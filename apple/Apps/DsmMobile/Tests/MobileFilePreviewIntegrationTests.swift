@@ -99,7 +99,10 @@ final class MobileFilePreviewIntegrationTests: XCTestCase {
 
         XCTAssertTrue(source.contains("onDismiss: previewPresentationDidDismiss"))
         XCTAssertTrue(source.contains(".onChange(of: showsPreviewInspector)"))
-        XCTAssertTrue(source.contains(".onChange(of: model.activeProfile?.id)"))
+        XCTAssertTrue(source.contains(".onChange(of: activationIdentity)"))
+        XCTAssertTrue(source.contains("profileID: model.activeProfile?.id"))
+        XCTAssertTrue(source.contains("repositoryIdentity: model.fileRepository.map { ObjectIdentifier($0) }"))
+        XCTAssertTrue(source.contains("showsAdvancedSearch = false\n            resetPreviewPresentation()"))
         XCTAssertTrue(source.contains("private func closePreview()"))
         XCTAssertTrue(source.contains("preview.close()"))
         XCTAssertTrue(source.contains("private func resetPreviewPresentation()"))

@@ -7,6 +7,24 @@ import XCTest
 
 @MainActor
 final class MobileFileUploadQueueTests: XCTestCase {
+    func test共享根或无效目标不能准备及提交上传() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let file = fixture.base.appendingPathComponent("sample.txt")
+        try Data().write(to: file)
+        let queue = MobileFileUploadQueue(rootURL: fixture.root)
+        queue.configure(profile: fixture.profile, repository: fixture.repository)
+        try await ready(queue)
+        for destination in ["", "/", "relative", "/synthetic/../other"] {
+            await queue.prepare([file], destination: destination)
+            XCTAssertFalse(queue.isPresented)
+            await queue.submit(overwrite: false)
+        }
+        XCTAssertTrue(queue.batches.isEmpty)
+        let count = await fixture.transport.uploadCount
+        XCTAssertEqual(count, 0)
+    }
+
     func test目录上传保留空目录隐藏文件且跳过符号链接() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }

@@ -18,6 +18,7 @@ struct MobileFileBrowser: View {
     @State private var showsPreviewFullScreen = false
     @State private var showsPreviewDetails = false
     @State private var showsLocations = false
+    @State private var showsAdvancedSearch = false
     @State private var restoresPreviewInspectorAfterFullScreen = false
     @State private var isSelectingCopyMoveItems = false
     @State private var selectedCopyMovePaths: Set<String> = []
@@ -58,6 +59,25 @@ struct MobileFileBrowser: View {
         .onSubmit(of: .search, submitSearch)
         .refreshable { await refreshNow() }
         .toolbar { browserToolbar }
+        .safeAreaInset(edge: .top) {
+            if state.advancedSearch != nil || state.page.indexCoverage == .incomplete || state.errorMessage != nil && state.pageState == .content {
+                VStack(alignment: .leading, spacing: 8) {
+                    if state.advancedSearch != nil {
+                        Button { showsAdvancedSearch = true } label: {
+                            Label(L10n.string("mobile.files.search.active"), systemImage: "line.3.horizontal.decrease.circle.fill")
+                                .frame(minHeight: 44)
+                        }
+                    }
+                    if state.page.indexCoverage == .incomplete {
+                        Text(L10n.string("files.search.indexIncomplete")).font(.callout).foregroundStyle(.secondary)
+                    }
+                    if let message = state.errorMessage, state.pageState == .content {
+                        Text(message).font(.callout).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).background(.bar)
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if isSelectingCopyMoveItems {
                 batchCopyMoveBar
@@ -75,6 +95,15 @@ struct MobileFileBrowser: View {
         }
         .sheet(isPresented: shareLinkPresentationBinding) {
             MobileFileShareLinkView(model: model.fileShareLinkModel)
+        }
+        .sheet(isPresented: $showsAdvancedSearch) {
+            if let repository = model.fileRepository {
+                let identity = activationIdentity
+                MobileFileAdvancedSearchView(repository: repository, request: advancedSearchDraft) { request in
+                    guard identity == activationIdentity else { return }
+                    Task { await browser.applyAdvancedSearch(request, repository: repository) }
+                }
+            }
         }
         .sheet(isPresented: $showsLocations) {
             MobileFileLocationsView(
@@ -148,7 +177,8 @@ struct MobileFileBrowser: View {
                 await browser.refreshStorage(repository: repository)
             }
         }
-        .onChange(of: model.activeProfile?.id) { _, _ in
+        .onChange(of: activationIdentity) { _, _ in
+            showsAdvancedSearch = false
             resetPreviewPresentation()
             endCopyMoveSelection()
         }
@@ -226,7 +256,7 @@ struct MobileFileBrowser: View {
     private var fileCollection: some View {
         if state.layout == .grid {
             ScrollView {
-                if state.currentPath.isEmpty {
+                if showsStorageSummary {
                     storageSummaryView
                         .padding(.horizontal)
                         .padding(.top, 12)
@@ -244,7 +274,7 @@ struct MobileFileBrowser: View {
             }
         } else {
             List {
-                if state.currentPath.isEmpty {
+                if showsStorageSummary {
                     storageSummaryView
                         .listRowSeparator(.hidden)
                 }
@@ -255,6 +285,10 @@ struct MobileFileBrowser: View {
             }
             .listStyle(.plain)
         }
+    }
+
+    private var showsStorageSummary: Bool {
+        state.currentPath.isEmpty && state.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && state.advancedSearch == nil
     }
 
     private var storageSummaryView: some View {
@@ -570,44 +604,47 @@ struct MobileFileBrowser: View {
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
-            Button(action: toggleCopyMoveSelection) {
-                Image(systemName: isSelectingCopyMoveItems ? "xmark" : "checkmark.circle")
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            sortAndFilterMenu.disabled(isSelectingCopyMoveItems)
+            if horizontalSizeClass == .regular {
+                createFolderButton
+                uploadButton
             }
-            .disabled(!isSelectingCopyMoveItems && selectableCopyMoveItems.isEmpty)
-            .accessibilityLabel(
-                L10n.string(
-                    isSelectingCopyMoveItems
-                        ? "mobile.files.batch-selection.done"
-                        : "mobile.files.batch-selection.start"
-                )
-            )
-            Button(action: beginCreateFolder) {
-                Image(systemName: "folder.badge.plus")
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            Menu {
+                Button(action: toggleCopyMoveSelection) {
+                    Label(L10n.string(isSelectingCopyMoveItems ? "mobile.files.batch-selection.done" : "mobile.files.batch-selection.start"),
+                          systemImage: isSelectingCopyMoveItems ? "xmark" : "checkmark.circle")
+                }
+                .disabled(!isSelectingCopyMoveItems && selectableCopyMoveItems.isEmpty)
+                if horizontalSizeClass != .regular {
+                    createFolderButton
+                    uploadButton
+                }
+                Button(action: toggleLayout) {
+                    Label(L10n.string(state.layout == .list ? "mobile.files.show-grid" : "mobile.files.show-list"),
+                          systemImage: state.layout == .list ? "square.grid.2x2" : "list.bullet")
+                }
+                Button(action: refresh) {
+                    Label(L10n.string("ui.aee88743413144a2"), systemImage: "arrow.clockwise")
+                }.disabled(state.isRefreshing || isSelectingCopyMoveItems)
+            } label: {
+                Image(systemName: "ellipsis.circle").frame(width: 44, height: 44).contentShape(Rectangle())
             }
-            .disabled(!canCreateFolder || isSelectingCopyMoveItems)
-            .accessibilityLabel(L10n.string("mobile.files.mutation.create.action"))
-            sortAndFilterMenu
-                .disabled(isSelectingCopyMoveItems)
-            Button(action: toggleLayout) {
-                Image(systemName: state.layout == .list ? "square.grid.2x2" : "list.bullet")
-            }
-            .accessibilityLabel(L10n.string(state.layout == .list ? "mobile.files.show-grid" : "mobile.files.show-list"))
-            Button(action: refresh) { Image(systemName: "arrow.clockwise") }
-                .disabled(state.isRefreshing || isSelectingCopyMoveItems)
-                .accessibilityLabel(L10n.string("ui.aee88743413144a2"))
-            Button(action: beginUpload) {
-                Label(L10n.string("mobile.documents.upload"), systemImage: "square.and.arrow.up")
-            }
-            .disabled(
-                model.fileRepository == nil ||
-                    state.location.source.isReadOnlyLocation ||
-                    isSelectingCopyMoveItems
-            )
+            .accessibilityLabel(L10n.string("workspace.actions.more"))
         }
+    }
+
+    private var createFolderButton: some View {
+        Button(action: beginCreateFolder) {
+            Label(L10n.string("mobile.files.mutation.create.action"), systemImage: "folder.badge.plus")
+        }
+        .disabled(!canCreateFolder || isSelectingCopyMoveItems)
+    }
+
+    private var uploadButton: some View {
+        Button(action: beginUpload) {
+            Label(L10n.string("mobile.documents.upload"), systemImage: "square.and.arrow.up")
+        }
+        .disabled(!canCreateFolder || state.location.source.isReadOnlyLocation || isSelectingCopyMoveItems)
     }
 
     private var batchCopyMoveBar: some View {
@@ -673,8 +710,17 @@ struct MobileFileBrowser: View {
         .accessibilityHidden(true)
     }
 
+    private var advancedSearchDraft: FileSearchRequest {
+        var request = state.advancedSearch ?? FileSearchRequest(folders: state.currentPath.isEmpty ? [] : [state.currentPath])
+        request.name = state.query
+        return request
+    }
+
     private var sortAndFilterMenu: some View {
         Menu {
+            Button(L10n.string("files.search.advanced")) { showsAdvancedSearch = true }
+                .accessibilityIdentifier("files.search.advanced")
+            Divider()
             Picker(L10n.string("mobile.files.sort-by"), selection: sortFieldBinding) {
                 Text(L10n.string("mobile.files.sort.name"))
                     .tag(FileListSortField.name)
@@ -734,7 +780,7 @@ struct MobileFileBrowser: View {
             filteredEmptyTitle: L10n.string("mobile.files.no-results"),
             filteredEmptyMessage: L10n.string("ui.49e7a5872fdd5088"),
             errorTitle: L10n.string("mobile.files.load-error"),
-            errorMessage: L10n.string("ui.5448ceb91a80e260"),
+            errorMessage: state.errorMessage ?? L10n.string("ui.5448ceb91a80e260"),
             retryTitle: L10n.string("ui.b8784c8dd5636ff2")
         )
     }
@@ -943,7 +989,7 @@ struct MobileFileBrowser: View {
     }
 
     private func beginUpload() {
-        guard !state.location.source.isReadOnlyLocation,
+        guard canCreateFolder, !state.location.source.isReadOnlyLocation,
               let profileID = model.activeProfile?.id,
               let repository = model.fileRepository else { return }
         pendingUploadContext = MobileDocumentPickerContext(contextID: model.documentTransferController.contextID,

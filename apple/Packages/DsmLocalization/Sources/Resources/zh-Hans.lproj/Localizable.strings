@@ -5794,3 +5794,10 @@
 "mobile.files.upload-submit" = "上传";
 
 "mobile.activity.nas-ended" = "任务已结束";
+
+"mobile.files.choose-folder" = "选择文件夹";
+"mobile.files.choose-this-folder" = "选择";
+"mobile.files.search.locations" = "搜索位置";
+"mobile.files.search.active" = "已启用搜索条件";
+"mobile.files.search.keyword-needed" = "请填写要查找的内容，或关闭文件内容搜索。";
+"mobile.files.folder-picker.empty-root" = "没有可访问的文件夹。请刷新列表，或联系管理员检查访问权限。";

@@ -116,9 +116,13 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
             result = ["files": [["name": "Sample document.txt", "path": "/fixture/Sample document.txt", "isdir": false,
                                   "additional": ["size": 1024, "time": ["mtime": 1_700_000_000]]]], "offset": 0, "total": 1]
         case (DsmAPIName.fileStationSearch, "start"):
-            result = ["taskid": "fixture-search"]
+            result = ["taskid": "fixture-search", "has_not_index_share": pageState == "advanced"]
         case (DsmAPIName.fileStationSearch, "list"):
-            result = ["files": [], "offset": 0, "total": 0, "finished": true]
+            if pageState == "advanced" {
+                result = ["files": [["name": "Filtered result.txt", "path": "/fixture/Filtered result.txt", "isdir": false]], "offset": 0, "total": 1, "finished": true]
+            } else {
+                result = ["files": [], "offset": 0, "total": 0, "finished": true]
+            }
         case (DsmAPIName.fileStationSearch, "stop"), (DsmAPIName.fileStationSearch, "clean"):
             result = [:]
         case (DsmAPIName.fileStationInfo, "get"):

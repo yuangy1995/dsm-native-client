@@ -5794,3 +5794,10 @@
 "mobile.files.upload-submit" = "Upload";
 
 "mobile.activity.nas-ended" = "Task ended";
+
+"mobile.files.choose-folder" = "Choose Folder";
+"mobile.files.choose-this-folder" = "Choose";
+"mobile.files.search.locations" = "Search Locations";
+"mobile.files.search.active" = "Search Filters Active";
+"mobile.files.search.keyword-needed" = "Enter a search term, or turn off searching file contents.";
+"mobile.files.folder-picker.empty-root" = "No accessible folders were found. Refresh the list, or ask an administrator to check your access.";

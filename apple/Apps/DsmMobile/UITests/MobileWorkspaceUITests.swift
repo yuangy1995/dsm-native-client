@@ -77,6 +77,45 @@ final class MobileWorkspaceUITests: XCTestCase {
         app.terminate()
     }
 
+    func test高级搜索通过文件夹选择应用条件并显示部分正文提示() {
+        let app = launchFixture(state: "advanced")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        let filters = app.buttons["Sort and filter"]
+        XCTAssertTrue(filters.waitForExistence(timeout: 5))
+        filters.tap()
+        let advanced = element("files.search.advanced", in: app)
+        XCTAssertTrue(advanced.waitForExistence(timeout: 5))
+        advanced.tap()
+        let name = element("files.search.name", in: app)
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        if app.buttons["Continue"].waitForExistence(timeout: 1) { app.buttons["Continue"].tap() }
+        name.typeText("term")
+        let contents = app.switches["Search file contents"]
+        XCTAssertTrue(contents.exists)
+        // 系统开关的可访问性元素包含整行；点击右侧开关本体，避免只结束输入焦点。
+        contents.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertEqual(contents.value as? String, "1")
+        element("files.search.addLocation", in: app).tap()
+        let folder = element("files.folder-picker.folder./fixture", in: app)
+        XCTAssertTrue(folder.waitForExistence(timeout: 8))
+        folder.tap()
+        let choose = app.buttons["Choose"]
+        XCTAssertTrue(choose.waitForExistence(timeout: 5))
+        choose.tap()
+        let apply = element("files.search.apply", in: app)
+        XCTAssertTrue(apply.waitForExistence(timeout: 5))
+        XCTAssertTrue(apply.isEnabled)
+        attachScreenshot(app, name: "Advanced search conditions")
+        apply.tap()
+        XCTAssertTrue(app.staticTexts["Filtered result.txt"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Search Filters Active"].exists)
+        XCTAssertFalse(app.staticTexts["Storage Visible to This Account"].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'not been indexed'")).firstMatch.exists)
+        attachScreenshot(app, name: "Advanced search results")
+    }
+
     private func launchFixture(state: String = "content") -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()

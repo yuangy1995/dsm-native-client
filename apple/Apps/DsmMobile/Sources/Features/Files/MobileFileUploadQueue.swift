@@ -93,7 +93,9 @@ final class MobileFileUploadQueue {
     }
 
     func prepare(_ urls: [URL], destination: String) async {
-        guard context != nil, repository != nil, !isConfiguring else { return }
+        guard context != nil, repository != nil, !isConfiguring,
+              destination.hasPrefix("/"), destination != "/",
+              !destination.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }) else { return }
         dismissSelection()
         self.destination = destination
         isPresented = true; isPreparing = true

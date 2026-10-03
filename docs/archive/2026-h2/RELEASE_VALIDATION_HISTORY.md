@@ -536,3 +536,23 @@ M1 云端文档检查修正：提交 `c776de72f40f5d80795c490010c9eba80860776b` 
 `PENDING_USER_VALIDATION`：iPhone/iPad 真机系统 Files 来源授权、iCloud/第三方提供商、锁屏/进后台中断、低空间、真实 NAS 同名覆盖与断网恢复、VoiceOver/大字号/键盘。使用独立可丢弃目录与文件；预期暂停/恢复不重复覆盖、不串账号，结果与目标文件一致；仅回传 OS/App/DSM 版本、脱敏操作和错误类别，不回传凭据、主机或真实路径。系统后台任务、分享扩展和 Files 扩展未开发，仍在 M8，不能写成仅待真机验证。
 
 M2a 补充：iPhone 深色外观下单独重跑目录上传/重启 UI 测试，1/1 通过（`m2-upload-iphone-dark.xcresult`），已查看深色截图，之后将专用模拟器恢复浅色。Mac Release 二进制实际包含 `x86_64 arm64`；Mobile/Mac 工程及共享测试方案用锁定生成器再次生成，摘要一致。M1 的源码提交 `c776de72` 对应 Apple Build 仍在云端运行，本机通过不冒充云端门禁完成。
+
+
+## 2026-10-04 移动 M2b 高级搜索与目录选择
+
+已实现多目录、名称/正文、类型、扩展名、大小、修改/创建/访问日期、所有者/群组条件；共享搜索请求和完整分页不变，新增可哈希值语义用于移动缓存。正文索引不完整时保留提示，不支持时显示恢复说明；清空正文关键词不退回普通搜索。目录选择复用现有浏览模型，不改变主页面位置。所有接口测试均为内存替身，未读取或写入真实 NAS。
+
+缓存按完整条件隔离，切换连接/条件丢弃迟到响应；文件变更使包含该目录的多位置搜索缓存失效。目录导航清除条件并恢复目录页。iPhone 工具栏保留筛选与“更多”，iPad 直接显示上传及新建文件夹；上传仅在有效文件夹开放，模型也拒绝共享根目标。搜索结果不显示无关的根容量摘要。
+
+当前已实际运行：共享 `swift test --package-path apple --jobs 4`，2427 项 XCTest（172 项既有环境/UI 跳过）、0 失败，另 12 项 Swift Testing 通过。两端第一轮聚焦行为各 41 项通过；新增高级搜索 UI 曾分别暴露紧凑工具栏入口溢出、弹窗背后同名测试元素和系统首次键盘提示干扰开关，已修正布局/定位并增加实际开关状态断言。其后高级搜索 UI 在 iPhone 深色与 iPad 浅色各通过，截图已查看。
+
+最终验证：XcodeGen 2.46.0 生成移动工程；`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过。随后两端分别 `test-without-building ... -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test高级搜索通过文件夹选择应用条件并显示部分正文提示`：iPhone、iPad 均为 533 项单元 + 1 项高级搜索实际 UI 全通过。结果为 `m2b-search-iphone-final2.xcresult`、`m2b-search-ipad-final2.xcresult`（同一忽略的构建目录，iPad ID 沿用 M0）；最终 iPhone 深色、iPad 浅色，之后恢复 iPhone 浅色。其他四项工作区 UI（导航、基础搜索、加载/空/错误、目录上传及重启）已在 `m2b-search-iphone-ui2.xcresult`、`m2b-search-ipad-ui2.xcresult` 各通过；这些结果中的高级搜索失败已由最终轮补回，不能将前一结果包整体称为通过。
+
+`python3 tools/localization/check_localization.py`（Apple 5597、Android 2188、Windows 3402）、`python3 tools/codex/check_documentation.py --strict-release` 与 `git diff --check` 均通过。新增高级搜索行为覆盖条件透传、缓存、正文覆盖/错误、迟到响应、导航、变更失效和输入边界；上传增加共享根零提交回归。完整单元首次发现两处旧源码文本断言：现已改为检查连接身份（配置及 Repository）与有效文件夹/只读限制，保留原安全语义，不通过删除或跳过断言消除失败。
+
+独立集成审查核对了搜索完整分页、完整条件缓存、账号隔离、正文缺失不降级、目录选择不写 NAS、原有只读来源限制、当前目录上传权限及双语资源。公开请求、其他端行为和既有存储格式未改。`PENDING_USER_VALIDATION`：真实 NAS 大目录/索引覆盖、实际权限，以及 VoiceOver、大字号、外接键盘；使用专用可丢弃目录查找已有测试文件，预期各条件生效且不串账号，仅回传脱敏版本、条件和错误类别。
+
+M1 的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37147153425) 已完成并成功；文档日期修复后的 [Repository Check](https://github.com/yuangy1995/dsm-native-client/actions/runs/37147481568) 与[文档预检](https://github.com/yuangy1995/dsm-native-client/actions/runs/37147481548) 均成功。M2a `b675fc6e` 的 [Repository Check](https://github.com/yuangy1995/dsm-native-client/actions/runs/37149447493) 与[文档预检](https://github.com/yuangy1995/dsm-native-client/actions/runs/37149447500) 均成功，Apple Build 仍在运行；本切片未发布移动安装包或改动正式 macOS 标签。
+
+
+M2b Mac 工程回归：`xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过；未改 Mac App 源码，不安装/启动或重新发布。Mobile/Mac 工程用 XcodeGen 2.46.0 重复生成后摘要一致。两端最终搜索结果截图已查看，文件容量摘要在搜索时隐藏；完整动态文字/VoiceOver 和真实 NAS 仍按设备待办执行。

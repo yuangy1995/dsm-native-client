@@ -1,5 +1,6 @@
 import DsmCore
 import DsmNetwork
+import DsmLocalization
 import Foundation
 import Observation
 
@@ -8,10 +9,14 @@ protocol MobileFileBrowsing: AnyObject, Sendable {
     func listShares(offset: Int, limit: Int, options: FileListOptions) async throws -> FilePage
     func listFolder(path: String, offset: Int, limit: Int, options: FileListOptions) async throws -> FilePage
     func search(folderPath: String, query: String) async throws -> [FileItem]
+    func searchWithReport(_ request: FileSearchRequest) async throws -> FileSearchResult
     func storageSpaceSummary() async throws -> StorageSpaceSummary?
 }
 
 extension MobileFileBrowsing {
+    func searchWithReport(_ request: FileSearchRequest) async throws -> FileSearchResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.search.unsupported"))
+    }
     func storageSpaceSummary() async throws -> StorageSpaceSummary? { nil }
 }
 
@@ -96,6 +101,22 @@ final class MobileFileBrowserModel {
 
     func setQuery(_ query: String) {
         updateActive { $0.query = query }
+    }
+
+    func applyAdvancedSearch(_ request: FileSearchRequest?, repository: any MobileFileBrowsing) async {
+        guard isActive(repository), request?.isValid != false else { return }
+        cancelRequest()
+        updateActive {
+            $0.advancedSearch = request
+            if let request { $0.query = request.name }
+        }
+        await replaceContent(repository: repository, forceNetwork: false)
+    }
+
+    private var effectiveSearch: FileSearchRequest? {
+        guard var request = state.advancedSearch else { return nil }
+        request.name = state.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return request
     }
 
     func setLayout(_ layout: MobileFileBrowserLayout) {
@@ -203,7 +224,8 @@ final class MobileFileBrowserModel {
         cancelRequest()
         updateActive { profile in
             profile.query = ""
-            profile.caches = profile.caches.filter { $0.key.path != success.parentPath }
+            profile.advancedSearch = nil
+            profile.caches = profile.caches.filter { !$0.key.includesDirectory(success.parentPath) }
             profile.visibleKey = nil
             profile.options = Self.effectiveOptions(
                 profile.directoryOptions,
@@ -225,9 +247,10 @@ final class MobileFileBrowserModel {
         cancelRequest()
         updateActive { profile in
             profile.query = ""
+            profile.advancedSearch = nil
             profile.caches = profile.caches.filter {
-                $0.key.path != success.sourceParentPath &&
-                    $0.key.path != success.destinationFolderPath
+                !$0.key.includesDirectory(success.sourceParentPath) &&
+                    !$0.key.includesDirectory(success.destinationFolderPath)
             }
             profile.visibleKey = nil
             profile.options = Self.effectiveOptions(
@@ -249,9 +272,10 @@ final class MobileFileBrowserModel {
         cancelRequest()
         updateActive { profile in
             profile.query = ""
+            profile.advancedSearch = nil
             profile.caches = profile.caches.filter {
-                $0.key.path != success.sourceParentPath &&
-                    $0.key.path != success.destinationParentPath
+                !$0.key.includesDirectory(success.sourceParentPath) &&
+                    !$0.key.includesDirectory(success.destinationParentPath)
             }
             profile.visibleKey = nil
             profile.options = Self.effectiveOptions(
@@ -275,6 +299,7 @@ final class MobileFileBrowserModel {
             $0.location.path = item.path
             $0.location.source = source
             $0.query = ""
+            $0.advancedSearch = nil
             $0.options = Self.effectiveOptions($0.directoryOptions, path: item.path)
         }
         restoreCachedPageIfPresent()
@@ -355,6 +380,7 @@ final class MobileFileBrowserModel {
         updateActive {
             $0.location.path = $0.location.history.removeLast()
             $0.query = ""
+            $0.advancedSearch = nil
             $0.options = Self.effectiveOptions($0.directoryOptions, path: $0.location.path)
         }
         restoreCachedPageIfPresent()
@@ -372,6 +398,7 @@ final class MobileFileBrowserModel {
             $0.location.path = parent
             if parent.isEmpty { $0.location.source = .shares }
             $0.query = ""
+            $0.advancedSearch = nil
             $0.options = Self.effectiveOptions($0.directoryOptions, path: parent)
         }
         restoreCachedPageIfPresent()
@@ -384,6 +411,7 @@ final class MobileFileBrowserModel {
     func loadMore(repository: any MobileFileBrowsing) async {
         guard isActive(repository),
               state.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              state.advancedSearch == nil,
               state.page.hasMore,
               !state.isLoadingMore else { return }
         let profileID = repository.profileID
@@ -490,14 +518,16 @@ final class MobileFileBrowserModel {
         let path = state.currentPath
         let query = state.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let options = Self.effectiveOptions(state.options, path: path)
-        let key = MobileFileBrowserCacheKey(path: path, query: query, options: options)
+        let advancedSearch = effectiveSearch
+        let key = MobileFileBrowserCacheKey(path: path, query: query, options: options, advancedSearch: advancedSearch)
 
         if !forceNetwork, let cached = profiles[profileID]?.caches[key] {
             cancelRequest()
             updateActive {
                 $0.page = cached
                 $0.visibleKey = key
-                $0.pageState = Self.pageState(items: cached.items, query: query, options: options)
+                $0.errorMessage = nil
+                $0.pageState = Self.pageState(items: cached.items, query: query, options: options, advancedSearch: key.advancedSearch != nil)
                 $0.isRefreshing = false
                 $0.isLoadingMore = false
                 $0.loadMoreFailed = false
@@ -514,6 +544,7 @@ final class MobileFileBrowserModel {
 
         let preservesContent = state.visibleKey == key && !state.page.items.isEmpty
         let requestGeneration = beginRequest { profile in
+            profile.errorMessage = nil
             profile.isRefreshing = preservesContent
             profile.isLoadingMore = false
             profile.loadMoreFailed = false
@@ -525,7 +556,7 @@ final class MobileFileBrowserModel {
         }
         let task = Task { [weak self] in
             do {
-                if query.isEmpty {
+                if query.isEmpty && advancedSearch == nil {
                     let page = try await Self.fetchPage(
                         repository: repository,
                         path: path,
@@ -558,13 +589,21 @@ final class MobileFileBrowserModel {
                         )
                     }
                 } else {
-                    let items = try await repository.search(
-                        folderPath: path.isEmpty ? "/" : path,
-                        query: query
-                    )
+                    let result: FileSearchResult
+                    if let advancedSearch {
+                        if advancedSearch.searchesContents && query.isEmpty {
+                            throw AppError(category: .invalidResponse, isRetryable: false,
+                                safeUserMessage: L10n.string("mobile.files.search.keyword-needed"))
+                        }
+                        result = try await repository.searchWithReport(advancedSearch)
+                    } else {
+                        result = FileSearchResult(items: try await repository.search(
+                            folderPath: path.isEmpty ? "/" : path, query: query))
+                    }
                     try Task.checkCancellation()
                     self?.applySearch(
-                        items,
+                        result,
+                        advancedSearch: advancedSearch,
                         path: path,
                         query: query,
                         options: options,
@@ -581,6 +620,7 @@ final class MobileFileBrowserModel {
                 )
             } catch {
                 self?.finishReplaceFailure(
+                    error: error,
                     profileID: profileID,
                     repositoryIdentity: identity,
                     generation: requestGeneration
@@ -634,10 +674,12 @@ final class MobileFileBrowserModel {
         var committed = baseline
         committed.location = MobileFileBrowserLocation(path: path, history: [], source: source)
         committed.query = ""
+        committed.advancedSearch = nil
         committed.options = options
         committed.page = cache
         committed.caches[key] = cache
         committed.visibleKey = key
+        committed.errorMessage = nil
         committed.pageState = Self.pageState(items: items, query: "", options: options)
         committed.isRefreshing = false
         committed.isLoadingMore = false
@@ -717,6 +759,7 @@ final class MobileFileBrowserModel {
             $0.page = cache
             $0.caches[key] = cache
             $0.visibleKey = key
+            $0.errorMessage = nil
             $0.pageState = Self.pageState(items: merged, query: "", options: options)
             $0.isRefreshing = false
             $0.isLoadingMore = false
@@ -725,7 +768,8 @@ final class MobileFileBrowserModel {
     }
 
     private func applySearch(
-        _ items: [FileItem],
+        _ result: FileSearchResult,
+        advancedSearch: FileSearchRequest?,
         path: String,
         query: String,
         options: FileListOptions,
@@ -741,21 +785,25 @@ final class MobileFileBrowserModel {
               state.currentPath == path,
               state.query.trimmingCharacters(in: .whitespacesAndNewlines) == query,
               state.options == options else { return }
+        guard effectiveSearch == advancedSearch else { return }
+        let items = result.items
         let visibleItems = Self.sortedAndFiltered(items, options: options)
         let cache = MobileFileBrowserPageCache(
             items: Self.deduplicated(visibleItems),
+            indexCoverage: result.indexCoverage,
             nextOffset: visibleItems.count,
             hasMore: false,
             filteredEmptyReason: visibleItems.isEmpty
                 ? (items.isEmpty ? .query : .typeFilter)
                 : nil
         )
-        let key = MobileFileBrowserCacheKey(path: path, query: query, options: options)
+        let key = MobileFileBrowserCacheKey(path: path, query: query, options: options, advancedSearch: advancedSearch)
         updateActive {
             $0.page = cache
             $0.caches[key] = cache
             $0.visibleKey = key
-            $0.pageState = Self.pageState(items: cache.items, query: query, options: options)
+            $0.errorMessage = nil
+            $0.pageState = Self.pageState(items: cache.items, query: query, options: options, advancedSearch: advancedSearch != nil)
             $0.isRefreshing = false
             $0.isLoadingMore = false
             $0.loadMoreFailed = false
@@ -795,6 +843,7 @@ final class MobileFileBrowserModel {
     }
 
     private func finishReplaceFailure(
+        error: Error,
         profileID: UUID,
         repositoryIdentity identity: ObjectIdentifier,
         generation requestGeneration: Int
@@ -808,18 +857,20 @@ final class MobileFileBrowserModel {
             $0.isRefreshing = false
             $0.isLoadingMore = false
             $0.pageState = $0.page.items.isEmpty ? .error : .content
+            $0.errorMessage = (error as? AppError)?.safeUserMessage ?? L10n.string("ui.5448ceb91a80e260")
         }
     }
 
     private func restoreCachedPageIfPresent() {
         let query = state.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let options = Self.effectiveOptions(state.options, path: state.currentPath)
-        let key = MobileFileBrowserCacheKey(path: state.currentPath, query: query, options: options)
+        let key = MobileFileBrowserCacheKey(path: state.currentPath, query: query, options: options, advancedSearch: effectiveSearch)
         updateActive {
             if let cached = $0.caches[key] {
                 $0.page = cached
                 $0.visibleKey = key
-                $0.pageState = Self.pageState(items: cached.items, query: query, options: options)
+                $0.errorMessage = nil
+                $0.pageState = Self.pageState(items: cached.items, query: query, options: options, advancedSearch: key.advancedSearch != nil)
             } else {
                 $0.page = MobileFileBrowserPageCache()
                 $0.visibleKey = nil
@@ -876,10 +927,11 @@ final class MobileFileBrowserModel {
     private static func pageState(
         items: [FileItem],
         query: String,
-        options: FileListOptions = .default
+        options: FileListOptions = .default,
+        advancedSearch: Bool = false
     ) -> MobilePageState {
         if items.isEmpty {
-            return query.isEmpty && options.typeFilter == .all ? .empty : .filteredEmpty
+            return query.isEmpty && !advancedSearch && options.typeFilter == .all ? .empty : .filteredEmpty
         }
         return .content
     }

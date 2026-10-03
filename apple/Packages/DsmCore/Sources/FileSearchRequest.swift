@@ -2,7 +2,7 @@ import Foundation
 
 public enum FileSearchKind: String, CaseIterable, Sendable { case all, file, directory = "dir" }
 
-public struct FileSearchTimeRange: Equatable, Sendable {
+public struct FileSearchTimeRange: Hashable, Sendable {
     public var from: Date?
     public var to: Date?
     public init(from: Date? = nil, to: Date? = nil) { self.from = from; self.to = to }
@@ -13,7 +13,7 @@ public struct FileSearchTimeRange: Equatable, Sendable {
 }
 
 /// 条件之间按 AND 组合；名称正则由界面过滤，不作为 DSM glob 参数发送。
-public struct FileSearchRequest: Equatable, Sendable {
+public struct FileSearchRequest: Hashable, Sendable {
     public var folders: [String]
     public var recursive: Bool
     public var name: String

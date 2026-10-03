@@ -16,6 +16,16 @@ struct MobileFileBrowserCacheKey: Hashable, Sendable {
     let path: String
     let query: String
     let options: FileListOptions
+    var advancedSearch: FileSearchRequest? = nil
+
+    func includesDirectory(_ directory: String) -> Bool {
+        guard let search = advancedSearch else {
+            return path == directory || !query.isEmpty && (path.isEmpty || directory.hasPrefix(path + "/"))
+        }
+        return search.folders.contains { folder in
+            folder == directory || search.recursive && directory.hasPrefix(folder + "/")
+        }
+    }
 }
 
 enum MobileFileBrowserFilteredEmptyReason: Equatable, Sendable {
@@ -25,6 +35,7 @@ enum MobileFileBrowserFilteredEmptyReason: Equatable, Sendable {
 
 struct MobileFileBrowserPageCache: Equatable, Sendable {
     var items: [FileItem] = []
+    var indexCoverage: FileSearchIndexCoverage = .notRequested
     var nextOffset = 0
     var hasMore = false
     var filteredEmptyReason: MobileFileBrowserFilteredEmptyReason? = nil
@@ -33,6 +44,8 @@ struct MobileFileBrowserPageCache: Equatable, Sendable {
 struct MobileFileBrowserProfileState: Equatable, Sendable {
     var location = MobileFileBrowserLocation()
     var query = ""
+    var advancedSearch: FileSearchRequest?
+    var errorMessage: String?
     var layout: MobileFileBrowserLayout = .list
     var directoryOptions: FileListOptions = .default
     var options: FileListOptions = .default
