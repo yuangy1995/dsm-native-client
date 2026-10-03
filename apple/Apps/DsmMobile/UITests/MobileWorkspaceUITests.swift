@@ -173,6 +173,62 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No transfer tasks yet"].waitForExistence(timeout: 8))
     }
 
+    func test权限编辑保留继承规则并保存后重新读取() {
+        let app = launchFixture(state: "permissions-acl")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        app.buttons["Actions for Inbox"].tap(); app.buttons["Owner and permissions"].tap()
+        let rule = app.buttons["Sample member, Allow"]
+        XCTAssertTrue(rule.waitForExistence(timeout: 8)); rule.tap()
+        let write = app.switches["files.permissions.rule.0.write_data"]
+        XCTAssertTrue(write.waitForExistence(timeout: 5))
+        write.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        element("files.permissions.save", in: app).tap()
+        XCTAssertTrue(app.staticTexts["These changes apply to this item and may change who can access it."].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Permission change confirmation")
+        element("files.permissions.confirm", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Permissions saved."].waitForExistence(timeout: 8))
+        XCTAssertEqual(write.value as? String, "1")
+        attachScreenshot(app, name: "Explicit permissions saved")
+    }
+
+    func test基础权限修改需确认移除访问且准确回读() {
+        let app = launchFixture(state: "permissions-posix")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        app.buttons["Actions for Sample document.txt"].tap(); app.buttons["Owner and permissions"].tap()
+        let write = app.switches["files.permissions.posix.0.2"]
+        XCTAssertTrue(write.waitForExistence(timeout: 8))
+        write.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        element("files.permissions.save", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Some accounts will lose part or all of their current access."].waitForExistence(timeout: 5))
+        element("files.permissions.confirm", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Permissions saved."].waitForExistence(timeout: 8))
+        XCTAssertEqual(write.value as? String, "0")
+        attachScreenshot(app, name: "Basic permissions saved")
+    }
+
+    func test共享根权限只读且仍可展开继承规则() {
+        let app = launchFixture(state: "permissions-acl")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        app.buttons["Actions for Sample folder"].tap(); app.buttons["Owner and permissions"].tap()
+        XCTAssertTrue(app.staticTexts["Permissions are read-only here. Manage permissions for this location in DSM."].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["files.permissions.save"].isEnabled)
+        let rule = app.buttons["Sample member, Allow"]
+        XCTAssertTrue(rule.exists); rule.tap()
+        XCTAssertFalse(app.switches["files.permissions.rule.0.write_data"].isEnabled)
+        app.staticTexts["Sample member"].firstMatch.tap()
+        let inherited = element("files.permissions.inherited.0", in: app)
+        for _ in 0..<3 where !inherited.isHittable { app.swipeUp() }
+        XCTAssertTrue(inherited.isHittable); inherited.tap()
+        let inheritedRead = app.staticTexts["Read files / list folders"]
+        for _ in 0..<3 where !inheritedRead.isHittable { app.swipeUp() }
+        XCTAssertTrue(inheritedRead.waitForExistence(timeout: 5))
+        XCTAssertTrue(inheritedRead.isHittable)
+        attachScreenshot(app, name: "Shared root permissions remain read-only")
+    }
+
     func test文件多选可批量创建并保留逐项链接() {
         let app = launchFixture(state: "sharing")
         defer { app.terminate() }

@@ -220,6 +220,14 @@ final class MobileFileBrowserModel {
         }
     }
 
+    /// 权限可能同时改变子目录的可见性，不继续使用原账号的旧目录权限缓存。
+    func refreshAfterPermissionChange(repository: any MobileFileBrowsing) async {
+        guard isActive(repository) else { return }
+        cancelRequest()
+        updateActive { $0.caches = [:] }
+        await replaceContent(repository: repository, forceNetwork: true)
+    }
+
     func refreshAfterConfirmedMutation(
         _ success: MobileFileItemMutationSuccess,
         repository: any MobileFileBrowsing

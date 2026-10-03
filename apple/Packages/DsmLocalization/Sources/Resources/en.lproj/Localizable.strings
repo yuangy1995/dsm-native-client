@@ -5849,3 +5849,14 @@
 "mobile.sharing.empty-all" = "You have no sharing links. Create one from a file or folder menu.";
 "mobile.sharing.access-title" = "Access settings";
 "mobile.sharing.save" = "Save";
+"mobile.permissions.load-error" = "Could not load the current permissions. Refresh to try again.";
+"mobile.permissions.access-unavailable" = "You can view these permissions. To make changes, refresh or contact your administrator.";
+"mobile.permissions.pending" = "The last change may still be in progress. Refresh to view the current permissions. Further changes are temporarily unavailable.";
+"mobile.permissions.partial" = "Some permission changes failed. Changes already made were kept. Open this location in DSM to manage its permissions.";
+"mobile.permissions.save-error" = "Permissions could not be saved. Refresh the current permissions and try again.";
+"mobile.permissions.current-risk" = "These changes apply to this item and may change who can access it.";
+"mobile.permissions.recursive-risk" = "These changes also apply to every file and folder inside this folder. Existing access may change for all of them.";
+"mobile.permissions.owner-risk" = "Changing the owner or group may give different accounts control of this item.";
+"mobile.permissions.removal-risk" = "Some accounts will lose part or all of their current access.";
+"mobile.permissions.title" = "Permissions";
+"mobile.permissions.conflict" = "This change cannot start yet. Refresh the current permissions, or wait if another change is still running.";

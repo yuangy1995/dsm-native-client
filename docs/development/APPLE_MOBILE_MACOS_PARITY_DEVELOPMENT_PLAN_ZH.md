@@ -33,7 +33,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | M2a 已接共用上传计划、多选/目录、同名跳过/替换确认、逐项结果与暂停恢复；两端验证记录见后文，其他文件管理仍在实施 |
 | M2 分享与收集 | FileShareCreationView、FileShareManagementView、FileShareAdvancedView | 详情表单/系统分享；Sharing 密码/日期/权限；外部可见写 | M2d 已接批量创建、全部链接编辑/撤销、访问对象/次数、收集和二维码；两端验证通过，未知写保留隔离限制 |
 | M2 压缩、解压、归档浏览 | ArchiveExtractionView；共享 DsmFileFeature/FileArchiveBrowserModel | 包内列表/选择目标与条目；Compress/Extract；数据写 | M2c 已接多项压缩、包内选择/分页及解压、持久记录、取消和输出回读；两端单元/实际 UI 及 Mac 回归通过 |
-| M2 ACL 与所有者 | FilePermissionEditor、FileStationPrincipalPicker | 分步权限/成员选择；原对象与权限快照；高风险写 | 未实现；明确后果、原权限变化拒绝、回读一致 |
+| M2 ACL 与所有者 | FilePermissionEditor、FileStationPrincipalPicker | 分步权限/成员选择；原对象与权限快照；高风险写 | M2e 已接显式/继承权限、所有者/群组、具体后果确认和持久未知目标限制；两端单元/实际 UI 与 Mac 回归通过 |
 | M2 远程位置与 ISO/VFS | FileVFSViews、FileVFSForm、FileISOMountView | 原生列表/连接表单；SMB/NFS/VFS/ISO/云授权；凭据与内部写 | 现有位置浏览不足；凭据仅当次，提交未知不重复连接 |
 | M2 NAS 任务 | FileBackgroundTaskActions | Activity 绑定 NAS/原任务；状态及取消；写 | M2c 完整分页、原任务停止/清除、未知控制恢复已接；两端单元/实际 UI 通过，真实 NAS 待验 |
 | M2 跨 NAS 传输 | WorkspaceModel | 源/目标明确绑定；复制后核对目标再确认源删除；高风险 | 未实现；目标未核对不得删源，恢复不重放已完成步骤 |
@@ -128,7 +128,7 @@ M1 验证结果与只读对抗复核见[验证历史](../archive/2026-h2/RELEASE
 Mac 参考为 `FileUploadPlan.swift`、`FileUploadBatch.swift`、`WorkspaceModel.swift`；目录层次、同名冲突、部分成功、取消及未知结果按其业务语义实现。iPhone/iPad 均通过系统文件选择器及原生活动列表操作，不引入桌面常驻运行假设。当前尚在实现，不能据此提升验证等级。
 
 
-M2a 的恢复队列、多文件/目录上传、独立两端 UI 和 Mac 回归已通过，详见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2a-可恢复传输与目录上传)。高级搜索、归档和 NAS 任务已由 M2b/M2c 补齐；M2d 已补分享/收集；M2 仍须完成 ACL、远程连接、跨 NAS、目录批量管理与 Office 主动回传，不能以本切片替代整波验收。
+M2a 的恢复队列、多文件/目录上传、独立两端 UI 和 Mac 回归已通过，详见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2a-可恢复传输与目录上传)。高级搜索、归档和 NAS 任务已由 M2b/M2c 补齐；M2d 已补分享/收集；M2e 已补 ACL/所有者；M2 仍须完成远程连接、跨 NAS、目录批量管理与 Office 主动回传，不能以本切片替代整波验收。
 
 
 ### M2b 高级搜索与目录选择
@@ -149,8 +149,8 @@ M2a 的恢复队列、多文件/目录上传、独立两端 UI 和 Mac 回归已
 沿用现有公开 Sharing 和已记录的内部高级分享/账号契约。外部可见写必须绑定完整原对象，保留实际权限、扩大访问/移除密码/收集上传的具体后果确认、未知结果防重放与回读；不以截断列表中的缺失推定撤销成功。独立版本 1 恢复记录仅存上下文及未完成操作身份、不保存密码；提交前保存，重启后只读恢复，回滚停用新入口而保留记录，既有登录格式不变。此项存储属已批准 M0–M8 恢复范围。M2d 两端单元/实际 UI、共享及 Mac 构建回归已通过，详见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2d-分享与文件收集)。真实 NAS 不参与自动写测试，Windows/Android 无请求变化，ACL/远程连接/跨 NAS/Office 在后续 M2 切片。
 
 
-### M2e 所有者与权限（实施准备）
+### M2e 所有者与权限
 
-下一单一修改范围为移动权限模型/原生表单、现有成员选择器、Files 入口、组合根、双语资源及对应测试/工程；不改变共享 API 请求或 Mac 行为。参考 `FilePermissionEditor.swift`、`DsmFileRepository+Permissions.swift` 和已记录的内部权限端点。两端均展示所有者、显式/继承规则与基础权限；继承项只读，普通目录以原生展开表单编辑，保存前展示变更对象和具体后果。共享根、回收站、挂载位置和实际授权不足保持只读。
+当前单一修改范围为移动权限模型/原生表单、现有成员选择器、Files 入口、组合根、双语资源及对应测试/工程；不改变共享 API 请求或 Mac 行为。参考 `FilePermissionEditor.swift`、`DsmFileRepository+Permissions.swift` 和已记录的内部权限端点。两端均展示所有者、显式/继承规则与基础权限；继承项只读，普通目录以原生展开表单编辑，保存前展示变更对象和具体后果。共享根、回收站、挂载位置和实际授权不足保持只读。
 
-高风险写继续由现有 Repository 执行完整路径映射/权限快照重读、成员存在性、自锁检查及最终状态回读。移动端仅增加独立版本 1 的受保护未结束目标记录，内部映射路径、权限快照和凭据不落盘；写前保存失败零提交，未知请求禁止重放。同一会话保留原请求用于只读查询；重启后保留未知目标限制与当前权限读取，不凭根项目相同断言整棵目录完成。回滚停用新增入口并保留记录，原配置不变。本行是实施边界而非完成结论，真实权限写仅列后续用户验证，不访问 NAS 真实数据。
+高风险写继续由现有 Repository 执行完整路径映射/权限快照重读、成员存在性、自锁检查及最终状态回读。移动端仅增加独立版本 1 的受保护未结束目标记录，内部映射路径、权限快照和凭据不落盘；写前保存失败零提交，未知请求禁止重放。同一会话保留原请求用于只读查询；重启后保留未知目标限制与当前权限读取，不凭根项目相同断言整棵目录完成。回滚停用新增入口并保留记录，原配置不变。模型/表单、具体后果确认和恢复记录已接入；权限变化使当前账号旧目录与搜索权限缓存失效。两端各 586 项单元及全部 17 项实际 UI 均已有通过证据，共享和 Mac 回归通过；精确命令、iPad 中间失败与补测见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2e-所有者与权限)。真实权限写仅列后续用户验证，不访问 NAS 真实数据。

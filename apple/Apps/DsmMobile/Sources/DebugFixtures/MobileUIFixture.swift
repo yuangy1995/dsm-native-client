@@ -12,7 +12,7 @@ enum MobileUIFixture {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
-            let uploadFixture = ["upload", "archive", "sharing"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -21,7 +21,8 @@ enum MobileUIFixture {
                 transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
-            let versions = [DsmAPIName.fileStationSharing: 3, DsmAPIName.desktopInitData: 1, DsmAPIName.fileStationUserGroup: 1, DsmAPIName.fileStationList: 2, DsmAPIName.fileStationInfo: 2, DsmAPIName.fileStationSearch: 2,
+            let versions = [DsmAPIName.coreACL: 1, DsmAPIName.fileStationACLOwner: 1, DsmAPIName.fileStationProperty: 1,
+                            DsmAPIName.fileStationSharing: 3, DsmAPIName.desktopInitData: 1, DsmAPIName.fileStationUserGroup: 1, DsmAPIName.fileStationList: 2, DsmAPIName.fileStationInfo: 2, DsmAPIName.fileStationSearch: 2,
                             DsmAPIName.fileStationBackgroundTask: 3, DsmAPIName.fileStationCompress: 3, DsmAPIName.fileStationExtract: 2,
                             DsmAPIName.fileStationUpload: 3, DsmAPIName.fileStationCreateFolder: 2, DsmAPIName.fileStationCheckPermission: 3,
                             DsmAPIName.downloadStationTask: 3, DsmAPIName.downloadStationStatistic: 1,
@@ -83,6 +84,17 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
     private var uploaded: [String: Bool] = [:]
     private var stopped = false
     private var cleared = false
+    private var permissionMode = 755
+    private var permissionOwner = "Sample member"
+    private var permissionGroup = "Sample group"
+    private var permissionRules: [[String: Any]] = [FixtureTransport.rule("Sample member", kind: "user", level: 0),
+                                                    FixtureTransport.rule("Sample group", kind: "group", level: 1)]
+    private var isPermissionFixture: Bool { pageState.hasPrefix("permissions-") }
+    private static func rule(_ name: String, kind: String, level: Int) -> [String: Any] {
+        ["owner_type": kind, "owner_name": name, "permission_type": "allow", "level": level,
+         "permission": Dictionary(uniqueKeysWithValues: FileACLRight.allCases.map { ($0.rawValue, $0 == .readData) }),
+         "inherit": Dictionary(uniqueKeysWithValues: FileACLInheritance.allCases.map { ($0.rawValue, $0 == .thisFolder) })]
+    }
     private var sharing: [[String: Any]] = [FixtureTransport.share("fixture-existing", path: "/fixture/Sample document.txt"),
                                            FixtureTransport.share("fixture-folder", path: "/fixture/Inbox")]
     private static func share(_ id: String, path: String) -> [String: Any] {
@@ -101,8 +113,31 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
         let method = fields.first { $0.name == "method" }?.value ?? ""
         let result: [String: Any]
         switch (api, method) {
+        case (DsmAPIName.coreACL, "get") where isPermissionFixture:
+            result = ["is_acl": true, "change_permission": true, "is_inherited": true, "acl": permissionRules]
+        case (DsmAPIName.fileStationACLOwner, "get") where isPermissionFixture:
+            result = ["name": permissionOwner, "type": "user", "value": "user:" + permissionOwner, "hasPrivilege": true]
+        case (DsmAPIName.coreACL, "check_self_denied") where isPermissionFixture:
+            result = ["is_denied": false]
+        case (DsmAPIName.coreACL, "set") where isPermissionFixture:
+            if fields.contains(where: { $0.name == "change_acl" && $0.value == "true" }),
+               let data = fields.first(where: { $0.name == "rules" })?.value?.data(using: .utf8),
+               let rules = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                permissionRules = rules.map { $0.merging(["level": 0]) { _, new in new } }
+                    + permissionRules.filter { $0["level"] as? Int == 1 }
+            }
+            if let owner = fields.first(where: { $0.name == "acl_owner" })?.value { permissionOwner = owner }
+            result = ["task_id": "fixture-permission-task"]
+        case (DsmAPIName.coreACL, "status") where isPermissionFixture,
+             (DsmAPIName.fileStationProperty, "status") where isPermissionFixture:
+            result = ["finished": true]
+        case (DsmAPIName.fileStationProperty, "set") where isPermissionFixture:
+            if let mode = fields.first(where: { $0.name == "mode" })?.value, mode != "-1" { permissionMode = Int(mode) ?? permissionMode }
+            if let owner = fields.first(where: { $0.name == "owner" })?.value { permissionOwner = owner }
+            if let group = fields.first(where: { $0.name == "group" })?.value { permissionGroup = group }
+            result = ["taskid": "fixture-permission-task"]
         case (DsmAPIName.desktopInitData, "get_user_service"):
-            result = ["AppPrivilege": ["SYNO.SDS.App.FileStation3.Instance": pageState == "sharing"], "Session": ["is_admin": false]]
+            result = ["AppPrivilege": ["SYNO.SDS.App.FileStation3.Instance": pageState == "sharing" || isPermissionFixture], "Session": ["is_admin": isPermissionFixture]]
         case (DsmAPIName.fileStationUserGroup, "list_all"):
             result = ["owners": [["name": "Sample member", "type": "user"], ["name": "Sample group", "type": "group"]], "total": 2]
         case (DsmAPIName.fileStationSharing, "list") where pageState == "sharing":
@@ -159,10 +194,10 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
             let paths = try JSONDecoder().decode([String].self, from: Data(value.utf8))
             result = ["files": paths.compactMap { path -> [String: Any]? in
                 guard path == "/fixture" || uploaded[path] != nil || pageState == "archive" && path == "/fixture/Sample archive.zip"
-                    || pageState == "sharing" && ["/fixture/Sample document.txt", "/fixture/Inbox"].contains(path) else { return nil }
+                    || (pageState == "sharing" || isPermissionFixture) && ["/fixture/Sample document.txt", "/fixture/Inbox"].contains(path) else { return nil }
                 return fixtureItem(path, directory: uploaded[path] ?? (path == "/fixture" || path == "/fixture/Inbox"))
             }]
-        case (DsmAPIName.fileStationList, "list") where pageState == "sharing":
+        case (DsmAPIName.fileStationList, "list") where pageState == "sharing" || isPermissionFixture:
             result = ["files": [fixtureItem("/fixture/Sample document.txt", directory: false), fixtureItem("/fixture/Inbox", directory: true)], "offset": 0, "total": 2]
         case (DsmAPIName.fileStationList, "list") where pageState == "upload":
             let path = fields.first { $0.name == "folder_path" }?.value ?? ""
@@ -236,8 +271,14 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
     }
 
     private func fixtureItem(_ path: String, directory: Bool) -> [String: Any] {
-        ["name": (path as NSString).lastPathComponent, "path": path, "isdir": directory,
-         "additional": ["size": 0, "perm": ["adv_right": ["write": true, "read": true]]]]
+        var additional: [String: Any] = ["size": 0, "perm": ["adv_right": ["write": true, "read": true]]]
+        if isPermissionFixture {
+            additional["real_path"] = "/volume-fixture" + path; additional["mount_point_type"] = "normal"
+            additional["owner"] = ["user": permissionOwner, "group": permissionGroup]
+            additional["perm"] = ["is_acl_mode": pageState == "permissions-acl", "posix": permissionMode,
+                                  "adv_right": ["read": true, "write": true]]
+        }
+        return ["name": (path as NSString).lastPathComponent, "path": path, "isdir": directory, "additional": additional]
     }
 }
 #endif

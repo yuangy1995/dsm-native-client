@@ -25,6 +25,7 @@ struct MobileFileBrowser: View {
     @State private var showsPreviewDetails = false
     @State private var compressionSelection: MobileFileCompressionSelection?
     @State private var extractionItem: FileItem?
+    @State private var permissionItem: FileItem?
     @State private var showsLocations = false
     @State private var showsAdvancedSearch = false
     @State private var restoresPreviewInspectorAfterFullScreen = false
@@ -125,6 +126,9 @@ struct MobileFileBrowser: View {
                     repository: repository, queue: model.fileArchiveQueue)
             }
         }
+        .sheet(item: $permissionItem) { item in
+            MobileFilePermissionView(model: model.filePermissionModel, item: item)
+        }
         .sheet(isPresented: $showsLocations) {
             MobileFileLocationsView(
                 locations: locations,
@@ -201,6 +205,7 @@ struct MobileFileBrowser: View {
         .onChange(of: activationIdentity) { _, _ in
             showsAdvancedSearch = false
             compressionSelection = nil; extractionItem = nil
+            permissionItem = nil
             resetPreviewPresentation()
             endCopyMoveSelection()
         }
@@ -491,6 +496,11 @@ struct MobileFileBrowser: View {
 
     private func itemMenu(_ item: FileItem) -> some View {
         Menu {
+            if item.kind == .file || item.isDirectory {
+                Button { permissionItem = item } label: {
+                    Label(L10n.string("files.permissions.title"), systemImage: "person.badge.key")
+                }.disabled(model.fileRepository == nil)
+            }
             if canCreateFolder && !state.location.source.isReadOnlyLocation {
                 Button { compressionSelection = .init(items: [item], destination: state.currentPath) } label: {
                     Label(L10n.string("mobile.archive.compress"), systemImage: "archivebox")

@@ -600,3 +600,23 @@ M2a [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/3
 M2d 最终移动验证：XcodeGen 2.46.0 生成工程，`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过。测试使用 `xcodebuild test-without-building`、同工程/方案/构建目录及 `-parallel-testing-enabled NO`。iPhone 的 `m2d-sharing-iphone-final.xcresult` 中 570 项单元全部通过，原批量 UI 失败在工具栏修复后补回；随后 `-only-testing:DsmMobileUITests` 的 `m2d-sharing-iphone-ui-final.xcresult` **14 项实际 UI 全通过**。iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，深色 `m2d-sharing-ipad-final.xcresult` 中 570 项单元与 13 项 UI 通过，批量 UI 因分栏溢出失败；进一步将 iPad 的上一级也并入菜单后，`m2d-sharing-ipad-toolbar.xcresult` 的 **570 项单元 + 批量创建和高级搜索 2 项实际 UI 全通过**（分别使用 `-only-testing:DsmMobileTests` 和对应 `DsmMobileUITests/MobileWorkspaceUITests` 方法）。不将包含中间失败的结果包整体记为通过；两端 14 项界面用例均已有通过证据。
 
 已查看 iPhone 浅色批量结果、iPad 深色访问设置/批量结果和工具栏截图；iPad 测后恢复浅色。最终 `python3 tools/localization/check_localization.py`（Apple 5643、Android 2188、Windows 3402）、`python3 tools/codex/check_documentation.py --strict-release` 与 `git diff --check` 通过。M2e 权限仍是后续切片，未作为本次已验证功能或安装包发布。
+
+
+## 2026-10-04 移动 M2e 所有者与权限
+
+已接入共享权限读取/修改/只读查询、原生分组表单、所有者/群组与成员选择、全部十三项显式权限及四种继承范围、基础读写权限和目录应用范围。继承规则可以展开查看但不能编辑；共享根、挂载位置、回收站及实际授权不足保持只读。移动端用一次具体后果确认呈现账号、范围、访问移除与所有权转移，确认后草稿发生变化则拒绝沿用旧确认。Mac 业务与公开请求未改，Windows/Android 无实现或契约变化。
+
+独立受保护版本 1 文件 `permissions-v1.json` 只保存配置、账号上下文摘要和未结束逻辑路径，不存内部映射路径、权限快照或凭据。提交前保存失败零写，损坏记录不覆盖；重复点击/未知结果不重放；同一会话保留原请求用于只读查询，重启后保留未知目标限制并可读取当前权限。删除配置只清理对应记录。保存后刷新失败仍保留已知成功反馈，但在重新读到权限前禁止再次编辑；权限改变清除当前账号的旧目录/搜索缓存，保留搜索条件并重新读取。
+
+独立集成和只读对抗复核覆盖原对象/账号上下文、确认草稿冻结、实际访问授权、仅显式规则写入、成员类型、共享层两次权限/路径映射重读及自锁保护、递归任务状态与最终回读、保存失败/损坏记录、迟到回调、只读查询不重放，以及保护位置只读仍可展开。确认后的三个业务标志由实际展示的后果生成，不移除共享校验；无真实 NAS 读取或写入。
+
+共享 `swift test --package-path apple --jobs 4` 通过：2427 项 XCTest（172 项既有环境/UI 跳过）、0 失败，另 12 项 Swift Testing 通过；最终两项短标题/错误资源调整后 `swift test --package-path apple --jobs 4 --filter DsmLocalizationTests` 的 6 项通过。Mac `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过，没有安装/启动或发布。
+
+首轮编译修正测试构造参数和 Swift switch 表达式使用位置。第一轮实际界面发现保存反馈位于长表单末尾，以及测试误读导航容器的启用状态、展开组标识覆盖内部开关标识。已把反馈移到顶部并滚动显示，保留开关独立标识，改为断言实际禁用按钮和继承项可展开，没有削弱只读检查。随后 `m2e-permission-iphone2.xcresult` 的 583 项单元和 3 项新增权限 UI 全通过，iPhone 浅色保存结果及确认截图已查看。补同配置账号隔离、保存后重新读取失败和权限变更缓存回归后，最终两端完整回归另行登记。
+
+`PENDING_USER_VALIDATION`：两种真机、已授权可丢弃目录、管理员与普通账号，验证继承/显式权限、增加或拒绝访问、所有者/群组、目录范围、自锁拒绝、其他客户端同时改变权限、部分失败、断网和重启。预期原权限变化时不覆盖、共享根/挂载/回收站不修改、不把根项目匹配视为整个目录完成、未知不重放；内部请求仍按实际接口能力/权限/稳定对象保护。实际 NAS 权限行为、VoiceOver、大字号、键盘仍未验证；只回传 App/OS/DSM/File Station 版本、位置类别、脱敏步骤及错误类别，不回传账号、路径、权限明细或原始响应。重启后缺少原会话映射/任务证据的未知操作不能据当前状态判定完成，修改限制保留，不保存敏感快照来绕过该限制。
+
+
+M2e 最终移动验证：锁定 XcodeGen 2.46.0 生成工程；`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过。两端分别执行 `xcodebuild test-without-building`、同工程/方案/构建目录、`-parallel-testing-enabled NO`：iPhone 的 `m2e-permission-iphone-final.xcresult` 为 **586 项单元 + 17 项实际 UI 全通过**；iPad（`A31ABDE2-186F-43DD-8D40-5EB9511A9289`）深色 `m2e-permission-ipad-final.xcresult` 为 **586 项单元及 16 项 UI 通过**，共享根继承项显示断言失败。查看实际录屏确认继承项位于弹窗可见区域下方，测试补滚动并断言可见后重新构建；两端分别 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test共享根权限只读且仍可展开继承规则` 的 `m2e-permission-iphone-inherited.xcresult`、`m2e-permission-ipad-inherited.xcresult` 均 **1/1 通过**，保留保存按钮及显式开关禁用的原断言。不将中间失败结果包整体记为通过。上述结果均位于忽略的 `apple/Apps/DsmMobile/build/`。
+
+已查看 iPhone 浅色权限结果/确认和共享根截图、iPad 深色共享根继承项截图；iPad 测后恢复浅色。最终工程重复生成摘要、本地化完整性/硬编码检查（Apple 5654、Android 2188、Windows 3402）、严格文档和差异检查通过。M2c 的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37152701529) 已通过；本次移动源码不属于安装包发布，真实权限及辅助功能验收继续按上列条件执行。

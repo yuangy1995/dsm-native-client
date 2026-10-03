@@ -171,4 +171,18 @@ final class MobileFileAdvancedSearchTests: XCTestCase {
         XCTAssertNil(MobileFileAdvancedSearchView.resolve(.init(folders: ["/"]), minimum: "", maximum: "", unit: 1))
         XCTAssertNil(MobileFileAdvancedSearchView.resolve(.init(folders: ["/fixture"], modified: .init(from: Date(timeIntervalSince1970: 2), to: Date(timeIntervalSince1970: 1))), minimum: "", maximum: "", unit: 1))
     }
+
+    func test权限变化清除旧目录缓存并重新执行原搜索条件() async {
+        let repository = AdvancedSearchRepository(), other = AdvancedSearchRepository()
+        let browser = MobileFileBrowserModel()
+        await browser.activate(profileID: repository.profileID, repository: repository)
+        let request = FileSearchRequest(folders: ["/fixture", "/other"], name: "sample", fileExtension: "txt")
+        await browser.applyAdvancedSearch(request, repository: repository)
+        await browser.refreshAfterPermissionChange(repository: other)
+        var calls = await repository.requests; XCTAssertEqual(calls, [request])
+        await browser.refreshAfterPermissionChange(repository: repository)
+        calls = await repository.requests; XCTAssertEqual(calls, [request, request])
+        XCTAssertEqual(browser.state.advancedSearch, request)
+        XCTAssertEqual(browser.state.query, "sample")
+    }
 }

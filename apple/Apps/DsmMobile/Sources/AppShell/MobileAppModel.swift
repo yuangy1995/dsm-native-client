@@ -30,6 +30,7 @@ final class MobileAppModel {
     let fileBrowserModel = MobileFileBrowserModel()
     let filePreviewModel = MobileFilePreviewModel()
     let fileShareLinkModel: MobileFileShareLinkModel
+    let filePermissionModel: MobileFilePermissionModel
     let photoLibraryModel = MobilePhotoLibraryModel()
     let synologyPhotos = MobileSynologyPhotosSession()
     let chatModel = MobileChatModel()
@@ -66,6 +67,7 @@ final class MobileAppModel {
             filePreviewModel.activate(profileID: activeProfile?.id)
             fileUploadQueue.configure(profile: activeProfile, repository: fileRepository)
             fileArchiveQueue.configure(profile: activeProfile, repository: fileRepository)
+            filePermissionModel.configure(profile: activeProfile, repository: fileRepository)
             downloads.configure(profile: activeProfile, repository: serviceRepository)
             if activeProfile.map(MobileWorkspaceIdentity.init) != oldValue.map(MobileWorkspaceIdentity.init) {
                 fileActivityModel.reset()
@@ -100,6 +102,7 @@ final class MobileAppModel {
             fileActivityModel.reset()
             fileUploadQueue.configure(profile: activeProfile, repository: fileRepository)
             fileArchiveQueue.configure(profile: activeProfile, repository: fileRepository)
+            filePermissionModel.configure(profile: activeProfile, repository: fileRepository)
         }
     }
     var photoRepository: FileStationPhotoRepository?
@@ -128,6 +131,9 @@ final class MobileAppModel {
             mutationCoordinator: mutationCoordinator,
             rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Sharing", isDirectory: true)
         )
+        self.filePermissionModel = MobileFilePermissionModel(
+            rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Permissions", isDirectory: true)
+        )
         self.settingsStore = MobileSettingsStore(defaults: defaults)
         let transferCoordinator = MobileTransferCoordinator(
             mutationCoordinator: mutationCoordinator, recoveryStore: transferRecoveryStore
@@ -145,6 +151,12 @@ final class MobileAppModel {
                   MobileWorkspaceIdentity(profile).storageIdentifier == context,
                   let repository = fileRepository else { return }
             await fileBrowserModel.refreshAfterArchiveChange(destination: destination, repository: repository)
+        }
+        filePermissionModel.onPermissionsChanged = { [weak self] context in
+            guard let self, let profile = activeProfile,
+                  MobileWorkspaceIdentity(profile).storageIdentifier == context,
+                  let repository = fileRepository else { return }
+            await fileBrowserModel.refreshAfterPermissionChange(repository: repository)
         }
         loadProfiles()
         if let profile = profiles.first(where: {

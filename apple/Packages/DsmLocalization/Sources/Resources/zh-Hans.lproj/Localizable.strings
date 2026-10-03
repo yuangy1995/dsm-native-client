@@ -5849,3 +5849,14 @@
 "mobile.sharing.empty-all" = "你还没有分享链接。可从文件或文件夹菜单创建。";
 "mobile.sharing.access-title" = "访问设置";
 "mobile.sharing.save" = "保存";
+"mobile.permissions.load-error" = "无法读取当前权限。请刷新后重试。";
+"mobile.permissions.access-unavailable" = "当前可以查看权限。若需修改，请刷新或联系管理员。";
+"mobile.permissions.pending" = "上次修改可能仍在进行。请刷新查看当前权限，暂时无法再次修改。";
+"mobile.permissions.partial" = "部分权限修改失败，已生效的修改仍被保留。请在 DSM 中打开此位置管理权限。";
+"mobile.permissions.save-error" = "未能保存权限。请刷新当前权限后重试。";
+"mobile.permissions.current-risk" = "这些修改会应用到当前项目，并可能改变哪些账号可以访问它。";
+"mobile.permissions.recursive-risk" = "这些修改也会应用到文件夹内的所有文件和文件夹，可能改变它们现有的访问权限。";
+"mobile.permissions.owner-risk" = "更改所有者或所属群组，可能让其他账号取得此项目的控制权。";
+"mobile.permissions.removal-risk" = "部分账号将失去现有的部分或全部访问权限。";
+"mobile.permissions.title" = "权限";
+"mobile.permissions.conflict" = "暂时无法开始这次修改。请刷新当前权限；若还有修改正在进行，请稍后再试。";
