@@ -15,6 +15,8 @@
 | 大小 / 校验 | `DirSize.start/status/stop`、`MD5.start/status` | 目录大小固定 v2；仅轮询/停止本次任务 | 专用任务结果，取消与完成分开 |
 | 收藏 | `Favorite.list/add/delete` | 当前账号会话，目标路径与名称 | 列表/写入后核对；不能以显示文案作为身份 |
 
+2026-10-04 移动收藏维护复用公开 Favorite v2；共享 Apple 新增兼容的 `removeFavoriteResult`，旧 `removeFavorite` 调用保持。新增/移除回读保留 5000 项上限及截断标记，截断缺失不作为写结果；没有新增 NAS 字段、版本或权限。iPhone/iPad 接入文件与目录收藏和原目标恢复；macOS 的新增收藏共享回读随之修正并执行回归，既有移除入口不改变。Windows/Android 请求不变，仅记录相同的完整列表判断要求。
+
 List 原始条目通常含 `name/path/isdir/additional`；领域时间、权限和文件类型由适配器解析。完整原始字段容器在 Repository 的 `FileListPayload/FilePayload` 中，不能将 `FileItem` JSON 直接当作 DSM 响应。
 
 `additional.mount_point_type` 对普通本地项目可以是空字符串；Apple Adapter 将精确空串归一化为没有特殊挂载类型，非空值原样保留。该字段不替代 `perm` 权限判断，SMB/NFS 等特殊挂载的写入限制保持不变。2026-10-03 的只读观察、回归和五端影响见[挂载修复账本](../../development/MACOS_MOUNT_WRITABILITY_FIX_20261003_ZH.md)。

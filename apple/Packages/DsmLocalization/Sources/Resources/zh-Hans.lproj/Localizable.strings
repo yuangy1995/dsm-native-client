@@ -3586,7 +3586,7 @@
 "mobile.files.locations.favorites.filtered-empty" = "没有符合当前筛选条件的收藏位置。";
 "mobile.files.locations.favorites.error" = "无法加载收藏位置，请重试。";
 "mobile.files.locations.favorites.refresh-error" = "无法更新收藏位置，仍显示上次的列表。";
-"mobile.files.locations.favorites.truncated" = "为保持列表流畅，仅显示前 200 个收藏位置。";
+"mobile.files.locations.favorites.truncated" = "仅显示前 5,000 项收藏，部分收藏可能未显示。";
 "mobile.files.locations.recent.empty" = "打开过的文件夹会显示在这里。";
 "mobile.files.locations.recycle.loading" = "正在查找回收站…";
 "mobile.files.locations.recycle.refreshing" = "正在更新回收站…";
@@ -5878,3 +5878,10 @@
 "mobile.remote.cleartext-title" = "仍要使用未加密的连接吗？";
 "mobile.remote.cleartext-impact" = "此连接不会加密 NAS 与远程服务器之间传送的账号信息和文件，同一网络上的其他人可能读取这些内容。";
 "mobile.remote.manage" = "管理远程位置";
+
+// 移动文件收藏维护
+"mobile.favorites.incomplete" = "收藏列表不完整。请刷新后再添加收藏。";
+"mobile.favorites.changed" = "此项目已变化或无法访问。请刷新列表后重试。";
+"mobile.favorites.save-error" = "未能修改收藏。请刷新列表后重试。";
+"mobile.favorites.pending" = "这项收藏仍在更新。请稍后刷新列表。";
+"mobile.favorites.recovery-error" = "无法读取或保存尚未完成的收藏修改。请重新打开 App；仍无法恢复时请联系支持。";

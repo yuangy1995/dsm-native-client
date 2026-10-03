@@ -35,6 +35,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M2 压缩、解压、归档浏览 | ArchiveExtractionView；共享 DsmFileFeature/FileArchiveBrowserModel | 包内列表/选择目标与条目；Compress/Extract；数据写 | M2c 已接多项压缩、包内选择/分页及解压、持久记录、取消和输出回读；两端单元/实际 UI 及 Mac 回归通过 |
 | M2 ACL 与所有者 | FilePermissionEditor、FileStationPrincipalPicker | 分步权限/成员选择；原对象与权限快照；高风险写 | M2e 已接显式/继承权限、所有者/群组、具体后果确认和持久未知目标限制；两端单元/实际 UI 与 Mac 回归通过 |
 | M2 远程位置与 ISO/VFS | FileVFSViews、FileVFSForm、FileISOMountView | 原生列表/连接表单；SMB/NFS/VFS/ISO/云授权；凭据与内部写 | M2f 已接连接管理/原始 URI 浏览下载、ISO 与系统云授权；两端模型及实际 UI、共享与 Mac 回归通过，真实云回调仍待设备验收 |
+| M2 收藏与 File Station 设置 | WorkspaceModel.toggleFavorite、FileStationSettingsView、FileStationBandwidthView | 文件菜单/位置列表、分步设置表单；Favorite、Setting、Mount、Bandwidth、SharingDownload；普通写/内部管理写 | M2g1 收藏维护及两端验证已完成；M2g2 设置尚未实现，须保留权限与原始设置快照、完整列表回读、未知结果防重放 |
 | M2 NAS 任务 | FileBackgroundTaskActions | Activity 绑定 NAS/原任务；状态及取消；写 | M2c 完整分页、原任务停止/清除、未知控制恢复已接；两端单元/实际 UI 通过，真实 NAS 待验 |
 | M2 跨 NAS 传输 | WorkspaceModel | 源/目标明确绑定；复制后核对目标再确认源删除；高风险 | 未实现；目标未核对不得删源，恢复不重放已完成步骤 |
 | M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | 有预览/导出，缺冲突与主动回传；M8 接 Files 写回 |
@@ -128,7 +129,7 @@ M1 验证结果与只读对抗复核见[验证历史](../archive/2026-h2/RELEASE
 Mac 参考为 `FileUploadPlan.swift`、`FileUploadBatch.swift`、`WorkspaceModel.swift`；目录层次、同名冲突、部分成功、取消及未知结果按其业务语义实现。iPhone/iPad 均通过系统文件选择器及原生活动列表操作，不引入桌面常驻运行假设。当前尚在实现，不能据此提升验证等级。
 
 
-M2a 的恢复队列、多文件/目录上传、独立两端 UI 和 Mac 回归已通过，详见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2a-可恢复传输与目录上传)。高级搜索、归档和 NAS 任务已由 M2b/M2c 补齐；M2d 已补分享/收集；M2e 已补 ACL/所有者；M2 仍须完成远程连接、跨 NAS、目录批量管理与 Office 主动回传，不能以本切片替代整波验收。
+M2a 的恢复队列、多文件/目录上传、独立两端 UI 和 Mac 回归已通过，详见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2a-可恢复传输与目录上传)。高级搜索、归档和 NAS 任务已由 M2b/M2c 补齐；M2d 已补分享/收集；M2e 已补 ACL/所有者；M2 仍须完成 File Station 设置、跨 NAS、目录批量管理与 Office 主动回传，不能以本切片替代整波验收。
 
 
 ### M2b 高级搜索与目录选择
@@ -164,3 +165,12 @@ M2a 的恢复队列、多文件/目录上传、独立两端 UI 和 Mac 回归已
 新增独立版本 1 恢复记录只存账号上下文、操作/目标身份，不存密码、云令牌或完整授权回调；提交前落盘，失败则零提交，损坏保留，重启后的未知请求不自动重放。原配置/身份/权限不迁移，回滚停用新入口并保留恢复记录。云授权复用一次性 IPv4 loopback 回调与字段白名单；移动以系统 Safari 浏览界面在 App 内全屏呈现，避免外部浏览器使监听随 App 挂起。Safari 覆盖原表单不视为取消，只有明确关闭、账号切换或宿主被移除才清理授权；关闭后的迟到准备结果不可重新呈现。按 [Apple 文档](https://developer.apple.com/documentation/SafariServices/SFSafariViewController)使用模态呈现，不读取登录表单或浏览器 Cookie。监听取消即关闭，账号/请求/协议不匹配拒绝；实际云服务跳转和真机前后台行为留作用户验证。
 
 本切片已完成凭据、身份/原请求绑定、提交前保存、未知防重放、晚到回调及共享单一实现的独立集成与只读对抗复核。两端各 606 项单元通过，5 项新增实际 UI 及 3 项原有导航/文件回归均有两端通过证据；共享 2427 项 XCTest（172 项既有跳过）及 12 项 Swift Testing、Mac Release 双架构构建通过，精确命令和中间修复见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2f-远程位置与云连接)。共享请求/版本不变，Windows/Android 只记录无契约变化；收藏维护、File Station 设置、跨 NAS、批量目录管理和 Office 主动回传仍按后续切片处理。
+
+### M2g 收藏维护与 File Station 设置
+
+本切片单一修改范围为移动收藏/设置模型、原生表单、Files/Locations 入口、组合根、独立恢复记录、双语资源、工程及相关测试；共享 Repository 复用现有能力，新增兼容的移除收藏结果方法并修正截断回读，不改变 NAS 请求、字段或版本；旧方法保持，Mac 执行共享回归，Windows/Android 只记录影响。收藏对齐 `WorkspaceModel.toggleFavorite` 的文件/文件夹收藏和移除；位置列表中目录继续导航，文件通过现有预览打开。设置对齐 `FileStationSettingsView`、`FileStationBandwidthView` 的常规选项、挂载使用范围/账号、全局和逐账号带宽/时间表、分享页面主题。iPhone/iPad 功能一致，采用触控分步表单和原生成员/文件选择，不复制桌面窗口。
+
+收藏完整读取至共享层现有 5000 项上限，截断时不得以缺失推断移除成功或安全新增。设置写保留管理员与 File Station 实际权限、原快照重读及提交后回读；放宽访问与主题图片上传分别说明具体后果。两类未完成操作分别用独立版本 1 受保护记录保存账号上下文与目标身份，设置快照/图片及凭据不落盘；保存失败零提交，重启不重放原写。该存储属已授权 M0–M8 恢复范围，不迁移登录结构；回滚停用入口并保留记录。设置当前为实施账本，其自动化、构建与真实 NAS 行为尚未验证；收藏的完成证据见下段。真实 NAS 不参与自动写测试，Windows/Android 无请求变化。
+
+
+M2g1 收藏维护已完成 8 项新增模型、两端各 614 项单元及 2 项新增/3 项原有实际 UI；共享完整回归和构建记录集中于[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2g1-收藏维护)。M2g2 File Station 设置仍为下一独立切片，当前尚无移动设置实现或验证结论。

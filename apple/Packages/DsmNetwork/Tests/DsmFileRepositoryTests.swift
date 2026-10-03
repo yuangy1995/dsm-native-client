@@ -3938,6 +3938,65 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(requests.count, 0)
     }
 
+    func test移除收藏根据完整回读区分成功保留和权限拒绝() async throws {
+        for (payload, expected) in [
+            (#"{"success":true,"data":{"favorites":[]}}"#, MutationResultStatus.confirmedSuccess),
+            (#"{"success":true,"data":{"favorites":[{"name":"Sample","path":"/fixture/sample"}]}}"#, .confirmedFailure)
+        ] {
+            let transport = MockHTTPTransport(responses: [response(#"{"success":true}"#), response(payload)])
+            let repository = try makeRepository(capabilities: CapabilitySet([
+                DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 2)
+            ]), transport: transport)
+            let result = try await repository.removeFavoriteResult(path: "/fixture/sample")
+            XCTAssertEqual(result.status, expected); XCTAssertFalse(result.requiresRefresh)
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.compactMap { requestParameter("method", in: $0) }, ["delete", "list"])
+        }
+        let transport = MockHTTPTransport(responses: [response(#"{"success":false,"error":{"code":105}}"#)])
+        let repository = try makeRepository(capabilities: CapabilitySet([
+            DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 2)
+        ]), transport: transport)
+        let result = try await repository.removeFavoriteResult(path: "/fixture/sample")
+        XCTAssertEqual(result.status, .permissionDenied); XCTAssertFalse(result.requiresRefresh)
+    }
+
+    func test移除收藏丢失响应或回读失败保留未知且不会重发() async throws {
+        let scenarios: [[MockHTTPTransport.Step]] = [
+            [.urlError(.networkConnectionLost)],
+            [.response(response(#"{"success":true}"#)), .urlError(.timedOut)]
+        ]
+        for steps in scenarios {
+            let transport = MockHTTPTransport(steps: steps)
+            let repository = try makeRepository(capabilities: CapabilitySet([
+                DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 2)
+            ]), transport: transport)
+            let result = try await repository.removeFavoriteResult(path: "/fixture/sample")
+            XCTAssertTrue(result.requiresRefresh); XCTAssertEqual(result.status, .submittedButUnverified)
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "delete" }.count, 1)
+        }
+    }
+
+    func test收藏增加和移除不把截断快照缺失当作结果() async throws {
+        for removing in [false, true] {
+            var responses = [response(#"{"success":true}"#)]
+            for offset in stride(from: 0, to: 5_000, by: 500) {
+                let favorites = (offset..<offset + 500).map { ["name": "Sample \($0)", "path": "/fixture/item-\($0)"] }
+                responses.append(.init(data: try JSONSerialization.data(withJSONObject: ["success": true,
+                    "data": ["favorites": favorites, "offset": offset, "total": 5_001]]), statusCode: 200))
+            }
+            let transport = MockHTTPTransport(responses: responses)
+            let repository = try makeRepository(capabilities: CapabilitySet([
+                DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 2)
+            ]), transport: transport)
+            let result: MutationResult
+            if removing { result = try await repository.removeFavoriteResult(path: "/fixture/target") }
+            else { result = try await repository.addFavoriteResult(path: "/fixture/target", name: "Target") }
+            XCTAssertEqual(result.status, .submittedButUnverified); XCTAssertTrue(result.requiresRefresh)
+            let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 11)
+        }
+    }
+
     func test删除任务完成且逐项回读不存在时确认成功() async throws {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"taskid":"delete-task"}}"#),

@@ -12,7 +12,7 @@ enum MobileUIFixture {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
-            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -21,7 +21,7 @@ enum MobileUIFixture {
                 transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
-            let versions = [DsmAPIName.fileStationMount: 1, DsmAPIName.fileStationMountList: 1,
+            let versions = [DsmAPIName.fileStationFavorite: 2, DsmAPIName.fileStationMount: 1, DsmAPIName.fileStationMountList: 1,
                             DsmAPIName.fileStationVFSProtocol: 1, DsmAPIName.fileStationVFSProfile: 1, DsmAPIName.fileStationVFSConnection: 1, DsmAPIName.fileStationDownload: 2,
                             DsmAPIName.coreACL: 1, DsmAPIName.fileStationACLOwner: 1, DsmAPIName.fileStationProperty: 1,
                             DsmAPIName.fileStationSharing: 3, DsmAPIName.desktopInitData: 1, DsmAPIName.fileStationUserGroup: 1, DsmAPIName.fileStationList: 2, DsmAPIName.fileStationInfo: 2, DsmAPIName.fileStationSearch: 2,
@@ -84,6 +84,7 @@ private actor FixturePasswordStore: PasswordSecureStoring {
 private actor FixtureTransport: DsmBinaryHTTPTransport {
     private let pageState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "content"
     private var remote = MobileRemoteUIFixture()
+    private var favorites: [[String: String]] = []
     private var uploaded: [String: Bool] = [:]
     private var stopped = false
     private var cleared = false
@@ -119,6 +120,15 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
         }
         let result: [String: Any]
         switch (api, method) {
+        case (DsmAPIName.fileStationFavorite, "list"):
+            result = ["favorites": favorites, "offset": 0, "total": favorites.count]
+        case (DsmAPIName.fileStationFavorite, "add") where pageState == "favorites":
+            let path = fields.first { $0.name == "path" }?.value ?? ""
+            let name = fields.first { $0.name == "name" }?.value ?? ""
+            favorites.append(["path": path, "name": name]); result = [:]
+        case (DsmAPIName.fileStationFavorite, "delete") where pageState == "favorites":
+            let path = fields.first { $0.name == "path" }?.value ?? ""
+            favorites.removeAll { $0["path"] == path }; result = [:]
         case (DsmAPIName.coreACL, "get") where isPermissionFixture:
             result = ["is_acl": true, "change_permission": true, "is_inherited": true, "acl": permissionRules]
         case (DsmAPIName.fileStationACLOwner, "get") where isPermissionFixture:
@@ -200,10 +210,10 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
             let paths = try JSONDecoder().decode([String].self, from: Data(value.utf8))
             result = ["files": paths.compactMap { path -> [String: Any]? in
                 guard path == "/fixture" || uploaded[path] != nil || pageState == "archive" && path == "/fixture/Sample archive.zip"
-                    || (pageState == "sharing" || isPermissionFixture) && ["/fixture/Sample document.txt", "/fixture/Inbox"].contains(path) else { return nil }
+                    || (pageState == "sharing" || pageState == "favorites" || isPermissionFixture) && ["/fixture/Sample document.txt", "/fixture/Inbox"].contains(path) else { return nil }
                 return fixtureItem(path, directory: uploaded[path] ?? (path == "/fixture" || path == "/fixture/Inbox"))
             }]
-        case (DsmAPIName.fileStationList, "list") where pageState == "sharing" || isPermissionFixture:
+        case (DsmAPIName.fileStationList, "list") where pageState == "sharing" || pageState == "favorites" || isPermissionFixture:
             result = ["files": [fixtureItem("/fixture/Sample document.txt", directory: false), fixtureItem("/fixture/Inbox", directory: true)], "offset": 0, "total": 2]
         case (DsmAPIName.fileStationList, "list") where pageState == "upload":
             let path = fields.first { $0.name == "folder_path" }?.value ?? ""

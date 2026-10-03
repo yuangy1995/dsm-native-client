@@ -70,6 +70,7 @@ extension MobileAppModel {
         fileShareLinkModel.purge(profileID: profile.id, removeRecovery: true)
         filePermissionModel.removeProfile(profile.id)
         remoteLocations.removeProfile(profile.id)
+        favorites.removeProfile(profile.id)
         purgeFileLocations(profileID: profile.id)
         Task { await photoLibraryModel.purge(profileID: profile.id) }
         chatModel.purge(profileID: profile.id)

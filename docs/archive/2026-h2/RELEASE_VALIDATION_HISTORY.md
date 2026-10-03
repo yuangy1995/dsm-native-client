@@ -650,3 +650,23 @@ M2f 最终验证：XcodeGen 2.46.0 重复生成 Mobile/Mac 工程，摘要一致
 - 云 UI 使用 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test云授权使用系统浏览器且取消后返回原表单`：`m2f-cloud-ipad6.xcresult` 与 `m2f-cloud-iphone7.xcresult` 各 **1/1 通过**。系统关闭按钮已从实际界面定位；iPhone 按该按钮实际边界触控后，断言返回原表单、可重新授权且没有保存按钮。测试只打开官方公开起始页并取消，不选择账号、提交云授权或写 NAS。
 
 上述结果均在忽略的 `apple/Apps/DsmMobile/build/`，合计两端各 5 项新增及 3 项原有实际 UI 已有通过证据，无新增跳过。已检查 iPhone 浅色远程目录/ISO/系统浏览器及 iPad 深色远程列表/浏览器截图；iPad 测后恢复浅色。最终本地化完整性/硬编码（Apple 5671、Android 2188、Windows 3402）、严格文档及差异检查通过。Mac 二进制实际含 x86_64/arm64；未发布移动安装包。
+
+
+## 2026-10-04 移动 M2g1 收藏维护
+
+文件和文件夹菜单均可添加/取消收藏；位置列表支持滑动或长按移除，目录继续导航、文件转入现有预览。成功反馈放在页面内，不追加确认弹窗。收藏读取使用共享层既有 5000 项完整有界快照，超过上限显示限制；新增前读取当前清单及实际文件，移除绑定原路径与名称。独立受保护 `favorites-v1.json` 保存账号上下文、逻辑目标及操作方向；保存失败零提交，损坏保留，未知只读恢复，重启不会重发，迟到结果不进入新账号界面。
+
+共享 Apple 增量新增 `removeFavoriteResult`，原 `removeFavorite` 保持；修正新增收藏回读在截断清单中缺少目标时误报失败的问题。移除结果也不能从截断缺失推定成功。公开 Favorite 请求、版本/字段、主 App 身份、既有配置格式均不变，Windows/Android 仅记录影响。独立集成与只读对抗复核覆盖当前会话/原目标、明确拒绝与断网未知的区别、写前记录、完整清单、取消、双击、重启、切换账号/Repository 及旧回执；没有连接真实 NAS 或测试真实资料。
+
+`swift test --package-path apple --jobs 4 --filter DsmFileRepositoryTests` 最终 165 项通过，新增 3 项覆盖完整回读/权限拒绝、提交及回读断网、5000 项截断；首次截断测试错误使用 1000 项响应，实际请求上限为 500，修正合成分页后通过，未降低断言。完整 `swift test --package-path apple --jobs 4` 为 **2430 项 XCTest，172 项既有跳过，0 失败**，另 12 项 Swift Testing 通过。
+
+XcodeGen 2.46.0 生成移动工程。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过。两端分别使用 `xcodebuild test-without-building`、同工程/方案/构建目录、`-parallel-testing-enabled NO`，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`；`m2g-favorites-iphone.xcresult` 与 `m2g-favorites-ipad.xcresult` 均 **614 项单元 + 2 项新增实际 UI 通过**。新增 8 项模型测试覆盖持续修改、截断防误判、未知恢复/持久化、损坏/保存失败、双击/迟到结果、账号隔离和权限拒绝。随后将结果弹窗改为页面反馈，并为收藏行增加稳定标识，补预览实际内容断言；最终 UI 与 Mac 结果另记下段。
+
+`PENDING_USER_VALIDATION`：iPhone/iPad 真机与专用可丢弃文件/目录，验证收藏增删、另一客户端同时变更、断网、退出/重新登录及重启；预期不重复提交、列表截断不误报、文件收藏可预览、移除收藏不删除文件。VoiceOver、大字号与键盘交互仍待设备验证；只回传版本、脱敏步骤与错误类别，不回传账号/路径/原响应。File Station 设置仍在 M2g2 实施，不能以收藏交付代表完成。
+
+
+M2g1 最终界面验证：第二次 `build-for-testing` 通过后，两端分别以 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/<方法名>` 执行新增目录收藏/移除、文件收藏/实际预览内容，以及原有导航、文件搜索、文件加载/空/错误五项；`m2g-favorites-iphone2.xcresult`、`m2g-favorites-ipad2.xcresult` 均 **5/5 通过**。本切片全部结果包位于本机临时验证目录，没有新增跳过。已查看 iPhone 浅色移除反馈和 iPad 深色文件预览截图，iPad 测后恢复浅色。移动工程重复生成摘要一致；本地化完整性/硬编码（Apple 5676、Android 2188、Windows 3402）、`python3 tools/codex/check_documentation.py --strict-release` 和 `git diff --check` 通过。最终恢复错误文案补明确持续失败的支持路径，仅资源检查，不宣称重新执行全部 UI。
+
+M2e 的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37156630957) 已完成并通过；M2f 的云端门禁仍在运行，不以本机通过替代其结论。
+
+M2g1 Mac 回归：`xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过；实际二进制包含 x86_64/arm64，没有安装、启动或发布。

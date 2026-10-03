@@ -3586,7 +3586,7 @@
 "mobile.files.locations.favorites.filtered-empty" = "No favorites match the current filter.";
 "mobile.files.locations.favorites.error" = "Favorites couldn’t be loaded. Try again.";
 "mobile.files.locations.favorites.refresh-error" = "Favorites couldn’t be updated. Showing the previous list.";
-"mobile.files.locations.favorites.truncated" = "Showing the first 200 favorites to keep the list responsive.";
+"mobile.files.locations.favorites.truncated" = "Only the first 5,000 favorites are shown. Some favorites may be missing.";
 "mobile.files.locations.recent.empty" = "Folders you open will appear here.";
 "mobile.files.locations.recycle.loading" = "Finding recycle bins…";
 "mobile.files.locations.recycle.refreshing" = "Updating recycle bins…";
@@ -5878,3 +5878,10 @@
 "mobile.remote.cleartext-title" = "Connect without encryption?";
 "mobile.remote.cleartext-impact" = "This connection does not encrypt the account details and files sent between the NAS and the remote server. Other people on that network may be able to read them.";
 "mobile.remote.manage" = "Manage remote locations";
+
+// 移动文件收藏维护
+"mobile.favorites.incomplete" = "The favorites list is incomplete. Refresh it before adding another favorite.";
+"mobile.favorites.changed" = "This item has changed or is no longer available. Refresh the list and try again.";
+"mobile.favorites.save-error" = "Could not change this favorite. Refresh the list and try again.";
+"mobile.favorites.pending" = "This favorite is still being updated. Refresh the list later.";
+"mobile.favorites.recovery-error" = "Could not read or save unfinished favorite changes. Restart the app; if the problem persists, contact support.";

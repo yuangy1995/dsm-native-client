@@ -437,6 +437,39 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertFalse(app.buttons["files.remote.cloud.save"].exists)
     }
 
+    func test文件夹收藏可进入并从位置列表移除() {
+        let app = launchFixture(state: "favorites")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        app.buttons["Actions for Sample folder"].tap(); app.buttons["add to favorites"].tap()
+        XCTAssertTrue(app.staticTexts["Added to favorites."].waitForExistence(timeout: 8))
+        app.buttons["Show locations"].tap()
+        let row = app.buttons["files.favorite./fixture"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 8))
+        app.buttons["Show locations"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5)); row.press(forDuration: 1)
+        app.buttons["Remove from favorites"].tap()
+        XCTAssertTrue(app.staticTexts["Removed from favorites."].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Favorite removed from locations")
+        XCTAssertFalse(row.exists)
+    }
+
+    func test文件收藏打开现有预览且不作为文件夹导航() {
+        let app = launchFixture(state: "favorites")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        app.buttons["Actions for Sample document.txt"].tap(); app.buttons["add to favorites"].tap()
+        XCTAssertTrue(app.staticTexts["Added to favorites."].waitForExistence(timeout: 8))
+        app.buttons["Show locations"].tap()
+        let row = app.buttons["files.favorite./fixture/Sample document.txt"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["No text content"].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Favorite file uses preview")
+        XCTAssertFalse(app.alerts.staticTexts["Could not open location"].exists)
+    }
+
     private func openRemoteLocations(_ app: XCUIApplication) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         element("files.toolbar.more", in: app).tap(); app.buttons["files.remote.manage"].tap()

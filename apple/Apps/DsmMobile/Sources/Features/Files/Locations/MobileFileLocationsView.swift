@@ -8,6 +8,7 @@ struct MobileFileLocationsView: View {
     let openLocation: (String, MobileFileLocationSource) async -> Bool
     let cancelOpenLocation: () -> Void
     var onManageRemote: (() -> Void)? = nil
+    var favorites: MobileFavoritesModel? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var openingPath: String?
@@ -94,7 +95,27 @@ struct MobileFileLocationsView: View {
                         source: .favorite,
                         systemImage: "star.fill"
                     )
+                    .accessibilityIdentifier("files.favorite." + location.path)
+                    .swipeActions(allowsFullSwipe: false) {
+                        if let favorites {
+                            Button(L10n.string("ui.d9eba5226c5df4c4")) {
+                                Task { await favorites.setFavorite(path: location.path, name: location.name, removing: true) }
+                            }.tint(.orange).disabled(!favorites.available || favorites.isBlocked(location.path))
+                        }
+                    }
+                    .contextMenu {
+                        if let favorites {
+                            Button(L10n.string("ui.d9eba5226c5df4c4"), systemImage: "star.slash") {
+                                Task { await favorites.setFavorite(path: location.path, name: location.name, removing: true) }
+                            }.disabled(!favorites.available || favorites.isBlocked(location.path))
+                        }
+                    }
                 }
+            }
+            if let favorites {
+                if favorites.recoveryFailed { Text(L10n.string("mobile.favorites.recovery-error")).foregroundStyle(.secondary) }
+                else if let feedback = favorites.feedback { Text(feedback).foregroundStyle(.secondary) }
+                else if !favorites.pending.isEmpty { Text(L10n.string("mobile.favorites.pending")).foregroundStyle(.secondary) }
             }
             if state.favorites.isTruncated {
                 noticeRow("mobile.files.locations.favorites.truncated")

@@ -15,7 +15,7 @@
 | macOS Office | 系统预览、本机应用编辑、保存后自动回传、冲突/未知核查已完成本机验证 | 真实 Office/Pages/Numbers/Keynote、旧格式、正式签名沙盒及 NAS 验收 |
 | macOS UI / 远程位置 | 完整 WebDAV URL、工具栏/路径、照片来源、连接成功结束、保存进度及外置浏览入口已修正并有原生回归 | 用户实际连接、窄窗口与完整辅助功能反馈 |
 | Windows | 2026-09-21 范围的业务对齐、云盘写回/恢复及 x64/ARM64 云端验证完成；后续 Mac 增量未自动移植 | Photos 管理、File Station 增量、Office 按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)逐项开发 |
-| iPhone / iPad | M0/M1 基础、M2a 恢复传输/目录上传、M2b 高级搜索、M2c 归档/NAS 任务、M2d 分享/收集、M2e 权限/所有者、M2f 远程位置/ISO/云授权已通过两端单元/实际 UI；共享及 Mac 工程回归通过，其他业务仍在实施 | 按[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)继续 M2 收藏/设置、批量/跨 NAS 与文档回传，旧图库清理随 M3 收敛；两种设备分别验证 |
+| iPhone / iPad | M0/M1 基础、M2a 恢复传输/目录上传、M2b 高级搜索、M2c 归档/NAS 任务、M2d 分享/收集、M2e 权限/所有者、M2f 远程位置/ISO/云授权、M2g1 收藏已通过两端单元/实际 UI；共享及 Mac 工程回归通过，其他业务仍在实施 | 按[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)继续 M2 设置、批量/跨 NAS 与文档回传，旧图库清理随 M3 收敛；两种设备分别验证 |
 | Android | Compose 客户端、导航改版、后台/传输、Synology Photos 与质量门已建立；下载 destination v2 修复已通过完整云端门禁 | 按[Android 计划](../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)继续结构收敛与目标设备验证；Mac 新增只作接口参考 |
 
 ## 系统集成与发布

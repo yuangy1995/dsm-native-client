@@ -4535,16 +4535,17 @@ public actor DsmFileRepository: FileRepository {
         }
 
         do {
-            let favorites = try await listFavorites()
-            guard favorites.contains(where: { $0.path == path }) else {
+            let page = try await listFavoritesPage(offset: 0, limit: Self.favoriteSnapshotLimit)
+            guard page.locations.contains(where: { $0.path == path }) else {
+                let incomplete = page.isTruncated || page.hasMore
                 return try makeMutationResult(
-                    status: .confirmedFailure,
+                    status: incomplete ? .submittedButUnverified : .confirmedFailure,
                     operation: operation,
                     submitted: true,
-                    requiresRefresh: false,
+                    requiresRefresh: incomplete,
                     succeeded: 0,
-                    failed: 1,
-                    unknown: 0,
+                    failed: incomplete ? 0 : 1,
+                    unknown: incomplete ? 1 : 0,
                     errorCategory: .server,
                     diagnosticTag: "file-station.favorite.add.readback-mismatch"
                 )
@@ -4595,6 +4596,39 @@ public actor DsmFileRepository: FileRepository {
             parameters: ["path": .string(path)],
             credential: credential
         )
+    }
+
+    /// 删除收藏后必须读取完整清单，截断清单的缺失不表示已经删除。
+    public func removeFavoriteResult(path: String) async throws -> MutationResult {
+        let operation = "favoriteRemove"
+        if Task.isCancelled {
+            return try makeMutationResult(status: .cancelledBeforeSubmission, operation: operation,
+                submitted: false, requiresRefresh: false, succeeded: 0, failed: 0, unknown: 0,
+                diagnosticTag: "file-station.favorite.remove.cancelled-before-submission")
+        }
+        _ = try Self.canonicalFileLocationPath(path)
+        let capability = try requireCapability(DsmAPIName.fileStationFavorite)
+        _ = try selectedVersion(capability)
+        do { try await removeFavorite(path: path) }
+        catch let error as DsmNetworkError { return try mutationResultForFavoriteSubmissionError(error, operation: operation) }
+        catch {
+            return try makeMutationResult(status: .submittedButUnverified, operation: operation,
+                submitted: true, requiresRefresh: true, succeeded: 0, failed: 0, unknown: 1,
+                diagnosticTag: "file-station.favorite.remove.submission-unknown")
+        }
+        do {
+            let page = try await listFavoritesPage(offset: 0, limit: Self.favoriteSnapshotLimit)
+            let remains = page.locations.contains { $0.path == path }
+            let incomplete = !remains && (page.hasMore || page.isTruncated)
+            return try makeMutationResult(status: incomplete ? .submittedButUnverified : remains ? .confirmedFailure : .confirmedSuccess,
+                operation: operation, submitted: true, requiresRefresh: incomplete, succeeded: !incomplete && !remains ? 1 : 0,
+                failed: remains ? 1 : 0, unknown: incomplete ? 1 : 0,
+                diagnosticTag: "file-station.favorite.remove.readback")
+        } catch {
+            return try makeMutationResult(status: .submittedButUnverified, operation: operation,
+                submitted: true, requiresRefresh: true, succeeded: 0, failed: 0, unknown: 1,
+                diagnosticTag: "file-station.favorite.remove.readback-unknown")
+        }
     }
 
     private func mutationResultForFavoriteSubmissionError(

@@ -284,7 +284,7 @@ final class MobileFileLocationsModel {
         repository: any MobileFileLocationBrowsing
     ) async -> SnapshotResult<FileFavoritePage> {
         do {
-            return .success(try await repository.listFavoritesPage(offset: 0, limit: pageSize))
+            return .success(try await repository.listFavoritesPage(offset: 0, limit: MobileFavoritesModel.snapshotLimit))
         } catch {
             return .failure
         }

@@ -27,6 +27,7 @@ struct MobileFileBrowser: View {
     @State private var extractionItem: FileItem?
     @State private var permissionItem: FileItem?
     @State private var showsLocations = false
+    @State private var favoritePreview: FileItem?
     @State private var showsRemoteLocations = false
     @State private var remoteAfterLocations = false
     @State private var remoteContext = ""
@@ -75,8 +76,16 @@ struct MobileFileBrowser: View {
         .refreshable { await refreshNow() }
         .toolbar { browserToolbar }
         .safeAreaInset(edge: .top) {
-            if state.advancedSearch != nil || state.page.indexCoverage == .incomplete || state.errorMessage != nil && state.pageState == .content {
+            if model.favorites.feedback != nil || state.advancedSearch != nil || state.page.indexCoverage == .incomplete || state.errorMessage != nil && state.pageState == .content {
                 VStack(alignment: .leading, spacing: 8) {
+                    if let feedback = model.favorites.feedback {
+                        HStack {
+                            Text(feedback).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+                            Button { model.favorites.clearFeedback() } label: {
+                                Image(systemName: "xmark").frame(width: 44, height: 44)
+                            }.accessibilityLabel(L10n.string("files.common.close"))
+                        }
+                    }
                     if state.advancedSearch != nil {
                         Button { showsAdvancedSearch = true } label: {
                             Label(L10n.string("mobile.files.search.active"), systemImage: "line.3.horizontal.decrease.circle.fill")
@@ -148,13 +157,16 @@ struct MobileFileBrowser: View {
         }
         .sheet(isPresented: $showsLocations, onDismiss: {
             if remoteAfterLocations { remoteAfterLocations = false; showRemoteLocations() }
+            if let item = favoritePreview { favoritePreview = nil; openPreview(item) }
+            model.favorites.clearFeedback()
         }) {
             MobileFileLocationsView(
                 locations: locations,
                 refresh: refreshLocations,
                 openLocation: openLocation,
                 cancelOpenLocation: browser.cancelLocationRequest,
-                onManageRemote: { remoteAfterLocations = true }
+                onManageRemote: { remoteAfterLocations = true },
+                favorites: model.favorites
             )
         }
         .sheet(isPresented: mutationPresentationBinding) {
@@ -225,7 +237,7 @@ struct MobileFileBrowser: View {
         .onChange(of: activationIdentity) { _, _ in
             showsAdvancedSearch = false
             compressionSelection = nil; extractionItem = nil
-            permissionItem = nil
+            permissionItem = nil; favoritePreview = nil
             isoSource = nil; remotePath = nil; remoteDownload = nil; remoteAfterLocations = false; showsRemoteLocations = false
             resetPreviewPresentation()
             endCopyMoveSelection()
@@ -517,6 +529,15 @@ struct MobileFileBrowser: View {
 
     private func itemMenu(_ item: FileItem) -> some View {
         Menu {
+            if !state.location.source.isReadOnlyLocation && (item.kind == .file || item.isDirectory) {
+                let selected = locations.state.favorites.locations.contains { $0.path == item.path }
+                Button {
+                    Task { await model.favorites.setFavorite(path: item.path, name: item.name, removing: selected) }
+                } label: {
+                    Label(L10n.string(selected ? "ui.dca60869e7d26839" : "ui.0cfc396e4aa347ad"),
+                          systemImage: selected ? "star.slash" : "star")
+                }.disabled(!model.favorites.available || model.favorites.isBlocked(item.path))
+            }
             if item.kind == .file || item.isDirectory {
                 Button { permissionItem = item } label: {
                     Label(L10n.string("files.permissions.title"), systemImage: "person.badge.key")
@@ -1026,6 +1047,7 @@ struct MobileFileBrowser: View {
 
     private func refreshLocations() async {
         guard let repository = model.fileRepository else { return }
+        await model.favorites.refreshPending()
         await locations.refresh(repository: repository)
     }
 
@@ -1035,6 +1057,12 @@ struct MobileFileBrowser: View {
     ) async -> Bool {
         guard let repository = model.fileRepository else { return false }
         prepareForLocationChange()
+        if source == .favorite {
+            let identity = activationIdentity
+            guard let item = try? await repository.getInfo(paths: [path]).first(where: { $0.path == path }),
+                  identity == activationIdentity, !Task.isCancelled else { return false }
+            if !item.isDirectory { favoritePreview = item; return true }
+        }
         let opened = await browser.openLocation(path: path, source: source, repository: repository)
         if opened, path.isEmpty, !browser.state.hasLoadedStorage {
             await browser.refreshStorage(repository: repository)
