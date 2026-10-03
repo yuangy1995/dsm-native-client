@@ -32,6 +32,7 @@ final class MobileAppModel {
     let fileShareLinkModel: MobileFileShareLinkModel
     let filePermissionModel: MobileFilePermissionModel
     let favorites: MobileFavoritesModel
+    let fileSettings: MobileFileSettingsModel
     let remoteLocations: MobileRemoteLocationsModel
     let photoLibraryModel = MobilePhotoLibraryModel()
     let synologyPhotos = MobileSynologyPhotosSession()
@@ -72,6 +73,7 @@ final class MobileAppModel {
             filePermissionModel.configure(profile: activeProfile, repository: fileRepository)
             remoteLocations.configure(profile: activeProfile, repository: fileRepository)
             favorites.configure(profile: activeProfile, repository: fileRepository)
+            fileSettings.configure(profile: activeProfile, repository: fileRepository)
             downloads.configure(profile: activeProfile, repository: serviceRepository)
             if activeProfile.map(MobileWorkspaceIdentity.init) != oldValue.map(MobileWorkspaceIdentity.init) {
                 fileActivityModel.reset()
@@ -109,6 +111,7 @@ final class MobileAppModel {
             filePermissionModel.configure(profile: activeProfile, repository: fileRepository)
             remoteLocations.configure(profile: activeProfile, repository: fileRepository)
             favorites.configure(profile: activeProfile, repository: fileRepository)
+            fileSettings.configure(profile: activeProfile, repository: fileRepository)
         }
     }
     var photoRepository: FileStationPhotoRepository?
@@ -146,6 +149,9 @@ final class MobileAppModel {
         self.favorites = MobileFavoritesModel(
             rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Favorites", isDirectory: true)
         )
+        self.fileSettings = MobileFileSettingsModel(
+            rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("FileSettings", isDirectory: true)
+        )
         self.settingsStore = MobileSettingsStore(defaults: defaults)
         let transferCoordinator = MobileTransferCoordinator(
             mutationCoordinator: mutationCoordinator, recoveryStore: transferRecoveryStore
@@ -174,6 +180,11 @@ final class MobileAppModel {
             guard let self, let profile = activeProfile,
                   MobileWorkspaceIdentity(profile).storageIdentifier == context, let repository = fileRepository else { return }
             await fileBrowserModel.refreshAfterRemoteLocationChange(repository: repository)
+        }
+        fileSettings.onChanged = { [weak self] context in
+            guard let self, let profile = activeProfile,
+                  MobileWorkspaceIdentity(profile).storageIdentifier == context, let repository = fileRepository else { return }
+            await fileBrowserModel.refreshAfterPermissionChange(repository: repository)
         }
         favorites.onChanged = { [weak self] context in
             guard let self, let profile = activeProfile,

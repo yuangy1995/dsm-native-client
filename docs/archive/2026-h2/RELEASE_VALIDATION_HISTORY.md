@@ -670,3 +670,25 @@ M2g1 最终界面验证：第二次 `build-for-testing` 通过后，两端分别
 M2e 的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37156630957) 已完成并通过；M2f 的云端门禁仍在运行，不以本机通过替代其结论。
 
 M2g1 Mac 回归：`xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过；实际二进制包含 x86_64/arm64，没有安装、启动或发布。
+
+
+## 2026-10-04 移动 M2g2 File Station 设置
+
+两端文件页“更多”已接入文件管理设置：常规开关、分享/收集具名账号、远程连接范围与本机/域/LDAP 账号名单、六类账号限速/每周时间表、分享页布局/颜色/页脚与 NAS/历史/本机/内置图片选择。iPhone/iPad 均以原生导航与分步表单操作；时间表采用星期选择和完整时段行，数值输入保留字段标签。各类保存独立执行；普通按钮直接保存，扩大访问范围使用说明具体后果的原生警告框。成功后重读并更新表单基线，保留滚动位置、允许继续编辑。
+
+新增 `MobileFileSettingsModel` 复用共享 Repository，当前管理员、File Station 权限、原设置快照、具名账号与最终回读继续在共享层执行。独立受保护且排除备份的 `FileSettings/settings-v1.json` 只保存上下文/目标摘要及操作身份，不包含设置快照、账号名单、路径、页脚、图片或凭据。写前保存失败零提交；未知结果只读刷新，重启/更换 Repository 不复用旧回执或自动重放。图片上传异常保留图片摘要，用户从历史图片继续选取；图片上传与主题应用独立。没有新增依赖、身份、权限、既有存储迁移或 NAS 请求变化；Android/Windows 只同步接口影响记录。
+
+独立集成与只读对抗复核检查身份/目标绑定、同 UUID 换账号的延后按钮任务、旧读取/写回、重复提交、原记录保护、重新打开/保存基线、来源与 uid/gid 区分、未配置限速和图片预览/上传/应用边界。13 项新增行为测试覆盖连续保存、管理员与配置拒绝、放宽权限确认、未知只读恢复、重启/重连、明确提交前失败、回读失败、损坏/不可写记录、重复点击、旧账号结果、图片摘要和时间表/速率边界。测试使用本机临时目录及合成服务，没有访问或修改真实 NAS。
+
+- `swift test --package-path apple --jobs 4`：**2430 项 XCTest，172 项既有跳过，0 失败**，另 **12 项 Swift Testing 通过**。现有 `FileStationParityTests` 覆盖实际请求编码、管理员拒绝、原快照变化、具名授权差量、时间表/限速、挂载账号和图片回执/序列验证；未改变这些共享请求。
+- 锁定 XcodeGen 2.46.0 生成移动工程，重复生成 SHA-256 同为 `c1519e0586c3371911db401bb82aa9acb3d4a557a740344e4ce7278a5fa28493`。最终 `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过（`m2g-settings-build10.log`）。首次编译修正错误变量遮蔽、测试 String/Substring 类型及结果计数参数，未降低断言。
+- 两端分别执行 `xcodebuild test-without-building`，同工程/方案/构建目录，`-parallel-testing-enabled NO`，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。`m2g-settings-iphone.xcresult` 和 `m2g-settings-ipad.xcresult` 中 `-only-testing:DsmMobileTests` 均 **627 项单元通过**，没有新增跳过；同包中的首轮 UI 有失败，不将整个结果包记为通过。
+- 六项新增 UI 为普通保存/连续编辑、扩大权限/取消/保存回读、账号继承/时间表、内置图片预览/主题应用、设置加载/错误/普通账号只读、名单空内容/搜索无结果；另运行原有导航、文件搜索、文件加载/空/错误三项。按 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/<方法名>` 选择；第二轮 `m2g-settings-iphone2.xcresult` 与 `m2g-settings-ipad2.xcresult` 的普通保存、换图、空名单/筛选及三项原有回归均通过，其他失败保留如下。
+- 首轮 UI 暴露重建表单重置滚动位置、隐藏保存反馈，已改为更新现有表单基线；确认弹出层没有显式取消按钮，改为原生警告框。第二轮定位到系统将确认按钮暴露为嵌套元素、加载动画类型是 ActivityIndicator、iPad 通用返回选择器误点背景页，分别限定警告作用域、增加本地化加载状态及稳定标识、按当前导航栏定位返回。最终第三轮 `m2g-settings-iphone3.xcresult` 与 `m2g-settings-ipad3.xcresult` 的权限确认、加载/错误/只读、时间表和换图 **各 4/4 通过**。合并上述记录，两端各 **6 项新增 + 3 项原有 UI 均有通过证据**。
+- 最终 Mac `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过（`m2g-settings-macos-build2.log`），实际二进制含 x86_64/arm64；没有安装、启动或发布。
+
+本切片日志和结果包在本机临时验证目录，未加入仓库。已检查 iPhone 浅色时间表/连续保存与 iPad 深色分享页截图；加载状态有辅助功能说明，时段使用完整触控行和当前策略朗读，不依赖颜色。iPad 测后恢复浅色。本地化资源/硬编码检查通过（Apple 5691、Android 2188、Windows 3402），严格文档及差异检查通过。资源变更后的 Mac 构建已重新执行；共享业务层没有变动。
+
+`PENDING_USER_VALIDATION`：iPhone/iPad 真机、专用可丢弃管理员/普通账号和测试图片，分别验证所有设置最终生效、目录服务名单和权限、NAS 时区/实际限速/群组继承、系统文件选择、四类图片及实际分享页面、另一管理员同时修改、断网/重启和旧账号隔离。预期取消零提交、未知不重发、原设置变化拒绝覆盖、没有回执的换图不误报成功。VoiceOver、大字号、外接键盘、系统选择器与真实 NAS 行为未验证；仅回传版本、脱敏步骤和错误类别，不回传凭据、主机、账号、路径、图片或原响应。M2 批量/目录管理、跨 NAS 及 Office 主动回传仍须后续实现，不能用本切片代替整波完成。
+
+M2g2 最后复核补充：当远程访问范围不是“指定账号”时，页面显示逐账号权限只有在该范围下才生效的既有双语限制说明。此项只增显示条件和文案引用，重新构建及本地化/文档检查通过；不宣称为该文案重新执行整组 UI。

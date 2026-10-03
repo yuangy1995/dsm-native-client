@@ -5885,3 +5885,19 @@
 "mobile.favorites.save-error" = "Could not change this favorite. Refresh the list and try again.";
 "mobile.favorites.pending" = "This favorite is still being updated. Refresh the list later.";
 "mobile.favorites.recovery-error" = "Could not read or save unfinished favorite changes. Restart the app; if the problem persists, contact support.";
+
+"mobile.file-settings.recovery-error" = "Setting records are unavailable. Unlock this device, check available storage, and reopen the app. Contact support if this continues.";
+"mobile.file-settings.pending" = "The last save could not be confirmed. Refresh to view the current settings. Saving this item again is temporarily unavailable.";
+"mobile.file-settings.save-error" = "The settings could not be saved. Refresh the current settings, then try again.";
+"mobile.file-settings.changed" = "These settings have changed. Refresh them before making your changes again.";
+"mobile.file-settings.upload-pending" = "The image upload could not be confirmed. Look for it in History and select it there. This image will not be uploaded again for now.";
+"mobile.file-settings.risk-sharing" = "More accounts will be able to create sharing links. People receiving those links may access the shared files.";
+"mobile.file-settings.risk-requests" = "More accounts will be able to create file request links that let recipients upload files.";
+"mobile.file-settings.risk-mount" = "More accounts will be able to use remote connections.";
+"mobile.file-settings.risk-accounts" = "Accounts using File Station will be able to view account and group lists.";
+"mobile.file-settings.day" = "Day";
+"mobile.file-settings.fill-day" = "Apply to this day";
+"mobile.file-settings.local-image" = "This Device";
+"mobile.file-settings.images-empty" = "Choose another folder or upload an image from this device.";
+"mobile.file-settings.risk-iso" = "More accounts will be able to mount disc images.";
+"mobile.file-settings.loading" = "Loading settings…";

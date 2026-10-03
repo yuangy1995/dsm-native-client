@@ -470,6 +470,124 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertFalse(app.alerts.staticTexts["Could not open location"].exists)
     }
 
+    func test文件设置普通保存后可以继续修改并回读() {
+        let app = launchFixture(state: "file-settings")
+        defer { app.terminate() }
+        openFileSettings(app); app.buttons["General"].tap()
+        let toggle = app.switches["Record file transfers"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8)); XCTAssertEqual(toggle.value as? String, "0")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        let save = app.buttons["files.settings.save"]
+        reveal(save, in: app); XCTAssertTrue(save.isEnabled); save.tap()
+        XCTAssertTrue(app.staticTexts["Settings saved."].waitForExistence(timeout: 8)); XCTAssertFalse(save.isEnabled)
+        app.swipeDown(); app.swipeDown()
+        XCTAssertEqual(toggle.value as? String, "1")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        reveal(save, in: app); XCTAssertTrue(save.isEnabled); save.tap()
+        XCTAssertTrue(app.staticTexts["Settings saved."].waitForExistence(timeout: 8)); XCTAssertFalse(save.isEnabled)
+        attachScreenshot(app, name: "File settings saved twice")
+    }
+
+    func test文件设置扩大账号权限显示后果且取消不会保存() {
+        let app = launchFixture(state: "file-settings")
+        defer { app.terminate() }
+        openFileSettings(app); app.buttons["Remote access"].tap()
+        app.buttons["Manage account permissions"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sample member'")).firstMatch.waitForExistence(timeout: 8))
+        app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sample member'")).firstMatch.tap()
+        let toggle = app.switches["Allow remote connections"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        app.buttons["files.settings.save"].tap()
+        XCTAssertTrue(app.staticTexts["More accounts will be able to use remote connections."].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["files.settings.save"].isEnabled)
+        app.buttons["files.settings.save"].tap()
+        // 系统将同一警告按钮暴露为外层和 SwiftUI 子元素，限定警告作用域。
+        app.alerts.buttons["files.settings.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sample member' AND label CONTAINS 'Access allowed'")).firstMatch.waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Remote access saved with explicit consequence")
+    }
+
+    func test限速保留群组继承并可用触控编辑每周时间表() {
+        let app = launchFixture(state: "file-settings")
+        defer { app.terminate() }
+        openFileSettings(app); app.buttons["Speed limits"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sample member'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8)); XCTAssertTrue(row.label.contains("Use group limits")); row.tap()
+        XCTAssertFalse(app.buttons["files.settings.save"].isEnabled)
+        app.buttons.matching(NSPredicate(format: "label CONTAINS 'When to apply speed limits'")).firstMatch.tap()
+        app.buttons["Follow a schedule"].tap()
+        app.buttons["Follow a schedule"].tap()
+        let hour = app.buttons["files.settings.hour.0"]
+        XCTAssertTrue(hour.waitForExistence(timeout: 5)); XCTAssertTrue(hour.label.contains("Default limit"))
+        app.buttons.matching(NSPredicate(format: "label CONTAINS 'Apply to selected hours'")).firstMatch.tap()
+        app.buttons["Custom limit"].tap(); hour.tap()
+        XCTAssertTrue(hour.label.contains("Custom limit"))
+        attachScreenshot(app, name: "Accessible hourly bandwidth schedule")
+        app.navigationBars["Follow a schedule"].buttons["BackButton"].tap()
+        reveal(app.buttons["files.settings.save"], in: app); app.buttons["files.settings.save"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 8)); XCTAssertTrue(row.label.contains("Follow a schedule"))
+    }
+
+    func test分享页面选择内置背景后保存并保留外观() {
+        let app = launchFixture(state: "file-settings")
+        defer { app.terminate() }
+        openFileSettings(app); app.buttons["Sharing page"].tap()
+        XCTAssertTrue(app.buttons["Choose background"].waitForExistence(timeout: 8)); app.buttons["Choose background"].tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS 'Image source'")).firstMatch.tap()
+        app.buttons["Built-in backgrounds"].tap()
+        app.buttons["Background 1"].tap()
+        let choose = app.buttons["Use this image"]
+        reveal(choose, in: app); XCTAssertTrue(choose.isEnabled); choose.tap()
+        XCTAssertEqual(app.switches["Use a custom background"].value as? String, "1")
+        let save = app.buttons["files.settings.save"]; reveal(save, in: app); XCTAssertTrue(save.isEnabled); save.tap()
+        XCTAssertTrue(app.staticTexts["Settings saved."].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Sharing page background applied")
+    }
+
+    func test文件设置读取错误和普通账号只读有实际呈现() {
+        for state in ["file-settings-error", "file-settings-readonly", "file-settings-loading"] {
+            let app = launchFixture(state: state)
+            openFileSettings(app); app.buttons["General"].tap()
+            if state.hasSuffix("loading") {
+                XCTAssertTrue(element("files.settings.loading", in: app).waitForExistence(timeout: 8))
+            } else if state.hasSuffix("error") {
+                XCTAssertTrue(app.staticTexts["Could not load these settings"].waitForExistence(timeout: 8)); XCTAssertTrue(app.buttons["Retry"].exists)
+            } else {
+                let toggle = app.switches["Record file transfers"]
+                XCTAssertTrue(toggle.waitForExistence(timeout: 8)); XCTAssertFalse(toggle.isEnabled)
+                reveal(app.buttons["files.settings.save"], in: app); XCTAssertFalse(app.buttons["files.settings.save"].isEnabled)
+            }
+            attachScreenshot(app, name: state); app.terminate()
+        }
+    }
+
+    func test限速名单空内容和搜索无结果提供恢复路径() {
+        let app = launchFixture(state: "file-settings")
+        defer { app.terminate() }
+        openFileSettings(app); app.buttons["Speed limits"].tap()
+        let type = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Account type'")).firstMatch
+        XCTAssertTrue(type.waitForExistence(timeout: 8)); type.tap(); app.buttons["Local groups"].tap()
+        XCTAssertTrue(app.staticTexts["No accounts were returned for this type. Choose another account type or refresh."].waitForExistence(timeout: 5))
+        type.tap(); app.buttons["Local accounts"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sample member'")).firstMatch.waitForExistence(timeout: 5))
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("missing-fixture")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sample member'")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["Try another search or ask an administrator to check your access to the account list."].exists)
+        attachScreenshot(app, name: "Bandwidth list filtered empty")
+    }
+
+    private func openFileSettings(_ app: XCUIApplication) {
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        element("files.toolbar.more", in: app).tap(); app.buttons["files.settings.open"].tap()
+        XCTAssertTrue(app.buttons["General"].waitForExistence(timeout: 5))
+    }
+    private func reveal(_ item: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<7 { if item.exists && item.isHittable { return }; app.swipeUp() }
+        XCTAssertTrue(item.exists && item.isHittable)
+    }
+
     private func openRemoteLocations(_ app: XCUIApplication) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         element("files.toolbar.more", in: app).tap(); app.buttons["files.remote.manage"].tap()

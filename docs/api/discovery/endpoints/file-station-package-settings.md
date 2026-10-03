@@ -73,3 +73,8 @@ upload 为 multipart，type 与 upload_image 文件字段，成功 data.path 作
 响应 Schema 及 `synthetic-bandwidth-unconfigured-user/group` 合成样本已同步；`FileStationParityTests` 覆盖两类读取、已配置策略、首次明确设定后回读、未知策略拒绝及禁止回写未配置标记。该标记只补全共享 Apple 内存模型，没有会话/持久化格式、公开 DSM 请求或存储迁移；回滚可撤销本轮解析与界面变更，NAS 原数据不受影响。
 
 五端影响：macOS 接入名单与编辑状态；iPhone/iPad 共享模型和网络层兼容读取，不新增设置入口；Windows/Android 后续接入应保留“继承或未配置”和“不限速”的区别，不借本次修复改变两端源码。真实保存、实际速度、群组继承计算及域/LDAP 均为 `PENDING_USER_VALIDATION`，本轮不提升写验证等级。
+
+
+## 2026-10-04 Apple 移动设置接入
+
+iPhone/iPad 已接入上述现有设置、账号目录、限速时间表和分享主题接口；五端请求、版本、字段及验证等级不变。两端使用触控表单与逐日/逐时编辑，保留 `notexist`、管理员不可修改账号、来源请求值、完整分页及原快照回读规则。独立未结束目标记录与上传摘要不保存设置内容或图片，重启不自动重放；共享接口仍是唯一请求实现。macOS 仅资源/构建回归，Windows/Android 无代码变化。真实写入未验证，准确移动自动化与设备条件见 [M2g2 实施账本](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m2g2-file-station-设置)。

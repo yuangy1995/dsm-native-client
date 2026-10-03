@@ -28,6 +28,7 @@ struct MobileFileBrowser: View {
     @State private var permissionItem: FileItem?
     @State private var showsLocations = false
     @State private var favoritePreview: FileItem?
+    @State private var showsFileSettings = false
     @State private var showsRemoteLocations = false
     @State private var remoteAfterLocations = false
     @State private var remoteContext = ""
@@ -144,6 +145,9 @@ struct MobileFileBrowser: View {
         .sheet(item: $permissionItem) { item in
             MobileFilePermissionView(model: model.filePermissionModel, item: item)
         }
+        .sheet(isPresented: $showsFileSettings) {
+            if let repository = model.fileRepository { MobileFileSettingsView(model: model.fileSettings, repository: repository) }
+        }
         .sheet(isPresented: $showsRemoteLocations, onDismiss: finishRemoteSelection) {
             if let repository = model.fileRepository {
                 MobileRemoteLocationsView(model: model.remoteLocations, repository: repository,
@@ -235,6 +239,7 @@ struct MobileFileBrowser: View {
             }
         }
         .onChange(of: activationIdentity) { _, _ in
+            showsFileSettings = false
             showsAdvancedSearch = false
             compressionSelection = nil; extractionItem = nil
             permissionItem = nil; favoritePreview = nil
@@ -714,6 +719,9 @@ struct MobileFileBrowser: View {
                 Button(action: showRemoteLocations) {
                     Label(L10n.string("mobile.files.locations.remote"), systemImage: "network")
                 }.disabled(model.fileRepository == nil).accessibilityIdentifier("files.remote.manage")
+                Button { showsFileSettings = true } label: {
+                    Label(L10n.string("files.settings.title"), systemImage: "gearshape")
+                }.disabled(model.fileRepository == nil).accessibilityIdentifier("files.settings.open")
                 Button(action: toggleLayout) {
                     Label(L10n.string(state.layout == .list ? "mobile.files.show-grid" : "mobile.files.show-list"),
                           systemImage: state.layout == .list ? "square.grid.2x2" : "list.bullet")

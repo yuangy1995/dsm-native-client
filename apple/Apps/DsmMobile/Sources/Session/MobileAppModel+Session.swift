@@ -71,6 +71,7 @@ extension MobileAppModel {
         filePermissionModel.removeProfile(profile.id)
         remoteLocations.removeProfile(profile.id)
         favorites.removeProfile(profile.id)
+        fileSettings.removeProfile(profile.id)
         purgeFileLocations(profileID: profile.id)
         Task { await photoLibraryModel.purge(profileID: profile.id) }
         chatModel.purge(profileID: profile.id)

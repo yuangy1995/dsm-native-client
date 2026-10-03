@@ -5885,3 +5885,19 @@
 "mobile.favorites.save-error" = "未能修改收藏。请刷新列表后重试。";
 "mobile.favorites.pending" = "这项收藏仍在更新。请稍后刷新列表。";
 "mobile.favorites.recovery-error" = "无法读取或保存尚未完成的收藏修改。请重新打开 App；仍无法恢复时请联系支持。";
+
+"mobile.file-settings.recovery-error" = "无法保存设置操作记录。请解锁设备并检查可用空间后重新打开 App；如果仍然失败，请联系支持。";
+"mobile.file-settings.pending" = "上次保存的结果暂时无法确定。请刷新查看当前设置，暂时不能再次保存此项。";
+"mobile.file-settings.save-error" = "设置未能保存。请刷新当前设置后重试。";
+"mobile.file-settings.changed" = "设置已经发生变化。请刷新后重新修改。";
+"mobile.file-settings.upload-pending" = "暂时无法确定图片是否已上传。请在“历史图片”中查找并选择，暂时不能重新上传这张图片。";
+"mobile.file-settings.risk-sharing" = "更多账号将能够创建分享链接。链接接收者可能访问被分享的文件。";
+"mobile.file-settings.risk-requests" = "更多账号将能够创建文件收集链接，并允许链接接收者上传文件。";
+"mobile.file-settings.risk-mount" = "更多账号将能够使用远程连接。";
+"mobile.file-settings.risk-accounts" = "使用文件管理的账号将能够查看账号和群组名单。";
+"mobile.file-settings.day" = "星期";
+"mobile.file-settings.fill-day" = "应用到当天";
+"mobile.file-settings.local-image" = "此设备";
+"mobile.file-settings.images-empty" = "请选择其他文件夹，或从此设备上传图片。";
+"mobile.file-settings.risk-iso" = "更多账号将能够挂载光盘镜像。";
+"mobile.file-settings.loading" = "正在加载设置…";
