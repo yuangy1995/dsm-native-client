@@ -1,5 +1,5 @@
 <!-- doc-role: archive -->
-<!-- last-reviewed: 2026-10-03 -->
+<!-- last-reviewed: 2026-10-04 -->
 
 # 发布与手工验收历史（2026-H2）
 
@@ -505,3 +505,34 @@ M0 追加原生操作：iPad 空地址点击连接后显示“请输入 NAS 地�
 
 
 M1 云端文档检查修正：提交 `c776de72f40f5d80795c490010c9eba80860776b` 的 [Repository Check](https://github.com/yuangy1995/dsm-native-client/actions/runs/37147153437) 和[文档预检](https://github.com/yuangy1995/dsm-native-client/actions/runs/37147153419) 在 UTC 10 月 3 日将北京时间 10 月 4 日误判为未来；本机以 `TZ=UTC` 复现。检查器现统一按项目北京时间 UTC+08:00 取日，不修改系统时区、不放宽未来日期或时效门。新增跨日、同一时刻不同时区及真实未来日期拒绝回归，工具测试 107/107 通过；`TZ=UTC` 和 `TZ=America/Los_Angeles` 下的 `check_documentation.py --strict-release` 均通过。此增量不改变客户端或 NAS 契约，云端最终状态另按实际运行结果记录。
+
+
+## 2026-10-04 移动 M2a 可恢复传输与目录上传
+
+本切片为 M2 的文件传输基础，不代表 M2 全部高级文件管理或 M3–M8 完成。Mac 只迁移已有上传计划/批次到内部 `DsmFileFeature` 并调整引用；增加可选恢复检查点和提交前保存回调，原 Mac 调用不启用新存储。没有修改 Windows/Android 或 NAS 请求契约，也没有访问或写入真实 NAS。
+
+- 移动文件入口统一接多选/目录上传确认：空目录和隐藏文件保留，符号链接跳过，同名默认跳过，替换单独说明原内容可能无法恢复。活动按文件显示结果，可暂停、继续、重试明确失败项、只读取未知结果、清除已结束任务的本机副本。
+- 传输记录和批次副本位于独立受保护目录并排除备份，不保存凭据、不迁移登录格式。阶段落盘失败不提交；恢复后未提交项暂停，已提交上传只查询，下载可从头恢复。完整内容比对确认未知上传，不能只凭同名和大小判成功。
+- 任务绑定 NAS/账号上下文；迟到选择器结果不进入新会话。系统下载导出面板由工作区统一持有，从活动页恢复也可展示；系统面板关闭后清理受控副本，不改用户原件。旧图库使用的单文件上传桥仍随 M3 清理，正式文件页已使用批次。
+- 新增 Debug 合成目录上传 UI 场景；只使用隔离测试目录和内存网络，不读取真实配置或登录资料。其验证范围是原生确认/活动/重启流程，不等同系统 Files 选择器、真实文件提供商或 NAS 的实机验收。
+
+实际命令与结果：
+
+| 命令／证据 | 结果 |
+| --- | --- |
+| `swift build --package-path apple --target DsmFileFeature --jobs 4` | 通过 |
+| `swift test --package-path apple --jobs 4 --filter 'FileUploadWorkflowTests|WorkspacePresentationTests.test.*上传'` | 8 项上传行为通过；6 项既有合成截图测试按环境要求跳过，不能算 UI 验收 |
+| `swift test --package-path apple --jobs 4` | 2427 项 XCTest，172 项既有环境/UI 跳过，0 失败；另 12 项 Swift Testing 通过 |
+| XcodeGen 2.46.0 生成 Mobile/Mac 工程；移动 `build-for-testing`，`CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` | 通过；复用 M0 的专用模拟器与忽略的 `build/m0-m8` 目录 |
+| iPhone `xcodebuild test-without-building ... -parallel-testing-enabled NO` | 523 项单元 + 6 项实际 UI 全通过；`apple/Apps/DsmMobile/build/m2-upload-iphone-full.xcresult` |
+| iPad 同命令、独立目标 | 523 项单元 + 6 项实际 UI 全通过；`apple/Apps/DsmMobile/build/m2-upload-ipad-full.xcresult` |
+| macOS `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` | 通过；只构建，不安装或启动，不重发 1.0.15 |
+| `python3 tools/localization/check_localization.py`、`python3 tools/codex/check_documentation.py`、`git diff --check` | 通过；双语、占位符、资源引用、硬编码与文档一致性均通过 |
+
+模拟器目标仍为 iPhone `8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`、iPad `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。已检查两端上传完成截图。第一轮恢复测试发现非法 mutation operation 标识（包含点），改为既有字母标识并增加生产适配器的内容匹配/不匹配回归；首次 UI 测试发现英文取消按钮过长将提交动作挤进工具栏折叠菜单，改用简短“取消／上传”后两端全通过。未降低断言或跳过新测试。
+
+独立只读集成与对抗复核覆盖：共享提取仅保留一套目录上传业务；身份变化后的任务/文件隔离；复制完成前取消零上传；原子保存失败零提交；未知上传只查询、相同目标未知任务不重复写；完整内容不一致不能判成功；原件不被清理，记录或路径无效时保留原文件并拒绝写入。上述结论来自源码与合成测试，未提升为真实 NAS 行为验证。
+
+`PENDING_USER_VALIDATION`：iPhone/iPad 真机系统 Files 来源授权、iCloud/第三方提供商、锁屏/进后台中断、低空间、真实 NAS 同名覆盖与断网恢复、VoiceOver/大字号/键盘。使用独立可丢弃目录与文件；预期暂停/恢复不重复覆盖、不串账号，结果与目标文件一致；仅回传 OS/App/DSM 版本、脱敏操作和错误类别，不回传凭据、主机或真实路径。系统后台任务、分享扩展和 Files 扩展未开发，仍在 M8，不能写成仅待真机验证。
+
+M2a 补充：iPhone 深色外观下单独重跑目录上传/重启 UI 测试，1/1 通过（`m2-upload-iphone-dark.xcresult`），已查看深色截图，之后将专用模拟器恢复浅色。Mac Release 二进制实际包含 `x86_64 arm64`；Mobile/Mac 工程及共享测试方案用锁定生成器再次生成，摘要一致。M1 的源码提交 `c776de72` 对应 Apple Build 仍在云端运行，本机通过不冒充云端门禁完成。

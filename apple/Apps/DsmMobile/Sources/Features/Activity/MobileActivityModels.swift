@@ -1,17 +1,17 @@
 import DsmCore
 import Foundation
 
-enum MobileActivitySource: String, CaseIterable, Sendable {
+enum MobileActivitySource: String, Codable, CaseIterable, Sendable {
     case app
     case nas
 }
 
-enum MobileTransferDirection: String, CaseIterable, Sendable {
+enum MobileTransferDirection: String, Codable, CaseIterable, Sendable {
     case upload
     case download
 }
 
-enum MobileActivityOperation: String, CaseIterable, Equatable, Sendable {
+enum MobileActivityOperation: String, Codable, CaseIterable, Equatable, Sendable {
     case appUpload = "app.upload"
     case appDownload = "app.download"
     case downloadStation = "download-station"
@@ -28,7 +28,7 @@ enum MobileActivityOperation: String, CaseIterable, Equatable, Sendable {
     }
 }
 
-enum MobileTransferStatus: String, CaseIterable, Sendable {
+enum MobileTransferStatus: String, Codable, CaseIterable, Sendable {
     case queued
     case preparing
     case running
@@ -50,7 +50,7 @@ enum MobileTransferStatus: String, CaseIterable, Sendable {
     }
 }
 
-enum MobileTransferRetryPolicy: String, CaseIterable, Sendable {
+enum MobileTransferRetryPolicy: String, Codable, CaseIterable, Sendable {
     case restartFromBeginning
     case none
 }
@@ -94,7 +94,7 @@ enum MobileActivityPresentationState: Equatable, Sendable {
     }
 }
 
-struct MobileTransferProgress: Equatable, Sendable {
+struct MobileTransferProgress: Codable, Equatable, Sendable {
     var completedBytes: Int64
     var totalBytes: Int64?
     var completedItems: Int?
@@ -136,7 +136,7 @@ struct MobileTransferProgress: Equatable, Sendable {
     }
 }
 
-struct MobileActivityTask: Identifiable, Equatable, Sendable {
+struct MobileActivityTask: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let createdAt: Date
     let profileID: UUID
@@ -150,12 +150,20 @@ struct MobileActivityTask: Identifiable, Equatable, Sendable {
     var mutationResult: MutationResult?
     var failureCategory: AppErrorCategory? = nil
 
+    var canResume: Bool {
+        source == .app && (status == .paused || status == .queued)
+    }
+
+    var canRefreshUpload: Bool {
+        source == .app && operation == .appUpload && status == .resultNeedsReview
+    }
+
     var canCancel: Bool {
         guard source == .app else { return false }
         return switch status {
-        case .queued, .preparing, .running:
+        case .queued, .preparing, .running, .paused:
             true
-        case .paused, .cancelling, .succeeded, .failed, .cancelledBeforeSubmission, .cancelled,
+        case .cancelling, .succeeded, .failed, .cancelledBeforeSubmission, .cancelled,
              .resultNeedsReview:
             false
         }
@@ -175,7 +183,7 @@ struct MobileActivityTask: Identifiable, Equatable, Sendable {
     }
 }
 
-struct MobileUploadRequest: Equatable, Sendable {
+struct MobileUploadRequest: Codable, Equatable, Sendable {
     let profileID: UUID
     let localURL: URL
     let folderPath: String
@@ -183,14 +191,15 @@ struct MobileUploadRequest: Equatable, Sendable {
     let stableTarget: String
 }
 
-struct MobileDownloadRequest: Equatable, Sendable {
+struct MobileDownloadRequest: Codable, Equatable, Sendable {
     let profileID: UUID
     let remotePath: String
     let temporaryURL: URL
     let stableTarget: String
+    var intent: MobileDocumentIntent = .exportCopy
 }
 
-enum MobileTransferRequest: Equatable, Sendable {
+enum MobileTransferRequest: Codable, Equatable, Sendable {
     case upload(MobileUploadRequest)
     case download(MobileDownloadRequest)
 

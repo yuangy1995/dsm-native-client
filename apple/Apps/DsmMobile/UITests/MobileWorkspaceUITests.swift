@@ -49,6 +49,34 @@ final class MobileWorkspaceUITests: XCTestCase {
         attachScreenshot(app, name: "Files — no search results")
     }
 
+    func test目录上传在活动中显示逐项成功且重启保留() {
+        let app = launchFixture(state: "upload")
+        let start = element("mobile.upload.start", in: app)
+        XCTAssertTrue(start.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample upload/Sample upload.txt"].exists)
+        start.tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        navigate("activity", title: "Activity", in: app)
+        let tasks = element("mobile.module.transfers", in: app)
+        XCTAssertTrue(tasks.waitForExistence(timeout: 5))
+        tasks.tap()
+        XCTAssertTrue(app.staticTexts["Sample upload/Sample upload.txt"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Clear Finished Uploads"].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Folder upload completed")
+        app.terminate()
+        app.launchArguments.append("--ui-preserve-transfer-fixture")
+        app.launch()
+        navigate("activity", title: "Activity", in: app)
+        let restoredTasks = element("mobile.module.transfers", in: app)
+        XCTAssertTrue(restoredTasks.waitForExistence(timeout: 5))
+        restoredTasks.tap()
+        XCTAssertTrue(app.staticTexts["Sample upload/Sample upload.txt"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Clear Finished Uploads"].exists)
+        app.buttons["Clear Finished Uploads"].tap()
+        XCTAssertFalse(app.staticTexts["Sample upload/Sample upload.txt"].exists)
+        app.terminate()
+    }
+
     private func launchFixture(state: String = "content") -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()

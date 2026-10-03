@@ -2,7 +2,7 @@ import DsmCore
 import Foundation
 import Observation
 
-enum MobileDocumentIntent: String, Equatable, Sendable {
+enum MobileDocumentIntent: String, Codable, Equatable, Sendable {
     case upload
     case exportCopy
     case share
@@ -10,7 +10,7 @@ enum MobileDocumentIntent: String, Equatable, Sendable {
 
 enum MobileDocumentTransferPolicy {
     static let supportsBackgroundTransfer = false
-    static let supportsMultipleSelection = false
+    static let supportsMultipleSelection = true
     static let supportsResume = false
 }
 
@@ -80,7 +80,7 @@ struct MobileSecurityScopedDocumentCopier: MobileDocumentImportCopying {
         }
         try await Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
-            try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            try MobileTransferRecoveryStore.prepareDirectory(directoryURL)
             let coordinator = NSFileCoordinator()
             var coordinationError: NSError?
             var copyError: (any Error)?
@@ -90,7 +90,10 @@ struct MobileSecurityScopedDocumentCopier: MobileDocumentImportCopying {
                 error: &coordinationError
             ) { coordinatedURL in
                 do {
+                    let values = try coordinatedURL.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey])
+                    guard values.isRegularFile == true, values.isSymbolicLink != true else { throw CocoaError(.fileReadUnsupportedScheme) }
                     try fileManager.copyItem(at: coordinatedURL, to: destinationURL)
+                    try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destinationURL.path)
                 } catch {
                     copyError = error
                 }
@@ -117,6 +120,7 @@ final class MobileDocumentTransferController {
     private let fileManager: FileManager
     private let importCopier: any MobileDocumentImportCopying
     private let rootURL: URL
+    private let recoveryStore: MobileTransferRecoveryStore?
     private var artifactsByTaskID: [UUID: ArtifactRecord] = [:]
     private var monitorsByTaskID: [UUID: Task<Void, Never>] = [:]
     private var activeProfileID: UUID?
@@ -132,12 +136,14 @@ final class MobileDocumentTransferController {
         fileManager: FileManager = .default,
         importCopier: any MobileDocumentImportCopying = MobileSecurityScopedDocumentCopier(),
         rootURL: URL? = nil,
-        clearsStaleRootOnInitialization: Bool = false
+        clearsStaleRootOnInitialization: Bool = false,
+        recoveryStore: MobileTransferRecoveryStore? = nil
     ) {
         self.transferCoordinator = transferCoordinator
         self.fileManager = fileManager
         self.importCopier = importCopier
-        self.rootURL = rootURL ?? fileManager.temporaryDirectory
+        self.recoveryStore = recoveryStore
+        self.rootURL = rootURL ?? recoveryStore?.artifactsURL ?? fileManager.temporaryDirectory
             .appendingPathComponent("LanStashDocuments", isDirectory: true)
         if clearsStaleRootOnInitialization {
             // 仅测试或调用方能证明没有 active task 时启用；App 首版不冒险清理共享根目录。
@@ -181,7 +187,8 @@ final class MobileDocumentTransferController {
             overwrite: false,
             stableTarget: target
         )
-        let enqueuedID = await transferCoordinator.enqueueUpload(request, retryPolicy: .none)
+        let enqueuedID = await transferCoordinator.enqueueUpload(request,
+            retryPolicy: recoveryStore == nil ? .none : .restartFromBeginning)
         guard context.contextID == contextID, !Task.isCancelled else {
             await transferCoordinator.cancel(enqueuedID)
             cleanup(directory)
@@ -221,7 +228,7 @@ final class MobileDocumentTransferController {
             profileID: context.profileID,
             remotePath: context.remotePath,
             temporaryURL: destination,
-            stableTarget: context.remotePath
+            stableTarget: context.remotePath, intent: context.intent
         )
         let enqueuedID = await transferCoordinator.enqueueDownload(request)
         guard context.contextID == contextID, !Task.isCancelled else {
@@ -279,9 +286,46 @@ final class MobileDocumentTransferController {
         if !isAwaitingSystemDismissal {
             advancePresentationQueue()
         }
+        if recoveryStore != nil, let profileID {
+            Task { await restoreArtifacts(profileID: profileID) }
+        }
     }
 
-    /// 连接工作区已经结束，系统面板不会再提供 onDismiss；立即释放本会话拥有的任务与临时文件。
+    func restoreArtifacts(profileID: UUID) async {
+        let expectedContext = contextID
+        for task in await transferCoordinator.tasks(profileID: profileID) {
+            guard expectedContext == contextID, activeProfileID == profileID else { return }
+            guard let request = await transferCoordinator.request(id: task.id),
+                  expectedContext == contextID, recoveryStore?.ownsArtifact(request.localURL) == true else { continue }
+            if presentation?.taskID == task.id || presentationQueue.contains(task.id) { continue }
+            if task.status == .succeeded && task.operation == .appDownload && task.retryPolicy == .none { continue }
+            if artifactsByTaskID[task.id] == nil {
+                let intent: MobileDocumentIntent
+                switch request {
+                case .upload: intent = .upload
+                case .download(let download): intent = download.intent
+                }
+                artifactsByTaskID[task.id] = ArtifactRecord(taskID: task.id, profileID: profileID,
+                    directoryURL: request.localURL.deletingLastPathComponent(), fileURL: request.localURL, intent: intent)
+            }
+            if monitorsByTaskID[task.id] == nil, task.status != .paused { monitor(task.id) }
+        }
+    }
+
+    func continueTransfer(_ id: UUID, service: any MobileTransferServing) async {
+        guard let task = await transferCoordinator.task(id: id), task.profileID == activeProfileID else { return }
+        if task.canRefreshUpload {
+            await transferCoordinator.refreshUpload(id, using: service)
+        } else if task.canResume {
+            await transferCoordinator.resume(id, using: service)
+        } else {
+            await transferCoordinator.retryFromBeginning(id, using: service)
+        }
+        if recoveryStore != nil { await restoreArtifacts(profileID: task.profileID) }
+        else if artifactsByTaskID[id] != nil { monitor(id) }
+    }
+
+    /// 连接结束时关闭系统面板、取消正在执行的传输，持久副本保留给原账号恢复。
     func resetForDisconnectedWorkspace() {
         contextID = UUID()
         activeProfileID = nil
@@ -293,7 +337,8 @@ final class MobileDocumentTransferController {
         let taskIDs = Set(monitorsByTaskID.keys).union(artifactsByTaskID.keys)
         monitorsByTaskID.values.forEach { $0.cancel() }
         monitorsByTaskID.removeAll()
-        Array(artifactsByTaskID.keys).forEach(removeArtifact)
+        if recoveryStore == nil { Array(artifactsByTaskID.keys).forEach(removeArtifact) }
+        else { artifactsByTaskID.removeAll() }
 
         Task {
             for taskID in taskIDs {
@@ -328,7 +373,9 @@ final class MobileDocumentTransferController {
     private func finish(_ task: MobileActivityTask) async {
         monitorsByTaskID[task.id] = nil
         guard let artifact = artifactsByTaskID[task.id] else { return }
+        if recoveryStore != nil, await transferCoordinator.recoveryFailure { return }
         if artifact.intent == .upload {
+            if recoveryStore != nil && (task.status == .resultNeedsReview || task.canRetryFromBeginning) { return }
             cleanup(artifact.directoryURL)
             artifactsByTaskID[task.id] = nil
             await transferCoordinator.disableRetry(task.id)
@@ -343,7 +390,7 @@ final class MobileDocumentTransferController {
             if task.status == .failed, let category = task.failureCategory {
                 failure = MobileDocumentTransferFailure(category: category)
             }
-            removeArtifact(task.id)
+            if recoveryStore == nil || !task.canRetryFromBeginning { removeArtifact(task.id) }
             return
         }
         guard activeProfileID == artifact.profileID else {
@@ -359,6 +406,7 @@ final class MobileDocumentTransferController {
         presentationQueue.removeAll { $0 == taskID }
         guard let artifact = artifactsByTaskID.removeValue(forKey: taskID) else { return }
         cleanup(artifact.directoryURL)
+        Task { await transferCoordinator.forgetLocalArtifact(taskID) }
     }
 
     private func advancePresentationQueue() {

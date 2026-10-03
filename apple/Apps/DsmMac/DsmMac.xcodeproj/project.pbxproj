@@ -54,13 +54,11 @@
 		841D608F0BAF7C2CEC96234A /* DsmNetwork in Frameworks */ = {isa = PBXBuildFile; productRef = 3B2A8675E12B02AFDAD476A1 /* DsmNetwork */; };
 		898C87ADDC1ECC668D3E94FC /* FileArchiveBrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97AE28664180F1C490CFEBB9 /* FileArchiveBrowserModel.swift */; };
 		89BA1323D0D84BB246D213BA /* DsmLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = DD19F00B3A61C5DB02ADB503 /* DsmLocalization */; };
-		9034150C3EDB69FC2A3104F4 /* FileUploadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF46E4DA1435F1B99414C27E /* FileUploadPlan.swift */; };
 		9728A7945A860E79C3166107 /* ProviderOperationRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AEB908BC08B01E03B6B4BC6 /* ProviderOperationRegistry.swift */; };
 		9B3EFFB8C8D9612E2180DE97 /* RemoteMountRecoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3879993A5ED04BE900402F59 /* RemoteMountRecoveryView.swift */; };
 		A8947CF70F1CC5F62D83C33C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CAE6054DEF2A3BA368025AC9 /* Sparkle */; };
 		AB278A90DA574E3C49D06481 /* ServiceManagementModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2578503BB6C863138963CE6B /* ServiceManagementModel.swift */; };
 		AC6936BB386C9A829A221F34 /* WorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F6DF22565675FC82D7CC686 /* WorkspaceModel.swift */; };
-		B201EF93975A7FD864C1BB1F /* FileUploadBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 437C050468D12733396B29E1 /* FileUploadBatch.swift */; };
 		B3DA7CC7D189932DEBFAA409 /* FileVFSCloudAuthorizationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 324BA0FE1CE13A86B87C527C /* FileVFSCloudAuthorizationView.swift */; };
 		B6FA5CB7DA8790CA0A105940 /* NasAdministrationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF05BE448D0653B1A065559A /* NasAdministrationModel.swift */; };
 		B748536108879BA2D705F5CE /* MacAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1E6D2F66C1068D2E20A49C /* MacAppearance.swift */; };
@@ -81,6 +79,7 @@
 		D733D79BB2B46B2F6E5C06E9 /* PhotoMetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC9C9961187B8013EEE5911 /* PhotoMetadataExtractor.swift */; };
 		D9F509ACD514897C93DBCCAD /* ProviderRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56B3E5F2DD3A282E12BA4A6 /* ProviderRuntime.swift */; };
 		DB1EE1D0FF0CE4357B6A5E54 /* ProviderErrorMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95BEAF224CE41E06152FECD6 /* ProviderErrorMapper.swift */; };
+		DE708B411FCC5D6A7892A1BB /* DsmFileFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 0331834533939195B7F64607 /* DsmFileFeature */; };
 		DF9A454EE827CB25400301C5 /* LanStashFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 21F2702AC3558C7DD3F3EA25 /* LanStashFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E299C8B6250241D030C2136C /* FileVFSCloudAuthorizationSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16ED5F39E14843B118F32DF8 /* FileVFSCloudAuthorizationSession.swift */; };
 		E53088EB1BE1BCBA9B672B12 /* PhotoLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */; };
@@ -143,7 +142,6 @@
 		3879993A5ED04BE900402F59 /* RemoteMountRecoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteMountRecoveryView.swift; sourceTree = "<group>"; };
 		3D43383FD609AFA6A0605CEA /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		3F276AF6EC0C343DF594E76B /* NasAdministrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NasAdministrationView.swift; sourceTree = "<group>"; };
-		437C050468D12733396B29E1 /* FileUploadBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileUploadBatch.swift; sourceTree = "<group>"; };
 		46A9227A5E05161F8B71FDF4 /* DsmMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DsmMacApp.swift; sourceTree = "<group>"; };
 		4D54FCCE59BEF04898E541CE /* LoginViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModel.swift; sourceTree = "<group>"; };
 		4E1F96609F0323DC19D30EC7 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -200,7 +198,6 @@
 		DF1E6D2F66C1068D2E20A49C /* MacAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppearance.swift; sourceTree = "<group>"; };
 		E6FC011F3531054EAFEB7F62 /* MediaStreamRedirectPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaStreamRedirectPolicy.swift; sourceTree = "<group>"; };
 		EF1EB3904279ABE52505A57B /* ChatWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWorkspaceView.swift; sourceTree = "<group>"; };
-		EF46E4DA1435F1B99414C27E /* FileUploadPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileUploadPlan.swift; sourceTree = "<group>"; };
 		F4E9000C7AE089029FC7CC9D /* FileShareBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileShareBatch.swift; sourceTree = "<group>"; };
 		F69DD3E71DCD020D41515EDC /* OfficeDocumentEditingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeDocumentEditingView.swift; sourceTree = "<group>"; };
 		F9F9356097F9C9523ED5CCE8 /* FileStationMountAccountList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationMountAccountList.swift; sourceTree = "<group>"; };
@@ -228,6 +225,7 @@
 				0BF65A78DC3488741ACAA862 /* DsmCore in Frameworks */,
 				3D2E5047C4CC4EA551E248FA /* DsmNetwork in Frameworks */,
 				FA75DBF3BA945D79778D9FC8 /* DsmPhotosFeature in Frameworks */,
+				DE708B411FCC5D6A7892A1BB /* DsmFileFeature in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -299,8 +297,6 @@
 				88654D1BEADDF24EB170D5C0 /* FileStationPrincipalPicker.swift */,
 				77AC18D23D4D54011B4BD6FF /* FileStationSettingsView.swift */,
 				5B2EB7CAB40E81F9AA56CD9A /* FileStationThemeImagePicker.swift */,
-				437C050468D12733396B29E1 /* FileUploadBatch.swift */,
-				EF46E4DA1435F1B99414C27E /* FileUploadPlan.swift */,
 				53594B9C2C06D07097ADB39C /* FileUploadViews.swift */,
 				7887E62887B30F052D149BE9 /* FileVFSBrowserView.swift */,
 				16ED5F39E14843B118F32DF8 /* FileVFSCloudAuthorizationSession.swift */,
@@ -407,6 +403,7 @@
 				CDFB3D25D6035AB51E143261 /* DsmCore */,
 				6A578FB6D5B34A59438162B6 /* DsmNetwork */,
 				F2E8EE0FEEC51582BD4E6286 /* DsmPhotosFeature */,
+				0331834533939195B7F64607 /* DsmFileFeature */,
 			);
 			productName = DsmMac;
 			productReference = 73A190EAB72D1587728A072E /* LanStash.app */;
@@ -520,8 +517,6 @@
 				1DF11B871DCBFF8FFA423061 /* FileStationPrincipalPicker.swift in Sources */,
 				3588633B6EF10C5FA9B4D316 /* FileStationSettingsView.swift in Sources */,
 				ED5CE92C2E629DA8387E9E20 /* FileStationThemeImagePicker.swift in Sources */,
-				B201EF93975A7FD864C1BB1F /* FileUploadBatch.swift in Sources */,
-				9034150C3EDB69FC2A3104F4 /* FileUploadPlan.swift in Sources */,
 				D57BB489AE64410384B1C18F /* FileUploadViews.swift in Sources */,
 				22FF82FAA577EB96423D26E0 /* FileVFSBrowserView.swift in Sources */,
 				E299C8B6250241D030C2136C /* FileVFSCloudAuthorizationSession.swift in Sources */,
@@ -866,6 +861,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		0331834533939195B7F64607 /* DsmFileFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DsmFileFeature;
+		};
 		068B0CB217B93D2E04F6CB21 /* DsmLocalization */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DsmLocalization;

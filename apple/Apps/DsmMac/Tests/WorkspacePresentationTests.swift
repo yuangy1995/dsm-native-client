@@ -1,3 +1,4 @@
+import DsmFileFeature
 @testable import DsmPhotosFeature
 import AppKit
 import AVKit

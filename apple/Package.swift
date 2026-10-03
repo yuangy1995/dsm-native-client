@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "DsmCore", targets: ["DsmCore"]),
         .library(name: "DsmNetwork", targets: ["DsmNetwork"]),
         .library(name: "DsmLocalization", targets: ["DsmLocalization"]),
+        .library(name: "DsmFileFeature", targets: ["DsmFileFeature"]),
         .library(name: "DsmPhotosFeature", targets: ["DsmPhotosFeature"]),
         .executable(name: "LanStash", targets: ["DsmMacExecutable"])
     ],
@@ -41,6 +42,11 @@ let package = Package(
             ]
         ),
         .target(
+            name: "DsmFileFeature",
+            dependencies: ["DsmCore", "DsmLocalization"],
+            path: "Packages/DsmFileFeature/Sources"
+        ),
+        .target(
             name: "DsmPhotosFeature",
             dependencies: ["DsmCore", "DsmNetwork", "DsmLocalization"],
             path: "Packages/DsmPhotosFeature/Sources"
@@ -48,7 +54,7 @@ let package = Package(
         .executableTarget(
             name: "DsmMacExecutable",
             dependencies: [
-                "DsmCore", "DsmNetwork", "DsmLocalization", "DsmPhotosFeature",
+                "DsmCore", "DsmNetwork", "DsmLocalization", "DsmPhotosFeature", "DsmFileFeature",
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS]))
             ],
             path: "Apps/DsmMac/Sources",
@@ -97,7 +103,7 @@ let package = Package(
         ),
         .testTarget(
             name: "DsmMacTests",
-            dependencies: ["DsmCore", "DsmLocalization", "DsmPhotosFeature", "DsmMacExecutable"],
+            dependencies: ["DsmCore", "DsmLocalization", "DsmPhotosFeature", "DsmFileFeature", "DsmMacExecutable"],
             path: "Apps/DsmMac/Tests",
             resources: [.copy("Fixtures/Office")]
         ),

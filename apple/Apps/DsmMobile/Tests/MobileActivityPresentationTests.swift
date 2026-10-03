@@ -62,7 +62,7 @@ final class MobileActivityPresentationTests: XCTestCase {
         XCTAssertTrue(makeTask(status: .queued).canCancel)
         XCTAssertTrue(makeTask(status: .preparing).canCancel)
         XCTAssertTrue(makeTask(status: .running).canCancel)
-        XCTAssertFalse(makeTask(status: .paused).canCancel)
+        XCTAssertTrue(makeTask(status: .paused).canCancel)
         XCTAssertFalse(makeTask(status: .cancelling).canCancel)
         XCTAssertFalse(makeTask(status: .succeeded).canCancel)
         XCTAssertFalse(makeTask(status: .resultNeedsReview).canCancel)

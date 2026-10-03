@@ -4,9 +4,9 @@ import DsmLocalization
 import Foundation
 import Observation
 
-enum FileUploadItemState: String, Sendable {
+public enum FileUploadItemState: String, Codable, Sendable {
     case pending, running, succeeded, skipped, failed, conflict, paused, cancelled, unverified
-    var title: String {
+    public var title: String {
         switch self {
         case .pending: L10n.string("files.upload.state.pending")
         case .running: L10n.string("files.upload.state.running")
@@ -21,30 +21,34 @@ enum FileUploadItemState: String, Sendable {
     }
 }
 
-struct FileUploadEntry: Identifiable, Sendable {
-    let source: FileUploadSource
-    var state: FileUploadItemState = .pending
-    var completedBytes: Int64 = 0
-    var message: String?
-    var needsReconciliation = false
-    var retryAllowed = true
-    var id: UUID { source.id }
+public struct FileUploadEntry: Identifiable, Sendable {
+    public let source: FileUploadSource
+    public var state: FileUploadItemState = .pending
+    public var completedBytes: Int64 = 0
+    public var message: String?
+    public var needsReconciliation = false
+    public var retryAllowed = true
+    public var id: UUID { source.id }
 }
 
 @MainActor @Observable
-final class FileUploadBatch: Identifiable {
-    let id = UUID()
-    let destination: String
-    let overwrite: Bool
-    private(set) var entries: [FileUploadEntry]
-    private(set) var isRunning = false
-    private(set) var isPaused = false
+public final class FileUploadBatch: Identifiable {
+    public let id: UUID
+    public let destination: String
+    public let overwrite: Bool
+    public private(set) var entries: [FileUploadEntry]
+    public private(set) var isRunning = false
+    public private(set) var isPaused = false
     @ObservationIgnored private var operation: Task<Void, Never>?
     @ObservationIgnored private let repository: any FileRepository
-    @ObservationIgnored var onChange: ((FileUploadEntry) -> Void)?
-    @ObservationIgnored var onSettled: (() -> Void)?
+    @ObservationIgnored public var onChange: ((FileUploadEntry) -> Void)?
+    @ObservationIgnored public var onSettled: (() -> Void)?
+    /// 移动持久队列在真正提交之前保存阶段；失败时不得发出写请求。
+    @ObservationIgnored public var beforeSubmission: (() throws -> Void)?
 
-    init(sources: [FileUploadSource], destination: String, overwrite: Bool, repository: any FileRepository) {
+    public init(sources: [FileUploadSource], destination: String, overwrite: Bool, repository: any FileRepository,
+                id: UUID = UUID(), restoredEntries: [FileUploadEntryCheckpoint]? = nil) {
+        self.id = id
         self.destination = destination
         self.overwrite = overwrite
         self.repository = repository
@@ -63,14 +67,33 @@ final class FileUploadBatch: Identifiable {
             }
             return entry
         }
+        if let restoredEntries {
+            for index in entries.indices {
+                guard let restored = restoredEntries.first(where: { $0.id == entries[index].id }) else { continue }
+                entries[index].state = switch restored.state {
+                case .pending: .paused
+                case .running: .unverified
+                default: restored.state
+                }
+                entries[index].completedBytes = restored.completedBytes
+                entries[index].needsReconciliation = restored.needsReconciliation || restored.state == .running || restored.state == .unverified
+                entries[index].retryAllowed = restored.retryAllowed
+            }
+            isPaused = entries.contains { $0.state == .paused }
+        }
     }
 
-    var totalBytes: Int64 { entries.filter { $0.source.kind == .file }.reduce(0) { $0 + $1.source.size } }
-    var completedBytes: Int64 { entries.filter { $0.source.kind == .file }.reduce(0) { $0 + min($1.completedBytes, $1.source.size) } }
-    var finishedCount: Int { entries.filter { [.succeeded, .skipped].contains($0.state) }.count }
-    var hasPending: Bool { entries.contains { $0.state == .pending } }
+    public var checkpoint: [FileUploadEntryCheckpoint] {
+        entries.map { FileUploadEntryCheckpoint(id: $0.id, state: $0.state, completedBytes: $0.completedBytes,
+            needsReconciliation: $0.needsReconciliation, retryAllowed: $0.retryAllowed) }
+    }
 
-    func start() {
+    public var totalBytes: Int64 { entries.filter { $0.source.kind == .file }.reduce(0) { $0 + $1.source.size } }
+    public var completedBytes: Int64 { entries.filter { $0.source.kind == .file }.reduce(0) { $0 + min($1.completedBytes, $1.source.size) } }
+    public var finishedCount: Int { entries.filter { [.succeeded, .skipped].contains($0.state) }.count }
+    public var hasPending: Bool { entries.contains { $0.state == .pending } }
+
+    public func start() {
         guard operation == nil, hasPending else { return }
         isPaused = false; isRunning = true
         operation = Task { [weak self] in
@@ -91,32 +114,32 @@ final class FileUploadBatch: Identifiable {
         }
     }
 
-    func pause() {
+    public func pause() {
         guard isRunning else { return }
         isPaused = true
         for index in entries.indices where entries[index].state == .pending { set(index, state: .paused) }
         operation?.cancel()
     }
 
-    func resume() {
+    public func resume() {
         guard !isRunning else { return }
         for index in entries.indices where entries[index].state == .paused { set(index, state: .pending) }
         isPaused = false
     }
 
-    func cancel() {
+    public func cancel() {
         isPaused = false
         for index in entries.indices where [.pending, .paused].contains(entries[index].state) { set(index, state: .cancelled) }
         operation?.cancel()
     }
 
-    func retryFailed() {
+    public func retryFailed() {
         guard !isRunning else { return }
         for index in entries.indices where [.failed, .conflict].contains(entries[index].state)
             && entries[index].retryAllowed { set(index, state: .pending) }
     }
 
-    func reconcileUnknown() async {
+    public func reconcileUnknown() async {
         guard !isRunning else { return }
         isRunning = true
         for index in entries.indices where entries[index].state == .unverified {
@@ -166,7 +189,7 @@ final class FileUploadBatch: Identifiable {
             }
             if source.kind == .directory {
                 if existing == nil {
-                    try Task.checkCancellation(); submitted = true
+                    try Task.checkCancellation(); try beforeSubmission?(); submitted = true
                     let outcome = try await repository.createFolderResult(parentPath: parentPath(source), name: source.url.lastPathComponent)
                     guard outcome.result.status == .confirmedSuccess else {
                         if outcome.result.status == .cancelledBeforeSubmission {
@@ -186,7 +209,7 @@ final class FileUploadBatch: Identifiable {
                 entries[index].retryAllowed = false
                 set(index, state: .failed, message: L10n.string("files.upload.sourceChanged")); return
             }
-            try Task.checkCancellation(); submitted = true
+            try Task.checkCancellation(); try beforeSubmission?(); submitted = true
             try await repository.upload(localURL: source.url, to: parentPath(source), overwrite: overwrite && !wasUnverified) { [weak self] bytes, _ in
                 Task { @MainActor in
                     guard let self, self.entries[index].state == .running else { return }

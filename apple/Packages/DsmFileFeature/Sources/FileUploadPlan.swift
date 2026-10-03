@@ -1,26 +1,32 @@
 import Foundation
 
 /// 选择器授权覆盖整个选择根；文件夹内的子项不能仅靠自身 URL 延长授权。
-final class FileUploadSourceAccess: @unchecked Sendable {
-    let url: URL
+public final class FileUploadSourceAccess: @unchecked Sendable {
+    public let url: URL
     private let accessed: Bool
-    init(_ url: URL) { self.url = url; accessed = url.startAccessingSecurityScopedResource() }
+    public init(_ url: URL) { self.url = url; accessed = url.startAccessingSecurityScopedResource() }
     deinit { if accessed { url.stopAccessingSecurityScopedResource() } }
 }
 
-struct FileUploadSource: Identifiable, Sendable {
-    enum Kind: Sendable { case directory, file, symbolicLink, unreadable }
-    let id = UUID()
-    let url: URL
-    let relativePath: String
-    let kind: Kind
-    let size: Int64
-    let modifiedAt: Date?
-    let access: FileUploadSourceAccess
+public struct FileUploadSource: Identifiable, Sendable {
+    public enum Kind: String, Codable, Sendable { case directory, file, symbolicLink, unreadable }
+    public let id: UUID
+    public let url: URL
+    public let relativePath: String
+    public let kind: Kind
+    public let size: Int64
+    public let modifiedAt: Date?
+    public let access: FileUploadSourceAccess
+
+    public init(id: UUID = UUID(), url: URL, relativePath: String, kind: Kind, size: Int64,
+                modifiedAt: Date?, access: FileUploadSourceAccess) {
+        self.id = id; self.url = url; self.relativePath = relativePath; self.kind = kind
+        self.size = size; self.modifiedAt = modifiedAt; self.access = access
+    }
 }
 
-enum FileUploadPlan {
-    static func collect(_ urls: [URL]) throws -> [FileUploadSource] {
+public enum FileUploadPlan {
+    public static func collect(_ urls: [URL]) throws -> [FileUploadSource] {
         var result: [FileUploadSource] = []
         var paths = Set<String>()
         let keys: Set<URLResourceKey> = [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey,

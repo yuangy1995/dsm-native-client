@@ -10,6 +10,7 @@ struct MobileActivityView: View {
     @State private var filter = MobileActivityFilter.all
     @State private var isLoading = true
     @State private var hasError = false
+    @State private var hasRecoveryFailure = false
     @State private var fileActivityModel: MobileFileActivityModel
 
     init(model: MobileAppModel) {
@@ -24,7 +25,8 @@ struct MobileActivityView: View {
     }
 
     private var state: MobileActivityPresentationState {
-        .resolve(
+        if !model.fileUploadQueue.batches.isEmpty || model.fileUploadQueue.recoveryError != nil { return .content }
+        return .resolve(
             isLoading: isLoading,
             hasError: hasError,
             allTasks: tasks,
@@ -94,7 +96,12 @@ struct MobileActivityView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if !tasks.isEmpty {
+            if hasRecoveryFailure {
+                Label(L10n.string("mobile.activity.recovery-error"), systemImage: "exclamationmark.triangle")
+                    .font(.callout).padding().frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.bar)
+            }
+            if !tasks.isEmpty || !model.fileUploadQueue.batches.isEmpty {
                 filterPicker
             }
         }
@@ -129,6 +136,7 @@ struct MobileActivityView: View {
     private var taskList: some View {
         List {
             fileActivityNotices
+            MobileFileUploadSections(queue: model.fileUploadQueue, filter: filter)
             taskSection(source: .app)
             taskSection(source: .nas)
         }
@@ -212,6 +220,7 @@ struct MobileActivityView: View {
             profileID: model.activeProfile?.id,
             repository: model.fileRepository
         )
+        model.documentTransferController.setActiveProfile(model.activeProfile?.id)
         await refresh()
         var localRefreshes = 0
         while !Task.isCancelled {
@@ -239,6 +248,7 @@ struct MobileActivityView: View {
             return
         }
         tasks = await model.transferCoordinator.tasks(profileID: profileID)
+        hasRecoveryFailure = await model.transferCoordinator.recoveryFailure
         isLoading = false
         hasError = fileActivityModel.error != nil && tasks.isEmpty
     }
@@ -257,7 +267,7 @@ struct MobileActivityView: View {
         }
         let service = MobileFileTransferService(repository: repository)
         Task {
-            await model.transferCoordinator.retryFromBeginning(id, using: service)
+            await model.documentTransferController.continueTransfer(id, service: service)
             await refresh()
         }
     }
@@ -324,12 +334,17 @@ private struct MobileActivityTaskRow: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var statusTitle: String {
+        task.operation.isFileStationTask && task.status == .resultNeedsReview
+            ? L10n.string("mobile.activity.nas-ended") : task.status.title
+    }
+
     private var statusLabel: some View {
-        Label(task.status.title, systemImage: task.status.systemImage)
+        Label(statusTitle, systemImage: task.status.systemImage)
             .font(.subheadline.weight(.medium))
             .foregroundStyle(task.status.foregroundStyle)
             .accessibilityLabel(
-                L10n.string("mobile.activity.status-accessibility", task.status.title)
+                L10n.string("mobile.activity.status-accessibility", statusTitle)
             )
     }
 
@@ -394,6 +409,15 @@ private struct MobileActivityTaskRow: View {
 
     @ViewBuilder
     private var action: some View {
+        if task.canResume || task.canRefreshUpload || task.canRetryFromBeginning {
+            Button(action: retry) {
+                Label(L10n.string(task.canResume ? "mobile.activity.resume"
+                    : task.canRefreshUpload ? "mobile.activity.refresh-result" : "mobile.activity.retry-from-beginning"),
+                    systemImage: task.canResume ? "play.circle" : "arrow.clockwise")
+                    .frame(minHeight: MobileMetrics.minimumTouchTarget)
+            }
+            .buttonStyle(.bordered)
+        }
         if task.canCancel {
             Button(role: .cancel, action: cancel) {
                 Label(L10n.string("desktopDrive.cancel"), systemImage: "xmark.circle")
@@ -401,15 +425,7 @@ private struct MobileActivityTaskRow: View {
             }
             .buttonStyle(.bordered)
             .disabled(task.status == .cancelling)
-        } else if task.canRetryFromBeginning {
-            Button(action: retry) {
-                Label(
-                    L10n.string("mobile.activity.retry-from-beginning"),
-                    systemImage: "arrow.counterclockwise"
-                )
-                .frame(minHeight: MobileMetrics.minimumTouchTarget)
-            }
-            .buttonStyle(.bordered)
+
         }
     }
 }

@@ -30,6 +30,8 @@ targets:
         product: DsmNetwork
       - package: DsmShared
         product: DsmPhotosFeature
+      - package: DsmShared
+        product: DsmFileFeature
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MOBILE_BUNDLE_ID)"

@@ -15,6 +15,23 @@ struct MobileWorkspaceView: View {
                 compactWorkspace
             }
         }
+        .sheet(item: Binding(get: { model.documentTransferController.presentation }, set: { value in
+            if value == nil, let id = model.documentTransferController.presentation?.taskID {
+                model.documentTransferController.requestDismiss(taskID: id)
+            }
+        }), onDismiss: { model.documentTransferController.presentationDidDismiss() }) { presentation in
+            switch presentation.intent {
+            case .exportCopy:
+                MobileDocumentExporter(url: presentation.url) {
+                    model.documentTransferController.requestDismiss(taskID: presentation.taskID)
+                }
+            case .share:
+                MobileShareSheet(url: presentation.url) {
+                    model.documentTransferController.requestDismiss(taskID: presentation.taskID)
+                }
+            case .upload: EmptyView()
+            }
+        }
         .overlay(alignment: .top) {
             if model.actionInProgress {
                 ProgressView()

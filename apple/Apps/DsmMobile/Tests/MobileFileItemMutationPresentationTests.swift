@@ -34,8 +34,9 @@ final class MobileFileItemMutationPresentationTests: XCTestCase {
         XCTAssertTrue(browser.contains("MobileFileItemMutationModel.canRename"))
         XCTAssertTrue(browser.contains("mobile.documents.upload"))
         XCTAssertTrue(browser.contains("mobile.files.share-link.action.create"))
-        XCTAssertTrue(browser.contains("MobileDocumentExporter"))
-        XCTAssertTrue(browser.contains("MobileShareSheet"))
+        let documentPresenter = try sourceFile("Sources/AppShell/MobileWorkspaceView.swift")
+        XCTAssertTrue(documentPresenter.contains("MobileDocumentExporter"))
+        XCTAssertTrue(documentPresenter.contains("MobileShareSheet"))
     }
 
     func test所有变更可见文案均使用冻结资源键() throws {

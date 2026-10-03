@@ -22,6 +22,7 @@ final class MobileAppModel {
     let quickConnectResolver: any QuickConnectResolving
     let mutationCoordinator: MobileMutationCoordinator
     let transferCoordinator: MobileTransferCoordinator
+    let fileUploadQueue: MobileFileUploadQueue
     let documentTransferController: MobileDocumentTransferController
     let settingsStore: MobileSettingsStore
     let fileBrowserModel = MobileFileBrowserModel()
@@ -61,6 +62,7 @@ final class MobileAppModel {
     var activeProfile: NasProfile? {
         didSet {
             filePreviewModel.activate(profileID: activeProfile?.id)
+            fileUploadQueue.configure(profile: activeProfile, repository: fileRepository)
             downloads.configure(profile: activeProfile, repository: serviceRepository)
             if activeProfile.map(MobileWorkspaceIdentity.init) != oldValue.map(MobileWorkspaceIdentity.init) {
                 fileShareLinkModel.deactivate()
@@ -89,7 +91,9 @@ final class MobileAppModel {
     var capabilities: CapabilitySet?
     var session: AuthSession?
     var activeConnectionProfile: NasProfile?
-    var fileRepository: DsmFileRepository?
+    var fileRepository: DsmFileRepository? {
+        didSet { fileUploadQueue.configure(profile: activeProfile, repository: fileRepository) }
+    }
     var photoRepository: FileStationPhotoRepository?
     var serviceRepository: DsmServiceManagementRepository? {
         didSet { downloads.configure(profile: activeProfile, repository: serviceRepository) }
@@ -103,7 +107,8 @@ final class MobileAppModel {
         passwordStore: any PasswordSecureStoring = MobileSecureStoreDefaults.passwordStore(),
         authRepository: (any AuthRepository)? = nil,
         quickConnectResolver: any QuickConnectResolving = DsmQuickConnectResolver(),
-        mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator()
+        mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator(),
+        transferRecoveryStore: MobileTransferRecoveryStore? = nil
     ) {
         self.defaults = defaults
         self.sessionStore = sessionStore
@@ -116,12 +121,13 @@ final class MobileAppModel {
         )
         self.settingsStore = MobileSettingsStore(defaults: defaults)
         let transferCoordinator = MobileTransferCoordinator(
-            mutationCoordinator: mutationCoordinator
+            mutationCoordinator: mutationCoordinator, recoveryStore: transferRecoveryStore
         )
         self.transferCoordinator = transferCoordinator
+        self.fileUploadQueue = MobileFileUploadQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("UploadBatches", isDirectory: true))
         self.downloads = MobileDownloadsModel(transferCoordinator: transferCoordinator)
         self.documentTransferController = MobileDocumentTransferController(
-            transferCoordinator: transferCoordinator
+            transferCoordinator: transferCoordinator, recoveryStore: transferRecoveryStore
         )
         loadProfiles()
         if let profile = profiles.first(where: {

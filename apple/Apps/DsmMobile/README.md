@@ -29,4 +29,6 @@ xcodebuild \
 
 移动业务结构：组合根装配会话与导航；下载由 `MobileDownloadsModel` 持有，Photos 依赖共享 `DsmPhotosFeature`，不再直接编译 macOS App 源文件。系统文件选择回调绑定连接上下文；同一配置切换账号/地址时清理旧展示缓存并隔离活动任务。
 
+文件选择支持多文件和目录，上传确认和活动列表由移动原生页面呈现。`DsmFileFeature` 共用 Mac 的目录计划、冲突与逐项状态；`MobileFileUploadQueue` 负责移动文件副本和账号隔离。任务与副本使用独立版本化存储、系统文件保护并排除备份；重启不自动重放未知上传，下载可从头恢复。系统后台传输、分享扩展与 Files 扩展仍属 M8，不能由恢复记录存在推定已实现。
+
 `DsmMobileUITests` 在 iPhone/iPad 分别实际启动 App、操作原生控件并保留截图附件。仅 Debug 的 `--ui-fixture` 使用独立测试偏好和内存网络替身，不读取真实配置或访问 NAS；Release 不编译该测试入口。普通启动仍走现有登录。完整命令与真实结果写入移动账本及验证历史，不能把测试入口当成产品功能。

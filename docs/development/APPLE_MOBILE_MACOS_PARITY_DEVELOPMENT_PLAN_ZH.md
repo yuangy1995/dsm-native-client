@@ -30,7 +30,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M1 共用照片状态 | SynologyPhotosModel、PhotoUploadRecoveryStore | 内部 DsmPhotosFeature；平台文件访问/恢复/导出适配；共享 | 已迁入 `DsmPhotosFeature`，Mac 书签适配及旧队列版本保持；两端和 Mac 回归通过，详见验证历史 |
 | M1 旧图库清理 | SynologyPhotosView | 主路由已为 MobileSynologyPhotosView；兼容 | 迁移有效行为后删除旧 File Station 图库路径，保留缓存清理 |
 | M2 浏览、分页及高级搜索 | FileAdvancedSearchView、WorkspaceModel | 触控筛选，iPad 并列详情；List/Search/索引；只读 | 有基础浏览搜索，缺高级筛选与完整分页闭环 |
-| M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | 当前前台单文件为主；补目录计划、冲突、取消、部分成功恢复 |
+| M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | M2a 已接共用上传计划、多选/目录、同名跳过/替换确认、逐项结果与暂停恢复；两端验证记录见后文，其他文件管理仍在实施 |
 | M2 分享与收集 | FileShareCreationView、FileShareManagementView、FileShareAdvancedView | 详情表单/系统分享；Sharing 密码/日期/权限；外部可见写 | 有基础分享，缺完整编辑管理；密码不泄露、结果逐项绑定 |
 | M2 压缩、解压、归档浏览 | ArchiveExtractionView、FileArchiveBrowserModel | 包内列表/选择目标与条目；Compress/Extract；数据写 | 缺完整流程；取消只处理本操作，超限/失败可恢复 |
 | M2 ACL 与所有者 | FilePermissionEditor、FileStationPrincipalPicker | 分步权限/成员选择；原对象与权限快照；高风险写 | 未实现；明确后果、原权限变化拒绝、回读一致 |
@@ -38,7 +38,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M2 NAS 任务 | FileBackgroundTaskActions | Activity 绑定 NAS/原任务；状态及取消；写 | 有投影，需完整控制和暂时不可达恢复 |
 | M2 跨 NAS 传输 | WorkspaceModel | 源/目标明确绑定；复制后核对目标再确认源删除；高风险 | 未实现；目标未核对不得删源，恢复不重放已完成步骤 |
 | M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | 有预览/导出，缺冲突与主动回传；M8 接 Files 写回 |
-| M2 可恢复活动队列 | WorkspaceModel | 独立版本化任务、来源/目标身份与进度；持久化 | MobileTransferCoordinator 仅进程内单文件；重启后准确恢复/显示未知 |
+| M2 可恢复活动队列 | WorkspaceModel | 独立版本化任务、来源/目标身份与进度；持久化 | M2a 接独立受保护记录/副本；重启后暂停未提交项，未知上传只查询，下载可从头恢复；后台执行仍属 M8 |
 | M3 Photos 上传 | SynologyPhotosModel、SynologyPhotosView | Photos/Files 选择与队列；上传/相册加入；写 | 缺入口；加入相册失败只补后一步，不重传原件 |
 | M3 批量及资料 | PhotoManagementPanel | 多选、标签/日期/资料表单；原件权限；写 | 缺编辑/批量；列表可见不代表可改/删 |
 | M3 目录及移动复制 | PhotoFolderDestinationPicker | 分步目的地选择；Folder/Move/Copy；数据写 | 缺管理；绑定对象、空间与角色，保留部分成功 |
@@ -118,3 +118,14 @@ M1 凭据边界补充：修改已有连接的地址、端口或账号时，表�
 
 
 M1 验证结果与只读对抗复核见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m1-共享结构会话与导航)。基础结构门已通过，下一切片为 M2 文件、传输及活动中心；旧图库清理和设备待验仍按上文分别追踪。
+
+## M2 当前切片与存储边界
+
+本切片先落实可恢复传输、多文件与目录上传，再接高级搜索、归档、分享管理和高级文件操作。沿用现有 FileRepository、文件批量操作模型和活动协调器；不另建平行文件服务。单一修改范围为移动 Files/Activity/Documents、必要的共享文件逻辑、双语资源、工程和相关测试。
+
+恢复记录使用独立版本 1，位于应用支持目录；与登录配置分离，只保存任务身份、账号上下文摘要、来源/目标路径及阶段，不保存凭据。受控文件与记录使用系统文件保护并排除备份。开始实际写请求前先落盘；保存失败则不提交。进程中断后，未提交项由用户继续，已经提交的上传只查询结果，不自动重传；下载可从头恢复。未知版本或损坏记录保留原件并提示恢复失败，不以空记录覆盖。回滚停用新增队列，旧账号配置不变；该新增存储在 M0–M8 批准范围内，不迁移既有格式。
+
+Mac 参考为 `FileUploadPlan.swift`、`FileUploadBatch.swift`、`WorkspaceModel.swift`；目录层次、同名冲突、部分成功、取消及未知结果按其业务语义实现。iPhone/iPad 均通过系统文件选择器及原生活动列表操作，不引入桌面常驻运行假设。当前尚在实现，不能据此提升验证等级。
+
+
+M2a 的恢复队列、多文件/目录上传、独立两端 UI 和 Mac 回归已通过，详见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2a-可恢复传输与目录上传)。接下来仍须完成 M2 高级搜索、归档、分享/收集、ACL、远程连接、NAS 任务控制、跨 NAS 与 Office 主动回传，不能以本切片替代整波验收。

@@ -2893,7 +2893,7 @@
 "mobile.activity.error-message" = "请重新连接此 NAS 后再试。";
 "mobile.activity.filter-label" = "任务状态";
 "mobile.activity.retry-from-beginning" = "从头重试";
-"mobile.activity.review-message" = "NAS 可能已经收到此上传。再次操作前，请先检查目标位置。";
+"mobile.activity.review-message" = "连接已中断。刷新状态以获取上传结果。";
 "mobile.activity.direction-upload" = "上传到 NAS";
 "mobile.activity.direction-download" = "从 NAS 下载";
 "mobile.activity.status-accessibility" = "状态：%@";
@@ -2910,7 +2910,7 @@
 "mobile.activity.status-failed" = "传输失败";
 "mobile.activity.status-cancelled-before-submission" = "已在开始前取消";
 "mobile.activity.status-cancelled" = "已取消";
-"mobile.activity.status-result-needs-review" = "请检查结果";
+"mobile.activity.status-result-needs-review" = "连接已中断";
 "mobile.activity.operation-download-station" = "Download Station 任务";
 "mobile.activity.operation-file-copy-move" = "复制或移动文件和文件夹";
 "mobile.activity.operation-file-delete" = "删除文件";
@@ -5774,3 +5774,23 @@
 "download.speed.none" = "--";
 "nas.overview.defaultName" = "NAS";
 "download.remaining.none" = "--";
+
+"mobile.activity.recovery-error" = "无法读取或保存任务。请解锁设备并腾出存储空间，然后重新打开应用。";
+
+"mobile.activity.resume" = "继续";
+
+"mobile.activity.refresh-result" = "刷新状态";
+
+"mobile.files.upload-copy-error" = "无法准备这些文件。请检查原文件是否可读、设备空间是否充足，然后重试。";
+
+"mobile.files.upload-earlier-pending" = "此位置的上一次上传已中断。请先在“活动”中刷新其状态，再上传。";
+
+"mobile.files.upload-replace-title" = "替换同名文件？";
+
+"mobile.files.upload-replace-message" = "NAS 上的同名文件将被替换，原内容可能无法恢复。";
+
+"mobile.files.upload-clear" = "清除已结束的上传";
+
+"mobile.files.upload-submit" = "上传";
+
+"mobile.activity.nas-ended" = "任务已结束";

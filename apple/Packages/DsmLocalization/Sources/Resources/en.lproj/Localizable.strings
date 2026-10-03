@@ -2893,7 +2893,7 @@
 "mobile.activity.error-message" = "Reconnect to this NAS and try again.";
 "mobile.activity.filter-label" = "Task Status";
 "mobile.activity.retry-from-beginning" = "Start Over";
-"mobile.activity.review-message" = "The NAS may have received this upload. Check the destination before trying again.";
+"mobile.activity.review-message" = "The connection was interrupted. Refresh the status to see whether the upload finished.";
 "mobile.activity.direction-upload" = "Upload to NAS";
 "mobile.activity.direction-download" = "Download from NAS";
 "mobile.activity.status-accessibility" = "Status: %@";
@@ -2910,7 +2910,7 @@
 "mobile.activity.status-failed" = "Failed";
 "mobile.activity.status-cancelled-before-submission" = "Cancelled Before Starting";
 "mobile.activity.status-cancelled" = "Cancelled";
-"mobile.activity.status-result-needs-review" = "Check the Result";
+"mobile.activity.status-result-needs-review" = "Connection interrupted";
 "mobile.activity.operation-download-station" = "Download Station task";
 "mobile.activity.operation-file-copy-move" = "Copy or move files and folders";
 "mobile.activity.operation-file-delete" = "Delete files";
@@ -5774,3 +5774,23 @@
 "download.speed.none" = "--";
 "nas.overview.defaultName" = "NAS";
 "download.remaining.none" = "--";
+
+"mobile.activity.recovery-error" = "Task records are unavailable. Unlock this device and free up storage, then reopen the app.";
+
+"mobile.activity.resume" = "Continue";
+
+"mobile.activity.refresh-result" = "Refresh Status";
+
+"mobile.files.upload-copy-error" = "Could not prepare the files. Check access to the originals and available device storage, then try again.";
+
+"mobile.files.upload-earlier-pending" = "An earlier upload to this location was interrupted. Refresh its status in Activity before uploading again.";
+
+"mobile.files.upload-replace-title" = "Replace files with the same name?";
+
+"mobile.files.upload-replace-message" = "Existing files with matching names will be replaced. Their current contents may not be recoverable.";
+
+"mobile.files.upload-clear" = "Clear Finished Uploads";
+
+"mobile.files.upload-submit" = "Upload";
+
+"mobile.activity.nas-ended" = "Task ended";

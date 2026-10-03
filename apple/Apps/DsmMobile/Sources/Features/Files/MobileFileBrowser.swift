@@ -65,25 +65,13 @@ struct MobileFileBrowser: View {
         }
         .fileImporter(
             isPresented: $isImportingFile,
-            allowedContentTypes: [.data],
-            allowsMultipleSelection: false,
+            allowedContentTypes: [.item, .folder],
+            allowsMultipleSelection: true,
             onCompletion: handleFileImport
         )
-        .sheet(item: documentPresentationBinding, onDismiss: {
-            model.documentTransferController.presentationDidDismiss()
-        }) { presentation in
-            switch presentation.intent {
-            case .exportCopy:
-                MobileDocumentExporter(url: presentation.url) {
-                    model.documentTransferController.requestDismiss(taskID: presentation.taskID)
-                }
-            case .share:
-                MobileShareSheet(url: presentation.url) {
-                    model.documentTransferController.requestDismiss(taskID: presentation.taskID)
-                }
-            case .upload:
-                EmptyView()
-            }
+        .sheet(isPresented: Binding(get: { model.fileUploadQueue.isPresented },
+                                    set: { if !$0 { model.fileUploadQueue.dismissSelection() } })) {
+            MobileFileUploadSelectionView(queue: model.fileUploadQueue)
         }
         .sheet(isPresented: shareLinkPresentationBinding) {
             MobileFileShareLinkView(model: model.fileShareLinkModel)
@@ -1219,33 +1207,20 @@ struct MobileFileBrowser: View {
     }
 
     private func handleFileImport(_ result: Result<[URL], Error>) {
-        guard let context = pendingUploadContext,
-              let service = pendingUploadService else { return }
+        guard let context = pendingUploadContext, pendingUploadService != nil else { return }
         pendingUploadContext = nil
         pendingUploadService = nil
         switch result {
         case .success(let urls):
-            guard let url = urls.first else { return }
-            Task {
-                _ = await model.documentTransferController.handlePickedFile(url, context: context, service: service)
-            }
+            guard context.contextID == model.documentTransferController.contextID,
+                  context.profileID == model.activeProfile?.id else { return }
+            Task { await model.fileUploadQueue.prepare(urls, destination: context.folderPath) }
         case .failure(let error):
             let nsError = error as NSError
             if nsError.domain != NSCocoaErrorDomain || nsError.code != NSUserCancelledError {
                 model.documentTransferController.reportPickerFailure(error)
             }
         }
-    }
-
-    private var documentPresentationBinding: Binding<MobileDocumentPresentation?> {
-        Binding(
-            get: { model.documentTransferController.presentation },
-            set: { value in
-                guard value == nil,
-                      let taskID = model.documentTransferController.presentation?.taskID else { return }
-                model.documentTransferController.requestDismiss(taskID: taskID)
-            }
-        )
     }
 
     private var shareLinkPresentationBinding: Binding<Bool> {

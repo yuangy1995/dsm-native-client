@@ -17,6 +17,7 @@ struct DsmMobileApp: App {
                     if MobileUIFixture.isEnabled, let profile = model.activeProfile {
                         await model.prepareWorkspaceContext(for: profile)
                         await model.loadSelectedModule()
+                        await MobileUIFixture.prepareUploadSelection(model)
                     }
                 }
                 #endif
@@ -32,7 +33,7 @@ struct DsmMobileApp: App {
         #if DEBUG
         if MobileUIFixture.isEnabled { return MobileUIFixture.makeModel() }
         #endif
-        return MobileAppModel()
+        return MobileAppModel(transferRecoveryStore: .application)
     }
 
     private var chatForegroundContext: MobileChatForegroundContext {

@@ -109,8 +109,9 @@ final class MobileFilePreviewIntegrationTests: XCTestCase {
         let source = try sourceFile("Sources/Features/Files/MobileFileBrowser.swift")
 
         XCTAssertTrue(source.contains(".fileImporter("))
-        XCTAssertTrue(source.contains("MobileDocumentExporter"))
-        XCTAssertTrue(source.contains("MobileShareSheet"))
+        let documentPresenter = try sourceFile("Sources/AppShell/MobileWorkspaceView.swift")
+        XCTAssertTrue(documentPresenter.contains("MobileDocumentExporter"))
+        XCTAssertTrue(documentPresenter.contains("MobileShareSheet"))
         XCTAssertFalse(source.contains("let filePreviewModel = MobileFilePreviewModel()"))
         XCTAssertFalse(source.contains("documentTransferController.presentation ="))
     }

@@ -12,10 +12,17 @@ enum MobileUIFixture {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
-            let model = MobileAppModel(defaults: defaults, sessionStore: FixtureSessionStore(), passwordStore: FixturePasswordStore())
+            let uploadFixture = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] == "upload"
+            let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
+            if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
+                try? FileManager.default.removeItem(at: fixtureRoot)
+            }
+            let model = MobileAppModel(defaults: defaults, sessionStore: FixtureSessionStore(), passwordStore: FixturePasswordStore(),
+                transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
             let versions = [DsmAPIName.fileStationList: 2, DsmAPIName.fileStationInfo: 2, DsmAPIName.fileStationSearch: 2,
+                            DsmAPIName.fileStationUpload: 3, DsmAPIName.fileStationCreateFolder: 2, DsmAPIName.fileStationCheckPermission: 3,
                             DsmAPIName.downloadStationTask: 3, DsmAPIName.downloadStationStatistic: 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             let fixtureCapabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: versions.map { name, version in
@@ -39,6 +46,23 @@ enum MobileUIFixture {
             preconditionFailure("UI fixture configuration failed")
         }
     }
+    static func prepareUploadSelection(_ model: MobileAppModel) async {
+        guard ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] == "upload",
+              !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") else { return }
+        while model.fileUploadQueue.isConfiguring {
+            try? await Task.sleep(for: .milliseconds(20))
+            if Task.isCancelled { return }
+        }
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestSelection")
+            try? FileManager.default.removeItem(at: root)
+            let folder = root.appendingPathComponent("Sample upload")
+            try FileManager.default.createDirectory(at: folder.appendingPathComponent("Empty folder"), withIntermediateDirectories: true)
+            try Data().write(to: folder.appendingPathComponent("Sample upload.txt"))
+            await model.fileUploadQueue.prepare([folder], destination: "/fixture")
+        } catch { preconditionFailure("UI upload fixture could not be prepared") }
+    }
+
 }
 
 private actor FixtureSessionStore: SessionSecureStoring {
@@ -55,6 +79,7 @@ private actor FixturePasswordStore: PasswordSecureStoring {
 
 private actor FixtureTransport: DsmBinaryHTTPTransport {
     private let pageState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "content"
+    private var uploaded: [String: Bool] = [:]
 
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         if pageState == "loading" { try await Task.sleep(for: .seconds(60)) }
@@ -68,6 +93,25 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
         case (DsmAPIName.fileStationList, "list_share"):
             let shares: [[String: Any]] = pageState == "empty" ? [] : [["name": "Sample folder", "path": "/fixture", "isdir": true]]
             result = ["shares": shares, "offset": 0, "total": shares.count]
+        case (DsmAPIName.fileStationCheckPermission, "write"):
+            result = [:]
+        case (DsmAPIName.fileStationCreateFolder, "create"):
+            let path = fields.first { $0.name == "folder_path" }?.value ?? ""
+            let name = fields.first { $0.name == "name" }?.value ?? ""
+            guard path == "/fixture" || path.hasPrefix("/fixture/") else { throw URLError(.unsupportedURL) }
+            uploaded[path + "/" + name] = true
+            result = [:]
+        case (DsmAPIName.fileStationList, "getinfo"):
+            let value = fields.first { $0.name == "path" }?.value ?? "[]"
+            let paths = try JSONDecoder().decode([String].self, from: Data(value.utf8))
+            result = ["files": paths.compactMap { path -> [String: Any]? in
+                guard path == "/fixture" || uploaded[path] != nil else { return nil }
+                return fixtureItem(path, directory: uploaded[path] ?? true)
+            }]
+        case (DsmAPIName.fileStationList, "list") where pageState == "upload":
+            let path = fields.first { $0.name == "folder_path" }?.value ?? ""
+            let children = uploaded.filter { ($0.key as NSString).deletingLastPathComponent == path }
+            result = ["files": children.map { fixtureItem($0.key, directory: $0.value) }, "offset": 0, "total": children.count]
         case (DsmAPIName.fileStationList, "list"):
             result = ["files": [["name": "Sample document.txt", "path": "/fixture/Sample document.txt", "isdir": false,
                                   "additional": ["size": 1024, "time": ["mtime": 1_700_000_000]]]], "offset": 0, "total": 1]
@@ -94,7 +138,22 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
         throw URLError(.unsupportedURL)
     }
     func upload(_ request: URLRequest, from bodyFileURL: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
-        throw URLError(.unsupportedURL)
+        guard pageState == "upload" else { throw URLError(.unsupportedURL) }
+        let body = try String(contentsOf: bodyFileURL, encoding: .utf8)
+        guard let nameStart = body.range(of: "filename=\"")?.upperBound,
+              let nameEnd = body[nameStart...].firstIndex(of: "\""),
+              let pathStart = body.range(of: "name=\"path\"\r\n\r\n")?.upperBound,
+              let pathEnd = body[pathStart...].range(of: "\r\n")?.lowerBound else { throw URLError(.badServerResponse) }
+        let path = String(body[pathStart..<pathEnd])
+        guard path == "/fixture" || path.hasPrefix("/fixture/") else { throw URLError(.unsupportedURL) }
+        uploaded[path + "/" + String(body[nameStart..<nameEnd])] = false
+        progress(1, 1)
+        return .init(data: Data("{\"success\":true,\"data\":{}}".utf8), statusCode: 200)
+    }
+
+    private func fixtureItem(_ path: String, directory: Bool) -> [String: Any] {
+        ["name": (path as NSString).lastPathComponent, "path": path, "isdir": directory,
+         "additional": ["size": 0, "perm": ["adv_right": ["write": true, "read": true]]]]
     }
 }
 #endif

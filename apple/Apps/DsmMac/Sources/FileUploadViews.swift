@@ -1,3 +1,4 @@
+import DsmFileFeature
 import DsmLocalization
 import Foundation
 import SwiftUI

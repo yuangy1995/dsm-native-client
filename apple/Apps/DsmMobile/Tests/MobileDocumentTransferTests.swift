@@ -435,9 +435,9 @@ final class MobileDocumentTransferTests: XCTestCase {
         XCTAssertEqual(MobileDocumentTransferController.safeLeafName("bad:\u{0000}name"), "badname")
     }
 
-    func test首版策略明确禁止后台多选和续传() {
+    func test文件多选已支持但后台和字节续传仍未启用() {
         XCTAssertFalse(MobileDocumentTransferPolicy.supportsBackgroundTransfer)
-        XCTAssertFalse(MobileDocumentTransferPolicy.supportsMultipleSelection)
+        XCTAssertTrue(MobileDocumentTransferPolicy.supportsMultipleSelection)
         XCTAssertFalse(MobileDocumentTransferPolicy.supportsResume)
     }
 

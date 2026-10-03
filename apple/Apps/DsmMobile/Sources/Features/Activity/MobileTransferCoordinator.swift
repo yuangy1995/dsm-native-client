@@ -1,8 +1,13 @@
 import DsmCore
 import Foundation
 
-/// 仅管理当前进程内、用户主动发起的前台单文件任务。
+/// 管理用户主动发起的传输；恢复时保留提交边界，未知上传绝不自动重放。
 actor MobileTransferCoordinator {
+    private let recoveryStore: MobileTransferRecoveryStore?
+    private var recoveryLoadFailed = false
+    private(set) var recoveryFailure = false
+    private var reviewingIDs = Set<UUID>()
+    private var lastProgressSave = Date.distantPast
     private let mutationCoordinator: MobileMutationCoordinator
     private var activeContexts: [UUID: String] = [:]
     private var taskContexts: [UUID: String] = [:]
@@ -12,8 +17,79 @@ actor MobileTransferCoordinator {
     private var executionGenerationsByID: [UUID: UUID] = [:]
     private var fileStationObservationTokensByProfile: [UUID: UUID] = [:]
 
-    init(mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator()) {
+    init(mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator(),
+         recoveryStore: MobileTransferRecoveryStore? = nil) {
         self.mutationCoordinator = mutationCoordinator
+        self.recoveryStore = recoveryStore
+        do {
+            for record in try recoveryStore?.load() ?? [] {
+                var task = record.task
+                switch task.status {
+                case .queued, .preparing: task.status = .paused
+                case .running, .cancelling:
+                    task.status = task.operation == .appUpload ? .resultNeedsReview : .cancelled
+                    if task.operation == .appUpload { task.retryPolicy = .none }
+                default: break
+                }
+                tasksByID[task.id] = task
+                requestsByID[task.id] = record.request
+                taskContexts[task.id] = record.context
+            }
+        } catch {
+            // 保留损坏或未来版本的原记录；不能当成空队列继续覆盖。
+            recoveryLoadFailed = true
+            recoveryFailure = true
+        }
+    }
+
+    var isPersistent: Bool { recoveryStore != nil }
+
+    func request(id: UUID) -> MobileTransferRequest? { requestsByID[id] }
+
+    func resume(_ id: UUID, using service: any MobileTransferServing) {
+        guard let task = tasksByID[id], task.canResume,
+              taskContexts[id] == activeContexts[task.profileID] else { return }
+        tasksByID[id]?.status = .queued
+        start(id, using: service)
+    }
+
+    func refreshUpload(_ id: UUID, using service: any MobileTransferServing) async {
+        guard let task = tasksByID[id], task.canRefreshUpload,
+              taskContexts[id] == activeContexts[task.profileID],
+              !reviewingIDs.contains(id), case .upload(let request) = requestsByID[id] else { return }
+        reviewingIDs.insert(id)
+        defer { reviewingIDs.remove(id) }
+        let result = try? await service.reviewUpload(request)
+        tasksByID[id]?.mutationResult = result
+        if result?.status == .confirmedSuccess { complete(id, status: .succeeded) }
+        else { _ = persist() }
+    }
+
+    /// 下载副本已由系统导出后，重试需重新准备目录；上传原件只由拥有者清理。
+    func forgetLocalArtifact(_ id: UUID) {
+        tasksByID[id]?.retryPolicy = .none
+        _ = persist()
+    }
+
+    @discardableResult
+    private func persist() -> Bool {
+        guard let recoveryStore else { return true }
+        guard !recoveryLoadFailed else { return false }
+        do {
+            let records = try tasksByID.values.filter { $0.source == .app }.map { task in
+                guard let context = taskContexts[task.id], let request = requestsByID[task.id],
+                      recoveryStore.ownsArtifact(request.localURL) else {
+                    throw MobileTransferRecoveryStore.StoreError.invalidRecord
+                }
+                return MobileTransferRecoveryStore.Record(context: context, task: task, request: request)
+            }
+            try recoveryStore.save(records)
+            recoveryFailure = false
+            return true
+        } catch {
+            recoveryFailure = true
+            return false
+        }
     }
 
     /// 同一配置改换账号时保留旧任务记录，但不向新账号展示或使用新会话重试。
@@ -185,7 +261,21 @@ actor MobileTransferCoordinator {
               taskContexts[id] == activeContexts[task.profileID],
               task.status == .queued,
               requestsByID[id] != nil else { return }
+        if tasksByID.values.contains(where: {
+            $0.id != id && $0.profileID == task.profileID && $0.stableTarget == task.stableTarget
+                && taskContexts[$0.id] == taskContexts[id] && $0.canRefreshUpload
+        }) {
+            tasksByID[id]?.status = .cancelledBeforeSubmission
+            tasksByID[id]?.retryPolicy = .none
+            _ = persist()
+            return
+        }
         tasksByID[id]?.status = .preparing
+        guard persist() else {
+            tasksByID[id]?.status = .cancelledBeforeSubmission
+            tasksByID[id]?.failureCategory = .localStorageFull
+            return
+        }
         let generation = UUID()
         executionGenerationsByID[id] = generation
         executionsByID[id] = Task { [weak self] in
@@ -196,7 +286,7 @@ actor MobileTransferCoordinator {
     func cancel(_ id: UUID) {
         guard var task = tasksByID[id], !task.status.isTerminal else { return }
         switch task.status {
-        case .queued, .preparing:
+        case .queued, .preparing, .paused:
             executionsByID[id]?.cancel()
             executionsByID[id] = nil
             executionGenerationsByID[id] = nil
@@ -207,10 +297,11 @@ actor MobileTransferCoordinator {
             task.status = .cancelling
             tasksByID[id] = task
             executionsByID[id]?.cancel()
-        case .paused, .cancelling, .succeeded, .failed, .cancelledBeforeSubmission, .cancelled,
+        case .cancelling, .succeeded, .failed, .cancelledBeforeSubmission, .cancelled,
              .resultNeedsReview:
             break
         }
+        _ = persist()
     }
 
     func retryFromBeginning(_ id: UUID, using service: any MobileTransferServing) async {
@@ -251,6 +342,7 @@ actor MobileTransferCoordinator {
     /// 本地源文件已被清理后，关闭从头重试，避免留下指向失效副本的入口。
     func disableRetry(_ id: UUID) {
         tasksByID[id]?.retryPolicy = .none
+        _ = persist()
     }
 
     func tasks(profileID: UUID) -> [MobileActivityTask] {
@@ -286,6 +378,10 @@ actor MobileTransferCoordinator {
             mutationResult: nil
         )
         requestsByID[id] = request
+        if !persist() {
+            tasksByID[id]?.status = .cancelledBeforeSubmission
+            tasksByID[id]?.failureCategory = .localStorageFull
+        }
         return id
     }
 
@@ -370,6 +466,11 @@ actor MobileTransferCoordinator {
         guard isCurrentExecution(id, generation: generation),
               tasksByID[id]?.status == .preparing else { return false }
         tasksByID[id]?.status = .running
+        guard persist() else {
+            tasksByID[id]?.status = .cancelledBeforeSubmission
+            tasksByID[id]?.failureCategory = .localStorageFull
+            return false
+        }
         return true
     }
 
@@ -386,6 +487,10 @@ actor MobileTransferCoordinator {
             completedBytes: max(0, completed),
             totalBytes: total.map { max(0, $0) }
         )
+        if Date().timeIntervalSince(lastProgressSave) >= 1 {
+            lastProgressSave = Date()
+            _ = persist()
+        }
     }
 
     private func handleExecutionError(
@@ -394,6 +499,7 @@ actor MobileTransferCoordinator {
         error: Error,
         service: any MobileTransferServing
     ) async {
+        if recoveryFailure && tasksByID[id]?.failureCategory == .localStorageFull { return }
         tasksByID[id]?.failureCategory = Self.failureCategory(for: error)
         let submitted = tasksByID[id]?.status == .running || tasksByID[id]?.status == .cancelling
         guard submitted else {
@@ -437,7 +543,7 @@ actor MobileTransferCoordinator {
             try? await service.reviewUpload(request)
         }.value
         tasksByID[id]?.mutationResult = review
-        complete(id, status: .resultNeedsReview)
+        complete(id, status: review?.status == .confirmedSuccess ? .succeeded : .resultNeedsReview)
     }
 
     private func complete(
@@ -453,6 +559,7 @@ actor MobileTransferCoordinator {
         if clearsProgress {
             tasksByID[id]?.progress = .zero
         }
+        _ = persist()
     }
 
     private static func failureCategory(for error: Error) -> AppErrorCategory {
