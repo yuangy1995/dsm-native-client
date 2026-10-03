@@ -578,3 +578,25 @@ NAS 任务按完整分页读取；页码、总量、漏项或重复异常保留�
 M2c 最终验证：XcodeGen 2.46.0 重复生成 Mobile/Mac 工程，摘要一致；`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过。两端分别执行 `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=<目标 ID>' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests`，均为 **550 项单元 + 10 项实际 UI 全通过**，无新增跳过。iPhone 目标沿用上列 ID，iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`；独立结果为 `apple/Apps/DsmMobile/build/m2c-archive-iphone-final.xcresult`、`apple/Apps/DsmMobile/build/m2c-archive-ipad-final.xcresult`。最终 iPhone 浅色、iPad 深色，结束后恢复 iPad 浅色；测试覆盖原有登录/语言、导航、文件五态/搜索、目录上传恢复及新增归档/NAS 控制流程。
 
 `python3 tools/localization/check_localization.py`（Apple 5630、Android 2188、Windows 3402）、`python3 tools/codex/check_documentation.py --strict-release`、`git diff --check` 均通过。新增归档 11 项、NAS 控制 6 项行为测试；既有 NAS 首页截断测试改为完整多页及同步验证。没有发布移动包或修改正式 macOS 1.0.15 标签。M2b 的 Repository Check/文档预检已成功，M2a/M2b Apple Build 仍在云端运行，不将本机结果代替云端状态。
+
+
+## 2026-10-04 移动 M2d 分享与文件收集
+
+已接入文件/目录混合多选创建、起止日期、密码和可写目录收集；全部分享的完整分页/筛选/多选、批量密码与日期编辑、撤销；单项访问对象、次数与收集信息编辑、实际成员分页选择、本机二维码、系统分享及短期本设备剪贴板。界面沿用共享 Repository 的结果方法，没有复制 NAS 请求。高级设置保留实际文件应用权限和成员核对；日期“保持”不覆盖原时间，设置密码需要收到成功回执与状态回读，不能仅凭已有密码标记推定成功。
+
+创建/编辑/撤销的未结束身份先保存在独立受保护的 `sharing-v1.json`，不含密码、会话、分享 URL 或内部路径映射；坏记录保留、保存失败零提交。账号上下文隔离，注销保留，删除连接仅移除该连接记录。完整全部列表确认链接已消失可解除未知撤销；未知创建/编辑保持相应目标限制并允许查看最新列表，不推测新密码或重放请求。普通创建前明确按钮确认，文件收集、移除密码、替换访问对象和撤销分别说明具体后果，不增加仪式式勾选。
+
+独立集成与只读对抗复核检查了完整原对象绑定、共享层写前/写后回读、超过 5000 项的全部分页、总量/重复异常拒绝、不以截断列表中的缺失推定删除、保存失败零写、未知提交跨重启防重复、账号切换迟到响应丢弃、密码只留当次内存及安全 URL。新增 20 项行为测试覆盖上述边界与混合结果；原 13 项分享测试保留。代码审查不代替真实 NAS 验收。
+
+共享 `swift test --package-path apple --jobs 4` 通过：2427 项 XCTest（172 项既有环境/UI 跳过）、0 失败，另 12 项 Swift Testing 通过；最终短标题资源修改后 `swift test --package-path apple --jobs 4 --filter DsmLocalizationTests` 的 6 项 Swift Testing 通过。Mac 工程 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过；未修改 Mac App 业务、未安装/启动或重新发布。
+
+第一轮新增测试暴露替身结果操作名不符合既有契约，已修正替身而未改变生产校验；高级设置 UI 改为重新打开后断言实际次数输入值。批量 UI 发现子目录顶部操作溢出，已将两端“上一级”移入“更多”、移除 Shell 重复刷新，保留文件页菜单刷新与下拉刷新。多选可包含目录供分享/压缩，目录批量复制/移动仍未实现，维持原限制并列入后续 M2；不能把该选择扩展当作其完成。修复后 iPhone 文件与文件夹混合批量创建实际 UI 通过，两项成功及可复制链接均有断言和截图。最终两端完整结果另行登记。
+
+`PENDING_USER_VALIDATION`：两种真机使用独立可丢弃目录与专用账号，验证密码/日期保留与更新、具名成员、访问次数、文件收集、批量部分失败/撤销、网络中断/重启，以及系统分享/剪贴板/二维码。预期每项结果绑定原链接，扩大访问前说明后果，不重放未知写，不向其他账号泄漏链接。实际 NAS 写入、接收端访问、VoiceOver/大字号/键盘未验证；只回传 App/OS/DSM/套件版本和脱敏步骤/错误类别，不回传密码、链接、主机或路径。Agent 未向外部收件人发送链接，全部 UI 网络为内存替身。
+
+M2a [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37149447568) 与 M2b [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37150909914) 已成功。M2c 的 Repository Check 和文档预检成功，Apple Build 在本次记录时仍在运行；本机验证不替代云端门禁。
+
+
+M2d 最终移动验证：XcodeGen 2.46.0 生成工程，`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过。测试使用 `xcodebuild test-without-building`、同工程/方案/构建目录及 `-parallel-testing-enabled NO`。iPhone 的 `m2d-sharing-iphone-final.xcresult` 中 570 项单元全部通过，原批量 UI 失败在工具栏修复后补回；随后 `-only-testing:DsmMobileUITests` 的 `m2d-sharing-iphone-ui-final.xcresult` **14 项实际 UI 全通过**。iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，深色 `m2d-sharing-ipad-final.xcresult` 中 570 项单元与 13 项 UI 通过，批量 UI 因分栏溢出失败；进一步将 iPad 的上一级也并入菜单后，`m2d-sharing-ipad-toolbar.xcresult` 的 **570 项单元 + 批量创建和高级搜索 2 项实际 UI 全通过**（分别使用 `-only-testing:DsmMobileTests` 和对应 `DsmMobileUITests/MobileWorkspaceUITests` 方法）。不将包含中间失败的结果包整体记为通过；两端 14 项界面用例均已有通过证据。
+
+已查看 iPhone 浅色批量结果、iPad 深色访问设置/批量结果和工具栏截图；iPad 测后恢复浅色。最终 `python3 tools/localization/check_localization.py`（Apple 5643、Android 2188、Windows 3402）、`python3 tools/codex/check_documentation.py --strict-release` 与 `git diff --check` 通过。M2e 权限仍是后续切片，未作为本次已验证功能或安装包发布。

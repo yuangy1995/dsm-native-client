@@ -67,7 +67,7 @@ extension MobileAppModel {
             cancelConnection()
         }
         profiles.removeAll { $0.id == profile.id }
-        fileShareLinkModel.purge(profileID: profile.id)
+        fileShareLinkModel.purge(profileID: profile.id, removeRecovery: true)
         purgeFileLocations(profileID: profile.id)
         Task { await photoLibraryModel.purge(profileID: profile.id) }
         chatModel.purge(profileID: profile.id)

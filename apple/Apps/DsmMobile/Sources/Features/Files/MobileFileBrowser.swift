@@ -185,7 +185,8 @@ struct MobileFileBrowser: View {
             recycleAction.activate(profileID: profileID, repository: repository)
             locations.activate(profileID: profileID, repository: repository)
             guard let profileID, let repository else { return }
-            model.fileShareLinkModel.activate(profileID: profileID, repository: repository)
+            model.fileShareLinkModel.activate(profileID: profileID, repository: repository,
+                context: model.activeProfile.map { MobileWorkspaceIdentity($0).storageIdentifier })
             await locations.loadIfNeeded(repository: repository)
             if browser.state.visibleKey == nil && !browser.state.hasLoadedStorage {
                 async let files: Void = browser.refresh(repository: repository)
@@ -628,12 +629,6 @@ struct MobileFileBrowser: View {
                     .accessibilityLabel(L10n.string("mobile.files.back"))
             }
         }
-        if !state.currentPath.isEmpty {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: goUp) { Image(systemName: "arrow.up") }
-                    .accessibilityLabel(L10n.string("ui.2bab713fde4ebc53"))
-            }
-        }
         ToolbarItemGroup(placement: .primaryAction) {
             sortAndFilterMenu.disabled(isSelectingCopyMoveItems)
             if horizontalSizeClass == .regular {
@@ -646,10 +641,19 @@ struct MobileFileBrowser: View {
                           systemImage: isSelectingCopyMoveItems ? "xmark" : "checkmark.circle")
                 }
                 .disabled(!isSelectingCopyMoveItems && selectableCopyMoveItems.isEmpty)
+                if !state.currentPath.isEmpty {
+                    Button(action: goUp) {
+                        Label(L10n.string("ui.2bab713fde4ebc53"), systemImage: "arrow.up")
+                    }
+                }
                 if horizontalSizeClass != .regular {
                     createFolderButton
                     uploadButton
                 }
+                Button {
+                    model.fileShareLinkModel.beginManagement()
+                } label: { Label(L10n.string("mobile.sharing.all"), systemImage: "link") }
+                .disabled(model.fileRepository == nil).accessibilityIdentifier("files.sharing.all")
                 Button(action: toggleLayout) {
                     Label(L10n.string(state.layout == .list ? "mobile.files.show-grid" : "mobile.files.show-list"),
                           systemImage: state.layout == .list ? "square.grid.2x2" : "list.bullet")
@@ -661,6 +665,7 @@ struct MobileFileBrowser: View {
                 Image(systemName: "ellipsis.circle").frame(width: 44, height: 44).contentShape(Rectangle())
             }
             .accessibilityLabel(L10n.string("workspace.actions.more"))
+            .accessibilityIdentifier("files.toolbar.more")
         }
     }
 
@@ -704,11 +709,18 @@ struct MobileFileBrowser: View {
             .font(.callout)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button {
-                compressionSelection = .init(items: selectedCopyMoveItems, destination: state.currentPath); endCopyMoveSelection()
-            } label: {
-                Label(L10n.string("mobile.archive.compress"), systemImage: "archivebox")
-            }.disabled(selectedCopyMoveItems.isEmpty || !canCreateFolder || state.location.source.isReadOnlyLocation)
+            Menu {
+                Button {
+                    model.fileShareLinkModel.begin(for: selectedCopyMoveItems); endCopyMoveSelection()
+                } label: { Label(L10n.string("mobile.files.share-link.action.create"), systemImage: "link.badge.plus") }
+                    .disabled(selectedCopyMoveItems.isEmpty || state.location.source.isReadOnlyLocation)
+                Button {
+                    compressionSelection = .init(items: selectedCopyMoveItems, destination: state.currentPath); endCopyMoveSelection()
+                } label: { Label(L10n.string("mobile.archive.compress"), systemImage: "archivebox") }
+                    .disabled(selectedCopyMoveItems.isEmpty || !canCreateFolder || state.location.source.isReadOnlyLocation)
+            } label: { Image(systemName: "ellipsis").frame(minWidth: 24, minHeight: 24) }
+                .accessibilityLabel(L10n.string("workspace.actions.more"))
+                .accessibilityIdentifier("files.batch.more")
             Button {
                 beginBatchCopyMove(.copy)
             } label: {
@@ -717,7 +729,7 @@ struct MobileFileBrowser: View {
                     systemImage: "doc.on.doc"
                 )
             }
-            .disabled(selectedCopyMoveItems.isEmpty)
+            .disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canBatchCopyMove))
             Button {
                 beginBatchCopyMove(.move)
             } label: {
@@ -726,7 +738,7 @@ struct MobileFileBrowser: View {
                     systemImage: "folder"
                 )
             }
-            .disabled(selectedCopyMoveItems.isEmpty)
+            .disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canBatchCopyMove))
         }
         if horizontal {
             HStack(spacing: 12) { content }
@@ -741,7 +753,7 @@ struct MobileFileBrowser: View {
                 ? "checkmark.circle.fill"
                 : "circle"
         )
-        .foregroundStyle(canBatchCopyMove(item) ? Color.accentColor : Color.secondary)
+        .foregroundStyle(canCopyMove(item) ? Color.accentColor : Color.secondary)
         .frame(width: 32, height: 44)
         .accessibilityHidden(true)
     }
@@ -1107,7 +1119,8 @@ struct MobileFileBrowser: View {
     }
 
     private var selectableCopyMoveItems: [FileItem] {
-        state.page.items.filter(canBatchCopyMove)
+        // 选择服务于分享和压缩，也包含目录；批量复制/移动仍单独遵守既有文件契约。
+        state.page.items.filter(canCopyMove)
     }
 
     private var selectedCopyMoveItems: [FileItem] {
@@ -1128,7 +1141,7 @@ struct MobileFileBrowser: View {
     }
 
     private func canSelectCopyMoveItem(_ item: FileItem) -> Bool {
-        canBatchCopyMove(item) && (
+        canCopyMove(item) && (
             selectedCopyMovePaths.contains(item.path) ||
                 selectedCopyMovePaths.count < MobileFileCopyMoveModel.maximumBatchCount
         )
@@ -1139,7 +1152,7 @@ struct MobileFileBrowser: View {
         if selectedCopyMovePaths.contains(item.path) {
             return L10n.string("mobile.files.batch-selection.selected")
         }
-        if !canBatchCopyMove(item) {
+        if !canCopyMove(item) {
             return L10n.string("mobile.files.batch-selection.unavailable")
         }
         if selectedCopyMovePaths.count >= MobileFileCopyMoveModel.maximumBatchCount {
@@ -1188,7 +1201,7 @@ struct MobileFileBrowser: View {
 
     private func beginBatchCopyMove(_ operation: FileCopyMoveOperation) {
         let items = selectedCopyMoveItems
-        guard !items.isEmpty, let repository = model.fileRepository else { return }
+        guard !items.isEmpty, items.allSatisfy(canBatchCopyMove), let repository = model.fileRepository else { return }
         prepareForMutation()
         copyMove.begin(
             operation: operation,

@@ -36,8 +36,8 @@ final class MobileFileShareLinkPresentationTests: XCTestCase {
         XCTAssertTrue(view.contains("mobile.files.share-link.delete.confirm.title"))
         XCTAssertTrue(model.contains("state.phase == .confirmedSuccess"))
         XCTAssertTrue(model.contains("confirmedLink"))
-        XCTAssertTrue(model.contains("deleteShareLinks(ids: [link.id])"))
-        XCTAssertTrue(model.contains("loadManagedLinkSnapshot(targetPath: targetPath, repository: repository)"))
+        XCTAssertTrue(model.contains("repository.deleteShareLinkResult(link)"))
+        XCTAssertTrue(model.contains("state.managedLinks.contains(link)"))
         XCTAssertFalse(model.contains("clear_invalid"))
         XCTAssertFalse(model.contains("download("))
     }
@@ -45,7 +45,7 @@ final class MobileFileShareLinkPresentationTests: XCTestCase {
     func test到期日期严格解析后本地化且无原始字符串直出() throws {
         let source = try Self.source("MobileFileShareLinkView.swift")
         XCTAssertTrue(source.contains("FileShareLinkCalendarDate(iso8601:"))
-        XCTAssertTrue(source.contains("date.formatted(.dateTime.year().month().day())"))
+        XCTAssertTrue(source.contains("date.formatted(.dateTime.year().month().day().locale(L10n.locale))"))
         XCTAssertFalse(source.contains("expires\", expiresAt"))
     }
 

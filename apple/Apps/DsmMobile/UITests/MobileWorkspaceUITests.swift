@@ -173,6 +173,118 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No transfer tasks yet"].waitForExistence(timeout: 8))
     }
 
+    func test文件多选可批量创建并保留逐项链接() {
+        let app = launchFixture(state: "sharing")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
+        let toolbar = element("files.toolbar.more", in: app)
+        let toolbarExists = toolbar.waitForExistence(timeout: 5)
+        attachScreenshot(app, name: "Batch selection toolbar")
+        XCTAssertTrue(toolbarExists)
+        toolbar.tap(); app.buttons["Select Files"].tap()
+        app.staticTexts["Sample document.txt"].tap(); app.staticTexts["Inbox"].tap()
+        let more = element("files.batch.more", in: app)
+        XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
+        app.buttons["Create sharing link"].tap()
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].exists); XCTAssertTrue(app.staticTexts["Inbox"].exists)
+        let submit = element("sharing.create.submit", in: app)
+        for _ in 0..<3 where !submit.isHittable { app.swipeUp() }
+        XCTAssertTrue(submit.isHittable); submit.tap()
+        XCTAssertTrue(element("sharing.results", in: app).waitForExistence(timeout: 8))
+        XCTAssertEqual(app.staticTexts.matching(identifier: "Completed").count, 2)
+        XCTAssertTrue(app.buttons["Copy selected links"].exists)
+        attachScreenshot(app, name: "Batch sharing links created")
+    }
+
+    func test分享创建文件收集后可展示二维码和返回管理() {
+        let app = launchFixture(state: "sharing")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        app.staticTexts["Sample folder"].tap()
+        let actions = app.buttons["Actions for Inbox"]
+        XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap()
+        app.buttons["Create sharing link"].tap()
+        let collection = app.switches["Create a file request link"]
+        XCTAssertTrue(collection.waitForExistence(timeout: 5))
+        collection.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        let name = app.textFields["Collection name"]
+        XCTAssertTrue(name.exists); name.tap(); name.typeText("Sample collection")
+        let submit = element("sharing.create.submit", in: app)
+        for _ in 0..<4 where !submit.isHittable { app.swipeUp() }
+        XCTAssertTrue(submit.isHittable); submit.tap()
+        let confirm = app.alerts.buttons["Create link"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+        XCTAssertTrue(app.staticTexts["Link ready"].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "File collection link ready")
+        app.buttons["Show QR code"].tap()
+        XCTAssertTrue(app.images["Show QR code"].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Local sharing QR code")
+    }
+
+    func test全部分享链接编辑密码并撤销原链接() {
+        let app = launchFixture(state: "sharing")
+        defer { app.terminate() }
+        openAllSharing(app)
+        let actions = element("sharing.row.more.fixture-existing", in: app)
+        XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap()
+        app.buttons["Edit shared links"].tap()
+        let mode = element("sharing.edit.passwordMode", in: app)
+        XCTAssertTrue(mode.waitForExistence(timeout: 5)); mode.tap()
+        app.buttons["Set a new password"].tap()
+        let password = element("sharing.edit.password", in: app)
+        XCTAssertTrue(password.waitForExistence(timeout: 5)); password.tap(); password.typeText("synthetic-only")
+        element("sharing.edit.save", in: app).tap()
+        XCTAssertTrue(element("sharing.results", in: app).waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Completed"].exists)
+        attachScreenshot(app, name: "Sharing password updated")
+        app.buttons["Back to links"].tap()
+        XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap()
+        app.buttons["Cancel sharing"].tap()
+        let confirm = app.buttons["Cancel sharing"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+        XCTAssertTrue(app.buttons["Back to links"].waitForExistence(timeout: 8)); app.buttons["Back to links"].tap()
+        XCTAssertFalse(actions.exists)
+        XCTAssertTrue(element("sharing.row.more.fixture-folder", in: app).exists)
+        attachScreenshot(app, name: "Sharing original link removed")
+    }
+
+    func test分享访问次数可编辑并保留原链接() {
+        let app = launchFixture(state: "sharing")
+        defer { app.terminate() }
+        openAllSharing(app)
+        let actions = element("sharing.row.more.fixture-existing", in: app)
+        XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap()
+        app.buttons["Access and collection settings"].tap()
+        let audience = element("sharing.access.audience", in: app)
+        XCTAssertTrue(audience.waitForExistence(timeout: 5)); audience.tap()
+        app.buttons["Selected users and groups"].tap()
+        app.buttons["Choose users and groups"].tap()
+        XCTAssertTrue(app.buttons["Sample member"].waitForExistence(timeout: 5)); app.buttons["Sample member"].tap()
+        app.buttons["Done"].tap()
+        let limit = app.switches["Change access limit"]
+        XCTAssertTrue(limit.waitForExistence(timeout: 5)); limit.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        let count = app.textFields["Access count"]
+        XCTAssertTrue(count.exists); count.tap(); count.typeText(XCUIKeyboardKey.delete.rawValue + "5")
+        element("sharing.access.save", in: app).tap()
+        XCTAssertTrue(app.alerts.buttons["Save changes"].waitForExistence(timeout: 5)); app.alerts.buttons["Save changes"].tap()
+        XCTAssertTrue(element("sharing.results", in: app).waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Completed"].exists)
+        app.buttons["Back to links"].tap()
+        XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap(); app.buttons["Access and collection settings"].tap()
+        XCTAssertTrue(limit.waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Sharing access limit saved")
+        limit.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertEqual(count.value as? String, "5")
+    }
+
+    private func openAllSharing(_ app: XCUIApplication) {
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        element("files.toolbar.more", in: app).tap()
+        element("files.sharing.all", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 8))
+    }
+
     private func launchFixture(state: String = "content") -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()

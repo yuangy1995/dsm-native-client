@@ -6,6 +6,7 @@ enum MobileFileShareLinkExpiration: Int, CaseIterable, Identifiable, Sendable {
     case sevenDays = 7
     case thirtyDays = 30
     case ninetyDays = 90
+    case custom = -1
 
     var id: Int { rawValue }
 
@@ -15,6 +16,7 @@ enum MobileFileShareLinkExpiration: Int, CaseIterable, Identifiable, Sendable {
         case .sevenDays: "mobile.files.share-link.expiration.7-days"
         case .thirtyDays: "mobile.files.share-link.expiration.30-days"
         case .ninetyDays: "mobile.files.share-link.expiration.90-days"
+        case .custom: "files.sharing.customDate"
         }
     }
 }
@@ -35,6 +37,15 @@ enum MobileFileShareLinkPhase: Equatable, Sendable {
     case deletionConfirmed
     case deletionReviewRequired
     case deletionFailure
+    case managing
+    case batchResults
+}
+
+struct MobileFileShareItemResult: Identifiable, Equatable, Sendable {
+    let id: String
+    let name: String
+    let status: MutationResultStatus
+    let link: FileShareLink?
 }
 
 enum MobileFileShareLinkFailure: Equatable, Sendable {
@@ -43,6 +54,7 @@ enum MobileFileShareLinkFailure: Equatable, Sendable {
     case changed
     case unsupported
     case duplicate
+    case recovery
 }
 
 enum MobileFileShareLinkDeletionFailure: Equatable, Sendable {
@@ -51,6 +63,7 @@ enum MobileFileShareLinkDeletionFailure: Equatable, Sendable {
     case changed
     case unsupported
     case duplicate
+    case recovery
 }
 
 struct MobileFileSharePresentation: Identifiable, Equatable, Sendable {
@@ -62,8 +75,17 @@ struct MobileFileShareLinkState: Equatable, Sendable {
     var isPresented = false
     var phase: MobileFileShareLinkPhase = .form
     var target: FileItem?
+    var targets: [FileItem] = []
     var password = ""
     var expiration: MobileFileShareLinkExpiration = .never
+    var availableOn: Date?
+    var customExpiration = Date()
+    var isFileRequest = false
+    var requestName = ""
+    var requestMessage = ""
+    var advancedAccess: FileStationAdvancedAccess?
+    var itemResults: [MobileFileShareItemResult] = []
+    var blockedLinkIDs: Set<String> = []
     var confirmedLink: FileShareLink?
     var failure: MobileFileShareLinkFailure?
     var canRetry = false

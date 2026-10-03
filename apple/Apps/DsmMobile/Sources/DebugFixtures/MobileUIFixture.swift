@@ -12,7 +12,7 @@ enum MobileUIFixture {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
-            let uploadFixture = ["upload", "archive"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = ["upload", "archive", "sharing"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -21,7 +21,7 @@ enum MobileUIFixture {
                 transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
-            let versions = [DsmAPIName.fileStationList: 2, DsmAPIName.fileStationInfo: 2, DsmAPIName.fileStationSearch: 2,
+            let versions = [DsmAPIName.fileStationSharing: 3, DsmAPIName.desktopInitData: 1, DsmAPIName.fileStationUserGroup: 1, DsmAPIName.fileStationList: 2, DsmAPIName.fileStationInfo: 2, DsmAPIName.fileStationSearch: 2,
                             DsmAPIName.fileStationBackgroundTask: 3, DsmAPIName.fileStationCompress: 3, DsmAPIName.fileStationExtract: 2,
                             DsmAPIName.fileStationUpload: 3, DsmAPIName.fileStationCreateFolder: 2, DsmAPIName.fileStationCheckPermission: 3,
                             DsmAPIName.downloadStationTask: 3, DsmAPIName.downloadStationStatistic: 1,
@@ -83,6 +83,14 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
     private var uploaded: [String: Bool] = [:]
     private var stopped = false
     private var cleared = false
+    private var sharing: [[String: Any]] = [FixtureTransport.share("fixture-existing", path: "/fixture/Sample document.txt"),
+                                           FixtureTransport.share("fixture-folder", path: "/fixture/Inbox")]
+    private static func share(_ id: String, path: String) -> [String: Any] {
+        ["id": id, "name": (path as NSString).lastPathComponent, "path": path, "url": "https://share.example.invalid/" + id,
+         "has_password": false, "date_available": "0", "date_expired": "0", "status": "valid", "protect_type": "none",
+         "protect_users": [String](), "protect_groups": [String](), "expire_times": 0, "enable_upload": false,
+         "project_name": "SYNO.SDS.App.FileStation3.Instance", "request_name": "", "request_info": ""]
+    }
 
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         if pageState == "loading" { try await Task.sleep(for: .seconds(60)) }
@@ -93,6 +101,48 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
         let method = fields.first { $0.name == "method" }?.value ?? ""
         let result: [String: Any]
         switch (api, method) {
+        case (DsmAPIName.desktopInitData, "get_user_service"):
+            result = ["AppPrivilege": ["SYNO.SDS.App.FileStation3.Instance": pageState == "sharing"], "Session": ["is_admin": false]]
+        case (DsmAPIName.fileStationUserGroup, "list_all"):
+            result = ["owners": [["name": "Sample member", "type": "user"], ["name": "Sample group", "type": "group"]], "total": 2]
+        case (DsmAPIName.fileStationSharing, "list") where pageState == "sharing":
+            result = ["links": sharing, "offset": 0, "total": sharing.count]
+        case (DsmAPIName.fileStationSharing, "create") where pageState == "sharing":
+            let value = fields.first { $0.name == "path" }?.value ?? "[]"
+            guard let path = try JSONDecoder().decode([String].self, from: Data(value.utf8)).first else { throw URLError(.badURL) }
+            let id = "fixture-created-" + String(sharing.count)
+            var link = Self.share(id, path: path)
+            for key in ["date_available", "date_expired"] {
+                if let value = fields.first(where: { $0.name == key })?.value { link[key] = value }
+            }
+            if fields.contains(where: { $0.name == "password" && $0.value?.isEmpty == false }) { link["has_password"] = true; link["protect_type"] = "password" }
+            if fields.contains(where: { $0.name == "file_request" && $0.value == "true" }) {
+                link["enable_upload"] = true; link["project_name"] = "SYNO.SDS.App.SharingUpload.Application"
+                link["request_name"] = fields.first { $0.name == "request_name" }?.value ?? ""
+                link["request_info"] = fields.first { $0.name == "request_info" }?.value ?? ""
+            }
+            sharing.append(link); result = ["links": [["id": id, "path": path, "error": 0]]]
+        case (DsmAPIName.fileStationSharing, "edit") where pageState == "sharing",
+             (DsmAPIName.fileStationSharing, "delete") where pageState == "sharing":
+            let value = fields.first { $0.name == "id" }?.value ?? "[]"
+            let ids = try JSONDecoder().decode([String].self, from: Data(value.utf8))
+            if method == "delete" { sharing.removeAll { ids.contains($0["id"] as? String ?? "") } }
+            else {
+                for index in sharing.indices where ids.contains(sharing[index]["id"] as? String ?? "") {
+                    for key in ["date_available", "date_expired", "protect_type", "request_name", "request_info"] {
+                        if let value = fields.first(where: { $0.name == key })?.value { sharing[index][key] = value }
+                    }
+                    if let password = fields.first(where: { $0.name == "password" })?.value {
+                        sharing[index]["has_password"] = !password.isEmpty; sharing[index]["protect_type"] = password.isEmpty ? "none" : "password"
+                    }
+                    if fields.contains(where: { $0.name == "protect_type" }) { sharing[index]["has_password"] = false }
+                    for key in ["protect_users", "protect_groups"] {
+                        if let value = fields.first(where: { $0.name == key })?.value { sharing[index][key] = try JSONDecoder().decode([String].self, from: Data(value.utf8)) }
+                    }
+                    if let value = fields.first(where: { $0.name == "expire_times" })?.value { sharing[index]["expire_times"] = Int(value) }
+                }
+            }
+            result = [:]
         case (DsmAPIName.fileStationList, "list_share"):
             let shares: [[String: Any]] = pageState == "empty" ? [] : [["name": "Sample folder", "path": "/fixture", "isdir": true]]
             result = ["shares": shares, "offset": 0, "total": shares.count]
@@ -108,9 +158,12 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
             let value = fields.first { $0.name == "path" }?.value ?? "[]"
             let paths = try JSONDecoder().decode([String].self, from: Data(value.utf8))
             result = ["files": paths.compactMap { path -> [String: Any]? in
-                guard path == "/fixture" || uploaded[path] != nil || pageState == "archive" && path == "/fixture/Sample archive.zip" else { return nil }
-                return fixtureItem(path, directory: uploaded[path] ?? (path == "/fixture"))
+                guard path == "/fixture" || uploaded[path] != nil || pageState == "archive" && path == "/fixture/Sample archive.zip"
+                    || pageState == "sharing" && ["/fixture/Sample document.txt", "/fixture/Inbox"].contains(path) else { return nil }
+                return fixtureItem(path, directory: uploaded[path] ?? (path == "/fixture" || path == "/fixture/Inbox"))
             }]
+        case (DsmAPIName.fileStationList, "list") where pageState == "sharing":
+            result = ["files": [fixtureItem("/fixture/Sample document.txt", directory: false), fixtureItem("/fixture/Inbox", directory: true)], "offset": 0, "total": 2]
         case (DsmAPIName.fileStationList, "list") where pageState == "upload":
             let path = fields.first { $0.name == "folder_path" }?.value ?? ""
             let children = uploaded.filter { ($0.key as NSString).deletingLastPathComponent == path }

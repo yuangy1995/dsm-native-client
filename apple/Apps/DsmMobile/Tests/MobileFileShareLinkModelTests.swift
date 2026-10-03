@@ -420,7 +420,7 @@ final class MobileFileShareLinkModelTests: XCTestCase {
         )
     }
 
-    private static func outcome(
+    fileprivate static func outcome(
         _ status: MutationResultStatus,
         link: FileShareLink? = nil
     ) -> FileShareLinkCreateOutcome {
@@ -448,6 +448,7 @@ final class MobileFileShareLinkModelTests: XCTestCase {
 private final class ClipboardProbe: MobileClipboardWriting {
     private(set) var urls: [URL] = []
     func copySensitiveURL(_ url: URL) { urls.append(url) }
+    func copySensitiveURLs(_ urls: [URL]) { self.urls.append(contentsOf: urls) }
 }
 
 private actor ShareLinkRepositoryStub: MobileFileShareLinkServing {
@@ -509,15 +510,22 @@ private actor ShareLinkRepositoryStub: MobileFileShareLinkServing {
 
     func requests() -> [FileShareLinkCreateRequest] { recordedRequests }
 
-    func deleteShareLinks(ids: [String]) async throws {
-        recordedDeleteIDs.append(ids)
-        guard !deleteReplies.isEmpty else { return }
-        switch deleteReplies.removeFirst() {
-        case .success:
-            return
-        case .appError(let error):
-            throw error
+    func loadFileStationAdvancedAccess() async throws -> FileStationAdvancedAccess { .init(isAdministrator: false, writesEnabled: false) }
+    func listFileStationPrincipals(prefix: String, offset: Int, limit: Int) async throws -> FileStationPrincipalPage {
+        .init(items: [], total: 0, nextOffset: 0)
+    }
+    func editShareLink(_ request: FileShareLinkEditRequest) async throws -> FileShareLinkEditOutcome {
+        .init(result: await MobileFileShareLinkModelTests.outcome(.unsupported).result, confirmedLink: nil)
+    }
+    func deleteShareLinkResult(_ link: FileShareLink) async throws -> MutationResult {
+        let before = try await listShareLinksPage(offset: 0, limit: 500)
+        guard before.links.contains(link), !before.isTruncated else { return await MobileFileShareLinkModelTests.outcome(.confirmedFailure).result }
+        recordedDeleteIDs.append([link.id])
+        if !deleteReplies.isEmpty, case .appError = deleteReplies.removeFirst() {
+            return await MobileFileShareLinkModelTests.outcome(.submittedButUnverified).result
         }
+        let after = try await listShareLinksPage(offset: 0, limit: 500)
+        return await MobileFileShareLinkModelTests.outcome(after.links.contains(link) || after.isTruncated ? .submittedButUnverified : .confirmedSuccess).result
     }
 
     func deletedIDs() -> [[String]] { recordedDeleteIDs }

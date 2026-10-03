@@ -125,7 +125,8 @@ final class MobileAppModel {
         self.quickConnectResolver = quickConnectResolver
         self.mutationCoordinator = mutationCoordinator
         self.fileShareLinkModel = MobileFileShareLinkModel(
-            mutationCoordinator: mutationCoordinator
+            mutationCoordinator: mutationCoordinator,
+            rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Sharing", isDirectory: true)
         )
         self.settingsStore = MobileSettingsStore(defaults: defaults)
         let transferCoordinator = MobileTransferCoordinator(
