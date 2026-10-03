@@ -3,6 +3,7 @@
 
 import plistlib
 import re
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -97,7 +98,7 @@ RUN_AFTER_PACKAGE=1
     def test_local_exception_is_separate_from_formal_signing(self):
         key = "com.apple.security.cs.disable-library-validation"
         local = ROOT / "apple/Apps/DsmMac/SupportingFiles/DsmMacLocalTest.entitlements"
-        self.assertEqual(plistlib.loads(local.read_bytes()), {key: True})
+        self.assertEqual(plistlib.loads(local.read_bytes()), {key: True, "com.apple.security.device.audio-input": True})
         for target in ["DsmMac", "DsmFileProvider"]:
             formal = ROOT / f"apple/Apps/DsmMac/SupportingFiles/{target}.entitlements"
             self.assertNotIn(key, plistlib.loads(formal.read_bytes()))
@@ -107,6 +108,33 @@ RUN_AFTER_PACKAGE=1
         self.assertIn("sign_macos_local_test.sh", local_branch)
         self.assertNotIn("sign_macos_local_test.sh", formal_branch)
         self.assertNotIn("DsmMacLocalTest.entitlements", formal_branch)
+
+    def test_local_entitlement_gate_rejects_extra_runtime_exceptions(self):
+        source = (ROOT / "tools/release/verify_macos_local_test.sh").read_text()
+        line = next(line for line in source.splitlines() if line.startswith("python3 -c "))
+        command = shlex.split(line)[:3]
+        expected = {"com.apple.security.cs.disable-library-validation": True, "com.apple.security.device.audio-input": True}
+        for candidate, accepted in [(expected, True),
+                                    ({**expected, "com.apple.security.cs.allow-unsigned-executable-memory": True}, False),
+                                    ({**expected, "com.apple.security.cs.disable-executable-page-protection": True}, False),
+                                    ({**expected, "com.apple.security.device.audio-input": False}, False)]:
+            with tempfile.TemporaryFile() as source:
+                source.write(plistlib.dumps(candidate)); source.seek(0)
+                result = subprocess.run(command, stdin=source, capture_output=True)
+            self.assertEqual(result.returncode == 0, accepted, result.stderr.decode())
+
+    def test_microphone_permission_and_privacy_text_stay_in_main_app(self):
+        supporting = ROOT / "apple/Apps/DsmMac/SupportingFiles"
+        for target in ["DsmMac", "DsmMacLocalTest"]:
+            entitlements = plistlib.loads((supporting / f"{target}.entitlements").read_bytes())
+            self.assertIs(entitlements["com.apple.security.device.audio-input"], True)
+        provider = plistlib.loads((supporting / "DsmFileProvider.entitlements").read_bytes())
+        self.assertNotIn("com.apple.security.device.audio-input", provider)
+        self.assertTrue(plistlib.loads((supporting / "Info.plist").read_bytes())["NSMicrophoneUsageDescription"])
+        for base in [ROOT / "apple/Apps/DsmMac/Resources", supporting / "LocalTest"]:
+            for locale in ["en", "zh-Hans"]:
+                data = subprocess.check_output(["plutil", "-convert", "xml1", "-o", "-", str(base / f"{locale}.lproj/InfoPlist.strings")])
+                self.assertTrue(plistlib.loads(data)["NSMicrophoneUsageDescription"])
 
     def test_formal_gate_rejects_local_exception_in_either_executable(self):
         source = (ROOT / "tools/release/verify_macos_distribution.sh").read_text()
@@ -147,7 +175,7 @@ RUN_AFTER_PACKAGE=1
             self.assertEqual(system.returncode, 0)
             before = subprocess.run([str(executable), str(library)], capture_output=True, text=True)
             # GitHub 的 macOS 15 ARM64 环境在添加例外前也可加载，不能把必须拒绝当成跨环境保证。
-            # 无论基线是否拒绝，后续的实际加载、runtime 和唯一权限检查都必须执行。
+            # 无论基线是否拒绝，后续的实际加载、runtime 和精确权限清单检查都必须执行。
             if before.returncode == 0:
                 self.assertIn("library loaded", before.stdout)
             else:
@@ -161,7 +189,7 @@ RUN_AFTER_PACKAGE=1
             self.assertIn("runtime", signing.stderr)
             self.assertIn("Signature=adhoc", signing.stderr)
             entitlements = subprocess.check_output(["codesign", "-d", "--entitlements", "-", "--xml", str(app)], stderr=subprocess.DEVNULL)
-            self.assertEqual(plistlib.loads(entitlements), {"com.apple.security.cs.disable-library-validation": True})
+            self.assertEqual(plistlib.loads(entitlements), {"com.apple.security.cs.disable-library-validation": True, "com.apple.security.device.audio-input": True})
 
     def test_updater_architecture_command_accepts_real_binary_and_rejects_missing_slice(self):
         source = (ROOT / "tools/release/verify_macos_updater.sh").read_text()

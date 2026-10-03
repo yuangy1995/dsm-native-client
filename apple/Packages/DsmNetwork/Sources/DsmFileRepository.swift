@@ -399,7 +399,9 @@ private struct FileAdditionalPayload: Decodable, Sendable {
         time = try? container.decodeIfPresent(FileTimePayload.self, forKey: .time)
         owner = try? container.decodeIfPresent(FileOwnerPayload.self, forKey: .owner)
         perm = try? container.decodeIfPresent(FilePermissionPayload.self, forKey: .perm)
-        mountPointType = try? container.decodeIfPresent(String.self, forKey: .mountPointType)
+        // File Station 对普通本地项目返回空字符串，不能据此误判成特殊挂载而禁用写入。
+        let rawMountPointType = try? container.decodeIfPresent(String.self, forKey: .mountPointType)
+        mountPointType = rawMountPointType.flatMap { $0.isEmpty ? nil : $0 }
         realPath = try? container.decodeIfPresent(String.self, forKey: .realPath)
         volumeStatus = try? container.decodeIfPresent(VolumeStatusPayload.self, forKey: .volumeStatus)
     }

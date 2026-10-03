@@ -26,15 +26,30 @@ public actor DsmChatRepository: ChatRepository {
     private var terminalGroupConversationOutcomes: [UUID: ChatConversationCreateOutcome] = [:]
     private var isCreatingConversation = false
     private var conversationCreateWaiters: [CheckedContinuation<Void, Never>] = []
+    private var pendingPollCreations: [UUID: PendingChatPollCreation] = [:]
     private var completedReminders: [UUID: ChatReminder] = [:]
     private var completedReminderDeletions: Set<UUID> = []
     private var completedScheduledMessages: [UUID: ChatScheduledMessage] = [:]
+    private var pendingScheduledMessages: [UUID: PendingChatSchedule] = [:]
+    private var pendingReminders: [UUID: (conversationID: String, messageID: String, remindAt: Date)] = [:]
     private var completedScheduledMessageDeletions: Set<UUID> = []
     private var completedMessageDeletions: Set<UUID> = []
     private var completedConversationClosures: Set<UUID> = []
     private var completedMessageForwards: Set<UUID> = []
+    private var pendingMessageForwards: [UUID: PendingChatForward] = [:]
+    private var forwardingRequestIDs: Set<UUID> = []
+    private var schedulingRequestIDs: Set<UUID> = []
     private var completedPinChanges: Set<UUID> = []
+    private struct PendingEdit: Equatable { let original: ChatMessage; let text: String }
+    private struct PendingVote: Equatable { let message: ChatMessage; let choices: Set<String> }
+    private var pendingEdits: [UUID: PendingEdit] = [:]
+    private var pendingVotes: [UUID: PendingVote] = [:]
+    private var completedEdits: [UUID: ChatMessage] = [:]
+    private var completedVotes: [UUID: ChatMessage] = [:]
+    private var mutatingMessageIDs: Set<String> = []
     private var knownUsersByID: [String: ChatUser] = [:]
+    private var knownMessagesByID: [String: ChatMessage] = [:]
+    private var knownConversationsByID: [String: ChatConversation] = [:]
     private var cachedCurrentUserID: String?
     private let currentAccountName: String?
     private var avatarCache: [String: Data] = [:]
@@ -91,7 +106,8 @@ public actor DsmChatRepository: ChatRepository {
               hasCapability(DsmAPIName.chatUser) else {
             return ChatAvailability(status: .unavailable)
         }
-        var features: Set<ChatFeature> = [.deleteOwnMessage, .closeConversation]
+        var features: Set<ChatFeature> = []
+        if supportsVersion(DsmAPIName.chatChannel, version: 5) { features.insert(.closeConversation) }
         if supportsVersion(DsmAPIName.chatChannelAnonymous, version: 2) {
             features.insert(.directConversation)
         }
@@ -99,28 +115,34 @@ public actor DsmChatRepository: ChatRepository {
            supportsVersion(DsmAPIName.chatChannelMember, version: 1) {
             features.insert(.groupConversation)
         }
-        if hasCapability(DsmAPIName.chatPostReminder) {
+        if supportsVersion(DsmAPIName.chatPostReminder, version: 1) {
             features.insert(.reminder)
             features.insert(.reminderManagement)
         }
-        if hasCapability(DsmAPIName.chatPostVote) {
+        if supportsVersion(DsmAPIName.chatPostVote, version: 1) {
             features.insert(.poll)
         }
-        if hasCapability(DsmAPIName.chatPostSchedule) {
+        if supportsVersion(DsmAPIName.chatPostSchedule, version: 1) {
             features.insert(.scheduledMessage)
         }
         if supportsVersion(DsmAPIName.chatPost, version: 5) {
-            features.formUnion([.textMessage, .emoji, .messageForward, .pinnedMessages])
+            features.formUnion([.textMessage, .emoji, .messageForward, .pinnedMessages, .deleteOwnMessage, .messageSearch])
         }
-        if hasCapability(DsmAPIName.chatChannelMember) {
+        if supportsVersion(DsmAPIName.chatChannelMember, version: 1) {
             features.insert(.groupMembers)
         }
         if supportsAttachmentUpload {
-            features.formUnion([.imageAttachment, .videoAttachment, .fileAttachment])
+            features.formUnion([.imageAttachment, .videoAttachment, .fileAttachment, .voiceMessage])
         }
-        if hasCapability(DsmAPIName.chatPostFile) {
+        if supportsVersion(DsmAPIName.chatPostFile, version: 2) {
             features.insert(.attachmentDownload)
         }
+        if supportsVersion(DsmAPIName.chatPost, version: 5) { features.insert(.threadedReplies) }
+        if supportsVersion(DsmAPIName.chatPost, version: 8), supportsVersion(DsmAPIName.chatAdminSetting, version: 3) {
+            features.insert(.messageEditing)
+        }
+        if supportsVersion(DsmAPIName.chatPostVote, version: 1) { features.insert(.pollVoting) }
+        if supportsVersion(DsmAPIName.chatChannel, version: 2) { features.insert(.readSynchronization) }
         return ChatAvailability(status: .available, supportedFeatures: features)
     }
 
@@ -134,7 +156,7 @@ public actor DsmChatRepository: ChatRepository {
             method: "list",
             parameters: [:]
         )
-        let currentUserID = currentUserID(from: payload)
+        let currentUserID = currentUserID(from: payload) ?? cachedCurrentUserID
         cachedCurrentUserID = currentUserID ?? cachedCurrentUserID
         let parsedUsers = userValues(from: payload).compactMap {
             makeUser(from: $0, currentUserID: currentUserID)
@@ -155,19 +177,24 @@ public actor DsmChatRepository: ChatRepository {
     public func listConversations() async throws -> [ChatConversation] {
         let users = try await call(DsmAPIName.chatUser, method: "list", parameters: [:])
         let channels = try await call(DsmAPIName.chatChannel, method: "list", parameters: [:])
-        let currentUserID = currentUserID(from: users)
+        let currentUserID = currentUserID(from: users) ?? cachedCurrentUserID
         cachedCurrentUserID = currentUserID ?? cachedCurrentUserID
         let names = userValues(from: users).reduce(into: [String: String]()) { result, value in
             guard let user = makeUser(from: value, currentUserID: currentUserID) else { return }
             result[user.id] = user.displayName
             knownUsersByID[user.id] = user
         }
-        return channels.array(for: "channels").compactMap {
-            makeConversation(from: $0, userNames: names, currentUserID: currentUserID)
+        guard let values = channels.objectValue?["channels"]?.arrayValue else {
+            throw invalidChatResponse()
         }
-        .sorted {
-            ($0.lastActivityAt ?? .distantPast) > ($1.lastActivityAt ?? .distantPast)
-        }
+        let conversations = try values.map { value in
+            guard let conversation = makeConversation(from: value, userNames: names, currentUserID: currentUserID) else {
+                throw invalidChatResponse()
+            }
+            return conversation
+        }.sorted { ($0.lastActivityAt ?? .distantPast) > ($1.lastActivityAt ?? .distantPast) }
+        knownConversationsByID = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        return conversations
     }
 
     public func listConversationMembers(conversationID: String) async throws -> [ChatUser] {
@@ -197,27 +224,31 @@ public actor DsmChatRepository: ChatRepository {
     public func listPinnedMessages(conversationID: String) async throws -> [ChatMessage] {
         let normalizedID = conversationID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedID.isEmpty else { throw ChatContractError.emptyConversationID }
-        let payload = try await call(
-            DsmAPIName.chatPost,
-            method: "search",
-            parameters: [
-                "channel_id": .string(normalizedID),
-                "offset": .integer(0),
-                "limit": .integer(100),
-                "has": .stringArray(["pin"]),
-                "sort_by": .string("last_pin_at"),
+        var offset = 0
+        var messages: [ChatMessage] = []
+        var seen: Set<String> = []
+        while true {
+            try Task.checkCancellation()
+            let payload = try await call(DsmAPIName.chatPost, method: "search", parameters: [
+                "channel_id": .string(normalizedID), "offset": .integer(offset), "limit": .integer(100),
+                "has": .stringArray(["pin"]), "sort_by": .string("last_pin_at"),
                 "sort_by_array": .stringArray(["is_sticky", "last_pin_at"])
-            ],
-            version: 5
-        )
-        let values = payload.array(for: "search_results").isEmpty
-            ? payload.array(for: "posts")
-            : payload.array(for: "search_results")
-        return values.compactMap {
-            makeMessage(from: $0, fallbackConversationID: normalizedID)
+            ], version: 5)
+            guard let object = payload.objectValue,
+                  let values = object["search_results"]?.arrayValue ?? object["posts"]?.arrayValue else {
+                throw invalidChatResponse()
+            }
+            for value in values {
+                guard let message = makeMessage(from: value, fallbackConversationID: normalizedID),
+                      message.conversationID == normalizedID, seen.insert(message.id).inserted else {
+                    throw invalidChatResponse()
+                }
+                if message.isPinned { messages.append(message) }
+            }
+            offset += values.count
+            if values.count < 100 || object.firstInt(for: ["total"]).map({ offset >= $0 }) == true { break }
         }
-        .filter(\.isPinned)
-        .sorted { ($0.pinnedAt ?? .distantPast) > ($1.pinnedAt ?? .distantPast) }
+        return messages.sorted { ($0.pinnedAt ?? .distantPast) > ($1.pinnedAt ?? .distantPast) }
     }
 
     public func setMessagePinned(
@@ -262,39 +293,303 @@ public actor DsmChatRepository: ChatRepository {
         clientRequestID: UUID
     ) async throws {
         if completedMessageForwards.contains(clientRequestID) { return }
+        guard forwardingRequestIDs.insert(clientRequestID).inserted else { throw unconfirmedForwardError() }
+        defer { forwardingRequestIDs.remove(clientRequestID) }
         let normalizedMessageID = messageID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetIDs = Array(Set(toConversationIDs.compactMap { value -> String? in
-            let id = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return id.isEmpty ? nil : id
-        })).sorted()
-        guard !normalizedMessageID.isEmpty else {
-            throw AppError(
-                category: .notFound,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.9c54e8bb76140412")
-            )
+        let targets = Array(Set(toConversationIDs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })).sorted()
+        guard !normalizedMessageID.isEmpty, !targets.isEmpty, !targets.contains("") else {
+            throw ChatContractError.emptyConversationID
         }
-        guard !targetIDs.isEmpty else { throw ChatContractError.emptyConversationID }
-        let numericTargetIDs = try targetIDs.map { id -> Int in
-            guard let value = Int(id) else {
-                throw AppError(
-                    category: .invalidResponse,
-                    isRetryable: false,
-                    safeUserMessage: L10n.string("shared.555f70678d804174")
-                )
+        if let pending = pendingMessageForwards[clientRequestID] {
+            guard pending.source.id == normalizedMessageID, pending.targetIDs == targets else {
+                throw unconfirmedForwardError()
             }
+            try await confirmForward(pending, requestID: clientRequestID)
+            return
+        }
+        guard !pendingMessageForwards.values.contains(where: { $0.source.id == normalizedMessageID }) else {
+            throw unconfirmedForwardError()
+        }
+        let numericTargets = try targets.map { id in
+            guard let value = Int(id), value > 0 else { throw invalidChatResponse() }
             return value
         }
-        try await callVoid(
-            DsmAPIName.chatPost,
-            method: "forward",
-            parameters: [
-                "post_id": .string(normalizedMessageID),
-                "channel_ids": .integerArray(numericTargetIDs)
-            ],
-            version: 5
-        )
-        completedMessageForwards.insert(clientRequestID)
+        guard let original = knownMessagesByID[normalizedMessageID],
+              original.encryptionState == .notEncrypted, original.poll == nil,
+              !targets.contains(original.conversationID) else {
+            throw AppError(category: .notFound, isRetryable: true, safeUserMessage: L10n.string("chat.message.refreshRequired"))
+        }
+        let conversations = try await listConversations()
+        guard let sourceConversation = conversations.first(where: { $0.id == original.conversationID }),
+              !sourceConversation.isEncrypted,
+              targets.allSatisfy({ id in conversations.contains { $0.id == id && !$0.isEncrypted } }),
+              let source = try await findMessage(id: normalizedMessageID, conversationID: original.conversationID),
+              sameMessageContent(original, source) else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("chat.message.changed"))
+        }
+        var baselines: [String: Set<String>] = [:]
+        for target in targets {
+            let page = try await listMessages(conversationID: target, before: nil, limit: 100)
+            baselines[target] = Set(page.messages.map(\.id))
+        }
+        try Task.checkCancellation()
+        var pending = PendingChatForward(source: source, targetIDs: targets, baselineIDs: baselines, acknowledged: false)
+        pendingMessageForwards[clientRequestID] = pending
+        do {
+            let capability = try requireCapability(DsmAPIName.chatPost)
+            try await client.callVoid(
+                path: capability.path, api: capability.name,
+                version: try selectedVersion(capability, requiring: 5), method: "forward",
+                requestFormat: capability.requestFormat,
+                parameters: ["post_id": .string(normalizedMessageID), "channel_ids": .integerArray(numericTargets)],
+                credential: credential
+            )
+            pending.acknowledged = true
+            pendingMessageForwards[clientRequestID] = pending
+        } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+            pendingMessageForwards[clientRequestID] = nil
+            throw mapChatError(error)
+        } catch {
+            throw unconfirmedForwardError()
+        }
+        try await confirmForward(pending, requestID: clientRequestID)
+    }
+
+    private func confirmForward(_ pending: PendingChatForward, requestID: UUID) async throws {
+        // 丢失写回执时不凭相似内容推断成功；保留原操作，不能重新提交。
+        guard pending.acknowledged else { throw unconfirmedForwardError() }
+        do {
+            for target in pending.targetIDs {
+                let page = try await listMessages(conversationID: target, before: nil, limit: 100)
+                let matches = page.messages.filter { message in
+                    message.conversationID == target && isOwnedByCurrentUser(message)
+                        && message.encryptionState == .notEncrypted && message.poll == nil
+                        && pending.baselineIDs[target]?.contains(message.id) == false
+                        && message.text == pending.source.text
+                        && message.attachments.map(\.fileName) == pending.source.attachments.map(\.fileName)
+                        && message.attachments.map(\.sizeBytes) == pending.source.attachments.map(\.sizeBytes)
+                }
+                guard matches.count == 1 else { throw unconfirmedForwardError() }
+            }
+            completedMessageForwards.insert(requestID)
+            pendingMessageForwards[requestID] = nil
+        } catch {
+            throw unconfirmedForwardError()
+        }
+    }
+
+    private func unconfirmedForwardError() -> AppError {
+        AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("chat.forward.unconfirmed"))
+    }
+
+    private func requirePlainConversation(_ id: String) async throws {
+        let values = try await listConversations()
+        guard let value = values.first(where: { $0.id == id }), !value.isEncrypted else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+        }
+    }
+
+    public func searchMessages(query: String, conversationID: String?, cursor: String?, limit: Int) async throws -> ChatSearchPage {
+        let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !keyword.isEmpty else { return ChatSearchPage(messages: [], nextCursor: nil) }
+        let offset = cursor.flatMap(Int.init) ?? 0
+        guard offset >= 0, cursor == nil || Int(cursor!) != nil else { throw invalidChatResponse() }
+        let size = min(max(limit, 1), 100)
+        var channels: [Int] = []
+        if let conversationID {
+            try rejectKnownEncryptedConversation(conversationID)
+            guard let number = Int(conversationID) else { throw invalidChatResponse() }
+            channels = [number]
+        }
+        let payload = try await call(DsmAPIName.chatPost, method: "search", parameters: [
+            "keyword": .string(keyword), "in": .integerArray(channels),
+            "offset": .integer(offset), "limit": .integer(size)
+        ], version: 5)
+        guard let object = payload.objectValue, let rows = object["search_results"]?.arrayValue,
+              let total = object.firstInt(for: ["total"]), total >= 0, rows.count <= size else { throw invalidChatResponse() }
+        var seen: Set<String> = []
+        let messages = try rows.compactMap { value -> ChatMessage? in
+            guard let channel = value.objectValue?.firstNonEmptyString(for: ["channel_id"]),
+                  conversationID == nil || channel == conversationID,
+                  let message = makeMessage(from: value, fallbackConversationID: channel),
+                  seen.insert(message.id).inserted else { throw invalidChatResponse() }
+            guard message.encryptionState == .notEncrypted, knownConversationsByID[channel]?.isEncrypted != true else { return nil }
+            knownMessagesByID[message.id] = message
+            return message
+        }
+        let next = offset + rows.count
+        return ChatSearchPage(messages: messages, nextCursor: !rows.isEmpty && next < total ? String(next) : nil)
+    }
+
+    public func message(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage? {
+        try rejectKnownEncryptedConversation(conversationID)
+        let value = try await call(DsmAPIName.chatPost, method: "list", parameters: [
+            "channel_id": .string(conversationID), "post_id": .string(messageID),
+            "thread_id": .string(threadID ?? "0"), "prev_count": .integer(0), "next_count": .integer(0)
+        ], version: 5)
+        guard let rows = value.objectValue?["posts"]?.arrayValue, rows.count <= 1 else { throw invalidChatResponse() }
+        guard let row = rows.first else { return nil }
+        guard let result = makeMessage(from: row, fallbackConversationID: conversationID),
+              result.id == messageID, result.conversationID == conversationID else { throw invalidChatResponse() }
+        knownMessagesByID[result.id] = result
+        return result
+    }
+
+    public func listReplies(conversationID: String, threadID: String, before: String?, limit: Int) async throws -> ChatMessagePage {
+        try rejectKnownEncryptedConversation(conversationID)
+        let page = try await messagePage(conversationID: conversationID, before: before, limit: limit,
+                                         cachesMessages: true, threadID: threadID)
+        return ChatMessagePage(messages: page.messages.filter { $0.id != threadID },
+                               previousCursor: page.previousCursor, hasMoreBefore: page.hasMoreBefore)
+    }
+
+    public func editingPolicy() async throws -> ChatEditingPolicy {
+        let value = try await call(DsmAPIName.chatAdminSetting, method: "get", parameters: [:], version: 3)
+        guard let object = value.objectValue,
+              let allows = object.firstBool(for: ["allow_edit_message"]),
+              let minutes = object.firstDouble(for: ["allow_edit_message_time_within_min"]), minutes >= 0 else {
+            throw invalidChatResponse()
+        }
+        return ChatEditingPolicy(allowsEditing: allows, maximumAgeSeconds: minutes == 0 ? nil : minutes * 60)
+    }
+
+    public func editMessage(_ original: ChatMessage, text: String, clientRequestID: UUID) async throws -> ChatMessage {
+        guard supportsVersion(DsmAPIName.chatPost, version: 8), supportsVersion(DsmAPIName.chatAdminSetting, version: 3) else {
+            throw unsupported(L10n.string("chat.feature.unavailable"))
+        }
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw ChatContractError.emptyMessage }
+        if let completed = completedEdits[clientRequestID] { return completed }
+        guard mutatingMessageIDs.insert(original.id).inserted else { throw messageUpdatePending() }
+        defer { mutatingMessageIDs.remove(original.id) }
+        let operation = PendingEdit(original: original, text: body)
+        if let pending = pendingEdits[clientRequestID] {
+            guard pending == operation else { throw invalidChatResponse() }
+        } else {
+            guard !pendingEdits.values.contains(where: { $0.original.id == original.id }) else { throw messageUpdatePending() }
+            try await requirePlainConversation(original.conversationID)
+            guard let current = try await message(conversationID: original.conversationID, messageID: original.id, threadID: original.threadID),
+                  sameMessageContent(current, original), current.editedAt == original.editedAt,
+                  try await editingPolicy().permits(current) else {
+                throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("chat.edit.unavailable"))
+            }
+            try Task.checkCancellation()
+            pendingEdits[clientRequestID] = operation
+            do {
+                try await callNewWrite(DsmAPIName.chatPost, method: "set", version: 8, parameters: [
+                    "channel_id": .string(original.conversationID), "post_id": .string(original.id), "message": .string(body)
+                ])
+            } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+                pendingEdits[clientRequestID] = nil
+                throw mapChatError(error)
+            } catch { /* 响应中断后只回读，绝不重放修改。 */ }
+        }
+        guard let result = try? await message(conversationID: original.conversationID, messageID: original.id, threadID: original.threadID),
+              result.text == body, result.senderID == original.senderID,
+              result.encryptionState == .notEncrypted else { throw messageUpdatePending() }
+        pendingEdits[clientRequestID] = nil
+        completedEdits[clientRequestID] = result
+        return result
+    }
+
+    public func vote(_ original: ChatMessage, choiceIDs: Set<String>, clientRequestID: UUID) async throws -> ChatMessage {
+        guard supportsVersion(DsmAPIName.chatPostVote, version: 1) else { throw unsupported(L10n.string("chat.feature.unavailable")) }
+        if let completed = completedVotes[clientRequestID] { return completed }
+        guard mutatingMessageIDs.insert(original.id).inserted else { throw messageUpdatePending() }
+        defer { mutatingMessageIDs.remove(original.id) }
+        let operation = PendingVote(message: original, choices: choiceIDs)
+        if let pending = pendingVotes[clientRequestID] {
+            guard pending == operation else { throw invalidChatResponse() }
+        } else {
+            guard !pendingVotes.values.contains(where: { $0.message.id == original.id }) else { throw messageUpdatePending() }
+            try await requirePlainConversation(original.conversationID)
+            guard cachedCurrentUserID != nil,
+                  let current = try await message(conversationID: original.conversationID, messageID: original.id, threadID: original.threadID),
+                  let poll = current.poll, current.encryptionState == .notEncrypted,
+                  !poll.isClosed, poll.closesAt.map({ $0 > Date() }) != false,
+                  !choiceIDs.isEmpty, poll.allowsMultipleSelection || choiceIDs.count == 1,
+                  choiceIDs.isSubset(of: Set(poll.options.map(\.id))),
+                  poll.question == original.poll?.question,
+                  poll.options.map(\.id) == original.poll?.options.map(\.id),
+                  poll.options.map(\.text) == original.poll?.options.map(\.text) else {
+                throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("chat.vote.unavailable"))
+            }
+            try Task.checkCancellation()
+            pendingVotes[clientRequestID] = operation
+            do {
+                try await callNewWrite(DsmAPIName.chatPostVote, method: "vote", version: 1, parameters: [
+                    "post_id": .string(original.id), "choice_ids": .stringArray(choiceIDs.sorted())
+                ])
+            } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+                pendingVotes[clientRequestID] = nil
+                throw mapChatError(error)
+            } catch { /* 未收到响应时仍读取自己的选择，不能自动再投一次。 */ }
+        }
+        do {
+        guard let result = try? await message(conversationID: original.conversationID, messageID: original.id, threadID: original.threadID),
+              let poll = result.poll else { throw messageUpdatePending() }
+        let choices = try await call(DsmAPIName.chatPostVote, method: "get_choices", parameters: ["post_id": .string(original.id)], version: 1)
+        guard let rows = choices.objectValue?["choices"]?.arrayValue,
+              let currentID = cachedCurrentUserID else { throw messageUpdatePending() }
+        let selected = Set(rows.compactMap { value -> String? in
+            guard let row = value.objectValue, row.array(for: "voters").contains(where: { $0.stringValue == currentID }) else { return nil }
+            return row.firstString(for: ["id"])
+        })
+        guard selected == choiceIDs else { throw messageUpdatePending() }
+        let options = try poll.options.map { option -> ChatPollOption in
+            guard let row = rows.first(where: { $0.objectValue?.firstString(for: ["id"]) == option.id })?.objectValue,
+                  let count = row.firstInt(for: ["count"]) else { throw invalidChatResponse() }
+            return ChatPollOption(id: option.id, text: option.text, voteCount: count, isSelectedByCurrentUser: selected.contains(option.id))
+        }
+        let updatedPoll = ChatPoll(id: poll.id, question: poll.question, allowsMultipleSelection: poll.allowsMultipleSelection,
+                                   isAnonymous: poll.isAnonymous, closesAt: poll.closesAt, isClosed: poll.isClosed, options: options)
+        let updated = ChatMessage(id: result.id, conversationID: result.conversationID, senderID: result.senderID,
+            senderDisplayName: result.senderDisplayName, isFromCurrentUser: result.isFromCurrentUser, sentAt: result.sentAt,
+            text: result.text, attachments: result.attachments, poll: updatedPoll, pinnedAt: result.pinnedAt,
+            kind: result.kind, threadID: result.threadID, replyCount: result.replyCount, editedAt: result.editedAt)
+        knownMessagesByID[updated.id] = updated
+        pendingVotes[clientRequestID] = nil
+        completedVotes[clientRequestID] = updated
+        return updated
+        } catch { throw messageUpdatePending() }
+    }
+
+    public func markRead(conversationID: String, through: Date) async throws -> ChatConversation {
+        try rejectKnownEncryptedConversation(conversationID)
+        // 必须是本适配器实际读取的消息时间，不能用本机当前时间越过未读消息。
+        guard knownMessagesByID.values.contains(where: { $0.conversationID == conversationID && $0.sentAt == through }),
+              through > .distantPast else { throw invalidChatResponse() }
+        let timestamp = Int((through.timeIntervalSince1970 * 1_000).rounded())
+        try await callVoid(DsmAPIName.chatChannel, method: "view", parameters: [
+            "channel_id": .string(conversationID), "last_view_at": .integer(timestamp)
+        ], version: 2)
+        let channels = try await listConversations()
+        guard let updated = channels.first(where: { $0.id == conversationID }),
+              updated.lastViewedAt.map({ $0 >= through }) == true else { throw messageUpdatePending() }
+        return updated
+    }
+
+    public func markThreadRead(conversationID: String, threadID: String, lastMessageID: String) async throws {
+        try rejectKnownEncryptedConversation(conversationID)
+        guard let visible = knownMessagesByID[lastMessageID], visible.conversationID == conversationID,
+              visible.threadID == threadID else { throw invalidChatResponse() }
+        let latest = try await listReplies(conversationID: conversationID, threadID: threadID, before: nil, limit: 1)
+        guard latest.messages.last?.id == lastMessageID else { throw messageUpdatePending() }
+        try Task.checkCancellation()
+        try await callVoid(DsmAPIName.chatPostSubscribe, method: "view", parameters: [
+            "channel_id": .string(conversationID), "thread_id": .string(threadID)
+        ], version: 2)
+    }
+
+    private func callNewWrite(_ name: String, method: String, version: Int, parameters: [String: DsmParameterValue]) async throws {
+        let capability = try requireCapability(name)
+        try await client.callVoid(path: capability.path, api: name,
+            version: try selectedVersion(capability, requiring: version), method: method,
+            requestFormat: capability.requestFormat, parameters: parameters, credential: credential)
+    }
+
+    private func messageUpdatePending() -> AppError {
+        AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("chat.update.pending"))
     }
 
     public func listMessages(
@@ -302,29 +597,59 @@ public actor DsmChatRepository: ChatRepository {
         before cursor: String?,
         limit: Int
     ) async throws -> ChatMessagePage {
+        try await messagePage(conversationID: conversationID, before: cursor, limit: limit, cachesMessages: true)
+    }
+
+    private func messagePage(
+        conversationID: String,
+        before cursor: String?,
+        limit: Int,
+        cachesMessages: Bool,
+        threadID: String? = nil
+    ) async throws -> ChatMessagePage {
         let safeLimit = min(max(limit, 1), 100)
-        let offset = max(Int(cursor ?? "0") ?? 0, 0)
-        let payload = try await call(
-            DsmAPIName.chatPost,
-            method: "list",
-            parameters: [
-                "channel_id": .string(conversationID),
-                "limit": .integer(safeLimit),
-                "offset": .integer(offset)
-            ]
-        )
-        let postValues = payload.array(for: "posts")
-        let messages = postValues.compactMap {
-            makeMessage(from: $0, fallbackConversationID: conversationID)
+        var parameters: [String: DsmParameterValue] = [
+            "channel_id": .string(conversationID), "thread_id": .string(threadID ?? "0"),
+            "prev_count": .integer(safeLimit), "next_count": .integer(0)
+        ]
+        if let cursor { parameters["post_id"] = .string(cursor) }
+        let payload = try await call(DsmAPIName.chatPost, method: "list", parameters: parameters, version: 5)
+        guard let postValues = payload.objectValue?["posts"]?.arrayValue,
+              postValues.count <= safeLimit + (cursor == nil ? 0 : 1) else {
+            throw invalidChatResponse()
         }
-        .sorted { $0.sentAt < $1.sentAt }
-        let total = payload.objectValue?.firstInt(for: ["total"])
-        // 游标按服务器原始记录数推进；部分附件操作会附带不可展示的辅助记录。
-        let nextOffset = offset + postValues.count
-        let hasMore = total.map { nextOffset < $0 } ?? (postValues.count == safeLimit)
+        if let totalValue = payload.objectValue?["total"] {
+            guard let number = totalValue.doubleValue, let total = Int(exactly: number), total >= 0 else { throw invalidChatResponse() }
+        }
+        var rawIDs: Set<String> = []
+        let messages = try postValues.compactMap { value -> ChatMessage? in
+            guard let object = value.objectValue,
+                  let id = object.firstNonEmptyString(for: ["post_id", "id"]), rawIDs.insert(id).inserted else {
+                throw invalidChatResponse()
+            }
+            if let returnedID = object.firstString(for: ["channel_id", "conversation_id"]), returnedID != conversationID {
+                throw invalidChatResponse()
+            }
+            guard id != cursor else { return nil }
+            let message = makeMessage(from: value, fallbackConversationID: conversationID)
+            if let threadID, let message, message.id != threadID, message.threadID != threadID {
+                throw invalidChatResponse()
+            }
+            return message
+        }.sorted { $0.sentAt < $1.sentAt }
+        // 官方分页包含定位消息；游标按原始记录推进，辅助记录也不能使分页停滞。
+        let olderValues = postValues.filter { $0.objectValue?.firstString(for: ["post_id", "id"]) != cursor }
+        guard olderValues.count <= safeLimit else { throw invalidChatResponse() }
+        let oldestID = olderValues.min {
+            ($0.objectValue?.firstDouble(for: ["create_at"]) ?? 0) < ($1.objectValue?.firstDouble(for: ["create_at"]) ?? 0)
+        }?.objectValue?.firstString(for: ["post_id", "id"])
+        let hasMore = olderValues.count >= safeLimit && oldestID != nil && oldestID != cursor
+        if cachesMessages {
+            for message in messages { knownMessagesByID[message.id] = message }
+        }
         return ChatMessagePage(
             messages: messages,
-            previousCursor: hasMore ? String(nextOffset) : nil,
+            previousCursor: hasMore ? oldestID : nil,
             hasMoreBefore: hasMore
         )
     }
@@ -975,38 +1300,15 @@ public actor DsmChatRepository: ChatRepository {
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessage {
-        if let completed = completedMessages[draft.clientRequestID] { return completed }
-        guard draft.localAttachmentURLs.count <= 1 else {
-            throw unsupported(L10n.string("shared.fa24cc9d55caa0ef"))
-        }
-        if let localURL = draft.localAttachmentURLs.first {
-            if let pending = pendingAttachmentSends[draft.clientRequestID] {
-                let outcome = try await finishPendingChatAttachmentSend(pending)
-                guard outcome.result.status == .confirmedSuccess,
-                      let message = outcome.confirmedMessage else {
-                    throw AppError(
-                        category: outcome.result.status == .unsupported ? .apiUnavailable : .partialFailure,
-                        isRetryable: outcome.result.status != .submittedButUnverified,
-                        safeUserMessage: L10n.string("shared.f975fe7c14e442cf")
-                    )
-                }
-                return message
-            }
-            let uploaded = try await uploadAttachment(
-                localURL: localURL,
-                draft: draft,
-                progress: progress
-            )
-            completedMessages[draft.clientRequestID] = uploaded
-            return uploaded
-        }
-        let outcome = try await sendMessageResult(draft, progress: progress)
+        let outcome = try await (draft.localAttachmentURLs.isEmpty
+            ? sendMessageResult(draft, progress: progress)
+            : sendAttachmentMessageResult(draft, progress: progress))
         guard outcome.result.status == .confirmedSuccess,
               let message = outcome.confirmedMessage else {
             throw AppError(
                 category: outcome.result.status == .unsupported ? .apiUnavailable : .partialFailure,
-                isRetryable: outcome.result.status != .submittedButUnverified,
-                safeUserMessage: L10n.string("shared.f975fe7c14e442cf")
+                isRetryable: outcome.result.status == .confirmedFailure,
+                safeUserMessage: L10n.string("chat.send.unconfirmed")
             )
         }
         return message
@@ -1016,6 +1318,13 @@ public actor DsmChatRepository: ChatRepository {
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessageSendOutcome {
+        try rejectKnownEncryptedConversation(draft.conversationID)
+        if let threadID = draft.threadID, pendingMessageSends[draft.clientRequestID] == nil,
+           completedMessages[draft.clientRequestID] == nil {
+            try await requirePlainConversation(draft.conversationID)
+            guard let root = try await message(conversationID: draft.conversationID, messageID: threadID, threadID: nil),
+                  root.encryptionState == .notEncrypted, root.threadID == nil || root.threadID == root.id else { throw invalidChatResponse() }
+        }
         if let completed = completedMessages[draft.clientRequestID] {
             return try chatTextOutcome(
                 status: .confirmedSuccess,
@@ -1068,14 +1377,22 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
 
+        pendingMessageSends[draft.clientRequestID] = PendingChatMessageSendReview(
+            draft: draft, candidateMessageID: nil
+        )
         do {
+            var parameters: [String: DsmParameterValue] = [
+                "channel_id": .string(draft.conversationID), "message": .string(draft.text ?? "")
+            ]
+            if let threadID = draft.threadID {
+                parameters["type"] = .string("normal")
+                parameters["is_thread"] = .boolean(false)
+                parameters["thread_id"] = .string(threadID)
+            }
             let payload = try await call(
                 DsmAPIName.chatPost,
                 method: "create",
-                parameters: [
-                    "channel_id": .string(draft.conversationID),
-                    "message": .string(draft.text ?? "")
-                ],
+                parameters: parameters,
                 version: 5
             )
             guard let pending = makePendingChatTextSend(from: payload, draft: draft) else {
@@ -1094,6 +1411,7 @@ public actor DsmChatRepository: ChatRepository {
             pendingMessageSends[draft.clientRequestID] = pending
             return try await finishPendingChatTextSend(pending)
         } catch let error as AppError where error.category == .permissionDenied {
+            pendingMessageSends[draft.clientRequestID] = nil
             return try chatTextOutcome(
                 status: .permissionDenied,
                 submitted: true,
@@ -1145,6 +1463,11 @@ public actor DsmChatRepository: ChatRepository {
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessageSendOutcome {
+        guard draft.threadID == nil else {
+            return try chatAttachmentOutcome(status: .unsupported, submitted: false, failed: 1,
+                errorCategory: .unsupported, diagnosticTag: "chat.attachment-send.thread-unsupported", draft: draft)
+        }
+        try rejectKnownEncryptedConversation(draft.conversationID)
         if let completed = completedMessages[draft.clientRequestID] {
             return try chatAttachmentOutcome(
                 status: .confirmedSuccess,
@@ -1332,10 +1655,9 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
         do {
-            let page = try await listMessages(
-                conversationID: pending.draft.conversationID,
-                before: nil,
-                limit: 50
+            let page = try await messagePage(
+                conversationID: pending.draft.conversationID, before: nil, limit: 50,
+                cachesMessages: true, threadID: pending.draft.threadID
             )
             guard let confirmed = page.messages.first(where: {
                 isConfirmedChatTextMessage($0, pending: pending, candidateID: candidateID)
@@ -1390,15 +1712,20 @@ public actor DsmChatRepository: ChatRepository {
     ) -> Bool {
         message.id == candidateID &&
             message.conversationID == pending.draft.conversationID &&
-            message.isFromCurrentUser == true &&
-            message.text == pending.draft.text
+            message.encryptionState == .notEncrypted &&
+            isReturnedSendAuthorValid(message) &&
+            message.text == pending.draft.text &&
+            (pending.draft.threadID == nil || message.threadID == pending.draft.threadID)
     }
 
     private func confirmedSentMessage(
         _ message: ChatMessage,
         draft: ChatMessageDraft
     ) -> ChatMessage {
-        ChatMessage(
+        if cachedCurrentUserID == nil, message.senderID != "unknown" {
+            cachedCurrentUserID = message.senderID
+        }
+        let confirmed = ChatMessage(
             id: message.id,
             clientRequestID: draft.clientRequestID,
             conversationID: message.conversationID,
@@ -1411,8 +1738,11 @@ public actor DsmChatRepository: ChatRepository {
             poll: message.poll,
             deliveryState: .sent,
             encryptionState: message.encryptionState,
-            pinnedAt: message.pinnedAt
+            pinnedAt: message.pinnedAt, kind: message.kind, threadID: message.threadID,
+            replyCount: message.replyCount, editedAt: message.editedAt
         )
+        knownMessagesByID[confirmed.id] = confirmed
+        return confirmed
     }
 
     private func chatTextOutcome(
@@ -1548,7 +1878,8 @@ public actor DsmChatRepository: ChatRepository {
         }
         return message.id == candidateID &&
             message.conversationID == pending.draft.conversationID &&
-            message.isFromCurrentUser == true &&
+            message.encryptionState == .notEncrypted &&
+            isReturnedSendAuthorValid(message) &&
             message.text == pending.draft.text
     }
 
@@ -1587,39 +1918,6 @@ public actor DsmChatRepository: ChatRepository {
     /// 使用 Chat Server 2.4.1-22111 官方网页客户端当前采用的内部上传契约。
     /// `SYNO.Chat.Post/create` v5 与 multipart 的 `file` 字段均不是群晖公开 API，
     /// 因此仅在运行时能力范围明确包含 v5 时启用，并保持关闭型兼容策略。
-    private func uploadAttachment(
-        localURL: URL,
-        draft: ChatMessageDraft,
-        progress: @escaping FileTransferProgress
-    ) async throws -> ChatMessage {
-        let receipt = try await uploadAttachmentReceipt(
-            localURL: localURL,
-            draft: draft,
-            progress: progress,
-            submissionState: nil
-        )
-        if let message = receipt.message { return message }
-
-        // 旧发送入口在上传响应缺少完整消息时，也只允许按稳定 post 标识回读。
-        let pending = PendingChatAttachmentSendReview(
-            draft: draft,
-            candidateMessageID: receipt.candidateMessageID,
-            expectedFileName: receipt.localFileName,
-            expectedFileSize: receipt.localFileSize
-        )
-        pendingAttachmentSends[draft.clientRequestID] = pending
-        let outcome = try await finishPendingChatAttachmentSend(pending)
-        guard outcome.result.status == .confirmedSuccess,
-              let message = outcome.confirmedMessage else {
-            throw AppError(
-                category: .partialFailure,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.05430b68cf645911")
-            )
-        }
-        return message
-    }
-
     private func uploadAttachmentReceipt(
         localURL: URL,
         draft: ChatMessageDraft,
@@ -1799,21 +2097,24 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
 
-        let currentPage = try await listMessages(
-            conversationID: normalizedConversationID,
-            before: nil,
-            limit: 100
-        )
-        guard let message = currentPage.messages.first(where: { $0.id == normalizedMessageID }) else {
+        try rejectKnownEncryptedConversation(normalizedConversationID)
+        let baseline = knownMessagesByID[normalizedMessageID]
+        guard let message = try await findMessage(
+            id: normalizedMessageID, conversationID: normalizedConversationID
+        ) else {
             completedMessageDeletions.insert(clientRequestID)
             return
         }
-        guard isOwnedByCurrentUser(message) else {
+        guard message.encryptionState == .notEncrypted, isOwnedByCurrentUser(message) else {
             throw AppError(
                 category: .permissionDenied,
                 isRetryable: false,
                 safeUserMessage: L10n.string("shared.66a12c2de716c8cf")
             )
+        }
+        if let baseline, !sameMessageContent(baseline, message) {
+            throw AppError(category: .partialFailure, isRetryable: false,
+                           safeUserMessage: L10n.string("chat.message.changed"))
         }
 
         // 内部 API：SYNO.Chat.Post/delete 尚无公开开发者契约，必须由能力发现和实机复查共同保护。
@@ -1822,12 +2123,7 @@ public actor DsmChatRepository: ChatRepository {
             method: "delete",
             parameters: ["post_id": .string(normalizedMessageID)]
         )
-        let verifiedPage = try await listMessages(
-            conversationID: normalizedConversationID,
-            before: nil,
-            limit: 100
-        )
-        guard !verifiedPage.messages.contains(where: { $0.id == normalizedMessageID }) else {
+        guard try await findMessage(id: normalizedMessageID, conversationID: normalizedConversationID) == nil else {
             throw AppError(
                 category: .partialFailure,
                 isRetryable: true,
@@ -1835,6 +2131,33 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
         completedMessageDeletions.insert(clientRequestID)
+        knownMessagesByID[normalizedMessageID] = nil
+    }
+
+    /// 只有读到完整分页的末尾才能确认不存在，不能将“不在最新一页”当成已删除。
+    private func findMessage(id: String, conversationID: String) async throws -> ChatMessage? {
+        var cursor: String?
+        var visited: Set<String> = []
+        var seenMessageIDs: Set<String> = []
+        repeat {
+            try Task.checkCancellation()
+            let page = try await messagePage(conversationID: conversationID, before: cursor, limit: 100, cachesMessages: false)
+            for message in page.messages {
+                guard seenMessageIDs.insert(message.id).inserted else { throw invalidChatResponse() }
+            }
+            if let message = page.messages.first(where: { $0.id == id }) { return message }
+            guard page.hasMoreBefore else { return nil }
+            guard let next = page.previousCursor, next != cursor, visited.insert(next).inserted else {
+                throw invalidChatResponse()
+            }
+            cursor = next
+        } while true
+    }
+
+    private func sameMessageContent(_ lhs: ChatMessage, _ rhs: ChatMessage) -> Bool {
+        lhs.id == rhs.id && lhs.conversationID == rhs.conversationID && lhs.senderID == rhs.senderID
+            && lhs.text == rhs.text && lhs.attachments == rhs.attachments
+            && lhs.encryptionState == rhs.encryptionState
     }
 
     public func closeConversation(
@@ -1872,18 +2195,49 @@ public actor DsmChatRepository: ChatRepository {
         remindAt: Date,
         clientRequestID: UUID
     ) async throws -> ChatReminder {
+        guard supportsVersion(DsmAPIName.chatPostReminder, version: 1) else {
+            throw unsupported(L10n.string("chat.send.unsupported"))
+        }
         if let completed = completedReminders[clientRequestID] { return completed }
-        _ = try await call(
-            DsmAPIName.chatPostReminder,
-            method: "set",
-            parameters: [
-                "post_id": .string(messageID),
-                "remind_at": .string(String(Int64(remindAt.timeIntervalSince1970 * 1_000)))
-            ]
-        )
-        let reminder = ChatReminder(id: messageID, messageID: messageID, remindAt: remindAt)
-        completedReminders[clientRequestID] = reminder
-        return reminder
+        if let pending = pendingReminders[clientRequestID] {
+            guard pending.messageID == messageID, pending.remindAt == remindAt else { throw invalidChatResponse() }
+            return try await confirmReminder(requestID: clientRequestID)
+        }
+        guard let message = knownMessagesByID[messageID], message.encryptionState == .notEncrypted else {
+            throw AppError(category: .notFound, isRetryable: true, safeUserMessage: L10n.string("chat.message.refreshRequired"))
+        }
+        try rejectKnownEncryptedConversation(message.conversationID)
+        try Task.checkCancellation()
+        pendingReminders[clientRequestID] = (message.conversationID, messageID, remindAt)
+        do {
+            let capability = try requireCapability(DsmAPIName.chatPostReminder)
+            try await client.callVoid(path: capability.path, api: capability.name,
+                version: try selectedVersion(capability, requiring: 1), method: "set",
+                requestFormat: capability.requestFormat,
+                parameters: ["post_id": .string(messageID),
+                    "remind_at": .string(String(Int64(remindAt.timeIntervalSince1970 * 1_000)))], credential: credential)
+        } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+            pendingReminders[clientRequestID] = nil
+            throw mapChatError(error)
+        } catch {
+            // 该操作设置同一消息的提醒时间，回读目标状态即可恢复，不重放写入。
+        }
+        return try await confirmReminder(requestID: clientRequestID)
+    }
+
+    private func confirmReminder(requestID: UUID) async throws -> ChatReminder {
+        guard let pending = pendingReminders[requestID] else { throw invalidChatResponse() }
+        do {
+            let values = try await listReminders(conversationID: pending.conversationID)
+            guard let reminder = values.first(where: {
+                $0.messageID == pending.messageID && abs($0.remindAt.timeIntervalSince(pending.remindAt)) < 1
+            }) else { throw invalidChatResponse() }
+            completedReminders[requestID] = reminder
+            pendingReminders[requestID] = nil
+            return reminder
+        } catch {
+            throw AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("chat.reminder.unavailable"))
+        }
     }
 
     public func listReminders(conversationID: String) async throws -> [ChatReminder] {
@@ -1894,8 +2248,13 @@ public actor DsmChatRepository: ChatRepository {
             method: "list",
             parameters: ["channel_id": .string(normalizedID)]
         )
-        return reminderValues(from: payload).compactMap(makeReminder)
-            .sorted { $0.remindAt < $1.remindAt }
+        return try reminderValues(from: payload).map { value in
+            if let returnedID = value.objectValue?.firstString(for: ["channel_id", "conversation_id"]), returnedID != normalizedID {
+                throw invalidChatResponse()
+            }
+            guard let reminder = makeReminder(from: value) else { throw invalidChatResponse() }
+            return reminder
+        }.sorted { $0.remindAt < $1.remindAt }
     }
 
     public func deleteReminder(
@@ -2018,8 +2377,12 @@ public actor DsmChatRepository: ChatRepository {
             method: "list",
             parameters: ["channel_id": .string(normalizedID)]
         )
-        return scheduledMessageValues(from: payload).compactMap(makeScheduledMessage)
-            .sorted { $0.sendAt < $1.sendAt }
+        return try scheduledMessageValues(from: payload).map { value in
+            guard let message = makeScheduledMessage(from: value), message.conversationID == normalizedID else {
+                throw invalidChatResponse()
+            }
+            return message
+        }.sorted { $0.sendAt < $1.sendAt }
     }
 
     public func createScheduledMessage(
@@ -2028,56 +2391,62 @@ public actor DsmChatRepository: ChatRepository {
         sendAt: Date,
         clientRequestID: UUID
     ) async throws -> ChatScheduledMessage {
+        guard supportsVersion(DsmAPIName.chatPostSchedule, version: 1) else {
+            throw unsupported(L10n.string("chat.send.unsupported"))
+        }
         if let completed = completedScheduledMessages[clientRequestID] { return completed }
-        let normalizedConversationID = conversationID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard schedulingRequestIDs.insert(clientRequestID).inserted else { throw unavailableScheduleError() }
+        defer { schedulingRequestIDs.remove(clientRequestID) }
+        let normalizedID = conversationID.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedConversationID.isEmpty else { throw ChatContractError.emptyConversationID }
+        guard !normalizedID.isEmpty else { throw ChatContractError.emptyConversationID }
         guard !normalizedText.isEmpty else { throw ChatContractError.emptyMessage }
-        guard sendAt > Date() else {
-            throw AppError(
-                category: .invalidResponse,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.412848e827fc7e08")
-            )
-        }
-
-        let existing = try await listScheduledMessages(conversationID: normalizedConversationID).first {
-            $0.conversationID == normalizedConversationID
-                && $0.text == normalizedText
-                && abs($0.sendAt.timeIntervalSince(sendAt)) < 1
-        }
-        if let existing {
-            completedScheduledMessages[clientRequestID] = existing
-            return existing
-        }
-        let payload = try await call(
-            DsmAPIName.chatPostSchedule,
-            method: "create",
-            parameters: [
-                "channel_id": .string(normalizedConversationID),
-                "message": .string(normalizedText),
-                "send_at": .string(String(Int64(sendAt.timeIntervalSince1970 * 1_000)))
-            ]
-        )
-        let parsed: ChatScheduledMessage?
-        if let responseMessage = makeScheduledMessage(from: payload) {
-            parsed = responseMessage
-        } else {
-            parsed = try await listScheduledMessages(conversationID: normalizedConversationID).first {
-                $0.conversationID == normalizedConversationID
-                    && $0.text == normalizedText
-                    && abs($0.sendAt.timeIntervalSince(sendAt)) < 1
+        try rejectKnownEncryptedConversation(normalizedID)
+        if let pending = pendingScheduledMessages[clientRequestID] {
+            guard pending.conversationID == normalizedID, pending.text == normalizedText, pending.sendAt == sendAt else {
+                throw invalidChatResponse()
             }
+            return try await confirmScheduledMessage(pending, requestID: clientRequestID)
         }
-        guard let parsed else {
-            throw AppError(
-                category: .partialFailure,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.653720b44687243d")
-            )
+        guard sendAt > Date() else {
+            throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: L10n.string("shared.412848e827fc7e08"))
         }
-        completedScheduledMessages[clientRequestID] = parsed
-        return parsed
+        _ = try await listScheduledMessages(conversationID: normalizedID)
+        try Task.checkCancellation()
+        var pending = PendingChatSchedule(conversationID: normalizedID, text: normalizedText, sendAt: sendAt, candidateID: nil)
+        pendingScheduledMessages[clientRequestID] = pending
+        do {
+            let payload = try await callRaw(DsmAPIName.chatPostSchedule, method: "create", parameters: [
+                "channel_id": .string(normalizedID), "message": .string(normalizedText),
+                "send_at": .string(String(Int64(sendAt.timeIntervalSince1970 * 1_000)))
+            ], version: 1)
+            pending.candidateID = payload.objectValue?.firstNonEmptyString(for: ["cronjob_id", "schedule_id", "id"])
+            pendingScheduledMessages[clientRequestID] = pending
+        } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+            pendingScheduledMessages[clientRequestID] = nil
+            throw mapChatError(error)
+        } catch {
+            throw unavailableScheduleError()
+        }
+        return try await confirmScheduledMessage(pending, requestID: clientRequestID)
+    }
+
+    private func confirmScheduledMessage(_ pending: PendingChatSchedule, requestID: UUID) async throws -> ChatScheduledMessage {
+        guard let id = pending.candidateID else { throw unavailableScheduleError() }
+        do {
+            let values = try await listScheduledMessages(conversationID: pending.conversationID)
+            guard let message = values.first(where: {
+                $0.id == id && $0.conversationID == pending.conversationID && $0.text == pending.text
+                    && abs($0.sendAt.timeIntervalSince(pending.sendAt)) < 1
+            }) else { throw unavailableScheduleError() }
+            completedScheduledMessages[requestID] = message
+            pendingScheduledMessages[requestID] = nil
+            return message
+        } catch { throw unavailableScheduleError() }
+    }
+
+    private func unavailableScheduleError() -> AppError {
+        AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("chat.schedule.unavailable"))
     }
 
     public func deleteScheduledMessage(
@@ -2112,102 +2481,93 @@ public actor DsmChatRepository: ChatRepository {
 
     public func createPoll(_ draft: ChatPollDraft) async throws -> ChatMessage {
         if let completed = completedMessages[draft.clientRequestID] { return completed }
-        let options = try pollOptionsJSON(for: draft)
-        let payload = try await call(
-            DsmAPIName.chatPostVote,
-            method: "create",
-            parameters: [
-                "channel_id": .string(draft.conversationID),
-                "message": .string(draft.question),
-                "choices": .stringArray(draft.options),
-                "options": .string(options)
-            ]
-        )
-        var parsed = makeMessage(from: payload, fallbackConversationID: draft.conversationID)
-        if parsed == nil,
-           let page = try? await listMessages(
-               conversationID: draft.conversationID,
-               before: nil,
-               limit: 50
-           ) {
-            parsed = page.messages.last {
-                $0.text == draft.question
-                    && isOwnedByCurrentUser($0)
-                    && abs($0.sentAt.timeIntervalSinceNow) <= 180
-            }
+        try rejectKnownEncryptedConversation(draft.conversationID)
+        guard supportsVersion(DsmAPIName.chatPostVote, version: 1) else {
+            throw unsupported(L10n.string("chat.send.unsupported"))
         }
-        guard let parsed else {
-            throw AppError(
-                category: .partialFailure,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.e188f125e55257f2")
-            )
-        }
-        let poll = ChatPoll(
-            id: parsed.id,
-            question: draft.question,
-            allowsMultipleSelection: draft.allowsMultipleSelection,
-            isAnonymous: draft.isAnonymous,
-            closesAt: draft.closesAt,
-            options: draft.options.enumerated().map {
-                ChatPollOption(id: "\(parsed.id)-choice-\($0.offset)", text: $0.element)
-            }
-        )
-        let result = ChatMessage(
-            id: parsed.id,
-            clientRequestID: draft.clientRequestID,
-            conversationID: parsed.conversationID,
-            senderID: parsed.senderID,
-            senderDisplayName: parsed.senderDisplayName,
-            isFromCurrentUser: true,
-            sentAt: parsed.sentAt,
-            text: parsed.text ?? draft.question,
-            attachments: parsed.attachments,
-            poll: poll,
-            deliveryState: .sent,
-            encryptionState: parsed.encryptionState,
-            pinnedAt: parsed.pinnedAt
-        )
-        completedMessages[draft.clientRequestID] = result
-        return result
-    }
-
-    private func pollOptionsJSON(for draft: ChatPollDraft) throws -> String {
-        guard draft.closesAt == nil else {
-            throw unsupported(L10n.string("shared.adce1daf145b81a7"))
-        }
-        let values: [String: Any] = [
-            "multiple": draft.allowsMultipleSelection,
-            "anonymous": draft.isAnonymous,
-            "add_option": false
+        guard draft.closesAt == nil else { throw unsupported(L10n.string("chat.feature.unavailable")) }
+        let options: [String: DsmJSONValue] = [
+            "multiple": .boolean(draft.allowsMultipleSelection), "anonymous": .boolean(draft.isAnonymous),
+            "add_option": .boolean(false), "expire_at": .integer(0)
         ]
-        let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
-        guard let result = String(data: data, encoding: .utf8) else {
-            throw invalidChatResponse()
+        if let pending = pendingPollCreations[draft.clientRequestID] {
+            guard pending.draft == draft else { throw invalidChatResponse() }
+            return try await confirmPoll(pending)
         }
-        return result
+        try Task.checkCancellation()
+        pendingPollCreations[draft.clientRequestID] = PendingChatPollCreation(draft: draft, candidateMessageID: nil)
+        do {
+            let payload = try await callRaw(
+                DsmAPIName.chatPostVote,
+                method: "create",
+                parameters: [
+                    "channel_id": .string(draft.conversationID),
+                    "message": .string(draft.question),
+                    "choices": .objectArray(draft.options.map { ["text": .string($0)] }),
+                    "options": .object(options)
+                ],
+                version: 1
+            )
+            let candidateID = payload.objectValue?.firstNonEmptyString(for: ["post_id", "id"])
+            let pending = PendingChatPollCreation(draft: draft, candidateMessageID: candidateID)
+            pendingPollCreations[draft.clientRequestID] = pending
+            return try await confirmPoll(pending)
+        } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+            pendingPollCreations[draft.clientRequestID] = nil
+            throw mapChatError(error)
+        } catch {
+            throw unconfirmedPollError()
+        }
     }
 
-    private func reminderValues(from payload: ChatJSON) -> [ChatJSON] {
+    private func confirmPoll(_ pending: PendingChatPollCreation) async throws -> ChatMessage {
+        let draft = pending.draft
+        guard let id = pending.candidateMessageID else { throw unconfirmedPollError() }
+        do {
+            guard let message = try await findMessage(id: id, conversationID: draft.conversationID),
+                  isReturnedSendAuthorValid(message), message.encryptionState == .notEncrypted,
+                  let poll = message.poll,
+                  poll.question == draft.question,
+                  poll.options.map(\.text) == draft.options,
+                  poll.allowsMultipleSelection == draft.allowsMultipleSelection,
+                  poll.isAnonymous == draft.isAnonymous,
+                  poll.closesAt == draft.closesAt else { throw unconfirmedPollError() }
+            let messageDraft = try ChatMessageDraft(
+                clientRequestID: draft.clientRequestID, conversationID: draft.conversationID, text: draft.question
+            )
+            let confirmed = confirmedSentMessage(message, draft: messageDraft)
+            pendingPollCreations[draft.clientRequestID] = nil
+            completedMessages[draft.clientRequestID] = confirmed
+            return confirmed
+        } catch {
+            throw unconfirmedPollError()
+        }
+    }
+
+    private func unconfirmedPollError() -> AppError {
+        AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("chat.poll.unconfirmed"))
+    }
+
+    private func reminderValues(from payload: ChatJSON) throws -> [ChatJSON] {
         if let values = payload.arrayValue { return values }
-        guard let object = payload.objectValue else { return [] }
+        guard let object = payload.objectValue else { throw invalidChatResponse() }
         for key in ["posts", "reminders", "reminder_list", "items", "list", "results"] {
             if let values = object[key]?.arrayValue { return values }
         }
         if object.firstString(for: ["post_id", "message_id"]) != nil {
             return [payload]
         }
-        return []
+        throw invalidChatResponse()
     }
 
-    private func scheduledMessageValues(from payload: ChatJSON) -> [ChatJSON] {
+    private func scheduledMessageValues(from payload: ChatJSON) throws -> [ChatJSON] {
         if let values = payload.arrayValue { return values }
-        guard let object = payload.objectValue else { return [] }
+        guard let object = payload.objectValue else { throw invalidChatResponse() }
         for key in ["schedules", "schedule_posts", "scheduled_posts", "cronjobs", "items", "list", "results"] {
             if let values = object[key]?.arrayValue { return values }
         }
         if object.firstString(for: ["cronjob_id", "id"]) != nil { return [payload] }
-        return []
+        throw invalidChatResponse()
     }
 
     private func makeScheduledMessage(from value: ChatJSON) -> ChatScheduledMessage? {
@@ -2419,7 +2779,8 @@ public actor DsmChatRepository: ChatRepository {
             lastActivityAt: Self.date(from: lastPost?.firstDouble(for: ["create_at", "created_at"])
                 ?? object.firstDouble(for: ["update_at", "last_activity_at"])),
             unreadCount: object.firstInt(for: ["unread", "unread_count"]) ?? 0,
-            isEncrypted: object.firstBool(for: ["encrypted", "is_encrypted"]) ?? false
+            isEncrypted: object.firstBool(for: ["encrypted", "is_encrypted"]) ?? false,
+            lastViewedAt: Self.date(from: object.firstDouble(for: ["last_view_at"]))
         )
     }
 
@@ -2456,10 +2817,11 @@ public actor DsmChatRepository: ChatRepository {
             ?? knownUsersByID[senderID]?.displayName
         let isCurrentUser = object.firstBool(for: ["is_my_post", "is_mine", "is_current_user"])
             ?? creator?.firstBool(for: ["is_login", "is_current", "is_current_user", "is_self", "is_me"])
-            ?? cachedCurrentUserID.map { $0 == senderID }
+            ?? (senderID == "unknown" ? nil : cachedCurrentUserID.map { $0 == senderID })
         let attachments = makeAttachments(from: object, messageID: id)
         let poll = makePoll(from: object, messageID: id)
-        let text = object.firstString(for: ["message", "text", "content"])
+        let rawText = object.firstString(for: ["message", "text", "content"])
+        let text = rawText?.isEmpty == false ? rawText : nil
         let isEncrypted = object.firstBool(for: ["encrypted", "is_encrypted"]) ?? false
         let rawPinnedAt = object.firstDouble(for: ["last_pin_at", "pinned_at"])
         let pinnedAt = rawPinnedAt.flatMap { $0 > 0 ? Self.date(from: $0) : nil }
@@ -2477,12 +2839,19 @@ public actor DsmChatRepository: ChatRepository {
             senderID: senderID,
             senderDisplayName: senderName,
             isFromCurrentUser: isCurrentUser,
-            sentAt: Self.date(from: object.firstDouble(for: ["create_at", "created_at", "timestamp"])) ?? Date(),
+            sentAt: Self.date(from: object.firstDouble(for: ["create_at", "created_at", "timestamp"])) ?? .distantPast,
             text: text,
             attachments: attachments,
             poll: poll,
             encryptionState: isEncrypted ? .locked : .notEncrypted,
-            pinnedAt: pinnedAt
+            pinnedAt: pinnedAt,
+            kind: object.firstString(for: ["type"]).map { ChatMessageKind(rawValue: $0) ?? .unknown },
+            threadID: object.firstString(for: ["thread_id"]).flatMap { $0 == "0" ? nil : $0 },
+            replyCount: object.firstInt(for: ["comment_count"]),
+            editedAt: object.firstDouble(for: ["update_at"]).flatMap { value in
+                let created = object.firstDouble(for: ["create_at"]) ?? value
+                return value > created ? Self.date(from: value) : nil
+            }
         )
     }
 
@@ -2490,7 +2859,7 @@ public actor DsmChatRepository: ChatRepository {
         from object: [String: ChatJSON],
         messageID: String
     ) -> ChatPoll? {
-        let rawValue = object["vote"] ?? object["poll"] ?? object["vote_info"]
+        let rawValue = object["props"]?.objectValue?["vote"] ?? object["vote"] ?? object["poll"] ?? object["vote_info"]
         let decodedValue: ChatJSON?
         if let encoded = rawValue?.stringValue,
            let data = encoded.data(using: .utf8) {
@@ -2517,7 +2886,9 @@ public actor DsmChatRepository: ChatRepository {
                 voteCount: choice.firstInt(for: ["vote_count", "count", "votes"]) ?? 0,
                 isSelectedByCurrentUser: choice.firstBool(
                     for: ["selected", "is_selected", "is_voted", "voted"]
-                ) ?? false
+                ) ?? cachedCurrentUserID.map { current in
+                    choice.array(for: "voters").contains { $0.stringValue == current }
+                } ?? false
             )
         }
         guard !choices.isEmpty else { return nil }
@@ -2530,8 +2901,9 @@ public actor DsmChatRepository: ChatRepository {
                 ?? L10n.string("shared.3c5a0fdbcf55aaa8"),
             allowsMultipleSelection: settings.firstBool(for: ["multiple", "allow_multiple"]) ?? false,
             isAnonymous: settings.firstBool(for: ["anonymous", "is_anonymous"]) ?? false,
-            closesAt: Self.date(from: settings.firstDouble(for: ["expire_at", "close_at", "closes_at"])),
-            isClosed: pollObject.firstBool(for: ["closed", "is_closed", "expired"]) ?? false,
+            closesAt: settings.firstDouble(for: ["expire_at", "close_at", "closes_at"]).flatMap { $0 > 0 ? Self.date(from: $0) : nil },
+            isClosed: pollObject.firstString(for: ["state"]).map { $0 != "open" }
+                ?? pollObject.firstBool(for: ["closed", "is_closed", "expired"]) ?? false,
             options: choices
         )
     }
@@ -2618,6 +2990,9 @@ public actor DsmChatRepository: ChatRepository {
         if media.hasPrefix("video/") || ["mov", "mp4", "m4v", "avi", "mkv", "3gp", "webm"].contains(ext) {
             return .video
         }
+        if media.hasPrefix("audio/") || ["aac", "mp3", "m4a", "wav", "aiff", "aif", "caf", "flac", "ogg"].contains(ext) {
+            return .voice
+        }
         return .file
     }
 
@@ -2627,11 +3002,20 @@ public actor DsmChatRepository: ChatRepository {
     }
 
     private func isOwnedByCurrentUser(_ message: ChatMessage) -> Bool {
-        if message.isFromCurrentUser == true { return true }
-        if cachedCurrentUserID == message.senderID { return true }
-        guard let currentAccountName else { return false }
-        return Self.normalizedIdentityName(message.senderDisplayName) == currentAccountName
-            || Self.normalizedIdentityName(knownUsersByID[message.senderID]?.displayName) == currentAccountName
+        if let declared = message.isFromCurrentUser { return declared }
+        return cachedCurrentUserID == message.senderID
+    }
+
+    private func isReturnedSendAuthorValid(_ message: ChatMessage) -> Bool {
+        guard message.isFromCurrentUser != false else { return false }
+        guard let cachedCurrentUserID, message.senderID != "unknown" else { return true }
+        return message.senderID == cachedCurrentUserID
+    }
+
+    private func rejectKnownEncryptedConversation(_ id: String) throws {
+        if knownConversationsByID[id]?.isEncrypted == true {
+            throw unsupported(L10n.string("chat.encrypted.description"))
+        }
     }
 
     private static func normalizedIdentityName(_ value: String?) -> String? {
@@ -2690,6 +3074,17 @@ public actor DsmChatRepository: ChatRepository {
                       for: ["is_login", "is_current", "is_current_user", "is_self", "is_me"]
                   ) == true else { continue }
             return object.firstString(for: ["user_id", "member_id", "id"])
+        }
+        // 只接受账号字段，不把昵称或显示名当成登录身份。
+        if let currentAccountName {
+            let matchedIDs = userValues(from: payload).compactMap { value -> String? in
+                guard let object = value.objectValue,
+                      object.firstBool(for: ["is_login", "is_current", "is_current_user", "is_self", "is_me"]) != false,
+                      let account = object.firstNonEmptyString(for: ["username", "user_name", "account", "login_name"]),
+                      Self.normalizedIdentityName(account) == currentAccountName else { return nil }
+                return object.firstNonEmptyString(for: ["user_id", "member_id", "uid", "account_id", "id"])
+            }
+            if Set(matchedIDs).count == 1 { return matchedIDs.first }
         }
         return nil
     }
@@ -2906,6 +3301,25 @@ public actor DsmChatRepository: ChatRepository {
             safeUserMessage: L10n.string("shared.cee51e4469010a94")
         )
     }
+}
+
+private struct PendingChatSchedule: Sendable {
+    let conversationID: String
+    let text: String
+    let sendAt: Date
+    var candidateID: String?
+}
+
+private struct PendingChatForward: Sendable {
+    let source: ChatMessage
+    let targetIDs: [String]
+    let baselineIDs: [String: Set<String>]
+    var acknowledged: Bool
+}
+
+private struct PendingChatPollCreation: Sendable {
+    let draft: ChatPollDraft
+    let candidateMessageID: String?
 }
 
 private struct PendingDirectConversationCreate: Equatable, Sendable {

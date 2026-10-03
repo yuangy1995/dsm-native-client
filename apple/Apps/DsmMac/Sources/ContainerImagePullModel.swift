@@ -29,7 +29,7 @@ final class ContainerImagePullModel {
     }
     var canSubmit: Bool { canConfirm && confirmation != nil }
     var canReview: Bool { isVisible && !isBusy }
-    var hasPollableTasks: Bool { results.contains { $0.stage == .downloading } }
+    var hasPollableTasks: Bool { results.contains { $0.stage == .downloading || $0.stage == .needsReview } }
 
     func setTarget(repository: String, tag: String) {
         let repository = repository.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -93,7 +93,8 @@ final class ContainerImagePullModel {
             let cached = try await repository.loadContainerImagePulls()
             guard current(stamp), !Task.isCancelled else { return }
             for result in cached { store(result) }
-            let pending = results.filter { !$0.stage.isTerminal && (!automatic || $0.stage == .downloading) }
+            // 有任务编号的暂时读取失败仍可恢复；无回执不能凭名称猜测任务或重新启动。
+            let pending = results.filter { !$0.stage.isTerminal && (!automatic || $0.stage != .awaitingReceipt) }
             for item in pending {
                 guard current(stamp), !Task.isCancelled else { return }
                 if let updated = try await repository.reviewContainerImagePull(id: item.id), updated.id == item.id,
@@ -129,6 +130,7 @@ final class ContainerImagePullModel {
             return L10n.string(value.outcome.errorCategory == .permission ? "container-image.pull.permission" :
                 value.outcome.errorCategory == .conflict ? "container-image.pull.conflict" :
                 value.outcome.errorCategory == .unsupported ? "container-image.pull.unsupported" :
+                value.outcome.errorCategory == .server ? "container-image.pull.download-failed" :
                 value.outcome.status == .cancelledBeforeSubmission ? "container-image.pull.not-sent" : "container-image.pull.failed")
         }
     }

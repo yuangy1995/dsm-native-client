@@ -3,6 +3,11 @@
 
 # iPhone 与 iPad 移动精选功能长期计划
 
+## Chat 共享增量影响（2026-10-03）
+
+共享 Apple 网络修正历史定位分页、投票创建对象和 props.vote 解析，领域模型添加可选线程/编辑/阅读字段与默认拒绝的新方法。本轮 iPhone/iPad 保持现有受限聊天能力，未增加搜索、编辑、投票参与、录音、常驻通知入口或权限，也不把这些尚未实现的能力列为 PENDING_USER_VALIDATION。未来需要移动端独立范围授权，并采用触控消息菜单、系统麦克风/媒体、前台阅读同步及系统后台约束；不能复制桌面常驻连接保证。两种设备本轮范围相同，替代路径为官方 Chat；本轮共享回归与模拟器构建结果见[功能账本](MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md)，协议以[消息交互契约](../api/discovery/endpoints/chat-message-interaction.md)为准。
+
+
 ## NAS 管理共享增量与移动取舍（2026-10-03）
 
 共享 Apple 增加套件目录/安装模型、Repository 默认不支持方法以及内存压缩/电源计划保存语义；旧移动实现保持源码兼容。本轮未增加 iPhone 或 iPad 页面，二者范围一致：内存压缩、电源计划、套件安装/卸载/自动更新与来源信任等长流程运维均为**当前不做**，不加入移动 DAG，也不标为 PENDING_USER_VALIDATION。用户目标由现有健康/服务摘要加浏览器 DSM 管理替代；不承诺移动后台持续安装监控或照搬桌面表单。共享读取后续需同步 enable_zram、available_operation 对象及正确防火墙通知含义，并继续做 macOS 回归。证据与契约见 [NAS 设置账本](NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
@@ -131,3 +136,5 @@ apple/Apps/DsmMac/            只读 macOS 参考实现
 ## Photos 新增共享能力的范围
 
 macOS 后续管理契约见[照片 API](../api/reference/photos.md)，不逐波复制施工记录。iPhone/iPad 仍保持上表范围；上传、相册/人物/目录管理、系统设置、常驻预览转换及重启恢复不因共享协议存在而进入移动实现或 `PENDING_USER_VALIDATION`。两端均可通过已有保存/分享及 DSM 官方界面完成范围外需求；未来增量先明确移动用户结果、生命周期及降级。
+
+2026-10-03 容器契约补充：Registry.search 必须固定 v1（v2 实测 103）；下载任务 1202 为已观察的 Docker 失败路径，传输读取失败应保留原任务自动恢复。详见 `MACOS_CONTAINER_IMAGE_PULL_FIX_20261003_ZH.md` 和当日发现记录。本端未新增功能或私有写开放结论；Apple 共享层另做构建回归。

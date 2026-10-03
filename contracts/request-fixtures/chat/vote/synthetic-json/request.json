@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "chat.vote.synthetic-json",
+  "module": "chat",
+  "operation": "vote",
+  "api": {
+    "name": "SYNO.Chat.Post.Vote",
+    "method": "vote",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "post_id",
+      "valueType": "string",
+      "encodedValue": "\"9001\""
+    },
+    {
+      "name": "choice_ids",
+      "valueType": "stringArray",
+      "encodedValue": "[\"option-a\"]"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

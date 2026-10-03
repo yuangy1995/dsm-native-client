@@ -5,6 +5,43 @@ import XCTest
 @testable import DsmFileProviderRuntime
 
 final class ProviderWritebackTests: XCTestCase {
+    func test更改编辑删除授权更新元数据并使旧枚举锚点失效() async throws {
+        for scope in [DesktopDriveScope.folder(path: "/share/work"), .allShares] {
+            let context = try await makeContext(enabled: false, scope: scope)
+            try await context.store.registerItemPaths(mappingID: context.mapping.id, remotePaths: ["/share", "/share/work"])
+            var original = try await context.runtime.item(for: context.identifier)
+            let originalContentVersion = original.itemVersion.contentVersion
+            var anchors: [(NSFileProviderItemIdentifier, Data)] = []
+            let parent = original.parentItemIdentifier
+            for container in Set([NSFileProviderItemIdentifier.rootContainer, .workingSet, parent]) {
+                anchors.append((container, try await context.runtime.currentChangeAnchor(for: container)))
+            }
+            for (editing, deletion) in [(true, false), (true, true), (false, false)] {
+                let lease = try context.journal.lock(mappingID: context.mapping.id)
+                try context.journal.setEnabled(editing, mappingID: context.mapping.id)
+                if editing { try context.journal.setDeletionEnabled(deletion, mappingID: context.mapping.id) }
+                withExtendedLifetime(lease) {}
+                let resumed = ProviderRuntime(mappingIdentifier: context.mapping.id.uuidString, dependencies: context.dependencies)
+                let updated = try await resumed.item(for: context.identifier)
+                XCTAssertEqual(updated.capabilities.contains(.allowsWriting), editing)
+                XCTAssertEqual(updated.capabilities.contains(.allowsDeleting), deletion)
+                XCTAssertEqual(updated.itemVersion.contentVersion, originalContentVersion, "权限刷新不能让未变动的文件内容重新下载")
+                XCTAssertNotEqual(updated.itemVersion.metadataVersion, original.itemVersion.metadataVersion)
+                for (container, anchor) in anchors {
+                    do {
+                        _ = try await resumed.enumerateChanges(for: container, from: anchor, limit: 200)
+                        XCTFail("授权已变化，旧锚点不能返回没有更新")
+                    } catch { XCTAssertEqual((error as NSError).code, NSFileProviderError.syncAnchorExpired.rawValue) }
+                }
+                original = updated
+                for index in anchors.indices { anchors[index].1 = try await resumed.currentChangeAnchor(for: anchors[index].0) }
+            }
+            let uploads = await context.repository.uploads
+            let deletes = await context.repository.deletes
+            XCTAssertEqual(uploads, 0); XCTAssertEqual(deletes, 0)
+        }
+    }
+
     func test未启用时保持只读且不发送写入() async throws {
         let context = try await makeContext(enabled: false)
         let item = try await context.runtime.item(for: context.identifier)

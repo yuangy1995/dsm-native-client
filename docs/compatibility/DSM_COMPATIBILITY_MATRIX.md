@@ -73,6 +73,8 @@
 
 ## Chat 历史记录
 
+2026-10-03 macOS 修复补充：收发结果、附件重试、旧消息删除、本人身份、投票/提醒/定时/转发结果处理、会话切换与未读规则已增加源码修正和合成回归。一对一会话新增既有置顶消息读取入口，写操作仍限原群聊范围；图片预览改为有界读取原文件。共享 Apple Adapter 影响 iPhone/iPad 的既有调用，Windows/Android 实现不变。下面历史版本证据不因此升级；新包真实 NAS 结果仍按[修复账本](../development/MACOS_CHAT_FIX_20261003_ZH.md)记录。
+
 | DSM build | Chat Server 版本 | 平台 | 用户会话 | 一对一/建群 | 文字/Emoji | 媒体/文件 | 语音 | 提醒/投票 | 加密 | 日期 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 7.2.1-69057 Update 12 | 2.4.1-22111 | macOS | 官方网页客户端已登录；岚仓待复验 | 首次单聊和建群静态契约已确认；写入待验收 | 静态契约已确认；岚仓待复验 | 上传/读取契约已确认；实际送达待新构建验收 | 音频附件播放可见；录音未确认 | 提醒/投票契约已确认；写入待验收 | 能力存在；密钥协议未验证 | 2026-07-23 |
@@ -150,3 +152,11 @@ macOS 本轮覆盖 21 个页面并新增 ZRAM、电源计划和套件中心流�
 
 
 同日二次反馈：官方清单的系统套件类型与前端允许缺省普通存储位置的逻辑已核对；Apple 共享网络层仅对 system/system_hidden 接受缺省/null 的 volume_list，macOS 准备阶段增加取消与迟到结果保护。照片错误归属及刷新清理仅是 macOS 模型修复，不是新的照片 API 或真实写验证。五端取舍、合成回归与待验收条件见[二次反馈账本](../development/PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)。
+
+### 2026-10-03 Chat 消息交互增量
+
+官方页面当前 DSM 7.2.1-69057 Update12 / Chat2.4.1-22111：关键词搜索、定位/线程分页、编辑设置和投票选择读取为 read-verified；本轮合成编辑/回复/投票创建与参与/Channel.view 已完成回读，逐项为 behavior-verified；Post.Subscribe.view 仅观察成功回执。待归属观察不替换 lab-a 当前基线。macOS 新增功能的自动化、构建与系统权限限制见[五组功能账本](../development/MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md)，协议见[消息交互记录](../api/discovery/endpoints/chat-message-interaction.md)。麦克风/通知、普通账号、中继、其他版本及新原生包操作尚不能据网页结果宣告通过；其他四端仅共享影响评估，未完成新增 UI。
+
+2026-10-03 macOS 容器搜索下载修复：Registry.search 固定 v1；暂时读取失败自动恢复，NAS 明确下载失败不再卡在核查提示。DSM 7.2.1-69057 U12 / Container Manager 24.0.2-1535 的受控下载已复现 1202 失败、无新增镜像；成功终态仍待用户验证。见 `docs/development/MACOS_CONTAINER_IMAGE_PULL_FIX_20261003_ZH.md`。不提升其他端或旧匿名设备的验证等级。
+
+2026-10-03 用户追加开放策略：macOS 已实现功能按实际能力与权限提供，Chat 新增交互移除精确 DSM/套件版本白名单；照片删除和容器网络创建在 macOS 组合根已经开放。保留系统安全、危险操作确认、并发去重与写后回读；不声称其他版本或其他平台已经验证。完整范围见 `docs/development/MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md`。

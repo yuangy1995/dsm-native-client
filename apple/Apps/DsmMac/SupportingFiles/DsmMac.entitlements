@@ -25,5 +25,7 @@
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
 	</array>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
 </dict>
 </plist>

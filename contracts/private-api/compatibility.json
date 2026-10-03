@@ -1168,7 +1168,7 @@
       "id": "container-manager-internal",
       "componentId": "container-manager",
       "scope": "Container Manager",
-      "capability": "容器、映像、仓库、网络与只读详情、项目和日志；2026-09-17 待归属观察只读核实 Image.list 的 offset=0/limit=-1/show_dsm=false 及 tags 数组结构，Windows/macOS 已有请求同步修正。Image.pull_status 与 Entry.Request.Polling.list 仅有官方脚本静态线索；后续兼容模型已获授权，Windows 已接 task_id 绑定进度与恢复，不采用 admin 聚合任务猜测绑定，旧 lab-a 验证与写等级不提升，见端点文档",
+      "capability": "容器、映像、仓库、网络与只读详情、项目和日志；2026-09-17 待归属观察只读核实 Image.list 的 offset=0/limit=-1/show_dsm=false 及 tags 数组结构，Windows/macOS 已有请求同步修正。Image.pull_status 与 Entry.Request.Polling.list 仅有官方脚本静态线索；后续兼容模型已获授权，Windows 已接 task_id 绑定进度与恢复，不采用 admin 聚合任务猜测绑定，旧 lab-a 验证与写等级不提升，见端点文档；2026-10-03 待归属同版本 search v1 成功/v2 返回 103，受控下载回执与运行状态可读、随后 1202 失败且无新增目标镜像，详见当日观察；成功下载仍未行为验证",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
@@ -1187,7 +1187,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "读取按能力逐项降级；日志失败/不可用不得显示为空，网络缺失关联数量不得默认为零，项目空键值对象是正常空列表。1.0.5 按用户要求移除创建的包类型限制，保留接口检查、确认、校验、互斥和回读；网络删除使用 networks 对象数组，默认及有连接的网络禁止删除。限定实机证据见端点文档，不外推其他环境。2026-09-19 Windows 网络创建/删除按用户授权开放，不强加 DSM 管理员身份。2026-09-20 Mac 源码已纠正容器 name 寻址和 delete 的 force=false/preserve_profile=false，增加确认与状态核查；Windows 四操作、筛选多选确认、逐项反馈及会话内恢复原生窗口已接，未知中止批次且核查不重发，已有双语原生合成证据。两端均排除容器或所属项目 is_package 托管实例，未知只核查不重放；只有 Windows 合成证据，Swift/Mac 未构建。Windows Image.delete 已接 images 仓库/标签数组或裸 identity，标签展开、原 ID/标签快照确认、容器占用预检、部分结果与只读恢复；Mac 同日已修 images 参数、多标签身份、占用预检、固定选择确认与独立只读恢复源码，新增 Swift/共享请求测试未在本机执行，无 Mac 修复包。Windows 拉取按标签确认和 task_id 查询，finished/回显匹配/完整列表共同核查；未知不重发，关闭仅停止本地查询，已知任务读取不依赖 Registry 能力，正式验证入口按能力开放。旧镜像删除 fixture 已同步 images/identity，Mac 已补拉取请求/进度/独立只读核查、兼容入口委托、搜索与任务分区、确认及可见轮询源码，恢复限当前仓库实例内存；数字任务编号超过 Double 安全整数范围时不回传。Swift/App 测试未执行，无 Mac 包，不提升行为等级。State 字段只读来源设备待归属，未提升任何写行为验证，详见端点文档。",
+      "fallback": "读取按能力逐项降级；日志失败/不可用不得显示为空，网络缺失关联数量不得默认为零，项目空键值对象是正常空列表。1.0.5 按用户要求移除创建的包类型限制，保留接口检查、确认、校验、互斥和回读；网络删除使用 networks 对象数组，默认及有连接的网络禁止删除。限定实机证据见端点文档，不外推其他环境。2026-09-19 Windows 网络创建/删除按用户授权开放，不强加 DSM 管理员身份。2026-09-20 Mac 源码已纠正容器 name 寻址和 delete 的 force=false/preserve_profile=false，增加确认与状态核查；Windows 四操作、筛选多选确认、逐项反馈及会话内恢复原生窗口已接，未知中止批次且核查不重发，已有双语原生合成证据。两端均排除容器或所属项目 is_package 托管实例，未知只核查不重放；只有 Windows 合成证据，Swift/Mac 未构建。Windows Image.delete 已接 images 仓库/标签数组或裸 identity，标签展开、原 ID/标签快照确认、容器占用预检、部分结果与只读恢复；Mac 同日已修 images 参数、多标签身份、占用预检、固定选择确认与独立只读恢复源码，新增 Swift/共享请求测试未在本机执行，无 Mac 修复包。Windows 拉取按标签确认和 task_id 查询，finished/回显匹配/完整列表共同核查；未知不重发，关闭仅停止本地查询，已知任务读取不依赖 Registry 能力，正式验证入口按能力开放。旧镜像删除 fixture 已同步 images/identity，Mac 已补拉取请求/进度/独立只读核查、兼容入口委托、搜索与任务分区、确认及可见轮询源码，恢复限当前仓库实例内存；数字任务编号超过 Double 安全整数范围时不回传。Swift/App 测试未执行，无 Mac 包，不提升行为等级。State 字段只读来源设备待归属，未提升任何写行为验证，详见端点文档。 2026-10-03 更新：macOS 与共享 Apple 搜索 v1、失败恢复和双语 UI 已完成 2415 项 XCTest（169 环境跳过、0 失败）及 12 项 Swift Testing，单独容器 UI 通过，iOS 通用模拟器构建通过；受控下载的 NAS 1202 失败有观察证据，成功结束仍未验证。较早“未构建/无 Mac 包”仅描述当时状态，最新产物与验证见 MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md。",
       "documentRef": "docs/api/discovery/endpoints/container-manager-internal.md",
       "verifications": [
         {
@@ -1650,6 +1650,31 @@
       ],
       "fallback": "按用户要求不以实机证据等级或精确固件白名单禁用功能；能力发现、绑定会话实际权限、目标确认、去重和结果回读继续执行。未知不重放，读取失败不影响无关文件流程。真实写仍待用户验证。",
       "documentRef": "docs/api/discovery/endpoints/file-station-package-settings.md",
+      "verifications": []
+    },
+    {
+      "id": "chat-message-interaction",
+      "componentId": "synology-chat-server",
+      "scope": "Synology Chat 消息交互",
+      "capability": "历史定位分页、关键词搜索、本人编辑、线程回复、投票参与和跨设备已读。2026-10-03 待归属观察包含受控合成消息的行为证据；因设备别名未确认，不伪造 environmentId 或提升历史基线。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.Chat.Post",
+        "SYNO.Chat.Admin.Setting",
+        "SYNO.Chat.Post.Vote",
+        "SYNO.Chat.Channel",
+        "SYNO.Chat.Post.Subscribe"
+      ],
+      "paths": [
+        "runtime-discovered-via-SYNO.API.Info"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "用户明确要求开放后，macOS/共享 Apple 新增交互不再按精确 DSM/Chat 版本白名单拦截，也不要求读取套件版本；按实际 API 能力、会话与本人权限、管理员编辑规则、稳定目标及去重回读开放。缺失接口保留独立读取；未知提交只回读。移动范围包装器与 Windows/Android 实现不变，麦克风/通知与其他版本真实效果另行验收。",
+      "documentRef": "docs/api/discovery/endpoints/chat-message-interaction.md",
       "verifications": []
     }
   ]

@@ -18,6 +18,7 @@
     "lastMessageSummary": { "type": ["string", "null"] },
     "lastActivityAt": { "type": ["string", "null"], "format": "date-time" },
     "unreadCount": { "type": "integer", "minimum": 0 },
-    "isEncrypted": { "type": "boolean" }
+    "isEncrypted": { "type": "boolean" },
+    "lastViewedAt": { "type": ["string", "null"], "format": "date-time" }
   }
 }

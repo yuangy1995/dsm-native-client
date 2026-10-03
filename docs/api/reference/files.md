@@ -17,6 +17,8 @@
 
 List 原始条目通常含 `name/path/isdir/additional`；领域时间、权限和文件类型由适配器解析。完整原始字段容器在 Repository 的 `FileListPayload/FilePayload` 中，不能将 `FileItem` JSON 直接当作 DSM 响应。
 
+`additional.mount_point_type` 对普通本地项目可以是空字符串；Apple Adapter 将精确空串归一化为没有特殊挂载类型，非空值原样保留。该字段不替代 `perm` 权限判断，SMB/NFS 等特殊挂载的写入限制保持不变。2026-10-03 的只读观察、回归和五端影响见[挂载修复账本](../../development/MACOS_MOUNT_WRITABILITY_FIX_20261003_ZH.md)。
+
 ## 搜索与后台任务
 
 - 名称/高级搜索使用 `Search.start → list → stop/clean`；条件以 [FileSearchRequest](../../../apple/Packages/DsmCore/Sources/FileSearchRequest.swift) 为输入，保持原始任务 ID 和完整分页。

@@ -17,7 +17,7 @@ signing="$(/usr/bin/codesign -dv --verbose=4 "$app_path" 2>&1)"
 probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/lanstash-local-loader.XXXXXX")"
 trap 'rm -r -- "$probe_dir"' EXIT
 /usr/bin/codesign -d --entitlements - --xml "$app_path" > "$probe_dir/entitlements.plist" 2>/dev/null
-python3 -c 'import plistlib,sys; assert plistlib.load(sys.stdin.buffer) == {"com.apple.security.cs.disable-library-validation": True}, "临时包权限超出单一库验证例外"' < "$probe_dir/entitlements.plist"
+python3 -c 'import plistlib,sys; assert plistlib.load(sys.stdin.buffer) == {"com.apple.security.cs.disable-library-validation": True, "com.apple.security.device.audio-input": True}, "临时包只允许录音权限与单一库验证例外"' < "$probe_dir/entitlements.plist"
 xcrun clang "$script_dir/fixtures/macos_library_load_probe.c" -o "$probe_dir/loader"
 /usr/bin/codesign --force --options runtime --timestamp=none \
     --entitlements "$probe_dir/entitlements.plist" --sign - "$probe_dir/loader"

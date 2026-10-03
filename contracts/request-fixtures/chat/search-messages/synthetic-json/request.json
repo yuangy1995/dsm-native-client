@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "chat.search-messages.synthetic-json",
+  "module": "chat",
+  "operation": "searchMessages",
+  "api": {
+    "name": "SYNO.Chat.Post",
+    "method": "search",
+    "preferredVersion": 5,
+    "resolvedVersion": 5,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "keyword",
+      "valueType": "string",
+      "encodedValue": "\"Synthetic\""
+    },
+    {
+      "name": "in",
+      "valueType": "integerArray",
+      "encodedValue": "[27]"
+    },
+    {
+      "name": "offset",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "limit",
+      "valueType": "integer",
+      "encodedValue": "25"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "readOnlyAutomatic",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

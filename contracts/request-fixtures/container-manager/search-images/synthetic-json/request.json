@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "container-manager.search-images.synthetic-json",
+  "module": "container-manager",
+  "operation": "searchImages",
+  "api": {
+    "name": "SYNO.Docker.Registry",
+    "method": "search",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "q",
+      "valueType": "string",
+      "encodedValue": "\"synthetic\""
+    },
+    {
+      "name": "offset",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "limit",
+      "valueType": "integer",
+      "encodedValue": "50"
+    },
+    {
+      "name": "page_size",
+      "valueType": "integer",
+      "encodedValue": "50"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "risk": "read",
+    "retryPolicy": "readOnlyAutomatic",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

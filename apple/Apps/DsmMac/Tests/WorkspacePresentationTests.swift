@@ -5006,6 +5006,58 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test容器下载恢复与搜索错误双语主题使用普通文案() async throws {
+        let previous = AppLanguageStore.shared.selection
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer { AppLanguageStore.shared.selection = previous; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for stage in [ContainerImagePullStage.needsReview, .downloading, .ready, .rejected] {
+                    let repository = ServiceManagementRepositoryStub()
+                    await repository.configurePull(stage: stage)
+                    let model = ContainerImagePullModel(repository: repository)
+                    await model.activate(); model.setTarget(repository: "synthetic/web", tag: "stable"); model.confirm(true); await model.submit()
+                    let host = NSHostingView(rootView: PullImageSheet(search: { _ in [] }, loadTags: { _ in [] }, tracking: model)
+                        .macSheetSurface().environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                        .environment(\.locale, AppLanguageStore.shared.locale).preferredColorScheme(scheme))
+                    let window = attach(host, size: .init(width: 620, height: 640))
+                    defer { model.deactivate(); window.contentView = nil; window.close() }
+                    try await settle(host)
+                    let values = remoteFlowElements(host).flatMap { [$0.accessibilityLabel(), $0.accessibilityTitle(), $0.value("accessibilityValue") as? String].compactMap { $0 } }
+                    XCTAssertTrue(values.contains { $0.contains(ContainerImagePullModel.statusText(model.results[0])) })
+                    XCTAssertTrue(values.contains(L10n.string("container-image.pull.review")))
+                    XCTAssertFalse(values.contains { $0.contains("检查下载状态") || $0.contains("不要再次提交") || $0.contains("Check download status") })
+                    let calls = await repository.pullRequests; XCTAssertEqual(calls.count, 1)
+                    try snapshot(host, name: "container-pull-\(stage.rawValue)-\(language.rawValue)-\(scheme)")
+                }
+                let repository = ServiceManagementRepositoryStub(), model = ContainerImagePullModel(repository: repository)
+                let host = NSHostingView(rootView: PullImageSheet(search: { _ in throw PresentationRepositoryError.unexpectedOperation }, loadTags: { _ in [] }, tracking: model)
+                    .macSheetSurface().environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                    .environment(\.locale, AppLanguageStore.shared.locale).preferredColorScheme(scheme))
+                let window = attach(host, size: .init(width: 620, height: 640))
+                defer { model.deactivate(); window.contentView = nil; window.close() }
+                try await settle(host); window.makeKeyAndOrderFront(nil)
+                let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.isEditable })
+                field.selectText(nil)
+                let editor = try XCTUnwrap(window.firstResponder as? NSTextView)
+                editor.insertText("synthetic", replacementRange: NSRange(location: NSNotFound, length: 0))
+                try await settle(host)
+                let search = try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("ui.44ce7ae909bbb28b") })
+                try click(window, at: window.convertPoint(fromScreen: .init(x: search.accessibilityFrame().midX, y: search.accessibilityFrame().midY)))
+                try await settle(host)
+                let values = remoteFlowElements(host).flatMap { [$0.accessibilityLabel(), $0.accessibilityTitle(), $0.value("accessibilityValue") as? String].compactMap { $0 } }
+                XCTAssertTrue(values.contains(L10n.string("container-image.search.failed")))
+                XCTAssertTrue(values.contains(L10n.string("container-image.search.retry")))
+                XCTAssertFalse(values.contains(L10n.string("ui.fd4d26c833ae1a5f")), "读取失败不能冒充没有匹配项")
+                let calls = await repository.pullRequests; XCTAssertTrue(calls.isEmpty)
+                try snapshot(host, name: "container-search-failed-\(language.rawValue)-\(scheme)")
+            }
+        }
+    }
+
     func test下载辅助弹窗双语主题不自动创建或保存() async throws {
         let previousLanguage = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = previousLanguage }
@@ -5343,6 +5395,129 @@ final class WorkspacePresentationTests: XCTestCase {
                     XCTAssertEqual(host.bounds.width, 720, accuracy: 1)
                     XCTAssertEqual(model.selection, [item.id])
                     if state == "filtered" { XCTAssertTrue(model.displayedItems.isEmpty) }
+                }
+            }
+        }
+    }
+
+    func test消息新增操作面板双语主题不自动发送或录音() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer {
+            AppLanguageStore.shared.selection = previousLanguage
+            NSApp.accessibilitySetValue(previousAX, forAttribute: attribute)
+        }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let conversation = ChatConversation(id: "27", kind: .direct, title: "Synthetic conversation", memberIDs: [])
+                let root = ChatMessage(id: "root", conversationID: "27", senderID: "self", senderDisplayName: "Synthetic self",
+                    isFromCurrentUser: true, sentAt: Date(timeIntervalSince1970: 1_800_000_000), text: "Synthetic original message", kind: .normal, threadID: "root", replyCount: 1)
+                let reply = ChatMessage(id: "reply", conversationID: "27", senderID: "peer", senderDisplayName: "Synthetic peer",
+                    isFromCurrentUser: false, sentAt: Date(timeIntervalSince1970: 1_800_000_100), text: "Synthetic threaded reply", kind: .normal, threadID: "root")
+                let poll = ChatMessage(id: "poll", conversationID: "27", senderID: "peer", sentAt: Date(), text: "Synthetic poll",
+                    poll: ChatPoll(id: "poll", question: "Synthetic poll", allowsMultipleSelection: true, isAnonymous: false,
+                        options: [ChatPollOption(id: "a", text: "Synthetic first choice", voteCount: 2), ChatPollOption(id: "b", text: "Synthetic second choice", voteCount: 1, isSelectedByCurrentUser: true)]))
+                let repository = ChatRepositoryStub(conversations: [conversation], messagesByConversation: [conversation.id: [root, reply, poll]], availableFeatures: Set(ChatFeature.allCases))
+                let model = ChatWorkspaceModel(repository: repository)
+                await model.loadIfNeeded()
+                for panel in ["search", "edit", "voice", "vote", "thread"] {
+                    let view: AnyView
+                    let expected: String
+                    switch panel {
+                    case "search": view = AnyView(ChatSearchSheet(model: model, conversation: conversation)); expected = L10n.string("chat.search.title")
+                    case "edit": view = AnyView(ChatEditSheet(model: model, message: root)); expected = L10n.string("chat.edit.save")
+                    case "voice": view = AnyView(ChatVoiceSheet(model: model, conversation: conversation)); expected = L10n.string("chat.voice.start")
+                    case "vote": view = AnyView(ChatVotingSheet(model: model, initialMessage: poll)); expected = L10n.string("chat.vote.submit")
+                    default: view = AnyView(ChatDiscussionSheet(model: model, initialMessage: root)); expected = "Synthetic threaded reply"
+                    }
+                    let host = NSHostingView(rootView: view.macSheetSurface().environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                        .environment(\.locale, AppLanguageStore.shared.locale).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 700, height: 620))
+                    defer { window.contentView = nil; window.close() }
+                    try await settle(host)
+                    let values = remoteFlowElements(host).flatMap { element in
+                        [element.accessibilityLabel(), element.accessibilityTitle(), element.value("accessibilityValue") as? String].compactMap { $0 }
+                    }
+                    XCTAssertTrue(values.contains(where: { $0.contains(expected) }), "\(panel): \(expected)")
+                    let previewName = "chat-five-\(panel)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")"
+                    try snapshot(host, name: previewName)
+                    let sent = await repository.sentTexts()
+                    XCTAssertTrue(sent.isEmpty)
+                }
+                model.cancelAllWork()
+            }
+        }
+    }
+
+    func test消息恢复使用普通操作且辅助功能包含正文() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer {
+            AppLanguageStore.shared.selection = previousLanguage
+            NSApp.accessibilitySetValue(previousAX, forAttribute: attribute)
+        }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let conversation = ChatConversation(id: "sample", kind: .direct, title: "Synthetic conversation", memberIDs: [])
+                let repository = ChatRepositoryStub(conversations: [conversation])
+                let model = ChatWorkspaceModel(repository: repository)
+                await model.loadIfNeeded()
+                await repository.makeNextSendUnconfirmed()
+                _ = await model.send(text: "Synthetic accessible message")
+                let host = NSHostingView(rootView: ChatWorkspaceView(model: model)
+                    .environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                    .environment(\.locale, AppLanguageStore.shared.locale).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 900, height: 650))
+                defer { model.cancelAllWork(); window.contentView = nil; window.close() }
+                try await settle(host)
+                let elements = remoteFlowElements(host)
+                XCTAssertTrue(elements.contains { ($0.value("accessibilityValue") as? String) == "Synthetic accessible message" })
+                XCTAssertTrue(elements.contains {
+                    $0.accessibilityRole() == .link && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("chat.send.check")
+                })
+                try snapshot(host, name: "chat-recovery-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                let requests = await repository.sendRequestIDs()
+                XCTAssertEqual(Set(requests).count, 1)
+            }
+        }
+    }
+
+    func test消息读取错误与加密聊天显示原因而不是空会话() async throws {
+        let previous = AppLanguageStore.shared.selection
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer {
+            AppLanguageStore.shared.selection = previous
+            NSApp.accessibilitySetValue(previousAX, forAttribute: attribute)
+        }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for encrypted in [false, true] {
+                    let conversation = ChatConversation(id: "sample", kind: .direct, title: "Synthetic conversation", memberIDs: [], isEncrypted: encrypted)
+                    let repository = ChatRepositoryStub(conversations: [conversation])
+                    await repository.setMessageReadsFailing(true)
+                    let model = ChatWorkspaceModel(repository: repository)
+                    await model.loadIfNeeded()
+                    let host = NSHostingView(rootView: ChatWorkspaceView(model: model)
+                        .environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                        .environment(\.locale, AppLanguageStore.shared.locale).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 900, height: 650))
+                    defer { model.cancelAllWork(); window.contentView = nil; window.close() }
+                    try await settle(host)
+                    let visibleText = remoteFlowElements(host).flatMap {
+                        [$0.value("accessibilityValue") as? String, $0.accessibilityLabel(), $0.accessibilityTitle()].compactMap { $0 }
+                    }.joined(separator: " ")
+                    XCTAssertTrue(visibleText.contains(L10n.string(encrypted ? "chat.encrypted.title" : "chat.messages.loadFailed")), visibleText)
+                    XCTAssertEqual(model.canSendText, !encrypted)
+                    try snapshot(host, name: "chat-\(encrypted ? "encrypted" : "read-error")-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
                 }
             }
         }

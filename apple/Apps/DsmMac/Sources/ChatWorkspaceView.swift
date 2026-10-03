@@ -7,6 +7,8 @@ import DsmLocalization
 struct ChatWorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
     @Bindable var model: ChatWorkspaceModel
+    @State private var presentsSearch = false
+    @State private var notificationMessage: String?
     @State private var presentsNewConversation = false
     @State private var selectedConversationIDs: Set<String> = []
     @State private var pendingConversationDeletion: Set<String> = []
@@ -15,6 +17,17 @@ struct ChatWorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             MacPageHeader(title: L10n.string("ui.4da199fae933d4fa")) {
+                Button { presentsSearch = true } label: {
+                    Label(L10n.string("chat.search.title"), systemImage: "magnifyingglass")
+                }.disabled(!model.canSearchMessages)
+                Button {
+                    Task {
+                        notificationMessage = L10n.string(await ChatNotificationService.enable()
+                            ? "chat.notification.enabled" : "chat.notification.denied")
+                    }
+                } label: {
+                    Label(L10n.string("chat.notification.enable"), systemImage: "bell")
+                }
                 Button {
                     Task { await model.reload() }
                 } label: {
@@ -58,6 +71,20 @@ struct ChatWorkspaceView: View {
             await model.loadIfNeeded()
             await model.refreshForegroundChat()
         }
+        .background(ChatWindowActivity { active in
+            model.isChatWindowActive = active
+            if active { Task { await model.synchronizeVisibleReadState() } }
+        })
+        .onAppear { model.setChatVisibility(true) }
+        .onDisappear { model.setChatVisibility(false) }
+        .macSheet(isPresented: $presentsSearch) {
+            ChatSearchSheet(model: model, conversation: model.selectedConversation)
+        }
+        .alert(L10n.string("chat.notification.title"), isPresented: Binding(
+            get: { notificationMessage != nil }, set: { if !$0 { notificationMessage = nil } }
+        )) {
+            Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) { notificationMessage = nil }
+        } message: { Text(notificationMessage ?? "") }
         .macSheet(isPresented: $presentsNewConversation) {
             NewChatSheet(model: model)
         }
@@ -230,6 +257,7 @@ struct ChatWorkspaceView: View {
     private var conversationDetail: some View {
         if let conversation = model.selectedConversation {
             ChatConversationView(model: model, conversation: conversation)
+                .id(conversation.id)
         } else if model.canUseMessaging {
             ContentUnavailableView(
                 L10n.string("ui.4fc5349db1ff0c87"),
@@ -403,7 +431,12 @@ private struct ChatUnavailableDetail: View {
 private struct ChatConversationView: View {
     @Bindable var model: ChatWorkspaceModel
     let conversation: ChatConversation
-    @State private var attachmentURLs: [URL] = []
+    @State private var editingMessage: ChatMessage?
+    @State private var replyingTo: ChatMessage?
+    @State private var votingMessage: ChatMessage?
+    @State private var playingMedia: ChatMediaSelection?
+    @State private var presentsVoiceRecorder = false
+    @State private var attachmentSelectionConversationID: String?
     @State private var presentsFileImporter = false
     @State private var presentsPollComposer = false
     @State private var presentsReminderList = false
@@ -419,6 +452,7 @@ private struct ChatConversationView: View {
     @State private var scrollToLatestRequest = 0
     @State private var presentsImagePreview = false
     @State private var previewedImage: NSImage?
+    @State private var imagePreviewTask: Task<Void, Never>?
     @FocusState private var isComposerFocused: Bool
 
     var body: some View {
@@ -426,13 +460,29 @@ private struct ChatConversationView: View {
             conversationHeader
             Divider()
 
-            if model.isLoadingMessages {
+            if conversation.isEncrypted {
+                ContentUnavailableView(L10n.string("chat.encrypted.title"), systemImage: "lock.fill",
+                                       description: Text(L10n.string("chat.encrypted.description")))
+                    .fillsAvailableContentArea()
+            } else if model.isLoadingMessages {
                 ProgressView(L10n.string("ui.68e4421f9ccf609d"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.messages.isEmpty, let error = model.messageLoadError {
+                ContentUnavailableView {
+                    Label(L10n.string("chat.messages.loadFailed"), systemImage: "exclamationmark.bubble")
+                } description: {
+                    Text(error)
+                } actions: {
+                    Button(L10n.string("ui.b8784c8dd5636ff2")) {
+                        Task { await model.selectConversation(id: conversation.id) }
+                    }
+                }
+                .fillsAvailableContentArea()
             } else if model.messages.isEmpty {
                 emptyConversationState
             } else {
                 ScrollViewReader { proxy in
+                    GeometryReader { viewport in
                     ScrollView {
                         LazyVStack(spacing: 8) {
                             if model.hasMoreMessagesBefore {
@@ -466,6 +516,7 @@ private struct ChatConversationView: View {
                                     isCurrentUser: model.isCurrentUser(message),
                                     showsSender: conversation.kind == .group,
                                     isSelected: selectedMessageIDs.contains(message.id),
+                                    isAwaitingConfirmation: model.isAwaitingMessageConfirmation(message.id),
                                     failureMessage: model.sendFailureMessage(for: message.id),
                                     uploadProgress: model.uploadProgress(for: message.id),
                                     downloadProgress: model.attachmentDownloadProgress(for: message.id),
@@ -489,7 +540,10 @@ private struct ChatConversationView: View {
                                     },
                                     onSaveAttachment: { attachment in
                                         saveAttachment(message: message, attachment: attachment)
-                                    }
+                                    },
+                                    onReply: model.canReply ? { replyingTo = message } : nil,
+                                    onVote: model.canVote ? { votingMessage = message } : nil,
+                                    onPlayMedia: { attachment in playingMedia = ChatMediaSelection(message: message, attachment: attachment) }
                                 )
                                     .id(message.id)
                                     .contentShape(Rectangle())
@@ -501,7 +555,8 @@ private struct ChatConversationView: View {
                                             Button {
                                                 Task { await model.retryMessage(id: message.id) }
                                             } label: {
-                                                Label(L10n.string("ui.9287ac799e545bb0"), systemImage: "arrow.clockwise")
+                                                Label(L10n.string(model.isAwaitingMessageConfirmation(message.id)
+                                                    ? "chat.send.check" : "ui.9287ac799e545bb0"), systemImage: "arrow.clockwise")
                                             }
                                             .disabled(model.isPerformingAction)
                                             Button(role: .destructive) {
@@ -509,6 +564,7 @@ private struct ChatConversationView: View {
                                             } label: {
                                                 Label(L10n.string("ui.a07bcb96af2f3182"), systemImage: "trash")
                                             }
+                                            .disabled(model.isAwaitingMessageConfirmation(message.id))
                                         } else if message.deliveryState == .sending {
                                             Button(role: .destructive) {
                                                 model.cancelMessageSend(id: message.id)
@@ -516,6 +572,13 @@ private struct ChatConversationView: View {
                                                 Label(L10n.string("ui.554bfa5fa81c82cb"), systemImage: "xmark.circle")
                                             }
                                         } else {
+                                            if model.canEdit(message) {
+                                                Button(L10n.string("chat.edit.action"), systemImage: "pencil") { editingMessage = message }
+                                                    .disabled(model.isPerformingAction)
+                                            }
+                                            if model.canReply {
+                                                Button(L10n.string("chat.thread.reply"), systemImage: "arrowshape.turn.up.left") { replyingTo = message }
+                                            }
                                             if let attachment = message.attachments.first,
                                                model.canDownloadAttachments {
                                                 if attachment.kind == .image {
@@ -588,10 +651,22 @@ private struct ChatConversationView: View {
                                         }
                                     }
                             }
+                            Color.clear.frame(height: 1)
+                                .background(GeometryReader { geometry in
+                                    Color.clear.preference(key: ChatBottomPreference.self,
+                                        value: ChatVisibleMessage(messageID: model.messages.last(where: { $0.deliveryState == .sent })?.id,
+                                            bottom: geometry.frame(in: .named("chat-message-scroll")).maxY))
+                                })
                         }
                         .padding(.horizontal, 24)
                         .padding(.vertical, 16)
                         .frame(maxWidth: .infinity)
+                    }
+                    .coordinateSpace(name: "chat-message-scroll")
+                    .onPreferenceChange(ChatBottomPreference.self) { position in
+                        let visible = position.bottom > 0 && position.bottom <= viewport.size.height + 2
+                        model.updateVisibleMessage(visible ? position.messageID : nil)
+                        if visible { Task { await model.synchronizeVisibleReadState() } }
                     }
                     .macThemedScrollContent()
                     .background(MacGlassSurface(role: .content))
@@ -604,13 +679,14 @@ private struct ChatConversationView: View {
                     .onChange(of: model.messages.last?.id) { _, lastID in
                         guard let lastID,
                               let lastMessage = model.messages.last,
-                              model.isCurrentUser(lastMessage) else { return }
+                              model.isCurrentUser(lastMessage) || model.isConversationAtBottom else { return }
                         proxy.scrollTo(lastID, anchor: .bottom)
                     }
                     .onChange(of: scrollToLatestRequest) { _, _ in
                         guard let lastID = model.messages.last?.id else { return }
                         proxy.scrollTo(lastID, anchor: .bottom)
                         model.clearNewMessageIndicator()
+                    }
                     }
                 }
             }
@@ -628,10 +704,18 @@ private struct ChatConversationView: View {
             allowedContentTypes: [.item],
             allowsMultipleSelection: false
         ) { result in
-            if case .success(let urls) = result {
-                attachmentURLs = Array(urls.prefix(1))
+            if case .success(let urls) = result,
+               let targetID = attachmentSelectionConversationID,
+               targetID == model.selectedConversationID {
+                model.updateAttachments(Array(urls.prefix(1)), for: targetID)
             }
+            attachmentSelectionConversationID = nil
         }
+        .macSheet(item: $editingMessage) { message in ChatEditSheet(model: model, message: message) }
+        .macSheet(item: $replyingTo) { message in ChatDiscussionSheet(model: model, initialMessage: message) }
+        .macSheet(item: $votingMessage) { message in ChatVotingSheet(model: model, initialMessage: message) }
+        .macSheet(item: $playingMedia) { media in ChatMediaSheet(model: model, selection: media) }
+        .macSheet(isPresented: $presentsVoiceRecorder) { ChatVoiceSheet(model: model, conversation: conversation) }
         .macSheet(isPresented: $presentsPollComposer) {
             CreatePollSheet(model: model, conversation: conversation)
         }
@@ -686,6 +770,17 @@ private struct ChatConversationView: View {
             presentsForwardSheet = false
             presentsImagePreview = false
             previewedImage = nil
+            imagePreviewTask?.cancel()
+            presentsFileImporter = false
+            attachmentSelectionConversationID = nil
+        }
+        .onChange(of: presentsImagePreview) { _, isPresented in
+            if !isPresented { imagePreviewTask?.cancel(); previewedImage = nil }
+        }
+        .onDisappear {
+            imagePreviewTask?.cancel()
+            presentsFileImporter = false
+            attachmentSelectionConversationID = nil
         }
     }
 
@@ -771,17 +866,17 @@ private struct ChatConversationView: View {
                 .help(L10n.string("ui.6003a1eadb5754b1"))
                 .accessibilityLabel(L10n.string("ui.6003a1eadb5754b1"))
             }
-            if conversation.kind == .group, model.canManagePinnedMessages {
+            if model.canManagePinnedMessages {
                 Button {
                     presentsPinnedMessages = true
                 } label: {
-                    Label(L10n.string("ui.99728d0e0224c355"), systemImage: "pin")
+                    Label(L10n.string("chat.pinned.title"), systemImage: "pin")
                         .labelStyle(.iconOnly)
                         .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.borderless)
-                .help(L10n.string("ui.b1ada05af7dc3716"))
-                .accessibilityLabel(L10n.string("ui.b1ada05af7dc3716"))
+                .help(L10n.string("chat.pinned.open"))
+                .accessibilityLabel(L10n.string("chat.pinned.open"))
             }
             if model.canManageReminders {
                 Button {
@@ -884,7 +979,7 @@ private struct ChatConversationView: View {
                         .font(.caption)
                     Spacer()
                     Button(L10n.string("ui.7ee8b2d0ae7ade97")) {
-                        attachmentURLs = []
+                        model.updateAttachments([], for: conversation.id)
                     }
                     .buttonStyle(.borderless)
                 }
@@ -900,6 +995,7 @@ private struct ChatConversationView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 Button {
                     if model.canSendAttachments {
+                        attachmentSelectionConversationID = conversation.id
                         presentsFileImporter = true
                     } else {
                         model.showAttachmentUnavailable()
@@ -909,7 +1005,7 @@ private struct ChatConversationView: View {
                         .labelStyle(.iconOnly)
                         .frame(width: 28, height: 28)
                 }
-                .disabled(!model.canUseMessaging || model.isPerformingAction)
+                .disabled(conversation.isEncrypted || !model.canUseMessaging || model.isPerformingAction)
                 .help(model.canSendAttachments ? L10n.string("ui.92ef78e381a90762") : L10n.string("ui.e19b010fb03f1d59"))
                 .accessibilityLabel(L10n.string("ui.c8a47d0018480abe"))
 
@@ -926,6 +1022,13 @@ private struct ChatConversationView: View {
                 .disabled(!model.canSendText || model.isPerformingAction)
                 .help(L10n.string("ui.9692543077ef0182"))
                 .accessibilityLabel(L10n.string("ui.d405f59076940eb3"))
+
+                Button { presentsVoiceRecorder = true } label: {
+                    Label(L10n.string("chat.voice.title"), systemImage: "mic")
+                        .labelStyle(.iconOnly).frame(width: 28, height: 28)
+                }.disabled(!model.canRecordVoice || model.isPerformingAction)
+                    .help(L10n.string("chat.voice.title"))
+                    .accessibilityLabel(L10n.string("chat.voice.title"))
 
                 Button {
                     presentsPollComposer = true
@@ -981,12 +1084,13 @@ private struct ChatConversationView: View {
         guard canSend else { return }
         let text = model.draftText(for: conversation.id)
         let urls = attachmentURLs
+        let conversationID = conversation.id
         Task {
-            if await model.send(text: text, attachmentURLs: urls) {
-                attachmentURLs = []
-            }
+            _ = await model.send(text: text, attachmentURLs: urls, conversationID: conversationID)
         }
     }
+
+    private var attachmentURLs: [URL] { model.attachmentURLs(for: conversation.id) }
 
     private var draftText: Binding<String> {
         Binding(
@@ -1058,10 +1162,17 @@ private struct ChatConversationView: View {
     private func presentImagePreview(message: ChatMessage, attachment: ChatAttachment) {
         guard attachment.kind == .image,
               model.canDownloadAttachments,
-              !model.isPerformingAction,
-              let image = model.thumbnailData(for: message.id).flatMap(NSImage.init(data:)) else { return }
-        previewedImage = image
+              !model.isPerformingAction else { return }
+        let conversationID = conversation.id
+        previewedImage = nil
         presentsImagePreview = true
+        imagePreviewTask?.cancel()
+        imagePreviewTask = Task {
+            let image = await model.loadAttachmentPreview(messageID: message.id, attachment: attachment)
+            guard !Task.isCancelled, model.selectedConversationID == conversationID else { return }
+            previewedImage = image
+            if image == nil { presentsImagePreview = false }
+        }
     }
 
     private func saveAttachment(message: ChatMessage, attachment: ChatAttachment) {
@@ -1472,7 +1583,7 @@ struct PinnedMessagesSheet: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(L10n.string("ui.99728d0e0224c355"))
+                    Text(L10n.string("chat.pinned.title"))
                         .font(.title2.bold())
                     Text(conversation.title)
                         .font(.callout)
@@ -1503,9 +1614,9 @@ struct PinnedMessagesSheet: View {
                 .fillsAvailableContentArea()
             } else if model.pinnedMessages.isEmpty {
                 ContentUnavailableView(
-                    L10n.string("ui.7b938afe1c9cbc79"),
+                    L10n.string("chat.pinned.empty"),
                     systemImage: "pin",
-                    description: Text(L10n.string("ui.2abb6d1e3b1abe9e"))
+                    description: Text(L10n.string("chat.pinned.empty.description"))
                 )
                 .fillsAvailableContentArea()
             } else {
@@ -1529,7 +1640,7 @@ struct PinnedMessagesSheet: View {
                             .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button {
+                        if model.canPin(message) { Button {
                             Task {
                                 _ = await model.setMessagePinned(message, isPinned: false)
                             }
@@ -1541,7 +1652,7 @@ struct PinnedMessagesSheet: View {
                         .buttonStyle(.borderless)
                         .help(L10n.string("ui.02bf53bf7b24aff8"))
                         .accessibilityLabel(L10n.string("ui.02bf53bf7b24aff8"))
-                        .disabled(model.isPerformingAction)
+                        .disabled(model.isPerformingAction) }
                     }
                     .padding(.vertical, 5)
                 }
@@ -1579,6 +1690,8 @@ struct ScheduledMessageComposerSheet: View {
     let conversation: ChatConversation
     @State private var text = ""
     @State private var sendAt = Date().addingTimeInterval(3_600)
+
+    private var isResuming: Bool { model.pendingScheduledMessage(for: conversation.id) != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1619,11 +1732,17 @@ struct ScheduledMessageComposerSheet: View {
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .disabled(isResuming || model.isPerformingAction)
 
+            if model.statusIsError, let error = model.statusMessage {
+                Text(error).font(.callout).foregroundStyle(.secondary).padding(.horizontal, 20)
+            }
             HStack {
                 Spacer()
                 Button {
                     Task {
+                        if isResuming { await model.loadScheduledMessages() }
+                        guard model.selectedConversationID == conversation.id else { return }
                         if await model.createScheduledMessage(text: text, sendAt: sendAt) {
                             dismiss()
                         }
@@ -1632,13 +1751,13 @@ struct ScheduledMessageComposerSheet: View {
                     if model.isPerformingAction {
                         ProgressView().controlSize(.small)
                     } else {
-                        Text(L10n.string("ui.5246400327a69731"))
+                        Text(L10n.string(isResuming ? "chat.send.check" : "ui.5246400327a69731"))
                     }
                 }
                 .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(
                     text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || sendAt <= Date()
+                        || (!isResuming && sendAt <= Date())
                         || model.isPerformingAction
                 )
                 .keyboardShortcut(.defaultAction)
@@ -1648,6 +1767,12 @@ struct ScheduledMessageComposerSheet: View {
         }
         .frame(minWidth: 460, minHeight: 300)
         .background(MacGlassSurface(role: .sidebar))
+        .onAppear {
+            if let draft = model.pendingScheduledMessage(for: conversation.id) {
+                text = draft.text
+                sendAt = draft.sendAt
+            }
+        }
     }
 }
 
@@ -1949,6 +2074,8 @@ struct CreatePollSheet: View {
     @State private var isAnonymous = false
     @FocusState private var focusedField: Int?
 
+    private var isResuming: Bool { model.pendingPollDraft(for: conversation.id) != nil }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -2008,6 +2135,11 @@ struct CreatePollSheet: View {
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .disabled(isResuming || model.isPerformingAction)
+
+            if model.statusIsError, let error = model.statusMessage {
+                Text(error).font(.callout).foregroundStyle(.secondary).padding(.horizontal, 20)
+            }
 
             HStack {
                 Text(L10n.string("ui.83abddba8f54950a"))
@@ -2016,6 +2148,8 @@ struct CreatePollSheet: View {
                 Spacer()
                 Button {
                     Task {
+                        if isResuming { await model.refreshCurrentConversation() }
+                        guard model.selectedConversationID == conversation.id else { return }
                         if await model.createPoll(
                             question: question,
                             options: options,
@@ -2029,7 +2163,7 @@ struct CreatePollSheet: View {
                     if model.isPerformingAction {
                         ProgressView().controlSize(.small)
                     } else {
-                        Text(L10n.string("ui.82c4fa27cdb5f875"))
+                        Text(L10n.string(isResuming ? "chat.send.check" : "ui.82c4fa27cdb5f875"))
                     }
                 }
                 .buttonStyle(MacToolbarButtonStyle(prominent: true))
@@ -2041,6 +2175,14 @@ struct CreatePollSheet: View {
         }
         .frame(minWidth: 460, minHeight: 390)
         .background(MacGlassSurface(role: .sidebar))
+        .onAppear {
+            if let draft = model.pendingPollDraft(for: conversation.id) {
+                question = draft.question
+                options = draft.options
+                allowsMultipleSelection = draft.allowsMultipleSelection
+                isAnonymous = draft.isAnonymous
+            }
+        }
     }
 
     private var canSubmit: Bool {
@@ -2061,6 +2203,7 @@ private struct ChatMessageRow: View {
     let isCurrentUser: Bool
     let showsSender: Bool
     let isSelected: Bool
+    let isAwaitingConfirmation: Bool
     let failureMessage: String?
     let uploadProgress: Double?
     let downloadProgress: Double?
@@ -2072,6 +2215,9 @@ private struct ChatMessageRow: View {
     let onLoadThumbnail: (ChatAttachment) -> Void
     let onPreviewImage: (ChatAttachment) -> Void
     let onSaveAttachment: (ChatAttachment) -> Void
+    var onReply: (() -> Void)? = nil
+    var onVote: (() -> Void)? = nil
+    var onPlayMedia: ((ChatAttachment) -> Void)? = nil
 
     private var senderName: String {
         if isCurrentUser { return L10n.string("ui.a0c7716669b5ded0") }
@@ -2088,6 +2234,12 @@ private struct ChatMessageRow: View {
                 metadata
                 messageBubble
                 deliveryStatus
+                if let onReply, message.deliveryState == .sent {
+                    Button(action: onReply) {
+                        Label(message.replyCount.map { $0 > 0 ? L10n.string("chat.thread.count", $0) : L10n.string("chat.thread.reply") }
+                            ?? L10n.string("chat.thread.reply"), systemImage: "arrowshape.turn.up.left")
+                    }.buttonStyle(.borderless).font(.caption)
+                }
             }
             .frame(maxWidth: 560, alignment: isCurrentUser ? .trailing : .leading)
 
@@ -2113,7 +2265,7 @@ private struct ChatMessageRow: View {
                     .stroke(Color.accentColor.opacity(0.65), lineWidth: 1)
             }
         }
-        .accessibilityElement(children: message.attachments.isEmpty ? .combine : .contain)
+        .accessibilityElement(children: onReply == nil && onVote == nil && message.attachments.isEmpty && message.deliveryState == .sent ? .combine : .contain)
         .accessibilityLabel(
             L10n.string(
                 "chat.message.accessibility",
@@ -2122,6 +2274,7 @@ private struct ChatMessageRow: View {
                 deliveryAccessibilityText
             )
         )
+        .accessibilityValue(message.text ?? message.poll?.question ?? "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -2143,6 +2296,7 @@ private struct ChatMessageRow: View {
                     Image(systemName: "lock.fill")
                         .accessibilityLabel(L10n.string("ui.aed642276d2b2cc9"))
                 }
+                if message.editedAt != nil { Text(L10n.string("chat.edit.edited")) }
                 if message.isPinned {
                     Image(systemName: "pin.fill")
                         .accessibilityLabel(L10n.string("ui.99728d0e0224c355"))
@@ -2171,7 +2325,7 @@ private struct ChatMessageRow: View {
 
     private var messageBubble: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let text = message.text {
+            if let text = message.text, message.poll == nil {
                 Text(text)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2191,6 +2345,10 @@ private struct ChatMessageRow: View {
                             systemImage: option.isSelectedByCurrentUser ? "checkmark.circle.fill" : "circle"
                         )
                         .font(.callout)
+                    }
+                    if let onVote {
+                        Button(L10n.string(poll.isClosed ? "chat.vote.results" : "chat.vote.title"), action: onVote)
+                            .buttonStyle(.bordered)
                     }
                 }
             }
@@ -2229,6 +2387,10 @@ private struct ChatMessageRow: View {
                 .buttonStyle(.plain)
                 .help(L10n.string("ui.e201b318efc4814d", String(describing: attachment.fileName)))
                 .accessibilityLabel(L10n.string("ui.d4c051bc4e2432c0", String(describing: attachment.fileName)))
+            }
+            if canDownloadAttachments, attachment.kind == .video || attachment.kind == .voice, let onPlayMedia {
+                Button(L10n.string("chat.media.play"), systemImage: "play.circle.fill") { onPlayMedia(attachment) }
+                    .buttonStyle(.bordered)
             }
             HStack(spacing: 8) {
                 Label(attachment.fileName, systemImage: attachmentIcon(attachment.kind))
@@ -2299,9 +2461,10 @@ private struct ChatMessageRow: View {
             .accessibilityElement(children: .combine)
         } else if message.deliveryState == .failed {
             VStack(alignment: .trailing, spacing: 4) {
-                Label(L10n.string("ui.ac77953a1e064ed6"), systemImage: "exclamationmark.circle.fill")
+                Label(L10n.string(isAwaitingConfirmation ? "chat.send.pending" : "ui.ac77953a1e064ed6"),
+                      systemImage: isAwaitingConfirmation ? "clock" : "exclamationmark.circle.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(isAwaitingConfirmation ? Color.secondary : .red)
                 if let failureMessage {
                     Text(failureMessage)
                         .font(.caption2)
@@ -2309,7 +2472,7 @@ private struct ChatMessageRow: View {
                         .multilineTextAlignment(.trailing)
                         .lineLimit(2)
                 }
-                Button(L10n.string("ui.9287ac799e545bb0"), action: onRetry)
+                Button(L10n.string(isAwaitingConfirmation ? "chat.send.check" : "ui.9287ac799e545bb0"), action: onRetry)
                     .buttonStyle(.link)
                     .font(.caption)
             }
@@ -2320,7 +2483,7 @@ private struct ChatMessageRow: View {
         switch message.deliveryState {
         case .sending: L10n.string("ui.2d88d503d0ffb609")
         case .sent: L10n.string("ui.60823aaec73bd5db")
-        case .failed: L10n.string("ui.ac77953a1e064ed6")
+        case .failed: L10n.string(isAwaitingConfirmation ? "chat.send.pending" : "ui.ac77953a1e064ed6")
         }
     }
 
@@ -2423,9 +2586,11 @@ struct NewChatSheet: View {
 
             MacPageTabs(options: availableModes, selection: $mode, title: { $0.title })
                 .accessibilityLabel(L10n.string("ui.4821f9f7af0425b0"))
+                .disabled(model.hasPendingConversationCreation || model.isPerformingAction)
 
             if mode == .group {
                 TextField(L10n.string("ui.12633e741c9ab2ed"), text: $groupTitle)
+                    .disabled(model.hasPendingConversationCreation || model.isPerformingAction)
                 Text(L10n.string("ui.b97d05b835c3cfc8"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -2489,11 +2654,16 @@ struct NewChatSheet: View {
                 .listStyle(.inset)
                 .macThemedScrollContent()
                 .frame(minHeight: 80, maxHeight: .infinity)
+                .disabled(model.hasPendingConversationCreation || model.isPerformingAction)
             }
 
             if mode == .group,
                model.availability.supportedFeatures.contains(.encryptedConversation) {
                 Toggle(L10n.string("ui.d33475f3928dbe36"), isOn: $createsEncryptedConversation)
+            }
+
+            if model.statusIsError, let error = model.statusMessage {
+                Text(error).font(.callout).foregroundStyle(.secondary)
             }
 
             HStack {
@@ -2510,7 +2680,8 @@ struct NewChatSheet: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Text(mode == .direct ? L10n.string("ui.b263cff274346402") : L10n.string("ui.675ee6eef7be449d"))
+                        Text(model.hasPendingConversationCreation ? L10n.string("chat.send.check")
+                             : mode == .direct ? L10n.string("ui.b263cff274346402") : L10n.string("ui.675ee6eef7be449d"))
                     }
                 }
                 .buttonStyle(MacToolbarButtonStyle(prominent: true))
@@ -2522,11 +2693,20 @@ struct NewChatSheet: View {
         .frame(minWidth: 460, minHeight: 460)
         .background(MacGlassSurface(role: .sidebar))
         .onChange(of: mode) { _, _ in
+            guard !model.hasPendingConversationCreation else { return }
             selectedUserIDs = []
             createsEncryptedConversation = false
             userSearchText = ""
         }
         .onAppear {
+            if let draft = model.pendingGroupDraft {
+                mode = .group
+                groupTitle = draft.title
+                selectedUserIDs = Set(draft.memberIDs)
+            } else if let userID = model.pendingDirectUserID {
+                mode = .direct
+                selectedUserIDs = [userID]
+            }
             if !availableModes.contains(mode), let firstMode = availableModes.first {
                 mode = firstMode
             }

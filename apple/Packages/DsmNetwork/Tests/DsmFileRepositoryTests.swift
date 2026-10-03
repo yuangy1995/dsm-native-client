@@ -6,6 +6,24 @@ import XCTest
 @testable import DsmNetwork
 
 final class DsmFileRepositoryTests: XCTestCase {
+    func test普通文件空挂载类型不阻止现有读写删除权限() async throws {
+        for mountType in ["", "remote", "cifs"] {
+            let body = """
+            {"success":true,"data":{"files":[{"name":"file.txt","path":"/synthetic/file.txt","isdir":false,"additional":{"mount_point_type":"\(mountType)","perm":{"is_acl_mode":true,"posix":777,"acl":{"read":true,"write":true,"del":true,"append":true,"exec":true}}}}],"offset":0,"total":1}}
+            """
+            let repository = try makeRepository(capabilities: .init([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]), transport: MockHTTPTransport(responses: [response(body), response(body)]))
+            let page = try await repository.listFolder(path: "/synthetic")
+            let details = try await repository.getInfo(paths: ["/synthetic/file.txt"])
+            for item in [try XCTUnwrap(page.items.first), try XCTUnwrap(details.first)] {
+                XCTAssertEqual(item.mountPointType, mountType.isEmpty ? nil : mountType)
+                XCTAssertEqual(item.permissions?.canWrite, true)
+                XCTAssertEqual(item.permissions?.canDelete, true)
+            }
+        }
+    }
+
     func test回收站恢复按接口能力开放而不要求实测标记() throws {
         let supported = copyMoveCapabilities()
         let repository = try makeRepository(capabilities: supported, transport: MockHTTPTransport(responses: []))

@@ -295,3 +295,17 @@ tag/name 对象，按首次出现顺序去重。缺失/错误列表或必需身�
 - Registry 私有凭据、安全存储及登录失败语义。
 - `pull_start`、映像更新/清理、容器创建编辑、Compose 校验/部署和异步任务的真实写行为。
 - 管理员与普通账号、QuickConnect、弱网、套件升级及大量容器/日志下的行为。
+
+## 2026-10-03 搜索版本与下载失败更正
+
+本次待归属环境 DSM 7.2.1-69057 Update 12 / Container Manager 24.0.2-1535；详见
+[观察记录](../environments/2026-10-03-container-image-pull-observation.md)。不改写旧 lab-a verification。
+
+- search 必须固定 Registry v1：本次 v1 返回成功，v2 返回 103；不能跟随 Registry 最高版本。
+- 成功结构 data.data 为数组；空数组是空结果，缺失/畸形容器应报告读取失败。
+- 用户授权的独立测试下载成功取得字符串 task_id；运行中为原生布尔 finished 与数值 downloaded，current/total 可缺省。
+- 同一任务随后以 1202（官方 Docker 未知错误常量）失败，目标标签没有出现、原任务消失。macOS 记住此明确失败，不再将它永久显示为未知进度。传输/暂时查询错误仍保留任务并自动只读恢复；无回执不猜测、不重发。
+- 不能从 1202 判断具体网络、权限、空间或仓库故障；界面提供这些检查方向及 Container Manager 详情入口说明，不暴露错误码。
+- 未验证成功下载终态；仍要求 task_id/finished/目标匹配/完整清单。搜索 v1 与失败路径证据不外推全部下载场景。
+
+五端影响：共享 Apple 读取适配修正并执行 macOS 回归和 iOS 模拟器构建；macOS 原生恢复/双语 UI 修复；Windows/Android 记录 search 版本及 1202 处理风险，未更改实现。未改变公开模型、存储或权限。

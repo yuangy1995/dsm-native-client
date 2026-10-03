@@ -43,6 +43,27 @@ final class ContainerImagePullModelTests: XCTestCase {
         model.deactivate()
     }
 
+    func test状态读取失败后自动恢复且不会再次启动下载() async {
+        let (repository, model) = await ready()
+        await repository.configurePull(stage: .needsReview)
+        model.confirm(true); await model.submit()
+        XCTAssertEqual(model.results.first?.stage, .needsReview)
+        XCTAssertTrue(model.hasPollableTasks)
+        await repository.configurePull(stage: .downloading)
+        await model.refresh(automatic: true)
+        XCTAssertEqual(model.results.first?.stage, .downloading)
+        await repository.configurePull(stage: .needsReview)
+        await model.refresh(automatic: true)
+        XCTAssertTrue(model.hasPollableTasks)
+        await repository.configurePull(stage: .ready)
+        await model.refresh(automatic: true)
+        XCTAssertEqual(model.results.first?.stage, .ready)
+        XCTAssertFalse(model.hasPollableTasks)
+        let calls = await repository.pullRequests
+        XCTAssertEqual(calls.count, 1)
+        model.deactivate()
+    }
+
     func test关闭后重开只读恢复且关闭时不再查询() async {
         let (repository, model) = await ready(); model.confirm(true); await model.submit(); model.deactivate()
         let before = await repository.pullReviewCalls; await model.refresh(automatic: true)

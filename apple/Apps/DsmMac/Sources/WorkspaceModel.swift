@@ -883,6 +883,7 @@ final class WorkspaceModel {
     func startEnabledModules() async {
         if needsModuleAccessCheck { await refreshModuleAccess(startsWorkspace: true) }
         guard !Task.isCancelled, !requiresReauthentication else { return }
+        if isChatModuleEnabled { chat.startBackgroundSync() }
         if hasStartedModules {
             await activate(section)
             return

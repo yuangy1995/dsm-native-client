@@ -66,6 +66,9 @@ public enum DsmAPIName {
     public static let chatPostReminder = "SYNO.Chat.Post.Reminder"
     /// Synology Chat 投票内部接口。
     public static let chatPostVote = "SYNO.Chat.Post.Vote"
+    /// Chat 管理员设置与线程阅读，内部接口。
+    public static let chatAdminSetting = "SYNO.Chat.Admin.Setting"
+    public static let chatPostSubscribe = "SYNO.Chat.Post.Subscribe"
     /// Synology Chat 定时消息内部接口。
     public static let chatPostSchedule = "SYNO.Chat.Post.Schedule"
     // Download Station 公开接口。
@@ -275,6 +278,8 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.chatPostFile,
         DsmAPIName.chatPostReminder,
         DsmAPIName.chatPostVote,
+        DsmAPIName.chatAdminSetting,
+        DsmAPIName.chatPostSubscribe,
         DsmAPIName.chatPostSchedule,
         DsmAPIName.downloadStationTask,
         DsmAPIName.downloadStationInfo,
@@ -497,6 +502,8 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.chatPostFile: 1...2,
         DsmAPIName.chatPostReminder: 1...1,
         DsmAPIName.chatPostVote: 1...1,
+        DsmAPIName.chatAdminSetting: 3...3,
+        DsmAPIName.chatPostSubscribe: 2...2,
         DsmAPIName.chatPostSchedule: 1...1,
         DsmAPIName.downloadStationTask: 1...3,
         DsmAPIName.downloadStationInfo: 1...2,

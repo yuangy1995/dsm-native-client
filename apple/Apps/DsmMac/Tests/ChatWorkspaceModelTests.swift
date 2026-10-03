@@ -170,7 +170,7 @@ final class ChatWorkspaceModelTests: XCTestCase {
         XCTAssertNotNil(model.thumbnailData(for: "message-heic"))
     }
 
-    func test进入会话后立即清除本地未读数字() async {
+    func test进入会话后必须窗口活跃且最新消息可见并同步后才清除未读数字() async {
         let active = ChatConversation(
             id: "conversation-1",
             kind: .direct,
@@ -189,7 +189,14 @@ final class ChatWorkspaceModelTests: XCTestCase {
         let model = ChatWorkspaceModel(repository: repository)
 
         await model.loadIfNeeded()
+        await model.refreshForegroundChat()
 
+        XCTAssertEqual(model.totalUnreadCount, 3)
+        model.isChatWindowActive = true
+        await model.synchronizeVisibleReadState()
+        XCTAssertEqual(model.totalUnreadCount, 3)
+        model.updateVisibleMessage(model.messages.last(where: { $0.deliveryState == .sent })?.id)
+        await model.synchronizeVisibleReadState()
         XCTAssertEqual(model.selectedConversationID, active.id)
         XCTAssertEqual(model.conversations.first?.unreadCount, 0)
     }
@@ -219,6 +226,10 @@ final class ChatWorkspaceModelTests: XCTestCase {
         )
         let model = ChatWorkspaceModel(repository: repository)
         await model.loadIfNeeded()
+        await model.refreshForegroundChat()
+        model.isChatWindowActive = true
+        model.updateVisibleMessage(model.messages.last(where: { $0.deliveryState == .sent })?.id)
+        await model.synchronizeVisibleReadState()
         await model.selectConversation(id: otherConversation.id)
 
         await model.refreshForegroundChat()
@@ -473,7 +484,7 @@ final class ChatWorkspaceModelTests: XCTestCase {
         XCTAssertEqual(model.newMessageCount, 1)
     }
 
-    func test使用登录账号识别当前用户并将其消息标记为自己() async {
+    func test登录账号同名不会覆盖消息明确的他人身份() async {
         let repository = ChatRepositoryStub(
             conversations: [conversation(
                 id: "conversation-1",
@@ -496,8 +507,9 @@ final class ChatWorkspaceModelTests: XCTestCase {
             text: "这是我发送的消息"
         )
 
-        XCTAssertEqual(model.currentUserID, "user-1")
-        XCTAssertTrue(model.isCurrentUser(ownMessage))
+        XCTAssertNil(model.currentUserID)
+        XCTAssertFalse(model.isCurrentUser(ownMessage))
+        XCTAssertFalse(model.canDelete(ownMessage))
     }
 
     func test登录账号不会把其他成员的消息标记为自己() async {
@@ -721,7 +733,7 @@ final class ChatWorkspaceModelTests: XCTestCase {
         )
     }
 
-    private func conversation(
+    func conversation(
         id: String,
         title: String,
         activity: Date
@@ -736,7 +748,7 @@ final class ChatWorkspaceModelTests: XCTestCase {
         )
     }
 
-    private func message(id: String, conversationID: String, date: Date) -> ChatMessage {
+    func message(id: String, conversationID: String, date: Date) -> ChatMessage {
         ChatMessage(
             id: id,
             conversationID: conversationID,
@@ -749,6 +761,31 @@ final class ChatWorkspaceModelTests: XCTestCase {
 
 // 供模型回归与合成页面共用，不连接真实消息服务。
 actor ChatRepositoryStub: ChatRepository {
+    private var shouldFailMessageReads = false
+    private var messageReadCount = 0
+    private var readSyncShouldFail = false
+    private var readMarkers: [(String, Date)] = []
+    func setReadSyncShouldFail(_ value: Bool) { readSyncShouldFail = value }
+    func recordedReadMarkers() -> [(String, Date)] { readMarkers }
+    func markRead(conversationID: String, through: Date) async throws -> ChatConversation {
+        readMarkers.append((conversationID, through))
+        if readSyncShouldFail { throw URLError(.notConnectedToInternet) }
+        guard let index = storedConversations.firstIndex(where: { $0.id == conversationID }) else { throw URLError(.badServerResponse) }
+        let value = storedConversations[index]
+        let result = ChatConversation(id: value.id, kind: value.kind, title: value.title, memberIDs: value.memberIDs,
+            lastMessageSummary: value.lastMessageSummary, lastActivityAt: value.lastActivityAt, unreadCount: 0,
+            isEncrypted: value.isEncrypted, lastViewedAt: through)
+        storedConversations[index] = result
+        return result
+    }
+    private var heldSend: CheckedContinuation<Void, Never>?
+    private var shouldHoldSend = false
+    private var nextSendStatus: MutationResultStatus?
+    private var pendingSendIDs: Set<UUID> = []
+    private var confirmedSend: ChatMessage?
+    private var recordedSendRequestIDs: [UUID] = []
+    private var groupStatuses: [MutationResultStatus] = []
+    private var recordedGroupRequestIDs: [UUID] = []
     private let availableFeatures: Set<ChatFeature>
     private var storedConversations: [ChatConversation]
     private let users: [ChatUser]
@@ -765,6 +802,9 @@ actor ChatRepositoryStub: ChatRepository {
     private var storedScheduledMessages: [ChatScheduledMessage] = []
     private let attachmentThumbnailShouldFail: Bool
     private let downloadedAttachmentData: Data
+    private var realtimeStartCount = 0
+    private var realtimeStopCount = 0
+    func realtimeCounts() -> (started: Int, stopped: Int) { (realtimeStartCount, realtimeStopCount) }
     private var realtimeContinuation: AsyncStream<ChatRealtimeEvent>.Continuation?
 
     init(
@@ -792,7 +832,8 @@ actor ChatRepositoryStub: ChatRepository {
             .closeConversation,
             .messageForward,
             .groupMembers,
-            .pinnedMessages
+            .pinnedMessages,
+            .readSynchronization
         ]
     ) {
         self.storedConversations = conversations
@@ -813,6 +854,18 @@ actor ChatRepositoryStub: ChatRepository {
         users
     }
 
+    func editingPolicy() async throws -> ChatEditingPolicy { ChatEditingPolicy(allowsEditing: true) }
+
+    func message(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage? {
+        if shouldFailMessageReads { throw URLError(.notConnectedToInternet) }
+        return messagesByConversation[conversationID]?.first { $0.id == messageID }
+    }
+
+    func listReplies(conversationID: String, threadID: String, before: String?, limit: Int) async throws -> ChatMessagePage {
+        if shouldFailMessageReads { throw URLError(.notConnectedToInternet) }
+        return ChatMessagePage(messages: messagesByConversation[conversationID]?.filter { $0.threadID == threadID && $0.id != threadID } ?? [], previousCursor: nil, hasMoreBefore: false)
+    }
+
     func listConversations() async throws -> [ChatConversation] {
         storedConversations
     }
@@ -822,6 +875,8 @@ actor ChatRepositoryStub: ChatRepository {
         before cursor: String?,
         limit: Int
     ) async throws -> ChatMessagePage {
+        messageReadCount += 1
+        if shouldFailMessageReads { throw URLError(.notConnectedToInternet) }
         if var pages = queuedMessagePagesByConversation[conversationID], !pages.isEmpty {
             let page = pages.removeFirst()
             queuedMessagePagesByConversation[conversationID] = pages
@@ -864,6 +919,10 @@ actor ChatRepositoryStub: ChatRepository {
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessage {
+        if shouldHoldSend {
+            shouldHoldSend = false
+            await withCheckedContinuation { heldSend = $0 }
+        }
         recordedSentTexts.append(draft.text ?? "")
         recordedAttachmentNames.append(contentsOf: draft.localAttachmentURLs.map(\.lastPathComponent))
         recordedConversationIDs.append(draft.conversationID)
@@ -893,6 +952,7 @@ actor ChatRepositoryStub: ChatRepository {
             clientRequestID: draft.clientRequestID,
             conversationID: draft.conversationID,
             senderID: "current-user",
+            isFromCurrentUser: true,
             sentAt: Date(timeIntervalSince1970: 3_000 + Double(recordedSentTexts.count)),
             text: draft.text,
             attachments: attachments
@@ -900,6 +960,75 @@ actor ChatRepositoryStub: ChatRepository {
         messagesByConversation[draft.conversationID, default: []].append(sent)
         return sent
     }
+
+    func sendMessageResult(_ draft: ChatMessageDraft, progress: @escaping FileTransferProgress) async throws -> ChatMessageSendOutcome {
+        recordedSendRequestIDs.append(draft.clientRequestID)
+        if nextSendStatus == .submittedButUnverified {
+            nextSendStatus = nil
+            pendingSendIDs.insert(draft.clientRequestID)
+        }
+        if pendingSendIDs.contains(draft.clientRequestID) {
+            if let confirmedSend {
+                pendingSendIDs.remove(draft.clientRequestID)
+                return try sendOutcome(draft, status: .confirmedSuccess, message: confirmedSend)
+            }
+            return try sendOutcome(draft, status: .submittedButUnverified)
+        }
+        do {
+            let message = try await sendMessage(draft, progress: progress)
+            return try sendOutcome(draft, status: .confirmedSuccess, message: message)
+        } catch {
+            return try sendOutcome(draft, status: .confirmedFailure)
+        }
+    }
+
+    func sendAttachmentMessageResult(_ draft: ChatMessageDraft, progress: @escaping FileTransferProgress) async throws -> ChatMessageSendOutcome {
+        try await sendMessageResult(draft, progress: progress)
+    }
+
+    private func sendOutcome(_ draft: ChatMessageDraft, status: MutationResultStatus, message: ChatMessage? = nil) throws -> ChatMessageSendOutcome {
+        ChatMessageSendOutcome(
+            result: try MutationResult(status: status, operation: "chatTextSend", submitted: status != .confirmedFailure,
+                requiresRefresh: status == .submittedButUnverified,
+                counts: MutationResultCounts(succeeded: status == .confirmedSuccess ? 1 : 0,
+                    failed: status == .confirmedFailure ? 1 : 0, unknown: status == .submittedButUnverified ? 1 : 0)),
+            conversationID: draft.conversationID, clientRequestID: draft.clientRequestID, confirmedMessage: message
+        )
+    }
+
+    func openDirectConversationResult(userID: String, clientRequestID: UUID) async throws -> ChatConversationCreateOutcome {
+        let conversation = try await openDirectConversation(userID: userID, clientRequestID: clientRequestID)
+        return try conversationOutcome(requestID: clientRequestID, conversation: conversation)
+    }
+
+    func createGroupResult(_ draft: ChatGroupDraft) async throws -> ChatConversationCreateOutcome {
+        recordedGroupRequestIDs.append(draft.clientRequestID)
+        let status = groupStatuses.isEmpty ? .confirmedSuccess : groupStatuses.removeFirst()
+        let conversation = status == .confirmedSuccess ? try await createGroup(draft) : nil
+        return try conversationOutcome(requestID: draft.clientRequestID, conversation: conversation)
+    }
+
+    private func conversationOutcome(requestID: UUID, conversation: ChatConversation?) throws -> ChatConversationCreateOutcome {
+        ChatConversationCreateOutcome(result: try MutationResult(
+            status: conversation == nil ? .submittedButUnverified : .confirmedSuccess,
+            operation: "chatGroupCreate", submitted: true, requiresRefresh: conversation == nil,
+            counts: MutationResultCounts(succeeded: conversation == nil ? 0 : 1, failed: 0, unknown: conversation == nil ? 1 : 0)),
+            clientRequestID: requestID, confirmedConversation: conversation)
+    }
+
+    func setMessageReadsFailing(_ failing: Bool) { shouldFailMessageReads = failing }
+    func messageReads() -> Int { messageReadCount }
+    func replaceMessages(_ messages: [ChatMessage], in conversationID: String) {
+        messagesByConversation[conversationID] = messages
+    }
+    func holdNextSend() { shouldHoldSend = true }
+    func isSendHeld() -> Bool { heldSend != nil }
+    func releaseSend() { heldSend?.resume(); heldSend = nil }
+    func makeNextSendUnconfirmed() { nextSendStatus = .submittedButUnverified }
+    func confirmPendingSend(with message: ChatMessage) { confirmedSend = message }
+    func sendRequestIDs() -> [UUID] { recordedSendRequestIDs }
+    func useGroupStatuses(_ statuses: [MutationResultStatus]) { groupStatuses = statuses }
+    func groupRequestIDs() -> [UUID] { recordedGroupRequestIDs }
 
     func deleteMessage(
         conversationID: String,
@@ -1058,9 +1187,10 @@ actor ChatRepositoryStub: ChatRepository {
         return pair.stream
     }
 
-    func startRealtime() async {}
+    func startRealtime() async { realtimeStartCount += 1 }
 
     func stopRealtime() async {
+        realtimeStopCount += 1
         realtimeContinuation?.finish()
         realtimeContinuation = nil
     }

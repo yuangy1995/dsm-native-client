@@ -3,6 +3,11 @@
 
 # Windows 对齐 macOS 功能长期计划
 
+## Chat 五组新基线影响（2026-10-03）
+
+macOS 新增旧消息搜索、本人编辑、文字线程回复、参与投票、媒体/录音和通知/跨端已读。本轮 Windows 只登记后续对齐切片，未改代码，不标成仅待真机验收；按 WinUI 列表、键盘、原生媒体及通知完成独立实现和自动化。当前真实契约纠正：Post.list 使用 post_id/prev_count/next_count，投票创建 choices 为 text 对象数组、options 为对象，真实投票在 props.vote；旧 Windows 请求/解析需要后续核实。保留 Windows 既有用户授权的能力策略，不依据 macOS 的设备记录扩大 Windows 的验证结论。详见[消息交互契约](../api/discovery/endpoints/chat-message-interaction.md)与[功能账本](MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md)。
+
+
 ## NAS 设置与套件中心新增基线影响（2026-10-03）
 
 macOS 本轮新增内存压缩保存、完整电源计划编辑及套件目录/安装/更新/手动上传/进度/设置/来源管理。Windows 仅记录后续对齐切片，本轮未修改实现，也不标记为仅待真机验收。后续须按 WinUI 文件选择器、列表、对话框和后台状态习惯实现：ZRAM 的 enable_zram 与 NeedReboot 独立标记、200 条双数组电源计划、available_operation 对象、依赖计划确认、签名/许可、未知提交只核查与目标版本确认。enable_port_check 的用户含义是防火墙通知，提示音与风扇按真实设备支持位显示。静态/合成证据不能代替 Windows 构建或真实 NAS 验收。契约及源文件见 [NAS 设置账本](NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)；依赖安装、状态恢复、写入和原生 UI 应作为完整功能切片，不复用旧直接 upgrade 控制。
@@ -108,3 +113,5 @@ dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Releas
 `PENDING_USER_VALIDATION`：在专用 Windows 设备、可丢弃 NAS 数据与可恢复同步根上，验证登录/证书、媒体和外部编辑器、权限拒绝、断网/重启、Explorer 占位与写回、通知/外接卷、辅助功能、安装升级及卸载。预期确认/权限/防重复/回读有效、未知不重放、失败保留本机内容。仅回传版本类别、步骤、结果与脱敏错误。
 
 每轮建立 macOS 证据 → Windows 等价语义 → 契约/权限 → 原生交互 → 自动化/构建 → 用户验收账本；共享热点由单一负责人修改。交接列出修改、实际命令/结果、失败、剩余步骤和工作区保护范围。macOS 新增但 Windows 未实现的能力必须记录为待开发，不能只写待验收。
+
+2026-10-03 容器契约补充：Registry.search 必须固定 v1（v2 实测 103）；下载任务 1202 为已观察的 Docker 失败路径，传输读取失败应保留原任务自动恢复。详见 `MACOS_CONTAINER_IMAGE_PULL_FIX_20261003_ZH.md` 和当日发现记录。本端未新增功能或私有写开放结论；Apple 共享层另做构建回归。

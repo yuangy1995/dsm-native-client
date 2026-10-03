@@ -131,22 +131,14 @@ struct WorkspaceView: View {
         .task {
             await model.startEnabledModules()
         }
-        .task(id: "\(model.profile.id.uuidString):\(model.isChatModuleEnabled)") {
-            guard model.isChatModuleEnabled else {
-                await model.chat.stopRealtime()
-                return
-            }
-            while !Task.isCancelled, model.isChatModuleEnabled {
-                await model.chat.syncWorkspaceChat(isChatVisible: model.section == .chat)
-                do {
-                    try await Task.sleep(
-                        for: .seconds(model.chat.workspaceSyncIntervalSeconds)
-                    )
-                } catch {
-                    break
-                }
-            }
-            await model.chat.stopRealtime()
+        .onReceive(NotificationCenter.default.publisher(for: .chatNotificationOpened)) { notification in
+            guard let scope = notification.userInfo?["scope"] as? String,
+                  let id = notification.userInfo?["conversationID"] as? String,
+                  let workspace = connectedWorkspaces.first(where: { $0.chat.notificationScope == scope }),
+                  workspace.isChatModuleEnabled else { return }
+            onSelectNAS(workspace.profile.id)
+            workspace.section = .chat
+            Task { await workspace.chat.selectConversation(id: id) }
         }
         .onChange(of: model.section) { previousSection, section in
             if isRestoringSectionAfterUnsavedEdit {

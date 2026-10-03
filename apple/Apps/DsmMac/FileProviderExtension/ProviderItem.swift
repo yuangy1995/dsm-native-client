@@ -123,7 +123,11 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
     var parentItemIdentifier: NSFileProviderItemIdentifier { parentIdentifier }
     var filename: String { itemName }
     var contentType: UTType { type }
-    var itemVersion: NSFileProviderItemVersion { version }
+    var itemVersion: NSFileProviderItemVersion {
+        // 编辑、删除授权或 NAS 权限变化只更新元数据，不使未改变的文件内容失效。
+        NSFileProviderItemVersion(contentVersion: version.contentVersion,
+            metadataVersion: version.metadataVersion + Data("|capabilities:\(capabilities.rawValue)".utf8))
+    }
     var documentSize: NSNumber? { size.map(NSNumber.init(value:)) }
     var contentModificationDate: Date? { modifiedAt }
     var capabilities: NSFileProviderItemCapabilities {

@@ -3223,6 +3223,10 @@ struct PullImageSheet: View {
     @State private var isLoadingTags = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var searchErrorMessage: String?
+    @State private var searchTask: Task<Void, Never>?
+    @State private var tagTask: Task<Void, Never>?
+    @State private var tagLoadID = UUID()
     @State private var showingDownloads = false
     @State private var startingTask: Task<Void, Never>?
     @State private var checkingTask: Task<Void, Never>?
@@ -3258,10 +3262,10 @@ struct PullImageSheet: View {
                     TextField(L10n.string("ui.41b3f0900cf8fd0f"), text: $query)
                         .textFieldStyle(.roundedBorder)
                         .disabled(isSubmitting)
-                        .onSubmit { Task { await performSearch() } }
+                        .onSubmit { beginSearch() }
                         .accessibilityHint(L10n.string("ui.cf00ba193f6977fa"))
                     Button {
-                        Task { await performSearch() }
+                        beginSearch()
                     } label: {
                         if isSearching {
                             ProgressView().controlSize(.small)
@@ -3294,6 +3298,16 @@ struct PullImageSheet: View {
                         Text(L10n.string("ui.326539c4b5681140"))
                             .font(.callout)
                             .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let searchErrorMessage {
+                    ContentUnavailableView {
+                        Label(L10n.string("container-image.search.failed"), systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text(searchErrorMessage)
+                    } actions: {
+                        Button(L10n.string("container-image.search.retry")) { beginSearch() }
+                            .buttonStyle(MacToolbarButtonStyle())
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if hasSearched && results.isEmpty {
@@ -3342,7 +3356,7 @@ struct PullImageSheet: View {
                             }
                             Spacer()
                             if image.starCount > 0 {
-                                Label("\(image.starCount)", systemImage: "star.fill")
+                                Label(image.starCount.formatted(.number.locale(AppLanguageStore.shared.locale)), systemImage: "star.fill")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -3366,6 +3380,10 @@ struct PullImageSheet: View {
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(Color.accentColor)
                         Spacer()
+                        if !isLoadingTags && tags.isEmpty {
+                            Button(L10n.string("container-image.tags.retry")) { beginTagLoad(for: repository) }
+                                .buttonStyle(MacToolbarButtonStyle())
+                        }
                         if isLoadingTags {
                             ProgressView().controlSize(.small)
                                 .accessibilityLabel(L10n.string("ui.f060a7a7228db374"))
@@ -3415,7 +3433,7 @@ struct PullImageSheet: View {
             // 固底 Footer 操作栏
             HStack {
                 Spacer()
-                Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) { dismiss() }
+                Button(L10n.string("container-image.pull.close"), role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 if showingDownloads {
                     Button(L10n.string("container-image.pull.review")) {
@@ -3457,7 +3475,10 @@ struct PullImageSheet: View {
         .background(MacGlassSurface(role: .sidebar))
         .task { await tracking.watch() }
         .onAppear { if !tracking.results.isEmpty { showingDownloads = true } }
-        .onDisappear { startingTask?.cancel(); checkingTask?.cancel(); tracking.deactivate() }
+        .onDisappear {
+            searchTask?.cancel(); tagTask?.cancel(); tagLoadID = UUID()
+            startingTask?.cancel(); checkingTask?.cancel(); tracking.deactivate()
+        }
         .onChange(of: repository) { _, value in tracking.setTarget(repository: value, tag: tag) }
         .onChange(of: tag) { _, value in tracking.setTarget(repository: repository, tag: value) }
         .onChange(of: selectedImageID) { _, newValue in
@@ -3466,7 +3487,7 @@ struct PullImageSheet: View {
             tag = "latest"
             tags = []
             errorMessage = nil
-            Task { await performTagLoad(for: image.name) }
+            beginTagLoad(for: image.name)
         }
     }
 
@@ -3494,33 +3515,53 @@ struct PullImageSheet: View {
     }
 
     @MainActor
+    private func beginSearch() {
+        guard !isSearching else { return }
+        searchTask = Task { await performSearch() }
+    }
+
+    @MainActor
+    private func beginTagLoad(for repository: String) {
+        tagTask?.cancel()
+        let id = UUID()
+        tagLoadID = id
+        tagTask = Task { await performTagLoad(for: repository, id: id) }
+    }
+
+    @MainActor
     private func performSearch() async {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty, !isSearching else { return }
         isSearching = true
+        defer { isSearching = false }
         errorMessage = nil
+        searchErrorMessage = nil
+        tagTask?.cancel()
+        tagLoadID = UUID()
         selectedImageID = nil
         repository = ""
         tags = []
         isLoadingTags = false
         do {
-            results = try await search(normalized)
+            let loaded = try await search(normalized)
+            guard !Task.isCancelled else { return }
+            results = loaded
             hasSearched = true
         } catch {
+            guard !Task.isCancelled else { return }
             results = []
             hasSearched = true
-            errorMessage = userMessage(for: error, fallback: L10n.string("ui.7b2f11d094f2a9b9"))
+            searchErrorMessage = imageReadMessage(for: error, fallback: "ui.7b2f11d094f2a9b9")
         }
-        isSearching = false
     }
 
     @MainActor
-    private func performTagLoad(for repository: String) async {
+    private func performTagLoad(for repository: String, id: UUID) async {
         isLoadingTags = true
         errorMessage = nil
         do {
             let loadedTags = try await loadTags(repository)
-            guard self.repository == repository else { return }
+            guard !Task.isCancelled, tagLoadID == id, self.repository == repository else { return }
             tags = loadedTags
             if !tags.contains(tag), let first = tags.first {
                 tag = first
@@ -3529,20 +3570,21 @@ struct PullImageSheet: View {
                 errorMessage = L10n.string("ui.394350058428e0ad")
             }
         } catch {
-            guard self.repository == repository else { return }
+            guard !Task.isCancelled, tagLoadID == id, self.repository == repository else { return }
             tags = []
-            errorMessage = userMessage(
-                for: error,
-                fallback: L10n.string("ui.29a0c35e68c4ba5a")
-            )
+            errorMessage = imageReadMessage(for: error, fallback: "ui.29a0c35e68c4ba5a")
         }
-        if self.repository == repository {
+        if !Task.isCancelled, tagLoadID == id, self.repository == repository {
             isLoadingTags = false
         }
     }
 
-    private func userMessage(for error: Error, fallback: String) -> String {
-        (error as? AppError)?.safeUserMessage ?? fallback
+    private func imageReadMessage(for error: Error, fallback: String) -> String {
+        switch (error as? AppError)?.category {
+        case .authenticationRequired: return L10n.string("container-image.search.sign-in")
+        case .permissionDenied: return L10n.string("container-image.search.permission")
+        default: return L10n.string(fallback)
+        }
     }
 }
 

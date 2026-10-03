@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "chat.edit-message.synthetic-json",
+  "module": "chat",
+  "operation": "editMessage",
+  "api": {
+    "name": "SYNO.Chat.Post",
+    "method": "set",
+    "preferredVersion": 8,
+    "resolvedVersion": 8,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "channel_id",
+      "valueType": "string",
+      "encodedValue": "\"27\""
+    },
+    {
+      "name": "post_id",
+      "valueType": "string",
+      "encodedValue": "\"9001\""
+    },
+    {
+      "name": "message",
+      "valueType": "string",
+      "encodedValue": "\"Synthetic edit\""
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

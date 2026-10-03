@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "chat.mark-thread-read.synthetic-json",
+  "module": "chat",
+  "operation": "markThreadRead",
+  "api": {
+    "name": "SYNO.Chat.Post.Subscribe",
+    "method": "view",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "channel_id",
+      "valueType": "string",
+      "encodedValue": "\"27\""
+    },
+    {
+      "name": "thread_id",
+      "valueType": "string",
+      "encodedValue": "\"9001\""
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

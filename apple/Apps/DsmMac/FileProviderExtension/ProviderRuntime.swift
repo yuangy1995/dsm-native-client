@@ -219,11 +219,13 @@ private struct ProviderChangeAnchor: Equatable, Sendable {
         mappingID: UUID,
         containerIdentifier: String,
         generation: UUID,
-        revision: Int64
+        revision: Int64,
+        writebackState: UInt8
     ) {
         containerFingerprint = Self.fingerprint(
             mappingID: mappingID,
-            containerIdentifier: containerIdentifier
+            containerIdentifier: containerIdentifier,
+            writebackState: writebackState
         )
         self.generation = generation
         self.revision = revision
@@ -237,11 +239,14 @@ private struct ProviderChangeAnchor: Equatable, Sendable {
 
     private static func fingerprint(
         mappingID: UUID,
-        containerIdentifier: String
+        containerIdentifier: String,
+        writebackState: UInt8
     ) -> String {
         var input = Data(mappingID.uuidString.lowercased().utf8)
         input.append(0)
         input.append(contentsOf: containerIdentifier.utf8)
+        // 本地读写授权不改变 NAS 的 FileItem 快照，但必须使旧同步锚点失效。
+        input.append(writebackState)
         return SHA256.hash(data: input).map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -391,7 +396,8 @@ actor ProviderRuntime {
             mappingID: context.configuration.mapping.id,
             containerIdentifier: result.containerIdentifier,
             generation: result.journal.generation,
-            revision: result.journal.currentRevision
+            revision: result.journal.currentRevision,
+            writebackState: writebackState(context.configuration)
         ).rawValue
     }
 
@@ -407,12 +413,14 @@ actor ProviderRuntime {
             for: containerIdentifier,
             context: context
         )
+        let accessState = writebackState(context.configuration)
         guard let anchor = ProviderChangeAnchor(anchorData),
               anchor == ProviderChangeAnchor(
                 mappingID: context.configuration.mapping.id,
                 containerIdentifier: result.containerIdentifier,
                 generation: result.journal.generation,
-                revision: anchor.revision
+                revision: anchor.revision,
+                writebackState: accessState
               ),
               anchor.revision >= result.journal.minimumAnchorRevision,
               anchor.revision <= result.journal.currentRevision else {
@@ -442,8 +450,8 @@ actor ProviderRuntime {
                         mapping: context.configuration.mapping,
                         keptOffline: runtime.keepsOffline(item.path),
                         identifiersByPath: currentIdentifiers,
-                        writable: isWritebackEnabled(context.configuration),
-                        deletable: isDeletionEnabled(context.configuration)
+                        writable: accessState > 0,
+                        deletable: accessState == 2
                     )
                 )
             case .deleted:
@@ -452,12 +460,17 @@ actor ProviderRuntime {
                 )
             }
         }
+        // 设置可能在异步扫描期间变化；不能把新授权写入空增量的锚点而漏掉权限更新。
+        guard accessState == writebackState(context.configuration) else {
+            throw NSFileProviderError(.syncAnchorExpired)
+        }
         let nextRevision = entries.last?.revision ?? result.journal.currentRevision
         let nextAnchor = ProviderChangeAnchor(
             mappingID: context.configuration.mapping.id,
             containerIdentifier: result.containerIdentifier,
             generation: result.journal.generation,
-            revision: nextRevision
+            revision: nextRevision,
+            writebackState: accessState
         ).rawValue
         return ProviderChangePage(
             updatedItems: updatedItems,
@@ -1151,6 +1164,11 @@ actor ProviderRuntime {
             snapshot[identifier] = item
         }
         return snapshot
+    }
+
+    private func writebackState(_ configuration: DesktopDriveProviderConfiguration) -> UInt8 {
+        guard isWritebackEnabled(configuration) else { return 0 }
+        return isDeletionEnabled(configuration) ? 2 : 1
     }
 
     private func isWritebackEnabled(_ configuration: DesktopDriveProviderConfiguration) -> Bool {

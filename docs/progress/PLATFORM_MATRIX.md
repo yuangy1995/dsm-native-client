@@ -77,6 +77,8 @@ QuickConnect 区域转介：Apple 共享层（macOS、iPhone、iPad）与 Androi
 
 ## 安全开放规则
 
+2026-10-03 macOS Chat 正确性修复不扩张五端功能范围或公开接口：macOS 修复收发、删除、刷新及原有表单，iPhone/iPad 仅受到共享 Adapter 的兼容修正影响；Windows/Android 只保留复核线索，没有本轮实现变更。加密消息收发继续关闭。测试和构建证据、UI 文案约束与真实环境限制见[专项账本](../development/MACOS_CHAT_FIX_20261003_ZH.md)。
+
 上述 Windows“受限”不是未实现或全部关闭：Chat 已接附件、提醒、纯文字定时及无附件
 投票；Download Station 已接设置、批次和已记录删除语义，不据此声称 RSS 已实现。
 Container/VMM 和 NAS 专用操作范围以对应账本为准；云盘源码缺口已按上文最新复核补齐，
@@ -114,3 +116,13 @@ Container/VMM 和 NAS 专用操作范围以对应账本为准；云盘源码缺�
 - [DSM 兼容矩阵](../compatibility/DSM_COMPATIBILITY_MATRIX.md)
 - [发布与手工验收历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)
 - [macOS 首个 Beta 就绪报告](../quality/MACOS_BETA_READINESS_ZH.md)
+
+### 2026-10-03 Chat 五组功能波次
+
+macOS 已实现搜索旧消息、本人编辑、文字线程回复、参与投票、媒体播放和录音发送、新消息通知与服务端已读；模块启用时连接跟随 NAS 工作区，页面隐藏不停止。Apple 共享层完成兼容接口与真实分页/投票形态修正；iOS/iPadOS 无新增入口和权限。Windows/Android 仅记录后续契约切片，不升级完成等级。自动化/构建、未验证条件及产物以[本轮账本](../development/MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md)为事实来源，官方页面行为证据不等于新包实机验收。
+
+2026-10-03 macOS 容器搜索下载修复：Registry.search 固定 v1；暂时读取失败自动恢复，NAS 明确下载失败不再卡在核查提示。DSM 7.2.1-69057 U12 / Container Manager 24.0.2-1535 的受控下载已复现 1202 失败、无新增镜像；成功终态仍待用户验证。见 `docs/development/MACOS_CONTAINER_IMAGE_PULL_FIX_20261003_ZH.md`。不提升其他端或旧匿名设备的验证等级。
+
+2026-10-03 用户追加开放策略：macOS 已实现功能按实际能力与权限提供，Chat 新增交互移除精确 DSM/套件版本白名单；照片删除和容器网络创建在 macOS 组合根已经开放。保留系统安全、危险操作确认、并发去重与写后回读；不声称其他版本或其他平台已经验证。完整范围见 `docs/development/MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md`。
+
+2026-10-03 本地磁盘挂载修复：macOS 修正普通文件空挂载类型误判，以及编辑/删除授权变化后 Finder 权限元数据和增量锚点未更新。共享 Apple 文件解析同步影响 iPhone/iPad，通用模拟器构建通过；移动端仍不实现桌面挂载。Windows/Android 未改代码，只记录空挂载类型语义供后续对齐。没有新增公开请求或私有 API；正式签名包的 Finder 保存/删除验收为 `PENDING_USER_VALIDATION`，见[专项账本](../development/MACOS_MOUNT_WRITABILITY_FIX_20261003_ZH.md)。

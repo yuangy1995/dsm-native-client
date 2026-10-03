@@ -145,6 +145,75 @@ final class ContainerImagePullTests: XCTestCase {
         let calls = await transport.recordedRequests(); XCTAssertFalse(calls.contains { parameter("method", $0) == "delete" })
     }
 
+    func test搜索固定官方V1且保留原生JSON参数() async throws {
+        for format in [DsmRequestFormat.form, .json] {
+            let transport = MockHTTPTransport(responses: [reply(#"{"success":true,"data":{"data":[{"name":"synthetic/web","registry":"docker.io","is_official":true}],"total":1}}"#)])
+            let repository = try makeRepository(transport, format: format)
+            let result = try await repository.searchContainerImages(query: "synthetic")
+            XCTAssertEqual(result.map(\.name), ["synthetic/web"])
+            let requests = await transport.recordedRequests()
+            let request = try XCTUnwrap(requests.first)
+            XCTAssertEqual(parameter("version", request), "1")
+            XCTAssertEqual(parameter("q", request), format == .json ? #""synthetic""# : "synthetic")
+            XCTAssertEqual(requests.count, 1)
+        }
+    }
+
+    func test搜索格式错误不能伪装成没有结果() async throws {
+        for payload in [#"{}"#, #"{"data":null}"#, #"{"data":[null]}"#, #"{"data":[{}]}"#, #"{"data":[{"name":""}]}"#] {
+            let transport = MockHTTPTransport(responses: [reply("{\"success\":true,\"data\":\(payload)}")])
+            let repository = try makeRepository(transport)
+            do { _ = try await repository.searchContainerImages(query: "synthetic"); XCTFail("畸形结果必须显示读取失败") }
+            catch { XCTAssertNotNil(error as? AppError) }
+        }
+        let transport = MockHTTPTransport(responses: [reply(#"{"success":true,"data":{"data":[],"total":0}}"#)])
+        let empty = try await makeRepository(transport).searchContainerImages(query: "synthetic")
+        XCTAssertTrue(empty.isEmpty)
+    }
+
+    func test状态连续失败保持原任务并且不会误报旧镜像可用() async throws {
+        let transport = MockHTTPTransport(responses: [reply(tags), reply(images), reply(receipt),
+            reply(#"{"success":false,"error":{"code":150}}"#), reply(#"{"success":false,"error":{"code":117,"errors":508}}"#),
+            reply(status()), reply(status(finished: true)), reply(images)])
+        let repository = try makeRepository(transport); let request = makeRequest()
+        let first = try await repository.startContainerImagePull(request)
+        let second = try await repository.reviewContainerImagePull(id: request.id)
+        XCTAssertEqual(first.stage, .needsReview); XCTAssertEqual(second?.stage, .needsReview)
+        let third = try await repository.reviewContainerImagePull(id: request.id)
+        XCTAssertEqual(third?.stage, .downloading)
+        let final = try await repository.reviewContainerImagePull(id: request.id)
+        XCTAssertEqual(final?.stage, .ready)
+        let calls = await transport.recordedRequests()
+        XCTAssertEqual(calls.filter { parameter("method", $0) == "pull_start" }.count, 1)
+        XCTAssertTrue(calls.filter { parameter("method", $0) == "pull_status" }.allSatisfy { parameter("task_id", $0) == "synthetic-task" })
+    }
+
+    func test已绑定任务明确下载失败后停止轮询且不重复启动() async throws {
+        let transport = MockHTTPTransport(responses: [reply(tags), reply(images), reply(receipt), reply(status()),
+            reply(#"{"success":false,"error":{"code":1202}}"#)])
+        let repository = try makeRepository(transport); let request = makeRequest()
+        _ = try await repository.startContainerImagePull(request)
+        let failure = try await repository.reviewContainerImagePull(id: request.id)
+        XCTAssertEqual(failure?.stage, .rejected)
+        XCTAssertEqual(failure?.outcome.status, .confirmedFailure)
+        XCTAssertEqual(failure?.outcome.errorCategory, .server)
+        let repeated = try await repository.startContainerImagePull(request)
+        XCTAssertEqual(repeated, failure)
+        let pending = try await repository.loadContainerImagePulls()
+        XCTAssertTrue(pending.isEmpty)
+        let calls = await transport.recordedRequests()
+        XCTAssertEqual(calls.count, 5)
+        XCTAssertEqual(calls.filter { parameter("method", $0) == "pull_start" }.count, 1)
+    }
+
+    func test完成后的镜像列表错误不能误报任务下载失败() async throws {
+        let transport = MockHTTPTransport(responses: [reply(tags), reply(images), reply(receipt), reply(status(finished: true)),
+            reply(#"{"success":false,"error":{"code":1202}}"#)])
+        let result = try await makeRepository(transport).startContainerImagePull(makeRequest())
+        XCTAssertEqual(result.stage, .needsReview)
+        XCTAssertEqual(result.outcome.status, .submittedButUnverified)
+    }
+
     private var tags: String { "{\"success\":true,\"data\":{\"tags\":[\"stable\"]}}" }
     private var images: String { "{\"success\":true,\"data\":{\"offset\":0,\"total\":1,\"images\":[{\"id\":\"synthetic-id\",\"repository\":\"synthetic/web\",\"tags\":[\"stable\"]}]}}" }
     private var receipt: String { "{\"success\":true,\"data\":{\"task_id\":\"synthetic-task\"}}" }

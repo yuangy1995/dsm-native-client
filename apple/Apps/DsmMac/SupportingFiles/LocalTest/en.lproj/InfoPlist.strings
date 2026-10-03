@@ -1,2 +1,4 @@
 "CFBundleDisplayName" = "LanStash Test";
 "CFBundleName" = "LanStash Test";
+
+"NSMicrophoneUsageDescription" = "Record voice messages that you can preview before sending.";

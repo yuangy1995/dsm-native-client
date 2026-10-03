@@ -1209,18 +1209,27 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
     public func searchContainerImages(query: String) async throws -> [ContainerRegistryImage] {
         let query = try validatedName(query, message: L10n.string("shared.7031852e2ed8042f"))
-        let value = try await call(
-            DsmAPIName.dockerRegistry,
-            method: "search",
-            parameters: [
+        guard let capability = capabilities[DsmAPIName.dockerRegistry], capability.name == DsmAPIName.dockerRegistry,
+              capability.minVersion == 1, capability.maxVersion >= 1, capability.selectedVersion != nil else { throw unavailableError() }
+        let value: ServiceJSON
+        do {
+            // Registry 的最高版本不代表每个方法都支持；官方搜索固定使用 v1，v2 返回 103。
+            value = try await client.call(path: capability.path, api: capability.name, version: 1, method: "search",
+                requestFormat: capability.requestFormat, parameters: [
                 "offset": .integer(0),
                 "limit": .integer(50),
                 "page_size": .integer(50),
                 "q": .string(query)
-            ]
-        )
-        return value.objects(for: ["data", "items", "results"])
-            .compactMap(Self.registryImage)
+            ], credential: credential, as: ServiceJSON.self)
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+        guard let rows = value["data"]?.array else { throw Self.invalidServiceResponseStatic() }
+        return try rows.map { row in
+            guard let object = row.object, let image = Self.registryImage(object),
+                  ContainerImagePullRequest.isValidTarget(repository: image.name, tag: "latest") else {
+                throw Self.invalidServiceResponseStatic()
+            }
+            return image
+        }
     }
 
     public func loadContainerImageTags(repository: String) async throws -> [String] {
@@ -1365,8 +1374,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         if Task.isCancelled {
             result = try imagePullProgress(request, stage: operation.taskID == nil ? .awaitingReceipt : .needsReview, status: .cancellationRequestedAfterSubmission)
         } else if let taskID = operation.taskID {
+            var hasReadTaskStatus = false
             do {
                 let value = try await containerImageRequest(method: "pull_status", parameters: ["task_id": taskID])
+                hasReadTaskStatus = true
                 guard let row = value.object, let repository = try Self.imageString(row, "repository"), let tag = try Self.imageString(row, "tag"),
                       Self.normalizedImageName("\(repository):\(tag)") == request.referenceKey,
                       case .boolean(let finished) = row["finished"] else { throw Self.invalidServiceResponseStatic() }
@@ -1380,6 +1391,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                     }
                     result = try imagePullProgress(request, stage: .ready, percentage: 100)
                 } else { result = try imagePullProgress(request, stage: .downloading, percentage: percentage) }
+            } catch let error as AppError where !hasReadTaskStatus && error.dsmCode == 1202 {
+                // 24.0.2-1535 的受控下载实测：任务先运行，再以 Docker 错误结束；
+                // 后续读取只剩任务不存在，不能丢弃首次明确失败并永久显示正在恢复。
+                result = try imagePullProgress(request, stage: .rejected, error: .server)
             } catch {
                 result = try imagePullProgress(request, stage: .needsReview, status: Task.isCancelled ? .cancellationRequestedAfterSubmission : nil,
                     error: (error as? AppError).map { serviceMutationErrorCategory(for: $0.category) } ?? .network)

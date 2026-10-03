@@ -1,27 +1,25 @@
-## macOS 1.0.13
+## macOS 1.0.14
 
-- 扩展文件管理：支持文件夹上传、高级与全文搜索、压缩包内容浏览和指定项目解压，以及更完整的分享链接与文件收集管理。
-- 增加文件权限、所有者、ISO 挂载及 File Station 设置管理；可查看并处理指定后台任务，结果不明确时保留核对入口。
-- 完善远程位置：支持 NAS 提供的 FTP、SFTP、WebDAV 和云服务连接，WebDAV 可直接粘贴完整网址；云服务通过系统浏览器授权。
-- 远程连接统一显示在文件主页，提供直接“浏览文件”入口；保存并连接时显示进度，成功后自动结束表单。
-- 新增 Word、Excel、PowerPoint 系统预览，以及本机应用编辑后自动保存到 NAS。未修改内容不会上传；发现远端冲突或保存结果不明确时暂停并提示核对。
-- 统一工具栏按钮与路径导航，改善长路径、键盘操作和窗口布局；简化照片来源选择、连接提示和重复确认。
-- 完善照片分享、收集请求、相册、人物与主题整理、相似照片管理，以及共享空间成员和文件夹权限。
-- 增加照片预览重建、自动转换、失败恢复和图库维护；完善后台任务、冻结相册恢复、整册下载、幻灯片和预览窗口操作。
-- 照片上传支持退出后恢复，先核对已提交任务再继续，避免重复上传；完善月份定位、选择保持与缩略图大小调整。
+- 修复本地磁盘挂载开启编辑、删除后仍显示只读的问题，并改善修改授权后 Finder 的权限刷新。
+- 完善 Chat：支持搜索历史消息、编辑本人消息、回复讨论及参与单选和多选投票。
+- 支持 Chat 音视频播放，以及语音录制、试听和发送；仅在主动录音时请求麦克风权限。
+- Chat 启用后，在切换到文件、照片等页面时继续接收消息；增加新消息通知，并在实际阅读最新消息后同步已读状态。
+- 改善 Chat 发送、附件、删除、转发及断线恢复，减少状态残留，避免结果不明确时重复发送；切换会话保留各自草稿。
+- 修复容器镜像搜索及下载状态刷新，临时连接失败后继续读取进度，NAS 明确下载失败时正确显示错误。
+- 完善 NAS 设置与套件中心，改善安装准备取消、设置保存和错误提示；修复部分文件权限与设置读取问题。
+- 改善 QuickConnect 区域连接、照片操作反馈与文件浏览位置，简化重复控件和提示，并同步中英文文案。
 
-部分功能取决于 NAS 套件版本、媒体格式和账号权限。Office 自动保存需要保持岚仓运行；本机副本会保留，另存到新位置不会自动跟踪。涉及覆盖、删除、分享范围或权限变更的操作仍需确认。
+挂载编辑和删除仍需分别授权，并遵循 NAS 权限。部分功能取决于 NAS 套件和账号权限；Chat 加密会话的收发暂不支持。镜像仓库限额或 NAS 网络连接失败仍需在对应仓库或 NAS 上处理。覆盖、删除及权限变更的确认和保护保持不变。
 
-## English — macOS 1.0.13
+## English — macOS 1.0.14
 
-- Expanded file management with folder uploads, advanced and full-text search, archive browsing and selected-item extraction, plus richer sharing links and file collection management.
-- Added file permission, ownership, ISO mount, and File Station settings management. Individual background tasks can be reviewed and controlled, with a review path for uncertain results.
-- Improved remote locations for FTP, SFTP, WebDAV, and cloud services supported by the NAS. WebDAV accepts a full URL, and cloud authorization opens in the system browser.
-- Remote connections now appear together on the file home page with a direct Browse Files action. Saving and connecting shows progress and closes the form when successful.
-- Added system previews for Word, Excel, and PowerPoint, with automatic saving to the NAS after editing in a local app. Unchanged content is not uploaded; remote conflicts or uncertain saves pause for review.
-- Unified toolbar controls and path navigation, improved long paths, keyboard access, and window layouts, and simplified photo source controls, connection messages, and repeated confirmations.
-- Expanded photo sharing, photo requests, albums, people and topic organization, similar-photo management, and shared-space member and folder permissions.
-- Added photo preview regeneration, automatic conversion, failure recovery, and library maintenance. Improved background tasks, frozen-album recovery, full-album downloads, slideshows, and preview-window actions.
-- Photo uploads can recover after restarting the app. Submitted tasks are checked before continuing to avoid duplicate uploads. Improved month navigation, selection retention, and thumbnail sizing.
+- Fixed local disk mounts remaining read-only after editing and deletion were enabled, and improved Finder permission refresh after authorization changes.
+- Expanded Chat with message history search, editing of your own messages, threaded replies, and participation in single-choice and multiple-choice polls.
+- Added Chat audio and video playback, plus voice recording, preview, and sending. Microphone access is requested only when you choose to record.
+- Chat continues receiving messages while you browse files, photos, or other pages. Added new-message notifications and read-state synchronization after the latest messages are actually viewed.
+- Improved Chat sending, attachments, deletion, forwarding, and connection recovery. Uncertain operations are not automatically sent again, and each conversation retains its own draft.
+- Fixed container image search and download status refresh. Progress checks resume after temporary connection failures, and confirmed NAS download failures are shown correctly.
+- Expanded NAS settings and Package Center, including cancellation during installation preparation, settings saves, and clearer errors. Fixed several file permission and settings reads.
+- Improved QuickConnect regional connections, feedback for photo operations, and file browsing position. Simplified repeated controls and messages, with matching English and Simplified Chinese text.
 
-Some features depend on NAS package versions, media formats, and account permissions. Keep LanStash running for Office automatic saves. Local copies are retained; saving to a new location is not tracked automatically. Overwriting, deleting, changing sharing scope, and changing permissions still require confirmation.
+Mount editing and deletion still require separate authorization and respect NAS permissions. Some features depend on installed packages and account permissions. Sending and receiving in encrypted Chat conversations is not supported yet. Registry rate limits and NAS network failures must still be resolved with the relevant registry or NAS. Confirmation and protection for overwriting, deletion, and permission changes remain in place.

@@ -34,7 +34,12 @@
           "scheduledMessage",
           "messageForward",
           "groupMembers",
-          "pinnedMessages"
+          "pinnedMessages",
+          "messageSearch",
+          "messageEditing",
+          "threadedReplies",
+          "pollVoting",
+          "readSynchronization"
         ]
       }
     }

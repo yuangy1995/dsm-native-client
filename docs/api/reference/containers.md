@@ -9,8 +9,8 @@
 | 容器清单 | `Container.list` | `offset=0,limit=-1,type="all"` | 稳定 ID/name 与原始 State；Running/Paused/Restarting 等不能由展示文案推断 |
 | 映像清单 | `Image.list` | `offset=0,limit=-1,show_dsm=false`，布尔不编码为字符串 | ID、仓库、标签分别保留；原始条目数与展开后的标签数不同 |
 | 网络 / 项目 / 事件 | `Network.list`、`Project.list`、`Log` 已接读取 | 实际能力、分页和排序按对应实现 | 各分区独立可用，关联数缺失不补成零 |
-| 仓库搜索 | `Registry.search` | `q:String,offset=0,limit=50,page_size=50` | 当前首批结果，不声称全量搜索 |
-| 仓库标签 | `Registry.tags` | `repo:String` | 标签原值；不猜测缺失的 latest |
+| 仓库搜索 | `Registry.search v1` | `q:String,offset=0,limit=50,page_size=50` | 固定 v1，v2 实测返回 103；data.data 严格数组，畸形不冒充空结果；当前首批结果 |
+| 仓库标签 | `Registry.tags v1` | `repo:String` | 标签原值；不猜测缺失的 latest |
 | 拉取映像 | `Image.pull_start/pull_status` | 启动 `repository/tag`；查询 `task_id` | `ContainerImagePullProgress`；接受请求不等于映像可用，轮询及清单核对分别执行 |
 | 启动 / 停止 / 重启 | `Container.start/stop/restart` | `name`，先按稳定 ID 核对名称及当前状态 | 操作互斥，身份变化拒绝；回读状态，不把 HTTP 成功当转态完成 |
 | 删除容器 | `Container.delete` | `name,force=false,preserve_profile=false` | 与保留配置的“重置”不同；确认全选目标并检查消失 |
@@ -32,3 +32,5 @@
 保留实际能力、账号权限和操作确认，不能把静态发现直接当作所有版本可写，也不能复制历史关闭开关来推断当前所有端的开放状态。最新能力以目标端代码和[平台矩阵](../../progress/PLATFORM_MATRIX.md)为准。
 
 测试入口：[DsmNetwork/Tests](../../../apple/Packages/DsmNetwork/Tests/)、[DsmMac/Tests](../../../apple/Apps/DsmMac/Tests/) 的容器生命周期、映像标签删除、网络创建/删除及拉取任务回归。真实 NAS 的运行影响、占用变化、权限撤销和任务长断线仍须专用目标验收。
+
+2026-10-03 修复：macOS 下载状态暂时读取失败后继续自动查询原 task_id；1202 明确 Docker 失败保存为失败终态，不再停留在“检查下载状态”。无回执不按名称猜测或重发。真实受控下载已复现 NAS 下载失败，成功结束路径仍待验证；见[当日记录](../discovery/environments/2026-10-03-container-image-pull-observation.md)。

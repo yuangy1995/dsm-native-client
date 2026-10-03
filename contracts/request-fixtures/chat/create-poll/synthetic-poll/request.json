@@ -8,8 +8,8 @@
   "parameters": [
     { "name": "channel_id", "valueType": "string", "encodedValue": "synthetic-channel" },
     { "name": "message", "valueType": "string", "encodedValue": "Synthetic question?" },
-    { "name": "choices", "valueType": "stringArray", "encodedValue": "[\"First choice\",\"Second choice\"]" },
-    { "name": "options", "valueType": "string", "encodedValue": "{\"add_option\":false,\"anonymous\":false,\"multiple\":true}" }
+    { "name": "choices", "valueType": "objectArray", "encodedValue": "[{\"text\":\"First choice\"},{\"text\":\"Second choice\"}]" },
+    { "name": "options", "valueType": "object", "encodedValue": "{\"add_option\":false,\"anonymous\":false,\"multiple\":true,\"expire_at\":0}" }
   ],
   "authentication": { "required": true, "synoTokenRequired": false, "sessionLocations": ["cookie", "form"], "synoTokenLocations": ["header", "form"] },
   "policy": { "retryPolicy": "queryStateBeforeDecision", "risk": "standardWrite", "readbackPolicy": "required" },

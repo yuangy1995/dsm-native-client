@@ -331,8 +331,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        // App 在前台活动时，通知全部通过 App 内内置悬浮 Toast 展示，取消系统右上角弹出 Banner 打扰
-        [.sound]
+        // 传输保留原前台行为；聊天仅为当前未阅读的会话生成通知。
+        if notification.request.content.userInfo["chatScope"] != nil { return [.banner, .sound] }
+        return [.sound]
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        guard let scope = response.notification.request.content.userInfo["chatScope"] as? String,
+              let conversationID = response.notification.request.content.userInfo["conversationID"] as? String else { return }
+        await MainActor.run {
+            NotificationCenter.default.post(name: .chatNotificationOpened, object: nil,
+                userInfo: ["scope": scope, "conversationID": conversationID])
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

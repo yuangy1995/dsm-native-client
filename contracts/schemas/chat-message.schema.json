@@ -15,6 +15,10 @@
     "sentAt": { "type": "string", "format": "date-time" },
     "pinnedAt": { "type": ["string", "null"], "format": "date-time" },
     "text": { "type": ["string", "null"] },
+    "kind": { "type": ["string", "null"], "enum": ["normal", "file", "vote", "sticker", "system", "unknown", null] },
+    "threadID": { "type": ["string", "null"] },
+    "replyCount": { "type": ["integer", "null"], "minimum": 0 },
+    "editedAt": { "type": ["string", "null"], "format": "date-time" },
     "attachments": {
       "type": "array",
       "items": { "$ref": "chat-attachment.schema.json" }

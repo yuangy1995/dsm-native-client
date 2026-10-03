@@ -20,6 +20,10 @@
 
 ## 待归属观察
 
+- [2026-10-03 Chat 五组交互补全](2026-10-03-chat-five-features-observation.md)：分页、搜索和编辑设置只读验证；指定合成会话内完成编辑、线程回复、投票与会话已读回读；线程已读仅有接受回执，不能提升其最终状态证据。
+
+- [2026-10-03 容器镜像搜索与下载](2026-10-03-container-image-pull-observation.md)：Registry.search v1 成功、v2 返回 103；用户授权小体积镜像测试，观察到任务启动和运行，随后 NAS 返回 1202 且无新增目标镜像。成功下载仍未验证。
+
 - [2026-10-02 File Station 设置读取故障核查](2026-10-02-file-station-settings-read-fix.md)：DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559；本机用户和群组名单的 uid/gid 数字字符串、原生权限布尔及限速 notexist 未配置状态已只读核对。临时草稿已取消，没有保存设置或权限，不提升历史设备基线或写验证等级。
 
 - [2026-10-02 File Station 官方包静态核查](2026-10-02-file-station-official-package.md)：浏览器会话不可访问；官方包无法用标准归档读取，未获得新字段证据，不改变历史兼容等级。

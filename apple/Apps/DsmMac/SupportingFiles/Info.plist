@@ -52,5 +52,7 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Record voice messages that you can preview before sending.</string>
 </dict>
 </plist>

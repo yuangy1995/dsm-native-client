@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "chat.send-reply.synthetic-json",
+  "module": "chat",
+  "operation": "sendReply",
+  "api": {
+    "name": "SYNO.Chat.Post",
+    "method": "create",
+    "preferredVersion": 5,
+    "resolvedVersion": 5,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "channel_id",
+      "valueType": "string",
+      "encodedValue": "\"27\""
+    },
+    {
+      "name": "message",
+      "valueType": "string",
+      "encodedValue": "\"Synthetic reply\""
+    },
+    {
+      "name": "type",
+      "valueType": "string",
+      "encodedValue": "\"normal\""
+    },
+    {
+      "name": "is_thread",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "thread_id",
+      "valueType": "string",
+      "encodedValue": "\"9001\""
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

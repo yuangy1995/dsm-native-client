@@ -163,7 +163,7 @@ final class DsmChatRepositoryTests: XCTestCase {
         )
 
         XCTAssertEqual(page.messages.first?.text, "收到")
-        XCTAssertEqual(page.previousCursor, "1")
+        XCTAssertEqual(page.previousCursor, "9001")
         let requests = await transport.recordedRequests()
         let request = try XCTUnwrap(requests.first)
         let fields = try decodeForm(request.httpBody)
@@ -187,7 +187,7 @@ final class DsmChatRepositoryTests: XCTestCase {
 
         XCTAssertEqual(page.messages.map(\.id), ["file-1"])
         XCTAssertEqual(page.messages.first?.attachments.first?.fileName, "sample.jpg")
-        XCTAssertEqual(page.previousCursor, "2")
+        XCTAssertEqual(page.previousCursor, "aux-1")
         XCTAssertTrue(page.hasMoreBefore)
     }
 
@@ -654,7 +654,8 @@ final class DsmChatRepositoryTests: XCTestCase {
 
     func test创建投票使用已确认契约并对同一请求去重() async throws {
         let transport = MockHTTPTransport(responses: [
-            response(#"{"success":true,"data":{"post_id":"9100","channel_id":"27","creator_id":"1","is_my_post":true,"create_at":1774166400000,"message":"周末去哪？"}}"#)
+            response(#"{"success":true,"data":{"post_id":"9100","channel_id":"27","creator_id":"1","is_my_post":true,"create_at":1774166400000,"message":"周末去哪？"}}"#),
+            response(#"{"success":true,"data":{"posts":[{"post_id":"9100","channel_id":"27","creator_id":"1","is_my_post":true,"create_at":1774166400000,"message":"周末去哪？","vote":{"choices":[{"choice_id":"c1","text":"公园"},{"choice_id":"c2","text":"博物馆"}],"options":{"multiple":true,"anonymous":false}}}]}}"#)
         ])
         let repository = try makeRepository(transport: transport)
         let requestID = UUID()
@@ -674,13 +675,17 @@ final class DsmChatRepositoryTests: XCTestCase {
         XCTAssertEqual(first.poll?.question, "周末去哪？")
         XCTAssertEqual(first.poll?.options.map(\.text), ["公园", "博物馆"])
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(try decodeForm(requests[1].httpBody)["method"], "list")
+        XCTAssertEqual(first.poll?.options.map(\.id), ["c1", "c2"])
         let fields = try decodeForm(requests[0].httpBody)
         XCTAssertEqual(fields["api"], DsmAPIName.chatPostVote)
         XCTAssertEqual(fields["version"], "1")
         XCTAssertEqual(fields["method"], "create")
-        XCTAssertEqual(fields["choices"], #"["公园","博物馆"]"#)
-        XCTAssertEqual(fields["options"], #"{"add_option":false,"anonymous":false,"multiple":true}"#)
+        let choices = try JSONSerialization.jsonObject(with: Data(XCTUnwrap(fields["choices"]).utf8)) as? [[String: String]]
+        XCTAssertEqual(choices, [["text": "公园"], ["text": "博物馆"]])
+        let options = try JSONSerialization.jsonObject(with: Data(XCTUnwrap(fields["options"]).utf8)) as? NSDictionary
+        XCTAssertEqual(options, ["add_option": false, "anonymous": false, "multiple": true, "expire_at": 0])
     }
 
     func test历史消息解析投票选项和当前用户选择() async throws {
@@ -725,25 +730,35 @@ final class DsmChatRepositoryTests: XCTestCase {
     }
 
     func test官方服务端转发使用PostForward且不下载附件() async throws {
+        let source = response(#"{"success":true,"data":{"posts":[{"post_id":"9001","channel_id":"99","creator_id":"1","is_my_post":true,"message":"附件转发","create_at":1774166400000,"file_props":{"file_id":"file","name":"sample.txt","size":7}}]}}"#)
         let transport = MockHTTPTransport(responses: [
-            response(#"{"success":true}"#)
+            source,
+            response(#"{"success":true,"data":{"current_user_id":"1","users":[]}}"#),
+            response(#"{"success":true,"data":{"channels":[{"channel_id":"99"},{"channel_id":"27"},{"channel_id":"42"}]}}"#),
+            source,
+            response(#"{"success":true,"data":{"posts":[]}}"#),
+            response(#"{"success":true,"data":{"posts":[]}}"#),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"posts":[{"post_id":"new-27","channel_id":"27","creator_id":"1","is_my_post":true,"message":"附件转发","create_at":1774166400001,"file_props":{"file_id":"file-27","name":"sample.txt","size":7}}]}}"#),
+            response(#"{"success":true,"data":{"posts":[{"post_id":"new-42","channel_id":"42","creator_id":"1","is_my_post":true,"message":"附件转发","create_at":1774166400001,"file_props":{"file_id":"file-42","name":"sample.txt","size":7}}]}}"#)
         ])
         let repository = try makeRepository(transport: transport)
-
-        try await repository.forwardMessage(
-            messageID: "9001",
-            toConversationIDs: ["27", "42"],
-            clientRequestID: UUID()
-        )
-
+        _ = try await repository.listMessages(conversationID: "99", before: nil, limit: 50)
+        let requestID = UUID()
+        try await repository.forwardMessage(messageID: "9001", toConversationIDs: ["27", "42"], clientRequestID: requestID)
+        try await repository.forwardMessage(messageID: "9001", toConversationIDs: ["27", "42"], clientRequestID: requestID)
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.count, 1)
-        let fields = try decodeForm(requests[0].httpBody)
+        XCTAssertEqual(requests.count, 9)
+        let allFields = try requests.map { try decodeForm($0.httpBody) }
+        let writes = allFields.filter { $0["method"] == "forward" }
+        XCTAssertEqual(writes.count, 1)
+        let fields = try XCTUnwrap(writes.first)
         XCTAssertEqual(fields["api"], DsmAPIName.chatPost)
         XCTAssertEqual(fields["version"], "5")
         XCTAssertEqual(fields["method"], "forward")
         XCTAssertEqual(fields["post_id"], "9001")
         XCTAssertEqual(fields["channel_ids"], #"[27,42]"#)
+        XCTAssertFalse(allFields.contains { $0["api"] == DsmAPIName.chatPostFile })
     }
 
     func test读取群成员并使用用户目录补齐名称() async throws {
@@ -873,6 +888,7 @@ final class DsmChatRepositoryTests: XCTestCase {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"schedules":[]}}"#),
             response(#"{"success":true,"data":{"cronjob_id":"job-1","channel_id":"27","message":"稍后见","send_at":1800000000000}}"#),
+            response(#"{"success":true,"data":{"schedules":[{"cronjob_id":"job-1","channel_id":"27","message":"稍后见","send_at":1800000000000}]}}"#),
             response(#"{"success":true}"#),
             response(#"{"success":true,"data":{"schedules":[]}}"#)
         ])
@@ -902,21 +918,26 @@ final class DsmChatRepositoryTests: XCTestCase {
         XCTAssertEqual(createFields["channel_id"], "27")
         XCTAssertEqual(createFields["message"], "稍后见")
         XCTAssertEqual(createFields["send_at"], "1800000000000")
-        let deleteFields = try decodeForm(requests[2].httpBody)
+        XCTAssertEqual(requests.count, 5)
+        XCTAssertEqual(try decodeForm(requests[2].httpBody)["method"], "list")
+        let deleteFields = try decodeForm(requests[3].httpBody)
         XCTAssertEqual(deleteFields["method"], "delete")
         XCTAssertEqual(deleteFields["cronjob_id"], "job-1")
-        let verificationFields = try decodeForm(requests[3].httpBody)
+        let verificationFields = try decodeForm(requests[4].httpBody)
         XCTAssertEqual(verificationFields["method"], "list")
         XCTAssertEqual(verificationFields["channel_id"], "27")
     }
 
     func test附件使用已验证的ChatPostV5多段上传且报告进度() async throws {
         let transport = MockHTTPTransport(responses: [
-            response(#"{"success":true,"data":{"post_id":"9010","channel_id":"27","creator_id":"1","create_at":1774166400000,"message":"测试附件","type":"file","file_props":{"file_id":"f-1","name":"sample.png","size":7,"type":"png"}}}"#)
+            response(#"{"success":true,"data":{"post_id":"9010","channel_id":"27","creator_id":"1","create_at":1774166400000,"message":"测试附件","type":"file","file_props":{"file_id":"f-1","name":"sample.png","size":7,"type":"png"}}}"#),
+            response(#"{"success":true,"data":{"posts":[{"post_id":"9010","channel_id":"27","creator_id":"1","is_my_post":true,"create_at":1774166400000,"message":"测试附件","type":"file","file_props":{"file_id":"f-1","name":"sample.png","size":7,"type":"png"}}]}}"#)
         ])
         let repository = try makeRepository(transport: transport)
-        let fileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-sample.png")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("sample.png")
         try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
         defer { try? FileManager.default.removeItem(at: fileURL) }
         let draft = try ChatMessageDraft(
@@ -935,6 +956,8 @@ final class DsmChatRepositoryTests: XCTestCase {
         XCTAssertEqual(message.clientRequestID, draft.clientRequestID)
         XCTAssertFalse(progressRecorder.values().isEmpty)
         let recordedRequests = await transport.recordedRequests()
+        XCTAssertEqual(recordedRequests.count, 2)
+        XCTAssertEqual(try decodeForm(recordedRequests[1].httpBody)["method"], "list")
         let request = try XCTUnwrap(recordedRequests.first)
         let query = Dictionary(uniqueKeysWithValues: (URLComponents(
             url: try XCTUnwrap(request.url),
@@ -1255,7 +1278,7 @@ final class DsmChatRepositoryTests: XCTestCase {
     }
 
     func test删除自己的消息并复查结果且重复请求只执行一次() async throws {
-        let ownPost = #"{"success":true,"data":{"posts":[{"post_id":"9001","channel_id":"27","creator_id":"1","creator_name":"testaccount","create_at":1774166400000,"message":"待删除"}]}}"#
+        let ownPost = #"{"success":true,"data":{"posts":[{"post_id":"9001","channel_id":"27","creator_id":"1","creator_name":"testaccount","is_my_post":true,"create_at":1774166400000,"message":"待删除"}]}}"#
         let transport = MockHTTPTransport(responses: [
             response(ownPost),
             response(#"{"success":true}"#),
@@ -1335,13 +1358,14 @@ final class DsmChatRepositoryTests: XCTestCase {
         XCTAssertEqual(closeFields["channel_id"], "27")
     }
 
-    private func makeRepository(
+    func makeRepository(
         transport: MockHTTPTransport,
         includesAvatarCapability: Bool = false,
         chatPostVersion: Int = 8,
         chatAnonymousVersion: Int = 2,
         includesChatMemberCapability: Bool = true,
-        chatRequestFormat: DsmRequestFormat = .form
+        chatRequestFormat: DsmRequestFormat = .form,
+        includesFiveFeatureCapabilities: Bool = false
     ) throws -> DsmChatRepository {
         var names = [
             DsmAPIName.chatChannel: 5,
@@ -1354,6 +1378,10 @@ final class DsmChatRepositoryTests: XCTestCase {
             DsmAPIName.chatPostVote: 1,
             DsmAPIName.chatPostSchedule: 1
         ]
+        if includesFiveFeatureCapabilities {
+            names[DsmAPIName.chatAdminSetting] = 3
+            names[DsmAPIName.chatPostSubscribe] = 2
+        }
         if includesChatMemberCapability {
             names[DsmAPIName.chatChannelMember] = 1
         }
@@ -1388,11 +1416,11 @@ final class DsmChatRepositoryTests: XCTestCase {
         )
     }
 
-    private func response(_ json: String) -> DsmHTTPResponse {
+    func response(_ json: String) -> DsmHTTPResponse {
         DsmHTTPResponse(data: Data(json.utf8), statusCode: 200)
     }
 
-    private func decodeForm(_ data: Data?) throws -> [String: String] {
+    func decodeForm(_ data: Data?) throws -> [String: String] {
         let body = try XCTUnwrap(data.flatMap { String(data: $0, encoding: .utf8) })
         let components = try XCTUnwrap(URLComponents(string: "?\(body)"))
         return Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map {

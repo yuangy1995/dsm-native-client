@@ -21,6 +21,11 @@ public enum ChatFeature: String, Codable, CaseIterable, Hashable, Sendable {
     case messageForward
     case groupMembers
     case pinnedMessages
+    case messageSearch
+    case messageEditing
+    case threadedReplies
+    case pollVoting
+    case readSynchronization
 }
 
 public enum ChatAvailabilityStatus: String, Codable, Sendable {
@@ -88,6 +93,7 @@ public struct ChatConversation: Identifiable, Codable, Hashable, Sendable {
     public let lastActivityAt: Date?
     public let unreadCount: Int
     public let isEncrypted: Bool
+    public let lastViewedAt: Date?
 
     public init(
         id: String,
@@ -98,7 +104,8 @@ public struct ChatConversation: Identifiable, Codable, Hashable, Sendable {
         lastMessageSummary: String? = nil,
         lastActivityAt: Date? = nil,
         unreadCount: Int = 0,
-        isEncrypted: Bool = false
+        isEncrypted: Bool = false,
+        lastViewedAt: Date? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -109,6 +116,7 @@ public struct ChatConversation: Identifiable, Codable, Hashable, Sendable {
         self.lastActivityAt = lastActivityAt
         self.unreadCount = max(0, unreadCount)
         self.isEncrypted = isEncrypted
+        self.lastViewedAt = lastViewedAt
     }
 }
 
@@ -208,6 +216,37 @@ public struct ChatPoll: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+public enum ChatMessageKind: String, Codable, Sendable {
+    case normal, file, vote, sticker, system, unknown
+}
+
+public struct ChatEditingPolicy: Equatable, Sendable {
+    public let allowsEditing: Bool
+    public let maximumAgeSeconds: TimeInterval?
+
+    public init(allowsEditing: Bool, maximumAgeSeconds: TimeInterval? = nil) {
+        self.allowsEditing = allowsEditing
+        self.maximumAgeSeconds = maximumAgeSeconds
+    }
+
+    public func permits(_ message: ChatMessage, now: Date = Date()) -> Bool {
+        allowsEditing && message.isFromCurrentUser == true && message.poll == nil
+            && (message.kind == .normal || message.kind == .file)
+            && message.encryptionState == .notEncrypted
+            && maximumAgeSeconds.map { now.timeIntervalSince(message.sentAt) <= $0 } != false
+    }
+}
+
+public struct ChatSearchPage: Equatable, Sendable {
+    public let messages: [ChatMessage]
+    public let nextCursor: String?
+
+    public init(messages: [ChatMessage], nextCursor: String?) {
+        self.messages = messages
+        self.nextCursor = nextCursor
+    }
+}
+
 public struct ChatMessage: Identifiable, Codable, Hashable, Sendable {
     public let id: String
     public let clientRequestID: UUID?
@@ -222,6 +261,10 @@ public struct ChatMessage: Identifiable, Codable, Hashable, Sendable {
     public let deliveryState: ChatMessageDeliveryState
     public let encryptionState: ChatEncryptionState
     public let pinnedAt: Date?
+    public let kind: ChatMessageKind?
+    public let threadID: String?
+    public let replyCount: Int?
+    public let editedAt: Date?
 
     public init(
         id: String,
@@ -236,7 +279,11 @@ public struct ChatMessage: Identifiable, Codable, Hashable, Sendable {
         poll: ChatPoll? = nil,
         deliveryState: ChatMessageDeliveryState = .sent,
         encryptionState: ChatEncryptionState = .notEncrypted,
-        pinnedAt: Date? = nil
+        pinnedAt: Date? = nil,
+        kind: ChatMessageKind? = nil,
+        threadID: String? = nil,
+        replyCount: Int? = nil,
+        editedAt: Date? = nil
     ) {
         self.id = id
         self.clientRequestID = clientRequestID
@@ -251,6 +298,10 @@ public struct ChatMessage: Identifiable, Codable, Hashable, Sendable {
         self.deliveryState = deliveryState
         self.encryptionState = encryptionState
         self.pinnedAt = pinnedAt
+        self.kind = kind
+        self.threadID = threadID
+        self.replyCount = replyCount
+        self.editedAt = editedAt
     }
 
     public var isPinned: Bool {
@@ -372,12 +423,14 @@ public struct ChatMessageDraft: Equatable, Sendable {
     public let conversationID: String
     public let text: String?
     public let localAttachmentURLs: [URL]
+    public let threadID: String?
 
     public init(
         clientRequestID: UUID = UUID(),
         conversationID: String,
         text: String?,
-        localAttachmentURLs: [URL] = []
+        localAttachmentURLs: [URL] = [],
+        threadID: String? = nil
     ) throws {
         let normalizedConversationID = conversationID
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -392,6 +445,7 @@ public struct ChatMessageDraft: Equatable, Sendable {
         self.conversationID = normalizedConversationID
         self.text = normalizedText?.isEmpty == false ? normalizedText : nil
         self.localAttachmentURLs = localAttachmentURLs
+        self.threadID = threadID
     }
 }
 
@@ -479,6 +533,14 @@ public struct ChatPollDraft: Equatable, Sendable {
 }
 
 public protocol ChatRepository: Sendable {
+    func searchMessages(query: String, conversationID: String?, cursor: String?, limit: Int) async throws -> ChatSearchPage
+    func message(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage?
+    func listReplies(conversationID: String, threadID: String, before: String?, limit: Int) async throws -> ChatMessagePage
+    func editingPolicy() async throws -> ChatEditingPolicy
+    func editMessage(_ original: ChatMessage, text: String, clientRequestID: UUID) async throws -> ChatMessage
+    func vote(_ message: ChatMessage, choiceIDs: Set<String>, clientRequestID: UUID) async throws -> ChatMessage
+    func markRead(conversationID: String, through: Date) async throws -> ChatConversation
+    func markThreadRead(conversationID: String, threadID: String, lastMessageID: String) async throws
     func availability() async -> ChatAvailability
     func listUsers() async throws -> [ChatUser]
     func listConversations() async throws -> [ChatConversation]
@@ -570,6 +632,15 @@ public protocol ChatRepository: Sendable {
 }
 
 public extension ChatRepository {
+    func searchMessages(query: String, conversationID: String?, cursor: String?, limit: Int) async throws -> ChatSearchPage { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }
+    func message(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage? { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }
+    func listReplies(conversationID: String, threadID: String, before: String?, limit: Int) async throws -> ChatMessagePage { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }
+    func editingPolicy() async throws -> ChatEditingPolicy { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }
+    func editMessage(_ original: ChatMessage, text: String, clientRequestID: UUID) async throws -> ChatMessage { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }
+    func vote(_ message: ChatMessage, choiceIDs: Set<String>, clientRequestID: UUID) async throws -> ChatMessage { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }
+    func markRead(conversationID: String, through: Date) async throws -> ChatConversation { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }
+    func markThreadRead(conversationID: String, threadID: String, lastMessageID: String) async throws { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }
+
     func openDirectConversationResult(
         userID: String,
         clientRequestID: UUID
