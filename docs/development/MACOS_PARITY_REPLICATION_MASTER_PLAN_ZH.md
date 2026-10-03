@@ -1,7 +1,11 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-03 -->
+<!-- last-reviewed: 2026-10-04 -->
 
 # macOS 语义基线下的 Windows 与 Apple 移动端对齐总控计划
+
+## 当前移动实施决策（2026-10-04）
+
+用户已确认并要求执行 [Apple 移动主计划 M0→M8](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)：iPhone/iPad 尽量完整对齐 macOS 1.0.15 业务、能力一致而布局各自原生；允许必要共享逻辑提取及 macOS 引用调整，须保持其行为并回归。Files、后台传输和分享扩展在 M8 独立实施。本页及历史条目中的“精选、复杂管理当前不做、Mac 完全只读”由本次范围取代，但不能据此宣布功能已经实现或移除权限/危险写/未知结果门禁。Windows/Android 实施范围不变，NAS 真实数据不得用于自动写测试。
 
 ## NAS 设置新基线与五端边界（2026-10-03）
 
@@ -12,8 +16,7 @@
 ## 决策摘要
 
 macOS 是 Files、Photos、Chat、Download Station、NAS 管理、桌面云盘与安全行为的业务语义
-基准。Windows 的目标是完整业务语义对齐；iPhone/iPad 的目标是移动专项计划中明确的
-核心或受限用户结果。Android 不属于本计划的一般实施线；2026-09-15 用户已单独授权四端 Photos 对齐，因此仅该波次包含 Android，详细账本集中在[照片计划](NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)，不扩大其他模块范围。
+基准。Windows 的目标是完整业务语义对齐；iPhone/iPad 按最新移动专项计划 M0→M8 实施同等用户结果及原生交互转换。Android 不属于本计划的一般实施线；2026-09-15 用户已单独授权四端 Photos 对齐，因此仅该历史波次包含 Android，详细账本集中在[照片计划](NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)，不扩大其他模块范围。
 
 当前状态见[开发进度](../progress/STATUS.md)，能力边界见[平台功能矩阵](../progress/PLATFORM_MATRIX.md)，
 已结束的阶段性账本见[跨端功能对齐历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。

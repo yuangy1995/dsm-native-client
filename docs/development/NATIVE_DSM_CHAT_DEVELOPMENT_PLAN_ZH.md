@@ -406,12 +406,12 @@ Chat 领域层不依赖平台 UI 和 HTTP 实现。Apple、Android、Windows 共
 
 ### CH7：其他平台按各自范围交付
 
-- iPhone 和 iPad 复用 Apple Chat Core、Repository、同步与安全实现，但只按 Apple 移动范围矩阵交付：会话、文字/Emoji、草稿、分页、失败恢复、本地会话置顶和群成员只读列表为核心；单附件和少量常用消息动作受限实现。移动端本地置顶只保存 profile 绑定的会话 ID 顺序；群成员只在 Sheet 打开期间按需读取并保留内存缓存，不保存标题、成员、消息或 NAS 地址。提醒、定时消息、投票、成员管理、服务端置顶、官方 Star、语音和完整加密不作为当前 Apple 移动完成条件，也不能因 macOS 已有入口自动进入移动端。
-- iPhone 使用原生层级导航，iPad 使用当前范围的自适应双栏、键盘和指针体验；两者都不照搬桌面右键、独立窗口或高密度管理界面。
+- 2026-10-04 用户已授权 iPhone/iPad 按 [M4](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) 接入历史搜索、本人编辑、线程、投票、提醒/定时、转发/置顶/会话管理、媒体播放/录音、前台实时及可见位置已读。旧 CH7 范围排除不再约束本次实施，但现有源码不能自动升级为已完成；精确差距和验证只维护在移动账本。
+- iPhone 使用层级导航及分步表单，iPad 使用自适应分栏、键盘及触控；保留会话隔离、最小持久化、权限、重复保护及最终回读。不建设推送服务器，不实施加密/实时通话，不承诺系统挂起后的常驻连接。
 - Android 使用 Kotlin、Jetpack Compose、OkHttp 和 Android Keystore，具体范围以 Android 专项计划和账本为准。
 - Windows 使用 C#、WinUI 3、HttpClient 和 Credential Locker/DPAPI，继续按 Windows 完整业务语义对齐计划实施。
 
-Apple 移动端被排除或后置的 Chat 能力应在 Mac App 或 DSM Web 中继续完成；文档不承诺深链、单点登录或自动携带会话。范围缩减不放松已纳入写操作的 capability、版本、权限、防重复和最终回读门禁。
+尚未实现的移动能力可在官方 Chat 中完成；不承诺深链或自动携带会话。历史波次的限制及测试数字仅代表当时证据，不覆盖新 M4 实施结果。
 
 ## 9. 测试与验收
 

@@ -11,8 +11,10 @@
 | SMART 历史 | `Core.Storage.Disk.disk_test_log_get` v1 | `device/offset/limit/sort_by/sort_direction/type`；保持检测类型和实际结果 |
 | 启动 / 停止 SMART | `Core.Storage.Disk.do_smart_test` v1 | `device`、`type=quick/extend/stop`；确认目标/可检测能力/占用，再单次发送并读取最终状态 |
 | 外接存储 | `Core.ExternalDevice.Storage.USB/eSATA` v1 的已接读取 | 分别保留可用性；当前不提供弹出写操作；[外接存储记录](../discovery/endpoints/dsm-external-storage.md) |
-| 电源计划 | `Core.Hardware.PowerSchedule.load` v1 | 只读，未知时间/启用状态不补值；[记录](../discovery/endpoints/dsm-power-schedule.md) |
-| 内存压缩 | `Core.Hardware.ZRAM.get` v1 | 只读，不提供设置开关；[记录](../discovery/endpoints/dsm-zram.md) |
+| 电源计划 | `Core.Hardware.PowerSchedule.load/save` v1 | `savePowerScheduleResult` 使用原快照、计划规则及最终回读；未知时间/启用状态不补值；[记录](../discovery/endpoints/dsm-power-schedule.md) |
+| 内存压缩 | `Core.Hardware.ZRAM.get/set` v1 | `saveZRAMResult` 核对原快照及 `enable_zram`，保存后回读；[记录](../discovery/endpoints/dsm-zram.md) |
+
+写入实现见 [HardwareEditing](../../../apple/Packages/DsmNetwork/Sources/DsmNasAdministrationRepository+HardwareEditing.swift)。macOS 已有管理入口；iPhone/iPad 按 [M6](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) 实施，不能由共享方法存在推断移动界面或真实行为已经验证。
 
 SMART 详细响应容器、状态别名与占用规则见[硬盘检测记录](../discovery/endpoints/dsm-smart-test.md)，精确写入字段见[参数目录](requests.md#storage)。权限、读取错误、设备换盘和不支持检测均不能解释为“未运行，可启动”。
 

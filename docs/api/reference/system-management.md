@@ -10,7 +10,7 @@
 | 资源监控 `loadPerformanceSnapshot` | `Core.System.Utilization.get` v1 | 专用性能快照；采样/图表历史属于客户端，不把内存采样写成 NAS 历史记录；[样例](requests.md#system-performance) |
 | 进程 `loadSystemProcesses` | `Core.System.Process/ProcessGroup` v1 的已接读取 | [进程记录](../discovery/endpoints/dsm-system-processes.md)，仅最小白名单信息，无终止进程接口 |
 | 套件 `loadPackages/controlPackageResult/uninstallPackageResult` | Package 列表/可行性 v2，Control 和 Uninstallation v1 | [套件控制](../discovery/endpoints/dsm-package-control.md)；启动、停止、卸载分别判断，列表可见不代表允许操作 |
-| 套件安装 | 当前没有完整安装业务入口 | [安装候选](../discovery/endpoints/dsm-package-installation.md)不等于已实现，不能按静态发现直接新增写入口 |
+| 套件目录、安装、更新和 SPK 上传 | Package 目录、准备、安装与进度的分阶段契约 | 已有[安装实现](../../../apple/Packages/DsmNetwork/Sources/DsmNasAdministrationRepository+PackageInstallation.swift)和 macOS 原生入口；[安装记录](../discovery/endpoints/dsm-package-installation.md)维护预检、卷、许可、提交、取消及回读；共享实现不等于移动入口或真实安装已经验证 |
 | 账号、群组 | `Core.User/Group` v1 | [账号目录](../discovery/endpoints/dsm-account-directory.md)；`NasAccountDraft/NasGroupDraft`，密码意图、成员增删及当前账号保护分别处理 |
 | 当前连接 | `Core.CurrentConnection.list/kick_connection` | [连接记录](../discovery/endpoints/dsm-current-connection.md)；按完整连接身份断开，当前或不能判断是否当前连接时保留额外风险说明 |
 | 日志 | `Core.SyslogClient.Log`、`LogCenter.History` 已接列表 | `NasLogPage`；分页与源区分，日志正文不得进入调试导出或本契约材料 |
@@ -40,7 +40,7 @@
 
 ## 只读与未接入能力
 
-电源计划、ZRAM、USB/eSATA 等当前只读项见[存储页](storage.md)。看到 API 名称、页面入口或领域字段不能推导存在编辑、弹出、更新安装、报告配置或完整套件安装能力。打印机 Bonjour 仅有[稳定发现记录](../discovery/endpoints/dsm-printer-bonjour-sharing.md)，移植时按当前目标平台明确范围处理。
+电源计划与 ZRAM 已有保存流程，USB/eSATA 保持只读，详见[存储页](storage.md)。系统固件安装、外接设备弹出和 Storage Analyzer 报告配置仍未接入；不可由 API 名称、页面或领域字段推导实现。打印机 Bonjour 仅有[稳定发现记录](../discovery/endpoints/dsm-printer-bonjour-sharing.md)，移植时按当前目标平台明确范围处理。
 
 ## 结果、权限与移植检查
 

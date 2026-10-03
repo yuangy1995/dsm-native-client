@@ -5,7 +5,7 @@
 
 ## 当前范围
 
-五端正式照片入口使用 Synology Photos；File Station 的图片扫描/文件备份组件不作为照片库降级。macOS 是当前完整管理语义参考，iPhone/iPad 仍为移动精选范围，Android 与 Windows 只具备各自已接入的范围，不能从共享模型或菜单数量推定全端完成。
+五端正式照片入口使用 Synology Photos；File Station 的图片扫描/文件备份组件不作为照片库降级。macOS 是当前完整管理语义参考，iPhone/iPad 已授权按移动 M3 完整管理范围实施，当前实现和差距以移动账本为准，Android 与 Windows 只具备各自已接入的范围，不能从共享模型或菜单数量推定全端完成。
 
 2026-10-02 已登记的 macOS Photos 网页对齐开发与本机可执行验证完成。真实 NAS 权限、写入、断网/重启，正式签名沙盒书签恢复与完整辅助功能均为 `PENDING_USER_VALIDATION`；接口证据不因此升级。具体 API、版本、参数和平台限制只维护在[照片 API](../api/reference/photos.md)、[管理端点](../api/discovery/endpoints/photos-management.md)与[环境索引](../api/discovery/environments/INDEX.md)。
 
@@ -43,7 +43,7 @@
 | 平台 | 当前范围 | 后续与非目标 |
 | --- | --- | --- |
 | macOS | 上表管理能力及原生时间线、预览、保存、任务和恢复 | 按真实使用反馈补兼容与系统验收；不承诺 Drive 协作锁、任意视频编码或全部版本行为。 |
-| iPhone / iPad | 触控浏览、筛选、预览、原件保存/系统分享、个人单项删除 | 上传/相册/人物/系统管理未进入移动 DAG；前台与系统分享代替桌面常驻流程，两端业务范围相同，iPad 可有分栏与键盘。 |
+| iPhone / iPad | 触控浏览、筛选、预览、原件保存/系统分享、个人单项删除 | 上传/相册/人物/管理已进入 [M3](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)，尚需原生实现；两端业务范围相同，iPad 提供分栏与键盘。自动备份仍非本轮目标。 |
 | Android | 当前 SynologyPhotos 门面、会话、浏览/筛选/保存及已接入动作；文件照片备份仍独立 | macOS 新管理能力只是后续接口参考；保留 SAF、WorkManager 与权限生命周期，需单独授权实施。 |
 | Windows | 既有 SynologyPhotosPage/Workspace 的时间线、筛选、共享读取、预览、保存与个人单项删除 | 2026-09-29 至 10-02 新管理能力尚需逐功能 WinUI 实现，不能记作仅待真机验证。 |
 

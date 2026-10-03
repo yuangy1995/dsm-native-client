@@ -3,6 +3,8 @@
 
 # 桌面端本地磁盘挂载与按需缓存
 
+2026-10-04 移动范围：用户已授权按 [Apple 移动主计划](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) 实施 M8 iOS File Provider、分享扩展及后台传输。iPhone/iPad 能力一致而采用各自原生布局；本页历史只读/精选限制不再排除该范围，当前实现与验收以移动账本为准，不由共享接口存在推断完成。Windows/Android 范围及现有安全边界不变。
+
 ## 当前范围与平台实现
 
 macOS 用户界面称“本地磁盘挂载”，内部 `DesktopCloudDrive` 名称保持不变。macOS 使用 Replicated File Provider Extension，Windows 使用 Cloud Files API 同步根；在系统文件管理器展示 NAS 位置，不要求独立 `/Volumes` 卷或盘符。文件内容以 NAS 为准，本地缓存不是备份。

@@ -441,3 +441,36 @@ SHA-256：`2f585372c284a50d721bc72c439b6848f7dcc7427cc9170d7699649833894db3`。
 同提交的 Repository Check、Documentation & Quality Preflight、Community Compatibility 和 Windows Build 已通过。Android Build 在 `main` 与发布标签均失败；标签运行 [37127867031](https://github.com/yuangy1995/dsm-native-client/actions/runs/37127867031) 显示 1,436 测试中 1 项创建投票断言失败。根因是 Android 仍编码旧字符串选项/旧 options，与已根据 NAS 实际行为修正的共享请求样本不符；这是 [Chat 勘误](../../api/discovery/endpoints/chat-advanced-actions.md)已记录的未对齐项。本次只发布 macOS，未改 Android 源码、恢复错误样本或降低断言，不宣称全平台门禁通过。Apple Build 的独立通用构建和 iPhone/iPad 合成回归已通过，常规 macOS 打包检查另见[主线运行](https://github.com/yuangy1995/dsm-native-client/actions/runs/37127844011)。
 
 `PENDING_USER_VALIDATION`：升级后 Finder 实际保存/删除、Intel/Apple Silicon/Rosetta 升级保持配置与挂载、系统麦克风与通知、真实 NAS 异常路径；正式发布、签名与自动化不替代这些设备行为。临时下载、工具和日志在核对并记录后清理，既有测试包保留；发布结果文档继续以普通提交推送到 `main`，正式标签保持指向上述源码提交。
+
+
+## 2026-10-04 移动 M0 基线
+
+用户确认 M0→M8 完整移动业务对齐，允许必要共享提取和 macOS 引用调整，禁止自动影响 NAS 真实数据。代码基线 `e3bd3480973b325fb76c75783c2f26b682e64f5f`，源码尚未修改；范围与差距统一在[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)。
+
+- Xcode 26.6（17F113），iOS 26.5 专用 iPhone 17 Pro（`8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`）和 iPad Air 11（`A31ABDE2-186F-43DD-8D40-5EB9511A9289`）均成功启动；未擦除旧模拟器。
+- `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`：通过。
+- 同一项目/方案/构建目录分别对两个设备执行 `test-without-building -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`：iPhone 498/498、0 失败（01:51），iPad 498/498、0 失败（01:52）。两端分别保存 `build/m0-m8-baseline-iphone.xcresult` 和 `build/m0-m8-baseline-ipad.xcresult`，生成物不提交。
+- 随后通过 `simctl launch` 分别运行主 App，在原生 Simulator 窗口检查 iPhone 单栏和 iPad 宽屏登录页。未填写真实账号或连接真实 NAS。
+- 现有测试含静态源码护栏，不等于所有界面交互已验证；真实 NAS、系统选择器、辅助功能及后续新功能均须各自验收。
+- M0 纠正套件安装、ZRAM、电源计划的旧 API 状态说明，并同步移动范围与各功能计划；不改变网络请求或 Windows/Android 代码。
+
+M0 追加原生操作：iPad 空地址点击连接后显示“请输入 NAS 地址或 QuickConnect ID”，未发起真实连接；切换英文菜单成功，再次提交空地址显示英文修正提示。发现切换语言时旧错误消息未重新本地化，记录至 M1；不把该项记为通过。源码另确认配置 UUID 复用时账号/连接变更的缓存隔离需要补强。
+
+
+## 2026-10-04 macOS 1.0.15 正式发布
+
+用户明确要求先发布当前 macOS 修复，再执行移动 M0→M8；在既有 `main` 更新主 App/File Provider 为 1.0.15（25），锁定 XcodeGen 2.46.0 重新生成工程。发布提交 `e3bd3480973b325fb76c75783c2f26b682e64f5f`，标签 `macos/v1.0.15`；未改写共享历史或旧版本附件。
+
+[正式工作流 37141445406](https://github.com/yuangy1995/dsm-native-client/actions/runs/37141445406) 成功，包含共享包 2425 项 XCTest（172 项环境/UI 条件跳过、0 失败）及 12 项 Swift Testing、本地化、32 项发布脚本回归、双架构构建、Developer ID 签名、公证 Accepted、装订、Gatekeeper 与组件验证。未运行的原生/真实环境项目不记为通过。
+
+北京时间 2026-10-04 02:07:51 公开 [macOS 1.0.15](https://github.com/yuangy1995/dsm-native-client/releases/tag/macos/v1.0.15)，非草稿、非预发布。
+
+| 正式附件 | 字节数 | SHA-256 |
+| --- | --- | --- |
+| `LanStash-1.0.15-arm64.dmg` | 33,414,369 | `a01f6a22f584e5a1b33ab3fe45fb18c71a3074e5db29e04e99a8e1f67fae00cc` |
+| `LanStash-1.0.15-x86_64.dmg` | 36,941,464 | `802d152deef4d48863660216d998918d9265addf23b84f210cf420b770dc423e` |
+| `appcast.xml` | 6,316 | `231df110543b1817b19d05525aa453d41e159e1ea22918400c02660793bab52c` |
+
+发布后本机重新下载两份 DMG、`SHA256SUMS.txt` 和 `appcast.xml`，执行 `shasum -a 256 -c SHA256SUMS.txt` 全部通过。另下载 `macos-updates/appcast.xml`，`cmp` 确认逐字节相同；首两项为 1.0.15（25），Apple Silicon 在前、Intel 在后，附件地址/长度/更新签名字段正确。签名验真由正式工作流完成。未安装或启动正式 Mac 包，未改 NAS 真实数据。
+
+移动对齐固定在此发布提交，后续移动源码不会进入这个已发布标签；M0 两台模拟器证据见上一节，真实设备及 Finder/NAS 验收仍按各功能步骤进行。

@@ -1,145 +1,105 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-03 -->
+<!-- last-reviewed: 2026-10-04 -->
 
-# iPhone 与 iPad 移动精选功能长期计划
+# iPhone 与 iPad 完整业务对齐实施计划
 
-## 置顶读取更正（2026-10-03）
+本页是 2026-10-04 用户确认的 M0→M8 唯一实施主线，取代旧“移动精选／只读管理”范围。两种设备业务范围一致：iPhone 使用单栏导航和分步表单；iPad 按可用宽度提供分栏、并列详情、键盘和拖放。macOS 是业务与安全语义参考，不照搬悬停、右键、菜单栏和常驻进程。计划纳入不代表已经实现或验证。
 
-共享 Apple 已改用 Post.search 的数字 in 数组限定置顶会话；iPhone/iPad 均保持既有受限能力，不新增本轮桌面入口。 参数、失败语义与五端边界见[消息交互记录](../api/discovery/endpoints/chat-message-interaction.md#2026-10-03-置顶搜索修正)。
+## 固定基线与授权
 
+- macOS 1.0.15（25）正式基线为 `e3bd3480973b325fb76c75783c2f26b682e64f5f`，标签 `macos/v1.0.15`；[正式工作流](https://github.com/yuangy1995/dsm-native-client/actions/runs/37141445406)。正式流程及公开双架构附件/更新源回读已通过，结果记入[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。
+- 允许渐进重构、必要共享逻辑提取和 macOS 引用/平台适配调整，保持其用户行为及数据兼容；不扩展无关桌面功能。
+- 保持 `main`、现有主 App 身份、iOS/iPadOS 17、SwiftUI、Swift 6、英语与简体中文、登录配置格式。
+- 用户授权必要的隔离测试及模拟器操作，禁止影响 NAS 真实数据；官方已登录页面只作必要只读核对。TestFlight 和移动正式发布不在本次发布范围。
+- 共享目标不增加第三方依赖；恢复队列独立版本化，不迁移旧配置、不存明文凭据；回滚停用新增入口并保留原配置。M8 的扩展身份、共享权限及存储在实施前列明必要性、影响和回滚。
 
-## Chat 共享增量影响（2026-10-03）
+## 证据与安全门
 
-共享 Apple 网络修正历史定位分页、投票创建对象和 props.vote 解析，领域模型添加可选线程/编辑/阅读字段与默认拒绝的新方法。本轮 iPhone/iPad 保持现有受限聊天能力，未增加搜索、编辑、投票参与、录音、常驻通知入口或权限，也不把这些尚未实现的能力列为 PENDING_USER_VALIDATION。未来需要移动端独立范围授权，并采用触控消息菜单、系统麦克风/媒体、前台阅读同步及系统后台约束；不能复制桌面常驻连接保证。两种设备本轮范围相同，替代路径为官方 Chat；本轮共享回归与模拟器构建结果见[功能账本](MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md)，协议以[消息交互契约](../api/discovery/endpoints/chat-message-interaction.md)为准。
+实现、自动化、目标构建和真机证据分别记录。`PENDING_USER_VALIDATION` 只是有明确步骤的设备待办；静态源码断言、合成网络结果、系统 UI 测试和真实 NAS 行为不能互代。未开发能力不得写成仅待实机。
 
+公开与内部写保留实际权限、稳定目标、明确确认、防重复、未知结果只查询和最终状态核对。未验证且可能导致数据丢失、凭据泄露、越权或不可逆副作用的入口单独受保护，不阻塞无依赖切片。契约只维护在[API 目录](../api/README.md)，变更同步五端影响，不改 Windows/Android 实现。
 
-## NAS 管理共享增量与移动取舍（2026-10-03）
+## 功能对齐账本
 
-共享 Apple 增加套件目录/安装模型、Repository 默认不支持方法以及内存压缩/电源计划保存语义；旧移动实现保持源码兼容。本轮未增加 iPhone 或 iPad 页面，二者范围一致：内存压缩、电源计划、套件安装/卸载/自动更新与来源信任等长流程运维均为**当前不做**，不加入移动 DAG，也不标为 PENDING_USER_VALIDATION。用户目标由现有健康/服务摘要加浏览器 DSM 管理替代；不承诺移动后台持续安装监控或照搬桌面表单。共享读取后续需同步 enable_zram、available_operation 对象及正确防火墙通知含义，并继续做 macOS 回归。证据与契约见 [NAS 设置账本](NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
+Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmMobile/Sources/`。共享协议和 Repository 位于 `apple/Packages/DsmCore/Sources/`、`apple/Packages/DsmNetwork/Sources/`。每行验收包含断网、取消、重复点击和跨账号迟到响应；当前差距以源码检查为依据，不使用页面数量作为完成标准。
 
-同日反馈修复补充：套件预检成功可以没有 data；Setting.get 的 update_channel 为 Boolean，set 仍为 stable/beta，单卷 default_vol 可缺省。macOS 已修正并同步应用实际加载的双语资源；其他平台实现范围保持上述取舍。官方单个 MediaServer 更新已成功，但不能代替任何目标客户端的真实提交验收。详见[反馈修复账本](PACKAGE_CENTER_FIX_20261003_ZH.md)。 后续确认 system/system_hidden 可以缺省普通存储列表；安装准备取消须丢弃迟到结果，已提交安装只关闭窗口后台继续。照片过期操作反馈修复仅涉及 macOS 模型，不改变五端照片读取/写入契约。见[二次反馈账本](PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)。
-
-## File Station 共享接口增量影响
-
-高级搜索/索引报告、分享日期/密码/增强选项、包内分页/选择解压、任务控制和权限/ISO/VFS/设置类型，以及目录来源、主题图片和临时云授权类型均为共享兼容增量；旧签名复用同一实现，分享可选字段兼容旧数据，缺失新能力显式拒绝。iPhone/iPad 本轮仅验证共享代码及通用工程构建，不新增界面、默认私有写或移动 DAG。后续目录上传、基础分享、触控筛选仍按 Files/前台/系统分享的核心或受限范围评估；ACL、ISO、桌面连接与套件管理仅作为契约参考，未排入移动实现或真机待办，当前替代路径为 DSM 官方管理入口，iPhone/iPad 本轮范围相同。详见 [File Station 账本](../../apple/Apps/DsmMac/README.md)。
-
-
-## Office 本机编辑的移动范围
-
-macOS 已实现 Office 系统预览和本机应用编辑自动回传；该增量只在 macOS 展示及会话层，不改变共享 `PreviewKind`、网络协议或移动端预览能力。iPhone/iPad 本轮均未新增此功能，尤其不引入持续监测其他应用保存或后台常驻回传。移动端继续通过既有前台下载、系统分享/另存将文件交给兼容应用，回传由用户主动上传；不承诺外部编辑保存自动回到 NAS。两端范围相同，未实施的自动回传不列为 `PENDING_USER_VALIDATION`，后续须先明确移动生命周期与用户结果，再单独排入计划。macOS 证据见 [Office 账本](../../apple/Apps/DsmMac/README.md)。
-
-## 目标与范围
-
-本计划定义 iPhone 和 iPad 的移动交付边界。macOS 是业务语义和安全行为基准，但不是移动
-页面模板；移动端只实施[平台功能矩阵](../progress/PLATFORM_MATRIX.md)中明确的核心或受限
-结果。当前状态见[开发进度](../progress/STATUS.md)，已结束的跨端对齐记录见
-[历史归档](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。
-
-### 移动端必须保持的原则
-
-- 使用 SwiftUI、系统返回、触控、系统分享、Files/Photos、系统选择器和移动后台规则。
-- 不复制桌面悬停、右键、双击、菜单栏、常驻进程或复杂长流程运维。
-- iPhone 优先单手、随身、短会话；iPad 在可用宽度下提供双栏、键盘和并列详情，但不超出
-  已批准移动范围。
-- 用户可见内容使用英语和简体中文资源；动态文字、VoiceOver、降低动效、浅色/深色和
-  触控是所有页面的基础要求。
-- 没有稳定契约或真实行为证据的内部写操作默认关闭，不以“macOS 已有实现”解除保护。
-
-## 当前核心与受限能力
-
-| 领域 | iPhone | iPad | 边界 |
+| 编号／用户结果 | macOS 证据 | 两端交互、契约及安全级别 | 当前差距与验收 |
 | --- | --- | --- | --- |
-| 登录与会话 | 核心 | 核心 | 平台安全存储、会话隔离、证书确认；真实设备与 NAS 待验收。 |
-| Files | 核心 | 核心 | 浏览、预览、用户主动前台传输和明确列出的安全文件操作。 |
-| Photos | 核心 | 核心 | Synology Photos 浏览、筛选、预览、原件保存／系统分享和个人单项删除；范围以照片计划为准，自动备份为后续。 |
-| Chat | 受限 | 受限 | 文字、单附件和少量明确操作；语音、加密、复杂管理和后台实时为后续或非目标。 |
-| Download Station | 受限 | 受限 | 常用单任务和只读信息；全局设置写、批量和删除数据不进入移动范围。 |
-| NAS 摘要 | 受限 | 受限 | 健康与服务只读摘要；复杂运维、网络、账号、电源和磁盘写入不进入移动范围。 |
-| Container / VMM | 受限 | 受限 | 隐私白名单只读摘要；生命周期、网络、删除和控制台不进入移动范围。 |
-| Activity | 核心 | 核心 | 前台任务与 NAS 任务的可理解投影；不承诺后台常驻。 |
+| M0 基线与范围 | 发布标签；WorkspaceView、ServiceManagementView、NasAdministrationView | 路由→模型→Repository，校正文档/矩阵；只读 | 已完成基线与差距核对，正式发布及两端基线均通过 |
+| M1 会话与导航 | LoginViewModel、WorkspaceModel | 现有 AppShell/Session；单栏/分栏；认证 | 下载等状态仍在组合根；切换 NAS/账号不能串草稿、结果、缓存 |
+| M1 共用照片状态 | SynologyPhotosModel、PhotoUploadRecoveryStore | 内部 DsmPhotosFeature；平台文件访问/恢复/导出适配；共享 | 工程直接包含 Mac 源文件，尚未提取；两端和 Mac 回归 |
+| M1 旧图库清理 | SynologyPhotosView | 主路由已为 MobileSynologyPhotosView；兼容 | 迁移有效行为后删除旧 File Station 图库路径，保留缓存清理 |
+| M2 浏览、分页及高级搜索 | FileAdvancedSearchView、WorkspaceModel | 触控筛选，iPad 并列详情；List/Search/索引；只读 | 有基础浏览搜索，缺高级筛选与完整分页闭环 |
+| M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | 当前前台单文件为主；补目录计划、冲突、取消、部分成功恢复 |
+| M2 分享与收集 | FileShareCreationView、FileShareManagementView、FileShareAdvancedView | 详情表单/系统分享；Sharing 密码/日期/权限；外部可见写 | 有基础分享，缺完整编辑管理；密码不泄露、结果逐项绑定 |
+| M2 压缩、解压、归档浏览 | ArchiveExtractionView、FileArchiveBrowserModel | 包内列表/选择目标与条目；Compress/Extract；数据写 | 缺完整流程；取消只处理本操作，超限/失败可恢复 |
+| M2 ACL 与所有者 | FilePermissionEditor、FileStationPrincipalPicker | 分步权限/成员选择；原对象与权限快照；高风险写 | 未实现；明确后果、原权限变化拒绝、回读一致 |
+| M2 远程位置与 ISO/VFS | FileVFSViews、FileVFSForm、FileISOMountView | 原生列表/连接表单；SMB/NFS/VFS/ISO/云授权；凭据与内部写 | 现有位置浏览不足；凭据仅当次，提交未知不重复连接 |
+| M2 NAS 任务 | FileBackgroundTaskActions | Activity 绑定 NAS/原任务；状态及取消；写 | 有投影，需完整控制和暂时不可达恢复 |
+| M2 跨 NAS 传输 | WorkspaceModel | 源/目标明确绑定；复制后核对目标再确认源删除；高风险 | 未实现；目标未核对不得删源，恢复不重放已完成步骤 |
+| M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | 有预览/导出，缺冲突与主动回传；M8 接 Files 写回 |
+| M2 可恢复活动队列 | WorkspaceModel | 独立版本化任务、来源/目标身份与进度；持久化 | MobileTransferCoordinator 仅进程内单文件；重启后准确恢复/显示未知 |
+| M3 Photos 上传 | SynologyPhotosModel、SynologyPhotosView | Photos/Files 选择与队列；上传/相册加入；写 | 缺入口；加入相册失败只补后一步，不重传原件 |
+| M3 批量及资料 | PhotoManagementPanel | 多选、标签/日期/资料表单；原件权限；写 | 缺编辑/批量；列表可见不代表可改/删 |
+| M3 目录及移动复制 | PhotoFolderDestinationPicker | 分步目的地选择；Folder/Move/Copy；数据写 | 缺管理；绑定对象、空间与角色，保留部分成功 |
+| M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | 当前主要浏览；照片、相册、目录、分享权限独立 |
+| M3 人物、相似组 | SynologyPhotosModel | 触控分组列表、人物编辑；People/Similar；写 | 缺管理流程；不推断服务端未识别的人物 |
+| M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | 缺流程；支持不足只限制相关入口 |
+| M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | 包装器未转发新增能力；本人/会话绑定，历史完整分页 |
+| M4 投票、提醒、定时 | ChatDetailsViews | 原生表单；投票对象/props.vote 及提醒定时字段；写 | 缺完整接入；未知不重发，撤销核对原对象 |
+| M4 转发、置顶、会话管理 | ChatWorkspaceModel | 目标会话选择、菜单；Post.search 数字 in 数组；写 | 有部分低风险操作；包装器截断/字段投影需复核 |
+| M4 语音与录制 | ChatNativeMedia | 消息内播放暂停、首次录制申请麦克风；媒体/权限 | 缺录音；一击加载播放、取消清理临时文件 |
+| M4 实时与阅读同步 | ChatNotificationService、ChatWindowActivity | App 前台工作区连接、真实可见位置、本地提醒；生命周期 | 当前只在 Chat 页激活；本人无残留未读，旧历史不提前读新消息 |
+| M5 详情、编辑、批量 | ServiceManagementView、ServiceManagementModel | 多选、详情/编辑表单；Download Station Task；写 | 有创建/暂停继续/记录删除，缺全详情、编辑、批量及完成做种 |
+| M5 RSS、设置与搜索创建 | ServiceManagementView | RSS/设置/搜索创建表单；现有共享 Download 协议；写 | 有 BT 搜索基础，缺完整设置/RSS；离页保留长任务身份 |
+| M5 删除与数值 | ServiceManagementModel | 记录删除与文件删除分别确认；数据删除 | 缺数据删除逐项结果；未知速度/剩余时间显示 --，读取失败不算成功 |
+| M6 21 页读取与普通设置 | NasAdministrationView、NasAdministrationModel | 分类设置/并列详情；系统日志存储区域代理等；内部写 | 当前仅摘要及部分详情；仅编辑实际支持字段 |
+| M6 账号、群组、网络、安全 | NasAdministrationView | 分步表单/当前账号保护；User/Group/Ethernet/FileServ/Security；高风险 | 缺操作；管理员/原快照/差量/防重复/回读 |
+| M6 硬件、UPS、内存、电源计划 | PowerScheduleEntryEditor、NasAdministrationView | 原生编辑器；Hardware/UPS/ZRAM/PowerSchedule；系统写 | 未实现；纠正 API 旧只读说明，未知字段不补 false |
+| M6 计划任务、连接、电源 | NasAdministrationModel | 后果确认与断连恢复；TaskScheduler/CurrentConnection/System；高风险 | 缺操作；接受不代表脚本完成或已重启，未知不重发 |
+| M6 套件中心 | PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 安装准备/卷/许可/进度、更新/SPK/设置；Package；内部写 | 只有只读列表；提交前取消丢弃迟到结果，提交后关闭不撤销任务 |
+| M7 容器生命周期/日志 | ServiceManagementView、ServiceManagementModel | 详情及操作确认；Docker 稳定身份；高风险 | 只有只读投影；套件权限不等同 DSM 管理员，写后回读 |
+| M7 映像、网络、项目 | ContainerImagePullModel、ServiceManagementView | 搜索/tag/拉取、网络/项目表单；Registry.search v1；内部写 | 缺入口；读取暂失保留任务，明确 1202 失败不再卡住 |
+| M7 VMM 操作与创建 | ServiceManagementView、ServiceManagementModel | 分步配置/稳定目标；Virtualization；高风险 | 只有只读包装器；先修正同名即成功不足，创建归属和配置不足保持未知 |
+| M7 VMM 网络/映像/控制台 | ServiceManagementView | 资源表单及触控 WebKit；控制台会话；凭据/内部写 | 缺入口；临时隔离 Cookie、限定源站，URL 禁止原始会话秘密 |
+| M8 系统后台传输 | WorkspaceModel（业务语义） | Background URLSession、受保护文件及恢复；后台/凭据 | 未实现；自动重定向不能弱化证书/源站约束，不适用路线维持前台恢复 |
+| M8 分享扩展 | FileUploadPlan（上传语义） | 分享→NAS/位置→持久任务；独立扩展最小共享权限 | 未实现；账号隔离、取消、重复接收及系统终止恢复 |
+| M8 Files 与外部编辑 | DesktopCloudDriveManager；Mac FileProviderExtension | iOS File Provider 先读/下载/缓存，再写回/冲突/删除；系统集成 | 未实现；不复制 Mac 外壳；正式 entitlement 与真机另验 |
 
-## 共享代码边界
+## 顺序、所有权与质量门
 
-```text
-apple/Packages/DsmCore/       领域模型、协议、结果语义
-apple/Packages/DsmNetwork/    HTTP、会话、能力与 Repository
-apple/Packages/*Feature/      Files、传输和可复用特性
-apple/Apps/DsmMobile/         iPhone/iPad SwiftUI 组合根和平台适配
-apple/Apps/DsmMac/            只读 macOS 参考实现
-```
+M6 的逐页范围以 `NasAdministrationModel.NasSettingsPage` 为准：总览与更新检查、存储/空间分析/SMART、外接存储、内存压缩、文件服务、终端、代理、网卡、硬件/UPS、电源计划、远程访问、安全、区域时间、DDNS、套件、计划任务、账号/群组、共享权限摘要、进程、日志、连接。读取不支持和空内容分开；只读基线（例如外接存储/进程）不虚构弹出或终止动作。
 
-- 共享 Package 只能做向后兼容的增量修改，保持公开协议、actor、会话和错误类型。
-- 每次共享 Package 变化同时运行 `swift test --package-path apple` 和 macOS 回归。
-- `apple/Apps/DsmMac/**` 不是移动对齐任务的可写范围。如需修改其中 Workspace、NAS
-  Administration View、WorkspaceModel 或 NasAdministrationModel，必须先向用户请求授权。
-- 移动 View 与 Model 拆分先保持 `@MainActor`、`ObservableObject`、`@Published` 顺序、
-  Binding、View identity、`task`、`onChange`、sheet/popover 和传输取消恢复语义。
+M1 已确认隔离缺口：`saveProfile` 会在相同 UUID 下替换账号/地址，而 Chat/NAS/Activity 等部分缓存只按 UUID 索引。实施时必须在上下文改变时失效旧结果与任务展示；普通重连和改显示名称不应冒充另一个账号。模拟器登录页另已检查空地址提示和语言菜单，既有错误文案在切换语言后仍保留旧语言，纳入同阶段会话界面复核。
 
-## 实施顺序
+M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数名，实际发送 `force_complete`（结束并移出未完成文件），并非删除下载文件；Mac 的 `finish` 控制也不产生请求。M5 必须把移除任务、结束做种和实际文件删除按各自真实结果分开，不把旧名称直接移植。RSS/任务编辑等额外入口先补足明确契约与结果核对，不能把请求缺口包装成可用按钮。M7 的 Mac 项目页目前读取项目状态与错误，未发现项目写方法；移动对齐先保留该实际语义，不虚构项目创建/部署接口。
 
-### M0：范围和回归护栏
+固定顺序 M0→M1→M2→M3→M4→M5→M6→M7→M8。先完成可使用主流程、错误恢复、聚焦自动化，再分别执行两台模拟器测试与构建。M2/M4/M7/M8 可形成候选收口，但不替代后续阶段。当前负责人单独修改 Shell、共享协议、工程、双语资源和进度文档，不与其他任务交叉修改热点。
 
-- 维护 iPhone/iPad 的核心、受限、后续和非目标矩阵。
-- 为每个切片记录 macOS 证据路径、移动替代、契约依赖、安全级别、自动化与真机等级。
-- 保持共享 Package 和移动组合根的单一修改范围；并发时先核对差异再写入。
+- 每阶段执行差异检查、文档/契约/本地化门禁、行为测试和独立集成审查。
+- 共享变化运行 `swift test --package-path apple`（含 Mac 回归），移动与 Mac 目标项目另构建，互不替代。
+- 锁定 XcodeGen 2.46.0 生成工程；iPhone/iPad 独立 `xcodebuild test` 并保留各自结果。
+- 页面五态、中英文、浅深色、动态文字、触控、键盘、VoiceOver、降低动效逐项审查；静态扫描仅为结构护栏。
+- 私有写、认证、跨 NAS、后台、File Provider 另做只读对抗复核；不自动改现有 NAS 文件、聊天、套件、网络、容器或 VM。
 
-### M1：会话、Shell 与可访问性
+## 当前验证记录
 
-- 保持 profile、会话、能力、导航和迟到结果的隔离。
-- iPhone 使用清晰的返回和单栏路径；iPad 按可用宽度切换为双栏，不固定设备型号断点。
-- 页面覆盖加载、空内容、筛选后为空、错误与正常内容；不适用状态要有产品原因。
+- 2026-10-04：专用 iPhone 17 Pro、iPad Air 11 模拟器（iOS 26.5）均已创建、启动并检查主屏幕；未擦除用户旧模拟器。基线 `build-for-testing` 通过，随后 iPhone 与 iPad 分别 `test-without-building`，均通过，精确数量见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m0-基线)；另分别启动 App 并原生检查登录页。未登录或写入真实 NAS。
+- 实际命令：`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`；随后两端分别运行 `test-without-building`，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，关闭测试并行。结果分别为 `build/m0-m8-baseline-iphone.xcresult`、`build/m0-m8-baseline-ipad.xcresult`（忽略的本地构建目录）。
+- `python3 tools/codex/check_documentation.py` 与 `git diff --check` 通过。
+- `MobileChatPresentationTests` 包含源码文本断言；更新过时范围限制时保留安全语义并补实际行为/界面测试。
+- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1–M8 新范围尚未实现。
 
-### M2：Files、传输与 Activity
+## PENDING_USER_VALIDATION
 
-- 保持用户主动、可取消的前台传输，明确提交前取消和提交后核对的区别。
-- Files 预览、分享和系统另存遵循 iOS/iPadOS 原生流程；不引入桌面常驻任务模型。
-- Activity 区分 App 发起任务和 NAS 服务器任务，不能把读取失败或后台未知状态写成成功。
+以下仅为后续设备验收条件，不能据此把未实现行标为完成。
 
-### M3：Photos 与受限 Chat
-
-- Photos 已迁移到 `Features/Photos/MobileSynologyPhotos*`，复用现有 Apple 网络和照片模型；触控筛选、系统保存／分享代替桌面交互。完整能力、非目标和设备验收只维护在[照片计划](NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。
-- Apple Build 分别在 iPhone 与 iPad 模拟器执行移动合成回归并上传结果；自动备份、Photos 上传／相册编辑不因旧文件导入组件仍存在而进入本轮范围。
-- Chat 只推进已记录的文字、单附件和低风险动作；提交未知、取消或回读不一致只核对，
-  不自动重放。
-- 真实 Chat Server、选择器、大附件、系统权限和无障碍行为均后置给用户验证。
-
-### M4：只读管理与发布收口
-
-2026-09-20 VMM 同类读取语义修正：原来把 autorun 作为开关，会混淆恢复原状态与
-开机。共享启动策略和 iPhone/iPad 详情改为三态/未知投影，继续原生 LabeledContent；
-七字段隐私白名单将 autoStart 布尔替换为 startupBehavior，不新增身份、事件或写
-方法。Mac 对应源码修复与官方只读证据见 Windows 持续账本和 VMM 发现记录。两种
-设备范围相同，不引入桌面创建/编辑/控制台；对应 Apple 集成构建及回归已记入[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)，真实 NAS 与设备行为仍待验证。
-
-- Download Station、NAS、Container 和 VMM 保持当前受限只读摘要；新增写能力需要独立
-  契约、安全和验收切片。
-- 运行 iPhone/iPad 模拟器构建、共享 Package 和 macOS 回归；不把模拟器结果写成真机通过。
-- 将签名、安装、TestFlight、真实设备、真实 NAS、网络切换和辅助功能记录为
-  `PENDING_USER_VALIDATION`。
-
-## 验证与发布
-
-| 验证层 | 可在当前环境执行 | 需要用户或正式环境 |
+| 条件 | 操作与预期 | 允许回传及影响 |
 | --- | --- | --- |
-| 共享逻辑 | Swift Package 测试、fixture、协议和错误语义。 | 真实 DSM/套件字段、权限与时序。 |
-| iPhone / iPad UI | 对应模拟器构建与可访问性代码检查。 | 触控、分栏、键盘、系统选择器、VoiceOver、动态文字。 |
-| 认证与传输 | 取消、迟到结果、会话隔离和状态机测试。 | Keychain、网络切换、前后台、系统限制和真实文件。 |
-| 发布 | 无签名构建与候选准备。 | 签名、TestFlight、安装、升级、回退和正式设备矩阵。 |
+| 真机、专用可丢弃账号/目录 | 两端登录、网络/前后台切换、逐功能操作；不串账号、不重复写，结果与 NAS 一致 | App/OS/DSM/套件版本、脱敏步骤/错误类别；不回传凭据、真实路径或正文 |
+| 媒体和辅助功能 | 选择器、麦克风允许/拒绝、播放、动态文字、VoiceOver、iPad 键盘分屏 | 型号/OS、控件和复现步骤；相应系统交互待验，不阻塞独立源码 |
+| 正式扩展签名和系统注册 | 分享/Files 注册、锁屏、系统终止、重登、冲突与删除 | 脱敏系统错误和任务状态；高风险系统入口验证前保留能力保护 |
 
-用户验证回传仅包含平台/系统类别、步骤、预期和实际用户可见结果、清理结果和脱敏失败
-语义。不得回传设备名称、账号、NAS 地址、文件路径、Cookie、SID、SynoToken 或原始响应。
+## 明确非目标
 
-## 当前不做
-
-- macOS 专有复杂运维、菜单栏、常驻后台、File Provider 和桌面云盘映射；
-- 未经独立产品和权限决策的自动照片备份、长期后台传输、iPad 多窗口；
-- Chat 语音、加密、实时通话、多附件和未经验证的服务器管理写操作；
-- Container/VMM 生命周期、网络、删除、控制台和其他高风险内部写；
-- 将桌面“后续”能力写进移动真机待办，或用 `PENDING_USER_VALIDATION` 掩盖范围外工作。
-
-
-## Photos 新增共享能力的范围
-
-macOS 后续管理契约见[照片 API](../api/reference/photos.md)，不逐波复制施工记录。iPhone/iPad 仍保持上表范围；上传、相册/人物/目录管理、系统设置、常驻预览转换及重启恢复不因共享协议存在而进入移动实现或 `PENDING_USER_VALIDATION`。两端均可通过已有保存/分享及 DSM 官方界面完成范围外需求；未来增量先明确移动用户结果、生命周期及降级。
-
-2026-10-03 容器契约补充：Registry.search 必须固定 v1（v2 实测 103）；下载任务 1202 为已观察的 Docker 失败路径，传输读取失败应保留原任务自动恢复。详见 `MACOS_CONTAINER_IMAGE_PULL_FIX_20261003_ZH.md` 和当日发现记录。本端未新增功能或私有写开放结论；Apple 共享层另做构建回归。
+不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。

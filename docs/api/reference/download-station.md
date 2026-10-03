@@ -10,8 +10,8 @@
 | 内部备用摘要 | `DownloadStation2.Task.list`、`Task.Statistic.get`、`Settings.Location.get` | 各自 v1/v2 能力，不能复制公开请求字段猜内部行为 | [备用接口记录](../discovery/endpoints/download-station2-fallback.md) |
 | 链接创建 `createDownloadTaskResult` | 公开 `Task.create` | 无 destination 固定 v1；带 destination 固定 v2；`uri` 为已允许的链接类型，目录按 NAS 契约传递 | 专用创建结果；固定输入和创建身份，未知不自动重发 |
 | 任务文件 `createDownloadTaskFileResult` | 公开 `Task.create` multipart | `.torrent/.nzb/.txt`；同样按 destination 选择 v1/v2，密码只在当次发送 | 同创建结果，不把成功上传请求当作所有下载已完成 |
-| 暂停、继续、编辑、完成做种等 | `Task` 对应方法 | 使用稳定任务 ID 和确认时快照；固定操作版本见[参数目录](requests.md#download-station) | 单项/批量结果逐项核对，部分成功保留 |
-| 删除任务 | `Task.delete` | `id`、明确的 `removeData` 意图 | 删除任务记录与删除下载文件不同；危险选项单独确认 |
+| 暂停、继续 | `Task.pause/resume` | 使用稳定任务 ID 和确认时快照；固定版本见[参数目录](requests.md#download-station) | 单项/批量结果逐项核对，部分成功保留；旧 `finish` 枚举当前不产生请求 |
+| 删除任务／结束并移出未完成文件 | `Task.delete` | `id`、`force_complete`；共享旧参数名 `removeData` 仅为调用兼容 | `false` 移除任务，`true` 请求把未完成文件移入目标目录；不是删除下载数据，列表消失也不能证明文件已移动 |
 | BT 搜索 | `BTSearch.getModule/getCategory/start/list/clean` | v1；模块、关键词、分类、排序、分页和任务 ID | 仅管理本次搜索任务，取消/结束清理自己的任务 |
 | 设置 | `Info.getconfig/setserverconfig`、`Schedule.getconfig/setconfig` | 已支持版本与原设置基线 | 部分分区不可用不当作默认值；保存后核对实际设置 |
 
@@ -19,7 +19,7 @@
 
 ## 关键语义
 
-- `force_complete` 表示结束已完成下载任务的做种阶段，不能用于把未下载完成的任务强制标成完成。
+- `force_complete` 不是删除数据开关，也不是单独的完成做种方法。当前 macOS 提供删除任务和“结束并移出未完成文件”两种选择；移动 M5 不得照旧参数名误译为删除文件。任务编辑、RSS 或额外控制能力需核对实际 Repository 与独立契约，不由本表笼统推定已实现。
 - 目标目录创建使用其真实支持版本；有 destination 的请求不得降成 v1 后静默忽略目录。
 - 原始任务状态、正在执行的控制请求和最终结果分别呈现；错误、正在进行、已结束不互相替代。
 - 上传任务文件、下载任务运行、实际内容完成是不同阶段。网络中断后先查询原创建/控制结果，禁止为了“重试”制造重复任务。

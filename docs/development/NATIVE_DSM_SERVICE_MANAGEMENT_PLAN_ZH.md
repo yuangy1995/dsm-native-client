@@ -1,5 +1,7 @@
 # DSM 套件管理三端实现计划
 
+2026-10-04 移动范围：用户已授权按 [Apple 移动主计划](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) 实施 M5 Download Station 与 M7 Container/VMM。iPhone/iPad 能力一致而采用各自原生布局；本页历史只读/精选限制不再排除该范围，当前实现与验收以移动账本为准，不由共享接口存在推断完成。Windows/Android 范围及现有安全边界不变。
+
 > 当前完成情况和验证结果以[当前开发进度](../progress/STATUS.md)为准。本文只维护范围、契约、安全门槛、未完成工作和验收条件。
 
 ## 1. 范围
