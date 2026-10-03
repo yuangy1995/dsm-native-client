@@ -20,8 +20,6 @@ targets:
     platform: iOS
     sources:
       - Sources
-      # 无 AppKit 依赖的同一状态机；Mac 源文件保持只读，避免四处复制分页和删除规则。
-      - path: ../DsmMac/Sources/SynologyPhotosModel.swift
       - path: Resources
     dependencies:
       - package: DsmShared
@@ -30,6 +28,8 @@ targets:
         product: DsmCore
       - package: DsmShared
         product: DsmNetwork
+      - package: DsmShared
+        product: DsmPhotosFeature
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MOBILE_BUNDLE_ID)"
@@ -49,12 +49,26 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MOBILE_BUNDLE_ID).tests"
         GENERATE_INFOPLIST_FILE: YES
+  DsmMobileUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    dependencies:
+      - target: DsmMobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MOBILE_BUNDLE_ID).uitests"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: DsmMobile
 schemes:
   DsmMobile:
     build:
       targets:
         DsmMobile: all
         DsmMobileTests: [test]
+        DsmMobileUITests: [test]
     test:
       targets:
         - DsmMobileTests
+        - DsmMobileUITests

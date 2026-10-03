@@ -94,6 +94,7 @@ struct MobileSettingsView: View {
                 }
             }
         }
+        .accessibilityIdentifier("mobile.settings.page")
         .task { await model.refreshSettingsCacheSummary() }
         .confirmationDialog(
             L10n.string("mobile.settings.cache.clearConfirmTitle"),

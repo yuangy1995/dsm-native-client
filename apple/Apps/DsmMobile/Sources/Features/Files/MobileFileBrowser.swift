@@ -958,7 +958,7 @@ struct MobileFileBrowser: View {
         guard !state.location.source.isReadOnlyLocation,
               let profileID = model.activeProfile?.id,
               let repository = model.fileRepository else { return }
-        pendingUploadContext = MobileDocumentPickerContext(
+        pendingUploadContext = MobileDocumentPickerContext(contextID: model.documentTransferController.contextID,
             profileID: profileID,
             folderPath: state.currentPath.isEmpty ? "/" : state.currentPath,
             intent: .upload
@@ -1301,7 +1301,7 @@ struct MobileFileBrowser: View {
 
     private func startDownload(_ item: FileItem, intent: MobileDocumentIntent) {
         guard let repository = model.fileRepository else { return }
-        let context = MobileDocumentDownloadContext(
+        let context = MobileDocumentDownloadContext(contextID: model.documentTransferController.contextID,
             profileID: item.profileID,
             remotePath: item.path,
             fileName: item.name,

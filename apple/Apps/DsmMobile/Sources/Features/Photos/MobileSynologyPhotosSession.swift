@@ -1,3 +1,4 @@
+import DsmPhotosFeature
 import DsmCore
 import DsmLocalization
 import Foundation

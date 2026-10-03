@@ -474,3 +474,31 @@ M0 追加原生操作：iPad 空地址点击连接后显示“请输入 NAS 地�
 发布后本机重新下载两份 DMG、`SHA256SUMS.txt` 和 `appcast.xml`，执行 `shasum -a 256 -c SHA256SUMS.txt` 全部通过。另下载 `macos-updates/appcast.xml`，`cmp` 确认逐字节相同；首两项为 1.0.15（25），Apple Silicon 在前、Intel 在后，附件地址/长度/更新签名字段正确。签名验真由正式工作流完成。未安装或启动正式 Mac 包，未改 NAS 真实数据。
 
 移动对齐固定在此发布提交，后续移动源码不会进入这个已发布标签；M0 两台模拟器证据见上一节，真实设备及 Finder/NAS 验收仍按各功能步骤进行。
+
+
+## 2026-10-04 移动 M1 共享结构、会话与导航
+
+本轮是 M0→M8 中的基础结构切片，未将 M2–M8 写成完成。原 File Station 图库的行为/测试迁移与最终清理随 M3 收敛，仍属源码待办。
+
+实际修改：Photos 状态机和原版本 1 上传恢复存储迁入内部 `DsmPhotosFeature`，Mac 保留原安全范围书签适配，移动工程移除 Mac App 源文件引用；下载状态/操作从组合根移入 `MobileDownloadsModel`；缓存、活动记录与系统文件选择回调加入账号/连接上下文隔离。修改地址/端口/账号形成独立连接并清空表单旧密码，保留原配置及凭据；迟到密码不覆盖手动输入。原生导航以目标页面出现驱动加载，修复手势影响下载等入口的问题，并隔离 iPad 分组路径。登录重复标题、旧语言错误残留及英文账号文案同步修正。
+
+测试增加 Debug 专用内存服务与 `DsmMobileUITests`，普通启动和 Release 均不进入样例模式；不访问真实 NAS，不放宽认证、证书或私有写权限。新增模块没有第三方依赖，不改变主 App 身份、最低系统版本、登录格式或 NAS 请求契约；Mac 修改仅限共享引用/书签适配及对应测试。
+
+| 实际命令／范围 | 结果 |
+| --- | --- |
+| `swift build --package-path apple --target DsmPhotosFeature --jobs 4` | 通过；公共值类型明确遵循 Sendable，没有放宽并发检查 |
+| `swift test --package-path apple --jobs 4 --filter 'SynologyPhotos|PhotoUploadRecoveryAdapter'` | 803/803，0 失败，含旧上传恢复和新平台适配回归 |
+| `swift test --package-path apple --jobs 4` | 2427 项 XCTest、172 项既有环境/UI 条件跳过、0 失败，另 12 项 Swift Testing 通过 |
+| XcodeGen 2.46.0 生成两个工程，移动 `build-for-testing` | 通过，包含新增 UI 测试目标 |
+| `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` | 最终 iPhone：507 项单元 + 5 项真实 UI 测试全部通过；最终轮设置模拟器深色模式 |
+| 同命令，iPad 目标 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` | 最终 iPad：507 项单元 + 5 项真实 UI 测试全部通过；浅色分栏独立运行 |
+| `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=NO` | 通过；`lipo -info` 确认 arm64/x86_64，属于工程回归构建，未签名、未安装或启动此 Mac 产物 |
+| `python3 tools/localization/check_localization.py`、`python3 tools/codex/check_documentation.py`、`git diff --check` | 通过 |
+
+两端最终结果分别保存在忽略的本地构建目录 `apple/Apps/DsmMobile/build/m1-iphone-final.xcresult` 与 `apple/Apps/DsmMobile/build/m1-ipad-2.xcresult`，包含界面截图附件。原生 UI 覆盖中英文登录、空输入恢复、语言选择持久化、文件/下载/设置导航、加载/空内容/错误/正常/筛选为空。额外通过 Simulator 实际点击复核 iPhone 下载入口、iPad 分栏及折叠搜索按钮。
+
+迭代中发现并修复：旧源码断言仅比较配置 UUID；iPhone 标签栏测试需按系统标签定位；导航点击手势干扰原生 NavigationLink；iPad 搜索先由工具栏按钮展开。均保留原安全断言、修正实际流程或测试定位，没有跳过失败项目。
+
+独立集成与只读对抗复核：重新检查 Mac 引用、平台书签/队列版本、切换目标前后的凭据身份、迟到回调、活动任务显示/重试以及 Debug 测试入口。新目标不会复用原配置会话或收到旧密码回填；当前进程中的旧任务记录可按原账号找回，但不会由新账号重试；旧文件选择回调在复制前后及入队后均有上下文核对。没有创建分支、PR、移动发布或真实 NAS 写测试。
+
+未验证：实际设备的安全存储、系统选择器权限撤销、完整动态文字/VoiceOver/外接键盘矩阵，以及真实 NAS 时序，按移动主计划 `PENDING_USER_VALIDATION` 执行。跨重启任务恢复、后台传输、扩展和新业务入口仍在后续阶段；不能以本轮构建或 UI 样例宣称完成。

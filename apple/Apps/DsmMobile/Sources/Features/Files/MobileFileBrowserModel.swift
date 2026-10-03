@@ -59,6 +59,17 @@ final class MobileFileBrowserModel {
         return profiles[activeProfileID] ?? MobileFileBrowserProfileState()
     }
 
+    /// 账号或地址改变后不能复用原账号的目录、搜索和空间摘要。
+    func purge(profileID: UUID) {
+        if activeProfileID == profileID {
+            cancelRequest(); cancelStorageRequest(); cancelLocationRequest()
+            activeProfileID = nil; repositoryIdentity = nil
+            mutations.deactivate(); copyMove.deactivate(); recycleAction.deactivate()
+        }
+        profiles[profileID] = nil
+        locations.purge(profileID: profileID)
+    }
+
     func activate(profileID: UUID?, repository: (any MobileFileBrowsing)?) async {
         let nextRepositoryIdentity = repository.map { ObjectIdentifier($0) }
         let preservesStorage = activeProfileID == profileID && repositoryIdentity == nextRepositoryIdentity

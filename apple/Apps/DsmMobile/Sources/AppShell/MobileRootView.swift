@@ -9,6 +9,7 @@ struct MobileRootView: View {
         Group {
             if model.isConnected {
                 MobileWorkspaceView(model: model)
+                    .id(model.activeProfile.map(MobileWorkspaceIdentity.init))
             } else {
                 MobileLoginView(model: model)
             }

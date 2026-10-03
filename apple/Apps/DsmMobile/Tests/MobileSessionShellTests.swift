@@ -653,7 +653,7 @@ final class MobileSessionShellTests: XCTestCase {
         model.capabilities = Self.capabilities([DsmAPIName.downloadStationTask])
         model.selectedTopLevel = .activity
         model.selectedModule = .transfers
-        model.downloadStationLoadOverride = { await loader.load() }
+        model.downloads.downloadStationLoadOverride = { await loader.load() }
 
         model.selectModule(.downloads)
         await loader.waitUntilStarted()
@@ -662,7 +662,7 @@ final class MobileSessionShellTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(model.selectedModule, .transfers)
-        XCTAssertNil(model.downloadSnapshot)
+        XCTAssertNil(model.downloads.downloadSnapshot)
         XCTAssertFalse(model.isLoading)
     }
 
@@ -684,7 +684,7 @@ final class MobileSessionShellTests: XCTestCase {
         model.capabilities = Self.capabilities([DsmAPIName.downloadStationTask])
         model.selectedTopLevel = .activity
         model.selectedModule = .transfers
-        model.downloadStationLoadOverride = { await loader.load() }
+        model.downloads.downloadStationLoadOverride = { await loader.load() }
 
         model.selectModule(.downloads)
         await loader.waitUntilStarted()
@@ -693,7 +693,7 @@ final class MobileSessionShellTests: XCTestCase {
         await Task.yield()
 
         XCTAssertFalse(model.isConnected)
-        XCTAssertNil(model.downloadSnapshot)
+        XCTAssertNil(model.downloads.downloadSnapshot)
         XCTAssertFalse(model.isLoading)
     }
 

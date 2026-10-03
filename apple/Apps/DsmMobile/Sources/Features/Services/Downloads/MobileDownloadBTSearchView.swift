@@ -288,7 +288,7 @@ final class MobileDownloadBTSearchModel {
 }
 
 struct MobileDownloadBTSearchView: View {
-    @Bindable var model: MobileAppModel
+    @Bindable var model: MobileDownloadsModel
     @State private var searchModel = MobileDownloadBTSearchModel()
     @Environment(\.dismiss) private var dismiss
 

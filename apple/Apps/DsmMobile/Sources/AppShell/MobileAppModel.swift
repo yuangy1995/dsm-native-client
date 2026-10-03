@@ -34,6 +34,7 @@ final class MobileAppModel {
     let nasDetailsModel = MobileNasDetailsModel()
     let containerInventoryModel = MobileContainerInventoryModel()
     let virtualMachineInventoryModel = MobileVirtualMachineInventoryModel()
+    let downloads: MobileDownloadsModel
 
     var profiles: [NasProfile] = []
     var selectedProfileID: UUID?
@@ -55,30 +56,15 @@ final class MobileAppModel {
     @ObservationIgnored var certificateRetryContext: MobileCertificateRetryContext?
     @ObservationIgnored var selectedModuleLoadTask: Task<Void, Never>?
     @ObservationIgnored var selectedModuleLoadGeneration: UInt64 = 0
-    @ObservationIgnored var downloadStationLoadOverride: (@Sendable () async throws -> DownloadStationSnapshot)?
-    @ObservationIgnored var downloadStationControlOverride:
-        (@Sendable (DownloadTaskControlRequest) async throws -> DownloadTaskControlOutcome)?
-    @ObservationIgnored var downloadStationCreateOverride:
-        (@Sendable (DownloadTaskCreateRequest) async throws -> DownloadTaskCreateOutcome)?
-    @ObservationIgnored var downloadStationCreateFileOverride:
-        (@Sendable (DownloadTaskFileCreateRequest) async throws -> DownloadTaskCreateOutcome)?
-    @ObservationIgnored var downloadStationDeleteOverride:
-        (@Sendable ([String], Bool) async throws -> MutationResult)?
-    @ObservationIgnored var downloadControlTask: Task<Void, Never>?
-    @ObservationIgnored var downloadControlGeneration: UInt64 = 0
-    @ObservationIgnored var downloadCreateTask: Task<Void, Never>?
-    @ObservationIgnored var downloadCreateGeneration: UInt64 = 0
-    @ObservationIgnored var downloadDeleteTask: Task<Void, Never>?
-    @ObservationIgnored var downloadDeleteGeneration: UInt64 = 0
 
     var isConnected = false
     var activeProfile: NasProfile? {
         didSet {
             filePreviewModel.activate(profileID: activeProfile?.id)
-            if activeProfile?.id != oldValue?.id {
+            downloads.configure(profile: activeProfile, repository: serviceRepository)
+            if activeProfile.map(MobileWorkspaceIdentity.init) != oldValue.map(MobileWorkspaceIdentity.init) {
                 fileShareLinkModel.deactivate()
                 deactivateFileLocations()
-                deactivateDownloads()
                 photoLibraryModel.deactivate()
                 synologyPhotos.deactivate()
                 chatModel.deactivate()
@@ -99,27 +85,15 @@ final class MobileAppModel {
     var currentPath = ""
     var pathHistory: [String] = []
     var files: [FileItem] = []
-    var downloadSnapshot: DownloadStationSnapshot?
-    var downloadControlTaskID: String?
-    var downloadControlAction: DownloadStationTaskAction?
-    var downloadControlFeedback: MobileDownloadControlFeedback?
-    var downloadCreateFeedback: MobileDownloadCreateFeedback?
-    var downloadDeleteTaskID: String?
-    var downloadDeleteFeedback: MobileDownloadDeleteFeedback?
-    var conversations: [ChatConversation] = []
-    var systemOverview: NasSystemOverview?
-    var storageSnapshot: NasStorageSnapshot?
-    var packages: [NasPackage] = []
-    var accountsAndGroups: NasAccountDirectory?
-    var logs: NasLogPage?
-    var connections: NasConnectionPage?
 
     var capabilities: CapabilitySet?
     var session: AuthSession?
     var activeConnectionProfile: NasProfile?
     var fileRepository: DsmFileRepository?
     var photoRepository: FileStationPhotoRepository?
-    var serviceRepository: DsmServiceManagementRepository?
+    var serviceRepository: DsmServiceManagementRepository? {
+        didSet { downloads.configure(profile: activeProfile, repository: serviceRepository) }
+    }
     var chatRepository: DsmChatRepository?
     var nasRepository: DsmNasAdministrationRepository?
 
@@ -145,6 +119,7 @@ final class MobileAppModel {
             mutationCoordinator: mutationCoordinator
         )
         self.transferCoordinator = transferCoordinator
+        self.downloads = MobileDownloadsModel(transferCoordinator: transferCoordinator)
         self.documentTransferController = MobileDocumentTransferController(
             transferCoordinator: transferCoordinator
         )

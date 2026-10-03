@@ -1,3 +1,5 @@
+import DsmNetwork
+import Observation
 import DsmCore
 import DsmLocalization
 import Foundation
@@ -51,7 +53,105 @@ struct MobileDownloadDeleteFeedback: Equatable {
     let kind: MobileDownloadDeleteFeedbackKind
 }
 
-extension MobileAppModel {
+/// 下载操作属于连接上下文，离开页面只停止读取，不丢弃已提交操作。
+@MainActor
+@Observable
+final class MobileDownloadsModel {
+    var activeProfile: NasProfile?
+    @ObservationIgnored var serviceRepository: DsmServiceManagementRepository?
+    @ObservationIgnored private let transferCoordinator: MobileTransferCoordinator
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var loadGeneration: UInt64 = 0
+    var isLoading = false
+    var message: String?
+    @ObservationIgnored var downloadStationLoadOverride: (@Sendable () async throws -> DownloadStationSnapshot)?
+    @ObservationIgnored var downloadStationControlOverride:
+        (@Sendable (DownloadTaskControlRequest) async throws -> DownloadTaskControlOutcome)?
+    @ObservationIgnored var downloadStationCreateOverride:
+        (@Sendable (DownloadTaskCreateRequest) async throws -> DownloadTaskCreateOutcome)?
+    @ObservationIgnored var downloadStationCreateFileOverride:
+        (@Sendable (DownloadTaskFileCreateRequest) async throws -> DownloadTaskCreateOutcome)?
+    @ObservationIgnored var downloadStationDeleteOverride:
+        (@Sendable ([String], Bool) async throws -> MutationResult)?
+    @ObservationIgnored var downloadControlTask: Task<Void, Never>?
+    @ObservationIgnored var downloadControlGeneration: UInt64 = 0
+    @ObservationIgnored var downloadCreateTask: Task<Void, Never>?
+    @ObservationIgnored var downloadCreateGeneration: UInt64 = 0
+    @ObservationIgnored var downloadDeleteTask: Task<Void, Never>?
+    @ObservationIgnored var downloadDeleteGeneration: UInt64 = 0
+    var downloadSnapshot: DownloadStationSnapshot?
+    var downloadControlTaskID: String?
+    var downloadControlAction: DownloadStationTaskAction?
+    var downloadControlFeedback: MobileDownloadControlFeedback?
+    var downloadCreateFeedback: MobileDownloadCreateFeedback?
+    var downloadDeleteTaskID: String?
+    var downloadDeleteFeedback: MobileDownloadDeleteFeedback?
+
+    init(transferCoordinator: MobileTransferCoordinator) { self.transferCoordinator = transferCoordinator }
+
+    func configure(profile: NasProfile?, repository: DsmServiceManagementRepository?) {
+        let identityChanged = profile.map(MobileWorkspaceIdentity.init) != activeProfile.map(MobileWorkspaceIdentity.init)
+        let repositoryChanged = repository.map(ObjectIdentifier.init) != serviceRepository.map(ObjectIdentifier.init)
+        if identityChanged || repositoryChanged {
+            cancelLoad()
+            deactivateDownloads()
+            downloadSnapshot = nil
+            message = nil
+        }
+        activeProfile = profile
+        serviceRepository = repository
+    }
+
+    func deactivate() {
+        cancelLoad()
+        deactivateDownloads()
+        activeProfile = nil
+        serviceRepository = nil
+        downloadSnapshot = nil
+        message = nil
+    }
+
+    func cancelLoad() {
+        loadGeneration &+= 1
+        loadTask?.cancel()
+        loadTask = nil
+        isLoading = false
+    }
+
+    func load() async {
+        loadGeneration &+= 1
+        let generation = loadGeneration
+        let identity = activeProfile.map(MobileWorkspaceIdentity.init)
+        guard identity != nil else { return }
+        isLoading = true
+        message = nil
+        do {
+            let snapshot: DownloadStationSnapshot
+            if let downloadStationLoadOverride { snapshot = try await downloadStationLoadOverride() }
+            else if let serviceRepository { snapshot = try await serviceRepository.loadDownloadStation() }
+            else { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("ui.38245f0b3e213b62")) }
+            try Task.checkCancellation()
+            guard generation == loadGeneration, identity == activeProfile.map(MobileWorkspaceIdentity.init) else { return }
+            downloadSnapshot = snapshot
+            syncDownloadSnapshotToActivity()
+            isLoading = false
+        } catch {
+            guard generation == loadGeneration, identity == activeProfile.map(MobileWorkspaceIdentity.init) else { return }
+            if !(error is CancellationError) {
+                message = (error as? AppError)?.safeUserMessage ?? L10n.string("ui.38245f0b3e213b62")
+            }
+            isLoading = false
+        }
+    }
+
+    private func syncDownloadSnapshotToActivity() {
+        guard let profile = activeProfile, let snapshot = downloadSnapshot else { return }
+        let context = MobileWorkspaceIdentity(profile)
+        Task { [transferCoordinator] in
+            await transferCoordinator.syncDownloadStationTasks(profileID: profile.id, snapshot: snapshot, context: context)
+        }
+    }
+
     var downloadPageState: MobilePageState {
         if isLoading, downloadSnapshot == nil {
             return .loading
@@ -97,7 +197,8 @@ extension MobileAppModel {
     }
 
     func reloadDownloads() {
-        selectModule(.downloads)
+        cancelLoad()
+        loadTask = Task { [weak self] in await self?.load() }
     }
 
     func deactivateDownloads() {

@@ -5,6 +5,7 @@ import SwiftUI
 struct MobileLoginView: View {
     @Bindable var model: MobileAppModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(AppLanguageStore.self) private var language
     @State private var profileToRemove: NasProfile?
     @State private var showsAdvancedConnectionSettings = false
 
@@ -39,10 +40,15 @@ struct MobileLoginView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     AppLanguagePicker()
+                        .accessibilityIdentifier("mobile.login.language")
                         .labelsHidden()
                         .pickerStyle(.menu)
                 }
             }
+        }
+        .onChange(of: language.resolvedLanguage) { _, _ in
+            // 旧反馈是当时的本地化快照，语言切换后由下一次操作产生新提示。
+            if !model.isConnecting { model.loginError = nil }
         }
         .confirmationDialog(
             L10n.string(
@@ -88,8 +94,6 @@ struct MobileLoginView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.string("ui.4aeb6d92cbbff699"))
                     .font(.largeTitle.bold())
-                Text(L10n.string("app.name"))
-                    .foregroundStyle(.secondary)
             }
             Spacer()
         }
@@ -164,24 +168,28 @@ struct MobileLoginView: View {
                 .font(.title2.bold())
                 .accessibilityAddTraits(.isHeader)
             TextField(L10n.string("ui.a98585871c5313ff"), text: $model.displayName)
+                .accessibilityIdentifier("mobile.login.name")
                 .textContentType(.organizationName)
                 .textFieldStyle(.roundedBorder)
             TextField(
                 L10n.string("ui.add3d846c43e6f54"),
-                text: $model.host,
+                text: Binding(get: { model.host }, set: { model.editConnectionField(.host, value: $0) }),
                 prompt: Text(L10n.string("ui.0eb5bf18b9814bd1"))
             )
+                .accessibilityIdentifier("mobile.login.host")
                 .textContentType(.URL)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .textFieldStyle(.roundedBorder)
-            TextField(L10n.string("ui.311bb313fdeca6aa"), text: $model.username)
+            TextField(L10n.string("ui.311bb313fdeca6aa"), text: Binding(get: { model.username }, set: { model.editConnectionField(.account, value: $0) }))
+                .accessibilityIdentifier("mobile.login.username")
                 .textContentType(.username)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .textFieldStyle(.roundedBorder)
             SecureField(L10n.string("ui.a621ab606db2a11f"), text: $model.password)
+                .accessibilityIdentifier("mobile.login.password")
                 .textContentType(.password)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { model.connect() }
@@ -225,7 +233,7 @@ struct MobileLoginView: View {
                 isExpanded: $showsAdvancedConnectionSettings
             ) {
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField(L10n.string("ui.9aa2d5f46c68bf78"), text: $model.port)
+                    TextField(L10n.string("ui.9aa2d5f46c68bf78"), text: Binding(get: { model.port }, set: { model.editConnectionField(.port, value: $0) }))
                         .keyboardType(.numberPad)
                         .textFieldStyle(.roundedBorder)
                     Text(L10n.string("ui.7ea0491272acd294"))
@@ -244,6 +252,7 @@ struct MobileLoginView: View {
             }
             if let loginError = model.loginError {
                 Label(loginError, systemImage: "exclamationmark.triangle.fill")
+                    .accessibilityIdentifier("mobile.login.error")
                     .font(.callout)
                     .foregroundStyle(.red)
                     .padding(12)
@@ -269,6 +278,7 @@ struct MobileLoginView: View {
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity, minHeight: 32)
                 }
+                .accessibilityIdentifier("mobile.login.connect")
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             }

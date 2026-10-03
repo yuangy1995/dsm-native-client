@@ -63,6 +63,7 @@ struct MobilePageStateView<Content: View>: View {
                 content
             }
         }
+        .accessibilityIdentifier("mobile.page.\(state.rawValue)")
         .fillsAvailableContentArea(alignment: state.layout.alignment)
         .animation(reduceMotion ? nil : MobileMotion.stateTransition, value: state)
     }

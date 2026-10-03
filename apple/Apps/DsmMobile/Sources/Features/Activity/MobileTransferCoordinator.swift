@@ -4,6 +4,8 @@ import Foundation
 /// 仅管理当前进程内、用户主动发起的前台单文件任务。
 actor MobileTransferCoordinator {
     private let mutationCoordinator: MobileMutationCoordinator
+    private var activeContexts: [UUID: String] = [:]
+    private var taskContexts: [UUID: String] = [:]
     private var tasksByID: [UUID: MobileActivityTask] = [:]
     private var requestsByID: [UUID: MobileTransferRequest] = [:]
     private var executionsByID: [UUID: Task<Void, Never>] = [:]
@@ -12,6 +14,16 @@ actor MobileTransferCoordinator {
 
     init(mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator()) {
         self.mutationCoordinator = mutationCoordinator
+    }
+
+    /// 同一配置改换账号时保留旧任务记录，但不向新账号展示或使用新会话重试。
+    func activateContext(_ identity: MobileWorkspaceIdentity) {
+        let context = identity.storageIdentifier
+        guard activeContexts[identity.profileID] != context else { return }
+        let oldIDs = tasksByID.values.filter { $0.profileID == identity.profileID && taskContexts[$0.id] != context }.map(\.id)
+        activeContexts[identity.profileID] = context
+        fileStationObservationTokensByProfile[identity.profileID] = nil
+        for id in oldIDs { cancel(id) }
     }
 
     func enqueueUpload(
@@ -33,6 +45,7 @@ actor MobileTransferCoordinator {
         status: MobileTransferStatus
     ) -> UUID {
         let id = UUID()
+        taskContexts[id] = activeContexts[profileID]
         tasksByID[id] = MobileActivityTask(
             id: id,
             createdAt: Date(),
@@ -51,14 +64,17 @@ actor MobileTransferCoordinator {
 
     func syncDownloadStationTasks(
         profileID: UUID,
-        snapshot: DownloadStationSnapshot
+        snapshot: DownloadStationSnapshot,
+        context: MobileWorkspaceIdentity? = nil
     ) {
+        guard context?.storageIdentifier == activeContexts[profileID] else { return }
         let sourcePrefix = "download:"
         let incomingKeys = Set(snapshot.tasks.map { sourcePrefix + $0.id })
         let existingByKey = Dictionary(
             tasksByID.compactMap { id, task -> (String, UUID)? in
                 guard task.profileID == profileID,
                       task.source == .nas,
+                      taskContexts[id] == activeContexts[profileID],
                       let sourceIdentifier = task.sourceIdentifier,
                       sourceIdentifier.hasPrefix(sourcePrefix) else {
                     return nil
@@ -70,6 +86,7 @@ actor MobileTransferCoordinator {
 
         let outdatedIDs = tasksByID.compactMap { id, task -> UUID? in
             guard task.profileID == profileID &&
+            taskContexts[id] == activeContexts[profileID] &&
             task.source == .nas &&
             task.sourceIdentifier?.hasPrefix(sourcePrefix) == true &&
             !incomingKeys.contains(task.sourceIdentifier ?? "") else {
@@ -85,6 +102,7 @@ actor MobileTransferCoordinator {
             let sourceIdentifier = sourcePrefix + downloadTask.id
             let id = existingByKey[sourceIdentifier] ?? UUID()
             let createdAt = tasksByID[id]?.createdAt ?? Date()
+            taskContexts[id] = activeContexts[profileID]
             tasksByID[id] = Self.activityTask(
                 id: id,
                 createdAt: createdAt,
@@ -121,6 +139,7 @@ actor MobileTransferCoordinator {
             tasksByID.compactMap { id, task -> (String, UUID)? in
                 guard task.profileID == profileID,
                       task.source == .nas,
+                      taskContexts[id] == activeContexts[profileID],
                       let sourceIdentifier = task.sourceIdentifier,
                       sourceIdentifier.hasPrefix(sourcePrefix) else {
                     return nil
@@ -132,6 +151,7 @@ actor MobileTransferCoordinator {
 
         let outdatedIDs = tasksByID.compactMap { id, task -> UUID? in
             guard task.profileID == profileID,
+                  taskContexts[id] == activeContexts[profileID],
                   task.source == .nas,
                   task.sourceIdentifier?.hasPrefix(sourcePrefix) == true,
                   !incomingKeys.contains(task.sourceIdentifier ?? "") else {
@@ -147,6 +167,7 @@ actor MobileTransferCoordinator {
             let sourceIdentifier = sourcePrefix + task.id
             let id = existingByKey[sourceIdentifier] ?? UUID()
             let createdAt = task.createdAt ?? tasksByID[id]?.createdAt ?? Date()
+            taskContexts[id] = activeContexts[profileID]
             tasksByID[id] = Self.activityTask(
                 id: id,
                 createdAt: createdAt,
@@ -161,6 +182,7 @@ actor MobileTransferCoordinator {
         guard executionsByID[id] == nil,
               let task = tasksByID[id],
               task.source == .app,
+              taskContexts[id] == activeContexts[task.profileID],
               task.status == .queued,
               requestsByID[id] != nil else { return }
         tasksByID[id]?.status = .preparing
@@ -193,6 +215,7 @@ actor MobileTransferCoordinator {
 
     func retryFromBeginning(_ id: UUID, using service: any MobileTransferServing) async {
         guard let task = tasksByID[id],
+              taskContexts[id] == activeContexts[task.profileID],
               task.retryPolicy == .restartFromBeginning,
               task.status.isTerminal,
               let request = requestsByID[id],
@@ -207,6 +230,7 @@ actor MobileTransferCoordinator {
         }
 
         guard var task = tasksByID[id],
+              taskContexts[id] == activeContexts[task.profileID],
               task.retryPolicy == .restartFromBeginning,
               task.status.isTerminal,
               let request = requestsByID[id],
@@ -231,7 +255,7 @@ actor MobileTransferCoordinator {
 
     func tasks(profileID: UUID) -> [MobileActivityTask] {
         tasksByID.values
-            .filter { $0.profileID == profileID }
+            .filter { $0.profileID == profileID && taskContexts[$0.id] == activeContexts[profileID] }
             .sorted {
                 if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
                 return $0.id.uuidString < $1.id.uuidString
@@ -247,6 +271,7 @@ actor MobileTransferCoordinator {
         retryPolicy: MobileTransferRetryPolicy
     ) -> UUID {
         let id = UUID()
+        taskContexts[id] = activeContexts[request.profileID]
         tasksByID[id] = MobileActivityTask(
             id: id,
             createdAt: Date(),

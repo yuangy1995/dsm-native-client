@@ -1,3 +1,4 @@
+@testable import DsmPhotosFeature
 @testable import DsmMobile
 import DsmCore
 import Foundation
@@ -117,7 +118,8 @@ final class MobileSynologyPhotosTests: XCTestCase {
         XCTAssertTrue(route.contains("MobileSynologyPhotosView(session: model.synologyPhotos)"))
         XCTAssertFalse(route.contains("MobilePhotosView(model:"))
         let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
-        XCTAssertTrue(project.contains("../DsmMac/Sources/SynologyPhotosModel.swift"))
+        XCTAssertFalse(project.contains("../DsmMac/Sources/SynologyPhotosModel.swift"))
+        XCTAssertTrue(project.contains("product: DsmPhotosFeature"))
         let view = try String(contentsOf: root.appendingPathComponent("Sources/Features/Photos/MobileSynologyPhotosView.swift"), encoding: .utf8)
         XCTAssertTrue(view.contains("LazyVGrid"))
         XCTAssertTrue(view.contains("loadNextPageAutomatically"))

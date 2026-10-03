@@ -830,7 +830,7 @@ struct MobilePhotosView: View {
               item.profileID == activeProfileID,
               let repository = model.fileRepository,
               repository.profileID == activeProfileID else { return }
-        let context = MobileDocumentDownloadContext(
+        let context = MobileDocumentDownloadContext(contextID: model.documentTransferController.contextID,
             profileID: item.profileID,
             remotePath: item.path,
             fileName: item.name,

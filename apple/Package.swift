@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "DsmCore", targets: ["DsmCore"]),
         .library(name: "DsmNetwork", targets: ["DsmNetwork"]),
         .library(name: "DsmLocalization", targets: ["DsmLocalization"]),
+        .library(name: "DsmPhotosFeature", targets: ["DsmPhotosFeature"]),
         .executable(name: "LanStash", targets: ["DsmMacExecutable"])
     ],
     dependencies: [
@@ -39,10 +40,15 @@ let package = Package(
                 .linkedFramework("Security")
             ]
         ),
+        .target(
+            name: "DsmPhotosFeature",
+            dependencies: ["DsmCore", "DsmNetwork", "DsmLocalization"],
+            path: "Packages/DsmPhotosFeature/Sources"
+        ),
         .executableTarget(
             name: "DsmMacExecutable",
             dependencies: [
-                "DsmCore", "DsmNetwork", "DsmLocalization",
+                "DsmCore", "DsmNetwork", "DsmLocalization", "DsmPhotosFeature",
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS]))
             ],
             path: "Apps/DsmMac/Sources",
@@ -85,8 +91,13 @@ let package = Package(
             path: "Packages/DsmLocalization/Tests"
         ),
         .testTarget(
+            name: "DsmPhotosFeatureTests",
+            dependencies: ["DsmCore", "DsmPhotosFeature"],
+            path: "Packages/DsmPhotosFeature/Tests"
+        ),
+        .testTarget(
             name: "DsmMacTests",
-            dependencies: ["DsmCore", "DsmLocalization", "DsmMacExecutable"],
+            dependencies: ["DsmCore", "DsmLocalization", "DsmPhotosFeature", "DsmMacExecutable"],
             path: "Apps/DsmMac/Tests",
             resources: [.copy("Fixtures/Office")]
         ),

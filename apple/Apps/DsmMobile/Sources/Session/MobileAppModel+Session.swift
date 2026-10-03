@@ -146,6 +146,8 @@ extension MobileAppModel {
                     session: session
                 )
                 try requireCurrentConnectionAttempt(attemptID)
+                await prepareWorkspaceContext(for: submission.profile)
+                try requireCurrentConnectionAttempt(attemptID)
                 applyWorkspaceRepositories(workspace)
                 saveProfile(submission.profile)
                 self.capabilities = connection.capabilities
@@ -210,6 +212,8 @@ extension MobileAppModel {
                     session: session
                 )
                 _ = try await workspace.file.listShares(offset: 0, limit: 1)
+                try requireCurrentConnectionAttempt(attemptID)
+                await prepareWorkspaceContext(for: profile)
                 try requireCurrentConnectionAttempt(attemptID)
                 applyWorkspaceRepositories(workspace)
                 self.capabilities = connection.capabilities
@@ -409,7 +413,7 @@ extension MobileAppModel {
         let connectionChanged = selectedProfile.map {
             $0.host != parsedAddress.host || $0.portOverride != portOverride
         } ?? false
-        return try NasProfile(
+        let candidate = try NasProfile(
             id: selectedProfileID ?? UUID(),
             displayName: displayName,
             host: parsedAddress.host,
@@ -419,8 +423,16 @@ extension MobileAppModel {
             pinnedCertificateSHA256: connectionChanged
                 ? nil
                 : selectedProfile?.pinnedCertificateSHA256,
-            lastDsmBuild: selectedProfile?.lastDsmBuild
+            lastDsmBuild: connectionChanged ? nil : selectedProfile?.lastDsmBuild
         )
+        if let selectedProfile, MobileWorkspaceIdentity(selectedProfile) != MobileWorkspaceIdentity(candidate) {
+            // 地址或账号代表另一条连接；保留旧配置和凭据，绝不把旧会话交给新目标。
+            return try NasProfile(displayName: candidate.displayName, scheme: candidate.scheme,
+                host: candidate.host, port: candidate.port, portOverride: candidate.portOverride,
+                usernameHint: candidate.usernameHint, pinnedCertificateSHA256: candidate.pinnedCertificateSHA256,
+                lastDsmBuild: candidate.lastDsmBuild)
+        }
+        return candidate
     }
 
     func discoverConnection(for profile: NasProfile) async throws -> DiscoveredConnection {
@@ -477,6 +489,26 @@ extension MobileAppModel {
         )
     }
 
+    func prepareWorkspaceContext(for profile: NasProfile) async {
+        let previous = profiles.first { $0.id == profile.id } ?? activeProfile.flatMap { $0.id == profile.id ? $0 : nil }
+        if let previous, MobileWorkspaceIdentity(previous) != MobileWorkspaceIdentity(profile) {
+            cancelSelectedModuleLoad()
+            fileBrowserModel.purge(profileID: profile.id)
+            fileShareLinkModel.purge(profileID: profile.id)
+            filePreviewModel.close()
+            documentTransferController.resetForDisconnectedWorkspace()
+            await photoLibraryModel.purge(profileID: profile.id)
+            chatModel.purge(profileID: profile.id)
+            chatModel.removePersistentPins(profileID: profile.id)
+            nasHealthModel.purge(profileID: profile.id)
+            nasDetailsModel.deactivate()
+            containerInventoryModel.purge(profileID: profile.id)
+            virtualMachineInventoryModel.purge(profileID: profile.id)
+            navigationStates[profile.id] = nil
+        }
+        await transferCoordinator.activateContext(MobileWorkspaceIdentity(profile))
+    }
+
     func saveProfile(_ profile: NasProfile) {
         profiles.removeAll { $0.id == profile.id }
         profiles.append(profile)
@@ -485,10 +517,30 @@ extension MobileAppModel {
         persistProfiles()
     }
 
+    func editConnectionField(_ field: MobileConnectionField, value: String) {
+        switch field {
+        case .host: host = value
+        case .port: port = value
+        case .account: username = value
+        }
+        guard let selected = profiles.first(where: { $0.id == selectedProfileID }),
+              !credentialFieldsMatch(selected) else { return }
+        password = ""
+        rememberPassword = false
+        autoLoginEnabled = false
+    }
+
+    private func credentialFieldsMatch(_ profile: NasProfile) -> Bool {
+        host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == profile.host.lowercased()
+            && username.trimmingCharacters(in: .whitespacesAndNewlines) == (profile.usernameHint ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            && port.trimmingCharacters(in: .whitespacesAndNewlines) == (profile.portOverride.map(String.init) ?? "")
+    }
+
     func loadSavedPassword(for profile: NasProfile, attemptsAutoLogin: Bool) async {
+        let passwordBeforeLoading = password
         do {
             let storedPassword = try await passwordStore.load(for: profile.id)
-            guard selectedProfileID == profile.id else { return }
+            guard selectedProfileID == profile.id, credentialFieldsMatch(profile), password == passwordBeforeLoading else { return }
             password = storedPassword ?? ""
             rememberPassword = storedPassword != nil
             autoLoginEnabled = defaults.bool(forKey: autoLoginKeyPrefix + profile.id.uuidString)
@@ -500,7 +552,7 @@ extension MobileAppModel {
                 restore(profile, fallbackToPassword: true)
             }
         } catch {
-            guard selectedProfileID == profile.id else { return }
+            guard selectedProfileID == profile.id, credentialFieldsMatch(profile), password == passwordBeforeLoading else { return }
             password = ""
             rememberPassword = false
             autoLoginEnabled = false
@@ -527,7 +579,7 @@ extension MobileAppModel {
         cancelSelectedModuleLoad()
         fileShareLinkModel.deactivate()
         deactivateFileLocations()
-        deactivateDownloads()
+        downloads.deactivate()
         photoLibraryModel.deactivate()
         chatModel.deactivate()
         nasHealthModel.deactivate()
@@ -548,14 +600,6 @@ extension MobileAppModel {
         currentPath = ""
         pathHistory = []
         files = []
-        downloadSnapshot = nil
-        conversations = []
-        systemOverview = nil
-        storageSnapshot = nil
-        packages = []
-        accountsAndGroups = nil
-        logs = nil
-        connections = nil
     }
 
     func userMessage(_ error: Error) -> String {
@@ -563,4 +607,8 @@ extension MobileAppModel {
             ?? (error as? LocalizedError)?.errorDescription
             ?? L10n.string("ui.0c94990463093268")
     }
+}
+
+enum MobileConnectionField {
+    case host, port, account
 }

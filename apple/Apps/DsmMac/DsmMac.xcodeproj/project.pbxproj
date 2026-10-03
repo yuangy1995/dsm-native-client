@@ -27,7 +27,6 @@
 		3F7B3902FFF181AEC9D25BEE /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 55636F64951E9DD6841A1586 /* InfoPlist.strings */; };
 		3FCADE45FE1B6CE377E360BA /* DsmMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46A9227A5E05161F8B71FDF4 /* DsmMacApp.swift */; };
 		41E443DC11E3D7A292D0952A /* FileStationPendingChangesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2C17F633E7A97A64BD09425 /* FileStationPendingChangesView.swift */; };
-		427786CD64BD31B101EF1648 /* SynologyPhotosModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0C33B9D3123D5BE97C3C07 /* SynologyPhotosModel.swift */; };
 		42BF5B5E814A964E72ED075E /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6244065C1FCDAD42A9B769D5 /* FileProviderExtension.swift */; };
 		441AF1825FA0812DDFC6AA03 /* OfficeDocumentEditing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1769392F5A94D9F749E5C0D1 /* OfficeDocumentEditing.swift */; };
 		4440F05E83E5ED0F48DAC304 /* DsmLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = 068B0CB217B93D2E04F6CB21 /* DsmLocalization */; };
@@ -91,6 +90,7 @@
 		ED5CE92C2E629DA8387E9E20 /* FileStationThemeImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B2EB7CAB40E81F9AA56CD9A /* FileStationThemeImagePicker.swift */; };
 		F06931669E2EB893B31BBBE0 /* LoginViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D54FCCE59BEF04898E541CE /* LoginViewModel.swift */; };
 		F7F5489C7BAA445C74E15F68 /* ArchiveExtractionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12CB8707A3C36F92BC55DBE /* ArchiveExtractionView.swift */; };
+		FA75DBF3BA945D79778D9FC8 /* DsmPhotosFeature in Frameworks */ = {isa = PBXBuildFile; productRef = F2E8EE0FEEC51582BD4E6286 /* DsmPhotosFeature */; };
 		FBC57AC514001012E65E6EEC /* ChatNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ECC34A24C3A294D0516B138 /* ChatNotificationService.swift */; };
 		FC17F5E31EB69CED526BB24C /* DesktopDriveDiagnosticExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAD292E2717BB0B33B6B7982 /* DesktopDriveDiagnosticExportSheet.swift */; };
 		FC6586D61A57AA7708C226A3 /* FileStationBandwidthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90BA11590C411CC95F58F85C /* FileStationBandwidthView.swift */; };
@@ -178,7 +178,6 @@
 		9E40BD82223C91C25D32C0C1 /* FileAdvancedSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAdvancedSearchView.swift; sourceTree = "<group>"; };
 		9FC3BFA2F265F092280DA5BF /* FileShareManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileShareManagementView.swift; sourceTree = "<group>"; };
 		A56B3E5F2DD3A282E12BA4A6 /* ProviderRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRuntime.swift; sourceTree = "<group>"; };
-		AD0C33B9D3123D5BE97C3C07 /* SynologyPhotosModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynologyPhotosModel.swift; sourceTree = "<group>"; };
 		AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoFolderDestinationPicker.swift; sourceTree = "<group>"; };
 		B3A50B5166E5AD3B95EA1CAA /* DesktopCloudDriveManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCloudDriveManager.swift; sourceTree = "<group>"; };
 		B826C3501E08204CDDCFFC02 /* FileVFSViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileVFSViews.swift; sourceTree = "<group>"; };
@@ -228,6 +227,7 @@
 				4440F05E83E5ED0F48DAC304 /* DsmLocalization in Frameworks */,
 				0BF65A78DC3488741ACAA862 /* DsmCore in Frameworks */,
 				3D2E5047C4CC4EA551E248FA /* DsmNetwork in Frameworks */,
+				FA75DBF3BA945D79778D9FC8 /* DsmPhotosFeature in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -330,7 +330,6 @@
 				3879993A5ED04BE900402F59 /* RemoteMountRecoveryView.swift */,
 				2578503BB6C863138963CE6B /* ServiceManagementModel.swift */,
 				CC9DA1CDE1FC236E9AC8DEDB /* ServiceManagementView.swift */,
-				AD0C33B9D3123D5BE97C3C07 /* SynologyPhotosModel.swift */,
 				2712B93FA47D4BCFAF3CDB1B /* SynologyPhotosView.swift */,
 				1F6DF22565675FC82D7CC686 /* WorkspaceModel.swift */,
 				BAF4D2E52FE8FDEB013A449D /* WorkspaceModuleAccess.swift */,
@@ -407,6 +406,7 @@
 				068B0CB217B93D2E04F6CB21 /* DsmLocalization */,
 				CDFB3D25D6035AB51E143261 /* DsmCore */,
 				6A578FB6D5B34A59438162B6 /* DsmNetwork */,
+				F2E8EE0FEEC51582BD4E6286 /* DsmPhotosFeature */,
 			);
 			productName = DsmMac;
 			productReference = 73A190EAB72D1587728A072E /* LanStash.app */;
@@ -551,7 +551,6 @@
 				9B3EFFB8C8D9612E2180DE97 /* RemoteMountRecoveryView.swift in Sources */,
 				AB278A90DA574E3C49D06481 /* ServiceManagementModel.swift in Sources */,
 				7DED1007E77ED31FE27F7E62 /* ServiceManagementView.swift in Sources */,
-				427786CD64BD31B101EF1648 /* SynologyPhotosModel.swift in Sources */,
 				CBFAB4666A25432A38C382B6 /* SynologyPhotosView.swift in Sources */,
 				AC6936BB386C9A829A221F34 /* WorkspaceModel.swift in Sources */,
 				0AF59184A358D65C48DE8148 /* WorkspaceModuleAccess.swift in Sources */,
@@ -895,6 +894,10 @@
 		DD19F00B3A61C5DB02ADB503 /* DsmLocalization */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DsmLocalization;
+		};
+		F2E8EE0FEEC51582BD4E6286 /* DsmPhotosFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DsmPhotosFeature;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -27,7 +27,7 @@ extension MobileAppModel {
             chatModel.deactivate()
         }
         if selectedModule == .downloads, module != .downloads {
-            deactivateDownloads()
+            downloads.cancelLoad()
         }
         if selectedModule == .nasSettings, module != .nasSettings {
             nasHealthModel.deactivate()
@@ -131,20 +131,7 @@ extension MobileAppModel {
                     await chatModel.reloadConversations()
                 }
             case .downloads:
-                let snapshot: DownloadStationSnapshot?
-                if let downloadStationLoadOverride {
-                    snapshot = try await downloadStationLoadOverride()
-                } else {
-                    snapshot = try await serviceRepository?.loadDownloadStation()
-                }
-                try Task.checkCancellation()
-                guard isCurrentModuleLoad(
-                    generation: loadGeneration,
-                    module: loadModule,
-                    profileID: loadProfileID
-                ) else { return }
-                downloadSnapshot = snapshot
-                syncDownloadSnapshotToActivity()
+                await downloads.load()
             case .containers:
                 guard let profileID = activeProfile?.id,
                       let serviceRepository else { break }
@@ -208,51 +195,6 @@ extension MobileAppModel {
             && activeProfile?.id == profileID
             && selectedModule == module
             && isModuleVisible(module)
-    }
-
-    func syncDownloadSnapshotToActivity() {
-        guard let profileID = activeProfile?.id,
-              let downloadSnapshot else { return }
-        let snapshot = downloadSnapshot
-        Task { [transferCoordinator] in
-            await transferCoordinator.syncDownloadStationTasks(
-                profileID: profileID,
-                snapshot: snapshot
-            )
-        }
-    }
-
-
-    func configureWorkspace(
-        profile: NasProfile,
-        capabilities: CapabilitySet,
-        session: AuthSession
-    ) throws {
-        let fileRepository = try DsmFileRepository(
-            profile: profile,
-            capabilities: capabilities,
-            session: session
-        )
-        self.fileRepository = fileRepository
-        photoRepository = FileStationPhotoRepository(files: fileRepository)
-        synologyPhotos.configure(try SynologyPhotosRepository(
-            profile: profile, capabilities: capabilities, session: session, deletionEnabled: true
-        ))
-        serviceRepository = try DsmServiceManagementRepository(
-            profile: profile,
-            capabilities: capabilities,
-            session: session
-        )
-        chatRepository = try DsmChatRepository(
-            profile: profile,
-            capabilities: capabilities,
-            session: session
-        )
-        nasRepository = try DsmNasAdministrationRepository(
-            profile: profile,
-            capabilities: capabilities,
-            session: session
-        )
     }
 
     func perform(_ success: String, operation: @escaping @MainActor () async throws -> Void) {

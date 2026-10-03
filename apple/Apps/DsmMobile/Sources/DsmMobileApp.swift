@@ -4,7 +4,7 @@ import SwiftUI
 @main
 struct DsmMobileApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    @State private var model = MobileAppModel()
+    @State private var model = initialModel()
     @State private var language = AppLanguageStore.shared
 
     var body: some Scene {
@@ -12,12 +12,27 @@ struct DsmMobileApp: App {
             MobileRootView(model: model)
                 .environment(language)
                 .environment(\.locale, language.locale)
+                #if DEBUG
+                .task {
+                    if MobileUIFixture.isEnabled, let profile = model.activeProfile {
+                        await model.prepareWorkspaceContext(for: profile)
+                        await model.loadSelectedModule()
+                    }
+                }
+                #endif
                 .task(id: chatForegroundContext) {
                     await model.chatModel.setForegroundRealtimeActive(
                         chatForegroundContext.isActive
                     )
                 }
         }
+    }
+
+    private static func initialModel() -> MobileAppModel {
+        #if DEBUG
+        if MobileUIFixture.isEnabled { return MobileUIFixture.makeModel() }
+        #endif
+        return MobileAppModel()
     }
 
     private var chatForegroundContext: MobileChatForegroundContext {

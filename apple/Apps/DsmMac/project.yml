@@ -40,6 +40,8 @@ targets:
         product: DsmCore
       - package: DsmShared
         product: DsmNetwork
+      - package: DsmShared
+        product: DsmPhotosFeature
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MAC_APP_BUNDLE_ID)"

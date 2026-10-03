@@ -9,7 +9,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let model = MobileAppModel(defaults: defaults)
+        let model = MobileDownloadsModel(transferCoordinator: MobileTransferCoordinator())
         let profile = try NasProfile(
             displayName: "测试设备",
             host: "nas.example.invalid",
@@ -48,7 +48,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let model = MobileAppModel(defaults: defaults)
+        let model = MobileDownloadsModel(transferCoordinator: MobileTransferCoordinator())
         let profile = try NasProfile(
             displayName: "测试设备",
             host: "nas.example.invalid",
@@ -95,7 +95,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let model = MobileAppModel(defaults: defaults)
+        let model = MobileDownloadsModel(transferCoordinator: MobileTransferCoordinator())
         let profile = try NasProfile(
             displayName: "测试设备",
             host: "nas.example.invalid",
@@ -145,7 +145,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let model = MobileAppModel(defaults: defaults)
+        let model = MobileDownloadsModel(transferCoordinator: MobileTransferCoordinator())
         let profile = try NasProfile(
             displayName: "测试设备",
             host: "nas.example.invalid",
@@ -180,7 +180,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let model = MobileAppModel(defaults: defaults)
+        let model = MobileDownloadsModel(transferCoordinator: MobileTransferCoordinator())
         let profile = try NasProfile(
             displayName: "测试设备",
             host: "nas.example.invalid",
@@ -218,7 +218,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
             "Sources/Features/Services/Downloads/MobileDownloadsView.swift"
         )
         let model = try sourceFile(
-            "Sources/Features/Services/Downloads/MobileAppModel+Downloads.swift"
+            "Sources/Features/Services/Downloads/MobileDownloadsModel.swift"
         )
 
         for forbidden in [
@@ -258,7 +258,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let model = MobileAppModel(defaults: defaults)
+        let model = MobileDownloadsModel(transferCoordinator: MobileTransferCoordinator())
         let profile = try NasProfile(
             displayName: "测试设备",
             host: "nas.example.invalid",
@@ -390,7 +390,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
             "Sources/Features/Services/Downloads/MobileDownloadsView.swift"
         )
         let model = try sourceFile(
-            "Sources/Features/Services/Downloads/MobileAppModel+Downloads.swift"
+            "Sources/Features/Services/Downloads/MobileDownloadsModel.swift"
         )
 
         XCTAssertTrue(view.contains("MobilePageStateView("))
@@ -456,7 +456,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
 
     @MainActor
     private func waitForDownloadCreateFeedback(
-        on model: MobileAppModel,
+        on model: MobileDownloadsModel,
         kind: MobileDownloadCreateFeedbackKind,
         file: StaticString = #filePath,
         line: UInt = #line

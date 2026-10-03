@@ -1,3 +1,4 @@
+import DsmPhotosFeature
 import AppKit
 import AVKit
 import DsmCore

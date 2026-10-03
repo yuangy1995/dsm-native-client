@@ -1,3 +1,4 @@
+@testable import DsmPhotosFeature
 import DsmCore
 import Foundation
 import XCTest

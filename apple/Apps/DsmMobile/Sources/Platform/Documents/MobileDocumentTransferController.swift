@@ -15,12 +15,14 @@ enum MobileDocumentTransferPolicy {
 }
 
 struct MobileDocumentPickerContext: Equatable, Sendable {
+    let contextID: UUID
     let profileID: UUID
     let folderPath: String
     let intent: MobileDocumentIntent
 }
 
 struct MobileDocumentDownloadContext: Equatable, Sendable {
+    let contextID: UUID
     let profileID: UUID
     let remotePath: String
     let fileName: String
@@ -118,6 +120,7 @@ final class MobileDocumentTransferController {
     private var artifactsByTaskID: [UUID: ArtifactRecord] = [:]
     private var monitorsByTaskID: [UUID: Task<Void, Never>] = [:]
     private var activeProfileID: UUID?
+    private(set) var contextID = UUID()
     private var presentationQueue: [UUID] = []
 
     private(set) var presentation: MobileDocumentPresentation?
@@ -147,7 +150,7 @@ final class MobileDocumentTransferController {
         context: MobileDocumentPickerContext,
         service: any MobileTransferServing
     ) async -> UUID? {
-        guard context.intent == .upload else { return nil }
+        guard context.contextID == contextID, context.intent == .upload else { return nil }
         failure = nil
         let taskID = UUID()
         let directory = taskDirectory(taskID)
@@ -162,9 +165,10 @@ final class MobileDocumentTransferController {
                 in: directory
             )
             try Task.checkCancellation()
+            guard context.contextID == contextID else { cleanup(directory); return nil }
         } catch {
             cleanup(directory)
-            if error is CancellationError { return nil }
+            if error is CancellationError || context.contextID != contextID { return nil }
             failure = Self.failure(for: error)
             return nil
         }
@@ -178,6 +182,11 @@ final class MobileDocumentTransferController {
             stableTarget: target
         )
         let enqueuedID = await transferCoordinator.enqueueUpload(request, retryPolicy: .none)
+        guard context.contextID == contextID, !Task.isCancelled else {
+            await transferCoordinator.cancel(enqueuedID)
+            cleanup(directory)
+            return nil
+        }
         artifactsByTaskID[enqueuedID] = ArtifactRecord(
             taskID: enqueuedID,
             profileID: context.profileID,
@@ -194,7 +203,7 @@ final class MobileDocumentTransferController {
         context: MobileDocumentDownloadContext,
         service: any MobileTransferServing
     ) async -> UUID? {
-        guard context.intent == .exportCopy || context.intent == .share else { return nil }
+        guard context.contextID == contextID, context.intent == .exportCopy || context.intent == .share else { return nil }
         failure = nil
         let taskID = UUID()
         let directory = taskDirectory(taskID)
@@ -215,6 +224,11 @@ final class MobileDocumentTransferController {
             stableTarget: context.remotePath
         )
         let enqueuedID = await transferCoordinator.enqueueDownload(request)
+        guard context.contextID == contextID, !Task.isCancelled else {
+            await transferCoordinator.cancel(enqueuedID)
+            cleanup(directory)
+            return nil
+        }
         artifactsByTaskID[enqueuedID] = ArtifactRecord(
             taskID: enqueuedID,
             profileID: context.profileID,
@@ -250,6 +264,7 @@ final class MobileDocumentTransferController {
     }
 
     func setActiveProfile(_ profileID: UUID?) {
+        if activeProfileID != profileID { contextID = UUID() }
         activeProfileID = profileID
         if let current = presentation, current.profileID != profileID {
             presentation = nil
@@ -268,6 +283,7 @@ final class MobileDocumentTransferController {
 
     /// 连接工作区已经结束，系统面板不会再提供 onDismiss；立即释放本会话拥有的任务与临时文件。
     func resetForDisconnectedWorkspace() {
+        contextID = UUID()
         activeProfileID = nil
         presentation = nil
         isAwaitingSystemDismissal = false

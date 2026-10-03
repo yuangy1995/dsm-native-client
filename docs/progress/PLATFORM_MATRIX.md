@@ -34,8 +34,8 @@
 | 平台 | 源码 | 自动化 | 真机 | 发布 |
 | --- | --- | --- | --- | --- |
 | macOS | 已建立核心客户端和桌面挂载；指定文件夹/全部共享均可按映射启用写回，默认只读，删除须另外确认。 | 共享 Package、写回回归和无签名构建已通过；云端门禁可重跑。 | 旧版升级与只读挂载已有用户反馈；本次写回、不同架构及真实 NAS 异常场景待验证。 | 已建立签名、公证与正式更新流程，发布结果见[macOS 发布指南](../releases/MACOS_GITHUB_RELEASE_ZH.md)。 |
-| iPhone | 已有移动核心与受限实现，按 M0→M8 扩展。 | Apple Build 包含共享 Package、通用构建及独立 iPhone 模拟器合成回归；提交结果见 Checks。 | 未验证：真机、系统选择器、网络、VoiceOver 与真实 NAS。 | 未发布：等待 Apple Beta 决策。 |
-| iPad | 已有与 iPhone 共用的核心和宽屏路径，按 M0→M8 扩展。 | Apple Build 独立执行 iPad 模拟器合成回归并保留结果；提交结果见 Checks，不借用 iPhone 结论。 | 未验证：分栏、键盘、多任务、VoiceOver 与真实 NAS。 | 未发布：不以 iPhone 结果替代。 |
+| iPhone | 已有核心实现；M1 共用照片状态机、账号隔离和原生导航已回归，继续 M2–M8。 | Apple Build 包含共享 Package、通用构建及独立 iPhone 模拟器合成回归；提交结果见 Checks。 | 未验证：真机、系统选择器、网络、VoiceOver 与真实 NAS。 | 未发布：等待 Apple Beta 决策。 |
+| iPad | 共用核心及 M1 分栏/导航已独立回归，继续 M2–M8。 | Apple Build 独立执行 iPad 模拟器合成回归并保留结果；提交结果见 Checks，不借用 iPhone 结论。 | 未验证：分栏、键盘、多任务、VoiceOver 与真实 NAS。 | 未发布：不以 iPhone 结果替代。 |
 | Android | 已建立 Compose 客户端、后台任务和质量门。 | 单元、增量构建与 JSON 质量基线可重跑；完整门禁由托管 Runner 执行。 | 未验证：真实设备、证书、后台、危险写和 NAS。 | 未发布：完整构建与设备验收分开记录。 |
 | Windows | 已建立 WinUI、领域与基础设施路径；云盘写回、移动/改名、删除与恢复已接入，默认只读，写入逐项授权。 | xUnit、XAML 和目标架构构建由 Windows Runner 执行。 | 未验证：Explorer、Cloud Files、通知、安装和真实 NAS。 | 未发布：不改变当前发布形态。 |
 

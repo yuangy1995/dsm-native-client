@@ -120,7 +120,7 @@ final class MobileDocumentTransferTests: XCTestCase {
 
         let taskID = await fixture.controller.handlePickedFile(
             source,
-            context: MobileDocumentPickerContext(
+            context: MobileDocumentPickerContext(contextID: fixture.controller.contextID,
                 profileID: profileID,
                 folderPath: "/home",
                 intent: .upload
@@ -151,7 +151,7 @@ final class MobileDocumentTransferTests: XCTestCase {
 
         let taskID = await fixture.controller.handlePickedFile(
             source,
-            context: MobileDocumentPickerContext(profileID: UUID(), folderPath: "/", intent: .upload),
+            context: MobileDocumentPickerContext(contextID: fixture.controller.contextID, profileID: UUID(), folderPath: "/", intent: .upload),
             service: DocumentTransferServiceSpy()
         )
 
@@ -172,7 +172,7 @@ final class MobileDocumentTransferTests: XCTestCase {
 
         let taskIDResult = await fixture.controller.handlePickedFile(
             source,
-            context: MobileDocumentPickerContext(profileID: UUID(), folderPath: "/", intent: .upload),
+            context: MobileDocumentPickerContext(contextID: fixture.controller.contextID, profileID: UUID(), folderPath: "/", intent: .upload),
             service: service
         )
         let taskID = try XCTUnwrap(taskIDResult)
@@ -198,7 +198,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         fixture.controller.setActiveProfile(profileID)
 
         let taskIDResult = await fixture.controller.startDownload(
-            context: MobileDocumentDownloadContext(
+            context: MobileDocumentDownloadContext(contextID: fixture.controller.contextID,
                 profileID: profileID,
                 remotePath: "/home/report.pdf",
                 fileName: "report.pdf",
@@ -227,7 +227,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         fixture.controller.setActiveProfile(UUID())
 
         let taskIDResult = await fixture.controller.startDownload(
-            context: MobileDocumentDownloadContext(
+            context: MobileDocumentDownloadContext(contextID: fixture.controller.contextID,
                 profileID: requestedProfile,
                 remotePath: "/home/file.txt",
                 fileName: "file.txt",
@@ -249,7 +249,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         let profileID = UUID()
         fixture.controller.setActiveProfile(profileID)
         let taskIDResult = await fixture.controller.startDownload(
-            context: MobileDocumentDownloadContext(
+            context: MobileDocumentDownloadContext(contextID: fixture.controller.contextID,
                 profileID: profileID,
                 remotePath: "/shown.txt",
                 fileName: "shown.txt",
@@ -275,7 +275,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         let profileID = UUID()
         fixture.controller.setActiveProfile(profileID)
         let firstResult = await fixture.controller.startDownload(
-            context: MobileDocumentDownloadContext(
+            context: MobileDocumentDownloadContext(contextID: fixture.controller.contextID,
                 profileID: profileID,
                 remotePath: "/first.txt",
                 fileName: "first.txt",
@@ -284,7 +284,7 @@ final class MobileDocumentTransferTests: XCTestCase {
             service: service
         )
         let secondResult = await fixture.controller.startDownload(
-            context: MobileDocumentDownloadContext(
+            context: MobileDocumentDownloadContext(contextID: fixture.controller.contextID,
                 profileID: profileID,
                 remotePath: "/second.txt",
                 fileName: "second.txt",
@@ -318,7 +318,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         let profileID = UUID()
         fixture.controller.setActiveProfile(profileID)
         let firstResult = await fixture.controller.startDownload(
-            context: MobileDocumentDownloadContext(
+            context: MobileDocumentDownloadContext(contextID: fixture.controller.contextID,
                 profileID: profileID,
                 remotePath: "/first.txt",
                 fileName: "first.txt",
@@ -327,7 +327,7 @@ final class MobileDocumentTransferTests: XCTestCase {
             service: service
         )
         let secondResult = await fixture.controller.startDownload(
-            context: MobileDocumentDownloadContext(
+            context: MobileDocumentDownloadContext(contextID: fixture.controller.contextID,
                 profileID: profileID,
                 remotePath: "/second.txt",
                 fileName: "second.txt",
@@ -359,7 +359,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         let profileID = UUID()
         fixture.controller.setActiveProfile(profileID)
         let taskIDResult = await fixture.controller.startDownload(
-            context: MobileDocumentDownloadContext(
+            context: MobileDocumentDownloadContext(contextID: fixture.controller.contextID,
                 profileID: profileID,
                 remotePath: "/shown.txt",
                 fileName: "shown.txt",
@@ -385,7 +385,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         let profileID = UUID()
         fixture.controller.setActiveProfile(profileID)
         let taskIDResult = await fixture.controller.startDownload(
-            context: MobileDocumentDownloadContext(
+            context: MobileDocumentDownloadContext(contextID: fixture.controller.contextID,
                 profileID: profileID,
                 remotePath: "/logout.jpg",
                 fileName: "logout.jpg",
@@ -413,7 +413,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         fixture.controller.setActiveProfile(profileID)
 
         let taskIDResult = await fixture.controller.startDownload(
-            context: MobileDocumentDownloadContext(
+            context: MobileDocumentDownloadContext(contextID: fixture.controller.contextID,
                 profileID: profileID,
                 remotePath: "/full.bin",
                 fileName: "full.bin",
@@ -453,6 +453,45 @@ final class MobileDocumentTransferTests: XCTestCase {
         XCTAssertEqual(completionCount, 1)
     }
 
+    func test旧工作区的文件选择结果不会提交到新会话() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let service = DocumentTransferServiceSpy()
+        let context = MobileDocumentPickerContext(contextID: fixture.controller.contextID,
+            profileID: UUID(), folderPath: "/fixture", intent: .upload)
+        fixture.controller.resetForDisconnectedWorkspace()
+        let result = await fixture.controller.handlePickedFile(fixture.base.appendingPathComponent("unused.txt"),
+                                                               context: context, service: service)
+        XCTAssertNil(result)
+        let count = await service.uploadCount
+        let tasks = await fixture.coordinator.allTasks()
+        XCTAssertEqual(count, 0)
+        XCTAssertTrue(tasks.isEmpty)
+    }
+
+    func test选择器复制期间换账号会清理副本并停止提交() async throws {
+        let copier = HeldDocumentCopier()
+        let fixture = try makeFixture(importCopier: copier)
+        defer { fixture.cleanup() }
+        let service = DocumentTransferServiceSpy()
+        let source = fixture.base.appendingPathComponent("source.txt")
+        try Data("fixture".utf8).write(to: source)
+        let context = MobileDocumentPickerContext(contextID: fixture.controller.contextID,
+            profileID: UUID(), folderPath: "/fixture", intent: .upload)
+        let operation = Task { await fixture.controller.handlePickedFile(source, context: context, service: service) }
+        await copier.waitUntilStarted()
+        fixture.controller.resetForDisconnectedWorkspace()
+        await copier.release()
+        let result = await operation.value
+        XCTAssertNil(result)
+        let count = await service.uploadCount
+        let tasks = await fixture.coordinator.allTasks()
+        XCTAssertEqual(count, 0)
+        XCTAssertTrue(tasks.isEmpty)
+        let remaining = (try? FileManager.default.contentsOfDirectory(atPath: fixture.root.path)) ?? []
+        XCTAssertTrue(remaining.isEmpty)
+    }
+
     private func makeFixture(
         importCopier: any MobileDocumentImportCopying = MobileSecurityScopedDocumentCopier()
     ) throws -> (
@@ -486,4 +525,17 @@ final class MobileDocumentTransferTests: XCTestCase {
         }
         XCTFail("等待文档传输状态超时")
     }
+}
+
+private actor HeldDocumentCopier: MobileDocumentImportCopying {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var started = false
+    func copySecurityScopedFile(from sourceURL: URL, to destinationURL: URL, in directoryURL: URL) async throws {
+        started = true
+        await withCheckedContinuation { continuation = $0 }
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+    }
+    func waitUntilStarted() async { while !started { await Task.yield() } }
+    func release() { continuation?.resume(); continuation = nil }
 }

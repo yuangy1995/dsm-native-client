@@ -26,8 +26,8 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | 编号／用户结果 | macOS 证据 | 两端交互、契约及安全级别 | 当前差距与验收 |
 | --- | --- | --- | --- |
 | M0 基线与范围 | 发布标签；WorkspaceView、ServiceManagementView、NasAdministrationView | 路由→模型→Repository，校正文档/矩阵；只读 | 已完成基线与差距核对，正式发布及两端基线均通过 |
-| M1 会话与导航 | LoginViewModel、WorkspaceModel | 现有 AppShell/Session；单栏/分栏；认证 | 下载等状态仍在组合根；切换 NAS/账号不能串草稿、结果、缓存 |
-| M1 共用照片状态 | SynologyPhotosModel、PhotoUploadRecoveryStore | 内部 DsmPhotosFeature；平台文件访问/恢复/导出适配；共享 | 工程直接包含 Mac 源文件，尚未提取；两端和 Mac 回归 |
+| M1 会话与导航 | LoginViewModel、WorkspaceModel | 现有 AppShell/Session；单栏/分栏；认证 | 下载已拆为独立模型，配置账号/地址进入隔离身份；两端与迟到回调回归通过，详见验证历史 |
+| M1 共用照片状态 | SynologyPhotosModel、PhotoUploadRecoveryStore | 内部 DsmPhotosFeature；平台文件访问/恢复/导出适配；共享 | 已迁入 `DsmPhotosFeature`，Mac 书签适配及旧队列版本保持；两端和 Mac 回归通过，详见验证历史 |
 | M1 旧图库清理 | SynologyPhotosView | 主路由已为 MobileSynologyPhotosView；兼容 | 迁移有效行为后删除旧 File Station 图库路径，保留缓存清理 |
 | M2 浏览、分页及高级搜索 | FileAdvancedSearchView、WorkspaceModel | 触控筛选，iPad 并列详情；List/Search/索引；只读 | 有基础浏览搜索，缺高级筛选与完整分页闭环 |
 | M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | 当前前台单文件为主；补目录计划、冲突、取消、部分成功恢复 |
@@ -70,7 +70,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 
 M6 的逐页范围以 `NasAdministrationModel.NasSettingsPage` 为准：总览与更新检查、存储/空间分析/SMART、外接存储、内存压缩、文件服务、终端、代理、网卡、硬件/UPS、电源计划、远程访问、安全、区域时间、DDNS、套件、计划任务、账号/群组、共享权限摘要、进程、日志、连接。读取不支持和空内容分开；只读基线（例如外接存储/进程）不虚构弹出或终止动作。
 
-M1 已确认隔离缺口：`saveProfile` 会在相同 UUID 下替换账号/地址，而 Chat/NAS/Activity 等部分缓存只按 UUID 索引。实施时必须在上下文改变时失效旧结果与任务展示；普通重连和改显示名称不应冒充另一个账号。模拟器登录页另已检查空地址提示和语言菜单，既有错误文案在切换语言后仍保留旧语言，纳入同阶段会话界面复核。
+M1 隔离依据与修正：`saveProfile` 会在相同 UUID 下替换账号/地址，而 Chat/NAS/Activity 等部分缓存只按 UUID 索引。已补上下文变化后的缓存失效、选择器回调身份及任务账号隔离，两端目标回归已通过；普通重连和改显示名称不应冒充另一个账号。模拟器登录页另已检查空地址提示和语言菜单，已修正切换语言后的旧错误残留、重复应用名及英文账号字段，原生 UI 测试已通过。
 
 M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数名，实际发送 `force_complete`（结束并移出未完成文件），并非删除下载文件；Mac 的 `finish` 控制也不产生请求。M5 必须把移除任务、结束做种和实际文件删除按各自真实结果分开，不把旧名称直接移植。RSS/任务编辑等额外入口先补足明确契约与结果核对，不能把请求缺口包装成可用按钮。M7 的 Mac 项目页目前读取项目状态与错误，未发现项目写方法；移动对齐先保留该实际语义，不虚构项目创建/部署接口。
 
@@ -88,7 +88,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 - 实际命令：`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`；随后两端分别运行 `test-without-building`，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，关闭测试并行。结果分别为 `build/m0-m8-baseline-iphone.xcresult`、`build/m0-m8-baseline-ipad.xcresult`（忽略的本地构建目录）。
 - `python3 tools/codex/check_documentation.py` 与 `git diff --check` 通过。
 - `MobileChatPresentationTests` 包含源码文本断言；更新过时范围限制时保留安全语义并补实际行为/界面测试。
-- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1–M8 新范围尚未实现。
+- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；旧图库清理随 M3 完成，M2–M8 新范围尚未实现。
 
 ## PENDING_USER_VALIDATION
 
@@ -103,3 +103,18 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+
+## M1 实施边界与迁移说明
+
+当前单一修改范围为移动 Shell/会话/下载模型、相关文件选择与活动身份、Photos 共用逻辑、双语资源、工程和测试。Mac 仅调整照片模块引用与文件授权适配。`DsmPhotosFeature` 是内部 Swift 模块，未增加第三方依赖或改变 NAS 请求；Windows/Android 只记录该无协议变化的影响。
+
+照片恢复继续使用原 JSON 版本与字段；Mac 使用原安全范围书签，iOS 使用独立选择器书签适配。新的移动恢复队列及后台能力仍在 M2/M8，不能由公共模型出现推定已完成。回滚可恢复原模块引用，现有照片队列仍可读取，主 App 身份、登录偏好和凭据格式不变。
+
+旧 File Station 图库已无正式导航入口，其缓存兼容清理暂保留；相关行为/测试迁移和删除在 M3 完整上传/浏览流程接入后统一收敛，仍是本次 M1–M3 的未完成工作，不计作仅待设备验证。
+
+
+M1 凭据边界补充：修改已有连接的地址、端口或账号时，表单清空旧密码并为新连接生成独立配置身份，原配置及其安全存储保持可用；只改显示名称保持身份。迟到密码读取必须仍匹配原输入目标且不得覆盖手动输入。此变化不迁移配置/凭据格式；用户可直接选回旧连接，不向新地址试用旧会话。
+
+
+M1 验证结果与只读对抗复核见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m1-共享结构会话与导航)。基础结构门已通过，下一切片为 M2 文件、传输及活动中心；旧图库清理和设备待验仍按上文分别追踪。

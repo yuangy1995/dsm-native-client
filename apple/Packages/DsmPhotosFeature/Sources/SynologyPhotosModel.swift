@@ -7,9 +7,9 @@ import Foundation
 import Observation
 import UniformTypeIdentifiers
 
-enum SynologyPhotosSection: CaseIterable, Hashable {
+public enum SynologyPhotosSection: CaseIterable, Hashable, Sendable {
     case timeline, folders, albums, sharing
-    var title: String {
+    public var title: String {
         switch self {
         case .timeline: L10n.string("photos.library.timeline")
         case .folders: L10n.string("photos.library.folders")
@@ -19,48 +19,59 @@ enum SynologyPhotosSection: CaseIterable, Hashable {
     }
 }
 
-struct SynologyPhotoMonth: Identifiable, Hashable {
-    let year: Int
-    let month: Int
-    var id: Int { year * 100 + month }
-    var date: Date? { Calendar(identifier: .gregorian).date(from: DateComponents(year: year, month: month, day: 1)) }
+public struct SynologyPhotoMonth: Identifiable, Hashable, Sendable {
+    public init(year: Int, month: Int) { self.year = year; self.month = month }
+    public let year: Int
+    public let month: Int
+    public var id: Int { year * 100 + month }
+    public var date: Date? { Calendar(identifier: .gregorian).date(from: DateComponents(year: year, month: month, day: 1)) }
 }
 
-enum PhotoThumbnailSize: Int, CaseIterable {
+public enum PhotoThumbnailSize: Int, CaseIterable, Sendable {
     case small, medium, comfortable, large, extraLarge
-    var minimumWidth: Double { 110 + Double(rawValue) * 40 }
-    var maximumWidth: Double { minimumWidth + 70 }
+    public var minimumWidth: Double { 110 + Double(rawValue) * 40 }
+    public var maximumWidth: Double { minimumWidth + 70 }
 }
 
-struct PhotoUploadFile: Identifiable, Sendable {
-    var id = UUID()
-    let url: URL
-    let size: Int64
-    let modifiedAt: Date
-    var sourceAccess: PhotoUploadSourceAccess? = nil
-    var directoryComponents: [String] = []
-    var requiresSourceSelection = false
-    var recoveryBookmark: Data? = nil
-    var recoveryRelativeComponents: [String] = []
+public struct PhotoUploadFile: Identifiable, Sendable {
+    public init(id: UUID = UUID(), url: URL, size: Int64, modifiedAt: Date,
+                sourceAccess: PhotoUploadSourceAccess? = nil, directoryComponents: [String] = [],
+                requiresSourceSelection: Bool = false, recoveryBookmark: Data? = nil,
+                recoveryRelativeComponents: [String] = []) {
+        self.id = id; self.url = url; self.size = size; self.modifiedAt = modifiedAt
+        self.sourceAccess = sourceAccess; self.directoryComponents = directoryComponents
+        self.requiresSourceSelection = requiresSourceSelection; self.recoveryBookmark = recoveryBookmark
+        self.recoveryRelativeComponents = recoveryRelativeComponents
+    }
+    public var id = UUID()
+    public let url: URL
+    public let size: Int64
+    public let modifiedAt: Date
+    public var sourceAccess: PhotoUploadSourceAccess? = nil
+    public var directoryComponents: [String] = []
+    public var requiresSourceSelection = false
+    public var recoveryBookmark: Data? = nil
+    public var recoveryRelativeComponents: [String] = []
 }
 
 /// 队列中的子文件共享原始选择的目录授权，确认窗口关闭后仍可读取。
-final class PhotoUploadSourceAccess: @unchecked Sendable {
-    let url: URL
+public final class PhotoUploadSourceAccess: @unchecked Sendable {
+    public let url: URL
     private let accessed: Bool
-    init(url: URL) {
+    public init(url: URL) {
         self.url = url
         accessed = url.startAccessingSecurityScopedResource()
     }
     deinit { if accessed { url.stopAccessingSecurityScopedResource() } }
 }
 
-struct PhotoUploadPreparation: Sendable {
-    var files: [PhotoUploadFile] = []
-    var skippedCount = 0
-    var includesDirectory = false
+public struct PhotoUploadPreparation: Sendable {
+    public init() {}
+    public var files: [PhotoUploadFile] = []
+    public var skippedCount = 0
+    public var includesDirectory = false
 
-    static func prepare(_ sources: [URL]) throws -> Self {
+    public static func prepare(_ sources: [URL]) throws -> Self {
         var result = Self()
         var seen: Set<URL> = []
         var skipped: Set<URL> = []
@@ -114,48 +125,63 @@ struct PhotoUploadPreparation: Sendable {
     }
 }
 
-struct PhotoUploadEntry: Identifiable {
-    enum State: String, Codable { case queued, preparingFolders, uploading, addingToAlbum, completed, skipped, failed, pendingReview, cancelled }
-    var id: UUID { file.id }
-    var file: PhotoUploadFile
-    let album: SynologyPhotoCollection?
-    let folder: SynologyPhotoCollection?
-    var space: SynologyPhotoSpace = .personal
-    var directAlbumUpload = false
-    var duplicate: SynologyPhotoDuplicateSettings.Upload = .rename
-    var ignoredDuplicate = false
-    var state: State = .queued
-    var progress: Double = 0
-    var uploadedPhoto: SynologyPhoto?
-    var error: String?
-    var batchID = UUID()
+public struct PhotoUploadEntry: Identifiable, Sendable {
+    public init(file: PhotoUploadFile, album: SynologyPhotoCollection?, folder: SynologyPhotoCollection?,
+                space: SynologyPhotoSpace = .personal, directAlbumUpload: Bool = false,
+                duplicate: SynologyPhotoDuplicateSettings.Upload = .rename, ignoredDuplicate: Bool = false,
+                state: State = .queued, progress: Double = 0, uploadedPhoto: SynologyPhoto? = nil,
+                error: String? = nil, batchID: UUID = UUID()) {
+        self.file = file; self.album = album; self.folder = folder; self.space = space
+        self.directAlbumUpload = directAlbumUpload; self.duplicate = duplicate; self.ignoredDuplicate = ignoredDuplicate
+        self.state = state; self.progress = progress; self.uploadedPhoto = uploadedPhoto; self.error = error; self.batchID = batchID
+    }
+    public enum State: String, Codable, Sendable { case queued, preparingFolders, uploading, addingToAlbum, completed, skipped, failed, pendingReview, cancelled }
+    public var id: UUID { file.id }
+    public var file: PhotoUploadFile
+    public let album: SynologyPhotoCollection?
+    public let folder: SynologyPhotoCollection?
+    public var space: SynologyPhotoSpace = .personal
+    public var directAlbumUpload = false
+    public var duplicate: SynologyPhotoDuplicateSettings.Upload = .rename
+    public var ignoredDuplicate = false
+    public var state: State = .queued
+    public var progress: Double = 0
+    public var uploadedPhoto: SynologyPhoto?
+    public var error: String?
+    public var batchID = UUID()
 }
 
-struct PhotoDragSelection {
-    let id = UUID()
-    let photos: [SynologyPhoto]
-    let folders: [SynologyPhotoCollection]
-    let generation: Int
+public struct PhotoDragSelection: Sendable {
+    public init(photos: [SynologyPhoto], folders: [SynologyPhotoCollection], generation: Int) {
+        self.photos = photos; self.folders = folders; self.generation = generation
+    }
+    public let id = UUID()
+    public let photos: [SynologyPhoto]
+    public let folders: [SynologyPhotoCollection]
+    public let generation: Int
 }
 
-struct PhotoUploadDirectoryKey: Hashable, Codable {
-    let batchID: UUID
-    let parentID: Int
-    let name: String
+public struct PhotoUploadDirectoryKey: Hashable, Codable, Sendable {
+    public init(batchID: UUID, parentID: Int, name: String) {
+        self.batchID = batchID; self.parentID = parentID; self.name = name
+    }
+    public let batchID: UUID
+    public let parentID: Int
+    public let name: String
 }
 
 /// 单一图库的双向分页状态，每个方向禁止重复请求；刷新后迟到结果不得覆盖当前图库。
 @MainActor
 @Observable
-final class SynologyPhotosModel {
-    private(set) var spaces: [SynologyPhotoSpace] = []
-    private(set) var canManageSharedSpace = false
-    private(set) var automaticPreviewEnabled: Bool?
-    private(set) var isGeneratingAutomaticPreview = false
-    private(set) var automaticPreviewPaused = false
-    private(set) var automaticPreviewFilename: String?
-    private(set) var automaticPreviewError: String?
-    private(set) var automaticPreviewCompleted = 0
+public final class SynologyPhotosModel {
+    public private(set) var spaces: [SynologyPhotoSpace] = []
+    public private(set) var canManageSharedSpace = false
+    public private(set) var automaticPreviewEnabled: Bool?
+    public private(set) var isGeneratingAutomaticPreview = false
+    public private(set) var automaticPreviewPaused = false
+    public private(set) var automaticPreviewFilename: String?
+    public private(set) var automaticPreviewError: String?
+    public private(set) var automaticPreviewCompleted = 0
     private var automaticPreviewRevisions: [SynologyPhotoSpace: [Int: Int]] = [:]
     @ObservationIgnored private var automaticPreviewSettingsVisible = false
     @ObservationIgnored private var automaticPreviewWorker: Task<Void, Never>?
@@ -168,53 +194,53 @@ final class SynologyPhotosModel {
     @ObservationIgnored private var nextAutomaticReviewAt = Date.distantPast
     @ObservationIgnored private var automaticReviewAttempts = 0
     @ObservationIgnored private let previewConversionSupport: SynologyPhotoPreviewConversionSupport
-    private(set) var displayPreferences: SynologyPhotoDisplaySettings?
-    private(set) var supportsOriginalSizeJPEG = false
-    var defaultPhotoRequestSpace: SynologyPhotoSpace? { spaces.contains(.personal) ? .personal : spaces.first }
-    func canUseDefaultRequestFolder(in space: SynologyPhotoSpace) -> Bool {
+    public private(set) var displayPreferences: SynologyPhotoDisplaySettings?
+    public private(set) var supportsOriginalSizeJPEG = false
+    public var defaultPhotoRequestSpace: SynologyPhotoSpace? { spaces.contains(.personal) ? .personal : spaces.first }
+    public func canUseDefaultRequestFolder(in space: SynologyPhotoSpace) -> Bool {
         spaces.contains(space) && (space == .personal || canManageSharedSpace)
     }
-    private(set) var selectedSpace: SynologyPhotoSpace = .personal
+    public private(set) var selectedSpace: SynologyPhotoSpace = .personal
     @ObservationIgnored private var preferredLibrarySpace: SynologyPhotoSpace = .personal
-    private(set) var days: [SynologyPhotoDay] = []
-    private(set) var items: [SynologyPhoto] = []
-    private(set) var collections: [SynologyPhotoCollection] = []
-    private(set) var section: SynologyPhotosSection = .timeline
-    private(set) var folderHistory: [SynologyPhotoCollection] = []
-    private(set) var dragSelection: PhotoDragSelection?
-    private(set) var selectedAlbum: SynologyPhotoCollection?
-    private(set) var selectedAlbumAccess: SynologyPhotoAlbumAccess?
-    private(set) var availableCategories: Set<SynologyPhotoCategory> = []
-    private(set) var selectedCategory: SynologyPhotoCategory?
-    private(set) var selectedCategoryItem: SynologyPhotoCollection?
-    private(set) var sharedEntries: [SynologyPhotoSharedEntry] = []
-    private(set) var shareScope: SynologyPhotoShareScope = .withMe
-    private(set) var needsSharedListRefresh = false
-    var filter = SynologyPhotoFilter()
-    var showsFilters = false
-    private(set) var options = SynologyPhotoFilterOptions(people: [], locations: [])
-    private(set) var isLoadingFilterOptions = false
-    private(set) var filterOptionsErrorMessage: String?
+    public private(set) var days: [SynologyPhotoDay] = []
+    public private(set) var items: [SynologyPhoto] = []
+    public private(set) var collections: [SynologyPhotoCollection] = []
+    public private(set) var section: SynologyPhotosSection = .timeline
+    public private(set) var folderHistory: [SynologyPhotoCollection] = []
+    public private(set) var dragSelection: PhotoDragSelection?
+    public private(set) var selectedAlbum: SynologyPhotoCollection?
+    public private(set) var selectedAlbumAccess: SynologyPhotoAlbumAccess?
+    public private(set) var availableCategories: Set<SynologyPhotoCategory> = []
+    public private(set) var selectedCategory: SynologyPhotoCategory?
+    public private(set) var selectedCategoryItem: SynologyPhotoCollection?
+    public private(set) var sharedEntries: [SynologyPhotoSharedEntry] = []
+    public private(set) var shareScope: SynologyPhotoShareScope = .withMe
+    public private(set) var needsSharedListRefresh = false
+    public var filter = SynologyPhotoFilter()
+    public var showsFilters = false
+    public private(set) var options = SynologyPhotoFilterOptions(people: [], locations: [])
+    public private(set) var isLoadingFilterOptions = false
+    public private(set) var filterOptionsErrorMessage: String?
     @ObservationIgnored private var filterOptionsGeneration = 0
-    private(set) var hasMoreCollections = false
-    private(set) var isModuleEnabled = true
-    var previewPhoto: SynologyPhoto?
-    private(set) var previewData: Data?
-    private(set) var previewSource: MediaStreamSource?
-    private(set) var previewError: String?
-    private(set) var isPreparingPreview = false
+    public private(set) var hasMoreCollections = false
+    public private(set) var isModuleEnabled = true
+    public var previewPhoto: SynologyPhoto?
+    public private(set) var previewData: Data?
+    public private(set) var previewSource: MediaStreamSource?
+    public private(set) var previewError: String?
+    public private(set) var isPreparingPreview = false
     private var similarUndoMutations: [SynologyPhotosMutation] = []
-    var similarUndoMutation: SynologyPhotosMutation? { similarUndoMutations.last }
+    public var similarUndoMutation: SynologyPhotosMutation? { similarUndoMutations.last }
     @ObservationIgnored private var similarUndoPositions: [SynologyPhotoSimilarGroup: (index: Int, paged: Bool, query: SynologyPhotoQuery)] = [:]
     private var similarBatchQueue: [SynologyPhotosMutation] = []
     @ObservationIgnored private var similarBatchOperationIDs: Set<UUID> = []
-    private(set) var isPreparingSimilarBatch = false
-    var hasSimilarBatchToContinue: Bool { !similarBatchQueue.isEmpty && !isManaging && pendingMutationID == nil }
+    public private(set) var isPreparingSimilarBatch = false
+    public var hasSimilarBatchToContinue: Bool { !similarBatchQueue.isEmpty && !isManaging && pendingMutationID == nil }
 
-    var similarSelectedIDs: Set<SynologyPhotoID> = []
-    private(set) var similarStatus: SynologyPhotoSimilarStatus?
-    var similarStatusIdentity: String { "\(generation):\(selectedSpace.rawValue):\(selectedCategory?.rawValue ?? "")" }
-    func refreshSimilarStatus() async {
+    public var similarSelectedIDs: Set<SynologyPhotoID> = []
+    public private(set) var similarStatus: SynologyPhotoSimilarStatus?
+    public var similarStatusIdentity: String { "\(generation):\(selectedSpace.rawValue):\(selectedCategory?.rawValue ?? "")" }
+    public func refreshSimilarStatus() async {
         guard selectedCategory == .similar, isModuleEnabled else { similarStatus = nil; return }
         let current = generation, source = selectedSpace
         do {
@@ -226,38 +252,36 @@ final class SynologyPhotosModel {
             similarStatus = nil
         }
     }
-    private(set) var previewSimilarDetail: SynologyPhotoSimilarDetail?
-    private(set) var isLoadingSimilarPreview = false
-    private(set) var similarPreviewError: String?
-    private(set) var managementFeatures: Set<SynologyPhotosManagementFeature> = []
-    private(set) var isManaging = false
-    private(set) var isManagingBackgroundTask = false
-    private(set) var pendingBackgroundMutationID: UUID?
-    private(set) var backgroundTaskMessage: String?
-    private(set) var backgroundTaskRevision = 0
+    public private(set) var previewSimilarDetail: SynologyPhotoSimilarDetail?
+    public private(set) var isLoadingSimilarPreview = false
+    public private(set) var similarPreviewError: String?
+    public private(set) var managementFeatures: Set<SynologyPhotosManagementFeature> = []
+    public private(set) var isManaging = false
+    public private(set) var isManagingBackgroundTask = false
+    public private(set) var pendingBackgroundMutationID: UUID?
+    public private(set) var backgroundTaskMessage: String?
+    public private(set) var backgroundTaskRevision = 0
     @ObservationIgnored private var backgroundControlTask: Task<Void, Never>?
-    private(set) var isOpeningBackgroundDestination = false
-    private(set) var backgroundNavigationError: String?
-    private(set) var uploadQueue: [PhotoUploadEntry] = []
-    private(set) var uploadPersistenceError: String?
-    #if os(macOS)
+    public private(set) var isOpeningBackgroundDestination = false
+    public private(set) var backgroundNavigationError: String?
+    public private(set) var uploadQueue: [PhotoUploadEntry] = []
+    public private(set) var uploadPersistenceError: String?
     @ObservationIgnored private var uploadRecoveryStore: PhotoUploadRecoveryStore?
-    #endif
     @ObservationIgnored private var uploadRecoveryIdentity: String?
     @ObservationIgnored private var uploadRecoveryReady = true
-    private(set) var isOpeningUploadDestination = false
-    private(set) var uploadNavigationError: String?
-    private(set) var isUploading = false
-    var isBrowsingBlocked: Bool { (isManaging && !isUploading && !isGeneratingAutomaticPreview) || isPreparingSimilarBatch }
-    private(set) var stopsAfterCurrentUpload = false
+    public private(set) var isOpeningUploadDestination = false
+    public private(set) var uploadNavigationError: String?
+    public private(set) var isUploading = false
+    public var isBrowsingBlocked: Bool { (isManaging && !isUploading && !isGeneratingAutomaticPreview) || isPreparingSimilarBatch }
+    public private(set) var stopsAfterCurrentUpload = false
     @ObservationIgnored private var pendingUploadID: UUID?
     @ObservationIgnored private var uploadDirectories: [PhotoUploadDirectoryKey: SynologyPhotoCollection] = [:]
     @ObservationIgnored private var pendingUploadDirectory: PhotoUploadDirectoryKey?
-    private(set) var managementMessage: String?
-    private(set) var managementLink: URL?
-    private(set) var pendingMutationID: UUID?
+    public private(set) var managementMessage: String?
+    public private(set) var managementLink: URL?
+    public private(set) var pendingMutationID: UUID?
     @ObservationIgnored private var pendingMutation: SynologyPhotosMutation?
-    private(set) var retryableManagementMutation: SynologyPhotosMutation?
+    public private(set) var retryableManagementMutation: SynologyPhotosMutation?
     @ObservationIgnored private var managementTask: Task<Void, Never>?
     @ObservationIgnored private var managementCompletion: (id: UUID, action: (SynologyPhotosMutationResult) -> Void)?
     private struct TemporarySharingCleanup {
@@ -267,77 +291,77 @@ final class SynologyPhotosModel {
         var preservedCopy: SynologyPhotoCollection?
     }
     private var temporarySharingCleanup: TemporarySharingCleanup?
-    private(set) var temporarySharingCleanupNeedsRetry = false
-    var hasTemporarySharingCleanup: Bool { temporarySharingCleanup != nil }
+    public private(set) var temporarySharingCleanupNeedsRetry = false
+    public var hasTemporarySharingCleanup: Bool { temporarySharingCleanup != nil }
     @ObservationIgnored private var temporaryCreationID: UUID?
     @ObservationIgnored private var cancelledTemporaryCreation = false
 
-    private(set) var isSaving = false
-    private(set) var saveProgress: Double?
-    private(set) var saveMessage: String?
-    var deletionCandidates: [SynologyPhoto] = []
+    public private(set) var isSaving = false
+    public private(set) var saveProgress: Double?
+    public private(set) var saveMessage: String?
+    public var deletionCandidates: [SynologyPhoto] = []
     // 移动端沿用单项确认；macOS 批量确认使用同一份目标快照。
-    var deletionCandidate: SynologyPhoto? {
+    public var deletionCandidate: SynologyPhoto? {
         get { deletionCandidates.first }
         set { deletionCandidates = newValue.map { [$0] } ?? [] }
     }
-    private(set) var selectedPhotoIDs: Set<SynologyPhotoID> = []
-    var isSelecting = false
-    var thumbnailSize: PhotoThumbnailSize = .medium
+    public private(set) var selectedPhotoIDs: Set<SynologyPhotoID> = []
+    public var isSelecting = false
+    public var thumbnailSize: PhotoThumbnailSize = .medium
     @ObservationIgnored private var selectionAnchorID: SynologyPhotoID?
-    var deletionError: String?
-    private(set) var pendingDeletionPhotos: [SynologyPhoto] = []
-    var pendingDeletionPhoto: SynologyPhoto? { pendingDeletionPhotos.first }
+    public var deletionError: String?
+    public private(set) var pendingDeletionPhotos: [SynologyPhoto] = []
+    public var pendingDeletionPhoto: SynologyPhoto? { pendingDeletionPhotos.first }
     @ObservationIgnored private var deletionTask: Task<Void, Never>?
     @ObservationIgnored private var deletionReviewEpoch = 0
     @ObservationIgnored private var isReadingDeletionResults = false
-    var hasAutomaticDeletionReview: Bool { isModuleEnabled && !pendingDeletionPhotos.isEmpty }
+    public var hasAutomaticDeletionReview: Bool { isModuleEnabled && !pendingDeletionPhotos.isEmpty }
     @ObservationIgnored private var preparedDeletionPhotos: [SynologyPhoto] = []
     @ObservationIgnored private var pagedPhotoIDs: Set<SynologyPhotoID> = []
     @ObservationIgnored private let deletionReviewDelay: @Sendable (Double) async throws -> Void
-    private(set) var deletionMessage: String?
+    public private(set) var deletionMessage: String?
     #if os(macOS)
-    var deletionSuccessMessage: String?
+    public var deletionSuccessMessage: String?
     #endif
-    private(set) var isDeleting = false
-    private(set) var isCheckingDeletion = false
-    var deletionKeptCount: Int?
-    private(set) var similarRefreshError: String?
+    public private(set) var isDeleting = false
+    public private(set) var isCheckingDeletion = false
+    public var deletionKeptCount: Int?
+    public private(set) var similarRefreshError: String?
     @ObservationIgnored private var similarRefreshes: [SynologyPhotoSimilarGroup: (query: SynologyPhotoQuery, index: Int, paged: Bool)] = [:]
 
     @ObservationIgnored private var confirmedDeletedIDs: Set<SynologyPhotoID> = []
-    private(set) var isLoading = false
-    private(set) var isLoadingMore = false
-    private(set) var hasMore = false
-    private(set) var errorMessage: String?
-    private(set) var needsAlbumRefresh = false
-    private(set) var hasLoaded = false
-    private(set) var isPlayingMotion = false
-    private(set) var selectedTimelineMonthID: Int?
-    private(set) var previousMonthID: Int?
-    private(set) var previousPageErrorMessage: String?
-    private(set) var isLoadingPrevious = false
-    var hasPrevious: Bool { previousMonthID.map { current in timelineMonths.contains { $0.id > current } } ?? false }
-    var previousPaginationIdentity: String { "\(generation):\(previousMonthID ?? 0)" }
+    public private(set) var isLoading = false
+    public private(set) var isLoadingMore = false
+    public private(set) var hasMore = false
+    public private(set) var errorMessage: String?
+    public private(set) var needsAlbumRefresh = false
+    public private(set) var hasLoaded = false
+    public private(set) var isPlayingMotion = false
+    public private(set) var selectedTimelineMonthID: Int?
+    public private(set) var previousMonthID: Int?
+    public private(set) var previousPageErrorMessage: String?
+    public private(set) var isLoadingPrevious = false
+    public var hasPrevious: Bool { previousMonthID.map { current in timelineMonths.contains { $0.id > current } } ?? false }
+    public var previousPaginationIdentity: String { "\(generation):\(previousMonthID ?? 0)" }
     @ObservationIgnored private var timelineBaseQuery: SynologyPhotoQuery?
-    var searchText = ""
-    var requestSearchText = ""
-    var isRequestList: Bool { section == .sharing && shareScope == .requests && selectedAlbum == nil }
-    var visibleSharedEntries: [SynologyPhotoSharedEntry] {
+    public var searchText = ""
+    public var requestSearchText = ""
+    public var isRequestList: Bool { section == .sharing && shareScope == .requests && selectedAlbum == nil }
+    public var visibleSharedEntries: [SynologyPhotoSharedEntry] {
         let keyword = requestSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isRequestList, !keyword.isEmpty else { return sharedEntries }
         return sharedEntries.filter { $0.title.localizedStandardContains(keyword) }
     }
-    private(set) var isFiltering = false
+    public private(set) var isFiltering = false
     @ObservationIgnored private let repository: (any SynologyPhotosServing)?
     @ObservationIgnored private var collectionOffset = 0
     @ObservationIgnored private var previewGeneration = 0
     @ObservationIgnored private var previewTask: Task<Void, Never>?
-    private(set) var isSlideshowPresented = false
-    private(set) var isSlideshowPlaying = false
-    private(set) var isLoadingSlideshow = false
-    private(set) var slideshowError: String?
-    private(set) var slideshowMediaID = UUID()
+    public private(set) var isSlideshowPresented = false
+    public private(set) var isSlideshowPlaying = false
+    public private(set) var isLoadingSlideshow = false
+    public private(set) var slideshowError: String?
+    public private(set) var slideshowMediaID = UUID()
     @ObservationIgnored private var slideshowTask: Task<Void, Never>?
     @ObservationIgnored private var slideshowPhotos: [SynologyPhoto] = []
     @ObservationIgnored private var slideshowQuery: SynologyPhotoQuery?
@@ -352,7 +376,7 @@ final class SynologyPhotosModel {
     @ObservationIgnored private var query: SynologyPhotoQuery = .recentlyAdded
     @ObservationIgnored private let pageSize: Int
 
-    init(repository: (any SynologyPhotosServing)? = nil, pageSize: Int = 100,
+    public init(repository: (any SynologyPhotosServing)? = nil, pageSize: Int = 100,
          deletionReviewDelay: @escaping @Sendable (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
          previewConversionSupport: SynologyPhotoPreviewConversionSupport? = nil,
          slideshowDelay: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(3)) }) {
@@ -365,30 +389,30 @@ final class SynologyPhotosModel {
         self.slideshowDelay = slideshowDelay
     }
 
-    func loadIfNeeded() async {
+    public func loadIfNeeded() async {
         guard isModuleEnabled, !hasLoaded, !isLoading else { return }
         await refresh()
     }
 
-    var automaticPreviewSupported: Bool { previewConversionSupport.hevc || previewConversionSupport.video }
+    public var automaticPreviewSupported: Bool { previewConversionSupport.hevc || previewConversionSupport.video }
     /// 空闲轮询和累计完成数量不占用图库；保留实际任务及需要恢复的状态。
-    var showsAutomaticPreviewStatus: Bool {
+    public var showsAutomaticPreviewStatus: Bool {
         automaticPreviewFilename != nil || hasPendingAutomaticPreview ||
             (automaticPreviewEnabled == true && (automaticPreviewError != nil || automaticPreviewPaused))
     }
-    var hasPendingAutomaticPreview: Bool {
+    public var hasPendingAutomaticPreview: Bool {
         if case .generateAutomaticPreview = pendingMutation { return true }
         return false
     }
 
-    func automaticPreviewRevision(for photo: SynologyPhoto) -> Int {
+    public func automaticPreviewRevision(for photo: SynologyPhoto) -> Int {
         guard let unit = photo.thumbnail?.unitID else { return 0 }
         return automaticPreviewRevisions[photo.id.space]?[unit] ?? 0
     }
 
-    func setAutomaticPreviewSettingsVisible(_ visible: Bool) { automaticPreviewSettingsVisible = visible }
+    public func setAutomaticPreviewSettingsVisible(_ visible: Bool) { automaticPreviewSettingsVisible = visible }
 
-    func setPreviewVisible(_ photo: SynologyPhoto, visible: Bool, source: UUID) {
+    public func setPreviewVisible(_ photo: SynologyPhoto, visible: Bool, source: UUID) {
         if visible { visiblePreviewSources[source] = photo.id } else { visiblePreviewSources.removeValue(forKey: source) }
         scheduleVisiblePreviews()
     }
@@ -463,7 +487,7 @@ final class SynologyPhotosModel {
         return items.lazy.filter { visibleIDs.contains($0.id) }.compactMap { candidate(for: $0) }.first ?? tier.first
     }
 
-    func startAutomaticPreviews() {
+    public func startAutomaticPreviews() {
         guard automaticPreviewWorker == nil, isModuleEnabled else { return }
         automaticPreviewWorker = Task { [weak self] in
             var delay = 5.0
@@ -477,12 +501,12 @@ final class SynologyPhotosModel {
         }
     }
 
-    func pauseAutomaticPreviews() {
+    public func pauseAutomaticPreviews() {
         automaticPreviewPaused = true
         automaticPreviewOperation?.cancel()
     }
 
-    func resumeAutomaticPreviews() {
+    public func resumeAutomaticPreviews() {
         automaticPreviewFailed = []
         automaticPreviewError = nil
         automaticPreviewPaused = false
@@ -490,7 +514,7 @@ final class SynologyPhotosModel {
     }
 
     /// 一个处理周期仅领取一项；直接复用Repository操作编号，不刷新图库和月份锚点。
-    func processAutomaticPreview(now: Date = Date()) async {
+    public func processAutomaticPreview(now: Date = Date()) async {
         guard isModuleEnabled, hasLoaded, !isLoading, !isDeleting, !isCheckingDeletion, !isManaging,
               similarBatchQueue.isEmpty, !isUploading, pendingDeletionPhotos.isEmpty,
               pendingMutationID == nil || hasPendingAutomaticPreview else { return }
@@ -592,16 +616,16 @@ final class SynologyPhotosModel {
         }
     }
 
-    var paginationIdentity: String { "\(generation):\(nextOffset):\(collectionOffset)" }
-    var sharedCategoriesRequireManagement: Bool { section == .albums && selectedSpace == .shared && !canManageSharedSpace }
-    var showsCategories: Bool { section == .albums && selectedAlbum == nil && selectedCategory == nil && !isFiltering && !availableCategories.isEmpty }
-    var showsTimeline: Bool { section == .timeline || (selectedCategory != nil && !items.isEmpty) }
-    var timelineMonths: [SynologyPhotoMonth] {
+    public var paginationIdentity: String { "\(generation):\(nextOffset):\(collectionOffset)" }
+    public var sharedCategoriesRequireManagement: Bool { section == .albums && selectedSpace == .shared && !canManageSharedSpace }
+    public var showsCategories: Bool { section == .albums && selectedAlbum == nil && selectedCategory == nil && !isFiltering && !availableCategories.isEmpty }
+    public var showsTimeline: Bool { section == .timeline || (selectedCategory != nil && !items.isEmpty) }
+    public var timelineMonths: [SynologyPhotoMonth] {
         Set(days.filter { $0.itemCount > 0 }.map { SynologyPhotoMonth(year: $0.year, month: $0.month) })
             .sorted { $0.id > $1.id }
     }
 
-    func jumpToMonth(_ month: SynologyPhotoMonth) async {
+    public func jumpToMonth(_ month: SynologyPhotoMonth) async {
         guard isModuleEnabled, !isDeleting, !isBrowsingBlocked, timelineMonths.contains(month), let base = timelineBaseQuery,
               let date = month.date,
               let nextMonth = Calendar(identifier: .gregorian).date(byAdding: .month, value: 1, to: date) else { return }
@@ -649,7 +673,7 @@ final class SynologyPhotosModel {
     }
 
     /// 向较新月份读取完整时间区间，再整体补入，避免月内分页制造日期缺口。
-    func loadPreviousPage() async {
+    public func loadPreviousPage() async {
         guard isModuleEnabled, !isDeleting, !isBrowsingBlocked, hasPrevious, !isLoading, !isLoadingPrevious,
               let monthID = previousMonthID,
               let month = timelineMonths.last(where: { $0.id > monthID }),
@@ -708,7 +732,7 @@ final class SynologyPhotosModel {
     }
 
     /// 仅在列表尾部进入预取区域时调用；失败停住，由明确重试恢复。
-    func loadNextPageAutomatically() async {
+    public func loadNextPageAutomatically() async {
         guard errorMessage == nil, !isDeleting else { return }
         let current = generation
         let oldCount = items.count + collections.count + sharedEntries.count
@@ -721,7 +745,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    var datedGroups: [(date: Date, photos: [SynologyPhoto])] {
+    public var datedGroups: [(date: Date, photos: [SynologyPhoto])] {
         let calendar = Calendar(identifier: .gregorian)
         let grouped = Dictionary(grouping: items) { photo in
             let date = selectedCategory == .recentlyAdded ? photo.indexedAt : photo.takenAt
@@ -731,7 +755,7 @@ final class SynologyPhotosModel {
         return grouped.keys.sorted(by: >).map { ($0, grouped[$0] ?? []) }
     }
 
-    func refresh(space: SynologyPhotoSpace? = nil) async {
+    public func refresh(space: SynologyPhotoSpace? = nil) async {
         await refresh(space: space, afterFolderMutation: false)
     }
 
@@ -984,14 +1008,14 @@ final class SynologyPhotosModel {
         closePreview()
     }
 
-    func selectSpace(_ space: SynologyPhotoSpace) async {
+    public func selectSpace(_ space: SynologyPhotoSpace) async {
         guard spaces.contains(space), section != .sharing,
               !isDeleting, !isCheckingDeletion, !isBrowsingBlocked else { return }
         preferredLibrarySpace = space
         if selectedSpace != space { await refresh(space: space) }
     }
 
-    func loadMore() async {
+    public func loadMore() async {
         guard isModuleEnabled, !isDeleting, !isBrowsingBlocked, hasMore, !isLoading, !isLoadingMore else { return }
         let current = generation
         let offset = nextOffset
@@ -1009,80 +1033,80 @@ final class SynologyPhotosModel {
         }
     }
 
-    func thumbnail(for photo: SynologyPhoto) async throws -> Data {
+    public func thumbnail(for photo: SynologyPhoto) async throws -> Data {
         let current = generation
         let data = try await service().thumbnail(for: photo)
         guard current == generation, !Task.isCancelled else { throw CancellationError() }
         return data
     }
 
-    private(set) var folderCoverRevision = 0
-    var currentCreationFolder: SynologyPhotoCollection? {
+    public private(set) var folderCoverRevision = 0
+    public var currentCreationFolder: SynologyPhotoCollection? {
         guard section == .folders, !isFiltering, managementFeatures.contains(.folders),
               let folder = folderHistory.last, folder.space == selectedSpace,
               case .folder(let id, _) = query, id == folder.id else { return nil }
         return folder
     }
 
-    var currentSortFolder: (folder: SynologyPhotoCollection, sort: SynologyPhotoSort)? {
+    public var currentSortFolder: (folder: SynologyPhotoCollection, sort: SynologyPhotoSort)? {
         guard section == .folders, managementFeatures.contains(.folderSorting),
               let folder = folderHistory.last, folder.space == selectedSpace,
               case .folder(let id, let sort) = query, id == folder.id else { return nil }
         return (folder, sort)
     }
 
-    func changeCurrentFolderSort(_ sort: SynologyPhotoSort) {
+    public func changeCurrentFolderSort(_ sort: SynologyPhotoSort) {
         guard !isLoading, let current = currentSortFolder, current.sort != sort else { return }
         submitMutation(.setFolderSort(folder: current.folder, sort: sort))
     }
 
-    private(set) var albumListSort: SynologyPhotoAlbumListSort?
-    private(set) var albumListDisplay: SynologyPhotoAlbumDisplay?
-    var albumListScope: SynologyPhotoAlbumListScope? {
+    public private(set) var albumListSort: SynologyPhotoAlbumListSort?
+    public private(set) var albumListDisplay: SynologyPhotoAlbumDisplay?
+    public var albumListScope: SynologyPhotoAlbumListScope? {
         guard selectedAlbum == nil, selectedCategory == nil, !isFiltering else { return nil }
         if section == .albums { return .albums }
         if section == .sharing, shareScope != .requests { return shareScope == .withMe ? .withMe : .byMe }
         return nil
     }
-    func changeAlbumListSort(_ sort: SynologyPhotoAlbumListSort) {
+    public func changeAlbumListSort(_ sort: SynologyPhotoAlbumListSort) {
         guard !isLoading, let scope = albumListScope, let original = albumListSort, original != sort else { return }
         submitMutation(.setAlbumListSort(scope: scope, original: original, sort: sort))
     }
-    func changeAlbumListDisplay(_ display: SynologyPhotoAlbumDisplay) {
+    public func changeAlbumListDisplay(_ display: SynologyPhotoAlbumDisplay) {
         guard !isLoading, albumListScope == .albums, let original = albumListDisplay, original != display else { return }
         submitMutation(.setAlbumListDisplay(original: original, display: display))
     }
 
-    var currentSortAlbum: (id: Int, sort: SynologyPhotoSort)? {
+    public var currentSortAlbum: (id: Int, sort: SynologyPhotoSort)? {
         guard managementFeatures.contains(.albumSorting), let album = selectedAlbum,
               selectedAlbumAccess?.albumID == album.id,
               case .album(let id, let sort) = query, id == album.id else { return nil }
         return (id, sort)
     }
 
-    func changeCurrentAlbumSort(_ sort: SynologyPhotoSort) {
+    public func changeCurrentAlbumSort(_ sort: SynologyPhotoSort) {
         guard !isLoading, let current = currentSortAlbum, current.sort != sort else { return }
         submitMutation(.setAlbumSort(id: current.id, original: current.sort, sort: sort))
     }
 
-    var currentCoverFolder: SynologyPhotoCollection? {
+    public var currentCoverFolder: SynologyPhotoCollection? {
         guard section == .folders, let folder = folderHistory.last, folder.path != "/",
               managementFeatures.contains(.folderCover) else { return nil }
         return folder
     }
-    func folderCoverImages(_ folder: SynologyPhotoCollection) async throws -> [Data] {
+    public func folderCoverImages(_ folder: SynologyPhotoCollection) async throws -> [Data] {
         let current = generation
         let images = try await service().folderCoverImages(folder)
         guard current == generation, !Task.isCancelled else { throw CancellationError() }
         return images
     }
-    func folderCoverSort(_ folder: SynologyPhotoCollection) async throws -> SynologyPhotoSort {
+    public func folderCoverSort(_ folder: SynologyPhotoCollection) async throws -> SynologyPhotoSort {
         try await service().folderSort(folder)
     }
-    func folderCoverPage(_ folder: SynologyPhotoCollection, offset: Int, sort: SynologyPhotoSort = .init()) async throws -> SynologyPhotoPage {
+    public func folderCoverPage(_ folder: SynologyPhotoCollection, offset: Int, sort: SynologyPhotoSort = .init()) async throws -> SynologyPhotoPage {
         try await service().photos(in: folder.space, query: .folder(id: folder.id, sort: sort), offset: offset, limit: 100)
     }
-    func folderCoverChildren(_ folder: SynologyPhotoCollection, direction: SynologyPhotoSort.Direction = .ascending) async throws -> [SynologyPhotoCollection] {
+    public func folderCoverChildren(_ folder: SynologyPhotoCollection, direction: SynologyPhotoSort.Direction = .ascending) async throws -> [SynologyPhotoCollection] {
         var result: [SynologyPhotoCollection] = []
         while true {
             try Task.checkCancellation()
@@ -1092,14 +1116,14 @@ final class SynologyPhotosModel {
         }
     }
 
-    func thumbnail(for album: SynologyPhotoCollection) async throws -> Data {
+    public func thumbnail(for album: SynologyPhotoCollection) async throws -> Data {
         let current = generation
         let data = try await service().thumbnail(for: album)
         guard current == generation, !Task.isCancelled else { throw CancellationError() }
         return data
     }
 
-    func leaveGallery() {
+    public func leaveGallery() {
         #if os(macOS)
         deletionSuccessMessage = nil
         #endif
@@ -1120,7 +1144,7 @@ final class SynologyPhotosModel {
         saveTask?.cancel()
     }
 
-    func cancel() {
+    public func cancel() {
         leaveGallery()
         backgroundControlTask?.cancel()
         stopUploadQueue()
@@ -1129,7 +1153,7 @@ final class SynologyPhotosModel {
         saveTask?.cancel()
     }
 
-    func setModuleEnabled(_ enabled: Bool) {
+    public func setModuleEnabled(_ enabled: Bool) {
         isModuleEnabled = enabled
         if !enabled {
             managementCompletion = nil
@@ -1143,7 +1167,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func selectSection(_ section: SynologyPhotosSection) async {
+    public func selectSection(_ section: SynologyPhotosSection) async {
         guard !isDeleting, !isBrowsingBlocked else { return }
         guard section != self.section else { await loadIfNeeded(); return }
         self.section = section
@@ -1157,7 +1181,7 @@ final class SynologyPhotosModel {
         await refresh(space: section == .sharing ? .personal : preferredLibrarySpace)
     }
 
-    func open(_ collection: SynologyPhotoCollection) async {
+    public func open(_ collection: SynologyPhotoCollection) async {
         guard !isDeleting, !isBrowsingBlocked else { return }
         searchText = ""
         if section == .folders { folderHistory.append(collection) }
@@ -1171,8 +1195,8 @@ final class SynologyPhotosModel {
         await refresh()
     }
 
-    var canGoBack: Bool { folderHistory.count > 1 || selectedAlbum != nil || selectedCategory != nil }
-    func navigateToFolder(_ folder: SynologyPhotoCollection) async {
+    public var canGoBack: Bool { folderHistory.count > 1 || selectedAlbum != nil || selectedCategory != nil }
+    public func navigateToFolder(_ folder: SynologyPhotoCollection) async {
         guard section == .folders, !isDeleting, !isBrowsingBlocked,
               let index = folderHistory.firstIndex(of: folder), index < folderHistory.count - 1 else { return }
         folderHistory = Array(folderHistory.prefix(index + 1))
@@ -1180,7 +1204,7 @@ final class SynologyPhotosModel {
     }
 
     /// 拖放仅携带本次图库内的随机标识；照片和路径始终保留在当前Model。
-    func beginPhotoDrag(photo: SynologyPhoto? = nil, folder: SynologyPhotoCollection? = nil) -> UUID? {
+    public func beginPhotoDrag(photo: SynologyPhoto? = nil, folder: SynologyPhotoCollection? = nil) -> UUID? {
         dragSelection = nil
         guard canHandlePhotoDrag else { return nil }
         let photos: [SynologyPhoto], folders: [SynologyPhotoCollection]
@@ -1202,28 +1226,28 @@ final class SynologyPhotosModel {
             !isLoading && !isManaging && !isDeleting && !isCheckingDeletion && !isBrowsingBlocked && pendingMutationID == nil
     }
 
-    func photoDropPath(to target: SynologyPhotoCollection) -> [SynologyPhotoCollection]? {
+    public func photoDropPath(to target: SynologyPhotoCollection) -> [SynologyPhotoCollection]? {
         guard target.space == selectedSpace else { return nil }
         if let index = folderHistory.firstIndex(of: target) { return Array(folderHistory.prefix(index + 1)) }
         if collections.contains(target), target.parentID == folderHistory.last?.id { return folderHistory + [target] }
         return nil
     }
 
-    func canDropPhotos(to target: SynologyPhotoCollection) -> Bool {
+    public func canDropPhotos(to target: SynologyPhotoCollection) -> Bool {
         guard canHandlePhotoDrag, let snapshot = dragSelection, snapshot.generation == generation,
               photoDropPath(to: target) != nil,
               canTransfer(snapshot.photos, copying: false, folders: snapshot.folders) else { return false }
         return SynologyPhotosMutation.move(snapshot.photos, folderID: target.id, destinationSpace: target.space, folders: snapshot.folders).acceptsTransferDestination(target)
     }
 
-    func takePhotoDrop(token: UUID, to target: SynologyPhotoCollection) -> PhotoDragSelection? {
+    public func takePhotoDrop(token: UUID, to target: SynologyPhotoCollection) -> PhotoDragSelection? {
         guard dragSelection?.id == token, canDropPhotos(to: target) else { return nil }
         let snapshot = dragSelection
         dragSelection = nil
         return snapshot
     }
 
-    func goBack() async {
+    public func goBack() async {
         guard !isDeleting, !isBrowsingBlocked else { return }
         if selectedCategoryItem != nil { selectedCategoryItem = nil; filter = SynologyPhotoFilter() }
         else if selectedCategory != nil { selectedCategory = nil; filter = SynologyPhotoFilter() }
@@ -1233,7 +1257,7 @@ final class SynologyPhotosModel {
         await refresh()
     }
 
-    func loadMoreCollections() async {
+    public func loadMoreCollections() async {
         guard isModuleEnabled, !isDeleting, !isBrowsingBlocked, hasMoreCollections, !isLoading, !isLoadingMore else { return }
         let current = generation
         isLoadingMore = true
@@ -1269,7 +1293,7 @@ final class SynologyPhotosModel {
         } catch { if current == generation { present(error) } }
     }
 
-    func openCategory(_ category: SynologyPhotoCategory) async {
+    public func openCategory(_ category: SynologyPhotoCategory) async {
         guard !isDeleting, !isBrowsingBlocked else { return }
         selectedCategory = category
         selectedCategoryItem = nil
@@ -1280,33 +1304,33 @@ final class SynologyPhotosModel {
         await refresh()
     }
 
-    func selectShareScope(_ scope: SynologyPhotoShareScope) async {
+    public func selectShareScope(_ scope: SynologyPhotoShareScope) async {
         guard !isDeleting, !isBrowsingBlocked else { return }
         shareScope = scope
         selectedAlbum = nil
         await refresh()
     }
 
-    func openSharedAlbum(_ entry: SynologyPhotoSharedEntry) async {
+    public func openSharedAlbum(_ entry: SynologyPhotoSharedEntry) async {
         guard !isDeleting, !isBrowsingBlocked else { return }
         guard let id = entry.albumID else { return }
         selectedAlbum = SynologyPhotoCollection(id: id, name: entry.title)
         await refresh()
     }
 
-    func sharingManagementTarget(for entry: SynologyPhotoSharedEntry) -> SynologyPhotoCollection? {
+    public func sharingManagementTarget(for entry: SynologyPhotoSharedEntry) -> SynologyPhotoCollection? {
         guard section == .sharing, shareScope == .withOthers, selectedAlbum == nil,
               managementFeatures.contains(.sharing), let id = entry.albumID, id > 0,
               sharedEntries.contains(where: { $0.id == entry.id && $0.albumID == id }) else { return nil }
         return .init(id: id, name: entry.title)
     }
 
-    func retrySharedListRefresh() async {
+    public func retrySharedListRefresh() async {
         guard needsSharedListRefresh, !isManaging, !isLoadingMore, let service = try? service() else { return }
         await refreshManagedSharingList(service: service)
     }
 
-    func loadFilterOptions() async {
+    public func loadFilterOptions() async {
         let current = generation
         filterOptionsGeneration += 1
         let request = filterOptionsGeneration
@@ -1324,14 +1348,14 @@ final class SynologyPhotosModel {
         }
     }
 
-    func applyFilter(_ value: SynologyPhotoFilter) async {
+    public func applyFilter(_ value: SynologyPhotoFilter) async {
         guard !isDeleting, !isBrowsingBlocked else { return }
         filter = value
         searchText = ""
         await refresh()
     }
 
-    func showPreview(_ photo: SynologyPhoto, playMotion: Bool = false, similarDetail: SynologyPhotoSimilarDetail? = nil) {
+    public func showPreview(_ photo: SynologyPhoto, playMotion: Bool = false, similarDetail: SynologyPhotoSimilarDetail? = nil) {
         guard isModuleEnabled else { return }
         previewTask?.cancel()
         previewGeneration += 1
@@ -1394,17 +1418,17 @@ final class SynologyPhotosModel {
         }
     }
 
-    func retrySimilarPreview() async {
+    public func retrySimilarPreview() async {
         guard let photo = previewPhoto, photo.similarGroup != nil, !isLoadingSimilarPreview else { return }
         await loadSimilarPreview(for: photo, generation: previewGeneration)
     }
 
-    func showSimilarPreview(_ photo: SynologyPhoto) {
+    public func showSimilarPreview(_ photo: SynologyPhoto) {
         guard let detail = previewSimilarDetail, detail.photos.contains(photo) else { return }
         showPreview(photo, similarDetail: detail)
     }
 
-    func closePreview() {
+    public func closePreview() {
         stopSlideshow()
         previewGeneration += 1
         previewTask?.cancel()
@@ -1417,7 +1441,7 @@ final class SynologyPhotosModel {
         isPlayingMotion = false
     }
 
-    func playMotion() {
+    public func playMotion() {
         guard let photo = previewPhoto, photo.canPlayMotion, !isPlayingMotion else { return }
         previewTask?.cancel()
         let current = previewGeneration
@@ -1436,22 +1460,22 @@ final class SynologyPhotosModel {
         }
     }
 
-    func finishMotion() {
+    public func finishMotion() {
         previewTask?.cancel()
         previewSource = nil
         isPlayingMotion = false
     }
 
-    func adjacentPreview(_ direction: Int) {
+    public func adjacentPreview(_ direction: Int) {
         let candidates = previewSimilarDetail?.photos ?? items
         guard let id = previewPhoto?.id, let index = candidates.firstIndex(where: { $0.id == id }), candidates.indices.contains(index + direction) else { return }
         if previewSimilarDetail != nil { showSimilarPreview(candidates[index + direction]) }
         else { showPreview(candidates[index + direction]) }
     }
 
-    var canStartSlideshow: Bool { isModuleEnabled && !isLoading && !isDeleting && !isBrowsingBlocked && (previewPhoto != nil || !items.isEmpty) }
+    public var canStartSlideshow: Bool { isModuleEnabled && !isLoading && !isDeleting && !isBrowsingBlocked && (previewPhoto != nil || !items.isEmpty) }
 
-    func startSlideshow() {
+    public func startSlideshow() {
         guard canStartSlideshow, !isSlideshowPresented, let photo = previewPhoto ?? items.first else { return }
         if isPlayingMotion { finishMotion() }
         slideshowSpace = selectedSpace
@@ -1466,13 +1490,13 @@ final class SynologyPhotosModel {
         scheduleSlideshow()
     }
 
-    func stopSlideshow() {
+    public func stopSlideshow() {
         isSlideshowPresented = false; isSlideshowPlaying = false; isLoadingSlideshow = false
         slideshowTask?.cancel(); slideshowTask = nil
         slideshowPhotos = []; slideshowQuery = nil; slideshowError = nil
     }
 
-    func toggleSlideshowPlayback() {
+    public func toggleSlideshowPlayback() {
         guard isSlideshowPresented else { return }
         let retryMedia = slideshowError != nil || previewError != nil
         isSlideshowPlaying.toggle(); slideshowError = nil
@@ -1483,13 +1507,13 @@ final class SynologyPhotosModel {
         } else { slideshowTask?.cancel(); isLoadingSlideshow = false }
     }
 
-    func slideshowVideoEnded() {
+    public func slideshowVideoEnded() {
         guard isSlideshowPresented else { return }
         slideshowVideoFinished = true
         if isSlideshowPlaying { advanceSlideshow(1) }
     }
 
-    func slideshowPlaybackFailed() {
+    public func slideshowPlaybackFailed() {
         guard isSlideshowPresented else { return }
         isSlideshowPlaying = false; isLoadingSlideshow = false; slideshowTask?.cancel()
         slideshowError = L10n.string("photos.slideshow.failed")
@@ -1515,7 +1539,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func advanceSlideshow(_ direction: Int) {
+    public func advanceSlideshow(_ direction: Int) {
         guard isSlideshowPresented, [-1, 1].contains(direction) else { return }
         slideshowTask?.cancel(); slideshowError = nil
         slideshowTask = Task { [weak self] in
@@ -1559,18 +1583,18 @@ final class SynologyPhotosModel {
         slideshowOffset = page.nextOffset; slideshowHasMore = page.hasMore
     }
 
-    var currentArchive: (target: SynologyPhotoArchiveTarget, name: String)? {
+    public var currentArchive: (target: SynologyPhotoArchiveTarget, name: String)? {
         if let album = selectedAlbum { return (.album(id: album.id), album.name) }
         if section == .folders, let folder = folderHistory.last { return (.folder(id: folder.id, space: selectedSpace), folder.name) }
         return nil
     }
 
-    var selectedArchive: SynologyPhotoArchiveTarget? {
+    public var selectedArchive: SynologyPhotoArchiveTarget? {
         guard section == .folders, !selectedFolders.isEmpty else { return nil }
         return .selection(photos: selectedPhotos, folders: selectedFolders)
     }
 
-    func canDownloadArchive(_ target: SynologyPhotoArchiveTarget) -> Bool {
+    public func canDownloadArchive(_ target: SynologyPhotoArchiveTarget) -> Bool {
         guard isModuleEnabled else { return false }
         switch target {
         case .album(let id):
@@ -1584,9 +1608,9 @@ final class SynologyPhotosModel {
         }
     }
 
-    func cancelSave() { saveTask?.cancel() }
+    public func cancelSave() { saveTask?.cancel() }
 
-    func saveArchive(_ target: SynologyPhotoArchiveTarget, format: SynologyPhotoDownloadFormat, to url: URL) {
+    public func saveArchive(_ target: SynologyPhotoArchiveTarget, format: SynologyPhotoDownloadFormat, to url: URL) {
         guard !isSaving, canDownloadArchive(target) else { return }
         isSaving = true; saveProgress = nil; saveMessage = nil
         saveTask = Task { [weak self] in
@@ -1608,7 +1632,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func save(_ photo: SynologyPhoto, to url: URL) {
+    public func save(_ photo: SynologyPhoto, to url: URL) {
         guard isModuleEnabled, !isSaving, canDownload(photo) else { return }
         isSaving = true; saveProgress = nil; saveMessage = nil
         saveTask = Task { [weak self] in
@@ -1633,12 +1657,12 @@ final class SynologyPhotosModel {
         }
     }
 
-    var canManageSelection: Bool { selectedFolderIDs.isEmpty && !selectedPhotos.isEmpty && selectedPhotos.count <= 100 && !isManaging && pendingMutationID == nil && !isDeleting && !isCheckingDeletion }
+    public var canManageSelection: Bool { selectedFolderIDs.isEmpty && !selectedPhotos.isEmpty && selectedPhotos.count <= 100 && !isManaging && pendingMutationID == nil && !isDeleting && !isCheckingDeletion }
 
-    func categoryThumbnail(for collection: SynologyPhotoCollection, category: SynologyPhotoCategory) async throws -> Data {
+    public func categoryThumbnail(for collection: SynologyPhotoCollection, category: SynologyPhotoCategory) async throws -> Data {
         try await service().thumbnail(for: collection, category: category)
     }
-    func categoryPreviewImages(_ category: SynologyPhotoCategory, in space: SynologyPhotoSpace) async throws -> [Data] {
+    public func categoryPreviewImages(_ category: SynologyPhotoCategory, in space: SynologyPhotoSpace) async throws -> [Data] {
         let current = generation
         guard showsCategories, selectedSpace == space, availableCategories.contains(category) else { throw CancellationError() }
         let images = try await service().categoryPreviewImages(category, in: space)
@@ -1646,40 +1670,40 @@ final class SynologyPhotosModel {
         guard current == generation, selectedSpace == space, showsCategories else { throw CancellationError() }
         return images
     }
-    func pendingPreviewRegenerations(in space: SynologyPhotoSpace) async throws -> [SynologyPhoto] { try await service().pendingPreviewRegenerations(in: space) }
-    func photoFaces(for photo: SynologyPhoto) async throws -> [SynologyPhotoFaceRegion] { try await service().photoFaces(for: photo) }
-    func personFaces(personID: Int, photos: [SynologyPhoto]) async throws -> [SynologyPhotoFace] { try await service().personFaces(personID: personID, photos: photos) }
-    func faceThumbnail(_ face: SynologyPhotoFace) async throws -> Data { try await service().thumbnail(for: face) }
-    func conceptState(_ concept: SynologyPhotoCollection) async throws -> SynologyPhotoConceptVisibility { try await service().conceptState(id: concept.id, in: concept.space) }
-    func canManageConceptPhotos(_ photos: [SynologyPhoto], cover: Bool) -> Bool {
+    public func pendingPreviewRegenerations(in space: SynologyPhotoSpace) async throws -> [SynologyPhoto] { try await service().pendingPreviewRegenerations(in: space) }
+    public func photoFaces(for photo: SynologyPhoto) async throws -> [SynologyPhotoFaceRegion] { try await service().photoFaces(for: photo) }
+    public func personFaces(personID: Int, photos: [SynologyPhoto]) async throws -> [SynologyPhotoFace] { try await service().personFaces(personID: personID, photos: photos) }
+    public func faceThumbnail(_ face: SynologyPhotoFace) async throws -> Data { try await service().thumbnail(for: face) }
+    public func conceptState(_ concept: SynologyPhotoCollection) async throws -> SynologyPhotoConceptVisibility { try await service().conceptState(id: concept.id, in: concept.space) }
+    public func canManageConceptPhotos(_ photos: [SynologyPhoto], cover: Bool) -> Bool {
         selectedCategory == .concept && selectedCategoryItem != nil && !photos.isEmpty && (!cover || photos.count == 1) &&
             photos.allSatisfy(canModifyOriginal) && managementFeatures.contains(cover ? .conceptCover : .conceptItems) &&
             !isManaging && !isDeleting && !isCheckingDeletion && pendingMutationID == nil
     }
-    func conceptVisibility(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoConceptVisibility] { try await service().conceptVisibility(in: space) }
-    func peopleVisibility(in space: SynologyPhotoSpace = .personal) async throws -> [SynologyPhotoPersonVisibility] { try await service().peopleVisibility(in: space) }
-    func managementPeople(in space: SynologyPhotoSpace = .personal) async throws -> [SynologyPhotoCollection] { try await service().managementPeople(in: space) }
-    func albumSharing(id: Int) async throws -> SynologyPhotoSharingState { try await service().albumSharing(id: id) }
-    func canInspectFolderSharing(_ folder: SynologyPhotoCollection) -> Bool {
+    public func conceptVisibility(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoConceptVisibility] { try await service().conceptVisibility(in: space) }
+    public func peopleVisibility(in space: SynologyPhotoSpace = .personal) async throws -> [SynologyPhotoPersonVisibility] { try await service().peopleVisibility(in: space) }
+    public func managementPeople(in space: SynologyPhotoSpace = .personal) async throws -> [SynologyPhotoCollection] { try await service().managementPeople(in: space) }
+    public func albumSharing(id: Int) async throws -> SynologyPhotoSharingState { try await service().albumSharing(id: id) }
+    public func canInspectFolderSharing(_ folder: SynologyPhotoCollection) -> Bool {
         folder.space == .shared && canManageSharedSpace && (1...2).contains(folder.path?.split(separator: "/").count ?? 0)
     }
-    func folderSharing(_ folder: SynologyPhotoCollection) async throws -> SynologyPhotoFolderSharingState { try await service().folderSharing(folder) }
-    func folderSharingRecipients() async throws -> [SynologyPhotoShareRecipient] { try await service().folderSharingRecipients() }
-    func sharingRecipients() async throws -> [SynologyPhotoShareRecipient] { try await service().sharingRecipients() }
-    func frozenAlbum(id: Int) async throws -> SynologyPhotoFrozenAlbum { try await service().frozenAlbum(id: id) }
-    func albumCondition(id: Int) async throws -> SynologyPhotoAlbumCondition { try await service().albumCondition(id: id) }
-    func conditionSuggestions(keyword: String, in space: SynologyPhotoSpace = .personal) async throws -> [String: [SynologyPhotoConditionOption]] { try await service().conditionSuggestions(keyword: keyword, in: space) }
-    var conditionSourceSpaces: [SynologyPhotoSpace] { spaces.filter { $0 == .personal || canManageSharedSpace } }
-    func conditionItemCount(_ condition: SynologyPhotoAlbumCondition) async throws -> Int { try await service().conditionItemCount(condition) }
+    public func folderSharing(_ folder: SynologyPhotoCollection) async throws -> SynologyPhotoFolderSharingState { try await service().folderSharing(folder) }
+    public func folderSharingRecipients() async throws -> [SynologyPhotoShareRecipient] { try await service().folderSharingRecipients() }
+    public func sharingRecipients() async throws -> [SynologyPhotoShareRecipient] { try await service().sharingRecipients() }
+    public func frozenAlbum(id: Int) async throws -> SynologyPhotoFrozenAlbum { try await service().frozenAlbum(id: id) }
+    public func albumCondition(id: Int) async throws -> SynologyPhotoAlbumCondition { try await service().albumCondition(id: id) }
+    public func conditionSuggestions(keyword: String, in space: SynologyPhotoSpace = .personal) async throws -> [String: [SynologyPhotoConditionOption]] { try await service().conditionSuggestions(keyword: keyword, in: space) }
+    public var conditionSourceSpaces: [SynologyPhotoSpace] { spaces.filter { $0 == .personal || canManageSharedSpace } }
+    public func conditionItemCount(_ condition: SynologyPhotoAlbumCondition) async throws -> Int { try await service().conditionItemCount(condition) }
 
-    func photoRequest(id: String) async throws -> SynologyPhotoRequest { try await service().photoRequest(id: id) }
-    func photoRequestAlbums() async throws -> [SynologyPhotoRequestAlbum] { try await service().photoRequestAlbums() }
-    func supportsManagement(_ feature: SynologyPhotosManagementFeature, in space: SynologyPhotoSpace) async -> Bool {
+    public func photoRequest(id: String) async throws -> SynologyPhotoRequest { try await service().photoRequest(id: id) }
+    public func photoRequestAlbums() async throws -> [SynologyPhotoRequestAlbum] { try await service().photoRequestAlbums() }
+    public func supportsManagement(_ feature: SynologyPhotosManagementFeature, in space: SynologyPhotoSpace) async -> Bool {
         guard let service = try? service() else { return false }
         return await service.managementFeatures(in: space).contains(feature)
     }
 
-    func managementAlbums() async throws -> [SynologyPhotoCollection] {
+    public func managementAlbums() async throws -> [SynologyPhotoCollection] {
         var result: [SynologyPhotoCollection] = []
         var offset = 0
         while true {
@@ -1691,7 +1715,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func managementFolders(parentID: Int?, in space: SynologyPhotoSpace? = nil) async throws -> (SynologyPhotoCollection, [SynologyPhotoCollection]) {
+    public func managementFolders(parentID: Int?, in space: SynologyPhotoSpace? = nil) async throws -> (SynologyPhotoCollection, [SynologyPhotoCollection]) {
         let service = try service()
         let destination = space ?? selectedSpace
         let root = try await service.rootFolder(in: destination)
@@ -1706,7 +1730,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func prepareSelectedSimilarGroups() async -> [SynologyPhotoSimilarDetail]? {
+    public func prepareSelectedSimilarGroups() async -> [SynologyPhotoSimilarDetail]? {
         guard selectedCategory == .similar, !selectedPhotos.isEmpty, !isManaging, !isDeleting, !isCheckingDeletion, !isPreparingSimilarBatch,
               pendingMutationID == nil, similarBatchQueue.isEmpty, managementFeatures.contains(.similarGroups) else { return nil }
         let photos = selectedPhotos, current = generation
@@ -1727,11 +1751,11 @@ final class SynologyPhotosModel {
         }
     }
 
-    func ungroupSimilarSelection(_ details: [SynologyPhotoSimilarDetail]) {
+    public func ungroupSimilarSelection(_ details: [SynologyPhotoSimilarDetail]) {
         beginSimilarBatch(details.map { .editSimilarGroup($0, .ungroup) })
     }
 
-    func undoSimilarChanges() { beginSimilarBatch(similarUndoMutations.reversed()) }
+    public func undoSimilarChanges() { beginSimilarBatch(similarUndoMutations.reversed()) }
 
     private func beginSimilarBatch(_ commands: [SynologyPhotosMutation]) {
         guard isModuleEnabled, !commands.isEmpty, !isManaging, !isDeleting, !isCheckingDeletion,
@@ -1744,13 +1768,13 @@ final class SynologyPhotosModel {
         continueSimilarBatch()
     }
 
-    func cancelRemainingSimilarGroups() {
+    public func cancelRemainingSimilarGroups() {
         guard !isManaging else { return }
         similarBatchQueue = []
     }
 
     /// 一次确认固定所有分组，逐组复用现有操作编号及自动核对；未知项不能重放。
-    func continueSimilarBatch() {
+    public func continueSimilarBatch() {
         guard isModuleEnabled, !isManaging, !isDeleting, !isCheckingDeletion, pendingMutationID == nil, !similarBatchQueue.isEmpty else { return }
         isManaging = true
         managementTask = Task { [weak self] in
@@ -1777,20 +1801,20 @@ final class SynologyPhotosModel {
         }
     }
 
-    var canRotatePreview: Bool {
+    public var canRotatePreview: Bool {
         guard let photo = previewPhoto else { return false }
         return photo.supportsRotation && previewData != nil && !isPreparingPreview &&
             canEditPhoto(photo) && managementFeatures.contains(.rotation) &&
             !isManaging && pendingMutationID == nil && !isDeleting && !isCheckingDeletion
     }
 
-    func rotatePreview() {
+    public func rotatePreview() {
         guard canRotatePreview, let photo = previewPhoto else { return }
         finishMotion()
         submitMutation(.rotatePhoto(photo))
     }
 
-    func submitMutation(_ mutation: SynologyPhotosMutation, onCompletion: ((SynologyPhotosMutationResult) -> Void)? = nil) {
+    public func submitMutation(_ mutation: SynologyPhotosMutation, onCompletion: ((SynologyPhotosMutationResult) -> Void)? = nil) {
         if mutation.feature == .backgroundTasks { submitBackgroundTaskMutation(mutation); return }
         guard isModuleEnabled, !isManaging, !isDeleting, !isCheckingDeletion, pendingMutationID == nil, similarBatchQueue.isEmpty,
               canSubmit(mutation) else { return }
@@ -1832,13 +1856,13 @@ final class SynologyPhotosModel {
     }
 
     /// 取消意图属于模型，创建窗口关闭后仍可沿原操作编号清理。
-    func cancelTemporaryAlbumCreation() {
+    public func cancelTemporaryAlbumCreation() {
         guard temporaryCreationID != nil else { return }
         cancelledTemporaryCreation = true
     }
 
     @discardableResult
-    func stopTemporarySharing(_ album: SynologyPhotoCollection, keepCopy: Bool) -> Bool {
+    public func stopTemporarySharing(_ album: SynologyPhotoCollection, keepCopy: Bool) -> Bool {
         guard isModuleEnabled, temporarySharingCleanup == nil, !isDeleting, !isCheckingDeletion else { return false }
         temporarySharingCleanup = .init(album: album, phase: keepCopy ? .copy : .stop)
         temporarySharingCleanupNeedsRetry = false
@@ -1846,12 +1870,12 @@ final class SynologyPhotosModel {
         return true
     }
 
-    func retryTemporarySharingCleanup() {
+    public func retryTemporarySharingCleanup() {
         temporarySharingCleanupNeedsRetry = false
         continueTemporarySharingCleanup()
     }
 
-    func keepTemporarySharingAlbums() {
+    public func keepTemporarySharingAlbums() {
         guard temporarySharingCleanupNeedsRetry, !isManaging, pendingMutationID == nil else { return }
         temporarySharingCleanup = nil
         temporarySharingCleanupNeedsRetry = false
@@ -1859,7 +1883,7 @@ final class SynologyPhotosModel {
         startUploadQueue()
     }
 
-    func continueTemporarySharingCleanup() {
+    public func continueTemporarySharingCleanup() {
         guard !Task.isCancelled, isModuleEnabled, temporarySharingCleanup != nil,
               !temporarySharingCleanupNeedsRetry, !isManaging, !isDeleting, !isCheckingDeletion,
               pendingMutationID == nil else { return }
@@ -1933,7 +1957,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func continuePartialManagement() {
+    public func continuePartialManagement() {
         guard let command = retryableManagementMutation else { return }
         submitMutation(command)
     }
@@ -1950,16 +1974,13 @@ final class SynologyPhotosModel {
         pendingMutationID = id; pendingMutation = mutation
         do {
             let first: SynologyPhotosMutationResult
-            #if os(macOS)
             if pendingUploadID != nil, let store = uploadRecoveryStore {
                 try saveUploadQueue()
                 first = try await service.performRecoverableUpload(mutation, operationID: id, progress: progress) { checkpoint in
                     try store.checkpoint(checkpoint)
                 }
             } else { first = try await service.performMutation(mutation, operationID: id, progress: progress) }
-            #else
-            first = try await service.performMutation(mutation, operationID: id, progress: progress)
-            #endif
+
             return await finishMutation(first, id: id, mutation: mutation, service: service)
         } catch {
             // Repository 只在提交前抛错；提交后的不确定结果由 pendingReview 返回。
@@ -1968,25 +1989,25 @@ final class SynologyPhotosModel {
         }
     }
 
-    var canUploadPhotos: Bool {
+    public var canUploadPhotos: Bool {
         if let album = selectedAlbum {
             return album.acceptsManualMembers && selectedAlbumAccess?.albumID == album.id && selectedAlbumAccess?.canContribute == true
         }
         return managementFeatures.contains(.upload)
     }
 
-    func uploadsDirectlyToAlbum(_ album: SynologyPhotoCollection?, space: SynologyPhotoSpace) -> Bool {
+    public func uploadsDirectlyToAlbum(_ album: SynologyPhotoCollection?, space: SynologyPhotoSpace) -> Bool {
         guard let album, selectedAlbumAccess?.albumID == album.id else { return false }
         return selectedAlbumAccess?.isOwner == false || !spaces.contains(space)
     }
 
-    func canDownload(_ photo: SynologyPhoto) -> Bool {
+    public func canDownload(_ photo: SynologyPhoto) -> Bool {
         guard let context = photo.albumContext else { return true }
         guard let rights = selectedAlbumAccess, rights.albumID == context.albumID else { return false }
         return rights.canDownload || (context.providerUserID == rights.currentUserID && spaces.contains(photo.id.space))
     }
 
-    func canModifyOriginal(_ photo: SynologyPhoto) -> Bool {
+    public func canModifyOriginal(_ photo: SynologyPhoto) -> Bool {
         guard spaces.contains(photo.id.space) else { return false }
         guard let context = photo.albumContext else { return true }
         guard let rights = selectedAlbumAccess, rights.albumID == context.albumID else { return false }
@@ -1994,7 +2015,7 @@ final class SynologyPhotosModel {
         return canManageSharedSpace || context.providerUserID == rights.currentUserID
     }
 
-    func canAddOriginalToAlbum(_ photo: SynologyPhoto) -> Bool {
+    public func canAddOriginalToAlbum(_ photo: SynologyPhoto) -> Bool {
         guard spaces.contains(photo.id.space), canDownload(photo) else { return false }
         if let context = photo.albumContext {
             guard let rights = selectedAlbumAccess, rights.albumID == context.albumID else { return false }
@@ -2003,26 +2024,26 @@ final class SynologyPhotosModel {
         return true
     }
 
-    func canAddToAlbum(_ photos: [SynologyPhoto]) -> Bool {
+    public func canAddToAlbum(_ photos: [SynologyPhoto]) -> Bool {
         guard photos.allSatisfy(canAddOriginalToAlbum) else { return false }
         return !photos.contains(where: { $0.albumContext != nil }) || Set(photos.map { $0.id.space }).count < 2 || canManageSharedSpace
     }
 
-    var canRemoveAlbumSelection: Bool {
+    public var canRemoveAlbumSelection: Bool {
         canRemoveAlbumPhotos(selectedPhotos)
     }
 
-    func canRemoveAlbumPhotos(_ photos: [SynologyPhoto]) -> Bool {
+    public func canRemoveAlbumPhotos(_ photos: [SynologyPhoto]) -> Bool {
         guard let rights = selectedAlbumAccess, rights.canContribute, !photos.isEmpty else { return false }
         return rights.isOwner || photos.allSatisfy { $0.albumContext?.albumID == rights.albumID && $0.albumContext?.providerUserID == rights.currentUserID }
     }
 
-    func transferDestinationSpaces(for photos: [SynologyPhoto], copying: Bool, folders: [SynologyPhotoCollection] = []) -> [SynologyPhotoSpace] {
+    public func transferDestinationSpaces(for photos: [SynologyPhoto], copying: Bool, folders: [SynologyPhotoCollection] = []) -> [SynologyPhotoSpace] {
         guard let source = folders.first?.space ?? photos.first?.id.space, photos.allSatisfy({ $0.id.space == source }), folders.allSatisfy({ $0.space == source }), spaces.contains(source) else { return [] }
         return spaces.filter { copying || source == .personal || $0 == source }
     }
 
-    func canTransfer(_ photos: [SynologyPhoto], copying: Bool, folders: [SynologyPhotoCollection] = []) -> Bool {
+    public func canTransfer(_ photos: [SynologyPhoto], copying: Bool, folders: [SynologyPhotoCollection] = []) -> Bool {
         guard !transferDestinationSpaces(for: photos, copying: copying, folders: folders).isEmpty else { return false }
         if let first = folders.first {
             guard let parent = first.parentID, parent > 0, Set(folders.map(\.id)).count == folders.count,
@@ -2035,7 +2056,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func canRegeneratePreviews(_ photos: [SynologyPhoto], fromPreview: Bool = false) -> Bool {
+    public func canRegeneratePreviews(_ photos: [SynologyPhoto], fromPreview: Bool = false) -> Bool {
         guard !photos.isEmpty, managementFeatures.contains(.previewRegeneration),
               Set(photos.map { $0.id.space }).count <= 1 || canManageSharedSpace else { return false }
         return photos.allSatisfy { photo in
@@ -2051,7 +2072,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func canEditSelection(_ photos: [SynologyPhoto], supportsMixedSpaces: Bool) -> Bool {
+    public func canEditSelection(_ photos: [SynologyPhoto], supportsMixedSpaces: Bool) -> Bool {
         guard !photos.isEmpty, photos.allSatisfy(canEditPhoto) else { return false }
         guard Set(photos.map { $0.id.space }).count > 1 else { return true }
         guard supportsMixedSpaces, canManageSharedSpace else { return false }
@@ -2062,7 +2083,7 @@ final class SynologyPhotosModel {
     }
 
     /// 相册编辑按提供者和来源空间管理资格判断，不扩大原件删除或搬移权限。
-    func canEditPhoto(_ photo: SynologyPhoto) -> Bool {
+    public func canEditPhoto(_ photo: SynologyPhoto) -> Bool {
         guard spaces.contains(photo.id.space) else { return false }
         guard let context = photo.albumContext else { return canModifyOriginal(photo) }
         guard let rights = selectedAlbumAccess, rights.albumID == context.albumID,
@@ -2104,7 +2125,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func automaticPreviewSetting() async throws -> Bool { try await service().automaticPreviewEnabled() }
+    public func automaticPreviewSetting() async throws -> Bool { try await service().automaticPreviewEnabled() }
     private func submitBackgroundTaskMutation(_ mutation: SynologyPhotosMutation) {
         guard isModuleEnabled, canSubmit(mutation), !isManagingBackgroundTask, pendingBackgroundMutationID == nil,
               !isDeleting, !isCheckingDeletion else { return }
@@ -2130,7 +2151,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func reviewBackgroundMutation() {
+    public func reviewBackgroundMutation() {
         guard isModuleEnabled, !isManagingBackgroundTask, let id = pendingBackgroundMutationID else { return }
         isManagingBackgroundTask = true
         backgroundControlTask = Task { [weak self] in
@@ -2167,14 +2188,14 @@ final class SynologyPhotosModel {
         if pendingMutation?.feature == .fileTransfer, !isManaging { reviewPendingMutation() }
     }
 
-    func backgroundTasks() async throws -> [SynologyPhotoBackgroundTask] {
+    public func backgroundTasks() async throws -> [SynologyPhotoBackgroundTask] {
         guard isModuleEnabled else { throw CancellationError() }
         let result = try await service().backgroundTasks()
         guard isModuleEnabled, !Task.isCancelled else { throw CancellationError() }
         return result
     }
 
-    func backgroundTaskErrors(_ task: SynologyPhotoBackgroundTask) async throws -> [SynologyPhotoBackgroundTaskError] {
+    public func backgroundTaskErrors(_ task: SynologyPhotoBackgroundTask) async throws -> [SynologyPhotoBackgroundTaskError] {
         guard isModuleEnabled else { throw CancellationError() }
         let result = try await service().backgroundTaskErrors(task)
         guard isModuleEnabled, !Task.isCancelled else { throw CancellationError() }
@@ -2182,7 +2203,7 @@ final class SynologyPhotosModel {
     }
 
     @discardableResult
-    func openBackgroundTask(_ task: SynologyPhotoBackgroundTask) async -> Bool {
+    public func openBackgroundTask(_ task: SynologyPhotoBackgroundTask) async -> Bool {
         guard isModuleEnabled, !isLoading, !isDeleting, !isCheckingDeletion, !isBrowsingBlocked,
               !isOpeningBackgroundDestination, let space = task.targetSpace, spaces.contains(space),
               let id = task.targetFolderID, id > 0 else { return false }
@@ -2225,15 +2246,15 @@ final class SynologyPhotosModel {
         }
     }
 
-    func codecPrompt() async throws -> SynologyPhotoCodecPrompt { try await service().codecPrompt() }
+    public func codecPrompt() async throws -> SynologyPhotoCodecPrompt { try await service().codecPrompt() }
 
-    func libraryMaintenanceStatus(in space: SynologyPhotoSpace) async throws -> SynologyPhotoLibraryMaintenanceStatus {
+    public func libraryMaintenanceStatus(in space: SynologyPhotoSpace) async throws -> SynologyPhotoLibraryMaintenanceStatus {
         try await service().libraryMaintenanceStatus(in: space)
     }
 
-    func globalSettings() async throws -> SynologyPhotoGlobalSettings { try await service().globalSettings() }
-    func conversionCache() async throws -> SynologyPhotoConversionCache { try await service().conversionCache() }
-    var automaticMutationReviewID: UUID? {
+    public func globalSettings() async throws -> SynologyPhotoGlobalSettings { try await service().globalSettings() }
+    public func conversionCache() async throws -> SynologyPhotoConversionCache { try await service().conversionCache() }
+    public var automaticMutationReviewID: UUID? {
         guard let mutation = pendingMutation else { return nil }
         switch mutation {
         case .createAlbum, .shareAlbum, .createFolder, .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum: return pendingMutationID
@@ -2255,19 +2276,19 @@ final class SynologyPhotosModel {
         return L10n.string(automaticMutationReviewID == nil ? "photos.manage.pending" : "photos.global.pending")
     }
 
-    func sharedSpaceMembers() async throws -> SynologyPhotoSharedMembers { try await service().sharedSpaceMembers() }
-    func sharedSpaceMemberCandidates() async throws -> [SynologyPhotoShareRecipient] { try await service().sharedSpaceMemberCandidates() }
-    func sharedSpaceMemberFolderSnapshot(for member: SynologyPhotoShareRecipient.ID) async throws -> [SynologyPhotoMemberFolder] {
+    public func sharedSpaceMembers() async throws -> SynologyPhotoSharedMembers { try await service().sharedSpaceMembers() }
+    public func sharedSpaceMemberCandidates() async throws -> [SynologyPhotoShareRecipient] { try await service().sharedSpaceMemberCandidates() }
+    public func sharedSpaceMemberFolderSnapshot(for member: SynologyPhotoShareRecipient.ID) async throws -> [SynologyPhotoMemberFolder] {
         try await service().sharedSpaceMemberFolderSnapshot(for: member)
     }
 
-    func sharedSpaceSettings() async throws -> SynologyPhotoSharedSpaceSettings { try await service().sharedSpaceSettings() }
+    public func sharedSpaceSettings() async throws -> SynologyPhotoSharedSpaceSettings { try await service().sharedSpaceSettings() }
 
-    func recognitionSettings() async throws -> SynologyPhotoRecognitionSettings { try await service().recognitionSettings() }
+    public func recognitionSettings() async throws -> SynologyPhotoRecognitionSettings { try await service().recognitionSettings() }
 
-    func displaySettings() async throws -> SynologyPhotoDisplaySettings { try await service().displaySettings() }
+    public func displaySettings() async throws -> SynologyPhotoDisplaySettings { try await service().displaySettings() }
 
-    func formattedPhotoDate(_ date: Date, includesTime: Bool = false, group: Bool = false) -> String {
+    public func formattedPhotoDate(_ date: Date, includesTime: Bool = false, group: Bool = false) -> String {
         guard let preferences = displayPreferences else {
             return includesTime ? date.formatted(.dateTime.locale(L10n.locale)) : date.formatted(.dateTime.year().month().day().locale(L10n.locale))
         }
@@ -2279,7 +2300,7 @@ final class SynologyPhotosModel {
         return formatter.string(from: date)
     }
 
-    func duplicateSettings() async throws -> SynologyPhotoDuplicateSettings { try await service().duplicateSettings() }
+    public func duplicateSettings() async throws -> SynologyPhotoDuplicateSettings { try await service().duplicateSettings() }
 
     private func canSubmit(_ mutation: SynologyPhotosMutation) -> Bool {
         switch mutation {
@@ -2335,22 +2356,19 @@ final class SynologyPhotosModel {
         }
     }
 
-    #if os(macOS)
-    func configureUploadRecovery(_ store: PhotoUploadRecoveryStore?) {
+    public func configureUploadRecovery(_ store: PhotoUploadRecoveryStore?) {
         precondition(!hasLoaded && uploadQueue.isEmpty)
         uploadRecoveryStore = store
         uploadRecoveryReady = store == nil
     }
-    #endif
 
     private func restoreUploadQueueIfNeeded(repository: any SynologyPhotosServing) async {
-        #if os(macOS)
         guard !uploadRecoveryReady, let store = uploadRecoveryStore else { return }
         do {
             let identity = try await repository.uploadRecoveryIdentity()
             if let saved = try store.load() {
                 guard saved.identity == identity else { throw CocoaError(.fileReadNoPermission) }
-                let entries = try saved.entries.map { try $0.restore() }
+                let entries = try store.restoredEntries(from: saved)
                 if let checkpoint = saved.checkpoint { try await repository.restoreUploadMutation(checkpoint) }
                 uploadQueue = entries
                 uploadDirectories = Dictionary(uniqueKeysWithValues: saved.directories.map { ($0.key, $0.folder.collection) })
@@ -2365,18 +2383,15 @@ final class SynologyPhotosModel {
             }
             uploadRecoveryIdentity = identity; uploadRecoveryReady = true; uploadPersistenceError = nil
         } catch { uploadPersistenceError = L10n.string("photos.upload.recovery.readFailed") }
-        #endif
     }
 
     private func saveUploadQueue() throws {
-        #if os(macOS)
         guard let store = uploadRecoveryStore else { return }
         guard uploadRecoveryReady, let identity = uploadRecoveryIdentity else { throw CocoaError(.fileReadNoPermission) }
         try store.save(identity: identity, entries: uploadQueue,
             directories: uploadDirectories.map { .init(key: $0.key, folder: .init($0.value)) },
             pendingEntryID: pendingUploadID, pendingDirectory: pendingUploadDirectory,
             pendingOperationID: pendingUploadID == nil ? nil : pendingMutationID)
-        #endif
     }
 
     @discardableResult
@@ -2389,12 +2404,12 @@ final class SynologyPhotosModel {
         }
     }
 
-    var canResumeUploads: Bool {
+    public var canResumeUploads: Bool {
         uploadRecoveryReady && uploadPersistenceError == nil && !isManaging && pendingMutationID == nil &&
         uploadQueue.contains { [.cancelled, .queued].contains($0.state) && ($0.uploadedPhoto != nil || !$0.file.requiresSourceSelection) }
     }
 
-    func resumeUploads() {
+    public func resumeUploads() {
         guard isModuleEnabled, canResumeUploads, !isDeleting, !isCheckingDeletion else { return }
         for row in uploadQueue.indices where [.cancelled, .queued].contains(uploadQueue[row].state) &&
             (uploadQueue[row].uploadedPhoto != nil || !uploadQueue[row].file.requiresSourceSelection) {
@@ -2405,7 +2420,7 @@ final class SynologyPhotosModel {
     }
 
     /// 用户在 NAS 核对后只移除本机记录，不把未知结果当成失败，也不重试上传。
-    func clearUnresolvedUploadAfterChecking(_ id: UUID) async {
+    public func clearUnresolvedUploadAfterChecking(_ id: UUID) async {
         guard isModuleEnabled, !isManaging, pendingUploadID == id, let operationID = pendingMutationID else { return }
         isManaging = true
         defer { isManaging = false }
@@ -2418,14 +2433,14 @@ final class SynologyPhotosModel {
         } catch { managementMessage = L10n.string("photos.manage.pending") }
     }
 
-    func retryUploadPersistence() async {
+    public func retryUploadPersistence() async {
         guard !isManaging else { return }
         if !uploadRecoveryReady {
             if let repository = try? service() { await restoreUploadQueueIfNeeded(repository: repository) }
         } else { persistUploadQueue() }
     }
 
-    func reselectUploadSource(_ id: UUID, url: URL) {
+    public func reselectUploadSource(_ id: UUID, url: URL) {
         guard !isManaging, pendingMutationID == nil, let row = uploadQueue.firstIndex(where: { $0.id == id }),
               [.failed, .cancelled].contains(uploadQueue[row].state), uploadQueue[row].uploadedPhoto == nil else { return }
         do {
@@ -2435,15 +2450,13 @@ final class SynologyPhotosModel {
                   file.url.lastPathComponent == old.url.lastPathComponent,
                   file.size == old.size, file.modifiedAt == old.modifiedAt else { throw CocoaError(.fileReadCorruptFile) }
             file.id = old.id; file.directoryComponents = old.directoryComponents
-            #if os(macOS)
-            file.recoveryBookmark = try url.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess], includingResourceValuesForKeys: nil, relativeTo: nil)
-            #endif
+            file.recoveryBookmark = try uploadRecoveryStore?.sourceBookmark(for: url)
             uploadQueue[row].file = file; uploadQueue[row].error = nil
             persistUploadQueue()
         } catch { uploadQueue[row].error = L10n.string("photos.upload.recovery.sourceChanged") }
     }
 
-    func enqueueUploads(_ files: [PhotoUploadFile], album: SynologyPhotoCollection?, folder: SynologyPhotoCollection?, preserveDirectories: Bool = false, space: SynologyPhotoSpace? = nil, duplicate: SynologyPhotoDuplicateSettings.Upload = .rename) {
+    public func enqueueUploads(_ files: [PhotoUploadFile], album: SynologyPhotoCollection?, folder: SynologyPhotoCollection?, preserveDirectories: Bool = false, space: SynologyPhotoSpace? = nil, duplicate: SynologyPhotoDuplicateSettings.Upload = .rename) {
         let destination = space ?? selectedSpace
         let direct = uploadsDirectlyToAlbum(album, space: destination)
         let albumAllowed = album.map { $0.acceptsManualMembers && (selectedAlbumAccess?.albumID == $0.id ? selectedAlbumAccess?.canContribute == true : selectedAlbum == nil && managementFeatures.contains(.albums)) } ?? true
@@ -2462,7 +2475,7 @@ final class SynologyPhotosModel {
         startUploadQueue()
     }
 
-    func stopUploadQueue() {
+    public func stopUploadQueue() {
         stopsAfterCurrentUpload = true
         for index in uploadQueue.indices where uploadQueue[index].state == .queued {
             uploadQueue[index].state = .cancelled
@@ -2470,7 +2483,7 @@ final class SynologyPhotosModel {
         persistUploadQueue()
     }
 
-    func retryUpload(_ id: UUID) {
+    public func retryUpload(_ id: UUID) {
         guard isModuleEnabled, uploadRecoveryReady, uploadPersistenceError == nil, !isManaging, !isDeleting, !isCheckingDeletion, pendingMutationID == nil,
               let index = uploadQueue.firstIndex(where: { $0.id == id }),
               [.failed, .cancelled].contains(uploadQueue[index].state),
@@ -2481,30 +2494,30 @@ final class SynologyPhotosModel {
         startUploadQueue()
     }
 
-    func canCancelUpload(_ id: UUID) -> Bool {
+    public func canCancelUpload(_ id: UUID) -> Bool {
         uploadQueue.contains { $0.id == id && $0.state == .queued } && pendingUploadID != id
     }
 
-    func cancelUpload(_ id: UUID) {
+    public func cancelUpload(_ id: UUID) {
         guard canCancelUpload(id), let index = uploadQueue.firstIndex(where: { $0.id == id }) else { return }
         uploadQueue[index].state = .cancelled
         persistUploadQueue()
     }
 
-    func canClearUpload(_ id: UUID) -> Bool {
+    public func canClearUpload(_ id: UUID) -> Bool {
         uploadQueue.contains { $0.id == id && [.completed, .skipped, .failed, .cancelled].contains($0.state) } && pendingUploadID != id
     }
 
     /// 仅移除本机任务记录；在途和结果未明的操作必须保留，以便继续核对。
-    func clearUpload(_ id: UUID) {
+    public func clearUpload(_ id: UUID) {
         guard canClearUpload(id) else { return }
         uploadQueue.removeAll { $0.id == id }
         pruneUploadDirectories()
     }
 
-    enum UploadDestination { case folder, album }
+    public enum UploadDestination { case folder, album }
 
-    func canOpenUpload(_ id: UUID, destination: UploadDestination) -> Bool {
+    public func canOpenUpload(_ id: UUID, destination: UploadDestination) -> Bool {
         guard let entry = uploadQueue.first(where: { $0.id == id }), let photo = entry.uploadedPhoto,
               [.completed, .skipped, .failed, .cancelled].contains(entry.state) else { return false }
         switch destination {
@@ -2514,7 +2527,7 @@ final class SynologyPhotosModel {
     }
 
     @discardableResult
-    func openUpload(_ id: UUID, destination: UploadDestination) async -> Bool {
+    public func openUpload(_ id: UUID, destination: UploadDestination) async -> Bool {
         guard isModuleEnabled, !isLoading, !isDeleting, !isCheckingDeletion, !isBrowsingBlocked,
               !isOpeningUploadDestination, canOpenUpload(id, destination: destination),
               let entry = uploadQueue.first(where: { $0.id == id }) else { return false }
@@ -2566,7 +2579,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func clearFinishedUploads() {
+    public func clearFinishedUploads() {
         uploadQueue.removeAll { [.completed, .skipped, .cancelled].contains($0.state) }
         pruneUploadDirectories()
     }
@@ -2719,7 +2732,7 @@ final class SynologyPhotosModel {
         return true
     }
 
-    func reviewPendingMutation() {
+    public func reviewPendingMutation() {
         if hasPendingAutomaticPreview { Task { await processAutomaticPreview(now: max(Date(), nextAutomaticReviewAt)) }; return }
         guard let id = pendingMutationID, let mutation = pendingMutation, !isManaging, isModuleEnabled else { return }
         isManaging = true
@@ -3202,7 +3215,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func retryAlbumRefresh() async {
+    public func retryAlbumRefresh() async {
         guard needsAlbumRefresh, !isManaging, let service = try? service() else { return }
         isManaging = true
         defer { isManaging = false }
@@ -3256,15 +3269,15 @@ final class SynologyPhotosModel {
         if let preview = previewPhoto, ids.contains(preview.id) { closePreview() }
     }
 
-    func saveSelection(to directory: URL, format: SynologyPhotoDownloadFormat = .original) {
+    public func saveSelection(to directory: URL, format: SynologyPhotoDownloadFormat = .original) {
         savePhotos(selectedPhotos, to: directory, format: format, includingSimilarMembers: selectedCategory == .similar)
     }
 
-    func canDownloadOriginalSizeJPEG(_ photo: SynologyPhoto) -> Bool {
+    public func canDownloadOriginalSizeJPEG(_ photo: SynologyPhoto) -> Bool {
         supportsOriginalSizeJPEG && photo.supportsOriginalSizeJPEG && canDownload(photo)
     }
 
-    func savePhotos(_ requested: [SynologyPhoto], to directory: URL, format: SynologyPhotoDownloadFormat, includingSimilarMembers: Bool = false) {
+    public func savePhotos(_ requested: [SynologyPhoto], to directory: URL, format: SynologyPhotoDownloadFormat, includingSimilarMembers: Bool = false) {
         let targets = requested
         guard isModuleEnabled, !isSaving, !targets.isEmpty, targets.allSatisfy(canDownload) else { return }
         if format == .originalSizeJPEG {
@@ -3436,19 +3449,19 @@ final class SynologyPhotosModel {
         return error.safeUserMessage
     }
 
-    private(set) var selectedFolderIDs: Set<Int> = []
-    var selectedFolders: [SynologyPhotoCollection] {
+    public private(set) var selectedFolderIDs: Set<Int> = []
+    public var selectedFolders: [SynologyPhotoCollection] {
         section == .folders ? collections.filter { $0.space == selectedSpace && selectedFolderIDs.contains($0.id) } : []
     }
-    var selectedItemCount: Int { selectedPhotoIDs.count + selectedFolderIDs.count }
+    public var selectedItemCount: Int { selectedPhotoIDs.count + selectedFolderIDs.count }
 
-    func toggleFolderSelection(_ folder: SynologyPhotoCollection) {
+    public func toggleFolderSelection(_ folder: SynologyPhotoCollection) {
         guard section == .folders, !isDeleting, !isManaging, collections.contains(folder), folder.space == selectedSpace else { return }
         isSelecting = true
         if !selectedFolderIDs.insert(folder.id).inserted { selectedFolderIDs.remove(folder.id) }
     }
 
-    func selectLoadedItems() {
+    public func selectLoadedItems() {
         guard !isDeleting, !isManaging else { return }
         guard section == .folders else { selectGroup(items); return }
         let photoIDs = Set(items.map(\.id)), folderIDs = Set(collections.map(\.id))
@@ -3460,12 +3473,12 @@ final class SynologyPhotosModel {
         }
     }
 
-    var selectedPhotos: [SynologyPhoto] { items.filter { selectedPhotoIDs.contains($0.id) } }
-    var canDeleteSelection: Bool {
+    public var selectedPhotos: [SynologyPhoto] { items.filter { selectedPhotoIDs.contains($0.id) } }
+    public var canDeleteSelection: Bool {
         selectedItemCount > 0 && (selectedFolderIDs.isEmpty || managementFeatures.contains(.folderDeletion)) && selectedPhotos.allSatisfy(canModifyOriginal) && !isDeleting && !isCheckingDeletion && !isManaging && pendingMutationID == nil && pendingDeletionPhotos.isEmpty
     }
 
-    func toggleSelection(_ photo: SynologyPhoto, extending: Bool = false) {
+    public func toggleSelection(_ photo: SynologyPhoto, extending: Bool = false) {
         guard !isDeleting, !isBrowsingBlocked, items.contains(where: { $0.id == photo.id }) else { return }
         isSelecting = true
         if extending, let anchor = selectionAnchorID,
@@ -3478,7 +3491,7 @@ final class SynologyPhotosModel {
         }
     }
 
-    func selectGroup(_ photos: [SynologyPhoto]) {
+    public func selectGroup(_ photos: [SynologyPhoto]) {
         guard !isDeleting, !isBrowsingBlocked else { return }
         let ids = Set(photos.map(\.id)).intersection(Set(items.map(\.id)))
         isSelecting = true
@@ -3486,19 +3499,19 @@ final class SynologyPhotosModel {
         else { selectedPhotoIDs.formUnion(ids) }
     }
 
-    func clearSelection() {
+    public func clearSelection() {
         selectedPhotoIDs = []; selectedFolderIDs = []; selectionAnchorID = nil; isSelecting = false
     }
 
-    func requestDeletion(_ photo: SynologyPhoto) { requestDeletion([photo]) }
+    public func requestDeletion(_ photo: SynologyPhoto) { requestDeletion([photo]) }
 
-    func requestSimilarCleanup(_ detail: SynologyPhotoSimilarDetail, keeping ids: Set<SynologyPhotoID>) {
+    public func requestSimilarCleanup(_ detail: SynologyPhotoSimilarDetail, keeping ids: Set<SynologyPhotoID>) {
         let members = Set(detail.photos.map { $0.id })
         guard !ids.isEmpty, ids.isSubset(of: members), ids.count < members.count else { return }
         requestDeletion(detail.photos.filter { !ids.contains($0.id) }, verifying: detail)
     }
 
-    func requestDeletion(_ photos: [SynologyPhoto], verifying similar: SynologyPhotoSimilarDetail? = nil) {
+    public func requestDeletion(_ photos: [SynologyPhoto], verifying similar: SynologyPhotoSimilarDetail? = nil) {
         guard isModuleEnabled, !photos.isEmpty, photos.allSatisfy(canModifyOriginal), !isDeleting, !isManaging, !isCheckingDeletion,
               pendingMutationID == nil, pendingDeletionPhotos.isEmpty else { return }
         let targets = photos.reduce(into: [SynologyPhoto]()) { result, photo in
@@ -3534,9 +3547,9 @@ final class SynologyPhotosModel {
         }
     }
 
-    func confirmDeletion(_ photo: SynologyPhoto) { beginDeletion([photo]) }
+    public func confirmDeletion(_ photo: SynologyPhoto) { beginDeletion([photo]) }
 
-    func confirmDeletion(_ photos: [SynologyPhoto]) {
+    public func confirmDeletion(_ photos: [SynologyPhoto]) {
         guard !photos.isEmpty, photos == preparedDeletionPhotos else { return }
         beginDeletion(photos)
     }
@@ -3607,7 +3620,7 @@ final class SynologyPhotosModel {
     }
 
     /// 由图库视图生命周期驱动；长断线后仍只回读结果，不重新提交删除。
-    func continueAutomaticDeletionReview() async {
+    public func continueAutomaticDeletionReview() async {
         let epoch = deletionReviewEpoch
         while hasAutomaticDeletionReview, !Task.isCancelled, epoch == deletionReviewEpoch {
             do { try await deletionReviewDelay(15) } catch { return }
@@ -3643,7 +3656,7 @@ final class SynologyPhotosModel {
         return completed
     }
 
-    func reviewPendingDeletion() async {
+    public func reviewPendingDeletion() async {
         guard isModuleEnabled, !isDeleting, !isManaging, !pendingDeletionPhotos.isEmpty else { return }
         isDeleting = true
         generation += 1
@@ -3667,7 +3680,7 @@ final class SynologyPhotosModel {
     }
 
     /// 删除结果与分组刷新分开：这里只回读，失败不能重新删除或刷新整本图库。
-    func refreshAffectedSimilarGroups() async {
+    public func refreshAffectedSimilarGroups() async {
         similarRefreshError = nil
         let current = generation
         for (group, position) in similarRefreshes.sorted(by: { $0.value.index < $1.value.index }) {

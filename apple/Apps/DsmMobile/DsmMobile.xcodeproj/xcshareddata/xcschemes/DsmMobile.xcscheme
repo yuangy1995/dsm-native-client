@@ -35,6 +35,20 @@
                ReferencedContainer = "container:DsmMobile.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "E4FB91AC64A8C1378C79FD49"
+               BuildableName = "DsmMobileUITests.xctest"
+               BlueprintName = "DsmMobileUITests"
+               ReferencedContainer = "container:DsmMobile.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -61,6 +75,17 @@
                BlueprintIdentifier = "10BED25D17BD589395B495C7"
                BuildableName = "DsmMobileTests.xctest"
                BlueprintName = "DsmMobileTests"
+               ReferencedContainer = "container:DsmMobile.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "E4FB91AC64A8C1378C79FD49"
+               BuildableName = "DsmMobileUITests.xctest"
+               BlueprintName = "DsmMobileUITests"
                ReferencedContainer = "container:DsmMobile.xcodeproj">
             </BuildableReference>
          </TestableReference>

@@ -4,7 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct MobileDownloadsView: View {
-    @Bindable var model: MobileAppModel
+    @Bindable var model: MobileDownloadsModel
     @State private var selectedTask: DownloadStationTask?
     @State private var isShowingCreateTask = false
     @State private var isShowingBTSearch = false
@@ -196,7 +196,7 @@ private struct MobileDownloadActivitySummaryView: View {
 }
 
 private struct MobileDownloadCreateTaskView: View {
-    @Bindable var model: MobileAppModel
+    @Bindable var model: MobileDownloadsModel
     @Environment(\.dismiss) private var dismiss
     @State private var uri = ""
 
@@ -289,7 +289,7 @@ private struct MobileDownloadCreateTaskView: View {
 }
 
 private struct DownloadCreateFeedbackView: View {
-    @Bindable var model: MobileAppModel
+    @Bindable var model: MobileDownloadsModel
     let feedback: MobileDownloadCreateFeedback
 
     var body: some View {
@@ -361,7 +361,7 @@ private struct DownloadTaskRow: View {
 }
 
 private struct MobileDownloadTaskDetailView: View {
-    @Bindable var model: MobileAppModel
+    @Bindable var model: MobileDownloadsModel
     let initialTask: DownloadStationTask
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingDelete = false
@@ -534,7 +534,7 @@ private struct MobileDownloadTaskDetailView: View {
 }
 
 private struct DownloadControlFeedbackView: View {
-    @Bindable var model: MobileAppModel
+    @Bindable var model: MobileDownloadsModel
     let feedback: MobileDownloadControlFeedback
 
     var body: some View {
@@ -571,7 +571,7 @@ private struct DownloadControlFeedbackView: View {
 }
 
 private struct DownloadDeleteFeedbackView: View {
-    @Bindable var model: MobileAppModel
+    @Bindable var model: MobileDownloadsModel
     let feedback: MobileDownloadDeleteFeedback
 
     var body: some View {

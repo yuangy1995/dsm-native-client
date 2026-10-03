@@ -50,7 +50,7 @@
 "ui.2cd0f3be8738a86c" = "Cancel";
 "ui.2f9daa828907b93f" = "Delete";
 "ui.307e0c332a164ea1" = "Trying to connect directly to the external network...";
-"ui.311bb313fdeca6aa" = "Account number";
+"ui.311bb313fdeca6aa" = "Username";
 "ui.322408c53beda26b" = "Model";
 "ui.36517d179e0f88a8" = "Reading directory…";
 "ui.36b7dfe53cf9b5df" = "Processing operation";
@@ -122,7 +122,7 @@
 "ui.77a666ac48251d37" = "Please enter your password to log in again.";
 "ui.77fa57e99556ca33" = "Directory is empty";
 "ui.79f326be4409d51f" = "Project";
-"ui.7a8a11ead50742a2" = "add";
+"ui.7a8a11ead50742a2" = "Add";
 "ui.7ac5626d1ad8df4e" = "No photo found";
 "ui.7b50017ae47eca32" = "photos";
 "ui.7c7802d8adaed72e" = "folder";
@@ -172,11 +172,11 @@
 "ui.a380c90e47459d56" = "Cross-NAS move completed.";
 "ui.a3e47aadd86c332b" = "Private chat";
 "ui.a50211f01216a878" = "Checking NAS…";
-"ui.a5574109f0208e89" = "connect";
+"ui.a5574109f0208e89" = "Connect";
 "ui.a621ab606db2a11f" = "Password";
 "ui.a6d2451928165b24" = "Continue to update";
 "ui.a8b7a4480407ac8a" = "warning";
-"ui.a98585871c5313ff" = "display name";
+"ui.a98585871c5313ff" = "Display name";
 "ui.aa0582cad267718e" = "Looking for NAS via QuickConnect…";
 "ui.aa35f61b37346876" = "Download task has been created";
 "ui.aa7162688ec2a974" = "Network deleted";
@@ -201,7 +201,7 @@
 "ui.b505f2e67d2915cf" = "Set reminder";
 "ui.b5141d3d19e9a048" = "Yes";
 "ui.b66975fbd35fa85d" = "Encrypted";
-"ui.b7a6112dd90ce389" = "Passwords are protected by system keychain security.";
+"ui.b7a6112dd90ce389" = "Saved passwords are protected on this device.";
 "ui.b7b405d8cf32c2de" = "No user to select";
 "ui.ba35dc23b245e61e" = "recycle bin";
 "ui.ba380b79ff47c4c2" = "storage pool";

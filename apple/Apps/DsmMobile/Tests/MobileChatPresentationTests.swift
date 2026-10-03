@@ -272,7 +272,7 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(workspace.contains("chatModel.deactivate()"))
         XCTAssertTrue(session.contains("func clearWorkspace()"))
         XCTAssertTrue(session.contains("chatModel.deactivate()"))
-        XCTAssertTrue(appModel.contains("activeProfile?.id != oldValue?.id"))
+        XCTAssertTrue(appModel.contains("activeProfile.map(MobileWorkspaceIdentity.init) != oldValue.map(MobileWorkspaceIdentity.init)"))
         XCTAssertTrue(workspaceView.contains("if module != .chat"))
         XCTAssertTrue(session.contains("chatModel.purge(profileID: profile.id)"))
         XCTAssertTrue(session.contains("chatModel.purge(profileID: profileID)"))

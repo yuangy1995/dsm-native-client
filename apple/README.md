@@ -1,28 +1,27 @@
 <!-- doc-role: platform-readme -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-10-04 -->
 
 # Apple 原生客户端
 
 Apple 客户端使用 Swift、SwiftUI 和 Swift Package Manager：macOS 作为业务语义与安全行为
-基准，iPhone/iPad 共享移动工程但只交付各自明确的核心或受限范围。
+基准，iPhone/iPad 按已确认的 M0→M8 共享业务、保持各自原生布局。当前实现与目标范围见移动主计划，不能互相替代。
 
 ```text
-Apps/DsmMac/                   macOS 原生应用（只读参考实现）
+Apps/DsmMac/                   macOS 原生应用（业务参考；必要共享引用获授权调整）
 Apps/DsmMobile/                iPhone/iPad 通用 SwiftUI 应用
 Packages/DsmCore/              领域模型、错误和 Repository 协议
 Packages/DsmNetwork/           DSM HTTP、会话和参数编码
-Packages/DsmFileFeature/       浏览、详情和预览
-Packages/DsmTransferFeature/   下载、上传、删除和恢复任务
+Packages/DsmPhotosFeature/     共用 Photos 状态机与上传恢复，文件授权由平台适配
+Packages/DsmFileFeature/       文件编排预留目录，当前实现仍在 Core/Network/App
+Packages/DsmTransferFeature/   传输编排预留目录，移动队列在 App 中按阶段完善
 ```
 
 ## 修改边界
 
-- `apple/Apps/DsmMac/**` 是只读范围。需要修改 Workspace、NAS Administration View 或对应
-  Model 时，必须暂停并取得用户明确授权。
+- 当前移动波次已获得必要共享逻辑提取及 macOS 引用调整授权；Mac 用户行为与数据格式保持兼容并运行回归。其余桌面改动仍遵循项目授权边界。
 - `apple/Packages/**` 可以做向后兼容的增量拆分；必须保持 actor、公有协议、会话、错误
   类型和 macOS 回归行为。
-- iPhone/iPad 不复制 macOS 菜单栏、悬停、右键、常驻进程或复杂运维流程；移动能力以
-  [平台功能矩阵](../docs/progress/PLATFORM_MATRIX.md) 的核心/受限范围为准。
+- iPhone/iPad 不复制菜单栏、悬停、右键或常驻进程；管理功能采用分步表单。范围与证据分别见[平台矩阵](../docs/progress/PLATFORM_MATRIX.md)及移动主计划。
 
 ## 本地验证
 

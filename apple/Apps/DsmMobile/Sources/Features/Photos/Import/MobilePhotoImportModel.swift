@@ -61,7 +61,7 @@ final class MobilePhotoImportModel {
                 ) else { return }
                 let taskID = await controller.handlePickedFile(
                     artifact.url,
-                    context: MobileDocumentPickerContext(
+                    context: MobileDocumentPickerContext(contextID: controller.contextID,
                         profileID: destination.profileID,
                         folderPath: destination.folderPath,
                         intent: .upload

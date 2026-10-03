@@ -82,6 +82,7 @@ struct MobileWorkspaceView: View {
                     } label: {
                         Label(destination.title, systemImage: destination.systemImage)
                     }
+                    .accessibilityIdentifier("mobile.navigation.\(destination.rawValue)")
                     .foregroundStyle(model.selectedTopLevel == destination ? .blue : .primary)
                     .accessibilityAddTraits(model.selectedTopLevel == destination ? .isSelected : [])
                 }
@@ -108,6 +109,7 @@ struct MobileWorkspaceView: View {
         }
         .tabItem {
             Label(destination.title, systemImage: destination.systemImage)
+                .accessibilityIdentifier("mobile.navigation.\(destination.rawValue)")
         }
         .tag(destination)
     }
@@ -120,6 +122,7 @@ struct MobileWorkspaceView: View {
                     moduleDetail(module)
                         .navigationTitle(module.title)
                         .navigationBarTitleDisplayMode(.inline)
+                        .onAppear { model.selectModule(module) }
                 }
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -129,6 +132,7 @@ struct MobileWorkspaceView: View {
         }
         .tabItem {
             Label(destination.title, systemImage: destination.systemImage)
+                .accessibilityIdentifier("mobile.navigation.\(destination.rawValue)")
         }
         .tag(destination)
     }
@@ -146,8 +150,10 @@ struct MobileWorkspaceView: View {
                     .navigationDestination(for: MobileModule.self) { module in
                         moduleDetail(module)
                             .navigationTitle(module.title)
+                            .onAppear { model.selectModule(module) }
                     }
             }
+            .id(destination)
         }
     }
 
@@ -157,9 +163,8 @@ struct MobileWorkspaceView: View {
                 NavigationLink(value: module) {
                     Label(module.title, systemImage: module.systemImage)
                 }
-                .simultaneousGesture(TapGesture().onEnded {
-                    model.selectModule(module)
-                })
+                .accessibilityIdentifier("mobile.module.\(module.rawValue)")
+
             }
         }
     }
@@ -233,7 +238,7 @@ struct MobileWorkspaceView: View {
             case .chat:
                 MobileChatView(model: model)
             case .downloads:
-                MobileDownloadsView(model: model)
+                MobileDownloadsView(model: model.downloads)
             case .containers:
                 MobileContainersView(inventory: model.containerInventoryModel)
             case .virtualMachines:
