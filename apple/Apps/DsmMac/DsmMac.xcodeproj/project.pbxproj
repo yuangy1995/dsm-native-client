@@ -52,7 +52,6 @@
 		836B31D0C4FF095E4FC1EFCF /* PhotoFolderDestinationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */; };
 		83D0BC284CA9C38A297A70BF /* MacFilePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9665B8659CF3AEC71209382 /* MacFilePresentation.swift */; };
 		841D608F0BAF7C2CEC96234A /* DsmNetwork in Frameworks */ = {isa = PBXBuildFile; productRef = 3B2A8675E12B02AFDAD476A1 /* DsmNetwork */; };
-		898C87ADDC1ECC668D3E94FC /* FileArchiveBrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97AE28664180F1C490CFEBB9 /* FileArchiveBrowserModel.swift */; };
 		89BA1323D0D84BB246D213BA /* DsmLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = DD19F00B3A61C5DB02ADB503 /* DsmLocalization */; };
 		9728A7945A860E79C3166107 /* ProviderOperationRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AEB908BC08B01E03B6B4BC6 /* ProviderOperationRegistry.swift */; };
 		9B3EFFB8C8D9612E2180DE97 /* RemoteMountRecoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3879993A5ED04BE900402F59 /* RemoteMountRecoveryView.swift */; };
@@ -170,7 +169,6 @@
 		903CFF29712CF8E5FC9DAB8F /* AppIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = AppIcon.png; sourceTree = "<group>"; };
 		90BA11590C411CC95F58F85C /* FileStationBandwidthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationBandwidthView.swift; sourceTree = "<group>"; };
 		95BEAF224CE41E06152FECD6 /* ProviderErrorMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderErrorMapper.swift; sourceTree = "<group>"; };
-		97AE28664180F1C490CFEBB9 /* FileArchiveBrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileArchiveBrowserModel.swift; sourceTree = "<group>"; };
 		9C86C1E7AC50E2616225F51D /* apple */ = {isa = PBXFileReference; lastKnownFileType = folder; name = apple; path = ../..; sourceTree = SOURCE_ROOT; };
 		9D89D62711D2351506A6E681 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		9E40BD82223C91C25D32C0C1 /* FileAdvancedSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAdvancedSearchView.swift; sourceTree = "<group>"; };
@@ -281,7 +279,6 @@
 				5DAD2EBEC5B471DB87A73E25 /* DesktopDriveWritebackSettingsSheet.swift */,
 				46A9227A5E05161F8B71FDF4 /* DsmMacApp.swift */,
 				9E40BD82223C91C25D32C0C1 /* FileAdvancedSearchView.swift */,
-				97AE28664180F1C490CFEBB9 /* FileArchiveBrowserModel.swift */,
 				1F06210A92C55890615D9D36 /* FileBackgroundTaskActions.swift */,
 				5A126F343F524361735CE974 /* FileISOMountView.swift */,
 				20D1575DF13DD10E0CD1EC3A /* FileLocationPicker.swift */,
@@ -501,7 +498,6 @@
 				39387DA256CFC2EDB2736FE9 /* DesktopDriveWritebackSettingsSheet.swift in Sources */,
 				3FCADE45FE1B6CE377E360BA /* DsmMacApp.swift in Sources */,
 				2D18591BF21FB97FE8F7010F /* FileAdvancedSearchView.swift in Sources */,
-				898C87ADDC1ECC668D3E94FC /* FileArchiveBrowserModel.swift in Sources */,
 				3676E27ABA39476E47068AE4 /* FileBackgroundTaskActions.swift in Sources */,
 				FF15A4ABFAC09F2D2B9AA774 /* FileISOMountView.swift in Sources */,
 				6C000BB5EE82DE0A02E6E858 /* FileLocationPicker.swift in Sources */,

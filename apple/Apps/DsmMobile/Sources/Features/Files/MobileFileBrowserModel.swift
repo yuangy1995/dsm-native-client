@@ -210,6 +210,16 @@ final class MobileFileBrowserModel {
     }
 
     /// 只在原 profile、repository 与父目录仍然有效时刷新；该父目录的旧查询缓存一并失效。
+    func refreshAfterArchiveChange(destination: String, repository: any MobileFileBrowsing) async {
+        guard isActive(repository) else { return }
+        let refreshVisible = state.visibleKey?.includesDirectory(destination) == true
+        updateActive { profile in profile.caches = profile.caches.filter { !$0.key.includesDirectory(destination) } }
+        if refreshVisible {
+            cancelRequest()
+            await replaceContent(repository: repository, forceNetwork: true)
+        }
+    }
+
     func refreshAfterConfirmedMutation(
         _ success: MobileFileItemMutationSuccess,
         repository: any MobileFileBrowsing

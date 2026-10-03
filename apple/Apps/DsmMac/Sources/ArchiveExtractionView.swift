@@ -1,4 +1,5 @@
 import DsmCore
+import DsmFileFeature
 import DsmLocalization
 import SwiftUI
 

@@ -1,3 +1,4 @@
+import DsmCore
 import DsmLocalization
 import SwiftUI
 
@@ -11,13 +12,11 @@ struct MobileActivityView: View {
     @State private var isLoading = true
     @State private var hasError = false
     @State private var hasRecoveryFailure = false
-    @State private var fileActivityModel: MobileFileActivityModel
+    @State private var controlTarget: FileBackgroundTaskSummary?
+    private var fileActivityModel: MobileFileActivityModel { model.fileActivityModel }
 
     init(model: MobileAppModel) {
         self.model = model
-        _fileActivityModel = State(
-            initialValue: MobileFileActivityModel(coordinator: model.transferCoordinator)
-        )
     }
 
     private var visibleTasks: [MobileActivityTask] {
@@ -25,7 +24,12 @@ struct MobileActivityView: View {
     }
 
     private var state: MobileActivityPresentationState {
-        if !model.fileUploadQueue.batches.isEmpty || model.fileUploadQueue.recoveryError != nil { return .content }
+        if model.fileArchiveQueue.recoveryError != nil || model.fileUploadQueue.recoveryError != nil { return .content }
+        if !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty {
+            let archivesVisible = model.fileArchiveQueue.records.contains { filter.includes(active: $0.isActive) }
+            let uploadsVisible = model.fileUploadQueue.batches.contains { filter.includes(active: $0.isRunning || $0.isPaused || $0.hasPending) }
+            return archivesVisible || uploadsVisible || !visibleTasks.isEmpty ? .content : .filteredEmpty
+        }
         return .resolve(
             isLoading: isLoading,
             hasError: hasError,
@@ -101,7 +105,7 @@ struct MobileActivityView: View {
                     .font(.callout).padding().frame(maxWidth: .infinity, alignment: .leading)
                     .background(.bar)
             }
-            if !tasks.isEmpty || !model.fileUploadQueue.batches.isEmpty {
+            if !tasks.isEmpty || !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty {
                 filterPicker
             }
         }
@@ -113,9 +117,18 @@ struct MobileActivityView: View {
             }
             await observeCurrentProfile()
         }
-        .onDisappear {
-            fileActivityModel.cancelRefresh()
-        }
+        .onDisappear { fileActivityModel.cancelRefresh() }
+        .alert(L10n.string(controlTarget?.state == .finished ? "files.tasks.clear" : "files.tasks.stop"),
+            isPresented: Binding(get: { controlTarget != nil }, set: { if !$0 { controlTarget = nil } })) {
+                Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) { controlTarget = nil }
+                Button(L10n.string(controlTarget?.state == .finished ? "files.tasks.clear" : "files.tasks.stop"), role: .destructive) {
+                    if let task = controlTarget { Task { await fileActivityModel.control(task); await refresh() } }
+                    controlTarget = nil
+                }
+            } message: {
+                Text(L10n.string(controlTarget?.state == .finished ? "files.tasks.clearNotice" : "files.tasks.stopNotice"))
+            }
+        .onChange(of: activityContext) { _, _ in controlTarget = nil }
     }
 
     private var filterPicker: some View {
@@ -136,11 +149,13 @@ struct MobileActivityView: View {
     private var taskList: some View {
         List {
             fileActivityNotices
+            MobileFileArchiveSections(queue: model.fileArchiveQueue, filter: filter)
             MobileFileUploadSections(queue: model.fileUploadQueue, filter: filter)
             taskSection(source: .app)
             taskSection(source: .nas)
         }
         .listStyle(.insetGrouped)
+        .refreshable { await refreshFileActivity() }
         .fillsAvailableContentArea(alignment: .topLeading)
     }
 
@@ -176,21 +191,8 @@ struct MobileActivityView: View {
                 .frame(minHeight: MobileMetrics.minimumTouchTarget)
             }
         }
-        if fileActivityModel.isTruncated {
-            Section {
-                Label {
-                    VStack(alignment: .leading, spacing: MobileSpacing.compact) {
-                        Text(L10n.string("mobile.activity.nas-truncated-title"))
-                            .font(.headline)
-                        Text(L10n.string("mobile.activity.nas-truncated-message"))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                } icon: {
-                    Image(systemName: "list.bullet.rectangle")
-                }
-                .accessibilityElement(children: .combine)
-            }
+        if let message = fileActivityModel.controlMessage ?? fileActivityModel.recoveryError {
+            Section { Text(message).font(.callout) }
         }
     }
 
@@ -200,12 +202,25 @@ struct MobileActivityView: View {
         if !sourceTasks.isEmpty {
             Section {
                 ForEach(sourceTasks) { task in
-                    MobileActivityTaskRow(
-                        task: task,
-                        usesWideLayout: horizontalSizeClass == .regular,
-                        cancel: { cancel(task.id) },
-                        retry: { retry(task.id) }
-                    )
+                    VStack(alignment: .leading, spacing: 8) {
+                        MobileActivityTaskRow(
+                            task: task,
+                            usesWideLayout: horizontalSizeClass == .regular,
+                            cancel: { cancel(task.id) },
+                            retry: { retry(task.id) }
+                        )
+                        if let snapshot = fileActivityModel.snapshot(for: task) {
+                            if let date = snapshot.createdAt {
+                                Text(date.formatted(.dateTime.year().month().day().hour().minute().second().locale(L10n.locale)))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if fileActivityModel.canControl(snapshot) {
+                                Button(L10n.string(snapshot.state == .finished ? "files.tasks.clear" : "files.tasks.stop"), role: snapshot.state == .finished ? nil : .destructive) {
+                                    controlTarget = snapshot
+                                }.frame(minHeight: 44)
+                            }
+                        }
+                    }
                 }
             } header: {
                 Label(source.title, systemImage: source.systemImage)
@@ -218,7 +233,8 @@ struct MobileActivityView: View {
         hasError = false
         await fileActivityModel.activate(
             profileID: model.activeProfile?.id,
-            repository: model.fileRepository
+            repository: model.fileRepository,
+            context: model.activeProfile.map { MobileWorkspaceIdentity($0).storageIdentifier }
         )
         model.documentTransferController.setActiveProfile(model.activeProfile?.id)
         await refresh()

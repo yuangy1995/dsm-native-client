@@ -12,7 +12,7 @@ enum MobileUIFixture {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
-            let uploadFixture = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] == "upload"
+            let uploadFixture = ["upload", "archive"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -22,6 +22,7 @@ enum MobileUIFixture {
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
             let versions = [DsmAPIName.fileStationList: 2, DsmAPIName.fileStationInfo: 2, DsmAPIName.fileStationSearch: 2,
+                            DsmAPIName.fileStationBackgroundTask: 3, DsmAPIName.fileStationCompress: 3, DsmAPIName.fileStationExtract: 2,
                             DsmAPIName.fileStationUpload: 3, DsmAPIName.fileStationCreateFolder: 2, DsmAPIName.fileStationCheckPermission: 3,
                             DsmAPIName.downloadStationTask: 3, DsmAPIName.downloadStationStatistic: 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
@@ -80,6 +81,8 @@ private actor FixturePasswordStore: PasswordSecureStoring {
 private actor FixtureTransport: DsmBinaryHTTPTransport {
     private let pageState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "content"
     private var uploaded: [String: Bool] = [:]
+    private var stopped = false
+    private var cleared = false
 
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         if pageState == "loading" { try await Task.sleep(for: .seconds(60)) }
@@ -105,13 +108,37 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
             let value = fields.first { $0.name == "path" }?.value ?? "[]"
             let paths = try JSONDecoder().decode([String].self, from: Data(value.utf8))
             result = ["files": paths.compactMap { path -> [String: Any]? in
-                guard path == "/fixture" || uploaded[path] != nil else { return nil }
-                return fixtureItem(path, directory: uploaded[path] ?? true)
+                guard path == "/fixture" || uploaded[path] != nil || pageState == "archive" && path == "/fixture/Sample archive.zip" else { return nil }
+                return fixtureItem(path, directory: uploaded[path] ?? (path == "/fixture"))
             }]
         case (DsmAPIName.fileStationList, "list") where pageState == "upload":
             let path = fields.first { $0.name == "folder_path" }?.value ?? ""
             let children = uploaded.filter { ($0.key as NSString).deletingLastPathComponent == path }
             result = ["files": children.map { fixtureItem($0.key, directory: $0.value) }, "offset": 0, "total": children.count]
+        case (DsmAPIName.fileStationList, "list") where pageState == "archive":
+            let path = fields.first { $0.name == "folder_path" }?.value ?? ""
+            var children = uploaded.filter { ($0.key as NSString).deletingLastPathComponent == path }
+            if path == "/fixture" { children["/fixture/Sample archive.zip"] = false }
+            result = ["files": children.map { fixtureItem($0.key, directory: $0.value) }, "offset": 0, "total": children.count]
+        case (DsmAPIName.fileStationExtract, "list"):
+            result = ["items": [["itemid": 1, "name": "Extracted document.txt", "path": "Extracted document.txt", "is_dir": false, "size": 0]], "total": 1]
+        case (DsmAPIName.fileStationCompress, "start"):
+            guard let destination = fields.first(where: { $0.name == "dest_file_path" })?.value, destination.hasPrefix("/fixture/") else { throw URLError(.unsupportedURL) }
+            uploaded[destination] = false; result = ["taskid": "fixture-compression"]
+        case (DsmAPIName.fileStationExtract, "start"):
+            uploaded["/fixture/Sample archive"] = true
+            uploaded["/fixture/Sample archive/Extracted document.txt"] = false
+            result = ["taskid": "fixture-extraction"]
+        case (DsmAPIName.fileStationCompress, "status"), (DsmAPIName.fileStationExtract, "status"):
+            result = ["finished": true, "progress": 100, "total": 100]
+        case (DsmAPIName.fileStationCompress, "stop"):
+            stopped = true; result = [:]
+        case (DsmAPIName.fileStationBackgroundTask, "clear_finished"):
+            cleared = true; result = [:]
+        case (DsmAPIName.fileStationBackgroundTask, "list"):
+            let tasks: [[String: Any]] = pageState == "archive" && !cleared ? [["taskid": "fixture-background", "api": DsmAPIName.fileStationCompress,
+                "version": 3, "method": "start", "finished": stopped, "progress": 0.5, "crtime": 1_700_000_000]] : []
+            result = ["tasks": tasks, "offset": 0, "total": tasks.count]
         case (DsmAPIName.fileStationList, "list"):
             result = ["files": [["name": "Sample document.txt", "path": "/fixture/Sample document.txt", "isdir": false,
                                   "additional": ["size": 1024, "time": ["mtime": 1_700_000_000]]]], "offset": 0, "total": 1]

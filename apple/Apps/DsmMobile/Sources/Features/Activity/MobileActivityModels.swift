@@ -60,16 +60,16 @@ enum MobileActivityFilter: String, CaseIterable, Equatable, Sendable {
     case inProgress
     case ended
 
-    func includes(_ task: MobileActivityTask) -> Bool {
+    func includes(_ task: MobileActivityTask) -> Bool { includes(active: !task.status.isTerminal) }
+
+    func includes(active: Bool) -> Bool {
         switch self {
-        case .all:
-            true
-        case .inProgress:
-            !task.status.isTerminal
-        case .ended:
-            task.status.isTerminal
+        case .all: true
+        case .inProgress: active
+        case .ended: !active
         }
     }
+
 }
 
 enum MobileActivityPresentationState: Equatable, Sendable {

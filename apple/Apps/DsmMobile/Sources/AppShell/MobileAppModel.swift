@@ -23,6 +23,8 @@ final class MobileAppModel {
     let mutationCoordinator: MobileMutationCoordinator
     let transferCoordinator: MobileTransferCoordinator
     let fileUploadQueue: MobileFileUploadQueue
+    let fileArchiveQueue: MobileFileArchiveQueue
+    let fileActivityModel: MobileFileActivityModel
     let documentTransferController: MobileDocumentTransferController
     let settingsStore: MobileSettingsStore
     let fileBrowserModel = MobileFileBrowserModel()
@@ -63,8 +65,10 @@ final class MobileAppModel {
         didSet {
             filePreviewModel.activate(profileID: activeProfile?.id)
             fileUploadQueue.configure(profile: activeProfile, repository: fileRepository)
+            fileArchiveQueue.configure(profile: activeProfile, repository: fileRepository)
             downloads.configure(profile: activeProfile, repository: serviceRepository)
             if activeProfile.map(MobileWorkspaceIdentity.init) != oldValue.map(MobileWorkspaceIdentity.init) {
+                fileActivityModel.reset()
                 fileShareLinkModel.deactivate()
                 deactivateFileLocations()
                 photoLibraryModel.deactivate()
@@ -92,7 +96,11 @@ final class MobileAppModel {
     var session: AuthSession?
     var activeConnectionProfile: NasProfile?
     var fileRepository: DsmFileRepository? {
-        didSet { fileUploadQueue.configure(profile: activeProfile, repository: fileRepository) }
+        didSet {
+            fileActivityModel.reset()
+            fileUploadQueue.configure(profile: activeProfile, repository: fileRepository)
+            fileArchiveQueue.configure(profile: activeProfile, repository: fileRepository)
+        }
     }
     var photoRepository: FileStationPhotoRepository?
     var serviceRepository: DsmServiceManagementRepository? {
@@ -124,11 +132,19 @@ final class MobileAppModel {
             mutationCoordinator: mutationCoordinator, recoveryStore: transferRecoveryStore
         )
         self.transferCoordinator = transferCoordinator
+        self.fileActivityModel = MobileFileActivityModel(coordinator: transferCoordinator, rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("NasControls", isDirectory: true))
         self.fileUploadQueue = MobileFileUploadQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("UploadBatches", isDirectory: true))
+        self.fileArchiveQueue = MobileFileArchiveQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Archives", isDirectory: true))
         self.downloads = MobileDownloadsModel(transferCoordinator: transferCoordinator)
         self.documentTransferController = MobileDocumentTransferController(
             transferCoordinator: transferCoordinator, recoveryStore: transferRecoveryStore
         )
+        fileArchiveQueue.onDestinationChanged = { [weak self] context, destination in
+            guard let self, let profile = activeProfile,
+                  MobileWorkspaceIdentity(profile).storageIdentifier == context,
+                  let repository = fileRepository else { return }
+            await fileBrowserModel.refreshAfterArchiveChange(destination: destination, repository: repository)
+        }
         loadProfiles()
         if let profile = profiles.first(where: {
             $0.id.uuidString == defaults.string(forKey: lastProfileKey)

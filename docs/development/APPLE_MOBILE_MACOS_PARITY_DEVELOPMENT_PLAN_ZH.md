@@ -32,10 +32,10 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M2 浏览、分页及高级搜索 | FileAdvancedSearchView、WorkspaceModel | 触控筛选，iPad 并列详情；List/Search/索引；只读 | M2b 已接多目录/类型/扩展名/大小/日期/所有者/正文条件；搜索沿用共享完整分页，保留正文覆盖不足；两端单元和实际 UI 已通过，证据见 M2b 记录 |
 | M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | M2a 已接共用上传计划、多选/目录、同名跳过/替换确认、逐项结果与暂停恢复；两端验证记录见后文，其他文件管理仍在实施 |
 | M2 分享与收集 | FileShareCreationView、FileShareManagementView、FileShareAdvancedView | 详情表单/系统分享；Sharing 密码/日期/权限；外部可见写 | 有基础分享，缺完整编辑管理；密码不泄露、结果逐项绑定 |
-| M2 压缩、解压、归档浏览 | ArchiveExtractionView、FileArchiveBrowserModel | 包内列表/选择目标与条目；Compress/Extract；数据写 | 缺完整流程；取消只处理本操作，超限/失败可恢复 |
+| M2 压缩、解压、归档浏览 | ArchiveExtractionView；共享 DsmFileFeature/FileArchiveBrowserModel | 包内列表/选择目标与条目；Compress/Extract；数据写 | M2c 已接多项压缩、包内选择/分页及解压、持久记录、取消和输出回读；两端单元/实际 UI 及 Mac 回归通过 |
 | M2 ACL 与所有者 | FilePermissionEditor、FileStationPrincipalPicker | 分步权限/成员选择；原对象与权限快照；高风险写 | 未实现；明确后果、原权限变化拒绝、回读一致 |
 | M2 远程位置与 ISO/VFS | FileVFSViews、FileVFSForm、FileISOMountView | 原生列表/连接表单；SMB/NFS/VFS/ISO/云授权；凭据与内部写 | 现有位置浏览不足；凭据仅当次，提交未知不重复连接 |
-| M2 NAS 任务 | FileBackgroundTaskActions | Activity 绑定 NAS/原任务；状态及取消；写 | 有投影，需完整控制和暂时不可达恢复 |
+| M2 NAS 任务 | FileBackgroundTaskActions | Activity 绑定 NAS/原任务；状态及取消；写 | M2c 完整分页、原任务停止/清除、未知控制恢复已接；两端单元/实际 UI 通过，真实 NAS 待验 |
 | M2 跨 NAS 传输 | WorkspaceModel | 源/目标明确绑定；复制后核对目标再确认源删除；高风险 | 未实现；目标未核对不得删源，恢复不重放已完成步骤 |
 | M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | 有预览/导出，缺冲突与主动回传；M8 接 Files 写回 |
 | M2 可恢复活动队列 | WorkspaceModel | 独立版本化任务、来源/目标身份与进度；持久化 | M2a 接独立受保护记录/副本；重启后暂停未提交项，未知上传只查询，下载可从头恢复；后台执行仍属 M8 |
@@ -128,9 +128,15 @@ M1 验证结果与只读对抗复核见[验证历史](../archive/2026-h2/RELEASE
 Mac 参考为 `FileUploadPlan.swift`、`FileUploadBatch.swift`、`WorkspaceModel.swift`；目录层次、同名冲突、部分成功、取消及未知结果按其业务语义实现。iPhone/iPad 均通过系统文件选择器及原生活动列表操作，不引入桌面常驻运行假设。当前尚在实现，不能据此提升验证等级。
 
 
-M2a 的恢复队列、多文件/目录上传、独立两端 UI 和 Mac 回归已通过，详见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2a-可恢复传输与目录上传)。接下来仍须完成 M2 高级搜索、归档、分享/收集、ACL、远程连接、NAS 任务控制、跨 NAS 与 Office 主动回传，不能以本切片替代整波验收。
+M2a 的恢复队列、多文件/目录上传、独立两端 UI 和 Mac 回归已通过，详见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2a-可恢复传输与目录上传)。高级搜索、归档和 NAS 任务已由 M2b/M2c 补齐；M2 仍须完成分享/收集、ACL、远程连接、跨 NAS 与 Office 主动回传，不能以本切片替代整波验收。
 
 
 ### M2b 高级搜索与目录选择
 
 当前单一修改范围为移动 Files、只读目录选择器、共享搜索值类型及相关语言资源/工程/测试；不改变 NAS API 或登录存储。高级搜索对齐 `FileAdvancedSearchView` 的多目录、名称/正文、类型、扩展名、大小、日期和所有者条件；iPhone/iPad 均用原生表单及逐层目录选择，不用手输路径代替选择。缓存绑定完整条件，正文覆盖不足明确提示。目录选择复用浏览模型的分页与请求隔离；iPhone 工具栏保留筛选，将其余操作收进“更多”，iPad 额外直接显示上传与新建文件夹。文件变更使相关多目录搜索缓存失效；共享根禁止上传。归档和分享仍是下一切片，不能由搜索完成推定完成。验证见[历史记录](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2b-高级搜索与目录选择)。
+
+### M2c 归档与 NAS 任务
+
+本切片单一修改范围为 Files 归档表单/任务记录、Activity 的 NAS 分页与控制、组合根、双语资源及工程/测试。`FileArchiveBrowserModel` 迁入现有 `DsmFileFeature`，Mac 仅调整引用与原编码评分入口，保持请求和行为。依据 `ArchiveExtractionView`、`WorkspaceModel.enqueueCompression/enqueueExtraction` 和 `FileBackgroundTaskActions`，两端均提供压缩格式/级别/密码、包内分页与选择、目录选择和任务状态；iPhone 分步表单、iPad 自适应表单，不迁移桌面窗口行为。
+
+归档记录使用独立版本 1 的受保护文件，只存账号上下文、输出清单、操作阶段和完成回执，不保存密码或请求凭据，不迁移既有配置。提交前保存，重启或断连后只读取，不自动重发；同一未结束输出禁止再次提交。回滚可停用新入口并保留记录。沿用现有公开 Compress/Extract/BackgroundTask 契约；Windows/Android 无请求变化。覆盖和取消须说明具体后果，最终输出与快照核对，NAS 原任务身份和账号不得替换；真实 NAS 写入未验证，仍按设备待办执行。共享回归、Mac 双架构工程构建及 iPhone/iPad 全部单元与实际 UI 测试均通过；详见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2c-归档与-nas-任务)。

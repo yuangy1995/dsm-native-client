@@ -5,11 +5,11 @@ import XCTest
 
 @MainActor
 final class MobileFileActivityModelTests: XCTestCase {
-    func test固定首100项并明确截断且同步到当前Profile() async {
+    func test多页任务完整加载并同步到当前Profile() async {
         let profileID = UUID()
         let repository = ImmediateFileActivityRepository(
             profileID: profileID,
-            result: .success(Self.page(id: "task", total: 101, hasMore: true))
+            result: .success(Self.page(id: "task", total: 2, hasMore: true))
         )
         let coordinator = MobileTransferCoordinator()
         let model = MobileFileActivityModel(coordinator: coordinator)
@@ -17,11 +17,11 @@ final class MobileFileActivityModelTests: XCTestCase {
         await model.activate(profileID: profileID, repository: repository)
 
         let requests = await repository.requests
-        XCTAssertEqual(requests, [Request(offset: 0, limit: 100)])
-        XCTAssertTrue(model.isTruncated)
+        XCTAssertEqual(requests, [Request(offset: 0, limit: 100), Request(offset: 1, limit: 100)])
+        XCTAssertEqual(model.snapshots.count, 2)
         XCTAssertNil(model.error)
         let tasks = await coordinator.tasks(profileID: profileID)
-        XCTAssertEqual(tasks.count, 1)
+        XCTAssertEqual(tasks.count, 2)
     }
 
     func test失败保留上次任务并允许独立重试() async {
@@ -142,7 +142,13 @@ private actor ImmediateFileActivityRepository: MobileFileActivityReading {
 
     func listFileActivityTasks(offset: Int, limit: Int) async throws -> FileBackgroundTaskPage {
         requests.append(Request(offset: offset, limit: limit))
-        return try result.get()
+        let page = try result.get()
+        if offset > 0 {
+            return FileBackgroundTaskPage(tasks: [.init(id: "second", kind: .extract, state: .active, progress: nil,
+                createdAt: nil, processedItemCount: nil, totalItemCount: nil, processedBytes: nil, totalBytes: nil)],
+                offset: offset, nextOffset: offset + 1, total: offset + 1, hasMore: false)
+        }
+        return page
     }
 }
 

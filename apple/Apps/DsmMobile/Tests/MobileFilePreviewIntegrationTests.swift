@@ -102,7 +102,13 @@ final class MobileFilePreviewIntegrationTests: XCTestCase {
         XCTAssertTrue(source.contains(".onChange(of: activationIdentity)"))
         XCTAssertTrue(source.contains("profileID: model.activeProfile?.id"))
         XCTAssertTrue(source.contains("repositoryIdentity: model.fileRepository.map { ObjectIdentifier($0) }"))
-        XCTAssertTrue(source.contains("showsAdvancedSearch = false\n            resetPreviewPresentation()"))
+        let start = try XCTUnwrap(source.range(of: ".onChange(of: activationIdentity)")).upperBound
+        let end = try XCTUnwrap(source.range(of: ".onChange(of: horizontalSizeClass)", range: start..<source.endIndex)).lowerBound
+        let reset = String(source[start..<end])
+        XCTAssertTrue(reset.contains("showsAdvancedSearch = false"))
+        XCTAssertTrue(reset.contains("compressionSelection = nil"))
+        XCTAssertTrue(reset.contains("extractionItem = nil"))
+        XCTAssertTrue(reset.contains("resetPreviewPresentation()"))
         XCTAssertTrue(source.contains("private func closePreview()"))
         XCTAssertTrue(source.contains("preview.close()"))
         XCTAssertTrue(source.contains("private func resetPreviewPresentation()"))

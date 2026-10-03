@@ -556,3 +556,25 @@ M1 的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/run
 
 
 M2b Mac 工程回归：`xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过；未改 Mac App 源码，不安装/启动或重新发布。Mobile/Mac 工程用 XcodeGen 2.46.0 重复生成后摘要一致。两端最终搜索结果截图已查看，文件容量摘要在搜索时隐藏；完整动态文字/VoiceOver 和真实 NAS 仍按设备待办执行。
+
+
+## 2026-10-04 移动 M2c 归档与 NAS 任务
+
+源码已接多文件压缩（ZIP/7z、级别、密码）、原生压缩包列表/编码/分页/条目选择、目录选择及解压选项。`FileArchiveBrowserModel` 从 Mac 迁到现有 `DsmFileFeature`，Mac 仅调整模块引用和编码评分委托；共享公共 NAS 请求未改。Windows/Android 无代码或契约变化。归档与 NAS 控制记录分别使用独立版本 1 受保护文件，不存密码，不迁移登录配置；写前保存失败不提交，重启/断连不自动重发。
+
+归档绑定账号上下文和输出清单；压缩拒绝已有同名、源目录内输出和变化的源快照。解压校验完整清单、相对路径、扁平名称、源文件快照；默认不替换已有文件，不把已有同名当成本次成功。明确的完成回执结合输出类型/大小回读后才显示完成；无回执的中断保留原记录，不能仅凭同名认定成功或再次提交同一输出。已创建文件不自动删除，取消只进入原 Repository 持有的本次任务。局部输出或完成会刷新关联目录及搜索缓存。
+
+NAS 任务按完整分页读取；页码、总量、漏项或重复异常保留上次完整快照。停止/清除绑定账号与原任务 ID、类型、创建时间、版本、方法及状态，沿用 Repository 的写前重读与写后回读。未知控制落盘并禁止重发，只有完整读取确认原任务结束或记录消失才解除；写前读取抛错不会被误锁为已提交。停止说明部分文件会保留；移除记录不删除文件。
+
+共享 `swift test --package-path apple --jobs 4` 实际通过：2427 项 XCTest（172 项原有环境/UI 跳过），0 失败；另 12 项 Swift Testing 通过。macOS `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过，实际二进制为 `x86_64 arm64`，未安装、启动或重新发布。
+
+第一轮移动测试发现压缩表单首次打开未携带选择项，已改为以文件/目标目录快照驱动弹窗；增加表单实际选中项断言，保留取消与账号变化清理。旧预览静态断言因增加归档清理语句而失效，现检查整个身份变更块内的清理动作，未删除安全断言。确认按钮首次定位命中弹窗后的原按钮，改为实际可点击的确认控件，并断言停止后的记录可清除、清除后进入空列表。第二轮 iPhone 549 项单元及 3 项新增实际 UI 全通过；之后补写前失败回归、任务分组及筛选空状态，最终两端结果继续登记。
+
+独立集成与只读对抗复核覆盖：共享业务单一实现、Mac 行为未改；密码不落盘，坏记录保留；取消/账号切换不向新账号提交；写前保存失败零写；同一未结束输出防重复；已有文件与不完整任务列表不能证明新操作成功；NAS 控制的写前异常和提交后未知分开，失败时不隐式重试。所有新增交互使用双语资源，合成网络及独立 Debug 测试目录不读取真实配置或访问 NAS。
+
+`PENDING_USER_VALIDATION`：两种真机使用可丢弃文件验证加密/大压缩包、编码、多层选择、ZIP/7z、权限变化、同名替换、断网/终止恢复及停止的最终 NAS 状态；预期不串账号、不重复提交，保留部分输出且原包不删除。VoiceOver、大字号、外接键盘和真实 NAS 文件名/时间行为独立验收。仅回传 OS/App/DSM 版本、脱敏步骤与错误类别，不回传凭据、真实地址或路径。无完成回执的中断不能证明成功，继续保留记录并允许选择其他输出位置；后台继续执行仍属 M8。
+
+
+M2c 最终验证：XcodeGen 2.46.0 重复生成 Mobile/Mac 工程，摘要一致；`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过。两端分别执行 `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=<目标 ID>' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests`，均为 **550 项单元 + 10 项实际 UI 全通过**，无新增跳过。iPhone 目标沿用上列 ID，iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`；独立结果为 `apple/Apps/DsmMobile/build/m2c-archive-iphone-final.xcresult`、`apple/Apps/DsmMobile/build/m2c-archive-ipad-final.xcresult`。最终 iPhone 浅色、iPad 深色，结束后恢复 iPad 浅色；测试覆盖原有登录/语言、导航、文件五态/搜索、目录上传恢复及新增归档/NAS 控制流程。
+
+`python3 tools/localization/check_localization.py`（Apple 5630、Android 2188、Windows 3402）、`python3 tools/codex/check_documentation.py --strict-release`、`git diff --check` 均通过。新增归档 11 项、NAS 控制 6 项行为测试；既有 NAS 首页截断测试改为完整多页及同步验证。没有发布移动包或修改正式 macOS 1.0.15 标签。M2b 的 Repository Check/文档预检已成功，M2a/M2b Apple Build 仍在云端运行，不将本机结果代替云端状态。

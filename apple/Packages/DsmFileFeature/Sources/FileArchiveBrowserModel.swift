@@ -4,48 +4,48 @@ import Foundation
 import Observation
 
 @MainActor @Observable
-final class FileArchiveBrowserModel {
-    let item: FileItem
-    var destination: String
-    var password = ""
-    var encoding = ""
-    var createSubfolder = true
-    var keepDirectories = true
-    var overwrite = false
-    var extractAll = true
-    private(set) var items: [ArchiveItem] = []
-    var selected: [Int: ArchiveItem] = [:]
-    private(set) var parents: [ArchiveItem] = []
-    private(set) var isLoading = false
-    private(set) var error: String?
-    private(set) var hasMore = false
-    private(set) var hasLoaded = false
+public final class FileArchiveBrowserModel {
+    public let item: FileItem
+    public var destination: String
+    public var password = ""
+    public var encoding = ""
+    public var createSubfolder = true
+    public var keepDirectories = true
+    public var overwrite = false
+    public var extractAll = true
+    public private(set) var items: [ArchiveItem] = []
+    public var selected: [Int: ArchiveItem] = [:]
+    public private(set) var parents: [ArchiveItem] = []
+    public private(set) var isLoading = false
+    public private(set) var error: String?
+    public private(set) var hasMore = false
+    public private(set) var hasLoaded = false
     @ObservationIgnored private var resolvedEncoding: String?
     @ObservationIgnored private var offset = 0
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private let repository: any FileRepository
-    init(item: FileItem, destination: String, repository: any FileRepository) {
+    public init(item: FileItem, destination: String, repository: any FileRepository) {
         self.item = item; self.destination = destination; self.repository = repository
     }
-    var currentFolder: String { parents.last?.path ?? item.name }
-    var canExtract: Bool { hasLoaded && !isLoading && error == nil && (extractAll || !selected.isEmpty) && destination != "/" && !destination.isEmpty }
+    public var currentFolder: String { parents.last?.path ?? item.name }
+    public var canExtract: Bool { hasLoaded && !isLoading && error == nil && (extractAll || !selected.isEmpty) && destination != "/" && !destination.isEmpty }
 
-    func reload() async {
+    public func reload() async {
         parents = []; selected = [:]; hasLoaded = false
         resolvedEncoding = encoding.isEmpty ? nil : encoding
         await load(reset: true)
         let expectedGeneration = generation
-        guard encoding.isEmpty, error == nil, WorkspaceModel.archiveNamePenalty(items.map(\.name)) > 0 else { return }
+        guard encoding.isEmpty, error == nil, Self.archiveNamePenalty(items.map(\.name)) > 0 else { return }
         if let page = try? await repository.listArchivePage(filePath: item.path, parentID: -1, offset: 0, limit: 200, codepage: "chs", password: password),
            expectedGeneration == generation, !Task.isCancelled,
-           WorkspaceModel.archiveNamePenalty(page.items.map(\.name)) < WorkspaceModel.archiveNamePenalty(items.map(\.name)) {
+           Self.archiveNamePenalty(page.items.map(\.name)) < Self.archiveNamePenalty(items.map(\.name)) {
             resolvedEncoding = "chs"; items = page.items; offset = items.count; hasMore = page.hasMore
         }
     }
-    func enter(_ folder: ArchiveItem) async { guard !isLoading else { return }; parents.append(folder); await load(reset: true) }
-    func back() async { guard !isLoading, !parents.isEmpty else { return }; parents.removeLast(); await load(reset: true) }
-    func more() async { guard !isLoading, hasMore else { return }; await load(reset: false) }
-    func invalidate() { generation += 1; isLoading = false; hasLoaded = false; selected = [:]; items = []; hasMore = false }
+    public func enter(_ folder: ArchiveItem) async { guard !isLoading else { return }; parents.append(folder); await load(reset: true) }
+    public func back() async { guard !isLoading, !parents.isEmpty else { return }; parents.removeLast(); await load(reset: true) }
+    public func more() async { guard !isLoading, hasMore else { return }; await load(reset: false) }
+    public func invalidate() { generation += 1; isLoading = false; hasLoaded = false; selected = [:]; items = []; hasMore = false }
 
     private func load(reset: Bool) async {
         generation += 1; let generation = generation
@@ -65,7 +65,7 @@ final class FileArchiveBrowserModel {
     }
 
     /// 提交前重新读取所选目录，检查包内相对路径并保留输出核对清单。
-    func prepare() async throws -> (FileExtractionRequest, [ArchiveItem]) {
+    public func prepare() async throws -> (FileExtractionRequest, [ArchiveItem]) {
         guard canExtract else { throw invalidSelection() }
         let chosen = selected.values.sorted { $0.id < $1.id }
         let draft = FileExtractionRequest(filePath: item.path, destination: destination,
@@ -110,6 +110,18 @@ final class FileArchiveBrowserModel {
             guard Set(files.map(\.name)).count == files.count else { throw invalidSelection() }
         }
         return (draft, inventory)
+    }
+
+    public static func archiveNamePenalty(_ names: [String]) -> Int {
+        names.reduce(into: 0) { score, name in
+            for scalar in name.unicodeScalars {
+                if scalar.value == 0xFFFD || (0x00C0...0x024F).contains(scalar.value) {
+                    score += 3
+                }
+            }
+            let suspicious = ["Ã", "Â", "Ð", "æ", "å", "ç", "ï¿½", "¤", "¦", "¨"]
+            score += suspicious.reduce(0) { $0 + (name.contains($1) ? 5 : 0) }
+        }
     }
 
     private func invalidSelection() -> AppError {

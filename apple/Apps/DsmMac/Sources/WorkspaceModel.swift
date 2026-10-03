@@ -2960,15 +2960,7 @@ final class WorkspaceModel {
     }
 
     static func archiveNamePenalty(_ names: [String]) -> Int {
-        names.reduce(into: 0) { score, name in
-            for scalar in name.unicodeScalars {
-                if scalar.value == 0xFFFD || (0x00C0...0x024F).contains(scalar.value) {
-                    score += 3
-                }
-            }
-            let suspicious = ["Ã", "Â", "Ð", "æ", "å", "ç", "ï¿½", "¤", "¦", "¨"]
-            score += suspicious.reduce(0) { $0 + (name.contains($1) ? 5 : 0) }
-        }
+        FileArchiveBrowserModel.archiveNamePenalty(names)
     }
 
     func makeArchiveBrowser(_ item: FileItem) -> FileArchiveBrowserModel {

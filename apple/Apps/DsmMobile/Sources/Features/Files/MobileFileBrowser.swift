@@ -9,6 +9,12 @@ private struct MobileFileBrowserActivationIdentity: Hashable {
     let repositoryIdentity: ObjectIdentifier?
 }
 
+private struct MobileFileCompressionSelection: Identifiable {
+    let id = UUID()
+    let items: [FileItem]
+    let destination: String
+}
+
 struct MobileFileBrowser: View {
     @Bindable var model: MobileAppModel
     @State private var isImportingFile = false
@@ -17,6 +23,8 @@ struct MobileFileBrowser: View {
     @State private var showsPreviewInspector = false
     @State private var showsPreviewFullScreen = false
     @State private var showsPreviewDetails = false
+    @State private var compressionSelection: MobileFileCompressionSelection?
+    @State private var extractionItem: FileItem?
     @State private var showsLocations = false
     @State private var showsAdvancedSearch = false
     @State private var restoresPreviewInspectorAfterFullScreen = false
@@ -105,6 +113,18 @@ struct MobileFileBrowser: View {
                 }
             }
         }
+        .sheet(item: $compressionSelection) { selection in
+            if let repository = model.fileRepository {
+                MobileFileCompressionView(items: selection.items, repository: repository,
+                    queue: model.fileArchiveQueue, destination: selection.destination)
+            }
+        }
+        .sheet(item: $extractionItem) { item in
+            if let repository = model.fileRepository {
+                MobileFileExtractionView(item: item, destination: state.currentPath,
+                    repository: repository, queue: model.fileArchiveQueue)
+            }
+        }
         .sheet(isPresented: $showsLocations) {
             MobileFileLocationsView(
                 locations: locations,
@@ -179,6 +199,7 @@ struct MobileFileBrowser: View {
         }
         .onChange(of: activationIdentity) { _, _ in
             showsAdvancedSearch = false
+            compressionSelection = nil; extractionItem = nil
             resetPreviewPresentation()
             endCopyMoveSelection()
         }
@@ -469,6 +490,16 @@ struct MobileFileBrowser: View {
 
     private func itemMenu(_ item: FileItem) -> some View {
         Menu {
+            if canCreateFolder && !state.location.source.isReadOnlyLocation {
+                Button { compressionSelection = .init(items: [item], destination: state.currentPath) } label: {
+                    Label(L10n.string("mobile.archive.compress"), systemImage: "archivebox")
+                }
+                if !item.isDirectory && ["zip", "7z", "rar", "tar", "gz", "bz2", "xz", "tgz", "iso"].contains((item.name as NSString).pathExtension.lowercased()) {
+                    Button { extractionItem = item } label: {
+                        Label(L10n.string("mobile.archive.extract"), systemImage: "archivebox.fill")
+                    }
+                }
+            }
             if canCopyMove(item) {
                 Button {
                     beginCopyMove(.copy, item: item)
@@ -673,6 +704,11 @@ struct MobileFileBrowser: View {
             .font(.callout)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                compressionSelection = .init(items: selectedCopyMoveItems, destination: state.currentPath); endCopyMoveSelection()
+            } label: {
+                Label(L10n.string("mobile.archive.compress"), systemImage: "archivebox")
+            }.disabled(selectedCopyMoveItems.isEmpty || !canCreateFolder || state.location.source.isReadOnlyLocation)
             Button {
                 beginBatchCopyMove(.copy)
             } label: {

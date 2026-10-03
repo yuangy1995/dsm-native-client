@@ -116,6 +116,63 @@ final class MobileWorkspaceUITests: XCTestCase {
         attachScreenshot(app, name: "Advanced search results")
     }
 
+    func test原生压缩创建文件且活动保存完成结果() {
+        let app = launchFixture(state: "archive")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        app.staticTexts["Sample folder"].tap()
+        app.buttons["Actions for Sample archive.zip"].tap()
+        app.buttons["Compress"].tap()
+        XCTAssertTrue(element("files.archive.source./fixture/Sample archive.zip", in: app).waitForExistence(timeout: 5))
+        let name = element("files.archive.name", in: app)
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Created archive")
+        attachScreenshot(app, name: "Compression form")
+        element("files.archive.start-compression", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Created archive.zip"].waitForExistence(timeout: 8))
+        navigate("activity", title: "Activity", in: app)
+        element("mobile.module.transfers", in: app).tap()
+        XCTAssertTrue(element("files.archive.phase.completed", in: app).waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Archive completed in Transfers")
+    }
+
+    func test原生压缩包浏览及解压完成() {
+        let app = launchFixture(state: "archive")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        app.staticTexts["Sample folder"].tap()
+        app.buttons["Actions for Sample archive.zip"].tap()
+        app.buttons["Extract"].tap()
+        XCTAssertTrue(app.staticTexts["Extracted document.txt"].waitForExistence(timeout: 8))
+        let start = element("files.archive.start-extraction", in: app)
+        XCTAssertTrue(start.isEnabled)
+        attachScreenshot(app, name: "Archive contents and extraction options")
+        start.tap()
+        XCTAssertTrue(app.staticTexts["Sample archive"].waitForExistence(timeout: 8))
+        navigate("activity", title: "Activity", in: app)
+        element("mobile.module.transfers", in: app).tap()
+        XCTAssertTrue(element("files.archive.phase.completed", in: app).waitForExistence(timeout: 8))
+    }
+
+    func testNAS原任务停止及移除记录需要确认并刷新() throws {
+        let app = launchFixture(state: "archive")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        navigate("activity", title: "Activity", in: app)
+        element("mobile.module.transfers", in: app).tap()
+        let stop = app.buttons["Stop this task"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 8)); stop.tap()
+        let confirmations = app.buttons.matching(identifier: "Stop this task")
+        let confirmation = try XCTUnwrap(confirmations.allElementsBoundByIndex.first(where: { $0.isHittable }))
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5)); confirmation.tap()
+        let clear = app.buttons["Clear this record"]
+        XCTAssertTrue(clear.waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "NAS task stopped")
+        clear.tap()
+        let clears = app.buttons.matching(identifier: "Clear this record")
+        try XCTUnwrap(clears.allElementsBoundByIndex.first(where: { $0.isHittable })).tap()
+        XCTAssertTrue(app.staticTexts["No transfer tasks yet"].waitForExistence(timeout: 8))
+    }
+
     private func launchFixture(state: String = "content") -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
