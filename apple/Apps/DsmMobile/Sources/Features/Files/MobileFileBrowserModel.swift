@@ -228,6 +228,13 @@ final class MobileFileBrowserModel {
         await replaceContent(repository: repository, forceNetwork: true)
     }
 
+    func refreshAfterRemoteLocationChange(repository: DsmFileRepository) async {
+        guard isActive(repository) else { return }
+        cancelRequest(); updateActive { $0.caches = [:] }
+        await replaceContent(repository: repository, forceNetwork: true)
+        await locations.refresh(repository: repository)
+    }
+
     func refreshAfterConfirmedMutation(
         _ success: MobileFileItemMutationSuccess,
         repository: any MobileFileBrowsing

@@ -5860,3 +5860,21 @@
 "mobile.permissions.removal-risk" = "Some accounts will lose part or all of their current access.";
 "mobile.permissions.title" = "Permissions";
 "mobile.permissions.conflict" = "This change cannot start yet. Refresh the current permissions, or wait if another change is still running.";
+
+"mobile.remote.load-error" = "Could not load the connection. Check your network, then refresh.";
+"mobile.remote.saved" = "The connection change is complete.";
+"mobile.remote.pending" = "The connection has not returned a result. Refresh to see its latest status.";
+"mobile.remote.previous-pending" = "A previous connection change has no result. You can refresh the list or manage the connection in DSM.";
+"mobile.remote.save-error" = "The connection change failed. Check your access and connection details, then try again.";
+"mobile.remote.changed" = "The connection or destination changed. Refresh and select it again.";
+"mobile.remote.incomplete" = "Unfinished connections";
+"mobile.remote.continue" = "Continue connection change";
+"mobile.remote.resume-connection" = "The old connection is disconnected. Continue to connect with the new settings.";
+"mobile.remote.resume-disconnect" = "The new location is connected. Continue to disconnect the old location.";
+"mobile.remote.end-remaining" = "End remaining steps";
+"mobile.remote.end-impact" = "Ending keeps the current connections as they are. It does not reconnect the old location or disconnect the new one.";
+"mobile.remote.remaining-ended" = "Remaining steps ended. Current connections were kept.";
+"mobile.remote.read-only" = "This connection cannot be changed with your current access. You can refresh or manage it in DSM.";
+"mobile.remote.cleartext-title" = "Connect without encryption?";
+"mobile.remote.cleartext-impact" = "This connection does not encrypt the account details and files sent between the NAS and the remote server. Other people on that network may be able to read them.";
+"mobile.remote.manage" = "Manage remote locations";

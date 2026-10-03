@@ -5860,3 +5860,21 @@
 "mobile.permissions.removal-risk" = "部分账号将失去现有的部分或全部访问权限。";
 "mobile.permissions.title" = "权限";
 "mobile.permissions.conflict" = "暂时无法开始这次修改。请刷新当前权限；若还有修改正在进行，请稍后再试。";
+
+"mobile.remote.load-error" = "无法读取连接。请检查网络后刷新。";
+"mobile.remote.saved" = "连接更改已完成。";
+"mobile.remote.pending" = "连接尚未返回结果。请刷新查看最新状态。";
+"mobile.remote.previous-pending" = "上次连接更改没有返回结果。可刷新列表，或前往 DSM 管理该连接。";
+"mobile.remote.save-error" = "连接更改失败。请检查操作权限和连接信息后重试。";
+"mobile.remote.changed" = "连接或目标位置已改变。请刷新后重新选择。";
+"mobile.remote.incomplete" = "未完成的连接";
+"mobile.remote.continue" = "继续更改连接";
+"mobile.remote.resume-connection" = "旧连接已断开。继续后将按新设置连接。";
+"mobile.remote.resume-disconnect" = "新位置已连接。继续后将断开旧位置。";
+"mobile.remote.end-remaining" = "结束剩余步骤";
+"mobile.remote.end-impact" = "结束后会保留连接现状，不会重新连接旧位置或断开新位置。";
+"mobile.remote.remaining-ended" = "剩余步骤已结束，保留了当前连接。";
+"mobile.remote.read-only" = "当前权限无法更改此连接。可刷新，或前往 DSM 管理。";
+"mobile.remote.cleartext-title" = "仍要使用未加密的连接吗？";
+"mobile.remote.cleartext-impact" = "此连接不会加密 NAS 与远程服务器之间传送的账号信息和文件，同一网络上的其他人可能读取这些内容。";
+"mobile.remote.manage" = "管理远程位置";

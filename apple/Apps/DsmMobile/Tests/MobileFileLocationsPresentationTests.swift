@@ -6,7 +6,7 @@ final class MobileFileLocationsPresentationTests: XCTestCase {
     func test文件页面使用原生位置Sheet且不嵌套SplitView() throws {
         let browser = try sourceFile("Sources/Features/Files/MobileFileBrowser.swift")
         let locations = try sourceFile("Sources/Features/Files/Locations/MobileFileLocationsView.swift")
-        XCTAssertTrue(browser.contains(".sheet(isPresented: $showsLocations)"))
+        XCTAssertTrue(browser.contains(".sheet(isPresented: $showsLocations, onDismiss:"))
         XCTAssertTrue(browser.contains("MobileFileLocationsView("))
         XCTAssertTrue(locations.contains("NavigationStack"))
         XCTAssertTrue(locations.contains("List {"))
@@ -85,7 +85,7 @@ final class MobileFileLocationsPresentationTests: XCTestCase {
         }
     }
 
-    func test不包含回收站恢复收藏写或远程挂载管理入口() throws {
+    func test位置列表不直接执行回收站收藏或挂载写入() throws {
         let locations = try sourceFile("Sources/Features/Files/Locations/MobileFileLocationsView.swift")
         for forbidden in [
             "restoreRecycle",

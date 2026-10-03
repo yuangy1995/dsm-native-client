@@ -6,7 +6,7 @@ import Network
 /// 使用系统浏览器和一次性本机回调，不接触云服务的登录表单。
 /// 监听地址固定为 IPv4 loopback，端口由系统分配；结束即关闭，不提供局域网服务。
 @MainActor
-final class FileVFSCloudAuthorizationSession {
+public final class FileVFSCloudAuthorizationSession {
     private let request: FileVFSCloudAuthorizationRequest
     private let onAuthorization: (FileVFSCloudAuthorization) -> Void
     private let onFailure: (String) -> Void
@@ -15,17 +15,17 @@ final class FileVFSCloudAuthorizationSession {
     private var connections: [UUID: (connection: NWConnection, bytes: Data)] = [:]
     private var timeout: Task<Void, Never>?
     private var boundRequest: FileVFSCloudAuthorizationRequest?
-    private(set) var loginURL: URL?
-    private(set) var callbackBaseURL: URL?
-    private(set) var isRunning = false
+    public private(set) var loginURL: URL?
+    public private(set) var callbackBaseURL: URL?
+    public private(set) var isRunning = false
     private var completed = false
 
-    init(request: FileVFSCloudAuthorizationRequest,
+    public init(request: FileVFSCloudAuthorizationRequest,
          onAuthorization: @escaping (FileVFSCloudAuthorization) -> Void, onFailure: @escaping (String) -> Void) {
         self.request = request; self.onAuthorization = onAuthorization; self.onFailure = onFailure
     }
 
-    func start(onReady: @escaping @MainActor (URL) -> Void) throws {
+    public func start(onReady: @escaping @MainActor (URL) -> Void) throws {
         guard listener == nil, !completed else { throw URLError(.cannotConnectToHost) }
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
@@ -72,7 +72,7 @@ final class FileVFSCloudAuthorizationSession {
         }
     }
 
-    func stop() {
+    public func stop() {
         completed = true; isRunning = false; timeout?.cancel(); timeout = nil
         listener?.stateUpdateHandler = nil; listener?.newConnectionHandler = nil; listener?.cancel(); listener = nil
         for value in connections.values { value.connection.cancel() }

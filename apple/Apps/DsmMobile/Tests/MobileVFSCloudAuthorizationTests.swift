@@ -4,7 +4,7 @@ import XCTest
 @testable import DsmFileFeature
 
 @MainActor
-final class FileVFSCloudAuthorizationTests: XCTestCase {
+final class MobileVFSCloudAuthorizationTests: XCTestCase {
     func test系统浏览器回调只接受本次路径与回调名且完成后关闭端口() async throws {
         let request = context()
         var received: [FileVFSCloudAuthorization] = []

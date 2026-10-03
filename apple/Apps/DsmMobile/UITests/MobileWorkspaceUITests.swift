@@ -334,6 +334,122 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertEqual(count.value as? String, "5")
     }
 
+    func test远程位置可浏览原始目录并显示筛选为空() throws {
+        let app = launchFixture(state: "remote")
+        defer { app.terminate() }
+        openRemoteLocations(app)
+        app.buttons["files.remote.profile.fixture-remote"].tap()
+        XCTAssertTrue(app.staticTexts["Remote sample.txt"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Download"].exists)
+        attachScreenshot(app, name: "Remote directory and download")
+        let search = app.searchFields["Filter files in this folder"]
+        if !search.exists {
+            let reveal = try XCTUnwrap(app.buttons.matching(NSPredicate(format: "label == 'Search' OR label == '搜索'"))
+                .allElementsBoundByIndex.first(where: { $0.isHittable }))
+            reveal.tap()
+        }
+        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("missing-file\n")
+        XCTAssertTrue(app.staticTexts["No files to show"].waitForExistence(timeout: 5))
+    }
+
+    func test远程服务器完整地址创建断开再移除配置() {
+        let app = launchFixture(state: "remote")
+        defer { app.terminate() }
+        openRemoteLocations(app)
+        app.buttons["files.remote.add"].tap(); app.buttons["FTP, WebDAV and cloud connections"].tap()
+        let alias = app.textFields["files.remote.vfs.alias"]
+        XCTAssertTrue(alias.waitForExistence(timeout: 5)); alias.tap(); alias.typeText("New remote")
+        let address = app.textFields["files.remote.vfs.hostname"]
+        address.tap(); address.typeText("https://new.example.invalid:8443/webdav")
+        attachScreenshot(app, name: "Remote server form")
+        app.buttons["files.remote.vfs.save"].tap()
+        let profile = app.buttons["files.remote.profile.fixture-created"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 8))
+        app.buttons["files.remote.actions.fixture-created"].tap(); app.buttons["Disconnect"].tap()
+        XCTAssertTrue(app.alerts.staticTexts["You will need to reconnect to browse files. No files will be deleted."].exists)
+        app.alerts.buttons["Disconnect"].tap()
+        XCTAssertTrue(app.staticTexts["Disconnected"].waitForExistence(timeout: 8))
+        app.buttons["files.remote.actions.fixture-created"].tap(); app.buttons["Remove connection"].tap()
+        app.alerts.buttons["Remove connection"].tap()
+        XCTAssertTrue(app.staticTexts["The connection change is complete."].waitForExistence(timeout: 8))
+        XCTAssertFalse(profile.exists)
+        attachScreenshot(app, name: "Saved remote connection removed")
+    }
+
+    func testSMB连接使用目录选择并断开后恢复普通目录() {
+        let app = launchFixture(state: "remote")
+        defer { app.terminate() }
+        openRemoteLocations(app)
+        app.buttons["files.remote.add"].tap(); app.buttons["SMB / NFS shared folder"].tap()
+        let server = app.textFields["files.remote.mount.server"]
+        XCTAssertTrue(server.waitForExistence(timeout: 5)); server.tap(); server.typeText("remote.example.invalid")
+        let folder = app.textFields["files.remote.mount.folder"]
+        folder.tap(); folder.typeText("Media")
+        element("files.remote.mount.destination", in: app).tap()
+        chooseRemoteDestination(app)
+        app.buttons["files.remote.mount.save"].tap()
+        XCTAssertTrue(app.staticTexts["//remote.example.invalid/Media"].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "SMB connection created")
+        app.buttons["files.remote.mount-actions./fixture/Inbox"].tap(); app.buttons["Disconnect"].tap()
+        app.alerts.buttons["Disconnect"].tap()
+        XCTAssertTrue(app.staticTexts["The connection change is complete."].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["files.remote.mount-actions./fixture/Inbox"].exists)
+    }
+
+    func testISO选择空目录加载并可卸载() {
+        let app = launchFixture(state: "remote")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        app.buttons["Actions for Sample image.iso"].tap(); app.buttons["Mount ISO"].tap()
+        let destination = element("files.remote.iso.destination", in: app)
+        XCTAssertTrue(destination.waitForExistence(timeout: 5)); destination.tap()
+        chooseRemoteDestination(app)
+        app.buttons["files.remote.iso.save"].tap()
+        XCTAssertTrue(app.staticTexts["Sample image.iso"].waitForExistence(timeout: 8))
+        element("files.toolbar.more", in: app).tap(); app.buttons["files.remote.manage"].tap()
+        let unmount = app.buttons["Unmount ISO"]
+        XCTAssertTrue(unmount.waitForExistence(timeout: 8)); unmount.tap()
+        attachScreenshot(app, name: "ISO unmount consequence")
+        app.buttons["files.remote.iso.save"].tap()
+        XCTAssertTrue(app.staticTexts["The connection change is complete."].waitForExistence(timeout: 8))
+        XCTAssertFalse(unmount.exists)
+    }
+
+    func test云授权使用系统浏览器且取消后返回原表单() throws {
+        let app = launchFixture(state: "remote")
+        defer { app.terminate() }
+        openRemoteLocations(app)
+        app.buttons["files.remote.add"].tap(); app.buttons["FTP, WebDAV and cloud connections"].tap()
+        let type = element("files.remote.vfs.protocol", in: app)
+        XCTAssertTrue(type.waitForExistence(timeout: 5)); type.tap(); app.buttons["Google Drive"].tap()
+        app.buttons["Authorize cloud account"].tap()
+        XCTAssertTrue(app.staticTexts["Sign in and authorize access on the cloud service page, then return here to save the connection."].waitForExistence(timeout: 5))
+        // 仅打开官方公开授权起始页；不选择账号、不填写凭据、不授权或创建云连接。
+        app.buttons["files.remote.cloud.start"].tap()
+        XCTAssertTrue(app.buttons["URL"].waitForExistence(timeout: 8))
+        let systemBrowser = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH 'BrowserView?'")).firstMatch
+        let done = systemBrowser.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "完成", "Close", "关闭"])).firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "System browser cloud sign-in")
+        done.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["The sign-in page was closed before authorization completed. Close this window and try again."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["files.remote.cloud.start"].isEnabled)
+        XCTAssertFalse(app.buttons["files.remote.cloud.save"].exists)
+    }
+
+    private func openRemoteLocations(_ app: XCUIApplication) {
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        element("files.toolbar.more", in: app).tap(); app.buttons["files.remote.manage"].tap()
+        XCTAssertTrue(app.buttons["files.remote.profile.fixture-remote"].waitForExistence(timeout: 8))
+    }
+    private func chooseRemoteDestination(_ app: XCUIApplication) {
+        let share = element("files.folder-picker.folder./fixture", in: app)
+        XCTAssertTrue(share.waitForExistence(timeout: 5)); share.tap()
+        let folder = element("files.folder-picker.folder./fixture/Inbox", in: app)
+        XCTAssertTrue(folder.waitForExistence(timeout: 5)); folder.tap()
+        app.buttons["Choose"].tap()
+    }
+
     private func openAllSharing(_ app: XCUIApplication) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         element("files.toolbar.more", in: app).tap()

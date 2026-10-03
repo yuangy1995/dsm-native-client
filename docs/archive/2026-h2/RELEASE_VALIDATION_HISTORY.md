@@ -620,3 +620,33 @@ M2d 最终移动验证：XcodeGen 2.46.0 生成工程，`xcodebuild build-for-te
 M2e 最终移动验证：锁定 XcodeGen 2.46.0 生成工程；`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过。两端分别执行 `xcodebuild test-without-building`、同工程/方案/构建目录、`-parallel-testing-enabled NO`：iPhone 的 `m2e-permission-iphone-final.xcresult` 为 **586 项单元 + 17 项实际 UI 全通过**；iPad（`A31ABDE2-186F-43DD-8D40-5EB9511A9289`）深色 `m2e-permission-ipad-final.xcresult` 为 **586 项单元及 16 项 UI 通过**，共享根继承项显示断言失败。查看实际录屏确认继承项位于弹窗可见区域下方，测试补滚动并断言可见后重新构建；两端分别 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test共享根权限只读且仍可展开继承规则` 的 `m2e-permission-iphone-inherited.xcresult`、`m2e-permission-ipad-inherited.xcresult` 均 **1/1 通过**，保留保存按钮及显式开关禁用的原断言。不将中间失败结果包整体记为通过。上述结果均位于忽略的 `apple/Apps/DsmMobile/build/`。
 
 已查看 iPhone 浅色权限结果/确认和共享根截图、iPad 深色共享根继承项截图；iPad 测后恢复浅色。最终工程重复生成摘要、本地化完整性/硬编码检查（Apple 5654、Android 2188、Windows 3402）、严格文档和差异检查通过。M2c 的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37152701529) 已通过；本次移动源码不属于安装包发布，真实权限及辅助功能验收继续按上列条件执行。
+
+
+## 2026-10-04 移动 M2f 远程位置与云连接
+
+已接 SMB/NFS 创建、修改、断开及原任务分步继续，ISO 选择空目录加载/卸载，FTP/SFTP/WebDAV/云连接的创建、编辑、连接、断开和移除，以及原始远程 URI 目录分页/筛选/下载。文件页“更多”和位置列表可达，同一功能使用原生触控表单。云授权以系统 Safari 模态呈现，沿用一次性 IPv4 loopback 监听，不读取浏览器表单/Cookie；取消/完成关闭监听。`FileVFSForm` 与 `FileVFSCloudAuthorizationSession` 移入现有 `DsmFileFeature`，Mac 只调整引用和测试导入，公开/内部请求没有变化。
+
+独立版本 1 恢复记录只保存原配置/账号上下文、操作身份和逻辑目标或摘要，不存密码、主机/云账号、令牌及完整回调。提交前保存失败零写；损坏记录保留；挂载的父子路径互斥，未知 VFS 原对象及新建别名禁止重放。共享 Repository 的原对象/实际权限和两步提交结果继续有效，同一会话只查询原请求；已知尚未执行的挂载步骤可重新输入密码并明确继续，不能放弃未知结果来重新提交。重启仅保留限制和当前状态读取，不能伪造原操作完成。删除配置仅清理其记录，账号切换丢弃旧界面反馈。成功的连接变化使旧目录/搜索/位置缓存失效。
+
+独立集成和只读对抗复核覆盖上述身份/存储/凭据边界、共享校验单一实现、关闭新挂载后仍可断开旧连接、VFS 读取失败不阻断 SMB、明文连接具体风险确认、ISO 空目录与来源快照、断开不删文件，以及保存配置移除必须已经断开。新增 16 项模型行为与 4 项真实本机 socket 回调测试；后者验证错误路径/回调名、字段白名单、重复长度/额外请求拒绝、分段正文、完成及取消关闭端口，均不访问 NAS。
+
+共享 `swift test --package-path apple --jobs 4 --filter 'FileVFS(Form|CloudAuthorization)Tests'` 的 16 项通过；完整 `swift test --package-path apple --jobs 4` 为 2427 项 XCTest（172 项既有环境/UI 跳过）、0 失败，另 12 项 Swift Testing 通过。Mac `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过，不安装/启动或重新发布。
+
+首轮编译修正 Swift 6 系统浏览器代理导入兼容和测试构造参数。第一轮两端均通过新增模型/本机回调，旧位置弹窗源码断言因新增关闭回调失败，已同步断言并保留全部安全限制；远程筛选 UI 错选背景文件页搜索框，现精确定位当前目录筛选。iPhone 的 ISO、SMB、VFS 创建/断开/移除 UI 通过；iPad 的 ISO、SMB 通过，最后一项反复等待系统动画结束，保留日志后中止并重启本次专用模拟器，不把该轮记为通过。界面复核另修正读取错误同时显示空目录、ISO 空列表下一步提示。
+
+`PENDING_USER_VALIDATION`：两种真机、专用可丢弃共享和账号，分别验证 SMB/NFS、远程修改换位置/同位置恢复、域账号、ISO、FTP/SFTP/WebDAV、实际支持的云服务授权回调及保存、网络/前后台/重启、权限变化和未知结果。预期不串账号、不重复提交、不绕过远端证书/主机警示，断开保留原文件和目录；重启缺少原任务证据时保持相应目标限制。VoiceOver、大字号、iPad 键盘及真实 NAS 行为未验证；只回传 App/OS/DSM/套件版本、脱敏步骤和错误类别，不回传凭据、回调、主机、账号或路径。后台系统传输仍属于 M8。
+
+M2d [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37155299594) 本轮返回失败：iPad 分享编辑用例在首次查询 Sample folder 时 UI 快照超时；日志没有业务断言差异，该用例两端本机已有通过证据。保留云端失败，不以本机替代，后续主分支门禁继续检查。
+
+
+M2f 界面复验发现 iPad 导航进入远程目录后自动布局未展示筛选栏，已明确使用原生导航筛选栏；两端对应实际 UI 及原有导航/文件五态/搜索共 4 项复验通过。云授权最初的同名按钮定位已改独立标识；进一步实际呈现暴露 Safari 全屏使原 SwiftUI 表单触发 onDisappear，从而立即取消自身授权。通过仅合成会话的临时生命周期日志定位后，将清理移到宿主真正被移除时，保留显式取消/账号切换清理及尝试编号，阻止已关闭页面的迟到准备结果重新打开；临时诊断代码已删除。授权返回不再重置新连接别名。连接失败还保留共享层的服务器身份/云授权恢复提示，并补行为断言，不能笼统归因于权限。最终两端结果见下列记录。
+
+
+M2f 最终验证：XcodeGen 2.46.0 重复生成 Mobile/Mac 工程，摘要一致；`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过。两端使用 `xcodebuild test-without-building`、同工程/方案/构建目录、`-parallel-testing-enabled NO`；iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。
+
+- `-only-testing:DsmMobileTests` 的 `m2f-cloud-iphone4.xcresult` 与 `m2f-cloud-ipad4.xcresult` 各 **606 项单元全通过**；同包中的云 UI 当时仍因系统按钮定位失败，不将整个结果包记为通过。
+- `m2f-remote-iphone2.xcresult`、`m2f-remote-ipad2.xcresult` 的 SMB 创建/断开、ISO 加载/卸载、VFS 创建/断开/移除三项 UI 均通过。
+- `m2f-remote-iphone3.xcresult`、`m2f-remote-ipad3.xcresult` 的远程筛选与原有文件导航、文件五态、搜索共四项 UI 均通过。
+- 云 UI 使用 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test云授权使用系统浏览器且取消后返回原表单`：`m2f-cloud-ipad6.xcresult` 与 `m2f-cloud-iphone7.xcresult` 各 **1/1 通过**。系统关闭按钮已从实际界面定位；iPhone 按该按钮实际边界触控后，断言返回原表单、可重新授权且没有保存按钮。测试只打开官方公开起始页并取消，不选择账号、提交云授权或写 NAS。
+
+上述结果均在忽略的 `apple/Apps/DsmMobile/build/`，合计两端各 5 项新增及 3 项原有实际 UI 已有通过证据，无新增跳过。已检查 iPhone 浅色远程目录/ISO/系统浏览器及 iPad 深色远程列表/浏览器截图；iPad 测后恢复浅色。最终本地化完整性/硬编码（Apple 5671、Android 2188、Windows 3402）、严格文档及差异检查通过。Mac 二进制实际含 x86_64/arm64；未发布移动安装包。

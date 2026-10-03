@@ -1,7 +1,7 @@
 import DsmCore
 import DsmLocalization
 import XCTest
-@testable import DsmMacExecutable
+@testable import DsmFileFeature
 
 final class FileVFSFormTests: XCTestCase {
     private let protocols: [FileVFSProtocol] = [

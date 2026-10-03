@@ -3,7 +3,7 @@ import DsmCore
 import DsmNetwork
 import Foundation
 
-/// 仅 Debug 的显式 UI 测试入口；所有请求都由内存替身处理，不读取真实配置或访问网络。
+/// 仅 Debug 的显式 UI 测试入口；NAS 请求由内存替身处理，不读取真实配置或访问 NAS。
 @MainActor
 enum MobileUIFixture {
     static var isEnabled: Bool { ProcessInfo.processInfo.arguments.contains("--ui-fixture") }
@@ -12,7 +12,7 @@ enum MobileUIFixture {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
-            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -21,7 +21,9 @@ enum MobileUIFixture {
                 transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
-            let versions = [DsmAPIName.coreACL: 1, DsmAPIName.fileStationACLOwner: 1, DsmAPIName.fileStationProperty: 1,
+            let versions = [DsmAPIName.fileStationMount: 1, DsmAPIName.fileStationMountList: 1,
+                            DsmAPIName.fileStationVFSProtocol: 1, DsmAPIName.fileStationVFSProfile: 1, DsmAPIName.fileStationVFSConnection: 1, DsmAPIName.fileStationDownload: 2,
+                            DsmAPIName.coreACL: 1, DsmAPIName.fileStationACLOwner: 1, DsmAPIName.fileStationProperty: 1,
                             DsmAPIName.fileStationSharing: 3, DsmAPIName.desktopInitData: 1, DsmAPIName.fileStationUserGroup: 1, DsmAPIName.fileStationList: 2, DsmAPIName.fileStationInfo: 2, DsmAPIName.fileStationSearch: 2,
                             DsmAPIName.fileStationBackgroundTask: 3, DsmAPIName.fileStationCompress: 3, DsmAPIName.fileStationExtract: 2,
                             DsmAPIName.fileStationUpload: 3, DsmAPIName.fileStationCreateFolder: 2, DsmAPIName.fileStationCheckPermission: 3,
@@ -81,6 +83,7 @@ private actor FixturePasswordStore: PasswordSecureStoring {
 
 private actor FixtureTransport: DsmBinaryHTTPTransport {
     private let pageState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "content"
+    private var remote = MobileRemoteUIFixture()
     private var uploaded: [String: Bool] = [:]
     private var stopped = false
     private var cleared = false
@@ -111,6 +114,9 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
         let fields = URLComponents(string: "https://fixture.invalid/?" + body)?.queryItems ?? []
         let api = fields.first { $0.name == "api" }?.value ?? ""
         let method = fields.first { $0.name == "method" }?.value ?? ""
+        if pageState == "remote", let result = try remote.response(api: api, method: method, fields: fields) {
+            return .init(data: try JSONSerialization.data(withJSONObject: ["success": true, "data": result]), statusCode: 200)
+        }
         let result: [String: Any]
         switch (api, method) {
         case (DsmAPIName.coreACL, "get") where isPermissionFixture:
@@ -254,7 +260,10 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
     }
 
     func download(_ request: URLRequest, to destinationURL: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
-        throw URLError(.unsupportedURL)
+        guard pageState == "remote" else { throw URLError(.unsupportedURL) }
+        let data = Data("Sample remote document".utf8)
+        try data.write(to: destinationURL); progress(Int64(data.count), Int64(data.count))
+        return .init(data: Data(), statusCode: 200, headers: ["Content-Type": "application/octet-stream", "Content-Length": String(data.count)])
     }
     func upload(_ request: URLRequest, from bodyFileURL: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
         guard pageState == "upload" else { throw URLError(.unsupportedURL) }

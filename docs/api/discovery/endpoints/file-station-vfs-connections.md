@@ -34,3 +34,8 @@ Connection.set 与 Profile.set 必须分别调用并核对；create 同理。保
 源码：`DsmFileRepository+VFS.swift`、`FileVFSViews.swift`、`FileVFSBrowserView.swift`、`FileVFSCloudAuthorizationView.swift`、`FileVFSCloudAuthorizationSession.swift`；自动化：`FileStationParityTests`。合成请求位于 `contracts/request-fixtures/file-station/create-vfs-connection`、`create-vfs-profile`，响应位于 `contracts/fixtures-redacted/file-station/vfs`，结构描述为 `contracts/schemas/file-station-vfs.schema.json`。公开核查入口与保存共享互斥状态，不持久化密码或自动补发第二步。
 
 请求新增 create-vfs-cloud-connection/profile、reauthorize-vfs-connection/profile 合成样本；真实本机回调测试为 `FileVFSCloudAuthorizationTests`，无云账号登录、NAS 请求或浏览器数据读取。正式主 App 新增 network.server entitlement 仅满足 loopback 回调；取消/完成/超时关闭，不改变扩展、Bundle ID 或存储。
+
+
+## 2026-10-04 移动 M2f 适配
+
+iPhone/iPad 按[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)接入现有共享 Repository 的原对象校验、权限、阶段控制和最终回读，替代上文历史移动范围；未新增请求、参数或版本。移动恢复记录独立保存未结束目标身份，凭据仅用于当前请求，未知不重放。macOS 仅共享校验/云回调代码引用调整，Windows/Android 无请求变化。本机模拟器与合成回调证据不提高此端点在真实 DSM/套件上的等级，真实连接/断开及云授权仍未验证。

@@ -121,3 +121,8 @@ Mac 后续恢复源码已接：相同 Repository 内记录操作编号和非密�
 ## 2026-10-02 ISO 静态补充
 
 [本轮官方 FileBrowser.js](../environments/2026-10-02-file-station-live-observation.md)确认 `Mount.mount_iso v1` 参数 source、mount_point、auto_mount、user_set。来源和挂载点均为 NAS 路径；客户端只允许明确选定现有空目录、user_set=true，不照搬隐式创建/卸载后删除目录。列表仍是 Mount.List.get 的 isoList，断开仅指定 mount_point。auto_mount 为持久行为，需单独确认；未挂载或卸载真实 ISO，证据仅 static，不提升历史验证。
+
+
+## 2026-10-04 移动 M2f 适配
+
+iPhone/iPad 按[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)接入现有共享 Repository 的原对象校验、权限、阶段控制和最终回读，替代上文历史移动范围；未新增请求、参数或版本。移动恢复记录独立保存未结束目标身份，凭据仅用于当前请求，未知不重放。macOS 仅共享校验/云回调代码引用调整，Windows/Android 无请求变化。本机模拟器与合成回调证据不提高此端点在真实 DSM/套件上的等级，真实连接/断开及云授权仍未验证。

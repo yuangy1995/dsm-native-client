@@ -27,6 +27,12 @@ struct MobileFileBrowser: View {
     @State private var extractionItem: FileItem?
     @State private var permissionItem: FileItem?
     @State private var showsLocations = false
+    @State private var showsRemoteLocations = false
+    @State private var remoteAfterLocations = false
+    @State private var remoteContext = ""
+    @State private var remotePath: String?
+    @State private var remoteDownload: FileItem?
+    @State private var isoSource: FileItem?
     @State private var showsAdvancedSearch = false
     @State private var restoresPreviewInspectorAfterFullScreen = false
     @State private var isSelectingCopyMoveItems = false
@@ -129,12 +135,26 @@ struct MobileFileBrowser: View {
         .sheet(item: $permissionItem) { item in
             MobileFilePermissionView(model: model.filePermissionModel, item: item)
         }
-        .sheet(isPresented: $showsLocations) {
+        .sheet(isPresented: $showsRemoteLocations, onDismiss: finishRemoteSelection) {
+            if let repository = model.fileRepository {
+                MobileRemoteLocationsView(model: model.remoteLocations, repository: repository,
+                    openMount: { remotePath = $0 }, download: { remoteDownload = $0; showsRemoteLocations = false })
+            }
+        }
+        .sheet(item: $isoSource) { source in
+            if let repository = model.fileRepository {
+                MobileISOMountView(model: model.remoteLocations, repository: repository, source: source, existing: nil)
+            }
+        }
+        .sheet(isPresented: $showsLocations, onDismiss: {
+            if remoteAfterLocations { remoteAfterLocations = false; showRemoteLocations() }
+        }) {
             MobileFileLocationsView(
                 locations: locations,
                 refresh: refreshLocations,
                 openLocation: openLocation,
-                cancelOpenLocation: browser.cancelLocationRequest
+                cancelOpenLocation: browser.cancelLocationRequest,
+                onManageRemote: { remoteAfterLocations = true }
             )
         }
         .sheet(isPresented: mutationPresentationBinding) {
@@ -206,6 +226,7 @@ struct MobileFileBrowser: View {
             showsAdvancedSearch = false
             compressionSelection = nil; extractionItem = nil
             permissionItem = nil
+            isoSource = nil; remotePath = nil; remoteDownload = nil; remoteAfterLocations = false; showsRemoteLocations = false
             resetPreviewPresentation()
             endCopyMoveSelection()
         }
@@ -501,6 +522,11 @@ struct MobileFileBrowser: View {
                     Label(L10n.string("files.permissions.title"), systemImage: "person.badge.key")
                 }.disabled(model.fileRepository == nil)
             }
+            if item.kind == .file && item.fileExtension?.lowercased() == "iso" {
+                Button { model.remoteLocations.clearFeedback(); isoSource = item } label: {
+                    Label(L10n.string("files.iso.mount"), systemImage: "opticaldisc")
+                }.disabled(model.fileRepository == nil)
+            }
             if canCreateFolder && !state.location.source.isReadOnlyLocation {
                 Button { compressionSelection = .init(items: [item], destination: state.currentPath) } label: {
                     Label(L10n.string("mobile.archive.compress"), systemImage: "archivebox")
@@ -664,6 +690,9 @@ struct MobileFileBrowser: View {
                     model.fileShareLinkModel.beginManagement()
                 } label: { Label(L10n.string("mobile.sharing.all"), systemImage: "link") }
                 .disabled(model.fileRepository == nil).accessibilityIdentifier("files.sharing.all")
+                Button(action: showRemoteLocations) {
+                    Label(L10n.string("mobile.files.locations.remote"), systemImage: "network")
+                }.disabled(model.fileRepository == nil).accessibilityIdentifier("files.remote.manage")
                 Button(action: toggleLayout) {
                     Label(L10n.string(state.layout == .list ? "mobile.files.show-grid" : "mobile.files.show-list"),
                           systemImage: state.layout == .list ? "square.grid.2x2" : "list.bullet")
@@ -1377,6 +1406,17 @@ struct MobileFileBrowser: View {
 
     private func formattedSize(_ item: FileItem) -> String {
         ByteCountFormatter.string(fromByteCount: item.sizeBytes ?? 0, countStyle: .file)
+    }
+
+    private func showRemoteLocations() {
+        remoteContext = model.remoteLocations.context; model.remoteLocations.clearFeedback(); showsRemoteLocations = true
+    }
+
+    private func finishRemoteSelection() {
+        defer { remotePath = nil; remoteDownload = nil }
+        guard remoteContext == model.remoteLocations.context else { return }
+        if let path = remotePath { Task { _ = await openLocation(path, .remote) } }
+        if let item = remoteDownload { startDownload(item, intent: .exportCopy) }
     }
 
     private func startDownload(_ item: FileItem, intent: MobileDocumentIntent) {

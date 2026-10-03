@@ -34,7 +34,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M2 分享与收集 | FileShareCreationView、FileShareManagementView、FileShareAdvancedView | 详情表单/系统分享；Sharing 密码/日期/权限；外部可见写 | M2d 已接批量创建、全部链接编辑/撤销、访问对象/次数、收集和二维码；两端验证通过，未知写保留隔离限制 |
 | M2 压缩、解压、归档浏览 | ArchiveExtractionView；共享 DsmFileFeature/FileArchiveBrowserModel | 包内列表/选择目标与条目；Compress/Extract；数据写 | M2c 已接多项压缩、包内选择/分页及解压、持久记录、取消和输出回读；两端单元/实际 UI 及 Mac 回归通过 |
 | M2 ACL 与所有者 | FilePermissionEditor、FileStationPrincipalPicker | 分步权限/成员选择；原对象与权限快照；高风险写 | M2e 已接显式/继承权限、所有者/群组、具体后果确认和持久未知目标限制；两端单元/实际 UI 与 Mac 回归通过 |
-| M2 远程位置与 ISO/VFS | FileVFSViews、FileVFSForm、FileISOMountView | 原生列表/连接表单；SMB/NFS/VFS/ISO/云授权；凭据与内部写 | 现有位置浏览不足；凭据仅当次，提交未知不重复连接 |
+| M2 远程位置与 ISO/VFS | FileVFSViews、FileVFSForm、FileISOMountView | 原生列表/连接表单；SMB/NFS/VFS/ISO/云授权；凭据与内部写 | M2f 已接连接管理/原始 URI 浏览下载、ISO 与系统云授权；两端模型及实际 UI、共享与 Mac 回归通过，真实云回调仍待设备验收 |
 | M2 NAS 任务 | FileBackgroundTaskActions | Activity 绑定 NAS/原任务；状态及取消；写 | M2c 完整分页、原任务停止/清除、未知控制恢复已接；两端单元/实际 UI 通过，真实 NAS 待验 |
 | M2 跨 NAS 传输 | WorkspaceModel | 源/目标明确绑定；复制后核对目标再确认源删除；高风险 | 未实现；目标未核对不得删源，恢复不重放已完成步骤 |
 | M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | 有预览/导出，缺冲突与主动回传；M8 接 Files 写回 |
@@ -154,3 +154,13 @@ M2a 的恢复队列、多文件/目录上传、独立两端 UI 和 Mac 回归已
 当前单一修改范围为移动权限模型/原生表单、现有成员选择器、Files 入口、组合根、双语资源及对应测试/工程；不改变共享 API 请求或 Mac 行为。参考 `FilePermissionEditor.swift`、`DsmFileRepository+Permissions.swift` 和已记录的内部权限端点。两端均展示所有者、显式/继承规则与基础权限；继承项只读，普通目录以原生展开表单编辑，保存前展示变更对象和具体后果。共享根、回收站、挂载位置和实际授权不足保持只读。
 
 高风险写继续由现有 Repository 执行完整路径映射/权限快照重读、成员存在性、自锁检查及最终状态回读。移动端仅增加独立版本 1 的受保护未结束目标记录，内部映射路径、权限快照和凭据不落盘；写前保存失败零提交，未知请求禁止重放。同一会话保留原请求用于只读查询；重启后保留未知目标限制与当前权限读取，不凭根项目相同断言整棵目录完成。回滚停用新增入口并保留记录，原配置不变。模型/表单、具体后果确认和恢复记录已接入；权限变化使当前账号旧目录与搜索权限缓存失效。两端各 586 项单元及全部 17 项实际 UI 均已有通过证据，共享和 Mac 回归通过；精确命令、iPad 中间失败与补测见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2e-所有者与权限)。真实权限写仅列后续用户验证，不访问 NAS 真实数据。
+
+### M2f 远程位置、ISO 与云连接
+
+当前单一修改范围为移动远程位置管理/浏览/表单、Files/Locations 入口、组合根、独立恢复记录、双语资源、工程与测试；共享 `DsmFileFeature` 仅提取原 `FileVFSForm` 和 `FileVFSCloudAuthorizationSession`，Mac 同步引用及回归，不改既有网络请求。证据为 Mac `RemoteMountEditorView`、`FileVFSViews`、`FileVFSBrowserView`、`FileISOMountView`，共享 `RemoteMountOperation`、`DsmFileRepository+VFS/+ISO` 以及[远程挂载](../api/discovery/endpoints/file-station-remote-mount.md)/[云连接](../api/discovery/endpoints/file-station-vfs-connections.md)契约。
+
+两端均以位置列表、触控表单和系统目录选择完成创建/编辑/连接/断开、ISO 加载/卸载及远程目录分页/下载；iPhone 单栏推进，iPad 自适应表单。SMB 编辑保留先连接新位置、再断开旧位置的既有顺序，同位置修改保留断开后继续阶段；未知结果只读查询，继续或放弃只作用于原任务。ISO 目标必须为空目录；VFS 保留完整原始 URI 和连接快照，不能转换成本地路径。普通连接由明确按钮确认；断开、移除已保存连接与明文传输显示具体后果。
+
+新增独立版本 1 恢复记录只存账号上下文、操作/目标身份，不存密码、云令牌或完整授权回调；提交前落盘，失败则零提交，损坏保留，重启后的未知请求不自动重放。原配置/身份/权限不迁移，回滚停用新入口并保留恢复记录。云授权复用一次性 IPv4 loopback 回调与字段白名单；移动以系统 Safari 浏览界面在 App 内全屏呈现，避免外部浏览器使监听随 App 挂起。Safari 覆盖原表单不视为取消，只有明确关闭、账号切换或宿主被移除才清理授权；关闭后的迟到准备结果不可重新呈现。按 [Apple 文档](https://developer.apple.com/documentation/SafariServices/SFSafariViewController)使用模态呈现，不读取登录表单或浏览器 Cookie。监听取消即关闭，账号/请求/协议不匹配拒绝；实际云服务跳转和真机前后台行为留作用户验证。
+
+本切片已完成凭据、身份/原请求绑定、提交前保存、未知防重放、晚到回调及共享单一实现的独立集成与只读对抗复核。两端各 606 项单元通过，5 项新增实际 UI 及 3 项原有导航/文件回归均有两端通过证据；共享 2427 项 XCTest（172 项既有跳过）及 12 项 Swift Testing、Mac Release 双架构构建通过，精确命令和中间修复见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2f-远程位置与云连接)。共享请求/版本不变，Windows/Android 只记录无契约变化；收藏维护、File Station 设置、跨 NAS、批量目录管理和 Office 主动回传仍按后续切片处理。

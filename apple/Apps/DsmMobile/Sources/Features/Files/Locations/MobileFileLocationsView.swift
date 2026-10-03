@@ -7,6 +7,7 @@ struct MobileFileLocationsView: View {
     let refresh: () async -> Void
     let openLocation: (String, MobileFileLocationSource) async -> Bool
     let cancelOpenLocation: () -> Void
+    var onManageRemote: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var openingPath: String?
@@ -165,6 +166,9 @@ struct MobileFileLocationsView: View {
     @ViewBuilder
     private var remoteSection: some View {
         Section(L10n.string("mobile.files.locations.remote")) {
+            if let onManageRemote {
+                Button(L10n.string("mobile.remote.manage")) { onManageRemote(); dismiss() }
+            }
             switch state.remote.pageState {
             case .loading:
                 loadingRow("mobile.files.locations.remote.loading")
