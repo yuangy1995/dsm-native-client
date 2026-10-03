@@ -490,7 +490,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "直连候选全部失败时才尝试；中继或身份核对失败则停止连接。",
+      "fallback": "全球入口返回 sites 时仅查询合法官方区域主机，去重且最多 8 个控制入口；成功响应没有直连候选时保留在线结果进入既有中继流程。Apple、Android 与 Windows 共用该语义；中继或身份核对失败则停止连接。2026-10-03 客户端区域转介修复不提升既有真实 NAS 验证等级。",
       "documentRef": "docs/api/discovery/endpoints/quickconnect-relay-control.md",
       "verifications": [
         {

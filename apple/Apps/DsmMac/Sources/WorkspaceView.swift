@@ -2122,11 +2122,15 @@ struct FileBrowserView: View {
                         }.padding(.horizontal, 24).padding(.vertical, 8)
                     }
                     if contentState == .content {
-                        if viewMode == .list {
-                            fileTable(items: orderedItems)
-                        } else {
-                            fileGrid(groups: groups)
+                        Group {
+                            if viewMode == .list {
+                                fileTable(items: orderedItems)
+                            } else {
+                                fileGrid(groups: groups)
+                            }
                         }
+                        // 新目录使用独立滚动与惰性布局状态；同目录刷新、排序和分页保留当前位置。
+                        .id(model.currentPath)
                     } else {
                         emptyFileContent(for: contentState)
                             .focusable()

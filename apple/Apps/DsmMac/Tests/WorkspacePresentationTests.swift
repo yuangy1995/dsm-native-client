@@ -1275,6 +1275,55 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test照片空闲预览不占底部且删除成功弹窗关闭后不再显示() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = PhotoUploadServiceStub(), idle = SynologyPhotosModel(repository: service,
+                    previewConversionSupport: .init(hevc: true, vc1: false, video: true))
+                await service.configureAutomatic(enabled: true, tasks: [])
+                await idle.refresh(); await idle.processAutomaticPreview()
+                let idleHost = NSHostingView(rootView: SynologyPhotosView(model: idle).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let idleWindow = attach(idleHost, size: NSSize(width: 1100, height: 720))
+                defer { idle.cancel(); idleWindow.contentView = nil; idleWindow.close() }
+                try await settle(idleHost)
+                XCTAssertEqual(idle.automaticPreviewEnabled, true); XCTAssertEqual(idle.automaticPreviewCompleted, 0)
+                XCTAssertFalse(idle.showsAutomaticPreviewStatus)
+                XCTAssertFalse(nativeViews(idleHost, of: NSButton.self).contains { $0.title == L10n.string("photos.automatic.pause") })
+                try snapshot(idleHost, name: "photos-preview-idle-\(language.rawValue)-\(scheme)")
+
+                let repository = DatePhotoServiceStub()
+                let model = SynologyPhotosModel(repository: repository, pageSize: 6, deletionReviewDelay: { _ in })
+                await model.refresh(); await model.jumpToMonth(.init(year: 2014, month: 8))
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1100, height: 720))
+                defer { if let alert = window.attachedSheet { window.endSheet(alert) }; model.cancel(); window.contentView = nil; window.close() }
+                try await settle(host)
+                model.requestDeletion(model.items[0])
+                for _ in 0..<100 where model.isCheckingDeletion { try await Task.sleep(for: .milliseconds(5)) }
+                try await settle(host)
+                let confirmation = try XCTUnwrap(window.attachedSheet?.contentView)
+                let delete = try XCTUnwrap(nativeViews(confirmation, of: NSButton.self).first { $0.title == L10n.string("photos.delete.action") })
+                delete.performClick(nil)
+                for _ in 0..<100 where model.isDeleting { try await Task.sleep(for: .milliseconds(5)) }
+                try await settle(host)
+                XCTAssertNil(model.deletionMessage); XCTAssertEqual(model.deletionSuccessMessage, L10n.string("photos.selection.deleted", 1))
+                let success = try XCTUnwrap(window.attachedSheet?.contentView)
+                try snapshot(success, name: "photos-delete-success-\(language.rawValue)-\(scheme)")
+                let close = try XCTUnwrap(nativeViews(success, of: NSButton.self).first { $0.title == L10n.string("photos.media.close") })
+                close.performClick(nil); try await settle(host)
+                XCTAssertNil(model.deletionSuccessMessage); XCTAssertNil(window.attachedSheet)
+                XCTAssertEqual(model.items.map(\.id.unitID), [5, 6]); XCTAssertEqual(model.selectedTimelineMonthID, 201408)
+                await model.continueAutomaticDeletionReview(); try await settle(host)
+                XCTAssertNil(window.attachedSheet, "关闭后不重新弹出，也不留下成功状态行")
+                try snapshot(host, name: "photos-delete-dismissed-\(language.rawValue)-\(scheme)")
+                let deletes = await repository.deleteIDs; XCTAssertEqual(deletes, [4])
+            }
+        }
+    }
+
     func test自动预览失败恢复提示中英浅深色保持历史月份() async throws {
         let previous = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = previous }
@@ -4385,6 +4434,54 @@ final class WorkspacePresentationTests: XCTestCase {
         XCTAssertEqual(writes, 0)
     }
 
+    func test文件面包屑从长目录返回时显示目标目录首项() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for mode in [FileViewMode.grid, .list] {
+                let fixture = try WorkspaceViewFixture(count: 160)
+                fixture.model.isFileModuleEnabled = true
+                fixture.model.currentPath = "/synthetic/child"
+                fixture.model.section = .files("/synthetic/child")
+                let destination = (0..<80).map { index in
+                    FileItem(profileID: fixture.model.profile.id, name: String(format: "Destination-%02d", index),
+                        path: "/synthetic/destination-\(index)", kind: .directory)
+                }
+                await fixture.repository.setFolderItems(destination, path: "/synthetic")
+                fixture.model.shares = Array(destination.prefix(12))
+                let host = makeHost(fixture: fixture, mode: mode, scheme: scheme, showsInspector: .constant(true))
+                let window = attach(host, size: NSSize(width: 1100, height: 640))
+                defer { fixture.model.cancelAllWork(); window.contentView = nil; window.close(); fixture.cleanPreferences() }
+                window.makeKeyAndOrderFront(nil); try await settle(host)
+                let scroll = try XCTUnwrap(nativeViews(host, of: NSScrollView.self).first)
+                let document = try XCTUnwrap(scroll.documentView)
+                let topOrigin = scroll.contentView.bounds.minY
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: document.bounds.height - scroll.contentView.bounds.height))
+                scroll.reflectScrolledClipView(scroll.contentView); try await settle(host)
+                XCTAssertGreaterThan(scroll.contentView.bounds.minY, 100, "先滚动长目录，再通过真实面包屑跳转")
+                try snapshot(host, name: "files-before-breadcrumb-\(mode)-\(scheme)")
+                // 1100×640合成窗口底栏中可见的父目录按钮。
+                try click(window, at: NSPoint(x: 105, y: 21))
+                try await settle(host)
+                XCTAssertEqual(fixture.model.currentPath, "/synthetic")
+                XCTAssertEqual(fixture.model.filteredItems, destination)
+                let currentScroll = try XCTUnwrap(nativeViews(host, of: NSScrollView.self).first)
+                XCTAssertEqual(currentScroll.contentView.bounds.minY, topOrigin, accuracy: 1, "切换目录不能沿用旧目录底部的滚动位置")
+                try snapshot(host, name: "files-breadcrumb-parent-\(mode)-\(scheme)")
+                currentScroll.contentView.scroll(to: NSPoint(x: 0, y: 200))
+                currentScroll.reflectScrolledClipView(currentScroll.contentView); try await settle(host)
+                let beforeRefresh = currentScroll.contentView.bounds.minY
+                await fixture.model.refresh(); try await settle(host)
+                XCTAssertEqual(currentScroll.contentView.bounds.minY, beforeRefresh, accuracy: 1, "刷新同一目录应保留浏览位置")
+                // 返回只有12项的根目录，不能留下旧网格的空白区域。
+                try click(window, at: NSPoint(x: 85, y: 21)); try await settle(host)
+                XCTAssertEqual(fixture.model.currentPath, "/"); XCTAssertEqual(fixture.model.filteredItems.count, 12)
+                let rootScroll = try XCTUnwrap(nativeViews(host, of: NSScrollView.self).first)
+                XCTAssertEqual(rootScroll.contentView.bounds.minY, topOrigin, accuracy: 1)
+                try snapshot(host, name: "files-breadcrumb-root-\(mode)-\(scheme)")
+                let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
     func test三档文件网格保持选择且文件与文件夹共同缩放() async throws {
         let previousSize = UserDefaults.standard.object(forKey: "LanStash_FileGridSize")
         defer {
@@ -6971,9 +7068,15 @@ private actor PresentationFileRepository: FileRepository {
         readCalls += 1; return page(path: "/", offset: offset)
     }
     func failNextFolderRead(_ error: AppError) { nextFolderError = error }
+    private var folderItems: [String: [FileItem]] = [:]
+    func setFolderItems(_ items: [FileItem], path: String) { folderItems[path] = items }
     func listFolder(path: String, offset: Int, limit: Int) throws -> FilePage {
         readCalls += 1
         if let error = nextFolderError { nextFolderError = nil; throw error }
+        if let items = folderItems[path] {
+            let pageItems = Array(items.dropFirst(offset).prefix(limit))
+            return FilePage(folderPath: path, items: pageItems, offset: offset, total: items.count, hasMore: offset + pageItems.count < items.count)
+        }
         return page(path: path, offset: offset)
     }
     func getInfo(paths: [String]) -> [FileItem] {

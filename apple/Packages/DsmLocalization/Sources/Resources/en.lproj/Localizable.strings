@@ -4032,6 +4032,7 @@
 "photos.delete.review" = "Check deletion result";
 "photos.delete.reviewFailed" = "The deletion result could not be checked. Check the connection, then try again.";
 "photos.delete.done" = "The photo has been deleted.";
+"photos.delete.success" = "Deleted";
 "download.local.permission" = "Cannot write to the selected location. Choose another save location and try again.";
 "download.local.space" = "There is not enough space to save the file. Free up space and try again.";
 "container.control.changed" = "The selected containers or their state changed. Refresh the list, select them again, and retry.";

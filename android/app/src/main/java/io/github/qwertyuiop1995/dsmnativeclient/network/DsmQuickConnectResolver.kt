@@ -9,12 +9,15 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -86,19 +89,7 @@ internal class DsmQuickConnectResolver(
 
     suspend fun resolve(id: String): List<QuickConnectEndpoint> {
         validateId(id)
-        var lastFailure = serviceUnavailable()
-        for (controlUrl in controlUrls) {
-            try {
-                return decodeEndpoints(
-                    send("get_server_info", stopWhenSuccess = false, id, controlUrl)
-                )
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: DsmFailure) {
-                lastFailure = error
-            }
-        }
-        throw lastFailure
+        return decodeEndpoints(queryServerInfo(id))
     }
 
     suspend fun requestRelay(id: String): QuickConnectEndpoint {
@@ -129,13 +120,35 @@ internal class DsmQuickConnectResolver(
     }
 
     private suspend fun resolveControlUrl(id: String): String {
+        val host = decodeControlHost(queryServerInfo(id))
+        return "https://$host/Serv.php"
+    }
+
+    private suspend fun queryServerInfo(id: String): JsonArray {
         var lastFailure = serviceUnavailable()
-        for (controlUrl in controlUrls) {
+        val pending = ArrayDeque(controlUrls)
+        val scheduled = controlUrls.toMutableSet()
+        // Synology 内部 API：sites 是官方区域转介；直连和中继共用有界查询。
+        while (pending.isNotEmpty()) {
+            currentCoroutineContext().ensureActive()
+            val controlUrl = pending.removeFirst()
             try {
-                val host = decodeControlHost(
-                    send("get_server_info", stopWhenSuccess = false, id, controlUrl)
-                )
-                return "https://$host/Serv.php"
+                val responses = send("get_server_info", stopWhenSuccess = false, id, controlUrl)
+                val objects = responses.filterIsInstance<JsonObject>()
+                // 在线但无直连候选时交给中继，不再让其他区域的错误覆盖结果。
+                if (objects.any { it.int("errno") == 0 }) return responses
+                for (response in objects) {
+                    val sites = response["sites"] as? JsonArray ?: continue
+                    for (site in sites) {
+                        val value = site as? JsonPrimitive ?: throw invalidResponse()
+                        if (!value.isString) throw invalidResponse()
+                        val host = value.content.lowercase(Locale.ROOT)
+                        if (!isTrustedControlHost(host)) throw invalidResponse()
+                        val url = "https://$host/Serv.php"
+                        if (scheduled.size < 8 && scheduled.add(url)) pending.addLast(url)
+                    }
+                }
+                successfulResponse(responses)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: DsmFailure) {

@@ -87,6 +87,7 @@ private struct QuickConnectResponse: Decodable {
     let server: Server?
     let service: Service?
     let smartDNS: SmartDNS?
+    let sites: [String]?
 
     struct Server: Decodable {
         let state: String?
@@ -133,6 +134,7 @@ private struct QuickConnectResponse: Decodable {
         case errno
         case server
         case service
+        case sites
         case smartDNS = "smartdns"
         case environment = "env"
     }
@@ -184,27 +186,8 @@ public actor DsmQuickConnectResolver: QuickConnectResolving {
             throw QuickConnectResolutionError.notFound
         }
 
-        var lastError: Error = QuickConnectResolutionError.serviceUnavailable
-
-        for controlURL in controlURLs {
-            do {
-                let data = try await send(
-                    command: "get_server_info",
-                    stopWhenSuccess: false,
-                    serverID: id,
-                    to: controlURL
-                )
-                return try Self.decodeEndpoints(from: data)
-            } catch let error as QuickConnectResolutionError {
-                lastError = error
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                lastError = QuickConnectResolutionError.serviceUnavailable
-            }
-        }
-
-        throw lastError
+        let data = try await queryServerInfo(id: id)
+        return try Self.decodeEndpoints(from: data)
     }
 
     public func requestRelay(id: String) async throws -> QuickConnectEndpoint {
@@ -250,8 +233,24 @@ public actor DsmQuickConnectResolver: QuickConnectResolving {
     }
 
     private func resolveControlURL(id: String) async throws -> URL {
-        var lastError: Error = QuickConnectResolutionError.serviceUnavailable
-        for controlURL in controlURLs {
+        let data = try await queryServerInfo(id: id)
+        let host = try Self.decodeControlHost(from: data)
+        guard let url = URL(string: "https://\(host)/Serv.php") else {
+            throw QuickConnectResolutionError.invalidResponse
+        }
+        return url
+    }
+
+    private func queryServerInfo(id: String) async throws -> Data {
+        var lastError = QuickConnectResolutionError.serviceUnavailable
+        var pending = controlURLs
+        var scheduled = Set(controlURLs.map(\.absoluteString))
+        var index = 0
+        // Synology 内部 API：sites 是官方区域转介；直连和中继共用有界查询。
+        while index < pending.count {
+            try Task.checkCancellation()
+            let controlURL = pending[index]
+            index += 1
             do {
                 let data = try await send(
                     command: "get_server_info",
@@ -259,15 +258,28 @@ public actor DsmQuickConnectResolver: QuickConnectResolving {
                     serverID: id,
                     to: controlURL
                 )
-                let host = try Self.decodeControlHost(from: data)
-                guard let url = URL(string: "https://\(host)/Serv.php") else {
-                    throw QuickConnectResolutionError.invalidResponse
+                let responses = try Self.decodeResponses(from: data)
+                // 在线但无直连候选时交给中继，不再让其他区域的错误覆盖结果。
+                if responses.contains(where: { $0.errno == 0 }) { return data }
+                for response in responses {
+                    for site in response.sites ?? [] {
+                        let host = site.lowercased()
+                        guard Self.isTrustedControlHost(host),
+                              let url = URL(string: "https://\(host)/Serv.php") else {
+                            throw QuickConnectResolutionError.invalidResponse
+                        }
+                        if scheduled.count < 8,
+                           scheduled.insert(url.absoluteString).inserted {
+                            pending.append(url)
+                        }
+                    }
                 }
-                return url
+                throw QuickConnectResolutionError.notFound
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                lastError = error
+                try Task.checkCancellation()
+                lastError = (error as? QuickConnectResolutionError) ?? .serviceUnavailable
             }
         }
         throw lastError
@@ -491,7 +503,8 @@ public actor DsmQuickConnectResolver: QuickConnectResolving {
 
     private static func isTrustedControlHost(_ host: String) -> Bool {
         (host.hasSuffix(".quickconnect.to") || host.hasSuffix(".quickconnect.cn"))
-            && host.split(separator: ".").allSatisfy { isValidHostLabel(String($0)) }
+            && host.split(separator: ".", omittingEmptySubsequences: false)
+                .allSatisfy { isValidHostLabel(String($0)) }
     }
 
     private static func isValidHostLabel(_ value: String) -> Bool {

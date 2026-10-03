@@ -296,6 +296,9 @@ final class SynologyPhotosModel {
     @ObservationIgnored private var pagedPhotoIDs: Set<SynologyPhotoID> = []
     @ObservationIgnored private let deletionReviewDelay: @Sendable (Double) async throws -> Void
     private(set) var deletionMessage: String?
+    #if os(macOS)
+    var deletionSuccessMessage: String?
+    #endif
     private(set) var isDeleting = false
     private(set) var isCheckingDeletion = false
     var deletionKeptCount: Int?
@@ -368,6 +371,11 @@ final class SynologyPhotosModel {
     }
 
     var automaticPreviewSupported: Bool { previewConversionSupport.hevc || previewConversionSupport.video }
+    /// 空闲轮询和累计完成数量不占用图库；保留实际任务及需要恢复的状态。
+    var showsAutomaticPreviewStatus: Bool {
+        automaticPreviewFilename != nil || hasPendingAutomaticPreview ||
+            (automaticPreviewEnabled == true && (automaticPreviewError != nil || automaticPreviewPaused))
+    }
     var hasPendingAutomaticPreview: Bool {
         if case .generateAutomaticPreview = pendingMutation { return true }
         return false
@@ -1092,6 +1100,9 @@ final class SynologyPhotosModel {
     }
 
     func leaveGallery() {
+        #if os(macOS)
+        deletionSuccessMessage = nil
+        #endif
         deletionReviewEpoch += 1
         automaticPreviewWorker?.cancel(); automaticPreviewWorker = nil
         automaticPreviewWake?.cancel(); automaticPreviewWake = nil
@@ -3541,6 +3552,9 @@ final class SynologyPhotosModel {
         }
         deletionCandidates = []; preparedDeletionPhotos = []; deletionKeptCount = nil
         deletionError = nil; deletionMessage = nil
+        #if os(macOS)
+        deletionSuccessMessage = nil
+        #endif
         isDeleting = true
         generation += 1
         isLoadingPrevious = false; isLoading = false; isLoadingMore = false
@@ -3566,7 +3580,7 @@ final class SynologyPhotosModel {
             if !pendingDeletionPhotos.isEmpty { deletionMessage = L10n.string("photos.delete.pending") }
             #endif
             if pendingDeletionPhotos.isEmpty, completed > 0 {
-                deletionMessage = L10n.string("photos.selection.deleted", completed)
+                showDeletionSuccess(completed)
             }
             await refreshAffectedSimilarGroups()
         }
@@ -3603,7 +3617,7 @@ final class SynologyPhotosModel {
             let completed = await readPendingDeletionResults()
             guard isModuleEnabled, !Task.isCancelled, epoch == deletionReviewEpoch else { return }
             if pendingDeletionPhotos.isEmpty, completed > 0 {
-                deletionMessage = L10n.string("photos.selection.deleted", completed)
+                showDeletionSuccess(completed)
             } else if !pendingDeletionPhotos.isEmpty {
                 deletionMessage = L10n.string("photos.selection.reviewContinuing")
             }
@@ -3637,9 +3651,19 @@ final class SynologyPhotosModel {
         defer { isDeleting = false }
         let completed = await automaticallyReviewDeletions()
         if pendingDeletionPhotos.isEmpty, completed > 0 {
-            deletionMessage = L10n.string("photos.selection.deleted", completed)
+            showDeletionSuccess(completed)
         }
         await refreshAffectedSimilarGroups()
+    }
+
+    private func showDeletionSuccess(_ completed: Int) {
+        #if os(macOS)
+        deletionMessage = nil
+        guard deletionError == nil, isModuleEnabled, !Task.isCancelled else { return }
+        deletionSuccessMessage = L10n.string("photos.selection.deleted", completed)
+        #else
+        deletionMessage = L10n.string("photos.selection.deleted", completed)
+        #endif
     }
 
     /// 删除结果与分组刷新分开：这里只回读，失败不能重新删除或刷新整本图库。

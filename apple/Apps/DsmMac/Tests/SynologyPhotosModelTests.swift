@@ -2514,6 +2514,10 @@ final class SynologyPhotosModelTests: XCTestCase {
         XCTAssertEqual(model.automaticPreviewEnabled, true); XCTAssertNil(model.pendingMutationID)
         XCTAssertEqual(model.selectedTimelineMonthID, 202003); XCTAssertEqual(model.items, items); XCTAssertEqual(model.selectedPhotoIDs, selection)
         let after = await service.pageReads; XCTAssertEqual(after, reads)
+        XCTAssertFalse(model.showsAutomaticPreviewStatus, "开启开关本身不显示空闲状态栏")
+        model.pauseAutomaticPreviews(); XCTAssertTrue(model.showsAutomaticPreviewStatus)
+        model.submitMutation(.setAutomaticPreview(original: true, enabled: false)); await waitForManagement(model)
+        XCTAssertFalse(model.showsAutomaticPreviewStatus, "关闭功能后不保留此前的暂停状态栏")
     }
 
     func test自动预览串行优先当前照片且不刷新时间线或重复已完成项() async throws {
@@ -2531,6 +2535,7 @@ final class SynologyPhotosModelTests: XCTestCase {
         let commands = await service.commands
         XCTAssertEqual(commands, [.generateAutomaticPreview(tasks[1], support: .init(hevc: true, vc1: false, video: true)), .generateAutomaticPreview(tasks[0], support: .init(hevc: true, vc1: false, video: true))])
         XCTAssertEqual(model.automaticPreviewCompleted, 2)
+        XCTAssertFalse(model.showsAutomaticPreviewStatus, "完成的预览不继续占用图库底部")
         XCTAssertEqual(model.automaticPreviewRevision(for: photos[0]), 1); XCTAssertEqual(model.automaticPreviewRevision(for: photos[1]), 1)
         XCTAssertEqual(model.selectedTimelineMonthID, 202003); XCTAssertEqual(model.selectedPhotoIDs, selected)
         let after = await service.pageReads; XCTAssertEqual(after, reads)
@@ -2724,6 +2729,7 @@ final class SynologyPhotosModelTests: XCTestCase {
         let now = Date()
         await model.processAutomaticPreview(now: now)
         let id = model.pendingMutationID; XCTAssertNotNil(id)
+        XCTAssertTrue(model.showsAutomaticPreviewStatus, "结果未确定时保留进度和控制")
         await model.processAutomaticPreview(now: now.addingTimeInterval(1))
         var reads = await service.automaticReviews; XCTAssertEqual(reads, 0)
         model.pauseAutomaticPreviews()
@@ -2761,6 +2767,7 @@ final class SynologyPhotosModelTests: XCTestCase {
         let now = Date(), worker = Task { await model.processAutomaticPreview(now: now) }
         await service.waitUntilHeld()
         XCTAssertTrue(model.isGeneratingAutomaticPreview); XCTAssertFalse(model.isBrowsingBlocked)
+        XCTAssertTrue(model.showsAutomaticPreviewStatus)
         model.selectGroup(model.items); XCTAssertFalse(model.selectedPhotoIDs.isEmpty)
         await model.processAutomaticPreview(now: now)
         let commands = await service.commands; XCTAssertEqual(commands.count, 1)
@@ -2803,6 +2810,7 @@ final class SynologyPhotosModelTests: XCTestCase {
         await model.processAutomaticPreview()
         XCTAssertEqual(model.automaticPreviewCompleted, 0); XCTAssertNil(model.pendingMutationID)
         XCTAssertEqual(model.automaticPreviewError, L10n.string("photos.automatic.failureRecorded", tasks[0].filename))
+        XCTAssertTrue(model.showsAutomaticPreviewStatus, "失败后保留恢复入口")
         XCTAssertEqual(model.selectedTimelineMonthID, 202003); XCTAssertEqual(model.items, items); XCTAssertEqual(model.selectedPhotoIDs, selection)
         await model.processAutomaticPreview()
         XCTAssertEqual(model.automaticPreviewCompleted, 1)
@@ -3972,6 +3980,11 @@ final class SynologyPhotosModelTests: XCTestCase {
         model.confirmDeletion(targets)
         try await waitFor { !model.isDeleting }
         XCTAssertNil(model.pendingDeletionPhoto)
+        XCTAssertNil(model.deletionMessage, "删除成功不留下常驻状态文字")
+        XCTAssertEqual(model.deletionSuccessMessage, L10n.string("photos.selection.deleted", 2))
+        model.deletionSuccessMessage = nil
+        await model.continueAutomaticDeletionReview()
+        XCTAssertNil(model.deletionSuccessMessage, "关闭成功提示后不会再次弹出")
         XCTAssertEqual(model.selectedTimelineMonthID, 201408)
         XCTAssertEqual(model.previousMonthID, 201408)
         XCTAssertTrue(model.items.isEmpty)
@@ -4041,8 +4054,11 @@ final class SynologyPhotosModelTests: XCTestCase {
         let early = await repository.reviewIDs; XCTAssertEqual(early.count, 6)
         XCTAssertTrue(model.hasAutomaticDeletionReview)
         XCTAssertEqual(model.deletionMessage, L10n.string("photos.selection.reviewContinuing"))
+        XCTAssertNil(model.deletionSuccessMessage, "等待确认时不能提前提示删除成功")
         await model.continueAutomaticDeletionReview()
         XCTAssertFalse(model.hasAutomaticDeletionReview); XCTAssertNil(model.pendingDeletionPhoto)
+        XCTAssertNil(model.deletionMessage)
+        XCTAssertEqual(model.deletionSuccessMessage, L10n.string("photos.selection.deleted", 1))
         XCTAssertEqual(model.items.map(\.id.unitID), [5]); XCTAssertEqual(model.selectedTimelineMonthID, 201408)
         let deletes = await repository.deleteIDs, reviews = await repository.reviewIDs, reads = await repository.requests
         XCTAssertEqual(deletes, [4]); XCTAssertEqual(reviews.count, 10); XCTAssertEqual(reads.count, 2)

@@ -4032,6 +4032,7 @@
 "photos.delete.review" = "检查删除结果";
 "photos.delete.reviewFailed" = "暂时无法检查删除结果，请检查连接后再次检查。";
 "photos.delete.done" = "照片已删除。";
+"photos.delete.success" = "删除成功";
 "download.local.permission" = "无法写入所选位置，请重新选择保存位置后再试。";
 "download.local.space" = "没有足够空间保存文件，请释放空间后再试。";
 "container.control.changed" = "所选容器或其状态已改变。请刷新列表、重新选择后再试。";

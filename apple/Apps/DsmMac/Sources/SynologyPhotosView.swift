@@ -373,16 +373,15 @@ struct SynologyPhotosView: View {
                     Button(L10n.string("photos.retry")) { Task { await model.refreshAffectedSimilarGroups() } }
                 }.padding(8)
             }
-            if model.automaticPreviewEnabled == true || model.hasPendingAutomaticPreview {
+            if model.showsAutomaticPreviewStatus {
                 HStack(spacing: 10) {
                     if model.isGeneratingAutomaticPreview { ProgressView().controlSize(.small) }
                     Text(model.hasPendingAutomaticPreview && !model.isGeneratingAutomaticPreview
                          ? L10n.string("photos.automatic.reviewing")
                          : model.automaticPreviewFilename.map { L10n.string("photos.automatic.processing", $0) }
-                            ?? (model.automaticPreviewPaused ? L10n.string("photos.automatic.paused") : L10n.string("photos.automatic.completed", model.automaticPreviewCompleted)))
-                        .font(.callout).lineLimit(1)
+                            ?? model.automaticPreviewError ?? L10n.string("photos.automatic.paused"))
+                        .font(.callout).lineLimit(2)
                     Spacer()
-                    if let error = model.automaticPreviewError { Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                     Button(L10n.string(model.automaticPreviewPaused || model.automaticPreviewError != nil ? "photos.automatic.resume" : "photos.automatic.pause")) {
                         if model.automaticPreviewPaused || model.automaticPreviewError != nil { model.resumeAutomaticPreviews() }
                         else { model.pauseAutomaticPreviews() }
@@ -453,6 +452,12 @@ struct SynologyPhotosView: View {
         .alert(L10n.string("photos.delete.title"), isPresented: Binding(get: { model.deletionError != nil }, set: { if !$0 { model.deletionError = nil } })) {
             Button(L10n.string("photos.media.close"), role: .cancel) { model.deletionError = nil }
         } message: { Text(model.deletionError ?? "") }
+        .alert(L10n.string("photos.delete.success"), isPresented: Binding(
+            get: { model.deletionSuccessMessage != nil },
+            set: { if !$0 { model.deletionSuccessMessage = nil } }
+        )) {
+            Button(L10n.string("photos.media.close"), role: .cancel) { model.deletionSuccessMessage = nil }
+        } message: { Text(model.deletionSuccessMessage ?? "") }
         .sheet(isPresented: $showsPreviewRecovery) { PhotoPreviewRecoveryPanel(model: model, initialSpace: model.selectedSpace) }
         .sheet(isPresented: $showsAutomaticPreviewSettings) { PhotoAutomaticPreviewSettingsPanel(model: model) }
         .sheet(isPresented: $showsGlobalSettings) { PhotoGlobalSettingsPanel(model: model) }

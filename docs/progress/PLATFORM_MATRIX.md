@@ -50,6 +50,8 @@
 
 ## 用户能力范围
 
+QuickConnect 区域转介：Apple 共享层（macOS、iPhone、iPad）与 Android 已接入 Windows 既有的官方 `sites` 查询语义；保留中继身份核对，不增加用户操作。逐端测试、构建与真实环境边界见[区域转介账本](../api/discovery/endpoints/quickconnect-relay-control.md)。
+
 | 能力 | macOS | iPhone | iPad | Android | Windows |
 | --- | --- | --- | --- | --- |
 | 登录、会话、安全存储 | 核心 | 核心 | 核心 | 核心 | 核心 |
