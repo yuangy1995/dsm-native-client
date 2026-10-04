@@ -2,15 +2,18 @@ import SwiftUI
 import UIKit
 
 struct MobileShareSheet: UIViewControllerRepresentable {
-    let url: URL
+    let urls: [URL]
     let completion: () -> Void
+
+    init(url: URL, completion: @escaping () -> Void) { self.init(urls: [url], completion: completion) }
+    init(urls: [URL], completion: @escaping () -> Void) { self.urls = urls; self.completion = completion }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(completion: completion)
     }
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: urls, applicationActivities: nil)
         controller.completionWithItemsHandler = { [weak coordinator = context.coordinator] _, _, _, _ in
             Task { @MainActor in
                 coordinator?.finishOnce()

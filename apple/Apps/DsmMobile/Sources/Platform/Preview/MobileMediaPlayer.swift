@@ -196,7 +196,7 @@ actor MobileMediaRangeCoordinator {
 
 @MainActor
 @Observable
-private final class MobileMediaPlaybackModel {
+final class MobileMediaPlaybackModel {
     private(set) var player: AVPlayer?
     private(set) var isPreparing = true
     private(set) var hasFailed = false
@@ -205,6 +205,27 @@ private final class MobileMediaPlaybackModel {
     @ObservationIgnored private var preparationTask: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var source: MediaStreamSource?
+    @ObservationIgnored private var endObserver: NSObjectProtocol?
+    @ObservationIgnored private var statusObserver: NSKeyValueObservation?
+    @ObservationIgnored private var requestedPlayback: Bool?
+    @ObservationIgnored private var onFinished: (() -> Void)?
+    @ObservationIgnored private var onFailure: (() -> Void)?
+    @ObservationIgnored private var hasEnded = false
+    @ObservationIgnored private let reader: any MobileSecureRangeReading
+
+    init(reader: any MobileSecureRangeReading = MobileSecureRangeReader()) { self.reader = reader }
+
+    func configurePlayback(isPlaying: Bool?, onFinished: (() -> Void)?, onFailure: (() -> Void)?) {
+        requestedPlayback = isPlaying
+        self.onFinished = onFinished
+        self.onFailure = onFailure
+    }
+
+    func setPlaying(_ isPlaying: Bool?) {
+        requestedPlayback = isPlaying
+        guard !isPreparing, !hasFailed, let isPlaying else { return }
+        if isPlaying { player?.play() } else { player?.pause() }
+    }
 
     func prepare(_ source: MediaStreamSource) {
         close()
@@ -219,7 +240,7 @@ private final class MobileMediaPlaybackModel {
             fail(requestGeneration)
             return
         }
-        let loader = MobileMediaResourceLoader(source: source) { [weak self] in
+        let loader = MobileMediaResourceLoader(source: source, reader: reader) { [weak self] in
             Task { @MainActor in self?.fail(requestGeneration) }
         }
         self.loader = loader
@@ -228,8 +249,20 @@ private final class MobileMediaPlaybackModel {
             loader,
             queue: DispatchQueue(label: "io.github.qwertyuiop1995.lanstash.mobile-media")
         )
-        let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+        let item = AVPlayerItem(asset: asset)
+        let player = AVPlayer(playerItem: item)
         self.player = player
+        endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.generation == requestGeneration, !self.hasEnded, !self.hasFailed else { return }
+                self.hasEnded = true
+                self.onFinished?()
+            }
+        }
+        statusObserver = item.observe(\.status) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            Task { @MainActor in self?.fail(requestGeneration) }
+        }
         preparationTask = Task { [weak self] in
             do {
                 let playable = try await asset.load(.isPlayable)
@@ -237,6 +270,7 @@ private final class MobileMediaPlaybackModel {
                 guard playable else { throw URLError(.cannotDecodeContentData) }
                 guard let self, generation == requestGeneration else { return }
                 isPreparing = false
+                setPlaying(requestedPlayback)
             } catch is CancellationError {
             } catch {
                 self?.fail(requestGeneration)
@@ -263,6 +297,11 @@ private final class MobileMediaPlaybackModel {
 
     func close() {
         generation = UUID()
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = nil
+        statusObserver?.invalidate()
+        statusObserver = nil
+        hasEnded = false
         preparationTask?.cancel()
         preparationTask = nil
         player?.pause()
@@ -274,16 +313,20 @@ private final class MobileMediaPlaybackModel {
     }
 
     private func fail(_ requestGeneration: UUID) {
-        guard generation == requestGeneration else { return }
+        guard generation == requestGeneration, !hasFailed else { return }
         isPreparing = false
         hasFailed = true
         player?.pause()
+        onFailure?()
     }
 }
 
 struct MobileMediaPlayer: View {
     let source: MediaStreamSource
     let title: String
+    var isPlaying: Bool? = nil
+    var onFinished: (() -> Void)? = nil
+    var onFailure: (() -> Void)? = nil
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = MobileMediaPlaybackModel()
@@ -318,7 +361,11 @@ struct MobileMediaPlayer: View {
             }
         }
         .accessibilityLabel(L10n.string("mobile.files.preview.media.accessibility.player", title))
-        .task(id: source.request.url) { model.prepare(source) }
+        .task(id: source.request.url) {
+            model.configurePlayback(isPlaying: isPlaying, onFinished: onFinished, onFailure: onFailure)
+            model.prepare(source)
+        }
+        .onChange(of: isPlaying) { _, value in model.setPlaying(value) }
         .onDisappear { model.close() }
         .onChange(of: scenePhase) { _, phase in
             switch phase {

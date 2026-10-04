@@ -54,8 +54,17 @@ private struct MobileSynologyPhotosContent: View {
                                 Section {
                                     photoGrid(group.photos)
                                 } header: {
-                                    Text(model.formattedPhotoDate(group.date, group: true))
-                                        .font(.headline).accessibilityAddTraits(.isHeader)
+                                    HStack {
+                                        Text(model.formattedPhotoDate(group.date, group: true))
+                                            .font(.headline).accessibilityAddTraits(.isHeader)
+                                        Spacer()
+                                        if model.isSelecting {
+                                            Button { model.selectGroup(group.photos) } label: {
+                                                Label(L10n.string(model.displayPreferences?.grouping == .month ? "photos.selection.month" : "photos.selection.day"), systemImage: "checkmark.circle")
+                                            }.labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
+                                                .accessibilityIdentifier("mobile.photos.selection.day")
+                                        }
+                                    }
                                 }
                             }
                         } else {
@@ -146,6 +155,10 @@ private struct MobileSynologyPhotosContent: View {
                     }.disabled(model.isBrowsingBlocked || model.isDeleting).accessibilityIdentifier("mobile.photos.selection.begin")
                 }
                 Menu {
+                    MobilePhotoBrowsingControls(model: model)
+                    if let archive = model.currentArchive {
+                        MobilePhotoArchiveExportMenu(session: session, target: archive.target, name: archive.name)
+                    }
                     if let recognition = session.recognition {
                         ForEach([MobilePhotoRecognitionModel.Action.peopleVisibility, .conceptVisibility, .rename, .merge], id: \.self) { action in
                             if recognition.allows(action) {
@@ -300,7 +313,7 @@ private struct MobileSynologyPhotosContent: View {
                 }
             }
         }
-        .sheet(isPresented: Binding(get: { model.previewPhoto != nil }, set: { if !$0 { model.closePreview() } })) {
+        .fullScreenCover(isPresented: Binding(get: { model.previewPhoto != nil }, set: { if !$0 { model.closePreview() } })) {
             MobileSynologyPhotoPreview(session: session, model: model)
         }
         .modifier(MobileSynologyPhotoDeletionPresentation(model: model, active: model.previewPhoto == nil))
@@ -322,7 +335,10 @@ private struct MobileSynologyPhotosContent: View {
         .task(id: model.hasAutomaticDeletionReview) {
             if model.hasAutomaticDeletionReview { await model.continueAutomaticDeletionReview() }
         }
-        .onDisappear { session.deactivate() }
+        .onDisappear {
+            // 全屏预览暂时遮住网格时仍保留会话；实际模块切换和退出由 Shell 停用。
+            if model.previewPhoto == nil { session.deactivate() }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { session.deactivate() }
             else if phase == .active { Task { await session.activate() } }
@@ -526,6 +542,8 @@ private struct MobileSynologyPhotosContent: View {
                 .disabled(model.isBrowsingBlocked).accessibilityIdentifier("mobile.photos.selection.loaded")
             if let albums = session.albums {
                 Menu {
+                    MobilePhotoExportActions(session: session)
+                    Divider()
                     if model.selectedCategory == .similar {
                         Button(L10n.string("photos.similar.ungroupSelected")) {
                             Task { if let groups = await model.prepareSelectedSimilarGroups() { similarGroups = groups } }
@@ -567,7 +585,7 @@ private struct MobileSynologyPhotosContent: View {
     }
 
     private func photoGrid(_ photos: [SynologyPhoto]) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 220), spacing: 8)], spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: model.thumbnailSize.minimumWidth, maximum: model.thumbnailSize.maximumWidth), spacing: 8)], spacing: 8) {
             ForEach(photos) { photo in
                 MobileSynologyPhotoCell(photo: photo, session: session, isSelecting: model.isSelecting, isSelected: model.selectedPhotoIDs.contains(photo.id)) {
                     if model.isSelecting { model.toggleSelection(photo) } else { model.showPreview(photo) }
@@ -576,7 +594,11 @@ private struct MobileSynologyPhotosContent: View {
                     .onDrag { dragProvider(photo: photo) }
                     .contextMenu {
                         Button(L10n.string("photos.media.open")) { model.showPreview(photo) }
-                        Button(L10n.string("photos.media.save")) { session.exportOriginal(photo) }
+                        MobilePhotoExportActions(session: session, photos: [photo])
+                        if model.isSelecting {
+                            Button(L10n.string("mobile.photos.selection.range")) { model.toggleSelection(photo, extending: true) }
+                                .accessibilityIdentifier("mobile.photos.selection.range")
+                        }
                         Button(L10n.string("photos.delete.action"), role: .destructive) { model.requestDeletion(photo) }
                             .disabled(!model.canDeletePhotos([photo]))
                     }
@@ -631,10 +653,17 @@ struct MobileSynologyPhotoCell: View {
         Button(action: open) {
             ZStack(alignment: .bottomLeading) {
                 Rectangle().fill(.quaternary).aspectRatio(1, contentMode: .fit)
-                if let image {
-                    Image(uiImage: image).resizable().scaledToFill()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
-                } else { Image(systemName: "photo").frame(maxWidth: .infinity, maxHeight: .infinity) }
+                    .overlay {
+                        // 图片仅填充既定方格，横幅或竖幅的固有比例不能撑大网格布局。
+                        GeometryReader { geometry in
+                            if let image {
+                                Image(uiImage: image).resizable().scaledToFill()
+                                    .frame(width: geometry.size.width, height: geometry.size.height).clipped()
+                            } else {
+                                Image(systemName: "photo").frame(width: geometry.size.width, height: geometry.size.height)
+                            }
+                        }.accessibilityHidden(true)
+                    }
                 if photo.mediaType == "video" || photo.mediaType == "live" {
                     Image(systemName: photo.mediaType == "live" ? "livephoto" : "play.fill")
                         .padding(8).background(.regularMaterial, in: Capsule()).padding(6)
@@ -642,6 +671,7 @@ struct MobileSynologyPhotoCell: View {
             }
             .aspectRatio(1, contentMode: .fit).clipped()
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
             .overlay(alignment: .bottomTrailing) {
                 if showsSimilarBadge, let group = photo.similarGroup {
                     Label(group.photoIDs.count.formatted(.number.locale(L10n.locale)), systemImage: "square.stack.3d.up")

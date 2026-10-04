@@ -3,6 +3,106 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test照片批量原件交给系统文件面板并能取消() {
+        let app = launchFixture(state: "photo-export"); defer { app.terminate() }
+        openPhotos(app)
+        let first = app.buttons["Sample 1.jpg"], second = app.buttons["Sample 2.jpg"]
+        XCTAssertTrue(first.waitForExistence(timeout: 8)); XCTAssertTrue(second.waitForExistence(timeout: 8))
+        XCTAssertEqual(first.frame.width, first.frame.height, accuracy: 1)
+        XCTAssertFalse(first.frame.intersects(second.frame))
+        attachScreenshot(app, name: "Wide photo thumbnails stay inside square cells")
+        selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap()
+        element("mobile.photos.export.save", in: app).tap(); element("mobile.photos.export.original", in: app).tap()
+        XCTAssertTrue(element("mobile.documents.export-panel", in: app).waitForExistence(timeout: 10))
+        let save = app.buttons.matching(NSPredicate(format: "label IN %@", ["Save", "保存"])).firstMatch
+        XCTAssertTrue(save.waitForExistence(timeout: 15))
+        attachScreenshot(app, name: "Multiple photo originals in system file export")
+        let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "取消"])).firstMatch
+        var cancelled = false
+        // 系统面板会恢复上次目录；先等待保存入口，再按实际目录层次回到取消按钮。
+        for _ in 0..<4 {
+            if cancel.waitForExistence(timeout: 1), cancel.isHittable { cancel.tap(); cancelled = true; break }
+            let back = app.buttons["BackButton"]; XCTAssertTrue(back.waitForExistence(timeout: 5)); back.tap()
+        }
+        XCTAssertTrue(cancelled)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+            object: element("mobile.documents.export-panel", in: app))], timeout: 5), .completed)
+        XCTAssertTrue(element("mobile.photos.selection.actions", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Sample 1.jpg"].exists)
+    }
+
+    func test整个照片文件夹可直接下载归档到系统面板() {
+        let app = launchFixture(state: "photo-export"); defer { app.terminate() }
+        openPhotos(app); openPhotoSection("Folders", app: app)
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.export.archive", in: app).tap()
+        element("mobile.photos.export.archiveOriginal", in: app).tap()
+        XCTAssertTrue(element("mobile.documents.export-panel", in: app).waitForExistence(timeout: 10))
+        attachScreenshot(app, name: "Entire photo folder archive in system file export")
+    }
+
+    func test照片分享交给系统并在部分失败后保留准确说明() {
+        let app = launchFixture(state: "photo-export-partial"); defer { app.terminate() }
+        openPhotos(app); selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.export.share", in: app).tap()
+        let panel = element("ActivityListView", in: app)
+        XCTAssertTrue(panel.waitForExistence(timeout: 10)); attachScreenshot(app, name: "Completed photo subset in system sharing")
+        let close = app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭"])).firstMatch
+        if close.exists { close.tap() } else { panel.swipeDown() }
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Prepared 1 of 3 items")).firstMatch.exists)
+        attachScreenshot(app, name: "Accurate partial photo export result")
+    }
+
+    func test照片导出加载可取消失败可恢复而不出现系统面板() {
+        for state in ["photo-export-loading", "photo-export-error"] {
+            let app = launchFixture(state: state); openPhotos(app); selectPhotoItems(app)
+            element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.export.share", in: app).tap()
+            if state == "photo-export-loading" {
+                XCTAssertTrue(element("mobile.photos.export.cancel", in: app).waitForExistence(timeout: 5))
+                attachScreenshot(app, name: state); element("mobile.photos.export.cancel", in: app).tap()
+                XCTAssertFalse(element("mobile.photos.export.cancel", in: app).exists)
+            } else {
+                XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); attachScreenshot(app, name: state)
+            }
+            XCTAssertFalse(element("ActivityListView", in: app).exists); app.terminate()
+        }
+    }
+
+    func test幻灯片暂停手动前后切换及退出回到原生预览() {
+        let app = launchFixture(state: "photo-export"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.slideshow.start", in: app).tap()
+        let playback = element("mobile.photos.slideshow.playback", in: app)
+        XCTAssertTrue(playback.waitForExistence(timeout: 5)); playback.tap(); XCTAssertEqual(playback.label, "Resume slideshow")
+        XCTAssertTrue(element("mobile.photos.slideshow.image", in: app).waitForExistence(timeout: 5))
+        let before = element("mobile.photos.slideshow.filename", in: app).label
+        element("mobile.photos.slideshow.next", in: app).tap()
+        XCTAssertTrue(NSPredicate(format: "label != %@", before).evaluate(with: element("mobile.photos.slideshow.filename", in: app)))
+        element("mobile.photos.slideshow.previous", in: app).tap()
+        XCTAssertEqual(element("mobile.photos.slideshow.filename", in: app).label, before)
+        attachScreenshot(app, name: "Photo slideshow with touch playback controls")
+        element("mobile.photos.slideshow.stop", in: app).tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5)); app.buttons["Close"].tap()
+        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 5))
+    }
+
+    func test中文大字号缩略图调节及按日选择不隐藏导出入口() {
+        let app = launchFixture(state: "photo-export", language: "zh-Hans"); app.terminate()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]; app.launch(); defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); navigate("settings", title: "App 设置", in: app)
+        let toggle = element("mobile.settings.module.photos", in: app)
+        for _ in 0..<8 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
+        toggle.switches.firstMatch.tap(); navigate("photos", title: "照片", in: app)
+        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.thumbnail.size", in: app).tap()
+        element("mobile.photos.thumbnail.larger", in: app).tap()
+        element("mobile.photos.selection.begin", in: app).tap(); element("mobile.photos.selection.day", in: app).tap()
+        XCTAssertTrue(app.staticTexts["已选择 3 项"].waitForExistence(timeout: 5))
+        element("mobile.photos.selection.actions", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.export.save", in: app).exists); XCTAssertTrue(element("mobile.photos.export.share", in: app).isEnabled)
+        attachScreenshot(app, name: "Chinese accessibility photo selection and export")
+    }
+
     func test相似预览更换代表照片移出与撤销均保留原件() {
         let app = launchFixture(state: "photo-similar"); defer { app.terminate() }
         openSimilarPhotos(app); app.buttons["Sample 1.jpg"].tap()
@@ -164,7 +264,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test预览删除单张后仍保留其余照片() {
         let app = launchFixture(state: "photo-deletion"); defer { app.terminate() }
         openPhotos(app); app.buttons["Sample 1.jpg"].tap()
-        let share = app.buttons["Save original"]; XCTAssertTrue(share.waitForExistence(timeout: 5)); share.tap()
+        let share = app.buttons["mobile.photos.preview.actions"]; XCTAssertTrue(share.waitForExistence(timeout: 5)); share.tap()
         let action = element("mobile.photos.preview.delete", in: app); XCTAssertTrue(action.waitForExistence(timeout: 5)); action.tap()
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); app.alerts.firstMatch.buttons["mobile.photos.deletion.confirm"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Deleted: 1."].waitForExistence(timeout: 8))
