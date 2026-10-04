@@ -6068,3 +6068,13 @@
 "mobile.photos.condition.create" = "Create";
 "mobile.photos.condition.chooseFolders" = "Choose folders";
 "mobile.photos.condition.title" = "Conditional album";
+
+"mobile.photos.frozen.restore" = "Restore";
+"mobile.photos.frozen.rebuild" = "Rebuild";
+"mobile.photos.frozen.regular" = "Regular album";
+"mobile.photos.frozen.confirmTitle" = "Replace the frozen album?";
+"mobile.photos.frozen.confirmMessage" = "A new album will use these conditions. The old album will be removed, while original photos are kept. Existing sharing links and member settings will not carry over.";
+"mobile.photos.frozen.loading" = "Loading album…";
+"mobile.photos.frozen.readFailed" = "Unable to load this album. Try again.";
+"mobile.photos.frozen.replace" = "Replace album";
+"mobile.photos.album.emptyContent" = "There are no photos to display in this album. Refresh to try again.";

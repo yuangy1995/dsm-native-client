@@ -1569,6 +1569,8 @@ private struct PhotosMutationRecord: Sendable {
     var sharingBefore: ManagementAlbum.Sharing?
     var restoredAlbumSharing: SynologyPhotosAlbumCheckpoint.Sharing?
     var restoredPhotoRequest: SynologyPhotosAlbumCheckpoint.Request?
+    var usesAlbumRecovery = false
+    var restoredFrozen: SynologyPhotosAlbumCheckpoint.Frozen?
     var restoredCondition: SynologyPhotosAlbumCheckpoint.Condition?
     var personPhotoIDs: Set<Int>?
     var personReceipt: PersonNameReceipt?
@@ -2934,13 +2936,18 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        if let condition = checkpoint.conditionDetails { try requireAccess(condition.space) }
+        if let frozen = checkpoint.frozenDetails {
+            try requireAlbumAccess()
+            if let condition = frozen.rebuiltCondition { try requireAccess(condition.space) }
+        } else if let condition = checkpoint.conditionDetails { try requireAccess(condition.space) }
         else if let request = checkpoint.requestDetails { try requireAccess(request.space) }
         else { try requireAlbumAccess() }
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            let matches = if let sharing = checkpoint.sharingDetails {
+            let matches = if let frozen = checkpoint.frozenDetails {
+                existing.restoredFrozen.map { $0 == frozen } ?? frozen.hasSameIntent(as: existing.mutation, profileID: profileID, userID: checkpoint.userID)
+            } else if let sharing = checkpoint.sharingDetails {
                 existing.restoredAlbumSharing.map { $0 == sharing } ?? sharing.hasSameIntent(as: existing.mutation)
             } else if let condition = checkpoint.conditionDetails {
                 existing.restoredCondition.map { $0 == condition } ?? condition.hasSameIntent(as: existing.mutation, userID: checkpoint.userID)
@@ -2963,6 +2970,10 @@ extension SynologyPhotosRepository {
         record.albumMembershipHasFailures = checkpoint.membershipHasFailures
         record.restoredAlbumSharing = checkpoint.sharingDetails
         record.restoredPhotoRequest = checkpoint.requestDetails
+        record.restoredFrozen = checkpoint.frozenDetails
+        record.usesAlbumRecovery = true
+        record.frozenDeletionAttempted = checkpoint.frozenDetails?.deletionAttempted ?? false
+        record.frozenDeletionRejected = checkpoint.frozenDetails?.deletionRejected ?? false
         record.restoredCondition = checkpoint.conditionDetails
         record.passwordUpdateAcknowledged = checkpoint.sharingDetails?.passwordAcknowledged ?? false
         record.enableSharingAttempted = checkpoint.sharingDetails?.enableAttempted ?? false
@@ -2982,6 +2993,11 @@ extension SynologyPhotosRepository {
             checkpoint.rejected = record.result.state == .rejected
             checkpoint.temporaryMembers = record.temporaryAlbumMembers?.map { id, value in
                 .init(id: id, filename: value.filename, size: value.size, folderID: value.folderID, indexedAt: value.indexedAt)
+            }
+            if var frozen = checkpoint.frozenDetails {
+                frozen.deletionAttempted = record.frozenDeletionAttempted
+                frozen.deletionRejected = record.frozenDeletionRejected
+                checkpoint.frozenDetails = frozen
             }
             if var sharing = checkpoint.sharingDetails {
                 sharing.previousMembers = sharingMembers(record.sharingBefore?.permission)?.map(SynologyPhotosAlbumCheckpoint.Sharing.Member.init)
@@ -3042,6 +3058,7 @@ extension SynologyPhotosRepository {
             sharingAlbum = album; sharingSnapshot = current
         }
         var record = PhotosMutationRecord(mutation: mutation)
+        record.usesAlbumRecovery = albumCheckpointWriters[operationID] != nil
         record.sharingBefore = sharingAlbum?.additional?.sharing_info
         record.regenerationBaseline = preparedTarget.previewBaselines
         if case .copyTemporaryAlbum(let id, _, let original) = mutation {
@@ -4036,8 +4053,9 @@ extension SynologyPhotosRepository {
             let generation = accessGeneration
             let current = try await managedAlbum(original.album.id)
             guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
-            if current.freeze_album == false, current.type != "condition", current.owner_user_id == original.userID,
-               current.name == original.album.name, current.item_count == original.album.itemCount {
+            let matches = record.restoredFrozen?.matchesOriginal(current.collection) ??
+                (current.name == original.album.name && current.item_count == original.album.itemCount)
+            if current.freeze_album == false, current.type != "condition", current.owner_user_id == original.userID, matches {
                 result = .init(state: .confirmed, album: current.collection)
             }
         case .rebuildFrozenAlbum(let original, let name, let condition):
@@ -4046,9 +4064,14 @@ extension SynologyPhotosRepository {
             let generation = accessGeneration
             let created = try await managedAlbum(id)
             let actualCondition = try await albumCondition(id: id)
-            guard created.owner_user_id == original.userID, created.name == name, created.freeze_album != true,
-                  created.shared == false, try conditionParameters(actualCondition) == conditionParameters(condition) else { break }
-            if !record.frozenDeletionAttempted {
+            let matches: Bool
+            if let restored = record.restoredFrozen?.rebuiltCondition {
+                matches = try restored.matches(name: created.name, condition: actualCondition, userID: original.userID)
+            } else { matches = try created.name == name && conditionParameters(actualCondition) == conditionParameters(condition) }
+            guard generation == accessGeneration, created.owner_user_id == original.userID,
+                  created.freeze_album != true, created.shared == false, matches else { break }
+            let readOnly = record.restoredFrozen != nil || (record.usesAlbumRecovery && albumCheckpointWriters[operationID] == nil)
+            if !record.frozenDeletionAttempted && !readOnly {
                 let current: SynologyPhotoFrozenAlbum
                 do { current = try await frozenAlbum(id: original.album.id) }
                 catch let error as AppError where [.conflict, .permissionDenied, .invalidResponse].contains(error.category) {
@@ -4061,6 +4084,8 @@ extension SynologyPhotosRepository {
                 guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
                 // 新相册已核对，旧相册身份未变；先记录尝试，再发送一次删除。
                 record.frozenDeletionAttempted = true
+                do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                catch { record.frozenDeletionAttempted = false; throw error }
                 mutations[operationID] = record
                 do {
                     try await managementWrite("SYNO.Foto.Browse.Album", method: "delete", parameters: ["id": .integerArray([original.album.id])])
@@ -4068,12 +4093,13 @@ extension SynologyPhotosRepository {
                     if case DsmNetworkError.api = error { record.frozenDeletionRejected = true }
                     if let error = error as? AppError, [.permissionDenied, .authenticationRequired].contains(error.category) { record.frozenDeletionRejected = true }
                     mutations[operationID] = record
+                    try persistRecoveryCheckpoint(record, operationID: operationID)
                 }
             }
             let old: ManagementAlbums = try await call("SYNO.Foto.Browse.Album", version: 4, method: "get", parameters: ["id": .integerArray([original.album.id])])
             guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
             if old.list.isEmpty { result = .init(state: .confirmed, album: created.collection) }
-            else if record.frozenDeletionRejected { result = .init(state: .partial, album: created.collection) }
+            else if record.frozenDeletionRejected || !record.frozenDeletionAttempted { result = .init(state: .partial, album: created.collection) }
         case .createConditionAlbum(let name, let condition):
             if let id = record.albumID {
                 let album = try await managedAlbum(id)

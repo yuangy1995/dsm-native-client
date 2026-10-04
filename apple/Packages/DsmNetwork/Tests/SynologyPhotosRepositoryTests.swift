@@ -614,6 +614,96 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
     }
     private var frozenNewProof: [DsmHTTPResponse] { [frozenCreated, frozenCreated, frozenConditionReply] }
 
+    func test冻结恢复记录仅摘要普通恢复在个人目录关闭时只读核对() async throws {
+        let profile = UUID(), id = UUID()
+        let reader = MockHTTPTransport(responses: accessResponses(homeEnabled: false) + [frozenFixture(condition: #"{"user_id":0}"#)])
+        let source = try makeRepository(reader, profileID: profile); _ = try await source.access()
+        let original = try await source.frozenAlbum(id: 21)
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: .unfreezeAlbum(original), operationID: id, profileID: profile, userID: 12)
+        let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
+        XCTAssertEqual(saved.version, 6)
+        for secret in ["Frozen fixture", "people", "recently_add", "obsolete_rule"] { XCTAssertFalse(text.contains(secret)) }
+        for (index, final) in [frozenFixture(frozen: false), frozenFixture(frozen: nil), frozenFixture(frozen: false, owner: 99), frozenFixture(frozen: false, name: "Other")].enumerated() {
+            let transport = MockHTTPTransport(responses: accessResponses(homeEnabled: false) + [final])
+            let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+            try await repository.restoreAlbumMutation(try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data))
+            let result = try await repository.reviewMutation(operationID: id)
+            XCTAssertEqual(result.state, index == 0 ? .confirmed : .pendingReview)
+            let calls = try await transport.recordedRequests().map(decode)
+            XCTAssertFalse(calls.contains { ["set_unfreeze", "create", "delete"].contains($0["method"] ?? "") })
+        }
+    }
+
+    func test冻结重建恢复按实际编号和删除阶段只读且不重放() async throws {
+        let profile = UUID(), id = UUID()
+        let reader = MockHTTPTransport(responses: accessResponses() + [frozenFixture()])
+        let source = try makeRepository(reader, profileID: profile); _ = try await source.access()
+        let original = try await source.frozenAlbum(id: 21)
+        let command = SynologyPhotosMutation.rebuildFrozenAlbum(original, name: "Rebuilt fixture", condition: try XCTUnwrap(original.rebuildCondition))
+        for mode in 0..<5 {
+            var saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+            saved.createdAlbumID = mode == 0 ? nil : 31
+            if var frozen = saved.frozenDetails { frozen.deletionAttempted = mode >= 3; frozen.deletionRejected = mode == 4; saved.frozenDetails = frozen }
+            let old = mode == 2 ? response(#"{"success":true,"data":{"list":[]}}"#) : frozenFixture()
+            let transport = MockHTTPTransport(responses: accessResponses() + (mode == 0 ? [] : frozenNewProof + [old]))
+            let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+            try await repository.restoreAlbumMutation(saved)
+            let result = try await repository.reviewMutation(operationID: id)
+            XCTAssertEqual(result.state, mode == 2 ? .confirmed : [1, 4].contains(mode) ? .partial : .pendingReview)
+            let calls = try await transport.recordedRequests().map(decode)
+            XCTAssertFalse(calls.contains { ["create", "delete", "set_unfreeze"].contains($0["method"] ?? "") })
+            if mode == 0 { XCTAssertFalse(calls.contains { $0["api"] == "SYNO.Foto.Browse.Album" }) }
+        }
+    }
+
+    func test冻结重建删除前保存失败同实例后续也只能保留两册() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let transport = MockHTTPTransport(responses: accessResponses() + [frozenFixture(), frozenFixture(), response(#"{"success":true,"data":{"album":{"id":31}}}"#)] + frozenNewProof + [frozenFixture()] + frozenNewProof + [frozenFixture()])
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let original = try await repository.frozenAlbum(id: 21)
+        let command = SynologyPhotosMutation.rebuildFrozenAlbum(original, name: "Rebuilt fixture", condition: try XCTUnwrap(original.rebuildCondition))
+        let first = try await repository.performRecoverableAlbumMutation(command, operationID: id) {
+            if $0.frozenDetails?.deletionAttempted == true { throw CocoaError(.fileWriteOutOfSpace) }
+            capture.append($0)
+        }
+        XCTAssertEqual(first.state, .pendingReview); XCTAssertEqual(capture.values.last?.createdAlbumID, 31)
+        XCTAssertEqual(capture.values.last?.frozenDetails?.deletionAttempted, false)
+        let second = try await repository.reviewMutation(operationID: id)
+        XCTAssertEqual(second.state, .partial); XCTAssertEqual(second.album?.id, 31)
+        let calls = try await transport.recordedRequests().map(decode)
+        XCTAssertEqual(calls.filter { $0["method"] == "create" }.count, 1); XCTAssertFalse(calls.contains { $0["method"] == "delete" })
+    }
+
+    func test冻结重建正常删除保存尝试阶段且明确拒绝可恢复为部分完成() async throws {
+        for reject in [false, true] {
+            let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+            let transport = MockHTTPTransport(responses: accessResponses() + [frozenFixture(), frozenFixture(), response(#"{"success":true,"data":{"album":{"id":31}}}"#)] + frozenNewProof + [frozenFixture(), response(reject ? #"{"success":false,"error":{"code":105}}"# : emptySuccess), reject ? frozenFixture() : response(#"{"success":true,"data":{"list":[]}}"#)])
+            let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+            let original = try await repository.frozenAlbum(id: 21)
+            let result = try await repository.performRecoverableAlbumMutation(.rebuildFrozenAlbum(original, name: "Rebuilt fixture", condition: try XCTUnwrap(original.rebuildCondition)), operationID: id) { capture.append($0) }
+            XCTAssertEqual(result.state, reject ? .partial : .confirmed)
+            XCTAssertEqual(capture.values.last?.frozenDetails?.deletionAttempted, true)
+            XCTAssertEqual(capture.values.last?.frozenDetails?.deletionRejected, reject)
+            let calls = try await transport.recordedRequests().map(decode)
+            XCTAssertEqual(calls.filter { $0["method"] == "delete" }.count, 1)
+        }
+    }
+
+    func test冻结摘要不接受错误身份损坏阶段或另一快照() async throws {
+        let profile = UUID(), id = UUID()
+        let reader = MockHTTPTransport(responses: accessResponses() + [frozenFixture(), frozenFixture(name: "Changed")])
+        let source = try makeRepository(reader, profileID: profile); _ = try await source.access()
+        let original = try await source.frozenAlbum(id: 21), changed = try await source.frozenAlbum(id: 21)
+        XCTAssertThrowsError(try SynologyPhotosAlbumCheckpoint(mutation: .unfreezeAlbum(original), operationID: id, profileID: UUID(), userID: 12))
+        var saved = try SynologyPhotosAlbumCheckpoint(mutation: .unfreezeAlbum(original), operationID: id, profileID: profile, userID: 12)
+        try await source.restoreAlbumMutation(saved)
+        let other = try SynologyPhotosAlbumCheckpoint(mutation: .unfreezeAlbum(changed), operationID: id, profileID: profile, userID: 12)
+        do { try await source.restoreAlbumMutation(other); XCTFail("不能恢复另一快照") } catch { }
+        if var frozen = saved.frozenDetails { frozen.deletionRejected = true; saved.frozenDetails = frozen }
+        XCTAssertThrowsError(try saved.reviewMutation())
+        saved.createdAlbumID = 21; XCTAssertThrowsError(try saved.reviewMutation())
+    }
+
     func test冻结相册独立标记和恢复快照只保留受支持的新条件() async throws {
         let transport = MockHTTPTransport(responses: accessResponses() + [frozenFixture(), frozenFixture(), frozenFixture(), frozenFixture()])
         let repository = try makeRepository(transport); _ = try await repository.access()

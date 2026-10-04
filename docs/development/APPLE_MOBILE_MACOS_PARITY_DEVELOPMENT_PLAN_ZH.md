@@ -43,7 +43,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M3 Photos 上传 | SynologyPhotosModel、SynologyPhotosView | Photos/Files 选择与队列；上传/相册加入；写 | M3a 已接系统多选、受保护副本及队列恢复；两端单元/实际 UI 通过，相册加入失败只补后一步，真实 NAS 待验 |
 | M3 批量及资料 | PhotoManagementPanel | 多选、标签/日期/资料表单；原件权限；写 | 缺编辑/批量；列表可见不代表可改/删 |
 | M3 目录及移动复制 | PhotoFolderDestinationPicker | 分步目的地选择；Folder/Move/Copy；数据写 | 缺管理；绑定对象、空间与角色，保留部分成功 |
-| M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | M3b1 普通相册及 M3b2 访问范围/成员/保护设置已接入并通过两端回归；M3b3 临时分享生命周期、M3b4 照片收集及 M3b5 条件相册也经两端回归；冻结相册继续后续切片，权限保持独立 |
+| M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | M3b1 普通相册及 M3b2 访问范围/成员/保护设置已接入并通过两端回归；M3b3 临时分享生命周期、M3b4 照片收集及 M3b5 条件相册也经两端回归；M3b6 冻结相册普通恢复/重建及重启只读也经两端回归，权限保持独立 |
 | M3 人物、相似组 | SynologyPhotosModel | 触控分组列表、人物编辑；People/Similar；写 | 缺管理流程；不推断服务端未识别的人物 |
 | M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | 缺流程；支持不足只限制相关入口 |
 | M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | 包装器未转发新增能力；本人/会话绑定，历史完整分页 |
@@ -104,6 +104,14 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+## M3b6 冻结相册恢复
+
+Mac 证据为 `PhotoManagementPanel` 的恢复表单与共享 `SynologyPhotosRepository.frozenAlbum/inspectMutation`。iPhone/iPad 复用现有条件规则表单，先读取冻结快照及无法沿用的规则，再选择恢复为普通相册或使用支持的规则重建；重建明确告知旧相册会移除、原照片保留且分享设置不会转移。普通恢复不依赖条件相册或来源目录能力。沿用已记录 NormalAlbum.set_unfreeze、ConditionAlbum.create 与 Album.delete，不新增猜测请求。
+
+单一修改范围为移动条件表单/模型、照片菜单、合成服务与对应测试；共享恢复记录及 Repository、双语资源和相关文档。安全级别为内部写与相册删除。独立恢复记录增量版本 6 仅存旧相册编号、名称/规则/原快照摘要、数量和删除阶段；不落盘原规则、链接、名称或凭据，版本 1–5 保持读取，旧客户端保留无法读取的新记录。属于已批准恢复范围，不迁移登录配置；回滚停用新入口并保留记录。重启恢复只查询，新相册必须使用真实返回编号；第二步删除前先持久保存尝试标记，存储失败不得删除。新相册已创建但旧相册未移除时保留两者并说明结果，不重放删除。Mac 非持久恢复调用保持原行为，共享修改须完整回归；Windows/Android 不改源码。
+
+已完成独立集成及只读对抗复核，覆盖旧快照变化、权限/账号、丢回执、重启、保存失败与重复操作；仅使用合成数据。网络 537 项、完整共享 2457 项（172 项既有条件跳过）及 12 项 Swift Testing 通过；两端各 782 项单元通过，Mac 双架构构建通过。两端各四项新增实际 UI 及一项条件相册回归已有通过证据，原生警告框包含明确取消和替换按钮，空相册提示不会误称没有相册。具体命令、首轮失败及修复见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m3b6-冻结相册恢复)。`PENDING_USER_VALIDATION`：两种真机、专用可丢弃冻结相册及普通/受限账号，分别恢复与重建并检查原照片、分享、支持/不支持规则、断网和重启；预期不误删旧相册、不重复创建/删除、不跨账号显示。真实 NAS、锁屏保护、VoiceOver、大字号和键盘待用户验证，只回传版本、脱敏步骤与错误类别。
 
 ## M3b5 条件相册
 

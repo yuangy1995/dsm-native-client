@@ -10,12 +10,16 @@ final class MobilePhotoConditionModel {
     struct Draft: Identifiable {
         let id = UUID()
         let editing: Bool
+        let restoring: Bool
         let album: SynologyPhotoCollection?
         let section: SynologyPhotosSection
         let space: SynologyPhotoSpace
     }
     private(set) var draft: Draft?
     private(set) var original: SynologyPhotoAlbumCondition?
+    private(set) var frozen: SynologyPhotoFrozenAlbum?
+    private(set) var canRebuild = false
+    var rebuild = false
     var name = ""
     var condition = SynologyPhotoAlbumCondition() {
         didSet { countTask?.cancel(); countGeneration = UUID(); isCounting = false; count = nil; countError = nil }
@@ -53,10 +57,15 @@ final class MobilePhotoConditionModel {
         return model.selectedAlbum?.isConditional == true && model.selectedAlbum?.isFrozen == false &&
             model.selectedAlbumAccess?.albumID == model.selectedAlbum?.id && model.selectedAlbumAccess?.isOwner == true
     }
-    func begin(editing: Bool = false) {
-        guard canOpen(editing: editing) else { return }
+    func canRestore() -> Bool {
+        model.canStartManagementMutation && model.managementFeatures.contains(.frozenAlbums) &&
+            model.selectedAlbum?.isFrozen == true && model.selectedAlbumAccess?.albumID == model.selectedAlbum?.id &&
+            model.selectedAlbumAccess?.isOwner == true
+    }
+    func begin(editing: Bool = false, restoring: Bool = false) {
+        guard restoring ? canRestore() : canOpen(editing: editing) else { return }
         cancel()
-        draft = .init(editing: editing, album: model.selectedAlbum, section: model.section, space: model.selectedSpace)
+        draft = .init(editing: editing, restoring: restoring, album: model.selectedAlbum, section: model.section, space: model.selectedSpace)
         if let space = model.conditionSourceSpaces.first(where: { $0 == model.selectedSpace }) ?? model.conditionSourceSpaces.first {
             condition = Self.empty(in: space)
         }
@@ -72,18 +81,29 @@ final class MobilePhotoConditionModel {
     func load() {
         guard let draft, isCurrent(draft), !isLoading else { return }
         error = nil
-        guard draft.editing, let album = draft.album else { return }
+        guard draft.editing || draft.restoring, let album = draft.album else { return }
         isLoading = true
         loadTask = Task { [weak self] in
             guard let self else { return }
             defer { if self.draft?.id == draft.id { self.isLoading = false; self.loadTask = nil } }
             do {
+                if draft.restoring {
+                    let value = try await self.model.frozenAlbum(id: album.id)
+                    let candidate = value.rebuildCondition
+                    let available = if let candidate, value.canRebuild, self.model.conditionSourceSpaces.contains(candidate.sourceSpace) {
+                        await self.model.supportsManagement(.conditionAlbums, in: candidate.sourceSpace)
+                    } else { false }
+                    guard !Task.isCancelled, self.isCurrent(draft) else { return }
+                    self.frozen = value; self.name = value.album.name; self.canRebuild = available
+                    if available, let candidate { self.condition = candidate }
+                    return
+                }
                 let value = try await self.model.albumCondition(id: album.id)
                 guard !Task.isCancelled, self.isCurrent(draft) else { return }
                 guard self.model.conditionSourceSpaces.contains(value.sourceSpace) else { throw CocoaError(.fileReadNoPermission) }
                 self.original = value; self.condition = value
             } catch {
-                if !Task.isCancelled, self.isCurrent(draft) { self.error = L10n.string("mobile.photos.condition.readFailed") }
+                if !Task.isCancelled, self.isCurrent(draft) { self.error = L10n.string(draft.restoring ? "mobile.photos.frozen.readFailed" : "mobile.photos.condition.readFailed") }
             }
         }
     }
@@ -96,8 +116,15 @@ final class MobilePhotoConditionModel {
         }
     }
     var mutation: SynologyPhotosMutation? {
-        guard let draft, isCurrent(draft), canOpen(editing: draft.editing), !isLoading, error == nil,
-              datesValid, model.conditionSourceSpaces.contains(condition.sourceSpace) else { return nil }
+        guard let draft, isCurrent(draft), !isLoading, error == nil else { return nil }
+        if draft.restoring {
+            guard canRestore(), let frozen else { return nil }
+            if !rebuild { return .unfreezeAlbum(frozen) }
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard canRebuild, !trimmed.isEmpty, datesValid, model.conditionSourceSpaces.contains(condition.sourceSpace) else { return nil }
+            return .rebuildFrozenAlbum(frozen, name: trimmed, condition: condition)
+        }
+        guard canOpen(editing: draft.editing), datesValid, model.conditionSourceSpaces.contains(condition.sourceSpace) else { return nil }
         if draft.editing {
             guard let album = draft.album, let original, original.fields != condition.fields else { return nil }
             return .setAlbumCondition(id: album.id, original: original, condition: condition)
@@ -105,7 +132,8 @@ final class MobilePhotoConditionModel {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : .createConditionAlbum(name: trimmed, condition: condition)
     }
-    @discardableResult func submit() -> Bool {
+    @discardableResult func submit(confirmedRebuild: Bool = false) -> Bool {
+        guard draft?.restoring != true || !rebuild || confirmedRebuild else { return false }
         guard let mutation else { return false }
         model.submitMutation(mutation)
         guard model.isManaging else { return false }
@@ -210,7 +238,7 @@ final class MobilePhotoConditionModel {
     }
     func cancel() {
         loadTask?.cancel(); loadTask = nil; searchTask?.cancel(); searchTask = nil; countTask?.cancel(); countTask = nil
-        resetFolders(); draft = nil; original = nil; name = ""; condition = .init(); sourceDrafts = [:]
+        resetFolders(); draft = nil; original = nil; frozen = nil; canRebuild = false; rebuild = false; name = ""; condition = .init(); sourceDrafts = [:]
         field = .keyword; search = ""; clearSuggestions(); isLoading = false; error = nil
     }
 }

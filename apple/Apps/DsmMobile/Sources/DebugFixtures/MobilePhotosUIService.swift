@@ -16,6 +16,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var rejectsSharing = true
     private var temporaryAlbumIDs: Set<Int> = []
     private var requestList: [SynologyPhotoRequest] = []
+    private var frozenValue: SynologyPhotoFrozenAlbum?
     private var conditions: [Int: SynologyPhotoAlbumCondition] = [:]
     private var heldCondition: CheckedContinuation<Void, Never>?
     private(set) var isConditionHeld = false
@@ -32,12 +33,21 @@ actor MobilePhotosUIService: SynologyPhotosServing {
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown"].contains(state)
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown"].contains(state)
         if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
                       sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20), folderID: 1, mediaType: "photo")
             }
+        }
+        if state.hasPrefix("photo-frozen") {
+            let album = SynologyPhotoCollection(id: 21, name: "Sample frozen album", itemCount: 2, isFrozen: true)
+            albumList = [album]
+            let condition = SynologyPhotoAlbumCondition(fields: ["item_type": .array([]), "keyword": .array([.string("Sample rule")])])
+            frozenValue = .init(profileID: profileID, userID: 12, album: album,
+                rawCondition: state == "photo-frozen-nohome" ? ["user_id": .integer(0)] : condition.fields,
+                unsupportedConditions: ["people": .array([.integer(1)]), "recently_add": .boolean(true)],
+                rebuildCondition: state == "photo-frozen-no-condition" ? nil : condition, sharingRevision: "synthetic-revision", isShared: true)
         }
         if state.hasPrefix("photo-condition") {
             albumList = [.init(id: 21, name: "Sample conditional album", isConditional: true)]
@@ -63,6 +73,14 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                 albumName: "Sample album", isFolderValid: state != "photo-request-invalid-folder", url: URL(string: "https://example.invalid/request/fixture"))]
         }
     }
+    func frozenAlbum(id: Int) async throws -> SynologyPhotoFrozenAlbum {
+        let value = frozenValue
+        if state == "photo-frozen-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-frozen-held" { isConditionHeld = true; await withCheckedContinuation { heldCondition = $0 } }
+        if state == "photo-frozen-error" { throw URLError(.notConnectedToInternet) }
+        guard let value, value.album.id == id else { throw CocoaError(.fileReadNoSuchFile) }; return value
+    }
+    func clearFrozenSnapshot() { frozenValue = nil }
     func seedCondition(_ condition: SynologyPhotoAlbumCondition, id: Int = 21, name: String = "Sample conditional album") {
         conditions[id] = condition
         albumList.removeAll { $0.id == id }; albumList.append(.init(id: id, name: name, isConditional: true))
@@ -100,12 +118,13 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func access() async throws -> SynologyPhotosAccess {
         if state == "photo-loading" { try await Task.sleep(for: .seconds(30)) }
         if state == "photo-error" { throw URLError(.notConnectedToInternet) }
-        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry")
+        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry")
     }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
         guard !state.hasSuffix("-readonly"), !deniesWrites else { return [] }
         var features: Set<SynologyPhotosManagementFeature> = [.upload, .albums, .folders, .sharing, .photoRequests]
-        if state.hasPrefix("photo-condition") { features.insert(.conditionAlbums) }
+        if state.hasPrefix("photo-condition") || (state.hasPrefix("photo-frozen") && state != "photo-frozen-no-condition") { features.insert(.conditionAlbums) }
+        if state.hasPrefix("photo-frozen") { features.insert(.frozenAlbums) }
         return features
     }
     func changeSharing(_ value: SynologyPhotoSharingState) { sharingValue = value }
@@ -191,6 +210,8 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func prepareMutation(_ mutation: SynologyPhotosMutation) async throws {
         if deniesWrites { throw CocoaError(.fileWriteNoPermission) }
         if case .shareAlbum(_, _, let original, _, _, _) = mutation, original?.revision != sharingValue.revision { throw CocoaError(.fileWriteNoPermission) }
+        if case .unfreezeAlbum(let original) = mutation, frozenValue?.hasSameState(as: original) != true { throw CocoaError(.fileWriteNoPermission) }
+        if case .rebuildFrozenAlbum(let original, _, _) = mutation, frozenValue?.hasSameState(as: original) != true { throw CocoaError(.fileWriteNoPermission) }
         if case .setAlbumCondition(let id, let original, _) = mutation, original != conditions[id] { throw CocoaError(.fileWriteNoPermission) }
     }
     func performRecoverableUpload(_ mutation: SynologyPhotosMutation, operationID: UUID, progress: @escaping FileTransferProgress,
@@ -235,6 +256,17 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             saved.sharingDetails = sharing
         }
         switch mutation {
+        case .unfreezeAlbum(let original):
+            albumList.removeAll { $0.id == original.album.id }
+            albumList.append(.init(id: original.album.id, name: original.album.name, itemCount: original.album.itemCount))
+        case .rebuildFrozenAlbum(let original, let name, let condition):
+            nextID += 1; saved.createdAlbumID = nextID
+            seedCondition(condition, id: nextID, name: name)
+            if state != "photo-frozen-partial" {
+                if var value = saved.frozenDetails { value.deletionAttempted = true; saved.frozenDetails = value }
+                try checkpoint(saved)
+                albumList.removeAll { $0.id == original.album.id }
+            }
         case .createConditionAlbum(let name, let condition):
             nextID += 1; saved.createdAlbumID = nextID
             seedCondition(condition, id: nextID, name: name)
@@ -272,6 +304,16 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .frozen(let summary):
+            if let condition = summary.rebuiltCondition {
+                guard let id = saved.createdAlbumID, let album = albumList.first(where: { $0.id == id }),
+                      let rules = conditions[id], (try? condition.matches(name: album.name, condition: rules, userID: userID)) == true else { return .init(state: .pendingReview) }
+                let oldExists = albumList.contains { $0.id == summary.albumID }
+                return .init(state: oldExists ? (!summary.deletionAttempted || summary.deletionRejected ? .partial : .pendingReview) : .confirmed, album: album)
+            }
+            guard let album = albumList.first(where: { $0.id == summary.albumID }), !album.isFrozen,
+                  !album.isConditional, summary.matchesOriginal(album) else { return .init(state: .pendingReview) }
+            return .init(state: .confirmed, album: album)
         case .condition(let summary):
             guard let id = summary.albumID ?? saved.createdAlbumID, let condition = conditions[id],
                   let album = albumList.first(where: { $0.id == id }),

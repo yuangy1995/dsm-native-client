@@ -158,6 +158,10 @@ private struct MobileSynologyPhotosContent: View {
                         }
                     }
                     if let conditions = session.conditions {
+                        if model.selectedAlbum?.isFrozen == true {
+                            Button(L10n.string("photos.frozen.restore")) { conditions.begin(restoring: true) }
+                                .disabled(!conditions.canRestore()).accessibilityIdentifier("mobile.photos.frozen.restore")
+                        }
                         Button(L10n.string("photos.condition.create")) { conditions.begin() }
                             .disabled(!conditions.canOpen()).accessibilityIdentifier("mobile.photos.condition.create")
                         if model.selectedAlbum?.isConditional == true, model.selectedAlbum?.isFrozen == false {
@@ -246,7 +250,7 @@ private struct MobileSynologyPhotosContent: View {
             Label(L10n.string("photos.empty.title"), systemImage: "photo.on.rectangle")
         } description: {
             Text(L10n.string(model.isRequestList && !model.requestSearchText.isEmpty ? "photos.request.noResults" : model.isFiltering ? "photos.library.noResults" :
-                model.section == .sharing ? "photos.sharing.empty" :
+                model.selectedAlbum != nil ? "mobile.photos.album.emptyContent" : model.section == .sharing ? "photos.sharing.empty" :
                 model.section == .albums ? "photos.library.noAlbums" : "photos.library.empty"))
         } actions: {
             Button(L10n.string("photos.library.refresh")) { Task { await model.refresh() } }
