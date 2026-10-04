@@ -7270,6 +7270,155 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         }
     }
 
+    func test管理员恢复全局多步保存逐步记录且跨实例只回读() async throws {
+        let profile = UUID(), original = globalSettingsFixture(profile), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let target = original.applying(enabled: original.enabled.subtracting([.person]), excludedExtensions: original.excludedExtensions)
+        let transport = MockHTTPTransport(responses: accessResponses() + (try globalSettingsResponses(original)) + Array(repeating: response(emptySuccess), count: 3) + (try globalSettingsResponses(target)))
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let command = SynologyPhotosMutation.setGlobalSettings(original: original, enabled: target.enabled, excludedExtensions: target.excludedExtensions)
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+        XCTAssertEqual(result.state, .confirmed)
+        let snapshots = capture.values.compactMap(\.administrationDetails)
+        XCTAssertTrue(snapshots.contains { $0.globalAttempted == [.admin] && $0.globalAcknowledged.isEmpty })
+        XCTAssertTrue(snapshots.contains { $0.globalAttempted == [.admin, .personal] && $0.globalAcknowledged == [.admin] })
+        let data = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
+        let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data)
+        XCTAssertEqual(saved.version, 13); XCTAssertEqual(saved.administrationDetails?.globalAcknowledged, [.admin, .personal, .shared])
+        let reads = MockHTTPTransport(responses: accessResponses() + (try globalSettingsResponses(target)))
+        let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access()
+        try await restored.restoreAlbumMutation(saved)
+        let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, .confirmed)
+        let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { ["set", "clear_cache"].contains($0["method"]) })
+    }
+
+    func test管理员恢复全局回执丢失不补发未提交的个人共享步骤() async throws {
+        let profile = UUID(), original = globalSettingsFixture(profile), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let target = original.applying(enabled: original.enabled.subtracting([.person]), excludedExtensions: original.excludedExtensions)
+        let transport = MockHTTPTransport(responses: accessResponses() + (try globalSettingsResponses(original)) + [response("invalid")] + (try globalSettingsResponses(original)))
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let command = SynologyPhotosMutation.setGlobalSettings(original: original, enabled: target.enabled, excludedExtensions: target.excludedExtensions)
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+        XCTAssertEqual(result.state, .pendingReview)
+        let saved = try XCTUnwrap(capture.values.last)
+        XCTAssertEqual(saved.administrationDetails?.globalAttempted, [.admin]); XCTAssertEqual(saved.administrationDetails?.globalAcknowledged, [])
+        let reads = MockHTTPTransport(responses: accessResponses() + (try globalSettingsResponses(target)))
+        let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+        let reviewed = try await restored.reviewMutation(operationID: id)
+        XCTAssertEqual(reviewed.state, .partial); XCTAssertEqual(reviewed.completedCount, 1)
+        let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { $0["method"] == "set" })
+    }
+
+    func test管理员恢复保存阶段失败停止写入并保留已完成步骤() async throws {
+        for failBeforeFirst in [true, false] {
+            let profile = UUID(), original = globalSettingsFixture(profile), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+            var partial = original; partial.values[.person] = false
+            let extra = failBeforeFirst ? [] : [response(emptySuccess)] + (try globalSettingsResponses(partial))
+            let transport = MockHTTPTransport(responses: accessResponses() + (try globalSettingsResponses(original)) + extra)
+            let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+            let command = SynologyPhotosMutation.setGlobalSettings(original: original, enabled: original.enabled.subtracting([.person]), excludedExtensions: original.excludedExtensions)
+            let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { saved in
+                if let details = saved.administrationDetails,
+                   failBeforeFirst ? details.globalAttempted == [.admin] : details.globalAttempted == [.admin, .personal] { throw CocoaError(.fileWriteNoPermission) }
+                capture.append(saved)
+            }
+            XCTAssertEqual(result.state, failBeforeFirst ? .rejected : .partial)
+            let calls = try await transport.recordedRequests().map(decode); XCTAssertEqual(calls.filter { $0["method"] == "set" }.count, failBeforeFirst ? 0 : 1)
+            if !failBeforeFirst { XCTAssertEqual(capture.values.last?.administrationDetails?.globalAttempted, [.admin]) }
+        }
+    }
+
+    func test管理员恢复缓存区分未提交清理中和已有接收回执() async throws {
+        let profile = UUID(), original = SynologyPhotoConversionCache(profileID: profile, administratorID: 12, sizeBytes: 20, isClearing: false)
+        let command = SynologyPhotosMutation.clearConversionCache(original), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let transport = MockHTTPTransport(responses: accessResponses() + cacheResponses(size: 25) + [response(emptySuccess)] + cacheResponses(size: 3, processing: true))
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }; XCTAssertEqual(result.state, .pendingReview)
+        let saved = try XCTUnwrap(capture.values.last); XCTAssertEqual(saved.administrationDetails?.globalAcknowledged, [.cache])
+        let reads = MockHTTPTransport(responses: accessResponses() + cacheResponses(size: 4))
+        let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+        let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, .confirmed)
+        let untouched = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: UUID(), profileID: profile, userID: 12)
+        try await restored.restoreAlbumMutation(untouched)
+        let initial = try await restored.reviewMutation(operationID: untouched.operationID); XCTAssertEqual(initial.state, .rejected)
+        let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { $0["method"] == "clear_cache" })
+    }
+
+    func test管理员恢复共享开关和选项保持原身份且不重复保存() async throws {
+        for switching in [true, false] {
+            let profile = UUID(), original = sharedSettingsFixture(profile), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+            var target = original
+            if switching { target.isEnabled = false } else { target.values[.person] = false }
+            let command: SynologyPhotosMutation = switching ? .setSharedSpaceEnabled(original: original, enabled: false) : .setSharedSpaceSettings(original: original, enabled: target.enabled)
+            let transport = MockHTTPTransport(responses: accessResponses() + (try sharedSettingsResponses(original)) + [response(emptySuccess)] + (try sharedSettingsResponses(target)))
+            let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+            let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }; XCTAssertEqual(result.state, .confirmed)
+            let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: JSONEncoder().encode(XCTUnwrap(capture.values.last)))
+            let reads = MockHTTPTransport(responses: accessResponses() + (try sharedSettingsResponses(target)))
+            let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+            let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, .confirmed)
+            let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { ["set_enable", "set"].contains($0["method"]) })
+        }
+    }
+
+    func test管理员恢复成员与目录多步结果不保存名称且重启只回读() async throws {
+        let profile = UUID(), original = memberState(profile, role: .management), member = original.members[0].id
+        var members = original.members; members[0] = members[0].changingRole(to: .entry)
+        let updated = SynologyPhotoSharedMembers(profileID: profile, administratorID: 12, isEnabled: true, members: members)
+        let folders = memberFolderSnapshotReads(parentRole: "view", childRole: nil), old = try memberStateReads(original)
+        let finalFolders = memberFolderSnapshotReads(parentRole: "download", childRole: "download")
+        let final = try memberStateReads(updated) + finalFolders + sharedSettingsResponses(sharedSettingsFixture(profile))
+        let transport = MockHTTPTransport(responses: accessResponses() + folders + old + folders + old + [response(emptySuccess), response(emptySuccess)] + final)
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let snapshot = try await repository.sharedSpaceMemberFolderSnapshot(for: member)
+        let edit = SynologyPhotoMemberFolderEdit(memberID: member, original: snapshot, batch: .init(action: .checkAll, role: .download))
+        let command = SynologyPhotosMutation.setSharedMembers(original: original, members: members, folderEdits: [edit]), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }; XCTAssertEqual(result.state, .confirmed)
+        let saved = try XCTUnwrap(capture.values.last), data = try JSONEncoder().encode(saved)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("Fixture self")); XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("administrators"))
+        XCTAssertEqual(saved.administrationDetails?.memberAttempted, [0, 1]); XCTAssertEqual(saved.administrationDetails?.memberAcknowledged, [0, 1])
+        try await repository.restoreAlbumMutation(try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data))
+        let reads = MockHTTPTransport(responses: accessResponses() + final)
+        let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access()
+        try await restored.restoreAlbumMutation(saved)
+        let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, .confirmed); XCTAssertEqual(reviewed.completedCount, 2)
+        let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { $0["method"]?.hasPrefix("update") == true })
+    }
+
+    func test管理员恢复成员保存失败零写和部分保存不补目录步骤() async throws {
+        for failBeforeFirst in [true, false] {
+            let profile = UUID(), original = memberState(profile, role: .management), member = original.members[0].id
+            var members = original.members; members[0] = members[0].changingRole(to: .entry)
+            let updated = SynologyPhotoSharedMembers(profileID: profile, administratorID: 12, isEnabled: true, members: members)
+            let folders = memberFolderSnapshotReads(parentRole: "view", childRole: nil), old = try memberStateReads(original)
+            let extra = failBeforeFirst ? [] : [response(emptySuccess)] + (try memberStateReads(updated)) + (try sharedSettingsResponses(sharedSettingsFixture(profile)))
+            let transport = MockHTTPTransport(responses: accessResponses() + folders + old + folders + old + extra)
+            let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+            let snapshot = try await repository.sharedSpaceMemberFolderSnapshot(for: member)
+            let edit = SynologyPhotoMemberFolderEdit(memberID: member, original: snapshot, changes: [.init(folderID: 9, role: .download)])
+            let command = SynologyPhotosMutation.setSharedMembers(original: original, members: members, folderEdits: [edit]), id = UUID()
+            let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { saved in
+                if let details = saved.administrationDetails,
+                   failBeforeFirst ? details.memberAttempted == [0] : details.memberAttempted == [0, 1] { throw CocoaError(.fileWriteNoPermission) }
+            }
+            XCTAssertEqual(result.state, failBeforeFirst ? .rejected : .partial)
+            let calls = try await transport.recordedRequests().map(decode); XCTAssertEqual(calls.filter { $0["method"]?.hasPrefix("update") == true }.count, failBeforeFirst ? 0 : 1)
+        }
+    }
+
+    func test管理员恢复拒绝跨账号损坏步骤和受保护管理员修改() throws {
+        let profile = UUID(), original = globalSettingsFixture(profile), id = UUID()
+        let command = SynologyPhotosMutation.setGlobalSettings(original: original, enabled: original.enabled.subtracting([.person]), excludedExtensions: original.excludedExtensions)
+        XCTAssertThrowsError(try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: UUID(), userID: 12))
+        XCTAssertThrowsError(try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 99))
+        var saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+        var details = try XCTUnwrap(saved.administrationDetails); details.globalAcknowledged = [.shared]; saved.administrationDetails = details
+        XCTAssertThrowsError(try saved.reviewMutation())
+        details.globalAcknowledged = []; details.globalAttempted = [.shared]; saved.administrationDetails = details; XCTAssertThrowsError(try saved.reviewMutation())
+        details.globalAcknowledged = []; details.memberAttempted = [0]; saved.administrationDetails = details; XCTAssertThrowsError(try saved.reviewMutation())
+        let members = memberState(profile)
+        XCTAssertThrowsError(try SynologyPhotosAlbumCheckpoint(mutation: .setSharedMembers(original: members, members: [members.members[0]], folderEdits: []), operationID: id, profileID: profile, userID: 12))
+    }
+
     private func globalSettingsFixture(_ profile: UUID) -> SynologyPhotoGlobalSettings {
         .init(profileID: profile, administratorID: 12, values: [.person: true, .concept: true, .similar: true, .userSharing: true, .guestInfo: false, .originalJPEG: true],
               excludedExtensions: ["legacy"], hasHEVC: true, personalRecognition: [.person: true, .concept: true, .similar: true],

@@ -3,6 +3,126 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test照片共享设置中文确认取消和保存() {
+        let app = launchFixture(state: "photo-admin", language: "zh-Hans"); defer { app.terminate() }
+        openPhotos(app, chinese: true); openPhotoAdministration("shared", in: app)
+        let toggle = app.switches["photos.sharedSettings.allow_root_folder_public"]; XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap(); app.buttons["mobile.photos.administration.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); attachScreenshot(app, name: "共享顶层文件夹公开权限确认")
+        app.alerts.firstMatch.buttons["取消"].tap(); app.buttons["mobile.photos.administration.save"].tap()
+        app.alerts.firstMatch.buttons["mobile.photos.administration.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
+        openPhotoAdministration("shared", in: app); XCTAssertEqual(app.switches["photos.sharedSettings.allow_root_folder_public"].value as? String, "1")
+        attachScreenshot(app, name: "共享照片管理员设置中文")
+    }
+
+    func test照片全局格式保留未知项及缓存清理() {
+        let app = launchFixture(state: "photo-admin"); defer { app.terminate() }
+        openPhotos(app); openPhotoAdministration("global", in: app)
+        let formats = element("mobile.photos.administration.excluded", in: app); revealPhotoAdministration(formats, in: app); formats.tap()
+        let legacy = app.switches["LEGACY"]; revealPhotoAdministration(legacy, in: app); XCTAssertEqual(legacy.value as? String, "1")
+        legacy.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertEqual(legacy.value as? String, "0")
+        attachScreenshot(app, name: "Preserved unknown excluded photo format")
+        app.navigationBars["Excluded file formats"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["mobile.photos.administration.save"].isEnabled); app.buttons["mobile.photos.administration.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); app.alerts.firstMatch.buttons["mobile.photos.administration.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        openPhotoAdministration("global", in: app)
+        let clear = app.buttons["mobile.photos.administration.clearCache"]; revealPhotoAdministration(clear, in: app); clear.tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); attachScreenshot(app, name: "Conversion cache clear confirmation")
+        app.alerts.firstMatch.buttons["Cancel"].tap(); clear.tap(); app.alerts.firstMatch.buttons["mobile.photos.administration.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        openPhotoAdministration("global", in: app); revealPhotoAdministration(clear, in: app); XCTAssertFalse(clear.isEnabled)
+    }
+
+    func test照片添加自定义成员并编辑目录后统一保存() {
+        let app = launchFixture(state: "photo-admin"); defer { app.terminate() }
+        openPhotos(app); openPhotoAdministration("members", in: app)
+        XCTAssertTrue(app.staticTexts["System administrators group"].waitForExistence(timeout: 5))
+        app.buttons["photos.members.add"].tap(); XCTAssertTrue(app.buttons["New member"].waitForExistence(timeout: 5)); app.buttons["New member"].tap()
+        app.buttons["Custom Access"].tap()
+        let folder = element("mobile.photos.administration.folder.9", in: app); XCTAssertTrue(folder.waitForExistence(timeout: 8)); folder.tap()
+        app.buttons["Download"].tap(); attachScreenshot(app, name: "Member folder permission draft")
+        app.buttons["mobile.photos.administration.folders.done"].tap()
+        let save = app.buttons["mobile.photos.administration.save"]; XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertTrue(save.isEnabled); save.tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); attachScreenshot(app, name: "Shared member permission confirmation")
+        app.alerts.firstMatch.buttons["mobile.photos.administration.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        openPhotoAdministration("members", in: app)
+        let search = app.searchFields["Search members"]; XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("New member")
+        XCTAssertTrue(app.staticTexts["New member"].waitForExistence(timeout: 5)); attachScreenshot(app, name: "Saved member filtered on mobile")
+    }
+
+    func test照片管理员空内容失败加载停用及搜索无结果() {
+        for state in ["photo-admin-empty", "photo-admin-error", "photo-admin-loading", "photo-admin-disabled", "photo-admin"] {
+            let app = launchFixture(state: state); openPhotos(app); openPhotoAdministration("members", in: app)
+            if state.hasSuffix("empty") { XCTAssertTrue(app.staticTexts["No Shared Space Members"].waitForExistence(timeout: 5)) }
+            else if state.hasSuffix("error") { XCTAssertTrue(app.staticTexts["Couldn’t load members. Check your connection and try again."].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["Try again"].exists) }
+            else if state.hasSuffix("loading") { XCTAssertTrue(element("mobile.photos.administration.loading", in: app).waitForExistence(timeout: 5)) }
+            else if state.hasSuffix("disabled") { XCTAssertTrue(app.staticTexts["Shared Space Is Off"].waitForExistence(timeout: 5)) }
+            else {
+                let search = app.searchFields["Search members"]; XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("missing-member")
+                XCTAssertTrue(app.staticTexts["No Matches"].waitForExistence(timeout: 5))
+            }
+            attachScreenshot(app, name: state + "-administration"); app.terminate()
+        }
+    }
+
+    func test照片共享最后图库与正在清理缓存保持限制() {
+        for state in ["photo-admin-last", "photo-admin-busy"] {
+            let app = launchFixture(state: state); openPhotos(app); openPhotoAdministration(state.hasSuffix("last") ? "shared" : "global", in: app)
+            let control = app.buttons[state.hasSuffix("last") ? "mobile.photos.administration.sharedSwitch" : "mobile.photos.administration.clearCache"]
+            revealPhotoAdministration(control, in: app); XCTAssertFalse(control.isEnabled)
+            XCTAssertTrue(app.staticTexts[state.hasSuffix("last") ? "Enable My photos before turning off shared photos." : "Clearing cache…"].exists)
+            attachScreenshot(app, name: state + "-restriction"); app.terminate()
+        }
+    }
+
+    func test照片管理员未知保存重启仍禁止再次提交() {
+        let app = launchFixture(state: "photo-admin-unknown"); defer { app.terminate() }
+        openPhotos(app); openPhotoAdministration("global", in: app)
+        let toggle = app.switches["photos.global.display_photo_info_to_guest"]; XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap(); app.buttons["mobile.photos.administration.save"].tap()
+        app.alerts.firstMatch.buttons["mobile.photos.administration.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["mobile.photos.album.refresh"].waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+        XCTAssertTrue(app.buttons["mobile.photos.album.refresh"].waitForExistence(timeout: 8)); openPhotoAdministration("global", in: app)
+        XCTAssertTrue(app.buttons["mobile.photos.administration.save"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.administration.save"].isEnabled)
+        XCTAssertFalse(app.switches["photos.global.display_photo_info_to_guest"].isEnabled); attachScreenshot(app, name: "Global settings recovery after relaunch")
+    }
+
+    func test照片全局部分完成重新打开保留剩余修改() {
+        let app = launchFixture(state: "photo-admin-partial"); defer { app.terminate() }
+        openPhotos(app); openPhotoAdministration("global", in: app)
+        let toggle = app.switches["photos.global.enable_person"]; XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap(); app.buttons["mobile.photos.administration.save"].tap()
+        app.alerts.firstMatch.buttons["mobile.photos.administration.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Some settings were saved. Reopen Global settings to review the current state and finish the remaining changes."].waitForExistence(timeout: 8))
+        openPhotoAdministration("global", in: app); XCTAssertEqual(app.switches["photos.global.enable_person"].value as? String, "0")
+        XCTAssertTrue(app.buttons["mobile.photos.administration.save"].isEnabled); attachScreenshot(app, name: "Partial global settings remain editable")
+    }
+
+    private func openPhotoAdministration(_ page: String, in app: XCUIApplication) {
+        element("mobile.photos.actions", in: app).tap()
+        let item = element("mobile.photos.administration.\(page)", in: app); XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
+    }
+    private func revealPhotoAdministration(_ item: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<8 {
+            if item.exists && item.isHittable {
+                // 浮动导航栏下的行仍可能报告可点击，先把整行移到标题下方。
+                if let bar = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable }), item.frame.minY < bar.frame.maxY {
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.05,
+                        thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.62)))
+                    continue
+                }
+                return
+            }
+            app.swipeUp()
+        }
+        XCTAssertTrue(item.exists && item.isHittable)
+    }
+
     func test自动预览处理中暂停再继续保持可操作() {
         let app = launchFixture(state: "photo-preview-automatic-slow"); defer { app.terminate() }
         openPhotos(app)

@@ -4694,14 +4694,14 @@
 "photos.global.guestConfirm" = "访客将可以查看已分享照片的详细信息。";
 "photos.global.excludedConfirm" = "被排除格式的照片和视频将不再显示，原文件仍会保留。";
 "photos.global.clearConfirm" = "转换缓存将被清理，原照片和视频不会删除。以后下载 JPEG 时可能需要重新转换。";
-"photos.global.pending" = "正在确认设置是否生效，将自动更新。";
+"photos.global.pending" = "暂时无法显示最新设置，请稍后刷新。";
 "photos.global.partial" = "部分设置已保存。请重新打开全局设置查看当前状态并完成剩余修改。";
 "photos.global.person" = "启用人物识别";
 "photos.global.concept" = "启用主题识别";
 "photos.global.similar" = "启用相似照片识别";
 
 "photos.members.title" = "共享成员管理";
-"photos.members.pending" = "正在确认成员和文件夹权限的保存结果，会自动更新。";
+"photos.members.pending" = "暂时无法显示最新权限，请稍后刷新。";
 "photos.members.partial" = "部分权限已保存。请重新打开共享成员管理查看当前权限后继续。";
 "photos.members.refreshFailed" = "权限已更新，但照片暂时无法加载。请刷新后重试。";
 "photos.members.disabled" = "共享空间尚未启用";

@@ -430,7 +430,7 @@ public struct SynologyPhotoSharingState: Equatable, Sendable {
 
 /// 成员编号保留接口的数字或字符串类型，用户与群组即使编号相同也不合并。
 public struct SynologyPhotoShareRecipient: Hashable, Identifiable, Sendable {
-    public struct ID: Hashable, Sendable {
+    public struct ID: Codable, Hashable, Sendable {
         public let type: String
         public let value: SynologyPhotoConditionValue
         public init(type: String, value: SynologyPhotoConditionValue) { self.type = type; self.value = value }
@@ -654,15 +654,15 @@ public struct SynologyPhotoRecognitionSettings: Codable, Equatable, Sendable {
 
 
 /// 共享空间设置由 DSM 管理员维护，与照片目录的 management 角色分开。
-public struct SynologyPhotoSharedSpaceSettings: Equatable, Sendable {
-    public enum Kind: String, CaseIterable, Sendable {
+public struct SynologyPhotoSharedSpaceSettings: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, CaseIterable, Sendable {
         case person = "enable_person", concept = "enable_concept", similar = "enable_similar"
         case publicRoot = "allow_root_folder_public"
         public var category: SynologyPhotoCategory? {
             switch self { case .person: .person; case .concept: .concept; case .similar: .similar; case .publicRoot: nil }
         }
     }
-    public enum Role: String, Sendable { case none, entry, management }
+    public enum Role: String, Codable, Sendable { case none, entry, management }
     public let profileID: UUID
     public let administratorID: Int
     public var isEnabled: Bool
@@ -749,7 +749,7 @@ public struct SynologyPhotoSharedMembers: Equatable, Sendable {
 }
 
 /// 目录成员角色是逐级包含的权限；公开访问下限与直接成员授权分别保留。
-public enum SynologyPhotoFolderMemberRole: String, CaseIterable, Sendable {
+public enum SynologyPhotoFolderMemberRole: String, Codable, CaseIterable, Sendable {
     case view, download, upload, manage
     public var level: Int {
         switch self { case .view: 0; case .download: 1; case .upload: 2; case .manage: 3 }
@@ -804,13 +804,13 @@ public struct SynologyPhotoMemberFolderPage: Equatable, Sendable {
 
 /// 一个成员的目录草稿与固定完整快照；确认前只在内存修改，不临时授权NAS。
 public struct SynologyPhotoMemberFolderEdit: Equatable, Sendable {
-    public struct Change: Equatable, Sendable {
+    public struct Change: Codable, Equatable, Sendable {
         public let folderID: Int
         public let role: SynologyPhotoFolderMemberRole?
         public init(folderID: Int, role: SynologyPhotoFolderMemberRole?) { self.folderID = folderID; self.role = role }
     }
-    public struct Batch: Equatable, Sendable {
-        public enum Action: String, CaseIterable, Sendable { case checkAll = "check_all", uncheckAll = "uncheck_all" }
+    public struct Batch: Codable, Equatable, Sendable {
+        public enum Action: String, Codable, CaseIterable, Sendable { case checkAll = "check_all", uncheckAll = "uncheck_all" }
         public let action: Action
         public let role: SynologyPhotoFolderMemberRole
         public init(action: Action, role: SynologyPhotoFolderMemberRole) { self.action = action; self.role = role }
@@ -864,8 +864,8 @@ public struct SynologyPhotoMemberFolderEdit: Equatable, Sendable {
 }
 
 /// 管理员设置的完整原快照；未知字段保留未知，不以缺失值推断关闭。
-public struct SynologyPhotoGlobalSettings: Equatable, Sendable {
-    public enum Kind: String, CaseIterable, Sendable {
+public struct SynologyPhotoGlobalSettings: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, CaseIterable, Sendable {
         case person = "enable_person", concept = "enable_concept", similar = "enable_similar"
         case userSharing = "enable_user_sharing", guestInfo = "display_photo_info_to_guest"
         case originalJPEG = "enable_converted_original_jpeg"
@@ -917,8 +917,8 @@ public struct SynologyPhotoGlobalSettings: Equatable, Sendable {
     }
 }
 
-/// 缓存只保留当前读取的大小和清理状态，不落盘保存，也不关联真实照片列表。
-public struct SynologyPhotoConversionCache: Equatable, Sendable {
+/// 缓存仅包含读取的大小和清理状态；恢复记录不关联真实照片列表。
+public struct SynologyPhotoConversionCache: Codable, Equatable, Sendable {
     public let profileID: UUID
     public let administratorID: Int
     public let sizeBytes: Int64
