@@ -162,7 +162,7 @@ final class MobilePhotoRequestTests: XCTestCase {
         let expected = try XCTUnwrap(form.preparedSettings)
         XCTAssertTrue(form.submit()); try await wait { !session.model.isManaging }
         let pending = try XCTUnwrap(session.model.pendingMutationID), saved = try XCTUnwrap(store(storage).load())
-        XCTAssertEqual(saved.version, 4)
+        XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         let text = String(decoding: try Data(contentsOf: store(storage).url), as: UTF8.self)
         for secret in ["Private collection", "Private description", "/PhotoRequest", "synthetic-created", "https://"] { XCTAssertFalse(text.contains(secret)) }
         session.deactivate()

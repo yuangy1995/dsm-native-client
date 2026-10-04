@@ -187,36 +187,7 @@ private actor SuspendedDownloadStationLoader {
     }
 }
 
-private struct SessionPhotoRepository: PhotoLibraryRepository {
-    func discoverSpaces() async throws -> [PhotoSpace] { [] }
 
-    func listFolder(
-        in space: PhotoSpace,
-        path: String,
-        offset: Int,
-        limit: Int
-    ) async throws -> PhotoLibraryPage {
-        PhotoLibraryPage(
-            folderPath: path,
-            items: [],
-            offset: offset,
-            nextOffset: offset,
-            sourceTotal: 0,
-            hasMore: false
-        )
-    }
-
-    func getThumbnail(for item: PhotoLibraryItem, size: ThumbnailSize) async throws -> Data {
-        Data()
-    }
-
-    func scanTimeline(
-        in space: PhotoSpace,
-        startingAt folderPaths: [String],
-        existingFolderItemPaths: [String: [String]],
-        onUpdate: @escaping @Sendable (PhotoTimelineScanUpdate) async -> Void
-    ) async throws {}
-}
 
 private actor SessionContainerInventoryRepository: MobileContainerInventoryReading {
     nonisolated let profileID: UUID
@@ -369,7 +340,7 @@ final class MobileSessionShellTests: XCTestCase {
         await repository.releaseDiscovery()
         try await waitUntil { model.isConnected }
 
-        XCTAssertNotNil(model.photoRepository)
+        XCTAssertNotNil(model.synologyPhotos.albums)
 
         let logins = await repository.logins
         XCTAssertEqual(logins, [
@@ -443,7 +414,7 @@ final class MobileSessionShellTests: XCTestCase {
         XCTAssertFalse(model.isConnected)
         XCTAssertNil(model.activeProfile)
         XCTAssertNil(model.fileRepository)
-        XCTAssertNil(model.photoRepository)
+        XCTAssertNil(model.synologyPhotos.albums)
         XCTAssertEqual(model.profiles, [profile])
     }
 
@@ -721,16 +692,37 @@ final class MobileSessionShellTests: XCTestCase {
         model.profiles = [first, second]
         model.activeProfile = first
         model.isConnected = true
-        await model.photoLibraryModel.activate(profileID: first.id, repository: SessionPhotoRepository())
-        XCTAssertNotNil(model.photoLibraryModel.profiles[first.id])
+        model.synologyPhotos.configure(MobilePhotoLifecycleService(profile: first.id))
+        await model.synologyPhotos.activate()
+        let oldFirst = model.synologyPhotos.model
+        let firstPhoto = try XCTUnwrap(oldFirst.items.first)
+        _ = await model.synologyPhotos.thumbnail(firstPhoto)
+        let firstCost = await model.synologyPhotos.thumbnails.cachedCost()
+        XCTAssertGreaterThan(firstCost, 0)
 
         model.logout()
-        try await waitUntil { model.photoLibraryModel.profiles[first.id] == nil }
+        try await waitUntil { model.activeProfile == nil }
+        XCTAssertFalse(oldFirst.isModuleEnabled)
+        XCTAssertTrue(model.synologyPhotos.model.items.isEmpty)
+        try await waitUntilAsync { await model.synologyPhotos.thumbnails.cachedCost() == 0 }
+        let afterLogout = await model.synologyPhotos.thumbnails.cachedCost()
+        XCTAssertEqual(afterLogout, 0)
 
-        await model.photoLibraryModel.activate(profileID: second.id, repository: SessionPhotoRepository())
-        XCTAssertNotNil(model.photoLibraryModel.profiles[second.id])
+        model.activeProfile = second
+        model.isConnected = true
+        model.synologyPhotos.configure(MobilePhotoLifecycleService(profile: second.id))
+        await model.synologyPhotos.activate()
+        let oldSecond = model.synologyPhotos.model
+        _ = await model.synologyPhotos.thumbnail(try XCTUnwrap(oldSecond.items.first))
+        let secondCost = await model.synologyPhotos.thumbnails.cachedCost()
+        XCTAssertGreaterThan(secondCost, 0)
         model.removeProfile(second)
-        try await waitUntil { model.photoLibraryModel.profiles[second.id] == nil }
+        try await waitUntil { model.activeProfile == nil }
+        XCTAssertFalse(oldSecond.isModuleEnabled)
+        XCTAssertTrue(model.synologyPhotos.model.items.isEmpty)
+        try await waitUntilAsync { await model.synologyPhotos.thumbnails.cachedCost() == 0 }
+        let afterRemoval = await model.synologyPhotos.thumbnails.cachedCost()
+        XCTAssertEqual(afterRemoval, 0)
     }
 
     private static func capabilities(_ names: [String]) -> CapabilitySet {

@@ -3,107 +3,62 @@ import Foundation
 import XCTest
 
 final class MobilePhotoViewerPresentationTests: XCTestCase {
-    func test查看器使用原生前后按钮键盘与VoiceOver且没有手势专用入口() throws {
-        let source = try sourceFile("Sources/Features/Photos/Viewer/MobilePhotoViewerView.swift")
-
-        XCTAssertTrue(source.contains("frame(width: 44, height: 44)"))
-        XCTAssertTrue(source.contains(".keyboardShortcut(shortcut, modifiers: [])"))
-        XCTAssertTrue(source.contains("shortcut: .leftArrow"))
-        XCTAssertTrue(source.contains("shortcut: .rightArrow"))
-        XCTAssertTrue(source.contains("shortcut: \"s\""))
-        XCTAssertTrue(source.contains(".accessibilityLabel(L10n.string(key))"))
-        XCTAssertFalse(source.contains("DragGesture"))
-        XCTAssertFalse(source.contains("onTapGesture"))
+    func test预览前后按钮支持触控键盘及明确名称() throws {
+        let source = try preview()
+        for token in ["minWidth: 44, minHeight: 44", ".keyboardShortcut(.leftArrow", ".keyboardShortcut(.rightArrow",
+                      ".keyboardShortcut(.cancelAction)", "photos.media.previous", "photos.media.next"] {
+            XCTAssertTrue(source.contains(token), token)
+        }
     }
 
-    func test基础元数据仅解析已验证本地产物且字段使用白名单() throws {
-        let source = try sourceFile("Sources/Features/Photos/Viewer/MobilePhotoViewerModel.swift")
-
-        XCTAssertTrue(source.contains("preview.content == .quickLook"))
-        XCTAssertTrue(source.contains("let artifactURL = preview.artifactURL"))
-        XCTAssertTrue(source.contains("CGImageSourceCreateWithURL"))
-        XCTAssertTrue(source.contains("kCGImagePropertyPixelWidth"))
-        XCTAssertTrue(source.contains("kCGImagePropertyExifDateTimeOriginal"))
-        XCTAssertTrue(source.contains("kCGImagePropertyTIFFMake"))
-        XCTAssertTrue(source.contains("kCGImagePropertyTIFFModel"))
-        for forbidden in ["GPSDictionary", "MakerNote", "mediaStreamSource(", "getInfo("] {
+    func test详情只呈现当前Photos对象而不解析本地路径或原始EXIF() throws {
+        let source = try preview()
+        for token in ["if let photo = model.previewPhoto", "photo.filename", "photo.takenAt", "photo.indexedAt", "photo.width", "photo.camera", "photo.tags"] {
+            XCTAssertTrue(source.contains(token), token)
+        }
+        for forbidden in ["MobilePhotoMetadata", "CGImageSourceCreateWithURL", "MakerNote", "FileItem"] {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }
     }
 
-    func test底层预览完成门比较完整FileItem而不是只比较路径() throws {
-        let source = try sourceFile("Sources/Features/Files/MobileFilePreviewModel.swift")
-
-        XCTAssertTrue(source.contains("state.selectedItem == item"))
-        XCTAssertFalse(source.contains("state.selectedItem?.path == item.path"))
+    func testiPad宽布局并列详情而iPhone垂直排布共用预览() throws {
+        let source = try preview()
+        XCTAssertTrue(source.contains("sizeClass == .regular && showsInfo"))
+        XCTAssertTrue(source.contains("HStack(spacing: 0)"))
+        XCTAssertTrue(source.contains("VStack(spacing: 0)"))
+        XCTAssertTrue(source.contains("details.frame(maxHeight: 300)"))
     }
 
-    func testiPhone全屏iPadInspector复用同一冻结查看器() throws {
-        let source = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-
-        XCTAssertTrue(source.contains("@State private var viewer = MobilePhotoViewerModel()"))
-        XCTAssertTrue(source.contains("viewer.open(item, visibleItems: visiblePhotoSnapshot)"))
-        XCTAssertTrue(source.contains("timeline.visibleItems : state.page.items"))
-        XCTAssertTrue(source.contains(".inspector(isPresented: $showsPreviewInspector)"))
-        XCTAssertTrue(source.contains(".fullScreenCover(isPresented: $showsPreviewFullScreen"))
-        XCTAssertTrue(source.contains("MobilePhotoViewerNavigationControls("))
-        XCTAssertTrue(source.contains("onSaveCopy: { saveCurrentPhotoCopy() }"))
-        XCTAssertTrue(source.contains("onShare: { shareCurrentPhoto() }"))
-        XCTAssertTrue(source.contains("viewer.state.selectedItem"))
-        XCTAssertTrue(source.contains("MobilePhotoMetadataView("))
-        XCTAssertTrue(source.contains(".task(id: activationIdentity)"))
-        XCTAssertTrue(source.contains("await activatePhotoContext()"))
-        XCTAssertTrue(source.contains("fileRepository: model.fileRepository"))
-        XCTAssertTrue(source.contains("viewer.close()"))
+    func test删除保留Photos原件权限与明确确认() throws {
+        let source = try preview()
+        for token in ["model.canDeletePhotos([photo])", "model.requestDeletion(photo)", "photos.delete.confirm", "role: .destructive"] {
+            XCTAssertTrue(source.contains(token), token)
+        }
+        XCTAssertFalse(source.contains("moveToRecycle"))
     }
 
-    func test查看器为合格普通媒体提供原生破坏性回收站入口() throws {
-        let controls = try sourceFile("Sources/Features/Photos/Viewer/MobilePhotoViewerView.swift")
-        let photos = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-
-        XCTAssertTrue(controls.contains("if let onMoveToRecycle"))
-        XCTAssertTrue(controls.contains("key: \"mobile.files.recycle.move.action\""))
-        XCTAssertTrue(controls.contains("systemImage: \"trash\""))
-        XCTAssertTrue(controls.contains("role: .destructive"))
-        XCTAssertTrue(photos.contains("moveCurrentPhotoToRecycleAction"))
-        XCTAssertTrue(photos.contains("canMoveToRecycle(item)"))
-        XCTAssertTrue(photos.contains("beginMoveToRecycle(item)"))
+    func test媒体通过受控播放器和本机图片不直接交付远端URL() throws {
+        let source = try preview()
+        XCTAssertTrue(source.contains("MobileMediaPlayer(source: source"))
+        XCTAssertTrue(source.contains("MobileSynologyPhotoZoomView(image:"))
+        XCTAssertTrue(source.contains("MobileSynologyPhotoImage.decode"))
+        XCTAssertTrue(source.contains("guard !Task.isCancelled"))
+        XCTAssertFalse(source.contains("AVPlayer(url:"))
+        XCTAssertFalse(source.contains("AsyncImage(url:"))
     }
 
-    func test全部可见文案由待补双语资源键提供() throws {
-        let source = try sourceFile("Sources/Features/Photos/Viewer/MobilePhotoViewerView.swift")
-        for key in [
-            "mobile.photos.viewer.action.previous",
-            "mobile.photos.viewer.action.next",
-            "mobile.photos.viewer.position",
-            "mobile.photos.viewer.metadata.loading",
-            "mobile.photos.viewer.metadata.unavailable.title",
-            "mobile.photos.viewer.metadata.unavailable.message",
-            "mobile.photos.viewer.metadata.failed.title",
-            "mobile.photos.viewer.metadata.failed.message",
-            "mobile.photos.viewer.metadata.section.file",
-            "mobile.photos.viewer.metadata.section.photo",
-            "mobile.photos.viewer.metadata.section.camera",
-            "mobile.photos.viewer.metadata.name",
-            "mobile.photos.viewer.metadata.kind",
-            "mobile.photos.viewer.metadata.kind.image",
-            "mobile.photos.viewer.metadata.kind.video",
-            "mobile.photos.viewer.metadata.size",
-            "mobile.photos.viewer.metadata.created",
-            "mobile.photos.viewer.metadata.modified",
-            "mobile.photos.viewer.metadata.dimensions",
-            "mobile.photos.viewer.metadata.dimensions.value",
-            "mobile.photos.viewer.metadata.captured",
-            "mobile.photos.viewer.metadata.camera.make",
-            "mobile.photos.viewer.metadata.camera.model"
-        ] {
+    func test保存分享失败和信息均使用双语资源入口() throws {
+        let source = try preview()
+        for key in ["photos.media.close", "photos.media.previous", "photos.media.next", "photos.media.info", "photos.media.failed",
+                    "photos.retry", "photos.media.save", "photos.detail.taken", "photos.detail.camera", "photos.detail.size"] {
             XCTAssertTrue(source.contains("\"\(key)\""), key)
         }
+        XCTAssertTrue(source.contains("MobileDocumentExporter"))
+        XCTAssertTrue(source.contains("MobileShareSheet"))
     }
 
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let appRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        return try String(contentsOf: appRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    private func preview() throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent("Sources/Features/Photos/MobileSynologyPhotoPreview.swift"), encoding: .utf8)
     }
 }

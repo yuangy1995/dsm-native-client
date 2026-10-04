@@ -97,7 +97,7 @@ final class MobilePhotoEditTests: XCTestCase {
         let editor = try await begin(session, .shiftDates); editor.shiftAmount = 10; editor.shiftUnit = .minutes
         XCTAssertTrue(editor.submit()); try await wait { !session.model.isManaging }
         let id = try XCTUnwrap(session.model.pendingMutationID)
-        let saved = try XCTUnwrap(store(storage).load()); XCTAssertEqual(saved.operationID, id); XCTAssertEqual(saved.version, 7)
+        let saved = try XCTUnwrap(store(storage).load()); XCTAssertEqual(saved.operationID, id); XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         session.deactivate()
         let restored = MobileSynologyPhotosSession(); restored.configure(service, uploadStorage: storage, reviewDelay: { _ in }); await restored.activate()
         XCTAssertEqual(restored.model.pendingMutationID, id)

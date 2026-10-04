@@ -28,6 +28,8 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case recognition(Recognition)
         case similar(Similar)
     }
+    /// 移动端尚未发布；只读写当前开发格式，不迁移旧记录。
+    public static let currentVersion = 16
     public let version: Int
     public let profileID: UUID
     public let userID: Int
@@ -54,23 +56,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
-        version = switch mutation {
-        case .editSimilarGroup: 15
-        case .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces: 14
-        case .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers: 13
-        case .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary: 12
-        case .regeneratePreviews: 11
-        case .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto: 10
-        case .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks: 9
-        case .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy: 8
-        case .edit, .shiftDates, .createTag, .addTags, .removeTags: 7
-        case .unfreezeAlbum, .rebuildFrozenAlbum: 6
-        case .createConditionAlbum, .setAlbumCondition: 5
-        case .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: 4
-        case .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum: 3
-        case .shareAlbum: 2
-        default: 1
-        }
+        version = Self.currentVersion
         self.profileID = profileID; self.userID = userID; self.operationID = operationID
         switch mutation {
         case .editSimilarGroup: operation = .similar(try Similar(mutation: mutation))
@@ -109,7 +95,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...15).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard version == Self.currentVersion, userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
@@ -117,34 +103,34 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         let command: SynologyPhotosMutation
         switch operation {
         case .similar(let value):
-            guard version == 15, createdAlbumID == nil, !rejected || !value.confirmed else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID == nil, !rejected || !value.confirmed else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID)
         case .recognition(let value):
-            guard version == 14, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID)
         case .administration(let value):
-            guard version == 13, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID, userID: userID)
         case .previewMaintenance(let value):
-            guard version == 12, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID, userID: userID)
         case .previewRegeneration(let value):
-            guard version == 11, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
         case .preference(let value):
-            guard version == 10, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
         case .folderSharing(let value):
-            guard version == 9, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
         case .background(let value):
-            guard version == 9, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID, userID: userID)
         case .folder(let value):
-            guard version == 8, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID)
         case .photoEdit(let value):
-            guard version == 7, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID)
         case .create(let name, let photos): command = .createAlbum(name: name, photos: photos.map(\.photo))
         case .rename(let id, let name): command = .renameAlbum(id: id, name: name)
@@ -153,25 +139,22 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .remove(let id, let photos): command = .removeFromAlbum(id: id, photos: photos.map(\.photo))
         case .cover(let id, let photo): command = .setAlbumCover(id: id, photo: photo.photo)
         case .sharing(let value):
-            guard version == 2 else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
         case .frozen(let value):
-            guard version == 6, createdAlbumID != value.albumID else { throw CocoaError(.coderReadCorrupt) }
+            guard createdAlbumID != value.albumID else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID, userID: userID)
         case .condition(let value):
-            guard version == 5 else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
         case .request(let value):
-            guard version == 4 else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID)
         case .createTemporary(let name, let photos):
-            guard version == 3, !photos.isEmpty else { throw CocoaError(.coderReadCorrupt) }
+            guard !photos.isEmpty else { throw CocoaError(.coderReadCorrupt) }
             command = .createTemporaryAlbum(name: name, photos: photos.map(\.photo))
         case .copyTemporary(let id, let name, let revision):
-            guard version == 3, id > 0, !revision.isEmpty else { throw CocoaError(.coderReadCorrupt) }
+            guard id > 0, !revision.isEmpty else { throw CocoaError(.coderReadCorrupt) }
             command = .copyTemporaryAlbum(id: id, name: name, original: .init(access: .disabled, revision: revision, isTemporary: true))
         case .deleteTemporary(let id, let revision, let copy):
-            guard version == 3, id > 0, !revision.isEmpty, copy.map({ $0 > 0 && $0 != id }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+            guard id > 0, !revision.isEmpty, copy.map({ $0 > 0 && $0 != id }) ?? true else { throw CocoaError(.coderReadCorrupt) }
             command = .deleteTemporaryAlbum(id: id, original: .init(access: .disabled, revision: revision, isTemporary: true), preservedCopyID: copy)
         }
         let photos = command.photos

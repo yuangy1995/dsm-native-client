@@ -1,63 +1,42 @@
+@testable import DsmMobile
 import Foundation
 import XCTest
 
 final class MobilePhotoTimelinePresentationTests: XCTestCase {
-    func test时间线使用原生分段搜索惰性月份和自适应网格() throws {
-        let root = Self.repositoryRoot()
-        let photos = try String(contentsOfFile: root + "/apple/Apps/DsmMobile/Sources/Features/Photos/MobilePhotosView.swift")
-        let timeline = try String(contentsOfFile: root + "/apple/Apps/DsmMobile/Sources/Features/Photos/Timeline/MobilePhotoTimelineView.swift")
-
-        XCTAssertTrue(photos.contains(".pickerStyle(.segmented)"))
-        XCTAssertTrue(photos.contains("PhotoBrowseMode.timeline"))
-        XCTAssertTrue(timeline.contains(".searchable("))
-        XCTAssertTrue(timeline.contains("LazyVStack"))
-        XCTAssertTrue(timeline.contains("LazyVGrid"))
-        XCTAssertTrue(timeline.contains("GridItem(.adaptive"))
-    }
-
-    func test时间线有取消截断部分结果和降低动态效果护栏() throws {
-        let root = Self.repositoryRoot()
-        let timeline = try String(contentsOfFile: root + "/apple/Apps/DsmMobile/Sources/Features/Photos/Timeline/MobilePhotoTimelineView.swift")
-        let model = try String(contentsOfFile: root + "/apple/Apps/DsmMobile/Sources/Features/Photos/Timeline/MobilePhotoTimelineModel.swift")
-
-        for token in ["timeline.action.cancel", "timeline.truncated.title", "timeline.partial.title", "accessibilityReduceMotion"] {
-            XCTAssertTrue(timeline.contains(token), "Missing presentation guard: \(token)")
+    func test时间线按套件日期索引分组且仍有手动分页入口() throws {
+        let source = try photos()
+        for token in ["model.datedGroups", "model.formattedPhotoDate", "photos.library.more", "model.hasPrevious", "model.hasMore"] {
+            XCTAssertTrue(source.contains(token), token)
         }
-        XCTAssertTrue(model.contains("limits: .mobileDefault"))
-        XCTAssertTrue(model.contains("generation == requestGeneration"))
-        XCTAssertFalse(model.contains("UserDefaults"))
+        XCTAssertFalse(source.contains("scanTimeline"))
     }
 
-    func test时间线照片仅向合格单项开放共享移动入口() throws {
-        let root = Self.repositoryRoot()
-        let photos = try String(contentsOfFile: root + "/apple/Apps/DsmMobile/Sources/Features/Photos/MobilePhotosView.swift")
-        let timeline = try String(contentsOfFile: root + "/apple/Apps/DsmMobile/Sources/Features/Photos/Timeline/MobilePhotoTimelineView.swift")
-
-        XCTAssertTrue(timeline.contains("onMove: canMove(item)"))
-        XCTAssertTrue(timeline.contains("!item.fileItem.isRecyclePath"))
-        XCTAssertTrue(timeline.contains("item.sizeBytes.map { $0 >= 0 } == true"))
-        XCTAssertTrue(timeline.contains("mobile.files.copy-move.move.action"))
-        XCTAssertTrue(photos.contains("if browseMode == .timeline"))
-        XCTAssertTrue(photos.contains("await timeline.refresh()"))
-        XCTAssertFalse(timeline.contains("copyMoveResult("))
+    func test月份定位可滚动且清除筛选提供恢复入口() throws {
+        let source = try photos()
+        for token in ["ScrollViewReader", "model.selectedTimelineMonthID", "proxy.scrollTo", "photos.filters.clear", "model.applyFilter"] {
+            XCTAssertTrue(source.contains(token), token)
+        }
     }
 
-    func test时间线仅向已通过完整门禁的媒体开放移入回收站入口() throws {
-        let root = Self.repositoryRoot()
-        let photos = try String(contentsOfFile: root + "/apple/Apps/DsmMobile/Sources/Features/Photos/MobilePhotosView.swift")
-        let timeline = try String(contentsOfFile: root + "/apple/Apps/DsmMobile/Sources/Features/Photos/Timeline/MobilePhotoTimelineView.swift")
-
-        XCTAssertTrue(timeline.contains("isMoveToRecycleAvailable(item)"))
-        XCTAssertTrue(timeline.contains("mobile.files.recycle.move.action"))
-        XCTAssertTrue(timeline.contains("role: .destructive"))
-        XCTAssertTrue(photos.contains("isMoveToRecycleAvailable: canMoveToRecycle"))
-        XCTAssertTrue(photos.contains("recycleAction.beginMoveToRecycle("))
-        XCTAssertFalse(timeline.contains("moveToRecycleResult("))
+    func test按日期选择复用正式原件删除完整选择() throws {
+        let source = try photos()
+        XCTAssertTrue(source.contains("model.selectGroup(group.photos)"))
+        XCTAssertTrue(source.contains("model.requestDeletion(model.selectedPhotos)"))
+        XCTAssertTrue(source.contains("model.canDeleteSelection"))
+        XCTAssertTrue(source.contains("role: .destructive"))
     }
 
-    private static func repositoryRoot(filePath: String = #filePath) -> String {
-        let marker = "/apple/Apps/DsmMobile/Tests/"
-        guard let range = filePath.range(of: marker) else { return "" }
-        return String(filePath[..<range.lowerBound])
+    func test时间线与目录都使用同一照片网格和导出入口() throws {
+        let source = try photos()
+        XCTAssertTrue(source.contains("photoGrid(group.photos)"))
+        XCTAssertTrue(source.contains("photoGrid(model.items)"))
+        XCTAssertTrue(source.contains("MobilePhotoExportActions"))
+        XCTAssertFalse(source.contains("PhotoBrowseMode"))
+        XCTAssertFalse(source.contains("FileStationPhotoRepository"))
+    }
+
+    private func photos() throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent("Sources/Features/Photos/MobileSynologyPhotosView.swift"), encoding: .utf8)
     }
 }

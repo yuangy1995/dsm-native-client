@@ -135,14 +135,14 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         let requests = await reader.recordedRequests(); XCTAssertEqual(requests.count, 4)
     }
 
-    func test预览设置恢复版本十二跨实例只回读开关() async throws {
+    func test预览设置恢复当前格式跨实例只回读开关() async throws {
         let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
         let writer = MockHTTPTransport(steps: (accessResponses() + [response(automaticSettingFixture(false))]).map(MockHTTPTransport.Step.response) + [.urlError(.networkConnectionLost)])
         let repository = try makeRepository(writer, profileID: profile); _ = try await repository.access()
         let result = try await repository.performRecoverableAlbumMutation(.setAutomaticPreview(original: false, enabled: true), operationID: id) { capture.append($0) }
         XCTAssertEqual(result.state, .pendingReview)
         let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: JSONEncoder().encode(XCTUnwrap(capture.values.last)))
-        XCTAssertEqual(saved.version, 12)
+        XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         let reader = MockHTTPTransport(responses: accessResponses() + [response(automaticSettingFixture(true))])
         let fresh = try makeRepository(reader, profileID: profile); _ = try await fresh.access(); try await fresh.restoreAlbumMutation(saved)
         let verified = try await fresh.reviewMutation(operationID: id); XCTAssertEqual(verified.state, .confirmed)
@@ -311,7 +311,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         }
     }
 
-    func test预览恢复版本十一保存每个写入边界且重启只读完成() async throws {
+    func test预览恢复当前格式保存每个写入边界且重启只读完成() async throws {
         let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
         let transport = MockHTTPTransport(responses: accessResponses() + [itemPage, itemPage, managedFolder, previewQueue(), emptySuccess, previewQueue()].map(response))
         let socket = PreviewSocketFixture([previewOpening, "40", "41"])
@@ -331,7 +331,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         let encoded = try JSONEncoder().encode(XCTUnwrap(capture.values.last)), text = String(decoding: encoded, as: UTF8.self)
         XCTAssertFalse(text.contains("private-description")); XCTAssertFalse(text.contains("private-camera")); XCTAssertFalse(text.contains("fixture-token"))
         let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: encoded)
-        XCTAssertEqual(saved.version, 11); XCTAssertTrue(try XCTUnwrap(saved.previewRegenerationDetails).hasSameIntent(as: command))
+        XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertTrue(try XCTUnwrap(saved.previewRegenerationDetails).hasSameIntent(as: command))
         try await repository.restoreAlbumMutation(saved)
         let empty = #"{"success":true,"data":{"list":[]}}"#
         let updated = itemPage.replacingOccurrences(of: "fixture-revision", with: "new-preview")
@@ -447,7 +447,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         XCTAssertThrowsError(try SynologyPhotosAlbumCheckpoint(mutation: .regeneratePreviews([photo, photo]), operationID: UUID(), profileID: profile, userID: 12))
     }
 
-    func test照片偏好恢复版本十保持原始设置且只回读不重复保存() async throws {
+    func test照片偏好恢复当前格式保持原始设置且只回读不重复保存() async throws {
         let original = SynologyPhotoDisplaySettings(), updated = SynologyPhotoDisplaySettings(grouping: .month, clock: .twelve, showsPreviewInfo: true)
         let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
         let transport = MockHTTPTransport(responses: accessResponses() + [try displayPayload(original), "invalid", try displayPayload(updated)].map(response))
@@ -457,7 +457,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         XCTAssertEqual(first.state, .pendingReview)
         let data = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
         let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data)
-        XCTAssertEqual(saved.version, 10); XCTAssertEqual(try saved.reviewMutation(), command)
+        XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertEqual(try saved.reviewMutation(), command)
         try await repository.restoreAlbumMutation(saved)
         let current = try await repository.reviewMutation(operationID: id); XCTAssertEqual(current.state, .confirmed)
         let freshTransport = MockHTTPTransport(responses: accessResponses() + [response(try displayPayload(updated))])
@@ -569,7 +569,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
             XCTAssertFalse(text.contains("synthetic-password-never-persist")); XCTAssertFalse(text.contains("example.invalid"))
             XCTAssertFalse(text.contains("Private member label"))
             let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data)
-            XCTAssertEqual(saved.version, 9); XCTAssertEqual(saved.folderSharingDetails?.acknowledged, acknowledged)
+            XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertEqual(saved.folderSharingDetails?.acknowledged, acknowledged)
             let reader = MockHTTPTransport(responses: accessResponses(teamPermission: "management") +
                 [permissionFolder(privacy: "public-download", members: member), permissionConfig, permissionParent].map(response))
             let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
@@ -627,7 +627,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         let first = try await source.performRecoverableAlbumMutation(.cancelBackgroundTask(task), operationID: id) { capture.append($0) }
         XCTAssertEqual(first.state, .pendingReview)
         let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: JSONEncoder().encode(XCTUnwrap(capture.values.last)))
-        XCTAssertEqual(saved.version, 9)
+        XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         for changed in [false, true] {
             let reader = MockHTTPTransport(responses: accessResponses() + [backgroundList([backgroundEntry(status: "done", created: changed ? 101 : 100)])])
             let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
@@ -702,7 +702,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
                 XCTAssertEqual(first.state, .pendingReview)
                 let data = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
                 let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data)
-                XCTAssertEqual(saved.version, 8); XCTAssertEqual(saved.folderDetails?.createdFolderID, kind == 0 ? 10 : nil)
+                XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertEqual(saved.folderDetails?.createdFolderID, kind == 0 ? 10 : nil)
                 let updated = kind == 0 ? coverFolder(id: 10, path: "/Fixture/Trip").replacingOccurrences(of: #""parent":1"#, with: #""parent":9"#)
                     : kind == 1 ? coverFolder(path: "/Renamed") : sortedFolder(sort)
                 let reader = MockHTTPTransport(responses: accessResponses(teamPermission: "management") + [response(updated)])
@@ -840,7 +840,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
                 let first = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
                 XCTAssertEqual(first.state, .pendingReview)
                 let saved = try XCTUnwrap(capture.values.last)
-                XCTAssertEqual(saved.version, 7); XCTAssertEqual(saved.photoEditDetails?.attempted, [0])
+                XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertEqual(saved.photoEditDetails?.attempted, [0])
                 let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
                 for value in ["sample.jpg", "Private description", "Private tag", "fixture-token"] { XCTAssertFalse(text.contains(value)) }
                 let reader = MockHTTPTransport(responses: accessResponses(teamPermission: "entry") + [response(updated)])
@@ -985,7 +985,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
         let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
         XCTAssertEqual(result.state, .pendingReview)
-        let saved = try XCTUnwrap(capture.values.last); XCTAssertEqual(saved.version, 5); XCTAssertEqual(saved.createdAlbumID, 21)
+        let saved = try XCTUnwrap(capture.values.last); XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertEqual(saved.createdAlbumID, 21)
         let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
         for value in ["Fixture rule album", "Private keyword", "future_order", "fixture-token"] { XCTAssertFalse(text.contains(value)) }
         try await repository.restoreAlbumMutation(saved)
@@ -1071,7 +1071,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         XCTAssertEqual(result.state, .pendingReview)
         XCTAssertNil(capture.values.first?.requestDetails?.targetDigest)
         let saved = try XCTUnwrap(capture.values.last)
-        XCTAssertEqual(saved.version, 4); XCTAssertTrue(try XCTUnwrap(saved.requestDetails).matchesTarget("fixture-request"))
+        XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertTrue(try XCTUnwrap(saved.requestDetails).matchesTarget("fixture-request"))
         let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
         for secret in ["Fixture", "Synthetic collection", "/PhotoRequest", "fixture-request", "https://", "fixture-session", "fixture-token"] {
             XCTAssertFalse(text.contains(secret))
@@ -1182,7 +1182,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         let photos = try await repository.photos(in: .personal, query: .recentlyAdded, offset: 0, limit: 20).items
         let result = try await repository.performRecoverableAlbumMutation(.createTemporaryAlbum(name: "Fixture", photos: photos), operationID: id) { capture.append($0) }
         XCTAssertEqual(result.state, .pendingReview)
-        let saved = try XCTUnwrap(capture.values.last); XCTAssertEqual(saved.version, 3); XCTAssertEqual(saved.createdAlbumID, 3)
+        let saved = try XCTUnwrap(capture.values.last); XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertEqual(saved.createdAlbumID, 3)
         let data = try JSONEncoder().encode(saved)
         let reader = MockHTTPTransport(responses: accessResponses() + [try temporaryAlbumFixture(), response(itemPage)])
         let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
@@ -1246,7 +1246,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(capture.values[1].sharingDetails).enableAttempted)
         XCTAssertTrue(try XCTUnwrap(capture.values[2].sharingDetails).enableAttempted)
         let saved = try XCTUnwrap(capture.values.last)
-        XCTAssertEqual(saved.version, 2)
+        XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
         for secret in ["synthetic-secret", "fixture-passphrase", "example.invalid", "\"Member\"", "\"Group\"", "fixture-token", "fixture-session"] {
             XCTAssertFalse(text.contains(secret))
@@ -1591,7 +1591,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         let original = try await source.frozenAlbum(id: 21)
         let saved = try SynologyPhotosAlbumCheckpoint(mutation: .unfreezeAlbum(original), operationID: id, profileID: profile, userID: 12)
         let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
-        XCTAssertEqual(saved.version, 6)
+        XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         for secret in ["Frozen fixture", "people", "recently_add", "obsolete_rule"] { XCTAssertFalse(text.contains(secret)) }
         for (index, final) in [frozenFixture(frozen: false), frozenFixture(frozen: nil), frozenFixture(frozen: false, owner: 99), frozenFixture(frozen: false, name: "Other")].enumerated() {
             let transport = MockHTTPTransport(responses: accessResponses(homeEnabled: false) + [final])
@@ -4486,7 +4486,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
                 let bytes = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
                 XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains("sample.jpg"))
                 let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: bytes)
-                XCTAssertEqual(saved.version, 15); XCTAssertEqual(saved.similarDetails?.submitted, true)
+                XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertEqual(saved.similarDetails?.submitted, true)
                 let after = edit == .ungroup ? [] : edit == .remove([9]) ? [7, 8] : [7, 8, 9], top = edit == .topPick(7) ? 7 : 8
                 let reader = MockHTTPTransport(responses: accessResponses(teamPermission: "management", similarEnabled: true) + [similarState(after, top: top), similarMemberResponse([7, 8, 9], group: after, top: top)])
                 let fresh = try makeRepository(reader, profileID: detail.group.profileID); _ = try await fresh.access()
@@ -7551,7 +7551,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         XCTAssertTrue(snapshots.contains { $0.globalAttempted == [.admin, .personal] && $0.globalAcknowledged == [.admin] })
         let data = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
         let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data)
-        XCTAssertEqual(saved.version, 13); XCTAssertEqual(saved.administrationDetails?.globalAcknowledged, [.admin, .personal, .shared])
+        XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertEqual(saved.administrationDetails?.globalAcknowledged, [.admin, .personal, .shared])
         let reads = MockHTTPTransport(responses: accessResponses() + (try globalSettingsResponses(target)))
         let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access()
         try await restored.restoreAlbumMutation(saved)
@@ -9096,7 +9096,7 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
             XCTAssertEqual(result.state, .confirmed)
             let data = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
             XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("Private"))
-            let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data); XCTAssertEqual(saved.version, 14)
+            let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data); XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion)
             try await repository.restoreAlbumMutation(saved)
             let reads = MockHTTPTransport(responses: accessResponses() + [response(after)])
             let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)

@@ -3,49 +3,43 @@ import Foundation
 import XCTest
 
 final class MobilePhotoImportPresentationTests: XCTestCase {
-    func test照片导入使用系统PhotosPicker且仅允许图片视频单项() throws {
-        let source = try sourceFile("Sources/Features/Photos/Import/MobilePhotoImportView.swift")
-        XCTAssertTrue(source.contains("PhotosPicker("))
+    func test系统选择器允许多张图片视频并保留原格式() throws {
+        let source = try sourceFile("MobilePhotoUploadViews.swift")
+        XCTAssertTrue(source.contains("[PhotosPickerItem]"))
+        XCTAssertTrue(source.contains("PhotosPicker(selection: $selection"))
         XCTAssertTrue(source.contains("matching: .any(of: [.images, .videos])"))
-        XCTAssertTrue(source.contains("selection: $selection"))
-        XCTAssertFalse(source.contains("maxSelectionCount"))
+        XCTAssertTrue(source.contains("preferredItemEncoding: .current"))
     }
 
-    func test导入复用既有受控上传链且没有整库权限或平行网络实现() throws {
-        let model = try sourceFile("Sources/Features/Photos/Import/MobilePhotoImportModel.swift")
-        let view = try sourceFile("Sources/Features/Photos/Import/MobilePhotoImportView.swift")
-        let combined = model + view
-        XCTAssertTrue(combined.contains("controller.handlePickedFile("))
-        XCTAssertTrue(combined.contains("MobileFileTransferService(repository: repository)"))
-        XCTAssertFalse(combined.contains("PHPhotoLibrary.requestAuthorization"))
-        XCTAssertFalse(combined.contains("URLSession"))
-        XCTAssertFalse(combined.contains("repository.upload("))
+    func test导入经共享上传队列而不申请整库权限或另建网络层() throws {
+        let source = try sourceFile("MobilePhotoUploadImportModel.swift") + sourceFile("MobilePhotoUploadViews.swift")
+        XCTAssertTrue(source.contains("model.enqueueUploads("))
+        XCTAssertTrue(source.contains("artifacts.forEach { $0.release() }"))
+        XCTAssertFalse(source.contains("PHPhotoLibrary.requestAuthorization"))
+        XCTAssertFalse(source.contains("URLSession"))
+        XCTAssertFalse(source.contains("MobileFileTransferService"))
     }
 
-    func test照片页所有状态均保留工具栏导入入口并绑定当前空间目标() throws {
-        let source = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-        XCTAssertTrue(source.contains("MobilePhotoImportButton("))
-        XCTAssertTrue(source.contains("let folderPath = browseMode == .timeline ? space.rootPath : state.currentPath"))
-        XCTAssertTrue(source.contains("photoImport.activate("))
-        XCTAssertTrue(source.contains("photoImport.cancelPreparation()"))
+    func test上传入口使用当前目标与实际权限而不把照片转换为路径() throws {
+        let source = try sourceFile("MobileSynologyPhotosView.swift")
+        let model = try sourceFile("MobilePhotoUploadImportModel.swift")
+        XCTAssertTrue(source.contains("uploads.begin()"))
+        XCTAssertTrue(source.contains("disabled(!uploads.canBegin)"))
+        XCTAssertTrue(model.contains("destination == currentDestination"))
+        XCTAssertTrue(model.contains("model.canUploadPhotos"))
+        XCTAssertFalse(model.contains("spaceRootPath"))
     }
 
-    func test导入控件具备44点目标可访问目标说明和本地化反馈() throws {
-        let source = try sourceFile("Sources/Features/Photos/Import/MobilePhotoImportView.swift")
-        XCTAssertTrue(source.contains("frame(minWidth: 44, minHeight: 44)"))
-        XCTAssertTrue(source.contains(".accessibilityHint("))
-        XCTAssertTrue(source.contains("mobile.photos.import.target"))
-        XCTAssertTrue(source.contains("mobile.photos.import.queued.title"))
-        XCTAssertTrue(source.contains("mobile.photos.import.failed.title"))
+    func test表单目的地错误与恢复由本地化和系统控件呈现() throws {
+        let source = try sourceFile("MobilePhotoUploadViews.swift")
+        for token in ["Form {", "photos.upload.destination", "mobile.photos.upload.choosePhotos", "mobile.photos.upload.chooseFiles",
+                      "uploads.error", "mobile.photos.import.failed.item", "uploads.cancel()", "disabled(!uploads.canSubmit)"] {
+            XCTAssertTrue(source.contains(token), token)
+        }
     }
 
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: root.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
+    private func sourceFile(_ file: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent("Sources/Features/Photos/" + file), encoding: .utf8)
     }
 }

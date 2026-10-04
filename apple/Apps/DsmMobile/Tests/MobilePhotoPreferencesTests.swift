@@ -124,7 +124,7 @@ final class MobilePhotoPreferencesTests: XCTestCase {
         session.model.showPreview(try XCTUnwrap(session.model.items.first)); try await wait { !session.model.isPreparingPreview }
         session.model.rotatePreview(); try await wait { !session.model.isManaging }; XCTAssertNotNil(session.model.pendingMutationID)
         let store = PhotoAlbumRecoveryStore(url: storage.recordURL.deletingPathExtension().appendingPathComponent("Albums/pending-v1.json"))
-        XCTAssertEqual(try store.load()?.version, 10)
+        XCTAssertEqual(try store.load()?.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         session.configure(service, uploadStorage: storage, reviewDelay: { _ in }); await session.activate()
         XCTAssertNotNil(session.model.pendingMutationID); await service.setPending(false); session.model.reviewPendingMutation()
         try await wait { !session.model.isManaging }; XCTAssertNil(session.model.pendingMutationID); XCTAssertNil(try store.load())

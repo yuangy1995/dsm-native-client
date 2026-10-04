@@ -36,7 +36,6 @@ final class MobileAppModel {
     let favorites: MobileFavoritesModel
     let fileSettings: MobileFileSettingsModel
     let remoteLocations: MobileRemoteLocationsModel
-    let photoLibraryModel = MobilePhotoLibraryModel()
     let synologyPhotos = MobileSynologyPhotosSession()
     let chatModel = MobileChatModel()
     let nasHealthModel = MobileNasHealthModel()
@@ -97,7 +96,6 @@ final class MobileAppModel {
                 fileActivityModel.reset()
                 fileShareLinkModel.deactivate()
                 deactivateFileLocations()
-                photoLibraryModel.deactivate()
                 synologyPhotos.deactivate()
                 chatModel.deactivate()
                 nasHealthModel.deactivate()
@@ -136,7 +134,6 @@ final class MobileAppModel {
             fileSettings.configure(profile: activeProfile, repository: fileRepository)
         }
     }
-    var photoRepository: FileStationPhotoRepository?
     var serviceRepository: DsmServiceManagementRepository? {
         didSet { downloads.configure(profile: activeProfile, repository: serviceRepository) }
     }
