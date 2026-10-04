@@ -5,6 +5,136 @@ import XCTest
 
 final class SynologyPhotosRepositoryTests: XCTestCase {
 
+    private func deletionPhoto(_ profile: UUID, space: SynologyPhotoSpace = .personal) -> SynologyPhoto {
+        .init(id: .init(profileID: profile, space: space, unitID: 7), filename: "sample.jpg", sizeBytes: 128,
+              takenAt: Date(timeIntervalSince1970: 50), indexedAt: Date(timeIntervalSince1970: 60), folderID: 9, mediaType: "photo")
+    }
+    private var deletionFolderResponse: DsmHTTPResponse {
+        response(#"{"success":true,"data":{"folder":{"id":9,"name":"/Sample","parent":1,"additional":{"access_permission":{"view":true,"manage":true}}}}}"#)
+    }
+    func test原件删除恢复写前落盘且成功空响应后保存终态() async throws {
+        let profile = UUID(), capture = PhotosDeletionCheckpointCapture()
+        let transport = MockHTTPTransport(responses: accessResponses() + [response(itemPage), deletionFolderResponse,
+            response(#"{"success":true}"#), response(#"{"success":true,"data":{"list":[]}}"#)])
+        let repository = try makeRepository(transport, profileID: profile, deletionEnabled: true); _ = try await repository.access()
+        let result = try await repository.performRecoverableDeletion(deletionPhoto(profile), operationID: UUID()) { capture.append($0) }
+        XCTAssertEqual(result, .confirmed); XCTAssertEqual(capture.values.map(\.state), [.submitted, .confirmed])
+        let data = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("sample.jpg"))
+        let restored = try JSONDecoder().decode(SynologyPhotoDeletionCheckpoint.self, from: data)
+        XCTAssertTrue(try restored.matches(deletionPhoto(profile))); XCTAssertEqual(restored.version, 1)
+        let requests = try await transport.recordedRequests().map(decode)
+        XCTAssertEqual(requests.filter { $0["method"] == "delete" }.count, 1)
+    }
+    func test原件删除保存失败不提交且成功后的保存失败只读恢复() async throws {
+        let profile = UUID()
+        for failAfterWrite in [false, true] {
+            let capture = PhotosDeletionCheckpointCapture()
+            let after = failAfterWrite ? [response(#"{"success":true}"#), response(#"{"success":true,"data":{"list":[]}}"#)] : []
+            let transport = MockHTTPTransport(responses: accessResponses() + [response(itemPage), deletionFolderResponse] + after)
+            let repository = try makeRepository(transport, profileID: profile, deletionEnabled: true); _ = try await repository.access()
+            do {
+                _ = try await repository.performRecoverableDeletion(deletionPhoto(profile), operationID: UUID()) { value in
+                    if (failAfterWrite && value.state == .confirmed) || !failAfterWrite { throw CocoaError(.fileWriteNoPermission) }
+                    capture.append(value)
+                }
+                XCTFail("记录不能保存时不得假装完成")
+            } catch { }
+            let requests = try await transport.recordedRequests().map(decode)
+            XCTAssertEqual(requests.filter { $0["method"] == "delete" }.count, failAfterWrite ? 1 : 0)
+            if failAfterWrite {
+                let saved = try XCTUnwrap(capture.values.last); XCTAssertEqual(saved.state, .submitted)
+                let reader = MockHTTPTransport(responses: accessResponses() + [response(#"{"success":true,"data":{"list":[]}}"#)])
+                let fresh = try makeRepository(reader, profileID: profile, deletionEnabled: true); _ = try await fresh.access()
+                let result = try await fresh.reviewDeletion(saved); XCTAssertEqual(result, .confirmed)
+                let reads = try await reader.recordedRequests().map(decode); XCTAssertFalse(reads.contains { $0["method"] == "delete" })
+            }
+        }
+    }
+    func test原件删除断线重启只查询成功空响应并保留个人共享路由() async throws {
+        for space in SynologyPhotoSpace.allCases {
+            let profile = UUID(), capture = PhotosDeletionCheckpointCapture()
+            let transport = MockHTTPTransport(steps: (accessResponses(teamPermission: "management") + [response(itemPage), deletionFolderResponse]).map(MockHTTPTransport.Step.response) + [.urlError(.networkConnectionLost)])
+            let repository = try makeRepository(transport, profileID: profile, deletionEnabled: true); _ = try await repository.access()
+            let result = try await repository.performRecoverableDeletion(deletionPhoto(profile, space: space), operationID: UUID()) { capture.append($0) }
+            XCTAssertEqual(result, .pendingReview)
+            let saved = try JSONDecoder().decode(SynologyPhotoDeletionCheckpoint.self, from: JSONEncoder().encode(XCTUnwrap(capture.values.last)))
+            let reader = MockHTTPTransport(responses: accessResponses(teamPermission: "management") + [response(itemPage), response(#"{"success":true,"data":{"list":[]}}"#)])
+            let fresh = try makeRepository(reader, profileID: profile, deletionEnabled: true); _ = try await fresh.access()
+            let pending = try await fresh.reviewDeletion(saved); XCTAssertEqual(pending, .pendingReview)
+            let complete = try await fresh.reviewDeletion(saved); XCTAssertEqual(complete, .confirmed)
+            let reads = try await reader.recordedRequests().map(decode)
+            XCTAssertEqual(reads.suffix(2).map { $0["api"] }, Array(repeating: space == .personal ? "SYNO.Foto.Browse.Item" : "SYNO.FotoTeam.Browse.Item", count: 2))
+            XCTAssertFalse(reads.contains { $0["method"] == "delete" })
+        }
+    }
+    func test原件删除明确拒绝保存终态且同操作不重发() async throws {
+        for code in [105, 106, 107, 119] {
+            let profile = UUID(), id = UUID(), capture = PhotosDeletionCheckpointCapture()
+            let transport = MockHTTPTransport(responses: accessResponses() + [response(itemPage), deletionFolderResponse, response("{\"success\":false,\"error\":{\"code\":\(code)}}")])
+            let repository = try makeRepository(transport, profileID: profile, deletionEnabled: true); _ = try await repository.access()
+            for _ in 0..<2 {
+                do { _ = try await repository.performRecoverableDeletion(deletionPhoto(profile), operationID: id) { capture.append($0) }; XCTFail("必须保留明确拒绝") } catch { }
+            }
+            XCTAssertEqual(capture.values.map(\.state), [.submitted, .rejected])
+            let requests = try await transport.recordedRequests().map(decode); XCTAssertEqual(requests.filter { $0["method"] == "delete" }.count, 1)
+        }
+    }
+    func test原件删除恢复拒绝未提交权限错误和已替换目标() async throws {
+        let profile = UUID(), photo = deletionPhoto(profile), identity = "\(profile.uuidString):12"
+        let saved = try SynologyPhotoDeletionCheckpoint(photo: photo, operationID: UUID(), identity: identity, state: .submitted)
+        for body in [#"{"success":false,"error":{"code":105}}"#, itemPage.replacingOccurrences(of: "sample.jpg", with: "replaced.jpg"), itemPage.replacingOccurrences(of: "\"time\":50", with: "\"time\":51")] {
+            let reader = MockHTTPTransport(responses: accessResponses() + [response(body)])
+            let repository = try makeRepository(reader, profileID: profile, deletionEnabled: true); _ = try await repository.access()
+            do { _ = try await repository.reviewDeletion(saved); XCTFail("拒绝或身份改变不能冒充已删除") } catch { }
+        }
+        let reader = MockHTTPTransport(responses: accessResponses()), repository = try makeRepository(reader, profileID: profile, deletionEnabled: true); _ = try await repository.access()
+        for state in [SynologyPhotoDeletionCheckpoint.State.prepared, .rejected, .cancelled] {
+            var unsubmitted = saved; unsubmitted.state = state
+            do { _ = try await repository.reviewDeletion(unsubmitted); XCTFail("未提交项不能用空列表确认删除") } catch { }
+        }
+        let requests = await reader.recordedRequests(); XCTAssertEqual(requests.count, 4)
+    }
+    func test原件删除继续前读取最小身份且不依赖可选媒体资料() async throws {
+        let profile = UUID(), photo = deletionPhoto(profile)
+        let saved = try SynologyPhotoDeletionCheckpoint(photo: photo, operationID: UUID(), identity: "\(profile.uuidString):12")
+        let minimal = #"{"success":true,"data":{"list":[{"id":7,"filename":"sample.jpg","filesize":128,"time":50,"indexed_time":60,"folder_id":9,"type":"photo","additional":{"exif":{"unexpected":true}}}]}}"#
+        let reader = MockHTTPTransport(responses: accessResponses() + [response(minimal)]), repository = try makeRepository(reader, profileID: profile, deletionEnabled: true); _ = try await repository.access()
+        let target = try await repository.deletionTarget(saved); XCTAssertTrue(try saved.matches(target))
+        let requests = try await reader.recordedRequests().map(decode)
+        XCTAssertEqual(requests.last?["method"], "get"); XCTAssertNil(requests.last?["additional"]); XCTAssertFalse(requests.contains { $0["method"] == "delete" })
+    }
+    func test删除恢复完成释放原会话占用且未完成时阻止其他管理写() async throws {
+        let profile = UUID(), capture = PhotosDeletionCheckpointCapture(), person = SynologyPhotoCollection(id: 31, name: "Before", itemCount: 1)
+        let transport = MockHTTPTransport(responses: accessResponses() + [response(itemPage), deletionFolderResponse,
+            response(emptySuccess), response(itemPage), response(#"{"success":true,"data":{"list":[]}}"#),
+            response(personList([(31, "Before", 1)])), response(#"{"success":true,"data":{"id":31,"name":"After"}}"#), response(personList([(31, "After", 1)]))])
+        let repository = try makeRepository(transport, profileID: profile, deletionEnabled: true); _ = try await repository.access()
+        let first = try await repository.performRecoverableDeletion(deletionPhoto(profile), operationID: UUID()) { capture.append($0) }; XCTAssertEqual(first, .pendingReview)
+        do { _ = try await repository.performMutation(.renamePerson(person, name: "After"), operationID: UUID()) { _, _ in }; XCTFail("删除尚未结束时不能交叉提交管理写") } catch { }
+        let saved = try XCTUnwrap(capture.values.last); let deleted = try await repository.reviewDeletion(saved); XCTAssertEqual(deleted, .confirmed)
+        let changed = try await repository.performMutation(.renamePerson(person, name: "After"), operationID: UUID()) { _, _ in }
+        XCTAssertEqual(changed.state, .confirmed)
+        let calls = try await transport.recordedRequests().map(decode)
+        XCTAssertEqual(calls.filter { $0["method"] == "delete" }.count, 1); XCTAssertEqual(calls.filter { $0["method"] == "set" }.count, 1)
+    }
+
+    func test原件删除恢复隔离账号与损坏摘要且查询前拒绝() async throws {
+        let profile = UUID(), photo = deletionPhoto(profile)
+        let reader = MockHTTPTransport(responses: accessResponses()), repository = try makeRepository(reader, profileID: profile, deletionEnabled: true); _ = try await repository.access()
+        for identity in ["\(profile.uuidString):13", "\(UUID().uuidString):12"] {
+            do {
+                let saved = try SynologyPhotoDeletionCheckpoint(photo: photo, operationID: UUID(), identity: identity, state: .submitted)
+                _ = try await repository.reviewDeletion(saved); XCTFail("跨账号不能读取恢复目标")
+            } catch { }
+        }
+        let saved = try SynologyPhotoDeletionCheckpoint(photo: photo, operationID: UUID(), identity: "\(profile.uuidString):12", state: .submitted)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any]); json["takenAtDigest"] = "damaged"
+        let corrupted = try JSONDecoder().decode(SynologyPhotoDeletionCheckpoint.self, from: JSONSerialization.data(withJSONObject: json))
+        do { _ = try await repository.reviewDeletion(corrupted); XCTFail("摘要损坏不能查询或提交") } catch { }
+        let requests = await reader.recordedRequests(); XCTAssertEqual(requests.count, 4)
+    }
+
     func test预览设置恢复版本十二跨实例只回读开关() async throws {
         let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
         let writer = MockHTTPTransport(steps: (accessResponses() + [response(automaticSettingFixture(false))]).map(MockHTTPTransport.Step.response) + [.urlError(.networkConnectionLost)])
@@ -10897,4 +11027,11 @@ private final class PhotosAlbumCheckpointCapture: @unchecked Sendable {
     private var snapshots: [SynologyPhotosAlbumCheckpoint] = []
     var values: [SynologyPhotosAlbumCheckpoint] { lock.withLock { snapshots } }
     func append(_ value: SynologyPhotosAlbumCheckpoint) { lock.withLock { snapshots.append(value) } }
+}
+
+private final class PhotosDeletionCheckpointCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshots: [SynologyPhotoDeletionCheckpoint] = []
+    var values: [SynologyPhotoDeletionCheckpoint] { lock.withLock { snapshots } }
+    func append(_ value: SynologyPhotoDeletionCheckpoint) { lock.withLock { snapshots.append(value) } }
 }

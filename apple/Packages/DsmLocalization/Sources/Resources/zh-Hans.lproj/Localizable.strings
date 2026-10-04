@@ -6115,3 +6115,13 @@
 "mobile.photos.faces.tooMany" = "本次人脸修改过多，请分批保存。";
 "mobile.photos.faces.emptyHint" = "在照片上画出人脸框，或添加居中的框。";
 "photos.recognition.pending" = "暂时无法显示最新的人物和主题，请稍后刷新。";
+"mobile.photos.deletion.title" = "删除照片";
+"mobile.photos.deletion.confirmMany" = "从 NAS 删除这 %d 张照片？它们也会从相册中移除。能否恢复取决于 NAS 的设置。";
+"mobile.photos.deletion.pending" = "照片删除尚未结束，恢复连接后会自动更新进度。";
+"mobile.photos.deletion.paused" = "已删除 %d 张照片，剩余 %d 张已暂停删除。";
+"mobile.photos.deletion.partial" = "已删除 %d 张照片，%d 张未删除。";
+"mobile.photos.deletion.continue" = "继续删除 %d 张照片";
+"mobile.photos.deletion.cancelRemaining" = "取消剩余删除";
+"mobile.photos.deletion.recoveryFailed" = "无法读取或保存删除进度。请重新打开照片页面再试；若仍无法恢复，请联系支持。";
+"mobile.photos.deletion.failed" = "删除未能继续。请检查连接和访问权限，再继续或取消剩余照片的删除。";
+"mobile.photos.deletion.complete" = "已删除 %d 张照片。";

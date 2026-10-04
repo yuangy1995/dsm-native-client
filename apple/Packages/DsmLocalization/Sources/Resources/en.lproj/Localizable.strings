@@ -6115,3 +6115,13 @@
 "mobile.photos.faces.tooMany" = "Too many face changes for one save. Save fewer changes at a time.";
 "mobile.photos.faces.emptyHint" = "Draw a face box on the photo, or add a centered box.";
 "photos.recognition.pending" = "The latest people and topics are temporarily unavailable. Refresh again later.";
+"mobile.photos.deletion.title" = "Delete photos";
+"mobile.photos.deletion.confirmMany" = "Delete these %d photos from your NAS? This also removes them from albums. Recovery depends on your NAS settings.";
+"mobile.photos.deletion.pending" = "Photo deletion is still in progress. The status will update when the connection returns.";
+"mobile.photos.deletion.paused" = "Deleted: %d. Deletion is paused with %d remaining.";
+"mobile.photos.deletion.partial" = "Deleted: %d. Not deleted: %d.";
+"mobile.photos.deletion.continue" = "Continue deleting (%d)";
+"mobile.photos.deletion.cancelRemaining" = "Cancel remaining deletions";
+"mobile.photos.deletion.recoveryFailed" = "Saved deletion progress could not be read or updated. Reopen Photos and try again. If the problem continues, contact support.";
+"mobile.photos.deletion.failed" = "Deletion could not continue. Check your connection and access, then continue or cancel the remaining photos.";
+"mobile.photos.deletion.complete" = "Deleted: %d.";

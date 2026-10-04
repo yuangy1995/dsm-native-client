@@ -425,6 +425,9 @@ public protocol SynologyPhotosServing: Sendable {
     func prepareDeletion(_ photo: SynologyPhoto) async throws
     func deletePhoto(_ photo: SynologyPhoto, operationID: UUID) async throws -> SynologyPhotoDeletionResult
     func reviewDeletion(_ photo: SynologyPhoto) async throws -> SynologyPhotoDeletionResult
+    func performRecoverableDeletion(_ photo: SynologyPhoto, operationID: UUID, checkpoint: @escaping @Sendable (SynologyPhotoDeletionCheckpoint) throws -> Void) async throws -> SynologyPhotoDeletionResult
+    func reviewDeletion(_ checkpoint: SynologyPhotoDeletionCheckpoint) async throws -> SynologyPhotoDeletionResult
+    func deletionTarget(_ checkpoint: SynologyPhotoDeletionCheckpoint) async throws -> SynologyPhoto
     func access() async throws -> SynologyPhotosAccess
     func timeline(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoDay]
     func searchTimeline(in space: SynologyPhotoSpace, keyword: String) async throws -> [SynologyPhotoDay]
@@ -593,6 +596,9 @@ public extension SynologyPhotosServing {
     func prepareDeletion(_ photo: SynologyPhoto) async throws { throw CapabilitySelectionError.unsupported(apiName: "Photos.Delete") }
     func deletePhoto(_ photo: SynologyPhoto, operationID: UUID) async throws -> SynologyPhotoDeletionResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.Delete") }
     func reviewDeletion(_ photo: SynologyPhoto) async throws -> SynologyPhotoDeletionResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.Delete") }
+    func performRecoverableDeletion(_ photo: SynologyPhoto, operationID: UUID, checkpoint: @escaping @Sendable (SynologyPhotoDeletionCheckpoint) throws -> Void) async throws -> SynologyPhotoDeletionResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.Delete.Recovery") }
+    func reviewDeletion(_ checkpoint: SynologyPhotoDeletionCheckpoint) async throws -> SynologyPhotoDeletionResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.Delete.Recovery") }
+    func deletionTarget(_ checkpoint: SynologyPhotoDeletionCheckpoint) async throws -> SynologyPhoto { throw CapabilitySelectionError.unsupported(apiName: "Photos.Delete.Recovery") }
     func filteredTimeline(in space: SynologyPhotoSpace, filter: SynologyPhotoFilter) async throws -> [SynologyPhotoDay] { throw CapabilitySelectionError.unsupported(apiName: "Photos.Filter") }
     func filterOptions(in space: SynologyPhotoSpace) async throws -> SynologyPhotoFilterOptions { throw CapabilitySelectionError.unsupported(apiName: "Photos.Filter") }
     func categories(in space: SynologyPhotoSpace) async throws -> Set<SynologyPhotoCategory> {
