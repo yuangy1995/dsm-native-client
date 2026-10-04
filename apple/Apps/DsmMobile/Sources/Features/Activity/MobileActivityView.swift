@@ -24,11 +24,12 @@ struct MobileActivityView: View {
     }
 
     private var state: MobileActivityPresentationState {
-        if model.fileArchiveQueue.recoveryError != nil || model.fileUploadQueue.recoveryError != nil { return .content }
-        if !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty {
+        if model.fileArchiveQueue.recoveryError != nil || model.fileUploadQueue.recoveryError != nil || model.crossNAS.recoveryFailed { return .content }
+        if !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty || !model.crossNAS.records.isEmpty {
             let archivesVisible = model.fileArchiveQueue.records.contains { filter.includes(active: $0.isActive) }
             let uploadsVisible = model.fileUploadQueue.batches.contains { filter.includes(active: $0.isRunning || $0.isPaused || $0.hasPending) }
-            return archivesVisible || uploadsVisible || !visibleTasks.isEmpty ? .content : .filteredEmpty
+            let crossVisible = model.crossNAS.records.contains { filter.includes(active: $0.isRunning || $0.canContinue || $0.hasUnknown) }
+            return archivesVisible || uploadsVisible || crossVisible || !visibleTasks.isEmpty ? .content : .filteredEmpty
         }
         return .resolve(
             isLoading: isLoading,
@@ -105,7 +106,7 @@ struct MobileActivityView: View {
                     .font(.callout).padding().frame(maxWidth: .infinity, alignment: .leading)
                     .background(.bar)
             }
-            if !tasks.isEmpty || !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty {
+            if !tasks.isEmpty || !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty || !model.crossNAS.records.isEmpty {
                 filterPicker
             }
         }
@@ -149,6 +150,7 @@ struct MobileActivityView: View {
     private var taskList: some View {
         List {
             fileActivityNotices
+            MobileCrossNASSections(model: model, filter: filter)
             MobileFileArchiveSections(queue: model.fileArchiveQueue, filter: filter)
             MobileFileUploadSections(queue: model.fileUploadQueue, filter: filter)
             taskSection(source: .app)

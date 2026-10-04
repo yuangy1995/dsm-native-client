@@ -22,6 +22,7 @@ final class MobileAppModel {
     let quickConnectResolver: any QuickConnectResolving
     let mutationCoordinator: MobileMutationCoordinator
     let transferCoordinator: MobileTransferCoordinator
+    let crossNAS: MobileCrossNASQueue
     let fileUploadQueue: MobileFileUploadQueue
     let fileArchiveQueue: MobileFileArchiveQueue
     let fileActivityModel: MobileFileActivityModel
@@ -43,6 +44,9 @@ final class MobileAppModel {
     let virtualMachineInventoryModel = MobileVirtualMachineInventoryModel()
     let downloads: MobileDownloadsModel
 
+#if DEBUG
+    var crossNASTargetFixture: MobileCrossNASEndpoint?
+#endif
     var profiles: [NasProfile] = []
     var selectedProfileID: UUID?
     var displayName = L10n.string("ui.b457fa7f7764aef5")
@@ -68,6 +72,9 @@ final class MobileAppModel {
     var activeProfile: NasProfile? {
         didSet {
             filePreviewModel.activate(profileID: activeProfile?.id)
+            crossNAS.configure(source: activeProfile.flatMap { profile in
+                fileRepository.map { MobileCrossNASEndpoint(profile: profile, repository: $0) }
+            })
             fileUploadQueue.configure(profile: activeProfile, repository: fileRepository)
             fileArchiveQueue.configure(profile: activeProfile, repository: fileRepository)
             filePermissionModel.configure(profile: activeProfile, repository: fileRepository)
@@ -106,6 +113,9 @@ final class MobileAppModel {
     var fileRepository: DsmFileRepository? {
         didSet {
             fileActivityModel.reset()
+            crossNAS.configure(source: activeProfile.flatMap { profile in
+                fileRepository.map { MobileCrossNASEndpoint(profile: profile, repository: $0) }
+            })
             fileUploadQueue.configure(profile: activeProfile, repository: fileRepository)
             fileArchiveQueue.configure(profile: activeProfile, repository: fileRepository)
             filePermissionModel.configure(profile: activeProfile, repository: fileRepository)
@@ -163,12 +173,19 @@ final class MobileAppModel {
         )
         self.transferCoordinator = transferCoordinator
         self.fileActivityModel = MobileFileActivityModel(coordinator: transferCoordinator, rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("NasControls", isDirectory: true))
+        self.crossNAS = MobileCrossNASQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("CrossNAS", isDirectory: true))
         self.fileUploadQueue = MobileFileUploadQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("UploadBatches", isDirectory: true))
         self.fileArchiveQueue = MobileFileArchiveQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Archives", isDirectory: true))
         self.downloads = MobileDownloadsModel(transferCoordinator: transferCoordinator)
         self.documentTransferController = MobileDocumentTransferController(
             transferCoordinator: transferCoordinator, recoveryStore: transferRecoveryStore
         )
+        crossNAS.onSourceChanged = { [weak self] context in
+            guard let self, let profile = activeProfile,
+                  MobileWorkspaceIdentity(profile).storageIdentifier == context,
+                  let repository = fileRepository else { return }
+            await fileBrowserModel.refresh(repository: repository)
+        }
         fileArchiveQueue.onDestinationChanged = { [weak self] context, destination in
             guard let self, let profile = activeProfile,
                   MobileWorkspaceIdentity(profile).storageIdentifier == context,

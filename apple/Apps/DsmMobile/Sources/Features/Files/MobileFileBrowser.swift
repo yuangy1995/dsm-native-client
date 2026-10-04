@@ -35,6 +35,7 @@ struct MobileFileBrowser: View {
     @State private var remotePath: String?
     @State private var remoteDownload: FileItem?
     @State private var isoSource: FileItem?
+    @State private var crossNASSelection: MobileCrossNASSelection?
     @State private var showsAdvancedSearch = false
     @State private var restoresPreviewInspectorAfterFullScreen = false
     @State private var isSelectingCopyMoveItems = false
@@ -120,6 +121,9 @@ struct MobileFileBrowser: View {
         }
         .sheet(isPresented: shareLinkPresentationBinding) {
             MobileFileShareLinkView(model: model.fileShareLinkModel)
+        }
+        .sheet(item: $crossNASSelection) { selection in
+            MobileCrossNASSelectionView(model: model, selection: selection)
         }
         .sheet(isPresented: $showsAdvancedSearch) {
             if let repository = model.fileRepository {
@@ -630,6 +634,10 @@ struct MobileFileBrowser: View {
                     )
                 }
             }
+            if canCrossNAS(item) {
+                Button(L10n.string("mobile.cross.title")) { beginCrossNAS([item]) }
+                    .accessibilityIdentifier("files.item.cross-nas")
+            }
             if item.isDirectory {
                 Button(L10n.string("ui.c771248e511fbf93")) { openDirectory(item) }
                 if canDownloadSelection(item) {
@@ -793,6 +801,9 @@ struct MobileFileBrowser: View {
                     Label(L10n.string("mobile.documents.share"), systemImage: "square.and.arrow.up")
                 }.disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canDownloadSelection))
                     .accessibilityIdentifier("files.batch.share")
+                Button(L10n.string("mobile.cross.title")) { beginCrossNAS(selectedCopyMoveItems) }
+                    .disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canCrossNAS))
+                    .accessibilityIdentifier("files.batch.cross-nas")
                 Button(role: .destructive) { beginBatchRecycle(.delete) } label: {
                     Label(L10n.string("mobile.files.recycle.delete.action"), systemImage: "trash")
                 }.disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canDelete))
@@ -1218,6 +1229,18 @@ struct MobileFileBrowser: View {
             readOnlyRoots: readOnlyMutationRoots,
             repository: repository
         )
+    }
+
+    private func canCrossNAS(_ item: FileItem) -> Bool {
+        guard let profile = model.activeProfile, !state.location.source.isReadOnlyLocation else { return false }
+        return MobileCrossNASPlan.canSelect(item, profileID: profile.id)
+    }
+
+    private func beginCrossNAS(_ items: [FileItem]) {
+        guard let profile = model.activeProfile, !items.isEmpty, items.allSatisfy(canCrossNAS),
+              items.allSatisfy({ state.page.items.contains($0) }) else { return }
+        crossNASSelection = .init(sourceContext: MobileWorkspaceIdentity(profile).storageIdentifier, items: items)
+        endCopyMoveSelection()
     }
 
     private var selectableCopyMoveItems: [FileItem] {

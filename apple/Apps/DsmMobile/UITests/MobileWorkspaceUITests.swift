@@ -780,6 +780,76 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertFalse(element("files.recycle.submit", in: app).exists)
     }
 
+    func test跨NAS混合复制与移动删源分开确认() {
+        let app = launchFixture(state: "cross-copy"); defer { app.terminate() }
+        beginCrossNAS(app, move: true)
+        let start = app.buttons["files.cross.start"]
+        XCTAssertTrue(start.isEnabled); start.tap()
+        openTransfers(app)
+        XCTAssertTrue(app.staticTexts["Copy Complete"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.staticTexts["Sample NAS → Destination NAS"].exists)
+        attachScreenshot(app, name: "Cross NAS verified copy before removal")
+        let remove = app.buttons["files.cross.remove"]
+        XCTAssertTrue(remove.exists); remove.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "Remove the copied originals from “Sample NAS” and keep the copies on “Destination NAS”. Removal may be permanent. Do not edit these files at the same time.")).firstMatch.waitForExistence(timeout: 5))
+        let confirmations = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Remove Originals", "files.cross.remove"))
+        XCTAssertEqual(confirmations.count, 1)
+        confirmations.firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Move Complete"].waitForExistence(timeout: 12))
+        XCTAssertFalse(app.buttons["files.cross.remove"].exists)
+        attachScreenshot(app, name: "Cross NAS move completed")
+        navigate("files", title: "File", in: app)
+        XCTAssertTrue(app.staticTexts["This position is empty"].waitForExistence(timeout: 8))
+    }
+
+    func test跨NAS断线刷新后继续未开始项目() {
+        let app = launchFixture(state: "cross-unknown"); defer { app.terminate() }
+        beginCrossNAS(app, move: false); app.buttons["files.cross.start"].tap()
+        openTransfers(app)
+        XCTAssertTrue(app.staticTexts["Transfer Interrupted"].waitForExistence(timeout: 12))
+        XCTAssertFalse(app.buttons["files.cross.resume"].exists)
+        XCTAssertFalse(app.buttons["files.cross.remove"].exists)
+        app.buttons["files.cross.refresh"].tap()
+        let resume = app.buttons["files.cross.resume"]
+        XCTAssertTrue(resume.waitForExistence(timeout: 8)); resume.tap()
+        XCTAssertTrue(app.staticTexts["Copy Complete"].waitForExistence(timeout: 12))
+        attachScreenshot(app, name: "Cross NAS recovered without duplicate upload")
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch()
+        openTransfers(app)
+        XCTAssertTrue(app.staticTexts["Copy Complete"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["files.cross.remove"].exists)
+    }
+
+    func test跨NAS重名和只读目标保留来源并给出恢复方法() {
+        for state in ["cross-conflict", "cross-readonly"] {
+            let app = launchFixture(state: state)
+            beginCrossNAS(app, move: false); app.buttons["files.cross.start"].tap()
+            let error = element("files.cross.error", in: app)
+            XCTAssertTrue(error.waitForExistence(timeout: 8))
+            XCTAssertTrue(error.label.contains(state == "cross-conflict" ? "same name" : "permissions"))
+            XCTAssertTrue(app.buttons["files.cross.start"].isEnabled)
+            attachScreenshot(app, name: state)
+            app.terminate()
+        }
+    }
+
+    private func beginCrossNAS(_ app: XCUIApplication, move: Bool) {
+        beginDownloadSelection(app, singleFile: false)
+        app.buttons["files.batch.more"].tap(); element("files.batch.cross-nas", in: app).tap()
+        let destination = app.buttons["files.cross.destination"]
+        XCTAssertTrue(destination.waitForExistence(timeout: 8)); destination.tap()
+        let folder = app.buttons["files.folder-picker.folder./output"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 8)); folder.tap()
+        app.buttons["Choose"].tap()
+        if move { app.segmentedControls.buttons["Move to…"].tap() }
+    }
+
+    private func openTransfers(_ app: XCUIApplication) {
+        navigate("activity", title: "Activity", in: app)
+        let tasks = element("mobile.module.transfers", in: app)
+        if tasks.waitForExistence(timeout: 5) { tasks.tap() }
+    }
+
     private func beginRecycleBatch(_ app: XCUIApplication, restore: Bool, recycle: Bool = false) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
         if recycle {

@@ -768,3 +768,25 @@ M2h3 第二轮 `m2h3-iphone2.xcresult` / `m2h3-ipad2.xcresult` 的 **3 项新增
 M2h3 最终 `m2h3-build8.log` **构建通过**；`m2h3-iphone4.xcresult` / `m2h3-ipad4.xcresult` 各 **654 项全部单元通过**，其中 11 项打包下载行为含最终副本保护失败的清理/禁止交付。第三轮只有错误假设的系统属性断言失败，未把该结果包算作通过。第二轮四项实际 UI 已分别全部通过，最终异常清理逻辑由新行为测试覆盖；没有无理由重跑整组 UI。
 
 XcodeGen 2.46.0 重复生成 SHA-256 为 `a6f07921bf9109d17b4be3934bd0da43582a742c08986de0f9dfaae9b6f13521`。本地化完整性/硬编码扫描为 Apple 5711 / Android 2188 / Windows 3402，通过；最终严格文档及差异检查均通过。所有临时日志、结果包与合成截图在本机临时验证目录，不进入源码；真实 NAS、系统实际写出和设备文件保护仍按主计划设备待办验收。
+
+
+## 2026-10-04 移动 M2h4 跨 NAS 复制与分步移动
+
+范围为移动 Files 的单项/多选传输、两端会话装配、独立清单和活动恢复，以及完成复制后的独立删源确认。`Features/Files/CrossNAS` 复用共享 Repository，不复制网络实现；`CrossNAS/queue-v1.json` 只保存两端身份摘要和逐项数据，版本独立、受保护且排除备份。目标重名不覆盖，文件以 MD5 和原大小/类型核对，目录完整分页；未知文件上传只读恢复，未知目录创建不根据同名对象认定归属。删源先重新检查两端文件/目录和当前权限，逐项非递归删除；删除未知仅回读，完成项不重放，源列表自动刷新。真实 NAS、后台系统执行及公开接口缺少条件删除事务的并发窗口继续按 M2h4 待办验收。
+
+独立集成与只读对抗复核检查了：两端分别加载保存会话及 TLS 规则、源退出/目标移除的迟到返回、同名文件和挂载路径、分页重复及目录新增、内容同大小改写、逐项写前持久化、丢回执后的归属、取消和非递归删除。发现并修正准备期间移除目标仍可能继续的问题、上一文件进度迟到影响下一项显示的问题，以及部分删除后的提示不能宣称所有原件仍保留。移动端不采用 macOS 原有复制后直接递归删源流程，也未顺手修改 Mac 文件。
+
+实际执行：
+
+- 锁定 XcodeGen 2.46.0 生成工程，重复生成 SHA-256 一致：`b6c3d34859d3992738e47a55d5c3ef350f56cb31c744b154d36e0a4f6c1cccd5`。没有改 Bundle ID、权限、签名、最低版本或新增依赖。
+- `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 最终通过。前四轮依次发现局部错误变量遮蔽、测试传输未声明二进制协议、UI 测试查询写法及嵌套测试 Fixture 的主线程隔离，均修正后重新编译；没有降低 Swift 6 约束。
+- `xcodebuild test-without-building` 使用同一工程/方案/派生目录、`-parallel-testing-enabled NO`、两台独立模拟器及 `-only-testing:DsmMobileTests`：iPhone `8145D5B0-65A7-46E3-A0CF-17850E4EFA3F` 为 **674 项通过，0 失败**；iPad `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 为 **674 项通过，0 失败**。新增 20 项覆盖空文件/目录、只读来源、两端内容和权限改变、完整分页、丢回执/部分删除、重启去重、迟到账号隔离、目标移除及存储失败；真实 Repository 合成链路要求每端使用自己的测试会话，并实际处理上传内容、摘要及非递归删除。
+- 首轮同命令聚焦 `MobileCrossNASTests` 两端各 **17 项通过**；三项 UI 中断线恢复和重名/权限场景通过，删源确认文案超过 XCTest 简写查询的 128 字符限制失败，已改为完整 label 谓词匹配，没有缩短或移除确认断言。后续补齐 3 项会话/取消回归和源列表刷新。
+- `swift test --package-path apple --jobs 4`：**2,432 项 XCTest，172 项既有条件跳过，0 失败**；另 **12 项 Swift Testing 通过**。共享变更仅双语资源，没有 Mac App 业务源码改动。
+- `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过；`lipo -archs` 回读为 **x86_64 arm64**。没有安装、启动或发布。
+- `python3 tools/localization/check_localization.py` 通过（Apple 5,747 / Android 2,188 / Windows 3,402）；`python3 tools/codex/check_documentation.py --strict-release` 与 `git diff --check` 通过。源码只读复核和模拟器证据不代表两台真实 NAS 验收。
+
+- 最终三项 UI 均已分别通过：同一 `test-without-building` 命令以 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/` 分别选 `test跨NAS混合复制与移动删源分开确认`、`test跨NAS断线刷新后继续未开始项目`、`test跨NAS重名和只读目标保留来源并给出恢复方法`。第二轮两端各通过后两项；第一项测试误选背景同名按钮后，明确排除背景标识并断言唯一确认按钮。第三轮只复跑受影响第一项，iPhone **1/1 通过（41.324 秒）**，iPad **1/1 通过（47.962 秒）**，并验证移动后返回源目录自动显示为空。没有重跑已通过的无关测试或降低任何断言。
+- iPhone 浅色、iPad 深色的实际表单、权限错误、活动明细和完成截图已检查，控件和恢复说明正常；设备辅助功能、真实证书/两端 NAS 及后台生命周期不计入上述通过。
+
+代码同步和云端完整门禁分别记录，不将本机通过当作真实 NAS 验收或移动发布。

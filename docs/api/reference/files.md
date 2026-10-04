@@ -92,3 +92,6 @@ macOS 用户流程标准：普通连接按钮直接执行；保存等待有进�
 相关模型：[FileStationAdvanced](../../../apple/Packages/DsmCore/Sources/FileStationAdvanced.swift)、[RemoteMountOperation](../../../apple/Packages/DsmCore/Sources/RemoteMountOperation.swift)、[权限模型](../../../apple/Packages/DsmCore/Sources/FilePermissionEditing.swift)。网络回归集中在 [DsmNetwork/Tests](../../../apple/Packages/DsmNetwork/Tests/) 的 `DsmFileRepositoryTests`、`FileStationParityTests`、`RemoteMountRecoveryTests`、请求快照测试；macOS 工作流在 [DsmMac/Tests](../../../apple/Apps/DsmMac/Tests/)。
 
 移植时先覆盖浏览/传输，再逐项接入写操作。File Station 扩展、Office 本机自动保存和桌面系统挂载不是同一个完成项；移动端范围按专项计划，不能把 macOS 测试当作其他端验收。
+
+
+2026-10-04 移动 M2h4 复用 List/getinfo/MD5、现有跨 NAS Download/Upload、CreateFolder 与 `deleteResult(recursive: false)`，共享请求、版本、认证与五端协议不变，Windows/Android 无代码修改。移动端两端会话分别装配，先冻结完整清单并核对内容，不覆盖同名输出；已确认复制之后才显示独立删源确认，删源前重读内容与权限，逐文件/空目录非递归删除。未知文件写入仅完整比对，未知建目录不根据同名对象继续写入；重启不重放已完成或未知步骤。公开删除 API 不提供与 MD5 联动的原子条件删除，仍有外部并发修改窗口，不能将合成测试等同真实 NAS 验收。平台范围及限制见移动 M2h4 账本。

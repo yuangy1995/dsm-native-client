@@ -66,6 +66,7 @@ extension MobileAppModel {
         if selectedProfileID == profile.id || removesActiveProfile {
             cancelConnection()
         }
+        crossNAS.removeProfile(profile.id)
         profiles.removeAll { $0.id == profile.id }
         fileShareLinkModel.purge(profileID: profile.id, removeRecovery: true)
         filePermissionModel.removeProfile(profile.id)
@@ -441,7 +442,7 @@ extension MobileAppModel {
         return candidate
     }
 
-    func discoverConnection(for profile: NasProfile) async throws -> DiscoveredConnection {
+    func discoverConnection(for profile: NasProfile, reportsProgress: Bool = true) async throws -> DiscoveredConnection {
         try Task.checkCancellation()
         let parsedAddress = try NasAddressParser.parse(profile.host, defaultPort: profile.port)
         guard parsedAddress.kind == .quickConnect else {
@@ -451,7 +452,7 @@ extension MobileAppModel {
             )
         }
 
-        connectionStatus = L10n.string("ui.aa0582cad267718e")
+        if reportsProgress { connectionStatus = L10n.string("ui.aa0582cad267718e") }
         let endpoints: [QuickConnectEndpoint]
         do {
             endpoints = try await quickConnectResolver.resolve(id: parsedAddress.host)
@@ -463,9 +464,11 @@ extension MobileAppModel {
 
         for endpoint in endpoints {
             try Task.checkCancellation()
-            connectionStatus = endpoint.kind == .local
-                ? L10n.string("ui.3b38866d76d21239")
-                : L10n.string("ui.307e0c332a164ea1")
+            if reportsProgress {
+                connectionStatus = endpoint.kind == .local
+                    ? L10n.string("ui.3b38866d76d21239")
+                    : L10n.string("ui.307e0c332a164ea1")
+            }
             let endpointPort = profile.portOverride ?? endpoint.port
             let connectionProfile = try profile.updating(host: endpoint.host, port: endpointPort)
             do {
@@ -481,7 +484,7 @@ extension MobileAppModel {
             }
         }
 
-        connectionStatus = L10n.string("ui.85e5d30ce27fc0e5")
+        if reportsProgress { connectionStatus = L10n.string("ui.85e5d30ce27fc0e5") }
         let relay = try await quickConnectResolver.requestRelay(id: parsedAddress.host)
         try Task.checkCancellation()
         let relayProfile = try profile.updating(
@@ -493,6 +496,37 @@ extension MobileAppModel {
             profile: relayProfile,
             capabilities: try await authRepository.discover(profile: relayProfile)
         )
+    }
+
+    /// 目标只复用其自己保存的会话；登录、OTP 与证书信任仍经原连接界面完成。
+    func crossNASTarget(_ profile: NasProfile) async throws -> MobileCrossNASEndpoint {
+        guard isConnected, let original = activeProfile, let originalRepository = fileRepository,
+              profile.id != original.id, profiles.contains(profile) else { throw MobileCrossNASFailure.connection }
+        func requireCurrent() throws {
+            try Task.checkCancellation()
+            guard activeProfile == original, fileRepository === originalRepository, profiles.contains(profile) else {
+                throw CancellationError()
+            }
+        }
+#if DEBUG
+        if MobileUIFixture.isEnabled, let fixture = crossNASTargetFixture, fixture.profile == profile {
+            try requireCurrent()
+            return fixture
+        }
+#endif
+        guard let savedSession = try await sessionStore.load(for: profile.id) else { throw MobileCrossNASFailure.connection }
+        try requireCurrent()
+        let connection = try await discoverConnection(for: profile, reportsProgress: false)
+        try requireCurrent()
+        let required = [DsmAPIName.fileStationList, DsmAPIName.fileStationMD5, DsmAPIName.fileStationUpload,
+            DsmAPIName.fileStationCreateFolder, DsmAPIName.fileStationCheckPermission]
+        guard required.allSatisfy({ connection.capabilities[$0]?.selectedVersion != nil }) else {
+            throw MobileCrossNASFailure.unavailable
+        }
+        let repository = try DsmFileRepository(profile: connection.profile, capabilities: connection.capabilities, session: savedSession)
+        _ = try await repository.listShares(offset: 0, limit: 1)
+        try requireCurrent()
+        return MobileCrossNASEndpoint(profile: profile, repository: repository)
     }
 
     func prepareWorkspaceContext(for profile: NasProfile) async {

@@ -12,7 +12,7 @@ enum MobileUIFixture {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
-            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -21,7 +21,7 @@ enum MobileUIFixture {
                 transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
-            let versions = [DsmAPIName.fileStationDelete: 2, DsmAPIName.fileStationCopyMove: 3, DsmAPIName.fileStationSettings: 1, DsmAPIName.fileStationVFSUser: 1,
+            let versions = [DsmAPIName.fileStationMD5: 2, DsmAPIName.fileStationDelete: 2, DsmAPIName.fileStationCopyMove: 3, DsmAPIName.fileStationSettings: 1, DsmAPIName.fileStationVFSUser: 1,
                             DsmAPIName.coreBandwidthControl: 1, DsmAPIName.coreFileSharingTheme: 1, DsmAPIName.coreThemeImage: 1,
                             DsmAPIName.coreDirectoryLDAP: 1, DsmAPIName.coreDirectoryDomain: 2, DsmAPIName.fileStationFavorite: 2, DsmAPIName.fileStationMount: 1, DsmAPIName.fileStationMountList: 1,
                             DsmAPIName.fileStationVFSProtocol: 1, DsmAPIName.fileStationVFSProfile: 1, DsmAPIName.fileStationVFSConnection: 1, DsmAPIName.fileStationDownload: 2,
@@ -44,6 +44,18 @@ enum MobileUIFixture {
             model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
+            let crossState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? ""
+            if crossState.hasPrefix("cross-") {
+                let targetProfile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000020")!,
+                    displayName: "Destination NAS", host: "destination.example.invalid", port: 5001, usernameHint: "target")
+                model.profiles.append(targetProfile)
+                model.fileRepository = try DsmFileRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
+                    transport: MobileCrossNASUITransport(target: false, state: crossState))
+                model.crossNASTargetFixture = MobileCrossNASEndpoint(profile: targetProfile,
+                    repository: try DsmFileRepository(profile: targetProfile, capabilities: fixtureCapabilities,
+                        session: AuthSession(sid: "target-fixture-session", synoToken: nil, did: nil, isPortalPort: false),
+                        transport: MobileCrossNASUITransport(target: true, state: crossState)))
+            }
             model.activeProfile = profile
             model.activeConnectionProfile = profile
             model.isConnected = true
