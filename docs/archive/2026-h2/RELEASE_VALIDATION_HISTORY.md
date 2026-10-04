@@ -1133,3 +1133,18 @@ Mac 两轮 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme
 - 本地化 Apple 5868/Android 2188/Windows 3402、参数/硬编码/引用，Fixture 29 组及私有 API 引用 48 项，请求 170 组/1 写结果、API 参数目录、严格文档和差异空白检查通过。真实 NAS 未参与自动写测试；设备/NAS 条件、步骤与脱敏反馈要求见主计划 M3f4 的 `PENDING_USER_VALIDATION`。人物/相似组、批量导出/原件删除恢复、旧图库清理与 M4–M8 继续后续工作。
 
 - 第二轮实际 UI 两端两项均通过：排除格式/缓存为 53.753 / 68.953 秒，新增自定义成员/目录/统一保存/再次搜索为 46.852 / 49.945 秒。使用同样命令，仅选择这两项；结果 `m3f4-iphone2.xcresult` / `m3f4-ipad2.xcresult`。最终 iPhone 目录权限与完整标题、iPad 深色成员筛选和格式开关截图已人工检查；iPad 测后恢复浅色。最终界面修复不改变模型、网络或 Mac 代码，未重复已通过的完整共享测试。
+
+## 2026-10-04 移动 M3g 人物主题与手工人脸
+
+- 两端实现人物改名/合并/显示隐藏、选中人脸移出/改归属/封面，主题显示/封面/移出，预览手工人脸新增/移动/缩放/命名/归属和撤销移除。普通保存直接提交，合并与移出固定目标并说明保留原照片。iPhone 纵向、宽屏 iPad 并列画布和表单；辅助大字使用纵向布局及完整辅助标签。纯框选/裁剪计算移入共享目标，Mac 保持原 JPEG 编码与行为。
+- 独立恢复版本 14 兼容旧 1–13，保存稳定身份、名称/原件/裁剪摘要、合并原成员集合及提交/回执状态，不存姓名、照片、凭据或链接。新增框返回编号及裁剪全部保存成功后才允许改动旧框；未知只读，丢回执不按同名猜新人物。独立集成与只读对抗复核补上人物移出/改归属后的原件身份检查，覆盖原照片替换、存储失败、先增后删、裁剪丢回执、跨账号及迟到读取；Mac 未装配持久适配的路径保持原语义。
+- 网络 `swift test --package-path apple --jobs 4 --filter SynologyPhotosRepositoryTests`：首轮编译暴露不可编码照片编号类型及闭包命名错误，修正后 587 项通过；增加十项用例后 597 项首轮失败三项，原因是合成共享分类权限未开启、隐私断言把属性名当正文、GET 回读被当作 POST 解码，修正 fixture 和定位后 597 项/1.988 秒通过。再补原件替换回归，最终完整共享运行包含 598 项网络测试，0 失败（1.994 秒）。未降低实际请求、摘要、不重复写或原件完整性断言。
+- 完整 `swift test --package-path apple --jobs 4`：2518 项 XCTest、172 项既有条件跳过、0 失败（38.243 秒），另 12 项 Swift Testing 通过（0.042 秒），编译 186.68 秒。包含三项原 Mac 人脸裁剪/颜色/方框变化测试；既有条件跳过不能计作实际 UI 验收。移动新增 15 项模型用例覆盖人物/主题权限、冻结确认、隐藏搜索、真实人脸编号、空/错/取消、未知重启、JPEG 裁剪、方向元数据、原预览替换与迟到读取。
+- 锁定 XcodeGen 2.46.0 生成工程。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 首轮因合成服务缺新增恢复枚举分支而失败；补齐后第二至第七轮均通过。后续迭代包含真实界面修复与测试操作修正，每次重建后才复测最终代码；未用构建期间编辑后的源码冒充已编译内容。
+- 首次聚焦移动单元 14 项中两项失败，合成服务未转发人物分类筛选后的照片列表；补齐既有筛选语义并增加迟到读取用例后，两端分别执行 `xcodebuild test-without-building`，沿用上述 project/scheme/derivedDataPath，`-parallel-testing-enabled NO -only-testing:DsmMobileTests`，iPad destination 为 `platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289`。最终各 885 项全部通过（iPhone 16.220 / iPad 16.303 秒）。
+- 七项新增实际 UI 为 `test人物显示隐藏与主题搜索`、`test人物中文改名合并取消及确认`、`test主题移出提示分类数量并保留原照片`、`test人脸触控框选移动与辅助控件保存`、`test人物加载空内容错误正常与筛选无结果`、`test人物保存中断重启不可重复提交`、`test人脸大字中文空内容仍可命名保存`，选项为 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/<方法名>`。首轮 iPad 六项仅一项通过（265.729 秒）：系统确认重复节点、隐藏按钮完整标签和滚动定位错误，另发现居中 sheet 无法提供并列编辑；分别修正定位、全屏编辑及选中框编辑区顺序。
+- 第二轮七项：iPhone 5/7 通过（327.522 秒），iPad 6/7 通过（408.590 秒）。五个非人脸流程两端全部通过；失败集中在大字设置开关/原生长菜单滚动，以及人脸表单测试滚动滑过输入区。增加明确可见性检查、原生菜单滚动及人脸表单专用滚动定位，保留原业务断言。第三轮仅复测两项人脸：iPad 2/2（90.354 秒），iPhone 大字通过、普通触控因键盘仍占据下半屏而失败（两项共 102.202 秒）。
+- 最终修复增加名称输入完成键、进入绘图/选择人脸时关闭键盘，并将表单测试滚动放在边缘，避开滑块。截图发现大字工具按钮截断，改为保留完整辅助标签的图标按钮；画布内标注保持图片比例，表单文字仍随系统字号变化。第七轮构建后，两项人脸实际 UI 两端全部通过：iPhone 2/2（87.812 秒），iPad 2/2（96.302 秒）。包括触控画框、滑块调整、移除/再画、保存及重新打开，中文无障碍最大字号空画布命名保存。七项均有各设备通过证据，不把不同轮次合称一次全套通过。
+- 已查看最终 iPhone 浅色普通/中文大字和 iPad 深色并列/中文大字截图；加载、空内容、错误、正常及筛选无结果另由七项用例覆盖。实际 VoiceOver 读屏、硬件键盘、分屏和真实图片/NAS 未验证，按主计划 M3g 的 `PENDING_USER_VALIDATION` 后置；只使用合成图片和服务，未操作真实 NAS 数据。
+- Mac `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO` 通过，实际主程序 `lipo -archs` 为 `x86_64 arm64`。未安装或启动 Mac 包；最终人脸视图修复仅移动端，不重复无变化的 Mac/完整共享测试。
+- 本地化 Apple 5873 / Android 2188 / Windows 3402、参数/引用/硬编码扫描、fixture 29 组/48 私有引用、请求契约 170 组/1 写结果、API 参数生成、严格文档及差异空白检查通过。结果包和截图保留在忽略的本机验证目录，`m3g-*.log` 不提交；下一切片为相似组、原件批量删除恢复、批量导出和旧图库清理，其后继续 M4–M8。

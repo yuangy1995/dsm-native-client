@@ -25,6 +25,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case previewRegeneration(PreviewRegeneration)
         case previewMaintenance(PreviewMaintenance)
         case administration(Administration)
+        case recognition(Recognition)
     }
     public let version: Int
     public let profileID: UUID
@@ -45,13 +46,15 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
              .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy,
              .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks,
              .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto, .regeneratePreviews, .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary,
-             .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers: true
+             .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers,
+             .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
         version = switch mutation {
+        case .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces: 14
         case .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers: 13
         case .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary: 12
         case .regeneratePreviews: 11
@@ -68,6 +71,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         }
         self.profileID = profileID; self.userID = userID; self.operationID = operationID
         switch mutation {
+        case .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces: operation = .recognition(try Recognition(mutation: mutation))
         case .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers: operation = .administration(try Administration(mutation: mutation))
         case .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary: operation = .previewMaintenance(try PreviewMaintenance(mutation: mutation))
         case .regeneratePreviews: operation = .previewRegeneration(try PreviewRegeneration(mutation: mutation))
@@ -102,13 +106,16 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...13).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...14).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
         }
         let command: SynologyPhotosMutation
         switch operation {
+        case .recognition(let value):
+            guard version == 14, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation(profileID: profileID)
         case .administration(let value):
             guard version == 13, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID, userID: userID)
@@ -176,10 +183,16 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
              .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy,
              .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks,
              .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto, .regeneratePreviews, .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary,
-             .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers: break
+             .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers,
+             .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
+    }
+
+    public var recognitionDetails: Recognition? {
+        get { if case .recognition(let value) = operation { return value }; return nil }
+        set { if case .recognition = operation, let newValue { operation = .recognition(newValue) } }
     }
 
     public var administrationDetails: Administration? {

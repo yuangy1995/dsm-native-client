@@ -537,7 +537,7 @@ public struct SynologyPhotoPersonVisibility: Identifiable, Equatable, Sendable {
 
 
 /// 显示方向图片上的归一化人脸框；不依赖视口大小或缩放倍率。
-public struct SynologyPhotoFaceBounds: Equatable, Sendable {
+public struct SynologyPhotoFaceBounds: Codable, Equatable, Sendable {
     public var x: Double, y: Double, width: Double, height: Double
     public init(x: Double, y: Double, width: Double, height: Double) { self.x = x; self.y = y; self.width = width; self.height = height }
     public var isValid: Bool {

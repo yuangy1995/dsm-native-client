@@ -50,6 +50,11 @@ struct MobileSynologyPhotoPreview: View {
                         if let editor = session.editor {
                             Menu {
                                 MobilePhotoEditActions(editor: editor, photos: [photo])
+                                if let recognition = session.recognition { MobilePhotoRecognitionActions(recognition: recognition, photos: [photo]) }
+                                if let faces = session.faces, model.managementFeatures.contains(.manualFaces), photo.mediaType != "video" {
+                                    Button(L10n.string("photos.faces.edit")) { faces.begin() }
+                                        .disabled(!faces.canBegin).accessibilityIdentifier("mobile.photos.faces.begin")
+                                }
                                 Button(L10n.string("photos.media.rotate")) { model.rotatePreview() }
                                     .disabled(!model.canRotatePreview).accessibilityIdentifier("mobile.photos.rotate")
                                 if let repair = session.previewRepair {
@@ -85,6 +90,8 @@ struct MobileSynologyPhotoPreview: View {
         }
         .modifier(MobileSynologyPhotoDeletionPresentation(model: model, active: true))
         .modifier(MobilePhotoEditPresentation(session: session, active: true))
+        .modifier(MobilePhotoRecognitionPresentation(session: session, active: true))
+        .modifier(MobilePhotoFacePresentation(session: session))
         .modifier(MobilePhotoFolderPresentation(session: session, active: true))
         .modifier(MobileSynologyPhotoExportPresentation(session: session, active: true))
     }

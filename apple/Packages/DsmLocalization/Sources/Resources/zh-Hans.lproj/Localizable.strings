@@ -6110,3 +6110,8 @@
 "mobile.photos.automatic.foreground" = "打开照片页面时补齐缺少的预览，离开页面或切到后台会暂停。原件保持不变。";
 "mobile.photos.automatic.unsupported" = "此设备暂不支持生成预览。保存的设置仍可用于其他支持的设备。";
 "mobile.photos.automatic.pending" = "预览正在处理，连接恢复后会继续更新状态。";
+"mobile.photos.recognition.loadFailed" = "无法载入人物或主题。请检查连接后重试。";
+"mobile.photos.recognition.removeFacesConfirm" = "将所选人脸从此人物中移除，原照片仍保留在图库中。";
+"mobile.photos.faces.tooMany" = "本次人脸修改过多，请分批保存。";
+"mobile.photos.faces.emptyHint" = "在照片上画出人脸框，或添加居中的框。";
+"photos.recognition.pending" = "暂时无法显示最新的人物和主题，请稍后刷新。";

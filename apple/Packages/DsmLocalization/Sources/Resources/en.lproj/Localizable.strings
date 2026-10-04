@@ -6110,3 +6110,8 @@
 "mobile.photos.automatic.foreground" = "Missing previews are generated while the Photos page is open. Leaving the page or switching to another app pauses processing. Originals are preserved.";
 "mobile.photos.automatic.unsupported" = "This device cannot generate previews. The saved setting can still be used by other supported devices.";
 "mobile.photos.automatic.pending" = "The preview is being processed. Its status will update when the connection returns.";
+"mobile.photos.recognition.loadFailed" = "Could not load people or topics. Check your connection and try again.";
+"mobile.photos.recognition.removeFacesConfirm" = "Remove the selected faces from this person. Original photos will stay in your library.";
+"mobile.photos.faces.tooMany" = "Too many face changes for one save. Save fewer changes at a time.";
+"mobile.photos.faces.emptyHint" = "Draw a face box on the photo, or add a centered box.";
+"photos.recognition.pending" = "The latest people and topics are temporarily unavailable. Refresh again later.";

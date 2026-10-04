@@ -1574,6 +1574,12 @@ private struct PhotosMutationRecord: Sendable {
     var restoredFrozen: SynologyPhotosAlbumCheckpoint.Frozen?
     var restoredCondition: SynologyPhotosAlbumCheckpoint.Condition?
     var restoredPhotoEdit: SynologyPhotosAlbumCheckpoint.PhotoEdit?
+    var restoredRecognition: SynologyPhotosAlbumCheckpoint.Recognition?
+    var manualAddAttempted = false
+    var manualAddAcknowledged = false
+    var manualAttempted: Set<String> = []
+    var manualThumbnailAttempted: Set<Int> = []
+    var manualCurrent: String?
     var personPhotoIDs: Set<Int>?
     var personReceipt: PersonNameReceipt?
     var personCoverReceipt: PersonCoverReceipt?
@@ -2941,7 +2947,8 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        if let maintenance = checkpoint.previewMaintenanceDetails {
+        if let recognition = checkpoint.recognitionDetails { try requireAccess(recognition.space) }
+        else if let maintenance = checkpoint.previewMaintenanceDetails {
             switch maintenance {
             case .automatic(let value): try requireAccess(value.task.space)
             case .library(let original, _, _): try requireAccess(original.space)
@@ -2967,7 +2974,9 @@ extension SynologyPhotosRepository {
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            let matches = if let administration = checkpoint.administrationDetails {
+            let matches = if let recognition = checkpoint.recognitionDetails {
+                existing.restoredRecognition.map { $0 == recognition } ?? recognition.hasSameIntent(as: existing.mutation)
+            } else if let administration = checkpoint.administrationDetails {
                 administration.hasSameIntent(as: existing.mutation)
             } else if let maintenance = checkpoint.previewMaintenanceDetails {
                 maintenance.hasSameIntent(as: existing.mutation, profileID: profileID, userID: checkpoint.userID)
@@ -3014,6 +3023,17 @@ extension SynologyPhotosRepository {
         record.restoredPhotoRequest = checkpoint.requestDetails
         record.restoredFrozen = checkpoint.frozenDetails
         record.usesAlbumRecovery = true
+        if let recognition = checkpoint.recognitionDetails {
+            record.restoredRecognition = recognition
+            record.personPhotoIDs = recognition.personPhotoIDs
+            if let id = recognition.personReceiptID, let name = recognition.personReceiptNameDigest { record.personReceipt = .init(id: id, name: name) }
+            if case .personCover(let person) = recognition.intent, let cover = recognition.personCoverID { record.personCoverReceipt = .init(id: person.id, cover: cover) }
+            record.visibilityAcknowledged = recognition.visibilityAcknowledged; record.conceptRemovalAcknowledged = recognition.conceptRemovalAcknowledged
+            record.manualAddAttempted = recognition.manualAddAttempted; record.manualAddAcknowledged = recognition.manualAddAcknowledged
+            record.manualAttempted = recognition.manualAttempted; record.manualThumbnailAttempted = recognition.manualThumbnailAttempted
+            record.manualNewIDs = recognition.manualNewIDs; record.manualUploaded = recognition.manualUploaded
+            record.manualAcknowledged = recognition.manualAcknowledged; record.manualKnownFailures = recognition.manualKnownFailures
+        }
         if let administration = checkpoint.administrationDetails {
             record.memberAttempted = administration.memberAttempted
             record.memberAcknowledged = administration.memberAcknowledged
@@ -3078,6 +3098,18 @@ extension SynologyPhotosRepository {
             checkpoint.createdAlbumID = record.albumID
             checkpoint.membershipHasFailures = record.albumMembershipHasFailures
             checkpoint.rejected = record.result.state == .rejected
+            if var recognition = checkpoint.recognitionDetails {
+                recognition.personPhotoIDs = record.personPhotoIDs
+                recognition.personReceiptID = record.personReceipt?.id
+                recognition.personReceiptNameDigest = record.personReceipt.map { SynologyPhotosAlbumCheckpoint.Recognition.digest($0.name) }
+                recognition.personCoverID = record.personCoverReceipt?.cover
+                recognition.visibilityAcknowledged = record.visibilityAcknowledged; recognition.conceptRemovalAcknowledged = record.conceptRemovalAcknowledged
+                recognition.manualAddAttempted = record.manualAddAttempted; recognition.manualAddAcknowledged = record.manualAddAcknowledged
+                recognition.manualAttempted = record.manualAttempted; recognition.manualThumbnailAttempted = record.manualThumbnailAttempted
+                recognition.manualNewIDs = record.manualNewIDs; recognition.manualPersonIDs = record.manualPersonReceipts.mapValues(\.id)
+                recognition.manualUploaded = record.manualUploaded; recognition.manualAcknowledged = record.manualAcknowledged; recognition.manualKnownFailures = record.manualKnownFailures
+                checkpoint.recognitionDetails = recognition
+            }
             if var administration = checkpoint.administrationDetails {
                 administration.memberAttempted = record.memberAttempted
                 administration.memberAcknowledged = record.memberAcknowledged
@@ -3467,18 +3499,29 @@ extension SynologyPhotosRepository {
                 guard let originalIDs = photoFaceIDs[photo.id] else { throw Self.failure(.conflict) }
                 let additions = changes.compactMap { change -> SynologyPhotoNewFace? in if case .add(let face) = change { return face }; return nil }
                 if !additions.isEmpty {
+                    record.manualAddAttempted = true
+                    do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                    catch { record.manualAddAttempted = false; throw error }
                     let receipt: ManualFaceReceipt = try await call(api("Browse.Person", in: mutation.space), version: 3, method: "add_face", parameters: ["id_item": .integer(photo.id.unitID), "face": .objectArray(additions.map(Self.manualFaceParameters))])
                     let requested = Set(additions.map(\.temporaryID))
                     guard receipt.list.allSatisfy({ $0.face_id > 0 && !originalIDs.contains($0.face_id) && requested.contains($0.face_id_temp) }),
                           Set(receipt.list.map(\.face_id)).count == receipt.list.count,
                           Set(receipt.list.map(\.face_id_temp)).count == receipt.list.count else { throw Self.failure(.invalidResponse) }
                     record.manualNewIDs = Dictionary(uniqueKeysWithValues: receipt.list.map { ($0.face_id_temp, $0.face_id) })
+                    record.manualAddAcknowledged = true
+                    try persistRecoveryCheckpoint(record, operationID: operationID)
                     for face in additions {
                         guard let id = record.manualNewIDs[face.temporaryID] else { record.manualKnownFailures.insert("new-" + face.temporaryID); continue }
                         // 裁剪图只发送给add_face明确返回的编号，绝不按姓名推测。
                         guard manualGeneration == accessGeneration else { throw Self.failure(.permissionDenied) }
+                        record.manualCurrent = "new-" + face.temporaryID
+                        record.manualThumbnailAttempted.insert(id)
+                        do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                        catch { record.manualThumbnailAttempted.remove(id); record.manualCurrent = nil; throw error }
                         try await uploadManualFace(face.jpeg, faceID: id, in: photo.id.space)
                         record.manualUploaded.insert(id); record.manualAcknowledged.insert("new-" + face.temporaryID)
+                        record.manualCurrent = nil
+                        try persistRecoveryCheckpoint(record, operationID: operationID)
                     }
                 }
                 if record.manualKnownFailures.isEmpty {
@@ -3487,6 +3530,10 @@ extension SynologyPhotosRepository {
                         if photo.albumContext != nil { try requireAccess(photo.id.space) }
                         else { try requirePhoto(photo) }
                         guard manualGeneration == accessGeneration else { throw Self.failure(.permissionDenied) }
+                        if case .add = change { continue }
+                        record.manualCurrent = change.id; record.manualAttempted.insert(change.id)
+                        do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                        catch { record.manualAttempted.remove(change.id); record.manualCurrent = nil; throw error }
                         switch change {
                         case .add: continue
                         case .remove(let original):
@@ -3498,7 +3545,8 @@ extension SynologyPhotosRepository {
                             guard receipt.id > 0, receipt.name == name, person == nil || person?.id == receipt.id else { throw Self.failure(.invalidResponse) }
                             record.manualPersonReceipts[change.id] = receipt
                         }
-                        record.manualAcknowledged.insert(change.id)
+                        record.manualAcknowledged.insert(change.id); record.manualCurrent = nil
+                        try persistRecoveryCheckpoint(record, operationID: operationID)
                     }
                 } else {
                     for change in changes { if case .add = change { continue }; record.manualKnownFailures.insert(change.id) }
@@ -3781,7 +3829,12 @@ extension SynologyPhotosRepository {
                 if rejected, record.createdTag != nil { record.tagAdditionRejected = true }
                 else if rejected { record.result = .init(state: .rejected) }
             case .editPhotoFaces(_, let changes):
-                if rejected { record.manualKnownFailures.formUnion(changes.map(\.id).filter { !record.manualAcknowledged.contains($0) }) }
+                if rejected {
+                    if !record.usesAlbumRecovery { record.manualKnownFailures.formUnion(changes.map(\.id).filter { !record.manualAcknowledged.contains($0) }) }
+                    else if record.manualAddAttempted, !record.manualAddAcknowledged {
+                        record.manualKnownFailures.formUnion(changes.map(\.id))
+                    } else if let current = record.manualCurrent { record.manualKnownFailures.insert(current) }
+                }
             case .shareAlbum: break
             case .setFolderSharing:
                 if rejected, !record.folderSharingAcknowledged { record.result = .init(state: .rejected) }
@@ -3811,6 +3864,17 @@ extension SynologyPhotosRepository {
         do { try persistRecoveryCheckpoint(record, operationID: operationID) }
         catch { return .init(state: .pendingReview) }
         return (try? await inspectMutation(operationID)) ?? record.result
+    }
+
+    private static func matchesRecognitionName(_ actual: String, expected: String, record: PhotosMutationRecord) -> Bool {
+        record.restoredRecognition == nil ? actual == expected : SynologyPhotosAlbumCheckpoint.Recognition.digest(actual) == expected
+    }
+
+    private static func matchesRecognitionImage(_ actual: Data, changeID: String, original: Data, record: PhotosMutationRecord) -> Bool {
+        guard let restored = record.restoredRecognition else { return actual == original }
+        guard case .manual(let changes) = restored.intent,
+              case .add(_, _, _, _, let digest) = changes.first(where: { $0.id == changeID }) else { return false }
+        return SynologyPhotosAlbumCheckpoint.Recognition.digest(actual) == digest
     }
 
     private func transferTargetMatches(_ task: ManagementTransferTask, mutation: SynologyPhotosMutation, folderID: Int) -> Bool {
@@ -4098,24 +4162,37 @@ extension SynologyPhotosRepository {
                 case .remove(let original):
                     if !faces.contains(where: { $0.id == original.id }) { completedIDs.insert(change.id) }
                 case .reassign(let original, let person, let name):
-                    if let id = person?.id ?? record.manualPersonReceipts[change.id]?.id,
-                       let face = faces.first(where: { $0.id == original.id }), face.personID == id, face.name == name,
+                    if let id = person?.id ?? record.manualPersonReceipts[change.id]?.id ?? record.restoredRecognition?.manualPersonIDs[change.id],
+                       let face = faces.first(where: { $0.id == original.id }), face.personID == id, Self.matchesRecognitionName(face.name, expected: name, record: record),
                        Self.sameFaceBounds(face.bounds, original.bounds) { completedIDs.insert(change.id) }
                 case .add(let addition):
                     guard let id = record.manualNewIDs[addition.temporaryID],
-                          let face = faces.first(where: { $0.id == id }), face.personID > 0, face.name == addition.name,
+                          let face = faces.first(where: { $0.id == id }), face.personID > 0, Self.matchesRecognitionName(face.name, expected: addition.name, record: record),
                           addition.person == nil || face.personID == addition.person?.id,
                           Self.sameFaceBounds(face.bounds, addition.bounds), let thumbnail = face.thumbnail else { continue }
                     if record.manualUploaded.contains(id) { completedIDs.insert(change.id) }
-                    else if let data = try? await image(thumbnail: thumbnail, size: nil, type: "face", space: photo.id.space), data == addition.jpeg {
+                    else if let data = try? await image(thumbnail: thumbnail, size: nil, type: "face", space: photo.id.space), Self.matchesRecognitionImage(data, changeID: change.id, original: addition.jpeg, record: record) {
                         // 回执丢失时仅接受新编号下与本次裁剪完全一致的图像，不重复上传。
                         completedIDs.insert(change.id)
                     }
                 }
             }
             let completed = completedIDs.count
-            if completed == changes.count || completed + record.manualKnownFailures.subtracting(completedIDs).count == changes.count {
+            var knownFailures = record.manualKnownFailures
+            if record.usesAlbumRecovery {
+                for change in changes {
+                    switch change {
+                    case .add(let face):
+                        if !record.manualAddAttempted || (record.manualAddAcknowledged && record.manualNewIDs[face.temporaryID] == nil) { knownFailures.insert(change.id) }
+                        else if let id = record.manualNewIDs[face.temporaryID], !record.manualThumbnailAttempted.contains(id) { knownFailures.insert(change.id) }
+                    case .remove, .reassign:
+                        if !record.manualAttempted.contains(change.id) { knownFailures.insert(change.id) }
+                    }
+                }
+            }
+            if completed == changes.count || completed + knownFailures.subtracting(completedIDs).count == changes.count {
                 let detail = try await details(for: photo)
+                if let target = record.restoredRecognition?.targets.first, try !target.matchesIdentity(detail) { throw Self.failure(.conflict) }
                 guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
                 result = .init(state: completed == changes.count ? .confirmed : (completed == 0 && record.manualNewIDs.isEmpty && record.manualAcknowledged.isEmpty ? .rejected : .partial), photos: [detail], completedCount: completed)
             }
@@ -4134,8 +4211,12 @@ extension SynologyPhotosRepository {
             for photo in removed {
                 // 分类归属消失还需确认原件身份，不能把原件同时被删除当作仅移出成功。
                 let detail = try await details(for: photo)
-                guard detail.filename == photo.filename, detail.sizeBytes == photo.sizeBytes,
-                      detail.folderID == photo.folderID, detail.indexedAt == photo.indexedAt else { throw Self.failure(.conflict) }
+                if let target = record.restoredRecognition?.targets.first(where: { $0.id == photo.id }) {
+                    guard try target.matchesIdentity(detail) else { throw Self.failure(.conflict) }
+                } else {
+                    guard detail.filename == photo.filename, detail.sizeBytes == photo.sizeBytes,
+                          detail.folderID == photo.folderID, detail.indexedAt == photo.indexedAt else { throw Self.failure(.conflict) }
+                }
             }
             if removed.count == photos.count || (record.conceptRemovalAcknowledged && !removed.isEmpty) {
                 result = .init(state: removed.count == photos.count ? .confirmed : .partial, completedCount: removed.count,
@@ -4167,12 +4248,20 @@ extension SynologyPhotosRepository {
                 let destination = try await personFaces(personID: targetID, photos: photos)
                 guard faces.allSatisfy({ face in destination.contains { $0.id == face.id && $0.photo.id == face.photo.id } }) else { break }
                 let details: PersonCoverList = try await call(api("Browse.Person", in: record.mutation.space), version: 1, method: "get", parameters: ["id": .integerArray([targetID])])
-                guard details.list.count == 1, details.list.first?.id == targetID, details.list.first?.name == name else { break }
+                guard details.list.count == 1, details.list.first?.id == targetID, details.list.first.map({ Self.matchesRecognitionName($0.name, expected: name, record: record) }) == true else { break }
             }
             let people = try await managementPeople(in: record.mutation.space)
             let remaining = people.first { $0.id == original.id }
             let stillPresent = Set(current.map { $0.photo.id })
-            result = .init(state: .confirmed, person: remaining ?? .init(id: original.id, name: original.name, space: original.space),
+            if record.usesAlbumRecovery {
+                // 人物关联消失不能代替原件完整性检查；恢复时也要匹配原始照片身份。
+                let recognition = try record.restoredRecognition ?? SynologyPhotosAlbumCheckpoint.Recognition(mutation: record.mutation)
+                for target in recognition.targets {
+                    let detail = try await details(for: target.queryPhoto)
+                    guard try target.matchesIdentity(detail) else { throw Self.failure(.conflict) }
+                }
+            }
+            result = .init(state: .confirmed, person: remaining ?? .init(id: original.id, name: record.restoredRecognition == nil ? original.name : "", space: original.space),
                 removedPersonIDs: remaining == nil ? [original.id] : [], removedFromPersonPhotoIDs: photos.map(\.id).filter { !stillPresent.contains($0) })
         case .setPersonCover(let original, _):
             guard let receipt = record.personCoverReceipt else { break }
@@ -4183,17 +4272,17 @@ extension SynologyPhotosRepository {
             }
         case .renamePerson(let original, let name):
             let people = try await managementPeople(in: record.mutation.space)
-            if let person = people.first(where: { $0.id == original.id }), person.name == name {
+            if let person = people.first(where: { $0.id == original.id }), Self.matchesRecognitionName(person.name, expected: name, record: record) {
                 result = .init(state: .confirmed, person: person)
-            } else if name.isEmpty, original.itemCount.map({ $0 < 2 }) == true,
+            } else if Self.matchesRecognitionName("", expected: name, record: record), original.itemCount.map({ $0 < 2 }) == true,
                       record.personReceipt?.id == original.id, record.personReceipt?.name == name,
                       !people.contains(where: { $0.id == original.id }) {
                 // 官方在少于两张照片的人物清空名称后重新加载；已确认回执与列表隐去共同验证。
-                result = .init(state: .confirmed, person: .init(id: original.id, name: name, itemCount: original.itemCount, space: original.space), removedPersonIDs: [original.id])
+                result = .init(state: .confirmed, person: .init(id: original.id, name: "", itemCount: original.itemCount, space: original.space), removedPersonIDs: [original.id])
             }
         case .mergePeople(let target, let sources, let name):
             let people = try await managementPeople(in: record.mutation.space)
-            if let person = people.first(where: { $0.id == target.id }), person.name == name,
+            if let person = people.first(where: { $0.id == target.id }), Self.matchesRecognitionName(person.name, expected: name, record: record),
                sources.allSatisfy({ source in !people.contains { $0.id == source.id } }),
                let expected = record.personPhotoIDs,
                Set(try await personPhotos(target.id, in: record.mutation.space).map { $0.id.unitID }) == expected {

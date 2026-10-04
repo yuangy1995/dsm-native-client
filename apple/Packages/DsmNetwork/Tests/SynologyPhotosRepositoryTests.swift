@@ -8815,6 +8815,206 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         XCTAssertEqual((delta[0]["member"] as? [String: Any])?["type"] as? String, "user")
     }
 
+    func test人物恢复改名仅保存摘要且清空名称保留回执条件() async throws {
+        for clear in [false, true] {
+            let profile = UUID(), person = SynologyPhotoCollection(id: 31, name: "Private before", itemCount: 1)
+            let name = clear ? "" : "Private after", id = UUID(), capture = PhotosAlbumCheckpointCapture()
+            let after = personList(clear ? [] : [(31, name, 1)])
+            let receipt = "{\"success\":true,\"data\":{\"id\":31,\"name\":\"\(name)\"}}"
+            let transport = MockHTTPTransport(responses: accessResponses() + [response(personList([(31, person.name, 1)])), response(receipt), response(after)])
+            let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+            let command = SynologyPhotosMutation.renamePerson(person, name: name)
+            let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+            XCTAssertEqual(result.state, .confirmed)
+            let data = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
+            XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("Private"))
+            let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data); XCTAssertEqual(saved.version, 14)
+            try await repository.restoreAlbumMutation(saved)
+            let reads = MockHTTPTransport(responses: accessResponses() + [response(after)])
+            let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+            let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, .confirmed)
+            XCTAssertEqual(reviewed.person?.name, name)
+            let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { $0["method"] == "set" })
+        }
+    }
+
+    func test人物恢复合并保存原成员并集且错误目标仍未知() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let before = personList([(31, "Target", 1), (32, "Source", 1)]), after = personList([(31, "Combined", 1)])
+        let transport = MockHTTPTransport(responses: accessResponses() + [response(before), response(personTimeline), response(itemPage), response(managedFolder), response(personTimeline), response(itemPage), response(before), response(emptySuccess), response(after), response(personTimeline), response(itemPage)])
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let command = SynologyPhotosMutation.mergePeople(target: .init(id: 31, name: "Target", itemCount: 1), sources: [.init(id: 32, name: "Source", itemCount: 1)], name: "Combined")
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }; XCTAssertEqual(result.state, .confirmed)
+        let saved = try XCTUnwrap(capture.values.last); XCTAssertEqual(saved.recognitionDetails?.personPhotoIDs, [7])
+        for matches in [false, true] {
+            let reads = MockHTTPTransport(responses: accessResponses() + [response(after), response(personTimeline), response(matches ? itemPage : itemPage.replacingOccurrences(of: #""id":7"#, with: #""id":8"#))])
+            let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+            let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, matches ? .confirmed : .pendingReview)
+            let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { $0["method"] == "merge" })
+        }
+    }
+
+    func test人物恢复封面必须有真实回执不能把照片编号当封面() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture(), photo = facePhoto(profile)
+        let person = SynologyPhotoCollection(id: 31, name: "Person", itemCount: 1)
+        let cover = #"{"success":true,"data":{"list":[{"id":31,"name":"Person","cover":71}]}}"#
+        let final = [response(cover), response(personList([(31, "Person", 1)]))]
+        let transport = MockHTTPTransport(responses: accessResponses() + [response(personList([(31, "Person", 1)])), response(faceList([71])), response(itemPage), response(managedFolder), response(#"{"success":true,"data":{"id":31,"cover":71}}"#)] + final)
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let command = SynologyPhotosMutation.setPersonCover(person: person, photo: photo)
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }; XCTAssertEqual(result.state, .confirmed)
+        for acknowledged in [false, true] {
+            let saved = try acknowledged ? XCTUnwrap(capture.values.last) : SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+            let reads = MockHTTPTransport(responses: accessResponses() + (acknowledged ? final : []))
+            let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+            let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, acknowledged ? .confirmed : .pendingReview)
+            let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { $0["method"] == "set_cover" })
+        }
+    }
+
+    func test人物恢复归属移动保留新人物编号且无回执不按名称追认() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture(), photo = facePhoto(profile)
+        let source = SynologyPhotoCollection(id: 31, name: "Person", itemCount: 1)
+        let command = SynologyPhotosMutation.reassignPersonFaces(person: source, faces: [.init(id: 71, personID: 31, photo: photo)], target: nil, name: "Target")
+        let final = [response(faceList([])), response(faceList([71])), response(personList([(32, "Target", 1)])), response(personList([(32, "Target", 1)])), response(itemPage)]
+        let transport = MockHTTPTransport(responses: accessResponses() + [response(personList([(31, "Person", 1)])), response(faceList([71])), response(itemPage), response(managedFolder), response(#"{"success":true,"data":{"id":32,"name":"Target"}}"#)] + final)
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }; XCTAssertEqual(result.state, .confirmed)
+        for acknowledged in [false, true] {
+            let saved = try acknowledged ? XCTUnwrap(capture.values.last) : SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+            let reads = MockHTTPTransport(responses: accessResponses() + (acknowledged ? final : [response(faceList([]))]))
+            let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+            let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, acknowledged ? .confirmed : .pendingReview)
+            let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { ["separate", "delete_face"].contains($0["method"]) })
+        }
+    }
+
+    func test人物移出恢复不能把原件变化当作仅移出分类成功() async throws {
+        let profile = UUID(), id = UUID(), photo = facePhoto(profile)
+        let command = SynologyPhotosMutation.removePersonFaces(person: .init(id: 31, name: "Person"), faces: [.init(id: 71, personID: 31, photo: photo)])
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+        for originalIntact in [false, true] {
+            let detail = originalIntact ? itemPage : itemPage.replacingOccurrences(of: #""id":7"#, with: #""id":8"#)
+            let transport = MockHTTPTransport(responses: accessResponses() + [response(faceList([])), response(personList([])), response(detail)])
+            let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access(); try await repository.restoreAlbumMutation(saved)
+            do {
+                let result = try await repository.reviewMutation(operationID: id)
+                if originalIntact { XCTAssertEqual(result.state, .confirmed); XCTAssertTrue(result.deletedPhotoIDs.isEmpty) }
+                else { XCTAssertNotEqual(result.state, .confirmed) }
+            } catch { XCTAssertFalse(originalIntact) }
+            let calls = try await transport.recordedRequests().map(decode); XCTAssertFalse(calls.contains { ["delete_face", "delete"].contains($0["method"]) })
+        }
+    }
+
+    func test人物主题恢复显示部分完成保持原来源且不重写() async throws {
+        for concept in [false, true] {
+            for space in SynologyPhotoSpace.allCases {
+                let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+                let before = concept ? conceptList([(31, true), (32, true)]) : visibilityList([(31, true), (32, true)])
+                let after = concept ? conceptList([(31, false), (32, true)]) : visibilityList([(31, false), (32, true)])
+                let access = accessResponses(teamPermission: space == .shared ? "management" : "none", peopleEnabled: true, conceptsEnabled: true)
+                let transport = MockHTTPTransport(responses: access + [response(before), response(emptySuccess), response(after)])
+                let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+                let people = [31, 32].map { SynologyPhotoCollection(id: $0, name: "Person", space: space) }
+                let command: SynologyPhotosMutation = concept ? .setConceptVisibility(people.map { .init(concept: $0, isVisible: true) }, visible: false) : .setPeopleVisibility(people.map { .init(person: $0, isVisible: true) }, visible: false)
+                let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }; XCTAssertEqual(result.state, .partial)
+                let saved = try XCTUnwrap(capture.values.last)
+                let reads = MockHTTPTransport(responses: access + [response(after)])
+                let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+                let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, .partial); XCTAssertEqual(reviewed.completedCount, 1)
+                let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { ["show", "set_visibility"].contains($0["method"]) })
+                XCTAssertEqual(calls.last?["api"], (space == .shared ? "SYNO.FotoTeam.Browse." : "SYNO.Foto.Browse.") + (concept ? "Concept" : "Person"))
+            }
+        }
+    }
+
+    func test主题恢复移出检查原件身份摘要且封面使用原目标() async throws {
+        for cover in [false, true] {
+            let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture(), photo = conceptPhoto(profile, id: 7, in: .personal)
+            let original = conceptSnapshot(count: 1)
+            let final = cover ? [response(conceptDetail(count: 1, cover: 7))] : [response(conceptDetail(count: 0)), response(#"{"success":true,"data":{"section":[]}}"#), response(conceptMembers([7]))]
+            let transport = MockHTTPTransport(responses: accessResponses(conceptsEnabled: true) + conceptPreflight([7]) + [response(emptySuccess)] + final)
+            let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+            let command: SynologyPhotosMutation = cover ? .setConceptCover(concept: original, photo: photo) : .removeConceptItems(concept: original, photos: [photo])
+            let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }; XCTAssertEqual(result.state, .confirmed)
+            let saved = try XCTUnwrap(capture.values.last), data = try JSONEncoder().encode(saved)
+            XCTAssertFalse(String(decoding: data, as: UTF8.self).contains(photo.filename))
+            let reads = MockHTTPTransport(responses: accessResponses(conceptsEnabled: true) + final)
+            let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+            let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, .confirmed); XCTAssertTrue(reviewed.deletedPhotoIDs.isEmpty)
+            let calls = try await reads.recordedRequests().map(decode); XCTAssertFalse(calls.contains { ["hide_item", "set_cover", "delete"].contains($0["method"]) })
+        }
+    }
+
+    func test手工人脸恢复逐步保存回执且重启不保存或重传图片() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture(), photo = facePhoto(profile)
+        let final = [response(manualList([(72, 32, "Target")])), response(itemPage)]
+        let transport = MockHTTPTransport(responses: accessResponses() + [response(manualList([(71, 31, "Person")])), response(itemPage), response(managedFolder), response(#"{"success":true,"data":{"list":[{"face_id":72,"face_id_temp":"7-0"}]}}"#), response(emptySuccess), response(emptySuccess)] + final)
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let command = SynologyPhotosMutation.editPhotoFaces(photo: photo, changes: [.remove(manualRegion(71)), .add(addedFace())])
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }; XCTAssertEqual(result.state, .confirmed)
+        let snapshots = capture.values.compactMap(\.recognitionDetails)
+        XCTAssertTrue(snapshots.contains { $0.manualNewIDs == ["7-0": 72] && $0.manualThumbnailAttempted.isEmpty })
+        XCTAssertTrue(snapshots.contains { $0.manualUploaded == [72] && $0.manualAttempted == ["face-71"] && $0.manualAcknowledged == ["new-7-0"] })
+        let saved = try XCTUnwrap(capture.values.last), data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
+        XCTAssertFalse(text.contains(#""Target""#)); XCTAssertFalse(text.contains(#""Person""#)); XCTAssertFalse(text.contains(photo.filename)); XCTAssertFalse(text.contains(faceJPEG.base64EncodedString()))
+        let reads = MockHTTPTransport(responses: accessResponses() + final)
+        let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data))
+        let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, .confirmed); XCTAssertEqual(reviewed.completedCount, 2)
+        let requests = await reads.recordedRequests()
+        XCTAssertFalse(requests.contains { $0.value(forHTTPHeaderField: "Content-Type")?.contains("multipart") == true })
+        let calls = try requests.map(decode); XCTAssertFalse(calls.contains { ["add_face", "delete_face"].contains($0["method"]) })
+    }
+
+    func test手工人脸恢复上传丢回执只按新编号和图像摘要确认() async throws {
+        let profile = UUID(), id = UUID(), command = SynologyPhotosMutation.editPhotoFaces(photo: facePhoto(profile), changes: [.add(addedFace())])
+        var saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+        var details = try XCTUnwrap(saved.recognitionDetails)
+        details.manualAddAttempted = true; details.manualAddAcknowledged = true; details.manualNewIDs = ["7-0": 72]; details.manualThumbnailAttempted = [72]; saved.recognitionDetails = details
+        for matches in [false, true] {
+            let image = DsmHTTPResponse(data: matches ? faceJPEG : Data([0xff, 0xd8, 0xff, 0x11]), statusCode: 200, headers: ["Content-Type": "image/jpeg"])
+            let reads = MockHTTPTransport(responses: accessResponses() + [response(manualList([(72, 32, "Target")])), image] + (matches ? [response(itemPage)] : []))
+            let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+            let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, matches ? .confirmed : .pendingReview)
+            let requests = await reads.recordedRequests(); XCTAssertEqual(requests.filter { $0.httpMethod == "GET" }.count, 1)
+            XCTAssertFalse(requests.contains { $0.value(forHTTPHeaderField: "Content-Type")?.contains("multipart") == true })
+        }
+    }
+
+    func test手工人脸恢复新增回执保存失败不移除旧框且保留部分结果() async throws {
+        let profile = UUID(), photo = facePhoto(profile), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let final = [response(manualList([(71, 31, "Person"), (72, 32, "Target")])), DsmHTTPResponse(data: Data([0xff, 0xd8, 0xff, 0x11]), statusCode: 200, headers: ["Content-Type": "image/jpeg"]), response(itemPage)]
+        let transport = MockHTTPTransport(responses: accessResponses() + [response(manualList([(71, 31, "Person")])), response(itemPage), response(managedFolder), response(#"{"success":true,"data":{"list":[{"face_id":72,"face_id_temp":"7-0"}]}}"#)] + final)
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let command = SynologyPhotosMutation.editPhotoFaces(photo: photo, changes: [.remove(manualRegion(71)), .add(addedFace())])
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { saved in
+            if saved.recognitionDetails?.manualThumbnailAttempted.isEmpty == false { throw CocoaError(.fileWriteNoPermission) }
+            capture.append(saved)
+        }
+        XCTAssertEqual(result.state, .partial); XCTAssertEqual(result.completedCount, 0)
+        let saved = try XCTUnwrap(capture.values.last)
+        let reads = MockHTTPTransport(responses: accessResponses() + final)
+        let restored = try makeRepository(reads, profileID: profile); _ = try await restored.access(); try await restored.restoreAlbumMutation(saved)
+        let reviewed = try await restored.reviewMutation(operationID: id); XCTAssertEqual(reviewed.state, .partial)
+        let requests = await transport.recordedRequests(); XCTAssertFalse(requests.contains { $0.value(forHTTPHeaderField: "Content-Type")?.contains("multipart") == true })
+        let calls = try requests.filter { $0.httpMethod != "GET" }.map(decode); XCTAssertFalse(calls.contains { $0["method"] == "delete_face" })
+    }
+
+    func test人物恢复拒绝跨账号与人脸损坏阶段并保留主题批量范围() async throws {
+        let profile = UUID(), id = UUID(), command = SynologyPhotosMutation.editPhotoFaces(photo: facePhoto(profile), changes: [.remove(manualRegion(71)), .add(addedFace())])
+        XCTAssertThrowsError(try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: UUID(), userID: 12))
+        var saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+        var details = try XCTUnwrap(saved.recognitionDetails); details.manualAttempted = ["face-71"]; saved.recognitionDetails = details
+        XCTAssertThrowsError(try saved.reviewMutation())
+        details.manualAttempted = []; details.manualUploaded = [72]; saved.recognitionDetails = details; XCTAssertThrowsError(try saved.reviewMutation())
+        let clean = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 99)
+        let transport = MockHTTPTransport(responses: accessResponses()), repository = try makeRepository(transport, profileID: profile)
+        _ = try await repository.access()
+        do { try await repository.restoreAlbumMutation(clean); XCTFail("其他账号记录不可恢复") } catch {}
+        let many = SynologyPhotosMutation.setConceptVisibility((1...101).map { .init(concept: .init(id: $0, name: "Concept"), isVisible: true) }, visible: false)
+        XCTAssertNoThrow(try SynologyPhotosAlbumCheckpoint(mutation: many, operationID: UUID(), profileID: profile, userID: 12).reviewMutation())
+    }
+
     func test人物改名校验原名称并回读且不重复写入() async throws {
         let original = SynologyPhotoCollection(id: 31, name: "Before", itemCount: 1)
         let transport = MockHTTPTransport(responses: accessResponses() + [response(personList([(31, "Before", 1)])),
