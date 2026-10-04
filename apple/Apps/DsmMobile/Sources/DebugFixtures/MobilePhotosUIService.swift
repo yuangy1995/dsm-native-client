@@ -2,7 +2,7 @@
 import DsmCore
 import Foundation
 
-/// Photos 上传与恢复的合成服务；不持有连接、凭据或真实媒体。
+/// Photos 管理与恢复的合成服务；不持有连接、凭据或真实媒体。
 actor MobilePhotosUIService: SynologyPhotosServing {
     nonisolated let profileID: UUID
     let state: String
@@ -13,6 +13,8 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var albumList: [SynologyPhotoCollection] = [.init(id: 21, name: "Sample album")]
     private var members: [Int: Set<Int>] = [21: [1, 2]]
     private var rejectsAlbum = true
+    private var rejectsSharing = true
+    private var sharingValue = SynologyPhotoSharingState(access: .disabled, hasPassword: true, hasExpiration: false, revision: "original", members: [], expiration: 0, isTemporary: false)
     private var pending: Bool
     private var nextID = 100
     private var userID = 12
@@ -22,13 +24,20 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private(set) var isUploadHeld = false
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
-        self.profileID = profileID; self.state = state; pending = state == "photo-unknown" || state == "photo-albums-unknown"
-        if state.hasPrefix("photo-albums") {
+        self.profileID = profileID; self.state = state
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown"].contains(state)
+        if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
                       sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20), folderID: 1, mediaType: "photo")
             }
         }
+        if state == "photo-sharing-conditional" { albumList = [.init(id: 21, name: "Sample album", isConditional: true)] }
+        if state == "photo-sharing-existing" {
+            sharingValue = .init(access: .invited, url: URL(string: "https://example.invalid/shared/fixture"), hasPassword: true, hasExpiration: false, revision: "original", members: [], expiration: 0, isTemporary: false)
+        }
+        if state == "photo-sharing-members-unknown" { sharingValue = .init(access: .disabled, hasPassword: nil, revision: "original") }
+        if state == "photo-sharing-temporary" { sharingValue = .init(access: .invited, revision: "original", members: [], isTemporary: true) }
     }
     func setPending(_ value: Bool) { pending = value }
     func setUser(_ value: Int) { userID = value }
@@ -40,7 +49,23 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return .init(spaces: state == "photo-albums-only" ? [] : state == "photo-albums-nohome" ? [.shared] : [.personal, .shared], packageVersion: "synthetic")
     }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
-        state.hasSuffix("-readonly") || deniesWrites ? [] : [.upload, .albums, .folders]
+        state.hasSuffix("-readonly") || deniesWrites ? [] : [.upload, .albums, .folders, .sharing]
+    }
+    func changeSharing(_ value: SynologyPhotoSharingState) { sharingValue = value }
+    func albumSharing(id: Int) async throws -> SynologyPhotoSharingState {
+        if state == "photo-sharing-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-sharing-error" || state.hasSuffix("-contributor") || deniesWrites { throw URLError(.notConnectedToInternet) }
+        return sharingValue
+    }
+    func sharingRecipients() async throws -> [SynologyPhotoShareRecipient] {
+        if state == "photo-sharing-members-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-sharing-members-error" { throw URLError(.notConnectedToInternet) }
+        if state == "photo-sharing-members-empty" { return [] }
+        return [.init(id: .init(type: "user", value: .integer(31)), name: "Sample member"),
+                .init(id: .init(type: "group", value: .string("31")), name: "Sample group")]
+    }
+    func sharedEntries(_ scope: SynologyPhotoShareScope, offset: Int, limit: Int) async throws -> [SynologyPhotoSharedEntry] {
+        scope == .withOthers && sharingValue.access != .disabled && offset == 0 ? [.init(id: "shared-album", title: "Sample album", albumID: 21, url: sharingValue.url)] : []
     }
     func timeline(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoDay] {
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -81,6 +106,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func uploadRecoveryIdentity() async throws -> String { "\(profileID.uuidString):\(userID)" }
     func prepareMutation(_ mutation: SynologyPhotosMutation) async throws {
         if deniesWrites { throw CocoaError(.fileWriteNoPermission) }
+        if case .shareAlbum(_, _, let original, _, _, _) = mutation, original?.revision != sharingValue.revision { throw CocoaError(.fileWriteNoPermission) }
     }
     func performRecoverableUpload(_ mutation: SynologyPhotosMutation, operationID: UUID, progress: @escaping FileTransferProgress,
                                   checkpoint: @escaping @Sendable (SynologyPhotosUploadCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult {
@@ -110,8 +136,19 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                                         checkpoint: @escaping @Sendable (SynologyPhotosAlbumCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult {
         if deniesWrites { throw CocoaError(.fileWriteNoPermission) }
         var saved = try SynologyPhotosAlbumCheckpoint(mutation: mutation, operationID: operationID, profileID: profileID, userID: userID)
+        if var sharing = saved.sharingDetails {
+            sharing.previousMembers = sharingValue.members?.map(SynologyPhotosAlbumCheckpoint.Sharing.Member.init)
+            sharing.previousHasPassword = sharingValue.hasPassword
+            sharing.previousExpiration = .init(sharingValue.expiration.map(SynologyPhotoConditionValue.integer))
+            saved.sharingDetails = sharing
+        }
         try checkpoint(saved)
         commands.append(mutation)
+        if var sharing = saved.sharingDetails {
+            sharing.passwordAcknowledged = sharing.password != .unchanged && !pending
+            sharing.enableAttempted = sharing.access != "disabled" && state != "photo-sharing-partial"
+            saved.sharingDetails = sharing
+        }
         if case .createAlbum = mutation { nextID += 1; saved.createdAlbumID = nextID }
         if state == "photo-albums-partial", rejectsAlbum, mutation.photos.count > 1 {
             saved.membershipHasFailures = true; rejectsAlbum = false
@@ -150,6 +187,17 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             members[id, default: []].subtract(completed.map(\.unitID))
             return .init(state: saved.membershipHasFailures ? .partial : .confirmed, photos: completed.map(\.photo), completedCount: completed.count)
         case .cover(let id, _): return .init(state: .confirmed, album: albumList.first { $0.id == id })
+        case .sharing(let settings):
+            let partial = state == "photo-sharing-partial" && rejectsSharing
+            rejectsSharing = false
+            let access = partial ? SynologyPhotoLinkAccess.disabled : SynologyPhotoLinkAccess(rawValue: settings.access) ?? .disabled
+            let protected = settings.password == .unchanged ? settings.previousHasPassword : settings.password == .set
+            let grants = settings.members?.map(\.grant) ?? sharingValue.members
+            let expiry = settings.expiration ?? sharingValue.expiration
+            sharingValue = .init(access: access, url: access == .disabled ? nil : URL(string: "https://example.invalid/shared/fixture"),
+                hasPassword: protected, hasExpiration: expiry.map { $0 > 0 }, revision: saved.operationID.uuidString,
+                members: grants, expiration: expiry, isTemporary: false)
+            return .init(state: partial ? .partial : .confirmed, album: albumList.first { $0.id == settings.albumID }, sharingURL: sharingValue.url)
         }
     }
     func reviewMutation(operationID: UUID) async throws -> SynologyPhotosMutationResult {

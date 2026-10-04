@@ -4,6 +4,87 @@ import XCTest
 @testable import DsmNetwork
 
 final class SynologyPhotosRepositoryTests: XCTestCase {
+    func test分享恢复保存保护回执但不保存密码链接或成员名称() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture(), before = memberAlbum()
+        let first = MockHTTPTransport(responses: accessResponses() + [response(before), response(before), response(before),
+            response(#"{"success":true,"data":{"passphrase":"fixture-passphrase"}}"#), response(emptySuccess), response(emptySuccess), response("invalid")])
+        let repository = try makeRepository(first, profileID: profile); _ = try await repository.access()
+        let original = try await repository.albumSharing(id: 3)
+        let command = SynologyPhotosMutation.shareAlbum(id: 3, access: .invited, original: original, password: " synthetic-secret ")
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+        XCTAssertEqual(result.state, .pendingReview)
+        XCTAssertEqual(capture.values.count, 4)
+        XCTAssertFalse(try XCTUnwrap(capture.values.first?.sharingDetails).passwordAcknowledged)
+        XCTAssertTrue(try XCTUnwrap(capture.values[1].sharingDetails).passwordAcknowledged)
+        XCTAssertFalse(try XCTUnwrap(capture.values[1].sharingDetails).enableAttempted)
+        XCTAssertTrue(try XCTUnwrap(capture.values[2].sharingDetails).enableAttempted)
+        let saved = try XCTUnwrap(capture.values.last)
+        XCTAssertEqual(saved.version, 2)
+        let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
+        for secret in ["synthetic-secret", "fixture-passphrase", "example.invalid", "\"Member\"", "\"Group\"", "fixture-token", "fixture-session"] {
+            XCTAssertFalse(text.contains(secret))
+        }
+        let restoredTransport = MockHTTPTransport(responses: accessResponses() + [response(before)])
+        let restored = try makeRepository(restoredTransport, profileID: profile); _ = try await restored.access()
+        try await restored.restoreAlbumMutation(try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data))
+        let reviewed = try await restored.reviewMutation(operationID: id)
+        XCTAssertEqual(reviewed.state, .confirmed)
+        let requests = try await restoredTransport.recordedRequests().map(decode)
+        XCTAssertFalse(requests.contains { ["update", "set_shared"].contains($0["method"] ?? "") })
+    }
+
+    func test分享改密丢回执跨重启不能以原密码保护为真确认() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture(), before = sharingFixture(shared: false)
+        let setup = accessResponses() + [response(before), response(before), response(before), response(#"{"success":true,"data":{"passphrase":"fixture-passphrase"}}"#)]
+        let transport = MockHTTPTransport(steps: setup.map(MockHTTPTransport.Step.response) + [.urlError(.networkConnectionLost)])
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let original = try await repository.albumSharing(id: 3)
+        _ = try await repository.performRecoverableAlbumMutation(.shareAlbum(id: 3, access: .disabled, original: original, password: "new-secret"), operationID: id) { capture.append($0) }
+        let saved = try XCTUnwrap(capture.values.last)
+        XCTAssertFalse(try XCTUnwrap(saved.sharingDetails).passwordAcknowledged)
+        let reader = MockHTTPTransport(responses: accessResponses() + [response(before), response(before)])
+        let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+        try await restored.restoreAlbumMutation(saved); try await restored.restoreAlbumMutation(saved)
+        for _ in 0..<2 { let result = try await restored.reviewMutation(operationID: id); XCTAssertEqual(result.state, .pendingReview) }
+        let requests = try await reader.recordedRequests().map(decode)
+        XCTAssertFalse(requests.contains { ["update", "set_shared"].contains($0["method"] ?? "") })
+    }
+
+    func test分享清除密码无回执跨重启可凭明确无密码确认() async throws {
+        let profile = UUID(), id = UUID(), before = sharingFixture(shared: false), capture = PhotosAlbumCheckpointCapture()
+        let setup = accessResponses() + [response(before), response(before), response(before), response(#"{"success":true,"data":{"passphrase":"fixture-passphrase"}}"#)]
+        let writer = MockHTTPTransport(steps: setup.map(MockHTTPTransport.Step.response) + [.urlError(.networkConnectionLost)])
+        let repository = try makeRepository(writer, profileID: profile); _ = try await repository.access()
+        let original = try await repository.albumSharing(id: 3)
+        _ = try await repository.performRecoverableAlbumMutation(.shareAlbum(id: 3, access: .disabled, original: original, password: ""), operationID: id) { capture.append($0) }
+        let after = before.replacingOccurrences(of: #""enable_password":true"#, with: #""enable_password":false"#)
+        let reader = MockHTTPTransport(responses: accessResponses() + [response(after)])
+        let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+        try await restored.restoreAlbumMutation(try XCTUnwrap(capture.values.last))
+        let result = try await restored.reviewMutation(operationID: id)
+        XCTAssertEqual(result.state, .confirmed)
+    }
+
+    func test分享写前保存失败零写且开启前回执保存失败不公开() async throws {
+        for failsBeforeWrite in [true, false] {
+            let before = sharingFixture(shared: false)
+            var replies = accessResponses() + [response(before), response(before), response(before)]
+            if !failsBeforeWrite { replies += [response(#"{"success":true,"data":{"passphrase":"fixture-passphrase"}}"#), response(emptySuccess)] }
+            let writer = MockHTTPTransport(responses: replies)
+            let repository = try makeRepository(writer); _ = try await repository.access()
+            let original = try await repository.albumSharing(id: 3)
+            do {
+                _ = try await repository.performRecoverableAlbumMutation(.shareAlbum(id: 3, access: .download, original: original, password: "new-secret"), operationID: UUID()) { value in
+                    if failsBeforeWrite || value.sharingDetails?.passwordAcknowledged == true { throw CocoaError(.fileWriteOutOfSpace) }
+                }
+                XCTAssertFalse(failsBeforeWrite)
+            } catch { XCTAssertTrue(failsBeforeWrite) }
+            let requests = try await writer.recordedRequests().map(decode)
+            XCTAssertFalse(requests.contains { $0["method"] == "set_shared" && $0["enabled"] == "true" })
+            XCTAssertEqual(requests.filter { $0["method"] == "update" }.count, failsBeforeWrite ? 0 : 1)
+        }
+    }
+
     func test相册创建回执可跨实例恢复且只读原编号() async throws {
         let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
         let album = #"{"success":true,"data":{"list":[{"id":31,"name":"Fixture","owner_user_id":12}]}}"#

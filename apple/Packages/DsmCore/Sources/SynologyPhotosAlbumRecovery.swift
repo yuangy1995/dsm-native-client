@@ -9,25 +9,27 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case add(id: Int, photos: [SynologyPhotoUploadPhoto])
         case remove(id: Int, photos: [SynologyPhotoUploadPhoto])
         case cover(id: Int, photo: SynologyPhotoUploadPhoto)
+        case sharing(Sharing)
     }
     public let version: Int
     public let profileID: UUID
     public let userID: Int
     public let operationID: UUID
-    public let operation: Operation
+    public private(set) var operation: Operation
     public var createdAlbumID: Int?
     public var membershipHasFailures = false
     public var rejected = false
 
     public static func supports(_ mutation: SynologyPhotosMutation) -> Bool {
         switch mutation {
-        case .createAlbum, .renameAlbum, .deleteAlbum, .addToAlbum, .removeFromAlbum, .setAlbumCover: true
+        case .createAlbum, .renameAlbum, .deleteAlbum, .addToAlbum, .removeFromAlbum, .setAlbumCover, .shareAlbum: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
-        version = 1; self.profileID = profileID; self.userID = userID; self.operationID = operationID
+        version = mutation.feature == .sharing ? 2 : 1
+        self.profileID = profileID; self.userID = userID; self.operationID = operationID
         switch mutation {
         case .createAlbum(let name, let photos): operation = .create(name: name, photos: photos.map(SynologyPhotoUploadPhoto.init))
         case .renameAlbum(let id, let name): operation = .rename(id: id, name: name)
@@ -35,6 +37,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .addToAlbum(let id, let photos): operation = .add(id: id, photos: photos.map(SynologyPhotoUploadPhoto.init))
         case .removeFromAlbum(let id, let photos): operation = .remove(id: id, photos: photos.map(SynologyPhotoUploadPhoto.init))
         case .setAlbumCover(let id, let photo): operation = .cover(id: id, photo: .init(photo))
+        case .shareAlbum: operation = .sharing(try Sharing(mutation: mutation))
         default: throw CocoaError(.coderInvalidValue)
         }
         _ = try reviewMutation()
@@ -42,7 +45,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard version == 1, userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard [1, 2].contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         let command: SynologyPhotosMutation
         switch operation {
         case .create(let name, let photos): command = .createAlbum(name: name, photos: photos.map(\.photo))
@@ -51,6 +54,9 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .add(let id, let photos): command = .addToAlbum(id: id, photos: photos.map(\.photo))
         case .remove(let id, let photos): command = .removeFromAlbum(id: id, photos: photos.map(\.photo))
         case .cover(let id, let photo): command = .setAlbumCover(id: id, photo: photo.photo)
+        case .sharing(let value):
+            guard version == 2 else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation()
         }
         let photos = command.photos
         guard photos.count <= 100, Set(photos.map(\.id)).count == photos.count,
@@ -61,8 +67,82 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .deleteAlbum(let id): guard id > 0 else { throw CocoaError(.coderReadCorrupt) }
         case .addToAlbum(let id, _), .removeFromAlbum(let id, _), .setAlbumCover(let id, _):
             guard id > 0, !photos.isEmpty else { throw CocoaError(.coderReadCorrupt) }
+        case .shareAlbum: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
+    }
+
+    public var sharingDetails: Sharing? {
+        get { if case .sharing(let value) = operation { return value }; return nil }
+        set { if case .sharing = operation, let newValue { operation = .sharing(newValue) } }
+    }
+}
+
+extension SynologyPhotosAlbumCheckpoint {
+    /// 密码只记录操作种类；成员只保留身份和角色，不保存名称、链接或分享口令。
+    public struct Sharing: Codable, Equatable, Sendable {
+        public enum Password: String, Codable, Sendable { case unchanged, set, remove }
+        public enum Expiration: Codable, Equatable, Sendable {
+            case missing, seconds(Int), unknown
+            public init(_ value: SynologyPhotoConditionValue?) {
+                switch value {
+                case nil: self = .missing
+                case .integer(let value) where value >= 0: self = .seconds(value)
+                case .decimal(let value) where value >= 0:
+                    self = Int(exactly: value).map(Self.seconds) ?? .unknown
+                default: self = .unknown
+                }
+            }
+            public func matches(_ value: SynologyPhotoConditionValue?) -> Bool {
+                self != .unknown && self == Self(value)
+            }
+        }
+        public struct Member: Codable, Equatable, Sendable {
+            public let type: String
+            public let id: SynologyPhotoConditionValue
+            public let role: String
+            public init(_ grant: SynologyPhotoShareGrant) { type = grant.id.type; id = grant.id.value; role = grant.role }
+            public var grant: SynologyPhotoShareGrant { .init(recipient: .init(id: .init(type: type, value: id), name: ""), role: role) }
+            var isValid: Bool {
+                guard ["user", "group"].contains(type), !role.isEmpty else { return false }
+                switch id {
+                case .integer(let value): return value > 0
+                case .string(let value): return !value.isEmpty
+                default: return false
+                }
+            }
+        }
+        public let albumID: Int
+        public let access: String
+        public let members: [Member]?
+        public let expiration: Int?
+        public let password: Password
+        public var previousMembers: [Member]?
+        public var previousExpiration: Expiration = .unknown
+        public var previousHasPassword: Bool?
+        public var passwordAcknowledged = false
+        public var enableAttempted = false
+
+        public init(mutation: SynologyPhotosMutation) throws {
+            guard case .shareAlbum(let id, let access, _, let members, let expiration, let password) = mutation else { throw CocoaError(.coderInvalidValue) }
+            albumID = id; self.access = access.rawValue; self.members = members?.map(Member.init)
+            self.expiration = expiration; self.password = password.map { $0.isEmpty ? .remove : .set } ?? .unchanged
+        }
+
+        /// 恢复只构造查询上下文，不还原或重新提交密码。
+        public func reviewMutation() throws -> SynologyPhotosMutation {
+            guard albumID > 0, let access = SynologyPhotoLinkAccess(rawValue: access), expiration.map({ $0 >= 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+            for values in [members, previousMembers].compactMap({ $0 }) {
+                guard values.allSatisfy(\.isValid), Set(values.map { $0.grant.id }).count == values.count else { throw CocoaError(.coderReadCorrupt) }
+            }
+            if case .seconds(let value) = previousExpiration, value < 0 { throw CocoaError(.coderReadCorrupt) }
+            return .shareAlbum(id: albumID, access: access, members: members?.map(\.grant), expiration: expiration)
+        }
+
+        public func hasSameIntent(as mutation: SynologyPhotosMutation) -> Bool {
+            guard let other = try? Self(mutation: mutation) else { return false }
+            return albumID == other.albumID && access == other.access && members == other.members && expiration == other.expiration && password == other.password
+        }
     }
 }

@@ -93,6 +93,7 @@ struct MobilePhotoManagementStatus: View {
                 Button(L10n.string("photos.retry")) { model.continuePartialManagement() }
                     .disabled(!model.canStartManagementMutation).accessibilityIdentifier("mobile.photos.album.continue")
             }
+            if let url = model.managementLink, model.pendingMutationID == nil, !model.isManaging { MobilePhotoSharingLink(url: url) }
         }.font(.callout).frame(maxWidth: .infinity).padding(.horizontal)
     }
 }

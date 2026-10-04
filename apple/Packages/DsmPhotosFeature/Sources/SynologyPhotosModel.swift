@@ -2890,6 +2890,9 @@ public final class SynologyPhotosModel {
         if result.state == .partial, case .setFolderSharing = mutation {
             managementMessage = L10n.string("photos.folderSharing.partial")
         }
+        if result.state == .partial, case .shareAlbum = mutation {
+            managementMessage = L10n.string("photos.sharing.partial")
+        }
         if result.state == .confirmed, case .editSimilarGroup(let detail, let edit) = mutation {
             applySimilarEdit(detail, edit: edit, result: result, operationID: id)
         }

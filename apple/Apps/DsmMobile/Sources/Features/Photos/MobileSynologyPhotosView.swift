@@ -157,6 +157,10 @@ private struct MobileSynologyPhotosContent: View {
                         Button(MobilePhotoAlbumModel.Action.create.title) { albums.begin(.create, photos: []) }
                             .disabled(!albums.allows(.create, photos: [])).accessibilityIdentifier("mobile.photos.album.create")
                         if model.selectedAlbum != nil {
+                            if let sharing = session.sharing {
+                                Button(L10n.string("photos.manage.sharing")) { sharing.begin() }
+                                    .disabled(!sharing.canOpen()).accessibilityIdentifier("mobile.photos.sharing.begin")
+                            }
                             ForEach([MobilePhotoAlbumModel.Action.rename, .delete], id: \.self) { action in
                                 Button(action.title, role: action == .delete ? .destructive : nil) { albums.begin(action, photos: []) }
                                     .disabled(!albums.allows(action, photos: [])).accessibilityIdentifier("mobile.photos.album.\(action.rawValue)")
@@ -189,6 +193,9 @@ private struct MobileSynologyPhotosContent: View {
         }
         .sheet(item: Binding(get: { session.albums?.draft }, set: { if $0 == nil { session.albums?.cancel() } }), onDismiss: { session.albums?.cancel() }) { draft in
             if let albums = session.albums { MobilePhotoAlbumForm(albums: albums, draft: draft) }
+        }
+        .sheet(item: Binding(get: { session.sharing?.draft }, set: { if $0 == nil { session.sharing?.cancel() } }), onDismiss: { session.sharing?.cancel() }) { draft in
+            if let sharing = session.sharing { MobilePhotoSharingForm(sharing: sharing, draft: draft) }
         }
         .sheet(isPresented: $showsMonths) {
             NavigationStack {
@@ -283,6 +290,12 @@ private struct MobileSynologyPhotosContent: View {
                     Button(entry.title) { Task { await model.openSharedAlbum(entry) } }.frame(minHeight: 44)
                 } else { Text(entry.title) }
                 Spacer()
+                if let sharing = session.sharing, model.sharingManagementTarget(for: entry) != nil {
+                    Button { sharing.begin(entry: entry) } label: {
+                        Label(L10n.string("photos.manage.sharing"), systemImage: "person.2.badge.gearshape")
+                    }.disabled(!sharing.canOpen(entry: entry)).frame(minWidth: 44, minHeight: 44)
+                        .accessibilityIdentifier("mobile.photos.sharing.entry")
+                }
                 if let url = entry.url {
                     Link(destination: url) { Label(L10n.string("photos.media.open"), systemImage: "arrow.up.right.square") }
                         .frame(minWidth: 44, minHeight: 44)

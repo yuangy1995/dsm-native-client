@@ -6039,3 +6039,16 @@
 "mobile.photos.album.refresh" = "刷新状态";
 "mobile.photos.album.partial" = "部分照片未能完成。重试可继续处理剩余照片。";
 "mobile.photos.album.loading" = "正在载入相册…";
+
+// 移动相册分享。
+"mobile.photos.sharing.loading" = "正在载入分享设置…";
+"mobile.photos.sharing.loadingMembers" = "正在载入用户和群组…";
+"mobile.photos.sharing.loadFailed" = "无法载入分享设置。请检查连接和相册权限，然后重试。";
+"mobile.photos.sharing.temporary" = "请在 Synology Photos 中管理这次临时照片分享。";
+"mobile.photos.sharing.confirm" = "保存分享修改？";
+"mobile.photos.sharing.risk.publicView" = "任何获得链接的人都可以查看这些照片。";
+"mobile.photos.sharing.risk.publicDownload" = "任何获得链接的人都可以查看和下载这些照片。";
+"mobile.photos.sharing.risk.passwordRemoved" = "相册分享密码将被移除，具有访问权限的人无需输入密码即可查看。";
+"mobile.photos.sharing.risk.memberAccess" = "所选成员将获得表单中显示的照片访问权限，可能包括下载或添加照片。";
+"mobile.photos.sharing.sendLink" = "分享链接";
+"photos.sharing.partial" = "部分分享设置未能保存，分享仍处于关闭状态。请重新打开分享设置继续修改。";
