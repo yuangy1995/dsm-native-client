@@ -730,6 +730,7 @@ final class DsmChatRepositoryTests: XCTestCase {
     }
 
     func test官方服务端转发使用PostForward且不下载附件() async throws {
+        let forwardedAt = String(Int64(Date().timeIntervalSince1970 * 1_000))
         let source = response(#"{"success":true,"data":{"posts":[{"post_id":"9001","channel_id":"99","creator_id":"1","is_my_post":true,"message":"附件转发","create_at":1774166400000,"file_props":{"file_id":"file","name":"sample.txt","size":7}}]}}"#)
         let transport = MockHTTPTransport(responses: [
             source,
@@ -739,8 +740,8 @@ final class DsmChatRepositoryTests: XCTestCase {
             response(#"{"success":true,"data":{"posts":[]}}"#),
             response(#"{"success":true,"data":{"posts":[]}}"#),
             response(#"{"success":true}"#),
-            response(#"{"success":true,"data":{"posts":[{"post_id":"new-27","channel_id":"27","creator_id":"1","is_my_post":true,"message":"附件转发","create_at":1774166400001,"file_props":{"file_id":"file-27","name":"sample.txt","size":7}}]}}"#),
-            response(#"{"success":true,"data":{"posts":[{"post_id":"new-42","channel_id":"42","creator_id":"1","is_my_post":true,"message":"附件转发","create_at":1774166400001,"file_props":{"file_id":"file-42","name":"sample.txt","size":7}}]}}"#)
+            response(#"{"success":true,"data":{"posts":[{"post_id":"new-27","channel_id":"27","creator_id":"1","is_my_post":true,"message":"附件转发","create_at":1774166400001,"file_props":{"file_id":"file-27","name":"sample.txt","size":7}}]}}"#.replacingOccurrences(of: "1774166400001", with: forwardedAt)),
+            response(#"{"success":true,"data":{"posts":[{"post_id":"new-42","channel_id":"42","creator_id":"1","is_my_post":true,"message":"附件转发","create_at":1774166400001,"file_props":{"file_id":"file-42","name":"sample.txt","size":7}}]}}"#.replacingOccurrences(of: "1774166400001", with: forwardedAt))
         ])
         let repository = try makeRepository(transport: transport)
         _ = try await repository.listMessages(conversationID: "99", before: nil, limit: 50)

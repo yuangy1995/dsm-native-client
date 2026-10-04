@@ -20,6 +20,8 @@
 
 ## 系统集成与发布
 
+M4b3b1 已补共享转发回执、逐目标进度与只读恢复；移动批量界面、新联系人创建恢复尚在实施，不改变上表的完成边界。当前证据及下一步见[移动 M4b3b](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3b-消息转发实施中)。
+
 桌面挂载默认只读，按映射启用编辑，删除另外确认；当前平台差异、根保护、日志兼容与恢复见[桌面云盘计划](../development/NATIVE_DSM_DESKTOP_CLOUD_DRIVE_DEVELOPMENT_PLAN_ZH.md)。历史版本已有正式发布及部分用户升级/挂载反馈；未覆盖场景仍独立验收。本机临时签名测试包不含 Finder 扩展，不自动安装或启动，也不替代正式分发。
 
 当前正式版本为 [macOS 1.0.15（25）](https://github.com/yuangy1995/dsm-native-client/releases/tag/macos/v1.0.15)，已完成 Apple Silicon/Intel 双架构签名、公证、公开附件及正式更新源回读核对，包含七项使用反馈与剩余时间显示修正。精确结果见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-macos-1015-正式发布)。Android 投票契约的既有失败仍未纳入本轮修复，不代表 Android 已完成适配。

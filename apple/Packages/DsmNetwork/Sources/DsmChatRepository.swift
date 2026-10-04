@@ -35,9 +35,10 @@ public actor DsmChatRepository: ChatRepository {
     private var completedScheduledMessageDeletions: Set<UUID> = []
     private var completedMessageDeletions: Set<UUID> = []
     private var completedConversationClosures: Set<UUID> = []
-    private var completedMessageForwards: Set<UUID> = []
-    private var pendingMessageForwards: [UUID: PendingChatForward] = [:]
+    private var completedMessageForwards: [UUID: ChatForwardReceipt] = [:]
+    private var pendingMessageForwards: [UUID: ChatForwardReceipt] = [:]
     private var forwardingRequestIDs: Set<UUID> = []
+    private var forwardingSourceIDs: Set<String> = []
     private var schedulingRequestIDs: Set<UUID> = []
     private var completedPinChanges: Set<UUID> = []
     private struct PendingEdit: Equatable { let original: ChatMessage; let text: String }
@@ -297,56 +298,79 @@ public actor DsmChatRepository: ChatRepository {
         toConversationIDs: [String],
         clientRequestID: UUID
     ) async throws {
-        if completedMessageForwards.contains(clientRequestID) { return }
-        guard forwardingRequestIDs.insert(clientRequestID).inserted else { throw unconfirmedForwardError() }
-        defer { forwardingRequestIDs.remove(clientRequestID) }
         let normalizedMessageID = messageID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let original = knownMessagesByID[normalizedMessageID] else {
+            throw AppError(category: .notFound, isRetryable: true, safeUserMessage: L10n.string("chat.message.refreshRequired"))
+        }
+        _ = try await forwardMessage(original, toConversationIDs: toConversationIDs,
+                                     clientRequestID: clientRequestID, recordProgress: { _ in })
+    }
+
+    public func forwardMessage(
+        _ original: ChatMessage, toConversationIDs: [String], clientRequestID: UUID,
+        recordProgress: @escaping @Sendable (ChatForwardReceipt) async throws -> Void
+    ) async throws -> ChatForwardReceipt {
         let targets = Array(Set(toConversationIDs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })).sorted()
-        guard !normalizedMessageID.isEmpty, !targets.isEmpty, !targets.contains("") else {
+        guard !original.id.isEmpty, !targets.isEmpty, !targets.contains("") else {
             throw ChatContractError.emptyConversationID
         }
-        if let pending = pendingMessageForwards[clientRequestID] {
-            guard pending.source.id == normalizedMessageID, pending.targetIDs == targets else {
+        if let prior = completedMessageForwards[clientRequestID] ?? pendingMessageForwards[clientRequestID] {
+            guard prior.sourceMessageID == original.id, prior.sourceConversationID == original.conversationID,
+                  prior.sourceThreadID == original.threadID, prior.contentDigest == (try ChatForwardReceipt.digest(of: original)),
+                  prior.targets.map(\.conversationID) == targets else {
                 throw unconfirmedForwardError()
             }
-            try await confirmForward(pending, requestID: clientRequestID)
-            return
+            if prior.isComplete {
+                do { try await recordProgress(prior) } catch { throw unconfirmedForwardError() }
+                completedMessageForwards[clientRequestID] = prior
+                pendingMessageForwards[clientRequestID] = nil
+                return prior
+            }
+            return try await recoverForward(prior, recordProgress: recordProgress)
         }
-        guard !pendingMessageForwards.values.contains(where: { $0.source.id == normalizedMessageID }) else {
+        guard !forwardingRequestIDs.contains(clientRequestID), !forwardingSourceIDs.contains(original.id),
+              !pendingMessageForwards.values.contains(where: { $0.sourceMessageID == original.id }) else {
             throw unconfirmedForwardError()
         }
+        forwardingRequestIDs.insert(clientRequestID); forwardingSourceIDs.insert(original.id)
+        defer { forwardingRequestIDs.remove(clientRequestID); forwardingSourceIDs.remove(original.id) }
+        let capability = try requireCapability(DsmAPIName.chatPost)
+        let version = try selectedVersion(capability, requiring: 5)
         let numericTargets = try targets.map { id in
-            guard let value = Int(id), value > 0 else { throw invalidChatResponse() }
+            guard let value = Int(id), value > 0, String(value) == id else { throw invalidChatResponse() }
             return value
         }
-        guard let original = knownMessagesByID[normalizedMessageID],
-              original.encryptionState == .notEncrypted, original.poll == nil,
+        guard original.encryptionState == .notEncrypted, original.poll == nil, original.deliveryState == .sent,
+              original.text?.isEmpty == false || !original.attachments.isEmpty,
               !targets.contains(original.conversationID) else {
             throw AppError(category: .notFound, isRetryable: true, safeUserMessage: L10n.string("chat.message.refreshRequired"))
         }
         let conversations = try await listConversations()
         guard let sourceConversation = conversations.first(where: { $0.id == original.conversationID }),
-              !sourceConversation.isEncrypted,
+              !sourceConversation.isEncrypted, let currentUserID = cachedCurrentUserID,
               targets.allSatisfy({ id in conversations.contains { $0.id == id && !$0.isEncrypted } }),
-              let source = try await findMessage(id: normalizedMessageID, conversationID: original.conversationID),
-              sameMessageContent(original, source) else {
+              let source = try await message(conversationID: original.conversationID, messageID: original.id, threadID: original.threadID),
+              sameMessageContent(original, source), source.poll == nil,
+              source.threadID == original.threadID, source.editedAt == original.editedAt else {
             throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("chat.message.changed"))
         }
-        var baselines: [String: Set<String>] = [:]
+        var baselines: [ChatForwardReceipt.Target] = []
         for target in targets {
             let page = try await listMessages(conversationID: target, before: nil, limit: 100)
-            baselines[target] = Set(page.messages.map(\.id))
+            baselines.append(.init(conversationID: target, baseline: page.messages))
         }
         try Task.checkCancellation()
-        var pending = PendingChatForward(source: source, targetIDs: targets, baselineIDs: baselines, acknowledged: false)
+        var pending = try ChatForwardReceipt(original: source, currentUserID: currentUserID,
+                                             clientRequestID: clientRequestID, targets: baselines)
+        try await recordProgress(pending)
+        try Task.checkCancellation()
         pendingMessageForwards[clientRequestID] = pending
         do {
-            let capability = try requireCapability(DsmAPIName.chatPost)
             try await client.callVoid(
                 path: capability.path, api: capability.name,
-                version: try selectedVersion(capability, requiring: 5), method: "forward",
+                version: version, method: "forward",
                 requestFormat: capability.requestFormat,
-                parameters: ["post_id": .string(normalizedMessageID), "channel_ids": .integerArray(numericTargets)],
+                parameters: ["post_id": .string(original.id), "channel_ids": .integerArray(numericTargets)],
                 credential: credential
             )
             pending.acknowledged = true
@@ -357,30 +381,98 @@ public actor DsmChatRepository: ChatRepository {
         } catch {
             throw unconfirmedForwardError()
         }
-        try await confirmForward(pending, requestID: clientRequestID)
+        do { try await recordProgress(pending) }
+        catch { throw unconfirmedForwardError() }
+        return try await confirmForward(pending, recordProgress: recordProgress)
     }
 
-    private func confirmForward(_ pending: PendingChatForward, requestID: UUID) async throws {
-        // 丢失写回执时不凭相似内容推断成功；保留原操作，不能重新提交。
-        guard pending.acknowledged else { throw unconfirmedForwardError() }
-        do {
-            for target in pending.targetIDs {
-                let page = try await listMessages(conversationID: target, before: nil, limit: 100)
-                let matches = page.messages.filter { message in
-                    message.conversationID == target && isOwnedByCurrentUser(message)
-                        && message.encryptionState == .notEncrypted && message.poll == nil
-                        && pending.baselineIDs[target]?.contains(message.id) == false
-                        && message.text == pending.source.text
-                        && message.attachments.map(\.fileName) == pending.source.attachments.map(\.fileName)
-                        && message.attachments.map(\.sizeBytes) == pending.source.attachments.map(\.sizeBytes)
-                }
-                guard matches.count == 1 else { throw unconfirmedForwardError() }
-            }
-            completedMessageForwards.insert(requestID)
-            pendingMessageForwards[requestID] = nil
-        } catch {
+    public func recoverForward(
+        _ receipt: ChatForwardReceipt,
+        recordProgress: @escaping @Sendable (ChatForwardReceipt) async throws -> Void
+    ) async throws -> ChatForwardReceipt {
+        try receipt.validate()
+        guard !forwardingRequestIDs.contains(receipt.clientRequestID), !forwardingSourceIDs.contains(receipt.sourceMessageID) else {
             throw unconfirmedForwardError()
         }
+        let pending = pendingMessageForwards[receipt.clientRequestID] ?? completedMessageForwards[receipt.clientRequestID] ?? receipt
+        guard pending.sourceMessageID == receipt.sourceMessageID, pending.sourceConversationID == receipt.sourceConversationID,
+              pending.sourceThreadID == receipt.sourceThreadID, pending.currentUserID == receipt.currentUserID,
+              pending.contentDigest == receipt.contentDigest, pending.submittedAt == receipt.submittedAt,
+              pending.targets.map(\.conversationID) == receipt.targets.map(\.conversationID),
+              zip(pending.targets, receipt.targets).allSatisfy({ $0.baselineMessageIDs == $1.baselineMessageIDs && $0.latestBaselineDate == $1.latestBaselineDate }) else {
+            throw unconfirmedForwardError()
+        }
+        // 丢失写回执时不凭相似内容推断成功；保留原操作，不能重新提交。
+        guard pending.acknowledged else {
+            pendingMessageForwards[receipt.clientRequestID] = pending
+            throw unconfirmedForwardError()
+        }
+        forwardingRequestIDs.insert(receipt.clientRequestID); forwardingSourceIDs.insert(receipt.sourceMessageID)
+        defer { forwardingRequestIDs.remove(receipt.clientRequestID); forwardingSourceIDs.remove(receipt.sourceMessageID) }
+        do {
+            let conversations = try await listConversations()
+            guard cachedCurrentUserID == pending.currentUserID,
+                  pending.targets.filter({ $0.confirmedMessageID == nil }).allSatisfy({ target in
+                      conversations.contains { $0.id == target.conversationID && !$0.isEncrypted }
+                  }) else { throw unconfirmedForwardError() }
+        } catch { throw unconfirmedForwardError() }
+        pendingMessageForwards[receipt.clientRequestID] = pending
+        do { try await recordProgress(pending) }
+        catch { throw unconfirmedForwardError() }
+        return try await confirmForward(pending, recordProgress: recordProgress)
+    }
+
+    private func confirmForward(
+        _ original: ChatForwardReceipt,
+        recordProgress: @escaping @Sendable (ChatForwardReceipt) async throws -> Void
+    ) async throws -> ChatForwardReceipt {
+        var pending = original
+        for index in pending.targets.indices where pending.targets[index].confirmedMessageID == nil {
+            do {
+                let candidate = try await forwardedMessageID(target: pending.targets[index], receipt: pending)
+                guard !pending.targets.contains(where: { $0.confirmedMessageID == candidate }) else { throw invalidChatResponse() }
+                pending.targets[index].confirmedMessageID = candidate
+            } catch is CancellationError { throw unconfirmedForwardError() }
+            catch { continue }
+            pendingMessageForwards[pending.clientRequestID] = pending
+            do { try await recordProgress(pending) }
+            catch { throw unconfirmedForwardError() }
+        }
+        guard pending.isComplete else { throw unconfirmedForwardError() }
+        completedMessageForwards[pending.clientRequestID] = pending
+        pendingMessageForwards[pending.clientRequestID] = nil
+        return pending
+    }
+
+    private func forwardedMessageID(target: ChatForwardReceipt.Target, receipt: ChatForwardReceipt) async throws -> String {
+        var cursor: String?
+        var seenCursors: Set<String> = [], seenIDs: Set<String> = [], matches: [String] = []
+        let earliestDate = max(receipt.submittedAt.addingTimeInterval(-180), target.latestBaselineDate ?? .distantPast)
+        repeat {
+            try Task.checkCancellation()
+            let page = try await listMessages(conversationID: target.conversationID, before: cursor, limit: 100)
+            for message in page.messages {
+                guard seenIDs.insert(message.id).inserted else { throw invalidChatResponse() }
+                if message.conversationID == target.conversationID, message.senderID == receipt.currentUserID,
+                   isOwnedByCurrentUser(message), message.encryptionState == .notEncrypted, message.poll == nil,
+                   message.threadID == nil || message.threadID == "0",
+                   !target.baselineMessageIDs.contains(message.id),
+                   abs(message.sentAt.timeIntervalSince(receipt.submittedAt)) <= 180,
+                   target.latestBaselineDate.map({ message.sentAt > $0 }) ?? true,
+                   try ChatForwardReceipt.digest(of: message) == receipt.contentDigest {
+                    matches.append(message.id)
+                }
+            }
+            guard matches.count <= 1 else { throw unconfirmedForwardError() }
+            // 读到提交前时间边界或完整末页才形成唯一结果，不能在最新一页先认领相同内容。
+            if !page.hasMoreBefore || page.messages.contains(where: { $0.sentAt < earliestDate }) { break }
+            guard let next = page.previousCursor, next != cursor, seenCursors.insert(next).inserted else {
+                throw invalidChatResponse()
+            }
+            cursor = next
+        } while true
+        guard let match = matches.first else { throw unconfirmedForwardError() }
+        return match
     }
 
     private func unconfirmedForwardError() -> AppError {
@@ -3382,13 +3474,6 @@ private struct PendingChatSchedule: Sendable {
     let text: String
     let sendAt: Date
     var candidateID: String?
-}
-
-private struct PendingChatForward: Sendable {
-    let source: ChatMessage
-    let targetIDs: [String]
-    let baselineIDs: [String: Set<String>]
-    var acknowledged: Bool
 }
 
 private struct PendingChatPollCreation: Sendable {
