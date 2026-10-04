@@ -143,6 +143,10 @@ private struct MobileSynologyPhotosContent: View {
                     }.disabled(model.isBrowsingBlocked || model.isDeleting).accessibilityIdentifier("mobile.photos.selection.begin")
                 }
                 Menu {
+                    if let repair = session.previewRepair, repair.canOpen {
+                        Button(L10n.string("photos.preview.recovery.title")) { repair.begin() }
+                            .accessibilityIdentifier("mobile.photos.repair.begin")
+                    }
                     if let preferences = session.preferences {
                         ForEach(MobilePhotoPreferencesModel.Page.allCases, id: \.self) { page in
                             if preferences.canOpen(page) {
@@ -239,6 +243,7 @@ private struct MobileSynologyPhotosContent: View {
         }
         .modifier(MobilePhotoControlSheets(session: session))
         .modifier(MobilePhotoPreferencesPresentation(session: session))
+        .modifier(MobilePhotoPreviewRepairPresentation(session: session))
         .sheet(item: sharingDraft, onDismiss: { session.sharing?.cancel() }) { draft in
             if let sharing = session.sharing { MobilePhotoSharingForm(sharing: sharing, draft: draft) }
         }
@@ -476,6 +481,10 @@ private struct MobileSynologyPhotosContent: View {
                         Divider()
                     }
                     if model.selectedFolders.isEmpty {
+                        if let repair = session.previewRepair {
+                            Button(L10n.string("photos.preview.rebuild")) { repair.regenerate(model.selectedPhotos) }
+                                .disabled(!repair.canRegenerate(model.selectedPhotos)).accessibilityIdentifier("mobile.photos.repair.selection")
+                        }
                         if let editor = session.editor {
                             MobilePhotoEditActions(editor: editor)
                             Divider()

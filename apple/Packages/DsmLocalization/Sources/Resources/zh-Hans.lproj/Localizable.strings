@@ -4460,6 +4460,8 @@
 "photos.preview.recovery.resume" = "继续重建";
 "photos.preview.recovery.failed" = "无法读取未完成的预览。请检查连接后重试。";
 "photos.preview.recovery.clear" = "清除选择";
+"mobile.photos.repair.loading" = "正在载入未完成的预览…";
+"mobile.photos.repair.resume" = "继续";
 
 "photos.category.similar" = "相似照片";
 "photos.similar.loading" = "正在加载相似照片…";

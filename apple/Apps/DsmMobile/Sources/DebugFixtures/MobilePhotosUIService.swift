@@ -31,6 +31,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var displayValue = SynologyPhotoDisplaySettings()
     private var recognitionValue = SynologyPhotoRecognitionSettings(values: [.person: true, .concept: true, .similar: false], globallyEnabled: [.person, .concept, .similar], personalSpaceEnabled: true)
     private var uploaded: [SynologyPhoto] = []
+    private var repairedPreviews: Set<SynologyPhotoID> = []
     private var tagChoices: [SynologyPhotoFilterChoice] = [.init(id: 8, name: "Sample tag")]
     private var heldEdit: CheckedContinuation<Void, Never>?
     private(set) var isEditHeld = false
@@ -48,7 +49,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown"].contains(state)
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown"].contains(state)
         if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") || state.hasPrefix("photo-edit") || (state.hasPrefix("photo-folders") || state.hasPrefix("photo-folder-sharing") || state.hasPrefix("photo-tasks")) {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
@@ -75,6 +76,15 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                     status: id == 41 ? .processing : .done, total: 5, completion: id == 41 ? 2 : 5,
                     errors: id == 42 ? 1 : 0, skipped: 0, overwritten: 0, createdAt: Double(1_700_000_000 + id), targetFolderID: 3, targetOwnerID: 12))
             }
+        }
+        if state.hasPrefix("photo-repair") {
+            uploaded = (1...(state == "photo-repair-many" ? 102 : 2)).map { index in
+                .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
+                    sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20),
+                    folderID: 1, mediaType: "photo", thumbnail: .init(unitID: index, revision: "original"))
+            }
+            uploaded.append(.init(id: .init(profileID: profileID, space: .shared, unitID: 1), filename: "Shared sample.jpg",
+                sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20), folderID: 1, mediaType: "photo"))
         }
         if state.hasPrefix("photo-preferences") {
             uploaded = [.init(id: .init(profileID: profileID, space: .personal, unitID: 1), filename: "Sample 1.jpg",
@@ -183,6 +193,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if state.hasPrefix("photo-folder-sharing"), space == .shared { features.insert(.folderSharing) }
         if state.hasPrefix("photo-tasks") { features.insert(.backgroundTasks) }
         if state == "photo-folders-defaults" { features.insert(.duplicateSettings) }
+        if state.hasPrefix("photo-repair") { features.insert(.previewRegeneration) }
         if state.hasPrefix("photo-preferences") { features.formUnion([.duplicateSettings, .displaySettings, .recognitionSettings, .rotation]) }
         return features
     }
@@ -259,8 +270,15 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return .init(items: Array(values.dropFirst(offset).prefix(limit)), offset: offset, nextOffset: values.count, hasMore: false)
     }
     func thumbnail(for photo: SynologyPhoto) async throws -> Data { Self.image }
+    func pendingPreviewRegenerations(in space: SynologyPhotoSpace) async throws -> [SynologyPhoto] {
+        if state == "photo-repair-held" { isControlHeld = true; await withCheckedContinuation { heldControl = $0 } }
+        if state == "photo-repair-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-repair-error" { throw URLError(.notConnectedToInternet) }
+        if state == "photo-repair-empty" { return [] }
+        return uploaded.filter { $0.id.space == space && !repairedPreviews.contains($0.id) }
+    }
     func previewImage(for photo: SynologyPhoto) async throws -> Data {
-        guard state.hasPrefix("photo-preferences") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
+        guard state.hasPrefix("photo-preferences") || state.hasPrefix("photo-repair") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
         return Self.image
     }
     func details(for photo: SynologyPhoto) async throws -> SynologyPhoto {
@@ -393,6 +411,15 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             saved.sharingDetails = sharing
         }
         switch mutation {
+        case .regeneratePreviews(let photos, _):
+            if var value = saved.previewRegenerationDetails {
+                for index in value.targets.indices {
+                    value.targets[index].marking = true; value.targets[index].marked = true; value.targets[index].submitted = true
+                    if state == "photo-repair-partial", index > 0 { value.targets[index].failed = true }
+                    else { value.targets[index].generated = true; repairedPreviews.insert(photos[index].id) }
+                }
+                saved.previewRegenerationDetails = value
+            }
         case .setDuplicateSettings(_, let updated): duplicateValue = updated
         case .setDisplaySettings(_, let updated): displayValue = updated
         case .setRecognitionSettings(let original, let enabled):
@@ -534,6 +561,10 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .previewRegeneration(let value):
+            let photos = value.targets.filter { $0.generated }.map { $0.original.photo }
+            return .init(state: photos.count == value.targets.count ? .confirmed : photos.isEmpty ? .rejected : .partial,
+                photos: photos, completedCount: photos.count)
         case .preference(let value):
             if case .rotation(let original) = value, let photo = uploaded.first(where: { $0.id == original.photo.id }) {
                 return .init(state: photo.orientation == original.photo.counterClockwiseOrientation && photo.width == original.photo.height && photo.height == original.photo.width ? .confirmed : .pendingReview, photos: [photo], completedCount: 1)

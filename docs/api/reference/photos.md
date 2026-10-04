@@ -77,3 +77,5 @@ M3d 移动端复用已有 Folder create/rename/set_order/set_cover、BackgroundT
 M3e 移动端沿用 FolderPermission.update/set_config 及 BackgroundTask.Info.list_user_task/abort_task/clear_completed_task/get_error_detail 既有契约，接入共享目录权限、任务取消/清除/错误详情和原目标导航。版本 9 摘要将原权限快照转为摘要，只保留成员类型/编号/角色、密码操作种类、必要目录及任务身份；密码、链接及成员名称不保存。权限更新回执在后续默认选项写入前保存，应用子目录或设置新密码需要明确回执；任务逐项清除先持久保存尝试范围，重启不重发。任务控制恢复使用独立文件，保留原移动复制的查询证据。旧版本 1–8 仍可读；不新增 NAS 参数或修改五端请求契约，Windows/Android 仅记录适配影响，Mac 未配置恢复文件时维持原业务流程。
 
 M3f1 移动照片偏好与旋转复用既有 Setting.User.get/set 和 Browse.Item.set（rotate_action），不新增请求或字段。版本 10 恢复保存偏好稳定枚举/布尔值与旋转原件身份、方向、尺寸；重启只回读最终值，旋转必须同时匹配预期方向、互换尺寸和原件身份。旧 1–9 记录继续可读，保存失败零写。新增 Codable 仅服务 Apple 独立恢复文件，不迁移 NAS/登录配置；Mac 未配置该恢复适配时调用不变，Windows/Android 无请求契约改动。
+
+M3f2 移动手动预览修复复用既有 RegeneratePreview 队列/转换/恢复标记、转换事件与 ConvertedFile 上传，未增加请求字段或放宽原件/相册提供者权限。Apple 恢复版本 11 保存必要原件身份、旧预览版本及各阶段回执，兼容 1–10；在每次写之前保存，重启只读，不把队列消失单独视为成功。已标记但尚未转换的项目结束原操作后可由用户从队列继续；转换已明确失败的清理只结束失败，不能报成功。移动本机转换临时文件受系统保护并排除备份；Mac 未装配恢复记录时仍使用原有同步流程。Windows/Android 契约不变，真实环境验证等级不因此提升。

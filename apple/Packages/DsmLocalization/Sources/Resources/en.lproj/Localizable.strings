@@ -4460,6 +4460,8 @@
 "photos.preview.recovery.resume" = "Continue rebuilding";
 "photos.preview.recovery.failed" = "Unable to load unfinished previews. Check your connection and try again.";
 "photos.preview.recovery.clear" = "Clear selection";
+"mobile.photos.repair.loading" = "Loading unfinished previews…";
+"mobile.photos.repair.resume" = "Continue";
 
 "photos.category.similar" = "Similar Photos";
 "photos.similar.loading" = "Loading similar photos…";

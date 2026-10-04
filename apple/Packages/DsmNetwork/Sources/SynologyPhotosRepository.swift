@@ -1583,6 +1583,9 @@ private struct PhotosMutationRecord: Sendable {
     var manualAcknowledged: Set<String> = []
     var manualKnownFailures: Set<String> = []
     var regenerationBaseline: [SynologyPhotoID: SynologyPhotoThumbnail] = [:]
+    var regenerationMarking: Set<SynologyPhotoID> = []
+    var regenerationMarked: Set<SynologyPhotoID> = []
+    var regenerationRestoring: Set<SynologyPhotoID> = []
     var regenerationSubmitted: Set<SynologyPhotoID> = []
     var regenerationAttempted: Set<SynologyPhotoID> = []
     var regenerationRecovered: Set<SynologyPhotoID> = []
@@ -2938,7 +2941,9 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        if case .rotation(let value) = checkpoint.preferenceDetails { try requireAccess(value.photo.id.space) }
+        if let preview = checkpoint.previewRegenerationDetails {
+            for space in Set(preview.targets.map { $0.id.space }) { try requireAccess(space) }
+        } else if case .rotation(let value) = checkpoint.preferenceDetails { try requireAccess(value.photo.id.space) }
         else if checkpoint.folderSharingDetails != nil { try requireAccess(.shared) }
         else if checkpoint.backgroundDetails != nil { try requireAlbumAccess() }
         else if checkpoint.folderDetails != nil {
@@ -2956,7 +2961,9 @@ extension SynologyPhotosRepository {
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            let matches = if let preference = checkpoint.preferenceDetails {
+            let matches = if let preview = checkpoint.previewRegenerationDetails {
+                preview.hasSameIntent(as: existing.mutation)
+            } else if let preference = checkpoint.preferenceDetails {
                 preference.hasSameIntent(as: existing.mutation)
             } else if let sharing = checkpoint.folderSharingDetails {
                 existing.restoredFolderSharing.map { $0 == sharing } ?? sharing.hasSameIntent(as: existing.mutation)
@@ -2997,6 +3004,19 @@ extension SynologyPhotosRepository {
         record.restoredPhotoRequest = checkpoint.requestDetails
         record.restoredFrozen = checkpoint.frozenDetails
         record.usesAlbumRecovery = true
+        if let preview = checkpoint.previewRegenerationDetails {
+            for target in preview.targets {
+                let id = target.id
+                record.regenerationBaseline[id] = target.baseline
+                if target.marking { record.regenerationMarking.insert(id) }
+                if target.marked { record.regenerationMarked.insert(id) }
+                if target.submitted { record.regenerationSubmitted.insert(id) }
+                if target.restoring { record.regenerationRestoring.insert(id) }
+                if target.generated { record.regenerated.insert(id) }
+                if target.recovered { record.regenerationRecovered.insert(id) }
+                if target.failed { record.regenerationFailed.insert(id) }
+            }
+        }
         record.frozenDeletionAttempted = checkpoint.frozenDetails?.deletionAttempted ?? false
         record.frozenDeletionRejected = checkpoint.frozenDetails?.deletionRejected ?? false
         record.restoredCondition = checkpoint.conditionDetails
@@ -3022,6 +3042,21 @@ extension SynologyPhotosRepository {
             checkpoint.createdAlbumID = record.albumID
             checkpoint.membershipHasFailures = record.albumMembershipHasFailures
             checkpoint.rejected = record.result.state == .rejected
+            if var preview = checkpoint.previewRegenerationDetails {
+                for index in preview.targets.indices {
+                    let id = preview.targets[index].id
+                    preview.targets[index].baselineUnitID = record.regenerationBaseline[id]?.unitID
+                    preview.targets[index].baselineRevision = record.regenerationBaseline[id]?.revision
+                    preview.targets[index].marking = record.regenerationMarking.contains(id)
+                    preview.targets[index].marked = record.regenerationMarked.contains(id)
+                    preview.targets[index].submitted = record.regenerationSubmitted.contains(id)
+                    preview.targets[index].restoring = record.regenerationRestoring.contains(id)
+                    preview.targets[index].generated = record.regenerated.contains(id)
+                    preview.targets[index].recovered = record.regenerationRecovered.contains(id)
+                    preview.targets[index].failed = record.regenerationFailed.contains(id)
+                }
+                checkpoint.previewRegenerationDetails = preview
+            }
             if var sharing = checkpoint.folderSharingDetails {
                 sharing.acknowledged = record.folderSharingAcknowledged
                 checkpoint.folderSharingDetails = sharing
@@ -3271,11 +3306,12 @@ extension SynologyPhotosRepository {
                         catch { record.regenerationFailed.formUnion(photos[index...].map(\.id)); break }
                     }
                     if let converted = prepared {
-                        try await preparePreviewRegeneration(photo, resuming: resuming, generation: generation)
+                        try await preparePreviewRegeneration(photo, resuming: resuming, generation: generation, record: &record, operationID: operationID)
                         marked = true
-                        record.regenerationSubmitted.insert(photo.id)
+                        try recordPreviewSubmission(photo, record: &record, operationID: operationID)
                         if try await uploadConvertedPreview(converted, photo: photo, generation: generation) {
                             record.regenerated.insert(photo.id)
+                            try persistRecoveryCheckpoint(record, operationID: operationID)
                             continue
                         }
                     }
@@ -3289,11 +3325,12 @@ extension SynologyPhotosRepository {
                             do { prepared = try await prepareLocalPreview(photo, generation: generation) }
                             catch { record.regenerationFailed.formUnion(photos[index...].map(\.id)); break }
                             if let converted = prepared {
-                                try await preparePreviewRegeneration(photo, resuming: resuming, generation: generation)
+                                try await preparePreviewRegeneration(photo, resuming: resuming, generation: generation, record: &record, operationID: operationID)
                                 marked = true
-                                record.regenerationSubmitted.insert(photo.id)
+                                try recordPreviewSubmission(photo, record: &record, operationID: operationID)
                                 if try await uploadConvertedPreview(converted, photo: photo, generation: generation) {
                                     record.regenerated.insert(photo.id)
+                                    try persistRecoveryCheckpoint(record, operationID: operationID)
                                     continue
                                 }
                             }
@@ -3302,6 +3339,7 @@ extension SynologyPhotosRepository {
                         if marked && !resuming {
                             try Task.checkCancellation()
                             guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
+                            try recordPreviewRestoration(photo, record: &record, operationID: operationID)
                             try await managementWrite(api("RegeneratePreview", in: photo.id.space), method: "restore_from_regenerating", parameters: ["unit_id": .integerArray([photo.id.unitID])])
                         }
                         record.regenerationFailed.formUnion(photos[index...].map(\.id))
@@ -3310,21 +3348,24 @@ extension SynologyPhotosRepository {
                     do {
                         try Task.checkCancellation(); try requirePreviewPhoto(photo)
                         guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
-                        if !marked { try await preparePreviewRegeneration(photo, resuming: resuming, generation: generation) }
-                        record.regenerationSubmitted.insert(photo.id)
+                        if !marked { try await preparePreviewRegeneration(photo, resuming: resuming, generation: generation, record: &record, operationID: operationID) }
+                        try recordPreviewSubmission(photo, record: &record, operationID: operationID)
                         try await managementWrite(api("RegeneratePreview", in: photo.id.space), method: "regenerate_preview_by_nas", parameters: ["unit_id": .integer(photo.id.unitID)])
                         var success = try await events.completion()
                         guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
                         await events.close()
                         if !success, !localFirst, let converted = try await prepareLocalPreview(photo, generation: generation) {
+                            try recordPreviewSubmission(photo, record: &record, operationID: operationID)
                             success = try await uploadConvertedPreview(converted, photo: photo, generation: generation)
                         }
                         if success { record.regenerated.insert(photo.id) }
                         else {
                             // 只有明确失败才恢复重建标记；未知结果不重复提交、不抢先清理。
+                            try recordPreviewRestoration(photo, record: &record, operationID: operationID)
                             try await managementWrite(api("RegeneratePreview", in: photo.id.space), method: "restore_from_regenerating", parameters: ["unit_id": .integerArray([photo.id.unitID])])
                             record.regenerationFailed.insert(photo.id)
                         }
+                        try persistRecoveryCheckpoint(record, operationID: operationID)
                         await events.close()
                     } catch { await events.close(); throw error }
                 }
@@ -3654,6 +3695,13 @@ extension SynologyPhotosRepository {
                 } else if !record.automaticPreviewSubmitted { record.result = .init(state: .rejected) }
             case .regeneratePreviews(let photos, let resuming):
                 record.regenerationFailed.formUnion(Set(photos.map(\.id)).subtracting(resuming ? record.regenerationSubmitted : record.regenerationAttempted))
+                if record.usesAlbumRecovery {
+                    for photo in photos where !record.regenerationSubmitted.contains(photo.id) {
+                        if !record.regenerationMarking.contains(photo.id) || record.regenerationMarked.contains(photo.id) || rejected || memberFailureReceipt {
+                            record.regenerationFailed.insert(photo.id)
+                        }
+                    }
+                }
             case .edit:
                 if rejected { record.metadataRejectedIDs.formUnion(record.metadataCurrentIDs) }
             case .shiftDates:
@@ -3898,6 +3946,18 @@ extension SynologyPhotosRepository {
             if let verified = try await inspectSimilarEdit(detail, edit: edit) { result = verified }
         case .regeneratePreviews(let originals, _):
             let generation = accessGeneration
+            if record.usesAlbumRecovery {
+                // 最后一次持久化之后不可能越过下一次写前保存；未转换项可重新从队列选择。
+                for original in originals where !record.regenerationSubmitted.contains(original.id) && !record.regenerationFailed.contains(original.id) {
+                    if !record.regenerationMarking.contains(original.id) || record.regenerationMarked.contains(original.id) {
+                        record.regenerationFailed.insert(original.id)
+                    } else if let queue = try? await previewRegenerationQueue(in: original.id.space),
+                              (try? requireQueuedPreview(original, queue: queue)) != nil {
+                        _ = try await validatePreviewRegenerationTarget(original)
+                        record.regenerationFailed.insert(original.id)
+                    }
+                }
+            }
             let unresolved = originals.filter { record.regenerationSubmitted.contains($0.id) && !record.regenerated.contains($0.id) && !record.regenerationFailed.contains($0.id) }
             for space in Set(unresolved.map({ $0.id.space })) {
                 try Task.checkCancellation()
@@ -3907,6 +3967,11 @@ extension SynologyPhotosRepository {
                     guard let current = try? await details(for: original) else { continue }
                     guard current.filename == original.filename, current.sizeBytes == original.sizeBytes,
                           current.folderID == original.folderID, current.indexedAt == original.indexedAt, current.mediaType == original.mediaType else { continue }
+                    if record.regenerationRestoring.contains(original.id) {
+                        // 转换已明确失败，后续清理只改变队列；缺失队列不能转成生成成功。
+                        record.regenerationFailed.insert(original.id)
+                        continue
+                    }
                     if let before = record.regenerationBaseline[original.id], let after = current.thumbnail,
                        before.unitID == after.unitID, !before.revision.isEmpty, !after.revision.isEmpty, before.revision != after.revision {
                         // 版本变化和队列消失共同核对；不把队列空或旧缩略图单独当作完成。
@@ -5623,13 +5688,33 @@ extension SynologyPhotosRepository {
         return item.additional?.thumbnail.map { .init(unitID: $0.unit_id, revision: $0.cache_key) }
     }
 
-    private func preparePreviewRegeneration(_ photo: SynologyPhoto, resuming: Bool, generation: Int) async throws {
+    private func preparePreviewRegeneration(_ photo: SynologyPhoto, resuming: Bool, generation: Int,
+                                            record: inout PhotosMutationRecord, operationID: UUID) async throws {
+        if !resuming {
+            record.regenerationMarking.insert(photo.id)
+            do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+            catch { record.regenerationMarking.remove(photo.id); throw error }
+        }
         if resuming {
             try requirePreviewPhoto(photo)
             let queue = try await previewRegenerationQueue(in: photo.id.space)
             guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
             try requireQueuedPreview(photo, queue: queue)
         } else { try await markPreviewRegenerating(photo, generation: generation) }
+        record.regenerationMarked.insert(photo.id)
+        try persistRecoveryCheckpoint(record, operationID: operationID)
+    }
+
+    private func recordPreviewSubmission(_ photo: SynologyPhoto, record: inout PhotosMutationRecord, operationID: UUID) throws {
+        let inserted = record.regenerationSubmitted.insert(photo.id).inserted
+        do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+        catch { if inserted { record.regenerationSubmitted.remove(photo.id) }; throw error }
+    }
+
+    private func recordPreviewRestoration(_ photo: SynologyPhoto, record: inout PhotosMutationRecord, operationID: UUID) throws {
+        record.regenerationRestoring.insert(photo.id)
+        do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+        catch { record.regenerationRestoring.remove(photo.id); throw error }
     }
 
     private func markPreviewRegenerating(_ photo: SynologyPhoto, generation: Int) async throws {
@@ -5649,10 +5734,19 @@ extension SynologyPhotosRepository {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: directory) }
+        #if os(iOS)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: directory.path)
+        var protectedDirectory = directory
+        var values = URLResourceValues(); values.isExcludedFromBackup = true
+        try protectedDirectory.setResourceValues(values)
+        #endif
         let source = directory.appendingPathComponent("source")
         let converted: PhotosConvertedPreview
         do {
             try await downloadOriginal(photo, to: source) { _, _ in }
+            #if os(iOS)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: source.path)
+            #endif
             converted = try await SynologyPhotosPreviewConverter.convert(file: source, mediaType: photo.mediaType)
         } catch {
             // 读取/解码失败尚未上传，可以继续其他转换方式；取消不能变成后续写请求。
