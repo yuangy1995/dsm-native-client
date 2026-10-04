@@ -194,7 +194,8 @@ final class MobileAppModel {
         self.crossNAS = MobileCrossNASQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("CrossNAS", isDirectory: true))
         self.fileUploadQueue = MobileFileUploadQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("UploadBatches", isDirectory: true))
         self.fileArchiveQueue = MobileFileArchiveQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Archives", isDirectory: true))
-        self.downloads = MobileDownloadsModel(transferCoordinator: transferCoordinator)
+        self.downloads = MobileDownloadsModel(transferCoordinator: transferCoordinator,
+            controlRoot: transferRecoveryStore?.rootURL.appendingPathComponent("Downloads", isDirectory: true))
         self.documentTransferController = MobileDocumentTransferController(
             transferCoordinator: transferCoordinator, recoveryStore: transferRecoveryStore
         )

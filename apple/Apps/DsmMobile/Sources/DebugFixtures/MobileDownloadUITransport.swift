@@ -6,7 +6,9 @@ import Foundation
 actor MobileDownloadUITransport: DsmHTTPTransport {
     let state: String
     private var detailAttempts = 0
-    init(state: String) { self.state = state }
+    private var statuses: [String: String]
+    private var hasUnknownWrite = false
+    init(state: String, statuses: [String: String] = [:]) { self.state = state; self.statuses = statuses }
 
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         let parameters = URLComponents(string: "https://example.invalid/?" + String(data: request.httpBody ?? Data(), encoding: .utf8)!)?.queryItems ?? []
@@ -16,9 +18,18 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
         case (DsmAPIName.downloadStationTask, "list"):
             if state == "downloads-loading" { try await Task.sleep(for: .seconds(30)) }
             if state == "downloads-error" { throw URLError(.notConnectedToInternet) }
-            let tasks = state == "downloads-empty" ? [] : [task("sample-1", "Sample archive.zip", "downloading"),
+            if hasUnknownWrite { throw URLError(.notConnectedToInternet) }
+            var tasks = state == "downloads-empty" || state == "downloads-controls-empty" ? [] : [task("sample-1", "Sample archive.zip", "downloading"),
                 task("sample-2", "Paused document.pdf", "paused"), task("sample-3", "Finished video.mp4", "finished")]
+            if state.hasPrefix("downloads-controls-"), state != "downloads-controls-empty" {
+                tasks.append(task("sample-4", "Second archive.zip", "seeding"))
+            }
             data = ["tasks": tasks, "offset": 0, "total": tasks.count]
+        case (DsmAPIName.downloadStationTask, "pause"), (DsmAPIName.downloadStationTask, "resume"):
+            guard let id = value("id"), ["sample-1", "sample-2", "sample-4"].contains(id) else { throw URLError(.badServerResponse) }
+            statuses[id] = value("method") == "pause" ? "paused" : "downloading"
+            if state == "downloads-controls-unknown" { hasUnknownWrite = true }
+            data = [:]
         case (DsmAPIName.downloadStationStatistic, "getinfo"):
             data = ["speed_download": 0]
         case (DsmAPIName.downloadStationTask, "getinfo"):
@@ -42,7 +53,7 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
     }
 
     private func task(_ id: String, _ title: String, _ status: String) -> [String: Any] {
-        ["id": id, "title": title, "status": status, "size": "4096",
+        ["id": id, "title": title, "status": statuses[id] ?? status, "size": "4096",
          "additional": ["detail": ["destination": "Sample Downloads"], "transfer": ["size_downloaded": "2048", "speed_download": 0]]]
     }
 }

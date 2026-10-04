@@ -560,7 +560,16 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     public func controlDownloadTaskResult(
         _ request: DownloadTaskControlRequest
     ) async throws -> DownloadTaskControlOutcome {
-        guard let taskID = Self.nonEmpty(request.task.id) else {
+        try await controlDownloadTaskResult(request, willSubmit: { _ in })
+    }
+
+    /// 移动恢复队列在最新状态检查之后、发送之前保存记录；失败必须阻止发送。
+    public func controlDownloadTaskResult(
+        _ request: DownloadTaskControlRequest,
+        willSubmit: @escaping @Sendable (DownloadStationTask) async throws -> Void
+    ) async throws -> DownloadTaskControlOutcome {
+        guard let taskID = Self.nonEmpty(request.task.id), taskID == request.task.id,
+              !taskID.contains(","), !taskID.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
             return try downloadControlOutcome(
                 status: .confirmedFailure,
                 action: request.action,
@@ -691,6 +700,13 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             )
         }
 
+        try await willSubmit(baseline)
+        if Task.isCancelled {
+            return try downloadControlOutcome(status: .cancelledBeforeSubmission, action: request.action,
+                taskID: taskID, task: nil, submitted: false, requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 0), errorCategory: nil,
+                tag: "download-task.control.cancelled-before")
+        }
         do {
             try await callOfficialDownloadTaskV1Void(
                 method: method,
@@ -739,6 +755,23 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 statusIfUnconfirmed: .submittedButUnverified
             )
         }
+    }
+
+    /// 应用重启后的控制恢复只读取当前任务，绝不再次调用暂停或继续。
+    public func loadDownloadTaskControlState(id: String) async throws -> DownloadStationTask? {
+        let ids = try validatedIDs([id])
+        guard ids.count == 1, id == ids[0], !id.contains(","),
+              !id.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+              officialDownloadTaskV1Capability() != nil else {
+            throw AppError(category: .apiUnavailable, isRetryable: false,
+                           safeUserMessage: L10n.string("mobile.downloads.control.unsupported.message"))
+        }
+        return try await loadOfficialDownloadControlTask(id: ids[0])
+    }
+
+    /// 调用方已将终态持久保存后，结束旧的进程内回读保护；不发送 NAS 请求。
+    public func acknowledgeDownloadTaskControlResult(id: String, action: DownloadStationTaskAction) {
+        pendingDownloadControlReviews[DownloadTaskControlKey(taskID: id, action: action.rawValue)] = nil
     }
 
     public func deleteDownloadTasks(ids: [String], removeData: Bool) async throws {

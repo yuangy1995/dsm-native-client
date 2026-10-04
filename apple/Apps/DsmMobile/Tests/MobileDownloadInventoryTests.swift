@@ -75,7 +75,7 @@ final class MobileDownloadInventoryTests: XCTestCase {
 
     func test控制期间迟到详情不能覆盖新任务状态() async throws {
         let model = try makeModel()
-        model.downloadSnapshot = DownloadStationSnapshot(source: .official, tasks: [task()], isComplete: true)
+        model.downloadSnapshot = DownloadStationSnapshot(source: .official, tasks: [task("one", "Current")], isComplete: true)
         let gate = DownloadDetailsGate()
         model.downloadDetailsOverride = { _ in await gate.wait(); return DownloadStationTaskDetails(task: DownloadStationTask(id: "one", title: "Old", status: "paused")) }
         let operation = Task { try await model.loadDetails(id: "one") }
@@ -87,7 +87,7 @@ final class MobileDownloadInventoryTests: XCTestCase {
                 counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0)), taskID: "one",
                 task: DownloadStationTask(id: "one", title: "Current", status: "downloading"))
         }
-        model.controlDownloadTask(task(), action: .resume)
+        model.controlDownloadTask(task("one", "Current"), action: .resume)
         await model.downloadControlTask?.value
         await gate.finish()
         do { _ = try await operation.value; XCTFail("提交前的旧读取不得覆盖写后状态") }
@@ -108,7 +108,8 @@ final class MobileDownloadInventoryTests: XCTestCase {
     func test控制执行中开始的列表与详情读取也不能覆盖最终状态() async throws {
         for loadsDetails in [false, true] {
             let model = try makeModel()
-            let original = task()
+            // 暂停和继续不改变身份；旧读取另外保留过时标题与状态。
+            let original = task("one", "Current"), stale = task("one", "Old")
             model.downloadSnapshot = DownloadStationSnapshot(source: .official, tasks: [original], isComplete: true)
             let writeGate = DownloadDetailsGate(), readGate = DownloadDetailsGate()
             model.downloadStationControlOverride = { _ in
@@ -118,8 +119,8 @@ final class MobileDownloadInventoryTests: XCTestCase {
                     counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0)), taskID: "one",
                     task: DownloadStationTask(id: "one", title: "Current", status: "downloading"))
             }
-            model.downloadDetailsOverride = { _ in await readGate.wait(); return DownloadStationTaskDetails(task: original) }
-            model.downloadStationLoadOverride = { await readGate.wait(); return DownloadStationSnapshot(source: .official, tasks: [original], isComplete: true) }
+            model.downloadDetailsOverride = { _ in await readGate.wait(); return DownloadStationTaskDetails(task: stale) }
+            model.downloadStationLoadOverride = { await readGate.wait(); return DownloadStationSnapshot(source: .official, tasks: [stale], isComplete: true) }
             model.controlDownloadTask(original, action: .resume)
             let write = model.downloadControlTask
             await writeGate.started()

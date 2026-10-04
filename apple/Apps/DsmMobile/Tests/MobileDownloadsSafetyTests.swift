@@ -213,7 +213,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertEqual(model.downloadDeleteFeedback?.kind, .needsReview)
     }
 
-    func test下载页面和模型仅开放单链接和任务文件创建单任务暂停继续和删除入口() throws {
+    func test下载创建与移除保留安全入口且单项控制复用恢复队列() throws {
         let view = try sourceFile(
             "Sources/Features/Services/Downloads/MobileDownloadsView.swift"
         )
@@ -247,7 +247,10 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(model.contains("DownloadTaskFileCreateRequest("))
         XCTAssertTrue(model.contains("createDownloadTaskFileResult(request)"))
         XCTAssertTrue(model.contains("controlDownloadTask(_ task: DownloadStationTask"))
-        XCTAssertTrue(model.contains("DownloadTaskControlRequest(task: task, action: action)"))
+        XCTAssertTrue(model.contains("startDownloadControlBatch([task], action: action)"))
+        let control = try sourceFile("Sources/Features/Services/Downloads/MobileDownloadsModel+Control.swift")
+        XCTAssertTrue(control.contains("controlDownloadTaskResult(request, willSubmit: save)"))
+        XCTAssertTrue(control.contains("loadDownloadTaskControlState(id: item.taskID)"))
         XCTAssertTrue(model.contains("deleteDownloadTask(_ task: DownloadStationTask)"))
         XCTAssertTrue(model.contains("deleteDownloadTasksResult("))
         XCTAssertTrue(model.contains("removeData: false"))

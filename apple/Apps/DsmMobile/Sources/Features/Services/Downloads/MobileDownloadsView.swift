@@ -9,6 +9,8 @@ struct MobileDownloadsView: View {
     @State private var isShowingCreateTask = false
     @State private var isShowingBTSearch = false
     @State private var isImportingTaskFile = false
+    @State private var isSelectingTasks = false
+    @State private var isShowingControls = false
 
     var body: some View {
         MobilePageStateView(
@@ -40,6 +42,8 @@ struct MobileDownloadsView: View {
         .sheet(isPresented: $isShowingBTSearch) {
             MobileDownloadBTSearchView(model: model)
         }
+        .sheet(isPresented: $isSelectingTasks) { MobileDownloadSelectionSheet(model: model) }
+        .sheet(isPresented: $isShowingControls) { MobileDownloadControlRecordsView(model: model) }
         .fileImporter(
             isPresented: $isImportingTaskFile,
             allowedContentTypes: mobileDownloadTaskFileTypes,
@@ -47,6 +51,21 @@ struct MobileDownloadsView: View {
             onCompletion: handleTaskFileImport
         )
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { isSelectingTasks = true } label: {
+                    Label(L10n.string("mobile.downloads.batch.select"), systemImage: "checkmark.circle")
+                }
+                .disabled(model.visibleTasks.allSatisfy { !model.canPauseDownloadTask($0) && !model.canResumeDownloadTask($0) })
+                .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
+                .accessibilityIdentifier("downloads.select")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { isShowingControls = true } label: {
+                    Label(L10n.string("mobile.downloads.batch.records"), systemImage: "clock.arrow.circlepath")
+                }
+                .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
+                .accessibilityIdentifier("downloads.records")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Picker(L10n.string("download.workspace.categories"), selection: $model.taskFilter) {
@@ -388,6 +407,7 @@ private struct MobileDownloadTaskDetailView: View {
     let initialTask: DownloadStationTask
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingDelete = false
+    @State private var isShowingControlRecords = false
     @State private var details: DownloadStationTaskDetails?
     @State private var isLoadingDetails = false
     @State private var detailsFailed = false
@@ -449,6 +469,7 @@ private struct MobileDownloadTaskDetailView: View {
             .accessibilityIdentifier("downloads.details.form")
             .task(id: model.activeProfile.map(MobileWorkspaceIdentity.init)) { await loadDetails() }
             .refreshable { await loadDetails() }
+            .sheet(isPresented: $isShowingControlRecords) { MobileDownloadControlRecordsView(model: model) }
             .confirmationDialog(
                 L10n.string("mobile.downloads.delete.confirm.title", task.title),
                 isPresented: $isConfirmingDelete,
@@ -496,10 +517,16 @@ private struct MobileDownloadTaskDetailView: View {
         if model.feedbackForDownloadTask(task) != nil
             || model.canPauseDownloadTask(task)
             || model.canResumeDownloadTask(task)
-            || model.isControllingDownloadTask {
+            || model.isControllingDownloadTask || model.controlProtects(task.id) {
             Section(L10n.string("mobile.downloads.control.section")) {
+                if model.controlRecovery.failed { Text(L10n.string("mobile.downloads.batch.storage-error")).foregroundStyle(.orange) }
                 if let feedback = model.feedbackForDownloadTask(task) {
                     DownloadControlFeedbackView(model: model, feedback: feedback)
+                }
+                if model.controlProtects(task.id) {
+                    Button(L10n.string("mobile.downloads.batch.records")) { isShowingControlRecords = true }
+                        .frame(minHeight: MobileMetrics.minimumTouchTarget)
+                        .accessibilityIdentifier("downloads.details.records")
                 }
                 if model.canPauseDownloadTask(task) {
                     Button {
@@ -512,6 +539,7 @@ private struct MobileDownloadTaskDetailView: View {
                     }
                     .frame(minHeight: MobileMetrics.minimumTouchTarget)
                     .accessibilityHint(L10n.string("mobile.downloads.control.pause.hint"))
+                    .accessibilityIdentifier("downloads.details.pause")
                 }
                 if model.canResumeDownloadTask(task) {
                     Button {
@@ -524,6 +552,7 @@ private struct MobileDownloadTaskDetailView: View {
                     }
                     .frame(minHeight: MobileMetrics.minimumTouchTarget)
                     .accessibilityHint(L10n.string("mobile.downloads.control.resume.hint"))
+                    .accessibilityIdentifier("downloads.details.resume")
                 }
                 if model.isControllingDownloadTask {
                     ProgressView()

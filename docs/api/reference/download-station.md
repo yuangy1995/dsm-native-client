@@ -13,6 +13,7 @@
 | 链接创建 `createDownloadTaskResult` | 公开 `Task.create` | 无 destination 固定 v1；带 destination 固定 v2；`uri` 为已允许的链接类型，目录按 NAS 契约传递 | 专用创建结果；固定输入和创建身份，未知不自动重发 |
 | 任务文件 `createDownloadTaskFileResult` | 公开 `Task.create` multipart | `.torrent/.nzb/.txt`；同样按 destination 选择 v1/v2，密码只在当次发送 | 同创建结果，不把成功上传请求当作所有下载已完成 |
 | 暂停、继续 | `Task.pause/resume` | 使用稳定任务 ID 和确认时快照；固定版本见[参数目录](requests.md#download-station) | 单项/批量结果逐项核对，部分成功保留；旧 `finish` 枚举当前不产生请求 |
+| 移动控制恢复 `loadDownloadTaskControlState` | 公开 `Task.list` v1 | 完整分页、单一合法任务编号 | 仅查询，匹配原身份及目标状态；本机终态保存后 `acknowledgeDownloadTaskControlResult` 清理进程内旧保护，不产生 NAS 请求 |
 | 删除任务／结束并移出未完成文件 | `Task.delete` | `id`、`force_complete`；共享旧参数名 `removeData` 仅为调用兼容 | `false` 移除任务，`true` 请求把未完成文件移入目标目录；不是删除下载数据，列表消失也不能证明文件已移动 |
 | BT 搜索 | `BTSearch.getModule/getCategory/start/list/clean` | v1；模块、关键词、分类、排序、分页和任务 ID | 仅管理本次搜索任务，取消/结束清理自己的任务 |
 | 设置 | `Info.getconfig/setserverconfig`、`Schedule.getconfig/setconfig` | 已支持版本与原设置基线 | 部分分区不可用不当作默认值；保存后核对实际设置 |
@@ -20,6 +21,10 @@
 上述 1000 项是当前 macOS 摘要入口的读取范围，不代表 NAS 永远只有 1000 项或已经读取全量。若目标端需要完整任务目录，应按已记录分页契约实现独立切片，不能在文档中把当前限制改写为已解决。
 
 移动 M5a1 已接独立完整目录，macOS 页面仍使用原摘要。共享公开创建/控制/任务删除的结果读取统一复用完整分页，不再以 5000 项硬截断或首批 1000 项判断对象不存在；这不改变 `force_complete` 的含义。内部备用摘要保留 `isComplete=false`，其写入结果与完整分页仍须在 M5 后续切片收敛，不能把公开分页测试当作内部协议证据。移动速度、分享率和剩余时间缺失显示 `--`，真实零速度保留零；暂停、做种等非下载状态不估算剩余时间。
+
+移动 M5a2 将单项和多项暂停/继续统一到独立持久队列。共享原协议方法保持原签名，新增带 `willSubmit` 的兼容重载；只有最新状态通过后才调用保存回调，保存失败或发送前取消不产生控制请求。已提交未知项仅用完整目录读取恢复，不能转调暂停/继续来探测；确认结束并持久保存后才清理同一连接中的旧回读保护，避免影响下一次用户操作。恢复结构记录账号上下文摘要、任务编号、名称/大小/目标摘要、动作与逐项阶段，不记录原名称、路径、URI 或凭据。
+
+五端影响：iPhone/iPad 同一多选与恢复语义；macOS 原协议调用及界面不变，共享新增路径需完整回归。Windows/Android 本轮没有实现变化，后续应遵守写前保存、逐项结果、未知只读、剩余显式继续/取消和跨动作重复保护；不得仅新增一组批量按钮就宣称已具备重启恢复。所有请求参数、能力与权限要求保持原契约，本阶段仍没有真实 NAS 写入证据。
 
 ## 编辑与 RSS 的官方证据边界
 

@@ -7,12 +7,16 @@
 
 移动 Apple M5 核对官方指南发现 Task.edit 字段表要求 v2，Android 当前 `editDestinationResult` 与其请求快照仍为 v1。后续授权切片需同时改实际版本选择、能力门禁及请求测试；旧样本仅记录当前源码，不能标为官方推荐版本或待真机。另需核实完整分页、缺失速度与任务移除/文件删除的边界。本轮不改 Android 实现，依据见[下载接口说明](../api/reference/download-station.md#编辑与-rss-的官方证据边界)。
 
+Apple 移动 M5a2 补充逐项写前保存、未知只读恢复与剩余显式继续/取消；同一任务的反向控制和移除也受未结束记录约束。Android 后续对齐应保留该结果语义，本轮不改 Android 源码。
+
 ## 置顶读取更正（2026-10-03）
 
 当前官方页面只读证据确认 Post.search 的 channel_id 不能限定置顶会话，正确字段为数字 in 数组。本平台本轮不改代码；现有同类请求需后续授权切片修正，不能标为仅待真机。 参数、失败语义与五端边界见[消息交互记录](../api/discovery/endpoints/chat-message-interaction.md#2026-10-03-置顶搜索修正)。
 
 
 ## Chat 契约影响（2026-10-03）
+
+2026-10-05 云端复核：提交 `8559a1f9` 的 Android Build 在 1436 项 JVM 测试中有 1 项失败：`ChatPollRepositoryTest.无附件投票固定v1且写后回读`。实际 choices 仍为字符串数组，共享 `chat/create-poll/synthetic-poll` 样例自 `e069cb3d` 起要求 `{text: ...}` 对象数组；错误为 `choices[0] 应为对象`，且 options 的 `expire_at` 也应在后续授权修复中一并核对。本轮 M5 不修改 Android 或降低断言，不能把 Apple 通过、Android 其他测试通过或代码已推送表述为 Android 门禁通过。
 
 本轮只更新 macOS 与共享 Apple 的五组日常聊天能力，Android 未修改实现。后续 Android 切片需核实 Post.list 定位分页、投票 choices/options 对象编码及 props.vote 解析，并单独决定搜索、编辑、线程、投票参与、媒体和阅读同步范围；不得把 macOS 构建或官方网页写入结果当成 Android 完成。新请求样例、失败语义和版本证据见[消息交互契约](../api/discovery/endpoints/chat-message-interaction.md)，待办保持实现阶段，不伪装成仅缺真机。
 
