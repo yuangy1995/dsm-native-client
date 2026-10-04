@@ -143,6 +143,14 @@ private struct MobileSynologyPhotosContent: View {
                     }.disabled(model.isBrowsingBlocked || model.isDeleting).accessibilityIdentifier("mobile.photos.selection.begin")
                 }
                 Menu {
+                    if let tasks = session.tasks, tasks.canOpen {
+                        Button(L10n.string("photos.tasks.title")) { tasks.begin() }
+                            .accessibilityIdentifier("mobile.photos.tasks.begin")
+                    }
+                    if let sharing = session.folderSharing, let folder = model.folderHistory.last, sharing.canOpen(folder) {
+                        Button(L10n.string("photos.folderSharing.title")) { sharing.begin(folder) }
+                            .accessibilityIdentifier("mobile.photos.folderSharing.begin")
+                    }
                     if let folders = session.folders, model.section == .folders {
                         ForEach([MobilePhotoFolderModel.Action.create, .rename, .sort, .cover], id: \.self) { action in
                             Button(action.title) { folders.begin(action, photos: [], folders: []) }
@@ -221,6 +229,7 @@ private struct MobileSynologyPhotosContent: View {
         .sheet(item: Binding(get: { session.albums?.draft }, set: { if $0 == nil { session.albums?.cancel() } }), onDismiss: { session.albums?.cancel() }) { draft in
             if let albums = session.albums { MobilePhotoAlbumForm(albums: albums, draft: draft) }
         }
+        .modifier(MobilePhotoControlSheets(session: session))
         .sheet(item: sharingDraft, onDismiss: { session.sharing?.cancel() }) { draft in
             if let sharing = session.sharing { MobilePhotoSharingForm(sharing: sharing, draft: draft) }
         }
@@ -310,6 +319,7 @@ private struct MobileSynologyPhotosContent: View {
                         Text(L10n.string(space == .personal ? "mobile.photos.source.mine" : "mobile.photos.source.shared")).tag(space)
                     }
                 }.pickerStyle(.menu).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .accessibilityIdentifier("mobile.photos.source")
             }
             if sizeClass == .regular {
                 Picker(L10n.string("photos.library.browse"), selection: section) {
@@ -375,6 +385,10 @@ private struct MobileSynologyPhotosContent: View {
                     .onDrag { dragProvider(folder: collection) }
                 if model.section == .folders, let folders = session.folders, !model.isSelecting {
                     Menu {
+                        if let sharing = session.folderSharing, sharing.canOpen(collection) {
+                            Button(L10n.string("photos.folderSharing.title")) { sharing.begin(collection) }
+                                .accessibilityIdentifier("mobile.photos.folderSharing.begin")
+                        }
                         ForEach([MobilePhotoFolderModel.Action.create, .rename, .sort, .cover], id: \.self) { action in
                             Button(action.title) { folders.begin(action, folder: collection, photos: [], folders: []) }
                                 .disabled(!folders.allows(action, folder: collection, photos: [], folders: []))

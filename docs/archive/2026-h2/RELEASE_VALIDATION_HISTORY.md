@@ -1042,3 +1042,25 @@ Mac 命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme
 
 
 最终生成工程重复运行 SHA-256 一致：`fa818e6627d097a94cba3d70ef54d784a4b3748b20551017adeb65911cce1698`。未修改 macOS App、Windows、Android 源码，不把两端合成结果当作真实 NAS 或真机结论。具体设备/专用数据、权限、锁屏/终止/切账号、拖放/键盘/VoiceOver 步骤及允许回传内容集中在移动主计划 M3d 的 `PENDING_USER_VALIDATION`；目录分享、完整任务控制、人物/相似组、旋转/预览设置、旧图库清理与后续 M4–M8 继续实施。
+
+## 2026-10-04 移动 M3e 文件夹权限与照片任务
+
+本切片接共享目录权限、成员搜索与角色、密码变更、覆盖子目录确认，以及照片任务筛选、错误详情、取消、逐项清除完成记录和打开原目标。恢复记录版本 9 仅新增两类操作，旧版本 1–8 仍可读；目录权限保留原快照摘要与成员编号/角色，不保存密码、链接或成员名称。任务控制使用独立受保护文件，避免阻断取消本 App 的移动复制；每项清除前保存范围，恢复只读取原对象，不重复发送原写。
+
+`swift test --package-path apple --filter SynologyPhotosRepositoryTests` 基线 **550 项（2.443 秒）**，新增七项恢复测试后 **557 项（1.906 秒）**通过；随后增加零时间/未知目标兼容用例。`swift test --package-path apple` 首轮 **2477 项、172 项既有条件跳过、0 失败（31.060 秒）**，另 **12 项 Swift Testing（0.041 秒）**。后续在 Mac 编译与两台模拟器同时运行期间，第二轮旧 `PhotoLibraryModelTests.test视窗完成后按显示顺序预取后续缩略图` 失败，第三轮该项通过，但相邻 `test离开视窗会取消后台预取并让新视窗请求先执行` 失败。两项既有用例分别依赖固定 30/10 毫秒等待，相关 Mac 源码和断言均未修改；最终串行复验结果另记。第三轮共 **2478 项、172 跳过、1 失败（45.624 秒）**，另 **12 项 Swift Testing（0.074 秒）**。一次聚焦命令误用了不存在的 `MacPhotoLibraryModelTests` 类名，执行零项，不计为通过证据。
+
+移动使用 XcodeGen **2.46.0** 生成工程。实际构建命令 `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`。前四轮分别修正合成服务新增枚举分支、根视图类型推断超时、测试调用旧方法名和错误的语言参数，第五与第六轮构建通过；根视图将相关弹窗按现有方式收拢为独立 modifier，不改变页面导航。
+
+两端以 `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=…' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath … -only-testing:DsmMobileTests` 执行全部单元，另选择七项新增权限/任务 UI 和既有 `test照片目录混合选择复制覆盖确认可取消再保存`。iPhone ID 如上，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，iPad 深色。首轮单元各 **823/823（14.283 / 14.309 秒）**通过；实际 UI 各八项中三项通过、五项失败（241.048 / 287.041 秒）。失败包括重启夹具未保留账号偏好/恢复文件、来源选择器辅助功能标签包含字段名，以及错误详情的“Close”定位到了下层同名控件；分别沿用既有重启保留标记、补稳定来源标识和错误详情关闭标识，并保留全部业务断言。任务按钮扩大为标准触控区域，读取原操作记录失败时禁止清除任务证据并提供重试；新增第 17 项移动控制测试覆盖该保护。
+
+第六轮构建后的第二轮单元两端各 **824/824（14.199 / 14.190 秒）**通过，结果包 `m3e-iphone2.xcresult` / `m3e-ipad2.xcresult`。两端仍分别运行全部八项相关实际 UI，结果另记。日志、结果包、截图均为本机忽略产物，不进入提交。真实 NAS 未参与写操作测试，Windows/Android/macOS App 源码不改动。
+
+第二轮实际 UI 两端各 **6/8 通过、2 项失败（335.942 / 345.728 秒）**。任务四流程、父目录限制/加载失败以及目录复制回归全部通过；权限确认用例遇 XCTest 字符串标识最多 128 字符限制，改用完整 `label` 谓词，不减少后果断言。成员搜索在 iPhone 进入系统搜索后隐藏导航栏，需要退出搜索再返回；iPad 默认布局未显示搜索入口，明确改为常驻原生搜索栏。两端分别保留搜索筛选、返回、普通收紧不确认及保存结果断言。截图另发现 iPhone 英文标题被长保存按钮挤短，改用已有“Save / 保存”资源；按钮含义不变。
+
+停止两端实际 UI 和 Mac 编译后，`swift test --package-path apple --filter PhotoLibraryModelTests` **13/13（0.468 秒）**通过（`m3e-shared-prefetch4.log`），随后串行完整 `swift test --package-path apple` **2478 项、172 项既有条件跳过、0 失败（33.090 秒）**，另 **12 项 Swift Testing（0.036 秒）**（`m3e-shared4.log`）。没有改动旧 Mac 实现或测试来消除并行时序失败。网络的最终八项新增回归已包含在完整测试中；第三轮中网络单独计数 **558/558（3.531 秒）**也通过。
+
+Mac 使用 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO`，初次及最终共享修改后的两轮均通过，日志 `m3e-macos-build1.log` / `m3e-macos-build2.log`，实际主程序 `lipo -archs` 为 **x86_64 arm64**；未安装、启动或发布。XcodeGen 重复生成前后 SHA-256 一致为 `d2f26bc76039396a8d685d919b4300a5b354da428b5f83c6f5a5f1ba87ecc045`；fixture **29 组/48 引用**与请求契约 **170 组/1 写结果**通过。独立集成及只读对抗复核覆盖原账号/对象、父目录限制、未知成员、密码与链接不落盘、写前存储失败、权限更新回执后再改默认选项、冻结任务范围、逐项中断、未知重启和迟到回调。
+
+最终第七轮移动构建通过（`m3e-mobile-build7.log`），仅调整成员搜索布局、短保存按钮及对应 UI 定位；共享逻辑与模型未再变化。第三轮以同一 `test-without-building` 命令选择三项权限 UI（中文成员搜索/普通收紧、共享范围/覆盖子目录确认、加载失败/父目录限制），两端各 **3/3（144.340 / 148.529 秒）**通过，结果 `m3e-iphone3.xcresult` / `m3e-ipad3.xcresult`。七项新增实际 UI 和原目录复制回归全部分别具有两端通过证据。最终本地化 **5859 / 2188 / 3402**、严格文档和差异检查通过。
+
+已导出并逐张检查 iPhone 浅色完整权限标题、子目录覆盖后果确认、父目录只读提示及任务错误恢复；iPad 深色任务取消确认、父目录限制与中文成员搜索也可读可操作，测试后已恢复浅色。真实 NAS、设备文件保护、断网/终止恢复与完整辅助功能验收按移动主计划 M3e 的 `PENDING_USER_VALIDATION` 执行；不把合成测试当作真实版本行为验证。下一切片继续预览与设置、人物/相似组和批量导出，M4–M8 仍未完成。

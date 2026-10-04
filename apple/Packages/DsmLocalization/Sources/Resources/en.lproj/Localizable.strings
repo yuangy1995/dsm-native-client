@@ -6097,3 +6097,5 @@
 "mobile.photos.frozen.readFailed" = "Unable to load this album. Try again.";
 "mobile.photos.frozen.replace" = "Replace album";
 "mobile.photos.album.emptyContent" = "There are no photos to display in this album. Refresh to try again.";
+
+"mobile.photos.tasks.changed" = "This task has changed. Refresh the task list and try again.";

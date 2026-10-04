@@ -6097,3 +6097,5 @@
 "mobile.photos.frozen.readFailed" = "无法读取此相册，请重试。";
 "mobile.photos.frozen.replace" = "替换相册";
 "mobile.photos.album.emptyContent" = "此相册暂无可显示的照片，请刷新后重试。";
+
+"mobile.photos.tasks.changed" = "任务已发生变化。请刷新任务列表后重试。";

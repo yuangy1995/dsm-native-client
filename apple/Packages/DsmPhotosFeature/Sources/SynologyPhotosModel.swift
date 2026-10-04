@@ -262,6 +262,13 @@ public final class SynologyPhotosModel {
     public private(set) var backgroundTaskMessage: String?
     public private(set) var backgroundTaskRevision = 0
     @ObservationIgnored private var backgroundControlTask: Task<Void, Never>?
+    @ObservationIgnored private var backgroundRecoveryStore: PhotoAlbumRecoveryStore?
+    @ObservationIgnored private var backgroundRecoveryReady = true
+    public private(set) var backgroundRecoveryError: String?
+    public var canControlBackgroundTasks: Bool {
+        isModuleEnabled && albumRecoveryReady && albumRecoveryError == nil && backgroundRecoveryReady && backgroundRecoveryError == nil &&
+            !isManagingBackgroundTask && pendingBackgroundMutationID == nil && !isDeleting && !isCheckingDeletion
+    }
     public private(set) var isOpeningBackgroundDestination = false
     public private(set) var backgroundNavigationError: String?
     public private(set) var uploadQueue: [PhotoUploadEntry] = []
@@ -275,7 +282,8 @@ public final class SynologyPhotosModel {
     @ObservationIgnored private var albumRecoveryReady = true
     public var canStartManagementMutation: Bool {
         isModuleEnabled && hasLoaded && !isLoading && !isManaging && !isDeleting && !isCheckingDeletion &&
-            pendingMutationID == nil && albumRecoveryReady && albumRecoveryError == nil && temporarySharingCleanup == nil
+            pendingMutationID == nil && albumRecoveryReady && albumRecoveryError == nil &&
+            backgroundRecoveryReady && backgroundRecoveryError == nil && temporarySharingCleanup == nil
     }
     public private(set) var isOpeningUploadDestination = false
     public private(set) var uploadNavigationError: String?
@@ -832,6 +840,7 @@ public final class SynologyPhotosModel {
             }
             await restoreUploadQueueIfNeeded(repository: repository)
             await restoreAlbumMutationIfNeeded(repository: repository)
+            await restoreBackgroundMutationIfNeeded(repository: repository)
             let albumOnly = spaces.isEmpty && (section == .albums || (section == .sharing && shareScope != .requests))
             guard let destination = spaces.first(where: { $0 == (space ?? selectedSpace) }) ?? spaces.first ?? (albumOnly ? .personal : nil) else {
                 resetSpaceNavigation()
@@ -1833,7 +1842,7 @@ public final class SynologyPhotosModel {
 
     public func submitMutation(_ mutation: SynologyPhotosMutation, onCompletion: ((SynologyPhotosMutationResult) -> Void)? = nil) {
         if mutation.feature == .backgroundTasks { submitBackgroundTaskMutation(mutation); return }
-        guard isModuleEnabled, albumRecoveryReady, albumRecoveryError == nil, !isManaging, !isDeleting, !isCheckingDeletion, pendingMutationID == nil, similarBatchQueue.isEmpty,
+        guard isModuleEnabled, albumRecoveryReady, albumRecoveryError == nil, backgroundRecoveryReady, backgroundRecoveryError == nil, !isManaging, !isDeleting, !isCheckingDeletion, pendingMutationID == nil, similarBatchQueue.isEmpty,
               canSubmit(mutation) else { return }
         let id = UUID()
         if case .createTemporaryAlbum = mutation, let store = albumRecoveryStore {
@@ -2220,8 +2229,7 @@ public final class SynologyPhotosModel {
 
     public func automaticPreviewSetting() async throws -> Bool { try await service().automaticPreviewEnabled() }
     private func submitBackgroundTaskMutation(_ mutation: SynologyPhotosMutation) {
-        guard isModuleEnabled, canSubmit(mutation), !isManagingBackgroundTask, pendingBackgroundMutationID == nil,
-              !isDeleting, !isCheckingDeletion else { return }
+        guard canControlBackgroundTasks, canSubmit(mutation) else { return }
         let id = UUID()
         isManagingBackgroundTask = true; backgroundTaskMessage = L10n.string("photos.manage.working")
         backgroundControlTask = Task { [weak self] in
@@ -2233,9 +2241,14 @@ public final class SynologyPhotosModel {
                 try Task.checkCancellation()
                 guard self.isModuleEnabled else { return }
                 self.pendingBackgroundMutationID = id
-                let result = try await repository.performMutation(mutation, operationID: id, progress: { _, _ in })
+                let result: SynologyPhotosMutationResult
+                if let store = self.backgroundRecoveryStore {
+                    result = try await repository.performRecoverableAlbumMutation(mutation, operationID: id) { try store.save($0) }
+                } else { result = try await repository.performMutation(mutation, operationID: id, progress: { _, _ in }) }
                 await self.finishBackgroundMutation(result, id: id, repository: repository)
             } catch {
+                do { try self.backgroundRecoveryStore?.clear(operationID: id) }
+                catch { self.backgroundRecoveryError = L10n.string("photos.album.recovery.saveFailed") }
                 self.pendingBackgroundMutationID = nil
                 if self.isModuleEnabled && !Task.isCancelled {
                     self.backgroundTaskMessage = operationErrorMessage(error, fallback: "photos.manage.failed")
@@ -2274,11 +2287,39 @@ public final class SynologyPhotosModel {
         guard isModuleEnabled, !Task.isCancelled, result.state != .pendingReview else {
             backgroundTaskMessage = L10n.string("photos.manage.pending"); return
         }
+        do { try backgroundRecoveryStore?.clear(operationID: id); backgroundRecoveryError = nil }
+        catch { backgroundRecoveryError = L10n.string("photos.album.recovery.saveFailed"); return }
         pendingBackgroundMutationID = nil
         backgroundTaskRevision += 1
         backgroundTaskMessage = L10n.string(result.state == .confirmed ? "photos.manage.completed" : result.state == .partial ? "photos.manage.partial" : "photos.manage.failed")
         // 取消本App发起的搬移后，沿原操作编号读取终态，不重发搬移。
         if pendingMutation?.feature == .fileTransfer, !isManaging { reviewPendingMutation() }
+    }
+
+    public func configureBackgroundRecovery(_ store: PhotoAlbumRecoveryStore?) {
+        precondition(!hasLoaded && pendingBackgroundMutationID == nil)
+        backgroundRecoveryStore = store; backgroundRecoveryReady = store == nil
+    }
+
+    private func restoreBackgroundMutationIfNeeded(repository: any SynologyPhotosServing) async {
+        guard !backgroundRecoveryReady, let store = backgroundRecoveryStore else { return }
+        do {
+            if let saved = try store.load() {
+                guard saved.backgroundDetails != nil,
+                      pendingBackgroundMutationID == nil || pendingBackgroundMutationID == saved.operationID else { throw CocoaError(.fileReadNoPermission) }
+                try await repository.restoreAlbumMutation(saved)
+                pendingBackgroundMutationID = saved.operationID
+                backgroundTaskMessage = L10n.string("photos.album.recovery.pending")
+            }
+            backgroundRecoveryReady = true; backgroundRecoveryError = nil
+        } catch { backgroundRecoveryError = L10n.string("photos.album.recovery.readFailed") }
+    }
+
+    public func retryBackgroundRecovery() async {
+        guard isModuleEnabled, !isManagingBackgroundTask else { return }
+        if backgroundRecoveryError != nil, pendingBackgroundMutationID == nil { backgroundRecoveryReady = false }
+        if !backgroundRecoveryReady, let repository = try? service() { await restoreBackgroundMutationIfNeeded(repository: repository) }
+        if pendingBackgroundMutationID != nil { reviewBackgroundMutation() }
     }
 
     public func backgroundTasks() async throws -> [SynologyPhotoBackgroundTask] {
@@ -2486,7 +2527,7 @@ public final class SynologyPhotosModel {
                 }
             }
             if let checkpoint {
-                guard pendingMutationID == nil || pendingMutationID == checkpoint.operationID else { throw CocoaError(.fileReadNoPermission) }
+                guard checkpoint.backgroundDetails == nil, pendingMutationID == nil || pendingMutationID == checkpoint.operationID else { throw CocoaError(.fileReadNoPermission) }
                 try await repository.restoreAlbumMutation(checkpoint)
                 pendingMutationID = checkpoint.operationID
                 pendingMutation = try checkpoint.reviewMutation()
