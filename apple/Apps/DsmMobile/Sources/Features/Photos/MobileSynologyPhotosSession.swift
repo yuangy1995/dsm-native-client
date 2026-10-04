@@ -25,6 +25,8 @@ final class MobileSynologyPhotosSession {
     private(set) var tasks: MobilePhotoTasksModel?
     private(set) var preferences: MobilePhotoPreferencesModel?
     private(set) var administration: MobilePhotoAdministrationModel?
+    private(set) var recognition: MobilePhotoRecognitionModel?
+    private(set) var faces: MobilePhotoFaceModel?
     private(set) var previewRepair: MobilePhotoPreviewRepairModel?
     private(set) var temporarySharing: MobilePhotoTemporarySharingModel?
     private(set) var conditions: MobilePhotoConditionModel?
@@ -67,6 +69,8 @@ final class MobileSynologyPhotosSession {
         tasks = repository == nil ? nil : MobilePhotoTasksModel(model: model)
         preferences = repository == nil ? nil : MobilePhotoPreferencesModel(model: model)
         administration = repository == nil ? nil : MobilePhotoAdministrationModel(model: model)
+        recognition = repository == nil ? nil : MobilePhotoRecognitionModel(model: model)
+        faces = repository == nil ? nil : MobilePhotoFaceModel(model: model)
         previewRepair = repository == nil ? nil : MobilePhotoPreviewRepairModel(model: model)
         temporarySharing = sharing.map { MobilePhotoTemporarySharingModel(model: model, sharing: $0) }
         conditions = repository == nil ? nil : MobilePhotoConditionModel(model: model)
@@ -95,6 +99,8 @@ final class MobileSynologyPhotosSession {
         tasks?.cancel()
         preferences?.cancel()
         administration?.cancel()
+        recognition?.cancel()
+        faces?.cancel()
         previewRepair?.cancel()
         temporarySharing?.clear()
         requests?.cancel()

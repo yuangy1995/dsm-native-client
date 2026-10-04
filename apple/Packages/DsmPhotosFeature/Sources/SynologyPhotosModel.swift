@@ -2397,6 +2397,7 @@ public final class SynologyPhotosModel {
     public func conversionCache() async throws -> SynologyPhotoConversionCache { try await service().conversionCache() }
     public var automaticMutationReviewID: UUID? {
         guard let mutation = pendingMutation else { return nil }
+        if albumRecoveryStore != nil, [.peopleNames, .peopleMerge, .peopleFaces, .peopleCover, .peopleVisibility, .manualFaces, .conceptCover, .conceptItems, .conceptVisibility].contains(mutation.feature) { return pendingMutationID }
         switch mutation {
         case .createAlbum, .shareAlbum, .createFolder, .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum: return pendingMutationID
         default: break
@@ -2406,6 +2407,8 @@ public final class SynologyPhotosModel {
     }
 
     private var pendingManagementMessage: String {
+        if albumRecoveryStore != nil, let feature = pendingMutation?.feature,
+           [.peopleNames, .peopleMerge, .peopleFaces, .peopleCover, .peopleVisibility, .manualFaces, .conceptCover, .conceptItems, .conceptVisibility].contains(feature) { return L10n.string("photos.recognition.pending") }
         if case .createFolder = pendingMutation { return L10n.string("photos.folder.creating") }
         if case .createTemporaryAlbum = pendingMutation { return L10n.string("photos.selectionShare.preparing") }
         if temporarySharingCleanup != nil { return L10n.string("photos.temporary.reviewing") }

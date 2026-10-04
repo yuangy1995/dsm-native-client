@@ -23,7 +23,7 @@ extension SynologyPhotosAlbumCheckpoint {
                       albumContext: albumID.map { .init(albumID: $0, ownerUserID: ownerID ?? 0, providerUserID: providerID) })
             }
 
-            fileprivate init(_ photo: SynologyPhoto, valueDigest: String?) throws {
+            init(_ photo: SynologyPhoto, valueDigest: String?) throws {
                 profileID = photo.id.profileID; space = photo.id.space; unitID = photo.id.unitID; folderID = photo.folderID
                 albumID = photo.albumContext?.albumID; ownerID = photo.albumContext?.ownerUserID; providerID = photo.albumContext?.providerUserID
                 identityDigest = try Self.digest(photo); self.valueDigest = valueDigest

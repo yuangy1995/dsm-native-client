@@ -1,4 +1,5 @@
 import DsmCore
+import DsmPhotosFeature
 import SwiftUI
 import XCTest
 @testable import DsmMacExecutable

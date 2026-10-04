@@ -145,6 +145,14 @@ private struct MobileSynologyPhotosContent: View {
                     }.disabled(model.isBrowsingBlocked || model.isDeleting).accessibilityIdentifier("mobile.photos.selection.begin")
                 }
                 Menu {
+                    if let recognition = session.recognition {
+                        ForEach([MobilePhotoRecognitionModel.Action.peopleVisibility, .conceptVisibility, .rename, .merge], id: \.self) { action in
+                            if recognition.allows(action) {
+                                Button(action.title) { recognition.begin(action) }
+                                    .accessibilityIdentifier("mobile.photos.recognition.\(action.rawValue)")
+                            }
+                        }
+                    }
                     if let repair = session.previewRepair, repair.canOpen {
                         Button(L10n.string("photos.preview.recovery.title")) { repair.begin() }
                             .accessibilityIdentifier("mobile.photos.repair.begin")
@@ -288,6 +296,7 @@ private struct MobileSynologyPhotosContent: View {
         }
         .modifier(MobileSynologyPhotoDeletionPresentation(model: model, active: model.previewPhoto == nil))
         .modifier(MobilePhotoEditPresentation(session: session, active: model.previewPhoto == nil))
+        .modifier(MobilePhotoRecognitionPresentation(session: session, active: model.previewPhoto == nil))
         .modifier(MobilePhotoFolderPresentation(session: session, active: model.previewPhoto == nil))
         .modifier(MobileSynologyPhotoExportPresentation(session: session, active: model.previewPhoto == nil))
         .task { await session.activate() }
@@ -399,7 +408,7 @@ private struct MobileSynologyPhotosContent: View {
                     else { Task { await model.open(collection) } }
                 } label: {
                     HStack {
-                        Label(collection.name, systemImage: model.section == .folders ? "folder" : "photo.on.rectangle")
+                        Label(collection.name.isEmpty && model.selectedCategory == .person ? L10n.string("photos.people.unnamed") : collection.name, systemImage: model.section == .folders ? "folder" : "photo.on.rectangle")
                         Spacer()
                         if model.section == .folders, model.isSelecting {
                             Image(systemName: model.selectedFolderIDs.contains(collection.id) ? "checkmark.circle.fill" : "circle")
@@ -408,6 +417,18 @@ private struct MobileSynologyPhotosContent: View {
                 }.buttonStyle(.bordered).accessibilityIdentifier("mobile.photos.collection.\(collection.id)")
                     .accessibilityAddTraits(model.section == .folders && model.selectedFolderIDs.contains(collection.id) ? .isSelected : [])
                     .onDrag { dragProvider(folder: collection) }
+                if model.selectedCategory == .person, let recognition = session.recognition,
+                   recognition.allows(.rename, collection: collection) || recognition.allows(.merge, collection: collection) {
+                    Menu {
+                        ForEach([MobilePhotoRecognitionModel.Action.rename, .merge, .peopleVisibility], id: \.self) { action in
+                            if recognition.allows(action, collection: collection) {
+                                Button(action.title) { recognition.begin(action, collection: collection) }
+                                    .accessibilityIdentifier("mobile.photos.recognition.\(action.rawValue)")
+                            }
+                        }
+                    } label: { Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis.circle") }
+                        .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.person.actions.\(collection.id)")
+                }
                 if model.section == .folders, let folders = session.folders, !model.isSelecting {
                     Menu {
                         if let sharing = session.folderSharing, sharing.canOpen(collection) {
@@ -492,6 +513,7 @@ private struct MobileSynologyPhotosContent: View {
                         Divider()
                     }
                     if model.selectedFolders.isEmpty {
+                        if let recognition = session.recognition { MobilePhotoRecognitionActions(recognition: recognition) }
                         if let repair = session.previewRepair {
                             Button(L10n.string("photos.preview.rebuild")) { repair.regenerate(model.selectedPhotos) }
                                 .disabled(!repair.canRegenerate(model.selectedPhotos)).accessibilityIdentifier("mobile.photos.repair.selection")

@@ -3,6 +3,144 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test人物显示隐藏与主题搜索() {
+        let app = launchFixture(state: "photo-recognition"); defer { app.terminate() }
+        openPhotos(app); openPhotoRecognition("peopleVisibility", in: app)
+        XCTAssertTrue(app.switches["mobile.photos.recognition.selection.77"].waitForExistence(timeout: 5))
+        let hide = app.segmentedControls.buttons["Hide people"]; XCTAssertTrue(hide.waitForExistence(timeout: 5)); hide.tap()
+        app.switches["mobile.photos.recognition.selection.77"].coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        attachScreenshot(app, name: "People visibility selection"); app.buttons["mobile.photos.recognition.save"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        openPhotoRecognition("conceptVisibility", in: app)
+        let search = app.searchFields["Search topics"]; XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Hidden")
+        XCTAssertTrue(app.switches["mobile.photos.recognition.selection.32"].waitForExistence(timeout: 5)); XCTAssertFalse(app.switches["mobile.photos.recognition.selection.31"].exists)
+        attachScreenshot(app, name: "Hidden topics searchable")
+    }
+
+    func test人物中文改名合并取消及确认() {
+        let app = launchFixture(state: "photo-recognition", language: "zh-Hans"); defer { app.terminate() }
+        openPhotos(app, chinese: true); openPhotoSection("相册", app: app); app.buttons["人物"].tap()
+        let actions = app.buttons["mobile.photos.person.actions.77"]; XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap()
+        element("mobile.photos.recognition.rename", in: app).tap()
+        let name = app.textFields["mobile.photos.recognition.name"]; XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap()
+        name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Sample person".count) + "Family")
+        app.buttons["mobile.photos.recognition.save"].tap(); XCTAssertTrue(app.staticTexts["Family"].waitForExistence(timeout: 8))
+        actions.tap(); element("mobile.photos.recognition.merge", in: app).tap()
+        let selected = app.switches["mobile.photos.recognition.selection.78"]; XCTAssertTrue(selected.waitForExistence(timeout: 5))
+        selected.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap(); app.buttons["mobile.photos.recognition.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); attachScreenshot(app, name: "人物合并保留原照片确认")
+        app.alerts.firstMatch.buttons["取消"].tap(); app.buttons["mobile.photos.recognition.save"].tap()
+        app.alerts.firstMatch.buttons["mobile.photos.recognition.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8)); XCTAssertFalse(app.buttons["mobile.photos.collection.78"].exists)
+    }
+
+    func test主题移出提示分类数量并保留原照片() {
+        let app = launchFixture(state: "photo-recognition"); defer { app.terminate() }
+        openPhotos(app); openPhotoSection("Albums", app: app); app.buttons["Subjects"].tap()
+        let topic = app.buttons["mobile.photos.collection.31"]; XCTAssertTrue(topic.waitForExistence(timeout: 5)); topic.tap()
+        selectPhotoItems(app); element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.recognition.removeConceptItems", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.recognition.save"].waitForExistence(timeout: 5)); attachScreenshot(app, name: "Topic removal keeps photos")
+        app.buttons["mobile.photos.recognition.save"].tap(); XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        app.alerts.firstMatch.buttons["mobile.photos.recognition.confirm"].firstMatch.tap(); XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        openPhotoSection("Timeline", app: app); XCTAssertTrue(app.buttons["Sample 1.jpg"].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["Sample 2.jpg"].exists)
+    }
+
+    func test人脸触控框选移动与辅助控件保存() {
+        let app = launchFixture(state: "photo-recognition"); defer { app.terminate() }
+        openPhotos(app); openPhotoFaceEditor(in: app)
+        let add = app.buttons["mobile.photos.faces.centered"]; XCTAssertTrue(add.waitForExistence(timeout: 5)); add.tap()
+        let name = app.textFields["mobile.photos.faces.name"]; revealPhotoFaceField(name, in: app); name.tap(); name.typeText("New face\n")
+        let horizontal = app.sliders["mobile.photos.faces.horizontal"]; revealPhotoFaceField(horizontal, in: app); horizontal.adjust(toNormalizedSliderPosition: 0.25)
+        attachScreenshot(app, name: "Face box with accessible position controls")
+        let remove = app.buttons["mobile.photos.faces.remove"]; revealPhotoFaceField(remove, in: app); remove.tap()
+        XCTAssertFalse(app.buttons["mobile.photos.faces.save"].isEnabled)
+        app.buttons["mobile.photos.faces.draw"].tap()
+        let canvas = element("mobile.photos.faces.canvas", in: app)
+        canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).press(forDuration: 0.05, thenDragTo: canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.7)))
+        revealPhotoFaceField(name, in: app); name.tap(); name.typeText("Drawn face")
+        XCTAssertTrue(app.buttons["mobile.photos.faces.save"].isEnabled); attachScreenshot(app, name: "Drawn face ready to save")
+        app.buttons["mobile.photos.faces.save"].tap(); XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        element("mobile.photos.edit.preview", in: app).tap(); element("mobile.photos.faces.begin", in: app).tap()
+        let saved = app.buttons.containing(.staticText, identifier: "Drawn face").firstMatch
+        revealPhotoFaceField(saved, in: app); XCTAssertTrue(saved.exists)
+        attachScreenshot(app, name: "Saved face reopened")
+    }
+
+    func test人物加载空内容错误正常与筛选无结果() {
+        for state in ["photo-recognition-loading", "photo-recognition-empty", "photo-recognition-error", "photo-recognition"] {
+            let app = launchFixture(state: state); openPhotos(app); openPhotoRecognition("peopleVisibility", in: app)
+            if state.hasSuffix("loading") { XCTAssertTrue(element("mobile.photos.recognition.loading", in: app).waitForExistence(timeout: 5)) }
+            else if state.hasSuffix("empty") { XCTAssertTrue(app.staticTexts["No matching people"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.recognition.save"].isEnabled) }
+            else if state.hasSuffix("error") {
+                XCTAssertTrue(app.staticTexts["Could not load people or topics. Check your connection and try again."].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["Try again"].exists)
+            } else {
+                XCTAssertTrue(app.switches["mobile.photos.recognition.selection.77"].waitForExistence(timeout: 5)); attachScreenshot(app, name: "People normal state")
+                let search = app.searchFields["Search people"]; search.tap(); search.typeText("missing-person")
+                XCTAssertTrue(app.staticTexts["No matching people"].waitForExistence(timeout: 5))
+            }
+            attachScreenshot(app, name: state + "-people"); app.terminate()
+        }
+    }
+
+    func test人物保存中断重启不可重复提交() {
+        let app = launchFixture(state: "photo-recognition-unknown"); defer { app.terminate() }
+        openPhotos(app); openPhotoRecognition("peopleVisibility", in: app)
+        let hide = app.segmentedControls.buttons["Hide people"]; XCTAssertTrue(hide.waitForExistence(timeout: 5)); hide.tap()
+        let item = app.switches["mobile.photos.recognition.selection.77"]; XCTAssertTrue(item.waitForExistence(timeout: 5)); item.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        app.buttons["mobile.photos.recognition.save"].tap(); XCTAssertTrue(app.buttons["mobile.photos.album.refresh"].waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+        XCTAssertTrue(app.buttons["mobile.photos.album.refresh"].waitForExistence(timeout: 8)); element("mobile.photos.actions", in: app).tap()
+        XCTAssertFalse(element("mobile.photos.recognition.peopleVisibility", in: app).exists); attachScreenshot(app, name: "People save recovery after relaunch")
+    }
+
+    func test人脸大字中文空内容仍可命名保存() {
+        let app = launchFixture(state: "photo-recognition-empty", language: "zh-Hans"); app.terminate()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch(); defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); navigate("settings", title: "App 设置", in: app)
+        let toggle = element("mobile.settings.module.photos", in: app)
+        for _ in 0..<8 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(toggle.exists); toggle.switches.firstMatch.tap(); navigate("photos", title: "照片", in: app)
+        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8))
+        let photo = app.buttons["Sample 1.jpg"]
+        for _ in 0..<8 { if photo.exists && photo.isHittable { break }; app.swipeUp() }
+        openPhotoFaceEditor(in: app)
+        let add = app.buttons["mobile.photos.faces.centered"]; XCTAssertTrue(add.waitForExistence(timeout: 5)); XCTAssertTrue(add.isHittable); add.tap()
+        let name = app.textFields["mobile.photos.faces.name"]; revealPhotoFaceField(name, in: app); name.tap(); name.typeText("Family")
+        let save = app.buttons["mobile.photos.faces.save"]; XCTAssertTrue(save.isEnabled); XCTAssertTrue(save.isHittable)
+        attachScreenshot(app, name: "人脸编辑中文无障碍大字"); save.tap()
+        XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
+    }
+
+    private func revealPhotoFaceField(_ item: XCUIElement, in app: XCUIApplication) {
+        let inspector = element("mobile.photos.faces.inspector", in: app)
+        for _ in 0..<12 {
+            let upper = inspector.frame.minY
+            if item.exists && item.isHittable && item.frame.minY >= upper { return }
+            let down = item.exists && item.frame.minY < upper
+            inspector.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).press(forDuration: 0.05,
+                thenDragTo: inspector.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: down ? 0.72 : 0.28)))
+        }
+        XCTAssertTrue(item.exists); XCTAssertTrue(item.isHittable)
+    }
+
+    private func openPhotoRecognition(_ action: String, in app: XCUIApplication) {
+        element("mobile.photos.actions", in: app).tap(); let item = element("mobile.photos.recognition.\(action)", in: app)
+        XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
+    }
+    private func openPhotoFaceEditor(in app: XCUIApplication) {
+        let photo = app.buttons["Sample 1.jpg"]; XCTAssertTrue(photo.waitForExistence(timeout: 8)); photo.tap()
+        let menu = element("mobile.photos.edit.preview", in: app); XCTAssertTrue(menu.waitForExistence(timeout: 5)); menu.tap()
+        let item = element("mobile.photos.faces.begin", in: app)
+        // 辅助大字下系统菜单会滚动，从当前可见的日期项向上方动作移动。
+        for _ in 0..<6 {
+            if item.waitForExistence(timeout: 1) && item.isHittable { break }
+            let date = element("mobile.photos.edit.date", in: app)
+            if date.exists { date.swipeDown() } else { app.swipeDown() }
+        }
+        XCTAssertTrue(item.exists); XCTAssertTrue(item.isHittable); item.tap()
+    }
+
     func test照片共享设置中文确认取消和保存() {
         let app = launchFixture(state: "photo-admin", language: "zh-Hans"); defer { app.terminate() }
         openPhotos(app, chinese: true); openPhotoAdministration("shared", in: app)

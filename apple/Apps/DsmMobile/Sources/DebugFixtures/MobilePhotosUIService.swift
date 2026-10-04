@@ -1,6 +1,9 @@
 #if DEBUG
+import CoreGraphics
 import DsmCore
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 /// Photos 管理与恢复的合成服务；不持有连接、凭据或真实媒体。
 actor MobilePhotosUIService: SynologyPhotosServing {
@@ -27,6 +30,12 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var nextID = 100
     private var userID = 12
     private var deniesWrites = false
+    private var recognitionPeople: [SynologyPhotoSpace: [SynologyPhotoPersonVisibility]] = [:]
+    private var recognitionConcepts: [SynologyPhotoSpace: [SynologyPhotoConceptVisibility]] = [:]
+    private var recognitionRegions: [SynologyPhotoID: [SynologyPhotoFaceRegion]] = [:]
+    private var recognitionResults: [UUID: SynologyPhotosMutationResult] = [:]
+    private var heldRecognition: CheckedContinuation<Void, Never>?
+    private(set) var isRecognitionHeld = false
     private var administrationShared: SynologyPhotoSharedSpaceSettings?
     private var administrationGlobal: SynologyPhotoGlobalSettings?
     private var administrationMembers: SynologyPhotoSharedMembers?
@@ -59,7 +68,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown", "photo-preview-unknown", "photo-preview-automatic-unknown", "photo-admin-unknown"].contains(state)
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown", "photo-preview-unknown", "photo-preview-automatic-unknown", "photo-admin-unknown", "photo-recognition-unknown"].contains(state)
         if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") || state.hasPrefix("photo-edit") || (state.hasPrefix("photo-folders") || state.hasPrefix("photo-folder-sharing") || state.hasPrefix("photo-tasks")) {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
@@ -86,6 +95,13 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                     status: id == 41 ? .processing : .done, total: 5, completion: id == 41 ? 2 : 5,
                     errors: id == 42 ? 1 : 0, skipped: 0, overwritten: 0, createdAt: Double(1_700_000_000 + id), targetFolderID: 3, targetOwnerID: 12))
             }
+        }
+        if state.hasPrefix("photo-recognition") {
+            uploaded = SynologyPhotoSpace.allCases.flatMap { space in (1...2).map { index in
+                .init(id: .init(profileID: profileID, space: space, unitID: index), filename: "Sample \(index).jpg",
+                      sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20),
+                      folderID: 1, mediaType: "photo", thumbnail: .init(unitID: index, revision: "original"))
+            } }
         }
         if state.hasPrefix("photo-preview") {
             automaticEnabled = state.contains("automatic")
@@ -199,7 +215,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func access() async throws -> SynologyPhotosAccess {
         if state == "photo-loading" { try await Task.sleep(for: .seconds(30)) }
         if state == "photo-error" { throw URLError(.notConnectedToInternet) }
-        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: (state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry") || state == "photo-edit-mixed" || (state.hasPrefix("photo-folder-sharing") && state != "photo-folder-sharing-noaccess"), displaySettings: state.hasPrefix("photo-preferences") ? displayValue : nil, automaticPreviewEnabled: state.hasPrefix("photo-preview") ? automaticEnabled : nil)
+        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: (state.hasPrefix("photo-recognition") && state != "photo-recognition-noaccess") || (state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry") || state == "photo-edit-mixed" || (state.hasPrefix("photo-folder-sharing") && state != "photo-folder-sharing-noaccess"), displaySettings: state.hasPrefix("photo-preferences") ? displayValue : nil, automaticPreviewEnabled: state.hasPrefix("photo-preview") ? automaticEnabled : nil)
     }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
         guard !state.hasSuffix("-readonly"), !deniesWrites else { return [] }
@@ -216,9 +232,109 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             features.formUnion([.automaticPreviewSettings, .automaticPreview, .codecPrompt])
             if space == .personal || state == "photo-preview-admin" { features.insert(.libraryMaintenance) }
         }
+        if state.hasPrefix("photo-recognition") { features.formUnion([.peopleNames, .peopleMerge, .peopleCover, .peopleVisibility, .peopleFaces, .conceptCover, .conceptItems, .conceptVisibility, .manualFaces]) }
         if state.hasPrefix("photo-admin") { features.formUnion([.sharedSpaceSettings, .sharedMembers, .globalSettings, .conversionCache]) }
         if state.hasPrefix("photo-preferences") { features.formUnion([.duplicateSettings, .displaySettings, .recognitionSettings, .rotation]) }
         return features
+    }
+    private func recognitionRead() async throws {
+        if state == "photo-recognition-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-recognition-held" { isRecognitionHeld = true; await withCheckedContinuation { heldRecognition = $0 } }
+        if state == "photo-recognition-error" { throw URLError(.notConnectedToInternet) }
+    }
+    func releaseRecognition() { heldRecognition?.resume(); heldRecognition = nil }
+    private func peopleValues(_ space: SynologyPhotoSpace) -> [SynologyPhotoPersonVisibility] {
+        recognitionPeople[space] ?? (state == "photo-recognition-empty" ? [] : [
+            .init(person: .init(id: 77, name: "Sample person", itemCount: 2, space: space), isVisible: true),
+            .init(person: .init(id: 78, name: "Another person", itemCount: 1, space: space), isVisible: true),
+            .init(person: .init(id: 79, name: "Hidden person", itemCount: 1, space: space), isVisible: false)])
+    }
+    private func conceptValues(_ space: SynologyPhotoSpace) -> [SynologyPhotoConceptVisibility] {
+        recognitionConcepts[space] ?? (state == "photo-recognition-empty" ? [] : [
+            .init(concept: .init(id: 31, name: "Sample topic", itemCount: 2, space: space), isVisible: true, displayThreshold: 2),
+            .init(concept: .init(id: 32, name: "Hidden topic", itemCount: 1, space: space), isVisible: false, displayThreshold: 2)])
+    }
+    private func regions(_ photo: SynologyPhoto) -> [SynologyPhotoFaceRegion] {
+        recognitionRegions[photo.id] ?? (state == "photo-recognition-empty" ? [] : [
+            .init(id: photo.id.unitID * 100 + 1, personID: 77, name: "Sample person", bounds: .init(x: 0.1, y: 0.1, width: 0.3, height: 0.3)),
+            .init(id: photo.id.unitID * 100 + 2, personID: 78, name: "Another person", bounds: .init(x: 0.55, y: 0.5, width: 0.3, height: 0.3))])
+    }
+    func categories(in space: SynologyPhotoSpace) async throws -> Set<SynologyPhotoCategory> { state.hasPrefix("photo-recognition") ? [.person, .concept] : [] }
+    func categoryItems(_ category: SynologyPhotoCategory, in space: SynologyPhotoSpace, offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
+        let values = category == .person ? peopleValues(space).filter(\.isVisible).map(\.person) : conceptValues(space).filter(\.appearsInList).map(\.concept)
+        return Array(values.dropFirst(offset).prefix(limit))
+    }
+    func categoryTimeline(_ category: SynologyPhotoCategory, id: Int, in space: SynologyPhotoSpace) async throws -> [SynologyPhotoDay] { try await timeline(in: space) }
+    func peopleVisibility(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoPersonVisibility] { try await recognitionRead(); return peopleValues(space) }
+    func managementPeople(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoCollection] { try await recognitionRead(); return peopleValues(space).map(\.person) }
+    func conceptVisibility(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoConceptVisibility] { try await recognitionRead(); return conceptValues(space) }
+    func conceptState(id: Int, in space: SynologyPhotoSpace) async throws -> SynologyPhotoConceptVisibility {
+        try await recognitionRead(); guard let value = conceptValues(space).first(where: { $0.id == id }) else { throw CocoaError(.fileReadNoSuchFile) }; return value
+    }
+    func photoFaces(for photo: SynologyPhoto) async throws -> [SynologyPhotoFaceRegion] { try await recognitionRead(); return regions(photo) }
+    func personFaces(personID: Int, photos: [SynologyPhoto]) async throws -> [SynologyPhotoFace] {
+        try await recognitionRead()
+        return photos.flatMap { photo in regions(photo).filter { $0.personID == personID }.map { .init(id: $0.id, personID: personID, photo: photo) } }
+    }
+    func thumbnail(for collection: SynologyPhotoCollection, category: SynologyPhotoCategory) async throws -> Data { Self.recognitionImage }
+    func thumbnail(for face: SynologyPhotoFace) async throws -> Data { Self.recognitionImage }
+    private func applyRecognition(_ mutation: SynologyPhotosMutation, saved: inout SynologyPhotosAlbumCheckpoint) -> SynologyPhotosMutationResult {
+        let space = mutation.space
+        var people = peopleValues(space), concepts = conceptValues(space)
+        defer { recognitionPeople[space] = people; recognitionConcepts[space] = concepts }
+        switch mutation {
+        case .renamePerson(let original, let name), .mergePeople(let original, _, let name):
+            let removed: [Int]
+            if case .mergePeople(_, let sources, _) = mutation { removed = sources.map(\.id) } else { removed = [] }
+            let person = SynologyPhotoCollection(id: original.id, name: name, itemCount: original.itemCount, space: space)
+            people.removeAll { $0.id == original.id || removed.contains($0.id) }; people.append(.init(person: person, isVisible: true))
+            return .init(state: .confirmed, person: person, removedPersonIDs: removed)
+        case .setPersonCover(let person, _): return .init(state: .confirmed, person: person)
+        case .setPeopleVisibility(let originals, let visible):
+            let ids = Set(originals.prefix(state == "photo-recognition-partial" ? 1 : originals.count).map(\.id))
+            people = people.map { .init(person: $0.person, isVisible: ids.contains($0.id) ? visible : $0.isVisible) }
+            return .init(state: ids.count == originals.count ? .confirmed : .partial, completedCount: ids.count, personVisibility: people.filter { ids.contains($0.id) })
+        case .setConceptVisibility(let originals, let visible):
+            let ids = Set(originals.map(\.id)); concepts = concepts.map { .init(concept: $0.concept, isVisible: ids.contains($0.id) ? visible : $0.isVisible, displayThreshold: $0.displayThreshold) }
+            return .init(state: .confirmed, completedCount: ids.count, conceptVisibility: concepts.filter { ids.contains($0.id) })
+        case .setConceptCover(let concept, _): return .init(state: .confirmed, completedCount: 1, conceptVisibility: [concept])
+        case .removeConceptItems(let original, let photos):
+            let value = SynologyPhotoConceptVisibility(concept: .init(id: original.id, name: original.concept.name, itemCount: max(0, (original.concept.itemCount ?? 0) - photos.count), space: space), isVisible: original.isVisible, displayThreshold: original.displayThreshold)
+            concepts.removeAll { $0.id == original.id }; concepts.append(value)
+            return .init(state: .confirmed, completedCount: photos.count, conceptVisibility: [value], removedFromConceptPhotoIDs: photos.map(\.id))
+        case .removePersonFaces(let person, let faces), .reassignPersonFaces(let person, let faces, _, _):
+            for face in faces {
+                var values = regions(face.photo)
+                if case .reassignPersonFaces(_, _, let target, let name) = mutation {
+                    values = values.map { $0.id == face.id ? .init(id: $0.id, personID: target?.id ?? 90, name: name, bounds: $0.bounds) : $0 }
+                } else { values.removeAll { $0.id == face.id } }
+                recognitionRegions[face.photo.id] = values
+            }
+            return .init(state: .confirmed, person: person, removedFromPersonPhotoIDs: mutation.photos.filter { photo in !regions(photo).contains { $0.personID == person.id } }.map(\.id))
+        case .editPhotoFaces(let photo, let changes):
+            var values = regions(photo)
+            if var recovery = saved.recognitionDetails {
+                for change in changes {
+                    switch change {
+                    case .add(let face):
+                        nextID += 1; let id = nextID + 1_000
+                        values.append(.init(id: id, personID: face.person?.id ?? 90, name: face.name, bounds: face.bounds))
+                        recovery.manualAddAttempted = true; recovery.manualAddAcknowledged = true
+                        recovery.manualNewIDs[face.temporaryID] = id; recovery.manualThumbnailAttempted.insert(id); recovery.manualUploaded.insert(id)
+                    case .remove(let original):
+                        values.removeAll { $0.id == original.id }; recovery.manualAttempted.insert(change.id)
+                    case .reassign(let original, let person, let name):
+                        values = values.map { $0.id == original.id ? .init(id: $0.id, personID: person?.id ?? 90, name: name, bounds: $0.bounds) : $0 }
+                        recovery.manualAttempted.insert(change.id); recovery.manualPersonIDs[change.id] = person?.id ?? 90
+                    }
+                    recovery.manualAcknowledged.insert(change.id)
+                }
+                saved.recognitionDetails = recovery
+            }
+            recognitionRegions[photo.id] = values
+            return .init(state: .confirmed, photos: [photo], completedCount: changes.count)
+        default: return .init(state: .rejected)
+        }
     }
     func seedTasks(_ values: [SynologyPhotoBackgroundTask]) { taskList = values }
     func releaseControl() { heldControl?.resume(); heldControl = nil }
@@ -280,6 +396,9 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         }
     }
     func searchTimeline(in space: SynologyPhotoSpace, keyword: String) async throws -> [SynologyPhotoDay] { [] }
+    func filteredTimeline(in space: SynologyPhotoSpace, filter: SynologyPhotoFilter) async throws -> [SynologyPhotoDay] {
+        state.hasPrefix("photo-recognition") ? try await timeline(in: space) : []
+    }
     func photos(in space: SynologyPhotoSpace, query: SynologyPhotoQuery, offset: Int, limit: Int) async throws -> SynologyPhotoPage {
         let values: [SynologyPhoto]
         if case .album(let id, _) = query {
@@ -292,7 +411,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         } else { values = uploaded.filter { $0.id.space == space } }
         return .init(items: Array(values.dropFirst(offset).prefix(limit)), offset: offset, nextOffset: values.count, hasMore: false)
     }
-    func thumbnail(for photo: SynologyPhoto) async throws -> Data { Self.image }
+    func thumbnail(for photo: SynologyPhoto) async throws -> Data { state.hasPrefix("photo-recognition") ? Self.recognitionImage : Self.image }
     func pendingPreviewRegenerations(in space: SynologyPhotoSpace) async throws -> [SynologyPhoto] {
         if state == "photo-repair-held" { isControlHeld = true; await withCheckedContinuation { heldControl = $0 } }
         if state == "photo-repair-loading" { try await Task.sleep(for: .seconds(30)) }
@@ -301,8 +420,8 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return uploaded.filter { $0.id.space == space && !repairedPreviews.contains($0.id) }
     }
     func previewImage(for photo: SynologyPhoto) async throws -> Data {
-        guard state.hasPrefix("photo-preferences") || state.hasPrefix("photo-repair") || state.hasPrefix("photo-preview") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
-        return Self.image
+        guard state.hasPrefix("photo-preferences") || state.hasPrefix("photo-repair") || state.hasPrefix("photo-preview") || state.hasPrefix("photo-recognition") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
+        return state.hasPrefix("photo-recognition") ? Self.recognitionImage : Self.image
     }
     func details(for photo: SynologyPhoto) async throws -> SynologyPhoto {
         if state.hasPrefix("photo-preferences"), let current = uploaded.first(where: { $0.id == photo.id }) { return current }
@@ -506,6 +625,8 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             saved.sharingDetails = sharing
         }
         switch mutation {
+        case .renamePerson, .mergePeople, .setPersonCover, .setPeopleVisibility, .removePersonFaces, .reassignPersonFaces, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces:
+            recognitionResults[operationID] = applyRecognition(mutation, saved: &saved)
         case .setSharedSpaceEnabled(let original, let enabled):
             var value = original; value.isEnabled = enabled; administrationShared = value
         case .setSharedSpaceSettings(let original, let enabled):
@@ -719,6 +840,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .recognition: return recognitionResults[saved.operationID] ?? .init(state: .pendingReview)
         case .administration(let value):
             switch value.intent {
             case .sharedEnabled, .sharedSettings: return .init(state: .confirmed, completedCount: 1, sharedSpaceSettings: sharedAdministrationValue)
@@ -875,6 +997,18 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         case .createFolder(let parent, let name, let space): return .init(state: .confirmed, folder: .init(id: record.folderID ?? 100, name: name, parentID: parent, space: space))
         }
     }
+    // 几何色块作为编辑画布，不包含真实照片或人物。
+    static let recognitionImage: Data = {
+        let context = CGContext(data: nil, width: 384, height: 256, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        context.setFillColor(CGColor(red: 0.18, green: 0.3, blue: 0.45, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: 384, height: 256))
+        context.setFillColor(CGColor(red: 0.96, green: 0.66, blue: 0.28, alpha: 1)); context.fillEllipse(in: CGRect(x: 38, y: 26, width: 114, height: 76))
+        context.setFillColor(CGColor(red: 0.35, green: 0.77, blue: 0.71, alpha: 1)); context.fillEllipse(in: CGRect(x: 210, y: 128, width: 114, height: 76))
+        let data = NSMutableData()
+        let output = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(output, context.makeImage()!, nil); precondition(CGImageDestinationFinalize(output))
+        return data as Data
+    }()
     static let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf1sAAAAASUVORK5CYII=")!
     private static func withDate(_ photo: SynologyPhoto, date: Date) -> SynologyPhoto {
         var value = SynologyPhoto(id: photo.id, filename: photo.filename, sizeBytes: photo.sizeBytes, takenAt: date,
