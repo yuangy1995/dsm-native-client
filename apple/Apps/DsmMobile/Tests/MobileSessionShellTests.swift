@@ -548,24 +548,24 @@ final class MobileSessionShellTests: XCTestCase {
         )
 
         model.activeProfile = first
-        model.selectedTopLevel = .activity
-        model.selectedModule = .downloads
+        model.selectedTopLevel = .files
+        model.selectedModule = .transfers
         model.saveNavigationState()
 
         model.activeProfile = second
         model.restoreNavigationState(for: second.id)
         XCTAssertEqual(model.selectedTopLevel, .files)
         XCTAssertEqual(model.selectedModule, .files)
-        model.selectedTopLevel = .more
+        model.selectedTopLevel = .settings
         model.selectedModule = .settings
         model.saveNavigationState()
 
         model.restoreNavigationState(for: first.id)
-        XCTAssertEqual(model.selectedTopLevel, .activity)
-        XCTAssertEqual(model.selectedModule, .downloads)
+        XCTAssertEqual(model.selectedTopLevel, .files)
+        XCTAssertEqual(model.selectedModule, .transfers)
 
         model.restoreNavigationState(for: second.id)
-        XCTAssertEqual(model.selectedTopLevel, .more)
+        XCTAssertEqual(model.selectedTopLevel, .settings)
         XCTAssertEqual(model.selectedModule, .settings)
     }
 
@@ -580,21 +580,21 @@ final class MobileSessionShellTests: XCTestCase {
             passwordStore: SessionShellPasswordStore(),
             authRepository: SessionShellAuthRepository()
         )
-        model.selectedTopLevel = .more
+        model.selectedTopLevel = .settings
         model.selectedModule = .containers
 
         model.setModule(.containers, isVisible: false)
 
-        XCTAssertEqual(model.selectedTopLevel, .more)
-        XCTAssertEqual(model.selectedModule, .nasSettings)
-        XCTAssertFalse(model.visibleChildModules(for: .more).contains(.containers))
+        XCTAssertEqual(model.selectedTopLevel, .settings)
+        XCTAssertEqual(model.selectedModule, .settings)
+        XCTAssertFalse(model.visibleChildModules(for: .settings).contains(.containers))
 
         model.selectModule(.containers)
-        XCTAssertEqual(model.selectedModule, .nasSettings)
+        XCTAssertEqual(model.selectedModule, .settings)
     }
 
     @MainActor
-    func test隐藏默认模块后进入分组使用首个可见安全入口() {
+    func test未开启模块不能通过顶层导航进入() {
         let suiteName = "MobileSessionShellTests.settings-fallback.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -606,10 +606,10 @@ final class MobileSessionShellTests: XCTestCase {
         )
         model.setModule(.nasSettings, isVisible: false)
 
-        model.selectTopLevel(.more)
+        model.selectTopLevel(.nasSettings)
 
-        XCTAssertEqual(model.selectedTopLevel, .more)
-        XCTAssertEqual(model.selectedModule, .containers)
+        XCTAssertEqual(model.selectedTopLevel, .files)
+        XCTAssertEqual(model.selectedModule, .files)
     }
 
     @MainActor
@@ -628,11 +628,15 @@ final class MobileSessionShellTests: XCTestCase {
             DsmAPIName.coreSystem,
         ])
 
-        XCTAssertEqual(model.visibleChildModules(for: .activity), [.transfers, .downloads])
-        XCTAssertEqual(model.visibleChildModules(for: .more), [.nasSettings, .settings])
+        model.availableOptionalModules = [.downloads, .nasSettings, .containers]
+        model.setModule(.downloads, isVisible: true)
+        model.setModule(.nasSettings, isVisible: true)
+        model.setModule(.containers, isVisible: true)
+        XCTAssertEqual(model.visibleTopLevelDestinations, [.files, .downloads, .nasSettings, .settings])
+        XCTAssertEqual(model.visibleChildModules(for: .files), [.files, .transfers])
 
         model.setModule(.downloads, isVisible: false)
-        XCTAssertEqual(model.visibleChildModules(for: .activity), [.transfers])
+        XCTAssertEqual(model.visibleTopLevelDestinations, [.files, .nasSettings, .settings])
     }
 
     @MainActor
@@ -651,7 +655,9 @@ final class MobileSessionShellTests: XCTestCase {
         model.activeProfile = profile
         model.isConnected = true
         model.capabilities = Self.capabilities([DsmAPIName.downloadStationTask])
-        model.selectedTopLevel = .activity
+        model.availableOptionalModules = [.downloads]
+        model.setModule(.downloads, isVisible: true)
+        model.selectedTopLevel = .files
         model.selectedModule = .transfers
         model.downloads.downloadStationLoadOverride = { await loader.load() }
 
@@ -661,7 +667,7 @@ final class MobileSessionShellTests: XCTestCase {
         await loader.release()
         await Task.yield()
 
-        XCTAssertEqual(model.selectedModule, .transfers)
+        XCTAssertEqual(model.selectedModule, .settings)
         XCTAssertNil(model.downloads.downloadSnapshot)
         XCTAssertFalse(model.isLoading)
     }
@@ -682,7 +688,9 @@ final class MobileSessionShellTests: XCTestCase {
         model.activeProfile = profile
         model.isConnected = true
         model.capabilities = Self.capabilities([DsmAPIName.downloadStationTask])
-        model.selectedTopLevel = .activity
+        model.availableOptionalModules = [.downloads]
+        model.setModule(.downloads, isVisible: true)
+        model.selectedTopLevel = .files
         model.selectedModule = .transfers
         model.downloads.downloadStationLoadOverride = { await loader.load() }
 

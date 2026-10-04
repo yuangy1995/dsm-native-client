@@ -82,18 +82,18 @@ struct MobileWorkspaceView: View {
 
     private var compactWorkspace: some View {
         TabView(selection: topLevelSelection) {
-            primaryTab(.files)
-            primaryTab(.photos)
-            primaryTab(.chat)
-            groupedTab(.activity)
-            groupedTab(.more)
+            ForEach(model.visibleTopLevelDestinations) { destination in
+                destinationContent(destination)
+                    .tabItem { Label(destination.title, systemImage: destination.systemImage) }
+                    .tag(destination)
+            }
         }
     }
 
     private var regularWorkspace: some View {
         NavigationSplitView {
             List {
-                ForEach(MobileTopLevelDestination.allCases) { destination in
+                ForEach(model.visibleTopLevelDestinations) { destination in
                     Button {
                         model.selectTopLevel(destination)
                     } label: {
@@ -118,71 +118,19 @@ struct MobileWorkspaceView: View {
         .navigationSplitViewStyle(.balanced)
     }
 
-    private func primaryTab(_ destination: MobileTopLevelDestination) -> some View {
+    private func destinationContent(_ destination: MobileTopLevelDestination) -> some View {
         NavigationStack {
             moduleDetail(destination.defaultModule)
                 .navigationTitle(destination.title)
                 .navigationBarTitleDisplayMode(.inline)
-        }
-        .tabItem {
-            Label(destination.title, systemImage: destination.systemImage)
-                .accessibilityIdentifier("mobile.navigation.\(destination.rawValue)")
-        }
-        .tag(destination)
-    }
-
-    private func groupedTab(_ destination: MobileTopLevelDestination) -> some View {
-        NavigationStack {
-            childModuleList(destination)
-                .navigationTitle(destination.title)
-                .navigationDestination(for: MobileModule.self) { module in
-                    moduleDetail(module)
-                        .navigationTitle(module.title)
+                .navigationDestination(isPresented: Binding(
+                    get: { destination == .files && model.selectedModule == .transfers },
+                    set: { if !$0, model.selectedModule == .transfers { model.selectModule(.files) } }
+                )) {
+                    moduleDetail(.transfers)
+                        .navigationTitle(MobileModule.transfers.title)
                         .navigationBarTitleDisplayMode(.inline)
-                        .onAppear { model.selectModule(module) }
                 }
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        profileMenu
-                    }
-                }
-        }
-        .tabItem {
-            Label(destination.title, systemImage: destination.systemImage)
-                .accessibilityIdentifier("mobile.navigation.\(destination.rawValue)")
-        }
-        .tag(destination)
-    }
-
-    @ViewBuilder
-    private func destinationContent(_ destination: MobileTopLevelDestination) -> some View {
-        switch destination {
-        case .files, .photos, .chat:
-            moduleDetail(destination.defaultModule)
-                .navigationTitle(destination.title)
-        case .activity, .more:
-            NavigationStack {
-                childModuleList(destination)
-                    .navigationTitle(destination.title)
-                    .navigationDestination(for: MobileModule.self) { module in
-                        moduleDetail(module)
-                            .navigationTitle(module.title)
-                            .onAppear { model.selectModule(module) }
-                    }
-            }
-            .id(destination)
-        }
-    }
-
-    private func childModuleList(_ destination: MobileTopLevelDestination) -> some View {
-        List {
-            ForEach(model.visibleChildModules(for: destination)) { module in
-                NavigationLink(value: module) {
-                    Label(module.title, systemImage: module.systemImage)
-                }
-                .accessibilityIdentifier("mobile.module.\(module.rawValue)")
-
-            }
         }
     }
 
@@ -277,6 +225,15 @@ struct MobileWorkspaceView: View {
             }
         }
         .toolbar {
+            if module == .files {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { model.selectModule(.transfers) } label: {
+                        Image(systemName: "arrow.up.arrow.down.circle")
+                    }
+                    .accessibilityLabel(L10n.string("mobile.navigation.activity"))
+                    .accessibilityIdentifier("mobile.module.transfers")
+                }
+            }
             if horizontalSizeClass != .regular {
                 ToolbarItem(placement: .topBarLeading) {
                     profileMenu

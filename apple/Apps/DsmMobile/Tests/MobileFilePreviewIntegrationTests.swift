@@ -150,7 +150,7 @@ final class MobileFilePreviewIntegrationTests: XCTestCase {
         await fixture.model.filePreviewModel.open(item, service: service)
         XCTAssertNotNil(fixture.model.filePreviewModel.mediaSource)
 
-        fixture.model.selectModule(.chat)
+        fixture.model.selectModule(.settings)
 
         XCTAssertNil(fixture.model.filePreviewModel.state.selectedItem)
         XCTAssertNil(fixture.model.filePreviewModel.state.artifactURL)

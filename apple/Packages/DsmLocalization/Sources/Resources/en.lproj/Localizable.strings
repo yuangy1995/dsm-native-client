@@ -3460,8 +3460,8 @@
 "mobile.settings.appearance.light" = "Light";
 "mobile.settings.appearance.dark" = "Dark";
 "mobile.settings.appearance.footer" = "Choose how the app looks on this device.";
-"mobile.settings.modules.title" = "Visible modules";
-"mobile.settings.modules.footer" = "Hide optional service shortcuts you do not use. Files, Photos, Chat, Transfers, and Settings always remain available.";
+"mobile.settings.modules.title" = "Available features";
+"mobile.settings.modules.footer" = "Enable features to add them to navigation.";
 "mobile.settings.cache.title" = "Cache";
 "mobile.settings.cache.photoThumbnails" = "Photo thumbnails";
 "mobile.settings.cache.clear" = "Clear photo cache";
@@ -5992,3 +5992,25 @@
 "mobile.office.local" = "Could not read the document copy on this device. Check available storage, then choose the saved file again.";
 "mobile.office.recovery" = "Could not read or save editing records. Check available storage on this device and reopen the app. Existing copies are retained.";
 "mobile.office.save.notice" = "Saving updates the original file. Avoid editing it on another device at the same time.";
+
+"mobile.settings.modules.loading" = "Loading available features…";
+
+"mobile.settings.modules.failed" = "Some features could not be loaded. Check your connection and refresh.";
+
+"mobile.settings.modules.empty" = "No additional features are available for this account.";
+
+"mobile.settings.modules.refresh" = "Refresh available features";
+
+"mobile.navigation.settings" = "App settings";
+
+"mobile.navigation.photos" = "Photos";
+
+"mobile.navigation.chat" = "Chat";
+
+"mobile.navigation.downloads" = "Downloads";
+
+"mobile.navigation.containers" = "Containers";
+
+"mobile.navigation.virtualMachines" = "Virtual machines";
+
+"mobile.navigation.nasSettings" = "NAS settings";

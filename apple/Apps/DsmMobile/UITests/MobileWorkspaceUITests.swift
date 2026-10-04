@@ -2,20 +2,139 @@ import XCTest
 
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
+    func test默认仅文件与App设置并按当前账号筛选开关() {
+        let app = launchFixture()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        assertOnlyDefaultNavigation(app)
+        navigate("settings", title: "App settings", in: app)
+        let downloads = element("mobile.settings.module.downloads", in: app)
+        XCTAssertTrue(downloads.waitForExistence(timeout: 8))
+        XCTAssertEqual(downloads.value as? String, "0")
+        for name in ["photos", "chat", "containers", "virtualMachines", "nasSettings"] {
+            XCTAssertFalse(element("mobile.settings.module.\(name)", in: app).exists)
+        }
+        downloads.switches.firstMatch.tap()
+        navigate("downloads", title: "Downloads", in: app)
+        XCTAssertTrue(app.staticTexts["Sample archive.zip"].waitForExistence(timeout: 8))
+        navigate("settings", title: "App settings", in: app)
+        downloads.switches.firstMatch.tap()
+        assertOnlyDefaultNavigation(app)
+        attachScreenshot(app, name: "Account features and two default destinations")
+    }
+
+    func test权限刷新撤销入口并且不能残留旧开关() {
+        let app = launchFixture(state: "modules-revoke")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        navigate("settings", title: "App settings", in: app)
+        let downloads = element("mobile.settings.module.downloads", in: app)
+        XCTAssertTrue(downloads.waitForExistence(timeout: 8)); downloads.switches.firstMatch.tap()
+        navigate("downloads", title: "Downloads", in: app)
+        XCTAssertTrue(app.staticTexts["Sample archive.zip"].waitForExistence(timeout: 8))
+        navigate("settings", title: "App settings", in: app)
+        XCTAssertTrue(element("mobile.settings.modules.empty", in: app).waitForExistence(timeout: 8))
+        XCTAssertFalse(downloads.exists)
+        assertOnlyDefaultNavigation(app)
+        attachScreenshot(app, name: "Revoked module removed")
+    }
+
+    func test可开启模块加载空内容和失败具有实际呈现() {
+        for state in ["modules-loading", "modules-none", "modules-failed"] {
+            let app = launchFixture(state: state)
+            XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+            navigate("settings", title: "App settings", in: app)
+            if state == "modules-loading" {
+                XCTAssertTrue(app.staticTexts["Loading available features…"].waitForExistence(timeout: 5))
+                XCTAssertFalse(element("mobile.settings.modules.refresh", in: app).isEnabled)
+            } else {
+                let id = state == "modules-none" ? "empty" : "failed"
+                XCTAssertTrue(element("mobile.settings.modules.\(id)", in: app).waitForExistence(timeout: 8))
+                XCTAssertTrue(element("mobile.settings.modules.refresh", in: app).isEnabled)
+            }
+            assertOnlyDefaultNavigation(app)
+            attachScreenshot(app, name: state)
+            app.terminate()
+        }
+    }
+
+    func test管理员六种模块均需开启且设置始终可达() {
+        let app = launchFixture(state: "modules-all")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        assertOnlyDefaultNavigation(app)
+        navigate("settings", title: "App settings", in: app)
+        for name in ["photos", "chat", "downloads", "containers", "virtualMachines", "nasSettings"] {
+            let toggle = element("mobile.settings.module.\(name)", in: app)
+            XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+            if !toggle.isHittable { app.swipeUp() }
+            XCTAssertEqual(toggle.value as? String, "0")
+            toggle.switches.firstMatch.tap()
+            XCTAssertEqual(toggle.value as? String, "1")
+        }
+        navigate("files", title: "File", in: app)
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        navigate("settings", title: "App settings", in: app)
+        XCTAssertTrue(element("mobile.settings.page", in: app).waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "All authorized features enabled")
+    }
+
+    private func assertOnlyDefaultNavigation(_ app: XCUIApplication) {
+        if app.tabBars.firstMatch.exists {
+            XCTAssertEqual(app.tabBars.buttons.count, 2)
+            XCTAssertTrue(app.tabBars.buttons["File"].exists)
+            XCTAssertTrue(app.tabBars.buttons["App settings"].exists)
+        } else {
+            XCTAssertTrue(element("mobile.navigation.files", in: app).exists)
+            XCTAssertTrue(element("mobile.navigation.settings", in: app).exists)
+            for name in ["photos", "chat", "downloads", "containers", "virtualMachines", "nasSettings"] {
+                XCTAssertFalse(element("mobile.navigation.\(name)", in: app).exists)
+            }
+        }
+    }
+
+    func test文件活动可返回并直接切换App设置() {
+        let app = launchFixture()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        element("mobile.module.transfers", in: app).tap()
+        XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 8))
+        navigate("settings", title: "App settings", in: app)
+        XCTAssertTrue(element("mobile.settings.page", in: app).waitForExistence(timeout: 8))
+        navigate("files", title: "File", in: app)
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        element("mobile.module.transfers", in: app).tap()
+        let back = app.navigationBars["Activity"].buttons["File"]
+        XCTAssertTrue(back.waitForExistence(timeout: 8)); back.tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+    }
+
+    func test中文模块设置可开启功能并保留原始文件名() {
+        let app = launchFixture(language: "zh-Hans")
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        navigate("settings", title: "App 设置", in: app)
+        XCTAssertTrue(app.staticTexts["可开启的功能"].waitForExistence(timeout: 8))
+        let toggle = element("mobile.settings.module.downloads", in: app)
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8)); toggle.switches.firstMatch.tap()
+        navigate("downloads", title: "下载管理", in: app)
+        XCTAssertTrue(app.staticTexts["Sample archive.zip"].waitForExistence(timeout: 8))
+        navigate("settings", title: "App 设置", in: app)
+        XCTAssertEqual(toggle.value as? String, "1")
+        attachScreenshot(app, name: "Chinese module settings")
+    }
+
     func test文件下载和设置可通过原生导航到达() {
         let app = launchFixture()
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
-        navigate("activity", title: "Activity", in: app)
-        let downloads = element("mobile.module.downloads", in: app)
-        XCTAssertTrue(downloads.waitForExistence(timeout: 5))
-        downloads.tap()
-        XCTAssertTrue(app.staticTexts["Sample archive.zip"].waitForExistence(timeout: 8))
-        navigate("more", title: "More", in: app)
-        let settings = element("mobile.module.settings", in: app)
-        XCTAssertTrue(settings.waitForExistence(timeout: 5))
-        settings.tap()
+        navigate("settings", title: "App settings", in: app)
         XCTAssertTrue(element("mobile.settings.page", in: app).waitForExistence(timeout: 5))
+        let toggle = element("mobile.settings.module.downloads", in: app)
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        navigate("downloads", title: "Downloads", in: app)
+        XCTAssertTrue(app.staticTexts["Sample archive.zip"].waitForExistence(timeout: 8))
+        navigate("settings", title: "App settings", in: app)
         attachScreenshot(app, name: "Workspace settings")
     }
 
@@ -56,7 +175,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Sample upload/Sample upload.txt"].exists)
         start.tap()
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
-        navigate("activity", title: "Activity", in: app)
+        navigate("files", title: "File", in: app)
         let tasks = element("mobile.module.transfers", in: app)
         XCTAssertTrue(tasks.waitForExistence(timeout: 5))
         tasks.tap()
@@ -66,7 +185,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         app.terminate()
         app.launchArguments.append("--ui-preserve-transfer-fixture")
         app.launch()
-        navigate("activity", title: "Activity", in: app)
+        navigate("files", title: "File", in: app)
         let restoredTasks = element("mobile.module.transfers", in: app)
         XCTAssertTrue(restoredTasks.waitForExistence(timeout: 5))
         restoredTasks.tap()
@@ -129,7 +248,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         attachScreenshot(app, name: "Compression form")
         element("files.archive.start-compression", in: app).tap()
         XCTAssertTrue(app.staticTexts["Created archive.zip"].waitForExistence(timeout: 8))
-        navigate("activity", title: "Activity", in: app)
+        navigate("files", title: "File", in: app)
         element("mobile.module.transfers", in: app).tap()
         XCTAssertTrue(element("files.archive.phase.completed", in: app).waitForExistence(timeout: 8))
         attachScreenshot(app, name: "Archive completed in Transfers")
@@ -148,7 +267,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         attachScreenshot(app, name: "Archive contents and extraction options")
         start.tap()
         XCTAssertTrue(app.staticTexts["Sample archive"].waitForExistence(timeout: 8))
-        navigate("activity", title: "Activity", in: app)
+        navigate("files", title: "File", in: app)
         element("mobile.module.transfers", in: app).tap()
         XCTAssertTrue(element("files.archive.phase.completed", in: app).waitForExistence(timeout: 8))
     }
@@ -157,7 +276,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "archive")
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
-        navigate("activity", title: "Activity", in: app)
+        navigate("files", title: "File", in: app)
         element("mobile.module.transfers", in: app).tap()
         let stop = app.buttons["Stop this task"]
         XCTAssertTrue(stop.waitForExistence(timeout: 8)); stop.tap()
@@ -707,7 +826,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 10))
         attachScreenshot(app, name: "Download failure recovery")
         app.alerts.buttons.firstMatch.tap()
-        navigate("activity", title: "Activity", in: app)
+        navigate("files", title: "File", in: app)
         element("mobile.module.transfers", in: app).tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.buttons["Start Over"].waitForExistence(timeout: 5))
@@ -845,7 +964,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func openTransfers(_ app: XCUIApplication) {
-        navigate("activity", title: "Activity", in: app)
+        navigate("files", title: "File", in: app)
         let tasks = element("mobile.module.transfers", in: app)
         if tasks.waitForExistence(timeout: 5) { tasks.tap() }
     }
@@ -958,10 +1077,10 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 5)); edit.tap()
     }
 
-    private func launchFixture(state: String = "content") -> XCUIApplication {
+    private func launchFixture(state: String = "content", language: String = "en") -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-fixture", "-lanstash.app-language.v1", "en"]
+        app.launchArguments = ["--ui-fixture", "-lanstash.app-language.v1", language]
         app.launchEnvironment["LANSTASH_UI_STATE"] = state
         app.launch()
         return app
@@ -971,6 +1090,11 @@ final class MobileWorkspaceUITests: XCTestCase {
         // iPhone 的系统标签栏按本地化标题暴露，iPad 侧栏使用稳定标识。
         let tab = app.tabBars.buttons[title]
         if tab.exists { tab.tap() }
+        else if app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch.exists {
+            app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch.tap()
+            let item = app.staticTexts[title].firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
+        }
         else {
             let item = element("mobile.navigation.\(destination)", in: app)
             XCTAssertTrue(item.waitForExistence(timeout: 5))

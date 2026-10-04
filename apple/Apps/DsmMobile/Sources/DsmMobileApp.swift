@@ -21,6 +21,9 @@ struct DsmMobileApp: App {
                     }
                 }
                 #endif
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { Task { await model.refreshModuleAccess() } }
+                }
                 .task(id: chatForegroundContext) {
                     await model.chatModel.setForegroundRealtimeActive(
                         chatForegroundContext.isActive

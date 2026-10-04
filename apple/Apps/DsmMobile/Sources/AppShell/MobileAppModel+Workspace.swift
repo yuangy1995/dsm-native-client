@@ -6,7 +6,7 @@ import DsmLocalization
 
 extension MobileAppModel {
     func selectTopLevel(_ destination: MobileTopLevelDestination) {
-        selectedTopLevel = destination
+        guard visibleTopLevelDestinations.contains(destination) else { return }
         selectModule(preferredModule(for: destination))
     }
 
@@ -61,11 +61,10 @@ extension MobileAppModel {
 
     func restoreNavigationState(for profileID: UUID) {
         let state = navigationStates[profileID] ?? .initial
-        selectedTopLevel = state.selectedTopLevel
-        selectedModule = isModuleVisible(state.selectedModule)
+        let canRestore = isModuleVisible(state.selectedModule)
             && state.selectedTopLevel.childModules.contains(state.selectedModule)
-            ? state.selectedModule
-            : preferredModule(for: state.selectedTopLevel)
+        selectedTopLevel = canRestore ? state.selectedTopLevel : .files
+        selectedModule = canRestore ? state.selectedModule : .files
     }
 
     func visibleChildModules(for destination: MobileTopLevelDestination) -> [MobileModule] {
@@ -74,15 +73,16 @@ extension MobileAppModel {
 
     func optionalModulesAvailableForPreference() -> [MobileModule] {
         MobileModule.allCases.filter {
-            $0.isOptionalPreference && $0.isAvailable(in: capabilities)
+            $0.isOptionalPreference && availableOptionalModules.contains($0) && $0.isAvailable(in: capabilities)
         }
     }
 
     func setModule(_ module: MobileModule, isVisible: Bool) {
-        guard module.isOptionalPreference else { return }
+        guard module.isOptionalPreference,
+              !isVisible || optionalModulesAvailableForPreference().contains(module) else { return }
         settingsStore.setVisible(isVisible, module: module)
         guard !isVisible, selectedModule == module else { return }
-        selectModule(preferredModule(for: selectedTopLevel))
+        selectModule(.settings)
     }
 
     func refreshSettingsCacheSummary() async {
@@ -111,7 +111,7 @@ extension MobileAppModel {
     }
 
     func loadSelectedModule() async {
-        guard isConnected else { return }
+        guard isConnected, isModuleVisible(selectedModule) else { return }
         let loadGeneration = selectedModuleLoadGeneration
         let loadModule = selectedModule
         let loadProfileID = activeProfile?.id
@@ -181,8 +181,14 @@ extension MobileAppModel {
         isLoading = false
     }
 
-    private func isModuleVisible(_ module: MobileModule) -> Bool {
+    var visibleTopLevelDestinations: [MobileTopLevelDestination] {
+        // 设置固定排在末尾；较多模块由系统标签栏提供原生“更多”入口。
+        MobileTopLevelDestination.allCases.filter { isModuleVisible($0.defaultModule) }
+    }
+
+    func isModuleVisible(_ module: MobileModule) -> Bool {
         settingsStore.isVisible(module) && module.isAvailable(in: capabilities)
+            && (!module.isOptionalPreference || availableOptionalModules.contains(module))
     }
 
     private func isCurrentModuleLoad(

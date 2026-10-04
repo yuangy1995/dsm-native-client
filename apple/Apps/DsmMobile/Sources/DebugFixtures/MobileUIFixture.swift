@@ -33,10 +33,12 @@ enum MobileUIFixture {
                             DsmAPIName.fileStationBackgroundTask: 3, DsmAPIName.fileStationCompress: 3, DsmAPIName.fileStationExtract: 2,
                             DsmAPIName.fileStationUpload: 3, DsmAPIName.fileStationCreateFolder: 2, DsmAPIName.fileStationCheckPermission: 3,
                             DsmAPIName.downloadStationTask: 3, DsmAPIName.downloadStationStatistic: 1,
+                            DsmAPIName.chatChannel: 1, DsmAPIName.chatUser: 1,
+                            "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             let fixtureCapabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: versions.map { name, version in
                 (name, ApiCapability(name: name, path: "entry.cgi", minVersion: 1, maxVersion: version,
-                                     requestFormat: .form, selectedVersion: version, verified: false))
+                                     requestFormat: name.hasPrefix("SYNO.Foto.") ? .json : .form, selectedVersion: version, verified: false))
             }))
             let session = AuthSession(sid: "ui-fixture-session", synoToken: nil, did: nil, isPortalPort: false)
             let transport = FixtureTransport()
@@ -66,6 +68,11 @@ enum MobileUIFixture {
             model.activeProfile = profile
             model.activeConnectionProfile = profile
             model.isConnected = true
+            let photoAccess = try SynologyPhotosRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
+            let privilegeService = try DsmDesktopAppPrivilegesService(profile: profile, transport: transport)
+            model.configureModuleAccess(MobileModuleAccessReader(capabilities: fixtureCapabilities,
+                readPrivileges: { try await privilegeService.read(capabilities: fixtureCapabilities, session: session) },
+                readPhotoAccess: { _ = try await photoAccess.access() }))
             return model
         } catch {
             preconditionFailure("UI fixture configuration failed")
@@ -125,6 +132,7 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
     private var copyMove = MobileCopyMoveUIFixture()
     private var favorites: [[String: String]] = []
     private var uploaded: [String: Bool] = [:]
+    private var modulePrivilegeRevoked = false
     private var stopped = false
     private var cleared = false
     private var permissionMode = 755
@@ -204,7 +212,22 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
             if let group = fields.first(where: { $0.name == "group" })?.value { permissionGroup = group }
             result = ["taskid": "fixture-permission-task"]
         case (DsmAPIName.desktopInitData, "get_user_service"):
-            result = ["AppPrivilege": ["SYNO.SDS.App.FileStation3.Instance": pageState == "sharing" || isPermissionFixture], "Session": ["is_admin": isPermissionFixture]]
+            if pageState == "modules-failed" { throw URLError(.notConnectedToInternet) }
+            if pageState == "modules-loading" { try await Task.sleep(for: .seconds(30)) }
+            let grantsDownloads = pageState != "modules-none" && !modulePrivilegeRevoked
+            result = ["AppPrivilege": ["SYNO.SDS.App.FileStation3.Instance": pageState == "sharing" || isPermissionFixture,
+                "SYNO.SDS.DownloadStation.Application": grantsDownloads,
+                "SYNO.SDS.Chat.Application": pageState == "modules-all",
+                "SYNO.SDS.Virtualization.Application": pageState == "modules-all"],
+                "Session": ["is_admin": isPermissionFixture || pageState == "modules-all"]]
+        case ("SYNO.Foto.UserInfo", "me"):
+            result = ["enabled": pageState == "modules-all", "id": 1]
+        case ("SYNO.Foto.Setting.User", "get"):
+            result = ["enable_home_service": true, "team_space_permission": "none"]
+        case ("SYNO.Foto.Setting.Admin", "get"):
+            result = ["package_version": "fixture"]
+        case ("SYNO.Foto.Setting.TeamSpace", "get"):
+            result = ["enabled": false]
         case (DsmAPIName.fileStationUserGroup, "list_all"):
             result = ["owners": [["name": "Sample member", "type": "user"], ["name": "Sample group", "type": "group"]], "total": 2]
         case (DsmAPIName.fileStationSharing, "list") where pageState == "sharing":
@@ -310,6 +333,7 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
         case (DsmAPIName.fileStationInfo, "get"):
             result = ["is_manager": false, "hostname": "Sample NAS", "support_sharing": false]
         case (DsmAPIName.downloadStationTask, "list"):
+            if pageState == "modules-revoke" { modulePrivilegeRevoked = true }
             result = ["tasks": [["id": "fixture-download", "title": "Sample archive.zip", "status": "downloading", "type": "http", "size": 4096,
                                   "additional": ["detail": ["destination": "fixture"], "transfer": ["size_downloaded": 2048, "speed_download": 0, "speed_upload": 0]]]], "total": 1, "offset": 0]
         case (DsmAPIName.downloadStationStatistic, "getinfo"):

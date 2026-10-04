@@ -77,7 +77,7 @@
 ## 客户端、测试与五端影响
 
 - macOS：`WorkspaceModuleAccessReader` 改为一次摘要读取；权限整体替换，隐藏模块停止后台模型并禁止导航，套件模型另阻止旧页面加载/操作回调。照片功能仍为 File Station 文件视图，继承文件权限，不接入 Photos API。
-- iPhone / iPad：共享网络层仅增加只读服务和能力名称，默认能力发现可登记该能力；移动 App 未调用新服务，页面和业务行为不变。本轮使用 macOS 回归验证共享代码，不冒充移动设备验证。
+- iPhone / iPad：2026-10-04 移动 App 接入既有只读服务，为 App 设置中的可开启功能筛选当前账号授权。默认只显示文件与 App 设置，权限候选还要求实际读取契约可用；照片单独使用已记录 Synology Photos `access()`，不沿用旧 File Station 图库授权，不猜测新的 AppPrivilege 键。登录/返回前台/设置页刷新重新读取，切换账号清空旧结果，迟到响应不可恢复旧授权；摘要失败不阻断文件，Photos 自身访问读取成功时可独立保留照片候选。安全错误及取消不追加照片读取。入口授权不代替各操作权限。请求参数、方法、认证和响应投影未改，真实 App/NAS 行为待用户验证；两端构建及合成测试证据见移动主计划。
 - Android / Windows：记录相同规则供后续对齐，本轮不改两端代码或请求。
 - 新服务：`apple/Packages/DsmNetwork/Sources/DsmDesktopAppPrivileges.swift`；测试：`apple/Packages/DsmNetwork/Tests/DsmDesktopAppPrivilegesTests.swift`、`apple/Apps/DsmMac/Tests/WorkspaceModuleAccessTests.swift`。白名单解码忽略真实会话和用户设置，合成 fixture 内联于测试，不保存原始响应。
 - [产品验证状态](../../../compatibility/DSM_COMPATIBILITY_MATRIX.md) 标记 App 实机待验；没有把代码接入提升为环境验证。

@@ -31,7 +31,7 @@ final class MobileSettingsStore {
             enabledOptionalModules = Set(savedValues.compactMap(MobileModule.init(rawValue:)))
                 .intersection(MobileModule.optionalPreferenceModules)
         } else {
-            enabledOptionalModules = MobileModule.optionalPreferenceModules
+            enabledOptionalModules = []
         }
     }
 
