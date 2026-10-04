@@ -155,9 +155,9 @@ final class MobileChatAttachmentModel {
         owner?.sending?.cancel()
     }
 
-    func leaveConversation(_ conversationID: String) {
+    func leaveConversation(_ conversationID: String, preservingAudio: Bool = false) {
         guard owner?.state.selectedConversationID == conversationID else { return }
-        cancelAllWork()
+        cancelAllWork(preservingAudio: preservingAudio)
     }
 
     func sendSelectedAttachment() async {
@@ -170,7 +170,8 @@ final class MobileChatAttachmentModel {
         await sending.send(conversationID: conversation.id, text: text, attachment: attachment)
     }
 
-    func cancelAllWork() {
+    func cancelAllWork(preservingAudio: Bool = false) {
+        if !preservingAudio { owner?.audio.reset() }
         preparationTask?.cancel()
         preparationTask = nil
         preparationGeneration &+= 1
@@ -194,7 +195,7 @@ final class MobileChatAttachmentModel {
     }
 
     private var supportedFeatures: Set<ChatFeature> {
-        [.imageAttachment, .videoAttachment, .fileAttachment]
+        [.imageAttachment, .videoAttachment, .fileAttachment, .voiceMessage]
     }
 
     private func beginPreparation() -> (profileID: UUID, conversationID: String, generation: Int)? {

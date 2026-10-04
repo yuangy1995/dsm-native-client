@@ -22,6 +22,8 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Record voice messages that you choose to send in Chat.</string>
     <key>UILaunchScreen</key>
     <dict>
         <key>UIColorName</key>

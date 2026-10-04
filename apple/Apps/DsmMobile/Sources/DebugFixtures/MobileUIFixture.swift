@@ -21,7 +21,8 @@ enum MobileUIFixture {
             }
             let model = MobileAppModel(defaults: defaults, sessionStore: FixtureSessionStore(), passwordStore: FixturePasswordStore(),
                 previewModel: officeState.hasPrefix("office-") ? MobileFilePreviewModel(rangeReader: officeTransport) : MobileFilePreviewModel(),
-                transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil)
+                transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil,
+                chatAudioDriver: officeState.hasPrefix("chat-audio-") ? MobileChatAudioUIDriver(denied: officeState == "chat-audio-permission-denied") : nil)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
             var versions = [DsmAPIName.fileStationMD5: 2, DsmAPIName.fileStationDelete: 2, DsmAPIName.fileStationCopyMove: 3, DsmAPIName.fileStationSettings: 1, DsmAPIName.fileStationVFSUser: 1,
@@ -37,6 +38,7 @@ enum MobileUIFixture {
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             if officeState.hasPrefix("chat-management-") { versions[DsmAPIName.chatPostFile] = 2 }
+            if officeState.hasPrefix("chat-audio-") { versions[DsmAPIName.chatPostFile] = 2 }
             if officeState.hasPrefix("chat-group-") {
                 versions[DsmAPIName.chatChannelNamed] = 1; versions[DsmAPIName.chatChannelMember] = 1
                 versions[DsmAPIName.chatChannelAnonymous] = 2
@@ -55,7 +57,10 @@ enum MobileUIFixture {
             model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
-            if officeState.hasPrefix("chat-group-") {
+            if officeState.hasPrefix("chat-audio-") {
+                model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
+                    transport: MobileChatAudioUITransport(state: officeState))
+            } else if officeState.hasPrefix("chat-group-") {
                 let restored = MobileChatGroupCreationStore(root: fixtureRoot.appendingPathComponent("Chat")).entries
                 model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
                     transport: MobileChatGroupUITransport(state: officeState, restored: restored))

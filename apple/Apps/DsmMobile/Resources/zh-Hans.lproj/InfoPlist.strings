@@ -1,2 +1,3 @@
 "CFBundleDisplayName" = "岚仓";
 "CFBundleName" = "岚仓";
+"NSMicrophoneUsageDescription" = "录制由你选择在聊天中发送的语音消息。";

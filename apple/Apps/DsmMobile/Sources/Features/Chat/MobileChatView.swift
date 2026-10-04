@@ -2,27 +2,34 @@ import DsmCore
 import DsmLocalization
 import Foundation
 import SwiftUI
+import UIKit
 
 struct MobileChatView: View {
     @Bindable var model: MobileAppModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var availableWidth: CGFloat = 0
     @State private var presentsConversationManagement = false
     @State private var managementDismissalGeneration = 0
     @State private var presentsConversationCreator = false
-    @State private var createdCompactConversation: ChatConversation?
+    @State private var presentedConversation: ChatConversation?
     @State private var presentsMessageSearch = false
     @State private var presentsForwardRecords = false
     @State private var presentsDeletionRecords = false
     @State private var presentsSendRecords = false
+    @State private var presentsVoiceRecorder = false
 
     var body: some View {
-        Group {
-            if horizontalSizeClass == .regular {
-                regularLayout
+        ZStack {
+            if usesColumns {
+                regularLayout(conversation: nil)
             } else {
                 compactLayout
             }
         }
+        .background(MobileChatViewportWidth { availableWidth = $0 })
+        .onChange(of: model.chatModel.activeProfileID) { _, _ in presentedConversation = nil }
+        .mobileChatAudioLifecycle(chat: model.chatModel)
         .toolbar {
             if let sending = model.chatModel.sending, (!sending.entries.isEmpty || sending.recovery.failed), model.chatModel.state.visibleConversationID == nil {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -79,6 +86,7 @@ struct MobileChatView: View {
                     .id(ObjectIdentifier(management))
             }
         }
+        .sheet(isPresented: $presentsVoiceRecorder) { MobileChatVoiceSheet(chat: model.chatModel) }
         .sheet(isPresented: $presentsSendRecords) {
             if let sending = model.chatModel.sending {
                 MobileChatSendRecordsSheet(sending: sending, conversations: model.chatModel.state.conversations).id(ObjectIdentifier(sending))
@@ -110,44 +118,48 @@ struct MobileChatView: View {
                         sourceCreator: creator,
                         sourceGeneration: sourceGeneration
                     )
-                    if accepted, horizontalSizeClass != .regular {
-                        createdCompactConversation = conversation
+                    if accepted {
+                        presentedConversation = conversation
                     }
                     return accepted
                 }
                 .id(ObjectIdentifier(creator))
             }
         }
-        .navigationDestination(item: $createdCompactConversation) { conversation in
-            MobileChatMessagesView(chat: model.chatModel, conversation: conversation, manageConversations: { presentsConversationManagement = true }, isManagingConversations: presentsConversationManagement, managementDismissalGeneration: managementDismissalGeneration)
-                .navigationTitle(conversation.title)
-                .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $presentedConversation) { conversation in
+            ZStack {
+                if usesColumns { regularLayout(conversation: conversation) }
+                else { messageDetail(conversation) }
+            }
+            .navigationTitle(conversation.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(usesColumns)
+            .background(MobileChatViewportWidth { availableWidth = $0 })
         }
     }
 
     private var compactLayout: some View {
-        conversationList
-            .navigationDestination(for: ChatConversation.self) { conversation in
-                MobileChatMessagesView(chat: model.chatModel, conversation: conversation, manageConversations: { presentsConversationManagement = true }, isManagingConversations: presentsConversationManagement, managementDismissalGeneration: managementDismissalGeneration)
-                    .navigationTitle(conversation.title)
-                    .navigationBarTitleDisplayMode(.inline)
-            }
+        conversationList.accessibilityIdentifier("chat-single-column")
     }
 
-    private var regularLayout: some View {
+    private var usesColumns: Bool {
+        horizontalSizeClass == .regular && availableWidth >= 760 && !dynamicTypeSize.isAccessibilitySize
+    }
+
+    private func regularLayout(conversation: ChatConversation?) -> some View {
         HStack(spacing: 0) {
             conversationList
-                .frame(minWidth: 260, idealWidth: 320, maxWidth: 380)
+                .frame(width: min(320, availableWidth * 0.36))
             Divider()
-            regularMessageDetail
+            regularMessageDetail(conversation)
         }
+        .accessibilityIdentifier("chat-two-columns")
     }
 
     @ViewBuilder
-    private var regularMessageDetail: some View {
-        if let conversation = model.chatModel.state.selectedConversation {
-            MobileChatMessagesView(chat: model.chatModel, conversation: conversation, manageConversations: { presentsConversationManagement = true }, isManagingConversations: presentsConversationManagement, managementDismissalGeneration: managementDismissalGeneration)
-                .navigationTitle(conversation.title)
+    private func regularMessageDetail(_ conversation: ChatConversation?) -> some View {
+        if let conversation {
+            messageDetail(conversation)
         } else {
             ContentUnavailableView(
                 L10n.string("mobile.chat.select.title"),
@@ -156,6 +168,13 @@ struct MobileChatView: View {
             )
             .fillsAvailableContentArea()
         }
+    }
+
+    private func messageDetail(_ conversation: ChatConversation) -> some View {
+        MobileChatMessagesView(chat: model.chatModel, conversation: conversation,
+            manageConversations: { presentsConversationManagement = true }, isManagingConversations: presentsConversationManagement,
+            managementDismissalGeneration: managementDismissalGeneration,
+            recordVoice: { presentsVoiceRecorder = true }, preservesVoiceRecording: $presentsVoiceRecorder)
     }
 
     @ViewBuilder
@@ -231,31 +250,32 @@ struct MobileChatView: View {
     @ViewBuilder
     private func conversationDestination(_ conversation: ChatConversation) -> some View {
         let isPinned = model.chatModel.state.isConversationPinned(conversation.id)
-        if horizontalSizeClass == .regular {
+        if usesColumns {
             Button {
-                Task { await model.chatModel.selectConversation(conversation) }
+                presentedConversation = conversation
             } label: {
                 MobileChatConversationRow(
                     conversation: conversation,
-                    isSelected: model.chatModel.state.selectedConversationID == conversation.id,
+                    isSelected: presentedConversation?.id == conversation.id,
                     isPinned: isPinned
                 )
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(
-                model.chatModel.state.selectedConversationID == conversation.id ? .isSelected : []
+                presentedConversation?.id == conversation.id ? .isSelected : []
             )
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 conversationPinButton(conversation, isPinned: isPinned)
             }
         } else {
-            NavigationLink(value: conversation) {
-                MobileChatConversationRow(
-                    conversation: conversation,
-                    isSelected: false,
-                    isPinned: isPinned
-                )
+            Button { presentedConversation = conversation } label: {
+                HStack {
+                    MobileChatConversationRow(conversation: conversation, isSelected: false, isPinned: isPinned)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary).accessibilityHidden(true)
+                }
             }
+            .buttonStyle(.plain)
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 conversationPinButton(conversation, isPinned: isPinned)
             }
@@ -298,6 +318,35 @@ struct MobileChatView: View {
             errorMessage: L10n.string("mobile.chat.error.message"),
             retryTitle: L10n.string("mobile.chat.action.retry")
         )
+    }
+}
+
+/// 从当前可见的 UIKit 页面读取安全区域；导航根隐藏后不再依赖其旧布局宽度。
+private struct MobileChatViewportWidth: UIViewRepresentable {
+    let onWidth: (CGFloat) -> Void
+    func makeUIView(context: Context) -> WidthView {
+        let view = WidthView()
+        view.isUserInteractionEnabled = false
+        view.onWidth = onWidth
+        return view
+    }
+    func updateUIView(_ view: WidthView, context: Context) { view.onWidth = onWidth; view.report() }
+    final class WidthView: UIView {
+        var onWidth: ((CGFloat) -> Void)?
+        private var lastWidth: CGFloat?
+        override func layoutSubviews() { super.layoutSubviews(); report() }
+        override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); report() }
+        override func didMoveToWindow() { super.didMoveToWindow(); report() }
+        func report() {
+            guard window != nil else { return }
+            let width = safeAreaLayoutGuide.layoutFrame.width
+            guard width > 0, width != lastWidth else { return }
+            lastWidth = width
+            Task { @MainActor [weak self] in
+                guard let self, self.window != nil else { return }
+                self.onWidth?(self.safeAreaLayoutGuide.layoutFrame.width)
+            }
+        }
     }
 }
 
@@ -726,7 +775,9 @@ private struct MobileChatMessagesView: View {
     let manageConversations: () -> Void
     let isManagingConversations: Bool
     let managementDismissalGeneration: Int
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    let recordVoice: () -> Void
+    @Binding var preservesVoiceRecording: Bool
+    @State private var visibilityOwner = UUID()
     @Environment(\.dismiss) private var dismiss
     @State private var presentsMembers = false
     @State private var presentsAnnouncements = false
@@ -756,8 +807,8 @@ private struct MobileChatMessagesView: View {
                 messageContent
             }
         }
-        .task(id: conversation.id) {
-            chat.enterConversation(conversation.id)
+        .task(id: "\(chat.activeProfileID?.uuidString ?? "")/\(conversation.id)") {
+            chat.enterConversation(conversation.id, ownerID: visibilityOwner)
             if chat.state.selectedConversationID != conversation.id {
                 await chat.selectConversation(conversation)
             }
@@ -768,13 +819,13 @@ private struct MobileChatMessagesView: View {
             await chat.management?.recover()
         }
         .onDisappear {
-            chat.leaveConversation(conversation.id)
+            chat.leaveConversation(conversation.id, ownerID: visibilityOwner, preservingVoiceRecording: preservesVoiceRecording)
         }
         .onChange(of: chat.management?.closeResults[conversation.id] == .closed) { _, closed in
-            if closed, !isManagingConversations, horizontalSizeClass != .regular { dismiss() }
+            if closed, !isManagingConversations { dismiss() }
         }
         .onChange(of: managementDismissalGeneration) { _, _ in
-            if chat.management?.closeResults[conversation.id] == .closed, horizontalSizeClass != .regular { dismiss() }
+            if chat.management?.closeResults[conversation.id] == .closed { dismiss() }
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -896,7 +947,7 @@ private struct MobileChatMessagesView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if chat.canComposeMessage, !conversation.isEncrypted {
-                MobileChatAttachmentComposer(chat: chat)
+                MobileChatAttachmentComposer(chat: chat, recordVoice: recordVoice)
             }
         }
         .mobileChatRemoteAttachmentPresentation(chat: chat,

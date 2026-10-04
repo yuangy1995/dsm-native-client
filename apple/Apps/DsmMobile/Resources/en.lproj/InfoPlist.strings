@@ -1,2 +1,3 @@
 "CFBundleDisplayName" = "LanStash";
 "CFBundleName" = "LanStash";
+"NSMicrophoneUsageDescription" = "Record voice messages that you choose to send in Chat.";

@@ -15,6 +15,7 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             .imageAttachment,
             .videoAttachment,
             .fileAttachment,
+            .voiceMessage,
             .attachmentDownload,
             .groupMembers,
             .pinnedMessages,

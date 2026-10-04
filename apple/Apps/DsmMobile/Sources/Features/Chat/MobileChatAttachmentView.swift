@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 /// 系统选择器、预览和导出界面由系统组件完成，避免保存选择器返回的本地路径。
 struct MobileChatAttachmentComposer: View {
     @Bindable var chat: MobileChatModel
+    let recordVoice: () -> Void
     @State private var photoAttachmentItem: PhotosPickerItem?
     @State private var isImportingAttachmentFile = false
     @State private var showsSelectedAttachmentPreview = false
@@ -106,6 +107,11 @@ struct MobileChatAttachmentComposer: View {
 
     private var pickerActions: some View {
         HStack(spacing: 8) {
+            if chat.state.availability.supportedFeatures.contains(.voiceMessage) {
+                Button(action: recordVoice) { Image(systemName: "mic").font(.system(size: 20)).frame(width: 24, height: 24) }
+                    .frame(minWidth: 44, minHeight: 44).disabled(!chat.canRecordVoice)
+                    .accessibilityLabel(L10n.string("chat.voice.title")).accessibilityIdentifier("chat-compose-voice")
+            }
             if chat.state.availability.supportedFeatures.contains(.imageAttachment) {
                 PhotosPicker(
                     selection: $photoAttachmentItem,
@@ -260,6 +266,8 @@ private struct MobileChatRemoteAttachmentPresentationModifier: ViewModifier {
                 MobileDocumentExporter(url: presentation.localURL) {
                     chat.dismissRemoteAttachmentPresentation()
                 }
+            case .voicePlayback:
+                EmptyView()
             }
         }
     }
@@ -329,6 +337,9 @@ struct MobileChatRemoteAttachmentRow: View {
                 .accessibilityElement(children: .combine)
             }
             HStack(spacing: 8) {
+                if attachment.kind == .voice {
+                    MobileChatVoicePlaybackButton(chat: chat, message: message, attachment: attachment)
+                } else {
                 Button {
                     chat.previewRemoteAttachment(attachment, in: message)
                 } label: {
@@ -341,6 +352,7 @@ struct MobileChatRemoteAttachmentRow: View {
                 .frame(minHeight: 44)
                 .disabled(!chat.canOpenRemoteAttachment(attachment, in: message))
                 .accessibilityHint(L10n.string("mobile.chat.attachment.preview.hint"))
+                }
                 Button {
                     chat.saveRemoteAttachment(attachment, in: message)
                 } label: {
@@ -431,8 +443,10 @@ struct MobileChatRemoteAttachmentRow: View {
             L10n.string("mobile.chat.attachment.kind.image")
         case .video:
             L10n.string("mobile.chat.attachment.kind.video")
-        case .file, .voice:
+        case .file:
             L10n.string("mobile.chat.attachment.kind.file")
+        case .voice:
+            L10n.string("chat.voice.title")
         }
     }
 

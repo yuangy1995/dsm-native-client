@@ -148,10 +148,11 @@ final class MobileAppModel {
         quickConnectResolver: any QuickConnectResolving = DsmQuickConnectResolver(),
         mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator(),
         previewModel: MobileFilePreviewModel = MobileFilePreviewModel(),
-        transferRecoveryStore: MobileTransferRecoveryStore? = nil
+        transferRecoveryStore: MobileTransferRecoveryStore? = nil,
+        chatAudioDriver: (any MobileChatAudioDriving)? = nil
     ) {
         self.filePreviewModel = previewModel
-        self.chatModel = MobileChatModel(interactionRecoveryRoot: transferRecoveryStore?.rootURL.appendingPathComponent("Chat", isDirectory: true))
+        self.chatModel = MobileChatModel(interactionRecoveryRoot: transferRecoveryStore?.rootURL.appendingPathComponent("Chat", isDirectory: true), audioDriver: chatAudioDriver)
         self.defaults = defaults
         self.sessionStore = sessionStore
         self.passwordStore = passwordStore

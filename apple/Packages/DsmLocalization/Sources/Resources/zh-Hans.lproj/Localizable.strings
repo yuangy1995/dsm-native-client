@@ -6326,3 +6326,7 @@
 "mobile.chat.group.refresh" = "刷新";
 "mobile.chat.group.cancel" = "取消创建";
 "mobile.chat.group.another" = "新建其他聊天";
+"mobile.chat.voice.permission" = "麦克风访问未开启。请打开设置，允许岚仓访问麦克风后重新录制。";
+"mobile.chat.voice.settings" = "打开设置";
+"mobile.chat.voice.too-short" = "录音太短，请录制至少半秒后再停止。";
+"mobile.chat.voice.preview-failed" = "无法播放这段录音，请重试试听或重新录制。";

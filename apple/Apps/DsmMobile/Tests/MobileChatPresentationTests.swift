@@ -3,16 +3,23 @@ import Foundation
 import XCTest
 
 final class MobileChatPresentationTests: XCTestCase {
-    func test聊天页按SizeClass提供iPhone层级和iPad双栏() throws {
+    func test聊天页按实际宽度与文字尺寸提供原生单栏和双栏() throws {
         let source = try chatViewSources()
 
         XCTAssertTrue(source.contains("@Environment(\\.horizontalSizeClass)"))
-        XCTAssertTrue(source.contains("if horizontalSizeClass == .regular"))
+        XCTAssertTrue(source.contains("horizontalSizeClass == .regular && availableWidth >= 760 && !dynamicTypeSize.isAccessibilitySize"))
+        XCTAssertTrue(source.contains("MobileChatViewportWidth: UIViewRepresentable"))
+        XCTAssertTrue(source.contains("safeAreaLayoutGuide.layoutFrame.width"))
+        XCTAssertTrue(source.contains("override func layoutSubviews()"))
+        XCTAssertTrue(source.contains("override func safeAreaInsetsDidChange()"))
+        XCTAssertFalse(source.contains(".onChange(of: usesColumns)"))
+        XCTAssertTrue(source.contains(".navigationBarBackButtonHidden(usesColumns)"))
         XCTAssertTrue(source.contains("private var compactLayout"))
-        XCTAssertTrue(source.contains("private var regularLayout"))
+        XCTAssertTrue(source.contains("private func regularLayout"))
         XCTAssertTrue(source.contains("HStack(spacing: 0)"))
         XCTAssertTrue(source.contains("regularMessageDetail"))
-        XCTAssertTrue(source.contains(".navigationDestination(for: ChatConversation.self)"))
+        XCTAssertTrue(source.contains(".navigationDestination(item: $presentedConversation)"))
+        XCTAssertTrue(source.contains("Button { presentedConversation = conversation }"))
         XCTAssertFalse(source.contains("UIDevice.current"))
     }
 
@@ -27,8 +34,8 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("chat.loadMoreMessages()"))
         XCTAssertTrue(source.contains("state.loadMoreMessagesFailed"))
         XCTAssertTrue(source.contains("state.selectedMessages.hasMoreBefore"))
-        XCTAssertTrue(source.contains("chat.enterConversation(conversation.id)"))
-        XCTAssertTrue(source.contains("chat.leaveConversation(conversation.id)"))
+        XCTAssertTrue(source.contains("chat.enterConversation(conversation.id, ownerID: visibilityOwner)"))
+        XCTAssertTrue(source.contains("chat.leaveConversation(conversation.id, ownerID: visibilityOwner, preservingVoiceRecording: preservesVoiceRecording)"))
         XCTAssertTrue(source.contains("case .unavailable"))
         XCTAssertTrue(source.contains("case .requiresValidation"))
     }
@@ -69,8 +76,8 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("creator.requiresReview"))
         XCTAssertTrue(source.contains("mobile.chat.create.review.action"))
         XCTAssertTrue(source.contains(".interactiveDismissDisabled(creator.isSubmitting)"))
-        XCTAssertTrue(source.contains(".navigationDestination(item: $createdCompactConversation)"))
-        XCTAssertTrue(source.contains("horizontalSizeClass != .regular"))
+        XCTAssertTrue(source.contains(".navigationDestination(item: $presentedConversation)"))
+        XCTAssertTrue(source.contains("if accepted {"))
         XCTAssertTrue(model.contains("sourceProfileID: UUID"))
         XCTAssertTrue(source.contains("sourceProfileID: sourceProfileID"))
         XCTAssertTrue(creator.contains("openDirectConversationResult"))
@@ -110,7 +117,7 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains(".accessibilityLabel("))
         XCTAssertTrue(source.contains(".accessibilityAddTraits("))
         XCTAssertTrue(source.contains("List("))
-        XCTAssertTrue(source.contains("NavigationLink(value:"))
+        XCTAssertTrue(source.contains(".navigationDestination(item: $presentedConversation)"))
         assertDynamicTextFonts(source)
         XCTAssertFalse(source.contains("withAnimation"))
     }
@@ -345,14 +352,15 @@ final class MobileChatPresentationTests: XCTestCase {
             sourceFile("Sources/Features/Chat/MobileChatView.swift"),
             sourceFile("Sources/Features/Chat/MobileChatAttachmentView.swift"),
             sourceFile("Sources/Features/Chat/MobileChatInteractionView.swift"),
-            sourceFile("Sources/Features/Chat/MobileChatGroupCreationView.swift")
+            sourceFile("Sources/Features/Chat/MobileChatGroupCreationView.swift"),
+            sourceFile("Sources/Features/Chat/MobileChatAudioView.swift")
         ].joined(separator: "\n")
     }
 
     private func assertDynamicTextFonts(_ source: String, file: StaticString = #filePath, line: UInt = #line) {
-        // 三个发送/选择按钮的纯图标固定在 24 点区域内；可见文字仍必须使用动态文字样式。
+        // 四个发送/选择按钮的纯图标固定在 24 点区域内；可见文字仍必须使用动态文字样式。
         var remaining = source.components(separatedBy: .whitespacesAndNewlines).joined()
-        for name in ["paperplane.fill", "photo.on.rectangle.angled", "folder"] {
+        for name in ["paperplane.fill", "photo.on.rectangle.angled", "folder", "mic"] {
             let glyph = "Image(systemName:\"\(name)\").font(.system(size:20)).frame(width:24,height:24)"
             XCTAssertTrue(remaining.contains(glyph), file: file, line: line)
             remaining = remaining.replacingOccurrences(of: glyph, with: "")
