@@ -14,6 +14,10 @@ public actor DsmChatRepository: ChatRepository {
     private let transport: any DsmHTTPTransport
     private let realtimeClient: DsmChatRealtimeClient
     private var completedMessages: [UUID: ChatMessage] = [:]
+    private var messageSendDrafts: [UUID: ChatMessageDraft] = [:]
+    private var messageSendReceipts: [UUID: ChatMessageSendReceipt] = [:]
+    private var terminalMessageSendOutcomes: [UUID: ChatMessageSendOutcome] = [:]
+    private var sendingRequestIDs: Set<UUID> = []
     private var pendingMessageSends: [UUID: PendingChatMessageSendReview] = [:]
     private var pendingAttachmentSends: [UUID: PendingChatAttachmentSendReview] = [:]
     private var completedDirectConversations: [UUID: ChatConversation] = [:]
@@ -181,9 +185,14 @@ public actor DsmChatRepository: ChatRepository {
     }
 
     public func listConversations() async throws -> [ChatConversation] {
+        try await listConversations(requiringCurrentUser: false)
+    }
+
+    private func listConversations(requiringCurrentUser: Bool) async throws -> [ChatConversation] {
         let users = try await call(DsmAPIName.chatUser, method: "list", parameters: [:])
         let channels = try await call(DsmAPIName.chatChannel, method: "list", parameters: [:])
-        let currentUserID = currentUserID(from: users) ?? cachedCurrentUserID
+        let currentUserID = currentUserID(from: users) ?? (requiringCurrentUser ? nil : cachedCurrentUserID)
+        if requiringCurrentUser, currentUserID == nil { throw invalidChatResponse() }
         cachedCurrentUserID = currentUserID ?? cachedCurrentUserID
         let names = userValues(from: users).reduce(into: [String: String]()) { result, value in
             guard let user = makeUser(from: value, currentUserID: currentUserID) else { return }
@@ -1485,14 +1494,164 @@ public actor DsmChatRepository: ChatRepository {
         return message
     }
 
+    private func beginMessageSend(_ draft: ChatMessageDraft) throws {
+        guard messageSendDrafts[draft.clientRequestID].map({ $0 == draft }) ?? true else { throw invalidChatResponse() }
+        if let receipt = messageSendReceipts[draft.clientRequestID] {
+            try requireSameSendDraft(draft, receipt: receipt)
+        }
+        guard sendingRequestIDs.insert(draft.clientRequestID).inserted else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("chat.send.unconfirmed"))
+        }
+        messageSendDrafts[draft.clientRequestID] = draft
+    }
+
+    private func requireSameSendDraft(_ draft: ChatMessageDraft, receipt: ChatMessageSendReceipt) throws {
+        let size = try draft.localAttachmentURLs.first.map {
+            guard let value = try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize else { throw invalidChatResponse() }
+            return Int64(value)
+        }
+        var original = try ChatMessageSendReceipt(draft: draft, currentUserID: receipt.currentUserID,
+            attachmentSize: size, attachmentFileName: draft.localAttachmentURLs.first.map(chatAttachmentFileName),
+            submittedAt: receipt.submittedAt)
+        original.candidateMessageID = receipt.candidateMessageID
+        guard original == receipt else { throw invalidChatResponse() }
+    }
+
+    private func requireSendAccess(_ conversationID: String) async throws -> String {
+        let conversations = try await listConversations(requiringCurrentUser: true)
+        guard conversations.contains(where: { $0.id == conversationID && !$0.isEncrypted }) else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+        }
+        guard let userID = cachedCurrentUserID, userID != "unknown" else { throw invalidChatResponse() }
+        return userID
+    }
+
+    private func acknowledgeMessageSend(
+        _ requestID: UUID, candidateID: String?,
+        recordProgress: (@Sendable (ChatMessageSendReceipt) async throws -> Void)?
+    ) async throws {
+        guard var receipt = messageSendReceipts[requestID], let candidateID else { return }
+        receipt.candidateMessageID = candidateID
+        try receipt.validate()
+        messageSendReceipts[requestID] = receipt
+        if let recordProgress { try await recordProgress(receipt) }
+    }
+
+    public func recoverMessageSend(_ receipt: ChatMessageSendReceipt) async throws -> ChatMessageSendOutcome {
+        try await recoverMessageSend(receipt, recordProgress: { _ in })
+    }
+
+    public func recoverMessageSend(
+        _ receipt: ChatMessageSendReceipt,
+        recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void
+    ) async throws -> ChatMessageSendOutcome {
+        try receipt.validate()
+        if let draft = messageSendDrafts[receipt.clientRequestID], messageSendReceipts[receipt.clientRequestID] == nil {
+            try requireSameSendDraft(draft, receipt: receipt)
+        }
+        if var existing = messageSendReceipts[receipt.clientRequestID] {
+            let previousID = existing.candidateMessageID
+            existing.candidateMessageID = receipt.candidateMessageID
+            guard existing == receipt,
+                  previousID == nil || receipt.candidateMessageID == nil || previousID == receipt.candidateMessageID else {
+                throw invalidChatResponse()
+            }
+        }
+        guard sendingRequestIDs.insert(receipt.clientRequestID).inserted else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("chat.send.unconfirmed"))
+        }
+        defer { sendingRequestIDs.remove(receipt.clientRequestID) }
+        // 导入后即阻止同编号的重新发送；旧落盘副本不得清空进程内刚收到的编号。
+        if messageSendReceipts[receipt.clientRequestID]?.candidateMessageID == nil {
+            messageSendReceipts[receipt.clientRequestID] = receipt
+        }
+        let effective = messageSendReceipts[receipt.clientRequestID] ?? receipt
+        try await recordProgress(effective)
+        return try await inspectMessageSend(effective)
+    }
+
+    private func inspectMessageSend(_ receipt: ChatMessageSendReceipt) async throws -> ChatMessageSendOutcome {
+        if let terminal = terminalMessageSendOutcomes[receipt.clientRequestID] { return terminal }
+        if let completed = completedMessages[receipt.clientRequestID], receipt.matches(completed) {
+            return try receiptSendOutcome(receipt, message: completed)
+        }
+        guard let candidateID = receipt.candidateMessageID else { return try receiptSendOutcome(receipt) }
+        do {
+            let userID = try await requireSendAccess(receipt.conversationID)
+            guard userID == receipt.currentUserID,
+                  let confirmed = try await message(conversationID: receipt.conversationID,
+                                                    messageID: candidateID, threadID: receipt.threadID),
+                  receipt.matches(confirmed) else { return try receiptSendOutcome(receipt) }
+            let result = confirmedSentMessage(confirmed, clientRequestID: receipt.clientRequestID, fallbackText: nil)
+            completedMessages[receipt.clientRequestID] = result
+            pendingMessageSends[receipt.clientRequestID] = nil
+            pendingAttachmentSends[receipt.clientRequestID] = nil
+            return try receiptSendOutcome(receipt, message: result)
+        } catch {
+            // 创建以后读权限丢失、取消或网络失败不能证明发送失败，更不能释放为可重发。
+            return try receiptSendOutcome(receipt, cancelled: isSendCancellation(error))
+        }
+    }
+
+    private func receiptSendOutcome(_ receipt: ChatMessageSendReceipt, message: ChatMessage? = nil,
+                                    cancelled: Bool = false) throws -> ChatMessageSendOutcome {
+        let confirmed = message != nil
+        return ChatMessageSendOutcome(result: try MutationResult(
+            status: confirmed ? .confirmedSuccess : (cancelled ? .cancellationRequestedAfterSubmission : .submittedButUnverified),
+            operation: receipt.attachmentDigest == nil ? "chatTextSend" : "chatAttachmentSend", submitted: true,
+            requiresRefresh: !confirmed, counts: MutationResultCounts(succeeded: confirmed ? 1 : 0, failed: 0, unknown: confirmed ? 0 : 1),
+            errorCategory: confirmed ? nil : .unknown, diagnosticTag: confirmed ? "chat.send.confirmed" : "chat.send.pending"),
+            conversationID: receipt.conversationID, clientRequestID: receipt.clientRequestID, confirmedMessage: message)
+    }
+
+    private func sendRejection(_ error: DsmNetworkError, draft: ChatMessageDraft, attachment: Bool) throws -> ChatMessageSendOutcome {
+        let category = mutationErrorCategory(for: error)
+        let status: MutationResultStatus = category == .permission ? .permissionDenied : (category == .unsupported ? .unsupported : .confirmedFailure)
+        return ChatMessageSendOutcome(result: try MutationResult(status: status,
+            operation: attachment ? "chatAttachmentSend" : "chatTextSend", submitted: true, requiresRefresh: false,
+            counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0), errorCategory: category,
+            diagnosticTag: "chat.send.rejected"), conversationID: draft.conversationID,
+            clientRequestID: draft.clientRequestID, confirmedMessage: nil)
+    }
+
+    private func isSendCancellation(_ error: Error) -> Bool {
+        isCancellationError(error) || (error as? DsmNetworkError).map(isCancellation) == true
+    }
+
     public func sendMessageResult(
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessageSendOutcome {
+        try await performTextSend(draft, progress: progress, recordProgress: nil)
+    }
+
+    public func sendMessageResult(
+        _ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+        recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void
+    ) async throws -> ChatMessageSendOutcome {
+        try await performTextSend(draft, progress: progress, recordProgress: recordProgress)
+    }
+
+    private func performTextSend(
+        _ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+        recordProgress: (@Sendable (ChatMessageSendReceipt) async throws -> Void)?
+    ) async throws -> ChatMessageSendOutcome {
+        try beginMessageSend(draft)
+        defer { sendingRequestIDs.remove(draft.clientRequestID) }
+        if let terminal = terminalMessageSendOutcomes[draft.clientRequestID] { return terminal }
+        if let receipt = messageSendReceipts[draft.clientRequestID] {
+            if let recordProgress { try await recordProgress(receipt) }
+            return try await inspectMessageSend(receipt)
+        }
         try rejectKnownEncryptedConversation(draft.conversationID)
+        var sendingUserID: String?
+        if recordProgress != nil, pendingMessageSends[draft.clientRequestID] == nil,
+           completedMessages[draft.clientRequestID] == nil {
+            sendingUserID = try await requireSendAccess(draft.conversationID)
+        }
         if let threadID = draft.threadID, pendingMessageSends[draft.clientRequestID] == nil,
            completedMessages[draft.clientRequestID] == nil {
-            try await requirePlainConversation(draft.conversationID)
+            if recordProgress == nil { try await requirePlainConversation(draft.conversationID) }
             guard let root = try await message(conversationID: draft.conversationID, messageID: threadID, threadID: nil),
                   root.encryptionState == .notEncrypted, root.threadID == nil || root.threadID == root.id else { throw invalidChatResponse() }
         }
@@ -1548,9 +1707,18 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
 
-        pendingMessageSends[draft.clientRequestID] = PendingChatMessageSendReview(
-            draft: draft, candidateMessageID: nil
-        )
+        if let recordProgress {
+            guard let sendingUserID else { throw invalidChatResponse() }
+            let receipt = try ChatMessageSendReceipt(draft: draft, currentUserID: sendingUserID)
+            try await recordProgress(receipt)
+            if Task.isCancelled {
+                return try chatTextOutcome(status: .cancelledBeforeSubmission, submitted: false,
+                    diagnosticTag: "chat.text-send.cancelled-before-submit", draft: draft)
+            }
+            messageSendReceipts[draft.clientRequestID] = receipt
+        }
+        pendingMessageSends[draft.clientRequestID] = PendingChatMessageSendReview(draft: draft, candidateMessageID: nil)
+        let payload: ChatJSON
         do {
             var parameters: [String: DsmParameterValue] = [
                 "channel_id": .string(draft.conversationID), "message": .string(draft.text ?? "")
@@ -1560,80 +1728,49 @@ public actor DsmChatRepository: ChatRepository {
                 parameters["is_thread"] = .boolean(false)
                 parameters["thread_id"] = .string(threadID)
             }
-            let payload = try await call(
-                DsmAPIName.chatPost,
-                method: "create",
-                parameters: parameters,
-                version: 5
-            )
-            guard let pending = makePendingChatTextSend(from: payload, draft: draft) else {
-                let review = PendingChatMessageSendReview(draft: draft, candidateMessageID: nil)
-                pendingMessageSends[draft.clientRequestID] = review
-                return try chatTextOutcome(
-                    status: .submittedButUnverified,
-                    submitted: true,
-                    requiresRefresh: true,
-                    unknown: 1,
-                    errorCategory: .server,
-                    diagnosticTag: "chat.text-send.missing-id",
-                    draft: draft
-                )
-            }
-            pendingMessageSends[draft.clientRequestID] = pending
-            return try await finishPendingChatTextSend(pending)
-        } catch let error as AppError where error.category == .permissionDenied {
+            payload = try await callRaw(DsmAPIName.chatPost, method: "create", parameters: parameters, version: 5)
+        } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+            let outcome = try sendRejection(error, draft: draft, attachment: false)
             pendingMessageSends[draft.clientRequestID] = nil
-            return try chatTextOutcome(
-                status: .permissionDenied,
-                submitted: true,
-                failed: 1,
-                errorCategory: .permission,
-                diagnosticTag: "chat.text-send.permission",
-                draft: draft
-            )
-        } catch let error as AppError where error.category == .cancelled {
-            let review = PendingChatMessageSendReview(draft: draft, candidateMessageID: nil)
-            pendingMessageSends[draft.clientRequestID] = review
-            return try chatTextOutcome(
-                status: .cancellationRequestedAfterSubmission,
-                submitted: true,
-                requiresRefresh: true,
-                unknown: 1,
-                errorCategory: .network,
-                diagnosticTag: "chat.text-send.cancelled-after-submit",
-                draft: draft
-            )
-        } catch is CancellationError {
-            let review = PendingChatMessageSendReview(draft: draft, candidateMessageID: nil)
-            pendingMessageSends[draft.clientRequestID] = review
-            return try chatTextOutcome(
-                status: .cancellationRequestedAfterSubmission,
-                submitted: true,
-                requiresRefresh: true,
-                unknown: 1,
-                errorCategory: .network,
-                diagnosticTag: "chat.text-send.cancelled-after-submit",
-                draft: draft
-            )
+            terminalMessageSendOutcomes[draft.clientRequestID] = outcome
+            return outcome
         } catch {
-            let review = PendingChatMessageSendReview(draft: draft, candidateMessageID: nil)
-            pendingMessageSends[draft.clientRequestID] = review
-            return try chatTextOutcome(
-                status: .submittedButUnverified,
-                submitted: true,
-                requiresRefresh: true,
-                unknown: 1,
-                errorCategory: .unknown,
-                diagnosticTag: "chat.text-send.unverified",
-                draft: draft
-            )
+            return try chatTextOutcome(status: isSendCancellation(error) ? .cancellationRequestedAfterSubmission : .submittedButUnverified,
+                submitted: true, requiresRefresh: true, unknown: 1, errorCategory: .unknown,
+                diagnosticTag: "chat.text-send.submit-unknown", draft: draft)
         }
+        let pending = makePendingChatTextSend(from: payload, draft: draft)
+            ?? PendingChatMessageSendReview(draft: draft, candidateMessageID: nil)
+        pendingMessageSends[draft.clientRequestID] = pending
+        try await acknowledgeMessageSend(draft.clientRequestID, candidateID: pending.candidateMessageID, recordProgress: recordProgress)
+        return try await finishPendingChatTextSend(pending)
     }
 
     public func sendAttachmentMessageResult(
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessageSendOutcome {
+        try await performAttachmentSend(draft, progress: progress, recordProgress: nil)
+    }
+
+    public func sendAttachmentMessageResult(
+        _ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+        recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void
+    ) async throws -> ChatMessageSendOutcome {
+        try await performAttachmentSend(draft, progress: progress, recordProgress: recordProgress)
+    }
+
+    private func performAttachmentSend(
+        _ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+        recordProgress: (@Sendable (ChatMessageSendReceipt) async throws -> Void)?
+    ) async throws -> ChatMessageSendOutcome {
+        try beginMessageSend(draft)
+        defer { sendingRequestIDs.remove(draft.clientRequestID) }
+        if let terminal = terminalMessageSendOutcomes[draft.clientRequestID] { return terminal }
+        if let receipt = messageSendReceipts[draft.clientRequestID] {
+            if let recordProgress { try await recordProgress(receipt) }
+            return try await inspectMessageSend(receipt)
+        }
         guard draft.threadID == nil else {
             return try chatAttachmentOutcome(status: .unsupported, submitted: false, failed: 1,
                 errorCategory: .unsupported, diagnosticTag: "chat.attachment-send.thread-unsupported", draft: draft)
@@ -1681,6 +1818,7 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
 
+        let sendingUserID = recordProgress != nil ? try await requireSendAccess(draft.conversationID) : nil
         // 先保留请求标识，避免并发调用在 multipart 构建或上传期间重复提交。
         pendingAttachmentSends[draft.clientRequestID] = PendingChatAttachmentSendReview(
             draft: draft,
@@ -1689,38 +1827,30 @@ public actor DsmChatRepository: ChatRepository {
             expectedFileSize: nil
         )
         let submissionState = ChatAttachmentSubmissionState()
+        let uploaded: ChatAttachmentUploadReceipt
         do {
-            let receipt = try await uploadAttachmentReceipt(
+            uploaded = try await uploadAttachmentReceipt(
                 localURL: draft.localAttachmentURLs[0],
                 draft: draft,
                 progress: progress,
-                submissionState: submissionState
+                submissionState: submissionState,
+                willSubmit: { size in
+                    guard let recordProgress else { return }
+                    guard let sendingUserID, let size else { throw self.invalidChatResponse() }
+                    let receipt = try ChatMessageSendReceipt(draft: draft, currentUserID: sendingUserID, attachmentSize: size,
+                        attachmentFileName: self.chatAttachmentFileName(draft.localAttachmentURLs[0]))
+                    try await recordProgress(receipt)
+                    try Task.checkCancellation()
+                    self.messageSendReceipts[draft.clientRequestID] = receipt
+                }
             )
-            let pending = PendingChatAttachmentSendReview(
-                draft: draft,
-                candidateMessageID: receipt.candidateMessageID,
-                expectedFileName: receipt.localFileName,
-                expectedFileSize: receipt.localFileSize
-            )
-            pendingAttachmentSends[draft.clientRequestID] = pending
-            guard pending.candidateMessageID != nil else {
-                return try chatAttachmentOutcome(
-                    status: .submittedButUnverified,
-                    submitted: true,
-                    requiresRefresh: true,
-                    unknown: 1,
-                    errorCategory: .server,
-                    diagnosticTag: "chat.attachment-send.missing-id",
-                    draft: draft
-                )
-            }
-            return try await finishPendingChatAttachmentSend(pending)
         } catch {
             let appError = error as? AppError
-            let isCancellation = error is CancellationError || appError?.category == .cancelled
+            let isCancellation = isSendCancellation(error)
 
             guard submissionState.hasStarted else {
                 pendingAttachmentSends[draft.clientRequestID] = nil
+                messageSendReceipts[draft.clientRequestID] = nil
                 if isCancellation || Task.isCancelled {
                     return try chatAttachmentOutcome(
                         status: .cancelledBeforeSubmission,
@@ -1759,25 +1889,13 @@ public actor DsmChatRepository: ChatRepository {
                 )
             }
 
-            if appError?.category == .permissionDenied {
+            if let networkError = error as? DsmNetworkError, isExplicitWriteRejection(networkError) {
+                let outcome = try sendRejection(networkError, draft: draft, attachment: true)
                 pendingAttachmentSends[draft.clientRequestID] = nil
-                return try chatAttachmentOutcome(
-                    status: .permissionDenied,
-                    submitted: true,
-                    failed: 1,
-                    errorCategory: .permission,
-                    diagnosticTag: "chat.attachment-send.permission",
-                    draft: draft
-                )
+                terminalMessageSendOutcomes[draft.clientRequestID] = outcome
+                return outcome
             }
-
-            let pending = PendingChatAttachmentSendReview(
-                draft: draft,
-                candidateMessageID: nil,
-                expectedFileName: draft.localAttachmentURLs[0].lastPathComponent,
-                expectedFileSize: nil
-            )
-            pendingAttachmentSends[draft.clientRequestID] = pending
+            // 写后保存失败不能清空已收到的编号；调用方保留提交记录，后续仅查询。
             if isCancellation {
                 return try chatAttachmentOutcome(
                     status: .cancellationRequestedAfterSubmission,
@@ -1799,6 +1917,11 @@ public actor DsmChatRepository: ChatRepository {
                 draft: draft
             )
         }
+        let pending = PendingChatAttachmentSendReview(draft: draft, candidateMessageID: uploaded.candidateMessageID,
+            expectedFileName: uploaded.localFileName, expectedFileSize: uploaded.localFileSize)
+        pendingAttachmentSends[draft.clientRequestID] = pending
+        try await acknowledgeMessageSend(draft.clientRequestID, candidateID: pending.candidateMessageID, recordProgress: recordProgress)
+        return try await finishPendingChatAttachmentSend(pending)
     }
 
     private func makePendingChatTextSend(
@@ -1814,6 +1937,7 @@ public actor DsmChatRepository: ChatRepository {
     private func finishPendingChatTextSend(
         _ pending: PendingChatMessageSendReview
     ) async throws -> ChatMessageSendOutcome {
+        if let receipt = messageSendReceipts[pending.draft.clientRequestID] { return try await inspectMessageSend(receipt) }
         guard let candidateID = pending.candidateMessageID else {
             return try chatTextOutcome(
                 status: .submittedButUnverified,
@@ -1826,13 +1950,9 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
         do {
-            let page = try await messagePage(
-                conversationID: pending.draft.conversationID, before: nil, limit: 50,
-                cachesMessages: true, threadID: pending.draft.threadID
-            )
-            guard let confirmed = page.messages.first(where: {
-                isConfirmedChatTextMessage($0, pending: pending, candidateID: candidateID)
-            }) else {
+            guard let confirmed = try await findMessage(id: candidateID, conversationID: pending.draft.conversationID,
+                                                        threadID: pending.draft.threadID),
+                  isConfirmedChatTextMessage(confirmed, pending: pending, candidateID: candidateID) else {
                 return try chatTextOutcome(
                     status: .submittedButUnverified,
                     submitted: true,
@@ -1854,15 +1974,7 @@ public actor DsmChatRepository: ChatRepository {
                 draft: pending.draft,
                 message: result
             )
-        } catch let error as AppError where error.category == .permissionDenied {
-            return try chatTextOutcome(
-                status: .permissionDenied,
-                submitted: true,
-                failed: 1,
-                errorCategory: .permission,
-                diagnosticTag: "chat.text-send.readback-permission",
-                draft: pending.draft
-            )
+
         } catch {
             return try chatTextOutcome(
                 status: .submittedButUnverified,
@@ -1886,25 +1998,29 @@ public actor DsmChatRepository: ChatRepository {
             message.encryptionState == .notEncrypted &&
             isReturnedSendAuthorValid(message) &&
             message.text == pending.draft.text &&
-            (pending.draft.threadID == nil || message.threadID == pending.draft.threadID)
+            message.threadID == pending.draft.threadID && message.attachments.isEmpty && message.poll == nil
     }
 
     private func confirmedSentMessage(
         _ message: ChatMessage,
         draft: ChatMessageDraft
     ) -> ChatMessage {
+        confirmedSentMessage(message, clientRequestID: draft.clientRequestID, fallbackText: draft.text)
+    }
+
+    private func confirmedSentMessage(_ message: ChatMessage, clientRequestID: UUID, fallbackText: String?) -> ChatMessage {
         if cachedCurrentUserID == nil, message.senderID != "unknown" {
             cachedCurrentUserID = message.senderID
         }
         let confirmed = ChatMessage(
             id: message.id,
-            clientRequestID: draft.clientRequestID,
+            clientRequestID: clientRequestID,
             conversationID: message.conversationID,
             senderID: message.senderID,
             senderDisplayName: message.senderDisplayName,
             isFromCurrentUser: true,
             sentAt: message.sentAt,
-            text: message.text ?? draft.text,
+            text: message.text ?? fallbackText,
             attachments: message.attachments,
             poll: message.poll,
             deliveryState: .sent,
@@ -1952,6 +2068,7 @@ public actor DsmChatRepository: ChatRepository {
     private func finishPendingChatAttachmentSend(
         _ pending: PendingChatAttachmentSendReview
     ) async throws -> ChatMessageSendOutcome {
+        if let receipt = messageSendReceipts[pending.draft.clientRequestID] { return try await inspectMessageSend(receipt) }
         guard let candidateID = pending.candidateMessageID else {
             return try chatAttachmentOutcome(
                 status: .submittedButUnverified,
@@ -1964,14 +2081,8 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
         do {
-            let page = try await listMessages(
-                conversationID: pending.draft.conversationID,
-                before: nil,
-                limit: 50
-            )
-            guard let confirmed = page.messages.first(where: {
-                isConfirmedChatAttachmentMessage($0, pending: pending, candidateID: candidateID)
-            }) else {
+            guard let confirmed = try await findMessage(id: candidateID, conversationID: pending.draft.conversationID),
+                  isConfirmedChatAttachmentMessage(confirmed, pending: pending, candidateID: candidateID) else {
                 return try chatAttachmentOutcome(
                     status: .submittedButUnverified,
                     submitted: true,
@@ -1993,15 +2104,7 @@ public actor DsmChatRepository: ChatRepository {
                 draft: pending.draft,
                 message: result
             )
-        } catch let error as AppError where error.category == .permissionDenied {
-            return try chatAttachmentOutcome(
-                status: .permissionDenied,
-                submitted: true,
-                failed: 1,
-                errorCategory: .permission,
-                diagnosticTag: "chat.attachment-send.readback-permission",
-                draft: pending.draft
-            )
+
         } catch let error as AppError where error.category == .cancelled {
             return try chatAttachmentOutcome(
                 status: .cancellationRequestedAfterSubmission,
@@ -2051,7 +2154,7 @@ public actor DsmChatRepository: ChatRepository {
             message.conversationID == pending.draft.conversationID &&
             message.encryptionState == .notEncrypted &&
             isReturnedSendAuthorValid(message) &&
-            message.text == pending.draft.text
+            message.text == pending.draft.text && message.threadID == nil && message.poll == nil
     }
 
     private func chatAttachmentOutcome(
@@ -2093,7 +2196,8 @@ public actor DsmChatRepository: ChatRepository {
         localURL: URL,
         draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress,
-        submissionState: ChatAttachmentSubmissionState?
+        submissionState: ChatAttachmentSubmissionState?,
+        willSubmit: (Int64?) async throws -> Void
     ) async throws -> ChatAttachmentUploadReceipt {
         guard supportsAttachmentUpload else {
             throw unsupported(L10n.string("shared.45cf7cd4f9a97d94"))
@@ -2189,6 +2293,8 @@ public actor DsmChatRepository: ChatRepository {
         let response: DsmHTTPResponse
         do {
             try Task.checkCancellation()
+            try await willSubmit(values.fileSize.map(Int64.init))
+            try Task.checkCancellation()
             submissionState?.markStarted()
             response = try await binaryTransport.upload(request, from: bodyURL, progress: progress)
         } catch is CancellationError {
@@ -2212,7 +2318,7 @@ public actor DsmChatRepository: ChatRepository {
             throw invalidChatResponse()
         }
         if let code = envelope.error?.code {
-            throw mapChatError(.api(code: code, requestID: UUID()))
+            throw DsmNetworkError.api(code: code, requestID: UUID())
         }
         guard envelope.success else { throw invalidChatResponse() }
 
@@ -2246,7 +2352,7 @@ public actor DsmChatRepository: ChatRepository {
         return ChatAttachmentUploadReceipt(
             message: message,
             candidateMessageID: stableCandidateMessageID,
-            localFileName: localURL.lastPathComponent,
+            localFileName: chatAttachmentFileName(localURL),
             localFileSize: localFileSize
         )
     }
@@ -2398,14 +2504,14 @@ public actor DsmChatRepository: ChatRepository {
     }
 
     /// 只有读到完整分页的末尾才能确认不存在，不能将“不在最新一页”当成已删除。
-    private func findMessage(id: String, conversationID: String) async throws -> ChatMessage? {
+    private func findMessage(id: String, conversationID: String, threadID: String? = nil) async throws -> ChatMessage? {
         var cursor: String?
         var visited: Set<String> = []
         var seenMessageIDs: Set<String> = []
         repeat {
             try Task.checkCancellation()
             let page = try await messagePage(conversationID: conversationID, before: cursor, limit: 100,
-                                             cachesMessages: false, requiredMessageID: id)
+                                             cachesMessages: false, threadID: threadID, requiredMessageID: id)
             for message in page.messages {
                 guard seenMessageIDs.insert(message.id).inserted else { throw invalidChatResponse() }
             }
@@ -3508,6 +3614,12 @@ public actor DsmChatRepository: ChatRepository {
         return url
     }
 
+    /// 结果核查使用实际 multipart 名称；沿用既有头字段转义规则。
+    private func chatAttachmentFileName(_ url: URL) -> String {
+        url.lastPathComponent.replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: "").replacingOccurrences(of: "\"", with: "'")
+    }
+
     private func createChatMultipartBody(
         localURL: URL,
         boundary: String,
@@ -3537,10 +3649,7 @@ public actor DsmChatRepository: ChatRepository {
                 try write("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
                 try write("\(value)\r\n")
             }
-            let safeFilename = localURL.lastPathComponent
-                .replacingOccurrences(of: "\r", with: "")
-                .replacingOccurrences(of: "\n", with: "")
-                .replacingOccurrences(of: "\"", with: "'")
+            let safeFilename = chatAttachmentFileName(localURL)
             try write("--\(boundary)\r\n")
             try write("Content-Disposition: form-data; name=\"file\"; filename=\"\(safeFilename)\"\r\n")
             try write("Content-Type: application/octet-stream\r\n\r\n")

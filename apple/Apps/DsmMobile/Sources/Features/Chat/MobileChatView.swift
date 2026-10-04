@@ -13,6 +13,7 @@ struct MobileChatView: View {
     @State private var presentsMessageSearch = false
     @State private var presentsForwardRecords = false
     @State private var presentsDeletionRecords = false
+    @State private var presentsSendRecords = false
 
     var body: some View {
         Group {
@@ -23,6 +24,12 @@ struct MobileChatView: View {
             }
         }
         .toolbar {
+            if let sending = model.chatModel.sending, (!sending.entries.isEmpty || sending.recovery.failed), model.chatModel.state.visibleConversationID == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { presentsSendRecords = true } label: { Image(systemName: "paperplane").frame(width: 44, height: 44) }
+                        .accessibilityLabel(L10n.string("mobile.chat.send.records")).accessibilityIdentifier("chat-send-records")
+                }
+            }
             if let deletion = model.chatModel.deletion, (!deletion.entries.isEmpty || deletion.recovery.failed), model.chatModel.state.visibleConversationID == nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { presentsDeletionRecords = true } label: { Image(systemName: "trash").frame(width: 44, height: 44) }
@@ -70,6 +77,11 @@ struct MobileChatView: View {
             if let management = model.chatModel.management {
                 MobileChatConversationManagementSheet(chat: model.chatModel, management: management)
                     .id(ObjectIdentifier(management))
+            }
+        }
+        .sheet(isPresented: $presentsSendRecords) {
+            if let sending = model.chatModel.sending {
+                MobileChatSendRecordsSheet(sending: sending, conversations: model.chatModel.state.conversations).id(ObjectIdentifier(sending))
             }
         }
         .sheet(isPresented: $presentsDeletionRecords) {
@@ -695,6 +707,7 @@ private struct MobileChatMessagesView: View {
     @State private var presentsDeletionSelection = false
     @State private var presentsForwardRecords = false
     @State private var presentsDeletionRecords = false
+    @State private var presentsSendRecords = false
 
     var body: some View {
         Group {
@@ -750,6 +763,10 @@ private struct MobileChatMessagesView: View {
                     .accessibilityIdentifier("chat-search-current")
                 }
                 Menu {
+                    if let sending = chat.sending, !sending.entries.isEmpty || sending.recovery.failed {
+                        Button { presentsSendRecords = true } label: { Label(L10n.string("mobile.chat.send.records"), systemImage: "paperplane") }
+                            .accessibilityIdentifier("chat-send-records")
+                    }
                     if !conversation.isEncrypted, chat.deletion?.canDelete == true {
                         Button { presentsDeletionSelection = true } label: { Label(L10n.string("mobile.chat.deletion.select"), systemImage: "trash") }
                             .accessibilityIdentifier("chat-deletion-select")
@@ -810,6 +827,11 @@ private struct MobileChatMessagesView: View {
         .sheet(isPresented: $presentsDeletionSelection) {
             if let deletion = chat.deletion {
                 MobileChatDeletionSheet(chat: chat, deletion: deletion).id(ObjectIdentifier(deletion))
+            }
+        }
+        .sheet(isPresented: $presentsSendRecords) {
+            if let sending = chat.sending {
+                MobileChatSendRecordsSheet(sending: sending, conversations: chat.state.conversations).id(ObjectIdentifier(sending))
             }
         }
         .sheet(isPresented: $presentsDeletionRecords) {

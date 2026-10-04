@@ -55,8 +55,9 @@ final class MobileChatModelTests: XCTestCase {
             try await repository.openDirectConversation(userID: "user", clientRequestID: UUID())
         }
         await assertReadOnlyFailure { try await repository.createGroup(groupDraft) }
-        let sent = try await repository.sendMessage(draft)
-        XCTAssertEqual(sent.text, "不会发送")
+        await assertReadOnlyFailure { try await repository.sendMessage(draft) }
+        let sent = try await repository.sendMessageResult(draft, progress: { _, _ in }, recordProgress: { _ in })
+        XCTAssertEqual(sent.confirmedMessage?.text, "不会发送")
         XCTAssertEqual(sent.conversationID, "conversation")
         await assertReadOnlyFailure {
             try await repository.sendMessage(
@@ -1012,7 +1013,7 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertEqual(sentDrafts.map(\.text), ["你好 👋"])
     }
 
-    func test发送失败保留草稿并在刷新前阻止同文再次提交() async {
+    func test发送未知保留草稿且普通刷新不能解除重复保护() async {
         let conversation = Self.conversation(id: "c1", title: "家庭")
         let request = ChatMessageRequest(conversationID: conversation.id, cursor: nil)
         let repository = ChatRepositoryStub(
@@ -1030,13 +1031,16 @@ final class MobileChatModelTests: XCTestCase {
         await model.sendSelectedMessage()
 
         XCTAssertEqual(model.state.selectedDraft, "需要核对")
-        XCTAssertEqual(model.state.sendErrorCategory, .partialFailure)
+        XCTAssertEqual(model.sending?.errorKey, "mobile.chat.send.pending")
         XCTAssertTrue(model.state.selectedDraftRequiresReview)
         let sentDrafts = await repository.sentDrafts()
         XCTAssertEqual(sentDrafts.count, 1)
 
         await model.refreshMessages()
-        XCTAssertFalse(model.state.selectedDraftRequiresReview)
+        XCTAssertTrue(model.state.selectedDraftRequiresReview)
+        await model.sendSelectedMessage()
+        let countAfterRefresh = await repository.sentDrafts().count
+        XCTAssertEqual(countAfterRefresh, 1)
     }
 
     func test删除本人消息成功后从当前会话移除且不开放他人消息() async {
@@ -2501,6 +2505,18 @@ private actor ChatRepositoryStub: ChatRepository {
             throw MobileReadOnlyChatRepositoryError.operationUnavailable
         }
         return message
+    }
+
+    func sendMessageResult(_ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+                           recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void) async throws -> ChatMessageSendOutcome {
+        var receipt = try ChatMessageSendReceipt(draft: draft, currentUserID: "me")
+        try await recordProgress(receipt)
+        let outcome = try await sendMessageResult(draft, progress: progress)
+        if let message = outcome.confirmedMessage {
+            receipt.candidateMessageID = message.id
+            try await recordProgress(receipt)
+        }
+        return outcome
     }
 
     func sendMessageResult(

@@ -3108,7 +3108,7 @@
 "mobile.chat.send.hint" = "Sends this message to the selected conversation.";
 "mobile.chat.action.send" = "Send";
 "mobile.chat.sending" = "Sending…";
-"mobile.chat.send.failed" = "The message couldn’t be confirmed. Check the conversation before sending it again.";
+"mobile.chat.send.failed" = "The message could not be sent. Try again in Sent messages.";
 "mobile.chat.message.action.delete" = "Delete";
 "mobile.chat.message.delete.confirm.title" = "Delete message?";
 "mobile.chat.message.delete.confirm.message" = "This removes the message from Synology Chat. This can’t be undone.";
@@ -6285,3 +6285,25 @@
 "mobile.chat.deletion.cancelled" = "Kept";
 "mobile.chat.deletion.failed" = "Couldn’t delete. Refresh the chat and select the message again.";
 "mobile.chat.deletion.confirm.message" = "Selected messages will be removed from Synology Chat. This can’t be undone.";
+
+"mobile.chat.send.records" = "Sent messages";
+"mobile.chat.send.empty" = "No sent messages";
+"mobile.chat.send.empty.message" = "Send a message in a conversation to see its status here.";
+"mobile.chat.send.conversation-unavailable" = "Conversation unavailable";
+"mobile.chat.send.kind.text" = "Text message";
+"mobile.chat.send.kind.reply" = "Reply";
+"mobile.chat.send.kind.attachment" = "Attachment";
+"mobile.chat.send.stop" = "Stop waiting";
+"mobile.chat.send.refresh" = "Refresh send status";
+"mobile.chat.send.cancel" = "Cancel sending";
+"mobile.chat.send.retry" = "Send again";
+"mobile.chat.send.remove" = "Remove local record";
+"mobile.chat.send.details" = "Message status";
+"mobile.chat.send.attachment-changed" = "The attachment copy is unavailable or has changed. Return to the conversation and select it again.";
+"mobile.chat.send.denied" = "You don’t have permission to send this message. Contact your administrator.";
+"mobile.chat.send.pending" = "The message hasn’t appeared yet. Refresh its status in Sent messages later. Sending it again is currently unavailable.";
+"mobile.chat.send.status.prepared" = "Not sent yet";
+"mobile.chat.send.status.submitted" = "The message hasn’t appeared yet. Refresh its send status later.";
+"mobile.chat.send.status.complete" = "Sent";
+"mobile.chat.send.status.failed" = "Sending failed. You can send it again.";
+"mobile.chat.send.status.cancelled" = "Cancelled. The message was not sent.";

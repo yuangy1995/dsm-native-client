@@ -23,43 +23,16 @@ struct MobileChatAttachmentComposer: View {
             if state.isSendingAttachment {
                 sendingStatus(state)
             }
-            HStack(alignment: .bottom, spacing: 8) {
-                pickerActions
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L10n.string("mobile.chat.composer.label"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextField(
-                        L10n.string("mobile.chat.send.placeholder"),
-                        text: draftBinding,
-                        axis: .vertical
-                    )
-                    .lineLimit(1...4)
-                    .textFieldStyle(.roundedBorder)
-                    .submitLabel(.send)
-                    .onSubmit { Task { await chat.sendSelectedMessage() } }
-                    .disabled(state.isSendingMessage || state.isSendingAttachment || state.isPreparingAttachment)
-                    .accessibilityLabel(L10n.string("mobile.chat.composer.label"))
-                    .accessibilityHint(L10n.string("mobile.chat.send.hint"))
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .bottom, spacing: 8) {
+                    pickerActions
+                    messageInput(state).frame(minWidth: 160)
+                    sendButton(state)
                 }
-                Button {
-                    Task { await chat.sendSelectedMessage() }
-                } label: {
-                    if state.isSendingMessage || state.isSendingAttachment {
-                        ProgressView()
-                            .frame(width: 24, height: 24)
-                    } else {
-                        Image(systemName: "paperplane.fill")
-                            .frame(width: 24, height: 24)
-                    }
+                VStack(alignment: .leading, spacing: 8) {
+                    messageInput(state)
+                    HStack(spacing: 8) { pickerActions; Spacer(minLength: 0); sendButton(state) }
                 }
-                .frame(minWidth: 44, minHeight: 44)
-                .disabled(!chat.canSendSelectedDraft)
-                .accessibilityLabel(
-                    state.isSendingMessage || state.isSendingAttachment
-                        ? L10n.string("mobile.chat.sending")
-                        : L10n.string("mobile.chat.action.send")
-                )
             }
         }
         .padding(.horizontal, 16)
@@ -89,6 +62,29 @@ struct MobileChatAttachmentComposer: View {
         }
     }
 
+    private func messageInput(_ state: MobileChatProfileState) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.string("mobile.chat.composer.label")).font(.caption).foregroundStyle(.secondary)
+            TextField(L10n.string("mobile.chat.send.placeholder"), text: draftBinding, axis: .vertical)
+                .lineLimit(1...4).textFieldStyle(.roundedBorder).submitLabel(.send)
+                .onSubmit { Task { await chat.sendSelectedMessage() } }
+                .disabled(state.isSendingMessage || state.isSendingAttachment || state.isPreparingAttachment)
+                .accessibilityIdentifier("chat-compose-text")
+                .accessibilityLabel(L10n.string("mobile.chat.composer.label"))
+                .accessibilityHint(L10n.string("mobile.chat.send.hint"))
+        }
+    }
+
+    private func sendButton(_ state: MobileChatProfileState) -> some View {
+        Button { Task { await chat.sendSelectedMessage() } } label: {
+            if state.isSendingMessage || state.isSendingAttachment { ProgressView().frame(width: 24, height: 24) }
+            else { Image(systemName: "paperplane.fill").font(.system(size: 20)).frame(width: 24, height: 24) }
+        }
+        .frame(minWidth: 44, minHeight: 44).disabled(!chat.canSendSelectedDraft)
+        .accessibilityIdentifier("chat-compose-send")
+        .accessibilityLabel(L10n.string(state.isSendingMessage || state.isSendingAttachment ? "mobile.chat.sending" : "mobile.chat.action.send"))
+    }
+
     @ViewBuilder
     private func feedback(_ state: MobileChatProfileState) -> some View {
         if state.isPreparingAttachment {
@@ -96,26 +92,15 @@ struct MobileChatAttachmentComposer: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .accessibilityElement(children: .combine)
-        } else if state.attachmentReviewRequired {
-            Label(L10n.string("mobile.chat.attachment.review"), systemImage: "exclamationmark.triangle")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
+        } else if chat.sending?.recovery.failed == true {
+            Text(L10n.string("mobile.chat.interaction.storage-error")).font(.footnote).foregroundStyle(.secondary)
+        } else if let sending = chat.sending, sending.errorConversationID == state.selectedConversationID, let key = sending.errorKey {
+            Label(L10n.string(key), systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.secondary)
+        } else if state.selectedDraftRequiresReview || state.attachmentReviewRequired {
+            Label(L10n.string("mobile.chat.send.pending"), systemImage: "clock").font(.footnote).foregroundStyle(.secondary)
         } else if state.attachmentErrorCategory != nil {
             Label(L10n.string("mobile.chat.attachment.failed"), systemImage: "exclamationmark.triangle")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
-        } else if state.selectedDraftRequiresReview {
-            Label(L10n.string("mobile.chat.send.review"), systemImage: "exclamationmark.triangle")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
-        } else if state.sendErrorCategory != nil {
-            Label(L10n.string("mobile.chat.send.failed"), systemImage: "exclamationmark.triangle")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
+                .font(.footnote).foregroundStyle(.secondary)
         }
     }
 
@@ -128,6 +113,7 @@ struct MobileChatAttachmentComposer: View {
                     preferredItemEncoding: .current
                 ) {
                     Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 20))
                         .frame(width: 24, height: 24)
                 }
                 .frame(minWidth: 44, minHeight: 44)
@@ -140,6 +126,7 @@ struct MobileChatAttachmentComposer: View {
                     isImportingAttachmentFile = true
                 } label: {
                     Image(systemName: "folder")
+                        .font(.system(size: 20))
                         .frame(width: 24, height: 24)
                 }
                 .frame(minWidth: 44, minHeight: 44)

@@ -27,8 +27,11 @@ final class MobileChatDeletionModel {
     func updateAvailability(_ value: ChatAvailability) { availability = value }
     func invalidate() { active = false; errorKey = nil }
     func protects(_ message: ChatMessage) -> Bool {
+        protects(messageID: message.id, conversationID: message.conversationID)
+    }
+    func protects(messageID: String, conversationID: String) -> Bool {
         recovery.failed || entries.contains { $0.items.contains { ($0.phase == .planned || $0.phase == .submitted)
-            && $0.source.messageID == message.id && $0.source.conversationID == message.conversationID } }
+            && $0.source.messageID == messageID && $0.source.conversationID == conversationID } }
     }
     func hasUnfinished(in conversationID: String) -> Bool {
         recovery.failed || entries.contains { $0.hasUnfinished && $0.items.first?.source.conversationID == conversationID }
@@ -55,7 +58,8 @@ final class MobileChatDeletionModel {
                 && owner?.state.selectedMessages.messages.contains { $0.id == message.id } == true))
     }
     private func otherWriteBlocks(messageID: String, conversationID: String) -> Bool {
-        owner?.interaction?.isMutating == true || owner?.polls?.isMutating == true
+        owner?.sending?.protectsRoot(messageID, in: conversationID) == true
+            || owner?.interaction?.isMutating == true || owner?.polls?.isMutating == true
             || owner?.timedActions?.isMutating == true || owner?.management?.blocksWrites(in: conversationID) == true
             || owner?.forwarding?.entries.contains(where: { $0.items.contains { ($0.phase == .planned || $0.phase == .submitted)
                 && $0.source.messageID == messageID && $0.source.conversationID == conversationID } }) == true

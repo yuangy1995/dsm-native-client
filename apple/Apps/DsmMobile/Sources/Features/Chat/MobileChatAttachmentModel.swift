@@ -19,12 +19,9 @@ final class MobileChatAttachmentModel {
     var remoteAttachmentPresentation: MobileChatRemoteAttachmentPresentation?
 
     @ObservationIgnored private var preparationTask: Task<Void, Never>?
-    @ObservationIgnored private var sendTask: Task<Void, Never>?
     @ObservationIgnored var thumbnailTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored var remoteDownloadTask: Task<Void, Never>?
-    @ObservationIgnored private var inFlightAttachments: [UUID: MobileChatAttachmentSelection] = [:]
     @ObservationIgnored private var preparationGeneration = 0
-    @ObservationIgnored private var sendGeneration = 0
     @ObservationIgnored var remoteDownloadGeneration = 0
 
     init(
@@ -46,7 +43,7 @@ final class MobileChatAttachmentModel {
               !owner.state.isPreparingAttachment,
               !owner.state.isSendingMessage,
               !owner.state.isSendingAttachment,
-              !owner.state.attachmentReviewRequired else {
+              owner.sending?.recovery.failed == false else {
             return false
         }
         return supportedFeatures.contains { owner.state.availability.supportedFeatures.contains($0) }
@@ -61,13 +58,13 @@ final class MobileChatAttachmentModel {
     }
 
     var canSendSelectedDraft: Bool {
-        guard let owner, !owner.state.attachmentReviewRequired,
+        guard let owner, let sending = owner.sending,
               owner.management?.blocksWrites(in: owner.state.selectedConversationID ?? "") != true else { return false }
         if let selectedAttachment {
             return canSelectAttachment &&
                 owner.state.availability.supportedFeatures.contains(selectedAttachment.requiredFeature)
         }
-        return owner.state.canSendSelectedDraft && !owner.state.isSendingAttachment
+        return owner.state.canSendSelectedDraft && sending.canSend(conversationID: owner.state.selectedConversationID ?? "", text: owner.state.selectedDraft)
     }
 
     func preparePhotoAttachment(_ item: any MobilePhotosPickerItemServing) {
@@ -155,7 +152,7 @@ final class MobileChatAttachmentModel {
 
     func cancelSelectedAttachmentSend() {
         guard owner?.state.isSendingAttachment == true else { return }
-        sendTask?.cancel()
+        owner?.sending?.cancel()
     }
 
     func leaveConversation(_ conversationID: String) {
@@ -164,108 +161,19 @@ final class MobileChatAttachmentModel {
     }
 
     func sendSelectedAttachment() async {
-        guard owner?.management?.blocksWrites(in: owner?.state.selectedConversationID ?? "") != true else { return }
-        guard let owner,
-              let profileID = owner.activeProfileID,
-              let repository = owner.attachmentRepository(for: profileID),
-              let conversation = owner.state.selectedConversation,
-              !conversation.isEncrypted,
-              !owner.state.attachmentReviewRequired,
-              let attachment = selectedAttachment,
-              !owner.state.isPreparingAttachment,
-              !owner.state.isSendingMessage,
-              !owner.state.isSendingAttachment,
-              owner.state.availability.supportedFeatures.contains(attachment.requiredFeature) else {
-            if selectedAttachment != nil {
-                owner?.updateActive { $0.attachmentErrorCategory = .apiUnavailable }
-            }
-            return
-        }
-
-        let draft: ChatMessageDraft
-        do {
-            draft = try ChatMessageDraft(
-                conversationID: conversation.id,
-                text: owner.state.selectedDraft,
-                localAttachmentURLs: [attachment.localURL]
-            )
-        } catch {
-            owner.updateActive { $0.attachmentErrorCategory = Self.category(for: error) }
-            return
-        }
-
+        guard let owner, let sending = owner.sending, canSendSelectedDraft,
+              let conversation = owner.state.selectedConversation, let attachment = selectedAttachment else { return }
+        let text = owner.state.selectedDraft
         selectedAttachment = nil
-        inFlightAttachments[draft.clientRequestID] = attachment
-        let generation = beginSend { profile in
-            profile.isSendingAttachment = true
-            profile.attachmentProgressFraction = nil
-            profile.attachmentErrorCategory = nil
-            profile.attachmentReviewRequired = false
-        }
-        let task = Task { [weak self] in
-            do {
-                let outcome = try await repository.sendAttachmentMessageResult(
-                    draft,
-                    progress: { [weak self] completedBytes, totalBytes in
-                        let fraction = Self.progressFraction(
-                            completedBytes: completedBytes,
-                            totalBytes: totalBytes
-                        )
-                        Task { @MainActor [weak self] in
-                            self?.updateSendProgress(
-                                fraction,
-                                profileID: profileID,
-                                conversationID: conversation.id,
-                                generation: generation
-                            )
-                        }
-                    }
-                )
-                self?.finishSendOutcome(
-                    outcome,
-                    draft: draft,
-                    profileID: profileID,
-                    conversationID: conversation.id,
-                    generation: generation
-                )
-            } catch is CancellationError {
-                self?.finishSendReview(
-                    profileID: profileID,
-                    conversationID: conversation.id,
-                    clientRequestID: draft.clientRequestID,
-                    generation: generation
-                )
-            } catch {
-                self?.finishSendFailure(
-                    error,
-                    profileID: profileID,
-                    conversationID: conversation.id,
-                    clientRequestID: draft.clientRequestID,
-                    generation: generation
-                )
-            }
-        }
-        sendTask = task
-        await task.value
-    }
-
-    func clearReviewAfterMessageRefresh() {
-        owner?.updateActive { profile in
-            profile.attachmentReviewRequired = false
-            profile.attachmentErrorCategory = nil
-        }
+        // 副本准备结束前保留输入；离页不清理正在复制的文件。
+        defer { cleanup(attachment) }
+        await sending.send(conversationID: conversation.id, text: text, attachment: attachment)
     }
 
     func cancelAllWork() {
-        let shouldRequireSendReview = owner?.state.isSendingAttachment == true && !inFlightAttachments.isEmpty
-        let inFlightAttachmentsToClean = Array(inFlightAttachments.values)
-        inFlightAttachments = [:]
         preparationTask?.cancel()
         preparationTask = nil
         preparationGeneration &+= 1
-        sendTask?.cancel()
-        sendTask = nil
-        sendGeneration &+= 1
         thumbnailTasks.values.forEach { $0.cancel() }
         thumbnailTasks = [:]
         remoteDownloadTask?.cancel()
@@ -273,7 +181,6 @@ final class MobileChatAttachmentModel {
         remoteDownloadGeneration &+= 1
         dismissRemoteAttachmentPresentation()
         releaseSelectedAttachment()
-        inFlightAttachmentsToClean.forEach(cleanup)
         owner?.updateActive { profile in
             profile.isPreparingAttachment = false
             profile.isSendingAttachment = false
@@ -283,10 +190,6 @@ final class MobileChatAttachmentModel {
             profile.remoteAttachmentProgressFraction = nil
             profile.remoteAttachmentErrorMessageID = nil
             profile.remoteAttachmentErrorCategory = nil
-            if shouldRequireSendReview {
-                profile.attachmentReviewRequired = true
-                profile.attachmentErrorCategory = .partialFailure
-            }
         }
     }
 
@@ -428,228 +331,6 @@ final class MobileChatAttachmentModel {
         preparationTask = nil
     }
 
-    private func beginSend(_ update: (inout MobileChatProfileState) -> Void) -> Int {
-        sendTask?.cancel()
-        sendTask = nil
-        sendGeneration &+= 1
-        owner?.updateActive(update)
-        return sendGeneration
-    }
-
-    private func updateSendProgress(
-        _ fraction: Double?,
-        profileID: UUID,
-        conversationID: String,
-        generation: Int
-    ) {
-        guard isCurrentSend(
-            profileID: profileID,
-            conversationID: conversationID,
-            generation: generation
-        ) else { return }
-        owner?.updateActive { $0.attachmentProgressFraction = fraction }
-    }
-
-    private func finishSendOutcome(
-        _ outcome: ChatMessageSendOutcome,
-        draft: ChatMessageDraft,
-        profileID: UUID,
-        conversationID: String,
-        generation: Int
-    ) {
-        guard outcome.clientRequestID == draft.clientRequestID,
-              outcome.conversationID == conversationID else {
-            finishSendReview(
-                profileID: profileID,
-                conversationID: conversationID,
-                clientRequestID: draft.clientRequestID,
-                generation: generation
-            )
-            return
-        }
-        switch outcome.result.status {
-        case .confirmedSuccess:
-            guard let message = outcome.confirmedMessage else {
-                finishSendReview(
-                    profileID: profileID,
-                    conversationID: conversationID,
-                    clientRequestID: draft.clientRequestID,
-                    generation: generation
-                )
-                return
-            }
-            finishSendSuccess(
-                message,
-                draft: draft,
-                profileID: profileID,
-                conversationID: conversationID,
-                generation: generation
-            )
-        case .cancelledBeforeSubmission:
-            finishSendCancellationBeforeSubmission(
-                profileID: profileID,
-                conversationID: conversationID,
-                clientRequestID: draft.clientRequestID,
-                generation: generation
-            )
-        case .submittedButUnverified, .cancellationRequestedAfterSubmission:
-            finishSendReview(
-                profileID: profileID,
-                conversationID: conversationID,
-                clientRequestID: draft.clientRequestID,
-                generation: generation
-            )
-        case .permissionDenied, .confirmedFailure, .partialSuccess, .unsupported:
-            finishSendFailure(
-                Self.appError(for: outcome.result),
-                profileID: profileID,
-                conversationID: conversationID,
-                clientRequestID: draft.clientRequestID,
-                generation: generation
-            )
-        }
-    }
-
-    private func finishSendSuccess(
-        _ message: ChatMessage,
-        draft: ChatMessageDraft,
-        profileID: UUID,
-        conversationID: String,
-        generation: Int
-    ) {
-        guard let owner,
-              let attachment = takeInFlight(
-                clientRequestID: draft.clientRequestID,
-                profileID: profileID,
-                conversationID: conversationID,
-                generation: generation
-              ) else {
-            return
-        }
-        cleanup(attachment)
-        guard message.conversationID == conversationID else {
-            finishSendReviewState()
-            return
-        }
-        owner.updateActive { profile in
-            let existing = profile.messagesByConversation[conversationID]?.messages ?? []
-            let messages = MobileChatModel.normalizedMessages(existing + [message])
-            let previous = profile.messagesByConversation[conversationID]
-            profile.messagesByConversation[conversationID] = MobileChatMessageCache(
-                messages: messages,
-                previousCursor: previous?.previousCursor,
-                hasMoreBefore: previous?.hasMoreBefore ?? false
-            )
-            profile.messagePageState = messages.isEmpty ? .empty : .content
-            if let text = draft.text,
-               profile.draftsByConversation[conversationID]?.trimmingCharacters(in: .whitespacesAndNewlines) == text {
-                profile.draftsByConversation[conversationID] = ""
-            }
-            profile.isSendingAttachment = false
-            profile.attachmentProgressFraction = nil
-            profile.attachmentReviewRequired = false
-            profile.attachmentErrorCategory = nil
-        }
-        sendTask = nil
-    }
-
-    private func finishSendCancellationBeforeSubmission(
-        profileID: UUID,
-        conversationID: String,
-        clientRequestID: UUID,
-        generation: Int
-    ) {
-        guard let owner,
-              let attachment = takeInFlight(
-                clientRequestID: clientRequestID,
-                profileID: profileID,
-                conversationID: conversationID,
-                generation: generation
-              ) else {
-            return
-        }
-        releaseSelectedAttachment()
-        selectedAttachment = attachment
-        owner.updateActive { profile in
-            profile.isSendingAttachment = false
-            profile.attachmentProgressFraction = nil
-            profile.attachmentErrorCategory = nil
-        }
-        sendTask = nil
-    }
-
-    private func finishSendReview(
-        profileID: UUID,
-        conversationID: String,
-        clientRequestID: UUID,
-        generation: Int
-    ) {
-        guard let attachment = takeInFlight(
-            clientRequestID: clientRequestID,
-            profileID: profileID,
-            conversationID: conversationID,
-            generation: generation
-        ) else { return }
-        cleanup(attachment)
-        finishSendReviewState()
-    }
-
-    private func finishSendReviewState() {
-        owner?.updateActive { profile in
-            profile.isSendingAttachment = false
-            profile.attachmentProgressFraction = nil
-            profile.attachmentReviewRequired = true
-            profile.attachmentErrorCategory = .partialFailure
-        }
-        sendTask = nil
-    }
-
-    private func finishSendFailure(
-        _ error: Error,
-        profileID: UUID,
-        conversationID: String,
-        clientRequestID: UUID,
-        generation: Int
-    ) {
-        guard let owner,
-              let attachment = takeInFlight(
-                clientRequestID: clientRequestID,
-                profileID: profileID,
-                conversationID: conversationID,
-                generation: generation
-              ) else {
-            return
-        }
-        releaseSelectedAttachment()
-        selectedAttachment = attachment
-        owner.updateActive { profile in
-            profile.isSendingAttachment = false
-            profile.attachmentProgressFraction = nil
-            profile.attachmentErrorCategory = Self.category(for: error)
-        }
-        sendTask = nil
-    }
-
-    private func takeInFlight(
-        clientRequestID: UUID,
-        profileID: UUID,
-        conversationID: String,
-        generation: Int
-    ) -> MobileChatAttachmentSelection? {
-        guard let attachment = inFlightAttachments.removeValue(forKey: clientRequestID) else {
-            return nil
-        }
-        guard isCurrentSend(
-            profileID: profileID,
-            conversationID: conversationID,
-            generation: generation
-        ) else {
-            cleanup(attachment)
-            return nil
-        }
-        return attachment
-    }
-
     private func releaseSelectedAttachment() {
         guard let selectedAttachment else { return }
         self.selectedAttachment = nil
@@ -678,17 +359,6 @@ final class MobileChatAttachmentModel {
             preparationGeneration == generation
     }
 
-    private func isCurrentSend(
-        profileID: UUID,
-        conversationID: String,
-        generation: Int
-    ) -> Bool {
-        guard let owner else { return false }
-        return owner.activeProfileID == profileID &&
-            owner.state.selectedConversationID == conversationID &&
-            sendGeneration == generation
-    }
-
     nonisolated static func progressFraction(
         completedBytes: Int64,
         totalBytes: Int64?
@@ -715,24 +385,4 @@ final class MobileChatAttachmentModel {
         return (error as? AppError)?.category ?? .unknown
     }
 
-    private static func appError(for result: MutationResult) -> AppError {
-        AppError(
-            category: appErrorCategory(for: result.errorCategory),
-            isRetryable: result.status != .unsupported && result.status != .permissionDenied,
-            safeUserMessage: ""
-        )
-    }
-
-    private static func appErrorCategory(for category: MutationErrorCategory?) -> AppErrorCategory {
-        switch category {
-        case .authentication: .authenticationRequired
-        case .permission: .permissionDenied
-        case .conflict: .conflict
-        case .network: .networkUnavailable
-        case .server: .serverBusy
-        case .unsupported: .apiUnavailable
-        case .validation: .invalidResponse
-        case .unknown, nil: .unknown
-        }
-    }
 }

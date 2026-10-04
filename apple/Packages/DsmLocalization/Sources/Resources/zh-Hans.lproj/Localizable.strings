@@ -3108,7 +3108,7 @@
 "mobile.chat.send.hint" = "将此消息发送到当前选中的会话。";
 "mobile.chat.action.send" = "发送";
 "mobile.chat.sending" = "正在发送…";
-"mobile.chat.send.failed" = "无法确认消息是否已发送。再次发送前，请先检查此会话。";
+"mobile.chat.send.failed" = "消息未能发送。请在发送记录中重试。";
 "mobile.chat.message.action.delete" = "删除";
 "mobile.chat.message.delete.confirm.title" = "删除这条消息？";
 "mobile.chat.message.delete.confirm.message" = "这会从 Synology Chat 中删除此消息，且无法撤销。";
@@ -6285,3 +6285,25 @@
 "mobile.chat.deletion.cancelled" = "已保留";
 "mobile.chat.deletion.failed" = "无法删除。请刷新聊天后重新选择消息。";
 "mobile.chat.deletion.confirm.message" = "所选消息将从 Synology Chat 中移除，无法撤销。";
+
+"mobile.chat.send.records" = "发送记录";
+"mobile.chat.send.empty" = "没有发送记录";
+"mobile.chat.send.empty.message" = "从聊天中发送消息后，可在这里查看发送状态。";
+"mobile.chat.send.conversation-unavailable" = "此会话暂不可用";
+"mobile.chat.send.kind.text" = "文字消息";
+"mobile.chat.send.kind.reply" = "线程回复";
+"mobile.chat.send.kind.attachment" = "附件消息";
+"mobile.chat.send.stop" = "停止等待";
+"mobile.chat.send.refresh" = "刷新发送状态";
+"mobile.chat.send.cancel" = "取消发送";
+"mobile.chat.send.retry" = "重新发送";
+"mobile.chat.send.remove" = "移除本机记录";
+"mobile.chat.send.details" = "消息发送状态";
+"mobile.chat.send.attachment-changed" = "附件副本已不可用或发生变化。请回到聊天重新选择附件。";
+"mobile.chat.send.denied" = "你没有发送此消息的权限。请联系管理员。";
+"mobile.chat.send.pending" = "消息尚未显示。请稍后在发送记录中刷新状态，暂不能重复发送。";
+"mobile.chat.send.status.prepared" = "尚未发送";
+"mobile.chat.send.status.submitted" = "消息尚未显示，可稍后刷新发送状态。";
+"mobile.chat.send.status.complete" = "已发送";
+"mobile.chat.send.status.failed" = "发送失败，可重新发送。";
+"mobile.chat.send.status.cancelled" = "已取消，消息未发送。";

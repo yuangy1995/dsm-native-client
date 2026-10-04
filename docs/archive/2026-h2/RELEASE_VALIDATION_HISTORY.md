@@ -1503,3 +1503,80 @@ iPad 使用相同测试命令，将目标改为 `A31ABDE2-186F-43DD-8D40-5EB9511
 | 静态门禁 | 双语资源 6031/2188/3402、29 组 fixture/48 私有引用、170 请求/1 写结果、最终严格文档和差异格式检查通过 |
 
 真实 NAS 的删除权限、并发分页、其他客户端编辑与删除之间的竞态、附件实际删除范围及真机锁屏保护/辅助功能仍为 `PENDING_USER_VALIDATION`，步骤见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3c-本人消息批量删除)。Post.delete 不是带原内容条件的原子删除，不能把合成回读通过写成跨客户端事务保证。M4b4/c/d 与 M5–M8 继续后续实施。
+
+## 2026-10-05 移动 M4b4a 共享发送持久回执
+
+范围为 Apple 共享普通文字、线程文字和单附件发送的最小回执、写前/写后保存、只读恢复，以及旧入口的去重/回读修正；移动队列与界面尚未接入，继续 M4b4b，群聊继续 M4b4c。本次不访问真实 NAS、不修改 Mac App 或 Windows/Android 源码、不改变登录配置、应用身份、权限、最低系统与 NAS 请求。
+
+独立集成复核检查了新旧调用共用请求、公开协议默认拒绝、账号/会话和完整草稿绑定、终态与进行中互斥；分开的只读对抗复核覆盖缺回执不认领同内容、保存失败、旧记录降级候选、附件原文件消失、取消、读取权限丢失及线程归属。补充修复保存完成但尚未提交时取消返回明确未发送，以及实际上传文件名转义后仍用本机原名核查导致永久未知的问题。恢复回执只存身份及摘要，不含正文、名称、路径、附件内容或凭据；远端附件描述不能代替字节校验。
+
+实际命令（仓库根目录）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'DsmChatRepositoryTests|ChatMessageSendReceiptTests'
+swift test --package-path apple --jobs 2
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests '-only-testing:DsmMobileUITests/MobileChatUITests/test聊天搜索打开原消息并发送线程回复' -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4b4a-iphone1.xcresult
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+python3 tools/localization/check_localization.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/codex/check_documentation.py --strict-release
+git diff --check
+```
+
+iPad 使用同样命令，目标为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，首轮结果 `m4b4a-ipad1.xcresult`。两端 iOS 26.5。包内新增源文件由 Swift Package 自动发现，没有手改生成工程。所有临时日志/测试包均在忽略目录或临时证据目录；不提交真实数据。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 既有 Chat 初次聚焦 | 135 项，零失败，0.254 秒 |
+| 新回执首次编译 | 测试将已有 `DsmRequestFormat` 误写为不存在的类型名，编译失败；修正引用后通过，没有删除断言 |
+| 新回执聚焦 | 152 项零失败，0.595 秒；补恢复保存/取消/附件拒绝后 155 项零失败，0.667 秒 |
+| 第一轮共享全量 | 2613 项 XCTest、172 条既有条件跳过、零失败，37.108 秒；12 项 Swift Testing，0.050 秒通过 |
+| 首轮移动 | 通用构建通过；两端各 1067 项单元、各 1 条既有条件跳过、零失败，iPhone 26.501 秒、iPad 26.882 秒；实际线程回复界面各 1 项通过，iPhone 30.304 秒、iPad 33.973 秒 |
+| 最终共享全量 | 2614 项 XCTest、172 条既有条件跳过、零失败，36.814 秒；12 项 Swift Testing，0.039 秒通过；本切片共新增 21 项行为测试 |
+| 最终移动 | 第二次通用构建通过；两端各 1067 项单元、各 1 条既有条件跳过、零失败，iPhone 26.337 秒、iPad 26.691 秒；实际线程回复界面各 1 项通过，iPhone 29.687 秒、iPad 33.040 秒；最终结果为 m4b4a-iphone2/ipad2.xcresult |
+| Mac 双架构 | 两次构建均通过；最终修正后复验通过，实际主程序同时含 x86_64、arm64；未安装、启动或发布 Mac 包 |
+| 静态门禁 | 本地化 6031/2188/3402、29 组 fixture/48 私有引用、170 请求/1 写结果通过；严格文档与差异检查通过。最初误用脚本目录导致命令未执行，改为上列仓库真实路径后通过 |
+
+`PENDING_USER_VALIDATION`：M4b4b 界面接入后，在专用可丢弃账号/会话使用已记录版本，分别发送文字、线程回复与文件，在创建前后及读回阶段断网、取消、终止 App、重新登录并刷新；没有返回消息编号时不得凭同内容重发。检查历史较多、其他设备编辑/删除、作者/权限变化、附件特殊名称，以及锁屏/低空间保护。只回传版本、权限类别、脱敏步骤、数量和错误类别；不回传正文、真实文件名、路径或凭据。当前共享前置不等于移动持久发送已交付，M4b4/c/d 和 M5–M8 仍未完成。
+
+## 2026-10-05 移动 M4b4b 普通消息、线程与附件发送恢复
+
+M4b4a 共享前置接入移动统一 `MobileChatSendModel/Store/View`，替换普通文字、附件各自的进程内发送，以及不可恢复的线程摘要记录。新增双语发送记录界面与合成发送服务，正式测试覆盖两端界面和真实共享 Repository 调用。独立版本化文件保留未结束草稿正文及受保护附件副本，成功清理；不保存凭据，不改变登录存储、应用身份、权限或最低系统。未访问或写入真实 NAS。
+
+分开的集成复核检查调用收敛、旧无回调移动入口关闭、同账号执行锁与不同账号隔离、终态原子重试及草稿清理；只读对抗复核检查写前保存失败、未知结果不能移除/重发、创建返回身份落盘失败、权限撤回后只读恢复、原始附件消失/副本变化、复制期间切换账号、迟到回调以及发送未结束时编辑/删除原消息的互斥。复核修复恢复目录无效时入口仍可点击、回执与附件描述不匹配、重试后旧失败记录仍可再次点击，以及未结束发送被本机修改/删除的问题。初次聚焦 120 项有 1 项失败，后续根目录检查提前发现故障后更新对应测试的故障归属断言；始终保留零编辑/发送请求与禁止再发送断言。没有删除行为测试或把环境缺失当作通过。
+
+实际命令（仓库根目录）：
+
+```sh
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatSendUITests '-only-testing:DsmMobileUITests/MobileChatUITests/test聊天搜索打开原消息并发送线程回复' -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4b4b-iphone2.xcresult
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+python3 tools/localization/check_localization.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/codex/check_documentation.py --strict-release
+git diff --check
+```
+
+iPad 用相同测试命令，目标 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`、结果 `m4b4b-ipad2.xcresult`；两端 iOS 26.5。首轮聚焦命令将 only-testing 限定为 `MobileChatSendStoreTests/MobileChatSendTests/MobileChatAttachmentTests/MobileChatInteractionTests/MobileChatModelTests/MobileChatPresentationTests` 六个类；正式全量没有静默跳过新增测试。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 构建 | 第 1、3、4、5、6、7、8、9 次通过；第 2 次测试缺少 progress 参数编译失败，补齐后通过。工程由锁定 XcodeGen 2.46.0 生成 |
+| 首轮聚焦 | 120 项，1 项失败，4.693 秒；存储目录错误归属问题按上述方式修复 |
+| 首轮两端单元 | 各 1090 项、各 1 条既有条件跳过、各 1 条同一旧断言失败；iPhone 26.743 秒，iPad 26.632 秒；全部新增 23 项行为测试通过 |
+| 首轮实际 UI | 两端均在第一个用例因系统键盘和聊天按钮同名而定位不唯一，已追加稳定标识；中止剩余重复失败后重新运行，无业务断言删减 |
+| 共享全量 | 2614 项 XCTest、172 条既有条件跳过、零失败，37.572 秒；12 项 Swift Testing，0.055 秒通过 |
+| Mac 双架构 | 构建通过，实际主程序同时含 x86_64、arm64；未安装、启动或发布 Mac 包 |
+| 第二轮两端单元 | 各 1090 项、各 1 条既有条件跳过、零失败；iPhone 25.996 秒，iPad 26.009 秒 |
+| 第二轮实际 UI | 两端各 5 项零失败；iPhone 203.295 秒，iPad 210.383 秒；覆盖重启只读恢复、缺回执保持保护、终态移除、中文深色大字号拒绝重试，以及原搜索/线程回复 |
+| 截图复核后的窄栏修正 | iPad 竖屏输入框被附件按钮挤窄，改为系统 ViewThatFits 自动把输入框独立成行；删除发送详情重复反馈。新增输入框宽度断言；两端各 14 项展示测试与 2 项实际 UI 零失败（iPhone 73.892 秒、iPad 76.039 秒），截图确认窄栏输入已可用；随后限定工具图标尺寸，保留动态文字和 44 点点击区，补中文大字号实际 UI 回归两端均通过，iPhone 40.537 秒、iPad 42.168 秒 |
+| 静态门禁 | 双语 6052/2188/3402、29 组 fixture/48 私有引用、170 请求/1 写结果、严格文档和差异检查通过；初次动态资源键检查失败后改用明确枚举映射 |
+
+最终布局定向复验沿用上列 `test-without-building` 命令，only-testing 为 `DsmMobileTests/MobileChatPresentationTests` 及 `DsmMobileUITests/MobileChatSendUITests/test普通消息发送成功后记录可移除且不会删除聊天消息`、`DsmMobileUITests/MobileChatSendUITests/test中文深色大字号明确拒绝可重新发送并更新唯一记录`，结果为 `m4b4b-iphone3/ipad3.xcresult`。图标调整后的最后一次仅保留上述中文用例，结果为 `m4b4b-iphone4/ipad4.xcresult`。未因纯移动布局变化重复共享或 Mac 构建；其共享源码和资源与已通过版本相同。
+
+真实 NAS、真机锁屏文件保护、系统终止与辅助功能为 `PENDING_USER_VALIDATION`，前提、操作、预期结果与脱敏反馈范围集中在移动主计划 M4b4；远端文件名/大小读取不能证明字节相同。M4b4c 建群恢复、M4c/d 媒体实时与 M5–M8 不计为本切片完成。

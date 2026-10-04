@@ -579,6 +579,21 @@ public protocol ChatRepository: Sendable {
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessageSendOutcome
+    /// 提交前和收到稳定消息编号后保存回执；保存失败不得开始或重放发送。
+    func sendMessageResult(
+        _ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+        recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void
+    ) async throws -> ChatMessageSendOutcome
+    func sendAttachmentMessageResult(
+        _ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+        recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void
+    ) async throws -> ChatMessageSendOutcome
+    /// 仅按创建回执查询原消息，不按内容猜测，也不重新提交文字或附件。
+    func recoverMessageSend(_ receipt: ChatMessageSendReceipt) async throws -> ChatMessageSendOutcome
+    func recoverMessageSend(
+        _ receipt: ChatMessageSendReceipt,
+        recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void
+    ) async throws -> ChatMessageSendOutcome
     func deleteMessage(
         conversationID: String,
         messageID: String,
@@ -811,6 +826,31 @@ public extension ChatRepository {
             clientRequestID: draft.clientRequestID,
             confirmedMessage: nil
         )
+    }
+
+    func sendMessageResult(
+        _ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+        recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void
+    ) async throws -> ChatMessageSendOutcome {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: "")
+    }
+
+    func sendAttachmentMessageResult(
+        _ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+        recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void
+    ) async throws -> ChatMessageSendOutcome {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: "")
+    }
+
+    func recoverMessageSend(_ receipt: ChatMessageSendReceipt) async throws -> ChatMessageSendOutcome {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: "")
+    }
+
+    func recoverMessageSend(
+        _ receipt: ChatMessageSendReceipt,
+        recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void
+    ) async throws -> ChatMessageSendOutcome {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: "")
     }
 
     func realtimeEvents() async -> AsyncStream<ChatRealtimeEvent> {

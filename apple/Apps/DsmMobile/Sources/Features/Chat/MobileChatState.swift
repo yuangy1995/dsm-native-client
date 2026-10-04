@@ -20,7 +20,7 @@ struct MobileChatProfileState: Equatable, Sendable {
     var membersByConversation: [String: [ChatUser]] = [:]
     var announcementsByConversation: [String: [ChatMessage]] = [:]
     var draftsByConversation: [String: String] = [:]
-    var sendReviewBlockedTextsByConversation: [String: Set<String>] = [:]
+    var selectedDraftRequiresReview = false
     var conversationPageState: MobilePageState = .loading
     var messagePageState: MobilePageState = .empty
     var isRefreshingConversations = false
@@ -81,13 +81,6 @@ struct MobileChatProfileState: Equatable, Sendable {
     var selectedDraft: String {
         guard let selectedConversationID else { return "" }
         return draftsByConversation[selectedConversationID] ?? ""
-    }
-
-    var selectedDraftRequiresReview: Bool {
-        guard let selectedConversationID else { return false }
-        let normalized = selectedDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return false }
-        return sendReviewBlockedTextsByConversation[selectedConversationID]?.contains(normalized) == true
     }
 
     var canSendSelectedDraft: Bool {

@@ -96,6 +96,7 @@ struct MobileChatDiscussionView: View {
     @Bindable var chat: MobileChatModel
     @Bindable var interaction: MobileChatInteractionModel
     let message: ChatMessage
+    @State private var presentsSendRecords = false
     @State private var reply = ""
 
     var body: some View {
@@ -138,6 +139,9 @@ struct MobileChatDiscussionView: View {
             chat.dismissRemoteAttachmentPresentation()
         }
         .mobileChatRemoteAttachmentPresentation(chat: chat)
+        .sheet(isPresented: $presentsSendRecords) {
+            MobileChatSendRecordsSheet(sending: interaction.sending, conversations: chat.state.conversations)
+        }
     }
 
     private var threadContent: some View {
@@ -174,12 +178,17 @@ struct MobileChatDiscussionView: View {
 
     private var replyComposer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if interaction.recovery.failed {
+            if interaction.sending.recovery.failed {
                 Text(L10n.string("mobile.chat.interaction.storage-error")).foregroundStyle(.orange)
             } else if let error = interaction.mutationErrorKey {
                 Text(L10n.string(error)).foregroundStyle(.orange)
-            } else if interaction.pending.contains(where: { $0.kind == .reply && $0.conversationID == interaction.root?.conversationID && $0.messageID == interaction.root?.id }) {
-                Text(L10n.string("mobile.chat.interaction.reply-pending")).foregroundStyle(.secondary)
+            } else if interaction.sending.entries.contains(where: { $0.hasUnfinished && $0.kind == .reply && $0.conversationID == interaction.root?.conversationID && $0.threadID == interaction.root?.id }) {
+                Text(L10n.string("mobile.chat.send.pending")).foregroundStyle(.secondary)
+            }
+            if interaction.sending.entries.contains(where: { $0.hasUnfinished && $0.threadID == interaction.root?.id
+                && $0.conversationID == interaction.root?.conversationID }) {
+                Button(L10n.string("mobile.chat.send.records")) { presentsSendRecords = true }.frame(minHeight: 44)
+                    .accessibilityIdentifier("chat-thread-send-records")
             }
             HStack(alignment: .bottom) {
                 TextField(L10n.string("chat.thread.placeholder"), text: $reply, axis: .vertical)
