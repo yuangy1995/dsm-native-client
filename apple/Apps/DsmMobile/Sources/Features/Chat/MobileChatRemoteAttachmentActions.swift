@@ -44,6 +44,12 @@ extension MobileChatAttachmentModel {
         beginRemoteDownload(attachment, in: message, intent: .exportCopy)
     }
 
+    func playVoiceAttachment(_ attachment: ChatAttachment, in message: ChatMessage) {
+        guard attachment.kind == .voice, let size = attachment.sizeBytes,
+              size > 0, size <= MobileChatAudioModel.maximumPlaybackBytes else { return }
+        beginRemoteDownload(attachment, in: message, intent: .voicePlayback)
+    }
+
     func dismissRemoteAttachmentPresentation() {
         guard let presentation = remoteAttachmentPresentation else { return }
         remoteAttachmentPresentation = nil
@@ -88,7 +94,7 @@ extension MobileChatAttachmentModel {
             isDirectory: false
         )
         do {
-            try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            try MobileTransferRecoveryStore.prepareDirectory(directoryURL)
         } catch {
             owner.updateActive { profile in
                 profile.remoteAttachmentErrorCategory = Self.category(for: error)
@@ -133,8 +139,14 @@ extension MobileChatAttachmentModel {
                     try? FileManager.default.removeItem(at: directoryURL)
                     return
                 }
+                if intent == .voicePlayback {
+                    let size = try destinationURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                    guard size > 0, Int64(size) <= MobileChatAudioModel.maximumPlaybackBytes else {
+                        throw MobileChatAttachmentSelectionError.invalidSelection
+                    }
+                }
                 try self.fileManager.setAttributes(
-                    [.posixPermissions: 0o600],
+                    [.posixPermissions: 0o600, .protectionKey: FileProtectionType.complete],
                     ofItemAtPath: destinationURL.path
                 )
                 self.finishRemoteDownload(
@@ -241,13 +253,13 @@ extension MobileChatAttachmentModel {
             cleanupDirectory(directoryURL)
             return
         }
-        remoteAttachmentPresentation = MobileChatRemoteAttachmentPresentation(
-            id: UUID(),
-            title: title,
-            localURL: destinationURL,
-            directoryURL: directoryURL,
-            intent: intent
-        )
+        if intent == .voicePlayback {
+            owner.audio.play(url: destinationURL, directory: directoryURL, id: messageID)
+        } else {
+            remoteAttachmentPresentation = MobileChatRemoteAttachmentPresentation(
+                id: UUID(), title: title, localURL: destinationURL, directoryURL: directoryURL, intent: intent
+            )
+        }
         owner.updateActive { profile in
             profile.remoteAttachmentMessageID = nil
             profile.remoteAttachmentProgressFraction = nil

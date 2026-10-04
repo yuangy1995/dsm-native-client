@@ -1624,3 +1624,52 @@ iPad 两轮对应替换为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 和 `m4b4c-ipa
 截图从两份第 1 轮结果用 `xcrun xcresulttool export attachments --path ... --output-path ...` 导出。已检查 iPhone 中文深色大字号错误/继续按钮与 iPad 浅色三步进度、中文深色大字号；文字可换行和滚动，三个阶段与恢复操作可达，没有截图中的真实账号或 NAS 数据。临时截图和日志仅在上述临时目录，不提交。
 
 `PENDING_USER_VALIDATION`：真实 NAS 建群/加入/邀请、权限撤回、原群改名或本人被移出、网络切换，以及 iPhone/iPad 锁屏前后文件保护。两个条件跳过为既有照片删除保护及新增建群保护；新增断言以独立系统写入确认模拟器不返回保护属性后明确报告待验，保留真机断言，不能把缺属性解释成保护通过。设备步骤、需回传的脱敏信息和回滚边界见移动主计划 M4b4c。没有安装/启动 Mac 测试包或进行移动分发；M4c/d 媒体/实时及 M5–M8 继续实施。
+
+## 2026-10-05 移动 M4c 语音消息与自适应聊天布局
+
+本波次仅增加移动 Chat 音频模型/原生驱动/界面与必要附件、组合根和导航接线，新增麦克风用途双语说明及四项共享文案、合成音频 fixture、单元/实际 UI 测试。沿用 Post.create v5 单附件、Post.File 读取与 M4b4 发送回执；没有新增私有请求、公开契约、依赖、最低系统版本、主 App 身份、后台音频模式或恢复格式。Mac App、Windows、Android 未改；共享资源执行完整 Apple 测试与 Mac 双架构回归。没有访问真实 NAS 或采集现场声音。
+
+录音只在明确开始后申请权限，AAC 单声道、至少半秒、最长五分钟；停止、试听、暂停、丢弃和发送均为原生操作。录音和消息播放共用单一驱动，后台/音频中断不自动重启，耳机断开暂停；新录音取消尚未完成的下载。临时录音有 0700/0600 权限、完整系统文件保护请求与备份排除，发送先移交原有持久副本；准备失败保留当前录音，已提交未知只进入原发送记录。权限、播放和下载迟到回调均按原代次/账号处理，丢弃后清理旧试听错误。
+
+iPad 按实际聊天宽度与动态文字决定并列详情或导航栈；当前页面通过 UIKit 布局和安全区域回调报告宽度，避免隐藏根几何与重复边距扣减；旋转只重排同一导航层级内的内容。每个详情实例有独立可见性所有者，旧实例退出不能清理新的详情状态或媒体；进入任务包含账号身份。宽度切换保留所选会话，不依赖可能先被退出回调清除的可见标记。21 项新增单元中有 1 项明确设备条件测试；五项新增实际 UI 覆盖系统解码播放、合成 AAC 录制/试听/发送/原字节下载播放、损坏文件恢复、未知发送保留一条记录、中文深色辅助功能 XXXL 与旋转。
+
+完成分开的只读集成与对抗复核，没有使用另一模型审查。复核权限请求时机、无加密媒体读取、同源 Repository 复用、大小与临时文件归属、旧回调、同一播放器互斥、发送复制期间的源保留和未知不重发。截图复核与强化 UI 断言实际发现并修复 iPad 返回竖屏丢失详情、旧实例清除新详情导致重复搜索入口的问题；不是通过删除或放宽断言消除失败。
+
+实际命令（仓库根目录，日志与结果前缀 `/tmp/lanstash-release-1.0.15.1x6wUX/m4c-`）：
+
+```sh
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -configuration Debug -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatAudioUITests -only-testing:DsmMobileUITests/MobileChatUITests/test新联系人打开单聊并进入会话 -only-testing:DsmMobileUITests/MobileChatGroupCreationUITests/test新建群聊选择成员后进入对应会话 -only-testing:DsmMobileUITests/MobileChatSendUITests/test普通消息发送成功后记录可移除且不会删除聊天消息 -only-testing:DsmMobileUITests/MobileChatManagementUITests/test会话多选取消确认和关闭结果 -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4c-iphone1.xcresult
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatAudioUITests/test合成录音停止试听暂停发送后显示语音附件 -only-testing:DsmMobileUITests/MobileChatAudioUITests/test语音消息一次点击播放暂停并在旋转后保留会话 -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4c-iphone4.xcresult
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py --strict-release
+git diff --check
+```
+
+iPad 使用相同命令、目标 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，两端 iOS 26.5。第 2 轮与第 4 轮选择相同完整单元及两项 UI，结果后缀为 2；第 3 轮只选择 `MobileChatAudioTests`、`MobileChatPresentationTests` 和完整 `MobileChatAudioUITests`，结果后缀为 3。首轮聚焦 `m4c-focused1` 选择 Audio/Attachment/Model/Send 四个单元类。最终第 11 轮使用首轮相同的完整单元及九项 UI 选择，结果后缀为 11；第 5/8/9 轮为 iPad 布局定位，相关完整结果见下表。XcodeGen 固定 2.46.0；第 1 次构建因附件大小字段误用 `byteCount` 失败，改用既有 `sizeBytes`；第 2–22 次构建均通过，未改变工具链。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 首轮聚焦 | 95 项，0 失败，1.130 秒；当时新增音频 15 项 |
+| 第 1 轮完整单元 | 两端各 1131 项、3 条明确条件跳过、0 失败；iPhone 26.999 秒，iPad 26.574 秒 |
+| 第 1 轮实际 UI | 新增五项音频加四项既有单聊/建群/关闭/发送，共 9 项各端零失败；iPhone 258.730 秒，iPad 279.050 秒 |
+| 第 2 轮完整单元 | 两端各 1131 项、3 条明确条件跳过、0 失败；iPhone 27.511 秒，iPad 27.217 秒 |
+| 第 2 轮实际 UI | AAC 原字节上传后下载播放两端通过；iPhone 两项共 64.737 秒零失败；iPad 转回竖屏未重新打开详情，2 项中 1 失败，74.090 秒。不将第一轮存在性检查当作严格横屏/竖屏对齐证明 |
+| 第 3 轮聚焦单元 / UI | 两端各 33 项、1 条明确条件跳过、0 失败，iPhone 3.221 秒、iPad 3.141 秒；五项音频 UI 各端零失败，分别 141.421/153.057 秒。随后截图发现旧详情退出清除新详情状态，追加唯一所有者回归与工具栏无重复入口断言 |
+| 第 4 轮完整单元 / UI | 两端各 1132 项、3 条明确条件跳过、0 失败，iPhone 26.583 秒、iPad 26.411 秒；两项 UI 为 iPhone 64.293 秒零失败，iPad 66.557 秒含横屏空白详情 1 失败 |
+| 第 5–8 轮布局定位 | 第 5 轮两端各 14 项展示检查通过，无动画导航切换仍在 iPad 失败；第 6 轮固定会话导航层级后，iPhone 九项 UI 零失败，iPad 八项通过、双栏断言失败；第 7 轮两端完整 1132 项、3 条跳过、0 失败，iPad 同一双栏断言仍失败。第 8 轮临时数值记录确认外层 490 点已扣除边栏，却又被减去 330 点，且隐藏根不继续报告旋转尺寸；未用降低宽度门槛消除失败 |
+| 第 9 轮原生尺寸复验 | 改用当前 UIKit 页面安全区域后，iPad 严格双栏/返回竖屏/播放/单一搜索入口通过，37.464 秒；已移除临时诊断源码及两个模拟器中的诊断文件 |
+| 第 10 轮 | 两端各 1132 项、3 条跳过、0 失败；iPad 真正分栏重排时录音窗口消失，新增的录音中旋转断言失败。将表单上移至稳定根容器，以绑定保留录音；新增账号退出仍清理的行为测试，不能把第 7 轮未展开双栏的录音结果当作此场景通过 |
+| 最终第 11 轮 | 两端各 1133 项单元、3 条明确条件跳过、0 失败，iPhone 26.822 秒、iPad 27.215 秒；各 9 项实际 UI 零失败，分别 264.714/294.953 秒。包括录音中旋转、真实分栏与再次播放后的稳定双栏断言、原 AAC 字节上传/下载/系统解码、中文深色大字号及原单聊/建群/关闭/普通发送 |
+| 共享完整回归 | 2636 项 XCTest、172 条既有条件跳过、0 失败，35.791 秒；12 项 Swift Testing，0.041 秒 |
+| macOS 回归 | Release 构建通过，实际主程序经 `lipo -archs` 返回 `x86_64 arm64`；未安装、启动或发布 |
+| 静态门 | Apple 6073 / Android 2188 / Windows 3402 双语资源；170 个请求 Fixture / 1 个写结果、29 组 fixture / 48 项私有记录引用、严格文档与差异检查均通过 |
+
+截图由 `xcrun xcresulttool export attachments --path ... --output-path ...` 导出，已检查 iPhone 中文深色大字号、iPad 录音表单、横屏并列与竖屏单列。XCTest 的应用窗口截图在横屏附带旋转/裁切，改用 `XCUIScreen.main.screenshot()` 捕获完整设备；保留原附件，不把裁切附件当作完整布局证据。所有截图、日志、合成媒体和结果包在专用临时目录或隔离模拟器，不提交。
+
+`PENDING_USER_VALIDATION`：真实麦克风授权/撤回、来电、耳机与蓝牙、锁屏/返回、真实 AAC 在双方客户端互播、VoiceOver/键盘/窗口和完整文件保护，具体前置、步骤、预期与脱敏反馈见移动主计划 M4c。三条设备条件跳过分别为照片删除记录、群聊恢复记录与新录音保护；新测试以独立系统写入识别模拟器不返回属性，真机断言仍保留，不能计作保护通过。没有移动分发或真实 NAS 写入；M4d 及 M5–M8 继续实施。

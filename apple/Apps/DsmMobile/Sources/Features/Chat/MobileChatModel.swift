@@ -26,6 +26,7 @@ final class MobileChatModel {
     private let deletionRecovery: MobileChatDeletionStore
     private(set) var sending: MobileChatSendModel?
     private let sendRecovery: MobileChatSendStore
+    let audio: MobileChatAudioModel
 
     @ObservationIgnored private var repositories: [UUID: any ChatRepository] = [:]
     @ObservationIgnored private var conversationTask: Task<Void, Never>?
@@ -43,6 +44,7 @@ final class MobileChatModel {
     @ObservationIgnored private var announcementGeneration = 0
     @ObservationIgnored private var realtimeGeneration = 0
     @ObservationIgnored private var foregroundRealtimeRequested = false
+    @ObservationIgnored private var conversationVisibilityOwner: UUID?
     @ObservationIgnored private var realtimeConnected = false
     @ObservationIgnored private var pendingRealtimeSync = false
     @ObservationIgnored private let conversationPinStore: any MobileChatConversationPinStore
@@ -65,8 +67,11 @@ final class MobileChatModel {
         conversationPinStore: any MobileChatConversationPinStore = UserDefaultsMobileChatConversationPinStore(),
         realtimePollingIntervalNanoseconds: UInt64 = 30_000_000_000,
         realtimeDebounceIntervalNanoseconds: UInt64 = 200_000_000,
-        interactionRecoveryRoot: URL? = nil
+        interactionRecoveryRoot: URL? = nil,
+        audioDriver: (any MobileChatAudioDriving)? = nil
     ) {
+        self.audio = MobileChatAudioModel(driver: audioDriver ?? MobileSystemChatAudioDriver(),
+            root: attachmentFileManager.temporaryDirectory.appendingPathComponent("LanStashChatAudio", isDirectory: true))
         self.interactionRecovery = MobileChatInteractionStore(root: interactionRecoveryRoot)
         self.conversationCreationRecovery = MobileChatConversationCreationStore(root: interactionRecoveryRoot)
         self.groupCreationRecovery = MobileChatGroupCreationStore(root: interactionRecoveryRoot)
@@ -118,7 +123,45 @@ final class MobileChatModel {
     }
 
     var canSelectAttachment: Bool {
-        attachmentModel.canSelectAttachment
+        attachmentModel.canSelectAttachment && !audio.isRecording && !audio.isRequestingPermission
+    }
+
+    var canRecordVoice: Bool {
+        canSelectAttachment && selectedAttachment == nil && state.availability.supportedFeatures.contains(.voiceMessage)
+    }
+
+    func startVoiceRecording() async {
+        guard canRecordVoice else { return }
+        attachmentModel.cancelRemoteAttachmentDownload()
+        await audio.startRecording { [weak self] in self?.canRecordVoice == true }
+    }
+
+    func sendVoiceRecording() async {
+        guard canRecordVoice, let sender = sending, let profileID = activeProfileID,
+              let conversationID = state.selectedConversationID, let (recording, duration) = audio.takeRecording() else { return }
+        let oldIDs = Set(sender.entries.map(\.id))
+        let completed = await sender.send(conversationID: conversationID, text: nil, attachment: recording)
+        let saved = sender.entries.contains { !oldIDs.contains($0.id) }
+        if !completed, !saved, activeProfileID == profileID, sending === sender, state.selectedConversationID == conversationID {
+            audio.restoreRecording(recording, duration: duration)
+        } else {
+            try? attachmentFileManager.removeItem(at: recording.directoryURL)
+        }
+    }
+
+    func toggleVoicePlayback(_ attachment: ChatAttachment, in message: ChatMessage) {
+        guard canUseRemoteAttachment(attachment, in: message), attachment.kind == .voice,
+              !audio.isRecording, !audio.isRequestingPermission else { return }
+        if audio.playbackID == message.id { audio.togglePlayback() }
+        else {
+            audio.stopPlayback()
+            attachmentModel.playVoiceAttachment(attachment, in: message)
+        }
+    }
+
+    func interruptChatAudio() {
+        audio.interrupt()
+        attachmentModel.cancelRemoteAttachmentDownload()
     }
 
     var canComposeMessage: Bool {
@@ -649,16 +692,20 @@ final class MobileChatModel {
         attachmentModel.cancelSelectedAttachmentSend()
     }
 
-    func leaveConversation(_ conversationID: String) {
+    func leaveConversation(_ conversationID: String, ownerID: UUID? = nil, preservingVoiceRecording: Bool = false) {
+        guard conversationVisibilityOwner == ownerID else { return }
+        conversationVisibilityOwner = nil
         updateActive { profile in
             if profile.visibleConversationID == conversationID {
                 profile.visibleConversationID = nil
             }
         }
-        attachmentModel.leaveConversation(conversationID)
+        attachmentModel.leaveConversation(conversationID, preservingAudio: preservingVoiceRecording)
     }
 
-    func enterConversation(_ conversationID: String) {
+    func enterConversation(_ conversationID: String, ownerID: UUID? = nil) {
+        guard state.conversations.contains(where: { $0.id == conversationID }) else { return }
+        conversationVisibilityOwner = ownerID
         updateActive { profile in
             guard let conversation = profile.conversations.first(where: { $0.id == conversationID }) else {
                 return
@@ -704,6 +751,7 @@ final class MobileChatModel {
     }
 
     func cancelAllWork() {
+        conversationVisibilityOwner = nil
         sending?.invalidate()
         sending = nil
         deletion?.invalidate()

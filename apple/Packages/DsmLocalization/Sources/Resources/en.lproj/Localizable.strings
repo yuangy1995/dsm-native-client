@@ -6326,3 +6326,7 @@
 "mobile.chat.group.refresh" = "Refresh";
 "mobile.chat.group.cancel" = "Cancel creating";
 "mobile.chat.group.another" = "Start another chat";
+"mobile.chat.voice.permission" = "Microphone access is off. Open Settings and allow microphone access for LanStash, then record again.";
+"mobile.chat.voice.settings" = "Open Settings";
+"mobile.chat.voice.too-short" = "The recording is too short. Record for at least half a second, then stop.";
+"mobile.chat.voice.preview-failed" = "Could not play this recording. Try listening again or record a new message.";

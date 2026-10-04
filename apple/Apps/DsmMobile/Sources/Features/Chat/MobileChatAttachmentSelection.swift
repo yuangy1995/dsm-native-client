@@ -19,7 +19,8 @@ struct MobileChatAttachmentSelection: Identifiable {
         switch kind {
         case .image: .imageAttachment
         case .video: .videoAttachment
-        case .file, .voice: .fileAttachment
+        case .file: .fileAttachment
+        case .voice: .voiceMessage
         }
     }
 
@@ -27,6 +28,7 @@ struct MobileChatAttachmentSelection: Identifiable {
         let resolvedType = contentType ?? UTType(filenameExtension: (fileName as NSString).pathExtension)
         if resolvedType?.conforms(to: .image) == true { return .image }
         if resolvedType?.conforms(to: .movie) == true { return .video }
+        if resolvedType?.conforms(to: .audio) == true { return .voice }
         return .file
     }
 }
@@ -40,6 +42,7 @@ enum MobileChatAttachmentSelectionError: Error, Equatable, Sendable {
 enum MobileChatRemoteAttachmentPresentationIntent: Sendable {
     case preview
     case exportCopy
+    case voicePlayback
 }
 
 /// 远端附件下载后仅在系统预览或导出面板存活期间持有的临时文件。
