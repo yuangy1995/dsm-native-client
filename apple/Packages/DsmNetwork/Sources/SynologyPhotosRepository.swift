@@ -54,6 +54,7 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
     private var currentUserUID: SynologyPhotoConditionValue?
     private var mutationInFlight = false
     private var mutations: [UUID: PhotosMutationRecord] = [:]
+    private var albumCheckpointWriters: [UUID: @Sendable (SynologyPhotosAlbumCheckpoint) throws -> Void] = [:]
     private var uploadCheckpointWriters: [UUID: @Sendable (SynologyPhotosUploadCheckpoint) throws -> Void] = [:]
     private let deletionEnabled: Bool
     private var deletionLocks: Set<SynologyPhotoID> = []
@@ -2072,7 +2073,7 @@ extension SynologyPhotosRepository {
     public func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
         guard allowedSpaces.contains(space) else {
             guard hasPhotosAccess else { return [] }
-            return Set([SynologyPhotosManagementFeature.frozenAlbums, .backgroundTasks, .codecPrompt, .globalSettings, .conversionCache, .sharedSpaceSettings, .sharedMembers, .automaticPreviewSettings, .recognitionSettings, .displaySettings, .duplicateSettings, .albumSorting, .albumListSorting, .albumListDisplay].filter { feature in
+            return Set([SynologyPhotosManagementFeature.albums, .sharing, .frozenAlbums, .backgroundTasks, .codecPrompt, .globalSettings, .conversionCache, .sharedSpaceSettings, .sharedMembers, .automaticPreviewSettings, .recognitionSettings, .displaySettings, .duplicateSettings, .albumSorting, .albumListSorting, .albumListDisplay].filter { feature in
                 (![.sharedMembers, .sharedSpaceSettings, .globalSettings, .conversionCache].contains(feature) || isPhotosAdministrator) && managementRequirements(feature).allSatisfy { name, version in
                     guard let capability = capabilities[name] else { return false }
                     return capability.minVersion <= version && capability.maxVersion >= version && capability.requestFormat == .json
@@ -2153,8 +2154,8 @@ extension SynologyPhotosRepository {
         if [.frozenAlbums, .backgroundTasks, .codecPrompt, .sharedMembers, .globalSettings, .conversionCache, .sharedSpaceSettings, .automaticPreviewSettings, .recognitionSettings, .displaySettings, .duplicateSettings, .albumSorting, .albumListSorting, .albumListDisplay].contains(mutation.feature) { try requireAlbumAccess(); return .personal }
         if mutation.isAlbumCollaboration { try requireAlbumAccess(); return .personal }
         if mutation.feature == .albums, mutation.photos.isEmpty {
-            guard let space = allowedSpaces.first else { throw Self.failure(.permissionDenied) }
-            return allowedSpaces.contains(.personal) ? .personal : space
+            try requireAlbumAccess()
+            return .personal
         }
         try requireAccess(mutation.space)
         if mutation.supportsMixedPhotoSpaces {
@@ -2905,7 +2906,39 @@ extension SynologyPhotosRepository {
         mutations.removeValue(forKey: operationID)
     }
 
-    private func persistUploadCheckpoint(_ record: PhotosMutationRecord, operationID: UUID) throws {
+    public func performRecoverableAlbumMutation(_ mutation: SynologyPhotosMutation, operationID: UUID,
+                                                checkpoint: @escaping @Sendable (SynologyPhotosAlbumCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult {
+        guard let user = currentUserID, user > 0, albumCheckpointWriters[operationID] == nil else { throw Self.failure(.conflict) }
+        _ = try SynologyPhotosAlbumCheckpoint(mutation: mutation, operationID: operationID, profileID: profileID, userID: user)
+        albumCheckpointWriters[operationID] = checkpoint
+        defer { albumCheckpointWriters.removeValue(forKey: operationID) }
+        return try await performMutation(mutation, operationID: operationID) { _, _ in }
+    }
+
+    public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
+        try requireAlbumAccess()
+        guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
+        let mutation = try checkpoint.reviewMutation()
+        if let existing = mutations[checkpoint.operationID] {
+            guard existing.mutation == mutation else { throw Self.failure(.conflict) }
+            return
+        }
+        var record = PhotosMutationRecord(mutation: mutation)
+        record.albumID = checkpoint.createdAlbumID
+        record.albumMembershipHasFailures = checkpoint.membershipHasFailures
+        if checkpoint.rejected { record.result = .init(state: .rejected) }
+        mutations[checkpoint.operationID] = record
+    }
+
+    private func persistRecoveryCheckpoint(_ record: PhotosMutationRecord, operationID: UUID) throws {
+        if let writer = albumCheckpointWriters[operationID] {
+            guard let user = currentUserID else { throw Self.failure(.permissionDenied) }
+            var checkpoint = try SynologyPhotosAlbumCheckpoint(mutation: record.mutation, operationID: operationID, profileID: profileID, userID: user)
+            checkpoint.createdAlbumID = record.albumID
+            checkpoint.membershipHasFailures = record.albumMembershipHasFailures
+            checkpoint.rejected = record.result.state == .rejected
+            try writer(checkpoint)
+        }
         guard let writer = uploadCheckpointWriters[operationID] else { return }
         guard let user = currentUserID else { throw Self.failure(.permissionDenied) }
         var checkpoint = try SynologyPhotosUploadCheckpoint(mutation: record.mutation, operationID: operationID, profileID: profileID, userID: user)
@@ -2977,8 +3010,8 @@ extension SynologyPhotosRepository {
             guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
             try requireCategoryAccess(.person, in: mutation.space)
         }
-        // 写入前必须持久化上传意图；失败时尚未向 NAS 发送请求。
-        try persistUploadCheckpoint(record, operationID: operationID)
+        // 已配置恢复适配器时，写入前必须保存意图；失败时尚未向 NAS 发送请求。
+        try persistRecoveryCheckpoint(record, operationID: operationID)
         // 先保留提交记录。提交后的取消、解码失败或断网都不能证明没有执行。
         mutations[operationID] = record
         do {
@@ -3484,7 +3517,7 @@ extension SynologyPhotosRepository {
                 if rejected { record.result = .init(state: .rejected) }
             }
             mutations[operationID] = record
-            try? persistUploadCheckpoint(record, operationID: operationID)
+            try? persistRecoveryCheckpoint(record, operationID: operationID)
             switch mutation {
             case .cancelBackgroundTask, .clearBackgroundTasks, .respondToCodecPrompt, .maintainLibrary, .setSharedMembers, .setGlobalSettings, .clearConversionCache:
                 return (try? await inspectMutation(operationID)) ?? record.result
@@ -3503,7 +3536,7 @@ extension SynologyPhotosRepository {
         }
         mutations[operationID] = record
         // 回执先保存，再进行网络核对；保存失败保留未知状态，不能重发。
-        do { try persistUploadCheckpoint(record, operationID: operationID) }
+        do { try persistRecoveryCheckpoint(record, operationID: operationID) }
         catch { return .init(state: .pendingReview) }
         return (try? await inspectMutation(operationID)) ?? record.result
     }

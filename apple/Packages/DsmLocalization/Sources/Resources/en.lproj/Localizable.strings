@@ -6026,3 +6026,16 @@
 "mobile.photos.source.shared" = "Shared Photos";
 "mobile.photos.source.title" = "Photo library";
 "mobile.photos.upload.prepareFailed" = "The selected items could not be prepared. Check your connection and available device storage, then choose them again.";
+
+// 移动普通相册与恢复。
+"photos.album.recovery.saveFailed" = "The album result could not be saved on this device. Check available storage and refresh the status.";
+"photos.album.recovery.readFailed" = "Previous album changes could not be restored. Reconnect with the original account and try again.";
+"photos.album.recovery.pending" = "Album changes are not finished. Reconnect and refresh the status to continue.";
+"mobile.photos.album.removeHint" = "Remove these photos from this album? The originals and other albums will stay unchanged.";
+"mobile.photos.album.choose" = "Choose an Album";
+"mobile.photos.album.empty" = "No albums are available. Create an album first, then add photos.";
+"mobile.photos.album.stale" = "The selected photos or album have changed. Close this form and select them again.";
+"mobile.photos.album.save" = "Save Changes";
+"mobile.photos.album.refresh" = "Refresh Status";
+"mobile.photos.album.partial" = "Some photos could not be updated. Try again to finish the remaining photos.";
+"mobile.photos.album.loading" = "Loading albums…";

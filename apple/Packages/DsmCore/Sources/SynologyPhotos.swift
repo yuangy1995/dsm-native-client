@@ -419,6 +419,8 @@ public protocol SynologyPhotosServing: Sendable {
     func uploadRecoveryIdentity() async throws -> String
     func performRecoverableUpload(_ mutation: SynologyPhotosMutation, operationID: UUID, progress: @escaping FileTransferProgress, checkpoint: @escaping @Sendable (SynologyPhotosUploadCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult
     func restoreUploadMutation(_ checkpoint: SynologyPhotosUploadCheckpoint) async throws
+    func performRecoverableAlbumMutation(_ mutation: SynologyPhotosMutation, operationID: UUID, checkpoint: @escaping @Sendable (SynologyPhotosAlbumCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult
+    func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws
     func forgetUploadMutation(operationID: UUID) async throws
     func prepareDeletion(_ photo: SynologyPhoto) async throws
     func deletePhoto(_ photo: SynologyPhoto, operationID: UUID) async throws -> SynologyPhotoDeletionResult
@@ -502,6 +504,8 @@ public extension SynologyPhotosServing {
     func uploadRecoveryIdentity() async throws -> String { throw CapabilitySelectionError.unsupported(apiName: "Photos.UploadRecovery") }
     func performRecoverableUpload(_ mutation: SynologyPhotosMutation, operationID: UUID, progress: @escaping FileTransferProgress, checkpoint: @escaping @Sendable (SynologyPhotosUploadCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.UploadRecovery") }
     func restoreUploadMutation(_ checkpoint: SynologyPhotosUploadCheckpoint) async throws { throw CapabilitySelectionError.unsupported(apiName: "Photos.UploadRecovery") }
+    func performRecoverableAlbumMutation(_ mutation: SynologyPhotosMutation, operationID: UUID, checkpoint: @escaping @Sendable (SynologyPhotosAlbumCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.AlbumRecovery") }
+    func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws { throw CapabilitySelectionError.unsupported(apiName: "Photos.AlbumRecovery") }
     func globalSettings() async throws -> SynologyPhotoGlobalSettings { throw CapabilitySelectionError.unsupported(apiName: "Photos.GlobalSettings") }
     func conversionCache() async throws -> SynologyPhotoConversionCache { throw CapabilitySelectionError.unsupported(apiName: "Photos.ConversionCache") }
     func sharedSpaceSettings() async throws -> SynologyPhotoSharedSpaceSettings { throw CapabilitySelectionError.unsupported(apiName: "Photos.SharedSpaceSettings") }

@@ -269,6 +269,13 @@ public final class SynologyPhotosModel {
     @ObservationIgnored private var uploadRecoveryStore: PhotoUploadRecoveryStore?
     @ObservationIgnored private var uploadRecoveryIdentity: String?
     @ObservationIgnored private var uploadRecoveryReady = true
+    public private(set) var albumRecoveryError: String?
+    @ObservationIgnored private var albumRecoveryStore: PhotoAlbumRecoveryStore?
+    @ObservationIgnored private var albumRecoveryReady = true
+    public var canStartManagementMutation: Bool {
+        isModuleEnabled && hasLoaded && !isLoading && !isManaging && !isDeleting && !isCheckingDeletion &&
+            pendingMutationID == nil && albumRecoveryReady && albumRecoveryError == nil
+    }
     public private(set) var isOpeningUploadDestination = false
     public private(set) var uploadNavigationError: String?
     public private(set) var isUploading = false
@@ -817,10 +824,11 @@ public final class SynologyPhotosModel {
                 automaticPreviewEnabled = access.automaticPreviewEnabled
             }
             await restoreUploadQueueIfNeeded(repository: repository)
+            await restoreAlbumMutationIfNeeded(repository: repository)
             let albumOnly = spaces.isEmpty && (section == .albums || (section == .sharing && shareScope != .requests))
             guard let destination = spaces.first(where: { $0 == (space ?? selectedSpace) }) ?? spaces.first ?? (albumOnly ? .personal : nil) else {
                 resetSpaceNavigation()
-                managementFeatures = await repository.managementFeatures(in: .personal).intersection([.globalSettings, .conversionCache, .sharedMembers, .sharedSpaceSettings, .automaticPreviewSettings, .recognitionSettings, .displaySettings, .duplicateSettings, .albumSorting, .albumListSorting, .albumListDisplay])
+                managementFeatures = await repository.managementFeatures(in: .personal).intersection([.albums, .sharing, .globalSettings, .conversionCache, .sharedMembers, .sharedSpaceSettings, .automaticPreviewSettings, .recognitionSettings, .displaySettings, .duplicateSettings, .albumSorting, .albumListSorting, .albumListDisplay])
                 hasLoaded = true
                 return
             }
@@ -1816,7 +1824,7 @@ public final class SynologyPhotosModel {
 
     public func submitMutation(_ mutation: SynologyPhotosMutation, onCompletion: ((SynologyPhotosMutationResult) -> Void)? = nil) {
         if mutation.feature == .backgroundTasks { submitBackgroundTaskMutation(mutation); return }
-        guard isModuleEnabled, !isManaging, !isDeleting, !isCheckingDeletion, pendingMutationID == nil, similarBatchQueue.isEmpty,
+        guard isModuleEnabled, albumRecoveryReady, albumRecoveryError == nil, !isManaging, !isDeleting, !isCheckingDeletion, pendingMutationID == nil, similarBatchQueue.isEmpty,
               canSubmit(mutation) else { return }
         let id = UUID()
         managementCompletion = onCompletion.map { (id, $0) }
@@ -1964,6 +1972,7 @@ public final class SynologyPhotosModel {
 
     private func executeMutation(_ mutation: SynologyPhotosMutation, id: UUID = UUID(),
                                  progress: @escaping FileTransferProgress = { _, _ in }) async throws -> SynologyPhotosMutationResult? {
+        guard albumRecoveryReady, albumRecoveryError == nil else { throw CocoaError(.fileWriteNoPermission) }
         let service = try service()
         try await service.prepareMutation(mutation)
         try Task.checkCancellation()
@@ -1979,11 +1988,17 @@ public final class SynologyPhotosModel {
                 first = try await service.performRecoverableUpload(mutation, operationID: id, progress: progress) { checkpoint in
                     try store.checkpoint(checkpoint)
                 }
+            } else if let store = albumRecoveryStore, SynologyPhotosAlbumCheckpoint.supports(mutation) {
+                first = try await service.performRecoverableAlbumMutation(mutation, operationID: id) { try store.save($0) }
             } else { first = try await service.performMutation(mutation, operationID: id, progress: progress) }
 
             return await finishMutation(first, id: id, mutation: mutation, service: service)
         } catch {
             // Repository 只在提交前抛错；提交后的不确定结果由 pendingReview 返回。
+            if pendingUploadID == nil, SynologyPhotosAlbumCheckpoint.supports(mutation) {
+                do { try albumRecoveryStore?.clear(operationID: id) }
+                catch { albumRecoveryError = L10n.string("photos.album.recovery.saveFailed") }
+            }
             pendingMutationID = nil; pendingMutation = nil
             throw error
         }
@@ -2342,6 +2357,10 @@ public final class SynologyPhotosModel {
              .addTags(let photos, _), .removeTags(let photos, _), .createTag(_, let photos, _):
             return canEditSelection(photos, supportsMixedSpaces: mutation.supportsMixedPhotoSpaces) &&
                 (mutation.space != selectedSpace || managementFeatures.contains(mutation.feature))
+        case .createAlbum(_, let photos) where photos.isEmpty:
+            return managementFeatures.contains(.albums)
+        case .renameAlbum, .deleteAlbum, .setAlbumCover:
+            return managementFeatures.contains(.albums)
         case .addToAlbum(_, let photos), .createAlbum(_, let photos), .createTemporaryAlbum(_, let photos):
             return canAddToAlbum(photos) && spaces.contains(mutation.space) && (mutation.space != selectedSpace || managementFeatures.contains(.albums))
         case .removeFromAlbum(let id, let photos):
@@ -2354,6 +2373,31 @@ public final class SynologyPhotosModel {
                 (mutation.space != selectedSpace || managementFeatures.contains(.fileTransfer))
         default: return spaces.contains(mutation.space) && (mutation.space != selectedSpace || managementFeatures.contains(mutation.feature))
         }
+    }
+
+    public func configureAlbumRecovery(_ store: PhotoAlbumRecoveryStore?) {
+        precondition(!hasLoaded && pendingMutationID == nil)
+        albumRecoveryStore = store; albumRecoveryReady = store == nil
+    }
+
+    private func restoreAlbumMutationIfNeeded(repository: any SynologyPhotosServing) async {
+        guard !albumRecoveryReady, let store = albumRecoveryStore else { return }
+        do {
+            if let checkpoint = try store.load() {
+                guard pendingMutationID == nil || pendingMutationID == checkpoint.operationID else { throw CocoaError(.fileReadNoPermission) }
+                try await repository.restoreAlbumMutation(checkpoint)
+                pendingMutationID = checkpoint.operationID
+                pendingMutation = try checkpoint.reviewMutation()
+                managementMessage = L10n.string("photos.album.recovery.pending")
+            }
+            albumRecoveryReady = true; albumRecoveryError = nil
+        } catch { albumRecoveryError = L10n.string("photos.album.recovery.readFailed") }
+    }
+
+    public func retryAlbumRecovery() async {
+        guard isModuleEnabled, !isManaging else { return }
+        if !albumRecoveryReady, let repository = try? service() { await restoreAlbumMutationIfNeeded(repository: repository) }
+        if pendingMutationID != nil { reviewPendingMutation() }
     }
 
     public func configureUploadRecovery(_ store: PhotoUploadRecoveryStore?) {
@@ -2405,7 +2449,7 @@ public final class SynologyPhotosModel {
     }
 
     public var canResumeUploads: Bool {
-        uploadRecoveryReady && uploadPersistenceError == nil && !isManaging && pendingMutationID == nil &&
+        uploadRecoveryReady && uploadPersistenceError == nil && albumRecoveryReady && albumRecoveryError == nil && !isManaging && pendingMutationID == nil &&
         uploadQueue.contains { [.cancelled, .queued].contains($0.state) && ($0.uploadedPhoto != nil || !$0.file.requiresSourceSelection) }
     }
 
@@ -2809,6 +2853,13 @@ public final class SynologyPhotosModel {
         guard pendingMutationID == id else { return nil }
         guard isModuleEnabled, !Task.isCancelled else { managementMessage = pendingManagementMessage; return nil }
         guard result.state != .pendingReview else { managementMessage = pendingManagementMessage; return nil }
+        if pendingUploadID == nil, SynologyPhotosAlbumCheckpoint.supports(mutation) {
+            do { try albumRecoveryStore?.clear(operationID: id); albumRecoveryError = nil }
+            catch {
+                albumRecoveryError = L10n.string("photos.album.recovery.saveFailed")
+                return nil
+            }
+        }
         // 表单内新建相册沿同一操作编号等待核对，未知结果不得同名追认或重复创建。
         defer {
             advanceTemporarySharing(mutation, result: result)
@@ -3119,6 +3170,7 @@ public final class SynologyPhotosModel {
             else { await refreshManagedSharingList(service: service) }
         case .deleteAlbum(let id):
             if collections.contains(where: { $0.id == id }) { collections.removeAll { $0.id == id }; collectionOffset = max(0, collectionOffset - 1) }
+            if selectedAlbum?.id == id { selectedAlbum = nil; await refresh(afterFolderMutation: true) }
         case .removeFromAlbum(let id, let photos) where selectedAlbum?.id == id:
             removeManagedItems(Set(photos.map(\.id)))
         case .move(let photos, _, _, let folders, _):
@@ -3512,7 +3564,7 @@ public final class SynologyPhotosModel {
     }
 
     public func requestDeletion(_ photos: [SynologyPhoto], verifying similar: SynologyPhotoSimilarDetail? = nil) {
-        guard isModuleEnabled, !photos.isEmpty, photos.allSatisfy(canModifyOriginal), !isDeleting, !isManaging, !isCheckingDeletion,
+        guard isModuleEnabled, albumRecoveryReady, albumRecoveryError == nil, !photos.isEmpty, photos.allSatisfy(canModifyOriginal), !isDeleting, !isManaging, !isCheckingDeletion,
               pendingMutationID == nil, pendingDeletionPhotos.isEmpty else { return }
         let targets = photos.reduce(into: [SynologyPhoto]()) { result, photo in
             if !result.contains(where: { $0.id == photo.id }) { result.append(photo) }

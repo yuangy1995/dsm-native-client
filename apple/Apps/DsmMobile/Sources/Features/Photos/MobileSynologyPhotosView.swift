@@ -68,7 +68,8 @@ private struct MobileSynologyPhotosContent: View {
                                 } description: { Text(error) } actions: {
                                     Button(L10n.string("photos.retry")) { Task { await model.refresh() } }
                                 }
-                            } else if model.hasLoaded && model.spaces.isEmpty {
+                            } else if model.hasLoaded && model.spaces.isEmpty && model.section != .albums
+                                        && (model.section != .sharing || model.shareScope == .requests) {
                                 ContentUnavailableView {
                                     Label(L10n.string("photos.error.title"), systemImage: "lock")
                                 } description: { Text(L10n.string("photos.service.permission")) } actions: {
@@ -108,6 +109,11 @@ private struct MobileSynologyPhotosContent: View {
                     proxy.scrollTo("photos-top", anchor: .top)
                 }
             }
+            if model.isSelecting {
+                selectionToolbar
+                if model.selectedPhotos.count > 100 { Text(L10n.string("photos.preview.recovery.limit")).font(.caption).padding(.horizontal) }
+            }
+            MobilePhotoManagementStatus(model: model)
             if model.isDeleting || model.isCheckingDeletion { ProgressView().padding(8) }
             if let message = model.deletionMessage {
                 VStack {
@@ -130,28 +136,37 @@ private struct MobileSynologyPhotosContent: View {
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if let uploads = session.uploads {
-                    Menu {
+                if !model.items.isEmpty {
+                    Button {
+                        if model.isSelecting { model.clearSelection() } else { model.isSelecting = true }
+                    } label: {
+                        Label(L10n.string(model.isSelecting ? "photos.selection.cancel" : "photos.selection.start"), systemImage: "checkmark.circle")
+                    }.disabled(model.isBrowsingBlocked || model.isDeleting).accessibilityIdentifier("mobile.photos.selection.begin")
+                }
+                Menu {
+                    if let uploads = session.uploads {
                         Button { uploads.begin() } label: {
                             Label(L10n.string("photos.manage.upload"), systemImage: "square.and.arrow.up")
                         }.disabled(!uploads.canBegin).accessibilityIdentifier("mobile.photos.upload.begin")
                         Button { showsUploadQueue = true } label: {
                             Label(L10n.string("photos.upload.queue"), systemImage: "list.bullet")
                         }.accessibilityIdentifier("mobile.photos.upload.queue")
-                    } label: {
-                        Label(L10n.string("photos.manage.upload"), systemImage: "square.and.arrow.up")
-                    }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.upload.menu")
-                }
-                if model.section == .timeline {
-                    Button { model.showsFilters = true } label: {
-                        Label(L10n.string("photos.filters"), systemImage: model.filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                    }.frame(minWidth: 44, minHeight: 44)
-                }
-                if model.showsTimeline && !model.timelineMonths.isEmpty {
-                    Button { showsMonths = true } label: {
-                        Label(L10n.string("photos.timeline.navigator"), systemImage: "calendar")
-                    }.frame(minWidth: 44, minHeight: 44)
-                }
+                    }
+                    if let albums = session.albums {
+                        Divider()
+                        Button(MobilePhotoAlbumModel.Action.create.title) { albums.begin(.create, photos: []) }
+                            .disabled(!albums.allows(.create, photos: [])).accessibilityIdentifier("mobile.photos.album.create")
+                        if model.selectedAlbum != nil {
+                            ForEach([MobilePhotoAlbumModel.Action.rename, .delete], id: \.self) { action in
+                                Button(action.title, role: action == .delete ? .destructive : nil) { albums.begin(action, photos: []) }
+                                    .disabled(!albums.allows(action, photos: [])).accessibilityIdentifier("mobile.photos.album.\(action.rawValue)")
+                            }
+                        }
+                    }
+                    if sizeClass != .regular { timelineActions }
+                } label: { Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis.circle") }
+                    .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.actions")
+                if sizeClass == .regular { timelineActions }
                 Button { Task { await model.refresh() } } label: {
                     Label(L10n.string("photos.library.refresh"), systemImage: "arrow.clockwise")
                 }.frame(minWidth: 44, minHeight: 44).disabled(model.isLoading || model.isDeleting)
@@ -171,6 +186,9 @@ private struct MobileSynologyPhotosContent: View {
         }
         .sheet(isPresented: $showsUploadQueue) {
             if let uploads = session.uploads { MobilePhotoUploadQueueView(model: model, uploads: uploads) }
+        }
+        .sheet(item: Binding(get: { session.albums?.draft }, set: { if $0 == nil { session.albums?.cancel() } }), onDismiss: { session.albums?.cancel() }) { draft in
+            if let albums = session.albums { MobilePhotoAlbumForm(albums: albums, draft: draft) }
         }
         .sheet(isPresented: $showsMonths) {
             NavigationStack {
@@ -276,10 +294,45 @@ private struct MobileSynologyPhotosContent: View {
         }
     }
 
+    @ViewBuilder private var timelineActions: some View {
+        if model.section == .timeline {
+            Button { model.showsFilters = true } label: {
+                Label(L10n.string("photos.filters"), systemImage: model.filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+            }.frame(minWidth: 44, minHeight: 44)
+        }
+        if model.showsTimeline && !model.timelineMonths.isEmpty {
+            Button { showsMonths = true } label: {
+                Label(L10n.string("photos.timeline.navigator"), systemImage: "calendar")
+            }.frame(minWidth: 44, minHeight: 44)
+        }
+    }
+
+    private var selectionToolbar: some View {
+        HStack {
+            Text(L10n.string("photos.selection.count", model.selectedItemCount)).font(.callout)
+            Spacer()
+            Button { model.selectGroup(model.items) } label: {
+                Label(L10n.string("photos.selection.loaded"), systemImage: "checkmark.circle.fill")
+            }.labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
+                .disabled(model.isBrowsingBlocked).accessibilityIdentifier("mobile.photos.selection.loaded")
+            if let albums = session.albums {
+                Menu {
+                    ForEach([MobilePhotoAlbumModel.Action.create, .add, .remove, .cover], id: \.self) { action in
+                        Button(action.title) { albums.begin(action) }
+                            .disabled(!albums.allows(action)).accessibilityIdentifier("mobile.photos.selection.\(action.rawValue)")
+                    }
+                } label: { Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis.circle") }
+                    .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.selection.actions")
+            }
+        }.padding(.horizontal).background(.bar)
+    }
+
     private func photoGrid(_ photos: [SynologyPhoto]) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 220), spacing: 8)], spacing: 8) {
             ForEach(photos) { photo in
-                MobileSynologyPhotoCell(photo: photo, session: session) { model.showPreview(photo) }
+                MobileSynologyPhotoCell(photo: photo, session: session, isSelecting: model.isSelecting, isSelected: model.selectedPhotoIDs.contains(photo.id)) {
+                    if model.isSelecting { model.toggleSelection(photo) } else { model.showPreview(photo) }
+                }
                     .id(photo.id)
                     .contextMenu {
                         Button(L10n.string("photos.media.open")) { model.showPreview(photo) }
@@ -311,6 +364,8 @@ private struct MobileSynologyPhotosContent: View {
 private struct MobileSynologyPhotoCell: View {
     let photo: SynologyPhoto
     let session: MobileSynologyPhotosSession
+    let isSelecting: Bool
+    let isSelected: Bool
     let open: () -> Void
     @State private var image: UIImage?
 
@@ -329,10 +384,18 @@ private struct MobileSynologyPhotoCell: View {
             }
             .aspectRatio(1, contentMode: .fit).clipped()
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .topTrailing) {
+                if isSelecting {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .symbolRenderingMode(.palette).foregroundStyle(isSelected ? Color.accentColor : Color.primary, .background)
+                        .font(.title2).padding(8).accessibilityHidden(true)
+                }
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(photo.filename)
-        .accessibilityHint(L10n.string("photos.media.open"))
+        .accessibilityHint(isSelecting ? L10n.string("photos.selection.toggle", photo.filename) : L10n.string("photos.media.open"))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .task(id: photo.thumbnail) {
             image = nil
             let data = await session.thumbnail(photo)

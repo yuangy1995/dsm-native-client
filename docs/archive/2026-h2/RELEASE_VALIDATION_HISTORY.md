@@ -849,3 +849,37 @@ M2g2 提交的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/act
 两端实际 UI 使用合成媒体与内存服务，iPhone 浅色、iPad 深色；已检查上传结果和失败恢复界面。Files 面板仅打开，没有向其他提供方写出数据。NAS/iCloud 媒体、真机锁屏、VoiceOver、大字号和键盘按主计划 `PENDING_USER_VALIDATION` 继续；M3 其余管理及 M8 后台未由本切片覆盖。API 文档和私有兼容索引只记录移动端接入既有契约，环境证据等级没有提升。
 
 最终 `m3a-build8.log` 构建通过；第五轮仅复跑中文系统选择器，`m3a-iphone5.xcresult` **1/1 通过（32.501 秒）**，`m3a-ipad5.xcresult` **1/1 通过（30.882 秒）**。四项新增 UI 均有两端通过证据，已通过的单元与其余 UI 未无理由重跑。XcodeGen 重复生成 SHA-256 一致：`fb42e06f5f25f5b94aed06e09e8e30b2ba9a2c755ff5cfa7fd7c6fe9850dde44`。`python3 tools/localization/check_localization.py`（Apple 5794 / Android 2188 / Windows 3402）、`python3 tools/codex/check_documentation.py --strict-release`、`python3 tools/contract-validation/validate_fixtures.py`（29 组 / 48 引用）与 `git diff --check` 均通过。测试后恢复 iPad 浅色；日志、结果包和合成截图不进入源码。
+
+
+## 2026-10-04 移动 M3b1 多选与普通相册
+
+移动 Photos 增加触控多选、创建/加入普通相册、改名、封面、移除成员及删除相册。确认文案分别说明只移除相册关系或删除相册及链接，原照片保持。表单冻结原空间、相册及照片，候选完整分页；仅相册权限不依赖个人图库，原件权限不扩大。手机工具栏合并相册/上传操作并去除重复刷新；平板保留独立筛选。没有操作真实 NAS 或修改 Mac App、Windows、Android 源码。
+
+独立版本 1 的 `Albums/pending-v1.json` 在写前原子保存，受系统保护并排除备份；只保存原对象及必要回执，不含分享口令或凭据。创建编号先落盘再回读，无编号不按同名推断成功；重启只恢复原操作，部分失败只继续剩余照片。损坏、跨账号或无法保存记录均保留保护，替换会话后旧写入者不能清空新记录。共享协议默认不支持，Mac 保持原调用；新增相册能力判断和删除当前相册后返回列表有共享回归，NAS 契约和真实证据等级不变。
+
+独立集成与只读对抗复核覆盖冻结选择、旧表单/空间/账号、贡献者与所有者权限、加载取消、未知重启、无创建编号、写前保存失败、损坏记录、旧写入者、部分失败只补剩余项及关闭个人图库。末轮额外发现并修正只有相册权限时页面误显示图库权限错误；此类账号仍可创建空相册，不能据此编辑原件。
+
+- XcodeGen **2.46.0** 按 `apple/Apps/DsmMobile/project.yml` 生成；重复生成 SHA-256 一致：`ee2267b2ed237a62cdfdaf591060a778ad4cdd07944686db220d6b50471e5241`。
+- `swift test --package-path apple --jobs 4`：最终共享逻辑 **2435 项 XCTest、172 项既有条件跳过、0 失败（37.447 秒）**，另 **12 项 Swift Testing 通过**，日志 `m3b1-shared2.log`。含三项新增真实 Repository 合成测试：回执恢复且零重发、保存失败零请求/无编号不猜测、相册能力与原空间隔离。最终文案后另运行 `swift test --package-path apple --jobs 4 --filter AppLanguageTests`，**6 项通过**。
+- `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 前八轮通过；末轮补仅有相册权限的显示修正，最终构建与结果在下文记录。
+- `xcodebuild test-without-building` 沿用同工程/方案/派生目录、`-parallel-testing-enabled NO -only-testing:DsmMobileTests`；iPhone ID 如上，iPad `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。第一轮各 727 项单元中三项新用例失败，原因是合成时间线没有返回新增照片的日期；修正 Fixture 后第二轮各 **727/727 通过**。第三轮最终工具栏版本仍各 **727/727 通过**，iPhone 12.670 秒、iPad 12.520 秒。
+- 实际 UI 同命令以 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/` 选择中文候选加载/空/错误、多选创建改名、移除及删除保留原件、部分失败继续、未知重启及原有上传完成/清理。第一轮各 **3/6 通过**，三项失败同属合成时间线缺失；第二轮重测先前失败三项，各 **2/3 通过**，剩余为无标签进度控件不可被辅助功能识别。为进度增加双语加载标签和标识后，第三轮中文三态在两端通过；其余最终结果在下文记录。未降低任何成功/恢复/原件保留断言。
+
+上述合成测试、构建和只读审查不代替真实 NAS、真机锁屏与辅助功能。详细 `PENDING_USER_VALIDATION` 路径见移动主计划 M3b1；相册分享、资料/目录、条件相册及其余 M3 功能继续独立切片。
+
+
+Mac 共享回归构建沿用 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO`；首轮完整构建与最终资源增量构建均通过（`m3b1-macos-build1.log` / `m3b1-macos-build2.log`），`lipo -archs` 确认为 **x86_64 arm64**。未安装、启动或发布 Mac 包。最终语言资源为 Apple 5805 / Android 2188 / Windows 3402；本地化完整性/硬编码扫描通过，29 组 fixture / 48 项私有文档引用校验通过。
+
+
+第三轮 `m3b1-iphone3.xcresult` / `m3b1-ipad3.xcresult` 两端各 **6/6 实际 UI 全部通过**；未知创建跨重启仅刷新、部分成员继续及原上传/清理均通过。已查看 iPhone 浅色的改名后相册页和 iPad 深色的删除确认，工具栏、原件保留说明及结果入口正常；长相册名由系统标题截断，不影响原名或辅助功能标识。仅有相册权限的末轮用例单独追加，不用之前的 727 项代替其结果。
+
+
+第九轮移动构建通过，第四轮 `m3b1-iphone4.xcresult` / `m3b1-ipad4.xcresult` 各 **728/728 单元通过**（12.155 / 12.040 秒），新增“仅有相册权限仍能创建且不显示图库错误”实际 UI 各 **1/1 通过**（29.495 / 28.664 秒）。合计六项相册 UI 加一项原有上传回归均有两端证据。复核实际 Repository 时进一步发现空相册命令仍要求至少一个原图库，已将该入口改为统一相册授权，所有者预检保持；新增合成请求测试覆盖创建/改名/删除与拒绝他人相册。此最后共享层变更后的完整回归和构建另记下文，不借用前一版结果。
+
+
+最后权限修正后，`swift test --package-path apple --jobs 4 --filter SynologyPhotosRepositoryTests` **516/516 通过**（2.878 秒）；第十轮移动构建通过，`m3b1-iphone5.xcresult` / `m3b1-ipad5.xcresult` 再次各 **728/728 单元通过**（12.657 / 12.782 秒）。全部移动用例含 11 项本轮相册模型回归；先前六项相册实际 UI 及上传回归的生产界面未再改动，未重复运行。测试后恢复 iPad 浅色，临时日志、结果包及合成截图不进入源码。
+
+
+最终完整 `swift test --package-path apple --jobs 4`：**2436 项 XCTest、172 项既有条件跳过、0 失败（34.272 秒）**，另 **12 项 Swift Testing 通过**（`m3b1-shared3.log`）。与前次差异为补充实际统一相册授权的请求链路，未降低原件编辑/上传门禁。最终严格文档及差异检查通过。
+
+最终共享权限修正后的 Mac Release 构建再次通过（`m3b1-macos-build3.log`），`lipo -archs` 仍为 **x86_64 arm64**。没有安装、启动或发布产物；M3b1 源码与本机验证收口，后续继续相册分享。
