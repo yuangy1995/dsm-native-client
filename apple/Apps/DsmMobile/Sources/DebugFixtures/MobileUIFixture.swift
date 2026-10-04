@@ -73,6 +73,20 @@ enum MobileUIFixture {
             model.configureModuleAccess(MobileModuleAccessReader(capabilities: fixtureCapabilities,
                 readPrivileges: { try await privilegeService.read(capabilities: fixtureCapabilities, session: session) },
                 readPhotoAccess: { _ = try await photoAccess.access() }))
+            if officeState.hasPrefix("photo-") {
+                let photosRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestPhotos")
+                if !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
+                    try? FileManager.default.removeItem(at: photosRoot)
+                }
+                try FileManager.default.createDirectory(at: photosRoot, withIntermediateDirectories: true)
+                let source = photosRoot.appendingPathComponent("Sample image.jpg")
+                try MobilePhotosUIService.image.write(to: source)
+                model.synologyPhotos.configure(MobilePhotosUIService(profileID: profile.id, state: officeState),
+                    uploadStorage: .init(recordURL: photosRoot.appendingPathComponent("Recovery/queue.json")), reviewDelay: { _ in })
+                if ["photo-upload", "photo-album-failure", "photo-unknown", "photo-contributor"].contains(officeState) {
+                    model.synologyPhotos.uploads?.fixtureSources = [source]
+                }
+            }
             return model
         } catch {
             preconditionFailure("UI fixture configuration failed")
@@ -221,7 +235,7 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
                 "SYNO.SDS.Virtualization.Application": pageState == "modules-all"],
                 "Session": ["is_admin": isPermissionFixture || pageState == "modules-all"]]
         case ("SYNO.Foto.UserInfo", "me"):
-            result = ["enabled": pageState == "modules-all", "id": 1]
+            result = ["enabled": pageState == "modules-all" || pageState.hasPrefix("photo-"), "id": 1]
         case ("SYNO.Foto.Setting.User", "get"):
             result = ["enable_home_service": true, "team_space_permission": "none"]
         case ("SYNO.Foto.Setting.Admin", "get"):

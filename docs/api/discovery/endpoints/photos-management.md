@@ -411,3 +411,9 @@ macOS显示设置现在仅在默认排序字段或方向变化时确认，显示
 官方react_bundle中3176000附近的P函数要求平台支持人脸识别并启用当前空间识别；3179900–3181400的普通/共享相册预览分支对个人提供者、共享management提供EDIT_FACE菜单。原生手动人脸因此复用本轮资料编辑角色，并保留现有Item.list_face v6、Person.add_face v3/delete_face/separate及上传编号核对，未新增NAS接口。原件删除、移动仍使用原有独立权限。2692274/2693142的列表动作定义与2727911/2728084的kZ/k0表明COLLECT_PHOTO_TO_HERE_FROM_FOLDER通过openPhotoRequestDialogAction打开照片请求，对应原生createPhotoRequest。
 
 本机上传恢复新增的是客户端本地记录能力，不是NAS新增API，也不提升接口证据等级。仅持久化上传、直接相册上传、创建上传目录、加入相册的意图与必要回执；恢复只调用既有只读核对。没有回执时不按文件名自动追认，用户明确核对后只能移除本机记录。会话与分享口令禁止进入该文件。当前完整功能覆盖与验收范围见[照片计划](../../../development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。
+
+### 2026-10-04 移动选择上传与恢复适配
+
+iPhone/iPad M3a 复用 `DsmPhotosFeature` 上传队列及本节现有请求，接入 Photos/Files 多选、目录结构、普通相册加入和直接贡献上传。账号隔离的本机副本使用完整文件保护并排除备份；沿用版本 1 的意图/回执记录，替换会话时停止旧记录写入者，迟到回调不得覆盖新队列。已上传而加入相册失败只补加入，重启后的未知操作仅查询原回执；未完成项由用户继续，清理终态只删除本机记录和副本。队列成功恢复后清理未提交草稿，损坏记录及无法恢复来源的副本保留。
+
+没有新增 NAS 接口或改变原请求，Mac 原有记录格式和调用行为保持；Windows/Android 仅记录同契约影响，不自动开启本机恢复。发现等级继续为 `static`，不增加 `verifications`；源码、模拟器与真实设备待办集中于[移动 M3a 账本](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)。后台上传、批量资料/目录管理和相册分享分别属于后续切片，不由本次接入推定完成。

@@ -4902,7 +4902,7 @@
 
 // 上传任务跨重启恢复
 "photos.upload.recovery.readFailed" = "Previous uploads could not be restored. Check that you are connected with the original account, then try again.";
-"photos.upload.recovery.saveFailed" = "Upload progress could not be saved, so further uploads are paused. Check the available space on this Mac, then try again.";
+"photos.upload.recovery.saveFailed" = "Upload progress could not be saved, so further uploads are paused. Check the available space on this device, then try again.";
 "photos.upload.recovery.sourceChanged" = "The selected file does not match the original. Choose the original file.";
 "photos.upload.recovery.sourceNeeded" = "Choose the original file again to continue uploading.";
 "photos.upload.recovery.reselect" = "Choose File Again";
@@ -6014,3 +6014,15 @@
 "mobile.navigation.virtualMachines" = "Virtual machines";
 
 "mobile.navigation.nasSettings" = "NAS settings";
+
+// 移动照片选择上传与恢复。
+"mobile.photos.upload.choosePhotos" = "Choose Photos and Videos";
+"mobile.photos.upload.chooseFiles" = "Choose from Files";
+"mobile.photos.upload.chooseFolder" = "Choose a Folder";
+"mobile.photos.upload.pending" = "Upload not finished";
+"mobile.photos.upload.pendingHint" = "The upload result is not available yet. Reconnect and refresh its status before uploading again.";
+"mobile.photos.upload.refresh" = "Refresh Status";
+"mobile.photos.source.mine" = "My Photos";
+"mobile.photos.source.shared" = "Shared Photos";
+"mobile.photos.source.title" = "Photo library";
+"mobile.photos.upload.prepareFailed" = "The selected items could not be prepared. Check your connection and available device storage, then choose them again.";

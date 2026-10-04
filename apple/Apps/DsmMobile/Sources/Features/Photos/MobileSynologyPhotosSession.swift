@@ -16,6 +16,7 @@ final class MobileSynologyPhotosSession {
 
     private(set) var identity = UUID()
     private(set) var model = SynologyPhotosModel()
+    private(set) var uploads: MobilePhotoUploadImportModel?
     let thumbnails = MobilePhotoThumbnailStore(totalCostLimit: 32 * 1_024 * 1_024, concurrencyLimit: 4)
     private(set) var isExporting = false
     private(set) var exportProgress: Double?
@@ -25,20 +26,34 @@ final class MobileSynologyPhotosSession {
     @ObservationIgnored private var exportTask: Task<Void, Never>?
     @ObservationIgnored private var exportDirectory: URL?
     @ObservationIgnored private var exportGeneration = UUID()
+    @ObservationIgnored private var uploadRecoveryStore: PhotoUploadRecoveryStore?
+    @ObservationIgnored private var hasCleanedUploadDrafts = false
 
-    func configure(_ repository: (any SynologyPhotosServing)?) {
+    func configure(_ repository: (any SynologyPhotosServing)?, uploadStorage: MobilePhotoUploadStorage? = nil,
+                   reviewDelay: @escaping @Sendable (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
         deactivate()
+        uploadRecoveryStore?.suspendWrites()
         identity = UUID()
         self.repository = repository
-        model = SynologyPhotosModel(repository: repository)
+        model = SynologyPhotosModel(repository: repository, deletionReviewDelay: reviewDelay)
+        uploadRecoveryStore = uploadStorage?.recoveryStore()
+        model.configureUploadRecovery(uploadRecoveryStore)
+        uploads = uploadStorage.map { MobilePhotoUploadImportModel(model: model, storage: $0) }
+        hasCleanedUploadDrafts = false
     }
 
     func activate() async {
         model.setModuleEnabled(true)
         await model.loadIfNeeded()
+        if !hasCleanedUploadDrafts, model.hasLoaded, !model.isLoading, model.errorMessage == nil,
+           model.uploadPersistenceError == nil, let uploads, uploads.draftID == nil {
+            try? uploads.storage.removeUnreferencedCopies(keeping: model.uploadQueue.map(\.file))
+            hasCleanedUploadDrafts = true
+        }
     }
 
     func deactivate() {
+        uploads?.cancel()
         model.setModuleEnabled(false)
         cancelExport()
         Task { await thumbnails.removeAll() }

@@ -6014,3 +6014,15 @@
 "mobile.navigation.virtualMachines" = "虚拟机";
 
 "mobile.navigation.nasSettings" = "NAS 设置";
+
+// 移动照片选择上传与恢复。
+"mobile.photos.upload.choosePhotos" = "选择照片和视频";
+"mobile.photos.upload.chooseFiles" = "从“文件”选择";
+"mobile.photos.upload.chooseFolder" = "选择文件夹";
+"mobile.photos.upload.pending" = "上传尚未完成";
+"mobile.photos.upload.pendingHint" = "暂时无法取得上传结果。请恢复连接并刷新状态后再继续。";
+"mobile.photos.upload.refresh" = "刷新状态";
+"mobile.photos.source.mine" = "我的照片";
+"mobile.photos.source.shared" = "共享照片";
+"mobile.photos.source.title" = "图库";
+"mobile.photos.upload.prepareFailed" = "无法读取所选项目。请检查网络连接和本机可用空间，然后重新选择。";

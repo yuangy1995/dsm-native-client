@@ -109,9 +109,15 @@ public final class PhotoUploadRecoveryStore: @unchecked Sendable {
     public let url: URL
     private let bookmarkAccess: any PhotoUploadBookmarkAccess
     private var document: PhotoUploadRecoveryDocument?
+    private var acceptsWrites = true
 
     public init(url: URL, bookmarkAccess: any PhotoUploadBookmarkAccess) {
         self.url = url; self.bookmarkAccess = bookmarkAccess
+    }
+
+    /// 替换会话前冻结旧写入者，迟到回执不能覆盖新会话恢复后的队列。
+    public func suspendWrites() {
+        lock.withLock { acceptsWrites = false }
     }
 
     func sourceBookmark(for url: URL) throws -> Data { try bookmarkAccess.makeBookmark(for: url) }
@@ -163,11 +169,20 @@ public final class PhotoUploadRecoveryStore: @unchecked Sendable {
     }
 
     private func write(_ value: PhotoUploadRecoveryDocument) throws {
+        guard acceptsWrites else { throw CocoaError(.fileWriteNoPermission) }
         let manager = FileManager.default
         let root = url.deletingLastPathComponent()
         try manager.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+        #if os(iOS)
+        try manager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: root.path)
+        var protectedRoot = root
+        var values = URLResourceValues(); values.isExcludedFromBackup = true
+        try protectedRoot.setResourceValues(values)
+        try JSONEncoder().encode(value).write(to: url, options: [.atomic, .completeFileProtection])
+        #else
         try JSONEncoder().encode(value).write(to: url, options: [.atomic])
+        #endif
         try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         document = value
     }

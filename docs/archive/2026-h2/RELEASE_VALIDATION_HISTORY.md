@@ -831,3 +831,21 @@ M2g2 提交的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/act
 补充 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test中文模块设置可开启功能并保留原始文件名`：`m1nav-iphone4.xcresult` / `m1nav-ipad4.xcresult` 各 **1/1 通过**，分别 20.685 / 24.585 秒。界面使用中文入口与开关，NAS 文件名保留原文；测试后恢复 iPad 浅色。合计两端各有九项相关实际 UI 通过证据，其中七项为本轮模块/导航流程，两项为既有活动恢复回归。
 
 真实账号权限、DSM/Photos 版本差异与辅助功能按主计划的 `PENDING_USER_VALIDATION` 继续验收。没有修改 Mac App、Windows 或 Android 实现；共享资源增加新键，私有接口文档/索引只记录移动使用范围，环境验证等级未提升。代码同步、云端完整门禁与真实 NAS 验收分别记录。
+
+
+## 2026-10-04 移动 M3a 照片选择上传与恢复
+
+正式 Synology Photos 页面增加系统 Photos/Files/目录选择、上传表单、逐项任务和恢复入口，复用共享状态机与已记录上传/相册协议。平台适配先生成按原账号隔离、排除备份且受系统保护的副本；沿用版本 1 记录，不迁移登录配置。目录层次、忽略/重命名、直接贡献相册、上传后加入相册及只补加入步骤保持既有业务语义。旧会话写入者停用后，迟到回执不能覆盖新会话队列；损坏记录不覆盖，未知上传只读恢复，取消及移除只清理自有副本。没有操作真实 NAS、修改 Mac App/Windows/Android、增加依赖或改变主 App 身份。
+
+独立集成与只读对抗复核覆盖 15 项新增模型行为：原件/副本分离、重复提交、旧账号及选择器回调、未知跨重启、相册单步继续、直接贡献、写前落盘失败、损坏记录、权限/目标变化、符号链接拒绝、目录层次、缺失副本重新选择、同账号重连迟到落盘及未提交草稿清理。只在队列成功恢复后清理无引用草稿，损坏记录和失效书签保留副本。表单和队列使用中英文资源，上传期间保留取消/停止边界；真实硬件文件保护不由模拟器属性推定。
+
+- XcodeGen **2.46.0** 按 `apple/Apps/DsmMobile/project.yml` 生成工程。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`：第二轮因合成 actor 的不可变 profileID 隔离声明失败，修正为 `nonisolated let`；后续构建通过，没有降低 Swift 6 约束。
+- `xcodebuild test-without-building` 使用同工程/方案/派生目录、`-parallel-testing-enabled NO -only-testing:DsmMobileTests`；iPhone ID 如上，iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。最终 `m3a-iphone3.xcresult` / `m3a-ipad3.xcresult` **各 717/717 单元通过**，分别 11.768 / 11.907 秒。第一轮发现缓存 URL 属性没有察觉符号链接替换，改为实时文件属性并保留拒绝断言；损坏记录测试改用全新会话，避免仍在内存的旧队列先合法保存覆盖测试文件。第二轮各 716 项通过；加入草稿清理回归后第三轮 717 项通过。
+- 同命令分别选择四个 `DsmMobileUITests/MobileWorkspaceUITests/test照片…`：上传结果及清理、相册加入失败继续、未知重启不显示重传/移除、中文表单与系统文件选择器。第三轮 iPhone **4/4 通过**，iPad **3/4 通过**。此前实际 UI 发现同一视图的两个 `fileImporter` 覆盖导致 Files 按钮不呈现，合并为一个并按选择类型切换；其余修复为使用实际按钮判断禁用、紧凑布局的分区标识及 iPad 系统分栏选择器定位，未降低业务断言。
+- 第四轮仅复跑中文选择器：iPad **1/1 通过（29.836 秒）**；iPhone 的系统紧凑布局没有 iPad 的容器标识，仍有实际“浏览”按钮，按两种已观察布局修正定位。最终重测另记下文，不将失败结果包算作通过。
+- `swift test --package-path apple --jobs 4`：**2432 项 XCTest、172 项既有条件跳过、0 失败（35.257 秒）**；另 **12 项 Swift Testing 通过**，日志 `m3a-shared1.log`。
+- `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` **通过**，日志 `m3a-macos-build1.log`；`lipo -archs` 确认 **x86_64 arm64**。没有安装、启动或发布。
+
+两端实际 UI 使用合成媒体与内存服务，iPhone 浅色、iPad 深色；已检查上传结果和失败恢复界面。Files 面板仅打开，没有向其他提供方写出数据。NAS/iCloud 媒体、真机锁屏、VoiceOver、大字号和键盘按主计划 `PENDING_USER_VALIDATION` 继续；M3 其余管理及 M8 后台未由本切片覆盖。API 文档和私有兼容索引只记录移动端接入既有契约，环境证据等级没有提升。
+
+最终 `m3a-build8.log` 构建通过；第五轮仅复跑中文系统选择器，`m3a-iphone5.xcresult` **1/1 通过（32.501 秒）**，`m3a-ipad5.xcresult` **1/1 通过（30.882 秒）**。四项新增 UI 均有两端通过证据，已通过的单元与其余 UI 未无理由重跑。XcodeGen 重复生成 SHA-256 一致：`fb42e06f5f25f5b94aed06e09e8e30b2ba9a2c755ff5cfa7fd7c6fe9850dde44`。`python3 tools/localization/check_localization.py`（Apple 5794 / Android 2188 / Windows 3402）、`python3 tools/codex/check_documentation.py --strict-release`、`python3 tools/contract-validation/validate_fixtures.py`（29 组 / 48 引用）与 `git diff --check` 均通过。测试后恢复 iPad 浅色；日志、结果包和合成截图不进入源码。
