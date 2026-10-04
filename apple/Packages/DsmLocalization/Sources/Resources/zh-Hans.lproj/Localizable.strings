@@ -4819,6 +4819,12 @@
 "photos.thumbnail.smaller" = "缩小缩略图";
 "photos.thumbnail.larger" = "放大缩略图";
 "photos.thumbnail.level" = "第 %ld 档，共 5 档";
+"mobile.photos.selection.range" = "从上次选择的照片选到这里";
+"mobile.photos.export.originals" = "%lld 项仅能提供原件，已保留原格式。";
+"mobile.photos.export.partial" = "已准备 %lld 项可供保存或分享，共选择 %lld 项。其余项目未能下载，请检查连接后重新选择它们重试。";
+"mobile.photos.export.failed" = "未能下载这些项目。请检查连接和设备可用空间，然后重试。";
+"mobile.photos.export.save" = "保存";
+"mobile.photos.export.title" = "保存或分享照片";
 "photos.sharing.savedRefreshFailed" = "暂时无法刷新分享列表。请刷新列表查看最新结果。";
 "photos.sharing.listUpdated" = "分享列表已更新。";
 

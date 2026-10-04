@@ -4819,6 +4819,12 @@
 "photos.thumbnail.smaller" = "Smaller thumbnails";
 "photos.thumbnail.larger" = "Larger thumbnails";
 "photos.thumbnail.level" = "Size %ld of 5";
+"mobile.photos.selection.range" = "Select from the last selected photo";
+"mobile.photos.export.originals" = "%lld items are available only in their original format. Their original formats were kept.";
+"mobile.photos.export.partial" = "Prepared %lld of %lld items for saving or sharing. The remaining items could not be downloaded. Check the connection and select them again to retry.";
+"mobile.photos.export.failed" = "These items could not be downloaded. Check the connection and available device storage, then try again.";
+"mobile.photos.export.save" = "Save";
+"mobile.photos.export.title" = "Save or share photos";
 "photos.sharing.savedRefreshFailed" = "The sharing list could not be refreshed. Refresh it to see the latest changes.";
 "photos.sharing.listUpdated" = "Sharing list updated.";
 

@@ -13,7 +13,7 @@ struct MobileSynologyPhotoPreview: View {
     @State private var isDecoding = false
     @State private var showsSimilar = false
 
-    var body: some View {
+    private var workspace: some View {
         NavigationStack {
             Group {
                 if sizeClass == .regular && showsInfo {
@@ -72,19 +72,28 @@ struct MobileSynologyPhotoPreview: View {
                         }
                         Menu {
                             if let folders = session.folders { MobilePhotoFolderActions(folders: folders, photos: [photo], targets: []) }
-                            Button(L10n.string("photos.media.save")) { session.exportOriginal(photo) }
-                            Button(L10n.string("mobile.documents.share")) { session.exportOriginal(photo, sharing: true) }
+                            MobilePhotoExportActions(session: session, photos: [photo])
+                            Button(L10n.string("photos.slideshow.start")) { model.startSlideshow() }
+                                .disabled(!model.canStartSlideshow).accessibilityIdentifier("mobile.photos.slideshow.start")
                             Button(L10n.string("photos.delete.action"), role: .destructive) { model.requestDeletion(photo) }
                                 .disabled(!model.canDeletePhotos([photo])).accessibilityIdentifier("mobile.photos.preview.delete")
                         } label: {
-                            Label(L10n.string("photos.media.save"), systemImage: "square.and.arrow.up")
+                            Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis.circle")
                         }.frame(minWidth: 44, minHeight: 44).disabled(session.isExporting)
+                            .accessibilityIdentifier("mobile.photos.preview.actions")
                     }
                 }
             }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 8) { MobilePhotoManagementStatus(model: model); MobilePhotoSimilarStatus(model: model) }
             }
+        }
+    }
+
+    var body: some View {
+        Group {
+            if model.isSlideshowPresented { MobilePhotoSlideshowView(model: model) }
+            else { workspace }
         }
         .onAppear { showsInfo = model.displayPreferences?.showsPreviewInfo == true }
         .task(id: model.previewData) {
@@ -108,7 +117,8 @@ struct MobileSynologyPhotoPreview: View {
         ZStack(alignment: .topLeading) {
             if let source = model.previewSource, model.previewPhoto?.mediaType == "video" || model.isPlayingMotion {
                 // 复用证书钉扎和同源范围读取，不把带凭据 URL 直接交给系统播放器。
-                MobileMediaPlayer(source: source, title: model.previewPhoto?.filename ?? "")
+                MobileMediaPlayer(source: source, title: model.previewPhoto?.filename ?? "",
+                    isPlaying: model.isPlayingMotion ? true : nil, onFinished: { if model.isPlayingMotion { model.finishMotion() } })
                     .id(source.request.url)
             } else if let image {
                 MobileSynologyPhotoZoomView(image: image, title: model.previewPhoto?.filename ?? "")
@@ -194,6 +204,7 @@ struct MobileSynologyPhotoPreview: View {
 struct MobileSynologyPhotoExportPresentation: ViewModifier {
     @Bindable var session: MobileSynologyPhotosSession
     let active: Bool
+    @State private var presentedExportID: UUID?
 
     func body(content: Content) -> some View {
         content
@@ -201,19 +212,27 @@ struct MobileSynologyPhotoExportPresentation: ViewModifier {
                 if active && session.isExporting {
                     HStack {
                         ProgressView(value: session.exportProgress)
-                        Button(L10n.string("photos.delete.cancel")) { session.cancelExport() }.frame(minHeight: 44)
+                        Button(L10n.string("photos.download.cancel")) { session.cancelExport() }.frame(minHeight: 44)
+                            .accessibilityIdentifier("mobile.photos.export.cancel")
                     }.padding().background(.bar)
                 }
             }
-            .sheet(item: Binding(get: { active ? session.export : nil }, set: { session.export = $0 }), onDismiss: session.finishExport) { item in
-                if item.sharing {
-                    MobileShareSheet(url: item.url, completion: session.finishExport)
-                } else {
-                    MobileDocumentExporter(url: item.url, completion: session.finishExport)
-                }
+            .sheet(item: Binding(get: { active ? session.export : nil }, set: { value in
+                if value == nil, let id = presentedExportID { session.finishExport(id: id) }
+            }), onDismiss: {
+                if let id = presentedExportID { session.finishExport(id: id) }
+                presentedExportID = nil
+            }) { item in
+                Group {
+                    if item.sharing {
+                        MobileShareSheet(urls: item.urls) { session.finishExport(id: item.id) }
+                    } else {
+                        MobileDocumentExporter(urls: item.urls) { session.finishExport(id: item.id) }
+                    }
+                }.onAppear { presentedExportID = item.id }
             }
-            .alert(L10n.string("photos.media.save"), isPresented: Binding(
-                get: { active && session.exportError != nil },
+            .alert(L10n.string("mobile.photos.export.title"), isPresented: Binding(
+                get: { active && session.export == nil && !session.isExporting && session.exportError != nil },
                 set: { if !$0 { session.exportError = nil } }
             )) {
                 Button(L10n.string("photos.media.close"), role: .cancel) { session.exportError = nil }

@@ -76,6 +76,13 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         self.profileID = profileID; self.state = state
         pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown", "photo-preview-unknown", "photo-preview-automatic-unknown", "photo-admin-unknown", "photo-recognition-unknown", "photo-deletion-unknown"].contains(state)
         if state == "photo-similar-unknown" { pending = true }
+        if state.hasPrefix("photo-export") {
+            uploaded = (1...3).map { index in
+                .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
+                      sizeBytes: Int64(Self.exportImage.count), takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20),
+                      folderID: 1, mediaType: "photo", thumbnail: .init(unitID: index, revision: "original"))
+            }
+        }
         if state.hasPrefix("photo-similar") {
             uploaded = SynologyPhotoSpace.allCases.flatMap { space in (1...9).map { index in
                 var photo = SynologyPhoto(id: .init(profileID: profileID, space: space, unitID: index), filename: "Sample \(index).jpg",
@@ -503,7 +510,10 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         } else { values = uploaded.filter { $0.id.space == space } }
         return .init(items: Array(values.dropFirst(offset).prefix(limit)), offset: offset, nextOffset: values.count, hasMore: false)
     }
-    func thumbnail(for photo: SynologyPhoto) async throws -> Data { state.hasPrefix("photo-recognition") ? Self.recognitionImage : Self.image }
+    func thumbnail(for photo: SynologyPhoto) async throws -> Data {
+        if state.hasPrefix("photo-export") { return Self.exportImage }
+        return state.hasPrefix("photo-recognition") ? Self.recognitionImage : Self.image
+    }
     func pendingPreviewRegenerations(in space: SynologyPhotoSpace) async throws -> [SynologyPhoto] {
         if state == "photo-repair-held" { isControlHeld = true; await withCheckedContinuation { heldControl = $0 } }
         if state == "photo-repair-loading" { try await Task.sleep(for: .seconds(30)) }
@@ -512,6 +522,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return uploaded.filter { $0.id.space == space && !repairedPreviews.contains($0.id) }
     }
     func previewImage(for photo: SynologyPhoto) async throws -> Data {
+        if state.hasPrefix("photo-export") { return Self.exportImage }
         guard state.hasPrefix("photo-preferences") || state.hasPrefix("photo-repair") || state.hasPrefix("photo-preview") || state.hasPrefix("photo-recognition") || state.hasPrefix("photo-deletion") || state.hasPrefix("photo-similar") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
         return state.hasPrefix("photo-recognition") ? Self.recognitionImage : Self.image
     }
@@ -524,6 +535,18 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         var result = Self.withDate(photo, date: current.takenAt)
         result.description = current.description; result.rating = current.rating; result.tags = current.tags
         return result
+    }
+    func download(_ photo: SynologyPhoto, format: SynologyPhotoDownloadFormat, to destination: URL, progress: @escaping FileTransferProgress) async throws -> SynologyPhotoDownloadFormat {
+        guard state.hasPrefix("photo-export") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Download") }
+        if state == "photo-export-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-export-error" || (state == "photo-export-partial" && photo.id.unitID == 2) { throw URLError(.notConnectedToInternet) }
+        try Self.exportImage.write(to: destination); progress(Int64(Self.exportImage.count), Int64(Self.exportImage.count))
+        return .original
+    }
+    func downloadArchive(_ target: SynologyPhotoArchiveTarget, format: SynologyPhotoDownloadFormat, to destination: URL, progress: @escaping FileTransferProgress) async throws {
+        guard state.hasPrefix("photo-export") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Download.Archive") }
+        // 空 ZIP 的标准结束记录；仅供系统面板交接验证，不冒充真实集合下载结果。
+        try Data([0x50, 0x4b, 0x05, 0x06] + Array(repeating: UInt8(0), count: 18)).write(to: destination); progress(22, 22)
     }
     func filterOptions(in space: SynologyPhotoSpace) async throws -> SynologyPhotoFilterOptions {
         if state == "photo-edit-tags-error" { throw URLError(.notConnectedToInternet) }
@@ -1183,6 +1206,13 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return data as Data
     }()
     static let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf1sAAAAASUVORK5CYII=")!
+    private static let exportImage: Data = {
+        let source = CGImageSourceCreateWithData(recognitionImage as CFData, nil)!
+        let data = NSMutableData(), image = CGImageSourceCreateImageAtIndex(source, 0, nil)!
+        let output = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(output, image, nil); precondition(CGImageDestinationFinalize(output))
+        return data as Data
+    }()
     private static func withDate(_ photo: SynologyPhoto, date: Date) -> SynologyPhoto {
         var value = SynologyPhoto(id: photo.id, filename: photo.filename, sizeBytes: photo.sizeBytes, takenAt: date,
             indexedAt: photo.indexedAt, folderID: photo.folderID, mediaType: photo.mediaType, thumbnail: photo.thumbnail,

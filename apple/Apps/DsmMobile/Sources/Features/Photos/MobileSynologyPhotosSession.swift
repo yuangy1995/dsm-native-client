@@ -10,8 +10,9 @@ import Observation
 final class MobileSynologyPhotosSession {
     struct Export: Identifiable {
         let id: UUID
-        let url: URL
+        let urls: [URL]
         let sharing: Bool
+        var url: URL { urls[0] }
     }
 
     private(set) var identity = UUID()
@@ -46,10 +47,15 @@ final class MobileSynologyPhotosSession {
     @ObservationIgnored private var backgroundRecoveryStore: PhotoAlbumRecoveryStore?
     @ObservationIgnored private var deletionRecoveryStore: PhotoDeletionRecoveryStore?
     @ObservationIgnored private var similarRecoveryStore: PhotoSimilarRecoveryStore?
+    private static var hasCleanedExportFiles = false
 
     func configure(_ repository: (any SynologyPhotosServing)?, uploadStorage: MobilePhotoUploadStorage? = nil,
                    reviewDelay: @escaping @Sendable (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
         deactivate()
+        if !Self.hasCleanedExportFiles {
+            // 系统终止时无法执行 defer；重新打开照片后只清理本应用随机命名的旧副本。
+            Self.hasCleanedExportFiles = (try? Self.removeAbandonedExports(in: FileManager.default.temporaryDirectory)) != nil
+        }
         uploadRecoveryStore?.suspendWrites()
         albumRecoveryStore?.suspendWrites()
         backgroundRecoveryStore?.suspendWrites()
@@ -130,7 +136,39 @@ final class MobileSynologyPhotosSession {
     }
 
     func exportOriginal(_ photo: SynologyPhoto, sharing: Bool = false) {
-        guard model.isModuleEnabled, !isExporting, let repository else { return }
+        exportPhotos([photo], format: .original, sharing: sharing)
+    }
+
+    func canExport(_ photos: [SynologyPhoto], format: SynologyPhotoDownloadFormat = .original, includingSimilarMembers: Bool = false) -> Bool {
+        guard model.isModuleEnabled, !isExporting, !photos.isEmpty, photos.allSatisfy(model.canDownload) else { return false }
+        return format != .originalSizeJPEG || (!includingSimilarMembers && photos.count == 1 && photos.allSatisfy(model.canDownloadOriginalSizeJPEG))
+    }
+
+    func exportSelection(format: SynologyPhotoDownloadFormat, sharing: Bool = false) {
+        if let target = model.selectedArchive {
+            exportArchive(target, format: format, name: L10n.string("photos.download.defaultName"), sharing: sharing)
+        } else {
+            exportPhotos(model.selectedPhotos, format: format, sharing: sharing, includingSimilarMembers: model.selectedCategory == .similar)
+        }
+    }
+
+    func exportPhotos(_ photos: [SynologyPhoto], format: SynologyPhotoDownloadFormat, sharing: Bool = false, includingSimilarMembers: Bool = false) {
+        guard canExport(photos, format: format, includingSimilarMembers: includingSimilarMembers) else { return }
+        beginExport(.photos(photos, includingSimilarMembers: includingSimilarMembers), format: format, sharing: sharing)
+    }
+
+    func exportArchive(_ target: SynologyPhotoArchiveTarget, format: SynologyPhotoDownloadFormat, name: String, sharing: Bool = false) {
+        guard model.isModuleEnabled, !isExporting, format != .originalSizeJPEG, model.canDownloadArchive(target) else { return }
+        beginExport(.archive(target, name: name), format: format, sharing: sharing)
+    }
+
+    private enum ExportSource {
+        case photos([SynologyPhoto], includingSimilarMembers: Bool)
+        case archive(SynologyPhotoArchiveTarget, name: String)
+    }
+
+    private func beginExport(_ source: ExportSource, format: SynologyPhotoDownloadFormat, sharing: Bool) {
+        guard let repository else { return }
         finishExport()
         let request = UUID()
         let current = identity
@@ -142,37 +180,100 @@ final class MobileSynologyPhotosSession {
             guard let self else { return }
             defer { if self.exportGeneration == request { self.isExporting = false } }
             var directory: URL?
+            var files: [URL] = []
+            var requestedCount = 0
+            var originalCount = 0
             do {
-                // 服务端文件名只能是单个名称，绝不用于选择任意本地路径。
-                guard !photo.filename.isEmpty, photo.filename != ".", photo.filename != "..",
-                      !photo.filename.contains("/"), !photo.filename.contains("\\"),
-                      !photo.filename.contains("\0") else { throw CocoaError(.fileWriteInvalidFileName) }
+                try self.checkExport(request: request, identity: current)
                 let folder = FileManager.default.temporaryDirectory
                     .appendingPathComponent("synology-photos-\(request.uuidString)", isDirectory: true)
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false,
                     attributes: [.protectionKey: FileProtectionType.completeUnlessOpen])
                 directory = folder
-                let destination = folder.appendingPathComponent(photo.filename)
-                try await repository.downloadOriginal(photo, to: destination) { [weak self] done, total in
-                    Task { @MainActor in
-                        guard let self, self.identity == current, self.exportGeneration == request else { return }
-                        self.exportProgress = total.flatMap { $0 > 0 ? min(1, Double(done) / Double($0)) : nil }
+                var protectedFolder = folder
+                var values = URLResourceValues(); values.isExcludedFromBackup = true
+                try protectedFolder.setResourceValues(values)
+                switch source {
+                case .archive(let target, let name):
+                    requestedCount = 1
+                    let safeName = Self.isExportName(name) ? name : L10n.string("photos.download.defaultName")
+                    let destination = folder.appendingPathComponent(safeName + ".zip")
+                    try await repository.downloadArchive(target, format: format, to: destination,
+                        progress: self.exportProgressHandler(request: request, identity: current, completed: 0, count: 1))
+                    try self.checkExport(request: request, identity: current)
+                    try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: destination.path)
+                    files.append(destination)
+                case .photos(let requested, let includingSimilarMembers):
+                    var targets: [SynologyPhoto] = []
+                    var seen: Set<SynologyPhotoID> = []
+                    for representative in requested {
+                        try self.checkExport(request: request, identity: current)
+                        let members = includingSimilarMembers ? try await repository.similarPhotos(for: representative).photos : [representative]
+                        try self.checkExport(request: request, identity: current)
+                        for photo in members where seen.insert(photo.id).inserted { targets.append(photo) }
+                    }
+                    requestedCount = targets.count
+                    guard !targets.isEmpty, targets.allSatisfy(self.model.canDownload) else { throw CocoaError(.fileReadNoPermission) }
+                    // 先检查整批名称；任何服务端名称都不能选择本地目录。
+                    guard targets.allSatisfy({ Self.isExportName($0.filename) }) else { throw CocoaError(.fileWriteInvalidFileName) }
+                    for photo in targets {
+                        try self.checkExport(request: request, identity: current)
+                        let staging = folder.appendingPathComponent(UUID().uuidString + ".partial")
+                        defer { try? FileManager.default.removeItem(at: staging) }
+                        let actual = try await repository.download(photo, format: format, to: staging,
+                            progress: self.exportProgressHandler(request: request, identity: current, completed: files.count, count: targets.count))
+                        try self.checkExport(request: request, identity: current)
+                        let name = actual == .original ? photo.filename : (photo.filename as NSString).deletingPathExtension + ".jpg"
+                        let destination = Self.uniqueExportURL(name: name, directory: folder)
+                        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: staging.path)
+                        try FileManager.default.moveItem(at: staging, to: destination)
+                        files.append(destination)
+                        if format == .optimizedJPEG && actual == .original { originalCount += 1 }
                     }
                 }
-                try Task.checkCancellation()
-                guard self.identity == current, self.exportGeneration == request, self.model.isModuleEnabled else {
-                    throw CancellationError()
-                }
-                self.exportDirectory = folder
-                self.export = Export(id: request, url: destination, sharing: sharing)
-                directory = nil
+                if originalCount > 0 { self.exportError = L10n.string("mobile.photos.export.originals", originalCount) }
             } catch {
-                if self.identity == current, self.exportGeneration == request, !(error is CancellationError) {
-                    self.exportError = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.media.saveFailed")
+                if self.identity == current, self.exportGeneration == request, self.model.isModuleEnabled, !Task.isCancelled, !(error is CancellationError) {
+                    self.exportError = files.isEmpty ? ((error as? AppError)?.safeUserMessage ?? L10n.string("mobile.photos.export.failed")) :
+                        L10n.string("mobile.photos.export.partial", files.count, requestedCount)
                 }
+            }
+            if !files.isEmpty, self.identity == current, self.exportGeneration == request, self.model.isModuleEnabled, !Task.isCancelled {
+                self.exportDirectory = directory
+                self.export = Export(id: request, urls: files, sharing: sharing)
+                directory = nil
             }
             if let directory { try? FileManager.default.removeItem(at: directory) }
         }
+    }
+
+    private func checkExport(request: UUID, identity: UUID) throws {
+        try Task.checkCancellation()
+        guard self.identity == identity, exportGeneration == request, model.isModuleEnabled else { throw CancellationError() }
+    }
+
+    private func exportProgressHandler(request: UUID, identity: UUID, completed: Int, count: Int) -> FileTransferProgress {
+        { [weak self] done, total in
+            Task { @MainActor in
+                guard let self, self.identity == identity, self.exportGeneration == request, self.isExporting else { return }
+                self.exportProgress = total.flatMap { $0 > 0 ? (Double(completed) + min(1, max(0, Double(done) / Double($0)))) / Double(count) : nil }
+            }
+        }
+    }
+
+    private static func isExportName(_ name: String) -> Bool {
+        !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\\") && !name.contains("\0")
+    }
+
+    private static func uniqueExportURL(name: String, directory: URL) -> URL {
+        var result = directory.appendingPathComponent(name)
+        let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
+        var suffix = 1
+        while FileManager.default.fileExists(atPath: result.path) {
+            result = directory.appendingPathComponent("\(base) (\(suffix))" + (ext.isEmpty ? "" : ".\(ext)"))
+            suffix += 1
+        }
+        return result
     }
 
     func cancelExport() {
@@ -181,12 +282,24 @@ final class MobileSynologyPhotosSession {
         exportTask = nil
         isExporting = false
         exportProgress = nil
+        exportError = nil
         finishExport()
     }
 
-    func finishExport() {
+    func finishExport(id: UUID? = nil) {
+        if let id, id != exportGeneration { return }
         export = nil
         if let exportDirectory { try? FileManager.default.removeItem(at: exportDirectory) }
         exportDirectory = nil
+    }
+
+    static func removeAbandonedExports(in directory: URL) throws {
+        let prefix = "synology-photos-"
+        for child in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) {
+            guard child.lastPathComponent.hasPrefix(prefix), UUID(uuidString: String(child.lastPathComponent.dropFirst(prefix.count))) != nil else { continue }
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isDirectory == true, values.isSymbolicLink != true else { continue }
+            try FileManager.default.removeItem(at: child)
+        }
     }
 }
