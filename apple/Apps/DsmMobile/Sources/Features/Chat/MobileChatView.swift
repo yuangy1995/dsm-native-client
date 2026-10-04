@@ -310,6 +310,7 @@ private struct MobileChatConversationCreatorSheet: View {
     @State private var selectedUserIDs: Set<String> = []
     @State private var userSearchText = ""
     @State private var isSearching = false
+    @State private var presentsGroupRecords = false
 
     var body: some View {
         NavigationStack {
@@ -317,6 +318,13 @@ private struct MobileChatConversationCreatorSheet: View {
                 .navigationTitle(L10n.string("mobile.chat.create.title"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    if !creator.groupEntries.isEmpty, creator.pendingDirectUserID == nil {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button { presentsGroupRecords = true } label: { Image(systemName: "clock.arrow.circlepath").frame(width: 44, height: 44) }
+                                .accessibilityLabel(L10n.string("mobile.chat.group.records"))
+                                .accessibilityIdentifier("chat-group-records").disabled(creator.isSubmitting)
+                        }
+                    }
                     ToolbarItem(placement: .cancellationAction) {
                         Button(L10n.string("mobile.chat.create.close")) { dismiss() }
                             .frame(minWidth: 44, minHeight: 44)
@@ -330,6 +338,9 @@ private struct MobileChatConversationCreatorSheet: View {
                 }
         }
         .interactiveDismissDisabled(creator.isSubmitting)
+        .sheet(isPresented: $presentsGroupRecords) {
+            MobileChatGroupCreationRecordsSheet(creator: creator, onSelect: restorePendingDraft)
+        }
         .task(id: creator.repositoryGeneration) {
             restorePendingDraft()
             if creator.pageState == .loading || creator.users.isEmpty {
@@ -360,6 +371,12 @@ private struct MobileChatConversationCreatorSheet: View {
         } else if creator.isSubmitting {
             ProgressView(L10n.string("mobile.chat.create.opening"))
                 .fillsAvailableContentArea()
+        } else if creator.pendingIsGroup, let entry = creator.groupEntry {
+            MobileChatGroupCreationProgressView(creator: creator, entry: entry, onOutcome: handleOutcome) {
+                groupTitle = ""; selectedUserIDs = []; userSearchText = ""
+                restorePendingDraft()
+                if creator.users.isEmpty { Task { await creator.loadUsers() } }
+            }
         } else if creator.requiresReview {
             ContentUnavailableView {
                 Label(L10n.string("mobile.chat.create.review.title"), systemImage: "bubble.left.and.bubble.right")
@@ -446,6 +463,7 @@ private struct MobileChatConversationCreatorSheet: View {
                         text: $groupTitle
                     )
                     .textInputAutocapitalization(.sentences)
+                    .accessibilityIdentifier("chat-create-group-name")
                     .disabled(creator.isSubmitting || creator.requiresReview)
                 }
             }
@@ -518,6 +536,7 @@ private struct MobileChatConversationCreatorSheet: View {
 
     private var canSubmit: Bool {
         guard !creator.isSubmitting, !creator.storageFailed else { return false }
+        if let entry = creator.groupEntry { return entry.receipt != nil || creator.canContinueGroup }
         if creator.requiresReview { return true }
         guard creator.pageState == .content else { return false }
         return mode == .direct
@@ -527,6 +546,9 @@ private struct MobileChatConversationCreatorSheet: View {
     }
 
     private var submitTitle: String {
+        if let entry = creator.groupEntry {
+            return L10n.string(entry.receipt == nil ? "mobile.chat.group.continue" : "mobile.chat.group.refresh")
+        }
         if creator.canResumeDirectCreation { return L10n.string("mobile.chat.create.open") }
         return L10n.string(
             creator.requiresReview
@@ -582,12 +604,20 @@ private struct MobileChatConversationCreatorSheet: View {
     }
 
     private func submit() async {
+        if let entry = creator.groupEntry {
+            await handleOutcome(entry.receipt == nil ? creator.continueGroup() : creator.refreshGroup())
+            return
+        }
         let outcome = mode == .direct
             ? await creator.openDirectConversation(userID: selectedUserIDs.first ?? "")
             : await creator.createGroup(
                 title: groupTitle,
                 memberIDs: Array(selectedUserIDs)
             )
+        await handleOutcome(outcome)
+    }
+
+    private func handleOutcome(_ outcome: ChatConversationCreateOutcome?) async {
         guard outcome?.result.status == .confirmedSuccess,
               let conversation = outcome?.confirmedConversation else { return }
         if await onCreated(conversation) {

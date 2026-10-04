@@ -19,6 +19,7 @@ final class MobileChatModel {
     private let pollRecovery: MobileChatPollStore
     private let interactionRecovery: MobileChatInteractionStore
     private let conversationCreationRecovery: MobileChatConversationCreationStore
+    private let groupCreationRecovery: MobileChatGroupCreationStore
     private(set) var forwarding: MobileChatForwardModel?
     private let forwardRecovery: MobileChatForwardStore
     private(set) var deletion: MobileChatDeletionModel?
@@ -68,6 +69,7 @@ final class MobileChatModel {
     ) {
         self.interactionRecovery = MobileChatInteractionStore(root: interactionRecoveryRoot)
         self.conversationCreationRecovery = MobileChatConversationCreationStore(root: interactionRecoveryRoot)
+        self.groupCreationRecovery = MobileChatGroupCreationStore(root: interactionRecoveryRoot)
         self.forwardRecovery = MobileChatForwardStore(root: interactionRecoveryRoot)
         self.deletionRecovery = MobileChatDeletionStore(root: interactionRecoveryRoot)
         self.sendRecovery = MobileChatSendStore(root: interactionRecoveryRoot)
@@ -111,6 +113,7 @@ final class MobileChatModel {
 
     var canCreateConversation: Bool {
         conversationCreator?.requiresReview == true
+            || conversationCreator?.groupEntries.isEmpty == false || conversationCreator?.storageFailed == true
             || conversationCreator?.canCreateDirect == true || conversationCreator?.canCreateGroup == true
     }
 
@@ -192,6 +195,7 @@ final class MobileChatModel {
                     ?? ChatAvailability(status: .requiresValidation),
                 context: creationContext,
                 recovery: conversationCreationRecovery,
+                groupRecovery: groupCreationRecovery,
                 owner: self
             )
         }

@@ -37,6 +37,10 @@ enum MobileUIFixture {
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             if officeState.hasPrefix("chat-management-") { versions[DsmAPIName.chatPostFile] = 2 }
+            if officeState.hasPrefix("chat-group-") {
+                versions[DsmAPIName.chatChannelNamed] = 1; versions[DsmAPIName.chatChannelMember] = 1
+                versions[DsmAPIName.chatChannelAnonymous] = 2
+            }
             if officeState.hasPrefix("chat-direct-") || officeState.hasPrefix("chat-forward-") { versions[DsmAPIName.chatChannelAnonymous] = 2 }
             let fixtureCapabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: versions.map { name, version in
                 (name, ApiCapability(name: name, path: "entry.cgi", minVersion: 1, maxVersion: version,
@@ -51,7 +55,11 @@ enum MobileUIFixture {
             model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
-            if officeState.hasPrefix("chat-send-") {
+            if officeState.hasPrefix("chat-group-") {
+                let restored = MobileChatGroupCreationStore(root: fixtureRoot.appendingPathComponent("Chat")).entries
+                model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
+                    transport: MobileChatGroupUITransport(state: officeState, restored: restored))
+            } else if officeState.hasPrefix("chat-send-") {
                 let restored = MobileChatSendStore(root: fixtureRoot.appendingPathComponent("Chat")).entries
                 model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
                     transport: MobileChatSendUITransport(state: officeState, restored: restored))

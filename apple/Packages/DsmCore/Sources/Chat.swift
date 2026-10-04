@@ -567,6 +567,21 @@ public protocol ChatRepository: Sendable {
     func recoverDirectConversation(userID: String, clientRequestID: UUID) async throws -> ChatConversationCreateOutcome
     func createGroup(_ draft: ChatGroupDraft) async throws -> ChatConversation
     func createGroupResult(_ draft: ChatGroupDraft) async throws -> ChatConversationCreateOutcome
+    /// 每一步写入前及收到回执后持久保存进度；失败时不能跨过保存继续提交。
+    func createGroupResult(
+        _ draft: ChatGroupDraft,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome
+    /// 只读取原群聊编号；没有创建编号时不能按群名认领或重新创建。
+    func recoverGroupCreation(
+        _ receipt: ChatGroupCreateReceipt,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome
+    /// 由用户主动继续未提交或明确被拒绝的加入、邀请步骤，绝不重做创建。
+    func continueGroupCreation(
+        _ draft: ChatGroupDraft, receipt: ChatGroupCreateReceipt,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome
     func sendMessage(
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
@@ -774,6 +789,27 @@ public extension ChatRepository {
             clientRequestID: draft.clientRequestID,
             confirmedConversation: nil
         )
+    }
+
+    func createGroupResult(
+        _ draft: ChatGroupDraft,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+    }
+
+    func recoverGroupCreation(
+        _ receipt: ChatGroupCreateReceipt,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+    }
+
+    func continueGroupCreation(
+        _ draft: ChatGroupDraft, receipt: ChatGroupCreateReceipt,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
     }
 
     func sendMessage(_ draft: ChatMessageDraft) async throws -> ChatMessage {

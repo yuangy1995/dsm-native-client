@@ -6307,3 +6307,22 @@
 "mobile.chat.send.status.complete" = "已发送";
 "mobile.chat.send.status.failed" = "发送失败，可重新发送。";
 "mobile.chat.send.status.cancelled" = "已取消，消息未发送。";
+
+// 移动群聊分步创建与中断恢复。
+"mobile.chat.group.records" = "未完成的群聊";
+"mobile.chat.group.step.create" = "创建群聊";
+"mobile.chat.group.step.join" = "加入群聊";
+"mobile.chat.group.step.invite" = "邀请成员";
+"mobile.chat.group.created" = "已创建";
+"mobile.chat.group.joined" = "已加入";
+"mobile.chat.group.invited" = "邀请已发送";
+"mobile.chat.group.ready" = "尚未开始";
+"mobile.chat.group.interrupted" = "暂时无法获取进度";
+"mobile.chat.group.rejected" = "未完成";
+"mobile.chat.group.pending" = "暂时无法打开群聊，请检查连接后刷新。";
+"mobile.chat.group.permission" = "部分步骤没有完成，请让 NAS 管理员检查你的 Chat 权限后继续。";
+"mobile.chat.group.authentication" = "登录已过期，请重新登录后再刷新群聊。";
+"mobile.chat.group.continue" = "继续创建";
+"mobile.chat.group.refresh" = "刷新";
+"mobile.chat.group.cancel" = "取消创建";
+"mobile.chat.group.another" = "新建其他聊天";

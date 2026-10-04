@@ -1580,3 +1580,47 @@ iPad 用相同测试命令，目标 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`、结
 最终布局定向复验沿用上列 `test-without-building` 命令，only-testing 为 `DsmMobileTests/MobileChatPresentationTests` 及 `DsmMobileUITests/MobileChatSendUITests/test普通消息发送成功后记录可移除且不会删除聊天消息`、`DsmMobileUITests/MobileChatSendUITests/test中文深色大字号明确拒绝可重新发送并更新唯一记录`，结果为 `m4b4b-iphone3/ipad3.xcresult`。图标调整后的最后一次仅保留上述中文用例，结果为 `m4b4b-iphone4/ipad4.xcresult`。未因纯移动布局变化重复共享或 Mac 构建；其共享源码和资源与已通过版本相同。
 
 真实 NAS、真机锁屏文件保护、系统终止与辅助功能为 `PENDING_USER_VALIDATION`，前提、操作、预期结果与脱敏反馈范围集中在移动主计划 M4b4；远端文件名/大小读取不能证明字节相同。M4b4c 建群恢复、M4c/d 媒体实时与 M5–M8 不计为本切片完成。
+
+## 2026-10-05 移动 M4b4c 群聊分步创建与恢复
+
+范围为共享 Chat 群聊回执、新重载与分步恢复、移动创建模型/独立记录/原生表单、对应双语资源和测试。原单聊恢复保留，移动旧群聊内存草稿与按同名认领路径删除；新旧共享建群调用共用 Named v1 三个实际请求，Mac 原调用及其既有会话复用行为未改为移动恢复语义。没有改动 Mac App、Windows、Android、身份、最低系统版本或登录格式，也没有执行真实 NAS 创建或邀请。
+
+`ChatGroupCreateReceipt` 绑定 UUID、当前用户、标题摘要、成员 ID、创建返回的群聊编号与三步阶段；写前和回执后分别保存。缺编号不能按同名认领；未知加入/邀请只读，明确继续才补安全的剩余步骤，当前已经在群内的成员不重复邀请。移动独立版本 1 `group-creations-v1.json` 暂存未完成标题和成员，原子写入、完整文件保护、排除备份，不保存凭据；终态删除草稿，未提交记录可取消。多记录按账号隔离，相同草稿去重，同账号执行互斥；未知记录不阻止准备其他聊天。切换账号后迟到回执仍归原账号，下一步不自动执行。
+
+完成分开的只读集成与对抗复核，没有使用另一模型进行审查。复核覆盖保存失败零写、回执补保存、修订号合并、三个步骤各自取消/丢回执/拒绝、117 仅适用于加入、原账号/群聊编号/标题/加密状态、缺少成员和本人被移出、能力撤回后只读恢复、跨模型锁与原账号迟到回执。新增单聊/群聊同时未完成的回归：恢复单聊时不被群聊记录选中状态抢占，原群草稿仍保留。新增共享 22 项测试；移动新增 22 项（其中 1 项文件保护设备条件测试）及 4 项实际 UI。
+
+实际命令（仓库根目录；日志和结果前缀 `/tmp/lanstash-release-1.0.15.1x6wUX/m4b4c-`）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter DsmChatRepositoryTests
+swift test --package-path apple --jobs 2 --filter 'DsmChatRepositoryTests|ChatGroupCreateReceiptTests'
+swift test --package-path apple --jobs 2
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatGroupCreationUITests -only-testing:DsmMobileUITests/MobileChatUITests/test新联系人打开单聊并进入会话 -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4b4c-iphone1.xcresult
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4b4c-iphone2.xcresult
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py --strict-release
+git diff --check
+```
+
+iPad 两轮对应替换为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 和 `m4b4c-ipad1/2.xcresult`。首轮聚焦 `m4b4c-focused1` 使用同一 `test-without-building`，选择 MobileChatGroupCreationStoreTests、MobileChatGroupCreationTests、MobileChatModelTests、MobileChatPresentationTests、MobileChatConversationCreationStoreTests。工程始终由锁定 XcodeGen 2.46.0 生成；build1–5 均成功，build4 更新字体检查，build5 加入单聊/群聊并存恢复修正。第 2 轮仅重跑完整单元，未重跑已经通过且界面代码未变的四项建群 UI 和单聊 UI；此前两个失败的源码断言并未被计作通过。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 共享聚焦 | 既有 152 项、新增第一轮 170 项、最终 174 项均零失败；最终 0.332 秒 |
+| 共享全量 | `m4b4c-shared-full1.log`：2636 项 XCTest，172 条既有条件跳过、0 失败，37.004 秒；12 项 Swift Testing 0.082 秒 |
+| 聚焦移动首轮 | 102 项、3 失败：两条既有源码检查误把纯图标固定字号视作文字固定字号，另一个文件保护属性断言在模拟器返回 nil；所有建群行为用例通过 |
+| 两端第 1 轮完整单元 | 各 1111 项、各 2 条条件跳过及 2 条字体检查失败；仅豁免发送图标后仍漏掉附件的两个纯图标，故此轮不计通过 |
+| 两端第 2 轮完整单元 | 各 1112 项、各 2 条明确条件跳过、0 失败；iPhone 27.219 秒，iPad 26.904 秒。字体检查严格限定三个 24 点纯图标，其余可见文字仍禁止固定字号，并检查 44 点按钮区域 |
+| iPhone 实际 UI | 四项新增建群加一项原单聊共 5 项零失败，202.831 秒；包含正常群聊、创建丢回执/新建其他聊天/返回记录、加入中断重启/刷新/主动邀请、中文深色辅助功能 XXXL |
+| iPad 实际 UI | 同一组 5 项零失败，232.303 秒；独立系统模拟器，不能以 iPhone 代替 |
+| macOS 回归 | `m4b4c-mac1.log` Release 构建通过；`lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash` 实际返回 `x86_64 arm64` |
+| 静态门 | 本地化 Apple 6069 / Android 2188 / Windows 3402；170 个请求 Fixture、1 个写结果、29 组 fixture / 48 项私有 API 文档引用、严格文档与差异空白检查均通过 |
+
+截图从两份第 1 轮结果用 `xcrun xcresulttool export attachments --path ... --output-path ...` 导出。已检查 iPhone 中文深色大字号错误/继续按钮与 iPad 浅色三步进度、中文深色大字号；文字可换行和滚动，三个阶段与恢复操作可达，没有截图中的真实账号或 NAS 数据。临时截图和日志仅在上述临时目录，不提交。
+
+`PENDING_USER_VALIDATION`：真实 NAS 建群/加入/邀请、权限撤回、原群改名或本人被移出、网络切换，以及 iPhone/iPad 锁屏前后文件保护。两个条件跳过为既有照片删除保护及新增建群保护；新增断言以独立系统写入确认模拟器不返回保护属性后明确报告待验，保留真机断言，不能把缺属性解释成保护通过。设备步骤、需回传的脱敏信息和回滚边界见移动主计划 M4b4c。没有安装/启动 Mac 测试包或进行移动分发；M4c/d 媒体/实时及 M5–M8 继续实施。

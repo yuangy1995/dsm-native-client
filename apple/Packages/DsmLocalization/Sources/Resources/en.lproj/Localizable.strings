@@ -6307,3 +6307,22 @@
 "mobile.chat.send.status.complete" = "Sent";
 "mobile.chat.send.status.failed" = "Sending failed. You can send it again.";
 "mobile.chat.send.status.cancelled" = "Cancelled. The message was not sent.";
+
+// 移动群聊分步创建与中断恢复。
+"mobile.chat.group.records" = "Unfinished groups";
+"mobile.chat.group.step.create" = "Create group";
+"mobile.chat.group.step.join" = "Join group";
+"mobile.chat.group.step.invite" = "Invite members";
+"mobile.chat.group.created" = "Created";
+"mobile.chat.group.joined" = "Joined";
+"mobile.chat.group.invited" = "Invitations sent";
+"mobile.chat.group.ready" = "Not started";
+"mobile.chat.group.interrupted" = "Progress unavailable";
+"mobile.chat.group.rejected" = "Not completed";
+"mobile.chat.group.pending" = "Unable to open the group yet. Check your connection and refresh.";
+"mobile.chat.group.permission" = "Some steps could not be completed. Ask your NAS administrator to check your Chat permissions before continuing.";
+"mobile.chat.group.authentication" = "Your login has expired. Sign in again, then refresh the group.";
+"mobile.chat.group.continue" = "Continue creating";
+"mobile.chat.group.refresh" = "Refresh";
+"mobile.chat.group.cancel" = "Cancel creating";
+"mobile.chat.group.another" = "Start another chat";

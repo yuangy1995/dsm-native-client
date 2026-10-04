@@ -1778,7 +1778,7 @@ final class MobileChatModelTests: XCTestCase {
         let drafts = await repository.groupCreateDrafts()
 
         XCTAssertEqual(second?.confirmedConversation, conversation)
-        XCTAssertEqual(drafts.count, 2)
+        XCTAssertEqual(drafts.count, 1)
         XCTAssertEqual(drafts.first?.clientRequestID, drafts.last?.clientRequestID)
         XCTAssertEqual(drafts.first?.memberIDs, drafts.last?.memberIDs)
         XCTAssertFalse(creator.requiresReview)
@@ -2459,6 +2459,22 @@ private actor ChatRepositoryStub: ChatRepository {
             clientRequestID: draft.clientRequestID,
             confirmedConversation: outcome.confirmedConversation
         )
+    }
+
+    func createGroupResult(_ draft: ChatGroupDraft, recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void) async throws -> ChatConversationCreateOutcome {
+        var receipt = try ChatGroupCreateReceipt(draft: draft, currentUserID: "current")
+        try await recordProgress(receipt)
+        receipt.candidateConversationID = "group"; receipt.create = .completed
+        receipt.join = .completed; receipt.invite = .completed; receipt.revision += 1
+        try await recordProgress(receipt)
+        return try await createGroupResult(draft)
+    }
+
+    func recoverGroupCreation(_ receipt: ChatGroupCreateReceipt, recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void) async throws -> ChatConversationCreateOutcome {
+        try await recordProgress(receipt)
+        guard !groupCreateOutcomeValues.isEmpty else { throw MobileReadOnlyChatRepositoryError.operationUnavailable }
+        let outcome = groupCreateOutcomeValues.removeFirst()
+        return .init(result: outcome.result, clientRequestID: receipt.clientRequestID, confirmedConversation: outcome.confirmedConversation)
     }
 
     func directCreateRequests() -> [(userID: String, clientRequestID: UUID)] {
