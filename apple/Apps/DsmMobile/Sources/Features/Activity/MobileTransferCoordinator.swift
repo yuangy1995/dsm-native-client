@@ -377,6 +377,9 @@ actor MobileTransferCoordinator {
             retryPolicy: retryPolicy,
             mutationResult: nil
         )
+        if case .download(let download) = request, download.archiveSources != nil {
+            tasksByID[id]?.artifactName = download.temporaryURL.lastPathComponent
+        }
         requestsByID[id] = request
         if !persist() {
             tasksByID[id]?.status = .cancelledBeforeSubmission

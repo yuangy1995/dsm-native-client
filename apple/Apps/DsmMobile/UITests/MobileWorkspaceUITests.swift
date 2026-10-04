@@ -665,6 +665,63 @@ final class MobileWorkspaceUITests: XCTestCase {
         attachScreenshot(app, name: "Copy respects actual destination permissions")
     }
 
+    func test文件夹下载ZIP后打开系统保存面板() {
+        let app = launchFixture(state: "download-archive"); defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        let menu = app.buttons["Actions for Inbox"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5)); menu.tap()
+        element("files.item.download-archive", in: app).tap()
+        XCTAssertTrue(element("mobile.documents.export-panel", in: app).waitForExistence(timeout: 10))
+        let save = app.buttons.matching(NSPredicate(format: "label == 'Save' OR label == '保存'")).firstMatch
+        XCTAssertTrue(save.waitForExistence(timeout: 15))
+        attachScreenshot(app, name: "Folder ZIP system export")
+        let cancel = app.buttons.matching(NSPredicate(format: "label == 'Cancel' OR label == '取消'")).firstMatch
+        if !cancel.exists {
+            let back = app.buttons["BackButton"]
+            XCTAssertTrue(back.waitForExistence(timeout: 5)); back.tap()
+        }
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5)); cancel.tap()
+        XCTAssertTrue(app.staticTexts["Inbox"].waitForExistence(timeout: 5))
+    }
+
+    func test只读文件夹和多文件可打包并交给系统分享() {
+        let app = launchFixture(state: "download-readonly"); defer { app.terminate() }
+        beginDownloadSelection(app, singleFile: false)
+        element("files.batch.more", in: app).tap()
+        let share = element("files.batch.share", in: app)
+        XCTAssertTrue(share.isEnabled); share.tap()
+        XCTAssertTrue(element("ActivityListView", in: app).waitForExistence(timeout: 10))
+        let title = element("LP.CaptionBar.TopCaption", in: app)
+        XCTAssertTrue(title.waitForExistence(timeout: 10)); XCTAssertEqual(title.label, "2 items")
+        XCTAssertTrue(element("LP.CaptionBar.BottomCaption", in: app).label.contains("ZIP"))
+        attachScreenshot(app, name: "Read-only mixed selection ZIP share")
+        app.buttons["header.closeButton"].tap()
+        XCTAssertFalse(element("ActivityListView", in: app).exists)
+    }
+
+    func test多选仅一个文件保持原格式且下载失败能从活动重试() {
+        let app = launchFixture(state: "download-failure"); defer { app.terminate() }
+        beginDownloadSelection(app, singleFile: true)
+        element("files.batch.more", in: app).tap(); element("files.batch.download", in: app).tap()
+        // 错误文案及重试入口由现有前台下载流程提供。
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 10))
+        attachScreenshot(app, name: "Download failure recovery")
+        app.alerts.buttons.firstMatch.tap()
+        navigate("activity", title: "Activity", in: app)
+        element("mobile.module.transfers", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Start Over"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["1 items.zip"].exists)
+    }
+
+    private func beginDownloadSelection(_ app: XCUIApplication, singleFile: Bool) {
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
+        element("files.toolbar.more", in: app).tap(); app.buttons["Select Items"].tap()
+        app.staticTexts["Sample document.txt"].tap()
+        if !singleFile { app.staticTexts["Inbox"].tap() }
+    }
+
     func test批量删除文件和文件夹明确后果且刷新源列表() {
         let app = launchFixture(state: "recycle-delete"); defer { app.terminate() }
         beginRecycleBatch(app, restore: false)

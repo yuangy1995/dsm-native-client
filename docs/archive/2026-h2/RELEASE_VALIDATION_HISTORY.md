@@ -743,3 +743,28 @@ M2h2 `m2h2-build7.log` 通过；`m2h2-iphone3.xcresult` / `m2h2-ipad3.xcresult` 
 
 
 M2h2 最终原路径修复后，`swift test --package-path apple --jobs 4`（`m2h2-shared2.log`）为 **2432 项 XCTest、172 既有跳过、0 失败，另 12 项 Swift Testing 通过**。相同 Mac 构建命令再次通过（`m2h2-macos-build2.log`）；移动 `m2h2-build8.log` 通过，随后两端 `m2h2-iphone4.xcresult` / `m2h2-ipad4.xcresult` 正常批量删除及源列表刷新 UI **各 1/1 通过**。第二、三、四轮是针对实际修正的重测，第一轮失败不计整体通过。最终本地化检查为 Apple 5707 / Android 2188 / Windows 3402，严格文档和差异门禁通过，iPad 测后恢复浅色。
+
+
+## 2026-10-04 移动 M2h3 文件夹与多项目下载
+
+基于现有公开 `downloadArchive` 和移动前台传输，接入单文件夹 ZIP、混合多项 ZIP 及系统保存/分享；多选单文件仍保留原格式。只读源可选择，写能力继续独立限制。下载前核对完整源清单、类型与读取权限，精确保留尾部空格路径；源清单摘要用于重复点击保护，与显示名/语言无关。取消后清除部分副本，重启只有原账号可主动从头下载，迟到结果不向新账号展示。
+
+现有独立传输记录接受版本 1/2，含打包源清单时保存版本 2；旧 App 版本检查拒绝并保留原件，不会按第一个源文件继续。副本完成后明确设置文件保护，排除备份；不修改登录配置。活动显示实际 ZIP 名称；文件列表大小改用当前 App 语言，缺失大小为 `--`。共享网络请求、Mac App、Android/Windows 源码保持不变，测试仅用合成数据和系统模拟器，不访问 NAS。
+
+- `swift test --package-path apple --jobs 4`：**2432 项 XCTest、172 项既有跳过、0 失败**，另 **12 项 Swift Testing 通过**（`m2h3-shared.log`）。
+- Mac `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` **通过**（`m2h3-macos-build.log`）；`lipo -archs` 确认实际二进制 x86_64/arm64。未安装、启动或发布。
+- XcodeGen 2.46.0 生成移动工程。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`：第一轮通过，第二轮因新增测试替身声明为基础 transport 而非二进制 transport 失败，修正声明后第三、四、五轮通过；未放宽下载断言。
+- 两端 `xcodebuild test-without-building` 使用同工程/方案/构建目录、`-parallel-testing-enabled NO`；iPhone ID 如上，iPad ID `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。首轮 `-only-testing:DsmMobileTests` 在 `m2h3-iphone1.xcresult` / `m2h3-ipad1.xcresult` 中 **各 653 项全部通过**。其中 10 项新增行为覆盖只读/原路径、真实 Repository 请求及无 Range、类型/权限改变、版本兼容、原账号重启、失败重试、取消/迟到、重复点击和非法恢复原件保留。
+- 首轮实际 UI：下载失败与活动重试入口两端通过；系统分享实际出现正确 ZIP 名称/类型，但系统替换了根视图标记，两端测试查找失败。iPad 文件夹系统导出/取消通过；iPhone 导出打开成功，但文件选择器自动进入上次目录，取消按钮切换为返回入口，原点击定位失败。已依据真实 UI 层级改查系统分享容器/标题，并等待保存面板稳定后返回顶层取消；不是下载请求失败。最终修正及文件保护断言的重测另记下文，首轮结果包不记为整体通过。
+
+独立集成和只读安全复核检查原清单/类型/账号、摘要去重、旧版本拒绝、原件保护、取消清理、晚到面板和旧单文件路径；共享层不新增写请求。界面加载/空/筛空/错误仍沿用原文件页，新入口与系统交付通过实际 UI 验证。真实 NAS 下载完整性、系统写出到用户选定提供方、锁屏和辅助功能不得由模拟器打开面板替代；待办见主计划。
+
+
+M2h3 第二轮 `m2h3-iphone2.xcresult` / `m2h3-ipad2.xcresult` 的 **3 项新增实际 UI + 1 项原有导航 UI 各全部通过**，iPad 使用深色，截图已查看 iPhone 分享和 iPad 系统保存面板。50 项聚焦单元中各有 1 项新增文件保护属性断言失败；第三轮尝试按字符串读取仍失败，确认模拟器未返回该系统属性，不能据此声称真机加密生效。该不可在模拟器执行的硬件验收移入明确的 `PENDING_USER_VALIDATION`，没有改为静默跳过；改为直接验证生产服务交付前请求 `.complete` 保护并增加设置失败即清理、禁止面板交付的行为测试。
+
+第七轮构建发现直接持有 `FileManager` 不符合 Swift 6 Sendable，改为传入同步 `@Sendable` 的保护设置函数；生产默认仍调用 Foundation，不放宽并发检查。后续最终构建/单元结果在下文记录。系统文件保护实际锁屏效果需真机，自动化只证明调用参数、时序及失败处理；系统保存测试打开原生面板并取消，没有向其他服务写出测试文件。
+
+
+M2h3 最终 `m2h3-build8.log` **构建通过**；`m2h3-iphone4.xcresult` / `m2h3-ipad4.xcresult` 各 **654 项全部单元通过**，其中 11 项打包下载行为含最终副本保护失败的清理/禁止交付。第三轮只有错误假设的系统属性断言失败，未把该结果包算作通过。第二轮四项实际 UI 已分别全部通过，最终异常清理逻辑由新行为测试覆盖；没有无理由重跑整组 UI。
+
+XcodeGen 2.46.0 重复生成 SHA-256 为 `a6f07921bf9109d17b4be3934bd0da43582a742c08986de0f9dfaae9b6f13521`。本地化完整性/硬编码扫描为 Apple 5711 / Android 2188 / Windows 3402，通过；最终严格文档及差异检查均通过。所有临时日志、结果包与合成截图在本机临时验证目录，不进入源码；真实 NAS、系统实际写出和设备文件保护仍按主计划设备待办验收。

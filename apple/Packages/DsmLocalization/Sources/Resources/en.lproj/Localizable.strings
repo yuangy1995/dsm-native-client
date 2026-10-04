@@ -5922,3 +5922,7 @@
 "mobile.files.recycle.failed.title" = "Unable to complete this action";
 "mobile.files.recycle.failed.message" = "Reconnect to the NAS and refresh the folder, then try again.";
 "mobile.files.recycle.results.title" = "Operation results";
+"mobile.documents.archive.save" = "Save as ZIP";
+"mobile.documents.archive.share" = "Share as ZIP";
+"mobile.documents.archive.filename" = "%lld items.zip";
+"mobile.documents.size-unavailable" = "--";

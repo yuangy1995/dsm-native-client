@@ -632,6 +632,12 @@ struct MobileFileBrowser: View {
             }
             if item.isDirectory {
                 Button(L10n.string("ui.c771248e511fbf93")) { openDirectory(item) }
+                if canDownloadSelection(item) {
+                    Button(L10n.string("mobile.documents.archive.save")) { startArchiveDownload([item], intent: .exportCopy) }
+                        .accessibilityIdentifier("files.item.download-archive")
+                    Button(L10n.string("mobile.documents.archive.share")) { startArchiveDownload([item], intent: .share) }
+                        .accessibilityIdentifier("files.item.share-archive")
+                }
             } else {
                 Button(L10n.string("mobile.documents.save-copy")) {
                     startDownload(item, intent: .exportCopy)
@@ -779,6 +785,14 @@ struct MobileFileBrowser: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             Menu {
+                Button { startSelectedDownload(intent: .exportCopy) } label: {
+                    Label(L10n.string("mobile.documents.save-copy"), systemImage: "square.and.arrow.down")
+                }.disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canDownloadSelection))
+                    .accessibilityIdentifier("files.batch.download")
+                Button { startSelectedDownload(intent: .share) } label: {
+                    Label(L10n.string("mobile.documents.share"), systemImage: "square.and.arrow.up")
+                }.disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canDownloadSelection))
+                    .accessibilityIdentifier("files.batch.share")
                 Button(role: .destructive) { beginBatchRecycle(.delete) } label: {
                     Label(L10n.string("mobile.files.recycle.delete.action"), systemImage: "trash")
                 }.disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canDelete))
@@ -1208,7 +1222,7 @@ struct MobileFileBrowser: View {
 
     private var selectableCopyMoveItems: [FileItem] {
         // 文件和目录共用选择，具体操作继续检查自己的权限和目标限制。
-        state.page.items.filter { canCopyMove($0) || canDelete($0) || canRestoreFromRecycle($0) }
+        state.page.items.filter { canCopyMove($0) || canDelete($0) || canRestoreFromRecycle($0) || canDownloadSelection($0) }
     }
 
     private var selectedCopyMoveItems: [FileItem] {
@@ -1229,7 +1243,7 @@ struct MobileFileBrowser: View {
     }
 
     private func canSelectCopyMoveItem(_ item: FileItem) -> Bool {
-        (canCopyMove(item) || canDelete(item) || canRestoreFromRecycle(item)) && (
+        (canCopyMove(item) || canDelete(item) || canRestoreFromRecycle(item) || canDownloadSelection(item)) && (
             selectedCopyMovePaths.contains(item.path) ||
                 selectedCopyMovePaths.count < MobileFileCopyMoveModel.maximumBatchCount
         )
@@ -1240,7 +1254,7 @@ struct MobileFileBrowser: View {
         if selectedCopyMovePaths.contains(item.path) {
             return L10n.string("mobile.files.batch-selection.selected")
         }
-        if !canCopyMove(item) && !canDelete(item) && !canRestoreFromRecycle(item) {
+        if !canCopyMove(item) && !canDelete(item) && !canRestoreFromRecycle(item) && !canDownloadSelection(item) {
             return L10n.string("mobile.files.batch-selection.unavailable")
         }
         if selectedCopyMovePaths.count >= MobileFileCopyMoveModel.maximumBatchCount {
@@ -1459,7 +1473,7 @@ struct MobileFileBrowser: View {
     }
 
     private func formattedSize(_ item: FileItem) -> String {
-        ByteCountFormatter.string(fromByteCount: item.sizeBytes ?? 0, countStyle: .file)
+        item.sizeBytes.map(formattedBytes) ?? L10n.string("mobile.documents.size-unavailable")
     }
 
     private func showRemoteLocations() {
@@ -1471,6 +1485,34 @@ struct MobileFileBrowser: View {
         guard remoteContext == model.remoteLocations.context else { return }
         if let path = remotePath { Task { _ = await openLocation(path, .remote) } }
         if let item = remoteDownload { startDownload(item, intent: .exportCopy) }
+    }
+
+    private func canDownloadSelection(_ item: FileItem) -> Bool {
+        guard model.fileRepository != nil, let profileID = model.activeProfile?.id else { return false }
+        return MobileArchiveDownloadSelection.canSelect(item, profileID: profileID)
+    }
+
+    private func startSelectedDownload(intent: MobileDocumentIntent) {
+        let items = selectedCopyMoveItems
+        guard !items.isEmpty, items.allSatisfy(canDownloadSelection) else { return }
+        if items.count == 1, let item = items.first, !item.isDirectory {
+            startDownload(item, intent: intent)
+        } else {
+            startArchiveDownload(items, intent: intent)
+        }
+        endCopyMoveSelection()
+    }
+
+    private func startArchiveDownload(_ items: [FileItem], intent: MobileDocumentIntent) {
+        guard let repository = model.fileRepository, let profileID = model.activeProfile?.id,
+              let sources = MobileArchiveDownloadSelection.sources(items, profileID: profileID),
+              let first = items.first else { return }
+        let name = items.count == 1 ? first.name + ".zip"
+            : L10n.string("mobile.documents.archive.filename", Int64(items.count))
+        let context = MobileDocumentDownloadContext(contextID: model.documentTransferController.contextID,
+            profileID: profileID, remotePath: first.path, fileName: name, intent: intent, archiveSources: sources)
+        let service = MobileFileTransferService(repository: repository)
+        Task { _ = await model.documentTransferController.startDownload(context: context, service: service) }
     }
 
     private func startDownload(_ item: FileItem, intent: MobileDocumentIntent) {

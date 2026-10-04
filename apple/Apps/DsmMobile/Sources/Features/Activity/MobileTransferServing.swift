@@ -18,6 +18,15 @@ protocol MobileTransferServing: Sendable {
 /// 下载明确请求整文件；恢复从头下载，不冒充字节断点续传。
 struct MobileFileTransferService: MobileTransferServing {
     let repository: any FileRepository
+    private let applyProtection: @Sendable (URL, FileProtectionType) throws -> Void
+
+    init(repository: any FileRepository,
+         applyProtection: @escaping @Sendable (URL, FileProtectionType) throws -> Void = { url, protection in
+             try FileManager.default.setAttributes([.protectionKey: protection], ofItemAtPath: url.path)
+         }) {
+        self.repository = repository
+        self.applyProtection = applyProtection
+    }
 
     func upload(
         _ request: MobileUploadRequest,
@@ -59,12 +68,41 @@ struct MobileFileTransferService: MobileTransferServing {
         progress: @escaping FileTransferProgress
     ) async throws {
         try MobileTransferRecoveryStore.prepareDirectory(request.temporaryURL.deletingLastPathComponent())
-        try await repository.download(
-            remotePath: request.remotePath,
-            to: request.temporaryURL,
-            expectedSize: nil,
-            progress: progress
-        )
+        if let sources = request.archiveSources {
+            guard MobileArchiveDownloadSelection.isValid(sources), request.remotePath == sources.first?.path,
+                  request.stableTarget == MobileArchiveDownloadSelection.identity(sources) else {
+                throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: "")
+            }
+            try Task.checkCancellation()
+            let current = try await repository.getInfo(paths: sources.map(\.path))
+            try Task.checkCancellation()
+            guard current.count == sources.count, sources.allSatisfy({ source in
+                current.filter { $0.path == source.path && $0.profileID == request.profileID
+                    && $0.isDirectory == source.isDirectory
+                    && ($0.kind == .file || $0.kind == .directory) }.count == 1
+            }) else {
+                throw AppError(category: .conflict, isRetryable: false, safeUserMessage: "")
+            }
+            guard current.allSatisfy({ $0.permissions?.canRead != false }) else {
+                throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "")
+            }
+            try await repository.downloadArchive(remotePaths: sources.map(\.path), to: request.temporaryURL, progress: progress)
+        } else {
+            try await repository.download(
+                remotePath: request.remotePath,
+                to: request.temporaryURL,
+                expectedSize: nil,
+                progress: progress
+            )
+        }
+        // 下载可能移动系统临时文件；明确设置最终副本保护，不依赖原目录的继承规则。
+        do {
+            try applyProtection(request.temporaryURL, .complete)
+        } catch {
+            // 无法保护的副本不能等待重试或进入系统面板。
+            Self.removeControlledTemporaryFile(at: request.temporaryURL)
+            throw error
+        }
     }
 
     func removePartialDownload(_ request: MobileDownloadRequest) async {

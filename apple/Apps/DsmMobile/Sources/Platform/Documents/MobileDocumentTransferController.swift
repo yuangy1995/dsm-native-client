@@ -27,6 +27,7 @@ struct MobileDocumentDownloadContext: Equatable, Sendable {
     let remotePath: String
     let fileName: String
     let intent: MobileDocumentIntent
+    var archiveSources: [MobileArchiveDownloadSource]? = nil
 }
 
 enum MobileDocumentTransferFailure: Equatable, Sendable {
@@ -211,6 +212,9 @@ final class MobileDocumentTransferController {
         service: any MobileTransferServing
     ) async -> UUID? {
         guard context.contextID == contextID, context.intent == .exportCopy || context.intent == .share else { return nil }
+        if let sources = context.archiveSources {
+            guard MobileArchiveDownloadSelection.isValid(sources), sources.first?.path == context.remotePath else { return nil }
+        }
         failure = nil
         let taskID = UUID()
         let directory = taskDirectory(taskID)
@@ -219,7 +223,7 @@ final class MobileDocumentTransferController {
             isDirectory: false
         )
         do {
-            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            try MobileTransferRecoveryStore.prepareDirectory(directory)
         } catch {
             failure = Self.failure(for: error)
             return nil
@@ -228,7 +232,8 @@ final class MobileDocumentTransferController {
             profileID: context.profileID,
             remotePath: context.remotePath,
             temporaryURL: destination,
-            stableTarget: context.remotePath, intent: context.intent
+            stableTarget: context.archiveSources.map(MobileArchiveDownloadSelection.identity) ?? context.remotePath,
+            intent: context.intent, archiveSources: context.archiveSources
         )
         let enqueuedID = await transferCoordinator.enqueueDownload(request)
         guard context.contextID == contextID, !Task.isCancelled else {

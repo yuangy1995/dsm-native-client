@@ -545,6 +545,7 @@ private extension MobileActivityTask {
         if operation.isFileStationTask {
             return operation.title
         }
+        if let artifactName { return artifactName }
         let name = (stableTarget as NSString).lastPathComponent
         return name.isEmpty ? stableTarget : name
     }

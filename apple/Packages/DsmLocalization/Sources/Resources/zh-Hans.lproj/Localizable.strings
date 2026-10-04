@@ -5922,3 +5922,7 @@
 "mobile.files.recycle.failed.title" = "无法完成操作";
 "mobile.files.recycle.failed.message" = "请重新连接 NAS 并刷新文件夹，然后重试。";
 "mobile.files.recycle.results.title" = "操作结果";
+"mobile.documents.archive.save" = "保存为 ZIP";
+"mobile.documents.archive.share" = "分享 ZIP";
+"mobile.documents.archive.filename" = "%lld 个项目.zip";
+"mobile.documents.size-unavailable" = "--";

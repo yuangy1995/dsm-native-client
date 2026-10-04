@@ -12,7 +12,7 @@ enum MobileUIFixture {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
-            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -119,7 +119,7 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
         let fields = URLComponents(string: "https://fixture.invalid/?" + body)?.queryItems ?? []
         let api = fields.first { $0.name == "api" }?.value ?? ""
         let method = fields.first { $0.name == "method" }?.value ?? ""
-        if (pageState.hasPrefix("copy-") || pageState.hasPrefix("recycle-")), let result = try copyMove.response(api: api, method: method, fields: fields, state: pageState) {
+        if (pageState.hasPrefix("copy-") || pageState.hasPrefix("recycle-") || pageState.hasPrefix("download-")), let result = try copyMove.response(api: api, method: method, fields: fields, state: pageState) {
             return .init(data: try JSONSerialization.data(withJSONObject: ["success": true, "data": result]), statusCode: 200)
         }
         if pageState == "remote", let result = try remote.response(api: api, method: method, fields: fields) {
@@ -286,8 +286,18 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
     }
 
     func download(_ request: URLRequest, to destinationURL: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
-        guard pageState == "remote" else { throw URLError(.unsupportedURL) }
-        let data = Data("Sample remote document".utf8)
+        guard pageState == "remote" || pageState.hasPrefix("download-") else { throw URLError(.unsupportedURL) }
+        if pageState == "download-failure" { throw URLError(.notConnectedToInternet) }
+        let data: Data
+        if pageState.hasPrefix("download-") {
+            let fields = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = fields.first { $0.name == "path" }?.value ?? ""
+            let paths = try JSONDecoder().decode([String].self, from: Data(value.utf8))
+            guard !paths.isEmpty, paths.allSatisfy({ $0.hasPrefix("/fixture/") }) else { throw URLError(.badServerResponse) }
+            data = paths == ["/fixture/Sample document.txt"] ? Data("Sample document".utf8)
+                : paths == ["/fixture/Inbox"] ? Data(base64Encoded: "UEsDBBQAAAAAAAAAIVBt57LFFgAAABYAAAAQAAAASW5ib3gvTmVzdGVkLnR4dFNhbXBsZSBuZXN0ZWQgZG9jdW1lbnRQSwECFAMUAAAAAAAAACFQbeeyxRYAAAAWAAAAEAAAAAAAAAAAAAAAgAEAAAAASW5ib3gvTmVzdGVkLnR4dFBLBQYAAAAAAQABAD4AAABEAAAAAAA=")!
+                : Data(base64Encoded: "UEsDBBQAAAAAAAAAIVBt57LFFgAAABYAAAAQAAAASW5ib3gvTmVzdGVkLnR4dFNhbXBsZSBuZXN0ZWQgZG9jdW1lbnRQSwMEFAAAAAAAAAAhUFDEymYPAAAADwAAABMAAABTYW1wbGUgZG9jdW1lbnQudHh0U2FtcGxlIGRvY3VtZW50UEsBAhQDFAAAAAAAAAAhUG3nssUWAAAAFgAAABAAAAAAAAAAAAAAAIABAAAAAEluYm94L05lc3RlZC50eHRQSwECFAMUAAAAAAAAACFQUMTKZg8AAAAPAAAAEwAAAAAAAAAAAAAAgAFEAAAAU2FtcGxlIGRvY3VtZW50LnR4dFBLBQYAAAAAAgACAH8AAACEAAAAAAA=")!
+        } else { data = Data("Sample remote document".utf8) }
         try data.write(to: destinationURL); progress(Int64(data.count), Int64(data.count))
         return .init(data: Data(), statusCode: 200, headers: ["Content-Type": "application/octet-stream", "Content-Length": String(data.count)])
     }

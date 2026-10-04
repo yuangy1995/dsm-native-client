@@ -27,9 +27,16 @@ struct MobileTransferRecoveryStore: Sendable {
     func load() throws -> [Record] {
         guard FileManager.default.fileExists(atPath: recordsURL.path) else { return [] }
         let envelope = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: recordsURL))
-        guard envelope.version == 1 else { throw StoreError.unsupportedVersion }
+        guard envelope.version == 1 || envelope.version == 2 else { throw StoreError.unsupportedVersion }
         var ids = Set<UUID>()
         for record in envelope.records {
+            if case .download(let request) = record.request, let sources = request.archiveSources {
+                guard envelope.version == 2, MobileArchiveDownloadSelection.isValid(sources),
+                      request.remotePath == sources.first?.path,
+                      request.stableTarget == MobileArchiveDownloadSelection.identity(sources) else {
+                    throw StoreError.invalidRecord
+                }
+            }
             guard ids.insert(record.task.id).inserted,
                   !record.context.isEmpty,
                   record.task.source == .app,
@@ -43,7 +50,11 @@ struct MobileTransferRecoveryStore: Sendable {
 
     func save(_ records: [Record]) throws {
         try Self.prepareDirectory(rootURL)
-        let data = try JSONEncoder().encode(Envelope(version: 1, records: records))
+        let hasArchive = records.contains { record in
+            if case .download(let request) = record.request { return request.archiveSources != nil }
+            return false
+        }
+        let data = try JSONEncoder().encode(Envelope(version: hasArchive ? 2 : 1, records: records))
         try data.write(to: recordsURL, options: [.atomic, .completeFileProtection])
     }
 

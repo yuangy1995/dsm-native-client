@@ -149,6 +149,7 @@ struct MobileActivityTask: Codable, Identifiable, Equatable, Sendable {
     var retryPolicy: MobileTransferRetryPolicy
     var mutationResult: MutationResult?
     var failureCategory: AppErrorCategory? = nil
+    var artifactName: String? = nil
 
     var canResume: Bool {
         source == .app && (status == .paused || status == .queued)
@@ -197,6 +198,7 @@ struct MobileDownloadRequest: Codable, Equatable, Sendable {
     let temporaryURL: URL
     let stableTarget: String
     var intent: MobileDocumentIntent = .exportCopy
+    var archiveSources: [MobileArchiveDownloadSource]? = nil
 }
 
 enum MobileTransferRequest: Codable, Equatable, Sendable {

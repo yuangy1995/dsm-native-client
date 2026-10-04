@@ -24,7 +24,7 @@ struct MobileCopyMoveUIFixture {
         func row(_ path: String, _ directory: Bool) -> [String: Any] {
             ["name": path == "/fixture" && method == "list_share" ? "Sample folder" : (path as NSString).lastPathComponent,
              "path": path, "isdir": directory, "additional": ["size": 10,
-                "perm": ["adv_right": ["read": true, "write": state != "copy-readonly", "delete": state != "recycle-readonly"]], "time": ["mtime": 1000]]]
+                "perm": ["adv_right": ["read": true, "write": state != "copy-readonly" && state != "download-readonly", "delete": state != "recycle-readonly" && state != "download-readonly"]], "time": ["mtime": 1000]]]
         }
         switch (api, method) {
         case (DsmAPIName.fileStationList, "list_share"):

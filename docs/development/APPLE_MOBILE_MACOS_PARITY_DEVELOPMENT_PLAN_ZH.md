@@ -30,7 +30,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M1 共用照片状态 | SynologyPhotosModel、PhotoUploadRecoveryStore | 内部 DsmPhotosFeature；平台文件访问/恢复/导出适配；共享 | 已迁入 `DsmPhotosFeature`，Mac 书签适配及旧队列版本保持；两端和 Mac 回归通过，详见验证历史 |
 | M1 旧图库清理 | SynologyPhotosView | 主路由已为 MobileSynologyPhotosView；兼容 | 迁移有效行为后删除旧 File Station 图库路径，保留缓存清理 |
 | M2 浏览、分页及高级搜索 | FileAdvancedSearchView、WorkspaceModel | 触控筛选，iPad 并列详情；List/Search/索引；只读 | M2b 已接多目录/类型/扩展名/大小/日期/所有者/正文条件；搜索沿用共享完整分页，保留正文覆盖不足；两端单元和实际 UI 已通过，证据见 M2b 记录 |
-| M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | M2a 已接多选/目录上传及恢复；M2h1 已补文件/文件夹混合复制移动、逐项结果与重启防重放，两端自动化通过；M2h2 已补批量删除/恢复及文件夹支持；打包下载仍在实施 |
+| M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | M2a 已接多选/目录上传及恢复；M2h1 已补文件/文件夹混合复制移动、逐项结果与重启防重放，两端自动化通过；M2h2 已补批量删除/恢复及文件夹支持；M2h3 已接文件夹/多项 ZIP 下载、系统保存/分享与恢复 |
 | M2 分享与收集 | FileShareCreationView、FileShareManagementView、FileShareAdvancedView | 详情表单/系统分享；Sharing 密码/日期/权限；外部可见写 | M2d 已接批量创建、全部链接编辑/撤销、访问对象/次数、收集和二维码；两端验证通过，未知写保留隔离限制 |
 | M2 压缩、解压、归档浏览 | ArchiveExtractionView；共享 DsmFileFeature/FileArchiveBrowserModel | 包内列表/选择目标与条目；Compress/Extract；数据写 | M2c 已接多项压缩、包内选择/分页及解压、持久记录、取消和输出回读；两端单元/实际 UI 及 Mac 回归通过 |
 | M2 ACL 与所有者 | FilePermissionEditor、FileStationPrincipalPicker | 分步权限/成员选择；原对象与权限快照；高风险写 | M2e 已接显式/继承权限、所有者/群组、具体后果确认和持久未知目标限制；两端单元/实际 UI 与 Mac 回归通过 |
@@ -209,3 +209,12 @@ M2h2 已完成独立集成及只读对抗复核：共享根/回收站容器、�
 
 
 M2h2 最终安全复核另发现共享 `deleteResult` 裁剪尾部空格会改变真实文件名，已改为保持原路径并增加请求/回读精确一致及非绝对路径拒绝测试。该数据安全修复同时保护 Mac 调用方，未改 Mac App 或发布新安装包；共享与 Mac、移动目标按最终源码重新回归。真实 NAS 仍不参与自动验证。
+
+### M2h3 文件夹与多项目打包下载
+
+Mac 证据为 `WorkspaceModel.enqueueDownload/enqueueBatchDownload`；复用共享公开 `FileRepository.downloadArchive` 与 Download.download，不新增 NAS 压缩写任务。两端通过现有单项菜单或最多 20 项多选，将文件夹/多个项目下载为 ZIP，再交给系统保存或分享；单个文件保持原格式。只读账号也可选择有读取权限的项目，写操作继续独立检查权限。任务绑定原账号和完整选择，取消、失败重试与完成后的系统面板沿用活动中心；单项类型改变或权限撤销时先失败，不生成错误副本。
+
+本切片单一修改范围为移动文档/传输/Files/Activity、双语资源、Debug 合成响应及对应测试/工程。恢复记录继续使用独立传输文件，新读取器接受版本 1 和版本 2，仅含打包请求的记录写为版本 2，保存完整源路径/类型；旧 App 拒绝版本 2 并保留原记录，不会错当单文件恢复。没有登录配置迁移或新凭据存储，回滚停用入口并保留记录，属于已批准的 M0–M8 恢复范围。共享 API 和五端请求契约不变，Windows/Android 无代码变化。两端单元、实际系统面板 UI、共享回归和 Mac 双架构构建均已通过；精确命令、首轮失败及修正见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2h3-文件夹与多项目下载)。下载副本交付前显式设置系统保护，设置失败即清理；独立集成复核覆盖原路径、权限、版本回退、去重、重启、取消及迟到结果。真实 NAS、后台下载、跨 NAS 与 Office 回传不计入本切片验证。
+
+
+`PENDING_USER_VALIDATION`：iPhone/iPad 真机、只读及普通账号、专用含空目录/嵌套目录/尾部空格文件名的测试文件。分别下载单文件、文件夹和混合选择，检查 ZIP 内容，再保存至系统“文件”及选定分享目标；执行断网、取消、重启、低存储空间和改换账号。预期保留原文件、输出清单正确、失败可从头恢复、旧副本不交给新账号；锁屏后受保护副本的实际可访问性仅能在真机验证，模拟器不回传该保护属性。VoiceOver、大字号、外接键盘、系统实际写出及真实 NAS ZIP 完整性尚未验证，只回传版本、脱敏步骤和错误类别。跨 NAS 与 Office 继续下一切片，M2 尚未整体完成。

@@ -11,6 +11,7 @@ struct MobileDocumentExporter: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let controller = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
+        controller.view.accessibilityIdentifier = "mobile.documents.export-panel"
         controller.delegate = context.coordinator
         controller.allowsMultipleSelection = false
         return controller
