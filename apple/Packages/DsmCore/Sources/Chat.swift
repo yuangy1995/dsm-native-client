@@ -626,12 +626,25 @@ public protocol ChatRepository: Sendable {
         clientRequestID: UUID
     ) async throws
     func createPoll(_ draft: ChatPollDraft) async throws -> ChatMessage
+    /// 收到新消息身份后、确认内容之前保存回执；保存失败必须保留未知结果，不能重发。
+    func createPoll(_ draft: ChatPollDraft, recordCreatedMessage: @escaping @Sendable (String) async throws -> Void) async throws -> ChatMessage
+    /// 只读取投票及当前账号的选择，不触发投票提交。
+    func pollMessage(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage?
     func realtimeEvents() async -> AsyncStream<ChatRealtimeEvent>
     func startRealtime() async
     func stopRealtime() async
 }
 
 public extension ChatRepository {
+    func createPoll(_ draft: ChatPollDraft, recordCreatedMessage: @escaping @Sendable (String) async throws -> Void) async throws -> ChatMessage {
+        let message = try await createPoll(draft)
+        do { try await recordCreatedMessage(message.id) }
+        catch { throw AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("chat.poll.unconfirmed")) }
+        return message
+    }
+    func pollMessage(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage? {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+    }
     func searchMessages(query: String, conversationID: String?, cursor: String?, limit: Int) async throws -> ChatSearchPage { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }
     func message(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage? { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }
     func listReplies(conversationID: String, threadID: String, before: String?, limit: Int) async throws -> ChatMessagePage { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable")) }

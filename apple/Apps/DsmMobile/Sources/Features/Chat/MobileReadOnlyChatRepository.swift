@@ -21,11 +21,15 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             .deleteOwnMessage,
             .messageSearch,
             .messageEditing,
-            .threadedReplies
+            .threadedReplies,
+            .poll,
+            .pollVoting
         ]
-        let mobileFeatures = value.status == .available
+        var mobileFeatures = value.status == .available
             ? value.supportedFeatures.intersection(mobileScope)
             : []
+        // 投票创建与参与都需要 Post v5 的消息回读能力，不能只凭 Vote v1 显示可写入口。
+        if !value.supportedFeatures.contains(.messageSearch) { mobileFeatures.subtract([.poll, .pollVoting]) }
         return ChatAvailability(status: value.status, supportedFeatures: mobileFeatures)
     }
 
@@ -150,7 +154,7 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     func message(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage? {
         let value = await availability()
         guard value.status == .available,
-              !value.supportedFeatures.isDisjoint(with: [.messageSearch, .messageEditing, .threadedReplies]) else {
+              !value.supportedFeatures.isDisjoint(with: [.messageSearch, .messageEditing, .threadedReplies, .poll, .pollVoting]) else {
             throw MobileReadOnlyChatRepositoryError.operationUnavailable
         }
         return try await base.message(conversationID: conversationID, messageID: messageID, threadID: threadID)
@@ -351,7 +355,23 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     }
 
     func createPoll(_ draft: ChatPollDraft) async throws -> ChatMessage {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        try await require(.poll)
+        return try await base.createPoll(draft)
+    }
+
+    func createPoll(_ draft: ChatPollDraft, recordCreatedMessage: @escaping @Sendable (String) async throws -> Void) async throws -> ChatMessage {
+        try await require(.poll)
+        return try await base.createPoll(draft, recordCreatedMessage: recordCreatedMessage)
+    }
+
+    func pollMessage(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage? {
+        try await require(.pollVoting)
+        return try await base.pollMessage(conversationID: conversationID, messageID: messageID, threadID: threadID)
+    }
+
+    func vote(_ message: ChatMessage, choiceIDs: Set<String>, clientRequestID: UUID) async throws -> ChatMessage {
+        try await require(.pollVoting)
+        return try await base.vote(message, choiceIDs: choiceIDs, clientRequestID: clientRequestID)
     }
 
     private func unsupportedConversationCreate(

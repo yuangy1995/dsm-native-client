@@ -6152,3 +6152,20 @@
 "mobile.chat.interaction.missing" = "Message unavailable";
 "mobile.chat.interaction.missing-help" = "The message may have been removed. Return to the conversation to see the latest messages.";
 "mobile.chat.interaction.selected-message" = "Selected message";
+
+// 移动聊天投票
+"mobile.chat.poll.create" = "Create poll";
+"mobile.chat.poll.question" = "Question";
+"mobile.chat.poll.options" = "Options";
+"mobile.chat.poll.option" = "Option %d";
+"mobile.chat.poll.remove-option" = "Remove option %d";
+"mobile.chat.poll.add-option" = "Add option";
+"mobile.chat.poll.multiple" = "Allow multiple choices";
+"mobile.chat.poll.anonymous" = "Anonymous voting";
+"mobile.chat.poll.loading" = "Loading poll…";
+"mobile.chat.poll.load-failed" = "Could not load poll";
+"mobile.chat.poll.closes" = "Ends";
+"mobile.chat.poll.invalid" = "Enter a question and 2–10 different, nonempty options.";
+"mobile.chat.poll.create-failed" = "Could not create the poll. Refresh the conversation and try again.";
+"mobile.chat.poll.create-pending" = "The new poll has not appeared yet. Refresh the conversation in a moment.";
+"mobile.chat.poll.vote-pending" = "Your choice has not appeared yet. Refresh the poll in a moment.";

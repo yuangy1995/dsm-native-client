@@ -267,7 +267,7 @@ final class MobileChatInteractionModel {
             && message.text.map(MobileChatInteractionStore.digest) == entry.textDigest
     }
 
-    private func update(_ message: ChatMessage) {
+    func update(_ message: ChatMessage) {
         if focusedMessage?.id == message.id, focusedMessage?.conversationID == message.conversationID { focusedMessage = message }
         if root?.id == message.id, root?.conversationID == message.conversationID { root = message }
         if let index = replies.messages.firstIndex(where: { $0.id == message.id && $0.conversationID == message.conversationID }) { replies.messages[index] = message }

@@ -259,4 +259,49 @@ extension DsmChatRepositoryTests {
         let page = try await repository.listMessages(conversationID: "27", before: nil, limit: 10)
         XCTAssertEqual(page.messages.first?.attachments.first?.kind, .voice)
     }
+    func test投票详情只读取且保留当前账号选择() async throws {
+        let choices = response(#"{"success":true,"data":{"choices":[{"id":"choice-a","text":"方案甲","count":1,"voters":[1]},{"id":"choice-b","text":"方案乙","count":0,"voters":[]}]}}"#)
+        let transport = MockHTTPTransport(responses: [ownChatUser, plainChatChannel, interactionPoll(), choices])
+        let repository = try makeRepository(transport: transport, includesFiveFeatureCapabilities: true)
+        let result = try await repository.pollMessage(conversationID: "27", messageID: "9100", threadID: nil)
+        XCTAssertEqual(result?.poll?.options.first?.isSelectedByCurrentUser, true)
+        XCTAssertEqual(result?.poll?.options.first?.voteCount, 1)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(try requests.map { try decodeForm($0.httpBody)["method"] }, ["list", "list", "list", "get_choices"])
+    }
+
+    func test投票详情拒绝重复或缺失的选项身份() async throws {
+        for rows in [#"{"id":"choice-a","count":1,"voters":[1]}"#,
+                     #"{"id":"choice-a","count":1,"voters":[1]},{"id":"choice-a","count":1,"voters":[1]},{"id":"choice-b","count":0,"voters":[]}"#] {
+            let transport = MockHTTPTransport(responses: [ownChatUser, plainChatChannel, interactionPoll(), response("{\"success\":true,\"data\":{\"choices\":[\(rows)]}}")])
+            let repository = try makeRepository(transport: transport, includesFiveFeatureCapabilities: true)
+            do { _ = try await repository.pollMessage(conversationID: "27", messageID: "9100", threadID: nil); XCTFail("不得显示不完整的投票状态") }
+            catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+            let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 4)
+        }
+    }
+
+    func test投票创建先保存身份且保存失败后同请求只回读() async throws {
+        let transport = MockHTTPTransport(responses: [ownChatUser, plainChatChannel,
+            response(#"{"success":true,"data":{"post_id":"9100"}}"#), interactionPoll()])
+        let repository = try makeRepository(transport: transport, includesFiveFeatureCapabilities: true)
+        _ = try await repository.listConversations()
+        let draft = try ChatPollDraft(conversationID: "27", question: "合成投票", options: ["方案甲", "方案乙"], allowsMultipleSelection: true, isAnonymous: false)
+        do {
+            _ = try await repository.createPoll(draft) { id in
+                XCTAssertEqual(id, "9100")
+                let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 3)
+                throw URLError(.cannotWriteToFile)
+            }
+            XCTFail("回执保存失败不能宣布完成")
+        } catch let error as AppError { XCTAssertEqual(error.category, .partialFailure) }
+        let result = try await repository.createPoll(draft) { id in
+            XCTAssertEqual(id, "9100")
+            let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 3)
+        }
+        XCTAssertEqual(result.id, "9100")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(try requests.map { try decodeForm($0.httpBody)["method"] }, ["list", "list", "create", "list"])
+    }
+
 }

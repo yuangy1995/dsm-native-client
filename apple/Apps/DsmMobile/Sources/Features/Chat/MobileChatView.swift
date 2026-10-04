@@ -618,6 +618,7 @@ private struct MobileChatMessagesView: View {
     @State private var presentsMembers = false
     @State private var presentsAnnouncements = false
     @State private var presentsMessageSearch = false
+    @State private var presentsPollCreation = false
 
     var body: some View {
         Group {
@@ -643,12 +644,20 @@ private struct MobileChatMessagesView: View {
             }
             await chat.interaction?.loadPolicy()
             await chat.interaction?.recoverEdits()
+            await chat.polls?.recover()
         }
         .onDisappear {
             chat.leaveConversation(conversation.id)
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if !conversation.isEncrypted, chat.polls?.availability.supportedFeatures.contains(.poll) == true {
+                    Button { presentsPollCreation = true } label: {
+                        Image(systemName: "chart.bar.xaxis").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(L10n.string("mobile.chat.poll.create"))
+                    .accessibilityIdentifier("chat-poll-create")
+                }
                 if !conversation.isEncrypted, chat.interaction?.canSearch == true {
                     Button { presentsMessageSearch = true } label: {
                         Image(systemName: "magnifyingglass").frame(width: 44, height: 44)
@@ -696,6 +705,9 @@ private struct MobileChatMessagesView: View {
                 .disabled(conversation.isEncrypted || chat.state.isRefreshingMessages)
                 .accessibilityLabel(L10n.string("mobile.chat.action.refresh-messages"))
             }
+        }
+        .sheet(isPresented: $presentsPollCreation) {
+            if let polls = chat.polls { MobileChatCreatePollSheet(polls: polls, conversation: conversation) }
         }
         .sheet(isPresented: $presentsMembers) {
             MobileChatMembersSheet(chat: chat, conversation: conversation)
@@ -1048,6 +1060,7 @@ struct MobileChatMessageRow: View {
     var allowsThreadNavigation = true
     @State private var confirmsDelete = false
     @State private var presentsEdit = false
+    @State private var presentsPoll = false
     @State private var presentsThread = false
 
     var body: some View {
@@ -1064,6 +1077,16 @@ struct MobileChatMessageRow: View {
                 Text(text)
                     .font(.body)
                     .textSelection(.enabled)
+            }
+            if let poll = message.poll {
+                if poll.isClosed { Text(L10n.string("chat.vote.closed")).font(.caption).foregroundStyle(.secondary) }
+                if chat.polls?.hasVoting == true {
+                    Button { presentsPoll = true } label: {
+                        Label(L10n.string("chat.vote.results"), systemImage: "chart.bar.xaxis")
+                    }
+                    .buttonStyle(.borderless).frame(minHeight: 44)
+                    .accessibilityIdentifier("chat-poll-open-\(message.id)")
+                }
             }
             ForEach(message.attachments) { attachment in
                 MobileChatRemoteAttachmentRow(
@@ -1103,6 +1126,9 @@ struct MobileChatMessageRow: View {
                 .accessibilityIdentifier("chat-edit-\(message.id)")
             }
             deleteActionButton
+        }
+        .sheet(isPresented: $presentsPoll) {
+            if let polls = chat.polls { MobileChatPollSheet(polls: polls, original: message) }
         }
         .sheet(isPresented: $presentsEdit) {
             if let interaction = chat.interaction { MobileChatEditSheet(interaction: interaction, original: message) }
