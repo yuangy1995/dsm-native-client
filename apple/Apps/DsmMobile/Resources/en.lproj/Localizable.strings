@@ -305,3 +305,18 @@
 "mobile.chat.schedule.cancel-message" = "This message will no longer be sent at its scheduled time:\n%@";
 "mobile.chat.schedule.pending" = "The scheduled message has not appeared yet. Refresh in a moment and check the chat for delivery.";
 "mobile.chat.schedule.cancel-pending" = "This scheduled message may still be sent. Refresh in a moment and check the chat for delivery.";
+
+"mobile.chat.management.changed" = "The conversation or message changed. Refresh it before trying again.";
+"mobile.chat.management.failed" = "Could not save this change. Refresh and try again.";
+"mobile.chat.close.pending" = "The conversation is still being closed. Refresh in a moment.";
+"mobile.chat.announcement.pending" = "The announcement change has not appeared yet. Refresh in a moment.";
+"mobile.chat.close.manage" = "Manage conversations";
+"mobile.chat.close.action" = "Close conversations";
+"mobile.chat.close.confirm.title" = "Close selected conversations?";
+"mobile.chat.close.confirm.message" = "These conversations will leave your list. Existing messages stay in Chat and you can reopen the conversations.\n\n%@";
+"mobile.chat.close.done" = "Closed";
+"mobile.chat.announcement.badge" = "Announcement";
+"mobile.chat.announcement.pin" = "Set as announcement";
+"mobile.chat.announcement.unpin" = "Remove announcement";
+
+"mobile.chat.close.progress" = "Closing conversations…";

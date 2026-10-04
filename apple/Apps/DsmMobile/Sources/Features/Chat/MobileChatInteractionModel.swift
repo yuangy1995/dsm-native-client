@@ -71,6 +71,7 @@ final class MobileChatInteractionModel {
         active && availability.status == .available && availability.supportedFeatures.contains(.messageEditing) && policy.permits(message)
             && message.deliveryState == .sent && !isMutating && !recovery.failed
             && owner?.state.deletingMessageID == nil
+            && owner?.management?.blocksWrites(in: message.conversationID) != true
             && !pending.contains { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }
     }
 
@@ -83,7 +84,8 @@ final class MobileChatInteractionModel {
 
     func canSendReply(_ text: String) -> Bool {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canReply, let root, !body.isEmpty else { return false }
+        guard canReply, let root, !body.isEmpty,
+              owner?.management?.blocksWrites(in: root.conversationID) != true else { return false }
         return !pending.contains { $0.kind == .reply && $0.conversationID == root.conversationID
             && $0.messageID == root.id && $0.textDigest == MobileChatInteractionStore.digest(body) }
     }

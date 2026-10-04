@@ -24,7 +24,7 @@ enum MobileUIFixture {
                 transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
-            let versions = [DsmAPIName.fileStationMD5: 2, DsmAPIName.fileStationDelete: 2, DsmAPIName.fileStationCopyMove: 3, DsmAPIName.fileStationSettings: 1, DsmAPIName.fileStationVFSUser: 1,
+            var versions = [DsmAPIName.fileStationMD5: 2, DsmAPIName.fileStationDelete: 2, DsmAPIName.fileStationCopyMove: 3, DsmAPIName.fileStationSettings: 1, DsmAPIName.fileStationVFSUser: 1,
                             DsmAPIName.coreBandwidthControl: 1, DsmAPIName.coreFileSharingTheme: 1, DsmAPIName.coreThemeImage: 1,
                             DsmAPIName.coreDirectoryLDAP: 1, DsmAPIName.coreDirectoryDomain: 2, DsmAPIName.fileStationFavorite: 2, DsmAPIName.fileStationMount: 1, DsmAPIName.fileStationMountList: 1,
                             DsmAPIName.fileStationVFSProtocol: 1, DsmAPIName.fileStationVFSProfile: 1, DsmAPIName.fileStationVFSConnection: 1, DsmAPIName.fileStationDownload: 2,
@@ -33,9 +33,10 @@ enum MobileUIFixture {
                             DsmAPIName.fileStationBackgroundTask: 3, DsmAPIName.fileStationCompress: 3, DsmAPIName.fileStationExtract: 2,
                             DsmAPIName.fileStationUpload: 3, DsmAPIName.fileStationCreateFolder: 2, DsmAPIName.fileStationCheckPermission: 3,
                             DsmAPIName.downloadStationTask: 3, DsmAPIName.downloadStationStatistic: 1,
-                            DsmAPIName.chatChannel: 2, DsmAPIName.chatUser: 1, DsmAPIName.chatPost: 8, DsmAPIName.chatAdminSetting: 3, DsmAPIName.chatPostVote: 1, DsmAPIName.chatPostReminder: 1, DsmAPIName.chatPostSchedule: 1,
+                            DsmAPIName.chatChannel: officeState.hasPrefix("chat-management-") ? 5 : 2, DsmAPIName.chatUser: 1, DsmAPIName.chatPost: 8, DsmAPIName.chatAdminSetting: 3, DsmAPIName.chatPostVote: 1, DsmAPIName.chatPostReminder: 1, DsmAPIName.chatPostSchedule: 1,
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
+            if officeState.hasPrefix("chat-management-") { versions[DsmAPIName.chatPostFile] = 2 }
             let fixtureCapabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: versions.map { name, version in
                 (name, ApiCapability(name: name, path: "entry.cgi", minVersion: 1, maxVersion: version,
                                      requestFormat: name.hasPrefix("SYNO.Foto.") ? .json : .form, selectedVersion: version, verified: false))
@@ -49,7 +50,9 @@ enum MobileUIFixture {
             model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
-            if officeState.hasPrefix("chat-timed-") {
+            if officeState.hasPrefix("chat-management-") {
+                model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: MobileChatManagementUITransport(state: officeState, root: fixtureRoot))
+            } else if officeState.hasPrefix("chat-timed-") {
                 model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: MobileChatTimedUITransport(state: officeState, root: fixtureRoot))
             } else if officeState.hasPrefix("chat-poll-") {
                 model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: MobileChatPollUITransport(state: officeState))

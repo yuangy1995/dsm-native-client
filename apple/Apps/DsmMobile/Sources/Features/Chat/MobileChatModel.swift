@@ -11,6 +11,8 @@ final class MobileChatModel {
     private(set) var profiles: [UUID: MobileChatProfileState] = [:]
     private(set) var conversationCreators: [UUID: MobileChatConversationCreator] = [:]
     private(set) var interaction: MobileChatInteractionModel?
+    private(set) var management: MobileChatManagementModel?
+    private let managementRecovery: MobileChatManagementStore
     private(set) var timedActions: MobileChatTimedActionModel?
     private let timedActionRecovery: MobileChatTimedActionStore
     private(set) var polls: MobileChatPollModel?
@@ -63,6 +65,7 @@ final class MobileChatModel {
     ) {
         self.interactionRecovery = MobileChatInteractionStore(root: interactionRecoveryRoot)
         self.pollRecovery = MobileChatPollStore(root: interactionRecoveryRoot)
+        self.managementRecovery = MobileChatManagementStore(root: interactionRecoveryRoot)
         self.timedActionRecovery = MobileChatTimedActionStore(root: interactionRecoveryRoot)
         self.conversationPinStore = conversationPinStore
         self.attachmentFileManager = attachmentFileManager
@@ -135,6 +138,8 @@ final class MobileChatModel {
               interaction?.isMutating != true,
               polls?.isMutating != true,
               timedActions?.isMutating != true,
+              management?.isMutating != true,
+              management?.hasPending(in: message.conversationID, messageID: message.id) != true,
               timedActions?.hasPending(in: message.conversationID, targetID: message.id, reminder: true) != true,
               polls?.pending.contains(where: { $0.kind == .vote && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true,
               interaction?.pending.contains(where: { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true,
@@ -169,6 +174,8 @@ final class MobileChatModel {
         interaction?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         polls = MobileChatPollModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: pollRecovery, owner: self)
         polls?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
+        management = MobileChatManagementModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: managementRecovery, owner: self)
+        management?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         timedActions = MobileChatTimedActionModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: timedActionRecovery, owner: self)
         timedActions?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         if let creator = conversationCreators[profileID] {
@@ -302,6 +309,7 @@ final class MobileChatModel {
             self?.interaction?.updateAvailability(availability)
             self?.polls?.updateAvailability(availability)
             self?.timedActions?.updateAvailability(availability)
+            self?.management?.updateAvailability(availability)
             self?.conversationCreators[profileID]?.updateAvailability(availability)
             guard availability.status == .available else {
                 self?.finishUnavailable(profileID: profileID, generation: requestGeneration)
@@ -332,6 +340,7 @@ final class MobileChatModel {
         }
         conversationTask = task
         await task.value
+        if isCurrentConversation(profileID: profileID, generation: requestGeneration) { await management?.recover() }
     }
 
     func selectConversation(_ conversation: ChatConversation) async {
@@ -539,6 +548,7 @@ final class MobileChatModel {
             guard activeProfileID == profileID else { return }
             await polls?.recover()
             await timedActions?.recover()
+            await management?.recover()
         }
     }
 
@@ -592,6 +602,7 @@ final class MobileChatModel {
     }
 
     func sendSelectedMessage() async {
+        guard management?.blocksWrites(in: state.selectedConversationID ?? "") != true else { return }
         if selectedAttachment != nil {
             await attachmentModel.sendSelectedAttachment()
             return
@@ -771,6 +782,8 @@ final class MobileChatModel {
     }
 
     func cancelAllWork() {
+        management?.invalidate()
+        management = nil
         timedActions?.invalidate()
         timedActions = nil
         polls?.invalidate()
@@ -1629,9 +1642,46 @@ final class MobileChatModel {
         }
     }
 
+    func hasUnfinishedChatWrite(in conversationID: String) -> Bool {
+        (state.selectedConversationID == conversationID && (state.isSendingMessage || state.isSendingAttachment || state.isPreparingAttachment || state.deletingMessageID != nil))
+            || state.sendReviewBlockedTextsByConversation[conversationID]?.isEmpty == false
+            || state.deleteReviewBlockedMessageIDsByConversation[conversationID]?.isEmpty == false
+            || interaction?.isMutating == true || polls?.isMutating == true || timedActions?.isMutating == true
+            || interaction?.pending.contains(where: { $0.conversationID == conversationID }) == true
+            || polls?.pending.contains(where: { $0.conversationID == conversationID }) == true
+            || timedActions?.pending.contains(where: { $0.conversationID == conversationID }) == true
+    }
+
+    func refreshManagementMessages(in conversationID: String) async {
+        guard state.selectedConversationID == conversationID, let profileID = activeProfileID,
+              let repository = repositories[profileID] else { return }
+        await replaceMessages(conversationID: conversationID, profileID: profileID, repository: repository,
+            preservesContent: !state.selectedMessages.messages.isEmpty)
+        guard activeProfileID == profileID, state.selectedConversationID == conversationID else { return }
+        await loadConversationAnnouncements(forceRefresh: true)
+    }
+
+    func applyClosedConversation(_ id: String) {
+        if state.selectedConversationID == id {
+            cancelMessageWork(); cancelMemberWork(); cancelAnnouncementWork(); attachmentModel.cancelAllWork()
+        }
+        updateActive { profile in
+            profile.conversations.removeAll { $0.id == id }
+            profile.pinnedConversationIDs.removeAll { $0 == id }
+            profile.messagesByConversation[id] = nil; profile.announcementsByConversation[id] = nil
+            profile.membersByConversation[id] = nil
+            if profile.selectedConversationID == id { profile.selectedConversationID = nil; profile.messagePageState = .empty }
+            if profile.visibleConversationID == id { profile.visibleConversationID = nil }
+            Self.applyConversationFilter(to: &profile)
+        }
+        if let activeProfileID { conversationPinStore.savePinnedConversationIDs(state.pinnedConversationIDs, profileID: activeProfileID) }
+    }
+
     func containsVisibleMessage(conversationID: String, messageID: String) -> Bool {
         (state.selectedConversationID == conversationID && state.selectedConversation?.isEncrypted == false
             && state.selectedMessages.messages.contains { $0.id == messageID })
+            || (state.selectedConversationID == conversationID && state.selectedConversation?.isEncrypted == false
+                && state.selectedConversationAnnouncements.contains { $0.id == messageID })
             || interaction?.containsFocusedMessage(conversationID: conversationID, messageID: messageID) == true
     }
 

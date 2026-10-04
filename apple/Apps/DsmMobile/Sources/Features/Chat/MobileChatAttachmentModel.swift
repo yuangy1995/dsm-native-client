@@ -42,6 +42,7 @@ final class MobileChatAttachmentModel {
     var canSelectAttachment: Bool {
         guard let owner,
               owner.state.selectedConversation?.isEncrypted == false,
+              owner.management?.blocksWrites(in: owner.state.selectedConversationID ?? "") != true,
               !owner.state.isPreparingAttachment,
               !owner.state.isSendingMessage,
               !owner.state.isSendingAttachment,
@@ -60,7 +61,8 @@ final class MobileChatAttachmentModel {
     }
 
     var canSendSelectedDraft: Bool {
-        guard let owner, !owner.state.attachmentReviewRequired else { return false }
+        guard let owner, !owner.state.attachmentReviewRequired,
+              owner.management?.blocksWrites(in: owner.state.selectedConversationID ?? "") != true else { return false }
         if let selectedAttachment {
             return canSelectAttachment &&
                 owner.state.availability.supportedFeatures.contains(selectedAttachment.requiredFeature)
@@ -162,6 +164,7 @@ final class MobileChatAttachmentModel {
     }
 
     func sendSelectedAttachment() async {
+        guard owner?.management?.blocksWrites(in: owner?.state.selectedConversationID ?? "") != true else { return }
         guard let owner,
               let profileID = owner.activeProfileID,
               let repository = owner.attachmentRepository(for: profileID),

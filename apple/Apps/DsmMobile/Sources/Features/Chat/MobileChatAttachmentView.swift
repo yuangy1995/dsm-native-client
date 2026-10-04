@@ -245,19 +245,30 @@ struct MobileChatAttachmentComposer: View {
 /// 将远端附件临时文件交给系统预览或导出面板；面板关闭即清理专用临时目录。
 private struct MobileChatRemoteAttachmentPresentationModifier: ViewModifier {
     @Bindable var chat: MobileChatModel
+    let isEnabled: Bool
 
     func body(content: Content) -> some View {
         content.sheet(
             item: presentationBinding,
-            onDismiss: chat.dismissRemoteAttachmentPresentation
+            onDismiss: { if isEnabled { chat.dismissRemoteAttachmentPresentation() } }
         ) { presentation in
             switch presentation.intent {
             case .preview:
-                MobileQuickLookPreview(
-                    localURL: presentation.localURL,
-                    title: presentation.title,
-                    onDismiss: chat.dismissRemoteAttachmentPresentation
-                )
+                NavigationStack {
+                    MobileQuickLookPreview(
+                        localURL: presentation.localURL,
+                        title: presentation.title,
+                        onDismiss: chat.dismissRemoteAttachmentPresentation
+                    )
+                    .navigationTitle(presentation.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button(L10n.string("files.common.close")) { chat.dismissRemoteAttachmentPresentation() }
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                    }
+                }
             case .exportCopy:
                 MobileDocumentExporter(url: presentation.localURL) {
                     chat.dismissRemoteAttachmentPresentation()
@@ -268,9 +279,9 @@ private struct MobileChatRemoteAttachmentPresentationModifier: ViewModifier {
 
     private var presentationBinding: Binding<MobileChatRemoteAttachmentPresentation?> {
         Binding(
-            get: { chat.remoteAttachmentPresentation },
+            get: { isEnabled ? chat.remoteAttachmentPresentation : nil },
             set: { presentation in
-                if presentation == nil {
+                if isEnabled, presentation == nil {
                     chat.dismissRemoteAttachmentPresentation()
                 }
             }
@@ -279,8 +290,8 @@ private struct MobileChatRemoteAttachmentPresentationModifier: ViewModifier {
 }
 
 extension View {
-    func mobileChatRemoteAttachmentPresentation(chat: MobileChatModel) -> some View {
-        modifier(MobileChatRemoteAttachmentPresentationModifier(chat: chat))
+    func mobileChatRemoteAttachmentPresentation(chat: MobileChatModel, isEnabled: Bool = true) -> some View {
+        modifier(MobileChatRemoteAttachmentPresentationModifier(chat: chat, isEnabled: isEnabled))
     }
 }
 

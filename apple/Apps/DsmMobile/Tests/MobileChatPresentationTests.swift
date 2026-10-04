@@ -180,7 +180,7 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertFalse(source.contains("mobile.chat.members.filtered"))
     }
 
-    func test群公告仅按能力显示并使用原生Sheet五态和隐私白名单() throws {
+    func test群公告完整展示原消息并保留能力与隐私边界() throws {
         let source = try chatViewSources()
         let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
         let state = try sourceFile("Sources/Features/Chat/MobileChatState.swift")
@@ -217,7 +217,9 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(model.contains("announcementGeneration"))
         XCTAssertTrue(state.contains("announcementsByConversation"))
         XCTAssertTrue(repository.contains(".pinnedMessages"))
-        XCTAssertTrue(repository.contains("attachments: []"))
+        XCTAssertFalse(repository.contains("attachments: []"))
+        XCTAssertFalse(repository.contains(".prefix(100)"))
+        XCTAssertTrue(source.contains("MobileChatMessageRow(chat: chat, message: announcement, showsAnnouncementBadge: false)"))
         XCTAssertFalse(model.contains("setMessagePinned"))
     }
 
@@ -290,8 +292,11 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(model.contains("case .contentChanged:"))
         XCTAssertTrue(model.contains("await self?.reloadConversations()"))
         XCTAssertTrue(model.contains("await self?.refreshMessages()"))
-        XCTAssertFalse(model.contains("loadConversationMembers(forceRefresh: true)"))
-        XCTAssertFalse(model.contains("loadConversationAnnouncements(forceRefresh: true)"))
+        let syncStart = try XCTUnwrap(model.range(of: "private func enqueueRealtimeSync("))
+        let syncEnd = try XCTUnwrap(model.range(of: "private func consumePendingRealtimeSync(", range: syncStart.upperBound..<model.endIndex))
+        let sync = String(model[syncStart.lowerBound..<syncEnd.lowerBound])
+        XCTAssertFalse(sync.contains("loadConversationMembers(forceRefresh: true)"))
+        XCTAssertFalse(sync.contains("loadConversationAnnouncements(forceRefresh: true)"))
         XCTAssertTrue(repository.contains("await base.realtimeEvents()"))
         XCTAssertTrue(repository.contains("await base.startRealtime()"))
         XCTAssertTrue(repository.contains("await base.stopRealtime()"))

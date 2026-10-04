@@ -6,6 +6,8 @@ import SwiftUI
 struct MobileChatView: View {
     @Bindable var model: MobileAppModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var presentsConversationManagement = false
+    @State private var managementDismissalGeneration = 0
     @State private var presentsConversationCreator = false
     @State private var createdCompactConversation: ChatConversation?
     @State private var presentsMessageSearch = false
@@ -19,6 +21,13 @@ struct MobileChatView: View {
             }
         }
         .toolbar {
+            if model.chatModel.management?.canManageConversations == true, model.chatModel.state.visibleConversationID == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { presentsConversationManagement = true } label: {
+                        Image(systemName: "checklist").frame(width: 44, height: 44)
+                    }.accessibilityLabel(L10n.string("mobile.chat.close.manage")).accessibilityIdentifier("chat-manage-conversations")
+                }
+            }
             if model.chatModel.interaction?.canSearch == true, model.chatModel.state.visibleConversationID == nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { presentsMessageSearch = true } label: {
@@ -39,6 +48,12 @@ struct MobileChatView: View {
                     .accessibilityLabel(L10n.string("mobile.chat.create.action"))
                     .accessibilityHint(L10n.string("mobile.chat.create.hint"))
                 }
+            }
+        }
+        .sheet(isPresented: $presentsConversationManagement, onDismiss: { managementDismissalGeneration &+= 1 }) {
+            if let management = model.chatModel.management {
+                MobileChatConversationManagementSheet(chat: model.chatModel, management: management)
+                    .id(ObjectIdentifier(management))
             }
         }
         .sheet(isPresented: $presentsMessageSearch) {
@@ -62,7 +77,7 @@ struct MobileChatView: View {
             }
         }
         .navigationDestination(item: $createdCompactConversation) { conversation in
-            MobileChatMessagesView(chat: model.chatModel, conversation: conversation)
+            MobileChatMessagesView(chat: model.chatModel, conversation: conversation, manageConversations: { presentsConversationManagement = true }, isManagingConversations: presentsConversationManagement, managementDismissalGeneration: managementDismissalGeneration)
                 .navigationTitle(conversation.title)
                 .navigationBarTitleDisplayMode(.inline)
         }
@@ -71,7 +86,7 @@ struct MobileChatView: View {
     private var compactLayout: some View {
         conversationList
             .navigationDestination(for: ChatConversation.self) { conversation in
-                MobileChatMessagesView(chat: model.chatModel, conversation: conversation)
+                MobileChatMessagesView(chat: model.chatModel, conversation: conversation, manageConversations: { presentsConversationManagement = true }, isManagingConversations: presentsConversationManagement, managementDismissalGeneration: managementDismissalGeneration)
                     .navigationTitle(conversation.title)
                     .navigationBarTitleDisplayMode(.inline)
             }
@@ -89,7 +104,7 @@ struct MobileChatView: View {
     @ViewBuilder
     private var regularMessageDetail: some View {
         if let conversation = model.chatModel.state.selectedConversation {
-            MobileChatMessagesView(chat: model.chatModel, conversation: conversation)
+            MobileChatMessagesView(chat: model.chatModel, conversation: conversation, manageConversations: { presentsConversationManagement = true }, isManagingConversations: presentsConversationManagement, managementDismissalGeneration: managementDismissalGeneration)
                 .navigationTitle(conversation.title)
         } else {
             ContentUnavailableView(
@@ -614,7 +629,11 @@ private struct MobileChatConversationRow: View {
 private struct MobileChatMessagesView: View {
     @Bindable var chat: MobileChatModel
     let conversation: ChatConversation
+    let manageConversations: () -> Void
+    let isManagingConversations: Bool
+    let managementDismissalGeneration: Int
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dismiss) private var dismiss
     @State private var presentsMembers = false
     @State private var presentsAnnouncements = false
     @State private var presentsMessageSearch = false
@@ -647,9 +666,16 @@ private struct MobileChatMessagesView: View {
             await chat.interaction?.recoverEdits()
             await chat.polls?.recover()
             await chat.timedActions?.recover()
+            await chat.management?.recover()
         }
         .onDisappear {
             chat.leaveConversation(conversation.id)
+        }
+        .onChange(of: chat.management?.closeResults[conversation.id] == .closed) { _, closed in
+            if closed, !isManagingConversations, horizontalSizeClass != .regular { dismiss() }
+        }
+        .onChange(of: managementDismissalGeneration) { _, _ in
+            if chat.management?.closeResults[conversation.id] == .closed, horizontalSizeClass != .regular { dismiss() }
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -668,6 +694,10 @@ private struct MobileChatMessagesView: View {
                     .accessibilityIdentifier("chat-search-current")
                 }
                 Menu {
+                    if chat.management?.canManageConversations == true {
+                        Button { manageConversations() } label: { Label(L10n.string("mobile.chat.close.manage"), systemImage: "checklist") }
+                            .accessibilityIdentifier("chat-manage-conversations")
+                    }
                     if !conversation.isEncrypted, chat.timedActions?.canManageReminders == true {
                         Button { timedList = .reminders } label: { Label(L10n.string("mobile.chat.reminder.list"), systemImage: "bell") }
                             .accessibilityIdentifier("chat-reminders-list")
@@ -679,6 +709,7 @@ private struct MobileChatMessagesView: View {
                     if chat.canViewAnnouncements(for: conversation) {
                         Button { presentsAnnouncements = true } label: { Label(L10n.string("mobile.chat.announcements.action"), systemImage: "megaphone") }
                             .accessibilityHint(L10n.string("mobile.chat.announcements.hint"))
+                            .accessibilityIdentifier("chat-announcements-list")
                     }
                     if chat.canViewMembers(for: conversation) {
                         Button { presentsMembers = true } label: { Label(L10n.string("mobile.chat.members.action"), systemImage: "person.2") }
@@ -723,7 +754,8 @@ private struct MobileChatMessagesView: View {
                 MobileChatAttachmentComposer(chat: chat)
             }
         }
-        .mobileChatRemoteAttachmentPresentation(chat: chat)
+        .mobileChatRemoteAttachmentPresentation(chat: chat,
+            isEnabled: !presentsAnnouncements && !presentsMessageSearch && chat.interaction?.root == nil)
     }
 
     private var conversationPinSystemImageName: String {
@@ -806,131 +838,66 @@ private struct MobileChatAnnouncementsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var chat: MobileChatModel
     let conversation: ChatConversation
-
+    @State private var query = ""
+    private var filtered: [ChatMessage] {
+        let values = chat.state.selectedConversationAnnouncements
+        return query.isEmpty ? values : values.filter {
+            ($0.text ?? "").localizedStandardContains(query) || $0.attachments.contains { $0.fileName.localizedStandardContains(query) }
+        }
+    }
+    private var pageState: MobilePageState {
+        chat.state.announcementPageState == .content && filtered.isEmpty ? .filteredEmpty : chat.state.announcementPageState
+    }
     var body: some View {
         NavigationStack {
-            MobilePageStateView(
-                state: chat.state.announcementPageState,
-                labels: announcementStateLabels,
-                emptySystemImage: "megaphone",
-                errorSystemImage: "exclamationmark.bubble",
-                retryAction: {
-                    Task { await chat.loadConversationAnnouncements(forceRefresh: true) }
-                }
-            ) {
+            MobilePageStateView(state: pageState, labels: announcementStateLabels,
+                emptySystemImage: "megaphone", errorSystemImage: "exclamationmark.bubble",
+                retryAction: { Task { await refresh() } }) {
                 List {
-                    Section {
-                        ForEach(chat.state.selectedConversationAnnouncements) { announcement in
-                            announcementRow(announcement)
+                    Section(L10n.string("mobile.chat.announcements.count", filtered.count)) {
+                        ForEach(filtered) { announcement in
+                            MobileChatMessageRow(chat: chat, message: announcement, showsAnnouncementBadge: false)
+                                .accessibilityIdentifier("chat-announcement-row-\(announcement.id)")
                         }
-                    } header: {
-                        Text(
-                            L10n.string(
-                                "mobile.chat.announcements.count",
-                                chat.state.selectedConversationAnnouncements.count
-                            )
-                        )
                     }
                 }
                 .listStyle(.plain)
-                .refreshable {
-                    await chat.loadConversationAnnouncements(forceRefresh: true)
-                }
+                .accessibilityIdentifier("chat-announcements-content")
+                .refreshable { await refresh() }
             }
             .navigationTitle(L10n.string("mobile.chat.announcements.title"))
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, prompt: L10n.string("mobile.chat.timed.search"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("mobile.chat.announcements.close")) {
-                        chat.cancelConversationAnnouncementLoad()
-                        dismiss()
-                    }
-                    .frame(minWidth: 44, minHeight: 44)
+                        chat.cancelConversationAnnouncementLoad(); dismiss()
+                    }.frame(minWidth: 44, minHeight: 44)
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        Task { await chat.loadConversationAnnouncements(forceRefresh: true) }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .frame(width: 44, height: 44)
+                    Button { Task { await refresh() } } label: {
+                        Image(systemName: "arrow.clockwise").frame(width: 44, height: 44)
                     }
-                    .disabled(
-                        chat.state.announcementPageState == .loading
-                            || chat.state.isRefreshingAnnouncements
-                    )
+                    .disabled(chat.state.announcementPageState == .loading || chat.state.isRefreshingAnnouncements)
                     .accessibilityLabel(L10n.string("mobile.chat.announcements.refresh"))
                 }
             }
-            .overlay(alignment: .top) {
-                if chat.state.isRefreshingAnnouncements {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(8)
-                        .background(.regularMaterial, in: .capsule)
-                        .accessibilityLabel(L10n.string("mobile.chat.announcements.loading"))
-                }
-            }
         }
-        .task(id: conversation.id) {
-            await chat.loadConversationAnnouncements()
-        }
-        .onDisappear {
-            chat.cancelConversationAnnouncementLoad()
-        }
+        .task(id: conversation.id) { await refresh() }
+        .onDisappear { chat.cancelConversationAnnouncementLoad() }
+        .mobileChatRemoteAttachmentPresentation(chat: chat, isEnabled: chat.interaction?.root == nil)
     }
-
-    private func announcementRow(_ announcement: ChatMessage) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(
-                announcement.senderDisplayName
-                    ?? L10n.string("mobile.chat.sender.unknown")
-            )
-            .font(.subheadline.weight(.semibold))
-            Text(announcementText(announcement))
-                .font(.body)
-                .textSelection(.enabled)
-            if let pinnedAt = announcement.pinnedAt {
-                Text(
-                    L10n.string(
-                        "mobile.chat.announcements.pinned-at",
-                        pinnedAt.formatted(
-                            .dateTime
-                                .year()
-                                .month()
-                                .day()
-                                .hour()
-                                .minute()
-                                .locale(L10n.locale)
-                        )
-                    )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 4)
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-
-    private func announcementText(_ announcement: ChatMessage) -> String {
-        let text = announcement.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return text.isEmpty
-            ? L10n.string("mobile.chat.announcements.no-text")
-            : text
-    }
-
+    private func refresh() async { await chat.management?.recover(); await chat.loadConversationAnnouncements(forceRefresh: true) }
     private var announcementStateLabels: MobilePageStateLabels {
         MobilePageStateLabels(
             loading: L10n.string("mobile.chat.announcements.loading"),
             emptyTitle: L10n.string("mobile.chat.announcements.empty.title"),
             emptyMessage: L10n.string("mobile.chat.announcements.empty.message"),
-            filteredEmptyTitle: L10n.string("mobile.chat.announcements.empty.title"),
-            filteredEmptyMessage: L10n.string("mobile.chat.announcements.empty.message"),
+            filteredEmptyTitle: L10n.string("mobile.chat.timed.filtered"),
+            filteredEmptyMessage: L10n.string("mobile.chat.timed.filtered-message"),
             errorTitle: L10n.string("mobile.chat.announcements.error.title"),
             errorMessage: L10n.string("mobile.chat.announcements.error.message"),
-            retryTitle: L10n.string("mobile.chat.action.retry")
-        )
+            retryTitle: L10n.string("mobile.chat.action.retry"))
     }
 }
 
@@ -1056,6 +1023,7 @@ struct MobileChatMessageRow: View {
     @Bindable var chat: MobileChatModel
     let message: ChatMessage
     var allowsThreadNavigation = true
+    var showsAnnouncementBadge = true
     @State private var confirmsDelete = false
     @State private var presentsEdit = false
     @State private var presentsPoll = false
@@ -1109,6 +1077,25 @@ struct MobileChatMessageRow: View {
                interaction.pending.contains(where: { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }) {
                 Text(L10n.string("mobile.chat.interaction.edit-pending")).font(.footnote).foregroundStyle(.secondary)
             }
+            if message.isPinned {
+                if message.text?.isEmpty != false && message.attachments.isEmpty && message.poll == nil {
+                    Text(L10n.string("mobile.chat.announcements.no-text"))
+                }
+                if let date = message.pinnedAt {
+                    Text(L10n.string("mobile.chat.announcements.pinned-at", date.formatted(.dateTime.year().month().day().hour().minute().locale(L10n.locale))))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if showsAnnouncementBadge {
+                    Label(L10n.string("mobile.chat.announcement.badge"), systemImage: "pin.fill").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if let management = chat.management {
+                if management.pending.contains(where: { $0.kind != .close && $0.conversationID == message.conversationID && $0.messageID == message.id }) {
+                    Text(L10n.string("mobile.chat.announcement.pending")).font(.footnote).foregroundStyle(.secondary)
+                } else if let key = management.error(for: message) {
+                    Text(L10n.string(key)).font(.footnote).foregroundStyle(.orange)
+                }
+            }
             deleteStatus
         }
         .padding(.vertical, 6)
@@ -1118,6 +1105,12 @@ struct MobileChatMessageRow: View {
             deleteActionButton
         }
         .contextMenu {
+            if let management = chat.management, management.canPin(message) {
+                Button { Task { _ = await management.setPinned(message, isPinned: !message.isPinned) } } label: {
+                    Label(L10n.string(message.isPinned ? "mobile.chat.announcement.unpin" : "mobile.chat.announcement.pin"),
+                        systemImage: message.isPinned ? "pin.slash" : "pin")
+                }.accessibilityIdentifier("chat-pin-\(message.id)")
+            }
             if chat.timedActions?.availability.supportedFeatures.contains(.reminder) == true, message.encryptionState == .notEncrypted {
                 Button { presentsReminder = true } label: { Label(L10n.string("mobile.chat.reminder.action"), systemImage: "bell") }
                     .accessibilityIdentifier("chat-reminder-\(message.id)")

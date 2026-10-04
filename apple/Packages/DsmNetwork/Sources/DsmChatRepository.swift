@@ -193,6 +193,7 @@ public actor DsmChatRepository: ChatRepository {
             }
             return conversation
         }.sorted { ($0.lastActivityAt ?? .distantPast) > ($1.lastActivityAt ?? .distantPast) }
+        guard Set(conversations.map(\.id)).count == conversations.count else { throw invalidChatResponse() }
         knownConversationsByID = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         return conversations
     }
@@ -269,21 +270,24 @@ public actor DsmChatRepository: ChatRepository {
                 safeUserMessage: L10n.string("shared.9a0677d885f715fd")
             )
         }
-        try await callVoid(
-            DsmAPIName.chatPost,
-            method: isPinned ? "pin" : "unpin",
-            parameters: ["post_id": .string(normalizedMessageID)],
-            version: 5
-        )
-        let pinnedMessages = try await listPinnedMessages(conversationID: normalizedConversationID)
-        guard pinnedMessages.contains(where: { $0.id == normalizedMessageID }) == isPinned else {
-            throw AppError(
-                category: .partialFailure,
-                isRetryable: true,
-                safeUserMessage: isPinned
-                    ? L10n.string("shared.1d62e7d6335efb1d")
-                    : L10n.string("shared.13594aba892f3da9")
-            )
+        let capability = try requireCapability(DsmAPIName.chatPost)
+        let version = try selectedVersion(capability, requiring: 5)
+        try Task.checkCancellation()
+        do {
+            try await client.callVoid(path: capability.path, api: capability.name, version: version,
+                method: isPinned ? "pin" : "unpin", requestFormat: capability.requestFormat,
+                parameters: ["post_id": .string(normalizedMessageID)], credential: credential)
+        } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+            throw mapChatError(error)
+        } catch {
+            // 丢失回执时只读目标状态，不自动重复置顶或取消。
+        }
+        do {
+            let values = try await listPinnedMessages(conversationID: normalizedConversationID)
+            guard values.contains(where: { $0.id == normalizedMessageID }) == isPinned else { throw invalidChatResponse() }
+        } catch {
+            throw AppError(category: .partialFailure, isRetryable: false,
+                safeUserMessage: isPinned ? L10n.string("shared.1d62e7d6335efb1d") : L10n.string("shared.13594aba892f3da9"))
         }
         completedPinChanges.insert(clientRequestID)
     }
@@ -2202,19 +2206,24 @@ public actor DsmChatRepository: ChatRepository {
             return
         }
 
-        // 内部 API：群晖客户端称此操作为“关闭会话”；消息会进入 Chat 归档而不是本地直接抹除。
-        try await callVoid(
-            DsmAPIName.chatChannel,
-            method: "close",
-            parameters: ["channel_id": .string(normalizedID)]
-        )
-        let verifiedConversations = try await listConversations()
-        guard !verifiedConversations.contains(where: { $0.id == normalizedID }) else {
-            throw AppError(
-                category: .partialFailure,
-                isRetryable: true,
-                safeUserMessage: L10n.string("shared.6d5ebb57592ff9fa")
-            )
+        // 内部 API：关闭当前用户会话，不删除消息；必须回读完整会话列表。
+        let capability = try requireCapability(DsmAPIName.chatChannel)
+        let version = try selectedVersion(capability, requiring: 5)
+        try Task.checkCancellation()
+        do {
+            try await client.callVoid(path: capability.path, api: capability.name, version: version,
+                method: "close", requestFormat: capability.requestFormat,
+                parameters: ["channel_id": .string(normalizedID)], credential: credential)
+        } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+            throw mapChatError(error)
+        } catch {
+            // 请求可能已执行，后续读取失败也不能降为未提交。
+        }
+        do {
+            let values = try await listConversations()
+            guard !values.contains(where: { $0.id == normalizedID }) else { throw invalidChatResponse() }
+        } catch {
+            throw AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("shared.6d5ebb57592ff9fa"))
         }
         completedConversationClosures.insert(clientRequestID)
     }

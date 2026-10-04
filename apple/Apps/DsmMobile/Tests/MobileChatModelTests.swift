@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class MobileChatModelTests: XCTestCase {
-    func test移动适配层开放纯文字群成员群公告和本人消息删除并继续拒绝高级能力() async throws {
+    func test移动适配层开放已接能力保留公告原内容并拒绝未接能力() async throws {
         let member = ChatUser(id: "member", displayName: "成员")
         let pinnedAt = Date(timeIntervalSince1970: 100)
         let announcement = ChatMessage(
@@ -88,17 +88,10 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertEqual(sanitizedAnnouncement.id, announcement.id)
         XCTAssertEqual(sanitizedAnnouncement.text, announcement.text)
         XCTAssertEqual(sanitizedAnnouncement.pinnedAt, pinnedAt)
-        XCTAssertNil(sanitizedAnnouncement.clientRequestID)
-        XCTAssertTrue(sanitizedAnnouncement.attachments.isEmpty)
+        XCTAssertEqual(sanitizedAnnouncement.clientRequestID, announcement.clientRequestID)
+        XCTAssertEqual(sanitizedAnnouncement.attachments, announcement.attachments)
         XCTAssertNil(sanitizedAnnouncement.poll)
-        await assertReadOnlyFailure {
-            try await repository.setMessagePinned(
-                conversationID: "conversation",
-                messageID: "message",
-                isPinned: true,
-                clientRequestID: UUID()
-            )
-        }
+        try await repository.setMessagePinned(conversationID: "conversation", messageID: "message", isPinned: true, clientRequestID: UUID())
         await assertReadOnlyFailure {
             try await repository.forwardMessage(
                 messageID: "message",
@@ -168,7 +161,7 @@ final class MobileChatModelTests: XCTestCase {
 
         let nonReadCallCount = await base.nonReadCallCount()
         let realtimeCallCount = await base.realtimeCallCount()
-        XCTAssertEqual(nonReadCallCount, 0)
+        XCTAssertEqual(nonReadCallCount, 1)
         XCTAssertEqual(realtimeCallCount, 3)
         XCTAssertEqual(receivedEvent, .connected)
 

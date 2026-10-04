@@ -37,6 +37,7 @@ final class MobileChatPollModel {
 
     func canCreate(in conversation: ChatConversation) -> Bool {
         active && availability.status == .available && availability.supportedFeatures.contains(.poll)
+            && owner?.management?.blocksWrites(in: conversation.id) != true
             && !conversation.isEncrypted && !isMutating && !isRecovering && !recovery.failed
             && (owner == nil || owner?.state.selectedConversationID == conversation.id)
             && !pending.contains { $0.kind == .create && $0.conversationID == conversation.id }
@@ -49,6 +50,7 @@ final class MobileChatPollModel {
               !choices.isEmpty, poll.allowsMultipleSelection || choices.count == 1,
               choices.isSubset(of: Set(poll.options.map(\.id))),
               choices != Set(poll.options.filter(\.isSelectedByCurrentUser).map(\.id)),
+              owner?.management?.blocksWrites(in: value.conversationID) != true,
               owner?.state.deletingMessageID != value.id else { return false }
         return !pending.contains { $0.kind == .vote && $0.conversationID == value.conversationID && $0.messageID == value.id }
     }
