@@ -47,6 +47,11 @@ struct MobileSynologyPhotoPreview: View {
                         Label(L10n.string("photos.media.info"), systemImage: "info.circle")
                     }.frame(minWidth: 44, minHeight: 44)
                     if let photo = model.previewPhoto {
+                        if let editor = session.editor {
+                            Menu { MobilePhotoEditActions(editor: editor, photos: [photo]) } label: {
+                                Label(L10n.string("mobile.photos.edit.title"), systemImage: "pencil")
+                            }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.edit.preview")
+                        }
                         Menu {
                             Button(L10n.string("photos.media.save")) { session.exportOriginal(photo) }
                             Button(L10n.string("mobile.documents.share")) { session.exportOriginal(photo, sharing: true) }
@@ -58,6 +63,7 @@ struct MobileSynologyPhotoPreview: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) { MobilePhotoManagementStatus(model: model) }
         }
         .task(id: model.previewData) {
             image = nil
@@ -68,6 +74,7 @@ struct MobileSynologyPhotoPreview: View {
             isDecoding = false
         }
         .modifier(MobileSynologyPhotoDeletionPresentation(model: model, active: true))
+        .modifier(MobilePhotoEditPresentation(session: session, active: true))
         .modifier(MobileSynologyPhotoExportPresentation(session: session, active: true))
     }
 
@@ -135,6 +142,7 @@ struct MobileSynologyPhotoPreview: View {
                     }
                     if let rating = photo.rating { row("photos.detail.rating", L10n.string("photos.stars", rating)) }
                     row("photos.detail.description", photo.description)
+                    row("photos.category.tags", formattedLocation(photo.tags?.map(\.name) ?? []))
                 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding()
         }.background(.regularMaterial)

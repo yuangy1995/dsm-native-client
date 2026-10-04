@@ -270,6 +270,7 @@ public final class SynologyPhotosModel {
     @ObservationIgnored private var uploadRecoveryIdentity: String?
     @ObservationIgnored private var uploadRecoveryReady = true
     public private(set) var albumRecoveryError: String?
+    @ObservationIgnored private var restoredPhotoEditID: UUID?
     @ObservationIgnored private var albumRecoveryStore: PhotoAlbumRecoveryStore?
     @ObservationIgnored private var albumRecoveryReady = true
     public var canStartManagementMutation: Bool {
@@ -1706,6 +1707,8 @@ public final class SynologyPhotosModel {
     public func sharingRecipients() async throws -> [SynologyPhotoShareRecipient] { try await service().sharingRecipients() }
     public func frozenAlbum(id: Int) async throws -> SynologyPhotoFrozenAlbum { try await service().frozenAlbum(id: id) }
     public func albumCondition(id: Int) async throws -> SynologyPhotoAlbumCondition { try await service().albumCondition(id: id) }
+    public func managementPhotoDetails(_ photo: SynologyPhoto) async throws -> SynologyPhoto { try await service().details(for: photo) }
+    public func managementFilterOptions(in space: SynologyPhotoSpace) async throws -> SynologyPhotoFilterOptions { try await service().filterOptions(in: space) }
     public func conditionSuggestions(keyword: String, in space: SynologyPhotoSpace = .personal) async throws -> [String: [SynologyPhotoConditionOption]] { try await service().conditionSuggestions(keyword: keyword, in: space) }
     public var conditionSourceSpaces: [SynologyPhotoSpace] { spaces.filter { $0 == .personal || canManageSharedSpace } }
     public func conditionItemCount(_ condition: SynologyPhotoAlbumCondition) async throws -> Int { try await service().conditionItemCount(condition) }
@@ -2487,6 +2490,7 @@ public final class SynologyPhotosModel {
                 try await repository.restoreAlbumMutation(checkpoint)
                 pendingMutationID = checkpoint.operationID
                 pendingMutation = try checkpoint.reviewMutation()
+                restoredPhotoEditID = checkpoint.photoEditDetails == nil ? nil : checkpoint.operationID
                 managementMessage = L10n.string("photos.album.recovery.pending")
             }
             albumRecoveryReady = true; albumRecoveryError = nil
@@ -2995,6 +2999,13 @@ public final class SynologyPhotosModel {
         if result.state == .partial, case .shareAlbum = mutation {
             managementMessage = L10n.string("photos.sharing.partial")
         }
+        if result.state == .partial {
+            switch mutation {
+            case .edit, .shiftDates: managementMessage = L10n.string("photos.metadata.partial")
+            case .createTag: managementMessage = L10n.string("photos.metadata.tagPartial")
+            default: break
+            }
+        }
         if result.state == .confirmed, case .editSimilarGroup(let detail, let edit) = mutation {
             applySimilarEdit(detail, edit: edit, result: result, operationID: id)
         }
@@ -3184,7 +3195,7 @@ public final class SynologyPhotosModel {
                 collections.insert(.init(id: tag.id, name: tag.name), at: 0); collectionOffset += 1
             }
         }
-        if result.state == .partial {
+        if result.state == .partial, restoredPhotoEditID != id {
             let completed = Set(result.photos.map(\.id))
             let remaining = mutation.photos.filter { !completed.contains($0.id) }
             if !remaining.isEmpty {
@@ -3201,6 +3212,10 @@ public final class SynologyPhotosModel {
                 default: break
                 }
             }
+        }
+        if restoredPhotoEditID == id {
+            restoredPhotoEditID = nil
+            if result.state == .partial { managementMessage = L10n.string("photos.metadata.recovery.partial") }
         }
         if let updated = result.globalSettings, case .setGlobalSettings(let original, _, _) = mutation {
             supportsOriginalSizeJPEG = updated.supportsOriginalJPEG

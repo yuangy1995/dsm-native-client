@@ -173,6 +173,10 @@ private struct MobileSynologyPhotosContent: View {
                         Button(L10n.string("photos.request.create")) { requests.begin() }
                             .disabled(!requests.canOpen()).accessibilityIdentifier("mobile.photos.request.create")
                     }
+                    if let editor = session.editor {
+                        Button(MobilePhotoEditModel.Action.tagsCreate.title) { editor.begin(.tagsCreate, photos: []) }
+                            .disabled(!editor.allows(.tagsCreate, photos: [])).accessibilityIdentifier("mobile.photos.edit.createEmptyTag")
+                    }
                     if sizeClass != .regular { timelineActions }
                 } label: { Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis.circle") }
                     .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.actions")
@@ -232,6 +236,7 @@ private struct MobileSynologyPhotosContent: View {
             MobileSynologyPhotoPreview(session: session, model: model)
         }
         .modifier(MobileSynologyPhotoDeletionPresentation(model: model, active: model.previewPhoto == nil))
+        .modifier(MobilePhotoEditPresentation(session: session, active: model.previewPhoto == nil))
         .modifier(MobileSynologyPhotoExportPresentation(session: session, active: model.previewPhoto == nil))
         .task { await session.activate() }
         .onDisappear { session.deactivate() }
@@ -396,6 +401,10 @@ private struct MobileSynologyPhotosContent: View {
                 .disabled(model.isBrowsingBlocked).accessibilityIdentifier("mobile.photos.selection.loaded")
             if let albums = session.albums {
                 Menu {
+                    if let editor = session.editor {
+                        MobilePhotoEditActions(editor: editor)
+                        Divider()
+                    }
                     if let temporary = session.temporarySharing {
                         Button(L10n.string("photos.selectionShare.title")) { temporary.begin() }
                             .disabled(!temporary.canBegin).accessibilityIdentifier("mobile.photos.temporary.begin")

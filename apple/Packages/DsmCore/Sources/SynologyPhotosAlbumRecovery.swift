@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// 相册恢复只保留回读需要的身份，不包含媒体、认证资料或分享链接。
+/// 照片管理恢复只保留回读需要的身份，不包含媒体、认证资料或分享链接。
 public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
     public enum Operation: Codable, Sendable {
         case create(name: String, photos: [SynologyPhotoUploadPhoto])
@@ -17,6 +17,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case request(Request)
         case condition(Condition)
         case frozen(Frozen)
+        case photoEdit(PhotoEdit)
     }
     public let version: Int
     public let profileID: UUID
@@ -32,13 +33,15 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         switch mutation {
         case .createAlbum, .renameAlbum, .deleteAlbum, .addToAlbum, .removeFromAlbum, .setAlbumCover, .shareAlbum,
              .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum,
-             .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum: true
+             .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum,
+             .edit, .shiftDates, .createTag, .addTags, .removeTags: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
         version = switch mutation {
+        case .edit, .shiftDates, .createTag, .addTags, .removeTags: 7
         case .unfreezeAlbum, .rebuildFrozenAlbum: 6
         case .createConditionAlbum, .setAlbumCondition: 5
         case .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: 4
@@ -48,6 +51,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         }
         self.profileID = profileID; self.userID = userID; self.operationID = operationID
         switch mutation {
+        case .edit, .shiftDates, .createTag, .addTags, .removeTags: operation = .photoEdit(try PhotoEdit(mutation: mutation))
         case .createAlbum(let name, let photos): operation = .create(name: name, photos: photos.map(SynologyPhotoUploadPhoto.init))
         case .renameAlbum(let id, let name): operation = .rename(id: id, name: name)
         case .deleteAlbum(let id): operation = .delete(id: id)
@@ -68,13 +72,16 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...6).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...7).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
         }
         let command: SynologyPhotosMutation
         switch operation {
+        case .photoEdit(let value):
+            guard version == 7, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation(profileID: profileID)
         case .create(let name, let photos): command = .createAlbum(name: name, photos: photos.map(\.photo))
         case .rename(let id, let name): command = .renameAlbum(id: id, name: name)
         case .delete(let id): command = .deleteAlbum(id: id)
@@ -113,7 +120,8 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .deleteAlbum(let id): guard id > 0 else { throw CocoaError(.coderReadCorrupt) }
         case .addToAlbum(let id, _), .removeFromAlbum(let id, _), .setAlbumCover(let id, _):
             guard id > 0, !photos.isEmpty else { throw CocoaError(.coderReadCorrupt) }
-        case .shareAlbum, .deleteTemporaryAlbum, .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum: break
+        case .shareAlbum, .deleteTemporaryAlbum, .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum,
+             .edit, .shiftDates, .createTag, .addTags, .removeTags: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
@@ -122,6 +130,11 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
     public var sharingDetails: Sharing? {
         get { if case .sharing(let value) = operation { return value }; return nil }
         set { if case .sharing = operation, let newValue { operation = .sharing(newValue) } }
+    }
+
+    public var photoEditDetails: PhotoEdit? {
+        get { if case .photoEdit(let value) = operation { return value }; return nil }
+        set { if case .photoEdit = operation, let newValue { operation = .photoEdit(newValue) } }
     }
 
     public var frozenDetails: Frozen? {

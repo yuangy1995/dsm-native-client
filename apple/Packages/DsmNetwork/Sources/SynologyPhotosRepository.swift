@@ -1572,6 +1572,7 @@ private struct PhotosMutationRecord: Sendable {
     var usesAlbumRecovery = false
     var restoredFrozen: SynologyPhotosAlbumCheckpoint.Frozen?
     var restoredCondition: SynologyPhotosAlbumCheckpoint.Condition?
+    var restoredPhotoEdit: SynologyPhotosAlbumCheckpoint.PhotoEdit?
     var personPhotoIDs: Set<Int>?
     var personReceipt: PersonNameReceipt?
     var personCoverReceipt: PersonCoverReceipt?
@@ -2936,7 +2937,10 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        if let frozen = checkpoint.frozenDetails {
+        if let edit = checkpoint.photoEditDetails {
+            try requireAccess(edit.space)
+            for space in Set(edit.targets.map(\.space)) { try requireAccess(space) }
+        } else if let frozen = checkpoint.frozenDetails {
             try requireAlbumAccess()
             if let condition = frozen.rebuiltCondition { try requireAccess(condition.space) }
         } else if let condition = checkpoint.conditionDetails { try requireAccess(condition.space) }
@@ -2945,7 +2949,9 @@ extension SynologyPhotosRepository {
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            let matches = if let frozen = checkpoint.frozenDetails {
+            let matches = if let edit = checkpoint.photoEditDetails {
+                existing.restoredPhotoEdit.map { $0 == edit } ?? edit.hasSameIntent(as: existing.mutation)
+            } else if let frozen = checkpoint.frozenDetails {
                 existing.restoredFrozen.map { $0 == frozen } ?? frozen.hasSameIntent(as: existing.mutation, profileID: profileID, userID: checkpoint.userID)
             } else if let sharing = checkpoint.sharingDetails {
                 existing.restoredAlbumSharing.map { $0 == sharing } ?? sharing.hasSameIntent(as: existing.mutation)
@@ -2975,6 +2981,7 @@ extension SynologyPhotosRepository {
         record.frozenDeletionAttempted = checkpoint.frozenDetails?.deletionAttempted ?? false
         record.frozenDeletionRejected = checkpoint.frozenDetails?.deletionRejected ?? false
         record.restoredCondition = checkpoint.conditionDetails
+        record.restoredPhotoEdit = checkpoint.photoEditDetails
         record.passwordUpdateAcknowledged = checkpoint.sharingDetails?.passwordAcknowledged ?? false
         record.enableSharingAttempted = checkpoint.sharingDetails?.enableAttempted ?? false
         record.temporaryAlbumMembers = checkpoint.temporaryMembers.map { values in
@@ -2991,6 +2998,17 @@ extension SynologyPhotosRepository {
             checkpoint.createdAlbumID = record.albumID
             checkpoint.membershipHasFailures = record.albumMembershipHasFailures
             checkpoint.rejected = record.result.state == .rejected
+            if var edit = checkpoint.photoEditDetails {
+                edit.createdTagID = record.createdTag?.id
+                let submitted = record.metadataSubmittedIDs.union(record.shiftedSubmittedIDs)
+                edit.attempted = Set(edit.targets.indices.filter { submitted.contains(edit.targets[$0].id) })
+                let rejected = record.metadataRejectedIDs.union(record.shiftedRejectedID.map { [$0] } ?? [])
+                edit.rejected = Set(edit.targets.indices.filter { rejected.contains(edit.targets[$0].id) })
+                edit.reportedFailures = Set(edit.targets.indices.filter { record.metadataFailureReportedIDs.contains(edit.targets[$0].id) })
+                edit.tagAdditionAttempted = record.tagAdditionAttempted
+                edit.tagAdditionRejected = record.tagAdditionRejected
+                checkpoint.photoEditDetails = edit
+            }
             checkpoint.temporaryMembers = record.temporaryAlbumMembers?.map { id, value in
                 .init(id: id, filename: value.filename, size: value.size, folderID: value.folderID, indexedAt: value.indexedAt)
             }
@@ -3387,10 +3405,16 @@ extension SynologyPhotosRepository {
                     }
                     record.metadataCurrentIDs = Set(group.map(\.id))
                     record.metadataSubmittedIDs.formUnion(record.metadataCurrentIDs)
+                    do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                    catch {
+                        record.metadataSubmittedIDs.subtract(record.metadataCurrentIDs); record.metadataCurrentIDs = []
+                        throw error
+                    }
                     let receipt: AlbumMembershipReceipt = try await call(api("Browse.Item", in: space), version: 2, method: "set", parameters: params)
                     guard (receipt.error_list?.count ?? 0) <= group.count else { throw Self.failure(.invalidResponse) }
                     if receipt.error_list?.isEmpty == false { record.metadataFailureReportedIDs.formUnion(record.metadataCurrentIDs) }
                     record.metadataCurrentIDs = []
+                    try persistRecoveryCheckpoint(record, operationID: operationID)
                 }
             case .shiftDates(let photos, let seconds):
                 let generation = accessGeneration
@@ -3400,23 +3424,32 @@ extension SynologyPhotosRepository {
                     _ = try mutationAccessSpace(mutation)
                     record.shiftedSubmittedIDs.insert(photo.id)
                     record.shiftingPhotoID = photo.id
+                    do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                    catch { record.shiftedSubmittedIDs.remove(photo.id); record.shiftingPhotoID = nil; throw error }
                     try await managementWrite(api("Browse.Item", in: photo.id.space), version: 2, method: "set", parameters: [
                         "id": .integerArray([photo.id.unitID]), "time": .integer(try shiftedTimestamp(photo, seconds: seconds))])
                     record.shiftingPhotoID = nil
+                    try persistRecoveryCheckpoint(record, operationID: operationID)
                 }
             case .createTag(let name, let photos, _):
                 let created: CreatedManagementTag = try await call(api("Browse.GeneralTag", in: mutation.space), version: 1, method: "create", parameters: ["name": .string(name)])
                 guard created.tag.id > 0, created.tag.name == name else { throw Self.failure(.invalidResponse) }
                 record.createdTag = created.tag
+                try persistRecoveryCheckpoint(record, operationID: operationID)
                 if !photos.isEmpty {
                     try Task.checkCancellation()
                     try requireAccess(mutation.space)
                     record.tagAdditionAttempted = true
+                    do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                    catch { record.tagAdditionAttempted = false; throw error }
                     try await managementWrite(api("Browse.Item", in: mutation.space), method: "add_tag", parameters: ["id": .integerArray(ids), "tag": .integerArray([created.tag.id])])
                 }
             case .addTags(_, let tags), .removeTags(_, let tags):
                 let method: String
                 if case .addTags = mutation { method = "add_tag" } else { method = "remove_tag" }
+                record.metadataSubmittedIDs = Set(mutation.photos.map(\.id))
+                do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                catch { record.metadataSubmittedIDs = []; record.result = .init(state: .rejected); throw error }
                 try await managementWrite(api("Browse.Item", in: mutation.space), method: method, parameters: ["id": .integerArray(ids), "tag": .integerArray(tags)])
             case .unfreezeAlbum(let original):
                 try await managementWrite("SYNO.Foto.Browse.NormalAlbum", version: 1, method: "set_unfreeze", parameters: ["id": .integer(original.album.id)])
@@ -3606,7 +3639,7 @@ extension SynologyPhotosRepository {
                 return (try? await inspectMutation(operationID)) ?? record.result
             case .shiftDates, .editPhotoFaces, .regeneratePreviews:
                 return (try? await inspectMutation(operationID)) ?? record.result
-            case .edit where !record.metadataRejectedIDs.isEmpty:
+            case .edit where record.usesAlbumRecovery || !record.metadataRejectedIDs.isEmpty:
                 return (try? await inspectMutation(operationID)) ?? record.result
             case .createTag where record.createdTag != nil:
                 return (try? await inspectMutation(operationID)) ?? record.result
@@ -3644,6 +3677,11 @@ extension SynologyPhotosRepository {
     private func inspectMutation(_ operationID: UUID) async throws -> SynologyPhotosMutationResult {
         guard var record = mutations[operationID] else { throw Self.failure(.conflict) }
         _ = try mutationAccessSpace(record.mutation)
+        if let edit = record.restoredPhotoEdit {
+            let result = try await inspectRecoveredPhotoEdit(edit, record: record)
+            record.result = result; mutations[operationID] = record
+            return result
+        }
         var result = SynologyPhotosMutationResult(state: .pendingReview)
         switch record.mutation {
         case .cancelBackgroundTask(let original):
@@ -4287,7 +4325,38 @@ extension SynologyPhotosRepository {
         return result
     }
 
+    private func inspectRecoveredPhotoEdit(_ edit: SynologyPhotosAlbumCheckpoint.PhotoEdit, record: PhotosMutationRecord) async throws -> SynologyPhotosMutationResult {
+        if record.result.state == .rejected { return record.result }
+        let generation = accessGeneration
+        var tag: SynologyPhotoFilterChoice?
+        if edit.kind == .createTag {
+            guard let id = edit.createdTagID, let current = try await managementTag(id, in: edit.space),
+                  try edit.matchesTag(current) else { return .init(state: .pendingReview) }
+            tag = current
+        }
+        var updated: [SynologyPhoto] = [], completed: Set<Int> = []
+        for (index, target) in edit.targets.enumerated() {
+            if edit.kind != .createTag && (!edit.attempted.contains(index) || edit.rejected.contains(index)) { continue }
+            let photo = try await details(for: target.queryPhoto)
+            guard try target.matchesIdentity(photo) else { throw Self.failure(.conflict) }
+            if try edit.matchesValue(photo, target: target) { updated.append(photo); completed.insert(index) }
+        }
+        guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
+        _ = try mutationAccessSpace(record.mutation)
+        let state: SynologyPhotosMutationResult.State
+        if updated.count == edit.targets.count { state = .confirmed }
+        else if edit.kind == .createTag { state = edit.tagAdditionRejected || !edit.tagAdditionAttempted ? .partial : .pendingReview }
+        else if edit.attempted.isSubset(of: completed.union(edit.rejected).union(edit.reportedFailures)) {
+            state = edit.rejected.count == edit.targets.count ? .rejected : .partial
+        } else { state = .pendingReview }
+        return .init(state: state, photos: updated, completedCount: updated.count, tag: tag)
+    }
+
     private func verifyTag(_ tag: SynologyPhotoFilterChoice, in space: SynologyPhotoSpace) async throws -> Bool {
+        try await managementTag(tag.id, in: space)?.name == tag.name
+    }
+
+    private func managementTag(_ id: Int, in space: SynologyPhotoSpace) async throws -> SynologyPhotoFilterChoice? {
         try requireAccess(space)
         var offset = 0
         while true {
@@ -4295,8 +4364,8 @@ extension SynologyPhotosRepository {
                 "offset": .integer(offset), "limit": .integer(500), "additional": .stringArray(["thumbnail"])])
             let page = payload.list
             guard page.count <= 500, page.allSatisfy({ $0.id > 0 }), Set(page.map(\.id)).count == page.count else { throw Self.failure(.invalidResponse) }
-            if let match = page.first(where: { $0.id == tag.id }) { return match.name == tag.name }
-            if page.count < 500 { return false }
+            if let match = page.first(where: { $0.id == id }) { return .init(id: match.id, name: match.name) }
+            if page.count < 500 { return nil }
             offset += page.count
             try Task.checkCancellation()
         }

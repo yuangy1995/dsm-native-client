@@ -28,16 +28,27 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var userID = 12
     private var deniesWrites = false
     private var uploaded: [SynologyPhoto] = []
+    private var tagChoices: [SynologyPhotoFilterChoice] = [.init(id: 8, name: "Sample tag")]
+    private var heldEdit: CheckedContinuation<Void, Never>?
+    private(set) var isEditHeld = false
     private var heldUpload: CheckedContinuation<Void, Never>?
     private(set) var isUploadHeld = false
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown"].contains(state)
-        if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") {
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown"].contains(state)
+        if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") || state.hasPrefix("photo-edit") {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
                       sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20), folderID: 1, mediaType: "photo")
+            }
+        }
+        if state.hasPrefix("photo-edit") {
+            let initialTags = tagChoices
+            uploaded = uploaded.map { photo in
+                var result = Self.withDate(photo, date: Date(timeIntervalSince1970: 1_700_000_000 + Double(photo.id.unitID) * 3_600))
+                result.description = "Original description"; result.rating = 2; result.tags = initialTags
+                return result
             }
         }
         if state.hasPrefix("photo-frozen") {
@@ -106,6 +117,8 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return condition.values("keyword").isEmpty ? 12 : 3
     }
     func setPending(_ value: Bool) { pending = value }
+    func seedPhotos(_ photos: [SynologyPhoto]) { uploaded = photos }
+    func releaseEdit() { heldEdit?.resume(); heldEdit = nil }
     func seedTemporaryAlbum(_ album: SynologyPhotoCollection) {
         albumList.append(album); temporaryAlbumIDs.insert(album.id); members[album.id] = Set(uploaded.map { $0.id.unitID })
         sharingValue = .init(access: .invited, revision: "created", members: [], expiration: 0, isTemporary: true)
@@ -118,13 +131,14 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func access() async throws -> SynologyPhotosAccess {
         if state == "photo-loading" { try await Task.sleep(for: .seconds(30)) }
         if state == "photo-error" { throw URLError(.notConnectedToInternet) }
-        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry")
+        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: (state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry") || state == "photo-edit-mixed")
     }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
         guard !state.hasSuffix("-readonly"), !deniesWrites else { return [] }
         var features: Set<SynologyPhotosManagementFeature> = [.upload, .albums, .folders, .sharing, .photoRequests]
         if state.hasPrefix("photo-condition") || (state.hasPrefix("photo-frozen") && state != "photo-frozen-no-condition") { features.insert(.conditionAlbums) }
         if state.hasPrefix("photo-frozen") { features.insert(.frozenAlbums) }
+        if state.hasPrefix("photo-edit") { features.formUnion([.metadata, .tags, .tagCreation]) }
         return features
     }
     func changeSharing(_ value: SynologyPhotoSharingState) { sharingValue = value }
@@ -162,13 +176,26 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if case .album(let id, _) = query {
             values = uploaded.filter { members[id, default: []].contains($0.id.unitID) }.map { photo in
                 .init(id: photo.id, filename: photo.filename, sizeBytes: photo.sizeBytes, takenAt: photo.takenAt, indexedAt: photo.indexedAt,
-                    folderID: photo.folderID, mediaType: photo.mediaType, albumContext: .init(albumID: id, ownerUserID: userID, providerUserID: userID))
+                    folderID: photo.folderID, mediaType: photo.mediaType, albumContext: .init(albumID: id, ownerUserID: photo.id.space == .shared ? 0 : userID, providerUserID: userID))
             }
         } else { values = uploaded.filter { $0.id.space == space } }
         return .init(items: Array(values.dropFirst(offset).prefix(limit)), offset: offset, nextOffset: values.count, hasMore: false)
     }
     func thumbnail(for photo: SynologyPhoto) async throws -> Data { Self.image }
-    func details(for photo: SynologyPhoto) async throws -> SynologyPhoto { photo }
+    func details(for photo: SynologyPhoto) async throws -> SynologyPhoto {
+        if state == "photo-edit-held" { isEditHeld = true; await withCheckedContinuation { heldEdit = $0 } }
+        if state == "photo-edit-error" { throw URLError(.notConnectedToInternet) }
+        if state == "photo-edit-loading" { try await Task.sleep(for: .seconds(30)) }
+        guard state.hasPrefix("photo-edit"), let current = uploaded.first(where: { $0.id == photo.id }) else { return photo }
+        var result = Self.withDate(photo, date: current.takenAt)
+        result.description = current.description; result.rating = current.rating; result.tags = current.tags
+        return result
+    }
+    func filterOptions(in space: SynologyPhotoSpace) async throws -> SynologyPhotoFilterOptions {
+        if state == "photo-edit-tags-error" { throw URLError(.notConnectedToInternet) }
+        if state == "photo-edit-tags-loading" { try await Task.sleep(for: .seconds(30)) }
+        return .init(people: [], locations: [], tags: state == "photo-edit-tags-empty" ? [] : tagChoices)
+    }
     func rootFolder(in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection { .init(id: 1, name: "Sample folder", path: "/", space: space) }
     func folder(id: Int, in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection { .init(id: id, name: "Sample folder", parentID: id == 1 ? nil : 1, path: "/Sample folder", space: space) }
     func folders(in space: SynologyPhotoSpace, parentID: Int, offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
@@ -256,6 +283,34 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             saved.sharingDetails = sharing
         }
         switch mutation {
+        case .edit, .shiftDates, .createTag, .addTags, .removeTags:
+            if var summary = saved.photoEditDetails {
+                var tag: SynologyPhotoFilterChoice?
+                if case .createTag(let name, _, _) = mutation {
+                    nextID += 1; tag = .init(id: nextID, name: name); tagChoices.append(tag!)
+                    summary.createdTagID = nextID
+                    summary.tagAdditionAttempted = !mutation.photos.isEmpty && state != "photo-edit-tag-partial"
+                }
+                let partial = state == "photo-edit-partial" && rejectsAlbum && mutation.photos.count > 1
+                summary.attempted = partial ? [0] : Set(mutation.photos.indices)
+                if partial { rejectsAlbum = false }
+                for (index, photo) in mutation.photos.enumerated() where summary.attempted.contains(index) {
+                    if case .createTag = mutation, !summary.tagAdditionAttempted { continue }
+                    var updated = photo
+                    switch mutation {
+                    case .edit(_, .rating(let value)): updated.rating = value
+                    case .edit(_, .description(let value)): updated.description = value
+                    case .edit(_, .takenAt(let date)): updated = Self.withDate(photo, date: date)
+                    case .shiftDates(_, let seconds): updated = Self.withDate(photo, date: photo.takenAt.addingTimeInterval(Double(seconds)))
+                    case .addTags(_, let ids): updated.tags = Array(Set((photo.tags ?? []) + tagChoices.filter { ids.contains($0.id) }))
+                    case .removeTags(_, let ids): updated.tags = (photo.tags ?? []).filter { !ids.contains($0.id) }
+                    case .createTag: updated.tags = (photo.tags ?? []) + (tag.map { [$0] } ?? [])
+                    default: break
+                    }
+                    if let position = uploaded.firstIndex(where: { $0.id == photo.id }) { uploaded[position] = updated }
+                }
+                saved.photoEditDetails = summary
+            }
         case .unfreezeAlbum(let original):
             albumList.removeAll { $0.id == original.album.id }
             albumList.append(.init(id: original.album.id, name: original.album.name, itemCount: original.album.itemCount))
@@ -304,6 +359,13 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .photoEdit(let summary):
+            let updated = summary.targets.compactMap { target in
+                uploaded.first { $0.id == target.id && (try? target.matchesIdentity($0)) == true && (try? summary.matchesValue($0, target: target)) == true }
+            }
+            let tag = tagChoices.first { (try? summary.matchesTag($0)) == true }
+            return .init(state: updated.count == summary.targets.count ? .confirmed : .partial,
+                         photos: updated, completedCount: updated.count, tag: tag)
         case .frozen(let summary):
             if let condition = summary.rebuiltCondition {
                 guard let id = saved.createdAlbumID, let album = albumList.first(where: { $0.id == id }),
@@ -399,5 +461,12 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         }
     }
     static let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf1sAAAAASUVORK5CYII=")!
+    private static func withDate(_ photo: SynologyPhoto, date: Date) -> SynologyPhoto {
+        var value = SynologyPhoto(id: photo.id, filename: photo.filename, sizeBytes: photo.sizeBytes, takenAt: date,
+            indexedAt: photo.indexedAt, folderID: photo.folderID, mediaType: photo.mediaType, thumbnail: photo.thumbnail,
+            width: photo.width, height: photo.height, orientation: photo.orientation, albumContext: photo.albumContext)
+        value.description = photo.description; value.rating = photo.rating; value.tags = photo.tags
+        return value
+    }
 }
 #endif
