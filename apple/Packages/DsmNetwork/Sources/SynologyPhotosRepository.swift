@@ -1514,7 +1514,7 @@ private struct SharedAlbumList: Decodable, Sendable {
 
 // MARK: - 按实际接口能力与权限开放的照片管理
 
-private enum PhotosGlobalStep: Hashable, Sendable { case cache, admin, personal, shared }
+private typealias PhotosGlobalStep = SynologyPhotosAlbumCheckpoint.Administration.GlobalStep
 
 private typealias PhotosPreviewFailureKind = SynologyPhotosAlbumCheckpoint.AutomaticPreview.FailureKind
 
@@ -2967,7 +2967,9 @@ extension SynologyPhotosRepository {
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            let matches = if let maintenance = checkpoint.previewMaintenanceDetails {
+            let matches = if let administration = checkpoint.administrationDetails {
+                administration.hasSameIntent(as: existing.mutation)
+            } else if let maintenance = checkpoint.previewMaintenanceDetails {
                 maintenance.hasSameIntent(as: existing.mutation, profileID: profileID, userID: checkpoint.userID)
             } else if let preview = checkpoint.previewRegenerationDetails {
                 preview.hasSameIntent(as: existing.mutation)
@@ -3012,6 +3014,15 @@ extension SynologyPhotosRepository {
         record.restoredPhotoRequest = checkpoint.requestDetails
         record.restoredFrozen = checkpoint.frozenDetails
         record.usesAlbumRecovery = true
+        if let administration = checkpoint.administrationDetails {
+            record.memberAttempted = administration.memberAttempted
+            record.memberAcknowledged = administration.memberAcknowledged
+            record.memberRejected = administration.memberRejected
+            record.globalAttempted = administration.globalAttempted
+            record.globalAcknowledged = administration.globalAcknowledged
+            record.globalRejected = administration.globalRejected
+            if case .cache = administration.intent, administration.globalAttempted.isEmpty { record.result = .init(state: .rejected) }
+        }
         if let maintenance = checkpoint.previewMaintenanceDetails {
             switch maintenance {
             case .setting: break
@@ -3067,6 +3078,15 @@ extension SynologyPhotosRepository {
             checkpoint.createdAlbumID = record.albumID
             checkpoint.membershipHasFailures = record.albumMembershipHasFailures
             checkpoint.rejected = record.result.state == .rejected
+            if var administration = checkpoint.administrationDetails {
+                administration.memberAttempted = record.memberAttempted
+                administration.memberAcknowledged = record.memberAcknowledged
+                administration.memberRejected = record.memberRejected
+                administration.globalAttempted = record.globalAttempted
+                administration.globalAcknowledged = record.globalAcknowledged
+                administration.globalRejected = record.globalRejected
+                checkpoint.administrationDetails = administration
+            }
             if let maintenance = checkpoint.previewMaintenanceDetails {
                 switch maintenance {
                 case .setting: break
@@ -3261,9 +3281,12 @@ extension SynologyPhotosRepository {
                     try Task.checkCancellation()
                     guard generation == accessGeneration, isPhotosAdministrator else { throw Self.failure(.permissionDenied) }
                     record.memberCurrent = index; record.memberAttempted.insert(index)
+                    do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                    catch { record.memberAttempted.remove(index); record.memberCurrent = nil; throw error }
                     mutations[operationID] = record
                     try await managementWrite(step.api, method: step.method, parameters: step.parameters)
                     record.memberAcknowledged.insert(index); record.memberCurrent = nil
+                    try persistRecoveryCheckpoint(record, operationID: operationID)
                 }
             case .setAutomaticPreview(_, let enabled):
                 try await managementWrite("SYNO.Foto.Setting.User", method: "set", parameters: ["auto_generate_thumbnail": .boolean(enabled)])
@@ -3275,12 +3298,17 @@ extension SynologyPhotosRepository {
                     try Task.checkCancellation()
                     guard generation == accessGeneration, isPhotosAdministrator else { throw Self.failure(.permissionDenied) }
                     record.globalCurrent = step; record.globalAttempted.insert(step)
+                    do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                    catch { record.globalAttempted.remove(step); record.globalCurrent = nil; throw error }
                     mutations[operationID] = record
                     try await managementWrite(name, version: version, method: method, parameters: parameters)
                     record.globalAcknowledged.insert(step); record.globalCurrent = nil
+                    try persistRecoveryCheckpoint(record, operationID: operationID)
                 }
             case .clearConversionCache:
                 record.globalCurrent = .cache; record.globalAttempted.insert(.cache)
+                do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                catch { record.globalAttempted.remove(.cache); record.globalCurrent = nil; throw error }
                 mutations[operationID] = record
                 try await managementWrite("SYNO.Foto.Download", version: 2, method: "clear_cache", parameters: [:])
                 record.globalAcknowledged.insert(.cache); record.globalCurrent = nil

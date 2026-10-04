@@ -149,6 +149,14 @@ private struct MobileSynologyPhotosContent: View {
                         Button(L10n.string("photos.preview.recovery.title")) { repair.begin() }
                             .accessibilityIdentifier("mobile.photos.repair.begin")
                     }
+                    if let administration = session.administration {
+                        ForEach(MobilePhotoAdministrationModel.Page.allCases, id: \.self) { page in
+                            if administration.canOpen(page) {
+                                Button(page.title) { administration.begin(page) }
+                                    .accessibilityIdentifier("mobile.photos.administration.\(page.rawValue)")
+                            }
+                        }
+                    }
                     if let preferences = session.preferences {
                         ForEach(MobilePhotoPreferencesModel.Page.allCases, id: \.self) { page in
                             if preferences.canOpen(page) {
@@ -245,6 +253,7 @@ private struct MobileSynologyPhotosContent: View {
         }
         .modifier(MobilePhotoControlSheets(session: session))
         .modifier(MobilePhotoPreferencesPresentation(session: session))
+        .modifier(MobilePhotoAdministrationPresentation(session: session))
         .modifier(MobilePhotoPreviewRepairPresentation(session: session))
         .sheet(item: sharingDraft, onDismiss: { session.sharing?.cancel() }) { draft in
             if let sharing = session.sharing { MobilePhotoSharingForm(sharing: sharing, draft: draft) }

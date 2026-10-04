@@ -27,6 +27,11 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var nextID = 100
     private var userID = 12
     private var deniesWrites = false
+    private var administrationShared: SynologyPhotoSharedSpaceSettings?
+    private var administrationGlobal: SynologyPhotoGlobalSettings?
+    private var administrationMembers: SynologyPhotoSharedMembers?
+    private var administrationCache: SynologyPhotoConversionCache?
+    private var administrationFolders: [SynologyPhotoShareRecipient.ID: [SynologyPhotoMemberFolder]] = [:]
     private var duplicateValue = SynologyPhotoDuplicateSettings(upload: .ignore, transfer: .skip)
     private var displayValue = SynologyPhotoDisplaySettings()
     private var recognitionValue = SynologyPhotoRecognitionSettings(values: [.person: true, .concept: true, .similar: false], globallyEnabled: [.person, .concept, .similar], personalSpaceEnabled: true)
@@ -54,7 +59,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown", "photo-preview-unknown", "photo-preview-automatic-unknown"].contains(state)
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown", "photo-preview-unknown", "photo-preview-automatic-unknown", "photo-admin-unknown"].contains(state)
         if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") || state.hasPrefix("photo-edit") || (state.hasPrefix("photo-folders") || state.hasPrefix("photo-folder-sharing") || state.hasPrefix("photo-tasks")) {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
@@ -211,6 +216,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             features.formUnion([.automaticPreviewSettings, .automaticPreview, .codecPrompt])
             if space == .personal || state == "photo-preview-admin" { features.insert(.libraryMaintenance) }
         }
+        if state.hasPrefix("photo-admin") { features.formUnion([.sharedSpaceSettings, .sharedMembers, .globalSettings, .conversionCache]) }
         if state.hasPrefix("photo-preferences") { features.formUnion([.duplicateSettings, .displaySettings, .recognitionSettings, .rotation]) }
         return features
     }
@@ -353,6 +359,49 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             + [.init(passphrase: "synthetic-shared-album", name: "Shared sample album", shared: true)]
     }
     func folderSort(_ folder: SynologyPhotoCollection) async throws -> SynologyPhotoSort { folderSorts["\(folder.space):\(folder.id)"] ?? .init() }
+    private var sharedAdministrationValue: SynologyPhotoSharedSpaceSettings {
+        administrationShared ?? .init(profileID: profileID, administratorID: userID, isEnabled: state != "photo-admin-disabled", personalSpaceEnabled: state != "photo-admin-last",
+            role: .management, values: state == "photo-admin-empty" ? [:] : [.person: true, .concept: true, .similar: false, .publicRoot: false], globallyEnabled: [.person, .concept, .similar])
+    }
+    private var globalAdministrationValue: SynologyPhotoGlobalSettings {
+        administrationGlobal ?? .init(profileID: profileID, administratorID: userID,
+            values: state == "photo-admin-empty" ? [:] : [.person: true, .concept: true, .similar: false, .userSharing: true, .guestInfo: false, .originalJPEG: true],
+            excludedExtensions: state == "photo-admin-empty" ? nil : ["LEGACY"], hasHEVC: state != "photo-admin-restricted",
+            personalRecognition: [.person: true, .concept: true, .similar: false], sharedRecognition: [.person: true, .concept: true, .similar: false],
+            personalSpaceEnabled: true, sharedSpaceEnabled: sharedAdministrationValue.isEnabled, sharedRole: sharedAdministrationValue.role)
+    }
+    private var memberAdministrationValue: SynologyPhotoSharedMembers {
+        administrationMembers ?? .init(profileID: profileID, administratorID: userID, isEnabled: sharedAdministrationValue.isEnabled, members: state == "photo-admin-empty" ? [] : [
+            .init(recipient: .init(id: .init(type: "group", value: .integer(1)), name: "administrators"), role: .management),
+            .init(recipient: .init(id: .init(type: "user", value: .integer(12)), name: "Sample member"), role: .entry),
+            .init(recipient: .init(id: .init(type: "group", value: .string("fixture-future")), name: "Future group"), role: "future", autoBackup: false)])
+    }
+    private var cacheAdministrationValue: SynologyPhotoConversionCache {
+        administrationCache ?? .init(profileID: profileID, administratorID: userID, sizeBytes: 2048, isClearing: state == "photo-admin-busy")
+    }
+    private func administrationRead() async throws {
+        if state == "photo-admin-held" { isControlHeld = true; await withCheckedContinuation { heldControl = $0 } }
+        if state == "photo-admin-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-admin-error" { throw URLError(.notConnectedToInternet) }
+    }
+    func sharedSpaceSettings() async throws -> SynologyPhotoSharedSpaceSettings { try await administrationRead(); return sharedAdministrationValue }
+    func globalSettings() async throws -> SynologyPhotoGlobalSettings { try await administrationRead(); return globalAdministrationValue }
+    func conversionCache() async throws -> SynologyPhotoConversionCache { try await administrationRead(); return cacheAdministrationValue }
+    func sharedSpaceMembers() async throws -> SynologyPhotoSharedMembers { try await administrationRead(); return memberAdministrationValue }
+    func sharedSpaceMemberCandidates() async throws -> [SynologyPhotoShareRecipient] {
+        if state == "photo-admin-candidates-error" { throw URLError(.notConnectedToInternet) }
+        return memberAdministrationValue.members.map(\.recipient) + [.init(id: .init(type: "user", value: .integer(23)), name: "New member")]
+    }
+    func sharedSpaceMemberFolderSnapshot(for member: SynologyPhotoShareRecipient.ID) async throws -> [SynologyPhotoMemberFolder] {
+        if state == "photo-admin-folders-error" { throw URLError(.notConnectedToInternet) }
+        if let value = administrationFolders[member] { return value }
+        if state == "photo-admin-empty" { return [] }
+        return [
+            .init(profileID: profileID, memberID: member, rootID: 1, folder: .init(id: 9, name: "Sample folder", parentID: 1, path: "/Sample folder", space: .shared), depth: 0, privacy: "private", directRole: "view", revision: "fixture-parent"),
+            .init(profileID: profileID, memberID: member, rootID: 1, folder: .init(id: 10, name: "Child folder", parentID: 9, path: "/Sample folder/Child folder", space: .shared), depth: 1, privacy: "private", directRole: "download", revision: "fixture-child"),
+            .init(profileID: profileID, memberID: member, rootID: 1, folder: .init(id: 11, name: "Public folder", parentID: 1, path: "/Public folder", space: .shared), depth: 0, privacy: "public-download", directRole: nil, revision: "fixture-public")]
+    }
+
     func seedAutomaticEnabled(_ value: Bool) { automaticEnabled = value }
     func finishMaintenance() { maintenanceRunning = [:] }
     private func previewSettingsRead() async throws {
@@ -457,6 +506,42 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             saved.sharingDetails = sharing
         }
         switch mutation {
+        case .setSharedSpaceEnabled(let original, let enabled):
+            var value = original; value.isEnabled = enabled; administrationShared = value
+        case .setSharedSpaceSettings(let original, let enabled):
+            var value = original; for kind in value.values.keys { value.values[kind] = enabled.contains(kind) }; administrationShared = value
+        case .setGlobalSettings(let original, let enabled, let excluded):
+            var value = original.applying(enabled: enabled, excludedExtensions: excluded)
+            if state == "photo-admin-partial" { value.personalRecognition = original.personalRecognition; value.sharedRecognition = original.sharedRecognition }
+            administrationGlobal = value
+            if var details = saved.administrationDetails {
+                if original.values != value.values || original.excludedExtensions != value.excludedExtensions { details.globalAttempted.insert(.admin) }
+                if original.personalRecognition != value.personalRecognition { details.globalAttempted.insert(.personal) }
+                if original.sharedRecognition != value.sharedRecognition { details.globalAttempted.insert(.shared) }
+                if original.values[.originalJPEG] == true && value.values[.originalJPEG] == false {
+                    details.globalAttempted.insert(.cache); administrationCache = .init(profileID: profileID, administratorID: userID, sizeBytes: 0, isClearing: false)
+                }
+                let ordered = [SynologyPhotosAlbumCheckpoint.Administration.GlobalStep.cache, .admin, .personal, .shared].filter(details.globalAttempted.contains)
+                details.globalAcknowledged = pending ? Set(ordered.dropLast()) : details.globalAttempted; saved.administrationDetails = details
+            }
+        case .clearConversionCache:
+            administrationCache = .init(profileID: profileID, administratorID: userID, sizeBytes: 0, isClearing: false)
+            if var details = saved.administrationDetails {
+                details.globalAttempted = [.cache]; details.globalAcknowledged = pending ? [] : [.cache]; saved.administrationDetails = details
+            }
+        case .setSharedMembers(let original, let target, let edits):
+            administrationMembers = .init(profileID: profileID, administratorID: userID, isEnabled: original.isEnabled, members: target)
+            for edit in edits {
+                administrationFolders[edit.memberID] = edit.original.map { value in
+                    .init(profileID: value.profileID, memberID: value.memberID, rootID: value.rootID, folder: value.folder,
+                        depth: value.depth, privacy: value.privacy, directRole: edit.expectedRole(for: value), revision: "fixture-updated")
+                }
+            }
+            if var details = saved.administrationDetails {
+                let old = Dictionary(uniqueKeysWithValues: original.members.map { ($0.id, $0) }), new = Dictionary(uniqueKeysWithValues: target.map { ($0.id, $0) })
+                let count = (old == new ? 0 : 1) + edits.reduce(0) { $0 + ($1.batch == nil ? 0 : 1) + ($1.changes.isEmpty ? 0 : 1) }
+                details.memberAttempted = Set(0..<count); details.memberAcknowledged = pending ? Set(0..<max(0, count - 1)) : details.memberAttempted; saved.administrationDetails = details
+            }
         case .setAutomaticPreview(_, let enabled): automaticEnabled = enabled
         case .respondToCodecPrompt(let original, let generate):
             if generate { codecSubmitted = true }
@@ -634,6 +719,13 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .administration(let value):
+            switch value.intent {
+            case .sharedEnabled, .sharedSettings: return .init(state: .confirmed, completedCount: 1, sharedSpaceSettings: sharedAdministrationValue)
+            case .global: return .init(state: state == "photo-admin-partial" ? .partial : .confirmed, completedCount: value.globalAttempted.count, globalSettings: globalAdministrationValue)
+            case .cache: return .init(state: .confirmed, completedCount: 1, conversionCache: cacheAdministrationValue)
+            case .members: return .init(state: .confirmed, completedCount: value.memberAttempted.count, sharedSpaceSettings: sharedAdministrationValue, sharedMembers: memberAdministrationValue)
+            }
         case .previewMaintenance(let value):
             switch value {
             case .setting(_, let enabled): return .init(state: automaticEnabled == enabled ? .confirmed : .pendingReview, completedCount: 1)

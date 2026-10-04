@@ -1117,3 +1117,19 @@ Mac 两轮 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme
 - Mac 三轮 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 均通过；最终 `lipo -archs` 为 `x86_64 arm64`。未安装或启动正式 Mac 包。
 - 本地化 Apple 5868、Android 2188、Windows 3402 键通过；请求契约 170/1、Fixture 29 组与私有 API 文档引用 48 项、API 目录一致性、严格文档与差异空白检查通过。代码推送、云端结果和正式发布分别记录，不以本机验证推定云端或真实设备通过。
 - `PENDING_USER_VALIDATION`：真实解码、NAS 接收/最终状态、锁屏保护、能耗、网络断开、VoiceOver、大字号、外接键盘和 iPad 分屏。条件、步骤、预期及可回传信息见移动主计划 M3f3；未实现的管理员设置、人物/相似组、导出/删除恢复、旧图库清理及 M4–M8 继续后续工作。
+
+
+## 2026-10-04 移动 M3f4 管理员设置与共享成员
+
+- 实现共享图库启停/选项、全局设置/排除格式、转换缓存与成员/备份/两层目录权限的原生表单。目录编辑只更新本机草稿，主表单确认固定全部改动；普通开关直接保存，公开范围、分类关闭、缓存及成员权限变更说明具体后果。纯目录草稿逻辑从 Mac 移入共享目标，Mac 保持行为，无新 NAS 参数、第三方依赖或登录格式变化。
+- 恢复版本 13 保存最小设置、管理员/成员/目录身份与每一步尝试/接收/拒绝状态，不保存成员显示名称、密码、链接、媒体或会话。独立集成与只读对抗复核覆盖新旧记录、前序回执完整性、存储失败零写、原快照/实际管理员/候选名单、受保护/未知角色、父子目录与公开下限、跨账号迟到响应、重复确认及部分保存；所有恢复只回读，不自动补发权限或缓存操作。
+- 网络 `swift test --package-path apple --jobs 4 --filter SynologyPhotosRepositoryTests` 三轮通过：579 项/1.698 秒，增加八项后 587 项/1.705 秒，收紧恢复步骤顺序校验后 587 项/1.736 秒；编译分别 136.88、23.03、26.33 秒。新增用例真实经过请求编码/阶段回执和跨实例恢复，覆盖全局多步/成员目录/共享开关/缓存、保存失败与受保护成员。
+- 完整共享 `swift test --package-path apple --jobs 4` 在 Mac 和两端首轮 UI 结束后运行：2507 项 XCTest、172 项既有条件跳过、0 失败，32.392 秒；另 12 项 Swift Testing 通过，0.032 秒。编译 0.19 秒，没有新增跳过或降低断言。
+- 锁定 XcodeGen 2.46.0 生成工程，重复生成前后 SHA-256 均为 `17c91541f1bddf29ecc5a4319e5b97ec7b7e0b247a7d69d7eb4ba031a8729226`。前三轮 `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 均通过。
+- 两端首轮 `xcodebuild test-without-building` 沿用上述 project/scheme/derivedDataPath，`-parallel-testing-enabled NO`，iPad destination 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。分别选择 `-only-testing:DsmMobileTests`，870 项单元全部通过（iPhone 15.794、iPad 15.534 秒），包含 13 项新增管理员模型测试。
+- 首轮七项新增实际 UI：iPhone 6/7 通过（323.571 秒），iPad 5/7 通过（346.996 秒）。`test照片添加自定义成员并编辑目录后统一保存` 两端失败：候选菜单仅文字附近可触发，行中心点击无效；已扩大菜单标签到整行并明确点击范围。iPad `test照片全局格式保留未知项及缓存清理` 失败：截图显示开关滚到浮动标题栏下，测试点击未改变值；滚动辅助改为完整露出该行，另加点击后值与保存可用断言。未减少确认、取消或最终结果检查。
+- 首轮其余五项两端通过：`test照片全局部分完成重新打开保留剩余修改`、`test照片共享最后图库与正在清理缓存保持限制`、`test照片共享设置中文确认取消和保存`、`test照片管理员未知保存重启仍禁止再次提交`、`test照片管理员空内容失败加载停用及搜索无结果`。界面选项为 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/<方法名>`；两端结果分别为忽略目录中的 `m3f4-iphone1.xcresult`、`m3f4-ipad1.xcresult`，iPhone 浅色、iPad 深色。截图已检查正常、空内容、部分完成与中文设置的标题、布局和恢复入口。
+- Mac `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过；实际主程序 `lipo -archs` 为 `x86_64 arm64`，没有安装或启动正式包。
+- 本地化 Apple 5868/Android 2188/Windows 3402、参数/硬编码/引用，Fixture 29 组及私有 API 引用 48 项，请求 170 组/1 写结果、API 参数目录、严格文档和差异空白检查通过。真实 NAS 未参与自动写测试；设备/NAS 条件、步骤与脱敏反馈要求见主计划 M3f4 的 `PENDING_USER_VALIDATION`。人物/相似组、批量导出/原件删除恢复、旧图库清理与 M4–M8 继续后续工作。
+
+- 第二轮实际 UI 两端两项均通过：排除格式/缓存为 53.753 / 68.953 秒，新增自定义成员/目录/统一保存/再次搜索为 46.852 / 49.945 秒。使用同样命令，仅选择这两项；结果 `m3f4-iphone2.xcresult` / `m3f4-ipad2.xcresult`。最终 iPhone 目录权限与完整标题、iPad 深色成员筛选和格式开关截图已人工检查；iPad 测后恢复浅色。最终界面修复不改变模型、网络或 Mac 代码，未重复已通过的完整共享测试。

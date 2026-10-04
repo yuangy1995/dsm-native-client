@@ -4694,14 +4694,14 @@
 "photos.global.guestConfirm" = "Guests will be able to view details of shared photos.";
 "photos.global.excludedConfirm" = "Photos and videos in excluded formats will no longer appear. Original files will be kept.";
 "photos.global.clearConfirm" = "The conversion cache will be cleared. Original photos and videos will be kept. Later JPEG downloads may need conversion again.";
-"photos.global.pending" = "Checking whether the settings have taken effect. This will update automatically.";
+"photos.global.pending" = "The latest settings are unavailable. Refresh in a moment.";
 "photos.global.partial" = "Some settings were saved. Reopen Global settings to review the current state and finish the remaining changes.";
 "photos.global.person" = "Enable people recognition";
 "photos.global.concept" = "Enable subject recognition";
 "photos.global.similar" = "Enable similar photo recognition";
 
 "photos.members.title" = "Shared Space Members";
-"photos.members.pending" = "Checking saved member and folder permissions. This will update automatically.";
+"photos.members.pending" = "The latest permissions are unavailable. Refresh in a moment.";
 "photos.members.partial" = "Some permissions were saved. Reopen Shared Space Members to review the current permissions before continuing.";
 "photos.members.refreshFailed" = "Permissions were updated, but photos couldn’t be loaded. Refresh to try again.";
 "photos.members.disabled" = "Shared Space Is Off";
