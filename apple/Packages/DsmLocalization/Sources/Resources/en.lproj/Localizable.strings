@@ -6125,3 +6125,15 @@
 "mobile.photos.deletion.recoveryFailed" = "Saved deletion progress could not be read or updated. Reopen Photos and try again. If the problem continues, contact support.";
 "mobile.photos.deletion.failed" = "Deletion could not continue. Check your connection and access, then continue or cancel the remaining photos.";
 "mobile.photos.deletion.complete" = "Deleted: %d.";
+
+/* 移动相似照片分组与恢复 */
+"mobile.photos.similar.pending" = "Photo grouping is still in progress. Reconnect to update its progress.";
+"mobile.photos.similar.recoveryFailed" = "The saved photo grouping task could not be opened or saved. Try again to continue safely.";
+"mobile.photos.similar.changed" = "These photos or their grouping have changed. Refresh the list and try again.";
+"mobile.photos.similar.continue" = "Continue grouping (%d)";
+"mobile.photos.similar.cancelRemaining" = "Cancel remaining changes";
+"mobile.photos.similar.progress" = "Groups updated: %d. Remaining: %d.";
+"mobile.photos.similar.finished" = "Groups updated: %d. Not changed: %d.";
+"mobile.photos.similar.select" = "Select photos";
+"mobile.photos.similar.open" = "View group";
+"mobile.photos.similar.undoConfirm" = "Restore the previous grouping? Photos that have since moved to another group will not be changed.";

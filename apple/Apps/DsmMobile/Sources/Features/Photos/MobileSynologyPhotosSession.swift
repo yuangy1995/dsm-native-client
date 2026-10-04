@@ -45,6 +45,7 @@ final class MobileSynologyPhotosSession {
     @ObservationIgnored private var albumRecoveryStore: PhotoAlbumRecoveryStore?
     @ObservationIgnored private var backgroundRecoveryStore: PhotoAlbumRecoveryStore?
     @ObservationIgnored private var deletionRecoveryStore: PhotoDeletionRecoveryStore?
+    @ObservationIgnored private var similarRecoveryStore: PhotoSimilarRecoveryStore?
 
     func configure(_ repository: (any SynologyPhotosServing)?, uploadStorage: MobilePhotoUploadStorage? = nil,
                    reviewDelay: @escaping @Sendable (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
@@ -53,6 +54,7 @@ final class MobileSynologyPhotosSession {
         albumRecoveryStore?.suspendWrites()
         backgroundRecoveryStore?.suspendWrites()
         deletionRecoveryStore?.suspendWrites()
+        similarRecoveryStore?.suspendWrites()
         identity = UUID()
         self.repository = repository
         model = SynologyPhotosModel(repository: repository, deletionReviewDelay: reviewDelay)
@@ -64,6 +66,8 @@ final class MobileSynologyPhotosSession {
         model.configureBackgroundRecovery(backgroundRecoveryStore)
         deletionRecoveryStore = uploadStorage.map { PhotoDeletionRecoveryStore(url: $0.recordURL.deletingPathExtension().appendingPathComponent("Deletion/pending-v1.json")) }
         model.configureDeletionRecovery(deletionRecoveryStore)
+        similarRecoveryStore = uploadStorage.map { PhotoSimilarRecoveryStore(url: $0.recordURL.deletingPathExtension().appendingPathComponent("Similar/batch-v1.json")) }
+        model.configureSimilarRecovery(similarRecoveryStore)
         uploads = uploadStorage.map { MobilePhotoUploadImportModel(model: model, storage: $0) }
         albums = repository == nil ? nil : MobilePhotoAlbumModel(model: model)
         editor = repository == nil ? nil : MobilePhotoEditModel(model: model)

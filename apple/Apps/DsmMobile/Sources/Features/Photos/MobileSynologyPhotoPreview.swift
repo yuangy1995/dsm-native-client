@@ -11,6 +11,7 @@ struct MobileSynologyPhotoPreview: View {
     @State private var showsInfo = false
     @State private var image: UIImage?
     @State private var isDecoding = false
+    @State private var showsSimilar = false
 
     var body: some View {
         NavigationStack {
@@ -47,6 +48,10 @@ struct MobileSynologyPhotoPreview: View {
                         Label(L10n.string("photos.media.info"), systemImage: "info.circle")
                     }.frame(minWidth: 44, minHeight: 44)
                     if let photo = model.previewPhoto {
+                        if photo.similarGroup != nil || model.previewSimilarDetail != nil {
+                            Button { showsSimilar = true } label: { Label(L10n.string("mobile.photos.similar.open"), systemImage: "square.stack.3d.up") }
+                                .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.similar.open")
+                        }
                         if let editor = session.editor {
                             Menu {
                                 MobilePhotoEditActions(editor: editor, photos: [photo])
@@ -77,7 +82,9 @@ struct MobileSynologyPhotoPreview: View {
                     }
                 }
             }
-            .safeAreaInset(edge: .bottom) { MobilePhotoManagementStatus(model: model) }
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 8) { MobilePhotoManagementStatus(model: model); MobilePhotoSimilarStatus(model: model) }
+            }
         }
         .onAppear { showsInfo = model.displayPreferences?.showsPreviewInfo == true }
         .task(id: model.previewData) {
@@ -88,7 +95,8 @@ struct MobileSynologyPhotoPreview: View {
             image = decoded
             isDecoding = false
         }
-        .modifier(MobileSynologyPhotoDeletionPresentation(model: model, active: true))
+        .modifier(MobileSynologyPhotoDeletionPresentation(model: model, active: !showsSimilar))
+        .sheet(isPresented: $showsSimilar) { MobilePhotoSimilarPanel(session: session, model: model) }
         .modifier(MobilePhotoEditPresentation(session: session, active: true))
         .modifier(MobilePhotoRecognitionPresentation(session: session, active: true))
         .modifier(MobilePhotoFacePresentation(session: session))

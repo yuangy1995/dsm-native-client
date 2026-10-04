@@ -3,6 +3,117 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test相似预览更换代表照片移出与撤销均保留原件() {
+        let app = launchFixture(state: "photo-similar"); defer { app.terminate() }
+        openSimilarPhotos(app); app.buttons["Sample 1.jpg"].tap()
+        element("mobile.photos.similar.open", in: app).tap()
+        let second = element("mobile.photos.similar.photo.2", in: app)
+        for _ in 0..<5 { if second.exists && second.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(second.isHittable); second.tap()
+        element("mobile.photos.similar.open", in: app).tap()
+        element("mobile.photos.similar.topPick", in: app).tap(); app.alerts.firstMatch.buttons["mobile.photos.similar.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Groups updated: 1. Not changed: 0."].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["mobile.photos.similar.topPick"].isEnabled)
+        attachScreenshot(app, name: "Similar group with a new top pick")
+        element("mobile.photos.similar.remove", in: app).tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "Remove the 1 selected photos from this group? The originals will be kept, and you can undo this change.")).firstMatch.waitForExistence(timeout: 5))
+        app.alerts.firstMatch.buttons["mobile.photos.similar.confirm"].firstMatch.tap()
+        let panel = element("mobile.photos.similar.panel", in: app)
+        let undo = panel.buttons["mobile.photos.similar.undo"].firstMatch
+        for _ in 0..<5 { if undo.exists && undo.isHittable { break }; panel.swipeUp() }
+        XCTAssertTrue(undo.isEnabled); XCTAssertTrue(undo.isHittable); undo.tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); app.alerts.firstMatch.buttons["Confirm changes"].firstMatch.tap()
+        XCTAssertTrue(element("mobile.photos.similar.photo.1", in: app).waitForExistence(timeout: 8))
+        XCTAssertFalse(panel.buttons["mobile.photos.similar.undo"].firstMatch.exists)
+    }
+
+    func test相似批量拆组中断重启后不重发并能取消剩余项() {
+        let app = launchFixture(state: "photo-similar-unknown"); openSimilarPhotos(app); selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.similar.batch", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Ungroup the 3 selected groups? All original photos will be kept, and completed group changes can be undone."].waitForExistence(timeout: 5))
+        app.alerts.firstMatch.buttons["mobile.photos.similar.batchConfirm"].firstMatch.tap()
+        XCTAssertTrue(element("mobile.photos.similar.continue", in: app).waitForExistence(timeout: 8)); XCTAssertFalse(element("mobile.photos.similar.continue", in: app).isEnabled)
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); defer { app.terminate() }
+        openPhotos(app)
+        XCTAssertTrue(app.staticTexts["Groups updated: 0. Remaining: 2."].waitForExistence(timeout: 8))
+        XCTAssertFalse(element("mobile.photos.similar.continue", in: app).isEnabled)
+        attachScreenshot(app, name: "Unfinished group changes restored without replay")
+        element("mobile.photos.similar.cancelRemaining", in: app).tap()
+        XCTAssertFalse(element("mobile.photos.similar.continue", in: app).exists)
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).exists)
+    }
+
+    func test相似清理确认可取消并只删除未保留原件() {
+        let app = launchFixture(state: "photo-similar"); defer { app.terminate() }
+        openSimilarPhotos(app); app.buttons["Sample 1.jpg"].tap(); element("mobile.photos.similar.open", in: app).tap()
+        element("mobile.photos.similar.cleanup", in: app).tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "Keep the 1 selected photos and delete the other 2 photos in this group from the NAS? Deleted originals will also be removed from their albums. Recovery depends on your NAS settings.")).firstMatch.waitForExistence(timeout: 8))
+        app.alerts.firstMatch.buttons["Cancel"].tap()
+        XCTAssertTrue(element("mobile.photos.similar.photo.2", in: app).exists)
+        XCTAssertEqual(element("mobile.photos.similar.select.1", in: app).value as? String, "Selected")
+        element("mobile.photos.similar.cleanup", in: app).tap()
+        XCTAssertTrue(app.alerts.firstMatch.buttons["mobile.photos.deletion.confirm"].firstMatch.waitForExistence(timeout: 8)); app.alerts.firstMatch.buttons["mobile.photos.deletion.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Deleted: 2."].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["Sample 1.jpg"].exists); XCTAssertTrue(app.buttons["Sample 4.jpg"].exists)
+        openPhotoSection("Timeline", app: app)
+        XCTAssertTrue(app.buttons["Sample 1.jpg"].waitForExistence(timeout: 8)); XCTAssertFalse(app.buttons["Sample 2.jpg"].exists); XCTAssertFalse(app.buttons["Sample 3.jpg"].exists)
+        attachScreenshot(app, name: "Only unselected originals removed")
+    }
+
+    func test相似分类空内容加载失败与无写权限保留正确入口() {
+        for state in ["photo-similar-empty", "photo-similar-loading", "photo-similar-error", "photo-similar-readonly"] {
+            let app = launchFixture(state: state); openSimilarPhotos(app, expectPhotos: false)
+            if state.hasSuffix("empty") { XCTAssertTrue(app.staticTexts["No similar photos found. You can refresh to check again."].waitForExistence(timeout: 8)) }
+            else if state.hasSuffix("loading") { XCTAssertTrue(element("mobile.photos.loading", in: app).waitForExistence(timeout: 5)) }
+            else if state.hasSuffix("error") { XCTAssertTrue(app.buttons["Try again"].firstMatch.waitForExistence(timeout: 8)); XCTAssertFalse(app.buttons["Sample 1.jpg"].exists) }
+            else {
+                XCTAssertTrue(app.buttons["Sample 1.jpg"].waitForExistence(timeout: 8)); app.buttons["Sample 1.jpg"].tap(); element("mobile.photos.similar.open", in: app).tap()
+                XCTAssertTrue(element("mobile.photos.similar.ungroup", in: app).waitForExistence(timeout: 8)); XCTAssertFalse(element("mobile.photos.similar.ungroup", in: app).isEnabled)
+                XCTAssertFalse(element("mobile.photos.similar.cleanup", in: app).isEnabled)
+            }
+            attachScreenshot(app, name: state); app.terminate()
+        }
+    }
+
+    func test相似照片中文最大字号选择与确认可触达() {
+        let app = launchFixture(state: "photo-similar", language: "zh-Hans"); app.terminate()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]; app.launch(); defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); navigate("settings", title: "App 设置", in: app)
+        let toggle = element("mobile.settings.module.photos", in: app)
+        for _ in 0..<8 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
+        toggle.switches.firstMatch.tap(); navigate("photos", title: "照片", in: app)
+        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8)); openPhotoSection("相册", app: app)
+        let category = app.buttons["相似照片"].firstMatch
+        for _ in 0..<8 { if category.exists && category.isHittable { break }; app.swipeUp() }
+        category.tap()
+        let photo = app.buttons["Sample 1.jpg"]
+        for _ in 0..<8 { if photo.exists && photo.isHittable { break }; app.swipeUp() }
+        photo.tap(); element("mobile.photos.similar.open", in: app).tap()
+        let checkbox = element("mobile.photos.similar.select.2", in: app)
+        for _ in 0..<10 { if checkbox.exists && checkbox.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(checkbox.isHittable); checkbox.tap(); XCTAssertEqual(checkbox.value as? String, "已选择")
+        attachScreenshot(app, name: "相似照片中文大字选择")
+        let ungroup = element("mobile.photos.similar.ungroup", in: app)
+        let panel = element("mobile.photos.similar.panel", in: app)
+        for _ in 0..<10 {
+            if ungroup.exists && ungroup.isHittable && ungroup.frame.minY > app.navigationBars["相似照片"].frame.maxY + 4 { break }
+            panel.swipeDown()
+        }
+        XCTAssertTrue(ungroup.isHittable); ungroup.tap()
+        let confirm = app.alerts.firstMatch.buttons["mobile.photos.similar.confirm"].firstMatch
+        let available = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: confirm)
+        XCTAssertEqual(XCTWaiter.wait(for: [available], timeout: 5), .completed)
+        XCTAssertTrue(confirm.isHittable)
+        attachScreenshot(app, name: "相似照片中文大字拆组确认"); app.alerts.firstMatch.buttons["取消"].tap()
+    }
+
+    private func openSimilarPhotos(_ app: XCUIApplication, expectPhotos: Bool = true) {
+        openPhotos(app); openPhotoSection("Albums", app: app)
+        let category = app.buttons["Similar Photos"].firstMatch
+        XCTAssertTrue(category.waitForExistence(timeout: 8)); category.tap()
+        if expectPhotos { XCTAssertTrue(app.buttons["Sample 1.jpg"].waitForExistence(timeout: 8)) }
+    }
+
     func test照片完整批量删除确认可取消且删除全部选择() {
         let app = launchFixture(state: "photo-deletion"); defer { app.terminate() }
         openPhotos(app); selectPhotoItems(app); beginPhotoDeletion(in: app)

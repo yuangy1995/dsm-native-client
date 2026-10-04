@@ -4474,6 +4474,144 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         }
     }
 
+    func test相似写前阶段持久化并在新服务中只读恢复() async throws {
+        for space in [SynologyPhotoSpace.personal, .shared] {
+            for edit in [SynologyPhotoSimilarEdit.topPick(7), .remove([9]), .ungroup] {
+                let detail = similarMutationFixture(space: space), capture = PhotosAlbumCheckpointCapture()
+                let transport = MockHTTPTransport(steps: (accessResponses(teamPermission: "management", similarEnabled: true) + similarPreflight()).map(MockHTTPTransport.Step.response) + [.urlError(.networkConnectionLost)])
+                let repository = try makeRepository(transport, profileID: detail.group.profileID); _ = try await repository.access()
+                let result = try await repository.performRecoverableAlbumMutation(.editSimilarGroup(detail, edit), operationID: UUID()) { capture.append($0) }
+                XCTAssertEqual(result.state, .pendingReview)
+                XCTAssertEqual(capture.values.first?.similarDetails?.submitted, false)
+                let bytes = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
+                XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains("sample.jpg"))
+                let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: bytes)
+                XCTAssertEqual(saved.version, 15); XCTAssertEqual(saved.similarDetails?.submitted, true)
+                let after = edit == .ungroup ? [] : edit == .remove([9]) ? [7, 8] : [7, 8, 9], top = edit == .topPick(7) ? 7 : 8
+                let reader = MockHTTPTransport(responses: accessResponses(teamPermission: "management", similarEnabled: true) + [similarState(after, top: top), similarMemberResponse([7, 8, 9], group: after, top: top)])
+                let fresh = try makeRepository(reader, profileID: detail.group.profileID); _ = try await fresh.access()
+                try await fresh.restoreAlbumMutation(saved)
+                let restored = try await fresh.reviewMutation(operationID: saved.operationID)
+                XCTAssertEqual(restored.state, .confirmed); XCTAssertEqual(restored.photos.map(\.filename), ["sample.jpg", "sample.jpg", "sample.jpg"])
+                let requests = try await reader.recordedRequests().dropFirst(4).map(decode)
+                XCTAssertTrue(requests.allSatisfy { $0["method"] == "get" })
+            }
+        }
+    }
+
+    func test相似写前保存失败不发送分类修改() async throws {
+        for submittedOnly in [false, true] {
+            let detail = similarMutationFixture(), transport = MockHTTPTransport(responses: accessResponses(similarEnabled: true) + similarPreflight())
+            let repository = try makeRepository(transport, profileID: detail.group.profileID); _ = try await repository.access()
+            do {
+                let result = try await repository.performRecoverableAlbumMutation(.editSimilarGroup(detail, .ungroup), operationID: UUID()) {
+                    if !submittedOnly || $0.similarDetails?.submitted == true { throw CocoaError(.fileWriteNoPermission) }
+                }
+                XCTAssertEqual(result.state, .rejected)
+            } catch { XCTAssertFalse(submittedOnly) }
+            let requests = try await transport.recordedRequests().map(decode)
+            XCTAssertFalse(requests.contains { $0["method"] == "ungroup" })
+        }
+    }
+
+    func test相似意图保存后提交前取消不遗留未知操作() async throws {
+        let detail = similarMutationFixture(), capture = PhotosAlbumCheckpointCapture()
+        let transport = MockHTTPTransport(responses: accessResponses(similarEnabled: true) + similarPreflight())
+        let repository = try makeRepository(transport, profileID: detail.group.profileID); _ = try await repository.access()
+        let task = Task {
+            try await repository.performRecoverableAlbumMutation(.editSimilarGroup(detail, .ungroup), operationID: UUID()) {
+                capture.append($0)
+                if $0.similarDetails?.submitted == false { withUnsafeCurrentTask { $0?.cancel() } }
+            }
+        }
+        let result = try await task.value
+        XCTAssertEqual(result.state, .rejected); XCTAssertEqual(capture.values.last?.rejected, true)
+        XCTAssertEqual(capture.values.last?.similarDetails?.submitted, false)
+        let requests = try await transport.recordedRequests().map(decode)
+        XCTAssertFalse(requests.contains { $0["method"] == "ungroup" })
+    }
+
+    func test相似恢复可保留超过百张的完整成员集合() throws {
+        let profile = UUID(), group = SynologyPhotoSimilarGroup(profileID: profile, space: .personal, id: 31, photoIDs: Array(1...101), topPickID: 1)
+        let photos = group.photoIDs.map { id in SynologyPhoto(id: .init(profileID: profile, space: .personal, unitID: id), filename: "sample.jpg", sizeBytes: 128,
+            takenAt: Date(timeIntervalSince1970: 50), indexedAt: Date(timeIntervalSince1970: 60), folderID: 9, mediaType: "photo") }
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: .editSimilarGroup(.init(group: group, photos: photos), .ungroup), operationID: UUID(), profileID: profile, userID: 12)
+        XCTAssertEqual(try saved.reviewMutation().photos.count, 101)
+        XCTAssertEqual(saved.similarDetails?.group.photoIDs, group.photoIDs)
+    }
+
+    func test未提交相似记录不能被回读状态误判为完成() async throws {
+        let detail = similarMutationFixture()
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: .editSimilarGroup(detail, .ungroup), operationID: UUID(), profileID: detail.group.profileID, userID: 12)
+        let transport = MockHTTPTransport(responses: accessResponses(similarEnabled: true)), repository = try makeRepository(transport, profileID: detail.group.profileID)
+        _ = try await repository.access(); try await repository.restoreAlbumMutation(saved)
+        let result = try await repository.reviewMutation(operationID: saved.operationID)
+        XCTAssertEqual(result.state, .rejected); let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 4)
+    }
+
+    func test相似剩余任务重新读取真实照片且拒绝变化的原件() async throws {
+        for changed in [false, true] {
+            let detail = similarMutationFixture()
+            let saved = try SynologyPhotosAlbumCheckpoint(mutation: .editSimilarGroup(detail, .ungroup), operationID: UUID(), profileID: detail.group.profileID, userID: 12)
+            let source = similarMemberResponse([7, 8, 9], group: [7, 8, 9])
+            let members = changed ? DsmHTTPResponse(data: Data(String(decoding: source.data, as: UTF8.self).replacingOccurrences(of: "sample.jpg", with: "replaced.jpg").utf8), statusCode: 200) : source
+            let transport = MockHTTPTransport(responses: accessResponses(similarEnabled: true) + [members, similarState([7, 8, 9])])
+            let repository = try makeRepository(transport, profileID: detail.group.profileID); _ = try await repository.access()
+            do {
+                let command = try await repository.similarMutationTarget(saved)
+                XCTAssertFalse(changed); XCTAssertEqual(command, .editSimilarGroup(detail, .ungroup))
+            } catch { XCTAssertTrue(changed) }
+            let requests = try await transport.recordedRequests().dropFirst(4).map(decode)
+            XCTAssertTrue(requests.allSatisfy { $0["method"] == "get" })
+        }
+    }
+
+    func test相似已确认记录重启后可撤销且只提交一次恢复成员() async throws {
+        let detail = similarMutationFixture(), identities = [7, 8, 9].flatMap { [similarMemberResponse([$0], group: []), response(managedFolder)] }
+        var saved = try SynologyPhotosAlbumCheckpoint(mutation: .editSimilarGroup(detail, .ungroup), operationID: UUID(), profileID: detail.group.profileID, userID: 12)
+        saved.similarDetails?.submitted = true; saved.similarDetails?.confirmed = true
+        let transport = MockHTTPTransport(responses: accessResponses(similarEnabled: true) +
+            [similarState([]), similarMemberResponse([7, 8, 9], group: [])] + identities +
+            [similarState([]), similarMemberResponse([7, 8, 9], group: []), response(emptySuccess), similarState([7, 8, 9]), similarMemberResponse([7, 8, 9], group: [7, 8, 9])])
+        let repository = try makeRepository(transport, profileID: detail.group.profileID); _ = try await repository.access()
+        let command = try await repository.prepareSimilarUndo(saved), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+        XCTAssertEqual(result.state, .confirmed); XCTAssertEqual(result.similarGroup, detail.group)
+        let repeated = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+        XCTAssertEqual(repeated.state, .confirmed)
+        let requests = try await transport.recordedRequests().map(decode)
+        XCTAssertEqual(requests.filter { $0["method"] == "add_item" }.count, 1)
+        XCTAssertFalse(requests.contains { $0["method"] == "ungroup" })
+    }
+
+    func test相似撤销持久记录不能覆盖另一分组或冒用账号() async throws {
+        for wrongAccount in [false, true] {
+            let detail = similarMutationFixture()
+            var saved = try SynologyPhotosAlbumCheckpoint(mutation: .editSimilarGroup(detail, .ungroup), operationID: UUID(), profileID: detail.group.profileID, userID: wrongAccount ? 13 : 12)
+            saved.similarDetails?.submitted = true; saved.similarDetails?.confirmed = true
+            let original = similarMemberResponse([7, 8, 9], group: [7, 8, 9])
+            let other = DsmHTTPResponse(data: Data(String(decoding: original.data, as: UTF8.self).replacingOccurrences(of: "31", with: "32").utf8), statusCode: 200)
+            let transport = MockHTTPTransport(responses: accessResponses(similarEnabled: true) + (wrongAccount ? [] : [similarState([]), other]))
+            let repository = try makeRepository(transport, profileID: detail.group.profileID); _ = try await repository.access()
+            do { _ = try await repository.prepareSimilarUndo(saved); XCTFail("原账号或归组不符时不得恢复") } catch {}
+            let requests = try await transport.recordedRequests().dropFirst(4).map(decode)
+            XCTAssertTrue(requests.allSatisfy { $0["method"] == "get" }); if wrongAccount { XCTAssertTrue(requests.isEmpty) }
+        }
+    }
+
+    func test相似持久结果要求原件身份与完整分组一致() async throws {
+        let detail = similarMutationFixture()
+        var saved = try SynologyPhotosAlbumCheckpoint(mutation: .editSimilarGroup(detail, .remove([9])), operationID: UUID(), profileID: detail.group.profileID, userID: 12)
+        saved.similarDetails?.submitted = true
+        let source = similarMemberResponse([7, 8, 9], group: [7, 8])
+        let replaced = DsmHTTPResponse(data: Data(String(decoding: source.data, as: UTF8.self).replacingOccurrences(of: "sample.jpg", with: "changed.jpg").utf8), statusCode: 200)
+        let transport = MockHTTPTransport(responses: accessResponses(similarEnabled: true) + [similarState([7, 8]), replaced])
+        let repository = try makeRepository(transport, profileID: detail.group.profileID); _ = try await repository.access(); try await repository.restoreAlbumMutation(saved)
+        do { _ = try await repository.reviewMutation(operationID: saved.operationID); XCTFail("替换后的原件不能追认为旧操作成功") } catch {}
+        saved.similarDetails?.confirmed = true; saved.similarDetails?.resultingGroup = detail.group
+        XCTAssertThrowsError(try saved.reviewMutation())
+    }
+
     private func similarMutationFixture(space: SynologyPhotoSpace = .personal) -> SynologyPhotoSimilarDetail {
         let group = SynologyPhotoSimilarGroup(profileID: UUID(), space: space, id: 31, photoIDs: [7, 8, 9], topPickID: 8)
         return .init(group: group, photos: group.photoIDs.map { id in

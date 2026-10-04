@@ -76,8 +76,8 @@ public struct SynologyPhotoAlbumAccess: Equatable, Sendable {
     }
 }
 
-/// 撤销引用本会话已确认的分组操作，不能用新快照猜测原始成员。
-public enum SynologyPhotoSimilarEdit: Equatable, Sendable {
+/// 撤销引用已确认且重新读取过的原分组操作，不能用新快照猜测原始成员。
+public enum SynologyPhotoSimilarEdit: Codable, Equatable, Sendable {
     case topPick(Int)
     case ungroup
     case remove([Int])

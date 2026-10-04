@@ -36,6 +36,8 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var recognitionResults: [UUID: SynologyPhotosMutationResult] = [:]
     private(set) var deletedPhotoIDs: [SynologyPhotoID] = []
     private(set) var deletionReads = 0
+    private var heldSimilar: CheckedContinuation<Void, Never>?
+    private(set) var isSimilarHeld = false
     private var heldDeletion: CheckedContinuation<Void, Never>?
     private(set) var isDeletionHeld = false
     private var heldRecognition: CheckedContinuation<Void, Never>?
@@ -73,6 +75,20 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
         pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown", "photo-preview-unknown", "photo-preview-automatic-unknown", "photo-admin-unknown", "photo-recognition-unknown", "photo-deletion-unknown"].contains(state)
+        if state == "photo-similar-unknown" { pending = true }
+        if state.hasPrefix("photo-similar") {
+            uploaded = SynologyPhotoSpace.allCases.flatMap { space in (1...9).map { index in
+                var photo = SynologyPhoto(id: .init(profileID: profileID, space: space, unitID: index), filename: "Sample \(index).jpg",
+                    sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20),
+                    folderID: 1, mediaType: "photo", thumbnail: .init(unitID: index, revision: "original"))
+                if state != "photo-similar-empty" {
+                    let start = ((index - 1) / 3) * 3 + 1
+                    photo.similarGroup = .init(profileID: profileID, space: space, id: 31 + (index - 1) / 3,
+                        photoIDs: [start, start + 1, start + 2], topPickID: start)
+                }
+                return photo
+            } }
+        }
         if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") || state.hasPrefix("photo-edit") || (state.hasPrefix("photo-folders") || state.hasPrefix("photo-folder-sharing") || state.hasPrefix("photo-tasks")) {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
@@ -226,11 +242,12 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func access() async throws -> SynologyPhotosAccess {
         if state == "photo-loading" { try await Task.sleep(for: .seconds(30)) }
         if state == "photo-error" { throw URLError(.notConnectedToInternet) }
-        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: (state.hasPrefix("photo-recognition") && state != "photo-recognition-noaccess") || (state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry") || state == "photo-edit-mixed" || (state.hasPrefix("photo-folder-sharing") && state != "photo-folder-sharing-noaccess"), displaySettings: state.hasPrefix("photo-preferences") ? displayValue : nil, automaticPreviewEnabled: state.hasPrefix("photo-preview") ? automaticEnabled : nil)
+        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: state.hasPrefix("photo-similar") || (state.hasPrefix("photo-recognition") && state != "photo-recognition-noaccess") || (state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry") || state == "photo-edit-mixed" || (state.hasPrefix("photo-folder-sharing") && state != "photo-folder-sharing-noaccess"), displaySettings: state.hasPrefix("photo-preferences") ? displayValue : nil, automaticPreviewEnabled: state.hasPrefix("photo-preview") ? automaticEnabled : nil)
     }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
         guard !state.hasSuffix("-readonly"), !deniesWrites else { return [] }
         var features: Set<SynologyPhotosManagementFeature> = [.upload, .albums, .folders, .sharing, .photoRequests]
+        if state.hasPrefix("photo-similar") { features.insert(.similarGroups) }
         if state.hasPrefix("photo-condition") || (state.hasPrefix("photo-frozen") && state != "photo-frozen-no-condition") { features.insert(.conditionAlbums) }
         if state.hasPrefix("photo-frozen") { features.insert(.frozenAlbums) }
         if state.hasPrefix("photo-edit") { features.formUnion([.metadata, .tags, .tagCreation]) }
@@ -270,7 +287,68 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             .init(id: photo.id.unitID * 100 + 1, personID: 77, name: "Sample person", bounds: .init(x: 0.1, y: 0.1, width: 0.3, height: 0.3)),
             .init(id: photo.id.unitID * 100 + 2, personID: 78, name: "Another person", bounds: .init(x: 0.55, y: 0.5, width: 0.3, height: 0.3))])
     }
-    func categories(in space: SynologyPhotoSpace) async throws -> Set<SynologyPhotoCategory> { state.hasPrefix("photo-recognition") ? [.person, .concept] : [] }
+    func categories(in space: SynologyPhotoSpace) async throws -> Set<SynologyPhotoCategory> { state.hasPrefix("photo-similar") ? [.similar] : state.hasPrefix("photo-recognition") ? [.person, .concept] : [] }
+    func allPhotos() -> [SynologyPhoto] { uploaded }
+    func releaseSimilar() { heldSimilar?.resume(); heldSimilar = nil }
+    func similarStatus(in space: SynologyPhotoSpace) async throws -> SynologyPhotoSimilarStatus {
+        .init(waitingCount: state == "photo-similar-processing" ? 7 : 0, stage: "running", migrationComplete: true)
+    }
+    func similarTimeline(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoDay] { try await timeline(in: space) }
+    private func similarRead() async throws {
+        if state == "photo-similar-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-similar-error" { throw URLError(.notConnectedToInternet) }
+    }
+    func similarPhotos(for photo: SynologyPhoto) async throws -> SynologyPhotoSimilarDetail {
+        guard let group = photo.similarGroup, let value = try await similarGroupDetails(group), value.group.photoIDs.contains(photo.id.unitID) else { throw CocoaError(.fileReadNoSuchFile) }
+        return value
+    }
+    func similarGroupDetails(_ original: SynologyPhotoSimilarGroup) async throws -> SynologyPhotoSimilarDetail? {
+        try await similarRead()
+        guard original.profileID == profileID else { throw CocoaError(.fileReadNoPermission) }
+        let remaining = uploaded.filter { $0.id.space == original.space && $0.similarGroup?.id == original.id }
+        guard remaining.count >= 2, let old = remaining.first?.similarGroup else { return nil }
+        let ids = remaining.map(\.id.unitID)
+        let group = SynologyPhotoSimilarGroup(profileID: profileID, space: original.space, id: original.id, photoIDs: ids,
+            topPickID: ids.contains(old.topPickID) ? old.topPickID : ids[0])
+        let photos = remaining.map { value in var photo = value; photo.similarGroup = group; return photo }
+        return .init(group: group, photos: photos)
+    }
+    private func similarTargets(_ saved: SynologyPhotosAlbumCheckpoint) throws -> [SynologyPhoto] {
+        _ = try saved.reviewMutation()
+        guard saved.profileID == profileID, saved.userID == userID, let value = saved.similarDetails else { throw CocoaError(.fileReadNoPermission) }
+        return try value.targets.map { target in
+            guard let photo = uploaded.first(where: { $0.id == target.id }), try target.matchesIdentity(photo) else { throw CocoaError(.fileReadCorruptFile) }
+            return photo
+        }
+    }
+    func similarMutationTarget(_ saved: SynologyPhotosAlbumCheckpoint) async throws -> SynologyPhotosMutation {
+        try await similarRead()
+        guard let value = saved.similarDetails, !value.submitted, !deniesWrites,
+              let detail = try await similarGroupDetails(value.group), detail.group == value.group else { throw CocoaError(.fileReadNoPermission) }
+        _ = try similarTargets(saved)
+        return .editSimilarGroup(detail, value.edit)
+    }
+    func prepareSimilarUndo(_ saved: SynologyPhotosAlbumCheckpoint) async throws -> SynologyPhotosMutation {
+        guard let value = saved.similarDetails, value.canUndo, !deniesWrites else { throw CocoaError(.fileReadNoPermission) }
+        let photos = try similarTargets(saved)
+        guard photos.allSatisfy({ $0.similarGroup == nil || $0.similarGroup == value.resultingGroup }),
+              try await similarGroupDetails(value.group)?.group == value.resultingGroup else { throw CocoaError(.fileReadCorruptFile) }
+        let originals = photos.map { item in var photo = item; photo.similarGroup = value.group; return photo }
+        return .editSimilarGroup(.init(group: value.group, photos: originals), .undo(saved.operationID))
+    }
+    private func applySimilar(_ detail: SynologyPhotoSimilarDetail, edit: SynologyPhotoSimilarEdit) {
+        let ids: [Int], top: Int
+        switch edit {
+        case .topPick(let id): ids = detail.group.photoIDs; top = id
+        case .remove(let removed): ids = detail.group.photoIDs.filter { !removed.contains($0) }; top = ids.contains(detail.group.topPickID) ? detail.group.topPickID : ids.first ?? 0
+        case .ungroup: ids = []; top = 0
+        case .undo: ids = detail.group.photoIDs; top = detail.group.topPickID
+        }
+        let group = ids.count >= 2 ? SynologyPhotoSimilarGroup(profileID: profileID, space: detail.group.space, id: detail.group.id, photoIDs: ids, topPickID: top) : nil
+        for index in uploaded.indices where detail.photos.contains(where: { $0.id == uploaded[index].id }) {
+            uploaded[index].similarGroup = ids.contains(uploaded[index].id.unitID) ? group : nil
+        }
+    }
     func categoryItems(_ category: SynologyPhotoCategory, in space: SynologyPhotoSpace, offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
         let values = category == .person ? peopleValues(space).filter(\.isVisible).map(\.person) : conceptValues(space).filter(\.appearsInList).map(\.concept)
         return Array(values.dropFirst(offset).prefix(limit))
@@ -412,7 +490,10 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     }
     func photos(in space: SynologyPhotoSpace, query: SynologyPhotoQuery, offset: Int, limit: Int) async throws -> SynologyPhotoPage {
         let values: [SynologyPhoto]
-        if case .album(let id, _) = query {
+        if case .similar = query {
+            try await similarRead()
+            values = uploaded.filter { $0.id.space == space && $0.similarGroup?.topPickID == $0.id.unitID }
+        } else if case .album(let id, _) = query {
             values = uploaded.filter { members[id, default: []].contains($0.id.unitID) }.map { photo in
                 .init(id: photo.id, filename: photo.filename, sizeBytes: photo.sizeBytes, takenAt: photo.takenAt, indexedAt: photo.indexedAt,
                     folderID: photo.folderID, mediaType: photo.mediaType, albumContext: .init(albumID: id, ownerUserID: photo.id.space == .shared ? 0 : userID, providerUserID: userID))
@@ -431,7 +512,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return uploaded.filter { $0.id.space == space && !repairedPreviews.contains($0.id) }
     }
     func previewImage(for photo: SynologyPhoto) async throws -> Data {
-        guard state.hasPrefix("photo-preferences") || state.hasPrefix("photo-repair") || state.hasPrefix("photo-preview") || state.hasPrefix("photo-recognition") || state.hasPrefix("photo-deletion") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
+        guard state.hasPrefix("photo-preferences") || state.hasPrefix("photo-repair") || state.hasPrefix("photo-preview") || state.hasPrefix("photo-recognition") || state.hasPrefix("photo-deletion") || state.hasPrefix("photo-similar") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
         return state.hasPrefix("photo-recognition") ? Self.recognitionImage : Self.image
     }
     func details(for photo: SynologyPhoto) async throws -> SynologyPhoto {
@@ -588,8 +669,8 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     }
     func releaseDeletion() { heldDeletion?.resume(); heldDeletion = nil }
     func prepareDeletion(_ photo: SynologyPhoto) async throws {
-        guard state.hasPrefix("photo-deletion"), photo.id.profileID == profileID,
-              !deniesWrites, state != "photo-deletion-denied" else {
+        guard state.hasPrefix("photo-deletion") || state.hasPrefix("photo-similar"), photo.id.profileID == profileID,
+              !deniesWrites, !state.hasSuffix("-readonly"), state != "photo-deletion-denied" else {
             throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "Deletion is not allowed.")
         }
         if state == "photo-deletion-loading" { try await Task.sleep(for: .seconds(30)) }
@@ -637,6 +718,13 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func uploadRecoveryIdentity() async throws -> String { "\(profileID.uuidString):\(userID)" }
     func prepareMutation(_ mutation: SynologyPhotosMutation) async throws {
         if deniesWrites { throw CocoaError(.fileWriteNoPermission) }
+        if case .editSimilarGroup(let detail, let edit) = mutation {
+            let saved = try SynologyPhotosAlbumCheckpoint(mutation: mutation, operationID: UUID(), profileID: profileID, userID: userID)
+            _ = try similarTargets(saved)
+            if case .undo = edit {} else {
+                guard try await similarGroupDetails(detail.group)?.group == detail.group else { throw CocoaError(.fileReadCorruptFile) }
+            }
+        }
         if case .shareAlbum(_, _, let original, _, _, _) = mutation, original?.revision != sharingValue.revision { throw CocoaError(.fileWriteNoPermission) }
         if case .unfreezeAlbum(let original) = mutation, frozenValue?.hasSameState(as: original) != true { throw CocoaError(.fileWriteNoPermission) }
         if case .rebuildFrozenAlbum(let original, _, _) = mutation, frozenValue?.hasSameState(as: original) != true { throw CocoaError(.fileWriteNoPermission) }
@@ -669,6 +757,17 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func performRecoverableAlbumMutation(_ mutation: SynologyPhotosMutation, operationID: UUID,
                                         checkpoint: @escaping @Sendable (SynologyPhotosAlbumCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult {
         if deniesWrites { throw CocoaError(.fileWriteNoPermission) }
+        if case .editSimilarGroup(let detail, let edit) = mutation {
+            try await prepareMutation(mutation); try Task.checkCancellation()
+            var saved = try SynologyPhotosAlbumCheckpoint(mutation: mutation, operationID: operationID, profileID: profileID, userID: userID)
+            try checkpoint(saved); saved.similarDetails?.submitted = true; try checkpoint(saved)
+            commands.append(mutation)
+            if state.hasPrefix("photo-similar-held") { isSimilarHeld = true; await withCheckedContinuation { heldSimilar = $0 } }
+            if (state == "photo-similar-partial" && detail.group.id == 32) || state == "photo-similar-held-rejected" { saved.rejected = true }
+            else { applySimilar(detail, edit: edit) }
+            albumRecords[operationID] = saved; try checkpoint(saved)
+            return albumResult(saved)
+        }
         var saved = try SynologyPhotosAlbumCheckpoint(mutation: mutation, operationID: operationID, profileID: profileID, userID: userID)
         if var sharing = saved.sharingDetails {
             sharing.previousMembers = sharingValue.members?.map(SynologyPhotosAlbumCheckpoint.Sharing.Member.init)
@@ -899,6 +998,21 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .similar(let value):
+            guard value.submitted else { return .init(state: .rejected) }
+            guard let photos = try? similarTargets(saved) else { return .init(state: .pendingReview) }
+            let current = photos.compactMap(\.similarGroup).first { $0.id == value.group.id }
+            let matches: Bool
+            switch value.edit {
+            case .ungroup: matches = current == nil && photos.allSatisfy { $0.similarGroup?.id != value.group.id }
+            case .topPick(let id): matches = current?.topPickID == id && current?.photoIDs == value.group.photoIDs && photos.allSatisfy { $0.similarGroup == current }
+            case .remove(let removed):
+                let remaining = Set(value.group.photoIDs).subtracting(removed)
+                matches = (remaining.count < 2 ? current == nil : current.map { Set($0.photoIDs) == remaining } == true) &&
+                    photos.filter { removed.contains($0.id.unitID) }.allSatisfy { $0.similarGroup?.id != value.group.id }
+            case .undo: matches = current == value.group && photos.allSatisfy { $0.similarGroup == current }
+            }
+            return .init(state: matches ? .confirmed : .pendingReview, photos: photos, completedCount: matches ? 1 : 0, similarGroup: current)
         case .recognition: return recognitionResults[saved.operationID] ?? .init(state: .pendingReview)
         case .administration(let value):
             switch value.intent {
