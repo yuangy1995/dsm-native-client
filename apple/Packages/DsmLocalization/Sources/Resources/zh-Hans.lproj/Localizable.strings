@@ -6036,6 +6036,14 @@
 "photos.metadata.tagPartial" = "标签已创建，但未能添加到所有所选照片。请重试以添加到剩余照片。";
 "mobile.photos.edit.title" = "编辑照片";
 "mobile.photos.edit.save" = "保存";
+"mobile.photos.folder.loading" = "正在加载文件夹…";
+"mobile.photos.folder.loadFailed" = "无法加载文件夹，请检查连接后重试。";
+"mobile.photos.folder.unavailable" = "无法打开文件夹";
+"mobile.photos.folder.moveHere" = "移动到这里";
+"mobile.photos.folder.copyHere" = "复制到这里";
+"mobile.photos.folder.create" = "创建";
+"mobile.photos.folder.noChildren" = "此文件夹没有子文件夹。";
+"mobile.photos.folder.limit" = "每次操作最多选择 100 项。";
 "mobile.photos.edit.noTagsTitle" = "暂无标签";
 "mobile.photos.edit.detailsUnavailable" = "资料暂时不可用";
 "mobile.photos.edit.loading" = "正在读取照片资料";

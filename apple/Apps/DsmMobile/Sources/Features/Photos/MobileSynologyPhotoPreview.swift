@@ -53,6 +53,7 @@ struct MobileSynologyPhotoPreview: View {
                             }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.edit.preview")
                         }
                         Menu {
+                            if let folders = session.folders { MobilePhotoFolderActions(folders: folders, photos: [photo], targets: []) }
                             Button(L10n.string("photos.media.save")) { session.exportOriginal(photo) }
                             Button(L10n.string("mobile.documents.share")) { session.exportOriginal(photo, sharing: true) }
                             Button(L10n.string("photos.delete.action"), role: .destructive) { model.requestDeletion(photo) }
@@ -75,6 +76,7 @@ struct MobileSynologyPhotoPreview: View {
         }
         .modifier(MobileSynologyPhotoDeletionPresentation(model: model, active: true))
         .modifier(MobilePhotoEditPresentation(session: session, active: true))
+        .modifier(MobilePhotoFolderPresentation(session: session, active: true))
         .modifier(MobileSynologyPhotoExportPresentation(session: session, active: true))
     }
 
