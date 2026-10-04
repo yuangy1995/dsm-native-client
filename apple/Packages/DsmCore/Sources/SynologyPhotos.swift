@@ -264,7 +264,7 @@ public enum SynologyPhotoCategory: String, CaseIterable, Hashable, Sendable {
 }
 
 /// 相似组是同一空间内的成员快照，不代表删除或修改原件的权限。
-public struct SynologyPhotoSimilarGroup: Hashable, Sendable {
+public struct SynologyPhotoSimilarGroup: Codable, Hashable, Sendable {
     public let profileID: UUID
     public let space: SynologyPhotoSpace
     public let id: Int
@@ -421,6 +421,8 @@ public protocol SynologyPhotosServing: Sendable {
     func restoreUploadMutation(_ checkpoint: SynologyPhotosUploadCheckpoint) async throws
     func performRecoverableAlbumMutation(_ mutation: SynologyPhotosMutation, operationID: UUID, checkpoint: @escaping @Sendable (SynologyPhotosAlbumCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult
     func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws
+    func similarMutationTarget(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws -> SynologyPhotosMutation
+    func prepareSimilarUndo(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws -> SynologyPhotosMutation
     func forgetUploadMutation(operationID: UUID) async throws
     func prepareDeletion(_ photo: SynologyPhoto) async throws
     func deletePhoto(_ photo: SynologyPhoto, operationID: UUID) async throws -> SynologyPhotoDeletionResult
@@ -509,6 +511,8 @@ public extension SynologyPhotosServing {
     func restoreUploadMutation(_ checkpoint: SynologyPhotosUploadCheckpoint) async throws { throw CapabilitySelectionError.unsupported(apiName: "Photos.UploadRecovery") }
     func performRecoverableAlbumMutation(_ mutation: SynologyPhotosMutation, operationID: UUID, checkpoint: @escaping @Sendable (SynologyPhotosAlbumCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.AlbumRecovery") }
     func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws { throw CapabilitySelectionError.unsupported(apiName: "Photos.AlbumRecovery") }
+    func similarMutationTarget(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws -> SynologyPhotosMutation { throw CapabilitySelectionError.unsupported(apiName: "Photos.SimilarRecovery") }
+    func prepareSimilarUndo(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws -> SynologyPhotosMutation { throw CapabilitySelectionError.unsupported(apiName: "Photos.SimilarRecovery") }
     func globalSettings() async throws -> SynologyPhotoGlobalSettings { throw CapabilitySelectionError.unsupported(apiName: "Photos.GlobalSettings") }
     func conversionCache() async throws -> SynologyPhotoConversionCache { throw CapabilitySelectionError.unsupported(apiName: "Photos.ConversionCache") }
     func sharedSpaceSettings() async throws -> SynologyPhotoSharedSpaceSettings { throw CapabilitySelectionError.unsupported(apiName: "Photos.SharedSpaceSettings") }

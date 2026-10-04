@@ -23,78 +23,87 @@ private struct MobileSynologyPhotosContent: View {
     @State private var showsMonths = false
     @State private var showsUploadQueue = false
     @State private var opensQueueAfterUpload = false
+    @State private var similarGroups: [SynologyPhotoSimilarDetail]?
+
+    private var gallery: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    Color.clear.frame(height: 1).id("photos-top")
+                    if model.isLoading {
+                        ProgressView().frame(maxWidth: .infinity).padding().accessibilityIdentifier("mobile.photos.loading")
+                    } else {
+                        if model.selectedCategory == .similar, let status = model.similarStatus, status.isVisible {
+                            Text(status.isRunning ? L10n.string("photos.similar.processing", status.waitingCount) : L10n.string("photos.similar.scheduled"))
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                        if model.hasPrevious {
+                            Button(L10n.string("photos.media.previous")) {
+                                Task { await loadPrevious(using: proxy) }
+                            }.frame(minHeight: 44)
+                            if model.isLoadingPrevious { ProgressView() }
+                            if let error = model.previousPageErrorMessage {
+                                Text(error).foregroundStyle(.secondary)
+                                Button(L10n.string("photos.retry")) { Task { await loadPrevious(using: proxy) } }
+                                    .frame(minHeight: 44)
+                            }
+                        }
+                        collectionContent
+                        if model.showsTimeline {
+                            ForEach(model.datedGroups, id: \.date) { group in
+                                Section {
+                                    photoGrid(group.photos)
+                                } header: {
+                                    Text(model.formattedPhotoDate(group.date, group: true))
+                                        .font(.headline).accessibilityAddTraits(.isHeader)
+                                }
+                            }
+                        } else {
+                            photoGrid(model.items)
+                        }
+                        if let error = model.errorMessage {
+                            ContentUnavailableView {
+                                Label(L10n.string("photos.error.title"), systemImage: "exclamationmark.triangle")
+                            } description: { Text(error) } actions: {
+                                Button(L10n.string("photos.retry")) { Task { await model.refresh() } }
+                            }
+                        } else if model.hasLoaded && model.spaces.isEmpty && model.section != .albums
+                                    && (model.section != .sharing || model.shareScope == .requests) {
+                            ContentUnavailableView {
+                                Label(L10n.string("photos.error.title"), systemImage: "lock")
+                            } description: { Text(L10n.string("photos.service.permission")) } actions: {
+                                Button(L10n.string("photos.retry")) { Task { await model.refresh() } }
+                            }
+                        } else if model.hasLoaded && model.items.isEmpty && model.collections.isEmpty
+                                    && model.visibleSharedEntries.isEmpty && !model.showsCategories {
+                            emptyContent
+                        }
+                        if (model.hasMore || model.hasMoreCollections) && model.errorMessage == nil {
+                            ProgressView().frame(maxWidth: .infinity).padding()
+                                .id(model.paginationIdentity)
+                                .task { await model.loadNextPageAutomatically() }
+                            Button(L10n.string("photos.library.more")) {
+                                Task { await model.loadNextPageAutomatically() }
+                            }.frame(minHeight: 44).disabled(model.isLoadingMore)
+                        }
+                    }
+                }.padding()
+            }
+            .refreshable { await model.refresh() }
+            .onChange(of: model.selectedTimelineMonthID) { _, _ in
+                proxy.scrollTo("photos-top", anchor: .top)
+            }
+        }
+    }
 
     private var section: Binding<SynologyPhotosSection> {
         Binding(get: { model.section }, set: { value in Task { await model.selectSection(value) } })
     }
 
-    var body: some View {
+    private var workspace: some View {
         VStack(spacing: 0) {
             header
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
-                        Color.clear.frame(height: 1).id("photos-top")
-                        if model.isLoading {
-                            ProgressView().frame(maxWidth: .infinity).padding()
-                        } else {
-                            if model.hasPrevious {
-                                Button(L10n.string("photos.media.previous")) {
-                                    Task { await loadPrevious(using: proxy) }
-                                }.frame(minHeight: 44)
-                                if model.isLoadingPrevious { ProgressView() }
-                                if let error = model.previousPageErrorMessage {
-                                    Text(error).foregroundStyle(.secondary)
-                                    Button(L10n.string("photos.retry")) { Task { await loadPrevious(using: proxy) } }
-                                        .frame(minHeight: 44)
-                                }
-                            }
-                            collectionContent
-                            if model.showsTimeline {
-                                ForEach(model.datedGroups, id: \.date) { group in
-                                    Section {
-                                        photoGrid(group.photos)
-                                    } header: {
-                                        Text(model.formattedPhotoDate(group.date, group: true))
-                                            .font(.headline).accessibilityAddTraits(.isHeader)
-                                    }
-                                }
-                            } else {
-                                photoGrid(model.items)
-                            }
-                            if let error = model.errorMessage {
-                                ContentUnavailableView {
-                                    Label(L10n.string("photos.error.title"), systemImage: "exclamationmark.triangle")
-                                } description: { Text(error) } actions: {
-                                    Button(L10n.string("photos.retry")) { Task { await model.refresh() } }
-                                }
-                            } else if model.hasLoaded && model.spaces.isEmpty && model.section != .albums
-                                        && (model.section != .sharing || model.shareScope == .requests) {
-                                ContentUnavailableView {
-                                    Label(L10n.string("photos.error.title"), systemImage: "lock")
-                                } description: { Text(L10n.string("photos.service.permission")) } actions: {
-                                    Button(L10n.string("photos.retry")) { Task { await model.refresh() } }
-                                }
-                            } else if model.hasLoaded && model.items.isEmpty && model.collections.isEmpty
-                                        && model.visibleSharedEntries.isEmpty && !model.showsCategories {
-                                emptyContent
-                            }
-                            if (model.hasMore || model.hasMoreCollections) && model.errorMessage == nil {
-                                ProgressView().frame(maxWidth: .infinity).padding()
-                                    .id(model.paginationIdentity)
-                                    .task { await model.loadNextPageAutomatically() }
-                                Button(L10n.string("photos.library.more")) {
-                                    Task { await model.loadNextPageAutomatically() }
-                                }.frame(minHeight: 44).disabled(model.isLoadingMore)
-                            }
-                        }
-                    }.padding()
-                }
-                .refreshable { await model.refresh() }
-                .onChange(of: model.selectedTimelineMonthID) { _, _ in
-                    proxy.scrollTo("photos-top", anchor: .top)
-                }
-            }
+            gallery
             if model.isSelecting {
                 selectionToolbar
                 if model.selectedItemCount > 100 { Text(L10n.string("mobile.photos.folder.limit")).font(.caption).padding(.horizontal) }
@@ -107,6 +116,7 @@ private struct MobileSynologyPhotosContent: View {
                     .disabled(!model.canStartManagementMutation).accessibilityIdentifier("mobile.photos.temporary.resume")
             }
             MobilePhotoDeletionStatus(model: model)
+            MobilePhotoSimilarStatus(model: model).padding(.horizontal)
         }
         .navigationTitle(model.selectedCategoryItem?.name ?? model.selectedAlbum?.name ??
             (model.folderHistory.count > 1 ? model.folderHistory.last?.name : nil) ?? L10n.string("mobile.photos.title"))
@@ -233,6 +243,10 @@ private struct MobileSynologyPhotosContent: View {
                     .keyboardShortcut("r", modifiers: .command)
             }
         }
+    }
+
+    private var uploadWorkspace: some View {
+        workspace
         .sheet(isPresented: $model.showsFilters) {
             MobileSynologyPhotoFilters(model: model, draft: model.filter)
         }
@@ -254,6 +268,10 @@ private struct MobileSynologyPhotosContent: View {
         .modifier(MobilePhotoPreferencesPresentation(session: session))
         .modifier(MobilePhotoAdministrationPresentation(session: session))
         .modifier(MobilePhotoPreviewRepairPresentation(session: session))
+    }
+
+    private var presentedWorkspace: some View {
+        uploadWorkspace
         .sheet(item: sharingDraft, onDismiss: { session.sharing?.cancel() }) { draft in
             if let sharing = session.sharing { MobilePhotoSharingForm(sharing: sharing, draft: draft) }
         }
@@ -290,7 +308,17 @@ private struct MobileSynologyPhotosContent: View {
         .modifier(MobilePhotoRecognitionPresentation(session: session, active: model.previewPhoto == nil))
         .modifier(MobilePhotoFolderPresentation(session: session, active: model.previewPhoto == nil))
         .modifier(MobileSynologyPhotoExportPresentation(session: session, active: model.previewPhoto == nil))
+    }
+
+    var body: some View {
+        presentedWorkspace
         .task { await session.activate() }
+        .task(id: model.similarStatusIdentity) { await model.refreshSimilarStatus() }
+        .alert(L10n.string("photos.similar.ungroupSelected"), isPresented: Binding(get: { similarGroups != nil }, set: { if !$0 { similarGroups = nil } }), presenting: similarGroups) { groups in
+            Button(L10n.string("photos.delete.cancel"), role: .cancel) { similarGroups = nil }
+            Button(L10n.string("photos.similar.confirm")) { model.ungroupSimilarSelection(groups); similarGroups = nil }
+                .accessibilityIdentifier("mobile.photos.similar.batchConfirm")
+        } message: { groups in Text(L10n.string("photos.similar.ungroupSelectedConfirm", groups.count)) }
         .task(id: model.hasAutomaticDeletionReview) {
             if model.hasAutomaticDeletionReview { await model.continueAutomaticDeletionReview() }
         }
@@ -310,6 +338,7 @@ private struct MobileSynologyPhotosContent: View {
             Label(L10n.string("photos.empty.title"), systemImage: "photo.on.rectangle")
         } description: {
             Text(L10n.string(model.isRequestList && !model.requestSearchText.isEmpty ? "photos.request.noResults" : model.isFiltering ? "photos.library.noResults" :
+                model.selectedCategory == .similar ? "photos.similar.empty" :
                 model.selectedAlbum != nil ? "mobile.photos.album.emptyContent" : model.section == .sharing ? "photos.sharing.empty" :
                 model.section == .albums ? "photos.library.noAlbums" : "photos.library.empty"))
         } actions: {
@@ -497,6 +526,12 @@ private struct MobileSynologyPhotosContent: View {
                 .disabled(model.isBrowsingBlocked).accessibilityIdentifier("mobile.photos.selection.loaded")
             if let albums = session.albums {
                 Menu {
+                    if model.selectedCategory == .similar {
+                        Button(L10n.string("photos.similar.ungroupSelected")) {
+                            Task { if let groups = await model.prepareSelectedSimilarGroups() { similarGroups = groups } }
+                        }.disabled(!model.canStartManagementMutation || model.isPreparingSimilarBatch || model.selectedPhotos.isEmpty || model.selectedItemCount > 100)
+                            .accessibilityIdentifier("mobile.photos.similar.batch")
+                    }
                     if let folders = session.folders {
                         MobilePhotoFolderActions(folders: folders)
                         Button(L10n.string("photos.delete.action"), role: .destructive) {
@@ -578,11 +613,12 @@ private struct MobileSynologyPhotosContent: View {
     }
 }
 
-private struct MobileSynologyPhotoCell: View {
+struct MobileSynologyPhotoCell: View {
     let photo: SynologyPhoto
     let session: MobileSynologyPhotosSession
     let isSelecting: Bool
     let isSelected: Bool
+    var showsSimilarBadge = true
     let open: () -> Void
     @State private var image: UIImage?
     @State private var visibilityID = UUID()
@@ -606,6 +642,12 @@ private struct MobileSynologyPhotoCell: View {
             }
             .aspectRatio(1, contentMode: .fit).clipped()
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .bottomTrailing) {
+                if showsSimilarBadge, let group = photo.similarGroup {
+                    Label(group.photoIDs.count.formatted(.number.locale(L10n.locale)), systemImage: "square.stack.3d.up")
+                        .font(.caption).padding(6).background(.regularMaterial, in: Capsule()).padding(6).accessibilityHidden(true)
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 if isSelecting {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -618,6 +660,7 @@ private struct MobileSynologyPhotoCell: View {
         .accessibilityLabel(photo.filename)
         .accessibilityHint(isSelecting ? L10n.string("photos.selection.toggle", photo.filename) : L10n.string("photos.media.open"))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityValue(photo.similarGroup.map { L10n.string("photos.similar.count", $0.photoIDs.count) } ?? "")
         .task(id: ThumbnailIdentity(thumbnail: photo.thumbnail, revision: session.model.automaticPreviewRevision(for: photo))) {
             image = nil
             let data = await session.thumbnail(photo)

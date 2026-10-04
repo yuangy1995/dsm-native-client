@@ -1643,6 +1643,8 @@ private struct PhotosMutationRecord: Sendable {
     var restoredCondition: SynologyPhotosAlbumCheckpoint.Condition?
     var restoredPhotoEdit: SynologyPhotosAlbumCheckpoint.PhotoEdit?
     var restoredRecognition: SynologyPhotosAlbumCheckpoint.Recognition?
+    var restoredSimilar: SynologyPhotosAlbumCheckpoint.Similar?
+    var similarSubmitted = false
     var manualAddAttempted = false
     var manualAddAcknowledged = false
     var manualAttempted: Set<String> = []
@@ -2711,7 +2713,7 @@ extension SynologyPhotosRepository {
     }
 
     /// 同时读取原照片的归组信息，组消失本身不能证明移出或拆组已完成。
-    private func similarMemberships(_ detail: SynologyPhotoSimilarDetail) async throws -> [SynologyPhoto] {
+    private func similarMemberships(_ detail: SynologyPhotoSimilarDetail, restored: SynologyPhotosAlbumCheckpoint.Similar? = nil) async throws -> [SynologyPhoto] {
         try requireCategoryAccess(.similar, in: detail.group.space)
         let generation = accessGeneration
         let payload: ItemList = try await call(api("Browse.SimilarItem", in: detail.group.space), version: 1, method: "get",
@@ -2720,10 +2722,19 @@ extension SynologyPhotosRepository {
         guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
         guard payload.list.count == detail.photos.count, Set(payload.list.map { $0.id }) == Set(detail.group.photoIDs) else { throw Self.failure(.invalidResponse) }
         return try detail.photos.map { original in
-            guard let item = payload.list.first(where: { $0.id == original.id.unitID }),
-                  item.filename == original.filename, item.filesize == original.sizeBytes, item.folder_id == original.folderID,
-                  Date(timeIntervalSince1970: item.indexed_time) == original.indexedAt, item.type == original.mediaType else { throw Self.failure(.conflict) }
-            var photo = original
+            guard let item = payload.list.first(where: { $0.id == original.id.unitID }) else { throw Self.failure(.conflict) }
+            var photo = SynologyPhoto(id: original.id, filename: item.filename, sizeBytes: item.filesize,
+                takenAt: Date(timeIntervalSince1970: item.time), indexedAt: Date(timeIntervalSince1970: item.indexed_time),
+                folderID: item.folder_id, mediaType: item.type,
+                thumbnail: item.additional?.thumbnail.map { .init(unitID: $0.unit_id, revision: $0.cache_key) },
+                width: item.additional?.resolution?.width, height: item.additional?.resolution?.height, orientation: item.additional?.orientation)
+            if let restored {
+                guard let target = restored.targets.first(where: { $0.id == photo.id }), try target.matchesIdentity(photo) else { throw Self.failure(.conflict) }
+            } else {
+                guard item.filename == original.filename, item.filesize == original.sizeBytes, item.folder_id == original.folderID,
+                      Date(timeIntervalSince1970: item.indexed_time) == original.indexedAt, item.type == original.mediaType else { throw Self.failure(.conflict) }
+                photo = original
+            }
             photo.similarGroup = try item.similar.flatMap { value in
                 guard value.count < 2 else { return try similarGroup(value, in: detail.group.space) }
                 guard value.count >= 0, value.count == value.item_id.count, value.item_id.allSatisfy({ $0 > 0 }) else { throw Self.failure(.invalidResponse) }
@@ -2732,6 +2743,48 @@ extension SynologyPhotosRepository {
             if let group = photo.similarGroup, !group.photoIDs.contains(photo.id.unitID) { throw Self.failure(.invalidResponse) }
             return photo
         }
+    }
+
+    /// 剩余批次只能以当前原件重新构造写入快照，摘要占位数据不可直接提交。
+    public func similarMutationTarget(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws -> SynologyPhotosMutation {
+        let value = try requireSimilarCheckpoint(checkpoint)
+        guard !value.submitted, !checkpoint.rejected else { throw Self.failure(.conflict) }
+        if case .undo = value.edit { throw Self.failure(.conflict) }
+        let generation = accessGeneration
+        guard case .editSimilarGroup(let original, _) = try checkpoint.reviewMutation() else { throw Self.failure(.invalidResponse) }
+        let photos = try await similarMemberships(original, restored: value)
+        guard try await currentSimilarGroup(value.group) == value.group,
+              generation == accessGeneration,
+              photos.allSatisfy({ $0.similarGroup == value.group }) else { throw Self.failure(.conflict) }
+        return .editSimilarGroup(.init(group: value.group, photos: photos), value.edit)
+    }
+
+    /// 恢复撤销资格只读取并验证已确认结果；不重放原拆组或移出请求。
+    public func prepareSimilarUndo(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws -> SynologyPhotosMutation {
+        let value = try requireSimilarCheckpoint(checkpoint)
+        guard value.canUndo, !checkpoint.rejected, !mutationInFlight,
+              case .editSimilarGroup(let original, _) = try checkpoint.reviewMutation() else { throw Self.failure(.conflict) }
+        guard let result = try await inspectSimilarEdit(original, edit: value.edit, restored: value),
+              result.similarGroup == value.resultingGroup,
+              result.photos.allSatisfy({ $0.similarGroup == nil || $0.similarGroup?.id == value.group.id }) else { throw Self.failure(.conflict) }
+        let photos = result.photos.map { value in var photo = value; photo.similarGroup = original.group; return photo }
+        let detail = SynologyPhotoSimilarDetail(group: original.group, photos: photos)
+        if let existing = mutations[checkpoint.operationID] {
+            guard existing.result.state == .confirmed,
+                  existing.restoredSimilar.map({ $0.group == value.group && $0.edit == value.edit && $0.targets == value.targets }) ?? value.hasSameIntent(as: existing.mutation) else { throw Self.failure(.conflict) }
+        }
+        var record = PhotosMutationRecord(mutation: .editSimilarGroup(detail, value.edit))
+        record.result = result; record.usesAlbumRecovery = true; record.similarSubmitted = true
+        mutations[checkpoint.operationID] = record
+        return .editSimilarGroup(detail, .undo(checkpoint.operationID))
+    }
+
+    private func requireSimilarCheckpoint(_ checkpoint: SynologyPhotosAlbumCheckpoint) throws -> SynologyPhotosAlbumCheckpoint.Similar {
+        _ = try checkpoint.reviewMutation()
+        guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID,
+              let value = checkpoint.similarDetails else { throw Self.failure(.permissionDenied) }
+        try requireCategoryAccess(.similar, in: value.group.space)
+        return value
     }
 
     private func prepareSimilarEdit(_ detail: SynologyPhotoSimilarDetail, edit: SynologyPhotoSimilarEdit) async throws {
@@ -2755,11 +2808,12 @@ extension SynologyPhotosRepository {
         guard members.allSatisfy({ $0.similarGroup == group }) else { throw Self.failure(.conflict) }
     }
 
-    private func inspectSimilarEdit(_ detail: SynologyPhotoSimilarDetail, edit: SynologyPhotoSimilarEdit) async throws -> SynologyPhotosMutationResult? {
+    private func inspectSimilarEdit(_ detail: SynologyPhotoSimilarDetail, edit: SynologyPhotoSimilarEdit,
+        restored: SynologyPhotosAlbumCheckpoint.Similar? = nil) async throws -> SynologyPhotosMutationResult? {
         try validateSimilarSnapshot(detail)
         let generation = accessGeneration
         let current = try await currentSimilarGroup(detail.group)
-        let members = try await similarMemberships(detail)
+        let members = try await similarMemberships(detail, restored: restored)
         let originalIDs = Set(detail.group.photoIDs)
         switch edit {
         case .topPick(let id):
@@ -3015,7 +3069,8 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        if let recognition = checkpoint.recognitionDetails { try requireAccess(recognition.space) }
+        if let similar = checkpoint.similarDetails { try requireCategoryAccess(.similar, in: similar.group.space) }
+        else if let recognition = checkpoint.recognitionDetails { try requireAccess(recognition.space) }
         else if let maintenance = checkpoint.previewMaintenanceDetails {
             switch maintenance {
             case .automatic(let value): try requireAccess(value.task.space)
@@ -3042,7 +3097,9 @@ extension SynologyPhotosRepository {
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            let matches = if let recognition = checkpoint.recognitionDetails {
+            let matches = if let similar = checkpoint.similarDetails {
+                existing.restoredSimilar.map { $0 == similar } ?? similar.hasSameIntent(as: existing.mutation)
+            } else if let recognition = checkpoint.recognitionDetails {
                 existing.restoredRecognition.map { $0 == recognition } ?? recognition.hasSameIntent(as: existing.mutation)
             } else if let administration = checkpoint.administrationDetails {
                 administration.hasSameIntent(as: existing.mutation)
@@ -3091,6 +3148,10 @@ extension SynologyPhotosRepository {
         record.restoredPhotoRequest = checkpoint.requestDetails
         record.restoredFrozen = checkpoint.frozenDetails
         record.usesAlbumRecovery = true
+        if let similar = checkpoint.similarDetails {
+            record.restoredSimilar = similar; record.similarSubmitted = similar.submitted
+            if !similar.submitted { record.result = .init(state: .rejected) }
+        }
         if let recognition = checkpoint.recognitionDetails {
             record.restoredRecognition = recognition
             record.personPhotoIDs = recognition.personPhotoIDs
@@ -3166,6 +3227,12 @@ extension SynologyPhotosRepository {
             checkpoint.createdAlbumID = record.albumID
             checkpoint.membershipHasFailures = record.albumMembershipHasFailures
             checkpoint.rejected = record.result.state == .rejected
+            if var similar = checkpoint.similarDetails {
+                similar.submitted = record.similarSubmitted
+                similar.confirmed = record.result.state == .confirmed
+                similar.resultingGroup = similar.confirmed ? record.result.similarGroup : nil
+                checkpoint.similarDetails = similar
+            }
             if var recognition = checkpoint.recognitionDetails {
                 recognition.personPhotoIDs = record.personPhotoIDs
                 recognition.personReceiptID = record.personReceipt?.id
@@ -3455,6 +3522,12 @@ extension SynologyPhotosRepository {
                 }
             case .editSimilarGroup(let detail, let edit):
                 try requireCategoryAccess(.similar, in: detail.group.space)
+                try Task.checkCancellation()
+                guard operationGeneration == accessGeneration else { throw Self.failure(.permissionDenied) }
+                record.similarSubmitted = true
+                do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                catch { record.similarSubmitted = false; record.result = .init(state: .rejected); throw error }
+                mutations[operationID] = record
                 let group = detail.group
                 let method: String
                 var parameters: [String: DsmParameterValue] = ["id": .integer(group.id)]
@@ -3903,6 +3976,9 @@ extension SynologyPhotosRepository {
                         record.manualKnownFailures.formUnion(changes.map(\.id))
                     } else if let current = record.manualCurrent { record.manualKnownFailures.insert(current) }
                 }
+            case .editSimilarGroup:
+                // 取消或保存失败发生在提交边界之前时，没有需要继续查询的写操作。
+                if !record.similarSubmitted || rejected { record.result = .init(state: .rejected) }
             case .shareAlbum: break
             case .setFolderSharing:
                 if rejected, !record.folderSharingAcknowledged { record.result = .init(state: .rejected) }
@@ -4149,7 +4225,7 @@ extension SynologyPhotosRepository {
                     sharingURL: current.url, folder: current.folder)
             }
         case .editSimilarGroup(let detail, let edit):
-            if let verified = try await inspectSimilarEdit(detail, edit: edit) { result = verified }
+            if let verified = try await inspectSimilarEdit(detail, edit: edit, restored: record.restoredSimilar) { result = verified }
         case .regeneratePreviews(let originals, _):
             let generation = accessGeneration
             if record.usesAlbumRecovery {

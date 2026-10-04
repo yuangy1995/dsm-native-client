@@ -1,5 +1,5 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-02 -->
+<!-- last-reviewed: 2026-10-04 -->
 
 # Synology Photos 当前实现与跨端计划
 
@@ -43,7 +43,7 @@
 | 平台 | 当前范围 | 后续与非目标 |
 | --- | --- | --- |
 | macOS | 上表管理能力及原生时间线、预览、保存、任务和恢复 | 按真实使用反馈补兼容与系统验收；不承诺 Drive 协作锁、任意视频编码或全部版本行为。 |
-| iPhone / iPad | 触控浏览、筛选、预览、原件保存/系统分享、个人单项删除 | 上传/相册/人物/管理已进入 [M3](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)，尚需原生实现；两端业务范围相同，iPad 提供分栏与键盘。自动备份仍非本轮目标。 |
+| iPhone / iPad | M3a–M3h2 已接上传恢复、普通/条件/冻结相册、分享/收集、资料/目录/权限、人物/主题/手工人脸、预览任务/设置、原件批量删除及相似分组/撤销；两端单元和实际 UI 分别验证 | 批量导出、浏览补齐与旧图库清理继续 [M3h3](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)；两端业务范围相同，真机/NAS 按主计划另验。自动备份仍非本轮目标。 |
 | Android | 当前 SynologyPhotos 门面、会话、浏览/筛选/保存及已接入动作；文件照片备份仍独立 | macOS 新管理能力只是后续接口参考；保留 SAF、WorkManager 与权限生命周期，需单独授权实施。 |
 | Windows | 既有 SynologyPhotosPage/Workspace 的时间线、筛选、共享读取、预览、保存与个人单项删除 | 2026-09-29 至 10-02 新管理能力尚需逐功能 WinUI 实现，不能记作仅待真机验证。 |
 

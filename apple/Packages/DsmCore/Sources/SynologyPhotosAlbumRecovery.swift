@@ -26,6 +26,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case previewMaintenance(PreviewMaintenance)
         case administration(Administration)
         case recognition(Recognition)
+        case similar(Similar)
     }
     public let version: Int
     public let profileID: UUID
@@ -47,13 +48,14 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
              .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks,
              .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto, .regeneratePreviews, .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary,
              .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers,
-             .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces: true
+             .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces, .editSimilarGroup: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
         version = switch mutation {
+        case .editSimilarGroup: 15
         case .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces: 14
         case .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers: 13
         case .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary: 12
@@ -71,6 +73,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         }
         self.profileID = profileID; self.userID = userID; self.operationID = operationID
         switch mutation {
+        case .editSimilarGroup: operation = .similar(try Similar(mutation: mutation))
         case .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces: operation = .recognition(try Recognition(mutation: mutation))
         case .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers: operation = .administration(try Administration(mutation: mutation))
         case .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary: operation = .previewMaintenance(try PreviewMaintenance(mutation: mutation))
@@ -106,13 +109,16 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...14).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...15).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
         }
         let command: SynologyPhotosMutation
         switch operation {
+        case .similar(let value):
+            guard version == 15, createdAlbumID == nil, !rejected || !value.confirmed else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation(profileID: profileID)
         case .recognition(let value):
             guard version == 14, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID)
@@ -169,7 +175,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
             command = .deleteTemporaryAlbum(id: id, original: .init(access: .disabled, revision: revision, isTemporary: true), preservedCopyID: copy)
         }
         let photos = command.photos
-        guard photos.count <= 100, Set(photos.map(\.id)).count == photos.count,
+        guard (photos.count <= 100 || command.feature == .similarGroups), Set(photos.map(\.id)).count == photos.count,
               photos.allSatisfy({ $0.id.profileID == profileID && $0.id.unitID > 0 && $0.folderID > 0 }) else { throw CocoaError(.coderReadCorrupt) }
         switch command {
         case .createAlbum(let name, _), .createTemporaryAlbum(let name, _), .copyTemporaryAlbum(_, let name, _):
@@ -184,10 +190,15 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
              .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks,
              .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto, .regeneratePreviews, .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary,
              .setSharedSpaceEnabled, .setSharedSpaceSettings, .setGlobalSettings, .clearConversionCache, .setSharedMembers,
-             .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces: break
+             .renamePerson, .mergePeople, .setPersonCover, .removePersonFaces, .reassignPersonFaces, .setPeopleVisibility, .setConceptCover, .removeConceptItems, .setConceptVisibility, .editPhotoFaces, .editSimilarGroup: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
+    }
+
+    public var similarDetails: Similar? {
+        get { if case .similar(let value) = operation { return value }; return nil }
+        set { if case .similar = operation, let newValue { operation = .similar(newValue) } }
     }
 
     public var recognitionDetails: Recognition? {

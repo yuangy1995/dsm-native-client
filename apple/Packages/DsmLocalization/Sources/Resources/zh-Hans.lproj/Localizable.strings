@@ -6125,3 +6125,15 @@
 "mobile.photos.deletion.recoveryFailed" = "无法读取或保存删除进度。请重新打开照片页面再试；若仍无法恢复，请联系支持。";
 "mobile.photos.deletion.failed" = "删除未能继续。请检查连接和访问权限，再继续或取消剩余照片的删除。";
 "mobile.photos.deletion.complete" = "已删除 %d 张照片。";
+
+/* 移动相似照片分组与恢复 */
+"mobile.photos.similar.pending" = "照片分组尚未结束，恢复连接后可刷新进度。";
+"mobile.photos.similar.recoveryFailed" = "无法打开或保存上次的照片分组任务。请重试后继续。";
+"mobile.photos.similar.changed" = "照片或分组已发生变化。请刷新列表后重试。";
+"mobile.photos.similar.continue" = "继续处理 %d 组";
+"mobile.photos.similar.cancelRemaining" = "取消剩余更改";
+"mobile.photos.similar.progress" = "已更新 %d 组，还有 %d 组未开始。";
+"mobile.photos.similar.finished" = "已更新 %d 组，未更改 %d 组。";
+"mobile.photos.similar.select" = "选择照片";
+"mobile.photos.similar.open" = "查看分组";
+"mobile.photos.similar.undoConfirm" = "恢复上次更改前的分组吗？已加入其他分组的照片不会被改动。";
