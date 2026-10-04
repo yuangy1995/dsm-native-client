@@ -76,7 +76,6 @@ extension MobileAppModel {
         fileBrowserModel.copyMove.removeProfile(profile.id)
         fileBrowserModel.recycleAction.removeProfile(profile.id)
         purgeFileLocations(profileID: profile.id)
-        Task { await photoLibraryModel.purge(profileID: profile.id) }
         chatModel.purge(profileID: profile.id)
         chatModel.removePersistentPins(profileID: profile.id)
         nasHealthModel.purge(profileID: profile.id)
@@ -378,7 +377,6 @@ extension MobileAppModel {
 
     private func applyWorkspaceRepositories(_ repositories: WorkspaceRepositories, profile: NasProfile) {
         fileRepository = repositories.file
-        photoRepository = FileStationPhotoRepository(files: repositories.file)
         synologyPhotos.configure(repositories.photos, uploadStorage: .forProfile(profile))
         serviceRepository = repositories.service
         chatRepository = repositories.chat
@@ -406,7 +404,6 @@ extension MobileAppModel {
         }
         chatModel.purge(profileID: profileID)
         purgeFileLocations(profileID: profileID)
-        Task { await photoLibraryModel.purge(profileID: profileID) }
         nasHealthModel.purge(profileID: profileID)
         containerInventoryModel.purge(profileID: profileID)
         virtualMachineInventoryModel.purge(profileID: profileID)
@@ -551,7 +548,6 @@ extension MobileAppModel {
             fileShareLinkModel.purge(profileID: profile.id)
             filePreviewModel.close()
             documentTransferController.resetForDisconnectedWorkspace()
-            await photoLibraryModel.purge(profileID: profile.id)
             chatModel.purge(profileID: profile.id)
             chatModel.removePersistentPins(profileID: profile.id)
             nasHealthModel.purge(profileID: profile.id)
@@ -634,7 +630,6 @@ extension MobileAppModel {
         fileShareLinkModel.deactivate()
         deactivateFileLocations()
         downloads.deactivate()
-        photoLibraryModel.deactivate()
         chatModel.deactivate()
         nasHealthModel.deactivate()
         containerInventoryModel.deactivate()
@@ -646,7 +641,6 @@ extension MobileAppModel {
         capabilities = nil
         session = nil
         fileRepository = nil
-        photoRepository = nil
         synologyPhotos.configure(nil)
         serviceRepository = nil
         chatRepository = nil

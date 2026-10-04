@@ -131,7 +131,7 @@ final class MobilePhotoSharingTests: XCTestCase {
         XCTAssertFalse(sharing.requestSave()); XCTAssertTrue(sharing.confirmSave()); try await wait { !session.model.isManaging }
         let id = try XCTUnwrap(session.model.pendingMutationID)
         let store = PhotoAlbumRecoveryStore(url: storage.recordURL.deletingPathExtension().appendingPathComponent("Albums/pending-v1.json"))
-        XCTAssertEqual(try store.load()?.version, 2)
+        XCTAssertEqual(try store.load()?.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         let text = try String(contentsOf: store.url, encoding: .utf8)
         XCTAssertFalse(text.contains("draft-secret")); XCTAssertFalse(text.contains("https://"))
         session.deactivate()

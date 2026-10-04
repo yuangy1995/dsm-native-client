@@ -19,7 +19,6 @@ extension MobileAppModel {
             filePreviewModel.close()
         }
         if selectedModule == .photos, module != .photos {
-            photoLibraryModel.deactivate()
             synologyPhotos.deactivate()
             filePreviewModel.close()
         }
@@ -86,16 +85,14 @@ extension MobileAppModel {
     }
 
     func refreshSettingsCacheSummary() async {
-        let legacyBytes = await photoLibraryModel.thumbnailCacheCost()
         let photosBytes = await synologyPhotos.thumbnails.cachedCost()
-        settingsStore.setPhotoThumbnailCacheBytes(legacyBytes + photosBytes)
+        settingsStore.setPhotoThumbnailCacheBytes(photosBytes)
     }
 
     func clearRegenerableCaches() async {
         guard settingsStore.beginClearingCache() else { return }
-        await photoLibraryModel.clearThumbnailCache()
         await synologyPhotos.thumbnails.removeAll()
-        let remainingBytes = await photoLibraryModel.thumbnailCacheCost()
+        let remainingBytes = await synologyPhotos.thumbnails.cachedCost()
         settingsStore.finishClearingCache(
             result: remainingBytes == 0 ? .success : .failure,
             remainingBytes: remainingBytes

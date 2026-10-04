@@ -133,7 +133,7 @@ final class MobilePhotoFolderTests: XCTestCase {
         let (root, storage, service, session) = try await fixture("photo-folders-unknown"); defer { try? FileManager.default.removeItem(at: root) }
         let editor = try await transfer(session, copying: true); XCTAssertTrue(editor.submit()); try await wait { !session.model.isManaging }
         let id = try XCTUnwrap(session.model.pendingMutationID), saved = try XCTUnwrap(store(storage).load())
-        XCTAssertEqual(saved.operationID, id); XCTAssertEqual(saved.version, 8); XCTAssertEqual(saved.folderDetails?.taskID, 88)
+        XCTAssertEqual(saved.operationID, id); XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertEqual(saved.folderDetails?.taskID, 88)
         session.deactivate()
         let restored = MobileSynologyPhotosSession(); restored.configure(service, uploadStorage: storage, reviewDelay: { _ in }); await restored.activate()
         XCTAssertEqual(restored.model.pendingMutationID, id)

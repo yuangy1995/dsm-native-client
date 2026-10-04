@@ -79,7 +79,7 @@ final class MobilePhotoPreviewRepairTests: XCTestCase {
         let repair = try await open(session); XCTAssertTrue(repair.resume()); try await wait { !session.model.isManaging }
         let id = try XCTUnwrap(session.model.pendingMutationID)
         let saved = try PhotoAlbumRecoveryStore(url: storage.recordURL.deletingPathExtension().appendingPathComponent("Albums/pending-v1.json")).load()
-        XCTAssertEqual(saved?.version, 11); XCTAssertEqual(saved?.operationID, id)
+        XCTAssertEqual(saved?.version, SynologyPhotosAlbumCheckpoint.currentVersion); XCTAssertEqual(saved?.operationID, id)
         session.configure(service, uploadStorage: storage, reviewDelay: { _ in }); await session.activate()
         let reopened = try await open(session); XCTAssertFalse(reopened.canResume)
         XCTAssertFalse(reopened.regenerate(session.model.items)); XCTAssertEqual(session.model.pendingMutationID, id)

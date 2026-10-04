@@ -51,7 +51,7 @@ final class MobilePhotoPreviewMaintenanceTests: XCTestCase {
         let (root, storage, service, session) = try await fixture("photo-preview-automatic-unknown")
         defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
         await session.model.processAutomaticPreview(); let id = try XCTUnwrap(session.model.pendingMutationID)
-        XCTAssertEqual(try store(storage).load()?.version, 12)
+        XCTAssertEqual(try store(storage).load()?.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         session.configure(service, uploadStorage: storage, reviewDelay: { _ in }); await session.activate()
         XCTAssertEqual(session.model.pendingMutationID, id)
         await session.model.processAutomaticPreview(now: Date.distantFuture)
@@ -114,7 +114,7 @@ final class MobilePhotoPreviewMaintenanceTests: XCTestCase {
         let value = try await open(.maintenance, in: session); XCTAssertFalse(try XCTUnwrap(value.maintenance).canStart(.previews))
         value.confirmMaintenance(.previews); XCTAssertFalse(value.showsConfirmation)
         value.confirmMaintenance(.reindex); XCTAssertTrue(value.confirmSave()); try await wait { !session.model.isManaging }
-        XCTAssertNotNil(session.model.pendingMutationID); XCTAssertEqual(try store(storage).load()?.version, 12)
+        XCTAssertNotNil(session.model.pendingMutationID); XCTAssertEqual(try store(storage).load()?.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         session.configure(service, uploadStorage: storage, reviewDelay: { _ in }); await session.activate()
         await service.finishMaintenance(); session.model.reviewPendingMutation(); try await wait { !session.model.isManaging }
         XCTAssertNil(session.model.pendingMutationID); let commands = await service.commands; XCTAssertEqual(commands.count, 1)

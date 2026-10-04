@@ -166,7 +166,7 @@ final class MobilePhotoConditionTests: XCTestCase {
         let editor = try await open(session); editor.name = "Private title"; editor.search = "Private keyword"; editor.addKeyword()
         let condition = editor.condition
         XCTAssertTrue(editor.submit()); try await wait { !session.model.isManaging }
-        let saved = try XCTUnwrap(store(storage).load()); XCTAssertEqual(saved.version, 5)
+        let saved = try XCTUnwrap(store(storage).load()); XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         let data = String(decoding: try Data(contentsOf: store(storage).url), as: UTF8.self)
         XCTAssertFalse(data.contains("Private title")); XCTAssertFalse(data.contains("Private keyword"))
         session.deactivate()
@@ -273,7 +273,7 @@ final class MobilePhotoConditionTests: XCTestCase {
         let editor = try await restore(session); editor.rebuild = true
         let condition = editor.condition, name = editor.name
         XCTAssertTrue(editor.submit(confirmedRebuild: true)); try await wait { !session.model.isManaging }
-        let saved = try XCTUnwrap(store(storage).load()); XCTAssertEqual(saved.version, 6)
+        let saved = try XCTUnwrap(store(storage).load()); XCTAssertEqual(saved.version, SynologyPhotosAlbumCheckpoint.currentVersion)
         let data = String(decoding: try Data(contentsOf: store(storage).url), as: UTF8.self)
         for secret in ["Sample frozen album", "Sample rule", "people", "synthetic-revision"] { XCTAssertFalse(data.contains(secret)) }
         session.deactivate()

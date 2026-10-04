@@ -79,10 +79,9 @@ final class MobileFilePreviewIntegrationTests: XCTestCase {
         XCTAssertFalse(source.contains("openWindow"))
     }
 
-    func testFiles与Photos从Inspector放大全屏时容器互斥并仅按条件恢复() throws {
+    func testFiles从Inspector放大全屏时容器互斥并仅按条件恢复() throws {
         for path in [
-            "Sources/Features/Files/MobileFileBrowser.swift",
-            "Sources/Features/Photos/MobilePhotosView.swift"
+            "Sources/Features/Files/MobileFileBrowser.swift"
         ] {
             let source = try sourceFile(path)
             XCTAssertTrue(source.contains("restoresPreviewInspectorAfterFullScreen = true"), path)

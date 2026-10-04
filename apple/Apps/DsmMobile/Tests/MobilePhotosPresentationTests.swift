@@ -3,205 +3,88 @@ import Foundation
 import XCTest
 
 final class MobilePhotosPresentationTests: XCTestCase {
-    func test照片页按实际SizeClass提供紧凑与常规布局() throws {
-        let source = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-
+    func test照片正式页面按可用宽度选择布局而不依赖设备名称() throws {
+        let source = try sourceFile("MobileSynologyPhotosView.swift")
         XCTAssertTrue(source.contains("@Environment(\\.horizontalSizeClass)"))
-        XCTAssertTrue(source.contains("if horizontalSizeClass == .regular"))
-        XCTAssertTrue(source.contains("private var regularLayout"))
-        XCTAssertTrue(source.contains("private var compactLayout"))
-        XCTAssertTrue(source.contains("spaceSidebar"))
+        XCTAssertTrue(source.contains("if sizeClass == .regular"))
+        XCTAssertTrue(source.contains(".pickerStyle(.segmented)"))
         XCTAssertFalse(source.contains("UIDevice.current"))
     }
 
-    func test照片页覆盖空间与相册五态和筛选空态恢复() throws {
-        let source = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-
-        for state in [
-            "state.isDiscoveringSpaces && state.spaces.isEmpty",
-            "state.pageState == .loading",
-            "state.pageState == .error",
-            "state.spaces.isEmpty",
-            "state.pageState == .filteredEmpty",
-            "state.pageState == .empty"
-        ] {
-            XCTAssertTrue(source.contains(state), state)
-        }
-        XCTAssertTrue(source.contains("library.setFilter(.all)"))
-        XCTAssertTrue(source.contains("Task { await library.reload() }"))
-        XCTAssertTrue(source.contains(".fillsAvailableContentArea(alignment: .center)"))
-    }
-
-    func test网格使用Lazy布局显式分页并保留内联失败() throws {
-        let source = try sourceFile("Sources/Features/Photos/MobilePhotoGrid.swift")
-
-        XCTAssertTrue(source.contains("LazyVGrid"))
-        XCTAssertTrue(source.contains("GridItem(.adaptive"))
-        XCTAssertTrue(source.contains("dynamicTypeSize.isAccessibilitySize"))
-        XCTAssertTrue(source.contains("if loadMoreFailed"))
-        XCTAssertTrue(source.contains("else if isLoadingMore"))
-        XCTAssertTrue(source.contains("else if hasMore"))
-        XCTAssertTrue(source.contains("mobile.photos.action.load-more"))
-        XCTAssertTrue(source.contains("mobile.photos.loading-more"))
-    }
-
-    func test缩略图使用真实异步数据滚出取消并尊重降低动态效果() throws {
-        let source = try sourceFile("Sources/Features/Photos/MobilePhotoCell.swift")
-
-        XCTAssertTrue(source.contains("await library.thumbnailData(for: item)"))
-        XCTAssertTrue(source.contains("guard !Task.isCancelled"))
-        XCTAssertTrue(source.contains(".task(id: thumbnailIdentity)"))
-        XCTAssertTrue(source.contains("Task.detached(priority: .userInitiated)"))
-        XCTAssertTrue(source.contains("CGImageSourceCreateThumbnailAtIndex"))
-        XCTAssertTrue(source.contains("kCGImageSourceThumbnailMaxPixelSize: 1_024"))
-        XCTAssertTrue(source.contains("data.count <= 10 * 1024 * 1024"))
-        XCTAssertTrue(source.contains("@Environment(\\.accessibilityReduceMotion)"))
-        XCTAssertTrue(source.contains("reduceMotion ? nil : .easeOut(duration: 0.2)"))
-        XCTAssertFalse(source.contains("Data(contentsOf:"))
-    }
-
-    func test照片与文件夹均有主操作且动作保留可测试注入点() throws {
-        let view = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-        let cell = try sourceFile("Sources/Features/Photos/MobilePhotoCell.swift")
-        let combined = view + cell
-
-        for seam in ["onOpenPhoto", "onSaveCopy", "onShare", "onOpenFolder"] {
-            XCTAssertTrue(combined.contains(seam), seam)
-        }
-        XCTAssertTrue(cell.contains("if item.isFolder"))
-        XCTAssertTrue(cell.contains("onOpenFolder(item)"))
-        XCTAssertTrue(cell.contains("onOpenPhoto(item)"))
-        XCTAssertTrue(cell.contains("onSaveCopy(item)"))
-        XCTAssertTrue(cell.contains("onShare(item)"))
-        for forbidden in ["delete(", "upload("] {
-            XCTAssertFalse(combined.contains(forbidden), forbidden)
+    func test正式照片覆盖加载错误空图库筛选为空与内容() throws {
+        let source = try sourceFile("MobileSynologyPhotosView.swift")
+        for token in ["model.isLoading", "model.errorMessage", "model.items.isEmpty", "model.isFiltering",
+                      "photoGrid(model.items)", "photos.library.noResults", "photos.filters.clear", "await model.refresh()"] {
+            XCTAssertTrue(source.contains(token), token)
         }
     }
 
-    func test生产初始化完成图片预览保存副本与分享闭环() throws {
-        let source = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-
-        XCTAssertTrue(source.contains("Task { await preview.open(item.fileItem, service: repository) }"))
-        XCTAssertTrue(source.contains(".inspector(isPresented: $showsPreviewInspector)"))
-        XCTAssertTrue(source.contains(".fullScreenCover(isPresented: $showsPreviewFullScreen"))
-        XCTAssertTrue(source.contains("MobileFilePreviewView("))
-        XCTAssertTrue(source.contains("MobileDocumentDownloadContext("))
-        XCTAssertTrue(source.contains("MobileDocumentExporter"))
-        XCTAssertTrue(source.contains("MobileShareSheet"))
-        XCTAssertTrue(source.contains("documentTransferController.presentationDidDismiss()"))
-        XCTAssertTrue(source.contains("documentTransferController.startDownload"))
-        XCTAssertTrue(source.contains("preview.close()"))
-        XCTAssertFalse(source.contains("library.cancelAllWork()\n            resetPreviewPresentation()"))
-    }
-
-    func test文件夹网格照片复用共享同Nas单项移动闭环() throws {
-        let view = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-        let grid = try sourceFile("Sources/Features/Photos/MobilePhotoGrid.swift")
-        let cell = try sourceFile("Sources/Features/Photos/MobilePhotoCell.swift")
-
-        XCTAssertTrue(view.contains("@State private var copyMove = MobileFileCopyMoveModel()"))
-        XCTAssertTrue(view.contains("MobileFileCopyMoveView("))
-        XCTAssertTrue(view.contains("operation: .move"))
-        XCTAssertTrue(view.contains("source: .browser"))
-        XCTAssertTrue(view.contains("visibleItems: visiblePhotoSnapshot.map(\\.fileItem)"))
-        XCTAssertTrue(view.contains("readOnlyRoots: readOnlyMutationRoots"))
-        XCTAssertTrue(view.contains("copyMove.activate("))
-        XCTAssertTrue(view.contains("copyMove.deactivate()"))
-        XCTAssertTrue(view.contains("model.activeProfile?.id == success.profileID"))
-        XCTAssertTrue(view.contains("model.fileRepository?.profileID == success.profileID"))
-        XCTAssertTrue(view.contains("repositoryIdentity: repositoryIdentity"))
-        XCTAssertTrue(view.contains("model.fileRepository.map(ObjectIdentifier.init) == repositoryIdentity"))
-        XCTAssertTrue(view.contains("await library.reload()"))
-        XCTAssertFalse(view.contains("copyMoveResult("))
-
-        XCTAssertTrue(grid.contains("!item.isFolder"))
-        XCTAssertTrue(grid.contains("!item.fileItem.isRecyclePath"))
-        XCTAssertTrue(grid.contains("item.sizeBytes.map { $0 >= 0 } == true"))
-        XCTAssertTrue(cell.contains("mobile.files.copy-move.move.action"))
-    }
-
-    func test文件夹网格普通媒体复用共享回收站安全写闭环() throws {
-        let view = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-        let grid = try sourceFile("Sources/Features/Photos/MobilePhotoGrid.swift")
-        let cell = try sourceFile("Sources/Features/Photos/MobilePhotoCell.swift")
-
-        XCTAssertTrue(view.contains("MobileFileRecycleActionModel.canMoveToRecycle("))
-        XCTAssertTrue(view.contains("recycleLocations: model.fileBrowserModel.locations.state.recycle.locations"))
-        XCTAssertTrue(view.contains("recycleAction.beginMoveToRecycle("))
-        XCTAssertTrue(view.contains("source: .browser"))
-        XCTAssertTrue(view.contains("visibleItems: visiblePhotoSnapshot.map(\\.fileItem)"))
-        XCTAssertTrue(view.contains("closePreview()"))
-        XCTAssertTrue(view.contains("model.activeProfile?.id == success.profileID"))
-        XCTAssertTrue(view.contains("model.fileRepository?.profileID == success.profileID"))
-        XCTAssertFalse(view.contains("moveToRecycleResult("))
-
-        XCTAssertTrue(grid.contains("isMoveToRecycleAvailable(item) ? onMoveToRecycle : nil"))
-        XCTAssertTrue(cell.contains("mobile.files.recycle.move.action"))
-        XCTAssertTrue(cell.contains("role: .destructive"))
-    }
-
-    func test触控VoiceOver动态文字与平台原生控件均有明确实现() throws {
-        let view = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-        let grid = try sourceFile("Sources/Features/Photos/MobilePhotoGrid.swift")
-        let cell = try sourceFile("Sources/Features/Photos/MobilePhotoCell.swift")
-        let combined = view + grid + cell
-
-        XCTAssertTrue(combined.contains("minHeight: 44"))
-        XCTAssertTrue(combined.contains("frame(width: 44, height: 44)"))
-        XCTAssertTrue(cell.contains(".accessibilityLabel("))
-        XCTAssertTrue(cell.contains("mobile.photos.open-album"))
-        XCTAssertTrue(cell.contains("mobile.photos.open-photo"))
-        XCTAssertTrue(cell.contains("mobile.photos.item-actions"))
-        XCTAssertTrue(view.contains("Picker("))
-        XCTAssertTrue(view.contains("List("))
-        XCTAssertTrue(cell.contains("Menu {"))
-        for forbidden in ["onHover", "contextMenu", "doubleClick", "rightClick"] {
-            XCTAssertFalse(combined.contains(forbidden), forbidden)
+    func test网格保持有界图片和前后分页失败恢复() throws {
+        let source = try sourceFile("MobileSynologyPhotosView.swift")
+        for token in ["LazyVGrid", "GridItem(.adaptive", "model.previousPageErrorMessage", "loadPreviousPage", "loadNextPageAutomatically",
+                      "maximumPixels: 512", "data.count <= 8 * 1_024 * 1_024", "CGImageSourceCreateThumbnailAtIndex"] {
+            XCTAssertTrue(source.contains(token), token)
         }
     }
 
-    func test全部新增可见文案只使用约定资源键() throws {
-        let view = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-        let grid = try sourceFile("Sources/Features/Photos/MobilePhotoGrid.swift")
-        let cell = try sourceFile("Sources/Features/Photos/MobilePhotoCell.swift")
-        let combined = view + grid + cell
-        let keys = [
-            "mobile.photos.title",
-            "mobile.photos.space",
-            "mobile.photos.filter.title",
-            "mobile.photos.filter.all",
-            "mobile.photos.filter.images",
-            "mobile.photos.loading.spaces",
-            "mobile.photos.loading.album",
-            "mobile.photos.empty.spaces.title",
-            "mobile.photos.empty.spaces.message",
-            "mobile.photos.empty.album.title",
-            "mobile.photos.empty.album.message",
-            "mobile.photos.empty.filtered.title",
-            "mobile.photos.empty.filtered.message",
-            "mobile.photos.error.title",
-            "mobile.photos.action.retry",
-            "mobile.photos.action.clear-filters",
-            "mobile.photos.action.load-more",
-            "mobile.photos.loading-more",
-            "mobile.photos.action.save-copy",
-            "mobile.photos.action.share",
-            "mobile.files.copy-move.move.action",
-            "mobile.files.recycle.move.action",
-            "mobile.photos.item-actions",
-            "mobile.photos.open-album",
-            "mobile.photos.open-photo",
-            "mobile.photos.thumbnail.unavailable"
-        ]
-
-        for key in keys {
-            XCTAssertTrue(combined.contains("\"\(key)\""), key)
+    func test异步图片解码取消后不回填且离开清除可见项() throws {
+        let source = try sourceFile("MobileSynologyPhotosView.swift")
+        for token in ["await session.thumbnail(photo)", "guard !Task.isCancelled", "Task.detached(priority: .userInitiated)",
+                      "ThumbnailIdentity(thumbnail:", "image = nil", "visible: false"] {
+            XCTAssertTrue(source.contains(token), token)
         }
     }
 
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let appRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        return try String(contentsOf: appRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    func test系统全屏预览覆盖图库时保留会话而后台停用() throws {
+        let source = try sourceFile("MobileSynologyPhotosView.swift")
+        XCTAssertTrue(source.contains("if model.previewPhoto == nil { session.deactivate() }"))
+        XCTAssertTrue(source.contains("if phase == .background { session.deactivate() }"))
+        XCTAssertTrue(source.contains("await session.activate()"))
+        XCTAssertTrue(source.contains("model.closePreview()"))
+    }
+
+    func test移动与删除沿Photos身份和权限而不转换为FileStation路径() throws {
+        let source = try sourceFile("MobileSynologyPhotosView.swift") + sourceFile("MobileSynologyPhotoPreview.swift")
+        for token in ["MobilePhotoFolderActions", "model.requestDeletion", "model.canDeletePhotos", "role: .destructive"] {
+            XCTAssertTrue(source.contains(token), token)
+        }
+        for forbidden in ["FileStationPhotoRepository", "PhotoLibraryItem", "moveToRecycleResult(", "copyMoveResult("] {
+            XCTAssertFalse(source.contains(forbidden), forbidden)
+        }
+    }
+
+    func test触控和VoiceOver保留原生按钮语义与照片名称() throws {
+        let source = try sourceFile("MobileSynologyPhotosView.swift")
+        for token in ["Button {", "minWidth: 44, minHeight: 44", ".accessibilityLabel(photo.filename)",
+                      ".accessibilityHint(", ".accessibilityAddTraits(isSelected", ".accessibilityHidden(true)"] {
+            XCTAssertTrue(source.contains(token), token)
+        }
+        XCTAssertFalse(source.contains("onHover"))
+        XCTAssertFalse(source.contains("doubleClick"))
+    }
+
+    func test只有实际多来源时才呈现来源切换() throws {
+        let source = try sourceFile("MobileSynologyPhotosView.swift")
+        XCTAssertTrue(source.contains("model.spaces.count > 1"))
+        XCTAssertTrue(source.contains("mobile.photos.source.mine"))
+        XCTAssertTrue(source.contains("mobile.photos.source.shared"))
+        XCTAssertFalse(source.contains("mobile.photos.space"))
+    }
+
+    func test已移除旧路径图库且Shell只装配正式会话() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let shell = try String(contentsOf: root.appendingPathComponent("Sources/AppShell/MobileAppModel.swift"), encoding: .utf8)
+        XCTAssertTrue(shell.contains("MobileSynologyPhotosSession()"))
+        XCTAssertFalse(shell.contains("MobilePhotoLibraryModel"))
+        XCTAssertFalse(shell.contains("FileStationPhotoRepository"))
+        for file in ["MobilePhotosView.swift", "MobilePhotoLibraryModel.swift", "MobilePhotoGrid.swift", "MobilePhotoCell.swift",
+                     "Timeline/MobilePhotoTimelineModel.swift", "Viewer/MobilePhotoViewerModel.swift"] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Sources/Features/Photos/" + file).path), file)
+        }
+    }
+
+    private func sourceFile(_ file: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent("Sources/Features/Photos/" + file), encoding: .utf8)
     }
 }

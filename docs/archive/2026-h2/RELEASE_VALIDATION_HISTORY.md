@@ -1195,3 +1195,22 @@ Mac 两轮 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme
 - 集成与只读对抗复核覆盖下载权限、完整成员与归档身份、原格式回退、路径穿越/同名文件、取消和切账号、旧回调、临时文件与旧面板关闭、媒体结束/失败回调身份和前后台。模拟器截图覆盖 iPhone 浅色、iPad 深色、中文最大字号、实际几何图片、系统面板及准确部分失败提示。系统原生 SwiftUI 工具栏仍出现 UIKit 层级诊断，实际按钮回归通过；真机、VoiceOver、硬件键盘和分屏不据此宣告通过。
 - 本地化最终 **Apple 5899 / Android 2188 / Windows 3402**，双语/参数/资源引用/硬编码检查通过；fixture **29 组/48 私有引用**、请求 **170 组/1 写结果**及 API 参数目录检查通过。最初误用不存在的 fixture 脚本未计通过，改用 `python3 tools/contract-validation/validate_fixtures.py` 后成功。严格文档与差异空白检查通过。
 - 日志/结果包为本机临时目录的 `m3h3-*.log`、`m3h3-*.xcresult`，不提交；一次性导出截图/视频在复核后清理，iPad 恢复浅色设置。真实 NAS、设备文件保护和系统交接按主计划 M3h3a 的具体 `PENDING_USER_VALIDATION` 验收；旧图库清理继续 M3h3b，之后仍有 M4–M8，不将其计为只待真机。
+
+## 2026-10-04 移动 M3h3b 旧图库与开发数据收口
+
+在 `8a655ca3` 基线上核对正式路由及所有调用方后，删除无入口的 File Station 图库、Library/Timeline/Viewer、Cell/Grid 和旧单张导入共 **14 个源文件**，移除组合根和会话里的旧装配；设置改为只统计、清理并回读正式照片缩略图缓存。系统照片选择器仍供 Chat 与正式上传共用，File Station 共享 Repository、文件预览和已发布 Mac 上传书签存储保留实际用途。原旧图库只有内存缓存，没有需要迁移的旧磁盘相册库。
+
+用户在本切片明确补充：移动端未发布，后续按开发阶段处理，不保留旧开发数据兼容模式，无用旧代码直接删除。依此将相册管理检查点统一为唯一当前格式 **16**，删去按操作选择 1–15 以及接受这些旧编号的分支；操作、账号、原目标、回执、写入阶段和损坏数据校验保持。仅移动端装配这套磁盘存储，Mac 共享调用按当前类型回归，NAS 方法、参数及其他端实现均未改变。旧开发记录不自动转换、删除或重放；格式往返与拒绝旧/未知编号新增两项 Core 测试，现有各类恢复用例改为断言当前格式，未移除写前保存或只读恢复断言。
+
+旧 Library/Timeline 的目录扫描、视频排除和永久路径缓存断言随无入口实现退休；仍有效的会话、分页失败/偏移、迟到响应、空间权限、预览、系统选择及清理转到正式模型。五项缩略图缓存测试迁入 `MobilePhotoThumbnailStoreTests` 后逐函数与原代码比对完全一致；取消用例单独迁移并保留释放槽位、零取消缓存和可重试检查。完整映射和替代语义见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m3h3b-旧图库迁移账本)。移动单元总数由 939 收敛为 910；共享正式模型与 Repository 的已有回归继续覆盖原件身份、权限及分页，不能将数量变化解释为删除安全门禁。
+
+实际验证与结果：
+
+- 锁定 XcodeGen **2.46.0** 生成移动工程；重复生成前后 SHA-256 均为 `9469fa8e2920a51f1c24de2a8d036ffe327ad3817315bc62336b14459281b237`。四轮 `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 均通过；第四轮包含唯一当前恢复格式和对应测试。
+- 两端以 `xcodebuild test-without-building` 沿用上述 project/scheme/derivedDataPath，`-parallel-testing-enabled NO -only-testing:DsmMobileTests`，iPad destination 为 `platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289`。第一轮各 910 项、1 项既有设备文件保护跳过，两个测试共 3 条断言失败：静态检查仍写旧权限方法名，退出/删除配置用例在异步缓存清理前检查了零成本。改为检查正式 `canDeleteSelection`，并等待实际缓存清理完成再保留零成本断言；第二轮各 **910 项、1 跳过、0 失败**（21.899 / 21.708 秒）。格式收敛后的第三轮各 **910 项、1 跳过、0 失败**（iPhone **21.601** / iPad **21.532** 秒），即各 909 项实际通过。
+- 第一轮四项实际 UI 两端全部通过：批量照片原件交给系统文件面板并取消、单张预览删除后保留其他照片、选择上传/清理记录、文件与 App 设置导航。iPhone **106.556 秒**、iPad **118.572 秒**。第四轮构建后另验“照片资料未知重启保留记录并限制再次编辑”，iPhone **46.671 秒**、iPad **59.650 秒**均通过，证明当前格式仍保留重启后的防重复提交；测试全部使用合成服务和素材，没有真实 NAS 写入。
+- 清理后的聚焦共享 `swift test --package-path apple --jobs 4 --filter 'SynologyPhotos(Model|Repository)Tests'` 为 **865 项、0 失败（3.143 秒）**。格式收敛后的完整 `swift test --package-path apple --jobs 4` 为 **2537 项 XCTest、172 项既有条件跳过、0 失败（34.890 秒）**，另 **12 项 Swift Testing（0.036 秒）**通过。
+- 最终 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO` **通过**；主程序 `lipo -archs` 实际为 **x86_64 arm64**。没有安装、启动或发布 Mac 包。
+- 本地化资源检查 **Apple 5899 / Android 2188 / Windows 3402**，双语/参数/引用/硬编码通过；fixture **29 组/48 项私有引用**、请求 **170 组/1 写结果**、API 参数目录、严格发布文档及 `git diff --check` 通过。
+
+独立集成与只读对抗复核覆盖无旧路由/装配、Chat/正式上传选择器仍在使用、当前格式校验的全部读取入口、损坏/不支持记录不自动重写、异步注销清理、旧会话迟到响应、有效测试映射以及无其他端源码变化。结果包和日志为本机临时目录中的 `m3h3b-*.xcresult` 与 `m3h3b-*.log`，不提交。真实 NAS、设备保护、媒体交接和完整辅助功能仍按各 M3 切片的具体 `PENDING_USER_VALIDATION` 进行；旧代码/开发格式清理已实现，不列为设备待验。下一阶段为 M4 Chat，M4–M8 仍未完成。

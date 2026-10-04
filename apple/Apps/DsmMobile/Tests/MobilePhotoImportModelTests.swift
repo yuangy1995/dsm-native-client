@@ -1,237 +1,119 @@
-import DsmCore
 @testable import DsmMobile
+import DsmCore
+import DsmPhotosFeature
 import Foundation
 import XCTest
 
-private struct PhotoImportItemStub: MobilePhotosPickerItemServing {
-    let selectionID = UUID().uuidString
-    let result: Result<MobilePhotosPickerArtifact, Error>
-
-    func loadArtifact() async throws -> MobilePhotosPickerArtifact {
-        try result.get()
-    }
-}
-
-private actor PhotoImportTransferServiceSpy: MobileTransferServing {
-    private(set) var uploadCount = 0
-
-    func upload(
-        _ request: MobileUploadRequest,
-        progress: @escaping FileTransferProgress
-    ) async throws {
-        uploadCount += 1
-        progress(1, 1)
-    }
-
-    func reviewUpload(_ request: MobileUploadRequest) async throws -> MutationResult? { nil }
-    func download(_ request: MobileDownloadRequest, progress: @escaping FileTransferProgress) async throws {}
-    func removePartialDownload(_ request: MobileDownloadRequest) async {}
-}
-
 @MainActor
 final class MobilePhotoImportModelTests: XCTestCase {
-    func test普通照片文件进入既有Activity上传且只提交一次() async throws {
-        let fixture = try makePhotoImportFixture()
-        defer { fixture.cleanup() }
-        let source = fixture.base.appendingPathComponent("photo.jpg")
-        XCTAssertTrue(FileManager.default.createFile(atPath: source.path, contents: Data([1, 2, 3])))
-        let service = PhotoImportTransferServiceSpy()
-        var refreshed = false
-
-        fixture.model.begin(
-            item: PhotoImportItemStub(result: .success(.init(url: source))),
-            destination: fixture.destination,
-            repositoryProfileID: fixture.destination.profileID,
-            repositoryIdentity: ObjectIdentifier(fixture.repositoryMarker),
-            controller: fixture.controller,
-            service: service,
-            coordinator: fixture.coordinator,
-            onConfirmedSuccess: { refreshed = true }
-        )
-
-        try await waitForPhotoImport {
-            if case .queued = fixture.model.phase { return true }
-            return false
-        }
-        let count = await service.uploadCount
-        XCTAssertEqual(count, 1)
-        let tasks = await fixture.coordinator.allTasks()
-        XCTAssertEqual(tasks.count, 1)
-        XCTAssertEqual(tasks.first?.stableTarget, "/home/Photos/photo.jpg")
-        try await waitForPhotoImport { refreshed }
+    func test系统选择照片进入正式队列且重复确认仅上传一次() async throws {
+        let (root, source, service, session) = try await fixture()
+        defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
+        let uploads = try XCTUnwrap(session.uploads)
+        uploads.begin()
+        uploads.preparePhotos([ImportItem(result: .success(.init(url: source)))], draftID: try XCTUnwrap(uploads.draftID))
+        try await wait { !uploads.isPreparing && !uploads.isLoadingDefaults }
+        XCTAssertNil(uploads.error); XCTAssertEqual(uploads.files.count, 1)
+        XCTAssertTrue(uploads.submit()); XCTAssertFalse(uploads.submit())
+        try await wait { !session.model.isManaging }
+        let commands = await service.commands
+        XCTAssertEqual(commands.count, 1)
+        XCTAssertEqual(session.model.uploadQueue.first?.state, .completed)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
     }
 
-    func test选择器受控临时文件在进入Activity后立即清理() async throws {
-        let fixture = try makePhotoImportFixture()
-        defer { fixture.cleanup() }
-        let pickerDirectory = fixture.base.appendingPathComponent("picker-owned")
-        try FileManager.default.createDirectory(at: pickerDirectory, withIntermediateDirectories: true)
-        let source = pickerDirectory.appendingPathComponent("photo.jpg")
-        XCTAssertTrue(FileManager.default.createFile(atPath: source.path, contents: Data([1, 2, 3])))
-        let service = PhotoImportTransferServiceSpy()
-
-        fixture.model.begin(
-            item: PhotoImportItemStub(result: .success(.init(
-                url: source,
-                ownedDirectory: pickerDirectory
-            ))),
-            destination: fixture.destination,
-            repositoryProfileID: fixture.destination.profileID,
-            repositoryIdentity: ObjectIdentifier(fixture.repositoryMarker),
-            controller: fixture.controller,
-            service: service,
-            coordinator: fixture.coordinator,
-            onConfirmedSuccess: {}
-        )
-
-        try await waitForPhotoImport {
-            if case .queued = fixture.model.phase { return true }
-            return false
-        }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: pickerDirectory.path))
-        let uploadCount = await service.uploadCount
-        XCTAssertEqual(uploadCount, 1)
+    func test选择器临时目录及时释放且队列保留独立受保护副本() async throws {
+        let (root, _, _, session) = try await fixture()
+        defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
+        let picker = root.appendingPathComponent("Picker")
+        try FileManager.default.createDirectory(at: picker, withIntermediateDirectories: false)
+        let source = picker.appendingPathComponent("Synthetic.jpg")
+        try MobilePhotosUIService.image.write(to: source)
+        let uploads = try XCTUnwrap(session.uploads)
+        uploads.begin()
+        uploads.preparePhotos([ImportItem(result: .success(.init(url: source, ownedDirectory: picker)))], draftID: try XCTUnwrap(uploads.draftID))
+        try await wait { !uploads.isPreparing }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: picker.path))
+        let prepared = try XCTUnwrap(uploads.files.first)
+        XCTAssertEqual(try Data(contentsOf: prepared.url), MobilePhotosUIService.image)
+        uploads.cancel()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: prepared.url.path))
     }
 
-    func test系统选择项不可读取时显示通俗失败且零上传() async throws {
-        let fixture = try makePhotoImportFixture()
-        defer { fixture.cleanup() }
-        let service = PhotoImportTransferServiceSpy()
-
-        fixture.model.begin(
-            item: PhotoImportItemStub(result: .failure(MobilePhotosPickerFailure.itemUnavailable)),
-            destination: fixture.destination,
-            repositoryProfileID: fixture.destination.profileID,
-            repositoryIdentity: ObjectIdentifier(fixture.repositoryMarker),
-            controller: fixture.controller,
-            service: service,
-            coordinator: fixture.coordinator,
-            onConfirmedSuccess: {}
-        )
-
-        try await waitForPhotoImport { fixture.model.phase == .failed(.itemUnavailable) }
-        let count = await service.uploadCount
-        XCTAssertEqual(count, 0)
+    func test系统选择不可读取时显示可恢复错误且零上传() async throws {
+        let (root, _, service, session) = try await fixture()
+        defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
+        let uploads = try XCTUnwrap(session.uploads)
+        uploads.begin()
+        uploads.preparePhotos([ImportItem(result: .failure(MobilePhotosPickerFailure.itemUnavailable))], draftID: try XCTUnwrap(uploads.draftID))
+        try await wait { !uploads.isPreparing }
+        XCTAssertNotNil(uploads.error); XCTAssertTrue(uploads.files.isEmpty); XCTAssertFalse(uploads.canSubmit)
+        let commands = await service.commands
+        XCTAssertTrue(commands.isEmpty)
     }
 
-    func test跨空间越界与回收站目标在选择前拒绝() throws {
-        let profileID = UUID()
-        XCTAssertFalse(MobilePhotoImportModel.isAllowed(.init(
-            profileID: profileID,
-            folderPath: "/photo/other",
-            spaceRootPath: "/home/Photos"
-        )))
-        XCTAssertFalse(MobilePhotoImportModel.isAllowed(.init(
-            profileID: profileID,
-            folderPath: "/home/Photos/#recycle/item",
-            spaceRootPath: "/home/Photos"
-        )))
-        XCTAssertTrue(MobilePhotoImportModel.isAllowed(.init(
-            profileID: profileID,
-            folderPath: "/home/Photos/Trips",
-            spaceRootPath: "/home/Photos"
-        )))
+    func test目标空间变化拒绝旧选择且不投递到新空间() async throws {
+        let (root, source, service, session) = try await fixture()
+        defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
+        let uploads = try XCTUnwrap(session.uploads)
+        uploads.begin(); let draft = try XCTUnwrap(uploads.draftID)
+        await session.model.selectSpace(.shared)
+        uploads.preparePhotos([ImportItem(result: .success(.init(url: source)))], draftID: draft)
+        XCTAssertFalse(uploads.isPreparing); XCTAssertFalse(uploads.submit()); XCTAssertTrue(uploads.files.isEmpty)
+        let commands = await service.commands
+        XCTAssertTrue(commands.isEmpty)
     }
 
-    func test同Profile更换Repository会取消准备并拒绝旧结果() async throws {
-        let fixture = try makePhotoImportFixture()
-        defer { fixture.cleanup() }
-        let source = fixture.base.appendingPathComponent("slow.jpg")
-        _ = FileManager.default.createFile(atPath: source.path, contents: Data([1]))
-        let delayed = DelayedPhotoImportItem(url: source)
-        let service = PhotoImportTransferServiceSpy()
+    func test同账号会话替换取消旧选择准备并拒绝迟到结果() async throws {
+        let (root, source, service, session) = try await fixture()
+        defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
+        let uploads = try XCTUnwrap(session.uploads)
+        let item = DelayedImportItem(url: source)
+        uploads.begin(); uploads.preparePhotos([item], draftID: try XCTUnwrap(uploads.draftID))
+        for _ in 0..<300 { if await item.started { break }; try await Task.sleep(for: .milliseconds(5)) }
+        let started = await item.started; XCTAssertTrue(started)
+        session.configure(MobilePhotosUIService(profileID: service.profileID))
+        await item.release()
+        for _ in 0..<30 { await Task.yield() }
+        XCTAssertNil(uploads.draftID); XCTAssertFalse(uploads.isPreparing)
+        XCTAssertFalse(uploads.submit()); XCTAssertTrue(uploads.files.isEmpty)
+        let commands = await service.commands
+        XCTAssertTrue(commands.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+    }
 
-        fixture.model.begin(
-            item: delayed,
-            destination: fixture.destination,
-            repositoryProfileID: fixture.destination.profileID,
-            repositoryIdentity: ObjectIdentifier(fixture.repositoryMarker),
-            controller: fixture.controller,
-            service: service,
-            coordinator: fixture.coordinator,
-            onConfirmedSuccess: {}
-        )
-        fixture.model.activate(
-            profileID: fixture.destination.profileID,
-            repositoryIdentity: ObjectIdentifier(NSObject())
-        )
-        await delayed.resume()
-        try await Task.sleep(for: .milliseconds(30))
-
-        XCTAssertEqual(fixture.model.phase, .idle)
-        let count = await service.uploadCount
-        XCTAssertEqual(count, 0)
+    private func fixture() async throws -> (URL, URL, MobilePhotosUIService, MobileSynologyPhotosSession) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-import-migration-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let source = root.appendingPathComponent("Synthetic.jpg")
+        try MobilePhotosUIService.image.write(to: source)
+        let service = MobilePhotosUIService(state: "photo-upload")
+        let session = MobileSynologyPhotosSession()
+        session.configure(service, uploadStorage: .init(recordURL: root.appendingPathComponent("Recovery/queue.json")), reviewDelay: { _ in })
+        await session.activate()
+        return (root, source, service, session)
+    }
+    private func wait(_ condition: () -> Bool) async throws {
+        for _ in 0..<300 { if condition() { return }; try await Task.sleep(for: .milliseconds(5)) }
+        XCTFail("选择器准备未完成")
     }
 }
 
-private actor DelayedPhotoImportItem: MobilePhotosPickerItemServing {
+private struct ImportItem: MobilePhotosPickerItemServing {
     let selectionID = UUID().uuidString
+    let result: Result<MobilePhotosPickerArtifact, Error>
+    func loadArtifact() async throws -> MobilePhotosPickerArtifact { try result.get() }
+}
+
+private actor DelayedImportItem: MobilePhotosPickerItemServing {
+    nonisolated let selectionID = UUID().uuidString
     let url: URL
+    private(set) var started = false
     private var continuation: CheckedContinuation<Void, Never>?
-
     init(url: URL) { self.url = url }
-
     func loadArtifact() async throws -> MobilePhotosPickerArtifact {
-        await withCheckedContinuation { continuation = $0 }
-        try Task.checkCancellation()
-        return MobilePhotosPickerArtifact(url: url)
+        await withCheckedContinuation { continuation = $0; started = true }
+        return .init(url: url)
     }
-
-    func resume() {
-        continuation?.resume()
-        continuation = nil
-    }
-}
-
-private struct PhotoImportFixture {
-    let base: URL
-    let root: URL
-    let model: MobilePhotoImportModel
-    let coordinator: MobileTransferCoordinator
-    let controller: MobileDocumentTransferController
-    let repositoryMarker: NSObject
-    let destination: MobilePhotoImportDestination
-
-    func cleanup() { try? FileManager.default.removeItem(at: base) }
-}
-
-@MainActor
-private func makePhotoImportFixture() throws -> PhotoImportFixture {
-    let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let root = base.appendingPathComponent("artifacts")
-    try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-    let coordinator = MobileTransferCoordinator()
-    let controller = MobileDocumentTransferController(
-        transferCoordinator: coordinator,
-        rootURL: root
-    )
-    let profileID = UUID()
-    let repositoryMarker = NSObject()
-    let model = MobilePhotoImportModel()
-    model.activate(profileID: profileID, repositoryIdentity: ObjectIdentifier(repositoryMarker))
-    controller.setActiveProfile(profileID)
-    return PhotoImportFixture(
-        base: base,
-        root: root,
-        model: model,
-        coordinator: coordinator,
-        controller: controller,
-        repositoryMarker: repositoryMarker,
-        destination: MobilePhotoImportDestination(
-            profileID: profileID,
-            folderPath: "/home/Photos",
-            spaceRootPath: "/home/Photos"
-        )
-    )
-}
-
-@MainActor
-private func waitForPhotoImport(
-    _ condition: @escaping @MainActor () async -> Bool
-) async throws {
-    for _ in 0..<100 {
-        if await condition() { return }
-        try await Task.sleep(for: .milliseconds(20))
-    }
-    XCTFail("等待照片导入状态超时")
+    func release() { continuation?.resume(); continuation = nil }
 }
