@@ -768,3 +768,10 @@ M2h3 第二轮 `m2h3-iphone2.xcresult` / `m2h3-ipad2.xcresult` 的 **3 项新增
 M2h3 最终 `m2h3-build8.log` **构建通过**；`m2h3-iphone4.xcresult` / `m2h3-ipad4.xcresult` 各 **654 项全部单元通过**，其中 11 项打包下载行为含最终副本保护失败的清理/禁止交付。第三轮只有错误假设的系统属性断言失败，未把该结果包算作通过。第二轮四项实际 UI 已分别全部通过，最终异常清理逻辑由新行为测试覆盖；没有无理由重跑整组 UI。
 
 XcodeGen 2.46.0 重复生成 SHA-256 为 `a6f07921bf9109d17b4be3934bd0da43582a742c08986de0f9dfaae9b6f13521`。本地化完整性/硬编码扫描为 Apple 5711 / Android 2188 / Windows 3402，通过；最终严格文档及差异检查均通过。所有临时日志、结果包与合成截图在本机临时验证目录，不进入源码；真实 NAS、系统实际写出和设备文件保护仍按主计划设备待办验收。
+
+
+## 2026-10-04 移动 iPad 搜索与目录测试定位修正
+
+M2g2 提交的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37162193861) 在完整移动回归失败：iPad ISO 的通用 `Any` 后代查询超时，账号限速搜索误选背景文件页的 `Search files`，点击后丢失键盘焦点。已读取云端日志和 xcresult；未修改业务/权限/请求，只将两处定位分别改为已存在的目录按钮和 `Search accounts` 搜索框，保留原成功、空列表及筛选结果断言。ISO 的长时间 AX 查询超时本机未复现，精确限定控件后仍须以新云端完整结果确认，不宣称所有 CI 已通过。
+
+`xcodebuild build-for-testing` 沿用 M2h3 的同工程/方案/模拟器/构建目录及临时签名参数，通过（`m2-ui-query-build.log`）。随后 `xcodebuild test-without-building`、`-parallel-testing-enabled NO`、两端分别以 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/testISO选择空目录加载并可卸载` 和 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test限速名单空内容和搜索无结果提供恢复路径` 重测；`m2-ui-query-iphone.xcresult` 与 `m2-ui-query-ipad.xcresult` **各 2/2 全部通过**。该增量只改 UI 测试定位，不重复无关共享逻辑测试；本地化/严格文档/差异门禁在提交前再次检查。

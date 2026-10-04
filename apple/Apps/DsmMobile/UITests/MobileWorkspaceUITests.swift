@@ -401,7 +401,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
         app.buttons["Actions for Sample image.iso"].tap(); app.buttons["Mount ISO"].tap()
-        let destination = element("files.remote.iso.destination", in: app)
+        let destination = app.buttons["files.remote.iso.destination"]
         XCTAssertTrue(destination.waitForExistence(timeout: 5)); destination.tap()
         chooseRemoteDestination(app)
         app.buttons["files.remote.iso.save"].tap()
@@ -571,7 +571,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No accounts were returned for this type. Choose another account type or refresh."].waitForExistence(timeout: 5))
         type.tap(); app.buttons["Local accounts"].tap()
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sample member'")).firstMatch.waitForExistence(timeout: 5))
-        let search = app.searchFields.firstMatch
+        let search = app.searchFields["Search accounts"]
         XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("missing-fixture")
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sample member'")).firstMatch.exists)
         XCTAssertTrue(app.staticTexts["Try another search or ask an administrator to check your access to the account list."].exists)
