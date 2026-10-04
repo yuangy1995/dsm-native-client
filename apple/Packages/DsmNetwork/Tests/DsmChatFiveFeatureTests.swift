@@ -304,4 +304,72 @@ extension DsmChatRepositoryTests {
         XCTAssertEqual(try requests.map { try decodeForm($0.httpBody)["method"] }, ["list", "list", "create", "list"])
     }
 
+    func test定时创建回执保存失败后同请求不重新创建() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"schedules":[]}}"#),
+            response(#"{"success":true,"data":{"cronjob_id":"job-1"}}"#),
+            response(#"{"success":true,"data":{"schedules":[{"cronjob_id":"job-1","channel_id":"27","message":"合成定时","send_at":1800000000000}]}}"#)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let requestID = UUID(), date = Date(timeIntervalSince1970: 1_800_000_000)
+        do {
+            _ = try await repository.createScheduledMessage(conversationID: "27", text: "合成定时", sendAt: date, clientRequestID: requestID) { id in
+                XCTAssertEqual(id, "job-1")
+                let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 2)
+                throw URLError(.cannotWriteToFile)
+            }
+            XCTFail("保存失败不得宣布完成")
+        } catch let error as AppError { XCTAssertEqual(error.category, .partialFailure) }
+        let result = try await repository.createScheduledMessage(conversationID: "27", text: "合成定时", sendAt: date, clientRequestID: requestID) { id in
+            XCTAssertEqual(id, "job-1")
+            let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 2)
+        }
+        XCTAssertEqual(result.id, "job-1")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(try requests.map { try decodeForm($0.httpBody)["method"] }, ["list", "create", "list"])
+    }
+
+    func test提醒及定时取消的回读失败保留未知结果() async throws {
+        for reminder in [true, false] {
+            let transport = MockHTTPTransport(responses: [response(#"{"success":true}"#), DsmHTTPResponse(data: Data(), statusCode: 503)])
+            let repository = try makeRepository(transport: transport)
+            do {
+                if reminder { try await repository.deleteReminder(messageID: "9001", conversationID: "27", clientRequestID: UUID()) }
+                else { try await repository.deleteScheduledMessage(id: "job-1", conversationID: "27", clientRequestID: UUID()) }
+                XCTFail("不能把提交后的读取失败当作取消失败")
+            } catch let error as AppError { XCTAssertEqual(error.category, .partialFailure); XCTAssertFalse(error.isRetryable) }
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(try requests.map { try decodeForm($0.httpBody)["method"] }, ["delete", "list"])
+        }
+    }
+
+    func test提醒及定时取消传输中断后可由空列表恢复且只提交一次() async throws {
+        for reminder in [true, false] {
+            let transport = MockHTTPTransport(responses: [DsmHTTPResponse(data: Data(), statusCode: 503),
+                response(reminder ? #"{"success":true,"data":{"reminders":[]}}"# : #"{"success":true,"data":{"schedules":[]}}"#)])
+            let repository = try makeRepository(transport: transport)
+            let id = UUID()
+            for _ in 0..<2 {
+                if reminder { try await repository.deleteReminder(messageID: "9001", conversationID: "27", clientRequestID: id) }
+                else { try await repository.deleteScheduledMessage(id: "job-1", conversationID: "27", clientRequestID: id) }
+            }
+            let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 2)
+        }
+    }
+
+    func test提醒及定时重复身份列表不可用于确认结果() async throws {
+        let reminderRow = #"{"post_id":"9001","remind_at":1800000000000}"#
+        let scheduleRow = #"{"cronjob_id":"job-1","channel_id":"27","message":"合成定时","send_at":1800000000000}"#
+        for reminder in [true, false] {
+            let key = reminder ? "reminders" : "schedules", row = reminder ? reminderRow : scheduleRow
+            let transport = MockHTTPTransport(responses: [response("{\"success\":true,\"data\":{\"\(key)\":[\(row),\(row)]}}")])
+            let repository = try makeRepository(transport: transport)
+            do {
+                if reminder { _ = try await repository.listReminders(conversationID: "27") }
+                else { _ = try await repository.listScheduledMessages(conversationID: "27") }
+                XCTFail("不能接受重复身份")
+            } catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        }
+    }
+
 }

@@ -192,7 +192,7 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("chat.state.announcementPageState"))
         XCTAssertTrue(source.contains("chat.loadConversationAnnouncements(forceRefresh: true)"))
         XCTAssertTrue(source.contains("chat.cancelConversationAnnouncementLoad()"))
-        XCTAssertTrue(source.contains("Image(systemName: \"megaphone\")"))
+        XCTAssertTrue(source.contains("Label(L10n.string(\"mobile.chat.announcements.action\"), systemImage: \"megaphone\")"))
         XCTAssertTrue(source.contains(".frame(width: 44, height: 44)"))
         XCTAssertTrue(source.contains(".frame(maxWidth: .infinity, minHeight: 44"))
         for key in [

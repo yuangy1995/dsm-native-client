@@ -1271,3 +1271,43 @@ UI 在相同两台设备及 `test-without-building` 参数下运行：首轮同�
 中间失败如实保留：第一轮两端各 948 项单元有同一创建恢复测试两条断言失败，原因是新 Repository 没有当前账号身份缓存；恢复改为读取当前账号/会话及原投票后解决。另一个首次测试脚本错误将现有 `Try Again` 按钮写成 `Retry`，导致每端四项投票 UI 中一项失败，修正准确按钮定位后通过；未降低恢复断言。复核补充同一连接恢复后继续改选、提交前/后取消和缺 Post v5 的零写入测试。第二轮两端 951 项单元均通过，最终加入能力门测试后为 952 项。截图复核还将选项正文/票数显式采用系统前景色，避免按钮内继承浅蓝色；第二轮实际截图已确认两种主题、大字与触控可用，iPad 大字结果可滚动。
 
 结果保留在本机本轮工作目录的 `m4b1-build1..4.log`、`m4b1-iphone1..3`/`m4b1-ipad1..3` 结果包与日志、`m4b1-shared2.log`、`m4b1-macos.log`；导出的临时截图在复核后清理。生成工程 SHA-256 为 `8bb7d41394ed9e316fa076b0d76476f74728c6d851085586d7eb287b4fcaf504`。`PENDING_USER_VALIDATION` 的专用账号/可丢弃投票、匿名规则、断网、十选项、VoiceOver/硬件键盘与锁屏保护步骤见[移动 M4b1](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b1-投票创建参与与恢复)。本轮没有真实 NAS 写入或移动分发，继续 M4b2 提醒/定时及 M4 后续切片。
+
+## 2026-10-04 移动 M4b2 提醒与定时消息
+
+基线 `052b88a7`。新增移动 `MobileChatTimedActionModel/Store/View`、Debug 合成服务、25 项行为测试及五项实际 UI；包装器按能力开放提醒及文字定时，原消息菜单和聊天工具栏接入原生表单、筛选、刷新及明确取消确认。工具栏次要动作收进统一菜单，保留公告/成员/置顶和可访问提示。共享协议增加定时创建回执保存回调；取消提交后的网络/读取异常保持未知语义，重复身份列表不能用来确认结果。Mac App、Windows、Android 未修改，NAS 请求字段不变；共享影响已同步 API 记录和矩阵。
+
+`Chat/timed-actions-v1.json` 采用独立当前开发格式，受完整文件保护且排除备份，仅含账号上下文、动作/目标身份、时间与文字摘要，不含正文或凭据。提醒设置/取消、定时取消都重新读取原对象和会话；原时间或内容改变时零写入。定时创建回执先保存再回读，没有回执不按相似内容认领，重启只查询。超过发送时间的取消不能凭列表消失宣称未送达。分离的集成与只读对抗复核另外发现并修复同账号切会话后迟到成功替换当前列表，以及原会话错误出现到其他会话的问题；都有实际 Repository 合成回归。无新依赖、权限、最低版本、登录格式或旧开发迁移。
+
+实际命令（`xcodegen` 调用锁定的 2.46.0）：
+
+```sh
+xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py --strict-release
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/request-contract/validate_contracts.py
+git diff --check
+```
+
+每端第一轮在相同 `test-without-building` 中同时指定全部单元、`-only-testing:DsmMobileUITests/MobileChatTimedActionUITests`、`-only-testing:DsmMobileUITests/MobileChatPollUITests/test创建投票查看结果并提交选择` 和 `-only-testing:DsmMobileUITests/MobileChatUITests/test聊天搜索打开原消息并发送线程回复`；第二轮为全部单元，加 `MobileChatTimedActionUITests` 下的 `test中文深色大字定时列表及筛选空状态`、`test定时创建中断后重启按原回执恢复`、`test消息提醒保存修改与取消` 三个完整选择器。各轮用独立 `-resultBundlePath`。
+
+| 实际门禁 | 结果 |
+| --- | --- |
+| 移动构建 | 首次发现消息缓存路径错误并修复，第二至四次 `build-for-testing` 成功；最后一次仅去除未使用的合成服务辅助方法；最终工程重复生成 SHA-256 为 `4006e78ed7744b2d396399c638ebcfde8a3b9440b7715a90b40ba8374095b522` |
+| iPhone 最终全部单元 | 977 项，1 条既有设备文件保护条件跳过，0 失败；24.421 秒（含框架开销 24.908 秒） |
+| iPad 最终全部单元 | 977 项，1 条同类跳过，0 失败；24.419 秒（含框架开销 24.864 秒） |
+| 新行为测试 | 25 项两端通过：创建/修改/取消、毫秒参数、重复点击、明确拒绝、原快照变化、加密/撤权、坏列表/存储、回执丢失、跨重启、取消时点、迟到数据/错误、跨账号及过发送时间 |
+| 新实际 UI | iPhone 首轮五项全部通过（315.053 秒）；iPad 首轮四项通过、一项定位失败，第二轮修正后通过。最后三项复验两端全通过（127.027 / 142.214 秒） |
+| 原聊天 UI | 两端投票创建/参与及搜索原消息/线程发送均通过；菜单收拢未改变这些入口 |
+| 共享 Apple | 2544 项 XCTest，172 条既有环境/设备条件跳过，0 失败，33.823 秒；另 12 项 Swift Testing 通过，0.037 秒 |
+| macOS Release | 双架构构建通过，实际主程序 `lipo -archs` 为 `x86_64 arm64`；未安装或启动 |
+| 双语/文档/契约 | Apple 5956 / Android 2188 / Windows 3402；引用、参数、硬编码、严格文档、29 组 fixture / 48 项私有引用及 170 个请求 / 1 个结果均通过 |
+
+中间失败如实保留：首轮移动构建将会话消息缓存误写为不存在的顶层属性；本地化首次只增加 App 资源，缺共享资源，随后同步并通过。首轮两端 975 项单元的两个旧展示测试共三条断言失败：菜单合并遗漏公告/成员无障碍提示，以及图标由 Image 改为原生 Label；已恢复提示并精确检查 Label 图标，未删安全或隐私断言。iPad 中文筛选脚本误点弹窗下方的“搜索会话”，改为准确的“搜索消息”后通过；提醒关闭同样定位当前导航栏。复核再增加两项迟到结果/错误的会话隔离测试，使最终为 977 项。实际截图已查看两端浅色表单/列表、中文深色最大字号、错误和筛选空态，并移除表单空白提示行；最终截图复验确认空白行消失及 iPad 搜索可用。
+
+日志和结果包留在本机本轮工作目录的 `m4b2-mobile-build1..4.log`、`m4b2-iphone1..2`/`m4b2-ipad1..2`、`m4b2-shared1.log`、`m4b2-mac-build1.log`；导出的临时截图/文本检查后清理，不纳入提交。真实 NAS 未参与写测试，移动端未分发；跨时区、到期实际投递、VoiceOver/硬件键盘和锁屏保护按[移动 M4b2 待办](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b2-提醒与定时消息)验收。下一切片为 M4b3 转发/置顶/会话操作，M4–M8 尚未整体完成。

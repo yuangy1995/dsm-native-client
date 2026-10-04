@@ -620,6 +620,11 @@ public protocol ChatRepository: Sendable {
         sendAt: Date,
         clientRequestID: UUID
     ) async throws -> ChatScheduledMessage
+    /// 收到定时任务身份后先保存回执，再回读正文与时间；保存失败不得重新创建。
+    func createScheduledMessage(
+        conversationID: String, text: String, sendAt: Date, clientRequestID: UUID,
+        recordCreatedSchedule: @escaping @Sendable (String) async throws -> Void
+    ) async throws -> ChatScheduledMessage
     func deleteScheduledMessage(
         id: String,
         conversationID: String,
@@ -636,6 +641,15 @@ public protocol ChatRepository: Sendable {
 }
 
 public extension ChatRepository {
+    func createScheduledMessage(
+        conversationID: String, text: String, sendAt: Date, clientRequestID: UUID,
+        recordCreatedSchedule: @escaping @Sendable (String) async throws -> Void
+    ) async throws -> ChatScheduledMessage {
+        let value = try await createScheduledMessage(conversationID: conversationID, text: text, sendAt: sendAt, clientRequestID: clientRequestID)
+        do { try await recordCreatedSchedule(value.id) }
+        catch { throw AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("chat.schedule.unavailable")) }
+        return value
+    }
     func createPoll(_ draft: ChatPollDraft, recordCreatedMessage: @escaping @Sendable (String) async throws -> Void) async throws -> ChatMessage {
         let message = try await createPoll(draft)
         do { try await recordCreatedMessage(message.id) }

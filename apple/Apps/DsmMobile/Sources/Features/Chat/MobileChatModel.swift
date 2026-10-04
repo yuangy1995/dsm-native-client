@@ -11,6 +11,8 @@ final class MobileChatModel {
     private(set) var profiles: [UUID: MobileChatProfileState] = [:]
     private(set) var conversationCreators: [UUID: MobileChatConversationCreator] = [:]
     private(set) var interaction: MobileChatInteractionModel?
+    private(set) var timedActions: MobileChatTimedActionModel?
+    private let timedActionRecovery: MobileChatTimedActionStore
     private(set) var polls: MobileChatPollModel?
     private let pollRecovery: MobileChatPollStore
     private let interactionRecovery: MobileChatInteractionStore
@@ -61,6 +63,7 @@ final class MobileChatModel {
     ) {
         self.interactionRecovery = MobileChatInteractionStore(root: interactionRecoveryRoot)
         self.pollRecovery = MobileChatPollStore(root: interactionRecoveryRoot)
+        self.timedActionRecovery = MobileChatTimedActionStore(root: interactionRecoveryRoot)
         self.conversationPinStore = conversationPinStore
         self.attachmentFileManager = attachmentFileManager
         self.attachmentCopier = attachmentCopier
@@ -131,6 +134,8 @@ final class MobileChatModel {
               state.availability.supportedFeatures.contains(.deleteOwnMessage),
               interaction?.isMutating != true,
               polls?.isMutating != true,
+              timedActions?.isMutating != true,
+              timedActions?.hasPending(in: message.conversationID, targetID: message.id, reminder: true) != true,
               polls?.pending.contains(where: { $0.kind == .vote && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true,
               interaction?.pending.contains(where: { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true,
               state.deletingMessageID == nil,
@@ -164,6 +169,8 @@ final class MobileChatModel {
         interaction?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         polls = MobileChatPollModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: pollRecovery, owner: self)
         polls?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
+        timedActions = MobileChatTimedActionModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: timedActionRecovery, owner: self)
+        timedActions?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         if let creator = conversationCreators[profileID] {
             creator.rebind(
                 repository: mobileRepository,
@@ -294,6 +301,7 @@ final class MobileChatModel {
             self?.updateActive { $0.availability = availability }
             self?.interaction?.updateAvailability(availability)
             self?.polls?.updateAvailability(availability)
+            self?.timedActions?.updateAvailability(availability)
             self?.conversationCreators[profileID]?.updateAvailability(availability)
             guard availability.status == .available else {
                 self?.finishUnavailable(profileID: profileID, generation: requestGeneration)
@@ -530,6 +538,7 @@ final class MobileChatModel {
             await interaction?.recoverEdits()
             guard activeProfileID == profileID else { return }
             await polls?.recover()
+            await timedActions?.recover()
         }
     }
 
@@ -762,6 +771,8 @@ final class MobileChatModel {
     }
 
     func cancelAllWork() {
+        timedActions?.invalidate()
+        timedActions = nil
         polls?.invalidate()
         polls = nil
         interaction?.invalidate()

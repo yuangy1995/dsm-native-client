@@ -2277,13 +2277,15 @@ public actor DsmChatRepository: ChatRepository {
             method: "list",
             parameters: ["channel_id": .string(normalizedID)]
         )
-        return try reminderValues(from: payload).map { value in
+        let values = try reminderValues(from: payload).map { value in
             if let returnedID = value.objectValue?.firstString(for: ["channel_id", "conversation_id"]), returnedID != normalizedID {
                 throw invalidChatResponse()
             }
             guard let reminder = makeReminder(from: value) else { throw invalidChatResponse() }
             return reminder
         }.sorted { $0.remindAt < $1.remindAt }
+        guard Set(values.map(\.id)).count == values.count, Set(values.map(\.messageID)).count == values.count, values.allSatisfy({ !$0.id.isEmpty && !$0.messageID.isEmpty }) else { throw invalidChatResponse() }
+        return values
     }
 
     public func deleteReminder(
@@ -2301,18 +2303,23 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
         // 内部 API：参数来自当前 Chat Server 官方网页客户端静态契约。
-        try await callVoid(
-            DsmAPIName.chatPostReminder,
-            method: "delete",
-            parameters: ["post_id": .string(normalizedID)]
-        )
-        let remaining = try await listReminders(conversationID: conversationID)
-        guard !remaining.contains(where: { $0.messageID == normalizedID }) else {
-            throw AppError(
-                category: .partialFailure,
-                isRetryable: true,
-                safeUserMessage: L10n.string("shared.1d064651a58beeb6")
-            )
+        let capability = try requireCapability(DsmAPIName.chatPostReminder)
+        let version = try selectedVersion(capability, requiring: 1)
+        try Task.checkCancellation()
+        do {
+            try await client.callVoid(path: capability.path, api: capability.name, version: version,
+                method: "delete", requestFormat: capability.requestFormat,
+                parameters: ["post_id": .string(normalizedID)], credential: credential)
+        } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+            throw mapChatError(error)
+        } catch {
+            // 请求可能已执行；继续只读查询，不自动重发。
+        }
+        do {
+            let remaining = try await listReminders(conversationID: conversationID)
+            guard !remaining.contains(where: { $0.messageID == normalizedID }) else { throw invalidChatResponse() }
+        } catch {
+            throw AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("shared.1d064651a58beeb6"))
         }
         completedReminderDeletions.insert(clientRequestID)
     }
@@ -2406,12 +2413,14 @@ public actor DsmChatRepository: ChatRepository {
             method: "list",
             parameters: ["channel_id": .string(normalizedID)]
         )
-        return try scheduledMessageValues(from: payload).map { value in
+        let values = try scheduledMessageValues(from: payload).map { value in
             guard let message = makeScheduledMessage(from: value), message.conversationID == normalizedID else {
                 throw invalidChatResponse()
             }
             return message
         }.sorted { $0.sendAt < $1.sendAt }
+        guard Set(values.map(\.id)).count == values.count, values.allSatisfy({ !$0.id.isEmpty }) else { throw invalidChatResponse() }
+        return values
     }
 
     public func createScheduledMessage(
@@ -2419,6 +2428,14 @@ public actor DsmChatRepository: ChatRepository {
         text: String,
         sendAt: Date,
         clientRequestID: UUID
+    ) async throws -> ChatScheduledMessage {
+        try await createScheduledMessage(conversationID: conversationID, text: text, sendAt: sendAt,
+            clientRequestID: clientRequestID, recordCreatedSchedule: { _ in })
+    }
+
+    public func createScheduledMessage(
+        conversationID: String, text: String, sendAt: Date, clientRequestID: UUID,
+        recordCreatedSchedule: @escaping @Sendable (String) async throws -> Void
     ) async throws -> ChatScheduledMessage {
         guard supportsVersion(DsmAPIName.chatPostSchedule, version: 1) else {
             throw unsupported(L10n.string("chat.send.unsupported"))
@@ -2434,6 +2451,9 @@ public actor DsmChatRepository: ChatRepository {
         if let pending = pendingScheduledMessages[clientRequestID] {
             guard pending.conversationID == normalizedID, pending.text == normalizedText, pending.sendAt == sendAt else {
                 throw invalidChatResponse()
+            }
+            if let id = pending.candidateID {
+                do { try await recordCreatedSchedule(id) } catch { throw unavailableScheduleError() }
             }
             return try await confirmScheduledMessage(pending, requestID: clientRequestID)
         }
@@ -2456,6 +2476,9 @@ public actor DsmChatRepository: ChatRepository {
             throw mapChatError(error)
         } catch {
             throw unavailableScheduleError()
+        }
+        if let id = pending.candidateID {
+            do { try await recordCreatedSchedule(id) } catch { throw unavailableScheduleError() }
         }
         return try await confirmScheduledMessage(pending, requestID: clientRequestID)
     }
@@ -2492,18 +2515,23 @@ public actor DsmChatRepository: ChatRepository {
                 safeUserMessage: L10n.string("shared.783c6fb80b2f8038")
             )
         }
-        try await callVoid(
-            DsmAPIName.chatPostSchedule,
-            method: "delete",
-            parameters: ["cronjob_id": .string(normalizedID)]
-        )
-        let remaining = try await listScheduledMessages(conversationID: conversationID)
-        guard !remaining.contains(where: { $0.id == normalizedID }) else {
-            throw AppError(
-                category: .partialFailure,
-                isRetryable: true,
-                safeUserMessage: L10n.string("shared.ee8e0d0abe0030d9")
-            )
+        let capability = try requireCapability(DsmAPIName.chatPostSchedule)
+        let version = try selectedVersion(capability, requiring: 1)
+        try Task.checkCancellation()
+        do {
+            try await client.callVoid(path: capability.path, api: capability.name, version: version,
+                method: "delete", requestFormat: capability.requestFormat,
+                parameters: ["cronjob_id": .string(normalizedID)], credential: credential)
+        } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+            throw mapChatError(error)
+        } catch {
+            // 请求可能已执行；继续只读查询，不自动重发。
+        }
+        do {
+            let remaining = try await listScheduledMessages(conversationID: conversationID)
+            guard !remaining.contains(where: { $0.id == normalizedID }) else { throw invalidChatResponse() }
+        } catch {
+            throw AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("shared.ee8e0d0abe0030d9"))
         }
         completedScheduledMessageDeletions.insert(clientRequestID)
     }
