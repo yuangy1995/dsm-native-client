@@ -2,6 +2,95 @@ import XCTest
 
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
+    func test相册分享公开下载和移除密码说明后果再保存() {
+        let app = launchFixture(state: "photo-sharing")
+        defer { app.terminate() }
+        openAlbumSharing(app)
+        XCTAssertFalse(app.buttons["mobile.photos.sharing.save"].isEnabled)
+        element("mobile.photos.sharing.access", in: app).tap(); app.buttons["Anyone with the link can view and download"].tap()
+        element("mobile.photos.sharing.passwordChoice", in: app).tap(); app.buttons["Remove password protection"].tap()
+        app.buttons["mobile.photos.sharing.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label == %@", "Anyone with this link will be able to view and download these photos.\n\nThe album’s sharing password will be removed. People with access will no longer need it.")).firstMatch.exists)
+        attachScreenshot(app, name: "Album public access and password removal confirmation")
+        app.alerts.buttons.matching(identifier: "mobile.photos.sharing.confirm").firstMatch.tap()
+        XCTAssertTrue(element("mobile.photos.sharing.sendLink", in: app).waitForExistence(timeout: 8))
+        XCTAssertTrue(element("mobile.photos.sharing.copyLink", in: app).exists)
+    }
+
+    func test相册分享选择具名成员并保存权限() {
+        let app = launchFixture(state: "photo-sharing")
+        defer { app.terminate() }
+        openAlbumSharing(app)
+        let choose = element("mobile.photos.sharing.members", in: app)
+        for _ in 0..<3 where !choose.isHittable { app.swipeUp() }
+        choose.tap()
+        XCTAssertTrue(app.buttons["Sample member"].waitForExistence(timeout: 5)); app.buttons["Sample member"].tap()
+        XCTAssertTrue(app.staticTexts["Sample member"].waitForExistence(timeout: 5))
+        app.buttons["mobile.photos.sharing.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); app.alerts.buttons.matching(identifier: "mobile.photos.sharing.confirm").firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Album named member changes saved")
+    }
+
+    func test相册分享未知跨重启只显示刷新而不重复保存() {
+        let app = launchFixture(state: "photo-sharing-unknown")
+        openAlbumSharing(app)
+        element("mobile.photos.sharing.access", in: app).tap(); app.buttons["Anyone with the link can view"].tap()
+        app.buttons["mobile.photos.sharing.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); app.alerts.buttons.matching(identifier: "mobile.photos.sharing.confirm").firstMatch.tap()
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch()
+        defer { app.terminate() }
+        openPhotos(app)
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        XCTAssertFalse(element("mobile.photos.sharing.sendLink", in: app).exists)
+        attachScreenshot(app, name: "Pending album sharing restored")
+    }
+
+    func test相册分享部分完成明确保持关闭并可重新编辑() {
+        let app = launchFixture(state: "photo-sharing-partial")
+        defer { app.terminate() }
+        openAlbumSharing(app)
+        element("mobile.photos.sharing.access", in: app).tap(); app.buttons["Anyone with the link can view"].tap()
+        app.buttons["mobile.photos.sharing.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); app.alerts.buttons.matching(identifier: "mobile.photos.sharing.confirm").firstMatch.tap()
+        let message = app.staticTexts.matching(NSPredicate(format: "label == %@", "Some sharing settings could not be saved. Sharing remains off. Open sharing settings again to continue.")).firstMatch
+        XCTAssertTrue(message.waitForExistence(timeout: 8))
+        XCTAssertFalse(element("mobile.photos.sharing.sendLink", in: app).exists)
+        attachScreenshot(app, name: "Sharing stays off after a partial update")
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.sharing.begin", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.sharing.access", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["mobile.photos.sharing.save"].isEnabled)
+    }
+
+    func test相册分享中文加载失败和成员空内容可恢复() {
+        for state in ["photo-sharing-loading", "photo-sharing-error", "photo-sharing-members-empty", "photo-sharing-members-error"] {
+            let app = launchFixture(state: state, language: "zh-Hans")
+            openAlbumSharing(app, chinese: true)
+            if state == "photo-sharing-loading" {
+                XCTAssertTrue(element("mobile.photos.sharing.loading", in: app).waitForExistence(timeout: 5))
+            } else if state == "photo-sharing-error" {
+                XCTAssertTrue(app.staticTexts["无法载入分享设置。请检查连接和相册权限，然后重试。"].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.buttons["重试"].exists)
+            } else {
+                let choose = element("mobile.photos.sharing.members", in: app)
+                for _ in 0..<3 where !choose.isHittable { app.swipeUp() }
+                choose.tap()
+                if state == "photo-sharing-members-empty" { XCTAssertTrue(app.staticTexts["没有可添加的用户或群组，可尝试其他搜索词。"].waitForExistence(timeout: 5)) }
+                else { XCTAssertTrue(app.staticTexts["无法加载用户和群组，请检查连接后重试。"].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["重试"].exists) }
+            }
+            attachScreenshot(app, name: state); app.terminate()
+        }
+    }
+
+    private func openAlbumSharing(_ app: XCUIApplication, chinese: Bool = false) {
+        openPhotos(app, chinese: chinese); openPhotoSection(chinese ? "相册" : "Albums", app: app)
+        XCTAssertTrue(app.buttons["Sample album"].waitForExistence(timeout: 8)); app.buttons["Sample album"].tap()
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.sharing.begin", in: app).tap()
+        XCTAssertTrue(app.navigationBars[chinese ? "管理分享" : "Manage sharing"].waitForExistence(timeout: 5))
+    }
+
     func test仅有相册权限可以管理相册且不显示图库权限错误() {
         let app = launchFixture(state: "photo-albums-only")
         defer { app.terminate() }

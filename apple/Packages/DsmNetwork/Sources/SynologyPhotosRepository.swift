@@ -1567,6 +1567,7 @@ private struct PhotosMutationRecord: Sendable {
     var folderCoverAcknowledged = false
     var folderSharingAcknowledged = false
     var sharingBefore: ManagementAlbum.Sharing?
+    var restoredAlbumSharing: SynologyPhotosAlbumCheckpoint.Sharing?
     var personPhotoIDs: Set<Int>?
     var personReceipt: PersonNameReceipt?
     var personCoverReceipt: PersonCoverReceipt?
@@ -2920,12 +2921,18 @@ extension SynologyPhotosRepository {
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            guard existing.mutation == mutation else { throw Self.failure(.conflict) }
+            let matches = if let sharing = checkpoint.sharingDetails {
+                existing.restoredAlbumSharing.map { $0 == sharing } ?? sharing.hasSameIntent(as: existing.mutation)
+            } else { existing.mutation == mutation }
+            guard matches else { throw Self.failure(.conflict) }
             return
         }
         var record = PhotosMutationRecord(mutation: mutation)
         record.albumID = checkpoint.createdAlbumID
         record.albumMembershipHasFailures = checkpoint.membershipHasFailures
+        record.restoredAlbumSharing = checkpoint.sharingDetails
+        record.passwordUpdateAcknowledged = checkpoint.sharingDetails?.passwordAcknowledged ?? false
+        record.enableSharingAttempted = checkpoint.sharingDetails?.enableAttempted ?? false
         if checkpoint.rejected { record.result = .init(state: .rejected) }
         mutations[checkpoint.operationID] = record
     }
@@ -2937,6 +2944,14 @@ extension SynologyPhotosRepository {
             checkpoint.createdAlbumID = record.albumID
             checkpoint.membershipHasFailures = record.albumMembershipHasFailures
             checkpoint.rejected = record.result.state == .rejected
+            if var sharing = checkpoint.sharingDetails {
+                sharing.previousMembers = sharingMembers(record.sharingBefore?.permission)?.map(SynologyPhotosAlbumCheckpoint.Sharing.Member.init)
+                sharing.previousExpiration = .init(record.sharingBefore?.expiration)
+                sharing.previousHasPassword = record.sharingBefore?.enable_password
+                sharing.passwordAcknowledged = record.passwordUpdateAcknowledged
+                sharing.enableAttempted = record.enableSharingAttempted
+                checkpoint.sharingDetails = sharing
+            }
             try writer(checkpoint)
         }
         guard let writer = uploadCheckpointWriters[operationID] else { return }
@@ -2984,6 +2999,7 @@ extension SynologyPhotosRepository {
             sharingAlbum = album; sharingSnapshot = current
         }
         var record = PhotosMutationRecord(mutation: mutation)
+        record.sharingBefore = sharingAlbum?.additional?.sharing_info
         record.regenerationBaseline = preparedTarget.previewBaselines
         if case .copyTemporaryAlbum(let id, _, let original) = mutation {
             record.temporaryAlbumMembers = try await albumMemberSnapshot(id)
@@ -3434,7 +3450,6 @@ extension SynologyPhotosRepository {
                     mutations[operationID] = record
                     return record.result
                 }
-                record.sharingBefore = album.additional?.sharing_info
                 if access == .disabled, memberChanges.isEmpty, !expirationChanged, password == nil {
                     try await managementWrite("SYNO.Foto.Sharing.Passphrase", method: "set_shared", parameters: ["policy": .string("album"), "album_id": .integer(id), "enabled": .boolean(false)])
                 } else {
@@ -3456,11 +3471,15 @@ extension SynologyPhotosRepository {
                         if let password { parameters["password"] = .string(password) }
                         try await managementWrite("SYNO.Foto.Sharing.Passphrase", method: "update", parameters: parameters)
                         record.passwordUpdateAcknowledged = password != nil
+                        // 设置密码的回执必须先保存，再决定是否开启访问。
+                        try persistRecoveryCheckpoint(record, operationID: operationID)
                     }
                     if access != .disabled {
                         try Task.checkCancellation()
                         try requireAccess(.personal)
                         record.enableSharingAttempted = true
+                        do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                        catch { record.enableSharingAttempted = false; throw error }
                         try await managementWrite("SYNO.Foto.Sharing.Passphrase", method: "set_shared", parameters: ["policy": .string("album"), "album_id": .integer(id), "enabled": .boolean(true)])
                     }
                 }
@@ -4158,17 +4177,24 @@ extension SynologyPhotosRepository {
         case .shareAlbum(let id, let access, _, let members, let expiration, let password):
             let album = try await managedAlbum(id)
             let currentMembers = sharingMembers(album.additional?.sharing_info?.permission)
-            let expectedMembers = members ?? sharingMembers(record.sharingBefore?.permission)
+            let recovery = record.restoredAlbumSharing
+            let expectedMembers = members ?? recovery?.previousMembers?.map(\.grant) ?? sharingMembers(record.sharingBefore?.permission)
             let membersMatch = expectedMembers.map { expected in currentMembers.map { sharingMemberRoles($0) == sharingMemberRoles(expected) } ?? false } ?? true
             let expirationMatch = expiration.map { sharingExpiration(album.additional?.sharing_info?.expiration) == $0 }
+                ?? recovery.map { $0.previousExpiration.matches(album.additional?.sharing_info?.expiration) }
                 ?? (album.additional?.sharing_info?.expiration == record.sharingBefore?.expiration)
-            let passwordMatch = password.map { value in
-                if value.isEmpty { return album.additional?.sharing_info?.enable_password == false }
+            let passwordIntent = recovery?.password ?? password.map { $0.isEmpty ? .remove : .set } ?? .unchanged
+            let passwordMatch: Bool
+            switch passwordIntent {
+            case .remove: passwordMatch = album.additional?.sharing_info?.enable_password == false
+            case .set:
                 // 已有密码的true状态不能证明回执丢失时的新密码生效。
-                return record.passwordUpdateAcknowledged && album.additional?.sharing_info?.enable_password == true
-            } ?? (album.additional?.sharing_info?.enable_password == record.sharingBefore?.enable_password)
+                passwordMatch = record.passwordUpdateAcknowledged && album.additional?.sharing_info?.enable_password == true
+            case .unchanged:
+                passwordMatch = album.additional?.sharing_info?.enable_password == (recovery == nil ? record.sharingBefore?.enable_password : recovery?.previousHasPassword)
+            }
             let protectionsMatch = passwordMatch && expirationMatch
-            if access == .disabled, album.shared == false, (members == nil && expiration == nil && password == nil) || (membersMatch && protectionsMatch) { result = SynologyPhotosMutationResult(state: .confirmed, album: album.collection) }
+            if access == .disabled, album.shared == false, (members == nil && expiration == nil && passwordIntent == .unchanged) || (membersMatch && protectionsMatch) { result = SynologyPhotosMutationResult(state: .confirmed, album: album.collection) }
             else if access != .disabled, !record.enableSharingAttempted, album.shared == false {
                 result = SynologyPhotosMutationResult(state: .partial, album: album.collection)
             }

@@ -6039,3 +6039,16 @@
 "mobile.photos.album.refresh" = "Refresh Status";
 "mobile.photos.album.partial" = "Some photos could not be updated. Try again to finish the remaining photos.";
 "mobile.photos.album.loading" = "Loading albums…";
+
+// 移动相册分享。
+"mobile.photos.sharing.loading" = "Loading sharing settings…";
+"mobile.photos.sharing.loadingMembers" = "Loading users and groups…";
+"mobile.photos.sharing.loadFailed" = "Could not load sharing settings. Check your connection and album permissions, then try again.";
+"mobile.photos.sharing.temporary" = "Manage this temporary photo share in Synology Photos.";
+"mobile.photos.sharing.confirm" = "Save sharing changes?";
+"mobile.photos.sharing.risk.publicView" = "Anyone with this link will be able to view these photos.";
+"mobile.photos.sharing.risk.publicDownload" = "Anyone with this link will be able to view and download these photos.";
+"mobile.photos.sharing.risk.passwordRemoved" = "The album’s sharing password will be removed. People with access will no longer need it.";
+"mobile.photos.sharing.risk.memberAccess" = "The selected members will gain the photo access shown in this form. This may include downloading or adding photos.";
+"mobile.photos.sharing.sendLink" = "Share link";
+"photos.sharing.partial" = "Some sharing settings could not be saved. Sharing remains off. Open sharing settings again to continue.";
