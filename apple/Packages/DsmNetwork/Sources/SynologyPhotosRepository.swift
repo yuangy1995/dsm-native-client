@@ -2938,7 +2938,8 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        if checkpoint.folderSharingDetails != nil { try requireAccess(.shared) }
+        if case .rotation(let value) = checkpoint.preferenceDetails { try requireAccess(value.photo.id.space) }
+        else if checkpoint.folderSharingDetails != nil { try requireAccess(.shared) }
         else if checkpoint.backgroundDetails != nil { try requireAlbumAccess() }
         else if checkpoint.folderDetails != nil {
             let command = try checkpoint.reviewMutation()
@@ -2955,7 +2956,9 @@ extension SynologyPhotosRepository {
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            let matches = if let sharing = checkpoint.folderSharingDetails {
+            let matches = if let preference = checkpoint.preferenceDetails {
+                preference.hasSameIntent(as: existing.mutation)
+            } else if let sharing = checkpoint.folderSharingDetails {
                 existing.restoredFolderSharing.map { $0 == sharing } ?? sharing.hasSameIntent(as: existing.mutation)
             } else if let background = checkpoint.backgroundDetails {
                 background.hasSameIntent(as: existing.mutation, profileID: profileID, userID: checkpoint.userID)

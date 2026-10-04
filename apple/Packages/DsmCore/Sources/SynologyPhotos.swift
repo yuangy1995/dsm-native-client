@@ -240,9 +240,9 @@ public struct SynologyPhotoAlbumListSort: Equatable, Sendable {
 }
 
 /// 目录照片按NAS统一排序分页，字段及方向不依赖界面语言。
-public struct SynologyPhotoSort: Hashable, Sendable {
-    public enum Field: String, CaseIterable, Sendable { case filename, filesize, itemType = "item_type", takenTime = "takentime" }
-    public enum Direction: String, CaseIterable, Sendable { case ascending = "asc", descending = "desc" }
+public struct SynologyPhotoSort: Codable, Hashable, Sendable {
+    public enum Field: String, Codable, CaseIterable, Sendable { case filename, filesize, itemType = "item_type", takenTime = "takentime" }
+    public enum Direction: String, Codable, CaseIterable, Sendable { case ascending = "asc", descending = "desc" }
     public var field: Field
     public var direction: Direction
     public init(field: Field = .takenTime, direction: Direction = .ascending) { self.field = field; self.direction = direction }

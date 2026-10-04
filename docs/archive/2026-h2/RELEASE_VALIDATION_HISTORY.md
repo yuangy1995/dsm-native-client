@@ -1064,3 +1064,19 @@ Mac 使用 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme
 最终第七轮移动构建通过（`m3e-mobile-build7.log`），仅调整成员搜索布局、短保存按钮及对应 UI 定位；共享逻辑与模型未再变化。第三轮以同一 `test-without-building` 命令选择三项权限 UI（中文成员搜索/普通收紧、共享范围/覆盖子目录确认、加载失败/父目录限制），两端各 **3/3（144.340 / 148.529 秒）**通过，结果 `m3e-iphone3.xcresult` / `m3e-ipad3.xcresult`。七项新增实际 UI 和原目录复制回归全部分别具有两端通过证据。最终本地化 **5859 / 2188 / 3402**、严格文档和差异检查通过。
 
 已导出并逐张检查 iPhone 浅色完整权限标题、子目录覆盖后果确认、父目录只读提示及任务错误恢复；iPad 深色任务取消确认、父目录限制与中文成员搜索也可读可操作，测试后已恢复浅色。真实 NAS、设备文件保护、断网/终止恢复与完整辅助功能验收按移动主计划 M3e 的 `PENDING_USER_VALIDATION` 执行；不把合成测试当作真实版本行为验证。下一切片继续预览与设置、人物/相似组和批量导出，M4–M8 仍未完成。
+
+## 2026-10-04 移动 M3f1 照片偏好与旋转
+
+接入重复文件、显示方式、个人智能分类三类设置及预览向左旋转保存。移动上传读取已保存重复处理策略，显示偏好应用于时间线分组、日期/时钟与预览资料；默认覆盖须冻结确认，普通偏好由保存按钮提交。版本 10 恢复保存稳定偏好值及旋转原件身份/方向/尺寸，重启只回读，不保存描述、相机资料、媒体或凭据。共享模型的旋转入口同时受恢复文件可用性保护；Mac App、Windows 与 Android 源码不改。
+
+使用锁定 XcodeGen 2.46.0 生成移动工程。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 四轮均通过。后两轮同步界面测试定位和截图发现的短标题/准确文案；新增动态资源引用在首次本地化扫描被拒绝，已改用现有明确资源键。最终资源检查为 **5863 / 2188 / 3402**，包含参数、引用和硬编码扫描；fixture **29 组/48 引用**、请求契约 **170 组/1 写结果**、API 参数生成一致性和严格文档检查通过。
+
+首轮 `swift test --package-path apple --filter SynologyPhotosRepositoryTests` 在仍补充测试时因输入文件变更而中止，不计通过。完成编辑后的第二轮 **563/563（2.607 秒）**通过，包含五项新增持久恢复回归：偏好完整回读/缺字段、旋转方向/尺寸及原件替换、非必要资料不落盘、存储失败零写、跨账号拒绝与损坏枚举。
+
+两端分别执行 `xcodebuild test-without-building`，沿上述 project/scheme/derivedDataPath，iPad destination 为 `platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289`，`-parallel-testing-enabled NO`。第一轮包含 `-only-testing:DsmMobileTests` 及五项新 UI；单元分别 **836/836（21.454 / 21.530 秒）**通过，其中新增偏好/旋转 12 项。实际 UI 第一轮各 **2/5 通过、3 项失败（209.625 / 234.286 秒）**：中文显示偏好/默认资料及旋转尺寸通过；重启用例误用不存在的恢复按钮标识、加载视图不是预设元素类型、系统确认按钮产生嵌套同标识节点。分别改用现有刷新标识、增加加载标识、限定确认框内首个匹配，保留全部业务断言。第一轮另指定的旧用例名称不存在，未运行旧回归；第二轮使用实际 `test照片资料预览可评分并显示标签`。
+
+已查看第一轮 iPhone 中文显示设置、旋转后资料/尺寸、智能分类限制及 iPad 分类限制截图。发现英文分类标题在 iPhone 被截短，改用移动短标题；资料开关删去移动端没有的幻灯片措辞。第四轮构建后的最终六项实际 UI，两端各 **6/6（234.009 / 262.092 秒）**通过，结果为 `apple/Apps/DsmMobile/build/m3f1-iphone2.xcresult` / `m3f1-ipad2.xcresult`。iPad 使用深色并在测试结束后恢复浅色，iPhone 保持浅色；两端没有相互借用结果。本切片仅使用合成服务及图片，真实 NAS、实际媒体方向、系统保护和辅助功能按主计划明确待用户验证。
+
+Mac 两轮 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 均通过；第二轮纳入最终语言资源，实际主程序 `lipo -archs` 为 **x86_64 arm64**，没有安装或发布。XcodeGen 重复生成 SHA-256 保持 `e2826dd4c4d7c6ee4a407306b0e0257f199266a692e2a41bdffc29520f14b6f8`。独立集成及只读对抗复核检查原设置差异、真实能力/权限、冻结覆盖确认、存储不可写零提交、记录损坏限制旋转、原件替换、旧账号迟到结果、重启只读和最小持久化字段；没有新 NAS 写接口。
+
+两端实际 UI 和 Mac 构建结束后，串行 `swift test --package-path apple` 完整通过：**2483 项 XCTest、172 项既有条件跳过、0 失败（31.957 秒）**，另 **12 项 Swift Testing（0.031 秒）**。最终已查看 iPhone 未截断英文标题、中文显示设置及旋转尺寸，iPad 深色设置/错误恢复均完整可读。日志位于本机临时验证目录 `m3f1-*.log`，结果包及截图不提交；未把合成素材的尺寸变化当作真实媒体像素方向验证。下一切片为预览修复/生成，其余管理员设置、人物/相似组、批量导出、旧图库清理与 M4–M8 继续实施。

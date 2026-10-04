@@ -48,7 +48,11 @@ struct MobileSynologyPhotoPreview: View {
                     }.frame(minWidth: 44, minHeight: 44)
                     if let photo = model.previewPhoto {
                         if let editor = session.editor {
-                            Menu { MobilePhotoEditActions(editor: editor, photos: [photo]) } label: {
+                            Menu {
+                                MobilePhotoEditActions(editor: editor, photos: [photo])
+                                Button(L10n.string("photos.media.rotate")) { model.rotatePreview() }
+                                    .disabled(!model.canRotatePreview).accessibilityIdentifier("mobile.photos.rotate")
+                            } label: {
                                 Label(L10n.string("mobile.photos.edit.title"), systemImage: "pencil")
                             }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.edit.preview")
                         }
@@ -66,6 +70,7 @@ struct MobileSynologyPhotoPreview: View {
             }
             .safeAreaInset(edge: .bottom) { MobilePhotoManagementStatus(model: model) }
         }
+        .onAppear { showsInfo = model.displayPreferences?.showsPreviewInfo == true }
         .task(id: model.previewData) {
             image = nil
             isDecoding = model.previewData != nil
@@ -120,8 +125,8 @@ struct MobileSynologyPhotoPreview: View {
             VStack(alignment: .leading, spacing: 14) {
                 if let photo = model.previewPhoto {
                     Text(photo.filename).font(.headline).textSelection(.enabled)
-                    row("photos.detail.taken", photo.takenAt.formatted(.dateTime.locale(L10n.locale)))
-                    row("photos.detail.added", photo.indexedAt.formatted(.dateTime.locale(L10n.locale)))
+                    row("photos.detail.taken", model.formattedPhotoDate(photo.takenAt, includesTime: true))
+                    row("photos.detail.added", model.formattedPhotoDate(photo.indexedAt, includesTime: true))
                     row("photos.detail.size", photo.sizeBytes.formatted(.byteCount(style: .file).locale(L10n.locale)))
                     row("photos.detail.format", (photo.filename as NSString).pathExtension.uppercased())
                     if let width = photo.width, let height = photo.height {

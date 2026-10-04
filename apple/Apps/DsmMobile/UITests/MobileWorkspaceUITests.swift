@@ -3,6 +3,75 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test照片重复默认覆盖确认可取消再保存() {
+        let app = launchFixture(state: "photo-preferences"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.duplicates", in: app).tap()
+        let transfer = element("mobile.photos.preferences.transfer", in: app)
+        XCTAssertTrue(transfer.waitForExistence(timeout: 5)); transfer.tap(); app.buttons["Overwrite existing items"].tap()
+        app.buttons["mobile.photos.preferences.save"].tap(); XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "Future moves and copies will default to replacing items with the same name at the destination. You can change this option for each operation.")).firstMatch.exists)
+        attachScreenshot(app, name: "Default duplicate overwrite consequences")
+        app.alerts.firstMatch.buttons["Cancel"].firstMatch.tap(); app.buttons["mobile.photos.preferences.save"].tap(); app.alerts.firstMatch.buttons["mobile.photos.preferences.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+    }
+
+    func test照片显示偏好中文保存及预览默认资料() {
+        let app = launchFixture(state: "photo-preferences", language: "zh-Hans"); defer { app.terminate() }
+        openPhotos(app, chinese: true); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.display", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.preferences.grouping", in: app).waitForExistence(timeout: 5))
+        element("mobile.photos.preferences.grouping", in: app).tap(); app.buttons["按月"].tap()
+        let info = app.switches["mobile.photos.preferences.info"]
+        for _ in 0..<3 where !info.isHittable { app.swipeUp() }
+        info.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        attachScreenshot(app, name: "照片显示设置")
+        app.buttons["mobile.photos.preferences.save"].tap(); XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
+        app.buttons["Sample 1.jpg"].tap(); XCTAssertTrue(app.staticTexts["拍摄时间"].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "照片预览默认显示资料")
+    }
+
+    func test照片预览旋转并显示保存后的尺寸() {
+        let app = launchFixture(state: "photo-preferences"); defer { app.terminate() }
+        openPhotos(app); XCTAssertTrue(app.buttons["Sample 1.jpg"].waitForExistence(timeout: 8)); app.buttons["Sample 1.jpg"].tap()
+        XCTAssertTrue(element("mobile.photos.edit.preview", in: app).waitForExistence(timeout: 5)); element("mobile.photos.edit.preview", in: app).tap()
+        let rotate = element("mobile.photos.rotate", in: app); XCTAssertTrue(rotate.waitForExistence(timeout: 5)); XCTAssertTrue(rotate.isEnabled); rotate.tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        app.buttons["Details"].tap()
+        let resolution = app.staticTexts["80 × 100 pixels"]
+        for _ in 0..<3 where !resolution.isHittable { app.swipeUp() }
+        XCTAssertTrue(resolution.waitForExistence(timeout: 5)); attachScreenshot(app, name: "Saved photo rotation and dimensions")
+    }
+
+    func test照片智能分类权限与空内容错误和加载状态() {
+        for state in ["photo-preferences-restricted", "photo-preferences-empty", "photo-preferences-error", "photo-preferences-loading"] {
+            let app = launchFixture(state: state)
+            openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.recognition", in: app).tap()
+            let save = app.buttons["mobile.photos.preferences.save"]; XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertFalse(save.isEnabled)
+            if state.hasSuffix("restricted") {
+                let person = app.switches["mobile.photos.preferences.enable_person"]
+                XCTAssertTrue(person.waitForExistence(timeout: 5)); XCTAssertTrue(person.isEnabled)
+                XCTAssertFalse(app.switches["mobile.photos.preferences.enable_similar"].isEnabled)
+                person.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap(); XCTAssertTrue(save.isEnabled)
+            } else if state.hasSuffix("empty") { XCTAssertTrue(app.staticTexts["No recognition settings available"].waitForExistence(timeout: 5)) }
+            else if state.hasSuffix("error") { XCTAssertTrue(app.staticTexts["Couldn’t load photo settings. Try again."].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["Try again"].exists) }
+            else { XCTAssertTrue(element("mobile.photos.preferences.loading", in: app).waitForExistence(timeout: 5)) }
+            attachScreenshot(app, name: state); app.terminate()
+        }
+    }
+
+    func test照片偏好未知重启保留恢复入口与保存限制() {
+        let app = launchFixture(state: "photo-preferences-unknown"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.display", in: app).tap()
+        let info = app.switches["mobile.photos.preferences.info"]; XCTAssertTrue(info.waitForExistence(timeout: 5))
+        for _ in 0..<3 where !info.isHittable { app.swipeUp() }
+        info.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap(); app.buttons["mobile.photos.preferences.save"].tap()
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.display", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.preferences.save"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.preferences.save"].isEnabled)
+        attachScreenshot(app, name: "Photo preferences recovery after restart")
+    }
+
 
     func test照片文件夹权限共享范围与覆盖子目录确认() {
         let app = launchFixture(state: "photo-folder-sharing"); defer { app.terminate() }

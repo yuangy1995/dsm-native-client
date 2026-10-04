@@ -16,6 +16,8 @@ final class MobilePhotoUploadImportModel {
     private(set) var destination: Destination?
     private(set) var files: [PhotoUploadFile] = []
     private(set) var isPreparing = false
+    private(set) var isLoadingDefaults = false
+    private(set) var defaultsError: String?
     private(set) var skippedCount = 0
     private(set) var includesDirectory = false
     var preservesDirectories = true
@@ -23,6 +25,7 @@ final class MobilePhotoUploadImportModel {
     var error: String?
     @ObservationIgnored let model: SynologyPhotosModel
     @ObservationIgnored let storage: MobilePhotoUploadStorage
+    @ObservationIgnored private var defaultsTask: Task<Void, Never>?
     @ObservationIgnored private var preparationTask: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     #if DEBUG
@@ -44,7 +47,7 @@ final class MobilePhotoUploadImportModel {
         !model.isDeleting && !model.isCheckingDeletion && model.pendingMutationID == nil && model.uploadPersistenceError == nil
     }
     var canSubmit: Bool {
-        canBegin && draftID != nil && destination == currentDestination && !isPreparing && !files.isEmpty &&
+        canBegin && draftID != nil && destination == currentDestination && !isPreparing && !isLoadingDefaults && defaultsError == nil && !files.isEmpty &&
         (!includesDirectory || !preservesDirectories || model.managementFeatures.contains(.folders))
     }
 
@@ -53,9 +56,28 @@ final class MobilePhotoUploadImportModel {
         cancel()
         draftID = UUID(); destination = currentDestination
         duplicate = .rename; preservesDirectories = true
+        loadDefaults()
         #if DEBUG
         if !fixtureSources.isEmpty, let id = draftID { prepareFiles(fixtureSources, draftID: id) }
         #endif
+    }
+
+    func loadDefaults() {
+        guard let draftID, destination == currentDestination, canBegin, !isLoadingDefaults,
+              model.managementFeatures.contains(.duplicateSettings) else { return }
+        isLoadingDefaults = true; defaultsError = nil
+        defaultsTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.draftID == draftID { self.isLoadingDefaults = false; self.defaultsTask = nil } }
+            do {
+                let value = try await self.model.duplicateSettings()
+                guard !Task.isCancelled, self.draftID == draftID, self.destination == self.currentDestination,
+                      self.model.isModuleEnabled else { return }
+                self.duplicate = value.upload
+            } catch {
+                if !Task.isCancelled, self.draftID == draftID { self.defaultsError = L10n.string("mobile.photos.preferences.loadFailed") }
+            }
+        }
     }
 
     func prepareFiles(_ urls: [URL], draftID: UUID) {
@@ -121,6 +143,7 @@ final class MobilePhotoUploadImportModel {
     }
 
     func cancel() {
+        defaultsTask?.cancel(); defaultsTask = nil; isLoadingDefaults = false; defaultsError = nil
         generation = UUID(); preparationTask?.cancel(); preparationTask = nil
         storage.remove(files); files = []; draftID = nil; destination = nil
         skippedCount = 0; includesDirectory = false; isPreparing = false; error = nil

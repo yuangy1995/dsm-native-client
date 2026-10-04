@@ -75,3 +75,5 @@ M3c 两端接入评分、描述、绝对日期/相对偏移与标签创建/添�
 M3d 移动端复用已有 Folder create/rename/set_order/set_cover、BackgroundTask.File move/copy/delete 与 BackgroundTask.Info 查询，补齐目录操作和混合选择。独立版本 8 记录保存必要目录/照片快照、任务/创建编号、目标总数及封面成功回执，沿既有受保护文件保存，兼容版本 1–7。恢复只查询，缺少任务/创建编号不能猜测成功，封面仍需成功回执与可解码自定义封面，目录移动同时检查原目录最终父编号；跨来源及目录任务保持既有目标权限、计数和部分完成语义。不新增 NAS 参数或降低权限门，Mac 无持久适配时原行为不变，Windows/Android 无请求契约变更。
 
 M3e 移动端沿用 FolderPermission.update/set_config 及 BackgroundTask.Info.list_user_task/abort_task/clear_completed_task/get_error_detail 既有契约，接入共享目录权限、任务取消/清除/错误详情和原目标导航。版本 9 摘要将原权限快照转为摘要，只保留成员类型/编号/角色、密码操作种类、必要目录及任务身份；密码、链接及成员名称不保存。权限更新回执在后续默认选项写入前保存，应用子目录或设置新密码需要明确回执；任务逐项清除先持久保存尝试范围，重启不重发。任务控制恢复使用独立文件，保留原移动复制的查询证据。旧版本 1–8 仍可读；不新增 NAS 参数或修改五端请求契约，Windows/Android 仅记录适配影响，Mac 未配置恢复文件时维持原业务流程。
+
+M3f1 移动照片偏好与旋转复用既有 Setting.User.get/set 和 Browse.Item.set（rotate_action），不新增请求或字段。版本 10 恢复保存偏好稳定枚举/布尔值与旋转原件身份、方向、尺寸；重启只回读最终值，旋转必须同时匹配预期方向、互换尺寸和原件身份。旧 1–9 记录继续可读，保存失败零写。新增 Codable 仅服务 Apple 独立恢复文件，不迁移 NAS/登录配置；Mac 未配置该恢复适配时调用不变，Windows/Android 无请求契约改动。

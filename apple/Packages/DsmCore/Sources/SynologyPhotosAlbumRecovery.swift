@@ -21,6 +21,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case folder(FolderOperation)
         case folderSharing(FolderSharing)
         case background(BackgroundControl)
+        case preference(Preference)
     }
     public let version: Int
     public let profileID: UUID
@@ -39,13 +40,15 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
              .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum,
              .edit, .shiftDates, .createTag, .addTags, .removeTags,
              .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy,
-             .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks: true
+             .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks,
+             .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
         version = switch mutation {
+        case .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto: 10
         case .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks: 9
         case .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy: 8
         case .edit, .shiftDates, .createTag, .addTags, .removeTags: 7
@@ -58,6 +61,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         }
         self.profileID = profileID; self.userID = userID; self.operationID = operationID
         switch mutation {
+        case .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto: operation = .preference(try Preference(mutation: mutation))
         case .setFolderSharing: operation = .folderSharing(try FolderSharing(mutation: mutation))
         case .cancelBackgroundTask, .clearBackgroundTasks:
             let tasks: [SynologyPhotoBackgroundTask]
@@ -88,13 +92,16 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...9).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...10).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
         }
         let command: SynologyPhotosMutation
         switch operation {
+        case .preference(let value):
+            guard version == 10, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation()
         case .folderSharing(let value):
             guard version == 9, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
@@ -148,10 +155,15 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .shareAlbum, .deleteTemporaryAlbum, .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum,
              .edit, .shiftDates, .createTag, .addTags, .removeTags,
              .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy,
-             .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks: break
+             .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks,
+             .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
+    }
+
+    public var preferenceDetails: Preference? {
+        if case .preference(let value) = operation { return value }; return nil
     }
 
     public var folderSharingDetails: FolderSharing? {

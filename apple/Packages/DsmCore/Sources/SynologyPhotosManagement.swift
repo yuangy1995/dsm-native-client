@@ -45,9 +45,9 @@ public struct SynologyPhotoLibraryMaintenanceStatus: Equatable, Sendable {
     }
 }
 
-public struct SynologyPhotoDuplicateSettings: Equatable, Sendable {
-    public enum Upload: String, CaseIterable, Sendable { case ignore, rename }
-    public enum Transfer: String, CaseIterable, Sendable { case skip, overwrite }
+public struct SynologyPhotoDuplicateSettings: Codable, Equatable, Sendable {
+    public enum Upload: String, Codable, CaseIterable, Sendable { case ignore, rename }
+    public enum Transfer: String, Codable, CaseIterable, Sendable { case skip, overwrite }
     public var upload: Upload
     public var transfer: Transfer
     public init(upload: Upload, transfer: Transfer) { self.upload = upload; self.transfer = transfer }
@@ -605,10 +605,10 @@ public struct SynologyPhotoFolderSharingState: Equatable, Sendable {
 
 
 /// 照片显示偏好保存在NAS；与相册/目录各自排序及应用外观设置分开。
-public struct SynologyPhotoDisplaySettings: Equatable, Sendable {
-    public enum Grouping: String, CaseIterable, Sendable { case day, month }
-    public enum Clock: String, CaseIterable, Sendable { case twelve = "12", twentyFour = "24" }
-    public enum DateFormat: String, CaseIterable, Sendable {
+public struct SynologyPhotoDisplaySettings: Codable, Equatable, Sendable {
+    public enum Grouping: String, Codable, CaseIterable, Sendable { case day, month }
+    public enum Clock: String, Codable, CaseIterable, Sendable { case twelve = "12", twentyFour = "24" }
+    public enum DateFormat: String, Codable, CaseIterable, Sendable {
         case yearDash = "yyyy-mm-dd", yearSlash = "yyyy/mm/dd", yearDot = "yyyy.mm.dd"
         case dayDash = "dd-mm-yyyy", daySlash = "dd/mm/yyyy", dayDot = "dd.mm.yyyy"
         case monthDash = "mm-dd-yyyy", monthSlash = "mm/dd/yyyy", monthDot = "mm.dd.yyyy"
@@ -631,8 +631,8 @@ public struct SynologyPhotoDisplaySettings: Equatable, Sendable {
 
 
 /// 个人识别开关与管理员提供的实际能力分开；缺字段不猜为关闭。
-public struct SynologyPhotoRecognitionSettings: Equatable, Sendable {
-    public enum Kind: String, CaseIterable, Sendable {
+public struct SynologyPhotoRecognitionSettings: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, CaseIterable, Sendable {
         case person = "enable_person", concept = "enable_concept", similar = "enable_similar"
         public var category: SynologyPhotoCategory {
             switch self { case .person: .person; case .concept: .concept; case .similar: .similar }

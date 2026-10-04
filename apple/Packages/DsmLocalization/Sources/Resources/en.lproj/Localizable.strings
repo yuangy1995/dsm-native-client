@@ -6099,3 +6099,8 @@
 "mobile.photos.album.emptyContent" = "There are no photos to display in this album. Refresh to try again.";
 
 "mobile.photos.tasks.changed" = "This task has changed. Refresh the task list and try again.";
+
+"mobile.photos.preferences.loadFailed" = "Couldn’t load photo settings. Try again.";
+"mobile.photos.preferences.loading" = "Loading photo settings…";
+"mobile.photos.preferences.recognition" = "Photo Recognition";
+"mobile.photos.preferences.info" = "Show photo details by default";

@@ -41,11 +41,11 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | M2i 已接六种格式预览、系统编辑副本、主动回传及冲突/未知恢复，两端自动化通过；M8 再接 Files 写回 |
 | M2 可恢复活动队列 | WorkspaceModel | 独立版本化任务、来源/目标身份与进度；持久化 | M2a 接独立受保护记录/副本；重启后暂停未提交项，未知上传只查询，下载可从头恢复；后台执行仍属 M8 |
 | M3 Photos 上传 | SynologyPhotosModel、SynologyPhotosView | Photos/Files 选择与队列；上传/相册加入；写 | M3a 已接系统多选、受保护副本及队列恢复；两端单元/实际 UI 通过，相册加入失败只补后一步，真实 NAS 待验 |
-| M3 批量及资料 | PhotoManagementPanel | 多选、标签/日期/资料表单；原件权限；写 | M3c 已接评分/描述/日期/时间偏移与标签创建/添加/移除，多选及单张预览、版本 7 摘要恢复均经两端单元/实际 UI；原件权限与相册贡献权限分别检查 |
+| M3 批量及资料 | PhotoManagementPanel | 多选、标签/日期/资料表单；原件权限；写 | M3c 已接评分/描述/日期/时间偏移与标签创建/添加/移除，M3f1 补齐预览旋转；多选及单张预览、版本 7/10 摘要恢复均经两端单元/实际 UI；原件权限与相册贡献权限分别检查 |
 | M3 目录及移动复制 | PhotoFolderDestinationPicker、PhotoManagementPanel | 分步目的地选择、图库内拖放；Folder/Move/Copy；数据写 | M3d 已接目录创建/重命名/排序/封面、混合移动复制/删除及版本 8 恢复；两端单元与实际 UI 通过；M3e 已接共享目录权限、成员/密码/子目录确认和完整任务控制及版本 9 恢复 |
 | M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | M3b1 普通相册及 M3b2 访问范围/成员/保护设置已接入并通过两端回归；M3b3 临时分享生命周期、M3b4 照片收集及 M3b5 条件相册也经两端回归；M3b6 冻结相册普通恢复/重建及重启只读也经两端回归，权限保持独立 |
 | M3 人物、相似组 | SynologyPhotosModel | 触控分组列表、人物编辑；People/Similar；写 | 缺管理流程；不推断服务端未识别的人物 |
-| M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | M3e 已接移动复制任务列表/筛选、取消、逐项清除、错误详情与原目标导航，两端自动化通过；预览转换和设置继续后续切片，支持不足只限制相关入口 |
+| M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | M3e 已接移动复制任务列表/筛选、取消、逐项清除、错误详情与原目标导航，两端自动化通过；M3f1 已接重复文件/显示/个人分类设置、上传默认策略和旋转及版本 10 恢复，两端单元/实际 UI 通过；预览生成及管理员设置继续后续切片 |
 | M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | 包装器未转发新增能力；本人/会话绑定，历史完整分页 |
 | M4 投票、提醒、定时 | ChatDetailsViews | 原生表单；投票对象/props.vote 及提醒定时字段；写 | 缺完整接入；未知不重发，撤销核对原对象 |
 | M4 转发、置顶、会话管理 | ChatWorkspaceModel | 目标会话选择、菜单；Post.search 数字 in 数组；写 | 有部分低风险操作；包装器截断/字段投影需复核 |
@@ -89,7 +89,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 - 实际命令：`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`；随后两端分别运行 `test-without-building`，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，关闭测试并行。结果分别为 `build/m0-m8-baseline-iphone.xcresult`、`build/m0-m8-baseline-ipad.xcresult`（忽略的本地构建目录）。
 - `python3 tools/codex/check_documentation.py` 与 `git diff --check` 通过。
 - `MobileChatPresentationTests` 包含源码文本断言；更新过时范围限制时保留安全语义并补实际行为/界面测试。
-- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通相册/分享/临时分享及照片收集已通过两端回归；旧图库清理随 M3 完成，其余 M3 和 M4–M8 继续实施。
+- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通/条件/冻结相册、分享与收集、资料/目录/权限/任务及照片偏好/旋转已通过两端回归；旧图库清理随 M3 完成，其余 M3 和 M4–M8 继续实施。
 
 ## PENDING_USER_VALIDATION
 
@@ -104,6 +104,16 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+## M3f1 照片偏好与旋转
+
+Mac 证据为 `PhotoManagementPanel` 的重复文件、显示及智能分类表单，`SynologyPhotosModel` 的日期格式、时间线分组和预览旋转。iPhone/iPad 使用相同原生设置表单及预览菜单；显示设置应用于移动时间线/资料面板，上传与移动复制使用已保存的重复处理偏好。修改默认覆盖策略保留具体后果确认，旋转绑定当前原件权限和预览快照，未知结果不得再次旋转。
+
+当前任务单一修改移动照片设置模型/表单、上传默认值、照片列表/预览/会话装配、共享恢复类型与网络回读、双语资源、合成服务/正式测试、生成工程及相关文档。复用已记录 Setting.User 与 Item.rotate 契约，不增加 NAS 请求。安全级别为普通偏好写和原件旋转；版本 10 恢复摘要仅保存设置枚举/布尔值及旋转原件身份、方向、尺寸，不保存媒体或凭据。沿用独立受保护操作文件，旧版本继续可读，不迁移登录配置；回滚停用新入口并保留记录，属于已批准 M0–M8 恢复范围。共享增量需完整 Mac 回归，Windows/Android 无源码变化。
+
+两端各 836 项单元、五项新设置/旋转实际 UI 和一项旧资料预览回归均通过；完整共享 2483 项（172 项既有条件跳过）及 12 项 Swift Testing、Mac 双架构构建通过。已完成独立集成及只读对抗复核，覆盖原设置/原件快照、默认覆盖确认、保存失败零写、跨账号、记录损坏和未知旋转不重放。最终截图确认短标题、预览资料和浅深主题；精确命令、中间失败及修正见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m3f1-照片偏好与旋转)。预览生成、管理员设置、人物/相似组、批量导出及旧图库清理仍为后续源码切片，不列作本切片待设备验证。
+
+`PENDING_USER_VALIDATION`：在已支持版本的专用可丢弃账号中保存三类偏好，从官方页面检查结果；重新打开移动端后检查按月/按日、日期和时钟、目录默认排序、预览资料、上传及移动复制的初始重复处理选项。普通/受限账号分别检查智能分类缺字段和管理员关闭的能力，拒绝或取消保存不能改变设置。用有明确方向的可丢弃照片检查向左旋转、镜像方向、横竖尺寸和 Live Photo 静态/动态部分；保存前撤销权限或替换原件应停止，提交后断网、锁屏、终止 App、重启只查询，不能再旋转一次。补验 VoiceOver、大字、iPad 键盘和分屏；只回传版本、媒体类型、脱敏步骤/状态/错误，不提供原件、账号或真实路径。当前模拟器仅覆盖合成图片与设置，真实 NAS 行为、媒体像素方向和设备保护未验证，入口保留实际能力、权限与恢复保护。
 
 ## M3e 文件夹权限与照片任务
 

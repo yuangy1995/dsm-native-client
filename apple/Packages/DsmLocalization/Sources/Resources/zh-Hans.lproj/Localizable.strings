@@ -6099,3 +6099,8 @@
 "mobile.photos.album.emptyContent" = "此相册暂无可显示的照片，请刷新后重试。";
 
 "mobile.photos.tasks.changed" = "任务已发生变化。请刷新任务列表后重试。";
+
+"mobile.photos.preferences.loadFailed" = "无法载入照片设置，请重试。";
+"mobile.photos.preferences.loading" = "正在载入照片设置…";
+"mobile.photos.preferences.recognition" = "照片智能分类";
+"mobile.photos.preferences.info" = "默认显示照片信息";
