@@ -1430,3 +1430,36 @@ iPad 将目标改为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，使用 `m4b3b-dire
 | 本地化与契约 | Apple 5972 / Android 2188 / Windows 3402；29 组响应 / 48 私有引用；170 组请求 / 1 写结果通过 |
 
 已查看首轮恢复页及第二轮普通联系人、中文深色大字号错误页截图。界面去掉恢复/加载/错误页无效搜索框，仅一种会话能力时不显示类型选择，待恢复不依赖联系人列表成功；所有提示描述聊天和恢复动作。最终已检查 iPhone 第 4 轮及 iPad 第 3 轮截图，两端正常、加载、空内容、筛选为空、错误与恢复状态均有实际证据。既有消息页在 iPhone 多按钮时标题被挤压、iPad 窄分栏和大字号背景布局的问题继续 M4c，本切片的新建弹窗验收不代表整个聊天布局完成。临时日志、截图、结果包不进入源码。真实 NAS、系统文件保护与完整辅助功能为 `PENDING_USER_VALIDATION`，具体条件和步骤见[移动主计划 M4b3b2](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3b2-新联系人单聊恢复)。
+
+## 2026-10-05 移动 M4b3b3 批量转发与恢复
+
+移动端接通消息单选/多选、接收会话/新联系人搜索多选、顺序转发及逐消息/接收人结果。新联系人先完成单聊准备；批次以受保护的独立 `forwarding-v1.json` 保存身份、时间、摘要和共享回执，不保存正文、联系人姓名或附件名。部分完成/丢回执后暂停后续消息，刷新只读取；用户可继续尚未开始项或取消剩余项。已完成目标不重发，未知记录不能移除。新建单聊、编辑/删除来源和关闭相关会话共享占用；账号失效后的迟到结果只落到原上下文。
+
+新增 15 项实际 Repository/包装器/移动模型行为测试、7 项存储测试及 4 项实际 UI。分离进行集成与只读对抗复核，检查落盘顺序、单聊创建与转发之间的中断、明确拒绝/未知区分、回执不可倒退、跨账号执行与互斥；补上恢复文件损坏时另一创建入口的绕过，以及执行中取消剩余消息的处理。附件确认沿用共享的描述摘要，不将其称为附件字节校验。共享业务源码、公开协议和 NAS 请求均未改变；本次没有重新运行共享全量或 Mac 双架构构建，不冒用上一个切片的结果作为本次新增移动功能验证。
+
+实际命令（仓库根目录）：
+
+```sh
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatForwardUITests -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4b3b-forward-iphone2.xcresult
+python3 tools/localization/check_localization.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/codex/check_documentation.py --strict-release
+git diff --check
+```
+
+iPad 使用 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 和 `m4b3b-forward-ipad2.xcresult`，两台均为 iOS 26.5；第 1 轮使用相应 `iphone1` / `ipad1` 结果包。聚焦轮选择 `MobileChatForwardTests`、`MobileChatForwardStoreTests`、`MobileChatModelTests`、`MobileChatPresentationTests`，结果为 `m4b3b-forward-focused1.xcresult`。所有构建/结果文件在既有临时目录保存，不进入源码。
+
+| 验证 | 已确认结果 |
+| --- | --- |
+| 移动构建 | `m4b3b-forward-build1` 至 `build4` 均通过；当前代码由第 4 轮构建，工程由锁定 XcodeGen 生成 |
+| 聚焦移动 | 94 项零失败，3.100 秒 |
+| 第 1 轮全量单元 | 两端各 1043 项，各 1 条既有设备条件跳过，零失败；iPhone 25.000 秒，iPad 24.901 秒 |
+| 最终全量单元 | 两端各 1044 项，各 1 条既有设备条件跳过，零失败；iPhone 24.776 秒，iPad 24.797 秒 |
+| 第 1 轮实际 UI | iPhone 4 项通过；iPad 取消/中文三态/重启恢复通过，正常搜索转发失败。截图确认 iPad 接收页默认折叠搜索栏；已改为列表常显，加载/空内容/错误不显示无效搜索栏，没有放宽测试断言 |
+| 最终第 2 轮实际 UI | 两端各 4 项全通过；iPhone 206.370 秒，iPad 217.536 秒。覆盖正常多选/搜索/新联系人、部分结果重启/继续、未知/取消，以及中文深色大字号加载/空内容/错误 |
+| 本地化与契约 | Apple 6009 / Android 2188 / Windows 3402，双语、参数和硬编码扫描通过；29 组响应 / 48 私有引用、170 组请求 / 1 写结果通过 |
+
+已查看第 1 轮 iPad 正常接收页、中文深色大字号错误页及 iPhone 多消息/多接收人结果截图。第 2 轮已检查 iPad 常显搜索栏与去掉无效搜索的中文错误页、iPhone 恢复后已完成/尚未发送分项与继续按钮；所有五态均有两端实际 UI 证据。既有 iPhone/iPad 消息主布局问题仍归 M4c。真实 NAS/设备、锁屏文件保护、完整 VoiceOver/硬件键盘与 iPad 分屏没有本次实际验证；条件和操作步骤见移动主计划 M4b3b3。

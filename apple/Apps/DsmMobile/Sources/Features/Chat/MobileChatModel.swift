@@ -19,6 +19,8 @@ final class MobileChatModel {
     private let pollRecovery: MobileChatPollStore
     private let interactionRecovery: MobileChatInteractionStore
     private let conversationCreationRecovery: MobileChatConversationCreationStore
+    private(set) var forwarding: MobileChatForwardModel?
+    private let forwardRecovery: MobileChatForwardStore
 
     @ObservationIgnored private var repositories: [UUID: any ChatRepository] = [:]
     @ObservationIgnored private var conversationTask: Task<Void, Never>?
@@ -66,6 +68,7 @@ final class MobileChatModel {
     ) {
         self.interactionRecovery = MobileChatInteractionStore(root: interactionRecoveryRoot)
         self.conversationCreationRecovery = MobileChatConversationCreationStore(root: interactionRecoveryRoot)
+        self.forwardRecovery = MobileChatForwardStore(root: interactionRecoveryRoot)
         self.pollRecovery = MobileChatPollStore(root: interactionRecoveryRoot)
         self.managementRecovery = MobileChatManagementStore(root: interactionRecoveryRoot)
         self.timedActionRecovery = MobileChatTimedActionStore(root: interactionRecoveryRoot)
@@ -142,6 +145,7 @@ final class MobileChatModel {
               polls?.isMutating != true,
               timedActions?.isMutating != true,
               management?.isMutating != true,
+              forwarding?.protects(message) != true,
               management?.hasPending(in: message.conversationID, messageID: message.id) != true,
               timedActions?.hasPending(in: message.conversationID, targetID: message.id, reminder: true) != true,
               polls?.pending.contains(where: { $0.kind == .vote && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true,
@@ -181,6 +185,8 @@ final class MobileChatModel {
         management?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         timedActions = MobileChatTimedActionModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: timedActionRecovery, owner: self)
         timedActions?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
+        forwarding = MobileChatForwardModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: forwardRecovery, owner: self)
+        forwarding?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         let creationContext = context ?? profileID.uuidString
         if let creator = conversationCreators[profileID], creator.context == creationContext {
             creator.rebind(
@@ -194,7 +200,8 @@ final class MobileChatModel {
                 availability: profiles[profileID]?.availability
                     ?? ChatAvailability(status: .requiresValidation),
                 context: creationContext,
-                recovery: conversationCreationRecovery
+                recovery: conversationCreationRecovery,
+                owner: self
             )
         }
         if profiles[profileID] == nil {
@@ -316,6 +323,7 @@ final class MobileChatModel {
             self?.polls?.updateAvailability(availability)
             self?.timedActions?.updateAvailability(availability)
             self?.management?.updateAvailability(availability)
+            self?.forwarding?.updateAvailability(availability)
             self?.conversationCreators[profileID]?.updateAvailability(availability)
             guard availability.status == .available else {
                 self?.finishUnavailable(profileID: profileID, generation: requestGeneration)
@@ -794,6 +802,8 @@ final class MobileChatModel {
     }
 
     func cancelAllWork() {
+        forwarding?.invalidate()
+        forwarding = nil
         conversationCreator?.invalidate()
         management?.invalidate()
         management = nil
@@ -1663,6 +1673,7 @@ final class MobileChatModel {
             || interaction?.pending.contains(where: { $0.conversationID == conversationID }) == true
             || polls?.pending.contains(where: { $0.conversationID == conversationID }) == true
             || timedActions?.pending.contains(where: { $0.conversationID == conversationID }) == true
+            || forwarding?.hasUnfinished(in: conversationID) == true
     }
 
     func refreshManagementMessages(in conversationID: String) async {

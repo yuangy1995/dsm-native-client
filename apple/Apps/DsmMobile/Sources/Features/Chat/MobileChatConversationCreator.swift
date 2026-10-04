@@ -27,21 +27,24 @@ final class MobileChatConversationCreator {
     let context: String
     private let recovery: MobileChatConversationCreationStore
     private var isActive = true
+    private weak var owner: MobileChatModel?
     private var directEntry: MobileChatConversationCreationStore.Entry? { recovery.pending(in: context) }
     var storageFailed: Bool { recovery.failed }
     var canResumeDirectCreation: Bool { directEntry?.phase == .prepared }
 
     init(repository: any ChatRepository, availability: ChatAvailability,
-         context: String = UUID().uuidString, recovery: MobileChatConversationCreationStore? = nil) {
+         context: String = UUID().uuidString, recovery: MobileChatConversationCreationStore? = nil, owner: MobileChatModel? = nil) {
         self.repository = repository
         self.availability = availability
         self.context = context
         self.recovery = recovery ?? MobileChatConversationCreationStore(root: nil)
+        self.owner = owner
     }
 
     var canCreateDirect: Bool {
         availability.status == .available
             && availability.supportedFeatures.contains(.directConversation)
+            && owner?.forwarding?.blocksContactCreation != true
     }
 
     var canCreateGroup: Bool {
@@ -122,7 +125,8 @@ final class MobileChatConversationCreator {
 
     func openDirectConversation(userID: String) async -> ChatConversationCreateOutcome? {
         let normalizedID = userID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isActive, !isSubmitting, pendingDraft == nil, !normalizedID.isEmpty else { return nil }
+        guard isActive, !isSubmitting, pendingDraft == nil, !normalizedID.isEmpty,
+              owner?.forwarding?.blocksContactCreation != true else { return nil }
         guard !recovery.failed else { errorCategory = .unknown; return nil }
         let entry: MobileChatConversationCreationStore.Entry
         if let existing = directEntry {

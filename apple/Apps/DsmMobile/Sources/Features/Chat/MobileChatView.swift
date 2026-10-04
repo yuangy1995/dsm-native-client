@@ -11,6 +11,7 @@ struct MobileChatView: View {
     @State private var presentsConversationCreator = false
     @State private var createdCompactConversation: ChatConversation?
     @State private var presentsMessageSearch = false
+    @State private var presentsForwardRecords = false
 
     var body: some View {
         Group {
@@ -21,6 +22,12 @@ struct MobileChatView: View {
             }
         }
         .toolbar {
+            if let forwarding = model.chatModel.forwarding, (!forwarding.entries.isEmpty || forwarding.recovery.failed), model.chatModel.state.visibleConversationID == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { presentsForwardRecords = true } label: { Image(systemName: "arrowshape.turn.up.right").frame(width: 44, height: 44) }
+                        .accessibilityLabel(L10n.string("mobile.chat.forward.records")).accessibilityIdentifier("chat-forward-records")
+                }
+            }
             if model.chatModel.management?.canManageConversations == true, model.chatModel.state.visibleConversationID == nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { presentsConversationManagement = true } label: {
@@ -56,6 +63,11 @@ struct MobileChatView: View {
             if let management = model.chatModel.management {
                 MobileChatConversationManagementSheet(chat: model.chatModel, management: management)
                     .id(ObjectIdentifier(management))
+            }
+        }
+        .sheet(isPresented: $presentsForwardRecords) {
+            if let forwarding = model.chatModel.forwarding {
+                MobileChatForwardRecordsSheet(forwarding: forwarding).id(ObjectIdentifier(forwarding))
             }
         }
         .sheet(isPresented: $presentsMessageSearch) {
@@ -667,6 +679,8 @@ private struct MobileChatMessagesView: View {
     @State private var presentsMessageSearch = false
     @State private var presentsPollCreation = false
     @State private var timedList: MobileChatTimedListKind?
+    @State private var presentsForwardSelection = false
+    @State private var presentsForwardRecords = false
 
     var body: some View {
         Group {
@@ -722,6 +736,14 @@ private struct MobileChatMessagesView: View {
                     .accessibilityIdentifier("chat-search-current")
                 }
                 Menu {
+                    if !conversation.isEncrypted, chat.forwarding?.canForward == true {
+                        Button { presentsForwardSelection = true } label: { Label(L10n.string("mobile.chat.forward.select"), systemImage: "arrowshape.turn.up.right") }
+                            .accessibilityIdentifier("chat-forward-select")
+                    }
+                    if let forwarding = chat.forwarding, !forwarding.entries.isEmpty || forwarding.recovery.failed {
+                        Button { presentsForwardRecords = true } label: { Label(L10n.string("mobile.chat.forward.records"), systemImage: "list.bullet") }
+                            .accessibilityIdentifier("chat-forward-records")
+                    }
                     if chat.management?.canManageConversations == true {
                         Button { manageConversations() } label: { Label(L10n.string("mobile.chat.close.manage"), systemImage: "checklist") }
                             .accessibilityIdentifier("chat-manage-conversations")
@@ -762,6 +784,17 @@ private struct MobileChatMessagesView: View {
         }
         .sheet(item: $timedList) { kind in
             if let timed = chat.timedActions { MobileChatTimedListSheet(timed: timed, chat: chat, conversation: conversation, kind: kind) }
+        }
+        .sheet(isPresented: $presentsForwardSelection) {
+            if let forwarding = chat.forwarding {
+                MobileChatForwardSheet(forwarding: forwarding, messages: chat.state.selectedMessages.messages.filter(MobileChatForwardModel.permits))
+                    .id(ObjectIdentifier(forwarding))
+            }
+        }
+        .sheet(isPresented: $presentsForwardRecords) {
+            if let forwarding = chat.forwarding {
+                MobileChatForwardRecordsSheet(forwarding: forwarding).id(ObjectIdentifier(forwarding))
+            }
         }
         .sheet(isPresented: $presentsPollCreation) {
             if let polls = chat.polls { MobileChatCreatePollSheet(polls: polls, conversation: conversation) }
@@ -1057,6 +1090,7 @@ struct MobileChatMessageRow: View {
     @State private var presentsPoll = false
     @State private var presentsThread = false
     @State private var presentsReminder = false
+    @State private var presentsForward = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1133,6 +1167,10 @@ struct MobileChatMessageRow: View {
             deleteActionButton
         }
         .contextMenu {
+            if chat.forwarding?.canSelect(message) == true {
+                Button { presentsForward = true } label: { Label(L10n.string("mobile.chat.forward.action"), systemImage: "arrowshape.turn.up.right") }
+                    .accessibilityIdentifier("chat-forward-\(message.id)")
+            }
             if let management = chat.management, management.canPin(message) {
                 Button { Task { _ = await management.setPinned(message, isPinned: !message.isPinned) } } label: {
                     Label(L10n.string(message.isPinned ? "mobile.chat.announcement.unpin" : "mobile.chat.announcement.pin"),
@@ -1153,6 +1191,12 @@ struct MobileChatMessageRow: View {
         }
         .sheet(isPresented: $presentsReminder) {
             if let timed = chat.timedActions { MobileChatReminderEditor(timed: timed, original: message) }
+        }
+        .sheet(isPresented: $presentsForward) {
+            if let forwarding = chat.forwarding {
+                MobileChatForwardSheet(forwarding: forwarding, messages: [message], initialSelection: [message.id])
+                    .id(ObjectIdentifier(forwarding))
+            }
         }
         .sheet(isPresented: $presentsPoll) {
             if let polls = chat.polls { MobileChatPollSheet(polls: polls, original: message) }
