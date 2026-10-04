@@ -1023,3 +1023,22 @@ Mac 首次完整构建及三次资源收尾增量构建均通过，最终 `m3b6-
 第二轮两端各 **794/794 单元通过（13.653 / 13.492 秒）**；四项受影响的实际 UI 两端各 **4/4 通过（172.988 / 195.009 秒）**。未再执行已通过且不受布局调整影响的未知重启、标签部分失败继续及冻结回归。每个新增编辑 UI 均有 iPhone 和 iPad 独立通过证据。合成服务未提供可打开的预览媒体，本轮仅证明预览中的编辑、错误降级和资料展示，不能代替真实媒体兼容性验收。真实 NAS、设备锁屏保护、时区/夏令时与辅助功能按主计划保留明确用户步骤；未自动修改 NAS 真实资料。
 
 最终分别导出并检查 iPhone 浅色英文完整标题、标签空状态及滚动后的资料/标签，以及 iPad 深色中文时间偏移与完整空状态；状态文案及按钮可读，iPad 测后恢复浅色。最终本地化、fixture、严格文档和差异检查均通过，临时日志、结果包和合成截图不进入提交。
+
+
+## 2026-10-04 移动 M3d 目录与移动复制
+
+本切片对齐目录创建/重命名/排序/封面、目录与照片混合移动复制及删除，复用已有权限预检、原对象与目标检查和任务终态读取。受保护的独立照片管理文件增量版本 8 保存必要快照与真实编号/回执，兼容版本 1–7；重启只查询，不按同名推定创建成功，不重复写入。图库内拖放只传会话内随机标识，最终仍显示目标表单并由用户提交。独立集成及只读对抗复核覆盖错账号/来源、同编号不同意图、丢回执、保存失败、目录自身/后代、共享反向移动、覆盖/删除确认和部分结果不重放；集成复核另外收起混合目录选择下仅适用于照片的菜单，避免忽略所选目录。没有对真实 NAS 执行写入，也没有改变请求参数、应用身份或系统权限。
+
+`swift test --package-path apple --filter SynologyPhotosRepositoryTests` 第一轮既有 **544/544（1.880 秒）**，加入六项目录恢复回归后 **550/550（2.455 秒）**，日志 `m3d-network1.log` / `m3d-network2.log`。`swift test --package-path apple` 完整 **2470 项、172 项既有条件跳过、0 失败（32.453 秒）**，另 **12 项 Swift Testing（0.044 秒）**，`m3d-shared1.log`。恢复覆盖双来源创建/重命名/排序、真实移动复制任务及递归总数、目录删除任务与完整父列表、封面回执/实际解码，以及缺编号零猜测、首次存储失败零写与错误身份拒绝。
+
+XcodeGen **2.46.0** 按现有流程生成工程。实际构建命令 `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`：首轮合成目录数组表达式过于复杂，编译器无法完成类型推断；拆成明确的局部循环后第二至第四轮通过（`m3d-mobile-build1.log` 至 `m3d-mobile-build4.log`）。初次本地化检查拒绝排序资源键拼接，改为四项完整枚举资源引用，复验 **Apple 5858 / Android 2188 / Windows 3402** 通过；fixture **29 组/48 引用**、请求 **170 组/1 写结果**、严格文档及差异检查通过。
+
+两端首轮执行 `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=…' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath … -only-testing:DsmMobileTests`，另选择七项 `DsmMobileUITests/MobileWorkspaceUITests/test照片目录…` 与既有 `test照片资料预览可评分并显示标签`。iPhone ID 如上，iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，iPad 深色；结果 `m3d-iphone1.xcresult` / `m3d-ipad1.xcresult`。两端各 **807 项单元全部通过（14.227 / 14.420 秒）**，含 13 项新增目录用例。首轮各 8 项实际 UI 中 6 项通过、2 项因系统确认按钮在辅助功能树出现相同标识的嵌套匹配而失败（316.605 / 362.899 秒）；失败分别为混合删除及复制覆盖确认，实际确认文案断言均已通过。修正新测试定位为首个匹配，不删除确认内容、提交或结果断言；其余通过项覆盖中文子目录封面、未知重启、拖放、创建/重命名/排序、等待/错误/空内容和既有资料预览。
+
+
+收尾保留排序重试的同一草稿，并在混合目录选择时收起照片专属菜单；第五轮移动构建通过（`m3d-mobile-build5.log`）。两端以相同 `test-without-building` 命令重新运行完整单元及三项受影响 UI（创建/重命名/排序、批量删除、混合复制覆盖），结果 `m3d-iphone2.xcresult` / `m3d-ipad2.xcresult`；单元各 **807/807（14.106 / 13.891 秒）** 通过；三项实际 UI 各 **3/3（111.219 / 115.605 秒）** 通过，包含确认后结果和混合选择不显示照片专属操作断言。所有七项新增目录 UI 与一项既有资料回归均分别已有两端通过证据。
+
+Mac 命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过，`m3d-macos-build1.log`；实际主程序 `lipo -archs` 返回 **x86_64 arm64**。没有安装、启动或发布 Mac App。首轮两端完成后分别导出 xcresult 附件；已逐张检查 iPhone 中文封面、英文移动目标/删除确认及 iPad 深色覆盖确认/错误恢复，标题与后果完整可见，错误占满弹窗可用内容区。封面图仅为合成图片，不代表真实 NAS 媒体体验通过。
+
+
+最终生成工程重复运行 SHA-256 一致：`fa818e6627d097a94cba3d70ef54d784a4b3748b20551017adeb65911cce1698`。未修改 macOS App、Windows、Android 源码，不把两端合成结果当作真实 NAS 或真机结论。具体设备/专用数据、权限、锁屏/终止/切账号、拖放/键盘/VoiceOver 步骤及允许回传内容集中在移动主计划 M3d 的 `PENDING_USER_VALIDATION`；目录分享、完整任务控制、人物/相似组、旋转/预览设置、旧图库清理与后续 M4–M8 继续实施。

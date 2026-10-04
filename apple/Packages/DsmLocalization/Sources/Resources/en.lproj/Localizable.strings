@@ -6036,6 +6036,14 @@
 "photos.metadata.tagPartial" = "The tag was created, but it was not added to every selected photo. Try again to add it to the remaining photos.";
 "mobile.photos.edit.title" = "Edit photo";
 "mobile.photos.edit.save" = "Save";
+"mobile.photos.folder.loading" = "Loading folders…";
+"mobile.photos.folder.loadFailed" = "Could not load the folder. Check your connection and try again.";
+"mobile.photos.folder.unavailable" = "Folder unavailable";
+"mobile.photos.folder.moveHere" = "Move Here";
+"mobile.photos.folder.copyHere" = "Copy Here";
+"mobile.photos.folder.create" = "Create";
+"mobile.photos.folder.noChildren" = "This folder has no subfolders.";
+"mobile.photos.folder.limit" = "Select up to 100 items for each operation.";
 "mobile.photos.edit.noTagsTitle" = "No tags";
 "mobile.photos.edit.detailsUnavailable" = "Details unavailable";
 "mobile.photos.edit.loading" = "Loading photo details";

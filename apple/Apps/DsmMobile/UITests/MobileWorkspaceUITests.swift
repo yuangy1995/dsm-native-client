@@ -3,6 +3,113 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test照片目录新建重命名与排序() {
+        let app = launchFixture(state: "photo-folders"); defer { app.terminate() }
+        openPhotos(app); openPhotoSection("Folders", app: app)
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.folder.create", in: app).tap()
+        let name = app.textFields["mobile.photos.folder.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Trip")
+        app.buttons["mobile.photos.folder.submit"].tap()
+        let created = app.buttons["mobile.photos.collection.101"]
+        XCTAssertTrue(created.waitForExistence(timeout: 8)); created.tap()
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.folder.rename", in: app).tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4) + "Renamed")
+        attachScreenshot(app, name: "Photo folder rename")
+        app.buttons["mobile.photos.folder.submit"].tap()
+        XCTAssertTrue(app.navigationBars["Renamed"].waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.folder.sort", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.folder.sortField", in: app).waitForExistence(timeout: 5))
+        element("mobile.photos.folder.sortField", in: app).tap(); app.buttons["Name"].tap()
+        attachScreenshot(app, name: "Photo folder sorting")
+        app.buttons["mobile.photos.folder.submit"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+    }
+
+    func test照片目录混合选择复制覆盖确认可取消再保存() {
+        let app = launchFixture(state: "photo-folders"); defer { app.terminate() }
+        openPhotos(app); openPhotoSection("Folders", app: app)
+        element("mobile.photos.selection.begin", in: app).tap()
+        app.buttons["mobile.photos.collection.2"].tap(); app.buttons["Sample 1.jpg"].tap()
+        element("mobile.photos.selection.actions", in: app).tap()
+        XCTAssertFalse(element("mobile.photos.selection.create", in: app).exists)
+        XCTAssertFalse(element("mobile.photos.edit.rating", in: app).exists)
+        element("mobile.photos.folder.copy", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.folder.child.3"].waitForExistence(timeout: 5)); app.buttons["mobile.photos.folder.child.3"].tap()
+        XCTAssertTrue(element("mobile.photos.folder.empty", in: app).waitForExistence(timeout: 5))
+        element("mobile.photos.folder.duplicate", in: app).tap(); app.buttons["Overwrite existing items"].tap()
+        app.buttons["mobile.photos.folder.submit"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); attachScreenshot(app, name: "Photo folder overwrite confirmation")
+        app.alerts.buttons["Cancel"].firstMatch.tap(); XCTAssertTrue(app.buttons["mobile.photos.folder.submit"].exists)
+        app.buttons["mobile.photos.folder.submit"].tap(); app.alerts.buttons["mobile.photos.folder.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["mobile.photos.collection.2"].exists); XCTAssertTrue(app.buttons["Sample 1.jpg"].exists)
+    }
+
+    func test照片目录中文封面从子目录选片() {
+        let app = launchFixture(state: "photo-folders", language: "zh-Hans"); defer { app.terminate() }
+        openPhotos(app, chinese: true); openPhotoSection("文件夹", app: app)
+        XCTAssertTrue(app.buttons["mobile.photos.collection.2"].waitForExistence(timeout: 5)); app.buttons["mobile.photos.collection.2"].tap()
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.folder.cover", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.folder.child.200"].waitForExistence(timeout: 5)); app.buttons["mobile.photos.folder.child.200"].tap()
+        let photo = app.buttons["mobile.photos.folder.cover.3"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 5)); photo.tap(); attachScreenshot(app, name: "照片目录子目录封面选择")
+        app.buttons["mobile.photos.folder.submit"].tap()
+        XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
+    }
+
+    func test照片目录批量删除确认包含照片和文件夹() {
+        let app = launchFixture(state: "photo-folders"); defer { app.terminate() }
+        openPhotos(app); openPhotoSection("Folders", app: app)
+        element("mobile.photos.selection.begin", in: app).tap(); element("mobile.photos.selection.loaded", in: app).tap()
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.selection.delete", in: app).tap()
+        app.buttons["mobile.photos.folder.submit"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "2 folders and 2 photos")).firstMatch.exists)
+        attachScreenshot(app, name: "Photo folder mixed deletion confirmation")
+        app.alerts.buttons["mobile.photos.folder.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["mobile.photos.collection.2"].exists); XCTAssertFalse(app.buttons["Sample 1.jpg"].exists)
+    }
+
+    func test照片目录任务未知重启不重新复制() {
+        let app = launchFixture(state: "photo-folders-unknown"); defer { app.terminate() }
+        openPhotos(app); selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.folder.copy", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.folder.child.3"].waitForExistence(timeout: 5)); app.buttons["mobile.photos.folder.child.3"].tap()
+        app.buttons["mobile.photos.folder.submit"].tap()
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Photo folder task restored after restart")
+    }
+
+    func test照片目录目标加载失败等待空内容与取消() {
+        for state in ["photo-folders-loading", "photo-folders-error", "photo-folders-empty"] {
+            let app = launchFixture(state: state)
+            openPhotos(app); selectPhotoItems(app)
+            element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.folder.copy", in: app).tap()
+            if state.hasSuffix("loading") { XCTAssertTrue(element("mobile.photos.folder.loading", in: app).waitForExistence(timeout: 5)) }
+            else if state.hasSuffix("error") { XCTAssertTrue(app.staticTexts["Could not load the folder. Check your connection and try again."].waitForExistence(timeout: 5)) }
+            else { XCTAssertTrue(element("mobile.photos.folder.empty", in: app).waitForExistence(timeout: 5)) }
+            XCTAssertFalse(app.buttons["mobile.photos.folder.submit"].isEnabled)
+            attachScreenshot(app, name: state); app.buttons["Cancel"].tap(); app.terminate()
+        }
+    }
+
+    func test照片目录拖放后选择目标并提交移动() {
+        let app = launchFixture(state: "photo-folders"); defer { app.terminate() }
+        openPhotos(app); openPhotoSection("Folders", app: app)
+        let source = app.buttons["mobile.photos.collection.2"], target = app.buttons["mobile.photos.collection.3"]
+        XCTAssertTrue(source.waitForExistence(timeout: 5)); XCTAssertTrue(target.exists)
+        source.press(forDuration: 1.0, thenDragTo: target)
+        XCTAssertTrue(app.buttons["mobile.photos.folder.submit"].waitForExistence(timeout: 6))
+        XCTAssertTrue(app.buttons["mobile.photos.folder.submit"].isEnabled)
+        attachScreenshot(app, name: "Photo folder drag destination")
+        app.buttons["mobile.photos.folder.submit"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["mobile.photos.collection.2"].exists)
+    }
+
     func test照片资料批量描述保存与日期表单() {
         let app = launchFixture(state: "photo-edit"); defer { app.terminate() }
         openPhotos(app); openPhotoEditForm("description", app: app)

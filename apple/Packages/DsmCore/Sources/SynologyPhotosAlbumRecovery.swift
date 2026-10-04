@@ -18,6 +18,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case condition(Condition)
         case frozen(Frozen)
         case photoEdit(PhotoEdit)
+        case folder(FolderOperation)
     }
     public let version: Int
     public let profileID: UUID
@@ -34,13 +35,15 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .createAlbum, .renameAlbum, .deleteAlbum, .addToAlbum, .removeFromAlbum, .setAlbumCover, .shareAlbum,
              .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum,
              .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum,
-             .edit, .shiftDates, .createTag, .addTags, .removeTags: true
+             .edit, .shiftDates, .createTag, .addTags, .removeTags,
+             .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
         version = switch mutation {
+        case .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy: 8
         case .edit, .shiftDates, .createTag, .addTags, .removeTags: 7
         case .unfreezeAlbum, .rebuildFrozenAlbum: 6
         case .createConditionAlbum, .setAlbumCondition: 5
@@ -51,6 +54,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         }
         self.profileID = profileID; self.userID = userID; self.operationID = operationID
         switch mutation {
+        case .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy: operation = .folder(try FolderOperation(mutation: mutation))
         case .edit, .shiftDates, .createTag, .addTags, .removeTags: operation = .photoEdit(try PhotoEdit(mutation: mutation))
         case .createAlbum(let name, let photos): operation = .create(name: name, photos: photos.map(SynologyPhotoUploadPhoto.init))
         case .renameAlbum(let id, let name): operation = .rename(id: id, name: name)
@@ -72,13 +76,16 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...7).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...8).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
         }
         let command: SynologyPhotosMutation
         switch operation {
+        case .folder(let value):
+            guard version == 8, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation(profileID: profileID)
         case .photoEdit(let value):
             guard version == 7, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID)
@@ -121,7 +128,8 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .addToAlbum(let id, _), .removeFromAlbum(let id, _), .setAlbumCover(let id, _):
             guard id > 0, !photos.isEmpty else { throw CocoaError(.coderReadCorrupt) }
         case .shareAlbum, .deleteTemporaryAlbum, .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum,
-             .edit, .shiftDates, .createTag, .addTags, .removeTags: break
+             .edit, .shiftDates, .createTag, .addTags, .removeTags,
+             .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
@@ -135,6 +143,11 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
     public var photoEditDetails: PhotoEdit? {
         get { if case .photoEdit(let value) = operation { return value }; return nil }
         set { if case .photoEdit = operation, let newValue { operation = .photoEdit(newValue) } }
+    }
+
+    public var folderDetails: FolderOperation? {
+        get { if case .folder(let value) = operation { return value }; return nil }
+        set { if case .folder = operation, let newValue { operation = .folder(newValue) } }
     }
 
     public var frozenDetails: Frozen? {

@@ -33,15 +33,33 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private(set) var isEditHeld = false
     private var heldUpload: CheckedContinuation<Void, Never>?
     private(set) var isUploadHeld = false
+    private var folderList: [SynologyPhotoCollection] = []
+    private var folderSorts: [String: SynologyPhotoSort] = [:]
+    private var heldFolder: CheckedContinuation<Void, Never>?
+    private(set) var isFolderHeld = false
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown"].contains(state)
-        if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") || state.hasPrefix("photo-edit") {
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown"].contains(state)
+        if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") || state.hasPrefix("photo-edit") || state.hasPrefix("photo-folders") {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
                       sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20), folderID: 1, mediaType: "photo")
             }
+        }
+        if state.hasPrefix("photo-folders") {
+            let count = state == "photo-folders-paged" ? 101 : 2
+            var initial: [SynologyPhotoCollection] = []
+            for space in [SynologyPhotoSpace.personal, .shared] {
+                for id in 2..<(count + 2) {
+                    let name = id == 2 ? "Source" : id == 3 ? "Destination" : "Folder \(id)"
+                    initial.append(.init(id: id, name: name, parentID: 1, path: "/" + name, space: space))
+                }
+                initial.append(.init(id: 200, name: "Child", parentID: 2, path: "/Source/Child", space: space))
+            }
+            folderList = initial
+            uploaded.append(.init(id: .init(profileID: profileID, space: .personal, unitID: 3), filename: "Cover.jpg",
+                sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20), folderID: 200, mediaType: "photo"))
         }
         if state.hasPrefix("photo-edit") {
             let initialTags = tagChoices
@@ -139,6 +157,8 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if state.hasPrefix("photo-condition") || (state.hasPrefix("photo-frozen") && state != "photo-frozen-no-condition") { features.insert(.conditionAlbums) }
         if state.hasPrefix("photo-frozen") { features.insert(.frozenAlbums) }
         if state.hasPrefix("photo-edit") { features.formUnion([.metadata, .tags, .tagCreation]) }
+        if state.hasPrefix("photo-folders") { features.formUnion([.folders, .fileTransfer, .folderDeletion, .folderSorting, .folderCover]) }
+        if state == "photo-folders-defaults" { features.insert(.duplicateSettings) }
         return features
     }
     func changeSharing(_ value: SynologyPhotoSharingState) { sharingValue = value }
@@ -178,6 +198,8 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                 .init(id: photo.id, filename: photo.filename, sizeBytes: photo.sizeBytes, takenAt: photo.takenAt, indexedAt: photo.indexedAt,
                     folderID: photo.folderID, mediaType: photo.mediaType, albumContext: .init(albumID: id, ownerUserID: photo.id.space == .shared ? 0 : userID, providerUserID: userID))
             }
+        } else if state.hasPrefix("photo-folders"), case .folder(let id, _) = query {
+            values = uploaded.filter { $0.id.space == space && $0.folderID == id }
         } else { values = uploaded.filter { $0.id.space == space } }
         return .init(items: Array(values.dropFirst(offset).prefix(limit)), offset: offset, nextOffset: values.count, hasMore: false)
     }
@@ -197,8 +219,22 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return .init(people: [], locations: [], tags: state == "photo-edit-tags-empty" ? [] : tagChoices)
     }
     func rootFolder(in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection { .init(id: 1, name: "Sample folder", path: "/", space: space) }
-    func folder(id: Int, in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection { .init(id: id, name: "Sample folder", parentID: id == 1 ? nil : 1, path: "/Sample folder", space: space) }
+    func folder(id: Int, in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection {
+        if state.hasPrefix("photo-folders") {
+            if id == 1 { return try await rootFolder(in: space) }
+            guard let folder = folderList.first(where: { $0.id == id && $0.space == space }) else { throw CocoaError(.fileReadNoSuchFile) }
+            return folder
+        }
+        return .init(id: id, name: "Sample folder", parentID: id == 1 ? nil : 1, path: "/Sample folder", space: space)
+    }
     func folders(in space: SynologyPhotoSpace, parentID: Int, offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
+        if state.hasPrefix("photo-folders") {
+            if state == "photo-folders-error" { throw URLError(.notConnectedToInternet) }
+            if state == "photo-folders-loading" { try await Task.sleep(for: .seconds(30)) }
+            if state == "photo-folders-held" { isFolderHeld = true; await withCheckedContinuation { heldFolder = $0 } }
+            if state == "photo-folders-empty" { return [] }
+            return Array(folderList.filter { $0.space == space && $0.parentID == parentID }.dropFirst(offset).prefix(limit))
+        }
         if state == "photo-request-folders-error" || state == "photo-condition-folders-error" { throw URLError(.notConnectedToInternet) }
         guard (state.hasPrefix("photo-request") || state.hasPrefix("photo-condition")), parentID == 1 else { return [] }
         let count = ["photo-request-paged", "photo-condition-paged"].contains(state) ? 101 : 1
@@ -221,7 +257,9 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return albumList.map { .init(albumID: $0.id, name: $0.name, shared: false) }
             + [.init(passphrase: "synthetic-shared-album", name: "Shared sample album", shared: true)]
     }
-    func folderSort(_ folder: SynologyPhotoCollection) async throws -> SynologyPhotoSort { .init() }
+    func folderSort(_ folder: SynologyPhotoCollection) async throws -> SynologyPhotoSort { folderSorts["\(folder.space):\(folder.id)"] ?? .init() }
+    func duplicateSettings() async throws -> SynologyPhotoDuplicateSettings { .init(upload: .ignore, transfer: state == "photo-folders-defaults" ? .overwrite : .skip) }
+    func releaseFolder() { heldFolder?.resume(); heldFolder = nil }
     func albums(offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] { Array(albumList.dropFirst(offset).prefix(limit)) }
     func addableAlbums(offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
         if state == "photo-albums-empty" { return [] }
@@ -283,6 +321,45 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             saved.sharingDetails = sharing
         }
         switch mutation {
+        case .createFolder(let parent, let name, let space):
+            nextID += 1
+            let ancestor = try await folder(id: parent, in: space)
+            let path = ancestor.path == "/" ? "/" + name : (ancestor.path ?? "") + "/" + name
+            folderList.append(.init(id: nextID, name: name, parentID: parent, path: path, space: space))
+            if var folder = saved.folderDetails { folder.createdFolderID = nextID; saved.folderDetails = folder }
+        case .renameFolder(let target, let name):
+            let parentPath = ((target.path ?? "") as NSString).deletingLastPathComponent
+            let path = (parentPath == "/" ? "/" : parentPath + "/") + name
+            if let index = folderList.firstIndex(where: { $0.id == target.id && $0.space == target.space }) {
+                folderList[index] = .init(id: target.id, name: name, parentID: target.parentID, path: path, space: target.space)
+            }
+        case .setFolderSort(let target, let sort): folderSorts["\(target.space):\(target.id)"] = sort
+        case .setFolderCover:
+            if var folder = saved.folderDetails { folder.coverAcknowledged = true; saved.folderDetails = folder }
+        case .deleteFolderItems(let photos, let targets):
+            uploaded.removeAll { photo in photos.contains { $0.id == photo.id } }
+            folderList.removeAll { folder in targets.contains { $0.id == folder.id && $0.space == folder.space } }
+            if var folder = saved.folderDetails { folder.taskID = 88; saved.folderDetails = folder }
+        case .move(let photos, let target, _, let sources, _), .copy(let photos, let target, _, let sources, _):
+            let copying = if case .copy = mutation { true } else { false }
+            let destination = try await folder(id: target, in: mutation.destinationSpace)
+            for photo in photos {
+                if copying { nextID += 1 }
+                let updated = SynologyPhoto(id: .init(profileID: profileID, space: mutation.destinationSpace, unitID: copying ? nextID : photo.id.unitID),
+                    filename: photo.filename, sizeBytes: photo.sizeBytes, takenAt: photo.takenAt, indexedAt: photo.indexedAt, folderID: target, mediaType: photo.mediaType)
+                if !copying { uploaded.removeAll { $0.id == photo.id } }
+                uploaded.append(updated)
+            }
+            for source in sources {
+                if copying { nextID += 1 }
+                if !copying { folderList.removeAll { $0.id == source.id && $0.space == source.space } }
+                folderList.append(.init(id: copying ? nextID : source.id, name: source.name, parentID: target,
+                    path: (destination.path == "/" ? "/" : (destination.path ?? "") + "/") + source.name, space: destination.space))
+            }
+            if var folder = saved.folderDetails {
+                folder.taskID = 88; folder.transferTargetVerified = true; folder.transferTotal = photos.count + sources.count
+                saved.folderDetails = folder
+            }
         case .edit, .shiftDates, .createTag, .addTags, .removeTags:
             if var summary = saved.photoEditDetails {
                 var tag: SynologyPhotoFilterChoice?
@@ -359,6 +436,23 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .folder(let summary):
+            guard let command = try? saved.reviewMutation() else { return .init(state: .pendingReview) }
+            switch command {
+            case .createFolder:
+                guard let id = summary.createdFolderID, let folder = folderList.first(where: { $0.id == id && $0.space == command.space }) else { return .init(state: .pendingReview) }
+                return .init(state: .confirmed, folder: folder)
+            case .renameFolder(let target, _), .setFolderSort(let target, _), .setFolderCover(let target, _):
+                return .init(state: .confirmed, folder: folderList.first { $0.id == target.id && $0.space == target.space } ?? target)
+            case .deleteFolderItems(let photos, let targets):
+                guard summary.taskID != nil else { return .init(state: .pendingReview) }
+                return .init(state: .confirmed, completedCount: photos.count + targets.count, deletedFolders: targets, deletedPhotoIDs: photos.map(\.id))
+            case .move, .copy:
+                guard summary.taskID != nil else { return .init(state: .pendingReview) }
+                return .init(state: state == "photo-folders-partial" ? .partial : .confirmed,
+                    photos: uploaded.filter { current in command.photos.contains { $0.id == current.id } }, completedCount: command.photos.count + command.transferFolders.count)
+            default: return .init(state: .pendingReview)
+            }
         case .photoEdit(let summary):
             let updated = summary.targets.compactMap { target in
                 uploaded.first { $0.id == target.id && (try? target.matchesIdentity($0)) == true && (try? summary.matchesValue($0, target: target)) == true }

@@ -2937,7 +2937,10 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        if let edit = checkpoint.photoEditDetails {
+        if checkpoint.folderDetails != nil {
+            let command = try checkpoint.reviewMutation()
+            try requireAccess(command.space); try requireAccess(command.destinationSpace)
+        } else if let edit = checkpoint.photoEditDetails {
             try requireAccess(edit.space)
             for space in Set(edit.targets.map(\.space)) { try requireAccess(space) }
         } else if let frozen = checkpoint.frozenDetails {
@@ -2949,7 +2952,9 @@ extension SynologyPhotosRepository {
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            let matches = if let edit = checkpoint.photoEditDetails {
+            let matches = if let folder = checkpoint.folderDetails {
+                folder.hasSameIntent(as: existing.mutation, profileID: profileID)
+            } else if let edit = checkpoint.photoEditDetails {
                 existing.restoredPhotoEdit.map { $0 == edit } ?? edit.hasSameIntent(as: existing.mutation)
             } else if let frozen = checkpoint.frozenDetails {
                 existing.restoredFrozen.map { $0 == frozen } ?? frozen.hasSameIntent(as: existing.mutation, profileID: profileID, userID: checkpoint.userID)
@@ -2982,6 +2987,11 @@ extension SynologyPhotosRepository {
         record.frozenDeletionRejected = checkpoint.frozenDetails?.deletionRejected ?? false
         record.restoredCondition = checkpoint.conditionDetails
         record.restoredPhotoEdit = checkpoint.photoEditDetails
+        if let folder = checkpoint.folderDetails {
+            record.taskID = folder.taskID; record.folderID = folder.createdFolderID
+            record.transferTargetVerified = folder.transferTargetVerified; record.transferTotal = folder.transferTotal
+            record.folderCoverAcknowledged = folder.coverAcknowledged
+        }
         record.passwordUpdateAcknowledged = checkpoint.sharingDetails?.passwordAcknowledged ?? false
         record.enableSharingAttempted = checkpoint.sharingDetails?.enableAttempted ?? false
         record.temporaryAlbumMembers = checkpoint.temporaryMembers.map { values in
@@ -2998,6 +3008,12 @@ extension SynologyPhotosRepository {
             checkpoint.createdAlbumID = record.albumID
             checkpoint.membershipHasFailures = record.albumMembershipHasFailures
             checkpoint.rejected = record.result.state == .rejected
+            if var folder = checkpoint.folderDetails {
+                folder.taskID = record.taskID; folder.createdFolderID = record.folderID
+                folder.transferTargetVerified = record.transferTargetVerified; folder.transferTotal = record.transferTotal
+                folder.coverAcknowledged = record.folderCoverAcknowledged
+                checkpoint.folderDetails = folder
+            }
             if var edit = checkpoint.photoEditDetails {
                 edit.createdTagID = record.createdTag?.id
                 let submitted = record.metadataSubmittedIDs.union(record.shiftedSubmittedIDs)

@@ -5,6 +5,132 @@ import XCTest
 
 final class SynologyPhotosRepositoryTests: XCTestCase {
 
+    func test目录创建重命名排序跨实例恢复沿原目标且不重写() async throws {
+        for space in SynologyPhotoSpace.allCases {
+            for kind in 0..<3 {
+                let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+                let source = SynologyPhotoCollection(id: 9, name: "Fixture", parentID: 1, path: "/Fixture", space: space)
+                let sort = SynologyPhotoSort(field: .filename, direction: .descending)
+                let command: SynologyPhotosMutation = kind == 0 ? .createFolder(parentID: 9, name: "Trip", space: space)
+                    : kind == 1 ? .renameFolder(folder: source, name: "Renamed") : .setFolderSort(folder: source, sort: sort)
+                let receipt = kind == 0 ? #"{"success":true,"data":{"folder":{"id":10}}}"# : emptySuccess
+                let writer = MockHTTPTransport(responses: accessResponses(teamPermission: "management") + [coverFolder(), receipt, "invalid"].map(response))
+                let repository = try makeRepository(writer, profileID: profile); _ = try await repository.access()
+                let first = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+                XCTAssertEqual(first.state, .pendingReview)
+                let data = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
+                let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data)
+                XCTAssertEqual(saved.version, 8); XCTAssertEqual(saved.folderDetails?.createdFolderID, kind == 0 ? 10 : nil)
+                let updated = kind == 0 ? coverFolder(id: 10, path: "/Fixture/Trip").replacingOccurrences(of: #""parent":1"#, with: #""parent":9"#)
+                    : kind == 1 ? coverFolder(path: "/Renamed") : sortedFolder(sort)
+                let reader = MockHTTPTransport(responses: accessResponses(teamPermission: "management") + [response(updated)])
+                let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+                try await restored.restoreAlbumMutation(saved)
+                let final = try await restored.reviewMutation(operationID: id)
+                XCTAssertEqual(final.state, .confirmed); XCTAssertEqual(final.folder?.space, space)
+                let reads = try await reader.recordedRequests().map(decode)
+                XCTAssertFalse(reads.contains { ["create", "rename", "set_order"].contains($0["method"] ?? "") })
+                let writes = try await writer.recordedRequests().map(decode)
+                XCTAssertEqual(writes.filter { ["create", "rename", "set_order"].contains($0["method"] ?? "") }.count, 1)
+            }
+        }
+    }
+
+    func test目录复制移动恢复真实任务编号目标与数量且不重新提交() async throws {
+        for (moving, destination) in [(true, SynologyPhotoSpace.personal), (false, .personal), (true, .shared), (false, .shared)] {
+            let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+            let source = deletionFolderTarget(), target = coverFolder(id: 20, path: "/Destination")
+            let receipt = folderTransferReceipt(total: 600, owner: destination == .shared ? 0 : 12)
+            let writer = MockHTTPTransport(responses: accessResponses(teamPermission: "management") + [coverFolder(), deletingFolder(), target, receipt, "invalid"].map(response))
+            let repository = try makeRepository(writer, profileID: profile); _ = try await repository.access()
+            let command: SynologyPhotosMutation = moving ? .move([], folderID: 20, destinationSpace: destination, folders: [source]) : .copy([], folderID: 20, destinationSpace: destination, folders: [source])
+            let first = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+            XCTAssertEqual(first.state, .pendingReview)
+            let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: JSONEncoder().encode(XCTUnwrap(capture.values.last)))
+            XCTAssertEqual(saved.folderDetails?.taskID, 42); XCTAssertEqual(saved.folderDetails?.transferTotal, 600)
+            XCTAssertEqual(saved.folderDetails?.transferTargetVerified, true)
+            let moved = deletingFolder(parent: 20).replacingOccurrences(of: "/Fixture/Child10", with: "/Destination/Child10")
+            let reader = MockHTTPTransport(responses: accessResponses(teamPermission: "management") +
+                ([folderDeleteStatus(completion: 600), target] + (moving && destination == .personal ? [moved] : [])).map(response))
+            let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+            try await restored.restoreAlbumMutation(saved)
+            let result = try await restored.reviewMutation(operationID: id)
+            XCTAssertEqual(result.state, .confirmed); XCTAssertEqual(result.completedCount, 600)
+            let reads = try await reader.recordedRequests().map(decode)
+            XCTAssertFalse(reads.contains { ["copy", "move"].contains($0["method"] ?? "") })
+        }
+    }
+
+    func test目录删除恢复任务终态及父目录回读不重删() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let writer = MockHTTPTransport(responses: accessResponses() + [coverFolder(), deletingFolder(), folderDeleteReceipt, "invalid"].map(response))
+        let repository = try makeRepository(writer, profileID: profile, deletionEnabled: true); _ = try await repository.access()
+        let command = SynologyPhotosMutation.deleteFolderItems(photos: [], folders: [deletionFolderTarget()])
+        let first = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+        XCTAssertEqual(first.state, .pendingReview)
+        let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: JSONEncoder().encode(XCTUnwrap(capture.values.last)))
+        XCTAssertEqual(saved.folderDetails?.taskID, 42)
+        let reader = MockHTTPTransport(responses: accessResponses() + [folderDeleteStatus(), coverFolder(), emptyFolderOrItemList].map(response))
+        let restored = try makeRepository(reader, profileID: profile, deletionEnabled: true); _ = try await restored.access()
+        try await restored.restoreAlbumMutation(saved)
+        let result = try await restored.reviewMutation(operationID: id)
+        XCTAssertEqual(result.state, .confirmed); XCTAssertEqual(result.deletedFolders.map(\.id), [10])
+        let requests = try await reader.recordedRequests().map(decode); XCTAssertFalse(requests.contains { $0["method"] == "delete" })
+    }
+
+    func test目录封面恢复仍要求成功回执与可解码自定义封面() async throws {
+        for acknowledged in [true, false] {
+            let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+            let writer = MockHTTPTransport(responses: accessResponses() + [coverFolder(), itemPage, coverFolder(manage: false), acknowledged ? emptySuccess : "invalid", "invalid"].map(response))
+            let repository = try makeRepository(writer, profileID: profile); _ = try await repository.access()
+            let command = SynologyPhotosMutation.setFolderCover(folder: .init(id: 9, name: "Fixture", path: "/Fixture"), photo: coverPhoto(profile, space: .personal))
+            let first = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+            XCTAssertEqual(first.state, .pendingReview)
+            let saved = try XCTUnwrap(capture.values.last); XCTAssertEqual(saved.folderDetails?.coverAcknowledged, acknowledged)
+            let data = try PhotoPreviewFixture.image(type: .jpeg)
+            let reader = MockHTTPTransport(responses: accessResponses() + (acknowledged ? [response(coverFolder(thumbnail: customFolderCover)), .init(data: data, statusCode: 200, headers: ["Content-Type": "image/jpeg"])] : []))
+            let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+            try await restored.restoreAlbumMutation(saved)
+            let result = try await restored.reviewMutation(operationID: id)
+            XCTAssertEqual(result.state, acknowledged ? .confirmed : .pendingReview)
+            let requests = await reader.recordedRequests(); XCTAssertEqual(requests.count, acknowledged ? 6 : 4)
+        }
+    }
+
+    func test目录恢复丢失编号不按同名猜测且写前存储失败零提交() async throws {
+        let profile = UUID(), source = deletionFolderTarget()
+        for command in [SynologyPhotosMutation.createFolder(parentID: 9, name: "Trip"), .copy([], folderID: 20, folders: [source]), .deleteFolderItems(photos: [], folders: [source])] {
+            let id = UUID(), saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+            let transport = MockHTTPTransport(responses: accessResponses()), repository = try makeRepository(transport, profileID: profile, deletionEnabled: true)
+            _ = try await repository.access(); try await repository.restoreAlbumMutation(saved)
+            let result = try await repository.reviewMutation(operationID: id); XCTAssertEqual(result.state, .pendingReview)
+            let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 4)
+        }
+        let writer = MockHTTPTransport(responses: accessResponses() + [response(coverFolder())])
+        let repository = try makeRepository(writer, profileID: profile); _ = try await repository.access()
+        do {
+            _ = try await repository.performRecoverableAlbumMutation(.createFolder(parentID: 9, name: "Trip"), operationID: UUID()) { _ in throw CocoaError(.fileWriteNoPermission) }
+            XCTFail("存储失败不应提交")
+        } catch { }
+        let requests = try await writer.recordedRequests().map(decode); XCTAssertFalse(requests.contains { $0["method"] == "create" })
+    }
+
+    func test目录恢复拒绝错账号非法回执与同编号不同意图() async throws {
+        let profile = UUID(), id = UUID(), command = SynologyPhotosMutation.copy([], folderID: 20, folders: [deletionFolderTarget()])
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+        var invalid = saved
+        var folder = try XCTUnwrap(invalid.folderDetails); folder.transferTargetVerified = true; invalid.folderDetails = folder
+        XCTAssertThrowsError(try invalid.reviewMutation())
+        let transport = MockHTTPTransport(responses: accessResponses()), repository = try makeRepository(transport, profileID: profile)
+        _ = try await repository.access(); try await repository.restoreAlbumMutation(saved)
+        for other in [try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: UUID(), profileID: UUID(), userID: 12),
+                      try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: UUID(), profileID: profile, userID: 99),
+                      try SynologyPhotosAlbumCheckpoint(mutation: .move([], folderID: 20, folders: [deletionFolderTarget()]), operationID: id, profileID: profile, userID: 12)] {
+            do { try await repository.restoreAlbumMutation(other); XCTFail("不能恢复其他身份或意图") } catch { }
+        }
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 4)
+    }
+
     func test照片编辑恢复覆盖两种来源六种操作且不保存正文或重写() async throws {
         for space in SynologyPhotoSpace.allCases {
             for kind in 0..<6 {

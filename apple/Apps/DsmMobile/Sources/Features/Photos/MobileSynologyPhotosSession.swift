@@ -19,6 +19,7 @@ final class MobileSynologyPhotosSession {
     private(set) var uploads: MobilePhotoUploadImportModel?
     private(set) var albums: MobilePhotoAlbumModel?
     private(set) var editor: MobilePhotoEditModel?
+    private(set) var folders: MobilePhotoFolderModel?
     private(set) var sharing: MobilePhotoSharingModel?
     private(set) var temporarySharing: MobilePhotoTemporarySharingModel?
     private(set) var conditions: MobilePhotoConditionModel?
@@ -51,6 +52,7 @@ final class MobileSynologyPhotosSession {
         uploads = uploadStorage.map { MobilePhotoUploadImportModel(model: model, storage: $0) }
         albums = repository == nil ? nil : MobilePhotoAlbumModel(model: model)
         editor = repository == nil ? nil : MobilePhotoEditModel(model: model)
+        folders = repository == nil ? nil : MobilePhotoFolderModel(model: model)
         sharing = repository == nil ? nil : MobilePhotoSharingModel(model: model)
         temporarySharing = sharing.map { MobilePhotoTemporarySharingModel(model: model, sharing: $0) }
         conditions = repository == nil ? nil : MobilePhotoConditionModel(model: model)
@@ -72,6 +74,7 @@ final class MobileSynologyPhotosSession {
         uploads?.cancel()
         albums?.cancel()
         editor?.cancel()
+        folders?.cancel()
         sharing?.cancel()
         temporarySharing?.clear()
         requests?.cancel()

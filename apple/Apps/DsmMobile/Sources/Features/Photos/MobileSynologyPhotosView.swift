@@ -97,7 +97,7 @@ private struct MobileSynologyPhotosContent: View {
             }
             if model.isSelecting {
                 selectionToolbar
-                if model.selectedPhotos.count > 100 { Text(L10n.string("photos.preview.recovery.limit")).font(.caption).padding(.horizontal) }
+                if model.selectedItemCount > 100 { Text(L10n.string("mobile.photos.folder.limit")).font(.caption).padding(.horizontal) }
             }
             MobilePhotoManagementStatus(model: model)
             if model.preparedTemporaryAlbum != nil, let sharing = session.sharing {
@@ -123,10 +123,19 @@ private struct MobileSynologyPhotosContent: View {
                     Button { Task { await model.goBack() } } label: {
                         Label(L10n.string("photos.library.back"), systemImage: "chevron.left")
                     }.frame(minWidth: 44, minHeight: 44)
+                    if model.section == .folders, model.folderHistory.count > 1 {
+                        Menu {
+                            ForEach(model.folderHistory) { folder in
+                                Button(folder.path == "/" ? L10n.string("photos.folders.root") : folder.name) { Task { await model.navigateToFolder(folder) } }
+                                    .disabled(folder.id == model.folderHistory.last?.id)
+                            }
+                        } label: { Label(L10n.string("photos.folders.root"), systemImage: "folder") }
+                            .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.folder.navigation")
+                    }
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if !model.items.isEmpty {
+                if !model.items.isEmpty || (model.section == .folders && !model.collections.isEmpty) {
                     Button {
                         if model.isSelecting { model.clearSelection() } else { model.isSelecting = true }
                     } label: {
@@ -134,6 +143,14 @@ private struct MobileSynologyPhotosContent: View {
                     }.disabled(model.isBrowsingBlocked || model.isDeleting).accessibilityIdentifier("mobile.photos.selection.begin")
                 }
                 Menu {
+                    if let folders = session.folders, model.section == .folders {
+                        ForEach([MobilePhotoFolderModel.Action.create, .rename, .sort, .cover], id: \.self) { action in
+                            Button(action.title) { folders.begin(action, photos: [], folders: []) }
+                                .disabled(!folders.allows(action, photos: [], folders: []))
+                                .accessibilityIdentifier("mobile.photos.folder.\(action.rawValue)")
+                        }
+                        Divider()
+                    }
                     if let uploads = session.uploads {
                         Button { uploads.begin() } label: {
                             Label(L10n.string("photos.manage.upload"), systemImage: "square.and.arrow.up")
@@ -237,6 +254,7 @@ private struct MobileSynologyPhotosContent: View {
         }
         .modifier(MobileSynologyPhotoDeletionPresentation(model: model, active: model.previewPhoto == nil))
         .modifier(MobilePhotoEditPresentation(session: session, active: model.previewPhoto == nil))
+        .modifier(MobilePhotoFolderPresentation(session: session, active: model.previewPhoto == nil))
         .modifier(MobileSynologyPhotoExportPresentation(session: session, active: model.previewPhoto == nil))
         .task { await session.activate() }
         .onDisappear { session.deactivate() }
@@ -340,10 +358,34 @@ private struct MobileSynologyPhotosContent: View {
             }
         }
         ForEach(model.collections) { collection in
-            Button { Task { await model.open(collection) } } label: {
-                Label(collection.name, systemImage: model.section == .folders ? "folder" : "photo.on.rectangle")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            }.buttonStyle(.bordered)
+            HStack {
+                Button {
+                    if model.section == .folders, model.isSelecting { model.toggleFolderSelection(collection) }
+                    else { Task { await model.open(collection) } }
+                } label: {
+                    HStack {
+                        Label(collection.name, systemImage: model.section == .folders ? "folder" : "photo.on.rectangle")
+                        Spacer()
+                        if model.section == .folders, model.isSelecting {
+                            Image(systemName: model.selectedFolderIDs.contains(collection.id) ? "checkmark.circle.fill" : "circle")
+                        }
+                    }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }.buttonStyle(.bordered).accessibilityIdentifier("mobile.photos.collection.\(collection.id)")
+                    .accessibilityAddTraits(model.section == .folders && model.selectedFolderIDs.contains(collection.id) ? .isSelected : [])
+                    .onDrag { dragProvider(folder: collection) }
+                if model.section == .folders, let folders = session.folders, !model.isSelecting {
+                    Menu {
+                        ForEach([MobilePhotoFolderModel.Action.create, .rename, .sort, .cover], id: \.self) { action in
+                            Button(action.title) { folders.begin(action, folder: collection, photos: [], folders: []) }
+                                .disabled(!folders.allows(action, folder: collection, photos: [], folders: []))
+                        }
+                        MobilePhotoFolderActions(folders: folders, photos: [], targets: [collection])
+                        Button(L10n.string("photos.delete.action"), role: .destructive) { folders.begin(.delete, photos: [], folders: [collection]) }
+                            .disabled(!folders.allows(.delete, photos: [], folders: [collection]))
+                    } label: { Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis.circle") }
+                        .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.collection.actions.\(collection.id)")
+                }
+            }.dropDestination(for: String.self) { values, _ in drop(values, into: collection) }
         }
         ForEach(model.visibleSharedEntries) { entry in
             HStack {
@@ -395,23 +437,34 @@ private struct MobileSynologyPhotosContent: View {
         HStack {
             Text(L10n.string("photos.selection.count", model.selectedItemCount)).font(.callout)
             Spacer()
-            Button { model.selectGroup(model.items) } label: {
-                Label(L10n.string("photos.selection.loaded"), systemImage: "checkmark.circle.fill")
+            Button { model.selectLoadedItems() } label: {
+                Label(L10n.string("photos.folder.selectLoaded"), systemImage: "checkmark.circle.fill")
             }.labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
                 .disabled(model.isBrowsingBlocked).accessibilityIdentifier("mobile.photos.selection.loaded")
             if let albums = session.albums {
                 Menu {
-                    if let editor = session.editor {
-                        MobilePhotoEditActions(editor: editor)
+                    if let folders = session.folders {
+                        MobilePhotoFolderActions(folders: folders)
+                        Button(L10n.string("photos.delete.action"), role: .destructive) {
+                            if model.selectedFolders.isEmpty { model.requestDeletion(model.selectedPhotos) }
+                            else { folders.begin(.delete) }
+                        }.disabled(!model.canDeleteSelection || model.selectedItemCount > 100)
+                            .accessibilityIdentifier("mobile.photos.selection.delete")
                         Divider()
                     }
-                    if let temporary = session.temporarySharing {
-                        Button(L10n.string("photos.selectionShare.title")) { temporary.begin() }
-                            .disabled(!temporary.canBegin).accessibilityIdentifier("mobile.photos.temporary.begin")
-                    }
-                    ForEach([MobilePhotoAlbumModel.Action.create, .add, .remove, .cover], id: \.self) { action in
-                        Button(action.title) { albums.begin(action) }
-                            .disabled(!albums.allows(action)).accessibilityIdentifier("mobile.photos.selection.\(action.rawValue)")
+                    if model.selectedFolders.isEmpty {
+                        if let editor = session.editor {
+                            MobilePhotoEditActions(editor: editor)
+                            Divider()
+                        }
+                        if let temporary = session.temporarySharing {
+                            Button(L10n.string("photos.selectionShare.title")) { temporary.begin() }
+                                .disabled(!temporary.canBegin).accessibilityIdentifier("mobile.photos.temporary.begin")
+                        }
+                        ForEach([MobilePhotoAlbumModel.Action.create, .add, .remove, .cover], id: \.self) { action in
+                            Button(action.title) { albums.begin(action) }
+                                .disabled(!albums.allows(action)).accessibilityIdentifier("mobile.photos.selection.\(action.rawValue)")
+                        }
                     }
                 } label: { Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis.circle") }
                     .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.selection.actions")
@@ -426,6 +479,7 @@ private struct MobileSynologyPhotosContent: View {
                     if model.isSelecting { model.toggleSelection(photo) } else { model.showPreview(photo) }
                 }
                     .id(photo.id)
+                    .onDrag { dragProvider(photo: photo) }
                     .contextMenu {
                         Button(L10n.string("photos.media.open")) { model.showPreview(photo) }
                         Button(L10n.string("photos.media.save")) { session.exportOriginal(photo) }
@@ -434,6 +488,18 @@ private struct MobileSynologyPhotosContent: View {
                     }
             }
         }
+    }
+
+    private func dragProvider(photo: SynologyPhoto? = nil, folder: SynologyPhotoCollection? = nil) -> NSItemProvider {
+        guard let token = model.beginPhotoDrag(photo: photo, folder: folder) else { return NSItemProvider() }
+        return NSItemProvider(object: token.uuidString as NSString)
+    }
+
+    private func drop(_ values: [String], into folder: SynologyPhotoCollection) -> Bool {
+        guard values.count == 1, let token = UUID(uuidString: values[0]), let editor = session.folders,
+              let path = model.photoDropPath(to: folder), let source = model.takePhotoDrop(token: token, to: folder) else { return false }
+        editor.begin(.move, photos: source.photos, folders: source.folders, destinationPath: path)
+        return editor.draft != nil
     }
 
     private func search() {
