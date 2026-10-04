@@ -89,40 +89,17 @@ private actor MobileQuickConnectResolver: QuickConnectResolving {
 }
 
 final class MobileModuleTests: XCTestCase {
-    func test移动端仅暴露五个顶层入口() {
-        XCTAssertEqual(
-            MobileTopLevelDestination.allCases.map(\.rawValue),
-            [
-                "files",
-                "photos",
-                "chat",
-                "activity",
-                "more"
-            ]
-        )
+    func test导航包含文件设置及六种可开启模块() {
+        XCTAssertEqual(MobileTopLevelDestination.allCases.map(\.rawValue),
+                       ["files", "photos", "chat", "downloads", "containers", "virtualMachines", "nasSettings", "settings"])
+        XCTAssertEqual(MobileTopLevelDestination.files.childModules, [.files, .transfers])
+        XCTAssertEqual(Set(MobileTopLevelDestination.allCases.flatMap(\.childModules)), Set(MobileModule.allCases))
     }
 
-    func test活动与更多承载当前核心和受限入口() {
-        XCTAssertEqual(
-            MobileTopLevelDestination.activity.childModules,
-            [.transfers, .downloads]
-        )
-        XCTAssertEqual(
-            MobileTopLevelDestination.more.childModules,
-            [.nasSettings, .containers, .virtualMachines, .settings]
-        )
-        XCTAssertEqual(
-            Set(MobileTopLevelDestination.allCases.flatMap(\.childModules)),
-            Set(MobileModule.allCases)
-        )
-    }
-
-    func test只有四个服务模块允许按设备隐藏() {
-        XCTAssertEqual(
-            MobileModule.optionalPreferenceModules,
-            [.downloads, .containers, .virtualMachines, .nasSettings]
-        )
-        for module in [.files, .photos, .chat, .transfers, .settings] as [MobileModule] {
+    func test照片聊天和管理功能均须主动开启() {
+        XCTAssertEqual(MobileModule.optionalPreferenceModules,
+                       [.photos, .chat, .downloads, .containers, .virtualMachines, .nasSettings])
+        for module in [.files, .transfers, .settings] as [MobileModule] {
             XCTAssertFalse(module.isOptionalPreference)
         }
     }

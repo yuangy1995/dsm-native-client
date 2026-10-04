@@ -5,53 +5,19 @@ import Observation
 import DsmLocalization
 
 enum MobileTopLevelDestination: String, CaseIterable, Identifiable {
-    case files
-    case photos
-    case chat
-    case activity
-    case more
+    case files, photos, chat, downloads, containers, virtualMachines, nasSettings, settings
 
     var id: String { rawValue }
-
     var title: String {
         switch self {
         case .files: L10n.string("ui.39932f24fe11a6ba")
-        case .photos: L10n.string("ui.7b50017ae47eca32")
-        case .chat: L10n.string("shared.4b3510b8d86ea785")
-        case .activity: L10n.string("mobile.navigation.activity")
-        case .more: L10n.string("ui.38844b135cf70dfc")
+        case .settings: L10n.string("mobile.navigation.settings")
+        default: defaultModule.title
         }
     }
-
-    var systemImage: String {
-        switch self {
-        case .files: "folder"
-        case .photos: "photo.on.rectangle.angled"
-        case .chat: "bubble.left.and.bubble.right"
-        case .activity: "arrow.up.arrow.down.circle"
-        case .more: "ellipsis.circle"
-        }
-    }
-
-    var defaultModule: MobileModule {
-        switch self {
-        case .files: .files
-        case .photos: .photos
-        case .chat: .chat
-        case .activity: .transfers
-        case .more: .nasSettings
-        }
-    }
-
-    var childModules: [MobileModule] {
-        switch self {
-        case .files: [.files]
-        case .photos: [.photos]
-        case .chat: [.chat]
-        case .activity: [.transfers, .downloads]
-        case .more: [.nasSettings, .containers, .virtualMachines, .settings]
-        }
-    }
+    var systemImage: String { defaultModule.systemImage }
+    var defaultModule: MobileModule { MobileModule(rawValue: rawValue)! }
+    var childModules: [MobileModule] { self == .files ? [.files, .transfers] : [defaultModule] }
 }
 
 struct MobileProfileNavigationState: Equatable, Sendable {
@@ -78,6 +44,8 @@ enum MobileModule: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     static let optionalPreferenceModules: Set<MobileModule> = [
+        .photos,
+        .chat,
         .downloads,
         .containers,
         .virtualMachines,
@@ -89,7 +57,7 @@ enum MobileModule: String, CaseIterable, Identifiable {
     }
 
     func isAvailable(in capabilities: CapabilitySet?) -> Bool {
-        guard let capabilities else { return true }
+        guard let capabilities else { return !isOptionalPreference }
         func supports(_ apiName: String) -> Bool {
             capabilities[apiName]?.selectedVersion != nil
         }
@@ -108,7 +76,11 @@ enum MobileModule: String, CaseIterable, Identifiable {
                 DsmAPIName.storageOverview,
                 DsmAPIName.coreUpgradeServer,
             ].contains(where: supports)
-        case .files, .photos, .chat, .transfers, .settings:
+        case .photos:
+            return ["SYNO.Foto.UserInfo", "SYNO.Foto.Setting.User", "SYNO.Foto.Setting.Admin", "SYNO.Foto.Setting.TeamSpace"].allSatisfy(supports)
+        case .chat:
+            return supports(DsmAPIName.chatChannel) && supports(DsmAPIName.chatUser)
+        case .files, .transfers, .settings:
             return true
         }
     }
@@ -125,14 +97,14 @@ enum MobileModule: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .files: L10n.string("ui.8e8343f9178e476d")
-        case .photos: L10n.string("ui.7b50017ae47eca32")
-        case .chat: L10n.string("ui.4da199fae933d4fa")
-        case .downloads: L10n.string("ui.5248507df52ff455")
-        case .containers: L10n.string("ui.aaf778d85ce5c2ed")
-        case .virtualMachines: L10n.string("ui.80c43bd2481c9580")
-        case .nasSettings: L10n.string("ui.b1729f4b03c4b97d")
-        case .transfers: L10n.string("ui.74c2308f64b688ae")
-        case .settings: L10n.string("ui.df3d58c7d84b85f2")
+        case .photos: L10n.string("mobile.navigation.photos")
+        case .chat: L10n.string("mobile.navigation.chat")
+        case .downloads: L10n.string("mobile.navigation.downloads")
+        case .containers: L10n.string("mobile.navigation.containers")
+        case .virtualMachines: L10n.string("mobile.navigation.virtualMachines")
+        case .nasSettings: L10n.string("mobile.navigation.nasSettings")
+        case .transfers: L10n.string("mobile.navigation.activity")
+        case .settings: L10n.string("mobile.navigation.settings")
         }
     }
 

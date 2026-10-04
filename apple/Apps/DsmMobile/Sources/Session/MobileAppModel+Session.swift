@@ -163,6 +163,7 @@ extension MobileAppModel {
                 activeProfile = submission.profile
                 restoreNavigationState(for: submission.profile.id)
                 isConnected = true
+                configureModuleAccess(workspace.modules)
                 finishConnectionAttempt(attemptID)
                 if !submission.rememberPassword,
                    selectedProfileID == submission.profile.id {
@@ -229,6 +230,7 @@ extension MobileAppModel {
                 activeProfile = profile
                 restoreNavigationState(for: profile.id)
                 isConnected = true
+                configureModuleAccess(workspace.modules)
                 finishConnectionAttempt(attemptID)
                 await loadSelectedModule()
             } catch is CancellationError {
@@ -345,7 +347,8 @@ extension MobileAppModel {
         photos: SynologyPhotosRepository,
         service: DsmServiceManagementRepository,
         chat: DsmChatRepository,
-        nas: DsmNasAdministrationRepository
+        nas: DsmNasAdministrationRepository,
+        modules: MobileModuleAccessReader
     )
 
     private func makeWorkspaceRepositories(
@@ -353,12 +356,23 @@ extension MobileAppModel {
         capabilities: CapabilitySet,
         session: AuthSession
     ) throws -> WorkspaceRepositories {
-        (
+        let photos = try SynologyPhotosRepository(profile: profile, capabilities: capabilities, session: session, deletionEnabled: true)
+        // 权限刷新不清空照片工作区正在使用的对象权限与预览缓存。
+        let photoAccess = try SynologyPhotosRepository(profile: profile, capabilities: capabilities, session: session)
+        let privileges = try DsmDesktopAppPrivilegesService(profile: profile, transport: URLSessionTransport(
+            expectedHost: profile.host,
+            pinnedCertificateSHA256: profile.pinnedCertificateSHA256,
+            requiresSystemCertificateTrust: DsmQuickConnectResolver.isTrustedRelayHost(profile.host)
+        ))
+        return (
             file: try DsmFileRepository(profile: profile, capabilities: capabilities, session: session),
-            photos: try SynologyPhotosRepository(profile: profile, capabilities: capabilities, session: session, deletionEnabled: true),
+            photos: photos,
             service: try DsmServiceManagementRepository(profile: profile, capabilities: capabilities, session: session),
             chat: try DsmChatRepository(profile: profile, capabilities: capabilities, session: session),
-            nas: try DsmNasAdministrationRepository(profile: profile, capabilities: capabilities, session: session)
+            nas: try DsmNasAdministrationRepository(profile: profile, capabilities: capabilities, session: session),
+            modules: MobileModuleAccessReader(capabilities: capabilities,
+                readPrivileges: { try await privileges.read(capabilities: capabilities, session: session) },
+                readPhotoAccess: { _ = try await photoAccess.access() })
         )
     }
 

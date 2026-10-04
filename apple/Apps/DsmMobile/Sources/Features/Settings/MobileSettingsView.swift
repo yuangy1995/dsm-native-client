@@ -33,6 +33,18 @@ struct MobileSettingsView: View {
             }
 
             Section {
+                if model.isLoadingModuleAccess {
+                    ProgressView(L10n.string("mobile.settings.modules.loading"))
+                }
+                if model.moduleAccessLookupFailed {
+                    Text(L10n.string("mobile.settings.modules.failed"))
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("mobile.settings.modules.failed")
+                } else if !model.isLoadingModuleAccess, model.optionalModulesAvailableForPreference().isEmpty {
+                    Text(L10n.string("mobile.settings.modules.empty"))
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("mobile.settings.modules.empty")
+                }
                 ForEach(
                     model.optionalModulesAvailableForPreference()
                 ) { module in
@@ -45,7 +57,13 @@ struct MobileSettingsView: View {
                         Label(module.title, systemImage: module.systemImage)
                     }
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("mobile.settings.module.\(module.rawValue)")
                 }
+                Button(L10n.string("mobile.settings.modules.refresh")) {
+                    Task { await model.refreshModuleAccess() }
+                }
+                .disabled(model.isLoadingModuleAccess)
+                .accessibilityIdentifier("mobile.settings.modules.refresh")
             } header: {
                 Text(L10n.string("mobile.settings.modules.title"))
             } footer: {
@@ -95,7 +113,10 @@ struct MobileSettingsView: View {
             }
         }
         .accessibilityIdentifier("mobile.settings.page")
-        .task { await model.refreshSettingsCacheSummary() }
+        .task {
+            await model.refreshModuleAccess()
+            await model.refreshSettingsCacheSummary()
+        }
         .confirmationDialog(
             L10n.string("mobile.settings.cache.clearConfirmTitle"),
             isPresented: $confirmsCacheClear,

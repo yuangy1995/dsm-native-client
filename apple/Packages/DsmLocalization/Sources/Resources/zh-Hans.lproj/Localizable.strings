@@ -3460,8 +3460,8 @@
 "mobile.settings.appearance.light" = "浅色";
 "mobile.settings.appearance.dark" = "深色";
 "mobile.settings.appearance.footer" = "选择此设备上的 App 外观。";
-"mobile.settings.modules.title" = "显示的模块";
-"mobile.settings.modules.footer" = "可隐藏不常用的可选服务入口。文件、照片、Chat、传输和设置始终可用。";
+"mobile.settings.modules.title" = "可开启的功能";
+"mobile.settings.modules.footer" = "开启后显示在导航栏中。";
 "mobile.settings.cache.title" = "缓存";
 "mobile.settings.cache.photoThumbnails" = "照片缩略图";
 "mobile.settings.cache.clear" = "清理照片缓存";
@@ -5992,3 +5992,25 @@
 "mobile.office.local" = "无法读取此设备上的文档副本。请检查可用空间，并重新选择已保存的文件。";
 "mobile.office.recovery" = "无法读取或保存编辑记录。请检查此设备的可用空间并重新打开 App；已有副本会保留。";
 "mobile.office.save.notice" = "保存会更新原文件。请勿同时从其他设备编辑此文件。";
+
+"mobile.settings.modules.loading" = "正在读取可用功能…";
+
+"mobile.settings.modules.failed" = "部分功能无法读取，请检查连接后刷新。";
+
+"mobile.settings.modules.empty" = "当前账号没有可开启的其他功能。";
+
+"mobile.settings.modules.refresh" = "刷新可用功能";
+
+"mobile.navigation.settings" = "App 设置";
+
+"mobile.navigation.photos" = "照片";
+
+"mobile.navigation.chat" = "聊天";
+
+"mobile.navigation.downloads" = "下载管理";
+
+"mobile.navigation.containers" = "容器管理";
+
+"mobile.navigation.virtualMachines" = "虚拟机";
+
+"mobile.navigation.nasSettings" = "NAS 设置";

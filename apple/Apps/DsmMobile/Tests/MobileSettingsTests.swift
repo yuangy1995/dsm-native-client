@@ -10,10 +10,10 @@ final class MobileSettingsTests: XCTestCase {
 
         let first = MobileSettingsStore(defaults: defaults)
         XCTAssertEqual(first.appearance, .system)
-        XCTAssertEqual(first.enabledOptionalModules, MobileModule.optionalPreferenceModules)
+        XCTAssertTrue(first.enabledOptionalModules.isEmpty)
 
         first.appearance = .dark
-        first.setVisible(false, module: .containers)
+        first.setVisible(true, module: .downloads)
 
         let restored = MobileSettingsStore(defaults: defaults)
         XCTAssertEqual(restored.appearance, .dark)
@@ -46,8 +46,6 @@ final class MobileSettingsTests: XCTestCase {
 
         for module in [
             MobileModule.files,
-            .photos,
-            .chat,
             .transfers,
             .settings,
         ] {

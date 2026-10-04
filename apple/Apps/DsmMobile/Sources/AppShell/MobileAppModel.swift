@@ -70,6 +70,13 @@ final class MobileAppModel {
     @ObservationIgnored var selectedModuleLoadTask: Task<Void, Never>?
     @ObservationIgnored var selectedModuleLoadGeneration: UInt64 = 0
 
+    @ObservationIgnored var moduleAccessReader: MobileModuleAccessReader?
+    @ObservationIgnored var moduleAccessTask: Task<Void, Never>?
+    @ObservationIgnored var moduleAccessGeneration: UInt64 = 0
+    var availableOptionalModules: Set<MobileModule> = []
+    var isLoadingModuleAccess = false
+    var moduleAccessLookupFailed = false
+
     var isConnected = false
     var activeProfile: NasProfile? {
         didSet {
@@ -86,6 +93,7 @@ final class MobileAppModel {
             fileSettings.configure(profile: activeProfile, repository: fileRepository)
             downloads.configure(profile: activeProfile, repository: serviceRepository)
             if activeProfile.map(MobileWorkspaceIdentity.init) != oldValue.map(MobileWorkspaceIdentity.init) {
+                resetModuleAccess()
                 fileActivityModel.reset()
                 fileShareLinkModel.deactivate()
                 deactivateFileLocations()

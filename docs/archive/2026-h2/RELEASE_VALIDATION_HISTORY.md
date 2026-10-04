@@ -813,3 +813,21 @@ M2g2 提交的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/act
 - 最终同工程/方案/构建目录、`test-without-building`、`-parallel-testing-enabled NO`，分别选择 `-only-testing:DsmMobileTests/MobileOfficeTests` 及四个 `MobileWorkspaceUITests/testOffice…`：**每端 18/18 单元与 4/4 实际 UI 全部通过**。iPhone 模型 0.397 秒、UI 115.830 秒；iPad 模型 0.359 秒、UI 121.018 秒。结果包 `m2i-iphone2.xcresult` / `m2i-ipad2.xcresult`。四项为预览/系统交接与选回、主动保存后从活动继续、丢回执只读刷新、冲突/权限/相同内容恢复。
 
 实际 UI 使用内存 NAS 与合成最小 Word 包，通过正式 Repository 和系统 Quick Look/分享/文件选择器；第二轮 iPhone 浅色与 iPad 深色实际文档、保存与权限错误截图已检查，测试后恢复 iPad 浅色。六种格式的真实编辑器、锁屏文件保护、真实 NAS 内容及辅助功能按 M2i 设备待办继续，不能以合成界面和模型测试替代。用户追加的默认两个导航入口与账号权限候选列表将在下一切片实现，不由本次 Office 验证覆盖。
+
+
+## 2026-10-04 移动默认模块与账号权限导航
+
+按用户补充要求，默认只显示文件与 App 设置，照片、聊天、下载、容器、虚拟机和 NAS 设置在设置中主动开启；候选同时要求当前账号授权与可用读取契约。文件工具栏保留活动入口，iPhone 使用动态系统标签栏，iPad 使用动态侧栏。复用既有内部只读 `DsmDesktopAppPrivilegesService`，Photos 单独调用既有 `access()`；不查询业务列表试探权限，不猜测 Photos 的桌面应用键。原偏好键与数组格式保持不变，已有显式选择保留，未保存设备默认空集。实际操作权限、危险写确认和恢复记录未改，无真实 NAS 请求或写入。
+
+独立集成与只读对抗复核覆盖权限/能力取交集、管理员缺失键及显式拒绝、照片独立授权、摘要失败、证书/会话错误零追加探测、权限撤销后退出、旧偏好保留、重复刷新合并、切换账号迟到响应，以及快速重新配置时尚未开始的旧任务。最后一项增加取消前置检查，避免旧已取消任务抢占新连接读取；照片权限读取与工作区 Repository 实例分离，避免刷新破坏业务缓存。新增 10 项模型行为测试，原导航/设置测试按已批准的新语义更新，不删除业务安全断言。
+
+- XcodeGen **2.46.0** 按 `apple/Apps/DsmMobile/project.yml` 生成工程。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`：首轮新增测试误用错误枚举名称，已修正；第二至第五轮构建通过，日志 `m1nav-build*.log`。
+- `xcodebuild test-without-building` 使用同工程、方案和派生目录，`-parallel-testing-enabled NO -only-testing:DsmMobileTests`；iPhone ID 如上，iPad `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。第一轮各 **701 项通过**；补快速配置取消回归后，最终 `m1nav-iphone3.xcresult` / `m1nav-ipad3.xcresult` 各 **702 项通过，0 失败**，分别 11.636 / 11.623 秒。
+- 同一命令加六个 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test…`：默认两入口及按权限开关、权限刷新撤销、加载/空/失败、管理员六种模块、文件下载与设置导航、活动返回与直接切换设置。第三轮两端各 **6/6 通过**，iPhone 146.087 秒、iPad 175.958 秒。iPhone 浅色与 iPad 深色截图已检查。
+- 第一轮 UI 两端各 3/7 通过；失败定位为测试点击开关外层而非实际控件、照片合成能力错误登记为 form，以及用请求次数模拟撤权。改为点击内层 Switch、真实 JSON 能力和访问下载列表后确定撤权；未放宽断言。第二轮 iPad **5/5 通过**，iPhone **4/5 通过**，其余失败为系统“更多”按系统中文显示、测试仅查英文；同时支持实际中英文系统标题后第三轮全过。独立的目录上传/重启和 Office 活动继续编辑在首轮两端均通过，证明活动迁入文件后既有闭环可达。
+- `swift test --package-path apple --jobs 4`：**2432 项 XCTest，172 项既有条件跳过，0 失败，39.413 秒**；另 **12 项 Swift Testing 通过**。最终新增导航名称后，`swift test --package-path apple --jobs 4 --filter AppLanguageTests` 的 **6 项语言测试通过**。
+- `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 两轮通过，最终日志 `m1nav-macos-build2.log`；`lipo -archs` 确认为 **x86_64 arm64**，未安装、启动或发布 Mac 包。
+
+补充 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test中文模块设置可开启功能并保留原始文件名`：`m1nav-iphone4.xcresult` / `m1nav-ipad4.xcresult` 各 **1/1 通过**，分别 20.685 / 24.585 秒。界面使用中文入口与开关，NAS 文件名保留原文；测试后恢复 iPad 浅色。合计两端各有九项相关实际 UI 通过证据，其中七项为本轮模块/导航流程，两项为既有活动恢复回归。
+
+真实账号权限、DSM/Photos 版本差异与辅助功能按主计划的 `PENDING_USER_VALIDATION` 继续验收。没有修改 Mac App、Windows 或 Android 实现；共享资源增加新键，私有接口文档/索引只记录移动使用范围，环境验证等级未提升。代码同步、云端完整门禁与真实 NAS 验收分别记录。

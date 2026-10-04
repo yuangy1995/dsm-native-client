@@ -455,7 +455,7 @@
       "id": "dsm-desktop-app-privileges",
       "componentId": "dsm-core",
       "scope": "DSM",
-      "capability": "当前账号应用权限摘要（macOS 已接入，App 实机待验证）",
+      "capability": "当前账号应用权限摘要（macOS、iPhone、iPad 已接入，移动 App 实机待验证）",
       "classification": "internal",
       "operation": "read",
       "risk": "medium",
@@ -468,7 +468,7 @@
       "methods": [
         "GET"
       ],
-      "fallback": "摘要失败只保留文件只读会话确认，其他模块保持关闭；有效空表不额外试探。用户确认 NAS 设置与容器要求管理员，独立应用要求明确授权，false 不被管理员覆盖；不加载组件业务数据判断权限。设备匿名归属待确认，verifications 不冒用旧基线。 2026-09-27 当前 App 保存会话的 GET/POST 摘要均明确 isLogined=false；Apple 拒绝未登录空摘要，回到原文件会话核实，不放开权限；修复包已恢复文件和管理菜单，用户确认退出后重新连接正常。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。",
+      "fallback": "摘要失败只保留文件只读会话确认，其他模块保持关闭；有效空表不额外试探。用户确认 NAS 设置与容器要求管理员，独立应用要求明确授权，false 不被管理员覆盖；不加载组件业务数据判断权限。设备匿名归属待确认，verifications 不冒用旧基线。 2026-09-27 当前 App 保存会话的 GET/POST 摘要均明确 isLogined=false；Apple 拒绝未登录空摘要，回到原文件会话核实，不放开权限；修复包已恢复文件和管理菜单，用户确认退出后重新连接正常。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。 2026-10-04 移动端沿用此摘要筛选可开启功能；照片另按既有 Photos access 读取授权，摘要非安全类失败时可独立保留照片候选。请求契约和环境证据等级不变。",
       "documentRef": "docs/api/discovery/endpoints/dsm-desktop-app-privileges.md",
       "verifications": []
     },
