@@ -7,7 +7,7 @@ import Observation
 @Observable
 final class MobileChatInteractionStore {
     struct Entry: Codable, Equatable, Identifiable {
-        enum Kind: String, Codable { case edit, reply }
+        enum Kind: String, Codable { case edit }
         let id: UUID
         let context: String
         let kind: Kind
@@ -45,7 +45,7 @@ final class MobileChatInteractionStore {
     func reserve(_ entry: Entry) -> Bool {
         guard !failed, !entries.contains(where: { $0.id == entry.id || ($0.context == entry.context
             && $0.kind == entry.kind && $0.conversationID == entry.conversationID
-            && $0.messageID == entry.messageID && (entry.kind == .edit || $0.textDigest == entry.textDigest)) }) else { return false }
+            && $0.messageID == entry.messageID) }) else { return false }
         return persist(entries + [entry])
     }
 

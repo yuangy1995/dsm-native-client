@@ -144,27 +144,31 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessage {
-        let outcome = try await sendMessageResult(draft, progress: progress)
-        guard outcome.result.status == .confirmedSuccess,
-              let message = outcome.confirmedMessage else {
-            throw MobileReadOnlyChatRepositoryError.operationUnavailable
-        }
-        return message
+        throw MobileReadOnlyChatRepositoryError.operationUnavailable
     }
 
-    func sendMessageResult(
-        _ draft: ChatMessageDraft,
-        progress: @escaping FileTransferProgress
-    ) async throws -> ChatMessageSendOutcome {
+    func sendMessageResult(_ draft: ChatMessageDraft, progress: @escaping FileTransferProgress) async throws -> ChatMessageSendOutcome {
+        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+    }
+
+    func sendMessageResult(_ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+                           recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void) async throws -> ChatMessageSendOutcome {
         let value = await base.availability()
-        guard value.status == .available,
-              value.supportedFeatures.contains(.textMessage),
-              draft.localAttachmentURLs.isEmpty,
-              draft.text?.isEmpty == false,
+        guard value.status == .available, value.supportedFeatures.contains(.textMessage),
+              draft.localAttachmentURLs.isEmpty, draft.text?.isEmpty == false,
               draft.threadID == nil || value.supportedFeatures.contains(.threadedReplies) else {
             throw MobileReadOnlyChatRepositoryError.operationUnavailable
         }
-        return try await base.sendMessageResult(draft, progress: progress)
+        return try await base.sendMessageResult(draft, progress: progress, recordProgress: recordProgress)
+    }
+
+    func recoverMessageSend(_ receipt: ChatMessageSendReceipt,
+                            recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void) async throws -> ChatMessageSendOutcome {
+        try await base.recoverMessageSend(receipt, recordProgress: recordProgress)
+    }
+
+    func recoverMessageSend(_ receipt: ChatMessageSendReceipt) async throws -> ChatMessageSendOutcome {
+        try await base.recoverMessageSend(receipt)
     }
 
     func searchMessages(query: String, conversationID: String?, cursor: String?, limit: Int) async throws -> ChatSearchPage {
@@ -203,10 +207,12 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         }
     }
 
-    func sendAttachmentMessageResult(
-        _ draft: ChatMessageDraft,
-        progress: @escaping FileTransferProgress
-    ) async throws -> ChatMessageSendOutcome {
+    func sendAttachmentMessageResult(_ draft: ChatMessageDraft, progress: @escaping FileTransferProgress) async throws -> ChatMessageSendOutcome {
+        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+    }
+
+    func sendAttachmentMessageResult(_ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+                                    recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void) async throws -> ChatMessageSendOutcome {
         let value = await base.availability()
         guard value.status == .available,
               draft.localAttachmentURLs.count == 1,
@@ -220,7 +226,7 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         guard value.supportedFeatures.contains(MobileChatAttachmentSelection.requiredFeature(for: kind)) else {
             throw MobileReadOnlyChatRepositoryError.operationUnavailable
         }
-        return try await base.sendAttachmentMessageResult(draft, progress: progress)
+        return try await base.sendAttachmentMessageResult(draft, progress: progress, recordProgress: recordProgress)
     }
 
     func deleteMessage(

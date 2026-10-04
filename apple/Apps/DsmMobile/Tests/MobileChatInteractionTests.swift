@@ -16,7 +16,8 @@ final class MobileChatInteractionTests: XCTestCase {
     private func make(_ transport: MobileChatUITransport, root: URL, context: String = "test-context") async throws -> MobileChatInteractionModel {
         let repository = try makeRepository(transport)
         _ = try await repository.listConversations()
-        let model = MobileChatInteractionModel(context: context, repository: repository, recovery: MobileChatInteractionStore(root: root))
+        let model = MobileChatInteractionModel(context: context, repository: repository, recovery: MobileChatInteractionStore(root: root),
+            sending: MobileChatSendModel(context: context, repository: repository, recovery: MobileChatSendStore(root: root)))
         model.updateAvailability(await repository.availability())
         await model.loadPolicy()
         return model
@@ -123,14 +124,14 @@ final class MobileChatInteractionTests: XCTestCase {
         XCTAssertEqual(other.recovery.entries.first?.context, "account-a")
     }
 
-    func test写前保存失败不提交消息() async throws {
+    func test聊天恢复目录无效时不能编辑或发送回复() async throws {
         let directory = try root().appendingPathComponent("not-a-directory")
         try Data().write(to: directory)
         let transport = MobileChatUITransport()
         let model = try await make(transport, root: directory)
         await model.open(seed)
         let success = await model.edit(try XCTUnwrap(model.root), text: "Edited sample")
-        XCTAssertFalse(success); XCTAssertTrue(model.recovery.failed)
+        XCTAssertFalse(success); XCTAssertTrue(model.sending.recovery.failed)
         let counts = await transport.writeCounts(); XCTAssertEqual(counts.0, 0)
         XCTAssertFalse(model.canSendReply("new reply"))
     }
@@ -168,7 +169,7 @@ final class MobileChatInteractionTests: XCTestCase {
         let model = try await make(transport, root: directory)
         await model.open(seed)
         let first = await model.sendReply("Unknown reply")
-        XCTAssertFalse(first); XCTAssertEqual(model.pending.count, 1)
+        XCTAssertFalse(first); XCTAssertEqual(model.sending.entries.filter(\.hasUnfinished).count, 1)
         XCTAssertFalse(model.canSendReply(" Unknown reply "))
         let restoredTransport = MobileChatUITransport()
         let restored = try await make(restoredTransport, root: directory)
@@ -176,7 +177,7 @@ final class MobileChatInteractionTests: XCTestCase {
         let duplicate = await restored.sendReply("Unknown reply")
         XCTAssertFalse(duplicate); XCTAssertTrue(restored.canSendReply("Different reply"))
         let counts = await restoredTransport.writeCounts(); XCTAssertEqual(counts.1, 0)
-        XCTAssertEqual(restored.pending.count, 1)
+        XCTAssertEqual(restored.sending.entries.filter(\.hasUnfinished).count, 1)
     }
 
     func test线程分页保留完整历史并排除定位记录() async throws {

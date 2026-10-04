@@ -102,7 +102,7 @@ final class MobileChatAttachmentTests: XCTestCase {
         XCTAssertEqual(attachmentDraftCount, 1)
     }
 
-    func test离开发送中的会话会要求核对且阻止再次选择附件() async throws {
+    func test离开会话不会提前清理正在发送的附件且成功仍记入原会话() async throws {
         let rootURL = try makeRootURL()
         defer { try? FileManager.default.removeItem(at: rootURL) }
         let sourceURL = try makeSourceFile(named: "late.png")
@@ -135,8 +135,9 @@ final class MobileChatAttachmentTests: XCTestCase {
 
         XCTAssertNil(model.selectedAttachment)
         XCTAssertFalse(model.state.isSendingAttachment)
-        XCTAssertTrue(model.state.attachmentReviewRequired)
-        XCTAssertTrue(model.state.selectedMessages.messages.isEmpty)
+        XCTAssertFalse(model.state.attachmentReviewRequired)
+        XCTAssertEqual(model.state.selectedMessages.messages.count, 1)
+        XCTAssertEqual(model.sending?.entries.last?.phase, .complete)
         let attachmentDraftCount = await repository.attachmentDrafts().count
         XCTAssertEqual(attachmentDraftCount, 1)
     }
@@ -239,6 +240,19 @@ private actor AttachmentChatRepositoryStub: ChatRepository {
         return try outcome(for: draft, status: .confirmedSuccess, message: message)
     }
 
+    func sendAttachmentMessageResult(_ draft: ChatMessageDraft, progress: @escaping FileTransferProgress,
+                                    recordProgress: @escaping @Sendable (ChatMessageSendReceipt) async throws -> Void) async throws -> ChatMessageSendOutcome {
+        let size = try draft.localAttachmentURLs[0].resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init)
+        var receipt = try ChatMessageSendReceipt(draft: draft, currentUserID: "me", attachmentSize: size)
+        try await recordProgress(receipt)
+        let outcome = try await sendAttachmentMessageResult(draft, progress: progress)
+        if let message = outcome.confirmedMessage {
+            receipt.candidateMessageID = message.id
+            try await recordProgress(receipt)
+        }
+        return outcome
+    }
+
     func sendAttachmentMessageResult(
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
@@ -263,7 +277,8 @@ private actor AttachmentChatRepositoryStub: ChatRepository {
                     ChatAttachment(
                         id: "attachment",
                         kind: .image,
-                        fileName: draft.localAttachmentURLs[0].lastPathComponent
+                        fileName: draft.localAttachmentURLs[0].lastPathComponent,
+                        sizeBytes: try draft.localAttachmentURLs[0].resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init)
                     )
                 ]
             )

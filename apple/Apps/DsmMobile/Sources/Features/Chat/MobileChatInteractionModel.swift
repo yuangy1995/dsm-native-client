@@ -9,6 +9,7 @@ final class MobileChatInteractionModel {
     let context: String
     private let repository: any ChatRepository
     let recovery: MobileChatInteractionStore
+    let sending: MobileChatSendModel
     private weak var owner: MobileChatModel?
     private var active = true
     private var searchGeneration = 0
@@ -32,16 +33,17 @@ final class MobileChatInteractionModel {
     private(set) var mutationErrorKey: String?
     private(set) var isRecovering = false
 
-    init(context: String, repository: any ChatRepository, recovery: MobileChatInteractionStore, owner: MobileChatModel? = nil) {
-        self.context = context; self.repository = repository; self.recovery = recovery; self.owner = owner
+    init(context: String, repository: any ChatRepository, recovery: MobileChatInteractionStore, sending: MobileChatSendModel, owner: MobileChatModel? = nil) {
+        self.context = context; self.repository = repository; self.recovery = recovery; self.sending = sending; self.owner = owner
     }
 
     var canSearch: Bool { active && availability.status == .available && availability.supportedFeatures.contains(.messageSearch) }
-    var canReply: Bool { active && availability.status == .available && availability.supportedFeatures.isSuperset(of: [.threadedReplies, .textMessage]) && root != nil && !isMutating && !recovery.failed }
+    var canReply: Bool { active && availability.status == .available && availability.supportedFeatures.isSuperset(of: [.threadedReplies, .textMessage]) && root != nil && !isMutating && !sending.isBusy && !sending.recovery.failed }
     var pending: [MobileChatInteractionStore.Entry] { recovery.entries.filter { $0.context == context } }
 
     func updateAvailability(_ value: ChatAvailability) {
         availability = value
+        sending.updateAvailability(value)
         if value.status != .available {
             searchGeneration &+= 1; searchMessages = []; searchCursor = nil; isSearching = false
             policy = ChatEditingPolicy(allowsEditing: false)
@@ -50,6 +52,7 @@ final class MobileChatInteractionModel {
     }
 
     func invalidate() {
+        sending.invalidate()
         active = false; searchGeneration &+= 1; focusGeneration &+= 1
         searchMessages = []; root = nil; focusedMessage = nil; replies = MobileChatMessageCache()
         isSearching = false; isLoadingThread = false
@@ -74,6 +77,7 @@ final class MobileChatInteractionModel {
             && owner?.management?.blocksWrites(in: message.conversationID) != true
             && owner?.forwarding?.protects(message) != true
             && owner?.deletion?.protects(message) != true
+            && !sending.protectsPendingMessage(message.id, in: message.conversationID)
             && !pending.contains { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }
     }
 
@@ -89,8 +93,7 @@ final class MobileChatInteractionModel {
         guard canReply, let root, !body.isEmpty,
               owner?.management?.blocksWrites(in: root.conversationID) != true,
               owner?.deletion?.protects(root) != true else { return false }
-        return !pending.contains { $0.kind == .reply && $0.conversationID == root.conversationID
-            && $0.messageID == root.id && $0.textDigest == MobileChatInteractionStore.digest(body) }
+        return sending.canSend(conversationID: root.conversationID, threadID: root.id, text: body)
     }
 
     func search(_ query: String, conversationID: String?, more: Bool = false) async {
@@ -210,43 +213,23 @@ final class MobileChatInteractionModel {
 
     @discardableResult
     func sendReply(_ text: String) async -> Bool {
-        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canSendReply(body), let root else { return false }
-        let entry = MobileChatInteractionStore.Entry(id: UUID(), context: context, kind: .reply,
-            conversationID: root.conversationID, messageID: root.id, threadID: root.id,
-            senderID: root.senderID, textDigest: MobileChatInteractionStore.digest(body))
-        guard recovery.reserve(entry) else { mutationErrorKey = "mobile.chat.interaction.storage-error"; return false }
-        isMutating = true; mutationErrorKey = nil
+        guard canSendReply(text), let root else { return false }
         let generation = focusGeneration
+        isMutating = true; mutationErrorKey = nil
         defer { isMutating = false }
-        do {
-            let draft = try ChatMessageDraft(clientRequestID: entry.id, conversationID: root.conversationID, text: body, threadID: root.id)
-            let outcome = try await repository.sendMessageResult(draft)
-            if outcome.result.status == .confirmedSuccess, outcome.clientRequestID == entry.id,
-               outcome.conversationID == root.conversationID, let value = outcome.confirmedMessage,
-               value.conversationID == root.conversationID, value.threadID == root.id,
-               value.clientRequestID == nil || value.clientRequestID == entry.id,
-               value.text == body, value.encryptionState == .notEncrypted, value.isFromCurrentUser == true, value.deliveryState == .sent {
-                guard recovery.finish(entry) else { mutationErrorKey = "mobile.chat.interaction.storage-error"; return false }
-                guard active else { return false }
-                if self.root?.id == root.id, self.root?.conversationID == root.conversationID,
-                   !replies.messages.contains(where: { $0.id == value.id }) { replies.messages.append(value) }
-                return true
-            }
-            if !outcome.result.submitted { recovery.finish(entry) }
-            if active, generation == focusGeneration {
-                mutationErrorKey = outcome.result.submitted ? "mobile.chat.interaction.reply-pending" : "mobile.chat.interaction.reply-failed"
-            }
-        } catch {
-            // Repository 已提交后的网络失败返回带 submitted 的结果；抛出的普通 AppError 来自写前校验。
-            if let error = error as? AppError, error.category != .partialFailure {
-                recovery.finish(entry)
-                if active, generation == focusGeneration { mutationErrorKey = "mobile.chat.interaction.reply-failed" }
-            } else if active, generation == focusGeneration {
-                mutationErrorKey = "mobile.chat.interaction.reply-pending"
-            }
-        }
-        return false
+        let sent = await sending.send(conversationID: root.conversationID, threadID: root.id, text: text)
+        guard active else { return false }
+        if sent, let message = sending.confirmedMessage { acceptSentReply(message) }
+        else if generation == focusGeneration { mutationErrorKey = sending.errorKey }
+        return sent
+    }
+
+    func acceptSentReply(_ message: ChatMessage) {
+        guard active, message.threadID == root?.id, message.conversationID == root?.conversationID else { return }
+        // 原线程读取可能早于发送结束，作废后保留已经收到的回复。
+        focusGeneration &+= 1; isLoadingThread = false
+        if !replies.messages.contains(where: { $0.id == message.id }) { replies.messages.append(message) }
+        mutationErrorKey = nil
     }
 
     func recoverEdits() async {

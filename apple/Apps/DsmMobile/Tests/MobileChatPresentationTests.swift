@@ -90,13 +90,13 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("TextField("))
         XCTAssertTrue(source.contains("mobile.chat.composer.label"))
         XCTAssertTrue(source.contains("mobile.chat.action.send"))
-        XCTAssertTrue(source.contains("mobile.chat.send.failed"))
-        XCTAssertTrue(source.contains("mobile.chat.send.review"))
+        XCTAssertTrue(source.contains("sending.errorKey"))
+        XCTAssertTrue(source.contains("mobile.chat.send.pending"))
         XCTAssertTrue(source.contains(".submitLabel(.send)"))
         XCTAssertTrue(source.contains(".frame(minWidth: 44, minHeight: 44)"))
         XCTAssertTrue(source.contains(".accessibilityHint(L10n.string(\"mobile.chat.send.hint\"))"))
         XCTAssertTrue(model.contains("sendSelectedMessage()"))
-        XCTAssertTrue(model.contains("sendReviewBlockedTextsByConversation"))
+        XCTAssertTrue(model.contains("sending?.pendingText"))
     }
 
     func test触控动态文字VoiceOver和降低动态效果沿用系统组件() throws {

@@ -51,7 +51,11 @@ enum MobileUIFixture {
             model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
-            if officeState.hasPrefix("chat-deletion-") {
+            if officeState.hasPrefix("chat-send-") {
+                let restored = MobileChatSendStore(root: fixtureRoot.appendingPathComponent("Chat")).entries
+                model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
+                    transport: MobileChatSendUITransport(state: officeState, restored: restored))
+            } else if officeState.hasPrefix("chat-deletion-") {
                 model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
                     transport: MobileChatDeletionUITransport(state: officeState))
             } else if officeState.hasPrefix("chat-forward-") {
