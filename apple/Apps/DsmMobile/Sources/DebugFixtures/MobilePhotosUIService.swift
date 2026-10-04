@@ -27,6 +27,9 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var nextID = 100
     private var userID = 12
     private var deniesWrites = false
+    private var duplicateValue = SynologyPhotoDuplicateSettings(upload: .ignore, transfer: .skip)
+    private var displayValue = SynologyPhotoDisplaySettings()
+    private var recognitionValue = SynologyPhotoRecognitionSettings(values: [.person: true, .concept: true, .similar: false], globallyEnabled: [.person, .concept, .similar], personalSpaceEnabled: true)
     private var uploaded: [SynologyPhoto] = []
     private var tagChoices: [SynologyPhotoFilterChoice] = [.init(id: 8, name: "Sample tag")]
     private var heldEdit: CheckedContinuation<Void, Never>?
@@ -45,7 +48,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown"].contains(state)
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown"].contains(state)
         if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") || state.hasPrefix("photo-edit") || (state.hasPrefix("photo-folders") || state.hasPrefix("photo-folder-sharing") || state.hasPrefix("photo-tasks")) {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
@@ -72,6 +75,13 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                     status: id == 41 ? .processing : .done, total: 5, completion: id == 41 ? 2 : 5,
                     errors: id == 42 ? 1 : 0, skipped: 0, overwritten: 0, createdAt: Double(1_700_000_000 + id), targetFolderID: 3, targetOwnerID: 12))
             }
+        }
+        if state.hasPrefix("photo-preferences") {
+            uploaded = [.init(id: .init(profileID: profileID, space: .personal, unitID: 1), filename: "Sample 1.jpg",
+                sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20),
+                folderID: 1, mediaType: "photo", width: 100, height: 80, orientation: 1)]
+            if state == "photo-preferences-empty" { recognitionValue = .init(values: [:], globallyEnabled: [], personalSpaceEnabled: true) }
+            if state == "photo-preferences-restricted" { recognitionValue = .init(values: [.person: true, .similar: false], globallyEnabled: [.person], personalSpaceEnabled: true) }
         }
         if state.hasPrefix("photo-edit") {
             let initialTags = tagChoices
@@ -161,7 +171,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func access() async throws -> SynologyPhotosAccess {
         if state == "photo-loading" { try await Task.sleep(for: .seconds(30)) }
         if state == "photo-error" { throw URLError(.notConnectedToInternet) }
-        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: (state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry") || state == "photo-edit-mixed" || (state.hasPrefix("photo-folder-sharing") && state != "photo-folder-sharing-noaccess"))
+        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: (state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry") || state == "photo-edit-mixed" || (state.hasPrefix("photo-folder-sharing") && state != "photo-folder-sharing-noaccess"), displaySettings: state.hasPrefix("photo-preferences") ? displayValue : nil)
     }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
         guard !state.hasSuffix("-readonly"), !deniesWrites else { return [] }
@@ -173,6 +183,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if state.hasPrefix("photo-folder-sharing"), space == .shared { features.insert(.folderSharing) }
         if state.hasPrefix("photo-tasks") { features.insert(.backgroundTasks) }
         if state == "photo-folders-defaults" { features.insert(.duplicateSettings) }
+        if state.hasPrefix("photo-preferences") { features.formUnion([.duplicateSettings, .displaySettings, .recognitionSettings, .rotation]) }
         return features
     }
     func seedTasks(_ values: [SynologyPhotoBackgroundTask]) { taskList = values }
@@ -248,7 +259,12 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return .init(items: Array(values.dropFirst(offset).prefix(limit)), offset: offset, nextOffset: values.count, hasMore: false)
     }
     func thumbnail(for photo: SynologyPhoto) async throws -> Data { Self.image }
+    func previewImage(for photo: SynologyPhoto) async throws -> Data {
+        guard state.hasPrefix("photo-preferences") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
+        return Self.image
+    }
     func details(for photo: SynologyPhoto) async throws -> SynologyPhoto {
+        if state.hasPrefix("photo-preferences"), let current = uploaded.first(where: { $0.id == photo.id }) { return current }
         if state == "photo-edit-held" { isEditHeld = true; await withCheckedContinuation { heldEdit = $0 } }
         if state == "photo-edit-error" { throw URLError(.notConnectedToInternet) }
         if state == "photo-edit-loading" { try await Task.sleep(for: .seconds(30)) }
@@ -302,7 +318,19 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             + [.init(passphrase: "synthetic-shared-album", name: "Shared sample album", shared: true)]
     }
     func folderSort(_ folder: SynologyPhotoCollection) async throws -> SynologyPhotoSort { folderSorts["\(folder.space):\(folder.id)"] ?? .init() }
-    func duplicateSettings() async throws -> SynologyPhotoDuplicateSettings { .init(upload: .ignore, transfer: state == "photo-folders-defaults" ? .overwrite : .skip) }
+    private func preferenceRead() async throws {
+        if state == "photo-preferences-held" { isControlHeld = true; await withCheckedContinuation { heldControl = $0 } }
+        if state == "photo-preferences-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-preferences-error" { throw URLError(.notConnectedToInternet) }
+    }
+    func duplicateSettings() async throws -> SynologyPhotoDuplicateSettings {
+        try await preferenceRead()
+        return state == "photo-folders-defaults" ? .init(upload: .ignore, transfer: .overwrite) : duplicateValue
+    }
+    func displaySettings() async throws -> SynologyPhotoDisplaySettings { try await preferenceRead(); return displayValue }
+    func recognitionSettings() async throws -> SynologyPhotoRecognitionSettings { try await preferenceRead(); return recognitionValue }
+    func seedDisplay(_ value: SynologyPhotoDisplaySettings) { displayValue = value }
+
     func releaseFolder() { heldFolder?.resume(); heldFolder = nil }
     func albums(offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] { Array(albumList.dropFirst(offset).prefix(limit)) }
     func addableAlbums(offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
@@ -365,6 +393,17 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             saved.sharingDetails = sharing
         }
         switch mutation {
+        case .setDuplicateSettings(_, let updated): duplicateValue = updated
+        case .setDisplaySettings(_, let updated): displayValue = updated
+        case .setRecognitionSettings(let original, let enabled):
+            recognitionValue = .init(values: original.values.mapValues { _ in false }.merging(Dictionary(uniqueKeysWithValues: enabled.map { ($0, true) })) { _, new in new },
+                globallyEnabled: original.globallyEnabled, personalSpaceEnabled: original.personalSpaceEnabled)
+        case .rotatePhoto(let photo):
+            uploaded = uploaded.map { old in
+                guard old.id == photo.id else { return old }
+                return .init(id: old.id, filename: old.filename, sizeBytes: old.sizeBytes, takenAt: old.takenAt, indexedAt: old.indexedAt,
+                    folderID: old.folderID, mediaType: old.mediaType, width: old.height, height: old.width, orientation: old.counterClockwiseOrientation, albumContext: old.albumContext)
+            }
         case .setFolderSharing(let original, let access, let members, let password, let apply):
             folderSharingValues[original.folder.id] = .init(folder: original.folder, access: access, url: original.url,
                 hasPassword: password.map { !$0.isEmpty } ?? original.hasPassword, members: members ?? original.members,
@@ -495,6 +534,11 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .preference(let value):
+            if case .rotation(let original) = value, let photo = uploaded.first(where: { $0.id == original.photo.id }) {
+                return .init(state: photo.orientation == original.photo.counterClockwiseOrientation && photo.width == original.photo.height && photo.height == original.photo.width ? .confirmed : .pendingReview, photos: [photo], completedCount: 1)
+            }
+            return .init(state: .confirmed, completedCount: 1)
         case .folderSharing(let summary):
             guard let value = folderSharingValues[summary.folder.id] else { return .init(state: .pendingReview) }
             return .init(state: state == "photo-folder-sharing-partial" ? .partial : .confirmed, sharingURL: value.url, folder: value.folder)

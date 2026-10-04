@@ -56,11 +56,16 @@ struct MobilePhotoUploadForm: View {
                         if uploads.includesDirectory {
                             Toggle(L10n.string("photos.upload.preserveDirectories"), isOn: $uploads.preservesDirectories)
                         }
+                        if uploads.isLoadingDefaults { ProgressView(L10n.string("mobile.photos.preferences.loading")) }
+                        if let error = uploads.defaultsError {
+                            Text(error).foregroundStyle(.secondary)
+                            Button(L10n.string("photos.retry")) { uploads.loadDefaults() }
+                        }
                         Picker(L10n.string("photos.duplicates.upload"), selection: $uploads.duplicate) {
                             ForEach(SynologyPhotoDuplicateSettings.Upload.allCases, id: \.self) { value in
                                 Text(L10n.string(value == .ignore ? "photos.duplicates.ignore" : "photos.duplicates.rename")).tag(value)
                             }
-                        }
+                        }.disabled(uploads.isLoadingDefaults || uploads.defaultsError != nil)
                     }
                 }
                 if uploads.skippedCount > 0 { Text(L10n.string("photos.upload.skippedCount", uploads.skippedCount)) }

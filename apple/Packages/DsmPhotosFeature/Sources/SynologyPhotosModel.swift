@@ -1829,7 +1829,7 @@ public final class SynologyPhotosModel {
 
     public var canRotatePreview: Bool {
         guard let photo = previewPhoto else { return false }
-        return photo.supportsRotation && previewData != nil && !isPreparingPreview &&
+        return canStartManagementMutation && photo.supportsRotation && previewData != nil && !isPreparingPreview &&
             canEditPhoto(photo) && managementFeatures.contains(.rotation) &&
             !isManaging && pendingMutationID == nil && !isDeleting && !isCheckingDeletion
     }

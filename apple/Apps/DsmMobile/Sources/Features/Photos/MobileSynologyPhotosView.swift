@@ -55,7 +55,7 @@ private struct MobileSynologyPhotosContent: View {
                                     Section {
                                         photoGrid(group.photos)
                                     } header: {
-                                        Text(group.date.formatted(.dateTime.year().month().day().locale(L10n.locale)))
+                                        Text(model.formattedPhotoDate(group.date, group: true))
                                             .font(.headline).accessibilityAddTraits(.isHeader)
                                     }
                                 }
@@ -143,6 +143,14 @@ private struct MobileSynologyPhotosContent: View {
                     }.disabled(model.isBrowsingBlocked || model.isDeleting).accessibilityIdentifier("mobile.photos.selection.begin")
                 }
                 Menu {
+                    if let preferences = session.preferences {
+                        ForEach(MobilePhotoPreferencesModel.Page.allCases, id: \.self) { page in
+                            if preferences.canOpen(page) {
+                                Button(page.title) { preferences.begin(page) }
+                                    .accessibilityIdentifier("mobile.photos.preferences.\(page.rawValue)")
+                            }
+                        }
+                    }
                     if let tasks = session.tasks, tasks.canOpen {
                         Button(L10n.string("photos.tasks.title")) { tasks.begin() }
                             .accessibilityIdentifier("mobile.photos.tasks.begin")
@@ -230,6 +238,7 @@ private struct MobileSynologyPhotosContent: View {
             if let albums = session.albums { MobilePhotoAlbumForm(albums: albums, draft: draft) }
         }
         .modifier(MobilePhotoControlSheets(session: session))
+        .modifier(MobilePhotoPreferencesPresentation(session: session))
         .sheet(item: sharingDraft, onDismiss: { session.sharing?.cancel() }) { draft in
             if let sharing = session.sharing { MobilePhotoSharingForm(sharing: sharing, draft: draft) }
         }
