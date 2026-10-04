@@ -619,6 +619,7 @@ private struct MobileChatMessagesView: View {
     @State private var presentsAnnouncements = false
     @State private var presentsMessageSearch = false
     @State private var presentsPollCreation = false
+    @State private var timedList: MobileChatTimedListKind?
 
     var body: some View {
         Group {
@@ -645,6 +646,7 @@ private struct MobileChatMessagesView: View {
             await chat.interaction?.loadPolicy()
             await chat.interaction?.recoverEdits()
             await chat.polls?.recover()
+            await chat.timedActions?.recover()
         }
         .onDisappear {
             chat.leaveConversation(conversation.id)
@@ -665,36 +667,29 @@ private struct MobileChatMessagesView: View {
                     .accessibilityLabel(L10n.string("chat.search.title"))
                     .accessibilityIdentifier("chat-search-current")
                 }
-                if chat.canViewAnnouncements(for: conversation) {
-                    Button {
-                        presentsAnnouncements = true
-                    } label: {
-                        Image(systemName: "megaphone")
-                            .frame(width: 44, height: 44)
+                Menu {
+                    if !conversation.isEncrypted, chat.timedActions?.canManageReminders == true {
+                        Button { timedList = .reminders } label: { Label(L10n.string("mobile.chat.reminder.list"), systemImage: "bell") }
+                            .accessibilityIdentifier("chat-reminders-list")
                     }
-                    .accessibilityLabel(L10n.string("mobile.chat.announcements.action"))
-                    .accessibilityHint(L10n.string("mobile.chat.announcements.hint"))
-                }
-
-                if chat.canViewMembers(for: conversation) {
-                    Button {
-                        presentsMembers = true
-                    } label: {
-                        Image(systemName: "person.2")
-                            .frame(width: 44, height: 44)
+                    if !conversation.isEncrypted, chat.timedActions?.canManageSchedules == true {
+                        Button { timedList = .schedules } label: { Label(L10n.string("mobile.chat.schedule.list"), systemImage: "clock") }
+                            .accessibilityIdentifier("chat-schedules-list")
                     }
-                    .accessibilityLabel(L10n.string("mobile.chat.members.action"))
-                    .accessibilityHint(L10n.string("mobile.chat.members.hint"))
-                }
-
-                Button {
-                    chat.toggleConversationPinned(conversation)
-                } label: {
-                    Image(systemName: conversationPinSystemImageName)
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel(conversationPinActionTitle)
-                .accessibilityHint(L10n.string("mobile.chat.pin.hint"))
+                    if chat.canViewAnnouncements(for: conversation) {
+                        Button { presentsAnnouncements = true } label: { Label(L10n.string("mobile.chat.announcements.action"), systemImage: "megaphone") }
+                            .accessibilityHint(L10n.string("mobile.chat.announcements.hint"))
+                    }
+                    if chat.canViewMembers(for: conversation) {
+                        Button { presentsMembers = true } label: { Label(L10n.string("mobile.chat.members.action"), systemImage: "person.2") }
+                            .accessibilityHint(L10n.string("mobile.chat.members.hint"))
+                    }
+                    Button { chat.toggleConversationPinned(conversation) } label: {
+                        Label(conversationPinActionTitle, systemImage: conversationPinSystemImageName)
+                    }.accessibilityHint(L10n.string("mobile.chat.pin.hint"))
+                } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }
+                .accessibilityLabel(L10n.string("mobile.chat.timed.more"))
+                .accessibilityIdentifier("chat-more")
 
                 Button {
                     Task { await chat.refreshMessages() }
@@ -705,6 +700,9 @@ private struct MobileChatMessagesView: View {
                 .disabled(conversation.isEncrypted || chat.state.isRefreshingMessages)
                 .accessibilityLabel(L10n.string("mobile.chat.action.refresh-messages"))
             }
+        }
+        .sheet(item: $timedList) { kind in
+            if let timed = chat.timedActions { MobileChatTimedListSheet(timed: timed, chat: chat, conversation: conversation, kind: kind) }
         }
         .sheet(isPresented: $presentsPollCreation) {
             if let polls = chat.polls { MobileChatCreatePollSheet(polls: polls, conversation: conversation) }
@@ -1062,6 +1060,7 @@ struct MobileChatMessageRow: View {
     @State private var presentsEdit = false
     @State private var presentsPoll = false
     @State private var presentsThread = false
+    @State private var presentsReminder = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1119,6 +1118,10 @@ struct MobileChatMessageRow: View {
             deleteActionButton
         }
         .contextMenu {
+            if chat.timedActions?.availability.supportedFeatures.contains(.reminder) == true, message.encryptionState == .notEncrypted {
+                Button { presentsReminder = true } label: { Label(L10n.string("mobile.chat.reminder.action"), systemImage: "bell") }
+                    .accessibilityIdentifier("chat-reminder-\(message.id)")
+            }
             if chat.interaction?.canEdit(message) == true {
                 Button { presentsEdit = true } label: {
                     Label(L10n.string("chat.edit.action"), systemImage: "pencil")
@@ -1126,6 +1129,9 @@ struct MobileChatMessageRow: View {
                 .accessibilityIdentifier("chat-edit-\(message.id)")
             }
             deleteActionButton
+        }
+        .sheet(isPresented: $presentsReminder) {
+            if let timed = chat.timedActions { MobileChatReminderEditor(timed: timed, original: message) }
         }
         .sheet(isPresented: $presentsPoll) {
             if let polls = chat.polls { MobileChatPollSheet(polls: polls, original: message) }

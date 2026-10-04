@@ -23,13 +23,16 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             .messageEditing,
             .threadedReplies,
             .poll,
-            .pollVoting
+            .pollVoting,
+            .reminder,
+            .reminderManagement,
+            .scheduledMessage
         ]
         var mobileFeatures = value.status == .available
             ? value.supportedFeatures.intersection(mobileScope)
             : []
-        // 投票创建与参与都需要 Post v5 的消息回读能力，不能只凭 Vote v1 显示可写入口。
-        if !value.supportedFeatures.contains(.messageSearch) { mobileFeatures.subtract([.poll, .pollVoting]) }
+        // 投票与提醒需要 Post v5 的原消息回读能力。
+        if !value.supportedFeatures.contains(.messageSearch) { mobileFeatures.subtract([.poll, .pollVoting, .reminder, .reminderManagement]) }
         return ChatAvailability(status: value.status, supportedFeatures: mobileFeatures)
     }
 
@@ -154,7 +157,7 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     func message(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage? {
         let value = await availability()
         guard value.status == .available,
-              !value.supportedFeatures.isDisjoint(with: [.messageSearch, .messageEditing, .threadedReplies, .poll, .pollVoting]) else {
+              !value.supportedFeatures.isDisjoint(with: [.messageSearch, .messageEditing, .threadedReplies, .poll, .pollVoting, .reminder]) else {
             throw MobileReadOnlyChatRepositoryError.operationUnavailable
         }
         return try await base.message(conversationID: conversationID, messageID: messageID, threadID: threadID)
@@ -289,11 +292,13 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         remindAt: Date,
         clientRequestID: UUID
     ) async throws -> ChatReminder {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        try await require(.reminder)
+        return try await base.setReminder(messageID: messageID, remindAt: remindAt, clientRequestID: clientRequestID)
     }
 
     func listReminders(conversationID: String) async throws -> [ChatReminder] {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        try await require(.reminderManagement)
+        return try await base.listReminders(conversationID: conversationID)
     }
 
     func deleteReminder(
@@ -301,7 +306,8 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         conversationID: String,
         clientRequestID: UUID
     ) async throws {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        try await require(.reminderManagement)
+        try await base.deleteReminder(messageID: messageID, conversationID: conversationID, clientRequestID: clientRequestID)
     }
 
     func loadAttachmentThumbnail(
@@ -334,7 +340,8 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     }
 
     func listScheduledMessages(conversationID: String) async throws -> [ChatScheduledMessage] {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        try await require(.scheduledMessage)
+        return try await base.listScheduledMessages(conversationID: conversationID)
     }
 
     func createScheduledMessage(
@@ -343,7 +350,17 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         sendAt: Date,
         clientRequestID: UUID
     ) async throws -> ChatScheduledMessage {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        try await require(.scheduledMessage)
+        return try await base.createScheduledMessage(conversationID: conversationID, text: text, sendAt: sendAt, clientRequestID: clientRequestID)
+    }
+
+    func createScheduledMessage(
+        conversationID: String, text: String, sendAt: Date, clientRequestID: UUID,
+        recordCreatedSchedule: @escaping @Sendable (String) async throws -> Void
+    ) async throws -> ChatScheduledMessage {
+        try await require(.scheduledMessage)
+        return try await base.createScheduledMessage(conversationID: conversationID, text: text, sendAt: sendAt,
+            clientRequestID: clientRequestID, recordCreatedSchedule: recordCreatedSchedule)
     }
 
     func deleteScheduledMessage(
@@ -351,7 +368,8 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         conversationID: String,
         clientRequestID: UUID
     ) async throws {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        try await require(.scheduledMessage)
+        try await base.deleteScheduledMessage(id: id, conversationID: conversationID, clientRequestID: clientRequestID)
     }
 
     func createPoll(_ draft: ChatPollDraft) async throws -> ChatMessage {

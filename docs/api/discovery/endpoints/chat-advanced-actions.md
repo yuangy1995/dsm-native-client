@@ -47,6 +47,14 @@
 证据路径：`apple/Packages/DsmNetwork/Sources/DsmChatRepository.swift`，现有
 `contracts/request-fixtures/chat/`，Windows `ChatAdvancedFlowTests/ChatAdvancedViewModelTests`。
 
+## 2026-10-04 Apple 移动提醒与定时实现
+
+iPhone/iPad 在 M4b2 接入提醒创建/修改/列表/取消及文字定时创建/列表/取消。NAS 请求沿用上表 Reminder/Schedule v1；提醒另需 Post v5 回读原消息。每次写入重新读取可见未加密会话，提醒绑定原消息，修改或取消使用刚确认的原时间/正文快照。重复身份或错误容器不能形成有效列表；未知取消不能被后续读取失败降为未提交。
+
+共享 `ChatRepository.createScheduledMessage(...recordCreatedSchedule:)` 在取得任务 ID 后、内容回读前保存回执；原调用继续委托相同请求。保存失败保留未知结果，不能重发。移动 `Chat/timed-actions-v1.json` 仅记录账号上下文、动作/对象身份、时间及内容摘要，不记录正文或凭据；恢复只读取，创建必须匹配原回执 ID、会话、文字摘要及时间，没有 ID 不按相似内容猜测。定时取消若已过发送时间，即使列表消失也不宣称已取消。当前开发格式不兼容旧开发记录，无登录格式迁移。
+
+五端影响：共享 Apple 增量影响 macOS/iPhone/iPad，旧方法保持调用方式，Mac 需回归；Windows/Android 的 NAS 字段不变，本轮不修改其代码或提升其验证等级。定时修改、定时附件、远程推送不在本切片；本地提醒和前台实时属于 M4d。源码/模拟器与真实 NAS 证据分开，具体结果及设备步骤见[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b2-提醒与定时消息)。
+
 ## Windows 能力与安全规则
 
 1. 用户 2026-09-16 明确批准 Windows 共享接口的兼容增量；本轮未进行真实 NAS 写验证。
