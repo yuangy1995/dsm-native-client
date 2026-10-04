@@ -6152,3 +6152,20 @@
 "mobile.chat.interaction.missing" = "消息已不可用";
 "mobile.chat.interaction.missing-help" = "消息可能已被移除。请返回聊天查看最新消息。";
 "mobile.chat.interaction.selected-message" = "所选消息";
+
+// 移动聊天投票
+"mobile.chat.poll.create" = "创建投票";
+"mobile.chat.poll.question" = "投票问题";
+"mobile.chat.poll.options" = "选项";
+"mobile.chat.poll.option" = "选项 %d";
+"mobile.chat.poll.remove-option" = "移除选项 %d";
+"mobile.chat.poll.add-option" = "添加选项";
+"mobile.chat.poll.multiple" = "允许多选";
+"mobile.chat.poll.anonymous" = "匿名投票";
+"mobile.chat.poll.loading" = "正在载入投票…";
+"mobile.chat.poll.load-failed" = "无法载入投票";
+"mobile.chat.poll.closes" = "截止时间";
+"mobile.chat.poll.invalid" = "请输入问题和 2–10 个不同的非空选项。";
+"mobile.chat.poll.create-failed" = "未能创建投票。请刷新聊天后重试。";
+"mobile.chat.poll.create-pending" = "新投票尚未显示。请稍后刷新聊天。";
+"mobile.chat.poll.vote-pending" = "你的选择尚未显示。请稍后刷新投票。";

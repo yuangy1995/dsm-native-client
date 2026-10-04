@@ -1230,3 +1230,44 @@ Mac 两轮 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme
 - `python3 tools/localization/check_localization.py`：**Apple 5907 / Android 2188 / Windows 3402**，双语/参数/资源引用/硬编码均通过。删除无用的旧能力教学提示并保留加密限制页面；新增错误均说明当前状态与恢复操作。`python3 tools/contract-validation/validate_fixtures.py` 为 **29 组 / 48 项私有文档引用**，`python3 tools/request-contract/validate_contracts.py` 为 **170 组请求 / 1 写结果**，均通过。严格文档与 `git diff --check` 同步通过。
 
 独立集成和只读对抗复核检查账号/会话/作者/线程绑定、未知消息不按相似内容认领、写前持久失败零提交、跨账号与旧查询迟到、坏/旧格式拒绝、编辑/删除互斥、附件离页取消与清理、真实回读更新原消息，以及无其他平台源码变化。测试使用合成账号、消息与图像，没有访问或发送真实 NAS 聊天。结果与日志保留在本机临时目录的 `m4a-*.xcresult` / `m4a-*.log`，一次性导出图片/层次文本复核后清理，不提交临时产物。真实普通账号/编辑时限、多人并发、真机文件保护、VoiceOver 和硬件键盘按主计划 M4a 的 `PENDING_USER_VALIDATION` 执行；下一切片为 M4b 高级消息动作，M4b–M8 仍为未完成源码。
+
+
+## 2026-10-04 移动 M4b1 投票创建、参与与恢复
+
+- 实际修改：新增移动投票模型/恢复文件/创建与结果表单、Debug 合成服务及 24 项行为测试/四项实际 UI；接入原聊天工具栏和消息卡片，双语资源与工程按 XcodeGen 2.46.0 生成。共享 `ChatRepository` 增加创建回执回调和只读投票详情，复用原请求与解析；只读恢复结束原内存投票后允许用户主动改选。Mac App、Windows、Android 无文件修改。
+- 决策：投票需要 Vote v1 与 Post v5 读取能力；创建回执先持久化、再确认本人原消息，不能凭同内容认领。`Chat/polls-v1.json` 仅含身份与摘要，保存失败零提交、未知跨重启不重放；无旧开发格式兼容，无登录存储/权限/身份/依赖变化。匿名和截止时间依现行读取，创建只开放已实现的无截止投票。
+- 分离的只读集成/对抗复核覆盖权限撤销/加密变化、冻结目标、回执保存失败、取消、重复点击、坏结构、迟到响应、跨账号和恢复后继续改选；未使用其他模型或真实 NAS 作为验收来源。
+
+实际命令（本轮调用锁定的 XcodeGen 2.46.0）：
+
+```sh
+xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py --strict-release
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/request-contract/validate_contracts.py
+git diff --check
+```
+
+UI 在相同两台设备及 `test-without-building` 参数下运行：首轮同时指定 `-only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatPollUITests -only-testing:DsmMobileUITests/MobileChatUITests`；第二轮指定 `-only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatPollUITests`。每轮用独立 `-resultBundlePath` 保存结果。
+
+| 实际门禁 | 结果 |
+| --- | --- |
+| 移动构建 | 四次 `build-for-testing` 均成功；最后一次包含新增读取能力门及测试 |
+| iPhone 最终全部单元 | 952 项，1 条既有设备文件保护条件跳过，0 失败；22.616 秒（含框架开销 23.010 秒） |
+| iPad 最终全部单元 | 952 项，1 条同类明确跳过，0 失败；22.513 秒（含框架开销 22.893 秒） |
+| iPhone 投票实际 UI | 四项通过，197.895 秒；创建/投票、创建中断重启、中文深色超大字号多选/结束、错误/删除/加载状态 |
+| iPad 投票实际 UI | 四项通过，221.196 秒，独立执行相同流程 |
+| 原聊天实际 UI | iPhone 四项通过 167.740 秒，iPad 四项通过 194.099 秒；搜索、本人编辑、重启恢复与线程回复 |
+| 最终共享 Apple | 2,540 项 XCTest，172 条既有环境/设备条件跳过，0 失败，48.288 秒；12 项 Swift Testing 通过，0.068 秒 |
+| macOS Release | 主 App 与扩展工程构建通过；主可执行文件实际含 `x86_64 arm64`；未打安装包、安装或启动 Mac App |
+| 资源/文档/契约 | 双语完整、参数/引用/硬编码与严格文档检查通过；29 组 fixture、48 项私有引用、170 个请求及 1 个结果示例通过 |
+
+中间失败如实保留：第一轮两端各 948 项单元有同一创建恢复测试两条断言失败，原因是新 Repository 没有当前账号身份缓存；恢复改为读取当前账号/会话及原投票后解决。另一个首次测试脚本错误将现有 `Try Again` 按钮写成 `Retry`，导致每端四项投票 UI 中一项失败，修正准确按钮定位后通过；未降低恢复断言。复核补充同一连接恢复后继续改选、提交前/后取消和缺 Post v5 的零写入测试。第二轮两端 951 项单元均通过，最终加入能力门测试后为 952 项。截图复核还将选项正文/票数显式采用系统前景色，避免按钮内继承浅蓝色；第二轮实际截图已确认两种主题、大字与触控可用，iPad 大字结果可滚动。
+
+结果保留在本机本轮工作目录的 `m4b1-build1..4.log`、`m4b1-iphone1..3`/`m4b1-ipad1..3` 结果包与日志、`m4b1-shared2.log`、`m4b1-macos.log`；导出的临时截图在复核后清理。生成工程 SHA-256 为 `8bb7d41394ed9e316fa076b0d76476f74728c6d851085586d7eb287b4fcaf504`。`PENDING_USER_VALIDATION` 的专用账号/可丢弃投票、匿名规则、断网、十选项、VoiceOver/硬件键盘与锁屏保护步骤见[移动 M4b1](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b1-投票创建参与与恢复)。本轮没有真实 NAS 写入或移动分发，继续 M4b2 提醒/定时及 M4 后续切片。

@@ -11,6 +11,8 @@ final class MobileChatModel {
     private(set) var profiles: [UUID: MobileChatProfileState] = [:]
     private(set) var conversationCreators: [UUID: MobileChatConversationCreator] = [:]
     private(set) var interaction: MobileChatInteractionModel?
+    private(set) var polls: MobileChatPollModel?
+    private let pollRecovery: MobileChatPollStore
     private let interactionRecovery: MobileChatInteractionStore
 
     @ObservationIgnored private var repositories: [UUID: any ChatRepository] = [:]
@@ -58,6 +60,7 @@ final class MobileChatModel {
         interactionRecoveryRoot: URL? = nil
     ) {
         self.interactionRecovery = MobileChatInteractionStore(root: interactionRecoveryRoot)
+        self.pollRecovery = MobileChatPollStore(root: interactionRecoveryRoot)
         self.conversationPinStore = conversationPinStore
         self.attachmentFileManager = attachmentFileManager
         self.attachmentCopier = attachmentCopier
@@ -127,6 +130,8 @@ final class MobileChatModel {
               state.availability.status == .available,
               state.availability.supportedFeatures.contains(.deleteOwnMessage),
               interaction?.isMutating != true,
+              polls?.isMutating != true,
+              polls?.pending.contains(where: { $0.kind == .vote && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true,
               interaction?.pending.contains(where: { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true,
               state.deletingMessageID == nil,
               state.deleteReviewBlockedMessageIDsByConversation[message.conversationID]?.contains(message.id) != true
@@ -157,6 +162,8 @@ final class MobileChatModel {
         interaction = MobileChatInteractionModel(context: context ?? profileID.uuidString,
             repository: mobileRepository, recovery: interactionRecovery, owner: self)
         interaction?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
+        polls = MobileChatPollModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: pollRecovery, owner: self)
+        polls?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         if let creator = conversationCreators[profileID] {
             creator.rebind(
                 repository: mobileRepository,
@@ -286,6 +293,7 @@ final class MobileChatModel {
             }
             self?.updateActive { $0.availability = availability }
             self?.interaction?.updateAvailability(availability)
+            self?.polls?.updateAvailability(availability)
             self?.conversationCreators[profileID]?.updateAvailability(availability)
             guard availability.status == .available else {
                 self?.finishUnavailable(profileID: profileID, generation: requestGeneration)
@@ -518,7 +526,11 @@ final class MobileChatModel {
             repository: repository,
             preservesContent: !state.selectedMessages.messages.isEmpty
         )
-        if activeProfileID == profileID { await interaction?.recoverEdits() }
+        if activeProfileID == profileID {
+            await interaction?.recoverEdits()
+            guard activeProfileID == profileID else { return }
+            await polls?.recover()
+        }
     }
 
     func loadMoreMessages() async {
@@ -750,6 +762,8 @@ final class MobileChatModel {
     }
 
     func cancelAllWork() {
+        polls?.invalidate()
+        polls = nil
         interaction?.invalidate()
         interaction = nil
         stopForegroundRealtimeSoon()
@@ -1577,6 +1591,20 @@ final class MobileChatModel {
         var profile = profiles[activeProfileID] ?? MobileChatProfileState()
         update(&profile)
         profiles[activeProfileID] = profile
+    }
+
+    func applyPollMessage(_ message: ChatMessage, created: Bool) {
+        if let interaction { interaction.update(message) }
+        else { applyInteractionMessage(message) }
+        if created {
+            updateActive { profile in
+                guard var cache = profile.messagesByConversation[message.conversationID],
+                      !cache.messages.contains(where: { $0.id == message.id }) else { return }
+                cache.messages.append(message)
+                cache.messages.sort { $0.sentAt < $1.sentAt }
+                profile.messagesByConversation[message.conversationID] = cache
+            }
+        }
     }
 
     func applyInteractionMessage(_ message: ChatMessage) {

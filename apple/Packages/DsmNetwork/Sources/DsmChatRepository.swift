@@ -527,16 +527,46 @@ public actor DsmChatRepository: ChatRepository {
             } catch { /* 未收到响应时仍读取自己的选择，不能自动再投一次。 */ }
         }
         do {
-        guard let result = try? await message(conversationID: original.conversationID, messageID: original.id, threadID: original.threadID),
-              let poll = result.poll else { throw messageUpdatePending() }
-        let choices = try await call(DsmAPIName.chatPostVote, method: "get_choices", parameters: ["post_id": .string(original.id)], version: 1)
+            guard let result = try await message(conversationID: original.conversationID, messageID: original.id, threadID: original.threadID) else { throw messageUpdatePending() }
+            let updated = try await readPollChoices(in: result)
+            guard Set(updated.poll?.options.filter(\.isSelectedByCurrentUser).map(\.id) ?? []) == choiceIDs else { throw messageUpdatePending() }
+            pendingVotes[clientRequestID] = nil
+            completedVotes[clientRequestID] = updated
+            return updated
+        } catch { throw messageUpdatePending() }
+    }
+
+    public func pollMessage(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage? {
+        guard supportsVersion(DsmAPIName.chatPostVote, version: 1) else { throw unsupported(L10n.string("chat.feature.unavailable")) }
+        try await requirePlainConversation(conversationID)
+        guard let result = try await message(conversationID: conversationID, messageID: messageID, threadID: threadID) else { return nil }
+        let updated = try await readPollChoices(in: result)
+        let selected = Set(updated.poll?.options.filter(\.isSelectedByCurrentUser).map(\.id) ?? [])
+        for (id, pending) in pendingVotes where pending.message.id == messageID
+            && pending.message.conversationID == conversationID && pending.choices == selected
+            && pending.message.poll?.id == updated.poll?.id
+            && pending.message.poll?.question == updated.poll?.question
+            && pending.message.poll?.options.map(\.id) == updated.poll?.options.map(\.id)
+            && pending.message.poll?.options.map(\.text) == updated.poll?.options.map(\.text) {
+            // 移动只读恢复结束原操作；之后用户可另行改变选择，无需再次重放原投票。
+            pendingVotes[id] = nil
+            completedVotes[id] = updated
+        }
+        return updated
+    }
+
+    private func readPollChoices(in result: ChatMessage) async throws -> ChatMessage {
+        guard let poll = result.poll, result.encryptionState == .notEncrypted else { throw invalidChatResponse() }
+        let choices = try await call(DsmAPIName.chatPostVote, method: "get_choices", parameters: ["post_id": .string(result.id)], version: 1)
         guard let rows = choices.objectValue?["choices"]?.arrayValue,
-              let currentID = cachedCurrentUserID else { throw messageUpdatePending() }
+              let currentID = cachedCurrentUserID else { throw invalidChatResponse() }
+        let rowIDs = rows.compactMap { $0.objectValue?.firstString(for: ["id"]) }
+        guard rowIDs.count == rows.count, Set(rowIDs).count == rows.count,
+              Set(rowIDs) == Set(poll.options.map(\.id)) else { throw invalidChatResponse() }
         let selected = Set(rows.compactMap { value -> String? in
             guard let row = value.objectValue, row.array(for: "voters").contains(where: { $0.stringValue == currentID }) else { return nil }
             return row.firstString(for: ["id"])
         })
-        guard selected == choiceIDs else { throw messageUpdatePending() }
         let options = try poll.options.map { option -> ChatPollOption in
             guard let row = rows.first(where: { $0.objectValue?.firstString(for: ["id"]) == option.id })?.objectValue,
                   let count = row.firstInt(for: ["count"]) else { throw invalidChatResponse() }
@@ -544,15 +574,13 @@ public actor DsmChatRepository: ChatRepository {
         }
         let updatedPoll = ChatPoll(id: poll.id, question: poll.question, allowsMultipleSelection: poll.allowsMultipleSelection,
                                    isAnonymous: poll.isAnonymous, closesAt: poll.closesAt, isClosed: poll.isClosed, options: options)
-        let updated = ChatMessage(id: result.id, conversationID: result.conversationID, senderID: result.senderID,
+        let updated = ChatMessage(id: result.id, clientRequestID: result.clientRequestID, conversationID: result.conversationID, senderID: result.senderID,
             senderDisplayName: result.senderDisplayName, isFromCurrentUser: result.isFromCurrentUser, sentAt: result.sentAt,
-            text: result.text, attachments: result.attachments, poll: updatedPoll, pinnedAt: result.pinnedAt,
+            text: result.text, attachments: result.attachments, poll: updatedPoll, deliveryState: result.deliveryState,
+            encryptionState: result.encryptionState, pinnedAt: result.pinnedAt,
             kind: result.kind, threadID: result.threadID, replyCount: result.replyCount, editedAt: result.editedAt)
         knownMessagesByID[updated.id] = updated
-        pendingVotes[clientRequestID] = nil
-        completedVotes[clientRequestID] = updated
         return updated
-        } catch { throw messageUpdatePending() }
     }
 
     public func markRead(conversationID: String, through: Date) async throws -> ChatConversation {
@@ -2481,6 +2509,10 @@ public actor DsmChatRepository: ChatRepository {
     }
 
     public func createPoll(_ draft: ChatPollDraft) async throws -> ChatMessage {
+        try await createPoll(draft, recordCreatedMessage: { _ in })
+    }
+
+    public func createPoll(_ draft: ChatPollDraft, recordCreatedMessage: @escaping @Sendable (String) async throws -> Void) async throws -> ChatMessage {
         if let completed = completedMessages[draft.clientRequestID] { return completed }
         try rejectKnownEncryptedConversation(draft.conversationID)
         guard supportsVersion(DsmAPIName.chatPostVote, version: 1) else {
@@ -2493,6 +2525,9 @@ public actor DsmChatRepository: ChatRepository {
         ]
         if let pending = pendingPollCreations[draft.clientRequestID] {
             guard pending.draft == draft else { throw invalidChatResponse() }
+            if let id = pending.candidateMessageID {
+                do { try await recordCreatedMessage(id) } catch { throw unconfirmedPollError() }
+            }
             return try await confirmPoll(pending)
         }
         try Task.checkCancellation()
@@ -2512,6 +2547,7 @@ public actor DsmChatRepository: ChatRepository {
             let candidateID = payload.objectValue?.firstNonEmptyString(for: ["post_id", "id"])
             let pending = PendingChatPollCreation(draft: draft, candidateMessageID: candidateID)
             pendingPollCreations[draft.clientRequestID] = pending
+            if let candidateID { try await recordCreatedMessage(candidateID) }
             return try await confirmPoll(pending)
         } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
             pendingPollCreations[draft.clientRequestID] = nil

@@ -49,7 +49,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | M3e 已接移动复制任务列表/筛选、取消、逐项清除、错误详情与原目标导航，两端自动化通过；M3f1 已接重复文件/显示/个人分类设置、上传默认策略和旋转及版本 10 恢复，两端单元/实际 UI 通过；M3f2 已接手动预览重建/未完成列表及版本 11 恢复，两端回归通过；M3f3 已接自动预览设置/前台生成、图库维护与新格式提示及版本 12 恢复，M3f4 已接共享/全局设置、缓存及成员/两层目录权限和版本 13 恢复，两端回归通过 |
 | M3 导出、幻灯片及浏览控制 | PhotoDownloadMenu、PhotoArchiveDownloadMenu、PhotoSlideshowView、PhotoThumbnailSizeControls | 系统多项保存/分享、原件/JPEG/完整集合 ZIP，全屏触控播放与键盘；媒体读取/本机副本 | M3h3a 已接完整目标导出、实际格式与同名保护、部分失败/取消、独立分页播放、日/月和范围选择、缩略图大小；两端单元/系统 UI、共享及 Mac 回归通过，M3h3b 旧图库已清理 |
 | M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | M4a 已接全局/当前聊天搜索、本人编辑、线程完整分页与回复，未知摘要持久恢复；两端单元/实际 UI、共享及 Mac 回归通过，真实 NAS 待验 |
-| M4 投票、提醒、定时 | ChatDetailsViews | 原生表单；投票对象/props.vote 及提醒定时字段；写 | 缺完整接入；未知不重发，撤销核对原对象 |
+| M4 投票、提醒、定时 | ChatWorkspaceView、ChatWorkspaceModel | 原生表单；投票对象/props.vote 及提醒定时字段；写 | M4b1 投票创建/参与/结果与重启恢复已接入并通过两端回归；提醒/定时继续 M4b2，未知不重发，撤销核对原对象 |
 | M4 转发、置顶、会话管理 | ChatWorkspaceModel | 目标会话选择、菜单；Post.search 数字 in 数组；写 | 有部分低风险操作；包装器截断/字段投影需复核 |
 | M4 语音与录制 | ChatNativeMedia | 消息内播放暂停、首次录制申请麦克风；媒体/权限 | 缺录音；一击加载播放、取消清理临时文件 |
 | M4 实时与阅读同步 | ChatNotificationService、ChatWindowActivity | App 前台工作区连接、真实可见位置、本地提醒；生命周期 | 当前只在 Chat 页激活；本人无残留未读，旧历史不提前读新消息 |
@@ -91,7 +91,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 - 实际命令：`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`；随后两端分别运行 `test-without-building`，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，关闭测试并行。结果分别为 `build/m0-m8-baseline-iphone.xcresult`、`build/m0-m8-baseline-ipad.xcresult`（忽略的本地构建目录）。
 - `python3 tools/codex/check_documentation.py` 与 `git diff --check` 通过。
 - `MobileChatPresentationTests` 包含源码文本断言；更新过时范围限制时保留安全语义并补实际行为/界面测试。
-- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通/条件/冻结相册、分享与收集、资料/目录/权限/任务及照片偏好/旋转、手动预览重建/恢复、自动预览/图库维护与新格式提示、管理员设置/共享成员、人物/主题/手工人脸、M3h1 原件批量删除/持久恢复及 M3h2 相似分组/撤销与 M3h3a 批量/整集合导出、幻灯片和浏览控制已通过两端回归；M3h3b 已清理旧图库并收敛当前恢复格式，M3 源码范围收口；M4a 搜索/编辑/线程经两端回归，继续 M4b–M8。
+- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通/条件/冻结相册、分享与收集、资料/目录/权限/任务及照片偏好/旋转、手动预览重建/恢复、自动预览/图库维护与新格式提示、管理员设置/共享成员、人物/主题/手工人脸、M3h1 原件批量删除/持久恢复及 M3h2 相似分组/撤销与 M3h3a 批量/整集合导出、幻灯片和浏览控制已通过两端回归；M3h3b 已清理旧图库并收敛当前恢复格式，M3 源码范围收口；M4a 搜索/编辑/线程及 M4b1 投票创建/参与/恢复经两端回归，继续 M4b2–M8。
 
 ## PENDING_USER_VALIDATION
 
@@ -106,6 +106,19 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+## M4b1 投票创建、参与与恢复
+
+本切片源码、两端自动化与可用构建已完成。Mac 证据为 `ChatWorkspaceModel.createPoll/vote`、`CreatePollSheet` 和共享 `DsmChatRepository`；现行请求以 `chat-message-interaction.md` 的对象选项、`props.vote`、`get_choices` 为准。两端通过聊天工具栏创建投票、消息卡片查看结果和选择投票；原生表单保留两至十个选项、单选/多选及匿名，不增加截止时间、加密投票或投票管理请求。
+
+安全级别为私有普通写。单一修改范围为移动 Chat/Poll 模型、受保护恢复文件、聊天入口、双语资源、合成服务/测试及生成工程；共享协议增加创建回执保存回调和只读投票详情方法，旧调用保持行为，运行 Mac 回归。独立 `Chat/polls-v1.json` 只保存账号上下文、操作/消息身份、草稿与选择摘要；创建回执有消息 ID 时先落盘再回读，缺回执不以同内容或同名对象猜测成功。恢复只查询，不能重新创建或再次投票。采用当前开发格式，不保留旧开发迁移；无登录格式、权限或依赖变化，回滚停用新入口并保留当前未结束记录。五端 NAS 请求不变，Windows/Android 只记录接口影响，不改实现。
+
+已完成分离的集成及只读对抗复核：实际能力/回读依赖、当前账号/会话、冻结草稿、创建回执归属、写前存储失败、损坏文件、跨重启未知、取消/重复点击和迟到响应均有对应回归。首轮发现新 Repository 身份缓存缺失导致创建恢复停留，已改为重读账号/会话；同时让只读恢复结束旧内存投票，以支持后续主动改选。最终两端各 952 项单元（各 1 条设备条件跳过）零失败，24 项新增投票行为测试、四项投票实际 UI、原有四项聊天 UI、共享和 Mac 双架构构建均通过；实际截图检查覆盖中英文、浅深主题及超大字号。准确命令和首轮失败见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m4b1-投票创建参与与恢复)。
+
+后续 M4b2 提醒/定时和 M4b3 转发/置顶/会话管理继续独立完成，本切片不宣布 M4b 或 M4 整体完成。真实 NAS 不参与自动写测试，设备待办不计为源码完成证据。
+
+`PENDING_USER_VALIDATION`：iPhone/iPad 真机、专用可丢弃聊天与普通/受限账号。分别创建单选、多选和匿名投票，使用其他客户端查看问题/选项，投票后刷新本人选择和票数，再主动改选；检查已结束、过期、移除的投票与访问撤销。创建/投票提交时断网，重连、退出重登及重启 App，预期有身份的创建仅恢复原消息、未知不重发、不认领他人同内容投票、恢复后可再次改选。验证十选项、大字号滚动、VoiceOver、外接键盘和锁屏文件保护。未知结果仅限制原聊天创建或原投票，其他聊天/账号继续可用；匿名选项的真实可见规则、网络中断点和设备保护尚未实测。只回传版本、脱敏步骤/错误类别与实际业务结果，不提供正文、投票者名单、主机、账号或原始响应。
+
 
 ## M4a 搜索、本人编辑与线程
 
