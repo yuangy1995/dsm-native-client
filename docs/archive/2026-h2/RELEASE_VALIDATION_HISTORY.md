@@ -1080,3 +1080,25 @@ Mac 使用 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme
 Mac 两轮 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 均通过；第二轮纳入最终语言资源，实际主程序 `lipo -archs` 为 **x86_64 arm64**，没有安装或发布。XcodeGen 重复生成 SHA-256 保持 `e2826dd4c4d7c6ee4a407306b0e0257f199266a692e2a41bdffc29520f14b6f8`。独立集成及只读对抗复核检查原设置差异、真实能力/权限、冻结覆盖确认、存储不可写零提交、记录损坏限制旋转、原件替换、旧账号迟到结果、重启只读和最小持久化字段；没有新 NAS 写接口。
 
 两端实际 UI 和 Mac 构建结束后，串行 `swift test --package-path apple` 完整通过：**2483 项 XCTest、172 项既有条件跳过、0 失败（31.957 秒）**，另 **12 项 Swift Testing（0.031 秒）**。最终已查看 iPhone 未截断英文标题、中文显示设置及旋转尺寸，iPad 深色设置/错误恢复均完整可读。日志位于本机临时验证目录 `m3f1-*.log`，结果包及截图不提交；未把合成素材的尺寸变化当作真实媒体像素方向验证。下一切片为预览修复/生成，其余管理员设置、人物/相似组、批量导出、旧图库清理与 M4–M8 继续实施。
+
+## 2026-10-04 移动 M3f2 手动预览重建与恢复
+
+多选、单张预览和未完成列表复用原有预览重建；列表提供来源切换、文件名搜索、触控选择和 100 项上限。独立版本 11 记录区分写前意图、加入队列、转换提交、失败清理及完成回执；重启只读，完成必须有回执或原件身份/新版本/队列共同证据。本机转换临时媒体在 iOS 受保护并排除备份，结束后清理。无新增 NAS 请求、依赖、权限、应用身份或登录格式变化；真实 NAS 未参与自动写测试。
+
+锁定 XcodeGen 2.46.0 生成工程；首轮 `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 通过（`m3f2-build1.log`）。`swift test --package-path apple --filter SynologyPhotosRepositoryTests` 首轮 **569/569、0 失败（3.483 秒）**通过（`m3f2-network1.log`），含六项新恢复/保存失败/原件替换/PNG 上传/账号与记录校验测试。编译 133.04 秒，未把编译时间计作测试执行时间。
+
+两端以 `xcodebuild test-without-building`、同 project/scheme/derivedDataPath、`-parallel-testing-enabled NO` 和各自 destination 运行 `-only-testing:DsmMobileTests` 及五项新增实际 UI、原有旋转尺寸 UI。iPhone ID 同上，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`；结果包为 `apple/Apps/DsmMobile/build/m3f2-iphone1.xcresult` / `m3f2-ipad1.xcresult`，iPad 深色。单元两端各 **845/845（14.351 / 14.101 秒）**通过，含九项新移动预览修复测试；随后分别执行实际 UI、Mac 及完整共享回归，最终结果见下。
+
+本地化资源 **5865 / 2188 / 3402**、参数/引用/硬编码、fixture **29 组/48 引用**通过。首次请求校验误用了不存在的脚本名，未计通过；改用仓库真实 `python3 tools/request-contract/validate_contracts.py` 后 **170 组/1 写结果**通过。`python3 tools/codex/generate_api_reference.py --check`、严格文档与 `git diff --check` 通过。
+
+首轮实际 UI 两端各 **3/6 通过、3 项失败（205.326 / 240.577 秒）**。空内容/错误/加载、未知重启及旧旋转全部通过。失败原因是批量重建后测试未退出多选就打开预览、搜索时系统隐藏导航按钮/iPad 清除文本后失去输入焦点，以及来源标签沿用旧资源大小写与移动主入口不一致。分别按实际原生步骤退出多选/搜索、重新聚焦，来源统一使用移动现有资源；保留全部业务断言。第二轮构建已通过，截图还发现英文标题被刷新按钮挤短，随后将刷新合并列表操作栏，添加未结束操作状态/恢复入口并重新构建。搜索框显式常驻；下一轮分别复跑六项实际 UI，业务模型和共享网络未再改动。
+
+第三轮移动构建通过（`m3f2-build3.log`）。首轮 Mac `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过，实际 `lipo -archs` 为 **x86_64 arm64**，没有安装或发布。XcodeGen 重复生成哈希均为 `da7c9e251e200de86963b7704584618ffccb9dc6da970b6cfe0de45a54c36e26`。
+
+独立收尾复核发现“加入队列回执丢失、尚未转换”原本只能重启后读回并结束旧操作；已让当前会话同样只读处理，不再要求重启。`reviewMutation` 在写调用未返回前不会进入该处理，因此不会抢先结束仍在发送的请求。新增第七项网络回归明确仅发一次标记、不转换、不清理队列。共享、移动及 Mac 构建按最终代码复验；实际 UI 中 iPhone 系统搜索退出键名为“关闭”，已据实际辅助功能标签修正单个测试步骤。
+
+第二轮实际 UI：iPhone **5/6 通过（218.372 秒）**，仅中文搜索的系统退出控件名称定位失败；iPad **6/6 通过（274.955 秒）**。iPhone 截图确认英文标题完整、共享来源标签与主入口一致、未结束操作的说明和刷新状态按钮可见；系统搜索退出改按实际“关闭”按钮，仅在导航动作隐藏时触发。未减少搜索为空、筛选结果、选择目标和完成后剩余项目断言。最终仅需复验这一测试及受影响的移动模型，不重复已通过的不相关 UI。
+
+第四轮移动构建通过（`m3f2-build4.log`）。最终网络 **570/570、0 失败（2.009 秒）**通过（`m3f2-network2.log`）；两端第三轮九项预览修复单元各 **9/9（0.276 / 0.282 秒）**，中文搜索/选择/继续实际 UI 各 **1/1（35.454 / 38.604 秒）**通过，结果 `m3f2-iphone3.xcresult` / `m3f2-ipad3.xcresult`。五项新实际 UI 与旧旋转全部分别具有两端通过证据，未通过的中间轮次保留如上。已查看 iPhone 浅色完整标题/共享来源/未知恢复说明，以及 iPad 深色中文搜索/错误恢复截图；iPad 测后恢复浅色。
+
+最终 Mac 第二轮双架构构建通过（`m3f2-mac2.log`），再次检查实际主程序为 **x86_64 arm64**。两端 UI 与 Mac 编译结束后串行 `swift test --package-path apple` 完整通过：**2490 项 XCTest、172 项既有条件跳过、0 失败（31.520 秒）**，另 **12 项 Swift Testing（0.031 秒）**（`m3f2-shared1.log`）。最终本地化、响应/请求契约、API 参数生成、严格文档及差异检查均通过。日志、结果包和截图是本机验证产物，不进入提交。真实 NAS、媒体像素效果、设备文件保护和辅助功能按主计划 M3f2 的 `PENDING_USER_VALIDATION` 验收；自动预览、图库维护、管理员设置、人物/相似组、批量导出和旧图库清理继续后续 M3，M4–M8 尚未完成。

@@ -5,6 +5,142 @@ import XCTest
 
 final class SynologyPhotosRepositoryTests: XCTestCase {
 
+    func test预览恢复版本十一保存每个写入边界且重启只读完成() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let transport = MockHTTPTransport(responses: accessResponses() + [itemPage, itemPage, managedFolder, previewQueue(), emptySuccess, previewQueue()].map(response))
+        let socket = PreviewSocketFixture([previewOpening, "40", "41"])
+        let repository = try makeRepository(transport, profileID: profile, previewEvents: { SynologyPhotosPreviewEvents(socket: socket) })
+        _ = try await repository.access()
+        let page = try await repository.photos(in: .personal, query: .recentlyAdded, offset: 0, limit: 20)
+        var photo = try XCTUnwrap(page.items.first)
+        photo.description = "private-description"; photo.camera = "private-camera"
+        let command = SynologyPhotosMutation.regeneratePreviews([photo])
+        let first = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+        XCTAssertEqual(first.state, .pendingReview)
+        let stages = capture.values.compactMap { $0.previewRegenerationDetails?.targets.first }
+        XCTAssertTrue(stages.contains { !$0.marking && !$0.submitted })
+        XCTAssertTrue(stages.contains { $0.marking && !$0.marked && !$0.submitted })
+        XCTAssertTrue(stages.contains { $0.marked && !$0.submitted })
+        XCTAssertTrue(stages.contains { $0.submitted && !$0.generated })
+        let encoded = try JSONEncoder().encode(XCTUnwrap(capture.values.last)), text = String(decoding: encoded, as: UTF8.self)
+        XCTAssertFalse(text.contains("private-description")); XCTAssertFalse(text.contains("private-camera")); XCTAssertFalse(text.contains("fixture-token"))
+        let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: encoded)
+        XCTAssertEqual(saved.version, 11); XCTAssertTrue(try XCTUnwrap(saved.previewRegenerationDetails).hasSameIntent(as: command))
+        try await repository.restoreAlbumMutation(saved)
+        let empty = #"{"success":true,"data":{"list":[]}}"#
+        let updated = itemPage.replacingOccurrences(of: "fixture-revision", with: "new-preview")
+        for (page, expected) in [(itemPage, SynologyPhotosMutationResult.State.pendingReview), (updated, .confirmed),
+                                 (updated.replacingOccurrences(of: "sample.jpg", with: "replacement.jpg"), .pendingReview)] {
+            let reader = MockHTTPTransport(responses: accessResponses() + [empty, page, empty, page].map(response))
+            let fresh = try makeRepository(reader, profileID: profile); _ = try await fresh.access()
+            try await fresh.restoreAlbumMutation(saved)
+            let result = try await fresh.reviewMutation(operationID: id); XCTAssertEqual(result.state, expected)
+            let calls = try await reader.recordedRequests().map(decode)
+            XCTAssertFalse(calls.contains { ["set_regenerating", "regenerate_preview_by_nas", "restore_from_regenerating", "upload"].contains($0["method"] ?? "") })
+        }
+    }
+
+    func test预览恢复未转换阶段不重发标记且保留NAS队列() async throws {
+        let profile = UUID(), photo = SynologyPhoto(id: .init(profileID: profile, space: .personal, unitID: 7), filename: "sample.jpg",
+            sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 50), indexedAt: Date(timeIntervalSince1970: 60), folderID: 9, mediaType: "photo")
+        for stage in 0...3 {
+            var saved = try SynologyPhotosAlbumCheckpoint(mutation: .regeneratePreviews([photo]), operationID: UUID(), profileID: profile, userID: 12)
+            var value = try XCTUnwrap(saved.previewRegenerationDetails)
+            value.targets[0].marking = stage > 0; value.targets[0].marked = stage > 1; value.targets[0].submitted = stage > 2
+            saved.previewRegenerationDetails = value
+            let reader = MockHTTPTransport(responses: accessResponses() + [previewQueue(), itemPage, managedFolder].map(response))
+            let repository = try makeRepository(reader, profileID: profile); _ = try await repository.access()
+            try await repository.restoreAlbumMutation(saved)
+            let result = try await repository.reviewMutation(operationID: saved.operationID)
+            XCTAssertEqual(result.state, stage == 3 ? .pendingReview : .rejected)
+            let calls = try await reader.recordedRequests().map(decode)
+            XCTAssertFalse(calls.contains { ["set_regenerating", "regenerate_preview_by_nas", "restore_from_regenerating"].contains($0["method"] ?? "") })
+        }
+    }
+
+    func test预览标记丢回执同会话可读回队列而不要求重启() async throws {
+        let capture = PhotosAlbumCheckpointCapture()
+        let transport = MockHTTPTransport(responses: accessResponses() + [itemPage, itemPage, managedFolder, "invalid", previewQueue(), itemPage, managedFolder].map(response))
+        let socket = previewSocket(success: true)
+        let repository = try makeRepository(transport, previewEvents: { SynologyPhotosPreviewEvents(socket: socket) })
+        _ = try await repository.access()
+        let photos = try await repository.photos(in: .personal, query: .recentlyAdded, offset: 0, limit: 20).items
+        let id = UUID()
+        let result = try await repository.performRecoverableAlbumMutation(.regeneratePreviews(photos), operationID: id) { capture.append($0) }
+        XCTAssertEqual(result.state, .rejected)
+        let checked = try await repository.reviewMutation(operationID: id); XCTAssertEqual(checked.state, .rejected)
+        let calls = try await transport.recordedRequests().map(decode)
+        XCTAssertEqual(calls.filter { $0["method"] == "set_regenerating" }.count, 1)
+        XCTAssertFalse(calls.contains { $0["method"] == "regenerate_preview_by_nas" || $0["method"] == "restore_from_regenerating" })
+        XCTAssertTrue(try XCTUnwrap(capture.values.last?.previewRegenerationDetails?.targets.first).marking)
+    }
+
+    func test预览每步写前保存失败不会开始该步写请求() async throws {
+        for boundary in 0...2 {
+            let transport = MockHTTPTransport(responses: accessResponses() + [itemPage, itemPage, managedFolder, previewQueue()].map(response))
+            let socket = previewSocket(success: true)
+            let repository = try makeRepository(transport, previewEvents: { SynologyPhotosPreviewEvents(socket: socket) })
+            _ = try await repository.access()
+            let photos = try await repository.photos(in: .personal, query: .recentlyAdded, offset: 0, limit: 20).items
+            do {
+                let result = try await repository.performRecoverableAlbumMutation(.regeneratePreviews(photos), operationID: UUID()) { checkpoint in
+                    let target = try XCTUnwrap(checkpoint.previewRegenerationDetails?.targets.first)
+                    if boundary == 0 || (boundary == 1 && target.marking) || (boundary == 2 && target.submitted) { throw CocoaError(.fileWriteOutOfSpace) }
+                }
+                XCTAssertEqual(result.state, .rejected)
+            } catch { XCTAssertEqual(boundary, 0) }
+            let calls = try await transport.recordedRequests().map(decode)
+            XCTAssertEqual(calls.filter { $0["method"] == "set_regenerating" }.count, boundary == 2 ? 1 : 0)
+            XCTAssertFalse(calls.contains { $0["method"] == "regenerate_preview_by_nas" || $0["method"] == "upload" })
+        }
+    }
+
+    func test预览明确失败后清理丢回执重启只结束失败不误报生成() async throws {
+        let profile = UUID(), photo = SynologyPhoto(id: .init(profileID: profile, space: .personal, unitID: 7), filename: "sample.jpg",
+            sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 50), indexedAt: Date(timeIntervalSince1970: 60), folderID: 9, mediaType: "photo")
+        var saved = try SynologyPhotosAlbumCheckpoint(mutation: .regeneratePreviews([photo]), operationID: UUID(), profileID: profile, userID: 12)
+        var value = try XCTUnwrap(saved.previewRegenerationDetails)
+        value.targets[0].marking = true; value.targets[0].marked = true; value.targets[0].submitted = true; value.targets[0].restoring = true
+        value.targets[0].baselineUnitID = 7; value.targets[0].baselineRevision = "fixture-revision"; saved.previewRegenerationDetails = value
+        for queue in [previewQueue(), #"{"success":true,"data":{"list":[]}}"#] {
+            let transport = MockHTTPTransport(responses: accessResponses() + [queue, itemPage].map(response))
+            let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+            try await repository.restoreAlbumMutation(saved)
+            let result = try await repository.reviewMutation(operationID: saved.operationID)
+            XCTAssertEqual(result.state, queue == previewQueue() ? .pendingReview : .rejected)
+            let calls = try await transport.recordedRequests().map(decode)
+            XCTAssertFalse(calls.contains { $0["method"] == "restore_from_regenerating" })
+        }
+    }
+
+    func test预览本机上传也保存标记提交和成功回执() async throws {
+        let data = try PhotoPreviewFixture.image(), page = localPreviewPage(data), capture = PhotosAlbumCheckpointCapture()
+        let transport = MockHTTPTransport(responses: accessResponses(teamPermission: "entry") + [response(page), response(page), response(managedFolder),
+            DsmHTTPResponse(data: data, statusCode: 200), response(page), response(managedFolder), response(previewQueue(name: "fixture.png")),
+            response(emptySuccess), response(page)])
+        let repository = try makeRepository(transport, convertedPreview: true, previewEvents: { throw PhotosPreviewEventError.disconnected })
+        _ = try await repository.access()
+        let photos = try await repository.photos(in: .shared, query: .recentlyAdded, offset: 0, limit: 20).items
+        let result = try await repository.performRecoverableAlbumMutation(.regeneratePreviews(photos), operationID: UUID()) { capture.append($0) }
+        XCTAssertEqual(result.state, .confirmed)
+        let target = try XCTUnwrap(capture.values.last?.previewRegenerationDetails?.targets.first)
+        XCTAssertTrue(target.marking && target.marked && target.submitted && target.generated)
+        let calls = await transport.recordedRequests(); XCTAssertEqual(calls.filter { $0.value(forHTTPHeaderField: "Content-Type")?.contains("multipart") == true }.count, 1)
+    }
+
+    func test预览恢复拒绝跨账号和矛盾阶段快照() async throws {
+        let profile = UUID(), photo = SynologyPhoto(id: .init(profileID: profile, space: .personal, unitID: 7), filename: "sample.jpg",
+            sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 50), indexedAt: Date(timeIntervalSince1970: 60), folderID: 9, mediaType: "photo")
+        var saved = try SynologyPhotosAlbumCheckpoint(mutation: .regeneratePreviews([photo]), operationID: UUID(), profileID: profile, userID: 12)
+        let transport = MockHTTPTransport(responses: accessResponses())
+        let repository = try makeRepository(transport, profileID: UUID()); _ = try await repository.access()
+        do { try await repository.restoreAlbumMutation(saved); XCTFail("不能恢复其他NAS账号") } catch { }
+        var value = try XCTUnwrap(saved.previewRegenerationDetails); value.targets[0].submitted = true; saved.previewRegenerationDetails = value
+        XCTAssertThrowsError(try saved.reviewMutation())
+        XCTAssertThrowsError(try SynologyPhotosAlbumCheckpoint(mutation: .regeneratePreviews([]), operationID: UUID(), profileID: profile, userID: 12))
+        XCTAssertThrowsError(try SynologyPhotosAlbumCheckpoint(mutation: .regeneratePreviews([photo, photo]), operationID: UUID(), profileID: profile, userID: 12))
+    }
+
     func test照片偏好恢复版本十保持原始设置且只回读不重复保存() async throws {
         let original = SynologyPhotoDisplaySettings(), updated = SynologyPhotoDisplaySettings(grouping: .month, clock: .twelve, showsPreviewInfo: true)
         let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()

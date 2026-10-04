@@ -3,6 +3,76 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test照片所选重建和单张预览重建() {
+        let app = launchFixture(state: "photo-repair"); defer { app.terminate() }
+        openPhotos(app); selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.repair.selection", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Selected photo previews regenerated")
+        element("mobile.photos.selection.begin", in: app).tap()
+        app.buttons["Sample 1.jpg"].tap(); XCTAssertTrue(element("mobile.photos.edit.preview", in: app).waitForExistence(timeout: 5))
+        element("mobile.photos.edit.preview", in: app).tap(); element("mobile.photos.repair.preview", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Single preview regenerated")
+    }
+
+    func test照片未完成预览中文搜索选择与继续() {
+        let app = launchFixture(state: "photo-repair", language: "zh-Hans"); defer { app.terminate() }
+        openPhotos(app, chinese: true); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.repair.begin", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.repair.item.1", in: app).waitForExistence(timeout: 5))
+        let search = app.searchFields.firstMatch; search.tap(); search.typeText("no-match")
+        XCTAssertTrue(app.staticTexts["没有找到匹配的照片，请换个关键词搜索。"].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "未完成预览搜索为空")
+        search.tap(); search.buttons.firstMatch.tap(); search.tap(); search.typeText("2.jpg")
+        element("mobile.photos.repair.select", in: app).tap()
+        XCTAssertFalse(element("mobile.photos.repair.item.1", in: app).exists)
+        XCTAssertTrue(element("mobile.photos.repair.item.2", in: app).exists)
+        attachScreenshot(app, name: "未完成预览按文件名选择")
+        if !app.buttons["mobile.photos.repair.resume"].exists { app.buttons["关闭"].firstMatch.tap() }
+        app.buttons["mobile.photos.repair.resume"].tap(); XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.repair.begin", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.repair.item.1", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(element("mobile.photos.repair.item.2", in: app).exists)
+    }
+
+    func test照片未完成预览来源切换和清除选择() {
+        let app = launchFixture(state: "photo-repair"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.repair.begin", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.repair.item.2", in: app).waitForExistence(timeout: 5))
+        element("mobile.photos.repair.clear", in: app).tap(); XCTAssertFalse(app.buttons["mobile.photos.repair.resume"].isEnabled)
+        app.segmentedControls.buttons["Shared Photos"].tap()
+        XCTAssertTrue(app.buttons["Shared sample.jpg"].waitForExistence(timeout: 5))
+        XCTAssertFalse(element("mobile.photos.repair.item.2", in: app).exists)
+        XCTAssertTrue(app.buttons["mobile.photos.repair.resume"].isEnabled)
+        attachScreenshot(app, name: "Shared unfinished previews")
+        app.buttons["mobile.photos.repair.resume"].tap(); XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+    }
+
+    func test照片未完成预览空内容错误与加载状态() {
+        for state in ["photo-repair-empty", "photo-repair-error", "photo-repair-loading"] {
+            let app = launchFixture(state: state)
+            openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.repair.begin", in: app).tap()
+            XCTAssertTrue(app.buttons["mobile.photos.repair.resume"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.repair.resume"].isEnabled)
+            if state.hasSuffix("empty") { XCTAssertTrue(app.staticTexts["No unfinished previews"].waitForExistence(timeout: 5)) }
+            else if state.hasSuffix("error") { XCTAssertTrue(app.staticTexts["Unable to load unfinished previews. Check your connection and try again."].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["Try again"].exists) }
+            else { XCTAssertTrue(element("mobile.photos.repair.loading", in: app).waitForExistence(timeout: 5)) }
+            attachScreenshot(app, name: state); app.terminate()
+        }
+    }
+
+    func test照片预览重建未知重启不再次发送() {
+        let app = launchFixture(state: "photo-repair-unknown"); defer { app.terminate() }
+        openPhotos(app); selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.repair.selection", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.repair.begin", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.repair.item.1", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["mobile.photos.repair.resume"].isEnabled)
+        attachScreenshot(app, name: "Preview repair restart keeps submission blocked")
+    }
+
     func test照片重复默认覆盖确认可取消再保存() {
         let app = launchFixture(state: "photo-preferences"); defer { app.terminate() }
         openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.duplicates", in: app).tap()

@@ -52,6 +52,10 @@ struct MobileSynologyPhotoPreview: View {
                                 MobilePhotoEditActions(editor: editor, photos: [photo])
                                 Button(L10n.string("photos.media.rotate")) { model.rotatePreview() }
                                     .disabled(!model.canRotatePreview).accessibilityIdentifier("mobile.photos.rotate")
+                                if let repair = session.previewRepair {
+                                    Button(L10n.string("photos.preview.rebuild")) { repair.regenerate([photo], fromPreview: true) }
+                                        .disabled(!repair.canRegenerate([photo], fromPreview: true)).accessibilityIdentifier("mobile.photos.repair.preview")
+                                }
                             } label: {
                                 Label(L10n.string("mobile.photos.edit.title"), systemImage: "pencil")
                             }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.edit.preview")
