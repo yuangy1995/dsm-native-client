@@ -1363,6 +1363,7 @@ final class DsmChatRepositoryTests: XCTestCase {
         chatPostVersion: Int = 8,
         chatAnonymousVersion: Int = 2,
         includesChatMemberCapability: Bool = true,
+        includesChatNamedCapability: Bool = true,
         chatRequestFormat: DsmRequestFormat = .form,
         includesFiveFeatureCapabilities: Bool = false
     ) throws -> DsmChatRepository {
@@ -1384,6 +1385,7 @@ final class DsmChatRepositoryTests: XCTestCase {
         if includesChatMemberCapability {
             names[DsmAPIName.chatChannelMember] = 1
         }
+        if !includesChatNamedCapability { names[DsmAPIName.chatChannelNamed] = nil }
         if includesAvatarCapability {
             names[DsmAPIName.chatUserAvatar] = 1
         }

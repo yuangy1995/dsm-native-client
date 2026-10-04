@@ -1236,7 +1236,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "内部普通用户接口缺失或精确版本不支持时关闭对应能力，不用公开 Bot/Webhook API 替代。会话创建按能力声明使用 FORM 或 JSON 参数编码，不因 JSON 声明误禁用；2026-09-09 待归属观察及五端影响见 documentRef 的编码纠正节，未提升创建写入证据等级。2026-09-19 Windows 按用户授权移除单一 DSM/套件 build 白名单及系统套件管理读取依赖，保留绑定会话、接口版本/格式、目标/归属预检、防重复及结果核查；其他四端不变，不提升真实验证。",
+      "fallback": "内部普通用户接口缺失或精确版本不支持时关闭对应能力，不用公开 Bot/Webhook API 替代。会话创建按能力声明使用 FORM 或 JSON 参数编码，不因 JSON 声明误禁用；2026-09-09 待归属观察及五端影响见 documentRef 的编码纠正节，未提升创建写入证据等级。2026-09-19 Windows 按用户授权移除单一 DSM/套件 build 白名单及系统套件管理读取依赖，保留绑定会话、接口版本/格式、目标/归属预检、防重复及结果核查；其他四端不变，不提升真实验证。 2026-10-05 iPhone/iPad M4b4c 使用分步持久建群回执，只按创建编号与原账号恢复；缺编号不认领同名群，未知加入/邀请只读，用户继续只补未提交或明确拒绝步骤及缺少成员。旧 Mac 调用保持兼容并共用 Named v1 请求编码；Windows/Android 仅记录语义参考。详见 chat-advanced-actions.md；只有源码/合成证据，不提升真实环境等级。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {

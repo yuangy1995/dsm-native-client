@@ -24,6 +24,7 @@ public actor DsmChatRepository: ChatRepository {
     private var completedGroups: [UUID: ChatConversation] = [:]
     private var directConversationDrafts: [UUID: String] = [:]
     private var groupConversationDrafts: [UUID: ChatGroupDraft] = [:]
+    private var groupCreateReceipts: [UUID: ChatGroupCreateReceipt] = [:]
     private var pendingDirectConversations: [UUID: PendingDirectConversationCreate] = [:]
     private var pendingGroupConversations: [UUID: PendingGroupConversationCreate] = [:]
     private var terminalDirectConversationOutcomes: [UUID: ChatConversationCreateOutcome] = [:]
@@ -160,13 +161,14 @@ public actor DsmChatRepository: ChatRepository {
         try await listUsers(loadAvatars: true)
     }
 
-    private func listUsers(loadAvatars: Bool) async throws -> [ChatUser] {
+    private func listUsers(loadAvatars: Bool, requiringCurrentUser: Bool = false) async throws -> [ChatUser] {
         let payload = try await call(
             DsmAPIName.chatUser,
             method: "list",
             parameters: [:]
         )
-        let currentUserID = currentUserID(from: payload) ?? cachedCurrentUserID
+        let currentUserID = currentUserID(from: payload) ?? (requiringCurrentUser ? nil : cachedCurrentUserID)
+        if requiringCurrentUser, currentUserID == nil { throw invalidChatResponse() }
         cachedCurrentUserID = currentUserID ?? cachedCurrentUserID
         let parsedUsers = userValues(from: payload).compactMap {
             makeUser(from: $0, currentUserID: currentUserID)
@@ -985,7 +987,8 @@ public actor DsmChatRepository: ChatRepository {
                 requestID: draft.clientRequestID
             )
         }
-        guard groupConversationDrafts[draft.clientRequestID].map({ $0 == draft }) ?? true else {
+        guard (groupConversationDrafts[draft.clientRequestID].map({ $0 == draft }) ?? true),
+              (groupCreateReceipts[draft.clientRequestID].map({ $0.matches(draft) }) ?? true) else {
             return try conversationCreateFailure(
                 operation: "chatGroupCreate",
                 requestID: draft.clientRequestID,
@@ -994,6 +997,9 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
         groupConversationDrafts[draft.clientRequestID] = draft
+        if let receipt = groupCreateReceipts[draft.clientRequestID] {
+            return try await inspectGroupCreation(receipt, recordProgress: { _ in }).outcome
+        }
         if let terminal = terminalGroupConversationOutcomes[draft.clientRequestID] { return terminal }
         if let completed = completedGroups[draft.clientRequestID] {
             return try conversationCreateSuccess(
@@ -1065,20 +1071,10 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
 
-        let named = try requireCapability(DsmAPIName.chatChannelNamed)
         var pending = PendingGroupConversationCreate(draft: draft, candidateID: nil)
         pendingGroupConversations[draft.clientRequestID] = pending
         do {
-            let created = try await client.call(
-                path: named.path,
-                api: named.name,
-                version: try selectedVersion(named, requiring: 1),
-                method: "create",
-                requestFormat: named.requestFormat,
-                parameters: ["name": .string(draft.title), "type": .string("private")],
-                credential: credential,
-                as: ChatJSON.self
-            )
+            let created = try await submitGroupCreate(draft)
             guard let channelID = created.objectValue?.firstString(for: ["channel_id", "id"]) else {
                 return try conversationCreateUnknown(
                     operation: "chatGroupCreate",
@@ -1091,15 +1087,7 @@ public actor DsmChatRepository: ChatRepository {
             pending = PendingGroupConversationCreate(draft: draft, candidateID: channelID)
             pendingGroupConversations[draft.clientRequestID] = pending
             do {
-                try await client.callVoid(
-                    path: named.path,
-                    api: named.name,
-                    version: 1,
-                    method: "join",
-                    requestFormat: named.requestFormat,
-                    parameters: ["channel_id": .string(channelID)],
-                    credential: credential
-                )
+                try await submitGroupJoin(channelID)
             } catch let error as DsmNetworkError {
                 if case .api(let code, _) = error, code == 117 {
                     // 117 表示创建者已经在群聊中，可继续邀请成员。
@@ -1108,19 +1096,7 @@ public actor DsmChatRepository: ChatRepository {
                 }
             }
             do {
-                try await client.callVoid(
-                    path: named.path,
-                    api: named.name,
-                    version: 1,
-                    method: "invite",
-                    requestFormat: named.requestFormat,
-                    parameters: [
-                        "channel_id": .string(channelID),
-                        "user_ids": .stringArray(draft.memberIDs),
-                        "channel_key_encs": .objectArray([])
-                    ],
-                    credential: credential
-                )
+                try await submitGroupInvite(channelID, memberIDs: draft.memberIDs)
             } catch let error as DsmNetworkError {
                 return try groupStageFailure(error, pending: pending, stage: "invite")
             }
@@ -1146,6 +1122,255 @@ public actor DsmChatRepository: ChatRepository {
                 tag: "chat.group-create.submit-unknown"
             )
         }
+    }
+
+    // 旧调用与持久恢复共用三个实际写请求；兼容入口保留既有会话复用行为。
+    private func submitGroupCreate(_ draft: ChatGroupDraft) async throws -> ChatJSON {
+        let named = try requireCapability(DsmAPIName.chatChannelNamed)
+        return try await client.call(path: named.path, api: named.name, version: 1, method: "create",
+            requestFormat: named.requestFormat, parameters: ["name": .string(draft.title), "type": .string("private")],
+            credential: credential, as: ChatJSON.self)
+    }
+
+    private func submitGroupJoin(_ channelID: String) async throws {
+        let named = try requireCapability(DsmAPIName.chatChannelNamed)
+        try await client.callVoid(path: named.path, api: named.name, version: 1, method: "join",
+            requestFormat: named.requestFormat, parameters: ["channel_id": .string(channelID)], credential: credential)
+    }
+
+    private func submitGroupInvite(_ channelID: String, memberIDs: [String]) async throws {
+        let named = try requireCapability(DsmAPIName.chatChannelNamed)
+        try await client.callVoid(path: named.path, api: named.name, version: 1, method: "invite",
+            requestFormat: named.requestFormat, parameters: ["channel_id": .string(channelID),
+                "user_ids": .stringArray(memberIDs), "channel_key_encs": .objectArray([])], credential: credential)
+    }
+
+    public func createGroupResult(
+        _ draft: ChatGroupDraft,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        await acquireConversationCreatePermit()
+        defer { releaseConversationCreatePermit() }
+        guard groupConversationDrafts[draft.clientRequestID].map({ $0 == draft }) ?? true else { throw invalidChatResponse() }
+        if let receipt = groupCreateReceipts[draft.clientRequestID] {
+            guard receipt.matches(draft) else { throw invalidChatResponse() }
+            try await recordProgress(receipt)
+            return try await inspectGroupCreation(receipt, recordProgress: recordProgress).outcome
+        }
+        // 同进程旧调用留下的未知结果也不能被新重载变为再次创建。
+        if pendingGroupConversations[draft.clientRequestID] != nil {
+            return try conversationCreateUnknown(operation: "chatGroupCreate", requestID: draft.clientRequestID,
+                cancelled: false, candidate: nil, tag: "chat.group-create.receipt-unavailable")
+        }
+        if let terminal = terminalGroupConversationOutcomes[draft.clientRequestID] { return terminal }
+        if let completed = completedGroups[draft.clientRequestID] {
+            return try conversationCreateSuccess(operation: "chatGroupCreate", requestID: draft.clientRequestID, conversation: completed)
+        }
+        guard !draft.isEncrypted, supportsVersion(DsmAPIName.chatChannelNamed, version: 1),
+              supportsVersion(DsmAPIName.chatChannelMember, version: 1) else {
+            return try conversationCreateUnsupported(operation: "chatGroupCreate", requestID: draft.clientRequestID,
+                tag: "chat.group-create.unsupported")
+        }
+        let userID = try await requireGroupMembers(draft.memberIDs)
+        if Task.isCancelled {
+            return try conversationCreateCancelledBeforeSubmission(operation: "chatGroupCreate", requestID: draft.clientRequestID)
+        }
+        var receipt = try ChatGroupCreateReceipt(draft: draft, currentUserID: userID)
+        try await recordProgress(receipt)
+        if Task.isCancelled {
+            return try conversationCreateCancelledBeforeSubmission(operation: "chatGroupCreate", requestID: draft.clientRequestID)
+        }
+        groupConversationDrafts[draft.clientRequestID] = draft
+        groupCreateReceipts[draft.clientRequestID] = receipt
+        let created: ChatJSON
+        do {
+            created = try await submitGroupCreate(draft)
+        } catch {
+            if let network = error as? DsmNetworkError, isExplicitWriteRejection(network) {
+                receipt.create = .rejected; receipt.lastError = mutationErrorCategory(for: network)
+                try await saveGroupProgress(&receipt, recordProgress: recordProgress)
+            }
+            return try groupReceiptOutcome(receipt, cancelled: isSendCancellation(error))
+        }
+        guard let id = created.objectValue?.firstString(for: ["channel_id", "id"]),
+              !id.isEmpty, id == id.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return try groupReceiptOutcome(receipt)
+        }
+        receipt.candidateConversationID = id; receipt.create = .completed
+        try await saveGroupProgress(&receipt, recordProgress: recordProgress)
+        return try await performRemainingGroupSteps(receipt, recordProgress: recordProgress)
+    }
+
+    public func recoverGroupCreation(
+        _ receipt: ChatGroupCreateReceipt,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        await acquireConversationCreatePermit()
+        defer { releaseConversationCreatePermit() }
+        let effective = try importGroupReceipt(receipt)
+        try await recordProgress(effective)
+        return try await inspectGroupCreation(effective, recordProgress: recordProgress).outcome
+    }
+
+    public func continueGroupCreation(
+        _ draft: ChatGroupDraft, receipt: ChatGroupCreateReceipt,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        await acquireConversationCreatePermit()
+        defer { releaseConversationCreatePermit() }
+        guard receipt.matches(draft) else { throw invalidChatResponse() }
+        let effective = try importGroupReceipt(receipt)
+        try await recordProgress(effective)
+        let inspection = try await inspectGroupCreation(effective, recordProgress: recordProgress)
+        guard inspection.canContinue, let current = groupCreateReceipts[receipt.clientRequestID],
+              current.canContinue, supportsVersion(DsmAPIName.chatChannelNamed, version: 1),
+              supportsVersion(DsmAPIName.chatChannelMember, version: 1) else { return inspection.outcome }
+        guard try await requireGroupMembers(inspection.remainingMemberIDs) == current.currentUserID else { throw invalidChatResponse() }
+        return try await performRemainingGroupSteps(current, inviteMemberIDs: inspection.remainingMemberIDs, recordProgress: recordProgress)
+    }
+
+    private func requireGroupMembers(_ memberIDs: [String]) async throws -> String {
+        let users = try await listUsers(loadAvatars: false, requiringCurrentUser: true)
+        guard let current = cachedCurrentUserID, current != "unknown",
+              users.contains(where: { $0.id == current && $0.isCurrentUser == true && !$0.isDisabled }),
+              Set(memberIDs).isSubset(of: Set(users.filter { !$0.isDisabled && $0.isCurrentUser != true }.map(\.id))) else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+        }
+        return current
+    }
+
+    private func importGroupReceipt(_ receipt: ChatGroupCreateReceipt) throws -> ChatGroupCreateReceipt {
+        try receipt.validate()
+        if let draft = groupConversationDrafts[receipt.clientRequestID], !receipt.matches(draft) { throw invalidChatResponse() }
+        if let existing = groupCreateReceipts[receipt.clientRequestID] {
+            guard existing.hasSameIdentity(as: receipt),
+                  existing.candidateConversationID == nil || receipt.candidateConversationID == nil
+                    || existing.candidateConversationID == receipt.candidateConversationID else { throw invalidChatResponse() }
+            if existing.revision == receipt.revision, existing != receipt { throw invalidChatResponse() }
+            if existing.revision >= receipt.revision { return existing }
+            guard (existing.create != .completed || receipt.create == .completed),
+                  (existing.join != .completed || receipt.join == .completed),
+                  (existing.invite != .completed || receipt.invite == .completed) else { throw invalidChatResponse() }
+        }
+        groupCreateReceipts[receipt.clientRequestID] = receipt
+        return receipt
+    }
+
+    private func saveGroupProgress(
+        _ receipt: inout ChatGroupCreateReceipt,
+        beforeSubmission: Bool = false,
+        recordProgress: @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws {
+        receipt.revision += 1
+        try receipt.validate()
+        if beforeSubmission {
+            // 写前保存失败时，该步骤尚未开始；不得把它误存为已发出的请求。
+            try await recordProgress(receipt)
+            groupCreateReceipts[receipt.clientRequestID] = receipt
+        } else {
+            // 已收到的回执先留在原操作内存中，磁盘失败只能补保存与读取。
+            groupCreateReceipts[receipt.clientRequestID] = receipt
+            try await recordProgress(receipt)
+        }
+    }
+
+    private func performRemainingGroupSteps(
+        _ original: ChatGroupCreateReceipt,
+        inviteMemberIDs: [String]? = nil,
+        recordProgress: @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        var receipt = original
+        guard let id = receipt.candidateConversationID, receipt.create == .completed else { throw invalidChatResponse() }
+        for isJoin in [true, false] {
+            let stage = isJoin ? receipt.join : receipt.invite
+            if stage == .completed { continue }
+            guard stage == .ready || stage == .rejected else { return try groupReceiptOutcome(receipt) }
+            if !isJoin, inviteMemberIDs?.isEmpty == true {
+                receipt.invite = .completed; receipt.lastError = nil
+                try await saveGroupProgress(&receipt, recordProgress: recordProgress)
+                continue
+            }
+            if Task.isCancelled { return try groupReceiptOutcome(receipt, cancelled: true) }
+            if isJoin { receipt.join = .submitted } else { receipt.invite = .submitted }
+            receipt.lastError = nil
+            try await saveGroupProgress(&receipt, beforeSubmission: true, recordProgress: recordProgress)
+            if Task.isCancelled {
+                // 已落盘但尚未发送，恢复为可由用户继续的步骤；已创建的群不能整项取消。
+                if isJoin { receipt.join = .ready } else { receipt.invite = .ready }
+                try await saveGroupProgress(&receipt, recordProgress: recordProgress)
+                return try groupReceiptOutcome(receipt, cancelled: true)
+            }
+            do {
+                if isJoin { try await submitGroupJoin(id) }
+                else { try await submitGroupInvite(id, memberIDs: inviteMemberIDs ?? receipt.memberIDs) }
+            } catch {
+                let alreadyJoined = isJoin && (error as? DsmNetworkError).map {
+                    if case .api(let code, _) = $0 { return code == 117 }; return false
+                } == true
+                if !alreadyJoined {
+                    if let network = error as? DsmNetworkError, isExplicitWriteRejection(network) {
+                        if isJoin { receipt.join = .rejected } else { receipt.invite = .rejected }
+                        receipt.lastError = mutationErrorCategory(for: network)
+                        try await saveGroupProgress(&receipt, recordProgress: recordProgress)
+                    }
+                    return try groupReceiptOutcome(receipt, cancelled: isSendCancellation(error))
+                }
+            }
+            if isJoin { receipt.join = .completed } else { receipt.invite = .completed }
+            try await saveGroupProgress(&receipt, recordProgress: recordProgress)
+        }
+        return try await inspectGroupCreation(receipt, recordProgress: recordProgress).outcome
+    }
+
+    private func inspectGroupCreation(
+        _ original: ChatGroupCreateReceipt,
+        recordProgress: @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> (outcome: ChatConversationCreateOutcome, canContinue: Bool, remainingMemberIDs: [String]) {
+        guard let id = original.candidateConversationID else { return (try groupReceiptOutcome(original), false, []) }
+        let candidate: ChatConversation
+        let memberIDs: Set<String>
+        do {
+            let values = try await listConversations(requiringCurrentUser: true)
+            guard cachedCurrentUserID == original.currentUserID,
+                  let value = values.first(where: { $0.id == id && $0.kind == .group && !$0.isEncrypted }),
+                  ChatMessageSendReceipt.digest(text: value.title) == original.titleDigest else {
+                return (try groupReceiptOutcome(original), false, [])
+            }
+            candidate = value
+            memberIDs = Set(try await listConversationMembers(conversationID: id).map(\.id))
+        } catch {
+            return (try groupReceiptOutcome(original, cancelled: isSendCancellation(error)), false, [])
+        }
+        var receipt = original
+        let joined = memberIDs.contains(receipt.currentUserID)
+        let complete = joined && Set(receipt.memberIDs).isSubset(of: memberIDs)
+        if joined {
+            if receipt.join != .completed { receipt.lastError = nil }
+            receipt.join = .completed
+        }
+        if complete { receipt.invite = .completed; receipt.lastError = nil }
+        if receipt != original { try await saveGroupProgress(&receipt, recordProgress: recordProgress) }
+        if complete {
+            return (try conversationCreateSuccess(operation: "chatGroupCreate", requestID: receipt.clientRequestID,
+                conversation: candidate), false, [])
+        }
+        // 已完成的加入若后来被撤销，不能将恢复变成再次加入或邀请。
+        let canContinue = receipt.canContinue && (joined || receipt.join == .ready || receipt.join == .rejected)
+        return (try groupReceiptOutcome(receipt), canContinue, receipt.memberIDs.filter { !memberIDs.contains($0) })
+    }
+
+    private func groupReceiptOutcome(_ receipt: ChatGroupCreateReceipt, cancelled: Bool = false) throws -> ChatConversationCreateOutcome {
+        if receipt.create == .rejected {
+            let category = receipt.lastError ?? .unknown
+            let status: MutationResultStatus = category == .permission ? .permissionDenied
+                : (category == .unsupported ? .unsupported : .confirmedFailure)
+            return ChatConversationCreateOutcome(result: try MutationResult(status: status, operation: "chatGroupCreate",
+                submitted: true, requiresRefresh: false, counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: category, diagnosticTag: "chat.group-create.rejected"),
+                clientRequestID: receipt.clientRequestID, confirmedConversation: nil)
+        }
+        return try conversationCreateUnknown(operation: "chatGroupCreate", requestID: receipt.clientRequestID,
+            cancelled: cancelled, candidate: nil, errorCategory: receipt.lastError, tag: "chat.group-create.pending")
     }
 
     private func finishPendingDirectConversation(

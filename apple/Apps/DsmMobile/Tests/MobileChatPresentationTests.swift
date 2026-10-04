@@ -75,10 +75,13 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("sourceProfileID: sourceProfileID"))
         XCTAssertTrue(creator.contains("openDirectConversationResult"))
         XCTAssertTrue(creator.contains("createGroupResult"))
-        XCTAssertTrue(creator.contains("pendingDraft"))
+        XCTAssertTrue(creator.contains("groupRecovery"))
+        XCTAssertTrue(creator.contains("recoverGroupCreation"))
+        XCTAssertTrue(creator.contains("continueGroupCreation"))
+        XCTAssertFalse(creator.contains("reviewPendingDraft"))
         XCTAssertTrue(repository.contains(".directConversation"))
         XCTAssertTrue(repository.contains(".groupConversation"))
-        XCTAssertFalse(source.contains(".font(.system(size:"))
+        assertDynamicTextFonts(source)
         XCTAssertFalse(source.contains("withAnimation"))
     }
 
@@ -108,7 +111,7 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains(".accessibilityAddTraits("))
         XCTAssertTrue(source.contains("List("))
         XCTAssertTrue(source.contains("NavigationLink(value:"))
-        XCTAssertFalse(source.contains(".font(.system(size:"))
+        assertDynamicTextFonts(source)
         XCTAssertFalse(source.contains("withAnimation"))
     }
 
@@ -341,7 +344,21 @@ final class MobileChatPresentationTests: XCTestCase {
         try [
             sourceFile("Sources/Features/Chat/MobileChatView.swift"),
             sourceFile("Sources/Features/Chat/MobileChatAttachmentView.swift"),
-            sourceFile("Sources/Features/Chat/MobileChatInteractionView.swift")
+            sourceFile("Sources/Features/Chat/MobileChatInteractionView.swift"),
+            sourceFile("Sources/Features/Chat/MobileChatGroupCreationView.swift")
         ].joined(separator: "\n")
+    }
+
+    private func assertDynamicTextFonts(_ source: String, file: StaticString = #filePath, line: UInt = #line) {
+        // 三个发送/选择按钮的纯图标固定在 24 点区域内；可见文字仍必须使用动态文字样式。
+        var remaining = source.components(separatedBy: .whitespacesAndNewlines).joined()
+        for name in ["paperplane.fill", "photo.on.rectangle.angled", "folder"] {
+            let glyph = "Image(systemName:\"\(name)\").font(.system(size:20)).frame(width:24,height:24)"
+            XCTAssertTrue(remaining.contains(glyph), file: file, line: line)
+            remaining = remaining.replacingOccurrences(of: glyph, with: "")
+        }
+        XCTAssertFalse(remaining.contains(".font(.system(size:"), file: file, line: line)
+        XCTAssertTrue(source.contains(".frame(minWidth: 44, minHeight: 44).disabled(!chat.canSendSelectedDraft)"), file: file, line: line)
+        XCTAssertEqual(remaining.components(separatedBy: ".frame(minWidth:44,minHeight:44).disabled(!chat.canSelectAttachment)").count - 1, 2, file: file, line: line)
     }
 }

@@ -127,6 +127,13 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     func createGroupResult(
         _ draft: ChatGroupDraft
     ) async throws -> ChatConversationCreateOutcome {
+        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+    }
+
+    func createGroupResult(
+        _ draft: ChatGroupDraft,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
         let value = await base.availability()
         guard value.status == .available,
               value.supportedFeatures.contains(.groupConversation),
@@ -137,7 +144,26 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
                 clientRequestID: draft.clientRequestID
             )
         }
-        return try await base.createGroupResult(draft)
+        return try await base.createGroupResult(draft, recordProgress: recordProgress)
+    }
+
+    func recoverGroupCreation(
+        _ receipt: ChatGroupCreateReceipt,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        try await base.recoverGroupCreation(receipt, recordProgress: recordProgress)
+    }
+
+    func continueGroupCreation(
+        _ draft: ChatGroupDraft, receipt: ChatGroupCreateReceipt,
+        recordProgress: @escaping @Sendable (ChatGroupCreateReceipt) async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        let value = await base.availability()
+        guard value.status == .available, value.supportedFeatures.contains(.groupConversation),
+              value.supportedFeatures.contains(.groupMembers), !draft.isEncrypted else {
+            return try await base.recoverGroupCreation(receipt, recordProgress: recordProgress)
+        }
+        return try await base.continueGroupCreation(draft, receipt: receipt, recordProgress: recordProgress)
     }
 
     func sendMessage(

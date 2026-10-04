@@ -242,6 +242,8 @@
 - Apple Adapter：`apple/Packages/DsmNetwork/Sources/DsmChatRepository.swift`；FORM 和 JSON 的能力、完整创建链、数组编码、回读及去重测试见同包 `Tests/DsmChatRepositoryTests.swift`；JSON 合成请求见 `contracts/request-fixtures/chat/create-private-group/synthetic-json/request.json`。
 - 五端影响与剩余工作见[本轮修复和功能真实性审计](../../../../apple/Apps/DsmMac/README.md)。本次不替代其他 build/套件版本的兼容复验，不提高既有创建操作的实机验证等级。
 
+2026-10-05 移动 M4b4c 增量：iPhone/iPad 建群改用分步持久回执，仍调用上述 Named v1 和 Member.get v1。新重载仅按创建返回的群聊编号与原账号恢复，缺编号不认领同名群；刷新只读，明确继续只补未提交或明确被拒绝的加入/缺少成员邀请。旧 Mac 方法保持兼容且共用请求编码，不因此拥有移动持久恢复。没有新增真实 NAS 证据；完整错误、恢复及五端边界见[高级动作记录](chat-advanced-actions.md#2026-10-05-apple-移动群聊分步恢复)。
+
 ### `chat-realtime`
 
 - 稳定记录：[Chat 实时事件通道](chat-realtime.md)。Windows 已接入同源原生 WebSocket、现有证书管线、事件合并与取消隔离；只有本地合成证据。
