@@ -1685,7 +1685,7 @@ final class MobileChatModelTests: XCTestCase {
     }
 
     func test单聊提交未知后按同一请求回读且不丢失目标() async throws {
-        let conversation = Self.conversation(id: "direct", title: "成员", kind: .direct)
+        let conversation = ChatConversation(id: "direct", kind: .direct, title: "成员", memberIDs: ["member"], unreadCount: 0, isEncrypted: false)
         let repository = ChatRepositoryStub(
             availability: ChatAvailability(
                 status: .available,
@@ -1706,14 +1706,15 @@ final class MobileChatModelTests: XCTestCase {
         )
 
         let first = await creator.openDirectConversation(userID: "member")
+        await repository.setConversations([conversation])
         let second = await creator.openDirectConversation(userID: "member")
         let requests = await repository.directCreateRequests()
 
         XCTAssertEqual(first?.result.status, .submittedButUnverified)
         XCTAssertTrue(creator.requiresReview == false)
         XCTAssertEqual(second?.confirmedConversation, conversation)
-        XCTAssertEqual(requests.map(\.userID), ["member", "member"])
-        XCTAssertEqual(requests.first?.clientRequestID, requests.last?.clientRequestID)
+        XCTAssertEqual(requests.map(\.userID), ["member"])
+        XCTAssertEqual(first?.clientRequestID, second?.clientRequestID)
     }
 
     func test群聊提交未知后保留完整草稿并按原请求回读() async throws {
@@ -1835,7 +1836,7 @@ final class MobileChatModelTests: XCTestCase {
         let confirmed = await creator.openDirectConversation(userID: "member")
         let newCreateRequests = await newRepository.directCreateRequests()
 
-        XCTAssertEqual(firstOutcome?.result.status, .submittedButUnverified)
+        XCTAssertNil(firstOutcome, "重绑后旧调用不能把迟到结果交给当前页面")
         XCTAssertEqual(confirmed?.result.status, .confirmedSuccess)
         XCTAssertTrue(newCreateRequests.isEmpty)
     }
@@ -1845,17 +1846,181 @@ final class MobileChatModelTests: XCTestCase {
         let profileB = UUID()
         let model = MobileChatModel()
         await model.activate(profileID: profileA, repository: ChatRepositoryStub(conversations: []))
+        let sourceCreator = model.conversationCreator!
+        let sourceGeneration = sourceCreator.repositoryGeneration
         await model.activate(profileID: profileB, repository: ChatRepositoryStub(conversations: []))
         let conversation = Self.conversation(id: "late", title: "迟到会话", kind: .direct)
 
         let accepted = await model.acceptCreatedConversation(
             conversation,
-            sourceProfileID: profileA
+            sourceProfileID: profileA,
+            sourceCreator: sourceCreator,
+            sourceGeneration: sourceGeneration
         )
 
         XCTAssertFalse(accepted)
         XCTAssertFalse(model.state.conversations.contains { $0.id == conversation.id })
         XCTAssertNil(model.state.selectedConversationID)
+    }
+
+    func test单聊丢回执重启后只恢复原目标并拒绝改目标() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ChatCreationTests-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let availability = ChatAvailability(status: .available, supportedFeatures: [.directConversation])
+        let firstRepository = ChatRepositoryStub(availability: availability, conversations: [], directCreateOutcomes: [
+            try Self.conversationCreateOutcome(status: .submittedButUnverified)
+        ])
+        let first = MobileChatConversationCreator(repository: firstRepository, availability: availability,
+            context: "account-a", recovery: MobileChatConversationCreationStore(root: root))
+        let unknown = await first.openDirectConversation(userID: "member")
+        XCTAssertEqual(unknown?.result.status, .submittedButUnverified)
+        let direct = ChatConversation(id: "direct", kind: .direct, title: "合成成员", memberIDs: ["member"], unreadCount: 0, isEncrypted: false)
+        let secondRepository = ChatRepositoryStub(conversations: [direct])
+        let store = MobileChatConversationCreationStore(root: root)
+        let second = MobileChatConversationCreator(repository: secondRepository, availability: availability, context: "account-a", recovery: store)
+        XCTAssertTrue(second.requiresReview); XCTAssertEqual(second.pendingDirectUserID, "member")
+        let changed = await second.openDirectConversation(userID: "other")
+        XCTAssertNil(changed); XCTAssertTrue(second.requiresReview)
+        let result = await second.openDirectConversation(userID: "member")
+        XCTAssertEqual(result?.confirmedConversation, direct)
+        XCTAssertEqual(result?.clientRequestID, unknown?.clientRequestID)
+        XCTAssertNil(store.pending(in: "account-a")); XCTAssertFalse(second.requiresReview)
+        let requests = await secondRepository.directCreateRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test单聊准备阶段重启可由用户继续但不会自动提交() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ChatCreationTests-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = MobileChatConversationCreationStore(root: root)
+        let entry = MobileChatConversationCreationStore.Entry(id: UUID(), context: "account-a", userID: "member", phase: .prepared)
+        XCTAssertTrue(store.reserve(entry))
+        let direct = Self.conversation(id: "direct", title: "成员", kind: .direct)
+        let repository = ChatRepositoryStub(conversations: [], directCreateOutcomes: [
+            try Self.conversationCreateOutcome(status: .confirmedSuccess, conversation: direct)
+        ])
+        let restored = MobileChatConversationCreationStore(root: root)
+        let creator = MobileChatConversationCreator(repository: repository,
+            availability: ChatAvailability(status: .available, supportedFeatures: [.directConversation]),
+            context: "account-a", recovery: restored)
+        let before = await repository.directCreateRequests(); XCTAssertTrue(before.isEmpty)
+        let outcome = await creator.openDirectConversation(userID: "member")
+        XCTAssertEqual(outcome?.confirmedConversation, direct)
+        let requests = await repository.directCreateRequests()
+        XCTAssertEqual(requests.count, 1); XCTAssertEqual(requests.first?.clientRequestID, entry.id)
+        XCTAssertFalse(creator.requiresReview)
+    }
+
+    func test同账号新创建模型不能在旧请求执行时提前恢复() async throws {
+        let store = MobileChatConversationCreationStore(root: nil)
+        let availability = ChatAvailability(status: .available, supportedFeatures: [.directConversation])
+        let old = ChatRepositoryStub(conversations: [], directCreateOutcomes: [
+            try Self.conversationCreateOutcome(status: .submittedButUnverified)
+        ], blocksDirectCreate: true)
+        let first = MobileChatConversationCreator(repository: old, availability: availability, context: "account-a", recovery: store)
+        let task = Task { await first.openDirectConversation(userID: "member") }
+        await old.waitUntilDirectCreateBlocked()
+        first.invalidate()
+        let fresh = ChatRepositoryStub(conversations: [])
+        let second = MobileChatConversationCreator(repository: fresh, availability: availability, context: "account-a", recovery: store)
+        XCTAssertTrue(second.isSubmitting)
+        let overlapping = await second.openDirectConversation(userID: "member")
+        XCTAssertNil(overlapping)
+        let earlyReads = await fresh.conversationRequestCount(); XCTAssertEqual(earlyReads, 0)
+        await old.releaseDirectCreate()
+        let late = await task.value; XCTAssertNil(late)
+        XCTAssertFalse(second.isSubmitting); XCTAssertTrue(second.requiresReview)
+        _ = await second.openDirectConversation(userID: "member")
+        let reads = await fresh.conversationRequestCount(), writes = await fresh.directCreateRequests()
+        XCTAssertEqual(reads, 1); XCTAssertTrue(writes.isEmpty)
+    }
+
+    func test同一配置档换账号后旧创建结果不能打开当前聊天() async throws {
+        let id = UUID(), model = MobileChatModel()
+        await model.activate(profileID: id, repository: ChatRepositoryStub(conversations: []), context: "account-a")
+        let old = try XCTUnwrap(model.conversationCreator), generation = old.repositoryGeneration
+        await model.activate(profileID: id, repository: ChatRepositoryStub(conversations: []), context: "account-b")
+        let current = try XCTUnwrap(model.conversationCreator)
+        XCTAssertFalse(old === current)
+        let accepted = await model.acceptCreatedConversation(Self.conversation(id: "late", title: "旧成员", kind: .direct),
+            sourceProfileID: id, sourceCreator: old, sourceGeneration: generation)
+        XCTAssertFalse(accepted); XCTAssertTrue(model.state.conversations.isEmpty); XCTAssertNil(model.state.selectedConversationID)
+        let stale = await old.openDirectConversation(userID: "member"); XCTAssertNil(stale)
+    }
+
+    func test同账号重绑后旧创建完成回调不再打开详情() async throws {
+        let id = UUID(), model = MobileChatModel()
+        await model.activate(profileID: id, repository: ChatRepositoryStub(conversations: []), context: "account-a")
+        let old = try XCTUnwrap(model.conversationCreator), generation = old.repositoryGeneration
+        await model.activate(profileID: id, repository: ChatRepositoryStub(conversations: []), context: "account-a")
+        XCTAssertTrue(model.conversationCreator === old)
+        let accepted = await model.acceptCreatedConversation(Self.conversation(id: "late", title: "旧会话", kind: .direct),
+            sourceProfileID: id, sourceCreator: old, sourceGeneration: generation)
+        XCTAssertFalse(accepted); XCTAssertTrue(model.state.conversations.isEmpty)
+    }
+
+    func test单聊坏恢复文件阻止新写入且不清理原记录() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ChatCreationTests-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("conversation-creation-v1.json"), bytes = Data("broken".utf8)
+        try bytes.write(to: url)
+        let repository = ChatRepositoryStub(conversations: [])
+        let creator = MobileChatConversationCreator(repository: repository,
+            availability: ChatAvailability(status: .available, supportedFeatures: [.directConversation]),
+            context: "account-a", recovery: MobileChatConversationCreationStore(root: root))
+        let outcome = await creator.openDirectConversation(userID: "member")
+        XCTAssertNil(outcome); XCTAssertTrue(creator.storageFailed)
+        let requests = await repository.directCreateRequests(); XCTAssertTrue(requests.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: url), bytes)
+    }
+
+    func test单聊成功但本机完成记录保存失败不得交付可重发状态() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ChatCreationTests-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = MobileChatConversationCreationStore(root: root)
+        let repository = ChatRepositoryStub(conversations: [], directCreateOutcomes: [
+            try Self.conversationCreateOutcome(status: .confirmedSuccess, conversation: Self.conversation(id: "direct", title: "成员", kind: .direct))
+        ], blocksDirectCreate: true)
+        let creator = MobileChatConversationCreator(repository: repository,
+            availability: ChatAvailability(status: .available, supportedFeatures: [.directConversation]), context: "account-a", recovery: store)
+        let task = Task { await creator.openDirectConversation(userID: "member") }
+        await repository.waitUntilDirectCreateBlocked()
+        XCTAssertEqual(store.pending(in: "account-a")?.phase, .submitted)
+        try FileManager.default.removeItem(at: root); try Data("occupied".utf8).write(to: root)
+        await repository.releaseDirectCreate()
+        let result = await task.value
+        XCTAssertNil(result); XCTAssertTrue(creator.storageFailed); XCTAssertTrue(creator.requiresReview)
+        let again = await creator.openDirectConversation(userID: "member"); XCTAssertNil(again)
+        let writes = await repository.directCreateRequests(); XCTAssertEqual(writes.count, 1)
+    }
+
+    func test单聊恢复不依赖联系人加载或创建能力仍可读取原会话() async throws {
+        let store = MobileChatConversationCreationStore(root: nil)
+        let entry = MobileChatConversationCreationStore.Entry(id: UUID(), context: "account-a", userID: "member", phase: .prepared)
+        XCTAssertTrue(store.reserve(entry)); XCTAssertTrue(store.beginExecution(entry)); try store.markSubmitted(entry); store.endExecution(entry)
+        let direct = ChatConversation(id: "direct", kind: .direct, title: "成员", memberIDs: ["member"], unreadCount: 0, isEncrypted: false)
+        let repository = ChatRepositoryStub(conversations: [direct], users: [])
+        let creator = MobileChatConversationCreator(repository: repository, availability: ChatAvailability(status: .available), context: "account-a", recovery: store)
+        await creator.loadUsers(); XCTAssertEqual(creator.pageState, .empty)
+        let outcome = await creator.openDirectConversation(userID: "member")
+        XCTAssertEqual(outcome?.confirmedConversation, direct)
+        let writes = await repository.directCreateRequests(); XCTAssertTrue(writes.isEmpty)
+    }
+
+    func test创建能力消失后仍保留已提交单聊的恢复入口() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ChatCreationTests-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = MobileChatConversationCreationStore(root: root)
+        let entry = MobileChatConversationCreationStore.Entry(id: UUID(), context: "account-a", userID: "member", phase: .prepared)
+        XCTAssertTrue(store.reserve(entry)); XCTAssertTrue(store.beginExecution(entry)); try store.markSubmitted(entry)
+        store.endExecution(entry)
+        let model = MobileChatModel(interactionRecoveryRoot: root)
+        await model.activate(profileID: UUID(), repository: ChatRepositoryStub(availability: ChatAvailability(status: .available), conversations: []), context: "account-a")
+        XCTAssertFalse(model.conversationCreator?.canCreateDirect == true)
+        XCTAssertFalse(model.conversationCreator?.canCreateGroup == true)
+        XCTAssertTrue(model.conversationCreator?.requiresReview == true)
+        XCTAssertTrue(model.canCreateConversation)
     }
 
     private static func conversationCreateOutcome(
@@ -2227,6 +2392,25 @@ private actor ChatRepositoryStub: ChatRepository {
             clientRequestID: clientRequestID,
             confirmedConversation: outcome.confirmedConversation
         )
+    }
+
+    func openDirectConversationResult(
+        userID: String, clientRequestID: UUID,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        try await willSubmit()
+        return try await openDirectConversationResult(userID: userID, clientRequestID: clientRequestID)
+    }
+
+    func recoverDirectConversation(userID: String, clientRequestID: UUID) async throws -> ChatConversationCreateOutcome {
+        let conversations = try await listConversations()
+        let conversation = conversations.first { $0.kind == .direct && !$0.isEncrypted && $0.memberIDs.contains(userID) }
+        let confirmed = conversation != nil
+        return ChatConversationCreateOutcome(result: try MutationResult(
+            status: confirmed ? .confirmedSuccess : .submittedButUnverified,
+            operation: "chatDirectConversationCreate", submitted: true, requiresRefresh: !confirmed,
+            counts: MutationResultCounts(succeeded: confirmed ? 1 : 0, failed: 0, unknown: confirmed ? 0 : 1),
+            diagnosticTag: "synthetic.direct-recovery"), clientRequestID: clientRequestID, confirmedConversation: conversation)
     }
 
     func createGroup(_ draft: ChatGroupDraft) async throws -> ChatConversation {

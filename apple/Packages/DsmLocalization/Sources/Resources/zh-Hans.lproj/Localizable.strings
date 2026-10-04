@@ -3794,7 +3794,7 @@
 "mobile.chat.create.title" = "新建会话";
 "mobile.chat.create.close" = "关闭";
 "mobile.chat.create.submit" = "创建";
-"mobile.chat.create.review.action" = "检查结果";
+"mobile.chat.create.review.action" = "刷新聊天";
 "mobile.chat.create.type" = "会话类型";
 "mobile.chat.create.direct" = "一对一聊天";
 "mobile.chat.create.group" = "私人群聊";
@@ -3812,8 +3812,8 @@
 "mobile.chat.create.filtered-empty.title" = "没有匹配的联系人";
 "mobile.chat.create.filtered-empty.message" = "请尝试其他姓名，或清除搜索。";
 "mobile.chat.create.clear-search" = "显示全部";
-"mobile.chat.create.review.title" = "再次尝试前请先检查";
-"mobile.chat.create.review.message" = "NAS 可能已经创建此会话。再次尝试前请先检查结果；不会重复发送创建请求。";
+"mobile.chat.create.review.title" = "聊天暂时无法打开";
+"mobile.chat.create.review.message" = "请稍后刷新，恢复后即可打开聊天。";
 "mobile.chat.create.permission" = "你没有创建此会话的权限。请让 NAS 管理员检查你的 Chat 访问权限。";
 "mobile.chat.create.authentication" = "登录已过期。请重新登录，然后检查会话是否已经创建。";
 "mobile.chat.create.unsupported" = "此 NAS 或 Chat Server 版本不提供这类会话。";
@@ -6220,3 +6220,7 @@
 "mobile.chat.announcement.unpin" = "取消公告";
 
 "mobile.chat.close.progress" = "正在关闭会话…";
+
+"mobile.chat.create.open" = "打开聊天";
+"mobile.chat.create.opening" = "正在打开聊天…";
+"mobile.chat.create.storage-error.title" = "无法保存聊天进度";

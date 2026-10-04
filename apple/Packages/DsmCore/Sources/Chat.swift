@@ -557,6 +557,14 @@ public protocol ChatRepository: Sendable {
         userID: String,
         clientRequestID: UUID
     ) async throws -> ChatConversationCreateOutcome
+    /// 调用方必须先持久保存提交阶段；回调失败时不得发起创建请求。
+    func openDirectConversationResult(
+        userID: String,
+        clientRequestID: UUID,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome
+    /// 恢复已提交的单聊，只读取现有会话，不能重新创建。
+    func recoverDirectConversation(userID: String, clientRequestID: UUID) async throws -> ChatConversationCreateOutcome
     func createGroup(_ draft: ChatGroupDraft) async throws -> ChatConversation
     func createGroupResult(_ draft: ChatGroupDraft) async throws -> ChatConversationCreateOutcome
     func sendMessage(
@@ -707,6 +715,18 @@ public extension ChatRepository {
             clientRequestID: clientRequestID,
             confirmedConversation: nil
         )
+    }
+
+    func openDirectConversationResult(
+        userID: String,
+        clientRequestID: UUID,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+    }
+
+    func recoverDirectConversation(userID: String, clientRequestID: UUID) async throws -> ChatConversationCreateOutcome {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
     }
 
     func createGroupResult(_ draft: ChatGroupDraft) async throws -> ChatConversationCreateOutcome {

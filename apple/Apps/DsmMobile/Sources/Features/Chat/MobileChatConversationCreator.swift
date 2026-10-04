@@ -16,17 +16,27 @@ final class MobileChatConversationCreator {
     private(set) var availability: ChatAvailability
     private(set) var users: [ChatUser] = []
     private(set) var pageState: MobileChatConversationCreatorPageState = .loading
-    private(set) var isSubmitting = false
+    private var submitting = false
+    var isSubmitting: Bool { submitting || directEntry.map(recovery.isExecuting) == true }
     private(set) var errorCategory: AppErrorCategory?
     private(set) var repositoryGeneration = 0
     private var pendingDraft: PendingDraft?
     private var pendingRequiresReadbackOnly = false
     private var deferredRepository: (any ChatRepository)?
     private var deferredAvailability: ChatAvailability?
+    let context: String
+    private let recovery: MobileChatConversationCreationStore
+    private var isActive = true
+    private var directEntry: MobileChatConversationCreationStore.Entry? { recovery.pending(in: context) }
+    var storageFailed: Bool { recovery.failed }
+    var canResumeDirectCreation: Bool { directEntry?.phase == .prepared }
 
-    init(repository: any ChatRepository, availability: ChatAvailability) {
+    init(repository: any ChatRepository, availability: ChatAvailability,
+         context: String = UUID().uuidString, recovery: MobileChatConversationCreationStore? = nil) {
         self.repository = repository
         self.availability = availability
+        self.context = context
+        self.recovery = recovery ?? MobileChatConversationCreationStore(root: nil)
     }
 
     var canCreateDirect: Bool {
@@ -40,24 +50,31 @@ final class MobileChatConversationCreator {
             && availability.supportedFeatures.contains(.groupMembers)
     }
 
-    var requiresReview: Bool { pendingDraft != nil }
-    var pendingDirectUserID: String? { pendingDraft?.directUserID }
-    var pendingGroupTitle: String? { pendingDraft?.groupDraft?.title }
-    var pendingGroupMemberIDs: [String] { pendingDraft?.groupDraft?.memberIDs ?? [] }
-    var pendingIsGroup: Bool { pendingDraft?.groupDraft != nil }
+    var requiresReview: Bool { pendingDraft != nil || directEntry != nil }
+    var pendingDirectUserID: String? { directEntry?.userID }
+    var pendingGroupTitle: String? { pendingDraft?.groupDraft.title }
+    var pendingGroupMemberIDs: [String] { pendingDraft?.groupDraft.memberIDs ?? [] }
+    var pendingIsGroup: Bool { pendingDraft != nil }
 
     func updateAvailability(_ value: ChatAvailability) {
         availability = value
     }
 
     func rebind(repository: any ChatRepository, availability: ChatAvailability) {
+        isActive = true
         self.availability = availability
-        guard !isSubmitting else {
+        guard !submitting else {
+            repositoryGeneration &+= 1
             deferredRepository = repository
             deferredAvailability = availability
             return
         }
         applyRepositoryBinding(repository, availability: availability)
+    }
+
+    func invalidate() {
+        isActive = false
+        repositoryGeneration &+= 1
     }
 
     private func applyRepositoryBinding(
@@ -77,7 +94,7 @@ final class MobileChatConversationCreator {
     }
 
     func loadUsers() async {
-        guard !isSubmitting else { return }
+        guard isActive, !isSubmitting else { return }
         let generation = repositoryGeneration
         let boundRepository = repository
         pageState = .loading
@@ -85,7 +102,7 @@ final class MobileChatConversationCreator {
         do {
             let values = try await boundRepository.listUsers()
             try Task.checkCancellation()
-            guard generation == repositoryGeneration else { return }
+            guard isActive, generation == repositoryGeneration else { return }
             users = values
                 .filter { !$0.isDisabled && $0.isCurrentUser != true }
                 .sorted {
@@ -96,7 +113,7 @@ final class MobileChatConversationCreator {
         } catch is CancellationError {
             return
         } catch {
-            guard generation == repositoryGeneration else { return }
+            guard isActive, generation == repositoryGeneration else { return }
             users = []
             pageState = .error
             errorCategory = Self.category(for: error)
@@ -105,22 +122,61 @@ final class MobileChatConversationCreator {
 
     func openDirectConversation(userID: String) async -> ChatConversationCreateOutcome? {
         let normalizedID = userID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canCreateDirect, !normalizedID.isEmpty else { return nil }
-        let draft = PendingDraft(
-            requestID: pendingDraft?.requestID ?? UUID(),
-            directUserID: normalizedID,
-            groupDraft: nil
-        )
-        return await submit(draft) {
-            try await repository.openDirectConversationResult(
-                userID: normalizedID,
-                clientRequestID: draft.requestID
-            )
+        guard isActive, !isSubmitting, pendingDraft == nil, !normalizedID.isEmpty else { return nil }
+        guard !recovery.failed else { errorCategory = .unknown; return nil }
+        let entry: MobileChatConversationCreationStore.Entry
+        if let existing = directEntry {
+            guard existing.userID == normalizedID else { errorCategory = .conflict; return nil }
+            entry = existing
+        } else {
+            guard canCreateDirect else { return nil }
+            entry = .init(id: UUID(), context: context, userID: normalizedID, phase: .prepared)
+            guard recovery.reserve(entry) else { errorCategory = .unknown; return nil }
+        }
+        guard recovery.beginExecution(entry) else { return nil }
+        submitting = true
+        errorCategory = nil
+        let generation = repositoryGeneration, boundRepository = repository
+        defer {
+            recovery.endExecution(entry)
+            submitting = false
+            applyDeferredRepositoryIfNeeded()
+        }
+        do {
+            let outcome: ChatConversationCreateOutcome
+            if entry.phase == .submitted {
+                outcome = try await boundRepository.recoverDirectConversation(userID: entry.userID, clientRequestID: entry.id)
+            } else {
+                outcome = try await boundRepository.openDirectConversationResult(userID: entry.userID, clientRequestID: entry.id) { [weak self] in
+                    try await MainActor.run {
+                        guard let self, self.isActive, self.repositoryGeneration == generation, !Task.isCancelled else {
+                            throw CancellationError()
+                        }
+                        try self.recovery.markSubmitted(entry)
+                    }
+                }
+            }
+            let unfinished = outcome.result.status == .submittedButUnverified
+                || outcome.result.status == .cancellationRequestedAfterSubmission
+                || outcome.result.status == .partialSuccess
+            if !unfinished, !recovery.finish(entry) {
+                if isActive, generation == repositoryGeneration { errorCategory = .unknown }
+                return nil
+            }
+            guard isActive, generation == repositoryGeneration else { return nil }
+            errorCategory = Self.category(for: outcome.result)
+            return outcome
+        } catch {
+            if directEntry?.phase == .prepared, !recovery.failed { recovery.finish(entry) }
+            guard isActive, generation == repositoryGeneration else { return nil }
+            errorCategory = recovery.failed ? .unknown
+                : (directEntry?.phase == .submitted ? .partialFailure : Self.category(for: error))
+            return nil
         }
     }
 
     func createGroup(title: String, memberIDs: [String]) async -> ChatConversationCreateOutcome? {
-        guard canCreateGroup else { return nil }
+        guard isActive, canCreateGroup, directEntry == nil, !recovery.failed else { return nil }
         let requestID = pendingDraft?.requestID ?? UUID()
         let groupDraft: ChatGroupDraft
         do {
@@ -136,7 +192,6 @@ final class MobileChatConversationCreator {
         }
         let draft = PendingDraft(
             requestID: requestID,
-            directUserID: nil,
             groupDraft: groupDraft
         )
         return await submit(draft) {
@@ -152,10 +207,11 @@ final class MobileChatConversationCreator {
             errorCategory = .conflict
             return nil
         }
-        isSubmitting = true
+        submitting = true
+        let generation = repositoryGeneration
         errorCategory = nil
         defer {
-            isSubmitting = false
+            submitting = false
             applyDeferredRepositoryIfNeeded()
         }
         do {
@@ -171,6 +227,7 @@ final class MobileChatConversationCreator {
                 pendingRequiresReadbackOnly = false
                 errorCategory = Self.category(for: outcome.result)
             }
+            guard isActive, generation == repositoryGeneration else { return nil }
             return outcome
         } catch is CancellationError {
             return nil
@@ -193,26 +250,15 @@ final class MobileChatConversationCreator {
     ) async throws -> ChatConversationCreateOutcome {
         do {
             let conversations = try await repository.listConversations()
-            let confirmed: ChatConversation?
-            if let userID = draft.directUserID {
-                confirmed = conversations.first {
-                    $0.kind == .direct && $0.memberIDs.contains(userID)
+            let groupDraft = draft.groupDraft
+            var confirmed: ChatConversation?
+            for conversation in conversations
+            where conversation.kind == .group && !conversation.isEncrypted && conversation.title == groupDraft.title {
+                let members = try await repository.listConversationMembers(conversationID: conversation.id)
+                if Set(groupDraft.memberIDs).isSubset(of: Set(members.map(\.id))) {
+                    confirmed = conversation
+                    break
                 }
-            } else if let groupDraft = draft.groupDraft {
-                var match: ChatConversation?
-                for conversation in conversations
-                where conversation.kind == .group && conversation.title == groupDraft.title {
-                    let members = try await repository.listConversationMembers(
-                        conversationID: conversation.id
-                    )
-                    if Set(groupDraft.memberIDs).isSubset(of: Set(members.map(\.id))) {
-                        match = conversation
-                        break
-                    }
-                }
-                confirmed = match
-            } else {
-                confirmed = nil
             }
             return try readbackOutcome(draft: draft, confirmedConversation: confirmed)
         } catch {
@@ -237,9 +283,7 @@ final class MobileChatConversationCreator {
                     : (cancelled
                         ? .cancellationRequestedAfterSubmission
                         : .submittedButUnverified),
-                operation: draft.groupDraft == nil
-                    ? "chatDirectConversationCreate"
-                    : "chatGroupCreate",
+                operation: "chatGroupCreate",
                 submitted: true,
                 requiresRefresh: !confirmed,
                 counts: MutationResultCounts(
@@ -282,7 +326,6 @@ final class MobileChatConversationCreator {
 
     private struct PendingDraft: Equatable {
         let requestID: UUID
-        let directUserID: String?
-        let groupDraft: ChatGroupDraft?
+        let groupDraft: ChatGroupDraft
     }
 }

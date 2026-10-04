@@ -3794,7 +3794,7 @@
 "mobile.chat.create.title" = "New Conversation";
 "mobile.chat.create.close" = "Close";
 "mobile.chat.create.submit" = "Create";
-"mobile.chat.create.review.action" = "Check Result";
+"mobile.chat.create.review.action" = "Refresh Chat";
 "mobile.chat.create.type" = "Conversation Type";
 "mobile.chat.create.direct" = "Direct";
 "mobile.chat.create.group" = "Private Group";
@@ -3812,8 +3812,8 @@
 "mobile.chat.create.filtered-empty.title" = "No Matching People";
 "mobile.chat.create.filtered-empty.message" = "Try a different name or clear the search.";
 "mobile.chat.create.clear-search" = "Show All";
-"mobile.chat.create.review.title" = "Check Before Trying Again";
-"mobile.chat.create.review.message" = "The NAS may have created this conversation. Check the result before trying again; the creation request won’t be sent twice.";
+"mobile.chat.create.review.title" = "Chat Is Not Available Yet";
+"mobile.chat.create.review.message" = "Refresh to open this chat when it becomes available.";
 "mobile.chat.create.permission" = "You don’t have permission to create this conversation. Ask the NAS administrator to check your Chat access.";
 "mobile.chat.create.authentication" = "Your login has expired. Sign in again, then check whether the conversation was created.";
 "mobile.chat.create.unsupported" = "This NAS or Chat Server version doesn’t offer this conversation type.";
@@ -6220,3 +6220,7 @@
 "mobile.chat.announcement.unpin" = "Remove announcement";
 
 "mobile.chat.close.progress" = "Closing conversations…";
+
+"mobile.chat.create.open" = "Open Chat";
+"mobile.chat.create.opening" = "Opening chat…";
+"mobile.chat.create.storage-error.title" = "Unable to Save Chat Progress";

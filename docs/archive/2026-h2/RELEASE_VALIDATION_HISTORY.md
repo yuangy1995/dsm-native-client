@@ -1389,3 +1389,44 @@ iPad 使用相同测试命令，将目标改为 `A31ABDE2-186F-43DD-8D40-5EB9511
 | 本地化与契约 | Apple 5969 / Android 2188 / Windows 3402；29 组响应 / 48 私有引用；170 组请求 / 1 写结果，均通过 |
 
 日志/结果包位于本轮临时工作目录，不进入源码；本切片无新界面或新移动转发 UI 验收。移动批量、新联系人创建恢复、本人批量删除和 M4c–M8 继续实施。真实 NAS/时钟偏差/同毫秒消息/附件内容及多人并发仍未验证；维持唯一归属不足时保留未知，不扩大匹配条件或自动重发。共享增量及五端影响见[高级动作契约](../../api/discovery/endpoints/chat-advanced-actions.md#2026-10-04-apple-转发恢复增量)。
+
+## 2026-10-05 移动 M4b3b2 新联系人单聊恢复
+
+范围为转发前置的新联系人普通单聊创建/打开与重启恢复。共享新增写前保存回调和独立只读恢复，旧调用保留；完整用户/会话预检之后才保存提交阶段，普通单聊必须精确匹配当前用户与对端且未加密。移动独立文件只存账号上下文、请求/用户身份与阶段，准备状态可由用户继续，提交状态只能读取。共享执行占用防止旧请求执行期间提前恢复；完成记录保存失败仍保留保护，同配置档换账号或重新绑定后旧结果不导航当前页面。
+
+本轮新增 6 项网络测试、6 项存储测试、9 项模型测试、4 项实际 Repository/移动包装器集成测试及 3 项界面测试。分离的集成与只读对抗复核检查保存先后、缺回执、重启、执行锁、身份绑定、终态落盘失败与能力撤回；补上新建能力消失后仍显示未完成单聊恢复入口的缺口，并删除原单聊内存回读死分支。群聊持久恢复继续 M4b4，不能以本切片的单聊结果代替。
+
+实际命令（仓库根目录）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter DsmChatRepositoryTests
+swift test --package-path apple --jobs 2
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatUITests/test新联系人打开单聊并进入会话 -only-testing:DsmMobileUITests/MobileChatUITests/test新联系人创建中断重启后刷新打开原单聊 -only-testing:DsmMobileUITests/MobileChatUITests/test中文深色大字号新建联系人空列表和加载失败 -only-testing:DsmMobileUITests/MobileChatUITests/test聊天搜索打开原消息并发送线程回复 -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4b3b-direct-iphone3.xcresult
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash
+python3 tools/localization/check_localization.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/codex/check_documentation.py --strict-release
+git diff --check
+```
+
+iPad 将目标改为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，使用 `m4b3b-direct-ipad3.xcresult`。两台均为 iOS 26.5。首轮聚焦移动 `m4b3b-direct-focused1` 仅选择 MobileChatModelTests / MobileChatConversationCreationStoreTests / MobileChatPresentationTests。界面第 1 轮只运行三项新增 UI 和完整单元；第 2 轮改为 14 项呈现单元与三项 UI，第 3 轮恢复全部单元并追加原聊天搜索/线程 UI。最终第 4 轮使用同一 `test-without-building` 命令，选择 `DsmMobileTests/MobileChatPresentationTests` 与两项新建/恢复 UI，结果分别为 `m4b3b-direct-iphone4.xcresult` / `m4b3b-direct-ipad4.xcresult`。
+
+| 验证 | 已确认结果 |
+| --- | --- |
+| 聚焦共享 | 既有 117 项通过；新增后 123 项中的三项因成功响应 fixture 缺少 Anonymous 返回 data 产生 4 个断言失败；按既有单聊契约修正 fixture 后 123 项零失败，0.410 秒 |
+| 完整共享 | 2577 项 XCTest，172 条既有条件跳过，零失败，39.155 秒；另 12 项 Swift Testing 通过，0.062 秒 |
+| 移动构建 | `m4b3b-direct-build1` 至 `build6` 均通过；新增源文件由锁定 XcodeGen 生成 |
+| 聚焦移动 | 80 项，零失败，2.851 秒 |
+| 第 1 轮单元 | 两端各 1021 项，各 1 条既有设备条件跳过，零失败；iPhone 25.570 秒，iPad 25.426 秒 |
+| 最终单元 | 两端各 1022 项，各 1 条既有设备条件跳过，零失败；iPhone 25.070 秒，iPad 25.033 秒 |
+| 界面定位修正 | 第 1 轮把工具栏外层容器当作按钮读取禁用状态，iPhone 将实际导航栏标题当普通文本查找；第 2 轮新增筛选检查错误选中背景会话搜索栏。均已改为对应按钮/导航栏和明确联系人搜索栏，没有删除功能断言 |
+| 第 3 轮实际 UI | iPad 三项新增及原搜索/线程共 4 项通过；iPhone 恢复、中文三态、原搜索/线程通过，新增筛选后打开流程发现搜索模式隐藏确认操作栏。已改为选择单聊联系人后自动退出搜索，第 4 轮两端复验通过 |
+| 最终第 4 轮 | 两端各 14 项呈现单元通过；两项新建/恢复 UI 全通过，iPhone 73.631 秒，iPad 82.845 秒 |
+| Mac 双架构 | `m4b3b-direct-mac-build1.log` 通过；实际二进制包含 `x86_64 arm64`，未安装或启动 |
+| 本地化与契约 | Apple 5972 / Android 2188 / Windows 3402；29 组响应 / 48 私有引用；170 组请求 / 1 写结果通过 |
+
+已查看首轮恢复页及第二轮普通联系人、中文深色大字号错误页截图。界面去掉恢复/加载/错误页无效搜索框，仅一种会话能力时不显示类型选择，待恢复不依赖联系人列表成功；所有提示描述聊天和恢复动作。最终已检查 iPhone 第 4 轮及 iPad 第 3 轮截图，两端正常、加载、空内容、筛选为空、错误与恢复状态均有实际证据。既有消息页在 iPhone 多按钮时标题被挤压、iPad 窄分栏和大字号背景布局的问题继续 M4c，本切片的新建弹窗验收不代表整个聊天布局完成。临时日志、截图、结果包不进入源码。真实 NAS、系统文件保护与完整辅助功能为 `PENDING_USER_VALIDATION`，具体条件和步骤见[移动主计划 M4b3b2](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3b2-新联系人单聊恢复)。
