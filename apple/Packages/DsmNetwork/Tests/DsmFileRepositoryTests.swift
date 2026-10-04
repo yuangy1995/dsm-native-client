@@ -2449,6 +2449,41 @@ final class DsmFileRepositoryTests: XCTestCase {
         )
     }
 
+    func test文件夹移入和恢复使用真实Repository且不依赖目录大小() async throws {
+        let permission = #""perm":{"adv_right":{"read":true,"write":true,"delete":true}}"#
+        for restore in [false, true] {
+            let source = restore ? "/home/#recycle/folder" : "/home/folder"
+            let destination = restore ? "/home/folder" : "/home/#recycle/folder"
+            let parent = restore ? #",{"name":"home","path":"/home","isdir":true,"additional":{\#(permission)}}"# : ""
+            let baseline = response(#"{"success":true,"data":{"files":[{"name":"folder","path":"\#(source)","isdir":true,"additional":{\#(permission)}}\#(parent)]}}"#)
+            var responses = [baseline]
+            if restore { responses += [mutationInfo(), response(#"{"success":true}"#)] }
+            responses += [response(#"{"success":true,"data":{"taskid":"folder-recycle"}}"#),
+                response(#"{"success":true,"data":{"finished":true}}"#),
+                response(#"{"success":true,"data":{"files":[{"name":"folder","path":"\#(destination)","isdir":true,"additional":{"size":4096}}]}}"#)]
+            let transport = MockHTTPTransport(responses: responses)
+            let repository = try makeRepository(capabilities: restore ? copyMoveCapabilities() : recycleMoveCapabilities(), transport: transport)
+            let item = FileItem(profileID: repository.profileID, name: "folder", path: source, kind: .directory)
+            let outcome: FileRecycleMutationOutcome
+            if restore {
+                outcome = try await repository.restoreFromRecycleResult(.init(profileID: repository.profileID, item: item)) { _, _ in }
+            } else {
+                outcome = try await repository.moveToRecycleResult(.init(profileID: repository.profileID, item: item,
+                    recycleLocation: .init(shareName: "home", sharePath: "/home", recyclePath: "/home/#recycle"))) { _, _ in }
+            }
+            XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+            XCTAssertEqual(outcome.item?.kind, .directory)
+            XCTAssertEqual(outcome.item?.path, destination)
+            let requests = await transport.recordedRequests()
+            let start = try XCTUnwrap(requests.first { requestParameter("method", in: $0) == "start" })
+            XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "start" }.count, 1)
+            XCTAssertEqual(requestParameter("version", in: start), restore ? "3" : "2")
+            XCTAssertEqual(requestParameter("api", in: start), restore ? DsmAPIName.fileStationCopyMove : DsmAPIName.fileStationDelete)
+            if restore { XCTAssertEqual(requestParameter("overwrite", in: start), "false") }
+            else { XCTAssertEqual(requestParameter("recursive", in: start), "true") }
+        }
+    }
+
     func test回收站恢复未知结果会阻断二次提交只回读() async throws {
         let transport = MockHTTPTransport(responses: [
             recycleRestoreBaseline(),
@@ -2481,7 +2516,7 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(methods.suffix(2), ["getinfo", "getinfo"])
     }
 
-    func test回收站写操作拒绝目录伪路径与未发现回收站且零请求() async throws {
+    func test回收站写操作拒绝链接伪路径与未发现回收站且零请求() async throws {
         let transport = MockHTTPTransport(responses: [])
         let repository = try makeRepository(
             capabilities: copyMoveCapabilities(),
@@ -2505,7 +2540,7 @@ final class DsmFileRepositoryTests: XCTestCase {
                     profileID: repository.profileID,
                     name: "folder",
                     path: "/home/#recycle/folder",
-                    kind: .directory
+                    kind: .symlink
                 )
             )
         ) { _, _ in }
@@ -4019,6 +4054,27 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(methods, ["start", "status", "getinfo"])
     }
 
+    func test删除保留文件名尾部空格且请求与回读使用同一原路径() async throws {
+        let paths = ["/home/a.txt", "/home/a.txt "]
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"taskid":"delete-exact"}}"#),
+            response(#"{"success":true,"data":{"finished":true}}"#),
+            mutationInfo(), mutationInfo(),
+        ])
+        let repository = try makeDeleteRepository(transport: transport)
+        let result = try await repository.deleteResult(paths: paths, progress: { _, _ in })
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        XCTAssertEqual(result.counts.succeeded, 2)
+        let requests = await transport.recordedRequests()
+        let start = try XCTUnwrap(requests.first { requestParameter("method", in: $0) == "start" })
+        let encoded = try XCTUnwrap(requestParameter("path", in: start))
+        XCTAssertEqual(try JSONDecoder().decode([String].self, from: Data(encoded.utf8)), paths)
+        let readPaths = try requests.filter { requestParameter("method", in: $0) == "getinfo" }.flatMap {
+            try JSONDecoder().decode([String].self, from: Data(XCTUnwrap(requestParameter("path", in: $0)).utf8))
+        }
+        XCTAssertEqual(readPaths, paths)
+    }
+
     func test删除被服务明确拒绝时返回权限不足() async throws {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":false,"error":{"code":105}}"#),
@@ -4200,18 +4256,15 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(duplicate.errorCategory, .conflict)
     }
 
-    func test删除拒绝根目录和上级路径且不发出请求() async throws {
+    func test删除拒绝根目录上级路径和非绝对原路径且不发出请求() async throws {
         let transport = MockHTTPTransport(responses: [])
         let repository = try makeDeleteRepository(transport: transport)
-
-        let result = try await repository.deleteResult(
-            paths: ["/home/../"],
-            progress: { _, _ in }
-        )
-
-        XCTAssertEqual(result.status, .confirmedFailure)
-        XCTAssertFalse(result.submitted)
-        XCTAssertEqual(result.errorCategory, .validation)
+        for path in ["/", "/home/../", " /home/a.txt"] {
+            let result = try await repository.deleteResult(paths: [path], progress: { _, _ in })
+            XCTAssertEqual(result.status, .confirmedFailure)
+            XCTAssertFalse(result.submitted)
+            XCTAssertEqual(result.errorCategory, .validation)
+        }
         let requests = await transport.recordedRequests()
         XCTAssertTrue(requests.isEmpty)
     }

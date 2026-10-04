@@ -223,7 +223,7 @@ struct MobileFileBrowser: View {
             mutation.activate(profileID: profileID, repository: repository)
             copyMove.activate(profileID: profileID, repository: repository,
                 context: model.activeProfile.map { MobileWorkspaceIdentity($0).storageIdentifier })
-            recycleAction.activate(profileID: profileID, repository: repository)
+            recycleAction.activate(profileID: profileID, repository: repository, context: model.activeProfile.map { MobileWorkspaceIdentity($0).storageIdentifier })
             locations.activate(profileID: profileID, repository: repository)
             guard let profileID, let repository else { return }
             model.fileShareLinkModel.activate(profileID: profileID, repository: repository,
@@ -582,12 +582,12 @@ struct MobileFileBrowser: View {
                     )
                 }
             }
-            if canMoveToRecycle(item) {
+            if canDelete(item) {
                 Button(role: .destructive) {
-                    beginMoveToRecycle(item)
+                    beginDelete(item)
                 } label: {
                     Label(
-                        L10n.string("mobile.files.recycle.move.action"),
+                        L10n.string("mobile.files.recycle.delete.action"),
                         systemImage: "trash"
                     )
                 }
@@ -779,6 +779,16 @@ struct MobileFileBrowser: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             Menu {
+                Button(role: .destructive) { beginBatchRecycle(.delete) } label: {
+                    Label(L10n.string("mobile.files.recycle.delete.action"), systemImage: "trash")
+                }.disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canDelete))
+                    .accessibilityIdentifier("files.batch.delete")
+                if state.location.source == .recycle {
+                    Button { beginBatchRecycle(.restoreFromRecycle) } label: {
+                        Label(L10n.string("mobile.files.recycle.restore.action"), systemImage: "arrow.uturn.backward")
+                    }.disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canRestoreFromRecycle))
+                        .accessibilityIdentifier("files.batch.restore")
+                }
                 Button {
                     model.fileShareLinkModel.begin(for: selectedCopyMoveItems); endCopyMoveSelection()
                 } label: { Label(L10n.string("mobile.files.share-link.action.create"), systemImage: "link.badge.plus") }
@@ -824,7 +834,7 @@ struct MobileFileBrowser: View {
                 ? "checkmark.circle.fill"
                 : "circle"
         )
-        .foregroundStyle(canCopyMove(item) ? Color.accentColor : Color.secondary)
+        .foregroundStyle(canSelectCopyMoveItem(item) ? Color.accentColor : Color.secondary)
         .frame(width: 32, height: 44)
         .accessibilityHidden(true)
     }
@@ -1198,7 +1208,7 @@ struct MobileFileBrowser: View {
 
     private var selectableCopyMoveItems: [FileItem] {
         // 文件和目录共用选择，具体操作继续检查自己的权限和目标限制。
-        state.page.items.filter(canCopyMove)
+        state.page.items.filter { canCopyMove($0) || canDelete($0) || canRestoreFromRecycle($0) }
     }
 
     private var selectedCopyMoveItems: [FileItem] {
@@ -1219,7 +1229,7 @@ struct MobileFileBrowser: View {
     }
 
     private func canSelectCopyMoveItem(_ item: FileItem) -> Bool {
-        canCopyMove(item) && (
+        (canCopyMove(item) || canDelete(item) || canRestoreFromRecycle(item)) && (
             selectedCopyMovePaths.contains(item.path) ||
                 selectedCopyMovePaths.count < MobileFileCopyMoveModel.maximumBatchCount
         )
@@ -1230,7 +1240,7 @@ struct MobileFileBrowser: View {
         if selectedCopyMovePaths.contains(item.path) {
             return L10n.string("mobile.files.batch-selection.selected")
         }
-        if !canCopyMove(item) {
+        if !canCopyMove(item) && !canDelete(item) && !canRestoreFromRecycle(item) {
             return L10n.string("mobile.files.batch-selection.unavailable")
         }
         if selectedCopyMovePaths.count >= MobileFileCopyMoveModel.maximumBatchCount {
@@ -1316,14 +1326,14 @@ struct MobileFileBrowser: View {
         await browser.refreshAfterConfirmedCopyMove(success, repository: repository)
     }
 
-    private func canMoveToRecycle(_ item: FileItem) -> Bool {
+    private func canDelete(_ item: FileItem) -> Bool {
         guard let profileID = model.activeProfile?.id else { return false }
-        return MobileFileRecycleActionModel.canMoveToRecycle(
+        return MobileFileRecycleActionModel.canDelete(
             item: item,
             parentPath: state.currentPath,
             source: state.location.source,
             visibleItems: state.page.items,
-            recycleLocations: locations.state.recycle.locations,
+            readOnlyRoots: locations.state.remote.folders.map(\.item.path),
             profileID: profileID
         )
     }
@@ -1339,17 +1349,22 @@ struct MobileFileBrowser: View {
         )
     }
 
-    private func beginMoveToRecycle(_ item: FileItem) {
-        guard canMoveToRecycle(item), let repository = model.fileRepository else { return }
+    private func beginDelete(_ item: FileItem) {
+        guard canDelete(item), let repository = model.fileRepository else { return }
         prepareForMutation()
-        recycleAction.beginMoveToRecycle(
-            item: item,
-            parentPath: state.currentPath,
-            source: state.location.source,
-            visibleItems: state.page.items,
-            recycleLocations: locations.state.recycle.locations,
-            repository: repository
-        )
+        recycleAction.begin(operation: .delete, items: [item], parentPath: state.currentPath,
+            source: state.location.source, visibleItems: state.page.items,
+            readOnlyRoots: locations.state.remote.folders.map(\.item.path), repository: repository)
+    }
+
+    private func beginBatchRecycle(_ operation: MobileFileRecycleActionOperation) {
+        let items = selectedCopyMoveItems
+        guard !items.isEmpty, let repository = model.fileRepository else { return }
+        prepareForMutation()
+        recycleAction.begin(operation: operation, items: items, parentPath: state.currentPath,
+            source: state.location.source, visibleItems: state.page.items,
+            readOnlyRoots: locations.state.remote.folders.map(\.item.path), repository: repository)
+        if recycleAction.isPresented { endCopyMoveSelection() }
     }
 
     private func beginRestoreFromRecycle(_ item: FileItem) {

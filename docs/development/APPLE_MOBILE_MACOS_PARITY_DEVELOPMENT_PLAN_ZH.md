@@ -30,7 +30,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M1 共用照片状态 | SynologyPhotosModel、PhotoUploadRecoveryStore | 内部 DsmPhotosFeature；平台文件访问/恢复/导出适配；共享 | 已迁入 `DsmPhotosFeature`，Mac 书签适配及旧队列版本保持；两端和 Mac 回归通过，详见验证历史 |
 | M1 旧图库清理 | SynologyPhotosView | 主路由已为 MobileSynologyPhotosView；兼容 | 迁移有效行为后删除旧 File Station 图库路径，保留缓存清理 |
 | M2 浏览、分页及高级搜索 | FileAdvancedSearchView、WorkspaceModel | 触控筛选，iPad 并列详情；List/Search/索引；只读 | M2b 已接多目录/类型/扩展名/大小/日期/所有者/正文条件；搜索沿用共享完整分页，保留正文覆盖不足；两端单元和实际 UI 已通过，证据见 M2b 记录 |
-| M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | M2a 已接多选/目录上传及恢复；M2h1 已补文件/文件夹混合复制移动、逐项结果与重启防重放，两端自动化通过；回收站批量及打包下载仍在实施 |
+| M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | M2a 已接多选/目录上传及恢复；M2h1 已补文件/文件夹混合复制移动、逐项结果与重启防重放，两端自动化通过；M2h2 已补批量删除/恢复及文件夹支持；打包下载仍在实施 |
 | M2 分享与收集 | FileShareCreationView、FileShareManagementView、FileShareAdvancedView | 详情表单/系统分享；Sharing 密码/日期/权限；外部可见写 | M2d 已接批量创建、全部链接编辑/撤销、访问对象/次数、收集和二维码；两端验证通过，未知写保留隔离限制 |
 | M2 压缩、解压、归档浏览 | ArchiveExtractionView；共享 DsmFileFeature/FileArchiveBrowserModel | 包内列表/选择目标与条目；Compress/Extract；数据写 | M2c 已接多项压缩、包内选择/分页及解压、持久记录、取消和输出回读；两端单元/实际 UI 及 Mac 回归通过 |
 | M2 ACL 与所有者 | FilePermissionEditor、FileStationPrincipalPicker | 分步权限/成员选择；原对象与权限快照；高风险写 | M2e 已接显式/继承权限、所有者/群组、具体后果确认和持久未知目标限制；两端单元/实际 UI 与 Mac 回归通过 |
@@ -195,3 +195,17 @@ M2g1 收藏维护已完成 8 项新增模型、两端各 614 项单元及 2 项�
 已完成独立集成与只读安全复核：原始源/目标、账号隔离、目录子树、分页、写前保存/损坏、迟到结果、取消和重复点击均有聚焦证据。7 项新增行为测试在两端各 634 项单元中通过；两端各 5 项新增实际 UI 与原有批量分享回归已有通过证据。共享测试及 Mac 双架构工程构建通过；精确命令、中间失败和修复见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2h1-批量文件夹复制与移动)。
 
 `PENDING_USER_VALIDATION`：iPhone/iPad 真机、专用可丢弃目录和两种账号，混合选择文件/目录并复制、移动；检查嵌套内容、无权限、同名冲突、空目录、取消、断网和重启。预期保留同名原件、逐项结果真实、未知不重放、取消不启动下一项，换账号不显示旧数据。VoiceOver、大字号、外接键盘和实际 NAS 内容完整性尚未验证；仅回传 App/OS/DSM/套件版本、脱敏步骤和错误类别。批量回收站、打包下载、跨 NAS 和 Office 主动回传继续独立实施，不由本小切片宣布 M2 完成。
+
+### M2h2 批量删除与回收站恢复
+
+Mac 证据为 `WorkspaceModel.deleteItems`、`restoreToOriginalLocation` 和 `ModernDeleteConfirmationDialog`；公开 Delete.start/status 只确认删除结果，不保证回收站开启。移动端将单项/批量删除统一为具体后果确认，普通删除可能进入回收站或永久删除，回收站内删除明确无法恢复；恢复保持原位置、拒绝同名覆盖，不自动创建缺失的原目录。iPhone/iPad 均以现有多选、原生确认与逐项结果完成，最多 20 项；文件夹恢复复用共享 CopyMove 源快照/任务/最终回读，补齐共享层原有仅文件限制。
+
+单一修改范围为移动 Recycle、现有文件多选/组合根、双语资源、相关共享回收站校验、测试和本账本。删除为高风险写：提交前重读冻结的源及权限，写前保存独立、受保护且排除备份的 `Recycle/pending-v1.json`，结果未知停止余项，退出/重启/换账号不解除原目标限制；明确结果才移除记录。新记录属已批准 M0–M8 恢复范围，不迁移旧登录格式；回滚停用入口并保留记录。共享变化仅向后兼容接受文件夹，不改请求协议，Mac 必须回归，Windows/Android 记录影响而不改代码。两端各 643 项单元、共享回归和 Mac 双架构构建已通过，五项新增实际 UI 已各有通过证据；自动验证仅使用合成数据，不操作真实 NAS。打包下载、跨 NAS、Office 与 M8 后台能力不属于本切片。
+
+
+M2h2 已完成独立集成及只读对抗复核：共享根/回收站容器、冻结对象/权限重读、原位置与同名冲突、取消后当前项成功、旧账号/旧按钮、写前保存与损坏记录、目录子树及跨操作重放均有聚焦证据。界面不再承诺删除一定进入回收站，也不要求用户辅助核查内部请求。精确命令、首轮失败原因及修复结果见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2h2-批量删除与回收站恢复)。
+
+`PENDING_USER_VALIDATION`：专用可丢弃文件和含嵌套内容的文件夹、启用/停用回收站的共享目录、普通及受限账号、iPhone/iPad 真机。分别确认普通删除、回收站内永久删除、文件/目录恢复及目标同名或原目录缺失；再执行取消、断网、重连和 App 重启。预期不删除未选择目标、不覆盖已有项目、不自动创建原目录、不重放未知操作且不继续余项；删除能否恢复取决于 NAS 设置。实际嵌套内容、NAS 策略、VoiceOver、大字号、键盘尚未验证，只回传版本、脱敏步骤和错误类别。下一切片为打包下载，随后跨 NAS 和 Office 主动回传，M2 尚未整体完成。
+
+
+M2h2 最终安全复核另发现共享 `deleteResult` 裁剪尾部空格会改变真实文件名，已改为保持原路径并增加请求/回读精确一致及非绝对路径拒绝测试。该数据安全修复同时保护 Mac 调用方，未改 Mac App 或发布新安装包；共享与 Mac、移动目标按最终源码重新回归。真实 NAS 仍不参与自动验证。

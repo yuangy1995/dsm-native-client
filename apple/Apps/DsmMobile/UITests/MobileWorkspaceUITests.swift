@@ -665,6 +665,78 @@ final class MobileWorkspaceUITests: XCTestCase {
         attachScreenshot(app, name: "Copy respects actual destination permissions")
     }
 
+    func test批量删除文件和文件夹明确后果且刷新源列表() {
+        let app = launchFixture(state: "recycle-delete"); defer { app.terminate() }
+        beginRecycleBatch(app, restore: false)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "The selected items and folder contents will be deleted. Depending on the NAS recycle bin settings, they may be permanently deleted.")).firstMatch.exists)
+        element("files.recycle.submit", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Completed: 2 · Failed: 0 · Result unavailable: 0 · Cancelled: 0 · Not started: 0"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Inbox, Completed"].exists)
+        attachScreenshot(app, name: "Delete per-item results")
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["This position is empty"].waitForExistence(timeout: 5))
+    }
+
+    func test批量永久删除回收站项目明确无法恢复() {
+        let app = launchFixture(state: "recycle-permanent"); defer { app.terminate() }
+        beginRecycleBatch(app, restore: false, recycle: true)
+        XCTAssertTrue(app.staticTexts["These items are in the recycle bin. Deleting them also deletes all folder contents and cannot be undone."].exists)
+        attachScreenshot(app, name: "Permanent deletion consequence")
+        element("files.recycle.submit", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Completed: 2 · Failed: 0 · Result unavailable: 0 · Cancelled: 0 · Not started: 0"].waitForExistence(timeout: 10))
+    }
+
+    func test批量恢复文件夹和文件返回原位置并保留同名冲突() {
+        let app = launchFixture(state: "recycle-restore-conflict"); defer { app.terminate() }
+        beginRecycleBatch(app, restore: true, recycle: true)
+        element("files.recycle.submit", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Completed: 1 · Failed: 1 · Result unavailable: 0 · Cancelled: 0 · Not started: 0"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Inbox, Completed"].exists)
+        XCTAssertTrue(app.staticTexts["Sample document.txt, The item or destination changed"].exists)
+        attachScreenshot(app, name: "Restore keeps existing destination")
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Inbox"].exists)
+    }
+
+    func test批量删除无权限零写并提供恢复方法() {
+        let app = launchFixture(state: "recycle-readonly"); defer { app.terminate() }
+        beginRecycleBatch(app, restore: false); element("files.recycle.submit", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Completed: 0 · Failed: 2 · Result unavailable: 0 · Cancelled: 0 · Not started: 0"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Inbox, You don’t have permission"].exists)
+        XCTAssertTrue(app.staticTexts["Your account can’t change this item. Ask an administrator for access, then refresh the folder."].exists)
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Inbox"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].exists)
+    }
+
+    func test批量删除未知停止余项且重启不重放() {
+        let app = launchFixture(state: "recycle-unknown"); defer { app.terminate() }
+        beginRecycleBatch(app, restore: false); element("files.recycle.submit", in: app).tap()
+        let summary = "Completed: 0 · Failed: 0 · Result unavailable: 1 · Cancelled: 0 · Not started: 1"
+        XCTAssertTrue(app.staticTexts[summary].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Sample document.txt, Not started"].exists)
+        attachScreenshot(app, name: "Unknown deletion stops remaining items")
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch()
+        beginRecycleBatch(app, restore: false); element("files.recycle.submit", in: app).tap()
+        XCTAssertTrue(app.staticTexts[summary].waitForExistence(timeout: 6))
+        XCTAssertFalse(element("files.recycle.submit", in: app).exists)
+    }
+
+    private func beginRecycleBatch(_ app: XCUIApplication, restore: Bool, recycle: Bool = false) {
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        if recycle {
+            XCTAssertTrue(app.staticTexts["#recycle"].waitForExistence(timeout: 5)); app.staticTexts["#recycle"].tap()
+        }
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
+        element("files.toolbar.more", in: app).tap(); app.buttons["Select Items"].tap()
+        app.staticTexts["Sample document.txt"].tap(); app.staticTexts["Inbox"].tap()
+        element("files.batch.more", in: app).tap()
+        let operation = element(restore ? "files.batch.restore" : "files.batch.delete", in: app)
+        XCTAssertTrue(operation.waitForExistence(timeout: 5)); XCTAssertTrue(operation.isEnabled); operation.tap()
+        XCTAssertTrue(element("files.recycle.submit", in: app).waitForExistence(timeout: 5))
+    }
+
     private func beginCopyMoveBatch(_ app: XCUIApplication, move: Bool) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))

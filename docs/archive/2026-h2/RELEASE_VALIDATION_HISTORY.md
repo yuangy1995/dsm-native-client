@@ -714,3 +714,32 @@ M2g2 最后复核补充：当远程访问范围不是“指定账号”时，页
 `PENDING_USER_VALIDATION`：专用可丢弃文件夹、普通/受限账号、iPhone/iPad 真机，分别验证混合复制/移动后的嵌套内容、空目录、同名和权限、取消/断网/重启/账号切换。预期无覆盖、无重放、无继续启动未开始项，实际结果与 NAS 一致。VoiceOver、大字号、键盘和真实 NAS 内容完整性未验证；只回传版本、脱敏步骤及错误类别，不回传账号、主机、路径、凭据或内容。批量回收站、打包下载、跨 NAS 和 Office 仍为未完成源码范围。
 
 M2h1 截图收尾：完成或结果暂不可用时，导航栏显示“关闭”，不再显示“取消”以暗示能撤销已完成操作。最终 `m2h1-build6.log` 构建通过；`m2h1-iphone5.xcresult` 和 `m2h1-ipad5.xcresult` 的混合复制/关闭返回源列表 UI 各 1/1 通过。iPad 测后恢复浅色；最终本地化、文档和差异门禁通过。
+
+
+## 2026-10-04 移动 M2h2 批量删除与回收站恢复
+
+单项和最多 20 项的删除/恢复沿用现有 Recycle 模型、文件多选和原生确认页，文件与文件夹可混合选择。普通删除明确可能永久删除，回收站内删除明确无法恢复；恢复原位置且拒绝同名覆盖，不自动新建缺失的原目录。逐项保留成功/失败/未知/取消/未开始结果，明确失败继续余项，未知或取消停止余项。删除前重新读取冻结对象及明确的删除权限；共享 Delete 完成后确认原目标消失，不能把权限拒绝当作删除成功。
+
+现有 blocker 扩展为独立、受保护且排除备份的 `Recycle/pending-v1.json`，每项写前保存账号上下文和原源/目标，失败则零请求；退出登录不清理未知记录，删除配置只清理自身。未知记录覆盖源/目标子树及删除/恢复之间的重复操作；旧按钮和迟到结果不能影响新账号/弹窗，迟到明确结果只清理原记录。保留原登录格式、身份与权限。共享 `moveToRecycleResult` / `restoreFromRecycleResult` 补齐文件夹，继续路径/类型/修改时间/权限/同名/结果回读；目录大小不同不判为失败，也不声称逐个校验所有子文件。
+
+独立集成和只读对抗复核检查共享根、回收站容器、远程位置、源快照、权限、原目录缺失、同名冲突、重复点击、取消、进程退出、损坏/不可写记录、旧账号和迟到进度。普通删除不再依赖发现回收站来承诺可恢复；旧照片兼容入口同步删除风险文案。未访问真实 NAS 或执行真实文件写入；Mac App、Windows、Android 无源码修改，API 文档记录五端增量影响。
+
+- `swift test --package-path apple --jobs 4 --filter 'DsmFileRepositoryTests/test文件夹移入和恢复|DsmFileRepositoryTests/test回收站写操作拒绝|DsmFileRepositoryTests/test回收站恢复未知'`：**3/3 通过**，直接经过真实 Repository 请求编码和最终读取；旧“目录不支持”用例改为符号链接拒绝，并另加目录成功测试，未降低身份或权限断言。
+- `swift test --package-path apple --jobs 4`：**2431 项 XCTest，172 项既有跳过，0 失败**；另 **12 项 Swift Testing 通过**（`m2h2-shared.log`）。
+- XcodeGen 2.46.0 重复生成 SHA-256 同为 `04bc3ab7c2506aec280b31c93f3c59501545d8085a2e3fe1e303dbde6df725cb`。移动构建命令为 `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`。第一轮 Swift 6 并发闭包捕获错误、第三轮结果标题放置错误均已修正；第二、四、五轮构建通过，不把失败轮记为通过。
+- 两端 `xcodebuild test-without-building`、同工程/方案/构建目录、`-parallel-testing-enabled NO`；iPhone ID 如上，iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。`m2h2-iphone1.xcresult` / `m2h2-ipad1.xcresult` 的 `-only-testing:DsmMobileTests` **各 643 项通过**。9 项新增行为测试覆盖混合删除/恢复、明确失败继续、源被替换/权限未知、写前保存/重启、取消、迟到与旧按钮、恢复记录损坏、子树/账号隔离和伪成功。
+- 首轮两端各 6 条实际 UI 中 4 条通过（权限拒绝、未知后实际重启、原有混合复制、永久删除）；普通删除断言触发 XCTest 128 字符查询限制，改为完整文字谓词匹配。恢复测试的合成目录详情误用共享显示名，真实 Repository 按规范身份拒绝；修正夹具的 `getinfo` 目录名，没有放宽检查。第二轮两端普通删除/源刷新、文件夹恢复成功/同名文件保留均通过，五项新增及一项原有 UI 已各有独立通过记录，完整第二轮结果另记下文。
+- Mac 命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过（`m2h2-macos-build.log`）；`lipo -archs` 确认 x86_64/arm64。未安装、启动或发布 Mac 包。
+
+合成日志、结果包与截图只保留于本机临时目录，不入仓库。iPhone 浅色未知结果已人工查看；第二轮 iPad 使用深色检查确认与结果页。真实 NAS/嵌套内容/权限策略和真机辅助功能按主计划 `PENDING_USER_VALIDATION` 后置，不能由模拟器或构建通过代替。下一切片为打包下载，跨 NAS 和 Office 仍为未完成源码范围。
+
+
+M2h2 第二轮 `m2h2-iphone2.xcresult` 与 `m2h2-ipad2.xcresult` 各 **3/3 UI 通过**（68.298 秒 / 70.589 秒），包含普通删除、混合恢复冲突和永久删除。已人工查看 iPhone 浅色未知结果、iPad 深色永久删除确认及恢复部分成功截图。确认页收尾移除重复“项目”标签，删除按钮明确使用红色，动作后果和权限门不变；重复点击的显式断言并入现有取消用例，未增加或替换测试数量。最终界面和聚焦重测结果继续记录于下文。
+
+
+M2h2 `m2h2-build7.log` 通过；`m2h2-iphone3.xcresult` / `m2h2-ipad3.xcresult` 各 **15 项回收站单元 + 1 项永久删除 UI 全部通过**，包含新增的重复点击断言及确认页文案/红色按钮收尾。
+
+最终安全复核发现共享 `deleteResult` 使用 `trimmingCharacters` 会把尾部空格文件名改为另一目标。已改为按原路径去重，保持提交、互斥和回读身份一致；新增合成测试同时删除带/不带尾部空格的两个独立路径，断言请求与逐项回读均未混淆。既有非法路径测试增强为根路径、上级路径及前导空格非绝对路径均零请求。此为防止误删的必要共享修复，不涉及实际 NAS，不更改 Mac App，未另行发布 macOS；最终共享/两端/Mac 重跑结果继续记于下文。
+
+
+M2h2 最终原路径修复后，`swift test --package-path apple --jobs 4`（`m2h2-shared2.log`）为 **2432 项 XCTest、172 既有跳过、0 失败，另 12 项 Swift Testing 通过**。相同 Mac 构建命令再次通过（`m2h2-macos-build2.log`）；移动 `m2h2-build8.log` 通过，随后两端 `m2h2-iphone4.xcresult` / `m2h2-ipad4.xcresult` 正常批量删除及源列表刷新 UI **各 1/1 通过**。第二、三、四轮是针对实际修正的重测，第一轮失败不计整体通过。最终本地化检查为 Apple 5707 / Android 2188 / Windows 3402，严格文档和差异门禁通过，iPad 测后恢复浅色。

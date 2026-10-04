@@ -55,6 +55,7 @@
 		38DC76513C796CE754CA595C /* MobileFileCopyMoveModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 245A9E8184A8B60E2305C61D /* MobileFileCopyMoveModel.swift */; };
 		39F96BDF05F27E180FDE122A /* MobileNasHealthState.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE274AAC7E0CBED97B002C59 /* MobileNasHealthState.swift */; };
 		3A6A3DF703F83217A7365159 /* MobileDocumentTransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15C27EF86330C93C5B8B459 /* MobileDocumentTransferTests.swift */; };
+		3BACCF8D8EE571AB44DDBD3F /* MobileFileRecycleBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83FF4885ACBC3D2582FEC69 /* MobileFileRecycleBatchTests.swift */; };
 		3CAE31A0ABF71FEF9B4B953E /* MobileFileBrowserState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 563278D949C1A32C01CCE48E /* MobileFileBrowserState.swift */; };
 		3CCBC884D014C8567DFF1877 /* MobileDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A92BB36D80B20C0388F7C6 /* MobileDesignTokens.swift */; };
 		3D9AF86DF99B9B17F37F81F2 /* MobileRemoteLocationsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D31405F8EF6BE5CFAF9EBA /* MobileRemoteLocationsModel.swift */; };
@@ -384,6 +385,7 @@
 		C50CF206BC2C562330B40FE6 /* MobileActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileActivityView.swift; sourceTree = "<group>"; };
 		C7B24736F93A76A35A8BFAE3 /* MobileFileCopyMoveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFileCopyMoveView.swift; sourceTree = "<group>"; };
 		C7E3C64B837651EFE7D18295 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C83FF4885ACBC3D2582FEC69 /* MobileFileRecycleBatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFileRecycleBatchTests.swift; sourceTree = "<group>"; };
 		CA92F3241E2F6936AED99DAB /* MobileContainersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileContainersView.swift; sourceTree = "<group>"; };
 		CBA7A2040AE214D55509151C /* MobileSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileSettingsStore.swift; sourceTree = "<group>"; };
 		CD79516204D8F6367D61EC89 /* MobileFileShareLinkIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFileShareLinkIntegrationTests.swift; sourceTree = "<group>"; };
@@ -823,6 +825,7 @@
 				2CE444F597D515DF65947F6B /* MobileFilePreviewPresentationTests.swift */,
 				5B0C6D7E3892F3433F57E770 /* MobileFileRecycleActionModelTests.swift */,
 				47FEE7AEDA7E118C66AF9696 /* MobileFileRecycleActionPresentationTests.swift */,
+				C83FF4885ACBC3D2582FEC69 /* MobileFileRecycleBatchTests.swift */,
 				37927DBA89F3FB3AF9F14D15 /* MobileFileSettingsTests.swift */,
 				CD79516204D8F6367D61EC89 /* MobileFileShareLinkIntegrationTests.swift */,
 				A02E9A94EB5A4C38A3CFAE7B /* MobileFileShareLinkModelTests.swift */,
@@ -1256,6 +1259,7 @@
 				47E8C57E2F7F7F29055F51CB /* MobileFilePreviewPresentationTests.swift in Sources */,
 				C9E92410C1CB08B4A9198061 /* MobileFileRecycleActionModelTests.swift in Sources */,
 				4ABCFAD4455CA645AD2A33FA /* MobileFileRecycleActionPresentationTests.swift in Sources */,
+				3BACCF8D8EE571AB44DDBD3F /* MobileFileRecycleBatchTests.swift in Sources */,
 				8E2DEC669547F79FA2FBC7C7 /* MobileFileSettingsTests.swift in Sources */,
 				E83543BCF1E11497640AA0DE /* MobileFileShareLinkIntegrationTests.swift in Sources */,
 				15A65C2A073C2588FF41C02E /* MobileFileShareLinkModelTests.swift in Sources */,

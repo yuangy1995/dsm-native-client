@@ -225,8 +225,8 @@ actor FileRecycleMutationCoordinator {
         guard let observedSource = baseline.first(where: { $0.path == prepared.sourcePath }),
               observedSource.profileID == prepared.profileID,
               hasCanonicalIdentity(observedSource),
-              observedSource.kind == .file,
-              observedSource.sizeBytes == prepared.source.sizeBytes,
+              observedSource.kind == prepared.source.kind,
+              (observedSource.kind == .directory || observedSource.sizeBytes == prepared.source.sizeBytes),
               observedSource.times?.modifiedAt == prepared.source.times?.modifiedAt,
               !isRecyclePath(observedSource.path),
               !isRemote(observedSource) else {
@@ -291,7 +291,7 @@ actor FileRecycleMutationCoordinator {
               }),
               hasCanonicalIdentity(destination),
               destination.kind == review.source.kind,
-              destination.sizeBytes == review.source.sizeBytes,
+              (review.source.kind == .directory || destination.sizeBytes == review.source.sizeBytes),
               isRecyclePath(destination.path),
               !isRemote(destination) else {
             return .mismatch

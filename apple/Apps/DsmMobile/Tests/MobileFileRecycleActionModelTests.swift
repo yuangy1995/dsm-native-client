@@ -23,6 +23,9 @@ private actor FileRecycleActionRepositoryStub: MobileFileRecycleMutating {
         self.restoreReply = restoreReply
     }
 
+    func getInfo(paths: [String]) async throws -> [FileItem] { throw StubError.missingReply }
+    func deleteResult(paths: [String], progress: @escaping FileTransferProgress) async throws -> MutationResult { throw StubError.missingReply }
+
     func moveToRecycleResult(
         _ request: FileMoveToRecycleRequest,
         progress: @escaping FileTransferProgress

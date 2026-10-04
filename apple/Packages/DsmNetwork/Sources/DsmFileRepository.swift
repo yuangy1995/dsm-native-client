@@ -2795,9 +2795,8 @@ public actor DsmFileRepository: FileRepository {
             )
         }
 
-        let normalizedPaths = Array(Set(paths.map {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines)
-        })).sorted()
+        // 文件名中的尾部空白属于目标身份，删除不能通过裁剪改为另一个文件。
+        let normalizedPaths = Array(Set(paths)).sorted()
         guard !normalizedPaths.isEmpty,
               normalizedPaths.allSatisfy(Self.isValidDeletionPath) else {
             return try makeMutationResult(
@@ -3224,9 +3223,7 @@ public actor DsmFileRepository: FileRepository {
         let fallbackDestination = request.recycleLocation.recyclePath + "/" + request.item.name
         guard request.profileID == profileID,
               request.item.profileID == profileID,
-              request.item.kind == .file,
-              let sourceSize = request.item.sizeBytes,
-              sourceSize >= 0,
+              Self.isSupportedCopyMoveSource(request.item),
               let sourcePath = Self.normalizedMutationPath(request.item.path),
               sourcePath == request.item.path,
               !Self.isRecycleMutationPath(sourcePath),
@@ -3292,9 +3289,7 @@ public actor DsmFileRepository: FileRepository {
         let operation = "restoreFromRecycle"
         guard request.profileID == profileID,
               request.item.profileID == profileID,
-              request.item.kind == .file,
-              let sourceSize = request.item.sizeBytes,
-              sourceSize >= 0,
+              Self.isSupportedCopyMoveSource(request.item),
               let sourcePath = Self.normalizedMutationPath(request.item.path),
               sourcePath == request.item.path,
               Self.isRecycleMutationPath(sourcePath),

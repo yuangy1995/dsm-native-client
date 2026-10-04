@@ -12,13 +12,19 @@ struct MobileCopyMoveUIFixture {
     mutating func response(api: String, method: String, fields: [URLQueryItem], state: String) throws -> [String: Any]? {
         if !initialized {
             initialized = true
+            if state.hasPrefix("recycle-restore") || state == "recycle-permanent" {
+                items = ["/fixture": true, "/fixture/#recycle": true,
+                    "/fixture/#recycle/Inbox": true, "/fixture/#recycle/Inbox/Nested.txt": false,
+                    "/fixture/#recycle/Sample document.txt": false]
+                if state == "recycle-restore-conflict" { items["/fixture/Sample document.txt"] = false }
+            }
             if state == "copy-conflict" { items["/output/Sample document.txt"] = false }
         }
         func field(_ name: String) -> String { fields.first { $0.name == name }?.value ?? "" }
         func row(_ path: String, _ directory: Bool) -> [String: Any] {
-            ["name": path == "/fixture" ? "Sample folder" : (path as NSString).lastPathComponent,
+            ["name": path == "/fixture" && method == "list_share" ? "Sample folder" : (path as NSString).lastPathComponent,
              "path": path, "isdir": directory, "additional": ["size": 10,
-                "perm": ["adv_right": ["read": true, "write": state != "copy-readonly", "delete": true]], "time": ["mtime": 1000]]]
+                "perm": ["adv_right": ["read": true, "write": state != "copy-readonly", "delete": state != "recycle-readonly"]], "time": ["mtime": 1000]]]
         }
         switch (api, method) {
         case (DsmAPIName.fileStationList, "list_share"):
@@ -30,6 +36,15 @@ struct MobileCopyMoveUIFixture {
         case (DsmAPIName.fileStationList, "getinfo"):
             let paths = try JSONDecoder().decode([String].self, from: Data(field("path").utf8))
             return ["files": paths.compactMap { path in items[path].map { row(path, $0) } }]
+        case (DsmAPIName.fileStationDelete, "start"):
+            if state == "recycle-unknown" { throw URLError(.networkConnectionLost) }
+            let paths = try JSONDecoder().decode([String].self, from: Data(field("path").utf8))
+            for source in paths {
+                items = items.filter { $0.key != source && !$0.key.hasPrefix(source + "/") }
+            }
+            return ["taskid": "fixture-delete-task"]
+        case (DsmAPIName.fileStationDelete, "status"):
+            return ["finished": true]
         case (DsmAPIName.fileStationCopyMove, "start"):
             if state == "copy-unknown" { throw URLError(.networkConnectionLost) }
             let paths = try JSONDecoder().decode([String].self, from: Data(field("path").utf8))

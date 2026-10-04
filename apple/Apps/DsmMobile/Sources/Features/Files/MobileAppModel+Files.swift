@@ -13,7 +13,6 @@ extension MobileAppModel {
 
     func purgeFileLocations(profileID: UUID) {
         fileBrowserModel.locations.purge(profileID: profileID)
-        MobileFileRecycleActionReviewBlocker.shared.purge(profileID: profileID)
     }
 
     func openDirectory(_ item: FileItem) {

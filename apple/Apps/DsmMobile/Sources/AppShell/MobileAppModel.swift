@@ -138,6 +138,8 @@ final class MobileAppModel {
         self.mutationCoordinator = mutationCoordinator
         self.fileBrowserModel = MobileFileBrowserModel(copyMove: MobileFileCopyMoveModel(
             blocker: MobileFileCopyMoveReviewBlocker(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("CopyMove", isDirectory: true))
+        ), recycleAction: MobileFileRecycleActionModel(
+            blocker: MobileFileRecycleActionReviewBlocker(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Recycle", isDirectory: true))
         ))
         self.fileShareLinkModel = MobileFileShareLinkModel(
             mutationCoordinator: mutationCoordinator,
