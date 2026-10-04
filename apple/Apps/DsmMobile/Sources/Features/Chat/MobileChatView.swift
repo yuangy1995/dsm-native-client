@@ -12,6 +12,7 @@ struct MobileChatView: View {
     @State private var createdCompactConversation: ChatConversation?
     @State private var presentsMessageSearch = false
     @State private var presentsForwardRecords = false
+    @State private var presentsDeletionRecords = false
 
     var body: some View {
         Group {
@@ -22,6 +23,12 @@ struct MobileChatView: View {
             }
         }
         .toolbar {
+            if let deletion = model.chatModel.deletion, (!deletion.entries.isEmpty || deletion.recovery.failed), model.chatModel.state.visibleConversationID == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { presentsDeletionRecords = true } label: { Image(systemName: "trash").frame(width: 44, height: 44) }
+                        .accessibilityLabel(L10n.string("mobile.chat.deletion.records")).accessibilityIdentifier("chat-deletion-records")
+                }
+            }
             if let forwarding = model.chatModel.forwarding, (!forwarding.entries.isEmpty || forwarding.recovery.failed), model.chatModel.state.visibleConversationID == nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { presentsForwardRecords = true } label: { Image(systemName: "arrowshape.turn.up.right").frame(width: 44, height: 44) }
@@ -63,6 +70,11 @@ struct MobileChatView: View {
             if let management = model.chatModel.management {
                 MobileChatConversationManagementSheet(chat: model.chatModel, management: management)
                     .id(ObjectIdentifier(management))
+            }
+        }
+        .sheet(isPresented: $presentsDeletionRecords) {
+            if let deletion = model.chatModel.deletion {
+                MobileChatDeletionRecordsSheet(deletion: deletion).id(ObjectIdentifier(deletion))
             }
         }
         .sheet(isPresented: $presentsForwardRecords) {
@@ -680,7 +692,9 @@ private struct MobileChatMessagesView: View {
     @State private var presentsPollCreation = false
     @State private var timedList: MobileChatTimedListKind?
     @State private var presentsForwardSelection = false
+    @State private var presentsDeletionSelection = false
     @State private var presentsForwardRecords = false
+    @State private var presentsDeletionRecords = false
 
     var body: some View {
         Group {
@@ -736,6 +750,14 @@ private struct MobileChatMessagesView: View {
                     .accessibilityIdentifier("chat-search-current")
                 }
                 Menu {
+                    if !conversation.isEncrypted, chat.deletion?.canDelete == true {
+                        Button { presentsDeletionSelection = true } label: { Label(L10n.string("mobile.chat.deletion.select"), systemImage: "trash") }
+                            .accessibilityIdentifier("chat-deletion-select")
+                    }
+                    if let deletion = chat.deletion, !deletion.entries.isEmpty || deletion.recovery.failed {
+                        Button { presentsDeletionRecords = true } label: { Label(L10n.string("mobile.chat.deletion.records"), systemImage: "list.bullet") }
+                            .accessibilityIdentifier("chat-deletion-records")
+                    }
                     if !conversation.isEncrypted, chat.forwarding?.canForward == true {
                         Button { presentsForwardSelection = true } label: { Label(L10n.string("mobile.chat.forward.select"), systemImage: "arrowshape.turn.up.right") }
                             .accessibilityIdentifier("chat-forward-select")
@@ -784,6 +806,16 @@ private struct MobileChatMessagesView: View {
         }
         .sheet(item: $timedList) { kind in
             if let timed = chat.timedActions { MobileChatTimedListSheet(timed: timed, chat: chat, conversation: conversation, kind: kind) }
+        }
+        .sheet(isPresented: $presentsDeletionSelection) {
+            if let deletion = chat.deletion {
+                MobileChatDeletionSheet(chat: chat, deletion: deletion).id(ObjectIdentifier(deletion))
+            }
+        }
+        .sheet(isPresented: $presentsDeletionRecords) {
+            if let deletion = chat.deletion {
+                MobileChatDeletionRecordsSheet(deletion: deletion).id(ObjectIdentifier(deletion))
+            }
         }
         .sheet(isPresented: $presentsForwardSelection) {
             if let forwarding = chat.forwarding {
@@ -1086,11 +1118,13 @@ struct MobileChatMessageRow: View {
     var allowsThreadNavigation = true
     var showsAnnouncementBadge = true
     @State private var confirmsDelete = false
+    @State private var deletionConfirmation: ChatMessage?
     @State private var presentsEdit = false
     @State private var presentsPoll = false
     @State private var presentsThread = false
     @State private var presentsReminder = false
     @State private var presentsForward = false
+    @State private var presentsDeletionRecords = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1192,6 +1226,11 @@ struct MobileChatMessageRow: View {
         .sheet(isPresented: $presentsReminder) {
             if let timed = chat.timedActions { MobileChatReminderEditor(timed: timed, original: message) }
         }
+        .sheet(isPresented: $presentsDeletionRecords) {
+            if let deletion = chat.deletion {
+                MobileChatDeletionRecordsSheet(deletion: deletion).id(ObjectIdentifier(deletion))
+            }
+        }
         .sheet(isPresented: $presentsForward) {
             if let forwarding = chat.forwarding {
                 MobileChatForwardSheet(forwarding: forwarding, messages: [message], initialSelection: [message.id])
@@ -1218,7 +1257,7 @@ struct MobileChatMessageRow: View {
             }
         }
         .modifier(MobileChatDeleteAccessibilityAction(isEnabled: chat.canDeleteMessage(message)) {
-            confirmsDelete = true
+            deletionConfirmation = message; confirmsDelete = true
         })
         .confirmationDialog(
             L10n.string("mobile.chat.message.delete.confirm.title"),
@@ -1226,7 +1265,7 @@ struct MobileChatMessageRow: View {
             titleVisibility: .visible
         ) {
             Button(L10n.string("mobile.chat.message.action.delete"), role: .destructive) {
-                Task { await chat.deleteMessage(message) }
+                if let original = deletionConfirmation { Task { await chat.deleteMessage(original) } }
             }
             Button(L10n.string("mobile.chat.message.delete.confirm.cancel"), role: .cancel) {}
         } message: {
@@ -1238,7 +1277,7 @@ struct MobileChatMessageRow: View {
     private var deleteActionButton: some View {
         if chat.canDeleteMessage(message) {
             Button(role: .destructive) {
-                confirmsDelete = true
+                deletionConfirmation = message; confirmsDelete = true
             } label: {
                 Label(
                     L10n.string("mobile.chat.message.action.delete"),
@@ -1270,14 +1309,12 @@ struct MobileChatMessageRow: View {
             )
             .font(.footnote)
             .foregroundStyle(.secondary)
-        } else if chat.state.deleteMessageErrorID == message.id,
-                  chat.state.deleteMessageErrorCategory != nil {
-            Label(
-                L10n.string("mobile.chat.message.delete.failed"),
-                systemImage: "exclamationmark.triangle.fill"
-            )
-            .font(.footnote)
-            .foregroundStyle(.orange)
+        } else if let key = chat.deletion?.status(for: message) {
+            Button { presentsDeletionRecords = true } label: {
+                Label(L10n.string(key), systemImage: "list.bullet")
+            }
+            .font(.footnote).foregroundStyle(.orange).frame(minHeight: 44)
+            .accessibilityIdentifier("chat-deletion-status-\(message.id)")
         }
     }
 }

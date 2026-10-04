@@ -45,6 +45,7 @@ final class MobileChatManagementModel {
             && !hasPending(in: message.conversationID, messageID: message.id)
             && (owner == nil || owner?.state.selectedConversation?.kind == .group)
             && owner?.state.deletingMessageID == nil && owner?.interaction?.isMutating != true
+            && owner?.deletion?.protects(message) != true
             && owner?.polls?.isMutating != true
             && owner?.interaction?.pending.contains(where: { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true
             && owner?.polls?.pending.contains(where: { $0.kind == .vote && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true

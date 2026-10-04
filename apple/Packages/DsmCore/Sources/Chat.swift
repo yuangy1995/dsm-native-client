@@ -584,6 +584,13 @@ public protocol ChatRepository: Sendable {
         messageID: String,
         clientRequestID: UUID
     ) async throws
+    /// 重读原内容后、提交前持久保存阶段；回调失败时不得发送删除请求。
+    func deleteMessage(
+        _ original: ChatMessageDeletionSnapshot, clientRequestID: UUID,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws
+    /// 仅在仍可访问原会话且完整历史中找不到原消息时返回 true；绝不重放删除。
+    func recoverMessageDeletion(_ original: ChatMessageDeletionSnapshot, clientRequestID: UUID) async throws -> Bool
     func closeConversation(
         conversationID: String,
         clientRequestID: UUID
@@ -659,6 +666,15 @@ public protocol ChatRepository: Sendable {
 }
 
 public extension ChatRepository {
+    func deleteMessage(
+        _ original: ChatMessageDeletionSnapshot, clientRequestID: UUID,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+    }
+    func recoverMessageDeletion(_ original: ChatMessageDeletionSnapshot, clientRequestID: UUID) async throws -> Bool {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+    }
     func forwardMessage(
         _ original: ChatMessage, toConversationIDs: [String], clientRequestID: UUID,
         recordProgress: @escaping @Sendable (ChatForwardReceipt) async throws -> Void

@@ -1280,11 +1280,9 @@ final class DsmChatRepositoryTests: XCTestCase {
 
     func test删除自己的消息并复查结果且重复请求只执行一次() async throws {
         let ownPost = #"{"success":true,"data":{"posts":[{"post_id":"9001","channel_id":"27","creator_id":"1","creator_name":"testaccount","is_my_post":true,"create_at":1774166400000,"message":"待删除"}]}}"#
-        let transport = MockHTTPTransport(responses: [
-            response(ownPost),
-            response(#"{"success":true}"#),
-            response(#"{"success":true,"data":{"posts":[]}}"#)
-        ])
+        let transport = MockHTTPTransport(responses: deletionAccess() + [
+            response(ownPost), response(#"{"success":true}"#)
+        ] + deletionAccess() + [response(#"{"success":true,"data":{"posts":[]}}"#)])
         let repository = try makeRepository(transport: transport)
         let requestID = UUID()
 
@@ -1300,15 +1298,15 @@ final class DsmChatRepositoryTests: XCTestCase {
         )
 
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.count, 3)
-        let deleteFields = try decodeForm(requests[1].httpBody)
+        XCTAssertEqual(requests.count, 7)
+        let deleteFields = try decodeForm(requests[3].httpBody)
         XCTAssertEqual(deleteFields["api"], DsmAPIName.chatPost)
         XCTAssertEqual(deleteFields["method"], "delete")
         XCTAssertEqual(deleteFields["post_id"], "9001")
     }
 
     func test拒绝删除其他成员发送的消息且不发送写请求() async throws {
-        let transport = MockHTTPTransport(responses: [
+        let transport = MockHTTPTransport(responses: deletionAccess() + [
             response(#"{"success":true,"data":{"posts":[{"post_id":"9001","channel_id":"27","creator_id":"2","creator_name":"other","create_at":1774166400000,"message":"其他成员消息"}]}}"#)
         ])
         let repository = try makeRepository(transport: transport)
@@ -1325,7 +1323,7 @@ final class DsmChatRepositoryTests: XCTestCase {
         }
 
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.count, 3)
     }
 
     func test关闭会话后复查会话已移除() async throws {

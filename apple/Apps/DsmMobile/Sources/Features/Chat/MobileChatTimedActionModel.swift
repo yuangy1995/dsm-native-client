@@ -44,6 +44,7 @@ final class MobileChatTimedActionModel {
         supports(.reminder) && !isBusy && message.encryptionState == .notEncrypted && message.deliveryState == .sent
             && owner?.management?.blocksWrites(in: message.conversationID) != true
             && owner?.state.deletingMessageID != message.id
+            && owner?.deletion?.protects(message) != true
             && !hasPending(in: message.conversationID, targetID: message.id, reminder: true)
     }
     func canCreateSchedule(in conversation: ChatConversation) -> Bool {

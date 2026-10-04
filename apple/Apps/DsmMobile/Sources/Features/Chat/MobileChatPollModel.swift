@@ -51,7 +51,8 @@ final class MobileChatPollModel {
               choices.isSubset(of: Set(poll.options.map(\.id))),
               choices != Set(poll.options.filter(\.isSelectedByCurrentUser).map(\.id)),
               owner?.management?.blocksWrites(in: value.conversationID) != true,
-              owner?.state.deletingMessageID != value.id else { return false }
+              owner?.state.deletingMessageID != value.id,
+              owner?.deletion?.protects(value) != true else { return false }
         return !pending.contains { $0.kind == .vote && $0.conversationID == value.conversationID && $0.messageID == value.id }
     }
 

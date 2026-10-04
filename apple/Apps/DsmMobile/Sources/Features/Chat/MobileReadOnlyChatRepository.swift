@@ -228,16 +228,19 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         messageID: String,
         clientRequestID: UUID
     ) async throws {
-        let value = await base.availability()
-        guard value.status == .available,
-              value.supportedFeatures.contains(.deleteOwnMessage) else {
-            throw MobileReadOnlyChatRepositoryError.operationUnavailable
-        }
-        try await base.deleteMessage(
-            conversationID: conversationID,
-            messageID: messageID,
-            clientRequestID: clientRequestID
-        )
+        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+    }
+
+    func deleteMessage(
+        _ original: ChatMessageDeletionSnapshot, clientRequestID: UUID,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        try await require(.deleteOwnMessage)
+        try await base.deleteMessage(original, clientRequestID: clientRequestID, willSubmit: willSubmit)
+    }
+
+    func recoverMessageDeletion(_ original: ChatMessageDeletionSnapshot, clientRequestID: UUID) async throws -> Bool {
+        try await base.recoverMessageDeletion(original, clientRequestID: clientRequestID)
     }
 
     func closeConversation(

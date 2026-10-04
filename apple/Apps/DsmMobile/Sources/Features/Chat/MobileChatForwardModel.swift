@@ -64,7 +64,7 @@ final class MobileChatForwardModel {
             || owner?.management?.hasPending(in: message.conversationID, messageID: message.id) == true
             || owner?.management?.blocksWrites(in: message.conversationID) == true
             || owner?.interaction?.pending.contains(where: { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }) == true
-            || owner?.state.deleteReviewBlockedMessageIDsByConversation[message.conversationID]?.contains(message.id) == true
+            || owner?.deletion?.protects(message) == true
     }
 
     func loadTargets(sourceConversationID: String) async {

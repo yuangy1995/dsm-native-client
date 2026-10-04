@@ -34,6 +34,11 @@ public actor DsmChatRepository: ChatRepository {
     private var pendingReminders: [UUID: (conversationID: String, messageID: String, remindAt: Date)] = [:]
     private var completedScheduledMessageDeletions: Set<UUID> = []
     private var completedMessageDeletions: Set<UUID> = []
+    private struct MessageDeletionTarget: Equatable { let conversationID: String; let messageID: String }
+    private var messageDeletionTargets: [UUID: MessageDeletionTarget] = [:]
+    private var pendingMessageDeletions: [UUID: ChatMessageDeletionSnapshot] = [:]
+    private var messageDeletionSnapshots: [UUID: ChatMessageDeletionSnapshot] = [:]
+    private var rejectedMessageDeletions: [UUID: AppError] = [:]
     private var completedConversationClosures: Set<UUID> = []
     private var completedMessageForwards: [UUID: ChatForwardReceipt] = [:]
     private var pendingMessageForwards: [UUID: ChatForwardReceipt] = [:]
@@ -557,7 +562,8 @@ public actor DsmChatRepository: ChatRepository {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw ChatContractError.emptyMessage }
         if let completed = completedEdits[clientRequestID] { return completed }
-        guard mutatingMessageIDs.insert(original.id).inserted else { throw messageUpdatePending() }
+        guard !pendingMessageDeletions.values.contains(where: { $0.messageID == original.id }),
+              mutatingMessageIDs.insert(original.id).inserted else { throw messageUpdatePending() }
         defer { mutatingMessageIDs.remove(original.id) }
         let operation = PendingEdit(original: original, text: body)
         if let pending = pendingEdits[clientRequestID] {
@@ -592,7 +598,8 @@ public actor DsmChatRepository: ChatRepository {
     public func vote(_ original: ChatMessage, choiceIDs: Set<String>, clientRequestID: UUID) async throws -> ChatMessage {
         guard supportsVersion(DsmAPIName.chatPostVote, version: 1) else { throw unsupported(L10n.string("chat.feature.unavailable")) }
         if let completed = completedVotes[clientRequestID] { return completed }
-        guard mutatingMessageIDs.insert(original.id).inserted else { throw messageUpdatePending() }
+        guard !pendingMessageDeletions.values.contains(where: { $0.messageID == original.id }),
+              mutatingMessageIDs.insert(original.id).inserted else { throw messageUpdatePending() }
         defer { mutatingMessageIDs.remove(original.id) }
         let operation = PendingVote(message: original, choices: choiceIDs)
         if let pending = pendingVotes[clientRequestID] {
@@ -730,7 +737,8 @@ public actor DsmChatRepository: ChatRepository {
         before cursor: String?,
         limit: Int,
         cachesMessages: Bool,
-        threadID: String? = nil
+        threadID: String? = nil,
+        requiredMessageID: String? = nil
     ) async throws -> ChatMessagePage {
         let safeLimit = min(max(limit, 1), 100)
         var parameters: [String: DsmParameterValue] = [
@@ -757,6 +765,7 @@ public actor DsmChatRepository: ChatRepository {
             }
             guard id != cursor else { return nil }
             let message = makeMessage(from: value, fallbackConversationID: conversationID)
+            if id == requiredMessageID, message == nil { throw invalidChatResponse() }
             if let threadID, let message, message.id != threadID, message.threadID != threadID {
                 throw invalidChatResponse()
             }
@@ -2247,7 +2256,6 @@ public actor DsmChatRepository: ChatRepository {
         messageID: String,
         clientRequestID: UUID
     ) async throws {
-        if completedMessageDeletions.contains(clientRequestID) { return }
         let normalizedConversationID = conversationID.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedMessageID = messageID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedConversationID.isEmpty else { throw ChatContractError.emptyConversationID }
@@ -2259,41 +2267,134 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
 
-        try rejectKnownEncryptedConversation(normalizedConversationID)
-        let baseline = knownMessagesByID[normalizedMessageID]
+        let baseline = try knownMessagesByID[normalizedMessageID].map(ChatMessageDeletionSnapshot.init)
+        try await performMessageDeletion(conversationID: normalizedConversationID, messageID: normalizedMessageID,
+                                         original: baseline, clientRequestID: clientRequestID, willSubmit: {})
+    }
+
+    public func deleteMessage(
+        _ original: ChatMessageDeletionSnapshot, clientRequestID: UUID,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        try original.validate()
+        try await performMessageDeletion(conversationID: original.conversationID, messageID: original.messageID,
+                                         original: original, clientRequestID: clientRequestID, willSubmit: willSubmit)
+    }
+
+    private func performMessageDeletion(
+        conversationID: String, messageID: String, original: ChatMessageDeletionSnapshot?, clientRequestID: UUID,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        try bindMessageDeletion(conversationID: conversationID, messageID: messageID, clientRequestID: clientRequestID)
+        if let original, let previous = messageDeletionSnapshots[clientRequestID], original != previous { throw messageDeletionPending() }
+        if let original { messageDeletionSnapshots[clientRequestID] = original }
+        if completedMessageDeletions.contains(clientRequestID) { return }
+        if let rejected = rejectedMessageDeletions[clientRequestID] { throw rejected }
+        if let pending = pendingMessageDeletions[clientRequestID] {
+            guard original == nil || original == pending else { throw messageDeletionPending() }
+            guard try await recoverMessageDeletion(pending, clientRequestID: clientRequestID) else { throw messageDeletionPending() }
+            return
+        }
+        guard !pendingMessageDeletions.values.contains(where: { $0.conversationID == conversationID && $0.messageID == messageID }),
+              !pendingEdits.values.contains(where: { $0.original.id == messageID }),
+              !pendingVotes.values.contains(where: { $0.message.id == messageID }),
+              mutatingMessageIDs.insert(messageID).inserted else { throw messageDeletionPending() }
+        defer { mutatingMessageIDs.remove(messageID) }
+
+        try await requireMessageDeletionAccess(conversationID: conversationID, senderID: original?.senderID)
         guard let message = try await findMessage(
-            id: normalizedMessageID, conversationID: normalizedConversationID
+            id: messageID, conversationID: conversationID
         ) else {
             completedMessageDeletions.insert(clientRequestID)
             return
         }
-        guard message.encryptionState == .notEncrypted, isOwnedByCurrentUser(message) else {
+        guard message.encryptionState == .notEncrypted, message.threadID == nil,
+              message.senderID == cachedCurrentUserID, isOwnedByCurrentUser(message) else {
             throw AppError(
                 category: .permissionDenied,
                 isRetryable: false,
                 safeUserMessage: L10n.string("shared.66a12c2de716c8cf")
             )
         }
-        if let baseline, !sameMessageContent(baseline, message) {
-            throw AppError(category: .partialFailure, isRetryable: false,
+        if let original, !original.matches(message) {
+            throw AppError(category: .conflict, isRetryable: false,
                            safeUserMessage: L10n.string("chat.message.changed"))
         }
-
-        // 内部 API：SYNO.Chat.Post/delete 尚无公开开发者契约，必须由能力发现和实机复查共同保护。
-        try await callVoid(
-            DsmAPIName.chatPost,
-            method: "delete",
-            parameters: ["post_id": .string(normalizedMessageID)]
-        )
-        guard try await findMessage(id: normalizedMessageID, conversationID: normalizedConversationID) == nil else {
-            throw AppError(
-                category: .partialFailure,
-                isRetryable: true,
-                safeUserMessage: L10n.string("shared.aacd70e29509b789")
-            )
+        let snapshot = try ChatMessageDeletionSnapshot(message)
+        messageDeletionSnapshots[clientRequestID] = snapshot
+        let capability = try requireCapability(DsmAPIName.chatPost)
+        let version = try selectedVersion(capability, requiring: 5)
+        try Task.checkCancellation()
+        try await willSubmit()
+        try Task.checkCancellation()
+        pendingMessageDeletions[clientRequestID] = snapshot
+        // 内部 API：仅明确拒绝可结束为失败；连接中断后继续只读，不重复删除。
+        do {
+            try await client.callVoid(path: capability.path, api: capability.name, version: version,
+                method: "delete", requestFormat: capability.requestFormat,
+                parameters: ["post_id": .string(messageID)], credential: credential)
+        } catch let error as DsmNetworkError where isExplicitWriteRejection(error) {
+            pendingMessageDeletions[clientRequestID] = nil
+            let rejection = mapChatError(error)
+            rejectedMessageDeletions[clientRequestID] = rejection
+            throw rejection
+        } catch { /* 已越过提交边界，最终状态只能通过完整读取确定。 */ }
+        do {
+            guard try await inspectMessageDeletion(snapshot) else { throw messageDeletionPending() }
+        } catch {
+            throw messageDeletionPending()
         }
+        pendingMessageDeletions[clientRequestID] = nil
         completedMessageDeletions.insert(clientRequestID)
-        knownMessagesByID[normalizedMessageID] = nil
+        knownMessagesByID[messageID] = nil
+    }
+
+    public func recoverMessageDeletion(_ original: ChatMessageDeletionSnapshot, clientRequestID: UUID) async throws -> Bool {
+        try original.validate()
+        try bindMessageDeletion(conversationID: original.conversationID, messageID: original.messageID, clientRequestID: clientRequestID)
+        if let previous = messageDeletionSnapshots[clientRequestID], previous != original { throw messageDeletionPending() }
+        if completedMessageDeletions.contains(clientRequestID) { return true }
+        if let rejected = rejectedMessageDeletions[clientRequestID] { throw rejected }
+        if let pending = pendingMessageDeletions[clientRequestID], pending != original { throw messageDeletionPending() }
+        guard !pendingMessageDeletions.contains(where: {
+            $0.key != clientRequestID && $0.value.conversationID == original.conversationID && $0.value.messageID == original.messageID
+        }), mutatingMessageIDs.insert(original.messageID).inserted else { throw messageDeletionPending() }
+        defer { mutatingMessageIDs.remove(original.messageID) }
+        // 即使本轮读取失败，导入的已提交记录也要阻止同实例换编号重删。
+        pendingMessageDeletions[clientRequestID] = original
+        messageDeletionSnapshots[clientRequestID] = original
+        let removed = try await inspectMessageDeletion(original)
+        if removed {
+            pendingMessageDeletions[clientRequestID] = nil
+            completedMessageDeletions.insert(clientRequestID)
+            knownMessagesByID[original.messageID] = nil
+        }
+        return removed
+    }
+
+    private func bindMessageDeletion(conversationID: String, messageID: String, clientRequestID: UUID) throws {
+        let target = MessageDeletionTarget(conversationID: conversationID, messageID: messageID)
+        if let previous = messageDeletionTargets[clientRequestID], previous != target { throw messageDeletionPending() }
+        messageDeletionTargets[clientRequestID] = target
+    }
+
+    private func requireMessageDeletionAccess(conversationID: String, senderID: String?) async throws {
+        try Task.checkCancellation()
+        let conversations = try await listConversations()
+        guard let currentUserID = cachedCurrentUserID,
+              senderID.map({ $0 == currentUserID }) ?? true,
+              let conversation = conversations.first(where: { $0.id == conversationID }), !conversation.isEncrypted else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("chat.delete.unavailable"))
+        }
+    }
+
+    private func inspectMessageDeletion(_ original: ChatMessageDeletionSnapshot) async throws -> Bool {
+        try await requireMessageDeletionAccess(conversationID: original.conversationID, senderID: original.senderID)
+        return try await findMessage(id: original.messageID, conversationID: original.conversationID) == nil
+    }
+
+    private func messageDeletionPending() -> AppError {
+        AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("chat.delete.pending"))
     }
 
     /// 只有读到完整分页的末尾才能确认不存在，不能将“不在最新一页”当成已删除。
@@ -2303,7 +2404,8 @@ public actor DsmChatRepository: ChatRepository {
         var seenMessageIDs: Set<String> = []
         repeat {
             try Task.checkCancellation()
-            let page = try await messagePage(conversationID: conversationID, before: cursor, limit: 100, cachesMessages: false)
+            let page = try await messagePage(conversationID: conversationID, before: cursor, limit: 100,
+                                             cachesMessages: false, requiredMessageID: id)
             for message in page.messages {
                 guard seenMessageIDs.insert(message.id).inserted else { throw invalidChatResponse() }
             }
