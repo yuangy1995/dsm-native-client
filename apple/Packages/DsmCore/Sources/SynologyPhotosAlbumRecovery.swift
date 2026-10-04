@@ -15,6 +15,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case copyTemporary(id: Int, name: String, revision: String)
         case deleteTemporary(id: Int, revision: String, preservedCopyID: Int?)
         case request(Request)
+        case condition(Condition)
     }
     public let version: Int
     public let profileID: UUID
@@ -30,13 +31,14 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         switch mutation {
         case .createAlbum, .renameAlbum, .deleteAlbum, .addToAlbum, .removeFromAlbum, .setAlbumCover, .shareAlbum,
              .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum,
-             .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: true
+             .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
         version = switch mutation {
+        case .createConditionAlbum, .setAlbumCondition: 5
         case .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: 4
         case .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum: 3
         case .shareAlbum: 2
@@ -55,6 +57,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .copyTemporaryAlbum(let id, let name, let original): operation = .copyTemporary(id: id, name: name, revision: original.revision)
         case .deleteTemporaryAlbum(let id, let original, let copy): operation = .deleteTemporary(id: id, revision: original.revision, preservedCopyID: copy)
         case .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: operation = .request(try Request(mutation: mutation))
+        case .createConditionAlbum, .setAlbumCondition: operation = .condition(try Condition(mutation: mutation, userID: userID))
         default: throw CocoaError(.coderInvalidValue)
         }
         _ = try reviewMutation()
@@ -62,7 +65,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...4).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...5).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
@@ -77,6 +80,9 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .cover(let id, let photo): command = .setAlbumCover(id: id, photo: photo.photo)
         case .sharing(let value):
             guard version == 2 else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation()
+        case .condition(let value):
+            guard version == 5 else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
         case .request(let value):
             guard version == 4 else { throw CocoaError(.coderReadCorrupt) }
@@ -101,7 +107,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .deleteAlbum(let id): guard id > 0 else { throw CocoaError(.coderReadCorrupt) }
         case .addToAlbum(let id, _), .removeFromAlbum(let id, _), .setAlbumCover(let id, _):
             guard id > 0, !photos.isEmpty else { throw CocoaError(.coderReadCorrupt) }
-        case .shareAlbum, .deleteTemporaryAlbum, .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: break
+        case .shareAlbum, .deleteTemporaryAlbum, .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
@@ -112,6 +118,10 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         set { if case .sharing = operation, let newValue { operation = .sharing(newValue) } }
     }
 
+    public var conditionDetails: Condition? {
+        if case .condition(let value) = operation { return value }; return nil
+    }
+
     public var requestDetails: Request? {
         get { if case .request(let value) = operation { return value }; return nil }
         set { if case .request = operation, let newValue { operation = .request(newValue) } }
@@ -119,6 +129,51 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 }
 
 extension SynologyPhotosAlbumCheckpoint {
+    /// 不落盘照片筛选内容；名称与规则只保留一致性摘要，创建另需真实返回编号。
+    public struct Condition: Codable, Equatable, Sendable {
+        public let albumID: Int?
+        public let nameDigest: String?
+        public let fieldsDigest: String
+        public let space: SynologyPhotoSpace
+
+        public init(mutation: SynologyPhotosMutation, userID: Int) throws {
+            let condition: SynologyPhotoAlbumCondition
+            switch mutation {
+            case .createConditionAlbum(let name, let value):
+                guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw CocoaError(.coderInvalidValue) }
+                albumID = nil; nameDigest = Self.hash(Data(name.utf8)); condition = value
+            case .setAlbumCondition(let id, _, let value):
+                guard id > 0 else { throw CocoaError(.coderInvalidValue) }
+                albumID = id; nameDigest = nil; condition = value
+            default: throw CocoaError(.coderInvalidValue)
+            }
+            guard userID > 0, condition.fields["user_id"] == nil || condition.fields["user_id"]?.integer == (condition.sourceSpace == .shared ? 0 : userID) else { throw CocoaError(.coderInvalidValue) }
+            space = condition.sourceSpace
+            fieldsDigest = try Self.digest(condition, userID: userID)
+        }
+        public func matches(name: String, condition: SynologyPhotoAlbumCondition, userID: Int) throws -> Bool {
+            guard space == condition.sourceSpace, nameDigest == nil || nameDigest == Self.hash(Data(name.utf8)) else { return false }
+            guard condition.fields["user_id"] == nil || condition.fields["user_id"]?.integer == (space == .shared ? 0 : userID) else { return false }
+            return fieldsDigest == (try Self.digest(condition, userID: userID))
+        }
+        public func hasSameIntent(as mutation: SynologyPhotosMutation, userID: Int) -> Bool {
+            (try? Self(mutation: mutation, userID: userID)) == self
+        }
+        fileprivate func reviewMutation() throws -> SynologyPhotosMutation {
+            let valid: (String) -> Bool = { $0.count == 64 && $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }
+            guard valid(fieldsDigest), albumID.map({ $0 > 0 && nameDigest == nil }) ?? (nameDigest.map(valid) == true) else { throw CocoaError(.coderReadCorrupt) }
+            let value = SynologyPhotoAlbumCondition(fields: space == .shared ? ["user_id": .integer(0)] : [:])
+            if let albumID { return .setAlbumCondition(id: albumID, original: value, condition: value) }
+            return .createConditionAlbum(name: nameDigest ?? "", condition: value)
+        }
+        private static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+        private static func digest(_ condition: SynologyPhotoAlbumCondition, userID: Int) throws -> String {
+            let fields = try condition.canonicalFields(sourceUserID: condition.sourceSpace == .shared ? 0 : userID)
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            return hash(try encoder.encode(fields))
+        }
+    }
+
     /// 收集编号同时是访问口令；恢复只保存摘要，并且不能还原成可提交的设置。
     public struct Request: Codable, Equatable, Sendable {
         public enum Kind: String, Codable, Sendable { case create, update, delete }

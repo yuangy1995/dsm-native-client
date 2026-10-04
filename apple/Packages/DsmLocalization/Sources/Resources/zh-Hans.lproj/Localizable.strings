@@ -6061,3 +6061,10 @@
 "mobile.photos.request.currentAlbum" = "当前相册";
 "mobile.photos.request.noSubfolders" = "没有子文件夹，可使用当前文件夹或选择上级文件夹。";
 "mobile.photos.request.loadingFolders" = "正在读取文件夹…";
+
+"mobile.photos.condition.loading" = "正在载入相册条件…";
+"mobile.photos.condition.readFailed" = "无法载入相册条件，请重试。";
+"mobile.photos.condition.stars" = "%lld 星";
+"mobile.photos.condition.create" = "创建";
+"mobile.photos.condition.chooseFolders" = "选择文件夹";
+"mobile.photos.condition.title" = "条件相册";

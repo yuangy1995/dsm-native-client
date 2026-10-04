@@ -6061,3 +6061,10 @@
 "mobile.photos.request.currentAlbum" = "Current album";
 "mobile.photos.request.noSubfolders" = "No subfolders. You can use this folder or choose a parent folder.";
 "mobile.photos.request.loadingFolders" = "Loading folders…";
+
+"mobile.photos.condition.loading" = "Loading album conditions…";
+"mobile.photos.condition.readFailed" = "Unable to load album conditions. Try again.";
+"mobile.photos.condition.stars" = "Rating %lld";
+"mobile.photos.condition.create" = "Create";
+"mobile.photos.condition.chooseFolders" = "Choose folders";
+"mobile.photos.condition.title" = "Conditional album";

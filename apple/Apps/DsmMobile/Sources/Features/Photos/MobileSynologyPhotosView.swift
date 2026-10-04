@@ -157,6 +157,14 @@ private struct MobileSynologyPhotosContent: View {
                             }
                         }
                     }
+                    if let conditions = session.conditions {
+                        Button(L10n.string("photos.condition.create")) { conditions.begin() }
+                            .disabled(!conditions.canOpen()).accessibilityIdentifier("mobile.photos.condition.create")
+                        if model.selectedAlbum?.isConditional == true, model.selectedAlbum?.isFrozen == false {
+                            Button(L10n.string("photos.condition.edit")) { conditions.begin(editing: true) }
+                                .disabled(!conditions.canOpen(editing: true)).accessibilityIdentifier("mobile.photos.condition.edit")
+                        }
+                    }
                     if let requests = session.requests {
                         Button(L10n.string("photos.request.create")) { requests.begin() }
                             .disabled(!requests.canOpen()).accessibilityIdentifier("mobile.photos.request.create")
@@ -191,6 +199,9 @@ private struct MobileSynologyPhotosContent: View {
         .sheet(item: sharingDraft, onDismiss: { session.sharing?.cancel() }) { draft in
             if let sharing = session.sharing { MobilePhotoSharingForm(sharing: sharing, draft: draft) }
         }
+        .sheet(item: conditionDraft, onDismiss: { session.conditions?.cancel() }) { draft in
+            if let conditions = session.conditions { MobilePhotoConditionForm(editor: conditions, draft: draft) }
+        }
         .sheet(item: requestDraft, onDismiss: { session.requests?.cancel() }) { draft in
             if let requests = session.requests { MobilePhotoRequestForm(request: requests, draft: draft) }
         }
@@ -224,6 +235,10 @@ private struct MobileSynologyPhotosContent: View {
             if phase == .background { session.deactivate() }
             else if phase == .active { Task { await session.activate() } }
         }
+    }
+
+    private var conditionDraft: Binding<MobilePhotoConditionModel.Draft?> {
+        Binding(get: { session.conditions?.draft }, set: { if $0 == nil { session.conditions?.cancel() } })
     }
 
     private var emptyContent: some View {

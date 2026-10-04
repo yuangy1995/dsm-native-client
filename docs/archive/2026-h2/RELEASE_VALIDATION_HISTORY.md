@@ -953,3 +953,29 @@ Mac 最终回归命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcode
 Mac 命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 首轮通过；共享文案收尾后第二轮同样通过（`m3b4-macos-build2.log`）。主程序 `lipo -archs` 为 **x86_64 arm64**。未安装、启动或发布 Mac 包。移动工程重复生成 SHA-256 不变：`2bc4c393644d8fc7755a28416f2ce9124e80a023c9c90022154e128c0150f69d`。
 
 第六轮移动测试构建通过；最终行内目录标题在 `m3b4-iphone3.xcresult` / `m3b4-ipad3.xcresult` 各 **1/1 UI 通过（34.024 / 35.351 秒）**。最终代码没有新增运行失败或未解决编译问题；iPad 已恢复浅色。M3b4 源码及本机验证收口，真实 NAS/真机仍按主计划的 `PENDING_USER_VALIDATION` 后置，不据模拟器结果提升私有 API 真实兼容等级。
+
+## 2026-10-04 移动 M3b5 条件相册
+
+范围、Mac 证据、存储版本 5 边界和真实设备步骤见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m3b5-条件相册)。本轮接入条件相册新建/编辑、来源草稿、媒体/日期/目录/评分/规则、建议与预览计数；共享请求和只读恢复共用原有集合归一化，未知字段与顺序保留，创建必须有返回编号。独立集成及只读对抗复核检查了所有者/目录权限、原快照、损坏摘要、跨账号、迟到响应、写前保存失败和丢回执不按名称猜测。全部自动化使用合成资料，没有真实 NAS 写操作。
+
+实际命令（仓库根目录，Xcode 26.6、iOS Simulator 26.5）：
+
+```bash
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+swift test --package-path apple --jobs 4 --filter SynologyPhotosRepositoryTests
+swift test --package-path apple --jobs 4
+swift test --package-path apple --jobs 4 --filter DsmFileRepositoryTests.test分享创建提交前取消不访问网络
+swift test --package-path apple --jobs 2
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py --strict-release
+git diff --check
+```
+
+移动分别运行 `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=…' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath … -only-testing:DsmMobileTests`，并追加 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/…` 以下七项：`test条件相册创建添加关键词预览并保存`、`test条件相册编辑保留缺名规则并取消不写入`、`test条件相册中文建议搜索空结果与选择人物`、`test条件相册共享目录选择与空子目录导航`、`test条件相册未知重启限制重复创建`、`test条件相册读取等待与失败支持退出重试`、`test照片收集创建并显示可分享链接`。iPhone 为 `8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`，iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果分别保存为临时目录下 `m3b5-iphone1.xcresult` / `m3b5-ipad1.xcresult`；iPad 本轮使用深色模式。
+
+中间结果：共享网络 532 项通过（2.138 秒）。首次完整共享回归 2452 项、172 项既有条件跳过、1 项失败（35.404 秒），失败是既有文件分享提交前取消用例的“零读取”断言；提交前取消状态断言通过，未改该用例或降低断言，单项原样复验 1/1 通过（0.027 秒），完整复验 2452 项、172 项既有条件跳过、0 失败（38.506 秒）。首次/复验另 12 项 Swift Testing 分别通过（0.046 / 0.418 秒）。首次移动构建因新增测试误用 `openAlbum` 而失败，改为现有 `open` 后第二次构建通过。本地化首次动态键引用被扫描拒绝，改为十二项明确资源键后通过（Apple 5827 / Android 2188 / Windows 3402）。Fixture 29 组、私有文档引用 48 项及严格文档检查通过。两端各 774 项单元已通过（iPhone 16.027 秒、iPad 14.298 秒），包含本轮 11 项条件相册测试。首轮两端各 7/7 实际 UI 通过（306.214 / 358.939 秒），Mac 两次 Release 构建通过，`lipo -archs` 确认 x86_64 / arm64。截图复核后缩短条件表单标题、区分新建按钮、删除重复文件夹标签，并让添加/搜索/预览后关闭键盘；移除规则按钮补读出目标名称。第三次移动构建通过，第二轮各四项 UI 中创建/预览、编辑、目录均通过，中文搜索在清空关键词后失败；失败时输入已空，补显式滚动至按钮及空值断言后仍复现，第四次构建/第三轮单项 UI 继续失败，不能归因于点按位置。随后修正输入内容未变时重复回写也清空建议/取消读取的问题，来源切换及关闭仍显式清空，并新增一项在途/已返回建议保持测试；第五次构建通过；第四轮两端各 775/775 单元通过（13.110 / 13.074 秒），包含 12 项条件相册测试；中文搜索和创建预览两项 UI 均通过（iPhone 单项 41.402 / 37.394 秒，iPad 41.118 / 39.124 秒），保留找到人物并成功保存的原断言。最后双语资源为 5830 / 2188 / 3402，AppLanguageTests 6 项通过（0.041 秒）。不据此声明实机通过。
+
+收尾复验仍用上述 `test-without-building` 命令：第二轮只选条件创建、编辑、中文建议、共享目录四项，第三轮只选中文建议，第四轮选全部 `DsmMobileTests` 加中文建议与创建两项 UI，分别保存 `m3b5-{iphone,ipad}{2,3,4}.xcresult`。源码、双语资源、过期草稿隔离及最终差异再次只读复核通过；新增规则未扩展 NAS 请求或删除原件。已导出并检查 iPhone 浅色的中文规则、来源目录、完整英文标题与可见预览数，以及 iPad 深色的旧引用、读取错误、表单标题与键盘关闭状态；完整辅助功能和真实 NAS 条件匹配仍按主计划待用户验证。最终工程经锁定 XcodeGen 重复生成检查，SHA-256 为 `f6165f999a62215c2b3927119377933e958fb79123ab1a0fa7943098ef20daad`，不改最低版本、应用身份、权限或原登录格式，临时日志/截图仅保留在仓库外，未提交。

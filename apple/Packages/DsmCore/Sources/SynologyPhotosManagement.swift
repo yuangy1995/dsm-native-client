@@ -388,6 +388,22 @@ public struct SynologyPhotoAlbumCondition: Equatable, Sendable {
         fields[key] = values.isEmpty && key != "item_type" ? nil : .array(values)
         if values.isEmpty { fields[key + "_policy"] = nil }
     }
+
+    /// 请求与恢复共用集合归一化；未知字段的空数组与顺序原样保留。
+    public func canonicalFields(sourceUserID: Int) throws -> [String: SynologyPhotoConditionValue] {
+        var result = fields
+        result["user_id"] = .integer(sourceUserID)
+        result["item_type"] = result["item_type"] ?? .array([])
+        let setFields = Set(SynologyPhotoConditionField.allCases.map(\.rawValue) + ["folder_filter", "rating", "item_type", "time"])
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        for (key, value) in result where setFields.contains(key) {
+            if let values = value.array {
+                if values.isEmpty && key != "item_type" { result[key] = nil; continue }
+                result[key] = .array(try values.sorted { try encoder.encode($0).lexicographicallyPrecedes(encoder.encode($1)) })
+            }
+        }
+        return result
+    }
 }
 
 

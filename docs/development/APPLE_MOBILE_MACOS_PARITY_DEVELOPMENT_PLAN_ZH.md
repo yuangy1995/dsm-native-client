@@ -43,7 +43,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M3 Photos 上传 | SynologyPhotosModel、SynologyPhotosView | Photos/Files 选择与队列；上传/相册加入；写 | M3a 已接系统多选、受保护副本及队列恢复；两端单元/实际 UI 通过，相册加入失败只补后一步，真实 NAS 待验 |
 | M3 批量及资料 | PhotoManagementPanel | 多选、标签/日期/资料表单；原件权限；写 | 缺编辑/批量；列表可见不代表可改/删 |
 | M3 目录及移动复制 | PhotoFolderDestinationPicker | 分步目的地选择；Folder/Move/Copy；数据写 | 缺管理；绑定对象、空间与角色，保留部分成功 |
-| M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | M3b1 普通相册及 M3b2 访问范围/成员/保护设置已接入并通过两端回归；M3b3 临时分享生命周期及 M3b4 照片收集也经两端回归；条件/冻结相册继续后续切片，权限保持独立 |
+| M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | M3b1 普通相册及 M3b2 访问范围/成员/保护设置已接入并通过两端回归；M3b3 临时分享生命周期、M3b4 照片收集及 M3b5 条件相册也经两端回归；冻结相册继续后续切片，权限保持独立 |
 | M3 人物、相似组 | SynologyPhotosModel | 触控分组列表、人物编辑；People/Similar；写 | 缺管理流程；不推断服务端未识别的人物 |
 | M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | 缺流程；支持不足只限制相关入口 |
 | M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | 包装器未转发新增能力；本人/会话绑定，历史完整分页 |
@@ -104,6 +104,16 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+## M3b5 条件相册
+
+Mac 证据为 `PhotoManagementPanel.conditionForm/conditionDates/switchConditionSource`、共享 `SynologyPhotoAlbumCondition` 及 Repository 的 ConditionAlbum create/set_condition/get/suggest/peek_item_count。iPhone/iPad 同时提供新建、编辑、来源/媒体/日期/目录/评分/各字段规则、建议搜索和数量预览；原生滚动表单与独立目录页面替代桌面横排控件。未知规则与引用原样保留，切换来源分别保存草稿，保存绑定原相册与原规则快照。
+
+单一修改范围是移动条件表单/模型/入口、共享条件归一化与相册恢复、Repository 恢复、合成服务/测试、双语资源、工程及相关文档。条件操作使用独立版本 5 摘要记录，仅保存来源、目标编号及规则/名称摘要；版本 1–4 继续可读，旧 App 拒绝新记录并保留文件。恢复只读，创建必须有返回编号，不按同名确认。此为已批准 M0–M8 恢复范围；不迁移登录配置，无新 NAS 请求、第三方依赖、身份或系统权限变化，回滚停用新入口并保留记录。Mac 不改界面但运行共享与双架构回归，Windows/Android 无代码变更。
+
+安全级别为内部条件相册写，保持所有者、来源/目录许可、原快照、重复提交及最终规则回读检查。真实 NAS 不参与自动写测试。冻结相册、原件资料与目录写入另行实施，不在此切片计作完成。共享网络 532 项通过；完整共享复验 2452 项、172 项既有条件跳过、0 失败，另 12 项 Swift Testing 通过；首次既有文件分享取消时序用例失败与原样复验结果保留在验证历史。两端最终各 775 项单元通过，含 12 项条件相册测试；六项条件相册实际 UI 和一项照片收集回归分别已有通过证据，收尾标题/键盘/搜索同值回写修复已完成两端聚焦复验。Mac 双架构两次构建通过。独立集成/只读对抗复核覆盖权限、原快照、恢复摘要、未知回执和迟到响应。精确命令及中间失败见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m3b5-条件相册)。
+
+`PENDING_USER_VALIDATION`：需 iPhone/iPad 真机、已记录 DSM/Photos 版本、专用相册与所有者/受限/共享管理账号。创建→预览→保存→再次编辑全部规则，检查未知引用保留与共享来源权限；另一客户端修改后旧草稿不能覆盖，断网丢回执及重启只能查询原目标且不重复创建。设备辅助功能、实际匹配结果及权限变化仍未验证，仅回传版本、角色、脱敏步骤和错误类别，不回传原照片、标签、目录或响应。
 
 ## M3b4 照片收集请求
 
