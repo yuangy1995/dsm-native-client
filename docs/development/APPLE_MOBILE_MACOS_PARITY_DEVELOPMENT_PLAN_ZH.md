@@ -37,7 +37,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M2 远程位置与 ISO/VFS | FileVFSViews、FileVFSForm、FileISOMountView | 原生列表/连接表单；SMB/NFS/VFS/ISO/云授权；凭据与内部写 | M2f 已接连接管理/原始 URI 浏览下载、ISO 与系统云授权；两端模型及实际 UI、共享与 Mac 回归通过，真实云回调仍待设备验收 |
 | M2 收藏与 File Station 设置 | WorkspaceModel.toggleFavorite、FileStationSettingsView、FileStationBandwidthView | 文件菜单/位置列表、分步设置表单；Favorite、Setting、Mount、Bandwidth、SharingDownload；普通写/内部管理写 | M2g1 收藏与 M2g2 常规/账号/限速/分享页面设置已接入并通过两端单元/实际 UI；保留权限、原快照回读与未知防重放，真实 NAS 待用户验证 |
 | M2 NAS 任务 | FileBackgroundTaskActions | Activity 绑定 NAS/原任务；状态及取消；写 | M2c 完整分页、原任务停止/清除、未知控制恢复已接；两端单元/实际 UI 通过，真实 NAS 待验 |
-| M2 跨 NAS 传输 | WorkspaceModel | 源/目标明确绑定；复制后核对目标再确认源删除；高风险 | 未实现；目标未核对不得删源，恢复不重放已完成步骤 |
+| M2 跨 NAS 传输 | WorkspaceModel | 源/目标明确绑定；复制后核对目标再确认源删除；高风险 | M2h4 已接两端独立会话、目录/文件复制、内容比对、活动恢复与独立确认删源；两端单元和实际 UI 通过，目标未核对不得删源，未知及已完成步骤不重放 |
 | M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | 有预览/导出，缺冲突与主动回传；M8 接 Files 写回 |
 | M2 可恢复活动队列 | WorkspaceModel | 独立版本化任务、来源/目标身份与进度；持久化 | M2a 接独立受保护记录/副本；重启后暂停未提交项，未知上传只查询，下载可从头恢复；后台执行仍属 M8 |
 | M3 Photos 上传 | SynologyPhotosModel、SynologyPhotosView | Photos/Files 选择与队列；上传/相册加入；写 | 缺入口；加入相册失败只补后一步，不重传原件 |
@@ -218,3 +218,13 @@ Mac 证据为 `WorkspaceModel.enqueueDownload/enqueueBatchDownload`；复用共�
 
 
 `PENDING_USER_VALIDATION`：iPhone/iPad 真机、只读及普通账号、专用含空目录/嵌套目录/尾部空格文件名的测试文件。分别下载单文件、文件夹和混合选择，检查 ZIP 内容，再保存至系统“文件”及选定分享目标；执行断网、取消、重启、低存储空间和改换账号。预期保留原文件、输出清单正确、失败可从头恢复、旧副本不交给新账号；锁屏后受保护副本的实际可访问性仅能在真机验证，模拟器不回传该保护属性。VoiceOver、大字号、外接键盘、系统实际写出及真实 NAS ZIP 完整性尚未验证，只回传版本、脱敏步骤和错误类别。跨 NAS 与 Office 继续下一切片，M2 尚未整体完成。
+
+## M2h4 跨 NAS 复制与分步移动
+
+参考 `WorkspaceModel.enqueueCrossNASOperation/transferCrossNASItem` 与共享 `DsmFileRepository.streamFileToNAS`。两端用原生表单选择已保存连接和目标目录，活动中心保留两端名称、逐项进度及恢复操作。复用保存的会话和现有证书/QuickConnect 连接发现；目标过期须先重新登录，不复制密码或把源凭据交给目标。安全级别为跨 NAS、认证及危险写。契约依赖为已实现的 List/getinfo/MD5/Download/Upload/CreateFolder/Delete；不新增私有请求。
+
+本切片唯一修改范围：移动 Files/CrossNAS 模型、表单与测试，组合根/会话的目标装配、Activity/Files 入口、双语资源、生成工程及相应文档。恢复记录独立版本化，只保存任务和两端账号身份摘要，不改变旧登录或传输文件；回滚关闭新增入口并保留记录。无新增依赖、身份、签名、权限、最低版本或 Windows/Android 代码变化。
+
+实现边界：复制先冻结完整目录清单和内容摘要，目标重名不覆盖，上传后比对源与目标内容；中断时保留已完成项，未知写只读取，绝不重放。移动的删源是复制完成后的独立危险确认，先重新比对内容，再按文件及空目录顺序非递归删除；新增目录内容不得随原目录被删。macOS 原流程在复制后直接递归删除源且存在重名跳过路径，不作为移动端安全依据，不在本切片顺手改动桌面行为。源码、两端自动化及模拟器构建已通过；每端 674 项单元与三项实际 UI、共享及 Mac 双架构构建证据见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2h4-跨-nas-复制与分步移动)。后台执行、Files 扩展及 Office 回传属于后续切片。
+
+`PENDING_USER_VALIDATION`：准备 iPhone/iPad 真机、两台已授权专用 NAS、独立账号及可丢弃文件，包含空文件/空目录、嵌套目录、分页规模和尾空格名称。先分别登录两端，再从源端选择文件/目录复制到空目标；检查副本后选择移动并单独确认删源。追加只读来源、目标无权限、同名冲突、源/目标改写、断网丢回执、暂停、重启、移除连接及源端退出测试。预期不覆盖原目标、不自动删源、不重放未知写入、不重复传已确认项目；新增目录内容不能被递归删除，部分删除保持逐项状态。真实网络、QuickConnect/证书、锁屏/系统挂起、VoiceOver、大字与键盘仍未验证；公开接口没有跨客户端原子删除保证，测试期间不要并行编辑同一文件。只回传版本类别、脱敏操作/错误类别与逐项最终状态，不提供账号、地址、路径、会话或原始响应。Windows/Android/Mac 行为不因移动测试结论提升验证等级。
