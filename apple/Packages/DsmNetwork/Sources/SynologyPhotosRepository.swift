@@ -1568,6 +1568,7 @@ private struct PhotosMutationRecord: Sendable {
     var folderSharingAcknowledged = false
     var sharingBefore: ManagementAlbum.Sharing?
     var restoredAlbumSharing: SynologyPhotosAlbumCheckpoint.Sharing?
+    var restoredPhotoRequest: SynologyPhotosAlbumCheckpoint.Request?
     var personPhotoIDs: Set<Int>?
     var personReceipt: PersonNameReceipt?
     var personCoverReceipt: PersonCoverReceipt?
@@ -2705,14 +2706,19 @@ extension SynologyPhotosRepository {
     }
 
     private func findPhotoRequest(id: String) async throws -> SynologyPhotoRequest? {
-        guard !id.isEmpty, !allowedSpaces.isEmpty else { throw Self.failure(.permissionDenied) }
+        guard !id.isEmpty else { throw Self.failure(.permissionDenied) }
+        return try await findPhotoRequest { $0 == id }
+    }
+
+    private func findPhotoRequest(matching matches: (String) -> Bool) async throws -> SynologyPhotoRequest? {
+        guard !allowedSpaces.isEmpty else { throw Self.failure(.permissionDenied) }
         let generation = accessGeneration
         var offset = 0, seen = Set<String>()
         while true {
             let page: PhotoRequestList = try await call("SYNO.Foto.PhotoRequest", version: 1, method: "list", parameters: ["offset": .integer(offset), "limit": .integer(500)])
             guard generation == accessGeneration, !allowedSpaces.isEmpty else { throw Self.failure(.permissionDenied) }
             guard page.list.count <= 500, page.list.allSatisfy({ !$0.passphrase.isEmpty && seen.insert($0.passphrase).inserted }) else { throw Self.failure(.invalidResponse) }
-            if let item = page.list.first(where: { $0.passphrase == id }) { return try decodePhotoRequest(item) }
+            if let item = page.list.first(where: { matches($0.passphrase) }) { return try decodePhotoRequest(item) }
             if page.list.count < 500 { return nil }
             offset += page.list.count
             try Task.checkCancellation()
@@ -2798,6 +2804,16 @@ extension SynologyPhotosRepository {
         if let passphrase = settings.albumPassphrase { result["album_passphrase"] = .string(passphrase) }
         else if let id = settings.albumID { result["album_id"] = .integer(id) }
         return result
+    }
+
+    private func inspectRestoredPhotoRequest(_ saved: SynologyPhotosAlbumCheckpoint.Request) async throws -> SynologyPhotosMutationResult {
+        try requireAccess(saved.space)
+        guard saved.targetDigest != nil else { return .init(state: .pendingReview) }
+        let request = try await findPhotoRequest(matching: saved.matchesTarget)
+        if saved.kind == .delete { return .init(state: request == nil ? .confirmed : .pendingReview) }
+        guard let request, request.isFolderValid, try saved.matchesSettings(request.settings),
+              saved.kind != .create || request.url != nil else { return .init(state: .pendingReview) }
+        return .init(state: .confirmed, sharingURL: request.url, photoRequest: request)
     }
 
     private func photoRequestMatches(_ actual: SynologyPhotoRequestSettings, _ expected: SynologyPhotoRequestSettings) -> Bool {
@@ -2917,12 +2933,15 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        try requireAlbumAccess()
+        if let request = checkpoint.requestDetails { try requireAccess(request.space) }
+        else { try requireAlbumAccess() }
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
             let matches = if let sharing = checkpoint.sharingDetails {
                 existing.restoredAlbumSharing.map { $0 == sharing } ?? sharing.hasSameIntent(as: existing.mutation)
+            } else if let request = checkpoint.requestDetails {
+                existing.restoredPhotoRequest.map { $0 == request } ?? request.hasSameIntent(as: existing.mutation)
             } else {
                 switch (existing.mutation, mutation) {
                 case (.copyTemporaryAlbum(let id, let name, let original), .copyTemporaryAlbum(let otherID, let otherName, let other)):
@@ -2939,6 +2958,7 @@ extension SynologyPhotosRepository {
         record.albumID = checkpoint.createdAlbumID
         record.albumMembershipHasFailures = checkpoint.membershipHasFailures
         record.restoredAlbumSharing = checkpoint.sharingDetails
+        record.restoredPhotoRequest = checkpoint.requestDetails
         record.passwordUpdateAcknowledged = checkpoint.sharingDetails?.passwordAcknowledged ?? false
         record.enableSharingAttempted = checkpoint.sharingDetails?.enableAttempted ?? false
         record.temporaryAlbumMembers = checkpoint.temporaryMembers.map { values in
@@ -2965,6 +2985,10 @@ extension SynologyPhotosRepository {
                 sharing.passwordAcknowledged = record.passwordUpdateAcknowledged
                 sharing.enableAttempted = record.enableSharingAttempted
                 checkpoint.sharingDetails = sharing
+            }
+            if var request = checkpoint.requestDetails, request.kind == .create, let id = record.photoRequestID {
+                try request.recordCreatedID(id)
+                checkpoint.requestDetails = request
             }
             try writer(checkpoint)
         }
@@ -3790,17 +3814,22 @@ extension SynologyPhotosRepository {
                 : (photos.count == originals.count ? .confirmed : (photos.isEmpty ? .rejected : .partial))
             result = .init(state: state, photos: photos, completedCount: photos.count)
         case .createPhotoRequest(let settings):
-            if let id = record.photoRequestID, let request = try await findPhotoRequest(id: id), request.isFolderValid,
+            if let restored = record.restoredPhotoRequest {
+                result = try await inspectRestoredPhotoRequest(restored)
+            } else if let id = record.photoRequestID, let request = try await findPhotoRequest(id: id), request.isFolderValid,
                photoRequestMatches(request.settings, settings), request.url != nil {
                 result = .init(state: .confirmed, sharingURL: request.url, photoRequest: request)
             }
         case .updatePhotoRequest(let original, let settings):
-            if let request = try await findPhotoRequest(id: original.id), request.isFolderValid,
+            if let restored = record.restoredPhotoRequest {
+                result = try await inspectRestoredPhotoRequest(restored)
+            } else if let request = try await findPhotoRequest(id: original.id), request.isFolderValid,
                photoRequestMatches(request.settings, settings) {
                 result = .init(state: .confirmed, sharingURL: request.url, photoRequest: request)
             }
         case .deletePhotoRequest(let original):
-            if try await findPhotoRequest(id: original.id) == nil { result = .init(state: .confirmed) }
+            if let restored = record.restoredPhotoRequest { result = try await inspectRestoredPhotoRequest(restored) }
+            else if try await findPhotoRequest(id: original.id) == nil { result = .init(state: .confirmed) }
         case .editPhotoFaces(let photo, let changes):
             let generation = accessGeneration
             let faces = try await photoFaces(for: photo)

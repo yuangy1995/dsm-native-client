@@ -6028,9 +6028,9 @@
 "mobile.photos.upload.prepareFailed" = "无法读取所选项目。请检查网络连接和本机可用空间，然后重新选择。";
 
 // 移动普通相册与恢复。
-"photos.album.recovery.saveFailed" = "无法在本机保存相册操作结果。请检查可用空间，然后刷新状态。";
-"photos.album.recovery.readFailed" = "无法恢复上次的相册操作。请使用原来的账号重新连接，然后重试。";
-"photos.album.recovery.pending" = "相册操作尚未完成。请恢复连接，然后刷新状态。";
+"photos.album.recovery.saveFailed" = "无法在本机保存处理结果。请检查可用空间，然后刷新状态。";
+"photos.album.recovery.readFailed" = "无法恢复上次未完成的更改。请使用原来的账号重新连接，然后重试。";
+"photos.album.recovery.pending" = "上次的更改尚未完成。请恢复连接，然后刷新状态。";
 "mobile.photos.album.removeHint" = "从当前相册移除这些照片？原件和其他相册中的照片仍会保留。";
 "mobile.photos.album.choose" = "选择相册";
 "mobile.photos.album.empty" = "暂无可加入的相册。请先创建相册，再添加照片。";
@@ -6055,3 +6055,9 @@
 
 "mobile.photos.temporary.preparing" = "正在准备所选照片…";
 "mobile.photos.temporary.resume" = "继续设置分享";
+"mobile.photos.request.loading" = "正在读取收集信息…";
+"mobile.photos.request.loadFailed" = "无法读取照片收集信息，请恢复连接后重试。";
+"mobile.photos.request.deleteHint" = "此链接将停止接收照片和视频，已收到的照片和视频会保留。";
+"mobile.photos.request.currentAlbum" = "当前相册";
+"mobile.photos.request.noSubfolders" = "没有子文件夹，可使用当前文件夹或选择上级文件夹。";
+"mobile.photos.request.loadingFolders" = "正在读取文件夹…";

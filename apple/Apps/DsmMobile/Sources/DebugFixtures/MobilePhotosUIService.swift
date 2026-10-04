@@ -15,6 +15,9 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var rejectsAlbum = true
     private var rejectsSharing = true
     private var temporaryAlbumIDs: Set<Int> = []
+    private var requestList: [SynologyPhotoRequest] = []
+    private var heldRequest: CheckedContinuation<Void, Never>?
+    private(set) var isRequestHeld = false
     private var sharingValue = SynologyPhotoSharingState(access: .disabled, hasPassword: true, hasExpiration: false, revision: "original", members: [], expiration: 0, isTemporary: false)
     private var pending: Bool
     private var nextID = 100
@@ -26,7 +29,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown"].contains(state)
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown"].contains(state)
         if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
@@ -43,6 +46,12 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             temporaryAlbumIDs = [21]
             sharingValue = .init(access: .invited, revision: "original", members: [], expiration: 0, isTemporary: true)
         }
+        if state.hasPrefix("photo-request") {
+            requestList = [.init(id: "synthetic-request", profileID: profileID,
+                settings: .init(subject: "Sample request", description: "Sample description", space: state == "photo-request-nohome" ? .shared : .personal,
+                    folderPath: "/Sample folder", folderID: 2, albumID: 21, expiration: 2_000_000_007, sizeLimit: 1_234_567),
+                albumName: "Sample album", isFolderValid: state != "photo-request-invalid-folder", url: URL(string: "https://example.invalid/request/fixture"))]
+        }
     }
     func setPending(_ value: Bool) { pending = value }
     func seedTemporaryAlbum(_ album: SynologyPhotoCollection) {
@@ -52,13 +61,15 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func setUser(_ value: Int) { userID = value }
     func denyWrites() { deniesWrites = true }
     func releaseUpload() { heldUpload?.resume(); heldUpload = nil }
+    func releaseRequest() { heldRequest?.resume(); heldRequest = nil }
+    func seedRequest(_ request: SynologyPhotoRequest) { requestList = [request] }
     func access() async throws -> SynologyPhotosAccess {
         if state == "photo-loading" { try await Task.sleep(for: .seconds(30)) }
         if state == "photo-error" { throw URLError(.notConnectedToInternet) }
-        return .init(spaces: state == "photo-albums-only" ? [] : state == "photo-albums-nohome" ? [.shared] : [.personal, .shared], packageVersion: "synthetic")
+        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic")
     }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
-        state.hasSuffix("-readonly") || deniesWrites ? [] : [.upload, .albums, .folders, .sharing]
+        state.hasSuffix("-readonly") || deniesWrites ? [] : [.upload, .albums, .folders, .sharing, .photoRequests]
     }
     func changeSharing(_ value: SynologyPhotoSharingState) { sharingValue = value }
     func albumSharing(id: Int) async throws -> SynologyPhotoSharingState {
@@ -74,6 +85,9 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                 .init(id: .init(type: "group", value: .string("31")), name: "Sample group")]
     }
     func sharedEntries(_ scope: SynologyPhotoShareScope, offset: Int, limit: Int) async throws -> [SynologyPhotoSharedEntry] {
+        if scope == .requests {
+            return requestList.dropFirst(offset).prefix(limit).map { .init(id: $0.id, title: $0.settings.subject, url: $0.url) }
+        }
         guard scope == .withOthers, sharingValue.access != .disabled, offset == 0 else { return [] }
         let id = temporaryAlbumIDs.sorted().last ?? 21
         return [.init(id: "shared-album", title: albumList.first { $0.id == id }?.name ?? "Sample album", albumID: id, url: sharingValue.url)]
@@ -101,7 +115,29 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func details(for photo: SynologyPhoto) async throws -> SynologyPhoto { photo }
     func rootFolder(in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection { .init(id: 1, name: "Sample folder", path: "/", space: space) }
     func folder(id: Int, in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection { .init(id: id, name: "Sample folder", parentID: id == 1 ? nil : 1, path: "/Sample folder", space: space) }
-    func folders(in space: SynologyPhotoSpace, parentID: Int, offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] { [] }
+    func folders(in space: SynologyPhotoSpace, parentID: Int, offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
+        if state == "photo-request-folders-error" { throw URLError(.notConnectedToInternet) }
+        guard state.hasPrefix("photo-request"), parentID == 1 else { return [] }
+        let count = state == "photo-request-paged" ? 101 : 1
+        return Array((0..<count).dropFirst(offset).prefix(limit)).map { index in
+            .init(id: index + 2, name: index == 0 ? "Sample folder" : "Folder \(index)", parentID: 1,
+                  path: index == 0 ? "/Sample folder" : "/Folder \(index)", space: space)
+        }
+    }
+    func photoRequest(id: String) async throws -> SynologyPhotoRequest {
+        let value = requestList.first { $0.id == id }
+        if state == "photo-request-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-request-held" { isRequestHeld = true; await withCheckedContinuation { heldRequest = $0 } }
+        if state == "photo-request-error" { throw URLError(.notConnectedToInternet) }
+        guard let value else { throw CocoaError(.fileReadNoSuchFile) }
+        return value
+    }
+    func photoRequestAlbums() async throws -> [SynologyPhotoRequestAlbum] {
+        if state == "photo-request-albums-error" { throw URLError(.notConnectedToInternet) }
+        if state == "photo-request-albums-empty" { return [] }
+        return albumList.map { .init(albumID: $0.id, name: $0.name, shared: false) }
+            + [.init(passphrase: "synthetic-shared-album", name: "Shared sample album", shared: true)]
+    }
     func folderSort(_ folder: SynologyPhotoCollection) async throws -> SynologyPhotoSort { .init() }
     func albums(offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] { Array(albumList.dropFirst(offset).prefix(limit)) }
     func addableAlbums(offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
@@ -161,6 +197,15 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             saved.sharingDetails = sharing
         }
         switch mutation {
+        case .createPhotoRequest(let settings):
+            nextID += 1
+            let id = "synthetic-created-\(nextID)"
+            if var request = saved.requestDetails { try request.recordCreatedID(id); saved.requestDetails = request }
+            requestList.append(.init(id: id, profileID: profileID, settings: settings, isFolderValid: true, url: URL(string: "https://example.invalid/request/new")))
+        case .updatePhotoRequest(let original, let settings):
+            requestList.removeAll { $0.id == original.id }
+            requestList.append(.init(id: original.id, profileID: profileID, settings: settings, albumName: original.albumName, isFolderValid: true, url: original.url))
+        case .deletePhotoRequest(let original): requestList.removeAll { $0.id == original.id }
         case .createAlbum, .createTemporaryAlbum, .copyTemporaryAlbum:
             nextID += 1; saved.createdAlbumID = nextID
             if case .copyTemporaryAlbum = mutation {
@@ -185,6 +230,12 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .request(let summary):
+            guard summary.targetDigest != nil else { return .init(state: .pendingReview) }
+            let request = requestList.first { summary.matchesTarget($0.id) }
+            if summary.kind == .delete { return .init(state: request == nil ? .confirmed : .pendingReview) }
+            guard let request, (try? summary.matchesSettings(request.settings)) == true else { return .init(state: .pendingReview) }
+            return .init(state: .confirmed, sharingURL: request.url, photoRequest: request)
         case .createTemporary(let name, let photos):
             guard let id = saved.createdAlbumID else { return .init(state: .pendingReview) }
             let album = SynologyPhotoCollection(id: id, name: name)

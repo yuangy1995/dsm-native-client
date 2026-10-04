@@ -4,6 +4,120 @@ import XCTest
 @testable import DsmNetwork
 
 final class SynologyPhotosRepositoryTests: XCTestCase {
+    func test收集创建恢复只保存摘要且跨实例按回执回读() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let settings = SynologyPhotoRequestSettings(subject: "Fixture", description: "Synthetic collection", folderPath: "/PhotoRequest/Fixture", expiration: 2_000_000_000, sizeLimit: 1_234_567)
+        let writer = MockHTTPTransport(responses: accessResponses() + [response(managedFolder), response(managedFolder),
+            response(try requestFixture(settings, list: false)), response("invalid")])
+        let repository = try makeRepository(writer, profileID: profile); _ = try await repository.access()
+        let command = SynologyPhotosMutation.createPhotoRequest(settings)
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+        XCTAssertEqual(result.state, .pendingReview)
+        XCTAssertNil(capture.values.first?.requestDetails?.targetDigest)
+        let saved = try XCTUnwrap(capture.values.last)
+        XCTAssertEqual(saved.version, 4); XCTAssertTrue(try XCTUnwrap(saved.requestDetails).matchesTarget("fixture-request"))
+        let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
+        for secret in ["Fixture", "Synthetic collection", "/PhotoRequest", "fixture-request", "https://", "fixture-session", "fixture-token"] {
+            XCTAssertFalse(text.contains(secret))
+        }
+        // 同实例的重装配也不把含回执摘要误判为另一操作。
+        try await repository.restoreAlbumMutation(saved)
+        let reader = MockHTTPTransport(responses: accessResponses() + [response(try requestFixture(settings))])
+        let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+        try await restored.restoreAlbumMutation(try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data))
+        let reviewed = try await restored.reviewMutation(operationID: id)
+        XCTAssertEqual(reviewed.state, .confirmed); XCTAssertEqual(reviewed.photoRequest?.id, "fixture-request")
+        let requests = try await reader.recordedRequests().map(decode)
+        XCTAssertFalse(requests.contains { ["create", "update", "delete"].contains($0["method"] ?? "") })
+    }
+
+    func test收集创建丢回执重启不按同名搜索且写前保存失败零写() async throws {
+        let profile = UUID(), id = UUID(), settings = SynologyPhotoRequestSettings(subject: "Fixture", folderPath: "/Sample", folderID: 9)
+        let command = SynologyPhotosMutation.createPhotoRequest(settings)
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+        let reader = MockHTTPTransport(responses: accessResponses())
+        let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+        try await restored.restoreAlbumMutation(saved)
+        let reviewed = try await restored.reviewMutation(operationID: id)
+        XCTAssertEqual(reviewed.state, .pendingReview)
+        let requests = try await reader.recordedRequests().map(decode)
+        XCTAssertFalse(requests.contains { $0["api"] == "SYNO.Foto.PhotoRequest" })
+        let writer = MockHTTPTransport(responses: accessResponses() + [response(managedFolder)])
+        let repository = try makeRepository(writer, profileID: profile); _ = try await repository.access()
+        do {
+            _ = try await repository.performRecoverableAlbumMutation(command, operationID: UUID()) { _ in throw CocoaError(.fileWriteOutOfSpace) }
+            XCTFail("保存失败不得发送")
+        } catch { }
+        let writes = try await writer.recordedRequests().map(decode)
+        XCTAssertFalse(writes.contains { $0["method"] == "create" })
+    }
+
+    func test收集编辑恢复逐字段比较且不会保存目标相册口令() async throws {
+        let profile = UUID(), id = UUID()
+        let settings = SynologyPhotoRequestSettings(subject: "Fixture", description: "After", folderPath: "/Sample", folderID: 9, albumPassphrase: "synthetic-album-secret", expiration: 2_000_000_000, sizeLimit: 1_234_567)
+        let original = SynologyPhotoRequest(id: "synthetic-request-secret", profileID: profile, settings: settings, isFolderValid: true)
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: .updatePhotoRequest(original: original, settings: settings), operationID: id, profileID: profile, userID: 12)
+        let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
+        for value in [original.id, settings.albumPassphrase!, settings.subject, settings.description, settings.folderPath] { XCTAssertFalse(text.contains(value)) }
+        for change in 0..<5 {
+            var actual = settings
+            switch change {
+            case 1: actual.folderID = 10
+            case 2: actual.sizeLimit = 1_234_568
+            case 3: actual.albumPassphrase = "another-album"
+            case 4: actual.expiration += 1
+            default: break
+            }
+            let reader = MockHTTPTransport(responses: accessResponses() + [response(try requestFixture(actual, id: original.id))])
+            let repository = try makeRepository(reader, profileID: profile); _ = try await repository.access()
+            try await repository.restoreAlbumMutation(try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data))
+            let result = try await repository.reviewMutation(operationID: id)
+            XCTAssertEqual(result.state, change == 0 ? .confirmed : .pendingReview)
+            let requests = try await reader.recordedRequests().map(decode)
+            XCTAssertFalse(requests.contains { ["create", "update", "delete"].contains($0["method"] ?? "") })
+        }
+    }
+
+    func test收集删除恢复仅完整列表缺少原标识才结束且拒绝错误账号() async throws {
+        let profile = UUID(), id = UUID(), settings = SynologyPhotoRequestSettings(subject: "Fixture", space: .shared, folderPath: "/Sample", folderID: 9)
+        let original = SynologyPhotoRequest(id: "fixture-request", profileID: profile, settings: settings, isFolderValid: false)
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: .deletePhotoRequest(original), operationID: id, profileID: profile, userID: 12)
+        for present in [true, false] {
+            // 只有共享空间也可以恢复；不能误用个人相册权限。
+            let reader = MockHTTPTransport(responses: accessResponses(teamPermission: "entry", homeEnabled: false) + [response(present ? try requestFixture(settings) : #"{"success":true,"data":{"list":[]}}"#)])
+            let repository = try makeRepository(reader, profileID: profile); _ = try await repository.access()
+            try await repository.restoreAlbumMutation(saved)
+            let result = try await repository.reviewMutation(operationID: id)
+            XCTAssertEqual(result.state, present ? .pendingReview : .confirmed)
+            let requests = try await reader.recordedRequests().map(decode)
+            XCTAssertFalse(requests.contains { $0["method"] == "delete" })
+        }
+        let reader = MockHTTPTransport(responses: accessResponses())
+        let wrongProfile = try makeRepository(reader); _ = try await wrongProfile.access()
+        do { try await wrongProfile.restoreAlbumMutation(saved); XCTFail("不能加载另一账号的记录") }
+        catch let error as AppError { XCTAssertEqual(error.category, .permissionDenied) }
+    }
+
+    func test收集摘要删除恢复不能因目标在后页或分页重复而结束() async throws {
+        let profile = UUID(), id = UUID(), settings = SynologyPhotoRequestSettings(subject: "Fixture", folderPath: "/Sample", folderID: 9)
+        let original = SynologyPhotoRequest(id: "fixture-request", profileID: profile, settings: settings, isFolderValid: true)
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: .deletePhotoRequest(original), operationID: id, profileID: profile, userID: 12)
+        let entries = (0..<500).map { ["passphrase": "synthetic-page-\($0)", "subject": "Fixture"] }
+        let first = String(decoding: try JSONSerialization.data(withJSONObject: ["success": true, "data": ["list": entries]]), as: UTF8.self)
+        for duplicate in [false, true] {
+            let reader = MockHTTPTransport(responses: accessResponses() + [response(first), response(duplicate ? first : try requestFixture(settings))])
+            let repository = try makeRepository(reader, profileID: profile); _ = try await repository.access()
+            try await repository.restoreAlbumMutation(saved)
+            do {
+                let result = try await repository.reviewMutation(operationID: id)
+                XCTAssertFalse(duplicate); XCTAssertEqual(result.state, .pendingReview)
+            } catch { XCTAssertTrue(duplicate) }
+            let requests = try await reader.recordedRequests().map(decode).filter { $0["api"] == "SYNO.Foto.PhotoRequest" }
+            XCTAssertEqual(requests.map { $0["offset"] }, ["0", "500"])
+            XCTAssertTrue(requests.allSatisfy { $0["method"] == "list" })
+        }
+    }
+
     func test临时创建回执跨实例恢复原相册且不再创建() async throws {
         let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
         let writer = MockHTTPTransport(responses: accessResponses() + [response(itemPage), response(itemPage), response(managedFolder),

@@ -932,3 +932,24 @@ XcodeGen 2.46.0 重复生成一致，最终工程 SHA-256 为 `f94de91816c1fdcec
 最终中文 `m3b3-iphone2.xcresult` / `m3b3-ipad2.xcresult` 各 **1/1 实际 UI 通过（35.643 / 39.973 秒）**，覆盖中文创建→设置→取消→保留原件；已查看最终 iPad 深色中文设置截图，重复提示已移除。合计五项新临时分享 UI 加一项既有普通分享回归均有两端通过证据。第五轮除新增中文测试外仅移除重复说明，没有修改行为模型；已通过的 751 项单元和其余 UI 未重复运行。
 
 Mac 最终回归命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过（`m3b3-macos-build1.log`）；实际主程序 `lipo -archs` 为 **x86_64 arm64**。没有安装、启动或发布 Mac 包。iPad 已恢复浅色，临时合成截图、日志和结果包不提交；M3b3 源码及本机验证收口，照片收集继续 M3b4。
+
+
+## 2026-10-04 移动 M3b4 照片收集请求
+
+仅使用合成服务/响应、iPhone/iPad 模拟器和本机工具，没有对真实 NAS 进行写测试。实现范围和恢复格式取舍见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m3b4-照片收集请求)。本轮结果保存在 `/tmp/lanstash-release-1.0.15.1x6wUX/m3b4-*`，不提交一次性产物。
+
+- `swift test --package-path apple --filter SynologyPhotosRepositoryTests`：首轮编译发现摘要比较中的短路表达式未标记可抛出，改为显式空间判断；第二轮 **527/527 通过（2.097 秒）**。加入后页及重复分页用例后，`swift test --package-path apple --jobs 4 --filter SynologyPhotosRepositoryTests` **528/528 通过（3.433 秒）**，日志 `m3b4-repository-final.log`。
+- `swift test --package-path apple --jobs 4`：**2447 项 XCTest、172 项既有条件跳过、0 失败（31.449 秒）**，另 **12 项 Swift Testing 通过（0.036 秒）**，日志 `m3b4-shared1.log`。此后只新增一项网络分页测试，不改变共享业务实现；新增项已纳入上述 528 项聚焦回归。
+- 锁定 XcodeGen **2.46.0** 按移动 `project.yml` 生成工程。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`：首轮 Swift IRGen 在直接传入 MainActor setter 方法引用时崩溃，改为显式闭包；第二轮页面主表达式类型检查超时，提取具名空状态视图与弹窗 Binding；第三轮通过（`m3b4-build3.log`），未改工具链或关闭检查。
+- `xcodebuild test-without-building` 沿用同一工程/方案/模拟器 SDK/派生目录，`-parallel-testing-enabled NO -only-testing:DsmMobileTests`，目标分别为上述 iPhone 和 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` iPad；两端各 **763/763 单元通过（12.860 / 12.827 秒）**，包含 **12 项新增收集模型测试**。结果包为 `m3b4-iphone1.xcresult` / `m3b4-ipad1.xcresult`；同轮实际 UI 仍在运行，另记最终结果。
+- `python3 tools/localization/check_localization.py` 通过，资源 Apple **5824** / Android **2188** / Windows **3402**；`python3 tools/contract-validation/validate_fixtures.py` 通过 **29 组 / 48 项**；`python3 tools/codex/check_documentation.py --strict` 与 `git diff --check` 通过。
+
+首轮两端实际 UI 各 **6/7 通过**，失败均在“读取等待和错误”用例：测试查找 `Retry`，实际 `photos.retry` 英文为 `Try again`；等待和错误正文均已正确呈现。修正精确按钮标题，保留禁用保存与取消返回断言，并新增两种状态截图。首轮 UI 总耗时 **293.415 / 324.818 秒**。已查看 iPhone 浅色中文表单，以及 iPad 深色删除确认与空目录截图，目标和删除后果清楚。
+
+收尾将相册专用的恢复提示改为当前更改的通用结果说明，避免将收集误称为相册；新文案沿用共享 L10n 资源，主应用不存在旧覆盖项，不复制无关资源。目录路径与“使用此文件夹”合并为同一底栏，统一按钮样式/44 点区域并补路径分隔符。第四/第五轮移动测试构建均通过；最终针对中文、重启、错误恢复及目录选择分别复验，结果另记。`swift test --package-path apple --jobs 4 --filter AppLanguageTests` **6 项 Swift Testing 通过（0.054 秒）**。
+
+最终 `m3b4-iphone2.xcresult` / `m3b4-ipad2.xcresult` 两端各 **4/4 实际 UI 通过（179.051 / 201.278 秒）**，含正确英文按钮、新的恢复说明、中文表单和合并目录底栏。合计六项新收集 UI 和一项原有普通分享回归均有两端通过证据；业务模型没有在 763 项单元通过后改变。最终截图已确认浅色目录操作栏和深色错误恢复；iPhone 长英文目录标题改为原生行内标题，再作目录单项复验。
+
+Mac 命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 首轮通过；共享文案收尾后第二轮同样通过（`m3b4-macos-build2.log`）。主程序 `lipo -archs` 为 **x86_64 arm64**。未安装、启动或发布 Mac 包。移动工程重复生成 SHA-256 不变：`2bc4c393644d8fc7755a28416f2ce9124e80a023c9c90022154e128c0150f69d`。
+
+第六轮移动测试构建通过；最终行内目录标题在 `m3b4-iphone3.xcresult` / `m3b4-ipad3.xcresult` 各 **1/1 UI 通过（34.024 / 35.351 秒）**。最终代码没有新增运行失败或未解决编译问题；iPad 已恢复浅色。M3b4 源码及本机验证收口，真实 NAS/真机仍按主计划的 `PENDING_USER_VALIDATION` 后置，不据模拟器结果提升私有 API 真实兼容等级。
