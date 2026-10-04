@@ -3086,7 +3086,6 @@
 "mobile.chat.unavailable.message" = "Synology Chat isn’t available for this NAS or account.";
 "mobile.chat.validation.title" = "Chat Needs Attention";
 "mobile.chat.validation.message" = "Chat can’t be opened safely right now. Reconnect to this NAS, then try again.";
-"mobile.chat.read-only.notice" = "You can start direct conversations and private groups, send text and one attachment, and delete your own messages. Encrypted conversations aren’t available.";
 "mobile.chat.select.title" = "Select a Conversation";
 "mobile.chat.select.message" = "Choose a conversation from the sidebar to read its messages.";
 "mobile.chat.encrypted.label" = "Encrypted conversation";
@@ -6143,3 +6142,13 @@
 "mobile.photos.similar.select" = "Select photos";
 "mobile.photos.similar.open" = "View group";
 "mobile.photos.similar.undoConfirm" = "Restore the previous grouping? Photos that have since moved to another group will not be changed.";
+
+"mobile.chat.interaction.storage-error" = "Chat changes could not be saved on this device. Free up storage, then reopen the app.";
+"mobile.chat.interaction.edit-failed" = "The message could not be changed. Refresh the conversation, then try editing again.";
+"mobile.chat.interaction.edit-pending" = "The change has not appeared yet. Refresh the conversation in a moment.";
+"mobile.chat.interaction.reply-failed" = "The reply was not sent. Check your connection and try again.";
+"mobile.chat.interaction.reply-pending" = "This reply has not appeared yet. Refresh the conversation later; the same text cannot be sent again for now.";
+"mobile.chat.interaction.attachment" = "Attachment";
+"mobile.chat.interaction.missing" = "Message unavailable";
+"mobile.chat.interaction.missing-help" = "The message may have been removed. Return to the conversation to see the latest messages.";
+"mobile.chat.interaction.selected-message" = "Selected message";

@@ -227,7 +227,7 @@ final class MobileChatPresentationTests: XCTestCase {
         let state = try sourceFile("Sources/Features/Chat/MobileChatState.swift")
         let repository = try sourceFile("Sources/Features/Chat/MobileReadOnlyChatRepository.swift")
 
-        XCTAssertTrue(source.contains("private struct MobileChatMessageRow: View"))
+        XCTAssertTrue(source.contains("struct MobileChatMessageRow: View"))
         XCTAssertTrue(source.contains(".swipeActions(edge: .trailing, allowsFullSwipe: false)"))
         XCTAssertTrue(source.contains(".contextMenu"))
         XCTAssertTrue(source.contains("MobileChatDeleteAccessibilityAction(isEnabled: chat.canDeleteMessage(message))"))
@@ -266,8 +266,8 @@ final class MobileChatPresentationTests: XCTestCase {
         let workspaceView = try sourceFile("Sources/AppShell/MobileWorkspaceView.swift")
         let session = try sourceFile("Sources/Session/MobileAppModel+Session.swift")
 
-        XCTAssertEqual(appModel.components(separatedBy: "let chatModel = MobileChatModel()").count - 1, 1)
-        XCTAssertTrue(workspace.contains("chatModel.activate(profileID: profileID, repository: chatRepository)"))
+        XCTAssertEqual(appModel.components(separatedBy: "self.chatModel = MobileChatModel(").count - 1, 1)
+        XCTAssertTrue(workspace.contains("chatModel.activate(profileID: profileID, repository: chatRepository,"))
         XCTAssertTrue(workspace.contains("if selectedModule == .chat, module != .chat"))
         XCTAssertTrue(workspace.contains("chatModel.deactivate()"))
         XCTAssertTrue(session.contains("func clearWorkspace()"))
@@ -334,7 +334,8 @@ final class MobileChatPresentationTests: XCTestCase {
     private func chatViewSources() throws -> String {
         try [
             sourceFile("Sources/Features/Chat/MobileChatView.swift"),
-            sourceFile("Sources/Features/Chat/MobileChatAttachmentView.swift")
+            sourceFile("Sources/Features/Chat/MobileChatAttachmentView.swift"),
+            sourceFile("Sources/Features/Chat/MobileChatInteractionView.swift")
         ].joined(separator: "\n")
     }
 }

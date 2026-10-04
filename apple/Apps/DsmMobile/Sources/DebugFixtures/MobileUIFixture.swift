@@ -14,7 +14,7 @@ enum MobileUIFixture {
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
             let officeState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? ""
             let officeTransport = MobileOfficeUITransport(state: officeState)
-            let uploadFixture = officeState.hasPrefix("office-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = officeState.hasPrefix("office-") || officeState.hasPrefix("chat-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -33,7 +33,7 @@ enum MobileUIFixture {
                             DsmAPIName.fileStationBackgroundTask: 3, DsmAPIName.fileStationCompress: 3, DsmAPIName.fileStationExtract: 2,
                             DsmAPIName.fileStationUpload: 3, DsmAPIName.fileStationCreateFolder: 2, DsmAPIName.fileStationCheckPermission: 3,
                             DsmAPIName.downloadStationTask: 3, DsmAPIName.downloadStationStatistic: 1,
-                            DsmAPIName.chatChannel: 1, DsmAPIName.chatUser: 1,
+                            DsmAPIName.chatChannel: 2, DsmAPIName.chatUser: 1, DsmAPIName.chatPost: 8, DsmAPIName.chatAdminSetting: 3,
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             let fixtureCapabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: versions.map { name, version in
@@ -49,6 +49,9 @@ enum MobileUIFixture {
             model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
+            if officeState.hasPrefix("chat-") {
+                model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: MobileChatUITransport(state: officeState))
+            }
             let crossState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? ""
             if crossState.hasPrefix("cross-") {
                 let targetProfile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000020")!,
@@ -233,7 +236,7 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
             let grantsDownloads = pageState != "modules-none" && !modulePrivilegeRevoked
             result = ["AppPrivilege": ["SYNO.SDS.App.FileStation3.Instance": pageState == "sharing" || isPermissionFixture,
                 "SYNO.SDS.DownloadStation.Application": grantsDownloads,
-                "SYNO.SDS.Chat.Application": pageState == "modules-all",
+                "SYNO.SDS.Chat.Application": pageState == "modules-all" || pageState.hasPrefix("chat-"),
                 "SYNO.SDS.Virtualization.Application": pageState == "modules-all"],
                 "Session": ["is_admin": isPermissionFixture || pageState == "modules-all"]]
         case ("SYNO.Foto.UserInfo", "me"):

@@ -10,6 +10,8 @@ final class MobileChatModel {
     private(set) var activeProfileID: UUID?
     private(set) var profiles: [UUID: MobileChatProfileState] = [:]
     private(set) var conversationCreators: [UUID: MobileChatConversationCreator] = [:]
+    private(set) var interaction: MobileChatInteractionModel?
+    private let interactionRecovery: MobileChatInteractionStore
 
     @ObservationIgnored private var repositories: [UUID: any ChatRepository] = [:]
     @ObservationIgnored private var conversationTask: Task<Void, Never>?
@@ -52,8 +54,10 @@ final class MobileChatModel {
         attachmentRootURL: URL? = nil,
         conversationPinStore: any MobileChatConversationPinStore = UserDefaultsMobileChatConversationPinStore(),
         realtimePollingIntervalNanoseconds: UInt64 = 30_000_000_000,
-        realtimeDebounceIntervalNanoseconds: UInt64 = 200_000_000
+        realtimeDebounceIntervalNanoseconds: UInt64 = 200_000_000,
+        interactionRecoveryRoot: URL? = nil
     ) {
+        self.interactionRecovery = MobileChatInteractionStore(root: interactionRecoveryRoot)
         self.conversationPinStore = conversationPinStore
         self.attachmentFileManager = attachmentFileManager
         self.attachmentCopier = attachmentCopier
@@ -122,6 +126,8 @@ final class MobileChatModel {
               message.isFromCurrentUser == true,
               state.availability.status == .available,
               state.availability.supportedFeatures.contains(.deleteOwnMessage),
+              interaction?.isMutating != true,
+              interaction?.pending.contains(where: { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true,
               state.deletingMessageID == nil,
               state.deleteReviewBlockedMessageIDsByConversation[message.conversationID]?.contains(message.id) != true
         else {
@@ -130,7 +136,7 @@ final class MobileChatModel {
         return state.selectedMessages.messages.contains(where: { $0.id == message.id })
     }
 
-    func activate(profileID: UUID?, repository: (any ChatRepository)?) async {
+    func activate(profileID: UUID?, repository: (any ChatRepository)?, context: String? = nil) async {
         if let activeProfileID {
             profiles[activeProfileID]?.visibleConversationID = nil
         }
@@ -148,6 +154,9 @@ final class MobileChatModel {
         activeProfileID = profileID
         let mobileRepository = MobileReadOnlyChatRepository(base: repository)
         repositories[profileID] = mobileRepository
+        interaction = MobileChatInteractionModel(context: context ?? profileID.uuidString,
+            repository: mobileRepository, recovery: interactionRecovery, owner: self)
+        interaction?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         if let creator = conversationCreators[profileID] {
             creator.rebind(
                 repository: mobileRepository,
@@ -276,6 +285,7 @@ final class MobileChatModel {
                 return
             }
             self?.updateActive { $0.availability = availability }
+            self?.interaction?.updateAvailability(availability)
             self?.conversationCreators[profileID]?.updateAvailability(availability)
             guard availability.status == .available else {
                 self?.finishUnavailable(profileID: profileID, generation: requestGeneration)
@@ -508,6 +518,7 @@ final class MobileChatModel {
             repository: repository,
             preservesContent: !state.selectedMessages.messages.isEmpty
         )
+        if activeProfileID == profileID { await interaction?.recoverEdits() }
     }
 
     func loadMoreMessages() async {
@@ -739,6 +750,8 @@ final class MobileChatModel {
     }
 
     func cancelAllWork() {
+        interaction?.invalidate()
+        interaction = nil
         stopForegroundRealtimeSoon()
         conversationTask?.cancel()
         conversationTask = nil
@@ -1564,6 +1577,23 @@ final class MobileChatModel {
         var profile = profiles[activeProfileID] ?? MobileChatProfileState()
         update(&profile)
         profiles[activeProfileID] = profile
+    }
+
+    func applyInteractionMessage(_ message: ChatMessage) {
+        updateActive { profile in
+            if let index = profile.messagesByConversation[message.conversationID]?.messages.firstIndex(where: { $0.id == message.id }) {
+                profile.messagesByConversation[message.conversationID]?.messages[index] = message
+            }
+            if let index = profile.announcementsByConversation[message.conversationID]?.firstIndex(where: { $0.id == message.id }) {
+                profile.announcementsByConversation[message.conversationID]?[index] = message
+            }
+        }
+    }
+
+    func containsVisibleMessage(conversationID: String, messageID: String) -> Bool {
+        (state.selectedConversationID == conversationID && state.selectedConversation?.isEncrypted == false
+            && state.selectedMessages.messages.contains { $0.id == messageID })
+            || interaction?.containsFocusedMessage(conversationID: conversationID, messageID: messageID) == true
     }
 
     func attachmentRepository(for profileID: UUID) -> (any ChatRepository)? {

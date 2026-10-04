@@ -37,7 +37,7 @@ final class MobileAppModel {
     let fileSettings: MobileFileSettingsModel
     let remoteLocations: MobileRemoteLocationsModel
     let synologyPhotos = MobileSynologyPhotosSession()
-    let chatModel = MobileChatModel()
+    let chatModel: MobileChatModel
     let nasHealthModel = MobileNasHealthModel()
     let nasDetailsModel = MobileNasDetailsModel()
     let containerInventoryModel = MobileContainerInventoryModel()
@@ -151,6 +151,7 @@ final class MobileAppModel {
         transferRecoveryStore: MobileTransferRecoveryStore? = nil
     ) {
         self.filePreviewModel = previewModel
+        self.chatModel = MobileChatModel(interactionRecoveryRoot: transferRecoveryStore?.rootURL.appendingPathComponent("Chat", isDirectory: true))
         self.defaults = defaults
         self.sessionStore = sessionStore
         self.passwordStore = passwordStore
