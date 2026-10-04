@@ -14,8 +14,8 @@ struct PhotosConvertedPreview: Sendable {
 enum PhotosPreviewConversionError: Error { case unreadableMedia, invalidDimensions, encodingFailed }
 
 /// 比较编码轨道而非容器字节，允许下载端重新封装MOV；不接受仅时长/大小相同的视频。
-struct PhotosPreviewVideoSignature: Equatable, Sendable {
-    struct Track: Equatable, Sendable {
+struct PhotosPreviewVideoSignature: Codable, Equatable, Sendable {
+    struct Track: Codable, Equatable, Sendable {
         let type: String
         let formats: [FourCharCode]
         let transform: [Double]
@@ -24,6 +24,12 @@ struct PhotosPreviewVideoSignature: Equatable, Sendable {
     }
     let tracks: [Track]
     let durationMicroseconds: Int64
+
+    func validate() throws {
+        guard durationMicroseconds > 0, tracks.contains(where: { $0.type == AVMediaType.video.rawValue }),
+              tracks.allSatisfy({ !$0.formats.isEmpty && $0.transform.count == 6 && $0.transform.allSatisfy(\.isFinite) &&
+                  $0.sampleCount > 0 && $0.digest.count == 32 }) else { throw CocoaError(.coderReadCorrupt) }
+    }
 }
 
 enum SynologyPhotosPreviewConverter {
@@ -105,7 +111,7 @@ enum SynologyPhotosPreviewConverter {
               let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality),
               session.supportedFileTypes.contains(.mp4) else { throw PhotosPreviewConversionError.unreadableMedia }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        try PhotosPreviewTemporaryFiles.createDirectory(directory)
         defer { try? FileManager.default.removeItem(at: directory) }
         let output = directory.appendingPathComponent("converted.mp4")
         session.outputURL = output; session.outputFileType = .mp4
@@ -114,6 +120,7 @@ enum SynologyPhotosPreviewConverter {
         await PhotosVideoExport(session).run()
         try Task.checkCancellation()
         guard session.status == .completed else { throw session.error ?? PhotosPreviewConversionError.encodingFailed }
+        try PhotosPreviewTemporaryFiles.protect(output)
         let converted = AVURLAsset(url: output)
         let duration = try await converted.load(.duration).seconds
         let tracks = try await converted.loadTracks(withMediaType: .video)
@@ -196,5 +203,25 @@ enum SynologyPhotosPreviewConverter {
         } onCancel: {
             Task { @MainActor [self] in session.cancelExport() }
         }
+    }
+}
+
+/// 转换、上传体及结果回读都含媒体，只在自有目录中临时保存。
+enum PhotosPreviewTemporaryFiles {
+    static func createDirectory(_ url: URL) throws {
+        var attributes: [FileAttributeKey: Any] = [.posixPermissions: 0o700]
+        #if os(iOS)
+        attributes[.protectionKey] = FileProtectionType.completeUnlessOpen
+        #endif
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false, attributes: attributes)
+        do { try protect(url) }
+        catch { try? FileManager.default.removeItem(at: url); throw error }
+    }
+    static func protect(_ url: URL) throws {
+        #if os(iOS)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: url.path)
+        var target = url, values = URLResourceValues(); values.isExcludedFromBackup = true
+        try target.setResourceValues(values)
+        #endif
     }
 }

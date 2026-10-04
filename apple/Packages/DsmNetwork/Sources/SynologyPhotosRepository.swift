@@ -1516,7 +1516,7 @@ private struct SharedAlbumList: Decodable, Sendable {
 
 private enum PhotosGlobalStep: Hashable, Sendable { case cache, admin, personal, shared }
 
-private enum PhotosPreviewFailureKind: String, Sendable { case photo, video }
+private typealias PhotosPreviewFailureKind = SynologyPhotosAlbumCheckpoint.AutomaticPreview.FailureKind
 
 private struct PhotosMutationRecord: Sendable {
     var automaticFailureKind: PhotosPreviewFailureKind?
@@ -2941,7 +2941,13 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        if let preview = checkpoint.previewRegenerationDetails {
+        if let maintenance = checkpoint.previewMaintenanceDetails {
+            switch maintenance {
+            case .automatic(let value): try requireAccess(value.task.space)
+            case .library(let original, _, _): try requireAccess(original.space)
+            default: try requireAlbumAccess()
+            }
+        } else if let preview = checkpoint.previewRegenerationDetails {
             for space in Set(preview.targets.map { $0.id.space }) { try requireAccess(space) }
         } else if case .rotation(let value) = checkpoint.preferenceDetails { try requireAccess(value.photo.id.space) }
         else if checkpoint.folderSharingDetails != nil { try requireAccess(.shared) }
@@ -2961,7 +2967,9 @@ extension SynologyPhotosRepository {
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            let matches = if let preview = checkpoint.previewRegenerationDetails {
+            let matches = if let maintenance = checkpoint.previewMaintenanceDetails {
+                maintenance.hasSameIntent(as: existing.mutation, profileID: profileID, userID: checkpoint.userID)
+            } else if let preview = checkpoint.previewRegenerationDetails {
                 preview.hasSameIntent(as: existing.mutation)
             } else if let preference = checkpoint.preferenceDetails {
                 preference.hasSameIntent(as: existing.mutation)
@@ -3004,6 +3012,23 @@ extension SynologyPhotosRepository {
         record.restoredPhotoRequest = checkpoint.requestDetails
         record.restoredFrozen = checkpoint.frozenDetails
         record.usesAlbumRecovery = true
+        if let maintenance = checkpoint.previewMaintenanceDetails {
+            switch maintenance {
+            case .setting: break
+            case .codec(let original, _, let acknowledged, let rejected):
+                record.codecGenerationAcknowledged = acknowledged; record.codecPromptRejected = rejected
+                if acknowledged { codecGenerationAcknowledgedUsers.insert(original.userID) }
+            case .library(_, _, let acknowledged): record.libraryMaintenanceAcknowledged = acknowledged
+            case .automatic(let value):
+                record.automaticPreviewSubmitted = value.submitted; record.automaticPreviewAcknowledged = value.acknowledged
+                record.automaticFailureKind = value.failureKind; record.automaticFailureAcknowledged = value.failureAcknowledged
+                record.automaticThumbnailDigests = value.thumbnailDigests
+                if let encoded = value.videoSignature {
+                    let signature = try JSONDecoder().decode(PhotosPreviewVideoSignature.self, from: encoded)
+                    try signature.validate(); record.automaticVideoSignature = signature
+                }
+            }
+        }
         if let preview = checkpoint.previewRegenerationDetails {
             for target in preview.targets {
                 let id = target.id
@@ -3042,6 +3067,22 @@ extension SynologyPhotosRepository {
             checkpoint.createdAlbumID = record.albumID
             checkpoint.membershipHasFailures = record.albumMembershipHasFailures
             checkpoint.rejected = record.result.state == .rejected
+            if let maintenance = checkpoint.previewMaintenanceDetails {
+                switch maintenance {
+                case .setting: break
+                case .codec(let original, let generate, _, _):
+                    checkpoint.previewMaintenanceDetails = .codec(original, generate: generate,
+                        acknowledged: record.codecGenerationAcknowledged, promptRejected: record.codecPromptRejected)
+                case .library(let original, let action, _):
+                    checkpoint.previewMaintenanceDetails = .library(original, action, acknowledged: record.libraryMaintenanceAcknowledged)
+                case .automatic(var value):
+                    value.submitted = record.automaticPreviewSubmitted; value.acknowledged = record.automaticPreviewAcknowledged
+                    value.failureKind = record.automaticFailureKind; value.failureAcknowledged = record.automaticFailureAcknowledged
+                    value.thumbnailDigests = record.automaticThumbnailDigests
+                    value.videoSignature = try record.automaticVideoSignature.map { try JSONEncoder().encode($0) }
+                    checkpoint.previewMaintenanceDetails = .automatic(value)
+                }
+            }
             if var preview = checkpoint.previewRegenerationDetails {
                 for index in preview.targets.indices {
                     let id = preview.targets[index].id
@@ -3205,6 +3246,8 @@ extension SynologyPhotosRepository {
                     try await managementWrite("SYNO.Foto.Index", method: original.isAdministrator ? "reindex_all_user" : "reindex", parameters: ["type": .string("thumbnail")])
                     record.codecGenerationAcknowledged = true
                     codecGenerationAcknowledgedUsers.insert(original.userID)
+                    do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                    catch { record.codecPromptRejected = true; throw error }
                 }
                 try Task.checkCancellation()
                 guard operationGeneration == accessGeneration else { throw Self.failure(.permissionDenied) }
@@ -3838,6 +3881,9 @@ extension SynologyPhotosRepository {
         case .setAutomaticPreview(_, let enabled):
             if try await automaticPreviewEnabled() == enabled { result = .init(state: .confirmed, completedCount: 1) }
         case .generateAutomaticPreview(let task, _):
+            if record.usesAlbumRecovery, !record.automaticPreviewSubmitted, record.automaticFailureKind == nil {
+                result = .init(state: .rejected); break
+            }
             guard task.profileID == profileID else { throw Self.failure(.permissionDenied) }
             var verifiedSources: [AutomaticPreviewSource]?
             if let photo = task.sourcePhoto {
@@ -5431,11 +5477,12 @@ extension SynologyPhotosRepository {
         operationID: UUID, record: inout PhotosMutationRecord, progress: @escaping FileTransferProgress) async throws {
         let generation = accessGeneration
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        try PhotosPreviewTemporaryFiles.createDirectory(directory)
         defer { try? FileManager.default.removeItem(at: directory) }
         // AVFoundation识别部分容器依赖扩展名，临时文件保留格式但不使用真实文件名。
         let source = directory.appendingPathComponent("source").appendingPathExtension((task.filename as NSString).pathExtension)
         try await downloadAutomaticPreviewSource(task, support: support, to: source, progress: progress)
+        try PhotosPreviewTemporaryFiles.protect(source)
         var thumbnail: PhotosConvertedPreview?
         if task.needsThumbnail {
             do { thumbnail = try await SynologyPhotosPreviewConverter.convert(file: source, mediaType: task.typeCode == 0 ? "photo" : "video") }
@@ -5450,6 +5497,7 @@ extension SynologyPhotosRepository {
             let output = directory.appendingPathComponent("preview.mp4")
             do {
                 try await SynologyPhotosPreviewConverter.video(file: source, to: output)
+                try PhotosPreviewTemporaryFiles.protect(output)
                 record.automaticVideoSignature = try await SynologyPhotosPreviewConverter.videoSignature(file: output)
             } catch {
                 guard SynologyPhotosPreviewConverter.shouldRecordFailure(error) else { throw error }
@@ -5468,6 +5516,7 @@ extension SynologyPhotosRepository {
         let boundary = "LanStash-Preview-" + UUID().uuidString
         let body = directory.appendingPathComponent("upload")
         let length = try Self.writeAutomaticPreviewBody(to: body, boundary: boundary, api: name, unitID: task.unitID, thumbnail: thumbnail, video: video)
+        try PhotosPreviewTemporaryFiles.protect(body)
         var request = try DsmRequestBuilder.build(baseURL: baseURL, path: capability.path, api: name, version: 3, method: "upload", requestFormat: .json, parameters: [:], credential: credential)
         request.httpBody = nil
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -5477,6 +5526,8 @@ extension SynologyPhotosRepository {
         try Task.checkCancellation()
         guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
         record.automaticPreviewSubmitted = true
+        do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+        catch { record.automaticPreviewSubmitted = false; throw error }
         mutations[operationID] = record
         let response = try await binary.upload(request, from: body, progress: progress)
         guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
@@ -5496,6 +5547,8 @@ extension SynologyPhotosRepository {
         try Task.checkCancellation()
         guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
         record.automaticFailureKind = kind
+        do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+        catch { record.automaticFailureKind = nil; throw error }
         mutations[operationID] = record
         try await managementWrite(api("Upload.ConvertedFile", in: task.space), version: 3, method: "set_broken",
             parameters: ["id": .integerArray([task.unitID]), "type": .stringArray([kind.rawValue])])
@@ -5543,12 +5596,13 @@ extension SynologyPhotosRepository {
         if task.needsVideo {
             guard let expected = record.automaticVideoSignature else { return false }
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            try PhotosPreviewTemporaryFiles.createDirectory(directory)
             defer { try? FileManager.default.removeItem(at: directory) }
             let file = directory.appendingPathComponent("review.mov")
             let request = try mediaRequest(api("Streaming", in: task.space), method: "streaming", parameters: [
                 "id": .integer(task.unitID), "type": .string("unit"), "quality": .string("orig_h264"), "use_mov": .boolean(true)])
             let response = try await binary.download(request, to: file, progress: { _, _ in })
+            try PhotosPreviewTemporaryFiles.protect(file)
             guard response.statusCode == 200, try await SynologyPhotosPreviewConverter.videoSignature(file: file) == expected else { return false }
         }
         try Task.checkCancellation()

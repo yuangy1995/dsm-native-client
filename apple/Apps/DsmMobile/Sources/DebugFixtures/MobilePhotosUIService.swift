@@ -31,6 +31,11 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var displayValue = SynologyPhotoDisplaySettings()
     private var recognitionValue = SynologyPhotoRecognitionSettings(values: [.person: true, .concept: true, .similar: false], globallyEnabled: [.person, .concept, .similar], personalSpaceEnabled: true)
     private var uploaded: [SynologyPhoto] = []
+    private var automaticEnabled = false
+    private var automaticFinished: Set<Int> = []
+    private var codecShown = true
+    private var codecSubmitted = false
+    private var maintenanceRunning: [SynologyPhotoSpace: SynologyPhotoLibraryMaintenanceStatus.Action] = [:]
     private var repairedPreviews: Set<SynologyPhotoID> = []
     private var tagChoices: [SynologyPhotoFilterChoice] = [.init(id: 8, name: "Sample tag")]
     private var heldEdit: CheckedContinuation<Void, Never>?
@@ -49,7 +54,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown"].contains(state)
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown", "photo-preview-unknown", "photo-preview-automatic-unknown"].contains(state)
         if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") || state.hasPrefix("photo-edit") || (state.hasPrefix("photo-folders") || state.hasPrefix("photo-folder-sharing") || state.hasPrefix("photo-tasks")) {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
@@ -76,6 +81,14 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                     status: id == 41 ? .processing : .done, total: 5, completion: id == 41 ? 2 : 5,
                     errors: id == 42 ? 1 : 0, skipped: 0, overwritten: 0, createdAt: Double(1_700_000_000 + id), targetFolderID: 3, targetOwnerID: 12))
             }
+        }
+        if state.hasPrefix("photo-preview") {
+            automaticEnabled = state.contains("automatic")
+            codecShown = !state.hasSuffix("empty")
+            if state.hasSuffix("running") { maintenanceRunning[.personal] = .previews }
+            uploaded = [.init(id: .init(profileID: profileID, space: .personal, unitID: 1), filename: "Sample 1.jpg",
+                sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20),
+                folderID: 1, mediaType: "photo", thumbnail: .init(unitID: 11, revision: "original"))]
         }
         if state.hasPrefix("photo-repair") {
             uploaded = (1...(state == "photo-repair-many" ? 102 : 2)).map { index in
@@ -181,7 +194,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func access() async throws -> SynologyPhotosAccess {
         if state == "photo-loading" { try await Task.sleep(for: .seconds(30)) }
         if state == "photo-error" { throw URLError(.notConnectedToInternet) }
-        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: (state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry") || state == "photo-edit-mixed" || (state.hasPrefix("photo-folder-sharing") && state != "photo-folder-sharing-noaccess"), displaySettings: state.hasPrefix("photo-preferences") ? displayValue : nil)
+        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome", "photo-frozen-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: (state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry") || state == "photo-edit-mixed" || (state.hasPrefix("photo-folder-sharing") && state != "photo-folder-sharing-noaccess"), displaySettings: state.hasPrefix("photo-preferences") ? displayValue : nil, automaticPreviewEnabled: state.hasPrefix("photo-preview") ? automaticEnabled : nil)
     }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
         guard !state.hasSuffix("-readonly"), !deniesWrites else { return [] }
@@ -194,6 +207,10 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if state.hasPrefix("photo-tasks") { features.insert(.backgroundTasks) }
         if state == "photo-folders-defaults" { features.insert(.duplicateSettings) }
         if state.hasPrefix("photo-repair") { features.insert(.previewRegeneration) }
+        if state.hasPrefix("photo-preview") {
+            features.formUnion([.automaticPreviewSettings, .automaticPreview, .codecPrompt])
+            if space == .personal || state == "photo-preview-admin" { features.insert(.libraryMaintenance) }
+        }
         if state.hasPrefix("photo-preferences") { features.formUnion([.duplicateSettings, .displaySettings, .recognitionSettings, .rotation]) }
         return features
     }
@@ -278,7 +295,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return uploaded.filter { $0.id.space == space && !repairedPreviews.contains($0.id) }
     }
     func previewImage(for photo: SynologyPhoto) async throws -> Data {
-        guard state.hasPrefix("photo-preferences") || state.hasPrefix("photo-repair") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
+        guard state.hasPrefix("photo-preferences") || state.hasPrefix("photo-repair") || state.hasPrefix("photo-preview") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
         return Self.image
     }
     func details(for photo: SynologyPhoto) async throws -> SynologyPhoto {
@@ -336,6 +353,35 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             + [.init(passphrase: "synthetic-shared-album", name: "Shared sample album", shared: true)]
     }
     func folderSort(_ folder: SynologyPhotoCollection) async throws -> SynologyPhotoSort { folderSorts["\(folder.space):\(folder.id)"] ?? .init() }
+    func seedAutomaticEnabled(_ value: Bool) { automaticEnabled = value }
+    func finishMaintenance() { maintenanceRunning = [:] }
+    private func previewSettingsRead() async throws {
+        if state.hasSuffix("held") { isControlHeld = true; await withCheckedContinuation { heldControl = $0 } }
+        if state.hasSuffix("loading") { try await Task.sleep(for: .seconds(30)) }
+        if state.hasSuffix("error") { throw URLError(.notConnectedToInternet) }
+    }
+    func automaticPreviewEnabled() async throws -> Bool { try await previewSettingsRead(); return automaticEnabled }
+    func codecPrompt() async throws -> SynologyPhotoCodecPrompt {
+        try await previewSettingsRead()
+        return .init(profileID: profileID, userID: userID, isAdministrator: state == "photo-preview-admin",
+            shouldShow: codecShown, personalSpaceEnabled: state != "photo-preview-nohome", generationAlreadySubmitted: codecSubmitted)
+    }
+    func libraryMaintenanceStatus(in space: SynologyPhotoSpace) async throws -> SynologyPhotoLibraryMaintenanceStatus {
+        try await previewSettingsRead()
+        return .init(profileID: profileID, userID: userID, space: space,
+            indexingCount: maintenanceRunning[space] == .reindex ? 4 : 0, previewCount: maintenanceRunning[space] == .previews ? 5 : 0,
+            supportsPreviewGeneration: state != "photo-preview-unsupported")
+    }
+    func automaticPreviewTasks(in space: SynologyPhotoSpace, support: SynologyPhotoPreviewConversionSupport) async throws -> [SynologyPhotoAutomaticPreviewTask] {
+        guard state.hasPrefix("photo-preview"), automaticEnabled else { return [] }
+        return uploaded.filter { $0.id.space == space && !automaticFinished.contains($0.thumbnail?.unitID ?? 0) }.map {
+            .init(profileID: profileID, space: space, unitID: $0.thumbnail?.unitID ?? 0, filename: $0.filename,
+                typeCode: 0, needsThumbnail: true, needsVideo: false, sourcePhoto: $0)
+        }
+    }
+    func automaticPreviewTasks(for photo: SynologyPhoto, support: SynologyPhotoPreviewConversionSupport) async throws -> [SynologyPhotoAutomaticPreviewTask] {
+        try await automaticPreviewTasks(in: photo.id.space, support: support).filter { $0.sourcePhoto?.id == photo.id }
+    }
     private func preferenceRead() async throws {
         if state == "photo-preferences-held" { isControlHeld = true; await withCheckedContinuation { heldControl = $0 } }
         if state == "photo-preferences-loading" { try await Task.sleep(for: .seconds(30)) }
@@ -411,6 +457,29 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             saved.sharingDetails = sharing
         }
         switch mutation {
+        case .setAutomaticPreview(_, let enabled): automaticEnabled = enabled
+        case .respondToCodecPrompt(let original, let generate):
+            if generate { codecSubmitted = true }
+            let partial = state == "photo-preview-partial" && generate
+            if !partial { codecShown = false }
+            saved.previewMaintenanceDetails = .codec(original, generate: generate, acknowledged: generate, promptRejected: partial)
+        case .maintainLibrary(let original, let action):
+            if state.hasSuffix("running") { maintenanceRunning[original.space] = action }
+            saved.previewMaintenanceDetails = .library(original, action, acknowledged: !pending)
+        case .generateAutomaticPreview(let task, _):
+            if state == "photo-preview-automatic-slow" {
+                do { try await Task.sleep(for: .seconds(30)) }
+                catch {
+                    saved.rejected = true; albumRecords[operationID] = saved; try checkpoint(saved)
+                    return .init(state: .rejected)
+                }
+            }
+            if case .automatic(var value) = saved.previewMaintenanceDetails {
+                value.submitted = true; value.acknowledged = !pending
+                value.thumbnailDigests = ["xl": Data(repeating: 1, count: 32), "sm": Data(repeating: 2, count: 32), "m": Data(repeating: 3, count: 32)]
+                saved.previewMaintenanceDetails = .automatic(value)
+            }
+            automaticFinished.insert(task.unitID)
         case .regeneratePreviews(let photos, _):
             if var value = saved.previewRegenerationDetails {
                 for index in value.targets.indices {
@@ -556,11 +625,24 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         guard checkpoint.profileID == profileID, checkpoint.userID == userID else { throw CocoaError(.fileReadNoPermission) }
         _ = try checkpoint.reviewMutation()
         albumRecords[checkpoint.operationID] = checkpoint
+        if case .codec(_, _, let acknowledged, _) = checkpoint.previewMaintenanceDetails, acknowledged { codecSubmitted = true }
     }
     private func albumResult(_ saved: SynologyPhotosAlbumCheckpoint) -> SynologyPhotosMutationResult {
+        if case .codec(_, true, true, true) = saved.previewMaintenanceDetails {
+            return .init(state: codecShown ? .partial : .confirmed, completedCount: 1)
+        }
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .previewMaintenance(let value):
+            switch value {
+            case .setting(_, let enabled): return .init(state: automaticEnabled == enabled ? .confirmed : .pendingReview, completedCount: 1)
+            case .codec(_, let generate, let acknowledged, let rejected):
+                return .init(state: generate && acknowledged && rejected ? .partial : .confirmed, completedCount: 1)
+            case .library(let original, let action, let acknowledged):
+                return .init(state: acknowledged && maintenanceRunning[original.space] != action ? .confirmed : .pendingReview, completedCount: 1)
+            case .automatic: return .init(state: .confirmed, completedCount: 1)
+            }
         case .previewRegeneration(let value):
             let photos = value.targets.filter { $0.generated }.map { $0.original.photo }
             return .init(state: photos.count == value.targets.count ? .confirmed : photos.isEmpty ? .rejected : .partial,

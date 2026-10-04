@@ -1,5 +1,6 @@
 import DsmCore
 import DsmLocalization
+import DsmPhotosFeature
 import SwiftUI
 
 struct MobilePhotoPreferencesForm: View {
@@ -18,32 +19,110 @@ struct MobilePhotoPreferencesForm: View {
                     ContentUnavailableView {
                         Label(L10n.string("photos.error.title"), systemImage: "exclamationmark.triangle")
                     } description: { Text(error) } actions: { Button(L10n.string("photos.retry")) { preferences.load() } }
+                } else if draft.page == .codec, preferences.codec?.shouldShow == false {
+                    ContentUnavailableView {
+                        Label(L10n.string("photos.codec.none"), systemImage: "checkmark.circle")
+                    } actions: { Button(L10n.string("photos.library.refresh")) { preferences.load() } }
                 } else if draft.page == .recognition, preferences.originalRecognition?.values.isEmpty == true {
                     ContentUnavailableView(L10n.string("photos.recognition.empty"), systemImage: "sparkles",
                         description: Text(L10n.string("photos.recognition.emptyHint")))
                 } else {
                     Form {
                         switch draft.page {
-                        case .duplicates: duplicateFields
-                        case .display: displayFields
-                        case .recognition: recognitionFields
+                        case .duplicates: duplicateFields.disabled(!preferences.editable)
+                        case .display: displayFields.disabled(!preferences.editable)
+                        case .recognition: recognitionFields.disabled(!preferences.editable)
+                        case .automatic: automaticFields
+                        case .codec: codecFields
+                        case .maintenance: maintenanceFields
                         }
-                    }.disabled(!preferences.editable)
+                        if [.automatic, .codec, .maintenance].contains(draft.page), showsManagementStatus {
+                            MobilePhotoManagementStatus(model: preferences.model)
+                        }
+                    }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(draft.page.title).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button(L10n.string("photos.delete.cancel")) { preferences.cancel(); dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) {
+                        if draft.page == .maintenance || draft.page == .codec {
+                            Button { preferences.cancel(); dismiss() } label: { Image(systemName: "xmark") }
+                                .accessibilityLabel(L10n.string("photos.media.close")).keyboardShortcut(.cancelAction)
+                        } else { Button(L10n.string("photos.delete.cancel")) { preferences.cancel(); dismiss() } }
+                    }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(L10n.string("mobile.photos.edit.save")) { if preferences.save() { dismiss() } }
-                            .disabled(preferences.mutation == nil).accessibilityIdentifier("mobile.photos.preferences.save")
+                        if draft.page == .maintenance || draft.page == .codec {
+                            Button { preferences.load() } label: { Image(systemName: "arrow.clockwise") }
+                                .accessibilityLabel(L10n.string("photos.library.refresh")).disabled(preferences.isLoading)
+                        } else { Button(L10n.string("mobile.photos.edit.save")) { if preferences.save() { dismiss() } }
+                            .disabled(preferences.mutation == nil).accessibilityIdentifier("mobile.photos.preferences.save") }
                     }
                 }
-                .alert(L10n.string("photos.duplicates.overwriteTitle"), isPresented: $preferences.showsConfirmation) {
+                .alert(preferences.confirmationTitle, isPresented: $preferences.showsConfirmation) {
                     Button(L10n.string("photos.delete.cancel"), role: .cancel) { preferences.cancelConfirmation() }
-                    Button(L10n.string("mobile.photos.edit.save"), role: .destructive) { if preferences.confirmSave() { dismiss() } }
+                    Button(preferences.confirmationAction, role: draft.page == .maintenance ? nil : .destructive) { if preferences.confirmSave() { dismiss() } }
                         .accessibilityIdentifier("mobile.photos.preferences.confirm")
-                } message: { Text(L10n.string("photos.duplicates.defaultOverwriteWarning")) }
+                } message: { Text(preferences.confirmationMessage) }
+        }
+        .task(id: draft.id) {
+            guard draft.page == .maintenance else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                if !preferences.showsConfirmation { preferences.load() }
+            }
+        }
+    }
+
+    private var showsManagementStatus: Bool {
+        let model = preferences.model
+        return model.albumRecoveryError != nil || (model.isManaging && !model.isGeneratingAutomaticPreview) ||
+            (model.pendingMutationID != nil && (draft.page != .automatic || !model.hasPendingAutomaticPreview))
+    }
+
+    private var automaticFields: some View {
+        Section {
+            Toggle(L10n.string("photos.automatic.enabled"), isOn: $preferences.automatic)
+                .disabled(!preferences.editable).accessibilityIdentifier("photos.automatic.enabled")
+            Text(L10n.string("mobile.photos.automatic.foreground")).foregroundStyle(.secondary)
+            if !preferences.model.automaticPreviewSupported {
+                Text(L10n.string("mobile.photos.automatic.unsupported")).foregroundStyle(.secondary)
+            }
+            MobilePhotoAutomaticPreviewStatus(model: preferences.model)
+        }
+    }
+    @ViewBuilder private var codecFields: some View {
+        if let prompt = preferences.codec {
+            Section {
+                if !prompt.shouldShow { Text(L10n.string("photos.codec.none")) }
+                else {
+                    Text(L10n.string(prompt.generationAlreadySubmitted ? "photos.codec.submitted" : prompt.isAdministrator ? "photos.codec.allUsers" : "photos.codec.personal"))
+                    if !prompt.canGenerate && !prompt.generationAlreadySubmitted { Text(L10n.string("photos.codec.unavailable")).foregroundStyle(.secondary) }
+                    if prompt.canGenerate {
+                        Button(L10n.string("photos.codec.generate")) { if preferences.respondToCodec(generate: true) { dismiss() } }
+                            .accessibilityIdentifier("mobile.photos.codec.generate")
+                    }
+                    Button(L10n.string(prompt.generationAlreadySubmitted ? "photos.codec.dismiss" : "photos.codec.later")) {
+                        if preferences.respondToCodec(generate: false) { dismiss() }
+                    }.accessibilityIdentifier("mobile.photos.codec.dismiss")
+                }
+            }.disabled(!preferences.editable)
+        }
+    }
+    @ViewBuilder private var maintenanceFields: some View {
+        if let status = preferences.maintenance {
+            ForEach(SynologyPhotoLibraryMaintenanceStatus.Action.allCases, id: \.self) { action in
+                Section(L10n.string(action == .reindex ? "photos.maintenance.reindex" : "photos.maintenance.previews")) {
+                    Text(L10n.string(action == .reindex ? "photos.maintenance.reindexDescription" : "photos.maintenance.previewsDescription"))
+                    if action == .previews && !status.supportsPreviewGeneration {
+                        Text(L10n.string("photos.maintenance.previewUnavailable")).foregroundStyle(.secondary)
+                    } else if status.pendingCount(for: action) > 0 {
+                        Label(L10n.string("photos.maintenance.running"), systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    Button(L10n.string("photos.maintenance.start")) { preferences.confirmMaintenance(action) }
+                        .disabled(!preferences.editable || !status.canStart(action))
+                        .accessibilityIdentifier("mobile.photos.maintenance.\(action.rawValue)")
+                }
+            }
         }
     }
 
@@ -122,6 +201,32 @@ struct MobilePhotoPreferencesPresentation: ViewModifier {
     func body(content: Content) -> some View {
         content.sheet(item: Binding(get: { session.preferences?.draft }, set: { if $0 == nil { session.preferences?.cancel() } }), onDismiss: { session.preferences?.cancel() }) { draft in
             if let preferences = session.preferences { MobilePhotoPreferencesForm(preferences: preferences, draft: draft) }
+        }
+    }
+}
+
+struct MobilePhotoAutomaticPreviewStatus: View {
+    @Bindable var model: SynologyPhotosModel
+    var body: some View {
+        if model.showsAutomaticPreviewStatus || model.automaticPreviewCompleted > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                if let filename = model.automaticPreviewFilename { Text(L10n.string("photos.automatic.processing", filename)) }
+                else if model.hasPendingAutomaticPreview { Text(L10n.string("mobile.photos.automatic.pending")) }
+                else if let error = model.automaticPreviewError { Text(error) }
+                else if model.automaticPreviewPaused { Text(L10n.string("photos.automatic.paused")) }
+                else if model.automaticPreviewCompleted > 0 { Text(L10n.string("photos.automatic.completed", model.automaticPreviewCompleted)) }
+                HStack {
+                    if model.isGeneratingAutomaticPreview {
+                        Button(L10n.string("photos.automatic.pause")) { model.pauseAutomaticPreviews() }
+                            .accessibilityIdentifier("mobile.photos.automatic.pause")
+                    } else if model.hasPendingAutomaticPreview {
+                        Button(L10n.string("mobile.photos.album.refresh")) { model.reviewPendingMutation() }.disabled(model.isManaging)
+                    } else if model.automaticPreviewPaused || model.automaticPreviewError != nil {
+                        Button(L10n.string("photos.automatic.resume")) { model.resumeAutomaticPreviews() }
+                            .accessibilityIdentifier("mobile.photos.automatic.resume")
+                    }
+                }.buttonStyle(.bordered).controlSize(.large)
+            }.font(.callout)
         }
     }
 }

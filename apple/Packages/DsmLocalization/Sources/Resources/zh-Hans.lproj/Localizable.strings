@@ -6106,3 +6106,7 @@
 "mobile.photos.preferences.loading" = "正在载入照片设置…";
 "mobile.photos.preferences.recognition" = "照片智能分类";
 "mobile.photos.preferences.info" = "默认显示照片信息";
+
+"mobile.photos.automatic.foreground" = "打开照片页面时补齐缺少的预览，离开页面或切到后台会暂停。原件保持不变。";
+"mobile.photos.automatic.unsupported" = "此设备暂不支持生成预览。保存的设置仍可用于其他支持的设备。";
+"mobile.photos.automatic.pending" = "预览正在处理，连接恢复后会继续更新状态。";

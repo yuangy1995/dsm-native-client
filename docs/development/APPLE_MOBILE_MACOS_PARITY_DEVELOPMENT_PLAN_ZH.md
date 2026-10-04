@@ -45,7 +45,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M3 目录及移动复制 | PhotoFolderDestinationPicker、PhotoManagementPanel | 分步目的地选择、图库内拖放；Folder/Move/Copy；数据写 | M3d 已接目录创建/重命名/排序/封面、混合移动复制/删除及版本 8 恢复；两端单元与实际 UI 通过；M3e 已接共享目录权限、成员/密码/子目录确认和完整任务控制及版本 9 恢复 |
 | M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | M3b1 普通相册及 M3b2 访问范围/成员/保护设置已接入并通过两端回归；M3b3 临时分享生命周期、M3b4 照片收集及 M3b5 条件相册也经两端回归；M3b6 冻结相册普通恢复/重建及重启只读也经两端回归，权限保持独立 |
 | M3 人物、相似组 | SynologyPhotosModel | 触控分组列表、人物编辑；People/Similar；写 | 缺管理流程；不推断服务端未识别的人物 |
-| M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | M3e 已接移动复制任务列表/筛选、取消、逐项清除、错误详情与原目标导航，两端自动化通过；M3f1 已接重复文件/显示/个人分类设置、上传默认策略和旋转及版本 10 恢复，两端单元/实际 UI 通过；M3f2 已接手动预览重建/未完成列表及版本 11 恢复，两端回归通过；自动预览/图库维护及管理员设置继续后续切片 |
+| M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | M3e 已接移动复制任务列表/筛选、取消、逐项清除、错误详情与原目标导航，两端自动化通过；M3f1 已接重复文件/显示/个人分类设置、上传默认策略和旋转及版本 10 恢复，两端单元/实际 UI 通过；M3f2 已接手动预览重建/未完成列表及版本 11 恢复，两端回归通过；M3f3 已接自动预览设置/前台生成、图库维护与新格式提示及版本 12 恢复，两端回归通过；管理员设置继续后续切片 |
 | M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | 包装器未转发新增能力；本人/会话绑定，历史完整分页 |
 | M4 投票、提醒、定时 | ChatDetailsViews | 原生表单；投票对象/props.vote 及提醒定时字段；写 | 缺完整接入；未知不重发，撤销核对原对象 |
 | M4 转发、置顶、会话管理 | ChatWorkspaceModel | 目标会话选择、菜单；Post.search 数字 in 数组；写 | 有部分低风险操作；包装器截断/字段投影需复核 |
@@ -89,7 +89,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 - 实际命令：`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`；随后两端分别运行 `test-without-building`，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，关闭测试并行。结果分别为 `build/m0-m8-baseline-iphone.xcresult`、`build/m0-m8-baseline-ipad.xcresult`（忽略的本地构建目录）。
 - `python3 tools/codex/check_documentation.py` 与 `git diff --check` 通过。
 - `MobileChatPresentationTests` 包含源码文本断言；更新过时范围限制时保留安全语义并补实际行为/界面测试。
-- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通/条件/冻结相册、分享与收集、资料/目录/权限/任务及照片偏好/旋转、手动预览重建/恢复已通过两端回归；旧图库清理随 M3 完成，其余 M3 和 M4–M8 继续实施。
+- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通/条件/冻结相册、分享与收集、资料/目录/权限/任务及照片偏好/旋转、手动预览重建/恢复、自动预览/图库维护与新格式提示已通过两端回归；旧图库清理随 M3 完成，其余 M3 和 M4–M8 继续实施。
 
 ## PENDING_USER_VALIDATION
 
@@ -104,6 +104,18 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+## M3f3 自动预览与图库维护
+
+Mac 证据为 `PhotoAutomaticPreviewSettingsPanel`、`PhotoCodecPromptPanel`、`PhotoLibraryMaintenancePanel` 与共享模型的自动预览工作循环。两端采用原生设置表单、来源切换和维护确认；自动转换只在照片页面前台运行，离页或进入后台停止领取并取消当前本机工作，已提交项目只读恢复。图库维护与新格式生成保持 NAS 实际处理语义，不把接收回执表述为全部生成完成。
+
+单一修改范围为移动设置/维护表单及模型、会话与缩略图刷新、共享恢复和自动循环、网络写入边界、双语资源、合成服务与正式测试、工程及相关文档。沿用现有已记录接口，无新增 NAS 参数。独立恢复版本 12 保存设置原值/目标、维护身份/计数/动作、转换提示范围和回执，以及自动任务的最小原件身份与转换内容摘要；不存媒体、凭据或全量照片资料。旧版 1–11 继续可读，旧 App 拒绝新记录并保留文件，不迁移登录配置；回滚停用入口并保留记录。属于用户已批准 M0–M8 恢复范围，无新增依赖、身份、系统权限或最低版本变化；Mac 运行共享回归，Windows/Android 仅记录契约影响。
+
+安全级别为内部设置写、预览上传和整库维护。写前保存失败不得提交；未知上传必须凭本次内容摘要或接收回执确认，列表消失不代表成功；维护丢回执不按计数变化猜测归属，也不自动重启维护。新格式生成已接受而提示关闭失败时，额外保存同版本 `codec-v12.json` 后续记录，再清除已完成步骤；重启只读恢复接收证据并只能继续关闭提示，其他管理操作不会覆盖这份后续记录。真实 NAS 不参与自动写测试；系统后台传输属 M8，管理员设置、人物/相似组、批量导出/原件删除恢复与旧图库清理继续 M3，均不在本切片计作完成。
+
+已完成独立集成与只读对抗复核，两端最终各 857 项单元、七项新实际 UI 及原显示偏好回归均有通过记录；包含处理中暂停/继续、未知重启、部分生成后只保存提示、维护来源确认与限制、空内容/错误/加载、中英文和浅深色截图。网络 579 项通过，完整共享 2499 项（172 项既有条件跳过）、另 12 项语言测试通过；Mac 最终双架构构建通过。模拟器不代替真实媒体/NAS 和设备系统验收。精确命令及中间失败修复见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m3f3-自动预览与图库维护)。
+
+`PENDING_USER_VALIDATION`：两种真机、已记录 DSM/Photos 版本、专用可丢弃媒体及普通/共享管理员账号；开关自动预览、暂停/继续、页面/前后台切换，分别测试 JPEG/HEVC/视频与不支持格式，再执行个人/共享图库索引及预览维护、新格式提示处理。在上传/维护/关闭提示回执处断网并重启，预期已提交不重放、原件不变、进度与 NAS 一致。锁屏保护、真实解码、能耗、VoiceOver、大字号、iPad 键盘分屏和实际 NAS 结果未验证；只回传版本、媒体类型、角色、脱敏步骤和错误类别。
 
 ## M3f2 手动预览重建与中断恢复
 

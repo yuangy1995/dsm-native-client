@@ -75,6 +75,7 @@ final class MobileSynologyPhotosSession {
     func activate() async {
         model.setModuleEnabled(true)
         await model.loadIfNeeded()
+        if model.isModuleEnabled, model.hasLoaded, model.managementFeatures.contains(.automaticPreview) || model.hasPendingAutomaticPreview { model.startAutomaticPreviews() }
         if !hasCleanedUploadDrafts, model.hasLoaded, !model.isLoading, model.errorMessage == nil,
            model.uploadPersistenceError == nil, let uploads, uploads.draftID == nil {
             try? uploads.storage.removeUnreferencedCopies(keeping: model.uploadQueue.map(\.file))
@@ -103,7 +104,7 @@ final class MobileSynologyPhotosSession {
     func thumbnail(_ photo: SynologyPhoto) async -> Data? {
         guard model.isModuleEnabled, let repository else { return nil }
         let current = identity
-        let key = "\(current)|\(photo.id.profileID)|\(photo.id.space)|\(photo.id.unitID)|\(photo.thumbnail?.unitID ?? 0)|\(photo.thumbnail?.revision ?? "")"
+        let key = "\(current)|\(photo.id.profileID)|\(photo.id.space)|\(photo.id.unitID)|\(photo.thumbnail?.unitID ?? 0)|\(photo.thumbnail?.revision ?? "")|\(model.automaticPreviewRevision(for: photo))"
         let data = await thumbnails.data(for: key, namespace: current.uuidString, priority: .visible) {
             try await repository.thumbnail(for: photo)
         }
