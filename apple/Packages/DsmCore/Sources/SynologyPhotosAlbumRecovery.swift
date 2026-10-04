@@ -19,6 +19,8 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case frozen(Frozen)
         case photoEdit(PhotoEdit)
         case folder(FolderOperation)
+        case folderSharing(FolderSharing)
+        case background(BackgroundControl)
     }
     public let version: Int
     public let profileID: UUID
@@ -36,13 +38,15 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
              .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum,
              .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum,
              .edit, .shiftDates, .createTag, .addTags, .removeTags,
-             .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy: true
+             .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy,
+             .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
         version = switch mutation {
+        case .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks: 9
         case .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy: 8
         case .edit, .shiftDates, .createTag, .addTags, .removeTags: 7
         case .unfreezeAlbum, .rebuildFrozenAlbum: 6
@@ -54,6 +58,14 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         }
         self.profileID = profileID; self.userID = userID; self.operationID = operationID
         switch mutation {
+        case .setFolderSharing: operation = .folderSharing(try FolderSharing(mutation: mutation))
+        case .cancelBackgroundTask, .clearBackgroundTasks:
+            let tasks: [SynologyPhotoBackgroundTask]
+            if case .cancelBackgroundTask(let task) = mutation { tasks = [task] }
+            else if case .clearBackgroundTasks(let values) = mutation { tasks = values }
+            else { throw CocoaError(.coderInvalidValue) }
+            guard tasks.allSatisfy({ $0.profileID == profileID && $0.userID == userID }) else { throw CocoaError(.coderInvalidValue) }
+            operation = .background(try BackgroundControl(mutation: mutation))
         case .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy: operation = .folder(try FolderOperation(mutation: mutation))
         case .edit, .shiftDates, .createTag, .addTags, .removeTags: operation = .photoEdit(try PhotoEdit(mutation: mutation))
         case .createAlbum(let name, let photos): operation = .create(name: name, photos: photos.map(SynologyPhotoUploadPhoto.init))
@@ -76,13 +88,19 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...8).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...9).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
         }
         let command: SynologyPhotosMutation
         switch operation {
+        case .folderSharing(let value):
+            guard version == 9, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation()
+        case .background(let value):
+            guard version == 9, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation(profileID: profileID, userID: userID)
         case .folder(let value):
             guard version == 8, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation(profileID: profileID)
@@ -129,10 +147,21 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
             guard id > 0, !photos.isEmpty else { throw CocoaError(.coderReadCorrupt) }
         case .shareAlbum, .deleteTemporaryAlbum, .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum,
              .edit, .shiftDates, .createTag, .addTags, .removeTags,
-             .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy: break
+             .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy,
+             .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
+    }
+
+    public var folderSharingDetails: FolderSharing? {
+        get { if case .folderSharing(let value) = operation { return value }; return nil }
+        set { if case .folderSharing = operation, let newValue { operation = .folderSharing(newValue) } }
+    }
+
+    public var backgroundDetails: BackgroundControl? {
+        get { if case .background(let value) = operation { return value }; return nil }
+        set { if case .background = operation, let newValue { operation = .background(newValue) } }
     }
 
     public var sharingDetails: Sharing? {

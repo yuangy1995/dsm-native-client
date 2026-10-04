@@ -1566,6 +1566,7 @@ private struct PhotosMutationRecord: Sendable {
     var passwordUpdateAcknowledged = false
     var folderCoverAcknowledged = false
     var folderSharingAcknowledged = false
+    var restoredFolderSharing: SynologyPhotosAlbumCheckpoint.FolderSharing?
     var sharingBefore: ManagementAlbum.Sharing?
     var restoredAlbumSharing: SynologyPhotosAlbumCheckpoint.Sharing?
     var restoredPhotoRequest: SynologyPhotosAlbumCheckpoint.Request?
@@ -2937,7 +2938,9 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        if checkpoint.folderDetails != nil {
+        if checkpoint.folderSharingDetails != nil { try requireAccess(.shared) }
+        else if checkpoint.backgroundDetails != nil { try requireAlbumAccess() }
+        else if checkpoint.folderDetails != nil {
             let command = try checkpoint.reviewMutation()
             try requireAccess(command.space); try requireAccess(command.destinationSpace)
         } else if let edit = checkpoint.photoEditDetails {
@@ -2952,7 +2955,11 @@ extension SynologyPhotosRepository {
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
-            let matches = if let folder = checkpoint.folderDetails {
+            let matches = if let sharing = checkpoint.folderSharingDetails {
+                existing.restoredFolderSharing.map { $0 == sharing } ?? sharing.hasSameIntent(as: existing.mutation)
+            } else if let background = checkpoint.backgroundDetails {
+                background.hasSameIntent(as: existing.mutation, profileID: profileID, userID: checkpoint.userID)
+            } else if let folder = checkpoint.folderDetails {
                 folder.hasSameIntent(as: existing.mutation, profileID: profileID)
             } else if let edit = checkpoint.photoEditDetails {
                 existing.restoredPhotoEdit.map { $0 == edit } ?? edit.hasSameIntent(as: existing.mutation)
@@ -2980,6 +2987,10 @@ extension SynologyPhotosRepository {
         record.albumID = checkpoint.createdAlbumID
         record.albumMembershipHasFailures = checkpoint.membershipHasFailures
         record.restoredAlbumSharing = checkpoint.sharingDetails
+        record.restoredFolderSharing = checkpoint.folderSharingDetails
+        record.folderSharingAcknowledged = checkpoint.folderSharingDetails?.acknowledged ?? false
+        record.backgroundAttempted = checkpoint.backgroundDetails?.attempted ?? []
+        record.backgroundRejected = checkpoint.backgroundDetails?.rejected ?? []
         record.restoredPhotoRequest = checkpoint.requestDetails
         record.restoredFrozen = checkpoint.frozenDetails
         record.usesAlbumRecovery = true
@@ -3008,6 +3019,14 @@ extension SynologyPhotosRepository {
             checkpoint.createdAlbumID = record.albumID
             checkpoint.membershipHasFailures = record.albumMembershipHasFailures
             checkpoint.rejected = record.result.state == .rejected
+            if var sharing = checkpoint.folderSharingDetails {
+                sharing.acknowledged = record.folderSharingAcknowledged
+                checkpoint.folderSharingDetails = sharing
+            }
+            if var background = checkpoint.backgroundDetails {
+                background.attempted = record.backgroundAttempted; background.rejected = record.backgroundRejected
+                checkpoint.backgroundDetails = background
+            }
             if var folder = checkpoint.folderDetails {
                 folder.taskID = record.taskID; folder.createdFolderID = record.folderID
                 folder.transferTargetVerified = record.transferTargetVerified; folder.transferTotal = record.transferTotal
@@ -3135,6 +3154,8 @@ extension SynologyPhotosRepository {
                     try Task.checkCancellation()
                     guard operationGeneration == accessGeneration else { throw Self.failure(.permissionDenied) }
                     record.backgroundAttempted.insert(original.id); record.backgroundCurrent = original.id
+                    do { try persistRecoveryCheckpoint(record, operationID: operationID) }
+                    catch { record.backgroundAttempted.remove(original.id); record.backgroundCurrent = nil; throw error }
                     mutations[operationID] = record
                     try await managementWrite("SYNO.Foto.BackgroundTask.Info", method: "clear_completed_task", parameters: ["id": .integer(original.id)])
                     record.backgroundCurrent = nil
@@ -3216,6 +3237,7 @@ extension SynologyPhotosRepository {
                 try await managementWrite("SYNO.FotoTeam.Sharing.FolderPermission", method: "update", parameters: parameters)
                 record.folderSharingAcknowledged = true
                 record.passwordUpdateAcknowledged = password != nil
+                try persistRecoveryCheckpoint(record, operationID: operationID)
                 if apply != original.appliesToSubfolders {
                     try Task.checkCancellation()
                     try requireAccess(.shared)
@@ -3693,6 +3715,25 @@ extension SynologyPhotosRepository {
     private func inspectMutation(_ operationID: UUID) async throws -> SynologyPhotosMutationResult {
         guard var record = mutations[operationID] else { throw Self.failure(.conflict) }
         _ = try mutationAccessSpace(record.mutation)
+        if let sharing = record.restoredFolderSharing {
+            if record.result.state == .rejected { return record.result }
+            let current = try await folderSharing(sharing.folder)
+            let membersMatch = sharing.members.map { expected in
+                current.members.map { sharingMemberRoles($0) == sharingMemberRoles(expected.map(\.grant)) } ?? false
+            } ?? true
+            let passwordMatch = switch sharing.password {
+            case .unchanged: current.hasPassword == sharing.previousHasPassword
+            case .remove: current.hasPassword == false
+            case .set: sharing.acknowledged && current.hasPassword == true
+            }
+            if current.access.rawValue == sharing.access, membersMatch, passwordMatch,
+               !sharing.appliesToSubfolders || sharing.acknowledged {
+                record.result = .init(state: current.appliesToSubfolders == sharing.appliesToSubfolders ? .confirmed : .partial,
+                    sharingURL: current.url, folder: current.folder)
+                mutations[operationID] = record
+            }
+            return record.result
+        }
         if let edit = record.restoredPhotoEdit {
             let result = try await inspectRecoveredPhotoEdit(edit, record: record)
             record.result = result; mutations[operationID] = record

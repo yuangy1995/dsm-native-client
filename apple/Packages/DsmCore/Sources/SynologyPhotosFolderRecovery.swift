@@ -3,7 +3,7 @@ import Foundation
 extension SynologyPhotosAlbumCheckpoint {
     /// 目录操作沿用原对象与任务回执；路径仅用于 NAS 对象回读，不能用于本机文件读写。
     public struct FolderOperation: Codable, Sendable {
-        public struct Folder: Codable, Sendable {
+        public struct Folder: Codable, Equatable, Sendable {
             let id: Int
             let parentID: Int?
             let name: String

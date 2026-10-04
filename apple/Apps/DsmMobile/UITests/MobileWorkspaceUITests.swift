@@ -3,6 +3,128 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+
+    func test照片文件夹权限共享范围与覆盖子目录确认() {
+        let app = launchFixture(state: "photo-folder-sharing"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.source", in: app).tap(); app.buttons["Shared Photos"].tap(); openPhotoSection("Folders", app: app)
+        XCTAssertTrue(element("mobile.photos.collection.actions.2", in: app).waitForExistence(timeout: 5))
+        element("mobile.photos.collection.actions.2", in: app).tap(); element("mobile.photos.folderSharing.begin", in: app).tap()
+        let access = element("mobile.photos.folderSharing.access", in: app)
+        XCTAssertTrue(access.waitForExistence(timeout: 5)); access.tap(); app.buttons["Anyone with the link can view and download"].tap()
+        let apply = app.switches["mobile.photos.folderSharing.apply"]
+        for _ in 0..<3 where !apply.isHittable { app.swipeUp() }
+        XCTAssertTrue(apply.isHittable); apply.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        app.buttons["mobile.photos.folderSharing.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "Change access to “Source” and all its subfolders? Existing subfolder permissions will be replaced, and people may gain or lose access.")).firstMatch.exists)
+        attachScreenshot(app, name: "Folder permissions and subfolder warning")
+        app.alerts.buttons["Cancel"].firstMatch.tap(); app.buttons["mobile.photos.folderSharing.save"].tap()
+        app.alerts.buttons["mobile.photos.folderSharing.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+    }
+
+    func test照片文件夹权限中文成员搜索及普通收紧保存() {
+        let app = launchFixture(state: "photo-folder-sharing", language: "zh-Hans"); defer { app.terminate() }
+        openPhotos(app, chinese: true); element("mobile.photos.source", in: app).tap(); app.buttons["共享照片"].tap(); openPhotoSection("文件夹", app: app)
+        XCTAssertTrue(element("mobile.photos.collection.actions.2", in: app).waitForExistence(timeout: 5))
+        element("mobile.photos.collection.actions.2", in: app).tap(); element("mobile.photos.folderSharing.begin", in: app).tap()
+        let members = element("mobile.photos.folderSharing.members", in: app)
+        XCTAssertTrue(members.waitForExistence(timeout: 5)); for _ in 0..<3 where !members.isHittable { app.swipeUp() }; members.tap()
+        XCTAssertTrue(app.buttons["Sample group"].waitForExistence(timeout: 5))
+        let search = app.searchFields.firstMatch
+        if !search.exists {
+            let reveal = app.buttons.matching(NSPredicate(format: "label == 'Search' OR label == '搜索'")).firstMatch
+            XCTAssertTrue(reveal.waitForExistence(timeout: 5)); reveal.tap()
+        }
+        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("group")
+        XCTAssertTrue(app.buttons["Sample group"].exists); XCTAssertFalse(app.buttons["Sample member"].exists)
+        attachScreenshot(app, name: "Folder permission member search Chinese")
+        search.typeText("\n")
+        let closeSearch = app.buttons["关闭"].firstMatch
+        if closeSearch.exists && closeSearch.isHittable { closeSearch.tap() }
+        XCTAssertTrue(app.navigationBars["选择用户或群组"].waitForExistence(timeout: 5))
+        app.navigationBars["选择用户或群组"].buttons.firstMatch.tap()
+        let access = element("mobile.photos.folderSharing.access", in: app)
+        XCTAssertTrue(access.waitForExistence(timeout: 5))
+        for _ in 0..<3 where !access.isHittable { app.swipeDown() }; access.tap(); app.buttons["仅限拥有完整访问权限的用户"].tap()
+        app.buttons["mobile.photos.folderSharing.save"].tap()
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
+    }
+
+    func test照片文件夹权限加载失败与父目录限制() {
+        for state in ["photo-folder-sharing-error", "photo-folder-sharing-parent"] {
+            let app = launchFixture(state: state); defer { app.terminate() }
+            openPhotos(app); element("mobile.photos.source", in: app).tap(); app.buttons["Shared Photos"].tap(); openPhotoSection("Folders", app: app)
+            if state.hasSuffix("-parent") { app.buttons["mobile.photos.collection.2"].tap() }
+            let id = state.hasSuffix("-parent") ? "200" : "2"
+            XCTAssertTrue(element("mobile.photos.collection.actions.\(id)", in: app).waitForExistence(timeout: 5))
+            element("mobile.photos.collection.actions.\(id)", in: app).tap(); element("mobile.photos.folderSharing.begin", in: app).tap()
+            if state.hasSuffix("-parent") {
+                XCTAssertTrue(app.staticTexts["The parent folder is restricted to full-access users. Change its permissions before sharing this folder."].waitForExistence(timeout: 5))
+                XCTAssertFalse(element("mobile.photos.folderSharing.access", in: app).isEnabled)
+            } else { XCTAssertTrue(app.staticTexts["Could not load folder permissions. Check your connection and try again."].waitForExistence(timeout: 5)) }
+            XCTAssertFalse(app.buttons["mobile.photos.folderSharing.save"].isEnabled)
+            attachScreenshot(app, name: state); app.buttons["Cancel"].firstMatch.tap()
+        }
+    }
+
+    func test照片后台任务筛选错误与取消后保留进度() {
+        let app = launchFixture(state: "photo-tasks"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.tasks.begin", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.tasks.cancel.41", in: app).waitForExistence(timeout: 5))
+        element("mobile.photos.tasks.errors.42", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Your storage quota is full. Free up space or contact your administrator."].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Photo task error details"); app.buttons["mobile.photos.tasks.errors.close"].tap()
+        XCTAssertTrue(app.buttons["mobile.photos.tasks.errors.close"].waitForNonExistence(timeout: 5))
+        app.segmentedControls.buttons["In Progress"].tap(); element("mobile.photos.tasks.cancel.41", in: app).tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); XCTAssertTrue(app.staticTexts["Completed copies or moves will remain. The remaining work will stop."].exists)
+        attachScreenshot(app, name: "Photo task cancellation consequences")
+        app.alerts.buttons["mobile.photos.tasks.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["No Matching Tasks"].waitForExistence(timeout: 8))
+        app.segmentedControls.buttons["Finished"].tap()
+        XCTAssertTrue(app.staticTexts["Canceled"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Processed 2 of 5 · Failed 0 · Skipped 0 · Replaced 0"].exists)
+    }
+
+    func test照片后台任务清除记录和打开原目标() {
+        let app = launchFixture(state: "photo-tasks"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.tasks.begin", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.tasks.open.43", in: app).waitForExistence(timeout: 5))
+        let open = element("mobile.photos.tasks.open.43", in: app); for _ in 0..<3 where !open.isHittable { app.swipeUp() }; open.tap()
+        XCTAssertTrue(app.navigationBars["Destination"].waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.tasks.begin", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.tasks.actions", in: app).waitForExistence(timeout: 5)); element("mobile.photos.tasks.actions", in: app).tap()
+        element("mobile.photos.tasks.clearCompleted", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Only the selected task records will be cleared. Photos and folders will remain."].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Photo task record clearing warning"); app.alerts.buttons["mobile.photos.tasks.confirm"].firstMatch.tap()
+        app.segmentedControls.buttons["Finished"].tap(); XCTAssertTrue(app.staticTexts["No Matching Tasks"].waitForExistence(timeout: 8))
+        app.segmentedControls.buttons["All"].tap(); XCTAssertTrue(element("mobile.photos.tasks.cancel.41", in: app).exists)
+    }
+
+    func test照片后台任务未知重启仅刷新状态() {
+        let app = launchFixture(state: "photo-tasks-unknown"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.tasks.begin", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.tasks.cancel.41", in: app).waitForExistence(timeout: 5)); element("mobile.photos.tasks.cancel.41", in: app).tap()
+        app.alerts.buttons["mobile.photos.tasks.confirm"].firstMatch.tap()
+        XCTAssertTrue(element("mobile.photos.tasks.resume", in: app).waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8)); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.tasks.begin", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.tasks.resume", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(element("mobile.photos.tasks.cancel.41", in: app).isEnabled)
+        attachScreenshot(app, name: "Photo task restart recovery")
+    }
+
+    func test照片后台任务空内容与错误有恢复操作() {
+        for state in ["photo-tasks-empty", "photo-tasks-error"] {
+            let app = launchFixture(state: state); defer { app.terminate() }
+            openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.tasks.begin", in: app).tap()
+            XCTAssertTrue(app.staticTexts[state.hasSuffix("-empty") ? "No Background Tasks" : "Could not retrieve the latest tasks. Check your connection and refresh."].waitForExistence(timeout: 5))
+            if state.hasSuffix("-error") { XCTAssertTrue(app.buttons["Try again"].exists) }
+            attachScreenshot(app, name: state); app.buttons["Close"].firstMatch.tap()
+        }
+    }
+
     func test照片目录新建重命名与排序() {
         let app = launchFixture(state: "photo-folders"); defer { app.terminate() }
         openPhotos(app); openPhotoSection("Folders", app: app)

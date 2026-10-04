@@ -21,6 +21,8 @@ final class MobileSynologyPhotosSession {
     private(set) var editor: MobilePhotoEditModel?
     private(set) var folders: MobilePhotoFolderModel?
     private(set) var sharing: MobilePhotoSharingModel?
+    private(set) var folderSharing: MobilePhotoFolderSharingModel?
+    private(set) var tasks: MobilePhotoTasksModel?
     private(set) var temporarySharing: MobilePhotoTemporarySharingModel?
     private(set) var conditions: MobilePhotoConditionModel?
     private(set) var requests: MobilePhotoRequestModel?
@@ -36,12 +38,14 @@ final class MobileSynologyPhotosSession {
     @ObservationIgnored private var uploadRecoveryStore: PhotoUploadRecoveryStore?
     @ObservationIgnored private var hasCleanedUploadDrafts = false
     @ObservationIgnored private var albumRecoveryStore: PhotoAlbumRecoveryStore?
+    @ObservationIgnored private var backgroundRecoveryStore: PhotoAlbumRecoveryStore?
 
     func configure(_ repository: (any SynologyPhotosServing)?, uploadStorage: MobilePhotoUploadStorage? = nil,
                    reviewDelay: @escaping @Sendable (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
         deactivate()
         uploadRecoveryStore?.suspendWrites()
         albumRecoveryStore?.suspendWrites()
+        backgroundRecoveryStore?.suspendWrites()
         identity = UUID()
         self.repository = repository
         model = SynologyPhotosModel(repository: repository, deletionReviewDelay: reviewDelay)
@@ -49,11 +53,15 @@ final class MobileSynologyPhotosSession {
         model.configureUploadRecovery(uploadRecoveryStore)
         albumRecoveryStore = uploadStorage.map { PhotoAlbumRecoveryStore(url: $0.recordURL.deletingPathExtension().appendingPathComponent("Albums/pending-v1.json")) }
         model.configureAlbumRecovery(albumRecoveryStore)
+        backgroundRecoveryStore = uploadStorage.map { PhotoAlbumRecoveryStore(url: $0.recordURL.deletingPathExtension().appendingPathComponent("Albums/tasks-v1.json")) }
+        model.configureBackgroundRecovery(backgroundRecoveryStore)
         uploads = uploadStorage.map { MobilePhotoUploadImportModel(model: model, storage: $0) }
         albums = repository == nil ? nil : MobilePhotoAlbumModel(model: model)
         editor = repository == nil ? nil : MobilePhotoEditModel(model: model)
         folders = repository == nil ? nil : MobilePhotoFolderModel(model: model)
         sharing = repository == nil ? nil : MobilePhotoSharingModel(model: model)
+        folderSharing = repository == nil ? nil : MobilePhotoFolderSharingModel(model: model)
+        tasks = repository == nil ? nil : MobilePhotoTasksModel(model: model)
         temporarySharing = sharing.map { MobilePhotoTemporarySharingModel(model: model, sharing: $0) }
         conditions = repository == nil ? nil : MobilePhotoConditionModel(model: model)
         requests = repository == nil ? nil : MobilePhotoRequestModel(model: model)
@@ -76,6 +84,8 @@ final class MobileSynologyPhotosSession {
         editor?.cancel()
         folders?.cancel()
         sharing?.cancel()
+        folderSharing?.cancel()
+        tasks?.cancel()
         temporarySharing?.clear()
         requests?.cancel()
         conditions?.cancel()
