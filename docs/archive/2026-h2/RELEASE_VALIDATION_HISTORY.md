@@ -1351,3 +1351,41 @@ iPad 使用 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，两者运行 iOS 26.5，不
 保留失败证据及修复：第 1 轮各 997 项单元仅旧实时源码断言失败，已将“不额外加载公告”的约束限定到实时同步函数，未删除安全断言；公告 UI 原先匹配底层相同文字，改为按公告原消息 ID 定位。第 2 轮发现普通样式列表行的透明区不能点击，补整行触控范围与选中状态断言；第 3 轮确认 Quick Look 已加载但缺导航栏，补文件标题和显式关闭。第 5 轮 iPhone 退出管理后仍显示加载消息；第 6 轮立即返回又提前关闭结果窗口，改为管理窗口退出后再返回，iPad 保留并列详情语义。所有原断言保留或按新的完整功能语义加强，未将失败改为跳过。
 
 已查看两端中英文、浅深主题、超大字号、公告原内容、取消确认、批量结果与系统预览截图；iPad 背景聊天分栏/输入区的窄宽度问题留在 M4c，不能据新弹窗通过宣称整个聊天布局完成。临时导出截图/视频与诊断文本复核后清理；本机日志和结果包保留在本轮工作目录，不提交。锁定 XcodeGen 2.46.0 重复生成后的工程 SHA-256 均为 `3bdb87d5b82bc96368bb47861bd15419183b4aa57bef98085e5c77478b7819dc`。真实 NAS 不参与自动写测试，设备步骤见[移动 M4b3a](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3a-公告置顶与会话关闭)。继续 M4b3b 转发、多条本人消息删除与 M4b4 发送/创建恢复，M4–M8 尚未整体完成。
+
+
+## 2026-10-04 移动 M4b3b1 转发恢复共享前置
+
+范围为 Apple 共享转发的最小进度回执、保存回调与独立只读恢复。原 Mac 调用保留，同一来源写前串行，明确拒绝才解除未结束记录；成功回执、各目标完成身份分步保存，丢回执不认领同内容，导入未知记录后禁止换编号再发。来源按原线程/内容/作者/编辑时间重读，目标按账号、普通消息、内容摘要、提交前后 180 秒与原基线匹配，读取到旧时间边界或历史末尾才形成唯一结果，部分完成只恢复剩余目标。没有新增 NAS 参数或真实写证据。
+
+新增 `ChatForwardReceiptTests` 4 项与 `DsmChatForwardRecoveryTests` 18 项正式测试。测试覆盖受保护的最小信息、FORM/JSON 编码、写前/回执/最终保存失败、线程来源、能力/权限、明确拒绝、跨页超过 100 条、重复候选/坏分页、账号、旧消息/其他作者/投票/加密、实际任务取消、并发点击/恢复及持久回执重建。原附件转发用例将固定过期时间改为测试时刻，以覆盖新提交窗口，原请求和不下载附件断言保留。分离的集成与只读对抗复核补上两个缺口：最终进度补存后释放来源占用、缺回执的重建 Repository 保留原操作并拒绝新编号重发。
+
+实际命令（仓库根目录）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter DsmChatRepositoryTests
+swift test --package-path apple --jobs 2 --filter 'DsmChatRepositoryTests|ChatForwardReceiptTests'
+swift test --package-path apple --jobs 2
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatUITests/test聊天搜索打开原消息并发送线程回复 -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4b3b-iphone1.xcresult
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+python3 tools/localization/check_localization.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/codex/check_documentation.py --strict-release
+git diff --check
+```
+
+iPad 使用相同测试命令，将目标改为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果为 `m4b3b-ipad1.xcresult`。两种设备均为 iOS 26.5。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 聚焦网络与回执 | 首轮既有丢回执 1 项通过；第二轮 113 项零失败；第三轮 120 项零失败（新增最终保存与导入限制用例随后进入全量） |
+| 完整共享第 1 轮 | 2571 项 XCTest，172 条既有条件跳过，零失败，37.425 秒；另 12 项 Swift Testing 通过 |
+| 最终完整共享第 2 轮 | 2571 项 XCTest，172 条既有条件跳过，零失败，34.033 秒；另 12 项 Swift Testing，0.075 秒通过 |
+| 移动构建 | `m4b3b-mobile-build1.log`，通过 |
+| iPhone | 全部 1003 项单元，1 条既有设备条件跳过，零失败，25.319 秒；原聊天搜索/线程回复实际 UI 1 项通过，33.013 秒 |
+| iPad | 全部 1003 项单元，1 条既有设备条件跳过，零失败，25.306 秒；相同实际 UI 1 项通过，42.895 秒 |
+| Mac 双架构 | `m4b3b-mac-build1.log` 通过，10 月 5 日凌晨完成；`lipo -archs` 实际 App 为 `x86_64 arm64`，未安装或启动 |
+| 本地化与契约 | Apple 5969 / Android 2188 / Windows 3402；29 组响应 / 48 私有引用；170 组请求 / 1 写结果，均通过 |
+
+日志/结果包位于本轮临时工作目录，不进入源码；本切片无新界面或新移动转发 UI 验收。移动批量、新联系人创建恢复、本人批量删除和 M4c–M8 继续实施。真实 NAS/时钟偏差/同毫秒消息/附件内容及多人并发仍未验证；维持唯一归属不足时保留未知，不扩大匹配条件或自动重发。共享增量及五端影响见[高级动作契约](../../api/discovery/endpoints/chat-advanced-actions.md#2026-10-04-apple-转发恢复增量)。

@@ -593,6 +593,16 @@ public protocol ChatRepository: Sendable {
         toConversationIDs: [String],
         clientRequestID: UUID
     ) async throws
+    /// 写前、收到成功回执后及每个目标完成后保存进度；保存失败不得再次转发。
+    func forwardMessage(
+        _ original: ChatMessage, toConversationIDs: [String], clientRequestID: UUID,
+        recordProgress: @escaping @Sendable (ChatForwardReceipt) async throws -> Void
+    ) async throws -> ChatForwardReceipt
+    /// 只读恢复原操作；无成功回执时不按相同内容猜测，也不重发任何目标。
+    func recoverForward(
+        _ receipt: ChatForwardReceipt,
+        recordProgress: @escaping @Sendable (ChatForwardReceipt) async throws -> Void
+    ) async throws -> ChatForwardReceipt
     func setReminder(
         messageID: String,
         remindAt: Date,
@@ -641,6 +651,18 @@ public protocol ChatRepository: Sendable {
 }
 
 public extension ChatRepository {
+    func forwardMessage(
+        _ original: ChatMessage, toConversationIDs: [String], clientRequestID: UUID,
+        recordProgress: @escaping @Sendable (ChatForwardReceipt) async throws -> Void
+    ) async throws -> ChatForwardReceipt {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+    }
+    func recoverForward(
+        _ receipt: ChatForwardReceipt,
+        recordProgress: @escaping @Sendable (ChatForwardReceipt) async throws -> Void
+    ) async throws -> ChatForwardReceipt {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("chat.feature.unavailable"))
+    }
     func createScheduledMessage(
         conversationID: String, text: String, sendAt: Date, clientRequestID: UUID,
         recordCreatedSchedule: @escaping @Sendable (String) async throws -> Void
