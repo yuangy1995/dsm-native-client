@@ -27,19 +27,24 @@ final class MobileFileCopyMoveModel {
     @ObservationIgnored private var browseTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private let blocker: MobileFileCopyMoveReviewBlocker
+    @ObservationIgnored private var context = ""
 
     init(blocker: MobileFileCopyMoveReviewBlocker = .shared) {
         self.blocker = blocker
     }
 
     var isPresented: Bool { presentation != nil }
+    var activation: Int { generation }
 
-    func activate(profileID: UUID?, repository: (any MobileFileCopyMoving)?) {
+    func activate(profileID: UUID?, repository: (any MobileFileCopyMoving)?, context: String? = nil) {
         deactivate()
         guard let profileID, let repository, repository.profileID == profileID else { return }
         activeProfileID = profileID
         repositoryIdentity = ObjectIdentifier(repository)
+        self.context = context ?? profileID.uuidString
     }
+
+    func removeProfile(_ id: UUID) { blocker.purge(profileID: id) }
 
     func begin(
         operation: FileCopyMoveOperation,
@@ -185,20 +190,20 @@ final class MobileFileCopyMoveModel {
                 let page = try await Self.fetch(repository, path: path, offset: offset)
                 guard let self, self.isCurrent(profileID, identity, requestGeneration),
                       var current = self.presentation,
-                      current.destination.path == path,
-                      page.offset == offset else { return }
-                guard page.folderPath == path else { throw MobileFileCopyMoveError.wrongFolder }
+                      current.destination.path == path else { return }
+                guard page.folderPath == path, page.offset == offset else { throw MobileFileCopyMoveError.wrongFolder }
                 let added = Self.allowedFolders(
                     page.items,
                     profileID: profileID,
                     readOnlyRoots: current.readOnlyRoots,
                     sources: current.sources
                 )
-                guard !page.hasMore || !added.isEmpty else { throw MobileFileCopyMoveError.zeroProgress }
+                guard !page.hasMore || !page.items.isEmpty else { throw MobileFileCopyMoveError.zeroProgress }
                 var paths = Set(current.destination.folders.map(\.path))
                 current.destination.folders.append(contentsOf: added.filter { paths.insert($0.path).inserted })
                 current.destination.nextOffset = page.offset + page.items.count
                 current.destination.hasMore = page.hasMore
+                current.destination.pageState = current.destination.folders.isEmpty && !page.hasMore ? .empty : .content
                 current.destination.isLoadingMore = false
                 self.presentation = current
             } catch is CancellationError {
@@ -212,11 +217,13 @@ final class MobileFileCopyMoveModel {
         }
     }
 
-    func submit(repository: any MobileFileCopyMoving) async -> MobileFileCopyMoveSuccess? {
+    func submit(repository: any MobileFileCopyMoving, expectedActivation: Int? = nil) async -> MobileFileCopyMoveSuccess? {
         guard var snapshot = presentation,
+              expectedActivation == nil || expectedActivation == generation,
               snapshot.phase == .browsing,
               isActive(repository),
               snapshot.profileID == repository.profileID else { return nil }
+        guard !blocker.recoveryFailed else { setFeedback(.recovery); return nil }
         guard Self.isCanonicalAbsolutePath(snapshot.destination.path),
               !Self.isReadOnlyPath(snapshot.destination.path, roots: snapshot.readOnlyRoots),
               snapshot.canSubmitDestination else {
@@ -247,6 +254,11 @@ final class MobileFileCopyMoveModel {
 
         for index in snapshot.sources.indices {
             guard isCurrent(snapshot.profileID, identity, requestGeneration) else { return nil }
+            guard !Task.isCancelled else {
+                snapshot.phase = .completed
+                presentation = snapshot
+                return successSummary(for: snapshot, confirmedItems: confirmedItems)
+            }
             let source = snapshot.sources[index]
             snapshot.currentItemIndex = index
             snapshot.itemStates[index].status = .submitting
@@ -255,6 +267,18 @@ final class MobileFileCopyMoveModel {
             snapshot.cancellationRequested = false
             presentation = snapshot
             let key = reviewKey(for: source, snapshot: snapshot)
+            guard !blocker.contains(key) else {
+                snapshot.itemStates[index].status = .pendingReview
+                enterReview(snapshot)
+                return successSummary(for: snapshot, confirmedItems: confirmedItems)
+            }
+            guard blocker.insert(key) else {
+                snapshot.itemStates[index].status = .notStarted
+                snapshot.feedback = .recovery
+                snapshot.phase = snapshot.isBatch ? .completed : .browsing
+                presentation = snapshot
+                return successSummary(for: snapshot, confirmedItems: confirmedItems)
+            }
             let request = FileCopyMoveRequest(
                 profileID: snapshot.profileID,
                 operation: snapshot.operation,
@@ -278,9 +302,13 @@ final class MobileFileCopyMoveModel {
             requestTask = task
             do {
                 let outcome = try await task.value
+                let classified = classify(outcome, source: source, snapshot: snapshot)
+                // 原任务的持久记录独立结束；迟到结果不能写入新账号的界面。
+                if case .pendingReview = classified {} else { blocker.remove(key) }
                 guard isCurrent(snapshot.profileID, identity, requestGeneration) else { return nil }
+                let shouldStop = presentation?.cancellationRequested == true || Task.isCancelled
                 requestTask = nil
-                switch classify(outcome, source: source, snapshot: snapshot) {
+                switch classified {
                 case .confirmed(let item):
                     snapshot.itemStates[index].status = .confirmed
                     snapshot.itemStates[index].confirmedItem = item
@@ -297,15 +325,20 @@ final class MobileFileCopyMoveModel {
                     return successSummary(for: snapshot, confirmedItems: confirmedItems)
                 case .pendingReview:
                     snapshot.itemStates[index].status = .pendingReview
-                    blocker.insert(key)
                     enterReview(snapshot)
+                    return successSummary(for: snapshot, confirmedItems: confirmedItems)
+                }
+                if shouldStop || blocker.recoveryFailed {
+                    snapshot.phase = .completed
+                    snapshot.cancellationRequested = false
+                    if blocker.recoveryFailed { snapshot.feedback = .recovery }
+                    presentation = snapshot
                     return successSummary(for: snapshot, confirmedItems: confirmedItems)
                 }
             } catch {
                 guard isCurrent(snapshot.profileID, identity, requestGeneration) else { return nil }
                 requestTask = nil
                 snapshot.itemStates[index].status = .pendingReview
-                blocker.insert(key)
                 enterReview(snapshot)
                 return successSummary(for: snapshot, confirmedItems: confirmedItems)
             }
@@ -397,7 +430,7 @@ final class MobileFileCopyMoveModel {
             visibleItems: visibleItems,
             readOnlyRoots: readOnlyRoots,
             profileID: profileID,
-            allowDirectory: false
+            allowDirectory: true
         )
     }
 
@@ -499,9 +532,9 @@ final class MobileFileCopyMoveModel {
             do {
                 let page = try await Self.fetch(repository, path: path, offset: 0)
                 guard let self, self.isCurrent(profileID, identity, requestGeneration),
-                      var current = self.presentation,
-                      page.offset == 0 else { return }
-                guard page.folderPath == path else { throw MobileFileCopyMoveError.wrongFolder }
+                      var current = self.presentation else { return }
+                guard page.folderPath == path, page.offset == 0 else { throw MobileFileCopyMoveError.wrongFolder }
+                guard !page.hasMore || !page.items.isEmpty else { throw MobileFileCopyMoveError.zeroProgress }
                 let folders = Self.allowedFolders(
                     page.items,
                     profileID: profileID,
@@ -514,7 +547,7 @@ final class MobileFileCopyMoveModel {
                     folders: folders,
                     nextOffset: page.items.count,
                     hasMore: page.hasMore,
-                    pageState: folders.isEmpty ? .empty : .content
+                    pageState: folders.isEmpty && !page.hasMore ? .empty : .content
                 )
                 current.phase = .browsing
                 self.presentation = current
@@ -594,6 +627,7 @@ final class MobileFileCopyMoveModel {
     ) -> MobileFileCopyMoveReviewKey {
         MobileFileCopyMoveReviewKey(
             profileID: snapshot.profileID,
+            context: context,
             operation: snapshot.operation,
             sourcePath: source.path,
             destinationFolderPath: snapshot.destination.path
@@ -666,9 +700,13 @@ final class MobileFileCopyMoveModel {
         offset: Int
     ) async throws -> FilePage {
         let options = FileListOptions(typeFilter: path.isEmpty ? .all : .folders)
-        return path.isEmpty
-            ? try await repository.listShares(offset: offset, limit: pageSize, options: options)
-            : try await repository.listFolder(path: path, offset: offset, limit: pageSize, options: options)
+        if path.isEmpty {
+            let page = try await repository.listShares(offset: offset, limit: pageSize, options: options)
+            // Repository 的共享根是“/”，移动导航用空路径表示尚未选定共享目录。
+            guard page.folderPath == "/" else { throw MobileFileCopyMoveError.wrongFolder }
+            return FilePage(folderPath: "", items: page.items, offset: page.offset, total: page.total, hasMore: page.hasMore)
+        }
+        return try await repository.listFolder(path: path, offset: offset, limit: pageSize, options: options)
     }
 
     private static func allowedFolders(

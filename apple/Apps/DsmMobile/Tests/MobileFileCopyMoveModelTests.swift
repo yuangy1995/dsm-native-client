@@ -7,6 +7,7 @@ private actor FileCopyMoveRepositoryStub: MobileFileCopyMoving {
     enum Reply: Sendable {
         case outcome(FileCopyMoveOutcome)
         case delayed(FileCopyMoveOutcome)
+        case ignoresCancellation(FileCopyMoveOutcome)
         case failure
     }
 
@@ -16,6 +17,7 @@ private actor FileCopyMoveRepositoryStub: MobileFileCopyMoving {
     private(set) var requests: [FileCopyMoveRequest] = []
     private(set) var listPaths: [String] = []
     private(set) var cancellationObserved = false
+    private(set) var offsets: [Int] = []
 
     init(profileID: UUID, pages: [String: FilePage], reply: Reply? = nil) {
         self.profileID = profileID
@@ -31,13 +33,15 @@ private actor FileCopyMoveRepositoryStub: MobileFileCopyMoving {
 
     func listShares(offset: Int, limit: Int, options: FileListOptions) async throws -> FilePage {
         listPaths.append("")
-        guard let page = pages[""] else { throw StubError.missingPage }
+        offsets.append(offset)
+        guard let page = pages["@\(offset)"] ?? pages[""] else { throw StubError.missingPage }
         return page
     }
 
     func listFolder(path: String, offset: Int, limit: Int, options: FileListOptions) async throws -> FilePage {
         listPaths.append(path)
-        guard let page = pages[path] else { throw StubError.missingPage }
+        offsets.append(offset)
+        guard let page = pages["\(path)@\(offset)"] ?? pages[path] else { throw StubError.missingPage }
         return page
     }
 
@@ -51,6 +55,9 @@ private actor FileCopyMoveRepositoryStub: MobileFileCopyMoving {
         let reply = replies.removeFirst()
         switch reply {
         case .outcome(let outcome): return outcome
+        case .ignoresCancellation(let outcome):
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            return outcome
         case .delayed(let outcome):
             do {
                 try await Task.sleep(nanoseconds: 60_000_000)
@@ -402,7 +409,7 @@ final class MobileFileCopyMoveModelTests: XCTestCase {
         let profileID = UUID()
         let first = item(profileID, "a.txt", "/source/a.txt", .file, size: 1)
         let second = item(profileID, "b.txt", "/source/b.txt", .file, size: 2)
-        let invalid = item(profileID, "folder", "/source/folder", .directory)
+        let invalid = item(profileID, "link", "/source/link", .symlink)
         let repository = FileCopyMoveRepositoryStub(profileID: profileID, pages: pages(profileID))
         let model = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
         model.activate(profileID: profileID, repository: repository)
@@ -696,6 +703,156 @@ final class MobileFileCopyMoveModelTests: XCTestCase {
         XCTAssertTrue(cancellationObserved)
     }
 
+    func test批次混合文件和无大小目录逐项提交并保留全部结果() async throws {
+        let id = UUID(), folder = item(UUID(), "unused", "/unused", .directory)
+        let sources = [item(id, "Folder", "/source/Folder", .directory, size: nil), item(id, "a.txt", "/source/a.txt", .file)]
+        let outputs = [item(id, "Folder", "/target/Folder", .directory, size: nil), item(id, "a.txt", "/target/a.txt", .file)]
+        let repository = FileCopyMoveRepositoryStub(profileID: id, pages: pages(id), replies: try zip(sources, outputs).map {
+            .outcome(try outcome(.confirmedSuccess, .copy, $0.0, "/target", $0.1))
+        })
+        let model = MobileFileCopyMoveModel(blocker: .init()); model.activate(profileID: id, repository: repository)
+        await prepareBatch(model, repository: repository, sources: sources, operation: .copy)
+        let success = await model.submit(repository: repository)
+        XCTAssertEqual(success?.confirmedItems, outputs)
+        XCTAssertEqual(model.presentation?.itemStates.map(\.status), [.confirmed, .confirmed])
+        let requests = await repository.recordedRequests()
+        XCTAssertEqual(requests.map(\.source), sources); XCTAssertTrue(requests.allSatisfy { !$0.overwrite })
+        XCTAssertFalse(MobileFileCopyMoveModel.canBeginBatchItem(item: folder, parentPath: "/source", source: .browser,
+            visibleItems: [folder], readOnlyRoots: [], profileID: id))
+    }
+
+    func test目标第一页和中间页都无可选目录仍可加载后续目录() async {
+        let id = UUID()
+        let original = item(id, "a.txt", "/source/a.txt", .file)
+        let excluded = item(id, "remote", "/remote", .directory, mount: "cifs")
+        let file = item(id, "file", "/file", .file)
+        let folder = item(id, "target", "/target", .directory)
+        let repository = FileCopyMoveRepositoryStub(profileID: id, pages: [
+            "@0": FilePage(folderPath: "/", items: [excluded], offset: 0, total: 3, hasMore: true),
+            "@1": FilePage(folderPath: "/", items: [file], offset: 1, total: 3, hasMore: true),
+            "@2": FilePage(folderPath: "/", items: [folder], offset: 2, total: 3, hasMore: false)
+        ])
+        let model = MobileFileCopyMoveModel(blocker: .init()); model.activate(profileID: id, repository: repository)
+        model.begin(operation: .copy, item: original, parentPath: "/source", source: .browser,
+            visibleItems: [original], readOnlyRoots: [], repository: repository)
+        await waitForBrowser(model)
+        XCTAssertEqual(model.presentation?.destination.pageState, .content)
+        XCTAssertEqual(model.presentation?.destination.folders, [])
+        model.loadMore(repository: repository)
+        for _ in 0..<100 where model.presentation?.destination.isLoadingMore == true { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertEqual(model.presentation?.destination.nextOffset, 2)
+        XCTAssertEqual(model.presentation?.destination.loadMoreFailed, false)
+        model.loadMore(repository: repository)
+        for _ in 0..<100 where model.presentation?.destination.isLoadingMore == true { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertEqual(model.presentation?.destination.folders, [folder])
+        XCTAssertEqual(model.presentation?.destination.hasMore, false)
+        let offsets = await repository.offsets; XCTAssertEqual(offsets, [0, 1, 2])
+    }
+
+    func test提交前落盘且中断重启保留限制不能重放() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = UUID()
+        let source = item(id, "a.txt", "/source/a.txt", .file)
+        let repository = FileCopyMoveRepositoryStub(profileID: id, pages: pages(id), reply:
+            .delayed(try outcome(.submittedButUnverified, .move, source, "/target", nil)))
+        let model = MobileFileCopyMoveModel(blocker: .init(rootURL: root)); model.activate(profileID: id, repository: repository, context: "account-a")
+        await prepare(model, repository: repository, source: source, operation: .move)
+        let task = Task { await model.submit(repository: repository) }; await waitForRequest(repository)
+        let data = try Data(contentsOf: root.appendingPathComponent("pending-v1.json"))
+        XCTAssertFalse(data.isEmpty); XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("password"))
+        model.deactivate(); _ = await task.value
+        let second = FileCopyMoveRepositoryStub(profileID: id, pages: pages(id))
+        let restored = MobileFileCopyMoveModel(blocker: .init(rootURL: root)); restored.activate(profileID: id, repository: second, context: "account-a")
+        await prepare(restored, repository: second, source: source, operation: .move)
+        let result = await restored.submit(repository: second)
+        XCTAssertNil(result); XCTAssertEqual(restored.presentation?.phase, .review)
+        let requests = await second.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("pending-v1.json")), data)
+    }
+
+    func test持久限制绑定账号并阻止改目标和源子树但不阻止其他文件() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = UUID(), other = UUID()
+        func key(_ source: String, _ target: String = "/target", context: String = "account-a", profile: UUID? = nil) -> MobileFileCopyMoveReviewKey {
+            .init(profileID: profile ?? id, context: context, operation: .move, sourcePath: source, destinationFolderPath: target)
+        }
+        let first = MobileFileCopyMoveReviewBlocker(rootURL: root)
+        XCTAssertTrue(first.insert(key("/source/Folder")))
+        XCTAssertTrue(first.insert(key("/other/a", profile: other)))
+        let restored = MobileFileCopyMoveReviewBlocker(rootURL: root)
+        XCTAssertTrue(restored.contains(key("/source/Folder", "/another")))
+        XCTAssertTrue(restored.contains(key("/source/Folder/a")))
+        XCTAssertTrue(restored.contains(key("/target/Folder/a")))
+        XCTAssertFalse(restored.contains(key("/source/Folder", context: "account-b")))
+        XCTAssertFalse(restored.contains(key("/source/Folder2")))
+        restored.purge(profileID: id)
+        let remaining = MobileFileCopyMoveReviewBlocker(rootURL: root)
+        XCTAssertFalse(remaining.contains(key("/source/Folder")))
+        XCTAssertTrue(remaining.contains(key("/other/a", profile: other)))
+    }
+
+    func test损坏或不可写恢复记录保留原件并零请求() async throws {
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        let bad = parent.appendingPathComponent("bad"), blocked = parent.appendingPathComponent("blocked")
+        try FileManager.default.createDirectory(at: bad, withIntermediateDirectories: true)
+        let original = Data("not-json".utf8); try original.write(to: bad.appendingPathComponent("pending-v1.json")); try original.write(to: blocked)
+        for root in [bad, blocked] {
+            let id = UUID()
+            let entry = item(id, "a.txt", "/source/a.txt", .file)
+            let repository = FileCopyMoveRepositoryStub(profileID: id, pages: pages(id))
+            let model = MobileFileCopyMoveModel(blocker: .init(rootURL: root)); model.activate(profileID: id, repository: repository)
+            await prepare(model, repository: repository, source: entry, operation: .copy)
+            let result = await model.submit(repository: repository)
+            XCTAssertNil(result); XCTAssertEqual(model.presentation?.feedback, .recovery)
+            let requests = await repository.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+        }
+        XCTAssertEqual(try Data(contentsOf: bad.appendingPathComponent("pending-v1.json")), original)
+        XCTAssertEqual(try Data(contentsOf: blocked), original)
+    }
+
+    func test取消后当前项明确成功仍停止未开始项且清除完成记录() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = UUID()
+        let entries = ["a.txt", "b.txt"].map { item(id, $0, "/source/" + $0, .file) }
+        let copied = item(id, "a.txt", "/target/a.txt", .file)
+        let repository = FileCopyMoveRepositoryStub(profileID: id, pages: pages(id), reply:
+            .ignoresCancellation(try outcome(.confirmedSuccess, .copy, entries[0], "/target", copied)))
+        let model = MobileFileCopyMoveModel(blocker: .init(rootURL: root)); model.activate(profileID: id, repository: repository)
+        await prepareBatch(model, repository: repository, sources: entries, operation: .copy)
+        let task = Task { await model.submit(repository: repository) }; await waitForRequest(repository); model.requestCancellation()
+        let result = await task.value
+        XCTAssertEqual(result?.confirmedItems, [copied]); XCTAssertEqual(model.presentation?.phase, .completed)
+        XCTAssertEqual(model.presentation?.itemStates.map(\.status), [.confirmed, .notStarted])
+        let requests = await repository.recordedRequests(); XCTAssertEqual(requests.count, 1)
+        XCTAssertFalse(MobileFileCopyMoveReviewBlocker(rootURL: root).contains(.init(profileID: id, context: id.uuidString,
+            operation: .copy, sourcePath: entries[0].path, destinationFolderPath: "/target")))
+    }
+
+    func test迟到成功只清理原记录不改写新界面且旧按钮无新写() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = UUID()
+        let entry = item(id, "a.txt", "/source/a.txt", .file), copied = item(id, "a.txt", "/target/a.txt", .file)
+        let repository = FileCopyMoveRepositoryStub(profileID: id, pages: pages(id), reply:
+            .ignoresCancellation(try outcome(.confirmedSuccess, .copy, entry, "/target", copied)))
+        let model = MobileFileCopyMoveModel(blocker: .init(rootURL: root)); model.activate(profileID: id, repository: repository)
+        await prepare(model, repository: repository, source: entry, operation: .copy)
+        let token = model.activation, task = Task { await model.submit(repository: repository) }; await waitForRequest(repository)
+        let replacement = FileCopyMoveRepositoryStub(profileID: id, pages: pages(id))
+        model.activate(profileID: id, repository: replacement, context: "other-account")
+        let oldResult = await task.value; XCTAssertNil(oldResult); XCTAssertNil(model.presentation)
+        XCTAssertFalse(MobileFileCopyMoveReviewBlocker(rootURL: root).contains(.init(profileID: id, context: id.uuidString,
+            operation: .copy, sourcePath: entry.path, destinationFolderPath: "/target")))
+        await prepare(model, repository: replacement, source: entry, operation: .copy)
+        let stale = await model.submit(repository: replacement, expectedActivation: token)
+        XCTAssertNil(stale); let writes = await replacement.recordedRequests(); XCTAssertTrue(writes.isEmpty)
+    }
+
     private func prepare(
         _ model: MobileFileCopyMoveModel,
         repository: FileCopyMoveRepositoryStub,
@@ -767,7 +924,7 @@ final class MobileFileCopyMoveModelTests: XCTestCase {
     }
 
     private func page(_ path: String, _ items: [FileItem]) -> FilePage {
-        FilePage(folderPath: path, items: items, offset: 0, total: items.count, hasMore: false)
+        FilePage(folderPath: path.isEmpty ? "/" : path, items: items, offset: 0, total: items.count, hasMore: false)
     }
 
     private func outcome(

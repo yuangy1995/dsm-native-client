@@ -692,3 +692,25 @@ M2g1 Mac 回归：`xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj 
 `PENDING_USER_VALIDATION`：iPhone/iPad 真机、专用可丢弃管理员/普通账号和测试图片，分别验证所有设置最终生效、目录服务名单和权限、NAS 时区/实际限速/群组继承、系统文件选择、四类图片及实际分享页面、另一管理员同时修改、断网/重启和旧账号隔离。预期取消零提交、未知不重发、原设置变化拒绝覆盖、没有回执的换图不误报成功。VoiceOver、大字号、外接键盘、系统选择器与真实 NAS 行为未验证；仅回传版本、脱敏步骤和错误类别，不回传凭据、主机、账号、路径、图片或原响应。M2 批量/目录管理、跨 NAS 及 Office 主动回传仍须后续实现，不能用本切片代替整波完成。
 
 M2g2 最后复核补充：当远程访问范围不是“指定账号”时，页面显示逐账号权限只有在该范围下才生效的既有双语限制说明。此项只增显示条件和文案引用，重新构建及本地化/文档检查通过；不宣称为该文案重新执行整组 UI。
+
+
+## 2026-10-04 移动 M2h1 批量文件夹复制与移动
+
+同一多选工具栏接入文件/文件夹混合复制移动，继续复用共享 `copyMoveResult` 的源快照、实际权限、同名拒绝、任务完成与回读；未改 NAS 请求或共享业务层。逐项结果区包含已完成、失败、未知、取消和未开始项，取消后即使当前项成功也不再启动下一项。未知结果停止批次，界面说明可重新连接/刷新内容，不要求用户进行开发验收，也不提供可能重放的重试按钮。
+
+现有 `MobileFileCopyMoveReviewBlocker` 增加独立版本 1 的 `CopyMove/pending-v1.json`，由组合根注入真实恢复目录；包含账号上下文、配置 ID、操作及源/目标路径，文件受保护且排除备份，不存凭据。每项请求前保存，明确结束才清理；损坏/不可写保留原件并零提交，未知跨重启保持原源/子树与目标限制，不能改目标绕过。迟到明确结果只结束原持久记录，不写新账号界面。删除配置只清理该配置记录，退出登录不解除限制。原登录格式和应用身份不变。
+
+目标浏览按原始条目推进分页，整页没有可选目录仍可继续；共享 Repository 的根目录 `/` 明确转换为移动导航空路径。独立集成与只读对抗复核检查原目标与账号绑定、持久化前后边界、原快照重读、取消/迟到结果、重启重复提交和目录子树；没有连接或写入真实 NAS。Windows/Android 与 Mac App 无源码或协议变化，共享语言资源执行 Mac 回归。
+
+- `swift test --package-path apple --jobs 4`：**2430 项 XCTest，172 项既有跳过，0 失败**；另 **12 项 Swift Testing 通过**。现有共享真实编码测试包含单目录复制与回读；移动端没有另造请求。
+- XcodeGen 2.46.0 重复生成工程，SHA-256 同为 `dea144939f6af24fb7e86c15f3202b769c0b4eff40245cfa0fe2d5c3421d1958`。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 各轮通过，最后界面收尾另记下段。
+- 两端使用 `xcodebuild test-without-building`、同工程/方案/构建目录、`-parallel-testing-enabled NO`；iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。`m2h1-iphone2.xcresult` 与 `m2h1-ipad2.xcresult` 中 `-only-testing:DsmMobileTests` **各 634 项全部通过**。7 项新增行为测试涵盖混合目录、整页筛空、写前落盘/中断重启、账号/子树/改目标隔离、损坏/不可写、取消后当前项成功、迟到清理与旧按钮；原批次“目录非法”断言随需求改为“符号链接非法”，另加明确目录成功断言。
+- 首轮两端各 4 项新增 UI 均在目标列表失败：真实 Repository 根路径是 `/`，旧单元替身误用空路径，修复移动对接并让替身遵循真实契约。第二轮两端单元全部通过，但 UI 夹具误将权限直接放在 `perm` 内，被真实 Repository 按无写权限拒绝；修正为已有的 `perm.adv_right`，没有降低权限检查。两轮原有批量分享 UI 均通过。
+- 第三轮 `m2h1-iphone3.xcresult` 与 `m2h1-ipad3.xcresult` 的混合复制/源保留、移动/源刷新为空两项 UI 均通过。冲突、未知和新增无权限用例的摘要已正确，但逐项断言未按 SwiftUI 将名称和结果合并的实际辅助功能结构定位；根据导出的界面树改为精确“文件名＋状态”。最终 `m2h1-iphone4.xcresult` 和 `m2h1-ipad4.xcresult` 的这三项 **各 3/3 通过**，未知用例实际终止并重启 App，保留记录后再次进入只显示结果，不再出现提交按钮。合计两端 **5 项新增 + 1 项原有实际 UI 均有通过证据**，不把中间失败结果包记为整体通过。
+- Mac `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过（`m2h1-macos-build.log`），`lipo -archs` 确認实际二进制含 x86_64/arm64；未安装、启动或发布。
+
+日志/结果包和合成截图留在本机临时验证目录，不加入仓库。已检查 iPhone 浅色和 iPad 深色的逐项成功截图，触控结果行保留系统文字与朗读语义。资源完整性/硬编码检查通过（Apple 5695、Android 2188、Windows 3402），严格文档与差异检查通过；最终文档收尾继续执行同门禁。
+
+`PENDING_USER_VALIDATION`：专用可丢弃文件夹、普通/受限账号、iPhone/iPad 真机，分别验证混合复制/移动后的嵌套内容、空目录、同名和权限、取消/断网/重启/账号切换。预期无覆盖、无重放、无继续启动未开始项，实际结果与 NAS 一致。VoiceOver、大字号、键盘和真实 NAS 内容完整性未验证；只回传版本、脱敏步骤及错误类别，不回传账号、主机、路径、凭据或内容。批量回收站、打包下载、跨 NAS 和 Office 仍为未完成源码范围。
+
+M2h1 截图收尾：完成或结果暂不可用时，导航栏显示“关闭”，不再显示“取消”以暗示能撤销已完成操作。最终 `m2h1-build6.log` 构建通过；`m2h1-iphone5.xcresult` 和 `m2h1-ipad5.xcresult` 的混合复制/关闭返回源列表 UI 各 1/1 通过。iPad 测后恢复浅色；最终本地化、文档和差异门禁通过。

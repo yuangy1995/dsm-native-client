@@ -221,7 +221,8 @@ struct MobileFileBrowser: View {
             let repository = model.fileRepository
             await browser.activate(profileID: profileID, repository: repository)
             mutation.activate(profileID: profileID, repository: repository)
-            copyMove.activate(profileID: profileID, repository: repository)
+            copyMove.activate(profileID: profileID, repository: repository,
+                context: model.activeProfile.map { MobileWorkspaceIdentity($0).storageIdentifier })
             recycleAction.activate(profileID: profileID, repository: repository)
             locations.activate(profileID: profileID, repository: repository)
             guard let profileID, let repository else { return }
@@ -798,6 +799,7 @@ struct MobileFileBrowser: View {
                 )
             }
             .disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canBatchCopyMove))
+            .accessibilityIdentifier("files.batch.copy")
             Button {
                 beginBatchCopyMove(.move)
             } label: {
@@ -807,6 +809,7 @@ struct MobileFileBrowser: View {
                 )
             }
             .disabled(selectedCopyMoveItems.isEmpty || !selectedCopyMoveItems.allSatisfy(canBatchCopyMove))
+            .accessibilityIdentifier("files.batch.move")
         }
         if horizontal {
             HStack(spacing: 12) { content }
@@ -1194,7 +1197,7 @@ struct MobileFileBrowser: View {
     }
 
     private var selectableCopyMoveItems: [FileItem] {
-        // 选择服务于分享和压缩，也包含目录；批量复制/移动仍单独遵守既有文件契约。
+        // 文件和目录共用选择，具体操作继续检查自己的权限和目标限制。
         state.page.items.filter(canCopyMove)
     }
 

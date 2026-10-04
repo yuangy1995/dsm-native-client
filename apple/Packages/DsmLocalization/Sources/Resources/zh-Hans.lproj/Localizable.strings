@@ -3685,34 +3685,34 @@
 "mobile.files.copy-move.working.copy" = "正在复制…";
 "mobile.files.copy-move.working.move" = "正在移动…";
 "mobile.files.copy-move.cancelling" = "正在取消…";
-"mobile.files.copy-move.review.title" = "检查此操作";
-"mobile.files.copy-move.review.message" = "操作可能已提交到 NAS。再次尝试前，请检查源位置和目标位置。";
+"mobile.files.copy-move.review.title" = "暂时无法显示操作结果";
+"mobile.files.copy-move.review.message" = "暂时无法获取操作结果，后续项目已停止。连接恢复后可刷新文件夹查看内容，此操作不会自动重做。";
 "mobile.files.copy-move.review.dismiss" = "关闭";
 "mobile.files.copy-move.permission" = "你没有权限使用此目标位置。请选择其他文件夹，或联系管理员获取权限。";
 "mobile.files.copy-move.unsupported" = "所选项目或目标位置不支持此操作。";
 "mobile.files.copy-move.conflict" = "目标位置已有同名文件或文件夹。请选择其他文件夹。";
 "mobile.files.copy-move.destination.invalid" = "请选择此 NAS 上的普通本地文件夹。";
 "mobile.files.copy-move.progress.accessibility" = "%1$@，已完成 %2$lld%%";
-"mobile.files.batch-selection.start" = "选择文件";
+"mobile.files.batch-selection.start" = "选择项目";
 "mobile.files.batch-selection.done" = "完成选择";
-"mobile.files.batch-selection.count" = "已选择 %1$lld/%2$lld 个文件";
+"mobile.files.batch-selection.count" = "已选择 %1$lld/%2$lld 个项目";
 "mobile.files.batch-selection.selected" = "已选择";
 "mobile.files.batch-selection.not-selected" = "未选择";
 "mobile.files.batch-selection.unavailable" = "不能批量复制或移动";
 "mobile.files.batch-selection.limit-reached" = "已达到选择上限";
-"mobile.files.batch-selection.add-hint" = "将此文件加入选择";
-"mobile.files.batch-selection.remove-hint" = "从选择中移除此文件";
-"mobile.files.copy-move.batch.copy.title" = "复制 %lld 个文件";
-"mobile.files.copy-move.batch.move.title" = "移动 %lld 个文件";
-"mobile.files.copy-move.batch.progress" = "已处理 %1$lld/%2$lld 个文件";
-"mobile.files.copy-move.batch.summary" = "已完成 %1$lld 个，失败 %2$lld 个，待检查 %3$lld 个，已取消 %4$lld 个，未开始 %5$lld 个";
+"mobile.files.batch-selection.add-hint" = "将此项目加入选择";
+"mobile.files.batch-selection.remove-hint" = "从选择中移除此项目";
+"mobile.files.copy-move.batch.copy.title" = "复制 %lld 个项目";
+"mobile.files.copy-move.batch.move.title" = "移动 %lld 个项目";
+"mobile.files.copy-move.batch.progress" = "已处理 %1$lld/%2$lld 个项目";
+"mobile.files.copy-move.batch.summary" = "已完成 %1$lld 个，失败 %2$lld 个，结果暂不可用 %3$lld 个，已取消 %4$lld 个，未开始 %5$lld 个";
 "mobile.files.copy-move.batch.completed.title" = "批量操作已完成";
-"mobile.files.copy-move.batch.issues.title" = "需要处理";
+"mobile.files.copy-move.batch.issues.title" = "逐项结果";
 "mobile.files.copy-move.batch.issue.permission" = "没有权限";
 "mobile.files.copy-move.batch.issue.unsupported" = "不支持此操作";
-"mobile.files.copy-move.batch.issue.conflict" = "已有同名文件";
+"mobile.files.copy-move.batch.issue.conflict" = "已有同名项目";
 "mobile.files.copy-move.batch.issue.cancelled" = "已取消";
-"mobile.files.copy-move.batch.issue.failed" = "无法处理此文件。请刷新后重试。";
+"mobile.files.copy-move.batch.issue.failed" = "无法处理此项目，请刷新后重试。";
 "mobile.files.copy-move.failed" = "无法完成操作。请刷新文件夹后重试。";
 "mobile.files.recycle.move.action" = "移到回收站";
 "mobile.files.recycle.restore.action" = "恢复";
@@ -5901,3 +5901,11 @@
 "mobile.file-settings.images-empty" = "请选择其他文件夹，或从此设备上传图片。";
 "mobile.file-settings.risk-iso" = "更多账号将能够挂载光盘镜像。";
 "mobile.file-settings.loading" = "正在加载设置…";
+
+"mobile.files.copy-move.batch.item.completed" = "已完成";
+
+"mobile.files.copy-move.batch.item.unavailable" = "结果暂不可用";
+
+"mobile.files.copy-move.batch.item.not-started" = "未开始";
+
+"mobile.files.copy-move.recovery-error" = "无法保存或恢复操作记录，后续项目不会开始。请检查设备剩余空间后重新打开 App。";

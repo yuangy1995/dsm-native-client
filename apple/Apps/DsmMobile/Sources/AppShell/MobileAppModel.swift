@@ -27,7 +27,7 @@ final class MobileAppModel {
     let fileActivityModel: MobileFileActivityModel
     let documentTransferController: MobileDocumentTransferController
     let settingsStore: MobileSettingsStore
-    let fileBrowserModel = MobileFileBrowserModel()
+    let fileBrowserModel: MobileFileBrowserModel
     let filePreviewModel = MobileFilePreviewModel()
     let fileShareLinkModel: MobileFileShareLinkModel
     let filePermissionModel: MobileFilePermissionModel
@@ -136,6 +136,9 @@ final class MobileAppModel {
         self.authRepository = authRepository ?? DsmAuthRepository(sessionStore: sessionStore)
         self.quickConnectResolver = quickConnectResolver
         self.mutationCoordinator = mutationCoordinator
+        self.fileBrowserModel = MobileFileBrowserModel(copyMove: MobileFileCopyMoveModel(
+            blocker: MobileFileCopyMoveReviewBlocker(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("CopyMove", isDirectory: true))
+        ))
         self.fileShareLinkModel = MobileFileShareLinkModel(
             mutationCoordinator: mutationCoordinator,
             rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Sharing", isDirectory: true)

@@ -12,7 +12,7 @@ enum MobileUIFixture {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
-            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -21,7 +21,7 @@ enum MobileUIFixture {
                 transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
-            let versions = [DsmAPIName.fileStationSettings: 1, DsmAPIName.fileStationVFSUser: 1,
+            let versions = [DsmAPIName.fileStationCopyMove: 3, DsmAPIName.fileStationSettings: 1, DsmAPIName.fileStationVFSUser: 1,
                             DsmAPIName.coreBandwidthControl: 1, DsmAPIName.coreFileSharingTheme: 1, DsmAPIName.coreThemeImage: 1,
                             DsmAPIName.coreDirectoryLDAP: 1, DsmAPIName.coreDirectoryDomain: 2, DsmAPIName.fileStationFavorite: 2, DsmAPIName.fileStationMount: 1, DsmAPIName.fileStationMountList: 1,
                             DsmAPIName.fileStationVFSProtocol: 1, DsmAPIName.fileStationVFSProfile: 1, DsmAPIName.fileStationVFSConnection: 1, DsmAPIName.fileStationDownload: 2,
@@ -87,6 +87,7 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
     private let pageState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "content"
     private var remote = MobileRemoteUIFixture()
     private var fileSettings = MobileFileSettingsUIFixture()
+    private var copyMove = MobileCopyMoveUIFixture()
     private var favorites: [[String: String]] = []
     private var uploaded: [String: Bool] = [:]
     private var stopped = false
@@ -118,6 +119,9 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
         let fields = URLComponents(string: "https://fixture.invalid/?" + body)?.queryItems ?? []
         let api = fields.first { $0.name == "api" }?.value ?? ""
         let method = fields.first { $0.name == "method" }?.value ?? ""
+        if pageState.hasPrefix("copy-"), let result = try copyMove.response(api: api, method: method, fields: fields, state: pageState) {
+            return .init(data: try JSONSerialization.data(withJSONObject: ["success": true, "data": result]), statusCode: 200)
+        }
         if pageState == "remote", let result = try remote.response(api: api, method: method, fields: fields) {
             return .init(data: try JSONSerialization.data(withJSONObject: ["success": true, "data": result]), statusCode: 200)
         }

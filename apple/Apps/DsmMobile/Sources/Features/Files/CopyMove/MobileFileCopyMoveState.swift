@@ -15,6 +15,7 @@ enum MobileFileCopyMoveFeedback: Equatable, Sendable {
     case conflict
     case failed
     case invalidDestination
+    case recovery
 }
 
 enum MobileFileCopyMoveItemStatus: Equatable, Sendable {
@@ -149,19 +150,75 @@ struct MobileFileCopyMoveSuccess: Equatable, Sendable {
     }
 }
 
-struct MobileFileCopyMoveReviewKey: Hashable, Sendable {
+struct MobileFileCopyMoveReviewKey: Hashable, Codable, Sendable {
     let profileID: UUID
+    let context: String
     let operation: FileCopyMoveOperation
     let sourcePath: String
     let destinationFolderPath: String
 }
 
+/// 提交前保存原目标，进程退出、断线或换账号均不能解除未知操作的限制。
 @MainActor
 final class MobileFileCopyMoveReviewBlocker {
     static let shared = MobileFileCopyMoveReviewBlocker()
+    private struct Recovery: Codable { let version: Int; let keys: Set<MobileFileCopyMoveReviewKey> }
     private var keys: Set<MobileFileCopyMoveReviewKey> = []
+    private let root: URL?
+    private(set) var recoveryFailed = false
 
-    func contains(_ key: MobileFileCopyMoveReviewKey) -> Bool { keys.contains(key) }
-    func insert(_ key: MobileFileCopyMoveReviewKey) { keys.insert(key) }
-    func purge(profileID: UUID) { keys = keys.filter { $0.profileID != profileID } }
+    init(rootURL: URL? = nil) {
+        root = rootURL
+        guard let file = root?.appendingPathComponent("pending-v1.json"),
+              FileManager.default.fileExists(atPath: file.path) else { return }
+        do {
+            let value = try JSONDecoder().decode(Recovery.self, from: Data(contentsOf: file))
+            guard value.version == 1, value.keys.allSatisfy({ !$0.context.isEmpty && $0.sourcePath.hasPrefix("/") && $0.destinationFolderPath.hasPrefix("/") }) else {
+                throw MobileTransferRecoveryStore.StoreError.invalidRecord
+            }
+            keys = value.keys
+        } catch { recoveryFailed = true }
+    }
+
+    func contains(_ key: MobileFileCopyMoveReviewKey) -> Bool {
+        keys.contains { old in
+            guard old.profileID == key.profileID, old.context == key.context else { return false }
+            // 同一源或其子树不能改换目标重试，目标也不能与未结束输出重叠。
+            let oldPaths = [old.sourcePath, Self.destination(old)]
+            let newPaths = [key.sourcePath, Self.destination(key)]
+            return oldPaths.contains { left in newPaths.contains { right in
+                left == right || left.hasPrefix(right + "/") || right.hasPrefix(left + "/")
+            } }
+        }
+    }
+
+    @discardableResult func insert(_ key: MobileFileCopyMoveReviewKey) -> Bool {
+        keys.insert(key)
+        return persist()
+    }
+    func remove(_ key: MobileFileCopyMoveReviewKey) {
+        let old = keys; keys.remove(key)
+        if !persist() { keys = old }
+    }
+    func purge(profileID: UUID) {
+        let old = keys; keys = keys.filter { $0.profileID != profileID }
+        if !persist() { keys = old }
+    }
+
+    private static func destination(_ key: MobileFileCopyMoveReviewKey) -> String {
+        key.destinationFolderPath + "/" + (key.sourcePath.split(separator: "/").last.map(String.init) ?? "")
+    }
+    private func persist() -> Bool {
+        guard !recoveryFailed else { return false }
+        guard let root else { return true }
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+            var directory = root, values = URLResourceValues(); values.isExcludedFromBackup = true
+            try directory.setResourceValues(values)
+            try JSONEncoder().encode(Recovery(version: 1, keys: keys)).write(to: root.appendingPathComponent("pending-v1.json"),
+                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            return true
+        } catch { recoveryFailed = true; return false }
+    }
 }

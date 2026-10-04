@@ -7,6 +7,7 @@ import DsmLocalization
 extension MobileAppModel {
     func deactivateFileLocations() {
         fileBrowserModel.locations.deactivate()
+        fileBrowserModel.copyMove.deactivate()
         fileBrowserModel.recycleAction.deactivate()
     }
 

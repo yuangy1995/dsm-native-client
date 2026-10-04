@@ -30,7 +30,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M1 共用照片状态 | SynologyPhotosModel、PhotoUploadRecoveryStore | 内部 DsmPhotosFeature；平台文件访问/恢复/导出适配；共享 | 已迁入 `DsmPhotosFeature`，Mac 书签适配及旧队列版本保持；两端和 Mac 回归通过，详见验证历史 |
 | M1 旧图库清理 | SynologyPhotosView | 主路由已为 MobileSynologyPhotosView；兼容 | 迁移有效行为后删除旧 File Station 图库路径，保留缓存清理 |
 | M2 浏览、分页及高级搜索 | FileAdvancedSearchView、WorkspaceModel | 触控筛选，iPad 并列详情；List/Search/索引；只读 | M2b 已接多目录/类型/扩展名/大小/日期/所有者/正文条件；搜索沿用共享完整分页，保留正文覆盖不足；两端单元和实际 UI 已通过，证据见 M2b 记录 |
-| M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | M2a 已接共用上传计划、多选/目录、同名跳过/替换确认、逐项结果与暂停恢复；两端验证记录见后文，其他文件管理仍在实施 |
+| M2 批量与目录上传 | FileUploadPlan、FileUploadBatch、FileUploadViews | 选择器、多选工具栏、逐项结果；Upload/CreateFolder/复制移动；写 | M2a 已接多选/目录上传及恢复；M2h1 已补文件/文件夹混合复制移动、逐项结果与重启防重放，两端自动化通过；回收站批量及打包下载仍在实施 |
 | M2 分享与收集 | FileShareCreationView、FileShareManagementView、FileShareAdvancedView | 详情表单/系统分享；Sharing 密码/日期/权限；外部可见写 | M2d 已接批量创建、全部链接编辑/撤销、访问对象/次数、收集和二维码；两端验证通过，未知写保留隔离限制 |
 | M2 压缩、解压、归档浏览 | ArchiveExtractionView；共享 DsmFileFeature/FileArchiveBrowserModel | 包内列表/选择目标与条目；Compress/Extract；数据写 | M2c 已接多项压缩、包内选择/分页及解压、持久记录、取消和输出回读；两端单元/实际 UI 及 Mac 回归通过 |
 | M2 ACL 与所有者 | FilePermissionEditor、FileStationPrincipalPicker | 分步权限/成员选择；原对象与权限快照；高风险写 | M2e 已接显式/继承权限、所有者/群组、具体后果确认和持久未知目标限制；两端单元/实际 UI 与 Mac 回归通过 |
@@ -185,3 +185,13 @@ M2g1 收藏维护已完成 8 项新增模型、两端各 614 项单元及 2 项�
 已完成独立集成及只读对抗复核，覆盖旧账号草稿延后执行、迟到读取/写入、Repository 更换、重复点击、损坏/无法保存记录、未知结果、目录来源绑定、图片摘要隔离及共享校验复用。13 项新增单元在 iPhone/iPad 各 627 项全部单元中通过；完整共享回归和 Mac 构建已通过。两端各 6 项新增及 3 项原有实际 UI 均已有通过记录，精确命令、首轮失败及修复和结果包见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2g2-file-station-设置)。
 
 `PENDING_USER_VALIDATION`：两种真机和专用可丢弃管理员/普通账号，逐类保存并从 DSM 读取结果；检查账号名单分页、域/LDAP 及管理员不可修改项、NAS 时区与限速继承、四种图片来源及最终分享页、另一管理员同时修改、提交/回读断网、重连和重启。预期不覆盖新快照、不重复提交、不误报换图成功，未知上传可从历史选择；实际权限、速度/时间表、生效页面和系统文件选择尚未验证。VoiceOver、大字号、外接键盘继续在真机验收，只回传 App/OS/DSM/套件版本、脱敏步骤和错误类别。未访问真实 NAS 或执行真实设置写入；下一切片为批量/目录管理、跨 NAS 与主动文档回传。
+
+### M2h1 批量文件夹复制与移动
+
+单一修改范围为移动 CopyMove 模型/恢复记录/触控结果页、现有多选入口、组合根、双语资源和对应测试。基准为 Mac `WorkspaceModel` 的同 NAS 复制/移动，以及共享 `FileCopyMoveMutationCoordinator` 的源快照、目标权限、同名冲突、任务结束和回读语义。沿用已记录公开 CopyMove/List 契约，不改共享请求、Mac App、Windows 或 Android。iPhone/iPad 均以同一多选工具栏选择文件和文件夹、原生逐层目标选择、逐项结果与取消；目录上传已由 M2a 完成，不另建实现。
+
+复制为普通写、移动为涉及源位置的写；继续拒绝共享根、远程/回收站、源目录子树、过期项目、无权限和同名覆盖。每项提交前将账号上下文、操作及源/目标路径写入独立受保护且排除备份的 `CopyMove/pending-v1.json`；保存失败零请求。明确结束才移除记录，未知或中断后禁止重放及改目标重试；重启保留限制，不把同名目标当作原任务成功。该新增记录属于已批准 M0–M8 恢复范围，原登录格式不迁移；回滚停用入口并保留记录。批量遇未知即停止余项，取消后即使当前项成功也停止后续项，保留实际逐项结果。分页按原始条目数推进，不能因一页没有可选目录而丢失后续目录；共享根将 Repository 的 `/` 明确转换为导航空路径，修复实际请求链目标加载失败。
+
+已完成独立集成与只读安全复核：原始源/目标、账号隔离、目录子树、分页、写前保存/损坏、迟到结果、取消和重复点击均有聚焦证据。7 项新增行为测试在两端各 634 项单元中通过；两端各 5 项新增实际 UI 与原有批量分享回归已有通过证据。共享测试及 Mac 双架构工程构建通过；精确命令、中间失败和修复见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2h1-批量文件夹复制与移动)。
+
+`PENDING_USER_VALIDATION`：iPhone/iPad 真机、专用可丢弃目录和两种账号，混合选择文件/目录并复制、移动；检查嵌套内容、无权限、同名冲突、空目录、取消、断网和重启。预期保留同名原件、逐项结果真实、未知不重放、取消不启动下一项，换账号不显示旧数据。VoiceOver、大字号、外接键盘和实际 NAS 内容完整性尚未验证；仅回传 App/OS/DSM/套件版本、脱敏步骤和错误类别。批量回收站、打包下载、跨 NAS 和 Office 主动回传继续独立实施，不由本小切片宣布 M2 完成。

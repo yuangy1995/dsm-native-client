@@ -238,7 +238,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         let toolbarExists = toolbar.waitForExistence(timeout: 5)
         attachScreenshot(app, name: "Batch selection toolbar")
         XCTAssertTrue(toolbarExists)
-        toolbar.tap(); app.buttons["Select Files"].tap()
+        toolbar.tap(); app.buttons["Select Items"].tap()
         app.staticTexts["Sample document.txt"].tap(); app.staticTexts["Inbox"].tap()
         let more = element("files.batch.more", in: app)
         XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
@@ -292,7 +292,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(password.waitForExistence(timeout: 5)); password.tap(); password.typeText("synthetic-only")
         element("sharing.edit.save", in: app).tap()
         XCTAssertTrue(element("sharing.results", in: app).waitForExistence(timeout: 8))
-        XCTAssertTrue(app.staticTexts["Completed"].exists)
+        XCTAssertTrue(app.staticTexts["Inbox, Completed"].exists)
         attachScreenshot(app, name: "Sharing password updated")
         app.buttons["Back to links"].tap()
         XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap()
@@ -325,7 +325,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         element("sharing.access.save", in: app).tap()
         XCTAssertTrue(app.alerts.buttons["Save changes"].waitForExistence(timeout: 5)); app.alerts.buttons["Save changes"].tap()
         XCTAssertTrue(element("sharing.results", in: app).waitForExistence(timeout: 8))
-        XCTAssertTrue(app.staticTexts["Completed"].exists)
+        XCTAssertTrue(app.staticTexts["Inbox, Completed"].exists)
         app.buttons["Back to links"].tap()
         XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap(); app.buttons["Access and collection settings"].tap()
         XCTAssertTrue(limit.waitForExistence(timeout: 5))
@@ -606,6 +606,75 @@ final class MobileWorkspaceUITests: XCTestCase {
         element("files.toolbar.more", in: app).tap()
         element("files.sharing.all", in: app).tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 8))
+    }
+
+    func test批量复制文件和文件夹逐项成功且源内容保留() {
+        let app = launchFixture(state: "copy-move")
+        defer { app.terminate() }
+        beginCopyMoveBatch(app, move: false)
+        XCTAssertTrue(app.staticTexts["Batch complete"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Completed: 2 · Failed: 0 · Result unavailable: 0 · Cancelled: 0 · Not started: 0"].exists)
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].exists); XCTAssertTrue(app.staticTexts["Inbox"].exists)
+        attachScreenshot(app, name: "Mixed file and folder copy results")
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Inbox"].exists)
+    }
+
+    func test批量移动文件和文件夹后源列表为空() {
+        let app = launchFixture(state: "copy-move")
+        defer { app.terminate() }
+        beginCopyMoveBatch(app, move: true)
+        XCTAssertTrue(app.staticTexts["Completed: 2 · Failed: 0 · Result unavailable: 0 · Cancelled: 0 · Not started: 0"].waitForExistence(timeout: 10))
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["This position is empty"].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Move refreshes the source folder")
+    }
+
+    func test批量同名冲突保留失败原因并继续其他文件夹() {
+        let app = launchFixture(state: "copy-conflict")
+        defer { app.terminate() }
+        beginCopyMoveBatch(app, move: false)
+        XCTAssertTrue(app.staticTexts["Completed: 1 · Failed: 1 · Result unavailable: 0 · Cancelled: 0 · Not started: 0"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Sample document.txt, An item with this name already exists"].exists)
+        XCTAssertTrue(app.staticTexts["Inbox, Completed"].exists)
+        attachScreenshot(app, name: "Partial copy keeps per-item outcomes")
+    }
+
+    func test批量未知结果保留未开始项且重启不重放() {
+        let app = launchFixture(state: "copy-unknown")
+        defer { app.terminate() }
+        beginCopyMoveBatch(app, move: false)
+        XCTAssertTrue(app.staticTexts["Completed: 0 · Failed: 0 · Result unavailable: 1 · Cancelled: 0 · Not started: 1"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.staticTexts["Sample document.txt, Not started"].exists)
+        attachScreenshot(app, name: "Unknown copy stops remaining items")
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch()
+        beginCopyMoveBatch(app, move: false)
+        XCTAssertTrue(app.staticTexts["Result unavailable"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(element("files.copy-move.submit", in: app).exists)
+    }
+
+    func test批量复制无写入权限显示逐项失败与恢复说明() {
+        let app = launchFixture(state: "copy-readonly")
+        defer { app.terminate() }
+        beginCopyMoveBatch(app, move: false)
+        XCTAssertTrue(app.staticTexts["Completed: 0 · Failed: 2 · Result unavailable: 0 · Cancelled: 0 · Not started: 0"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Inbox, No permission"].exists)
+        XCTAssertTrue(app.staticTexts["Sample document.txt, No permission"].exists)
+        XCTAssertTrue(app.staticTexts["You don’t have permission to use this destination. Choose another folder or ask an administrator for access."].exists)
+        attachScreenshot(app, name: "Copy respects actual destination permissions")
+    }
+
+    private func beginCopyMoveBatch(_ app: XCUIApplication, move: Bool) {
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
+        element("files.toolbar.more", in: app).tap(); app.buttons["Select Items"].tap()
+        app.staticTexts["Sample document.txt"].tap(); app.staticTexts["Inbox"].tap()
+        let operation = element(move ? "files.batch.move" : "files.batch.copy", in: app)
+        XCTAssertTrue(operation.isEnabled); operation.tap()
+        XCTAssertTrue(app.buttons["output"].waitForExistence(timeout: 5)); app.buttons["output"].tap()
+        let submit = element("files.copy-move.submit", in: app)
+        XCTAssertTrue(submit.waitForExistence(timeout: 5)); XCTAssertTrue(submit.isEnabled); submit.tap()
     }
 
     private func launchFixture(state: String = "content") -> XCUIApplication {

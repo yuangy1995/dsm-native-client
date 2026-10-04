@@ -3685,34 +3685,34 @@
 "mobile.files.copy-move.working.copy" = "Copying…";
 "mobile.files.copy-move.working.move" = "Moving…";
 "mobile.files.copy-move.cancelling" = "Cancelling…";
-"mobile.files.copy-move.review.title" = "Check this operation";
-"mobile.files.copy-move.review.message" = "The operation may have reached the NAS. Check the source and destination before trying again.";
+"mobile.files.copy-move.review.title" = "Result unavailable";
+"mobile.files.copy-move.review.message" = "The result could not be retrieved. Remaining items have stopped. Reconnect and refresh the folders to see their contents; this operation will not be repeated automatically.";
 "mobile.files.copy-move.review.dismiss" = "Close";
 "mobile.files.copy-move.permission" = "You don’t have permission to use this destination. Choose another folder or ask an administrator for access.";
 "mobile.files.copy-move.unsupported" = "This operation isn’t available for the selected item or destination.";
 "mobile.files.copy-move.conflict" = "A file or folder with this name already exists in the destination. Choose another folder.";
 "mobile.files.copy-move.destination.invalid" = "Choose a regular local folder on this NAS.";
 "mobile.files.copy-move.progress.accessibility" = "%1$@, %2$lld%% complete";
-"mobile.files.batch-selection.start" = "Select Files";
+"mobile.files.batch-selection.start" = "Select Items";
 "mobile.files.batch-selection.done" = "Done Selecting";
-"mobile.files.batch-selection.count" = "%1$lld of %2$lld files selected";
+"mobile.files.batch-selection.count" = "%1$lld of %2$lld items selected";
 "mobile.files.batch-selection.selected" = "Selected";
 "mobile.files.batch-selection.not-selected" = "Not selected";
 "mobile.files.batch-selection.unavailable" = "Not available for batch copy or move";
 "mobile.files.batch-selection.limit-reached" = "Selection limit reached";
-"mobile.files.batch-selection.add-hint" = "Adds this file to the selection";
-"mobile.files.batch-selection.remove-hint" = "Removes this file from the selection";
-"mobile.files.copy-move.batch.copy.title" = "Copy %lld Files";
-"mobile.files.copy-move.batch.move.title" = "Move %lld Files";
-"mobile.files.copy-move.batch.progress" = "%1$lld of %2$lld files processed";
-"mobile.files.copy-move.batch.summary" = "%1$lld completed, %2$lld failed, %3$lld need checking, %4$lld cancelled, %5$lld not started";
+"mobile.files.batch-selection.add-hint" = "Add this item to the selection";
+"mobile.files.batch-selection.remove-hint" = "Remove this item from the selection";
+"mobile.files.copy-move.batch.copy.title" = "Copy %lld items";
+"mobile.files.copy-move.batch.move.title" = "Move %lld items";
+"mobile.files.copy-move.batch.progress" = "%1$lld of %2$lld items processed";
+"mobile.files.copy-move.batch.summary" = "Completed: %1$lld · Failed: %2$lld · Result unavailable: %3$lld · Cancelled: %4$lld · Not started: %5$lld";
 "mobile.files.copy-move.batch.completed.title" = "Batch complete";
-"mobile.files.copy-move.batch.issues.title" = "Needs attention";
+"mobile.files.copy-move.batch.issues.title" = "Item results";
 "mobile.files.copy-move.batch.issue.permission" = "No permission";
 "mobile.files.copy-move.batch.issue.unsupported" = "Not supported";
-"mobile.files.copy-move.batch.issue.conflict" = "A file with this name already exists";
+"mobile.files.copy-move.batch.issue.conflict" = "An item with this name already exists";
 "mobile.files.copy-move.batch.issue.cancelled" = "Cancelled";
-"mobile.files.copy-move.batch.issue.failed" = "Couldn’t complete this file. Refresh and try again.";
+"mobile.files.copy-move.batch.issue.failed" = "This item could not be processed. Refresh and try again.";
 "mobile.files.copy-move.failed" = "The operation couldn’t be completed. Refresh the folder and try again.";
 "mobile.files.recycle.move.action" = "Move to Recycle Bin";
 "mobile.files.recycle.restore.action" = "Restore";
@@ -5901,3 +5901,11 @@
 "mobile.file-settings.images-empty" = "Choose another folder or upload an image from this device.";
 "mobile.file-settings.risk-iso" = "More accounts will be able to mount disc images.";
 "mobile.file-settings.loading" = "Loading settings…";
+
+"mobile.files.copy-move.batch.item.completed" = "Completed";
+
+"mobile.files.copy-move.batch.item.unavailable" = "Result unavailable";
+
+"mobile.files.copy-move.batch.item.not-started" = "Not started";
+
+"mobile.files.copy-move.recovery-error" = "Operation history could not be saved or restored. No further items will start. Check available device storage, then reopen the app.";

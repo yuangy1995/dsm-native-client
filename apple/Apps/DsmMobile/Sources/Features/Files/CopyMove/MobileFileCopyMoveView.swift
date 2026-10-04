@@ -197,6 +197,9 @@ struct MobileFileCopyMoveView: View {
                 .font(.headline)
                 Text(batchSummary(presentation))
                     .foregroundStyle(.secondary)
+                if let feedback = presentation.feedback {
+                    Text(feedbackMessage(feedback)).foregroundStyle(.secondary)
+                }
             }
             let issues = batchIssues(presentation)
             if !issues.isEmpty {
@@ -223,26 +226,31 @@ struct MobileFileCopyMoveView: View {
     }
 
     private func reviewView(_ presentation: MobileFileCopyMovePresentation) -> some View {
-        ContentUnavailableView {
-            Label(
-                L10n.string("mobile.files.copy-move.review.title"),
-                systemImage: "exclamationmark.triangle"
-            )
-        } description: {
-            VStack(spacing: 8) {
-                Text(L10n.string("mobile.files.copy-move.review.message"))
-                if presentation.isBatch {
-                    Text(batchSummary(presentation))
+        ScrollView {
+            ContentUnavailableView {
+                Label(
+                    L10n.string("mobile.files.copy-move.review.title"),
+                    systemImage: "exclamationmark.triangle"
+                )
+            } description: {
+                VStack(spacing: 8) {
+                    Text(L10n.string("mobile.files.copy-move.review.message"))
+                    if presentation.isBatch {
+                        Text(batchSummary(presentation))
+                        ForEach(presentation.itemStates, id: \.source.path) { item in
+                            LabeledContent(item.source.name, value: batchIssueMessage(item))
+                        }
+                    }
                 }
+            } actions: {
+                Button(L10n.string("mobile.files.copy-move.review.dismiss")) {
+                    copyMove.dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(minWidth: 44, minHeight: 44)
             }
-        } actions: {
-            Button(L10n.string("mobile.files.copy-move.review.dismiss")) {
-                copyMove.dismiss()
-            }
-            .buttonStyle(.borderedProminent)
-            .frame(minWidth: 44, minHeight: 44)
+            .fillsAvailableContentArea(alignment: .center)
         }
-        .fillsAvailableContentArea(alignment: .center)
     }
 
     @ToolbarContentBuilder
@@ -286,6 +294,7 @@ struct MobileFileCopyMoveView: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button(confirmTitle(presentation.operation)) { submit() }
+                    .accessibilityIdentifier("files.copy-move.submit")
                     .disabled(
                         presentation.phase != .browsing ||
                         !presentation.canSubmitDestination
@@ -314,7 +323,10 @@ struct MobileFileCopyMoveView: View {
     }
 
     private var cancelTitle: String {
-        copyMove.presentation?.cancellationRequested == true
+        if copyMove.presentation?.phase == .completed || copyMove.presentation?.phase == .review {
+            return L10n.string("mobile.files.copy-move.review.dismiss")
+        }
+        return copyMove.presentation?.cancellationRequested == true
             ? L10n.string("mobile.files.copy-move.cancelling")
             : L10n.string("mobile.files.copy-move.cancel")
     }
@@ -376,14 +388,16 @@ struct MobileFileCopyMoveView: View {
     private func batchIssues(
         _ presentation: MobileFileCopyMovePresentation
     ) -> [MobileFileCopyMoveItemState] {
-        presentation.itemStates.filter {
-            $0.status == .failed || $0.status == .cancelled
-        }
+        presentation.itemStates
     }
 
     private func batchIssueMessage(_ issue: MobileFileCopyMoveItemState) -> String {
-        if issue.status == .cancelled {
-            return L10n.string("mobile.files.copy-move.batch.issue.cancelled")
+        switch issue.status {
+        case .confirmed: return L10n.string("mobile.files.copy-move.batch.item.completed")
+        case .pendingReview: return L10n.string("mobile.files.copy-move.batch.item.unavailable")
+        case .notStarted, .submitting: return L10n.string("mobile.files.copy-move.batch.item.not-started")
+        case .cancelled: return L10n.string("mobile.files.copy-move.batch.issue.cancelled")
+        case .failed: break
         }
         switch issue.feedback {
         case .permission:
@@ -394,6 +408,8 @@ struct MobileFileCopyMoveView: View {
             return L10n.string("mobile.files.copy-move.batch.issue.conflict")
         case .failed:
             return L10n.string("mobile.files.copy-move.batch.issue.failed")
+        case .recovery:
+            return L10n.string("mobile.files.copy-move.recovery-error")
         }
     }
 
@@ -404,14 +420,16 @@ struct MobileFileCopyMoveView: View {
         case .conflict: L10n.string("mobile.files.copy-move.conflict")
         case .failed: L10n.string("mobile.files.copy-move.failed")
         case .invalidDestination: L10n.string("mobile.files.copy-move.destination.invalid")
+        case .recovery: L10n.string("mobile.files.copy-move.recovery-error")
         }
     }
 
     private func retry() { copyMove.retry(repository: repository) }
     private func loadMore() { copyMove.loadMore(repository: repository) }
     private func submit() {
+        let activation = copyMove.activation
         Task {
-            if let success = await copyMove.submit(repository: repository) {
+            if let success = await copyMove.submit(repository: repository, expectedActivation: activation) {
                 await didConfirm(success)
             }
         }
