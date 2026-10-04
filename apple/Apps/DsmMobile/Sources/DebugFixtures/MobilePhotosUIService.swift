@@ -16,6 +16,9 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var rejectsSharing = true
     private var temporaryAlbumIDs: Set<Int> = []
     private var requestList: [SynologyPhotoRequest] = []
+    private var conditions: [Int: SynologyPhotoAlbumCondition] = [:]
+    private var heldCondition: CheckedContinuation<Void, Never>?
+    private(set) var isConditionHeld = false
     private var heldRequest: CheckedContinuation<Void, Never>?
     private(set) var isRequestHeld = false
     private var sharingValue = SynologyPhotoSharingState(access: .disabled, hasPassword: true, hasExpiration: false, revision: "original", members: [], expiration: 0, isTemporary: false)
@@ -29,12 +32,19 @@ actor MobilePhotosUIService: SynologyPhotosServing {
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown"].contains(state)
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown"].contains(state)
         if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
                       sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20), folderID: 1, mediaType: "photo")
             }
+        }
+        if state.hasPrefix("photo-condition") {
+            albumList = [.init(id: 21, name: "Sample conditional album", isConditional: true)]
+            conditions[21] = .init(fields: ["user_id": .integer(12), "item_type": .array([.integer(-3)]),
+                "person": .array([.integer(77)]), "person_policy": .string("or"),
+                "keyword": .array([.string("Original keyword")]), "keyword_policy": .string("and"),
+                "future_empty": .array([]), "future_order": .array([.integer(2), .integer(1)])])
         }
         if state == "photo-sharing-conditional" { albumList = [.init(id: 21, name: "Sample album", isConditional: true)] }
         if state == "photo-sharing-existing" {
@@ -53,6 +63,30 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                 albumName: "Sample album", isFolderValid: state != "photo-request-invalid-folder", url: URL(string: "https://example.invalid/request/fixture"))]
         }
     }
+    func seedCondition(_ condition: SynologyPhotoAlbumCondition, id: Int = 21, name: String = "Sample conditional album") {
+        conditions[id] = condition
+        albumList.removeAll { $0.id == id }; albumList.append(.init(id: id, name: name, isConditional: true))
+    }
+    func releaseCondition() { heldCondition?.resume(); heldCondition = nil }
+    func albumCondition(id: Int) async throws -> SynologyPhotoAlbumCondition {
+        let value = conditions[id]
+        if state == "photo-condition-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-condition-held" { isConditionHeld = true; await withCheckedContinuation { heldCondition = $0 } }
+        if state == "photo-condition-error" { throw URLError(.notConnectedToInternet) }
+        guard let value else { throw CocoaError(.fileReadNoSuchFile) }; return value
+    }
+    func conditionSuggestions(keyword: String, in space: SynologyPhotoSpace) async throws -> [String: [SynologyPhotoConditionOption]] {
+        if state == "photo-condition-suggest-held" { isConditionHeld = true; await withCheckedContinuation { heldCondition = $0 } }
+        if state == "photo-condition-suggest-error" { throw URLError(.notConnectedToInternet) }
+        if state == "photo-condition-empty" || keyword == "no-match" { return [:] }
+        return ["person": [.init(name: "Sample person", value: .integer(space == .personal ? 77 : 88))],
+            "general_tag": [.init(name: "Sample tag", value: .integer(8))]]
+    }
+    func conditionItemCount(_ condition: SynologyPhotoAlbumCondition) async throws -> Int {
+        if state == "photo-condition-count-held" { isConditionHeld = true; await withCheckedContinuation { heldCondition = $0 } }
+        if state == "photo-condition-count-error" { throw URLError(.notConnectedToInternet) }
+        return condition.values("keyword").isEmpty ? 12 : 3
+    }
     func setPending(_ value: Bool) { pending = value }
     func seedTemporaryAlbum(_ album: SynologyPhotoCollection) {
         albumList.append(album); temporaryAlbumIDs.insert(album.id); members[album.id] = Set(uploaded.map { $0.id.unitID })
@@ -66,10 +100,13 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func access() async throws -> SynologyPhotosAccess {
         if state == "photo-loading" { try await Task.sleep(for: .seconds(30)) }
         if state == "photo-error" { throw URLError(.notConnectedToInternet) }
-        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic")
+        return .init(spaces: state == "photo-albums-only" ? [] : ["photo-albums-nohome", "photo-request-nohome", "photo-condition-nohome"].contains(state) ? [.shared] : [.personal, .shared], packageVersion: "synthetic", canManageSharedSpace: state.hasPrefix("photo-condition") && state != "photo-condition-shared-entry")
     }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
-        state.hasSuffix("-readonly") || deniesWrites ? [] : [.upload, .albums, .folders, .sharing, .photoRequests]
+        guard !state.hasSuffix("-readonly"), !deniesWrites else { return [] }
+        var features: Set<SynologyPhotosManagementFeature> = [.upload, .albums, .folders, .sharing, .photoRequests]
+        if state.hasPrefix("photo-condition") { features.insert(.conditionAlbums) }
+        return features
     }
     func changeSharing(_ value: SynologyPhotoSharingState) { sharingValue = value }
     func albumSharing(id: Int) async throws -> SynologyPhotoSharingState {
@@ -116,9 +153,9 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func rootFolder(in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection { .init(id: 1, name: "Sample folder", path: "/", space: space) }
     func folder(id: Int, in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection { .init(id: id, name: "Sample folder", parentID: id == 1 ? nil : 1, path: "/Sample folder", space: space) }
     func folders(in space: SynologyPhotoSpace, parentID: Int, offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
-        if state == "photo-request-folders-error" { throw URLError(.notConnectedToInternet) }
-        guard state.hasPrefix("photo-request"), parentID == 1 else { return [] }
-        let count = state == "photo-request-paged" ? 101 : 1
+        if state == "photo-request-folders-error" || state == "photo-condition-folders-error" { throw URLError(.notConnectedToInternet) }
+        guard (state.hasPrefix("photo-request") || state.hasPrefix("photo-condition")), parentID == 1 else { return [] }
+        let count = ["photo-request-paged", "photo-condition-paged"].contains(state) ? 101 : 1
         return Array((0..<count).dropFirst(offset).prefix(limit)).map { index in
             .init(id: index + 2, name: index == 0 ? "Sample folder" : "Folder \(index)", parentID: 1,
                   path: index == 0 ? "/Sample folder" : "/Folder \(index)", space: space)
@@ -154,6 +191,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func prepareMutation(_ mutation: SynologyPhotosMutation) async throws {
         if deniesWrites { throw CocoaError(.fileWriteNoPermission) }
         if case .shareAlbum(_, _, let original, _, _, _) = mutation, original?.revision != sharingValue.revision { throw CocoaError(.fileWriteNoPermission) }
+        if case .setAlbumCondition(let id, let original, _) = mutation, original != conditions[id] { throw CocoaError(.fileWriteNoPermission) }
     }
     func performRecoverableUpload(_ mutation: SynologyPhotosMutation, operationID: UUID, progress: @escaping FileTransferProgress,
                                   checkpoint: @escaping @Sendable (SynologyPhotosUploadCheckpoint) throws -> Void) async throws -> SynologyPhotosMutationResult {
@@ -197,6 +235,10 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             saved.sharingDetails = sharing
         }
         switch mutation {
+        case .createConditionAlbum(let name, let condition):
+            nextID += 1; saved.createdAlbumID = nextID
+            seedCondition(condition, id: nextID, name: name)
+        case .setAlbumCondition(let id, _, let condition): conditions[id] = condition
         case .createPhotoRequest(let settings):
             nextID += 1
             let id = "synthetic-created-\(nextID)"
@@ -230,6 +272,11 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .condition(let summary):
+            guard let id = summary.albumID ?? saved.createdAlbumID, let condition = conditions[id],
+                  let album = albumList.first(where: { $0.id == id }),
+                  (try? summary.matches(name: album.name, condition: condition, userID: userID)) == true else { return .init(state: .pendingReview) }
+            return .init(state: .confirmed, album: album)
         case .request(let summary):
             guard summary.targetDigest != nil else { return .init(state: .pendingReview) }
             let request = requestList.first { summary.matchesTarget($0.id) }

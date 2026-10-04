@@ -1569,6 +1569,7 @@ private struct PhotosMutationRecord: Sendable {
     var sharingBefore: ManagementAlbum.Sharing?
     var restoredAlbumSharing: SynologyPhotosAlbumCheckpoint.Sharing?
     var restoredPhotoRequest: SynologyPhotosAlbumCheckpoint.Request?
+    var restoredCondition: SynologyPhotosAlbumCheckpoint.Condition?
     var personPhotoIDs: Set<Int>?
     var personReceipt: PersonNameReceipt?
     var personCoverReceipt: PersonCoverReceipt?
@@ -2933,13 +2934,16 @@ extension SynologyPhotosRepository {
     }
 
     public func restoreAlbumMutation(_ checkpoint: SynologyPhotosAlbumCheckpoint) async throws {
-        if let request = checkpoint.requestDetails { try requireAccess(request.space) }
+        if let condition = checkpoint.conditionDetails { try requireAccess(condition.space) }
+        else if let request = checkpoint.requestDetails { try requireAccess(request.space) }
         else { try requireAlbumAccess() }
         guard checkpoint.profileID == profileID, checkpoint.userID == currentUserID, !mutationInFlight else { throw Self.failure(.permissionDenied) }
         let mutation = try checkpoint.reviewMutation()
         if let existing = mutations[checkpoint.operationID] {
             let matches = if let sharing = checkpoint.sharingDetails {
                 existing.restoredAlbumSharing.map { $0 == sharing } ?? sharing.hasSameIntent(as: existing.mutation)
+            } else if let condition = checkpoint.conditionDetails {
+                existing.restoredCondition.map { $0 == condition } ?? condition.hasSameIntent(as: existing.mutation, userID: checkpoint.userID)
             } else if let request = checkpoint.requestDetails {
                 existing.restoredPhotoRequest.map { $0 == request } ?? request.hasSameIntent(as: existing.mutation)
             } else {
@@ -2959,6 +2963,7 @@ extension SynologyPhotosRepository {
         record.albumMembershipHasFailures = checkpoint.membershipHasFailures
         record.restoredAlbumSharing = checkpoint.sharingDetails
         record.restoredPhotoRequest = checkpoint.requestDetails
+        record.restoredCondition = checkpoint.conditionDetails
         record.passwordUpdateAcknowledged = checkpoint.sharingDetails?.passwordAcknowledged ?? false
         record.enableSharingAttempted = checkpoint.sharingDetails?.enableAttempted ?? false
         record.temporaryAlbumMembers = checkpoint.temporaryMembers.map { values in
@@ -4073,15 +4078,19 @@ extension SynologyPhotosRepository {
             if let id = record.albumID {
                 let album = try await managedAlbum(id)
                 let current = try await albumCondition(id: id)
-                if album.name == name, try conditionParameters(current) == conditionParameters(condition) {
-                    result = .init(state: .confirmed, album: album.collection)
-                }
+                let matches: Bool
+                if let restored = record.restoredCondition, let user = currentUserID {
+                    matches = try restored.matches(name: album.name, condition: current, userID: user)
+                } else { matches = try album.name == name && conditionParameters(current) == conditionParameters(condition) }
+                if matches { result = .init(state: .confirmed, album: album.collection) }
             }
         case .setAlbumCondition(let id, _, let condition):
             let current = try await albumCondition(id: id)
-            if try conditionParameters(current) == conditionParameters(condition) {
-                result = .init(state: .confirmed, album: try await managedAlbum(id).collection)
-            }
+            let matches: Bool
+            if let restored = record.restoredCondition, let user = currentUserID {
+                matches = try restored.matches(name: "", condition: current, userID: user)
+            } else { matches = try conditionParameters(current) == conditionParameters(condition) }
+            if matches { result = .init(state: .confirmed, album: try await managedAlbum(id).collection) }
         case .renameAlbum(let id, let name):
             let album = try await managedAlbum(id)
             if album.name == name { result = SynologyPhotosMutationResult(state: .confirmed, album: album.collection) }
@@ -4547,9 +4556,7 @@ extension SynologyPhotosRepository {
         let user = try conditionSourceUser(in: condition.sourceSpace)
         guard
               condition.fields["user_id"] == nil || condition.fields["user_id"]?.integer == user else { throw Self.failure(.permissionDenied) }
-        var fields = condition.fields
-        fields["user_id"] = .integer(user)
-        fields["item_type"] = fields["item_type"] ?? .array([])
+        let fields = condition.fields
         for field in SynologyPhotoConditionField.allCases where !condition.values(field.rawValue).isEmpty && field.supportsPolicy {
             guard let policy = fields[field.rawValue + "_policy"]?.string, ["and", "or"].contains(policy) else { throw Self.failure(.invalidResponse) }
         }
@@ -4571,16 +4578,7 @@ extension SynologyPhotosRepository {
             case .object(let values): .object(values.mapValues(json))
             }
         }
-        // 只归一化已知集合字段，未知字段的空数组与顺序必须原样保留。
-        let setFields = Set(SynologyPhotoConditionField.allCases.map(\.rawValue) + ["folder_filter", "rating", "item_type", "time"])
-        for (key, value) in fields where setFields.contains(key) {
-            if let values = value.array {
-                if values.isEmpty && key != "item_type" { fields[key] = nil; continue }
-                let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
-                fields[key] = .array(try values.sorted { try encoder.encode($0).lexicographicallyPrecedes(encoder.encode($1)) })
-            }
-        }
-        return fields.mapValues(json)
+        return try condition.canonicalFields(sourceUserID: user).mapValues(json)
     }
 
     private func conditionRangeTitle(_ value: SynologyPhotoConditionValue) -> String {

@@ -2,6 +2,119 @@ import XCTest
 
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
+
+    func test条件相册创建添加关键词预览并保存() {
+        let app = launchFixture(state: "photo-condition")
+        defer { app.terminate() }
+        openConditionForm(app)
+        let title = app.textFields["mobile.photos.condition.name"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.condition.save"].isEnabled)
+        title.tap(); title.typeText("Trip rules")
+        let keyword = app.textFields["mobile.photos.condition.search"]
+        reveal(keyword, in: app); keyword.tap(); keyword.typeText("summer")
+        let add = app.buttons["mobile.photos.condition.add"]; reveal(add, in: app); add.tap()
+        XCTAssertTrue(app.staticTexts["summer"].waitForExistence(timeout: 5))
+        let preview = app.buttons["mobile.photos.condition.preview"]; reveal(preview, in: app); preview.tap()
+        XCTAssertTrue(app.staticTexts["3 photos and videos"].waitForExistence(timeout: 5))
+        reveal(app.staticTexts["3 photos and videos"], in: app)
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        attachScreenshot(app, name: "Conditional album rules and match count")
+        app.buttons["mobile.photos.condition.save"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        openPhotoSection("Albums", app: app); XCTAssertTrue(app.buttons["Trip rules"].waitForExistence(timeout: 8))
+    }
+
+    func test条件相册编辑保留缺名规则并取消不写入() {
+        let app = launchFixture(state: "photo-condition")
+        defer { app.terminate() }
+        openConditionForm(app, editing: true)
+        XCTAssertFalse(app.buttons["mobile.photos.condition.save"].isEnabled)
+        XCTAssertTrue(app.staticTexts["Keep existing types"].exists)
+        let reference = app.staticTexts["Existing condition 77"]; reveal(reference, in: app)
+        attachScreenshot(app, name: "Existing conditional rules remain editable")
+        let keyword = app.textFields["mobile.photos.condition.search"]; reveal(keyword, in: app); keyword.tap(); keyword.typeText("extra")
+        let add = app.buttons["mobile.photos.condition.add"]; reveal(add, in: app); add.tap()
+        XCTAssertTrue(app.buttons["mobile.photos.condition.save"].isEnabled); app.buttons["Cancel"].tap()
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.condition.edit", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.condition.save"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["mobile.photos.condition.save"].isEnabled)
+        let media = element("mobile.photos.condition.media", in: app); media.tap(); app.buttons["Videos"].tap()
+        app.buttons["mobile.photos.condition.save"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+    }
+
+    func test条件相册中文建议搜索空结果与选择人物() {
+        let app = launchFixture(state: "photo-condition", language: "zh-Hans")
+        defer { app.terminate() }
+        openConditionForm(app, chinese: true)
+        let title = app.textFields["mobile.photos.condition.name"]; title.tap(); title.typeText("People")
+        let field = element("mobile.photos.condition.field", in: app); reveal(field, in: app); field.tap(); app.buttons["人物"].tap()
+        let keyword = app.textFields["mobile.photos.condition.search"]; reveal(keyword, in: app); keyword.tap(); keyword.typeText("no-match")
+        let find = app.buttons["mobile.photos.condition.find"]; reveal(find, in: app); find.tap()
+        XCTAssertTrue(app.staticTexts["没有匹配项，请换个关键词查找。"].waitForExistence(timeout: 5))
+        keyword.tap(); keyword.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "no-match".count))
+        XCTAssertEqual(keyword.value as? String, "关键词")
+        // 收起键盘后先滚动到实际按钮，避免自动点按仍使用键盘出现时的位置。
+        reveal(find, in: app); find.tap(); let person = app.buttons["Sample person"]; XCTAssertTrue(person.waitForExistence(timeout: 5)); reveal(person, in: app); person.tap()
+        attachScreenshot(app, name: "条件相册中文建议与人物规则")
+        app.buttons["mobile.photos.condition.save"].tap()
+        XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
+    }
+
+    func test条件相册共享目录选择与空子目录导航() {
+        let app = launchFixture(state: "photo-condition-nohome")
+        defer { app.terminate() }
+        openConditionForm(app)
+        XCTAssertFalse(element("mobile.photos.condition.source", in: app).exists)
+        let title = app.textFields["mobile.photos.condition.name"]; title.tap(); title.typeText("Shared rules")
+        element("mobile.photos.condition.folders", in: app).tap()
+        XCTAssertTrue(app.buttons["Sample folder"].waitForExistence(timeout: 5)); app.cells.buttons["Sample folder"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["No subfolders. You can use this folder or choose a parent folder."].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Conditional shared folder navigation")
+        element("mobile.photos.condition.addFolder", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 5)); app.buttons["mobile.photos.condition.save"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+    }
+
+    func test条件相册未知重启限制重复创建() {
+        let app = launchFixture(state: "photo-condition-unknown")
+        openConditionForm(app)
+        let title = app.textFields["mobile.photos.condition.name"]; title.tap(); title.typeText("Pending rules")
+        app.buttons["mobile.photos.condition.save"].tap()
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch()
+        defer { app.terminate() }
+        openPhotos(app)
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap(); XCTAssertFalse(element("mobile.photos.condition.create", in: app).isEnabled)
+    }
+
+    func test条件相册读取等待与失败支持退出重试() {
+        for state in ["photo-condition-loading", "photo-condition-error"] {
+            let app = launchFixture(state: state)
+            openConditionForm(app, editing: true)
+            if state.hasSuffix("loading") { XCTAssertTrue(app.staticTexts["Loading album conditions…"].waitForExistence(timeout: 5)) }
+            else {
+                XCTAssertTrue(app.staticTexts["Unable to load album conditions. Try again."].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.buttons["Try again"].exists)
+            }
+            XCTAssertFalse(app.buttons["mobile.photos.condition.save"].isEnabled)
+            attachScreenshot(app, name: state)
+            app.buttons["Cancel"].tap(); XCTAssertTrue(element("mobile.photos.actions", in: app).exists)
+            app.terminate()
+        }
+    }
+
+    private func openConditionForm(_ app: XCUIApplication, editing: Bool = false, chinese: Bool = false) {
+        openPhotos(app, chinese: chinese)
+        if editing {
+            openPhotoSection(chinese ? "相册" : "Albums", app: app)
+            XCTAssertTrue(app.buttons["Sample conditional album"].waitForExistence(timeout: 8)); app.buttons["Sample conditional album"].tap()
+        }
+        element("mobile.photos.actions", in: app).tap()
+        element(editing ? "mobile.photos.condition.edit" : "mobile.photos.condition.create", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.condition.save"].waitForExistence(timeout: 5))
+    }
     func test照片收集创建并显示可分享链接() {
         let app = launchFixture(state: "photo-request")
         defer { app.terminate() }

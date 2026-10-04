@@ -20,6 +20,7 @@ final class MobileSynologyPhotosSession {
     private(set) var albums: MobilePhotoAlbumModel?
     private(set) var sharing: MobilePhotoSharingModel?
     private(set) var temporarySharing: MobilePhotoTemporarySharingModel?
+    private(set) var conditions: MobilePhotoConditionModel?
     private(set) var requests: MobilePhotoRequestModel?
     let thumbnails = MobilePhotoThumbnailStore(totalCostLimit: 32 * 1_024 * 1_024, concurrencyLimit: 4)
     private(set) var isExporting = false
@@ -50,6 +51,7 @@ final class MobileSynologyPhotosSession {
         albums = repository == nil ? nil : MobilePhotoAlbumModel(model: model)
         sharing = repository == nil ? nil : MobilePhotoSharingModel(model: model)
         temporarySharing = sharing.map { MobilePhotoTemporarySharingModel(model: model, sharing: $0) }
+        conditions = repository == nil ? nil : MobilePhotoConditionModel(model: model)
         requests = repository == nil ? nil : MobilePhotoRequestModel(model: model)
         hasCleanedUploadDrafts = false
     }
@@ -70,6 +72,7 @@ final class MobileSynologyPhotosSession {
         sharing?.cancel()
         temporarySharing?.clear()
         requests?.cancel()
+        conditions?.cancel()
         model.setModuleEnabled(false)
         cancelExport()
         Task { await thumbnails.removeAll() }

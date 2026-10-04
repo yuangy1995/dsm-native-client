@@ -4,6 +4,92 @@ import XCTest
 @testable import DsmNetwork
 
 final class SynologyPhotosRepositoryTests: XCTestCase {
+
+    func test条件创建回执恢复仅摘要且归一化已知集合不改变未知顺序() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let condition = SynologyPhotoAlbumCondition(fields: ["rating": .array([.integer(3), .integer(5)]),
+            "keyword": .array([.string("Private keyword")]), "keyword_policy": .string("and"),
+            "future_empty": .array([]), "future_order": .array([.integer(2), .integer(1)])])
+        let command = SynologyPhotosMutation.createConditionAlbum(name: "Fixture rule album", condition: condition)
+        let transport = MockHTTPTransport(responses: accessResponses() + [response(#"{"success":true,"data":{"album":{"id":21}}}"#), response("invalid")])
+        let repository = try makeRepository(transport, profileID: profile); _ = try await repository.access()
+        let result = try await repository.performRecoverableAlbumMutation(command, operationID: id) { capture.append($0) }
+        XCTAssertEqual(result.state, .pendingReview)
+        let saved = try XCTUnwrap(capture.values.last); XCTAssertEqual(saved.version, 5); XCTAssertEqual(saved.createdAlbumID, 21)
+        let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
+        for value in ["Fixture rule album", "Private keyword", "future_order", "fixture-token"] { XCTAssertFalse(text.contains(value)) }
+        try await repository.restoreAlbumMutation(saved)
+        let raw = #"{"user_id":12,"item_type":[],"rating":[{"id":5,"name":"Five"},{"id":3,"name":"Three"}],"keyword":["Private keyword"],"keyword_policy":"and","future_empty":[],"future_order":[2,1]}"#
+        for wrongOrder in [false, true] {
+            let reader = MockHTTPTransport(responses: accessResponses() + [response(conditionAlbum), response(conditionAlbum), conditionReply(wrongOrder ? raw.replacingOccurrences(of: "[2,1]", with: "[1,2]") : raw)])
+            let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+            try await restored.restoreAlbumMutation(try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data))
+            let reviewed = try await restored.reviewMutation(operationID: id)
+            XCTAssertEqual(reviewed.state, wrongOrder ? .pendingReview : .confirmed)
+            let requests = try await reader.recordedRequests().map(decode)
+            XCTAssertFalse(requests.contains { ["create", "set_condition", "delete"].contains($0["method"] ?? "") })
+        }
+    }
+
+    func test条件创建丢回执不按同名搜索且保存失败零写入() async throws {
+        let profile = UUID(), id = UUID(), command = SynologyPhotosMutation.createConditionAlbum(name: "Fixture rule album", condition: .init())
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+        let reader = MockHTTPTransport(responses: accessResponses())
+        let repository = try makeRepository(reader, profileID: profile); _ = try await repository.access()
+        try await repository.restoreAlbumMutation(saved)
+        let result = try await repository.reviewMutation(operationID: id); XCTAssertEqual(result.state, .pendingReview)
+        let reads = try await reader.recordedRequests().map(decode)
+        XCTAssertFalse(reads.contains { $0["api"] == "SYNO.Foto.Browse.ConditionAlbum" })
+        do {
+            _ = try await repository.performRecoverableAlbumMutation(command, operationID: UUID()) { _ in throw CocoaError(.fileWriteOutOfSpace) }
+            XCTFail("未知操作不能再创建")
+        } catch { }
+        let writer = MockHTTPTransport(responses: accessResponses())
+        let fresh = try makeRepository(writer); _ = try await fresh.access()
+        do {
+            _ = try await fresh.performRecoverableAlbumMutation(command, operationID: UUID()) { _ in throw CocoaError(.fileWriteOutOfSpace) }
+            XCTFail("恢复记录写入失败不得创建")
+        } catch { }
+        let writes = try await writer.recordedRequests().map(decode); XCTAssertFalse(writes.contains { $0["method"] == "create" })
+    }
+
+    func test条件编辑恢复按规则摘要且拒绝错误来源原目标和账号() async throws {
+        let profile = UUID(), id = UUID(), expected = SynologyPhotoAlbumCondition(fields: ["user_id": .integer(0), "item_type": .array([.integer(-2)])])
+        let command = SynologyPhotosMutation.setAlbumCondition(id: 21, original: .init(), condition: expected)
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+        for variant in 0..<4 {
+            let raw = variant == 1 ? #"{"user_id":0,"item_type":[-1]}"# : variant == 2 ? #"{"user_id":12,"item_type":[-2]}"# : #"{"user_id":0,"item_type":[-2]}"#
+            let album = variant == 3 ? conditionAlbum.replacingOccurrences(of: "\"owner_user_id\":12", with: "\"owner_user_id\":99") : conditionAlbum
+            let reader = MockHTTPTransport(responses: accessResponses(teamPermission: "management", homeEnabled: false) + [response(album), conditionReply(raw), response(album)])
+            let repository = try makeRepository(reader, profileID: profile); _ = try await repository.access(); try await repository.restoreAlbumMutation(saved)
+            do {
+                let result = try await repository.reviewMutation(operationID: id)
+                XCTAssertEqual(result.state, variant == 0 ? .confirmed : .pendingReview)
+            } catch { XCTAssertTrue(variant == 2 || variant == 3) }
+            let requests = try await reader.recordedRequests().map(decode)
+            XCTAssertFalse(requests.contains { $0["method"] == "set_condition" })
+        }
+        let reader = MockHTTPTransport(responses: accessResponses())
+        let wrong = try makeRepository(reader); _ = try await wrong.access()
+        do { try await wrong.restoreAlbumMutation(saved); XCTFail("错误账号不得恢复") }
+        catch let error as AppError { XCTAssertEqual(error.category, .permissionDenied) }
+    }
+
+    func test条件摘要损坏与不同意图不能恢复到已存在操作() async throws {
+        let profile = UUID(), id = UUID(), command = SynologyPhotosMutation.createConditionAlbum(name: "Fixture", condition: .init())
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
+        var operation = try XCTUnwrap(object["operation"] as? [String: Any]), condition = try XCTUnwrap(operation["condition"] as? [String: Any])
+        var details = try XCTUnwrap(condition["_0"] as? [String: Any]); details["fieldsDigest"] = "invalid"; condition["_0"] = details
+        operation["condition"] = condition; object["operation"] = operation
+        let corrupt = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertThrowsError(try corrupt.reviewMutation())
+        let reader = MockHTTPTransport(responses: accessResponses())
+        let repository = try makeRepository(reader, profileID: profile); _ = try await repository.access(); try await repository.restoreAlbumMutation(saved)
+        let other = try SynologyPhotosAlbumCheckpoint(mutation: .createConditionAlbum(name: "Other", condition: .init()), operationID: id, profileID: profile, userID: 12)
+        do { try await repository.restoreAlbumMutation(other); XCTFail("不能覆盖其他意图") }
+        catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+    }
     func test收集创建恢复只保存摘要且跨实例按回执回读() async throws {
         let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
         let settings = SynologyPhotoRequestSettings(subject: "Fixture", description: "Synthetic collection", folderPath: "/PhotoRequest/Fixture", expiration: 2_000_000_000, sizeLimit: 1_234_567)
