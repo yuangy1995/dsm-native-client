@@ -106,16 +106,7 @@ private struct MobileSynologyPhotosContent: View {
                 Button(L10n.string("mobile.photos.temporary.resume")) { sharing.beginPrepared() }
                     .disabled(!model.canStartManagementMutation).accessibilityIdentifier("mobile.photos.temporary.resume")
             }
-            if model.isDeleting || model.isCheckingDeletion { ProgressView().padding(8) }
-            if let message = model.deletionMessage {
-                VStack {
-                    Text(message).font(.callout)
-                    if model.pendingDeletionPhoto != nil {
-                        Button(L10n.string("photos.delete.review")) { Task { await model.reviewPendingDeletion() } }
-                            .frame(minHeight: 44).disabled(model.isDeleting)
-                    }
-                }.padding(8)
-            }
+            MobilePhotoDeletionStatus(model: model)
         }
         .navigationTitle(model.selectedCategoryItem?.name ?? model.selectedAlbum?.name ??
             (model.folderHistory.count > 1 ? model.folderHistory.last?.name : nil) ?? L10n.string("mobile.photos.title"))
@@ -300,6 +291,9 @@ private struct MobileSynologyPhotosContent: View {
         .modifier(MobilePhotoFolderPresentation(session: session, active: model.previewPhoto == nil))
         .modifier(MobileSynologyPhotoExportPresentation(session: session, active: model.previewPhoto == nil))
         .task { await session.activate() }
+        .task(id: model.hasAutomaticDeletionReview) {
+            if model.hasAutomaticDeletionReview { await model.continueAutomaticDeletionReview() }
+        }
         .onDisappear { session.deactivate() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { session.deactivate() }
@@ -549,7 +543,7 @@ private struct MobileSynologyPhotosContent: View {
                         Button(L10n.string("photos.media.open")) { model.showPreview(photo) }
                         Button(L10n.string("photos.media.save")) { session.exportOriginal(photo) }
                         Button(L10n.string("photos.delete.action"), role: .destructive) { model.requestDeletion(photo) }
-                            .disabled(model.isDeleting || model.isCheckingDeletion || model.pendingDeletionPhoto != nil)
+                            .disabled(!model.canDeletePhotos([photo]))
                     }
             }
         }

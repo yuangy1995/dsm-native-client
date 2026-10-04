@@ -70,7 +70,7 @@ struct MobileSynologyPhotoPreview: View {
                             Button(L10n.string("photos.media.save")) { session.exportOriginal(photo) }
                             Button(L10n.string("mobile.documents.share")) { session.exportOriginal(photo, sharing: true) }
                             Button(L10n.string("photos.delete.action"), role: .destructive) { model.requestDeletion(photo) }
-                                .disabled(model.isDeleting || model.isCheckingDeletion || model.pendingDeletionPhoto != nil)
+                                .disabled(!model.canDeletePhotos([photo])).accessibilityIdentifier("mobile.photos.preview.delete")
                         } label: {
                             Label(L10n.string("photos.media.save"), systemImage: "square.and.arrow.up")
                         }.frame(minWidth: 44, minHeight: 44).disabled(session.isExporting)
@@ -219,24 +219,67 @@ struct MobileSynologyPhotoDeletionPresentation: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .alert(L10n.string("photos.delete.title"), isPresented: Binding(
-                get: { active && model.deletionCandidate != nil },
-                set: { if !$0 { model.deletionCandidate = nil } }
-            )) {
-                Button(L10n.string("photos.delete.cancel"), role: .cancel) { model.deletionCandidate = nil }
-                if let photo = model.deletionCandidate {
-                    Button(L10n.string("photos.delete.action"), role: .destructive) {
-                        model.confirmDeletion(photo)
-                        model.closePreview()
-                    }
-                }
-            } message: { Text(L10n.string("photos.delete.confirm", model.deletionCandidate?.filename ?? "")) }
+            .alert(L10n.string("mobile.photos.deletion.title"), isPresented: Binding(
+                get: { active && !model.deletionCandidates.isEmpty },
+                set: { if !$0 { model.deletionCandidates = [] } }
+            ), presenting: model.deletionCandidates) { photos in
+                Button(L10n.string("photos.delete.cancel"), role: .cancel) { model.deletionCandidates = [] }
+                Button(L10n.string("photos.delete.action"), role: .destructive) {
+                    model.confirmDeletion(photos)
+                    if model.isDeleting { model.clearSelection(); model.closePreview() }
+                }.accessibilityIdentifier("mobile.photos.deletion.confirm")
+            } message: { photos in
+                if let kept = model.deletionKeptCount {
+                    Text(L10n.string("photos.similar.cleanupConfirm", kept, photos.count))
+                } else if photos.count == 1 {
+                    Text(L10n.string("photos.delete.confirm", photos[0].filename))
+                } else { Text(L10n.string("mobile.photos.deletion.confirmMany", photos.count)) }
+            }
             .alert(L10n.string("photos.delete.title"), isPresented: Binding(
                 get: { active && model.deletionError != nil },
                 set: { if !$0 { model.deletionError = nil } }
             )) {
                 Button(L10n.string("photos.media.close"), role: .cancel) { model.deletionError = nil }
             } message: { Text(model.deletionError ?? "") }
+    }
+}
+
+struct MobilePhotoDeletionStatus: View {
+    @Bindable var model: SynologyPhotosModel
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var body: some View {
+        if model.isDeleting || model.isCheckingDeletion || model.deletionRecoveryError != nil || model.deletionMessage != nil {
+            if typeSize.isAccessibilitySize {
+                ScrollView { controls }.frame(height: 280).clipped()
+                    .accessibilityIdentifier("mobile.photos.deletion.controls")
+            } else { controls }
+        }
+    }
+    private var controls: some View {
+        VStack(spacing: 8) {
+            if model.isDeleting || model.isCheckingDeletion { ProgressView().accessibilityIdentifier("mobile.photos.deletion.loading") }
+            if let error = model.deletionRecoveryError {
+                Text(error).font(.callout).fixedSize(horizontal: false, vertical: true)
+                Button { Task { await model.retryDeletionRecovery() } } label: { Text(L10n.string("photos.retry")) }
+                    .disabled(model.isDeleting || model.isCheckingDeletion).accessibilityIdentifier("mobile.photos.deletion.retry")
+            } else {
+                if let message = model.deletionMessage {
+                    Text(message).font(.callout).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("mobile.photos.deletion.status")
+                }
+                if model.pendingDeletionPhoto != nil {
+                    Button { Task { await model.reviewPendingDeletion() } } label: { Text(L10n.string("photos.library.refresh")) }
+                        .disabled(model.isDeleting).accessibilityIdentifier("mobile.photos.deletion.refresh")
+                }
+                if model.remainingDeletionCount > 0 {
+                    Button { model.requestRemainingDeletion() } label: {
+                        Text(L10n.string("mobile.photos.deletion.continue", model.remainingDeletionCount)).fixedSize(horizontal: false, vertical: true)
+                    }.disabled(!model.canContinueDeletion).accessibilityIdentifier("mobile.photos.deletion.continue")
+                    Button { model.cancelRemainingDeletion() } label: {
+                        Text(L10n.string("mobile.photos.deletion.cancelRemaining")).fixedSize(horizontal: false, vertical: true)
+                    }.disabled(model.isDeleting || model.isCheckingDeletion).accessibilityIdentifier("mobile.photos.deletion.cancelRemaining")
+                }
+            }
+        }.multilineTextAlignment(.center).frame(maxWidth: .infinity).buttonStyle(.bordered).controlSize(.large).padding(8)
     }
 }
 

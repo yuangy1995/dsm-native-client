@@ -82,7 +82,9 @@ enum MobileUIFixture {
                 let source = photosRoot.appendingPathComponent("Sample image.jpg")
                 try MobilePhotosUIService.image.write(to: source)
                 model.synologyPhotos.configure(MobilePhotosUIService(profileID: profile.id, state: officeState),
-                    uploadStorage: .init(recordURL: photosRoot.appendingPathComponent("Recovery/queue.json")), reviewDelay: { _ in })
+                    uploadStorage: .init(recordURL: photosRoot.appendingPathComponent("Recovery/queue.json")), reviewDelay: { delay in
+                        if officeState.hasPrefix("photo-deletion") { try await Task.sleep(for: .seconds(min(delay, 1))) }
+                    })
                 if ["photo-upload", "photo-album-failure", "photo-unknown", "photo-contributor"].contains(officeState) {
                     model.synologyPhotos.uploads?.fixtureSources = [source]
                 }

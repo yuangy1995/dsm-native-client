@@ -3,6 +3,99 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test照片完整批量删除确认可取消且删除全部选择() {
+        let app = launchFixture(state: "photo-deletion"); defer { app.terminate() }
+        openPhotos(app); selectPhotoItems(app); beginPhotoDeletion(in: app)
+        XCTAssertTrue(app.staticTexts["Delete these 3 photos from your NAS? This also removes them from albums. Recovery depends on your NAS settings."].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Delete all three originals confirmation")
+        app.alerts.firstMatch.buttons["Cancel"].tap(); XCTAssertTrue(app.buttons["Sample 1.jpg"].exists); XCTAssertTrue(app.buttons["Sample 3.jpg"].exists)
+        beginPhotoDeletion(in: app); app.alerts.firstMatch.buttons["mobile.photos.deletion.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Deleted: 3."].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["Sample 1.jpg"].exists); XCTAssertFalse(app.buttons["Sample 2.jpg"].exists); XCTAssertFalse(app.buttons["Sample 3.jpg"].exists)
+        XCTAssertFalse(element("mobile.photos.selection.actions", in: app).exists)
+        attachScreenshot(app, name: "All selected originals deleted")
+    }
+    func test照片删除未知重启后只能刷新或取消剩余项目() {
+        let app = launchFixture(state: "photo-deletion-unknown"); defer { app.terminate() }
+        openPhotos(app); selectPhotoItems(app); beginPhotoDeletion(in: app)
+        app.alerts.firstMatch.buttons["mobile.photos.deletion.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["mobile.photos.deletion.refresh"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["mobile.photos.deletion.continue"].isEnabled)
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+        XCTAssertTrue(app.buttons["mobile.photos.deletion.refresh"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["mobile.photos.deletion.continue"].isEnabled)
+        app.buttons["mobile.photos.deletion.cancelRemaining"].tap()
+        XCTAssertFalse(app.buttons["mobile.photos.deletion.continue"].exists); XCTAssertTrue(app.buttons["mobile.photos.deletion.refresh"].exists)
+        attachScreenshot(app, name: "Interrupted deletion keeps submitted item after cancel remaining")
+    }
+    func test照片部分删除中文只继续未提交项且不误报全部成功() {
+        let app = launchFixture(state: "photo-deletion-partial", language: "zh-Hans"); defer { app.terminate() }
+        openPhotos(app, chinese: true); selectPhotoItems(app); beginPhotoDeletion(in: app)
+        app.alerts.firstMatch.buttons["mobile.photos.deletion.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 8)); app.alerts.firstMatch.buttons["关闭"].tap()
+        let resume = app.buttons["mobile.photos.deletion.continue"]; XCTAssertTrue(resume.waitForExistence(timeout: 8))
+        XCTAssertEqual(resume.label, "继续删除 1 张照片"); resume.tap()
+        XCTAssertTrue(app.staticTexts["要从 NAS 删除“Sample 3.jpg”吗？它也将从所属相册中移除。能否恢复取决于 NAS 的设置。"].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "仅继续尚未提交的一张照片")
+        app.alerts.firstMatch.buttons["mobile.photos.deletion.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["已删除 2 张照片，1 张未删除。"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Sample 2.jpg"].exists); XCTAssertFalse(app.buttons["Sample 1.jpg"].exists); XCTAssertFalse(app.buttons["Sample 3.jpg"].exists)
+    }
+    func test照片删除预检加载和连接错误不弹出删除确认() {
+        for state in ["photo-deletion-loading", "photo-deletion-error", "photo-deletion-denied"] {
+            let app = launchFixture(state: state); openPhotos(app); selectPhotoItems(app)
+            element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.selection.delete", in: app).tap()
+            if state.hasSuffix("loading") { XCTAssertTrue(element("mobile.photos.deletion.loading", in: app).waitForExistence(timeout: 5)); XCTAssertFalse(app.alerts.firstMatch.exists) }
+            else { XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 8)); XCTAssertFalse(app.alerts.firstMatch.buttons["mobile.photos.deletion.confirm"].exists) }
+            attachScreenshot(app, name: state); app.terminate()
+        }
+    }
+    func test预览删除单张后仍保留其余照片() {
+        let app = launchFixture(state: "photo-deletion"); defer { app.terminate() }
+        openPhotos(app); app.buttons["Sample 1.jpg"].tap()
+        let share = app.buttons["Save original"]; XCTAssertTrue(share.waitForExistence(timeout: 5)); share.tap()
+        let action = element("mobile.photos.preview.delete", in: app); XCTAssertTrue(action.waitForExistence(timeout: 5)); action.tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); app.alerts.firstMatch.buttons["mobile.photos.deletion.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Deleted: 1."].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["Sample 1.jpg"].exists); XCTAssertTrue(app.buttons["Sample 2.jpg"].exists); XCTAssertTrue(app.buttons["Sample 3.jpg"].exists)
+    }
+    func test照片删除中文大字确认和剩余操作仍可触达() {
+        let app = launchFixture(state: "photo-deletion-unknown", language: "zh-Hans"); app.terminate()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]; app.launch(); defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); navigate("settings", title: "App 设置", in: app)
+        let toggle = element("mobile.settings.module.photos", in: app)
+        for _ in 0..<8 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(toggle.exists); toggle.switches.firstMatch.tap(); navigate("photos", title: "照片", in: app)
+        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8))
+        let photo = app.buttons["Sample 1.jpg"]
+        for _ in 0..<8 { if photo.exists && photo.isHittable { break }; app.swipeUp() }
+        selectPhotoItems(app); beginPhotoDeletion(in: app)
+        let confirm = app.alerts.firstMatch.buttons["mobile.photos.deletion.confirm"].firstMatch
+        XCTAssertTrue(confirm.isHittable); attachScreenshot(app, name: "照片删除中文大字完整确认"); confirm.tap()
+        let controls = app.scrollViews["mobile.photos.deletion.controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 8)); attachScreenshot(app, name: "照片删除中文大字完整进度")
+        let cancel = app.buttons["mobile.photos.deletion.cancelRemaining"]
+        for _ in 0..<6 { if cancel.exists && cancel.isHittable { break }; scrollPhotoDeletionControls(controls, in: app) }
+        XCTAssertTrue(cancel.exists); XCTAssertTrue(cancel.isHittable, "操作区 \(controls.frame)，按钮 \(cancel.frame)")
+        XCTAssertFalse(app.buttons["mobile.photos.deletion.continue"].isEnabled); attachScreenshot(app, name: "照片删除中文大字恢复操作"); cancel.tap()
+        let refresh = app.buttons["mobile.photos.deletion.refresh"]
+        for _ in 0..<6 { if refresh.exists && refresh.isHittable { break }; scrollPhotoDeletionControls(controls, in: app) }
+        XCTAssertTrue(refresh.isHittable)
+    }
+    private func scrollPhotoDeletionControls(_ controls: XCUIElement, in app: XCUIApplication) {
+        let frame = controls.frame.intersection(app.frame)
+        let bottom = min(frame.maxY, app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.frame.maxY)
+        let height = bottom - frame.minY
+        XCTAssertGreaterThan(height, 40)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        origin.withOffset(CGVector(dx: frame.midX, dy: frame.minY + height * 0.75)).press(forDuration: 0.05,
+            thenDragTo: origin.withOffset(CGVector(dx: frame.midX, dy: frame.minY + height * 0.25)))
+    }
+    private func beginPhotoDeletion(in app: XCUIApplication) {
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.selection.delete", in: app).tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 8))
+    }
+
     func test人物显示隐藏与主题搜索() {
         let app = launchFixture(state: "photo-recognition"); defer { app.terminate() }
         openPhotos(app); openPhotoRecognition("peopleVisibility", in: app)

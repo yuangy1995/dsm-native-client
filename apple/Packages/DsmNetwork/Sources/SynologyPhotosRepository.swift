@@ -910,20 +910,41 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
     }
 
     public func deletePhoto(_ photo: SynologyPhoto, operationID: UUID) async throws -> SynologyPhotoDeletionResult {
+        try await deletePhoto(photo, operationID: operationID, checkpoint: nil)
+    }
+
+    public func performRecoverableDeletion(_ photo: SynologyPhoto, operationID: UUID,
+        checkpoint: @escaping @Sendable (SynologyPhotoDeletionCheckpoint) throws -> Void) async throws -> SynologyPhotoDeletionResult {
+        try await deletePhoto(photo, operationID: operationID, checkpoint: checkpoint)
+    }
+
+    private func deletePhoto(_ photo: SynologyPhoto, operationID: UUID,
+        checkpoint: (@Sendable (SynologyPhotoDeletionCheckpoint) throws -> Void)?) async throws -> SynologyPhotoDeletionResult {
         try requirePhoto(photo)
+        let identity = checkpoint == nil ? nil : try await uploadRecoveryIdentity()
+        func save(_ state: SynologyPhotoDeletionCheckpoint.State) throws {
+            if let checkpoint, let identity {
+                try checkpoint(.init(photo: photo, operationID: operationID, identity: identity, state: state))
+            }
+        }
         if let previous = deletionOperations[operationID], previous != photo.id { throw deletionError(.conflict, "photos.delete.changed") }
         if let rejection = rejectedDeletionOperations[operationID] { throw rejection }
-        if let confirmed = confirmedDeletions[photo.id], Self.sameDeletionTarget(confirmed, photo) { return .confirmed }
+        if let confirmed = confirmedDeletions[photo.id], Self.sameDeletionTarget(confirmed, photo) { try save(.confirmed); return .confirmed }
         guard deletionLocks.insert(photo.id).inserted else { return .pendingReview }
         defer { deletionLocks.remove(photo.id) }
         if let pending = pendingDeletions[photo.id] {
             guard Self.sameDeletionTarget(pending, photo) else { throw deletionError(.conflict, "photos.delete.changed") }
-            return try await reviewDeletion(photo)
+            let result = try await reviewDeletion(photo)
+            try save(result == .confirmed ? .confirmed : .submitted)
+            return result
         }
         // 确认框之后重新核对版本、目标与权限，再且仅再提交一次。
         try await prepareDeletion(photo)
         try Task.checkCancellation()
         guard allowedSpaces.contains(photo.id.space) else { throw deletionError(.permissionDenied, "photos.delete.denied") }
+        if let identity, identity != currentUserID.map({ "\(profileID.uuidString):\($0)" }) { throw Self.failure(.permissionDenied) }
+        // 写前必须保存已提交边界；落盘失败时不发送删除请求。
+        try save(.submitted)
         deletionOperations[operationID] = photo.id
         pendingDeletions[photo.id] = photo
         let capability = capabilities[api("BackgroundTask.File", in: photo.id.space)]!
@@ -937,6 +958,7 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
                 let rejection = DsmErrorMapper.map(error)
                 pendingDeletions.removeValue(forKey: photo.id)
                 rejectedDeletionOperations[operationID] = rejection
+                try save(.rejected)
                 throw rejection
             }
             return .pendingReview
@@ -944,7 +966,48 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
             // 提交后的错误或取消不能证明未执行；保留待核对记录，不自动重放。
             return .pendingReview
         }
-        return (try? await reviewDeletion(photo)) ?? .pendingReview
+        let result = (try? await reviewDeletion(photo)) ?? .pendingReview
+        if result == .confirmed { try save(.confirmed) }
+        return result
+    }
+
+    public func deletionTarget(_ checkpoint: SynologyPhotoDeletionCheckpoint) async throws -> SynologyPhoto {
+        try requireDeletionCheckpoint(checkpoint)
+        guard checkpoint.state == .prepared else { throw Self.failure(.conflict) }
+        let generation = accessGeneration
+        let payload: DeletionItemList = try await call(api("Browse.Item", in: checkpoint.target.space), version: 5, method: "get",
+            parameters: ["id": .integerArray([checkpoint.target.unitID])])
+        guard generation == accessGeneration, payload.list.count == 1, let value = payload.list.first else { throw deletionError(.conflict, "photos.delete.changed") }
+        let photo = value.photo(for: checkpoint.target)
+        guard try checkpoint.matches(photo) else { throw deletionError(.conflict, "photos.delete.changed") }
+        return photo
+    }
+
+    public func reviewDeletion(_ checkpoint: SynologyPhotoDeletionCheckpoint) async throws -> SynologyPhotoDeletionResult {
+        try requireDeletionCheckpoint(checkpoint)
+        if checkpoint.state == .confirmed { return .confirmed }
+        guard checkpoint.state == .submitted else { throw Self.failure(.conflict) }
+        let generation = accessGeneration
+        let payload: DeletionItemList = try await call(api("Browse.Item", in: checkpoint.target.space), version: 5, method: "get",
+            parameters: ["id": .integerArray([checkpoint.target.unitID])])
+        guard generation == accessGeneration else { throw Self.failure(.permissionDenied) }
+        // 只有已提交记录加成功空响应才算删除完成，权限错误和原件变化均不猜测。
+        if payload.list.isEmpty {
+            if let pending = pendingDeletions[checkpoint.target.id], try checkpoint.matches(pending) {
+                pendingDeletions.removeValue(forKey: checkpoint.target.id)
+                confirmedDeletions[checkpoint.target.id] = pending
+            }
+            return .confirmed
+        }
+        guard payload.list.count == 1, let value = payload.list.first,
+              try checkpoint.matches(value.photo(for: checkpoint.target)) else { throw deletionError(.conflict, "photos.delete.changed") }
+        return .pendingReview
+    }
+
+    private func requireDeletionCheckpoint(_ checkpoint: SynologyPhotoDeletionCheckpoint) throws {
+        try checkpoint.validate()
+        guard let user = currentUserID, user > 0, "\(profileID.uuidString):\(user)" == checkpoint.identity else { throw Self.failure(.permissionDenied) }
+        try requirePhoto(checkpoint.target.queryPhoto)
     }
 
     public func reviewDeletion(_ photo: SynologyPhoto) async throws -> SynologyPhotoDeletionResult {
@@ -1374,6 +1437,11 @@ private struct DeletionItemList: Decodable, Sendable {
                 && Date(timeIntervalSince1970: time) == photo.takenAt
                 && Date(timeIntervalSince1970: indexed_time) == photo.indexedAt
                 && folder_id == photo.folderID && type == photo.mediaType
+        }
+        func photo(for target: SynologyPhotosAlbumCheckpoint.PhotoEdit.Target) -> SynologyPhoto {
+            .init(id: .init(profileID: target.profileID, space: target.space, unitID: id), filename: filename,
+                  sizeBytes: filesize, takenAt: Date(timeIntervalSince1970: time), indexedAt: Date(timeIntervalSince1970: indexed_time),
+                  folderID: folder_id, mediaType: type, albumContext: target.queryPhoto.albumContext)
         }
     }
 }

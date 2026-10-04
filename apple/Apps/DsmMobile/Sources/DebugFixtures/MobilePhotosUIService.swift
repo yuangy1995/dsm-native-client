@@ -34,6 +34,10 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var recognitionConcepts: [SynologyPhotoSpace: [SynologyPhotoConceptVisibility]] = [:]
     private var recognitionRegions: [SynologyPhotoID: [SynologyPhotoFaceRegion]] = [:]
     private var recognitionResults: [UUID: SynologyPhotosMutationResult] = [:]
+    private(set) var deletedPhotoIDs: [SynologyPhotoID] = []
+    private(set) var deletionReads = 0
+    private var heldDeletion: CheckedContinuation<Void, Never>?
+    private(set) var isDeletionHeld = false
     private var heldRecognition: CheckedContinuation<Void, Never>?
     private(set) var isRecognitionHeld = false
     private var administrationShared: SynologyPhotoSharedSpaceSettings?
@@ -68,7 +72,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown", "photo-preview-unknown", "photo-preview-automatic-unknown", "photo-admin-unknown", "photo-recognition-unknown"].contains(state)
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown", "photo-request-unknown", "photo-condition-unknown", "photo-frozen-unknown", "photo-edit-unknown", "photo-folders-unknown", "photo-folder-sharing-unknown", "photo-tasks-unknown", "photo-preferences-unknown", "photo-repair-unknown", "photo-preview-unknown", "photo-preview-automatic-unknown", "photo-admin-unknown", "photo-recognition-unknown", "photo-deletion-unknown"].contains(state)
         if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") || state.hasPrefix("photo-edit") || (state.hasPrefix("photo-folders") || state.hasPrefix("photo-folder-sharing") || state.hasPrefix("photo-tasks")) {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
@@ -95,6 +99,13 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                     status: id == 41 ? .processing : .done, total: 5, completion: id == 41 ? 2 : 5,
                     errors: id == 42 ? 1 : 0, skipped: 0, overwritten: 0, createdAt: Double(1_700_000_000 + id), targetFolderID: 3, targetOwnerID: 12))
             }
+        }
+        if state.hasPrefix("photo-deletion"), !state.hasSuffix("empty") {
+            uploaded = SynologyPhotoSpace.allCases.flatMap { space in (1...3).map { index in
+                .init(id: .init(profileID: profileID, space: space, unitID: index), filename: "Sample \(index).jpg",
+                      sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20),
+                      folderID: 1, mediaType: "photo", thumbnail: .init(unitID: index, revision: "original"))
+            } }
         }
         if state.hasPrefix("photo-recognition") {
             uploaded = SynologyPhotoSpace.allCases.flatMap { space in (1...2).map { index in
@@ -420,7 +431,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         return uploaded.filter { $0.id.space == space && !repairedPreviews.contains($0.id) }
     }
     func previewImage(for photo: SynologyPhoto) async throws -> Data {
-        guard state.hasPrefix("photo-preferences") || state.hasPrefix("photo-repair") || state.hasPrefix("photo-preview") || state.hasPrefix("photo-recognition") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
+        guard state.hasPrefix("photo-preferences") || state.hasPrefix("photo-repair") || state.hasPrefix("photo-preview") || state.hasPrefix("photo-recognition") || state.hasPrefix("photo-deletion") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
         return state.hasPrefix("photo-recognition") ? Self.recognitionImage : Self.image
     }
     func details(for photo: SynologyPhoto) async throws -> SynologyPhoto {
@@ -574,6 +585,54 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func albumSort(id: Int) async throws -> SynologyPhotoSort { .init() }
     func albumAccess(id: Int) async throws -> SynologyPhotoAlbumAccess {
         .init(albumID: id, currentUserID: userID, isOwner: !state.hasSuffix("-contributor"), canDownload: true, canContribute: !state.hasSuffix("-readonly") && !deniesWrites)
+    }
+    func releaseDeletion() { heldDeletion?.resume(); heldDeletion = nil }
+    func prepareDeletion(_ photo: SynologyPhoto) async throws {
+        guard state.hasPrefix("photo-deletion"), photo.id.profileID == profileID,
+              !deniesWrites, state != "photo-deletion-denied" else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "Deletion is not allowed.")
+        }
+        if state == "photo-deletion-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-deletion-error" { throw URLError(.notConnectedToInternet) }
+        if state == "photo-deletion-prepare-held" { isDeletionHeld = true; await withCheckedContinuation { heldDeletion = $0 } }
+        guard let current = uploaded.first(where: { $0.id == photo.id }), current.filename == photo.filename,
+              current.sizeBytes == photo.sizeBytes, current.folderID == photo.folderID, current.takenAt == photo.takenAt,
+              current.indexedAt == photo.indexedAt else { throw CocoaError(.fileReadCorruptFile) }
+    }
+    func performRecoverableDeletion(_ photo: SynologyPhoto, operationID: UUID,
+        checkpoint: @escaping @Sendable (SynologyPhotoDeletionCheckpoint) throws -> Void) async throws -> SynologyPhotoDeletionResult {
+        try await prepareDeletion(photo)
+        try Task.checkCancellation()
+        let identity = try await uploadRecoveryIdentity()
+        var saved = try SynologyPhotoDeletionCheckpoint(photo: photo, operationID: operationID, identity: identity, state: .submitted)
+        try checkpoint(saved)
+        deletedPhotoIDs.append(photo.id)
+        if state == "photo-deletion-held" { isDeletionHeld = true; await withCheckedContinuation { heldDeletion = $0 } }
+        if state == "photo-deletion-partial", photo.id.unitID == 2 {
+            saved.state = .rejected; try checkpoint(saved)
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "Deletion is not allowed.")
+        }
+        if pending { return .pendingReview }
+        uploaded.removeAll { $0.id == photo.id }
+        saved.state = .confirmed; try checkpoint(saved)
+        return .confirmed
+    }
+    func reviewDeletion(_ checkpoint: SynologyPhotoDeletionCheckpoint) async throws -> SynologyPhotoDeletionResult {
+        try checkpoint.validate()
+        guard checkpoint.identity == (try await uploadRecoveryIdentity()), [.submitted, .confirmed].contains(checkpoint.state) else { throw CocoaError(.fileReadNoPermission) }
+        deletionReads += 1
+        if pending { return .pendingReview }
+        uploaded.removeAll { $0.id == checkpoint.target.id }
+        return .confirmed
+    }
+    func deletionTarget(_ checkpoint: SynologyPhotoDeletionCheckpoint) async throws -> SynologyPhoto {
+        try checkpoint.validate()
+        guard checkpoint.identity == (try await uploadRecoveryIdentity()), checkpoint.state == .prepared,
+              let photo = uploaded.first(where: { $0.id == checkpoint.target.id }) else { throw CocoaError(.fileReadNoPermission) }
+        let value = SynologyPhoto(id: photo.id, filename: photo.filename, sizeBytes: photo.sizeBytes, takenAt: photo.takenAt,
+            indexedAt: photo.indexedAt, folderID: photo.folderID, mediaType: photo.mediaType, albumContext: checkpoint.target.queryPhoto.albumContext)
+        guard try checkpoint.matches(value) else { throw CocoaError(.fileReadCorruptFile) }
+        return value
     }
     func uploadRecoveryIdentity() async throws -> String { "\(profileID.uuidString):\(userID)" }
     func prepareMutation(_ mutation: SynologyPhotosMutation) async throws {

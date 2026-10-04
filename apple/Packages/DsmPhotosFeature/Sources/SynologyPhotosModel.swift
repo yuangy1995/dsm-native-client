@@ -266,7 +266,7 @@ public final class SynologyPhotosModel {
     @ObservationIgnored private var backgroundRecoveryReady = true
     public private(set) var backgroundRecoveryError: String?
     public var canControlBackgroundTasks: Bool {
-        isModuleEnabled && albumRecoveryReady && albumRecoveryError == nil && backgroundRecoveryReady && backgroundRecoveryError == nil &&
+        isModuleEnabled && deletionRecoveryAllowsWrites && albumRecoveryReady && albumRecoveryError == nil && backgroundRecoveryReady && backgroundRecoveryError == nil &&
             !isManagingBackgroundTask && pendingBackgroundMutationID == nil && !isDeleting && !isCheckingDeletion
     }
     public private(set) var isOpeningBackgroundDestination = false
@@ -283,7 +283,7 @@ public final class SynologyPhotosModel {
     public var canStartManagementMutation: Bool {
         isModuleEnabled && hasLoaded && !isLoading && !isManaging && !isDeleting && !isCheckingDeletion &&
             pendingMutationID == nil && albumRecoveryReady && albumRecoveryError == nil &&
-            backgroundRecoveryReady && backgroundRecoveryError == nil && temporarySharingCleanup == nil
+            backgroundRecoveryReady && backgroundRecoveryError == nil && temporarySharingCleanup == nil && deletionRecoveryAllowsWrites
     }
     public private(set) var isOpeningUploadDestination = false
     public private(set) var uploadNavigationError: String?
@@ -322,7 +322,7 @@ public final class SynologyPhotosModel {
     public private(set) var saveProgress: Double?
     public private(set) var saveMessage: String?
     public var deletionCandidates: [SynologyPhoto] = []
-    // 移动端沿用单项确认；macOS 批量确认使用同一份目标快照。
+    // 保留单项调用兼容；批量界面使用完整目标快照。
     public var deletionCandidate: SynologyPhoto? {
         get { deletionCandidates.first }
         set { deletionCandidates = newValue.map { [$0] } ?? [] }
@@ -339,6 +339,19 @@ public final class SynologyPhotosModel {
     @ObservationIgnored private var isReadingDeletionResults = false
     public var hasAutomaticDeletionReview: Bool { isModuleEnabled && !pendingDeletionPhotos.isEmpty }
     @ObservationIgnored private var preparedDeletionPhotos: [SynologyPhoto] = []
+    @ObservationIgnored private var preparedDeletionBatchID: UUID?
+    @ObservationIgnored private var deletionRecoveryStore: PhotoDeletionRecoveryStore?
+    @ObservationIgnored private var deletionRecoveryReady = true
+    public private(set) var deletionRecovery: PhotoDeletionRecovery?
+    public private(set) var deletionRecoveryError: String?
+    private var deletionRecoveryAllowsWrites: Bool {
+        deletionRecoveryReady && deletionRecoveryError == nil && (deletionRecovery?.isFinished ?? true)
+    }
+    public var remainingDeletionCount: Int { deletionRecovery?.count(.prepared) ?? 0 }
+    public var canContinueDeletion: Bool {
+        isModuleEnabled && deletionRecoveryReady && deletionRecoveryError == nil && !isDeleting && !isCheckingDeletion &&
+            !isManaging && pendingMutationID == nil && pendingDeletionPhotos.isEmpty && remainingDeletionCount > 0
+    }
     @ObservationIgnored private var pagedPhotoIDs: Set<SynologyPhotoID> = []
     @ObservationIgnored private let deletionReviewDelay: @Sendable (Double) async throws -> Void
     public private(set) var deletionMessage: String?
@@ -537,7 +550,7 @@ public final class SynologyPhotosModel {
 
     /// 一个处理周期仅领取一项；直接复用Repository操作编号，不刷新图库和月份锚点。
     public func processAutomaticPreview(now: Date = Date()) async {
-        guard isModuleEnabled, hasLoaded, albumRecoveryReady, albumRecoveryError == nil || hasPendingAutomaticPreview,
+        guard isModuleEnabled, hasLoaded, deletionRecoveryAllowsWrites, albumRecoveryReady, albumRecoveryError == nil || hasPendingAutomaticPreview,
               !isLoading, !isDeleting, !isCheckingDeletion, !isManaging,
               similarBatchQueue.isEmpty, !isUploading, pendingDeletionPhotos.isEmpty,
               pendingMutationID == nil || hasPendingAutomaticPreview else { return }
@@ -848,6 +861,7 @@ public final class SynologyPhotosModel {
             await restoreUploadQueueIfNeeded(repository: repository)
             await restoreAlbumMutationIfNeeded(repository: repository)
             await restoreBackgroundMutationIfNeeded(repository: repository)
+            await restoreDeletionQueueIfNeeded(repository: repository)
             let albumOnly = spaces.isEmpty && (section == .albums || (section == .sharing && shareScope != .requests))
             guard let destination = spaces.first(where: { $0 == (space ?? selectedSpace) }) ?? spaces.first ?? (albumOnly ? .personal : nil) else {
                 resetSpaceNavigation()
@@ -1169,7 +1183,8 @@ public final class SynologyPhotosModel {
         isLoading = false
         isLoadingMore = false
         closePreview()
-        clearSelection(); deletionCandidates = []; preparedDeletionPhotos = []
+        clearSelection(); deletionCandidates = []; preparedDeletionPhotos = []; preparedDeletionBatchID = nil
+        if deletionRecoveryStore != nil { deletionRecoveryReady = false }
         deletionTask?.cancel()
         if !isUploading { managementTask?.cancel() }
         saveTask?.cancel()
@@ -2447,6 +2462,7 @@ public final class SynologyPhotosModel {
     public func duplicateSettings() async throws -> SynologyPhotoDuplicateSettings { try await service().duplicateSettings() }
 
     private func canSubmit(_ mutation: SynologyPhotosMutation) -> Bool {
+        guard deletionRecoveryAllowsWrites else { return false }
         switch mutation {
         case .unfreezeAlbum(let original): return managementFeatures.contains(.frozenAlbums) && original.album.isFrozen
         case .rebuildFrozenAlbum(let original, _, let condition):
@@ -2614,7 +2630,7 @@ public final class SynologyPhotosModel {
     }
 
     public var canResumeUploads: Bool {
-        uploadRecoveryReady && uploadPersistenceError == nil && albumRecoveryReady && albumRecoveryError == nil && !isManaging && pendingMutationID == nil &&
+        deletionRecoveryAllowsWrites && uploadRecoveryReady && uploadPersistenceError == nil && albumRecoveryReady && albumRecoveryError == nil && !isManaging && pendingMutationID == nil &&
         uploadQueue.contains { [.cancelled, .queued].contains($0.state) && ($0.uploadedPhoto != nil || !$0.file.requiresSourceSelection) }
     }
 
@@ -2669,7 +2685,7 @@ public final class SynologyPhotosModel {
         let destination = space ?? selectedSpace
         let direct = uploadsDirectlyToAlbum(album, space: destination)
         let albumAllowed = album.map { $0.acceptsManualMembers && (selectedAlbumAccess?.albumID == $0.id ? selectedAlbumAccess?.canContribute == true : selectedAlbum == nil && managementFeatures.contains(.albums)) } ?? true
-        guard isModuleEnabled, uploadRecoveryReady, uploadPersistenceError == nil, !isManaging, !isLoading, !isDeleting, !isCheckingDeletion, pendingMutationID == nil,
+        guard isModuleEnabled, deletionRecoveryAllowsWrites, uploadRecoveryReady, uploadPersistenceError == nil, !isManaging, !isLoading, !isDeleting, !isCheckingDeletion, pendingMutationID == nil,
               direct || managementFeatures.contains(.upload), !files.isEmpty, albumAllowed,
               !preserveDirectories || (!direct && managementFeatures.contains(.folders)) else { return }
         let batchID = UUID()
@@ -2693,7 +2709,7 @@ public final class SynologyPhotosModel {
     }
 
     public func retryUpload(_ id: UUID) {
-        guard isModuleEnabled, uploadRecoveryReady, uploadPersistenceError == nil, !isManaging, !isDeleting, !isCheckingDeletion, pendingMutationID == nil,
+        guard isModuleEnabled, deletionRecoveryAllowsWrites, uploadRecoveryReady, uploadPersistenceError == nil, !isManaging, !isDeleting, !isCheckingDeletion, pendingMutationID == nil,
               let index = uploadQueue.firstIndex(where: { $0.id == id }),
               [.failed, .cancelled].contains(uploadQueue[index].state),
               uploadQueue[index].uploadedPhoto != nil || !uploadQueue[index].file.requiresSourceSelection else { return }
@@ -2800,7 +2816,7 @@ public final class SynologyPhotosModel {
     }
 
     private func startUploadQueue() {
-        guard isModuleEnabled, uploadRecoveryReady, uploadPersistenceError == nil, !isManaging, pendingMutationID == nil,
+        guard isModuleEnabled, deletionRecoveryAllowsWrites, uploadRecoveryReady, uploadPersistenceError == nil, !isManaging, pendingMutationID == nil,
               uploadQueue.contains(where: { $0.state == .queued }) else { return }
         isManaging = true; isUploading = true; managementLink = nil
         managementTask = Task { [weak self] in
@@ -3717,7 +3733,7 @@ public final class SynologyPhotosModel {
 
     public var selectedPhotos: [SynologyPhoto] { items.filter { selectedPhotoIDs.contains($0.id) } }
     public var canDeleteSelection: Bool {
-        selectedItemCount > 0 && (selectedFolderIDs.isEmpty || managementFeatures.contains(.folderDeletion)) && selectedPhotos.allSatisfy(canModifyOriginal) && !isDeleting && !isCheckingDeletion && !isManaging && pendingMutationID == nil && pendingDeletionPhotos.isEmpty
+        deletionRecoveryAllowsWrites && selectedItemCount > 0 && (selectedFolderIDs.isEmpty || managementFeatures.contains(.folderDeletion)) && selectedPhotos.allSatisfy(canModifyOriginal) && !isDeleting && !isCheckingDeletion && !isManaging && pendingMutationID == nil && pendingDeletionPhotos.isEmpty
     }
 
     public func toggleSelection(_ photo: SynologyPhoto, extending: Bool = false) {
@@ -3745,7 +3761,167 @@ public final class SynologyPhotosModel {
         selectedPhotoIDs = []; selectedFolderIDs = []; selectionAnchorID = nil; isSelecting = false
     }
 
+    public func configureDeletionRecovery(_ store: PhotoDeletionRecoveryStore?) {
+        precondition(!hasLoaded && pendingDeletionPhotos.isEmpty)
+        deletionRecoveryStore = store; deletionRecoveryReady = store == nil
+    }
+
+    private func restoreDeletionQueueIfNeeded(repository: any SynologyPhotosServing) async {
+        guard !deletionRecoveryReady, let store = deletionRecoveryStore else { return }
+        let epoch = deletionReviewEpoch
+        do {
+            let identity = try await repository.uploadRecoveryIdentity()
+            let saved = try store.load()
+            guard saved == nil || saved?.identity == identity else { throw CocoaError(.fileReadNoPermission) }
+            guard isModuleEnabled, epoch == deletionReviewEpoch, !Task.isCancelled else { return }
+            deletionRecovery = saved; deletionRecoveryReady = true; deletionRecoveryError = nil
+            updateDeletionRecoveryPresentation()
+        } catch {
+            if isModuleEnabled, epoch == deletionReviewEpoch { deletionRecoveryError = L10n.string("mobile.photos.deletion.recoveryFailed") }
+        }
+    }
+
+    public func retryDeletionRecovery() async {
+        guard isModuleEnabled, !isDeleting, !isCheckingDeletion, !isManaging, let repository = try? service() else { return }
+        deletionRecoveryReady = false
+        await restoreDeletionQueueIfNeeded(repository: repository)
+        if deletionRecoveryReady, deletionRecoveryError == nil { await reviewPendingDeletion() }
+    }
+
+    private func updateDeletionRecoveryPresentation() {
+        guard let batch = deletionRecovery else { return }
+        let previous = pendingDeletionPhotos
+        pendingDeletionPhotos = batch.entries.filter { $0.state == .submitted }.map { entry in
+            previous.first { $0.id == entry.target.id } ?? entry.target.queryPhoto
+        }
+        for entry in batch.entries where entry.state == .confirmed { applyDeletionResult(.confirmed, photo: entry.target.queryPhoto) }
+        if batch.count(.submitted) > 0 { deletionMessage = L10n.string("mobile.photos.deletion.pending") }
+        else if batch.count(.prepared) > 0 { deletionMessage = L10n.string("mobile.photos.deletion.paused", batch.count(.confirmed), batch.count(.prepared)) }
+        else if batch.count(.confirmed) == batch.entries.count { deletionMessage = L10n.string("mobile.photos.deletion.complete", batch.count(.confirmed)) }
+        else { deletionMessage = L10n.string("mobile.photos.deletion.partial", batch.count(.confirmed), batch.entries.count - batch.count(.confirmed)) }
+    }
+
+    public func requestRemainingDeletion() {
+        guard canContinueDeletion, let batch = deletionRecovery else { return }
+        isCheckingDeletion = true; deletionError = nil
+        let epoch = deletionReviewEpoch, current = generation
+        Task {
+            defer { isCheckingDeletion = false }
+            do {
+                var photos: [SynologyPhoto] = []
+                for entry in batch.entries where entry.state == .prepared {
+                    let photo = try await service().deletionTarget(entry)
+                    try await service().prepareDeletion(photo)
+                    guard isModuleEnabled, epoch == deletionReviewEpoch, current == generation, !Task.isCancelled, deletionRecovery?.id == batch.id else { return }
+                    photos.append(photo)
+                }
+                preparedDeletionPhotos = photos; preparedDeletionBatchID = batch.id
+                deletionCandidates = photos; deletionKeptCount = nil
+            } catch {
+                if isModuleEnabled, epoch == deletionReviewEpoch, current == generation { deletionError = operationErrorMessage(error, fallback: "mobile.photos.deletion.failed") }
+            }
+        }
+    }
+
+    public func cancelRemainingDeletion() {
+        guard isModuleEnabled, !isDeleting, !isCheckingDeletion, let store = deletionRecoveryStore, let batch = deletionRecovery else { return }
+        do {
+            for var entry in batch.entries where entry.state == .prepared {
+                entry.state = .cancelled; try store.update(entry, batchID: batch.id)
+            }
+            deletionRecovery = try store.load(); updateDeletionRecoveryPresentation()
+        } catch { deletionRecoveryError = L10n.string("mobile.photos.deletion.recoveryFailed") }
+    }
+
+    private func beginRecoverableDeletion(_ photos: [SynologyPhoto], resuming batchID: UUID?) {
+        guard let store = deletionRecoveryStore, deletionRecoveryReady, deletionRecoveryError == nil,
+              !photos.isEmpty, photos.count <= 100,
+              batchID == nil ? photos.allSatisfy(canModifyOriginal) : photos.allSatisfy({ spaces.contains($0.id.space) }),
+              batchID == nil ? deletionRecoveryAllowsWrites : (batchID == deletionRecovery?.id && canContinueDeletion) else { return }
+        let epoch = deletionReviewEpoch
+        deletionCandidates = []; preparedDeletionPhotos = []; preparedDeletionBatchID = nil; deletionKeptCount = nil
+        deletionError = nil; isDeleting = true
+        generation += 1; isLoadingPrevious = false; isLoading = false; isLoadingMore = false
+        deletionTask = Task {
+            defer { isDeleting = false }
+            do {
+                let repository = try service()
+                let identity = try await repository.uploadRecoveryIdentity()
+                guard isModuleEnabled, epoch == deletionReviewEpoch, !Task.isCancelled else { return }
+                let batch: PhotoDeletionRecovery
+                if let batchID {
+                    guard let saved = try store.load(), saved.id == batchID, saved.identity == identity,
+                          Set(saved.entries.filter { $0.state == .prepared }.map { $0.target.id }) == Set(photos.map(\.id)) else { throw CocoaError(.fileReadCorruptFile) }
+                    batch = saved
+                } else {
+                    batch = try .init(photos: photos, identity: identity)
+                    try store.save(batch)
+                }
+                deletionRecovery = batch
+                for entry in batch.entries where entry.state == .prepared {
+                    guard isModuleEnabled, epoch == deletionReviewEpoch, !Task.isCancelled else { break }
+                    guard let photo = photos.first(where: { $0.id == entry.target.id }), try entry.matches(photo) else { throw CocoaError(.fileReadCorruptFile) }
+                    do {
+                        let result = try await repository.performRecoverableDeletion(photo, operationID: entry.operationID) { saved in
+                            try store.update(saved, batchID: batch.id)
+                        }
+                        guard isModuleEnabled, epoch == deletionReviewEpoch, !Task.isCancelled else { return }
+                        deletionRecovery = try store.load(); updateDeletionRecoveryPresentation()
+                        if result == .pendingReview { break }
+                    } catch {
+                        guard isModuleEnabled, epoch == deletionReviewEpoch, !Task.isCancelled else { return }
+                        deletionRecovery = try store.load(); updateDeletionRecoveryPresentation()
+                        if error is CocoaError { deletionRecoveryError = L10n.string("mobile.photos.deletion.recoveryFailed") }
+                        else { deletionError = operationErrorMessage(error, fallback: "mobile.photos.deletion.failed") }
+                        break
+                    }
+                }
+                guard isModuleEnabled, epoch == deletionReviewEpoch, !Task.isCancelled else { return }
+                updateDeletionRecoveryPresentation()
+                await refreshAffectedSimilarGroups()
+            } catch {
+                if isModuleEnabled, epoch == deletionReviewEpoch, !Task.isCancelled {
+                    deletionRecoveryError = L10n.string("mobile.photos.deletion.recoveryFailed")
+                }
+            }
+        }
+    }
+
+    private func readRecoverableDeletionResults() async -> Int {
+        guard !isReadingDeletionResults, let store = deletionRecoveryStore, let batch = deletionRecovery,
+              deletionRecoveryReady, deletionRecoveryError == nil else { return 0 }
+        isReadingDeletionResults = true
+        defer { isReadingDeletionResults = false }
+        let epoch = deletionReviewEpoch
+        var completed = 0
+        for var entry in batch.entries where entry.state == .submitted {
+            guard isModuleEnabled, epoch == deletionReviewEpoch, !Task.isCancelled else { break }
+            do {
+                let result = try await service().reviewDeletion(entry)
+                guard isModuleEnabled, epoch == deletionReviewEpoch, !Task.isCancelled else { break }
+                if result == .confirmed {
+                    entry.state = .confirmed
+                    try store.update(entry, batchID: batch.id)
+                    completed += 1
+                }
+            } catch {
+                if error is CocoaError, isModuleEnabled, epoch == deletionReviewEpoch { deletionRecoveryError = L10n.string("mobile.photos.deletion.recoveryFailed") }
+                // 读取失败仍保留已提交状态，下一次只查询同一个目标。
+            }
+        }
+        guard isModuleEnabled, epoch == deletionReviewEpoch, !Task.isCancelled else { return 0 }
+        do { deletionRecovery = try store.load(); updateDeletionRecoveryPresentation() }
+        catch { deletionRecoveryError = L10n.string("mobile.photos.deletion.recoveryFailed") }
+        return completed
+    }
+
     public func requestDeletion(_ photo: SynologyPhoto) { requestDeletion([photo]) }
+
+    public func canDeletePhotos(_ photos: [SynologyPhoto]) -> Bool {
+        isModuleEnabled && deletionRecoveryAllowsWrites && albumRecoveryReady && albumRecoveryError == nil &&
+            !photos.isEmpty && (deletionRecoveryStore == nil || photos.count <= 100) && photos.allSatisfy(canModifyOriginal) &&
+            !isDeleting && !isManaging && !isCheckingDeletion && pendingMutationID == nil && pendingDeletionPhotos.isEmpty
+    }
 
     public func requestSimilarCleanup(_ detail: SynologyPhotoSimilarDetail, keeping ids: Set<SynologyPhotoID>) {
         let members = Set(detail.photos.map { $0.id })
@@ -3754,8 +3930,7 @@ public final class SynologyPhotosModel {
     }
 
     public func requestDeletion(_ photos: [SynologyPhoto], verifying similar: SynologyPhotoSimilarDetail? = nil) {
-        guard isModuleEnabled, albumRecoveryReady, albumRecoveryError == nil, !photos.isEmpty, photos.allSatisfy(canModifyOriginal), !isDeleting, !isManaging, !isCheckingDeletion,
-              pendingMutationID == nil, pendingDeletionPhotos.isEmpty else { return }
+        guard canDeletePhotos(photos) else { return }
         let targets = photos.reduce(into: [SynologyPhoto]()) { result, photo in
             if !result.contains(where: { $0.id == photo.id }) { result.append(photo) }
         }
@@ -3778,6 +3953,7 @@ public final class SynologyPhotosModel {
                     guard isModuleEnabled, current == generation else { return }
                 }
                 preparedDeletionPhotos = targets
+                preparedDeletionBatchID = nil
                 deletionCandidates = targets
                 deletionKeptCount = similar.map { $0.photos.count - targets.count }
                 if similar != nil { closePreview() }
@@ -3789,7 +3965,10 @@ public final class SynologyPhotosModel {
         }
     }
 
-    public func confirmDeletion(_ photo: SynologyPhoto) { beginDeletion([photo]) }
+    public func confirmDeletion(_ photo: SynologyPhoto) {
+        if deletionRecoveryStore != nil { confirmDeletion([photo]) }
+        else { beginDeletion([photo]) }
+    }
 
     public func confirmDeletion(_ photos: [SynologyPhoto]) {
         guard !photos.isEmpty, photos == preparedDeletionPhotos else { return }
@@ -3798,6 +3977,10 @@ public final class SynologyPhotosModel {
 
     private func beginDeletion(_ photos: [SynologyPhoto]) {
         guard isModuleEnabled, !isDeleting, !isManaging, !isCheckingDeletion, pendingMutationID == nil, pendingDeletionPhotos.isEmpty else { return }
+        if deletionRecoveryStore != nil {
+            beginRecoverableDeletion(photos, resuming: preparedDeletionBatchID)
+            return
+        }
         if selectedCategory == .similar {
             for photo in photos {
                 guard let group = photo.similarGroup,
@@ -3874,13 +4057,15 @@ public final class SynologyPhotosModel {
             if pendingDeletionPhotos.isEmpty, completed > 0 {
                 showDeletionSuccess(completed)
             } else if !pendingDeletionPhotos.isEmpty {
-                deletionMessage = L10n.string("photos.selection.reviewContinuing")
+                if deletionRecoveryStore != nil { updateDeletionRecoveryPresentation() }
+                else { deletionMessage = L10n.string("photos.selection.reviewContinuing") }
             }
             await refreshAffectedSimilarGroups()
         }
     }
 
     private func readPendingDeletionResults() async -> Int {
+        if deletionRecoveryStore != nil { return await readRecoverableDeletionResults() }
         guard !isReadingDeletionResults else { return 0 }
         isReadingDeletionResults = true
         defer { isReadingDeletionResults = false }
@@ -3904,7 +4089,7 @@ public final class SynologyPhotosModel {
         generation += 1
         isLoadingPrevious = false; isLoadingMore = false; isLoading = false
         defer { isDeleting = false }
-        let completed = await automaticallyReviewDeletions()
+        let completed = deletionRecoveryStore == nil ? await automaticallyReviewDeletions() : await readRecoverableDeletionResults()
         if pendingDeletionPhotos.isEmpty, completed > 0 {
             showDeletionSuccess(completed)
         }
@@ -3912,6 +4097,7 @@ public final class SynologyPhotosModel {
     }
 
     private func showDeletionSuccess(_ completed: Int) {
+        if deletionRecoveryStore != nil { updateDeletionRecoveryPresentation(); return }
         #if os(macOS)
         deletionMessage = nil
         guard deletionError == nil, isModuleEnabled, !Task.isCancelled else { return }
