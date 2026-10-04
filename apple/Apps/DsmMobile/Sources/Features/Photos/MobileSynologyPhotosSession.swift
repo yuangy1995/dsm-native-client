@@ -17,6 +17,7 @@ final class MobileSynologyPhotosSession {
     private(set) var identity = UUID()
     private(set) var model = SynologyPhotosModel()
     private(set) var uploads: MobilePhotoUploadImportModel?
+    private(set) var albums: MobilePhotoAlbumModel?
     let thumbnails = MobilePhotoThumbnailStore(totalCostLimit: 32 * 1_024 * 1_024, concurrencyLimit: 4)
     private(set) var isExporting = false
     private(set) var exportProgress: Double?
@@ -28,17 +29,22 @@ final class MobileSynologyPhotosSession {
     @ObservationIgnored private var exportGeneration = UUID()
     @ObservationIgnored private var uploadRecoveryStore: PhotoUploadRecoveryStore?
     @ObservationIgnored private var hasCleanedUploadDrafts = false
+    @ObservationIgnored private var albumRecoveryStore: PhotoAlbumRecoveryStore?
 
     func configure(_ repository: (any SynologyPhotosServing)?, uploadStorage: MobilePhotoUploadStorage? = nil,
                    reviewDelay: @escaping @Sendable (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
         deactivate()
         uploadRecoveryStore?.suspendWrites()
+        albumRecoveryStore?.suspendWrites()
         identity = UUID()
         self.repository = repository
         model = SynologyPhotosModel(repository: repository, deletionReviewDelay: reviewDelay)
         uploadRecoveryStore = uploadStorage?.recoveryStore()
         model.configureUploadRecovery(uploadRecoveryStore)
+        albumRecoveryStore = uploadStorage.map { PhotoAlbumRecoveryStore(url: $0.recordURL.deletingPathExtension().appendingPathComponent("Albums/pending-v1.json")) }
+        model.configureAlbumRecovery(albumRecoveryStore)
         uploads = uploadStorage.map { MobilePhotoUploadImportModel(model: model, storage: $0) }
+        albums = repository == nil ? nil : MobilePhotoAlbumModel(model: model)
         hasCleanedUploadDrafts = false
     }
 
@@ -54,6 +60,7 @@ final class MobileSynologyPhotosSession {
 
     func deactivate() {
         uploads?.cancel()
+        albums?.cancel()
         model.setModuleEnabled(false)
         cancelExport()
         Task { await thumbnails.removeAll() }

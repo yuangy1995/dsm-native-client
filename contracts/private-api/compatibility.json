@@ -326,7 +326,7 @@
       "id": "photos-album-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "2026-10-01临时分享生命周期：create(shared=true)、temporary_shared、copy(source_album_id)及已停止临时相册清理已接入Core/Repository，按回执身份、完整成员、所有权与分享快照核对；macOS已接入创建取消清理、停止并保留副本、关闭/Esc及未知结果持续核对；preservedCopyID仅作本地清理前完整成员复查，明确失败可保留现有相册，未知结果不可放弃核对。完整网页对齐仍有其他待办。static，未进行真实NAS行为验证。 普通相册创建/命名/封面/删除与混合来源成员；新增addable目标列表、贡献角色添加及按provider移除成员。所有者用id，贡献者用passphrase，明确部分失败逐项回读，未知不重放；本人提供的相册项目在原空间启用时可转加或新建目标；原空间关闭时不提供转加，与网页一致。 新增相册内照片四字段/双向排序：Album.get v4读取，set_order v1保存；Item.list携带相同排序分页；查看权限独立于上传和原空间开启，过期设置冲突拒绝，回读缺省不能冒充保存证明。 新增相册首页及两类分享列表独立排序：get/set_album_list_order v2；全部/我的相册显示范围get/set_album_list_display v3；固定范围跨页传参和原偏好冲突检查，不改变相册内容或共享权限。",
+      "capability": "2026-10-01临时分享生命周期：create(shared=true)、temporary_shared、copy(source_album_id)及已停止临时相册清理已接入Core/Repository，按回执身份、完整成员、所有权与分享快照核对；macOS已接入创建取消清理、停止并保留副本、关闭/Esc及未知结果持续核对；preservedCopyID仅作本地清理前完整成员复查，明确失败可保留现有相册，未知结果不可放弃核对。完整网页对齐仍有其他待办。static，未进行真实NAS行为验证。 普通相册创建/命名/封面/删除与混合来源成员；新增addable目标列表、贡献角色添加及按provider移除成员。所有者用id，贡献者用passphrase，明确部分失败逐项回读，未知不重放；本人提供的相册项目在原空间启用时可转加或新建目标；原空间关闭时不提供转加，与网页一致。 新增相册内照片四字段/双向排序：Album.get v4读取，set_order v1保存；Item.list携带相同排序分页；查看权限独立于上传和原空间开启，过期设置冲突拒绝，回读缺省不能冒充保存证明。 新增相册首页及两类分享列表独立排序：get/set_album_list_order v2；全部/我的相册显示范围get/set_album_list_display v3；固定范围跨页传参和原偏好冲突检查，不改变相册内容或共享权限。 2026-10-04 iPhone/iPad接入多选及普通相册管理；独立版本1客户端意图/回执在写前保存，创建编号先落盘再回读，重启只读恢复。统一相册权限独立于个人图库，原件权限不扩大；共享模型删除当前相册后返回列表。Mac不启用新恢复存储，Windows/Android仅记录影响；不增加NAS请求或真实验证等级。",
       "classification": "internal",
       "operation": "write",
       "risk": "high",

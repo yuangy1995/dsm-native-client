@@ -6026,3 +6026,16 @@
 "mobile.photos.source.shared" = "共享照片";
 "mobile.photos.source.title" = "图库";
 "mobile.photos.upload.prepareFailed" = "无法读取所选项目。请检查网络连接和本机可用空间，然后重新选择。";
+
+// 移动普通相册与恢复。
+"photos.album.recovery.saveFailed" = "无法在本机保存相册操作结果。请检查可用空间，然后刷新状态。";
+"photos.album.recovery.readFailed" = "无法恢复上次的相册操作。请使用原来的账号重新连接，然后重试。";
+"photos.album.recovery.pending" = "相册操作尚未完成。请恢复连接，然后刷新状态。";
+"mobile.photos.album.removeHint" = "从当前相册移除这些照片？原件和其他相册中的照片仍会保留。";
+"mobile.photos.album.choose" = "选择相册";
+"mobile.photos.album.empty" = "暂无可加入的相册。请先创建相册，再添加照片。";
+"mobile.photos.album.stale" = "所选照片或相册已发生变化。请关闭此窗口后重新选择。";
+"mobile.photos.album.save" = "保存修改";
+"mobile.photos.album.refresh" = "刷新状态";
+"mobile.photos.album.partial" = "部分照片未能完成。重试可继续处理剩余照片。";
+"mobile.photos.album.loading" = "正在载入相册…";

@@ -38,7 +38,7 @@ final class MobilePhotoUploadImportModel {
               folder: model.section == .folders ? model.folderHistory.last : nil)
     }
     var canBegin: Bool {
-        model.isModuleEnabled && model.hasLoaded && model.canUploadPhotos &&
+        model.canStartManagementMutation && model.canUploadPhotos &&
         (model.managementFeatures.contains(.upload) || model.uploadsDirectlyToAlbum(model.selectedAlbum, space: model.selectedSpace)) &&
         !model.isLoading && !model.isManaging &&
         !model.isDeleting && !model.isCheckingDeletion && model.pendingMutationID == nil && model.uploadPersistenceError == nil

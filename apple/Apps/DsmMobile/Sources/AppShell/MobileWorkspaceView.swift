@@ -239,7 +239,7 @@ struct MobileWorkspaceView: View {
                     profileMenu
                 }
             }
-            if module != .chat, module != .settings, module != .transfers, module != .files {
+            if module != .chat, module != .settings, module != .transfers, module != .files, module != .photos {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         if module == .nasSettings {

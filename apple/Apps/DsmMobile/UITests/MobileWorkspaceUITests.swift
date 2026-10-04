@@ -2,6 +2,119 @@ import XCTest
 
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
+    func test仅有相册权限可以管理相册且不显示图库权限错误() {
+        let app = launchFixture(state: "photo-albums-only")
+        defer { app.terminate() }
+        openPhotos(app); openPhotoSection("Albums", app: app)
+        XCTAssertTrue(app.buttons["Sample album"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.staticTexts["You cannot access these photos. Ask your NAS administrator to check your photo permissions, then try again."].exists)
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.album.create", in: app).tap()
+        let name = app.textFields["mobile.photos.album.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Album only")
+        app.buttons["mobile.photos.album.submit"].tap()
+        XCTAssertTrue(app.buttons["Album only"].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Albums remain available without a photo library")
+    }
+
+    func test照片多选创建相册并可改名() {
+        let app = launchFixture(state: "photo-albums")
+        defer { app.terminate() }
+        openPhotos(app)
+        selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap()
+        element("mobile.photos.selection.create", in: app).tap()
+        let name = app.textFields["mobile.photos.album.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Created album")
+        app.buttons["mobile.photos.album.submit"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        openPhotoSection("Albums", app: app)
+        XCTAssertTrue(app.buttons["Created album"].waitForExistence(timeout: 8)); app.buttons["Created album"].tap()
+        element("mobile.photos.actions", in: app).tap()
+        element("mobile.photos.album.rename", in: app).tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap()
+        name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Created album".count) + "Renamed album")
+        app.buttons["mobile.photos.album.submit"].tap()
+        XCTAssertTrue(app.navigationBars["Renamed album"].waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Selected photos and renamed album")
+    }
+
+    func test照片从相册移除及删除相册都保留图库原件() {
+        let app = launchFixture(state: "photo-albums")
+        defer { app.terminate() }
+        openPhotos(app); openPhotoSection("Albums", app: app)
+        XCTAssertTrue(app.buttons["Sample album"].waitForExistence(timeout: 8)); app.buttons["Sample album"].tap()
+        selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.selection.remove", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Remove these photos from this album? The originals and other albums will stay unchanged."].waitForExistence(timeout: 5))
+        app.buttons["mobile.photos.album.submit"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.album.delete", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Delete this album and its sharing link. Original photos will be kept."].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Album deletion keeps original photos")
+        app.buttons["mobile.photos.album.submit"].tap()
+        openPhotoSection("Timeline", app: app)
+        XCTAssertTrue(app.buttons["Sample 1.jpg"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Sample 2.jpg"].exists)
+    }
+
+    func test相册成员部分失败可继续剩余照片() {
+        let app = launchFixture(state: "photo-albums-partial")
+        defer { app.terminate() }
+        openPhotos(app); openPhotoSection("Albums", app: app)
+        XCTAssertTrue(app.buttons["Sample album"].waitForExistence(timeout: 8)); app.buttons["Sample album"].tap()
+        selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.selection.remove", in: app).tap()
+        app.buttons["mobile.photos.album.submit"].tap()
+        XCTAssertTrue(element("mobile.photos.album.continue", in: app).waitForExistence(timeout: 8))
+        attachScreenshot(app, name: "Album remaining photos can continue")
+        element("mobile.photos.album.continue", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["Sample 1.jpg"].exists); XCTAssertFalse(app.buttons["Sample 2.jpg"].exists)
+    }
+
+    func test相册创建未知跨重启仅显示刷新入口() {
+        let app = launchFixture(state: "photo-albums-unknown")
+        openPhotos(app)
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.album.create", in: app).tap()
+        let name = app.textFields["mobile.photos.album.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Pending album")
+        app.buttons["mobile.photos.album.submit"].tap()
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch()
+        defer { app.terminate() }
+        openPhotos(app)
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap()
+        XCTAssertFalse(app.buttons["mobile.photos.album.create"].isEnabled)
+        attachScreenshot(app, name: "Pending album restored without another create")
+    }
+
+    func test加入相册候选加载空内容和失败中文可恢复() {
+        for state in ["photo-albums-loading", "photo-albums-empty", "photo-albums-error"] {
+            let app = launchFixture(state: state, language: "zh-Hans")
+            openPhotos(app, chinese: true); selectPhotoItems(app)
+            element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.selection.add", in: app).tap()
+            XCTAssertTrue(app.navigationBars["加入相册"].waitForExistence(timeout: 5))
+            XCTAssertFalse(app.buttons["mobile.photos.album.submit"].isEnabled)
+            if state == "photo-albums-loading" { XCTAssertTrue(element("mobile.photos.album.loading", in: app).waitForExistence(timeout: 5)) }
+            else if state == "photo-albums-empty" {
+                XCTAssertTrue(app.staticTexts["暂无可加入的相册。请先创建相册，再添加照片。"].waitForExistence(timeout: 5))
+            } else { XCTAssertTrue(app.buttons["重试"].waitForExistence(timeout: 5)) }
+            attachScreenshot(app, name: state)
+            app.terminate()
+        }
+    }
+
+    private func selectPhotoItems(_ app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["Sample 1.jpg"].waitForExistence(timeout: 8))
+        element("mobile.photos.selection.begin", in: app).tap()
+        element("mobile.photos.selection.loaded", in: app).tap()
+    }
+    private func openPhotoSection(_ title: String, app: XCUIApplication) {
+        if app.segmentedControls.buttons[title].exists { app.segmentedControls.buttons[title].tap() }
+        else { element("mobile.photos.section", in: app).tap(); app.buttons[title].tap() }
+    }
+
     func test照片选择上传显示逐项结果且可清理记录() {
         let app = launchFixture(state: "photo-upload")
         defer { app.terminate() }
@@ -42,7 +155,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         openPhotos(app)
-        element("mobile.photos.upload.menu", in: app).tap()
+        element("mobile.photos.actions", in: app).tap()
         element("mobile.photos.upload.queue", in: app).tap()
         XCTAssertTrue(element("mobile.photos.upload.state.pendingReview", in: app).waitForExistence(timeout: 8))
         XCTAssertFalse(element("mobile.photos.upload.retry", in: app).exists)
@@ -71,11 +184,11 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 8))
         toggle.switches.firstMatch.tap()
         navigate("photos", title: chinese ? "照片" : "Photos", in: app)
-        XCTAssertTrue(element("mobile.photos.upload.menu", in: app).waitForExistence(timeout: 8))
+        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8))
     }
 
     private func beginPhotoUpload(_ app: XCUIApplication) {
-        element("mobile.photos.upload.menu", in: app).tap()
+        element("mobile.photos.actions", in: app).tap()
         let begin = element("mobile.photos.upload.begin", in: app)
         XCTAssertTrue(begin.waitForExistence(timeout: 8)); XCTAssertTrue(begin.isEnabled); begin.tap()
     }

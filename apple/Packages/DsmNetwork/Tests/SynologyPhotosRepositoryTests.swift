@@ -4,6 +4,89 @@ import XCTest
 @testable import DsmNetwork
 
 final class SynologyPhotosRepositoryTests: XCTestCase {
+    func test相册创建回执可跨实例恢复且只读原编号() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let album = #"{"success":true,"data":{"list":[{"id":31,"name":"Fixture","owner_user_id":12}]}}"#
+        let first = MockHTTPTransport(responses: accessResponses() + [response(#"{"success":true,"data":{"album":{"id":31,"name":"Fixture","owner_user_id":12}}}"#), response("invalid")])
+        let repository = try makeRepository(first, profileID: profile); _ = try await repository.access()
+        let result = try await repository.performRecoverableAlbumMutation(.createAlbum(name: "Fixture", photos: []), operationID: id) { capture.append($0) }
+        XCTAssertEqual(result.state, .pendingReview)
+        XCTAssertEqual(capture.values.count, 2)
+        XCTAssertNil(capture.values.first?.createdAlbumID)
+        XCTAssertEqual(capture.values.last?.createdAlbumID, 31)
+        let data = try JSONEncoder().encode(XCTUnwrap(capture.values.last))
+        for forbidden in ["fixture-session", "fixture-token", "passphrase", "password", "cookie"] {
+            XCTAssertFalse(String(decoding: data, as: UTF8.self).contains(forbidden))
+        }
+        let saved = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data)
+        let second = MockHTTPTransport(responses: accessResponses() + [response(album), response(#"{"success":true,"data":{"list":[]}}"#)])
+        let restored = try makeRepository(second, profileID: profile); _ = try await restored.access()
+        try await restored.restoreAlbumMutation(saved)
+        let final = try await restored.reviewMutation(operationID: id)
+        XCTAssertEqual(final.state, .confirmed); XCTAssertEqual(final.album?.id, 31)
+        let calls = try await second.recordedRequests().map(decode)
+        XCTAssertFalse(calls.contains { $0["method"] == "create" })
+        XCTAssertEqual(calls.filter { $0["api"] == "SYNO.Foto.Browse.Album" }.first?["id"], "[31]")
+    }
+
+    func test相册写前保存失败零创建且无回执不按名称追认() async throws {
+        let profile = UUID(), id = UUID(), command = SynologyPhotosMutation.createAlbum(name: "Fixture", photos: [])
+        let first = MockHTTPTransport(responses: accessResponses())
+        let repository = try makeRepository(first, profileID: profile); _ = try await repository.access()
+        do {
+            _ = try await repository.performRecoverableAlbumMutation(command, operationID: id) { _ in throw CocoaError(.fileWriteOutOfSpace) }
+            XCTFail("保存失败必须先于创建")
+        } catch { }
+        let calls = try await first.recordedRequests().map(decode)
+        XCTAssertFalse(calls.contains { $0["method"] == "create" })
+        let saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+        try await repository.restoreAlbumMutation(saved)
+        for _ in 0..<2 {
+            let result = try await repository.reviewMutation(operationID: id)
+            XCTAssertEqual(result.state, .pendingReview)
+        }
+        let after = await first.recordedRequests(); XCTAssertEqual(after.count, calls.count)
+        for wrong in [try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: UUID(), profileID: UUID(), userID: 12),
+                      try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: UUID(), profileID: profile, userID: 99)] {
+            do { try await repository.restoreAlbumMutation(wrong); XCTFail("不能恢复其他账号") }
+            catch let error as AppError { XCTAssertEqual(error.category, .permissionDenied) }
+        }
+    }
+
+    func test无原空间仍保留统一相册能力且不开放原件编辑() async throws {
+        let transport = MockHTTPTransport(responses: accessResponses(teamPermission: "none", homeEnabled: false))
+        let repository = try makeRepository(transport); _ = try await repository.access()
+        let features = await repository.managementFeatures(in: .personal)
+        XCTAssertTrue(features.contains(.albums)); XCTAssertTrue(features.contains(.sharing))
+        XCTAssertFalse(features.contains(.metadata)); XCTAssertFalse(features.contains(.upload))
+    }
+
+    func test仅有相册权限的空相册创建改名删除仍沿统一接口及所有者检查() async throws {
+        let album = #"{"success":true,"data":{"list":[{"id":31,"name":"Fixture","owner_user_id":12}]}}"#
+        let renamed = album.replacingOccurrences(of: "Fixture", with: "Renamed")
+        let empty = #"{"success":true,"data":{"list":[]}}"#
+        let transport = MockHTTPTransport(responses: accessResponses(homeEnabled: false) + [
+            response(#"{"success":true,"data":{"album":{"id":31}}}"#), response(album), response(empty),
+            response(album), response(emptySuccess), response(renamed),
+            response(renamed), response(emptySuccess), response(empty)])
+        let repository = try makeRepository(transport); let access = try await repository.access()
+        XCTAssertTrue(access.spaces.isEmpty)
+        for command: SynologyPhotosMutation in [.createAlbum(name: "Fixture", photos: []), .renameAlbum(id: 31, name: "Renamed"), .deleteAlbum(id: 31)] {
+            let result = try await repository.performMutation(command, operationID: UUID()) { _, _ in }
+            XCTAssertEqual(result.state, .confirmed)
+        }
+        let requests = try await transport.recordedRequests().dropFirst(4).map(decode)
+        XCTAssertFalse(requests.contains { $0["api"]?.contains("FotoTeam") == true })
+        XCTAssertEqual(requests.filter { ["create", "set_name", "delete"].contains($0["method"] ?? "") }.count, 3)
+
+        let foreign = MockHTTPTransport(responses: accessResponses(homeEnabled: false) + [response(album.replacingOccurrences(of: "\"owner_user_id\":12", with: "\"owner_user_id\":99"))])
+        let denied = try makeRepository(foreign); _ = try await denied.access()
+        do { try await denied.prepareMutation(.deleteAlbum(id: 31)); XCTFail("不可删除他人的相册") }
+        catch let error as AppError { XCTAssertEqual(error.category, .permissionDenied) }
+        let deniedRequests = try await foreign.recordedRequests().map(decode)
+        XCTAssertFalse(deniedRequests.contains { $0["method"] == "delete" })
+    }
+
     func test上传恢复写前落盘回执先于核对且新实例不重发() async throws {
         let source = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
         try Data(repeating: 1, count: 128).write(to: source); defer { try? FileManager.default.removeItem(at: source) }
@@ -9190,4 +9273,11 @@ private final class PhotosUploadCheckpointCapture: @unchecked Sendable {
     private var snapshots: [SynologyPhotosUploadCheckpoint] = []
     var values: [SynologyPhotosUploadCheckpoint] { lock.withLock { snapshots } }
     func append(_ snapshot: SynologyPhotosUploadCheckpoint) throws { lock.withLock { snapshots.append(snapshot) } }
+}
+
+private final class PhotosAlbumCheckpointCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshots: [SynologyPhotosAlbumCheckpoint] = []
+    var values: [SynologyPhotosAlbumCheckpoint] { lock.withLock { snapshots } }
+    func append(_ value: SynologyPhotosAlbumCheckpoint) { lock.withLock { snapshots.append(value) } }
 }
