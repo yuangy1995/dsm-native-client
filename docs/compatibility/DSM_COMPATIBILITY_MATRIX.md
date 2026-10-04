@@ -1,5 +1,9 @@
 # DSM 兼容矩阵
 
+## Download Station M5 的兼容边界
+
+2026-10-05 Apple 移动完整任务目录/单项详情依据官方公开 Task.list/getinfo v1 实现，Task.edit 后续按字段表使用 v2；官方示例 v1 与字段表冲突，Android 既有 v1 实现另列源码待办。新分页与结果读取不构成新的 DSM/套件实测版本，内部备用摘要也不因此获得完整列表或写兼容结论。iPhone/iPad 同步实现，macOS 仅共享读取修正并回归，Windows/Android 仅登记影响。源码及合成样本边界见[下载接口说明](../api/reference/download-station.md)。
+
 ## File Station 本轮增量的兼容边界
 
 2026-10-02 设置读取修复：在 DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559 的官方页面只读确认 `VFS.User.get` 本机用户/群组编号使用数字字符串。macOS 及共享 Apple 解码兼容整数/数字字符串，保留权限布尔与写保护；限速名单同步支持 `policy=notexist`，用户显示应用群组限速、群组显示未设置限速，拒绝将该读取标记回写；iPhone/iPad 无新增入口，Android/Windows 后续适配遵循同一编号语义。本次未归入既有设备基线，也未验证真实写入，见[类型更正记录](../api/discovery/endpoints/file-station-package-settings.md#2026-10-02-本机账号名单类型更正)。

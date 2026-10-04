@@ -45,6 +45,6 @@
   },
   "source": {
     "kind": "synthetic",
-    "evidence": "publicDocumentation"
+    "evidence": "sourceReviewed"
   }
 }

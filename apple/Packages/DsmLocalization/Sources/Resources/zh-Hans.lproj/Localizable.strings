@@ -6342,3 +6342,24 @@
 "mobile.chat.notification.message" = "你有一条新消息，打开岚仓查看。";
 "mobile.chat.notification.reminder-title" = "聊天提醒";
 "mobile.chat.notification.reminder" = "提醒时间到了，打开岚仓查看对应消息。";
+
+/* 移动下载目录与详情 */
+"mobile.downloads.value.unknown" = "--";
+"mobile.downloads.sort" = "任务排序";
+"mobile.downloads.catalog.limited" = "当前 NAS 只能提供部分任务，请在 Download Station 中查看完整列表。";
+"mobile.downloads.catalog.refresh-failed" = "任务未能更新，仍显示上次列表。请检查连接后重试。";
+"mobile.downloads.details.failed" = "无法加载更多详情，请检查连接后重试。";
+"mobile.downloads.details.kind" = "类型";
+"mobile.downloads.details.owner" = "创建人";
+"mobile.downloads.details.created" = "创建时间";
+"mobile.downloads.details.priority" = "优先级";
+"mobile.downloads.details.connected-seeds" = "已连接的种子";
+"mobile.downloads.details.total-peers" = "参与者";
+"mobile.downloads.details.files" = "文件（%d）";
+"mobile.downloads.details.trackers" = "Tracker（%d）";
+"mobile.downloads.details.peers" = "已连接的参与者（%d）";
+"mobile.downloads.priority.auto" = "自动";
+"mobile.downloads.priority.low" = "低";
+"mobile.downloads.priority.normal" = "普通";
+"mobile.downloads.priority.high" = "高";
+"mobile.downloads.priority.skip" = "不下载";

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "download-station.edit-destination.synthetic-task-v2",
+  "module": "download-station",
+  "operation": "editDestination",
+  "api": {
+    "name": "SYNO.DownloadStation.Task",
+    "method": "edit",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "destination",
+      "valueType": "string",
+      "encodedValue": "<synthetic-directory>"
+    },
+    {
+      "name": "id",
+      "valueType": "string",
+      "encodedValue": "<synthetic-download-task>"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

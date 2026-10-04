@@ -64,6 +64,10 @@ final class MobileDownloadsModel {
     @ObservationIgnored private var loadGeneration: UInt64 = 0
     var isLoading = false
     var message: String?
+    var searchText = ""
+    var taskFilter: MobileDownloadFilter = .all
+    var taskSort: MobileDownloadSort = .name
+    @ObservationIgnored var downloadDetailsOverride: (@Sendable (String) async throws -> DownloadStationTaskDetails)?
     @ObservationIgnored var downloadStationLoadOverride: (@Sendable () async throws -> DownloadStationSnapshot)?
     @ObservationIgnored var downloadStationControlOverride:
         (@Sendable (DownloadTaskControlRequest) async throws -> DownloadTaskControlOutcome)?
@@ -97,6 +101,7 @@ final class MobileDownloadsModel {
             deactivateDownloads()
             downloadSnapshot = nil
             message = nil
+            resetPresentation()
         }
         activeProfile = profile
         serviceRepository = repository
@@ -109,6 +114,7 @@ final class MobileDownloadsModel {
         serviceRepository = nil
         downloadSnapshot = nil
         message = nil
+        resetPresentation()
     }
 
     func cancelLoad() {
@@ -122,16 +128,21 @@ final class MobileDownloadsModel {
         loadGeneration &+= 1
         let generation = loadGeneration
         let identity = activeProfile.map(MobileWorkspaceIdentity.init)
+        let mutationGenerations = [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration]
         guard identity != nil else { return }
         isLoading = true
         message = nil
         do {
             let snapshot: DownloadStationSnapshot
             if let downloadStationLoadOverride { snapshot = try await downloadStationLoadOverride() }
-            else if let serviceRepository { snapshot = try await serviceRepository.loadDownloadStation() }
+            else if let serviceRepository { snapshot = try await serviceRepository.loadDownloadStationInventory() }
             else { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("ui.38245f0b3e213b62")) }
             try Task.checkCancellation()
             guard generation == loadGeneration, identity == activeProfile.map(MobileWorkspaceIdentity.init) else { return }
+            guard mutationGenerations == [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration] else {
+                isLoading = false
+                return
+            }
             downloadSnapshot = snapshot
             syncDownloadSnapshotToActivity()
             isLoading = false
@@ -159,7 +170,46 @@ final class MobileDownloadsModel {
         guard let downloadSnapshot else {
             return message == nil ? .loading : .error
         }
-        return downloadSnapshot.tasks.isEmpty ? .empty : .content
+        if downloadSnapshot.tasks.isEmpty { return .empty }
+        return visibleTasks.isEmpty ? .filteredEmpty : .content
+    }
+
+    var visibleTasks: [DownloadStationTask] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (downloadSnapshot?.tasks ?? []).filter {
+            taskFilter.includes($0) && (query.isEmpty || $0.title.range(of: query,
+                options: [.caseInsensitive, .diacriticInsensitive], locale: L10n.locale) != nil)
+        }.sorted { taskSort.precedes($0, $1) }
+    }
+
+    func resetPresentation() {
+        searchText = ""
+        taskFilter = .all
+        taskSort = .name
+    }
+
+    func loadDetails(id: String) async throws -> DownloadStationTaskDetails {
+        let identity = activeProfile.map(MobileWorkspaceIdentity.init)
+        let repository = serviceRepository
+        let mutationGenerations = [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration]
+        guard identity != nil else { throw CancellationError() }
+        let details: DownloadStationTaskDetails
+        if let downloadDetailsOverride { details = try await downloadDetailsOverride(id) }
+        else if let repository { details = try await repository.loadDownloadTaskDetails(id: id) }
+        else { throw AppError(category: .apiUnavailable, isRetryable: false,
+                             safeUserMessage: L10n.string("mobile.downloads.details.failed")) }
+        try Task.checkCancellation()
+        guard identity == activeProfile.map(MobileWorkspaceIdentity.init),
+              repository.map(ObjectIdentifier.init) == serviceRepository.map(ObjectIdentifier.init),
+              mutationGenerations == [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration] else {
+            throw CancellationError()
+        }
+        guard details.task.id == id else {
+            throw AppError(category: .invalidResponse, isRetryable: true,
+                           safeUserMessage: L10n.string("mobile.downloads.details.failed"))
+        }
+        replaceDownloadTask(details.task)
+        return details
     }
 
     var isControllingDownloadTask: Bool {
@@ -650,6 +700,7 @@ final class MobileDownloadsModel {
         generation: UInt64
     ) {
         guard generation == downloadControlGeneration else { return }
+        downloadControlGeneration &+= 1
         downloadControlTask = nil
         downloadControlTaskID = nil
         downloadControlAction = nil
@@ -669,6 +720,7 @@ final class MobileDownloadsModel {
         generation: UInt64
     ) {
         guard generation == downloadControlGeneration else { return }
+        downloadControlGeneration &+= 1
         downloadControlTask = nil
         downloadControlTaskID = nil
         downloadControlAction = nil
@@ -685,6 +737,7 @@ final class MobileDownloadsModel {
         generation: UInt64
     ) {
         guard generation == downloadControlGeneration else { return }
+        downloadControlGeneration &+= 1
         downloadControlTask = nil
         downloadControlTaskID = nil
         downloadControlAction = nil
@@ -701,6 +754,7 @@ final class MobileDownloadsModel {
         generation: UInt64
     ) {
         guard generation == downloadCreateGeneration else { return }
+        downloadCreateGeneration &+= 1
         downloadCreateTask = nil
         if outcome.result.status == .confirmedSuccess, let task = outcome.task {
             upsertDownloadTask(task)
@@ -713,12 +767,14 @@ final class MobileDownloadsModel {
 
     private func finishDownloadCreateCancellation(uri: String, generation: UInt64) {
         guard generation == downloadCreateGeneration else { return }
+        downloadCreateGeneration &+= 1
         downloadCreateTask = nil
         downloadCreateFeedback = MobileDownloadCreateFeedback(uri: uri, kind: .cancelled)
     }
 
     private func finishDownloadCreateFailure(uri: String, generation: UInt64) {
         guard generation == downloadCreateGeneration else { return }
+        downloadCreateGeneration &+= 1
         downloadCreateTask = nil
         downloadCreateFeedback = MobileDownloadCreateFeedback(uri: uri, kind: .needsReview)
     }
@@ -729,6 +785,7 @@ final class MobileDownloadsModel {
         generation: UInt64
     ) {
         guard generation == downloadDeleteGeneration else { return }
+        downloadDeleteGeneration &+= 1
         downloadDeleteTask = nil
         downloadDeleteTaskID = nil
         if result.status == .confirmedSuccess {
@@ -742,6 +799,7 @@ final class MobileDownloadsModel {
 
     private func finishDownloadDeleteCancellation(taskID: String, generation: UInt64) {
         guard generation == downloadDeleteGeneration else { return }
+        downloadDeleteGeneration &+= 1
         downloadDeleteTask = nil
         downloadDeleteTaskID = nil
         downloadDeleteFeedback = MobileDownloadDeleteFeedback(
@@ -752,6 +810,7 @@ final class MobileDownloadsModel {
 
     private func finishDownloadDeleteFailure(taskID: String, generation: UInt64) {
         guard generation == downloadDeleteGeneration else { return }
+        downloadDeleteGeneration &+= 1
         downloadDeleteTask = nil
         downloadDeleteTaskID = nil
         downloadDeleteFeedback = MobileDownloadDeleteFeedback(
@@ -776,7 +835,8 @@ final class MobileDownloadsModel {
             uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
             emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond,
             emuleUploadBytesPerSecond: snapshot.emuleUploadBytesPerSecond,
-            defaultDestination: snapshot.defaultDestination
+            defaultDestination: snapshot.defaultDestination,
+            isComplete: snapshot.isComplete, statistics: snapshot.statistics
         )
         syncDownloadSnapshotToActivity()
     }
@@ -798,7 +858,8 @@ final class MobileDownloadsModel {
             uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
             emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond,
             emuleUploadBytesPerSecond: snapshot.emuleUploadBytesPerSecond,
-            defaultDestination: snapshot.defaultDestination
+            defaultDestination: snapshot.defaultDestination,
+            isComplete: snapshot.isComplete, statistics: snapshot.statistics
         )
         syncDownloadSnapshotToActivity()
     }
@@ -815,7 +876,8 @@ final class MobileDownloadsModel {
             uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
             emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond,
             emuleUploadBytesPerSecond: snapshot.emuleUploadBytesPerSecond,
-            defaultDestination: snapshot.defaultDestination
+            defaultDestination: snapshot.defaultDestination,
+            isComplete: snapshot.isComplete, statistics: snapshot.statistics
         )
         syncDownloadSnapshotToActivity()
     }

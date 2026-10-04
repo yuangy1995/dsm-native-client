@@ -3,6 +3,10 @@
 
 # Android 原生客户端长期计划
 
+## Download Station 契约影响（2026-10-05）
+
+移动 Apple M5 核对官方指南发现 Task.edit 字段表要求 v2，Android 当前 `editDestinationResult` 与其请求快照仍为 v1。后续授权切片需同时改实际版本选择、能力门禁及请求测试；旧样本仅记录当前源码，不能标为官方推荐版本或待真机。另需核实完整分页、缺失速度与任务移除/文件删除的边界。本轮不改 Android 实现，依据见[下载接口说明](../api/reference/download-station.md#编辑与-rss-的官方证据边界)。
+
 ## 置顶读取更正（2026-10-03）
 
 当前官方页面只读证据确认 Post.search 的 channel_id 不能限定置顶会话，正确字段为数字 in 数组。本平台本轮不改代码；现有同类请求需后续授权切片修正，不能标为仅待真机。 参数、失败语义与五端边界见[消息交互记录](../api/discovery/endpoints/chat-message-interaction.md#2026-10-03-置顶搜索修正)。

@@ -187,7 +187,6 @@ private enum DownloadTaskCreateValidation: Sendable {
 /// Container Manager 以及无公开接口时的套件分支均属于 DSM 内部接口。
 public actor DsmServiceManagementRepository: ServiceManagementRepository,
     VirtualMachineInventoryReading, ContainerInventoryReading {
-    private static let downloadControlReadbackLimit = 5_000
     private static let downloadControlPageSize = 500
     private static let downloadBTSearchResultLimit = 200
     private let capabilities: CapabilitySet
@@ -259,6 +258,37 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
         let taskObjects = taskValue.objects(for: ["tasks", "task", "items", "list"])
         let tasks = taskObjects.compactMap(Self.downloadTask)
+        return try await downloadStationSnapshot(tasks: tasks, usesOfficial: usesOfficial, isComplete: false)
+    }
+
+    /// 移动任务目录与写操作使用同一完整分页读取；内部备用仍是明确受限的摘要。
+    public func loadDownloadStationInventory() async throws -> DownloadStationSnapshot {
+        guard capabilities[DsmAPIName.downloadStationTask]?.selectedVersion != nil else {
+            return try await loadDownloadStation()
+        }
+        let tasks = try await loadAllOfficialDownloadTasks()
+        return try await downloadStationSnapshot(tasks: tasks, usesOfficial: true, isComplete: true)
+    }
+
+    public func loadDownloadTaskDetails(id: String) async throws -> DownloadStationTaskDetails {
+        guard Self.isStableDownloadBTSearchIdentifier(id, allowComma: false) else {
+            throw invalidServiceResponse()
+        }
+        let value = try await callOfficialDownloadTask(method: "getinfo", parameters: [
+            "id": .string(id),
+            "additional": .string("detail,transfer,file,tracker,peer")
+        ])
+        let objects = try Self.strictRootObjects(value, keys: ["tasks"])
+        guard objects.count == 1, let object = objects.first,
+              let task = Self.officialDownloadTask(object), task.id == id else {
+            throw invalidServiceResponse()
+        }
+        return try Self.downloadTaskDetails(object, task: task)
+    }
+
+    private func downloadStationSnapshot(
+        tasks: [DownloadStationTask], usesOfficial: Bool, isComplete: Bool
+    ) async throws -> DownloadStationSnapshot {
         let statisticAPI = usesOfficial
             ? DsmAPIName.downloadStationStatistic
             : DsmAPIName.downloadStation2Statistic
@@ -267,6 +297,13 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         let location = usesOfficial
             ? nil
             : try? await call(DsmAPIName.downloadStation2Location, method: "get")
+        try Task.checkCancellation()
+        let statistics = DownloadStationStatistics(
+            downloadBytesPerSecond: Self.downloadNumber(statistic, keys: ["download_rate", "download_speed", "speed_download"]),
+            uploadBytesPerSecond: Self.downloadNumber(statistic, keys: ["upload_rate", "upload_speed", "speed_upload"]),
+            emuleDownloadBytesPerSecond: Self.downloadNumber(statistic, keys: ["emule_download_rate", "emule_download_speed", "emule_speed_download"]),
+            emuleUploadBytesPerSecond: Self.downloadNumber(statistic, keys: ["emule_upload_rate", "emule_upload_speed", "emule_speed_upload"])
+        )
 
         return DownloadStationSnapshot(
             source: usesOfficial ? .official : .internalAPI,
@@ -274,19 +311,13 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             hasActivitySummary: statistic != nil,
             hasBTSearch: usesOfficial &&
                 capabilities[DsmAPIName.downloadStationBTSearch]?.selectedVersion != nil,
-            downloadBytesPerSecond: statistic?.firstInteger([
-                "download_rate", "download_speed", "speed_download"
-            ]) ?? 0,
-            uploadBytesPerSecond: statistic?.firstInteger([
-                "upload_rate", "upload_speed", "speed_upload"
-            ]) ?? 0,
-            emuleDownloadBytesPerSecond: statistic?.firstInteger([
-                "emule_download_rate", "emule_download_speed", "emule_speed_download"
-            ]) ?? 0,
-            emuleUploadBytesPerSecond: statistic?.firstInteger([
-                "emule_upload_rate", "emule_upload_speed", "emule_speed_upload"
-            ]) ?? 0,
-            defaultDestination: location?.firstString(["destination", "path", "default_destination"])
+            downloadBytesPerSecond: statistics.downloadBytesPerSecond ?? 0,
+            uploadBytesPerSecond: statistics.uploadBytesPerSecond ?? 0,
+            emuleDownloadBytesPerSecond: statistics.emuleDownloadBytesPerSecond ?? 0,
+            emuleUploadBytesPerSecond: statistics.emuleUploadBytesPerSecond ?? 0,
+            defaultDestination: location?.firstString(["destination", "path", "default_destination"]),
+            isComplete: isComplete,
+            statistics: statistics
         )
     }
 
@@ -720,7 +751,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 "force_complete": .boolean(removeData)
             ]
         )
-        let remaining = try await loadDownloadStation().tasks.map(\.id)
+        let remaining = try await loadDownloadDeletionIDs()
         guard ids.allSatisfy({ !remaining.contains($0) }) else {
             throw verificationError(L10n.string("shared.7ca744fb7c598d20"))
         }
@@ -741,7 +772,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             ),
             isSupported: capabilities[api]?.selectedVersion != nil,
             loadCurrentIDs: {
-                Set(try await self.loadDownloadStation().tasks.map(\.id))
+                try await self.loadDownloadDeletionIDs()
             },
             submit: { targets in
                 try await self.callVoid(
@@ -754,6 +785,13 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 )
             }
         )
+    }
+
+    private func loadDownloadDeletionIDs() async throws -> Set<String> {
+        if capabilities[DsmAPIName.downloadStationTask]?.selectedVersion != nil {
+            return Set(try await loadAllOfficialDownloadTasks().map(\.id))
+        }
+        return Set(try await loadDownloadStation().tasks.map(\.id))
     }
 
     public func loadContainerManager() async throws -> ContainerManagerSnapshot {
@@ -3662,30 +3700,30 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         var tasks: [DownloadStationTask] = []
         var seenIDs: Set<String> = []
 
-        while offset < Self.downloadControlReadbackLimit {
-            let limit = min(
-                Self.downloadControlPageSize,
-                Self.downloadControlReadbackLimit - offset
-            )
+        while true {
+            try Task.checkCancellation()
+            let limit = Self.downloadControlPageSize
             let value = try await callOfficialDownloadTask(
                 method: "list",
                 parameters: [
                     "offset": .integer(offset),
                     "limit": .integer(limit),
-                    "additional": .stringArray(["detail", "transfer"])
+                    "additional": .string("detail,transfer")
                 ]
             )
-            let objects = value.objects(for: ["tasks", "task", "items", "list"])
-            let pageTasks = objects.compactMap(Self.downloadTask)
+            let objects = try Self.strictRootObjects(value, keys: ["tasks"])
+            let pageTasks = objects.compactMap(Self.officialDownloadTask)
             guard pageTasks.count == objects.count, pageTasks.count <= limit else {
                 throw invalidServiceResponse()
             }
-            if let pageOffset = value.firstInteger(["offset"]),
-               pageOffset != Int64(offset) {
-                throw invalidServiceResponse()
+            if value["offset"] != nil {
+                guard Self.downloadNumber(value, keys: ["offset"]) == Int64(offset) else {
+                    throw invalidServiceResponse()
+                }
             }
-            if let totalValue = value.firstInteger(["total"]) {
-                let total = Int(totalValue)
+            if value["total"] != nil {
+                guard let totalValue = Self.downloadNumber(value, keys: ["total"]),
+                      let total = Int(exactly: totalValue) else { throw invalidServiceResponse() }
                 guard total >= offset + pageTasks.count else {
                     throw invalidServiceResponse()
                 }
@@ -3703,18 +3741,15 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 }
                 tasks.append(task)
             }
-            if let expectedTotal, offset + pageTasks.count >= expectedTotal {
-                break
-            }
-            if pageTasks.count < limit {
-                break
-            }
-            guard !pageTasks.isEmpty else {
-                throw invalidServiceResponse()
-            }
             offset += pageTasks.count
+            if let expectedTotal {
+                if offset == expectedTotal { return tasks }
+                // 服务端可返回小于 limit 的非末页；总量未读完时必须继续。
+                guard !pageTasks.isEmpty else { throw invalidServiceResponse() }
+            } else if pageTasks.count < limit {
+                return tasks
+            }
         }
-        return tasks
     }
 
     private static func downloadCreateDestinationMatches(
@@ -3824,71 +3859,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     private func loadOfficialDownloadControlTask(id taskID: String) async throws -> DownloadStationTask? {
-        var offset = 0
-        var expectedTotal: Int?
-        var found: DownloadStationTask?
-        var seenIDs: Set<String> = []
-
-        while offset < Self.downloadControlReadbackLimit {
-            let limit = min(
-                Self.downloadControlPageSize,
-                Self.downloadControlReadbackLimit - offset
-            )
-            let value = try await callOfficialDownloadTask(
-                method: "list",
-                parameters: [
-                    "offset": .integer(offset),
-                    "limit": .integer(limit),
-                    "additional": .stringArray(["detail", "transfer"])
-                ]
-            )
-            let objects = value.objects(for: ["tasks", "task", "items", "list"])
-            let tasks = objects.compactMap(Self.downloadTask)
-            guard tasks.count == objects.count, tasks.count <= limit else {
-                throw invalidServiceResponse()
-            }
-            if let pageOffset = value.firstInteger(["offset"]),
-               pageOffset != Int64(offset) {
-                throw invalidServiceResponse()
-            }
-            if let totalValue = value.firstInteger(["total"]) {
-                let total = Int(totalValue)
-                guard total >= offset + tasks.count else {
-                    throw invalidServiceResponse()
-                }
-                if let expectedTotal {
-                    guard expectedTotal == total else {
-                        throw invalidServiceResponse()
-                    }
-                } else {
-                    expectedTotal = total
-                }
-            }
-
-            for task in tasks {
-                guard seenIDs.insert(task.id).inserted else {
-                    throw invalidServiceResponse()
-                }
-                if task.id == taskID {
-                    guard found == nil else {
-                        throw invalidServiceResponse()
-                    }
-                    found = task
-                }
-            }
-
-            if let expectedTotal, offset + tasks.count >= expectedTotal {
-                break
-            }
-            if tasks.count < limit {
-                break
-            }
-            guard !tasks.isEmpty else {
-                throw invalidServiceResponse()
-            }
-            offset += tasks.count
-        }
-        return found
+        try await loadAllOfficialDownloadTasks().first { $0.id == taskID }
     }
 
     private func finishDownloadControlReview(
@@ -3897,7 +3868,16 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         statusIfUnconfirmed: MutationResultStatus
     ) async throws -> DownloadTaskControlOutcome {
         do {
-            if let task = try await loadOfficialDownloadControlTask(id: key.taskID),
+            // 写入可能已完成；提交后的取消不撤销只读结果查询。
+            let current: DownloadStationTask?
+            if Task.isCancelled {
+                current = try await Task.detached {
+                    try await self.loadOfficialDownloadControlTask(id: key.taskID)
+                }.value
+            } else {
+                current = try await loadOfficialDownloadControlTask(id: key.taskID)
+            }
+            if let task = current,
                Self.confirmsDownloadControl(action: action, status: task.status) {
                 pendingDownloadControlReviews[key] = nil
                 return try downloadControlOutcome(
@@ -4370,6 +4350,99 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             }
         }
         return nil
+    }
+
+    /// 公开下载接口允许数字和十进制数字字符串；缺失、负数与非法类型不补零。
+    private static func downloadNumber(_ value: ServiceJSON?, keys: [String]) -> Int64? {
+        for key in keys {
+            guard let node = value?[key] else { continue }
+            let result: Int64?
+            switch node {
+            case .number(let number): result = Int64(exactly: number)
+            case .string(let text): result = Int64(text)
+            default: result = nil
+            }
+            if let result, result >= 0 { return result }
+        }
+        return nil
+    }
+
+    private static func officialDownloadTask(_ object: [String: ServiceJSON]) -> DownloadStationTask? {
+        guard let id = strictNonEmptyString(object["id"], allowComma: false),
+              case .string(let title)? = object["title"],
+              let status = strictNonEmptyString(object["status"]) else { return nil }
+        let value = ServiceJSON.object(object)
+        let detail = value["additional"]?["detail"]
+        let transfer = value["additional"]?["transfer"]
+        return DownloadStationTask(
+            id: id, title: title, status: status,
+            sizeBytes: downloadNumber(value, keys: ["size"]),
+            downloadedBytes: downloadNumber(transfer, keys: ["size_downloaded"]),
+            uploadedBytes: downloadNumber(transfer, keys: ["size_uploaded"]),
+            downloadBytesPerSecond: downloadNumber(transfer, keys: ["speed_download"]),
+            uploadBytesPerSecond: downloadNumber(transfer, keys: ["speed_upload"]),
+            destination: strictOptionalString(detail?["destination"]),
+            errorDescription: strictOptionalString(value["status_extra"]?["error_detail"])
+        )
+    }
+
+    private static func downloadTaskDetails(
+        _ object: [String: ServiceJSON], task: DownloadStationTask
+    ) throws -> DownloadStationTaskDetails {
+        let value = ServiceJSON.object(object)
+        let additional = value["additional"]
+        let detail = additional?["detail"]
+        func rows(_ key: String) throws -> [[String: ServiceJSON]]? {
+            guard let additional, let node = additional[key] else { return nil }
+            if case .null = node { return nil }
+            return try strictRootObjects(additional, keys: [key])
+        }
+        func count(_ source: ServiceJSON?, _ key: String) -> Int? {
+            downloadNumber(source, keys: [key]).flatMap(Int.init(exactly:))
+        }
+        let files = try rows("file")?.map { row -> DownloadStationTaskFile in
+            guard case .string(let name)? = row["filename"], !name.isEmpty else {
+                throw invalidServiceResponseStatic()
+            }
+            let row = ServiceJSON.object(row)
+            return DownloadStationTaskFile(name: name,
+                sizeBytes: downloadNumber(row, keys: ["size"]),
+                downloadedBytes: downloadNumber(row, keys: ["size_downloaded"]),
+                priority: strictOptionalString(row["priority"]))
+        }
+        let trackers = try rows("tracker")?.map { row -> DownloadStationTaskTracker in
+            guard let address = strictOptionalString(row["url"]),
+                  let url = URLComponents(string: address), let scheme = url.scheme, let host = url.host else {
+                throw invalidServiceResponseStatic()
+            }
+            var display = URLComponents()
+            display.scheme = scheme
+            display.host = host
+            display.port = url.port
+            let row = ServiceJSON.object(row)
+            return DownloadStationTaskTracker(displayAddress: display.string ?? host,
+                status: strictOptionalString(row["status"]), seeds: count(row, "seeds"),
+                peers: count(row, "peers"), nextUpdateSeconds: count(row, "update_timer"))
+        }
+        let peers = try rows("peer")?.map { row -> DownloadStationTaskPeer in
+            guard let address = strictOptionalString(row["address"]) else {
+                throw invalidServiceResponseStatic()
+            }
+            let row = ServiceJSON.object(row)
+            var progress: Double?
+            if case .number(let number)? = row["progress"], number.isFinite, (0...1).contains(number) {
+                progress = number
+            }
+            return DownloadStationTaskPeer(address: address, client: strictOptionalString(row["agent"]),
+                progress: progress, downloadBytesPerSecond: downloadNumber(row, keys: ["speed_download"]),
+                uploadBytesPerSecond: downloadNumber(row, keys: ["speed_upload"]))
+        }
+        return DownloadStationTaskDetails(task: task, kind: strictOptionalString(value["type"]),
+            owner: strictOptionalString(value["username"]),
+            createdAt: downloadNumber(detail, keys: ["create_time"]).map { Date(timeIntervalSince1970: Double($0)) },
+            priority: strictOptionalString(detail?["priority"]),
+            connectedSeeders: count(detail, "connected_seeders"), connectedLeechers: count(detail, "connected_leechers"),
+            totalPeers: count(detail, "total_peers"), files: files, trackers: trackers, peers: peers)
     }
 
     private static func downloadTask(_ object: [String: ServiceJSON]) -> DownloadStationTask? {

@@ -6342,3 +6342,24 @@
 "mobile.chat.notification.message" = "You have a new message. Open LanStash to read it.";
 "mobile.chat.notification.reminder-title" = "Chat reminder";
 "mobile.chat.notification.reminder" = "It is time for your reminder. Open LanStash to view the message.";
+
+/* 移动下载目录与详情 */
+"mobile.downloads.value.unknown" = "--";
+"mobile.downloads.sort" = "Sort tasks";
+"mobile.downloads.catalog.limited" = "Only a limited task list is available on this NAS. Open Download Station to see all tasks.";
+"mobile.downloads.catalog.refresh-failed" = "Tasks could not be updated. The previous list is still shown. Check your connection and try again.";
+"mobile.downloads.details.failed" = "More details could not be loaded. Check your connection and try again.";
+"mobile.downloads.details.kind" = "Type";
+"mobile.downloads.details.owner" = "Created by";
+"mobile.downloads.details.created" = "Created";
+"mobile.downloads.details.priority" = "Priority";
+"mobile.downloads.details.connected-seeds" = "Connected seeds";
+"mobile.downloads.details.total-peers" = "Peers";
+"mobile.downloads.details.files" = "Files (%d)";
+"mobile.downloads.details.trackers" = "Trackers (%d)";
+"mobile.downloads.details.peers" = "Connected peers (%d)";
+"mobile.downloads.priority.auto" = "Automatic";
+"mobile.downloads.priority.low" = "Low";
+"mobile.downloads.priority.normal" = "Normal";
+"mobile.downloads.priority.high" = "High";
+"mobile.downloads.priority.skip" = "Do not download";

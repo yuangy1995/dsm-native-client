@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "download-station.read-task.synthetic-details",
+  "module": "download-station",
+  "operation": "readDownloadTask",
+  "api": {
+    "name": "SYNO.DownloadStation.Task",
+    "method": "getinfo",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "id",
+      "valueType": "string",
+      "encodedValue": "<synthetic-download-task>"
+    },
+    {
+      "name": "additional",
+      "valueType": "string",
+      "encodedValue": "detail,transfer,file,tracker,peer"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "readOnlyAutomatic",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}
