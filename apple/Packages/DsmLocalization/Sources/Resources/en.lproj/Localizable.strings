@@ -5964,3 +5964,31 @@
 "mobile.cross.error.recovery" = "Cannot save or read the transfer history. Check device storage, then reopen the app.";
 "mobile.cross.error.invalid" = "Cannot transfer the selected items. Refresh the file list and select regular files or folders again.";
 "mobile.cross.error.unavailable" = "This NAS does not support the required file operation. Use DSM to complete the transfer.";
+
+// 移动 Office 预览与主动回传
+"mobile.office.title" = "Edit document";
+"mobile.office.activity" = "Document editing";
+"mobile.office.export" = "Open or save an editing copy…";
+"mobile.office.import" = "Choose edited file…";
+"mobile.office.save" = "Save to NAS";
+"mobile.office.handoff" = "Edit a copy in another app, then choose the edited file. Saving updates the original file on your NAS.";
+"mobile.office.ready" = "Editing copy ready";
+"mobile.office.changed" = "Changes ready to save";
+"mobile.office.unchanged" = "Content unchanged. No save needed.";
+"mobile.office.saving" = "Saving changes…";
+"mobile.office.saved" = "Changes saved to NAS";
+"mobile.office.conflict.title" = "Original file changed";
+"mobile.office.conflict" = "The original file on your NAS has changed. Your edits have not been saved. Export this copy, then reopen the original to merge your changes.";
+"mobile.office.interrupted.title" = "Save not yet complete";
+"mobile.office.interrupted" = "It is not yet clear whether your changes were saved. Your copy is retained. Connect to your NAS and refresh.";
+"mobile.office.working" = "Working on document";
+"mobile.office.preparing" = "Preparing an editing copy…";
+"mobile.office.discard" = "Close editing and remove this copy";
+"mobile.office.discard.title" = "Remove the editing copy from this device?";
+"mobile.office.discard.message" = "Changes not yet saved to your NAS will be lost. The original file on your NAS is unaffected.";
+"mobile.office.connection" = "Could not connect to your NAS. Check your network, reconnect, and try again.";
+"mobile.office.permission" = "You do not have permission to change this file. Contact an administrator or export a copy to another location.";
+"mobile.office.format" = "The file format differs from the original. Save it in the original format in your editing app, then choose it again.";
+"mobile.office.local" = "Could not read the document copy on this device. Check available storage, then choose the saved file again.";
+"mobile.office.recovery" = "Could not read or save editing records. Check available storage on this device and reopen the app. Existing copies are retained.";
+"mobile.office.save.notice" = "Saving updates the original file. Avoid editing it on another device at the same time.";

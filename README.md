@@ -37,7 +37,7 @@
 
 部分能力依赖 DSM 或套件版本。项目优先使用 Synology 官方公开 API；必须使用内部 API 时，会在实现与兼容文档中明确标注并通过能力探测隔离。
 
-macOS 文档自动保存需保持岚仓运行；冲突或结果不明时暂停并保留本机副本，退出后不继续同步，重启不自动恢复。此功能只在 macOS 接入，真实编辑器与 NAS 验收仍待完成；使用步骤、独立测试包和验证范围见 [Office 预览与编辑记录](apple/Apps/DsmMac/README.md)。
+macOS 文档自动保存需保持岚仓运行；冲突或结果不明时暂停并保留本机副本，退出后不继续同步，重启不自动恢复。移动端采用系统编辑副本后主动回传，仍不支持离开 App 后自动同步；真实编辑器与 NAS 验收仍待完成；使用步骤、独立测试包和验证范围见 [Office 预览与编辑记录](apple/Apps/DsmMac/README.md)。
 
 五端正式照片入口均直接使用 Synology Photos，套件不可用时不会退回 File Station 扫描。系统原件分享不代表支持创建 Photos 分享链接；上传、相册编辑、共享空间和自动备份按各自范围控制。实现、性能边界与逐端验收统一见[照片计划](docs/development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。
 

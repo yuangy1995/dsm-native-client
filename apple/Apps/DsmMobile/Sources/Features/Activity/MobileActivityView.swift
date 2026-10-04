@@ -13,6 +13,7 @@ struct MobileActivityView: View {
     @State private var hasError = false
     @State private var hasRecoveryFailure = false
     @State private var controlTarget: FileBackgroundTaskSummary?
+    @State private var officeSelection: MobileOfficeSelection?
     private var fileActivityModel: MobileFileActivityModel { model.fileActivityModel }
 
     init(model: MobileAppModel) {
@@ -24,12 +25,13 @@ struct MobileActivityView: View {
     }
 
     private var state: MobileActivityPresentationState {
-        if model.fileArchiveQueue.recoveryError != nil || model.fileUploadQueue.recoveryError != nil || model.crossNAS.recoveryFailed { return .content }
-        if !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty || !model.crossNAS.records.isEmpty {
+        if model.fileArchiveQueue.recoveryError != nil || model.fileUploadQueue.recoveryError != nil || model.crossNAS.recoveryFailed || model.office.recoveryFailed { return .content }
+        if !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty || !model.crossNAS.records.isEmpty || !model.office.records.isEmpty {
             let archivesVisible = model.fileArchiveQueue.records.contains { filter.includes(active: $0.isActive) }
             let uploadsVisible = model.fileUploadQueue.batches.contains { filter.includes(active: $0.isRunning || $0.isPaused || $0.hasPending) }
             let crossVisible = model.crossNAS.records.contains { filter.includes(active: $0.isRunning || $0.canContinue || $0.hasUnknown) }
-            return archivesVisible || uploadsVisible || crossVisible || !visibleTasks.isEmpty ? .content : .filteredEmpty
+            let officeVisible = model.office.records.contains { filter.includes(active: $0.phase.isActive) }
+            return archivesVisible || uploadsVisible || crossVisible || officeVisible || !visibleTasks.isEmpty ? .content : .filteredEmpty
         }
         return .resolve(
             isLoading: isLoading,
@@ -100,13 +102,14 @@ struct MobileActivityView: View {
                 taskList
             }
         }
+        .sheet(item: $officeSelection) { MobileOfficeEditor(model: model.office, selection: $0) }
         .safeAreaInset(edge: .top, spacing: 0) {
             if hasRecoveryFailure {
                 Label(L10n.string("mobile.activity.recovery-error"), systemImage: "exclamationmark.triangle")
                     .font(.callout).padding().frame(maxWidth: .infinity, alignment: .leading)
                     .background(.bar)
             }
-            if !tasks.isEmpty || !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty || !model.crossNAS.records.isEmpty {
+            if !tasks.isEmpty || !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty || !model.crossNAS.records.isEmpty || !model.office.records.isEmpty {
                 filterPicker
             }
         }
@@ -150,6 +153,7 @@ struct MobileActivityView: View {
     private var taskList: some View {
         List {
             fileActivityNotices
+            MobileOfficeSections(model: model.office, filter: filter) { officeSelection = $0 }
             MobileCrossNASSections(model: model, filter: filter)
             MobileFileArchiveSections(queue: model.fileArchiveQueue, filter: filter)
             MobileFileUploadSections(queue: model.fileUploadQueue, filter: filter)

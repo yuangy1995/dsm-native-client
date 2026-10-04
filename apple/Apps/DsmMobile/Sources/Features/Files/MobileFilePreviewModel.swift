@@ -1,4 +1,5 @@
 import DsmCore
+import DsmFileFeature
 import DsmNetwork
 import Foundation
 import Observation
@@ -168,7 +169,7 @@ final class MobileFilePreviewModel {
             )
             return
         }
-        guard kind == .image || kind == .pdf else {
+        guard kind == .image || kind == .pdf || OfficeDocumentFormat.supports(resolvedItem) else {
             state.phase = .detailsOnly
             state.progress = nil
             return
@@ -209,8 +210,8 @@ final class MobileFilePreviewModel {
             isDirectory: false
         )
         do {
-            try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
-            try fileManager.createDirectory(at: directory, withIntermediateDirectories: false)
+            try MobileTransferRecoveryStore.prepareDirectory(rootURL)
+            try MobileTransferRecoveryStore.prepareDirectory(directory)
         } catch {
             guard isCurrent(item: originalItem, generation: requestGeneration) else { return }
             state.phase = .failed
@@ -232,7 +233,8 @@ final class MobileFilePreviewModel {
                 fileExtension: approvedExtension,
                 expectedContentLength: size
             )
-            guard fileManager.createFile(atPath: fileURL.path, contents: nil) else {
+            guard fileManager.createFile(atPath: fileURL.path, contents: nil,
+                attributes: [.protectionKey: FileProtectionType.complete]) else {
                 throw CocoaError(.fileWriteUnknown)
             }
             let handle = try FileHandle(forWritingTo: fileURL)
@@ -481,6 +483,7 @@ final class MobileFilePreviewModel {
         proposed: String?
     ) -> String? {
         let value = proposed?.lowercased() ?? ""
+        if OfficeDocumentFormat.extensions.contains(value) { return value }
         switch kind {
         case .image where [
             "jpg", "jpeg", "png", "gif", "heic", "heif", "webp", "tif", "tiff", "bmp"

@@ -1,3 +1,4 @@
+import DsmFileFeature
 import CryptoKit
 import DsmCore
 import Foundation

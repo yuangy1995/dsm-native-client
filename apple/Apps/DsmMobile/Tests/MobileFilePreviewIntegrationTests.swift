@@ -49,7 +49,7 @@ final class MobileFilePreviewIntegrationTests: XCTestCase {
     func testAppModel单一持有预览模型并随活动Profile切换() throws {
         let source = try sourceFile("Sources/AppShell/MobileAppModel.swift")
 
-        XCTAssertEqual(source.components(separatedBy: "let filePreviewModel = MobileFilePreviewModel()").count - 1, 1)
+        XCTAssertEqual(source.components(separatedBy: "let filePreviewModel: MobileFilePreviewModel").count - 1, 1)
         XCTAssertTrue(source.contains("filePreviewModel.activate(profileID: activeProfile?.id)"))
     }
 
@@ -121,7 +121,7 @@ final class MobileFilePreviewIntegrationTests: XCTestCase {
         let documentPresenter = try sourceFile("Sources/AppShell/MobileWorkspaceView.swift")
         XCTAssertTrue(documentPresenter.contains("MobileDocumentExporter"))
         XCTAssertTrue(documentPresenter.contains("MobileShareSheet"))
-        XCTAssertFalse(source.contains("let filePreviewModel = MobileFilePreviewModel()"))
+        XCTAssertFalse(source.contains("let filePreviewModel: MobileFilePreviewModel"))
         XCTAssertFalse(source.contains("documentTransferController.presentation ="))
     }
 

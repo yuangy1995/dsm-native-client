@@ -1,3 +1,4 @@
+import DsmFileFeature
 import AppKit
 import DsmCore
 import DsmLocalization

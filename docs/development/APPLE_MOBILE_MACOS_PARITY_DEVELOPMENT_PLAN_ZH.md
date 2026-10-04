@@ -38,7 +38,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M2 收藏与 File Station 设置 | WorkspaceModel.toggleFavorite、FileStationSettingsView、FileStationBandwidthView | 文件菜单/位置列表、分步设置表单；Favorite、Setting、Mount、Bandwidth、SharingDownload；普通写/内部管理写 | M2g1 收藏与 M2g2 常规/账号/限速/分享页面设置已接入并通过两端单元/实际 UI；保留权限、原快照回读与未知防重放，真实 NAS 待用户验证 |
 | M2 NAS 任务 | FileBackgroundTaskActions | Activity 绑定 NAS/原任务；状态及取消；写 | M2c 完整分页、原任务停止/清除、未知控制恢复已接；两端单元/实际 UI 通过，真实 NAS 待验 |
 | M2 跨 NAS 传输 | WorkspaceModel | 源/目标明确绑定；复制后核对目标再确认源删除；高风险 | M2h4 已接两端独立会话、目录/文件复制、内容比对、活动恢复与独立确认删源；两端单元和实际 UI 通过，目标未核对不得删源，未知及已完成步骤不重放 |
-| M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | 有预览/导出，缺冲突与主动回传；M8 接 Files 写回 |
+| M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | M2i 已接六种格式预览、系统编辑副本、主动回传及冲突/未知恢复，两端自动化通过；M8 再接 Files 写回 |
 | M2 可恢复活动队列 | WorkspaceModel | 独立版本化任务、来源/目标身份与进度；持久化 | M2a 接独立受保护记录/副本；重启后暂停未提交项，未知上传只查询，下载可从头恢复；后台执行仍属 M8 |
 | M3 Photos 上传 | SynologyPhotosModel、SynologyPhotosView | Photos/Files 选择与队列；上传/相册加入；写 | 缺入口；加入相册失败只补后一步，不重传原件 |
 | M3 批量及资料 | PhotoManagementPanel | 多选、标签/日期/资料表单；原件权限；写 | 缺编辑/批量；列表可见不代表可改/删 |
@@ -228,3 +228,18 @@ Mac 证据为 `WorkspaceModel.enqueueDownload/enqueueBatchDownload`；复用共�
 实现边界：复制先冻结完整目录清单和内容摘要，目标重名不覆盖，上传后比对源与目标内容；中断时保留已完成项，未知写只读取，绝不重放。移动的删源是复制完成后的独立危险确认，先重新比对内容，再按文件及空目录顺序非递归删除；新增目录内容不得随原目录被删。macOS 原流程在复制后直接递归删除源且存在重名跳过路径，不作为移动端安全依据，不在本切片顺手改动桌面行为。源码、两端自动化及模拟器构建已通过；每端 674 项单元与三项实际 UI、共享及 Mac 双架构构建证据见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2h4-跨-nas-复制与分步移动)。后台执行、Files 扩展及 Office 回传属于后续切片。
 
 `PENDING_USER_VALIDATION`：准备 iPhone/iPad 真机、两台已授权专用 NAS、独立账号及可丢弃文件，包含空文件/空目录、嵌套目录、分页规模和尾空格名称。先分别登录两端，再从源端选择文件/目录复制到空目标；检查副本后选择移动并单独确认删源。追加只读来源、目标无权限、同名冲突、源/目标改写、断网丢回执、暂停、重启、移除连接及源端退出测试。预期不覆盖原目标、不自动删源、不重放未知写入、不重复传已确认项目；新增目录内容不能被递归删除，部分删除保持逐项状态。真实网络、QuickConnect/证书、锁屏/系统挂起、VoiceOver、大字与键盘仍未验证；公开接口没有跨客户端原子删除保证，测试期间不要并行编辑同一文件。只回传版本类别、脱敏操作/错误类别与逐项最终状态，不提供账号、地址、路径、会话或原始响应。Windows/Android/Mac 行为不因移动测试结论提升验证等级。
+
+## M2i Office 预览与主动回传
+
+单一修改范围为移动 Office/预览/文件及活动入口、组合根、对应测试、双语资源和工程；共享提取 Mac `OfficeDocumentEditing.swift` 的内容摘要、稳定副本及格式判断，Mac 只调整引用并回归。六种格式为 doc/docx/xls/xlsx/ppt/pptx，沿用公开 Download/Upload/GetInfo/MD5/CheckPermission，不新增请求契约。预览只读；覆盖回传属于数据写，必须绑定原账号与原文件、当前权限及完整内容基线。
+
+iPhone/iPad 均使用 Quick Look、系统分享/保存副本、文件选择器和明确的“保存到 NAS”操作。系统编辑器返回新文件后先冻结受保护副本；相同内容不上传，远端内容变化停止覆盖，发送后丢回执只读恢复。独立版本 1 的 `Office` 记录及副本排除备份，不保存凭据，不迁移已有配置；重启不自动写，回滚停用入口而保留副本。此存储属于已批准 M0–M8 恢复范围。系统外部持续编辑监听、Files 扩展、自动写回及后台传输不是本切片目标。两端各 693 项全部单元已通过，最终 18 项 Office 单元与四项实际 UI 各自通过；共享和 Mac 双架构回归通过，精确命令与中间修复见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m2i-office-预览与主动回传)。
+
+
+M2i 已完成独立集成及只读对抗复核：源/账号绑定、稳定编辑及上传副本、权限检查期间内容变化、相同内容零上传、写前保存失败、重复点击、迟到回调、未来/损坏记录、未知跨重启恢复及本机副本保留均有聚焦证据。活动编辑弹窗从页面根呈现；错误置于表单上部，避免 iPad 中被操作行遮到可视范围外。
+
+`PENDING_USER_VALIDATION`：iPhone/iPad 真机、专用可丢弃 Office 文件和普通/受限账号；逐一预览 doc/docx/xls/xlsx/ppt/pptx，交给已安装的 Office/Pages/Numbers/Keynote 编辑器或保存到“文件”，选择同格式编辑结果并保存原位置。检查相同内容零上传、其他设备修改原件、撤销写权限、上传后断网、重新连接/重启和账号切换；预期保留副本、不覆盖已变化内容、不重放未知上传。仅合成 docx 已经两端系统实际渲染，六种格式分类及受控读取有模型测试；真实编辑器兼容性、真机锁屏保护、VoiceOver、大字和键盘尚未验证。公开 Upload 没有条件覆盖事务，避免同时编辑同一原件。仅回传版本、格式、脱敏步骤和错误类别，不提供真实文件、路径、账号或响应。
+
+## 用户补充：默认模块与当前账号权限
+
+2026-10-04 用户要求移动端与 Mac 的功能启用方式一致：默认导航只显示文件管理和 App 设置，其他模块在 App 设置中开启，候选列表来自当前登录用户权限。源码核对发现现有固定五入口与四个管理模块默认全开、仅按接口存在判断的策略不符合要求；下一切片优先调整移动导航、设置偏好与登录权限读取，M0–M8 目标继续保留。当前只是记录新要求，尚未完成实现与验证。
