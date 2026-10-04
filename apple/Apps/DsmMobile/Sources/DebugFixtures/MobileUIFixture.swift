@@ -14,7 +14,7 @@ enum MobileUIFixture {
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
             let officeState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? ""
             let officeTransport = MobileOfficeUITransport(state: officeState)
-            let uploadFixture = officeState.hasPrefix("office-") || officeState.hasPrefix("chat-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = officeState.hasPrefix("office-") || officeState.hasPrefix("chat-") || officeState.hasPrefix("downloads-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -59,8 +59,16 @@ enum MobileUIFixture {
             model.fileRepository = try DsmFileRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             if officeState.hasPrefix("downloads-") {
+                var statuses: [String: String] = [:]
+                if officeState == "downloads-controls-recover" {
+                    for entry in model.downloads.controlRecovery.entries {
+                        for item in entry.items where item.phase == .submitted || item.phase == .complete {
+                            statuses[item.taskID] = entry.action == .pause ? "paused" : "downloading"
+                        }
+                    }
+                }
                 model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
-                    session: session, transport: MobileDownloadUITransport(state: officeState))
+                    session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses))
             }
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)

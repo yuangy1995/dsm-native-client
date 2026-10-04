@@ -3,7 +3,7 @@
 
 # 平台功能矩阵
 
-2026-10-05 M5a1：iPhone/iPad 完整下载目录、筛选/排序、详细传输与任务内文件/Tracker/参与者已通过两端单元及实际 UI；macOS 摘要界面不变，共享公开写结果查询改为完整分页。Android Task.edit 仍有 v1 源码偏差，Windows/Android 本轮只登记后续影响。当前验证及剩余 M5a2–M8 范围见[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m5-download-station-基线与拆分施工中)，不据此宣布 M5 全部完成。
+2026-10-05 M5a：iPhone/iPad 完整下载目录、筛选/排序、详情与多选暂停/继续、逐项结果和持久恢复已通过两端单元及实际 UI。未知只读恢复、剩余显式继续/取消，操作记录在空列表仍可达；macOS 摘要界面不变，共享公开写结果完整查询及兼容增量已回归。Windows/Android 本轮只登记影响；Android Task.edit v1 和投票 choices 请求差异仍需独立修正。当前验证及剩余 M5b–M8 范围见[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m5-download-station-基线与拆分施工中)，不据此宣布 M5 全部完成。
 
 “核心／受限／后续／非目标”表示平台产品范围，不是源码、设备或发布等级；实现与验证分开看。当前事实见[开发进度](STATUS.md)，API 参数与恢复语义见[功能参考](../api/README.md)。
 
