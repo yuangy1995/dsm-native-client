@@ -155,7 +155,7 @@ extension MobileAppModel {
                 try requireCurrentConnectionAttempt(attemptID)
                 await prepareWorkspaceContext(for: submission.profile)
                 try requireCurrentConnectionAttempt(attemptID)
-                applyWorkspaceRepositories(workspace)
+                applyWorkspaceRepositories(workspace, profile: submission.profile)
                 saveProfile(submission.profile)
                 self.capabilities = connection.capabilities
                 self.session = session
@@ -223,7 +223,7 @@ extension MobileAppModel {
                 try requireCurrentConnectionAttempt(attemptID)
                 await prepareWorkspaceContext(for: profile)
                 try requireCurrentConnectionAttempt(attemptID)
-                applyWorkspaceRepositories(workspace)
+                applyWorkspaceRepositories(workspace, profile: profile)
                 self.capabilities = connection.capabilities
                 self.session = session
                 activeConnectionProfile = connection.profile
@@ -376,10 +376,10 @@ extension MobileAppModel {
         )
     }
 
-    private func applyWorkspaceRepositories(_ repositories: WorkspaceRepositories) {
+    private func applyWorkspaceRepositories(_ repositories: WorkspaceRepositories, profile: NasProfile) {
         fileRepository = repositories.file
         photoRepository = FileStationPhotoRepository(files: repositories.file)
-        synologyPhotos.configure(repositories.photos)
+        synologyPhotos.configure(repositories.photos, uploadStorage: .forProfile(profile))
         serviceRepository = repositories.service
         chatRepository = repositories.chat
         nasRepository = repositories.nas

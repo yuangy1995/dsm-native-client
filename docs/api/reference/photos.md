@@ -65,3 +65,5 @@
 [请求示例](requests.md#photos)只覆盖已有快照场景，远少于完整 Photos 功能；主要自动化见 [DsmNetwork/Tests](../../../apple/Packages/DsmNetwork/Tests/) 的 `SynologyPhotos*` 和 [DsmMac/Tests](../../../apple/Apps/DsmMac/Tests/) 的 Photos 模型/界面回归。完整来源仍是版本化证据，不把合成行为升级为 NAS 实测。
 
 移动端采用系统 Photos/Files、分享和前后台模型，不照搬常驻转换、桌面编辑器或 Finder 行为；Windows、Android 对齐进度和明确非目标见[Photos 长期计划](../../development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。
+
+iPhone/iPad 选择上传与恢复通过移动适配器提供受保护的稳定副本，复用共享上传/相册加入及版本 1 回执；替换会话后旧写入者冻结，未知结果不重发。两种选择器、目录层次、重名策略和相册贡献权限沿当前模型分别处理。具体实现与验证见[移动主计划 M3a](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)，后台传输仍由 M8 单独实施。

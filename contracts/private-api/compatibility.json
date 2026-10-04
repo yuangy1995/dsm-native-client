@@ -279,7 +279,7 @@
       "id": "photos-upload",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人/共享空间multipart队列、目录导入及相册直接上传；相册使用album_id或passphrase、PhotoLibrary目录，不加timeline目的字段，回读编号/大小/提供者，完成不重复add_item。切页保留队列目标，无空间贡献者可上传；真实NAS待验。 2026-09-30新增duplicate=ignore/rename显式策略；ignore回执按返回编号、名称及目标/相册重新读取已有照片，skippedCount与新上传数量分离，不要求原提供者或大小变为上传者内容。未知结果不重传；static/PENDING_USER_VALIDATION。 macOS新增本机跨重启队列：按连接及当前账号隔离，写前意图与收到的编号回执原子保存，恢复只读核对；已上传但未加入相册只补加入步骤，无回执不按名称猜测。新增Apple协议默认不支持，其他端不启用本机持久化。",
+      "capability": "个人/共享空间multipart队列、目录导入及相册直接上传；相册使用album_id或passphrase、PhotoLibrary目录，不加timeline目的字段，回读编号/大小/提供者，完成不重复add_item。切页保留队列目标，无空间贡献者可上传；真实NAS待验。 2026-09-30新增duplicate=ignore/rename显式策略；ignore回执按返回编号、名称及目标/相册重新读取已有照片，skippedCount与新上传数量分离，不要求原提供者或大小变为上传者内容。未知结果不重传；static/PENDING_USER_VALIDATION。 macOS新增本机跨重启队列：按连接及当前账号隔离，写前意图与收到的编号回执原子保存，恢复只读核对；已上传但未加入相册只补加入步骤，无回执不按名称猜测。Apple协议默认不支持以保持旧适配器兼容。2026-10-04 iPhone/iPad接入Photos/Files多选与目录、相册贡献及同一版本1恢复队列；本机副本完整保护并排除备份，换会话冻结旧写入者，未知只查询，重试相册加入不重传。Windows/Android仅记录影响；无新增NAS接口或真实行为验证。",
       "classification": "internal",
       "operation": "write",
       "risk": "high",

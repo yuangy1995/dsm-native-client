@@ -21,6 +21,8 @@ private struct MobileSynologyPhotosContent: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
     @State private var showsMonths = false
+    @State private var showsUploadQueue = false
+    @State private var opensQueueAfterUpload = false
 
     private var section: Binding<SynologyPhotosSection> {
         Binding(get: { model.section }, set: { value in Task { await model.selectSection(value) } })
@@ -128,6 +130,18 @@ private struct MobileSynologyPhotosContent: View {
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if let uploads = session.uploads {
+                    Menu {
+                        Button { uploads.begin() } label: {
+                            Label(L10n.string("photos.manage.upload"), systemImage: "square.and.arrow.up")
+                        }.disabled(!uploads.canBegin).accessibilityIdentifier("mobile.photos.upload.begin")
+                        Button { showsUploadQueue = true } label: {
+                            Label(L10n.string("photos.upload.queue"), systemImage: "list.bullet")
+                        }.accessibilityIdentifier("mobile.photos.upload.queue")
+                    } label: {
+                        Label(L10n.string("photos.manage.upload"), systemImage: "square.and.arrow.up")
+                    }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.upload.menu")
+                }
                 if model.section == .timeline {
                     Button { model.showsFilters = true } label: {
                         Label(L10n.string("photos.filters"), systemImage: model.filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
@@ -146,6 +160,17 @@ private struct MobileSynologyPhotosContent: View {
         }
         .sheet(isPresented: $model.showsFilters) {
             MobileSynologyPhotoFilters(model: model, draft: model.filter)
+        }
+        .sheet(isPresented: Binding(get: { session.uploads?.draftID != nil }, set: { if !$0 { session.uploads?.cancel() } }), onDismiss: {
+            session.uploads?.cancel()
+            if opensQueueAfterUpload { opensQueueAfterUpload = false; showsUploadQueue = true }
+        }) {
+            if let uploads = session.uploads, let id = uploads.draftID {
+                MobilePhotoUploadForm(uploads: uploads, draftID: id) { opensQueueAfterUpload = true }
+            }
+        }
+        .sheet(isPresented: $showsUploadQueue) {
+            if let uploads = session.uploads { MobilePhotoUploadQueueView(model: model, uploads: uploads) }
         }
         .sheet(isPresented: $showsMonths) {
             NavigationStack {
@@ -178,14 +203,24 @@ private struct MobileSynologyPhotosContent: View {
 
     private var header: some View {
         VStack(spacing: 8) {
+            if model.spaces.count > 1 && model.selectedAlbum == nil && model.section != .sharing {
+                Picker(L10n.string("mobile.photos.source.title"), selection: Binding(get: { model.selectedSpace }, set: { value in
+                    Task { await model.selectSpace(value) }
+                })) {
+                    ForEach(model.spaces, id: \.self) { space in
+                        Text(L10n.string(space == .personal ? "mobile.photos.source.mine" : "mobile.photos.source.shared")).tag(space)
+                    }
+                }.pickerStyle(.menu).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
             if sizeClass == .regular {
                 Picker(L10n.string("photos.library.browse"), selection: section) {
                     ForEach(SynologyPhotosSection.allCases, id: \.self) { Text($0.title).tag($0) }
-                }.pickerStyle(.segmented)
+                }.pickerStyle(.segmented).accessibilityIdentifier("mobile.photos.section")
             } else {
                 Picker(L10n.string("photos.library.browse"), selection: section) {
                     ForEach(SynologyPhotosSection.allCases, id: \.self) { Text($0.title).tag($0) }
                 }.pickerStyle(.menu).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .accessibilityIdentifier("mobile.photos.section")
             }
             if model.section == .sharing && model.selectedAlbum == nil {
                 Picker(L10n.string("photos.sharing"), selection: Binding(get: { model.shareScope }, set: { value in
