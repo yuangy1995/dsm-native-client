@@ -6031,6 +6031,17 @@
 "photos.album.recovery.saveFailed" = "无法在本机保存处理结果。请检查可用空间，然后刷新状态。";
 "photos.album.recovery.readFailed" = "无法恢复上次未完成的更改。请使用原来的账号重新连接，然后重试。";
 "photos.album.recovery.pending" = "上次的更改尚未完成。请恢复连接，然后刷新状态。";
+"photos.metadata.recovery.partial" = "部分照片未能更新。请重新选择这些照片后继续编辑。";
+"photos.metadata.partial" = "部分照片未能更新。请重试以完成剩余照片。";
+"photos.metadata.tagPartial" = "标签已创建，但未能添加到所有所选照片。请重试以添加到剩余照片。";
+"mobile.photos.edit.title" = "编辑照片";
+"mobile.photos.edit.save" = "保存";
+"mobile.photos.edit.noTagsTitle" = "暂无标签";
+"mobile.photos.edit.detailsUnavailable" = "资料暂时不可用";
+"mobile.photos.edit.loading" = "正在读取照片资料";
+"mobile.photos.edit.loadFailed" = "无法读取照片资料。请恢复连接后重试。";
+"mobile.photos.edit.descriptionHint" = "此描述会替换所有所选照片的描述，留空会清除原描述。";
+"mobile.photos.edit.noTags" = "目前没有可选标签。请关闭此表单，先创建标签。";
 "mobile.photos.album.removeHint" = "从当前相册移除这些照片？原件和其他相册中的照片仍会保留。";
 "mobile.photos.album.choose" = "选择相册";
 "mobile.photos.album.empty" = "暂无可加入的相册。请先创建相册，再添加照片。";

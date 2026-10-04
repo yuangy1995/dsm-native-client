@@ -1002,3 +1002,24 @@ git diff --check
 最终移动构建 `m3b6-mobile-build5.log` **通过**。第二轮沿用上述 `test-without-building` 命令，去掉全部单元及已通过的读取/重启/条件相册项，仅选择 `test冻结相册普通恢复与不支持规则展示`、`test冻结相册重建确认取消后再提交`、`test冻结相册中文重建保留旧册显示部分结果`；结果 `m3b6-iphone2.xcresult` / `m3b6-ipad2.xcresult`，两端各 **3/3 通过（106.609 / 112.129 秒）**。四项新增 UI 均具备两端通过记录，不以 iPhone 代替 iPad。导出并检查了 iPhone 浅色普通恢复、中文规则与部分结果，以及 iPad 深色系统警告框、明确取消/替换和空相册/部分结果。iPad 测后恢复浅色；真实 NAS、VoiceOver、大字号、键盘和真机锁屏保护按主计划待用户验证。
 
 Mac 首次完整构建及三次资源收尾增量构建均通过，最终 `m3b6-macos-build4.log`；`lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash` 为 **x86_64 arm64**。最初按中文显示名定位产物未找到文件，改为实际 `LanStash.app` 路径后核实；没有安装、启动或发布。末轮 `swift test --package-path apple --jobs 2 --filter AppLanguageTests` **6 项 Swift Testing 通过（0.043 秒）**。锁定 XcodeGen 2.46.0 重复生成工程，前后 SHA-256 同为 `f6165f999a62215c2b3927119377933e958fb79123ab1a0fa7943098ef20daad`；本切片没有新增工程文件。最终本地化、fixture、严格文档及差异检查通过，源码之外的临时日志、截图及结果包均未提交。
+
+
+## 2026-10-04 移动 M3c 资料日期与标签
+
+本切片使用合成照片完成多选及单张预览的评分、描述、拍摄日期、时间偏移和标签管理。复用照片管理恢复文件，版本 7 只保存编号、身份/目标摘要和提交阶段，兼容旧 1–6；日期偏移重启只读，新标签应用失败只补添加。未写真实 NAS。独立集成及只读对抗复核覆盖原快照/提供者身份、来源权限、同编号意图、未知回执、首次/中途保存失败、损坏阶段、取消/账号替换和摘要隐私；发现标签提交阶段未保存会留下永久未知，修正为明确未执行并补回归。恢复部分结果禁止从摘要构造重试写入，须重新选取真实照片。
+
+初轮 `swift test --package-path apple --filter SynologyPhotosRepositoryTests` 因两个可抛出的短路表达式缺少外层 `try` 编译失败；修正后既有 **537 项通过（2.005 秒）**（`m3c-network2.log`）。新增五项用例后 `--jobs 4 --filter SynologyPhotosRepositoryTests` 首轮 **542 项中 1 失败**，原因是新双来源测试默认未授予共享读取权限；合成访问改为明确共享入口权限，产品检查不变。`--jobs 2 --filter SynologyPhotosRepositoryTests` 复跑 **542/542 通过（1.818 秒）**（`m3c-network4.log`）。随后增加标签提交记录保存失败及相册贡献者恢复两项回归，结果并入本轮完整共享测试。
+
+锁定 XcodeGen 2.46.0 生成移动工程。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 首轮合成服务初始化闭包访问 actor 属性失败，改为捕获本地标签快照；第二轮及最终第三轮构建通过（`m3c-mobile-build2.log` / `m3c-mobile-build3.log`）。本地化初检拒绝动态资源键拼接，改为完整枚举引用；复验 **Apple 5847 / Android 2188 / Windows 3402**、fixture **29 组 / 48 引用**、严格文档均通过。未更改工具链或删除断言。
+
+两端执行 `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=…' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath … -only-testing:DsmMobileTests`，追加 `DsmMobileUITests/MobileWorkspaceUITests` 的六项 `test照片资料…` 与既有 `test冻结相册普通恢复与不支持规则展示`。iPhone ID 如上，iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`；iPad 使用深色，结果 `m3c-iphone1.xcresult` / `m3c-ipad1.xcresult`。完整共享及 Mac 回归、两端最终结果继续下记，不将进行中作为通过。
+
+完整 `swift test --package-path apple --jobs 2` **2464 项、172 项既有条件跳过、0 失败（45.839 秒）**；其中网络 **544/544（2.979 秒）**，另 **12 项 Swift Testing（0.111 秒）**，`m3c-shared1.log`。Mac 命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 完整及资源增量两轮通过（`m3c-macos-build1.log` / `m3c-macos-build2.log`）；实际主程序 `lipo -archs` 为 **x86_64 arm64**，未安装、启动或发布。
+
+首轮两端各运行 **794 项单元，2 项新用例共 4 个断言失败**（14.634 / 14.768 秒）。合成相册中共享照片的所有者编号错误写成当前用户，被既有来源检查拒绝；修正为共享来源编号 0，并加强来源/照片数量断言。另一用例重复调用“全选”导致再次打开表单前取消了选择，修正测试准备，保留所有编辑资格断言。其他单元通过。首轮全部 **7/7 实际 UI 在两端通过（294.664 / 355.980 秒）**，包括六项新增编辑流程和一项冻结相册回归。
+
+截图复核发现 iPhone 英文标题被“Save Changes”挤短，改为独立简短“Save / 保存”；时间数量保留常驻标签，加载/错误/标签空内容改为完整弹窗状态，新增 3 个资源。预览测试滚动到标签后再断言实际可见，未移除内容断言。第四、第五及最终第六轮移动构建均通过（`m3c-mobile-build6.log`）；第二轮重跑完整单元和四项受影响 UI（描述/日期、中文偏移/标签、预览评分、加载/失败/空内容），结果包 `m3c-iphone2.xcresult` / `m3c-ipad2.xcresult`。首轮导出截图前结果包尚未封口，导出失败；等待命令结束后正常导出，不将导出失败算产品错误。最终本地化扫描 **5850 / 2188 / 3402** 通过，`swift test --package-path apple --jobs 2 --filter AppLanguageTests` **6 项通过（0.038 秒）**。XcodeGen 2.46.0 重复生成 SHA-256 均为 `86780c576e51809068814fdb26587b6283ea2cccafbe5e58a69a7fe9c7bc3e82`。
+
+第二轮两端各 **794/794 单元通过（13.653 / 13.492 秒）**；四项受影响的实际 UI 两端各 **4/4 通过（172.988 / 195.009 秒）**。未再执行已通过且不受布局调整影响的未知重启、标签部分失败继续及冻结回归。每个新增编辑 UI 均有 iPhone 和 iPad 独立通过证据。合成服务未提供可打开的预览媒体，本轮仅证明预览中的编辑、错误降级和资料展示，不能代替真实媒体兼容性验收。真实 NAS、设备锁屏保护、时区/夏令时与辅助功能按主计划保留明确用户步骤；未自动修改 NAS 真实资料。
+
+最终分别导出并检查 iPhone 浅色英文完整标题、标签空状态及滚动后的资料/标签，以及 iPad 深色中文时间偏移与完整空状态；状态文案及按钮可读，iPad 测后恢复浅色。最终本地化、fixture、严格文档和差异检查均通过，临时日志、结果包和合成截图不进入提交。

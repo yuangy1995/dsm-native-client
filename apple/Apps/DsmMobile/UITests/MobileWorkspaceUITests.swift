@@ -3,6 +3,97 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test照片资料批量描述保存与日期表单() {
+        let app = launchFixture(state: "photo-edit"); defer { app.terminate() }
+        openPhotos(app); openPhotoEditForm("description", app: app)
+        let text = app.textViews["mobile.photos.edit.text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 5)); text.tap(); text.typeText("Trip description")
+        attachScreenshot(app, name: "Photo description batch editing")
+        app.buttons["mobile.photos.edit.submit"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.edit.date", in: app).tap()
+        XCTAssertTrue(element("mobile.photos.edit.dateValue", in: app).waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Photo date editor")
+        app.buttons["mobile.photos.edit.submit"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+    }
+
+    func test照片资料预览可评分并显示标签() {
+        let app = launchFixture(state: "photo-edit"); defer { app.terminate() }
+        openPhotos(app); XCTAssertTrue(app.buttons["Sample 1.jpg"].waitForExistence(timeout: 8)); app.buttons["Sample 1.jpg"].tap()
+        XCTAssertTrue(element("mobile.photos.edit.preview", in: app).waitForExistence(timeout: 5)); element("mobile.photos.edit.preview", in: app).tap()
+        element("mobile.photos.edit.rating", in: app).tap()
+        let stars = app.buttons["4 stars"]
+        XCTAssertTrue(stars.waitForExistence(timeout: 5)); stars.tap()
+        app.buttons["mobile.photos.edit.submit"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        app.buttons["Details"].tap()
+        XCTAssertTrue(app.staticTexts["4 stars"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Sample tag"].exists)
+        app.scrollViews.containing(.staticText, identifier: "Sample tag").firstMatch.swipeUp()
+        XCTAssertTrue(app.staticTexts["Sample tag"].isHittable)
+        attachScreenshot(app, name: "Photo preview edited rating and tags")
+    }
+
+    func test照片资料中文时间偏移与标签移除() {
+        let app = launchFixture(state: "photo-edit", language: "zh-Hans"); defer { app.terminate() }
+        openPhotos(app, chinese: true); openPhotoEditForm("shiftDates", app: app)
+        XCTAssertTrue(element("mobile.photos.edit.direction", in: app).waitForExistence(timeout: 5))
+        let amount = app.textFields["mobile.photos.edit.amount"]
+        amount.tap(); amount.typeText(XCUIKeyboardKey.delete.rawValue + "2")
+        attachScreenshot(app, name: "照片批量时间偏移")
+        app.buttons["mobile.photos.edit.submit"].tap()
+        XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.edit.tagsRemove", in: app).tap()
+        let tag = app.switches["mobile.photos.edit.tag.8"]
+        XCTAssertTrue(tag.waitForExistence(timeout: 5)); tag.tap()
+        attachScreenshot(app, name: "照片标签移除")
+        app.buttons["mobile.photos.edit.submit"].tap()
+        XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
+    }
+
+    func test照片资料标签创建后可只继续剩余添加() {
+        let app = launchFixture(state: "photo-edit-tag-partial"); defer { app.terminate() }
+        openPhotos(app); openPhotoEditForm("tagsCreate", app: app)
+        let name = app.textFields["mobile.photos.edit.text"]; XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Trip tag")
+        app.buttons["mobile.photos.edit.submit"].tap()
+        let retry = element("mobile.photos.album.continue", in: app)
+        XCTAssertTrue(retry.waitForExistence(timeout: 8)); attachScreenshot(app, name: "Created tag with remaining photos")
+        retry.tap(); XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        XCTAssertFalse(element("mobile.photos.album.continue", in: app).exists)
+    }
+
+    func test照片资料标签读取等待失败与空内容() {
+        for state in ["photo-edit-tags-loading", "photo-edit-tags-error", "photo-edit-tags-empty"] {
+            let app = launchFixture(state: state)
+            openPhotos(app); openPhotoEditForm("tagsAdd", app: app)
+            XCTAssertFalse(app.buttons["mobile.photos.edit.submit"].isEnabled)
+            if state.hasSuffix("loading") { XCTAssertTrue(element("mobile.photos.edit.loading", in: app).waitForExistence(timeout: 5)) }
+            else if state.hasSuffix("error") { XCTAssertTrue(app.staticTexts["Photo details could not be loaded. Reconnect and try again."].waitForExistence(timeout: 5)) }
+            else { XCTAssertTrue(app.staticTexts["There are no tags to choose from. Close this form and create a tag first."].waitForExistence(timeout: 5)) }
+            attachScreenshot(app, name: state); app.buttons["Cancel"].tap(); app.terminate()
+        }
+    }
+
+    func test照片资料未知重启保留记录并限制再次编辑() {
+        let app = launchFixture(state: "photo-edit-unknown"); defer { app.terminate() }
+        openPhotos(app); openPhotoEditForm("shiftDates", app: app)
+        app.buttons["mobile.photos.edit.submit"].tap()
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap()
+        XCTAssertFalse(element("mobile.photos.edit.createEmptyTag", in: app).isEnabled)
+    }
+
+    private func openPhotoEditForm(_ action: String, app: XCUIApplication) {
+        let selection = element("mobile.photos.selection.begin", in: app)
+        XCTAssertTrue(selection.waitForExistence(timeout: 8)); selection.tap()
+        element("mobile.photos.selection.loaded", in: app).tap()
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.edit.\(action)", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.edit.submit"].waitForExistence(timeout: 5))
+    }
+
     func test冻结相册普通恢复与不支持规则展示() {
         let app = launchFixture(state: "photo-frozen-no-condition")
         defer { app.terminate() }

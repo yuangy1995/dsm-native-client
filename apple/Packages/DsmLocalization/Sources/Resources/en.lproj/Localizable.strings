@@ -6031,6 +6031,17 @@
 "photos.album.recovery.saveFailed" = "The result could not be saved on this device. Check available storage and refresh the status.";
 "photos.album.recovery.readFailed" = "Previous unfinished changes could not be restored. Reconnect with the original account and try again.";
 "photos.album.recovery.pending" = "Your previous changes are not finished. Reconnect and refresh the status to continue.";
+"photos.metadata.recovery.partial" = "Some photos were not updated. Select those photos again to continue editing.";
+"photos.metadata.partial" = "Some photos were not updated. Try again to finish the remaining photos.";
+"photos.metadata.tagPartial" = "The tag was created, but it was not added to every selected photo. Try again to add it to the remaining photos.";
+"mobile.photos.edit.title" = "Edit photo";
+"mobile.photos.edit.save" = "Save";
+"mobile.photos.edit.noTagsTitle" = "No tags";
+"mobile.photos.edit.detailsUnavailable" = "Details unavailable";
+"mobile.photos.edit.loading" = "Loading photo details";
+"mobile.photos.edit.loadFailed" = "Photo details could not be loaded. Reconnect and try again.";
+"mobile.photos.edit.descriptionHint" = "This description will replace the descriptions of all selected photos. Leave it empty to clear them.";
+"mobile.photos.edit.noTags" = "There are no tags to choose from. Close this form and create a tag first.";
 "mobile.photos.album.removeHint" = "Remove these photos from this album? The originals and other albums will stay unchanged.";
 "mobile.photos.album.choose" = "Choose an Album";
 "mobile.photos.album.empty" = "No albums are available. Create an album first, then add photos.";

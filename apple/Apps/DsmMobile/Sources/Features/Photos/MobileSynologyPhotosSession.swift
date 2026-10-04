@@ -18,6 +18,7 @@ final class MobileSynologyPhotosSession {
     private(set) var model = SynologyPhotosModel()
     private(set) var uploads: MobilePhotoUploadImportModel?
     private(set) var albums: MobilePhotoAlbumModel?
+    private(set) var editor: MobilePhotoEditModel?
     private(set) var sharing: MobilePhotoSharingModel?
     private(set) var temporarySharing: MobilePhotoTemporarySharingModel?
     private(set) var conditions: MobilePhotoConditionModel?
@@ -49,6 +50,7 @@ final class MobileSynologyPhotosSession {
         model.configureAlbumRecovery(albumRecoveryStore)
         uploads = uploadStorage.map { MobilePhotoUploadImportModel(model: model, storage: $0) }
         albums = repository == nil ? nil : MobilePhotoAlbumModel(model: model)
+        editor = repository == nil ? nil : MobilePhotoEditModel(model: model)
         sharing = repository == nil ? nil : MobilePhotoSharingModel(model: model)
         temporarySharing = sharing.map { MobilePhotoTemporarySharingModel(model: model, sharing: $0) }
         conditions = repository == nil ? nil : MobilePhotoConditionModel(model: model)
@@ -69,6 +71,7 @@ final class MobileSynologyPhotosSession {
     func deactivate() {
         uploads?.cancel()
         albums?.cancel()
+        editor?.cancel()
         sharing?.cancel()
         temporarySharing?.clear()
         requests?.cancel()
