@@ -3,6 +3,68 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test冻结相册普通恢复与不支持规则展示() {
+        let app = launchFixture(state: "photo-frozen-no-condition")
+        defer { app.terminate() }
+        openFrozenForm(app)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "People, Recently added")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(element("mobile.photos.frozen.action", in: app).exists)
+        XCTAssertFalse(app.textFields["mobile.photos.condition.name"].exists)
+        attachScreenshot(app, name: "Frozen album regular restoration")
+        app.buttons["mobile.photos.condition.save"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap(); XCTAssertFalse(element("mobile.photos.frozen.restore", in: app).exists)
+    }
+    func test冻结相册重建确认取消后再提交() {
+        let app = launchFixture(state: "photo-frozen")
+        defer { app.terminate() }
+        openFrozenForm(app)
+        element("mobile.photos.frozen.action", in: app).tap(); app.buttons["Conditional album"].tap()
+        XCTAssertTrue(app.textFields["mobile.photos.condition.name"].waitForExistence(timeout: 5))
+        app.buttons["mobile.photos.condition.save"].tap()
+        XCTAssertTrue(app.staticTexts["Replace the frozen album?"].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Frozen album replacement confirmation")
+        app.alerts.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["mobile.photos.condition.save"].waitForExistence(timeout: 5))
+        app.buttons["mobile.photos.condition.save"].tap(); app.alerts.buttons["Replace album"].tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+    }
+    func test冻结相册中文重建保留旧册显示部分结果() {
+        let app = launchFixture(state: "photo-frozen-partial", language: "zh-Hans")
+        defer { app.terminate() }
+        openFrozenForm(app, chinese: true)
+        element("mobile.photos.frozen.action", in: app).tap(); app.buttons["条件相册"].tap()
+        attachScreenshot(app, name: "冻结相册中文重建规则")
+        app.buttons["mobile.photos.condition.save"].tap(); app.alerts.buttons["替换相册"].tap()
+        XCTAssertTrue(app.staticTexts["新相册已创建，但旧相册未能移除。请检查两册内容，再手动移除旧相册。"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["此相册暂无可显示的照片，请刷新后重试。"].exists)
+        XCTAssertFalse(app.staticTexts["暂时没有相册。请在 Synology Photos 中创建相册，然后刷新。"].exists)
+        attachScreenshot(app, name: "冻结相册保留两册结果")
+    }
+    func test冻结相册读取等待失败与未知重启() {
+        for state in ["photo-frozen-loading", "photo-frozen-error", "photo-frozen-unknown"] {
+            let app = launchFixture(state: state)
+            openFrozenForm(app)
+            if state.hasSuffix("unknown") {
+                app.buttons["mobile.photos.condition.save"].tap()
+                XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+                app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+                XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+            } else {
+                XCTAssertFalse(app.buttons["mobile.photos.condition.save"].isEnabled)
+                if state.hasSuffix("error") { XCTAssertTrue(app.buttons["Try again"].waitForExistence(timeout: 5)) }
+                attachScreenshot(app, name: state); app.buttons["Cancel"].tap()
+            }
+            app.terminate()
+        }
+    }
+    private func openFrozenForm(_ app: XCUIApplication, chinese: Bool = false) {
+        openPhotos(app, chinese: chinese); openPhotoSection(chinese ? "相册" : "Albums", app: app)
+        XCTAssertTrue(app.buttons["Sample frozen album"].waitForExistence(timeout: 8)); app.buttons["Sample frozen album"].tap()
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.frozen.restore", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.condition.save"].waitForExistence(timeout: 5))
+    }
+
     func test条件相册创建添加关键词预览并保存() {
         let app = launchFixture(state: "photo-condition")
         defer { app.terminate() }

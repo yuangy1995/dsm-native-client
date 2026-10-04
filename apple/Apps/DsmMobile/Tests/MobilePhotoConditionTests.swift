@@ -206,4 +206,95 @@ final class MobilePhotoConditionTests: XCTestCase {
         XCTAssertTrue(editor.submit()); try await wait { !session.model.isManaging }
         commands = await service.commands; XCTAssertTrue(commands.isEmpty); XCTAssertNotNil(session.model.albumRecoveryError)
     }
+    private func restore(_ session: MobileSynologyPhotosSession) async throws -> MobilePhotoConditionModel {
+        await session.model.selectSection(.albums); await session.model.open(try XCTUnwrap(session.model.collections.first))
+        let editor = try XCTUnwrap(session.conditions); editor.begin(restoring: true)
+        try await wait { !editor.isLoading }; return editor
+    }
+    func test冻结恢复普通相册不依赖条件功能或个人目录() async throws {
+        for state in ["photo-frozen-nohome", "photo-frozen-no-condition"] {
+            let (root, storage, service, session) = try await fixture(state)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let editor = try await restore(session)
+            XCTAssertFalse(editor.canRebuild); XCTAssertNotNil(editor.frozen)
+            XCTAssertTrue(editor.submit()); XCTAssertFalse(editor.submit()); try await wait { !session.model.isManaging }
+            XCTAssertEqual(session.model.selectedAlbum?.id, 21); XCTAssertEqual(session.model.selectedAlbum?.isFrozen, false)
+            let commands = await service.commands; XCTAssertEqual(commands.count, 1)
+            guard case .unfreezeAlbum = commands[0] else { return XCTFail("应恢复普通相册") }
+            XCTAssertNil(try store(storage).load())
+        }
+    }
+    func test冻结重建必须确认并使用读取后的支持规则() async throws {
+        let (root, _, service, session) = try await fixture("photo-frozen")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let editor = try await restore(session), original = try XCTUnwrap(editor.frozen)
+        XCTAssertTrue(editor.canRebuild); XCTAssertEqual(editor.name, original.album.name)
+        editor.rebuild = true; XCTAssertFalse(editor.submit()); XCTAssertNotNil(editor.draft)
+        editor.name = "Rebuilt"; editor.search = "Extra"; editor.addKeyword()
+        XCTAssertNil(editor.condition.fields["people"])
+        XCTAssertTrue(editor.submit(confirmedRebuild: true)); try await wait { !session.model.isManaging }
+        let commands = await service.commands; XCTAssertEqual(commands.count, 1)
+        guard case .rebuildFrozenAlbum(let before, let name, let condition) = commands[0] else { return XCTFail("应重建") }
+        XCTAssertEqual(before, original); XCTAssertEqual(name, "Rebuilt"); XCTAssertEqual(condition.values("keyword"), [.string("Sample rule"), .string("Extra")])
+        XCTAssertEqual(session.model.selectedAlbum?.isConditional, true); XCTAssertNotEqual(session.model.selectedAlbum?.id, 21)
+    }
+    func test冻结重建部分完成保留旧册并移除已完成恢复记录() async throws {
+        let (root, storage, service, session) = try await fixture("photo-frozen-partial")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let editor = try await restore(session); editor.rebuild = true
+        XCTAssertTrue(editor.submit(confirmedRebuild: true)); try await wait { !session.model.isManaging }
+        let albums = try await service.albums(offset: 0, limit: 100)
+        XCTAssertEqual(albums.count, 2); XCTAssertEqual(session.model.selectedAlbum?.id, 21)
+        XCTAssertNil(session.model.pendingMutationID); XCTAssertNotNil(session.model.managementMessage); XCTAssertNil(try store(storage).load())
+    }
+    func test冻结等待取消丢弃旧账号迟到快照() async throws {
+        let (root, _, service, session) = try await fixture("photo-frozen-held")
+        defer { try? FileManager.default.removeItem(at: root) }
+        await session.model.selectSection(.albums); await session.model.open(try XCTUnwrap(session.model.collections.first))
+        let editor = try XCTUnwrap(session.conditions); editor.begin(restoring: true)
+        for _ in 0..<200 { if await service.isConditionHeld { break }; try await Task.sleep(for: .milliseconds(5)) }
+        session.deactivate(); await service.releaseCondition(); try await Task.sleep(for: .milliseconds(20))
+        XCTAssertNil(editor.draft); XCTAssertNil(editor.frozen); XCTAssertFalse(editor.canRebuild); XCTAssertNil(editor.mutation)
+    }
+    func test冻结读取失败保留重试权限与过期页面不提交() async throws {
+        for state in ["photo-frozen-error", "photo-frozen-readonly", "photo-frozen-contributor", "photo-frozen"] {
+            let (root, _, service, session) = try await fixture(state)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let editor = try await restore(session)
+            if state.hasSuffix("error") { XCTAssertNotNil(editor.error); XCTAssertNil(editor.mutation); editor.load(); try await wait { !editor.isLoading }; XCTAssertNotNil(editor.error) }
+            else if state == "photo-frozen" { await session.model.selectSection(.timeline); XCTAssertNil(editor.mutation); XCTAssertFalse(editor.submit()) }
+            else { XCTAssertNil(editor.draft); XCTAssertFalse(editor.canRestore()) }
+            let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+        }
+    }
+    func test冻结未知重启只读恢复且不保存原规则与名称() async throws {
+        let (root, storage, service, session) = try await fixture("photo-frozen-unknown")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let editor = try await restore(session); editor.rebuild = true
+        let condition = editor.condition, name = editor.name
+        XCTAssertTrue(editor.submit(confirmedRebuild: true)); try await wait { !session.model.isManaging }
+        let saved = try XCTUnwrap(store(storage).load()); XCTAssertEqual(saved.version, 6)
+        let data = String(decoding: try Data(contentsOf: store(storage).url), as: UTF8.self)
+        for secret in ["Sample frozen album", "Sample rule", "people", "synthetic-revision"] { XCTAssertFalse(data.contains(secret)) }
+        session.deactivate()
+        let reader = MobilePhotosUIService(profileID: service.profileID, state: "photo-frozen"), next = MobileSynologyPhotosSession()
+        await reader.seedCondition(condition, id: try XCTUnwrap(saved.createdAlbumID), name: name)
+        next.configure(reader, uploadStorage: storage, reviewDelay: { _ in }); await next.activate()
+        XCTAssertNotNil(next.model.pendingMutationID); next.model.reviewPendingMutation(); try await wait { !next.model.isManaging }
+        // 新相册存在但旧册仍在，且删除结果未知，不得据此解除保护。
+        XCTAssertNotNil(next.model.pendingMutationID); XCTAssertNotNil(try store(storage).load())
+        let commands = await reader.commands; XCTAssertTrue(commands.isEmpty)
+    }
+    func test冻结旧快照变化与写前保存失败零提交() async throws {
+        for damagedStore in [false, true] {
+            let (root, storage, service, session) = try await fixture("photo-frozen")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let editor = try await restore(session)
+            if damagedStore { try FileManager.default.createDirectory(at: store(storage).url, withIntermediateDirectories: true) }
+            else { await service.clearFrozenSnapshot() }
+            XCTAssertTrue(editor.submit()); try await wait { !session.model.isManaging }
+            let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+        }
+    }
+
 }

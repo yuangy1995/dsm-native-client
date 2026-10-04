@@ -979,3 +979,26 @@ git diff --check
 中间结果：共享网络 532 项通过（2.138 秒）。首次完整共享回归 2452 项、172 项既有条件跳过、1 项失败（35.404 秒），失败是既有文件分享提交前取消用例的“零读取”断言；提交前取消状态断言通过，未改该用例或降低断言，单项原样复验 1/1 通过（0.027 秒），完整复验 2452 项、172 项既有条件跳过、0 失败（38.506 秒）。首次/复验另 12 项 Swift Testing 分别通过（0.046 / 0.418 秒）。首次移动构建因新增测试误用 `openAlbum` 而失败，改为现有 `open` 后第二次构建通过。本地化首次动态键引用被扫描拒绝，改为十二项明确资源键后通过（Apple 5827 / Android 2188 / Windows 3402）。Fixture 29 组、私有文档引用 48 项及严格文档检查通过。两端各 774 项单元已通过（iPhone 16.027 秒、iPad 14.298 秒），包含本轮 11 项条件相册测试。首轮两端各 7/7 实际 UI 通过（306.214 / 358.939 秒），Mac 两次 Release 构建通过，`lipo -archs` 确认 x86_64 / arm64。截图复核后缩短条件表单标题、区分新建按钮、删除重复文件夹标签，并让添加/搜索/预览后关闭键盘；移除规则按钮补读出目标名称。第三次移动构建通过，第二轮各四项 UI 中创建/预览、编辑、目录均通过，中文搜索在清空关键词后失败；失败时输入已空，补显式滚动至按钮及空值断言后仍复现，第四次构建/第三轮单项 UI 继续失败，不能归因于点按位置。随后修正输入内容未变时重复回写也清空建议/取消读取的问题，来源切换及关闭仍显式清空，并新增一项在途/已返回建议保持测试；第五次构建通过；第四轮两端各 775/775 单元通过（13.110 / 13.074 秒），包含 12 项条件相册测试；中文搜索和创建预览两项 UI 均通过（iPhone 单项 41.402 / 37.394 秒，iPad 41.118 / 39.124 秒），保留找到人物并成功保存的原断言。最后双语资源为 5830 / 2188 / 3402，AppLanguageTests 6 项通过（0.041 秒）。不据此声明实机通过。
 
 收尾复验仍用上述 `test-without-building` 命令：第二轮只选条件创建、编辑、中文建议、共享目录四项，第三轮只选中文建议，第四轮选全部 `DsmMobileTests` 加中文建议与创建两项 UI，分别保存 `m3b5-{iphone,ipad}{2,3,4}.xcresult`。源码、双语资源、过期草稿隔离及最终差异再次只读复核通过；新增规则未扩展 NAS 请求或删除原件。已导出并检查 iPhone 浅色的中文规则、来源目录、完整英文标题与可见预览数，以及 iPad 深色的旧引用、读取错误、表单标题与键盘关闭状态；完整辅助功能和真实 NAS 条件匹配仍按主计划待用户验证。最终工程经锁定 XcodeGen 重复生成检查，SHA-256 为 `f6165f999a62215c2b3927119377933e958fb79123ab1a0fa7943098ef20daad`，不改最低版本、应用身份、权限或原登录格式，临时日志/截图仅保留在仓库外，未提交。
+
+
+## 2026-10-04 移动 M3b6 冻结相册恢复
+
+范围对应[移动主计划 M3b6](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m3b6-冻结相册恢复)。复用条件表单与既有冻结快照，恢复普通相册无需条件功能/个人图库；重建明确确认旧册移除、原件保留、分享不转移。版本 6 独立记录仅含摘要/编号和删除阶段，兼容读取 1–5；删除前保存失败零删除，重启只读、未尝试删除则保留两册。Mac 原非恢复调用保持，NAS 请求契约不变，Windows/Android 无代码变化。所有验证使用合成内容，无真实 NAS 写入。
+
+构建前独立集成及只读对抗复核覆盖原快照、账号权限、来源、未知回执、真实返回编号、阶段保存失败、重复点击、恢复不重放删除、原件保留与摘要隐私。新增网络用例包含普通恢复/关闭个人图库、五种重建恢复阶段、删除前保存失败及同实例后续只读、正常/明确拒绝删除、错误身份与另一快照；移动增加七项冻结行为测试及四项实际 UI。
+
+命令与已知结果（环境 Xcode 26.6、iOS/iPadOS 26.5，日志及结果在仓库外临时目录）：
+
+- `swift test --package-path apple --jobs 4 --filter SynologyPhotosRepositoryTests` **537/537 通过（1.864 秒）**，`m3b6-network1.log`。
+- `swift test --package-path apple --jobs 2` **2457 项、172 项既有条件跳过、0 失败（34.948 秒）**，另 **12 项 Swift Testing 通过（0.071 秒）**，`m3b6-shared1.log`。
+- `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 首轮测试源码使用不存在的 `XCUIElement.lastMatch`，构建失败；修正为查询匹配按钮的最后一项，不修改业务或工具链。第二轮及目标测试结果另记下文。
+- Mac 使用 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO`；结果另记下文。
+- `python3 tools/localization/check_localization.py` **通过（Apple 5837 / Android 2188 / Windows 3402）**；`python3 tools/contract-validation/validate_fixtures.py` **29 组 / 48 引用通过**；`python3 tools/codex/check_documentation.py --strict-release` 和 `git diff --check` 通过。
+
+第二轮移动构建通过（`m3b6-mobile-build2.log`）。iPhone/iPad 分别执行 `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=…' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath … -only-testing:DsmMobileTests`，并选取 `DsmMobileUITests/MobileWorkspaceUITests` 中四项 `test冻结相册…` 用例与 `test条件相册创建添加关键词预览并保存`。iPhone ID 如上，iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`；结果包 `m3b6-iphone1.xcresult` / `m3b6-ipad1.xcresult`。两端各 **782/782 单元通过（13.483 / 13.688 秒）**，包含 7 项新冻结测试。首轮界面结果及复验见下文；iPad 使用深色模式。
+
+首轮 UI：iPhone 5 项中 4 项通过、普通恢复的规则文字查询失败（总 244.702 秒）；iPad 5 项中 2 项通过，普通恢复文字查询及两项重建确认失败（275.811 秒）。导出无障碍树确认 `LabeledContent` 将标题和规则合并成单个文本，测试改为完整规则内容匹配；原规则内容断言保留。iPad 重建日志与截图确认选中了弹层下方同名工具栏按钮，取消弹层也无独立取消行，改用原生警告框及独立“替换相册”按钮，测试直接限定系统警告框。读取等待/错误/重启和既有条件相册创建在两端均通过。截图另发现已打开的空相册误用“没有相册”提示，改为当前相册无可显示照片及刷新路径，并增加中文回归断言。第三/四次移动构建通过；末轮本地化扫描发现新空内容资源与旧“可加入相册为空”键重名，改为独立 `mobile.photos.album.emptyContent`，保留旧资源用途，最终扫描 5839 / 2188 / 3402 通过。第五次构建及第二轮三项受影响 UI 结果另记下文。
+
+最终移动构建 `m3b6-mobile-build5.log` **通过**。第二轮沿用上述 `test-without-building` 命令，去掉全部单元及已通过的读取/重启/条件相册项，仅选择 `test冻结相册普通恢复与不支持规则展示`、`test冻结相册重建确认取消后再提交`、`test冻结相册中文重建保留旧册显示部分结果`；结果 `m3b6-iphone2.xcresult` / `m3b6-ipad2.xcresult`，两端各 **3/3 通过（106.609 / 112.129 秒）**。四项新增 UI 均具备两端通过记录，不以 iPhone 代替 iPad。导出并检查了 iPhone 浅色普通恢复、中文规则与部分结果，以及 iPad 深色系统警告框、明确取消/替换和空相册/部分结果。iPad 测后恢复浅色；真实 NAS、VoiceOver、大字号、键盘和真机锁屏保护按主计划待用户验证。
+
+Mac 首次完整构建及三次资源收尾增量构建均通过，最终 `m3b6-macos-build4.log`；`lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash` 为 **x86_64 arm64**。最初按中文显示名定位产物未找到文件，改为实际 `LanStash.app` 路径后核实；没有安装、启动或发布。末轮 `swift test --package-path apple --jobs 2 --filter AppLanguageTests` **6 项 Swift Testing 通过（0.043 秒）**。锁定 XcodeGen 2.46.0 重复生成工程，前后 SHA-256 同为 `f6165f999a62215c2b3927119377933e958fb79123ab1a0fa7943098ef20daad`；本切片没有新增工程文件。最终本地化、fixture、严格文档及差异检查通过，源码之外的临时日志、截图及结果包均未提交。

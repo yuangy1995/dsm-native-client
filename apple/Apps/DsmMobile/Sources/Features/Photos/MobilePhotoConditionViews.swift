@@ -6,30 +6,79 @@ struct MobilePhotoConditionForm: View {
     @Bindable var editor: MobilePhotoConditionModel
     let draft: MobilePhotoConditionModel.Draft
     @Environment(\.dismiss) private var dismiss
+    @State private var confirmingRebuild = false
     @FocusState private var focused: Field?
     private enum Field: Hashable { case name, search }
 
     var body: some View {
         NavigationStack {
             Form {
-                if editor.isLoading { ProgressView(L10n.string("mobile.photos.condition.loading")) }
+                if editor.isLoading { ProgressView(L10n.string(draft.restoring ? "mobile.photos.frozen.loading" : "mobile.photos.condition.loading")) }
                 else if let error = editor.error {
                     Text(error).foregroundStyle(.red)
                     Button(L10n.string("photos.retry")) { editor.load() }
-                } else { rules }
+                } else {
+                    if draft.restoring { restoration }
+                    if !draft.restoring || editor.rebuild { rules }
+                }
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(L10n.string("mobile.photos.condition.title"))
+            .navigationTitle(L10n.string(draft.restoring ? "photos.frozen.restore" : "mobile.photos.condition.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("photos.delete.cancel")) { editor.cancel(); dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.string(draft.editing ? "mobile.photos.album.save" : "mobile.photos.condition.create")) { if editor.submit() { dismiss() } }
+                    Button(saveTitle) {
+                        focused = nil
+                        if draft.restoring && editor.rebuild { confirmingRebuild = true }
+                        else if editor.submit() { dismiss() }
+                    }
                         .disabled(editor.mutation == nil).accessibilityIdentifier("mobile.photos.condition.save")
                 }
             }
+            .alert(L10n.string("mobile.photos.frozen.confirmTitle"), isPresented: $confirmingRebuild) {
+                Button(L10n.string("mobile.photos.frozen.replace"), role: .destructive) {
+                    if editor.submit(confirmedRebuild: true) { dismiss() }
+                }
+                Button(L10n.string("photos.delete.cancel"), role: .cancel) { }
+            } message: { Text(L10n.string("mobile.photos.frozen.confirmMessage")) }
+        }
+    }
+    private var saveTitle: String {
+        if draft.restoring { return L10n.string(editor.rebuild ? "mobile.photos.frozen.rebuild" : "mobile.photos.frozen.restore") }
+        return L10n.string(draft.editing ? "mobile.photos.album.save" : "mobile.photos.condition.create")
+    }
+    private var restoration: some View {
+        Section {
+            if let frozen = editor.frozen, !frozen.unsupportedConditions.isEmpty {
+                LabeledContent(L10n.string("photos.frozen.unsupported")) {
+                    Text(frozen.unsupportedConditions.keys.sorted().map(frozenTitle).joined(separator: L10n.string("photos.frozen.separator")))
+                }
+            }
+            if editor.canRebuild {
+                Picker(L10n.string("photos.frozen.action"), selection: $editor.rebuild) {
+                    Text(L10n.string("mobile.photos.frozen.regular")).tag(false)
+                    Text(L10n.string("mobile.photos.condition.title")).tag(true)
+                }.accessibilityIdentifier("mobile.photos.frozen.action")
+            }
+            Text(L10n.string(editor.rebuild ? "mobile.photos.frozen.confirmMessage" : "photos.frozen.ordinaryHint"))
+                .foregroundStyle(.secondary)
+        }
+    }
+    private func frozenTitle(_ key: String) -> String {
+        switch key {
+        case "recently_add": L10n.string("photos.frozen.recentlyAdded")
+        case "recently_comment": L10n.string("photos.frozen.recentlyCommented")
+        case "update_time": L10n.string("photos.frozen.updated")
+        case "people": L10n.string("photos.frozen.people")
+        case "geocoding": L10n.string("photos.frozen.location")
+        case "rating": L10n.string("photos.frozen.rating")
+        case "camera": L10n.string("photos.frozen.camera")
+        case "lens": L10n.string("photos.frozen.lens")
+        case "flash": L10n.string("photos.frozen.flash")
+        default: L10n.string("photos.frozen.other")
         }
     }
     @ViewBuilder private var rules: some View {

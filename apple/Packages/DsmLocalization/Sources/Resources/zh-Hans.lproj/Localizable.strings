@@ -6068,3 +6068,13 @@
 "mobile.photos.condition.create" = "创建";
 "mobile.photos.condition.chooseFolders" = "选择文件夹";
 "mobile.photos.condition.title" = "条件相册";
+
+"mobile.photos.frozen.restore" = "恢复";
+"mobile.photos.frozen.rebuild" = "重建";
+"mobile.photos.frozen.regular" = "普通相册";
+"mobile.photos.frozen.confirmTitle" = "替换冻结相册？";
+"mobile.photos.frozen.confirmMessage" = "将按这些规则创建新相册并移除旧相册，原始照片会保留。现有分享链接和成员设置不会转移。";
+"mobile.photos.frozen.loading" = "正在读取相册…";
+"mobile.photos.frozen.readFailed" = "无法读取此相册，请重试。";
+"mobile.photos.frozen.replace" = "替换相册";
+"mobile.photos.album.emptyContent" = "此相册暂无可显示的照片，请刷新后重试。";

@@ -16,6 +16,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case deleteTemporary(id: Int, revision: String, preservedCopyID: Int?)
         case request(Request)
         case condition(Condition)
+        case frozen(Frozen)
     }
     public let version: Int
     public let profileID: UUID
@@ -31,13 +32,14 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         switch mutation {
         case .createAlbum, .renameAlbum, .deleteAlbum, .addToAlbum, .removeFromAlbum, .setAlbumCover, .shareAlbum,
              .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum,
-             .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition: true
+             .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
         version = switch mutation {
+        case .unfreezeAlbum, .rebuildFrozenAlbum: 6
         case .createConditionAlbum, .setAlbumCondition: 5
         case .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: 4
         case .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum: 3
@@ -57,6 +59,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .copyTemporaryAlbum(let id, let name, let original): operation = .copyTemporary(id: id, name: name, revision: original.revision)
         case .deleteTemporaryAlbum(let id, let original, let copy): operation = .deleteTemporary(id: id, revision: original.revision, preservedCopyID: copy)
         case .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: operation = .request(try Request(mutation: mutation))
+        case .unfreezeAlbum, .rebuildFrozenAlbum: operation = .frozen(try Frozen(mutation: mutation, profileID: profileID, userID: userID))
         case .createConditionAlbum, .setAlbumCondition: operation = .condition(try Condition(mutation: mutation, userID: userID))
         default: throw CocoaError(.coderInvalidValue)
         }
@@ -65,7 +68,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...5).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...6).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
@@ -81,6 +84,9 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .sharing(let value):
             guard version == 2 else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
+        case .frozen(let value):
+            guard version == 6, createdAlbumID != value.albumID else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation(profileID: profileID, userID: userID)
         case .condition(let value):
             guard version == 5 else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
@@ -107,7 +113,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .deleteAlbum(let id): guard id > 0 else { throw CocoaError(.coderReadCorrupt) }
         case .addToAlbum(let id, _), .removeFromAlbum(let id, _), .setAlbumCover(let id, _):
             guard id > 0, !photos.isEmpty else { throw CocoaError(.coderReadCorrupt) }
-        case .shareAlbum, .deleteTemporaryAlbum, .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition: break
+        case .shareAlbum, .deleteTemporaryAlbum, .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest, .createConditionAlbum, .setAlbumCondition, .unfreezeAlbum, .rebuildFrozenAlbum: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
@@ -116,6 +122,11 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
     public var sharingDetails: Sharing? {
         get { if case .sharing(let value) = operation { return value }; return nil }
         set { if case .sharing = operation, let newValue { operation = .sharing(newValue) } }
+    }
+
+    public var frozenDetails: Frozen? {
+        get { if case .frozen(let value) = operation { return value }; return nil }
+        set { if case .frozen = operation, let newValue { operation = .frozen(newValue) } }
     }
 
     public var conditionDetails: Condition? {
@@ -129,6 +140,61 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 }
 
 extension SynologyPhotosAlbumCheckpoint {
+    /// 只保存恢复所需摘要；重建的删除阶段不可在恢复时重放。
+    public struct Frozen: Codable, Equatable, Sendable {
+        public let albumID: Int
+        public let nameDigest: String
+        public let itemCount: Int?
+        public let snapshotDigest: String
+        public let rebuiltCondition: Condition?
+        public var deletionAttempted = false
+        public var deletionRejected = false
+
+        public init(mutation: SynologyPhotosMutation, profileID: UUID, userID: Int) throws {
+            let original: SynologyPhotoFrozenAlbum
+            switch mutation {
+            case .unfreezeAlbum(let value): original = value; rebuiltCondition = nil
+            case .rebuildFrozenAlbum(let value, let name, let condition):
+                original = value
+                rebuiltCondition = try Condition(mutation: .createConditionAlbum(name: name, condition: condition), userID: userID)
+            default: throw CocoaError(.coderInvalidValue)
+            }
+            guard original.profileID == profileID, original.userID == userID, original.album.id > 0,
+                  original.album.isFrozen, original.album.itemCount.map({ $0 >= 0 }) ?? true else { throw CocoaError(.coderInvalidValue) }
+            albumID = original.album.id; itemCount = original.album.itemCount
+            nameDigest = Self.hash(Data(original.album.name.utf8))
+            struct Snapshot: Encodable {
+                let raw, unsupported: [String: SynologyPhotoConditionValue]
+                let sharing: String?
+                let shared, conditional: Bool
+            }
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            snapshotDigest = Self.hash(try encoder.encode(Snapshot(raw: original.rawCondition,
+                unsupported: original.unsupportedConditions, sharing: original.sharingRevision,
+                shared: original.isShared, conditional: original.album.isConditional)))
+        }
+        public func matchesOriginal(_ album: SynologyPhotoCollection) -> Bool {
+            album.id == albumID && album.itemCount == itemCount && Self.hash(Data(album.name.utf8)) == nameDigest
+        }
+        public func hasSameIntent(as mutation: SynologyPhotosMutation, profileID: UUID, userID: Int) -> Bool {
+            guard var other = try? Self(mutation: mutation, profileID: profileID, userID: userID) else { return false }
+            other.deletionAttempted = deletionAttempted; other.deletionRejected = deletionRejected
+            return other == self
+        }
+        fileprivate func reviewMutation(profileID: UUID, userID: Int) throws -> SynologyPhotosMutation {
+            let valid: (String) -> Bool = { $0.count == 64 && $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }
+            guard albumID > 0, itemCount.map({ $0 >= 0 }) ?? true, valid(nameDigest), valid(snapshotDigest),
+                  !deletionRejected || deletionAttempted, rebuiltCondition != nil || !deletionAttempted else { throw CocoaError(.coderReadCorrupt) }
+            let original = SynologyPhotoFrozenAlbum(profileID: profileID, userID: userID,
+                album: .init(id: albumID, name: nameDigest, itemCount: itemCount, isFrozen: true),
+                rawCondition: [:], unsupportedConditions: [:], rebuildCondition: nil, sharingRevision: nil, isShared: false)
+            guard let rebuiltCondition else { return .unfreezeAlbum(original) }
+            guard case .createConditionAlbum(let name, let condition) = try rebuiltCondition.reviewMutation() else { throw CocoaError(.coderReadCorrupt) }
+            return .rebuildFrozenAlbum(original, name: name, condition: condition)
+        }
+        private static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    }
+
     /// 不落盘照片筛选内容；名称与规则只保留一致性摘要，创建另需真实返回编号。
     public struct Condition: Codable, Equatable, Sendable {
         public let albumID: Int?
