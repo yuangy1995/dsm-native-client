@@ -2,6 +2,113 @@ import XCTest
 
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
+    func test照片收集创建并显示可分享链接() {
+        let app = launchFixture(state: "photo-request")
+        defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.request.create", in: app).tap()
+        let title = app.textFields["mobile.photos.request.subject"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.request.save"].isEnabled)
+        title.tap(); title.typeText("Trip photos")
+        attachScreenshot(app, name: "Photo request creation form")
+        app.buttons["mobile.photos.request.save"].tap()
+        XCTAssertTrue(element("mobile.photos.sharing.sendLink", in: app).waitForExistence(timeout: 8))
+        openPhotoRequests(app)
+        XCTAssertTrue(app.staticTexts["Trip photos"].waitForExistence(timeout: 5))
+    }
+
+    func test照片收集编辑和删除确认保留已收内容() {
+        let app = launchFixture(state: "photo-request")
+        defer { app.terminate() }
+        openPhotos(app); openPhotoRequests(app)
+        element("mobile.photos.request.actions", in: app).tap(); element("mobile.photos.request.edit", in: app).tap()
+        let title = app.textFields["mobile.photos.request.subject"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.request.save"].isEnabled)
+        title.tap(); title.typeText(" updated")
+        app.buttons["mobile.photos.request.save"].tap()
+        XCTAssertTrue(app.staticTexts["Sample request updated"].waitForExistence(timeout: 8))
+        element("mobile.photos.request.actions", in: app).tap(); element("mobile.photos.request.delete", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.request.save"].waitForExistence(timeout: 5)); app.buttons["mobile.photos.request.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts["This link will stop accepting photos and videos. Photos and videos already collected will be kept."].exists)
+        attachScreenshot(app, name: "Photo request deletion keeps collected originals")
+        app.alerts.buttons["Cancel"].tap(); app.buttons["mobile.photos.request.save"].tap()
+        app.alerts.buttons.matching(identifier: "mobile.photos.request.confirmDelete").firstMatch.tap()
+        XCTAssertFalse(app.staticTexts["Sample request updated"].waitForExistence(timeout: 3))
+    }
+
+    func test照片收集选择共享目录并显示空子目录恢复入口() {
+        let app = launchFixture(state: "photo-request-nohome")
+        defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.request.create", in: app).tap()
+        let title = app.textFields["mobile.photos.request.subject"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Shared collection")
+        XCTAssertFalse(element("mobile.photos.request.space", in: app).exists)
+        element("mobile.photos.request.folder", in: app).tap()
+        XCTAssertTrue(app.buttons["Sample folder"].waitForExistence(timeout: 5))
+        // 列表中的子目录和工具栏中的根目录同名，选取列表里的触控行。
+        app.cells.buttons["Sample folder"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["No subfolders. You can use this folder or choose a parent folder."].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Photo request shared destination")
+        element("mobile.photos.request.useFolder", in: app).tap()
+        XCTAssertTrue(app.staticTexts["/Sample folder"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["mobile.photos.request.save"].isEnabled); app.buttons["mobile.photos.request.save"].tap()
+        XCTAssertTrue(element("mobile.photos.sharing.sendLink", in: app).waitForExistence(timeout: 8))
+    }
+
+    func test照片收集中文搜索空结果可清除并取消编辑() {
+        let app = launchFixture(state: "photo-request", language: "zh-Hans")
+        defer { app.terminate() }
+        openPhotos(app, chinese: true); openPhotoRequests(app, chinese: true)
+        let search = app.textFields["mobile.photos.request.search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("missing-request")
+        XCTAssertTrue(app.staticTexts["没有找到匹配的照片收集，请换个关键词。"].waitForExistence(timeout: 5))
+        app.buttons["清除搜索"].tap(); XCTAssertTrue(app.staticTexts["Sample request"].exists)
+        element("mobile.photos.request.actions", in: app).tap(); element("mobile.photos.request.edit", in: app).tap()
+        XCTAssertTrue(app.textFields["mobile.photos.request.subject"].waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "照片收集中文编辑")
+        app.buttons["取消"].tap(); XCTAssertTrue(app.staticTexts["Sample request"].waitForExistence(timeout: 5))
+    }
+
+    func test照片收集未知重启限制重放且不显示成功链接() {
+        let app = launchFixture(state: "photo-request-unknown")
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.request.create", in: app).tap()
+        let title = app.textFields["mobile.photos.request.subject"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Pending collection")
+        app.buttons["mobile.photos.request.save"].tap()
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch()
+        defer { app.terminate() }
+        openPhotos(app)
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Your previous changes are not finished. Reconnect and refresh the status to continue."].waitForExistence(timeout: 5))
+        XCTAssertFalse(element("mobile.photos.sharing.sendLink", in: app).exists)
+        element("mobile.photos.actions", in: app).tap(); XCTAssertFalse(element("mobile.photos.request.create", in: app).isEnabled)
+    }
+
+    func test照片收集读取等待和错误允许取消或重试() {
+        for state in ["photo-request-loading", "photo-request-error"] {
+            let app = launchFixture(state: state)
+            openPhotos(app); openPhotoRequests(app)
+            element("mobile.photos.request.actions", in: app).tap(); element("mobile.photos.request.edit", in: app).tap()
+            if state.hasSuffix("loading") { XCTAssertTrue(app.staticTexts["Loading photo request…"].waitForExistence(timeout: 5)) }
+            else {
+                XCTAssertTrue(app.staticTexts["Could not load this photo request. Reconnect and try again."].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.buttons["Try again"].exists)
+            }
+            XCTAssertFalse(app.buttons["mobile.photos.request.save"].isEnabled)
+            attachScreenshot(app, name: state)
+            app.buttons["Cancel"].tap(); XCTAssertTrue(app.staticTexts["Sample request"].waitForExistence(timeout: 5))
+            app.terminate()
+        }
+    }
+
+    private func openPhotoRequests(_ app: XCUIApplication, chinese: Bool = false) {
+        openPhotoSection(chinese ? "共享" : "Sharing", app: app)
+        let scope = element("mobile.photos.sharing.scope", in: app)
+        XCTAssertTrue(scope.waitForExistence(timeout: 5)); scope.tap()
+        app.buttons[chinese ? "照片请求" : "Photo requests"].tap()
+    }
+
     func test所选照片创建临时分享并设置公开范围() {
         let app = launchFixture(state: "photo-temporary")
         defer { app.terminate() }

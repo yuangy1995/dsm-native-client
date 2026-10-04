@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// 相册恢复只保留回读需要的身份，不包含媒体、认证资料或分享链接。
@@ -13,6 +14,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case createTemporary(name: String, photos: [SynologyPhotoUploadPhoto])
         case copyTemporary(id: Int, name: String, revision: String)
         case deleteTemporary(id: Int, revision: String, preservedCopyID: Int?)
+        case request(Request)
     }
     public let version: Int
     public let profileID: UUID
@@ -27,13 +29,15 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
     public static func supports(_ mutation: SynologyPhotosMutation) -> Bool {
         switch mutation {
         case .createAlbum, .renameAlbum, .deleteAlbum, .addToAlbum, .removeFromAlbum, .setAlbumCover, .shareAlbum,
-             .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum: true
+             .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum,
+             .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
         version = switch mutation {
+        case .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: 4
         case .createTemporaryAlbum, .copyTemporaryAlbum, .deleteTemporaryAlbum: 3
         case .shareAlbum: 2
         default: 1
@@ -50,6 +54,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .createTemporaryAlbum(let name, let photos): operation = .createTemporary(name: name, photos: photos.map(SynologyPhotoUploadPhoto.init))
         case .copyTemporaryAlbum(let id, let name, let original): operation = .copyTemporary(id: id, name: name, revision: original.revision)
         case .deleteTemporaryAlbum(let id, let original, let copy): operation = .deleteTemporary(id: id, revision: original.revision, preservedCopyID: copy)
+        case .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: operation = .request(try Request(mutation: mutation))
         default: throw CocoaError(.coderInvalidValue)
         }
         _ = try reviewMutation()
@@ -57,7 +62,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...3).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...4).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
@@ -73,6 +78,9 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .sharing(let value):
             guard version == 2 else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
+        case .request(let value):
+            guard version == 4 else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation(profileID: profileID)
         case .createTemporary(let name, let photos):
             guard version == 3, !photos.isEmpty else { throw CocoaError(.coderReadCorrupt) }
             command = .createTemporaryAlbum(name: name, photos: photos.map(\.photo))
@@ -93,7 +101,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case .deleteAlbum(let id): guard id > 0 else { throw CocoaError(.coderReadCorrupt) }
         case .addToAlbum(let id, _), .removeFromAlbum(let id, _), .setAlbumCover(let id, _):
             guard id > 0, !photos.isEmpty else { throw CocoaError(.coderReadCorrupt) }
-        case .shareAlbum, .deleteTemporaryAlbum: break
+        case .shareAlbum, .deleteTemporaryAlbum, .createPhotoRequest, .updatePhotoRequest, .deletePhotoRequest: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
@@ -103,9 +111,86 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         get { if case .sharing(let value) = operation { return value }; return nil }
         set { if case .sharing = operation, let newValue { operation = .sharing(newValue) } }
     }
+
+    public var requestDetails: Request? {
+        get { if case .request(let value) = operation { return value }; return nil }
+        set { if case .request = operation, let newValue { operation = .request(newValue) } }
+    }
 }
 
 extension SynologyPhotosAlbumCheckpoint {
+    /// 收集编号同时是访问口令；恢复只保存摘要，并且不能还原成可提交的设置。
+    public struct Request: Codable, Equatable, Sendable {
+        public enum Kind: String, Codable, Sendable { case create, update, delete }
+        public let kind: Kind
+        public let space: SynologyPhotoSpace
+        public private(set) var targetDigest: String?
+        public let settingsDigest: String?
+        public let includesFolderID: Bool
+
+        public init(mutation: SynologyPhotosMutation) throws {
+            let settings: SynologyPhotoRequestSettings
+            switch mutation {
+            case .createPhotoRequest(let value): kind = .create; targetDigest = nil; settings = value
+            case .updatePhotoRequest(let original, let value):
+                guard !original.id.isEmpty else { throw CocoaError(.coderInvalidValue) }
+                kind = .update; targetDigest = Self.targetDigest(original.id); settings = value
+            case .deletePhotoRequest(let original):
+                guard !original.id.isEmpty else { throw CocoaError(.coderInvalidValue) }
+                kind = .delete; targetDigest = Self.targetDigest(original.id); settings = original.settings
+            default: throw CocoaError(.coderInvalidValue)
+            }
+            space = settings.space; includesFolderID = settings.folderID != nil
+            settingsDigest = kind == .delete ? nil : try Self.digest(settings, includesFolderID: includesFolderID)
+        }
+
+        public mutating func recordCreatedID(_ id: String) throws {
+            guard kind == .create, !id.isEmpty else { throw CocoaError(.coderInvalidValue) }
+            targetDigest = Self.targetDigest(id)
+        }
+
+        public func matchesTarget(_ id: String) -> Bool { targetDigest == Self.targetDigest(id) }
+        public func matchesSettings(_ settings: SynologyPhotoRequestSettings) throws -> Bool {
+            guard settings.space == space else { return false }
+            return settingsDigest == (try Self.digest(settings, includesFolderID: includesFolderID))
+        }
+
+        public func hasSameIntent(as mutation: SynologyPhotosMutation) -> Bool {
+            guard var other = try? Self(mutation: mutation) else { return false }
+            if kind == .create { other.targetDigest = targetDigest }
+            return self == other
+        }
+
+        fileprivate func reviewMutation(profileID: UUID) throws -> SynologyPhotosMutation {
+            let valid: (String) -> Bool = { $0.count == 64 && $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }
+            guard targetDigest.map(valid) ?? (kind == .create),
+                  kind == .delete ? settingsDigest == nil : settingsDigest.map(valid) == true else { throw CocoaError(.coderReadCorrupt) }
+            let settings = SynologyPhotoRequestSettings(space: space)
+            let original = SynologyPhotoRequest(id: targetDigest ?? "", profileID: profileID, settings: settings, isFolderValid: false)
+            switch kind {
+            case .create: return .createPhotoRequest(settings)
+            case .update: return .updatePhotoRequest(original: original, settings: settings)
+            case .delete: return .deletePhotoRequest(original)
+            }
+        }
+
+        private static func targetDigest(_ id: String) -> String { hash(Data(id.utf8)) }
+        private static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+        private static func digest(_ settings: SynologyPhotoRequestSettings, includesFolderID: Bool) throws -> String {
+            struct Fields: Encodable {
+                let subject: String, description: String, space: SynologyPhotoSpace, folderPath: String
+                let folderID: Int?, albumID: Int?, albumPassphrase: String?
+                let expiration: Int, sizeLimit: Int64
+            }
+            let value = Fields(subject: settings.subject, description: settings.description, space: settings.space,
+                folderPath: settings.folderPath, folderID: includesFolderID ? settings.folderID : nil,
+                albumID: settings.albumID, albumPassphrase: settings.albumPassphrase,
+                expiration: settings.expiration, sizeLimit: settings.sizeLimit)
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            return hash(try encoder.encode(value))
+        }
+    }
+
     /// 临时相册副本必须核对完整成员，不保存缩略图引用或分享上下文。
     public struct TemporaryMember: Codable, Sendable {
         public let profileID: UUID

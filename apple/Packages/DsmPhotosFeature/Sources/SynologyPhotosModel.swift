@@ -3261,6 +3261,9 @@ public final class SynologyPhotosModel {
         case .deletePhotoRequest(let request):
             if sharedEntries.contains(where: { $0.id == request.id }) {
                 sharedEntries.removeAll { $0.id == request.id }; collectionOffset = max(0, collectionOffset - 1)
+            } else {
+                // 重启恢复只持有收集标识摘要，刷新原范围以移除已结束的收集。
+                await refreshManagedSharingList(service: service)
             }
         case .deleteTemporaryAlbum(let id, _, _) where result.state == .confirmed:
             if section == .albums, selectedCategory == nil {
@@ -3536,15 +3539,15 @@ public final class SynologyPhotosModel {
 
     /// 保留已加载列表直到新分页完整返回；读取失败只能重读，不能再次提交分享修改。
     private func refreshManagedSharingList(service: any SynologyPhotosServing) async {
-        guard isModuleEnabled, section == .sharing, shareScope == .withOthers, selectedAlbum == nil else { return }
-        let current = generation, sort = albumListSort, count = max(pageSize, collectionOffset)
+        guard isModuleEnabled, section == .sharing, [.withOthers, .requests].contains(shareScope), selectedAlbum == nil else { return }
+        let current = generation, sort = albumListSort, scope = shareScope, count = max(pageSize, collectionOffset)
         isLoadingMore = true
         defer { if current == generation { isLoadingMore = false } }
         do {
             var entries: [SynologyPhotoSharedEntry] = []
             var more = true
             while entries.count < count && more {
-                let page = try await service.sharedEntries(.withOthers, offset: entries.count, limit: pageSize, sort: sort)
+                let page = try await service.sharedEntries(scope, offset: entries.count, limit: pageSize, sort: sort)
                 guard current == generation, !Task.isCancelled else { return }
                 let seen = Set(entries.map(\.id))
                 guard page.allSatisfy({ !seen.contains($0.id) }) else { throw CocoaError(.fileReadCorruptFile) }

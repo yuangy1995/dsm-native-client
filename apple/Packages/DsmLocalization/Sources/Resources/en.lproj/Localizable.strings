@@ -6028,9 +6028,9 @@
 "mobile.photos.upload.prepareFailed" = "The selected items could not be prepared. Check your connection and available device storage, then choose them again.";
 
 // 移动普通相册与恢复。
-"photos.album.recovery.saveFailed" = "The album result could not be saved on this device. Check available storage and refresh the status.";
-"photos.album.recovery.readFailed" = "Previous album changes could not be restored. Reconnect with the original account and try again.";
-"photos.album.recovery.pending" = "Album changes are not finished. Reconnect and refresh the status to continue.";
+"photos.album.recovery.saveFailed" = "The result could not be saved on this device. Check available storage and refresh the status.";
+"photos.album.recovery.readFailed" = "Previous unfinished changes could not be restored. Reconnect with the original account and try again.";
+"photos.album.recovery.pending" = "Your previous changes are not finished. Reconnect and refresh the status to continue.";
 "mobile.photos.album.removeHint" = "Remove these photos from this album? The originals and other albums will stay unchanged.";
 "mobile.photos.album.choose" = "Choose an Album";
 "mobile.photos.album.empty" = "No albums are available. Create an album first, then add photos.";
@@ -6055,3 +6055,9 @@
 
 "mobile.photos.temporary.preparing" = "Preparing the photo selection…";
 "mobile.photos.temporary.resume" = "Continue sharing setup";
+"mobile.photos.request.loading" = "Loading photo request…";
+"mobile.photos.request.loadFailed" = "Could not load this photo request. Reconnect and try again.";
+"mobile.photos.request.deleteHint" = "This link will stop accepting photos and videos. Photos and videos already collected will be kept.";
+"mobile.photos.request.currentAlbum" = "Current album";
+"mobile.photos.request.noSubfolders" = "No subfolders. You can use this folder or choose a parent folder.";
+"mobile.photos.request.loadingFolders" = "Loading folders…";

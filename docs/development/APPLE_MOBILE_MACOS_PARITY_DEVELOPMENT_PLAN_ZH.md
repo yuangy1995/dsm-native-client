@@ -43,7 +43,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M3 Photos 上传 | SynologyPhotosModel、SynologyPhotosView | Photos/Files 选择与队列；上传/相册加入；写 | M3a 已接系统多选、受保护副本及队列恢复；两端单元/实际 UI 通过，相册加入失败只补后一步，真实 NAS 待验 |
 | M3 批量及资料 | PhotoManagementPanel | 多选、标签/日期/资料表单；原件权限；写 | 缺编辑/批量；列表可见不代表可改/删 |
 | M3 目录及移动复制 | PhotoFolderDestinationPicker | 分步目的地选择；Folder/Move/Copy；数据写 | 缺管理；绑定对象、空间与角色，保留部分成功 |
-| M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | M3b1 普通相册及 M3b2 访问范围/成员/保护设置已接入并通过两端回归；M3b3 临时分享生命周期亦经两端回归；条件相册与照片收集继续后续切片，权限保持独立 |
+| M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | M3b1 普通相册及 M3b2 访问范围/成员/保护设置已接入并通过两端回归；M3b3 临时分享生命周期及 M3b4 照片收集也经两端回归；条件/冻结相册继续后续切片，权限保持独立 |
 | M3 人物、相似组 | SynologyPhotosModel | 触控分组列表、人物编辑；People/Similar；写 | 缺管理流程；不推断服务端未识别的人物 |
 | M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | 缺流程；支持不足只限制相关入口 |
 | M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | 包装器未转发新增能力；本人/会话绑定，历史完整分页 |
@@ -89,7 +89,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 - 实际命令：`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`；随后两端分别运行 `test-without-building`，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，关闭测试并行。结果分别为 `build/m0-m8-baseline-iphone.xcresult`、`build/m0-m8-baseline-ipad.xcresult`（忽略的本地构建目录）。
 - `python3 tools/codex/check_documentation.py` 与 `git diff --check` 通过。
 - `MobileChatPresentationTests` 包含源码文本断言；更新过时范围限制时保留安全语义并补实际行为/界面测试。
-- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；旧图库清理随 M3 完成，M2–M8 新范围尚未实现。
+- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通相册/分享/临时分享及照片收集已通过两端回归；旧图库清理随 M3 完成，其余 M3 和 M4–M8 继续实施。
 
 ## PENDING_USER_VALIDATION
 
@@ -104,6 +104,16 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+## M3b4 照片收集请求
+
+本切片以 Mac `PhotoManagementPanel.requestForm/preparedRequestSettings`、共享 `SynologyPhotoRequestSettings` 和 Repository 的 PhotoRequest 创建/更新/删除/回读为证据。iPhone/iPad 同时提供主题、说明、存放目录、可选相册、大小与有效期表单，以及保留已收照片的删除确认；触控逐层目录导航代替桌面内嵌目录列表。沿用已记录 `SYNO.Foto.PhotoRequest` 与相册/目录读取契约，安全级别为外部收集及停止收集，不修改原照片。
+
+单一修改范围是移动收集入口/表单/目录选择、共享相册恢复中的收集操作摘要、Repository 恢复及模型列表更新、合成服务与对应测试、双语资源、生成工程和相关文档。操作记录仅新收集操作写版本 4，原有 1–3 继续可读；收集 ID 就是访问口令，因此只保存目标和设置摘要，不保存链接、主题、描述、目录路径或分享口令。恢复仅分页读取，创建必须有返回 ID 的摘要，丢回执不能按同名确认。旧 App 拒绝新记录并保留原文件，回滚停用入口，不迁移原登录格式；此项属已批准 M0–M8 恢复范围。无第三方依赖、应用身份、系统权限、最低版本及 NAS 请求变化；Mac 需共享回归，Windows/Android 不改代码。
+
+已实现表单、当前列表搜索、完整分页目录选择和表单内创建相册；未触碰的大小/有效期保留精确值，读取错误/取消/账号更换不采用旧草稿。共享网络 528 项聚焦测试通过；完整共享回归在加入最后一项分页测试前为 2447 项、172 项既有条件跳过、0 失败，另 12 项 Swift Testing 通过。两端各 763 项单元、六项新收集实际 UI 与一项普通分享回归已有通过记录，Mac 双架构构建通过；收尾目录标题显示在两端分别完成单项复验。已完成单独的集成及只读对抗复核，覆盖写前保存失败、摘要秘密排除、丢回执不猜同名、跨实例/账号恢复、完整分页、共享账号、旧快照与取消迟到响应。精确命令和中间失败/修复见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m3b4-照片收集请求)。真实 NAS 不参与自动写测试；条件/冻结相册、原件资料、目录写入及其他 M3 功能不计入本切片。
+
+`PENDING_USER_VALIDATION`：iPhone/iPad 真机、已记录 DSM/Photos 版本、专用可丢弃收集目录/相册及普通、受限、仅共享来源账号。测试创建→发送链接→收集、改变说明/目标/限制、停止收集，检查已收照片保留和陌生目标不可写；再测另一客户端修改、权限撤销、断网丢回执、重启/重连。预期只读恢复、不重复创建、无回执不猜同名、完整分页后才确认原链接消失、未改动的大小/秒数不变。真实上传方体验、过期和大小限制、共享目标权限、系统分享/剪贴板、锁屏保护、VoiceOver、大字号及外接键盘仍未验证；只回传版本、角色、脱敏步骤和错误类别，不提供链接、口令、照片、路径或原始响应。
 
 ## M3b3 临时分享生命周期
 

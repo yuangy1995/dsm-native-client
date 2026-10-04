@@ -76,22 +76,8 @@ private struct MobileSynologyPhotosContent: View {
                                     Button(L10n.string("photos.retry")) { Task { await model.refresh() } }
                                 }
                             } else if model.hasLoaded && model.items.isEmpty && model.collections.isEmpty
-                                        && model.sharedEntries.isEmpty && !model.showsCategories {
-                                ContentUnavailableView {
-                                    Label(L10n.string("photos.empty.title"), systemImage: "photo.on.rectangle")
-                                } description: {
-                                    Text(L10n.string(model.isFiltering ? "photos.library.noResults" :
-                                        model.section == .sharing ? "photos.sharing.empty" :
-                                        model.section == .albums ? "photos.library.noAlbums" : "photos.library.empty"))
-                                } actions: {
-                                    Button(L10n.string("photos.library.refresh")) { Task { await model.refresh() } }
-                                    if model.isFiltering {
-                                        Button(L10n.string("photos.filters.clear")) {
-                                            model.searchText = ""
-                                            Task { await model.applyFilter(SynologyPhotoFilter()) }
-                                        }
-                                    }
-                                }
+                                        && model.visibleSharedEntries.isEmpty && !model.showsCategories {
+                                emptyContent
                             }
                             if (model.hasMore || model.hasMoreCollections) && model.errorMessage == nil {
                                 ProgressView().frame(maxWidth: .infinity).padding()
@@ -171,6 +157,10 @@ private struct MobileSynologyPhotosContent: View {
                             }
                         }
                     }
+                    if let requests = session.requests {
+                        Button(L10n.string("photos.request.create")) { requests.begin() }
+                            .disabled(!requests.canOpen()).accessibilityIdentifier("mobile.photos.request.create")
+                    }
                     if sizeClass != .regular { timelineActions }
                 } label: { Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis.circle") }
                     .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("mobile.photos.actions")
@@ -200,6 +190,9 @@ private struct MobileSynologyPhotosContent: View {
         }
         .sheet(item: sharingDraft, onDismiss: { session.sharing?.cancel() }) { draft in
             if let sharing = session.sharing { MobilePhotoSharingForm(sharing: sharing, draft: draft) }
+        }
+        .sheet(item: requestDraft, onDismiss: { session.requests?.cancel() }) { draft in
+            if let requests = session.requests { MobilePhotoRequestForm(request: requests, draft: draft) }
         }
         .sheet(item: Binding(get: { session.temporarySharing?.draft }, set: { if $0 == nil { session.temporarySharing?.clear() } }), onDismiss: { session.temporarySharing?.clear() }) { draft in
             if let temporary = session.temporarySharing { MobilePhotoTemporarySharingForm(temporary: temporary, draft: draft) }
@@ -231,6 +224,31 @@ private struct MobileSynologyPhotosContent: View {
             if phase == .background { session.deactivate() }
             else if phase == .active { Task { await session.activate() } }
         }
+    }
+
+    private var emptyContent: some View {
+        ContentUnavailableView {
+            Label(L10n.string("photos.empty.title"), systemImage: "photo.on.rectangle")
+        } description: {
+            Text(L10n.string(model.isRequestList && !model.requestSearchText.isEmpty ? "photos.request.noResults" : model.isFiltering ? "photos.library.noResults" :
+                model.section == .sharing ? "photos.sharing.empty" :
+                model.section == .albums ? "photos.library.noAlbums" : "photos.library.empty"))
+        } actions: {
+            Button(L10n.string("photos.library.refresh")) { Task { await model.refresh() } }
+            if model.isRequestList && !model.requestSearchText.isEmpty {
+                Button(L10n.string("photos.request.clearSearch")) { model.requestSearchText = "" }
+            }
+            if model.isFiltering {
+                Button(L10n.string("photos.filters.clear")) {
+                    model.searchText = ""
+                    Task { await model.applyFilter(SynologyPhotoFilter()) }
+                }
+            }
+        }
+    }
+
+    private var requestDraft: Binding<MobilePhotoRequestModel.Draft?> {
+        Binding(get: { session.requests?.draft }, set: { if $0 == nil { session.requests?.cancel() } })
     }
 
     private var sharingDraft: Binding<MobilePhotoSharingModel.Draft?> {
@@ -267,6 +285,11 @@ private struct MobileSynologyPhotosContent: View {
                 })) {
                     ForEach(SynologyPhotoShareScope.allCases, id: \.self) { Text($0.mobileTitle).tag($0) }
                 }.pickerStyle(.menu).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .accessibilityIdentifier("mobile.photos.sharing.scope")
+                if model.isRequestList {
+                    TextField(L10n.string("photos.request.search"), text: $model.requestSearchText)
+                        .textFieldStyle(.roundedBorder).accessibilityIdentifier("mobile.photos.request.search")
+                }
             } else {
                 HStack {
                     Image(systemName: "magnifyingglass").accessibilityHidden(true)
@@ -298,12 +321,22 @@ private struct MobileSynologyPhotosContent: View {
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             }.buttonStyle(.bordered)
         }
-        ForEach(model.sharedEntries) { entry in
+        ForEach(model.visibleSharedEntries) { entry in
             HStack {
                 if entry.albumID != nil {
                     Button(entry.title) { Task { await model.openSharedAlbum(entry) } }.frame(minHeight: 44)
                 } else { Text(entry.title) }
                 Spacer()
+                if model.shareScope == .requests, let requests = session.requests {
+                    Menu {
+                        Button(L10n.string("photos.request.edit")) { requests.begin(entry: entry) }
+                            .accessibilityIdentifier("mobile.photos.request.edit")
+                        Button(L10n.string("photos.request.delete"), role: .destructive) { requests.begin(entry: entry, deleting: true) }
+                            .accessibilityIdentifier("mobile.photos.request.delete")
+                    } label: { Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis.circle") }
+                        .disabled(!requests.canOpen(entry: entry)).frame(minWidth: 44, minHeight: 44)
+                        .accessibilityIdentifier("mobile.photos.request.actions")
+                }
                 if let sharing = session.sharing, model.sharingManagementTarget(for: entry) != nil {
                     Button { sharing.begin(entry: entry) } label: {
                         Label(L10n.string("photos.manage.sharing"), systemImage: "person.2.badge.gearshape")
