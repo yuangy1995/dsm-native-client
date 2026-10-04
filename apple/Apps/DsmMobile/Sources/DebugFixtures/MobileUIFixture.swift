@@ -37,7 +37,7 @@ enum MobileUIFixture {
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             if officeState.hasPrefix("chat-management-") { versions[DsmAPIName.chatPostFile] = 2 }
-            if officeState.hasPrefix("chat-direct-") { versions[DsmAPIName.chatChannelAnonymous] = 2 }
+            if officeState.hasPrefix("chat-direct-") || officeState.hasPrefix("chat-forward-") { versions[DsmAPIName.chatChannelAnonymous] = 2 }
             let fixtureCapabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: versions.map { name, version in
                 (name, ApiCapability(name: name, path: "entry.cgi", minVersion: 1, maxVersion: version,
                                      requestFormat: name.hasPrefix("SYNO.Foto.") ? .json : .form, selectedVersion: version, verified: false))
@@ -51,7 +51,11 @@ enum MobileUIFixture {
             model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
-            if officeState.hasPrefix("chat-management-") {
+            if officeState.hasPrefix("chat-forward-") {
+                let receipts = MobileChatForwardStore(root: fixtureRoot.appendingPathComponent("Chat")).entries.flatMap(\.items).compactMap(\.receipt)
+                model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
+                    transport: MobileChatForwardUITransport(state: officeState, receipts: receipts))
+            } else if officeState.hasPrefix("chat-management-") {
                 model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: MobileChatManagementUITransport(state: officeState, root: fixtureRoot))
             } else if officeState.hasPrefix("chat-timed-") {
                 model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: MobileChatTimedUITransport(state: officeState, root: fixtureRoot))

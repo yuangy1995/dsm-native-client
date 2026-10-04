@@ -72,6 +72,7 @@ final class MobileChatInteractionModel {
             && message.deliveryState == .sent && !isMutating && !recovery.failed
             && owner?.state.deletingMessageID == nil
             && owner?.management?.blocksWrites(in: message.conversationID) != true
+            && owner?.forwarding?.protects(message) != true
             && !pending.contains { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }
     }
 

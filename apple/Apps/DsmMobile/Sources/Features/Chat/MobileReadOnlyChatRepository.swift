@@ -27,7 +27,8 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             .reminder,
             .reminderManagement,
             .scheduledMessage,
-            .closeConversation
+            .closeConversation,
+            .messageForward
         ]
         var mobileFeatures = value.status == .available
             ? value.supportedFeatures.intersection(mobileScope)
@@ -287,6 +288,22 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         clientRequestID: UUID
     ) async throws {
         throw MobileReadOnlyChatRepositoryError.operationUnavailable
+    }
+
+    func forwardMessage(
+        _ original: ChatMessage, toConversationIDs: [String], clientRequestID: UUID,
+        recordProgress: @escaping @Sendable (ChatForwardReceipt) async throws -> Void
+    ) async throws -> ChatForwardReceipt {
+        try await require(.messageForward)
+        return try await base.forwardMessage(original, toConversationIDs: toConversationIDs,
+            clientRequestID: clientRequestID, recordProgress: recordProgress)
+    }
+
+    func recoverForward(
+        _ receipt: ChatForwardReceipt,
+        recordProgress: @escaping @Sendable (ChatForwardReceipt) async throws -> Void
+    ) async throws -> ChatForwardReceipt {
+        try await base.recoverForward(receipt, recordProgress: recordProgress)
     }
 
     func setReminder(

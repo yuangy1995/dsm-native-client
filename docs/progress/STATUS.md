@@ -20,7 +20,7 @@
 
 ## 系统集成与发布
 
-M4b3b1 已补共享转发回执、逐目标进度与只读恢复；M4b3b2 新联系人单聊持久恢复与账号隔离已通过两端各 1022 项单元及实际 UI、共享与 Mac 双架构验证。移动批量转发界面仍在实施，不将两个前置当作整体转发完成。当前证据及下一步见[移动 M4b3b](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3b-消息转发实施中)。
+M4b3b 已接通批量转发、已有会话/新联系人选择、逐目标结果及跨重启恢复；最终两端各 1044 项单元（各 1 条既有条件跳过）和 4 项实际 UI 零失败。真实 NAS 待用户验证，继续 M4b3c 本人批量删除及 M4 后续能力。当前证据及下一步见[移动 M4b3b](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3b-消息转发)。
 
 桌面挂载默认只读，按映射启用编辑，删除另外确认；当前平台差异、根保护、日志兼容与恢复见[桌面云盘计划](../development/NATIVE_DSM_DESKTOP_CLOUD_DRIVE_DEVELOPMENT_PLAN_ZH.md)。历史版本已有正式发布及部分用户升级/挂载反馈；未覆盖场景仍独立验收。本机临时签名测试包不含 Finder 扩展，不自动安装或启动，也不替代正式分发。
 
