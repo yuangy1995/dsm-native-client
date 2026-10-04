@@ -11,13 +11,21 @@ actor MobileChatUITransport: DsmBinaryHTTPTransport {
     private var setCount = 0
     private var createCount = 0
     private var readFailures = false
+    private var directCreated = false
+    private var directCreateCount = 0
+    private var userReads = 0
     private var searchCalls: [(String, String?, String?)] = []
 
-    init(state: String = "chat-content") { self.state = state; edited = state == "chat-edit-restored" }
+    init(state: String = "chat-content") {
+        self.state = state
+        edited = state == "chat-edit-restored"
+        directCreated = state.hasPrefix("chat-direct-restored")
+    }
 
     func setReadFailures(_ value: Bool) { readFailures = value }
     func writeCounts() -> (Int, Int) { (setCount, createCount) }
     func searches() -> [(String, String?, String?)] { searchCalls }
+    func directWrites() -> Int { directCreateCount }
 
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         let body = request.httpBody.flatMap { String(data: $0, encoding: .utf8) } ?? request.url?.query ?? ""
@@ -30,11 +38,24 @@ actor MobileChatUITransport: DsmBinaryHTTPTransport {
             try await Task.sleep(for: .milliseconds(150))
             return DsmHTTPResponse(data: Self.png, statusCode: 200, headers: ["Content-Type": "image/png"])
         case (DsmAPIName.chatUser, "list"):
-            result = ["users": [["user_id": 1, "username": "fixture", "nickname": "Sample author"],
+            userReads += 1
+            if userReads > 1, state == "chat-direct-users-error" { throw URLError(.notConnectedToInternet) }
+            if userReads > 1, state == "chat-direct-users-loading" { try await Task.sleep(for: .seconds(30)) }
+            result = ["current_user_id": 1, "users": state == "chat-direct-users-empty" ? [] : [["user_id": 1, "username": "fixture", "nickname": "Sample author"],
                                 ["user_id": 2, "username": "other", "nickname": "Sample member"]]]
         case (DsmAPIName.chatChannel, "list"):
-            result = ["channels": [["channel_id": 27, "type": "named", "name": "Sample chat", "members": [1, 2], "encrypted": false],
-                                   ["channel_id": 28, "type": "named", "name": "Another chat", "members": [1, 2], "encrypted": false]]]
+            if state == "chat-direct-unknown", directCreated { throw URLError(.networkConnectionLost) }
+            var channels: [[String: Any]] = [["channel_id": 27, "type": "named", "name": "Sample chat", "members": [1, 2], "encrypted": false],
+                                            ["channel_id": 28, "type": "named", "name": "Another chat", "members": [1, 2], "encrypted": false]]
+            if directCreated { channels.append(["channel_id": 29, "type": "anonymous", "members": [1, 2], "member_count": 2, "encrypted": false]) }
+            result = ["channels": channels]
+        case (DsmAPIName.chatChannelAnonymous, "initiate"):
+            directCreateCount += 1
+            guard field("user_ids") == #"["2"]"#, field("encrypted") == "false" else { throw URLError(.badServerResponse) }
+            if state == "chat-direct-denied" { return try response(["success": false, "error": ["code": 105]]) }
+            directCreated = true
+            if state == "chat-direct-unknown" { throw URLError(.networkConnectionLost) }
+            result = ["channel_id": 29]
         case (DsmAPIName.chatAdminSetting, "get"):
             result = ["allow_edit_message": state != "chat-readonly", "allow_edit_message_time_within_min": 0]
         case (DsmAPIName.chatPost, "search"):
@@ -50,6 +71,7 @@ actor MobileChatUITransport: DsmBinaryHTTPTransport {
             }
             result = ["search_results": Array(matches.dropFirst(offset).prefix(count)), "total": matches.count]
         case (DsmAPIName.chatPost, "list"):
+            if field("channel_id") == "29" { result = ["posts": []]; break }
             if readFailures || (state == "chat-edit-unknown" && edited) { throw URLError(.notConnectedToInternet) }
             let thread = field("thread_id") ?? "0"
             if let id = field("post_id"), field("prev_count") == "0" {

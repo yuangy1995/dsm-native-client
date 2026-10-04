@@ -794,6 +794,14 @@ public actor DsmChatRepository: ChatRepository {
         userID: String,
         clientRequestID: UUID
     ) async throws -> ChatConversationCreateOutcome {
+        try await openDirectConversationResult(userID: userID, clientRequestID: clientRequestID, willSubmit: {})
+    }
+
+    public func openDirectConversationResult(
+        userID: String,
+        clientRequestID: UUID,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
         await acquireConversationCreatePermit()
         defer { releaseConversationCreatePermit() }
         if Task.isCancelled {
@@ -871,6 +879,10 @@ public actor DsmChatRepository: ChatRepository {
             }
             throw error
         }
+        guard let currentUserID = cachedCurrentUserID, currentUserID != normalizedID else {
+            return try conversationCreateFailure(operation: "chatDirectConversationCreate", requestID: clientRequestID,
+                category: .validation, tag: "chat.direct-create.account-unavailable")
+        }
         if let existing = directConversation(in: conversations, userID: normalizedID) {
             completedDirectConversations[clientRequestID] = existing
             return try conversationCreateSuccess(
@@ -880,6 +892,11 @@ public actor DsmChatRepository: ChatRepository {
             )
         }
 
+        try Task.checkCancellation()
+        try await willSubmit()
+        if Task.isCancelled {
+            return try conversationCreateCancelledBeforeSubmission(operation: "chatDirectConversationCreate", requestID: clientRequestID)
+        }
         pendingDirectConversations[clientRequestID] = PendingDirectConversationCreate(
             requestID: clientRequestID,
             userID: normalizedID
@@ -919,6 +936,21 @@ public actor DsmChatRepository: ChatRepository {
                 tag: "chat.direct-create.submit-unknown"
             )
         }
+    }
+
+    public func recoverDirectConversation(userID: String, clientRequestID: UUID) async throws -> ChatConversationCreateOutcome {
+        await acquireConversationCreatePermit()
+        defer { releaseConversationCreatePermit() }
+        let normalizedID = userID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedID.isEmpty,
+              directConversationDrafts[clientRequestID].map({ $0 == normalizedID }) ?? true else {
+            throw invalidChatResponse()
+        }
+        directConversationDrafts[clientRequestID] = normalizedID
+        let pending = PendingDirectConversationCreate(requestID: clientRequestID, userID: normalizedID)
+        // 导入恢复身份后，同编号的普通调用也只能回读。
+        pendingDirectConversations[clientRequestID] = pending
+        return try await finishPendingDirectConversation(pending)
     }
 
     public func createGroup(_ draft: ChatGroupDraft) async throws -> ChatConversation {
@@ -1206,7 +1238,12 @@ public actor DsmChatRepository: ChatRepository {
         in conversations: [ChatConversation],
         userID: String
     ) -> ChatConversation? {
-        conversations.first { $0.kind == .direct && $0.memberIDs.contains(userID) }
+        guard let currentUserID = cachedCurrentUserID, currentUserID != userID else { return nil }
+        return conversations.first {
+            $0.kind == .direct && !$0.isEncrypted
+                && Set($0.memberIDs) == Set([currentUserID, userID])
+                && ($0.memberCount == nil || $0.memberCount == 2)
+        }
     }
 
     private func groupStageFailure(

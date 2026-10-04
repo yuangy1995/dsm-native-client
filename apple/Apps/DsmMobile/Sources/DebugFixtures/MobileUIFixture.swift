@@ -37,6 +37,7 @@ enum MobileUIFixture {
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             if officeState.hasPrefix("chat-management-") { versions[DsmAPIName.chatPostFile] = 2 }
+            if officeState.hasPrefix("chat-direct-") { versions[DsmAPIName.chatChannelAnonymous] = 2 }
             let fixtureCapabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: versions.map { name, version in
                 (name, ApiCapability(name: name, path: "entry.cgi", minVersion: 1, maxVersion: version,
                                      requestFormat: name.hasPrefix("SYNO.Foto.") ? .json : .form, selectedVersion: version, verified: false))

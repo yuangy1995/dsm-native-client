@@ -2,6 +2,63 @@ import XCTest
 
 @MainActor
 final class MobileChatUITests: XCTestCase {
+    func test新联系人打开单聊并进入会话() {
+        let app = launch(state: "chat-direct-content"); defer { app.terminate() }
+        openChat(app)
+        app.buttons["chat-create-conversation"].tap()
+        let user = app.buttons["chat-create-user-2"]
+        XCTAssertTrue(user.waitForExistence(timeout: 8))
+        screenshot(app, "Available contact in the direct chat form")
+        let search = app.searchFields["Search people"]
+        XCTAssertTrue(search.exists); search.tap(); search.typeText("missing")
+        XCTAssertTrue(app.staticTexts["No Matching People"].waitForExistence(timeout: 5))
+        screenshot(app, "Direct chat contact filter is empty")
+        app.buttons["Show All"].tap()
+        XCTAssertTrue(user.waitForExistence(timeout: 5)); user.tap()
+        let submit = app.buttons["chat-create-submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        XCTAssertTrue(submit.isEnabled); submit.tap()
+        XCTAssertTrue(app.navigationBars["Sample member"].waitForExistence(timeout: 8)
+            || app.staticTexts["Sample member"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["chat-create-submit"].waitForNonExistence(timeout: 8))
+        screenshot(app, "Created direct chat opens its conversation")
+    }
+
+    func test新联系人创建中断重启后刷新打开原单聊() {
+        let app = launch(state: "chat-direct-unknown")
+        openChat(app); app.buttons["chat-create-conversation"].tap()
+        let user = app.buttons["chat-create-user-2"]
+        XCTAssertTrue(user.waitForExistence(timeout: 8)); user.tap(); app.buttons["chat-create-submit"].tap()
+        XCTAssertTrue(app.staticTexts["Chat Is Not Available Yet"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["chat-create-submit"].isEnabled)
+        screenshot(app, "Interrupted direct chat offers refresh")
+        app.terminate()
+        app.launchEnvironment["LANSTASH_UI_STATE"] = "chat-direct-restored"
+        app.launchArguments += ["--ui-preserve-transfer-fixture"]
+        app.launch(); defer { app.terminate() }
+        openChat(app); app.buttons["chat-create-conversation"].tap()
+        XCTAssertTrue(app.staticTexts["Chat Is Not Available Yet"].waitForExistence(timeout: 8))
+        app.buttons["chat-create-submit"].tap()
+        XCTAssertTrue(app.navigationBars["Sample member"].waitForExistence(timeout: 8)
+            || app.staticTexts["Sample member"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["chat-create-submit"].waitForNonExistence(timeout: 8))
+        screenshot(app, "Restarted direct chat recovers the existing conversation")
+    }
+
+    func test中文深色大字号新建联系人空列表和加载失败() {
+        for state in ["chat-direct-users-empty", "chat-direct-users-error", "chat-direct-users-loading"] {
+            let app = launch(state: state, language: "zh-Hans", dark: true)
+            openChat(app, chinese: true); app.buttons["chat-create-conversation"].tap()
+            let title = state == "chat-direct-users-empty" ? "没有可选择的用户"
+                : (state == "chat-direct-users-error" ? "无法加载用户" : "正在加载用户…")
+            XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 8))
+            if state != "chat-direct-users-loading" { XCTAssertTrue(app.buttons["重试"].exists) }
+            XCTAssertFalse(app.buttons["chat-create-submit"].isEnabled)
+            screenshot(app, "Chinese dark contact creation \(state)")
+            app.terminate()
+        }
+    }
+
     func test聊天搜索打开原消息并发送线程回复() {
         let app = launch(); defer { app.terminate() }
         openChat(app)

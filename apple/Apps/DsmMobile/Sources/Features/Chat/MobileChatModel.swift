@@ -18,6 +18,7 @@ final class MobileChatModel {
     private(set) var polls: MobileChatPollModel?
     private let pollRecovery: MobileChatPollStore
     private let interactionRecovery: MobileChatInteractionStore
+    private let conversationCreationRecovery: MobileChatConversationCreationStore
 
     @ObservationIgnored private var repositories: [UUID: any ChatRepository] = [:]
     @ObservationIgnored private var conversationTask: Task<Void, Never>?
@@ -64,6 +65,7 @@ final class MobileChatModel {
         interactionRecoveryRoot: URL? = nil
     ) {
         self.interactionRecovery = MobileChatInteractionStore(root: interactionRecoveryRoot)
+        self.conversationCreationRecovery = MobileChatConversationCreationStore(root: interactionRecoveryRoot)
         self.pollRecovery = MobileChatPollStore(root: interactionRecoveryRoot)
         self.managementRecovery = MobileChatManagementStore(root: interactionRecoveryRoot)
         self.timedActionRecovery = MobileChatTimedActionStore(root: interactionRecoveryRoot)
@@ -96,7 +98,8 @@ final class MobileChatModel {
     }
 
     var canCreateConversation: Bool {
-        conversationCreator?.canCreateDirect == true || conversationCreator?.canCreateGroup == true
+        conversationCreator?.requiresReview == true
+            || conversationCreator?.canCreateDirect == true || conversationCreator?.canCreateGroup == true
     }
 
     var canSelectAttachment: Bool {
@@ -178,7 +181,8 @@ final class MobileChatModel {
         management?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         timedActions = MobileChatTimedActionModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: timedActionRecovery, owner: self)
         timedActions?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
-        if let creator = conversationCreators[profileID] {
+        let creationContext = context ?? profileID.uuidString
+        if let creator = conversationCreators[profileID], creator.context == creationContext {
             creator.rebind(
                 repository: mobileRepository,
                 availability: profiles[profileID]?.availability
@@ -188,7 +192,9 @@ final class MobileChatModel {
             conversationCreators[profileID] = MobileChatConversationCreator(
                 repository: mobileRepository,
                 availability: profiles[profileID]?.availability
-                    ?? ChatAvailability(status: .requiresValidation)
+                    ?? ChatAvailability(status: .requiresValidation),
+                context: creationContext,
+                recovery: conversationCreationRecovery
             )
         }
         if profiles[profileID] == nil {
@@ -394,9 +400,13 @@ final class MobileChatModel {
 
     func acceptCreatedConversation(
         _ conversation: ChatConversation,
-        sourceProfileID: UUID
+        sourceProfileID: UUID,
+        sourceCreator: MobileChatConversationCreator,
+        sourceGeneration: Int
     ) async -> Bool {
-        guard activeProfileID == sourceProfileID, !conversation.isEncrypted else { return false }
+        guard activeProfileID == sourceProfileID, !conversation.isEncrypted,
+              conversationCreator === sourceCreator,
+              sourceCreator.repositoryGeneration == sourceGeneration else { return false }
         updateActive { profile in
             profile.conversations = Self.normalizedConversations(
                 profile.conversations
@@ -411,6 +421,8 @@ final class MobileChatModel {
         guard activeProfileID == sourceProfileID else { return false }
         await selectConversation(conversation)
         return activeProfileID == sourceProfileID
+            && conversationCreator === sourceCreator
+            && sourceCreator.repositoryGeneration == sourceGeneration
             && state.selectedConversationID == conversation.id
     }
 
@@ -782,6 +794,7 @@ final class MobileChatModel {
     }
 
     func cancelAllWork() {
+        conversationCreator?.invalidate()
         management?.invalidate()
         management = nil
         timedActions?.invalidate()

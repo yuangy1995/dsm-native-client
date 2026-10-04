@@ -107,6 +107,22 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         )
     }
 
+    func openDirectConversationResult(
+        userID: String,
+        clientRequestID: UUID,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws -> ChatConversationCreateOutcome {
+        let value = await base.availability()
+        guard value.status == .available, value.supportedFeatures.contains(.directConversation) else {
+            return try unsupportedConversationCreate(operation: "chatDirectConversationCreate", clientRequestID: clientRequestID)
+        }
+        return try await base.openDirectConversationResult(userID: userID, clientRequestID: clientRequestID, willSubmit: willSubmit)
+    }
+
+    func recoverDirectConversation(userID: String, clientRequestID: UUID) async throws -> ChatConversationCreateOutcome {
+        try await base.recoverDirectConversation(userID: userID, clientRequestID: clientRequestID)
+    }
+
     func createGroupResult(
         _ draft: ChatGroupDraft
     ) async throws -> ChatConversationCreateOutcome {
