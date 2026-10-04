@@ -114,6 +114,10 @@ private struct MobileSynologyPhotosContent: View {
                 if model.selectedPhotos.count > 100 { Text(L10n.string("photos.preview.recovery.limit")).font(.caption).padding(.horizontal) }
             }
             MobilePhotoManagementStatus(model: model)
+            if model.preparedTemporaryAlbum != nil, let sharing = session.sharing {
+                Button(L10n.string("mobile.photos.temporary.resume")) { sharing.beginPrepared() }
+                    .disabled(!model.canStartManagementMutation).accessibilityIdentifier("mobile.photos.temporary.resume")
+            }
             if model.isDeleting || model.isCheckingDeletion { ProgressView().padding(8) }
             if let message = model.deletionMessage {
                 VStack {
@@ -194,8 +198,11 @@ private struct MobileSynologyPhotosContent: View {
         .sheet(item: Binding(get: { session.albums?.draft }, set: { if $0 == nil { session.albums?.cancel() } }), onDismiss: { session.albums?.cancel() }) { draft in
             if let albums = session.albums { MobilePhotoAlbumForm(albums: albums, draft: draft) }
         }
-        .sheet(item: Binding(get: { session.sharing?.draft }, set: { if $0 == nil { session.sharing?.cancel() } }), onDismiss: { session.sharing?.cancel() }) { draft in
+        .sheet(item: sharingDraft, onDismiss: { session.sharing?.cancel() }) { draft in
             if let sharing = session.sharing { MobilePhotoSharingForm(sharing: sharing, draft: draft) }
+        }
+        .sheet(item: Binding(get: { session.temporarySharing?.draft }, set: { if $0 == nil { session.temporarySharing?.clear() } }), onDismiss: { session.temporarySharing?.clear() }) { draft in
+            if let temporary = session.temporarySharing { MobilePhotoTemporarySharingForm(temporary: temporary, draft: draft) }
         }
         .sheet(isPresented: $showsMonths) {
             NavigationStack {
@@ -224,6 +231,13 @@ private struct MobileSynologyPhotosContent: View {
             if phase == .background { session.deactivate() }
             else if phase == .active { Task { await session.activate() } }
         }
+    }
+
+    private var sharingDraft: Binding<MobilePhotoSharingModel.Draft?> {
+        Binding(get: {
+            if session.temporarySharing?.draft != nil { return nil }
+            return session.sharing?.draft
+        }, set: { if $0 == nil { session.sharing?.cancel() } })
     }
 
     private var header: some View {
@@ -330,6 +344,10 @@ private struct MobileSynologyPhotosContent: View {
                 .disabled(model.isBrowsingBlocked).accessibilityIdentifier("mobile.photos.selection.loaded")
             if let albums = session.albums {
                 Menu {
+                    if let temporary = session.temporarySharing {
+                        Button(L10n.string("photos.selectionShare.title")) { temporary.begin() }
+                            .disabled(!temporary.canBegin).accessibilityIdentifier("mobile.photos.temporary.begin")
+                    }
                     ForEach([MobilePhotoAlbumModel.Action.create, .add, .remove, .cover], id: \.self) { action in
                         Button(action.title) { albums.begin(action) }
                             .disabled(!albums.allows(action)).accessibilityIdentifier("mobile.photos.selection.\(action.rawValue)")

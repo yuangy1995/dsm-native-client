@@ -43,7 +43,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M3 Photos 上传 | SynologyPhotosModel、SynologyPhotosView | Photos/Files 选择与队列；上传/相册加入；写 | M3a 已接系统多选、受保护副本及队列恢复；两端单元/实际 UI 通过，相册加入失败只补后一步，真实 NAS 待验 |
 | M3 批量及资料 | PhotoManagementPanel | 多选、标签/日期/资料表单；原件权限；写 | 缺编辑/批量；列表可见不代表可改/删 |
 | M3 目录及移动复制 | PhotoFolderDestinationPicker | 分步目的地选择；Folder/Move/Copy；数据写 | 缺管理；绑定对象、空间与角色，保留部分成功 |
-| M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | M3b1 普通相册及 M3b2 访问范围/成员/保护设置已接入并通过两端回归；条件/临时相册与照片收集继续后续切片，权限保持独立 |
+| M3 普通/条件相册与分享 | SynologyPhotosView、PhotoManagementPanel | 相册/条件/分享表单；Album/Sharing；外部可见写 | M3b1 普通相册及 M3b2 访问范围/成员/保护设置已接入并通过两端回归；M3b3 临时分享生命周期亦经两端回归；条件相册与照片收集继续后续切片，权限保持独立 |
 | M3 人物、相似组 | SynologyPhotosModel | 触控分组列表、人物编辑；People/Similar；写 | 缺管理流程；不推断服务端未识别的人物 |
 | M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | 缺流程；支持不足只限制相关入口 |
 | M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | 包装器未转发新增能力；本人/会话绑定，历史完整分页 |
@@ -104,6 +104,16 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+## M3b3 临时分享生命周期
+
+本切片对齐 Mac `PhotoSelectionSharingPanel`、`PhotoManagementPanel` 及共享 `SynologyPhotosModel.stopTemporarySharing` 的选片创建→设置访问→停止/保留普通相册流程。iPhone/iPad 均用多选菜单、原生表单和说明具体后果的停止确认；取消准备清理临时相册，保留原照片。仅复用已记录 NormalAlbum.create/copy、Album.delete 和分享契约；照片请求独立为 M3b4，条件相册及原件管理继续后续切片。
+
+单一修改范围是移动临时分享入口/表单、共享临时操作回执与流程恢复、现有相册存储适配、合成服务和测试、双语资源及工程/对应文档。临时创建/复制必须保存返回编号与完整成员依据，回执丢失不按同名确认。新增版本 3 操作记录及独立版本 1 流程记录，保存非秘密目标、阶段和必要回执；不保存链接、分享口令或密码，不迁移登录/上传/既有相册记录，回滚停用新增入口并保留记录。复制副本确认之前不停止原分享，停止确认之前不删除临时相册；阶段先保存后清除旧操作，重启显示可恢复步骤而不自动重放。此项属于已批准 M0–M8 恢复范围。
+
+安全级别为外部可见分享及删除临时相册；真实 NAS 不作自动写测试。既有所有者、对象与快照、完整成员、具体后果确认、重复提交保护及最终回读全部保留。Mac 不装配新存储，共享变化需完整回归；Windows/Android 仅记录无 NAS 请求变化的影响。两端各 751 项单元（含 12 项新临时分享用例）、五项临时分享实际 UI（含独立中文）及一项普通分享回归均通过；共享逻辑与 Mac 双架构构建通过。独立集成及只读对抗复核覆盖阶段与旧回执并存、身份/损坏记录、创建预检失败、取消中断、复制未知及完整成员核对。精确命令、阶段性失败和修复见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m3b3-临时分享生命周期)。
+
+`PENDING_USER_VALIDATION`：已记录 DSM/Photos 版本、iPhone/iPad 真机、专用可丢弃选片及所有者/受限账号。测试选片创建、设置访问、取消准备、停止并移除临时相册、停止并保留普通相册；在创建、复制和关闭步骤丢回执/重启，预期只查询原操作、原照片不变、已确认副本不重复创建；另一客户端更改成员后不误删来源。系统分享、VoiceOver、大字/键盘、锁屏文件保护与实际 NAS 结果尚未验证，仅回传版本、角色类别、脱敏步骤及错误类别，不回传照片、成员、链接或响应。
 
 ## M3b2 相册分享设置
 

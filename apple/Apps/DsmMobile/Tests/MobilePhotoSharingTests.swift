@@ -156,12 +156,12 @@ final class MobilePhotoSharingTests: XCTestCase {
     }
 
     func test分享现状与成员加载错误可以重试而只读贡献者不可编辑() async throws {
-        for state in ["photo-sharing-error", "photo-sharing-members-error", "photo-sharing-members-empty", "photo-sharing-readonly", "photo-sharing-contributor", "photo-sharing-temporary"] {
+        for state in ["photo-sharing-error", "photo-sharing-members-error", "photo-sharing-members-empty", "photo-sharing-readonly", "photo-sharing-contributor"] {
             let (root, _, service, session) = try await fixture(state)
             defer { try? FileManager.default.removeItem(at: root) }
             let sharing = try await open(session)
             if ["photo-sharing-readonly", "photo-sharing-contributor"].contains(state) { XCTAssertNil(sharing.draft) }
-            else if ["photo-sharing-error", "photo-sharing-temporary"].contains(state) { XCTAssertNotNil(sharing.error); XCTAssertNil(sharing.mutation) }
+            else if ["photo-sharing-error"].contains(state) { XCTAssertNotNil(sharing.error); XCTAssertNil(sharing.mutation) }
             else {
                 XCTAssertTrue(sharing.recipients.isEmpty)
                 XCTAssertEqual(sharing.recipientError != nil, state == "photo-sharing-members-error")

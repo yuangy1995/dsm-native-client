@@ -274,7 +274,7 @@ public final class SynologyPhotosModel {
     @ObservationIgnored private var albumRecoveryReady = true
     public var canStartManagementMutation: Bool {
         isModuleEnabled && hasLoaded && !isLoading && !isManaging && !isDeleting && !isCheckingDeletion &&
-            pendingMutationID == nil && albumRecoveryReady && albumRecoveryError == nil
+            pendingMutationID == nil && albumRecoveryReady && albumRecoveryError == nil && temporarySharingCleanup == nil
     }
     public private(set) var isOpeningUploadDestination = false
     public private(set) var uploadNavigationError: String?
@@ -302,6 +302,12 @@ public final class SynologyPhotosModel {
     public var hasTemporarySharingCleanup: Bool { temporarySharingCleanup != nil }
     @ObservationIgnored private var temporaryCreationID: UUID?
     @ObservationIgnored private var cancelledTemporaryCreation = false
+    private var temporaryRecovery: PhotoTemporarySharingRecovery?
+    @ObservationIgnored private var temporaryRecoveryIdentity: String?
+    public var preparedTemporaryAlbum: SynologyPhotoCollection? {
+        temporaryRecovery?.phase == .configure ? temporaryRecovery?.album?.collection : nil
+    }
+    public var canStartTemporarySharing: Bool { canStartManagementMutation && temporaryRecovery == nil }
 
     public private(set) var isSaving = false
     public private(set) var saveProgress: Double?
@@ -1827,6 +1833,12 @@ public final class SynologyPhotosModel {
         guard isModuleEnabled, albumRecoveryReady, albumRecoveryError == nil, !isManaging, !isDeleting, !isCheckingDeletion, pendingMutationID == nil, similarBatchQueue.isEmpty,
               canSubmit(mutation) else { return }
         let id = UUID()
+        if case .createTemporaryAlbum = mutation, let store = albumRecoveryStore {
+            guard temporaryRecovery == nil, let identity = temporaryRecoveryIdentity else { return }
+            let value = PhotoTemporarySharingRecovery(id: id, identity: identity, phase: .creating)
+            do { try store.saveTemporarySharing(value); temporaryRecovery = value }
+            catch { managementMessage = L10n.string("photos.album.recovery.saveFailed"); return }
+        }
         managementCompletion = onCompletion.map { (id, $0) }
         if case .createTemporaryAlbum = mutation { temporaryCreationID = id; cancelledTemporaryCreation = false }
         let isContinuation = retryableManagementMutation == mutation
@@ -1853,10 +1865,12 @@ public final class SynologyPhotosModel {
                 if isContinuation, result?.state == .rejected { self.retryableManagementMutation = mutation }
             } catch is CancellationError {
                 if isContinuation, self.pendingMutationID == nil { self.retryableManagementMutation = mutation }
+                self.clearUnsubmittedTemporaryCreation(id: id)
                 self.managementMessage = self.pendingMutationID == nil ? nil : L10n.string("photos.manage.pending")
             } catch {
                 // 新操作只有提交前错误才会抛出；提交后的未知状态由结果返回。
                 self.pendingMutationID = nil; self.pendingMutation = nil
+                self.clearUnsubmittedTemporaryCreation(id: id)
                 if isContinuation { self.retryableManagementMutation = mutation }
                 self.managementMessage = self.operationErrorMessage(error, fallback: "photos.manage.failed")
             }
@@ -1867,11 +1881,23 @@ public final class SynologyPhotosModel {
     public func cancelTemporaryAlbumCreation() {
         guard temporaryCreationID != nil else { return }
         cancelledTemporaryCreation = true
+        if var saved = temporaryRecovery, saved.phase == .creating {
+            saved.cancelled = true
+            do { try albumRecoveryStore?.saveTemporarySharing(saved); temporaryRecovery = saved }
+            catch { albumRecoveryError = L10n.string("photos.album.recovery.saveFailed") }
+        }
     }
 
     @discardableResult
     public func stopTemporarySharing(_ album: SynologyPhotoCollection, keepCopy: Bool) -> Bool {
-        guard isModuleEnabled, temporarySharingCleanup == nil, !isDeleting, !isCheckingDeletion else { return false }
+        guard isModuleEnabled, temporarySharingCleanup == nil, !isManaging, pendingMutationID == nil, !isDeleting, !isCheckingDeletion,
+              albumRecoveryReady, albumRecoveryError == nil else { return false }
+        if let store = albumRecoveryStore {
+            guard let identity = temporaryRecoveryIdentity, temporaryRecovery == nil || temporaryRecovery?.album?.id == album.id else { return false }
+            let saved = PhotoTemporarySharingRecovery(id: UUID(), identity: identity, phase: keepCopy ? .copy : .stop, album: album)
+            do { try store.saveTemporarySharing(saved); temporaryRecovery = saved }
+            catch { managementMessage = L10n.string("photos.album.recovery.saveFailed"); return false }
+        }
         temporarySharingCleanup = .init(album: album, phase: keepCopy ? .copy : .stop)
         temporarySharingCleanupNeedsRetry = false
         continueTemporarySharingCleanup()
@@ -1879,12 +1905,15 @@ public final class SynologyPhotosModel {
     }
 
     public func retryTemporarySharingCleanup() {
+        guard pendingMutationID == nil, !isManaging else { return }
         temporarySharingCleanupNeedsRetry = false
         continueTemporarySharingCleanup()
     }
 
     public func keepTemporarySharingAlbums() {
         guard temporarySharingCleanupNeedsRetry, !isManaging, pendingMutationID == nil else { return }
+        do { try clearTemporaryRecovery() }
+        catch { albumRecoveryError = L10n.string("photos.album.recovery.saveFailed"); return }
         temporarySharingCleanup = nil
         temporarySharingCleanupNeedsRetry = false
         managementMessage = L10n.string("photos.temporary.cleanupCancelled")
@@ -1915,7 +1944,13 @@ public final class SynologyPhotosModel {
                     case .copy:
                         command = .copyTemporaryAlbum(id: flow.album.id, name: flow.album.name, original: original)
                     case .stop:
-                        if original.access == .disabled { self.temporarySharingCleanup?.phase = .delete; continue }
+                        if original.access == .disabled {
+                            if var saved = self.temporaryRecovery {
+                                saved.phase = .delete
+                                try self.albumRecoveryStore?.saveTemporarySharing(saved); self.temporaryRecovery = saved
+                            }
+                            self.temporarySharingCleanup?.phase = .delete; continue
+                        }
                         command = .shareAlbum(id: flow.album.id, access: .disabled, original: original)
                     case .delete:
                         guard original.access == .disabled else { throw CocoaError(.fileReadUnknown) }
@@ -1931,6 +1966,43 @@ public final class SynologyPhotosModel {
                 self.managementMessage = operationErrorMessage(error, fallback: "photos.temporary.retryHint")
             }
         }
+    }
+
+    private func clearUnsubmittedTemporaryCreation(id: UUID) {
+        guard pendingMutationID == nil, temporaryRecovery?.phase == .creating, temporaryRecovery?.id == id else { return }
+        do { try clearTemporaryRecovery() }
+        catch { albumRecoveryError = L10n.string("photos.album.recovery.saveFailed") }
+    }
+
+    private func clearTemporaryRecovery() throws {
+        if let saved = temporaryRecovery { try albumRecoveryStore?.clearTemporarySharing(id: saved.id) }
+        temporaryRecovery = nil
+    }
+
+    /// 后续阶段先落盘再清除当前操作回执；恢复时旧回执不能使流程再次前进。
+    private func recordTemporaryResult(_ mutation: SynologyPhotosMutation, id: UUID, result: SynologyPhotosMutationResult) throws {
+        guard var saved = temporaryRecovery else { return }
+        if saved.phase == .creating, saved.id == id, case .createTemporaryAlbum = mutation {
+            if result.state == .rejected { try clearTemporaryRecovery(); return }
+            guard result.state == .confirmed, let album = result.album else { throw CocoaError(.fileReadCorruptFile) }
+            saved.album = .init(album)
+            saved.phase = saved.cancelled || cancelledTemporaryCreation ? .stop : .configure
+        } else {
+            guard result.state == .confirmed else { return }
+            switch (saved.phase, mutation) {
+            case (.copy, .copyTemporaryAlbum(let albumID, _, _)) where albumID == saved.album?.id:
+                guard let copy = result.album else { throw CocoaError(.fileReadCorruptFile) }
+                saved.preservedCopy = .init(copy); saved.phase = .stop
+            case (.stop, .shareAlbum(let albumID, .disabled, _, _, _, _)) where albumID == saved.album?.id:
+                saved.phase = .delete
+            case (.delete, .deleteTemporaryAlbum(let albumID, _, _)) where albumID == saved.album?.id:
+                try clearTemporaryRecovery(); return
+            case (.configure, .shareAlbum(let albumID, let access, _, _, _, _)) where albumID == saved.album?.id && access != .disabled:
+                try clearTemporaryRecovery(); return
+            default: return
+            }
+        }
+        try albumRecoveryStore?.saveTemporarySharing(saved); temporaryRecovery = saved
     }
 
     private func advanceTemporarySharing(_ mutation: SynologyPhotosMutation, result: SynologyPhotosMutationResult) {
@@ -1996,7 +2068,10 @@ public final class SynologyPhotosModel {
         } catch {
             // Repository 只在提交前抛错；提交后的不确定结果由 pendingReview 返回。
             if pendingUploadID == nil, SynologyPhotosAlbumCheckpoint.supports(mutation) {
-                do { try albumRecoveryStore?.clear(operationID: id) }
+                do {
+                    if temporaryRecovery?.phase == .creating, temporaryRecovery?.id == id { try clearTemporaryRecovery() }
+                    try albumRecoveryStore?.clear(operationID: id)
+                }
                 catch { albumRecoveryError = L10n.string("photos.album.recovery.saveFailed") }
             }
             pendingMutationID = nil; pendingMutation = nil
@@ -2383,7 +2458,31 @@ public final class SynologyPhotosModel {
     private func restoreAlbumMutationIfNeeded(repository: any SynologyPhotosServing) async {
         guard !albumRecoveryReady, let store = albumRecoveryStore else { return }
         do {
-            if let checkpoint = try store.load() {
+            let saved = try store.loadTemporarySharing(), checkpoint = try store.load()
+            temporaryRecoveryIdentity = try await repository.uploadRecoveryIdentity()
+            if let saved {
+                guard saved.identity == temporaryRecoveryIdentity else { throw CocoaError(.fileReadNoPermission) }
+                temporaryRecovery = saved
+                if saved.phase == .creating {
+                    if checkpoint?.operationID == saved.id {
+                        temporaryCreationID = saved.id; cancelledTemporaryCreation = saved.cancelled
+                    } else if checkpoint == nil { try clearTemporaryRecovery() }
+                    else { throw CocoaError(.fileReadNoPermission) }
+                } else if let album = saved.album?.collection {
+                    let phase: TemporarySharingCleanup.Phase? = switch saved.phase {
+                    case .copy: .copy
+                    case .stop: .stop
+                    case .delete: .delete
+                    default: nil
+                    }
+                    if let phase {
+                        temporarySharingCleanup = .init(album: album, phase: phase, preservedCopy: saved.preservedCopy?.collection)
+                        temporarySharingCleanupNeedsRetry = true
+                        managementMessage = L10n.string("photos.temporary.retryHint")
+                    }
+                }
+            }
+            if let checkpoint {
                 guard pendingMutationID == nil || pendingMutationID == checkpoint.operationID else { throw CocoaError(.fileReadNoPermission) }
                 try await repository.restoreAlbumMutation(checkpoint)
                 pendingMutationID = checkpoint.operationID
@@ -2396,6 +2495,7 @@ public final class SynologyPhotosModel {
 
     public func retryAlbumRecovery() async {
         guard isModuleEnabled, !isManaging else { return }
+        if albumRecoveryError != nil, pendingMutationID == nil { albumRecoveryReady = false }
         if !albumRecoveryReady, let repository = try? service() { await restoreAlbumMutationIfNeeded(repository: repository) }
         if pendingMutationID != nil { reviewPendingMutation() }
     }
@@ -2853,6 +2953,8 @@ public final class SynologyPhotosModel {
         guard pendingMutationID == id else { return nil }
         guard isModuleEnabled, !Task.isCancelled else { managementMessage = pendingManagementMessage; return nil }
         guard result.state != .pendingReview else { managementMessage = pendingManagementMessage; return nil }
+        do { try recordTemporaryResult(mutation, id: id, result: result) }
+        catch { albumRecoveryError = L10n.string("photos.album.recovery.saveFailed"); return nil }
         if pendingUploadID == nil, SynologyPhotosAlbumCheckpoint.supports(mutation) {
             do { try albumRecoveryStore?.clear(operationID: id); albumRecoveryError = nil }
             catch {
