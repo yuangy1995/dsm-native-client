@@ -3102,7 +3102,7 @@
 "mobile.chat.messages.empty.message" = "此会话中暂无可阅读的消息。";
 "mobile.chat.load-earlier.failed" = "无法加载更早消息，请重试";
 "mobile.chat.sender.unknown" = "未知发送者";
-"mobile.chat.attachment.read-only" = "只读模式暂不支持附件预览";
+"mobile.chat.attachment.read-only" = "此附件暂不支持预览，可在 Synology Chat 中打开。";
 "mobile.chat.composer.label" = "消息";
 "mobile.chat.send.placeholder" = "输入消息";
 "mobile.chat.send.hint" = "将此消息发送到当前选中的会话。";
@@ -6205,3 +6205,18 @@
 "mobile.chat.schedule.cancel-message" = "取消后不会按原定时间发送这条消息：\n%@";
 "mobile.chat.schedule.pending" = "定时消息暂时未显示。请稍后刷新，并留意聊天中的消息。";
 "mobile.chat.schedule.cancel-pending" = "这条定时消息仍可能发送。请稍后刷新，并留意聊天中的消息。";
+
+"mobile.chat.management.changed" = "会话或消息已改变，请刷新后再试。";
+"mobile.chat.management.failed" = "未能保存修改，请刷新后重试。";
+"mobile.chat.close.pending" = "会话尚未关闭，请稍后刷新。";
+"mobile.chat.announcement.pending" = "公告修改尚未显示，请稍后刷新。";
+"mobile.chat.close.manage" = "管理会话";
+"mobile.chat.close.action" = "关闭会话";
+"mobile.chat.close.confirm.title" = "关闭所选会话？";
+"mobile.chat.close.confirm.message" = "以下会话将从列表移除。已有消息仍保留在 Chat 中，你可以重新打开会话。\n\n%@";
+"mobile.chat.close.done" = "已关闭";
+"mobile.chat.announcement.badge" = "公告";
+"mobile.chat.announcement.pin" = "设为公告";
+"mobile.chat.announcement.unpin" = "取消公告";
+
+"mobile.chat.close.progress" = "正在关闭会话…";

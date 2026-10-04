@@ -47,6 +47,14 @@
 证据路径：`apple/Packages/DsmNetwork/Sources/DsmChatRepository.swift`，现有
 `contracts/request-fixtures/chat/`，Windows `ChatAdvancedFlowTests/ChatAdvancedViewModelTests`。
 
+## 2026-10-04 Apple 移动公告与会话管理
+
+iPhone/iPad 的 M4b3a 接入群聊公告设置/取消及单项/批量关闭会话，仍使用上表已记录 Post v5 与 Channel v5。公告保存前重新读取可见未加密群聊及原消息，比较正文、附件、投票、线程与置顶时间；完整读取所有公告页，不丢弃附件/投票；移动层遇到异会话或受保护条目拒绝整次读取，不能把过滤后的空列表当作取消成功。关闭前比较原会话身份、种类、名称、成员和加密状态，允许关闭加密会话但不读取其消息；已不可见时零提交。完整会话列表拒绝重复身份，不能用去重掩盖坏响应。
+
+共享 Apple Repository 明确区分写前错误、DSM 明确拒绝与提交后的未知结果。置顶和关闭遇到传输/HTTP 错误后只读当前状态；后续读取失败统一保留 `partialFailure` 且不可普通重试。置顶按完整公告列表中的期望状态确认，关闭按完整会话列表的目标不存在确认；既有完成 UUID 不重放。移动独立 `Chat/management-actions-v1.json` 保存账号上下文、操作 UUID、动作和对象身份，不保存正文或凭据，写前必须落盘；重启只查询原目标，同进程旧请求仍在执行时禁止新模型提前恢复其记录。批量出现未知暂停尚未开始项，恢复不自动开启剩余项；关闭与正在发送/编辑/投票/提醒及该会话未结束操作互斥。
+
+五端影响：NAS 请求字段及响应结构不变，Apple 共享方法签名不变；macOS/iPhone/iPad 受到错误归类及重复会话身份拒绝的增量影响，需共享与 Mac 回归。Windows/Android 仅记录影响，不修改实现。以上为源码/合成与模拟器范围，未新增任何真实 NAS 写入证据。当前验证结果及真机前提见[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3a-公告置顶与会话关闭)。转发及本人多条删除继续由后续切片完成。
+
 ## 2026-10-04 Apple 移动提醒与定时实现
 
 iPhone/iPad 在 M4b2 接入提醒创建/修改/列表/取消及文字定时创建/列表/取消。NAS 请求沿用上表 Reminder/Schedule v1；提醒另需 Post v5 回读原消息。每次写入重新读取可见未加密会话，提醒绑定原消息，修改或取消使用刚确认的原时间/正文快照。重复身份或错误容器不能形成有效列表；未知取消不能被后续读取失败降为未提交。

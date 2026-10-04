@@ -50,7 +50,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M3 导出、幻灯片及浏览控制 | PhotoDownloadMenu、PhotoArchiveDownloadMenu、PhotoSlideshowView、PhotoThumbnailSizeControls | 系统多项保存/分享、原件/JPEG/完整集合 ZIP，全屏触控播放与键盘；媒体读取/本机副本 | M3h3a 已接完整目标导出、实际格式与同名保护、部分失败/取消、独立分页播放、日/月和范围选择、缩略图大小；两端单元/系统 UI、共享及 Mac 回归通过，M3h3b 旧图库已清理 |
 | M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | M4a 已接全局/当前聊天搜索、本人编辑、线程完整分页与回复，未知摘要持久恢复；两端单元/实际 UI、共享及 Mac 回归通过，真实 NAS 待验 |
 | M4 投票、提醒、定时 | ChatWorkspaceView、ChatWorkspaceModel | 原生表单；投票对象/props.vote 及提醒定时字段；写 | M4b1 投票与 M4b2 提醒/文字定时创建、管理和持久恢复均通过两端回归；未知不重发，取消须匹配原对象，过发送时间不凭消失推断取消 |
-| M4 转发、置顶、会话管理 | ChatWorkspaceModel | 目标会话选择、菜单；Post.search 数字 in 数组；写 | 有部分低风险操作；包装器截断/字段投影需复核 |
+| M4 转发、置顶、会话管理 | ChatWorkspaceModel | 目标会话选择、菜单；Post.search 数字 in 数组；写 | M4b3a 已接公告设置/取消、完整原内容/附件预览及单项/多项关闭和持久恢复；两端单元/实际 UI、共享及 Mac 回归通过；转发和多条本人消息删除继续 M4b3b/c |
 | M4 语音与录制 | ChatNativeMedia | 消息内播放暂停、首次录制申请麦克风；媒体/权限 | 缺录音；一击加载播放、取消清理临时文件 |
 | M4 实时与阅读同步 | ChatNotificationService、ChatWindowActivity | App 前台工作区连接、真实可见位置、本地提醒；生命周期 | 当前只在 Chat 页激活；本人无残留未读，旧历史不提前读新消息 |
 | M5 详情、编辑、批量 | ServiceManagementView、ServiceManagementModel | 多选、详情/编辑表单；Download Station Task；写 | 有创建/暂停继续/记录删除，缺全详情、编辑、批量及完成做种 |
@@ -91,7 +91,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 - 实际命令：`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`；随后两端分别运行 `test-without-building`，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，关闭测试并行。结果分别为 `build/m0-m8-baseline-iphone.xcresult`、`build/m0-m8-baseline-ipad.xcresult`（忽略的本地构建目录）。
 - `python3 tools/codex/check_documentation.py` 与 `git diff --check` 通过。
 - `MobileChatPresentationTests` 包含源码文本断言；更新过时范围限制时保留安全语义并补实际行为/界面测试。
-- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通/条件/冻结相册、分享与收集、资料/目录/权限/任务及照片偏好/旋转、手动预览重建/恢复、自动预览/图库维护与新格式提示、管理员设置/共享成员、人物/主题/手工人脸、M3h1 原件批量删除/持久恢复及 M3h2 相似分组/撤销与 M3h3a 批量/整集合导出、幻灯片和浏览控制已通过两端回归；M3h3b 已清理旧图库并收敛当前恢复格式，M3 源码范围收口；M4a 搜索/编辑/线程、M4b1 投票及 M4b2 提醒/定时与恢复经两端回归，继续 M4b3–M8。
+- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通/条件/冻结相册、分享与收集、资料/目录/权限/任务及照片偏好/旋转、手动预览重建/恢复、自动预览/图库维护与新格式提示、管理员设置/共享成员、人物/主题/手工人脸、M3h1 原件批量删除/持久恢复及 M3h2 相似分组/撤销与 M3h3a 批量/整集合导出、幻灯片和浏览控制已通过两端回归；M3h3b 已清理旧图库并收敛当前恢复格式，M3 源码范围收口；M4a 搜索/编辑/线程、M4b1 投票、M4b2 提醒/定时及 M4b3a 公告/关闭会话与恢复经两端回归，继续 M4b3b–M8。
 
 ## PENDING_USER_VALIDATION
 
@@ -106,6 +106,19 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+## M4b3a 公告置顶与会话关闭
+
+本切片唯一修改范围是移动 Chat 管理模型/恢复记录、消息与会话入口、公告页、对应双语资源/测试及共享 Repository 的置顶和关闭结果语义；工程只用锁定 XcodeGen 生成。Mac App、Windows、Android 不修改。后续转发、多条本人消息删除仍在 M4b3；发送/附件/创建会话的持久恢复在 M4b4。
+
+| 用户结果 | macOS 证据与移动转换 | 契约、安全与验收 |
+| --- | --- | --- |
+| 将消息设为或取消公告，查看全部公告及原内容 | `ChatWorkspaceModel.canPin/setMessagePinned/loadPinnedMessages`；两端长按消息、公告列表原消息详情和明确取消按钮 | Post v5 pin/unpin/search，普通私有写；未加密群聊、原消息/置顶时间快照、回读期望状态，保留附件/投票，不截断 100 条；两端单元/实际 UI 通过，真实 NAS 待验 |
+| 单项或多项关闭会话 | `ChatWorkspaceModel.closeConversations`；两端会话管理多选及逐项结果，不删除消息 | Channel close/list，实际能力/可见性、原会话身份、确认、防重复，未知只读取；两端单元/实际 UI 通过，真实 NAS 待验 |
+
+为重启防重复新增独立受保护 `Chat/management-actions-v1.json`，仅保存账号上下文、动作及对象 ID，不保存正文、凭据；不改变登录配置或旧开发数据格式，不增加权限与依赖。回滚关闭入口并保留原配置；已开始的记录不得直接清空后重发。沿用用户 M0–M8 必要操作授权。私有请求不新增字段，五端影响仅 Apple 共享结果错误归类；Mac 必须回归。分离的集成与只读对抗复核覆盖原消息/置顶快照、真实能力、坏列表、明确拒绝、重复点击、写前存储失败、未知与重启、跨账号迟到回调和写入互斥。已修复公告截断/丢内容、受保护条目过滤后的假消失、重复会话身份、旧请求执行期间的新模型过早恢复、iPad 关闭当前详情时管理窗口丢失、iPhone 操作栏文字截断、整行选择点击区域及关闭成功后停留加载详情的问题；管理弹窗按模型实例重建，旧账号选择和结果不带入新账号。公告使用原消息行和系统附件预览，当前可见页面单独承接预览，底层聊天不争抢弹窗。最终两端各 1003 项单元（各 1 条既有设备条件跳过）零失败，包含 26 项新增行为；五项新增实际 UI 均有两端通过证据，系统附件预览/取消和关闭后返回均完成实际操作。原提醒及搜索/线程 UI、共享 2549 项 XCTest（172 条既有条件跳过）与 12 项 Swift Testing、Mac 双架构、本地化及契约检查通过。命令和各轮失败/修复见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m4b3a-公告置顶与会话关闭)。真实 NAS 不参加自动写测试。既有 iPad 背景聊天分栏和输入区在窄宽度下仍需 M4c 调整，本切片弹窗通过不代表整个聊天布局验收完成。
+
+`PENDING_USER_VALIDATION`：iPhone/iPad 真机、已记录的 DSM/Chat 版本、专用可丢弃群聊、普通及无修改权限账号。分别将本人/其他成员的文字、图片和投票设为公告，在公告中打开原内容，再取消；超过 100 条公告仍完整，其他客户端编辑消息或重新置顶后旧页面不得覆盖新状态。单项/多项关闭会话，取消确认不得产生写入；确认后列表移除，但官方 Chat 中历史仍保留，可重新打开。写前、写回执和回读阶段断网后终止 App，重启只查询原目标，不重复写入、不自动继续未开始项；验证无权限、退出账号、切 NAS、锁屏保护、iPad 分屏/键盘及 VoiceOver。只回传版本、权限类别、脱敏操作步骤和实际表现，不提供消息、账号、地址或原始响应。未实现的转发、多条删除及 M4 后续能力不列为本切片设备待办。
 
 ## M4b2 提醒与定时消息
 

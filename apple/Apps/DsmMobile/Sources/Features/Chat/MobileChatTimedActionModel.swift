@@ -42,11 +42,13 @@ final class MobileChatTimedActionModel {
 
     func canSetReminder(_ message: ChatMessage) -> Bool {
         supports(.reminder) && !isBusy && message.encryptionState == .notEncrypted && message.deliveryState == .sent
+            && owner?.management?.blocksWrites(in: message.conversationID) != true
             && owner?.state.deletingMessageID != message.id
             && !hasPending(in: message.conversationID, targetID: message.id, reminder: true)
     }
     func canCreateSchedule(in conversation: ChatConversation) -> Bool {
         canManageSchedules && !isBusy && !conversation.isEncrypted
+            && owner?.management?.blocksWrites(in: conversation.id) != true
             && !pending.contains { $0.kind == .createSchedule && $0.conversationID == conversation.id }
     }
     func hasPending(in conversationID: String, targetID: String, reminder: Bool) -> Bool {
@@ -127,6 +129,7 @@ final class MobileChatTimedActionModel {
 
     func deleteReminder(_ original: ChatReminder, in conversationID: String) async -> Bool {
         guard canManageReminders, !isBusy, !Task.isCancelled,
+              owner?.management?.blocksWrites(in: conversationID) != true,
               !hasPending(in: conversationID, targetID: original.messageID, reminder: true) else { return false }
         isMutating = true; errorKey = nil; defer { isMutating = false }
         do {
@@ -148,6 +151,7 @@ final class MobileChatTimedActionModel {
 
     func deleteSchedule(_ original: ChatScheduledMessage) async -> Bool {
         guard canManageSchedules, !isBusy, !Task.isCancelled,
+              owner?.management?.blocksWrites(in: original.conversationID) != true,
               !hasPending(in: original.conversationID, targetID: original.id, reminder: false) else { return false }
         isMutating = true; errorKey = nil; defer { isMutating = false }
         do {

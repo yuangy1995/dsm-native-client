@@ -1311,3 +1311,43 @@ git diff --check
 中间失败如实保留：首轮移动构建将会话消息缓存误写为不存在的顶层属性；本地化首次只增加 App 资源，缺共享资源，随后同步并通过。首轮两端 975 项单元的两个旧展示测试共三条断言失败：菜单合并遗漏公告/成员无障碍提示，以及图标由 Image 改为原生 Label；已恢复提示并精确检查 Label 图标，未删安全或隐私断言。iPad 中文筛选脚本误点弹窗下方的“搜索会话”，改为准确的“搜索消息”后通过；提醒关闭同样定位当前导航栏。复核再增加两项迟到结果/错误的会话隔离测试，使最终为 977 项。实际截图已查看两端浅色表单/列表、中文深色最大字号、错误和筛选空态，并移除表单空白提示行；最终截图复验确认空白行消失及 iPad 搜索可用。
 
 日志和结果包留在本机本轮工作目录的 `m4b2-mobile-build1..4.log`、`m4b2-iphone1..2`/`m4b2-ipad1..2`、`m4b2-shared1.log`、`m4b2-mac-build1.log`；导出的临时截图/文本检查后清理，不纳入提交。真实 NAS 未参与写测试，移动端未分发；跨时区、到期实际投递、VoiceOver/硬件键盘和锁屏保护按[移动 M4b2 待办](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b2-提醒与定时消息)验收。下一切片为 M4b3 转发/置顶/会话操作，M4–M8 尚未整体完成。
+
+## 2026-10-04 移动 M4b3a 公告置顶与会话关闭
+
+当前主分支在 `9df14f12` 后实施。新增 `MobileChatManagementModel/Store/View`、隔离服务与单元/实际 UI 测试，接入公告设置/取消、完整公告原消息和附件/投票、单项/多项关闭会话。保留前置原快照、权限/能力、确认、防重复、写前受保护落盘与未知只读恢复；同进程旧请求未结束时，新模型不能提前解除它的记录。关闭和发送/编辑/投票/提醒互斥；未知时暂停批次，恢复不自动开始剩余项。
+
+共享 Apple 修正 pin/unpin/close 提交后的错误分类：传输失败可以继续只读查询，回读失败保留未知且不可普通重试；完整会话列表拒绝重复身份。NAS 字段不变，原方法签名不变，Windows/Android 与 Mac App 源码未修改。移动层不再截断公告或丢弃附件/投票，受保护条目不能被过滤为“已不存在”。恢复记录只含账号/动作/对象身份，不保存正文和凭据，不迁移旧开发数据。私有 API、独立集成与只读对抗复核的范围见移动主计划和端点记录。
+
+本轮真实执行的命令主体（模拟器分别替换下列两个设备 ID，结果包/日志按轮次独立保存）：
+
+```sh
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatManagementUITests -only-testing:DsmMobileUITests/MobileChatTimedActionUITests/test消息提醒保存修改与取消 -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4b3a-iphone1.xcresult
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py --strict-release
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/request-contract/validate_contracts.py
+git diff --check
+```
+
+iPad 使用 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，两者运行 iOS 26.5，不能相互替代。第 2 轮为全部单元、新管理五项 UI 加原搜索/线程 UI；第 3 轮为全部单元加管理关闭/未知重启/公告取消三项 UI；第 4 轮为全部单元加公告附件/取消与原搜索/线程 UI；第 5 轮单独补完整关闭后返回路径；第 6–7 轮为全部单元和该关闭 UI。各轮沿用上述 `test-without-building` 参数，实际选择器均为源文件内中文方法名，输出分别为 `m4b3a-iphone1..7`、`m4b3a-ipad1..7` 的日志与结果包。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 模拟器构建 | 最终第 10 次增量 `build-for-testing` 通过；此前各次构建亦通过，没有以静态阅读替代构建 |
+| iPhone 单元 | 最终 1003 项，1 条既有设备条件跳过、0 失败，25.302 秒；包含 26 项新增行为测试 |
+| iPad 单元 | 最终 1003 项，1 条既有设备条件跳过、0 失败，25.284 秒；包含同一 26 项新增行为测试 |
+| 公告正常/空内容/加载/错误/筛选为空 | 两端第 2 轮中文深色超大字号及三态实际 UI 通过；112 条完整分页、附件与投票保留另有行为测试 |
+| 公告附件及取消 | 第 4 轮两端均通过，分别 40.192/42.376 秒；实际进入系统 Quick Look、关闭预览后取消精确公告行，另一个公告保留 |
+| 重启恢复与旧流程 | 第 3 轮置顶未知重启两端通过，44.269/47.706 秒；第 1 轮原提醒 UI 39.997/47.166 秒通过，第 4 轮原搜索/线程 27.617/29.420 秒通过 |
+| 关闭后返回路径 | 第 7 轮两端通过，32.909/35.136 秒；明确检查结果窗口关闭后返回可见会话列表 |
+| 共享 Apple | 2549 项 XCTest，172 条既有条件跳过、0 失败，34.726 秒；另 12 项 Swift Testing 0 失败，0.039 秒；包含 5 项新增请求/错误语义测试 |
+| macOS | 两次 Release 双架构构建通过，最终实际二进制 `lipo -archs` 为 `x86_64 arm64`；未安装/启动 App 或发布新包 |
+| 本地化/契约/文档 | Apple 5969、Android 2188、Windows 3402 键检查通过；29 组 fixture/48 项私有文档引用及 170 组请求/1 写结果示例通过，严格文档与差异检查通过 |
+
+保留失败证据及修复：第 1 轮各 997 项单元仅旧实时源码断言失败，已将“不额外加载公告”的约束限定到实时同步函数，未删除安全断言；公告 UI 原先匹配底层相同文字，改为按公告原消息 ID 定位。第 2 轮发现普通样式列表行的透明区不能点击，补整行触控范围与选中状态断言；第 3 轮确认 Quick Look 已加载但缺导航栏，补文件标题和显式关闭。第 5 轮 iPhone 退出管理后仍显示加载消息；第 6 轮立即返回又提前关闭结果窗口，改为管理窗口退出后再返回，iPad 保留并列详情语义。所有原断言保留或按新的完整功能语义加强，未将失败改为跳过。
+
+已查看两端中英文、浅深主题、超大字号、公告原内容、取消确认、批量结果与系统预览截图；iPad 背景聊天分栏/输入区的窄宽度问题留在 M4c，不能据新弹窗通过宣称整个聊天布局完成。临时导出截图/视频与诊断文本复核后清理；本机日志和结果包保留在本轮工作目录，不提交。锁定 XcodeGen 2.46.0 重复生成后的工程 SHA-256 均为 `3bdb87d5b82bc96368bb47861bd15419183b4aa57bef98085e5c77478b7819dc`。真实 NAS 不参与自动写测试，设备步骤见[移动 M4b3a](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3a-公告置顶与会话关闭)。继续 M4b3b 转发、多条本人消息删除与 M4b4 发送/创建恢复，M4–M8 尚未整体完成。

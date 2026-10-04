@@ -26,7 +26,8 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             .pollVoting,
             .reminder,
             .reminderManagement,
-            .scheduledMessage
+            .scheduledMessage,
+            .closeConversation
         ]
         var mobileFeatures = value.status == .available
             ? value.supportedFeatures.intersection(mobileScope)
@@ -226,7 +227,8 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         conversationID: String,
         clientRequestID: UUID
     ) async throws {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        try await require(.closeConversation)
+        try await base.closeConversation(conversationID: conversationID, clientRequestID: clientRequestID)
     }
 
     func listConversationMembers(conversationID: String) async throws -> [ChatUser] {
@@ -244,30 +246,12 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
               value.supportedFeatures.contains(.pinnedMessages) else {
             throw MobileReadOnlyChatRepositoryError.operationUnavailable
         }
-        return try await base.listPinnedMessages(conversationID: conversationID)
-            .filter {
-                $0.conversationID == conversationID
-                    && $0.pinnedAt != nil
-                    && $0.encryptionState == .notEncrypted
-            }
-            .prefix(100)
-            .map {
-                ChatMessage(
-                    id: $0.id,
-                    clientRequestID: nil,
-                    conversationID: $0.conversationID,
-                    senderID: $0.senderID,
-                    senderDisplayName: $0.senderDisplayName,
-                    isFromCurrentUser: $0.isFromCurrentUser,
-                    sentAt: $0.sentAt,
-                    text: $0.text,
-                    attachments: [],
-                    poll: nil,
-                    deliveryState: .sent,
-                    encryptionState: .notEncrypted,
-                    pinnedAt: $0.pinnedAt
-                )
-            }
+        let messages = try await base.listPinnedMessages(conversationID: conversationID)
+        // 被过滤的对象不能作为取消公告后“不存在”的证明。
+        guard messages.allSatisfy({ $0.conversationID == conversationID && $0.isPinned && $0.encryptionState == .notEncrypted }) else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return messages
     }
 
     func setMessagePinned(
@@ -276,7 +260,9 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         isPinned: Bool,
         clientRequestID: UUID
     ) async throws {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        try await require(.pinnedMessages)
+        try await base.setMessagePinned(conversationID: conversationID, messageID: messageID,
+            isPinned: isPinned, clientRequestID: clientRequestID)
     }
 
     func forwardMessage(
