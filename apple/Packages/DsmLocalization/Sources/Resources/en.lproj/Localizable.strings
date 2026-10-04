@@ -6330,3 +6330,15 @@
 "mobile.chat.voice.settings" = "Open Settings";
 "mobile.chat.voice.too-short" = "The recording is too short. Record for at least half a second, then stop.";
 "mobile.chat.voice.preview-failed" = "Could not play this recording. Try listening again or record a new message.";
+
+"mobile.chat.latest" = "Latest messages";
+"mobile.chat.notification.enable" = "Chat notifications";
+"mobile.chat.notification.title" = "Notifications";
+"mobile.chat.notification.footer" = "New messages arrive while you use the app. Reminders saved on this device can appear at their scheduled time. Message text stays private.";
+"mobile.chat.notification.denied" = "Notifications are off. Open Settings to allow notifications for LanStash.";
+"mobile.chat.notification.failed" = "Notifications could not be enabled. Try again or check Settings.";
+"mobile.chat.notification.sync-failed" = "Some reminders could not be saved to this device. Reconnect and reopen Notifications to try again.";
+"mobile.chat.notification.limit" = "The next 50 reminders are saved on this device. Open the app later to update the remaining reminders.";
+"mobile.chat.notification.message" = "You have a new message. Open LanStash to read it.";
+"mobile.chat.notification.reminder-title" = "Chat reminder";
+"mobile.chat.notification.reminder" = "It is time for your reminder. Open LanStash to view the message.";

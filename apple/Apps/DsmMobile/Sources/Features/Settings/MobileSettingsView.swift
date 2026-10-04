@@ -5,6 +5,7 @@ import SwiftUI
 struct MobileSettingsView: View {
     @Bindable var model: MobileAppModel
     @State private var confirmsCacheClear = false
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         Form {
@@ -14,6 +15,29 @@ struct MobileSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if model.isModuleVisible(.chat) {
+                Section {
+                    Toggle(L10n.string("mobile.chat.notification.enable"), isOn: Binding(
+                        get: { model.chatModel.notifications.enabled },
+                        set: { enabled in Task {
+                            await model.chatModel.notifications.setEnabled(enabled)
+                            if enabled { await model.chatModel.reloadConversations() }
+                        } }
+                    ))
+                    .frame(minHeight: 44).disabled(model.chatModel.notifications.isChangingPermission)
+                    .accessibilityIdentifier("chat-notifications-enabled")
+                    if model.chatModel.notifications.authorization == .denied {
+                        Text(L10n.string("mobile.chat.notification.denied"))
+                        Button(L10n.string("mobile.chat.voice.settings")) {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                        }.frame(minHeight: 44).accessibilityIdentifier("chat-notifications-settings")
+                    } else if let key = model.chatModel.notifications.errorKey {
+                        Text(L10n.string(key)).foregroundStyle(.secondary)
+                    }
+                } header: { Text(L10n.string("mobile.chat.notification.title")) }
+                footer: { Text(L10n.string("mobile.chat.notification.footer")) }
+            }
+
             Section {
                 Picker(
                     L10n.string("mobile.settings.appearance.title"),
@@ -115,6 +139,8 @@ struct MobileSettingsView: View {
         .accessibilityIdentifier("mobile.settings.page")
         .task {
             await model.refreshModuleAccess()
+            await model.chatModel.notifications.refreshAuthorization()
+            if model.chatModel.notifications.enabled { await model.chatModel.reloadConversations() }
             await model.refreshSettingsCacheSummary()
         }
         .confirmationDialog(

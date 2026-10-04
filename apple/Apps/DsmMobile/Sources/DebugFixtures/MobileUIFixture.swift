@@ -22,7 +22,9 @@ enum MobileUIFixture {
             let model = MobileAppModel(defaults: defaults, sessionStore: FixtureSessionStore(), passwordStore: FixturePasswordStore(),
                 previewModel: officeState.hasPrefix("office-") ? MobileFilePreviewModel(rangeReader: officeTransport) : MobileFilePreviewModel(),
                 transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil,
-                chatAudioDriver: officeState.hasPrefix("chat-audio-") ? MobileChatAudioUIDriver(denied: officeState == "chat-audio-permission-denied") : nil)
+                chatAudioDriver: officeState.hasPrefix("chat-audio-") ? MobileChatAudioUIDriver(denied: officeState == "chat-audio-permission-denied") : nil,
+                chatNotificationDriver: MobileChatNotificationUIDriver(denied: officeState == "chat-realtime-notifications-denied"),
+                chatPollingIntervalNanoseconds: officeState.hasPrefix("chat-realtime-") ? 1_000_000_000 : 30_000_000_000)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
             var versions = [DsmAPIName.fileStationMD5: 2, DsmAPIName.fileStationDelete: 2, DsmAPIName.fileStationCopyMove: 3, DsmAPIName.fileStationSettings: 1, DsmAPIName.fileStationVFSUser: 1,
@@ -39,6 +41,7 @@ enum MobileUIFixture {
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             if officeState.hasPrefix("chat-management-") { versions[DsmAPIName.chatPostFile] = 2 }
             if officeState.hasPrefix("chat-audio-") { versions[DsmAPIName.chatPostFile] = 2 }
+            if officeState.hasPrefix("chat-realtime-") { versions[DsmAPIName.chatPostSubscribe] = 2 }
             if officeState.hasPrefix("chat-group-") {
                 versions[DsmAPIName.chatChannelNamed] = 1; versions[DsmAPIName.chatChannelMember] = 1
                 versions[DsmAPIName.chatChannelAnonymous] = 2
@@ -57,7 +60,10 @@ enum MobileUIFixture {
             model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
-            if officeState.hasPrefix("chat-audio-") {
+            if officeState.hasPrefix("chat-realtime-") {
+                model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
+                    transport: MobileChatRealtimeUITransport(state: officeState))
+            } else if officeState.hasPrefix("chat-audio-") {
                 model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
                     transport: MobileChatAudioUITransport(state: officeState))
             } else if officeState.hasPrefix("chat-group-") {

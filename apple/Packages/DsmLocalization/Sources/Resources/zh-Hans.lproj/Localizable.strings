@@ -6330,3 +6330,15 @@
 "mobile.chat.voice.settings" = "打开设置";
 "mobile.chat.voice.too-short" = "录音太短，请录制至少半秒后再停止。";
 "mobile.chat.voice.preview-failed" = "无法播放这段录音，请重试试听或重新录制。";
+
+"mobile.chat.latest" = "最新消息";
+"mobile.chat.notification.enable" = "聊天通知";
+"mobile.chat.notification.title" = "通知";
+"mobile.chat.notification.footer" = "使用 App 时接收新消息通知。已保存到本机的提醒会在指定时间通知你；通知不显示消息正文。";
+"mobile.chat.notification.denied" = "通知已被关闭。请前往系统设置，允许岚仓发送通知。";
+"mobile.chat.notification.failed" = "未能开启通知。请重试，或检查系统设置。";
+"mobile.chat.notification.sync-failed" = "部分提醒未能保存到本机。请重新连接并打开通知设置重试。";
+"mobile.chat.notification.limit" = "本机保留最近的 50 条提醒。之后打开 App 可继续更新其余提醒。";
+"mobile.chat.notification.message" = "你有一条新消息，打开岚仓查看。";
+"mobile.chat.notification.reminder-title" = "聊天提醒";
+"mobile.chat.notification.reminder" = "提醒时间到了，打开岚仓查看对应消息。";

@@ -280,7 +280,7 @@ final class MobileChatPresentationTests: XCTestCase {
         let session = try sourceFile("Sources/Session/MobileAppModel+Session.swift")
 
         XCTAssertEqual(appModel.components(separatedBy: "self.chatModel = MobileChatModel(").count - 1, 1)
-        XCTAssertTrue(workspace.contains("chatModel.activate(profileID: profileID, repository: chatRepository,"))
+        XCTAssertTrue(workspace.contains("chatModel.activate(profileID: profile.id, repository: chatRepository,"))
         XCTAssertTrue(workspace.contains("if selectedModule == .chat, module != .chat"))
         XCTAssertTrue(workspace.contains("chatModel.deactivate()"))
         XCTAssertTrue(session.contains("func clearWorkspace()"))
@@ -292,17 +292,18 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(session.contains("chatModel.removePersistentPins(profileID: profile.id)"))
     }
 
-    func testChat前台实时刷新由Scene和当前模块共同控制() throws {
+    func testChat前台实时刷新由Scene和当前工作区权限控制() throws {
         let app = try sourceFile("Sources/DsmMobileApp.swift")
         let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
         let repository = try sourceFile("Sources/Features/Chat/MobileReadOnlyChatRepository.swift")
 
         XCTAssertTrue(app.contains("@Environment(\\.scenePhase)"))
-        XCTAssertTrue(app.contains("model.selectedModule == .chat"))
-        XCTAssertTrue(app.contains("setForegroundRealtimeActive"))
+        XCTAssertTrue(app.contains("model.isModuleVisible(.chat)"))
+        XCTAssertFalse(app.contains("model.selectedModule == .chat"))
+        XCTAssertTrue(app.contains("updateChatForeground"))
         XCTAssertTrue(model.contains("case .contentChanged:"))
         XCTAssertTrue(model.contains("await self?.reloadConversations()"))
-        XCTAssertTrue(model.contains("await self?.refreshMessages()"))
+        XCTAssertTrue(model.contains("await self?.refreshVisibleMessages()"))
         let syncStart = try XCTUnwrap(model.range(of: "private func enqueueRealtimeSync("))
         let syncEnd = try XCTUnwrap(model.range(of: "private func consumePendingRealtimeSync(", range: syncStart.upperBound..<model.endIndex))
         let sync = String(model[syncStart.lowerBound..<syncEnd.lowerBound])

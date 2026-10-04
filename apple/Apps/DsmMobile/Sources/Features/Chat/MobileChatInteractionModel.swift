@@ -14,6 +14,10 @@ final class MobileChatInteractionModel {
     private var active = true
     private var searchGeneration = 0
     private var focusGeneration = 0
+    private var readTask: Task<Void, Never>?
+    private var readGeneration = 0
+    private var synchronizedReplyID: String?
+    private var visibleReplyID: String?
     private(set) var availability = ChatAvailability(status: .requiresValidation)
     private(set) var policy = ChatEditingPolicy(allowsEditing: false)
     private(set) var searchQuery = ""
@@ -52,6 +56,7 @@ final class MobileChatInteractionModel {
     }
 
     func invalidate() {
+        readTask?.cancel(); readTask = nil
         sending.invalidate()
         active = false; searchGeneration &+= 1; focusGeneration &+= 1
         searchMessages = []; root = nil; focusedMessage = nil; replies = MobileChatMessageCache()
@@ -59,8 +64,40 @@ final class MobileChatInteractionModel {
     }
 
     func closeDiscussion() {
+        visibleReplyID = nil
+        readTask?.cancel(); readTask = nil; synchronizedReplyID = nil
         focusGeneration &+= 1
         root = nil; focusedMessage = nil; replies = MobileChatMessageCache(); isLoadingThread = false
+    }
+
+    func synchronizeVisibleReply(_ id: String, isVisible: Bool) {
+        guard replies.messages.last?.id == id else { return }
+        visibleReplyID = isVisible ? id : nil
+        guard isVisible else { clearVisibleReply(); return }
+        guard active, owner?.isForegroundActive == true, readTask == nil,
+              availability.supportedFeatures.contains(.readSynchronization),
+              let root, replies.messages.last?.id == id, synchronizedReplyID != id else { return }
+        let generation = focusGeneration
+        let request = readGeneration
+        readTask = Task { [weak self, repository] in
+            defer { if self?.focusGeneration == generation, self?.readGeneration == request { self?.readTask = nil } }
+            do {
+                try await repository.markThreadRead(conversationID: root.conversationID, threadID: root.id, lastMessageID: id)
+                try Task.checkCancellation()
+                guard let self, self.active, self.focusGeneration == generation, self.readGeneration == request else { return }
+                self.synchronizedReplyID = id
+            } catch { /* 下次真正可见时重试，不影响线程阅读和发送。 */ }
+        }
+    }
+
+    func clearVisibleReply() {
+        visibleReplyID = nil; readGeneration &+= 1; readTask?.cancel(); readTask = nil
+    }
+
+    func refreshVisibleDiscussion() async {
+        guard active, owner?.isForegroundActive == true, root != nil, visibleReplyID != nil, !isLoadingThread else { return }
+        await loadReplies()
+        if let visibleReplyID { synchronizeVisibleReply(visibleReplyID, isVisible: true) }
     }
 
     func loadPolicy() async {
@@ -127,6 +164,8 @@ final class MobileChatInteractionModel {
 
     func open(_ message: ChatMessage) async {
         guard active, message.encryptionState == .notEncrypted else { return }
+        visibleReplyID = nil
+        readTask?.cancel(); readTask = nil; synchronizedReplyID = nil
         focusGeneration &+= 1
         let generation = focusGeneration
         root = nil; focusedMessage = nil; replies = MobileChatMessageCache()

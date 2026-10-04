@@ -88,3 +88,9 @@ M4b3c 将单条和多条删除统一为原内容快照及逐项持久记录，�
 ## 2026-10-05 移动语音接入
 
 M4c 的录音发送复用 Post.create v5 单附件及既有持久发送回执，语音播放复用 Post.File 读取；没有新增 NAS 参数、公开契约或新的私有接口证据。移动透出已有 voiceMessage 能力，AAC 录音与其他音频附件经过相同账号、权限、保存和未知结果恢复边界；读取仍只按消息身份，不访问正文中的任意地址。麦克风仅由用户主动录制申请，后台/中断停止或暂停，不开启后台音频模式。macOS 仅共享双语资源回归，Windows/Android 无实现变化，不提升任何真实环境验证等级。实现、两端验证与设备待办见[移动 M4c](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)。
+
+## Apple 移动 M4d 接入
+
+iPhone/iPad 沿用已记录的 Channel.view v2 和 Post.Subscribe.view v2，不新增私有字段或公开接口。主会话只提交实际可见最新消息的 create_at，读取 Channel.list 确认 last_view_at；同步失败保持未读，缓存时间不得回退其他客户端更晚的阅读。线程先读取最新回复身份再提交 view，真实线程未读计数仍按原端点证据等级记录，不能把合成成功提高为实机验证。
+
+实时连接复用共享 Apple 的源站、证书与凭据约束；移动 App 前台且当前账号启用 Chat 时运行，离开聊天页面保留订阅，后台取消，事件和 30 秒轮询均通过业务 API 回读。通知与定时提醒是移动系统适配，不改变 NAS 请求或凭据；本机最多安排最近 50 条未来提醒，后台期间其他客户端的改期/取消只能在重新连接后同步。源码与双端验证集中在[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)，当前真实 NAS 与系统通知行为未新增验证结论。

@@ -207,6 +207,8 @@ final class MobileChatModelTests: XCTestCase {
         let model = MobileChatModel(realtimePollingIntervalNanoseconds: 1_000_000_000)
         await model.activate(profileID: profileID, repository: repository)
         await model.selectConversation(conversation)
+        model.enterConversation(conversation.id)
+        model.updateVisibleMessage(oldMessage.id, isVisible: true, conversationID: conversation.id)
 
         let refreshedConversation = Self.conversation(id: conversation.id, title: "新标题")
         let refreshedMessage = Self.message(id: "m2", conversationID: conversation.id, seconds: 2)
@@ -236,7 +238,7 @@ final class MobileChatModelTests: XCTestCase {
         await model.setForegroundRealtimeActive(false)
     }
 
-    func test实时断开时固定轮询且Connected后停止() async {
+    func test实时连接前后均保留低频轮询防止漏掉事件() async {
         let repository = ChatRepositoryStub(
             conversations: [Self.conversation(id: "c1", title: "家庭")]
         )
@@ -251,7 +253,7 @@ final class MobileChatModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 30_000_000)
 
         let finalConversationCount = await repository.conversationRequestCount()
-        XCTAssertEqual(finalConversationCount, connectedCount)
+        XCTAssertGreaterThan(finalConversationCount, connectedCount)
         await model.setForegroundRealtimeActive(false)
         let stopCallCount = await repository.realtimeStopCallCount()
         XCTAssertEqual(stopCallCount, 1)
@@ -374,7 +376,7 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertEqual(model.state.messagePageState, .content)
     }
 
-    func test成功读取会话后本地清零且旧服务端未读不会反弹() async {
+    func test实际阅读并收到已读回执后清零且刷新保持服务端结果() async {
         let profileID = UUID()
         let activity = Date(timeIntervalSince1970: 3_000)
         let conversation = Self.conversation(
@@ -385,6 +387,7 @@ final class MobileChatModelTests: XCTestCase {
         )
         let message = Self.message(id: "message", conversationID: conversation.id, seconds: 3_000)
         let repository = ChatRepositoryStub(
+            availability: .init(status: .available, supportedFeatures: [.readSynchronization]),
             conversations: [conversation],
             pages: [
                 .init(conversationID: conversation.id, cursor: nil): .init(
@@ -397,11 +400,15 @@ final class MobileChatModelTests: XCTestCase {
 
         model.enterConversation(conversation.id)
         await model.selectConversation(conversation)
+        XCTAssertEqual(model.state.selectedConversation?.unreadCount, conversation.unreadCount)
+        await model.setForegroundRealtimeActive(true)
+        model.updateVisibleMessage(model.state.selectedMessages.messages.last!.id, isVisible: true, conversationID: conversation.id)
+        await eventually { await MainActor.run { model.state.selectedConversation?.unreadCount == 0 } }
         XCTAssertEqual(model.state.selectedConversation?.unreadCount, 0)
 
-        await repository.setConversations([conversation])
         await model.reloadConversations()
         XCTAssertEqual(model.state.selectedConversation?.unreadCount, 0)
+        await model.setForegroundRealtimeActive(false)
     }
 
     func test读后出现更晚活动会重新显示服务端未读() async {
@@ -413,6 +420,7 @@ final class MobileChatModelTests: XCTestCase {
             unreadCount: 2
         )
         let repository = ChatRepositoryStub(
+            availability: .init(status: .available, supportedFeatures: [.readSynchronization]),
             conversations: [conversation],
             pages: [
                 .init(conversationID: conversation.id, cursor: nil): .init(
@@ -430,6 +438,10 @@ final class MobileChatModelTests: XCTestCase {
         await model.activate(profileID: profileID, repository: repository)
         model.enterConversation(conversation.id)
         await model.selectConversation(conversation)
+        XCTAssertEqual(model.state.selectedConversation?.unreadCount, conversation.unreadCount)
+        await model.setForegroundRealtimeActive(true)
+        model.updateVisibleMessage(model.state.selectedMessages.messages.last!.id, isVisible: true, conversationID: conversation.id)
+        await eventually { await MainActor.run { model.state.selectedConversation?.unreadCount == 0 } }
 
         let refreshed = Self.conversation(
             id: conversation.id,
@@ -459,7 +471,10 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertEqual(model.state.selectedConversation?.unreadCount, 1)
 
         model.enterConversation(conversation.id)
+        model.updateVisibleMessage("new-message", isVisible: true, conversationID: conversation.id)
+        await eventually { await MainActor.run { model.state.selectedConversation?.unreadCount == 0 } }
         XCTAssertEqual(model.state.selectedConversation?.unreadCount, 0)
+        await model.setForegroundRealtimeActive(false)
     }
 
     func test加密会话和消息读取失败都不会本地标记已读() async {
@@ -2713,6 +2728,17 @@ private actor ChatRepositoryStub: ChatRepository {
     func createPoll(_ draft: ChatPollDraft) async throws -> ChatMessage {
         rejectedBaseCalls += 1
         throw MobileReadOnlyChatRepositoryError.operationUnavailable
+    }
+
+    func markRead(conversationID: String, through: Date) async throws -> ChatConversation {
+        guard let index = conversationValues.firstIndex(where: { $0.id == conversationID }) else { throw URLError(.badServerResponse) }
+        let value = conversationValues[index]
+        let updated = ChatConversation(id: value.id, kind: value.kind, title: value.title, memberIDs: value.memberIDs,
+            memberCount: value.memberCount, lastMessageSummary: value.lastMessageSummary, lastActivityAt: value.lastActivityAt,
+            unreadCount: (value.lastActivityAt ?? .distantPast) <= through ? 0 : value.unreadCount,
+            isEncrypted: value.isEncrypted, lastViewedAt: through)
+        conversationValues[index] = updated
+        return updated
     }
 
     func realtimeEvents() async -> AsyncStream<ChatRealtimeEvent> {

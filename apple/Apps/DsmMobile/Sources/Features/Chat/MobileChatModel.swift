@@ -27,6 +27,7 @@ final class MobileChatModel {
     private(set) var sending: MobileChatSendModel?
     private let sendRecovery: MobileChatSendStore
     let audio: MobileChatAudioModel
+    let notifications: MobileChatNotifications
 
     @ObservationIgnored private var repositories: [UUID: any ChatRepository] = [:]
     @ObservationIgnored private var conversationTask: Task<Void, Never>?
@@ -45,6 +46,9 @@ final class MobileChatModel {
     @ObservationIgnored private var realtimeGeneration = 0
     @ObservationIgnored private var foregroundRealtimeRequested = false
     @ObservationIgnored private var conversationVisibilityOwner: UUID?
+    @ObservationIgnored private var readTask: Task<Void, Never>?
+    @ObservationIgnored private var readGeneration = 0
+    private(set) var visibleReadMessageID: String?
     @ObservationIgnored private var realtimeConnected = false
     @ObservationIgnored private var pendingRealtimeSync = false
     @ObservationIgnored private let conversationPinStore: any MobileChatConversationPinStore
@@ -68,8 +72,10 @@ final class MobileChatModel {
         realtimePollingIntervalNanoseconds: UInt64 = 30_000_000_000,
         realtimeDebounceIntervalNanoseconds: UInt64 = 200_000_000,
         interactionRecoveryRoot: URL? = nil,
-        audioDriver: (any MobileChatAudioDriving)? = nil
+        audioDriver: (any MobileChatAudioDriving)? = nil,
+        notifications: MobileChatNotifications = MobileChatNotifications()
     ) {
+        self.notifications = notifications
         self.audio = MobileChatAudioModel(driver: audioDriver ?? MobileSystemChatAudioDriver(),
             root: attachmentFileManager.temporaryDirectory.appendingPathComponent("LanStashChatAudio", isDirectory: true))
         self.interactionRecovery = MobileChatInteractionStore(root: interactionRecoveryRoot)
@@ -195,16 +201,19 @@ final class MobileChatModel {
         }
         cancelAllWork()
         guard let profileID else {
+            notifications.configure(context: nil)
             activeProfileID = nil
             return
         }
         guard let repository else {
+            notifications.configure(context: nil)
             repositories[profileID] = nil
             activeProfileID = nil
             return
         }
 
         activeProfileID = profileID
+        notifications.configure(context: context ?? profileID.uuidString)
         let mobileRepository = MobileReadOnlyChatRepository(base: repository)
         repositories[profileID] = mobileRepository
         let sender = MobileChatSendModel(context: context ?? profileID.uuidString, repository: mobileRepository,
@@ -255,6 +264,7 @@ final class MobileChatModel {
     func deactivate() {
         let profileID = activeProfileID
         foregroundRealtimeRequested = false
+        notifications.configure(context: nil)
         cancelAllWork()
         if let profileID {
             profiles[profileID]?.visibleConversationID = nil
@@ -267,6 +277,7 @@ final class MobileChatModel {
     func purge(profileID: UUID) {
         if activeProfileID == profileID {
             foregroundRealtimeRequested = false
+            notifications.configure(context: nil)
             cancelAllWork()
             activeProfileID = nil
         }
@@ -287,16 +298,44 @@ final class MobileChatModel {
         }
     }
 
-    /// 实时刷新只在 Chat 可见且 App 位于前台时运行；后台不保活也不承诺即时到达。
+    var isForegroundActive: Bool { foregroundRealtimeRequested }
+
+    /// 当前账号允许聊天时在 App 前台运行；后台停止，不承诺挂起后即时到达。
     func setForegroundRealtimeActive(_ isActive: Bool) async {
         foregroundRealtimeRequested = isActive
+        notifications.isForeground = isActive
         if isActive {
             await waitForForegroundRealtimeStop()
             startForegroundRealtimeIfNeeded()
         } else {
+            visibleReadMessageID = nil
+            interaction?.clearVisibleReply()
+            cancelReadSynchronization()
             scheduleForegroundRealtimeStop()
             await waitForForegroundRealtimeStop()
         }
+    }
+
+    func leaveChatPage() {
+        conversationVisibilityOwner = nil
+        visibleReadMessageID = nil
+        cancelReadSynchronization()
+        updateActive { $0.visibleConversationID = nil }
+        interaction?.closeDiscussion()
+        attachmentModel.cancelAllWork()
+    }
+
+    func notificationMessage(_ destination: MobileChatNotifications.Destination) async throws -> ChatMessage? {
+        guard notifications.enabled, notifications.scope == destination.scope,
+              let profileID = activeProfileID, let repository = repositories[profileID] else { throw CancellationError() }
+        let conversations = try await repository.listConversations()
+        guard activeProfileID == profileID, notifications.scope == destination.scope,
+              conversations.contains(where: { $0.id == destination.conversationID && !$0.isEncrypted }) else { return nil }
+        let value = try await repository.message(conversationID: destination.conversationID, messageID: destination.messageID, threadID: nil)
+        guard activeProfileID == profileID, notifications.scope == destination.scope, !Task.isCancelled else { throw CancellationError() }
+        guard let value, value.conversationID == destination.conversationID, value.id == destination.messageID,
+              value.encryptionState == .notEncrypted else { return nil }
+        return value
     }
 
     func toggleConversationPinned(_ conversation: ChatConversation) {
@@ -357,6 +396,8 @@ final class MobileChatModel {
                 return
             }
             self?.updateActive { $0.availability = availability }
+            self?.notifications.configure(context: availability.status == .available ? self?.sending?.context : nil)
+            self?.notifications.isForeground = self?.foregroundRealtimeRequested == true
             self?.sending?.updateAvailability(availability)
             self?.interaction?.updateAvailability(availability)
             self?.polls?.updateAvailability(availability)
@@ -394,7 +435,16 @@ final class MobileChatModel {
         }
         conversationTask = task
         await task.value
-        if isCurrentConversation(profileID: profileID, generation: requestGeneration) { await management?.recover() }
+        if isCurrentConversation(profileID: profileID, generation: requestGeneration) {
+            await management?.recover()
+            guard isCurrentConversation(profileID: profileID, generation: requestGeneration) else { return }
+            await notifications.processIncoming(state.conversations, repository: repository) { [weak self] id in
+                self?.state.visibleConversationID == id && self?.visibleReadMessageID != nil
+            }
+            guard isCurrentConversation(profileID: profileID, generation: requestGeneration),
+                  state.availability.supportedFeatures.contains(.reminderManagement) else { return }
+            await notifications.refreshReminders(conversations: state.conversations, repository: repository)
+        }
     }
 
     func selectConversation(_ conversation: ChatConversation) async {
@@ -404,6 +454,8 @@ final class MobileChatModel {
             return
         }
         attachmentModel.cancelAllWork()
+        visibleReadMessageID = nil
+        cancelReadSynchronization()
         cancelMessageWork()
         cancelMemberWork()
         cancelAnnouncementWork()
@@ -590,7 +642,7 @@ final class MobileChatModel {
         cancelAnnouncementWork()
     }
 
-    func refreshMessages() async {
+    func refreshMessages(preservingHistory: Bool = false) async {
         guard let profileID = activeProfileID,
               let repository = repositories[profileID],
               let conversation = state.selectedConversation,
@@ -599,7 +651,8 @@ final class MobileChatModel {
             conversationID: conversation.id,
             profileID: profileID,
             repository: repository,
-            preservesContent: !state.selectedMessages.messages.isEmpty
+            preservesContent: !state.selectedMessages.messages.isEmpty,
+            preservingHistory: preservingHistory
         )
         if activeProfileID == profileID {
             await interaction?.recoverEdits()
@@ -695,6 +748,8 @@ final class MobileChatModel {
     func leaveConversation(_ conversationID: String, ownerID: UUID? = nil, preservingVoiceRecording: Bool = false) {
         guard conversationVisibilityOwner == ownerID else { return }
         conversationVisibilityOwner = nil
+        visibleReadMessageID = nil
+        cancelReadSynchronization()
         updateActive { profile in
             if profile.visibleConversationID == conversationID {
                 profile.visibleConversationID = nil
@@ -707,19 +762,58 @@ final class MobileChatModel {
         guard state.conversations.contains(where: { $0.id == conversationID }) else { return }
         conversationVisibilityOwner = ownerID
         updateActive { profile in
-            guard let conversation = profile.conversations.first(where: { $0.id == conversationID }) else {
-                return
-            }
             profile.visibleConversationID = conversationID
-            if !conversation.isEncrypted,
-               let cached = profile.messagesByConversation[conversationID] {
-                Self.markConversationReadLocally(
-                    in: &profile,
-                    conversationID: conversationID,
-                    through: cached.messages.map(\.sentAt).max()
-                )
+        }
+    }
+
+    /// 只接收当前页面实例、当前最新消息的实际可见位置；预加载不会推进已读。
+    func updateVisibleMessage(_ messageID: String, isVisible: Bool, conversationID: String, ownerID: UUID? = nil) {
+        guard conversationVisibilityOwner == ownerID,
+              state.visibleConversationID == conversationID,
+              state.selectedConversationID == conversationID,
+              state.selectedMessages.messages.last(where: { $0.deliveryState == .sent })?.id == messageID else { return }
+        visibleReadMessageID = isVisible ? messageID : nil
+        if isVisible { requestReadSynchronization() }
+        else { cancelReadSynchronization() }
+    }
+
+    private func requestReadSynchronization() {
+        guard readTask == nil, foregroundRealtimeRequested,
+              let profileID = activeProfileID, let repository = repositories[profileID],
+              let conversation = state.selectedConversation, !conversation.isEncrypted,
+              state.visibleConversationID == conversation.id,
+              state.availability.supportedFeatures.contains(.readSynchronization),
+              let latest = state.selectedMessages.messages.last(where: { $0.deliveryState == .sent }),
+              latest.id == visibleReadMessageID,
+              latest.sentAt > max(state.synchronizedReadThroughByConversationID[conversation.id] ?? .distantPast,
+                  conversation.lastViewedAt ?? .distantPast) else { return }
+        let generation = readGeneration
+        readTask = Task { [weak self] in
+            defer { if self?.readGeneration == generation { self?.readTask = nil } }
+            do {
+                let updated = try await repository.markRead(conversationID: conversation.id, through: latest.sentAt)
+                try Task.checkCancellation()
+                guard let self, self.activeProfileID == profileID, self.readGeneration == generation,
+                      updated.id == conversation.id, updated.lastViewedAt.map({ $0 >= latest.sentAt }) == true else { return }
+                self.updateActive { profile in
+                    profile.synchronizedReadThroughByConversationID[conversation.id] = latest.sentAt
+                    guard let index = profile.conversations.firstIndex(where: { $0.id == conversation.id }) else { return }
+                    // 同步期间可能已有新活动；旧回读不能覆盖更晚的会话摘要或未读。
+                    if (updated.lastActivityAt ?? .distantPast) >= (profile.conversations[index].lastActivityAt ?? .distantPast) {
+                        profile.conversations[index] = updated
+                        Self.applyConversationFilter(to: &profile)
+                    }
+                }
+            } catch {
+                // 保留原未读；下一次可见刷新重试，不把本机清零当作跨设备成功。
             }
         }
+    }
+
+    private func cancelReadSynchronization() {
+        readGeneration &+= 1
+        readTask?.cancel()
+        readTask = nil
     }
 
     func loadAttachmentThumbnail(for message: ChatMessage) {
@@ -752,6 +846,8 @@ final class MobileChatModel {
 
     func cancelAllWork() {
         conversationVisibilityOwner = nil
+        visibleReadMessageID = nil
+        cancelReadSynchronization()
         sending?.invalidate()
         sending = nil
         deletion?.invalidate()
@@ -795,6 +891,7 @@ final class MobileChatModel {
     private func startForegroundRealtimeIfNeeded() {
         guard foregroundRealtimeRequested,
               realtimeTask == nil,
+              pollingTask == nil,
               let profileID = activeProfileID,
               let repository = repositories[profileID],
               state.availability.status == .available else { return }
@@ -803,6 +900,11 @@ final class MobileChatModel {
         let generation = realtimeGeneration
         realtimeConnected = false
         startPollingIfNeeded(profileID: profileID, repository: repository, generation: generation)
+        requestRealtimeSync(profileID: profileID, generation: generation, waitsForDebounce: true)
+        #if DEBUG
+        // 显式 UI 测试使用合成服务和轮询；不启动独立的真实 Socket 连接。
+        if MobileUIFixture.isEnabled { return }
+        #endif
         realtimeTask = Task { [weak self] in
             let events = await repository.realtimeEvents()
             guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else {
@@ -847,8 +949,7 @@ final class MobileChatModel {
         switch event {
         case .connected:
             realtimeConnected = true
-            pollingTask?.cancel()
-            pollingTask = nil
+            requestRealtimeSync(profileID: profileID, generation: generation, waitsForDebounce: true)
         case .contentChanged:
             requestRealtimeSync(
                 profileID: profileID,
@@ -866,8 +967,7 @@ final class MobileChatModel {
         repository: any ChatRepository,
         generation: Int
     ) {
-        guard !realtimeConnected,
-              pollingTask == nil,
+        guard pollingTask == nil,
               isCurrentRealtime(profileID: profileID, generation: generation) else { return }
         let interval = realtimePollingIntervalNanoseconds
         pollingTask = Task { [weak self] in
@@ -877,8 +977,7 @@ final class MobileChatModel {
                 } catch {
                     return
                 }
-                guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true,
-                      self?.realtimeConnected == false else { return }
+                guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else { return }
                 self?.requestRealtimeSync(
                     profileID: profileID,
                     generation: generation,
@@ -928,13 +1027,24 @@ final class MobileChatModel {
                       self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else {
                     break
                 }
-                await self?.refreshMessages()
+                await self?.refreshVisibleMessages()
+                guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else { break }
+                await self?.interaction?.refreshVisibleDiscussion()
+                self?.requestReadSynchronization()
             }
             guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else {
                 return
             }
             self?.realtimeSyncTask = nil
         }
+    }
+
+    private func refreshVisibleMessages() async {
+        // 阅读历史时保留页面和分页游标；新活动仍更新会话列表，回到最新消息后再取新页。
+        guard state.visibleConversationID == state.selectedConversationID,
+              !state.isLoadingMoreMessages, !state.isRefreshingMessages,
+              state.selectedMessages.messages.isEmpty || visibleReadMessageID != nil else { return }
+        await refreshMessages(preservingHistory: true)
     }
 
     private func consumePendingRealtimeSync(profileID: UUID, generation: Int) -> Bool {
@@ -974,6 +1084,11 @@ final class MobileChatModel {
         realtimeDebounceTask?.cancel()
         realtimeDebounceTask = nil
         realtimeSyncTask?.cancel()
+        if realtimeSyncTask != nil {
+            conversationTask?.cancel(); conversationTask = nil; conversationGeneration &+= 1
+            cancelMessageWork()
+            updateActive { $0.isRefreshingConversations = false }
+        }
         realtimeSyncTask = nil
         pendingRealtimeSync = false
         realtimeConnected = false
@@ -985,7 +1100,8 @@ final class MobileChatModel {
         conversationID: String,
         profileID: UUID,
         repository: any ChatRepository,
-        preservesContent: Bool
+        preservesContent: Bool,
+        preservingHistory: Bool = false
     ) async {
         let requestGeneration = beginMessageRequest { profile in
             profile.isRefreshingMessages = preservesContent
@@ -1009,7 +1125,8 @@ final class MobileChatModel {
                     conversationID: conversationID,
                     appending: false,
                     profileID: profileID,
-                    generation: requestGeneration
+                    generation: requestGeneration,
+                    preservingHistory: preservingHistory
                 )
             } catch is CancellationError {
                 self?.finishMessageCancellation(
@@ -1119,16 +1236,13 @@ final class MobileChatModel {
         var invalidatesMessageLane = false
         var pinnedConversationIDsToSave: [String]?
         updateActive { profile in
-            let locallyAdjusted = conversations.map {
-                Self.applyingLocalReadState($0, profile: profile)
-            }
             profile.conversations = Self.normalizedConversations(
-                locallyAdjusted,
+                conversations,
                 pinnedConversationIDs: profile.pinnedConversationIDs
             )
             let availableConversationIDs = Set(profile.conversations.map(\.id))
-            profile.locallyReadThroughActivityByConversationID =
-                profile.locallyReadThroughActivityByConversationID.filter {
+            profile.synchronizedReadThroughByConversationID =
+                profile.synchronizedReadThroughByConversationID.filter {
                     availableConversationIDs.contains($0.key)
                 }
             let prunedPinnedConversationIDs = profile.pinnedConversationIDs.filter {
@@ -1171,6 +1285,7 @@ final class MobileChatModel {
             conversationPinStore.savePinnedConversationIDs(pinnedConversationIDsToSave, profileID: profileID)
         }
         conversationTask = nil
+        startForegroundRealtimeIfNeeded()
     }
 
     private func finishUnavailable(profileID: UUID, generation: Int) {
@@ -1200,35 +1315,41 @@ final class MobileChatModel {
         conversationID: String,
         appending: Bool,
         profileID: UUID,
-        generation: Int
+        generation: Int,
+        preservingHistory: Bool = false
     ) {
         guard isCurrentMessage(profileID: profileID, generation: generation),
               state.selectedConversationID == conversationID,
               state.selectedConversation?.isEncrypted == false else { return }
         updateActive { profile in
+            let cached = profile.messagesByConversation[conversationID]
+            let incoming = Self.normalizedMessages(page.messages.filter { $0.conversationID == conversationID })
+            let incomingIDs = Set(incoming.map(\.id))
+            let overlapsHistory = cached?.messages.contains(where: { incomingIDs.contains($0.id) }) == true
+            if preservingHistory, page.hasMoreBefore, !overlapsHistory, cached?.messages.isEmpty == false {
+                // 新页与已读历史之间有缺口时保留当前位置；用户通过“最新消息”重新定位。
+                profile.isRefreshingMessages = false
+                return
+            }
+            let older = preservingHistory && page.hasMoreBefore && overlapsHistory
+                ? (cached?.messages ?? []).filter { $0.sentAt < (incoming.first?.sentAt ?? .distantPast) }
+                : []
             let existing = appending
                 ? profile.messagesByConversation[conversationID]?.messages ?? []
-                : []
+                : older
             let messages = Self.normalizedMessages(
-                existing + page.messages.filter { $0.conversationID == conversationID }
+                existing + incoming
             )
             profile.messagesByConversation[conversationID] = MobileChatMessageCache(
                 messages: messages,
-                previousCursor: page.previousCursor,
-                hasMoreBefore: page.hasMoreBefore
+                previousCursor: older.isEmpty ? page.previousCursor : cached?.previousCursor,
+                hasMoreBefore: older.isEmpty ? page.hasMoreBefore : cached?.hasMoreBefore == true
             )
             profile.messagePageState = messages.isEmpty ? .empty : .content
             profile.isRefreshingMessages = false
             profile.isLoadingMoreMessages = false
             profile.loadMoreMessagesFailed = false
             profile.messageErrorCategory = nil
-            if !appending, profile.visibleConversationID == conversationID {
-                Self.markConversationReadLocally(
-                    in: &profile,
-                    conversationID: conversationID,
-                    through: messages.map(\.sentAt).max()
-                )
-            }
         }
         messageTask = nil
     }
@@ -1570,56 +1691,6 @@ final class MobileChatModel {
             result.append(trimmed)
         }
         return result
-    }
-
-    private static func markConversationReadLocally(
-        in profile: inout MobileChatProfileState,
-        conversationID: String,
-        through activity: Date?
-    ) {
-        guard let activity else { return }
-        let existing = profile.locallyReadThroughActivityByConversationID[conversationID]
-            ?? .distantPast
-        profile.locallyReadThroughActivityByConversationID[conversationID] = max(existing, activity)
-        guard let index = profile.conversations.firstIndex(where: { $0.id == conversationID }) else {
-            return
-        }
-        let conversation = profile.conversations[index]
-        if let conversationActivity = conversation.lastActivityAt,
-           conversationActivity > activity {
-            return
-        }
-        profile.conversations[index] = Self.conversation(conversation, unreadCount: 0)
-        applyConversationFilter(to: &profile)
-    }
-
-    private static func applyingLocalReadState(
-        _ conversation: ChatConversation,
-        profile: MobileChatProfileState
-    ) -> ChatConversation {
-        guard let readThrough = profile.locallyReadThroughActivityByConversationID[conversation.id],
-              let activity = conversation.lastActivityAt,
-              activity <= readThrough else {
-            return conversation
-        }
-        return self.conversation(conversation, unreadCount: 0)
-    }
-
-    private static func conversation(
-        _ value: ChatConversation,
-        unreadCount: Int
-    ) -> ChatConversation {
-        ChatConversation(
-            id: value.id,
-            kind: value.kind,
-            title: value.title,
-            memberIDs: value.memberIDs,
-            memberCount: value.memberCount,
-            lastMessageSummary: value.lastMessageSummary,
-            lastActivityAt: value.lastActivityAt,
-            unreadCount: unreadCount,
-            isEncrypted: value.isEncrypted
-        )
     }
 
     static func normalizedMessages(_ messages: [ChatMessage]) -> [ChatMessage] {

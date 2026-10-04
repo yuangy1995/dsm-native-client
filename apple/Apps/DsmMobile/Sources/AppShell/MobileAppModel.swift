@@ -137,7 +137,7 @@ final class MobileAppModel {
     var serviceRepository: DsmServiceManagementRepository? {
         didSet { downloads.configure(profile: activeProfile, repository: serviceRepository) }
     }
-    var chatRepository: DsmChatRepository?
+    var chatRepository: (any ChatRepository)?
     var nasRepository: DsmNasAdministrationRepository?
 
     init(
@@ -149,10 +149,14 @@ final class MobileAppModel {
         mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator(),
         previewModel: MobileFilePreviewModel = MobileFilePreviewModel(),
         transferRecoveryStore: MobileTransferRecoveryStore? = nil,
-        chatAudioDriver: (any MobileChatAudioDriving)? = nil
+        chatAudioDriver: (any MobileChatAudioDriving)? = nil,
+        chatNotificationDriver: (any MobileChatNotificationDriving)? = nil,
+        chatPollingIntervalNanoseconds: UInt64 = 30_000_000_000
     ) {
         self.filePreviewModel = previewModel
-        self.chatModel = MobileChatModel(interactionRecoveryRoot: transferRecoveryStore?.rootURL.appendingPathComponent("Chat", isDirectory: true), audioDriver: chatAudioDriver)
+        self.chatModel = MobileChatModel(realtimePollingIntervalNanoseconds: chatPollingIntervalNanoseconds,
+            interactionRecoveryRoot: transferRecoveryStore?.rootURL.appendingPathComponent("Chat", isDirectory: true), audioDriver: chatAudioDriver,
+            notifications: MobileChatNotifications(defaults: defaults, driver: chatNotificationDriver ?? MobileSystemChatNotificationDriver()))
         self.defaults = defaults
         self.sessionStore = sessionStore
         self.passwordStore = passwordStore

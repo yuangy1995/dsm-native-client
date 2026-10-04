@@ -162,6 +162,13 @@ struct MobileChatDiscussionView: View {
                 }
                 ForEach(interaction.replies.messages) { reply in
                     MobileChatMessageRow(chat: chat, message: reply, allowsThreadNavigation: false)
+                        .background(alignment: .bottom) {
+                            if reply.id == interaction.replies.messages.last?.id {
+                                MobileChatReadVisibility(identity: reply.id) { visible in
+                                    interaction.synchronizeVisibleReply(reply.id, isVisible: visible)
+                                }.frame(height: 2)
+                            }
+                        }
                 }
                 if interaction.isLoadingThread { ProgressView(L10n.string("mobile.chat.loading.messages")) }
                 else if interaction.threadError {

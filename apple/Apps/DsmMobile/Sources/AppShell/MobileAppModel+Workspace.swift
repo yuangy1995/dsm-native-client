@@ -23,7 +23,7 @@ extension MobileAppModel {
             filePreviewModel.close()
         }
         if selectedModule == .chat, module != .chat {
-            chatModel.deactivate()
+            chatModel.leaveChatPage()
         }
         if selectedModule == .downloads, module != .downloads {
             downloads.cancelLoad()
@@ -80,8 +80,27 @@ extension MobileAppModel {
         guard module.isOptionalPreference,
               !isVisible || optionalModulesAvailableForPreference().contains(module) else { return }
         settingsStore.setVisible(isVisible, module: module)
+        if module == .chat, !isVisible { chatModel.deactivate() }
         guard !isVisible, selectedModule == module else { return }
         selectModule(.settings)
+    }
+
+    /// 前台聊天属于当前工作区，切换页面不会重建发送队列或实时订阅。
+    func updateChatForeground(_ isActive: Bool) async {
+        guard isConnected, isModuleVisible(.chat), let profile = activeProfile, chatRepository != nil else {
+            chatModel.deactivate()
+            return
+        }
+        if isActive { await prepareChatContext() }
+        guard activeProfile?.id == profile.id, chatModel.activeProfileID == profile.id else { return }
+        await chatModel.setForegroundRealtimeActive(isActive)
+    }
+
+    private func prepareChatContext() async {
+        guard isConnected, isModuleVisible(.chat), let profile = activeProfile,
+              chatModel.activeProfileID != profile.id else { return }
+        await chatModel.activate(profileID: profile.id, repository: chatRepository,
+            context: MobileWorkspaceIdentity(profile).storageIdentifier)
     }
 
     func refreshSettingsCacheSummary() async {
@@ -121,13 +140,7 @@ extension MobileAppModel {
             case .photos:
                 break
             case .chat:
-                guard let profileID = activeProfile?.id else { break }
-                let restoresCachedProfile = chatModel.profiles[profileID] != nil
-                await chatModel.activate(profileID: profileID, repository: chatRepository,
-                    context: activeProfile.map { MobileWorkspaceIdentity($0).storageIdentifier })
-                if restoresCachedProfile {
-                    await chatModel.reloadConversations()
-                }
+                await prepareChatContext()
             case .downloads:
                 await downloads.load()
             case .containers:
