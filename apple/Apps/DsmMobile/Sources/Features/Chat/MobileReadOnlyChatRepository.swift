@@ -22,6 +22,7 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             .deleteOwnMessage,
             .messageSearch,
             .messageEditing,
+            .readSynchronization,
             .threadedReplies,
             .poll,
             .pollVoting,
@@ -65,6 +66,18 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
 
     func stopRealtime() async {
         await base.stopRealtime()
+    }
+
+    func markRead(conversationID: String, through: Date) async throws -> ChatConversation {
+        let value = await availability()
+        guard value.supportedFeatures.contains(.readSynchronization) else { throw MobileReadOnlyChatRepositoryError.operationUnavailable }
+        return try await base.markRead(conversationID: conversationID, through: through)
+    }
+
+    func markThreadRead(conversationID: String, threadID: String, lastMessageID: String) async throws {
+        let value = await availability()
+        guard value.supportedFeatures.contains(.readSynchronization) else { throw MobileReadOnlyChatRepositoryError.operationUnavailable }
+        try await base.markThreadRead(conversationID: conversationID, threadID: threadID, lastMessageID: lastMessageID)
     }
 
     func openDirectConversation(

@@ -67,6 +67,7 @@ final class MobileChatTimedActionModel {
             let values = try await repository.listReminders(conversationID: conversationID)
             guard active, generation == reminderGeneration else { return }
             reminders = values; reminderState = values.isEmpty ? .empty : .content
+            await owner?.notifications.updateReminders(values, conversationID: conversationID)
         } catch { if active, generation == reminderGeneration { reminderState = .error } }
     }
     func loadSchedules(in conversationID: String) async {
@@ -188,6 +189,7 @@ final class MobileChatTimedActionModel {
                     if active, reminderConversationID == entry.conversationID {
                         reminders = values; reminderState = values.isEmpty ? .empty : .content
                     }
+                    if active { await owner?.notifications.updateReminders(values, conversationID: entry.conversationID) }
                 } else {
                     guard entry.targetID != nil else { continue }
                     let values = try await repository.listScheduledMessages(conversationID: entry.conversationID)

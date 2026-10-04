@@ -18,6 +18,7 @@ struct MobileChatView: View {
     @State private var presentsDeletionRecords = false
     @State private var presentsSendRecords = false
     @State private var presentsVoiceRecorder = false
+    @State private var notificationDestination: MobileChatNotifications.Destination?
 
     var body: some View {
         ZStack {
@@ -30,6 +31,15 @@ struct MobileChatView: View {
         .background(MobileChatViewportWidth { availableWidth = $0 })
         .onChange(of: model.chatModel.activeProfileID) { _, _ in presentedConversation = nil }
         .mobileChatAudioLifecycle(chat: model.chatModel)
+        .task(id: model.chatModel.notifications.destination) {
+            if let destination = model.chatModel.notifications.destination {
+                notificationDestination = destination
+                model.chatModel.notifications.clearDestination()
+            }
+        }
+        .sheet(item: $notificationDestination) { destination in
+            MobileChatNotificationMessageView(chat: model.chatModel, destination: destination)
+        }
         .toolbar {
             if let sending = model.chatModel.sending, (!sending.entries.isEmpty || sending.recovery.failed), model.chatModel.state.visibleConversationID == nil {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -739,6 +749,7 @@ private struct MobileChatConversationRow: View {
         .background(isSelected ? Color.accentColor.opacity(0.12) : .clear)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(conversationAccessibilityLabel)
+        .accessibilityIdentifier("chat-conversation-\(conversation.id)")
     }
 
     private var conversationAccessibilityLabel: String {
@@ -808,6 +819,7 @@ private struct MobileChatMessagesView: View {
             }
         }
         .task(id: "\(chat.activeProfileID?.uuidString ?? "")/\(conversation.id)") {
+            visibilityOwner = UUID()
             chat.enterConversation(conversation.id, ownerID: visibilityOwner)
             if chat.state.selectedConversationID != conversation.id {
                 await chat.selectConversation(conversation)
@@ -968,20 +980,54 @@ private struct MobileChatMessagesView: View {
 
     private var messageContent: some View {
         let state = chat.state
+        let readOwner = visibilityOwner
         return MobilePageStateView(
             state: state.messagePageState,
             labels: messageStateLabels,
             emptySystemImage: "bubble.left",
             retryAction: { Task { await chat.refreshMessages() } }
         ) {
-            List {
-                loadEarlierSection(state)
-                ForEach(state.selectedMessages.messages) { message in
-                    MobileChatMessageRow(chat: chat, message: message)
+            ScrollViewReader { proxy in
+                List {
+                    loadEarlierSection(state)
+                    ForEach(state.selectedMessages.messages) { message in
+                        MobileChatMessageRow(chat: chat, message: message)
+                            .id(message.id)
+                            .background(alignment: .bottom) {
+                                if message.id == state.selectedMessages.messages.last(where: { $0.deliveryState == .sent })?.id {
+                                    MobileChatReadVisibility(identity: message.id) { visible in
+                                        chat.updateVisibleMessage(message.id, isVisible: visible,
+                                            conversationID: conversation.id, ownerID: readOwner)
+                                    }.frame(height: 2)
+                                }
+                            }
+                    }
+                }
+                .listStyle(.plain)
+                .refreshable { await chat.refreshMessages() }
+                .onChange(of: state.selectedMessages.messages.last?.id) { old, latest in
+                    if let latest, old == chat.visibleReadMessageID || state.selectedMessages.messages.last?.isFromCurrentUser == true {
+                        proxy.scrollTo(latest, anchor: .bottom)
+                    }
+                }
+                .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+                    if !state.selectedMessages.messages.isEmpty,
+                       chat.visibleReadMessageID == nil || (state.selectedConversation?.lastActivityAt ?? .distantPast) > (state.selectedMessages.messages.last?.sentAt ?? .distantPast) {
+                        Button {
+                            Task {
+                                let profileID = chat.activeProfileID
+                                await chat.refreshMessages()
+                                guard chat.activeProfileID == profileID, chat.state.selectedConversationID == conversation.id else { return }
+                                if let latest = chat.state.selectedMessages.messages.last?.id { proxy.scrollTo(latest, anchor: .bottom) }
+                            }
+                        } label: { Label(L10n.string("mobile.chat.latest"), systemImage: "arrow.down") }
+                        .buttonStyle(.borderedProminent).controlSize(.large)
+                        .disabled(state.isRefreshingMessages)
+                        .accessibilityIdentifier("chat-scroll-latest").padding(12)
+                    }
                 }
             }
-            .listStyle(.plain)
-            .refreshable { await chat.refreshMessages() }
+            .accessibilityElement(children: .contain)
         }
         .overlay(alignment: .top) {
             if state.isRefreshingMessages {

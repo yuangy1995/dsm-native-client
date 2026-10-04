@@ -24,8 +24,11 @@ struct DsmMobileApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { Task { await model.refreshModuleAccess() } }
                 }
+                .onChange(of: model.chatModel.notifications.destination) { _, destination in
+                    if destination != nil, model.isConnected, model.isModuleVisible(.chat) { model.selectModule(.chat) }
+                }
                 .task(id: chatForegroundContext) {
-                    await model.chatModel.setForegroundRealtimeActive(
+                    await model.updateChatForeground(
                         chatForegroundContext.isActive
                     )
                 }
@@ -43,14 +46,13 @@ struct DsmMobileApp: App {
         MobileChatForegroundContext(
             isActive: scenePhase == .active
                 && model.isConnected
-                && model.selectedModule == .chat
-                && model.activeProfile?.id == model.chatModel.activeProfileID,
-            profileID: model.chatModel.activeProfileID
+                && model.isModuleVisible(.chat),
+            context: model.activeProfile.map { MobileWorkspaceIdentity($0).storageIdentifier }
         )
     }
 }
 
 private struct MobileChatForegroundContext: Hashable {
     let isActive: Bool
-    let profileID: UUID?
+    let context: String?
 }

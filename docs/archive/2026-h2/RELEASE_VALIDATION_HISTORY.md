@@ -1673,3 +1673,43 @@ iPad 使用相同命令、目标 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，两端
 截图由 `xcrun xcresulttool export attachments --path ... --output-path ...` 导出，已检查 iPhone 中文深色大字号、iPad 录音表单、横屏并列与竖屏单列。XCTest 的应用窗口截图在横屏附带旋转/裁切，改用 `XCUIScreen.main.screenshot()` 捕获完整设备；保留原附件，不把裁切附件当作完整布局证据。所有截图、日志、合成媒体和结果包在专用临时目录或隔离模拟器，不提交。
 
 `PENDING_USER_VALIDATION`：真实麦克风授权/撤回、来电、耳机与蓝牙、锁屏/返回、真实 AAC 在双方客户端互播、VoiceOver/键盘/窗口和完整文件保护，具体前置、步骤、预期与脱敏反馈见移动主计划 M4c。三条设备条件跳过分别为照片删除记录、群聊恢复记录与新录音保护；新测试以独立系统写入识别模拟器不返回属性，真机断言仍保留，不能计作保护通过。没有移动分发或真实 NAS 写入；M4d 及 M5–M8 继续实施。
+
+
+## 2026-10-05 移动 M4d 前台聊天、已读与本地提醒
+
+基线 `7047c62f`；仅移动工作区/Chat/设置接线、原生通知与阅读位置适配、双语资源、合成 fixture、测试和相关文档。没有新增私有字段、公开业务接口、依赖、最低系统、App 身份、推送权限或后台模式；Mac App、Windows、Android 源码不改。新增两个独立通知偏好键，仅保存开关与账号摘要到随机标识的映射，不存正文、地址或凭据，不改变登录配置。
+
+前台工作区维持单一实时连接与 30 秒补读；离开 Chat 页保留发送记录，后台取消订阅/未完成刷新。主会话按最新实际可见消息时间调用已读并核对回读，不把预加载当作阅读、不回退其他设备更晚时间；线程只在最新回复实际可见后同步。历史位置与游标保留，分页缺口通过“最新消息”重新定位。通知只有主动开启才申请权限；初次静默、他人新消息提示和定时提醒都不包含正文，账号切换/退出/权限撤回清理请求；当前会话正在阅读时抑制重复提示。本机最多安排 50 条最近未来提醒，其他客户端在 App 后台期间的取消/改期必须等重新连接才能同步。
+
+实施后分离进行只读集成与对抗复核，不表述为另一模型审查。25 项新增行为测试涵盖实际请求/解析、权限、历史/预加载、迟到读回执、跨账号、跨设备更晚已读、本人消息、线程、重叠分页/缺口、前台其他模块、通知首屏静默、重复/改期/取消、50 条限制、权限撤回与重启定位。UI 通知替身只写内存，显式 UI fixture 不启动真实 Socket，不触碰 NAS、现场麦克风或系统通知；阅读位置则由真实 UIKit 窗口、裁剪、遮挡和点击命中验证。
+
+实际命令（仓库根目录，完整输出与结果使用本轮临时目录 `m4d-*`，不提交）：
+
+```sh
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -configuration Debug -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing
+xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -configuration Debug -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4d-iphone4.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatRealtimeUITests -only-testing:DsmMobileUITests/MobileChatUITests/test聊天搜索打开原消息并发送线程回复 -only-testing:DsmMobileUITests/MobileChatAudioUITests/test语音消息一次点击播放暂停并在旋转后保留会话 test-without-building
+xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -configuration Debug -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4d-ipad4.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatRealtimeUITests -only-testing:DsmMobileUITests/MobileChatUITests/test聊天搜索打开原消息并发送线程回复 -only-testing:DsmMobileUITests/MobileChatAudioUITests/test语音消息一次点击播放暂停并在旋转后保留会话 test-without-building
+swift test --package-path apple --jobs 2
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py --strict
+git diff --check
+```
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 移动构建 | 最终第 10 轮 `TEST BUILD SUCCEEDED`；新增文件由锁定 XcodeGen 2.46.0 生成 |
+| iPhone / iPad 完整单元，第 4 轮 | 各 1158 项、3 条既有明确设备条件跳过、0 失败；27.359 / 27.079 秒 |
+| iPhone / iPad 实际 UI，第 4 轮 | 各 6 项零失败；180.647 / 188.307 秒；四项新增阅读/前台/通知流程、搜索线程回复及语音旋转 |
+| 原音频全部五项，第 2 轮 | 两端五项均通过；其中播放旋转又在最终轮通过。相同轮次的两项新阅读 UI 曾失败，不能把该整轮写为通过 |
+| 聚焦及三项 UI，第 3 轮 | 两端各 39 项行为/呈现测试零失败，3 项实际 UI 零失败；UI 85.817 / 91.415 秒 |
+| 共享 Apple | 2636 项 XCTest、172 条既有条件跳过、0 失败，32.627 秒；12 项 Swift Testing、0 失败，0.033 秒 |
+| Mac Release | 两次双架构构建通过，第二次覆盖最终中文 App 名称文案；实际主程序 `lipo -archs` 为 `x86_64 arm64` |
+| 静态与契约 | 双语/占位符/硬编码通过：Apple 6084、Android 2188、Windows 3402；170 个请求 fixture、1 个写结果示例、29 组 fixture / 48 项私有 API 引用、严格文档与差异检查通过 |
+
+保留失败与修复记录：第 2 次构建的 Swift 6 通知回调跨 actor 访问失败，改为在主 actor 执行回调；第 3 次构建的测试闭包访问主 actor 失败，改用明确的主 actor 检查。初轮 iPhone 100 项聚焦测试一项精确请求计数失败，是启动补读与故障注入重叠；明确等待启动同步后再注入，保持原计数和状态断言。第 2 轮两端完整单元通过，但 UI 各 9 项中 2 项找不到“最新消息”标识：截图显示按钮可见，页面容器覆盖了子按钮无障碍标识；增加可访问容器后，保留点击、真实末尾可见、未读变化及拒绝后未读保留的断言，第 3/4 轮均通过。没有删除测试、降低断言或把未运行实机项目改成通过。
+
+已查看两端长历史/末尾消息、未读保留、搜索线程以及中文深色超大字号通知恢复截图。实际系统权限弹窗、锁屏通知、系统终止/点击、提醒调度、真实 NAS/多客户端及完整辅助功能为 `PENDING_USER_VALIDATION`，条件、步骤、预期和脱敏反馈见[移动主计划 M4d](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4d-前台实时阅读同步与本地提醒)。M4 源码范围收口；继续 M5–M8，不发布移动安装包，不把后台远程新消息推送列为待设备验证。
