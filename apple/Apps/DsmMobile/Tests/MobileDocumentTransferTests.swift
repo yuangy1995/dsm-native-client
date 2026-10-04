@@ -295,7 +295,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         let firstID = try XCTUnwrap(firstResult)
         let secondID = try XCTUnwrap(secondResult)
         try await waitUntil { fixture.controller.presentation?.taskID == secondID }
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil { await fixture.coordinator.task(id: firstID)?.status == .succeeded }
 
         XCTAssertEqual(fixture.controller.presentation?.taskID, secondID)
         XCTAssertTrue(fixture.controller.ownsArtifact(taskID: firstID))
@@ -303,6 +303,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         XCTAssertNil(fixture.controller.presentation)
         XCTAssertTrue(fixture.controller.ownsArtifact(taskID: firstID))
         fixture.controller.presentationDidDismiss()
+        try await waitUntil { fixture.controller.presentation?.taskID == firstID }
         XCTAssertEqual(fixture.controller.presentation?.taskID, firstID)
         fixture.controller.requestDismiss(taskID: firstID)
         fixture.controller.presentationDidDismiss()
@@ -338,7 +339,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         let firstID = try XCTUnwrap(firstResult)
         let secondID = try XCTUnwrap(secondResult)
         try await waitUntil { fixture.controller.presentation?.taskID == secondID }
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil { await fixture.coordinator.task(id: firstID)?.status == .succeeded }
 
         fixture.controller.requestDismiss(taskID: secondID)
         XCTAssertNil(fixture.controller.presentation)
@@ -349,6 +350,7 @@ final class MobileDocumentTransferTests: XCTestCase {
         XCTAssertTrue(fixture.controller.ownsArtifact(taskID: firstID))
 
         fixture.controller.presentationDidDismiss()
+        try await waitUntil { fixture.controller.presentation?.taskID == firstID }
         XCTAssertEqual(fixture.controller.presentation?.taskID, firstID)
         XCTAssertFalse(fixture.controller.isAwaitingSystemDismissal)
     }

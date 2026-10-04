@@ -3086,7 +3086,6 @@
 "mobile.chat.unavailable.message" = "此 NAS 或账号无法使用 Synology Chat。";
 "mobile.chat.validation.title" = "暂时无法打开聊天";
 "mobile.chat.validation.message" = "当前无法安全打开聊天。请重新连接此 NAS 后再试。";
-"mobile.chat.read-only.notice" = "可新建单聊和私人群聊，发送文字和一个附件，并删除你自己发出的消息。暂不支持加密会话。";
 "mobile.chat.select.title" = "选择会话";
 "mobile.chat.select.message" = "请从侧边栏选择一个会话来阅读消息。";
 "mobile.chat.encrypted.label" = "加密会话";
@@ -6143,3 +6142,13 @@
 "mobile.photos.similar.select" = "选择照片";
 "mobile.photos.similar.open" = "查看分组";
 "mobile.photos.similar.undoConfirm" = "恢复上次更改前的分组吗？已加入其他分组的照片不会被改动。";
+
+"mobile.chat.interaction.storage-error" = "无法在本机保存聊天修改。请释放储存空间后重新打开 App。";
+"mobile.chat.interaction.edit-failed" = "未能修改消息。请刷新聊天后重新编辑。";
+"mobile.chat.interaction.edit-pending" = "修改尚未显示。请稍后刷新聊天。";
+"mobile.chat.interaction.reply-failed" = "回复未发送。请检查连接后重试。";
+"mobile.chat.interaction.reply-pending" = "这条回复尚未显示。请稍后刷新聊天；相同内容暂不能重复发送。";
+"mobile.chat.interaction.attachment" = "附件";
+"mobile.chat.interaction.missing" = "消息已不可用";
+"mobile.chat.interaction.missing-help" = "消息可能已被移除。请返回聊天查看最新消息。";
+"mobile.chat.interaction.selected-message" = "所选消息";

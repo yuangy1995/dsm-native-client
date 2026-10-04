@@ -8,6 +8,7 @@ struct MobileChatView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var presentsConversationCreator = false
     @State private var createdCompactConversation: ChatConversation?
+    @State private var presentsMessageSearch = false
 
     var body: some View {
         Group {
@@ -18,6 +19,15 @@ struct MobileChatView: View {
             }
         }
         .toolbar {
+            if model.chatModel.interaction?.canSearch == true, model.chatModel.state.visibleConversationID == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { presentsMessageSearch = true } label: {
+                        Image(systemName: "magnifyingglass").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(L10n.string("chat.search.title"))
+                    .accessibilityIdentifier("chat-search-all")
+                }
+            }
             if model.chatModel.canCreateConversation {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -29,6 +39,11 @@ struct MobileChatView: View {
                     .accessibilityLabel(L10n.string("mobile.chat.create.action"))
                     .accessibilityHint(L10n.string("mobile.chat.create.hint"))
                 }
+            }
+        }
+        .sheet(isPresented: $presentsMessageSearch) {
+            if let interaction = model.chatModel.interaction {
+                MobileChatSearchSheet(chat: model.chatModel, interaction: interaction, conversationID: nil)
             }
         }
         .sheet(isPresented: $presentsConversationCreator) {
@@ -127,19 +142,6 @@ struct MobileChatView: View {
                 placement: .navigationBarDrawer(displayMode: .always),
                 prompt: L10n.string("mobile.chat.search.placeholder")
             )
-            .safeAreaInset(edge: .top) {
-                Label(
-                    L10n.string("mobile.chat.read-only.notice"),
-                    systemImage: "eye"
-                )
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.thinMaterial)
-                .accessibilityElement(children: .combine)
-            }
             .overlay(alignment: .top) {
                 if state.isRefreshingConversations {
                     ProgressView()
@@ -615,6 +617,7 @@ private struct MobileChatMessagesView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var presentsMembers = false
     @State private var presentsAnnouncements = false
+    @State private var presentsMessageSearch = false
 
     var body: some View {
         Group {
@@ -638,28 +641,21 @@ private struct MobileChatMessagesView: View {
             if chat.state.selectedConversationID != conversation.id {
                 await chat.selectConversation(conversation)
             }
+            await chat.interaction?.loadPolicy()
+            await chat.interaction?.recoverEdits()
         }
         .onDisappear {
             chat.leaveConversation(conversation.id)
         }
-        .safeAreaInset(edge: .top) {
-            if horizontalSizeClass != .regular,
-               !chat.canComposeMessage {
-                Label(
-                    L10n.string("mobile.chat.read-only.notice"),
-                    systemImage: "eye"
-                )
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.thinMaterial)
-                .accessibilityElement(children: .combine)
-            }
-        }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if !conversation.isEncrypted, chat.interaction?.canSearch == true {
+                    Button { presentsMessageSearch = true } label: {
+                        Image(systemName: "magnifyingglass").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(L10n.string("chat.search.title"))
+                    .accessibilityIdentifier("chat-search-current")
+                }
                 if chat.canViewAnnouncements(for: conversation) {
                     Button {
                         presentsAnnouncements = true
@@ -703,6 +699,11 @@ private struct MobileChatMessagesView: View {
         }
         .sheet(isPresented: $presentsMembers) {
             MobileChatMembersSheet(chat: chat, conversation: conversation)
+        }
+        .sheet(isPresented: $presentsMessageSearch) {
+            if let interaction = chat.interaction {
+                MobileChatSearchSheet(chat: chat, interaction: interaction, conversationID: conversation.id)
+            }
         }
         .sheet(isPresented: $presentsAnnouncements) {
             MobileChatAnnouncementsSheet(chat: chat, conversation: conversation)
@@ -1041,10 +1042,13 @@ private struct MobileChatMembersSheet: View {
     }
 }
 
-private struct MobileChatMessageRow: View {
+struct MobileChatMessageRow: View {
     @Bindable var chat: MobileChatModel
     let message: ChatMessage
+    var allowsThreadNavigation = true
     @State private var confirmsDelete = false
+    @State private var presentsEdit = false
+    @State private var presentsThread = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1068,6 +1072,21 @@ private struct MobileChatMessageRow: View {
                     attachment: attachment
                 )
             }
+            if message.editedAt != nil {
+                Text(L10n.string("chat.edit.edited")).font(.caption).foregroundStyle(.secondary)
+            }
+            if allowsThreadNavigation, message.encryptionState == .notEncrypted,
+               chat.interaction?.availability.supportedFeatures.contains(.threadedReplies) == true {
+                Button { presentsThread = true } label: {
+                    Label(L10n.string("chat.thread.reply"), systemImage: "bubble.left.and.bubble.right")
+                }
+                .buttonStyle(.borderless).frame(minHeight: 44)
+                .accessibilityIdentifier("chat-thread-\(message.id)")
+            }
+            if let interaction = chat.interaction,
+               interaction.pending.contains(where: { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }) {
+                Text(L10n.string("mobile.chat.interaction.edit-pending")).font(.footnote).foregroundStyle(.secondary)
+            }
             deleteStatus
         }
         .padding(.vertical, 6)
@@ -1077,7 +1096,29 @@ private struct MobileChatMessageRow: View {
             deleteActionButton
         }
         .contextMenu {
+            if chat.interaction?.canEdit(message) == true {
+                Button { presentsEdit = true } label: {
+                    Label(L10n.string("chat.edit.action"), systemImage: "pencil")
+                }
+                .accessibilityIdentifier("chat-edit-\(message.id)")
+            }
             deleteActionButton
+        }
+        .sheet(isPresented: $presentsEdit) {
+            if let interaction = chat.interaction { MobileChatEditSheet(interaction: interaction, original: message) }
+        }
+        .sheet(isPresented: $presentsThread) {
+            if let interaction = chat.interaction {
+                NavigationStack {
+                    MobileChatDiscussionView(chat: chat, interaction: interaction, message: message)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button(L10n.string("files.common.close")) { presentsThread = false }
+                                    .frame(minWidth: 44, minHeight: 44)
+                            }
+                        }
+                }
+            }
         }
         .modifier(MobileChatDeleteAccessibilityAction(isEnabled: chat.canDeleteMessage(message)) {
             confirmsDelete = true
@@ -1114,15 +1155,11 @@ private struct MobileChatMessageRow: View {
         let isEnabled: Bool
         let action: () -> Void
 
-        @ViewBuilder
         func body(content: Content) -> some View {
-            if isEnabled {
-                content.accessibilityAction(
-                    named: L10n.string("mobile.chat.message.action.delete"),
-                    action
-                )
-            } else {
-                content
+            content.accessibilityActions {
+                if isEnabled {
+                    Button(L10n.string("mobile.chat.message.action.delete"), action: action)
+                }
             }
         }
     }

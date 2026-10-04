@@ -2,7 +2,7 @@ import DsmCore
 import Foundation
 import UniformTypeIdentifiers
 
-/// 移动端 Chat 能力边界：只透传当前受限范围内的会话读取、文字、单附件和本人消息删除能力。
+/// 移动端 Chat 能力边界：仅转发已接入原生主流程的能力，其余方法保持拒绝。
 struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     let base: any ChatRepository
 
@@ -18,7 +18,10 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             .attachmentDownload,
             .groupMembers,
             .pinnedMessages,
-            .deleteOwnMessage
+            .deleteOwnMessage,
+            .messageSearch,
+            .messageEditing,
+            .threadedReplies
         ]
         let mobileFeatures = value.status == .available
             ? value.supportedFeatures.intersection(mobileScope)
@@ -132,10 +135,47 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         guard value.status == .available,
               value.supportedFeatures.contains(.textMessage),
               draft.localAttachmentURLs.isEmpty,
-              draft.text?.isEmpty == false else {
+              draft.text?.isEmpty == false,
+              draft.threadID == nil || value.supportedFeatures.contains(.threadedReplies) else {
             throw MobileReadOnlyChatRepositoryError.operationUnavailable
         }
         return try await base.sendMessageResult(draft, progress: progress)
+    }
+
+    func searchMessages(query: String, conversationID: String?, cursor: String?, limit: Int) async throws -> ChatSearchPage {
+        try await require(.messageSearch)
+        return try await base.searchMessages(query: query, conversationID: conversationID, cursor: cursor, limit: limit)
+    }
+
+    func message(conversationID: String, messageID: String, threadID: String?) async throws -> ChatMessage? {
+        let value = await availability()
+        guard value.status == .available,
+              !value.supportedFeatures.isDisjoint(with: [.messageSearch, .messageEditing, .threadedReplies]) else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return try await base.message(conversationID: conversationID, messageID: messageID, threadID: threadID)
+    }
+
+    func listReplies(conversationID: String, threadID: String, before: String?, limit: Int) async throws -> ChatMessagePage {
+        try await require(.threadedReplies)
+        return try await base.listReplies(conversationID: conversationID, threadID: threadID, before: before, limit: limit)
+    }
+
+    func editingPolicy() async throws -> ChatEditingPolicy {
+        try await require(.messageEditing)
+        return try await base.editingPolicy()
+    }
+
+    func editMessage(_ original: ChatMessage, text: String, clientRequestID: UUID) async throws -> ChatMessage {
+        try await require(.messageEditing)
+        return try await base.editMessage(original, text: text, clientRequestID: clientRequestID)
+    }
+
+    private func require(_ feature: ChatFeature) async throws {
+        let value = await availability()
+        guard value.status == .available, value.supportedFeatures.contains(feature) else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
     }
 
     func sendAttachmentMessageResult(

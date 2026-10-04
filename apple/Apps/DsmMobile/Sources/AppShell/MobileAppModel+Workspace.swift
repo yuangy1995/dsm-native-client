@@ -123,7 +123,8 @@ extension MobileAppModel {
             case .chat:
                 guard let profileID = activeProfile?.id else { break }
                 let restoresCachedProfile = chatModel.profiles[profileID] != nil
-                await chatModel.activate(profileID: profileID, repository: chatRepository)
+                await chatModel.activate(profileID: profileID, repository: chatRepository,
+                    context: activeProfile.map { MobileWorkspaceIdentity($0).storageIdentifier })
                 if restoresCachedProfile {
                     await chatModel.reloadConversations()
                 }

@@ -53,6 +53,12 @@ extension MobileChatAttachmentModel {
     func cancelRemoteAttachmentDownload() {
         guard owner?.state.remoteAttachmentMessageID != nil else { return }
         remoteDownloadTask?.cancel()
+        remoteDownloadTask = nil
+        remoteDownloadGeneration &+= 1
+        owner?.updateActive {
+            $0.remoteAttachmentMessageID = nil
+            $0.remoteAttachmentProgressFraction = nil
+        }
     }
 
     func canOpenRemoteAttachment(_ attachment: ChatAttachment, in message: ChatMessage) -> Bool {
@@ -173,16 +179,18 @@ extension MobileChatAttachmentModel {
     }
 
     private func finishThumbnail(_ data: Data, messageID: String, profileID: UUID) {
-        guard let owner,
-              owner.activeProfileID == profileID,
-              owner.state.selectedMessages.messages.contains(where: { $0.id == messageID }) else {
+        guard let owner, owner.activeProfileID == profileID else { return }
+        defer {
+            owner.updateActive { $0.loadingAttachmentThumbnailIDs.remove(messageID) }
+            thumbnailTasks[messageID] = nil
+        }
+        guard owner.state.selectedMessages.messages.contains(where: { $0.id == messageID })
+                || owner.interaction?.root?.id == messageID
+                || owner.interaction?.focusedMessage?.id == messageID
+                || owner.interaction?.replies.messages.contains(where: { $0.id == messageID }) == true else {
             return
         }
-        owner.updateActive { profile in
-            profile.attachmentThumbnailsByMessageID[messageID] = data
-            profile.loadingAttachmentThumbnailIDs.remove(messageID)
-        }
-        thumbnailTasks[messageID] = nil
+        owner.updateActive { $0.attachmentThumbnailsByMessageID[messageID] = data }
     }
 
     private func finishThumbnailCancellation(messageID: String, profileID: UUID) {
@@ -280,8 +288,8 @@ extension MobileChatAttachmentModel {
 
     private func messageCanUseTransport(_ message: ChatMessage) -> Bool {
         guard let owner,
-              owner.state.selectedConversationID == message.conversationID,
-              owner.state.selectedConversation?.isEncrypted == false,
+              owner.containsVisibleMessage(conversationID: message.conversationID, messageID: message.id),
+              message.encryptionState == .notEncrypted,
               message.attachments.count == 1,
               owner.state.availability.supportedFeatures.contains(.attachmentDownload) else {
             return false
@@ -297,7 +305,7 @@ extension MobileChatAttachmentModel {
     ) -> Bool {
         guard let owner else { return false }
         return owner.activeProfileID == profileID &&
-            owner.state.selectedConversationID == conversationID &&
+            owner.containsVisibleMessage(conversationID: conversationID, messageID: messageID) &&
             owner.state.remoteAttachmentMessageID == messageID &&
             remoteDownloadGeneration == generation
     }

@@ -48,7 +48,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M3 人物、相似组 | SynologyPhotosModel、PhotoManagementPanel、PhotoFaceEditor | 触控分组列表、人物编辑及人脸画布；People/Concept/Similar；写 | M3g 已接人物/主题管理、手工人脸及版本 14 恢复，两端单元/实际 UI 与 Mac 回归通过；M3h2 已接相似分组/代表照片/移出/拆组/撤销及批量持久恢复，两端回归通过；不推断未识别人脸的身份 |
 | M3 预览任务及设置 | SynologyPhotosModel | 任务列表、取消及设置；预览转换/Settings；内部写 | M3e 已接移动复制任务列表/筛选、取消、逐项清除、错误详情与原目标导航，两端自动化通过；M3f1 已接重复文件/显示/个人分类设置、上传默认策略和旋转及版本 10 恢复，两端单元/实际 UI 通过；M3f2 已接手动预览重建/未完成列表及版本 11 恢复，两端回归通过；M3f3 已接自动预览设置/前台生成、图库维护与新格式提示及版本 12 恢复，M3f4 已接共享/全局设置、缓存及成员/两层目录权限和版本 13 恢复，两端回归通过 |
 | M3 导出、幻灯片及浏览控制 | PhotoDownloadMenu、PhotoArchiveDownloadMenu、PhotoSlideshowView、PhotoThumbnailSizeControls | 系统多项保存/分享、原件/JPEG/完整集合 ZIP，全屏触控播放与键盘；媒体读取/本机副本 | M3h3a 已接完整目标导出、实际格式与同名保护、部分失败/取消、独立分页播放、日/月和范围选择、缩略图大小；两端单元/系统 UI、共享及 Mac 回归通过，M3h3b 旧图库已清理 |
-| M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | 包装器未转发新增能力；本人/会话绑定，历史完整分页 |
+| M4 搜索、本人编辑、线程 | ChatWorkspaceModel、ChatWorkspaceView | 搜索、消息菜单、线程导航；Post search/update/thread；写 | M4a 已接全局/当前聊天搜索、本人编辑、线程完整分页与回复，未知摘要持久恢复；两端单元/实际 UI、共享及 Mac 回归通过，真实 NAS 待验 |
 | M4 投票、提醒、定时 | ChatDetailsViews | 原生表单；投票对象/props.vote 及提醒定时字段；写 | 缺完整接入；未知不重发，撤销核对原对象 |
 | M4 转发、置顶、会话管理 | ChatWorkspaceModel | 目标会话选择、菜单；Post.search 数字 in 数组；写 | 有部分低风险操作；包装器截断/字段投影需复核 |
 | M4 语音与录制 | ChatNativeMedia | 消息内播放暂停、首次录制申请麦克风；媒体/权限 | 缺录音；一击加载播放、取消清理临时文件 |
@@ -91,7 +91,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 - 实际命令：`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`；随后两端分别运行 `test-without-building`，iPad ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，关闭测试并行。结果分别为 `build/m0-m8-baseline-iphone.xcresult`、`build/m0-m8-baseline-ipad.xcresult`（忽略的本地构建目录）。
 - `python3 tools/codex/check_documentation.py` 与 `git diff --check` 通过。
 - `MobileChatPresentationTests` 包含源码文本断言；更新过时范围限制时保留安全语义并补实际行为/界面测试。
-- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通/条件/冻结相册、分享与收集、资料/目录/权限/任务及照片偏好/旋转、手动预览重建/恢复、自动预览/图库维护与新格式提示、管理员设置/共享成员、人物/主题/手工人脸、M3h1 原件批量删除/持久恢复及 M3h2 相似分组/撤销与 M3h3a 批量/整集合导出、幻灯片和浏览控制已通过两端回归；M3h3b 已清理旧图库并收敛当前恢复格式，M3 源码范围收口；M4–M8 继续实施。
+- M0 已核对照片主路由、组合根下载状态、进程内任务队列、Chat/NAS/Container/VMM 包装器以及 Mac 管理入口。M1 共享提取、下载模型、身份隔离与原生导航回归已通过；M2 源码范围已收口，M3 上传、普通/条件/冻结相册、分享与收集、资料/目录/权限/任务及照片偏好/旋转、手动预览重建/恢复、自动预览/图库维护与新格式提示、管理员设置/共享成员、人物/主题/手工人脸、M3h1 原件批量删除/持久恢复及 M3h2 相似分组/撤销与 M3h3a 批量/整集合导出、幻灯片和浏览控制已通过两端回归；M3h3b 已清理旧图库并收敛当前恢复格式，M3 源码范围收口；M4a 搜索/编辑/线程经两端回归，继续 M4b–M8。
 
 ## PENDING_USER_VALIDATION
 
@@ -106,6 +106,18 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+## M4a 搜索、本人编辑与线程
+
+Mac 证据为 `ChatWorkspaceModel.searchMessages/editMessage/loadDiscussionRoot/loadReplies/sendReply`、`ChatWorkspaceView` 与共享 `DsmChatRepository`；契约为 `chat-message-interaction` 中 Post v5 独立搜索/历史游标、Post v8 编辑及 Admin.Setting v3 策略。两端提供所有聊天/当前聊天搜索、原消息详情、本人消息编辑和线程分页回复，使用系统搜索、消息菜单和导航表单；不复制桌面窗口、悬停或双击。
+
+当前负责人单一修改移动 Chat 模型/包装器/视图、会话装配、受保护恢复文件、双语资源、合成服务与正式测试、工程及相关文档。搜索为内部只读，编辑和回复为消息写；提交前保存独立版本 1 操作摘要（账号上下文、会话/消息/线程身份、作者和文字摘要、请求编号），不保存正文或凭据。未知编辑只读取原消息，未知回复不按同内容猜测归属或自动重发；存储失败零提交。沿用已授权 M0–M8 独立恢复范围，采用当前结构，无旧开发数据兼容或登录格式迁移；回滚停用新增入口并保留记录。NAS 请求及共享协议不变，无新增依赖、权限、最低版本或应用身份。源码、两端各 928 项单元（各 1 条既有设备条件跳过）、四项实际 UI 及追加中文深色/无障碍最大字号均通过；共享回归和 Mac 双架构构建通过，真实 NAS 不参与自动写测试。
+
+M4b 接投票/提醒/定时/转发/置顶/会话管理，M4c 接语音与录制，M4d 接前台工作区实时、实际可见位置已读与本地提醒。后续项仍是源码待办，不能由本切片标为仅待设备验证。
+
+已完成独立集成及只读对抗复核：搜索/线程游标分离、原账号/消息/作者、旧查询迟到、无权限与存储失败零提交、未知重启不重放、编辑与删除互斥、回复中刷新仍完成原草稿、关闭线程后附件清理与再次读取。实际 UI 发现并修正无障碍条件分支重建消息行导致编辑表单关闭；回归同时将既有文档下载测试的 300ms 假定改为等待真实完成及面板交接，保留 FIFO、重复关闭和清理断言。精确命令和中间失败见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-04-移动-m4a-搜索编辑与线程)。
+
+`PENDING_USER_VALIDATION`：使用两台设备和专用可丢弃聊天/普通账号，验证跨会话关键词搜索、编辑允许/超时/撤权、旧回复跳转、多人并发修改及断网重连；结果应绑定原会话/本人/线程，未知不重复发出，其他账号不可接手旧操作。真机输入法、VoiceOver、外接键盘和设备锁定下的文件保护需分别验证。仅回传 App/OS/DSM/Chat 版本、权限类别、脱敏操作与错误类别，不提供正文、成员、主机或凭据；未新增加密、后台实时或推送服务。
 
 ## M3h 相似分组、批量删除与导出
 
