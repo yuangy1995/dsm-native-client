@@ -385,7 +385,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(source.contains("catalog.categories.filter { $0.id != \"_allcat_\" }"))
     }
 
-    func test下载页面保留四态受限控制列表和详情选择() throws {
+    func test下载页面保留五态控制列表和详情选择() throws {
         let view = try sourceFile(
             "Sources/Features/Services/Downloads/MobileDownloadsView.swift"
         )
@@ -399,7 +399,9 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(view.contains("MobileDownloadActivitySummaryView"))
         XCTAssertTrue(view.contains("mobile.downloads.activity.title"))
         XCTAssertTrue(view.contains("mobile.downloads.activity.emule-download"))
-        XCTAssertTrue(view.contains("ui.3b14d1af77ab3e3e"))
+        let presentation = try sourceFile("Sources/Features/Services/Downloads/MobileDownloadPresentation.swift")
+        XCTAssertTrue(presentation.contains("ui.3b14d1af77ab3e3e"))
+        XCTAssertTrue(view.contains("MobileDownloadPresentation.speed"))
         XCTAssertTrue(model.contains("hasActivitySummary: snapshot.hasActivitySummary"))
         XCTAssertTrue(model.contains("emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond"))
         XCTAssertTrue(view.contains(".sheet(item: $selectedTask)"))
@@ -407,7 +409,9 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(view.contains("mobile.downloads.control.section"))
         XCTAssertTrue(model.contains("return .loading"))
         XCTAssertTrue(model.contains("return message == nil ? .loading : .error"))
-        XCTAssertTrue(model.contains("return downloadSnapshot.tasks.isEmpty ? .empty : .content"))
+        XCTAssertTrue(model.contains("if downloadSnapshot.tasks.isEmpty { return .empty }"))
+        XCTAssertTrue(model.contains("return visibleTasks.isEmpty ? .filteredEmpty : .content"))
+        XCTAssertTrue(model.contains("loadDownloadStationInventory()"))
     }
 
     func test受限控制说明触控和VoiceOver语义保持稳定() throws {
@@ -415,7 +419,9 @@ final class MobileDownloadsSafetyTests: XCTestCase {
             "Sources/Features/Services/Downloads/MobileDownloadsView.swift"
         )
 
-        XCTAssertTrue(view.contains("mobile.downloads.read-only.notice"))
+        XCTAssertFalse(view.contains("mobile.downloads.read-only.notice"))
+        XCTAssertTrue(view.contains("mobile.downloads.catalog.limited"))
+        XCTAssertTrue(view.contains("download.workspace.empty-hint"))
         XCTAssertTrue(view.contains("mobile.downloads.create.url.label"))
         XCTAssertTrue(view.contains("mobile.downloads.create.url.help"))
         XCTAssertTrue(view.contains("mobile.downloads.create.file.action.hint"))

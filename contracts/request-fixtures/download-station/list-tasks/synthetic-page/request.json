@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "fixtureId": "download-station.edit-destination.synthetic-task",
+  "fixtureId": "download-station.list-tasks.synthetic-page",
   "module": "download-station",
-  "operation": "editDestination",
+  "operation": "listDownloadTasks",
   "api": {
     "name": "SYNO.DownloadStation.Task",
-    "method": "edit",
+    "method": "list",
     "preferredVersion": 1,
     "resolvedVersion": 1,
     "resolvedPath": "entry.cgi"
@@ -16,14 +16,19 @@
   },
   "parameters": [
     {
-      "name": "destination",
-      "valueType": "string",
-      "encodedValue": "<synthetic-directory>"
+      "name": "offset",
+      "valueType": "integer",
+      "encodedValue": "0"
     },
     {
-      "name": "id",
+      "name": "limit",
+      "valueType": "integer",
+      "encodedValue": "500"
+    },
+    {
+      "name": "additional",
       "valueType": "string",
-      "encodedValue": "<synthetic-download-task>"
+      "encodedValue": "detail,transfer"
     }
   ],
   "authentication": {
@@ -39,12 +44,12 @@
     ]
   },
   "policy": {
-    "retryPolicy": "queryStateBeforeDecision",
-    "risk": "standardWrite",
-    "readbackPolicy": "required"
+    "retryPolicy": "readOnlyAutomatic",
+    "risk": "read",
+    "readbackPolicy": "none"
   },
   "source": {
     "kind": "synthetic",
-    "evidence": "sourceReviewed"
+    "evidence": "publicDocumentation"
   }
 }

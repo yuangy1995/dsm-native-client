@@ -43,8 +43,21 @@ public struct DownloadStationTask: Identifiable, Equatable, Sendable {
     }
 
     public var progress: Double? {
-        guard let sizeBytes, sizeBytes > 0, let downloadedBytes else { return nil }
+        guard let sizeBytes, sizeBytes > 0, let downloadedBytes, downloadedBytes >= 0 else { return nil }
         return min(1, max(0, Double(downloadedBytes) / Double(sizeBytes)))
+    }
+
+    public var remainingSeconds: TimeInterval? {
+        guard status.lowercased() == "downloading", let sizeBytes, sizeBytes > 0,
+              let downloadedBytes, downloadedBytes >= 0,
+              let downloadBytesPerSecond, downloadBytesPerSecond > 0 else { return nil }
+        return max(0, (Double(sizeBytes) - Double(downloadedBytes)) / Double(downloadBytesPerSecond))
+    }
+
+    public var shareRatio: Double? {
+        guard let downloadedBytes, downloadedBytes > 0,
+              let uploadedBytes, uploadedBytes >= 0 else { return nil }
+        return Double(uploadedBytes) / Double(downloadedBytes)
     }
 }
 
@@ -58,6 +71,9 @@ public struct DownloadStationSnapshot: Equatable, Sendable {
     public let emuleDownloadBytesPerSecond: Int64
     public let emuleUploadBytesPerSecond: Int64
     public let defaultDestination: String?
+    /// 完整分页已结束才为 true；旧摘要和内部备用快照不得作为对象不存在的证据。
+    public let isComplete: Bool
+    public let statistics: DownloadStationStatistics?
 
     public init(
         source: ServiceContractSource,
@@ -68,7 +84,9 @@ public struct DownloadStationSnapshot: Equatable, Sendable {
         uploadBytesPerSecond: Int64 = 0,
         emuleDownloadBytesPerSecond: Int64 = 0,
         emuleUploadBytesPerSecond: Int64 = 0,
-        defaultDestination: String? = nil
+        defaultDestination: String? = nil,
+        isComplete: Bool = false,
+        statistics: DownloadStationStatistics? = nil
     ) {
         self.source = source
         self.tasks = tasks
@@ -79,6 +97,13 @@ public struct DownloadStationSnapshot: Equatable, Sendable {
         self.emuleDownloadBytesPerSecond = emuleDownloadBytesPerSecond
         self.emuleUploadBytesPerSecond = emuleUploadBytesPerSecond
         self.defaultDestination = defaultDestination
+        self.isComplete = isComplete
+        self.statistics = statistics ?? (hasActivitySummary ? DownloadStationStatistics(
+            downloadBytesPerSecond: downloadBytesPerSecond,
+            uploadBytesPerSecond: uploadBytesPerSecond,
+            emuleDownloadBytesPerSecond: emuleDownloadBytesPerSecond,
+            emuleUploadBytesPerSecond: emuleUploadBytesPerSecond
+        ) : nil)
     }
 }
 

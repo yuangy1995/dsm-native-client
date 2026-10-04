@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "fixtureId": "download-station.edit-destination.synthetic-task",
+  "fixtureId": "download-station.edit-destination.synthetic-task-v2",
   "module": "download-station",
   "operation": "editDestination",
   "api": {
     "name": "SYNO.DownloadStation.Task",
     "method": "edit",
-    "preferredVersion": 1,
-    "resolvedVersion": 1,
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
     "resolvedPath": "entry.cgi"
   },
   "transport": {
@@ -45,6 +45,6 @@
   },
   "source": {
     "kind": "synthetic",
-    "evidence": "sourceReviewed"
+    "evidence": "publicDocumentation"
   }
 }

@@ -16,9 +16,9 @@ struct MobileDownloadsView: View {
             labels: MobilePageStateLabels(
                 loading: L10n.string("ui.86b6d0d63062ba81"),
                 emptyTitle: L10n.string("ui.e0c9f46a0d2db5c0"),
-                emptyMessage: L10n.string("mobile.downloads.read-only.notice"),
+                emptyMessage: L10n.string("download.workspace.empty-hint"),
                 filteredEmptyTitle: L10n.string("ui.e0c9f46a0d2db5c0"),
-                filteredEmptyMessage: L10n.string("mobile.downloads.read-only.notice"),
+                filteredEmptyMessage: L10n.string("download.workspace.filtered-hint"),
                 errorTitle: L10n.string("ui.0bc1fb72ae1be5c5"),
                 errorMessage: model.message ?? L10n.string("ui.38245f0b3e213b62"),
                 retryTitle: L10n.string("ui.7bdd5ce1e298a972")
@@ -28,6 +28,9 @@ struct MobileDownloadsView: View {
         ) {
             taskList
         }
+        .accessibilityElement(children: .contain)
+        .searchable(text: $model.searchText, prompt: L10n.string("download.workspace.search"))
+        .refreshable { await model.load() }
         .sheet(item: $selectedTask) { task in
             MobileDownloadTaskDetailView(model: model, initialTask: task)
         }
@@ -44,6 +47,23 @@ struct MobileDownloadsView: View {
             onCompletion: handleTaskFileImport
         )
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Picker(L10n.string("download.workspace.categories"), selection: $model.taskFilter) {
+                        ForEach(MobileDownloadFilter.allCases) { filter in
+                            Text(filter.title).tag(filter).accessibilityIdentifier("downloads.filter.\(filter.rawValue)")
+                        }
+                    }
+                    Picker(L10n.string("mobile.downloads.sort"), selection: $model.taskSort) {
+                        ForEach(MobileDownloadSort.allCases) { sort in Text(sort.title).tag(sort) }
+                    }
+                    Button(L10n.string("download.workspace.show-all")) { model.resetPresentation() }
+                } label: {
+                    Label(L10n.string("download.workspace.categories"), systemImage: "line.3.horizontal.decrease.circle")
+                }
+                .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
+                .accessibilityIdentifier("downloads.filters")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button {
@@ -98,17 +118,16 @@ struct MobileDownloadsView: View {
 
     private var taskList: some View {
         List {
-            Section {
-                Label(
-                    L10n.string("mobile.downloads.read-only.notice"),
-                    systemImage: "eye"
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
+            if model.downloadSnapshot?.isComplete == false {
+                Section { Text(L10n.string("mobile.downloads.catalog.limited")).foregroundStyle(.secondary) }
             }
-
-            if let snapshot = model.downloadSnapshot, snapshot.hasActivitySummary {
+            if model.message != nil {
+                Section {
+                    Text(L10n.string("mobile.downloads.catalog.refresh-failed"))
+                    Button(L10n.string("ui.7bdd5ce1e298a972"), action: model.reloadDownloads)
+                }
+            }
+            if let snapshot = model.downloadSnapshot {
                 MobileDownloadActivitySummaryView(snapshot: snapshot)
             }
 
@@ -119,7 +138,7 @@ struct MobileDownloadsView: View {
             }
 
             Section {
-                ForEach(model.downloadSnapshot?.tasks ?? []) { task in
+                ForEach(model.visibleTasks) { task in
                     Button {
                         selectedTask = task
                     } label: {
@@ -129,6 +148,7 @@ struct MobileDownloadsView: View {
                     .frame(minHeight: MobileMetrics.minimumTouchTarget)
                     .contentShape(Rectangle())
                     .accessibilityHint(L10n.string("ui.a748cc074f78de00"))
+                    .accessibilityIdentifier("downloads.task.\(task.id)")
                 }
             }
         }
@@ -167,32 +187,26 @@ private struct MobileDownloadActivitySummaryView: View {
         Section(L10n.string("mobile.downloads.activity.title")) {
             LabeledContent(
                 L10n.string("mobile.downloads.activity.download"),
-                value: formattedSpeed(snapshot.downloadBytesPerSecond)
+                value: MobileDownloadPresentation.speed(snapshot.statistics?.downloadBytesPerSecond)
             )
             LabeledContent(
                 L10n.string("mobile.downloads.activity.upload"),
-                value: formattedSpeed(snapshot.uploadBytesPerSecond)
+                value: MobileDownloadPresentation.speed(snapshot.statistics?.uploadBytesPerSecond)
             )
             if showsEMuleSpeeds {
                 LabeledContent(
                     L10n.string("mobile.downloads.activity.emule-download"),
-                    value: formattedSpeed(snapshot.emuleDownloadBytesPerSecond)
+                    value: MobileDownloadPresentation.speed(snapshot.statistics?.emuleDownloadBytesPerSecond)
                 )
                 LabeledContent(
                     L10n.string("mobile.downloads.activity.emule-upload"),
-                    value: formattedSpeed(snapshot.emuleUploadBytesPerSecond)
+                    value: MobileDownloadPresentation.speed(snapshot.statistics?.emuleUploadBytesPerSecond)
                 )
             }
         }
         .accessibilityElement(children: .contain)
     }
 
-    private func formattedSpeed(_ bytesPerSecond: Int64) -> String {
-        let formatted = bytesPerSecond.formatted(
-            .byteCount(style: .file).locale(L10n.locale)
-        )
-        return L10n.string("ui.3b14d1af77ab3e3e", formatted)
-    }
 }
 
 private struct MobileDownloadCreateTaskView: View {
@@ -340,7 +354,7 @@ private struct DownloadTaskRow: View {
                 Text(task.title)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
-                Text(task.status)
+                Text(MobileDownloadPresentation.status(task.status))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let progress = task.progress {
@@ -348,6 +362,15 @@ private struct DownloadTaskRow: View {
                         .accessibilityLabel(L10n.string("ui.755ca1516d681c2c"))
                         .accessibilityValue(Text(progress, format: .percent.precision(.fractionLength(0))))
                 }
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        Label(MobileDownloadPresentation.speed(task.downloadBytesPerSecond), systemImage: "arrow.down")
+                        Text(MobileDownloadPresentation.remaining(task))
+                    }
+                    Text(MobileDownloadPresentation.speed(task.downloadBytesPerSecond))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
             Image(systemName: "chevron.forward")
@@ -365,6 +388,9 @@ private struct MobileDownloadTaskDetailView: View {
     let initialTask: DownloadStationTask
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingDelete = false
+    @State private var details: DownloadStationTaskDetails?
+    @State private var isLoadingDetails = false
+    @State private var detailsFailed = false
 
     private var task: DownloadStationTask {
         model.downloadTask(id: initialTask.id) ?? initialTask
@@ -373,23 +399,13 @@ private struct MobileDownloadTaskDetailView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Label(
-                        L10n.string("mobile.downloads.read-only.notice"),
-                        systemImage: "pause.circle"
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .accessibilityElement(children: .combine)
-                }
-
                 controlSection
                 deleteSection
 
                 Section(L10n.string("ui.1932da4d4dba4ed0")) {
                     LabeledContent(
                         L10n.string("background-tasks.filter-label"),
-                        value: task.status
+                        value: MobileDownloadPresentation.status(task.status)
                     )
                     if let progress = task.progress {
                         LabeledContent(L10n.string("ui.755ca1516d681c2c")) {
@@ -399,33 +415,40 @@ private struct MobileDownloadTaskDetailView: View {
                             .accessibilityLabel(L10n.string("ui.755ca1516d681c2c"))
                             .accessibilityValue(Text(progress, format: .percent.precision(.fractionLength(0))))
                     }
-                    if let sizeBytes = task.sizeBytes {
-                        LabeledContent(L10n.string("mobile.files.details.size")) {
-                            Text(sizeBytes, format: .byteCount(style: .file))
-                        }
-                    }
-                    if let downloadedBytes = task.downloadedBytes {
-                        Text(
-                            L10n.string(
-                                "desktopDrive.cache.size",
-                                downloadedBytes.formatted(.byteCount(style: .file))
-                            )
-                        )
-                    }
+                    LabeledContent(L10n.string("download.workspace.size"), value: MobileDownloadPresentation.bytes(task.sizeBytes))
+                    LabeledContent(L10n.string("download.workspace.downloaded"), value: MobileDownloadPresentation.bytes(task.downloadedBytes))
+                    LabeledContent(L10n.string("download.workspace.uploaded"), value: MobileDownloadPresentation.bytes(task.uploadedBytes))
+                    LabeledContent(L10n.string("download.workspace.download-speed"), value: MobileDownloadPresentation.speed(task.downloadBytesPerSecond))
+                    LabeledContent(L10n.string("download.workspace.upload-speed"), value: MobileDownloadPresentation.speed(task.uploadBytesPerSecond))
+                    LabeledContent(L10n.string("download.workspace.remaining"), value: MobileDownloadPresentation.remaining(task))
+                        .accessibilityIdentifier("downloads.details.remaining")
+                    LabeledContent(L10n.string("download.workspace.ratio"), value: task.shareRatio?.formatted(.number.precision(.fractionLength(0...2)).locale(L10n.locale)) ?? MobileDownloadPresentation.unknown)
                     if let destination = task.destination, !destination.isEmpty {
                         LabeledContent(
                             L10n.string("ui.0b7e2876922e4662"),
                             value: destination
                         )
                     }
-                    if let error = task.errorDescription, !error.isEmpty {
-                        LabeledContent(
-                            L10n.string("ui.0bc1fb72ae1be5c5"),
-                            value: error
-                        )
+                    if task.status.lowercased() == "error" {
+                        Text(L10n.string("download.workspace.task-error"))
                     }
                 }
+                if isLoadingDetails {
+                    Section { ProgressView(L10n.string("ui.86b6d0d63062ba81")) }
+                }
+                if detailsFailed {
+                    Section {
+                        Text(L10n.string("mobile.downloads.details.failed"))
+                        Button(L10n.string("ui.7bdd5ce1e298a972")) { Task { await loadDetails() } }
+                            .accessibilityIdentifier("downloads.details.retry")
+                    }
+                }
+                if let details { MobileDownloadAdditionalDetails(details: details) }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("downloads.details.form")
+            .task(id: model.activeProfile.map(MobileWorkspaceIdentity.init)) { await loadDetails() }
+            .refreshable { await loadDetails() }
             .confirmationDialog(
                 L10n.string("mobile.downloads.delete.confirm.title", task.title),
                 isPresented: $isConfirmingDelete,
@@ -445,9 +468,10 @@ private struct MobileDownloadTaskDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.string("ui.2cd0f3be8738a86c")) {
+                    Button(L10n.string("download.workspace.close")) {
                         dismiss()
                     }
+                    .accessibilityIdentifier("downloads.details.close")
                     .frame(
                         minWidth: MobileMetrics.minimumTouchTarget,
                         minHeight: MobileMetrics.minimumTouchTarget
@@ -455,6 +479,16 @@ private struct MobileDownloadTaskDetailView: View {
                 }
             }
         }
+    }
+
+    private func loadDetails() async {
+        guard !isLoadingDetails else { return }
+        isLoadingDetails = true
+        detailsFailed = false
+        defer { isLoadingDetails = false }
+        do { details = try await model.loadDetails(id: initialTask.id) }
+        catch is CancellationError { details = nil }
+        catch { detailsFailed = true }
     }
 
     @ViewBuilder

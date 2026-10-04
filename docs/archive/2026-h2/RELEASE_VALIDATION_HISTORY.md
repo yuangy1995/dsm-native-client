@@ -1713,3 +1713,49 @@ git diff --check
 保留失败与修复记录：第 2 次构建的 Swift 6 通知回调跨 actor 访问失败，改为在主 actor 执行回调；第 3 次构建的测试闭包访问主 actor 失败，改用明确的主 actor 检查。初轮 iPhone 100 项聚焦测试一项精确请求计数失败，是启动补读与故障注入重叠；明确等待启动同步后再注入，保持原计数和状态断言。第 2 轮两端完整单元通过，但 UI 各 9 项中 2 项找不到“最新消息”标识：截图显示按钮可见，页面容器覆盖了子按钮无障碍标识；增加可访问容器后，保留点击、真实末尾可见、未读变化及拒绝后未读保留的断言，第 3/4 轮均通过。没有删除测试、降低断言或把未运行实机项目改成通过。
 
 已查看两端长历史/末尾消息、未读保留、搜索线程以及中文深色超大字号通知恢复截图。实际系统权限弹窗、锁屏通知、系统终止/点击、提醒调度、真实 NAS/多客户端及完整辅助功能为 `PENDING_USER_VALIDATION`，条件、步骤、预期和脱敏反馈见[移动主计划 M4d](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4d-前台实时阅读同步与本地提醒)。M4 源码范围收口；继续 M5–M8，不发布移动安装包，不把后台远程新消息推送列为待设备验证。
+
+
+## 2026-10-05 移动 M5a1 下载完整目录与详情
+
+基线 `04cad733`。移动 Downloads、新增详情与展示类型、合成 transport、对应单元/UI、双语资源及生成工程；共享公开读取的兼容增量与分页修正。Mac App、Windows、Android 源码不改；未改变身份、权限、最低系统或持久格式。官方 Task.list/getinfo 固定 v1，additional 按指南使用逗号串；Task.edit 字段表要求 v2，而旧 Android 快照仍绑定 v1，本轮单独保留已知偏差并提供 v2 样本，不将其当作已修复实现。
+
+完整目录不再受原 5000 项上限约束，已知总量短页继续读取，重复 ID、错位、漂移、畸形或过早空页拒绝完整结论。公开删除查询复用完整清单，不能把首批 1000 项之外的任务当作已删除；Mac 摘要仍保持原范围，内部备用仍标为受限。统计缺失不补零；详情包含任务内文件、来源站及参与者，Tracker 不展示 userinfo、路径和查询中的密钥，不持久化详情。迟到列表/详情不能覆盖新账号、替换 Repository 或新操作状态。
+
+构建候选前分离执行只读集成复核，并复核涉及共享写结果查询的取消/丢回执路径。本项为当前负责人的独立复核阶段，不声称另一个模型执行。新增 15 项共享测试和 9 项移动行为测试；真实界面覆盖五态、搜索恢复/状态筛选、详情失败重试、文件与安全来源显示、中文深色最大辅助字号与横竖屏。
+
+实际命令（仓库根目录，日志与结果在专用临时目录 `m5a-*`，不提交）：
+
+```sh
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -configuration Debug -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -configuration Debug -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m5a-iphone4.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileDownloadInventoryUITests test-without-building
+swift test --package-path apple
+swift test --package-path apple --filter 'DownloadStationInventoryTests|DsmServiceManagementRepositoryTests'
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build
+python3 tools/codex/generate_api_reference.py
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py --strict
+git diff --check
+```
+
+iPad 用相同测试命令，目标 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`、结果包 `m5a-ipad4.xcresult`。两端 iOS 26.5。首轮选择全部 `DsmMobileTests` 与上述四项 UI，第二/三轮选择 `MobileDownloadInventoryTests`、`MobileDownloadsSafetyTests` 与四项 UI；最终第四轮重新选择全部移动单元及四项 UI。第 1–5 次及第 7–8 次构建使用具体模拟器目标，第 6 次使用 generic 目标。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 构建 | 前八次移动构建通过，锁定 XcodeGen 2.46.0 重复生成一致；Mac Release 双架构构建通过，实际主程序经 `lipo -archs` 为 `x86_64 arm64`，未安装或启动 |
+| 首轮完整移动单元 | 两端各 1165 项、3 条既有明确条件跳过、0 失败；iPhone 28.040 秒，iPad 28.002 秒 |
+| 第二轮聚焦移动单元 | 两端各 18 项、0 失败；iPhone 0.191 秒，iPad 0.209 秒；详情迟到测试直接执行继续下载再交付旧详情，保持状态断言 |
+| 共享完整回归 | 2651 项 XCTest、172 条既有条件跳过、0 失败，34.499 秒；12 项 Swift Testing、0 失败，0.035 秒 |
+| 共享最终分页/结果聚焦 | 最终 additional 逗号串及两项新增删除分页回归后，165 项、0 失败，0.490 秒 |
+| 第四轮完整移动单元 | 两端各 1167 项、3 条既有明确条件跳过、0 失败；iPhone 27.973 秒，iPad 27.965 秒 |
+| 最终移动 UI | 第四轮两端各 4 项零失败；iPhone 160.001 秒，iPad 178.727 秒；搜索/筛选、五态、详情失败重试/文件/安全 Tracker 和中文深色大字/旋转均通过 |
+| 静态与契约 | 双语、占位符及硬编码通过：Apple 6103 / Android 2188 / Windows 3402；173 个请求 fixture、1 个写结果、29 组 fixture / 48 项私有记录引用通过 |
+
+中间失败如实保留：共享首轮 163 项中的 2 项共 3 处断言失败，其中详情 additional 编码未按官方逗号串、取消检查提前跳过已提交控制的只读结果读取；改正编码并对提交后取消执行独立只读查询，保留原断言，第二轮 163 项零失败。UI 首轮 iPhone 四项中 2 项失败、iPad 四项中 3 项失败；第二轮均四项中 2 项失败。根因为 iOS 26 系统搜索折叠/关闭按钮变化、滚动误选侧栏或弹窗外、部分可见条目被误判为可操作。使用明确详情表单容器、当前列表与可见区域滚动，并保留搜索、剩余值、文件及安全 Tracker 展示断言，不把未通过轮次表述为通过。第三轮两端搜索/筛选、中文深色大字体/旋转及五态通过，但详情重试一项仍失败：滚动测试为底部预留过大固定区域，无法将页面末尾按钮移入判定区域；按实际导航/标签栏位置计算可见范围。随后收尾检查发现执行中才开始的读取可晚于操作完成返回，补充两项实际异步时序测试，并在控制/创建/移除完成时推进代次，第四轮完整单元通过。
+
+已导出并查看两端普通字号浅色的筛选/无结果/任务文件、中文深色最大辅助字号及横屏截图；所有内容来自显式合成 fixture，不访问 NAS。最后本地化、请求目录一致性、契约、严格文档及差异检查均通过。
+
+`PENDING_USER_VALIDATION`：iPhone/iPad 真机、已记录 DSM/Download Station 版本、专用普通及管理员账号，验证超过一页的混合状态任务、搜索/排序、真实零与缺失速度、BT 文件/Tracker/参与者、非 BT 缺少附属内容、读取中取消/断网/切账号，以及另一客户端并发变更目录。预期未知显示 `--`、部分目录明确受限、刷新失败保留旧清单且可重试、旧详情不覆盖新状态；来源站不显示下载密钥。单独补验 VoiceOver、键盘、最大字号与分屏。只回传版本、数量、权限类别、脱敏步骤及错误类别，不提供任务名、路径、地址、响应或凭据。真实 NAS 未参与本轮自动操作；多选控制、持久恢复、设置、编辑/RSS 及文件删除仍属后续 M5 切片，不能记为仅待设备验证。
