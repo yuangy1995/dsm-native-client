@@ -35,6 +35,8 @@ struct MobileFileBrowser: View {
     @State private var remotePath: String?
     @State private var remoteDownload: FileItem?
     @State private var isoSource: FileItem?
+    @State private var previewOfficeSelection: MobileOfficeSelection?
+    @State private var officeSelection: MobileOfficeSelection?
     @State private var crossNASSelection: MobileCrossNASSelection?
     @State private var showsAdvancedSearch = false
     @State private var restoresPreviewInspectorAfterFullScreen = false
@@ -122,6 +124,7 @@ struct MobileFileBrowser: View {
         .sheet(isPresented: shareLinkPresentationBinding) {
             MobileFileShareLinkView(model: model.fileShareLinkModel)
         }
+        .sheet(item: $officeSelection) { MobileOfficeEditor(model: model.office, selection: $0) }
         .sheet(item: $crossNASSelection) { selection in
             MobileCrossNASSelectionView(model: model, selection: selection)
         }
@@ -297,7 +300,15 @@ struct MobileFileBrowser: View {
             }
             .navigationTitle(preview.state.details?.name ?? preview.state.selectedItem?.name ?? "")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $previewOfficeSelection) { MobileOfficeEditor(model: model.office, selection: $0) }
             .toolbar {
+                if let item = preview.state.details ?? preview.state.selectedItem, MobileOfficePolicy.supports(item) {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(L10n.string("mobile.office.title"), systemImage: "doc.text") {
+                            if let context = model.office.context { previewOfficeSelection = .init(item: item, context: context) }
+                        }.accessibilityIdentifier("files.office.preview.edit")
+                    }
+                }
                 if showsPreviewDetails {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
@@ -539,6 +550,11 @@ struct MobileFileBrowser: View {
 
     private func itemMenu(_ item: FileItem) -> some View {
         Menu {
+            if MobileOfficePolicy.supports(item), !state.location.source.isReadOnlyLocation {
+                Button(L10n.string("mobile.office.title"), systemImage: "doc.text") {
+                    if let context = model.office.context { officeSelection = .init(item: item, context: context) }
+                }.disabled(model.fileRepository == nil).accessibilityIdentifier("files.office.open")
+            }
             if !state.location.source.isReadOnlyLocation && (item.kind == .file || item.isDirectory) {
                 let selected = locations.state.favorites.locations.contains { $0.path == item.path }
                 Button {

@@ -797,3 +797,19 @@ M2g2 提交的 [Apple Build](https://github.com/yuangy1995/dsm-native-client/act
 - iPhone 浅色、iPad 深色的实际表单、权限错误、活动明细和完成截图已检查，控件和恢复说明正常；设备辅助功能、真实证书/两端 NAS 及后台生命周期不计入上述通过。
 
 代码同步和云端完整门禁分别记录，不将本机通过当作真实 NAS 验收或移动发布。
+
+
+## 2026-10-04 移动 M2i Office 预览与主动回传
+
+移动端增加六种 Office 格式的受控 Quick Look、原生分享/文件选择器交接、用户主动覆盖回传及活动恢复。共享 `OfficeDocumentSupport` 从 Mac 提取既有格式白名单、稳定文件副本和摘要算法；Mac 只改引用，自动保存行为不变。移动编辑记录使用独立受保护且排除备份的 `Office/sessions-v1.json`，原账号/文件基线、选回文件与上传快照分别固定。相同内容零上传，前后读取与 MD5 发现原件变化即停止覆盖；写前落盘失败零请求，上传未知只读恢复，重启不自动覆盖。未更改 DSM 请求、主 App 身份、旧配置或 Windows/Android 源码；真实 NAS 未参与自动化。
+
+独立集成及只读对抗复核覆盖 18 项模型场景：原名/原位置、多轮保存、相同内容、同大小同时间的远端改写、权限撤销、权限检查期间内容变化、冻结上传不受编辑器晚到保存影响、丢回执回读、未知跨重启/禁止换文件重试、重复点击、会话切换与迟到结果、存储失败、未来/损坏版本、格式/符号链接拒绝、候选副本变化及记录隔离。另有一项新增模型测试覆盖六种格式与受控预览副本清理。
+
+- `swift test --package-path apple --jobs 4`：**2432 项 XCTest，172 项既有条件跳过，0 失败（30.407 秒）**；另 **12 项 Swift Testing 全部通过**，包含既有 Mac Office 回归。日志 `m2i-shared1.log`。
+- `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO`：**通过**；产物 `lipo -archs` 为 **x86_64 arm64**，没有安装、启动或发布 Mac 安装包。
+- 移动构建沿用 `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`。前两次发现进度闭包需要显式 `self`，已修正；第三至第七次构建通过，最终为 `m2i-build7.log`。
+- 首次聚焦 `-only-testing:DsmMobileTests/MobileOfficeTests` 与 `MobileFilePreviewModelTests`：**45/45 通过**。补两项对抗场景后，`test-without-building` 关闭并行，iPhone 使用上述 ID，iPad 使用 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`；`-only-testing:DsmMobileTests` 分别 **693/693 通过**，iPhone 11.366 秒、iPad 11.324 秒。结果包 `m2i-iphone1.xcresult` / `m2i-ipad1.xcresult`。
+- 同轮新增实际 UI：iPhone **3/4 通过**，iPad **2/4 通过**；发现活动记录的编辑弹窗挂在 List Section 上未呈现，以及 iPad 权限错误在长表单底部不可见。将弹窗提升到页面根、错误移到表单上方，保留全部断言；同时补等待前一文档结束和重新进入时清理旧反馈。
+- 最终同工程/方案/构建目录、`test-without-building`、`-parallel-testing-enabled NO`，分别选择 `-only-testing:DsmMobileTests/MobileOfficeTests` 及四个 `MobileWorkspaceUITests/testOffice…`：**每端 18/18 单元与 4/4 实际 UI 全部通过**。iPhone 模型 0.397 秒、UI 115.830 秒；iPad 模型 0.359 秒、UI 121.018 秒。结果包 `m2i-iphone2.xcresult` / `m2i-ipad2.xcresult`。四项为预览/系统交接与选回、主动保存后从活动继续、丢回执只读刷新、冲突/权限/相同内容恢复。
+
+实际 UI 使用内存 NAS 与合成最小 Word 包，通过正式 Repository 和系统 Quick Look/分享/文件选择器；第二轮 iPhone 浅色与 iPad 深色实际文档、保存与权限错误截图已检查，测试后恢复 iPad 浅色。六种格式的真实编辑器、锁屏文件保护、真实 NAS 内容及辅助功能按 M2i 设备待办继续，不能以合成界面和模型测试替代。用户追加的默认两个导航入口与账号权限候选列表将在下一切片实现，不由本次 Office 验证覆盖。

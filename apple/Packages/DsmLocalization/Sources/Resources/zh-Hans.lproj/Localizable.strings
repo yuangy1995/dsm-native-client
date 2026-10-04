@@ -5964,3 +5964,31 @@
 "mobile.cross.error.recovery" = "无法保存或读取传输记录。请检查设备存储空间后重新打开 App。";
 "mobile.cross.error.invalid" = "无法传输所选项目。请刷新文件列表，重新选择普通文件或文件夹。";
 "mobile.cross.error.unavailable" = "此 NAS 尚不支持所需的文件操作。请使用 DSM 完成传输。";
+
+// 移动 Office 预览与主动回传
+"mobile.office.title" = "编辑文档";
+"mobile.office.activity" = "文档编辑";
+"mobile.office.export" = "打开或保存编辑副本…";
+"mobile.office.import" = "选择编辑后的文件…";
+"mobile.office.save" = "保存到 NAS";
+"mobile.office.handoff" = "在其他 App 中编辑副本，再选择编辑后的文件。保存会更新 NAS 上的原文件。";
+"mobile.office.ready" = "编辑副本已准备好";
+"mobile.office.changed" = "修改已准备好，可以保存";
+"mobile.office.unchanged" = "内容未变化，无需保存";
+"mobile.office.saving" = "正在保存修改…";
+"mobile.office.saved" = "修改已保存到 NAS";
+"mobile.office.conflict.title" = "原文件已变化";
+"mobile.office.conflict" = "NAS 上的原文件已变化，修改尚未保存。请导出此副本，重新打开原文件后合并修改。";
+"mobile.office.interrupted.title" = "保存尚未完成";
+"mobile.office.interrupted" = "暂时无法确定修改是否已保存。副本已保留，请连接 NAS 后刷新。";
+"mobile.office.working" = "正在处理文档";
+"mobile.office.preparing" = "正在准备编辑副本…";
+"mobile.office.discard" = "关闭编辑并移除此副本";
+"mobile.office.discard.title" = "移除此设备上的编辑副本？";
+"mobile.office.discard.message" = "尚未保存到 NAS 的修改将丢失。NAS 上的原文件不受影响。";
+"mobile.office.connection" = "无法连接 NAS。请检查网络，重新连接后再试。";
+"mobile.office.permission" = "你无权修改此文件。请联系管理员，或导出副本保存到其他位置。";
+"mobile.office.format" = "文件格式与原文件不同。请在编辑 App 中保存为原格式后重新选择。";
+"mobile.office.local" = "无法读取此设备上的文档副本。请检查可用空间，并重新选择已保存的文件。";
+"mobile.office.recovery" = "无法读取或保存编辑记录。请检查此设备的可用空间并重新打开 App；已有副本会保留。";
+"mobile.office.save.notice" = "保存会更新原文件。请勿同时从其他设备编辑此文件。";

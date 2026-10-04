@@ -876,6 +876,88 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(submit.waitForExistence(timeout: 5)); XCTAssertTrue(submit.isEnabled); submit.tap()
     }
 
+    func testOffice预览并交给系统分享及文件选择器() {
+        let app = launchFixture(state: "office-preview"); defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Document.docx"].waitForExistence(timeout: 5)); app.staticTexts["Document.docx"].tap()
+        let edit = element("files.office.preview.edit", in: app)
+        XCTAssertTrue(edit.waitForExistence(timeout: 8))
+        let rendered = app.staticTexts["Office preview sample"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 15))
+        attachScreenshot(app, name: "Office native Quick Look")
+        edit.tap()
+        XCTAssertTrue(app.staticTexts["Editing copy ready"].waitForExistence(timeout: 10))
+        element("files.office.export", in: app).tap()
+        XCTAssertTrue(element("ActivityListView", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(element("LP.CaptionBar.TopCaption", in: app).label.contains("Document"))
+        attachScreenshot(app, name: "Office system editing handoff")
+        app.buttons["header.closeButton"].tap()
+        element("files.office.import", in: app).tap()
+        let cancel = app.buttons.matching(NSPredicate(format: "label == 'Cancel' OR label == '取消'")).firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10))
+        attachScreenshot(app, name: "Office system document picker")
+        cancel.tap()
+        XCTAssertTrue(app.staticTexts["Editing copy ready"].waitForExistence(timeout: 5))
+    }
+
+    func testOffice主动保存并从活动中心继续编辑() {
+        let app = launchFixture(state: "office-save"); defer { app.terminate() }
+        openOfficeEditor(app)
+        XCTAssertTrue(app.staticTexts["Changes ready to save"].waitForExistence(timeout: 10))
+        element("files.office.save", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Changes saved to NAS"].waitForExistence(timeout: 10))
+        XCTAssertFalse(element("files.office.save", in: app).exists)
+        attachScreenshot(app, name: "Office changes saved")
+        app.buttons["Done"].tap(); openTransfers(app)
+        let document = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'files.office.activity.'")).firstMatch
+        XCTAssertTrue(document.waitForExistence(timeout: 8)); document.tap()
+        XCTAssertTrue(app.staticTexts["Changes saved to NAS"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["files.office.import"].waitForExistence(timeout: 5))
+    }
+
+    func testOffice丢回执后刷新恢复且不显示再次保存() {
+        let app = launchFixture(state: "office-unknown"); defer { app.terminate() }
+        openOfficeEditor(app)
+        XCTAssertTrue(element("files.office.save", in: app).waitForExistence(timeout: 10)); element("files.office.save", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Save not yet complete"].waitForExistence(timeout: 10))
+        XCTAssertFalse(element("files.office.save", in: app).exists)
+        XCTAssertFalse(element("files.office.import", in: app).exists)
+        XCTAssertFalse(element("files.office.discard", in: app).exists)
+        element("files.office.refresh", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Changes saved to NAS"].waitForExistence(timeout: 10))
+        attachScreenshot(app, name: "Office lost receipt recovery")
+    }
+
+    func testOffice冲突权限与相同内容保留正确操作() {
+        for state in ["office-conflict", "office-readonly", "office-unchanged"] {
+            let app = launchFixture(state: state)
+            openOfficeEditor(app)
+            if state == "office-unchanged" {
+                XCTAssertTrue(app.staticTexts["Content unchanged. No save needed."].waitForExistence(timeout: 10))
+                XCTAssertFalse(element("files.office.save", in: app).exists)
+            } else {
+                XCTAssertTrue(element("files.office.save", in: app).waitForExistence(timeout: 10)); element("files.office.save", in: app).tap()
+                if state == "office-conflict" {
+                    XCTAssertTrue(app.staticTexts["Original file changed"].waitForExistence(timeout: 10))
+                    XCTAssertFalse(element("files.office.save", in: app).exists)
+                } else {
+                    let error = element("files.office.error", in: app)
+                    XCTAssertTrue(error.waitForExistence(timeout: 10)); XCTAssertTrue(error.label.contains("permission"))
+                }
+            }
+            XCTAssertTrue(element("files.office.export", in: app).isEnabled)
+            attachScreenshot(app, name: state); app.terminate()
+        }
+    }
+
+    private func openOfficeEditor(_ app: XCUIApplication) {
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        let actions = app.buttons["Actions for Document.docx"]
+        XCTAssertTrue(actions.waitForExistence(timeout: 8)); actions.tap()
+        let edit = element("files.office.open", in: app)
+        XCTAssertTrue(edit.waitForExistence(timeout: 5)); edit.tap()
+    }
+
     private func launchFixture(state: String = "content") -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()

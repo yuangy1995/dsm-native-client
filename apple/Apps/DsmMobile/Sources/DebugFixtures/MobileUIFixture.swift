@@ -12,12 +12,15 @@ enum MobileUIFixture {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
-            let uploadFixture = ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let officeState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? ""
+            let officeTransport = MobileOfficeUITransport(state: officeState)
+            let uploadFixture = officeState.hasPrefix("office-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
             }
             let model = MobileAppModel(defaults: defaults, sessionStore: FixtureSessionStore(), passwordStore: FixturePasswordStore(),
+                previewModel: officeState.hasPrefix("office-") ? MobileFilePreviewModel(rangeReader: officeTransport) : MobileFilePreviewModel(),
                 transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
                                          displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
@@ -56,6 +59,10 @@ enum MobileUIFixture {
                         session: AuthSession(sid: "target-fixture-session", synoToken: nil, did: nil, isPortalPort: false),
                         transport: MobileCrossNASUITransport(target: true, state: crossState)))
             }
+            if officeState.hasPrefix("office-") {
+                model.officeTransportFixture = officeTransport
+                model.fileRepository = try DsmFileRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: officeTransport)
+            }
             model.activeProfile = profile
             model.activeConnectionProfile = profile
             model.isConnected = true
@@ -65,6 +72,22 @@ enum MobileUIFixture {
         }
     }
     static func prepareUploadSelection(_ model: MobileAppModel) async {
+        let state = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? ""
+        if state.hasPrefix("office-"), state != "office-preview", !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture"),
+           let repository = model.fileRepository, let transport = model.officeTransportFixture {
+            do {
+                let item = try await repository.getInfo(paths: ["/fixture/Document.docx"])[0]
+                if let id = await model.office.prepare(item), let context = model.office.context {
+                    let local = FileManager.default.temporaryDirectory.appendingPathComponent("Edited.docx")
+                    defer { try? FileManager.default.removeItem(at: local) }
+                    var data = MobileOfficeUITransport.document
+                    if state != "office-unchanged" { data.append(Data("edited".utf8)) }
+                    try data.write(to: local)
+                    await model.office.importEdited(local, id: id, expectedContext: context)
+                    await transport.activateScenario()
+                }
+            } catch { preconditionFailure("Office UI fixture could not be prepared") }
+        }
         guard ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] == "upload",
               !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") else { return }
         while model.fileUploadQueue.isConfiguring {

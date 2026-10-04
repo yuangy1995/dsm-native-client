@@ -170,6 +170,22 @@ private final class SyntheticRangeURLProtocol: URLProtocol, @unchecked Sendable 
 
 @MainActor
 final class MobileFilePreviewModelTests: XCTestCase {
+    func test六种Office格式使用受控QuickLook副本并在关闭时清理() async throws {
+        let fixture = try makeFixture()
+        for ext in ["doc", "docx", "xls", "xlsx", "ppt", "pptx"] {
+            let item = file(fixture.profileID, name: "Document." + ext, path: "/sample/Document." + ext, size: 99)
+            let service = FilePreviewServiceStub(profileID: fixture.profileID, infoByPath: [item.path: .success([item])])
+            await fixture.model.open(item, service: service)
+            XCTAssertEqual(fixture.model.state.phase, .ready)
+            XCTAssertEqual(fixture.model.state.content, .quickLook)
+            let url = try XCTUnwrap(fixture.model.state.artifactURL)
+            XCTAssertEqual(url.pathExtension, ext)
+            XCTAssertEqual(try Data(contentsOf: url).count, 99)
+            fixture.model.close()
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        }
+    }
+
     func test图片预览下载不信任列表大小且成功产物保留到关闭() async throws {
         let fixture = try makeFixture()
         let item = file(fixture.profileID, name: "photo.jpg", path: "/photo.jpg", size: 99)

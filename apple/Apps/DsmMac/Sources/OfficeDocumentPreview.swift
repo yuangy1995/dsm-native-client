@@ -1,21 +1,9 @@
 import AppKit
 import DsmCore
+import DsmFileFeature
 import DsmLocalization
 import QuickLookUI
 import SwiftUI
-
-/// Office 支持限定在 macOS 展示层，不改变其他平台的预览分类契约。
-enum OfficeDocumentFormat {
-    static let extensions: Set<String> = ["doc", "docx", "xls", "xlsx", "ppt", "pptx"]
-
-    static func supports(_ item: FileItem) -> Bool {
-        !item.isDirectory && extensions.contains(item.fileExtension?.lowercased() ?? "")
-    }
-
-    static func canPreview(_ item: FileItem) -> Bool {
-        !item.isDirectory && (supports(item) || PreviewKind.classify(item) != .unsupported)
-    }
-}
 
 /// 只把已下载的本机文件交给系统预览，不向第三方文档服务发送文件或 NAS 凭据。
 struct OfficeDocumentPreview: NSViewRepresentable {

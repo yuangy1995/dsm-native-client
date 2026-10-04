@@ -95,3 +95,6 @@ macOS 用户流程标准：普通连接按钮直接执行；保存等待有进�
 
 
 2026-10-04 移动 M2h4 复用 List/getinfo/MD5、现有跨 NAS Download/Upload、CreateFolder 与 `deleteResult(recursive: false)`，共享请求、版本、认证与五端协议不变，Windows/Android 无代码修改。移动端两端会话分别装配，先冻结完整清单并核对内容，不覆盖同名输出；已确认复制之后才显示独立删源确认，删源前重读内容与权限，逐文件/空目录非递归删除。未知文件写入仅完整比对，未知建目录不根据同名对象继续写入；重启不重放已完成或未知步骤。公开删除 API 不提供与 MD5 联动的原子条件删除，仍有外部并发修改窗口，不能将合成测试等同真实 NAS 验收。平台范围及限制见移动 M2h4 账本。
+
+
+2026-10-04 移动 M2i 将 Office 六种格式加入本机 Quick Look，编辑副本下载与主动回传复用现有 GetInfo/Download/MD5/CheckPermission/Upload；没有新的 Office API 或请求字段。`DsmFileFeature/OfficeDocumentSupport` 共享稳定副本、内容摘要与格式白名单，Mac 仅调整引用；既有桌面自动保存行为与格式不迁移。iPhone/iPad 均保留未改零上传、原文件变化停止覆盖、上传后完整内容回读、未知不重放和账号隔离；Windows/Android 记录影响但无代码变化。公开 Upload 不提供原文件摘要条件下的原子覆盖，真实编辑器、NAS 与生命周期按移动 M2i 待办验证，不能推定五端全部通过。
