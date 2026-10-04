@@ -18,7 +18,7 @@
 | 私人群聊 | `Channel.Named.create` v1，再 `join/invite` v1 | 创建、加入、邀请分别核对，部分失败保留已创建群聊，不重复提交全部步骤 |
 | 文字 / 附件发送 | `Post.create` v5 与附件上传流程 | 请求固定会话、内容快照与附件；确认服务端消息身份后才算发送成功 |
 | 置顶 / 取消、转发 | `Post.pin/unpin/forward` v5 | 目标消息和目标会话绑定，读取当前成员资格；置顶读取使用相应搜索流程 |
-| 消息删除、关闭会话 | `Post.delete`、`Channel.close` | 作者/操作权限、具体目标确认与最终状态检查；关闭会话不伪装删除所有历史 |
+| 消息删除、关闭会话 | `Post.delete`、`Channel.close` v5 | 删除重读作者/原内容与会话访问，完整历史确认消失；未知只读恢复，关闭会话不伪装删除所有历史 |
 | 提醒 | `Post.Reminder.set/list/delete` v1 | 消息/会话与时间绑定，删除只针对所选提醒 |
 | 投票 | `Post.Vote.create` v1 | `choices` 为 text 对象数组，`options` 为对象；expire_at=0 表示无截止 |
 | 定时消息 | `Post.Schedule.list/create/delete` v1 | 内容与发送时间保持固定；结果未知只查原任务 |
@@ -73,3 +73,8 @@ iPhone/iPad 已接入现有搜索、本人编辑与线程回复协议，使用�
 移动端使用既有 `forwardMessage(original:…, recordProgress:)`、`recoverForward` 及单聊写前回调/只读恢复；没有新增 NAS 字段或改变 Post v5 / Anonymous v2 请求。每条消息转发到本批已准备成功的全部目标，确认结果保留到各目标稳定消息身份；部分完成只读补查询，随后需用户明确继续下一条。没有成功回执时保持未知，不猜测同内容归属。
 
 `Chat/forwarding-v1.json` 独立保存来源身份、时间、内容摘要、接收身份、创建阶段和共享回执，不保存正文、联系人姓名或附件内容；原消息变化、写前存储失败、重复来源、跨账号回调、编辑/删除/关闭和单聊创建互斥由移动功能模型处理。iPhone/iPad 功能一致，原生多选/搜索/结果表单不同于 Mac 窗口交互。macOS、Windows、Android 没有本次请求或实现变化，共享前置验证见已有记录；真实环境证据不提升。当前验收见[移动 M4b3b3](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3b3-批量转发与接收人结果)。
+
+
+## 2026-10-05 移动本人消息删除恢复
+
+M4b3c 将单条和多条删除统一为原内容快照及逐项持久记录，共享增加写前保存回调和只读恢复，旧 Mac 调用进入同一实现。固定 Post v5，写前/回读均检查当前作者与可访问未加密会话，完整历史找不到目标才确认；丢回执、读取失败、空辅助记录或权限丢失不解除保护。恢复只查原项，继续剩余项单独确认；确认期间冻结消息，迟到读取不插回已删除对象。两端完整单元、五项实际 UI、共享和 Mac 双架构已有通过证据；真实 NAS 权限、分页/并发编辑及真机保护继续待验。详见[删除契约增量](../discovery/endpoints/chat-advanced-actions.md#2026-10-05-apple-本人消息删除恢复)及[移动账本](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3c-本人消息批量删除)。

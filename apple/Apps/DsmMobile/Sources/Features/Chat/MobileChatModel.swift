@@ -21,6 +21,8 @@ final class MobileChatModel {
     private let conversationCreationRecovery: MobileChatConversationCreationStore
     private(set) var forwarding: MobileChatForwardModel?
     private let forwardRecovery: MobileChatForwardStore
+    private(set) var deletion: MobileChatDeletionModel?
+    private let deletionRecovery: MobileChatDeletionStore
 
     @ObservationIgnored private var repositories: [UUID: any ChatRepository] = [:]
     @ObservationIgnored private var conversationTask: Task<Void, Never>?
@@ -28,7 +30,6 @@ final class MobileChatModel {
     @ObservationIgnored private var memberTask: Task<Void, Never>?
     @ObservationIgnored private var announcementTask: Task<Void, Never>?
     @ObservationIgnored private var sendTask: Task<Void, Never>?
-    @ObservationIgnored private var messageDeleteTask: Task<Void, Never>?
     @ObservationIgnored private var realtimeTask: Task<Void, Never>?
     @ObservationIgnored private var pollingTask: Task<Void, Never>?
     @ObservationIgnored private var realtimeDebounceTask: Task<Void, Never>?
@@ -39,7 +40,6 @@ final class MobileChatModel {
     @ObservationIgnored private var memberGeneration = 0
     @ObservationIgnored private var announcementGeneration = 0
     @ObservationIgnored private var sendGeneration = 0
-    @ObservationIgnored private var messageDeleteGeneration = 0
     @ObservationIgnored private var realtimeGeneration = 0
     @ObservationIgnored private var foregroundRealtimeRequested = false
     @ObservationIgnored private var realtimeConnected = false
@@ -69,6 +69,7 @@ final class MobileChatModel {
         self.interactionRecovery = MobileChatInteractionStore(root: interactionRecoveryRoot)
         self.conversationCreationRecovery = MobileChatConversationCreationStore(root: interactionRecoveryRoot)
         self.forwardRecovery = MobileChatForwardStore(root: interactionRecoveryRoot)
+        self.deletionRecovery = MobileChatDeletionStore(root: interactionRecoveryRoot)
         self.pollRecovery = MobileChatPollStore(root: interactionRecoveryRoot)
         self.managementRecovery = MobileChatManagementStore(root: interactionRecoveryRoot)
         self.timedActionRecovery = MobileChatTimedActionStore(root: interactionRecoveryRoot)
@@ -132,31 +133,7 @@ final class MobileChatModel {
             && state.availability.supportedFeatures.contains(.pinnedMessages)
     }
 
-    func canDeleteMessage(_ message: ChatMessage) -> Bool {
-        guard let conversation = state.selectedConversation,
-              conversation.id == message.conversationID,
-              !conversation.isEncrypted,
-              message.deliveryState == .sent,
-              message.encryptionState == .notEncrypted,
-              message.isFromCurrentUser == true,
-              state.availability.status == .available,
-              state.availability.supportedFeatures.contains(.deleteOwnMessage),
-              interaction?.isMutating != true,
-              polls?.isMutating != true,
-              timedActions?.isMutating != true,
-              management?.isMutating != true,
-              forwarding?.protects(message) != true,
-              management?.hasPending(in: message.conversationID, messageID: message.id) != true,
-              timedActions?.hasPending(in: message.conversationID, targetID: message.id, reminder: true) != true,
-              polls?.pending.contains(where: { $0.kind == .vote && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true,
-              interaction?.pending.contains(where: { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }) != true,
-              state.deletingMessageID == nil,
-              state.deleteReviewBlockedMessageIDsByConversation[message.conversationID]?.contains(message.id) != true
-        else {
-            return false
-        }
-        return state.selectedMessages.messages.contains(where: { $0.id == message.id })
-    }
+    func canDeleteMessage(_ message: ChatMessage) -> Bool { deletion?.canSelect(message) == true }
 
     func activate(profileID: UUID?, repository: (any ChatRepository)?, context: String? = nil) async {
         if let activeProfileID {
@@ -187,6 +164,8 @@ final class MobileChatModel {
         timedActions?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         forwarding = MobileChatForwardModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: forwardRecovery, owner: self)
         forwarding?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
+        deletion = MobileChatDeletionModel(context: context ?? profileID.uuidString, repository: mobileRepository, recovery: deletionRecovery, owner: self)
+        deletion?.updateAvailability(profiles[profileID]?.availability ?? ChatAvailability(status: .requiresValidation))
         let creationContext = context ?? profileID.uuidString
         if let creator = conversationCreators[profileID], creator.context == creationContext {
             creator.rebind(
@@ -324,6 +303,7 @@ final class MobileChatModel {
             self?.timedActions?.updateAvailability(availability)
             self?.management?.updateAvailability(availability)
             self?.forwarding?.updateAvailability(availability)
+            self?.deletion?.updateAvailability(availability)
             self?.conversationCreators[profileID]?.updateAvailability(availability)
             guard availability.status == .available else {
                 self?.finishUnavailable(profileID: profileID, generation: requestGeneration)
@@ -373,8 +353,6 @@ final class MobileChatModel {
             profile.memberErrorCategory = nil
             profile.announcementErrorCategory = nil
             profile.sendErrorCategory = nil
-            profile.deleteMessageErrorCategory = nil
-            profile.deleteMessageErrorID = nil
             profile.loadMoreMessagesFailed = false
             if let cachedMembers = profile.membersByConversation[canonical.id] {
                 profile.memberPageState = cachedMembers.isEmpty ? .empty : .content
@@ -684,45 +662,8 @@ final class MobileChatModel {
     }
 
     func deleteMessage(_ message: ChatMessage) async {
-        guard canDeleteMessage(message),
-              let profileID = activeProfileID,
-              let repository = repositories[profileID],
-              state.selectedConversationID == message.conversationID else { return }
-
-        let requestGeneration = beginMessageDeleteRequest { profile in
-            profile.deletingMessageID = message.id
-            profile.deleteMessageErrorCategory = nil
-            profile.deleteMessageErrorID = nil
-        }
-        let task = Task { [weak self] in
-            do {
-                try await repository.deleteMessage(
-                    conversationID: message.conversationID,
-                    messageID: message.id,
-                    clientRequestID: UUID()
-                )
-                try Task.checkCancellation()
-                self?.finishMessageDeleteSuccess(
-                    message,
-                    profileID: profileID,
-                    generation: requestGeneration
-                )
-            } catch is CancellationError {
-                self?.finishMessageDeleteCancellation(
-                    profileID: profileID,
-                    generation: requestGeneration
-                )
-            } catch {
-                self?.finishMessageDeleteFailure(
-                    error,
-                    message: message,
-                    profileID: profileID,
-                    generation: requestGeneration
-                )
-            }
-        }
-        messageDeleteTask = task
-        await task.value
+        guard let deletion, let id = deletion.createBatch([message]) else { return }
+        await deletion.run(id, continuePlanned: true)
     }
 
     // MARK: - 附件状态机接线
@@ -802,6 +743,8 @@ final class MobileChatModel {
     }
 
     func cancelAllWork() {
+        deletion?.invalidate()
+        deletion = nil
         forwarding?.invalidate()
         forwarding = nil
         conversationCreator?.invalidate()
@@ -829,9 +772,6 @@ final class MobileChatModel {
         sendTask?.cancel()
         sendTask = nil
         sendGeneration &+= 1
-        messageDeleteTask?.cancel()
-        messageDeleteTask = nil
-        messageDeleteGeneration &+= 1
         attachmentModel.cancelAllWork()
         updateActive {
             $0.isRefreshingConversations = false
@@ -1112,16 +1052,6 @@ final class MobileChatModel {
         return sendGeneration
     }
 
-    private func beginMessageDeleteRequest(
-        _ update: (inout MobileChatProfileState) -> Void
-    ) -> Int {
-        messageDeleteTask?.cancel()
-        messageDeleteTask = nil
-        messageDeleteGeneration &+= 1
-        updateActive(update)
-        return messageDeleteGeneration
-    }
-
     private func beginMemberRequest(
         _ update: (inout MobileChatProfileState) -> Void
     ) -> Int {
@@ -1304,9 +1234,6 @@ final class MobileChatModel {
             if !appending {
                 profile.sendReviewBlockedTextsByConversation[conversationID] = nil
                 profile.sendErrorCategory = nil
-                profile.deleteReviewBlockedMessageIDsByConversation[conversationID] = nil
-                profile.deleteMessageErrorCategory = nil
-                profile.deleteMessageErrorID = nil
             }
         }
         messageTask = nil
@@ -1344,34 +1271,6 @@ final class MobileChatModel {
             profile.sendErrorCategory = nil
         }
         sendTask = nil
-    }
-
-    private func finishMessageDeleteSuccess(
-        _ message: ChatMessage,
-        profileID: UUID,
-        generation: Int
-    ) {
-        guard isCurrentMessageDelete(profileID: profileID, generation: generation),
-              state.selectedConversationID == message.conversationID else { return }
-        updateActive { profile in
-            let previous = profile.messagesByConversation[message.conversationID]
-            let messages = previous?.messages.filter { $0.id != message.id } ?? []
-            profile.messagesByConversation[message.conversationID] = MobileChatMessageCache(
-                messages: messages,
-                previousCursor: previous?.previousCursor,
-                hasMoreBefore: previous?.hasMoreBefore ?? false
-            )
-            profile.messagePageState = messages.isEmpty ? .empty : .content
-            profile.deletingMessageID = nil
-            profile.deleteMessageErrorCategory = nil
-            profile.deleteMessageErrorID = nil
-            if var blockedIDs = profile.deleteReviewBlockedMessageIDsByConversation[message.conversationID] {
-                blockedIDs.remove(message.id)
-                profile.deleteReviewBlockedMessageIDsByConversation[message.conversationID] =
-                    blockedIDs.isEmpty ? nil : blockedIDs
-            }
-        }
-        messageDeleteTask = nil
     }
 
     private func finishConversationMembers(
@@ -1424,27 +1323,6 @@ final class MobileChatModel {
             $0.sendReviewBlockedTextsByConversation[conversationID, default: []].insert(sentText)
         }
         sendTask = nil
-    }
-
-    private func finishMessageDeleteFailure(
-        _ error: Error,
-        message: ChatMessage,
-        profileID: UUID,
-        generation: Int
-    ) {
-        guard isCurrentMessageDelete(profileID: profileID, generation: generation),
-              state.selectedConversationID == message.conversationID else { return }
-        let category = Self.category(for: error)
-        updateActive {
-            $0.deletingMessageID = nil
-            $0.deleteMessageErrorCategory = category
-            $0.deleteMessageErrorID = message.id
-            if category == .partialFailure {
-                $0.deleteReviewBlockedMessageIDsByConversation[message.conversationID, default: []]
-                    .insert(message.id)
-            }
-        }
-        messageDeleteTask = nil
     }
 
     private func finishSendOutcome(
@@ -1625,14 +1503,6 @@ final class MobileChatModel {
         sendTask = nil
     }
 
-    private func finishMessageDeleteCancellation(profileID: UUID, generation: Int) {
-        guard isCurrentMessageDelete(profileID: profileID, generation: generation) else { return }
-        updateActive {
-            $0.deletingMessageID = nil
-        }
-        messageDeleteTask = nil
-    }
-
     func updateActive(_ update: (inout MobileChatProfileState) -> Void) {
         guard let activeProfileID else { return }
         var profile = profiles[activeProfileID] ?? MobileChatProfileState()
@@ -1665,15 +1535,30 @@ final class MobileChatModel {
         }
     }
 
+    func applyMessageDeletion(_ source: ChatMessageDeletionSnapshot) {
+        if state.selectedConversationID == source.conversationID {
+            cancelMessageWork(); cancelAnnouncementWork()
+        }
+        updateActive { profile in
+            profile.messagesByConversation[source.conversationID]?.messages.removeAll { $0.id == source.messageID }
+            profile.announcementsByConversation[source.conversationID]?.removeAll { $0.id == source.messageID }
+            if profile.selectedConversationID == source.conversationID {
+                profile.messagePageState = profile.selectedMessages.messages.isEmpty ? .empty : .content
+                profile.announcementPageState = profile.selectedConversationAnnouncements.isEmpty ? .empty : .content
+            }
+        }
+        interaction?.removeMessage(source)
+    }
+
     func hasUnfinishedChatWrite(in conversationID: String) -> Bool {
         (state.selectedConversationID == conversationID && (state.isSendingMessage || state.isSendingAttachment || state.isPreparingAttachment || state.deletingMessageID != nil))
             || state.sendReviewBlockedTextsByConversation[conversationID]?.isEmpty == false
-            || state.deleteReviewBlockedMessageIDsByConversation[conversationID]?.isEmpty == false
             || interaction?.isMutating == true || polls?.isMutating == true || timedActions?.isMutating == true
             || interaction?.pending.contains(where: { $0.conversationID == conversationID }) == true
             || polls?.pending.contains(where: { $0.conversationID == conversationID }) == true
             || timedActions?.pending.contains(where: { $0.conversationID == conversationID }) == true
             || forwarding?.hasUnfinished(in: conversationID) == true
+            || deletion?.hasUnfinished(in: conversationID) == true
     }
 
     func refreshManagementMessages(in conversationID: String) async {
@@ -1731,10 +1616,6 @@ final class MobileChatModel {
 
     private func isCurrentSend(profileID: UUID, generation: Int) -> Bool {
         activeProfileID == profileID && sendGeneration == generation
-    }
-
-    private func isCurrentMessageDelete(profileID: UUID, generation: Int) -> Bool {
-        activeProfileID == profileID && messageDeleteGeneration == generation
     }
 
     private func isCurrentRealtime(profileID: UUID, generation: Int) -> Bool {

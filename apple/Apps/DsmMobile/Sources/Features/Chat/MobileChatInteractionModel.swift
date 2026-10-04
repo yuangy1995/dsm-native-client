@@ -73,6 +73,7 @@ final class MobileChatInteractionModel {
             && owner?.state.deletingMessageID == nil
             && owner?.management?.blocksWrites(in: message.conversationID) != true
             && owner?.forwarding?.protects(message) != true
+            && owner?.deletion?.protects(message) != true
             && !pending.contains { $0.kind == .edit && $0.conversationID == message.conversationID && $0.messageID == message.id }
     }
 
@@ -86,7 +87,8 @@ final class MobileChatInteractionModel {
     func canSendReply(_ text: String) -> Bool {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canReply, let root, !body.isEmpty,
-              owner?.management?.blocksWrites(in: root.conversationID) != true else { return false }
+              owner?.management?.blocksWrites(in: root.conversationID) != true,
+              owner?.deletion?.protects(root) != true else { return false }
         return !pending.contains { $0.kind == .reply && $0.conversationID == root.conversationID
             && $0.messageID == root.id && $0.textDigest == MobileChatInteractionStore.digest(body) }
     }
@@ -268,6 +270,17 @@ final class MobileChatInteractionModel {
             && (message.threadID ?? message.id) == (entry.threadID ?? entry.messageID)
             && message.senderID == entry.senderID && message.isFromCurrentUser == true && message.encryptionState == .notEncrypted
             && message.text.map(MobileChatInteractionStore.digest) == entry.textDigest
+    }
+
+    func removeMessage(_ source: ChatMessageDeletionSnapshot) {
+        // 已结束的删除不能被先前发出的搜索或线程读取重新插回界面。
+        searchGeneration &+= 1; focusGeneration &+= 1; isSearching = false; isLoadingThread = false
+        searchMessages.removeAll { $0.id == source.messageID && $0.conversationID == source.conversationID }
+        if root?.id == source.messageID, root?.conversationID == source.conversationID {
+            root = nil; focusedMessage = nil; replies = MobileChatMessageCache(); missingMessage = true
+        } else if focusedMessage?.id == source.messageID, focusedMessage?.conversationID == source.conversationID {
+            focusedMessage = nil; missingMessage = true
+        }
     }
 
     func update(_ message: ChatMessage) {

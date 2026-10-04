@@ -1463,3 +1463,43 @@ iPad 使用 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 和 `m4b3b-forward-ipad2.xcre
 | 本地化与契约 | Apple 6009 / Android 2188 / Windows 3402，双语、参数和硬编码扫描通过；29 组响应 / 48 私有引用、170 组请求 / 1 写结果通过 |
 
 已查看第 1 轮 iPad 正常接收页、中文深色大字号错误页及 iPhone 多消息/多接收人结果截图。第 2 轮已检查 iPad 常显搜索栏与去掉无效搜索的中文错误页、iPhone 恢复后已完成/尚未发送分项与继续按钮；所有五态均有两端实际 UI 证据。既有 iPhone/iPad 消息主布局问题仍归 M4c。真实 NAS/设备、锁屏文件保护、完整 VoiceOver/硬件键盘与 iPad 分屏没有本次实际验证；条件和操作步骤见移动主计划 M4b3b3。
+
+
+## 2026-10-05 移动 M4b3c 本人消息批量删除
+
+范围为共享删除快照/写前保存/只读恢复、移动单条与多条删除共用的持久批次、逐项结果和相邻动作互斥；不访问真实 NAS。共享仍用已记录 Post v5，删除前后重新检查当前账号和可见会话；原内容改变、失去权限、辅助空记录、坏分页均不能冒充删除成功。独立记录不保存正文/附件名称；确认时冻结原消息，提交未知不重放，取消只影响未开始项，已结束删除不会被迟到的消息/搜索结果插回。Mac App 源码、Windows 和 Android 未修改。
+
+分开执行的集成和只读对抗复核覆盖写前/写后保存失败、同 UUID 与换 UUID 重复删除、明确拒绝、丢回执、旧历史页、权限/账号/会话变化、原文变更、重启、旧模型仍在执行及取消边界。复核补齐了目标为空辅助记录时拒绝确认、取消准备项保留原计划、确认期间原内容快照、删除成功后忽略旧读取等边界；未引入新 NAS 字段。新增共享 16 项测试、移动 23 项测试（含 1 项组合根迟到读取回归）与 5 项实际 UI。
+
+实际命令（仓库根目录）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'DsmChatRepositoryTests|ChatMessageDeletionSnapshotTests'
+swift test --package-path apple --jobs 2
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatDeletionUITests -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m4b3c-iphone2.xcresult
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+python3 tools/localization/check_localization.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/codex/check_documentation.py --strict-release
+git diff --check
+```
+
+iPad 使用相同测试命令，将目标改为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果目录为 `m4b3c-ipad2.xcresult`。两端运行 iOS 26.5；临时证据目录仅含合成环境结果，未提交日志或图片。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 共享聚焦 | 139 项，零失败，0.311 秒；包含原删除分页/权限回归及新增恢复、快照测试 |
+| 共享完整第 1 轮 | 2593 项 XCTest、172 条既有条件跳过、零失败，36.995 秒；另 12 项 Swift Testing，0.045 秒通过 |
+| 共享完整最终第 2 轮 | 2593 项 XCTest、172 条既有条件跳过、零失败，35.981 秒；另 12 项 Swift Testing，0.037 秒通过 |
+| Mac 双架构 | 第 1、2 次构建均通过；最终主程序为 x86_64、arm64，未安装或启动 Mac 包 |
+| 移动构建 | 第 1、3、4、5 次通过；第 2 次因 UI 测试把元素当作查询读取 count 编译失败，改为正确查询后重建 |
+| 首轮两端完整单元 | 各 1065 项、各 1 条既有条件跳过、零失败；iPhone 26.629 秒，iPad 26.646 秒 |
+| 第二轮两端完整单元 | 各 1067 项、各 1 条既有条件跳过、零失败；iPhone 26.520 秒，iPad 26.364 秒 |
+| 首轮实际 UI | 每端 5 项中 2 项通过、3 项失败；原生弹框将同一按钮暴露为父子两层节点，且取消采用框外点击。通过实际截图和层级核对后，测试限定弹框内目标并沿用原生框外取消；没有删减业务断言 |
+| 第二轮实际 UI | 两端各 5 项零失败；iPhone 231.132 秒，iPad 239.527 秒；最终截图已复核恢复后第一项已删除/第二项未删除、逐项完成及中文深色大字号空状态 |
+| 静态门禁 | 双语资源 6031/2188/3402、29 组 fixture/48 私有引用、170 请求/1 写结果、最终严格文档和差异格式检查通过 |
+
+真实 NAS 的删除权限、并发分页、其他客户端编辑与删除之间的竞态、附件实际删除范围及真机锁屏保护/辅助功能仍为 `PENDING_USER_VALIDATION`，步骤见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3c-本人消息批量删除)。Post.delete 不是带原内容条件的原子删除，不能把合成回读通过写成跨客户端事务保证。M4b4/c/d 与 M5–M8 继续后续实施。

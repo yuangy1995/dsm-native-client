@@ -152,17 +152,18 @@ extension DsmChatRepositoryTests {
             "{\"post_id\":\"newer-\(index)\",\"channel_id\":\"27\",\"message\":\"新消息\",\"create_at\":\(1_700_000_100 + index)}"
         }.joined(separator: ",")
         let fullPage = response("{\"success\":true,\"data\":{\"posts\":[\(newer)]}}")
-        let transport = MockHTTPTransport(responses: [
+        let transport = MockHTTPTransport(responses: deletionAccess() + [
             fullPage,
             response(#"{"success":true,"data":{"posts":[{"post_id":"older","channel_id":"27","creator_id":"1","is_my_post":true,"message":"旧消息","create_at":1700000000},{"post_id":"newer-1","channel_id":"27","message":"新消息","create_at":1700000101}]}}"#),
-            response(#"{"success":true}"#),
+            response(#"{"success":true}"#)
+        ] + deletionAccess() + [
             fullPage,
             response(#"{"success":true,"data":{"posts":[{"post_id":"newer-1","channel_id":"27","message":"新消息","create_at":1700000101}]}}"#)
         ])
         let repository = try makeRepository(transport: transport)
         try await repository.deleteMessage(conversationID: "27", messageID: "older", clientRequestID: UUID())
         let requests = await transport.recordedRequests()
-        let fields = try requests.map { try decodeForm($0.httpBody) }
+        let fields = try requests.map { try decodeForm($0.httpBody) }.filter { $0["api"] == DsmAPIName.chatPost }
         XCTAssertEqual(fields.map { $0["method"] }, ["list", "list", "delete", "list", "list"])
         XCTAssertEqual(fields.count, 5)
         XCTAssertEqual(fields.dropFirst().first?["post_id"], "newer-1")
@@ -179,19 +180,19 @@ extension DsmChatRepositoryTests {
             #"{"success":true,"data":{"posts":[{"post_id":"wrong","channel_id":"other","message":"不属于当前会话"}]}}"#
         ]
         for payload in malformed {
-            let transport = MockHTTPTransport(responses: [response(payload)])
+            let transport = MockHTTPTransport(responses: deletionAccess() + [response(payload)])
             let repository = try makeRepository(transport: transport)
             do {
                 try await repository.deleteMessage(conversationID: "27", messageID: "target", clientRequestID: UUID())
                 XCTFail("坏响应不得确认不存在")
             } catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
             let requests = await transport.recordedRequests()
-            XCTAssertEqual(requests.count, 1)
+            XCTAssertEqual(requests.count, 3)
         }
     }
 
     func test他人昵称等于登录账号也不能通过删除权限预检() async throws {
-        let transport = MockHTTPTransport(responses: [
+        let transport = MockHTTPTransport(responses: deletionAccess() + [
             response(#"{"success":true,"data":{"posts":[{"post_id":"target","channel_id":"27","creator_id":"other","creator_name":"testaccount","is_my_post":false,"message":"他人消息","create_at":1700000000}]}}"#)
         ])
         let repository = try makeRepository(transport: transport)
@@ -200,7 +201,7 @@ extension DsmChatRepositoryTests {
             XCTFail("不能以昵称获得删除权限")
         } catch let error as AppError { XCTAssertEqual(error.category, .permissionDenied) }
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.count, 3)
     }
 
     func test投票缺少稳定回执时不认领同文消息且同请求不再创建() async throws {

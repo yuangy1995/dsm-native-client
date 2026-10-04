@@ -67,11 +67,12 @@ final class MobileChatModelTests: XCTestCase {
                 )
             )
         }
-        try await repository.deleteMessage(
-            conversationID: "conversation",
-            messageID: "message",
-            clientRequestID: UUID()
-        )
+        await assertReadOnlyFailure {
+            try await repository.deleteMessage(conversationID: "conversation", messageID: "message", clientRequestID: UUID())
+        }
+        let original = try ChatMessageDeletionSnapshot(ChatMessage(id: "message", conversationID: "conversation", senderID: "1",
+            isFromCurrentUser: true, sentAt: Date(), text: "合成消息"))
+        try await repository.deleteMessage(original, clientRequestID: UUID(), willSubmit: {})
         let deleteRequests = await base.deleteRequests()
         XCTAssertEqual(deleteRequests.map(\.messageID), ["message"])
         await assertReadOnlyFailure {
@@ -1071,13 +1072,13 @@ final class MobileChatModelTests: XCTestCase {
         await model.deleteMessage(own)
 
         XCTAssertNil(model.state.deletingMessageID)
-        XCTAssertNil(model.state.deleteMessageErrorCategory)
+        XCTAssertEqual(model.deletion?.entries.last?.items.first?.phase, .complete)
         XCTAssertEqual(model.state.selectedMessages.messages.map(\.id), ["other"])
         deleteRequests = await repository.deleteRequests()
         XCTAssertEqual(deleteRequests, [ChatDeleteRequest(conversationID: conversation.id, messageID: own.id)])
     }
 
-    func test删除提交后无法确认会阻止同一消息直到刷新() async {
+    func test删除提交后无法确认会持续保护消息且普通刷新不能解除() async {
         let conversation = Self.conversation(id: "c1", title: "家庭")
         let own = Self.message(
             id: "mine",
@@ -1103,8 +1104,8 @@ final class MobileChatModelTests: XCTestCase {
         await model.deleteMessage(own)
 
         XCTAssertNil(model.state.deletingMessageID)
-        XCTAssertEqual(model.state.deleteMessageErrorCategory, .partialFailure)
-        XCTAssertEqual(model.state.deleteMessageErrorID, own.id)
+        XCTAssertEqual(model.deletion?.entries.first?.items.first?.phase, .submitted)
+        XCTAssertEqual(model.deletion?.entries.first?.items.first?.source.messageID, own.id)
         XCTAssertFalse(model.canDeleteMessage(own))
         let deleteRequests = await repository.deleteRequests()
         XCTAssertEqual(deleteRequests.count, 1)
@@ -1115,8 +1116,33 @@ final class MobileChatModelTests: XCTestCase {
         )
         await model.refreshMessages()
 
-        XCTAssertTrue(model.canDeleteMessage(own))
-        XCTAssertNil(model.state.deleteMessageErrorCategory)
+        XCTAssertFalse(model.canDeleteMessage(own))
+        XCTAssertEqual(model.deletion?.entries.first?.items.first?.phase, .submitted)
+        await repository.setPage(.init(messages: [], previousCursor: nil, hasMoreBefore: false), for: request)
+        if let id = model.deletion?.entries.first?.id { await model.deletion?.run(id, continuePlanned: false) }
+        XCTAssertEqual(model.deletion?.entries.first?.items.first?.phase, .complete)
+        XCTAssertTrue(model.state.selectedMessages.messages.isEmpty)
+        let finalDeletes = await repository.deleteRequests()
+        XCTAssertEqual(finalDeletes.count, 1)
+    }
+
+    func test删除完成后迟到的消息刷新不能插回原消息() async throws {
+        let conversation = Self.conversation(id: "c1", title: "合成会话")
+        let own = Self.message(id: "mine", conversationID: "c1", seconds: 10, isFromCurrentUser: true)
+        let request = ChatMessageRequest(conversationID: "c1", cursor: nil)
+        let repository = ChatRepositoryStub(availability: .init(status: .available, supportedFeatures: [.deleteOwnMessage]),
+            conversations: [conversation], pages: [request: .init(messages: [own], previousCursor: nil, hasMoreBefore: false)])
+        let model = MobileChatModel()
+        await model.activate(profileID: UUID(), repository: repository); await model.selectConversation(conversation)
+        await repository.blockMessage(request)
+        let refresh = Task { await model.refreshMessages() }
+        await repository.waitUntilMessageBlocked(request)
+        await model.deleteMessage(own)
+        XCTAssertTrue(model.state.selectedMessages.messages.isEmpty)
+        await repository.releaseMessage(request); await refresh.value
+        XCTAssertTrue(model.state.selectedMessages.messages.isEmpty)
+        XCTAssertEqual(model.state.messagePageState, .empty); XCTAssertFalse(model.state.isRefreshingMessages)
+        XCTAssertEqual(model.deletion?.entries.first?.items.first?.phase, .complete)
     }
 
     func test加密会话可见但不会请求或缓存正文() async {
@@ -2538,6 +2564,16 @@ private actor ChatRepositoryStub: ChatRepository {
     ) async throws {
         deleteRequestValues.append(ChatDeleteRequest(conversationID: conversationID, messageID: messageID))
         if let failure = deleteFailureValues[messageID] { throw failure }
+    }
+
+    func deleteMessage(_ original: ChatMessageDeletionSnapshot, clientRequestID: UUID,
+                       willSubmit: @escaping @Sendable () async throws -> Void) async throws {
+        try await willSubmit()
+        try await deleteMessage(conversationID: original.conversationID, messageID: original.messageID, clientRequestID: clientRequestID)
+    }
+
+    func recoverMessageDeletion(_ original: ChatMessageDeletionSnapshot, clientRequestID: UUID) async throws -> Bool {
+        !pages.values.flatMap(\.messages).contains { $0.conversationID == original.conversationID && $0.id == original.messageID }
     }
 
     func setDeleteFailure(_ error: AppError, messageID: String) {

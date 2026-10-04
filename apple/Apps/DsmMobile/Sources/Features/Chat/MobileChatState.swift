@@ -47,11 +47,8 @@ struct MobileChatProfileState: Equatable, Sendable {
     var memberErrorCategory: AppErrorCategory?
     var announcementErrorCategory: AppErrorCategory?
     var sendErrorCategory: AppErrorCategory?
-    var deleteMessageErrorCategory: AppErrorCategory?
-    var deleteMessageErrorID: String?
     var attachmentErrorCategory: AppErrorCategory?
     var remoteAttachmentErrorCategory: AppErrorCategory?
-    var deleteReviewBlockedMessageIDsByConversation: [String: Set<String>] = [:]
 
     var selectedConversation: ChatConversation? {
         guard let selectedConversationID else { return nil }

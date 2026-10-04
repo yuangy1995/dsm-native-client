@@ -226,7 +226,8 @@ final class MobileChatPresentationTests: XCTestCase {
     func test本人消息删除使用原生行菜单二次确认和防重放状态() throws {
         let source = try chatViewSources()
         let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
-        let state = try sourceFile("Sources/Features/Chat/MobileChatState.swift")
+        let deletion = try sourceFile("Sources/Features/Chat/MobileChatDeletionModel.swift")
+        let store = try sourceFile("Sources/Features/Chat/MobileChatDeletionStore.swift")
         let repository = try sourceFile("Sources/Features/Chat/MobileReadOnlyChatRepository.swift")
 
         XCTAssertTrue(source.contains("struct MobileChatMessageRow: View"))
@@ -236,26 +237,26 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains(".confirmationDialog("))
         XCTAssertTrue(source.contains("Button(L10n.string(\"mobile.chat.message.action.delete\"), role: .destructive)"))
         XCTAssertTrue(source.contains("chat.canDeleteMessage(message)"))
-        XCTAssertTrue(source.contains("await chat.deleteMessage(message)"))
+        XCTAssertTrue(source.contains("deletionConfirmation = message"))
+        XCTAssertTrue(source.contains("await chat.deleteMessage(original)"))
         XCTAssertTrue(source.contains("chat.state.deletingMessageID == message.id"))
-        XCTAssertTrue(source.contains("chat.state.deleteMessageErrorID == message.id"))
+        XCTAssertTrue(source.contains("chat.deletion?.status(for: message)"))
         for key in [
             "mobile.chat.message.action.delete",
             "mobile.chat.message.delete.confirm.title",
             "mobile.chat.message.delete.confirm.message",
             "mobile.chat.message.delete.confirm.cancel",
-            "mobile.chat.message.delete.progress",
-            "mobile.chat.message.delete.failed"
+            "mobile.chat.message.delete.progress"
         ] {
             XCTAssertTrue(source.contains(key), key)
         }
         XCTAssertTrue(model.contains("canDeleteMessage(_ message: ChatMessage)"))
-        XCTAssertTrue(model.contains("message.isFromCurrentUser == true"))
-        XCTAssertTrue(model.contains("supportedFeatures.contains(.deleteOwnMessage)"))
-        XCTAssertTrue(model.contains("deleteReviewBlockedMessageIDsByConversation"))
-        XCTAssertTrue(model.contains("messageDeleteGeneration"))
-        XCTAssertTrue(state.contains("deletingMessageID"))
-        XCTAssertTrue(state.contains("deleteMessageErrorCategory"))
+        XCTAssertTrue(deletion.contains("message.isFromCurrentUser == true"))
+        XCTAssertTrue(deletion.contains("supportedFeatures.contains(.deleteOwnMessage)"))
+        XCTAssertTrue(model.contains("deletion.createBatch([message])"))
+        XCTAssertTrue(deletion.contains("recoverMessageDeletion"))
+        XCTAssertTrue(store.contains("message-deletions-v1.json"))
+        XCTAssertTrue(store.contains(".completeFileProtection"))
         XCTAssertTrue(repository.contains(".deleteOwnMessage"))
         XCTAssertFalse(source.contains("forwardMessage("))
         XCTAssertFalse(source.contains("closeConversation("))
