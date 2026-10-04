@@ -2,6 +2,88 @@ import XCTest
 
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
+    func test所选照片创建临时分享并设置公开范围() {
+        let app = launchFixture(state: "photo-temporary")
+        defer { app.terminate() }
+        openTemporarySelection(app)
+        let name = app.textFields["mobile.photos.temporary.name"]
+        name.tap(); name.typeText("Selected photos")
+        app.buttons["mobile.photos.temporary.create"].tap()
+        XCTAssertTrue(app.navigationBars["Manage sharing"].waitForExistence(timeout: 8))
+        XCTAssertTrue(element("mobile.photos.sharing.access", in: app).waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "Temporary selection sharing setup")
+        element("mobile.photos.sharing.access", in: app).tap(); app.buttons["Anyone with the link can view"].tap()
+        app.buttons["mobile.photos.sharing.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        app.alerts.buttons.matching(identifier: "mobile.photos.sharing.confirm").firstMatch.tap()
+        XCTAssertTrue(element("mobile.photos.sharing.sendLink", in: app).waitForExistence(timeout: 8))
+        XCTAssertFalse(element("mobile.photos.temporary.resume", in: app).exists)
+    }
+
+    func test临时分享停止可保留普通相册且原照片仍可见() {
+        let app = launchFixture(state: "photo-temporary-existing")
+        defer { app.terminate() }
+        openAlbumSharing(app)
+        element("mobile.photos.sharing.access", in: app).tap(); app.buttons["Turn off sharing"].tap()
+        app.buttons["mobile.photos.sharing.save"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label == %@", "The temporary album will be removed. You can keep a copy as a regular album. Your original photos will not be deleted.")).firstMatch.exists)
+        attachScreenshot(app, name: "Stop temporary sharing and keep an album")
+        app.alerts.buttons.matching(identifier: "mobile.photos.temporary.keep").firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Sharing stopped and a copy was saved as an album."].waitForExistence(timeout: 8))
+        openPhotoSection("Timeline", app: app)
+        XCTAssertTrue(app.buttons["Sample 1.jpg"].waitForExistence(timeout: 8)); XCTAssertTrue(app.buttons["Sample 2.jpg"].exists)
+    }
+
+    func test取消临时分享设置会清理相册并保留原照片() {
+        let app = launchFixture(state: "photo-temporary")
+        defer { app.terminate() }
+        openTemporarySelection(app)
+        let name = app.textFields["mobile.photos.temporary.name"]
+        name.tap(); name.typeText("Cancelled selection"); app.buttons["mobile.photos.temporary.create"].tap()
+        XCTAssertTrue(element("mobile.photos.sharing.access", in: app).waitForExistence(timeout: 8))
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Sharing stopped. Your photos are kept."].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Sample 1.jpg"].exists); XCTAssertTrue(app.buttons["Sample 2.jpg"].exists)
+        XCTAssertFalse(element("mobile.photos.temporary.resume", in: app).exists)
+        attachScreenshot(app, name: "Cancelled temporary sharing keeps originals")
+    }
+
+    func test临时分享创建未知重启不再次创建或显示可用链接() {
+        let app = launchFixture(state: "photo-temporary-unknown")
+        openTemporarySelection(app)
+        let name = app.textFields["mobile.photos.temporary.name"]
+        name.tap(); name.typeText("Pending selection"); app.buttons["mobile.photos.temporary.create"].tap()
+        XCTAssertTrue(app.buttons["Refresh"].waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch()
+        defer { app.terminate() }
+        openPhotos(app)
+        XCTAssertTrue(element("mobile.photos.album.refresh", in: app).waitForExistence(timeout: 8))
+        XCTAssertFalse(element("mobile.photos.sharing.sendLink", in: app).exists)
+        XCTAssertFalse(element("mobile.photos.temporary.resume", in: app).exists)
+        attachScreenshot(app, name: "Temporary sharing creation restored without replay")
+    }
+
+    func test临时分享中文设置可取消且保留原件() {
+        let app = launchFixture(state: "photo-temporary", language: "zh-Hans")
+        defer { app.terminate() }
+        openTemporarySelection(app, chinese: true)
+        let name = app.textFields["mobile.photos.temporary.name"]
+        name.tap(); name.typeText("Chinese selection"); app.buttons["mobile.photos.temporary.create"].tap()
+        XCTAssertTrue(app.navigationBars["管理分享"].waitForExistence(timeout: 8))
+        XCTAssertTrue(element("mobile.photos.sharing.access", in: app).waitForExistence(timeout: 5))
+        attachScreenshot(app, name: "临时分享中文设置")
+        app.buttons["取消"].tap()
+        XCTAssertTrue(app.staticTexts["已停止分享，原照片已保留。"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Sample 1.jpg"].exists); XCTAssertTrue(app.buttons["Sample 2.jpg"].exists)
+    }
+
+    private func openTemporarySelection(_ app: XCUIApplication, chinese: Bool = false) {
+        openPhotos(app, chinese: chinese); selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap(); element("mobile.photos.temporary.begin", in: app).tap()
+        XCTAssertTrue(app.textFields["mobile.photos.temporary.name"].waitForExistence(timeout: 5))
+    }
+
     func test相册分享公开下载和移除密码说明后果再保存() {
         let app = launchFixture(state: "photo-sharing")
         defer { app.terminate() }

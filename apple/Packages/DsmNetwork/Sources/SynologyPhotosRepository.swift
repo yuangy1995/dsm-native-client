@@ -2923,7 +2923,15 @@ extension SynologyPhotosRepository {
         if let existing = mutations[checkpoint.operationID] {
             let matches = if let sharing = checkpoint.sharingDetails {
                 existing.restoredAlbumSharing.map { $0 == sharing } ?? sharing.hasSameIntent(as: existing.mutation)
-            } else { existing.mutation == mutation }
+            } else {
+                switch (existing.mutation, mutation) {
+                case (.copyTemporaryAlbum(let id, let name, let original), .copyTemporaryAlbum(let otherID, let otherName, let other)):
+                    id == otherID && name == otherName && original.revision == other.revision
+                case (.deleteTemporaryAlbum(let id, let original, let copy), .deleteTemporaryAlbum(let otherID, let other, let otherCopy)):
+                    id == otherID && original.revision == other.revision && copy == otherCopy
+                default: existing.mutation == mutation
+                }
+            }
             guard matches else { throw Self.failure(.conflict) }
             return
         }
@@ -2933,6 +2941,9 @@ extension SynologyPhotosRepository {
         record.restoredAlbumSharing = checkpoint.sharingDetails
         record.passwordUpdateAcknowledged = checkpoint.sharingDetails?.passwordAcknowledged ?? false
         record.enableSharingAttempted = checkpoint.sharingDetails?.enableAttempted ?? false
+        record.temporaryAlbumMembers = checkpoint.temporaryMembers.map { values in
+            Dictionary(uniqueKeysWithValues: values.map { ($0.id, PhotosAlbumMemberSnapshot(filename: $0.filename, size: $0.size, folderID: $0.folderID, indexedAt: $0.indexedAt)) })
+        }
         if checkpoint.rejected { record.result = .init(state: .rejected) }
         mutations[checkpoint.operationID] = record
     }
@@ -2944,6 +2955,9 @@ extension SynologyPhotosRepository {
             checkpoint.createdAlbumID = record.albumID
             checkpoint.membershipHasFailures = record.albumMembershipHasFailures
             checkpoint.rejected = record.result.state == .rejected
+            checkpoint.temporaryMembers = record.temporaryAlbumMembers?.map { id, value in
+                .init(id: id, filename: value.filename, size: value.size, folderID: value.folderID, indexedAt: value.indexedAt)
+            }
             if var sharing = checkpoint.sharingDetails {
                 sharing.previousMembers = sharingMembers(record.sharingBefore?.permission)?.map(SynologyPhotosAlbumCheckpoint.Sharing.Member.init)
                 sharing.previousExpiration = .init(record.sharingBefore?.expiration)

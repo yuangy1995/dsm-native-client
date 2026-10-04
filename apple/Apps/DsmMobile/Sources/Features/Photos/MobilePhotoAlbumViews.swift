@@ -94,6 +94,14 @@ struct MobilePhotoManagementStatus: View {
                     .disabled(!model.canStartManagementMutation).accessibilityIdentifier("mobile.photos.album.continue")
             }
             if let url = model.managementLink, model.pendingMutationID == nil, !model.isManaging { MobilePhotoSharingLink(url: url) }
+            if model.temporarySharingCleanupNeedsRetry, model.pendingMutationID == nil {
+                HStack {
+                    Button(L10n.string("photos.retry")) { model.retryTemporarySharingCleanup() }
+                        .accessibilityIdentifier("mobile.photos.temporary.retry")
+                    Button(L10n.string("photos.temporary.keepExisting")) { model.keepTemporarySharingAlbums() }
+                        .accessibilityIdentifier("mobile.photos.temporary.preserve")
+                }.disabled(model.isManaging)
+            }
         }.font(.callout).frame(maxWidth: .infinity).padding(.horizontal)
     }
 }

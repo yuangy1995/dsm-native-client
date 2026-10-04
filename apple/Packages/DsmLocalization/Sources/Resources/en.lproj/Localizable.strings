@@ -6052,3 +6052,6 @@
 "mobile.photos.sharing.risk.memberAccess" = "The selected members will gain the photo access shown in this form. This may include downloading or adding photos.";
 "mobile.photos.sharing.sendLink" = "Share link";
 "photos.sharing.partial" = "Some sharing settings could not be saved. Sharing remains off. Open sharing settings again to continue.";
+
+"mobile.photos.temporary.preparing" = "Preparing the photo selection…";
+"mobile.photos.temporary.resume" = "Continue sharing setup";

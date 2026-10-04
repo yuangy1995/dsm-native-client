@@ -14,6 +14,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private var members: [Int: Set<Int>] = [21: [1, 2]]
     private var rejectsAlbum = true
     private var rejectsSharing = true
+    private var temporaryAlbumIDs: Set<Int> = []
     private var sharingValue = SynologyPhotoSharingState(access: .disabled, hasPassword: true, hasExpiration: false, revision: "original", members: [], expiration: 0, isTemporary: false)
     private var pending: Bool
     private var nextID = 100
@@ -25,8 +26,8 @@ actor MobilePhotosUIService: SynologyPhotosServing {
 
     init(profileID: UUID = UUID(), state: String = "photo-upload") {
         self.profileID = profileID; self.state = state
-        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown"].contains(state)
-        if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") {
+        pending = ["photo-unknown", "photo-albums-unknown", "photo-sharing-unknown", "photo-temporary-unknown"].contains(state)
+        if state.hasPrefix("photo-albums") || state.hasPrefix("photo-sharing") || state.hasPrefix("photo-temporary") {
             uploaded = (1...2).map { index in
                 .init(id: .init(profileID: profileID, space: .personal, unitID: index), filename: "Sample \(index).jpg",
                       sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 10), indexedAt: Date(timeIntervalSince1970: 20), folderID: 1, mediaType: "photo")
@@ -38,8 +39,16 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         }
         if state == "photo-sharing-members-unknown" { sharingValue = .init(access: .disabled, hasPassword: nil, revision: "original") }
         if state == "photo-sharing-temporary" { sharingValue = .init(access: .invited, revision: "original", members: [], isTemporary: true) }
+        if state.hasPrefix("photo-temporary-existing") {
+            temporaryAlbumIDs = [21]
+            sharingValue = .init(access: .invited, revision: "original", members: [], expiration: 0, isTemporary: true)
+        }
     }
     func setPending(_ value: Bool) { pending = value }
+    func seedTemporaryAlbum(_ album: SynologyPhotoCollection) {
+        albumList.append(album); temporaryAlbumIDs.insert(album.id); members[album.id] = Set(uploaded.map { $0.id.unitID })
+        sharingValue = .init(access: .invited, revision: "created", members: [], expiration: 0, isTemporary: true)
+    }
     func setUser(_ value: Int) { userID = value }
     func denyWrites() { deniesWrites = true }
     func releaseUpload() { heldUpload?.resume(); heldUpload = nil }
@@ -65,7 +74,9 @@ actor MobilePhotosUIService: SynologyPhotosServing {
                 .init(id: .init(type: "group", value: .string("31")), name: "Sample group")]
     }
     func sharedEntries(_ scope: SynologyPhotoShareScope, offset: Int, limit: Int) async throws -> [SynologyPhotoSharedEntry] {
-        scope == .withOthers && sharingValue.access != .disabled && offset == 0 ? [.init(id: "shared-album", title: "Sample album", albumID: 21, url: sharingValue.url)] : []
+        guard scope == .withOthers, sharingValue.access != .disabled, offset == 0 else { return [] }
+        let id = temporaryAlbumIDs.sorted().last ?? 21
+        return [.init(id: "shared-album", title: albumList.first { $0.id == id }?.name ?? "Sample album", albumID: id, url: sharingValue.url)]
     }
     func timeline(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoDay] {
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -149,7 +160,15 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             sharing.enableAttempted = sharing.access != "disabled" && state != "photo-sharing-partial"
             saved.sharingDetails = sharing
         }
-        if case .createAlbum = mutation { nextID += 1; saved.createdAlbumID = nextID }
+        switch mutation {
+        case .createAlbum, .createTemporaryAlbum, .copyTemporaryAlbum:
+            nextID += 1; saved.createdAlbumID = nextID
+            if case .copyTemporaryAlbum = mutation {
+                if state == "photo-temporary-existing-copy-unknown" { pending = true }
+                if state == "photo-temporary-existing-copy-rejected", rejectsAlbum { saved.rejected = true; rejectsAlbum = false }
+            }
+        default: break
+        }
         if state == "photo-albums-partial", rejectsAlbum, mutation.photos.count > 1 {
             saved.membershipHasFailures = true; rejectsAlbum = false
         }
@@ -166,6 +185,22 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         if pending { return .init(state: .pendingReview) }
         if saved.rejected { return .init(state: .rejected) }
         switch saved.operation {
+        case .createTemporary(let name, let photos):
+            guard let id = saved.createdAlbumID else { return .init(state: .pendingReview) }
+            let album = SynologyPhotoCollection(id: id, name: name)
+            if !albumList.contains(where: { $0.id == id }) { albumList.append(album) }
+            temporaryAlbumIDs.insert(id); members[id] = Set(photos.map(\.unitID))
+            sharingValue = .init(access: .invited, revision: "created", members: [], expiration: 0, isTemporary: true)
+            return .init(state: .confirmed, album: album, completedCount: photos.count)
+        case .copyTemporary(let source, let name, _):
+            guard let id = saved.createdAlbumID else { return .init(state: .pendingReview) }
+            let album = SynologyPhotoCollection(id: id, name: name)
+            if !albumList.contains(where: { $0.id == id }) { albumList.append(album) }
+            members[id] = members[source]
+            return .init(state: .confirmed, album: album, completedCount: members[id]?.count ?? 0)
+        case .deleteTemporary(let id, _, _):
+            albumList.removeAll { $0.id == id }; members.removeValue(forKey: id); temporaryAlbumIDs.remove(id)
+            return .init(state: .confirmed)
         case .create(let name, let photos):
             guard let id = saved.createdAlbumID else { return .init(state: .pendingReview) }
             let album = SynologyPhotoCollection(id: id, name: name)
@@ -196,7 +231,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
             let expiry = settings.expiration ?? sharingValue.expiration
             sharingValue = .init(access: access, url: access == .disabled ? nil : URL(string: "https://example.invalid/shared/fixture"),
                 hasPassword: protected, hasExpiration: expiry.map { $0 > 0 }, revision: saved.operationID.uuidString,
-                members: grants, expiration: expiry, isTemporary: false)
+                members: grants, expiration: expiry, isTemporary: temporaryAlbumIDs.contains(settings.albumID) || sharingValue.isTemporary == true)
             return .init(state: partial ? .partial : .confirmed, album: albumList.first { $0.id == settings.albumID }, sharingURL: sharingValue.url)
         }
     }

@@ -4,6 +4,63 @@ import XCTest
 @testable import DsmNetwork
 
 final class SynologyPhotosRepositoryTests: XCTestCase {
+    func test临时创建回执跨实例恢复原相册且不再创建() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture()
+        let writer = MockHTTPTransport(responses: accessResponses() + [response(itemPage), response(itemPage), response(managedFolder),
+            try temporaryAlbumFixture(receipt: true), response("invalid")])
+        let repository = try makeRepository(writer, profileID: profile); _ = try await repository.access()
+        let photos = try await repository.photos(in: .personal, query: .recentlyAdded, offset: 0, limit: 20).items
+        let result = try await repository.performRecoverableAlbumMutation(.createTemporaryAlbum(name: "Fixture", photos: photos), operationID: id) { capture.append($0) }
+        XCTAssertEqual(result.state, .pendingReview)
+        let saved = try XCTUnwrap(capture.values.last); XCTAssertEqual(saved.version, 3); XCTAssertEqual(saved.createdAlbumID, 3)
+        let data = try JSONEncoder().encode(saved)
+        let reader = MockHTTPTransport(responses: accessResponses() + [try temporaryAlbumFixture(), response(itemPage)])
+        let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+        try await restored.restoreAlbumMutation(try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data))
+        let reviewed = try await restored.reviewMutation(operationID: id)
+        XCTAssertEqual(reviewed.state, .confirmed); XCTAssertEqual(reviewed.album?.id, 3)
+        let requests = try await reader.recordedRequests().map(decode)
+        XCTAssertFalse(requests.contains { ["create", "delete", "copy", "set_shared"].contains($0["method"] ?? "") })
+    }
+
+    func test临时副本恢复完整成员依据且内容变化不能确认() async throws {
+        let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture(), source = try temporaryAlbumFixture(shared: true)
+        let writer = MockHTTPTransport(responses: accessResponses() + [source, source, response(itemPage), source,
+            try temporaryAlbumFixture(id: 4, temporary: false, receipt: true), response("invalid")])
+        let repository = try makeRepository(writer, profileID: profile); _ = try await repository.access()
+        let original = try await repository.albumSharing(id: 3)
+        _ = try await repository.performRecoverableAlbumMutation(.copyTemporaryAlbum(id: 3, name: "Fixture", original: original), operationID: id) { capture.append($0) }
+        let saved = try XCTUnwrap(capture.values.last)
+        XCTAssertEqual(saved.createdAlbumID, 4); XCTAssertEqual(saved.temporaryMembers?.count, 1)
+        let data = try JSONEncoder().encode(saved), text = String(decoding: data, as: UTF8.self)
+        for secret in ["passphrase", "sharing_link", "fixture-session", "fixture-token", "https://"] { XCTAssertFalse(text.contains(secret)) }
+        for changed in [false, true] {
+            let reader = MockHTTPTransport(responses: accessResponses() + [try temporaryAlbumFixture(id: 4, temporary: false),
+                response(changed ? #"{"success":true,"data":{"list":[]}}"# : itemPage)])
+            let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+            try await restored.restoreAlbumMutation(try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: data))
+            let result = try await restored.reviewMutation(operationID: id)
+            XCTAssertEqual(result.state, changed ? .pendingReview : .confirmed)
+            let requests = try await reader.recordedRequests().map(decode)
+            XCTAssertFalse(requests.contains { ["copy", "set_shared", "delete"].contains($0["method"] ?? "") })
+        }
+    }
+
+    func test临时副本丢失编号恢复不猜同名且清理恢复只查询消失() async throws {
+        let profile = UUID(), id = UUID(), original = SynologyPhotoSharingState(access: .disabled, revision: "snapshot", isTemporary: true)
+        for copying in [true, false] {
+            let command: SynologyPhotosMutation = copying ? .copyTemporaryAlbum(id: 3, name: "Fixture", original: original) : .deleteTemporaryAlbum(id: 3, original: original)
+            let saved = try SynologyPhotosAlbumCheckpoint(mutation: command, operationID: id, profileID: profile, userID: 12)
+            let reader = MockHTTPTransport(responses: accessResponses() + (copying ? [] : [response(#"{"success":true,"data":{"list":[]}}"#)]))
+            let restored = try makeRepository(reader, profileID: profile); _ = try await restored.access()
+            try await restored.restoreAlbumMutation(saved)
+            let result = try await restored.reviewMutation(operationID: id)
+            XCTAssertEqual(result.state, copying ? .pendingReview : .confirmed)
+            let requests = try await reader.recordedRequests().map(decode)
+            XCTAssertFalse(requests.contains { ["copy", "set_shared", "delete", "create"].contains($0["method"] ?? "") })
+        }
+    }
+
     func test分享恢复保存保护回执但不保存密码链接或成员名称() async throws {
         let profile = UUID(), id = UUID(), capture = PhotosAlbumCheckpointCapture(), before = memberAlbum()
         let first = MockHTTPTransport(responses: accessResponses() + [response(before), response(before), response(before),

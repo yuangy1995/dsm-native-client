@@ -190,7 +190,7 @@
       "id": "photos-sharing-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "相册分享现状、具名成员、有效期与密码管理；新增get_permission v1读取实际下载/贡献角色，权限未知不沿用旧授权。静态与合成验证，真实NAS待验。 新增共享目录前两层权限只读：Folder.get sharing_info、FolderPermission.get_config/get_folder_link、共享成员候选；固定目录/父级身份与共享management，未知字段不当关闭或空名单。update/set_config仅静态候选，尚未接入保存，不声称完整目录权限管理。 共享目录FolderPermission.update/set_config保存已接入，四种访问范围/成员角色/密码/子目录选项，预检快照与身份、统一去重和自动回读；默认配置失败单独报告部分完成，丢失回执不猜子目录或新密码生效。macOS入口开放，static/PENDING_USER_VALIDATION，无新增真实环境结论。 2026-10-04 iPhone/iPad接入原有访问范围、成员、密码和有效期；版本2客户端恢复仅保存非秘密权限意图和步骤回执，重启只读，改密丢回执不能凭已有保护确认。Mac共享纯草稿逻辑并回归，Windows/Android仅记录影响；NAS契约及真实验证等级不变。",
+      "capability": "相册分享现状、具名成员、有效期与密码管理；新增get_permission v1读取实际下载/贡献角色，权限未知不沿用旧授权。静态与合成验证，真实NAS待验。 新增共享目录前两层权限只读：Folder.get sharing_info、FolderPermission.get_config/get_folder_link、共享成员候选；固定目录/父级身份与共享management，未知字段不当关闭或空名单。update/set_config仅静态候选，尚未接入保存，不声称完整目录权限管理。 共享目录FolderPermission.update/set_config保存已接入，四种访问范围/成员角色/密码/子目录选项，预检快照与身份、统一去重和自动回读；默认配置失败单独报告部分完成，丢失回执不猜子目录或新密码生效。macOS入口开放，static/PENDING_USER_VALIDATION，无新增真实环境结论。 2026-10-04 iPhone/iPad接入原有访问范围、成员、密码和有效期；版本2客户端恢复仅保存非秘密权限意图和步骤回执，重启只读，改密丢回执不能凭已有保护确认。Mac共享纯草稿逻辑并回归，Windows/Android仅记录影响；NAS契约及真实验证等级不变。 M3b3移动临时分享接入已实现创建/复制/关闭/清理，按版本3非秘密操作回执与版本1流程恢复，不以同名推断成功或重复复制，NAS请求及真实证据等级不变。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",

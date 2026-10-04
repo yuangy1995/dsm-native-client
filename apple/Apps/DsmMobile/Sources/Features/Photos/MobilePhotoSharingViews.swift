@@ -17,14 +17,13 @@ struct MobilePhotoSharingForm: View {
                 else if let error = sharing.error {
                     Section {
                         Text(error).foregroundStyle(.red)
-                        if sharing.original?.isTemporary != true { Button(L10n.string("photos.retry")) { sharing.load() } }
+                        Button(L10n.string("photos.retry")) { sharing.load() }
                     }
                 } else if let original = sharing.original {
                     Section {
                         Picker(L10n.string("photos.manage.linkAccess"), selection: $sharing.access) {
                             ForEach(SynologyPhotoLinkAccess.allCases, id: \.self) { Text(Self.title($0)).tag($0) }
                         }.accessibilityIdentifier("mobile.photos.sharing.access")
-                        if sharing.access == .invited { Text(L10n.string("photos.sharing.invitedHint")).foregroundStyle(.secondary) }
                         if let url = original.url { MobilePhotoSharingLink(url: url) }
                     }
                     Section {
@@ -83,7 +82,7 @@ struct MobilePhotoSharingForm: View {
             .navigationTitle(L10n.string("photos.manage.sharing"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("photos.delete.cancel")) { sharing.cancel(); dismiss() }
+                    Button(L10n.string("photos.delete.cancel")) { if sharing.cancelEditing() { dismiss() } }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L10n.string("mobile.photos.album.save")) { if sharing.requestSave() { dismiss() } }
@@ -97,7 +96,15 @@ struct MobilePhotoSharingForm: View {
             } message: {
                 Text(sharing.confirmationRisks.map(\.message).joined(separator: "\n\n"))
             }
+            .alert(L10n.string("photos.temporary.stopTitle"), isPresented: $sharing.showsTemporaryStop) {
+                Button(L10n.string("photos.temporary.stop"), role: .destructive) { if sharing.stopTemporary(keepCopy: false) { dismiss() } }
+                    .accessibilityIdentifier("mobile.photos.temporary.stop")
+                Button(L10n.string("photos.temporary.keep")) { if sharing.stopTemporary(keepCopy: true) { dismiss() } }
+                    .accessibilityIdentifier("mobile.photos.temporary.keep")
+                Button(L10n.string("photos.delete.cancel"), role: .cancel) { }
+            } message: { Text(L10n.string("photos.temporary.stopHint")) }
         }
+        .interactiveDismissDisabled(draft.prepared)
     }
 
     static func title(_ access: SynologyPhotoLinkAccess) -> String {

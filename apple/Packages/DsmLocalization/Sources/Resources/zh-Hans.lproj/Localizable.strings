@@ -6052,3 +6052,6 @@
 "mobile.photos.sharing.risk.memberAccess" = "所选成员将获得表单中显示的照片访问权限，可能包括下载或添加照片。";
 "mobile.photos.sharing.sendLink" = "分享链接";
 "photos.sharing.partial" = "部分分享设置未能保存，分享仍处于关闭状态。请重新打开分享设置继续修改。";
+
+"mobile.photos.temporary.preparing" = "正在准备所选照片…";
+"mobile.photos.temporary.resume" = "继续设置分享";

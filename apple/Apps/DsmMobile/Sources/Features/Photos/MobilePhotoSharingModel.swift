@@ -13,6 +13,7 @@ final class MobilePhotoSharingModel {
         let entry: SynologyPhotoSharedEntry?
         let section: SynologyPhotosSection
         let space: SynologyPhotoSpace
+        var prepared = false
     }
     enum Risk: String, CaseIterable {
         case publicView, publicDownload, passwordRemoved, memberAccess
@@ -34,6 +35,7 @@ final class MobilePhotoSharingModel {
     private(set) var recipients: [SynologyPhotoShareRecipient] = []
     private(set) var confirmationRisks: [Risk] = []
     var showsConfirmation = false
+    var showsTemporaryStop = false
     var access: SynologyPhotoLinkAccess = .disabled
     var members: [SynologyPhotoShareGrant] = []
     var expiration = PhotoSharingExpirationDraft()
@@ -59,8 +61,17 @@ final class MobilePhotoSharingModel {
         load()
     }
 
+    func beginPrepared() {
+        guard model.canStartManagementMutation, model.managementFeatures.contains(.sharing), let album = model.preparedTemporaryAlbum else { return }
+        cancel()
+        draft = .init(album: album, entry: nil, section: model.section, space: model.selectedSpace, prepared: true)
+        load()
+    }
+
     private func isCurrent(_ value: Draft) -> Bool {
-        guard draft?.id == value.id, model.isModuleEnabled, model.section == value.section, model.selectedSpace == value.space else { return false }
+        guard draft?.id == value.id, model.isModuleEnabled else { return false }
+        if value.prepared { return model.preparedTemporaryAlbum?.id == value.album.id }
+        guard model.section == value.section, model.selectedSpace == value.space else { return false }
         if let entry = value.entry { return model.sharedEntries.contains(entry) && model.sharingManagementTarget(for: entry) == value.album }
         return model.selectedAlbum == value.album && model.selectedAlbumAccess?.isOwner == true
     }
@@ -78,7 +89,6 @@ final class MobilePhotoSharingModel {
                 guard !Task.isCancelled, self.isCurrent(draft) else { return }
                 self.original = value; self.access = value.access; self.members = value.members ?? []
                 self.expiration = .init(expiration: value.expiration)
-                if value.isTemporary == true { self.error = L10n.string("mobile.photos.sharing.temporary"); return }
                 self.loadRecipients()
             } catch {
                 if !Task.isCancelled, self.isCurrent(draft) { self.error = L10n.string("mobile.photos.sharing.loadFailed") }
@@ -113,8 +123,8 @@ final class MobilePhotoSharingModel {
     }
 
     var mutation: SynologyPhotosMutation? {
-        guard let draft, isCurrent(draft), let original, original.isTemporary != true, model.canStartManagementMutation,
-              canOpen(entry: draft.entry), !isLoading, error == nil, expiration.isValid, password.isValid else { return nil }
+        guard let draft, isCurrent(draft), let original, model.canStartManagementMutation,
+              draft.prepared || canOpen(entry: draft.entry), !isLoading, error == nil, expiration.isValid, password.isValid else { return nil }
         let oldMembers = original.members ?? []
         guard Set(members.map(\.id)).count == members.count,
               members.allSatisfy({ member in
@@ -124,7 +134,7 @@ final class MobilePhotoSharingModel {
         let changedMembers = original.members.map { $0 != members } ?? false
         let changedExpiration = expiration.change(from: original.expiration)
         let changedPassword = password.change(hasPassword: original.hasPassword)
-        guard access != original.access || changedMembers || changedExpiration != nil || changedPassword != nil else { return nil }
+        guard original.isTemporary == true || access != original.access || changedMembers || changedExpiration != nil || changedPassword != nil else { return nil }
         return .shareAlbum(id: draft.album.id, access: access, original: original, members: changedMembers ? members : nil,
                            expiration: changedExpiration, password: changedPassword)
     }
@@ -145,6 +155,7 @@ final class MobilePhotoSharingModel {
 
     @discardableResult func requestSave() -> Bool {
         guard let command = mutation else { return false }
+        if original?.isTemporary == true, access == .disabled { showsTemporaryStop = true; return false }
         if !risks.isEmpty { confirmedMutation = command; confirmationRisks = risks; showsConfirmation = true; return false }
         return submit(command)
     }
@@ -153,6 +164,15 @@ final class MobilePhotoSharingModel {
         return submit(command)
     }
     func cancelConfirmation() { confirmationRisks = []; confirmedMutation = nil; showsConfirmation = false }
+    @discardableResult func stopTemporary(keepCopy: Bool) -> Bool {
+        guard let draft, isCurrent(draft), original?.isTemporary == true,
+              model.stopTemporarySharing(draft.album, keepCopy: keepCopy) else { return false }
+        cancel(); return true
+    }
+    @discardableResult func cancelEditing() -> Bool {
+        if let draft, draft.prepared, isCurrent(draft), !model.stopTemporarySharing(draft.album, keepCopy: false) { return false }
+        cancel(); return true
+    }
     private func submit(_ command: SynologyPhotosMutation) -> Bool {
         model.submitMutation(command)
         guard model.isManaging else { return false }
@@ -162,6 +182,6 @@ final class MobilePhotoSharingModel {
         loadingTask?.cancel(); loadingTask = nil; recipientsTask?.cancel(); recipientsTask = nil
         draft = nil; original = nil; isLoading = false; loadingRecipients = false; error = nil; recipientError = nil
         recipients = []; members = []; access = .disabled; expiration = .init(); password = .init(); search = ""
-        cancelConfirmation()
+        cancelConfirmation(); showsTemporaryStop = false
     }
 }

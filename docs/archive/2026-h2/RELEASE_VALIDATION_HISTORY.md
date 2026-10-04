@@ -908,3 +908,27 @@ Mac 共享回归构建沿用 `xcodebuild build -project apple/Apps/DsmMac/DsmMac
 第二轮最终 `m3b2-iphone2.xcresult` / `m3b2-ipad2.xcresult`：两端分别 **739/739 单元通过（12.513 / 12.650 秒）**，五项新分享实际 UI **5/5 通过（274.974 / 298.858 秒）**。覆盖公开下载与密码移除确认、具名成员、未知重启、部分完成保持关闭及中文加载/错误/候选空内容；原相册移除/删除回归在首轮两端通过（41.758 / 48.048 秒）。已查看最终 iPhone 浅色确认及 iPad 深色部分完成截图，具体后果、恢复提示和操作入口可见，无秘密显示。独立集成与只读对抗复核未发现待修缺陷；真实 NAS 和设备项目仍按主计划待验。
 
 XcodeGen 2.46.0 重复生成一致，最终工程 SHA-256 为 `f94de91816c1fdcec5696e779d12d969954e31f6302a5f541b999fbd2e5e6f49`；严格文档与差异检查通过。模拟器测试后恢复 iPad 浅色；临时合成截图及测试结果不提交。相册分享设置源码收口，M3 临时分享、照片收集及其他管理继续。
+
+
+## 2026-10-04 移动 M3b3 临时分享生命周期
+
+移动 Photos 多选接入临时分享创建与同一弹窗设置，已有临时分享可停止或先保留普通相册。准备取消沿原操作清理，原照片保留。普通相册分享表单复用原有成员/保护设置，停止说明临时相册移除和可保留副本；未知结果不显示可用链接。恢复记录不保存链接、口令或密码；写前保存版本 3 临时命令与完整成员依据，独立版本 1 流程先保存下一阶段再清除旧操作，已确认副本不重复复制。分享回执增加可选临时身份，避免恢复后混入普通相册。Mac 不装配新存储，NAS 请求不变，Windows/Android 仅记录影响。
+
+独立集成及只读对抗复核补上创建预检失败清除未提交阶段、准备完成与取消同时发生时仍清理已创建相册、恢复时保留临时身份。实际网络合成用例验证返回编号和完整成员恢复、成员变化保持未知、无编号不按同名追认、停止后删除只查询消失；模型用例覆盖旧回执与新阶段同时存在、取消/重启、明确失败保留、跨账号/损坏记录、写前保存失败及受限账号。
+
+- `swift test --package-path apple --jobs 4 --filter SynologyPhotosRepositoryTests`：首轮 520 项通过（1.903 秒）；加入三项回执用例后 **523/523 通过（3.004 秒）**，日志 `m3b3-repository2.log`。
+- `swift test --package-path apple --jobs 4`：首轮 **2443 项 XCTest、172 项既有条件跳过、0 失败（32.026 秒）**；最终共享逻辑第二轮同样 **2443 项、172 项既有条件跳过、0 失败（34.630 秒）**，另 **12 项 Swift Testing 通过**（`m3b3-shared2.log`）。
+- XcodeGen **2.46.0** 生成移动工程。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`：首轮分享弹窗绑定超出 Swift 类型检查时限，拆为具名 Binding 后第二轮通过。第三轮测试引用新增合成方法时使用了构建期间较早编译的服务快照，停止编辑后完整增量第四轮通过（`m3b3-build4.log`）；没有降低业务或测试断言。
+- `xcodebuild test-without-building` 沿用同工程、方案和派生目录，`-parallel-testing-enabled NO -only-testing:DsmMobileTests`；iPhone ID 如上、iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，本轮两端各 **751/751 单元通过（13.039 / 13.048 秒）**。其中 12 项临时分享行为测试均通过。
+
+两端四项临时分享实际 UI 加原普通分享回归及 Mac Release 双架构构建仍在进行；结果完成后单独补记。真实 NAS、锁屏保护和系统辅助功能按移动主计划 M3b3 的 `PENDING_USER_VALIDATION` 验收，不能由合成测试提升真实环境证据等级。
+
+
+首轮 `m3b3-iphone1.xcresult` / `m3b3-ipad1.xcresult` 两端各 **5/5 实际 UI 通过（190.667 / 218.680 秒）**，含四项临时分享主流程及一项普通相册分享回归。已查看 iPhone 浅色设置页和 iPad 深色停止确认，选片名称、成员、保护设置与停止/保留副本后果清晰。随后删去访问范围下重复的受邀成员说明，并加入独立中文流程；第五轮构建通过（`m3b3-build5.log`），中文实际 UI 另记结果。
+
+最终本地化资源 Apple 5818 / Android 2188 / Windows 3402 的完整性、参数、资源引用和硬编码检查通过；29 组 fixture / 48 项私有文档引用校验通过。XcodeGen 2.46.0 重复生成一致，移动工程 SHA-256 为 `c1023c756becc19894b505b3aab0df55478f538c44378e587ad55fda68f32d8a`；严格文档及差异检查通过。
+
+
+最终中文 `m3b3-iphone2.xcresult` / `m3b3-ipad2.xcresult` 各 **1/1 实际 UI 通过（35.643 / 39.973 秒）**，覆盖中文创建→设置→取消→保留原件；已查看最终 iPad 深色中文设置截图，重复提示已移除。合计五项新临时分享 UI 加一项既有普通分享回归均有两端通过证据。第五轮除新增中文测试外仅移除重复说明，没有修改行为模型；已通过的 751 项单元和其余 UI 未重复运行。
+
+Mac 最终回归命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 通过（`m3b3-macos-build1.log`）；实际主程序 `lipo -archs` 为 **x86_64 arm64**。没有安装、启动或发布 Mac 包。iPad 已恢复浅色，临时合成截图、日志和结果包不提交；M3b3 源码及本机验证收口，照片收集继续 M3b4。
