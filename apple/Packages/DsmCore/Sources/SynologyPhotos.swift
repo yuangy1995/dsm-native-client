@@ -42,7 +42,7 @@ public struct SynologyPhotoThumbnail: Hashable, Sendable {
 }
 
 /// 官方自动队列按数字升序处理；后台候选不从文件名猜测编码。
-public enum SynologyPhotoAutomaticPreviewPriority: Int, Hashable, Sendable {
+public enum SynologyPhotoAutomaticPreviewPriority: Int, Codable, Hashable, Sendable {
     case standard = 1, hevcOrLiveVideo = 2, vc1 = 3, background = 4
 }
 
@@ -71,7 +71,7 @@ public struct SynologyPhotoAutomaticPreviewTask: Hashable, Sendable {
 }
 
 /// 由实际转换后端提供能力，不代表当前设备已安装官方浏览器扩展。
-public struct SynologyPhotoPreviewConversionSupport: Equatable, Sendable {
+public struct SynologyPhotoPreviewConversionSupport: Codable, Equatable, Sendable {
     public let hevc: Bool
     public let vc1: Bool
     public let video: Bool

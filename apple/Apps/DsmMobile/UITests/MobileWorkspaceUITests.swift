@@ -3,6 +3,90 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test自动预览处理中暂停再继续保持可操作() {
+        let app = launchFixture(state: "photo-preview-automatic-slow"); defer { app.terminate() }
+        openPhotos(app)
+        let pause = app.buttons["mobile.photos.automatic.pause"]
+        XCTAssertTrue(pause.waitForExistence(timeout: 12)); pause.tap()
+        XCTAssertTrue(app.staticTexts["Preview generation paused"].waitForExistence(timeout: 5))
+        let resume = app.buttons["mobile.photos.automatic.resume"]; XCTAssertTrue(resume.isEnabled)
+        attachScreenshot(app, name: "Paused foreground preview generation")
+        resume.tap(); XCTAssertTrue(pause.waitForExistence(timeout: 12)); pause.tap()
+        XCTAssertTrue(resume.waitForExistence(timeout: 5)); XCTAssertTrue(resume.isEnabled)
+    }
+
+    func test自动预览中文开关保存后前台生成() {
+        let app = launchFixture(state: "photo-preview", language: "zh-Hans"); defer { app.terminate() }
+        openPhotos(app, chinese: true); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.automatic", in: app).tap()
+        let toggle = app.switches["photos.automatic.enabled"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.preferences.save"].isEnabled)
+        XCTAssertTrue(app.staticTexts["打开照片页面时补齐缺少的预览，离开页面或切到后台会暂停。原件保持不变。"].exists)
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        attachScreenshot(app, name: "自动预览前台设置")
+        app.buttons["mobile.photos.preferences.save"].tap()
+        XCTAssertTrue(app.staticTexts["已生成 1 项预览"].waitForExistence(timeout: 12))
+        attachScreenshot(app, name: "前台自动预览完成")
+    }
+
+    func test照片库维护确认取消和共享来源() {
+        let app = launchFixture(state: "photo-preview-admin"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.source", in: app).tap(); app.buttons["Shared Photos"].tap()
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.maintenance", in: app).tap()
+        let start = app.buttons["mobile.photos.maintenance.basic"]; XCTAssertTrue(start.waitForExistence(timeout: 5)); start.tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5)); XCTAssertTrue(app.alerts.firstMatch.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Shared Photos")).firstMatch.exists)
+        attachScreenshot(app, name: "Shared photo library maintenance confirmation")
+        app.alerts.firstMatch.buttons["Cancel"].tap(); start.tap(); app.alerts.firstMatch.buttons["mobile.photos.preferences.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
+    }
+
+    func test新格式部分完成只能补关闭提示() {
+        let app = launchFixture(state: "photo-preview-partial"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.codec", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.codec.generate"].waitForExistence(timeout: 5)); attachScreenshot(app, name: "New format preview generation")
+        app.buttons["mobile.photos.codec.generate"].tap(); XCTAssertTrue(app.buttons["mobile.photos.album.continue"].waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+        XCTAssertTrue(app.buttons["mobile.photos.album.refresh"].waitForExistence(timeout: 8)); app.buttons["mobile.photos.album.refresh"].tap()
+        XCTAssertTrue(app.buttons["mobile.photos.album.continue"].waitForExistence(timeout: 8)); attachScreenshot(app, name: "Codec generation accepted before restart")
+        app.buttons["mobile.photos.album.continue"].tap()
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.codec", in: app).tap()
+        XCTAssertTrue(app.staticTexts["There are no new format support messages."].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.codec.generate"].exists)
+    }
+
+    func test预览设置空内容错误与加载状态() {
+        for state in ["photo-preview-empty", "photo-preview-error", "photo-preview-loading", "photo-preview-nohome"] {
+            let app = launchFixture(state: state)
+            openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.codec", in: app).tap()
+            if state.hasSuffix("empty") { XCTAssertTrue(app.staticTexts["There are no new format support messages."].waitForExistence(timeout: 5)) }
+            else if state.hasSuffix("error") { XCTAssertTrue(app.staticTexts["Couldn’t load photo settings. Try again."].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["Try again"].exists) }
+            else if state.hasSuffix("loading") { XCTAssertTrue(element("mobile.photos.preferences.loading", in: app).waitForExistence(timeout: 5)) }
+            else { XCTAssertTrue(app.buttons["mobile.photos.codec.dismiss"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.codec.generate"].exists) }
+            attachScreenshot(app, name: state); app.terminate()
+        }
+    }
+
+    func test维护忙碌与不支持预览仍显示真实限制() {
+        for state in ["photo-preview-running", "photo-preview-unsupported"] {
+            let app = launchFixture(state: state)
+            openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.maintenance", in: app).tap()
+            XCTAssertTrue(app.buttons["mobile.photos.maintenance.thumbnail"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.maintenance.thumbnail"].isEnabled)
+            XCTAssertTrue(app.buttons["mobile.photos.maintenance.basic"].isEnabled)
+            attachScreenshot(app, name: state); app.terminate()
+        }
+    }
+
+    func test自动预览设置未知重启后禁止再次保存() {
+        let app = launchFixture(state: "photo-preview-unknown"); defer { app.terminate() }
+        openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.automatic", in: app).tap()
+        let toggle = app.switches["photos.automatic.enabled"]; XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap(); app.buttons["mobile.photos.preferences.save"].tap()
+        XCTAssertTrue(app.buttons["mobile.photos.album.refresh"].waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--ui-preserve-transfer-fixture"); app.launch(); openPhotos(app)
+        XCTAssertTrue(app.buttons["mobile.photos.album.refresh"].waitForExistence(timeout: 8))
+        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.automatic", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.photos.preferences.save"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["mobile.photos.preferences.save"].isEnabled)
+        attachScreenshot(app, name: "Automatic preview setting recovery")
+    }
+
     func test照片所选重建和单张预览重建() {
         let app = launchFixture(state: "photo-repair"); defer { app.terminate() }
         openPhotos(app); selectPhotoItems(app)

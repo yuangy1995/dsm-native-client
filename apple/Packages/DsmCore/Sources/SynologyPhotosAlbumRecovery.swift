@@ -23,6 +23,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         case background(BackgroundControl)
         case preference(Preference)
         case previewRegeneration(PreviewRegeneration)
+        case previewMaintenance(PreviewMaintenance)
     }
     public let version: Int
     public let profileID: UUID
@@ -42,13 +43,14 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
              .edit, .shiftDates, .createTag, .addTags, .removeTags,
              .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy,
              .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks,
-             .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto, .regeneratePreviews: true
+             .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto, .regeneratePreviews, .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary: true
         default: false
         }
     }
 
     public init(mutation: SynologyPhotosMutation, operationID: UUID, profileID: UUID, userID: Int) throws {
         version = switch mutation {
+        case .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary: 12
         case .regeneratePreviews: 11
         case .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto: 10
         case .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks: 9
@@ -63,6 +65,7 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
         }
         self.profileID = profileID; self.userID = userID; self.operationID = operationID
         switch mutation {
+        case .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary: operation = .previewMaintenance(try PreviewMaintenance(mutation: mutation))
         case .regeneratePreviews: operation = .previewRegeneration(try PreviewRegeneration(mutation: mutation))
         case .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto: operation = .preference(try Preference(mutation: mutation))
         case .setFolderSharing: operation = .folderSharing(try FolderSharing(mutation: mutation))
@@ -95,13 +98,16 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
 
     /// 只交给 restoreAlbumMutation；恢复接口不执行原写请求。
     public func reviewMutation() throws -> SynologyPhotosMutation {
-        guard (1...11).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...12).contains(version), userID > 0, createdAlbumID.map({ $0 > 0 }) ?? true else { throw CocoaError(.coderReadCorrupt) }
         if let temporaryMembers {
             guard temporaryMembers.allSatisfy({ $0.profileID == profileID && $0.unitID > 0 && $0.folderID > 0 && $0.size >= 0 }),
                   Set(temporaryMembers.map(\.id)).count == temporaryMembers.count else { throw CocoaError(.coderReadCorrupt) }
         }
         let command: SynologyPhotosMutation
         switch operation {
+        case .previewMaintenance(let value):
+            guard version == 12, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
+            command = try value.reviewMutation(profileID: profileID, userID: userID)
         case .previewRegeneration(let value):
             guard version == 11, createdAlbumID == nil else { throw CocoaError(.coderReadCorrupt) }
             command = try value.reviewMutation()
@@ -162,10 +168,15 @@ public struct SynologyPhotosAlbumCheckpoint: Codable, Sendable {
              .edit, .shiftDates, .createTag, .addTags, .removeTags,
              .createFolder, .renameFolder, .setFolderSort, .setFolderCover, .deleteFolderItems, .move, .copy,
              .setFolderSharing, .cancelBackgroundTask, .clearBackgroundTasks,
-             .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto, .regeneratePreviews: break
+             .setDuplicateSettings, .setDisplaySettings, .setRecognitionSettings, .rotatePhoto, .regeneratePreviews, .setAutomaticPreview, .generateAutomaticPreview, .respondToCodecPrompt, .maintainLibrary: break
         default: throw CocoaError(.coderReadCorrupt)
         }
         return command
+    }
+
+    public var previewMaintenanceDetails: PreviewMaintenance? {
+        get { if case .previewMaintenance(let value) = operation { return value }; return nil }
+        set { if case .previewMaintenance = operation, let newValue { operation = .previewMaintenance(newValue) } }
     }
 
     public var preferenceDetails: Preference? {

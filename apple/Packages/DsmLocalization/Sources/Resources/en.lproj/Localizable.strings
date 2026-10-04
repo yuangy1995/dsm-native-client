@@ -6106,3 +6106,7 @@
 "mobile.photos.preferences.loading" = "Loading photo settings…";
 "mobile.photos.preferences.recognition" = "Photo Recognition";
 "mobile.photos.preferences.info" = "Show photo details by default";
+
+"mobile.photos.automatic.foreground" = "Missing previews are generated while the Photos page is open. Leaving the page or switching to another app pauses processing. Originals are preserved.";
+"mobile.photos.automatic.unsupported" = "This device cannot generate previews. The saved setting can still be used by other supported devices.";
+"mobile.photos.automatic.pending" = "The preview is being processed. Its status will update when the connection returns.";

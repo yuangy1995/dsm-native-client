@@ -514,8 +514,8 @@ public final class SynologyPhotosModel {
         automaticPreviewWorker = Task { [weak self] in
             var delay = 5.0
             while !Task.isCancelled {
-                guard let self else { return }
                 do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                guard let self else { return }
                 let completed = self.automaticPreviewCompleted, failed = self.automaticPreviewFailed.count
                 await self.processAutomaticPreview()
                 delay = completed != self.automaticPreviewCompleted || failed != self.automaticPreviewFailed.count ? 0.1 : 5
@@ -537,7 +537,8 @@ public final class SynologyPhotosModel {
 
     /// 一个处理周期仅领取一项；直接复用Repository操作编号，不刷新图库和月份锚点。
     public func processAutomaticPreview(now: Date = Date()) async {
-        guard isModuleEnabled, hasLoaded, !isLoading, !isDeleting, !isCheckingDeletion, !isManaging,
+        guard isModuleEnabled, hasLoaded, albumRecoveryReady, albumRecoveryError == nil || hasPendingAutomaticPreview,
+              !isLoading, !isDeleting, !isCheckingDeletion, !isManaging,
               similarBatchQueue.isEmpty, !isUploading, pendingDeletionPhotos.isEmpty,
               pendingMutationID == nil || hasPendingAutomaticPreview else { return }
         guard hasPendingAutomaticPreview || (automaticPreviewEnabled == true && !automaticPreviewPaused && !automaticPreviewSettingsVisible && automaticPreviewSupported) else { return }
@@ -594,7 +595,10 @@ public final class SynologyPhotosModel {
                 self.pendingMutationID = id; self.pendingMutation = command
                 self.nextAutomaticReviewAt = now.addingTimeInterval(5); self.automaticReviewAttempts = 0
                 do {
-                    let result = try await service.performMutation(command, operationID: id) { _, _ in }
+                    let result: SynologyPhotosMutationResult
+                    if let store = self.albumRecoveryStore {
+                        result = try await service.performRecoverableAlbumMutation(command, operationID: id) { try store.save($0) }
+                    } else { result = try await service.performMutation(command, operationID: id) { _, _ in } }
                     await self.applyAutomaticPreviewResult(result, id: id, task: task, service: service)
                 } catch {
                     self.pendingMutationID = nil; self.pendingMutation = nil
@@ -614,9 +618,12 @@ public final class SynologyPhotosModel {
 
     private func applyAutomaticPreviewResult(_ result: SynologyPhotosMutationResult, id: UUID,
         task: SynologyPhotoAutomaticPreviewTask, service: any SynologyPhotosServing) async {
-        guard pendingMutationID == id else { return }
+        guard pendingMutationID == id, isModuleEnabled else { return }
         if result.state == .pendingReview { return }
+        do { try albumRecoveryStore?.clear(operationID: id); albumRecoveryError = nil }
+        catch { albumRecoveryError = L10n.string("photos.album.recovery.saveFailed"); return }
         pendingMutationID = nil; pendingMutation = nil
+        if albumRecoveryStore != nil, retryableManagementMutation == nil { managementMessage = nil }
         if result.state == .confirmed {
             automaticPreviewFinished.insert(task); automaticPreviewCompleted += 1
             automaticPreviewRevisions[task.space, default: [:]][task.unitID, default: 0] += 1
@@ -2502,7 +2509,17 @@ public final class SynologyPhotosModel {
     private func restoreAlbumMutationIfNeeded(repository: any SynologyPhotosServing) async {
         guard !albumRecoveryReady, let store = albumRecoveryStore else { return }
         do {
-            let saved = try store.loadTemporarySharing(), checkpoint = try store.load()
+            let saved = try store.loadTemporarySharing(), currentCheckpoint = try store.load(), codec = try store.loadCodecContinuation()
+            if let codec {
+                try await repository.restoreAlbumMutation(codec)
+                if let currentCheckpoint, currentCheckpoint.operationID != codec.operationID {
+                    let result = try await repository.reviewMutation(operationID: codec.operationID)
+                    if result.state == .confirmed { try store.clearCodecContinuation() }
+                    else if result.state != .partial { throw CocoaError(.coderReadCorrupt) }
+                }
+            }
+            let checkpoint = currentCheckpoint ?? codec
+            if currentCheckpoint == nil, let codec { try store.save(codec) }
             temporaryRecoveryIdentity = try await repository.uploadRecoveryIdentity()
             if let saved {
                 guard saved.identity == temporaryRecoveryIdentity else { throw CocoaError(.fileReadNoPermission) }
@@ -3001,7 +3018,13 @@ public final class SynologyPhotosModel {
         do { try recordTemporaryResult(mutation, id: id, result: result) }
         catch { albumRecoveryError = L10n.string("photos.album.recovery.saveFailed"); return nil }
         if pendingUploadID == nil, SynologyPhotosAlbumCheckpoint.supports(mutation) {
-            do { try albumRecoveryStore?.clear(operationID: id); albumRecoveryError = nil }
+            do {
+                if case .respondToCodecPrompt(_, let generate) = mutation {
+                    if result.state == .partial, generate { try albumRecoveryStore?.retainCodecContinuation(operationID: id) }
+                    if result.state == .confirmed { try albumRecoveryStore?.clearCodecContinuation() }
+                }
+                try albumRecoveryStore?.clear(operationID: id); albumRecoveryError = nil
+            }
             catch {
                 albumRecoveryError = L10n.string("photos.album.recovery.saveFailed")
                 return nil

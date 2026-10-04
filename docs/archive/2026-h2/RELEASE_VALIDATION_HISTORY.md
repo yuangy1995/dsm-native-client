@@ -1102,3 +1102,18 @@ Mac 两轮 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme
 第四轮移动构建通过（`m3f2-build4.log`）。最终网络 **570/570、0 失败（2.009 秒）**通过（`m3f2-network2.log`）；两端第三轮九项预览修复单元各 **9/9（0.276 / 0.282 秒）**，中文搜索/选择/继续实际 UI 各 **1/1（35.454 / 38.604 秒）**通过，结果 `m3f2-iphone3.xcresult` / `m3f2-ipad3.xcresult`。五项新实际 UI 与旧旋转全部分别具有两端通过证据，未通过的中间轮次保留如上。已查看 iPhone 浅色完整标题/共享来源/未知恢复说明，以及 iPad 深色中文搜索/错误恢复截图；iPad 测后恢复浅色。
 
 最终 Mac 第二轮双架构构建通过（`m3f2-mac2.log`），再次检查实际主程序为 **x86_64 arm64**。两端 UI 与 Mac 编译结束后串行 `swift test --package-path apple` 完整通过：**2490 项 XCTest、172 项既有条件跳过、0 失败（31.520 秒）**，另 **12 项 Swift Testing（0.031 秒）**（`m3f2-shared1.log`）。最终本地化、响应/请求契约、API 参数生成、严格文档及差异检查均通过。日志、结果包和截图是本机验证产物，不进入提交。真实 NAS、媒体像素效果、设备文件保护和辅助功能按主计划 M3f2 的 `PENDING_USER_VALIDATION` 验收；自动预览、图库维护、管理员设置、人物/相似组、批量导出和旧图库清理继续后续 M3，M4–M8 尚未完成。
+
+
+## 2026-10-04 移动 M3f3 自动预览与图库维护
+
+- 范围：原生自动预览设置/状态/暂停继续、新格式提示、个人/共享图库维护及原快照确认；自动工作只在照片页面前台运行，版本 12 保存写前意图、接收回执、图片/视频摘要与失败标记。新格式部分完成的后续记录独立保留，防止重启再次生成；无新 NAS 参数或真实 NAS 写测试。
+- 独立集成及只读对抗复核覆盖原件/单元编号区分、账号与来源、旧设置/维护许可、取消与提交边界、落盘失败零写、未知结果只查、生成接受与最终完成区分、后续提示记录和其他操作并存、临时文件保护及旧版本兼容。复核补齐生成已接受但提示失败后的持久后续记录；处理中主动暂停而尚未上传的确定取消保持暂停状态，不能误报失败。Mac 未装配存储时保持原行为，后台或被替换会话仍保留原记录。
+- 网络第一轮 `swift test --package-path apple --filter SynologyPhotosRepositoryTests` 570 项通过（1.631 秒）；新增七项后第二轮 577 项中一项失败，是测试把原件下载的 GET 请求送入表单解析器，未改变业务断言，已修正请求筛选。第三轮 `swift test --package-path apple --jobs 4 --filter SynologyPhotosRepositoryTests` 579 项、0 失败（1.753 秒），含九项新增恢复测试及真实合成视频摘要跨实例回读。对应编译分别 120.50、67.04、52.38 秒。
+- 完整共享最终 `swift test --package-path apple --jobs 4` 通过：2499 项 XCTest、172 项既有条件跳过、0 失败，31.700 秒；另 12 项 Swift Testing 通过，0.031 秒。最终编译 18.20 秒；没有使用静态扫描替代行为测试，也没有新增跳过。
+- 锁定 XcodeGen 2.46.0 生成工程并复验 SHA-256 相同。移动四轮 `xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 均通过。新增测试文件通过生成流程加入工程，没有手改生成内容。
+- 两端分别执行 `xcodebuild test-without-building`，沿用上述 project/scheme/derivedDataPath，`-parallel-testing-enabled NO`，iPad 目标为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。结果在忽略目录的 `m3f3-iphone1/2/3.xcresult`、`m3f3-ipad1/2/3.xcresult`，每轮均单独运行 `-only-testing:DsmMobileTests`。第一轮各 855 项只有同一新增用例失败（三条断言）：连续使用相同远期时间，未跨过查询退避时间；修正第二次时间推进。第二轮两端各 856 项通过，最终第三轮各 857 项通过（iPhone 14.455、iPad 14.280 秒），包含 12 项新模型测试；断言与安全门均保留。
+- 第一轮实际 UI 选择六项新流程与旧 `test照片显示偏好中文保存及预览默认资料`，两端各 6/7 通过（282.885/323.337 秒）；共享维护确认的定位未限定弹窗，命中重复元素，修正为当前 alert 的确认按钮，保留后果/来源/结果断言。第二轮六项新流程全部通过（247.782/275.766 秒）：`test自动预览中文开关保存后前台生成`、`test照片库维护确认取消和共享来源`、`test新格式部分完成只能补关闭提示`、`test预览设置空内容错误与加载状态`、`test维护忙碌与不支持预览仍显示真实限制`、`test自动预览设置未知重启后禁止再次保存`。第三轮新增 `test自动预览处理中暂停再继续保持可操作` 两端通过（25.235/23.473 秒）。界面选项为 `-only-testing:DsmMobileUITests/MobileWorkspaceUITests/<上述方法名>`。
+- 截图复核发现 iPhone 维护标题截断及空状态区留下表单空白行，已改为原生关闭/刷新图标并仅显示实际状态。最终 iPhone 浅色维护完整标题/空内容/暂停和 iPad 深色中文设置均已人工查看；两端 UI 都使用合成照片和账号，不能证明真实图片质量或系统辅助功能通过。iPad 测试后恢复浅色。
+- Mac 三轮 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO` 均通过；最终 `lipo -archs` 为 `x86_64 arm64`。未安装或启动正式 Mac 包。
+- 本地化 Apple 5868、Android 2188、Windows 3402 键通过；请求契约 170/1、Fixture 29 组与私有 API 文档引用 48 项、API 目录一致性、严格文档与差异空白检查通过。代码推送、云端结果和正式发布分别记录，不以本机验证推定云端或真实设备通过。
+- `PENDING_USER_VALIDATION`：真实解码、NAS 接收/最终状态、锁屏保护、能耗、网络断开、VoiceOver、大字号、外接键盘和 iPad 分屏。条件、步骤、预期及可回传信息见移动主计划 M3f3；未实现的管理员设置、人物/相似组、导出/删除恢复、旧图库清理及 M4–M8 继续后续工作。

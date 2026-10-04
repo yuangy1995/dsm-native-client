@@ -7,7 +7,7 @@ public enum SynologyPhotosManagementFeature: String, CaseIterable, Hashable, Sen
 }
 
 /// 新格式提示固定当前用户及生成范围；确认提交不等于后台生成已经结束。
-public struct SynologyPhotoCodecPrompt: Equatable, Sendable {
+public struct SynologyPhotoCodecPrompt: Codable, Equatable, Sendable {
     public let profileID: UUID
     public let userID: Int
     public let isAdministrator: Bool
@@ -23,8 +23,8 @@ public struct SynologyPhotoCodecPrompt: Equatable, Sendable {
 }
 
 /// 当前空间的整库维护快照，不包含其他用户或其他空间的索引任务。
-public struct SynologyPhotoLibraryMaintenanceStatus: Equatable, Sendable {
-    public enum Action: String, CaseIterable, Sendable { case reindex = "basic", previews = "thumbnail" }
+public struct SynologyPhotoLibraryMaintenanceStatus: Codable, Equatable, Sendable {
+    public enum Action: String, Codable, CaseIterable, Sendable { case reindex = "basic", previews = "thumbnail" }
     public let profileID: UUID
     public let userID: Int
     public let space: SynologyPhotoSpace

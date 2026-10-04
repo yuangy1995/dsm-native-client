@@ -99,7 +99,9 @@ private struct MobileSynologyPhotosContent: View {
                 selectionToolbar
                 if model.selectedItemCount > 100 { Text(L10n.string("mobile.photos.folder.limit")).font(.caption).padding(.horizontal) }
             }
-            MobilePhotoManagementStatus(model: model)
+            if model.albumRecoveryError == nil && model.retryableManagementMutation == nil && (model.showsAutomaticPreviewStatus || (model.automaticPreviewCompleted > 0 && model.managementMessage == nil)) {
+                MobilePhotoAutomaticPreviewStatus(model: model).padding(.horizontal)
+            } else { MobilePhotoManagementStatus(model: model) }
             if model.preparedTemporaryAlbum != nil, let sharing = session.sharing {
                 Button(L10n.string("mobile.photos.temporary.resume")) { sharing.beginPrepared() }
                     .disabled(!model.canStartManagementMutation).accessibilityIdentifier("mobile.photos.temporary.resume")
@@ -558,6 +560,11 @@ private struct MobileSynologyPhotoCell: View {
     let isSelected: Bool
     let open: () -> Void
     @State private var image: UIImage?
+    @State private var visibilityID = UUID()
+    private struct ThumbnailIdentity: Equatable {
+        let thumbnail: SynologyPhotoThumbnail?
+        let revision: Int
+    }
 
     var body: some View {
         Button(action: open) {
@@ -586,14 +593,15 @@ private struct MobileSynologyPhotoCell: View {
         .accessibilityLabel(photo.filename)
         .accessibilityHint(isSelecting ? L10n.string("photos.selection.toggle", photo.filename) : L10n.string("photos.media.open"))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .task(id: photo.thumbnail) {
+        .task(id: ThumbnailIdentity(thumbnail: photo.thumbnail, revision: session.model.automaticPreviewRevision(for: photo))) {
             image = nil
             let data = await session.thumbnail(photo)
             let decoded = await MobileSynologyPhotoImage.decode(data, maximumPixels: 512)
             guard !Task.isCancelled else { return }
             image = decoded
         }
-        .onDisappear { image = nil }
+        .onAppear { session.model.setPreviewVisible(photo, visible: true, source: visibilityID) }
+        .onDisappear { image = nil; session.model.setPreviewVisible(photo, visible: false, source: visibilityID) }
     }
 }
 

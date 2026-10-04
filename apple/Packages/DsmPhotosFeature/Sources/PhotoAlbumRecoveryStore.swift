@@ -55,6 +55,32 @@ public final class PhotoAlbumRecoveryStore: @unchecked Sendable {
         }
     }
 
+    private var codecURL: URL { url.deletingLastPathComponent().appendingPathComponent("codec-v12.json") }
+    func loadCodecContinuation() throws -> SynologyPhotosAlbumCheckpoint? {
+        try lock.withLock {
+            guard FileManager.default.fileExists(atPath: codecURL.path) else { return nil }
+            let value = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: Data(contentsOf: codecURL))
+            _ = try value.reviewMutation()
+            guard case .codec(_, true, true, true) = value.previewMaintenanceDetails else { throw CocoaError(.coderReadCorrupt) }
+            return value
+        }
+    }
+    func retainCodecContinuation(operationID: UUID) throws {
+        try lock.withLock {
+            guard acceptsWrites else { throw CocoaError(.fileWriteNoPermission) }
+            let value = try JSONDecoder().decode(SynologyPhotosAlbumCheckpoint.self, from: Data(contentsOf: url))
+            _ = try value.reviewMutation()
+            guard value.operationID == operationID, case .codec(_, true, true, true) = value.previewMaintenanceDetails else { throw CocoaError(.coderReadCorrupt) }
+            try writeProtected(value, to: codecURL)
+        }
+    }
+    func clearCodecContinuation() throws {
+        try lock.withLock {
+            guard acceptsWrites else { throw CocoaError(.fileWriteNoPermission) }
+            if FileManager.default.fileExists(atPath: codecURL.path) { try FileManager.default.removeItem(at: codecURL) }
+        }
+    }
+
     private var temporaryURL: URL { url.deletingLastPathComponent().appendingPathComponent("temporary-v1.json") }
     func loadTemporarySharing() throws -> PhotoTemporarySharingRecovery? {
         try lock.withLock {
