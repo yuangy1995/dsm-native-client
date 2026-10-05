@@ -83,7 +83,9 @@ final class MobileChatUITests: XCTestCase {
         let other = app.staticTexts["Sample message 2"].firstMatch
         XCTAssertTrue(other.waitForExistence(timeout: 8)); other.press(forDuration: 1)
         XCTAssertFalse(app.buttons["Edit"].exists)
-        app.tap()
+        // 点消息菜单外的导航区域；点击窗口中心可能误选“转发”。
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.08)).tap()
+        XCTAssertTrue(other.isHittable)
         beginEdit(app)
         replaceText(element("chat-edit-text", app), old: "Sample message 1", new: "Edited sample")
         element("chat-edit-save", app).tap()

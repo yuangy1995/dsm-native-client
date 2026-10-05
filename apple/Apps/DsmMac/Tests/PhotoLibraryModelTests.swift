@@ -270,35 +270,8 @@ final class PhotoLibraryModelTests: XCTestCase {
         let photos = try (0..<5).map { index in
             try XCTUnwrap(photoItem(name: "照片\(index).jpg", path: "/photo/照片\(index).jpg"))
         }
-        let repository = PhotoLibraryRepositoryStub(
-            spaces: [.shared],
-            pages: [
-                0: PhotoLibraryPage(
-                    folderPath: "/photo",
-                    items: photos,
-                    offset: 0,
-                    nextOffset: photos.count,
-                    sourceTotal: photos.count,
-                    hasMore: false
-                )
-            ]
-        )
-        let model = PhotoLibraryModel(repository: repository)
-        await model.loadIfNeeded()
-
-        model.thumbnailBecameVisible(photos[1])
-        _ = await model.thumbnailData(for: photos[1])
-        model.thumbnailRequestDidFinish(for: photos[1])
-        try await Task.sleep(nanoseconds: 30_000_000)
-
-        let names = await repository.requestedThumbnailNames()
-        XCTAssertEqual(names, ["照片1.jpg", "照片2.jpg", "照片3.jpg", "照片4.jpg"])
-    }
-
-    func test离开视窗会取消后台预取并让新视窗请求先执行() async throws {
-        let photos = try (0..<5).map { index in
-            try XCTUnwrap(photoItem(name: "照片\(index).jpg", path: "/photo/照片\(index).jpg"))
-        }
+        let requested = expectation(description: "视窗及全部后续缩略图开始读取")
+        requested.expectedFulfillmentCount = 4
         let repository = PhotoLibraryRepositoryStub(
             spaces: [.shared],
             pages: [
@@ -311,7 +284,46 @@ final class PhotoLibraryModelTests: XCTestCase {
                     hasMore: false
                 )
             ],
-            thumbnailDelayNanoseconds: 60_000_000
+            onThumbnailRequest: { _ in requested.fulfill() }
+        )
+        let model = PhotoLibraryModel(repository: repository)
+        await model.loadIfNeeded()
+
+        model.thumbnailBecameVisible(photos[1])
+        _ = await model.thumbnailData(for: photos[1])
+        model.thumbnailRequestDidFinish(for: photos[1])
+        await fulfillment(of: [requested], timeout: 5)
+
+        let names = await repository.requestedThumbnailNames()
+        XCTAssertEqual(names, ["照片1.jpg", "照片2.jpg", "照片3.jpg", "照片4.jpg"])
+    }
+
+    func test离开视窗会取消后台预取并让新视窗请求先执行() async throws {
+        let photos = try (0..<5).map { index in
+            try XCTUnwrap(photoItem(name: "照片\(index).jpg", path: "/photo/照片\(index).jpg"))
+        }
+        let prefetchStarted = expectation(description: "原视窗预取已开始")
+        let prefetchCancelled = expectation(description: "离开视窗取消原预取")
+        let pause = PhotoThumbnailRequestPause()
+        let repository = PhotoLibraryRepositoryStub(
+            spaces: [.shared],
+            pages: [
+                0: PhotoLibraryPage(
+                    folderPath: "/photo",
+                    items: photos,
+                    offset: 0,
+                    nextOffset: photos.count,
+                    sourceTotal: photos.count,
+                    hasMore: false
+                )
+            ],
+            onThumbnailRequest: { name in
+                guard name == "照片1.jpg" else { return }
+                prefetchStarted.fulfill()
+                await pause.wait()
+                if Task.isCancelled { prefetchCancelled.fulfill() }
+                try Task.checkCancellation()
+            }
         )
         let model = PhotoLibraryModel(repository: repository)
         await model.loadIfNeeded()
@@ -319,14 +331,16 @@ final class PhotoLibraryModelTests: XCTestCase {
         model.thumbnailBecameVisible(photos[0])
         _ = await model.thumbnailData(for: photos[0])
         model.thumbnailRequestDidFinish(for: photos[0])
-        try await Task.sleep(nanoseconds: 10_000_000)
+        await fulfillment(of: [prefetchStarted], timeout: 5)
         model.thumbnailBecameHidden(photos[0])
         model.thumbnailBecameVisible(photos[3])
+        await pause.resume()
         _ = await model.thumbnailData(for: photos[3])
-        model.thumbnailRequestDidFinish(for: photos[3])
+        await fulfillment(of: [prefetchCancelled], timeout: 5)
 
         let names = await repository.requestedThumbnailNames()
         XCTAssertEqual(names, ["照片0.jpg", "照片1.jpg", "照片3.jpg"])
+        model.thumbnailBecameHidden(photos[3])
     }
 
     @MainActor
@@ -407,6 +421,18 @@ private actor PhotoThumbnailFallbackStub: PhotoThumbnailFallbackProviding {
     }
 }
 
+/// 测试显式释放正在执行的预取，不依赖毫秒延迟猜测调度顺序。
+private actor PhotoThumbnailRequestPause {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var resumed = false
+    func wait() async {
+        if !resumed { await withCheckedContinuation { continuation = $0 } }
+    }
+    func resume() {
+        resumed = true; continuation?.resume(); continuation = nil
+    }
+}
+
 // 供模型回归与合成页面共用，所有内容均为测试数据。
 actor PhotoLibraryRepositoryStub: PhotoLibraryRepository {
     let spaces: [PhotoSpace]
@@ -414,6 +440,7 @@ actor PhotoLibraryRepositoryStub: PhotoLibraryRepository {
     let retryItem: PhotoLibraryItem?
     let thumbnailDelayNanoseconds: UInt64
     let fixtureThumbnailData: Data?
+    let onThumbnailRequest: (@Sendable (String) async throws -> Void)?
     private var offsets: [Int] = []
     private var timelineRoots: [[String]] = []
     private var activeThumbnailRequests = 0
@@ -426,13 +453,15 @@ actor PhotoLibraryRepositoryStub: PhotoLibraryRepository {
         pages: [Int: PhotoLibraryPage],
         retryItem: PhotoLibraryItem? = nil,
         thumbnailDelayNanoseconds: UInt64 = 0,
-        fixtureThumbnailData: Data? = nil
+        fixtureThumbnailData: Data? = nil,
+        onThumbnailRequest: (@Sendable (String) async throws -> Void)? = nil
     ) {
         self.spaces = spaces
         self.pages = pages
         self.retryItem = retryItem
         self.thumbnailDelayNanoseconds = thumbnailDelayNanoseconds
         self.fixtureThumbnailData = fixtureThumbnailData
+        self.onThumbnailRequest = onThumbnailRequest
     }
 
     func discoverSpaces() async throws -> [PhotoSpace] {
@@ -461,6 +490,7 @@ actor PhotoLibraryRepositoryStub: PhotoLibraryRepository {
         peakThumbnailRequests = max(peakThumbnailRequests, activeThumbnailRequests)
         thumbnailNames.append(item.name)
         defer { activeThumbnailRequests -= 1 }
+        try await onThumbnailRequest?(item.name)
         if thumbnailDelayNanoseconds > 0 {
             do {
                 try await Task.sleep(nanoseconds: thumbnailDelayNanoseconds)

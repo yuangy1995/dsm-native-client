@@ -1,5 +1,5 @@
 <!-- doc-role: archive -->
-<!-- last-reviewed: 2026-10-04 -->
+<!-- last-reviewed: 2026-10-05 -->
 
 # 发布与手工验收历史（2026-H2）
 
@@ -1916,3 +1916,35 @@ R3 在同一测试命令中只选择 `-only-testing:DsmMobileTests`，结果为 
 最终截图复核确认中文最大字号的目录、恢复默认及提交入口均可读；iPad 英文取消按钮仍被外层自定义框架裁切，改用项目已有原生工具栏布局。第 9 轮构建通过；R3 仅选择 `-only-testing:DsmMobileUITests/MobileDownloadCreationUITests/test预选任务文件表单取消不上传且密码目录通过真实二进制链路提交`，结果为 `m5c2b-<iphone或ipad>-ui3.xcresult`，两端各 1 项通过、零失败，58.069 / 55.017 秒。再次查看两端最终截图，取消和提交按钮完整显示，密码输入属于系统安全字段。最终重生成工程一致，SHA-256 为 `fd61c7073c5cb2c6bc0b8205d9bf01459b5078c2bee7ed2371a402a0b40b7648`。真实提供者选取（区别于已验证的系统选择器打开/取消）、锁屏、VoiceOver、外接键盘及真实 Download Station 参数处理继续单独设备验收，不与预选合成输入混同。
 
 远端操作前 `git fetch origin main` 返回主分支与 `5852841b` 相同、0/0。该提交的文档与 Repository Check 已通过；[Android Build 37252437372](https://github.com/yuangy1995/dsm-native-client/actions/runs/37252437372) 仍为既有 `ChatPollRepositoryTest.无附件投票固定v1且写后回读` 在 1436 项中 1 项失败，本轮不改变 Android 范围或断言。Apple 云端 `97c60331` 尚在运行，`5852841b` 尚排队，不能据本机结果声称云端全部通过。
+
+
+## 2026-10-05 Apple CI 历史测试与原生入口修复
+
+基线 `338c15b3`；按用户反馈单独修复 Apple CI，M5c3 RSS 的并行工作区改动不计入本次 CI 提交。已读取 [Apple Build 37219220810](https://github.com/yuangy1995/dsm-native-client/actions/runs/37219220810) 的失败日志和两端测试结果：共享包及构建通过，两端各 1044 项单元（各 1 条既有条件跳过）通过；各 185 项 UI 中 iPhone 24 项、iPad 37 项失败，合计 41 个不同场景。更早的 37215284233 具有相同主要失败群；后续尚未完成的云端运行不能视为绿色。
+
+旧测试与产品缺陷分别处理：
+
+- 文件动作使用系统工具栏溢出菜单，测试先打开实际“更多”菜单；分享结果严格查找当前文件及完成状态，纠正旧断言误用另一文件夹名称。系统分享面板按实际标题/副标题查找文件名，系统搜索关闭接纳系统中英语言。表单开关滚动到 sheet 内的实际可见区域后点击并核对值；拖放在目标处停留，聊天菜单从菜单外关闭，避免窗口中心误选转发。业务结果、危险操作确认及恢复断言保留。
+- iPad 文件浏览工具栏被检查器遮蔽，操作栏移至检查器外侧；系统搜索改位置后仍不可见，因此文件模块统一持有原查询绑定，宽屏改用与照片页一致的原生输入栏，窄屏保留系统搜索。键盘提交、按钮提交与清除仍使用同一浏览模型；侧栏行补足整行触控范围。Office 检查器内没有导航工具栏，编辑入口放入已有底部操作区，紧凑宽度/全屏沿用原导航栏。产品变更仅限上述实际入口和点击范围，不变更 API、权限、签名或存储。
+- 共享完整回归发现 Mac 缩略图测试依赖固定 10/30 毫秒睡眠，机器繁忙时预取尚未开始。仅修改 `PhotoLibraryModelTests.swift`：等待实际请求事件，用测试控制的暂停点确认取消，再保留精确请求顺序断言；不改 macOS 产品源码。
+- 工作流按共享/macOS、iPhone、iPad 分三组，移动端分别运行全部单元和 UI；每组在当前锁定 Xcode 中选择最新可用 iOS runtime，显式启动，构建一次再执行。保留原 `test-and-build` 汇总检查，只有全部组成功才通过；同分支新提交取消过期运行，不把取消算成功。Xcode/XcodeGen、运行器、测试断言和正式发布门禁没有降低。
+
+实际验证使用 Xcode 26.5 / iOS 26.5 的 iPhone 17 Pro（`8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`）及 iPad Air 11-inch M4（`A31ABDE2-186F-43DD-8D40-5EB9511A9289`）。云端继续沿用既有锁定 Xcode 26.6，不能将本机环境写成云端结果。临时日志/结果包前缀 `apple-ci-`，目录 `/tmp/lanstash-release-1.0.15.1x6wUX`。
+
+- 第一轮原样复现文件批量复制两端失败；工具栏修复后两端分别 29.206 / 25.468 秒通过。搜索 iPhone 通过、iPad 仍失败，继续核对原生入口。
+- 41 场景回归命令为 `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=<编号>' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileUITests/<类>/<方法> -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/apple-ci-<iphone或ipad>-affected1.xcresult`，为每个去重失败方法传一条选择项。iPhone R1 为 41 项、38 通过、3 失败；三项是本轮批量替换错误影响复制冲突/删除/恢复断言，已在源码恢复原断言，后续复跑独立记录，不将该轮改写为通过。iPad R1 为 41 项、35 通过、6 失败，1952.643 秒；另三项为 Office 编辑入口、搜索和权限表单定位。iPhone R1 为 1399.826 秒。
+- `swift test --package-path apple --jobs 2` 第一轮含当前工作区 RSS 增量，共 2702 项 XCTest、172 条既有条件跳过、1 失败，58.197 秒；失败是上面的 Mac 预取时序。修改后 `swift test --package-path apple --jobs 2 --filter PhotoLibraryModelTests` 13 项、0 失败，0.596 秒；12 项 Swift Testing 第一轮通过。修正后的第二轮完整共享回归为 2702 项 XCTest、172 条既有条件跳过、0 失败，54.788 秒；12 项 Swift Testing 通过，0.612 秒。
+- 工作流全部 13 段运行脚本通过 `bash -n`；YAML 解析通过。提取模拟器选择脚本，以新旧 runtime、首选机型和缺失机型的合成清单执行，确认最新 runtime 优先且缺目标设备必须失败。`python3 -m unittest discover -s tools/release -p 'test_*.py'` 32 项通过，5.931 秒。
+- 以 `git archive HEAD apple` 建立独立临时候选，只覆盖 CI 涉及的移动源文件/测试，锁定 XcodeGen 2.46.0 重生成后工程与原提交完全一致，SHA-256 `fd61c7073c5cb2c6bc0b8205d9bf01459b5078c2bee7ed2371a402a0b40b7648`。RSS 新文件的工程引用不混入 CI 提交；没有建立验证分支。
+
+后续复验继续使用上述 `test-without-building` 命令；R2/R4/R5 的构建目录改为 `apple/Apps/DsmMobile/build/m5c3-ci`，最终 R6 回到 `apple/Apps/DsmMobile/build/m0-m8`。只改变明确列出的选择项与结果包名称，没有降低业务断言：
+
+- 构建第 1–3 轮通过。第 4 轮加入尚未提交的 RSS 测试后，因测试尝试修改不可变 `NasProfile.usernameHint` 编译失败，改为构造相同 UUID 的新账号配置；第 5–9 轮构建均通过。构建统一使用 `xcodebuild build-for-testing`、`-sdk iphonesimulator`、上述 iPhone 目标、对应构建目录、`-jobs 2` 或 `-jobs 4`、`CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`。
+- R2 选择全部 `DsmMobileTests`，以及 `MobileWorkspaceUITests` 的 Office 系统分享/选择器、批量删除、复制同名冲突、批量恢复、文件搜索、照片文件夹覆盖子目录确认六项。两端各 1240 项单元（包含当前工作区 11 项 RSS 测试）、各 4 条既有设备条件跳过、0 失败，38.866 / 32.201 秒。六项 UI：iPhone 全通过（171.634 秒），iPad 4 通过、2 失败（278.813 秒）；剩余是搜索和权限表单。
+- iPad 搜索仅修改原生 placement 的 R3 单项仍失败；将搜索移至模块层的 R4，iPhone 搜索/权限两项通过（59.955 秒），iPad 搜索仍失败、权限已通过（69.031 秒）。权限录像证明最后一行开关已经可见，原测试误取后方侧栏，随后又把弹窗底部 55 点都排除；现明确选择包含开关的表单，以实际可见边界和可点击状态定位，并保留开关值与风险确认断言。iPad 在 R3 前重启测试模拟器，清理已退出系统面板留下的无障碍服务状态，不清空数据或跳过用例。
+- R5 使用全部单元及 Office、批量复制、文件搜索、跨 NAS 复制/移动确认四项 UI。两端各 1240 项单元、4 条原设备条件跳过、0 失败，30.992 / 31.232 秒；iPhone 四项通过（104.643 秒），iPad 另三项通过、搜索因普通 TextField 误使用 search 类型提交事件而失败（116.649 秒），已接回原生文本提交事件。没有用只点按钮来绕过键盘提交断言。
+- R6 选择 `DsmMobileTests/MobileFileBrowserPresentationTests`，以及 `MobileWorkspaceUITests/test文件搜索无结果保持筛选状态`、`test文件搜索中文深色大字号仍可输入与清除`。两端各 9 项聚焦单元通过（0.109 / 0.101 秒），两项实际 UI 全通过、0 失败（32.223 / 41.248 秒）。宽屏同时验证输入、空结果、清除后恢复原目录；两端英文浅色与中文深色最大辅助字号截图已检查。
+- 41 个不同历史失败场景均已有两端通过记录，保留上述中间失败。分轮通过不等于一次完整 UI 套件通过；云端仍运行所有用例。当前负责人另行完成只读集成复核：检查导航与活动页、Office 原账号/原文件边界、搜索绑定与清除、表单目标、所有旧断言恢复、无新增跳过，以及矩阵失败汇总。这不是另一模型审查。
+- 最终共享完整 `swift test --package-path apple --jobs 2`：2702 项 XCTest、172 条既有条件跳过、0 失败，44.437 秒；12 项 Swift Testing 通过。RSS 增量仍不在 CI 提交中。Mac Release 双架构两轮构建均通过，`lipo -archs` 为 `x86_64 arm64`；未安装或启动 App。最终本地化完整性/硬编码扫描（6196 / 2188 / 3402）、严格文档检查与 `git diff --check` 通过。
+
+本机修复与分轮回归已完成，云端绿色须等对应提交的全部矩阵完成后单独确认。此次合成测试不写真实 NAS，不代表系统文件提供者、实际 VoiceOver 或真实数据操作已验收。

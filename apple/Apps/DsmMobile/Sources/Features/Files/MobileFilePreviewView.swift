@@ -12,6 +12,7 @@ struct MobileFilePreviewView: View {
     let onOpenFullScreen: () -> Void
     let canOpenFullScreen: Bool
     var onQuickLookDismiss: () -> Void = {}
+    var onEditOffice: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -335,7 +336,13 @@ struct MobileFilePreviewView: View {
     private func bottomActions<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
-        adaptiveActions(content: content)
+        VStack(spacing: 8) {
+            if let onEditOffice {
+                actionButton(L10n.string("mobile.office.title"), systemImage: "doc.text", action: onEditOffice)
+                    .accessibilityIdentifier("files.office.preview.edit")
+            }
+            adaptiveActions(content: content)
+        }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(.bar)

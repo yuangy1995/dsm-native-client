@@ -98,6 +98,8 @@ struct MobileWorkspaceView: View {
                         model.selectTopLevel(destination)
                     } label: {
                         Label(destination.title, systemImage: destination.systemImage)
+                            .frame(maxWidth: .infinity, minHeight: MobileMetrics.minimumTouchTarget, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityIdentifier("mobile.navigation.\(destination.rawValue)")
                     .foregroundStyle(model.selectedTopLevel == destination ? .blue : .primary)
@@ -298,5 +300,6 @@ struct MobileWorkspaceView: View {
                 }
             }
         }
+        .modifier(MobileFileSearchModifier(model: model, enabled: module == .files))
     }
 }

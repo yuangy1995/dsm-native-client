@@ -674,7 +674,10 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertFalse(element("mobile.photos.repair.item.1", in: app).exists)
         XCTAssertTrue(element("mobile.photos.repair.item.2", in: app).exists)
         attachScreenshot(app, name: "未完成预览按文件名选择")
-        if !app.buttons["mobile.photos.repair.resume"].exists { app.buttons["关闭"].firstMatch.tap() }
+        if !app.buttons["mobile.photos.repair.resume"].exists {
+            let closeSearch = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭"])).firstMatch
+            XCTAssertTrue(closeSearch.waitForExistence(timeout: 5)); closeSearch.tap()
+        }
         app.buttons["mobile.photos.repair.resume"].tap(); XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
         element("mobile.photos.actions", in: app).tap(); element("mobile.photos.repair.begin", in: app).tap()
         XCTAssertTrue(element("mobile.photos.repair.item.1", in: app).waitForExistence(timeout: 5))
@@ -797,8 +800,9 @@ final class MobileWorkspaceUITests: XCTestCase {
         let access = element("mobile.photos.folderSharing.access", in: app)
         XCTAssertTrue(access.waitForExistence(timeout: 5)); access.tap(); app.buttons["Anyone with the link can view and download"].tap()
         let apply = app.switches["mobile.photos.folderSharing.apply"]
-        for _ in 0..<3 where !apply.isHittable { app.swipeUp() }
+        revealInForm(apply, in: app)
         XCTAssertTrue(apply.isHittable); apply.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertEqual(apply.value as? String, "1")
         app.buttons["mobile.photos.folderSharing.save"].tap()
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "Change access to “Source” and all its subfolders? Existing subfolder permissions will be replaced, and people may gain or lose access.")).firstMatch.exists)
@@ -825,7 +829,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Sample group"].exists); XCTAssertFalse(app.buttons["Sample member"].exists)
         attachScreenshot(app, name: "Folder permission member search Chinese")
         search.typeText("\n")
-        let closeSearch = app.buttons["关闭"].firstMatch
+        let closeSearch = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭"])).firstMatch
         if closeSearch.exists && closeSearch.isHittable { closeSearch.tap() }
         XCTAssertTrue(app.navigationBars["选择用户或群组"].waitForExistence(timeout: 5))
         app.navigationBars["选择用户或群组"].buttons.firstMatch.tap()
@@ -1008,7 +1012,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         openPhotos(app); openPhotoSection("Folders", app: app)
         let source = app.buttons["mobile.photos.collection.2"], target = app.buttons["mobile.photos.collection.3"]
         XCTAssertTrue(source.waitForExistence(timeout: 5)); XCTAssertTrue(target.exists)
-        source.press(forDuration: 1.0, thenDragTo: target)
+        source.press(forDuration: 1.0, thenDragTo: target, withVelocity: .slow, thenHoldForDuration: 1.0)
         XCTAssertTrue(app.buttons["mobile.photos.folder.submit"].waitForExistence(timeout: 6))
         XCTAssertTrue(app.buttons["mobile.photos.folder.submit"].isEnabled)
         attachScreenshot(app, name: "Photo folder drag destination")
@@ -1899,14 +1903,32 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test文件搜索无结果保持筛选状态() {
         let app = launchFixture()
         defer { app.terminate() }
+        assertFileSearch(app)
+    }
+
+    func test文件搜索中文深色大字号仍可输入与清除() {
+        let app = launchFixture(language: "zh-Hans")
+        app.terminate()
+        app.launchArguments += ["-lanstash.mobile.settings.appearance.v1", "dark",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch(); defer { app.terminate() }
+        assertFileSearch(app)
+    }
+
+    private func assertFileSearch(_ app: XCUIApplication) {
         let folder = app.staticTexts["Sample folder"]
         XCTAssertTrue(folder.waitForExistence(timeout: 8))
         folder.tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 8))
-        let search = app.searchFields.firstMatch
+        let inlineSearch = app.textFields["files.search.input"]
+        let search = inlineSearch.exists ? inlineSearch : app.searchFields.firstMatch
         if !search.exists {
-            // iPad 的原生工具栏先呈现搜索按钮，点击后才创建输入框。
+            // 窄屏的系统搜索可能先呈现按钮，点击后才创建输入框。
             let reveal = app.buttons.matching(NSPredicate(format: "label == 'Search' OR label == '搜索'")).firstMatch
+            if !reveal.exists {
+                let overflow = app.buttons["OverflowBarButtonItem"].firstMatch
+                XCTAssertTrue(overflow.waitForExistence(timeout: 5)); overflow.tap()
+            }
             XCTAssertTrue(reveal.waitForExistence(timeout: 5))
             reveal.tap()
         }
@@ -1915,6 +1937,11 @@ final class MobileWorkspaceUITests: XCTestCase {
         search.typeText("missing-fixture\n")
         XCTAssertTrue(element("mobile.page.filteredEmpty", in: app).waitForExistence(timeout: 8))
         attachScreenshot(app, name: "Files — no search results")
+        if inlineSearch.exists {
+            let clear = app.buttons["files.search.clear"]
+            XCTAssertTrue(clear.isHittable); clear.tap()
+            XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 8))
+        }
     }
 
     func test目录上传在活动中显示逐项成功且重启保留() {
@@ -2102,11 +2129,9 @@ final class MobileWorkspaceUITests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
-        let toolbar = element("files.toolbar.more", in: app)
-        let toolbarExists = toolbar.waitForExistence(timeout: 5)
+        openFileActions(app)
         attachScreenshot(app, name: "Batch selection toolbar")
-        XCTAssertTrue(toolbarExists)
-        toolbar.tap(); app.buttons["Select Items"].tap()
+        app.buttons["Select Items"].tap()
         app.staticTexts["Sample document.txt"].tap(); app.staticTexts["Inbox"].tap()
         let more = element("files.batch.more", in: app)
         XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
@@ -2160,7 +2185,8 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(password.waitForExistence(timeout: 5)); password.tap(); password.typeText("synthetic-only")
         element("sharing.edit.save", in: app).tap()
         XCTAssertTrue(element("sharing.results", in: app).waitForExistence(timeout: 8))
-        XCTAssertTrue(app.staticTexts["Inbox, Completed"].exists)
+        let result = element("sharing.results", in: app).cells.containing(.staticText, identifier: "Sample document.txt").firstMatch
+        XCTAssertTrue(result.staticTexts["Completed"].exists)
         attachScreenshot(app, name: "Sharing password updated")
         app.buttons["Back to links"].tap()
         XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap()
@@ -2193,7 +2219,8 @@ final class MobileWorkspaceUITests: XCTestCase {
         element("sharing.access.save", in: app).tap()
         XCTAssertTrue(app.alerts.buttons["Save changes"].waitForExistence(timeout: 5)); app.alerts.buttons["Save changes"].tap()
         XCTAssertTrue(element("sharing.results", in: app).waitForExistence(timeout: 8))
-        XCTAssertTrue(app.staticTexts["Inbox, Completed"].exists)
+        let result = element("sharing.results", in: app).cells.containing(.staticText, identifier: "Sample document.txt").firstMatch
+        XCTAssertTrue(result.staticTexts["Completed"].exists)
         app.buttons["Back to links"].tap()
         XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap(); app.buttons["Access and collection settings"].tap()
         XCTAssertTrue(limit.waitForExistence(timeout: 5))
@@ -2274,7 +2301,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         chooseRemoteDestination(app)
         app.buttons["files.remote.iso.save"].tap()
         XCTAssertTrue(app.staticTexts["Sample image.iso"].waitForExistence(timeout: 8))
-        element("files.toolbar.more", in: app).tap(); app.buttons["files.remote.manage"].tap()
+        openFileActions(app); app.buttons["files.remote.manage"].tap()
         let unmount = app.buttons["Unmount ISO"]
         XCTAssertTrue(unmount.waitForExistence(timeout: 8)); unmount.tap()
         attachScreenshot(app, name: "ISO unmount consequence")
@@ -2446,11 +2473,32 @@ final class MobileWorkspaceUITests: XCTestCase {
         attachScreenshot(app, name: "Bandwidth list filtered empty")
     }
 
+    private func openFileActions(_ app: XCUIApplication) {
+        let direct = element("files.toolbar.more", in: app)
+        if direct.exists && direct.isHittable { direct.tap(); return }
+        let overflow = app.buttons["OverflowBarButtonItem"].firstMatch
+        XCTAssertTrue(overflow.waitForExistence(timeout: 5)); overflow.tap()
+        // 原生溢出菜单保留动作标题，不保留原 ToolbarItem 的标识。
+        let more = app.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
+    }
+
     private func openFileSettings(_ app: XCUIApplication) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
-        element("files.toolbar.more", in: app).tap(); app.buttons["files.settings.open"].tap()
+        openFileActions(app); app.buttons["files.settings.open"].tap()
         XCTAssertTrue(app.buttons["General"].waitForExistence(timeout: 5))
     }
+    private func revealInForm(_ item: XCUIElement, in app: XCUIApplication) {
+        let form = app.collectionViews.containing(.any, identifier: item.identifier).firstMatch
+        guard form.waitForExistence(timeout: 5) else { XCTFail("找不到包含该控件的表单"); return }
+        for _ in 0..<10 {
+            let viewport = form.frame.intersection(app.frame).insetBy(dx: 12, dy: 16)
+            if item.exists && item.isHittable && viewport.contains(CGPoint(x: item.frame.midX, y: item.frame.midY)) { return }
+            form.swipeUp()
+        }
+        XCTFail("表单控件没有滚动到可见区域")
+    }
+
     private func reveal(_ item: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<7 { if item.exists && item.isHittable { return }; app.swipeUp() }
         XCTAssertTrue(item.exists && item.isHittable)
@@ -2458,7 +2506,7 @@ final class MobileWorkspaceUITests: XCTestCase {
 
     private func openRemoteLocations(_ app: XCUIApplication) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
-        element("files.toolbar.more", in: app).tap(); app.buttons["files.remote.manage"].tap()
+        openFileActions(app); app.buttons["files.remote.manage"].tap()
         XCTAssertTrue(app.buttons["files.remote.profile.fixture-remote"].waitForExistence(timeout: 8))
     }
     private func chooseRemoteDestination(_ app: XCUIApplication) {
@@ -2471,7 +2519,7 @@ final class MobileWorkspaceUITests: XCTestCase {
 
     private func openAllSharing(_ app: XCUIApplication) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
-        element("files.toolbar.more", in: app).tap()
+        openFileActions(app)
         element("files.sharing.all", in: app).tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 8))
     }
@@ -2585,7 +2633,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     private func beginDownloadSelection(_ app: XCUIApplication, singleFile: Bool) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
-        element("files.toolbar.more", in: app).tap(); app.buttons["Select Items"].tap()
+        openFileActions(app); app.buttons["Select Items"].tap()
         app.staticTexts["Sample document.txt"].tap()
         if !singleFile { app.staticTexts["Inbox"].tap() }
     }
@@ -2724,7 +2772,7 @@ final class MobileWorkspaceUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["#recycle"].waitForExistence(timeout: 5)); app.staticTexts["#recycle"].tap()
         }
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
-        element("files.toolbar.more", in: app).tap(); app.buttons["Select Items"].tap()
+        openFileActions(app); app.buttons["Select Items"].tap()
         app.staticTexts["Sample document.txt"].tap(); app.staticTexts["Inbox"].tap()
         element("files.batch.more", in: app).tap()
         let operation = element(restore ? "files.batch.restore" : "files.batch.delete", in: app)
@@ -2735,7 +2783,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     private func beginCopyMoveBatch(_ app: XCUIApplication, move: Bool) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
-        element("files.toolbar.more", in: app).tap(); app.buttons["Select Items"].tap()
+        openFileActions(app); app.buttons["Select Items"].tap()
         app.staticTexts["Sample document.txt"].tap(); app.staticTexts["Inbox"].tap()
         let operation = element(move ? "files.batch.move" : "files.batch.copy", in: app)
         XCTAssertTrue(operation.isEnabled); operation.tap()
@@ -2757,7 +2805,9 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Editing copy ready"].waitForExistence(timeout: 10))
         element("files.office.export", in: app).tap()
         XCTAssertTrue(element("ActivityListView", in: app).waitForExistence(timeout: 10))
-        XCTAssertTrue(element("LP.CaptionBar.TopCaption", in: app).label.contains("Document"))
+        let sharedFilename = element("ActivityListView", in: app).descendants(matching: .any).matching(
+            NSPredicate(format: "identifier IN %@ AND label CONTAINS %@", ["LP.CaptionBar.TopCaption", "LP.CaptionBar.BottomCaption"], "Document")).firstMatch
+        XCTAssertTrue(sharedFilename.waitForExistence(timeout: 5))
         attachScreenshot(app, name: "Office system editing handoff")
         app.buttons["header.closeButton"].tap()
         element("files.office.import", in: app).tap()
@@ -2828,6 +2878,7 @@ final class MobileWorkspaceUITests: XCTestCase {
 
     private func launchFixture(state: String = "content", language: String = "en") -> XCUIApplication {
         continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["--ui-fixture", "-lanstash.app-language.v1", language]
         app.launchEnvironment["LANSTASH_UI_STATE"] = state
