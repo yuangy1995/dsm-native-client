@@ -193,6 +193,10 @@ public struct NasStoragePool: Identifiable, Equatable, Sendable {
     public let spareDiskIDs: [String]
     public let supportsMultipleVolumes: Bool?
 
+    /// 保留原布尔供既有调用使用；以下值仅表示 NAS 实际返回的状态，缺失保持 nil。
+    public let reportedWritable: Bool?
+    public let reportedScrubbing: Bool?
+
     public init(
         id: String,
         name: String,
@@ -205,7 +209,9 @@ public struct NasStoragePool: Identifiable, Equatable, Sendable {
         nextScrubbingDate: Date?,
         diskIDs: [String] = [],
         spareDiskIDs: [String] = [],
-        supportsMultipleVolumes: Bool? = nil
+        supportsMultipleVolumes: Bool? = nil,
+        reportedWritable: Bool? = nil,
+        reportedScrubbing: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -219,6 +225,8 @@ public struct NasStoragePool: Identifiable, Equatable, Sendable {
         self.diskIDs = diskIDs
         self.spareDiskIDs = spareDiskIDs
         self.supportsMultipleVolumes = supportsMultipleVolumes
+        self.reportedWritable = reportedWritable
+        self.reportedScrubbing = reportedScrubbing
     }
 }
 
@@ -234,6 +242,10 @@ public struct NasVolume: Identifiable, Equatable, Sendable {
     public let poolID: String?
     public let path: String?
 
+    /// 保留原布尔供既有调用使用；以下值仅表示 NAS 实际返回的状态，缺失保持 nil。
+    public let reportedEncrypted: Bool?
+    public let reportedWritable: Bool?
+
     public init(
         id: String,
         name: String,
@@ -244,7 +256,9 @@ public struct NasVolume: Identifiable, Equatable, Sendable {
         isEncrypted: Bool,
         isWritable: Bool,
         poolID: String? = nil,
-        path: String? = nil
+        path: String? = nil,
+        reportedEncrypted: Bool? = nil,
+        reportedWritable: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -256,6 +270,8 @@ public struct NasVolume: Identifiable, Equatable, Sendable {
         self.isWritable = isWritable
         self.poolID = poolID
         self.path = path
+        self.reportedEncrypted = reportedEncrypted
+        self.reportedWritable = reportedWritable
     }
 }
 
@@ -663,6 +679,7 @@ public struct NasGroupDraft: Equatable, Sendable {
 public struct NasLogPage: Equatable, Sendable {
     public let entries: [NasLogEntry]
     public let total: Int
+    public let isTotalKnown: Bool
     public let infoCount: Int?
     public let warningCount: Int?
     public let errorCount: Int?
@@ -672,10 +689,12 @@ public struct NasLogPage: Equatable, Sendable {
         total: Int,
         infoCount: Int?,
         warningCount: Int?,
-        errorCount: Int?
+        errorCount: Int?,
+        isTotalKnown: Bool = true
     ) {
         self.entries = entries
         self.total = total
+        self.isTotalKnown = isTotalKnown
         self.infoCount = infoCount
         self.warningCount = warningCount
         self.errorCount = errorCount
@@ -1507,6 +1526,7 @@ public protocol NasSettingsRepository: Sendable {
     func loadPerformanceSnapshot() async throws -> NasPerformanceSnapshot
     func loadStorage() async throws -> NasStorageSnapshot
     func loadDiskTestStatus(diskID: String) async throws -> NasDiskTestStatus
+    func loadDiskTestStatus(disk: NasDisk) async throws -> NasDiskTestStatus
     func startDiskTest(diskID: String, type: NasDiskTestType) async throws -> NasDiskTestStatus
     func stopDiskTest(diskID: String) async throws -> NasDiskTestStatus
     func startDiskTestResult(
@@ -1514,6 +1534,10 @@ public protocol NasSettingsRepository: Sendable {
         type: NasDiskTestType
     ) async throws -> MutationResult
     func stopDiskTestResult(diskID: String) async throws -> MutationResult
+    func changeDiskTestResult(
+        _ change: NasDiskTestChange,
+        beforeSubmission: @escaping @Sendable () async throws -> Void
+    ) async throws -> MutationResult
     func loadPackages() async throws -> [NasPackage]
     func loadPackageCatalog() async throws -> NasPackageCatalog
     func loadPackageCenterSettings() async throws -> NasPackageCenterSettings
@@ -1635,6 +1659,10 @@ public extension NasSettingsRepository {
             safeUserMessage: L10n.string("shared.dfb40c98654f42a7")
         )
     }
+    func loadDiskTestStatus(disk: NasDisk) async throws -> NasDiskTestStatus {
+        throw AppError(category: .apiUnavailable, isRetryable: false,
+                       safeUserMessage: L10n.string("storage.disk-test.start.unsupported"))
+    }
     func startDiskTest(
         diskID: String,
         type: NasDiskTestType
@@ -1678,6 +1706,13 @@ public extension NasSettingsRepository {
             localizationKey: "storage.disk-test.stop.unsupported",
             diagnosticTag: "storage.disk-test.stop.unsupported"
         )
+    }
+    func changeDiskTestResult(
+        _ change: NasDiskTestChange,
+        beforeSubmission: @escaping @Sendable () async throws -> Void
+    ) async throws -> MutationResult {
+        throw AppError(category: .apiUnavailable, isRetryable: false,
+                       safeUserMessage: L10n.string("storage.disk-test.start.unsupported"))
     }
     func controlPackage(id: String, action: NasPackageAction) async throws {
         throw unsupportedManagementOperation()

@@ -114,7 +114,7 @@ struct MobileNasScheduledTaskDetail: Identifiable, Equatable, Sendable {
     let nextTriggerDescription: String?
 }
 
-enum MobileNasLogLevel: String, Equatable, Sendable {
+enum MobileNasLogLevel: String, CaseIterable, Equatable, Sendable {
     case information
     case warning
     case error
@@ -131,10 +131,22 @@ enum MobileNasLogLevel: String, Equatable, Sendable {
 }
 
 struct MobileNasLogDetail: Identifiable, Equatable, Sendable {
-    let id: Int
+    let id: String
     let date: Date?
     let source: String?
     let level: MobileNasLogLevel
+    let account: String?
+    let message: String
+}
+
+struct MobileNasLogPage: Equatable, Sendable {
+    let items: [MobileNasLogDetail]
+    let offset: Int
+    let limit: Int
+    let total: Int?
+    var isEmpty: Bool { items.isEmpty }
+    var pageNumber: Int { offset / limit + 1 }
+    var hasNext: Bool { !items.isEmpty && (total.map { offset + items.count < $0 } ?? (items.count == limit)) }
 }
 
 struct MobileNasConnectionDetail: Identifiable, Equatable, Sendable {
@@ -148,7 +160,7 @@ struct MobileNasConnectionDetail: Identifiable, Equatable, Sendable {
 struct MobileNasDetailsState: Equatable, Sendable {
     var packages = MobileNasDetailsSection<MobileNasBoundedPage<MobileNasPackageDetail>>()
     var scheduledTasks = MobileNasDetailsSection<MobileNasBoundedPage<MobileNasScheduledTaskDetail>>()
-    var logs = MobileNasDetailsSection<MobileNasBoundedPage<MobileNasLogDetail>>()
+    var logs = MobileNasDetailsSection<MobileNasLogPage>()
     var connections = MobileNasDetailsSection<MobileNasBoundedPage<MobileNasConnectionDetail>>()
 
     var externalStorage = MobileNasDetailsSection<NasExternalStorageDirectory>()

@@ -1,5 +1,6 @@
 import Charts
 import DsmCore
+import DsmFileFeature
 import SwiftUI
 import DsmLocalization
 

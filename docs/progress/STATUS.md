@@ -15,7 +15,7 @@
 | macOS Office | 系统预览、本机应用编辑、保存后自动回传、冲突/未知核查已完成本机验证 | 真实 Office/Pages/Numbers/Keynote、旧格式、正式签名沙盒及 NAS 验收 |
 | macOS UI / 远程位置 | 完整 WebDAV URL、工具栏/路径、照片来源、连接成功结束、保存进度及外置浏览入口已修正并有原生回归 | 用户实际连接、窄窗口与完整辅助功能反馈 |
 | Windows | 2026-09-21 范围的业务对齐、云盘写回/恢复及 x64/ARM64 云端验证完成；后续 Mac 增量未自动移植 | Photos 管理、File Station 增量、Office 按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)逐项开发 |
-| iPhone / iPad | M0–M5 已批准源码范围已完成；新会话继续 M6–M8。M6a1 已接外接存储、系统活动、共享访问、内存压缩与电源计划读取/筛选；修正共享权限未知误判。两端各 1263 项完整单元（各 4 条既有条件跳过）、8 项实际 UI 均通过，浅深色与中文大字另有检查记录 | 按[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6-nas-与套件逐页账本)继续空间分析/SMART/日志及后续完整管理；移除已实现功能仅因未实测而关闭的限制，每片分别进行两端交互与截图检查。交接提交两端完整 Apple CI 仍在运行；真实 NAS/系统条件按具体待办执行 |
+| iPhone / iPad | M0–M5 已批准源码范围已完成；M6a1 五项读取/筛选、M6a2 存储分析/硬盘检测恢复/完整日志已接入并通过当前环境验收。两端完整单元、实际 UI 与截图检查分别留有证据；真实 NAS 行为未验证 | 按[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6-nas-与套件逐页账本)继续区域时间/DDNS 及后续管理，再完成 M7–M8；已实现入口按能力、权限和操作保护开放。交接提交两端完整 Apple CI 仍在运行；真实设备条件按具体待办执行 |
 | Android | Compose 客户端、导航改版、后台/传输、Synology Photos 与质量门已建立；当前 Task.edit 仍使用 v1，需独立修正为官方字段表要求的 v2；既有 Chat 投票请求差异造成云端单测失败 | 按[Android 计划](../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)继续结构收敛与目标设备验证；Mac 新增只作接口参考 |
 
 ## 系统集成与发布

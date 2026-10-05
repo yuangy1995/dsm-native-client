@@ -4,12 +4,15 @@ import SwiftUI
 struct MobileNasDetailsScreen: View {
     @Bindable var model: MobileNasDetailsModel
     let destination: MobileNasAdministrationDestination
+    @State private var selectedLog: MobileNasLogDetail?
 
     var body: some View {
         List {
-            MobileNasDetailsSectionView(model: model, destination: destination, showsSectionTitle: false)
+            MobileNasDetailsSectionView(model: model, destination: destination, showsSectionTitle: false, onSelectLog: { selectedLog = $0 })
         }
         .listStyle(.insetGrouped)
+        .sheet(item: $selectedLog) { MobileNasLogDetailScreen(entry: $0) }
+        .onChange(of: model.activationID) { _, _ in selectedLog = nil }
         .navigationTitle(destination.title)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await model.refresh(destination) }
@@ -21,14 +24,15 @@ struct MobileNasDetailsSectionView: View {
     @Bindable var model: MobileNasDetailsModel
     let destination: MobileNasAdministrationDestination
     var showsSectionTitle = true
+    let onSelectLog: (MobileNasLogDetail) -> Void
 
     var body: some View {
         Group {
-            if [.packages, .scheduledTasks, .logs, .connections].contains(destination) { privacyNotice }
+            if [.packages, .scheduledTasks, .connections].contains(destination) { privacyNotice }
             switch destination {
             case .packages: packagesSection
             case .scheduledTasks: scheduledTasksSection
-            case .logs: logsSection
+            case .logs: MobileNasLogsSection(model: model, showsSectionTitle: showsSectionTitle, onSelect: onSelectLog).id(model.activationID)
             case .connections: connectionsSection
             case .externalStorage, .processes, .shareAccess, .zram, .powerSchedule:
                 MobileNasReadSections(model: model, destination: destination, showsSectionTitle: showsSectionTitle).id(destination)
@@ -109,41 +113,6 @@ struct MobileNasDetailsSectionView: View {
                         optionalRow(
                             L10n.string("mobile.nas-details.field.next-trigger"),
                             item.nextTriggerDescription
-                        )
-                    }
-                    .padding(.vertical, 6)
-                    .accessibilityElement(children: .combine)
-                }
-            }
-        } header: {
-            sectionHeader(isRefreshing: section.isRefreshing)
-        } footer: {
-            truncationNotice(section.value)
-        }
-    }
-
-    private var logsSection: some View {
-        let section = model.state.logs
-        return Section {
-            MobileNasDetailsSectionContent(
-                section: section,
-                loading: destination.loadingLabel,
-                emptyTitle: L10n.string("mobile.nas-details.logs.empty.title"),
-                emptyMessage: L10n.string("mobile.nas-details.logs.empty.message"),
-                retry: retry
-            ) { page in
-                ForEach(page.items) { item in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label(item.level.title, systemImage: item.level.systemImage)
-                            .font(.headline)
-                            .foregroundStyle(item.level.color)
-                        optionalRow(
-                            L10n.string("mobile.nas-details.field.time"),
-                            item.date.map(MobileNasDetailsFormatting.date)
-                        )
-                        optionalRow(
-                            L10n.string("mobile.nas-details.field.source"),
-                            item.source
                         )
                     }
                     .padding(.vertical, 6)
@@ -396,7 +365,7 @@ private extension MobileNasPackageStatus {
     }
 }
 
-private extension MobileNasLogLevel {
+extension MobileNasLogLevel {
     var title: String {
         switch self {
         case .information: L10n.string("mobile.nas-details.log.level.information")

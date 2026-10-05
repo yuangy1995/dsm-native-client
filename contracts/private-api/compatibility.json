@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/private-api-compatibility.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-10-03",
+  "updatedAt": "2026-10-05",
   "environments": [
     {
       "id": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -568,7 +568,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "各只读页面独立降级；连接断开不可用时不影响连接列表。 2026-09-26 Apple 连接列表兼容整数 PID，拒绝小数，断开保护不变。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 当前连接单项 PID 的数字类型已由当前浏览器成功响应核对。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。",
+      "fallback": "各只读页面独立降级；连接断开不可用时不影响连接列表。 2026-09-26 Apple 连接列表兼容整数 PID，拒绝小数，断开保护不变。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 当前连接单项 PID 的数字类型已由当前浏览器成功响应核对。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。 2026-10-05 Apple 移动 M6a2 接系统日志完整分页/正文，未知总数独立表示，畸形列表不当空；同账号重连清除正文，迟到翻页不回写。细化文档 docs/api/discovery/endpoints/dsm-system-log.md；无新现场观察或等级提升。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {
@@ -588,7 +588,8 @@
             "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md",
             "docs/api/discovery/endpoints/dsm-current-connection.md",
-            "docs/api/discovery/endpoints/dsm-system-update-check.md"
+            "docs/api/discovery/endpoints/dsm-system-update-check.md",
+            "docs/api/discovery/endpoints/dsm-system-log.md"
           ],
           "notes": "连接断开属于写行为，本环境未执行，不能继承只读证据等级；系统更新只读检查已记录，下载与安装保持关闭。Windows 连接固定 v1 严格读取、完整目标预检、网页 DID/服务 PID 请求、当前或未知会话更强确认及原始标识回读已有合成证据，原生列表/搜索/当前会话额外确认/关闭取消/只读恢复已有合成证据，关联原始身份不能绕过挂起阻止，写门关闭。Mac 同步修正派生 ID、畸形列表、用户名当前状态推断和缓存回读误报；新 Swift 回归未运行，不提升真实断开行为证据。"
         }
@@ -806,7 +807,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "以 Storage.load_info 为主；单项接口失败时保留其他有效数据并关闭对应写入口。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-10-03 macOS 以 BeepControl support_* 过滤不可编辑提示音，FanSpeed cool_fan/fan_type 决定支持模式；未知设备组合与扩展网卡限制由 NAS 拒绝，未执行实际硬件写入。",
+      "fallback": "以 Storage.load_info 为主；单项接口失败时保留其他有效数据并关闭对应写入口。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-10-03 macOS 以 BeepControl support_* 过滤不可编辑提示音，FanSpeed cool_fan/fan_type 决定支持模式；未知设备组合与扩展网卡限制由 NAS 拒绝，未执行实际硬件写入。 2026-10-05 Apple 移动 M6a2 接硬盘检测确认、写前摘要记录与重启只读恢复；共享统一原硬盘/确认状态和快速/完整类型匹配，旧 Mac 签名保持。未执行真实 NAS 写入，Windows/Android 仅记录影响，真实证据不提升。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {

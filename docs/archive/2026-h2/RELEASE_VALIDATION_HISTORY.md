@@ -2038,3 +2038,46 @@ git diff --check
 - 结束前读取远端 main，仍为交接基线，没有需整合的新提交。旧提交 Apple CI 仍为 shared-macos 成功、两端完整 UI 运行中；本片先留在本地 main，避免推送取消这轮唯一完整云端证据，后续继续跟进。清理本片截图临时导出目录，保留忽略目录中的日志与结果包供复核；未触碰此前正式发布产物。
 
 本片没有真实 NAS 请求或写入，没有新增跳过、修改工具链、身份、权限或存储格式；正式签名、真机/NAS、完整 VoiceOver 与键盘/分屏仍按主计划具体 `PENDING_USER_VALIDATION`。M6a2–M6e、M7、M8 和已实现入口的完整开放审计仍需继续。
+
+## 2026-10-05 移动 M6a2 存储分析硬盘检测与日志
+
+基线为本地 main 的 `f0d8e5fd`（M6a1），工作区起始干净。共享提取既有空间分析到 DsmFileFeature，Mac 只删除原定义并调整引用；移动接卷/池/硬盘详情、七类分析、SMART 确认/启停/历史与独立持久恢复、日志完整分页/本页筛选/正文。共享精确匹配检测类型，补明确原快照和写前保存回调；旧签名保持，卷/池状态与日志总数缺失保留未知。不改 Windows/Android、不写真实 NAS，已实现入口没有仅因缺真机而固定关闭。
+
+当前环境沿用 M6a1：Xcode 26.6（17F113）、iOS SDK/模拟器 26.5、XcodeGen 2.46.0，两台专用模拟器及 `build/m0-m8` 派生目录不变。本片日志和结果包在 `apple/Apps/DsmMobile/build/m6a2-*`，测试运行期间不重建移动派生目录。
+
+验证过程和实际修复：
+
+- 初次构建因 `catch` 的 error 名称遮蔽模型属性而失败，改为明确的 `self.error` 后重新构建通过。后续每次 UI/资源/源码修正均重新 `build-for-testing`；最终 `m6a2-build-r7.log` 为 `TEST BUILD SUCCEEDED`。
+- 两端 R1 各 1286 项单元（4 条既有跳过），各 1 失败：未知提交的反馈被随后的读取错误覆盖。模型保留提交未知状态，读取失败不能解除保护。9 项 UI 因列表子节点承载 sheet、加载节点查询方式而未通过；详情改由页面根列表呈现，测试使用实际无障碍状态。聚焦重跑两端各 17 项存储单元及日志分页正文、硬盘启停、空间分析三项 UI 均通过。
+- R2 两端各 1289 项完整单元、各 4 条既有条件跳过、零失败；9 项 UI 中 iPhone 5 通过、iPad 6 通过。实际截图发现完整检测确认菜单无可见取消，列表底部按钮露出部分仍被测试当作可点，未知反馈需要滚动。改用系统 alert 的明确取消、将操作记录靠近状态、将可选硬盘资料放入展开区，并让测试在内容视口小幅滚动。没有去掉原断言或增加跳过。
+- R4 使用全部单元及 10 项 UI（增加卷/池详情）：iPad 全 10 项 UI 通过；iPhone 9 项通过、中文大字滚动一项失败。两端完整单元仍各 1289 项、4 跳过、零失败。随后只修正测试的大幅滑动越过目标，并补历史时间的 App 语言/秒毫秒/ISO 格式测试；R5 选择 20 项存储单元与整组 10 项 UI，终态在本节后追加。R3 的重复结果路径调用返回 exit 64，未执行测试，不能计为通过。
+- 共享最终 `swift test --package-path apple --jobs 2`：2726 项 XCTest、172 条既有环境条件跳过、0 失败，另 12 项 Swift Testing 通过；`m6a2-shared-final2.log` 与收尾 `m6a2-shared-r3.log` 均通过。包含新增 11 项 `NasStorageFlowTests`、原 Mac 分析与管理模型回归。完整移动单元数量与共享数量单独记录，不互相替代。
+- 最终 `xcodebuild build` 的 `m6a2-macos-final.log` 为 `BUILD SUCCEEDED`，`lipo -archs` 返回 `x86_64 arm64`；未安装或启动 Mac App。双语/参数/引用/硬编码检查为 Apple 6296、Android 2188、Windows 3402，通过。
+
+实际命令（输出分别重定向至本片对应日志）：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6a2-phone-r5.xcresult -only-testing:DsmMobileTests/MobileNasStorageTests -only-testing:DsmMobileUITests/MobileNasStorageUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6a2-pad-r5.xcresult -only-testing:DsmMobileTests/MobileNasStorageTests -only-testing:DsmMobileUITests/MobileNasStorageUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+R1/R2/R4 全部移动单元命令将上方存储单元 selector 改为 `-only-testing:DsmMobileTests`；R1/R2 的 UI 组为当时九项，R4 增为十项。当前负责人在独立复核阶段检查权限撤回、身份变更、持久化失败、取消、迟到响应和只读恢复；没有虚称由另一模型审查。真实硬盘负载、NAS 版本/权限、锁屏文件保护及辅助功能另见[主计划 M6a2](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a2-存储分析硬盘检测与完整日志)中的具体 `PENDING_USER_VALIDATION`。
+
+收尾结果：
+
+- R5 两端各 10 项实际 UI 全部通过，包括中文大字、卷/池详情、取消、存储/日志各状态、日志分页/正文、启停、未知重启恢复、空间分析及重复文件。iPhone 的 20 项存储单元同时通过；iPad 其中一项过早在记录成功后读取尚未完成刷新的页面状态，实际值为 nil，整轮 exit 65。测试改为等待记录成功、精确状态及刷新结束，再执行原断言；未修改产品逻辑或降低断言。
+- 截图发现中文存储状态仍展示 NAS 的 `normal`，移动展示沿用 Mac 已记录状态的双语资源，未知值继续保留原文；`m6a2-build-r8.log` 构建通过。两端 `m6a2-phone-light.xcresult` / `m6a2-pad-light.xcresult` 各 20 项存储单元与 3 项实际 UI 全部通过（各 23 项、0 跳过、0 失败）。命令沿用上方 R5，将结果路径改为 `m6a2-<设备>-light.xcresult`，UI selector 分别为 `test中文大字号硬盘检测入口及确认可操作`、`test日志翻页完整正文与本页筛选`、`test空间分析显示未知容量和重复文件结果`。
+- `m6a2-phone-dark-final.xcresult` 单独执行中文大字号确认/取消，1 项通过；先使用 `xcrun simctl ui 8145D5B0-65A7-46E3-A0CF-17850E4EFA3F appearance dark`，完成后恢复 light。iPad R4/R5 深色、两端最终浅色截图均已实际查看，不能用设置命令代替像素证据。已看到可见的开始/取消、完整长正文、未知容量说明和恢复结果。用户询问后另将 Simulator 的 iPad 窗口调到前台，并展示实际 UI 测试截图。
+- 最后一张 iPad 浅色日志截图暴露窄栏分页文字折行；改为同样式/点击区域的左右箭头，保留完整无障碍名称。`m6a2-build-r9.log` 构建通过，两端日志翻页/全文/筛选定向复测各 1 项通过，结果为 `m6a2-phone-pagination.xcresult` / `m6a2-pad-pagination.xcresult`，命令只选择上述日志方法。最终两端截图已复核，iPad 窄栏箭头完整可见；没有以测试通过替代截图检查。
+- 按现有锁定路径 `/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen`（2.46.0）重生成移动工程，前后 SHA-256 均为 `64547dfc7809e765163b64495105d022ba22444ec48cbc02ecb0eaa6ee7bcb49`。请求样本 179/1、私有样本/文档引用 29/48、本地化资源 6296/2188/3402、文档与差异检查通过。
+- 再次 fetch origin/main，远端仍为交接基线。交接提交 [Apple Build 37267487226](https://github.com/yuangy1995/dsm-native-client/actions/runs/37267487226) 仍为 shared-macos 成功、两端完整 UI 运行中；本片不以新推送取消该运行，本机通过不代表当前提交的云端通过。
+
+本片结束时清理临时截图导出目录及一次性当前画面，日志/xcresult 保留在忽略目录以便复核；向用户展示的合成截图副本单独保留在本地 `build/m6a2-preview`，不提交。两台模拟器恢复原浅色设置，未擦除其他模拟器。功能和验证文档作为完整切片在 main 保存；后续继续 M6a3，不宣布整个 M6–M8 完成。

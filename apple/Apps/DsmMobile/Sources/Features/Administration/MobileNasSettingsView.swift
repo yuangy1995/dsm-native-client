@@ -4,6 +4,7 @@ import SwiftUI
 struct MobileNasSettingsView: View {
     @Bindable var model: MobileAppModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var selectedLog: MobileNasLogDetail?
     @State private var selectedSection: MobileNasAdministrationDestination = .system
 
     var body: some View {
@@ -18,6 +19,8 @@ struct MobileNasSettingsView: View {
         .onDisappear {
             if model.selectedModule != .nasSettings {
                 model.nasDetailsModel.deactivate()
+                model.nasStorageModel.cancelReads()
+                model.nasStorageModel.cancelAnalysis()
             }
         }
     }
@@ -33,7 +36,9 @@ struct MobileNasSettingsView: View {
         .listStyle(.insetGrouped)
         .refreshable { await model.nasHealthModel.refresh() }
         .navigationDestination(for: MobileNasAdministrationDestination.self) { destination in
-            if destination.isDetails {
+            if destination == .storage {
+                MobileNasStorageScreen(model: model.nasStorageModel)
+            } else if destination.isDetails {
                 MobileNasDetailsScreen(
                     model: model.nasDetailsModel,
                     destination: destination
@@ -61,20 +66,24 @@ struct MobileNasSettingsView: View {
 
             Divider()
 
-            List {
-                selectedDetail
-            }
-            .listStyle(.insetGrouped)
-            .refreshable {
-                await model.nasHealthModel.refresh()
-                await model.nasDetailsModel.refreshLoadedSections()
+            if selectedSection == .storage {
+                MobileNasStorageScreen(model: model.nasStorageModel)
+            } else {
+                List { selectedDetail }
+                    .listStyle(.insetGrouped)
+                    .refreshable {
+                        await model.nasHealthModel.refresh()
+                        await model.nasDetailsModel.refreshLoadedSections()
+                    }
+                    .sheet(item: $selectedLog) { MobileNasLogDetailScreen(entry: $0) }
+                    .onChange(of: model.nasDetailsModel.activationID) { _, _ in selectedLog = nil }
             }
         }
     }
 
     private var detailsNavigationSection: some View {
         Section(L10n.string("mobile.nas-details.group.title")) {
-            ForEach(MobileNasAdministrationDestination.details) { destination in
+            ForEach([MobileNasAdministrationDestination.storage] + MobileNasAdministrationDestination.details) { destination in
                 NavigationLink(value: destination) {
                     Label(destination.title, systemImage: destination.systemImage)
                         .frame(minHeight: 44, alignment: .leading)
@@ -113,7 +122,8 @@ struct MobileNasSettingsView: View {
         case .packages, .scheduledTasks, .logs, .connections, .externalStorage, .processes, .shareAccess, .zram, .powerSchedule:
             MobileNasDetailsSectionView(
                 model: model.nasDetailsModel,
-                destination: selectedSection
+                destination: selectedSection,
+                onSelectLog: { selectedLog = $0 }
             )
         }
     }
@@ -218,6 +228,11 @@ struct MobileNasSettingsView: View {
     private var storageSection: some View {
         let section = model.nasHealthModel.state.storage
         return Section {
+            NavigationLink(value: MobileNasAdministrationDestination.storage) {
+                Label(L10n.string("mobile.nas.storage.open"), systemImage: "internaldrive")
+                    .frame(minHeight: 44, alignment: .leading)
+            }
+            .accessibilityIdentifier("mobile.nas.storage.open")
             MobileNasHealthSectionContent(
                 section: section,
                 loading: L10n.string("mobile.nas-health.loading.storage"),

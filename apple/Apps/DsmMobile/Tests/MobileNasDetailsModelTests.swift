@@ -176,9 +176,9 @@ final class MobileNasDetailsModelTests: XCTestCase {
         )
         XCTAssertEqual(
             Self.labels(
-                MobileNasLogDetail(id: 0, date: nil, source: "System", level: .information)
+                MobileNasLogDetail(id: "0", date: nil, source: "System", level: .information, account: "synthetic", message: "Synthetic log")
             ),
-            ["date", "id", "level", "source"]
+            ["date", "id", "level", "source", "account", "message"]
         )
         XCTAssertEqual(
             Self.labels(
@@ -214,13 +214,13 @@ final class MobileNasDetailsModelTests: XCTestCase {
         XCTAssertTrue(source.contains("static let packageLimit = 100"))
         XCTAssertTrue(source.contains("static let scheduledTaskLimit = 100"))
         XCTAssertTrue(source.contains("static let pageLimit = 50"))
-        XCTAssertTrue(source.contains("loadLogs(offset: 0, limit: Self.pageLimit)"))
+        XCTAssertTrue(source.contains("loadLogs(offset: offset, limit: limit)"))
         XCTAssertTrue(source.contains("loadConnections(offset: 0, limit: Self.pageLimit)"))
         XCTAssertTrue(source.contains("prefix(Self.packageLimit)"))
         XCTAssertTrue(source.contains("prefix(Self.scheduledTaskLimit)"))
         for forbiddenProjection in [
-            "value.owner", "value.realOwner", "value.action", "value.message", "value.account",
-            "value.location", "value.description", "value.processID", "value.deviceID", "value.id",
+            "value.owner", "value.realOwner", "value.action",
+            "value.location", "value.description", "value.processID", "value.deviceID",
             "value.installedAt", "value.isUpgradeAvailable"
         ] {
             XCTAssertFalse(source.contains(forbiddenProjection))
@@ -310,9 +310,7 @@ final class MobileNasDetailsPresentationTests: XCTestCase {
         "mobile.nas-details.error.title",
         "mobile.nas-details.field.connected-at",
         "mobile.nas-details.field.next-trigger",
-        "mobile.nas-details.field.source",
         "mobile.nas-details.field.status",
-        "mobile.nas-details.field.time",
         "mobile.nas-details.field.type",
         "mobile.nas-details.field.version",
         "mobile.nas-details.loading.connections",
@@ -323,8 +321,6 @@ final class MobileNasDetailsPresentationTests: XCTestCase {
         "mobile.nas-details.log.level.information",
         "mobile.nas-details.log.level.unknown",
         "mobile.nas-details.log.level.warning",
-        "mobile.nas-details.logs.empty.message",
-        "mobile.nas-details.logs.empty.title",
         "mobile.nas-details.package.status.needs-attention",
         "mobile.nas-details.package.status.running",
         "mobile.nas-details.package.status.stopped",
@@ -404,12 +400,12 @@ private actor NasDetailsRepositoryStub: MobileNasDetailsReading {
         return MobileNasBoundedPage(items: items, total: items.count, isTruncated: false)
     }
 
-    func loadLogs() async throws -> MobileNasBoundedPage<MobileNasLogDetail> {
+    func loadLogs(offset: Int, limit: Int) async throws -> MobileNasLogPage {
         let outcome = try await begin(.logs)
         let items = outcome == .empty
             ? []
-            : [MobileNasLogDetail(id: 0, date: nil, source: marker, level: .information)]
-        return MobileNasBoundedPage(items: items, total: items.count, isTruncated: false)
+            : [MobileNasLogDetail(id: String(offset), date: nil, source: marker, level: .information, account: nil, message: "Synthetic log")]
+        return MobileNasLogPage(items: items, offset: offset, limit: limit, total: items.count)
     }
 
     func loadConnections() async throws -> MobileNasBoundedPage<MobileNasConnectionDetail> {

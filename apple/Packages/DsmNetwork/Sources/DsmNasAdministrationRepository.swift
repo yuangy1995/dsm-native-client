@@ -6925,6 +6925,15 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         return try await loadDiskTestStatus(for: disk, includesHistory: true)
     }
 
+    public func loadDiskTestStatus(disk: NasDisk) async throws -> NasDiskTestStatus {
+        let current = try await validatedStorageDisk(id: disk.id)
+        guard disk.hasSameTestIdentity(as: current), current.supportsSmartTest else {
+            throw AppError(category: .conflict, isRetryable: true,
+                           safeUserMessage: L10n.string("nas.storage.response-incomplete"))
+        }
+        return try await loadDiskTestStatus(for: current, includesHistory: true)
+    }
+
     private func loadDiskTestStatus(
         for disk: NasDisk,
         includesHistory: Bool
@@ -7079,7 +7088,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 try await Task.sleep(for: .seconds(1))
             }
             let verified = try await loadDiskTestStatus(for: disk, includesHistory: false)
-            if verified.isRunning {
+            if verified.isRunning, verified.runningType == type {
                 return verified
             }
         }
@@ -7149,11 +7158,21 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
+    public func changeDiskTestResult(
+        _ change: NasDiskTestChange,
+        beforeSubmission: @escaping @Sendable () async throws -> Void
+    ) async throws -> MutationResult {
+        try await changeDiskTestResult(diskID: change.disk.id, type: change.action.testType,
+            shouldBeRunning: change.action != .stop, expectedChange: change, beforeSubmission: beforeSubmission)
+    }
+
     /// 检测启停在提交或轮询失败时可能已经生效；未知结果必须先回读，不得自动重放。
     private func changeDiskTestResult(
         diskID: String,
         type: NasDiskTestType?,
-        shouldBeRunning: Bool
+        shouldBeRunning: Bool,
+        expectedChange: NasDiskTestChange? = nil,
+        beforeSubmission: (@Sendable () async throws -> Void)? = nil
     ) async throws -> MutationResult {
         let operation = shouldBeRunning ? "diskTestStart" : "diskTestStop"
         let prefix = shouldBeRunning
@@ -7236,6 +7255,13 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 for: disk,
                 includesHistory: false
             )
+            if let expectedChange,
+               !expectedChange.isValid || !expectedChange.matchesDisk(disk) || !expectedChange.matchesStatus(current) {
+                return try diskTestMutationResult(status: .confirmedFailure, operation: operation,
+                    submitted: false, requiresRefresh: true, succeeded: 0, failed: 1, unknown: 0,
+                    errorCategory: .conflict, localizationKey: "\(prefix).failed",
+                    diagnosticTag: "disk-test.confirmation-changed")
+            }
             if shouldBeRunning {
                 guard !current.isRunning, !current.isBusyWithOtherTest else {
                     return try diskTestMutationResult(
@@ -7303,6 +7329,13 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
 
+        try await beforeSubmission?()
+        if Task.isCancelled {
+            return try diskTestMutationResult(status: .cancelledBeforeSubmission, operation: operation,
+                submitted: false, requiresRefresh: false, succeeded: 0, failed: 0, unknown: 0,
+                diagnosticTag: "disk-test.cancelled-after-checkpoint")
+        }
+
         do {
             try await callVoid(
                 DsmAPIName.coreStorageDisk,
@@ -7322,6 +7355,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 error,
                 disk: disk,
                 shouldBeRunning: shouldBeRunning,
+                expectedType: type,
                 operation: operation,
                 prefix: prefix
             )
@@ -7329,6 +7363,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             return try await diskTestUnknownSubmissionResult(
                 disk: disk,
                 shouldBeRunning: shouldBeRunning,
+                expectedType: type,
                 operation: operation,
                 prefix: prefix
             )
@@ -7357,7 +7392,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     for: disk,
                     includesHistory: false
                 )
-                if verified.isRunning == shouldBeRunning {
+                if verified.isRunning == shouldBeRunning && (!shouldBeRunning || verified.runningType == type) {
                     return try diskTestMutationResult(
                         status: .confirmedSuccess,
                         operation: operation,
@@ -8583,6 +8618,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         _ error: AppError,
         disk: NasDisk,
         shouldBeRunning: Bool,
+        expectedType: NasDiskTestType?,
         operation: String,
         prefix: String
     ) async throws -> MutationResult {
@@ -8632,7 +8668,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     for: disk,
                     includesHistory: false
                 )
-                if verified.isRunning == shouldBeRunning {
+                if verified.isRunning == shouldBeRunning && (!shouldBeRunning || verified.runningType == expectedType) {
                     return try diskTestMutationResult(
                         status: .confirmedSuccess,
                         operation: operation,
@@ -8678,6 +8714,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private func diskTestUnknownSubmissionResult(
         disk: NasDisk,
         shouldBeRunning: Bool,
+        expectedType: NasDiskTestType?,
         operation: String,
         prefix: String
     ) async throws -> MutationResult {
@@ -8686,7 +8723,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 for: disk,
                 includesHistory: false
             )
-            if verified.isRunning == shouldBeRunning {
+            if verified.isRunning == shouldBeRunning && (!shouldBeRunning || verified.runningType == expectedType) {
                 return try diskTestMutationResult(
                     status: .confirmedSuccess,
                     operation: operation,

@@ -7,7 +7,7 @@ protocol MobileNasDetailsReading: Sendable {
 
     func loadPackages() async throws -> MobileNasBoundedPage<MobileNasPackageDetail>
     func loadScheduledTasks() async throws -> MobileNasBoundedPage<MobileNasScheduledTaskDetail>
-    func loadLogs() async throws -> MobileNasBoundedPage<MobileNasLogDetail>
+    func loadLogs(offset: Int, limit: Int) async throws -> MobileNasLogPage
     func loadConnections() async throws -> MobileNasBoundedPage<MobileNasConnectionDetail>
     func loadExternalStorage() async throws -> NasExternalStorageDirectory
     func loadProcesses() async throws -> NasProcessDirectory
@@ -68,24 +68,15 @@ struct MobileReadOnlyNasDetailsRepository: MobileNasDetailsReading, Sendable {
         )
     }
 
-    func loadLogs() async throws -> MobileNasBoundedPage<MobileNasLogDetail> {
-        let page = try await base.loadLogs(offset: 0, limit: Self.pageLimit)
+    func loadLogs(offset: Int, limit: Int) async throws -> MobileNasLogPage {
+        let offset = max(0, offset), limit = min(200, max(1, limit))
+        let page = try await base.loadLogs(offset: offset, limit: limit)
         try Task.checkCancellation()
-        let values = Array(page.entries.prefix(Self.pageLimit))
-        let items = values.enumerated().map { index, value in
-            MobileNasLogDetail(
-                id: index,
-                date: value.date,
-                source: value.source,
-                level: MobileNasLogLevel(value.level)
-            )
+        let items = page.entries.map { value in
+            MobileNasLogDetail(id: value.id, date: value.date, source: value.source,
+                level: MobileNasLogLevel(value.level), account: value.account, message: value.message)
         }
-        let total = max(page.total, page.entries.count)
-        return MobileNasBoundedPage(
-            items: items,
-            total: total,
-            isTruncated: total > items.count || page.entries.count > items.count
-        )
+        return MobileNasLogPage(items: items, offset: offset, limit: limit, total: page.isTotalKnown ? page.total : nil)
     }
 
     func loadConnections() async throws -> MobileNasBoundedPage<MobileNasConnectionDetail> {

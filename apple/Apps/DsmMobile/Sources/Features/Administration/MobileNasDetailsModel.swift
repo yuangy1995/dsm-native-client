@@ -6,6 +6,8 @@ import Observation
 @Observable
 final class MobileNasDetailsModel {
     private(set) var activeProfileID: UUID?
+    private(set) var activationID = UUID()
+    static let logPageSizes = [50, 100, 200]
     private(set) var state = MobileNasDetailsState()
 
     @ObservationIgnored private var repository: (any MobileNasDetailsReading)?
@@ -28,7 +30,7 @@ final class MobileNasDetailsModel {
         await refresh(destination)
     }
 
-    func refresh(_ destination: MobileNasAdministrationDestination) async {
+    func refresh(_ destination: MobileNasAdministrationDestination, logOffset: Int? = nil, logLimit: Int? = nil) async {
         guard destination.isDetails,
               let profileID = activeProfileID,
               let repository,
@@ -38,6 +40,9 @@ final class MobileNasDetailsModel {
         requestGenerations[destination, default: 0] &+= 1
         let requestGeneration = requestGenerations[destination, default: 0]
         let activationGeneration = activationGeneration
+        let requestedLogOffset = max(0, logOffset ?? state.logs.value?.offset ?? 0)
+        let requestedLogLimit = logLimit ?? state.logs.value?.limit ?? 50
+        guard Self.logPageSizes.contains(requestedLogLimit) else { return }
         beginLoading(destination)
 
         let task = Task { [repository] in
@@ -49,7 +54,7 @@ final class MobileNasDetailsModel {
                 case .scheduledTasks:
                     outcome = .scheduledTasks(try await repository.loadScheduledTasks())
                 case .logs:
-                    outcome = .logs(try await repository.loadLogs())
+                    outcome = .logs(try await repository.loadLogs(offset: requestedLogOffset, limit: requestedLogLimit))
                 case .connections:
                     outcome = .connections(try await repository.loadConnections())
                 case .externalStorage:
@@ -94,6 +99,12 @@ final class MobileNasDetailsModel {
         await task.value
     }
 
+    func loadLogPage(_ page: Int, pageSize: Int? = nil) async {
+        let limit = pageSize ?? state.logs.value?.limit ?? 50
+        guard Self.logPageSizes.contains(limit) else { return }
+        await refresh(.logs, logOffset: (max(1, page) - 1) * limit, logLimit: limit)
+    }
+
     func refreshLoadedSections() async {
         let destinations = MobileNasAdministrationDestination.details.filter {
             hasAttemptedLoad($0)
@@ -114,6 +125,7 @@ final class MobileNasDetailsModel {
     }
 
     func deactivate() {
+        activationID = UUID()
         activationGeneration &+= 1
         for request in requests.values { request.cancel() }
         requests.removeAll()
@@ -277,7 +289,7 @@ private extension MobileNasDetailsModel {
     enum LoadOutcome: Sendable {
         case packages(MobileNasBoundedPage<MobileNasPackageDetail>)
         case scheduledTasks(MobileNasBoundedPage<MobileNasScheduledTaskDetail>)
-        case logs(MobileNasBoundedPage<MobileNasLogDetail>)
+        case logs(MobileNasLogPage)
         case connections(MobileNasBoundedPage<MobileNasConnectionDetail>)
         case externalStorage(NasExternalStorageDirectory)
         case processes(NasProcessDirectory)

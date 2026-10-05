@@ -40,6 +40,7 @@ final class MobileAppModel {
     let chatModel: MobileChatModel
     let nasHealthModel = MobileNasHealthModel()
     let nasDetailsModel = MobileNasDetailsModel()
+    let nasStorageModel: MobileNasStorageModel
     let containerInventoryModel = MobileContainerInventoryModel()
     let virtualMachineInventoryModel = MobileVirtualMachineInventoryModel()
     let downloads: MobileDownloadsModel
@@ -100,6 +101,7 @@ final class MobileAppModel {
                 chatModel.deactivate()
                 nasHealthModel.deactivate()
                 nasDetailsModel.deactivate()
+                nasStorageModel.deactivate()
                 containerInventoryModel.deactivate()
                 virtualMachineInventoryModel.deactivate()
             }
@@ -196,6 +198,7 @@ final class MobileAppModel {
         self.fileArchiveQueue = MobileFileArchiveQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Archives", isDirectory: true))
         self.downloads = MobileDownloadsModel(transferCoordinator: transferCoordinator,
             controlRoot: transferRecoveryStore?.rootURL.appendingPathComponent("Downloads", isDirectory: true))
+        self.nasStorageModel = MobileNasStorageModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.documentTransferController = MobileDocumentTransferController(
             transferCoordinator: transferCoordinator, recoveryStore: transferRecoveryStore
         )
