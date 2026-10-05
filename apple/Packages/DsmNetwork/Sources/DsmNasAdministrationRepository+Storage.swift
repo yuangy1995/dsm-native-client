@@ -76,7 +76,9 @@ extension DsmNasAdministrationRepository {
                 nextScrubbingDate: Self.date(from: item.string(["next_schedule_time"])),
                 diskIDs: item.strings(["disks"]),
                 spareDiskIDs: item.strings(["spares"]),
-                supportsMultipleVolumes: item.string(["raidType"]).map { $0 != "single" }
+                supportsMultipleVolumes: item.string(["raidType"]).map { $0 != "single" },
+                reportedWritable: item.boolean(["is_writable"]),
+                reportedScrubbing: item.boolean(["data_scrubbing", "is_actioning"])
             )
         }
         let volumes = value.objects("volumes").enumerated().map { index, raw in
@@ -93,7 +95,9 @@ extension DsmNasAdministrationRepository {
                 isEncrypted: item.boolean(["is_encrypted"]) ?? false,
                 isWritable: item.boolean(["is_writable"]) ?? false,
                 poolID: item.string(["pool_path"]),
-                path: item.string(["vol_path"])
+                path: item.string(["vol_path"]),
+                reportedEncrypted: item.boolean(["is_encrypted"]),
+                reportedWritable: item.boolean(["is_writable"])
             )
         }
         loaded = true

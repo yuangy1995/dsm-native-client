@@ -69,6 +69,8 @@
 
 ### `dsm-system-observability`
 
+- [系统日志完整分页、字段解释及移动正文边界](dsm-system-log.md)；M6a2 仅细化已有读取契约，不增加现场证据。
+
 - 组件：`dsm-core`
 - API 与当前确认：
   - `SYNO.Core.System`：`info` v3。

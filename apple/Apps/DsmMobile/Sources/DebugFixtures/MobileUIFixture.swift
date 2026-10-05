@@ -25,7 +25,7 @@ enum MobileUIFixture {
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
             let officeState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? ""
             let officeTransport = MobileOfficeUITransport(state: officeState)
-            let uploadFixture = officeState.hasPrefix("office-") || officeState.hasPrefix("chat-") || officeState.hasPrefix("downloads-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = officeState.hasPrefix("nas-storage") || officeState.hasPrefix("nas-logs") || officeState.hasPrefix("nas-analysis") || officeState.hasPrefix("office-") || officeState.hasPrefix("chat-") || officeState.hasPrefix("downloads-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -51,6 +51,10 @@ enum MobileUIFixture {
                             DsmAPIName.chatChannel: officeState.hasPrefix("chat-management-") ? 5 : 2, DsmAPIName.chatUser: 1, DsmAPIName.chatPost: 8, DsmAPIName.chatAdminSetting: 3, DsmAPIName.chatPostVote: 1, DsmAPIName.chatPostReminder: 1, DsmAPIName.chatPostSchedule: 1,
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
+            if officeState.hasPrefix("nas-storage") || officeState.hasPrefix("nas-logs") || officeState.hasPrefix("nas-analysis") {
+                versions[DsmAPIName.storageOverview] = 1; versions[DsmAPIName.coreSystemLog] = 1
+                if officeState != "nas-storage-unsupported" { versions[DsmAPIName.coreStorageDisk] = 1 }
+            }
             if officeState.hasPrefix("nas-read-"), officeState != "nas-read-unsupported" {
                 for name in MobileNasReadUIFixture.apiNames { versions[name] = 1 }
             }
@@ -113,6 +117,13 @@ enum MobileUIFixture {
                     session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses, settings: settings, destinations: destinations, removedTaskIDs: removedTaskIDs))
             }
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
+            if officeState.hasPrefix("nas-storage") || officeState.hasPrefix("nas-logs") || officeState.hasPrefix("nas-analysis") {
+                let pending = officeState == "nas-storage-recover" ? model.nasStorageModel.recovery.entries.first(where: { $0.phase == .submitted })?.action.testType : nil
+                let nasTransport = MobileNasStorageUITransport(mode: officeState, running: pending)
+                model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: nasTransport)
+                model.fileRepository = try DsmFileRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: nasTransport)
+            }
+
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             if officeState.hasPrefix("chat-realtime-") {
                 model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session,
@@ -345,7 +356,7 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
                 "SYNO.SDS.DownloadStation.Application": grantsDownloads,
                 "SYNO.SDS.Chat.Application": pageState == "modules-all" || pageState.hasPrefix("chat-"),
                 "SYNO.SDS.Virtualization.Application": pageState == "modules-all"],
-                "Session": ["is_admin": isPermissionFixture || pageState == "modules-all" || pageState.hasPrefix("nas-read-")]]
+                "Session": ["is_admin": isPermissionFixture || pageState == "modules-all" || pageState.hasPrefix("nas-read-") || pageState.hasPrefix("nas-storage") || pageState.hasPrefix("nas-logs") || pageState.hasPrefix("nas-analysis")]]
         case ("SYNO.Foto.UserInfo", "me"):
             result = ["enabled": pageState == "modules-all" || pageState.hasPrefix("photo-"), "id": 1]
         case ("SYNO.Foto.Setting.User", "get"):

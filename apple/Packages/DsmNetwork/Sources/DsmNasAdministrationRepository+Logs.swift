@@ -14,9 +14,14 @@ extension DsmNasAdministrationRepository {
                 "limit": .integer(min(500, max(1, limit)))
             ]
         )
-        let entries = value.objects("items").enumerated().compactMap { index, raw -> NasLogEntry? in
-            let item = DsmDynamicJSON.object(raw)
-            guard let message = item.string(["descr", "message", "msg"]) else { return nil }
+        guard let rows = value["items"]?.array, rows.count <= min(500, max(1, limit)),
+              rows.allSatisfy({ $0.object != nil }) else {
+            throw verificationError(L10n.string("nas.logs.response-incomplete"))
+        }
+        let entries = try rows.enumerated().map { index, item -> NasLogEntry in
+            guard let message = item.string(["descr", "message", "msg"]) else {
+                throw verificationError(L10n.string("nas.logs.response-incomplete"))
+            }
             let rawTime = item.string(["time"])
             return NasLogEntry(
                 id: "log:\(offset + index):\(rawTime ?? "")",
@@ -27,12 +32,21 @@ extension DsmNasAdministrationRepository {
                 message: message
             )
         }
+        func count(_ key: String) -> Int? {
+            guard let number = value.number([key]), let count = Int(exactly: number), count >= 0 else { return nil }
+            return count
+        }
+        let total = count("total")
+        if value["total"] != nil, value["total"] != .null, total == nil {
+            throw verificationError(L10n.string("nas.logs.response-incomplete"))
+        }
         return NasLogPage(
             entries: entries,
-            total: Int(value.number(["total"]) ?? Double(entries.count)),
-            infoCount: value.number(["infoCount"]).map(Int.init),
-            warningCount: value.number(["warnCount"]).map(Int.init),
-            errorCount: value.number(["errorCount"]).map(Int.init)
+            total: total ?? max(0, offset) + entries.count,
+            infoCount: count("infoCount"),
+            warningCount: count("warnCount"),
+            errorCount: count("errorCount"),
+            isTotalKnown: total != nil
         )
     }
 
