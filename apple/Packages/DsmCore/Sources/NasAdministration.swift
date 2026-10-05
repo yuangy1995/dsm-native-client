@@ -1614,6 +1614,9 @@ public protocol NasSettingsRepository: Sendable {
         _ settings: NasSecuritySettings
     ) async throws -> MutationResult
     func loadRegionSettings() async throws -> NasRegionSettings
+    func loadRegionForManagement() async throws -> NasRegionSettings
+    func changeRegionResult(_ change: NasRegionChange,
+                            checkpoint: @escaping @Sendable (NasRegionCheckpoint) async throws -> Void) async throws -> MutationResult
     func saveRegionSettings(_ settings: NasRegionSettings) async throws
     func saveRegionSettingsResult(
         _ settings: NasRegionSettings
@@ -1983,6 +1986,11 @@ public extension NasSettingsRepository {
         )
     }
     func loadRegionSettings() async throws -> NasRegionSettings {
+        throw unsupportedManagementOperation()
+    }
+    func loadRegionForManagement() async throws -> NasRegionSettings { throw unsupportedManagementOperation() }
+    func changeRegionResult(_ change: NasRegionChange,
+                            checkpoint: @escaping @Sendable (NasRegionCheckpoint) async throws -> Void) async throws -> MutationResult {
         throw unsupportedManagementOperation()
     }
     func saveRegionSettings(_ settings: NasRegionSettings) async throws {

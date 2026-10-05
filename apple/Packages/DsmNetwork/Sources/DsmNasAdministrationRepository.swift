@@ -4880,6 +4880,39 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
+    public func loadRegionForManagement() async throws -> NasRegionSettings {
+        guard capabilitySupports(DsmAPIName.coreRegionNTP, version: 3) else { throw unavailableError() }
+        let value = try await loadRegionSettings()
+        guard !value.isNetworkTimeEnabled || !value.normalizedTimeServers.isEmpty
+                && value.normalizedTimeServers.count <= 3
+                && value.normalizedTimeServers.allSatisfy(NasRegionSettings.isValidTimeServer) else {
+            throw verificationError(L10n.string("region.settings.failed"))
+        }
+        return value
+    }
+
+    public func changeRegionResult(_ change: NasRegionChange,
+        checkpoint: @escaping @Sendable (NasRegionCheckpoint) async throws -> Void) async throws -> MutationResult {
+        if change.isSynchronizationOnly {
+            guard change.isValid, !isRegionSettingsUpdateActive else {
+                throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("region.settings.failed"))
+            }
+            isRegionSettingsUpdateActive = true
+            defer { isRegionSettingsUpdateActive = false }
+            guard capabilitySupports(DsmAPIName.coreRegionNTP, version: 2) else { throw unavailableError() }
+            let current = try await loadRegionForManagement()
+            guard change.matches(current) else {
+                throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("region.settings.failed"))
+            }
+            try Task.checkCancellation()
+            return try await synchronizeRegionConfiguration(current, steps: Self.regionConfigurationSteps(current),
+                checkpoint: checkpoint, configurationWasSaved: false)
+        }
+        var settings = change.desired
+        if !change.editsManualTime { settings.manualDate = nil }
+        return try await saveRegionSettingsResult(settings, expectedChange: change, checkpoint: checkpoint)
+    }
+
     public func loadRegionSettings() async throws -> NasRegionSettings {
         let value = try await call(
             DsmAPIName.coreRegionNTP,
@@ -4950,6 +4983,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     public func saveRegionSettingsResult(
         _ settings: NasRegionSettings
     ) async throws -> MutationResult {
+        try await saveRegionSettingsResult(settings, expectedChange: nil, checkpoint: nil)
+    }
+
+    private func saveRegionSettingsResult(_ settings: NasRegionSettings, expectedChange: NasRegionChange?,
+        checkpoint: (@Sendable (NasRegionCheckpoint) async throws -> Void)?) async throws -> MutationResult {
         let operation = "regionSettingsUpdate"
         let prefix = "region.settings"
         if Task.isCancelled {
@@ -5020,7 +5058,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
 
         let current: NasRegionSettings
         do {
-            current = try await loadRegionSettings()
+            if expectedChange == nil { current = try await loadRegionSettings() }
+            else { current = try await loadRegionForManagement() }
         } catch let error as AppError {
             return try regionPreflightResult(
                 error,
@@ -5040,6 +5079,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 localizationKey: "\(prefix).failed",
                 diagnosticTag: "\(prefix).preflight-unknown"
             )
+        }
+        if let expectedChange, !expectedChange.matches(current) {
+            return try regionMutationResult(status: .confirmedFailure, operation: operation, submitted: false,
+                requiresRefresh: true, succeeded: 0, failed: 1, unknown: 0, errorCategory: .conflict,
+                localizationKey: "\(prefix).failed", diagnosticTag: "\(prefix).confirmation-changed")
         }
         let manualDate = settings.isNetworkTimeEnabled
             ? settings.manualDate
@@ -5067,11 +5111,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 diagnosticTag: "\(prefix).missing-manual-date"
             )
         }
-        let configurationSteps = Self.regionMutationSteps(
+        let changedSteps = Self.regionMutationSteps(
             from: current,
             to: normalized,
-            updatesManualDate: settings.manualDate != nil
+            updatesManualDate: settings.manualDate != nil,
+            requiresManualDateChange: expectedChange?.editsManualTime == true
         )
+        let configurationSteps = expectedChange == nil ? changedSteps : Self.regionConfigurationSteps(normalized)
+            + (expectedChange?.editsManualTime == true ? [.manualDate] : [])
         let needsSynchronization = normalized.isNetworkTimeEnabled
             && (!current.isNetworkTimeEnabled
                 || current.timeServers != normalized.timeServers)
@@ -5079,7 +5126,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         if needsSynchronization {
             allSteps.append(.synchronize)
         }
-        guard !allSteps.isEmpty else {
+        guard !changedSteps.isEmpty || needsSynchronization else {
             return try regionMutationResult(
                 status: .confirmedFailure,
                 operation: operation,
@@ -5154,6 +5201,12 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             parameters["second"] = .integer(second)
         }
 
+        try await checkpoint?(.willSave)
+        if Task.isCancelled {
+            return try regionMutationResult(status: .cancelledBeforeSubmission, operation: operation,
+                submitted: false, requiresRefresh: false, succeeded: 0, failed: 0, unknown: 0,
+                diagnosticTag: "\(prefix).cancelled-before-save")
+        }
         do {
             try await callVoid(
                 DsmAPIName.coreRegionNTP,
@@ -5161,7 +5214,12 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 version: 3,
                 parameters: parameters
             )
+            try await checkpoint?(.saved)
         } catch let error as AppError {
+            if expectedChange?.editsManualTime == true,
+               [.networkUnavailable, .timeout, .serverBusy, .invalidResponse, .unknown].contains(error.category) {
+                return try regionUnacknowledgedManualResult(steps: configurationSteps.count)
+            }
             return try await regionSubmissionFailureResult(
                 error,
                 expected: normalized,
@@ -5171,6 +5229,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 prefix: prefix
             )
         } catch {
+            if expectedChange?.editsManualTime == true { return try regionUnacknowledgedManualResult(steps: configurationSteps.count) }
             return try await regionUnknownSubmissionResult(
                 expected: normalized,
                 configurationSteps: configurationSteps,
@@ -5235,8 +5294,38 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         guard configurationResult.status == .confirmedSuccess else {
             return configurationResult
         }
+        try await checkpoint?(.configurationVerified)
         guard needsSynchronization else {
             return configurationResult
+        }
+
+        return try await synchronizeRegionConfiguration(normalized, steps: configurationSteps, checkpoint: checkpoint)
+    }
+
+    private static func regionConfigurationSteps(_ value: NasRegionSettings) -> [RegionSettingsMutationStep] {
+        [.dateFormat, .timeFormat, .timeZone, .mode] + (value.isNetworkTimeEnabled ? [.servers] : [])
+    }
+
+    private func regionUnacknowledgedManualResult(steps: Int) throws -> MutationResult {
+        // 手动改时没有任务标识；尤其小幅调整时，近似时钟值不能替代本次写入回执。
+        try regionMutationResult(status: .submittedButUnverified, operation: "regionSettingsUpdate", submitted: true,
+            requiresRefresh: true, succeeded: 0, failed: 0, unknown: steps,
+            localizationKey: "region.settings.unverified", diagnosticTag: "region.settings.manual-acknowledgement-missing")
+    }
+
+    private func synchronizeRegionConfiguration(_ normalized: NasRegionSettings, steps configurationSteps: [RegionSettingsMutationStep],
+        checkpoint: (@Sendable (NasRegionCheckpoint) async throws -> Void)?, configurationWasSaved: Bool = true) async throws -> MutationResult {
+        let operation = "regionSettingsUpdate", prefix = "region.settings"
+        let allSteps = configurationSteps + [.synchronize]
+        do {
+            try Task.checkCancellation()
+            try await checkpoint?(.willSynchronize)
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            return try regionMutationResult(status: configurationWasSaved ? .cancellationRequestedAfterSubmission : .cancelledBeforeSubmission,
+                operation: operation, submitted: configurationWasSaved, requiresRefresh: configurationWasSaved,
+                succeeded: configurationWasSaved ? configurationSteps.count : 0, failed: 0, unknown: configurationWasSaved ? 1 : 0,
+                localizationKey: "\(prefix).unverified", diagnosticTag: "\(prefix).cancelled-before-sync")
         }
 
         do {
@@ -5248,20 +5337,21 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     "servers": .stringArray(normalized.timeServers)
                 ]
             )
+            try await checkpoint?(.synchronized)
         } catch let error as AppError {
             return try regionSynchronizationFailureResult(
                 error,
-                succeeded: configurationSteps.count,
+                succeeded: configurationWasSaved ? configurationSteps.count : 0,
                 operation: operation,
                 prefix: prefix
             )
         } catch {
             return try regionMutationResult(
-                status: .partialSuccess,
+                status: configurationWasSaved ? .partialSuccess : .submittedButUnverified,
                 operation: operation,
                 submitted: true,
                 requiresRefresh: true,
-                succeeded: configurationSteps.count,
+                succeeded: configurationWasSaved ? configurationSteps.count : 0,
                 failed: 0,
                 unknown: 1,
                 errorCategory: .unknown,
@@ -5275,7 +5365,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 operation: operation,
                 submitted: true,
                 requiresRefresh: true,
-                succeeded: configurationSteps.count,
+                succeeded: configurationWasSaved ? configurationSteps.count : 0,
                 failed: 0,
                 unknown: 1,
                 localizationKey: "\(prefix).unverified",
@@ -5284,6 +5374,13 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
         do {
             let verified = try await loadRegionSettings()
+            if !configurationWasSaved {
+                let matches = normalized.hasSameRegionConfiguration(as: verified)
+                return try regionMutationResult(status: matches ? .confirmedSuccess : .submittedButUnverified,
+                    operation: operation, submitted: true, requiresRefresh: !matches,
+                    succeeded: matches ? 1 : 0, failed: 0, unknown: matches ? 0 : 1,
+                    localizationKey: matches ? nil : "\(prefix).unverified", diagnosticTag: "\(prefix).standalone-sync-readback")
+            }
             return try regionVerifiedResult(
                 verified,
                 expected: normalized,
@@ -5294,11 +5391,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         } catch {
             return try regionMutationResult(
-                status: .partialSuccess,
+                status: configurationWasSaved ? .partialSuccess : .submittedButUnverified,
                 operation: operation,
                 submitted: true,
                 requiresRefresh: true,
-                succeeded: configurationSteps.count,
+                succeeded: configurationWasSaved ? configurationSteps.count : 0,
                 failed: 0,
                 unknown: 1,
                 errorCategory: .unknown,
@@ -5311,7 +5408,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private static func regionMutationSteps(
         from current: NasRegionSettings,
         to expected: NasRegionSettings,
-        updatesManualDate: Bool
+        updatesManualDate: Bool,
+        requiresManualDateChange: Bool = false
     ) -> [RegionSettingsMutationStep] {
         var steps: [RegionSettingsMutationStep] = []
         if current.dateFormat != expected.dateFormat {
@@ -5331,7 +5429,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             steps.append(.servers)
         }
         if !expected.isNetworkTimeEnabled, updatesManualDate,
-           !regionDatesMatch(current.manualDate, expected.manualDate) {
+           requiresManualDateChange || !regionDatesMatch(current.manualDate, expected.manualDate) {
             steps.append(.manualDate)
         }
         return steps
@@ -5575,6 +5673,13 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             true
         default:
             false
+        }
+        if succeeded == 0 {
+            if !ambiguous { return try regionRejectedResult(error, totalCount: 1, submitted: true, operation: operation, prefix: prefix) }
+            return try regionMutationResult(status: .submittedButUnverified, operation: operation, submitted: true,
+                requiresRefresh: true, succeeded: 0, failed: 0, unknown: 1,
+                errorCategory: packageMutationErrorCategory(for: error.category), localizationKey: "\(prefix).unverified",
+                diagnosticTag: "\(prefix).standalone-sync-unverified")
         }
         return try regionMutationResult(
             status: .partialSuccess,

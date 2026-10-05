@@ -77,6 +77,7 @@ final class MobileNasHealthPresentationTests: XCTestCase {
         XCTAssertTrue(administration.contains("await nasDetailsModel.refreshLoadedSections()"))
         XCTAssertTrue(administration.contains("await nasStorageModel.refresh()"))
         XCTAssertTrue(administration.contains("await ddnsModel.refresh()"))
+        XCTAssertTrue(administration.contains("await regionModel.refresh()"))
     }
 
     private func viewSource() throws -> String {

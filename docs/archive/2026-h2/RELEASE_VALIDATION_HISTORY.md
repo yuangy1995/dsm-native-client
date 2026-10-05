@@ -2145,3 +2145,46 @@ DDNS 提交 `83af8606` 的 [Apple Build 37300934405](https://github.com/yuangy19
 本机实际运行 `python3 -m unittest tools.release.test_macos_signing.MacOSSigningTests.test_disk_image_verification_only_retries_temporary_resource_errors tools.release.test_macos_signing.MacOSSigningTests.test_disk_image_verification_accepts_a_real_synthetic_image`：2 项通过。故障注入分别验证一次成功、临时占用后成功、三次仍占用及损坏错误立即退出；另实际创建小型合成 UDZO 映像并调用同一验证函数，通过后由临时目录自动清理。随后执行 `python3 -m unittest discover -s tools/release -p 'test_*.py'`：34 项全部通过；`bash -n apple/Apps/DsmMac/package.sh` 和 `git diff --check` 通过。日志分别保留于移动忽略目录的 `m6a3-region-dmg-tests.log` 和 `m6a3-region-release-tests.log`。
 
 本次没有安装/启动主应用、操作真实 NAS、创建发布标签或发布产物。云端修复结论仍须看包含该改动的后续运行，不能用合成重试测试代替托管环境最终结果。
+
+
+## 2026-10-05 移动 M6a3 区域时间与分步校时恢复
+
+从已推送的 `83af8606` 继续区域时间，起始工作区干净。先核实上述云端 DMG 失败并以 `f0432d7` 独立提交修复；两端云端完整 UI 仍运行时不再次推送取消它。区域切片新增九种日期格式、12/24 小时、时区搜索、网络服务器、手动日期时间和单独立即校时；所有入口按实际权限与状态开放，没有缺实机证据的固定关闭常量。
+
+共享沿用原 get/listzone/set/sync 管线，为移动增量增加原配置确认、写前/接受回执/完整配置回读检查点，旧 Mac 签名保持。单独重试校时不重新 set；未主动编辑手动时间使用 NAS 新值，小幅一分钟调整也按明确意图提交。独立受保护记录保存摘要、阶段和明确选择的墙上时间，不保存服务器或账号正文。手动改时无回执不能仅以相近读数恢复成功；网络校时无任务编号，未知不自动重放，新操作需明确确认。具体风险和回滚/真机条件见[主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a3-区域时间与-ddns)。
+
+沿用 Xcode 26.6（17F113）、iOS SDK/模拟器 26.5、XcodeGen 2.46.0 和两台专用模拟器。实际记录位于 `apple/Apps/DsmMobile/build/m6a3-region-*`，测试运行期间不重建其使用的派生目录。
+
+- 初次移动构建因错误类别不存在 `.validation` 而失败；按实际 AppErrorCategory 修正后 R2 构建成功。新行为测试首轮 15 项，后补校时权限拒绝为 16 项。
+- R1 两端各 1319 项完整单元、4 条既有跳过、0 失败。7 项实际 UI 中 iPhone 6 通过、iPad 5 通过：两端的日期测试误把完整日期按钮当作数字按钮；iPad 时区列表默认没有可见搜索框。导出并实际查看录像/层级，日期控件正常，测试改为选择包含数字的实际日期按钮；时区搜索改为常显。iPhone 编辑页标题截断，改用简短的“区域与时间”标题。
+- R2 两端各 1320 项完整单元、4 条既有跳过、0 失败；两项定向 UI 中 iPhone 全通过，iPad 两项失败：测试清空搜索后未重新获取键盘焦点，点击全屏弹窗关闭区域又一并关闭了编辑表单。改为重新点入搜索、点编辑页标题收起日历，并将手动日期场景补全为取消后再次确认保存、检查真实回读日期。没有缩减断言或新增跳过。
+- 最新共享 `swift test --package-path apple --jobs 2`（`m6a3-region-shared-r3.log`）：2751 项 XCTest、172 条既有条件跳过、0 失败，另 12 项 Swift Testing 通过。包含 13 项 `NasRegionFlowTests`、原 185 项 NAS 适配测试和 98 项 Mac 管理模型测试；配置与校时中间取消、单独校时权限拒绝均分别判定，没有把配置读取算成新的保存。
+- Mac Release 构建 `m6a3-region-macos.log` 及源码稳定后的 `m6a3-region-macos-final.log` 均成功，架构检查与最终 UI 轮次在下文补记。未安装或启动 Mac App。
+
+实际命令（输出写入相应日志）：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6a3-region-phone-r1.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileRegionUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6a3-region-pad-r1.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileRegionUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+R2 使用同样命令、独立 `-r2.xcresult` 路径，UI selector 只选择当时的 `test手动时间控件可展开并选择日期后取消保存` 和 `test格式与可搜索时区编辑保存及确认取消`；全部单元仍运行。R4 编译更新后的 UI 测试，手动方法改名为 `test手动日期选择可取消再确认保存`，保留取消断言并增加保存回读。独立集成及只读对抗复核由当前负责人完成，实际 NAS 时间未更改，所有写测试均走合成传输。
+
+收尾结果：
+
+- R3 在两台模拟器设为 dark 后，仅选择中文大字确认/表单、更新后的手动日期保存和格式/时区搜索三项 UI。iPhone 三项全通过；iPad 中文大字和搜索保存通过，日期测试的标题点击位置被日历覆盖，保存按钮未收到点击。已实际查看截图与层级；日期选中正确，测试改为在表单标题栏左侧空白处收起日历，并明确等待日期弹层消失，保留全部取消、保存和回读断言。
+- R5 `build-for-testing` 成功，R4 两端仅重跑 `MobileRegionUITests/test手动日期选择可取消再确认保存`：各 1 项通过，结果为 `m6a3-region-phone-r4.xcresult` / `m6a3-region-pad-r4.xcresult`。实际选中七日，先取消保存、再确认保存，检查读回七日及成功记录；没有用构建或程序设置值替代触控操作。七项新 UI 在两端均有通过记录，中间失败保留。
+- 深色中文大字确认与编辑表单、最终手动日期回读截图均已实际查看；浅色 iPhone 确认/保存与 iPad 搜索框录像另行复核。系统日历使用完整日期无障碍标签，测试选择其真实日期按钮；正式 VoiceOver 仍待真机。两台模拟器最后恢复原 light 设置。
+- 最终 Mac `lipo -archs` 返回 `x86_64 arm64`。双语/参数/引用/硬编码扫描为 Apple 6380、Android 2188、Windows 3402；请求样本 179/1、私有样本/文档引用 29/48、文档和差异检查通过。锁定 XcodeGen 重生成前后 SHA-256 均为 `294198c7f47eec863852c607013b1314ffd4d4ad417ad71c970a6da4aeaf2070`，内容一致。
+- 区域代码与文档在 main 完整提交；不在两端云端整轮仍运行时推送，以免取消该证据。已知 shared-macos 映像问题的本地修复与实际发布回归见上一节，仍需后续云端确认。没有分支、PR、标签、正式发布或真实 NAS 写入。
+- 清理本片临时 UI 层级、录像和截图导出；本机测试日志/结果包继续保留在忽略目录，少量合成交付图片保留于 `build/m6a3-region-preview`。不删除此前 M6a2/DDNS 的交付图片或其他用户文件。
+
+M6a3 当前环境工作完成；M6b–M6e、M7–M8、已实现入口固定门审计及主计划所列真实系统验证继续进行，不能将本片完成当作整个目标完成。

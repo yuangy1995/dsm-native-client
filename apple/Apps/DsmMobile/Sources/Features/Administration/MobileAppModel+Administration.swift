@@ -9,6 +9,7 @@ extension MobileAppModel {
         nasHealthModel.state.isRefreshing || nasDetailsModel.state.isRefreshing
             || nasStorageModel.storage.isRefreshing || nasStorageModel.storage.phase == .loading
             || ddnsModel.directory.isRefreshing || ddnsModel.directory.phase == .loading
+            || regionModel.settings.isRefreshing || regionModel.settings.phase == .loading
     }
 
     /// 操作栏刷新所有已打开的 NAS 页面，完整管理页不应只刷新总览。
@@ -17,6 +18,7 @@ extension MobileAppModel {
         await nasDetailsModel.refreshLoadedSections()
         if nasStorageModel.storage.phase != .idle { await nasStorageModel.refresh() }
         if ddnsModel.directory.phase != .idle { await ddnsModel.refresh() }
+        if regionModel.settings.phase != .idle { await regionModel.refresh() }
     }
 
     func loadNasHealth() async {
@@ -24,6 +26,7 @@ extension MobileAppModel {
             nasDetailsModel.deactivate()
             nasStorageModel.deactivate()
             ddnsModel.deactivate()
+            regionModel.deactivate()
             await nasHealthModel.activate(profileID: nil, repository: nil)
             return
         }
@@ -38,6 +41,7 @@ extension MobileAppModel {
         }
         nasStorageModel.configure(profile: profile, repository: nasRepository, fileRepository: fileRepository, authorize: authorize)
         ddnsModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
+        regionModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
         nasDetailsModel.activate(
             profileID: profileID,
             repository: MobileReadOnlyNasDetailsRepository(
