@@ -75,10 +75,6 @@ struct MobileFileBrowser: View {
                 }
             }
         }
-        .searchable(text: searchBinding, prompt: L10n.string("ui.9c8bd1565def7849"))
-        .onSubmit(of: .search, submitSearch)
-        .refreshable { await refreshNow() }
-        .toolbar { browserToolbar }
         .safeAreaInset(edge: .top) {
             if model.favorites.feedback != nil || state.advancedSearch != nil || state.page.indexCoverage == .incomplete || state.errorMessage != nil && state.pageState == .content {
                 VStack(alignment: .leading, spacing: 8) {
@@ -221,6 +217,9 @@ struct MobileFileBrowser: View {
         .fullScreenCover(isPresented: $showsPreviewFullScreen, onDismiss: previewPresentationDidDismiss) {
             previewPresentation
         }
+        // 操作栏属于浏览页，放在检查器外侧，避免常规宽度下被检查器吞掉。
+        .refreshable { await refreshNow() }
+        .toolbar { browserToolbar }
         .task(id: activationIdentity) {
             model.documentTransferController.setActiveProfile(model.activeProfile?.id)
             preview.activate(profileID: model.activeProfile?.id)
@@ -294,7 +293,8 @@ struct MobileFileBrowser: View {
                         onShowDetails: { showsPreviewDetails = true },
                         onOpenFullScreen: openPreviewFullScreen,
                         canOpenFullScreen: horizontalSizeClass == .regular && !showsPreviewFullScreen,
-                        onQuickLookDismiss: previewPresentationDidDismiss
+                        onQuickLookDismiss: previewPresentationDidDismiss,
+                        onEditOffice: previewInspectorOfficeAction
                     )
                 }
             }
@@ -302,7 +302,8 @@ struct MobileFileBrowser: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $previewOfficeSelection) { MobileOfficeEditor(model: model.office, selection: $0) }
             .toolbar {
-                if let item = preview.state.details ?? preview.state.selectedItem, MobileOfficePolicy.supports(item) {
+                if horizontalSizeClass != .regular || showsPreviewFullScreen,
+                   let item = preview.state.details ?? preview.state.selectedItem, MobileOfficePolicy.supports(item) {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(L10n.string("mobile.office.title"), systemImage: "doc.text") {
                             if let context = model.office.context { previewOfficeSelection = .init(item: item, context: context) }
@@ -330,6 +331,15 @@ struct MobileFileBrowser: View {
                     }
                 }
             }
+        }
+    }
+
+    /// iPad 检查器不呈现内部导航栏，编辑操作与其余预览操作放在同一底部区域。
+    private var previewInspectorOfficeAction: (() -> Void)? {
+        guard horizontalSizeClass == .regular, !showsPreviewFullScreen,
+              let item = preview.state.details ?? preview.state.selectedItem, MobileOfficePolicy.supports(item) else { return nil }
+        return {
+            if let context = model.office.context { previewOfficeSelection = .init(item: item, context: context) }
         }
     }
 
@@ -955,19 +965,6 @@ struct MobileFileBrowser: View {
         )
     }
 
-    private var searchBinding: Binding<String> {
-        Binding(
-            get: { state.query },
-            set: { value in
-                let previousQuery = browser.state.query
-                let clearsPresentedSearch = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    && !previousQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                browser.setQuery(value)
-                if clearsPresentedSearch { submitSearch() }
-            }
-        )
-    }
-
     private var sortFieldBinding: Binding<FileListSortField> {
         Binding(
             get: { state.options.sortField },
@@ -1089,11 +1086,6 @@ struct MobileFileBrowser: View {
     private func goUp() {
         guard let repository = model.fileRepository else { return }
         Task { await browser.goUp(repository: repository) }
-    }
-
-    private func submitSearch() {
-        guard let repository = model.fileRepository else { return }
-        Task { await browser.submitSearch(repository: repository) }
     }
 
     private func refresh() {
@@ -1566,5 +1558,60 @@ struct MobileFileBrowser: View {
         Task {
             _ = await model.documentTransferController.startDownload(context: context, service: service)
         }
+    }
+}
+
+/// 搜索属于文件模块；宽屏使用与照片页一致的原生输入栏，保持检查器打开时仍可达。
+struct MobileFileSearchModifier: ViewModifier {
+    @Bindable var model: MobileAppModel
+    let enabled: Bool
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var browser: MobileFileBrowserModel { model.fileBrowserModel }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            if horizontalSizeClass == .regular {
+                content.safeAreaInset(edge: .top) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
+                        TextField(L10n.string("ui.9c8bd1565def7849"), text: searchBinding)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search)
+                            .onSubmit(submitSearch)
+                            .frame(minHeight: MobileMetrics.minimumTouchTarget)
+                            .accessibilityIdentifier("files.search.input")
+                        if !browser.state.query.isEmpty {
+                            Button { searchBinding.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill") }
+                                .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
+                                .accessibilityLabel(L10n.string("workspace.search.clear"))
+                                .accessibilityIdentifier("files.search.clear")
+                        }
+                        Button(action: submitSearch) { Image(systemName: "arrow.right") }
+                            .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
+                            .accessibilityLabel(L10n.string("ui.9c8bd1565def7849"))
+                    }
+                    .padding(.horizontal).padding(.vertical, 4).background(.bar)
+                }
+            } else {
+                content.searchable(text: searchBinding, placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: L10n.string("ui.9c8bd1565def7849"))
+                    .onSubmit(of: .search, submitSearch)
+            }
+        } else { content }
+    }
+
+    private var searchBinding: Binding<String> {
+        Binding(get: { browser.state.query }, set: { value in
+            let previousQuery = browser.state.query
+            let clearsPresentedSearch = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !previousQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            browser.setQuery(value)
+            if clearsPresentedSearch { submitSearch() }
+        })
+    }
+
+    private func submitSearch() {
+        guard let repository = model.fileRepository else { return }
+        Task { await browser.submitSearch(repository: repository) }
     }
 }
