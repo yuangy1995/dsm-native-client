@@ -14,6 +14,7 @@ extension MobileDownloadsModel {
     }
     func canStartDownloadControl(_ task: DownloadStationTask) -> Bool {
         !isControllingDownloadTask && !isDeletingDownloadTask && !controlProtects(task.id)
+            && !isEditingDownloadTask && !editProtects(task.id)
             && activeProfile != nil && (serviceRepository != nil || downloadStationControlOverride != nil)
     }
 
@@ -38,6 +39,7 @@ extension MobileDownloadsModel {
 
     func runDownloadControlBatch(_ id: UUID, continuePlanned: Bool, originals: [String: DownloadStationTask] = [:]) {
         guard !isControllingDownloadTask, !isDeletingDownloadTask, let context = controlContext,
+              !isEditingDownloadTask,
               let entry = controlRecovery.entry(id, context: context), entry.hasUnfinished,
               serviceRepository != nil || downloadStationControlOverride != nil || downloadControlReadOverride != nil,
               controlRecovery.begin(id, context: context) else { return }

@@ -6367,10 +6367,10 @@
 // 下载批量控制与恢复
 "mobile.downloads.batch.select" = "Select tasks";
 "mobile.downloads.batch.select-all" = "Select all";
-"mobile.downloads.batch.select-empty" = "No tasks can be paused or resumed. Return to the list and refresh to try again.";
+"mobile.downloads.batch.select-empty" = "No tasks are available for these actions. Return to the list and refresh to try again.";
 "mobile.downloads.batch.records" = "Recent actions";
 "mobile.downloads.batch.records-empty" = "No recent actions";
-"mobile.downloads.batch.records-empty-help" = "Pause or resume a task to see its progress here.";
+"mobile.downloads.batch.records-empty-help" = "Change a task’s save location, pause it, or resume it to see progress here.";
 "mobile.downloads.batch.pause-count" = "Pause (%d)";
 "mobile.downloads.batch.resume-count" = "Resume (%d)";
 "mobile.downloads.batch.progress" = "%1$d of %2$d completed";
@@ -6415,3 +6415,14 @@
 "download.settings.schedule-enabled" = "Use download schedule";
 "download.settings.emule-schedule-enabled" = "Use schedule for eMule";
 "download.settings.empty" = "No download settings are available to display. Refresh to try again.";
+"download.edit.action" = "Save location";
+"download.edit.destination" = "New location";
+"download.edit.title" = "Change save location";
+"download.edit.tasks" = "%d tasks";
+"download.edit.changed" = "The task has changed or is no longer available. Refresh the task list before editing again.";
+"download.edit.pending-help" = "The save result is unavailable. Reconnect and refresh the status before changing this task again.";
+"download.edit.storage-error" = "Unable to save or read the operation record. Free up device storage and reopen the app.";
+"download.edit.read-error" = "Unable to read the task status. Check your connection and refresh.";
+"download.edit.denied" = "This account cannot save to this location or edit this task. Choose an accessible folder or contact your NAS administrator.";
+"download.edit.failed" = "The location could not be saved. Refresh the task list and choose another folder.";
+"download.edit.saving" = "Saving…";

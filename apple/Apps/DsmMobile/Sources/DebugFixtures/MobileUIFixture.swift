@@ -41,6 +41,7 @@ enum MobileUIFixture {
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             if officeState.hasPrefix("chat-management-") { versions[DsmAPIName.chatPostFile] = 2 }
+            if officeState == "downloads-edit-unsupported" { versions[DsmAPIName.downloadStationTask] = 1 }
             if officeState.hasPrefix("chat-audio-") { versions[DsmAPIName.chatPostFile] = 2 }
             if officeState.hasPrefix("chat-realtime-") { versions[DsmAPIName.chatPostSubscribe] = 2 }
             if officeState.hasPrefix("chat-group-") {
@@ -69,6 +70,14 @@ enum MobileUIFixture {
                     }
                 }
                 var settings: [DownloadSettingsField: DownloadSettingsValue] = [:]
+                var destinations: [String: String] = [:]
+                if officeState == "downloads-edit-recover" {
+                    for entry in model.downloads.editRecovery.entries {
+                        for item in entry.items where item.phase == .submitted || item.phase == .complete {
+                            destinations[item.taskID] = item.change.desired
+                        }
+                    }
+                }
                 if officeState == "downloads-settings-recover" {
                     for entry in model.downloads.settings.recovery.entries {
                         for step in entry.steps where step.phase == .submitted || step.phase == .complete {
@@ -77,7 +86,7 @@ enum MobileUIFixture {
                     }
                 }
                 model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
-                    session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses, settings: settings))
+                    session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses, settings: settings, destinations: destinations))
             }
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)

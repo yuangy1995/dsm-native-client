@@ -196,6 +196,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private let transport: any DsmHTTPTransport
     private var activeDownloadSettings = false
     private var pendingDownloadSettings: [DownloadSettingsField.Group: DownloadSettingsChange] = [:]
+    private var activeDownloadEdits: Set<String> = []
+    private var pendingDownloadEdits: [String: DownloadTaskDestinationChange] = [:]
     private var activeDownloadControlKeys: Set<DownloadTaskControlKey> = []
     private var pendingDownloadControlReviews: [DownloadTaskControlKey: DownloadTaskControlReview] = [:]
     private var activeDownloadCreateKeys: Set<DownloadTaskCreateKey> = []
@@ -648,6 +650,73 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         )
     }
 
+    public nonisolated var supportsDownloadDestinationEditing: Bool {
+        guard let capability = capabilities[DsmAPIName.downloadStationTask] else { return false }
+        return capability.name == DsmAPIName.downloadStationTask && capability.selectedVersion != nil
+            && capability.minVersion <= 1 && capability.maxVersion >= 2 && capability.requestFormat == .form
+    }
+
+    /// 官方 Task.edit v2；逐任务返回值与随后的实际位置都必须核对。
+    public func changeDownloadTaskDestination(_ change: DownloadTaskDestinationChange,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws -> DownloadTaskDestinationOutcome {
+        guard supportsDownloadDestinationEditing else { throw unavailableError() }
+        guard change.isValid, !activeDownloadEdits.contains(change.taskID), pendingDownloadEdits[change.taskID] == nil,
+              !activeDownloadControlKeys.contains(where: { $0.taskID == change.taskID }),
+              !pendingDownloadControlReviews.keys.contains(where: { $0.taskID == change.taskID }),
+              activeDeletionIDsByOperation["downloadTaskDelete"]?.contains(change.taskID) != true else {
+            throw validationError(L10n.string("download.edit.changed"))
+        }
+        activeDownloadEdits.insert(change.taskID)
+        defer { activeDownloadEdits.remove(change.taskID) }
+        guard let task = try await loadOfficialDownloadControlTask(id: change.taskID),
+              change.matchesIdentity(task), task.destination == change.original else { return .changed }
+        try Task.checkCancellation()
+        try await willSubmit()
+        if Task.isCancelled { return .cancelledBeforeSubmission }
+        pendingDownloadEdits[change.taskID] = change
+        do {
+            let value = try await callOfficialDownloadTask(method: "edit",
+                parameters: ["id": .string(change.taskID), "destination": .string(change.desired)], version: 2)
+            // 不接受缺少条目、重复编号、其他任务编号或隐式成功。
+            guard let items = value.array, items.count == 1, case .string(let id) = items[0]["id"], id == change.taskID,
+                  case .number(let raw) = items[0]["error"], let code = Int(exactly: raw) else { return .pending }
+            if code != 0 {
+                guard Self.downloadEditRejection(code) != nil else { return .pending }
+                pendingDownloadEdits[change.taskID] = nil
+                return Self.downloadEditRejection(code)!
+            }
+        } catch let error as AppError {
+            if let code = error.dsmCode, let rejection = Self.downloadEditRejection(code) {
+                pendingDownloadEdits[change.taskID] = nil
+                return rejection
+            }
+            return .pending
+        } catch { return .pending }
+        return (try? await reviewDownloadTaskDestination(change)) ?? .pending
+    }
+
+    /// 重启恢复只读；原值未变化仍不能证明旧请求没有执行。
+    public func reviewDownloadTaskDestination(_ change: DownloadTaskDestinationChange) async throws -> DownloadTaskDestinationOutcome {
+        guard change.isValid else { throw validationError(L10n.string("download.edit.changed")) }
+        guard let task = try await loadOfficialDownloadControlTask(id: change.taskID), change.matchesIdentity(task) else {
+            if pendingDownloadEdits[change.taskID] == change { pendingDownloadEdits[change.taskID] = nil }
+            return .changed
+        }
+        guard task.destination == change.desired else { return .pending }
+        if pendingDownloadEdits[change.taskID] == change { pendingDownloadEdits[change.taskID] = nil }
+        return .complete(task)
+    }
+
+    private static func downloadEditRejection(_ code: Int) -> DownloadTaskDestinationOutcome? {
+        switch code {
+        case 105, 402: .denied
+        case 404: .changed
+        case 101...104, 106, 107, 400, 401, 403, 405...408: .rejected
+        default: nil
+        }
+    }
+
     public func controlDownloadTaskResult(
         _ request: DownloadTaskControlRequest
     ) async throws -> DownloadTaskControlOutcome {
@@ -659,6 +728,9 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         _ request: DownloadTaskControlRequest,
         willSubmit: @escaping @Sendable (DownloadStationTask) async throws -> Void
     ) async throws -> DownloadTaskControlOutcome {
+        guard !activeDownloadEdits.contains(request.task.id), pendingDownloadEdits[request.task.id] == nil else {
+            throw validationError(L10n.string("download.edit.pending-help"))
+        }
         guard let taskID = Self.nonEmpty(request.task.id), taskID == request.task.id,
               !taskID.contains(","), !taskID.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
             return try downloadControlOutcome(
@@ -866,6 +938,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     public func deleteDownloadTasks(ids: [String], removeData: Bool) async throws {
+        try ensureNoDownloadEdit(ids)
         let ids = try validatedIDs(ids)
         try await callVoid(
             preferredDownloadTaskAPI(),
@@ -887,6 +960,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         ids: [String],
         removeData: Bool
     ) async throws -> MutationResult {
+        try ensureNoDownloadEdit(ids)
         let api = preferredDownloadTaskAPI()
         return try await performServiceDeletion(
             ids: ids,
@@ -3319,6 +3393,12 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
+
+    private func ensureNoDownloadEdit(_ ids: [String]) throws {
+        guard ids.allSatisfy({ !activeDownloadEdits.contains($0) && pendingDownloadEdits[$0] == nil }) else {
+            throw validationError(L10n.string("download.edit.pending-help"))
+        }
+    }
 
     private func preferredDownloadTaskAPI() -> String {
         capabilities[DsmAPIName.downloadStationTask]?.selectedVersion != nil
