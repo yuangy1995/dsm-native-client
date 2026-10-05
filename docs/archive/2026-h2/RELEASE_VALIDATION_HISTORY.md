@@ -2135,3 +2135,13 @@ R1 选择 `-only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileDDN
 - 清理本轮下载的云端结果包、录像和临时截图导出，仅保留忽略目录中的本机测试结果/日志和少量合成展示图片；保留 M6a2 已交付图片和其他原有文件。
 
 后续继续移动区域时间、M6b–M6e、M7–M8 和旧入口固定门审计，当前目标尚未整体完成。
+
+## 2026-10-05 macOS 映像验证短暂占用修复
+
+DDNS 提交 `83af8606` 的 [Apple Build 37300934405](https://github.com/yuangy1995/dsm-native-client/actions/runs/37300934405) 中，shared-macos 的 2739 项 XCTest（172 条既有跳过）、12 项 Swift Testing、发布与签名回归均通过。应用已完成构建、临时签名、库实际加载和 arm64 架构检查，DMG 创建成功后立即执行 verify 时返回 `Resource temporarily unavailable`，打包步骤因此 exit 1；不是源码测试失败，也不能将该组记为通过。两端完整 UI 当时仍在执行，不以新推送取消该轮证据。
+
+`package.sh` 只对这个已经观察到的系统临时占用错误重试验证，最多三次，每次间隔两秒；其他错误立即保留原退出码和诊断，连续占用也必须失败。不重新生成或覆盖映像，不跳过校验、签名、组件加载或架构检查，不修改正式权限及发布流程。
+
+本机实际运行 `python3 -m unittest tools.release.test_macos_signing.MacOSSigningTests.test_disk_image_verification_only_retries_temporary_resource_errors tools.release.test_macos_signing.MacOSSigningTests.test_disk_image_verification_accepts_a_real_synthetic_image`：2 项通过。故障注入分别验证一次成功、临时占用后成功、三次仍占用及损坏错误立即退出；另实际创建小型合成 UDZO 映像并调用同一验证函数，通过后由临时目录自动清理。随后执行 `python3 -m unittest discover -s tools/release -p 'test_*.py'`：34 项全部通过；`bash -n apple/Apps/DsmMac/package.sh` 和 `git diff --check` 通过。日志分别保留于移动忽略目录的 `m6a3-region-dmg-tests.log` 和 `m6a3-region-release-tests.log`。
+
+本次没有安装/启动主应用、操作真实 NAS、创建发布标签或发布产物。云端修复结论仍须看包含该改动的后续运行，不能用合成重试测试代替托管环境最终结果。

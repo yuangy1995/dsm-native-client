@@ -15,6 +15,46 @@ PACKAGE = ROOT / "apple/Apps/DsmMac/package.sh"
 
 
 class MacOSSigningTests(unittest.TestCase):
+    def test_disk_image_verification_only_retries_temporary_resource_errors(self):
+        source = PACKAGE.read_text()
+        function = re.search(r"^verify_disk_image\(\) \{\n.*?^\}", source, re.M | re.S).group()
+        function = function.replace("/usr/bin/hdiutil", "synthetic_hdiutil").replace("/bin/sleep 2", ":")
+        stub = '''
+synthetic_hdiutil() {
+    local count
+    count=$(cat "$VERIFY_COUNTER")
+    count=$((count + 1))
+    printf '%s' "$count" > "$VERIFY_COUNTER"
+    [[ "$1" == verify && "$2" == /synthetic/image.dmg ]] || return 99
+    if [[ "$VERIFY_MODE" == success || "$VERIFY_MODE" == recover && "$count" -eq 2 ]]; then return 0; fi
+    if [[ "$VERIFY_MODE" == corrupt ]]; then echo 'hdiutil: verify failed - image data corrupted' >&2; return 9; fi
+    echo 'hdiutil: verify failed - Resource temporarily unavailable' >&2
+    return 7
+}
+'''
+        for mode, code, attempts in [("success", 0, 1), ("recover", 0, 2), ("busy", 7, 3), ("corrupt", 9, 1)]:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                counter = Path(directory) / "attempts"
+                counter.write_text("0")
+                script = 'set -euo pipefail\nVERIFY_COUNTER="$1"\nVERIFY_MODE="$2"\n' + stub + function + '\nverify_disk_image /synthetic/image.dmg\n'
+                result = subprocess.run(["bash", "-c", script, "verify", str(counter), mode], capture_output=True)
+                self.assertEqual(result.returncode, code, result.stderr.decode())
+                self.assertEqual(int(counter.read_text()), attempts)
+        self.assertIn('verify_disk_image "$DMG_PATH"', source)
+
+    def test_disk_image_verification_accepts_a_real_synthetic_image(self):
+        source = PACKAGE.read_text()
+        function = re.search(r"^verify_disk_image\(\) \{\n.*?^\}", source, re.M | re.S).group()
+        with tempfile.TemporaryDirectory(prefix="lanstash-image-test-") as directory:
+            root = Path(directory)
+            content = root / "content"
+            content.mkdir()
+            (content / "synthetic.txt").write_text("Synthetic image verification fixture.\n")
+            image = root / "synthetic.dmg"
+            subprocess.run(["hdiutil", "create", "-srcfolder", str(content), "-format", "UDZO", str(image)], check=True, capture_output=True)
+            result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + function + '\nverify_disk_image "$1"\n', "verify", str(image)], capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+
     def test_distribution_architecture_matches_both_app_and_extension(self):
         source = (ROOT / "tools/release/verify_macos_distribution.sh").read_text()
         gate = source.split('case "$DMG_PATH" in\n', 1)[1].split('[[ -f "$APP_PROFILE_PATH" ]]', 1)[0]
