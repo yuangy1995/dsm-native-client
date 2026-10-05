@@ -95,9 +95,14 @@ final class MobileChatAudioUITests: XCTestCase {
         XCTAssertTrue(start.waitForExistence(timeout: 5)); start.tap()
         let stop = element("chat-voice-stop", app)
         XCTAssertTrue(stop.waitForExistence(timeout: 5)); stop.tap()
-        element("chat-voice-send", app).tap()
-        XCTAssertTrue(element("chat-compose-voice", app).waitForExistence(timeout: 8))
-        XCTAssertFalse(element("chat-voice-send", app).exists)
+        let send = element("chat-voice-send", app), compose = element("chat-compose-voice", app)
+        send.tap()
+        // iPad 弹窗后方的录音入口仍存在；等待原面板关闭且底层入口恢复可点击。
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            !send.exists && compose.exists && compose.isHittable
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 8), .completed)
+        XCTAssertFalse(send.exists)
         element("chat-more", app).tap(); element("chat-send-records", app).tap()
         XCTAssertTrue(app.navigationBars["Sent messages"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat-send-record-")).count, 1)

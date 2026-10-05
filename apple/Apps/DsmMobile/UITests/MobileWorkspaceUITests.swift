@@ -2900,16 +2900,19 @@ final class MobileWorkspaceUITests: XCTestCase {
     private func navigate(_ destination: String, title: String, in app: XCUIApplication) {
         // iPhone 的系统标签栏按本地化标题暴露，iPad 侧栏使用稳定标识。
         let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap() }
-        else if app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch.exists {
-            app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch.tap()
-            let item = app.staticTexts[title].firstMatch
-            XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
-        }
+        let sidebar = element("mobile.navigation.\(destination)", in: app)
+        let more = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch
+        // 开关重建导航后再确定入口，避免把短暂缺失的标签误判为侧栏布局。
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (tab.exists && tab.isHittable) || (sidebar.exists && sidebar.isHittable) || (more.exists && more.isHittable)
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        if tab.exists && tab.isHittable { tab.tap() }
+        else if sidebar.exists && sidebar.isHittable { sidebar.tap() }
         else {
-            let item = element("mobile.navigation.\(destination)", in: app)
-            XCTAssertTrue(item.waitForExistence(timeout: 5))
-            item.tap()
+            XCTAssertTrue(more.exists); XCTAssertTrue(more.isHittable); more.tap()
+            let item = app.staticTexts[title].firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 5)); XCTAssertTrue(item.isHittable); item.tap()
         }
     }
 

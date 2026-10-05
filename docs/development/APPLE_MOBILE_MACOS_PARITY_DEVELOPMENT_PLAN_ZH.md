@@ -129,6 +129,8 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 
 2026-10-05 新会话重新核对：`main` 与远端同为 `bf68dc96`，工作区干净。交接提交 Apple Build 的 shared-macos、iPhone、iPad 均仍运行，不能记为通过。本地可先推进 M6，完整运行结束前不以新推送取消它。
 
+2026-10-06 交接后的 `83af8606` 云端整轮已结束并失败；iPhone/iPad 的实际失败均已核对并完成本机修复与两端复测。每设备完整测试拆为两个互补作业，实际枚举确认 1364 单元与 304 UI 无遗漏、无重复；包含修复的新云端完整结论仍待运行，不能由本地通过推定。详情见[等待修复与测试分组](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-06-移动-ipad-云端等待修复与全量测试分组)。
+
 本阶段按 `NasAdministrationModel.swift` 的 `NasSettingsPage` 21 项推进。证据前缀为 `apple/Apps/DsmMac/Sources/`；`NasAdministrationView.swift`（下表简称 View）与 `NasAdministrationModel.swift`（Model）共同确定实际能力。接口只复用 `NasSettingsRepository` / `FileStationShareAccessRepository` 和已有端点记录，未发现方法不得猜测。两端业务一致，iPhone 导航栈、iPad 可用宽度分栏，编辑采用触控表单。每页保留独立加载、空内容、筛选空、错误和重试。
 
 | Mac 页 / 证据 | 移动等价结果与交互 | 契约 / 安全 | 当前切片与证据 |

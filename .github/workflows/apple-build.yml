@@ -34,7 +34,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [shared-macos, iPhone, iPad]
+        include:
+          - target: shared-macos
+          - target: iPhone-workspace
+            family: iPhone
+            suite: workspace
+          - target: iPhone-modules
+            family: iPhone
+            suite: modules
+          - target: iPad-workspace
+            family: iPad
+            suite: workspace
+          - target: iPad-modules
+            family: iPad
+            suite: modules
     steps:
       - name: 检出仓库
         # v7.0.0
@@ -110,7 +123,7 @@ jobs:
         if: matrix.target != 'shared-macos'
         shell: bash
         env:
-          MOBILE_FAMILY: ${{ matrix.target }}
+          MOBILE_FAMILY: ${{ matrix.family }}
         run: |
           xcrun simctl list devices available --json > "$RUNNER_TEMP/mobile-simulators.json"
           python3 - "$RUNNER_TEMP/mobile-simulators.json" "$MOBILE_FAMILY" >> "$GITHUB_ENV" <<'PYTHON'
@@ -149,19 +162,31 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DsmMobile-build" -jobs 3 \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
 
-      - name: 运行全部移动单元与界面回归
+      - name: 分组运行全部移动单元与界面回归
         if: matrix.target != 'shared-macos'
         working-directory: apple/Apps/DsmMobile
         shell: bash
         env:
-          MOBILE_FAMILY: ${{ matrix.target }}
+          MOBILE_TARGET: ${{ matrix.target }}
+          MOBILE_SUITE: ${{ matrix.suite }}
         run: |
+          # 每台设备两组互补覆盖全部测试，避免单个托管作业超过六小时。
+          case "$MOBILE_SUITE" in
+            workspace)
+              test_selection=(-only-testing:DsmMobileUITests/MobileWorkspaceUITests)
+              ;;
+            modules)
+              test_selection=(-only-testing:DsmMobileTests -only-testing:DsmMobileUITests -skip-testing:DsmMobileUITests/MobileWorkspaceUITests)
+              ;;
+            *) echo "未知移动测试分组：$MOBILE_SUITE" >&2; exit 1 ;;
+          esac
           xcodebuild test-without-building \
             -project DsmMobile.xcodeproj -scheme DsmMobile \
             -destination "platform=iOS Simulator,id=$MOBILE_DEVICE" \
             -derivedDataPath "$RUNNER_TEMP/DsmMobile-build" \
             -parallel-testing-enabled NO \
-            -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_FAMILY.xcresult"
+            -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET.xcresult" \
+            "${test_selection[@]}"
 
       - name: 上传移动端测试结果
         if: always() && matrix.target != 'shared-macos'

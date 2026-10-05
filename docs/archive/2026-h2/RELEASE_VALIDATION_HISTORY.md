@@ -2364,3 +2364,34 @@ git diff --check
 R1 iPad 与 R3 iPhone 分别使用相同测试选择，替换对应设备 ID 和结果包前缀；R2 完整命令见前节 CI/聊天修复记录。真实 NAS、路由器、证书变化、重新连接与锁屏/辅助功能按主计划四项具体 `PENDING_USER_VALIDATION`，源码未实现的其他 M6/M7/M8 不归入待验。
 
 本片提交前，旧 Apple Build `37300934405` 的 iPad 于 2026-10-05 17:02:57 UTC 结束并失败，整轮已终止。开始读取 iPad 实际日志，不能因 iPhone 修复已本地通过便推定 iPad 同因；远程访问源码与当前环境验收按本节独立交付，完成剩余 CI 故障核对后再正常推送 main。
+
+## 2026-10-06 移动 iPad 云端等待修复与全量测试分组
+
+Apple Build `37300934405`（`83af8606`）现已完整结束并失败。[iPad 作业](https://github.com/yuangy1995/dsm-native-client/actions/runs/37300934405/job/111733215131)执行 1304 项单元、4 条既有跳过，其中一项产生两条失败断言；273 项实际 UI 中五项失败。iPhone 的两项导航失败及聊天停止边界已由上一节修复；共享 macOS 的 DMG 短暂占用另由 `f0432d7f` 修复。不能把任一本机结果写成旧云端已通过。原 iPad 作业日志保留 `apple/Apps/DsmMobile/build/m6b3-ci-pad.log`，无云端截图下载证据。
+
+本次逐项根因与改动：
+
+- DDNS 瞬时动作测试等到持久记录退出请求阶段就断言，但生产模型随后还要刷新并把未知瞬时动作转为可再次显式发起。测试改等可观察的整个操作结束；仍断言未知结果、允许新的显式操作和仅发送一次原请求。
+- 语音断网测试错误地把 iPad 弹窗后方录音入口仍然存在视为弹窗已关闭。现等待原发送按钮实际消失、底层入口恢复可点击；仍断言原发送入口不存在且恢复记录恰好一条。生产录音的记录移交与关闭流程保持原实现。
+- 下载批量编辑和工作区三项失败均发生在启用模块后立即判断导航布局。与已修复 iPhone 情况一致，测试在原五秒范围内等待实际入口可点击，再选择标签栏、侧栏或系统“更多”；保留全部业务断言及多模块入口覆盖。
+
+原 iPad 的 UI 部分耗时 19864 秒，含构建和上传接近六小时；当前新增功能已使 UI 数量从 273 增至 304。[GitHub 官方托管作业限制](https://docs.github.com/en/actions/reference/limits)为每项六小时，不能仅把 timeout 调高。Apple Build 现保留一个 shared-macos 作业，每台移动设备各两个互补作业：workspace 运行 `MobileWorkspaceUITests`，modules 运行全部单元及其余 UI。工具链、签名、权限、Runner、失败汇总和测试本身的覆盖范围均不变；每组结果附件使用独立名称。没有为触发验证创建分支或 PR。
+
+`xcodebuild -enumerate-tests` 对已构建测试产物实际枚举：完整 **1668 项 = 1364 单元 + 304 UI**；workspace **159 UI**，modules **1364 单元 + 145 UI**。程序比较两个集合互不重叠且并集严格等于全部 1668 项。三份枚举 JSON 与日志位于忽略目录 `apple/Apps/DsmMobile/build/m6-ci-enumeration-{all,workspace,modules}.*`。新增三项工作流回归直接执行工作流里的命令，通过替身记录参数并校验每台设备的完整类覆盖、测试失败退出码 65 原样保留、未知分组零执行并失败；它们不代替 Xcode 实际测试。`python3 -m unittest discover -s tools/release -p 'test_*.py'` **37 项通过**，YAML 解析、双语资源/硬编码（6502/2188/3402）、请求 179+1、私有样本 29/文档引用 48、文档及差异检查通过。
+
+移动 `m6-ci-final-build.log` 构建成功。两端完整单元均 **1364 项、4 条既有跳过、0 失败**。针对五项云端失败的 UI 加六模块导航，两端均 **6 项全部通过**，两个命令均 exit 0。结果包为 `m6-ci-phone-final.xcresult` 和 `m6-ci-pad-final.xcresult`。此次只修改自动化等待和云端分组，没有新的共享/Mac 业务源码变化；其最新完整回归沿用上一节 M6b3 已完成结果，不声称重新执行。独立集成复核确认等待条件覆盖真实完成边界，未增加跳过、放宽结果断言或隐藏失败；测试分组经实际枚举及失败注入校验。包含全部修复的下一轮云端完整结果仍待运行，代码推送不等同门禁通过。
+
+实际主要命令：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6-ci-pad-final.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileChatAudioUITests/test语音发送断网保留记录并关闭原录音发送入口 -only-testing:DsmMobileUITests/MobileDownloadEditUITests/test多选逐项保存清楚显示部分拒绝 -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test条件相册未知重启限制重复创建 -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片偏好未知重启保留恢复入口与保存限制 -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test默认仅文件与App设置并按当前账号筛选开关 -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test管理员六种模块均需开启且设置始终可达 -parallel-testing-enabled NO
+python3 -m unittest discover -s tools/release -p 'test_*.py'
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+iPhone 使用相同测试选择，设备 ID 为 `8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`、结果包改为 `m6-ci-phone-final.xcresult`。三组实际枚举命令使用相同 iPhone 目标与派生路径，附 `-enumerate-tests -test-enumeration-style flat -test-enumeration-format json -test-enumeration-output-path <对应结果>`；完整组不添加测试筛选，另两组采用工作流对应参数。

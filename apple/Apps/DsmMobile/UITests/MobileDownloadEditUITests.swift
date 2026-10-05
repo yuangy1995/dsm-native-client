@@ -126,8 +126,14 @@ final class MobileDownloadEditUITests: XCTestCase {
         navigate("downloads", chinese ? "下载管理" : "Downloads", app)
     }
     private func navigate(_ id: String, _ title: String, _ app: XCUIApplication) {
-        if app.tabBars.buttons[title].exists { app.tabBars.buttons[title].tap() }
-        else { let item = element("mobile.navigation.\(id)", app); XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap() }
+        let tab = app.tabBars.buttons[title], sidebar = element("mobile.navigation.\(id)", app)
+        // 模块启用会重建原生导航，等待实际目标入口完成呈现并可点击。
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (tab.exists && tab.isHittable) || (sidebar.exists && sidebar.isHittable)
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        if tab.exists && tab.isHittable { tab.tap() }
+        else { XCTAssertTrue(sidebar.exists); XCTAssertTrue(sidebar.isHittable); sidebar.tap() }
     }
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func scrollTo(_ item: XCUIElement, _ app: XCUIApplication) {
