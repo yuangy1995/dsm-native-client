@@ -107,14 +107,14 @@ struct MobileDownloadCreateTaskView: View {
                     .disabled(!canSubmit)
                 }
             }
-            .sheet(isPresented: $choosingFolder) {
-                if let fileRepository {
-                    MobileFileFolderPicker(repository: fileRepository) { path in
-                        guard isEditing, path.hasPrefix("/"), path.count > 1 else { return }
-                        let relative = String(path.dropFirst())
-                        guard DownloadTaskDestinationChange.validDestination(relative) else { return }
-                        destination = relative
-                    }
+        }
+        .sheet(isPresented: $choosingFolder) {
+            if let fileRepository {
+                MobileFileFolderPicker(repository: fileRepository) { path in
+                    guard isEditing, path.hasPrefix("/"), path.count > 1 else { return }
+                    let relative = String(path.dropFirst())
+                    guard DownloadTaskDestinationChange.validDestination(relative) else { return }
+                    destination = relative
                 }
             }
         }

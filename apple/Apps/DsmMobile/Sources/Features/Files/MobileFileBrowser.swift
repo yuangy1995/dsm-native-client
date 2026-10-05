@@ -1572,7 +1572,8 @@ struct MobileFileSearchModifier: ViewModifier {
     func body(content: Content) -> some View {
         if enabled {
             if horizontalSizeClass == .regular {
-                content.safeAreaInset(edge: .top) {
+                // iPad 的 List 可能不继承外层安全区插入量；使用实际布局空间避免搜索栏覆盖首行。
+                VStack(spacing: 0) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
                         TextField(L10n.string("ui.9c8bd1565def7849"), text: searchBinding)
@@ -1591,6 +1592,7 @@ struct MobileFileSearchModifier: ViewModifier {
                             .accessibilityLabel(L10n.string("ui.9c8bd1565def7849"))
                     }
                     .padding(.horizontal).padding(.vertical, 4).background(.bar)
+                    content
                 }
             } else {
                 content.searchable(text: searchBinding, placement: .navigationBarDrawer(displayMode: .always),
