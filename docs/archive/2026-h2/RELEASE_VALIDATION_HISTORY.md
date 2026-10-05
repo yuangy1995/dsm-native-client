@@ -2442,3 +2442,71 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 最终静态检查通过：Apple 6507/Android 2188/Windows 3402 条双语资源与硬编码扫描、179+1 请求契约、29 组脱敏 Fixture/48 项私有文档引用及文档/差异检查。共享和 Mac 最终回归后只改移动界面/合成场景与其测试，未再次修改共享或桌面源码，不重复宣称这些检查覆盖真实 NAS 行为。
 
 最终两端命令均 exit 0：各 **1376 项完整单元、4 条既有跳过、0 失败，以及 2 项深色实际 UI 全部通过**；其中不完整数据用例实际覆盖非空截断、旧格式空摘要、未知压缩字段三种场景。两端中文大字编辑/确认及浅色保存回读截图均已实际查看，保留 `m6c1-preview/` 的合成截图；辅助功能树导出和临时附件目录已在检查后清理。两台模拟器均恢复浅色并读取确认。此片没有真实 NAS 写入、正式签名发布、安装 macOS 包或变更 Windows/Android 代码。
+
+## 2026-10-06 移动 M6d1 计划任务管理
+
+基线为本地 `886247d3`，main 领先 origin/main 一项已验证提交，初始工作区干净。前一批 Apple Build `37349262879`（`b5a7f42c`）的共享/macOS 已通过，四组移动完整回归仍在运行，本片先完成本地实现，不以新推送取消该轮。任务管理复用已有 TaskScheduler list v3、get/create/set v4、run/set_enable/delete v3 及 EventScheduler result_list/result_get_file v1 编码；没有新增私有 API、请求参数、依赖、权限或 App 身份变化。
+
+新增任务目录搜索/状态筛选、完整脚本草稿、创建/编辑/启停/运行/删除确认、主动查看记录和选中记录完整输入/输出。保存时保留已有日期与重复策略，无法解释的原星期只可原样保留；启用/脚本运行必须绑定用户预览过的完整详情，只有 v3 时仍允许按目标许可停用，非脚本任务仅按显式运行许可操作。运行接受回执不等于脚本成功，不查询历史冒认本次执行。恢复文件只含摘要、数字身份、动作/阶段/回执及创建前编号集合，写前保存、未知不重放、跨账号迟到和损坏保护均保留。
+
+独立集成与只读对抗复核由当前负责人在实现之外执行：检查旧 Mac 请求兼容与新旧入口同目标互斥、原列表/详情双基线、未知开关、未解释星期保留、v3 停用、非脚本许可、接受/缺回执、编号复用、完整输出绑定、确认后的权限撤销、跨连接代次、提交前后取消、存储失败及 TLS 连接身份异常。新增 **20 项 NasScheduledTaskFlowTests、19 项 MobileScheduledTasksTests 和 10 项 MobileScheduledTasksUITests**；没有删除原断言或新增跳过。创建成功的本地记录也必须保留接受回执，不允许损坏记录解除未知操作保护。
+
+共享新增测试最初编译分别因在 XCTUnwrap 自动闭包中 await、ApiCapability 初始化遗漏 requestFormat 失败，修正测试调用后聚焦 203 项通过；补齐 TLS 与预览/版本门后 205 项通过。最终 `m6d1-shared-full.log` 为 **2824 项 XCTest、172 条既有跳过、0 失败，以及 12 项 Swift Testing 全通过**。`m6d1-macos.log` 为 BUILD SUCCEEDED，`lipo` 实测 `x86_64 arm64`。这些结果覆盖最终共享源码，之后仅调整移动界面、测试定位和移动恢复记录校验；未安装或启动 macOS App。
+
+移动构建 R1 成功；R2 因 UI 测试使用不存在的查询属性 lastMatch 失败，改为从可点击按钮中选择当前弹窗后 R3 成功。首轮两端完整单元各 **1395 项、4 条既有跳过、0 失败**。十项 UI 中 iPhone 一项通过、九项失败，iPad 十项失败。封闭结果包导出的真实截图与辅助功能树证实：iPhone 详情已出现，但测试先等待长正文之后尚未生成的操作按钮；iPad NAS 分类列表的中心被主侧栏覆盖，原滑动落在主侧栏，分类列表未滚动。详情去掉重复身份摘要并把操作移到长正文前，测试等详情实际就绪；分类滑动改用其可见区域。没有把内容可见等同于控件已能操作。
+
+R4 构建成功。第二轮两端完整单元仍各 **1395 项、4 条既有跳过、0 失败**。iPhone 十项 UI 都因测试按首行 storage 定位列表、该行滚出后查询失效而失败；iPad 已能进入并完成常规任务操作，中文大字和屏外结果仍暴露弹窗滚动定位问题。后续给 NAS 分类/任务列表/详情表单增加稳定标识，测试在目标尚未生成时滚动当前可见表单，不在弹窗外操作；脚本预览也先滚入可见区域。完整两端复测结果在下文追加，当前中间轮次不能表述为全通过。
+
+主要实际命令（结果路径均为忽略的 `apple/Apps/DsmMobile/build/`）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'NasScheduledTaskFlowTests|DsmNasAdministrationRepositoryTests'
+swift test --package-path apple --jobs 2
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d1-phone-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileScheduledTasksUITests
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+iPad 使用相同测试选择，目标 ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果包改为 `m6d1-pad-r2.xcresult`；首轮两端对应 `r1`。当前静态资源检查为 Apple 6568/Android 2188/Windows 3402 条，双语、占位符和硬编码扫描通过；179+1 请求、29 组脱敏 Fixture/48 项私有文档引用、文档与差异检查通过。真实脚本执行、邮件通知、NAS 权限/断网、锁屏文件保护和完整辅助功能未验证，移动主计划列明四项具体 `PENDING_USER_VALIDATION`。Windows/Android 仅登记语义影响，真实 API 环境证据不提升。
+
+R2 iPad 在七项 UI 已结束（四项通过、三项失败）后主动中断：共同滚动定位缺陷已确认，剩余三项留给修正后完整复测。Xcode 结束时因动作日志三十秒内未封闭而 exit 73，因此不把该结果包作为完整测试报告；文本日志及成功导出的首个失败辅助功能树仍保留证据。树中详情 Form 范围为 x=120…700，而原测试在 x=808 滑动，确实落在弹窗外。R5 构建成功，随后两端使用同一完整测试选择重跑，结果路径改为 `m6d1-phone-r3.xcresult`、`m6d1-pad-r3.xcresult`。
+
+R3 两端完整单元均 **1395 项、4 条既有跳过、0 失败**。十项 UI 中 iPhone 九项通过、一项失败，iPad 四项通过、六项失败，两个命令均 exit 65。iPad 测试错误地用容器本身的 isHittable 过滤可滚动 Form；容器可以不可点击、内部按钮仍能操作，测试因此再次回退到弹窗外。改用辅助功能顺序中当前最上层列表，仍要求最终目标存在且可操作，导航栏按实际范围计算遮挡。iPhone 最后一项停在脚本替换，真实录屏显示长按 TextEditor 空白处只移动光标，没有出现全选菜单；按当前 Xcode SDK 的 iOS 键盘输入接口使用系统 Command-A，继续断言完整替换内容，不降低恢复或未知状态断言。新建测试按表单从上到下填写，保留全部字段、确认/取消和回读检查。
+
+详情中的操作结果同时移到按钮下方、长脚本之前，避免用户滚完整段脚本才能看到结果。锁定 XcodeGen 再生成前后工程 SHA256 同为 `bac52963160de70e49b7afb0cb4c1f06487802f17964d41120f2c71bcde8b4b1`。后续定向复测覆盖这些修改、两端最终完整单元及深色中文大字；已通过的共享/Mac 源码没有变化。
+
+R6 构建成功后两台模拟器设为深色。`m6d1-phone-final` 命令 exit 0，完整单元 **1395 项、4 条既有跳过、0 失败**，中文大字、未知运行、权限拒绝、完整新建和编辑重启恢复 **5 项 UI 全通过**。结合 R3，十项新 UI 均已有 iPhone 通过证据。`m6d1-pad-final` 完整单元同为 **1395 项、4 条既有跳过、0 失败**；中文大字、未知运行、权限拒绝和完整新建四项通过，启停/运行/删除链在脚本预览定位失败，最后的编辑恢复未执行完。该用例出现多次六十秒的模拟器动画等待；实际截图显示编辑页和未知操作记录仍在，但测试把滚动定位到了背景侧栏。主动结束该轮，Xcode 动作日志未及时封闭而 exit 73，不把最后一项或整轮记为通过。
+
+嵌套详情和确认页有相同的脚本字段标识，且全局列表枚举顺序不能代表当前弹窗。最终自动化使用确认页/编辑页/详情页/目录的明确标识，在同一表单内查找和滚动，确认页补唯一容器标识；不再按全局第一个字段或最后一个列表猜测。iPad 文本替换沿用既有表单测试的末尾点击/退格方式，合成单行原值和最终完整文本继续严格断言；iPhone 保留已通过的系统全选。重新启动专用 iPad 模拟器后 R7 构建成功，继续深色定向复测两项编辑/嵌套流程及完整单元，不修改业务请求或降低未知恢复断言。
+
+R6 使用相同完整单元选择，iPhone 的五项 UI 为中文大字、未知运行、权限拒绝、完整新建和编辑恢复；iPad 另加启停/运行/删除链。最终 R7 的实际命令：
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d1-phone-focused.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test中文大字编辑与脚本风险确认可取消 -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test编辑未知重启后完整回读恢复
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d1-pad-focused.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test启停运行删除各自确认且运行只显示请求已发送 -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test编辑未知重启后完整回读恢复
+```
+
+R7 两端完整单元仍各 **1395 项、4 条既有跳过、0 失败**。iPad 两项定向 UI 全通过，命令 exit 0，启停/运行/删除链 133 秒，编辑未知重启恢复 155 秒；十项新 UI 至此均有 iPad 通过证据。iPhone 中文大字通过，但系统全选快捷键在该轮未选中文本，输入被追加，完整值断言准确拦下，命令 exit 65。最终将单行合成输入统一为已在 iPad 通过的末尾点击/退格，生产源码不再变化；R8 构建成功，只补跑受影响的 iPhone 搜索替换和编辑恢复，保留此前完整单元与所有业务断言：
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d1-phone-input.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test编辑未知重启后完整回读恢复 -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test目录五态筛选和未知开关
+```
+
+R8 的目录五态/搜索替换通过，编辑用例的完整文本断言发现 iPhone TextEditor 点击后光标仍在原值开头，故该命令 exit 65。最终只对这个已复现的文本输入场景使用方向键明确移至单行原值末尾，再退格输入；普通文本框和 iPad 沿用已通过的方式。R9 构建成功，下列最后一项补验 **通过、命令 exit 0，耗时 143 秒**，没有新增跳过或绕过文本/持久恢复断言：
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d1-phone-editor.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test编辑未知重启后完整回读恢复
+```
+
+本片十项新实际 UI 在 iPhone/iPad 均有通过证据，不能把多个轮次说成单轮十项全绿，也不代表全部既有 UI 已在本地重跑。最终业务源码的两端完整单元各 1395 项（4 条既有跳过）、共享 2824 项 XCTest（172 条既有跳过）及 12 项 Swift Testing、Mac 双架构均已通过。浅色保存/确认、两端深色中文大字编辑/确认与恢复截图在 `m6d1-preview/` 保留并实际检查；两台模拟器均已恢复浅色并读取确认。真实 NAS 执行、通知邮件、权限/网络、锁屏及完整辅助功能仍按移动账本验收。
+
+结束本片时，上一批 Apple Build `37349262879` 的共享/macOS 与 iPhone-workspace 已通过；iPhone-modules 返回 1364 项单元通过（4 条既有跳过）、145 UI 中 9 项失败，iPad-workspace 也返回失败，iPad-modules 尚运行。新失败的日志/附件另行排查，本片未推送的代码不在该云端运行中，也不能以本机通过覆盖这些云端失败。
+
+最终静态检查再次通过：6568/2188/3402 条双语资源及硬编码扫描、179+1 请求契约、29 组脱敏 Fixture/48 项私有文档引用、文档与差异检查。本片临时辅助功能树、录屏提帧及导出日志已清理；正式测试结果与十二张合成预览保留。新增云端失败的证据保留在独立忽略目录继续排查，没有混入提交或据此声称云端通过。

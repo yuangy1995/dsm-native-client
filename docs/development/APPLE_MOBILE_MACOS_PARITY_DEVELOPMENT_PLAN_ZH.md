@@ -77,7 +77,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M6 21 页读取与普通设置 | NasAdministrationView、NasAdministrationModel | 分类设置/并列详情；系统日志存储区域代理等；内部写 | M6a1–M6a3 已接五项读取、存储/日志及区域时间/DDNS，M6b2 服务设置已完成；其余逐页继续，仅编辑实际支持字段 |
 | M6 账号、群组、网络、安全 | NasAdministrationView | 分步表单/当前账号保护；User/Group/Ethernet/FileServ/Security；高风险 | M6b1 账号/群组与 M6b2 文件服务/终端/代理已接并通过两端验收；M6b3 远程访问已完成；网卡、安全继续后续切片 |
 | M6 硬件、UPS、内存、电源计划 | PowerScheduleEntryEditor、NasAdministrationView | 原生编辑器；Hardware/UPS/ZRAM/PowerSchedule；系统写 | M6c1 内存压缩与电源计划管理已接；硬件/UPS 待后续，未知字段不补 false |
-| M6 计划任务、连接、电源 | NasAdministrationModel | 后果确认与断连恢复；TaskScheduler/CurrentConnection/System；高风险 | 缺操作；接受不代表脚本完成或已重启，未知不重发 |
+| M6 计划任务、连接、电源 | NasAdministrationModel | 后果确认与断连恢复；TaskScheduler/CurrentConnection/System；高风险 | M6d1 计划任务完整管理、记录/输出与持久恢复已接；连接和即时电源继续 M6d2。接受不代表脚本完成或已重启，未知不重发 |
 | M6 套件中心 | PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 安装准备/卷/许可/进度、更新/SPK/设置；Package；内部写 | 只有只读列表；提交前取消丢弃迟到结果，提交后关闭不撤销任务 |
 | M7 容器生命周期/日志 | ServiceManagementView、ServiceManagementModel | 详情及操作确认；Docker 稳定身份；高风险 | 只有只读投影；套件权限不等同 DSM 管理员，写后回读 |
 | M7 映像、网络、项目 | ContainerImagePullModel、ServiceManagementView | 搜索/tag/拉取、网络/项目表单；Registry.search v1；内部写 | 缺入口；读取暂失保留任务，明确 1202 失败不再卡住 |
@@ -150,7 +150,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 | region / Model.saveRegion | 区域格式/时区/时间源/校时 | dsm-region-time-settings；管理写 | M6a3 已接完整表单与分步恢复，两端实际操作及当前环境验收通过 |
 | ddns / Model.saveDDNS、testDDNS | 服务商/条目及明确提交；不持久保存口令 | dsm-ddns-settings；凭据/网络写 | M6a3 已接完整管理与恢复，两端实际交互通过 |
 | packages / PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 列表/目录、卷、许可、SPK、更新、进度、来源和设置 | dsm-package-control/installation；套件写 | 既有摘要；完整流程待 M6e |
-| tasks / Model.saveTask、runTask、loadTaskResults | 草稿、启停/执行/删除、结果与输出 | dsm-task-scheduler；脚本高风险写 | 既有摘要；完整流程待 M6d |
+| tasks / Model.saveTask、runTask、loadTaskResults | 草稿、启停/执行/删除、结果与输出 | dsm-task-scheduler；脚本高风险写 | M6d1 完整管理、记录/输出和恢复已接，十项新实际 UI 两端都有通过证据；真实执行待验 |
 | accounts / Model.saveAccount、saveGroup | 账号/群组表单与当前账号保护 | dsm-account-directory；权限高风险写 | M6b1 完整管理与恢复已接，两端单元/实际 UI 及共享/Mac 回归通过 |
 | shareAccess / View 共享访问 | 当前账号可见共享权限摘要与搜索 | FileStation.List / dsm-share-access；只读 | M6a1 读取/两端交互通过；不冒充完整 ACL 管理 |
 | processes / View 系统活动 | 进程/服务组快照、搜索、局部失败与截断 | dsm-system-processes；只读 | M6a1 读取/两端交互通过；终止/信号明确非目标 |
@@ -297,6 +297,31 @@ Apple 共享读取只增补本管理入口所需的单项失败信息，旧 Mac 
 | 可撤销权限、改变原清单、切换账号与中断网络的测试环境 | 保存前原值或 NAS 时区改变后拒绝覆盖；两步之间撤销权限只保留首步。断网/关闭 App 后只读恢复，未提交后项不自动补写，当前开关被他处改变后不能继续旧标记 | 回传操作阶段、结果类别和有无重复请求的脱敏结论；不回传操作记录文件、账号、会话或抓包。未知结果可通过 DSM 管理，原记录继续保留 |
 | 两端真机锁屏/低剩余空间、VoiceOver、大字及 iPad 键盘分屏 | 记录无法写入时零提交；解锁后重新读取。条目表单、星期、筛选、风险确认、取消与还原都可访问，关闭子弹窗回到原草稿 | 设备/系统及脱敏失败步骤或合成截图；真实文件保护和完整辅助功能仍需设备验证 |
 
+
+### M6d1 计划任务管理
+
+2026-10-06 从本地 `886247d3` 开始，main 工作区干净，领先 origin/main 一项已验证提交；上一批 Apple Build 共享/macOS 已通过，四组移动完整回归仍运行，本片先本地推进。基线逐项阅读 Mac Model 的 loadTaskDraft/saveTask/setTaskEnabled/runTask/deleteTask/loadTaskResults/loadTaskResultOutput 与 View 的 ScheduledTaskList、ScheduledTaskEditor、ScheduledTaskResultsSheet，以及共享 TaskScheduler/EventScheduler 实际请求。
+
+| 用户结果 / macOS 证据 | iPhone/iPad 原生转换与等价语义 | 契约、安全和验证边界 |
+| --- | --- | --- |
+| 任务目录、详情与编辑器 | 搜索/状态筛选、触控详情、新建/编辑脚本任务、时分/星期/执行用户/通知；保留 NAS 原日期和重复策略。单栏导航与可用宽度分栏共用完整业务，不移植桌面网格/右键 | list v3、get/create/set v4；脚本与系统权限写，风险 critical。保存前原列表及完整详情双基线确认；未知字段不猜值。源码及当前环境验收完成，真实 NAS 写入待验 |
+| 启用/停用、执行与删除 | 原生后果确认，执行/启用前展示并绑定脚本原文；非脚本任务仅按显式 can_run 提供运行，编辑/删除保持原 can_edit 与类型限制 | run/set_enable/delete v3。当前管理员和目标许可、同目标跨动作防重；接受只代表请求已发送，不能宣称脚本成功，未知运行不重放 |
+| 运行记录及选中记录的输入/输出 | 原生记录清单、选择后查看全文、可选择复制；不预取所有输出，切换账号/关闭详情清除正文 | EventScheduler result_list/result_get_file v1；按当前任务身份及唯一名称绑定，读取失败不变空记录，不自动执行正文 |
+
+单一修改范围为共享 Core/Network 的兼容增量与测试、移动计划任务模型/表单/受保护记录、必要组合根与路由、合成场景/测试、双语资源和生成工程及本片文档。复用既有实际请求编码，不新增 API 或猜测参数；旧 Mac 调用和已发布数据保持，共享增量执行完整共享/Mac 回归。Windows/Android 只登记影响，不修改实现；本片不接连接断开、即时电源、套件及仍待例外授权的三个 Mac 设置反馈分支。
+
+沿用已授权 M0–M8 隔离恢复范围，计划任务记录独立保存账号/目标摘要、动作、数字 ID、创建前已有 ID 集合、阶段及回执；不保存任务名称、执行用户、脚本、通知地址或输出正文。创建必须有接受回执、唯一新增候选及完整详情一致，编辑/启停必须完整回读；删除需完整目录中原数字身份消失。未知运行保持防重，只允许查看记录及在 DSM 中处理；重启不自动发送。回滚停用此入口并保留恢复记录与原登录配置，无主 App 身份、权限或依赖变化。当前环境行为、两端实际 UI 和独立集成/对抗复核已完成，真实任务不用于自动写测试。
+
+共享 2824 项 XCTest（172 条既有跳过）及 12 项 Swift Testing、Mac 双架构构建通过。两端完整单元各 1395 项（各 4 条既有跳过）、十项新实际 UI 均有通过证据，浅深色及中文大字截图已检查。独立复核覆盖原任务/完整脚本、逐次权限、持久记录失败、未知不重放、编号复用、跨账号迟到和输出身份绑定；预检与写入不冒充跨客户端原子保护。具体命令、中间失败和最终定向结果见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-06-移动-m6d1-计划任务管理)。
+
+`PENDING_USER_VALIDATION`（只包含本片已实现能力）：
+
+| 前置条件 | 操作与预期 | 脱敏反馈及影响范围 |
+| --- | --- | --- |
+| 已记录 DSM 版本、可维护测试 NAS、管理员、专用可丢弃脚本任务；保留独立 DSM 入口 | 新建时先保持停用，检查取消/保存、名称、执行用户、脚本、时分/星期和通知；与 DSM 完整详情对照，未编辑的日期/重复策略不变。分别启用/停用和删除，原任务被其他客户端修改后旧确认不能覆盖 | 版本、权限类别、动作阶段和脱敏字段差异；不提供任务名称、脚本、账号、邮件或原响应。脚本可能以指定用户权限改变文件和系统，须由用户自行选择无害测试内容 |
+| 专用无害任务、明确允许运行、可观察的执行记录 | 立即运行前核对显示内容；取消零执行，确认后仅显示请求已发送，主动读取当次记录与完整输出。中断响应或关闭 App 后不自动再次执行，旧成功记录不能把未知运行变成成功 | 版本、请求/记录数量、结果类别和脱敏步骤，不回传输出或脚本正文。实际脚本执行与服务影响不能由模拟器证明 |
+| 可撤销权限、切换账号与中断网络的测试环境 | 确认后撤销权限不写；断网后仅回读原目标。创建缺接受回执不按同名认领，删除后相同数字编号被替换不能误报消失，未完成操作不能通过反向操作或清记录绕过；旧账号迟到结果不进入新账号页面 | 动作阶段、状态类别、是否重复请求的脱敏结论；不回传恢复文件、地址、会话或抓包。仅影响对应任务管理入口 |
+| iPhone/iPad 真机锁屏/低剩余空间、VoiceOver、最大动态文字及 iPad 键盘分屏 | 写前记录不可保存时零提交；解锁后恢复读取。表单、长脚本、风险确认、记录及长输出均可滚动/选择/关闭，切换账号不保留原正文 | OS/设备类型、控件和脱敏失败步骤或合成截图；系统文件保护、通知邮件和完整辅助功能仍待真机验收 |
 
 ### M6a3 区域时间与 DDNS
 
