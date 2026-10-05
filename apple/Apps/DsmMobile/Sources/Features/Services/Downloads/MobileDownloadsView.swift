@@ -5,12 +5,14 @@ import UniformTypeIdentifiers
 
 struct MobileDownloadsView: View {
     @Bindable var model: MobileDownloadsModel
+    var fileRepository: (any MobileFileBrowsing)? = nil
     @State private var selectedTask: DownloadStationTask?
     @State private var isShowingCreateTask = false
     @State private var isShowingBTSearch = false
     @State private var isImportingTaskFile = false
     @State private var isSelectingTasks = false
     @State private var isShowingControls = false
+    @State private var isShowingSettings = false
 
     var body: some View {
         MobilePageStateView(
@@ -44,6 +46,9 @@ struct MobileDownloadsView: View {
         }
         .sheet(isPresented: $isSelectingTasks) { MobileDownloadSelectionSheet(model: model) }
         .sheet(isPresented: $isShowingControls) { MobileDownloadControlRecordsView(model: model) }
+        .sheet(isPresented: $isShowingSettings) {
+            MobileDownloadSettingsView(model: model.settings, fileRepository: fileRepository).id(model.settings.activation)
+        }
         .fileImporter(
             isPresented: $isImportingTaskFile,
             allowedContentTypes: mobileDownloadTaskFileTypes,
@@ -131,6 +136,13 @@ struct MobileDownloadsView: View {
                     minHeight: MobileMetrics.minimumTouchTarget
                 )
                 .accessibilityHint(L10n.string("mobile.downloads.create.menu.hint"))
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { isShowingSettings = true } label: {
+                    Label(L10n.string("ui.f988df886e7d7e73"), systemImage: "gearshape")
+                }
+                .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
+                .accessibilityIdentifier("downloads.settings")
             }
         }
     }

@@ -194,6 +194,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private let baseURL: URL
     private let client: DsmAPIClient
     private let transport: any DsmHTTPTransport
+    private var activeDownloadSettings = false
+    private var pendingDownloadSettings: [DownloadSettingsField.Group: DownloadSettingsChange] = [:]
     private var activeDownloadControlKeys: Set<DownloadTaskControlKey> = []
     private var pendingDownloadControlReviews: [DownloadTaskControlKey: DownloadTaskControlReview] = [:]
     private var activeDownloadCreateKeys: Set<DownloadTaskCreateKey> = []
@@ -492,6 +494,95 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         let config = try await call(DsmAPIName.downloadStationInfo, method: "getconfig")
         let schedule = try? await call(DsmAPIName.downloadStationSchedule, method: "getconfig")
         return Self.downloadSettings(config: config, schedule: schedule)
+    }
+
+    /// 保留字段存在性和套件当前管理权限，供增量设置与恢复使用。
+    public func loadDownloadSettingsSnapshot() async throws -> DownloadSettingsSnapshot {
+        let version = try downloadSettingsInfoVersion()
+        let info = try? await call(DsmAPIName.downloadStationInfo, method: "getinfo", fixedVersion: version)
+        try Task.checkCancellation()
+        let config = try await call(DsmAPIName.downloadStationInfo, method: "getconfig", fixedVersion: version)
+        let schedule = try? await call(DsmAPIName.downloadStationSchedule, method: "getconfig", fixedVersion: 1)
+        try Task.checkCancellation()
+        var values: [DownloadSettingsField: DownloadSettingsValue] = [:]
+        for field in DownloadSettingsField.allCases {
+            if field == .destination && version < 2 { continue }
+            let source = field.group == .general ? config : schedule
+            let value: DownloadSettingsValue?
+            switch source?[field.parameter] {
+            case .boolean(let flag): value = .flag(flag)
+            case .number(let number): value = Int(exactly: number).map(DownloadSettingsValue.number)
+            case .string(let text): value = field == .destination ? .text(text) : Int(text).map(DownloadSettingsValue.number)
+            default: value = nil
+            }
+            if let value, field.accepts(value) { values[field] = value }
+        }
+        let manager: Bool?
+        if case .boolean(let value) = info?["is_manager"] { manager = value } else { manager = nil }
+        return DownloadSettingsSnapshot(isManager: manager, values: values)
+    }
+
+    /// 只写已知差量；持久化回调失败及原值改变均发生在发送之前。
+    public func changeDownloadSettings(
+        _ change: DownloadSettingsChange,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws -> DownloadSettingsWriteOutcome {
+        guard change.isValid, !activeDownloadSettings, pendingDownloadSettings[change.group] == nil else {
+            throw validationError(L10n.string("download.settings.changed"))
+        }
+        activeDownloadSettings = true
+        defer { activeDownloadSettings = false }
+        let baseline = try await loadDownloadSettingsSnapshot()
+        guard let isManager = baseline.isManager else {
+            throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("download.settings.permission-unknown"))
+        }
+        guard isManager else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("download.settings.permission"))
+        }
+        guard change.matches(baseline, desired: false) else {
+            throw validationError(L10n.string("download.settings.changed"))
+        }
+        let version = change.group == .general ? try downloadSettingsInfoVersion() : 1
+        try Task.checkCancellation()
+        try await willSubmit()
+        if Task.isCancelled { return .cancelledBeforeSubmission }
+        let parameters = Dictionary(uniqueKeysWithValues: change.desired.map { field, value in
+            let parameter: DsmParameterValue
+            switch value {
+            case .text(let text): parameter = .string(text)
+            case .flag(let flag): parameter = .boolean(flag)
+            case .number(let number): parameter = .integer(number)
+            }
+            return (field.parameter, parameter)
+        })
+        pendingDownloadSettings[change.group] = change
+        do {
+            try await callVoid(change.group == .general ? DsmAPIName.downloadStationInfo : DsmAPIName.downloadStationSchedule,
+                method: change.group == .general ? "setserverconfig" : "setconfig", parameters: parameters, fixedVersion: version)
+        } catch let error as AppError where error.dsmCode != nil && [101, 102, 103, 104, 105, 106, 107].contains(error.dsmCode!) {
+            // 官方明确拒绝与网络中断分开；未知错误不据此解锁重发。
+            pendingDownloadSettings.removeValue(forKey: change.group)
+            return error.category == .permissionDenied ? .denied : .rejected
+        } catch {
+            return .pending
+        }
+        return (try? await reviewDownloadSettings(change)) == true ? .complete : .pending
+    }
+
+    /// 未知写只查询；即使当前值仍为原值，也不能证明先前请求未生效。
+    public func reviewDownloadSettings(_ change: DownloadSettingsChange) async throws -> Bool {
+        guard change.isValid else { throw validationError(L10n.string("download.settings.changed")) }
+        let current = try await loadDownloadSettingsSnapshot()
+        let complete = change.matches(current, desired: true)
+        if complete, pendingDownloadSettings[change.group] == change { pendingDownloadSettings.removeValue(forKey: change.group) }
+        return complete
+    }
+
+    private func downloadSettingsInfoVersion() throws -> Int {
+        guard let capability = capabilities[DsmAPIName.downloadStationInfo],
+              capability.name == DsmAPIName.downloadStationInfo, capability.selectedVersion != nil else { throw unavailableError() }
+        for version in [2, 1] where capability.minVersion <= version && capability.maxVersion >= version { return version }
+        throw unavailableError()
     }
 
     public func saveDownloadStationSettings(_ settings: DownloadStationSettings) async throws {
@@ -4272,17 +4363,22 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private func call(
         _ name: String,
         method: String,
-        parameters: [String: DsmParameterValue] = [:]
+        parameters: [String: DsmParameterValue] = [:],
+        fixedVersion: Int? = nil
     ) async throws -> ServiceJSON {
         guard let capability = capabilities[name],
               let version = capability.selectedVersion else {
             throw unavailableError()
         }
+        if let fixedVersion {
+            guard capability.name == name, capability.minVersion <= fixedVersion,
+                  capability.maxVersion >= fixedVersion else { throw unavailableError() }
+        }
         do {
             return try await client.call(
                 path: capability.path,
                 api: capability.name,
-                version: version,
+                version: fixedVersion ?? version,
                 method: method,
                 requestFormat: capability.requestFormat,
                 parameters: parameters,

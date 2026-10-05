@@ -6388,3 +6388,30 @@
 "mobile.downloads.batch.remove-record" = "Remove this record";
 "mobile.downloads.batch.task-number" = "Task %d";
 "mobile.downloads.batch.storage-error" = "Unable to save or read recent actions. Unlock your device and reopen the app to try again.";
+
+/* 下载设置与恢复 */
+"download.settings.changed" = "Settings changed elsewhere. Refresh before saving again.";
+"download.settings.permission" = "This account cannot change download settings. Contact your NAS administrator.";
+"download.settings.permission-unknown" = "Unable to read account permissions. Refresh and try again.";
+"download.settings.loading" = "Loading settings…";
+"download.settings.load-error" = "Unable to read download settings. Check your connection and refresh.";
+"download.settings.storage-error" = "Unable to save the action on this device. Check available storage and reopen the app.";
+"download.settings.recent" = "Last save";
+"download.settings.saving" = "Saving changes…";
+"download.settings.pending" = "The latest result is unavailable. Reconnect and refresh to see the saved settings.";
+"download.settings.continue" = "Save remaining changes";
+"download.settings.cancel-remaining" = "Cancel remaining changes";
+"download.settings.invalid-limit" = "Enter a whole number between 0 and 1,000,000.";
+"download.settings.limit-help" = "Limits are in KB/s; 0 means unlimited. The web download limit applies to new or resumed HTTP and FTP downloads.";
+"download.settings.unavailable" = "Unavailable";
+"download.settings.planned" = "Not saved yet";
+"download.settings.pending-short" = "Result unavailable";
+"download.settings.saved" = "Saved";
+"download.settings.cancelled" = "Cancelled";
+"download.settings.failed" = "Could not save. Refresh and try again.";
+"download.settings.general" = "General";
+"download.settings.limits" = "Speed limits";
+"download.settings.schedule" = "Download schedule";
+"download.settings.schedule-enabled" = "Use download schedule";
+"download.settings.emule-schedule-enabled" = "Use schedule for eMule";
+"download.settings.empty" = "No download settings are available to display. Refresh to try again.";

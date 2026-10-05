@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "download-station.save-schedule.synthetic-delta",
+  "module": "download-station",
+  "operation": "saveSchedule",
+  "api": {
+    "name": "SYNO.DownloadStation.Schedule",
+    "method": "setconfig",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "DownloadStation/schedule.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "enabled",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

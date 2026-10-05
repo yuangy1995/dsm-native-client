@@ -203,7 +203,7 @@ struct MobileWorkspaceView: View {
             case .chat:
                 MobileChatView(model: model)
             case .downloads:
-                MobileDownloadsView(model: model.downloads)
+                MobileDownloadsView(model: model.downloads, fileRepository: model.fileRepository)
             case .containers:
                 MobileContainersView(inventory: model.containerInventoryModel)
             case .virtualMachines:
