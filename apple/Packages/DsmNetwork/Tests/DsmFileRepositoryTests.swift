@@ -488,6 +488,21 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertNil(requestParameter("filetype", in: request))
     }
 
+    func test共享缺少权限不根据可见性生成只读或可写结论() async throws {
+        let data = response(#"{"success":true,"data":{"offset":0,"total":3,"shares":[{"name":"缺失权限","path":"/unknown","isdir":true},{"name":"空权限","path":"/empty","isdir":true,"additional":{"perm":{}}},{"name":"已知只读","path":"/read-only","isdir":true,"additional":{"perm":{"adv_right":{"read":true,"write":false}}}}]}}"#)
+        let repository = try makeRepository(capabilities: CapabilitySet([
+            DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+        ]), transport: MockHTTPTransport(responses: [data, data]))
+        let page = try await repository.listShares(offset: 0, limit: 200)
+        XCTAssertNil(page.items.first(where: { $0.name == "缺失权限" })?.permissions)
+        XCTAssertEqual(page.items.first(where: { $0.name == "空权限" })?.permissions?.canRead, false)
+        let directory = try await FileStationShareAccessRepository(repository: repository).loadShareAccess()
+        XCTAssertEqual(directory.shares.first(where: { $0.name == "缺失权限" })?.accessLevel, .unknown)
+        XCTAssertEqual(directory.shares.first(where: { $0.name == "空权限" })?.accessLevel, .unknown)
+        XCTAssertEqual(directory.shares.first(where: { $0.name == "已知只读" })?.accessLevel, .readOnly)
+        XCTAssertTrue(directory.shares.allSatisfy { !$0.canDelete })
+    }
+
     func test当前账号共享访问分页去重并排除远程挂载() async throws {
         let transport = MockHTTPTransport(responses: [
             response(

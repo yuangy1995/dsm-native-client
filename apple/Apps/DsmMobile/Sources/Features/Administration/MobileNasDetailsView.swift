@@ -7,7 +7,7 @@ struct MobileNasDetailsScreen: View {
 
     var body: some View {
         List {
-            MobileNasDetailsSectionView(model: model, destination: destination)
+            MobileNasDetailsSectionView(model: model, destination: destination, showsSectionTitle: false)
         }
         .listStyle(.insetGrouped)
         .navigationTitle(destination.title)
@@ -20,15 +20,18 @@ struct MobileNasDetailsScreen: View {
 struct MobileNasDetailsSectionView: View {
     @Bindable var model: MobileNasDetailsModel
     let destination: MobileNasAdministrationDestination
+    var showsSectionTitle = true
 
     var body: some View {
         Group {
-            privacyNotice
+            if [.packages, .scheduledTasks, .logs, .connections].contains(destination) { privacyNotice }
             switch destination {
             case .packages: packagesSection
             case .scheduledTasks: scheduledTasksSection
             case .logs: logsSection
             case .connections: connectionsSection
+            case .externalStorage, .processes, .shareAccess, .zram, .powerSchedule:
+                MobileNasReadSections(model: model, destination: destination, showsSectionTitle: showsSectionTitle).id(destination)
             case .system, .performance, .storage, .update: EmptyView()
             }
         }
@@ -204,7 +207,7 @@ struct MobileNasDetailsSectionView: View {
 
     private func sectionHeader(isRefreshing: Bool) -> some View {
         HStack(spacing: 8) {
-            Label(destination.title, systemImage: destination.systemImage)
+            if showsSectionTitle { Label(destination.title, systemImage: destination.systemImage) }
             if isRefreshing {
                 Spacer()
                 ProgressView()
@@ -232,7 +235,7 @@ struct MobileNasDetailsSectionView: View {
     }
 }
 
-private struct MobileNasDetailsSectionContent<
+struct MobileNasDetailsSectionContent<
     Value: Equatable & Sendable,
     Content: View
 >: View {
@@ -337,6 +340,11 @@ extension MobileNasAdministrationDestination {
         case .scheduledTasks: L10n.string("mobile.nas-details.section.scheduled-tasks")
         case .logs: L10n.string("mobile.nas-details.section.logs")
         case .connections: L10n.string("mobile.nas-details.section.connections")
+        case .externalStorage: L10n.string("external-storage.navigation-title")
+        case .processes: L10n.string("processes.navigation-title")
+        case .shareAccess: L10n.string("share-access.navigation-title")
+        case .zram: L10n.string("zram.navigation-title")
+        case .powerSchedule: L10n.string("power-schedule.navigation-title")
         }
     }
 
@@ -350,6 +358,11 @@ extension MobileNasAdministrationDestination {
         case .scheduledTasks: L10n.string("mobile.nas-details.loading.scheduled-tasks")
         case .logs: L10n.string("mobile.nas-details.loading.logs")
         case .connections: L10n.string("mobile.nas-details.loading.connections")
+        case .externalStorage: L10n.string("mobile.nas.externalStorage.loading")
+        case .processes: L10n.string("mobile.nas.processes.loading")
+        case .shareAccess: L10n.string("mobile.nas.shareAccess.loading")
+        case .zram: L10n.string("mobile.nas.zram.loading")
+        case .powerSchedule: L10n.string("mobile.nas.powerSchedule.loading")
         }
     }
 
@@ -363,6 +376,11 @@ extension MobileNasAdministrationDestination {
         case .scheduledTasks: "calendar.badge.clock"
         case .logs: "doc.text.magnifyingglass"
         case .connections: "network"
+        case .externalStorage: "externaldrive.badge.plus"
+        case .processes: "waveform.path.ecg"
+        case .shareAccess: "folder.badge.person.crop"
+        case .zram: "memorychip"
+        case .powerSchedule: "calendar.badge.clock"
         }
     }
 }

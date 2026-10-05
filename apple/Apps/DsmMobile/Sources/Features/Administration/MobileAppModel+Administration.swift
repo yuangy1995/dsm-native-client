@@ -15,7 +15,8 @@ extension MobileAppModel {
             profileID: profileID,
             repository: MobileReadOnlyNasDetailsRepository(
                 profileID: profileID,
-                base: nasRepository
+                base: nasRepository,
+                fileRepository: fileRepository
             )
         )
         await nasHealthModel.activate(

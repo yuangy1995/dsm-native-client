@@ -194,14 +194,14 @@ final class MobileNasDetailsModelTests: XCTestCase {
         )
     }
 
-    func test只读适配协议四项且分页与隐私边界冻结() throws {
+    func test只读适配协议九项且旧摘要分页与隐私边界保留() throws {
         let source = try Self.source("MobileReadOnlyNasDetailsRepository.swift")
         let protocolSource = try XCTUnwrap(
             source.components(separatedBy: "struct MobileReadOnlyNasDetailsRepository").first
         )
 
-        XCTAssertEqual(protocolSource.components(separatedBy: "func ").count - 1, 4)
-        for required in ["loadPackages", "loadScheduledTasks", "loadLogs", "loadConnections"] {
+        XCTAssertEqual(protocolSource.components(separatedBy: "func ").count - 1, 9)
+        for required in ["loadPackages", "loadScheduledTasks", "loadLogs", "loadConnections", "loadExternalStorage", "loadProcesses", "loadShareAccess", "loadZRAM", "loadPowerSchedule"] {
             XCTAssertTrue(protocolSource.contains("func \(required)"))
         }
         for forbidden in [
@@ -426,6 +426,26 @@ private actor NasDetailsRepositoryStub: MobileNasDetailsReading {
                 )
             ]
         return MobileNasBoundedPage(items: items, total: items.count, isTruncated: false)
+    }
+
+    func loadExternalStorage() async throws -> NasExternalStorageDirectory {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: "synthetic unavailable")
+    }
+
+    func loadProcesses() async throws -> NasProcessDirectory {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: "synthetic unavailable")
+    }
+
+    func loadShareAccess() async throws -> NasShareAccessDirectory {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: "synthetic unavailable")
+    }
+
+    func loadZRAM() async throws -> NasZRAMSnapshot {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: "synthetic unavailable")
+    }
+
+    func loadPowerSchedule() async throws -> NasPowerScheduleSnapshot {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: "synthetic unavailable")
     }
 
     func setMarker(_ marker: String) {

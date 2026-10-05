@@ -52,6 +52,16 @@ final class MobileNasDetailsModel {
                     outcome = .logs(try await repository.loadLogs())
                 case .connections:
                     outcome = .connections(try await repository.loadConnections())
+                case .externalStorage:
+                    outcome = .externalStorage(try await repository.loadExternalStorage())
+                case .processes:
+                    outcome = .processes(try await repository.loadProcesses())
+                case .shareAccess:
+                    outcome = .shareAccess(try await repository.loadShareAccess())
+                case .zram:
+                    outcome = .zram(try await repository.loadZRAM())
+                case .powerSchedule:
+                    outcome = .powerSchedule(try await repository.loadPowerSchedule())
                 case .system, .performance, .storage, .update:
                     return
                 }
@@ -119,6 +129,11 @@ final class MobileNasDetailsModel {
         case .scheduledTasks: state.scheduledTasks.beginLoading()
         case .logs: state.logs.beginLoading()
         case .connections: state.connections.beginLoading()
+        case .externalStorage: state.externalStorage.beginLoading()
+        case .processes: state.processes.beginLoading()
+        case .shareAccess: state.shareAccess.beginLoading()
+        case .zram: state.zram.beginLoading()
+        case .powerSchedule: state.powerSchedule.beginLoading()
         case .system, .performance, .storage, .update: break
         }
     }
@@ -142,6 +157,11 @@ final class MobileNasDetailsModel {
         case .scheduledTasks(let value): state.scheduledTasks.finish(value, isEmpty: value.isEmpty)
         case .logs(let value): state.logs.finish(value, isEmpty: value.isEmpty)
         case .connections(let value): state.connections.finish(value, isEmpty: value.isEmpty)
+        case .externalStorage(let value): state.externalStorage.finish(value, isEmpty: value.devices.isEmpty && value.unavailableConnections.isEmpty)
+        case .processes(let value): state.processes.finish(value, isEmpty: value.processes.isEmpty && value.groups.isEmpty && !value.groupsAreUnavailable)
+        case .shareAccess(let value): state.shareAccess.finish(value, isEmpty: value.shares.isEmpty)
+        case .zram(let value): state.zram.finish(value, isEmpty: false)
+        case .powerSchedule(let value): state.powerSchedule.finish(value, isEmpty: value.entries.isEmpty && !value.isTruncated)
         }
     }
 
@@ -165,6 +185,11 @@ final class MobileNasDetailsModel {
         case .scheduledTasks: state.scheduledTasks.fail(isUnavailable: isUnavailable)
         case .logs: state.logs.fail(isUnavailable: isUnavailable)
         case .connections: state.connections.fail(isUnavailable: isUnavailable)
+        case .externalStorage: state.externalStorage.fail(isUnavailable: isUnavailable)
+        case .processes: state.processes.fail(isUnavailable: isUnavailable)
+        case .shareAccess: state.shareAccess.fail(isUnavailable: isUnavailable)
+        case .zram: state.zram.fail(isUnavailable: isUnavailable)
+        case .powerSchedule: state.powerSchedule.fail(isUnavailable: isUnavailable)
         case .system, .performance, .storage, .update: break
         }
     }
@@ -191,6 +216,11 @@ final class MobileNasDetailsModel {
         case .scheduledTasks: state.scheduledTasks.cancelLoading()
         case .logs: state.logs.cancelLoading()
         case .connections: state.connections.cancelLoading()
+        case .externalStorage: state.externalStorage.cancelLoading()
+        case .processes: state.processes.cancelLoading()
+        case .shareAccess: state.shareAccess.cancelLoading()
+        case .zram: state.zram.cancelLoading()
+        case .powerSchedule: state.powerSchedule.cancelLoading()
         case .system, .performance, .storage, .update: break
         }
     }
@@ -201,6 +231,11 @@ final class MobileNasDetailsModel {
         case .scheduledTasks: state.scheduledTasks.phase
         case .logs: state.logs.phase
         case .connections: state.connections.phase
+        case .externalStorage: state.externalStorage.phase
+        case .processes: state.processes.phase
+        case .shareAccess: state.shareAccess.phase
+        case .zram: state.zram.phase
+        case .powerSchedule: state.powerSchedule.phase
         case .system, .performance, .storage, .update: .idle
         }
     }
@@ -211,6 +246,11 @@ final class MobileNasDetailsModel {
         case .scheduledTasks: state.scheduledTasks.phase != .idle
         case .logs: state.logs.phase != .idle
         case .connections: state.connections.phase != .idle
+        case .externalStorage: state.externalStorage.phase != .idle
+        case .processes: state.processes.phase != .idle
+        case .shareAccess: state.shareAccess.phase != .idle
+        case .zram: state.zram.phase != .idle
+        case .powerSchedule: state.powerSchedule.phase != .idle
         case .system, .performance, .storage, .update: false
         }
     }
@@ -239,5 +279,10 @@ private extension MobileNasDetailsModel {
         case scheduledTasks(MobileNasBoundedPage<MobileNasScheduledTaskDetail>)
         case logs(MobileNasBoundedPage<MobileNasLogDetail>)
         case connections(MobileNasBoundedPage<MobileNasConnectionDetail>)
+        case externalStorage(NasExternalStorageDirectory)
+        case processes(NasProcessDirectory)
+        case shareAccess(NasShareAccessDirectory)
+        case zram(NasZRAMSnapshot)
+        case powerSchedule(NasPowerScheduleSnapshot)
     }
 }

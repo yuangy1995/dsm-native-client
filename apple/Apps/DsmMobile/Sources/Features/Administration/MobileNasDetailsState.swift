@@ -1,3 +1,4 @@
+import DsmCore
 import Foundation
 
 enum MobileNasAdministrationDestination: String, CaseIterable, Identifiable, Hashable, Sendable {
@@ -9,11 +10,16 @@ enum MobileNasAdministrationDestination: String, CaseIterable, Identifiable, Has
     case scheduledTasks
     case logs
     case connections
+    case externalStorage
+    case processes
+    case shareAccess
+    case zram
+    case powerSchedule
 
     var id: String { rawValue }
 
     static let health: [Self] = [.system, .performance, .storage, .update]
-    static let details: [Self] = [.packages, .scheduledTasks, .logs, .connections]
+    static let details: [Self] = [.externalStorage, .zram, .powerSchedule, .shareAccess, .processes, .packages, .scheduledTasks, .logs, .connections]
 
     var isDetails: Bool { Self.details.contains(self) }
 }
@@ -145,12 +151,24 @@ struct MobileNasDetailsState: Equatable, Sendable {
     var logs = MobileNasDetailsSection<MobileNasBoundedPage<MobileNasLogDetail>>()
     var connections = MobileNasDetailsSection<MobileNasBoundedPage<MobileNasConnectionDetail>>()
 
+    var externalStorage = MobileNasDetailsSection<NasExternalStorageDirectory>()
+    var processes = MobileNasDetailsSection<NasProcessDirectory>()
+    var shareAccess = MobileNasDetailsSection<NasShareAccessDirectory>()
+    var zram = MobileNasDetailsSection<NasZRAMSnapshot>()
+    var powerSchedule = MobileNasDetailsSection<NasPowerScheduleSnapshot>()
+
     var isRefreshing: Bool {
-        [packages.isRefreshing, scheduledTasks.isRefreshing, logs.isRefreshing, connections.isRefreshing]
+        [packages.isRefreshing, scheduledTasks.isRefreshing, logs.isRefreshing, connections.isRefreshing,
+             externalStorage.isRefreshing, processes.isRefreshing, shareAccess.isRefreshing, zram.isRefreshing, powerSchedule.isRefreshing]
             .contains(true)
             || packages.phase == .loading
             || scheduledTasks.phase == .loading
             || logs.phase == .loading
             || connections.phase == .loading
+            || externalStorage.phase == .loading
+            || processes.phase == .loading
+            || shareAccess.phase == .loading
+            || zram.phase == .loading
+            || powerSchedule.phase == .loading
     }
 }
