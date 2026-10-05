@@ -633,7 +633,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         )
     }
 
-    func test指定目录链接使用官方V2且必须回读稳定任务ID() async throws {
+    func test指定目录链接使用官方V3且必须回读稳定任务ID() async throws {
         let transport = MockHTTPTransport(responses: [
             downloadTaskListResponse(ids: []),
             response(#"{"success":true,"data":{"taskid":"task-1"}}"#),
@@ -669,7 +669,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             requestValue("method", in: $0) == "create"
         })
         XCTAssertEqual(requestValue("api", in: create), DsmAPIName.downloadStationTask)
-        XCTAssertEqual(requestValue("version", in: create), "2")
+        XCTAssertEqual(requestValue("version", in: create), "3")
         XCTAssertEqual(requestValue("uri", in: create), "https://example.invalid/synthetic.iso")
         XCTAssertEqual(requestValue("destination", in: create), "downloads")
         XCTAssertFalse(requests.contains {
@@ -3352,7 +3352,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                     name: name,
                     path: "entry.cgi",
                     minVersion: minimumVersionOverrides[name] ?? 1,
-                    maxVersion: 2,
+                    maxVersion: name == DsmAPIName.downloadStationTask ? 3 : 2,
                     requestFormat: requestFormatOverrides[name] ?? .form,
                     selectedVersion: selectedVersionOverrides[name] ?? (name.contains("DownloadStation2") ? 2 : 1)
                 )

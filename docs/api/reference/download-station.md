@@ -10,7 +10,7 @@
 | 完整移动目录 `loadDownloadStationInventory` | 公开 `Task.list` v1 | 每页 500；`additional=detail,transfer`；同总量继续短页，无总量以短页结束 | 只有完整结束才标记 `isComplete`；重复身份、偏移/总量漂移、中途空页或畸形容器返回错误，旧界面数据保留 |
 | 单项详情 `loadDownloadTaskDetails` | 公开 `Task.getinfo` v1 | 单一稳定 `id`；`additional=detail,transfer,file,tracker,peer`，按官方要求逗号分隔 | 严格匹配唯一任务；文件名不当作 NAS 绝对路径；Tracker 只展示源站，统计缺值保持未知 |
 | 内部备用摘要 | `DownloadStation2.Task.list`、`Task.Statistic.get`、`Settings.Location.get` | 各自 v1/v2 能力，不能复制公开请求字段猜内部行为 | [备用接口记录](../discovery/endpoints/download-station2-fallback.md) |
-| 链接创建 `createDownloadTaskResult` | 公开 `Task.create` | 无 destination 固定 v1；带 destination 固定 v2；`uri` 为已允许的链接类型，目录按 NAS 契约传递 | 专用创建结果；固定输入和创建身份，未知不自动重发 |
+| 链接创建 `createDownloadTaskResult` | 公开 `Task.create` | 链接固定 v3（`uri` 自 v3）；`destination` 按 NAS 契约传递，不按目录降成 v1/v2 | 旧调用保留稳定任务回读；移动回调先保存摘要、再保存官方接受回执；未知不自动重发 |
 | 任务文件 `createDownloadTaskFileResult` | 公开 `Task.create` multipart | `.torrent/.nzb/.txt`；同样按 destination 选择 v1/v2，密码只在当次发送 | 同创建结果，不把成功上传请求当作所有下载已完成 |
 | 暂停、继续 | `Task.pause/resume` | 使用稳定任务 ID 和确认时快照；固定版本见[参数目录](requests.md#download-station) | 单项/批量结果逐项核对，部分成功保留；旧 `finish` 枚举当前不产生请求 |
 | 移动控制恢复 `loadDownloadTaskControlState` | 公开 `Task.list` v1 | 完整分页、单一合法任务编号 | 仅查询，匹配原身份及目标状态；本机终态保存后 `acknowledgeDownloadTaskControlResult` 清理进程内旧保护，不产生 NAS 请求 |
@@ -36,6 +36,16 @@ M5b 依据同一官方指南第 17–20 页：`Info.getinfo.is_manager` 只接�
 每个分区发送前重读当前权限与变更字段原值，只有写前持久化成功才发送。常规与计划分开记录，已完成不重放；未知只查询原变更，匹配目标才结束，原值未变也不能证明请求未发送。未执行分区必须显式继续或取消。`Downloads/settings-v1.json` 只存上下文摘要、字段原值/目标值和阶段，目录受完整文件保护、原子写和排除备份，不存凭据或主机；损坏/写失败保持限制，不覆盖原文件。账号切换后迟到结果只落原记录，不进入新页面。
 
 五端影响：iPhone/iPad 共享以上语义并分别做目标验证；macOS 旧全量设置行为保持，共享兼容增量必须回归；Windows/Android 本次只登记差量、缺失字段、当前权限及两分区恢复要求，不改源码。新增 `save-settings/save-schedule` 的 `synthetic-delta` 请求样本独立于旧全量样本。上述均为官方文档、源码与合成证据，没有真实 NAS 设置写验收；每周时段编辑未见于公开字段及 Mac 基线，不在此切片。
+
+## 创建回执与移动恢复
+
+官方指南第 24–25 页规定 URI 自 v3、文件自 v1、目录自 v2；创建成功允许没有 data 或任务编号。共享公开链接改用 v3，只对创建放宽成功 data 的存在要求，普通读取仍不能把无 data 当作空列表。任务文件仍按目录选择 v1/v2。旧任务回读接口保留其稳定编号语义；移动新增写前摘要与接受回执回调，`requestAccepted` 表示请求已被接受，不表示下载完成或任意任务的归属。带回调创建复用同一校验/请求，不调用内部备用创建。
+
+移动 `Downloads/creations-v1.json` 只保存账号上下文、来源/请求 SHA-256 摘要、类型、时间和阶段；写前持久化失败零请求，成功回执落盘失败保留未知保护。来源摘要排除目标目录；文件来源依据实际内容，改名/换目录不会解除同来源未知保护，同名同大小不同内容不会被混淆。原始 URI、文件名、内容及凭据不进入该记录，文件只保留当前发送的受保护副本并清理，不跨重启自动续传输入。
+
+已知拒绝与明确未发送可结束记录；未知只能刷新当前任务列表，不能根据名称、目录、同链接、新编号或任务消失认领成功，也不能清除记录解锁重发。官方无操作查询编号，因此丢失全部成功回执后的精确归属仍未知；当前列表可继续使用，其他来源创建不受该条记录阻塞。跨账号迟到回执只写原记录，同账号新连接仍受原来源保护。
+
+五端影响：iPhone/iPad 共用持久创建流程并分别验证；Mac App 未改，共享链接版本与文件内容摘要修正需全量及双架构回归，旧调用未新增持久恢复。Windows/Android 只登记语义；Android 当前链接仍按目录选 v1/v2，旧 `create/synthetic-link` 留为 `sourceReviewed`，新增 `synthetic-link-v3` 官方请求样本，不通过改动旧断言掩盖 Android 差异。实际 NAS 创建、下载运行和完成须分别由设备验收。
 
 ## 编辑与 RSS 的官方证据边界
 

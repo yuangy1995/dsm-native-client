@@ -245,7 +245,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(model.contains("createDownloadTask(fileURL: URL)"))
         XCTAssertTrue(model.contains("DownloadTaskCreateRequest("))
         XCTAssertTrue(model.contains("DownloadTaskFileCreateRequest("))
-        XCTAssertTrue(model.contains("createDownloadTaskFileResult(request)"))
+        XCTAssertTrue(model.contains("createDownloadTaskFileResult(request, willSubmit: willSubmit, didAccept: didAccept)"))
         XCTAssertTrue(model.contains("controlDownloadTask(_ task: DownloadStationTask"))
         XCTAssertTrue(model.contains("startDownloadControlBatch([task], action: action)"))
         let control = try sourceFile("Sources/Features/Services/Downloads/MobileDownloadsModel+Control.swift")

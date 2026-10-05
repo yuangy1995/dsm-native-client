@@ -91,6 +91,8 @@ final class MobileDownloadsModel {
     var downloadDeleteTaskID: String?
     var downloadDeleteFeedback: MobileDownloadDeleteFeedback?
 
+    let createRecovery: MobileDownloadCreateStore
+    var createErrorKey: String?
     let settings: MobileDownloadSettingsModel
     let editRecovery: MobileDownloadEditStore
     var editActivation = UUID()
@@ -109,6 +111,7 @@ final class MobileDownloadsModel {
         self.controlRecovery = MobileDownloadControlStore(root: controlRoot)
         self.settings = MobileDownloadSettingsModel(root: controlRoot)
         self.editRecovery = MobileDownloadEditStore(root: controlRoot)
+        self.createRecovery = MobileDownloadCreateStore(root: controlRoot)
     }
 
     func configure(profile: NasProfile?, repository: DsmServiceManagementRepository?) {
@@ -247,7 +250,7 @@ final class MobileDownloadsModel {
     }
 
     var canCreateDownloadTask: Bool {
-        !isCreatingDownloadTask &&
+        !createRecovery.failed && !isCreatingDownloadTask &&
         activeProfile != nil &&
         (
             serviceRepository != nil ||
@@ -288,7 +291,7 @@ final class MobileDownloadsModel {
         downloadCreateGeneration &+= 1
         downloadCreateTask?.cancel()
         downloadCreateTask = nil
-        downloadCreateFeedback = nil
+        downloadCreateFeedback = nil; createErrorKey = nil
         downloadDeleteGeneration &+= 1
         downloadDeleteTask?.cancel()
         downloadDeleteTask = nil
@@ -333,118 +336,86 @@ final class MobileDownloadsModel {
     }
 
     func createDownloadTask(uri rawURI: String) {
-        let uri = rawURI.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isCreatingDownloadTask else { return }
-        guard !uri.isEmpty,
-              activeProfile != nil,
-              serviceRepository != nil || downloadStationCreateOverride != nil else {
-            downloadCreateFeedback = MobileDownloadCreateFeedback(
-                uri: uri,
-                kind: .unsupported
-            )
-            return
-        }
-
-        downloadCreateGeneration &+= 1
-        let generation = downloadCreateGeneration
-        let request = DownloadTaskCreateRequest(
-            uri: uri,
-            destination: downloadCreateDefaultDestination
-        )
-        let repository = serviceRepository
-        let override = downloadStationCreateOverride
-        downloadCreateFeedback = MobileDownloadCreateFeedback(uri: uri, kind: .inProgress)
-        downloadCreateTask = Task { [weak self] in
-            do {
-                let outcome: DownloadTaskCreateOutcome
-                if let override {
-                    outcome = try await override(request)
-                } else if let repository {
-                    outcome = try await repository.createDownloadTaskResult(request)
-                } else {
-                    return
-                }
-                try Task.checkCancellation()
-                await MainActor.run {
-                    self?.finishDownloadCreate(
-                        outcome,
-                        uri: uri,
-                        generation: generation
-                    )
-                }
-            } catch is CancellationError {
-                await MainActor.run {
-                    self?.finishDownloadCreateCancellation(
-                        uri: uri,
-                        generation: generation
-                    )
-                }
-            } catch {
-                await MainActor.run {
-                    self?.finishDownloadCreateFailure(
-                        uri: uri,
-                        generation: generation
-                    )
-                }
-            }
-        }
+        startDownloadCreation(.link(rawURI.trimmingCharacters(in: .whitespacesAndNewlines)))
     }
 
-    func createDownloadTask(fileURL: URL) {
-        let displayName = fileURL.lastPathComponent.isEmpty
-            ? fileURL.path
-            : fileURL.lastPathComponent
-        guard !isCreatingDownloadTask else { return }
-        guard activeProfile != nil,
-              serviceRepository != nil || downloadStationCreateFileOverride != nil else {
-            downloadCreateFeedback = MobileDownloadCreateFeedback(
-                uri: displayName,
-                kind: .unsupported
-            )
-            return
-        }
+    func createDownloadTask(fileURL: URL) { startDownloadCreation(.file(fileURL)) }
 
+    private enum CreateSource {
+        case link(String), file(URL)
+        var displayName: String { switch self { case .link(let uri): uri; case .file(let url): url.lastPathComponent } }
+        var kind: MobileDownloadCreateStore.Source { switch self { case .link: .link; case .file: .file } }
+    }
+    var createEntries: [MobileDownloadCreateStore.Entry] {
+        createRecovery.entries.filter { $0.context == controlContext }.reversed()
+    }
+    func removeDownloadCreation(_ id: UUID) {
+        guard let context = controlContext else { return }
+        do { try createRecovery.remove(id, context: context) }
+        catch { createErrorKey = "download.edit.storage-error" }
+    }
+
+    private func startDownloadCreation(_ source: CreateSource) {
+        guard !isCreatingDownloadTask else { return }
+        guard canCreateDownloadTask, let context = controlContext, !source.displayName.isEmpty else {
+            createErrorKey = createRecovery.failed ? "download.edit.storage-error" : nil
+            downloadCreateFeedback = .init(uri: source.displayName, kind: .unsupported); return
+        }
         downloadCreateGeneration &+= 1
-        let generation = downloadCreateGeneration
-        let request = DownloadTaskFileCreateRequest(
-            fileURL: fileURL,
-            destination: downloadCreateDefaultDestination
-        )
-        let repository = serviceRepository
-        let override = downloadStationCreateFileOverride
-        downloadCreateFeedback = MobileDownloadCreateFeedback(uri: displayName, kind: .inProgress)
+        let generation = downloadCreateGeneration, id = UUID(), store = createRecovery
+        let repository = serviceRepository, destination = downloadCreateDefaultDestination
+        let linkOverride = downloadStationCreateOverride, fileOverride = downloadStationCreateFileOverride
+        let name = source.displayName, kind = source.kind
+        createErrorKey = nil; downloadCreateFeedback = .init(uri: name, kind: .inProgress)
+        let willSubmit: @Sendable (DownloadTaskCreationIdentity) async throws -> Void = { [weak self] identity in
+            try await MainActor.run {
+                guard let self, self.downloadCreateGeneration == generation, self.controlContext == context else { throw CancellationError() }
+                try store.reserve(.init(id: id, context: context, createdAt: Date(), source: kind, identity: identity))
+            }
+        }
+        let didAccept: @Sendable () async throws -> Void = {
+            // 迟到的成功回执仍必须写回原账号记录，不能受新页面的代次影响。
+            try await store.progress(id, context: context, phase: .accepted)
+        }
         downloadCreateTask = Task { [weak self] in
+            var input: URL?
+            defer { if let input { store.removeInput(input) }; store.end(id) }
             do {
                 let outcome: DownloadTaskCreateOutcome
-                if let override {
-                    outcome = try await override(request)
-                } else if let repository {
-                    outcome = try await repository.createDownloadTaskFileResult(request)
-                } else {
-                    return
+                switch source {
+                case .link(let uri):
+                    let request = DownloadTaskCreateRequest(uri: uri, destination: destination)
+                    if let linkOverride { outcome = try await linkOverride(request) }
+                    else if let repository { outcome = try await repository.createDownloadTaskResult(request, willSubmit: willSubmit, didAccept: didAccept) }
+                    else { throw CancellationError() }
+                case .file(let url):
+                    if let fileOverride {
+                        outcome = try await fileOverride(.init(fileURL: url, destination: destination))
+                    } else if let repository {
+                        let copy = try await store.copyInput(url, id: id); input = copy
+                        try Task.checkCancellation()
+                        let request = DownloadTaskFileCreateRequest(fileURL: copy, destination: destination)
+                        outcome = try await repository.createDownloadTaskFileResult(request, willSubmit: willSubmit, didAccept: didAccept)
+                    } else { throw CancellationError() }
                 }
-                try Task.checkCancellation()
-                await MainActor.run {
-                    self?.finishDownloadCreate(
-                        outcome,
-                        uri: displayName,
-                        generation: generation
-                    )
+                if store.entry(id, context: context)?.phase == .submitted {
+                    switch outcome.result.status {
+                    case .cancelledBeforeSubmission: try store.progress(id, context: context, phase: .cancelled)
+                    case .confirmedFailure, .permissionDenied, .unsupported:
+                        try store.progress(id, context: context, phase: .failed,
+                            failure: outcome.result.status == .permissionDenied ? .denied : .unavailable)
+                    default: break
+                    }
                 }
-            } catch is CancellationError {
-                await MainActor.run {
-                    self?.finishDownloadCreateCancellation(
-                        uri: displayName,
-                        generation: generation
-                    )
-                }
+                self?.finishDownloadCreate(outcome, uri: name, generation: generation)
             } catch {
-                await MainActor.run {
-                    self?.finishDownloadCreateFailure(
-                        uri: displayName,
-                        generation: generation
-                    )
-                }
+                guard let self, self.downloadCreateGeneration == generation else { return }
+                self.downloadCreateGeneration &+= 1; self.downloadCreateTask = nil
+                self.createErrorKey = store.failed ? "download.edit.storage-error" : nil
+                let pending = store.entry(id, context: context)?.phase == .submitted
+                let duplicate = (error as? MobileDownloadCreateStore.StoreError) == .duplicate
+                self.downloadCreateFeedback = .init(uri: name,
+                    kind: pending || duplicate ? .needsReview : error is CancellationError ? .cancelled : .failure)
             }
         }
     }
@@ -590,6 +561,7 @@ final class MobileDownloadsModel {
     }
 
     func message(for feedback: MobileDownloadCreateFeedback) -> String {
+        if let createErrorKey { return L10n.string(createErrorKey) }
         switch feedback.kind {
         case .inProgress:
             return L10n.string("mobile.downloads.create.creating.message")
@@ -665,22 +637,9 @@ final class MobileDownloadsModel {
         }
         downloadCreateFeedback = MobileDownloadCreateFeedback(
             uri: uri,
-            kind: Self.feedbackKind(for: outcome.result, confirmedTask: outcome.task)
+            kind: outcome.requestAccepted ? .success : Self.feedbackKind(for: outcome.result, confirmedTask: outcome.task)
         )
-    }
-
-    private func finishDownloadCreateCancellation(uri: String, generation: UInt64) {
-        guard generation == downloadCreateGeneration else { return }
-        downloadCreateGeneration &+= 1
-        downloadCreateTask = nil
-        downloadCreateFeedback = MobileDownloadCreateFeedback(uri: uri, kind: .cancelled)
-    }
-
-    private func finishDownloadCreateFailure(uri: String, generation: UInt64) {
-        guard generation == downloadCreateGeneration else { return }
-        downloadCreateGeneration &+= 1
-        downloadCreateTask = nil
-        downloadCreateFeedback = MobileDownloadCreateFeedback(uri: uri, kind: .needsReview)
+        if outcome.requestAccepted { reloadDownloads() }
     }
 
     private func finishDownloadDelete(

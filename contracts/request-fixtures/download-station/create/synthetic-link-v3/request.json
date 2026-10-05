@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "fixtureId": "download-station.create.synthetic-link",
+  "fixtureId": "download-station.create.synthetic-link-v3",
   "module": "download-station",
   "operation": "create",
   "api": {
     "name": "SYNO.DownloadStation.Task",
     "method": "create",
-    "preferredVersion": 2,
-    "resolvedVersion": 2,
+    "preferredVersion": 3,
+    "resolvedVersion": 3,
     "resolvedPath": "entry.cgi"
   },
   "transport": {
@@ -45,6 +45,6 @@
   },
   "source": {
     "kind": "synthetic",
-    "evidence": "sourceReviewed"
+    "evidence": "publicDocumentation"
   }
 }

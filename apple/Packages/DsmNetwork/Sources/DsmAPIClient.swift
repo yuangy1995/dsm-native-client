@@ -64,7 +64,8 @@ public struct DsmAPIClient: Sendable {
         parameters: [String: DsmParameterValue],
         credential: DsmSessionCredential? = nil,
         httpMethod: String = "POST",
-        as payloadType: Payload.Type
+        as payloadType: Payload.Type,
+        emptySuccessPayload: Payload? = nil
     ) async throws -> Payload {
         let requestID = UUID()
         let request: URLRequest
@@ -125,7 +126,7 @@ public struct DsmAPIClient: Sendable {
         if let error = envelope.error {
             throw DsmNetworkError.api(code: error.code, requestID: requestID)
         }
-        guard envelope.success, let payload = envelope.data else {
+        guard envelope.success, let payload = envelope.data ?? emptySuccessPayload else {
             throw DsmNetworkError.invalidResponse(requestID: requestID)
         }
         return payload

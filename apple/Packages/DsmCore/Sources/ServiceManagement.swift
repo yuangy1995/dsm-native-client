@@ -206,11 +206,14 @@ public struct DownloadTaskCreateOutcome: Equatable, Sendable {
     public let result: MutationResult
     public let taskID: String?
     public let task: DownloadStationTask?
+    /// 官方成功回执只证明添加请求已被接受，不证明下载完成或特定任务的归属。
+    public let requestAccepted: Bool
 
-    public init(result: MutationResult, taskID: String?, task: DownloadStationTask?) {
+    public init(result: MutationResult, taskID: String?, task: DownloadStationTask?, requestAccepted: Bool = false) {
         self.result = result
         self.taskID = taskID
         self.task = task
+        self.requestAccepted = requestAccepted
     }
 }
 

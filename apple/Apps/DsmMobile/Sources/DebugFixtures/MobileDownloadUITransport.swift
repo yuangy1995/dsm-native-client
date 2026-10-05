@@ -12,8 +12,10 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
     private var settings: [DownloadSettingsField: DownloadSettingsValue]
     private var hasUnknownSettingsWrite = false
     private var destinations: [String: String]
+    private var createdDownload: Bool
     init(state: String, statuses: [String: String] = [:], settings: [DownloadSettingsField: DownloadSettingsValue] = [:], destinations: [String: String] = [:]) {
         self.state = state; self.statuses = statuses
+        self.createdDownload = state == "downloads-create-recover" || state == "downloads-create-saved"
         self.destinations = destinations
         self.settings = [.destination: .text("Sample folder"), .emule: .flag(false), .autoExtract: .flag(false),
             .btDownload: .number(0), .btUpload: .number(0), .httpDownload: .number(0), .ftpDownload: .number(0),
@@ -27,6 +29,15 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
         func value(_ name: String) -> String? { parameters.first { $0.name == name }?.value }
         let data: Any
         switch (value("api"), value("method")) {
+        case (DsmAPIName.downloadStationTask, "create"):
+            guard value("version") == "3" else { throw URLError(.badServerResponse) }
+            if state == "downloads-create-denied" {
+                return .init(data: Data(#"{"success":false,"error":{"code":402}}"#.utf8), statusCode: 200)
+            }
+            createdDownload = true
+            if state == "downloads-create-unknown" || state == "downloads-create-recover" { throw URLError(.timedOut) }
+            // 官方创建允许无 data；不能靠 UI fixture 额外返回编号掩盖契约缺口。
+            return .init(data: Data(#"{"success":true}"#.utf8), statusCode: 200)
         case (DsmAPIName.downloadStationInfo, "getinfo"):
             data = ["is_manager": state != "downloads-settings-readonly"]
         case (DsmAPIName.downloadStationInfo, "getconfig"), (DsmAPIName.downloadStationSchedule, "getconfig"):
@@ -65,6 +76,7 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
             if state.hasPrefix("downloads-controls-"), state != "downloads-controls-empty" {
                 tasks.append(task("sample-4", "Second archive.zip", "seeding"))
             }
+            if createdDownload { tasks.append(task("sample-created", "Added download.zip", "waiting")) }
             data = ["tasks": tasks, "offset": 0, "total": tasks.count]
         case (DsmAPIName.downloadStationTask, "pause"), (DsmAPIName.downloadStationTask, "resume"):
             guard let id = value("id"), ["sample-1", "sample-2", "sample-4"].contains(id) else { throw URLError(.badServerResponse) }
