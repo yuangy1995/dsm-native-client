@@ -3160,11 +3160,11 @@
 "mobile.downloads.create.cancel" = "Cancel";
 "mobile.downloads.create.done" = "Done";
 "mobile.downloads.create.creating.title" = "Creating task";
-"mobile.downloads.create.creating.message" = "Waiting for the NAS to confirm the new download task.";
-"mobile.downloads.create.success.title" = "Task created";
-"mobile.downloads.create.success.message" = "The NAS confirmed the new download task.";
-"mobile.downloads.create.review.title" = "Check Download Station before trying again";
-"mobile.downloads.create.review.message" = "The request may have reached the NAS, but the app couldn’t confirm the new task. Refresh Download Station before creating it again.";
+"mobile.downloads.create.creating.message" = "Adding your download…";
+"mobile.downloads.create.success.title" = "Download added";
+"mobile.downloads.create.success.message" = "Your download was added. View its progress in the task list.";
+"mobile.downloads.create.review.title" = "Download status unavailable";
+"mobile.downloads.create.review.message" = "We could not get the result. Reconnect and refresh the task list. This download will not be added again automatically.";
 "mobile.downloads.create.cancelled.title" = "Creation cancelled";
 "mobile.downloads.create.cancelled.message" = "The task was cancelled before it was sent.";
 "mobile.downloads.create.conflict.title" = "Download task changed";
@@ -6370,7 +6370,7 @@
 "mobile.downloads.batch.select-empty" = "No tasks are available for these actions. Return to the list and refresh to try again.";
 "mobile.downloads.batch.records" = "Recent actions";
 "mobile.downloads.batch.records-empty" = "No recent actions";
-"mobile.downloads.batch.records-empty-help" = "Change a task’s save location, pause it, or resume it to see progress here.";
+"mobile.downloads.batch.records-empty-help" = "After adding downloads, changing save locations, pausing or resuming tasks, you can view progress here.";
 "mobile.downloads.batch.pause-count" = "Pause (%d)";
 "mobile.downloads.batch.resume-count" = "Resume (%d)";
 "mobile.downloads.batch.progress" = "%1$d of %2$d completed";
@@ -6426,3 +6426,9 @@
 "download.edit.denied" = "This account cannot save to this location or edit this task. Choose an accessible folder or contact your NAS administrator.";
 "download.edit.failed" = "The location could not be saved. Refresh the task list and choose another folder.";
 "download.edit.saving" = "Saving…";
+
+"download.creation.link" = "Download from link";
+
+"download.creation.file" = "Download from task file";
+
+"download.creation.refresh" = "Refresh task list";

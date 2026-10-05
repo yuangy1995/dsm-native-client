@@ -15,7 +15,7 @@
 | macOS Office | 系统预览、本机应用编辑、保存后自动回传、冲突/未知核查已完成本机验证 | 真实 Office/Pages/Numbers/Keynote、旧格式、正式签名沙盒及 NAS 验收 |
 | macOS UI / 远程位置 | 完整 WebDAV URL、工具栏/路径、照片来源、连接成功结束、保存进度及外置浏览入口已修正并有原生回归 | 用户实际连接、窄窗口与完整辅助功能反馈 |
 | Windows | 2026-09-21 范围的业务对齐、云盘写回/恢复及 x64/ARM64 云端验证完成；后续 Mac 增量未自动移植 | Photos 管理、File Station 增量、Office 按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)逐项开发 |
-| iPhone / iPad | M0/M1 会话、账号隔离与共享结构，M2 文件/传输/活动，M3 Photos 管理与恢复、旧图库清理，M4 Chat 日常操作/语音/前台实时/已读与本地提醒已完成源码范围；证据及设备待验集中在移动主计划。M5a 完整下载目录/详情、多选控制，M5b 下载设置及 M5c1 单项/多项保存位置编辑与持久恢复已完成：最新两端各 1211 项单元（各 3 条既有条件跳过），六项编辑 UI 分别通过，含中文深色大字/横屏；原多选控制及共享/Mac 回归通过 | 按[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)继续 M5c–M8；两种设备分别验证，真实 NAS/系统条件按具体待办执行；代码推送不代表云端门禁或实机验收通过 |
+| iPhone / iPad | M0/M1 会话、账号隔离与共享结构，M2 文件/传输/活动，M3 Photos 管理与恢复、旧图库清理，M4 Chat 日常操作/语音/前台实时/已读与本地提醒已完成源码范围；证据及设备待验集中在移动主计划。M5a 下载目录/多选控制、M5b 设置、M5c1 位置编辑和 M5c2 创建回执/持久记录已完成：最新两端各 1223 项完整单元（各 4 条已记录设备条件跳过），四项创建 UI 及原编辑回归通过；共享/Mac 回归通过 | 按[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)继续 M5c2b 创建选项、M5c3 RSS 及 M5d–M8；两种设备分别验证，真实 NAS/系统条件按具体待办执行；代码推送不代表云端门禁或实机验收通过 |
 | Android | Compose 客户端、导航改版、后台/传输、Synology Photos 与质量门已建立；当前 Task.edit 仍使用 v1，需独立修正为官方字段表要求的 v2；既有 Chat 投票请求差异造成云端单测失败 | 按[Android 计划](../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)继续结构收敛与目标设备验证；Mac 新增只作接口参考 |
 
 ## 系统集成与发布

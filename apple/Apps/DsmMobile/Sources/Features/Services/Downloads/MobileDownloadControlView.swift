@@ -90,16 +90,28 @@ struct MobileDownloadControlRecordsView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if (model.controlRecovery.failed || model.editRecovery.failed) && model.controlEntries.isEmpty && model.editEntries.isEmpty {
+                if (model.controlRecovery.failed || model.editRecovery.failed || model.createRecovery.failed) && model.controlEntries.isEmpty && model.editEntries.isEmpty && model.createEntries.isEmpty {
                     ContentUnavailableView(L10n.string("mobile.downloads.batch.records"), systemImage: "exclamationmark.circle",
                         description: Text(L10n.string("mobile.downloads.batch.storage-error"))).fillsAvailableContentArea()
-                } else if model.controlEntries.isEmpty && model.editEntries.isEmpty {
+                } else if model.controlEntries.isEmpty && model.editEntries.isEmpty && model.createEntries.isEmpty {
                     ContentUnavailableView(L10n.string("mobile.downloads.batch.records-empty"), systemImage: "clock",
                         description: Text(L10n.string("mobile.downloads.batch.records-empty-help"))).fillsAvailableContentArea()
                 } else {
                     List {
-                        if model.controlRecovery.failed || model.editRecovery.failed {
+                        if model.controlRecovery.failed || model.editRecovery.failed || model.createRecovery.failed {
                             Text(L10n.string("download.edit.storage-error")).foregroundStyle(.orange)
+                        }
+                        ForEach(model.createEntries) { entry in
+                            NavigationLink {
+                                MobileDownloadCreateRecordView(model: model, id: entry.id)
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(L10n.string(entry.source == .link ? "download.creation.link" : "download.creation.file"))
+                                    Text(entry.createdAt.formatted(.dateTime.locale(L10n.locale))).font(.caption).foregroundStyle(.secondary)
+                                    Text(L10n.string(MobileDownloadCreateRecordView.statusKey(entry, executing: model.createRecovery.isExecuting(entry.id))))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.accessibilityIdentifier("downloads.create-record.\(entry.id)")
                         }
                         ForEach(model.editEntries) { entry in
                             NavigationLink {

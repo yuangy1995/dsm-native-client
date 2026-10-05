@@ -8,8 +8,10 @@ struct MobileDownloadsView: View {
     var fileRepository: (any MobileFileBrowsing)? = nil
     @State private var selectedTask: DownloadStationTask?
     @State private var isShowingCreateTask = false
+    @State private var isShowingFileResult = false
     @State private var isShowingBTSearch = false
     @State private var isImportingTaskFile = false
+    @State private var importActivation: UUID?
     @State private var isSelectingTasks = false
     @State private var isShowingControls = false
     @State private var isShowingSettings = false
@@ -33,6 +35,9 @@ struct MobileDownloadsView: View {
             taskList
         }
         .accessibilityElement(children: .contain)
+        .onChange(of: model.editActivation) { _, _ in
+            isShowingCreateTask = false; isShowingFileResult = false; isShowingBTSearch = false; isImportingTaskFile = false; importActivation = nil
+        }
         .searchable(text: $model.searchText, prompt: L10n.string("download.workspace.search"))
         .refreshable { await model.load() }
         .sheet(item: $selectedTask) { task in
@@ -40,6 +45,9 @@ struct MobileDownloadsView: View {
         }
         .sheet(isPresented: $isShowingCreateTask) {
             MobileDownloadCreateTaskView(model: model)
+        }
+        .sheet(isPresented: $isShowingFileResult) {
+            MobileDownloadCreateTaskView(model: model, fileOnly: true)
         }
         .sheet(isPresented: $isShowingBTSearch) {
             MobileDownloadBTSearchView(model: model)
@@ -100,8 +108,10 @@ struct MobileDownloadsView: View {
                     }
                     .disabled(!model.canCreateDownloadTask)
                     .accessibilityHint(L10n.string("mobile.downloads.create.action.hint"))
+                    .accessibilityIdentifier("downloads.create.link")
 
                     Button {
+                        importActivation = model.editActivation
                         isImportingTaskFile = true
                     } label: {
                         Label(
@@ -136,6 +146,7 @@ struct MobileDownloadsView: View {
                     minHeight: MobileMetrics.minimumTouchTarget
                 )
                 .accessibilityHint(L10n.string("mobile.downloads.create.menu.hint"))
+                .accessibilityIdentifier("downloads.create.menu")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { isShowingSettings = true } label: {
@@ -189,11 +200,13 @@ struct MobileDownloadsView: View {
     }
 
     private func handleTaskFileImport(_ result: Result<[URL], Error>) {
+        guard importActivation == model.editActivation else { return }
         guard case .success(let urls) = result,
               let url = urls.first else {
             return
         }
         model.createDownloadTask(fileURL: url)
+        isShowingFileResult = true
     }
 }
 
@@ -246,31 +259,42 @@ private struct MobileDownloadCreateTaskView: View {
     @Bindable var model: MobileDownloadsModel
     @Environment(\.dismiss) private var dismiss
     @State private var uri = ""
+    @State private var activation: UUID
+    @FocusState private var inputFocused: Bool
+    let fileOnly: Bool
+    init(model: MobileDownloadsModel, fileOnly: Bool = false) {
+        self.model = model; self.fileOnly = fileOnly; _activation = State(initialValue: model.editActivation)
+    }
 
     private var canSubmit: Bool {
-        !model.isCreatingDownloadTask &&
+        activation == model.editActivation && !model.isCreatingDownloadTask &&
         model.downloadCreateFeedback == nil &&
         !uri.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             Form {
+                if !fileOnly {
                 Section {
                     TextField(
                         L10n.string("mobile.downloads.create.url.placeholder"),
                         text: $uri,
                         axis: .vertical
                     )
+                    .focused($inputFocused)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
                     .accessibilityLabel(L10n.string("mobile.downloads.create.url.label"))
+                    .accessibilityIdentifier("downloads.create.uri")
                     Text(L10n.string("mobile.downloads.create.url.help"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } header: {
                     Text(L10n.string("mobile.downloads.create.url.label"))
+                }
                 }
 
                 Section(L10n.string("mobile.downloads.create.destination.label")) {
@@ -291,10 +315,15 @@ private struct MobileDownloadCreateTaskView: View {
                 if let feedback = model.downloadCreateFeedback {
                     Section {
                         DownloadCreateFeedbackView(model: model, feedback: feedback)
-                    }
+                    }.id("creation-feedback")
                 }
             }
-            .navigationTitle(L10n.string("mobile.downloads.create.title"))
+            .accessibilityIdentifier("downloads.creation.form")
+            .onChange(of: model.downloadCreateFeedback) { _, feedback in
+                if feedback != nil { proxy.scrollTo("creation-feedback", anchor: .center) }
+            }
+            }
+            .navigationTitle(L10n.string(fileOnly ? "mobile.downloads.create.file.action" : "mobile.downloads.create.title"))
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(model.isCreatingDownloadTask)
             .toolbar {
@@ -303,21 +332,27 @@ private struct MobileDownloadCreateTaskView: View {
                         model.dismissDownloadCreateFeedback()
                         dismiss()
                     }
+                    .accessibilityIdentifier("downloads.create.close")
                     .disabled(model.isCreatingDownloadTask)
                     .frame(
                         minWidth: MobileMetrics.minimumTouchTarget,
                         minHeight: MobileMetrics.minimumTouchTarget
                     )
                 }
+                if !fileOnly {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L10n.string("mobile.downloads.create.submit")) {
+                        guard activation == model.editActivation else { return }
+                        inputFocused = false
                         model.createDownloadTask(uri: uri)
                     }
+                    .accessibilityIdentifier("downloads.create.submit")
                     .disabled(!canSubmit)
                     .frame(
                         minWidth: MobileMetrics.minimumTouchTarget,
                         minHeight: MobileMetrics.minimumTouchTarget
                     )
+                }
                 }
             }
         }
@@ -331,7 +366,7 @@ private struct MobileDownloadCreateTaskView: View {
     private var closeTitle: String {
         model.downloadCreateFeedback == nil
             ? L10n.string("mobile.downloads.create.cancel")
-            : L10n.string("mobile.downloads.create.done")
+            : L10n.string("files.common.close")
     }
 }
 
@@ -352,6 +387,7 @@ private struct DownloadCreateFeedbackView: View {
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("downloads.create.feedback")
     }
 
     private var systemImage: String {

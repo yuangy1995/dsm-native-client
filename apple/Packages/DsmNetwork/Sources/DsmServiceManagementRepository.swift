@@ -173,7 +173,8 @@ private enum DownloadTaskCreateSource: Sendable {
 }
 
 private struct PreparedDownloadTaskCreateRequest: Sendable {
-    let key: DownloadTaskCreateKey
+    let identity: DownloadTaskCreationIdentity
+    var key: DownloadTaskCreateKey { .init(digest: identity.requestDigest) }
     let source: DownloadTaskCreateSource
     let destination: String?
 }
@@ -420,7 +421,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
         if api == DsmAPIName.downloadStationTask {
             _ = try await callOfficialDownloadTask(method: "create", parameters: parameters,
-                version: parameters["destination"] == nil ? 1 : 2)
+                version: 3)
         } else {
             try await callVoid(api, method: "create", parameters: parameters)
         }
@@ -447,6 +448,27 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             return outcome
         case .success(let prepared):
             return try await performDownloadTaskCreate(prepared)
+        }
+    }
+
+    /// 在发送前持久保存摘要；收到官方成功回执后持久保存接受状态。旧任务回读接口仍保留。
+    public func createDownloadTaskResult(_ request: DownloadTaskCreateRequest,
+        willSubmit: @escaping @Sendable (DownloadTaskCreationIdentity) async throws -> Void,
+        didAccept: @escaping @Sendable () async throws -> Void
+    ) async throws -> DownloadTaskCreateOutcome {
+        switch try Self.validatedDownloadCreateRequest(request) {
+        case .failure(let outcome): return outcome
+        case .success(let prepared): return try await performDownloadTaskCreate(prepared, willSubmit: willSubmit, didAccept: didAccept)
+        }
+    }
+
+    public func createDownloadTaskFileResult(_ request: DownloadTaskFileCreateRequest,
+        willSubmit: @escaping @Sendable (DownloadTaskCreationIdentity) async throws -> Void,
+        didAccept: @escaping @Sendable () async throws -> Void
+    ) async throws -> DownloadTaskCreateOutcome {
+        switch try Self.validatedDownloadFileCreateRequest(request) {
+        case .failure(let outcome): return outcome
+        case .success(let prepared): return try await performDownloadTaskCreate(prepared, willSubmit: willSubmit, didAccept: didAccept)
         }
     }
 
@@ -3436,7 +3458,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 requestFormat: capability.requestFormat,
                 parameters: parameters,
                 credential: credential,
-                as: ServiceJSON.self
+                as: ServiceJSON.self,
+                emptySuccessPayload: method == "create" ? .object([:]) : nil
             )
         } catch let error as DsmNetworkError {
             throw DsmErrorMapper.map(error)
@@ -3534,7 +3557,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         if let code = envelope["error"]?.firstInteger(["code"]) {
             throw DsmErrorMapper.map(.api(code: Int(code), requestID: UUID()))
         }
-        guard envelope.firstBoolean(["success"]) == true else {
+        guard case .boolean(true)? = envelope["success"] else {
             throw AppError(
                 category: .invalidResponse,
                 isRetryable: true,
@@ -3592,11 +3615,9 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             ))
         }
         return .success(PreparedDownloadTaskCreateRequest(
-            key: DownloadTaskCreateKey(
-                digest: Self.downloadCreateDigest(
-                    kind: "uri",
-                    values: [normalizedURI, normalizedDestination ?? ""]
-                )
+            identity: DownloadTaskCreationIdentity(
+                sourceDigest: Self.downloadCreateDigest(kind: "uri", values: [normalizedURI]),
+                requestDigest: Self.downloadCreateDigest(kind: "uri", values: [normalizedURI, normalizedDestination ?? ""])
             ),
             source: .uri(normalizedURI),
             destination: normalizedDestination
@@ -3652,17 +3673,15 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                     tag: "download-task.create.invalid-file"
                 ))
             }
+            let file = try FileHandle(forReadingFrom: normalizedURL)
+            defer { try? file.close() }
+            var content = SHA256()
+            while let bytes = try file.read(upToCount: 1_048_576), !bytes.isEmpty { content.update(data: bytes) }
+            let contentDigest = content.finalize().map { String(format: "%02x", $0) }.joined()
             return .success(PreparedDownloadTaskCreateRequest(
-                key: DownloadTaskCreateKey(
-                    digest: Self.downloadCreateDigest(
-                        kind: "file",
-                        values: [
-                            normalizedURL.lastPathComponent,
-                            String(values.fileSize ?? 0),
-                            normalizedDestination ?? "",
-                            normalizedPassword ?? ""
-                        ]
-                    )
+                identity: DownloadTaskCreationIdentity(
+                    sourceDigest: Self.downloadCreateDigest(kind: "file", values: [contentDigest]),
+                    requestDigest: Self.downloadCreateDigest(kind: "file", values: [contentDigest, normalizedDestination ?? "", normalizedPassword ?? ""])
                 ),
                 source: .file(normalizedURL, unzipPassword: normalizedPassword),
                 destination: normalizedDestination
@@ -3682,9 +3701,18 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     private func performDownloadTaskCreate(
-        _ request: PreparedDownloadTaskCreateRequest
+        _ request: PreparedDownloadTaskCreateRequest,
+        willSubmit: (@Sendable (DownloadTaskCreationIdentity) async throws -> Void)? = nil,
+        didAccept: (@Sendable () async throws -> Void)? = nil
     ) async throws -> DownloadTaskCreateOutcome {
-        guard officialDownloadTaskV1Capability() != nil else {
+        let requiredVersion: Int
+        switch request.source {
+        case .uri: requiredVersion = 3
+        case .file: requiredVersion = request.destination == nil ? 1 : 2
+        }
+        let hasTransport: Bool
+        switch request.source { case .uri: hasTransport = true; case .file: hasTransport = transport is any DsmBinaryHTTPTransport }
+        guard let capability = officialDownloadTaskV1Capability(), capability.maxVersion >= requiredVersion, hasTransport else {
             return try Self.downloadCreateOutcome(
                 status: .unsupported,
                 taskID: nil,
@@ -3770,10 +3798,16 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             )
         }
 
+        try await willSubmit?(request.identity)
+        if Task.isCancelled {
+            return try Self.downloadCreateOutcome(status: .cancelledBeforeSubmission, taskID: nil, task: nil,
+                submitted: false, requiresRefresh: false, counts: .init(succeeded: 0, failed: 0, unknown: 0),
+                errorCategory: nil, tag: "download-task.create.cancelled-before")
+        }
         let response: ServiceJSON
         do {
             response = try await submitDownloadTaskCreate(request)
-        } catch let error as AppError where error.category == .permissionDenied {
+        } catch let error as AppError where error.category == .permissionDenied || error.dsmCode == 402 {
             return try Self.downloadCreateOutcome(
                 status: .permissionDenied,
                 taskID: nil,
@@ -3784,6 +3818,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 errorCategory: .permission,
                 tag: "download-task.create.permission"
             )
+        } catch let error as AppError where error.dsmCode.map({ [101, 102, 103, 104, 106, 107, 400, 401, 403, 404, 405, 406, 407, 408].contains($0) }) == true {
+            return try Self.downloadCreateOutcome(status: .confirmedFailure, taskID: nil, task: nil,
+                submitted: true, requiresRefresh: false, counts: .init(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: Self.downloadCreateErrorCategory(error), tag: "download-task.create.rejected")
         } catch let error as AppError where error.category == .cancelled {
             let review = DownloadTaskCreateReview(
                 key: request.key,
@@ -3811,6 +3849,16 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
 
         let expectedID = Self.downloadCreateTaskID(from: response)
+        if let didAccept {
+            // 先保留在内存中，回执落盘失败时不能让同一请求重发。
+            pendingDownloadCreateReviews[request.key] = .init(key: request.key,
+                previousTaskIDs: previousIDs, expectedTaskID: nil, destination: request.destination)
+            try await didAccept()
+            pendingDownloadCreateReviews[request.key] = nil
+            return try Self.downloadCreateOutcome(status: .confirmedSuccess, taskID: expectedID, task: nil,
+                submitted: true, requiresRefresh: true, counts: .init(succeeded: 1, failed: 0, unknown: 0),
+                errorCategory: nil, tag: "download-task.create.accepted", requestAccepted: true)
+        }
         let review = DownloadTaskCreateReview(
             key: request.key,
             previousTaskIDs: previousIDs,
@@ -3836,7 +3884,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             return try await callOfficialDownloadTask(
                 method: "create",
                 parameters: parameters,
-                version: request.destination == nil ? 1 : 2
+                version: 3
             )
         case .file(let fileURL, let unzipPassword):
             return try await callOfficialDownloadTaskFileCreate(
@@ -4044,7 +4092,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         requiresRefresh: Bool,
         counts: MutationResultCounts,
         errorCategory: MutationErrorCategory?,
-        tag: String
+        tag: String,
+        requestAccepted: Bool = false
     ) throws -> DownloadTaskCreateOutcome {
         try DownloadTaskCreateOutcome(
             result: MutationResult(
@@ -4058,7 +4107,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 diagnosticTag: tag
             ),
             taskID: taskID,
-            task: task
+            task: task,
+            requestAccepted: requestAccepted
         )
     }
 
@@ -4301,8 +4351,12 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     ) throws -> URL {
         let bodyURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LanStashDownload-\(UUID().uuidString).multipart")
+        var attributes: [FileAttributeKey: Any] = [.posixPermissions: 0o600]
+        #if os(iOS)
+        attributes[.protectionKey] = FileProtectionType.complete
+        #endif
         guard FileManager.default.createFile(
-            atPath: bodyURL.path, contents: nil, attributes: [.posixPermissions: 0o600]
+            atPath: bodyURL.path, contents: nil, attributes: attributes
         ) else {
             throw AppError(
                 category: .localStorageFull,

@@ -3160,11 +3160,11 @@
 "mobile.downloads.create.cancel" = "取消";
 "mobile.downloads.create.done" = "完成";
 "mobile.downloads.create.creating.title" = "正在创建任务";
-"mobile.downloads.create.creating.message" = "正在等待 NAS 确认新的下载任务。";
-"mobile.downloads.create.success.title" = "任务已创建";
-"mobile.downloads.create.success.message" = "NAS 已确认新的下载任务。";
-"mobile.downloads.create.review.title" = "再次尝试前请先检查 Download Station";
-"mobile.downloads.create.review.message" = "请求可能已提交到 NAS，但 App 无法确认新任务。再次创建前，请刷新 Download Station。";
+"mobile.downloads.create.creating.message" = "正在添加下载…";
+"mobile.downloads.create.success.title" = "已添加下载";
+"mobile.downloads.create.success.message" = "已添加下载，可在任务列表查看进度。";
+"mobile.downloads.create.review.title" = "添加结果暂不可用";
+"mobile.downloads.create.review.message" = "暂时无法获取添加结果。请恢复连接后刷新任务列表，App 不会重复添加。";
 "mobile.downloads.create.cancelled.title" = "已取消创建";
 "mobile.downloads.create.cancelled.message" = "任务已在发送前取消。";
 "mobile.downloads.create.conflict.title" = "下载任务已发生变化";
@@ -6370,7 +6370,7 @@
 "mobile.downloads.batch.select-empty" = "当前没有可操作的任务。请返回列表并刷新后重试。";
 "mobile.downloads.batch.records" = "操作记录";
 "mobile.downloads.batch.records-empty" = "暂无操作记录";
-"mobile.downloads.batch.records-empty-help" = "更改保存位置、暂停或继续任务后，可在这里查看进度。";
+"mobile.downloads.batch.records-empty-help" = "添加下载、更改保存位置、暂停或继续任务后，可在这里查看进度。";
 "mobile.downloads.batch.pause-count" = "暂停（%d）";
 "mobile.downloads.batch.resume-count" = "继续（%d）";
 "mobile.downloads.batch.progress" = "已完成 %1$d/%2$d 项";
@@ -6426,3 +6426,9 @@
 "download.edit.denied" = "当前账号无法使用此位置或修改此任务。请选择可用文件夹，或联系 NAS 管理员。";
 "download.edit.failed" = "保存位置失败。请刷新任务列表后选择其他文件夹。";
 "download.edit.saving" = "正在保存…";
+
+"download.creation.link" = "链接下载";
+
+"download.creation.file" = "任务文件下载";
+
+"download.creation.refresh" = "刷新任务列表";
