@@ -1006,6 +1006,63 @@ final class NasAdministrationModelTests: XCTestCase {
         )
     }
 
+    func test文件服务相同缓存不能覆盖拒绝部分完成或未知结果() async throws {
+        for status: MutationResultStatus in [.permissionDenied, .unsupported, .partialSuccess, .submittedButUnverified, .cancellationRequestedAfterSubmission, .confirmedFailure] {
+            let repository = NasAdministrationRepositoryStub(fileServiceUpdateStatus: status)
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            await model.activate(.fileServices)
+            let expected = try XCTUnwrap(model.fileServices)
+            do { try await model.saveFileServices(expected); XCTFail("相同配置不能覆盖操作结果：\(status)") }
+            catch let error as AppError {
+                let feedback = NasSettingsModel.fileServiceSettingsFeedback(for: status)
+                XCTAssertEqual(error.category, feedback.category)
+                XCTAssertEqual(error.safeUserMessage, L10n.string(feedback.resourceKey))
+                XCTAssertFalse(error.isRetryable)
+            }
+            XCTAssertEqual(model.fileServices, expected)
+            XCTAssertFalse(model.isSavingServiceSettings)
+        }
+    }
+
+    func test远程终端相同缓存不能覆盖拒绝部分完成或未知结果() async throws {
+        for status: MutationResultStatus in [.permissionDenied, .unsupported, .partialSuccess, .submittedButUnverified, .cancellationRequestedAfterSubmission, .confirmedFailure] {
+            let repository = NasAdministrationRepositoryStub(terminalUpdateStatus: status)
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            await model.activate(.terminal)
+            let expected = try XCTUnwrap(model.terminal)
+            do { try await model.saveTerminal(expected); XCTFail("相同配置不能覆盖操作结果：\(status)") }
+            catch let error as AppError {
+                let feedback = NasSettingsModel.terminalSettingsFeedback(for: status)
+                XCTAssertEqual(error.category, feedback.category)
+                XCTAssertEqual(error.safeUserMessage, L10n.string(feedback.resourceKey))
+                XCTAssertFalse(error.isRetryable)
+            }
+            XCTAssertEqual(model.terminal, expected)
+            XCTAssertFalse(model.isSavingServiceSettings)
+        }
+    }
+
+    func test互联网代理相同缓存不能覆盖拒绝部分完成或未知结果() async throws {
+        for status: MutationResultStatus in [.permissionDenied, .unsupported, .partialSuccess, .submittedButUnverified, .cancellationRequestedAfterSubmission, .confirmedFailure] {
+            let repository = NasAdministrationRepositoryStub(proxyUpdateStatus: status)
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            await model.activate(.network)
+            let expected = try XCTUnwrap(model.proxy)
+            do { try await model.saveProxy(expected); XCTFail("相同配置不能覆盖操作结果：\(status)") }
+            catch let error as AppError {
+                let feedback = NasSettingsModel.proxySettingsFeedback(for: status)
+                XCTAssertEqual(error.category, feedback.category)
+                XCTAssertEqual(error.safeUserMessage, L10n.string(feedback.resourceKey))
+                XCTAssertFalse(error.isRetryable)
+            }
+            XCTAssertEqual(model.proxy, expected)
+            XCTAssertFalse(model.isSavingServiceSettings)
+        }
+    }
+
     func test文件服务设置确认成功后刷新模型状态() async throws {
         let repository = NasAdministrationRepositoryStub()
         let model = NasSettingsModel(repository: repository)
