@@ -1465,10 +1465,8 @@ final class NasSettingsModel {
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.fileServices, force: true)
         }
-        if fileServices.map({
-            Self.fileServiceSettings($0, match: settings)
-        }) == true
-            || result.status == .confirmedSuccess
+        // 页面缓存或偶合的回读不能覆盖适配器的明确拒绝、部分完成及未知结果。
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }
@@ -1529,33 +1527,6 @@ final class NasSettingsModel {
         }
     }
 
-    private static func fileServiceSettings(
-        _ actual: NasFileServiceSettings,
-        match expected: NasFileServiceSettings
-    ) -> Bool {
-        (expected.isSMBEnabled == nil
-            || actual.isSMBEnabled == expected.isSMBEnabled)
-            && (expected.isNFSEnabled == nil
-                || actual.isNFSEnabled == expected.isNFSEnabled)
-            && (expected.isFTPEnabled == nil
-                || actual.isFTPEnabled == expected.isFTPEnabled)
-            && (expected.isFTPSEnabled == nil
-                || actual.isFTPSEnabled == expected.isFTPSEnabled)
-            && (expected.ftpPort == nil
-                || actual.ftpPort == expected.ftpPort)
-            && (expected.isSFTPEnabled == nil
-                || actual.isSFTPEnabled == expected.isSFTPEnabled)
-            && (expected.sftpPort == nil
-                || actual.sftpPort == expected.sftpPort)
-            && (expected.isSSDPEnabled == nil
-                || actual.isSSDPEnabled == expected.isSSDPEnabled)
-            && (expected.isBonjourEnabled == nil
-                || actual.isBonjourEnabled == expected.isBonjourEnabled)
-            && (expected.isSMBTimeMachineEnabled == nil
-                || actual.isSMBTimeMachineEnabled
-                    == expected.isSMBTimeMachineEnabled)
-    }
-
     func saveTerminal(_ settings: NasTerminalSettings) async throws {
         guard !isSavingServiceSettings else { throw settingsBusyError() }
         isSavingServiceSettings = true
@@ -1564,10 +1535,8 @@ final class NasSettingsModel {
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.terminal, force: true)
         }
-        if terminal.map({
-            Self.terminalSettings($0, match: settings)
-        }) == true
-            || result.status == .confirmedSuccess
+        // 页面缓存或偶合的回读不能覆盖适配器的明确拒绝、部分完成及未知结果。
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }
@@ -1628,16 +1597,6 @@ final class NasSettingsModel {
         }
     }
 
-    private static func terminalSettings(
-        _ actual: NasTerminalSettings,
-        match expected: NasTerminalSettings
-    ) -> Bool {
-        actual.isSSHEnabled == expected.isSSHEnabled
-            && actual.isTelnetEnabled == expected.isTelnetEnabled
-            && (expected.sshPort == nil
-                || actual.sshPort == expected.sshPort)
-    }
-
     func saveProxy(_ settings: NasProxySettings) async throws {
         guard !isSavingServiceSettings else { throw settingsBusyError() }
         isSavingServiceSettings = true
@@ -1646,10 +1605,8 @@ final class NasSettingsModel {
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.network, force: true)
         }
-        if proxy.map({
-            Self.proxySettings($0, match: settings)
-        }) == true
-            || result.status == .confirmedSuccess
+        // 页面缓存或偶合的回读不能覆盖适配器的明确拒绝、部分完成及未知结果。
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }
@@ -1708,16 +1665,6 @@ final class NasSettingsModel {
                 category: .cancelled
             )
         }
-    }
-
-    private static func proxySettings(
-        _ actual: NasProxySettings,
-        match expected: NasProxySettings
-    ) -> Bool {
-        actual.isEnabled == expected.isEnabled
-            && (!expected.isEnabled
-                || (actual.host == expected.normalizedHost
-                    && actual.port == expected.port))
     }
 
     func saveEthernetInterface(_ interface: NasEthernetInterface) async throws {
