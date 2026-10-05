@@ -38,6 +38,25 @@ fail() {
     exit 1
 }
 
+verify_disk_image() {
+    local image_path="$1" attempt output status
+    for attempt in 1 2 3; do
+        if output="$(LC_ALL=C /usr/bin/hdiutil verify "$image_path" 2>&1)"; then
+            return 0
+        else
+            status=$?
+        fi
+        # 托管 macOS 在 create 完成后仍可能短暂占用映像；只重试已观测到的 EAGAIN。
+        if [[ "$attempt" -lt 3 && "$output" == *"Resource temporarily unavailable"* ]]; then
+            echo "磁盘映像暂被系统占用，稍后重新验证。" >&2
+            /bin/sleep 2
+        else
+            printf '%s\n' "$output" >&2
+            return "$status"
+        fi
+    done
+}
+
 validate_and_embed_profile() {
     local profile_path="$1"
     local expected_bundle_id="$2"
@@ -603,7 +622,7 @@ echo "==> 生成 DMG"
     "$DMG_PATH"
 
 echo "==> 验证 DMG"
-/usr/bin/hdiutil verify "$DMG_PATH" >/dev/null
+verify_disk_image "$DMG_PATH"
 
 if [[ "$SIGNING_IDENTITY" != "-" ]]; then
     echo "==> 签名 DMG"
