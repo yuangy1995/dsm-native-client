@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct MobileDownloadsView: View {
     @Bindable var model: MobileDownloadsModel
     var fileRepository: (any MobileFileBrowsing)? = nil
+    var openFiles: (() -> Void)? = nil
     @State private var selectedTask: DownloadStationTask?
     @State private var createDraft: MobileDownloadCreateDraft?
     @State private var isShowingBTSearch = false
@@ -42,7 +43,7 @@ struct MobileDownloadsView: View {
         .searchable(text: $model.searchText, prompt: L10n.string("download.workspace.search"))
         .refreshable { await model.load() }
         .sheet(item: $selectedTask) { task in
-            MobileDownloadTaskDetailView(model: model, initialTask: task, fileRepository: fileRepository)
+            MobileDownloadTaskDetailView(model: model, initialTask: task, fileRepository: fileRepository, openFiles: openFiles)
         }
         .sheet(item: $createDraft) { draft in
             MobileDownloadCreateTaskView(model: model, draft: draft, fileRepository: fileRepository)
@@ -70,7 +71,7 @@ struct MobileDownloadsView: View {
                 Button { isSelectingTasks = true } label: {
                     Label(L10n.string("mobile.downloads.batch.select"), systemImage: "checkmark.circle")
                 }
-                .disabled(model.visibleTasks.allSatisfy { !model.canPauseDownloadTask($0) && !model.canResumeDownloadTask($0) && !model.canEditDownloadTask($0) })
+                .disabled(model.visibleTasks.allSatisfy { !model.canPauseDownloadTask($0) && !model.canResumeDownloadTask($0) && !model.canEditDownloadTask($0) && !model.canDeleteDownloadTask($0) })
                 .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
                 .accessibilityIdentifier("downloads.select")
             }
@@ -362,8 +363,9 @@ private struct MobileDownloadTaskDetailView: View {
     @Bindable var model: MobileDownloadsModel
     let initialTask: DownloadStationTask
     var fileRepository: (any MobileFileBrowsing)? = nil
+    var openFiles: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
-    @State private var isConfirmingDelete = false
+    @State private var removalDraft: MobileDownloadRemovalDraft?
     @State private var isShowingControlRecords = false
     @State private var editDraft: MobileDownloadEditDraft?
     @State private var details: DownloadStationTaskDetails?
@@ -397,8 +399,9 @@ private struct MobileDownloadTaskDetailView: View {
                 Section(L10n.string("ui.1932da4d4dba4ed0")) {
                     LabeledContent(
                         L10n.string("background-tasks.filter-label"),
-                        value: MobileDownloadPresentation.status(task.status)
+                        value: model.downloadTask(id: task.id) == nil ? L10n.string("download.removal.removed") : MobileDownloadPresentation.status(task.status)
                     )
+                    .accessibilityIdentifier("downloads.details.status")
                     if let progress = task.progress {
                         LabeledContent(L10n.string("ui.755ca1516d681c2c")) {
                             Text(progress, format: .percent.precision(.fractionLength(0)))
@@ -447,21 +450,7 @@ private struct MobileDownloadTaskDetailView: View {
                 MobileDownloadEditView(model: model, draft: draft, fileRepository: fileRepository)
             }
             .onChange(of: model.editActivation) { _, _ in dismiss() }
-            .confirmationDialog(
-                L10n.string("mobile.downloads.delete.confirm.title", task.title),
-                isPresented: $isConfirmingDelete,
-                titleVisibility: .visible
-            ) {
-                Button(
-                    L10n.string("mobile.downloads.delete.confirm.submit"),
-                    role: .destructive
-                ) {
-                    model.deleteDownloadTask(task)
-                }
-                Button(L10n.string("mobile.downloads.delete.confirm.cancel"), role: .cancel) {}
-            } message: {
-                Text(L10n.string("mobile.downloads.delete.confirm.message"))
-            }
+            .sheet(item: $removalDraft) { draft in MobileDownloadRemovalView(model: model, draft: draft) }
             .navigationTitle(task.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -510,7 +499,7 @@ private struct MobileDownloadTaskDetailView: View {
                         model.controlDownloadTask(task, action: .pause)
                     } label: {
                         Label(
-                            L10n.string("mobile.downloads.control.pause"),
+                            L10n.string(MobileDownloadFilter.seeding.includes(task) ? "download.removal.stop-seeding" : "mobile.downloads.control.pause"),
                             systemImage: "pause.fill"
                         )
                     }
@@ -543,31 +532,22 @@ private struct MobileDownloadTaskDetailView: View {
 
     @ViewBuilder
     private var deleteSection: some View {
-        if model.deleteFeedbackForDownloadTask(task) != nil
-            || model.canDeleteDownloadTask(task)
-            || model.isDeletingDownloadTask {
-            Section(L10n.string("mobile.downloads.delete.section")) {
-                if let feedback = model.deleteFeedbackForDownloadTask(task) {
-                    DownloadDeleteFeedbackView(model: model, feedback: feedback)
-                }
-                if model.canDeleteDownloadTask(task) {
-                    Button(role: .destructive) {
-                        isConfirmingDelete = true
-                    } label: {
-                        Label(
-                            L10n.string("mobile.downloads.delete.action"),
-                            systemImage: "trash"
-                        )
-                    }
-                    .frame(minHeight: MobileMetrics.minimumTouchTarget)
-                    .accessibilityHint(L10n.string("mobile.downloads.delete.action.hint"))
-                }
-                if model.isDeletingDownloadTask {
-                    ProgressView()
-                        .accessibilityLabel(
-                            L10n.string("mobile.downloads.delete.deleting.message")
-                        )
-                }
+        Section {
+            if model.canDeleteDownloadTask(task) {
+                Button(L10n.string("download.removal.action"), role: .destructive) {
+                    removalDraft = .init(activation: model.editActivation, tasks: [task], forceComplete: false)
+                }.frame(minHeight: MobileMetrics.minimumTouchTarget).accessibilityIdentifier("downloads.details.remove")
+                Button(L10n.string("download.removal.force-title"), role: .destructive) {
+                    removalDraft = .init(activation: model.editActivation, tasks: [task], forceComplete: true)
+                }.frame(minHeight: MobileMetrics.minimumTouchTarget).accessibilityIdentifier("downloads.details.force-remove")
+            }
+            if model.removalProtects(task.id) {
+                Button(L10n.string("mobile.downloads.batch.records")) { isShowingControlRecords = true }
+                    .frame(minHeight: MobileMetrics.minimumTouchTarget).accessibilityIdentifier("downloads.details.removal-records")
+            }
+            if let openFiles {
+                Button(L10n.string("download.removal.open-files")) { dismiss(); openFiles() }
+                    .frame(minHeight: MobileMetrics.minimumTouchTarget).accessibilityIdentifier("downloads.details.open-files")
             }
         }
     }
@@ -576,43 +556,6 @@ private struct MobileDownloadTaskDetailView: View {
 private struct DownloadControlFeedbackView: View {
     @Bindable var model: MobileDownloadsModel
     let feedback: MobileDownloadControlFeedback
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(model.title(for: feedback), systemImage: systemImage)
-                .font(.headline)
-            Text(model.message(for: feedback))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var systemImage: String {
-        switch feedback.kind {
-        case .inProgress:
-            return "clock"
-        case .success:
-            return "checkmark.circle"
-        case .needsReview:
-            return "exclamationmark.triangle"
-        case .cancelled:
-            return "xmark.circle"
-        case .conflict:
-            return "arrow.triangle.2.circlepath"
-        case .permission:
-            return "lock"
-        case .unsupported:
-            return "slash.circle"
-        case .failure:
-            return "exclamationmark.circle"
-        }
-    }
-}
-
-private struct DownloadDeleteFeedbackView: View {
-    @Bindable var model: MobileDownloadsModel
-    let feedback: MobileDownloadDeleteFeedback
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

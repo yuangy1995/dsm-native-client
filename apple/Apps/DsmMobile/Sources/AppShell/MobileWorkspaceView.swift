@@ -205,7 +205,8 @@ struct MobileWorkspaceView: View {
             case .chat:
                 MobileChatView(model: model)
             case .downloads:
-                MobileDownloadsView(model: model.downloads, fileRepository: model.fileRepository)
+                MobileDownloadsView(model: model.downloads, fileRepository: model.fileRepository,
+                    openFiles: model.isModuleVisible(.files) ? { model.selectModule(.files) } : nil)
             case .containers:
                 MobileContainersView(inventory: model.containerInventoryModel)
             case .virtualMachines:

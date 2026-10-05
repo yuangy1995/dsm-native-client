@@ -1970,3 +1970,28 @@ RSS 实施基线为 `338c15b3`；期间 Apple CI 的独立修复已提交/推送
 - `python3 tools/localization/check_localization.py`：6196 / 2188 / 3402；`python3 tools/request-contract/validate_contracts.py`：179 个请求、1 个结果样本；`python3 tools/contract-validation/validate_fixtures.py`：29 组、48 项私有引用；`python3 tools/codex/generate_api_reference.py --check` 均通过。新增均为脱敏公开 API 样本，未放宽既有校验器。
 
 具体真实设备/NAS 步骤见移动计划 M5c3 的 `PENDING_USER_VALIDATION`。真实来源读取、NAS 自动规则副作用、权限处理、文件保护与辅助功能仍需设备验收；Agent 未自动操作 NAS。Apple CI `09a1deda` 的 [37261490138](https://github.com/yuangy1995/dsm-native-client/actions/runs/37261490138) 已启动三个独立组，编译/测试仍进行时不能宣称绿色。旧七轮同分支运行（37255101279、37252437350、37249915372、37247498063、37244540417、37242202366、37238872718）已请求取消，避免过期提交重复占用资源；取消不是通过。M5d 仍需开发，用户已要求 M5 完成后暂停原目标并另开会话接续 M6–M8。
+
+## 2026-10-05 移动 M5d 任务移除与文件边界
+
+基线 `214e87d5`。共享新增冻结任务编号/名称/大小/位置摘要的 `DownloadTaskRemoval`，公开 Task.delete/list 固定 v1，逐项回执、完整清单回读、写前保存回调及同任务控制/编辑/移除互斥。旧 void 控制也拒绝未记录的 finish 方法；停止做种沿用 pause/paused，继续沿用 resume。Mac App、Windows/Android 源码未改，不从任务消失推断文件移动或删除。
+
+移动单项和多项使用同一 `removals-v1.json` 队列，提交未知只查询，未开始项明确继续/取消，取消立即保存。原单项内存删除流程及 23 个失效文案删除；本次确认中的名称保留在视图内，恢复文件不保存名称、路径正文、URI 或凭据，重启后仅从当前匹配任务恢复名称。两个危险选项分别说明未完成进度和未完成文件的风险；File Station 入口由用户选择真实对象，不能根据管理员可见下载任务的 destination 猜测文件归属或自动删除。
+
+当前负责人另行执行只读集成与对抗复核（非另一模型）：检查写前目标/位置、写前持久保存、未知/损坏、分页中断、重复与跨动作互斥、取消、同账号重连及跨账号迟到。发现移除成功后的旧详情仍可能提供暂停操作，已要求当前任务存在才开放控制、清理旧控制反馈并显示任务已移除。没有削弱旧业务断言，历史单项删除和迟到列表测试迁入真实 Repository 的合成网络链路。
+
+环境为 Xcode 26.5 / iOS 26.5、锁定 XcodeGen 2.46.0；iPhone `8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`、iPad `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。临时结果目录 `/tmp/lanstash-release-1.0.15.1x6wUX`，没有真实 NAS 写请求。
+
+- `swift test --package-path apple --jobs 2 --filter DownloadTaskDestinationTests`：10 项、0 失败，0.064 秒；随后 `--filter DownloadTaskRemovalTests`：11 项、0 失败，0.072 秒。新共享场景覆盖两种 force_complete 值、明确拒绝、损坏/错位回执、未知恢复、分页错误、编号复用、写前保存失败/取消、旧入口互斥及无 finish 请求。
+- `swift test --package-path apple --jobs 2`：2714 项 XCTest、172 条既有条件跳过、0 失败，48.948 秒；12 项 Swift Testing 通过，0.049 秒。包含新增停止做种用 pause 的回归。最后文案调整后的 `--filter AppLanguageTests` 另通过 6 项 Swift Testing（0.045 秒）。
+- `xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build` 两轮通过；最后 `lipo -archs .../Release/LanStash.app/Contents/MacOS/LanStash` 为 `x86_64 arm64`。没有安装或启动 Mac App。
+- 移动按既定 XcodeGen 工程生成流程增加三个源文件和两个测试文件的引用，共享新类型由 Package 发现。`xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -configuration Debug -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing`：首轮构建期间调整 UI 合成传输入参导致新旧对象的初始化签名不一致、链接失败；第 2–6 轮重新构建通过，没有添加旧初始化兼容层或手改工程。
+- 两端 R1 使用 `test-without-building`、相同项目/方案/配置/派生目录、各自 destination、`-parallel-testing-enabled NO`，选择 `-only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileDownloadRemovalUITests -only-testing:DsmMobileUITests/MobileDownloadControlUITests -only-testing:DsmMobileUITests/MobileDownloadEditUITests/test单任务选择文件夹保存后详情显示新位置`。结果包 `m5d-phone-r1.xcresult` / `m5d-pad-r1.xcresult`：各 1251 项单元、各 4 条既有设备条件跳过、零失败，32.792 / 33.217 秒；各 12 项 UI 为 11 通过/1 失败，565.285 / 683.639 秒。原 5 项控制与单项编辑均通过；新增 6 项移除中仅中文最大字号失败，原因是列表虚拟化后任务行在屏幕下方，测试没有滚动到目标。已沿用既有列表视口滚动，保留横屏、确认和结果断言。
+- 两端 R2 选择全部单元及 6 项移除 UI（`-only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileDownloadRemovalUITests`），结果包 `m5d-phone-r2.xcresult` / `m5d-pad-r2.xcresult`。最新两端各 1251 项单元、各 4 条既有条件跳过、0 失败，29.947 / 30.179 秒；各 6 项 UI 为 5 通过/1 失败，286.692 / 300.631 秒。中文最大字号/横屏和原五类业务流程中的对应动作通过，新增的返回详情状态断言未找到独立的纯文本节点；已移除任务的暂停/移除入口不可见断言通过。状态按现有 LabeledContent 的标识、组合文案与实际视口定位补强，R3 保留原状态断言继续复验；没有把该失败删除或当作已通过。
+
+R3 仅选择 `MobileDownloadRemovalUITests/test单项确认取消保持任务随后移除只显示任务结果` 和 `MobileDownloadRemovalUITests/test中文深色最大字号确认与结果支持横屏`，结果包 `m5d-phone-r3.xcresult` / `m5d-pad-r3.xcresult`：两端各 2 项通过、0 失败，136.863 / 125.171 秒。前者包含取消、移除后的原名称和准确状态、返回详情后无暂停/移除入口及主列表不再出现原任务；后者等待真正的中文确认文案后截图，保留最大字号和横屏可达性。6 个新增场景与原 6 个控制/编辑场景均有两端通过证据。
+
+首轮已查看 iPhone 英文确认和部分拒绝截图，随后修正单项数量标题、当次结果名称及精简结果说明。最终另查看两端中文深色最大字号确认页、iPhone 横屏结果及 iPad 移除后详情，确认内容可滚动、风险说明与关闭入口可读、旧操作已隐藏、状态为任务已移除；没有将过渡动画中的父页面截图当作确认页证据。`python3 tools/localization/check_localization.py` 最终 Apple 6192 / Android 2188 / Windows 3402，双语/参数/资源引用/硬编码通过；请求样本 179/1、私有样本/引用 29/48、API 目录一致性、严格文档预检和差异空白检查已通过。真实设备/NAS 条件见移动主计划 M5d 的 `PENDING_USER_VALIDATION`。
+
+交接准备时 `214e87d5` 的 [Apple Build 37264048781](https://github.com/yuangy1995/dsm-native-client/actions/runs/37264048781) 共享/macOS 组已通过，两端全量移动 UI 仍在执行。M5d 本机通过不替代最终提交的全量云端结果；新会话需按交接消息的实际提交和最新运行跟进，并避免持续新推送反复取消唯一完整运行。
+
+最终按锁定 XcodeGen 流程重新生成移动工程，前后内容一致，SHA-256 `2b402a704789a9faf4d7053108d95e4a43e60522dd8afaf916f47786b15b2110`。本切片按既定主分支策略交付，不创建分支或发布安装包；实际提交与云端状态随会话交接提供。

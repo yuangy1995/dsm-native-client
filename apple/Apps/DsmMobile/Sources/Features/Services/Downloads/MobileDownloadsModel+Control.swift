@@ -13,8 +13,8 @@ extension MobileDownloadsModel {
         return controlRecovery.protects(id, context: context)
     }
     func canStartDownloadControl(_ task: DownloadStationTask) -> Bool {
-        !isControllingDownloadTask && !isDeletingDownloadTask && !controlProtects(task.id)
-            && !isEditingDownloadTask && !editProtects(task.id)
+        downloadTask(id: task.id) != nil && !isControllingDownloadTask && !isDeletingDownloadTask && !controlProtects(task.id)
+            && !isEditingDownloadTask && !editProtects(task.id) && !removalProtects(task.id)
             && activeProfile != nil && (serviceRepository != nil || downloadStationControlOverride != nil)
     }
 
@@ -95,6 +95,7 @@ extension MobileDownloadsModel {
                             if isCurrent() { self.downloadControlFeedback = .init(taskID: item.taskID, action: entry.action.taskAction, kind: .conflict) }
                         }
                     } else {
+                        guard !self.removalProtects(item.taskID) else { break }
                         let original = originals[item.taskID] ?? self.downloadTask(id: item.taskID)
                         guard let original, item.matches(original), Self.normalizedDownloadTaskStatus(original.status)
                             == Self.normalizedDownloadTaskStatus(item.originalStatus) else {

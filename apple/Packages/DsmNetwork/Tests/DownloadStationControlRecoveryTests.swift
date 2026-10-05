@@ -4,6 +4,16 @@ import XCTest
 @testable import DsmNetwork
 
 final class DownloadStationControlRecoveryTests: XCTestCase {
+    func test停止做种只暂停任务并读取实际暂停状态() async throws {
+        for status in ["seeding", "uploading"] {
+            let transport = MockHTTPTransport(responses: [page(status), response(#"[{"id":"synthetic-1","error":0}]"#), page("paused")])
+            let outcome = try await repository(transport).controlDownloadTaskResult(.init(task: task(status), action: .pause))
+            XCTAssertEqual(outcome.result.status, .confirmedSuccess); XCTAssertEqual(outcome.task?.status, "paused")
+            let calls = await transport.recordedRequests()
+            XCTAssertEqual(calls.map { Self.field("method", $0) }, ["list", "pause", "list"])
+            XCTAssertTrue(calls.allSatisfy { Self.field("force_complete", $0) == nil })
+        }
+    }
     func test写前回调收到最新任务且回调完成前没有控制请求() async throws {
         let transport = MockHTTPTransport(responses: [page("downloading"), response(#"{}"#), page("paused")])
         let repository = try repository(transport), original = task("downloading")

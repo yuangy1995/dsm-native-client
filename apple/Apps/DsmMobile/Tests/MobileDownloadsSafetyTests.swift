@@ -154,29 +154,20 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let task = DownloadStationTask(id: "task-1", title: "示例任务", status: "finished")
         model.activeProfile = profile
         model.downloadSnapshot = DownloadStationSnapshot(source: .official, tasks: [task])
-        model.downloadStationDeleteOverride = { ids, removeData in
-            XCTAssertEqual(ids, ["task-1"])
-            XCTAssertFalse(removeData)
-            return try MutationResult(
-                status: .confirmedSuccess,
-                operation: "downloadTaskDelete",
-                submitted: true,
-                requiresRefresh: true,
-                counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0)
-            )
-        }
-
-        model.deleteDownloadTask(task)
-        for _ in 0..<50 where model.downloadDeleteFeedback?.kind != .success {
-            await Task.yield()
-        }
-
+        let transport = DownloadRemovalTransport(tasks: [task])
+        model.configure(profile: profile, repository: try makeDownloadRemovalRepository(profile: profile, transport: transport))
+        model.downloadSnapshot = DownloadStationSnapshot(source: .official, tasks: [task])
+        XCTAssertNotNil(model.startDownloadRemoval([task], forceComplete: false, activation: model.editActivation))
+        await model.downloadDeleteTask?.value
         XCTAssertNil(model.downloadTask(id: "task-1"))
-        XCTAssertEqual(model.downloadDeleteFeedback?.kind, .success)
+        XCTAssertEqual(model.removalEntries.first?.items.first?.phase, .complete)
+        let writes = await transport.writes
+        XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes.first?["id"], "task-1")
+        XCTAssertEqual(writes.first?["force_complete"], "false")
     }
 
     @MainActor
-    func test单任务删除未知结果保留任务并要求核对() async throws {
+    func test单任务删除未知结果保留任务且防止重发() async throws {
         let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -189,28 +180,16 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let task = DownloadStationTask(id: "task-1", title: "示例任务", status: "finished")
         model.activeProfile = profile
         model.downloadSnapshot = DownloadStationSnapshot(source: .official, tasks: [task])
-        model.downloadStationDeleteOverride = { ids, removeData in
-            XCTAssertEqual(ids, ["task-1"])
-            XCTAssertFalse(removeData)
-            return try MutationResult(
-                status: .submittedButUnverified,
-                operation: "downloadTaskDelete",
-                submitted: true,
-                requiresRefresh: true,
-                counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 1),
-                errorCategory: .network,
-                localizationKey: "download-task.delete.unverified",
-                diagnosticTag: "download-task.delete.unverified"
-            )
-        }
-
-        model.deleteDownloadTask(task)
-        for _ in 0..<50 where model.downloadDeleteFeedback?.kind != .needsReview {
-            await Task.yield()
-        }
-
+        let transport = DownloadRemovalTransport(tasks: [task], unknown: true)
+        model.configure(profile: profile, repository: try makeDownloadRemovalRepository(profile: profile, transport: transport))
+        model.downloadSnapshot = DownloadStationSnapshot(source: .official, tasks: [task])
+        XCTAssertNotNil(model.startDownloadRemoval([task], forceComplete: false, activation: model.editActivation))
+        await model.downloadDeleteTask?.value
         XCTAssertNotNil(model.downloadTask(id: "task-1"))
-        XCTAssertEqual(model.downloadDeleteFeedback?.kind, .needsReview)
+        XCTAssertEqual(model.removalEntries.first?.items.first?.phase, .submitted)
+        XCTAssertFalse(model.canDeleteDownloadTask(task))
+        let writes = await transport.writes
+        XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes.first?["force_complete"], "false")
     }
 
     func test下载创建与移除保留安全入口且单项控制复用恢复队列() throws {
@@ -244,8 +223,12 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         for forbidden in ["UserDefaults", "@AppStorage", "@SceneStorage"] { XCTAssertFalse(creation.contains(forbidden)) }
         XCTAssertTrue(view.contains("model.controlDownloadTask(task, action: .pause)"))
         XCTAssertTrue(view.contains("model.controlDownloadTask(task, action: .resume)"))
-        XCTAssertTrue(view.contains("model.deleteDownloadTask(task)"))
-        XCTAssertTrue(view.contains("confirmationDialog("))
+        let removalView = try sourceFile("Sources/Features/Services/Downloads/MobileDownloadRemovalView.swift")
+        let removalModel = try sourceFile("Sources/Features/Services/Downloads/MobileDownloadsModel+Removal.swift")
+        XCTAssertTrue(view.contains("MobileDownloadRemovalView"))
+        XCTAssertTrue(removalView.contains("role: .destructive"))
+        XCTAssertTrue(removalView.contains("download.removal.force-warning"))
+        XCTAssertTrue(removalView.contains("model.startDownloadRemoval(draft.tasks, forceComplete: draft.forceComplete, activation: draft.activation)"))
         XCTAssertTrue(model.contains("createDownloadTask(uri rawURI: String)"))
         XCTAssertTrue(model.contains("createDownloadTask(fileURL: URL)"))
         XCTAssertTrue(model.contains("DownloadTaskCreateRequest("))
@@ -256,9 +239,10 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let control = try sourceFile("Sources/Features/Services/Downloads/MobileDownloadsModel+Control.swift")
         XCTAssertTrue(control.contains("controlDownloadTaskResult(request, willSubmit: save)"))
         XCTAssertTrue(control.contains("loadDownloadTaskControlState(id: item.taskID)"))
-        XCTAssertTrue(model.contains("deleteDownloadTask(_ task: DownloadStationTask)"))
-        XCTAssertTrue(model.contains("deleteDownloadTasksResult("))
-        XCTAssertTrue(model.contains("removeData: false"))
+        XCTAssertTrue(removalModel.contains("repository.removeDownloadTask(current.removal)"))
+        XCTAssertTrue(removalModel.contains("repository.reviewDownloadTaskRemoval(current.removal)"))
+        XCTAssertTrue(removalModel.contains("phase: .submitted"))
+        XCTAssertFalse(model.contains("downloadStationDeleteOverride"))
     }
 
     @MainActor
@@ -441,10 +425,14 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(creation.contains("interactiveDismissDisabled(model.isCreatingDownloadTask)"))
         XCTAssertTrue(view.contains("mobile.downloads.control.pause.hint"))
         XCTAssertTrue(view.contains("mobile.downloads.control.resume.hint"))
-        XCTAssertTrue(view.contains("mobile.downloads.delete.action.hint"))
-        XCTAssertTrue(view.contains("mobile.downloads.delete.confirm.message"))
+        let removal = try sourceFile("Sources/Features/Services/Downloads/MobileDownloadRemovalView.swift")
+        XCTAssertTrue(view.contains("downloads.details.remove"))
+        XCTAssertTrue(removal.contains("download.removal.warning"))
+        XCTAssertTrue(removal.contains("download.removal.force-warning"))
+        XCTAssertTrue(removal.contains("MobileMetrics.minimumTouchTarget"))
+        XCTAssertTrue(removal.contains(".accessibilityElement(children: .combine)"))
         XCTAssertTrue(view.contains("mobile.downloads.control.in-progress.message"))
-        XCTAssertTrue(view.contains("mobile.downloads.delete.deleting.message"))
+        XCTAssertTrue(removal.contains("download.removal.running"))
         XCTAssertTrue(view.contains("MobileMetrics.minimumTouchTarget"))
         XCTAssertTrue(view.contains(".accessibilityHint("))
         XCTAssertTrue(view.contains(".accessibilityLabel("))

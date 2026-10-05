@@ -84,6 +84,12 @@ enum MobileUIFixture {
                         }
                     }
                 }
+                var removedTaskIDs: Set<String> = []
+                if officeState == "downloads-removal-recover" {
+                    for entry in model.downloads.removalRecovery.entries {
+                        for item in entry.items where item.phase == .submitted || item.phase == .complete { removedTaskIDs.insert(item.taskID) }
+                    }
+                }
                 var settings: [DownloadSettingsField: DownloadSettingsValue] = [:]
                 var destinations: [String: String] = [:]
                 if officeState == "downloads-edit-recover" {
@@ -101,7 +107,7 @@ enum MobileUIFixture {
                     }
                 }
                 model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
-                    session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses, settings: settings, destinations: destinations))
+                    session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses, settings: settings, destinations: destinations, removedTaskIDs: removedTaskIDs))
             }
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)

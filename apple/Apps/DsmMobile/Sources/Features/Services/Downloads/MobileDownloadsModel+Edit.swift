@@ -15,7 +15,7 @@ extension MobileDownloadsModel {
               DownloadTaskDestinationChange(task: task, destination: "").matchesIdentity(current) else { return false }
         return activeProfile != nil && serviceRepository?.supportsDownloadDestinationEditing == true
             && !isEditingDownloadTask && !isControllingDownloadTask && !isDeletingDownloadTask
-            && !editProtects(task.id) && !controlProtects(task.id)
+            && !editProtects(task.id) && !removalProtects(task.id) && !controlProtects(task.id)
             && DownloadTaskDestinationChange.validDestination(task.destination ?? "")
     }
     @discardableResult
@@ -55,7 +55,7 @@ extension MobileDownloadsModel {
                     if current.phase == .submitted {
                         outcome = try await repository.reviewDownloadTaskDestination(current.change)
                     } else {
-                        guard !self.controlProtects(item.taskID) else { break }
+                        guard !self.controlProtects(item.taskID) && !self.removalProtects(item.taskID) else { break }
                         outcome = try await repository.changeDownloadTaskDestination(current.change) { [weak self] in
                             try await MainActor.run {
                                 guard let self, self.editActivation == token, !Task.isCancelled,
