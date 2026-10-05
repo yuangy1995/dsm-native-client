@@ -188,6 +188,26 @@ final class MobileChatRealtimeTests: XCTestCase {
         XCTAssertEqual(before, after)
     }
 
+    func test停止前台会等待已取消的会话刷新结束() async throws {
+        let (model, transport, repository) = try await fixture()
+        await repository.holdNextConversationRead()
+        await model.setForegroundRealtimeActive(true)
+        await eventually { await repository.hasBlockedConversationRead }
+        var stopped = false
+        let stop = Task { await model.setForegroundRealtimeActive(false); stopped = true }
+        await eventually { !model.isForegroundActive }
+        // 请求仍由测试闸门阻塞；停止任务有机会运行后也不能提前报告结束。
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertFalse(stopped)
+        await repository.releaseConversationRead(); await stop.value
+        XCTAssertTrue(stopped)
+        let before = await transport.conversationReads
+        await repository.emit(.contentChanged)
+        try await Task.sleep(for: .milliseconds(40))
+        let after = await transport.conversationReads
+        XCTAssertEqual(before, after)
+    }
+
     func fixture() async throws -> (MobileChatModel, MobileChatRealtimeUITransport, MobileChatRealtimeRepositoryProbe) {
         let transport = MobileChatRealtimeUITransport()
         let base = try DsmChatRepository(profile: profile(), capabilities: capabilities(),
@@ -226,6 +246,11 @@ final class MobileChatRealtimeTests: XCTestCase {
 actor MobileChatRealtimeRepositoryProbe: ChatRepository {
     let base: any ChatRepository
     private var continuation: AsyncStream<ChatRealtimeEvent>.Continuation?
+    private var holdsConversationRead = false
+    private var conversationContinuation: CheckedContinuation<Void, Never>?
+    var hasBlockedConversationRead: Bool { conversationContinuation != nil }
+    func holdNextConversationRead() { holdsConversationRead = true }
+    func releaseConversationRead() { conversationContinuation?.resume(); conversationContinuation = nil }
     private(set) var starts = 0
     private(set) var stops = 0
     init(base: any ChatRepository) { self.base = base }
@@ -235,7 +260,13 @@ actor MobileChatRealtimeRepositoryProbe: ChatRepository {
     func emit(_ event: ChatRealtimeEvent) { continuation?.yield(event) }
     func availability() async -> ChatAvailability { await base.availability() }
     func listUsers() async throws -> [ChatUser] { try await base.listUsers() }
-    func listConversations() async throws -> [ChatConversation] { try await base.listConversations() }
+    func listConversations() async throws -> [ChatConversation] {
+        if holdsConversationRead {
+            holdsConversationRead = false
+            await withCheckedContinuation { conversationContinuation = $0 }
+        }
+        return try await base.listConversations()
+    }
     func listMessages(conversationID: String, before cursor: String?, limit: Int) async throws -> ChatMessagePage { try await base.listMessages(conversationID: conversationID, before: cursor, limit: limit) }
     func markRead(conversationID: String, through: Date) async throws -> ChatConversation { try await base.markRead(conversationID: conversationID, through: through) }
     func markThreadRead(conversationID: String, threadID: String, lastMessageID: String) async throws { try await base.markThreadRead(conversationID: conversationID, threadID: threadID, lastMessageID: lastMessageID) }

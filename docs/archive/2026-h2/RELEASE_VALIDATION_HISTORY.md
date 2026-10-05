@@ -2304,3 +2304,23 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 ```
 
 M6b2 源码与当前环境验收完成，真实 NAS 服务连接、Telnet、代理及真机文件保护/辅助功能仍为具体 `PENDING_USER_VALIDATION`。整体 M6–M8 目标仍在进行。
+
+## 2026-10-06 移动导航等待与聊天停止边界回归
+
+接续 Apple Build `37300934405`（提交 `83af8606`）的 [iPhone 作业](https://github.com/yuangy1995/dsm-native-client/actions/runs/37300934405/job/111733215105) 已于 2026-10-05 15:54 UTC 结束并失败：1304 项单元、4 条既有跳过、0 失败；273 项实际 UI 中两项失败。iPad 当时仍在同一整轮运行，没有取消、重跑或以本地通过替代其结果。已知 macOS DMG 短暂占用修复仍在此前本地提交。
+
+云端两处证据：`MobileDDNSUITests/test已有记录保存开关并可取消或确认删除` 在第 152 行等待 `mobile.navigation.nasSettings` 失败；`MobileDownloadControlUITests/test取消剩余项目后空任务列表仍可查看与清除已结束记录` 在第 111 行等待 `mobile.navigation.downloads` 失败。日志均显示刚点击值为 0 的模块开关，约半秒后仅检查一次目标标签是否存在，随后等待手机布局没有的侧栏标识。改为在原五秒范围内等待标签栏或侧栏的实际目标存在且可点击，再选择呈现出的入口；保存、删除、取消、未知恢复及清理断言均保留，不增加跳过或延长失败超时。完整作业日志保留忽略路径 `build/m6b3-ci-phone.log`。约 1 GB 的结果附件未完整下载，按范围读取附件的尝试网络失败，故不把云端截图当作此次证据；依据实际日志、源码分支及两端本机复测。
+
+本地 M6b3 首轮完整单元另外触发旧 `MobileChatRealtimeTests/test停止前台会取消未完成刷新且旧事件不再读取`：iPhone 停止后会话请求数从 1 变为 2，iPad 同轮通过。新增可控阻塞测试 `test停止前台会等待已取消的会话刷新结束` 在旧实现稳定产生两条失败（提前停止与请求数变化），结果为 `m6b3-chat-red.xcresult` / `.log`。模型原来取消刷新后只等待事件监听；现同时等待已取消的同步任务及其子请求结束，再完成前台停止，不吞旧事件或减弱请求数量断言。
+
+范围限定四个文件：`MobileChatModel.swift`、`MobileChatRealtimeTests.swift`、`MobileDDNSUITests.swift`、`MobileDownloadControlUITests.swift`。沿用用户“核实并修复 Apple CI 实际失败”的授权及 main 提交约定，按 gh-fix-ci 指南取证；没有新 PR、分支、凭据操作或云端重跑。验证工作区同时含独立实施中的 M6b3 远程访问增量，二者分开提交。
+
+修复后 `m6b3-build-r4.log` 构建通过。R2 两端完整单元均 **1364 项、4 条既有跳过、0 失败**，新增阻塞测试及原停止测试均通过；两端各四项实际 UI（上述两项云端失败、离开聊天页仍更新摘要、远程访问中文深色大字）全部通过，结果为 `m6b3-phone-r2.xcresult` / `m6b3-pad-r2.xcresult`，均 exit 0。实际命令：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b3-chat-red.xcresult -only-testing:DsmMobileTests/MobileChatRealtimeTests/test停止前台会等待已取消的会话刷新结束 -parallel-testing-enabled NO
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b3-phone-r2.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileDDNSUITests/test已有记录保存开关并可取消或确认删除 -only-testing:DsmMobileUITests/MobileDownloadControlUITests/test取消剩余项目后空任务列表仍可查看与清除已结束记录 -only-testing:DsmMobileUITests/MobileChatRealtimeUITests/test离开聊天页后前台仍更新会话摘要 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test远程中文大字表单和连接风险可操作 -parallel-testing-enabled NO
+```
+
+iPad 使用相同测试选择，destination 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，resultBundlePath 为 `apple/Apps/DsmMobile/build/m6b3-pad-r2.xcresult`。本机回归通过不代表包含修复的新云端整轮已通过；未进行真实 NAS 聊天或后台系统验收。
