@@ -17,11 +17,12 @@ enum MobileNasAdministrationDestination: String, CaseIterable, Identifiable, Has
     case powerSchedule
     case ddns
     case region
+    case accounts
 
     var id: String { rawValue }
 
     static let health: [Self] = [.system, .performance, .storage, .update]
-    static let management: [Self] = [.region, .ddns]
+    static let management: [Self] = [.region, .ddns, .accounts]
     static let details: [Self] = [.externalStorage, .zram, .powerSchedule, .shareAccess, .processes, .packages, .scheduledTasks, .logs, .connections]
 
     var isDetails: Bool { Self.details.contains(self) }

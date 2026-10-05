@@ -3,10 +3,86 @@ import DsmLocalization
 import Foundation
 
 extension DsmNasAdministrationRepository {
+    public func changeDirectoryResult(_ change: NasDirectoryChange,
+        checkpoint: @escaping @Sendable (NasDirectoryCheckpoint) async throws -> Void) async throws -> MutationResult {
+        func result(_ status: MutationResultStatus, submitted: Bool, category: MutationErrorCategory? = nil) throws -> MutationResult {
+            let unknown = status == .submittedButUnverified || status == .cancellationRequestedAfterSubmission
+            return try MutationResult(status: status, operation: change.action.rawValue, submitted: submitted,
+                requiresRefresh: unknown, counts: .init(succeeded: status == .confirmedSuccess ? 1 : 0,
+                    failed: unknown || status == .confirmedSuccess || status == .cancelledBeforeSubmission ? 0 : 1, unknown: unknown ? 1 : 0),
+                errorCategory: category, diagnosticTag: "directory.change.\(status.rawValue.lowercased())")
+        }
+        if Task.isCancelled { return try result(.cancelledBeforeSubmission, submitted: false) }
+        let key = "\(change.kind.rawValue):\(change.name.lowercased())"
+        guard activeDirectoryChangeKeys.insert(key).inserted else { return try result(.confirmedFailure, submitted: false, category: .conflict) }
+        defer { activeDirectoryChangeKeys.remove(key) }
+        do {
+            let directory = try await loadAccountDirectoryForManagement()
+            guard change.matches(directory, currentUsername: currentUsername ?? "") else {
+                return try result(.confirmedFailure, submitted: false, category: .conflict)
+            }
+        } catch {
+            switch (error as? AppError)?.category {
+            case .authenticationRequired, .permissionDenied: return try result(.permissionDenied, submitted: false, category: .permission)
+            case .apiUnavailable, .versionUnsupported: return try result(.unsupported, submitted: false, category: .unsupported)
+            case .cancelled: return try result(.cancelledBeforeSubmission, submitted: false)
+            default:
+                if error is CancellationError { return try result(.cancelledBeforeSubmission, submitted: false) }
+                return try result(.confirmedFailure, submitted: false, category: .unknown)
+            }
+        }
+        if Task.isCancelled { return try result(.cancelledBeforeSubmission, submitted: false) }
+        // 记录失败向上传递，绝不进入写请求；成功回执也必须在最终读取前落盘。
+        try await checkpoint(.willSubmit)
+        var accepted = false
+        do {
+            let parameters: [String: DsmParameterValue]
+            switch change {
+            case .saveUser(_, let draft, _): parameters = Self.accountParameters(draft)
+            case .saveGroup(_, let draft): parameters = Self.groupParameters(draft)
+            case .delete: parameters = ["name": .stringArray([change.name])]
+            }
+            try await callVoid(change.kind == .user ? DsmAPIName.coreUser : DsmAPIName.coreGroup,
+                method: change.isDeletion ? "delete" : (change.original == nil ? "create" : "set"), version: 1, parameters: parameters)
+            accepted = true
+        } catch {
+            // 明确拒绝不以目录的偶合变化覆盖；模糊结果只读恢复，不重发。
+            switch (error as? AppError)?.category {
+            case .permissionDenied, .authenticationRequired: return try result(.permissionDenied, submitted: true, category: .permission)
+            case .apiUnavailable, .versionUnsupported: return try result(.unsupported, submitted: true, category: .unsupported)
+            case .cancelled, .networkUnavailable, .timeout, .serverBusy, .invalidResponse, .unknown, nil: break
+            default: return try result(.confirmedFailure, submitted: true, category: .unknown)
+            }
+        }
+        if accepted { try await checkpoint(.accepted) }
+        if Task.isCancelled { return try result(.cancellationRequestedAfterSubmission, submitted: true) }
+        do {
+            let directory = try await loadAccountDirectoryForManagement()
+            let current = (change.kind == .user ? directory.users : directory.groups).first { $0.name.caseInsensitiveCompare(change.name) == .orderedSame }
+            if change.isDeletion ? current == nil : (current.map(change.savedFieldsMatch) == true && (accepted || !change.requiresAcknowledgement)) {
+                return try result(.confirmedSuccess, submitted: true)
+            }
+        } catch { /* 原目录读失败不能证明写结果，保留提交保护。 */ }
+        return try result(.submittedButUnverified, submitted: true)
+    }
+
     public func loadAccountsAndGroups() async throws -> NasAccountDirectory {
+        try await loadAccountsAndGroups(version: nil)
+    }
+
+    public func loadAccountDirectoryForManagement() async throws -> NasAccountDirectory {
+        guard [DsmAPIName.coreUser, DsmAPIName.coreGroup].allSatisfy({ name in
+            guard let value = capabilities[name], value.selectedVersion != nil else { return false }
+            return value.minVersion <= 1 && value.maxVersion >= 1
+        }) else { throw unavailableError() }
+        return try await loadAccountsAndGroups(version: 1)
+    }
+
+    private func loadAccountsAndGroups(version: Int?) async throws -> NasAccountDirectory {
         async let usersValue = call(
             DsmAPIName.coreUser,
             method: "list",
+            version: version,
             parameters: [
                 "offset": .integer(0),
                 "limit": .integer(1_000),
@@ -24,6 +100,7 @@ extension DsmNasAdministrationRepository {
         async let groupsValue = call(
             DsmAPIName.coreGroup,
             method: "list",
+            version: version,
             parameters: [
                 "offset": .integer(0),
                 "limit": .integer(1_000),
@@ -163,27 +240,21 @@ extension DsmNasAdministrationRepository {
                 }
             }
         }
+        try await callVoid(DsmAPIName.coreUser, method: draft.originalName == nil ? "create" : "set",
+                           parameters: Self.accountParameters(draft))
+    }
+
+    private static func accountParameters(_ draft: NasAccountDraft) -> [String: DsmParameterValue] {
         var parameters: [String: DsmParameterValue] = [
-            "name": .string(draft.originalName ?? name),
-            "description": .string(draft.description),
-            "email": .string(draft.email),
-            "expired": .boolean(draft.isExpired)
+            "name": .string(draft.originalName ?? draft.name.trimmingCharacters(in: .whitespacesAndNewlines)),
+            "description": .string(draft.description), "email": .string(draft.email), "expired": .boolean(draft.isExpired)
         ]
-        if let groups = draft.groups {
-            parameters["groups"] = .stringArray(groups)
-        }
-        if draft.originalName == nil {
-            parameters["password"] = .string(draft.password)
-            parameters["password_confirm"] = .string(draft.passwordConfirmation)
-        } else if !draft.password.isEmpty {
+        if let groups = draft.groups { parameters["groups"] = .stringArray(groups) }
+        if draft.originalName == nil || !draft.password.isEmpty {
             parameters["password"] = .string(draft.password)
             parameters["password_confirm"] = .string(draft.passwordConfirmation)
         }
-        try await callVoid(
-            DsmAPIName.coreUser,
-            method: draft.originalName == nil ? "create" : "set",
-            parameters: parameters
-        )
+        return parameters
     }
 
     public func deleteAccount(name: String) async throws {
@@ -225,11 +296,13 @@ extension DsmNasAdministrationRepository {
         try await callVoid(
             DsmAPIName.coreGroup,
             method: draft.originalName == nil ? "create" : "set",
-            parameters: [
-                "name": .string(draft.originalName ?? name),
-                "description": .string(draft.description)
-            ]
+            parameters: Self.groupParameters(draft)
         )
+    }
+
+    private static func groupParameters(_ draft: NasGroupDraft) -> [String: DsmParameterValue] {
+        ["name": .string(draft.originalName ?? draft.name.trimmingCharacters(in: .whitespacesAndNewlines)),
+         "description": .string(draft.description)]
     }
 
     public func deleteGroup(name: String) async throws {

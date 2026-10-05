@@ -1563,6 +1563,8 @@ public protocol NasSettingsRepository: Sendable {
     func runScheduledTask(id: Int, realOwner: String?) async throws
     func deleteScheduledTask(id: Int, realOwner: String?) async throws
     func loadAccountsAndGroups() async throws -> NasAccountDirectory
+    func loadAccountDirectoryForManagement() async throws -> NasAccountDirectory
+    func changeDirectoryResult(_ change: NasDirectoryChange, checkpoint: @escaping @Sendable (NasDirectoryCheckpoint) async throws -> Void) async throws -> MutationResult
     func saveAccount(_ draft: NasAccountDraft) async throws
     func deleteAccount(name: String) async throws
     func deleteAccountResult(name: String) async throws -> MutationResult
@@ -1785,6 +1787,8 @@ public extension NasSettingsRepository {
     ) async throws -> NasScheduledTaskResultOutput {
         throw unsupportedManagementOperation()
     }
+    func loadAccountDirectoryForManagement() async throws -> NasAccountDirectory { throw unsupportedManagementOperation() }
+    func changeDirectoryResult(_ change: NasDirectoryChange, checkpoint: @escaping @Sendable (NasDirectoryCheckpoint) async throws -> Void) async throws -> MutationResult { throw unsupportedManagementOperation() }
     func saveAccount(_ draft: NasAccountDraft) async throws {
         throw unsupportedManagementOperation()
     }
