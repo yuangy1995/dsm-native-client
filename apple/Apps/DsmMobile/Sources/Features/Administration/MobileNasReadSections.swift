@@ -9,7 +9,6 @@ struct MobileNasReadSections: View {
     var showsSectionTitle = true
     @State private var connection: NasExternalStorageConnection?
     @State private var query = ""
-    @State private var scheduleFilter = MobileNasScheduleFilter.all
 
     var body: some View {
         switch destination {
@@ -134,59 +133,17 @@ struct MobileNasReadSections: View {
     private var zram: some View {
         Section {
             content(model.state.zram, emptyTitle: "zram.empty-title", emptyMessage: "zram.empty-description") { value in
-                LabeledContent(L10n.string("zram.status-title"), value: MobileNasReadFormatting.enabled(value.isEnabled))
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(L10n.string("zram.status-title"))
-                    .accessibilityValue(MobileNasReadFormatting.enabled(value.isEnabled))
-                    .accessibilityIdentifier("mobile.nas.zram.status")
-                if let bytes = value.configuredBytes {
-                    LabeledContent(L10n.string("zram.capacity-title"), value: MobileNasReadFormatting.bytes(bytes))
-                }
-                if value.algorithm != .unknown {
-                    LabeledContent(L10n.string("zram.algorithm-title"), value: MobileNasReadFormatting.algorithm(value.algorithm))
-                }
+                MobilePowerSettingsSummary(value: .zram(value, needsReboot: nil))
             }
-        } header: { if showsSectionTitle { Text(destination.title) } } footer: { Text(L10n.string("zram.manage-in-dsm")) }
+        } header: { if showsSectionTitle { Text(destination.title) } }
     }
 
     private var powerSchedule: some View {
         Section {
-            content(model.state.powerSchedule, emptyTitle: "power-schedule.empty-title", emptyMessage: "mobile.nas.powerSchedule.empty") { snapshot in
-                Picker(L10n.string("power-schedule.filter-title"), selection: $scheduleFilter) {
-                    ForEach(MobileNasScheduleFilter.allCases, id: \.self) { filter in
-                        Text(filter.title).tag(filter)
-                    }
-                }
-                .accessibilityIdentifier("mobile.nas.powerSchedule.filter")
-                let entries = snapshot.entries.filter { scheduleFilter.includes($0.isEnabled) }
-                if entries.isEmpty {
-                    emptyFilter(title: snapshot.entries.isEmpty ? "power-schedule.empty-title" : "power-schedule.filtered-empty-title",
-                                message: snapshot.entries.isEmpty ? "mobile.nas.powerSchedule.empty" : "power-schedule.filtered-empty-description")
-                }
-                ForEach(entries) { entry in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label(MobileNasReadFormatting.action(entry.action), systemImage: "power")
-                            .font(.headline)
-                        Text(MobileNasReadFormatting.time(hour: entry.hour, minute: entry.minute))
-                            .font(.title3.monospacedDigit())
-                        Text(MobileNasReadFormatting.recurrence(entry.recurrence))
-                        Text(MobileNasReadFormatting.enabled(entry.isEnabled))
-                    }
-                    .padding(.vertical, 6)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("mobile.nas.powerSchedule.entry")
-                }
+            content(model.state.powerSchedule, emptyTitle: "power-schedule.empty-title", emptyMessage: "mobile.nas.power.empty") { snapshot in
+                MobilePowerSettingsSummary(value: .powerSchedule(snapshot))
             }
-        } header: { if showsSectionTitle { Text(destination.title) } } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                if let snapshot = model.state.powerSchedule.value {
-                    Text(snapshot.timeZoneIdentifier.map { L10n.string("power-schedule.time-zone", $0) }
-                         ?? L10n.string("power-schedule.time-zone-unavailable"))
-                    if snapshot.isTruncated { Text(L10n.string("power-schedule.truncated")) }
-                }
-                Text(L10n.string("mobile.nas.powerSchedule.manage"))
-            }
-        }
+        } header: { if showsSectionTitle { Text(destination.title) } }
     }
 
     private func content<Value: Equatable & Sendable, Content: View>(

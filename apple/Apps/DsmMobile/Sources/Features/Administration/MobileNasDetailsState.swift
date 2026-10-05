@@ -27,7 +27,8 @@ enum MobileNasAdministrationDestination: String, CaseIterable, Identifiable, Has
     static let details: [Self] = [.externalStorage, .zram, .powerSchedule, .shareAccess, .processes, .packages, .scheduledTasks, .logs, .connections]
 
     var serviceKind: NasServiceKind? {
-        switch self { case .fileServices: .fileServices; case .terminal: .terminal; case .proxy: .proxy; case .remoteAccess: .remoteAccess; default: nil }
+        switch self { case .fileServices: .fileServices; case .terminal: .terminal; case .proxy: .proxy; case .remoteAccess: .remoteAccess
+        case .zram: .zram; case .powerSchedule: .powerSchedule; default: nil }
     }
 
     var isDetails: Bool { Self.details.contains(self) }

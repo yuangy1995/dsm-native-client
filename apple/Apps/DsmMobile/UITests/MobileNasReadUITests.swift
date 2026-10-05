@@ -113,11 +113,13 @@ final class MobileNasReadUITests: XCTestCase {
 
     private func open(_ page: String, in app: XCUIApplication) {
         let link = element("mobile.nas.page.\(page)", in: app)
-        XCTAssertTrue(link.waitForExistence(timeout: 8))
+        let list = app.collectionViews.containing(.any, identifier: "mobile.nas.page.storage").firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 8))
         for _ in 0..<4 {
-            if link.isHittable { break }
-            app.swipeUp()
+            if link.exists && link.isHittable { break }
+            list.swipeUp()
         }
+        XCTAssertTrue(link.waitForExistence(timeout: 8))
         XCTAssertTrue(link.isHittable); link.tap()
     }
 

@@ -21,18 +21,8 @@ extension DsmNasAdministrationRepository {
             return try hardwareEditingResult(operation, status: .cancelledBeforeSubmission, submitted: false)
         }
         try Task.checkCancellation()
-        func tasks(_ action: NasPowerScheduleAction) -> DsmParameterValue {
-            .objectArray(entries.filter { $0.action == action }.map { entry in
-                [
-                    "enabled": .boolean(entry.isEnabled == true),
-                    "weekdays": .string((entry.scheduledWeekdays ?? []).map(String.init).joined(separator: ",")),
-                    "hour": .integer(entry.hour), "min": .integer(entry.minute)
-                ]
-            })
-        }
         do {
-            try await callVoid(DsmAPIName.coreHardwarePowerSchedule, method: "save", version: 1,
-                               parameters: ["poweron_tasks": tasks(.startup), "poweroff_tasks": tasks(.shutdown)])
+            try await submitPowerSchedule(entries)
         } catch {
             return try hardwareEditingWriteFailure(operation, error: error)
         }
@@ -65,14 +55,13 @@ extension DsmNasAdministrationRepository {
         }
         try Task.checkCancellation()
         do {
-            try await callVoid(DsmAPIName.coreHardwareZRAM, method: "set", version: 1,
-                               parameters: ["enable_zram": .boolean(enabled)])
+            try await submitZRAM(enabled: enabled)
         } catch {
             return try hardwareEditingWriteFailure(operation, error: error)
         }
         do {
             // 与官方页面一致标记需重启，但绝不附带关机或重启请求。
-            try await callVoid(DsmAPIName.coreHardwareNeedReboot, method: "set", version: 1)
+            try await submitRebootRequired()
             let actual = try await loadZRAM()
             let reboot = try await call(DsmAPIName.coreHardwareNeedReboot, method: "get", version: 1)
             guard actual.isEnabled == enabled, reboot["need_reboot"] == .boolean(true) else {
@@ -82,6 +71,26 @@ extension DsmNasAdministrationRepository {
             return try hardwareEditingResult(operation, status: .submittedButUnverified, submitted: true)
         }
         return try hardwareEditingResult(operation, status: .confirmedSuccess, submitted: true)
+    }
+
+    func submitPowerSchedule(_ entries: [NasPowerScheduleEntry]) async throws {
+        func tasks(_ action: NasPowerScheduleAction) -> DsmParameterValue {
+            .objectArray(entries.filter { $0.action == action }.map { entry in
+                ["enabled": .boolean(entry.isEnabled == true),
+                 "weekdays": .string((entry.scheduledWeekdays ?? []).map(String.init).joined(separator: ",")),
+                 "hour": .integer(entry.hour), "min": .integer(entry.minute)]
+            })
+        }
+        try await callVoid(DsmAPIName.coreHardwarePowerSchedule, method: "save", version: 1,
+                           parameters: ["poweron_tasks": tasks(.startup), "poweroff_tasks": tasks(.shutdown)])
+    }
+
+    func submitZRAM(enabled: Bool) async throws {
+        try await callVoid(DsmAPIName.coreHardwareZRAM, method: "set", version: 1, parameters: ["enable_zram": .boolean(enabled)])
+    }
+
+    func submitRebootRequired() async throws {
+        try await callVoid(DsmAPIName.coreHardwareNeedReboot, method: "set", version: 1)
     }
 
     private func hardwareEditingError(_ key: String) -> AppError {

@@ -572,6 +572,17 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             case .routerConfiguration: try await submitRemoteAccessMutationStep(.routerConfiguration, settings: value)
             default: throw unavailableError()
             }
+        case .zram(let value, _):
+            switch step {
+            case .zram:
+                guard let enabled = value.isEnabled else { throw unavailableError() }
+                try await submitZRAM(enabled: enabled)
+            case .rebootRequired: try await submitRebootRequired()
+            default: throw unavailableError()
+            }
+        case .powerSchedule(let value):
+            guard step == .powerSchedule else { throw unavailableError() }
+            try await submitPowerSchedule(value.entries)
         }
     }
 

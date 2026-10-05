@@ -6784,3 +6784,13 @@
 "mobile.nas.service.relayReadFailed" = "QuickConnect Relay settings could not be loaded. Refresh or sign in again.";
 "mobile.nas.service.routerReadFailed" = "Automatic router configuration settings could not be loaded. Refresh or sign in again.";
 "mobile.nas.service.trustError" = "The identity of this connection could not be verified. Return to the connection screen and reconnect.";
+
+"mobile.nas.power.compressionUnavailable" = "The settings needed to change memory compression could not be read. Refresh, or open Hardware & Power in DSM.";
+
+"mobile.nas.power.continue" = "Apply after restart";
+
+"mobile.nas.power.restartRequirement" = "Apply after restart";
+
+"mobile.nas.power.editSchedules" = "Edit schedules";
+
+"mobile.nas.power.empty" = "Add schedules to set when the NAS starts up or shuts down automatically.";

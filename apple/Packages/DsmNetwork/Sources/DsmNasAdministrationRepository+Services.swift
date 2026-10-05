@@ -13,6 +13,24 @@ extension DsmNasAdministrationRepository {
         case .terminal: return .terminal(try await loadTerminalSettings(managed: true))
         case .proxy: return .proxy(try await loadProxySettings(managed: true))
         case .remoteAccess: return .remoteAccess(try await loadRemoteAccessForManagement())
+        case .powerSchedule:
+            guard serviceVersion(.powerSchedule) != nil else { throw unavailableError() }
+            return .powerSchedule(try await loadPowerSchedule())
+        case .zram:
+            guard serviceVersion(.zram) != nil else { throw unavailableError() }
+            let value = try await loadZRAM()
+            guard serviceVersion(.rebootRequired) != nil else { return .zram(value, needsReboot: nil) }
+            let reboot: Bool?
+            do {
+                let result = try await call(DsmAPIName.coreHardwareNeedReboot, method: "get", version: 1)
+                if case .boolean(let enabled) = result["need_reboot"] { reboot = enabled } else { reboot = nil }
+            } catch {
+                if error is CancellationError || error is DsmCertificateTrustError { throw error }
+                if let value = error as? AppError, [.authenticationRequired, .permissionDenied, .tlsUntrusted, .tlsCertificateChanged, .cancelled].contains(value.category) { throw error }
+                // 重启要求读取失败仍显示压缩状态，但不可据此保存。
+                reboot = nil
+            }
+            return .zram(value, needsReboot: reboot)
         }
     }
 
@@ -114,6 +132,9 @@ extension DsmNasAdministrationRepository {
         case .proxy: DsmAPIName.coreNetworkProxy
         case .relay: DsmAPIName.coreQuickConnect
         case .routerConfiguration: DsmAPIName.coreQuickConnectUPnP
+        case .zram: DsmAPIName.coreHardwareZRAM
+        case .rebootRequired: DsmAPIName.coreHardwareNeedReboot
+        case .powerSchedule: DsmAPIName.coreHardwarePowerSchedule
         }
     }
     func serviceVersion(_ step: NasServiceStep) -> Int? {
@@ -151,7 +172,8 @@ extension DsmNasAdministrationRepository {
         if Task.isCancelled { return try result(.cancelledBeforeSubmission) }
         guard !steps.isEmpty else { return try result(.confirmedFailure, category: .validation) }
         let active: Bool
-        switch change.kind { case .fileServices: active = isFileServiceSettingsUpdateActive; case .terminal: active = isTerminalSettingsUpdateActive; case .proxy: active = isProxySettingsUpdateActive; case .remoteAccess: active = isRemoteAccessSettingsUpdateActive }
+        switch change.kind { case .fileServices: active = isFileServiceSettingsUpdateActive; case .terminal: active = isTerminalSettingsUpdateActive; case .proxy: active = isProxySettingsUpdateActive; case .remoteAccess: active = isRemoteAccessSettingsUpdateActive
+        case .zram: active = isZRAMUpdateActive; case .powerSchedule: active = isPowerScheduleUpdateActive }
         guard !active else { return try result(.confirmedFailure, category: .conflict) }
         setServiceActive(change.kind, true)
         defer { setServiceActive(change.kind, false) }
@@ -161,7 +183,7 @@ extension DsmNasAdministrationRepository {
             if Task.isCancelled { return try result(submitted ? .partialSuccess : .cancelledBeforeSubmission) }
             do {
                 let current = try await loadServiceForManagement(change.kind)
-                guard current == expected else { return try result(completed > 0 ? .partialSuccess : .confirmedFailure, category: .conflict) }
+                guard expected.hasSameConfiguration(as: current) else { return try result(completed > 0 ? .partialSuccess : .confirmedFailure, category: .conflict) }
             } catch { return try failure(error) }
             // 写前/接受回执/回读检查点错误均直接传回，不能把记录失败当作服务端拒绝。
             try await checkpoint(.willSubmit(step))
@@ -207,6 +229,7 @@ extension DsmNasAdministrationRepository {
     }
 
     private func setServiceActive(_ kind: NasServiceKind, _ active: Bool) {
-        switch kind { case .fileServices: isFileServiceSettingsUpdateActive = active; case .terminal: isTerminalSettingsUpdateActive = active; case .proxy: isProxySettingsUpdateActive = active; case .remoteAccess: isRemoteAccessSettingsUpdateActive = active }
+        switch kind { case .fileServices: isFileServiceSettingsUpdateActive = active; case .terminal: isTerminalSettingsUpdateActive = active; case .proxy: isProxySettingsUpdateActive = active; case .remoteAccess: isRemoteAccessSettingsUpdateActive = active
+        case .zram: isZRAMUpdateActive = active; case .powerSchedule: isPowerScheduleUpdateActive = active }
     }
 }

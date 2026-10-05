@@ -6784,3 +6784,13 @@
 "mobile.nas.service.relayReadFailed" = "暂时无法读取 QuickConnect 中继设置。请刷新或重新登录。";
 "mobile.nas.service.routerReadFailed" = "暂时无法读取路由器自动配置设置。请刷新或重新登录。";
 "mobile.nas.service.trustError" = "无法确认此连接的身份。请返回连接页面重新连接。";
+
+"mobile.nas.power.compressionUnavailable" = "无法读取修改内存压缩所需的设置。请刷新，或在 DSM 的“硬件和电源”中修改。";
+
+"mobile.nas.power.continue" = "设为重启后生效";
+
+"mobile.nas.power.restartRequirement" = "重启后生效";
+
+"mobile.nas.power.editSchedules" = "编辑计划";
+
+"mobile.nas.power.empty" = "添加计划，设置 NAS 自动开机或关机的时间。";
