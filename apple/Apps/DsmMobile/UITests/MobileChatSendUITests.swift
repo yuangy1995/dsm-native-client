@@ -44,7 +44,9 @@ final class MobileChatSendUITests: XCTestCase {
         app.launchArguments += ["--ui-preserve-transfer-fixture"]; app.launch(); defer { app.terminate() }
         openChat(app); openRecords(app, inConversation: false); openFirstRecord(app)
         element("chat-send-refresh", app).tap()
-        XCTAssertTrue(app.staticTexts[pending].waitForExistence(timeout: 8))
+        let status = element("chat-send-status", app)
+        XCTAssertTrue(status.waitForExistence(timeout: 8))
+        XCTAssertEqual(status.label, "The message hasn’t appeared yet. Refresh its send status later.")
         XCTAssertTrue(element("chat-send-refresh", app).exists)
         XCTAssertFalse(element("chat-send-retry", app).exists); XCTAssertFalse(element("chat-send-remove", app).exists)
         screenshot(app, "Missing creation receipt remains protected after restart")

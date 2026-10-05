@@ -2016,7 +2016,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         app.staticTexts["Sample folder"].tap()
-        app.buttons["Actions for Sample archive.zip"].tap()
+        openItemActions("Sample archive.zip", in: app)
         app.buttons["Compress"].tap()
         XCTAssertTrue(element("files.archive.source./fixture/Sample archive.zip", in: app).waitForExistence(timeout: 5))
         let name = element("files.archive.name", in: app)
@@ -2035,7 +2035,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         app.staticTexts["Sample folder"].tap()
-        app.buttons["Actions for Sample archive.zip"].tap()
+        openItemActions("Sample archive.zip", in: app)
         app.buttons["Extract"].tap()
         XCTAssertTrue(app.staticTexts["Extracted document.txt"].waitForExistence(timeout: 8))
         let start = element("files.archive.start-extraction", in: app)
@@ -2091,7 +2091,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "permissions-posix")
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
-        app.buttons["Actions for Sample document.txt"].tap(); app.buttons["Owner and permissions"].tap()
+        openItemActions("Sample document.txt", in: app); app.buttons["Owner and permissions"].tap()
         let write = app.switches["files.permissions.posix.0.2"]
         XCTAssertTrue(write.waitForExistence(timeout: 8))
         write.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
@@ -2295,7 +2295,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "remote")
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
-        app.buttons["Actions for Sample image.iso"].tap(); app.buttons["Mount ISO"].tap()
+        openItemActions("Sample image.iso", in: app); app.buttons["Mount ISO"].tap()
         let destination = app.buttons["files.remote.iso.destination"]
         XCTAssertTrue(destination.waitForExistence(timeout: 5)); destination.tap()
         chooseRemoteDestination(app)
@@ -2354,7 +2354,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "favorites")
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
-        app.buttons["Actions for Sample document.txt"].tap(); app.buttons["add to favorites"].tap()
+        openItemActions("Sample document.txt", in: app); app.buttons["add to favorites"].tap()
         XCTAssertTrue(app.staticTexts["Added to favorites."].waitForExistence(timeout: 8))
         app.buttons["Show locations"].tap()
         let row = app.buttons["files.favorite./fixture/Sample document.txt"]
@@ -2473,6 +2473,17 @@ final class MobileWorkspaceUITests: XCTestCase {
         attachScreenshot(app, name: "Bandwidth list filtered empty")
     }
 
+    private func openItemActions(_ name: String, in app: XCUIApplication) {
+        let actions = app.buttons["Actions for " + name]
+        XCTAssertTrue(actions.waitForExistence(timeout: 8))
+        let search = app.textFields["files.search.input"]
+        if search.exists {
+            XCTAssertGreaterThanOrEqual(actions.frame.minY, search.frame.maxY,
+                "搜索栏不能覆盖第一行文件及其操作按钮")
+        }
+        actions.tap()
+    }
+
     private func openFileActions(_ app: XCUIApplication) {
         let direct = element("files.toolbar.more", in: app)
         if direct.exists && direct.isHittable { direct.tap(); return }
@@ -2584,8 +2595,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test文件夹下载ZIP后打开系统保存面板() {
         let app = launchFixture(state: "download-archive"); defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
-        let menu = app.buttons["Actions for Inbox"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 5)); menu.tap()
+        openItemActions("Inbox", in: app)
         element("files.item.download-archive", in: app).tap()
         XCTAssertTrue(element("mobile.documents.export-panel", in: app).waitForExistence(timeout: 10))
         let save = app.buttons.matching(NSPredicate(format: "label == 'Save' OR label == '保存'")).firstMatch
@@ -2612,7 +2622,9 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(element("LP.CaptionBar.BottomCaption", in: app).label.contains("ZIP"))
         attachScreenshot(app, name: "Read-only mixed selection ZIP share")
         app.buttons["header.closeButton"].tap()
-        XCTAssertFalse(element("ActivityListView", in: app).exists)
+        let panel = element("ActivityListView", in: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: panel)], timeout: 5), .completed)
     }
 
     func test多选仅一个文件保持原格式且下载失败能从活动重试() {
@@ -2870,8 +2882,7 @@ final class MobileWorkspaceUITests: XCTestCase {
 
     private func openOfficeEditor(_ app: XCUIApplication) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
-        let actions = app.buttons["Actions for Document.docx"]
-        XCTAssertTrue(actions.waitForExistence(timeout: 8)); actions.tap()
+        openItemActions("Document.docx", in: app)
         let edit = element("files.office.open", in: app)
         XCTAssertTrue(edit.waitForExistence(timeout: 5)); edit.tap()
     }
