@@ -1,4 +1,5 @@
 #if DEBUG
+import DsmCore
 import DsmNetwork
 import Foundation
 
@@ -8,13 +9,51 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
     private var detailAttempts = 0
     private var statuses: [String: String]
     private var hasUnknownWrite = false
-    init(state: String, statuses: [String: String] = [:]) { self.state = state; self.statuses = statuses }
+    private var settings: [DownloadSettingsField: DownloadSettingsValue]
+    private var hasUnknownSettingsWrite = false
+    init(state: String, statuses: [String: String] = [:], settings: [DownloadSettingsField: DownloadSettingsValue] = [:]) {
+        self.state = state; self.statuses = statuses
+        self.settings = [.destination: .text("Sample folder"), .emule: .flag(false), .autoExtract: .flag(false),
+            .btDownload: .number(0), .btUpload: .number(0), .httpDownload: .number(0), .ftpDownload: .number(0),
+            .nzbDownload: .number(0), .emuleDownload: .number(0), .emuleUpload: .number(0),
+            .schedule: .flag(false), .emuleSchedule: .flag(false)]
+        self.settings.merge(settings) { _, new in new }
+    }
 
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         let parameters = URLComponents(string: "https://example.invalid/?" + String(data: request.httpBody ?? Data(), encoding: .utf8)!)?.queryItems ?? []
         func value(_ name: String) -> String? { parameters.first { $0.name == name }?.value }
         let data: [String: Any]
         switch (value("api"), value("method")) {
+        case (DsmAPIName.downloadStationInfo, "getinfo"):
+            data = ["is_manager": state != "downloads-settings-readonly"]
+        case (DsmAPIName.downloadStationInfo, "getconfig"), (DsmAPIName.downloadStationSchedule, "getconfig"):
+            if state == "downloads-settings-loading" { try await Task.sleep(for: .seconds(30)) }
+            if state == "downloads-settings-error" || hasUnknownSettingsWrite { throw URLError(.notConnectedToInternet) }
+            let group: DownloadSettingsField.Group = value("api") == DsmAPIName.downloadStationInfo ? .general : .schedule
+            var config: [String: Any] = [:]
+            if state != "downloads-settings-empty" {
+                for (field, setting) in settings where field.group == group {
+                    switch setting {
+                    case .text(let text): config[field.parameter] = text
+                    case .flag(let flag): config[field.parameter] = flag
+                    case .number(let number): config[field.parameter] = number
+                    }
+                }
+            }
+            data = config
+        case (DsmAPIName.downloadStationInfo, "setserverconfig"), (DsmAPIName.downloadStationSchedule, "setconfig"):
+            let group: DownloadSettingsField.Group = value("api") == DsmAPIName.downloadStationInfo ? .general : .schedule
+            for (field, setting) in settings where field.group == group {
+                guard let parameter = value(field.parameter) else { continue }
+                switch setting {
+                case .text: settings[field] = .text(parameter)
+                case .flag: settings[field] = .flag(parameter == "true")
+                case .number: settings[field] = .number(Int(parameter)!)
+                }
+            }
+            if state == "downloads-settings-unknown" { hasUnknownSettingsWrite = true; throw URLError(.timedOut) }
+            data = [:]
         case (DsmAPIName.downloadStationTask, "list"):
             if state == "downloads-loading" { try await Task.sleep(for: .seconds(30)) }
             if state == "downloads-error" { throw URLError(.notConnectedToInternet) }

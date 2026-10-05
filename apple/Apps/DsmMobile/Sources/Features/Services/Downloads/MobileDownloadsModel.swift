@@ -91,6 +91,7 @@ final class MobileDownloadsModel {
     var downloadDeleteTaskID: String?
     var downloadDeleteFeedback: MobileDownloadDeleteFeedback?
 
+    let settings: MobileDownloadSettingsModel
     let controlRecovery: MobileDownloadControlStore
     var controlBatchID: UUID?
     var controlCancelRequestedID: UUID?
@@ -100,9 +101,11 @@ final class MobileDownloadsModel {
     init(transferCoordinator: MobileTransferCoordinator, controlRoot: URL? = nil) {
         self.transferCoordinator = transferCoordinator
         self.controlRecovery = MobileDownloadControlStore(root: controlRoot)
+        self.settings = MobileDownloadSettingsModel(root: controlRoot)
     }
 
     func configure(profile: NasProfile?, repository: DsmServiceManagementRepository?) {
+        settings.configure(profile: profile, repository: repository)
         let identityChanged = profile.map(MobileWorkspaceIdentity.init) != activeProfile.map(MobileWorkspaceIdentity.init)
         let repositoryChanged = repository.map(ObjectIdentifier.init) != serviceRepository.map(ObjectIdentifier.init)
         if identityChanged || repositoryChanged {
@@ -117,6 +120,7 @@ final class MobileDownloadsModel {
     }
 
     func deactivate() {
+        settings.configure(profile: nil, repository: nil)
         cancelLoad()
         deactivateDownloads()
         activeProfile = nil

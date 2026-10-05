@@ -6388,3 +6388,30 @@
 "mobile.downloads.batch.remove-record" = "移除此记录";
 "mobile.downloads.batch.task-number" = "任务 %d";
 "mobile.downloads.batch.storage-error" = "无法保存或读取操作记录。请解锁设备并重新打开 App 后重试。";
+
+/* 下载设置与恢复 */
+"download.settings.changed" = "设置已在其他地方修改。请刷新后重新保存。";
+"download.settings.permission" = "此账号无法修改下载设置，请联系 NAS 管理员。";
+"download.settings.permission-unknown" = "暂时无法读取账号权限，请刷新后重试。";
+"download.settings.loading" = "正在读取设置…";
+"download.settings.load-error" = "无法读取下载设置，请检查连接后刷新。";
+"download.settings.storage-error" = "无法在此设备保存操作记录。请检查可用存储空间后重新打开 App。";
+"download.settings.recent" = "最近一次保存";
+"download.settings.saving" = "正在保存修改…";
+"download.settings.pending" = "暂时无法获取最新结果。请恢复连接后刷新，查看已保存的设置。";
+"download.settings.continue" = "保存剩余修改";
+"download.settings.cancel-remaining" = "取消剩余修改";
+"download.settings.invalid-limit" = "请输入 0 至 1,000,000 之间的整数。";
+"download.settings.limit-help" = "限速单位为 KB/s，0 表示不限速。网页下载限速对新建或继续的 HTTP 与 FTP 下载生效。";
+"download.settings.unavailable" = "暂不可用";
+"download.settings.planned" = "尚未保存";
+"download.settings.pending-short" = "暂未获取结果";
+"download.settings.saved" = "已保存";
+"download.settings.cancelled" = "已取消";
+"download.settings.failed" = "未能保存，请刷新后重试。";
+"download.settings.general" = "常规";
+"download.settings.limits" = "限速";
+"download.settings.schedule" = "下载计划";
+"download.settings.schedule-enabled" = "启用下载计划";
+"download.settings.emule-schedule-enabled" = "eMule 使用下载计划";
+"download.settings.empty" = "暂时没有可显示的下载设置，请刷新后重试。";

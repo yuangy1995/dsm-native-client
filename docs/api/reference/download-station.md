@@ -16,7 +16,7 @@
 | 移动控制恢复 `loadDownloadTaskControlState` | 公开 `Task.list` v1 | 完整分页、单一合法任务编号 | 仅查询，匹配原身份及目标状态；本机终态保存后 `acknowledgeDownloadTaskControlResult` 清理进程内旧保护，不产生 NAS 请求 |
 | 删除任务／结束并移出未完成文件 | `Task.delete` | `id`、`force_complete`；共享旧参数名 `removeData` 仅为调用兼容 | `false` 移除任务，`true` 请求把未完成文件移入目标目录；不是删除下载数据，列表消失也不能证明文件已移动 |
 | BT 搜索 | `BTSearch.getModule/getCategory/start/list/clean` | v1；模块、关键词、分类、排序、分页和任务 ID | 仅管理本次搜索任务，取消/结束清理自己的任务 |
-| 设置 | `Info.getconfig/setserverconfig`、`Schedule.getconfig/setconfig` | 已支持版本与原设置基线 | 部分分区不可用不当作默认值；保存后核对实际设置 |
+| 设置 | `Info.getinfo/getconfig/setserverconfig`、`Schedule.getconfig/setconfig` | 新移动路径 `loadDownloadSettingsSnapshot/changeDownloadSettings/reviewDownloadSettings`；Info 优先 v2，能力仅含 v1 时不编辑默认目录；Schedule v1 | 当前管理权限、字段存在性、原值比较、分区差量及只读恢复；旧 Mac 全量设置签名不变 |
 
 上述 1000 项是当前 macOS 摘要入口的读取范围，不代表 NAS 永远只有 1000 项或已经读取全量。若目标端需要完整任务目录，应按已记录分页契约实现独立切片，不能在文档中把当前限制改写为已解决。
 
@@ -25,6 +25,16 @@
 移动 M5a2 将单项和多项暂停/继续统一到独立持久队列。共享原协议方法保持原签名，新增带 `willSubmit` 的兼容重载；只有最新状态通过后才调用保存回调，保存失败或发送前取消不产生控制请求。已提交未知项仅用完整目录读取恢复，不能转调暂停/继续来探测；确认结束并持久保存后才清理同一连接中的旧回读保护，避免影响下一次用户操作。恢复结构记录账号上下文摘要、任务编号、名称/大小/目标摘要、动作与逐项阶段，不记录原名称、路径、URI 或凭据。
 
 五端影响：iPhone/iPad 同一多选与恢复语义；macOS 原协议调用及界面不变，共享新增路径需完整回归。Windows/Android 本轮没有实现变化，后续应遵守写前保存、逐项结果、未知只读、剩余显式继续/取消和跨动作重复保护；不得仅新增一组批量按钮就宣称已具备重启恢复。所有请求参数、能力与权限要求保持原契约，本阶段仍没有真实 NAS 写入证据。
+
+## 移动设置的差量与恢复
+
+M5b 依据同一官方指南第 17–20 页：`Info.getinfo.is_manager` 只接受明确布尔值；常规配置和计划为管理员设置，管理权限未知时不发送。配置字段缺失或类型不符不补 false/0；v1 不开放默认目录，Schedule 暂不可用只影响计划分区。新 `DownloadSettingsSnapshot` 与旧 `DownloadStationSettings` 并存，旧 Mac 调用未改；不能据此把旧全量模型的默认值标为字段存在证据。
+
+`Info.setserverconfig` 官方示例仅发送两个字段，`Schedule.setconfig` 示例仅发送 `enabled`，因此新移动路径按用户实际差量保存。HTTP/FTP 在官方限制中共用一个值，UI 统一编辑且两项原值必须存在并一致；同时发送相同目标值，不以 FTP 覆盖 HTTP 的顺序暗改另一字段。新限速仅影响新建/继续的 HTTP/FTP 下载，原下载不中断。默认目录复用 File Station 文件夹选择，保留名称空格并只去掉选中绝对路径的首个根分隔符；不能从浏览权限推断保存权限。
+
+每个分区发送前重读当前权限与变更字段原值，只有写前持久化成功才发送。常规与计划分开记录，已完成不重放；未知只查询原变更，匹配目标才结束，原值未变也不能证明请求未发送。未执行分区必须显式继续或取消。`Downloads/settings-v1.json` 只存上下文摘要、字段原值/目标值和阶段，目录受完整文件保护、原子写和排除备份，不存凭据或主机；损坏/写失败保持限制，不覆盖原文件。账号切换后迟到结果只落原记录，不进入新页面。
+
+五端影响：iPhone/iPad 共享以上语义并分别做目标验证；macOS 旧全量设置行为保持，共享兼容增量必须回归；Windows/Android 本次只登记差量、缺失字段、当前权限及两分区恢复要求，不改源码。新增 `save-settings/save-schedule` 的 `synthetic-delta` 请求样本独立于旧全量样本。上述均为官方文档、源码与合成证据，没有真实 NAS 设置写验收；每周时段编辑未见于公开字段及 Mac 基线，不在此切片。
 
 ## 编辑与 RSS 的官方证据边界
 

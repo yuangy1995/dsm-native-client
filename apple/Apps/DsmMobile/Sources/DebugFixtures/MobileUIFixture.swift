@@ -36,6 +36,7 @@ enum MobileUIFixture {
                             DsmAPIName.fileStationBackgroundTask: 3, DsmAPIName.fileStationCompress: 3, DsmAPIName.fileStationExtract: 2,
                             DsmAPIName.fileStationUpload: 3, DsmAPIName.fileStationCreateFolder: 2, DsmAPIName.fileStationCheckPermission: 3,
                             DsmAPIName.downloadStationTask: 3, DsmAPIName.downloadStationStatistic: 1,
+                            DsmAPIName.downloadStationInfo: 2, DsmAPIName.downloadStationSchedule: 1,
                             DsmAPIName.chatChannel: officeState.hasPrefix("chat-management-") ? 5 : 2, DsmAPIName.chatUser: 1, DsmAPIName.chatPost: 8, DsmAPIName.chatAdminSetting: 3, DsmAPIName.chatPostVote: 1, DsmAPIName.chatPostReminder: 1, DsmAPIName.chatPostSchedule: 1,
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
@@ -67,8 +68,16 @@ enum MobileUIFixture {
                         }
                     }
                 }
+                var settings: [DownloadSettingsField: DownloadSettingsValue] = [:]
+                if officeState == "downloads-settings-recover" {
+                    for entry in model.downloads.settings.recovery.entries {
+                        for step in entry.steps where step.phase == .submitted || step.phase == .complete {
+                            settings.merge(step.change.desired) { _, new in new }
+                        }
+                    }
+                }
                 model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
-                    session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses))
+                    session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses, settings: settings))
             }
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             model.chatRepository = try DsmChatRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
