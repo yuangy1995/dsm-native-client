@@ -7,6 +7,10 @@
 
 ## 固定基线与授权
 
+- 2026-10-05 用户再次明确：功能完成后必须分别使用 iPhone 和 iPad 模拟器实际操作并检查页面，避免设计与实际呈现不一致。每片保留两端交互、截图复核及异常状态证据；不能以单元测试、源码检查或通用构建替代目标设备界面测试。
+
+- 2026-10-05 用户在接续会话明确要求移除功能限制，确保后续移动端实机测试可以点击并操作。已实现功能不得仅因缺少真实行为验收而永久禁用、只读或隐藏；本阶段同时复查 M0–M5 的历史硬编码门，M6–M8 随实现开放完整入口。使用已记录接口、运行时能力、当前账号与对象权限、具体危险确认、防重复和结果恢复决定可操作性；不以待实机标签另设关闭常量。尚无接口或尚未实现的功能继续按计划完成，不能用空动作按钮假装开放。此授权用于用户主动测试，不授权 Agent 写入真实 NAS 或取消系统权限和凭据保护；真实证据仍单独记录。
+
 - 2026-10-05 用户要求：本会话完成并验证 M5 后暂停原目标，剩余 M6–M8 交接至新会话继续；本会话不提前实施后续阶段。交接须带当前源码/提交、验证结果、CI 状态、设备待办和操作边界。
 
 - 2026-10-04 用户补充：移动端尚未发布，M0–M8 及后续移动工作统一按开发阶段处理。采用当前数据结构，不为旧开发数据保留迁移、兼容模式或版本回退；无用旧代码直接删除。先前各切片关于旧开发版本读写兼容的设计由本条取代。保留当前操作的账号隔离、持久恢复和防重复提交；不以清理旧数据为由自动操作 NAS 真实数据。已发布 macOS 的实际调用与存储仍需单独核实和回归。
@@ -120,6 +124,53 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 ## 明确非目标
 
 不新增 macOS 尚未实现的加密聊天、实时通话、自动照片备份、推送服务器、iPad 多窗口，不模拟桌面常驻进程。远程通知依赖配套 APNs 服务，本轮只实施前台实时及本地提醒。DSM 更新仅检查，实际固件安装不属于当前业务基线。未实现与待设备验证严格分开。
+
+## M6 NAS 与套件逐页账本
+
+2026-10-05 新会话重新核对：`main` 与远端同为 `bf68dc96`，工作区干净。交接提交 Apple Build 的 shared-macos、iPhone、iPad 均仍运行，不能记为通过。本地可先推进 M6，完整运行结束前不以新推送取消它。
+
+本阶段按 `NasAdministrationModel.swift` 的 `NasSettingsPage` 21 项推进。证据前缀为 `apple/Apps/DsmMac/Sources/`；`NasAdministrationView.swift`（下表简称 View）与 `NasAdministrationModel.swift`（Model）共同确定实际能力。接口只复用 `NasSettingsRepository` / `FileStationShareAccessRepository` 和已有端点记录，未发现方法不得猜测。两端业务一致，iPhone 导航栈、iPad 可用宽度分栏，编辑采用触控表单。每页保留独立加载、空内容、筛选空、错误和重试。
+
+| Mac 页 / 证据 | 移动等价结果与交互 | 契约 / 安全 | 当前切片与证据 |
+| --- | --- | --- | --- |
+| overview / View 仪表板、Model.activate | 总览、性能、更新检查；独立确认电源操作 | System/Utilization/Upgrade；只读及电源高风险 | 既有摘要；电源及断连恢复待 M6d |
+| storage / Model.beginStorageAnalysis、磁盘详情 | 卷/池/磁盘、空间分析、SMART 进度与控制 | Storage/FileStation/SMART；读取及磁盘写 | 既有摘要；分析/SMART 待 M6a2 |
+| externalStorage / View 外接存储 | USB/eSATA 筛选、容量、局部不可用与截断 | dsm-external-storage；只读 | M6a1 读取/两端交互通过；弹出明确非目标 |
+| zram / Model.saveZRAM | 已知开关与可选容量；编辑独立确认重启后生效 | dsm-zram；读取/系统写 | M6a1 读取/两端交互通过；写入待 M6c |
+| fileServices / Model.saveFileServices | 原字段表单及差量保存 | dsm-file-service-settings；管理写 | 待 M6b |
+| terminal / Model.saveTerminal | SSH/Telnet/端口及风险说明 | dsm-terminal-settings；管理写 | 待 M6b |
+| network / Model.saveProxy | 代理开关/地址/端口；未知字段不可编辑 | dsm-proxy-settings；网络写 | 待 M6b |
+| interfaces / Model.saveEthernetInterface | 网卡详情/原配置编辑与断连恢复 | dsm-ethernet-settings；高风险网络写 | 待 M6b |
+| hardware / Model.saveHardware | 风扇/灯光/蜂鸣/休眠/UPS 原字段编辑 | dsm-hardware-settings；系统写 | 待 M6c |
+| powerSchedule / View 电源计划编辑器 | NAS 当地时间、筛选、完整清单草稿及整体保存 | dsm-power-schedule；高风险写 | M6a1 读取/两端交互通过；写入待 M6c |
+| remoteAccess / Model.saveRemoteAccess | QuickConnect/路由设置及中继断连保护 | dsm-remote-access-settings；网络写 | 待 M6b |
+| security / Model.saveSecurity | 自动封锁/DoS/防火墙原状态及差量 | dsm-security-settings；权限/高风险写 | 待 M6b |
+| region / Model.saveRegion | 区域格式/时区/时间源/校时 | dsm-region-time-settings；管理写 | 待 M6a3 |
+| ddns / Model.saveDDNS、testDDNS | 服务商/条目及明确提交；不持久保存口令 | dsm-ddns-settings；凭据/网络写 | 待 M6a3 |
+| packages / PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 列表/目录、卷、许可、SPK、更新、进度、来源和设置 | dsm-package-control/installation；套件写 | 既有摘要；完整流程待 M6e |
+| tasks / Model.saveTask、runTask、loadTaskResults | 草稿、启停/执行/删除、结果与输出 | dsm-task-scheduler；脚本高风险写 | 既有摘要；完整流程待 M6d |
+| accounts / Model.saveAccount、saveGroup | 账号/群组表单与当前账号保护 | dsm-account-directory；权限高风险写 | 待 M6b |
+| shareAccess / View 共享访问 | 当前账号可见共享权限摘要与搜索 | FileStation.List / dsm-share-access；只读 | M6a1 读取/两端交互通过；不冒充完整 ACL 管理 |
+| processes / View 系统活动 | 进程/服务组快照、搜索、局部失败与截断 | dsm-system-processes；只读 | M6a1 读取/两端交互通过；终止/信号明确非目标 |
+| logs / Model.fetchLogs | 分页、筛选与条目详情 | 已有日志读取契约；只读 | 既有摘要；完整阅读待 M6a2 |
+| connections / Model.disconnectConnection | 当前连接保护、明确目标、断开与只读恢复 | dsm-current-connection；高风险写 | 既有摘要；完整流程待 M6d |
+
+### M6a1 五项读取与筛选
+
+唯一修改范围：移动 Administration 现有状态/模型/适配器/导航及新增展示文件、合成服务与行为/UI 测试、双语资源、生成工程和对应文档。复用既有读取通道、请求代次隔离与取消，不新增共享业务模型或平行 Repository；共享访问使用已有 File Station 分页适配器。无依赖、身份、权限、存储或 API 契约变化。未知开关/容量保持未知，电源时间保持 NAS 当地时间，不随本机时区转换。外接存储/进程没有写入口，ZRAM/电源编辑在后续切片接入；不把这些未开发写操作写成仅待真机。
+
+双端实际 UI 发现共享列表缺少权限时，旧 Apple 文件解析会补出默认可读，从而错误显示“只读”。本片一并修正 `DsmFileRepository.listShares` 的缺失权限解释；普通目录的既有读取行为不变，领域字段/存储格式和接口参数不变。共享权限未知仍可浏览可见目录，不据此新增写权。macOS 复用同一修正并执行回归；Windows/Android 仅登记影响。状态行补明确的无障碍标签与状态值，界面测试检查实际值而非假设拆开的文本节点。
+
+M6a1 已完成读取主流程、12 项新行为测试与 8 项新 UI 测试；两端完整单元及全部新 UI 均有通过证据，浅深色/中文大字和截图检查、中间失败及重跑见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-05-移动-m6a1-nas-五项读取与入口开放约定)。共享权限修正有独立回归，桌面目标构建另行记录。M6a1 只读不提升既有端点真实环境证据等级；后续按 M6a2 → M6a3 → M6b → M6c → M6d → M6e 推进，再进入 M7、M8。入口开放审计已确认移动 Photos 的 `deletionEnabled: true`；M7 须在接入完整容器网络流程时显式开放组合根 `containerNetworkCreationEnabled`，并以套件实际权限替换移动旧入口对容器强加的 DSM 管理员条件。最终逐入口复核尚未完成。
+
+`PENDING_USER_VALIDATION`（仅 M6a1 已实现读取）：
+
+| 前置条件 | 操作与预期 | 脱敏反馈及影响 |
+| --- | --- | --- |
+| 两端真机、具备 NAS 管理权限的账号及已安装相关套件 | 依次打开五页并与 DSM 对照；外接存储筛选、进程/共享搜索、手动刷新；局部不可用不清除其他有效结果，缺权限不显示成可写 | App/OS/DSM/套件版本、操作页及错误类别；不回传账号、进程正文、共享名、路径或响应。影响五项读取，不涉及本轮 NAS 写入 |
+| NAS 与设备使用不同时区，存在停用及启用计划 | 对照 NAS 的时分/星期，切换启用/停用筛选；未知状态不能归为停用，手机换时区不能平移计划时间 | 脱敏时区/时间样例与复现步骤；计划编辑尚未实施，不属于本片待真机 |
+| VoiceOver、硬件键盘、iPad 分屏及最大动态文字 | 进入/返回、搜索、清空、菜单筛选、错误重试；控件可操作，状态按标签和值朗读；窄宽布局不裁掉关键值或恢复按钮 | 设备/系统、控件及脱敏截图；真实辅助功能尚未验证，不能由模拟器自动化代替 |
+
 
 ## M5 Download Station 基线与拆分
 

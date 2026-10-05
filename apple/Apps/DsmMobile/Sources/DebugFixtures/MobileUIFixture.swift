@@ -51,6 +51,9 @@ enum MobileUIFixture {
                             DsmAPIName.chatChannel: officeState.hasPrefix("chat-management-") ? 5 : 2, DsmAPIName.chatUser: 1, DsmAPIName.chatPost: 8, DsmAPIName.chatAdminSetting: 3, DsmAPIName.chatPostVote: 1, DsmAPIName.chatPostReminder: 1, DsmAPIName.chatPostSchedule: 1,
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
+            if officeState.hasPrefix("nas-read-"), officeState != "nas-read-unsupported" {
+                for name in MobileNasReadUIFixture.apiNames { versions[name] = 1 }
+            }
             if officeState.hasPrefix("chat-management-") { versions[DsmAPIName.chatPostFile] = 2 }
             if officeState == "downloads-create-bt" { versions[DsmAPIName.downloadStationBTSearch] = 1 }
             if officeState.hasPrefix("downloads-rss-"), officeState != "downloads-rss-unsupported" {
@@ -263,6 +266,8 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
          "project_name": "SYNO.SDS.App.FileStation3.Instance", "request_name": "", "request_info": ""]
     }
 
+    private var nasReadRequestCounts: [String: Int] = [:]
+
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         if pageState == "loading" { try await Task.sleep(for: .seconds(60)) }
         if pageState == "error" { throw URLError(.notConnectedToInternet) }
@@ -270,6 +275,19 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
         let fields = URLComponents(string: "https://fixture.invalid/?" + body)?.queryItems ?? []
         let api = fields.first { $0.name == "api" }?.value ?? ""
         let method = fields.first { $0.name == "method" }?.value ?? ""
+        if pageState.hasPrefix("nas-read-"), MobileNasReadUIFixture.apiNames.contains(api) {
+            nasReadRequestCounts[api, default: 0] += 1
+            if pageState == "nas-read-loading" { try await Task.sleep(for: .seconds(30)) }
+            if pageState == "nas-read-error"
+                || (pageState == "nas-read-retry" && nasReadRequestCounts[api] == 1)
+                || (pageState == "nas-read-partial" && [DsmAPIName.coreExternalStorageESATA, DsmAPIName.coreSystemProcessGroup].contains(api)) {
+                throw URLError(.notConnectedToInternet)
+            }
+            if let result = MobileNasReadUIFixture.response(api: api, method: method, state: pageState) {
+                return .init(data: try JSONSerialization.data(withJSONObject: ["success": true, "data": result]), statusCode: 200)
+            }
+            throw URLError(.unsupportedURL)
+        }
         if (pageState.hasPrefix("copy-") || pageState.hasPrefix("recycle-") || pageState.hasPrefix("download-")), let result = try copyMove.response(api: api, method: method, fields: fields, state: pageState) {
             return .init(data: try JSONSerialization.data(withJSONObject: ["success": true, "data": result]), statusCode: 200)
         }
@@ -327,7 +345,7 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
                 "SYNO.SDS.DownloadStation.Application": grantsDownloads,
                 "SYNO.SDS.Chat.Application": pageState == "modules-all" || pageState.hasPrefix("chat-"),
                 "SYNO.SDS.Virtualization.Application": pageState == "modules-all"],
-                "Session": ["is_admin": isPermissionFixture || pageState == "modules-all"]]
+                "Session": ["is_admin": isPermissionFixture || pageState == "modules-all" || pageState.hasPrefix("nas-read-")]]
         case ("SYNO.Foto.UserInfo", "me"):
             result = ["enabled": pageState == "modules-all" || pageState.hasPrefix("photo-"), "id": 1]
         case ("SYNO.Foto.Setting.User", "get"):

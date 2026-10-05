@@ -55,3 +55,7 @@ iPhone/iPad 尚无对应写界面。Windows/Android 本轮未修改，不能将 
 
 历史 2026-08-03 lab-a 仅观察控件，保持 static，不能继承本轮读证据。环境见
 [本轮快照](../environments/2026-10-02-nas-settings-web-audit.md)。全部真实 set 行为未验证。
+
+## 2026-10-05 移动 M6a1 接入
+
+iPhone/iPad M6a1 已接内存压缩读取和明确未知状态，仅在返回时显示容量/算法；开关保存继续在 M6c 实施。未实现的写入口不列为待真机，实施后按实际能力/权限开放，不再另加仅因未实测而关闭的常量。当前环境命令与两端页面验证集中在[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a1-五项读取与筛选)及其验证历史；真实 NAS 证据不提升。

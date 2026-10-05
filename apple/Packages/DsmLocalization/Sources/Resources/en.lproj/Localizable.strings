@@ -6464,3 +6464,16 @@
 "download.removal.open-files" = "Open Files";
 "download.removal.stop-seeding" = "Stop Seeding";
 "download.removal.selection" = "Selected: %@";
+
+// 移动 NAS 读取与筛选。
+"mobile.nas.externalStorage.loading" = "Loading external storage…";
+"mobile.nas.processes.loading" = "Loading system activity…";
+"mobile.nas.shareAccess.loading" = "Loading shared-folder access…";
+"mobile.nas.zram.loading" = "Loading memory compression…";
+"mobile.nas.powerSchedule.loading" = "Loading power schedules…";
+"mobile.nas.shareAccess.search" = "Search shared folders";
+"mobile.nas.filter.empty" = "No matching items";
+"mobile.nas.filter.retry" = "Change or clear the search to see other items.";
+"mobile.nas.powerSchedule.empty" = "No power schedules were returned. Set them up in Hardware & Power in DSM, then refresh.";
+"mobile.nas.powerSchedule.manage" = "To change schedules, open Hardware & Power in DSM. Times shown use the NAS clock.";
+"mobile.nas.processes.search" = "Search activity";

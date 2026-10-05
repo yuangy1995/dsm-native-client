@@ -1,4 +1,5 @@
 import DsmCore
+import DsmLocalization
 import Foundation
 
 protocol MobileNasDetailsReading: Sendable {
@@ -8,9 +9,14 @@ protocol MobileNasDetailsReading: Sendable {
     func loadScheduledTasks() async throws -> MobileNasBoundedPage<MobileNasScheduledTaskDetail>
     func loadLogs() async throws -> MobileNasBoundedPage<MobileNasLogDetail>
     func loadConnections() async throws -> MobileNasBoundedPage<MobileNasConnectionDetail>
+    func loadExternalStorage() async throws -> NasExternalStorageDirectory
+    func loadProcesses() async throws -> NasProcessDirectory
+    func loadShareAccess() async throws -> NasShareAccessDirectory
+    func loadZRAM() async throws -> NasZRAMSnapshot
+    func loadPowerSchedule() async throws -> NasPowerScheduleSnapshot
 }
 
-/// 只读适配器在 Repository 边界立即移除账号、地址、日志正文与管理能力字段。
+/// 只暴露已记录的读取能力；旧摘要保留投影，新增页面复用共享层的字段白名单。
 struct MobileReadOnlyNasDetailsRepository: MobileNasDetailsReading, Sendable {
     static let packageLimit = 100
     static let scheduledTaskLimit = 100
@@ -18,10 +24,12 @@ struct MobileReadOnlyNasDetailsRepository: MobileNasDetailsReading, Sendable {
 
     let profileID: UUID
     private let base: any NasSettingsRepository
+    private let shareAccess: (any NasShareAccessRepository)?
 
-    init(profileID: UUID, base: any NasSettingsRepository) {
+    init(profileID: UUID, base: any NasSettingsRepository, fileRepository: (any FileRepository)? = nil) {
         self.profileID = profileID
         self.base = base
+        self.shareAccess = fileRepository.map { FileStationShareAccessRepository(repository: $0) }
     }
 
     func loadPackages() async throws -> MobileNasBoundedPage<MobileNasPackageDetail> {
@@ -99,5 +107,29 @@ struct MobileReadOnlyNasDetailsRepository: MobileNasDetailsReading, Sendable {
             total: total,
             isTruncated: total > items.count || page.connections.count > items.count
         )
+    }
+
+    func loadExternalStorage() async throws -> NasExternalStorageDirectory {
+        try await base.loadExternalStorage()
+    }
+
+    func loadProcesses() async throws -> NasProcessDirectory {
+        try await base.loadSystemProcesses(start: 0, limit: 500)
+    }
+
+    func loadShareAccess() async throws -> NasShareAccessDirectory {
+        guard let shareAccess else {
+            throw AppError(category: .apiUnavailable, isRetryable: false,
+                           safeUserMessage: L10n.string("share-access.unavailable"))
+        }
+        return try await shareAccess.loadShareAccess()
+    }
+
+    func loadZRAM() async throws -> NasZRAMSnapshot {
+        try await base.loadZRAM()
+    }
+
+    func loadPowerSchedule() async throws -> NasPowerScheduleSnapshot {
+        try await base.loadPowerSchedule()
     }
 }

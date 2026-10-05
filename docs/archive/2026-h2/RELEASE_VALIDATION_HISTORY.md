@@ -1995,3 +1995,46 @@ R3 仅选择 `MobileDownloadRemovalUITests/test单项确认取消保持任务随
 交接准备时 `214e87d5` 的 [Apple Build 37264048781](https://github.com/yuangy1995/dsm-native-client/actions/runs/37264048781) 共享/macOS 组已通过，两端全量移动 UI 仍在执行。M5d 本机通过不替代最终提交的全量云端结果；新会话需按交接消息的实际提交和最新运行跟进，并避免持续新推送反复取消唯一完整运行。
 
 最终按锁定 XcodeGen 流程重新生成移动工程，前后内容一致，SHA-256 `2b402a704789a9faf4d7053108d95e4a43e60522dd8afaf916f47786b15b2110`。本切片按既定主分支策略交付，不创建分支或发布安装包；实际提交与云端状态随会话交接提供。
+
+## 2026-10-05 移动 M6a1 NAS 五项读取与入口开放约定
+
+新会话接手基线 `bf68dc962f9796c0f51574c284265589603a8082`，起始工作区干净，main 与 origin/main 一致。完成 Mac 21 页实际源码账本后，先接外接存储、进程/服务组、共享访问、内存压缩和电源计划的读取、筛选与错误恢复；ZRAM/计划保存尚属 M6c，不能由读取页存在宣称完成。唯一修改范围与实际设备待办见[主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a1-五项读取与筛选)。
+
+用户在本片补充两项交付条件：已实现功能移除仅因缺少实机证据而固定关闭的限制，保留真实权限/能力/危险确认和防重复；每片分别执行 iPhone/iPad 模拟器交互和截图复核。初步核实 Photos 删除已从移动组合根开放；容器网络默认关闭参数及容器入口强加 DSM 管理员的旧条件随 M7 完整流程修正。该审计没有代替尚未实施的 M6–M8。
+
+环境实读为 Xcode 26.6（17F113），命令行路径 `/Applications/Xcode.app`，本机 iOS SDK 与两台专用模拟器仍为 26.5；与旧交接的 Xcode 26.5 描述不同，本次没有安装、升级或切换工具链。XcodeGen 2.46.0 按 `apple/Apps/DsmMobile/project.yml` 生成工程。移动派生目录仍为 `apple/Apps/DsmMobile/build/m0-m8`，运行测试期间没有重建此目录。结果和日志位于被忽略的 `apple/Apps/DsmMobile/build/m6a1-*`。
+
+本机验证过程如实记录：
+
+- `build-for-testing` 第一轮缺少新增 Debug Fixture 的 `DsmNetwork` 导入；第二轮测试替身未实现 `DsmBinaryHTTPTransport`。分别修正后第三轮构建成功，没有关闭测试目标或削弱断言。
+- 第一轮两端测试在新增取消用例停滞：测试替身重复阻塞共享列表第二页。只中断本次两端进程，结果为 `TEST EXECUTE INTERRUPTED`；将阻塞点限制为首个匹配请求后重建。取消后零回写断言保留，没有新增跳过。
+- 第二轮两端完整单元均为 1263 项、各 4 条既有条件跳过、零失败；8 项新增实际 UI 各通过 5 项、失败 3 项。失败涉及共享权限缺省被显示为只读、中文未知状态与重试后状态的无障碍文本节点。实际 UI 层次显示 `Status, Enabled` 为同一状态行，不能按独立 `Enabled` 文本假定结构。
+- 共享权限修正限定 `DsmFileRepository.listShares`：缺少权限不再从可见性推断只读，普通目录原行为保持；补真实网络适配回归，未新增请求、字段、身份或持久化格式。状态行明确提供无障碍标签和值，测试仍断言具体业务状态。手机详情重复标题已移除。
+- 修正后的共享 `swift test --package-path apple --jobs 2` 成功：2715 项 XCTest（172 项既有环境条件跳过）、零失败，另 12 项 Swift Testing 通过；修正前第一轮为 2714 项，同样通过。最终模拟器构建 `m6a1-build-r6.log` 成功。两端第三轮完整单元仍各 1263 项、4 跳过、零失败；界面终态及截图检查在本片结束时补记。
+
+实际命令：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6a1-phone-r3.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileNasReadUITests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6a1-pad-r3.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileNasReadUITests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+第一次 Mac 回归通过且 `lipo -archs` 为 x86_64/arm64；共享权限修正后再次构建，终态单独补记。未安装或启动该 Mac 产物。独立集成与只读对抗复核由当前负责人另阶段执行，没有虚称其他模型审查：实际网络适配仅触发列表/get/load，覆盖局部失败、未知/零值区别、同配置重连、五页取消迟到、分页、NAS 墙钟与手机时区、共享权限来源；不添加弹出设备或终止进程接口。
+
+交接提交的 [Apple Build 37267487226](https://github.com/yuangy1995/dsm-native-client/actions/runs/37267487226) 已确认 shared-macos 成功，两端完整 UI 尚在运行；本片没有通过推送取消此运行。上一轮 `37264048781` 已取消，不能视为整体通过。新的本机结果不能代替该提交的云端终态。
+
+本片终态补记：
+
+- `m6a1-phone-r3.xcresult` 与 `m6a1-pad-r3.xcresult` 均 `TEST EXECUTE SUCCEEDED`：各 1263 项完整移动单元（各 4 条既有设备条件跳过）与各 8 项新增实际 UI 零失败。第三轮使用深色模式；随后恢复两台模拟器原有浅色模式，`m6a1-phone-light.xcresult` / `m6a1-pad-light.xcresult` 各补跑中文大字号未知开关、共享访问和错误重试三项，均零失败。
+- 从 `.xcresult` 导出并实际查看两端页面截图，复核外接设备、NAS 当地电源时间、加载/不可用、共享权限、中文大字状态与系统活动搜索。修正了手机重复标题、英文数量表达和 iPad 窄栏过长搜索提示。最后两项纯界面文案修改后 `m6a1-build-r7.log` 构建成功；`m6a1-phone-final.xcresult` / `m6a1-pad-final.xcresult` 各执行 12 项 `MobileNasReadTests` 与 1 项 `test系统活动搜索能显示与清除无匹配状态`，全部通过，最终搜索截图分别检查。两端浅色补跑使用上方 `test-without-building` 命令，将 `-only-testing` 改为上述三项完整 `DsmMobileUITests/MobileNasReadUITests/<方法名>`；最终聚焦使用 `-only-testing:DsmMobileTests/MobileNasReadTests` 与 `-only-testing:DsmMobileUITests/MobileNasReadUITests/test系统活动搜索能显示与清除无匹配状态`。这是失败修正后的通过证据，不是整组首次零失败。
+- 共享修正后的 Mac `m6a1-macos-r2.log` 与最终资源回归 `m6a1-macos-final.log` 均 `BUILD SUCCEEDED`，产物含 x86_64/arm64；仅构建，不安装/启动。最后新增短资源后 `swift test --package-path apple --jobs 2 --filter DsmLocalizationTests` 的 6 项通过。
+- `python3 tools/localization/check_localization.py`（Apple 6203、Android 2188、Windows 3402）、`python3 tools/request-contract/validate_contracts.py`（179 请求样本/1 结果）、`python3 tools/contract-validation/validate_fixtures.py`（29 组/48 私有文档）、`python3 tools/codex/check_documentation.py` 和 `git diff --check` 均通过。XcodeGen 2.46.0 重生成工程前后 SHA-256 一致。
+- 结束前读取远端 main，仍为交接基线，没有需整合的新提交。旧提交 Apple CI 仍为 shared-macos 成功、两端完整 UI 运行中；本片先留在本地 main，避免推送取消这轮唯一完整云端证据，后续继续跟进。清理本片截图临时导出目录，保留忽略目录中的日志与结果包供复核；未触碰此前正式发布产物。
+
+本片没有真实 NAS 请求或写入，没有新增跳过、修改工具链、身份、权限或存储格式；正式签名、真机/NAS、完整 VoiceOver 与键盘/分屏仍按主计划具体 `PENDING_USER_VALIDATION`。M6a2–M6e、M7、M8 和已实现入口的完整开放审计仍需继续。

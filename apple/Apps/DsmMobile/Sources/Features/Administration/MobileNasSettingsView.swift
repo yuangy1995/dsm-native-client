@@ -24,12 +24,11 @@ struct MobileNasSettingsView: View {
 
     private var compactLayout: some View {
         List {
-            readOnlyNotice
+            detailsNavigationSection
             systemSection
             performanceSection
             storageSection
             updateSection
-            detailsNavigationSection
         }
         .listStyle(.insetGrouped)
         .refreshable { await model.nasHealthModel.refresh() }
@@ -63,7 +62,6 @@ struct MobileNasSettingsView: View {
             Divider()
 
             List {
-                readOnlyNotice
                 selectedDetail
             }
             .listStyle(.insetGrouped)
@@ -81,19 +79,8 @@ struct MobileNasSettingsView: View {
                     Label(destination.title, systemImage: destination.systemImage)
                         .frame(minHeight: 44, alignment: .leading)
                 }
+                .accessibilityIdentifier("mobile.nas.page.\(destination.rawValue)")
             }
-        }
-    }
-
-    private var readOnlyNotice: some View {
-        Section {
-            Label(
-                L10n.string("mobile.nas-health.read-only.notice"),
-                systemImage: "eye"
-            )
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .accessibilityElement(children: .combine)
         }
     }
 
@@ -110,6 +97,7 @@ struct MobileNasSettingsView: View {
             .frame(minHeight: 44, alignment: .leading)
             .contentShape(.rect)
         }
+        .accessibilityIdentifier("mobile.nas.page.\(destination.rawValue)")
         .buttonStyle(.plain)
         .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -122,7 +110,7 @@ struct MobileNasSettingsView: View {
         case .performance: performanceSection
         case .storage: storageSection
         case .update: updateSection
-        case .packages, .scheduledTasks, .logs, .connections:
+        case .packages, .scheduledTasks, .logs, .connections, .externalStorage, .processes, .shareAccess, .zram, .powerSchedule:
             MobileNasDetailsSectionView(
                 model: model.nasDetailsModel,
                 destination: selectedSection

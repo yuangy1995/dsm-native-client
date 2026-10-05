@@ -6464,3 +6464,16 @@
 "download.removal.open-files" = "打开文件管理";
 "download.removal.stop-seeding" = "停止做种";
 "download.removal.selection" = "已选择 %@ 项";
+
+// 移动 NAS 读取与筛选。
+"mobile.nas.externalStorage.loading" = "正在加载外接存储…";
+"mobile.nas.processes.loading" = "正在加载系统活动…";
+"mobile.nas.shareAccess.loading" = "正在加载共享访问…";
+"mobile.nas.zram.loading" = "正在加载内存压缩…";
+"mobile.nas.powerSchedule.loading" = "正在加载电源计划…";
+"mobile.nas.shareAccess.search" = "搜索共享文件夹";
+"mobile.nas.filter.empty" = "没有匹配的项目";
+"mobile.nas.filter.retry" = "更改或清除搜索条件以查看其他项目。";
+"mobile.nas.powerSchedule.empty" = "未返回电源计划。可在 DSM 的“硬件和电源”中设置，然后刷新。";
+"mobile.nas.powerSchedule.manage" = "如需修改计划，请打开 DSM 的“硬件和电源”。此处时间按 NAS 当地时间显示。";
+"mobile.nas.processes.search" = "搜索系统活动";

@@ -1222,7 +1222,7 @@ public actor DsmFileRepository: FileRepository {
                 credential: credential,
                 as: FileListPayload.self
             )
-            let items = (payload.shares ?? []).map(makeFileItem)
+            let items = (payload.shares ?? []).map { makeFileItem($0, isSharedFolder: true) }
             let resolvedOffset = payload.offset ?? offset
             let total = payload.total ?? items.count
             return FilePage(
@@ -1408,7 +1408,7 @@ public actor DsmFileRepository: FileRepository {
                 credential: credential,
                 as: FileListPayload.self
             )
-            let items = (payload.files ?? []).map(makeFileItem)
+            let items = (payload.files ?? []).map { makeFileItem($0) }
             let resolvedOffset = payload.offset ?? offset
             let total = payload.total ?? items.count
             return FilePage(
@@ -3900,7 +3900,7 @@ public actor DsmFileRepository: FileRepository {
         }
     }
 
-    private func makeFileItem(_ payload: FilePayload) -> FileItem {
+    private func makeFileItem(_ payload: FilePayload, isSharedFolder: Bool = false) -> FileItem {
         let rawType = payload.additional?.type
         let kind: FileKind
         if rawType?.lowercased().contains("link") == true {
@@ -3911,8 +3911,9 @@ public actor DsmFileRepository: FileRepository {
 
         let rights = payload.additional?.perm?.advRight ?? [:]
         let acl = payload.additional?.perm?.isACLMode == true ? payload.additional?.perm?.acl : nil
-        let permissions = FilePermissions(
-            canRead: acl?["read"] ?? rights["read"] ?? rights["download"] ?? true,
+        // 可见共享不等于已知访问权限；缺少字段时保留未知，不生成默认只读结论。
+        let permissions: FilePermissions? = isSharedFolder && payload.additional?.perm == nil ? nil : FilePermissions(
+            canRead: acl?["read"] ?? rights["read"] ?? rights["download"] ?? !isSharedFolder,
             canWrite: acl?["write"] ?? rights["write"] ?? rights["upload"] ?? false,
             canDelete: acl?["del"] ?? rights["delete"] ?? false,
             posixMode: payload.additional?.perm?.posix
@@ -4045,7 +4046,7 @@ public actor DsmFileRepository: FileRepository {
                     }
                     try? await cleanSearch(capability: capability, taskID: start.taskid)
                     var seen = Set<String>()
-                    return FileSearchResult(items: files.map(makeFileItem).filter { seen.insert($0.id).inserted },
+                    return FileSearchResult(items: files.map { makeFileItem($0) }.filter { seen.insert($0.id).inserted },
                         indexCoverage: request.searchesContents ? (start.has_not_index_share == true ? .incomplete : .complete) : .notRequested)
                 }
                 try await Task.sleep(nanoseconds: delay)

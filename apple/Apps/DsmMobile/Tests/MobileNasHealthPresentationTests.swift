@@ -106,7 +106,6 @@ final class MobileNasHealthPresentationTests: XCTestCase {
         "mobile.nas-health.performance.swap",
         "mobile.nas-health.performance.volume.read",
         "mobile.nas-health.performance.volume.write",
-        "mobile.nas-health.read-only.notice",
         "mobile.nas-health.refresh.failed",
         "mobile.nas-health.status.critical",
         "mobile.nas-health.status.healthy",
