@@ -8,6 +8,17 @@ import Foundation
 enum MobileUIFixture {
     static var isEnabled: Bool { ProcessInfo.processInfo.arguments.contains("--ui-fixture") }
 
+    /// 只替代文件提供者选取这一步；表单、受保护副本与二进制上传仍走实际生产链路。
+    static var downloadCreationInput: URL? {
+        guard isEnabled, ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] == "downloads-create-file" else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers/Synthetic task.torrent")
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("d4:infod4:name9:syntheticee".utf8).write(to: url, options: [.atomic, .completeFileProtection])
+            return url
+        } catch { return nil }
+    }
+
     static func makeModel() -> MobileAppModel {
         do {
             let defaults = UserDefaults(suiteName: "LanStash.Mobile.UITests.Fixture")!
@@ -41,6 +52,7 @@ enum MobileUIFixture {
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             if officeState.hasPrefix("chat-management-") { versions[DsmAPIName.chatPostFile] = 2 }
+            if officeState == "downloads-create-bt" { versions[DsmAPIName.downloadStationBTSearch] = 1 }
             if officeState == "downloads-edit-unsupported" { versions[DsmAPIName.downloadStationTask] = 1 }
             if officeState.hasPrefix("chat-audio-") { versions[DsmAPIName.chatPostFile] = 2 }
             if officeState.hasPrefix("chat-realtime-") { versions[DsmAPIName.chatPostSubscribe] = 2 }

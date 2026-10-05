@@ -4,6 +4,85 @@ import UIKit
 @MainActor
 final class MobileDownloadCreationUITests: XCTestCase {
     private let uri = "https://files.example.invalid/synthetic.torrent"
+    func test链接草稿取消不添加且目录可恢复默认再选择提交() {
+        let app = launch(); enableDownloads(app); openLink(app)
+        let field = element("downloads.create.uri", app); field.tap(); field.typeText(uri)
+        button("downloads.create.close", app).tap()
+        XCTAssertFalse(element("downloads.task.sample-created", app).exists)
+        toolbar("downloads.records", labels: ["Recent actions", "操作记录"], app)
+        XCTAssertTrue(app.staticTexts["No recent actions"].firstMatch.waitForExistence(timeout: 8))
+        button("downloads.records.close", app).tap()
+        openLink(app); chooseFolder(app)
+        button("downloads.create.default", app).tap()
+        XCTAssertTrue(element("downloads.create.destination", app).label.contains("default location"))
+        XCTAssertFalse(element("downloads.create.default", app).exists)
+        chooseFolder(app)
+        let nextField = element("downloads.create.uri", app); nextField.tap(); nextField.typeText(uri)
+        button("downloads.create.submit", app).tap()
+        XCTAssertTrue(feedback(app).waitForExistence(timeout: 10)); XCTAssertTrue(feedback(app).label.contains("Download added"))
+        screenshot("Link draft chooses a folder before explicit creation")
+        button("downloads.create.close", app).tap()
+        let row = element("downloads.task.sample-created", app)
+        XCTAssertTrue(row.waitForExistence(timeout: 8)); row.tap()
+        let savedLocation = element("downloads.details.destination", app)
+        scrollTo(savedLocation, app)
+        XCTAssertTrue(savedLocation.waitForExistence(timeout: 8)); XCTAssertTrue(savedLocation.label.hasSuffix("fixture"))
+    }
+    func test预选任务文件表单取消不上传且密码目录通过真实二进制链路提交() {
+        let app = launch(state: "downloads-create-file"); enableDownloads(app); openFile(app)
+        XCTAssertTrue(element("downloads.create.filename", app).waitForExistence(timeout: 8))
+        XCTAssertTrue(app.secureTextFields["downloads.create.password"].exists)
+        button("downloads.create.close", app).tap()
+        XCTAssertFalse(element("downloads.task.sample-created", app).exists)
+        openFile(app)
+        let password = app.secureTextFields["downloads.create.password"]
+        XCTAssertTrue(password.waitForExistence(timeout: 8)); password.tap(); password.typeText("  synthetic secret  ")
+        chooseFolder(app)
+        XCTAssertFalse(app.staticTexts["  synthetic secret  "].exists)
+        screenshot("File creation has a secure password and chosen destination")
+        button("downloads.create.submit", app).tap()
+        XCTAssertTrue(feedback(app).waitForExistence(timeout: 10)); XCTAssertTrue(feedback(app).label.contains("Download added"))
+        button("downloads.create.close", app).tap()
+        XCTAssertTrue(element("downloads.task.sample-created", app).waitForExistence(timeout: 8))
+    }
+    func test系统文件选择器取消不创建下载() {
+        let app = launch(); enableDownloads(app); openFile(app)
+        let picker = app.otherElements["Browse View (Picker)"]
+        let browse = app.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 8) || browse.exists)
+        screenshot("Native task file picker")
+        let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "取消"])).firstMatch
+        var cancelled = false
+        // 系统选择器跟随系统语言并恢复上次目录，沿用导出面板已验证的返回路径。
+        for _ in 0..<4 {
+            if cancel.waitForExistence(timeout: 1), cancel.isHittable { cancel.tap(); cancelled = true; break }
+            let back = app.buttons["BackButton"]; XCTAssertTrue(back.waitForExistence(timeout: 5)); back.tap()
+        }
+        XCTAssertTrue(cancelled)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: picker)], timeout: 5), .completed)
+        XCTAssertFalse(element("downloads.create.filename", app).exists)
+        XCTAssertFalse(element("downloads.task.sample-created", app).exists)
+        screenshot("System file picker cancellation leaves downloads unchanged")
+    }
+    func testBT搜索结果先进入统一表单且可取消后再选择目录添加() {
+        let app = launch(state: "downloads-create-bt"); enableDownloads(app)
+        toolbar("downloads.create.menu", labels: ["Add Task", "添加任务"], app)
+        let searchBT = app.buttons["Search BT"].firstMatch
+        XCTAssertTrue(searchBT.waitForExistence(timeout: 8)); searchBT.tap()
+        let keyword = element("downloads.bt.keyword", app)
+        XCTAssertTrue(keyword.waitForExistence(timeout: 8)); keyword.tap(); keyword.typeText("synthetic")
+        button("downloads.bt.search", app).tap()
+        let add = element("downloads.bt.create.0", app)
+        scrollTo(add, app); XCTAssertTrue(add.waitForExistence(timeout: 10)); button("downloads.bt.create.0", app).tap()
+        let field = element("downloads.create.uri", app)
+        XCTAssertTrue(field.waitForExistence(timeout: 8)); XCTAssertEqual(field.value as? String, uri)
+        XCTAssertFalse(element("downloads.create.feedback", app).exists)
+        button("downloads.create.close", app).tap()
+        scrollTo(add, app); XCTAssertTrue(add.waitForExistence(timeout: 8)); button("downloads.bt.create.0", app).tap()
+        chooseFolder(app); button("downloads.create.submit", app).tap()
+        XCTAssertTrue(feedback(app).waitForExistence(timeout: 10)); XCTAssertTrue(feedback(app).label.contains("Download added"))
+        screenshot("BT result uses the same creation form")
+    }
     func test官方空回执添加链接后列表和重启记录可见并可移除结束记录() {
         let app = launch(); enableDownloads(app); addLink(app)
         let result = feedback(app)
@@ -47,7 +126,11 @@ final class MobileDownloadCreationUITests: XCTestCase {
         screenshot("Creation permission failure and recovery guidance")
     }
     func test中文深色大字创建结果和横屏记录可以阅读() {
-        let app = launch(chinese: true); enableDownloads(app, chinese: true); addLink(app, chinese: true)
+        let app = launch(chinese: true); enableDownloads(app, chinese: true); openLink(app, chinese: true)
+        let field = element("downloads.create.uri", app); field.tap(); field.typeText(uri)
+        chooseFolder(app, chinese: true)
+        screenshot("Chinese dark large-text creation options")
+        button("downloads.create.submit", app).tap()
         let result = feedback(app)
         XCTAssertTrue(result.waitForExistence(timeout: 10)); scrollTo(result, app)
         XCTAssertTrue(result.label.contains("已添加下载")); XCTAssertTrue(result.isHittable)
@@ -59,11 +142,28 @@ final class MobileDownloadCreationUITests: XCTestCase {
         screenshot("Chinese landscape accepted creation record"); XCUIDevice.shared.orientation = .portrait
     }
     private func addLink(_ app: XCUIApplication, chinese: Bool = false) {
+        openLink(app, chinese: chinese)
+        let field = element("downloads.create.uri", app); XCTAssertTrue(field.waitForExistence(timeout: 8)); field.tap(); field.typeText(uri)
+        let submit = button("downloads.create.submit", app); XCTAssertTrue(submit.isEnabled); submit.tap()
+    }
+    private func openLink(_ app: XCUIApplication, chinese: Bool = false) {
         toolbar("downloads.create.menu", labels: ["Add Task", "添加任务"], app)
         let add = app.buttons[chinese ? "添加链接" : "Add Link"].firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 8)); add.tap()
-        let field = element("downloads.create.uri", app); XCTAssertTrue(field.waitForExistence(timeout: 8)); field.tap(); field.typeText(uri)
-        let submit = button("downloads.create.submit", app); XCTAssertTrue(submit.isEnabled); submit.tap()
+        XCTAssertTrue(element("downloads.create.uri", app).waitForExistence(timeout: 8))
+    }
+    private func openFile(_ app: XCUIApplication) {
+        toolbar("downloads.create.menu", labels: ["Add Task", "添加任务"], app)
+        let item = app.buttons["Import Task File"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 8)); item.tap()
+    }
+    private func chooseFolder(_ app: XCUIApplication, chinese: Bool = false) {
+        let destination = button("downloads.create.destination", app); scrollTo(destination, app); destination.tap()
+        let folder = element("files.folder-picker.folder./fixture", app)
+        XCTAssertTrue(folder.waitForExistence(timeout: 8)); folder.tap()
+        let choose = app.buttons[chinese ? "选择" : "Choose"].firstMatch
+        XCTAssertTrue(choose.waitForExistence(timeout: 8)); choose.tap()
+        XCTAssertTrue(element("downloads.create.destination", app).label.contains("fixture"))
     }
     private func feedback(_ app: XCUIApplication) -> XCUIElement {
         app.collectionViews["downloads.creation.form"].descendants(matching: .any).matching(identifier: "downloads.create.feedback").firstMatch
@@ -116,11 +216,13 @@ final class MobileDownloadCreationUITests: XCTestCase {
     private func scrollTo(_ item: XCUIElement, _ app: XCUIApplication) {
         for _ in 0..<14 {
             let record = app.collectionViews["downloads.creation.record"], form = app.collectionViews["downloads.creation.form"]
-            let list = record.exists ? record : (form.exists ? form : app.collectionViews.firstMatch)
+            let bt = app.collectionViews["downloads.bt.form"]
+            let details = app.collectionViews["downloads.details.form"]
+            let list = record.exists ? record : (form.exists ? form : (bt.exists ? bt : (details.exists ? details : app.collectionViews.firstMatch)))
             guard list.exists else { XCTFail("找不到当前列表"); return }
             let frame = list.frame.intersection(app.frame)
             let navBottom = app.navigationBars.allElementsBoundByIndex.map(\.frame).filter { $0.intersects(frame) }.map(\.maxY).max() ?? frame.minY
-            let bottom = !record.exists && !form.exists && app.tabBars.firstMatch.exists ? min(frame.maxY, app.tabBars.firstMatch.frame.minY) - 12 : frame.maxY - 24
+            let bottom = !record.exists && !form.exists && !bt.exists && !details.exists && app.tabBars.firstMatch.exists ? min(frame.maxY, app.tabBars.firstMatch.frame.minY) - 12 : frame.maxY - 24
             let viewport = CGRect(x: frame.minX + 12, y: max(frame.minY, navBottom) + 10, width: frame.width - 24, height: bottom - max(frame.minY, navBottom) - 10)
             if item.exists, viewport.contains(CGPoint(x: item.frame.midX, y: item.frame.midY)) { return }
             let reverse = item.exists && item.frame.midY < viewport.minY

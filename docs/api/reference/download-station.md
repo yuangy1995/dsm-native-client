@@ -47,6 +47,12 @@ M5b 依据同一官方指南第 17–20 页：`Info.getinfo.is_manager` 只接�
 
 五端影响：iPhone/iPad 共用持久创建流程并分别验证；Mac App 未改，共享链接版本与文件内容摘要修正需全量及双架构回归，旧调用未新增持久恢复。Windows/Android 只登记语义；Android 当前链接仍按目录选 v1/v2，旧 `create/synthetic-link` 留为 `sourceReviewed`，新增 `synthetic-link-v3` 官方请求样本，不通过改动旧断言掩盖 Android 差异。实际 NAS 创建、下载运行和完成须分别由设备验收。
 
+### 逐次创建选项
+
+M5c2b 的链接、任务文件与 BT 搜索结果都进入同一移动表单，选择文件或搜索结果不立即创建；目录可选，恢复默认时省略 `destination`。File Station 选择结果仅移除路径首个 `/`，其余合法名称保持原值；目录可浏览不等于有创建权限。任务文件的 `unzip_password` 通过安全输入框提供，只在当次内存与受保护 multipart 正文使用，空字符串表示省略，前后或全部空格仍是密码原值。原校验先修剪后检查会吞掉密码边缘换行，现按原值拒绝换行/空字符，不能把非法值静默改成另一密码。
+
+原始目录与密码不写入创建记录；同文件改目录/密码也不能重发未知请求。表单、系统选取及目录回调绑定打开时连接，取消未提交草稿零创建；同账号重连也使旧草稿失效。iPhone/iPad 使用相同流程；共享文件创建正文保留原始目录值且旧 Mac 签名不变，Mac App 本轮不修改。Windows/Android 只登记原值、显式提交与来源防重要求，尚未修改实现。不增加 NAS 字段、公开协议签名或持久文件结构，也未提高真实 NAS 证据等级。
+
 ## 编辑与 RSS 的官方证据边界
 
 来源为 [Synology Download Station Web API 指南](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/DownloadStation/All/enu/Synology_Download_Station_Web_API.pdf)（2014-03-26）。第 26–27 页 Task.edit 的请求及响应字段要求 v2 及以后，示例 URL 中的 v1 不作为版本门禁依据。新的目的地编辑请求应固定 v2，能力不包含 v2 时不发送。现有 Android 实现仍发送 v1，旧合成样本保留为 `sourceReviewed`，另新增 v2 官方样本；这是待修正源码差异，不是“仅待真机”。本 M5 波次不修改 Android 源码或放宽其测试。

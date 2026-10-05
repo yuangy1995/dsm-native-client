@@ -4,7 +4,7 @@ import DsmNetwork
 import Foundation
 
 /// 下载页面只使用合成任务与内存请求，UI 测试不访问 NAS 或外部下载来源。
-actor MobileDownloadUITransport: DsmHTTPTransport {
+actor MobileDownloadUITransport: DsmBinaryHTTPTransport {
     let state: String
     private var detailAttempts = 0
     private var statuses: [String: String]
@@ -25,19 +25,32 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
     }
 
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
-        let parameters = URLComponents(string: "https://example.invalid/?" + String(data: request.httpBody ?? Data(), encoding: .utf8)!)?.queryItems ?? []
+        let parameters = (URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []) +
+            (URLComponents(string: "https://example.invalid/?" + String(data: request.httpBody ?? Data(), encoding: .utf8)!)?.queryItems ?? [])
         func value(_ name: String) -> String? { parameters.first { $0.name == name }?.value }
         let data: Any
         switch (value("api"), value("method")) {
         case (DsmAPIName.downloadStationTask, "create"):
-            guard value("version") == "3" else { throw URLError(.badServerResponse) }
+            guard value("version") == "3" || (state == "downloads-create-file" && value("version") == "2") else { throw URLError(.badServerResponse) }
             if state == "downloads-create-denied" {
                 return .init(data: Data(#"{"success":false,"error":{"code":402}}"#.utf8), statusCode: 200)
             }
             createdDownload = true
+            if let destination = value("destination") { destinations["sample-created"] = destination }
             if state == "downloads-create-unknown" || state == "downloads-create-recover" { throw URLError(.timedOut) }
             // 官方创建允许无 data；不能靠 UI fixture 额外返回编号掩盖契约缺口。
             return .init(data: Data(#"{"success":true}"#.utf8), statusCode: 200)
+        case (DsmAPIName.downloadStationBTSearch, "getModule"):
+            data = ["modules": [["id": "sample", "title": "Sample provider", "enabled": true]]]
+        case (DsmAPIName.downloadStationBTSearch, "getCategory"):
+            data = ["categories": [["id": "all", "title": "All"]]]
+        case (DsmAPIName.downloadStationBTSearch, "start"):
+            data = ["taskid": "synthetic-search"]
+        case (DsmAPIName.downloadStationBTSearch, "list"):
+            let size: Any = state == "downloads-create-bt-invalid" ? "4096" : 4096
+            data = ["finished": true, "items": [["title": "Synthetic torrent", "download_uri": "https://files.example.invalid/synthetic.torrent", "size": size, "seeds": 2]]]
+        case (DsmAPIName.downloadStationBTSearch, "clean"):
+            data = [:]
         case (DsmAPIName.downloadStationInfo, "getinfo"):
             data = ["is_manager": state != "downloads-settings-readonly"]
         case (DsmAPIName.downloadStationInfo, "getconfig"), (DsmAPIName.downloadStationSchedule, "getconfig"):
@@ -94,10 +107,11 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
         case (DsmAPIName.downloadStationTask, "getinfo"):
             detailAttempts += 1
             if state == "downloads-details-error", detailAttempts == 1 { throw URLError(.timedOut) }
-            var item = task("sample-1", "Sample archive.zip", "downloading")
+            let id = value("id") ?? "sample-1"
+            var item = task(id, id == "sample-created" ? "Added download.zip" : "Sample archive.zip", "downloading")
             item["type"] = "bt"; item["username"] = "Sample user"
             item["additional"] = [
-                "detail": ["destination": destinations["sample-1"] ?? "Sample Downloads", "create_time": 1_750_000_000,
+                "detail": ["destination": destinations[id] ?? "Sample Downloads", "create_time": 1_750_000_000,
                     "priority": "normal", "connected_seeders": 4, "total_peers": 8],
                 "transfer": ["size_downloaded": "2048", "size_uploaded": "1024", "speed_download": 0],
                 "file": [["filename": "Sample document.txt", "size": "4096", "size_downloaded": "2048", "priority": "normal"]],
@@ -109,6 +123,19 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
             return DsmHTTPResponse(data: Data(#"{"success":false,"error":{"code":102}}"#.utf8), statusCode: 200)
         }
         return DsmHTTPResponse(data: try JSONSerialization.data(withJSONObject: ["success": true, "data": data]), statusCode: 200)
+    }
+
+    func upload(_ request: URLRequest, from url: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
+        let body = try String(contentsOf: url, encoding: .utf8)
+        guard state == "downloads-create-file",
+              body.contains("name=\"destination\"\r\n\r\nfixture\r\n"),
+              body.contains("name=\"unzip_password\"\r\n\r\n  synthetic secret  \r\n"),
+              body.contains("d4:infod4:name9:syntheticee") else { throw URLError(.badServerResponse) }
+        destinations["sample-created"] = "fixture"
+        return try await send(request)
+    }
+    func download(_ request: URLRequest, to url: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
+        throw URLError(.unsupportedURL)
     }
 
     private func task(_ id: String, _ title: String, _ status: String) -> [String: Any] {

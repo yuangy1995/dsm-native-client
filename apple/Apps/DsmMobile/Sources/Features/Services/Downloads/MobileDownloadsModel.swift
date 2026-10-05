@@ -336,10 +336,22 @@ final class MobileDownloadsModel {
     }
 
     func createDownloadTask(uri rawURI: String) {
-        startDownloadCreation(.link(rawURI.trimmingCharacters(in: .whitespacesAndNewlines)))
+        startDownloadCreation(.link(rawURI.trimmingCharacters(in: .whitespacesAndNewlines)), destination: downloadCreateDefaultDestination)
     }
 
-    func createDownloadTask(fileURL: URL) { startDownloadCreation(.file(fileURL)) }
+    func createDownloadTask(fileURL: URL) { startDownloadCreation(.file(fileURL), destination: downloadCreateDefaultDestination) }
+
+    /// 草稿冻结打开时的连接；旧表单不能向重连或新账号提交。
+    func createDownloadTask(draft: MobileDownloadCreateDraft, uri: String, destination: String?, unzipPassword: String) {
+        guard draft.activation == editActivation,
+              destination.map(DownloadTaskDestinationChange.validDestination) != false else { return }
+        switch draft.source {
+        case .link:
+            startDownloadCreation(.link(uri.trimmingCharacters(in: .whitespacesAndNewlines)), destination: destination)
+        case .file(let url):
+            startDownloadCreation(.file(url), destination: destination, unzipPassword: unzipPassword.isEmpty ? nil : unzipPassword)
+        }
+    }
 
     private enum CreateSource {
         case link(String), file(URL)
@@ -355,7 +367,7 @@ final class MobileDownloadsModel {
         catch { createErrorKey = "download.edit.storage-error" }
     }
 
-    private func startDownloadCreation(_ source: CreateSource) {
+    private func startDownloadCreation(_ source: CreateSource, destination: String?, unzipPassword: String? = nil) {
         guard !isCreatingDownloadTask else { return }
         guard canCreateDownloadTask, let context = controlContext, !source.displayName.isEmpty else {
             createErrorKey = createRecovery.failed ? "download.edit.storage-error" : nil
@@ -363,7 +375,7 @@ final class MobileDownloadsModel {
         }
         downloadCreateGeneration &+= 1
         let generation = downloadCreateGeneration, id = UUID(), store = createRecovery
-        let repository = serviceRepository, destination = downloadCreateDefaultDestination
+        let repository = serviceRepository
         let linkOverride = downloadStationCreateOverride, fileOverride = downloadStationCreateFileOverride
         let name = source.displayName, kind = source.kind
         createErrorKey = nil; downloadCreateFeedback = .init(uri: name, kind: .inProgress)
@@ -379,6 +391,7 @@ final class MobileDownloadsModel {
         }
         downloadCreateTask = Task { [weak self] in
             var input: URL?
+            var inputPreparationFailed = false
             defer { if let input { store.removeInput(input) }; store.end(id) }
             do {
                 let outcome: DownloadTaskCreateOutcome
@@ -390,11 +403,13 @@ final class MobileDownloadsModel {
                     else { throw CancellationError() }
                 case .file(let url):
                     if let fileOverride {
-                        outcome = try await fileOverride(.init(fileURL: url, destination: destination))
+                        outcome = try await fileOverride(.init(fileURL: url, destination: destination, unzipPassword: unzipPassword))
                     } else if let repository {
-                        let copy = try await store.copyInput(url, id: id); input = copy
+                        let copy: URL
+                        do { copy = try await store.copyInput(url, id: id); input = copy }
+                        catch { inputPreparationFailed = true; throw error }
                         try Task.checkCancellation()
-                        let request = DownloadTaskFileCreateRequest(fileURL: copy, destination: destination)
+                        let request = DownloadTaskFileCreateRequest(fileURL: copy, destination: destination, unzipPassword: unzipPassword)
                         outcome = try await repository.createDownloadTaskFileResult(request, willSubmit: willSubmit, didAccept: didAccept)
                     } else { throw CancellationError() }
                 }
@@ -411,7 +426,8 @@ final class MobileDownloadsModel {
             } catch {
                 guard let self, self.downloadCreateGeneration == generation else { return }
                 self.downloadCreateGeneration &+= 1; self.downloadCreateTask = nil
-                self.createErrorKey = store.failed ? "download.edit.storage-error" : nil
+                self.createErrorKey = store.failed ? "download.edit.storage-error"
+                    : inputPreparationFailed ? "shared.51bdbefbc0c88421" : nil
                 let pending = store.entry(id, context: context)?.phase == .submitted
                 let duplicate = (error as? MobileDownloadCreateStore.StoreError) == .duplicate
                 self.downloadCreateFeedback = .init(uri: name,

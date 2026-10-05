@@ -1890,3 +1890,29 @@ R3 在同一测试命令中只选择 `-only-testing:DsmMobileTests`，结果为 
 具体真实设备/NAS 步骤见移动计划 M5c2 的 `PENDING_USER_VALIDATION`，包括真实提供者、文件保护、当前套件无 data 成功、断网/终止/账号边界。逐次创建目录、文件密码及 BT 搜索转入同一表单继续 M5c2b，RSS 继续 M5c3；这些仍是源码工作，不归入设备待验。没有自动写 NAS 或替换用户资料。
 
 补核 Mac 实际调用后，仅新增旧 void 签名的 v3/空成功回执行为测试，生产源码未再改动；`swift test --package-path apple --jobs 2 --filter DownloadCreationReceiptTests` 最后一轮 11 项通过、0 失败，0.084 秒。前述完整共享 2688 项是新增该项测试前的准确数量，不把聚焦复验改写成再次完整运行。XcodeGen 最终工程摘要保持 `ceb698e277c8293048900a9d2469a426fb43ef4a6619129611b381699acb3ef3`。
+
+
+## 2026-10-05 移动 M5c2b 创建目录、文件密码与统一表单
+
+基线为 `5852841b`。链接、任务文件和 BT 搜索结果统一进入原生创建表单，用户选择保存位置或使用 NAS 默认目录，文件可填写解压密码，明确提交才创建。表单与目录/系统文件回调冻结连接，同账号重连也使旧草稿失效；取消草稿不写 NAS。复用 M5c2 写前记录/回执/来源摘要，不改变持久结构。共享 Result 创建与文件正文保留目录和密码空格，空字符串才表示省略；带边缘换行/空字符的密码不能被修剪后发送。未知同内容文件更换目录/密码仍禁止重发，记录没有原始密码、目录、文件名或正文。
+
+当前负责人分离执行只读集成和对抗复核：检查旧连接草稿、参数原值、秘密/临时副本、写前零请求、未知防重、缺 File Station 权限时默认位置仍可用，以及选择文件不立即提交。将 BT 按钮辅助标识改为列表序号，避免完整下载 URI 进入标识；不可读取文件提示重新选择，真正的系统选取错误显示恢复提示，普通取消不显示失败。Mac App/Android/Windows 源码未改，不改变权限、签名、身份、工具链或持久格式；没有真实 NAS 自动写入。这不是另一模型审查。
+
+实际命令与结果，专用临时目录为 `/tmp/lanstash-release-1.0.15.1x6wUX`，本切片日志/结果包使用 `m5c2b-` 前缀：
+
+- `swift test --package-path apple --jobs 2 --filter DownloadCreationReceiptTests`：13 项、0 失败，0.061 秒，覆盖 URI 目录原值、文件目录/密码原值及全空格密码、非法密码零请求，以及既有回执/防重/取消。
+- `swift test --package-path apple --jobs 2`：2691 项 XCTest，172 条既有条件跳过、0 失败，35.904 秒；12 项 Swift Testing 全通过，0.036 秒。最终短文案另由资源检查、目标构建与对应 UI 复验，不把聚焦验证写成再次完整运行。
+- `/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml`，沿用锁定 2.46.0，只增加统一表单的工程引用。移动第 1–8 轮 `xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing` 均通过；中间轮次分别纳入正式测试、辅助标识和错误/文案修正。
+- 两端完整单元命令：`xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination id=<编号> -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m5c2b-<iphone或ipad>-units<轮次>.xcresult -only-testing:DsmMobileTests test-without-building`。iPhone 编号见构建，iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，均为 iOS 26.5 模拟器。
+- 单元 R1 两端各 1227 项、4 条明确设备条件跳过；两端同一旧静态检查有 3 条断言失败，因表单移至新文件及移除已过时的默认目录教学提示，29.887 / 29.677 秒。把字段无障碍/目的地标签/提交期间关闭限制断言移至实际新表单；保留并补充选择文件/搜索不立即提交、SecureField、旧连接拒绝和不进入界面持久属性的检查，没有删除业务安全断言。
+- 单元 R2 两端各 1229 项、4 条明确设备条件跳过、0 失败，30.430 / 30.472 秒；新增不可读取文件零创建、搜索畸形结果显示搜索恢复文案的行为用例。创建测试共 18 项，其中 1 条为既有设备文件保护条件跳过，其余全部执行。
+- 界面 R1 使用同一 `test-without-building` 命令，改为 `-only-testing:DsmMobileUITests/MobileDownloadCreationUITests`，结果包 `m5c2b-<iphone或ipad>-ui1.xcresult`。各 8 项，iPhone 4 失败、iPad 3 失败，547.314 / 546.080 秒；四项旧创建/恢复/权限/中文用例中，两端成功回执、未知重启及权限拒绝均通过，中文仅 iPad 通过。新文件表单两端通过，验证取消零创建、SecureField、目录和带前后空格密码经实际受保护副本及二进制上传链路发送；预选输入仅替代系统提供者选取，不能据此声称系统文件选取已经通过。
+- R1 失败逐项诊断：BT 合成数据把大小写为字符串，实际 BT 契约为数字，修正 fixture 而非放宽解析；移动收到无效搜索结果时原先引用不相关的上传错误，现使用已有搜索重试文案。原生选择器跟随系统语言，取消实际为“取消”；测试接纳系统双语并验证面板关闭。新任务详情的保存位置在滚动列表下方，测试限定详情并滚动后再查值；中文 iPhone 在空输入框前反向滚动拖动了 sheet，按实际输入→选目录→提交顺序验证。搜索提交主动收起键盘，最大字号默认位置按钮缩短，工具栏保持文字固有宽度。
+- `xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build`：共享源码及最终资源后的两轮均通过；`lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash` 两次均返回 `x86_64 arm64`，未安装或启动 Mac App。
+- `python3 tools/localization/check_localization.py` 最终 Apple 6166 / Android 2188 / Windows 3402，双语、变量、引用及硬编码扫描通过；`python3 tools/request-contract/validate_contracts.py` 176 请求/1 结果、`python3 tools/contract-validation/validate_fixtures.py` 29 组/48 私有引用及严格文档预检通过。本切片只明确已有参数原值和交互，不增加 NAS 请求字段或接口。
+
+界面 R2 采用上述测试命令，选择 `MobileDownloadCreationUITests` 的 `testBT搜索结果先进入统一表单且可取消后再选择目录添加`、`test中文深色大字创建结果和横屏记录可以阅读`、`test系统文件选择器取消不创建下载`、`test链接草稿取消不添加且目录可恢复默认再选择提交`、`test预选任务文件表单取消不上传且密码目录通过真实二进制链路提交` 五个方法，结果包为 `m5c2b-<iphone或ipad>-ui2.xcresult`。两端各 5 项全部通过，314.564 / 312.422 秒；最终所选断言仍核对精确保存位置、取消零创建、密码原值经真实二进制链路及结果状态，未降低断言。八项 UI 都有两端通过证据，保留首轮失败记录。
+
+最终截图复核确认中文最大字号的目录、恢复默认及提交入口均可读；iPad 英文取消按钮仍被外层自定义框架裁切，改用项目已有原生工具栏布局。第 9 轮构建通过；R3 仅选择 `-only-testing:DsmMobileUITests/MobileDownloadCreationUITests/test预选任务文件表单取消不上传且密码目录通过真实二进制链路提交`，结果为 `m5c2b-<iphone或ipad>-ui3.xcresult`，两端各 1 项通过、零失败，58.069 / 55.017 秒。再次查看两端最终截图，取消和提交按钮完整显示，密码输入属于系统安全字段。最终重生成工程一致，SHA-256 为 `fd61c7073c5cb2c6bc0b8205d9bf01459b5078c2bee7ed2371a402a0b40b7648`。真实提供者选取（区别于已验证的系统选择器打开/取消）、锁屏、VoiceOver、外接键盘及真实 Download Station 参数处理继续单独设备验收，不与预选合成输入混同。
+
+远端操作前 `git fetch origin main` 返回主分支与 `5852841b` 相同、0/0。该提交的文档与 Repository Check 已通过；[Android Build 37252437372](https://github.com/yuangy1995/dsm-native-client/actions/runs/37252437372) 仍为既有 `ChatPollRepositoryTest.无附件投票固定v1且写后回读` 在 1436 项中 1 项失败，本轮不改变 Android 范围或断言。Apple 云端 `97c60331` 尚在运行，`5852841b` 尚排队，不能据本机结果声称云端全部通过。

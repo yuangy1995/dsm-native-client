@@ -220,11 +220,12 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let model = try sourceFile(
             "Sources/Features/Services/Downloads/MobileDownloadsModel.swift"
         )
+        let creation = try sourceFile("Sources/Features/Services/Downloads/MobileDownloadCreateTaskView.swift")
 
         for forbidden in [
             "repository.createDownloadTask(fileURL:", "controlDownloadTasks", "deleteDownloadTasks(",
             "saveDownloadStationSettings", "removeData: true",
-            "force_complete", "unzipPassword", "DownloadStation2"
+            "force_complete", "DownloadStation2"
         ] {
             XCTAssertFalse(view.contains(forbidden), "View: \(forbidden)")
             XCTAssertFalse(model.contains(forbidden), "Model: \(forbidden)")
@@ -234,9 +235,13 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(view.contains("UTType(filenameExtension: \"torrent\")"))
         XCTAssertTrue(view.contains("UTType(filenameExtension: \"nzb\")"))
         XCTAssertTrue(view.contains("UTType(filenameExtension: \"txt\")"))
-        XCTAssertTrue(view.contains("TextField("))
-        XCTAssertTrue(view.contains("model.createDownloadTask(uri: uri)"))
-        XCTAssertTrue(view.contains("model.createDownloadTask(fileURL: url)"))
+        XCTAssertTrue(creation.contains("TextField("))
+        XCTAssertTrue(creation.contains("SecureField("))
+        XCTAssertTrue(creation.contains("model.createDownloadTask(draft: draft, uri: uri, destination: destination, unzipPassword: unzipPassword)"))
+        XCTAssertTrue(view.contains("source: .file(url)"))
+        XCTAssertFalse(view.contains("model.createDownloadTask(fileURL: url)"), "选择文件不能立即提交")
+        XCTAssertTrue(model.contains("draft.activation == editActivation"))
+        for forbidden in ["UserDefaults", "@AppStorage", "@SceneStorage"] { XCTAssertFalse(creation.contains(forbidden)) }
         XCTAssertTrue(view.contains("model.controlDownloadTask(task, action: .pause)"))
         XCTAssertTrue(view.contains("model.controlDownloadTask(task, action: .resume)"))
         XCTAssertTrue(view.contains("model.deleteDownloadTask(task)"))
@@ -297,7 +302,9 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(searchView.contains("searchDownloadBT(request)"))
         XCTAssertTrue(searchView.contains("titleFilter"))
         XCTAssertTrue(searchView.contains("selectedModuleIDs.isSubset(of: catalogModuleIDs)"))
-        XCTAssertTrue(searchView.contains("model.createDownloadTask(uri: result.downloadURI)"))
+        XCTAssertTrue(searchView.contains("source: .link(result.downloadURI)"))
+        XCTAssertTrue(searchView.contains("MobileDownloadCreateTaskView(model: model, draft: draft, fileRepository: fileRepository)"))
+        XCTAssertFalse(searchView.contains("model.createDownloadTask(uri: result.downloadURI)"), "选择搜索结果只打开表单")
         XCTAssertTrue(searchView.contains(".task(id: searchRepositoryIdentity)"))
         XCTAssertFalse(searchView.contains("UserDefaults"))
         XCTAssertFalse(searchView.contains("@AppStorage"))
@@ -421,15 +428,17 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         let view = try sourceFile(
             "Sources/Features/Services/Downloads/MobileDownloadsView.swift"
         )
+        let creation = try sourceFile("Sources/Features/Services/Downloads/MobileDownloadCreateTaskView.swift")
 
         XCTAssertFalse(view.contains("mobile.downloads.read-only.notice"))
         XCTAssertTrue(view.contains("mobile.downloads.catalog.limited"))
         XCTAssertTrue(view.contains("download.workspace.empty-hint"))
-        XCTAssertTrue(view.contains("mobile.downloads.create.url.label"))
-        XCTAssertTrue(view.contains("mobile.downloads.create.url.help"))
+        XCTAssertTrue(creation.contains(".accessibilityLabel(L10n.string(\"mobile.downloads.create.url.label\"))"))
+        XCTAssertTrue(creation.contains("LabeledContent(L10n.string(\"mobile.downloads.create.destination.label\")"))
+        XCTAssertTrue(creation.contains("mobile.downloads.create.destination.default"))
         XCTAssertTrue(view.contains("mobile.downloads.create.file.action.hint"))
         XCTAssertTrue(view.contains("mobile.downloads.create.menu.hint"))
-        XCTAssertTrue(view.contains("interactiveDismissDisabled(model.isCreatingDownloadTask)"))
+        XCTAssertTrue(creation.contains("interactiveDismissDisabled(model.isCreatingDownloadTask)"))
         XCTAssertTrue(view.contains("mobile.downloads.control.pause.hint"))
         XCTAssertTrue(view.contains("mobile.downloads.control.resume.hint"))
         XCTAssertTrue(view.contains("mobile.downloads.delete.action.hint"))
