@@ -440,6 +440,7 @@ public struct NasScheduledTask: Identifiable, Equatable, Sendable {
     public let type: String?
     public let action: String?
     public let isEnabled: Bool
+    public let isEnabledKnown: Bool
     public let nextTriggerDescription: String?
     public let canRun: Bool
     public let canEdit: Bool
@@ -454,7 +455,8 @@ public struct NasScheduledTask: Identifiable, Equatable, Sendable {
         isEnabled: Bool,
         nextTriggerDescription: String?,
         canRun: Bool,
-        canEdit: Bool
+        canEdit: Bool,
+        isEnabledKnown: Bool = true
     ) {
         self.id = id
         self.name = name
@@ -463,6 +465,7 @@ public struct NasScheduledTask: Identifiable, Equatable, Sendable {
         self.type = type
         self.action = action
         self.isEnabled = isEnabled
+        self.isEnabledKnown = isEnabledKnown
         self.nextTriggerDescription = nextTriggerDescription
         self.canRun = canRun
         self.canEdit = canEdit

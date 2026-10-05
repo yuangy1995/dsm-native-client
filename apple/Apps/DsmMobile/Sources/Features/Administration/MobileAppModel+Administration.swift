@@ -7,6 +7,7 @@ import DsmLocalization
 extension MobileAppModel {
     var isRefreshingNasAdministration: Bool {
         nasHealthModel.state.isRefreshing || nasDetailsModel.state.isRefreshing || serviceSettingsModel.isRefreshing
+            || scheduledTasksModel.tasks.isRefreshing || scheduledTasksModel.tasks.phase == .loading
             || nasStorageModel.storage.isRefreshing || nasStorageModel.storage.phase == .loading
             || ddnsModel.directory.isRefreshing || ddnsModel.directory.phase == .loading
             || directoryModel.directory.isRefreshing || directoryModel.directory.phase == .loading
@@ -22,6 +23,7 @@ extension MobileAppModel {
         if directoryModel.directory.phase != .idle { await directoryModel.refresh() }
         if regionModel.settings.phase != .idle { await regionModel.refresh() }
         await serviceSettingsModel.refreshLoaded()
+        if scheduledTasksModel.tasks.phase != .idle { await scheduledTasksModel.refresh() }
     }
 
     func loadNasHealth() async {
@@ -32,6 +34,7 @@ extension MobileAppModel {
             regionModel.deactivate()
             directoryModel.deactivate()
             serviceSettingsModel.deactivate()
+            scheduledTasksModel.deactivate()
             await nasHealthModel.activate(profileID: nil, repository: nil)
             return
         }
@@ -49,6 +52,7 @@ extension MobileAppModel {
         directoryModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
         regionModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
         serviceSettingsModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
+        scheduledTasksModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
         nasDetailsModel.activate(
             profileID: profileID,
             repository: MobileReadOnlyNasDetailsRepository(

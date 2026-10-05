@@ -22,6 +22,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     var packageSettingsNeedRefresh = false
     var packageSourcesNeedRefresh = false
     var activeDirectoryChangeKeys: Set<String> = []
+    var activeScheduledTaskKeys: Set<String> = []
     private var activeAccountDeletionNames: Set<String> = []
     private var activeGroupDeletionNames: Set<String> = []
     private var activeEthernetUpdateIDs: Set<String> = []
@@ -8399,7 +8400,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 isEnabled: enabled ?? false,
                 nextTriggerDescription: try taskReadText(item["next_trigger_time"]),
                 canRun: try taskReadBoolean(item["can_run"]) == true,
-                canEdit: try taskReadBoolean(item["can_edit"]) == true && enabled != nil && type == "script"
+                canEdit: try taskReadBoolean(item["can_edit"]) == true && enabled != nil && type == "script",
+                isEnabledKnown: enabled != nil
             )
         }
     }
@@ -8568,6 +8570,12 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     }
 
     public func saveScheduledTask(_ draft: NasScheduledTaskDraft) async throws {
+        let key = try beginScheduledTaskMutation(id: draft.id)
+        defer { activeScheduledTaskKeys.remove(key) }
+        try await submitScheduledTask(draft)
+    }
+
+    func submitScheduledTask(_ draft: NasScheduledTaskDraft) async throws {
         let trimmedName = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedOwner = draft.owner.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty, !trimmedOwner.isEmpty, !draft.script.isEmpty else {
@@ -8702,6 +8710,12 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         realOwner: String?,
         additional: [String: DsmParameterValue] = [:]
     ) async throws {
+        let key = try beginScheduledTaskMutation(id: id)
+        defer { activeScheduledTaskKeys.remove(key) }
+        try await submitScheduledTaskCommand(method: method, id: id, realOwner: realOwner, additional: additional)
+    }
+
+    func submitScheduledTaskCommand(method: String, id: Int, realOwner: String?, additional: [String: DsmParameterValue] = [:]) async throws {
         var parameters = additional
         parameters["id"] = .integer(id)
         if let realOwner, !realOwner.isEmpty {

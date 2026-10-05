@@ -24,6 +24,7 @@ struct MobileNasSettingsView: View {
                 model.regionModel.cancelRead()
                 model.directoryModel.cancelRead()
                 model.serviceSettingsModel.cancelReads()
+                model.scheduledTasksModel.cancelRead()
                 model.nasStorageModel.cancelAnalysis()
             }
         }
@@ -38,6 +39,7 @@ struct MobileNasSettingsView: View {
             updateSection
         }
         .listStyle(.insetGrouped)
+        .accessibilityIdentifier("mobile.nas.navigation")
         .refreshable { await model.nasHealthModel.refresh() }
         .navigationDestination(for: MobileNasAdministrationDestination.self) { destination in
             if destination == .storage {
@@ -48,6 +50,8 @@ struct MobileNasSettingsView: View {
                 MobileDirectoryScreen(model: model.directoryModel)
             } else if destination == .region {
                 MobileRegionScreen(model: model.regionModel)
+            } else if destination == .scheduledTasks {
+                MobileScheduledTasksScreen(model: model.scheduledTasksModel)
             } else if let kind = destination.serviceKind {
                 MobileServiceSettingsScreen(model: model.serviceSettingsModel, kind: kind).id(kind)
             } else if destination.isDetails {
@@ -74,6 +78,7 @@ struct MobileNasSettingsView: View {
                 }
             }
             .listStyle(.sidebar)
+            .accessibilityIdentifier("mobile.nas.navigation")
             .frame(minWidth: 220, idealWidth: 260, maxWidth: 300)
 
             Divider()
@@ -86,6 +91,8 @@ struct MobileNasSettingsView: View {
                 MobileDirectoryScreen(model: model.directoryModel)
             } else if selectedSection == .region {
                 MobileRegionScreen(model: model.regionModel)
+            } else if selectedSection == .scheduledTasks {
+                MobileScheduledTasksScreen(model: model.scheduledTasksModel)
             } else if let kind = selectedSection.serviceKind {
                 MobileServiceSettingsScreen(model: model.serviceSettingsModel, kind: kind).id(kind)
             } else {
