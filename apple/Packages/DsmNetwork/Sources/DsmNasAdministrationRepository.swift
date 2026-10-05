@@ -30,7 +30,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     var isProxySettingsUpdateActive = false
     private var isSecuritySettingsUpdateActive = false
     private var isHardwareSettingsUpdateActive = false
-    private var isRemoteAccessSettingsUpdateActive = false
+    var isRemoteAccessSettingsUpdateActive = false
     private var isRegionSettingsUpdateActive = false
     private var activeDDNSProviderIDs: Set<String> = []
     private var isDDNSRefreshActive = false
@@ -566,6 +566,12 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         case .proxy(let value):
             guard step == .proxy else { throw unavailableError() }
             try await submitProxySettings(value, version: version)
+        case .remoteAccess(let value):
+            switch step {
+            case .relay: try await submitRemoteAccessMutationStep(.relay, settings: value)
+            case .routerConfiguration: try await submitRemoteAccessMutationStep(.routerConfiguration, settings: value)
+            default: throw unavailableError()
+            }
         }
     }
 
@@ -3475,29 +3481,38 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     }
 
     public func loadRemoteAccessSettings() async throws -> NasRemoteAccessSettings {
-        let hasQuickConnect = capabilitySupports(DsmAPIName.coreQuickConnect, version: 3)
-        let hasUPnP = capabilitySupports(DsmAPIName.coreQuickConnectUPnP, version: 1)
-        guard hasQuickConnect || hasUPnP else {
-            throw unavailableError()
-        }
-        let quickConnect = hasQuickConnect ? try await remoteAccessReadBoolean(DsmAPIName.coreQuickConnect,
-            method: "get_misc_config", version: 3, field: "relay_enabled") : nil
-        let upnp = hasUPnP ? try await remoteAccessReadBoolean(DsmAPIName.coreQuickConnectUPnP,
-            method: "get", version: 1, field: "enabled") : nil
-        return NasRemoteAccessSettings(
-            isRelayEnabled: quickConnect,
-            isRouterConfigurationEnabled: upnp,
-            canDisableRelay: !isConnectedThroughQuickConnectRelay
-        )
+        try await loadRemoteAccessSettings(reportFailures: false)
     }
 
-    private func remoteAccessReadBoolean(_ api: String, method: String, version: Int, field: String) async throws -> Bool? {
+    func loadRemoteAccessForManagement() async throws -> NasRemoteAccessSettings {
+        try await loadRemoteAccessSettings(reportFailures: true)
+    }
+
+    private func loadRemoteAccessSettings(reportFailures: Bool) async throws -> NasRemoteAccessSettings {
+        let hasQuickConnect = capabilitySupports(DsmAPIName.coreQuickConnect, version: 3)
+        let hasUPnP = capabilitySupports(DsmAPIName.coreQuickConnectUPnP, version: 1)
+        guard hasQuickConnect || hasUPnP else { throw unavailableError() }
+        let quickConnect: (value: Bool?, failure: AppError?) = hasQuickConnect
+            ? try await remoteAccessReadBoolean(DsmAPIName.coreQuickConnect, method: "get_misc_config", version: 3, field: "relay_enabled", reportFailures: reportFailures) : (nil, nil)
+        let upnp: (value: Bool?, failure: AppError?) = hasUPnP
+            ? try await remoteAccessReadBoolean(DsmAPIName.coreQuickConnectUPnP, method: "get", version: 1, field: "enabled", reportFailures: reportFailures) : (nil, nil)
+        if reportFailures, quickConnect.value == nil, upnp.value == nil, let error = quickConnect.failure ?? upnp.failure { throw error }
+        return NasRemoteAccessSettings(isRelayEnabled: quickConnect.value, isRouterConfigurationEnabled: upnp.value,
+            canDisableRelay: !isConnectedThroughQuickConnectRelay,
+            relayReadFailed: reportFailures && quickConnect.failure != nil,
+            routerConfigurationReadFailed: reportFailures && upnp.failure != nil)
+    }
+
+    private func remoteAccessReadBoolean(_ api: String, method: String, version: Int, field: String, reportFailures: Bool) async throws -> (value: Bool?, failure: AppError?) {
         do {
             let value = try await call(api, method: method, version: version)
-            return try taskReadBoolean(value[field])
+            return (try taskReadBoolean(value[field]), nil)
         } catch is CancellationError { throw CancellationError() }
+        // 新管理读取不能将结构化证书信任请求降级为可选字段缺失。
+        catch let error as DsmCertificateTrustError where reportFailures { throw error }
         catch let error as AppError where [.authenticationRequired, .otpRequired, .tlsUntrusted, .tlsCertificateChanged, .cancelled].contains(error.category) { throw error }
-        catch { return nil }
+        catch let error as AppError { return (nil, error) }
+        catch { return (nil, AppError(category: .unknown, isRetryable: false, safeUserMessage: L10n.string("remote-access.settings.failed"))) }
     }
 
     public func saveRemoteAccessSettings(_ settings: NasRemoteAccessSettings) async throws {

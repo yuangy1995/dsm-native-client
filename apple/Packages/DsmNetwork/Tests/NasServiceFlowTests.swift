@@ -88,7 +88,7 @@ final class NasServiceFlowTests: XCTestCase {
             await transport.setMode("denied")
             let result = try await repository.changeServiceResult(change(original)) { _ in }
             XCTAssertEqual(result.status, .permissionDenied)
-            let calls = await transport.calls; XCTAssertEqual(calls.last?["method"], "set")
+            let calls = await transport.calls; XCTAssertEqual(calls.last?["method"], kind == .remoteAccess ? "set_misc_config" : "set")
         }
     }
 
@@ -193,18 +193,112 @@ final class NasServiceFlowTests: XCTestCase {
         let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
     }
 
+    func test远程访问两个固定接口各自提交并保存回执() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let original = try await repository.loadServiceForManagement(.remoteAccess)
+        let desired = NasRemoteAccessSettings(isRelayEnabled: false, isRouterConfigurationEnabled: true, canDisableRelay: true)
+        let result = try await repository.changeServiceResult(.init(original: original, desired: .remoteAccess(desired))) { await log.append($0) }
+        XCTAssertEqual(result.status, .confirmedSuccess); XCTAssertEqual(result.counts.succeeded, 2)
+        let writes = await transport.writes
+        XCTAssertEqual(writes.map { $0["api"] }, [DsmAPIName.coreQuickConnect, DsmAPIName.coreQuickConnectUPnP])
+        XCTAssertEqual(writes.map { $0["method"] }, ["set_misc_config", "set"]); XCTAssertEqual(writes.map { $0["version"] }, ["3", "1"])
+        XCTAssertEqual(writes[0]["relay_enabled"], "false"); XCTAssertNil(writes[0]["enabled"])
+        XCTAssertEqual(writes[1]["enabled"], "true"); XCTAssertNil(writes[1]["relay_enabled"])
+        let stages = await log.values
+        XCTAssertEqual(stages, [.willSubmit(.relay), .accepted(.relay), .verified(.relay), .willSubmit(.routerConfiguration), .accepted(.routerConfiguration), .verified(.routerConfiguration)])
+    }
+
+    func test可信中继连接不能通过伪造草稿或原值关闭但可设置路由器() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport, host: "alpha.beta.quickconnect.to")
+        let original = try await repository.loadServiceForManagement(.remoteAccess)
+        guard case .remoteAccess(let settings) = original else { return XCTFail() }; XCTAssertFalse(settings.canDisableRelay)
+        let forged = NasServiceSettings.remoteAccess(.init(isRelayEnabled: true, isRouterConfigurationEnabled: false, canDisableRelay: true))
+        for baseline in [original, forged] {
+            let result = try await repository.changeServiceResult(.init(original: baseline, desired: .remoteAccess(.init(isRelayEnabled: false, isRouterConfigurationEnabled: false, canDisableRelay: true)))) { _ in XCTFail("不能关闭当前中继") }
+            XCTAssertFalse(result.submitted)
+        }
+        var desired = settings; desired.isRouterConfigurationEnabled = true
+        let result = try await repository.changeServiceResult(.init(original: original, desired: .remoteAccess(desired))) { _ in }
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes[0]["api"], DsmAPIName.coreQuickConnectUPnP)
+    }
+
+    func test直连类别可以关闭中继并保留严格布尔字段() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport, host: "alpha.direct.quickconnect.to")
+        let original = try await repository.loadServiceForManagement(.remoteAccess)
+        let result = try await repository.changeServiceResult(change(original)) { _ in }; XCTAssertEqual(result.status, .confirmedSuccess)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes[0]["relay_enabled"], "false")
+    }
+
+    func test远程单项读取失败与字段未提供分开且保留另一项() async throws {
+        for malformed in [false, true] {
+            let transport = ServiceFlowTransport(), repository = try repository(transport)
+            if malformed { await transport.set(DsmAPIName.coreQuickConnect, key: "relay_enabled", value: "true") }
+            else { await transport.setMode("relay-read-error") }
+            let original = try await repository.loadServiceForManagement(.remoteAccess)
+            guard case .remoteAccess(var value) = original else { return XCTFail() }
+            XCTAssertNil(value.isRelayEnabled); XCTAssertTrue(value.relayReadFailed); XCTAssertEqual(value.isRouterConfigurationEnabled, false); XCTAssertFalse(value.routerConfigurationReadFailed)
+            value.isRouterConfigurationEnabled = true
+            let result = try await repository.changeServiceResult(.init(original: original, desired: .remoteAccess(value))) { _ in }
+            XCTAssertEqual(result.status, .confirmedSuccess)
+            let writes = await transport.writes; XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes[0]["api"], DsmAPIName.coreQuickConnectUPnP)
+        }
+    }
+
+    func test两项远程读取都失败不能显示为空而旧读取语义保持() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport)
+        await transport.setMode("remote-read-error")
+        do { _ = try await repository.loadServiceForManagement(.remoteAccess); XCTFail("两项读取失败不能成为空设置") } catch {}
+        let old = try await repository.loadRemoteAccessSettings()
+        XCTAssertNil(old.isRelayEnabled); XCTAssertNil(old.isRouterConfigurationEnabled); XCTAssertFalse(old.relayReadFailed); XCTAssertFalse(old.routerConfigurationReadFailed)
+    }
+
+    func test远程读取认证与证书失败必须传播不读取下一项() async throws {
+        for category in [AppErrorCategory.authenticationRequired, .tlsUntrusted, .tlsCertificateChanged] {
+            let transport = ServiceFlowTransport(), repository = try repository(transport)
+            await transport.setReadFailure(category)
+            do { _ = try await repository.loadServiceForManagement(.remoteAccess); XCTFail("不能吞掉认证或证书失败") }
+            catch {
+                if category == .tlsCertificateChanged { XCTAssertTrue(error is DsmCertificateTrustError) }
+                else { XCTAssertEqual((error as? AppError)?.category, category) }
+            }
+            let calls = await transport.calls; XCTAssertEqual(calls.count, 1)
+        }
+    }
+
+    func test远程第二项断线只保留已确认第一项而不重发() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let original = try await repository.loadServiceForManagement(.remoteAccess)
+        await transport.setMode("remote-second-offline")
+        let desired = NasServiceSettings.remoteAccess(.init(isRelayEnabled: false, isRouterConfigurationEnabled: true, canDisableRelay: true))
+        let result = try await repository.changeServiceResult(.init(original: original, desired: desired)) { await log.append($0) }
+        XCTAssertEqual(result.status, .partialSuccess); XCTAssertEqual(result.counts.succeeded, 1); XCTAssertEqual(result.counts.unknown, 1)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 2)
+        let stages = await log.values; XCTAssertTrue(stages.contains(.verified(.relay))); XCTAssertFalse(stages.contains(.verified(.routerConfiguration)))
+    }
+
+    func test远程缺少后项所需版本在第一项之前拒绝全部写入() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport, minimum: [DsmAPIName.coreQuickConnectUPnP: 2])
+        let original = NasServiceSettings.remoteAccess(.init(isRelayEnabled: true, isRouterConfigurationEnabled: false, canDisableRelay: true))
+        let desired = NasServiceSettings.remoteAccess(.init(isRelayEnabled: false, isRouterConfigurationEnabled: true, canDisableRelay: true))
+        let result = try await repository.changeServiceResult(.init(original: original, desired: desired)) { _ in XCTFail() }
+        XCTAssertEqual(result.status, .unsupported); XCTAssertFalse(result.submitted)
+        let calls = await transport.calls; XCTAssertTrue(calls.isEmpty)
+    }
+
     private func change(_ original: NasServiceSettings) -> NasServiceChange {
         let desired: NasServiceSettings
         switch original {
         case .fileServices(var value): value.isSMBEnabled?.toggle(); desired = .fileServices(value)
         case .terminal(var value): value.isSSHEnabled.toggle(); desired = .terminal(value)
         case .proxy(var value): value.isEnabled.toggle(); desired = .proxy(value)
+        case .remoteAccess(var value): value.isRelayEnabled?.toggle(); desired = .remoteAccess(value)
         }
         return .init(original: original, desired: desired)
     }
-    private func repository(_ transport: ServiceFlowTransport, missing: [String] = [], minimum: [String: Int] = [:]) throws -> DsmNasAdministrationRepository {
+    private func repository(_ transport: ServiceFlowTransport, missing: [String] = [], minimum: [String: Int] = [:], host: String = "nas.example.invalid") throws -> DsmNasAdministrationRepository {
         let capabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: ServiceFlowTransport.apis.filter { !missing.contains($0) }.map { ($0, ApiCapability(name: $0, path: "entry.cgi", minVersion: minimum[$0] ?? 1, maxVersion: 3, requestFormat: .form, selectedVersion: 3)) }))
-        return try .init(profile: NasProfile(displayName: "Synthetic", host: "nas.example.invalid", port: 5001, usernameHint: "operator"), capabilities: capabilities,
+        return try .init(profile: NasProfile(displayName: "Synthetic", host: host, port: 5001, usernameHint: "operator"), capabilities: capabilities,
             session: AuthSession(sid: "synthetic", synoToken: nil, did: nil, isPortalPort: false), transport: transport)
     }
 }
@@ -215,30 +309,40 @@ private actor ServiceCheckpointLog {
 }
 private actor ServiceFlowTransport: DsmHTTPTransport {
     static let apis = [DsmAPIName.coreFileServiceSMB, DsmAPIName.coreFileServiceNFS, DsmAPIName.coreFileServiceFTP,
-        DsmAPIName.coreFileServiceSFTP, DsmAPIName.coreWebDSM, DsmAPIName.coreFileServiceDiscovery, DsmAPIName.coreTerminal, DsmAPIName.coreNetworkProxy]
+        DsmAPIName.coreFileServiceSFTP, DsmAPIName.coreWebDSM, DsmAPIName.coreFileServiceDiscovery, DsmAPIName.coreTerminal, DsmAPIName.coreNetworkProxy, DsmAPIName.coreQuickConnect, DsmAPIName.coreQuickConnectUPnP]
     private(set) var calls: [[String: String]] = []
-    var writes: [[String: String]] { calls.filter { $0["method"] == "set" } }
+    var writes: [[String: String]] { calls.filter { ["set", "set_misc_config"].contains($0["method"] ?? "") } }
     private var mode = "normal"
+    private var readFailure: AppErrorCategory?
+    func setReadFailure(_ value: AppErrorCategory) { readFailure = value }
     private var payloads: [String: [String: Any]] = [
         DsmAPIName.coreFileServiceSMB: ["enable_samba": false], DsmAPIName.coreFileServiceNFS: ["enable_nfs": false],
         DsmAPIName.coreFileServiceFTP: ["enable_ftp": false, "enable_ftps": false, "portnum": 21],
         DsmAPIName.coreFileServiceSFTP: ["enable": false, "portnum": 22], DsmAPIName.coreWebDSM: ["enable_ssdp": false, "enable_avahi": false],
         DsmAPIName.coreFileServiceDiscovery: ["enable_smb_time_machine": false],
         DsmAPIName.coreTerminal: ["enable_ssh": false, "enable_telnet": false, "ssh_port": 22],
-        DsmAPIName.coreNetworkProxy: ["enable": false, "http_host": "proxy.example.invalid", "http_port": 3128]]
+        DsmAPIName.coreNetworkProxy: ["enable": false, "http_host": "proxy.example.invalid", "http_port": 3128],
+        DsmAPIName.coreQuickConnect: ["relay_enabled": true], DsmAPIName.coreQuickConnectUPnP: ["enabled": false]]
     func setMode(_ value: String) { mode = value }
     func set(_ api: String, key: String, value: any Sendable) { payloads[api]?[key] = value }
     func removeOptionalFields() { payloads[DsmAPIName.coreTerminal]?.removeValue(forKey: "ssh_port"); payloads[DsmAPIName.coreFileServiceFTP]?.removeValue(forKey: "enable_ftps") }
     func changeUneditedField(_ kind: NasServiceKind) {
         switch kind { case .fileServices: payloads[DsmAPIName.coreFileServiceNFS]?["enable_nfs"] = true
         case .terminal: payloads[DsmAPIName.coreTerminal]?["enable_telnet"] = true
-        case .proxy: payloads[DsmAPIName.coreNetworkProxy]?["http_port"] = 8080 }
+        case .proxy: payloads[DsmAPIName.coreNetworkProxy]?["http_port"] = 8080
+        case .remoteAccess: payloads[DsmAPIName.coreQuickConnectUPnP]?["enabled"] = true }
     }
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         let body = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
         let fields = Dictionary(uniqueKeysWithValues: (URLComponents(string: "https://fixture.invalid/?" + body)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         calls.append(fields); let api = fields["api"] ?? ""
-        if fields["method"] == "get" {
+        if ["get", "get_misc_config"].contains(fields["method"] ?? "") {
+            if let readFailure {
+                if readFailure == .authenticationRequired { return .init(data: Data(#"{"success":false,"error":{"code":106}}"#.utf8), statusCode: 200) }
+                if readFailure == .tlsUntrusted { throw URLError(.serverCertificateUntrusted) }
+                throw DsmCertificateTrustError.changed(.init(host: "fixture.example.invalid", subjectSummary: "Synthetic", sha256Fingerprint: String(repeating: "a", count: 64), canBePinned: true))
+            }
+            if mode == "remote-read-error" || mode == "relay-read-error" && api == DsmAPIName.coreQuickConnect || mode == "remote-second-offline" && writes.count == 2 { throw URLError(.notConnectedToInternet) }
             if mode == "offline" && !writes.isEmpty { throw URLError(.notConnectedToInternet) }
             return response(payloads[api] ?? [:])
         }

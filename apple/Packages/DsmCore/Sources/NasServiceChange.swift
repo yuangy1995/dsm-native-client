@@ -1,12 +1,12 @@
 import Foundation
 
-public enum NasServiceKind: String, CaseIterable, Codable, Sendable { case fileServices, terminal, proxy }
+public enum NasServiceKind: String, CaseIterable, Codable, Sendable { case fileServices, terminal, proxy, remoteAccess }
 
 /// 与实际写请求一一对应；同组字段不能拆成多个请求。
 public enum NasServiceStep: String, CaseIterable, Codable, Sendable {
-    case smb, nfs, ftp, sftp, webDiscovery, fileDiscovery, terminal, proxy
+    case smb, nfs, ftp, sftp, webDiscovery, fileDiscovery, terminal, proxy, relay, routerConfiguration
     public var kind: NasServiceKind {
-        switch self { case .terminal: .terminal; case .proxy: .proxy; default: .fileServices }
+        switch self { case .terminal: .terminal; case .proxy: .proxy; case .relay, .routerConfiguration: .remoteAccess; default: .fileServices }
     }
 }
 
@@ -15,9 +15,9 @@ public enum NasServiceCheckpoint: Equatable, Sendable {
 }
 
 public enum NasServiceSettings: Equatable, Sendable {
-    case fileServices(NasFileServiceSettings), terminal(NasTerminalSettings), proxy(NasProxySettings)
+    case fileServices(NasFileServiceSettings), terminal(NasTerminalSettings), proxy(NasProxySettings), remoteAccess(NasRemoteAccessSettings)
     public var kind: NasServiceKind {
-        switch self { case .fileServices: .fileServices; case .terminal: .terminal; case .proxy: .proxy }
+        switch self { case .fileServices: .fileServices; case .terminal: .terminal; case .proxy: .proxy; case .remoteAccess: .remoteAccess }
     }
     public var isEmpty: Bool { steps.allSatisfy { fields(for: $0).allSatisfy { $0 == nil } } }
     public var steps: [NasServiceStep] { NasServiceStep.allCases.filter { $0.kind == kind } }
@@ -32,6 +32,8 @@ public enum NasServiceSettings: Equatable, Sendable {
         case (.fileServices(let value), .webDiscovery): return [value.isSSDPEnabled.map(String.init), value.isBonjourEnabled.map(String.init)]
         case (.fileServices(let value), .fileDiscovery): return [value.isSMBTimeMachineEnabled.map(String.init)]
         case (.terminal(let value), .terminal): return [String(value.isSSHEnabled), String(value.isTelnetEnabled), value.sshPort.map(String.init)]
+        case (.remoteAccess(let value), .relay): return [value.isRelayEnabled.map(String.init)]
+        case (.remoteAccess(let value), .routerConfiguration): return [value.isRouterConfigurationEnabled.map(String.init)]
         case (.proxy(let value), .proxy):
             if verifying && !value.isEnabled { return [String(false)] }
             return [String(value.isEnabled), value.normalizedHost, value.port.map(String.init)]
@@ -52,6 +54,10 @@ public enum NasServiceSettings: Equatable, Sendable {
             default: break
             }
             return .fileServices(value)
+        case (.remoteAccess(var value), .remoteAccess(let next)):
+            if step == .relay { value.isRelayEnabled = next.isRelayEnabled }
+            if step == .routerConfiguration { value.isRouterConfigurationEnabled = next.isRouterConfigurationEnabled }
+            return .remoteAccess(value)
         case (.terminal, .terminal) where step == .terminal: return desired
         case (.proxy(let previous), .proxy(let next)) where step == .proxy:
             return .proxy(.init(isEnabled: next.isEnabled, host: next.isEnabled ? next.normalizedHost : previous.host, port: next.isEnabled ? next.port : previous.port))
@@ -69,6 +75,7 @@ public enum NasServiceSettings: Equatable, Sendable {
                     && value.ftpPort != nil && value.ftpPort == value.sftpPort)
         case .terminal(let value): return port(value.sshPort)
         case .proxy(let value): return value.isValidForSaving
+        case .remoteAccess: return true
         }
     }
 }
@@ -90,6 +97,10 @@ public struct NasServiceChange: Equatable, Sendable {
     /// 顺序必须使每个中间状态满足已有依赖；不能暗中增加开关操作。
     public var orderedSteps: [NasServiceStep]? {
         guard kind == desired.kind, desired.isValid, !changedSteps.isEmpty else { return nil }
+        if case .remoteAccess(let before) = original, case .remoteAccess(let after) = desired {
+            guard before.canDisableRelay == after.canDisableRelay,
+                  !(changedSteps.contains(.relay) && after.isRelayEnabled == false && !before.canDisableRelay) else { return nil }
+        }
         if kind != .proxy {
             guard original.steps.allSatisfy({ step in
                 zip(original.fields(for: step), desired.fields(for: step)).allSatisfy { ($0 == nil) == ($1 == nil) }

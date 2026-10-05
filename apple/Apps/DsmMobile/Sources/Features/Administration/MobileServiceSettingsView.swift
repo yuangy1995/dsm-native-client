@@ -41,6 +41,10 @@ struct MobileServiceSettingsScreen: View {
                             ContentUnavailableView(L10n.string("mobile.nas.filter.empty"), systemImage: "magnifyingglass",
                                 description: Text(L10n.string("mobile.nas.filter.retry"))).accessibilityIdentifier("mobile.nas.service.filteredEmpty")
                         }
+                        if case .remoteAccess(let settings) = value {
+                            remoteReadMessages(settings)
+                            if !settings.canDisableRelay && settings.isRelayEnabled != nil { Text(L10n.string("mobile.nas.service.relayProtection")).foregroundStyle(.secondary) }
+                        }
                         ForEach(rows) { row in
                             LabeledContent(row.title, value: row.value).accessibilityIdentifier("mobile.nas.service.row.\(row.id.rawValue)")
                         }
@@ -112,6 +116,7 @@ private struct MobileServiceSettingsEditor: View {
         case .fileServices(let value): ports = ["ftpPort": value.ftpPort.map(String.init) ?? "", "sftpPort": value.sftpPort.map(String.init) ?? ""]
         case .terminal(let value): ports = ["sshPort": value.sshPort.map(String.init) ?? ""]
         case .proxy(let value): ports = ["proxyPort": value.port.map(String.init) ?? ""]; host = value.host
+        case .remoteAccess: break
         }
         _ports = State(initialValue: ports); _proxyHost = State(initialValue: host)
     }
@@ -124,6 +129,7 @@ private struct MobileServiceSettingsEditor: View {
             desired = .fileServices(value)
         case .terminal(var value): if value.sshPort != nil { value.sshPort = parsedPort("sshPort") }; desired = .terminal(value)
         case .proxy(var value): value.host = proxyHost; value.port = parsedPort("proxyPort"); desired = .proxy(value)
+        case .remoteAccess: desired = draft
         }
         return .init(original: source.original, desired: desired)
     }
@@ -220,6 +226,14 @@ private struct MobileServiceSettingsEditor: View {
                 serviceToggle(.ssh, binding.isSSHEnabled); serviceToggle(.telnet, binding.isTelnetEnabled)
                 if value.sshPort != nil { portField(.sshPort) }
             }
+        case .remoteAccess(let value):
+            let binding = Binding<NasRemoteAccessSettings>(get: { if case .remoteAccess(let current) = draft { return current }; return value }, set: { draft = .remoteAccess($0) })
+            Section {
+                optionalToggle(.relay, binding.isRelayEnabled).disabled(!value.canDisableRelay && value.isRelayEnabled == true)
+                if !value.canDisableRelay && value.isRelayEnabled != nil { Text(L10n.string("mobile.nas.service.relayProtection")).foregroundStyle(.secondary) }
+                optionalToggle(.routerConfiguration, binding.isRouterConfigurationEnabled)
+                remoteReadMessages(value)
+            }
         case .proxy(let value):
             let binding = Binding<NasProxySettings>(get: { if case .proxy(let current) = draft { return current }; return value }, set: { draft = .proxy($0) })
             Section {
@@ -272,6 +286,8 @@ private extension NasServiceSettings {
             boolean(.ssdp, value.isSSDPEnabled, .webDiscovery); boolean(.bonjour, value.isBonjourEnabled, .webDiscovery)
             boolean(.timeMachine, value.isSMBTimeMachineEnabled, .fileDiscovery)
         case .terminal(let value): boolean(.ssh, value.isSSHEnabled, .terminal); boolean(.telnet, value.isTelnetEnabled, .terminal); port(.sshPort, value.sshPort, .terminal)
+        case .remoteAccess(let value):
+            boolean(.relay, value.isRelayEnabled, .relay); boolean(.routerConfiguration, value.isRouterConfigurationEnabled, .routerConfiguration)
         case .proxy(let value):
             boolean(.proxyEnabled, value.isEnabled, .proxy)
             if value.isEnabled {
@@ -284,7 +300,7 @@ private extension NasServiceSettings {
 }
 
 private enum MobileServiceField: String {
-    case smb, nfs, ftp, ftps, sftp, ftpPort, sftpPort, ssdp, bonjour, timeMachine, ssh, telnet, sshPort, proxyEnabled, proxyHost, proxyPort
+    case smb, nfs, ftp, ftps, sftp, ftpPort, sftpPort, ssdp, bonjour, timeMachine, ssh, telnet, sshPort, proxyEnabled, proxyHost, proxyPort, relay, routerConfiguration
     var title: String {
         let key = switch self {
         case .smb: "mobile.nas.service.smb"
@@ -303,6 +319,8 @@ private enum MobileServiceField: String {
         case .proxyEnabled: "mobile.nas.service.proxyEnabled"
         case .proxyHost: "mobile.nas.service.proxyHost"
         case .proxyPort: "mobile.nas.service.proxyPort"
+        case .relay: "mobile.nas.service.relay"
+        case .routerConfiguration: "mobile.nas.service.routerConfiguration"
         }
         return L10n.string(key)
     }
@@ -310,15 +328,15 @@ private enum MobileServiceField: String {
 
 extension NasServiceKind {
     var title: String {
-        let key = switch self { case .fileServices: "mobile.nas.service.fileServices"; case .terminal: "mobile.nas.service.terminal"; case .proxy: "mobile.nas.service.proxy" }
+        let key = switch self { case .fileServices: "mobile.nas.service.fileServices"; case .terminal: "mobile.nas.service.terminal"; case .proxy: "mobile.nas.service.proxy"; case .remoteAccess: "mobile.nas.service.remoteAccess" }
         return L10n.string(key)
     }
     var warning: String {
-        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesWarning"; case .terminal: "mobile.nas.service.terminalWarning"; case .proxy: "mobile.nas.service.proxyWarning" }
+        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesWarning"; case .terminal: "mobile.nas.service.terminalWarning"; case .proxy: "mobile.nas.service.proxyWarning"; case .remoteAccess: "mobile.nas.service.remoteAccessWarning" }
         return L10n.string(key)
     }
     var invalidMessage: String {
-        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesInvalid"; case .terminal: "mobile.nas.service.terminalInvalid"; case .proxy: "mobile.nas.service.proxyInvalid" }
+        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesInvalid"; case .terminal: "mobile.nas.service.terminalInvalid"; case .proxy: "mobile.nas.service.proxyInvalid"; case .remoteAccess: "mobile.nas.service.relayProtection" }
         return L10n.string(key)
     }
 }
@@ -326,14 +344,14 @@ private extension NasServiceStep {
     var title: String {
         let key: String
         switch self { case .smb: key = "mobile.nas.service.smb"; case .nfs: key = "mobile.nas.service.nfs"; case .ftp: key = "mobile.nas.service.ftpGroup"; case .sftp: key = "mobile.nas.service.sftp"
-        case .webDiscovery: key = "mobile.nas.service.discovery"; case .fileDiscovery: key = "mobile.nas.service.timeMachine"; case .terminal: key = "mobile.nas.service.terminal"; case .proxy: key = "mobile.nas.service.proxy" }
+        case .webDiscovery: key = "mobile.nas.service.discovery"; case .fileDiscovery: key = "mobile.nas.service.timeMachine"; case .terminal: key = "mobile.nas.service.terminal"; case .proxy: key = "mobile.nas.service.proxy"; case .relay: key = "mobile.nas.service.relay"; case .routerConfiguration: key = "mobile.nas.service.routerConfiguration" }
         return L10n.string(key)
     }
 }
 extension MobileServiceSettingsModel.Failure {
     var message: String {
         let key: String
-        switch self { case .read: key = "mobile.nas.service.readError"; case .denied: key = "mobile.nas.service.denied"; case .unavailable: key = "mobile.nas.service.unavailable"; case .changed: key = "mobile.nas.service.changed"; case .storage: key = "mobile.nas.service.storageError" }
+        switch self { case .read: key = "mobile.nas.service.readError"; case .denied: key = "mobile.nas.service.denied"; case .unavailable: key = "mobile.nas.service.unavailable"; case .changed: key = "mobile.nas.service.changed"; case .storage: key = "mobile.nas.service.storageError"; case .trust: key = "mobile.nas.service.trustError" }
         return L10n.string(key)
     }
 }
@@ -364,4 +382,9 @@ private extension MobileServiceOperationStore.Part {
         case .verified: key = "mobile.nas.service.partSaved"; case .rejected: key = "mobile.nas.service.partRejected"; case .skipped: key = "mobile.nas.service.partSkipped" }
         return L10n.string(key)
     }
+}
+
+@ViewBuilder private func remoteReadMessages(_ value: NasRemoteAccessSettings) -> some View {
+    if value.relayReadFailed { Text(L10n.string("mobile.nas.service.relayReadFailed")).foregroundStyle(.secondary).accessibilityIdentifier("mobile.nas.service.relayReadFailed") }
+    if value.routerConfigurationReadFailed { Text(L10n.string("mobile.nas.service.routerReadFailed")).foregroundStyle(.secondary).accessibilityIdentifier("mobile.nas.service.routerReadFailed") }
 }

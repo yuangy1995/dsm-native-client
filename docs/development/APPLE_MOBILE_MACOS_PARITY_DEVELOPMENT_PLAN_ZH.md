@@ -1,5 +1,5 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-05 -->
+<!-- last-reviewed: 2026-10-06 -->
 
 # iPhone 与 iPad 完整业务对齐实施计划
 
@@ -75,7 +75,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M5 RSS、设置与搜索创建 | ServiceManagementView | RSS/设置/搜索创建表单；现有共享 Download 协议；写 | M5b 下载设置与分步恢复、M5c2 链接/文件与搜索创建的持久记录已验证；M5c2b 统一表单、逐次目录/文件密码及 M5c3 已有 RSS 订阅/条目、更新与创建已通过两端回归 |
 | M5 删除与数值 | ServiceManagementModel | 记录删除与文件删除分别确认；数据删除 | M5a1 已统一缺失数值为 --；M5d 单项/多项任务移除与恢复、结束并移出未完成文件均通过两端回归；实际文件由用户进入既有 M2 文件管理另行选择，不自动关联删除 |
 | M6 21 页读取与普通设置 | NasAdministrationView、NasAdministrationModel | 分类设置/并列详情；系统日志存储区域代理等；内部写 | M6a1–M6a3 已接五项读取、存储/日志及区域时间/DDNS，M6b2 服务设置已完成；其余逐页继续，仅编辑实际支持字段 |
-| M6 账号、群组、网络、安全 | NasAdministrationView | 分步表单/当前账号保护；User/Group/Ethernet/FileServ/Security；高风险 | M6b1 账号/群组与 M6b2 文件服务/终端/代理已接并通过两端验收；网卡、远程、安全继续后续切片 |
+| M6 账号、群组、网络、安全 | NasAdministrationView | 分步表单/当前账号保护；User/Group/Ethernet/FileServ/Security；高风险 | M6b1 账号/群组与 M6b2 文件服务/终端/代理已接并通过两端验收；M6b3 远程访问已完成；网卡、安全继续后续切片 |
 | M6 硬件、UPS、内存、电源计划 | PowerScheduleEntryEditor、NasAdministrationView | 原生编辑器；Hardware/UPS/ZRAM/PowerSchedule；系统写 | 未实现；纠正 API 旧只读说明，未知字段不补 false |
 | M6 计划任务、连接、电源 | NasAdministrationModel | 后果确认与断连恢复；TaskScheduler/CurrentConnection/System；高风险 | 缺操作；接受不代表脚本完成或已重启，未知不重发 |
 | M6 套件中心 | PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 安装准备/卷/许可/进度、更新/SPK/设置；Package；内部写 | 只有只读列表；提交前取消丢弃迟到结果，提交后关闭不撤销任务 |
@@ -143,7 +143,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 | interfaces / Model.saveEthernetInterface | 网卡详情/原配置编辑与断连恢复 | dsm-ethernet-settings；高风险网络写 | 待 M6b |
 | hardware / Model.saveHardware | 风扇/灯光/蜂鸣/休眠/UPS 原字段编辑 | dsm-hardware-settings；系统写 | 待 M6c |
 | powerSchedule / View 电源计划编辑器 | NAS 当地时间、筛选、完整清单草稿及整体保存 | dsm-power-schedule；高风险写 | M6a1 读取/两端交互通过；写入待 M6c |
-| remoteAccess / Model.saveRemoteAccess | QuickConnect/路由设置及中继断连保护 | dsm-remote-access-settings；网络写 | 待 M6b |
+| remoteAccess / Model.saveRemoteAccess | QuickConnect/路由设置及中继断连保护 | dsm-remote-access-settings；网络写 | M6b3 两项管理/当前中继保护/持久恢复已接，两端实际 UI、共享及 Mac 回归通过 |
 | security / Model.saveSecurity | 自动封锁/DoS/防火墙原状态及差量 | dsm-security-settings；权限/高风险写 | 待 M6b |
 | region / Model.saveRegion | 区域格式/时区/时间源/校时 | dsm-region-time-settings；管理写 | M6a3 已接完整表单与分步恢复，两端实际操作及当前环境验收通过 |
 | ddns / Model.saveDDNS、testDDNS | 服务商/条目及明确提交；不持久保存口令 | dsm-ddns-settings；凭据/网络写 | M6a3 已接完整管理与恢复，两端实际交互通过 |
@@ -244,6 +244,32 @@ M6a2 已完成主流程与当前环境验收，两端完整单元、新增行为
 | 真机锁屏/低空间、VoiceOver、大字、iPad 键盘/分屏与浅深色 | 锁屏或记录无法保存时停止后续写入，恢复后保留原结果；表单、确认/取消、摘要/分组结果和刷新可操作 | 系统版本、设备类别、控件及脱敏截图。完整系统文件保护和辅助功能不由模拟器构建或截图代替 |
 
 后续只读核对发现 Mac 网卡、安全、硬件三个保存方法仍以相同页面缓存覆盖实际结果，已按 AGENTS 请求三处反馈/回归的单独授权，当前尚未修改；远程访问模型已使用真实结果。M6b2 已完成当前环境验收，其余 M6/M7/M8 继续推进，真实 NAS 验证不冒充源码缺口。
+
+### M6b3 远程访问
+
+开始基线 `eec33fbc`，main 工作区干净。前片已完成源码、两端真实 UI 和回归并在 main 提交；云端 `37300934405` 两端全量仍运行，继续避免推送取消。网卡、安全、硬件的 Mac 缓存反馈修正尚待前片单独授权，本片先完成无该依赖的远程访问；Mac `saveRemoteAccess` 已按实际结果判断并隔离迟到回调。
+
+| macOS 证据与用户结果 | 移动等价语义与交互 | 契约、安全、验证及非目标 |
+| --- | --- | --- |
+| `NasAdministrationView.RemoteAccessSettingsView`、Model.saveRemoteAccess | 编辑 QuickConnect 中继与路由器自动配置；可用字段独立显示，原生确认/取消及两步结果 | `dsm-remote-access-settings`：QuickConnect get/set_misc_config v3、Upnp get/set v1；高风险。当前真实中继连接禁止关闭中继，不能由草稿覆盖该保护；源码、两端实际 UI 与当前环境回归已完成，真实 NAS 待验 |
+| 同一保存配置重新连接后读取结果 | 保留逐步提交/回执记录，重启/重新登录只读恢复；使用同一 QuickConnect 配置重新解析路由后仍绑定原账号 | 既有登录过程把逻辑配置与实际连接端点分开；身份依据逻辑配置，保护依据实际受信任中继主机。手工换成新地址会建立新配置，不能据相同名称/开关认领旧 NAS 记录；可先通过 DSM 恢复原连接，不新增跨配置身份猜测 |
+
+单一修改范围为现有移动服务设置页面/模型/恢复记录及必要导航与 Debug/测试/双语资源/工程、共享 Core/Network 的兼容增量和本片文档。复用 M6b2 的逐请求保存流程及 `NAS/service-operations-v1.json`，只增加远程访问类别和两个稳定步骤，前面三类记录结构和保护规则保持；不新建平行恢复实现、不持久保存主机/QuickConnect ID/账号或凭据。沿用已授权 M0–M8 隔离恢复范围，不迁移登录数据；回滚在当前版本停用新增入口并保留未完成记录，不用旧开发版本猜测新类别。
+
+Apple 共享读取只增补本管理入口所需的单项失败信息，旧 Mac 原方法保留既有返回语义与请求；每个写边界仍检查完整原快照、实际权限和当前连接方式。两项读取均失败不能冒充空设置；单项失败保留另一项，只允许编辑有可信原值的字段。Windows/Android 只登记影响，不改源码；QuickConnect ID 注册/账号绑定、手工路由端口映射、网络身份探测及网卡/防火墙不在当前 Mac 页面基线，不加入此片。
+
+本片独立集成/只读对抗复核、209 项网络聚焦、两端最终完整单元各 1364 项（各 4 条既有跳过）、六项新增实际 UI、浅深色与中文大字均有通过证据。共享 2789 项 XCTest（172 条既有跳过）及 12 项 Swift Testing、Mac 双架构构建通过；中间失败及 CI 修复单列于[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-06-移动-m6b3-远程访问与连接恢复)。真实 NAS/路由器写操作未执行，具体设备条件见下表。
+
+独立复核已检查两种固定请求/版本、真实连接主机的中继保护、伪造草稿/原值、完整快照与组间权限、局部读取失败/缺失字段、认证/取消/TLS 中断、未提交组不认领、同一逻辑配置的实际换路与新地址新配置隔离。新增管理入口原样传播结构化证书信任错误，显示重新连接途径，保存前遇到该错误不继续写入或自动回读；旧 Mac 读取/字段降级语义保持，未改登录、证书信任界面或凭据存储。页面只有两项设置，不添加无用途搜索；加载、空内容、正常、错误及不可用分别验证，筛选为空不适用于本页。
+
+`PENDING_USER_VALIDATION`（仅已实现远程访问）：
+
+| 前置条件 | 操作与预期 | 脱敏反馈及影响范围 |
+| --- | --- | --- |
+| 两端真机、已记录 DSM 版本、专用管理员和可安全更改的测试路由器，保留局域网 DSM 入口 | 分别取消及确认中继/路由器配置；仅变化项保存，分别显示结果；实际外网连接与路由器映射另行观察 | 版本、连接方式类别、动作阶段和错误类别，不回传 QuickConnect ID、地址、端口映射、账号或原始响应；可能中断远程访问或改变公开入口 |
+| 同一 NAS 的直连和 QuickConnect 测试条件 | 中继连接不能关闭中继但可编辑路由器项；直连可明确关闭。伪造/陈旧草稿或权限撤回不能写入，单项缺失/失败不变成关闭 | 只回传连接类别、可用项和脱敏失败步骤；不以 NAS 接受设置推断外网已经连通 |
+| 同一保存配置可重新登录和解析其他路线、可中断网络/终止 App | 首项保存后中断第二项；重新打开只读恢复，未提交后项不认领、不补写；实际路线变化仍属于原逻辑配置，新地址新配置保持独立 | 回传阶段、是否收到回执、旧/新配置类别及结果。新地址不自动关联旧 NAS；必要时通过 DSM 恢复原连接，不发送旧会话给新目标 |
+| 可安全模拟证书变化、真机锁屏/低空间、VoiceOver/大字/iPad 键盘分屏 | 连接身份异常时停止管理操作，回到连接页面处理；记录不能写入时停止后续请求；原生开关、确认/取消与恢复可用 | 仅错误类别、阶段、设备/OS 与脱敏截图；不回传证书私钥、指纹对应主机、会话或恢复文件。模拟器不能替代真实文件保护及全部辅助功能 |
 
 ### M6a3 区域时间与 DDNS
 

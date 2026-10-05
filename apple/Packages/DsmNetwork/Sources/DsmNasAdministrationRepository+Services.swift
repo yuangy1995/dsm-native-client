@@ -12,6 +12,7 @@ extension DsmNasAdministrationRepository {
         case .fileServices: return .fileServices(try await loadFileServiceSettings(managed: true))
         case .terminal: return .terminal(try await loadTerminalSettings(managed: true))
         case .proxy: return .proxy(try await loadProxySettings(managed: true))
+        case .remoteAccess: return .remoteAccess(try await loadRemoteAccessForManagement())
         }
     }
 
@@ -66,7 +67,7 @@ extension DsmNasAdministrationRepository {
             guard let supported = serviceVersion(step) else { return nil }
             version = supported
         } else { version = step == .webDiscovery ? 2 : nil }
-        let value = try await call(api, method: "get", version: version)
+        let value = try await call(api, method: step == .relay ? "get_misc_config" : "get", version: version)
         if managed && value.object == nil { throw verificationError(L10n.string("file-services.settings.failed")) }
         return value
     }
@@ -111,12 +112,14 @@ extension DsmNasAdministrationRepository {
         case .fileDiscovery: DsmAPIName.coreFileServiceDiscovery
         case .terminal: DsmAPIName.coreTerminal
         case .proxy: DsmAPIName.coreNetworkProxy
+        case .relay: DsmAPIName.coreQuickConnect
+        case .routerConfiguration: DsmAPIName.coreQuickConnectUPnP
         }
     }
     func serviceVersion(_ step: NasServiceStep) -> Int? {
         guard let capability = capabilities[serviceAPI(step)], capability.selectedVersion != nil else { return nil }
         let version: Int
-        switch step { case .smb, .nfs, .terminal: version = min(3, capability.maxVersion); case .webDiscovery: version = 2; default: version = 1 }
+        switch step { case .smb, .nfs, .terminal: version = min(3, capability.maxVersion); case .webDiscovery: version = 2; case .relay: version = 3; default: version = 1 }
         return version >= 1 && capability.minVersion <= version && version <= capability.maxVersion ? version : nil
     }
 
@@ -132,6 +135,8 @@ extension DsmNasAdministrationRepository {
                 errorCategory: category, diagnosticTag: "service.change.\(status.rawValue.lowercased())")
         }
         func failure(_ error: Error) throws -> MutationResult {
+            if error is DsmCertificateTrustError { throw error }
+            if let error = error as? AppError, [.tlsUntrusted, .tlsCertificateChanged].contains(error.category) { throw error }
             let category = (error as? AppError)?.category
             let status: MutationResultStatus
             switch category {
@@ -146,7 +151,7 @@ extension DsmNasAdministrationRepository {
         if Task.isCancelled { return try result(.cancelledBeforeSubmission) }
         guard !steps.isEmpty else { return try result(.confirmedFailure, category: .validation) }
         let active: Bool
-        switch change.kind { case .fileServices: active = isFileServiceSettingsUpdateActive; case .terminal: active = isTerminalSettingsUpdateActive; case .proxy: active = isProxySettingsUpdateActive }
+        switch change.kind { case .fileServices: active = isFileServiceSettingsUpdateActive; case .terminal: active = isTerminalSettingsUpdateActive; case .proxy: active = isProxySettingsUpdateActive; case .remoteAccess: active = isRemoteAccessSettingsUpdateActive }
         guard !active else { return try result(.confirmedFailure, category: .conflict) }
         setServiceActive(change.kind, true)
         defer { setServiceActive(change.kind, false) }
@@ -166,6 +171,7 @@ extension DsmNasAdministrationRepository {
                 try await submitManagedServiceStep(step, settings: change.desired, version: serviceVersion(step)!)
                 accepted = true
             } catch {
+                if error is DsmCertificateTrustError { throw error }
                 switch (error as? AppError)?.category {
                 case .cancelled, .networkUnavailable, .timeout, .serverBusy, .invalidResponse, .unknown, nil: break
                 default: rejection = error
@@ -201,6 +207,6 @@ extension DsmNasAdministrationRepository {
     }
 
     private func setServiceActive(_ kind: NasServiceKind, _ active: Bool) {
-        switch kind { case .fileServices: isFileServiceSettingsUpdateActive = active; case .terminal: isTerminalSettingsUpdateActive = active; case .proxy: isProxySettingsUpdateActive = active }
+        switch kind { case .fileServices: isFileServiceSettingsUpdateActive = active; case .terminal: isTerminalSettingsUpdateActive = active; case .proxy: isProxySettingsUpdateActive = active; case .remoteAccess: isRemoteAccessSettingsUpdateActive = active }
     }
 }

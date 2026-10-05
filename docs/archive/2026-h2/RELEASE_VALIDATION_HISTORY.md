@@ -2324,3 +2324,43 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 ```
 
 iPad 使用相同测试选择，destination 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，resultBundlePath 为 `apple/Apps/DsmMobile/build/m6b3-pad-r2.xcresult`。本机回归通过不代表包含修复的新云端整轮已通过；未进行真实 NAS 聊天或后台系统验收。
+
+## 2026-10-06 移动 M6b3 远程访问与连接恢复
+
+从 `eec33fbc` 干净 main 开始，先完成无 Mac 网卡/安全/硬件反馈授权依赖的远程访问。Mac 本页只有 QuickConnect 中继和路由器自动配置，原 `saveRemoteAccess` 已按真实结果与 generation 判断；本片不增加 ID 注册、账号绑定或手工端口映射，不改 Mac App、Windows 或 Android 源码。
+
+复用服务设置模型、原生表单/确认及 `service-operations-v1.json`，增量加入远程访问类型和两个步骤。实际请求继续复用原 QuickConnect v3 `get_misc_config/set_misc_config`、Upnp v1 `get/set` 编码；单项读取失败与字段未提供分开，两项均失败显示错误。旧 Mac 方法保持可选读取返回语义，新管理入口传播结构化证书信任错误并提示重新连接；写前遇到该错误零写，不继续自动读取。中继保护来自实际连接端点，不能由草稿伪造；同一逻辑配置重新解析路线可只读恢复，新地址新配置不认领旧记录。恢复文件不新增真实主机、QuickConnect ID、账号、端口或凭据内容。
+
+独立集成与只读对抗复核覆盖固定方法/版本、原值/未提供字段、当前中继保护、伪造原值与草稿、组间权限撤回、逐步回执、部分/未知、未提交后项、认证/TLS 中断、同逻辑配置实际换路、跨配置隔离及既有记录共同恢复。页面只有两个开关，无额外搜索；加载、空内容、正常、错误和不可用分别验证，筛选为空不适用。
+
+验证结果：
+
+- 新增 8 项网络行为测试，`NasServiceFlowTests` 共 24 项，联合原 185 项 NAS 适配器共 **209 项通过**。首轮测试错误地从 HTTP 传输层抛领域 AppError，客户端按传输未知错误处理，导致认证/TLS 测试六条断言失败；改用真实层级的 DSM 106 响应、URLError 和结构化证书错误，保留错误类别与停止后续请求断言，`m6b3-shared-focused-r2.log` 全部通过。
+- `swift test --package-path apple --jobs 2` **2789 项 XCTest、172 条既有条件跳过、0 失败；另 12 项 Swift Testing 通过**（`m6b3-shared-full.log`）。Mac Release `m6b3-macos.log` 成功，最终资源后 `m6b3-macos-final.log` 再次成功，实际 `lipo` 为 **x86_64 arm64**。最后提示文案后 AppLanguageTests 为 **6 项 Swift Testing 通过**（XCTest 子集 0），见 `m6b3-localization-final.log`。
+- 新增 9 项移动行为测试，服务设置测试共 26 项；三类旧服务与新类别共同执行，原始请求断言保持。移动 R1/R2/R3 构建均通过；R1 两端完整单元各 1363 项、各 4 条既有跳过，iPad 零失败，iPhone 一条旧聊天停止测试失败；本片六项新实际 UI 两端均 **六项全部通过**。旧聊天问题及新阻塞回归、两项云端 UI 修复已单独以 `b5c27caf` 提交，见前节，不混作远程访问失败。
+- R4 构建通过，R2 两端完整单元均 **1364 项、4 条既有跳过、0 失败**；各四项 UI（聊天前台、两项云端失败、远程中文深色大字）全部通过。R5 在当前服务 UI 测试中沿用实际导航就绪等待，并把原值变化提示扩展为包含字段可用性变化；最终 R3 两端远程双项保存/取消/回读及中文深色大字 **各两项全部通过**。结果包分别为 `m6b3-phone-r1/r2/r3.xcresult` 与 iPad 同名结果，R1 iPhone 的整包失败如实保留，最终 R2/R3 均 exit 0。
+- 最终资源为 Apple **6502**、Android 2188、Windows 3402；双语/参数/引用/硬编码、请求 179+1、私有样本 29/文档引用 48、文档和差异检查通过。XcodeGen 2.46.0 重生成不改变工程内容，继续使用既有工具链、App 身份及派生构建路径。
+- 已实际查看浅色 iPhone 双项影响确认/保存结果、iPad 当前中继保护/路由器独立操作，以及两端最终中文深色大字表单/完整确认。七张合成图保留忽略路径 `build/m6b3-preview`；临时导出目录清理，日志/结果包保留。两台模拟器恢复 light；无真实 NAS/路由器写入、Mac 安装/启动或正式发布。
+
+实际主要命令：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'NasServiceFlowTests|DsmNasAdministrationRepositoryTests'
+swift test --package-path apple --jobs 2
+swift test --package-path apple --jobs 2 --filter AppLanguageTests
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b3-phone-r1.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test远程访问双项确认取消保存与回读 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test远程中继连接保护和路由器独立操作 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test远程单项读取失败仍可编辑另一项 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test远程未知记录重启后只读恢复 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test远程加载空内容错误不可用及恢复 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test远程中文大字表单和连接风险可操作 -parallel-testing-enabled NO
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b3-pad-r3.xcresult -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test远程访问双项确认取消保存与回读 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test远程中文大字表单和连接风险可操作 -parallel-testing-enabled NO
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+R1 iPad 与 R3 iPhone 分别使用相同测试选择，替换对应设备 ID 和结果包前缀；R2 完整命令见前节 CI/聊天修复记录。真实 NAS、路由器、证书变化、重新连接与锁屏/辅助功能按主计划四项具体 `PENDING_USER_VALIDATION`，源码未实现的其他 M6/M7/M8 不归入待验。
+
+本片提交前，旧 Apple Build `37300934405` 的 iPad 于 2026-10-05 17:02:57 UTC 结束并失败，整轮已终止。开始读取 iPad 实际日志，不能因 iPhone 修复已本地通过便推定 iPad 同因；远程访问源码与当前环境验收按本节独立交付，完成剩余 CI 故障核对后再正常推送 main。

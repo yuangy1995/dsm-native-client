@@ -1225,15 +1225,22 @@ public struct NasRemoteAccessSettings: Hashable, Sendable {
     public var isRelayEnabled: Bool?
     public var isRouterConfigurationEnabled: Bool?
     public let canDisableRelay: Bool
+    /// 单项读取失败与接口/字段未提供分开；旧调用默认不使用这些管理提示。
+    public let relayReadFailed: Bool
+    public let routerConfigurationReadFailed: Bool
 
     public init(
         isRelayEnabled: Bool?,
         isRouterConfigurationEnabled: Bool?,
-        canDisableRelay: Bool
+        canDisableRelay: Bool,
+        relayReadFailed: Bool = false,
+        routerConfigurationReadFailed: Bool = false
     ) {
         self.isRelayEnabled = isRelayEnabled
         self.isRouterConfigurationEnabled = isRouterConfigurationEnabled
         self.canDisableRelay = canDisableRelay
+        self.relayReadFailed = relayReadFailed
+        self.routerConfigurationReadFailed = routerConfigurationReadFailed
     }
 }
 
