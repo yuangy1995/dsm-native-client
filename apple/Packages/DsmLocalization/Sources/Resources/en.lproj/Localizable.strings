@@ -6434,3 +6434,35 @@
 "download.creation.refresh" = "Refresh task list";
 
 "download.creation.use-default" = "Use default location";
+
+/* RSS 订阅 */
+"download.rss.title" = "RSS subscriptions";
+"download.rss.loading" = "Loading subscriptions…";
+"download.rss.loading-feeds" = "Loading items…";
+"download.rss.reload" = "Reload";
+"download.rss.update" = "Update subscription";
+"download.rss.updating" = "Updating…";
+"download.rss.sending" = "Requesting an update…";
+"download.rss.last-update" = "Last updated";
+"download.rss.published" = "Published";
+"download.rss.search-sites" = "Search subscriptions";
+"download.rss.search-feeds" = "Search items";
+"download.rss.empty" = "No subscriptions";
+"download.rss.empty-help" = "Add subscriptions in Download Station on DSM, then reload here.";
+"download.rss.empty-feeds" = "No items";
+"download.rss.empty-feeds-help" = "Update this subscription to check for new items.";
+"download.rss.filtered-empty" = "No matches";
+"download.rss.filter-help" = "Try another search or clear the search field.";
+"download.rss.untitled" = "Untitled";
+"download.rss.previous-update" = "Previous update";
+"download.rss.changed" = "This subscription has changed or is already updating. Reload before trying again.";
+"download.rss.unsupported" = "Subscriptions are unavailable on this NAS. Manage them in Download Station on DSM.";
+"download.rss.permission" = "This account cannot update the subscription. Contact your NAS administrator.";
+"download.rss.read-permission" = "This account cannot view the subscription. Contact your NAS administrator.";
+"download.rss.load-error" = "Unable to load subscriptions or items. Check your connection and reload.";
+"download.rss.storage-error" = "Unable to save the update record on this device. Free up storage and reopen the app.";
+"download.rss.unknown" = "The connection was interrupted during the update. Reload to see the latest subscription status.";
+"download.rss.accepted" = "Update requested. Reload to see the latest items.";
+"download.rss.updated" = "Subscription updated";
+"download.rss.rejected" = "The subscription could not be updated. Reload and try again.";
+"download.rss.cancelled" = "Update cancelled before it was sent.";

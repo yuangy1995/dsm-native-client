@@ -53,6 +53,9 @@ enum MobileUIFixture {
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             if officeState.hasPrefix("chat-management-") { versions[DsmAPIName.chatPostFile] = 2 }
             if officeState == "downloads-create-bt" { versions[DsmAPIName.downloadStationBTSearch] = 1 }
+            if officeState.hasPrefix("downloads-rss-"), officeState != "downloads-rss-unsupported" {
+                versions[DsmAPIName.downloadStationRSSSite] = 1; versions[DsmAPIName.downloadStationRSSFeed] = 1
+            }
             if officeState == "downloads-edit-unsupported" { versions[DsmAPIName.downloadStationTask] = 1 }
             if officeState.hasPrefix("chat-audio-") { versions[DsmAPIName.chatPostFile] = 2 }
             if officeState.hasPrefix("chat-realtime-") { versions[DsmAPIName.chatPostSubscribe] = 2 }

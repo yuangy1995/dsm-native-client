@@ -197,6 +197,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private let transport: any DsmHTTPTransport
     private var activeDownloadSettings = false
     private var pendingDownloadSettings: [DownloadSettingsField.Group: DownloadSettingsChange] = [:]
+    private var activeDownloadRSSUpdates: Set<Int> = []
+    private var pendingDownloadRSSUpdates: [Int: DownloadRSSSite] = [:]
     private var activeDownloadEdits: Set<String> = []
     private var pendingDownloadEdits: [String: DownloadTaskDestinationChange] = [:]
     private var activeDownloadControlKeys: Set<DownloadTaskControlKey> = []
@@ -324,6 +326,109 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             isComplete: isComplete,
             statistics: statistics
         )
+    }
+
+    public var supportsDownloadRSS: Bool {
+        [DsmAPIName.downloadStationRSSSite, DsmAPIName.downloadStationRSSFeed].allSatisfy {
+            guard let capability = capabilities[$0] else { return false }
+            return capability.name == $0 && capability.selectedVersion != nil && capability.minVersion <= 1 && capability.maxVersion >= 1
+        }
+    }
+
+    public func loadDownloadRSSSites() async throws -> [DownloadRSSSite] {
+        let objects = try await loadDownloadRSSObjects(api: DsmAPIName.downloadStationRSSSite, keys: ["sites", "site"])
+        var ids: Set<Int> = []
+        let sites = try objects.map { object -> DownloadRSSSite in
+            guard let rawID = Self.rssInteger(object["id"]), let id = Int(exactly: rawID), ids.insert(id).inserted,
+                  case .string(let title) = object["title"], case .string(let url) = object["url"],
+                  case .string(let username) = object["username"], case .boolean(let updating) = object["is_updating"],
+                  let lastUpdate = Self.rssInteger(object["last_update"]) else { throw invalidServiceResponse() }
+            let digest = Self.rssDigest([String(id), url, username])
+            return .init(id: id, identityDigest: digest, title: title, isUpdating: updating, lastUpdate: lastUpdate)
+        }
+        // 仅同一订阅的更新日期前进且更新结束，才能解除原请求的不确定状态。
+        for site in sites {
+            if let pending = pendingDownloadRSSUpdates[site.id], pending.identityDigest == site.identityDigest,
+               site.lastUpdate > pending.lastUpdate, !site.isUpdating { pendingDownloadRSSUpdates.removeValue(forKey: site.id) }
+        }
+        return sites
+    }
+
+    public func loadDownloadRSSFeeds(siteID: Int) async throws -> [DownloadRSSFeed] {
+        guard siteID >= 0 else { throw invalidServiceResponse() }
+        let objects = try await loadDownloadRSSObjects(api: DsmAPIName.downloadStationRSSFeed, keys: ["feeds"],
+            parameters: ["id": .string(String(siteID))])
+        var seen: Set<String> = []
+        return try objects.compactMap { object in
+            guard case .string(let title) = object["title"], case .string(let uri) = object["download_uri"],
+                  case .string(let link) = object["external_link"], case .string(let rawSize) = object["size"],
+                  !rawSize.isEmpty, rawSize.utf8.allSatisfy({ (48...57).contains($0) }),
+                  let size = Int64(rawSize), let time = Self.rssInteger(object["time"]) else { throw invalidServiceResponse() }
+            let id = Self.rssDigest([title, uri, link, rawSize, String(time)])
+            // 完全相同的条目可以合并，分页偏移仍按原始条目数推进。
+            guard seen.insert(id).inserted else { return nil }
+            return .init(id: id, title: title, sizeBytes: size, time: time, downloadURI: uri)
+        }
+    }
+
+    public func refreshDownloadRSSSite(_ original: DownloadRSSSite,
+        willSubmit: @escaping @Sendable () async throws -> Void
+    ) async throws -> DownloadRSSRefreshReceipt {
+        guard original.id >= 0, activeDownloadRSSUpdates.insert(original.id).inserted else {
+            throw validationError(L10n.string("download.rss.changed"))
+        }
+        defer { activeDownloadRSSUpdates.remove(original.id) }
+        let sites = try await loadDownloadRSSSites()
+        guard let current = sites.first(where: { $0.id == original.id }),
+              current.identityDigest == original.identityDigest, current.lastUpdate == original.lastUpdate,
+              !current.isUpdating, pendingDownloadRSSUpdates[original.id] == nil else {
+            throw validationError(L10n.string("download.rss.changed"))
+        }
+        try Task.checkCancellation()
+        try await willSubmit()
+        if Task.isCancelled { return .cancelledBeforeSubmission }
+        pendingDownloadRSSUpdates[original.id] = current
+        do {
+            try await callVoid(DsmAPIName.downloadStationRSSSite, method: "refresh",
+                parameters: ["id": .string(String(original.id))], fixedVersion: 1)
+            return .accepted
+        } catch let error as AppError where error.dsmCode.map({ [101, 102, 103, 104, 105, 106, 107].contains($0) }) == true {
+            pendingDownloadRSSUpdates.removeValue(forKey: original.id)
+            return error.category == .permissionDenied ? .denied : .rejected
+        } catch { return .unknown }
+    }
+
+    private func loadDownloadRSSObjects(api: String, keys: [String], parameters: [String: DsmParameterValue] = [:]) async throws -> [ServiceJSON] {
+        var offset = 0, expectedTotal: Int?
+        var result: [ServiceJSON] = []
+        while true {
+            try Task.checkCancellation()
+            let value = try await call(api, method: "list", parameters: parameters.merging([
+                "offset": .integer(offset), "limit": .integer(Self.downloadControlPageSize)
+            ]) { _, next in next }, fixedVersion: 1)
+            guard let rawTotal = Self.rssInteger(value["total"]), let total = Int(exactly: rawTotal),
+                  Self.rssInteger(value["offset"]) == Int64(offset), expectedTotal == nil || expectedTotal == total else {
+                throw invalidServiceResponse()
+            }
+            let containers = keys.compactMap { value[$0] }
+            // 官方表使用 sites，示例使用 site；同时出现时不猜测哪个权威。
+            guard containers.count == 1, case .array(let page) = containers[0],
+                  page.count <= Self.downloadControlPageSize, page.allSatisfy({ $0.object != nil }),
+                  offset <= total, page.count <= total - offset else { throw invalidServiceResponse() }
+            expectedTotal = total; result.append(contentsOf: page); offset += page.count
+            if offset == total { return result }
+            guard !page.isEmpty else { throw invalidServiceResponse() }
+        }
+    }
+
+    private static func rssInteger(_ value: ServiceJSON?) -> Int64? {
+        guard case .number(let value) = value, let integer = Int64(exactly: value), integer >= 0 else { return nil }
+        return integer
+    }
+
+    private static func rssDigest(_ parts: [String]) -> String {
+        let encoded = parts.map { "\($0.utf8.count):\($0)" }.joined()
+        return SHA256.hash(data: Data(encoded.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     public func loadDownloadBTSearchCatalog() async throws -> DownloadBTSearchCatalog {
