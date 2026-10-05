@@ -283,14 +283,18 @@ final class MobileDownloadBTSearchModel {
     }
 
     private static func safeMessage(for error: Error, fallbackKey: String) -> String {
-        (error as? AppError)?.safeUserMessage ?? L10n.string(fallbackKey)
+        guard let error = error as? AppError, error.category != .invalidResponse else { return L10n.string(fallbackKey) }
+        return error.safeUserMessage
     }
 }
 
 struct MobileDownloadBTSearchView: View {
     @Bindable var model: MobileDownloadsModel
+    var fileRepository: (any MobileFileBrowsing)? = nil
+    @State private var createDraft: MobileDownloadCreateDraft?
     @State private var searchModel = MobileDownloadBTSearchModel()
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var inputFocused: Bool
 
     private var searchRepository: DsmServiceManagementRepository? {
         model.canSearchDownloadBT ? model.serviceRepository : nil
@@ -341,6 +345,7 @@ struct MobileDownloadBTSearchView: View {
                     emptyResultsSection
                 }
             }
+            .accessibilityIdentifier("downloads.bt.form")
             .navigationTitle(L10n.string("mobile.downloads.bt-search.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -352,6 +357,10 @@ struct MobileDownloadBTSearchView: View {
                 }
             }
         }
+        .sheet(item: $createDraft) { draft in
+            MobileDownloadCreateTaskView(model: model, draft: draft, fileRepository: fileRepository)
+        }
+        .onChange(of: model.editActivation) { _, _ in createDraft = nil; dismiss() }
         .task(id: searchRepositoryIdentity) {
             searchModel.activate(repository: searchRepository)
         }
@@ -366,9 +375,11 @@ struct MobileDownloadBTSearchView: View {
                 L10n.string("mobile.downloads.bt-search.keyword.placeholder"),
                 text: $searchModel.keyword
             )
+            .focused($inputFocused)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .accessibilityLabel(L10n.string("mobile.downloads.bt-search.keyword.label"))
+            .accessibilityIdentifier("downloads.bt.keyword")
             if searchModel.hasInvalidKeyword {
                 invalidInputMessage
             }
@@ -379,6 +390,7 @@ struct MobileDownloadBTSearchView: View {
                 L10n.string("mobile.downloads.bt-search.title-filter.placeholder"),
                 text: $searchModel.titleFilter
             )
+            .focused($inputFocused)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .accessibilityLabel(L10n.string("mobile.downloads.bt-search.title-filter.label"))
@@ -387,6 +399,7 @@ struct MobileDownloadBTSearchView: View {
             }
 
             Button {
+                inputFocused = false
                 searchModel.search()
             } label: {
                 Label(
@@ -399,6 +412,7 @@ struct MobileDownloadBTSearchView: View {
             .disabled(!searchModel.canSearch)
             .frame(minHeight: MobileMetrics.minimumTouchTarget)
             .accessibilityHint(L10n.string("mobile.downloads.bt-search.search.hint"))
+            .accessibilityIdentifier("downloads.bt.search")
         } header: {
             Text(L10n.string("mobile.downloads.bt-search.keyword.label"))
         } footer: {
@@ -539,7 +553,7 @@ struct MobileDownloadBTSearchView: View {
 
     private var resultSection: some View {
         Section(L10n.string("mobile.downloads.bt-search.results.title")) {
-            ForEach(searchModel.results) { result in
+            ForEach(Array(searchModel.results.enumerated()), id: \.element.id) { index, result in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(result.title)
                         .font(.headline)
@@ -568,8 +582,8 @@ struct MobileDownloadBTSearchView: View {
                     .font(.subheadline)
 
                     Button {
-                        model.createDownloadTask(uri: result.downloadURI)
-                        dismiss()
+                        model.dismissDownloadCreateFeedback()
+                        createDraft = .init(activation: model.editActivation, source: .link(result.downloadURI))
                     } label: {
                         Label(
                             L10n.string("mobile.downloads.bt-search.result.create"),
@@ -583,6 +597,7 @@ struct MobileDownloadBTSearchView: View {
                     .accessibilityHint(
                         L10n.string("mobile.downloads.bt-search.result.create.hint")
                     )
+                    .accessibilityIdentifier("downloads.bt.create.\(index)")
                 }
                 .accessibilityElement(children: .contain)
             }

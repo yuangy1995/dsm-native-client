@@ -1,5 +1,6 @@
 @testable import DsmMobile
 import DsmCore
+import DsmLocalization
 import DsmNetwork
 import Foundation
 import XCTest
@@ -25,6 +26,92 @@ final class MobileDownloadCreationTests: XCTestCase {
     }
     private func create(_ model: MobileDownloadsModel, uri: String? = nil) async {
         model.createDownloadTask(uri: uri ?? self.uri); await model.downloadCreateTask?.value
+    }
+    func test草稿创建本身不写入且显式目录与NAS默认分别提交() async throws {
+        let transport = CreationMobileTransport(), model = try model(root(), transport: transport)
+        let draft = MobileDownloadCreateDraft(activation: model.editActivation, source: .link(uri))
+        XCTAssertTrue(model.createEntries.isEmpty); XCTAssertNil(model.downloadCreateTask)
+        var calls = await transport.writes; XCTAssertTrue(calls.isEmpty)
+        model.createDownloadTask(draft: draft, uri: uri, destination: " shared/folder ", unzipPassword: "ignored")
+        await model.downloadCreateTask?.value
+        calls = await transport.writes; XCTAssertEqual(calls.count, 1); XCTAssertEqual(calls[0]["destination"], " shared/folder ")
+        XCTAssertNil(calls[0]["unzip_password"])
+        model.createDownloadTask(draft: draft, uri: uri, destination: nil, unzipPassword: "")
+        await model.downloadCreateTask?.value
+        calls = await transport.writes; XCTAssertEqual(calls.count, 2); XCTAssertNil(calls[1]["destination"])
+        model.deactivate()
+    }
+    func test旧草稿不能跨账号或同账号重连且无效目录不提交() async throws {
+        let profile = try profile(), first = CreationMobileTransport(), model = try model(root(), transport: first, profile: profile)
+        let draft = MobileDownloadCreateDraft(activation: model.editActivation, source: .link(uri))
+        model.createDownloadTask(draft: draft, uri: uri, destination: "../wrong", unzipPassword: "")
+        XCTAssertNil(model.downloadCreateTask)
+        for nextProfile in [profile, try self.profile("other")] {
+            let next = CreationMobileTransport()
+            model.configure(profile: nextProfile, repository: try repository(next, profile: nextProfile))
+            model.createDownloadTask(draft: draft, uri: uri, destination: nil, unzipPassword: "")
+            XCTAssertNil(model.downloadCreateTask); XCTAssertNil(model.downloadCreateFeedback)
+            XCTAssertTrue(model.createEntries.isEmpty); let calls = await next.writes; XCTAssertTrue(calls.isEmpty)
+        }
+        let calls = await first.writes; XCTAssertTrue(calls.isEmpty); model.deactivate()
+    }
+    func test文件表单保留目录及密码空格而记录与副本清理不泄露原值() async throws {
+        let root = root(), transport = CreationMobileTransport(), model = try model(root, transport: transport)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("Private input.torrent"), bytes = Data("synthetic content".utf8)
+        try bytes.write(to: file)
+        let draft = MobileDownloadCreateDraft(activation: model.editActivation, source: .file(file))
+        model.createDownloadTask(draft: draft, uri: "", destination: " shared/folder ", unzipPassword: "  synthetic secret  ")
+        await model.downloadCreateTask?.value
+        XCTAssertEqual(model.downloadCreateFeedback?.kind, .success)
+        let bodies = await transport.bodies, calls = await transport.writes
+        XCTAssertEqual(calls.count, 1); XCTAssertEqual(calls[0]["version"], "2")
+        let body = try XCTUnwrap(String(data: XCTUnwrap(bodies.first), encoding: .utf8))
+        XCTAssertTrue(body.contains("name=\"destination\"\r\n\r\n shared/folder \r\n"))
+        XCTAssertTrue(body.contains("name=\"unzip_password\"\r\n\r\n  synthetic secret  \r\n"))
+        let saved = try String(contentsOf: root.appendingPathComponent("creations-v1.json"), encoding: .utf8)
+        for value in ["synthetic secret", "shared/folder", "Private input", "synthetic content"] { XCTAssertFalse(saved.contains(value)) }
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("creation-inputs").path).isEmpty)
+        XCTAssertEqual(try Data(contentsOf: file), bytes); model.deactivate()
+    }
+    func test未知文件换密码和显式目录也不能重新提交() async throws {
+        let root = root(), profile = try profile(), transport = CreationMobileTransport(unknown: true)
+        let model = try model(root, transport: transport, profile: profile)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("input.torrent"); try Data("synthetic".utf8).write(to: file)
+        model.createDownloadTask(draft: .init(activation: model.editActivation, source: .file(file)), uri: "", destination: "first", unzipPassword: "first-password")
+        await model.downloadCreateTask?.value; model.deactivate()
+        let restored = try self.model(root, transport: transport, profile: profile)
+        restored.createDownloadTask(draft: .init(activation: restored.editActivation, source: .file(file)), uri: "", destination: "second", unzipPassword: "second-password")
+        await restored.downloadCreateTask?.value
+        XCTAssertEqual(restored.downloadCreateFeedback?.kind, .needsReview)
+        XCTAssertEqual(restored.createEntries.count, 1); XCTAssertEqual(restored.createEntries.first?.phase, .submitted)
+        let calls = await transport.writes; XCTAssertEqual(calls.count, 1); restored.deactivate()
+    }
+    func test任务文件已不可读取时不创建且提示重新选择输入() async throws {
+        let root = root(), transport = CreationMobileTransport(), model = try model(root, transport: transport)
+        model.createDownloadTask(draft: .init(activation: model.editActivation, source: .file(root.appendingPathComponent("missing.torrent"))),
+                                 uri: "", destination: nil, unzipPassword: "synthetic-secret")
+        await model.downloadCreateTask?.value
+        XCTAssertEqual(model.downloadCreateFeedback?.kind, .failure)
+        XCTAssertEqual(model.createErrorKey, "shared.51bdbefbc0c88421")
+        XCTAssertTrue(model.createEntries.isEmpty); XCTAssertFalse(model.createRecovery.failed)
+        let calls = await transport.writes; XCTAssertTrue(calls.isEmpty); model.deactivate()
+    }
+    func test搜索结果格式错误提示重试搜索而非文件上传失败() async throws {
+        let name = DsmAPIName.downloadStationBTSearch
+        let repo = try DsmServiceManagementRepository(profile: profile(), capabilities: CapabilitySet([
+            name: .init(name: name, path: "entry.cgi", minVersion: 1, maxVersion: 1, requestFormat: .form, selectedVersion: 1)]),
+            session: .init(sid: "REDACTED_SESSION", synoToken: nil, did: nil, isPortalPort: false),
+            transport: MobileDownloadUITransport(state: "downloads-create-bt-invalid"))
+        let search = MobileDownloadBTSearchModel(); search.activate(repository: repo)
+        var deadline = Date().addingTimeInterval(2)
+        while search.isLoadingCatalog && Date() < deadline { await Task.yield() }
+        search.keyword = "synthetic"; XCTAssertTrue(search.canSearch); search.search()
+        deadline = Date().addingTimeInterval(2)
+        while search.isSearching && Date() < deadline { await Task.yield() }
+        XCTAssertFalse(search.isSearching); XCTAssertTrue(search.results.isEmpty)
+        XCTAssertEqual(search.errorMessage, L10n.string("mobile.downloads.bt-search.search.error")); search.close()
     }
     func test官方空回执保存后显示已添加且重启保留记录() async throws {
         let root = root(), profile = try profile(), transport = CreationMobileTransport(), model = try model(root, transport: transport, profile: profile)

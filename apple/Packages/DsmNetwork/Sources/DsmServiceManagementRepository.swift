@@ -3471,7 +3471,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         destination: String?,
         unzipPassword: String?
     ) async throws -> ServiceJSON {
-        let requiredVersion = Self.nonEmpty(destination) == nil ? 1 : 2
+        let requiredVersion = destination?.isEmpty != false ? 1 : 2
         guard let capability = capabilities[DsmAPIName.downloadStationTask],
               capability.selectedVersion != nil,
               capability.minVersion <= requiredVersion, capability.maxVersion >= requiredVersion,
@@ -3489,7 +3489,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
         let boundary = "LanStashDownload-\(UUID().uuidString)"
         var multipartFields: [String: String] = [:]
-        if let destination = Self.nonEmpty(destination) {
+        if let destination, !destination.isEmpty {
             multipartFields["destination"] = destination
         }
         if let unzipPassword, !unzipPassword.isEmpty {
@@ -3593,7 +3593,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         _ request: DownloadTaskCreateRequest
     ) throws -> DownloadTaskCreateValidation {
         let normalizedURI = request.uri.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedDestination = Self.nonEmpty(request.destination)
+        let normalizedDestination = request.destination.flatMap { $0.isEmpty ? nil : $0 }
         guard let url = URL(string: normalizedURI),
               let scheme = url.scheme?.lowercased(),
               ["http", "https", "ftp", "magnet"].contains(scheme),
@@ -3628,8 +3628,9 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         _ request: DownloadTaskFileCreateRequest
     ) throws -> DownloadTaskCreateValidation {
         let normalizedURL = request.fileURL.standardizedFileURL
-        let normalizedDestination = Self.nonEmpty(request.destination)
-        let normalizedPassword = Self.nonEmpty(request.unzipPassword)
+        // 目录名和解压密码中的空格属于原值，只有空字符串表示不提供。
+        let normalizedDestination = request.destination.flatMap { $0.isEmpty ? nil : $0 }
+        let normalizedPassword = request.unzipPassword.flatMap { $0.isEmpty ? nil : $0 }
         let allowedExtensions = ["torrent", "nzb", "txt"]
         guard normalizedURL.isFileURL,
               allowedExtensions.contains(normalizedURL.pathExtension.lowercased()),

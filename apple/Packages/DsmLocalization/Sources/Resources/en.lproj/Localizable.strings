@@ -3149,13 +3149,13 @@
 "mobile.downloads.create.menu.hint" = "Create a Download Station task from a link or task file";
 "mobile.downloads.create.link.action" = "Add Link";
 "mobile.downloads.create.file.action" = "Import Task File";
-"mobile.downloads.create.file.action.hint" = "Choose a .torrent, .nzb, or .txt file to create a Download Station task.";
+"mobile.downloads.create.file.action.hint" = "Choose a task file, then set its save location and optional unzip password before adding it.";
 "mobile.downloads.create.title" = "Add Download Link";
 "mobile.downloads.create.url.label" = "URL or magnet link";
 "mobile.downloads.create.url.placeholder" = "Paste a URL or magnet link";
-"mobile.downloads.create.url.help" = "The task will use the Download Station default location shown by your NAS.";
+"mobile.downloads.create.url.help" = "Choose a save location or use the Download Station default.";
 "mobile.downloads.create.destination.label" = "Destination";
-"mobile.downloads.create.destination.default" = "Download Station default location";
+"mobile.downloads.create.destination.default" = "NAS default location";
 "mobile.downloads.create.submit" = "Create Task";
 "mobile.downloads.create.cancel" = "Cancel";
 "mobile.downloads.create.done" = "Done";
@@ -3786,8 +3786,8 @@
 "mobile.downloads.bt-search.result.size" = "Size";
 "mobile.downloads.bt-search.result.seeds" = "Seeds";
 "mobile.downloads.bt-search.result.leeches" = "Leechers";
-"mobile.downloads.bt-search.result.create" = "Create download task";
-"mobile.downloads.bt-search.result.create.hint" = "Create a Download Station task from this result.";
+"mobile.downloads.bt-search.result.create" = "Add Download…";
+"mobile.downloads.bt-search.result.create.hint" = "Choose a save location before adding this download.";
 "mobile.downloads.bt-search.result.unknown" = "Unknown";
 "mobile.chat.create.action" = "New conversation";
 "mobile.chat.create.hint" = "Choose people to start a direct conversation or private group.";
@@ -6432,3 +6432,5 @@
 "download.creation.file" = "Download from task file";
 
 "download.creation.refresh" = "Refresh task list";
+
+"download.creation.use-default" = "Use default location";

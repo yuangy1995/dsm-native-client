@@ -7,11 +7,11 @@ struct MobileDownloadsView: View {
     @Bindable var model: MobileDownloadsModel
     var fileRepository: (any MobileFileBrowsing)? = nil
     @State private var selectedTask: DownloadStationTask?
-    @State private var isShowingCreateTask = false
-    @State private var isShowingFileResult = false
+    @State private var createDraft: MobileDownloadCreateDraft?
     @State private var isShowingBTSearch = false
     @State private var isImportingTaskFile = false
     @State private var importActivation: UUID?
+    @State private var importFailed = false
     @State private var isSelectingTasks = false
     @State private var isShowingControls = false
     @State private var isShowingSettings = false
@@ -36,21 +36,18 @@ struct MobileDownloadsView: View {
         }
         .accessibilityElement(children: .contain)
         .onChange(of: model.editActivation) { _, _ in
-            isShowingCreateTask = false; isShowingFileResult = false; isShowingBTSearch = false; isImportingTaskFile = false; importActivation = nil
+            createDraft = nil; isShowingBTSearch = false; isImportingTaskFile = false; importActivation = nil; importFailed = false
         }
         .searchable(text: $model.searchText, prompt: L10n.string("download.workspace.search"))
         .refreshable { await model.load() }
         .sheet(item: $selectedTask) { task in
             MobileDownloadTaskDetailView(model: model, initialTask: task, fileRepository: fileRepository)
         }
-        .sheet(isPresented: $isShowingCreateTask) {
-            MobileDownloadCreateTaskView(model: model)
-        }
-        .sheet(isPresented: $isShowingFileResult) {
-            MobileDownloadCreateTaskView(model: model, fileOnly: true)
+        .sheet(item: $createDraft) { draft in
+            MobileDownloadCreateTaskView(model: model, draft: draft, fileRepository: fileRepository)
         }
         .sheet(isPresented: $isShowingBTSearch) {
-            MobileDownloadBTSearchView(model: model)
+            MobileDownloadBTSearchView(model: model, fileRepository: fileRepository)
         }
         .sheet(isPresented: $isSelectingTasks) { MobileDownloadSelectionSheet(model: model, fileRepository: fileRepository) }
         .sheet(isPresented: $isShowingControls) { MobileDownloadControlRecordsView(model: model) }
@@ -63,6 +60,9 @@ struct MobileDownloadsView: View {
             allowsMultipleSelection: false,
             onCompletion: handleTaskFileImport
         )
+        .alert(L10n.string("shared.51bdbefbc0c88421"), isPresented: $importFailed) {
+            Button(L10n.string("files.common.close"), role: .cancel) {}
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { isSelectingTasks = true } label: {
@@ -99,7 +99,8 @@ struct MobileDownloadsView: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button {
-                        isShowingCreateTask = true
+                        model.dismissDownloadCreateFeedback()
+                        createDraft = .init(activation: model.editActivation, source: .link(""))
                     } label: {
                         Label(
                             L10n.string("mobile.downloads.create.link.action"),
@@ -111,6 +112,13 @@ struct MobileDownloadsView: View {
                     .accessibilityIdentifier("downloads.create.link")
 
                     Button {
+                        model.dismissDownloadCreateFeedback()
+                        #if DEBUG
+                        if let url = MobileUIFixture.downloadCreationInput {
+                            createDraft = .init(activation: model.editActivation, source: .file(url))
+                            return
+                        }
+                        #endif
                         importActivation = model.editActivation
                         isImportingTaskFile = true
                     } label: {
@@ -121,6 +129,7 @@ struct MobileDownloadsView: View {
                     }
                     .disabled(!model.canCreateDownloadTask)
                     .accessibilityHint(L10n.string("mobile.downloads.create.file.action.hint"))
+                    .accessibilityIdentifier("downloads.create.file")
 
                     if model.downloadSnapshot?.hasBTSearch == true {
                         Button {
@@ -133,6 +142,7 @@ struct MobileDownloadsView: View {
                         }
                         .disabled(!model.canSearchDownloadBT)
                         .accessibilityHint(L10n.string("mobile.downloads.bt-search.action.hint"))
+                        .accessibilityIdentifier("downloads.search-bt")
                     }
                 } label: {
                     Label(
@@ -201,12 +211,15 @@ struct MobileDownloadsView: View {
 
     private func handleTaskFileImport(_ result: Result<[URL], Error>) {
         guard importActivation == model.editActivation else { return }
-        guard case .success(let urls) = result,
-              let url = urls.first else {
-            return
+        importActivation = nil
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            createDraft = .init(activation: model.editActivation, source: .file(url))
+        case .failure(let error):
+            let error = error as NSError
+            importFailed = error.domain != NSCocoaErrorDomain || error.code != NSUserCancelledError
         }
-        model.createDownloadTask(fileURL: url)
-        isShowingFileResult = true
     }
 }
 
@@ -255,122 +268,7 @@ private struct MobileDownloadActivitySummaryView: View {
 
 }
 
-private struct MobileDownloadCreateTaskView: View {
-    @Bindable var model: MobileDownloadsModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var uri = ""
-    @State private var activation: UUID
-    @FocusState private var inputFocused: Bool
-    let fileOnly: Bool
-    init(model: MobileDownloadsModel, fileOnly: Bool = false) {
-        self.model = model; self.fileOnly = fileOnly; _activation = State(initialValue: model.editActivation)
-    }
-
-    private var canSubmit: Bool {
-        activation == model.editActivation && !model.isCreatingDownloadTask &&
-        model.downloadCreateFeedback == nil &&
-        !uri.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    var body: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-            Form {
-                if !fileOnly {
-                Section {
-                    TextField(
-                        L10n.string("mobile.downloads.create.url.placeholder"),
-                        text: $uri,
-                        axis: .vertical
-                    )
-                    .focused($inputFocused)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                    .autocorrectionDisabled()
-                    .accessibilityLabel(L10n.string("mobile.downloads.create.url.label"))
-                    .accessibilityIdentifier("downloads.create.uri")
-                    Text(L10n.string("mobile.downloads.create.url.help"))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } header: {
-                    Text(L10n.string("mobile.downloads.create.url.label"))
-                }
-                }
-
-                Section(L10n.string("mobile.downloads.create.destination.label")) {
-                    if let destination = model.downloadCreateDefaultDestination {
-                        LabeledContent(
-                            L10n.string("ui.0b7e2876922e4662"),
-                            value: destination
-                        )
-                    } else {
-                        Label(
-                            L10n.string("mobile.downloads.create.destination.default"),
-                            systemImage: "folder"
-                        )
-                        .accessibilityElement(children: .combine)
-                    }
-                }
-
-                if let feedback = model.downloadCreateFeedback {
-                    Section {
-                        DownloadCreateFeedbackView(model: model, feedback: feedback)
-                    }.id("creation-feedback")
-                }
-            }
-            .accessibilityIdentifier("downloads.creation.form")
-            .onChange(of: model.downloadCreateFeedback) { _, feedback in
-                if feedback != nil { proxy.scrollTo("creation-feedback", anchor: .center) }
-            }
-            }
-            .navigationTitle(L10n.string(fileOnly ? "mobile.downloads.create.file.action" : "mobile.downloads.create.title"))
-            .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(model.isCreatingDownloadTask)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(closeTitle) {
-                        model.dismissDownloadCreateFeedback()
-                        dismiss()
-                    }
-                    .accessibilityIdentifier("downloads.create.close")
-                    .disabled(model.isCreatingDownloadTask)
-                    .frame(
-                        minWidth: MobileMetrics.minimumTouchTarget,
-                        minHeight: MobileMetrics.minimumTouchTarget
-                    )
-                }
-                if !fileOnly {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.string("mobile.downloads.create.submit")) {
-                        guard activation == model.editActivation else { return }
-                        inputFocused = false
-                        model.createDownloadTask(uri: uri)
-                    }
-                    .accessibilityIdentifier("downloads.create.submit")
-                    .disabled(!canSubmit)
-                    .frame(
-                        minWidth: MobileMetrics.minimumTouchTarget,
-                        minHeight: MobileMetrics.minimumTouchTarget
-                    )
-                }
-                }
-            }
-        }
-        .onDisappear {
-            if !model.isCreatingDownloadTask {
-                model.dismissDownloadCreateFeedback()
-            }
-        }
-    }
-
-    private var closeTitle: String {
-        model.downloadCreateFeedback == nil
-            ? L10n.string("mobile.downloads.create.cancel")
-            : L10n.string("files.common.close")
-    }
-}
-
-private struct DownloadCreateFeedbackView: View {
+struct DownloadCreateFeedbackView: View {
     @Bindable var model: MobileDownloadsModel
     let feedback: MobileDownloadCreateFeedback
 

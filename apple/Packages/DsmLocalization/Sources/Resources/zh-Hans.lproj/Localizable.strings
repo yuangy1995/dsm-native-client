@@ -3149,13 +3149,13 @@
 "mobile.downloads.create.menu.hint" = "通过链接或任务文件创建 Download Station 任务";
 "mobile.downloads.create.link.action" = "添加链接";
 "mobile.downloads.create.file.action" = "导入任务文件";
-"mobile.downloads.create.file.action.hint" = "选择 .torrent、.nzb 或 .txt 文件创建 Download Station 任务。";
+"mobile.downloads.create.file.action.hint" = "选择任务文件后，可设置保存位置和解压密码，再点击添加。";
 "mobile.downloads.create.title" = "添加下载链接";
 "mobile.downloads.create.url.label" = "网址或磁力链接";
 "mobile.downloads.create.url.placeholder" = "粘贴网址或磁力链接";
-"mobile.downloads.create.url.help" = "任务会使用 NAS 返回的 Download Station 默认位置。";
+"mobile.downloads.create.url.help" = "选择保存位置，或使用 Download Station 默认位置。";
 "mobile.downloads.create.destination.label" = "目标位置";
-"mobile.downloads.create.destination.default" = "Download Station 默认位置";
+"mobile.downloads.create.destination.default" = "NAS 默认位置";
 "mobile.downloads.create.submit" = "创建任务";
 "mobile.downloads.create.cancel" = "取消";
 "mobile.downloads.create.done" = "完成";
@@ -3786,8 +3786,8 @@
 "mobile.downloads.bt-search.result.size" = "大小";
 "mobile.downloads.bt-search.result.seeds" = "做种数";
 "mobile.downloads.bt-search.result.leeches" = "下载数";
-"mobile.downloads.bt-search.result.create" = "创建下载任务";
-"mobile.downloads.bt-search.result.create.hint" = "从此结果创建 Download Station 任务。";
+"mobile.downloads.bt-search.result.create" = "添加下载…";
+"mobile.downloads.bt-search.result.create.hint" = "选择保存位置后，再添加这项下载。";
 "mobile.downloads.bt-search.result.unknown" = "未知";
 "mobile.chat.create.action" = "新建会话";
 "mobile.chat.create.hint" = "选择用户开始一对一聊天或创建私人群聊。";
@@ -6432,3 +6432,5 @@
 "download.creation.file" = "任务文件下载";
 
 "download.creation.refresh" = "刷新任务列表";
+
+"download.creation.use-default" = "使用默认位置";

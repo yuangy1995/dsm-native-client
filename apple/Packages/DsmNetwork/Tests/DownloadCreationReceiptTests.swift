@@ -5,6 +5,34 @@ import XCTest
 
 final class DownloadCreationReceiptTests: XCTestCase {
     private let uri = "https://files.example.invalid/synthetic.torrent"
+    func test创建文件目录与密码原值包括全空格密码均保留() async throws {
+        let file = try input("synthetic"); defer { try? FileManager.default.removeItem(at: file) }
+        for password in ["  synthetic secret  ", "   ", ""] {
+            let transport = MockHTTPTransport(responses: [page(), response(#"{"success":true}"#)])
+            let result = try await repository(transport).createDownloadTaskFileResult(
+                .init(fileURL: file, destination: " shared/folder ", unzipPassword: password), willSubmit: { _ in }, didAccept: {})
+            XCTAssertTrue(result.requestAccepted)
+            let bodies = await transport.recordedUploadBodies(), calls = await transport.recordedRequests()
+            let body = try XCTUnwrap(String(data: XCTUnwrap(bodies.first), encoding: .utf8))
+            XCTAssertEqual(Self.field("version", calls[1]), "2")
+            XCTAssertTrue(body.contains("name=\"destination\"\r\n\r\n shared/folder \r\n"))
+            if password.isEmpty { XCTAssertFalse(body.contains("name=\"unzip_password\"")) }
+            else { XCTAssertTrue(body.contains("name=\"unzip_password\"\r\n\r\n\(password)\r\n")) }
+        }
+    }
+    func test链接目录空格不被修剪且文件控制字符密码发送前拒绝() async throws {
+        let transport = MockHTTPTransport(responses: [page(), response(#"{"success":true}"#)])
+        _ = try await repository(transport).createDownloadTaskResult(.init(uri: uri, destination: " shared/folder "), willSubmit: { _ in }, didAccept: {})
+        let calls = await transport.recordedRequests(); XCTAssertEqual(Self.field("destination", calls[1]), " shared/folder ")
+        let file = try input("synthetic"); defer { try? FileManager.default.removeItem(at: file) }
+        for password in ["\nsecret\n", "secret\0"] {
+            let none = MockHTTPTransport(responses: [])
+            let result = try await repository(none).createDownloadTaskFileResult(.init(fileURL: file, destination: nil, unzipPassword: password),
+                willSubmit: { _ in XCTFail("无效密码不得提交") }, didAccept: { XCTFail("未提交") })
+            XCTAssertEqual(result.result.status, .confirmedFailure)
+            let requests = await none.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+        }
+    }
     func testMac旧Void创建签名使用三版并接受官方空回执() async throws {
         let transport = MockHTTPTransport(responses: [response(#"{"success":true}"#)])
         try await repository(transport).createDownloadTask(uri: uri, destination: "synthetic-downloads")
