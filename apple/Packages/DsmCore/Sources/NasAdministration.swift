@@ -1575,6 +1575,8 @@ public protocol NasSettingsRepository: Sendable {
     func loadSystemProcesses(start: Int, limit: Int) async throws -> NasProcessDirectory
     func loadConnections(offset: Int, limit: Int) async throws -> NasConnectionPage
     func disconnectConnection(_ connection: NasConnection) async throws
+    func loadServiceForManagement(_ kind: NasServiceKind) async throws -> NasServiceSettings
+    func changeServiceResult(_ change: NasServiceChange, checkpoint: @escaping @Sendable (NasServiceCheckpoint) async throws -> Void) async throws -> MutationResult
     func loadFileServiceSettings() async throws -> NasFileServiceSettings
     func saveFileServiceSettings(_ settings: NasFileServiceSettings) async throws
     func saveFileServiceSettingsResult(
@@ -1648,6 +1650,8 @@ public protocol NasSettingsRepository: Sendable {
 }
 
 public extension NasSettingsRepository {
+    func loadServiceForManagement(_ kind: NasServiceKind) async throws -> NasServiceSettings { throw unsupportedManagementOperation() }
+    func changeServiceResult(_ change: NasServiceChange, checkpoint: @escaping @Sendable (NasServiceCheckpoint) async throws -> Void) async throws -> MutationResult { throw unsupportedManagementOperation() }
     func savePowerScheduleResult(_ entries: [NasPowerScheduleEntry], replacing baseline: NasPowerScheduleSnapshot) async throws -> MutationResult {
         throw unsupportedManagementOperation()
     }

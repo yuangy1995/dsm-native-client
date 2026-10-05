@@ -25,9 +25,9 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private var activeAccountDeletionNames: Set<String> = []
     private var activeGroupDeletionNames: Set<String> = []
     private var activeEthernetUpdateIDs: Set<String> = []
-    private var isFileServiceSettingsUpdateActive = false
-    private var isTerminalSettingsUpdateActive = false
-    private var isProxySettingsUpdateActive = false
+    var isFileServiceSettingsUpdateActive = false
+    var isTerminalSettingsUpdateActive = false
+    var isProxySettingsUpdateActive = false
     private var isSecuritySettingsUpdateActive = false
     private var isHardwareSettingsUpdateActive = false
     private var isRemoteAccessSettingsUpdateActive = false
@@ -476,7 +476,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
 
     private func submitFileServiceMutationStep(
         _ step: FileServiceSettingsMutationStep,
-        settings: NasFileServiceSettings
+        settings: NasFileServiceSettings,
+        version: Int? = nil
     ) async throws {
         switch step {
         case .smb:
@@ -488,6 +489,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.coreFileServiceSMB,
                 method: "set",
+                version: version,
                 parameters: ["enable_samba": .boolean(enabled)]
             )
         case .nfs:
@@ -499,12 +501,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.coreFileServiceNFS,
                 method: "set",
+                version: version,
                 parameters: ["enable_nfs": .boolean(enabled)]
             )
         case .ftp:
             try await callVoid(
                 DsmAPIName.coreFileServiceFTP,
                 method: "set",
+                version: version,
                 parameters: Self.fileServiceFTPParameters(
                     settings
                 )
@@ -513,6 +517,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.coreFileServiceSFTP,
                 method: "set",
+                version: version,
                 parameters: Self.fileServiceSFTPParameters(
                     settings
                 )
@@ -535,9 +540,47 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.coreFileServiceDiscovery,
                 method: "set",
+                version: version,
                 parameters: ["enable_smb_time_machine": .boolean(enabled)]
             )
         }
+    }
+
+    func submitManagedServiceStep(_ step: NasServiceStep, settings: NasServiceSettings, version: Int) async throws {
+        switch settings {
+        case .fileServices(let value):
+            let part: FileServiceSettingsMutationStep
+            switch step {
+            case .smb: part = .smb
+            case .nfs: part = .nfs
+            case .ftp: part = .ftp
+            case .sftp: part = .sftp
+            case .webDiscovery: part = .webDiscovery
+            case .fileDiscovery: part = .fileDiscovery
+            default: throw unavailableError()
+            }
+            try await submitFileServiceMutationStep(part, settings: value, version: version)
+        case .terminal(let value):
+            guard step == .terminal else { throw unavailableError() }
+            try await submitTerminalSettings(value, version: version)
+        case .proxy(let value):
+            guard step == .proxy else { throw unavailableError() }
+            try await submitProxySettings(value, version: version)
+        }
+    }
+
+    private func submitTerminalSettings(_ settings: NasTerminalSettings, version: Int? = nil) async throws {
+        var parameters: [String: DsmParameterValue] = ["enable_ssh": .boolean(settings.isSSHEnabled), "enable_telnet": .boolean(settings.isTelnetEnabled)]
+        if let port = settings.sshPort { parameters["ssh_port"] = .integer(port) }
+        try await callVoid(DsmAPIName.coreTerminal, method: "set", version: version, parameters: parameters)
+    }
+
+    private func submitProxySettings(_ settings: NasProxySettings, version: Int? = nil) async throws {
+        var parameters: [String: DsmParameterValue] = ["enable": .boolean(settings.isEnabled)]
+        if settings.isEnabled, let port = settings.port {
+            parameters["http_host"] = .string(settings.normalizedHost); parameters["http_port"] = .integer(port)
+        }
+        try await callVoid(DsmAPIName.coreNetworkProxy, method: "set", version: version, parameters: parameters)
     }
 
     private static func fileServiceFTPParameters(
@@ -1048,19 +1091,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
 
-        var parameters: [String: DsmParameterValue] = [
-            "enable_ssh": .boolean(settings.isSSHEnabled),
-            "enable_telnet": .boolean(settings.isTelnetEnabled)
-        ]
-        if let port = settings.sshPort {
-            parameters["ssh_port"] = .integer(port)
-        }
         do {
-            try await callVoid(
-                DsmAPIName.coreTerminal,
-                method: "set",
-                parameters: parameters
-            )
+            try await submitTerminalSettings(settings)
         } catch let error as AppError {
             return try await terminalSubmissionFailureResult(
                 error,
@@ -1586,19 +1618,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
 
-        var parameters: [String: DsmParameterValue] = [
-            "enable": .boolean(normalized.isEnabled)
-        ]
-        if normalized.isEnabled, let port = normalized.port {
-            parameters["http_host"] = .string(normalized.host)
-            parameters["http_port"] = .integer(port)
-        }
         do {
-            try await callVoid(
-                DsmAPIName.coreNetworkProxy,
-                method: "set",
-                parameters: parameters
-            )
+            try await submitProxySettings(normalized)
         } catch let error as AppError {
             return try await proxySubmissionFailureResult(
                 error,
