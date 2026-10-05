@@ -8,12 +8,14 @@ struct MobileDownloadSelectionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selected: Set<String> = []
     @State private var batchID: UUID?
+    @State private var removalDraft: MobileDownloadRemovalDraft?
     @State private var editDraft: MobileDownloadEditDraft?
     private var candidates: [DownloadStationTask] {
-        model.visibleTasks.filter { model.canPauseDownloadTask($0) || model.canResumeDownloadTask($0) || model.canEditDownloadTask($0) }
+        model.visibleTasks.filter { model.canPauseDownloadTask($0) || model.canResumeDownloadTask($0) || model.canEditDownloadTask($0) || model.canDeleteDownloadTask($0) }
     }
     private var pauseSelection: [DownloadStationTask] { candidates.filter { selected.contains($0.id) && model.canPauseDownloadTask($0) } }
     private var resumeSelection: [DownloadStationTask] { candidates.filter { selected.contains($0.id) && model.canResumeDownloadTask($0) } }
+    private var removalSelection: [DownloadStationTask] { candidates.filter { selected.contains($0.id) && model.canDeleteDownloadTask($0) } }
     private var editSelection: [DownloadStationTask] { candidates.filter { selected.contains($0.id) && model.canEditDownloadTask($0) } }
 
     var body: some View {
@@ -51,6 +53,19 @@ struct MobileDownloadSelectionSheet: View {
             .navigationTitle(L10n.string("mobile.downloads.batch.select"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button(L10n.string("download.removal.action"), role: .destructive) {
+                            removalDraft = .init(activation: model.editActivation, tasks: removalSelection, forceComplete: false)
+                        }
+                        Button(L10n.string("download.removal.force-title"), role: .destructive) {
+                            removalDraft = .init(activation: model.editActivation, tasks: removalSelection, forceComplete: true)
+                        }
+                    } label: { Label(L10n.string("download.removal.title"), systemImage: "trash") }
+                    .disabled(removalSelection.isEmpty)
+                    .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
+                    .accessibilityIdentifier("downloads.batch.removal-menu")
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("files.common.close")) { dismiss() }
                         .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
@@ -72,6 +87,7 @@ struct MobileDownloadSelectionSheet: View {
                 }
             }
             .navigationDestination(item: $batchID) { id in MobileDownloadControlResultView(model: model, id: id) }
+            .sheet(item: $removalDraft) { draft in MobileDownloadRemovalView(model: model, draft: draft) }
             .sheet(item: $editDraft) { draft in
                 MobileDownloadEditView(model: model, draft: draft, fileRepository: fileRepository)
             }
@@ -90,16 +106,28 @@ struct MobileDownloadControlRecordsView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if (model.controlRecovery.failed || model.editRecovery.failed || model.createRecovery.failed) && model.controlEntries.isEmpty && model.editEntries.isEmpty && model.createEntries.isEmpty {
+                if (model.controlRecovery.failed || model.editRecovery.failed || (model.createRecovery.failed || model.removalRecovery.failed)) && model.controlEntries.isEmpty && model.editEntries.isEmpty && (model.createEntries.isEmpty && model.removalEntries.isEmpty) {
                     ContentUnavailableView(L10n.string("mobile.downloads.batch.records"), systemImage: "exclamationmark.circle",
                         description: Text(L10n.string("mobile.downloads.batch.storage-error"))).fillsAvailableContentArea()
-                } else if model.controlEntries.isEmpty && model.editEntries.isEmpty && model.createEntries.isEmpty {
+                } else if model.controlEntries.isEmpty && model.editEntries.isEmpty && (model.createEntries.isEmpty && model.removalEntries.isEmpty) {
                     ContentUnavailableView(L10n.string("mobile.downloads.batch.records-empty"), systemImage: "clock",
                         description: Text(L10n.string("mobile.downloads.batch.records-empty-help"))).fillsAvailableContentArea()
                 } else {
                     List {
-                        if model.controlRecovery.failed || model.editRecovery.failed || model.createRecovery.failed {
+                        if model.controlRecovery.failed || model.editRecovery.failed || (model.createRecovery.failed || model.removalRecovery.failed) {
                             Text(L10n.string("download.edit.storage-error")).foregroundStyle(.orange)
+                        }
+                        ForEach(model.removalEntries) { entry in
+                            NavigationLink {
+                                MobileDownloadRemovalResultView(model: model, id: entry.id)
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(L10n.string(entry.items.first?.removal.forceComplete == true ? "download.removal.force-title" : "download.removal.title"))
+                                    Text(entry.createdAt.formatted(.dateTime.locale(L10n.locale))).font(.caption).foregroundStyle(.secondary)
+                                    Text(L10n.string("mobile.downloads.batch.progress", entry.items.filter { $0.phase == .complete }.count, entry.items.count))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.accessibilityIdentifier("downloads.removal-record.\(entry.id)")
                         }
                         ForEach(model.createEntries) { entry in
                             NavigationLink {

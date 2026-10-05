@@ -150,19 +150,19 @@ final class MobileDownloadInventoryTests: XCTestCase {
                     counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0)), taskID: "new",
                     task: DownloadStationTask(id: "new", title: "New", status: "waiting"))
             }
-            model.downloadStationDeleteOverride = { _, _ in
-                await writeGate.wait()
-                return try MutationResult(status: .confirmedSuccess, operation: "downloadDelete",
-                    submitted: true, requiresRefresh: true,
-                    counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0))
+            let removalTransport = DownloadRemovalTransport(tasks: [original], holdWrite: true)
+            if removesTask {
+                let profile = try XCTUnwrap(model.activeProfile)
+                model.configure(profile: profile, repository: try makeDownloadRemovalRepository(profile: profile, transport: removalTransport))
+                model.downloadSnapshot = DownloadStationSnapshot(source: .official, tasks: [original], isComplete: true)
             }
             model.downloadStationLoadOverride = { await readGate.wait(); return DownloadStationSnapshot(source: .official, tasks: [original], isComplete: true) }
-            if removesTask { model.deleteDownloadTask(original) }
+            if removesTask { XCTAssertNotNil(model.startDownloadRemoval([original], forceComplete: false, activation: model.editActivation)) }
             else { model.createDownloadTask(uri: "https://files.example.invalid/sample.zip") }
             let write = removesTask ? model.downloadDeleteTask : model.downloadCreateTask
-            await writeGate.started()
+            if removesTask { await removalTransport.waitUntilHeld() } else { await writeGate.started() }
             let read = Task { await model.load() }; await readGate.started()
-            await writeGate.finish(); await write?.value
+            if removesTask { await removalTransport.release() } else { await writeGate.finish() }; await write?.value
             await readGate.finish(); await read.value
             XCTAssertEqual(Set(model.downloadSnapshot?.tasks.map(\.id) ?? []), removesTask ? [] : ["one", "new"])
         }

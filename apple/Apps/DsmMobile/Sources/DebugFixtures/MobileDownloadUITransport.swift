@@ -12,11 +12,12 @@ actor MobileDownloadUITransport: DsmBinaryHTTPTransport {
     private var settings: [DownloadSettingsField: DownloadSettingsValue]
     private var hasUnknownSettingsWrite = false
     private var destinations: [String: String]
+    private var removedTaskIDs: Set<String>
     private var createdDownload: Bool
     private var rssUpdated = false
     private var rssDisconnected = false
-    init(state: String, statuses: [String: String] = [:], settings: [DownloadSettingsField: DownloadSettingsValue] = [:], destinations: [String: String] = [:]) {
-        self.state = state; self.statuses = statuses
+    init(state: String, statuses: [String: String] = [:], settings: [DownloadSettingsField: DownloadSettingsValue] = [:], destinations: [String: String] = [:], removedTaskIDs: Set<String> = []) {
+        self.state = state; self.statuses = statuses; self.removedTaskIDs = removedTaskIDs
         self.createdDownload = state == "downloads-create-recover" || state == "downloads-create-saved"
         self.destinations = destinations
         self.settings = [.destination: .text("Sample folder"), .emule: .flag(false), .autoExtract: .flag(false),
@@ -107,16 +108,23 @@ actor MobileDownloadUITransport: DsmBinaryHTTPTransport {
             if hasUnknownWrite { throw URLError(.notConnectedToInternet) }
             var tasks = state == "downloads-empty" || state == "downloads-controls-empty" ? [] : [task("sample-1", "Sample archive.zip", "downloading"),
                 task("sample-2", "Paused document.pdf", "paused"), task("sample-3", "Finished video.mp4", "finished")]
-            if state.hasPrefix("downloads-controls-"), state != "downloads-controls-empty" {
+            if (state.hasPrefix("downloads-controls-") && state != "downloads-controls-empty") || state == "downloads-removal-seeding" {
                 tasks.append(task("sample-4", "Second archive.zip", "seeding"))
             }
             if createdDownload { tasks.append(task("sample-created", "Added download.zip", "waiting")) }
+            tasks.removeAll { removedTaskIDs.contains($0["id"] as? String ?? "") }
             data = ["tasks": tasks, "offset": 0, "total": tasks.count]
         case (DsmAPIName.downloadStationTask, "pause"), (DsmAPIName.downloadStationTask, "resume"):
             guard let id = value("id"), ["sample-1", "sample-2", "sample-4"].contains(id) else { throw URLError(.badServerResponse) }
             statuses[id] = value("method") == "pause" ? "paused" : "downloading"
             if state == "downloads-controls-unknown" { hasUnknownWrite = true }
             data = [:]
+        case (DsmAPIName.downloadStationTask, "delete"):
+            guard let id = value("id"), value("version") == "1", ["true", "false"].contains(value("force_complete") ?? "") else { throw URLError(.badServerResponse) }
+            let code = state == "downloads-removal-partial" && id == "sample-2" ? 402 : 0
+            if code == 0 { removedTaskIDs.insert(id) }
+            if state == "downloads-removal-unknown" { hasUnknownWrite = true; throw URLError(.timedOut) }
+            data = [["id": id, "error": code]]
         case (DsmAPIName.downloadStationTask, "edit"):
             guard let id = value("id"), let destination = value("destination"), value("version") == "2" else { throw URLError(.badServerResponse) }
             let code = state == "downloads-edit-partial" && id == "sample-2" ? 402 : 0
@@ -129,7 +137,9 @@ actor MobileDownloadUITransport: DsmBinaryHTTPTransport {
             detailAttempts += 1
             if state == "downloads-details-error", detailAttempts == 1 { throw URLError(.timedOut) }
             let id = value("id") ?? "sample-1"
-            var item = task(id, id == "sample-created" ? "Added download.zip" : "Sample archive.zip", "downloading")
+            let title = ["sample-1": "Sample archive.zip", "sample-2": "Paused document.pdf", "sample-3": "Finished video.mp4", "sample-4": "Second archive.zip", "sample-created": "Added download.zip"][id] ?? "Sample archive.zip"
+            let status = ["sample-2": "paused", "sample-3": "finished", "sample-4": "seeding", "sample-created": "waiting"][id] ?? "downloading"
+            var item = task(id, title, status)
             item["type"] = "bt"; item["username"] = "Sample user"
             item["additional"] = [
                 "detail": ["destination": destinations[id] ?? "Sample Downloads", "create_time": 1_750_000_000,
