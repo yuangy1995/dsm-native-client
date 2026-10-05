@@ -25,7 +25,7 @@ enum MobileUIFixture {
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
             let officeState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? ""
             let officeTransport = MobileOfficeUITransport(state: officeState)
-            let uploadFixture = officeState.hasPrefix("nas-ddns") || officeState.hasPrefix("nas-storage") || officeState.hasPrefix("nas-logs") || officeState.hasPrefix("nas-analysis") || officeState.hasPrefix("office-") || officeState.hasPrefix("chat-") || officeState.hasPrefix("downloads-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = officeState.hasPrefix("nas-region") || officeState.hasPrefix("nas-ddns") || officeState.hasPrefix("nas-storage") || officeState.hasPrefix("nas-logs") || officeState.hasPrefix("nas-analysis") || officeState.hasPrefix("office-") || officeState.hasPrefix("chat-") || officeState.hasPrefix("downloads-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -55,6 +55,7 @@ enum MobileUIFixture {
                 versions[DsmAPIName.storageOverview] = 1; versions[DsmAPIName.coreSystemLog] = 1
                 if officeState != "nas-storage-unsupported" { versions[DsmAPIName.coreStorageDisk] = 1 }
             }
+            if officeState.hasPrefix("nas-region"), officeState != "nas-region-unsupported" { versions[DsmAPIName.coreRegionNTP] = 3 }
             if officeState.hasPrefix("nas-ddns"), officeState != "nas-ddns-unsupported" {
                 versions[DsmAPIName.coreDDNSProvider] = 1; versions[DsmAPIName.coreDDNSRecord] = 1
             }
@@ -120,6 +121,10 @@ enum MobileUIFixture {
                     session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses, settings: settings, destinations: destinations, removedTaskIDs: removedTaskIDs))
             }
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
+            if officeState.hasPrefix("nas-region") {
+                model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities,
+                    session: session, transport: MobileRegionUITransport(mode: officeState))
+            }
             if officeState.hasPrefix("nas-ddns") {
                 model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities,
                     session: session, transport: MobileDDNSUITransport(mode: officeState))
@@ -363,7 +368,7 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
                 "SYNO.SDS.DownloadStation.Application": grantsDownloads,
                 "SYNO.SDS.Chat.Application": pageState == "modules-all" || pageState.hasPrefix("chat-"),
                 "SYNO.SDS.Virtualization.Application": pageState == "modules-all"],
-                "Session": ["is_admin": isPermissionFixture || pageState == "modules-all" || pageState.hasPrefix("nas-read-") || pageState.hasPrefix("nas-ddns") || pageState.hasPrefix("nas-storage") || pageState.hasPrefix("nas-logs") || pageState.hasPrefix("nas-analysis")]]
+                "Session": ["is_admin": isPermissionFixture || pageState == "modules-all" || pageState.hasPrefix("nas-read-") || pageState.hasPrefix("nas-region") || pageState.hasPrefix("nas-ddns") || pageState.hasPrefix("nas-storage") || pageState.hasPrefix("nas-logs") || pageState.hasPrefix("nas-analysis")]]
         case ("SYNO.Foto.UserInfo", "me"):
             result = ["enabled": pageState == "modules-all" || pageState.hasPrefix("photo-"), "id": 1]
         case ("SYNO.Foto.Setting.User", "get"):
