@@ -23,6 +23,7 @@ struct MobileNasSettingsView: View {
                 model.ddnsModel.cancelRead()
                 model.regionModel.cancelRead()
                 model.directoryModel.cancelRead()
+                model.serviceSettingsModel.cancelReads()
                 model.nasStorageModel.cancelAnalysis()
             }
         }
@@ -47,6 +48,8 @@ struct MobileNasSettingsView: View {
                 MobileDirectoryScreen(model: model.directoryModel)
             } else if destination == .region {
                 MobileRegionScreen(model: model.regionModel)
+            } else if let kind = destination.serviceKind {
+                MobileServiceSettingsScreen(model: model.serviceSettingsModel, kind: kind).id(kind)
             } else if destination.isDetails {
                 MobileNasDetailsScreen(
                     model: model.nasDetailsModel,
@@ -83,6 +86,8 @@ struct MobileNasSettingsView: View {
                 MobileDirectoryScreen(model: model.directoryModel)
             } else if selectedSection == .region {
                 MobileRegionScreen(model: model.regionModel)
+            } else if let kind = selectedSection.serviceKind {
+                MobileServiceSettingsScreen(model: model.serviceSettingsModel, kind: kind).id(kind)
             } else {
                 List { selectedDetail }
                     .listStyle(.insetGrouped)
@@ -133,7 +138,7 @@ struct MobileNasSettingsView: View {
         case .system: systemSection
         case .performance: performanceSection
         case .storage: storageSection
-        case .ddns, .region, .accounts: EmptyView()
+        case .ddns, .region, .accounts, .fileServices, .terminal, .proxy: EmptyView()
         case .update: updateSection
         case .packages, .scheduledTasks, .logs, .connections, .externalStorage, .processes, .shareAccess, .zram, .powerSchedule:
             MobileNasDetailsSectionView(

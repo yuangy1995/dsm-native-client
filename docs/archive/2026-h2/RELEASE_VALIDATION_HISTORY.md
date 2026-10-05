@@ -2245,3 +2245,62 @@ R5 构建通过，风险确认使用原生二级表单，确认表单实际关�
 - Mac 三处反馈修复以 `ba4dfe6` 独立提交，提交前 `git fetch origin main` 确认远端无新提交。当前移动账户片同样在 main 完整提交；云端 `37300934405` 的两端旧整轮尚未结束时暂不推送取消，已知映像短暂占用修复仍待含修复的新云端结果。没有创建分支、PR、标签、正式发布或真实 NAS 写入。
 
 M6b1 当前环境开发完成。下一片为 M6b2 文件服务、终端及代理；其余 M6、M7、M8 和整体验收仍继续，整个目标保持进行中。
+
+## 2026-10-05 移动 M6b2 文件服务、终端与代理
+
+基线 `553b623e`、main 工作区干净。四个已验证提交尚未推送，避免取消 `37300934405` 的两端完整移动回归；该 run 的 macOS 已知 DMG 短暂占用修复在本地提交，不能视作新云端通过。当前片单一修改移动服务设置、必要组合根/导航/资源/工程/合成测试，共享 Core/Network 的兼容增量与对应文档；Mac App、Android、Windows 未改源码。
+
+实现原生三类设置表单与具体后果确认、完整原值/权限检查及独立服务恢复记录。实际写请求与旧 Mac 调用共用；文件服务逐组记录，终端/代理每次完整请求记为一组。单请求部分字段已生效时保留该事实和整组未知保护；未知不自动补写、未提交后组不认领成功。对抗复核追加最后回读所有已写组，外部改回前组不能仍报告全部成功。详细真实设备条件位于主计划 M6b2。
+
+截至首轮本机验证：
+
+- 共享初次增量编译及 `NasDirectoryFlowTests` 11 项通过（`m6b2-shared-compile.log`）。新增服务测试第一次编译因合成测试将 `Any` 跨 actor 传递被 Swift 6 拒绝；改为 Sendable 值后新 14 项通过（`m6b2-shared-focused-r2.log`）。扩展最终回读和新旧入口互斥后，`swift test --package-path apple --jobs 2 --filter 'NasServiceFlowTests|DsmNasAdministrationRepositoryTests'` 为 201 项/0 失败，其中新服务 16 项（`m6b2-shared-focused-r3.log`）。
+- 移动构建 R1 因导航标题文件未导入 DsmCore 失败，补导入后 R2 通过；本地化扫描指出新动态插值资源键无法校验，改为稳定枚举和显式完整资源键，未放宽扫描器。R3 构建和 Apple 6494/Android 2188/Windows 3402 资源完整性、参数、引用与硬编码检查通过。
+- R1 两台模拟器完整单元均 **1354 项、4 条既有系统条件跳过、0 失败**，新增 `MobileServiceSettingsTests` 17 项均通过。真实锁屏文件保护按主计划后置，不新增跳过或将模拟器结果称为真机通过。九项新实际 UI 正在执行，最终结果另补。
+
+实际命令（设备同本日既有两台，使用项目当前 Xcode，不升级工具链）：
+
+```sh
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b2-phone-r1.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileServiceSettingsUITests -parallel-testing-enabled NO
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b2-pad-r1.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileServiceSettingsUITests -parallel-testing-enabled NO
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+
+M6b2 后续验证记录：
+
+- 完整共享 `swift test --package-path apple --jobs 2` 为 **2781 项 XCTest、172 条既有跳过、0 失败，另 12 项 Swift Testing 通过**（`m6b2-shared-full.log`）。Mac Release 构建通过（`m6b2-macos.log`），实际 `lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash` 为 `x86_64 arm64`；没有安装或启动 Mac 测试包。
+- R1 九项 UI：iPhone 六项通过、三项失败；iPad 七项通过、两项失败。两端代理替换及 iPhone 终端端口替换失败源于测试点击合并后的标签/值区域或只选中部分文本；实际输入值断言保留。只读场景最初从无管理员权限启动，NAS 模块未出现，无法进入目标页面；合成场景改成已进入设置后撤销管理权限，保留实际组合根权限读取。
+- R4 构建通过。R2 深色定向两端各 17 项本片单元通过；iPhone 五项 UI（中文大字、代理启停、文件服务、终端端口、缺失字段/权限撤回）全部通过；iPad 中文大字和权限撤回两项通过，三个输入相关 UI 因长按未出现系统“全选”菜单失败。导出录像/层级证明 iPhone 长地址标签和值分两行，iPad 有键盘焦点但没有长按菜单。测试改为 iPad 点击可见值末尾并删除原值，再断言完整新值；iPhone 保持已通过的系统全选操作。
+- 截图审查发现空设置页残留无用编辑/搜索控件，以及不可用状态重复显示两条说明；本片页面改为隐藏空状态控件，并直接显示具体原因和重试。R5/R6 构建通过；改动仅本片界面和合成测试，不修改网络或权限语义。R3 对两端五态及 iPad 三类输入流程定向复测，结果待收。
+
+两端全部照片均为模拟器合成数据。中文大字深色终端表单/完整风险说明已实际查看，保留在忽略目录 `build/m6b2-preview`；正常、加载、空内容、筛选为空、不可用和文件服务确认/保存截图也已检查。真实锁屏、VoiceOver、iPad 键盘/分屏及 NAS 服务副作用仍按主计划待用户验证。
+
+后续切片只读核对另外发现 Mac `saveEthernetInterface`、`saveSecurity`、`saveHardware` 仍有相同缓存覆盖结果分支；已向用户请求限定为三处反馈及回归的单独授权，未修改这三处。`saveRemoteAccess` 已按实际结果判断，无需纳入该修正。
+
+
+M6b2 最终收尾：
+
+- R3 深色定向复测：iPhone 五态一项通过；iPad 五态、代理启停、文件服务、终端端口共四项全部通过。九项新 UI 至此均有两端通过证据；R1/R2 的失败已保留，不能把跨轮通过说成最初整组通过。
+- 最终审查使搜索基于稳定服务标识，而非翻译后的开关状态；新增实际 SMB 筛选断言。关闭代理只比较开关，保留地址变化不得被记为本次部分生效，现有网络测试补此断言。最终共享 `m6b2-shared-final.log` 仍为 **2781 XCTest / 172 条既有跳过 / 0 失败，加 12 Swift Testing 通过**；Mac `m6b2-macos-final.log` 再次构建成功，实际 `lipo` 为 **x86_64 arm64**。
+- R7 最终移动构建成功；R4 最终两端完整单元各 **1354 项 / 4 条既有跳过 / 0 失败**。iPhone 五态/稳定搜索一项 UI 通过，iPad 五态/稳定搜索与代理启停两项 UI 全部通过，结果包为 `m6b2-phone-r4.xcresult` / `m6b2-pad-r4.xcresult`，均 exit 0。R2 的中文大字、权限撤回，以及 R1 的部分保存/明确拒绝/重启恢复等通过证据仍各自保留。
+- 同一 XcodeGen 2.46.0 再生成工程前后 SHA-256 均为 `507d0d7a99b53e4c12a75a832a9e8bcd873a011e0fac3b1f48b5e6e8b681f0f9`；最终资源 6494/2188/3402、请求 179+1、私有样本 29/文档引用 48、文档和差异检查通过。
+- 已实际检查两端浅色文件服务确认/保存、加载/空内容/筛选/不可用，以及深色中文大字终端编辑/完整风险说明；最终空状态无无用编辑/搜索，不可用只保留一条原因与重试。十张供用户查看的合成截图保留 `build/m6b2-preview`；一次性导出的录像、层级及当前帧清理，正式测试日志/结果包保留忽略目录。
+- 提交前再次 fetch，main 与 origin/main 比较为本地领先四条、远端无新增。最新查询 `37300934405` 两台移动全量仍在运行，shared-macos 是旧 DMG 失败；本片在 main 语义完整提交，暂不推送取消唯一全量运行。没有创建分支/PR/标签、正式发布、安装 Mac 包或执行真实 NAS 写入。
+
+最终定向命令（同一派生构建，完整单元及选定 UI）：
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b2-phone-r4.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test五态搜索与读取失败恢复 -parallel-testing-enabled NO
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b2-pad-r4.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test五态搜索与读取失败恢复 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test代理地址校验保存并关闭代理 -parallel-testing-enabled NO
+```
+
+M6b2 源码与当前环境验收完成，真实 NAS 服务连接、Telnet、代理及真机文件保护/辅助功能仍为具体 `PENDING_USER_VALIDATION`。整体 M6–M8 目标仍在进行。
