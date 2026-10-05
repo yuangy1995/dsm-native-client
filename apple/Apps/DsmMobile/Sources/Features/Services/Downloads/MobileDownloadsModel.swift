@@ -92,6 +92,12 @@ final class MobileDownloadsModel {
     var downloadDeleteFeedback: MobileDownloadDeleteFeedback?
 
     let settings: MobileDownloadSettingsModel
+    let editRecovery: MobileDownloadEditStore
+    var editActivation = UUID()
+    var editBatchID: UUID?
+    var editErrorKey: String?
+    @ObservationIgnored var downloadEditTask: Task<Void, Never>?
+    @ObservationIgnored var downloadEditGeneration: UInt64 = 0
     let controlRecovery: MobileDownloadControlStore
     var controlBatchID: UUID?
     var controlCancelRequestedID: UUID?
@@ -102,6 +108,7 @@ final class MobileDownloadsModel {
         self.transferCoordinator = transferCoordinator
         self.controlRecovery = MobileDownloadControlStore(root: controlRoot)
         self.settings = MobileDownloadSettingsModel(root: controlRoot)
+        self.editRecovery = MobileDownloadEditStore(root: controlRoot)
     }
 
     func configure(profile: NasProfile?, repository: DsmServiceManagementRepository?) {
@@ -141,7 +148,7 @@ final class MobileDownloadsModel {
         loadGeneration &+= 1
         let generation = loadGeneration
         let identity = activeProfile.map(MobileWorkspaceIdentity.init)
-        let mutationGenerations = [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration]
+        let mutationGenerations = [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration, downloadEditGeneration]
         guard identity != nil else { return }
         isLoading = true
         message = nil
@@ -152,7 +159,7 @@ final class MobileDownloadsModel {
             else { throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("ui.38245f0b3e213b62")) }
             try Task.checkCancellation()
             guard generation == loadGeneration, identity == activeProfile.map(MobileWorkspaceIdentity.init) else { return }
-            guard mutationGenerations == [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration] else {
+            guard mutationGenerations == [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration, downloadEditGeneration] else {
                 isLoading = false
                 return
             }
@@ -160,6 +167,7 @@ final class MobileDownloadsModel {
             syncDownloadSnapshotToActivity()
             isLoading = false
             recoverPendingDownloadControls()
+            recoverPendingDownloadEdits()
         } catch {
             guard generation == loadGeneration, identity == activeProfile.map(MobileWorkspaceIdentity.init) else { return }
             if !(error is CancellationError) {
@@ -205,7 +213,7 @@ final class MobileDownloadsModel {
     func loadDetails(id: String) async throws -> DownloadStationTaskDetails {
         let identity = activeProfile.map(MobileWorkspaceIdentity.init)
         let repository = serviceRepository
-        let mutationGenerations = [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration]
+        let mutationGenerations = [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration, downloadEditGeneration]
         guard identity != nil else { throw CancellationError() }
         let details: DownloadStationTaskDetails
         if let downloadDetailsOverride { details = try await downloadDetailsOverride(id) }
@@ -215,7 +223,7 @@ final class MobileDownloadsModel {
         try Task.checkCancellation()
         guard identity == activeProfile.map(MobileWorkspaceIdentity.init),
               repository.map(ObjectIdentifier.init) == serviceRepository.map(ObjectIdentifier.init),
-              mutationGenerations == [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration] else {
+              mutationGenerations == [downloadControlGeneration, downloadCreateGeneration, downloadDeleteGeneration, downloadEditGeneration] else {
             throw CancellationError()
         }
         guard details.task.id == id else {
@@ -266,6 +274,8 @@ final class MobileDownloadsModel {
     }
 
     func deactivateDownloads() {
+        editActivation = UUID(); downloadEditGeneration &+= 1
+        downloadEditTask?.cancel(); downloadEditTask = nil; editBatchID = nil; editErrorKey = nil
         controlBatchID = nil
         controlCancelRequestedID = nil
         controlErrorKey = nil
@@ -300,6 +310,7 @@ final class MobileDownloadsModel {
 
     func canDeleteDownloadTask(_ task: DownloadStationTask) -> Bool {
         !isDeletingDownloadTask &&
+        !isEditingDownloadTask && !editProtects(task.id) &&
         !isControllingDownloadTask &&
         !controlProtects(task.id) &&
         downloadTask(id: task.id) != nil &&

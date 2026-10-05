@@ -6367,10 +6367,10 @@
 // 下载批量控制与恢复
 "mobile.downloads.batch.select" = "选择任务";
 "mobile.downloads.batch.select-all" = "全选";
-"mobile.downloads.batch.select-empty" = "没有可暂停或继续的任务。返回列表刷新后重试。";
+"mobile.downloads.batch.select-empty" = "当前没有可操作的任务。请返回列表并刷新后重试。";
 "mobile.downloads.batch.records" = "操作记录";
 "mobile.downloads.batch.records-empty" = "暂无操作记录";
-"mobile.downloads.batch.records-empty-help" = "暂停或继续任务后，可在这里查看进度。";
+"mobile.downloads.batch.records-empty-help" = "更改保存位置、暂停或继续任务后，可在这里查看进度。";
 "mobile.downloads.batch.pause-count" = "暂停（%d）";
 "mobile.downloads.batch.resume-count" = "继续（%d）";
 "mobile.downloads.batch.progress" = "已完成 %1$d/%2$d 项";
@@ -6415,3 +6415,14 @@
 "download.settings.schedule-enabled" = "启用下载计划";
 "download.settings.emule-schedule-enabled" = "eMule 使用下载计划";
 "download.settings.empty" = "暂时没有可显示的下载设置，请刷新后重试。";
+"download.edit.action" = "保存位置";
+"download.edit.destination" = "新位置";
+"download.edit.title" = "更改保存位置";
+"download.edit.tasks" = "%d 个任务";
+"download.edit.changed" = "任务已变化或已不存在。请刷新任务列表后重新编辑。";
+"download.edit.pending-help" = "暂时无法获取保存结果。请恢复连接并刷新状态后，再修改此任务。";
+"download.edit.storage-error" = "无法保存或读取操作记录。请清理设备存储空间后重新打开 App。";
+"download.edit.read-error" = "无法读取任务状态。请检查连接后刷新。";
+"download.edit.denied" = "当前账号无法使用此位置或修改此任务。请选择可用文件夹，或联系 NAS 管理员。";
+"download.edit.failed" = "保存位置失败。请刷新任务列表后选择其他文件夹。";
+"download.edit.saving" = "正在保存…";

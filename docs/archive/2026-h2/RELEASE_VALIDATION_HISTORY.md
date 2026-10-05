@@ -1840,3 +1840,25 @@ iPad 使用同一测试命令，将目标替换为 `A31ABDE2-186F-43DD-8D40-5EB9
 已查看 iPhone 第一轮大字表单、iPad 第二轮浅色保存/未知分步结果，最终两端中文深色横屏结果均可阅读“常规/下载计划”及各自“已保存”。所有截图和网络响应均为合成数据。最终 XcodeGen 重生成一致（SHA-256 `985e162fe1cddb3123b4091d39d73d823c5c9e1dff6dc0d4d425e427f32bca67`）；本地化 6151 / 2188 / 3402、175 个请求 fixture、1 个结果示例、29 组脱敏 fixture / 48 项私有引用、生成参数目录、严格文档及差异检查通过。
 
 `PENDING_USER_VALIDATION`：两种真机、记录 DSM/Download Station 版本、专用测试 NAS 与可丢弃下载/目录，保存原设置以便恢复；验证管理员的实际默认目录/限速/eMule/自动解压/计划开关、普通账号只读、目的地权限与新建/继续的 HTTP/FTP 限速生效。中途断网、终止、重连、切账号、其他客户端并发修改或撤销权限，预期未改字段不覆盖、未知不重发、已完成不重复、剩余明确继续/取消且取消持久保存。补验锁屏文件保护、VoiceOver、键盘、大字和分屏，只回传版本、权限类别、脱敏步骤与错误类别。真实 NAS 未由 Agent 改动；没有将尚无接口的每周时段编辑伪装为待真机。继续 M5c/M5d 和 M6–M8。
+
+## 2026-10-05 移动 M5c1 下载保存位置编辑与恢复
+
+基线为 `78598ffc`。新增官方 Task.edit v2、严格逐项结果与保存位置回读；移动单项/多项编辑使用现有文件夹选择器、保存按钮及逐项记录，未知只查询，未开始部分明确继续/取消。同任务编辑、控制与移除互相保护；写前持久化失败零请求，表单与文件夹回调冻结连接实例。独立恢复文件只存上下文、任务身份摘要、原/目标位置和阶段，保留原子写、完整文件保护与排除备份。Mac UI 和旧方法签名保持，Windows/Android 只登记影响。真实 NAS 未参与自动写测试，保存位置变化不证明文件已搬迁。
+
+实际验证：
+
+- `swift test --package-path apple --jobs 2 --filter DownloadStationControlRecoveryTests`：7 项通过；`--filter DownloadTaskDestinationTests`：新增 10 项通过（0.047 秒）。覆盖固定 v2、原值/对象变化、逐项错误及 405/402 区分、畸形/重复/错编号结果、写前保存/取消、未知只读、跨动作保护和在途重复。
+- `swift test --package-path apple --jobs 2`：2678 项 XCTest，172 条既有条件跳过，0 失败，33.390 秒；12 项 Swift Testing 全通过，0.032 秒。共享与 Mac 源码回归不替代目标构建。
+- 锁定 XcodeGen 2.46.0：`/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml`；只生成五个新移动源/测试文件的工程引用。`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`：第 1、2、3 轮均通过。第 2 轮包含冻结编辑草稿连接实例，第 3 轮补详情保存位置的无障碍标识与测试定位修正。
+- R1 两端分别运行 `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=<设备编号>' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileDownloadEditUITests -only-testing:DsmMobileUITests/MobileDownloadControlUITests/test多选暂停与继续分别处理符合状态的任务 -resultBundlePath /tmp/lanstash-release-1.0.15.1x6wUX/m5c1-<iphone或ipad>1.xcresult`；iPhone 编号见构建命令，iPad 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`。
+- R1 两端各 1211 项单元（各 3 条既有条件跳过），新增 `MobileDownloadEditTests` 12 项均通过；iPad 总计零失败（28.584 秒），iPhone 在既有 `MobileChatRealtimeTests/test停止前台会取消未完成刷新且旧事件不再读取` 有 1 项失败（总计 29.018 秒），停止后读取计数从 1 变 2。未降低断言或据此改动聊天代码。
+- R1 新 6 项 UI：iPhone 5 通过、1 失败（276.202 秒），iPad 4 通过、2 失败（295.803 秒）。两端中文深色最大字号/横屏、逐项权限拒绝、未知重启后显式继续、取消剩余并重启清理均通过；旧多选暂停/继续回归分别通过，39.626 / 46.524 秒。首轮先改测试为等待控件后定位实际按钮，并按详情保存位置标识断言完整值。R2 仍复现后检查实际辅助功能层次：iPad 任务行中心位于内容空白处，点击未打开详情，补上按钮标签内部的整行点击区域；iPhone 详情位置在列表下方，测试必须滚动后再检查完整值。未删除保存结果或禁用能力断言。
+- R2 在上述 `test-without-building` 命令中选择单项编辑 UI（两端）、不支持编辑 UI（iPad）及既有聊天停止测试（iPhone），结果目录为 `m5c1-<iphone或ipad>2.xcresult`。聊天单项通过（0.125 秒），不能据此声称首轮完整零失败；单项 UI 仍失败，iPad 不支持入口测试仍因任务行未打开失败。继续修正整行点击区域与详情滚动定位，不用重试成功掩盖已复现的问题。
+- 第 4 轮移动构建通过后，R3 两端选择单项保存与不支持编辑两项 UI，iPhone 另选完整 `DsmMobileTests`，结果为 `m5c1-<iphone或ipad>3.xcresult`。iPhone 完整 1211 项、3 条既有条件跳过、0 失败（29.190 秒），既有聊天停止测试也通过。不支持编辑 UI 两端通过（23.125 / 27.492 秒），验证整行点击确实打开详情；单项保存后详情定位仍失败（129.615 / 139.230 秒）。检查发现标识误加到同名的新建任务位置字段，已将标识移至任务详情字段；保存与回读断言不变。第 5 轮构建通过，按修复范围只复验两端单项保存 UI。
+- R4 仅选择 `-only-testing:DsmMobileUITests/MobileDownloadEditUITests/test单任务选择文件夹保存后详情显示新位置`，两端各 1 项通过、0 失败（47.394 / 56.197 秒），结果为 `m5c1-<iphone或ipad>4.xcresult`。六项新 UI 在两端均有通过记录；不将早期失败轮次写成全部通过。最终完整单元为 iPhone R3 / iPad R1，各 1211 项、3 条既有条件跳过、0 失败。工程重生成一致，SHA-256 为 `ab73a3084d1f013b8147ec25f420a70720fc769e5a32353b2c5330dae32274c3`。
+- `xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build` 通过；`lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash` 返回 `x86_64 arm64`，未安装或启动 Mac 包。
+- `python3 tools/localization/check_localization.py`：Apple 6162 / Android 2188 / Windows 3402，双语、变量及硬编码检查通过；`python3 tools/request-contract/validate_contracts.py`：175 个请求样本、1 个写结果示例通过；`python3 tools/contract-validation/validate_fixtures.py`：29 组样本和 48 项私有 API 文档引用通过；`python3 tools/codex/generate_api_reference.py --check`、`python3 tools/codex/check_documentation.py --strict-release` 与 `git diff --check` 通过。
+
+另行完成当前负责人的只读集成与对抗复核，并修复编辑草稿在账号切换/重连后可能重绑新实例的问题；这不是另一模型审查。检查源对象、目录、账号与原值、未知只读、损坏记录不覆盖、同账号旧请求仍在途及取消持久化。实际查看 iPhone 中文深色大字表单与浅色部分失败、iPad 中文横屏结果截图；都保留清楚的目标位置、逐项结果和恢复操作。系统 VoiceOver、键盘、锁屏保护及真实 NAS 的目录权限/任务状态/文件行为仍按移动主计划 M5c1 的具体 `PENDING_USER_VALIDATION` 执行，不能据合成测试宣布真实 NAS 行为通过。
+
+上个提交 `78598ffc` 的云端文档与 Repository Check 已通过；Android Build [37247498048](https://github.com/yuangy1995/dsm-native-client/actions/runs/37247498048) 仍是既有 `ChatPollRepositoryTest.无附件投票固定v1且写后回读` 失败（1436 项中 1 项），本波没有修改 Android 或放宽共享样本。Apple Build 当时仍在运行，不将代码推送等同全部门禁通过。创建持久恢复、RSS 与 M5d–M8 继续实施，不以本切片宣告整个 M5 完成。

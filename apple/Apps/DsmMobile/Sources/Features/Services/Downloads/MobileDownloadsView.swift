@@ -36,7 +36,7 @@ struct MobileDownloadsView: View {
         .searchable(text: $model.searchText, prompt: L10n.string("download.workspace.search"))
         .refreshable { await model.load() }
         .sheet(item: $selectedTask) { task in
-            MobileDownloadTaskDetailView(model: model, initialTask: task)
+            MobileDownloadTaskDetailView(model: model, initialTask: task, fileRepository: fileRepository)
         }
         .sheet(isPresented: $isShowingCreateTask) {
             MobileDownloadCreateTaskView(model: model)
@@ -44,7 +44,7 @@ struct MobileDownloadsView: View {
         .sheet(isPresented: $isShowingBTSearch) {
             MobileDownloadBTSearchView(model: model)
         }
-        .sheet(isPresented: $isSelectingTasks) { MobileDownloadSelectionSheet(model: model) }
+        .sheet(isPresented: $isSelectingTasks) { MobileDownloadSelectionSheet(model: model, fileRepository: fileRepository) }
         .sheet(isPresented: $isShowingControls) { MobileDownloadControlRecordsView(model: model) }
         .sheet(isPresented: $isShowingSettings) {
             MobileDownloadSettingsView(model: model.settings, fileRepository: fileRepository).id(model.settings.activation)
@@ -60,7 +60,7 @@ struct MobileDownloadsView: View {
                 Button { isSelectingTasks = true } label: {
                     Label(L10n.string("mobile.downloads.batch.select"), systemImage: "checkmark.circle")
                 }
-                .disabled(model.visibleTasks.allSatisfy { !model.canPauseDownloadTask($0) && !model.canResumeDownloadTask($0) })
+                .disabled(model.visibleTasks.allSatisfy { !model.canPauseDownloadTask($0) && !model.canResumeDownloadTask($0) && !model.canEditDownloadTask($0) })
                 .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
                 .accessibilityIdentifier("downloads.select")
             }
@@ -174,6 +174,8 @@ struct MobileDownloadsView: View {
                         selectedTask = task
                     } label: {
                         DownloadTaskRow(task: task)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .frame(minHeight: MobileMetrics.minimumTouchTarget)
@@ -417,9 +419,11 @@ private struct DownloadTaskRow: View {
 private struct MobileDownloadTaskDetailView: View {
     @Bindable var model: MobileDownloadsModel
     let initialTask: DownloadStationTask
+    var fileRepository: (any MobileFileBrowsing)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingDelete = false
     @State private var isShowingControlRecords = false
+    @State private var editDraft: MobileDownloadEditDraft?
     @State private var details: DownloadStationTaskDetails?
     @State private var isLoadingDetails = false
     @State private var detailsFailed = false
@@ -431,6 +435,20 @@ private struct MobileDownloadTaskDetailView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if model.canEditDownloadTask(task) || model.editProtects(task.id) {
+                    Section {
+                        if model.canEditDownloadTask(task) {
+                            Button(L10n.string("download.edit.action")) { editDraft = .init(activation: model.editActivation, tasks: [task]) }
+                                .disabled(fileRepository == nil)
+                                .frame(minHeight: MobileMetrics.minimumTouchTarget)
+                                .accessibilityIdentifier("downloads.details.edit")
+                        }
+                        if model.editProtects(task.id) {
+                            Button(L10n.string("mobile.downloads.batch.records")) { isShowingControlRecords = true }
+                                .accessibilityIdentifier("downloads.details.edit-records")
+                        }
+                    }
+                }
                 controlSection
                 deleteSection
 
@@ -460,6 +478,7 @@ private struct MobileDownloadTaskDetailView: View {
                             L10n.string("ui.0b7e2876922e4662"),
                             value: destination
                         )
+                        .accessibilityIdentifier("downloads.details.destination")
                     }
                     if task.status.lowercased() == "error" {
                         Text(L10n.string("download.workspace.task-error"))
@@ -482,6 +501,10 @@ private struct MobileDownloadTaskDetailView: View {
             .task(id: model.activeProfile.map(MobileWorkspaceIdentity.init)) { await loadDetails() }
             .refreshable { await loadDetails() }
             .sheet(isPresented: $isShowingControlRecords) { MobileDownloadControlRecordsView(model: model) }
+            .sheet(item: $editDraft) { draft in
+                MobileDownloadEditView(model: model, draft: draft, fileRepository: fileRepository)
+            }
+            .onChange(of: model.editActivation) { _, _ in dismiss() }
             .confirmationDialog(
                 L10n.string("mobile.downloads.delete.confirm.title", task.title),
                 isPresented: $isConfirmingDelete,

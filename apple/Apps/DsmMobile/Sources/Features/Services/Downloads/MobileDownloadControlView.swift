@@ -4,14 +4,17 @@ import SwiftUI
 
 struct MobileDownloadSelectionSheet: View {
     @Bindable var model: MobileDownloadsModel
+    var fileRepository: (any MobileFileBrowsing)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var selected: Set<String> = []
     @State private var batchID: UUID?
+    @State private var editDraft: MobileDownloadEditDraft?
     private var candidates: [DownloadStationTask] {
-        model.visibleTasks.filter { model.canPauseDownloadTask($0) || model.canResumeDownloadTask($0) }
+        model.visibleTasks.filter { model.canPauseDownloadTask($0) || model.canResumeDownloadTask($0) || model.canEditDownloadTask($0) }
     }
     private var pauseSelection: [DownloadStationTask] { candidates.filter { selected.contains($0.id) && model.canPauseDownloadTask($0) } }
     private var resumeSelection: [DownloadStationTask] { candidates.filter { selected.contains($0.id) && model.canResumeDownloadTask($0) } }
+    private var editSelection: [DownloadStationTask] { candidates.filter { selected.contains($0.id) && model.canEditDownloadTask($0) } }
 
     var body: some View {
         NavigationStack {
@@ -54,6 +57,11 @@ struct MobileDownloadSelectionSheet: View {
                         .accessibilityIdentifier("downloads.selection.close")
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
+                    Button(L10n.string("download.edit.action")) { editDraft = .init(activation: model.editActivation, tasks: editSelection) }
+                        .disabled(editSelection.isEmpty || fileRepository == nil)
+                        .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
+                        .accessibilityIdentifier("downloads.batch.edit")
+                    Spacer()
                     Button(L10n.string("mobile.downloads.batch.pause-count", pauseSelection.count)) { start(pauseSelection, action: .pause) }
                         .disabled(pauseSelection.isEmpty).accessibilityIdentifier("downloads.batch.pause")
                         .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
@@ -64,6 +72,10 @@ struct MobileDownloadSelectionSheet: View {
                 }
             }
             .navigationDestination(item: $batchID) { id in MobileDownloadControlResultView(model: model, id: id) }
+            .sheet(item: $editDraft) { draft in
+                MobileDownloadEditView(model: model, draft: draft, fileRepository: fileRepository)
+            }
+            .onChange(of: model.editActivation) { _, _ in dismiss() }
             .onChange(of: candidates.map(\.id)) { _, ids in selected.formIntersection(ids) }
         }
     }
@@ -78,14 +90,30 @@ struct MobileDownloadControlRecordsView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if model.controlRecovery.failed {
+                if (model.controlRecovery.failed || model.editRecovery.failed) && model.controlEntries.isEmpty && model.editEntries.isEmpty {
                     ContentUnavailableView(L10n.string("mobile.downloads.batch.records"), systemImage: "exclamationmark.circle",
                         description: Text(L10n.string("mobile.downloads.batch.storage-error"))).fillsAvailableContentArea()
-                } else if model.controlEntries.isEmpty {
+                } else if model.controlEntries.isEmpty && model.editEntries.isEmpty {
                     ContentUnavailableView(L10n.string("mobile.downloads.batch.records-empty"), systemImage: "clock",
                         description: Text(L10n.string("mobile.downloads.batch.records-empty-help"))).fillsAvailableContentArea()
                 } else {
-                    List(model.controlEntries) { entry in
+                    List {
+                        if model.controlRecovery.failed || model.editRecovery.failed {
+                            Text(L10n.string("download.edit.storage-error")).foregroundStyle(.orange)
+                        }
+                        ForEach(model.editEntries) { entry in
+                            NavigationLink {
+                                MobileDownloadEditResultView(model: model, id: entry.id)
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(L10n.string("download.edit.title"))
+                                    Text(entry.createdAt.formatted(.dateTime.locale(L10n.locale))).font(.caption).foregroundStyle(.secondary)
+                                    Text(L10n.string("mobile.downloads.batch.progress", entry.items.filter { $0.phase == .complete }.count, entry.items.count))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.accessibilityIdentifier("downloads.edit-record.\(entry.id)")
+                        }
+                        ForEach(model.controlEntries) { entry in
                         NavigationLink {
                             MobileDownloadControlResultView(model: model, id: entry.id)
                         } label: {
@@ -96,6 +124,7 @@ struct MobileDownloadControlRecordsView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }.accessibilityIdentifier("downloads.record.\(entry.id)")
+                        }
                     }
                 }
             }

@@ -11,8 +11,10 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
     private var hasUnknownWrite = false
     private var settings: [DownloadSettingsField: DownloadSettingsValue]
     private var hasUnknownSettingsWrite = false
-    init(state: String, statuses: [String: String] = [:], settings: [DownloadSettingsField: DownloadSettingsValue] = [:]) {
+    private var destinations: [String: String]
+    init(state: String, statuses: [String: String] = [:], settings: [DownloadSettingsField: DownloadSettingsValue] = [:], destinations: [String: String] = [:]) {
         self.state = state; self.statuses = statuses
+        self.destinations = destinations
         self.settings = [.destination: .text("Sample folder"), .emule: .flag(false), .autoExtract: .flag(false),
             .btDownload: .number(0), .btUpload: .number(0), .httpDownload: .number(0), .ftpDownload: .number(0),
             .nzbDownload: .number(0), .emuleDownload: .number(0), .emuleUpload: .number(0),
@@ -23,7 +25,7 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         let parameters = URLComponents(string: "https://example.invalid/?" + String(data: request.httpBody ?? Data(), encoding: .utf8)!)?.queryItems ?? []
         func value(_ name: String) -> String? { parameters.first { $0.name == name }?.value }
-        let data: [String: Any]
+        let data: Any
         switch (value("api"), value("method")) {
         case (DsmAPIName.downloadStationInfo, "getinfo"):
             data = ["is_manager": state != "downloads-settings-readonly"]
@@ -69,6 +71,12 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
             statuses[id] = value("method") == "pause" ? "paused" : "downloading"
             if state == "downloads-controls-unknown" { hasUnknownWrite = true }
             data = [:]
+        case (DsmAPIName.downloadStationTask, "edit"):
+            guard let id = value("id"), let destination = value("destination"), value("version") == "2" else { throw URLError(.badServerResponse) }
+            let code = state == "downloads-edit-partial" && id == "sample-2" ? 402 : 0
+            if code == 0 { destinations[id] = destination }
+            if state == "downloads-edit-unknown" { hasUnknownWrite = true; throw URLError(.timedOut) }
+            data = [["id": id, "error": code]]
         case (DsmAPIName.downloadStationStatistic, "getinfo"):
             data = ["speed_download": 0]
         case (DsmAPIName.downloadStationTask, "getinfo"):
@@ -77,7 +85,7 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
             var item = task("sample-1", "Sample archive.zip", "downloading")
             item["type"] = "bt"; item["username"] = "Sample user"
             item["additional"] = [
-                "detail": ["destination": "Sample Downloads", "create_time": 1_750_000_000,
+                "detail": ["destination": destinations["sample-1"] ?? "Sample Downloads", "create_time": 1_750_000_000,
                     "priority": "normal", "connected_seeders": 4, "total_peers": 8],
                 "transfer": ["size_downloaded": "2048", "size_uploaded": "1024", "speed_download": 0],
                 "file": [["filename": "Sample document.txt", "size": "4096", "size_downloaded": "2048", "priority": "normal"]],
@@ -93,7 +101,7 @@ actor MobileDownloadUITransport: DsmHTTPTransport {
 
     private func task(_ id: String, _ title: String, _ status: String) -> [String: Any] {
         ["id": id, "title": title, "status": statuses[id] ?? status, "size": "4096",
-         "additional": ["detail": ["destination": "Sample Downloads"], "transfer": ["size_downloaded": "2048", "speed_download": 0]]]
+         "additional": ["detail": ["destination": destinations[id] ?? "Sample Downloads"], "transfer": ["size_downloaded": "2048", "speed_download": 0]]]
     }
 }
 #endif

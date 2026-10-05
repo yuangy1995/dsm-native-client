@@ -14,6 +14,7 @@
 | 任务文件 `createDownloadTaskFileResult` | 公开 `Task.create` multipart | `.torrent/.nzb/.txt`；同样按 destination 选择 v1/v2，密码只在当次发送 | 同创建结果，不把成功上传请求当作所有下载已完成 |
 | 暂停、继续 | `Task.pause/resume` | 使用稳定任务 ID 和确认时快照；固定版本见[参数目录](requests.md#download-station) | 单项/批量结果逐项核对，部分成功保留；旧 `finish` 枚举当前不产生请求 |
 | 移动控制恢复 `loadDownloadTaskControlState` | 公开 `Task.list` v1 | 完整分页、单一合法任务编号 | 仅查询，匹配原身份及目标状态；本机终态保存后 `acknowledgeDownloadTaskControlResult` 清理进程内旧保护，不产生 NAS 请求 |
+| 保存位置编辑与恢复 | 公开 `Task.edit` v2、`Task.list` v1 | 单项 `id,destination`；完整目录重读原身份与原位置，能力需同时含读取 v1 与编辑 v2 | 返回必须有唯一同编号 `error`；成功还要回读目标位置，未知只查询，未开始项显式继续/取消 |
 | 删除任务／结束并移出未完成文件 | `Task.delete` | `id`、`force_complete`；共享旧参数名 `removeData` 仅为调用兼容 | `false` 移除任务，`true` 请求把未完成文件移入目标目录；不是删除下载数据，列表消失也不能证明文件已移动 |
 | BT 搜索 | `BTSearch.getModule/getCategory/start/list/clean` | v1；模块、关键词、分类、排序、分页和任务 ID | 仅管理本次搜索任务，取消/结束清理自己的任务 |
 | 设置 | `Info.getinfo/getconfig/setserverconfig`、`Schedule.getconfig/setconfig` | 新移动路径 `loadDownloadSettingsSnapshot/changeDownloadSettings/reviewDownloadSettings`；Info 优先 v2，能力仅含 v1 时不编辑默认目录；Schedule v1 | 当前管理权限、字段存在性、原值比较、分区差量及只读恢复；旧 Mac 全量设置签名不变 |
@@ -40,7 +41,17 @@ M5b 依据同一官方指南第 17–20 页：`Info.getinfo.is_manager` 只接�
 
 来源为 [Synology Download Station Web API 指南](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/DownloadStation/All/enu/Synology_Download_Station_Web_API.pdf)（2014-03-26）。第 26–27 页 Task.edit 的请求及响应字段要求 v2 及以后，示例 URL 中的 v1 不作为版本门禁依据。新的目的地编辑请求应固定 v2，能力不包含 v2 时不发送。现有 Android 实现仍发送 v1，旧合成样本保留为 `sourceReviewed`，另新增 v2 官方样本；这是待修正源码差异，不是“仅待真机”。本 M5 波次不修改 Android 源码或放宽其测试。
 
-第 32–35 页仅提供公开 RSS.Site.list/refresh 与 RSS.Feed.list。Site 标识为整数，Feed.list 必须指定站点 `id`；尺寸和时间需按文档保留整数/数字字符串差异。不能推定订阅创建/删除方法。M5c 先实现既有订阅查看、刷新和条目创建下载；M5a1 尚未接这些写入口，也未实现目的地编辑。所有以上说明仍是公开文档、源码及合成证据，没有新增真实 NAS 行为结论。
+第 32–35 页仅提供公开 RSS.Site.list/refresh 与 RSS.Feed.list。Site 标识为整数，Feed.list 必须指定站点 `id`；尺寸和时间需按文档保留整数/数字字符串差异。不能推定订阅创建/删除方法。M5c 后续实现既有订阅查看、刷新和条目创建下载；当前仅 M5c1 已接保存位置编辑，RSS 仍未实现。所有以上说明仍是公开文档、源码及合成证据，没有新增真实 NAS 行为结论。
+
+## 移动任务保存位置编辑与恢复
+
+M5c1 只编辑公开字段 `destination`，不猜测优先级、Tracker 或种子选项。每个任务分开发送，写前完整读取并匹配编号、名称/大小摘要及原位置；位置不进入稳定身份摘要，以便正确匹配已保存的新位置。目录从现有 File Station 选择器取得，只去掉绝对路径首个 `/`，拒绝 NAS 根路径、空段、`.`/`..` 和控制字符，保留合法名称空格。目录可浏览不代表可写，实际编辑权限由 NAS 的当前账号授权及返回值判定，不要求普通任务编辑具备管理员身份。
+
+`Task.edit` 的 data 必须是单一同编号结果数组，`error=0` 后还需查询到目标位置；缺条目、重复/错编号、错误类型、未知错误或断网均保留未知。官方 105/402 分别对应会话无权限与目标目录拒绝，404 为任务编号无效，405 是无效任务操作，407 是设置位置失败，不能把 405/407 误译成权限问题。明确拒绝可保留该项失败并继续其他项目，未知停止后续提交。
+
+`Downloads/edits-v1.json` 保存账号上下文、任务编号/身份摘要、原位置/目标位置和逐项阶段；完整文件保护、原子写及排除备份，不保存名称正文、URI、主机或凭据。发送前记录保存失败零请求，提交后只读恢复，原位置未变不证明此前未执行。未开始项需明确继续或取消，取消立即持久保存；结束记录可清除，未知记录不能删除以解锁重发。编辑与同任务暂停/继续/移除互相保护，表单冻结打开时的连接身份，切账号/重连后旧回调失效。
+
+五端影响：iPhone/iPad 新增同一单项/多项原生流程和独立设备测试；Mac 保持旧 UI/调用，共享增量需完整回归及双架构构建；Windows/Android 仅同步以上结果和恢复要求，没有源码变更。沿用已建立的 `edit-destination/synthetic-task-v2` 请求样本。真实 NAS 尚未验证；任务位置字段更新不证明既有文件实际搬迁，文件归属和删除仍由 M5d 单独处理。
 
 ## 关键语义
 
