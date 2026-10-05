@@ -94,6 +94,7 @@ final class MobileDownloadsModel {
     let createRecovery: MobileDownloadCreateStore
     var createErrorKey: String?
     let settings: MobileDownloadSettingsModel
+    let rss: MobileDownloadRSSModel
     let editRecovery: MobileDownloadEditStore
     var editActivation = UUID()
     var editBatchID: UUID?
@@ -110,12 +111,14 @@ final class MobileDownloadsModel {
         self.transferCoordinator = transferCoordinator
         self.controlRecovery = MobileDownloadControlStore(root: controlRoot)
         self.settings = MobileDownloadSettingsModel(root: controlRoot)
+        self.rss = MobileDownloadRSSModel(root: controlRoot)
         self.editRecovery = MobileDownloadEditStore(root: controlRoot)
         self.createRecovery = MobileDownloadCreateStore(root: controlRoot)
     }
 
     func configure(profile: NasProfile?, repository: DsmServiceManagementRepository?) {
         settings.configure(profile: profile, repository: repository)
+        rss.configure(profile: profile, repository: repository)
         let identityChanged = profile.map(MobileWorkspaceIdentity.init) != activeProfile.map(MobileWorkspaceIdentity.init)
         let repositoryChanged = repository.map(ObjectIdentifier.init) != serviceRepository.map(ObjectIdentifier.init)
         if identityChanged || repositoryChanged {
@@ -131,6 +134,7 @@ final class MobileDownloadsModel {
 
     func deactivate() {
         settings.configure(profile: nil, repository: nil)
+        rss.configure(profile: nil, repository: nil)
         cancelLoad()
         deactivateDownloads()
         activeProfile = nil

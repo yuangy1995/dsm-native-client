@@ -6434,3 +6434,35 @@
 "download.creation.refresh" = "刷新任务列表";
 
 "download.creation.use-default" = "使用默认位置";
+
+/* RSS 订阅 */
+"download.rss.title" = "RSS 订阅";
+"download.rss.loading" = "正在加载订阅…";
+"download.rss.loading-feeds" = "正在加载条目…";
+"download.rss.reload" = "重新加载";
+"download.rss.update" = "更新订阅";
+"download.rss.updating" = "正在更新…";
+"download.rss.sending" = "正在请求更新…";
+"download.rss.last-update" = "上次更新";
+"download.rss.published" = "发布时间";
+"download.rss.search-sites" = "搜索订阅";
+"download.rss.search-feeds" = "搜索条目";
+"download.rss.empty" = "暂无订阅";
+"download.rss.empty-help" = "请先在 DSM 的 Download Station 中添加订阅，再重新加载。";
+"download.rss.empty-feeds" = "暂无条目";
+"download.rss.empty-feeds-help" = "更新此订阅以获取新条目。";
+"download.rss.filtered-empty" = "没有匹配内容";
+"download.rss.filter-help" = "请更换搜索内容或清空搜索框。";
+"download.rss.untitled" = "未命名";
+"download.rss.previous-update" = "上次更新请求";
+"download.rss.changed" = "此订阅已发生变化或正在更新，请重新加载后再试。";
+"download.rss.unsupported" = "此 NAS 暂不支持在这里查看订阅，请在 DSM 的 Download Station 中管理。";
+"download.rss.permission" = "当前账号无法更新此订阅，请联系 NAS 管理员。";
+"download.rss.read-permission" = "当前账号无法查看此订阅，请联系 NAS 管理员。";
+"download.rss.load-error" = "无法加载订阅或条目，请检查连接后重新加载。";
+"download.rss.storage-error" = "无法在此设备上保存更新记录，请释放存储空间后重新打开 App。";
+"download.rss.unknown" = "更新时连接中断，请重新加载以查看订阅的最新状态。";
+"download.rss.accepted" = "已请求更新，请重新加载以查看最新条目。";
+"download.rss.updated" = "订阅已更新";
+"download.rss.rejected" = "未能更新此订阅，请重新加载后再试。";
+"download.rss.cancelled" = "更新已取消，尚未发送。";

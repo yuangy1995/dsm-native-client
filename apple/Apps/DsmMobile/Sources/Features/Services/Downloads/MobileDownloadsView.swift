@@ -15,6 +15,7 @@ struct MobileDownloadsView: View {
     @State private var isSelectingTasks = false
     @State private var isShowingControls = false
     @State private var isShowingSettings = false
+    @State private var isShowingRSS = false
 
     var body: some View {
         MobilePageStateView(
@@ -36,7 +37,7 @@ struct MobileDownloadsView: View {
         }
         .accessibilityElement(children: .contain)
         .onChange(of: model.editActivation) { _, _ in
-            createDraft = nil; isShowingBTSearch = false; isImportingTaskFile = false; importActivation = nil; importFailed = false
+            createDraft = nil; isShowingBTSearch = false; isImportingTaskFile = false; importActivation = nil; importFailed = false; isShowingRSS = false
         }
         .searchable(text: $model.searchText, prompt: L10n.string("download.workspace.search"))
         .refreshable { await model.load() }
@@ -54,6 +55,7 @@ struct MobileDownloadsView: View {
         .sheet(isPresented: $isShowingSettings) {
             MobileDownloadSettingsView(model: model.settings, fileRepository: fileRepository).id(model.settings.activation)
         }
+        .sheet(isPresented: $isShowingRSS) { MobileDownloadRSSView(downloads: model, fileRepository: fileRepository) }
         .fileImporter(
             isPresented: $isImportingTaskFile,
             allowedContentTypes: mobileDownloadTaskFileTypes,
@@ -164,6 +166,12 @@ struct MobileDownloadsView: View {
                 }
                 .frame(minWidth: MobileMetrics.minimumTouchTarget, minHeight: MobileMetrics.minimumTouchTarget)
                 .accessibilityIdentifier("downloads.settings")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { isShowingRSS = true } label: {
+                    Label(L10n.string("download.rss.title"), systemImage: "dot.radiowaves.left.and.right")
+                }
+                .accessibilityIdentifier("downloads.rss.open")
             }
         }
     }

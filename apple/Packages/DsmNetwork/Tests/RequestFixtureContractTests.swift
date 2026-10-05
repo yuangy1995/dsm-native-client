@@ -1432,6 +1432,23 @@ final class RequestFixtureContractTests: XCTestCase {
         try assertFormRequest(request, matches: fixture)
     }
 
+    func testRSS订阅条目和明确更新使用公开固定版本与站点编号() async throws {
+        let sites = response(#"{"success":true,"data":{"sites":[{"id":7,"title":"Synthetic RSS","url":"https://rss.example.invalid/feed","username":"synthetic","is_updating":false,"last_update":1000}],"offset":0,"total":1}}"#)
+        let transport = MockHTTPTransport(responses: [sites,
+            response(#"{"success":true,"data":{"feeds":[],"offset":0,"total":0}}"#), sites,
+            response(#"{"success":true}"#), sites])
+        let repository = try makeServiceManagementRepository(apiNames: [DsmAPIName.downloadStationRSSSite, DsmAPIName.downloadStationRSSFeed], transport: transport)
+        let site = try await repository.loadDownloadRSSSites()[0]
+        _ = try await repository.loadDownloadRSSFeeds(siteID: site.id)
+        let receipt = try await repository.refreshDownloadRSSSite(site) {}; XCTAssertEqual(receipt, .accepted)
+        _ = try await repository.loadDownloadRSSSites()
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 5)
+        for (index, path) in [(0, "list-rss-sites/synthetic-page"), (1, "list-rss-feeds/synthetic-site"), (3, "refresh-rss-site/synthetic-entry")] {
+            try assertFormRequest(requests[index], matches: loadFixture("download-station/\(path)/request.json"))
+        }
+    }
+
     private var testCredential: DsmSessionCredential {
         DsmSessionCredential(
             sid: "REDACTED_SESSION",

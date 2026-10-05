@@ -1948,3 +1948,25 @@ R3 在同一测试命令中只选择 `-only-testing:DsmMobileTests`，结果为 
 - 最终共享完整 `swift test --package-path apple --jobs 2`：2702 项 XCTest、172 条既有条件跳过、0 失败，44.437 秒；12 项 Swift Testing 通过。RSS 增量仍不在 CI 提交中。Mac Release 双架构两轮构建均通过，`lipo -archs` 为 `x86_64 arm64`；未安装或启动 App。最终本地化完整性/硬编码扫描（6196 / 2188 / 3402）、严格文档检查与 `git diff --check` 通过。
 
 本机修复与分轮回归已完成，云端绿色须等对应提交的全部矩阵完成后单独确认。此次合成测试不写真实 NAS，不代表系统文件提供者、实际 VoiceOver 或真实数据操作已验收。
+
+
+## 2026-10-05 移动 M5c3 RSS 订阅与更新恢复
+
+RSS 实施基线为 `338c15b3`；期间 Apple CI 的独立修复已提交/推送 `09a1deda`。公开 Site.list/refresh、Feed.list v1 接入既有订阅/条目、搜索、明确更新及统一创建表单；不自动访问订阅来源，也不新增订阅/删除/自动规则接口。更新记录只保存账号/站点身份摘要、原日期、时间和阶段，不保存地址、所有者、条目正文或凭据。接受回执与当前内容分开，未知重启只读；原站点日期前进且更新结束才结束记录，同编号替换或缺失不认作原更新完成。条目创建仍走 M5c2/b 同一来源防重与目录表单。
+
+当前负责人另行执行只读集成和对抗复核（非另一模型），核对公开文档中的 site/sites 差异、必需 id、数字/字符串类型、完整分页、旧对象/账号/连接、写前保存、权限拒绝、未知恢复及旧页面草稿。复核补齐冻结创建/更新连接、按原来源匹配回读，以及读取权限与更新权限的不同恢复提示；不把模拟器或合成 API 提升为真实 NAS 行为证据。Mac App、Windows/Android 源码未改，五端影响写入 API 参考与平台矩阵。
+
+实际验证沿用 Xcode 26.5 / iOS 26.5、iPhone `8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`、iPad `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，专用临时目录 `/tmp/lanstash-release-1.0.15.1x6wUX`：
+
+- `swift test --package-path apple --jobs 2 --filter DownloadStationRSSTests`：10 项、0 失败，0.108 秒。覆盖官方两种容器、分页稳定/重复、Feed 字节字符串、更新空回执、未知防重、原站点变化、写前失败/取消、权限及版本。
+- `swift test --package-path apple --jobs 2 --filter RequestFixtureContractTests/testRSS`：1 项、0 失败，1.048 秒；真实 Repository 的读取、写前重读、刷新及回读按新增三个官方请求样本严格比较。
+- 全部移动单元使用 `xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=<编号>' -derivedDataPath apple/Apps/DsmMobile/build/m5c3-ci -parallel-testing-enabled NO -only-testing:DsmMobileTests`，实际结果包同 CI 修复 R2/R5。最新两端各 1240 项、各 4 条既有设备条件跳过、0 失败，30.992 / 31.232 秒；11 项新增 RSS 行为全部执行，涵盖回执不等于完成、重启只读、替换/缺失、实际拒绝、同账号重连/跨账号迟到、记录秘密排除、损坏及写失败。
+- 最终共享 `swift test --package-path apple --jobs 2`：2702 项 XCTest、172 条既有条件跳过、0 失败，44.437 秒；12 项 Swift Testing 通过（0.040 秒）。第一轮 Mac 预取时序失败及修复证据见前一节，没有删除或跳过该断言。
+- `xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build` 两轮通过；最后 `lipo -archs` 为 `x86_64 arm64`。没有安装或启动 Mac App。
+- 移动由锁定 XcodeGen 2.46.0 生成五个 RSS 文件的工程引用，并用 `xcodebuild build-for-testing`、上述 iPhone 目标、`-sdk iphonesimulator`、`-jobs 2` 或 `-jobs 4`、`CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 构建。中间第 4 轮的不可变 NasProfile 测试构造错误已记录在 CI 节；RSS 最终第 10–12 轮构建均通过，没有手改生成工程。
+- RSS UI 统一使用上述 `test-without-building`，选择 `-only-testing:DsmMobileUITests/MobileDownloadRSSUITests`，结果包为 `m5c3-<iphone或ipad>-ui<轮次>.xcresult`。R1 仅 iPhone 六项：5 通过、1 失败，369.584 秒；误选后方下载页搜索框。R2 两端各六项、各 5 通过/1 失败，342.501 / 316.186 秒；iPad 实际面板没有系统搜索入口，iPhone 清除后键盘仍遮住列表。R3 仅中文大字项，两端仍失败（58.682 / 38.358 秒），保留失败。
+- 产品搜索改用面板顶部的原生 TextField，与当前列表绑定；键盘提交/清除后失去焦点，根页加载/空/错误在剩余区域居中。R4 重新跑全部六项，iPad 6 通过（344.637 秒），iPhone 5 通过/1 失败（339.492 秒）；后者已完成搜索与取消创建，但默认向下滑动在横屏误拉下整张 sheet。测试改为依据固定搜索栏与列表交集，在实际内容区域内拖动，保留原筛选、取消零创建和横屏按钮可触达断言。
+- R5 仅选择 `MobileDownloadRSSUITests/test中文深色大字筛选条目与取消创建支持横屏`；使用 `build/m5c3-ci`，两端分别通过（59.855 / 66.425 秒），零失败。其余五项已在最终产品布局的 R4 执行。六个场景均有两端通过证据：统一创建/更新、接受后重启防重、未知后只读恢复、中文深色最大字号/横屏、加载/空/错误/不支持、空条目与权限拒绝。
+- `python3 tools/localization/check_localization.py`：6196 / 2188 / 3402；`python3 tools/request-contract/validate_contracts.py`：179 个请求、1 个结果样本；`python3 tools/contract-validation/validate_fixtures.py`：29 组、48 项私有引用；`python3 tools/codex/generate_api_reference.py --check` 均通过。新增均为脱敏公开 API 样本，未放宽既有校验器。
+
+具体真实设备/NAS 步骤见移动计划 M5c3 的 `PENDING_USER_VALIDATION`。真实来源读取、NAS 自动规则副作用、权限处理、文件保护与辅助功能仍需设备验收；Agent 未自动操作 NAS。Apple CI `09a1deda` 的 [37261490138](https://github.com/yuangy1995/dsm-native-client/actions/runs/37261490138) 已启动三个独立组，编译/测试仍进行时不能宣称绿色。旧七轮同分支运行（37255101279、37252437350、37249915372、37247498063、37244540417、37242202366、37238872718）已请求取消，避免过期提交重复占用资源；取消不是通过。M5d 仍需开发，用户已要求 M5 完成后暂停原目标并另开会话接续 M6–M8。

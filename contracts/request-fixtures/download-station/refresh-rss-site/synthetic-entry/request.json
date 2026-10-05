@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "download-station.refresh-rss-site.synthetic-entry",
+  "module": "download-station",
+  "operation": "refreshRssSite",
+  "api": {
+    "name": "SYNO.DownloadStation.RSS.Site",
+    "method": "refresh",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "id",
+      "valueType": "string",
+      "encodedValue": "7"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

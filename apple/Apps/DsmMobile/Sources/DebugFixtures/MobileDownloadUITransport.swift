@@ -13,6 +13,8 @@ actor MobileDownloadUITransport: DsmBinaryHTTPTransport {
     private var hasUnknownSettingsWrite = false
     private var destinations: [String: String]
     private var createdDownload: Bool
+    private var rssUpdated = false
+    private var rssDisconnected = false
     init(state: String, statuses: [String: String] = [:], settings: [DownloadSettingsField: DownloadSettingsValue] = [:], destinations: [String: String] = [:]) {
         self.state = state; self.statuses = statuses
         self.createdDownload = state == "downloads-create-recover" || state == "downloads-create-saved"
@@ -30,6 +32,25 @@ actor MobileDownloadUITransport: DsmBinaryHTTPTransport {
         func value(_ name: String) -> String? { parameters.first { $0.name == name }?.value }
         let data: Any
         switch (value("api"), value("method")) {
+        case (DsmAPIName.downloadStationRSSSite, "list"):
+            if state == "downloads-rss-loading" { try await Task.sleep(for: .seconds(30)) }
+            if state == "downloads-rss-error" || rssDisconnected { throw URLError(.notConnectedToInternet) }
+            let sites: [[String: Any]] = state == "downloads-rss-empty" ? [] : [["id": 7, "title": "Sample subscription",
+                "url": "https://rss.example.invalid/synthetic?token=synthetic-private", "username": "synthetic-owner",
+                "is_updating": false, "last_update": rssUpdated || state == "downloads-rss-recover" ? 1_750_000_100 : 1_750_000_000]]
+            data = ["sites": sites, "total": sites.count, "offset": 0]
+        case (DsmAPIName.downloadStationRSSFeed, "list"):
+            guard value("id") == "7", value("version") == "1" else { throw URLError(.badServerResponse) }
+            let feeds: [[String: Any]] = state == "downloads-rss-empty-feeds" ? [] : [["title": "Sample RSS item",
+                "download_uri": "https://files.example.invalid/synthetic.torrent", "external_link": "https://rss.example.invalid/item",
+                "time": 1_750_000_000, "size": "4096"]]
+            data = ["feeds": feeds, "total": feeds.count, "offset": 0]
+        case (DsmAPIName.downloadStationRSSSite, "refresh"):
+            guard value("id") == "7", value("version") == "1" else { throw URLError(.badServerResponse) }
+            if state == "downloads-rss-denied" { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
+            rssUpdated = state != "downloads-rss-accepted"
+            if state == "downloads-rss-unknown" { rssDisconnected = true; throw URLError(.timedOut) }
+            return .init(data: Data(#"{"success":true}"#.utf8), statusCode: 200)
         case (DsmAPIName.downloadStationTask, "create"):
             guard value("version") == "3" || (state == "downloads-create-file" && value("version") == "2") else { throw URLError(.badServerResponse) }
             if state == "downloads-create-denied" {
