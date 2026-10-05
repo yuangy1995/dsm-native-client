@@ -67,7 +67,7 @@ final class MobileNasDetailsModel {
                     outcome = .zram(try await repository.loadZRAM())
                 case .powerSchedule:
                     outcome = .powerSchedule(try await repository.loadPowerSchedule())
-                case .system, .performance, .storage, .update, .ddns, .region:
+                case .system, .performance, .storage, .update, .ddns, .region, .accounts:
                     return
                 }
                 try Task.checkCancellation()
@@ -146,7 +146,7 @@ final class MobileNasDetailsModel {
         case .shareAccess: state.shareAccess.beginLoading()
         case .zram: state.zram.beginLoading()
         case .powerSchedule: state.powerSchedule.beginLoading()
-        case .system, .performance, .storage, .update, .ddns, .region: break
+        case .system, .performance, .storage, .update, .ddns, .region, .accounts: break
         }
     }
 
@@ -202,7 +202,7 @@ final class MobileNasDetailsModel {
         case .shareAccess: state.shareAccess.fail(isUnavailable: isUnavailable)
         case .zram: state.zram.fail(isUnavailable: isUnavailable)
         case .powerSchedule: state.powerSchedule.fail(isUnavailable: isUnavailable)
-        case .system, .performance, .storage, .update, .ddns, .region: break
+        case .system, .performance, .storage, .update, .ddns, .region, .accounts: break
         }
     }
 
@@ -233,7 +233,7 @@ final class MobileNasDetailsModel {
         case .shareAccess: state.shareAccess.cancelLoading()
         case .zram: state.zram.cancelLoading()
         case .powerSchedule: state.powerSchedule.cancelLoading()
-        case .system, .performance, .storage, .update, .ddns, .region: break
+        case .system, .performance, .storage, .update, .ddns, .region, .accounts: break
         }
     }
 
@@ -248,7 +248,7 @@ final class MobileNasDetailsModel {
         case .shareAccess: state.shareAccess.phase
         case .zram: state.zram.phase
         case .powerSchedule: state.powerSchedule.phase
-        case .system, .performance, .storage, .update, .ddns, .region: .idle
+        case .system, .performance, .storage, .update, .ddns, .region, .accounts: .idle
         }
     }
 
@@ -263,7 +263,7 @@ final class MobileNasDetailsModel {
         case .shareAccess: state.shareAccess.phase != .idle
         case .zram: state.zram.phase != .idle
         case .powerSchedule: state.powerSchedule.phase != .idle
-        case .system, .performance, .storage, .update, .ddns, .region: false
+        case .system, .performance, .storage, .update, .ddns, .region, .accounts: false
         }
     }
 

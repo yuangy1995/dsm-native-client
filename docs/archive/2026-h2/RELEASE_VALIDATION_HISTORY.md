@@ -2188,3 +2188,60 @@ R2 使用同样命令、独立 `-r2.xcresult` 路径，UI selector 只选择当�
 - 清理本片临时 UI 层级、录像和截图导出；本机测试日志/结果包继续保留在忽略目录，少量合成交付图片保留于 `build/m6a3-region-preview`。不删除此前 M6a2/DDNS 的交付图片或其他用户文件。
 
 M6a3 当前环境工作完成；M6b–M6e、M7–M8、已实现入口固定门审计及主计划所列真实系统验证继续进行，不能将本片完成当作整个目标完成。
+
+## 2026-10-05 移动 M6b1 账号与群组管理
+
+从本机 `c28d4993`（main 比 origin 提前两条，工作区干净）继续；云端 `83af8606` 的两端完整 UI 仍运行时未推送取消。读取 Mac 账号/群组模型、表单与 `dsm-account-directory` 后建立 M6b1 账本，当前负责人单独修改移动管理/组合根/路由/资源、共享兼容接口与对应测试；Mac App 文件、Windows/Android 源码未改。
+
+实现账号/群组搜索与目录切换、新建/编辑/删除、账号密码/停用/所属组和独立受保护恢复。普通资料直接保存，密码/停用/组关系等风险修改与删除需明确后果确认；没有仪式式复核勾选。共享固定 v1 管理读、完整原对象/数字身份和群组目录确认，复用旧请求参数构造；创建或改密没有接受回执始终保留未知，普通字段和删除只读恢复，不重发。恢复文件只保存摘要和阶段，不存账号/邮件/成员正文及密码；具体边界见主计划和端点文档。
+
+独立集成与只读对抗复核由当前负责人在实现后单独执行：检查写前/接受回执落盘失败、目录畸形、同名不同身份、组目录漂移、当前账号/保留名、明确拒绝、取消、重复点击、同配置重连及跨账号迟到结果。发现恢复格式可被不一致的创建回执字段误读时，增加字段一致性校验和故障注入回归；未引入自动重放或无条件清除未知操作。用户名写入仍用原始标识，只有保护和防重使用规范化形式。NAS 未提供跨客户端原子比较保证，真实环境验收期间应避免并行修改同一账号或群组。
+
+沿用 Xcode 26.6（17F113）、iOS SDK/模拟器 26.5、XcodeGen 2.46.0。当前本机命令和中间证据：
+
+- `swift test --package-path apple --jobs 2 --filter NasDDNSFlowTests`：10 项通过，先验证兼容编译；日志 `m6b1-shared-compile.log`。
+- `swift test --package-path apple --jobs 2 --filter 'NasDirectoryFlowTests|DsmNasAdministrationRepositoryTests'`：首轮 196 项中 9 失败，原因是新 diagnosticTag 使用状态驼峰值而不符合已有安全格式；改为小写后 R2 为 196 项、0 失败，其中新目录请求 11 项、既有 NAS 适配 185 项。日志 `m6b1-shared-focused*.log`。
+- `swift test --package-path apple --jobs 2`：2762 项 XCTest、172 条既有条件跳过、0 失败，另 12 项 Swift Testing 通过；包含 Mac 模型回归。日志 `m6b1-shared-full.log`。
+- 移动 R1 构建因两个 switch 表达式直接传参失败，修正后 R2 又发现只读详情枚举尚缺 `.accounts` 空分支；完整补齐，R3 `build-for-testing` 成功。生成工程只用锁定 XcodeGen 更新，没有手工修改工程。
+- 第一轮两端各运行 1335 项完整单元、4 条既有跳过、2 失败：目录替身重排后错误替换第一项而非指定目标，旧静态检查又把 `.accounts` 导航枚举误当 `.account` 敏感字段。修正替身按名称定位，静态检查使用精确字段边界且增加只读页不得承载管理视图的断言，没有降低权限/未知恢复断言。
+- R1 实际 UI 已发现 iPad 大字滚动测试落到文本输入区，改为定位表单容器并在边缘滚动；当前账号禁用按钮断言也必须先滚到真实控件。新建账号流程发现多个输入框共用焦点，改为逐字段绑定；补上已有说明/邮件值的可见标签。全部问题与最终重跑结果在本节后续补记。
+
+实际目标命令（标准输出与错误写入 `apple/Apps/DsmMobile/build/m6b1-*`；各轮使用独立结果包）：
+
+```sh
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b1-phone-r1.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileDirectoryUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b1-pad-r1.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileDirectoryUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+R1 收齐：iPhone 八项 UI 四通过、四失败；iPad 五通过、三失败。两端五态/搜索/重试、明确拒绝、群组创建编辑删除均通过；iPhone 中文大字通过，iPad 当前账号保护及未知重启恢复通过。实际查看 iPad 大字编辑截图、删除后界面和 iPhone 新建失败录像：滚动测试需要避开输入控件；iPad 删除已由回读确认，但嵌套弹窗后表单没有关闭，改为外层绑定控制关闭。输入框采用独立焦点，说明/邮件保留可见标签，滚动可收起键盘；没有因这些 UI 失败修改请求、安全判断或断言目标。
+
+R4 移动构建通过。新增恢复记录一致性测试后，R2 两端完整单元均为 1336 项、4 条既有条件跳过、0 失败；新目录行为测试 16 项全部通过。R2 同时在两台模拟器的 dark 模式运行八项新 UI，最终结果继续补记。共享源码在完整测试后未再改变；Mac Release 构建成功，`lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash` 返回 `x86_64 arm64`。锁定 XcodeGen 重生成前后工程 SHA-256 均为 `0251ef5c2ee04f5f8dbe75acf52df0c0ccea59aa7b7c86cd2ac1fd2b5bc3ec02`。
+
+
+R2 深色实际 UI 的中文大字、五态/搜索/重试、当前账号保护、明确拒绝及未知重启恢复均在两端通过；创建手动密码仍失败，iPad 的群组/账号删除完成后关闭仍有竞争。进一步查看 R1 录像第 32/37/40.4 秒确认是系统“使用强密码”建议干预手动测试：退出建议会清空先前字段。因此保留 App 的系统密码支持，测试在每次手动输入前明确关闭该建议，并仍要求两次密码不一致时禁用保存。
+
+R5 构建通过，风险确认使用原生二级表单，确认表单实际关闭后才提交。R3 浅色四项 UI 中，两端中文大字与群组 CRUD 通过；创建已越过密码断言并提交成功，但随后测试读取已关闭表单的滚动区域而失败，账号编辑/删除同样在转场时读取了失效控件。测试改为等待底层列表实际恢复可操作，再断言编辑器消失；表单用操作任务完成（包括刷新）驱动关闭，避免合并的状态更新漏掉结束。后续 R6 构建与 R4 结果补记，不把 R3 局部通过称为完整通过。
+
+用户在本片期间另授权同步修复 Mac 文件服务、终端和代理反馈，范围仅三个结果判断及回归。先执行 `swift test --package-path apple --jobs 2 --filter 'NasAdministrationModelTests/test.*相同缓存不能覆盖'`，三项新测试在六种状态下产生 18 条预期失败（`m6b1-mac-feedback-red.log`），证实缓存匹配掩盖实际结果。删除三个缓存覆盖分支及仅供它们使用的比较函数后，`swift test --package-path apple --jobs 2 --filter NasAdministrationModelTests` 为 101 项通过（`m6b1-mac-feedback-green.log`）。没有改请求、权限或功能范围。
+
+包含该授权修复的 `swift test --package-path apple --jobs 2` 最终为 2765 项 XCTest、172 条既有跳过、0 失败，另 12 项 Swift Testing 通过（`m6b1-shared-final.log`）；Mac Release 最终构建 `m6b1-macos-final.log` 成功，实际 `lipo -archs` 仍为 `x86_64 arm64`。这些结果不替代真实 NAS、正式签名或设备验收。
+
+
+最终收尾：
+
+- R6 移动构建通过后，R4 两端完整单元均 1336 项/4 条既有跳过/0 失败，但三个 UI 都在测试等待列表容器自身可点击时失败。实际导出创建录像可见新账号、成功记录且编辑器已关闭；容器可见不等于它本身是可点击控件。改为等待真正的新建按钮恢复可操作，保留编辑器必须消失的断言；说明字段以三次点击整段替换并断言精确新值，滚动范围排除软件键盘，避免坐标点击落入键盘或仅删除光标前内容。
+- R7 构建成功，R5 深色五项 UI（中文大字风险确认、账号创建/密码匹配、群组 CRUD、账号编辑/所属组/删除确认、未知重启恢复）在 iPhone 与 iPad **各五项全部通过**，结果为 `m6b1-phone-r5.xcresult` / `m6b1-pad-r5.xcresult`。R2 中另外三项五态/搜索/重试、当前账号保护、明确拒绝均有两端通过记录；没有新增 skip 或降低密码、权限、原对象及防重断言。
+- 只读复核补齐资料未知的显示：不呈现猜测的默认停用开关、空白编辑资料或密码编辑，而是保留已知名称/编号/组关系并提供 DSM 查看路径。新增第 17 项模型测试和第九项 UI。R8 构建成功，R6 浅色两端 **各 1337 项完整单元、4 条既有条件跳过、0 失败，以及一项只读资料 UI 通过**；结果为 `m6b1-phone-r6.xcresult` / `m6b1-pad-r6.xcresult`。九项新 UI 是跨轮分别取得两端通过证据，不声称最初整组无失败。
+- 最新资源检查为 Apple 6434、Android 2188、Windows 3402；双语/参数/引用/硬编码、179 个请求及 1 个写结果、29 组私有样本/48 项文档引用、文档与差异检查通过。新增最后一条资源后 `swift test --package-path apple --jobs 2 --filter AppLanguageTests` 为 6 项 Swift Testing 通过（XCTest 子集为 0，不能误报为六项 XCTest）。
+- 深色两端中文大字编辑和完整删除风险表单、浅色新账号成功列表均已实际查看；只读资料截图另保留。图片均为合成数据，位于忽略目录 `build/m6b1-preview`，测试日志/结果包继续保留，临时导出的录像和层级在收尾清理。两台模拟器恢复并确认 light。
+- Mac 三处反馈修复以 `ba4dfe6` 独立提交，提交前 `git fetch origin main` 确认远端无新提交。当前移动账户片同样在 main 完整提交；云端 `37300934405` 的两端旧整轮尚未结束时暂不推送取消，已知映像短暂占用修复仍待含修复的新云端结果。没有创建分支、PR、标签、正式发布或真实 NAS 写入。
+
+M6b1 当前环境开发完成。下一片为 M6b2 文件服务、终端及代理；其余 M6、M7、M8 和整体验收仍继续，整个目标保持进行中。

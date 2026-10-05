@@ -276,8 +276,14 @@ final class MobileNasDetailsPresentationTests: XCTestCase {
             "saveScheduledTask", "runScheduledTask", "setScheduledTaskEnabled",
             "deleteScheduledTask", "installedAt", "isUpdateAvailable"
         ] {
-            XCTAssertFalse(source.contains(forbidden), "界面不应引用：\(forbidden)")
+            if forbidden == ".account" {
+                // .accounts 是导航枚举；仍禁止读取账号字段本身，不能用子串误判路由名。
+                XCTAssertNil(source.range(of: #"\.account\b"#, options: .regularExpression), "界面不应引用：\(forbidden)")
+            } else {
+                XCTAssertFalse(source.contains(forbidden), "界面不应引用：\(forbidden)")
+            }
         }
+        XCTAssertFalse(source.contains("MobileDirectoryScreen"), "只读详情不能承载账号管理视图")
     }
 
     func test界面只引用冻结的双语资源键清单() throws {

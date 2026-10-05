@@ -75,7 +75,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M5 RSS、设置与搜索创建 | ServiceManagementView | RSS/设置/搜索创建表单；现有共享 Download 协议；写 | M5b 下载设置与分步恢复、M5c2 链接/文件与搜索创建的持久记录已验证；M5c2b 统一表单、逐次目录/文件密码及 M5c3 已有 RSS 订阅/条目、更新与创建已通过两端回归 |
 | M5 删除与数值 | ServiceManagementModel | 记录删除与文件删除分别确认；数据删除 | M5a1 已统一缺失数值为 --；M5d 单项/多项任务移除与恢复、结束并移出未完成文件均通过两端回归；实际文件由用户进入既有 M2 文件管理另行选择，不自动关联删除 |
 | M6 21 页读取与普通设置 | NasAdministrationView、NasAdministrationModel | 分类设置/并列详情；系统日志存储区域代理等；内部写 | 当前仅摘要及部分详情；仅编辑实际支持字段 |
-| M6 账号、群组、网络、安全 | NasAdministrationView | 分步表单/当前账号保护；User/Group/Ethernet/FileServ/Security；高风险 | 缺操作；管理员/原快照/差量/防重复/回读 |
+| M6 账号、群组、网络、安全 | NasAdministrationView | 分步表单/当前账号保护；User/Group/Ethernet/FileServ/Security；高风险 | M6b1 账号/群组已接并通过两端验收；其余设置继续 M6b2–M6b 后续切片 |
 | M6 硬件、UPS、内存、电源计划 | PowerScheduleEntryEditor、NasAdministrationView | 原生编辑器；Hardware/UPS/ZRAM/PowerSchedule；系统写 | 未实现；纠正 API 旧只读说明，未知字段不补 false |
 | M6 计划任务、连接、电源 | NasAdministrationModel | 后果确认与断连恢复；TaskScheduler/CurrentConnection/System；高风险 | 缺操作；接受不代表脚本完成或已重启，未知不重发 |
 | M6 套件中心 | PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 安装准备/卷/许可/进度、更新/SPK/设置；Package；内部写 | 只有只读列表；提交前取消丢弃迟到结果，提交后关闭不撤销任务 |
@@ -149,7 +149,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 | ddns / Model.saveDDNS、testDDNS | 服务商/条目及明确提交；不持久保存口令 | dsm-ddns-settings；凭据/网络写 | M6a3 已接完整管理与恢复，两端实际交互通过 |
 | packages / PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 列表/目录、卷、许可、SPK、更新、进度、来源和设置 | dsm-package-control/installation；套件写 | 既有摘要；完整流程待 M6e |
 | tasks / Model.saveTask、runTask、loadTaskResults | 草稿、启停/执行/删除、结果与输出 | dsm-task-scheduler；脚本高风险写 | 既有摘要；完整流程待 M6d |
-| accounts / Model.saveAccount、saveGroup | 账号/群组表单与当前账号保护 | dsm-account-directory；权限高风险写 | 待 M6b |
+| accounts / Model.saveAccount、saveGroup | 账号/群组表单与当前账号保护 | dsm-account-directory；权限高风险写 | M6b1 完整管理与恢复已接，两端单元/实际 UI 及共享/Mac 回归通过 |
 | shareAccess / View 共享访问 | 当前账号可见共享权限摘要与搜索 | FileStation.List / dsm-share-access；只读 | M6a1 读取/两端交互通过；不冒充完整 ACL 管理 |
 | processes / View 系统活动 | 进程/服务组快照、搜索、局部失败与截断 | dsm-system-processes；只读 | M6a1 读取/两端交互通过；终止/信号明确非目标 |
 | logs / Model.fetchLogs | 分页、筛选与条目详情 | 已有日志读取契约；只读 | M6a2 已接完整分页/筛选/正文，两端实际交互通过 |
@@ -197,6 +197,27 @@ M6a2 已完成主流程与当前环境验收，两端完整单元、新增行为
 | 可查看日志的账号及多页测试日志 | 翻页、调整每页五十、一百或两百条、搜索与等级筛选、查看长正文、断网重试和账号切换；原页失败保留内容，详情不串账号 | 页数、权限类别、版本和脱敏步骤；不回传日志正文、账号、地址或响应。仅影响日志读取 |
 | 两端 VoiceOver、硬件键盘、最大动态文字，iPad 分屏；真机锁屏文件保护 | 导航、滚动、确认/取消、重试和关闭都可触达；锁屏存储不可用时不提交新检测，解锁后可重新读取 | 设备/系统与控件位置及脱敏截图；系统文件保护和完整辅助功能不能由模拟器合成结果代替 |
 
+### M6b1 账号与群组
+
+2026-10-05 按 Mac `NasAdministrationModel.saveAccount/saveGroup/deleteAccount/deleteGroup`、`NasAdministrationView.AccountEditor/GroupEditor` 和共享 `DsmNasAdministrationRepository+Accounts.swift` 建立本片基线。iPhone/iPad 均提供账号/群组切换、搜索、资料及所属组查看、新建/编辑/删除和操作恢复；使用原生列表、导航详情与表单，不移植桌面网格或右键入口。群组只编辑名称（新建）和说明，群组成员通过账号所属组修改，不猜测新端点。
+
+依赖 `dsm-account-directory` 的 User/Group v1 既有请求，风险为账号、凭据及访问权限写。共享增量绑定完整原对象与数字身份、当前群组目录及接受回执，旧 Mac 调用兼容；保存和删除共用目标防重，当前账号禁止停用/改组/删除，保留系统账号删除保护。密码只在当次草稿和请求中，关闭/换账号清除；创建或改密码丢失回执不能凭同名及资料匹配认领成功。
+
+单一修改范围：移动 Administration、组合根/路由、双语资源、Debug 合成场景、工程/对应测试，共享 Core/Network 的账号兼容增量及测试，相关契约/矩阵/进度文档。沿用已授权独立恢复范围，新增受系统文件保护且排除备份的 `NAS/directory-operations-v1.json`，仅存账号上下文与对象/字段摘要、数字身份、阶段及回执；不存名称、邮件、成员正文或密码。不迁移登录配置，回滚停用新入口并保留未完成记录。Windows/Android 仅登记五端影响，不改源码；文件服务、终端、代理、网卡、远程和安全在后续 M6b 切片完成。
+
+当前已完成源码、共享自动化、两端完整单元各 1337 项（各 4 条既有跳过）、17 项新目录行为测试及九项新 UI 的两端通过证据；浅深色/中文大字已实际查看，Mac 双架构构建通过。真实 NAS 未参与写操作。缺少可编辑资料时只显示已知只读字段，不把默认状态当作真实值。中间失败、修正和最终结果见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-05-移动-m6b1-账号与群组管理)。
+
+`PENDING_USER_VALIDATION`（仅本片已实现的账号与群组）：
+
+| 前置条件 | 操作与预期 | 脱敏反馈及影响范围 |
+| --- | --- | --- |
+| iPhone/iPad 真机、已记录 DSM 版本、专用管理员与可丢弃账号/群组，保留原访问配置 | 创建账号/群组、修改说明/邮件、选择所属组、明确确认改密/停用；原值未变不保存、空密码保留原凭据、未知组关系不清空。用专用账号验证登录与访问；删除仅作用于可丢弃对象 | 回传版本、动作、角色类别及错误类别；不回传名称、邮件、组成员、密码、地址或原始响应。影响测试账号访问与所属组权限 |
+| 同一测试环境及另一管理会话 | 编辑期间修改原对象、数字身份或群组目录；撤销管理权限；检查当前账号及系统保留项保护 | 陈旧表单不覆盖、新权限拒绝不显示成功、当前账号不被停用/改组/删除；仅回传脱敏步骤和角色类别 |
+| 可中断网络、关闭 App、切换账号与模拟低剩余空间的专用设备 | 在提交前后分别断网/终止/重启，普通资料只读恢复；改密和创建无接受回执保留原保护，同名替换不能认领；记录损坏或无法写入时不提交 | 未完成记录不能简单清除重放；必要时通过 DSM 处理原对象。只回传阶段、结果和脱敏错误，不回传恢复文件或凭据 |
+| 两种机型、浅深色、大字号、VoiceOver、iPad 键盘与分屏、锁屏文件保护 | 检查字段、群组选择、风险说明、取消/保存、页面返回及密码关闭后清除；未授权读取不能沿用旧管理权限 | 补真实触控/辅助功能及锁屏行为；录制画面前用合成或可丢弃资料，不包含真实账号正文 |
+
+后续 M6b2 只读基线检查发现 Mac `NasAdministrationModel.saveFileServices/saveTerminal/saveProxy` 仍可能用页面缓存中的相同配置覆盖明确拒绝、部分完成或未知结果，证据为这三个方法原有的缓存匹配分支。用户已在 2026-10-05 明确授权同步修复这三处反馈，仅修改结果判断及对应回归，不扩张桌面功能、请求或权限。已补回归先复现 18 个错误判断，再移除三处缓存覆盖；101 项 Mac 管理模型、2765 项共享 XCTest（172 条既有跳过）和 12 项 Swift Testing 通过，Mac 双架构构建通过。后续 M6b2 移动实现继续单独建账。
+
 ### M6a3 区域时间与 DDNS
 
 2026-10-05 用户明确授权同步修复 Mac 区域保存结果被配置匹配覆盖的问题；范围限定结果判断与对应回归，不扩张其他桌面功能。
@@ -218,7 +239,7 @@ DDNS 与区域时间主流程及当前环境验收均已完成，真实 NAS 与�
 
 区域时间独立复核覆盖原配置变化、校时前权限撤回、两个副作用间的持久保存失败、仅调整一分钟、丢失手动改时回执、完整配置与时钟比较、跨账号迟到和单独校时取消。未知瞬时校时可由用户重新明确发起，不能将读取到的已有配置算成部分保存；手动改时缺少接受回执则不凭近似时钟解除原记录保护，提示可在 DSM 中管理。恢复文件只存摘要、阶段、回执及明确选择的墙上时间，无新主 App 身份/权限/依赖，回滚停用新增入口并保留记录和登录配置。
 
-区域时间两端完整单元、全部七项新 UI、浅深色和中文大字均有通过证据；中间失败及最终手动日期保存回读见[区域时间验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-05-移动-m6a3-区域时间与分步校时恢复)。M6a3 完成后继续 M6b 的账号/群组、文件服务、终端、代理、网卡、远程与安全设置，不把其未开发部分列为仅待真机。
+区域时间两端完整单元、全部七项新 UI、浅深色和中文大字均有通过证据；中间失败及最终手动日期保存回读见[区域时间验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-05-移动-m6a3-区域时间与分步校时恢复)。M6a3 和 M6b1 账号/群组已完成当前环境验收；继续 M6b2 文件服务/终端/代理，再完成网卡、远程与安全，不把未开发部分列为仅待真机。
 
 `PENDING_USER_VALIDATION`（区域时间已实现入口，以下仅为真实系统条件）：
 

@@ -851,7 +851,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "能力缺失或权限不足时关闭账号管理；写请求结果无法回读时提示核对，不自动重放。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-09-26 Apple 读取兼容 expired normal/now；缺少 can_edit 且资料完整时可打开编辑，显式拒绝和删除许可仍生效。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。",
+      "fallback": "能力缺失或权限不足时关闭账号管理；写请求结果无法回读时提示核对，不自动重放。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-09-26 Apple 读取兼容 expired normal/now；缺少 can_edit 且资料完整时可打开编辑，显式拒绝和删除许可仍生效。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-10-05 iPhone/iPad 已接 User/Group v1 完整管理与独立摘要恢复；运行时能力、当前管理员和对象权限、原快照/数字身份及写前/接受回执保护决定操作，未实机不固定关闭。创建/改密无回执保持未知，旧 Mac 方法兼容，Windows/Android 不改源码；真实账号写证据未提升。",
       "documentRef": "docs/api/discovery/endpoints/dsm-account-directory.md",
       "verifications": [
         {

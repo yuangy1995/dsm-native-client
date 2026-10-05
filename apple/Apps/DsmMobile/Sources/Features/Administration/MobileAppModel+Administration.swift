@@ -9,6 +9,7 @@ extension MobileAppModel {
         nasHealthModel.state.isRefreshing || nasDetailsModel.state.isRefreshing
             || nasStorageModel.storage.isRefreshing || nasStorageModel.storage.phase == .loading
             || ddnsModel.directory.isRefreshing || ddnsModel.directory.phase == .loading
+            || directoryModel.directory.isRefreshing || directoryModel.directory.phase == .loading
             || regionModel.settings.isRefreshing || regionModel.settings.phase == .loading
     }
 
@@ -18,6 +19,7 @@ extension MobileAppModel {
         await nasDetailsModel.refreshLoadedSections()
         if nasStorageModel.storage.phase != .idle { await nasStorageModel.refresh() }
         if ddnsModel.directory.phase != .idle { await ddnsModel.refresh() }
+        if directoryModel.directory.phase != .idle { await directoryModel.refresh() }
         if regionModel.settings.phase != .idle { await regionModel.refresh() }
     }
 
@@ -27,6 +29,7 @@ extension MobileAppModel {
             nasStorageModel.deactivate()
             ddnsModel.deactivate()
             regionModel.deactivate()
+            directoryModel.deactivate()
             await nasHealthModel.activate(profileID: nil, repository: nil)
             return
         }
@@ -41,6 +44,7 @@ extension MobileAppModel {
         }
         nasStorageModel.configure(profile: profile, repository: nasRepository, fileRepository: fileRepository, authorize: authorize)
         ddnsModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
+        directoryModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
         regionModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
         nasDetailsModel.activate(
             profileID: profileID,
