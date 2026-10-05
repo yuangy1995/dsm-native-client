@@ -1325,6 +1325,45 @@ final class NasAdministrationModelTests: XCTestCase {
         XCTAssertEqual(model.region?.timeZone, "Asia/Shanghai")
     }
 
+    func test配置完全匹配也不能掩盖校时部分失败() async throws {
+        let repository = NasAdministrationRepositoryStub(regionUpdateStatus: .partialSuccess)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.region)
+        let expected = regionUpdate
+        await repository.setRegionSnapshot(expected)
+        do { try await model.saveRegion(expected); XCTFail("配置匹配不能代替校时结果") }
+        catch let error as AppError {
+            XCTAssertEqual(error.category, .partialFailure)
+            XCTAssertEqual(error.safeUserMessage, L10n.string("region.settings.partial"))
+        }
+        XCTAssertEqual(model.region, expected)
+        XCTAssertFalse(model.isSavingServiceSettings)
+    }
+
+    func test手动改时被拒绝或结果未知不被格式时区匹配覆盖() async throws {
+        for status: MutationResultStatus in [.permissionDenied, .unsupported, .submittedButUnverified] {
+            let repository = NasAdministrationRepositoryStub(regionUpdateStatus: status)
+            var original = regionUpdate
+            original.isNetworkTimeEnabled = false
+            original.manualDate = Date(timeIntervalSince1970: 1_790_000_000)
+            await repository.setRegionSnapshot(original)
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            await model.activate(.region)
+            var desired = original
+            desired.manualDate = original.manualDate!.addingTimeInterval(3_600)
+            do { try await model.saveRegion(desired); XCTFail("手动时间未生效不能冒报成功") }
+            catch let error as AppError {
+                let feedback = NasSettingsModel.regionSettingsFeedback(for: status)
+                XCTAssertEqual(error.category, feedback.category)
+                XCTAssertEqual(error.safeUserMessage, L10n.string(feedback.resourceKey))
+            }
+            XCTAssertEqual(model.region?.manualDate, original.manualDate)
+            XCTAssertFalse(model.isSavingServiceSettings)
+        }
+    }
+
     func test区域与时间反馈覆盖权限和不支持状态() {
         XCTAssertEqual(
             NasSettingsModel.regionSettingsFeedback(for: .permissionDenied),
@@ -2729,6 +2768,8 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
             diagnosticTag: "proxy.settings.test"
         )
     }
+
+    func setRegionSnapshot(_ value: NasRegionSettings) { regionSettings = value }
 
     func loadRegionSettings() async throws -> NasRegionSettings {
         regionSettings

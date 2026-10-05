@@ -5488,44 +5488,29 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         default:
             false
         }
+        // 明确拒绝是本次操作的结论，不能用其他来源写入的相同配置覆盖。
+        guard ambiguous else {
+            return try regionRejectedResult(submissionError, totalCount: max(1, configurationSteps.count),
+                submitted: true, operation: operation, prefix: prefix)
+        }
         do {
             let verified = try await loadRegionSettings()
             return try regionVerifiedResult(
                 verified,
                 expected: expected,
                 steps: configurationSteps,
-                includesPendingSynchronization: ambiguous
-                    && includesPendingSynchronization,
+                includesPendingSynchronization: includesPendingSynchronization,
                 operation: operation,
                 prefix: prefix,
                 failureCategory: submissionError.category,
-                treatsMismatchAsUnknown: ambiguous
+                treatsMismatchAsUnknown: true
             )
         } catch {
-            if ambiguous {
-                return try regionMutationResult(
-                    status: .submittedButUnverified,
-                    operation: operation,
-                    submitted: true,
-                    requiresRefresh: true,
-                    succeeded: 0,
-                    failed: 0,
-                    unknown: configurationSteps.count
-                        + (includesPendingSynchronization ? 1 : 0),
-                    errorCategory: packageMutationErrorCategory(
-                        for: submissionError.category
-                    ),
-                    localizationKey: "\(prefix).unverified",
-                    diagnosticTag: "\(prefix).readback-unverified"
-                )
-            }
-            return try regionRejectedResult(
-                submissionError,
-                totalCount: max(1, configurationSteps.count),
-                submitted: true,
-                operation: operation,
-                prefix: prefix
-            )
+            return try regionMutationResult(
+                status: .submittedButUnverified, operation: operation, submitted: true, requiresRefresh: true,
+                succeeded: 0, failed: 0, unknown: configurationSteps.count + (includesPendingSynchronization ? 1 : 0),
+                errorCategory: packageMutationErrorCategory(for: submissionError.category),
+                localizationKey: "\(prefix).unverified", diagnosticTag: "\(prefix).readback-unverified")
         }
     }
 
@@ -5719,9 +5704,56 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
+    public func changeDDNSResult(_ change: NasDDNSChange,
+        checkpoint: @escaping @Sendable (NasDDNSCheckpoint) async throws -> Void) async throws -> MutationResult {
+        switch change {
+        case .test(_, let draft):
+            try await testDDNSResult(draft, expectedChange: change, checkpoint: checkpoint)
+        case .save(_, let draft):
+            try await saveDDNSResult(draft, expectedChange: change, checkpoint: checkpoint)
+        case .delete(let record):
+            try await deleteDDNSResult(providerID: record.providerID, expectedChange: change, checkpoint: checkpoint)
+        case .updateAddress:
+            try await refreshDDNSResult(expectedChange: change, checkpoint: checkpoint)
+        }
+    }
+
     public func loadDDNS() async throws -> NasDDNSDirectory {
+        try await loadDDNS(requireEditableFields: false)
+    }
+
+    public func loadDDNSForManagement() async throws -> NasDDNSDirectory {
+        guard ddnsCapabilitiesAreAvailable else { throw unavailableError() }
+        return try await loadDDNS(requireEditableFields: true)
+    }
+
+    private func loadDDNS(requireEditableFields: Bool) async throws -> NasDDNSDirectory {
+        func knownBoolean(_ value: DsmDynamicJSON?) -> Bool? {
+            guard let value else { return nil }
+            switch value {
+            case .boolean(let value): return value
+            case .number(let value) where value == 0 || value == 1: return value == 1
+            case .string(let value):
+                switch value.lowercased() {
+                case "true", "yes", "1", "enabled": return true
+                case "false", "no", "0", "disabled": return false
+                default: return nil
+                }
+            default: return nil
+            }
+        }
+        func knownString(_ value: DsmDynamicJSON?) -> String? {
+            guard let value, case .string(let text) = value else { return nil }
+            return text
+        }
         let providerValue = try await call(DsmAPIName.coreDDNSProvider, method: "list")
         let recordValue = try await call(DsmAPIName.coreDDNSRecord, method: "list")
+        if requireEditableFields {
+            guard let providers = providerValue["providers"]?.array, providers.allSatisfy({ $0.object != nil }),
+                  let records = recordValue["records"]?.array, records.allSatisfy({ $0.object != nil }) else {
+                throw verificationError(L10n.string("ddns.save.failed"))
+            }
+        }
         let providerObjects = providerValue.objects("providers")
         var providerOrder: [String] = []
         var providerByID: [String: NasDDNSProvider] = [:]
@@ -5729,7 +5761,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             guard let id = item["id"]?.scalarString
                     ?? item["provider"]?.scalarString,
                   !id.isEmpty else {
+                if requireEditableFields { throw verificationError(L10n.string("ddns.save.failed")) }
                 continue
+            }
+            if requireEditableFields, knownString(item["id"] ?? item["provider"]) == nil {
+                throw verificationError(L10n.string("ddns.save.failed"))
             }
             let provider = NasDDNSProvider(
                 id: id,
@@ -5751,11 +5787,27 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         let names = providers.reduce(into: [String: String]()) {
             $0[$1.id] = $1.displayName
         }
-        let records = recordValue.objects("records").compactMap { item -> NasDDNSRecord? in
+        var recordIDs: Set<String> = []
+        let records = try recordValue.objects("records").compactMap { item -> NasDDNSRecord? in
             guard let provider = item["provider"]?.scalarString,
                   let hostname = item["hostname"]?.scalarString,
                   !provider.isEmpty, !hostname.isEmpty else {
+                if requireEditableFields { throw verificationError(L10n.string("ddns.save.failed")) }
                 return nil
+            }
+            if requireEditableFields {
+                guard recordIDs.insert(provider).inserted,
+                      knownString(item["username"]) != nil,
+                      knownString(item["provider"]) != nil, knownString(item["hostname"]) != nil,
+                      knownBoolean(item["enable"]) != nil,
+                      knownBoolean(item["heartbeat"]) != nil else {
+                    throw verificationError(L10n.string("ddns.save.failed"))
+                }
+                for key in ["net", "ip", "ipv6", "interface_v4", "interface_v6"] {
+                    if let value = item[key], value != .null, knownString(value) == nil {
+                        throw verificationError(L10n.string("ddns.save.failed"))
+                    }
+                }
             }
             let ipv4 = item["ip"]?.scalarString
             let ipv6 = item["ipv6"]?.scalarString
@@ -5787,8 +5839,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         return NasDDNSDirectory(providers: providers, records: records)
     }
 
-    public func testDDNSResult(
-        _ draft: NasDDNSDraft
+    public func testDDNSResult(_ draft: NasDDNSDraft) async throws -> MutationResult {
+        try await testDDNSResult(draft, expectedChange: nil, checkpoint: nil)
+    }
+
+    private func testDDNSResult(
+        _ draft: NasDDNSDraft,
+        expectedChange: NasDDNSChange?,
+        checkpoint: (@Sendable (NasDDNSCheckpoint) async throws -> Void)?
     ) async throws -> MutationResult {
         let operation = "ddnsProviderTest"
         let prefix = "ddns.test"
@@ -5820,7 +5878,10 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
 
         let directory: NasDDNSDirectory
         do {
-            directory = try await loadDDNS()
+            directory = try await loadDDNS(requireEditableFields: expectedChange != nil)
+            if let expectedChange, !expectedChange.matches(directory) {
+                return try ddnsConflictResult(operation: operation, prefix: prefix, diagnosticTag: "\(prefix).confirmation-changed")
+            }
         } catch let error as AppError {
             return try ddnsRejectedResult(
                 error,
@@ -5852,17 +5913,29 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 diagnosticTag: "\(prefix).cancelled-after-preflight"
             )
         }
-        let parameters = Self.ddnsParameters(
+        var parameters = Self.ddnsParameters(
             draft,
             hostname: draft.normalizedHostname,
             username: draft.normalizedUsername
         )
+        if let original = expectedChange?.original,
+           let current = directory.records.first(where: { $0.providerID == original.providerID }) {
+            // 移动表单不编辑网络字段；使用本次预检值，避免回写已经变化的公网地址。
+            for (key, value) in [("net", current.networkType), ("ip", current.ipv4), ("ipv6", current.ipv6),
+                                 ("interface_v4", current.interfaceV4), ("interface_v6", current.interfaceV6)] {
+                if let value { parameters[key] = .string(value) }
+                else { parameters.removeValue(forKey: key) }
+            }
+        }
+        try await checkpoint?(.willSubmit)
+        if Task.isCancelled { return try ddnsCancelledBeforeSubmissionResult(operation: operation, prefix: prefix) }
         do {
             try await callVoid(
                 DsmAPIName.coreDDNSRecord,
                 method: "test",
                 parameters: parameters
             )
+            try await checkpoint?(.accepted)
             if Task.isCancelled {
                 return try ddnsCancellationAfterSubmissionResult(
                     operation: operation,
@@ -5918,8 +5991,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    public func saveDDNSResult(
-        _ draft: NasDDNSDraft
+    public func saveDDNSResult(_ draft: NasDDNSDraft) async throws -> MutationResult {
+        try await saveDDNSResult(draft, expectedChange: nil, checkpoint: nil)
+    }
+
+    private func saveDDNSResult(
+        _ draft: NasDDNSDraft,
+        expectedChange: NasDDNSChange?,
+        checkpoint: (@Sendable (NasDDNSCheckpoint) async throws -> Void)?
     ) async throws -> MutationResult {
         let operation = "ddnsRecordSave"
         let prefix = "ddns.save"
@@ -5944,7 +6023,10 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
 
         let directory: NasDDNSDirectory
         do {
-            directory = try await loadDDNS()
+            directory = try await loadDDNS(requireEditableFields: expectedChange != nil)
+            if let expectedChange, !expectedChange.matches(directory) {
+                return try ddnsConflictResult(operation: operation, prefix: prefix, diagnosticTag: "\(prefix).confirmation-changed")
+            }
         } catch let error as AppError {
             return try ddnsRejectedResult(
                 error,
@@ -5994,26 +6076,40 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         if draft.password.isEmpty, providerID != "Synology" {
             parameters.removeValue(forKey: "passwd")
         }
+        if let original = expectedChange?.original,
+           let current = directory.records.first(where: { $0.providerID == original.providerID }) {
+            // 移动表单不编辑网络字段；使用本次预检值，避免回写已经变化的公网地址。
+            for (key, value) in [("net", current.networkType), ("ip", current.ipv4), ("ipv6", current.ipv6),
+                                 ("interface_v4", current.interfaceV4), ("interface_v6", current.interfaceV6)] {
+                if let value { parameters[key] = .string(value) }
+                else { parameters.removeValue(forKey: key) }
+            }
+        }
+        try await checkpoint?(.willSubmit)
+        if Task.isCancelled { return try ddnsCancelledBeforeSubmissionResult(operation: operation, prefix: prefix) }
         do {
             try await callVoid(
                 DsmAPIName.coreDDNSRecord,
                 method: draft.originalProviderID == nil ? "create" : "set",
                 parameters: parameters
             )
+            try await checkpoint?(.accepted)
         } catch let error as AppError {
             return try await ddnsSaveSubmissionFailureResult(
                 error,
                 draft: draft,
                 needsCredentialAcknowledgement: needsCredentialAcknowledgement,
                 operation: operation,
-                prefix: prefix
+                prefix: prefix,
+                strict: expectedChange != nil
             )
         } catch {
             return try await ddnsSaveUnknownSubmissionResult(
                 draft: draft,
                 needsCredentialAcknowledgement: needsCredentialAcknowledgement,
                 operation: operation,
-                prefix: prefix
+                prefix: prefix,
+                strict: expectedChange != nil
             )
         }
         if Task.isCancelled {
@@ -6023,7 +6119,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
         do {
-            let verified = try await loadDDNS()
+            let verified = try await loadDDNS(requireEditableFields: expectedChange != nil)
             return try ddnsSavedRecordResult(
                 directory: verified,
                 draft: draft,
@@ -6058,8 +6154,13 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    public func deleteDDNSResult(
-        providerID: String
+    public func deleteDDNSResult(providerID: String) async throws -> MutationResult {
+        try await deleteDDNSResult(providerID: providerID, expectedChange: nil, checkpoint: nil)
+    }
+
+    private func deleteDDNSResult(
+        providerID: String, expectedChange: NasDDNSChange?,
+        checkpoint: (@Sendable (NasDDNSCheckpoint) async throws -> Void)?
     ) async throws -> MutationResult {
         let operation = "ddnsRecordDelete"
         let prefix = "ddns.delete"
@@ -6085,7 +6186,10 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         defer { activeDDNSProviderIDs.remove(normalizedID) }
 
         do {
-            let current = try await loadDDNS()
+            let current = try await loadDDNS(requireEditableFields: expectedChange != nil)
+            if let expectedChange, !expectedChange.matches(current) {
+                return try ddnsConflictResult(operation: operation, prefix: prefix, diagnosticTag: "\(prefix).confirmation-changed")
+            }
             guard current.records.contains(where: {
                 $0.providerID == normalizedID
             }) else {
@@ -6114,24 +6218,29 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 prefix: prefix
             )
         }
+        try await checkpoint?(.willSubmit)
+        if Task.isCancelled { return try ddnsCancelledBeforeSubmissionResult(operation: operation, prefix: prefix) }
         do {
             try await callVoid(
                 DsmAPIName.coreDDNSRecord,
                 method: "delete",
                 parameters: ["id": .stringArray([normalizedID])]
             )
+            try await checkpoint?(.accepted)
         } catch let error as AppError {
             return try await ddnsDeleteSubmissionFailureResult(
                 error,
                 providerID: normalizedID,
                 operation: operation,
-                prefix: prefix
+                prefix: prefix,
+                strict: expectedChange != nil
             )
         } catch {
             return try await ddnsDeleteUnknownSubmissionResult(
                 providerID: normalizedID,
                 operation: operation,
-                prefix: prefix
+                prefix: prefix,
+                strict: expectedChange != nil
             )
         }
         if Task.isCancelled {
@@ -6141,7 +6250,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
         do {
-            let verified = try await loadDDNS()
+            let verified = try await loadDDNS(requireEditableFields: expectedChange != nil)
             return try ddnsDeletedRecordResult(
                 directory: verified,
                 providerID: normalizedID,
@@ -6177,6 +6286,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     }
 
     public func refreshDDNSResult() async throws -> MutationResult {
+        try await refreshDDNSResult(expectedChange: nil, checkpoint: nil)
+    }
+
+    private func refreshDDNSResult(expectedChange: NasDDNSChange?,
+        checkpoint: (@Sendable (NasDDNSCheckpoint) async throws -> Void)?) async throws -> MutationResult {
         let operation = "ddnsAddressRefresh"
         let prefix = "ddns.refresh"
         if Task.isCancelled {
@@ -6195,7 +6309,10 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         defer { isDDNSRefreshActive = false }
 
         do {
-            let current = try await loadDDNS()
+            let current = try await loadDDNS(requireEditableFields: expectedChange != nil)
+            if let expectedChange, !expectedChange.matches(current) {
+                return try ddnsConflictResult(operation: operation, prefix: prefix, diagnosticTag: "\(prefix).confirmation-changed")
+            }
             guard !current.records.isEmpty else {
                 return try ddnsConflictResult(
                     operation: operation,
@@ -6222,11 +6339,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 prefix: prefix
             )
         }
+        try await checkpoint?(.willSubmit)
+        if Task.isCancelled { return try ddnsCancelledBeforeSubmissionResult(operation: operation, prefix: prefix) }
         do {
             try await callVoid(
                 DsmAPIName.coreDDNSRecord,
                 method: "update_ip_address"
             )
+            try await checkpoint?(.accepted)
         } catch let error as AppError {
             if error.category == .cancelled {
                 return try ddnsCancellationAfterSubmissionResult(
@@ -6262,7 +6382,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
         do {
-            _ = try await loadDDNS()
+            _ = try await loadDDNS(requireEditableFields: expectedChange != nil)
             return try ddnsMutationResult(
                 status: .confirmedSuccess,
                 operation: operation,
@@ -6300,7 +6420,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         draft: NasDDNSDraft,
         needsCredentialAcknowledgement: Bool,
         operation: String,
-        prefix: String
+        prefix: String,
+        strict: Bool
     ) async throws -> MutationResult {
         if submissionError.category == .cancelled {
             return try ddnsCancellationAfterSubmissionResult(
@@ -6314,7 +6435,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 draft: draft,
                 needsCredentialAcknowledgement: needsCredentialAcknowledgement,
                 operation: operation,
-                prefix: prefix
+                prefix: prefix,
+                strict: strict
             )
         }
         return try ddnsRejectedResult(
@@ -6329,7 +6451,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         draft: NasDDNSDraft,
         needsCredentialAcknowledgement: Bool,
         operation: String,
-        prefix: String
+        prefix: String,
+        strict: Bool
     ) async throws -> MutationResult {
         if needsCredentialAcknowledgement {
             return try ddnsUnverifiedResult(
@@ -6339,7 +6462,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
         do {
-            let verified = try await loadDDNS()
+            let verified = try await loadDDNS(requireEditableFields: strict)
             return try ddnsSavedRecordResult(
                 directory: verified,
                 draft: draft,
@@ -6360,7 +6483,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         _ submissionError: AppError,
         providerID: String,
         operation: String,
-        prefix: String
+        prefix: String,
+        strict: Bool
     ) async throws -> MutationResult {
         if submissionError.category == .cancelled {
             return try ddnsCancellationAfterSubmissionResult(
@@ -6372,7 +6496,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             return try await ddnsDeleteUnknownSubmissionResult(
                 providerID: providerID,
                 operation: operation,
-                prefix: prefix
+                prefix: prefix,
+                strict: strict
             )
         }
         return try ddnsRejectedResult(
@@ -6386,10 +6511,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private func ddnsDeleteUnknownSubmissionResult(
         providerID: String,
         operation: String,
-        prefix: String
+        prefix: String,
+        strict: Bool
     ) async throws -> MutationResult {
         do {
-            let verified = try await loadDDNS()
+            let verified = try await loadDDNS(requireEditableFields: strict)
             return try ddnsDeletedRecordResult(
                 directory: verified,
                 providerID: providerID,

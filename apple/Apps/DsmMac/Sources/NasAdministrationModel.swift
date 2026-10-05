@@ -2070,10 +2070,8 @@ final class NasSettingsModel {
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.region, force: true)
         }
-        if region.map({
-            Self.regionSettings($0, match: settings)
-        }) == true
-            || result.status == .confirmedSuccess
+        // 配置匹配不能覆盖校时部分失败，也不能证明手动改时或被拒绝的保存成功。
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }
@@ -2132,18 +2130,6 @@ final class NasSettingsModel {
                 category: .cancelled
             )
         }
-    }
-
-    private static func regionSettings(
-        _ actual: NasRegionSettings,
-        match expected: NasRegionSettings
-    ) -> Bool {
-        actual.dateFormat == expected.normalizedDateFormat
-            && actual.timeFormat == expected.normalizedTimeFormat
-            && actual.timeZone == expected.timeZone
-            && actual.isNetworkTimeEnabled == expected.isNetworkTimeEnabled
-            && (!expected.isNetworkTimeEnabled
-                || actual.timeServers == expected.normalizedTimeServers)
     }
 
     func testDDNS(_ draft: NasDDNSDraft) async throws -> MutationResult {

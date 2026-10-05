@@ -20,6 +20,7 @@ struct MobileNasSettingsView: View {
             if model.selectedModule != .nasSettings {
                 model.nasDetailsModel.deactivate()
                 model.nasStorageModel.cancelReads()
+                model.ddnsModel.cancelRead()
                 model.nasStorageModel.cancelAnalysis()
             }
         }
@@ -38,6 +39,8 @@ struct MobileNasSettingsView: View {
         .navigationDestination(for: MobileNasAdministrationDestination.self) { destination in
             if destination == .storage {
                 MobileNasStorageScreen(model: model.nasStorageModel)
+            } else if destination == .ddns {
+                MobileDDNSScreen(model: model.ddnsModel)
             } else if destination.isDetails {
                 MobileNasDetailsScreen(
                     model: model.nasDetailsModel,
@@ -56,7 +59,7 @@ struct MobileNasSettingsView: View {
                     }
                 }
                 Section(L10n.string("mobile.nas-details.group.title")) {
-                    ForEach(MobileNasAdministrationDestination.details) { destination in
+                    ForEach(MobileNasAdministrationDestination.management + MobileNasAdministrationDestination.details) { destination in
                         navigationButton(destination)
                     }
                 }
@@ -68,6 +71,8 @@ struct MobileNasSettingsView: View {
 
             if selectedSection == .storage {
                 MobileNasStorageScreen(model: model.nasStorageModel)
+            } else if selectedSection == .ddns {
+                MobileDDNSScreen(model: model.ddnsModel)
             } else {
                 List { selectedDetail }
                     .listStyle(.insetGrouped)
@@ -83,7 +88,7 @@ struct MobileNasSettingsView: View {
 
     private var detailsNavigationSection: some View {
         Section(L10n.string("mobile.nas-details.group.title")) {
-            ForEach([MobileNasAdministrationDestination.storage] + MobileNasAdministrationDestination.details) { destination in
+            ForEach([MobileNasAdministrationDestination.storage] + MobileNasAdministrationDestination.management + MobileNasAdministrationDestination.details) { destination in
                 NavigationLink(value: destination) {
                     Label(destination.title, systemImage: destination.systemImage)
                         .frame(minHeight: 44, alignment: .leading)
@@ -118,6 +123,7 @@ struct MobileNasSettingsView: View {
         case .system: systemSection
         case .performance: performanceSection
         case .storage: storageSection
+        case .ddns: EmptyView()
         case .update: updateSection
         case .packages, .scheduledTasks, .logs, .connections, .externalStorage, .processes, .shareAccess, .zram, .powerSchedule:
             MobileNasDetailsSectionView(
