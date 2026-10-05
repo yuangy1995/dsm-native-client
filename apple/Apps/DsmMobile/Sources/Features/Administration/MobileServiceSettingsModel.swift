@@ -5,7 +5,7 @@ import Observation
 
 @MainActor @Observable
 final class MobileServiceSettingsModel {
-    enum Failure: Equatable { case read, denied, unavailable, changed, storage }
+    enum Failure: Equatable { case read, denied, unavailable, changed, storage, trust }
     private(set) var context: String?
     private(set) var activation = UUID()
     private(set) var sections: [NasServiceKind: MobileNasDetailsSection<NasServiceSettings>] = [:]
@@ -108,6 +108,10 @@ final class MobileServiceSettingsModel {
                 let failure = Self.failure(error)
                 if !store.failed { try? store.stop(entry.id, failure: error is CancellationError ? nil : (failure == .denied ? .denied : .failed)) }
                 if self?.activation == token { self?.errors[change.kind] = store.failed ? .storage : failure }
+                if failure == .trust {
+                    if self?.activation == token { self?.permissions[change.kind] = false }
+                    return
+                }
             }
             store.end(entry.id)
             if self?.activation == token { await self?.refresh(change.kind) }
@@ -120,10 +124,12 @@ final class MobileServiceSettingsModel {
         do { try recovery.remove(id, context: context) } catch { errors[kind] = .storage }
     }
     private static func failure(_ error: Error) -> Failure {
+        if error is DsmCertificateTrustError { return .trust }
         guard let value = error as? AppError else { return .read }
         switch value.category { case .permissionDenied, .authenticationRequired: return .denied
         case .apiUnavailable, .versionUnsupported: return .unavailable
         case .conflict, .notFound: return .changed
+        case .tlsUntrusted, .tlsCertificateChanged: return .trust
         default: return .read }
     }
 }

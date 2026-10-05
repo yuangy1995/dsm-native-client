@@ -6759,7 +6759,7 @@
 "mobile.nas.service.readError" = "无法读取设置。请检查连接后刷新。";
 "mobile.nas.service.denied" = "当前账号无法保存这些设置。请使用有管理权限的账号重新连接。";
 "mobile.nas.service.unavailable" = "此 NAS 不支持这些设置。请在 DSM 中查看。";
-"mobile.nas.service.changed" = "设置已在其他位置更改。请刷新后重新编辑。";
+"mobile.nas.service.changed" = "可用设置已变化。请刷新后重新编辑。";
 "mobile.nas.service.storageError" = "无法保存本机操作记录，已停止后续修改。请解锁设备并检查剩余空间，再重新打开页面。";
 "mobile.nas.service.unknown" = "尚未读取到修改后的设置。请稍后刷新，或在 DSM 中管理。";
 "mobile.nas.service.partialUnknown" = "部分设置已保存，其余设置尚未显示最新结果。请稍后刷新，或在 DSM 中管理。";
@@ -6774,3 +6774,13 @@
 "mobile.nas.service.partSaved" = "已保存";
 "mobile.nas.service.partRejected" = "未保存";
 "mobile.nas.service.partSkipped" = "未修改";
+
+// 移动端远程访问设置。
+"mobile.nas.service.remoteAccess" = "远程访问";
+"mobile.nas.service.relay" = "QuickConnect 中继";
+"mobile.nas.service.routerConfiguration" = "自动配置路由器";
+"mobile.nas.service.relayProtection" = "当前连接正在使用 QuickConnect 中继。要关闭中继，请先通过局域网或公网地址直接连接。";
+"mobile.nas.service.remoteAccessWarning" = "修改这些设置可能中断外网连接。自动配置路由器可能开放或撤销访问入口，实际连接仍取决于路由器和网络。请确保能通过局域网进入 DSM 恢复原设置。";
+"mobile.nas.service.relayReadFailed" = "暂时无法读取 QuickConnect 中继设置。请刷新或重新登录。";
+"mobile.nas.service.routerReadFailed" = "暂时无法读取路由器自动配置设置。请刷新或重新登录。";
+"mobile.nas.service.trustError" = "无法确认此连接的身份。请返回连接页面重新连接。";

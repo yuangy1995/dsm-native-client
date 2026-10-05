@@ -18,16 +18,16 @@ enum MobileNasAdministrationDestination: String, CaseIterable, Identifiable, Has
     case ddns
     case region
     case accounts
-    case fileServices, terminal, proxy
+    case fileServices, terminal, proxy, remoteAccess
 
     var id: String { rawValue }
 
     static let health: [Self] = [.system, .performance, .storage, .update]
-    static let management: [Self] = [.region, .ddns, .accounts, .fileServices, .terminal, .proxy]
+    static let management: [Self] = [.region, .ddns, .accounts, .fileServices, .terminal, .proxy, .remoteAccess]
     static let details: [Self] = [.externalStorage, .zram, .powerSchedule, .shareAccess, .processes, .packages, .scheduledTasks, .logs, .connections]
 
     var serviceKind: NasServiceKind? {
-        switch self { case .fileServices: .fileServices; case .terminal: .terminal; case .proxy: .proxy; default: nil }
+        switch self { case .fileServices: .fileServices; case .terminal: .terminal; case .proxy: .proxy; case .remoteAccess: .remoteAccess; default: nil }
     }
 
     var isDetails: Bool { Self.details.contains(self) }

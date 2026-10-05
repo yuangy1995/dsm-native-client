@@ -128,7 +128,8 @@ enum MobileUIFixture {
             }
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             if officeState.hasPrefix("nas-services") {
-                model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities,
+                let actualProfile = officeState == "nas-services-remote-relay" ? try profile.updating(host: "alpha.beta.quickconnect.to", port: 443) : profile
+                model.nasRepository = try DsmNasAdministrationRepository(profile: actualProfile, capabilities: fixtureCapabilities,
                     session: session, transport: MobileServiceUITransport(mode: officeState, onRead: { await transport.revokeServiceManagement() }))
             }
             if officeState.hasPrefix("nas-directory") {

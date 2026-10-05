@@ -115,6 +115,65 @@ final class MobileServiceSettingsUITests: XCTestCase {
         element("mobile.nas.service.cancel", app).tap(); element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
         expect(reveal("mobile.nas.service.row.telnet", in: app), contains: "已关闭")
     }
+    func test远程访问双项确认取消保存与回读() {
+        let app = launch("nas-services", kind: "remoteAccess"); defer { app.terminate() }
+        openEditor(app); toggle("relay", in: app); toggle("routerConfiguration", in: app)
+        app.buttons["mobile.nas.service.save"].tap(); screenshot(app, "Remote access changes warning")
+        element("mobile.nas.service.cancel", app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].isEnabled)
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        expect(reveal("mobile.nas.service.row.relay", in: app), contains: "Off")
+        expect(reveal("mobile.nas.service.row.routerConfiguration", in: app), contains: "On")
+        expect(reveal("mobile.nas.service.activity.succeeded", in: app), contains: "saved"); screenshot(app, "Remote access saved")
+    }
+    func test远程中继连接保护和路由器独立操作() {
+        let app = launch("nas-services-remote-relay", kind: "remoteAccess"); defer { app.terminate() }
+        openEditor(app)
+        XCTAssertFalse(reveal("mobile.nas.service.relay", in: app).isEnabled)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "connect directly")).firstMatch.exists)
+        toggle("routerConfiguration", in: app); screenshot(app, "Active relay protected with router setting available")
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        expect(reveal("mobile.nas.service.row.relay", in: app), contains: "On")
+        expect(reveal("mobile.nas.service.row.routerConfiguration", in: app), contains: "On")
+    }
+    func test远程单项读取失败仍可编辑另一项() {
+        let app = launch("nas-services-remote-partial-read", kind: "remoteAccess"); defer { app.terminate() }
+        XCTAssertTrue(element("mobile.nas.service.relayReadFailed", app).waitForExistence(timeout: 8))
+        openEditor(app); XCTAssertFalse(element("mobile.nas.service.relay", app).exists)
+        toggle("routerConfiguration", in: app); app.buttons["mobile.nas.service.save"].tap()
+        element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        expect(reveal("mobile.nas.service.row.routerConfiguration", in: app), contains: "On")
+        XCTAssertTrue(element("mobile.nas.service.relayReadFailed", app).exists); screenshot(app, "Independent remote access read failure")
+    }
+    func test远程未知记录重启后只读恢复() {
+        let app = launch("nas-services-remote-unknown", kind: "remoteAccess")
+        openEditor(app); toggle("routerConfiguration", in: app)
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap()
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "not available yet")
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled); screenshot(app, "Remote access unknown protected"); app.terminate()
+        let reopened = launch("nas-services-remote-recover", kind: "remoteAccess", preserve: true); defer { reopened.terminate() }
+        expect(reveal("mobile.nas.service.activity.succeeded", in: reopened), contains: "saved")
+        expect(reveal("mobile.nas.service.row.routerConfiguration", in: reopened), contains: "On"); screenshot(reopened, "Remote access restored")
+    }
+    func test远程加载空内容错误不可用及恢复() {
+        for state in ["nas-services-empty", "nas-services-loading", "nas-services-remote-retry", "nas-services-unsupported"] {
+            let app = launch(state, kind: "remoteAccess")
+            if state == "nas-services-empty" { XCTAssertTrue(app.staticTexts["No settings available"].waitForExistence(timeout: 8)); XCTAssertFalse(element("mobile.nas.service.edit", app).exists) }
+            else if state == "nas-services-loading" { XCTAssertTrue(app.staticTexts["Loading settings…"].waitForExistence(timeout: 8)) }
+            else {
+                let retry = app.buttons["Try Again"].firstMatch; XCTAssertTrue(retry.waitForExistence(timeout: 8))
+                if state == "nas-services-remote-retry" { retry.tap(); XCTAssertTrue(element("mobile.nas.service.row.relay", app).waitForExistence(timeout: 8)) }
+            }
+            screenshot(app, "Remote " + state); app.terminate()
+        }
+    }
+    func test远程中文大字表单和连接风险可操作() {
+        let app = launch("nas-services", kind: "remoteAccess", chinese: true, large: true); defer { app.terminate() }
+        openEditor(app); toggle("routerConfiguration", in: app); screenshot(app, "Chinese large remote access editor")
+        app.buttons["mobile.nas.service.save"].tap(); XCTAssertTrue(element("mobile.nas.service.confirm", app).waitForExistence(timeout: 5))
+        screenshot(app, "Chinese large remote access warning")
+        element("mobile.nas.service.cancel", app).tap(); element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
+        expect(reveal("mobile.nas.service.row.routerConfiguration", in: app), contains: "已关闭")
+    }
     private func openEditor(_ app: XCUIApplication) { reveal("mobile.nas.service.edit", in: app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].waitForExistence(timeout: 5)) }
     private func toggle(_ key: String, in app: XCUIApplication) { reveal("mobile.nas.service.\(key)", in: app).switches.firstMatch.tap() }
     private func replace(_ key: String, text: String, _ app: XCUIApplication) {
@@ -160,10 +219,13 @@ final class MobileServiceSettingsUITests: XCTestCase {
         return app
     }
     private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap() } else {
-            let button = element("mobile.navigation.\(destination)", app); XCTAssertTrue(button.waitForExistence(timeout: 5)); button.tap()
-        }
+        let tab = app.tabBars.buttons[title], sidebar = element("mobile.navigation.\(destination)", app)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (tab.exists && tab.isHittable) || (sidebar.exists && sidebar.isHittable)
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        if tab.exists && tab.isHittable { tab.tap() }
+        else { XCTAssertTrue(sidebar.exists); XCTAssertTrue(sidebar.isHittable); sidebar.tap() }
     }
     private func expect(_ value: XCUIElement, contains text: String) {
         XCTAssertTrue(value.waitForExistence(timeout: 8))

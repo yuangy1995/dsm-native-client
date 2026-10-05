@@ -138,7 +138,7 @@ struct MobileNasSettingsView: View {
         case .system: systemSection
         case .performance: performanceSection
         case .storage: storageSection
-        case .ddns, .region, .accounts, .fileServices, .terminal, .proxy: EmptyView()
+        case .ddns, .region, .accounts, .fileServices, .terminal, .proxy, .remoteAccess: EmptyView()
         case .update: updateSection
         case .packages, .scheduledTasks, .logs, .connections, .externalStorage, .processes, .shareAccess, .zram, .powerSchedule:
             MobileNasDetailsSectionView(

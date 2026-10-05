@@ -12,7 +12,7 @@ final class MobileServiceSettingsTests: XCTestCase {
         for root in values { try? FileManager.default.removeItem(at: root) }
         try await super.tearDown()
     }
-    func test三类设置读编辑保存与真实回读() async throws {
+    func test服务设置读编辑保存与合成回读() async throws {
         let (model, transport, _, _) = try makeModel()
         for kind in NasServiceKind.allCases {
             await model.refresh(kind); XCTAssertTrue(model.canEdit(kind))
@@ -22,7 +22,7 @@ final class MobileServiceSettingsTests: XCTestCase {
             XCTAssertEqual(model.section(kind).value?.fields(for: change.changedSteps[0]), change.desired.fields(for: change.changedSteps[0]))
             XCTAssertFalse(model.isOperating); XCTAssertTrue(model.canEdit(kind))
         }
-        let writes = await transport.writes; XCTAssertEqual(writes.count, 3)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 4)
     }
     func test缺失字段保留不能猜值开启() async throws {
         let (model, transport, _, _) = try makeModel(mode: "nas-services-missing")
@@ -172,12 +172,107 @@ final class MobileServiceSettingsTests: XCTestCase {
         await transport.setMode("nas-services"); await transport.setTerminal(enabled: false); await model.refresh(.terminal); await model.refresh(.proxy)
         XCTAssertFalse(model.canEdit(.terminal)); XCTAssertTrue(model.canEdit(.proxy))
     }
+    func test远程单项失败不伪造关闭并允许保存另一项() async throws {
+        let (model, transport, _, _) = try makeModel(mode: "nas-services-remote-partial-read"); await model.refresh(.remoteAccess)
+        let original = try XCTUnwrap(model.section(.remoteAccess).value)
+        guard case .remoteAccess(var value) = original else { XCTFail(); throw ServiceTestError.invalidFixture }
+        XCTAssertNil(value.isRelayEnabled); XCTAssertTrue(value.relayReadFailed); XCTAssertEqual(value.isRouterConfigurationEnabled, false)
+        value.isRouterConfigurationEnabled = true
+        let id = try XCTUnwrap(model.perform(.init(original: original, desired: .remoteAccess(value)), activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.phase, .succeeded)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes[0]["api"], DsmAPIName.coreQuickConnectUPnP)
+    }
+    func test中继连接保护采用实际地址且路由器开关可独立修改() async throws {
+        let (model, transport, _, _) = try makeModel(connectionHost: "alpha.beta.quickconnect.to"); await model.refresh(.remoteAccess)
+        let original = try XCTUnwrap(model.section(.remoteAccess).value)
+        guard case .remoteAccess(var value) = original else { XCTFail(); throw ServiceTestError.invalidFixture }
+        XCTAssertFalse(value.canDisableRelay)
+        var disabled = value; disabled.isRelayEnabled = false
+        XCTAssertFalse(model.canPerform(.init(original: original, desired: .remoteAccess(disabled))))
+        value.isRouterConfigurationEnabled = true
+        let id = try XCTUnwrap(model.perform(.init(original: original, desired: .remoteAccess(value)), activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.phase, .succeeded)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes[0]["api"], DsmAPIName.coreQuickConnectUPnP)
+    }
+    func test同一逻辑配置重新连接不同实际路线只读恢复远程记录() async throws {
+        let (model, transport, _, root) = try makeModel(mode: "nas-services-remote-unknown", connectionHost: "alpha.beta.quickconnect.to")
+        await model.refresh(.remoteAccess)
+        let original = try XCTUnwrap(model.section(.remoteAccess).value)
+        guard case .remoteAccess(var value) = original else { XCTFail(); throw ServiceTestError.invalidFixture }
+        value.isRouterConfigurationEnabled = true
+        let id = try XCTUnwrap(model.perform(.init(original: original, desired: .remoteAccess(value)), activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.phase, .submitted); model.deactivate()
+        let (reopened, next, _, _) = try makeModel(mode: "nas-services-remote-recover", root: root, connectionHost: "alpha.direct.quickconnect.to")
+        await reopened.refresh(.remoteAccess)
+        XCTAssertEqual(reopened.recovery.entry(id)?.phase, .succeeded)
+        guard case .remoteAccess(let restored)? = reopened.section(.remoteAccess).value else { XCTFail(); throw ServiceTestError.invalidFixture }
+        XCTAssertTrue(restored.canDisableRelay); XCTAssertEqual(restored.isRouterConfigurationEnabled, true)
+        let writes = await transport.writes, replayed = await next.writes; XCTAssertEqual(writes.count, 1); XCTAssertTrue(replayed.isEmpty)
+    }
+    func test新地址新配置即使开关相同也不认领旧远程记录() async throws {
+        let (model, _, _, _) = try makeModel(mode: "nas-services-remote-unknown"); await model.refresh(.remoteAccess)
+        let original = try XCTUnwrap(model.section(.remoteAccess).value)
+        guard case .remoteAccess(var value) = original else { XCTFail(); throw ServiceTestError.invalidFixture }
+        value.isRouterConfigurationEnabled = true
+        let id = try XCTUnwrap(model.perform(.init(original: original, desired: .remoteAccess(value)), activation: model.activation)); await model.waitForOperation(id)
+        let next = MobileServiceUITransport(mode: "nas-services-remote-recover")
+        let newProfile = try NasProfile(displayName: "Same display name", host: "other.example.invalid", port: 5001, usernameHint: "fixture")
+        model.configure(profile: newProfile, repository: try repository(next, profile: newProfile), authorize: { true }); await model.refresh(.remoteAccess)
+        XCTAssertTrue(model.entries(.remoteAccess).isEmpty); XCTAssertEqual(model.recovery.entry(id)?.phase, .submitted)
+        let writes = await next.writes; XCTAssertTrue(writes.isEmpty)
+    }
+    func test远程双项逐次检查权限并只保留已完成项() async throws {
+        let (model, transport, gate, _) = try makeModel(); await model.refresh(.remoteAccess)
+        let original = try XCTUnwrap(model.section(.remoteAccess).value)
+        await gate.denyAfterNext()
+        let desired = NasServiceSettings.remoteAccess(.init(isRelayEnabled: false, isRouterConfigurationEnabled: true, canDisableRelay: true))
+        let id = try XCTUnwrap(model.perform(.init(original: original, desired: desired), activation: model.activation)); await model.waitForOperation(id)
+        let entry = try XCTUnwrap(model.recovery.entry(id)); XCTAssertEqual(entry.phase, .partial); XCTAssertEqual(entry.parts.map(\.stage), [.verified, .skipped]); XCTAssertEqual(entry.failure, .denied)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
+    }
+    func test远程空字段和读取失败有不同状态() async throws {
+        for (mode, phase) in [("nas-services-empty", MobileNasDetailsPhase.empty), ("nas-services-error", .error)] {
+            let (model, _, _, _) = try makeModel(mode: mode); await model.refresh(.remoteAccess)
+            XCTAssertEqual(model.section(.remoteAccess).phase, phase); XCTAssertFalse(model.canEdit(.remoteAccess))
+        }
+    }
+    func test远程双项恢复记录兼容既有服务且未提交项不被认领() async throws {
+        let (model, _, _, root) = try makeModel(); await model.refresh(.terminal); await model.refresh(.remoteAccess)
+        let terminal = try model.recovery.reserve(try change(model, .terminal), context: try XCTUnwrap(model.context)).id
+        try model.recovery.checkpoint(terminal, .willSubmit(.terminal)); model.recovery.end(terminal)
+        let original = try XCTUnwrap(model.section(.remoteAccess).value)
+        let desired = NasServiceSettings.remoteAccess(.init(isRelayEnabled: false, isRouterConfigurationEnabled: true, canDisableRelay: true))
+        let remote = try model.recovery.reserve(.init(original: original, desired: desired), context: try XCTUnwrap(model.context)).id
+        try model.recovery.checkpoint(remote, .willSubmit(.relay)); model.recovery.end(remote)
+        let restored = MobileServiceOperationStore(root: root)
+        XCTAssertFalse(restored.failed); XCTAssertEqual(restored.entry(terminal)?.phase, .submitted)
+        try restored.resolve(desired, context: try XCTUnwrap(model.context))
+        XCTAssertEqual(restored.entry(remote)?.phase, .partial); XCTAssertEqual(restored.entry(remote)?.parts.map(\.stage), [.verified, .skipped])
+        XCTAssertEqual(restored.entry(terminal)?.phase, .submitted)
+    }
+    func test远程证书信任失败不降级为普通缺失字段() async throws {
+        let (model, transport, _, _) = try makeModel(mode: "nas-services-remote-trust-error"); await model.refresh(.remoteAccess)
+        XCTAssertEqual(model.section(.remoteAccess).phase, .error); XCTAssertEqual(model.errors[.remoteAccess], .trust); XCTAssertFalse(model.canEdit(.remoteAccess))
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 1)
+        let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+    }
+    func test远程保存前连接身份变化零写且不会继续自动读取() async throws {
+        let (model, transport, _, _) = try makeModel(); await model.refresh(.remoteAccess)
+        let change = try change(model, .remoteAccess)
+        await transport.setMode("nas-services-remote-trust-error")
+        let id = try XCTUnwrap(model.perform(change, activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.errors[.remoteAccess], .trust); XCTAssertFalse(model.canEdit(.remoteAccess)); XCTAssertFalse(model.isOperating)
+        XCTAssertEqual(model.recovery.entry(id)?.phase, .failed)
+        let requests = await transport.requests; XCTAssertEqual(requests.count, 3)
+        let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+    }
     private func change(_ model: MobileServiceSettingsModel, _ kind: NasServiceKind) throws -> NasServiceChange {
         let original = try XCTUnwrap(model.section(kind).value), desired: NasServiceSettings
         switch original {
         case .fileServices(var value): value.isSMBEnabled = true; desired = .fileServices(value)
         case .terminal(var value): value.isSSHEnabled = true; desired = .terminal(value)
         case .proxy(var value): value.isEnabled = true; desired = .proxy(value)
+        case .remoteAccess(var value): value.isRelayEnabled = false; desired = .remoteAccess(value)
         }
         return .init(original: original, desired: desired)
     }
@@ -189,13 +284,14 @@ final class MobileServiceSettingsTests: XCTestCase {
     }
     private func makeRoot() -> URL { let root = FileManager.default.temporaryDirectory.appendingPathComponent("MobileServiceTests-\(UUID())"); roots.append(root); return root }
     private func profile(username: String = "fixture") throws -> NasProfile { try .init(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!, displayName: "Synthetic", host: "fixture.example.invalid", port: 5001, usernameHint: username) }
-    private func repository(_ transport: MobileServiceUITransport, profile: NasProfile) throws -> DsmNasAdministrationRepository {
+    private func repository(_ transport: MobileServiceUITransport, profile: NasProfile, connectionHost: String? = nil) throws -> DsmNasAdministrationRepository {
         let capabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: MobileServiceUITransport.versions.map { ($0, ApiCapability(name: $0, path: "entry.cgi", minVersion: 1, maxVersion: $1, requestFormat: .form, selectedVersion: $1)) }))
-        return try .init(profile: profile, capabilities: capabilities, session: .init(sid: "synthetic", synoToken: nil, did: nil, isPortalPort: false), transport: transport)
+        let actualProfile = try connectionHost.map { try profile.updating(host: $0, port: 443) } ?? profile
+        return try .init(profile: actualProfile, capabilities: capabilities, session: .init(sid: "synthetic", synoToken: nil, did: nil, isPortalPort: false), transport: transport)
     }
-    private func makeModel(mode: String = "nas-services", root: URL? = nil) throws -> (MobileServiceSettingsModel, MobileServiceUITransport, ServicePermissionGate, URL) {
+    private func makeModel(mode: String = "nas-services", root: URL? = nil, connectionHost: String? = nil) throws -> (MobileServiceSettingsModel, MobileServiceUITransport, ServicePermissionGate, URL) {
         let root = root ?? makeRoot(), transport = MobileServiceUITransport(mode: mode), gate = ServicePermissionGate(), profile = try profile(), model = MobileServiceSettingsModel(root: root)
-        model.configure(profile: profile, repository: try repository(transport, profile: profile), authorize: { await gate.check() }); return (model, transport, gate, root)
+        model.configure(profile: profile, repository: try repository(transport, profile: profile, connectionHost: connectionHost), authorize: { await gate.check() }); return (model, transport, gate, root)
     }
     private func wait(_ condition: @escaping @MainActor () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
         for _ in 0..<2_000 { if condition() { return }; try? await Task.sleep(for: .milliseconds(2)) }

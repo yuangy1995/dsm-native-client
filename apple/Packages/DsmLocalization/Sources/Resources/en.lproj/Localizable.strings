@@ -6759,7 +6759,7 @@
 "mobile.nas.service.readError" = "Unable to load settings. Check the connection and refresh.";
 "mobile.nas.service.denied" = "This account cannot save these settings. Reconnect with an account that has management permission.";
 "mobile.nas.service.unavailable" = "These settings are not supported on this NAS. View them in DSM.";
-"mobile.nas.service.changed" = "The settings changed elsewhere. Refresh before editing again.";
+"mobile.nas.service.changed" = "The available settings have changed. Refresh before editing again.";
 "mobile.nas.service.storageError" = "The operation record could not be saved on this device, so further changes have stopped. Unlock the device, check free space and reopen this page.";
 "mobile.nas.service.unknown" = "The updated settings are not available yet. Refresh later or manage them in DSM.";
 "mobile.nas.service.partialUnknown" = "Some settings were saved. The remaining results are not available yet. Refresh later or manage them in DSM.";
@@ -6774,3 +6774,13 @@
 "mobile.nas.service.partSaved" = "Saved";
 "mobile.nas.service.partRejected" = "Not saved";
 "mobile.nas.service.partSkipped" = "Not changed";
+
+// 移动端远程访问设置。
+"mobile.nas.service.remoteAccess" = "Remote Access";
+"mobile.nas.service.relay" = "QuickConnect Relay";
+"mobile.nas.service.routerConfiguration" = "Automatic Router Configuration";
+"mobile.nas.service.relayProtection" = "This connection uses QuickConnect Relay. To turn the relay off, first connect directly using a local or public address.";
+"mobile.nas.service.remoteAccessWarning" = "Changing these settings may interrupt remote connections. Automatic router configuration may open or remove access points; connectivity still depends on the router and network. Make sure you can access DSM locally to restore the settings.";
+"mobile.nas.service.relayReadFailed" = "QuickConnect Relay settings could not be loaded. Refresh or sign in again.";
+"mobile.nas.service.routerReadFailed" = "Automatic router configuration settings could not be loaded. Refresh or sign in again.";
+"mobile.nas.service.trustError" = "The identity of this connection could not be verified. Return to the connection screen and reconnect.";

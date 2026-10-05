@@ -3,7 +3,7 @@ import DsmCore
 import Foundation
 import Observation
 
-/// 三类服务共用一个受保护记录文件；地址、端口正文、账号和凭据均不落盘。
+/// 服务设置共用一个受保护记录文件；地址、端口正文、账号和凭据均不落盘。
 @MainActor @Observable
 final class MobileServiceOperationStore {
     enum Stage: String, Codable { case prepared, submitted, verified, rejected, skipped }
@@ -136,7 +136,7 @@ final class MobileServiceOperationStore {
         var ids: Set<UUID> = [], targets: Set<String> = []
         for value in values {
             guard ids.insert(value.id).inserted, Self.isDigest(value.context), value.createdAt.timeIntervalSince1970.isFinite,
-                  !value.parts.isEmpty, value.parts.count <= (value.kind == .fileServices ? 6 : 1),
+                  !value.parts.isEmpty, value.parts.count <= NasServiceStep.allCases.filter({ $0.kind == value.kind }).count,
                   Set(value.parts.map(\.step)).count == value.parts.count,
                   value.parts.filter({ $0.stage == .submitted }).count <= 1,
                   value.parts.allSatisfy({ $0.step.kind == value.kind && Self.isDigest($0.expected)
