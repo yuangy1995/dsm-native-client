@@ -69,7 +69,19 @@ final class MobileServiceSettingsModel {
     func canEdit(_ kind: NasServiceKind) -> Bool {
         let section = section(kind)
         return permissions[kind] == true && !isOperating && !section.isRefreshing && !section.hasRefreshError
-            && section.value?.isEmpty == false && context.map { !recovery.protects(kind, context: $0) } == true
+            && section.value?.supportsEditing == true && context.map { !recovery.protects(kind, context: $0) } == true
+    }
+    /// 只继续明确保存过的压缩设置，不因别处已有重启要求而认领未提交的步骤。
+    func rebootContinuation() -> NasServiceChange? {
+        guard canEdit(.zram), let original = section(.zram).value,
+              case .zram(let value, false) = original,
+              let latest = entries(.zram).first,
+              let marker = latest.parts.first(where: { $0.step == .rebootRequired }),
+              marker.stage == .skipped || marker.stage == .rejected,
+              latest.parts.count == 1 || latest.parts.contains(where: { $0.step == .zram && $0.stage == .verified }) else { return nil }
+        let desired = NasServiceSettings.zram(value, needsReboot: true)
+        guard marker.expected == MobileServiceOperationStore.signature(desired, step: .rebootRequired) else { return nil }
+        return .init(original: original, desired: desired)
     }
     func canPerform(_ change: NasServiceChange) -> Bool { canEdit(change.kind) && section(change.kind).value.map(change.matches) == true }
     @discardableResult

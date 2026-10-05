@@ -2,6 +2,143 @@ import XCTest
 
 @MainActor
 final class MobileServiceSettingsUITests: XCTestCase {
+    func test内存压缩确认取消后保存且不自动重启() {
+        let app = launch("nas-services", kind: "zram"); defer { app.terminate() }
+        openEditor(app)
+        reveal("mobile.nas.power.compression", in: app).switches.firstMatch.tap()
+        reveal("mobile.nas.power.compression", in: app).switches.firstMatch.tap()
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        reveal("mobile.nas.power.compression", in: app).switches.firstMatch.tap()
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "will not restart")).firstMatch.waitForExistence(timeout: 5))
+        screenshot(app, "Memory compression restart warning")
+        element("mobile.nas.service.cancel", app).tap()
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        XCTAssertEqual(reveal("mobile.nas.zram.status", in: app).value as? String, "Enabled")
+        expect(reveal("mobile.nas.service.activity.succeeded", in: app), contains: "saved")
+        XCTAssertFalse(element("mobile.nas.power.continue", app).exists)
+        screenshot(app, "Memory compression saved without restarting")
+    }
+    func test内存压缩部分保存可单独继续后一步() {
+        let app = launch("nas-services-partial", kind: "zram"); defer { app.terminate() }
+        openEditor(app); reveal("mobile.nas.power.compression", in: app).switches.firstMatch.tap()
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap()
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "permission")
+        element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
+        screenshot(app, "Memory compression partial save keeps explicit continuation")
+        reveal("mobile.nas.power.continue", in: app).tap()
+        XCTAssertTrue(app.buttons["mobile.nas.service.save"].isEnabled)
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        XCTAssertEqual(reveal("mobile.nas.zram.status", in: app).value as? String, "Enabled")
+        expect(reveal("mobile.nas.service.activity.succeeded", in: app), contains: "saved")
+        XCTAssertFalse(element("mobile.nas.power.continue", app).exists)
+    }
+    func test内存压缩未知标记重启只读恢复() {
+        let app = launch("nas-services-zram-marker-unknown", kind: "zram")
+        openEditor(app); reveal("mobile.nas.power.compression", in: app).switches.firstMatch.tap()
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap()
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "not available yet")
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled); app.terminate()
+        let next = launch("nas-services-zram-recover", kind: "zram", preserve: true); defer { next.terminate() }
+        expect(reveal("mobile.nas.service.activity.succeeded", in: next), contains: "saved")
+        XCTAssertEqual(reveal("mobile.nas.zram.status", in: next).value as? String, "Enabled")
+        screenshot(next, "Memory compression recovered after relaunch")
+    }
+    func test电源计划空清单新增草稿取消和整体保存() {
+        let app = launch("nas-services", kind: "powerSchedule"); defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["No Power Schedules"].waitForExistence(timeout: 5)); openEditor(app)
+        reveal("mobile.nas.power.add", in: app).tap(); element("mobile.nas.power.cancelEntry", app).tap()
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        reveal("mobile.nas.power.add", in: app).tap()
+        pickPower("action", value: "Shut down", app)
+        reveal("mobile.nas.power.entryEnabled", in: app).switches.firstMatch.tap()
+        pickPower("hour", value: "9", app); pickPower("minute", value: "5", app)
+        applyPowerEntry(app)
+        screenshot(app, "Power schedule draft before saving")
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Shutdown interrupts")).firstMatch.waitForExistence(timeout: 5))
+        screenshot(app, "Power schedule full list warning")
+        element("mobile.nas.service.cancel", app).tap(); app.buttons["mobile.nas.service.save"].tap()
+        element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        XCTAssertTrue(app.staticTexts["Shut down"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "9:05")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["Disabled"].exists)
+        screenshot(app, "Power schedule saved using NAS wall clock")
+    }
+    func test电源计划启停编辑星期移除还原与清空() {
+        let app = launch("nas-services-power-content", kind: "powerSchedule"); defer { app.terminate() }
+        openEditor(app)
+        reveal("mobile.nas.power.enabled.startup-0", in: app).switches.firstMatch.tap()
+        reveal("mobile.nas.power.edit.startup-0", in: app).tap()
+        pickPower("hour", value: "9", app)
+        for day in 1...5 { reveal("mobile.nas.power.day.\(day)", in: app).switches.firstMatch.tap() }
+        XCTAssertFalse(app.buttons["mobile.nas.power.applyEntry"].isEnabled)
+        reveal("mobile.nas.power.day.0", in: app).switches.firstMatch.tap(); applyPowerEntry(app)
+        XCTAssertTrue(app.buttons["mobile.nas.service.save"].isEnabled)
+        reveal("mobile.nas.power.remove.shutdown-0", in: app).tap()
+        reveal("mobile.nas.power.revert", in: app).tap()
+        XCTAssertTrue(app.staticTexts["Shut down"].exists); XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        reveal("mobile.nas.power.remove.startup-0", in: app).tap(); reveal("mobile.nas.power.remove.shutdown-0", in: app).tap()
+        app.buttons["mobile.nas.service.save"].tap(); screenshot(app, "Clear complete power schedule confirmation")
+        element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        XCTAssertTrue(app.staticTexts["No Power Schedules"].waitForExistence(timeout: 5))
+        expect(reveal("mobile.nas.service.activity.succeeded", in: app), contains: "saved")
+    }
+    func test电源计划停用条目也不能与相同时间重叠() {
+        let app = launch("nas-services-power-content", kind: "powerSchedule"); defer { app.terminate() }
+        openEditor(app); reveal("mobile.nas.power.add", in: app).tap()
+        reveal("mobile.nas.power.entryEnabled", in: app).switches.firstMatch.tap(); applyPowerEntry(app)
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        expect(reveal("mobile.nas.service.invalid", in: app), contains: "overlap")
+        screenshot(app, "Disabled power schedule still rejects overlapping time")
+        reveal("mobile.nas.power.revert", in: app).tap(); XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
+        XCTAssertFalse(element("mobile.nas.service.activity.succeeded", app).exists)
+    }
+    func test电源计划未知保存重启只读恢复() {
+        let app = launch("nas-services-unknown", kind: "powerSchedule")
+        openEditor(app); reveal("mobile.nas.power.add", in: app).tap(); applyPowerEntry(app)
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap()
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "not available yet")
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled); app.terminate()
+        let next = launch("nas-services-power-ui-recover", kind: "powerSchedule", preserve: true); defer { next.terminate() }
+        expect(reveal("mobile.nas.service.activity.succeeded", in: next), contains: "saved")
+        XCTAssertTrue(app.staticTexts["Start up"].exists); screenshot(next, "Power schedule recovered without resubmission")
+    }
+    func test电源清单不完整和压缩字段未知保留读取与限制() {
+        for (mode, kind, text) in [("nas-services-power-incomplete", "powerSchedule", "complete editable schedule"),
+                                   ("nas-services-power-summary-empty", "powerSchedule", "complete editable schedule"),
+                                   ("nas-services-zram-incomplete", "zram", "settings needed to change")] {
+            let app = launch(mode, kind: kind)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch.waitForExistence(timeout: 5))
+            XCTAssertFalse(element("mobile.nas.service.edit", app).exists)
+            screenshot(app, "Incomplete \(kind) keeps available information"); app.terminate()
+        }
+    }
+    func test中文大字内存与电源确认可取消() {
+        for kind in ["zram", "powerSchedule"] {
+            let app = launch("nas-services", kind: kind, chinese: true, large: true)
+            openEditor(app)
+            if kind == "zram" { reveal("mobile.nas.power.compression", in: app).switches.firstMatch.tap() }
+            else { reveal("mobile.nas.power.add", in: app).tap(); screenshot(app, "Chinese large power schedule entry editor"); applyPowerEntry(app) }
+            screenshot(app, "Chinese large \(kind) editor")
+            app.buttons["mobile.nas.service.save"].tap(); XCTAssertTrue(element("mobile.nas.service.confirm", app).waitForExistence(timeout: 5))
+            screenshot(app, "Chinese large \(kind) warning")
+            element("mobile.nas.service.cancel", app).tap(); element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
+            XCTAssertFalse(element("mobile.nas.service.activity.succeeded", app).exists); app.terminate()
+        }
+    }
+    private func pickPower(_ field: String, value: String, _ app: XCUIApplication) {
+        reveal("mobile.nas.power.\(field)", in: app).tap()
+        let item = app.buttons[value].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
+    }
+    private func applyPowerEntry(_ app: XCUIApplication) {
+        let apply = app.buttons["mobile.nas.power.applyEntry"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 5)); XCTAssertTrue(apply.isEnabled); apply.tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: apply)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed)
+    }
     func test文件服务端口校验确认取消和保存回读() {
         let app = launch("nas-services"); defer { app.terminate() }
         openEditor(app); toggle("smb", in: app); toggle("ftps", in: app)

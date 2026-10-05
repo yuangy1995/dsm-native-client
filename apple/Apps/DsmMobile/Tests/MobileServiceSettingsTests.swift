@@ -6,6 +6,112 @@ import XCTest
 
 @MainActor
 final class MobileServiceSettingsTests: XCTestCase {
+    func test空电源清单仍可编辑并保存完整草稿() async throws {
+        let (model, transport, _, _) = try makeModel(); await model.refresh(.powerSchedule)
+        XCTAssertEqual(model.section(.powerSchedule).phase, .empty); XCTAssertTrue(model.canEdit(.powerSchedule))
+        let id = try XCTUnwrap(model.perform(try change(model, .powerSchedule), activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.phase, .succeeded); XCTAssertEqual(model.section(.powerSchedule).phase, .content)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes[0]["method"], "save")
+    }
+    func test压缩两步成功后没有继续入口() async throws {
+        let (model, transport, _, _) = try makeModel(); await model.refresh(.zram)
+        let id = try XCTUnwrap(model.perform(try change(model, .zram), activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.parts.map(\.stage), [.verified, .verified])
+        XCTAssertEqual(model.recovery.entry(id)?.phase, .succeeded); XCTAssertNil(model.rebootContinuation())
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 2)
+    }
+    func test压缩后步被拒绝可明确继续且不重复前步() async throws {
+        let (model, transport, _, _) = try makeModel(mode: "nas-services-partial"); await model.refresh(.zram)
+        let id = try XCTUnwrap(model.perform(try change(model, .zram), activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.phase, .partial); XCTAssertEqual(model.recovery.entry(id)?.parts.map(\.stage), [.verified, .rejected])
+        let continuation = try XCTUnwrap(model.rebootContinuation()); XCTAssertEqual(continuation.changedSteps, [.rebootRequired])
+        await transport.setMode("nas-services")
+        let next = try XCTUnwrap(model.perform(continuation, activation: model.activation)); await model.waitForOperation(next)
+        XCTAssertEqual(model.recovery.entry(next)?.phase, .succeeded); XCTAssertNil(model.rebootContinuation())
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 3)
+        XCTAssertEqual(writes.filter { $0["api"] == DsmAPIName.coreHardwareZRAM }.count, 1)
+    }
+    func test压缩继续再次拒绝仍保留明确重试路径() async throws {
+        let (model, transport, _, _) = try makeModel(mode: "nas-services-partial"); await model.refresh(.zram)
+        let first = try XCTUnwrap(model.perform(try change(model, .zram), activation: model.activation)); await model.waitForOperation(first)
+        await transport.setMode("nas-services-denied")
+        let second = try XCTUnwrap(model.perform(try XCTUnwrap(model.rebootContinuation()), activation: model.activation)); await model.waitForOperation(second)
+        XCTAssertEqual(model.recovery.entry(second)?.phase, .failed); XCTAssertNotNil(model.rebootContinuation())
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 3)
+    }
+    func test压缩目标在别处变化不能继续旧重启要求() async throws {
+        let (model, transport, _, _) = try makeModel(mode: "nas-services-partial"); await model.refresh(.zram)
+        let first = try XCTUnwrap(model.perform(try change(model, .zram), activation: model.activation)); await model.waitForOperation(first)
+        await transport.setZRAM(enabled: false); await model.refresh(.zram)
+        XCTAssertNil(model.rebootContinuation()); let writes = await transport.writes; XCTAssertEqual(writes.count, 2)
+    }
+    func test压缩首步未知重启后不认领从未提交的标记() async throws {
+        let (model, transport, _, root) = try makeModel(mode: "nas-services-unknown"); await model.refresh(.zram)
+        let id = try XCTUnwrap(model.perform(try change(model, .zram), activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.phase, .submitted); XCTAssertFalse(model.canEdit(.zram))
+        model.deactivate()
+        let (next, nextTransport, _, _) = try makeModel(mode: "nas-services-zram-recover", root: root); await next.refresh(.zram)
+        XCTAssertEqual(next.recovery.entry(id)?.parts.map(\.stage), [.verified, .skipped]); XCTAssertEqual(next.recovery.entry(id)?.phase, .partial)
+        XCTAssertNil(next.rebootContinuation())
+        let writes = await transport.writes, replayed = await nextTransport.writes; XCTAssertEqual(writes.count, 1); XCTAssertTrue(replayed.isEmpty)
+    }
+    func test压缩第二步未知可在重启后只读完成() async throws {
+        let (model, transport, _, root) = try makeModel(mode: "nas-services-zram-marker-unknown"); await model.refresh(.zram)
+        let id = try XCTUnwrap(model.perform(try change(model, .zram), activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.parts.map(\.stage), [.verified, .submitted]); XCTAssertFalse(model.canEdit(.zram))
+        model.deactivate()
+        let (next, nextTransport, _, _) = try makeModel(mode: "nas-services-zram-recover", root: root); await next.refresh(.zram)
+        XCTAssertEqual(next.recovery.entry(id)?.phase, .succeeded); XCTAssertTrue(next.canEdit(.zram))
+        let writes = await transport.writes, replayed = await nextTransport.writes; XCTAssertEqual(writes.count, 2); XCTAssertTrue(replayed.isEmpty)
+    }
+    func test压缩未开始的操作不能产生继续入口() async throws {
+        let (model, transport, _, root) = try makeModel(); await model.refresh(.zram)
+        let id = try model.recovery.reserve(try change(model, .zram), context: try XCTUnwrap(model.context)).id; model.recovery.end(id)
+        model.deactivate()
+        let (next, _, _, _) = try makeModel(root: root); await next.refresh(.zram)
+        XCTAssertEqual(next.recovery.entry(id)?.phase, .cancelled); XCTAssertNil(next.rebootContinuation())
+        let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+    }
+    func test电源计划保存未知重启只读恢复且记录不含计划正文() async throws {
+        let (model, transport, _, root) = try makeModel(mode: "nas-services-unknown"); await model.refresh(.powerSchedule)
+        let id = try XCTUnwrap(model.perform(try change(model, .powerSchedule), activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.phase, .submitted); XCTAssertFalse(model.canEdit(.powerSchedule))
+        let contents = try String(contentsOf: root.appendingPathComponent("service-operations-v1.json"), encoding: .utf8)
+        for value in ["Asia/Taipei", "weekdays", "08:15", "poweroff_tasks", "fixture.example.invalid"] { XCTAssertFalse(contents.contains(value)) }
+        model.deactivate()
+        let (next, nextTransport, _, _) = try makeModel(mode: "nas-services-power-recover", root: root); await next.refresh(.powerSchedule)
+        XCTAssertEqual(next.recovery.entry(id)?.phase, .succeeded); XCTAssertTrue(next.canEdit(.powerSchedule))
+        let writes = await transport.writes, replayed = await nextTransport.writes; XCTAssertEqual(writes.count, 1); XCTAssertTrue(replayed.isEmpty)
+    }
+    func test计划快照不完整与压缩标记未知只读显示不提供写入() async throws {
+        for (mode, kind) in [("nas-services-power-incomplete", NasServiceKind.powerSchedule), ("nas-services-power-summary-empty", .powerSchedule), ("nas-services-zram-incomplete", .zram)] {
+            let (model, transport, _, _) = try makeModel(mode: mode); await model.refresh(kind)
+            XCTAssertNotNil(model.section(kind).value); XCTAssertFalse(model.canEdit(kind))
+            XCTAssertNil(model.perform(try change(model, kind), activation: model.activation))
+            let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+        }
+    }
+    func test计划提交前NAS时区变化停止覆盖() async throws {
+        let (model, transport, _, _) = try makeModel(); await model.refresh(.powerSchedule)
+        let change = try change(model, .powerSchedule)
+        await transport.setScheduleTimeZone("Europe/London")
+        let id = try XCTUnwrap(model.perform(change, activation: model.activation)); await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.phase, .failed); XCTAssertEqual(model.recovery.entry(id)?.failure, .changed)
+        let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+    }
+    func test压缩跨账号迟到只记录首步而不标记新账号重启() async throws {
+        let (model, transport, _, root) = try makeModel(); await model.refresh(.zram)
+        await transport.suspendWrites()
+        let id = try XCTUnwrap(model.perform(try change(model, .zram), activation: model.activation))
+        await wait { model.recovery.entry(id)?.phase == .submitted }
+        let next = MobileServiceUITransport(), profile = try profile(username: "another")
+        model.configure(profile: profile, repository: try repository(next, profile: profile), authorize: { true }); await model.refresh(.zram)
+        await transport.resumeWrites(); await model.waitForOperation(id)
+        XCTAssertTrue(model.entries(.zram).isEmpty); XCTAssertNil(model.rebootContinuation())
+        let entry = try XCTUnwrap(MobileServiceOperationStore(root: root).entry(id)); XCTAssertTrue(entry.parts[0].accepted)
+        XCTAssertEqual(entry.parts[1].stage, .skipped)
+        let writes = await transport.writes, replayed = await next.writes; XCTAssertEqual(writes.count, 1); XCTAssertTrue(replayed.isEmpty)
+    }
     private var roots: [URL] = []
     override func tearDown() async throws {
         let values = await MainActor.run { let values = self.roots; self.roots = []; return values }
@@ -22,7 +128,7 @@ final class MobileServiceSettingsTests: XCTestCase {
             XCTAssertEqual(model.section(kind).value?.fields(for: change.changedSteps[0]), change.desired.fields(for: change.changedSteps[0]))
             XCTAssertFalse(model.isOperating); XCTAssertTrue(model.canEdit(kind))
         }
-        let writes = await transport.writes; XCTAssertEqual(writes.count, 4)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 7)
     }
     func test缺失字段保留不能猜值开启() async throws {
         let (model, transport, _, _) = try makeModel(mode: "nas-services-missing")
@@ -273,6 +379,8 @@ final class MobileServiceSettingsTests: XCTestCase {
         case .terminal(var value): value.isSSHEnabled = true; desired = .terminal(value)
         case .proxy(var value): value.isEnabled = true; desired = .proxy(value)
         case .remoteAccess(var value): value.isRelayEnabled = false; desired = .remoteAccess(value)
+        case .zram(let value, _): desired = .zram(.init(isEnabled: true, configuredBytes: value.configuredBytes, algorithm: value.algorithm), needsReboot: true)
+        case .powerSchedule(let value): desired = .powerSchedule(.init(entries: [.init(id: "draft", action: .shutdown, isEnabled: false, hour: 8, minute: 15, recurrence: .daily)], timeZoneIdentifier: value.timeZoneIdentifier, total: 1, isTruncated: false, supportsEditing: true))
         }
         return .init(original: original, desired: desired)
     }

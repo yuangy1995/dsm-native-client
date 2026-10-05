@@ -650,7 +650,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "2026-10-03 macOS 按用户授权接入 v1 load/save，两个原生数组完整且不超过 200 条才可编辑；未知动作、时间、星期、状态或缺失条目拒绝覆盖。保存前完整基线比较，明确关机风险、全局去重并回读整表；未知结果仅刷新，不重放。Windows/Android 未迁移写入，历史验证不升级。本轮官方前端 static 及读取证据见 docs/api/discovery/environments/2026-10-02-nas-settings-web-audit.md。",
+      "fallback": "2026-10-03 macOS 按用户授权接入 v1 load/save，两个原生数组完整且不超过 200 条才可编辑；未知动作、时间、星期、状态或缺失条目拒绝覆盖。保存前完整基线比较，明确关机风险、全局去重并回读整表；未知结果仅刷新，不重放。2026-10-06 iPhone/iPad M6c1 已接完整清单草稿、启停、移除、整体保存与摘要恢复；NAS 时区纳入确认和恢复比较，空清单可添加，不完整清单不得覆盖。共享旧 Mac 调用不变。Windows/Android 未迁移写入，历史验证不升级。本轮官方前端 static 及读取证据见 docs/api/discovery/environments/2026-10-02-nas-settings-web-audit.md。",
       "documentRef": "docs/api/discovery/endpoints/dsm-power-schedule.md",
       "verifications": [
         {
@@ -725,7 +725,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "2026-10-03 macOS 使用 enable_zram 原生布尔，缺失或冲突保持未知。按用户授权提供开关；必须预检 ZRAM/NeedReboot v1、比较编辑基线、分别提交 set 并回读目标值和重启标记，不自动重启。断线或回读失败禁止自动重放；其他页面独立可用。其他四端未迁移写入，不升级历史验证。本轮证据见 docs/api/discovery/environments/2026-10-02-nas-settings-web-audit.md。",
+      "fallback": "2026-10-03 macOS 使用 enable_zram 原生布尔，缺失或冲突保持未知。按用户授权提供开关；必须预检 ZRAM/NeedReboot v1、比较编辑基线、分别提交 set 并回读目标值和重启标记，不自动重启。断线或回读失败禁止自动重放；其他页面独立可用。2026-10-06 iPhone/iPad M6c1 已接移动开关及逐步恢复：两步独立保存提交状态，压缩已保存而后步未完成时只允许明确继续，当前压缩配置变化则停止；共享旧 Mac 调用不变。Windows/Android 未迁移写入，不升级历史验证。本轮证据见 docs/api/discovery/environments/2026-10-02-nas-settings-web-audit.md。",
       "documentRef": "docs/api/discovery/endpoints/dsm-zram.md",
       "verifications": [
         {

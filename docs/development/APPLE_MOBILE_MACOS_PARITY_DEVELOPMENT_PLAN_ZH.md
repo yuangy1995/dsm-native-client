@@ -76,7 +76,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M5 删除与数值 | ServiceManagementModel | 记录删除与文件删除分别确认；数据删除 | M5a1 已统一缺失数值为 --；M5d 单项/多项任务移除与恢复、结束并移出未完成文件均通过两端回归；实际文件由用户进入既有 M2 文件管理另行选择，不自动关联删除 |
 | M6 21 页读取与普通设置 | NasAdministrationView、NasAdministrationModel | 分类设置/并列详情；系统日志存储区域代理等；内部写 | M6a1–M6a3 已接五项读取、存储/日志及区域时间/DDNS，M6b2 服务设置已完成；其余逐页继续，仅编辑实际支持字段 |
 | M6 账号、群组、网络、安全 | NasAdministrationView | 分步表单/当前账号保护；User/Group/Ethernet/FileServ/Security；高风险 | M6b1 账号/群组与 M6b2 文件服务/终端/代理已接并通过两端验收；M6b3 远程访问已完成；网卡、安全继续后续切片 |
-| M6 硬件、UPS、内存、电源计划 | PowerScheduleEntryEditor、NasAdministrationView | 原生编辑器；Hardware/UPS/ZRAM/PowerSchedule；系统写 | 未实现；纠正 API 旧只读说明，未知字段不补 false |
+| M6 硬件、UPS、内存、电源计划 | PowerScheduleEntryEditor、NasAdministrationView | 原生编辑器；Hardware/UPS/ZRAM/PowerSchedule；系统写 | M6c1 内存压缩与电源计划管理已接；硬件/UPS 待后续，未知字段不补 false |
 | M6 计划任务、连接、电源 | NasAdministrationModel | 后果确认与断连恢复；TaskScheduler/CurrentConnection/System；高风险 | 缺操作；接受不代表脚本完成或已重启，未知不重发 |
 | M6 套件中心 | PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 安装准备/卷/许可/进度、更新/SPK/设置；Package；内部写 | 只有只读列表；提交前取消丢弃迟到结果，提交后关闭不撤销任务 |
 | M7 容器生命周期/日志 | ServiceManagementView、ServiceManagementModel | 详情及操作确认；Docker 稳定身份；高风险 | 只有只读投影；套件权限不等同 DSM 管理员，写后回读 |
@@ -138,13 +138,13 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 | overview / View 仪表板、Model.activate | 总览、性能、更新检查；独立确认电源操作 | System/Utilization/Upgrade；只读及电源高风险 | 既有摘要；电源及断连恢复待 M6d |
 | storage / Model.beginStorageAnalysis、磁盘详情 | 卷/池/磁盘、空间分析、SMART 进度与控制 | Storage/FileStation/SMART；读取及磁盘写 | M6a2 已接详情/分析/SMART 与恢复，两端实际交互通过 |
 | externalStorage / View 外接存储 | USB/eSATA 筛选、容量、局部不可用与截断 | dsm-external-storage；只读 | M6a1 读取/两端交互通过；弹出明确非目标 |
-| zram / Model.saveZRAM | 已知开关与可选容量；编辑独立确认重启后生效 | dsm-zram；读取/系统写 | M6a1 读取/两端交互通过；写入待 M6c |
+| zram / Model.saveZRAM | 已知开关与可选容量；编辑独立确认重启后生效 | dsm-zram；读取/系统写 | M6c1 完整管理与恢复已接，两端实际 UI、共享及 Mac 回归通过 |
 | fileServices / Model.saveFileServices | 原字段表单及差量保存 | dsm-file-service-settings；管理写 | M6b2 六组差量保存与逐组恢复已接，两端实际 UI/共享及 Mac 回归通过 |
 | terminal / Model.saveTerminal | SSH/Telnet/端口及风险说明 | dsm-terminal-settings；管理写 | M6b2 完整编辑、风险确认与未知恢复已接，两端实际 UI/共享及 Mac 回归通过 |
 | network / Model.saveProxy | 代理开关/地址/端口；未知字段不可编辑 | dsm-proxy-settings；网络写 | M6b2 启用/停用与配置编辑恢复已接，两端实际 UI/共享及 Mac 回归通过 |
 | interfaces / Model.saveEthernetInterface | 网卡详情/原配置编辑与断连恢复 | dsm-ethernet-settings；高风险网络写 | 待 M6b |
 | hardware / Model.saveHardware | 风扇/灯光/蜂鸣/休眠/UPS 原字段编辑 | dsm-hardware-settings；系统写 | 待 M6c |
-| powerSchedule / View 电源计划编辑器 | NAS 当地时间、筛选、完整清单草稿及整体保存 | dsm-power-schedule；高风险写 | M6a1 读取/两端交互通过；写入待 M6c |
+| powerSchedule / View 电源计划编辑器 | NAS 当地时间、筛选、完整清单草稿及整体保存 | dsm-power-schedule；高风险写 | M6c1 完整管理与恢复已接，两端实际 UI、共享及 Mac 回归通过 |
 | remoteAccess / Model.saveRemoteAccess | QuickConnect/路由设置及中继断连保护 | dsm-remote-access-settings；网络写 | M6b3 两项管理/当前中继保护/持久恢复已接，两端实际 UI、共享及 Mac 回归通过 |
 | security / Model.saveSecurity | 自动封锁/DoS/防火墙原状态及差量 | dsm-security-settings；权限/高风险写 | 待 M6b |
 | region / Model.saveRegion | 区域格式/时区/时间源/校时 | dsm-region-time-settings；管理写 | M6a3 已接完整表单与分步恢复，两端实际操作及当前环境验收通过 |
@@ -272,6 +272,31 @@ Apple 共享读取只增补本管理入口所需的单项失败信息，旧 Mac 
 | 同一 NAS 的直连和 QuickConnect 测试条件 | 中继连接不能关闭中继但可编辑路由器项；直连可明确关闭。伪造/陈旧草稿或权限撤回不能写入，单项缺失/失败不变成关闭 | 只回传连接类别、可用项和脱敏失败步骤；不以 NAS 接受设置推断外网已经连通 |
 | 同一保存配置可重新登录和解析其他路线、可中断网络/终止 App | 首项保存后中断第二项；重新打开只读恢复，未提交后项不认领、不补写；实际路线变化仍属于原逻辑配置，新地址新配置保持独立 | 回传阶段、是否收到回执、旧/新配置类别及结果。新地址不自动关联旧 NAS；必要时通过 DSM 恢复原连接，不发送旧会话给新目标 |
 | 可安全模拟证书变化、真机锁屏/低空间、VoiceOver/大字/iPad 键盘分屏 | 连接身份异常时停止管理操作，回到连接页面处理；记录不能写入时停止后续请求；原生开关、确认/取消与恢复可用 | 仅错误类别、阶段、设备/OS 与脱敏截图；不回传证书私钥、指纹对应主机、会话或恢复文件。模拟器不能替代真实文件保护及全部辅助功能 |
+
+### M6c1 内存压缩与电源计划
+
+2026-10-06 基线为已推送 `b5a7f42c`，工作区干净。该提交的 Apple Build 移动作业仍运行，macOS、Repository Check 与文档检查已通过；本片先本地推进，不用新推送取消整轮。
+
+| macOS 证据 / 用户结果 | 移动等价语义与交互 | 契约、安全与验证边界 |
+| --- | --- | --- |
+| Model.saveZRAM、View.ZRAMView | 已知开关编辑、重启后生效的明确确认；容量/算法仅显示已返回信息；保存不自动重启。首步完成而后步失败时，明确继续后步且不重复开关保存 | ZRAM get/set v1、NeedReboot get/set v1；系统写。逐边界权限与持久记录，未知只读恢复；源码和当前环境验收完成，真实 NAS 写入未验证 |
+| Model.savePowerSchedule、View.PowerScheduleView、PowerScheduleEntryEditor | 完整草稿内新增/编辑/启停/移除、星期与时分、按状态筛选、取消/还原/整体保存；空清单也可添加。iPhone/iPad 均用原生触控表单，NAS 当地时间不随设备时区平移 | PowerSchedule load/save v1；高风险。两个完整数组、200 条上限、同一时分星期冲突（含停用条目）与原清单及 NAS 时区确认；源码和当前环境验收完成，真实计划执行待验 |
+
+单一修改范围为既有共享服务设置增量和原 HardwareEditing 请求编码、移动管理表单/现有恢复记录与导航、合成服务和本片测试、双语资源/生成工程及对应文档。复用既有逐步保存模型及账号隔离记录，不新增并行恢复实现；记录仍为现有版本 1 的固定字段，仅增加种类/步骤枚举和目标摘要，不保存计划时间、账号、地址或凭据正文。旧版本无法识别新种类时按既有规则保留记录并阻止写入；回滚停用新入口、保留恢复文件和登录配置，不迁移 App 身份/会话或增加权限。旧 macOS 调用保持，共享增量需运行完整共享及 Mac 回归；Windows/Android 只登记影响。
+
+管理写前检查实际权限、能力、完整快照和原配置，保存前落盘、接受回执和最终回读分别记录；计划用稳定语义比较，忽略临时行 ID 与排序，不能把空摘要用于清空完整计划。内存压缩的已提交步骤可只读恢复，未提交的重启标记只允许新的明确操作；必须仍匹配已保存的压缩开关，不能自动补写。真实重启、计划执行、锁屏文件保护和辅助功能在源码及两端可运行验收完成后列具体 `PENDING_USER_VALIDATION`。本片不包含 UPS/风扇/网卡/安全或即时重启，不触碰仍待范围授权的三个 Mac 反馈分支。
+
+本片共享 2804 项 XCTest（172 条既有跳过）及 12 项 Swift Testing、Mac 双架构构建均通过。两端完整单元各 1376 项（各 4 条既有跳过）及九项新实际 UI 均有通过证据，逐轮失败、修正与最终结果见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-06-移动-m6c1-内存压缩与电源计划)。独立集成/对抗复核覆盖逐步权限、未知不重放、未提交步骤不认领、持久记录失败、原清单/时区变化及跨账号隔离；真实 NAS 证据不提升。
+
+`PENDING_USER_VALIDATION`（只包含本片已实现能力）：
+
+| 前置条件 | 操作与预期 | 脱敏反馈及影响范围 |
+| --- | --- | --- |
+| iPhone/iPad 真机、已记录 DSM 版本、可维护测试 NAS 与管理员；用户保留独立 DSM 入口 | 分别取消及保存内存压缩开关，保存本身不重启；两步各自显示结果。若后项被拒，恢复权限后确认单独继续。用户另择维护时段重启，观察压缩状态和服务 | DSM/OS 版本、动作阶段及错误类别；不回传主机、账号或原响应。影响重启后的内存使用与系统服务，模拟器不能验证实际压缩效果 |
+| 专用 NAS、无冲突维护时段和可丢弃计划，先使用停用条目 | 新增/编辑时分与星期、启停、移除、还原、取消及整体保存；DSM 中完整清单一致。手机与 NAS 使用不同时区仍保留 NAS 时分。另行安排开关机测试，覆盖夏令时及硬件是否支持自动开机 | 版本、时区类别、条目数量和脱敏步骤，不提供真实计划正文。启用计划可能自动中断 NAS 服务；当前未验证 UPS/休眠与电源计划的实际组合 |
+| 可撤销权限、改变原清单、切换账号与中断网络的测试环境 | 保存前原值或 NAS 时区改变后拒绝覆盖；两步之间撤销权限只保留首步。断网/关闭 App 后只读恢复，未提交后项不自动补写，当前开关被他处改变后不能继续旧标记 | 回传操作阶段、结果类别和有无重复请求的脱敏结论；不回传操作记录文件、账号、会话或抓包。未知结果可通过 DSM 管理，原记录继续保留 |
+| 两端真机锁屏/低剩余空间、VoiceOver、大字及 iPad 键盘分屏 | 记录无法写入时零提交；解锁后重新读取。条目表单、星期、筛选、风险确认、取消与还原都可访问，关闭子弹窗回到原草稿 | 设备/系统及脱敏失败步骤或合成截图；真实文件保护和完整辅助功能仍需设备验证 |
+
 
 ### M6a3 区域时间与 DDNS
 

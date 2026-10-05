@@ -2395,3 +2395,50 @@ git diff --check
 ```
 
 iPhone 使用相同测试选择，设备 ID 为 `8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`、结果包改为 `m6-ci-phone-final.xcresult`。三组实际枚举命令使用相同 iPhone 目标与派生路径，附 `-enumerate-tests -test-enumeration-style flat -test-enumeration-format json -test-enumeration-output-path <对应结果>`；完整组不添加测试筛选，另两组采用工作流对应参数。
+
+## 2026-10-06 移动 M6c1 内存压缩与电源计划
+
+基线为 `b5a7f42c`，main 与 origin/main 一致且工作区干净。对应 Apple Build `37349262879` 的 shared-macos 已通过，四项移动分组仍在运行；Repository Check 与 Documentation & Quality Preflight 已通过。本片先在本地实施，未用推送取消完整云端回归，云端结果不代表本片已被覆盖。
+
+移动内存压缩与电源计划接入既有服务设置模型和版本 1 摘要恢复文件，新增种类与独立提交步骤，不创建平行恢复实现。共享管理方法复用旧 HardwareEditing 的三种实际请求编码；Mac App 源码、旧调用及公开请求版本不变。内存压缩保存和标记重启后生效分步确认/落盘/回读；后步未提交或明确拒绝时允许用户确认后单独继续，必须仍匹配前步目标。过程不发送重启请求。电源计划使用完整草稿和整体保存，保留两数组、200 条、停用条目也不能重叠等规则；NAS 时区参与原配置和最终摘要比较，不以相同时分误认时区变更后的成功。
+
+独立集成与只读对抗复核检查完整快照、缺失/畸形布尔、能力/权限/取消/连接身份异常、写前与回执落盘失败、两步之间配置变化、只读恢复不认领未提交项、跨账号迟到、空清单/截断/冲突/超量、旧 Mac 互斥字段和恢复隐私。新增 15 项 `NasServiceFlowTests`、12 项 `MobileServiceSettingsTests` 及 9 项实际 UI。原完整服务行为测试同步包含两种新设置，未删除断言或新增跳过。
+
+共享首轮编译曾因新增枚举分支未补全而失败，补齐后原 209 项聚焦通过；新增 14 项后的 223 项聚焦一项失败，原因是测试把“空数组但 total=1”错误视为可展示的不完整列表，而现有严格读取应抛错。改为一条有效记录而 total=2，保留不完整清单不能保存及零写断言，223 项通过。随后独立复核增加保存后 NAS 时区改变回归。源码稳定后的 `m6c1-shared-final.log` 为 **2804 项 XCTest、172 条既有跳过、0 失败，以及 12 项 Swift Testing 全通过**。最终 `m6c1-macos-final.log` 为 BUILD SUCCEEDED，`lipo` 实测 `x86_64 arm64`；未安装或启动 macOS App。
+
+移动构建 R1/R2/R3 均成功。首轮两端完整单元各 **1376 项、4 条既有跳过、0 失败**，13 项 UI 中 iPhone 7 项失败、iPad 5 项失败。共同五项电源计划失败的截图显示条目子弹窗可见，但辅助功能树中没有其控件；弹窗原挂在 Form 的惰性子 Section。将呈现状态和 sheet 移至稳定表单根。iPhone 另两项旧读取测试先等待屏外尚未生成的入口，改为先滚动实际 NAS 分类列表，再等待原入口存在且可点击；保留时间、筛选、空内容、缺少接口和加载断言。两端首轮内存压缩的确认/保存、部分结果继续、重启只读恢复及字段不完整限制已通过。R1 失败日志和结果包保留，不把首轮写成全绿。
+
+主要实际命令（结果目录均为忽略的 `apple/Apps/DsmMobile/build/`）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'NasServiceFlowTests|DsmNasAdministrationRepositoryTests'
+swift test --package-path apple --jobs 2
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6c1-phone-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源计划空清单新增草稿取消和整体保存 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源计划启停编辑星期移除还原与清空 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源计划停用条目也不能与相同时间重叠 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源计划未知保存重启只读恢复 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test中文大字内存与电源确认可取消 -only-testing:DsmMobileUITests/MobileNasReadUITests/test电源计划保留NAS时间并区分停用项目 -only-testing:DsmMobileUITests/MobileNasReadUITests/test空计划与缺少接口分别展示 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test文件服务端口校验确认取消和保存回读
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+iPad R2 使用同一测试选择，设备 ID 为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果包 `m6c1-pad-r2.xcresult`。R1 使用全部九项新 UI 和旧 `MobileNasReadUITests` 的 NAS 时间/空计划/错误重试/中文大字四项。真实 NAS 写入、实际开关机/压缩效果、锁屏/文件保护和完整辅助功能未验证，具体条件、预期及脱敏反馈记在移动主计划 M6c1 的四项 `PENDING_USER_VALIDATION`，不能由合成结果替代。
+
+R2 两端命令均 exit 0：各 **1376 项完整单元、4 条既有跳过、0 失败，加 8 项实际 UI 全部通过**。覆盖首轮全部电源计划失败、两项旧读取失败及原文件服务保存回归。真实截图与辅助功能定位已确认条目编辑器在表单根呈现后可访问，中文大字下完成/取消可用；新增/编辑时分星期、启停/移除/还原/清空、冲突拒绝、保存确认和未知重启恢复都在两端实际执行。截图保留 `m6c1-preview/`，来自合成场景，不含真实 NAS 资料。
+
+末次界面审查将计划开关标签改为既有“启用”资源，避免关闭时标签仍写“已启用”。旧格式空摘要缺少整体保存依据时，空页改为明确读取限制与刷新/DSM 路径，不能提示不存在的添加操作；既有模型/UI 不完整数据测试各补一个空摘要场景，测试数量不变。生成工程由锁定 XcodeGen 再生成前后 SHA256 一致：`dba8141a52f6294d15d5294ec6a51ed29e2fb15a5a4cd30546f678ba3ee7f08a`，未手改工程。
+
+末次 R4 移动构建成功，深色验证实际使用以下命令；两台设备均执行相同单元和两项 UI 选择，结果包分别为 `m6c1-phone-final.xcresult` 与 `m6c1-pad-final.xcresult`：
+
+```sh
+xcrun simctl ui 8145D5B0-65A7-46E3-A0CF-17850E4EFA3F appearance dark
+xcrun simctl ui A31ABDE2-186F-43DD-8D40-5EB9511A9289 appearance dark
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6c1-phone-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test中文大字内存与电源确认可取消 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源清单不完整和压缩字段未知保留读取与限制
+```
+
+最终静态检查通过：Apple 6507/Android 2188/Windows 3402 条双语资源与硬编码扫描、179+1 请求契约、29 组脱敏 Fixture/48 项私有文档引用及文档/差异检查。共享和 Mac 最终回归后只改移动界面/合成场景与其测试，未再次修改共享或桌面源码，不重复宣称这些检查覆盖真实 NAS 行为。
+
+最终两端命令均 exit 0：各 **1376 项完整单元、4 条既有跳过、0 失败，以及 2 项深色实际 UI 全部通过**；其中不完整数据用例实际覆盖非空截断、旧格式空摘要、未知压缩字段三种场景。两端中文大字编辑/确认及浅色保存回读截图均已实际查看，保留 `m6c1-preview/` 的合成截图；辅助功能树导出和临时附件目录已在检查后清理。两台模拟器均恢复浅色并读取确认。此片没有真实 NAS 写入、正式签名发布、安装 macOS 包或变更 Windows/Android 代码。
