@@ -147,10 +147,14 @@ final class MobileDDNSUITests: XCTestCase {
         return app
     }
     private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap() } else {
-            let button = element("mobile.navigation.\(destination)", app); XCTAssertTrue(button.waitForExistence(timeout: 5)); button.tap()
-        }
+        let tab = app.tabBars.buttons[title], sidebar = element("mobile.navigation.\(destination)", app)
+        // 模块启用会重建原生导航，等待实际目标入口完成呈现并可点击。
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (tab.exists && tab.isHittable) || (sidebar.exists && sidebar.isHittable)
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        if tab.exists && tab.isHittable { tab.tap() }
+        else { XCTAssertTrue(sidebar.exists); XCTAssertTrue(sidebar.isHittable); sidebar.tap() }
     }
     private func expect(_ value: XCUIElement, contains text: String) {
         XCTAssertTrue(value.waitForExistence(timeout: 8))

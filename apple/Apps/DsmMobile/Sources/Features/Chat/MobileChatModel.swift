@@ -1060,9 +1060,10 @@ final class MobileChatModel {
 
     private func scheduleForegroundRealtimeStop() {
         guard realtimeStopTask == nil,
-              let (repository, eventTask) = cancelForegroundRealtimeTasks() else { return }
+              let (repository, tasks) = cancelForegroundRealtimeTasks() else { return }
         realtimeStopTask = Task {
-            await eventTask?.value
+            // 取消只是发出停止请求；等刷新及其子请求结束后再完成前台停止。
+            for task in tasks { await task.value }
             await repository.stopRealtime()
         }
     }
@@ -1073,9 +1074,9 @@ final class MobileChatModel {
         self.realtimeStopTask = nil
     }
 
-    private func cancelForegroundRealtimeTasks() -> ((any ChatRepository), Task<Void, Never>?)? {
+    private func cancelForegroundRealtimeTasks() -> ((any ChatRepository), [Task<Void, Never>])? {
         let repository = activeProfileID.flatMap { repositories[$0] }
-        let eventTask = realtimeTask
+        let tasks = [realtimeTask, realtimeSyncTask].compactMap { $0 }
         realtimeGeneration &+= 1
         realtimeTask?.cancel()
         realtimeTask = nil
@@ -1093,7 +1094,7 @@ final class MobileChatModel {
         pendingRealtimeSync = false
         realtimeConnected = false
         guard let repository else { return nil }
-        return (repository, eventTask)
+        return (repository, tasks)
     }
 
     private func replaceMessages(
