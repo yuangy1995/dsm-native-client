@@ -130,8 +130,7 @@ final class MobileChatAudioUITests: XCTestCase {
         XCTAssertTrue(element("chat-voice-play-9400", app).waitForExistence(timeout: 8))
     }
     private func navigate(_ id: String, _ title: String, _ app: XCUIApplication) {
-        if app.tabBars.buttons[title].exists { app.tabBars.buttons[title].tap() }
-        else { let item = element("mobile.navigation.\(id)", app); XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap() }
+        MobileUITestNavigation.open(app, destination: id, title: title, test: self)
     }
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func screenshot(_ app: XCUIApplication, _ name: String) {

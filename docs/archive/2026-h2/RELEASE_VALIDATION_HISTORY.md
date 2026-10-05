@@ -2510,3 +2510,100 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 结束本片时，上一批 Apple Build `37349262879` 的共享/macOS 与 iPhone-workspace 已通过；iPhone-modules 返回 1364 项单元通过（4 条既有跳过）、145 UI 中 9 项失败，iPad-workspace 也返回失败，iPad-modules 尚运行。新失败的日志/附件另行排查，本片未推送的代码不在该云端运行中，也不能以本机通过覆盖这些云端失败。
 
 最终静态检查再次通过：6568/2188/3402 条双语资源及硬编码扫描、179+1 请求契约、29 组脱敏 Fixture/48 项私有文档引用、文档与差异检查。本片临时辅助功能树、录屏提帧及导出日志已清理；正式测试结果与十二张合成预览保留。新增云端失败的证据保留在独立忽略目录继续排查，没有混入提交或据此声称云端通过。
+
+
+## 2026-10-06 Apple 分组回归完整结果与后续排查
+
+M6d1 本机交付后，Apple Build `37349262879`（`b5a7f42c`）全部结束，结论失败。共享/macOS 与 iPhone-workspace 通过；iPhone-modules 的 1364 项单元通过（4 条既有跳过），145 项 UI 中 9 项失败；iPad-modules 同为 1364 项单元通过（4 条既有跳过），145 项 UI 中 7 项失败；iPad-workspace 的 159 项 UI 中 15 项失败。总计 31 个设备/用例失败，不代表 31 个独立根因。分组均在各自作业时限内完成，不能将这些失败归为六小时超时，也不能通过取消或跳过用例消除。
+
+下一修复基线为本地 main 的 `34fb9d6e`，另有此前 M6c1 提交尚未推送。当前修复集中于这些失败所涉及的自动化呈现和输入边界，生产侧仅为账号子弹窗补稳定的辅助功能标识。源证据为三个已结束作业的原日志及结果包；分析行号时先核对 `b5a7f42c` 对应源版本，不能套用本地后续已变化的行号。
+
+已确认的排查入口：iPhone 的账号创建/群组确认、四项 NAS 读取导航、存储分析导航及区域页导航；iPad 工作区十四项导航可操作等待与一项目录上传入口；iPad 模块的中文麦克风拒绝、账号保护/群组/恢复、下载剩余项/横屏和代理保存。按精确时间重新提帧后，iPad 导航等待末尾的侧栏和文件内容均已显示；早期默认关键帧中的读取进度层不代表失败时刻，不能用它推断导航被加载遮挡。仍需以实际按钮的可操作状态为准。账号群组用例的失败辅助功能树已经回到列表并显示更新后的说明，但组变更和确认缺失的原因尚未确定；密码用例显示两次输入不匹配，保持一致性检查，不根据掩码字符数量猜测明文。
+
+后续逐项核对实际界面、输入焦点、呈现与完成边界，再执行两端对应回归；保持全部权限、确认、输入一致性和未知结果断言，不增加跳过。完整结果和修正将在同一节继续记录。日志/附件只包含隔离合成场景，保存在忽略目录 `apple/Apps/DsmMobile/build/m6d1-ci-evidence/` 及同前缀日志中；完成排查后清理临时附件。
+
+
+本轮单一修改范围为共用的 UI 测试导航辅助、上述失败所在的测试类、账号子弹窗标识、合成密码请求检查、锁定工具生成的移动工程及本节记录。现有 NAS 请求、权限、危险确认、密码一致性和持久恢复规则保持；仅凭页面可见、掩码长度或旧结果不能让用例通过。导航辅助收敛原先多处重复的标签/侧栏判断，使用实际 Button，保留可点击断言并留出第二次云端快照的时间；失败附当前层级与截图。四项 NAS 读取的屏外等待已有 M6c1 本地修正，本轮改用稳定分类列表标识，避免首行滚出后查询失效。
+
+账号自动化先在当前群组弹窗操作并断言开关实际选中、返回草稿中包含成员，再要求原风险确认；说明替换不再依赖三击恰好选中整句。密码仍通过真实安全输入控件和系统建议关闭流程输入，合成服务额外要求收到指定测试口令，不能只凭两次错误输入相同而通过。上传在实际目录清单准备完成后才点击，保留文件/目录结果与重启断言。新增文件读取等待时仍可打开本机设置的 UI 回归；这些调整尚待本机执行结果。
+
+
+本机 R1 的 iPhone 命令 exit 0：完整单元 **1395 项、4 条既有跳过、0 失败**，**11 项 UI 全通过**（九项原云端失败，加读取等待导航和六模块导航）。iPad 命令 exit 65：完整单元同样 **1395 项、4 条既有跳过、0 失败**，24 项 UI 中 **23 项通过、一项代理输入失败**。最后一个失败并非代理保存出错：精确提取的 40.787 秒画面显示地址已清空、灰色占位提示可见、保存被正确禁用；新加的空值断言误将辅助功能返回的占位提示当作残留输入。该断言按既有 TextField 模式识别空值或占位提示，随后仍严格比较完整输入和保存回读结果。
+
+R1/R2 构建均成功；最后仅调整上述测试断言的 R3 构建也成功。没有变更真实代理保存逻辑或把未知结果当成功。新合成密码模式已在 iPhone 界面实际提交并通过，群组开关选中、返回草稿和风险确认的增强断言两端通过；iPad 目录上传准备、十五项工作区原失败、另外六项模块原失败也均通过。最后针对共用 iPad 输入辅助的代理、文件服务和终端三项继续补验。
+
+本轮实际移动构建与 R1 测试命令如下；Xcode 为锁定的 26.6（17F113），两台模拟器系统为 26.5，结果均在忽略的构建目录中：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6-ci2-phone-r1.xcresult -parallel-testing-enabled NO \
+  -only-testing:DsmMobileTests \
+  '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test创建账号密码不匹配不能保存且成功后显示新账号' \
+  '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test账号编辑群组选择保存取消及删除确认' \
+  '-only-testing:DsmMobileUITests/MobileNasReadUITests/test共享访问使用当前账号列表且未知权限不当可写' \
+  '-only-testing:DsmMobileUITests/MobileNasReadUITests/test电源计划保留NAS时间并区分停用项目' \
+  '-only-testing:DsmMobileUITests/MobileNasReadUITests/test空计划与缺少接口分别展示' \
+  '-only-testing:DsmMobileUITests/MobileNasReadUITests/test系统活动搜索能显示与清除无匹配状态' \
+  '-only-testing:DsmMobileUITests/MobileNasStorageUITests/test空间分析显示未知容量和重复文件结果' \
+  '-only-testing:DsmMobileUITests/MobileRegionUITests/test手动日期选择可取消再确认保存' \
+  '-only-testing:DsmMobileUITests/MobileRegionUITests/test明确权限拒绝不报告保存成功' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test文件读取等待时仍能打开本机设置' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test管理员六种模块均需开启且设置始终可达'
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6-ci2-pad-r1.xcresult -parallel-testing-enabled NO \
+  -only-testing:DsmMobileTests \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test所选照片创建临时分享并设置公开范围' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test新格式部分完成只能补关闭提示' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test条件相册中文建议搜索空结果与选择人物' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test条件相册共享目录选择与空子目录导航' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片全局部分完成重新打开保留剩余修改' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片删除中文大字确认和剩余操作仍可触达' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片后台任务清除记录和打开原目标' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片批量原件交给系统文件面板并能取消' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片智能分类权限与空内容错误和加载状态' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片目录批量删除确认包含照片和文件夹' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片目录目标加载失败等待空内容与取消' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片资料标签读取等待失败与空内容' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test目录上传在活动中显示逐项成功且重启保留' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test相似批量拆组中断重启后不重发并能取消剩余项' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test自动预览设置未知重启后禁止再次保存' \
+  '-only-testing:DsmMobileUITests/MobileChatAudioUITests/test麦克风拒绝中文深色大字给出设置入口且不发送' \
+  '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test当前账号保护和未知所属组仍可查看' \
+  '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test账号编辑群组选择保存取消及删除确认' \
+  '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test资料保存未知后重启只读恢复' \
+  '-only-testing:DsmMobileUITests/MobileDownloadControlUITests/test取消剩余项目后空任务列表仍可查看与清除已结束记录' \
+  '-only-testing:DsmMobileUITests/MobileDownloadEditUITests/test中文深色大字选择和结果支持横屏' \
+  '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test代理地址校验保存并关闭代理' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test文件读取等待时仍能打开本机设置' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test管理员六种模块均需开启且设置始终可达'
+```
+
+
+R3 构建后的 `m6-ci2-pad-services` 三项补验均在完整文本断言失败，命令 exit 65：预期 `8080`、`0`、`65536` 分别得到 `08080`、`00`、`065536`。按零容差提取的录屏显示 iPad 浮动数字键盘正覆盖输入框，清空后重复点击原输入框位置恰好落在数字 `0` 上。这是自动化新增的坐标误触，不能修改端口校验或忽略前导字符来掩盖。最终去掉清空后的重复点击，保留原焦点和分步清空检查，再输入新值；业务源码保持不变。R4 构建后使用相同三项选择再次验证。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6-ci2-pad-services-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test代理地址校验保存并关闭代理 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test文件服务端口校验确认取消和保存回读 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test终端端口校验Telnet风险及保存回读
+```
+
+上一轮命令只有结果路径为 `m6-ci2-pad-services.xcresult`，测试选择完全相同。共享/Mac 源码在这次 CI 修复中没有变化，沿用 M6d1 的完整共享测试与双架构构建证据，不把它们称为本轮重新执行。
+
+
+R4 构建成功；`m6-ci2-pad-services-r2` 中文件服务、终端两项通过，代理一项失败（exit 65）。端口完整值 `8080` 此时已通过断言，但浮动数字键盘仍在，底部完成按钮被弹出层拦截；随后测试点击被遮住的保存位置又敲入数字 `1`，失败树显示 `80801`，因此确认页未出现。最终在仍有数字弹出层时点击编辑器标题栏内的空白处，等待该层真正关闭，再使用明确的完成按钮；收起前后都比较完整文本，代理用例另要求保存按钮可用且可点击。该处理只修正真实录屏中已发生的测试动作，不改变产品表单或输入规则。
+
+
+**最终 R5 构建与两端三项服务 UI 全通过，两个测试命令均 exit 0。** iPhone、iPad 各完成代理地址/端口、文件服务端口、SSH/Telnet 端口的校验、确认取消、保存回读和相关停用流程。结果分别为 `m6-ci2-phone-services-final.xcresult` / `m6-ci2-pad-services-final.xcresult`；真实命令如下：
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6-ci2-phone-services-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test代理地址校验保存并关闭代理 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test文件服务端口校验确认取消和保存回读 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test终端端口校验Telnet风险及保存回读
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6-ci2-pad-services-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test代理地址校验保存并关闭代理 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test文件服务端口校验确认取消和保存回读 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test终端端口校验Telnet风险及保存回读
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+至此上一云端 31 个设备/用例失败均有对应本机通过结果。R1 的 iPad 首轮仍如实保留为 23/24，不改写成单轮全绿；最后的辅助只影响服务表单测试，其三项最终两端全通过，未重跑其他已通过的 1395 项单元或共享/Mac 测试。五次本轮移动构建均通过，双语资源 6568/2188/3402 条及硬编码检查、179+1 请求契约、29 组 Fixture/48 项引用、文档/差异检查通过。锁定 XcodeGen 2.46.0 再生成前后工程 SHA256 同为 `0c284895030dd5365cf0bd379636256c7e396fe7f9b1aaa6c9e9ed078d47030c`。
+
+独立差异复核确认生产侧只有两个账号子弹窗的辅助功能标识，另有仅合成环境的精确密码检查；当前授权、密码一致性、危险确认与未知状态保护未削弱，没有改变工具链、身份、权限或协议。真实两端账号创建、代理确认/关闭截图保留于 `apple/Apps/DsmMobile/build/m6-ci2-preview/`，已实际检查相关画面，两台模拟器恢复浅色并读取确认。新云端整轮须在推送本批 main 后取得真实结果，不能由本地通过推定。M6 余项、M7/M8 和具体真实 NAS 待办继续按移动主计划推进。
+
+本轮临时云端结果下载、辅助功能树、录屏提帧和测试选择文件已按独立目录清理；正式本机日志、结果包与上述五张合成预览保留。

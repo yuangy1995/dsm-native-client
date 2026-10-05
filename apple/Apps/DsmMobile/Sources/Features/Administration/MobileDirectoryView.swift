@@ -230,6 +230,7 @@ private struct MobileDirectoryEditor: View {
                     }))
                     .disabled(group.numericID == nil).accessibilityIdentifier("mobile.nas.directory.group.\(group.name)")
                 }
+                .accessibilityIdentifier("mobile.nas.directory.groupPicker")
                 .navigationTitle(L10n.string("mobile.nas.directory.groups"))
                 .toolbar { ToolbarItem(placement: .confirmationAction) {
                     Button(L10n.string("mobile.nas.directory.done")) { choosingGroups = false }
@@ -263,6 +264,7 @@ private struct MobileDirectoryEditor: View {
                                 : "mobile.nas.directory.saveWarning", confirmation.name))
                         }
                     }
+                    .accessibilityIdentifier("mobile.nas.directory.confirmation")
                     .navigationTitle(confirmation.action.title).navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {

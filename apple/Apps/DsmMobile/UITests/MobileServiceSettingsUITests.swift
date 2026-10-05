@@ -174,6 +174,8 @@ final class MobileServiceSettingsUITests: XCTestCase {
         openEditor(app); toggle("proxyEnabled", in: app)
         replace("proxyHost", text: "https://proxy.example.invalid/path", app); XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
         replace("proxyHost", text: "outbound.example.invalid", app); replace("proxyPort", text: "8080", app)
+        XCTAssertTrue(app.buttons["mobile.nas.service.save"].isEnabled)
+        XCTAssertTrue(app.buttons["mobile.nas.service.save"].isHittable)
         app.buttons["mobile.nas.service.save"].tap(); screenshot(app, "Proxy connection warning")
         element("mobile.nas.service.cancel", app).tap(); app.buttons["mobile.nas.service.save"].tap()
         element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
@@ -319,7 +321,12 @@ final class MobileServiceSettingsUITests: XCTestCase {
             // iPad 可连接硬件键盘；将光标放在可见值末尾后删除原值，不依赖长按菜单。
             field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap()
             let previous = field.value as? String ?? ""
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count) + text)
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+            // 空 TextField 的辅助功能值可能是占位提示，不能把它当作残留输入。
+            let cleared = field.value as? String ?? ""
+            XCTAssertTrue(cleared.isEmpty || cleared == field.placeholderValue, "输入框未清空：\(cleared)")
+            // 保留焦点继续输入；iPad 浮动数字键盘可覆盖原输入框，再点原位置会误敲数字。
+            if !text.isEmpty { field.typeText(text) }
         } else {
             // LabeledContent 的辅助功能框同时包含标签和值，须点入下方实际输入区。
             field.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.8)).tap()
@@ -332,8 +339,15 @@ final class MobileServiceSettingsUITests: XCTestCase {
             XCTAssertTrue(selectAll.exists); selectAll.tap(); field.typeText(text)
         }
         XCTAssertEqual(field.value as? String, text)
-        let done = element("mobile.nas.service.keyboardDone", app)
+        if app.frame.width > 600, app.popovers.firstMatch.exists {
+            // 数字键盘的弹出层会拦截底部完成按钮，先点击编辑器标题栏空白处收起它。
+            let bar = app.navigationBars.containing(.button, identifier: "mobile.nas.service.save").firstMatch
+            bar.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
+            XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        }
+        let done = app.buttons["mobile.nas.service.keyboardDone"]
         if done.exists && done.isHittable { done.tap() }
+        XCTAssertEqual(field.value as? String, text)
     }
     private func waitEditorClosed(_ app: XCUIApplication) {
         let edit = app.buttons["mobile.nas.service.edit"]

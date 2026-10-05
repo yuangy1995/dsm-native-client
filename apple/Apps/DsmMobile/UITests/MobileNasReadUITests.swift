@@ -113,23 +113,20 @@ final class MobileNasReadUITests: XCTestCase {
 
     private func open(_ page: String, in app: XCUIApplication) {
         let link = element("mobile.nas.page.\(page)", in: app)
-        let list = app.collectionViews.containing(.any, identifier: "mobile.nas.page.storage").firstMatch
+        let list = app.collectionViews["mobile.nas.navigation"]
         XCTAssertTrue(list.waitForExistence(timeout: 8))
-        for _ in 0..<4 {
+        for _ in 0..<14 {
             if link.exists && link.isHittable { break }
-            list.swipeUp()
+            // iPad 分类列表左侧可被主侧栏覆盖，使用它实际可见的右侧滚动。
+            list.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.7))
+                .press(forDuration: 0.1, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.4)), withVelocity: .slow, thenHoldForDuration: 0.2)
         }
         XCTAssertTrue(link.waitForExistence(timeout: 8))
         XCTAssertTrue(link.isHittable); link.tap()
     }
 
     private func navigate(_ destination: String, title: String, in app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap() }
-        else {
-            let item = element("mobile.navigation.\(destination)", in: app)
-            XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
-        }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
 
     private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {

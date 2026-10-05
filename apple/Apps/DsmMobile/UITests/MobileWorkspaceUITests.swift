@@ -1947,8 +1947,11 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test目录上传在活动中显示逐项成功且重启保留() {
         let app = launchFixture(state: "upload")
         let start = element("mobile.upload.start", in: app)
+        // 目录副本仍在准备时上传按钮尚不可操作，先等待实际文件清单。
+        XCTAssertTrue(app.staticTexts["Sample upload/Sample upload.txt"].waitForExistence(timeout: 20))
         XCTAssertTrue(start.waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["Sample upload/Sample upload.txt"].exists)
+        XCTAssertTrue(start.isEnabled)
         start.tap()
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         navigate("files", title: "File", in: app)
@@ -2897,23 +2900,17 @@ final class MobileWorkspaceUITests: XCTestCase {
         return app
     }
 
+    func test文件读取等待时仍能打开本机设置() {
+        let app = launchFixture(state: "loading"); defer { app.terminate() }
+        XCTAssertTrue(element("mobile.page.loading", in: app).waitForExistence(timeout: 8))
+        navigate("settings", title: "App settings", in: app)
+        XCTAssertTrue(element("mobile.settings.page", in: app).waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["App settings"].exists)
+        attachScreenshot(app, name: "App settings remain available while file reading waits")
+    }
+
     private func navigate(_ destination: String, title: String, in app: XCUIApplication) {
-        // iPhone 的系统标签栏按本地化标题暴露，iPad 侧栏使用稳定标识。
-        let tab = app.tabBars.buttons[title]
-        let sidebar = element("mobile.navigation.\(destination)", in: app)
-        let more = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch
-        // 开关重建导航后再确定入口，避免把短暂缺失的标签误判为侧栏布局。
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            (tab.exists && tab.isHittable) || (sidebar.exists && sidebar.isHittable) || (more.exists && more.isHittable)
-        }, object: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
-        if tab.exists && tab.isHittable { tab.tap() }
-        else if sidebar.exists && sidebar.isHittable { sidebar.tap() }
-        else {
-            XCTAssertTrue(more.exists); XCTAssertTrue(more.isHittable); more.tap()
-            let item = app.staticTexts[title].firstMatch
-            XCTAssertTrue(item.waitForExistence(timeout: 5)); XCTAssertTrue(item.isHittable); item.tap()
-        }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
 
     private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {

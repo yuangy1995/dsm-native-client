@@ -188,9 +188,7 @@ final class MobileNasStorageUITests: XCTestCase {
     }
     private func open(_ page: String, in app: XCUIApplication) { reveal("mobile.nas.page.\(page)", in: app).tap() }
     private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap() }
-        else { let button = element("mobile.navigation.\(destination)", app); XCTAssertTrue(button.waitForExistence(timeout: 5)); button.tap() }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
     private func reveal(_ id: String, in app: XCUIApplication) -> XCUIElement {
         let value = element(id, app)
