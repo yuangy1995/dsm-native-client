@@ -2081,3 +2081,57 @@ R1/R2/R4 全部移动单元命令将上方存储单元 selector 改为 `-only-te
 - 再次 fetch origin/main，远端仍为交接基线。交接提交 [Apple Build 37267487226](https://github.com/yuangy1995/dsm-native-client/actions/runs/37267487226) 仍为 shared-macos 成功、两端完整 UI 运行中；本片不以新推送取消该运行，本机通过不代表当前提交的云端通过。
 
 本片结束时清理临时截图导出目录及一次性当前画面，日志/xcresult 保留在忽略目录以便复核；向用户展示的合成截图副本单独保留在本地 `build/m6a2-preview`，不提交。两台模拟器恢复原浅色设置，未擦除其他模拟器。功能和验证文档作为完整切片在 main 保存；后续继续 M6a3，不宣布整个 M6–M8 完成。
+
+## 2026-10-05 移动 M6a3 DDNS 与交接 CI 修复
+
+本片开始于本地 main 的 `6846bd65`，工作区干净；此前两个 M6 提交尚未推送，以保留交接提交的完整云端运行。实现 DDNS 服务商/记录搜索、新建与编辑、独立连接测试、更新地址、删除、明确确认及账号隔离的持久恢复。移动区域与时间设置尚未实施，不以 DDNS 完成代替整个 M6a3 完成。用户另明确授权修正 Mac 区域设置的结果判断：配置相同不能覆盖校时部分失败、权限拒绝或未知结果；共享层遇到明确拒绝不再尝试用相同配置回读覆盖结论。
+
+DDNS 沿用现有 Provider/Record v1 请求管线，兼容增加确认快照、严格管理读取和写前/接受回执回调；不新增猜测请求。新恢复文件只存摘要、动作与阶段，不存口令、域名、账号或地址正文。仅变更密码但丢失回执时不能凭公开字段匹配冒认成功；瞬时测试/更新无回执保留未知反馈，只允许新的明确操作，不自动重发。编辑使用本次预检读到的网络字段，避免将打开表单时的旧公网地址写回。Windows/Android 只登记影响，不改代码。
+
+交接 [Apple Build 37267487226](https://github.com/yuangy1995/dsm-native-client/actions/runs/37267487226) 已完整结束：shared-macos 成功，iPhone 的 248 项 UI 中 2 失败，iPad 的 248 项 UI 中 11 失败；汇总任务失败。不能将此前的运行中状态或共享成功记作整轮成功。
+
+- 云端 iPad 录像/无障碍位置证实文件搜索栏覆盖首行及其操作按钮，本机压缩场景也重现。改为搜索栏在纵向布局中占用实际空间，相关文件操作新增不重叠断言，保留压缩、解压、权限、挂载、收藏、ZIP 和 Office 原业务断言。
+- 云端 BT 目的地按钮点击后未出现目录面板；本机旧实现暂未重现。将 sheet 挂到稳定页面根，后续两端原 BT 测试均通过；仍须最终云端复验。
+- Chat 丢回执重启测试误用编辑区的长文案查找详情状态，改为检查实际状态节点及短文案，并保留不能重试/移除的断言。系统 ZIP 分享关闭改为等待面板实际消失，仍要求最终不存在。
+- 本机两端 R2 各选择上述 12 个不同失败场景、2 项文件搜索回归和 7 项 DDNS UI。原 CI 相关 12 场景与搜索 2 场景在两端全部通过；不新增跳过或缩减原业务断言。
+
+环境为 Xcode 26.6（17F113）、iOS SDK/模拟器 26.5、锁定 XcodeGen 2.46.0。两台专用模拟器和 `build/m0-m8` 派生目录沿用 M6a1；没有升级工具链、修改 App 身份或安装/启动 Mac App。日志及结果在 `apple/Apps/DsmMobile/build/m6a3-*`。
+
+实际验证过程：
+
+- 新网络回归最初发现未知布尔字符串被默认解释为 false，严格管理解析改为只接受契约明确的值；同时检查必要字符串、完整数组与唯一记录。新增 10 项 DDNS 网络测试、1 项区域权限拒绝测试以及 2 项 Mac 反馈测试。
+- 移动首次构建因错误类别枚举没有 `.unsupported` 失败，修正后通过。R1 两端各 1304 项完整单元中 2 失败：连接测试错误套用了仅保存使用的凭据回执条件、页面刷新前过早结束忙碌状态；均修正产品逻辑，保留断言。7 项新 UI 各 6 通过、1 失败，保存按钮灰色的录像与无障碍节点证实测试查到了外层容器，改为准确查询按钮本身。
+- R2 两端各 1304 项单元、4 条既有条件跳过，各 1 条静态源码断言未更新：NAS 工具栏已改为统一刷新入口，测试仍要求直接调用健康摘要。改为验证统一调用及实际刷新的四个模型。21 项 UI 中 iPad 全部通过；iPhone 20 通过，DDNS 错误重试测试在详情页查找只位于目录页的工具栏，补原生返回后刷新再进入，仍验证全局刷新取得记录。iPad 的未知恢复期间有系统动画等待，最终通过，未中途取消或将等待当作通过。
+- R9 构建因上述静态测试修改位置不正确、局部变量超出作用域失败；将断言放回对应工作区测试，R10 `build-for-testing` 成功。期间没有对仍在执行的模拟器派生目录重建。
+- 最终共享 `swift test --package-path apple --jobs 2`：2739 项 XCTest、172 条既有条件跳过、0 失败，另 12 项 Swift Testing 通过（`m6a3-shared-final.log`）。包含最新公网地址变化回归与 Mac 管理模型。最终资源改动再执行 `--filter DsmLocalizationTests`，6 项通过。
+- Mac Release 最新共享代码构建成功（`m6a3-macos-final.log`），最终资源构建 `m6a3-macos-resources.log` 成功；架构与两端最终复测结果在下文收尾追加。
+
+实际命令（每次输出写入对应本地日志）：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6a3-phone-final.xcresult -only-testing:DsmMobileTests '-only-testing:DsmMobileUITests/MobileDDNSUITests/test已有记录保存开关并可取消或确认删除' '-only-testing:DsmMobileUITests/MobileDDNSUITests/test未知保存重启只恢复原记录而不重新创建' '-only-testing:DsmMobileUITests/MobileDDNSUITests/test空列表加载错误重试不支持和筛选为空各有恢复' -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6a3-pad-final.xcresult -only-testing:DsmMobileTests '-only-testing:DsmMobileUITests/MobileDDNSUITests/test已有记录保存开关并可取消或确认删除' '-only-testing:DsmMobileUITests/MobileDDNSUITests/test未知保存重启只恢复原记录而不重新创建' '-only-testing:DsmMobileUITests/MobileDDNSUITests/test空列表加载错误重试不支持和筛选为空各有恢复' -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+swift test --package-path apple --jobs 2
+swift test --package-path apple --jobs 2 --filter DsmLocalizationTests
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+R1 选择 `-only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileDDNSUITests`；R2 另加云端失败方法及 `MobileWorkspaceUITests` 的两个文件搜索方法。每次使用独立结果目录，没有覆盖失败证据。当前负责人在实现后独立执行只读对抗复核，检查请求分离、最新权限和原配置、凭据存储、回执丢失、重复点击、账号切换和迟到结果，没有虚称外部模型复核或真实 NAS 验收。DDNS 服务商、真机锁屏、系统辅助功能及 Mac 真实校时结果仍按主计划具体 `PENDING_USER_VALIDATION`，本轮 Agent 没有向真实 NAS 提交操作。
+
+收尾结果：
+
+- `m6a3-phone-final.xcresult`、`m6a3-pad-final.xcresult` 均 exit 0；两端各 1304 项完整单元、4 条既有条件跳过、0 失败，以及上述 3 项实际 UI 全部通过。此前 7 项新 DDNS UI 加最终修正场景在两端均有通过证据，不能把 R1/R2 整轮失败隐去。
+- 浅色截图已实际查看 iPhone 记录/删除确认、iPad 中文大字确认。发现系统密码管理器可能弹出保存提示，因此将界面文案明确为“App 不会保存密码或密钥”，不承诺用户主动选择的系统行为。只改中英文资源，再次构建 R11 通过。
+- 两端运行 `xcrun simctl ui <设备 ID> appearance dark` 后，沿用上述 `test-without-building` 命令，仅选 `MobileDDNSUITests/test中文大字详情与风险确认可触达并取消`，结果路径分别为 `m6a3-phone-dark.xcresult` / `m6a3-pad-dark.xcresult`：各 1 项通过、0 失败。导出并实际查看两张最终截图，风险内容完整、取消和删除按钮可触达，最终将两台恢复 light。截图和系统提示观察不替代真机辅助功能验收。
+- Mac 最终资源构建 `m6a3-macos-resources-final.log` 为 `BUILD SUCCEEDED`；`lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash` 返回 `x86_64 arm64`。
+- 锁定 XcodeGen 2.46.0 重生成前后 SHA-256 均为 `4de1f72514f8447d771b1173829594f89ba878563874afa8be8d0765bb29393c`。双语/参数/引用/硬编码校验 Apple 6340、Android 2188、Windows 3402；请求样本 179/1、私有样本/文档 29/48、文档及差异检查通过。
+- fetch origin/main 没有发现远端新增提交。CI 修复作为 `ff90b98` 独立提交，DDNS 与已授权 Mac 反馈修正另作完整提交；在已有 main 授权范围正常推送，下一轮云端终态需继续跟进，本机结果不替代云端全量。没有创建分支/PR、打标签或发布安装包。
+- 清理本轮下载的云端结果包、录像和临时截图导出，仅保留忽略目录中的本机测试结果/日志和少量合成展示图片；保留 M6a2 已交付图片和其他原有文件。
+
+后续继续移动区域时间、M6b–M6e、M7–M8 和旧入口固定门审计，当前目标尚未整体完成。

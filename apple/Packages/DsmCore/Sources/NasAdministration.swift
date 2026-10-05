@@ -1619,6 +1619,9 @@ public protocol NasSettingsRepository: Sendable {
         _ settings: NasRegionSettings
     ) async throws -> MutationResult
     func loadDDNS() async throws -> NasDDNSDirectory
+    func loadDDNSForManagement() async throws -> NasDDNSDirectory
+    func changeDDNSResult(_ change: NasDDNSChange,
+                          checkpoint: @escaping @Sendable (NasDDNSCheckpoint) async throws -> Void) async throws -> MutationResult
     func testDDNSResult(_ draft: NasDDNSDraft) async throws -> MutationResult
     func saveDDNS(_ draft: NasDDNSDraft) async throws
     func saveDDNSResult(_ draft: NasDDNSDraft) async throws -> MutationResult
@@ -2000,6 +2003,11 @@ public extension NasSettingsRepository {
         )
     }
     func loadDDNS() async throws -> NasDDNSDirectory {
+        throw unsupportedManagementOperation()
+    }
+    func loadDDNSForManagement() async throws -> NasDDNSDirectory { throw unsupportedManagementOperation() }
+    func changeDDNSResult(_ change: NasDDNSChange,
+                          checkpoint: @escaping @Sendable (NasDDNSCheckpoint) async throws -> Void) async throws -> MutationResult {
         throw unsupportedManagementOperation()
     }
     func testDDNSResult(_ draft: NasDDNSDraft) async throws -> MutationResult {

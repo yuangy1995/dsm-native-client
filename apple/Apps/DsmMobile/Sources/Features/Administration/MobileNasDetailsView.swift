@@ -36,7 +36,7 @@ struct MobileNasDetailsSectionView: View {
             case .connections: connectionsSection
             case .externalStorage, .processes, .shareAccess, .zram, .powerSchedule:
                 MobileNasReadSections(model: model, destination: destination, showsSectionTitle: showsSectionTitle).id(destination)
-            case .system, .performance, .storage, .update: EmptyView()
+            case .system, .performance, .storage, .update, .ddns: EmptyView()
             }
         }
         .task(id: destination) { await model.loadIfNeeded(destination) }
@@ -314,6 +314,7 @@ extension MobileNasAdministrationDestination {
         case .shareAccess: L10n.string("share-access.navigation-title")
         case .zram: L10n.string("zram.navigation-title")
         case .powerSchedule: L10n.string("power-schedule.navigation-title")
+        case .ddns: L10n.string("mobile.nas.ddns.title")
         }
     }
 
@@ -332,6 +333,7 @@ extension MobileNasAdministrationDestination {
         case .shareAccess: L10n.string("mobile.nas.shareAccess.loading")
         case .zram: L10n.string("mobile.nas.zram.loading")
         case .powerSchedule: L10n.string("mobile.nas.powerSchedule.loading")
+        case .ddns: L10n.string("mobile.nas.ddns.loading")
         }
     }
 
@@ -350,6 +352,7 @@ extension MobileNasAdministrationDestination {
         case .shareAccess: "folder.badge.person.crop"
         case .zram: "memorychip"
         case .powerSchedule: "calendar.badge.clock"
+        case .ddns: "globe"
         }
     }
 }

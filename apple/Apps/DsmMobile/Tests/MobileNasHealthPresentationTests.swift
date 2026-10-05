@@ -61,7 +61,7 @@ final class MobileNasHealthPresentationTests: XCTestCase {
         XCTAssertEqual(actual, Self.expectedResourceKeys)
     }
 
-    func test工作区刷新按钮会直接刷新健康模型而不是重复激活缓存() throws {
+    func test工作区刷新按钮通过统一入口刷新已打开的NAS页面() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let appRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(
@@ -70,7 +70,13 @@ final class MobileNasHealthPresentationTests: XCTestCase {
         )
 
         XCTAssertTrue(source.contains("if module == .nasSettings"))
-        XCTAssertTrue(source.contains("await model.nasHealthModel.refresh()"))
+        XCTAssertTrue(source.contains("await model.refreshNasAdministration()"))
+        let administration = try String(contentsOf: appRoot.appendingPathComponent(
+            "Sources/Features/Administration/MobileAppModel+Administration.swift"), encoding: .utf8)
+        XCTAssertTrue(administration.contains("await nasHealthModel.refresh()"))
+        XCTAssertTrue(administration.contains("await nasDetailsModel.refreshLoadedSections()"))
+        XCTAssertTrue(administration.contains("await nasStorageModel.refresh()"))
+        XCTAssertTrue(administration.contains("await ddnsModel.refresh()"))
     }
 
     private func viewSource() throws -> String {
