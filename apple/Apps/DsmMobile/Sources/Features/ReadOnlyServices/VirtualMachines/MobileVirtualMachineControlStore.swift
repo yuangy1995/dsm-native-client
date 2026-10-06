@@ -23,6 +23,7 @@ final class MobileVirtualMachineControlStore {
     struct Item: Equatable, Codable {
         let identity: String
         let name: String
+        let creationNameDigests: Set<String>
         var phase: Phase = .prepared
         var accepted = false
         var failure: Failure?
@@ -63,6 +64,14 @@ final class MobileVirtualMachineControlStore {
             }
         }
     }
+    func protectsCreation(name: String, context: String) -> Bool {
+        failed || entries.contains { entry in
+            entry.context == context && entry.items.contains {
+                ($0.phase == .prepared || $0.phase == .submitted || isExecuting(entry.id))
+                    && $0.creationNameDigests.contains(MobileVirtualMachineCreationStore.nameDigest(name))
+            }
+        }
+    }
     func reload() {
         guard executing.isEmpty else { return }
         do {
@@ -94,7 +103,7 @@ final class MobileVirtualMachineControlStore {
             throw MobileTransferRecoveryStore.StoreError.invalidRecord
         }
         let entry = Entry(id: UUID(), context: context, action: action, createdAt: Date(), items: targets.map {
-            Item(identity: Self.digest($0.id), name: Self.digest($0.name))
+            Item(identity: Self.digest($0.id), name: Self.digest($0.name), creationNameDigests: [MobileVirtualMachineCreationStore.nameDigest($0.name)])
         })
         try persist(entries + [entry]); executing.insert(entry.id); return entry
     }
@@ -110,7 +119,8 @@ final class MobileVirtualMachineControlStore {
         if let value = update.cpuWeight { values["cpu_weight"] = String(value) }
         if let value = update.startupBehavior { values["autorun"] = String(value.rawValue) }
         let entry = Entry(id: UUID(), context: context, action: .edit, createdAt: Date(), items: [
-            Item(identity: Self.digest(target.id), name: Self.digest(target.name), settings: values.mapValues(Self.digest))
+            Item(identity: Self.digest(target.id), name: Self.digest(target.name),
+                 creationNameDigests: Set([target.name, values["name"]!].map(MobileVirtualMachineCreationStore.nameDigest)), settings: values.mapValues(Self.digest))
         ])
         try persist(entries + [entry]); executing.insert(entry.id); return entry
     }
@@ -221,6 +231,7 @@ final class MobileVirtualMachineControlStore {
                           settings.values.allSatisfy(isDigest) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
                 } else if item.settings != nil { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
                 guard isDigest(item.identity), isDigest(item.name),
+                      !item.creationNameDigests.isEmpty, item.creationNameDigests.allSatisfy(isDigest),
                       item.phase != .succeeded || item.accepted,
                       entry.action != .restart || item.phase != .succeeded,
                       !item.accepted || [.submitted, .succeeded].contains(item.phase),

@@ -87,7 +87,7 @@ final class MobileVirtualMachinePresentationTests: XCTestCase {
         "mobile.virtual-machines.filtered-empty.title", "mobile.virtual-machines.loading",
         "mobile.virtual-machines.protection.plan", "mobile.virtual-machines.protection.retention",
         "mobile.virtual-machines.protection.schedule", "mobile.virtual-machines.control.selection", "mobile.virtual-machines.control.records",
-        "mobile.virtual-machines.control.removed.title", "mobile.virtual-machines.control.removed.message",
+        "mobile.virtual-machines.control.removed.title", "mobile.virtual-machines.control.removed.message", "mobile.virtual-machines.creation.title",
         "mobile.virtual-machines.refresh.failed", "mobile.virtual-machines.section.empty.message",
         "mobile.virtual-machines.session-expired",
         "mobile.virtual-machines.section.empty.title", "mobile.virtual-machines.section.events",

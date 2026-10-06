@@ -3643,3 +3643,77 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 继续保留；一次性附件导出、录屏取帧、临时脚本及下载的锁定工程生成工具已精确清理。
 两台模拟器系统外观均恢复/读取为浅色；App 最后一项实际场景也为浅色。没有真实
 NAS 写入、安装包发布或用户数据修改。
+
+## 2026-10-07 M7d3 虚拟机创建与中断恢复
+
+基线 `41ac8407`，main 领先 origin/main 三个已完成本机验证的 VMM 提交；沿既有
+离线自主授权实现本片，不触碰真实 VM/资源。移动新增四步创建表单、精确 MiB 输入、
+单空白盘/存储、网络或断开、ISO/固件和启动选项，以及独立受保护摘要记录。
+共享创建保留原 UUID/任务/完整参数摘要，通过原任务完成、新 ID 与完整配置匹配
+确认结果；丢回执、任务缺失或配置不足保持未知，刷新和重启只读恢复，不按同名认领。
+与 VM 编辑/电源/删除和所选资源写入互斥。Windows/Other 预设、ISO 启动字段及
+10 GiB 最低磁盘按已有记录修正；Mac 表单只同步最低磁盘值，旧调用保持兼容，
+不新增 Mac 持久恢复。Windows/Android 仅更新影响说明。
+
+独立集成及只读对抗复核发现映像需同时匹配存储/主机、创建资源引用需保护，均已补齐；
+另用 HTTP 401 负例复现旧流程继续读任务并误完成（1 项测试、2 条失败断言），
+修正后认证/OTP/权限错误立即停止后续查询。全部代码与测试只使用合成数据，
+没有提升 DSM/VMM 环境的真实证据等级。复核由当前负责人另行执行，不冒称其他模型。
+
+本机实际结果与中间失败：
+
+- 创建基线三个用例四条失败断言复现丢回执重发、同名误成功及低于最低磁盘仍提交；
+  修正后新增共享创建流程最终 **13 项**及原服务仓库 **182 项**全部通过，
+  `build/m7d3-shared-auth-focused.log`（exit 0）。初次测试的
+  `await XCTUnwrap` 自动闭包编译问题已修，不降低原线级请求断言。
+- 完整共享最终 **3035 XCTest，172 条既有条件跳过，0 失败；12 Swift Testing
+  全通过**，`build/m7d3-shared-reviewed.log`（exit 0，79.362 秒）。
+- 首次全新移动派生目录拉取既有 Sparkle 依赖时发生 GitHub HTTP/2 错误，已停止
+  该进程并改用现有依赖缓存；没有更改依赖版本。新 UI 测试首次缺少 `@MainActor`
+  已补齐。最终移动测试构建 **TEST BUILD SUCCEEDED、exit 0**，日志
+  `build/m7d3-mobile-reviewed-build.log`。
+- 首轮两端各 60 项模型只有固定资源键集合漏新增创建标题，已准确补键；新 13 项
+  创建行为均通过。首轮 UI：iPhone 9 项中 8 通过，iPad 9 项中 7 通过；旧三个
+  开机/编辑保存/编辑未知恢复全部通过。中文菜单测试误用 `Windows`，实际资源为
+  `Microsoft Windows`；iPad 精确输入完成后原生数字键盘浮层仍在，需先关闭浮层。
+  依据截图/层级修正实际测试操作，保留精确 768 MiB 与选项断言。
+- 首轮 **42 张**合成截图逐张复核，另有已检查的 iPad 键盘失败层级。输入框重复
+  无障碍标签已改为单一标签；摘要的存储后果提示移到顶部，切换步骤回到顶部，
+  新增独立标签与风险可见断言。增加 HTTP 登录失效移动行为测试后，两端最终
+  **61 项模型、0 失败**。最终六项创建 UI 和未修改的文件批删云端失败用例终态续记。
+- Mac 最终 Release 双架构构建 **BUILD SUCCEEDED、exit 0**，日志
+  `build/m7d3-mac-reviewed-build.log`；主 App 和内嵌 File Provider 扩展均通过
+  `lipo -archs` 确认 x86_64/arm64。未打包、安装、启动或发布应用。
+- XcodeGen 2.46.0 下载 SHA256 与 CI 锁定值一致，经正式生成流程更新工程；差异
+  只有四个新增源码/测试文件共 16 行。语言完整性/硬编码扫描、请求/响应契约和
+  私有引用、文档与差异检查均通过；没有新增依赖、最低版本、身份或系统权限。
+
+最终共享、构建及两端测试实际命令（均在仓库根目录）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'VirtualMachineCreationWorkflowTests|DsmServiceManagementRepositoryTests'
+swift test --package-path apple --jobs 2
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination generic/platform=macOS -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 -parallel-testing-enabled NO -only-testing:DsmMobileTests/MobileVirtualMachineControlTests -only-testing:DsmMobileTests/MobileVirtualMachineInventoryModelTests -only-testing:DsmMobileTests/MobileVirtualMachinePresentationTests -only-testing:DsmMobileTests/MobileVirtualMachineCreationTests -only-testing:DsmMobileUITests/MobileVirtualMachineCreationUITests -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test批量删除文件和文件夹明确后果且刷新源列表 -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -resultBundlePath build/m7d3-phone-final.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 -parallel-testing-enabled NO -only-testing:DsmMobileTests/MobileVirtualMachineControlTests -only-testing:DsmMobileTests/MobileVirtualMachineInventoryModelTests -only-testing:DsmMobileTests/MobileVirtualMachinePresentationTests -only-testing:DsmMobileTests/MobileVirtualMachineCreationTests -only-testing:DsmMobileUITests/MobileVirtualMachineCreationUITests -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test批量删除文件和文件夹明确后果且刷新源列表 -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -resultBundlePath build/m7d3-pad-final.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
+设备/NAS 前置、步骤、预期结果和最小脱敏反馈见移动主计划 M7d3 的四项
+`PENDING_USER_VALIDATION`。当前 Mac 没有既有 VM 磁盘/网卡/ISO 高级编辑及多盘多 NIC
+表单，这些不因笼统旧描述扩张本轮范围，两端继续用官方 VMM 网页；明确目标中的
+网络/映像资源管理、控制台与 M8 系统集成仍继续源码实施，不算本片已完成或仅待真机。
+
+最终两端组合测试均 **TEST EXECUTE SUCCEEDED、exit 0**。各 61 项模型零失败；
+新六项创建 UI：iPhone **432.884 秒**、iPad **477.467 秒**，全部通过。未修改的
+文件批删用例本机也通过（分别 **27.473 秒 / 23.565 秒**），所以每端七项 UI
+总时长分别 **460.357 秒 / 501.032 秒**；本机未复现云端启动卡住，不能据此声称
+云端故障已修复。最终 **36 张**合成截图全部逐张检查，包含中文深色大字摘要/选项、
+精确 768 MiB 与键盘关闭、成功/未知/已接受/拒绝、加载/空/重试及两端文件批删结果；
+连首轮共 78 张。
+
+收尾保留 10 张合成预览于 `build/m7d3-preview/`，测试结果包与正式验证日志留在
+忽略目录；一次性附件导出、下载的工程生成工具和未使用的新派生目录已精确清理。
+两台模拟器系统外观已恢复并读取为浅色。提交前读取远端 main，无远端新提交；
+当前 04d692ab 云端还有三组运行，先在 main 保存本片，避免推送取消未结束的整轮。
+本片本机通过与云端故障分别记录，不将其视为真实 NAS 验收或发布。

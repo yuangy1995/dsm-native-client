@@ -141,12 +141,28 @@ struct MobileVirtualMachineControlRecordsView: View {
     @Bindable var model: MobileVirtualMachineControlModel
     var body: some View {
         Group {
-            if model.entries.isEmpty {
+            if model.entries.isEmpty && model.creationEntries.isEmpty {
                 ContentUnavailableView(L10n.string("mobile.virtual-machines.control.records.empty"), systemImage: "clock.arrow.circlepath",
                     description: Text(L10n.string("mobile.virtual-machines.control.records.empty.message")))
             } else {
                 List {
                     MobileVirtualMachineControlNotice(model: model)
+                    ForEach(model.creationEntries) { entry in
+                        Section {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(model.name(for: entry) ?? L10n.string("mobile.virtual-machines.creation.title"))
+                                    .font(.body.weight(.medium))
+                                MobileVirtualMachineCreationStatus(entry: entry, isExecuting: model.creations.isExecuting(entry.id))
+                            }
+                            if !entry.isProtected && !model.creations.isExecuting(entry.id) {
+                                Button(L10n.string("mobile.virtual-machines.control.record.remove")) { model.removeCreationRecord(entry.id) }
+                                    .frame(minHeight: 44)
+                            }
+                        } header: {
+                            Text(L10n.string("mobile.virtual-machines.control.record.title", L10n.string("mobile.virtual-machines.creation.title"),
+                                entry.createdAt.formatted(.dateTime.year().month().day().hour().minute().locale(L10n.locale))))
+                        }
+                    }
                     ForEach(model.entries) { entry in
                         Section {
                             ForEach(Array(entry.items.enumerated()), id: \.offset) { index, item in
@@ -173,7 +189,7 @@ struct MobileVirtualMachineControlRecordsView: View {
         }
         .navigationTitle(L10n.string("mobile.virtual-machines.control.records"))
         .navigationBarTitleDisplayMode(.inline)
-        .fillsAvailableContentArea(alignment: model.entries.isEmpty ? .center : .topLeading)
+        .fillsAvailableContentArea(alignment: model.entries.isEmpty && model.creationEntries.isEmpty ? .center : .topLeading)
         .accessibilityIdentifier("virtual-machine.records")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

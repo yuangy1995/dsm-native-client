@@ -7,6 +7,7 @@ struct MobileVirtualMachinesView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsSelection = false
+    @State private var creationRequest: MobileVirtualMachineCreationRequest?
 
     var body: some View {
         GeometryReader { geometry in
@@ -27,12 +28,24 @@ struct MobileVirtualMachinesView: View {
         )
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button(L10n.string("mobile.virtual-machines.creation.title"), systemImage: "plus") {
+                    creationRequest = .init(activation: controls.activation)
+                }
+                .disabled(!controls.canOpenCreation).accessibilityIdentifier("virtual-machine.creation.open")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button(L10n.string("mobile.virtual-machines.control.selection"), systemImage: "checklist") { showsSelection = true }
                     .disabled(!controls.allowed || controls.targets.isEmpty)
                     .accessibilityIdentifier("virtual-machine.selection")
             }
         }
         .sheet(isPresented: $showsSelection) { MobileVirtualMachineSelectionView(model: controls) }
+        .sheet(item: $creationRequest) { MobileVirtualMachineCreationView(model: controls, request: $0) }
+        .onChange(of: controls.creationEntries) { previous, current in
+            if current.contains(where: { entry in entry.phase == .succeeded && !previous.contains(entry) }) {
+                Task { await inventory.refresh() }
+            }
+        }
         .onChange(of: controls.targets) { previous, _ in
             if !previous.isEmpty && !controls.isOperating && controls.error != .trust && controls.error != .denied {
                 Task { await inventory.refresh() }
