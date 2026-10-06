@@ -84,7 +84,7 @@ extension MobileAppModel {
         }
         availableOptionalModules = snapshot.allowed
         if !isModuleVisible(.chat) { chatModel.deactivate() }
-        if !isModuleVisible(.containers) { containerControls.deactivate(); containerImagePulls.deactivate(); containerInventoryModel.deactivate() }
+        if !isModuleVisible(.containers) { containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate(); containerInventoryModel.deactivate() }
         moduleAccessLookupFailed = snapshot.lookupFailed
         isLoadingModuleAccess = false
         if !isModuleVisible(selectedModule) { selectModule(.settings) }

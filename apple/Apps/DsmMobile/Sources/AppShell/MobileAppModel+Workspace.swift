@@ -33,7 +33,7 @@ extension MobileAppModel {
         }
         if selectedModule == .containers, module != .containers {
             containerInventoryModel.deactivate()
-            containerControls.deactivate(); containerImagePulls.deactivate()
+            containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate()
         }
         if selectedModule == .virtualMachines, module != .virtualMachines {
             virtualMachineInventoryModel.deactivate()
@@ -157,7 +157,10 @@ extension MobileAppModel {
                     return privileges.applications[.containers] == true
                 }
                 containerControls.configure(profile: profile, repository: serviceRepository, authorize: authorize)
-                containerImagePulls.configure(profile: profile, repository: serviceRepository, authorize: authorize)
+                containerImagePulls.configure(profile: profile, repository: serviceRepository,
+                    deletionRecovery: containerImageDeletions.recovery, authorize: authorize)
+                containerImageDeletions.configure(profile: profile, repository: serviceRepository,
+                    pullRecovery: containerImagePulls.recovery, authorize: authorize)
                 await containerInventoryModel.activate(
                     profileID: profileID,
                     repository: MobileReadOnlyContainerRepository(

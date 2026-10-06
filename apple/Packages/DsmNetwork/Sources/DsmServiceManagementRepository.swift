@@ -211,7 +211,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private var pendingContainerDeletions: [String: String] = [:]
     private var pendingContainerControls: [String: ContainerControlReview] = [:]
     private var imageDeletionActive = false
-    private var pendingImageDeletions: [Set<String>: [ContainerImage]] = [:]
+    private var pendingImageDeletions: [Set<String>: ContainerImageDeletionRecovery] = [:]
+    private var completedImageDeletions: [UUID: (ContainerImageDeletionRecovery, ContainerImageDeletionProgress)] = [:]
     private var imagePullBusy = false
     private var imagePullOperations: [UUID: ImagePullOperation] = [:]
     private var activeVirtualMachineDeletionIDs: Set<String> = []
@@ -1793,18 +1794,19 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             let images = try await loadContainerImageDefinitions()
             guard images.allSatisfy({ $0.sourceImageID != nil }) else { throw Self.invalidServiceResponseStatic() }
             baselineIDs = Set(images.filter { Self.imageAddress($0) == request.referenceKey }.compactMap(\.sourceImageID))
-            guard !pendingImageDeletions.values.flatMap({ $0 }).contains(where: {
-                Self.imageAddress($0) == request.referenceKey || ($0.tag == "<none>" && $0.sourceImageID.map(baselineIDs.contains) == true)
+            guard !pendingImageDeletions.values.flatMap(\.targets).contains(where: { target in
+                target.reference == ContainerImagePullRecovery.target(repository: request.repository, tag: request.tag)
+                    || (target.isUntagged && baselineIDs.contains(where: { ContainerImagePullRecovery.digest($0) == target.imageID }))
             }) else { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .conflict) }
             try Task.checkCancellation()
         } catch is CancellationError { return try imagePullProgress(request, stage: .rejected, status: .cancelledBeforeSubmission, submitted: false) }
         catch let error as AppError {
-            if observer != nil, Self.imagePullTrustError(error) { throw error }
+            if observer != nil, Self.imageManagementTrustError(error) { throw error }
             if error.category == .cancelled || Task.isCancelled { return try imagePullProgress(request, stage: .rejected, status: .cancelledBeforeSubmission, submitted: false) }
             return try imagePullProgress(request, stage: .rejected, submitted: false, error: serviceMutationErrorCategory(for: error.category))
         }
         catch {
-            if observer != nil, Self.imagePullTrustError(error) { throw error }
+            if observer != nil, Self.imageManagementTrustError(error) { throw error }
             return try imagePullProgress(request, stage: .rejected, submitted: false, error: .network)
         }
 
@@ -1827,7 +1829,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             try await observer?(.rejected)
             return result
         } catch {
-            if observer != nil, Self.imagePullTrustError(error) { throw error }
+            if observer != nil, Self.imageManagementTrustError(error) { throw error }
             // 可能已经启动：保留原请求，无回执不得按名称重绑或重发。
         }
         // 回执必须先保存；存储失败不能被当作网络未知后继续读取。
@@ -1904,7 +1906,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 // 后续读取只剩任务不存在，不能丢弃首次明确失败并永久显示正在恢复。
                 result = try imagePullProgress(request, id: id, stage: .rejected, error: .server)
             } catch {
-                if preservesTrustError, Self.imagePullTrustError(error) { throw error }
+                if preservesTrustError, Self.imageManagementTrustError(error) { throw error }
                 result = try imagePullProgress(request, id: id, stage: .needsReview, status: Task.isCancelled ? .cancellationRequestedAfterSubmission : nil,
                     error: (error as? AppError).map { serviceMutationErrorCategory(for: $0.category) } ?? .network)
             }
@@ -1913,7 +1915,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         return result
     }
 
-    private static func imagePullTrustError(_ error: Error) -> Bool {
+    private static func imageManagementTrustError(_ error: Error) -> Bool {
         if error is DsmCertificateTrustError { return true }
         if let error = error as? AppError { return error.category == .tlsUntrusted || error.category == .tlsCertificateChanged }
         if let error = error as? URLError {
@@ -1956,37 +1958,66 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         ServiceDeletionContext(operation: "containerImageDelete", localizationPrefix: "container-image.delete")
     }
 
-    /// 内部 v1 按仓库/标签或裸身份删除；未知批次只核查，不重放。
+    public func loadContainerImageDeletionTargets() async throws -> [ContainerImage] {
+        let images = try await loadContainerImageDefinitions()
+        guard images.allSatisfy({ ContainerImageDeletionTarget($0) != nil }) else { throw Self.invalidServiceResponseStatic() }
+        let used = try Self.containerImageUsage(images, containers: try await containerInventoryPayload())
+        return images.map { ContainerImage(id: $0.id, repository: $0.repository, tag: $0.tag,
+            sizeBytes: $0.sizeBytes, createdAt: $0.createdAt, isInUse: used.contains($0.id), sourceImageID: $0.sourceImageID) }
+    }
+
+    /// 内部 v1 按仓库/标签或裸身份删除；旧调用与持久恢复共用同一提交和回读。
     public func deleteContainerImagesResult(ids: [String]) async throws -> MutationResult {
-        let context = imageDeletionContext
-        if Task.isCancelled { return try deletionCancellationBeforeSubmission(context: context) }
+        try await deleteImageTargets(ids: ids, expected: nil, observer: nil).outcome
+    }
+
+    public func deleteContainerImages(_ request: ContainerImageDeletionRequest, observer: @escaping ContainerImageDeletionObserver) async throws -> ContainerImageDeletionProgress {
+        guard request.isValid, request.isConfirmed else { throw containerMutationChangedError() }
+        return try await deleteImageTargets(ids: request.targets.map(\.id), expected: request, observer: observer)
+    }
+
+    private func deleteImageTargets(ids: [String], expected: ContainerImageDeletionRequest?, observer: ContainerImageDeletionObserver?) async throws -> ContainerImageDeletionProgress {
+        let context = imageDeletionContext, operationID = expected?.id ?? UUID()
+        func progress(_ result: MutationResult) -> ContainerImageDeletionProgress { .init(id: operationID, outcome: result) }
+        if Task.isCancelled { return try progress(deletionCancellationBeforeSubmission(context: context)) }
         let targetIDs: Set<String>
         do { targetIDs = Set(try validatedIDs(ids)) }
-        catch { return try deletionUnexpectedPreflightResult(targetCount: max(ids.count, 1), context: context) }
-        guard !imageDeletionActive, !imagePullBusy else { return try deletionDuplicateResult(targetCount: targetIDs.count, context: context) }
+        catch { return try progress(deletionUnexpectedPreflightResult(targetCount: max(ids.count, 1), context: context)) }
+        let targetKey = Set(targetIDs.map(ContainerImagePullRecovery.digest))
+        if let expected, let completed = completedImageDeletions[operationID] {
+            guard completed.0 == expected.recovery else { throw containerMutationChangedError() }
+            return completed.1
+        }
+        guard !imageDeletionActive, !imagePullBusy else { return try progress(deletionDuplicateResult(targetCount: targetIDs.count, context: context)) }
         imageDeletionActive = true
         defer { imageDeletionActive = false }
-        if let pending = pendingImageDeletions[targetIDs] {
-            return try await reviewImageDeletionTargets(pending, ids: targetIDs)
+        if let pending = pendingImageDeletions[targetKey] {
+            guard expected == nil || expected?.recovery == pending else { throw containerMutationChangedError() }
+            return try await reviewImageDeletionTargets(pending, managed: observer != nil)
         }
+        guard !pendingImageDeletions.values.contains(where: { $0.id == operationID }) else { throw containerMutationChangedError() }
         guard let capability = capabilities[DsmAPIName.dockerImage], capability.name == DsmAPIName.dockerImage,
               capability.minVersion == 1, capability.maxVersion >= 1, capability.selectedVersion != nil else {
-            return try deletionUnsupportedResult(targetCount: targetIDs.count, context: context)
+            return try progress(deletionUnsupportedResult(targetCount: targetIDs.count, context: context))
         }
         let selected: [ContainerImage]
         do {
             let images = try await loadContainerImageDefinitions()
-            guard images.allSatisfy({ $0.sourceImageID != nil }) else { throw Self.invalidServiceResponseStatic() }
+            guard images.allSatisfy({ ContainerImageDeletionTarget($0) != nil }) else { throw Self.invalidServiceResponseStatic() }
             selected = images.filter { targetIDs.contains($0.id) }
-            guard selected.count == targetIDs.count else { return try deletionMissingTargetResult(targetCount: targetIDs.count, context: context) }
-            guard !imagePullOperations.values.contains(where: { pull in !pull.progress.stage.isTerminal && selected.contains(where: {
-                ContainerImagePullRecovery.digest(Self.imageAddress($0)) == pull.recovery.target || ($0.tag == "<none>" && $0.sourceImageID.map {
-                    pull.recovery.baselineImageIDs.contains(ContainerImagePullRecovery.digest($0))
-                } == true)
-            }) }) else { return try deletionDuplicateResult(targetCount: targetIDs.count, context: context) }
-            let pendingTargets = pendingImageDeletions.values.flatMap { $0 }
-            guard !selected.contains(where: { target in pendingTargets.contains(where: { Self.imageTargetsOverlap(target, $0) }) }) else {
-                return try deletionDuplicateResult(targetCount: targetIDs.count, context: context)
+            guard selected.count == targetIDs.count else { return try progress(deletionMissingTargetResult(targetCount: targetIDs.count, context: context)) }
+            if let expected {
+                guard expected.targets.allSatisfy({ original in selected.contains(where: {
+                    ContainerImageDeletionTarget($0) == ContainerImageDeletionTarget(original)
+                }) }) else { throw containerMutationChangedError() }
+            }
+            let targets = selected.compactMap(ContainerImageDeletionTarget.init)
+            guard !imagePullOperations.values.contains(where: { pull in
+                !pull.progress.stage.isTerminal && targets.contains(where: { $0.overlaps(pull.recovery) })
+            }) else { return try progress(deletionDuplicateResult(targetCount: targetIDs.count, context: context)) }
+            let pendingTargets = pendingImageDeletions.values.flatMap(\.targets)
+            guard !targets.contains(where: { target in pendingTargets.contains(where: target.overlaps) }) else {
+                return try progress(deletionDuplicateResult(targetCount: targetIDs.count, context: context))
             }
             // 裸身份会删除整个 ID，不允许带走未确认的有效标签。
             guard !selected.contains(where: { target in target.tag == "<none>" && images.contains(where: {
@@ -1996,9 +2027,13 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             guard targetIDs.isDisjoint(with: usedIDs) else { throw validationError(L10n.string("container-image.delete.in-use")) }
             try Task.checkCancellation()
         } catch let error as AppError {
-            return try deletionPreflightResult(error, targetCount: targetIDs.count, context: context)
-        } catch is CancellationError { return try deletionCancellationBeforeSubmission(context: context) }
-        catch { return try deletionUnexpectedPreflightResult(targetCount: targetIDs.count, context: context) }
+            if observer != nil, Self.imageManagementTrustError(error) { throw error }
+            return try progress(deletionPreflightResult(error, targetCount: targetIDs.count, context: context))
+        } catch is CancellationError { return try progress(deletionCancellationBeforeSubmission(context: context)) }
+        catch {
+            if observer != nil, Self.imageManagementTrustError(error) { throw error }
+            return try progress(deletionUnexpectedPreflightResult(targetCount: targetIDs.count, context: context))
+        }
 
         var objects: [[String: DsmJSONValue]] = []
         let tagged = Dictionary(grouping: selected.filter { $0.tag != "<none>" }, by: \.repository)
@@ -2008,22 +2043,34 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         for identity in Set(selected.filter { $0.tag == "<none>" }.compactMap(\.sourceImageID)).sorted() {
             objects.append(["identity": .string(identity)])
         }
-        pendingImageDeletions[targetIDs] = selected
+        let recovery = expected?.recovery ?? ContainerImageDeletionRecovery(id: operationID, targets: selected.compactMap(ContainerImageDeletionTarget.init))
+        try await observer?(.willSubmit(recovery))
+        pendingImageDeletions[targetKey] = recovery
+        var accepted = false
         do {
             try await client.callVoid(path: capability.path, api: capability.name, version: 1, method: "delete",
                 requestFormat: capability.requestFormat, parameters: ["images": .objectArray(objects)], credential: credential)
+            accepted = true
         } catch let error as DsmNetworkError {
             let mapped = DsmErrorMapper.map(error)
+            if observer != nil, Self.imageManagementTrustError(mapped) { throw mapped }
             if mapped.dsmCode != nil {
-                // 明确拒绝不能因其他客户端删掉目标而改判成功，也不保留已拒绝写的未知锁。
-                pendingImageDeletions[targetIDs] = nil
-                return try serviceDeletionResult(status: mapped.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
+                // 明确拒绝不能因第三方删除改判成功，存储检查点失败也不能被吞成未知。
+                pendingImageDeletions[targetKey] = nil
+                let result = try progress(serviceDeletionResult(status: mapped.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
                     context: context, submitted: true, requiresRefresh: false, succeeded: 0, failed: targetIDs.count, unknown: 0,
                     errorCategory: serviceMutationErrorCategory(for: mapped.category),
-                    localizationSuffix: mapped.category == .permissionDenied ? "permission-denied" : "failed", diagnosticSuffix: "rejected")
+                    localizationSuffix: mapped.category == .permissionDenied ? "permission-denied" : "failed", diagnosticSuffix: "rejected"))
+                if observer != nil { completedImageDeletions[operationID] = (recovery, result) }
+                try await observer?(.rejected)
+                return result
             }
-        } catch { /* 回执丢失或取消后只核查原标签，不重放。 */ }
-        return try await reviewImageDeletionTargets(selected, ids: targetIDs)
+        } catch {
+            if observer != nil, Self.imageManagementTrustError(error) { throw error }
+            // 回执丢失或取消后只读取原标签，不重放。
+        }
+        if accepted { try await observer?(.accepted) }
+        return try await reviewImageDeletionTargets(recovery, managed: observer != nil)
     }
 
     public func reviewContainerImageDeletion(ids: [String]) async throws -> MutationResult {
@@ -2032,28 +2079,58 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         do { targetIDs = Set(try validatedIDs(ids)) }
         catch { return try deletionUnexpectedPreflightResult(targetCount: max(ids.count, 1), context: context) }
         guard !imageDeletionActive else { return try deletionDuplicateResult(targetCount: targetIDs.count, context: context) }
-        guard let targets = pendingImageDeletions[targetIDs] else {
+        let targetKey = Set(targetIDs.map(ContainerImagePullRecovery.digest))
+        guard let recovery = pendingImageDeletions[targetKey] else {
             return try deletionMissingTargetResult(targetCount: targetIDs.count, context: context)
         }
         imageDeletionActive = true
         defer { imageDeletionActive = false }
-        return try await reviewImageDeletionTargets(targets, ids: targetIDs)
+        return try await reviewImageDeletionTargets(recovery, managed: false).outcome
     }
 
-    private func reviewImageDeletionTargets(_ targets: [ContainerImage], ids: Set<String>) async throws -> MutationResult {
-        let context = imageDeletionContext
-        if Task.isCancelled { return try deletionCancellationAfterSubmission(targetCount: ids.count, context: context) }
+    public func restoreContainerImageDeletion(_ recovery: ContainerImageDeletionRecovery) async throws -> ContainerImageDeletionProgress {
+        guard recovery.isValid else { throw Self.invalidServiceResponseStatic() }
+        if let completed = completedImageDeletions[recovery.id] {
+            guard completed.0 == recovery else { throw containerMutationChangedError() }
+            return completed.1
+        }
+        guard !imageDeletionActive, !imagePullBusy else { throw containerMutationChangedError() }
+        imageDeletionActive = true
+        defer { imageDeletionActive = false }
+        if let pending = pendingImageDeletions[recovery.targetIDs] {
+            guard pending == recovery else { throw containerMutationChangedError() }
+        } else {
+            guard !pendingImageDeletions.values.contains(where: { pending in
+                pending.id == recovery.id || pending.targets.contains(where: { original in recovery.targets.contains(where: original.overlaps) })
+            }) else { throw containerMutationChangedError() }
+            pendingImageDeletions[recovery.targetIDs] = recovery
+        }
+        return try await reviewImageDeletionTargets(recovery, managed: true)
+    }
+
+    private func reviewImageDeletionTargets(_ recovery: ContainerImageDeletionRecovery, managed: Bool) async throws -> ContainerImageDeletionProgress {
+        let context = imageDeletionContext, ids = recovery.targetIDs
+        func progress(_ result: MutationResult, removed: Set<String> = []) -> ContainerImageDeletionProgress {
+            .init(id: recovery.id, removedTargetIDs: removed, outcome: result)
+        }
+        if Task.isCancelled { return try progress(deletionCancellationAfterSubmission(targetCount: ids.count, context: context)) }
         do {
             let current = try await loadContainerImageDefinitions()
-            guard current.allSatisfy({ $0.sourceImageID != nil }) else { throw Self.invalidServiceResponseStatic() }
-            let remaining = Set(targets.filter { target in current.contains(where: {
-                target.tag == "<none>" ? $0.sourceImageID == target.sourceImageID : Self.imageAddress($0) == Self.imageAddress(target)
-            }) }.map(\.id))
-            let result = try deletionReadbackResult(targets: ids, remaining: remaining, context: context)
-            if result.status == .confirmedSuccess { pendingImageDeletions[ids] = nil }
+            guard current.allSatisfy({ ContainerImageDeletionTarget($0) != nil }) else { throw Self.invalidServiceResponseStatic() }
+            let remaining = Set(recovery.targets.filter { target in current.contains(where: target.remains) }.map(\.id))
+            let result = try progress(deletionReadbackResult(targets: ids, remaining: remaining, context: context), removed: ids.subtracting(remaining))
+            if result.outcome.status == .confirmedSuccess {
+                pendingImageDeletions[ids] = nil
+                if managed { completedImageDeletions[recovery.id] = (recovery, result) }
+            }
             return result
-        } catch let error as AppError { return try deletionReadbackFailureResult(error, targetCount: ids.count, context: context) }
-        catch { return try deletionUnexpectedReadbackResult(targetCount: ids.count, context: context) }
+        } catch let error as AppError {
+            if managed, Self.imageManagementTrustError(error) { throw error }
+            return try progress(deletionReadbackFailureResult(error, targetCount: ids.count, context: context))
+        } catch {
+            if managed, Self.imageManagementTrustError(error) { throw error }
+            return try progress(deletionUnexpectedReadbackResult(targetCount: ids.count, context: context))
+        }
     }
 
     private func loadContainerImageDefinitions() async throws -> [ContainerImage] {
@@ -5362,9 +5439,6 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         return lastComponent.contains(":") ? name : name + ":latest"
     }
     private static func imageAddress(_ image: ContainerImage) -> String { normalizedImageName("\(image.repository):\(image.tag)") }
-    private static func imageTargetsOverlap(_ left: ContainerImage, _ right: ContainerImage) -> Bool {
-        ((left.tag == "<none>" || right.tag == "<none>") && left.sourceImageID == right.sourceImageID) || imageAddress(left) == imageAddress(right)
-    }
 
     private static func registryImage(
         _ object: [String: ServiceJSON]

@@ -2965,3 +2965,46 @@ lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Co
 锁定 XcodeGen 2.46.0 再生成前后工程 SHA-256 同为 `f0868d2e28f0f675a96cb5afdf16a3202131d5dc63d115118419167cc054c219`。实际查看两端中文大字、非默认 stable 标签、横屏，以及 iPhone 恢复/搜索错误、iPad 无回执保护页面截图，未发现本片布局遮挡。正式合成预览保留在 `apple/Apps/DsmMobile/build/m7b-preview/`；一次性 `m7b-inspection` 目录中的失败截图、录屏、层次文本和导出清单已清理，日志和结果包继续忽略。两台模拟器恢复浅色。
 
 独立集成与只读对抗复核及四项具体 `PENDING_USER_VALIDATION` 见移动主计划。真实下载成功、各版本 1202、权限/锁屏/网络与完整辅助功能仍需用户在专用环境验收；Agent 未写 NAS。没有修改 macOS App、Windows 或 Android 源码，没有签名发布、移动分发或安装 Mac 包。M6 剩余、容器创建/删除、映像删除、网络及 VMM/M8 继续后续实现，不计为仅待真机。
+
+## 2026-10-06 移动 M7c1 映像删除与恢复
+
+基线为 `d2b9311c`；M7a/M7b 已在本地 `main` 提交，远端仍为 `cdc889cc`，没有创建分支。macOS 通用删除反馈的列表消失兜底可能覆盖明确拒绝/未提交，已记录源码证据并单独请求授权；映像路径原本已关闭该兜底，本片继续独立实现，不修改 Mac App。源码、安全及持久化范围见[主计划 M7c1](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-06-m7c1-映像删除与恢复)。
+
+- 共享新增固定原目标的删除请求、摘要恢复、逐项结果和写前/接受/拒绝检查点；旧 Mac 与移动共用 Image.delete v1 编码、占用预检及完整列表回读。恢复仅依赖映像读取，标签换 ID 仍未知；明确拒绝不被后来外部删除覆盖，已完成请求编号不能再写同标签。下载/删除的原标签和裸映像交叉保护保留。
+- 初始聚焦 42 项通过（旧映像筛选 16 项及下载 26 项）；新增 12 项删除恢复测试后聚焦 54 项通过。随后完整 `swift test` 为 2912 项 XCTest（172 条既有跳过、0 失败）及 12 项 Swift Testing 通过。日志为 `m7c1-shared-initial.log`、`m7c1-shared-focused.log` 和 `m7c1-shared-full.log`。
+- Mac Release 构建通过；实际主 App 与内嵌 File Provider 均由 `lipo -archs` 核为 x86_64/arm64。没有安装、启动或打包发布；日志 `m7c1-macos-build.log`。
+- 移动 R1/R2 构建通过。R1 两端各 18 项新增行为测试与两项定向 UI（中文大字、两个标签确认/取消后删除并保留其他标签）均通过，两端命令均 exit 0。实际查看两端中文确认截图，目标、风险与按钮完整；iPad 附件额外记录 `UIKitToolbar` 加入 `UIHostingController.view` 的布局警告，不能以通过状态忽略该警告。改为页面内 `.safeAreaInset` 底部操作，并显式设置最终删除按钮红色；R3 构建通过，后续完整移动单元与全部 UI 结果见下方。
+- 静态检查通过：Apple 6704、Android 2188、Windows 3402 条资源，双语/参数/引用/硬编码无问题；请求 fixture 179/结果示例 1、私有 fixture 29/引用 48、API 参数目录及文档/差异检查通过。
+
+实际命令（两端设备 ID 与 M7b 一致；R1 仅选择 18 项新单元及上述两项定向 UI）：
+
+```sh
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+swift test --package-path apple --jobs 2 --filter 'ContainerImageDeletionTests|ContainerImagePullTests|DsmServiceManagementRepositoryTests/test镜像|DsmServiceManagementRepositoryTests/test容器映像'
+swift test --package-path apple --jobs 2
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7c1-phone-r2.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileContainerImageDeletionUITests '-only-testing:DsmMobileUITests/MobileContainerImagePullUITests/test搜索选择标签下载完成并移除记录' '-only-testing:DsmMobileUITests/MobileContainerImagePullUITests/test无回执下载重启后保持保护且不能重发' -parallel-testing-enabled NO
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/generate_api_reference.py --check
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+iPad R2 替换目标为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果包为 `m7c1-pad-r2.xcresult`。R2 两端均 exit 0：每端 1522 项完整单元（4 条既有跳过、0 失败），九项删除 UI 与两项下载回归均通过。两端删除整组耗时 420.717/414.643 秒，含下载回归的十一项共 539.722/530.231 秒。R2 日志没有再出现 UIKitToolbar 警告，删除组附件仅 PNG，没有首轮的警告说明。未进行真实 NAS 删除，不提升私有 API 环境证据。
+
+截图复核另发现重启后的通用名称误用容器资源键，显示 `Container 1/2`。已新增双语“映像”编号，改用正确资源键，并在原部分删除重启用例补上 `Image 1/2` 的实际界面断言；不改业务或恢复数据。R4 移动构建和最终 Mac 资源增量构建通过。R3 两端仅复跑该用例，均 exit 0（64.889/65.192 秒）；最终截图已实际确认显示 Image 1/2。完整单元与其余 UI 保留 R2 证据，不重复无变化场景。最终本地化为 Apple 6705/Android 2188/Windows 3402，完整性和硬编码扫描通过。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7c1-phone-r3.xcresult '-only-testing:DsmMobileUITests/MobileContainerImageDeletionUITests/test部分删除跨重启只恢复剩余结果' -parallel-testing-enabled NO
+```
+
+XcodeGen 2.46.0 最终再生成前后工程 SHA-256 同为 `eacbffdfabb194090fde67b6d075c3055d6a85d0ef58ef6ffb1128ebcdb2720b`。实际查看两端中文大字/红色删除按钮、横屏确认、最终重启结果，以及 iPhone 部分完成/下载保护、iPad 裸映像确认。当前合成预览保留在 `apple/Apps/DsmMobile/build/m7c1-preview/`，重启结果图已替换为 R3；不保留仍含错误通用名称的旧未知结果预览。逐轮正式日志与结果包继续忽略，不提交测试生成物。
+
+本片独立集成/只读对抗复核与四项具体 `PENDING_USER_VALIDATION` 已记入移动主计划。Mac 通用删除反馈尚待对应授权，没有顺手修改；创建/编辑容器也未发现现有 Mac 实现及完整契约，需单独明确范围和接口，不凭名称猜实现或计作待真机。M6 其余管理、容器删除、网络/VMM 与 M8 仍需继续，不将本片完成当成总体完成。
+
+本片临时 `m7c1-inspection`（含首轮工具栏警告附件和各轮导出清单）已精确清理；保留当前预览、正式日志和结果包。两台模拟器均已恢复浅色。
+
+本片提交前读取云端 [37413207539](https://github.com/yuangy1995/dsm-native-client/actions/runs/37413207539)：基于 cdc889cc 的共享/macOS 与 iPad 工作区通过，iPhone 工作区失败，两个模块组仍运行。映像删除本机结果独立保存，云端失败另行读取具体日志修复，暂不推送取消仍在执行的组；不将本地提交当作云端通过。

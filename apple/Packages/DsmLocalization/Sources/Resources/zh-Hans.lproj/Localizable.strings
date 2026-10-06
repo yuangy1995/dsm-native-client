@@ -7024,3 +7024,21 @@
 "mobile.containers.pull.download" = "下载";
 "mobile.containers.pull.read-error" = "无法读取这些信息。请检查 NAS 连接后重试。";
 "mobile.containers.pull.preparing" = "正在准备下载…";
+
+// 移动映像删除与恢复。
+"mobile.containers.image-delete.title" = "删除映像";
+"mobile.containers.image-delete.selected" = "删除所选项目（%lld）";
+"mobile.containers.image-delete.load-failed" = "无法读取映像";
+"mobile.containers.image-delete.empty" = "暂无映像";
+"mobile.containers.image-delete.empty-help" = "下载的映像会显示在这里。";
+"mobile.containers.image-delete.protected" = "此映像已有未结束的操作，请先刷新操作记录。";
+"mobile.containers.image-delete.other-tags" = "此映像还有其他标签，请选择相应标签分别删除。";
+"mobile.containers.image-delete.records-help" = "映像删除结果会显示在这里。";
+"mobile.containers.image-delete.completed" = "已删除。";
+"mobile.containers.image-delete.not-sent" = "删除尚未开始，映像没有改变。";
+"mobile.containers.image-delete.processing" = "正在删除…";
+"mobile.containers.image-delete.unknown" = "删除进度暂不可用，请检查 NAS 连接并刷新。";
+"mobile.containers.image-delete.tag-risk" = "所选标签将从 NAS 删除，无法撤销。同一映像的其他标签会保留。";
+"mobile.containers.image-delete.image-risk" = "无标签映像将整体删除，无法撤销。";
+"mobile.containers.image-delete.download-protected" = "此映像的删除尚未结束，请先刷新删除记录，再下载映像。";
+"mobile.containers.image-delete.target" = "映像 %lld";

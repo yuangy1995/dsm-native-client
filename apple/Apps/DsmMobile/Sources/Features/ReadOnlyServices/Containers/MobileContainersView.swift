@@ -5,10 +5,12 @@ struct MobileContainersView: View {
     @Bindable var inventory: MobileContainerInventoryModel
     @Bindable var controls: MobileContainerControlModel
     @Bindable var imagePulls: MobileContainerImagePullModel
+    @Bindable var imageDeletions: MobileContainerImageDeletionModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsSelection = false
     @State private var showsImagePulls = false
+    @State private var showsImageDeletions = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -36,6 +38,10 @@ struct MobileContainersView: View {
         }
         .sheet(isPresented: $showsSelection) { MobileContainerSelectionView(model: controls) }
         .sheet(isPresented: $showsImagePulls) { MobileContainerImagePullView(model: imagePulls) }
+        .sheet(isPresented: $showsImageDeletions) { MobileContainerImageDeletionView(model: imageDeletions) }
+        .onChange(of: imageDeletions.removedCount) { previous, count in
+            if count > previous { Task { await inventory.refresh() } }
+        }
         .onChange(of: imagePulls.readyCount) { previous, count in
             if count > previous { Task { await inventory.refresh() } }
         }
@@ -128,6 +134,8 @@ struct MobileContainersView: View {
         Section {
             Button(L10n.string("mobile.containers.pull.title"), systemImage: "arrow.down.circle") { showsImagePulls = true }
                 .frame(minHeight: 44).accessibilityIdentifier("image-pull.open")
+            Button(L10n.string("mobile.containers.image-delete.title"), systemImage: "trash") { showsImageDeletions = true }
+                .frame(minHeight: 44).accessibilityIdentifier("image-delete.open")
             MobileContainerControlNotice(model: controls)
             NavigationLink { MobileContainerControlRecordsView(model: controls) } label: {
                 Label(L10n.string("mobile.containers.control.records"), systemImage: "clock.arrow.circlepath")
