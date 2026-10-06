@@ -1908,8 +1908,7 @@ final class NasSettingsModel {
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.security, force: true)
         }
-        if security.map({ Self.securitySettings($0, match: settings) }) == true
-            || result.status == .confirmedSuccess
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }
@@ -1966,28 +1965,6 @@ final class NasSettingsModel {
                 category: .cancelled
             )
         }
-    }
-
-    private static func securitySettings(
-        _ actual: NasSecuritySettings,
-        match expected: NasSecuritySettings
-    ) -> Bool {
-        actual.isAutoBlockEnabled == expected.isAutoBlockEnabled
-            && actual.failedAttempts == expected.failedAttempts
-            && actual.withinMinutes == expected.withinMinutes
-            && actual.expirationDays == expected.expirationDays
-            && Dictionary(
-                actual.dosProtection.map { ($0.id, $0.isEnabled) },
-                uniquingKeysWith: { _, latest in latest }
-            ) == Dictionary(
-                expected.dosProtection.map { ($0.id, $0.isEnabled) },
-                uniquingKeysWith: { _, latest in latest }
-            )
-            && (expected.isFirewallEnabled == nil
-                || actual.isFirewallEnabled == expected.isFirewallEnabled)
-            && (expected.isPortScanProtectionEnabled == nil
-                || actual.isPortScanProtectionEnabled
-                    == expected.isPortScanProtectionEnabled)
     }
 
     func saveRegion(_ settings: NasRegionSettings) async throws {

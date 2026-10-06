@@ -128,7 +128,8 @@ final class MobileServiceSettingsTests: XCTestCase {
             XCTAssertEqual(model.section(kind).value?.fields(for: change.changedSteps[0]), change.desired.fields(for: change.changedSteps[0]))
             XCTAssertFalse(model.isOperating); XCTAssertTrue(model.canEdit(kind))
         }
-        let writes = await transport.writes; XCTAssertEqual(writes.count, 8)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 9)
+        XCTAssertEqual(writes.filter { $0["api"] == DsmAPIName.coreSecurityAutoBlock }.count, 1)
     }
     func test缺失字段保留不能猜值开启() async throws {
         let (model, transport, _, _) = try makeModel(mode: "nas-services-missing")
@@ -378,6 +379,7 @@ final class MobileServiceSettingsTests: XCTestCase {
         case .fileServices(var value): value.isSMBEnabled = true; desired = .fileServices(value)
         case .terminal(var value): value.isSSHEnabled = true; desired = .terminal(value)
         case .ethernet(var values): values[0].mtu = 1400; desired = .ethernet(values)
+        case .security(var value): value.isAutoBlockEnabled = true; desired = .security(value)
         case .proxy(var value): value.isEnabled = true; desired = .proxy(value)
         case .remoteAccess(var value): value.isRelayEnabled = false; desired = .remoteAccess(value)
         case .zram(let value, _): desired = .zram(.init(isEnabled: true, configuredBytes: value.configuredBytes, algorithm: value.algorithm), needsReboot: true)

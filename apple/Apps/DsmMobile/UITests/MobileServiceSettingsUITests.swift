@@ -2,6 +2,98 @@ import XCTest
 
 @MainActor
 final class MobileServiceSettingsUITests: XCTestCase {
+    func test安全四组编辑输入校验风险取消及完整保存() {
+        let app = launch("nas-services", kind: "security"); defer { app.terminate() }
+        screenshot(app, "Security current configuration"); openEditor(app)
+        reveal("mobile.nas.security.autoBlock", in: app).switches.firstMatch.tap()
+        replace("attempts", text: "0", app, prefix: "mobile.nas.security")
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        expect(reveal("mobile.nas.service.invalid", in: app), contains: "login attempts")
+        replace("attempts", text: "6", app, prefix: "mobile.nas.security")
+        reveal("mobile.nas.security.expiration", in: app).switches.firstMatch.tap()
+        replace("expirationDays", text: "7", app, prefix: "mobile.nas.security")
+        reveal("mobile.nas.security.dos.eth0", in: app).switches.firstMatch.tap()
+        reveal("mobile.nas.security.firewall", in: app).switches.firstMatch.tap()
+        reveal("mobile.nas.security.notifications", in: app).switches.firstMatch.tap()
+        screenshot(app, "Security native form before saving")
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "block your account")).firstMatch.waitForExistence(timeout: 5))
+        screenshot(app, "Security blocking and disconnect warning")
+        element("mobile.nas.service.cancel", app).tap()
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        expect(reveal("mobile.nas.security.summary.autoBlock", in: app), contains: "On")
+        expect(reveal("mobile.nas.security.summary.attempts", in: app), contains: "6")
+        expect(reveal("mobile.nas.security.summary.expirationDays", in: app), contains: "7")
+        expect(reveal("mobile.nas.security.summary.dos.eth0", in: app), contains: "On")
+        expect(reveal("mobile.nas.security.summary.firewall", in: app), contains: "On")
+        expect(reveal("mobile.nas.security.summary.notifications", in: app), contains: "On")
+        expect(reveal("mobile.nas.service.activity.succeeded", in: app), contains: "saved")
+        screenshot(app, "Security all groups saved")
+    }
+    func test防火墙中断重启查询原任务后恢复保存结果() {
+        let app = launch("nas-services-security-task-offline", kind: "security")
+        openEditor(app); reveal("mobile.nas.security.firewall", in: app).switches.firstMatch.tap()
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap()
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "not available yet")
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        screenshot(app, "Firewall interrupted keeps operation protected"); app.terminate()
+        let next = launch("nas-services-security-task-recover", kind: "security", preserve: true); defer { next.terminate() }
+        expect(reveal("mobile.nas.security.summary.firewall", in: next), contains: "On")
+        expect(reveal("mobile.nas.service.activity.succeeded", in: next), contains: "saved")
+        screenshot(next, "Firewall original task recovered without another apply")
+    }
+    func test防火墙缺回执重启仍保留保护和刷新入口() {
+        let app = launch("nas-services-security-lost-receipt", kind: "security")
+        openEditor(app); reveal("mobile.nas.security.firewall", in: app).switches.firstMatch.tap()
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap()
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "not available yet"); app.terminate()
+        let next = launch("nas-services-security-task-recover", kind: "security", preserve: true); defer { next.terminate() }
+        XCTAssertFalse(reveal("mobile.nas.service.edit", in: next).isEnabled)
+        expect(reveal("mobile.nas.service.activity.submitted", in: next), contains: "not available yet")
+        reveal("mobile.nas.service.recover", in: next).tap()
+        XCTAssertFalse(element("mobile.nas.service.removeRecord", next).exists)
+        expect(reveal("mobile.nas.service.activity.submitted", in: next), contains: "not available yet")
+        screenshot(next, "Firewall missing receipt cannot claim current switch as completion")
+    }
+    func test安全后组拒绝显示部分保存且原值可读() {
+        let app = launch("nas-services-partial", kind: "security"); defer { app.terminate() }
+        openEditor(app); reveal("mobile.nas.security.autoBlock", in: app).switches.firstMatch.tap()
+        reveal("mobile.nas.security.dos.eth0", in: app).switches.firstMatch.tap()
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap()
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "permission")
+        element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
+        expect(reveal("mobile.nas.security.summary.autoBlock", in: app), contains: "On")
+        expect(reveal("mobile.nas.security.summary.dos.eth0", in: app), contains: "Off")
+        expect(reveal("mobile.nas.service.activity.partial", in: app), contains: "permission")
+        screenshot(app, "Security partial result preserves each group")
+    }
+    func test安全加载缺字段错误不支持无网卡及权限状态() {
+        for (state, label) in [("nas-services-loading", "Reading settings"), ("nas-services-security-incomplete", "Unable to load settings"), ("nas-services-error", "Unable to load settings"), ("nas-services-unsupported", "not supported"), ("nas-services-security-no-adapters", "no available network adapter")] {
+            let app = launch(state, kind: "security")
+            if state == "nas-services-loading" { XCTAssertTrue(app.activityIndicators.firstMatch.waitForExistence(timeout: 5)) }
+            else { XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", label)).firstMatch.waitForExistence(timeout: 5)) }
+            screenshot(app, "Security state " + state); app.terminate()
+        }
+        let app = launch("nas-services-readonly", kind: "security"); defer { app.terminate() }
+        XCTAssertFalse(reveal("mobile.nas.service.edit", in: app).isEnabled)
+        expect(reveal("mobile.nas.security.summary.autoBlock", in: app), contains: "Off")
+        screenshot(app, "Security restricted account keeps current state readable")
+    }
+    func test安全中文大字表单和危险确认完整可操作() {
+        let app = launch("nas-services", kind: "security", chinese: true, large: true); defer { app.terminate() }
+        openEditor(app); reveal("mobile.nas.security.autoBlock", in: app).switches.firstMatch.tap()
+        replace("attempts", text: "8", app, prefix: "mobile.nas.security")
+        screenshot(app, "Chinese large Security input")
+        reveal("mobile.nas.security.firewall", in: app).switches.firstMatch.tap()
+        reveal("mobile.nas.security.notifications", in: app).switches.firstMatch.tap()
+        screenshot(app, "Chinese large Security firewall controls")
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertTrue(element("mobile.nas.service.confirm", app).waitForExistence(timeout: 5))
+        screenshot(app, "Chinese large Security risk confirmation")
+        element("mobile.nas.service.cancel", app).tap(); element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
+        XCTAssertFalse(element("mobile.nas.service.activity.succeeded", app).exists)
+    }
+
     func test内存压缩确认取消后保存且不自动重启() {
         let app = launch("nas-services", kind: "zram"); defer { app.terminate() }
         openEditor(app)

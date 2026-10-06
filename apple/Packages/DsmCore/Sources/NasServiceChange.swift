@@ -1,27 +1,31 @@
 import Foundation
 
-public enum NasServiceKind: String, CaseIterable, Codable, Sendable { case fileServices, terminal, proxy, remoteAccess, zram, powerSchedule, ethernet }
+public enum NasServiceKind: String, CaseIterable, Codable, Sendable { case fileServices, terminal, proxy, remoteAccess, zram, powerSchedule, ethernet, security }
 
 /// 与实际写请求一一对应；同组字段不能拆成多个请求。
 public enum NasServiceStep: String, CaseIterable, Codable, Sendable {
     case smb, nfs, ftp, sftp, webDiscovery, fileDiscovery, terminal, proxy, relay, routerConfiguration, zram, rebootRequired, powerSchedule, ethernet
+    case autoBlock, denialOfService, firewallNotifications, firewall
     public var kind: NasServiceKind {
         switch self { case .terminal: .terminal; case .proxy: .proxy; case .relay, .routerConfiguration: .remoteAccess
-        case .zram, .rebootRequired: .zram; case .powerSchedule: .powerSchedule; case .ethernet: .ethernet; default: .fileServices }
+        case .zram, .rebootRequired: .zram; case .powerSchedule: .powerSchedule; case .ethernet: .ethernet
+        case .autoBlock, .denialOfService, .firewallNotifications, .firewall: .security; default: .fileServices }
     }
 }
 
 public enum NasServiceCheckpoint: Equatable, Sendable {
     case willSubmit(NasServiceStep), accepted(NasServiceStep), verified(NasServiceStep), partial(NasServiceStep), rejected(NasServiceStep)
+    case firewallTaskStarted(String), firewallTaskFinished(Bool), willCleanFirewallTask
 }
 
 public enum NasServiceSettings: Equatable, Sendable {
     case fileServices(NasFileServiceSettings), terminal(NasTerminalSettings), proxy(NasProxySettings), remoteAccess(NasRemoteAccessSettings)
     case zram(NasZRAMSnapshot, needsReboot: Bool?), powerSchedule(NasPowerScheduleSnapshot)
     case ethernet([NasEthernetInterface])
+    case security(NasSecuritySettings)
     public var kind: NasServiceKind {
         switch self { case .fileServices: .fileServices; case .terminal: .terminal; case .proxy: .proxy; case .remoteAccess: .remoteAccess
-        case .zram: .zram; case .powerSchedule: .powerSchedule; case .ethernet: .ethernet }
+        case .zram: .zram; case .powerSchedule: .powerSchedule; case .ethernet: .ethernet; case .security: .security }
     }
     public var isEmpty: Bool {
         switch self {
@@ -59,6 +63,10 @@ public enum NasServiceSettings: Equatable, Sendable {
             // 空的完整清单也有确定摘要；不完整读取不能用于恢复或覆盖。
             return [value.canEdit ? value.entries.map(\.scheduleComparisonKey).sorted().joined(separator: "|") : nil, value.timeZoneIdentifier]
         case (.ethernet(let values), .ethernet): return values.sorted { $0.id < $1.id }.flatMap(\.configurationFields)
+        case (.security(let value), .autoBlock): return [String(value.isAutoBlockEnabled), String(value.failedAttempts), String(value.withinMinutes), String(value.expirationDays ?? 0)]
+        case (.security(let value), .denialOfService): return value.dosProtection.sorted { $0.id < $1.id }.flatMap { [$0.id, String($0.isEnabled)] }
+        case (.security(let value), .firewallNotifications): return [value.isPortScanProtectionEnabled.map(String.init)]
+        case (.security(let value), .firewall): return [value.isFirewallEnabled.map(String.init), value.firewallProfileName]
         case (.proxy(let value), .proxy):
             if verifying && !value.isEnabled { return [String(false)] }
             return [String(value.isEnabled), value.normalizedHost, value.port.map(String.init)]
@@ -88,6 +96,15 @@ public enum NasServiceSettings: Equatable, Sendable {
             return .zram(step == .zram ? next : value, needsReboot: step == .rebootRequired ? reboot : needsReboot)
         case (.powerSchedule, .powerSchedule) where step == .powerSchedule: return desired
         case (.ethernet, .ethernet) where step == .ethernet: return desired
+        case (.security(var value), .security(let next)):
+            switch step {
+            case .autoBlock: value.isAutoBlockEnabled = next.isAutoBlockEnabled; value.failedAttempts = next.failedAttempts; value.withinMinutes = next.withinMinutes; value.expirationDays = next.expirationDays
+            case .denialOfService: value.dosProtection = next.dosProtection
+            case .firewallNotifications: value.isPortScanProtectionEnabled = next.isPortScanProtectionEnabled
+            case .firewall: value.isFirewallEnabled = next.isFirewallEnabled
+            default: break
+            }
+            return .security(value)
         case (.proxy(let previous), .proxy(let next)) where step == .proxy:
             return .proxy(.init(isEnabled: next.isEnabled, host: next.isEnabled ? next.normalizedHost : previous.host, port: next.isEnabled ? next.port : previous.port))
         default: return self
@@ -108,6 +125,11 @@ public enum NasServiceSettings: Equatable, Sendable {
         case .zram: return supportsEditing
         case .powerSchedule(let value): return value.canEdit && NasPowerScheduleSnapshot.replacementIsValid(value.entries)
         case .ethernet: return supportsEditing
+        case .security(let value):
+            return (1...9999).contains(value.failedAttempts) && (1...9999999).contains(value.withinMinutes)
+                && (value.expirationDays.map { (1...999).contains($0) } ?? true)
+                && Set(value.dosProtection.map(\.id)).count == value.dosProtection.count
+                && value.dosProtection.allSatisfy { !$0.id.isEmpty }
         }
     }
 
@@ -119,6 +141,7 @@ public enum NasServiceSettings: Equatable, Sendable {
         case (.zram(let value, _), .zram(let next, _)):
             return supportsEditing && other.supportsEditing && value.isEnabled == next.isEnabled
         case (.ethernet, .ethernet): return supportsEditing && other.supportsEditing && fields(for: .ethernet) == other.fields(for: .ethernet)
+        case (.security, .security): return isValid && other.isValid && steps.allSatisfy { fields(for: $0) == other.fields(for: $0) }
         default: return self == other
         }
     }
@@ -154,6 +177,11 @@ public struct NasServiceChange: Equatable, Sendable {
     public var orderedSteps: [NasServiceStep]? {
         guard kind == desired.kind, original.supportsEditing, desired.isValid, !changedSteps.isEmpty else { return nil }
         if kind == .ethernet, ethernetTarget == nil { return nil }
+        if case .security(let before) = original, case .security(let after) = desired {
+            guard before.firewallProfileName == after.firewallProfileName,
+                  Set(before.dosProtection.map(\.id)) == Set(after.dosProtection.map(\.id)),
+                  !(changedSteps.contains(.firewall) && after.isFirewallEnabled == true && (before.firewallProfileName?.isEmpty != false)) else { return nil }
+        }
         if case .zram(_, let reboot) = desired, reboot != true { return nil }
         if case .remoteAccess(let before) = original, case .remoteAccess(let after) = desired {
             guard before.canDisableRelay == after.canDisableRelay,

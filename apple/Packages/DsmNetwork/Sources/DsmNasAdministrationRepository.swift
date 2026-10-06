@@ -31,7 +31,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     var isFileServiceSettingsUpdateActive = false
     var isTerminalSettingsUpdateActive = false
     var isProxySettingsUpdateActive = false
-    private var isSecuritySettingsUpdateActive = false
+    var isSecuritySettingsUpdateActive = false
     private var isHardwareSettingsUpdateActive = false
     var isRemoteAccessSettingsUpdateActive = false
     private var isRegionSettingsUpdateActive = false
@@ -591,6 +591,16 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try Self.validateEthernetInterface(value)
             try await callVoid(DsmAPIName.coreNetworkEthernet, method: "set", version: 1,
                 parameters: ["configs": .objectArray([Self.ethernetConfiguration(value)])])
+        case .security(let value):
+            let part: SecuritySettingsMutationStep
+            switch step {
+            case .autoBlock: part = .autoBlock
+            case .denialOfService: part = .denialOfService
+            case .firewallNotifications: part = .portScanProtection
+            case .firewall: part = .firewall
+            default: throw unavailableError()
+            }
+            try await submitSecurityMutationStep(part, settings: value, current: value, version: version)
         }
     }
 
@@ -4368,6 +4378,15 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 )
                 acceptedCount += 1
             } catch let error as AppError {
+                if [.permissionDenied, .authenticationRequired, .tlsUntrusted, .tlsCertificateChanged].contains(error.category) { throw error }
+                if case .firewall = step, settings.isFirewallEnabled == true {
+                    let unknown = acceptedCount + (error.category == .conflict ? 0 : 1)
+                    return try securityMutationResult(status: unknown > 0 ? .submittedButUnverified : .confirmedFailure,
+                        operation: operation, submitted: true, requiresRefresh: unknown > 0, succeeded: 0,
+                        failed: steps.count - unknown, unknown: unknown, errorCategory: packageMutationErrorCategory(for: error.category),
+                        localizationKey: unknown > 0 ? "security.settings.unverified" : "security.settings.failed",
+                        diagnosticTag: "security.settings.firewall-task-incomplete")
+                }
                 return try await securitySubmissionFailureResult(
                     error,
                     settings: settings,
@@ -4377,6 +4396,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     prefix: prefix
                 )
             } catch {
+                if error is DsmCertificateTrustError { throw error }
+                if case .firewall = step, settings.isFirewallEnabled == true {
+                    let unknown = min(steps.count, acceptedCount + 1)
+                    return try securityMutationResult(status: error is CancellationError ? .cancellationRequestedAfterSubmission : .submittedButUnverified,
+                        operation: operation, submitted: true, requiresRefresh: true, succeeded: 0,
+                        failed: steps.count - unknown, unknown: unknown, errorCategory: .unknown,
+                        localizationKey: "security.settings.unverified", diagnosticTag: "security.settings.firewall-task-unknown")
+                }
                 return try await securityUnknownSubmissionResult(
                     settings: settings,
                     steps: steps,
@@ -4534,13 +4561,15 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private func submitSecurityMutationStep(
         _ step: SecuritySettingsMutationStep,
         settings: NasSecuritySettings,
-        current: NasSecuritySettings
+        current: NasSecuritySettings,
+        version: Int? = nil
     ) async throws {
         switch step {
         case .autoBlock:
             try await callVoid(
                 DsmAPIName.coreSecurityAutoBlock,
                 method: "set",
+                version: version,
                 parameters: [
                     "enable": .boolean(settings.isAutoBlockEnabled),
                     "attempts": .integer(settings.failedAttempts),
@@ -4568,6 +4597,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.coreSecurityFirewallConf,
                 method: "set",
+                version: version,
                 parameters: ["enable_port_check": .boolean(expected)]
             )
         case .firewall:
@@ -4583,6 +4613,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 try await callVoid(
                     DsmAPIName.coreSecurityFirewall,
                     method: "set",
+                    version: version,
                     parameters: ["set_type": .string("disable")]
                 )
             }
@@ -4893,47 +4924,19 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     }
 
     private func applyFirewallProfile(_ profile: String) async throws {
-        let started = try await call(
-            DsmAPIName.coreSecurityFirewallProfileApply,
-            method: "start",
-            parameters: [
-                "name": .string(profile),
-                "profile_applying": .boolean(false)
-            ]
-        )
-        guard let taskID = started.string(["task_id"]), !taskID.isEmpty else {
-            throw verificationError(L10n.string("shared.40d8f50f944fb5b6"))
-        }
-        var completed = false
+        let taskID = try await startManagedFirewallProfile(profile)
         for attempt in 0..<30 {
             if attempt > 0 {
                 try await Task.sleep(for: .seconds(1))
             }
-            let status = try await call(
-                DsmAPIName.coreSecurityFirewallProfileApply,
-                method: "status",
-                parameters: ["task_id": .string(taskID)]
-            )
-            if let success = status.boolean(["success"]) {
-                guard success else {
-                    try? await callVoid(
-                        DsmAPIName.coreSecurityFirewallProfileApply,
-                        method: "stop"
-                    )
-                    throw verificationError(L10n.string("shared.672df0d0489dd59a"))
-                }
-                completed = true
-                break
+            if let success = try await readFirewallApplication(taskID) {
+                try Task.checkCancellation()
+                try await cleanCompletedFirewallTask()
+                guard success else { throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("shared.672df0d0489dd59a")) }
+                return
             }
         }
-        try? await callVoid(DsmAPIName.coreSecurityFirewallProfileApply, method: "stop")
-        guard completed else {
-            throw AppError(
-                category: .serverBusy,
-                isRetryable: true,
-                safeUserMessage: L10n.string("shared.41454065abd301f9")
-            )
-        }
+        throw AppError(category: .serverBusy, isRetryable: false, safeUserMessage: L10n.string("shared.41454065abd301f9"))
     }
 
     public func loadRegionForManagement() async throws -> NasRegionSettings {

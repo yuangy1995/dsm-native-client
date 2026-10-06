@@ -14,6 +14,7 @@ extension DsmNasAdministrationRepository {
         case .proxy: return .proxy(try await loadProxySettings(managed: true))
         case .remoteAccess: return .remoteAccess(try await loadRemoteAccessForManagement())
         case .ethernet: return .ethernet(try await loadEthernetForManagement())
+        case .security: return .security(try await loadSecuritySettings(managed: true))
         case .powerSchedule:
             guard serviceVersion(.powerSchedule) != nil else { throw unavailableError() }
             return .powerSchedule(try await loadPowerSchedule())
@@ -91,7 +92,7 @@ extension DsmNasAdministrationRepository {
         return value
     }
 
-    private func serviceBoolean(_ payload: DsmDynamicJSON?, _ key: String, managed: Bool) throws -> Bool? {
+    func serviceBoolean(_ payload: DsmDynamicJSON?, _ key: String, managed: Bool) throws -> Bool? {
         guard managed else { return payload?.boolean([key]) }
         guard let value = payload?[key], value != .null else { return nil }
         switch value {
@@ -137,13 +138,17 @@ extension DsmNasAdministrationRepository {
         case .rebootRequired: DsmAPIName.coreHardwareNeedReboot
         case .powerSchedule: DsmAPIName.coreHardwarePowerSchedule
         case .ethernet: DsmAPIName.coreNetworkEthernet
+        case .autoBlock: DsmAPIName.coreSecurityAutoBlock
+        case .denialOfService: DsmAPIName.coreSecurityDoS
+        case .firewallNotifications: DsmAPIName.coreSecurityFirewallConf
+        case .firewall: DsmAPIName.coreSecurityFirewall
         }
     }
     func serviceVersion(_ step: NasServiceStep) -> Int? {
         guard let capability = capabilities[serviceAPI(step)], capability.selectedVersion != nil else { return nil }
         if step == .ethernet { return capability.minVersion <= 1 && capability.maxVersion >= 2 ? 1 : nil }
         let version: Int
-        switch step { case .smb, .nfs, .terminal: version = min(3, capability.maxVersion); case .webDiscovery: version = 2; case .relay: version = 3; default: version = 1 }
+        switch step { case .smb, .nfs, .terminal: version = min(3, capability.maxVersion); case .webDiscovery, .denialOfService: version = 2; case .relay: version = 3; default: version = 1 }
         return version >= 1 && capability.minVersion <= version && version <= capability.maxVersion ? version : nil
     }
 
@@ -177,11 +182,15 @@ extension DsmNasAdministrationRepository {
         let active: Bool
         switch change.kind { case .fileServices: active = isFileServiceSettingsUpdateActive; case .terminal: active = isTerminalSettingsUpdateActive; case .proxy: active = isProxySettingsUpdateActive; case .remoteAccess: active = isRemoteAccessSettingsUpdateActive
         case .zram: active = isZRAMUpdateActive; case .powerSchedule: active = isPowerScheduleUpdateActive
-        case .ethernet: active = isManagedEthernetUpdateActive || !activeEthernetUpdateIDs.isEmpty }
+        case .ethernet: active = isManagedEthernetUpdateActive || !activeEthernetUpdateIDs.isEmpty
+        case .security: active = isSecuritySettingsUpdateActive }
         guard !active else { return try result(.confirmedFailure, category: .conflict) }
         setServiceActive(change.kind, true)
         defer { setServiceActive(change.kind, false) }
         guard steps.allSatisfy({ serviceVersion($0) != nil }) else { return try result(.unsupported, category: .unsupported) }
+        let appliesFirewall: Bool
+        if case .security(let settings) = change.desired { appliesFirewall = steps.contains(.firewall) && settings.isFirewallEnabled == true } else { appliesFirewall = false }
+        if appliesFirewall && !capabilitySupports(DsmAPIName.coreSecurityFirewallProfileApply, version: 1) { return try result(.unsupported, category: .unsupported) }
         var expected = change.original
         for step in steps {
             if Task.isCancelled { return try result(submitted ? .partialSuccess : .cancelledBeforeSubmission) }
@@ -192,13 +201,18 @@ extension DsmNasAdministrationRepository {
             // 写前/接受回执/回读检查点错误均直接传回，不能把记录失败当作服务端拒绝。
             try await checkpoint(.willSubmit(step))
             submitted = true
-            var accepted = false, rejection: Error?
+            var accepted = false, rejection: Error?, firewallTask: String?
             do {
                 let submittedSettings = change.ethernetTarget.map { NasServiceSettings.ethernet([$0]) } ?? change.desired
-                try await submitManagedServiceStep(step, settings: submittedSettings, version: serviceVersion(step)!)
+                if step == .firewall && appliesFirewall, case .security(let value) = submittedSettings, let profile = value.firewallProfileName {
+                    firewallTask = try await startManagedFirewallProfile(profile)
+                } else {
+                    try await submitManagedServiceStep(step, settings: submittedSettings, version: serviceVersion(step)!)
+                }
                 accepted = true
             } catch {
                 if error is DsmCertificateTrustError { throw error }
+                if let value = error as? AppError, [.tlsUntrusted, .tlsCertificateChanged].contains(value.category) { throw error }
                 switch (error as? AppError)?.category {
                 case .cancelled, .networkUnavailable, .timeout, .serverBusy, .invalidResponse, .unknown, nil: break
                 default: rejection = error
@@ -208,8 +222,35 @@ extension DsmNasAdministrationRepository {
                 try await checkpoint(.rejected(step))
                 return try failure(rejection)
             }
+            if let firewallTask { try await checkpoint(.firewallTaskStarted(firewallTask)) }
             if accepted { try await checkpoint(.accepted(step)) }
             if Task.isCancelled { return try result(.cancellationRequestedAfterSubmission, unknown: 1) }
+            if step == .firewall && appliesFirewall {
+                // 未拿到回执不能仅凭开关变化认领任务；回执写盘错误也不能被当作网络错误吞掉。
+                guard let firewallTask else { return try result(completed > 0 ? .partialSuccess : .submittedButUnverified, unknown: 1) }
+                var outcome: Bool?
+                do {
+                    for attempt in 0..<30 {
+                        if attempt > 0 { try await Task.sleep(for: .seconds(1)) }
+                        outcome = try await readFirewallApplication(firewallTask)
+                        if outcome != nil { break }
+                    }
+                } catch {
+                    if error is DsmCertificateTrustError { throw error }
+                    if let value = error as? AppError, [.authenticationRequired, .permissionDenied, .tlsUntrusted, .tlsCertificateChanged].contains(value.category) { throw error }
+                    return try result(completed > 0 ? .partialSuccess : .submittedButUnverified, unknown: 1)
+                }
+                guard let outcome else { return try result(completed > 0 ? .partialSuccess : .submittedButUnverified, unknown: 1) }
+                try await checkpoint(.firewallTaskFinished(outcome))
+                if Task.isCancelled { return try result(.cancellationRequestedAfterSubmission, unknown: 1) }
+                try await checkpoint(.willCleanFirewallTask)
+                // stop 没有目标参数，仅本次持续执行且已结束的任务可以清理；重启恢复不调用它。
+                try await cleanCompletedFirewallTask()
+                if !outcome {
+                    try await checkpoint(.rejected(step))
+                    return try result(completed > 0 ? .partialSuccess : .confirmedFailure, category: .unknown)
+                }
+            }
             let current: NasServiceSettings
             do { current = try await loadServiceForManagement(change.kind) }
             catch {
@@ -241,6 +282,7 @@ extension DsmNasAdministrationRepository {
     private func setServiceActive(_ kind: NasServiceKind, _ active: Bool) {
         switch kind { case .fileServices: isFileServiceSettingsUpdateActive = active; case .terminal: isTerminalSettingsUpdateActive = active; case .proxy: isProxySettingsUpdateActive = active; case .remoteAccess: isRemoteAccessSettingsUpdateActive = active
         case .zram: isZRAMUpdateActive = active; case .powerSchedule: isPowerScheduleUpdateActive = active
-        case .ethernet: isManagedEthernetUpdateActive = active }
+        case .ethernet: isManagedEthernetUpdateActive = active
+        case .security: isSecuritySettingsUpdateActive = active }
     }
 }

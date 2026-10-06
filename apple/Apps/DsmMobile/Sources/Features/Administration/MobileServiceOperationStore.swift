@@ -3,7 +3,7 @@ import DsmCore
 import Foundation
 import Observation
 
-/// 服务设置共用一个受保护记录文件；地址、端口正文、账号和凭据均不落盘。
+/// 服务设置共用受保护记录；配置、账号和凭据不落盘，防火墙回执仅供原任务读取。
 @MainActor @Observable
 final class MobileServiceOperationStore {
     enum Stage: String, Codable { case prepared, submitted, verified, rejected, skipped }
@@ -16,6 +16,10 @@ final class MobileServiceOperationStore {
         var stage: Stage = .prepared
         var accepted = false
         var hasPartialFields = false
+        var requiresFirewallTask = false
+        var firewallTaskID: String? = nil
+        var firewallTaskSucceeded: Bool? = nil
+        var firewallCleanupRequested = false
     }
     struct Entry: Identifiable, Equatable, Codable {
         let id: UUID
@@ -84,15 +88,18 @@ final class MobileServiceOperationStore {
             guard let networkOwner, !protectsNetwork(owner: networkOwner) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
         }
         let target = change.ethernetTarget
+        let appliesFirewall: Bool
+        if case .security(let settings) = change.desired { appliesFirewall = settings.isFirewallEnabled == true } else { appliesFirewall = false }
         let value = Entry(id: UUID(), context: context, kind: change.kind, networkOwner: change.kind == .ethernet ? networkOwner : nil, createdAt: Date(),
             parts: steps.map { .init(step: $0, expected: Self.signature(target.map { .ethernet([$0]) } ?? change.desired, step: $0),
-                                   target: target.map { Self.targetSignature($0.id) }) })
+                                   target: target.map { Self.targetSignature($0.id) }, requiresFirewallTask: $0 == .firewall && appliesFirewall) })
         try persist(entries + [value]); executing.insert(value.id); return value
     }
     func checkpoint(_ id: UUID, _ checkpoint: NasServiceCheckpoint) throws {
         guard let index = entries.firstIndex(where: { $0.id == id }), executing.contains(id) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
         let step: NasServiceStep
-        switch checkpoint { case .willSubmit(let value), .accepted(let value), .verified(let value), .partial(let value), .rejected(let value): step = value }
+        switch checkpoint { case .willSubmit(let value), .accepted(let value), .verified(let value), .partial(let value), .rejected(let value): step = value
+        case .firewallTaskStarted, .firewallTaskFinished, .willCleanFirewallTask: step = .firewall }
         guard let part = entries[index].parts.firstIndex(where: { $0.step == step }) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
         var values = entries
         switch checkpoint {
@@ -103,6 +110,18 @@ final class MobileServiceOperationStore {
         case .accepted:
             guard values[index].parts[part].stage == .submitted else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             values[index].parts[part].accepted = true
+        case .firewallTaskStarted(let taskID):
+            guard values[index].parts[part].requiresFirewallTask, values[index].parts[part].stage == .submitted,
+                  values[index].parts[part].firewallTaskID == nil, !taskID.isEmpty else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+            values[index].parts[part].firewallTaskID = taskID
+        case .firewallTaskFinished(let succeeded):
+            guard values[index].parts[part].stage == .submitted, values[index].parts[part].firewallTaskID != nil,
+                  values[index].parts[part].firewallTaskSucceeded == nil else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+            values[index].parts[part].firewallTaskSucceeded = succeeded
+        case .willCleanFirewallTask:
+            guard values[index].parts[part].stage == .submitted, values[index].parts[part].firewallTaskSucceeded != nil,
+                  !values[index].parts[part].firewallCleanupRequested else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+            values[index].parts[part].firewallCleanupRequested = true
         case .verified, .partial, .rejected:
             guard values[index].parts[part].stage == .submitted else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             if case .verified = checkpoint { values[index].parts[part].stage = .verified }
@@ -124,12 +143,22 @@ final class MobileServiceOperationStore {
         var values = entries
         for index in values.indices where values[index].context == context && values[index].kind == value.kind && !executing.contains(values[index].id) {
             for part in values[index].parts.indices where values[index].parts[part].stage == .submitted {
+                if values[index].parts[part].firewallTaskSucceeded == false {
+                    values[index].parts[part].stage = .rejected; values[index].failure = .failed; continue
+                }
                 if Self.matches(value, part: values[index].parts[part]) {
                     values[index].parts[part].stage = .verified
                 }
             }
         }
         if values != entries { try persist(values) }
+    }
+    func finishFirewallTask(_ id: UUID, succeeded: Bool, context: String) throws {
+        guard let index = entries.firstIndex(where: { $0.id == id && $0.context == context }), !executing.contains(id),
+              let part = entries[index].parts.firstIndex(where: { $0.requiresFirewallTask && $0.stage == .submitted }),
+              entries[index].parts[part].firewallTaskID != nil, entries[index].parts[part].firewallTaskSucceeded == nil else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+        var values = entries; values[index].parts[part].firewallTaskSucceeded = succeeded
+        try persist(values)
     }
     /// 仅在重新登录并明确选择原记录后调用；不会移动记录账号或触发任何设置请求。
     func resolveNetwork(_ id: UUID, value: NasServiceSettings, owner: String) throws {
@@ -142,6 +171,7 @@ final class MobileServiceOperationStore {
         if values != entries { try persist(values) }
     }
     private static func matches(_ value: NasServiceSettings, part: Part) -> Bool {
+        if part.requiresFirewallTask && part.firewallTaskSucceeded != true { return false }
         if part.step == .ethernet {
             guard case .ethernet(let values) = value, let target = part.target,
                   let match = values.first(where: { Self.targetSignature($0.id) == target }) else { return false }
@@ -171,7 +201,12 @@ final class MobileServiceOperationStore {
                   value.parts.filter({ $0.stage == .submitted }).count <= 1,
                   value.parts.allSatisfy({ $0.step.kind == value.kind && Self.isDigest($0.expected)
                       && (value.kind == .ethernet ? $0.target.map(Self.isDigest) == true && value.networkOwner.map(Self.isDigest) == true : $0.target == nil && value.networkOwner == nil)
-                      && (!$0.accepted || $0.stage == .submitted || $0.stage == .verified)
+                      && (!$0.accepted || $0.stage == .submitted || $0.stage == .verified || $0.requiresFirewallTask && $0.stage == .rejected)
+                      && (!$0.requiresFirewallTask || $0.step == .firewall)
+                      && ($0.firewallTaskID == nil || $0.requiresFirewallTask && $0.firewallTaskID?.isEmpty == false)
+                      && ($0.firewallTaskSucceeded == nil || $0.firewallTaskID != nil)
+                      && (!$0.firewallCleanupRequested || $0.firewallTaskSucceeded != nil)
+                      && (!$0.requiresFirewallTask || $0.stage != .verified || $0.firewallTaskSucceeded == true)
                       && (!$0.hasPartialFields || $0.stage == .submitted || $0.stage == .verified) }) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             if value.isUnfinished, !targets.insert(value.context + value.kind.rawValue).inserted { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             if value.isUnfinished, let owner = value.networkOwner, !targets.insert("network:" + owner).inserted { throw MobileTransferRecoveryStore.StoreError.invalidRecord }

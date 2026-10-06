@@ -45,12 +45,29 @@ final class MobileServiceSettingsModel {
         sections[kind, default: .init()].beginLoading(); errors[kind] = nil
         let task = Task { [weak self] in
             do {
-                let value = try await repository.loadServiceForManagement(kind)
+                var value = try await repository.loadServiceForManagement(kind)
                 let allowed: Bool, failure: Failure?
                 do { try Task.checkCancellation(); allowed = try await authorize?() == true; failure = allowed ? nil : .denied }
                 catch is CancellationError { throw CancellationError() }
                 catch { allowed = false; failure = Self.failure(error) }
                 guard let self, self.activation == token, self.generations[kind] == generation, !Task.isCancelled else { return }
+                if kind == .security && allowed {
+                    var taskFinished = false
+                    // 恢复只查询原回执；不重启任务，也不调用没有目标参数的 stop。
+                    for entry in self.recovery.entries where entry.context == context && entry.kind == .security && !self.recovery.isExecuting(entry.id) {
+                        guard let part = entry.parts.first(where: { $0.requiresFirewallTask && $0.stage == .submitted }),
+                              part.firewallTaskSucceeded == nil, let taskID = part.firewallTaskID else { continue }
+                        let outcome = try await repository.readFirewallApplication(taskID)
+                        guard self.activation == token, self.generations[kind] == generation, !Task.isCancelled else { return }
+                        if let outcome {
+                            do { try self.recovery.finishFirewallTask(entry.id, succeeded: outcome, context: context) }
+                            catch { self.errors[kind] = .storage; self.sections[kind]?.cancelLoading(); return }
+                            taskFinished = true
+                        }
+                    }
+                    if taskFinished { value = try await repository.loadServiceForManagement(kind) }
+                }
+                guard self.activation == token, self.generations[kind] == generation, !Task.isCancelled else { return }
                 self.sections[kind, default: .init()].finish(value, isEmpty: value.isEmpty)
                 self.permissions[kind] = allowed; self.errors[kind] = failure; self.recovery.reload()
                 do { try self.recovery.resolve(value, context: context) } catch { self.errors[kind] = .storage }
@@ -101,11 +118,13 @@ final class MobileServiceSettingsModel {
             defer { store.end(entry.id); self?.operations[entry.id] = nil; self?.activeOperationIDs.remove(entry.id) }
             do {
                 let result = try await repository.changeServiceResult(change) { [weak self] stage in
-                    if case .willSubmit = stage {
+                    let needsAuthorization: Bool
+                    switch stage { case .willSubmit, .willCleanFirewallTask: needsAuthorization = true; default: needsAuthorization = false }
+                    if needsAuthorization {
                         guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
                     }
                     try await MainActor.run {
-                        if case .willSubmit = stage {
+                        if needsAuthorization {
                             guard let self, self.activation == token, !Task.isCancelled else { throw CancellationError() }
                             self.cancelRead(change.kind)
                         }

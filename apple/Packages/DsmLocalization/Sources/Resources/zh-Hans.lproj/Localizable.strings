@@ -7065,3 +7065,19 @@
 "mobile.nas.ethernet.recoveryTitle" = "在当前 NAS 读取保存结果？";
 "mobile.nas.ethernet.readResult" = "读取保存结果";
 "mobile.nas.ethernet.recoveryWarning" = "仅在当前连接是刚才修改网卡的那台 NAS 时继续。其他 NAS 上相同的配置不能说明原修改已完成。此操作只读取网卡配置，不会再次保存设置。";
+
+// 移动安全设置
+"mobile.nas.security.title" = "安全设置";
+"mobile.nas.security.autoBlock" = "自动封锁";
+"mobile.nas.security.attempts" = "登录失败次数";
+"mobile.nas.security.withinMinutes" = "统计时间（分钟）";
+"mobile.nas.security.expiration" = "自动解除封锁";
+"mobile.nas.security.expirationDays" = "解除等待天数";
+"mobile.nas.security.never" = "不自动解除";
+"mobile.nas.security.dos" = "网络攻击防护";
+"mobile.nas.security.firewall" = "防火墙";
+"mobile.nas.security.notifications" = "防火墙通知";
+"mobile.nas.security.profile" = "当前配置";
+"mobile.nas.security.noAdapters" = "NAS 未提供可配置的网卡防护。";
+"mobile.nas.security.warning" = "更改安全设置可能导致账号被封锁或 NAS 连接中断。请确保还有其他管理方式。";
+"mobile.nas.security.invalid" = "登录失败次数须为 1–9999，统计时间须为 1–9999999 分钟，自动解除期限须为 1–999 天。开启防火墙需要可用的配置。";
