@@ -12,6 +12,10 @@
 
 公开增量依据 Search v2、Sharing v3、Extract v2、BackgroundTask v3 和 List.list，文件夹上传复用 CreateFolder/Upload。DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559 的官方网页提供全文、具名分享/收集、权限、ISO、VFS、目录来源与主题图片的只读或静态证据；云授权页以完全合成参数验证了 major/minor 最小启动参数。macOS 已接入相关流程，但没有新增真实写兼容环境。按用户追加要求取消精确固件白名单和专用测试开关，仍检查实际 API 版本范围、会话权限、目标确认、重复保护及回读。真实云授权回调及 NAS 副作用不由合成自动化证明，详见 [文件功能说明](../../apple/Apps/DsmMac/README.md)。
 
+## Container Manager 容器删除增量边界
+
+2026-10-06 iPhone/iPad M7c2 复用内部 Container.list/delete v1，新增原目标/停止状态确认、逐项持久保护与只读恢复；请求保持 name、force=false、preserve_profile=false。共享完整清单检查和旧批量结果计数同步修正，macOS App 无本轮变化；Windows/Android 只记录影响。当前只有源码及合成验证，不能提升任何 DSM/套件版本的真实写等级。容器内部文件、共享挂载数据、并发外部改动和系统文件保护须按移动主计划在专用可丢弃环境验收。
+
 ## 证据使用规则
 
 本页记录维护者的版本兼容结论；[社区矩阵](COMMUNITY_COMPATIBILITY_MATRIX_ZH.md)单独展示用户反馈，不自动升级端点证据。能力可发现、页面观察、静态资料、客户端自动化与 NAS 行为验证必须区分。

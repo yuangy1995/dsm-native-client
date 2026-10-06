@@ -16,12 +16,12 @@ struct MobileContainerActions: View {
                     Text(L10n.string("mobile.containers.control.error.read")).font(.subheadline).foregroundStyle(.secondary)
                 }
             }
-            ForEach(ContainerAction.allCases, id: \.rawValue) { action in
-                Button { confirmation = model.confirmation(ids: ids, action: action) } label: {
+            ForEach(MobileContainerControlStore.Kind.allCases, id: \.rawValue) { action in
+                Button(role: action == .delete ? .destructive : nil) { confirmation = model.confirmation(ids: ids, kind: action) } label: {
                     Text(action.mobileTitle).frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
-                .disabled(!model.canPerform(ids: ids, action: action))
+                .disabled(!model.canPerform(ids: ids, kind: action))
                 .accessibilityIdentifier("container.action.\(action.rawValue)")
             }
         }
@@ -55,7 +55,7 @@ struct MobileContainerSelectionView: View {
                         }
                         .accessibilityAddTraits(selection.contains(target.id) ? .isSelected : [])
                         .accessibilityIdentifier("container.select.\(target.id)")
-                        .disabled(model.isOperating || !ContainerAction.allCases.contains(where: target.supports))
+                        .disabled(model.isOperating || !MobileContainerControlStore.Kind.allCases.contains(where: { $0.supports(target) }))
                     }
                 }
                 Section { MobileContainerActions(model: model, ids: selection) }
@@ -79,7 +79,13 @@ private struct MobileContainerConfirmationView: View {
             List {
                 if confirmation.action != .start {
                     Section {
-                        Text(L10n.string(confirmation.action == .stop ? "mobile.containers.control.stop.warning" : "mobile.containers.control.restart.warning"))
+                        let warningKey = switch confirmation.action {
+                        case .start: "mobile.containers.control.start"
+                        case .stop: "mobile.containers.control.stop.warning"
+                        case .restart: "mobile.containers.control.restart.warning"
+                        case .delete: "mobile.containers.control.delete.warning"
+                        }
+                        Text(L10n.string(warningKey))
                     }
                 }
                 Section {
@@ -90,7 +96,7 @@ private struct MobileContainerConfirmationView: View {
                         _ = model.perform(confirmation); dismiss()
                     }
                     .frame(minHeight: 44)
-                    .disabled(confirmation.activation != model.activation || !model.canPerform(ids: Set(confirmation.targets.map(\.id)), action: confirmation.action))
+                    .disabled(confirmation.activation != model.activation || !model.canPerform(ids: Set(confirmation.targets.map(\.id)), kind: confirmation.action))
                     .accessibilityIdentifier("container.confirm")
                 }
             }
@@ -135,7 +141,7 @@ struct MobileContainerControlRecordsView: View {
                         Section {
                             ForEach(Array(entry.items.enumerated()), id: \.offset) { index, item in
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text(model.targets.first(where: item.matches)?.name ?? L10n.string("mobile.containers.control.target", index + 1))
+                                    Text(model.name(for: item) ?? L10n.string("mobile.containers.control.target", index + 1))
                                         .font(.body.weight(.medium))
                                     Text(status(item, entry: entry)).font(.subheadline).foregroundStyle(.secondary)
                                         .accessibilityIdentifier("container.record.\(item.phase.rawValue)")
@@ -177,6 +183,7 @@ struct MobileContainerControlRecordsView: View {
             case .start: "mobile.containers.control.start.completed"
             case .stop: "mobile.containers.control.stop.completed"
             case .restart: "mobile.containers.control.restart.completed"
+            case .delete: "mobile.containers.control.delete.completed"
             }
             return L10n.string(key)
         case .skipped: return L10n.string("mobile.containers.control.skipped")
@@ -199,5 +206,12 @@ extension ContainerAction {
         case .restart: "mobile.containers.control.restart"
         }
         return L10n.string(key)
+    }
+}
+
+extension MobileContainerControlStore.Kind {
+    var mobileTitle: String {
+        if let controlAction { return controlAction.mobileTitle }
+        return L10n.string("mobile.containers.control.delete")
     }
 }

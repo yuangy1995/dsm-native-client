@@ -181,6 +181,125 @@ import XCTest
         for value in ["synthetic-id", "Sample container", "fixture.example.invalid", "operator", "synthetic-session", "Sample user"] { XCTAssertFalse(text.contains(value)) }
         let resources = try root.resourceValues(forKeys: [.isExcludedFromBackupKey]); XCTAssertEqual(resources.isExcludedFromBackup, true)
     }
+    func test删除仅停止且完整状态的非托管目标可用() async throws {
+        for mode in ["containers-control", "containers-running", "containers-restarting", "containers-missing-state"] {
+            let (model, _, _, _) = try make(mode: mode); await model.refresh()
+            XCTAssertEqual(model.canPerform(ids: ["synthetic-id"], kind: .delete), mode == "containers-control")
+            XCTAssertFalse(model.canPerform(ids: ["managed-id"], kind: .delete))
+        }
+    }
+    func test删除单项和多项保留逐项完成且不存容器名称() async throws {
+        for ids: Set<String> in [["synthetic-id"], ["synthetic-id", "worker-b"]] {
+            let (model, transport, _, root) = try make(); await model.refresh()
+            let id = try delete(model, ids: ids); await model.waitForOperation(id)
+            XCTAssertEqual(model.entries.first?.completedCount, ids.count)
+            let first = try XCTUnwrap(model.entries.first?.items.first)
+            XCTAssertEqual(model.name(for: first), "Sample container")
+            XCTAssertTrue(model.targets.allSatisfy { !ids.contains($0.id) })
+            let writes = await transport.writes; XCTAssertEqual(writes.count, ids.count)
+            XCTAssertTrue(writes.allSatisfy { $0["method"] == "delete" && $0["force"] == "false" && $0["preserve_profile"] == "false" })
+            let text = try String(contentsOf: root.appendingPathComponent("container-controls-v1.json"), encoding: .utf8)
+            for value in ["synthetic-id", "Sample container", "Worker B", "fixture.example.invalid", "synthetic-session"] { XCTAssertFalse(text.contains(value)) }
+        }
+    }
+    func test删除前撤权与确认目标变化均零写() async throws {
+        for change in 0...2 {
+            let (model, transport, gate, _) = try make(); await model.refresh()
+            if change == 0 { await gate.set(false) }
+            if change == 1 { await transport.renameFirst() }
+            if change == 2 { await transport.replaceFirst() }
+            let id = try delete(model); await model.waitForOperation(id)
+            XCTAssertEqual(model.entries.first?.items.first?.phase, .failed)
+            XCTAssertEqual(model.entries.first?.items.first?.failure, change == 0 ? .denied : .changed)
+            let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+        }
+    }
+    func test删除重复确认被拒且删除与启停互斥() async throws {
+        let (model, transport, _, _) = try make(); await model.refresh(); await transport.holdWrites()
+        let confirmation = try XCTUnwrap(model.confirmation(ids: ["synthetic-id"], kind: .delete))
+        let id = try XCTUnwrap(model.perform(confirmation)); await transport.waitForWrite()
+        XCTAssertNil(model.perform(confirmation)); XCTAssertFalse(model.canPerform(ids: ["synthetic-id"], action: .start))
+        await transport.release(); await model.waitForOperation(id)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
+    }
+    func test删除未知重启后只读恢复且未提交后项不续跑() async throws {
+        let (model, transport, _, root) = try make(mode: "containers-unknown"); await model.refresh()
+        let id = try delete(model, ids: ["synthetic-id", "worker-b"]); await model.waitForOperation(id)
+        XCTAssertEqual(model.entries.first?.items.map(\.phase), [.submitted, .skipped])
+        XCTAssertFalse(model.canPerform(ids: ["synthetic-id"], action: .start))
+        XCTAssertFalse(model.canPerform(ids: ["synthetic-id"], kind: .delete))
+        let (next, nextTransport, _, _) = try make(mode: "containers-delete-recovered", root: root); await next.refresh()
+        XCTAssertEqual(next.entries.first?.items.map(\.phase), [.succeeded, .skipped])
+        let writes = await transport.writes, recoveredWrites = await nextTransport.writes
+        XCTAssertEqual(writes.count, 1); XCTAssertTrue(recoveredWrites.isEmpty)
+    }
+    func test删除批量第二项未知不覆盖第一项成功() async throws {
+        let (model, transport, _, _) = try make(mode: "containers-partial"); await model.refresh()
+        let id = try delete(model, ids: ["synthetic-id", "worker-b"]); await model.waitForOperation(id)
+        XCTAssertEqual(model.entries.first?.items.map(\.phase), [.succeeded, .submitted])
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 2)
+    }
+    func test删除明确拒绝不能被之后外部移除覆盖() async throws {
+        let (model, transport, _, _) = try make(mode: "containers-reject"); await model.refresh()
+        let id = try delete(model); await model.waitForOperation(id)
+        XCTAssertEqual(model.entries.first?.items.first?.phase, .failed)
+        await transport.setMode("containers-control"); await transport.removeFirst(); await model.refresh()
+        XCTAssertEqual(model.entries.first?.items.first?.phase, .failed)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
+    }
+    func test删除恢复拒绝不完整目录且保留未知保护() async throws {
+        let (model, transport, _, _) = try make(mode: "containers-unknown"); await model.refresh()
+        let id = try delete(model); await model.waitForOperation(id)
+        await transport.setMode("containers-incomplete"); await model.refresh()
+        XCTAssertEqual(model.entries.first?.items.first?.phase, .submitted); XCTAssertFalse(model.allowed)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
+    }
+    func test删除原ID改名仍未知而同名新ID不被再次删除() async throws {
+        for replacement in [false, true] {
+            let (model, transport, _, _) = try make(mode: "containers-unknown"); await model.refresh()
+            let id = try delete(model); await model.waitForOperation(id)
+            await transport.setMode("containers-control")
+            if replacement { await transport.replaceFirst() } else { await transport.renameFirst() }
+            await model.refresh()
+            XCTAssertEqual(model.entries.first?.items.first?.phase, replacement ? .succeeded : .submitted)
+            let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
+        }
+    }
+    func test删除旧账号迟到回执不进入新账号且后项不续跑() async throws {
+        let (model, transport, _, _) = try make(); await model.refresh(); await transport.holdWrites()
+        let confirmation = try XCTUnwrap(model.confirmation(ids: ["synthetic-id", "worker-b"], kind: .delete))
+        let context = try XCTUnwrap(model.context), id = try XCTUnwrap(model.perform(confirmation)); await transport.waitForWrite()
+        let nextProfile = try profile(username: "other"), nextTransport = MobileContainerUITransport()
+        model.configure(profile: nextProfile, repository: try repository(nextTransport, profile: nextProfile), authorize: { true })
+        await model.refresh(); XCTAssertTrue(model.entries.isEmpty); XCTAssertNil(model.perform(confirmation))
+        await transport.release(); await model.waitForOperation(id)
+        XCTAssertTrue(model.entries.isEmpty)
+        let entry = try XCTUnwrap(model.recovery.entry(id)); XCTAssertEqual(entry.context, context)
+        XCTAssertEqual(entry.items[1].phase, .skipped)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
+    }
+    func test删除证书错误不继续读取或解除保护() async throws {
+        let (model, transport, _, _) = try make(); await model.refresh(); await transport.setMode("containers-write-trust")
+        let id = try delete(model); await model.waitForOperation(id)
+        XCTAssertEqual(model.error, .trust); XCTAssertFalse(model.allowed)
+        XCTAssertEqual(model.entries.first?.items.first?.phase, .submitted)
+        let calls = await transport.calls; XCTAssertEqual(calls.count, 3)
+    }
+    func test删除记录无法保存或在途文件丢失不能解除保护() async throws {
+        let root = newRoot(); try Data("file".utf8).write(to: root)
+        let (failed, transport, _, _) = try make(root: root); await failed.refresh()
+        XCTAssertFalse(failed.canPerform(ids: ["synthetic-id"], kind: .delete)); XCTAssertTrue(failed.recovery.failed)
+        let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+        let (model, source, _, savedRoot) = try make(mode: "containers-unknown"); await model.refresh()
+        let id = try delete(model); await model.waitForOperation(id)
+        try FileManager.default.removeItem(at: savedRoot.appendingPathComponent("container-controls-v1.json"))
+        await source.setMode("containers-control"); await model.refresh()
+        XCTAssertTrue(model.recovery.failed); XCTAssertEqual(model.entries.first?.items.first?.phase, .submitted)
+        XCTAssertFalse(model.canPerform(ids: ["synthetic-id"], kind: .delete))
+    }
+    private func delete(_ model: MobileContainerControlModel, ids: Set<String> = ["synthetic-id"]) throws -> UUID {
+        try XCTUnwrap(model.perform(try XCTUnwrap(model.confirmation(ids: ids, kind: .delete))))
+    }
     private func start(_ model: MobileContainerControlModel, ids: Set<String> = ["synthetic-id"], action: ContainerAction = .start) throws -> UUID {
         let confirmation = try XCTUnwrap(model.confirmation(ids: ids, action: action))
         return try XCTUnwrap(model.perform(confirmation))
