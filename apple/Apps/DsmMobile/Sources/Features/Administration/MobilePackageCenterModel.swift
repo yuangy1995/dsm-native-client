@@ -18,23 +18,30 @@ final class MobilePackageCenterModel {
     private(set) var errors: [Page: Failure] = [:]
     private var activeIDs: Set<UUID> = []
     let recovery: MobilePackageOperationStore
+    let installation: MobilePackageInstallationModel
     @ObservationIgnored private var repository: DsmNasAdministrationRepository?
     @ObservationIgnored private var authorize: (@MainActor @Sendable () async throws -> Bool)?
     @ObservationIgnored private var reads: [Page: Task<Void, Never>] = [:]
     @ObservationIgnored private var generations: [Page: UUID] = [:]
     @ObservationIgnored private var operations: [UUID: Task<Void, Never>] = [:]
 
-    init(root: URL? = nil) { recovery = .init(root: root) }
+    init(root: URL? = nil) { recovery = .init(root: root); installation = .init(root: root) }
     func configure(profile: NasProfile?, repository: DsmNasAdministrationRepository?, authorize: (@MainActor @Sendable () async throws -> Bool)?) {
+        defer {
+            installation.configure(profile: profile, repository: repository, authorize: authorize) { [weak self] in
+                guard let self, let context = self.context else { return false }
+                return !self.isOperating && !self.recovery.protects(context: context)
+            }
+        }
         let next = profile.map { MobileWorkspaceIdentity($0).storageIdentifier }
         guard next != context || self.repository.map(ObjectIdentifier.init) != repository.map(ObjectIdentifier.init) else { self.authorize = authorize; return }
         deactivate(); context = next; self.repository = repository; self.authorize = authorize; recovery.reload()
     }
     func deactivate() {
-        activation = UUID(); cancelReads(); operations.values.forEach { $0.cancel() }
+        activation = UUID(); installation.deactivate(); cancelReads(); operations.values.forEach { $0.cancel() }
         context = nil; repository = nil; authorize = nil; sections = [:]; permissions = [:]; errors = [:]
     }
-    func cancelReads() { Page.allCases.forEach(cancelRead) }
+    func cancelReads() { Page.allCases.forEach(cancelRead); installation.cancelRead() }
     func cancelRead(_ page: Page) { generations[page] = UUID(); reads[page]?.cancel(); reads[page] = nil; sections[page]?.cancelLoading() }
     func section(_ page: Page) -> MobileNasDetailsSection<Content> { sections[page] ?? .init() }
     var installed: [NasPackage] { if case .installed(let value) = section(.installed).value { return value }; return [] }
@@ -42,9 +49,12 @@ final class MobilePackageCenterModel {
     var sources: [NasPackageSource] { if case .sources(let value) = section(.sources).value { return value }; return [] }
     var entries: [MobilePackageOperationStore.Entry] { recovery.entries.filter { $0.context == context }.reversed() }
     var isOperating: Bool { entries.contains { activeIDs.contains($0.id) } }
-    var isRefreshing: Bool { sections.values.contains { $0.isRefreshing || $0.phase == .loading } }
+    var isRefreshing: Bool { sections.values.contains { $0.isRefreshing || $0.phase == .loading } || installation.catalog.isRefreshing || installation.catalog.phase == .loading }
     func loadIfNeeded(_ page: Page) async { if section(page).phase == .idle { await refresh(page) } }
-    func refreshLoaded() async { for page in Page.allCases where section(page).phase != .idle { await refresh(page) } }
+    func refreshLoaded() async {
+        for page in Page.allCases where section(page).phase != .idle { await refresh(page) }
+        if installation.catalog.phase != .idle { await installation.refresh() }
+    }
     func refresh(_ page: Page) async {
         guard let repository, let context else { return }
         cancelRead(page); let generation = generations[page], token = activation, authorize = authorize
@@ -89,6 +99,7 @@ final class MobilePackageCenterModel {
         let value = section(page)
         return permissions[page] == true && [.content, .empty].contains(value.phase)
             && !value.isRefreshing && !value.hasRefreshError && !isOperating && !recovery.protects(context: context)
+            && !installation.isBusy && !installation.blocksChanges
     }
     func canPerform(_ change: NasPackagePreferenceChange) -> Bool {
         guard change.isValid, canEdit(change.page) else { return false }

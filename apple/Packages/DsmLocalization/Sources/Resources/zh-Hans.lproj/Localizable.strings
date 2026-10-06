@@ -5594,30 +5594,30 @@
 "package.center.restart-required" = "此套件安装后需要重启 NAS 才能使用。";
 "package.center.queue-progress" = "已完成 %@ / %@ 个套件";
 "package.center.cancel-download" = "取消下载";
-"package.center.check-status" = "检查安装结果";
+"package.center.check-status" = "刷新状态";
 "package.center.continue-background" = "在后台继续";
 "package.center.phase.downloading" = "正在下载";
 "package.center.phase.installing" = "正在安装";
 "package.center.phase.needsOptions" = "需要完成安装选项";
 "package.center.phase.completed" = "安装完成";
 "package.center.phase.failed" = "安装未完成";
-"package.center.phase.unverified" = "安装结果待确认";
+"package.center.phase.unverified" = "暂时无法获取安装状态";
 "package.center.phase.cancelled" = "已取消";
 "package.center.unavailable" = "此 NAS 暂时无法提供套件安装。请在 DSM 套件中心操作，或稍后刷新。";
 "package.center.catalog-failed" = "无法读取套件目录。请检查连接后刷新；也可以在 DSM 套件中心检查套件来源。";
 "package.center.incomplete" = "NAS 返回的套件信息不完整。请刷新后重试，或在 DSM 套件中心继续。";
 "package.center.changed" = "套件版本、依赖或安装位置已发生变化。请刷新目录并重新查看安装计划。";
 "package.center.dependencies" = "套件存在缺失或冲突的依赖。请在 DSM 套件中心处理后重试。";
-"package.center.busy" = "已有套件操作正在进行或等待确认。请先完成该操作，再继续。";
+"package.center.busy" = "另一项套件操作尚未结束。请先完成该操作，再继续。";
 "package.center.no-volume" = "没有可用的安装位置。请在 DSM 存储管理器中检查存储空间。";
 "package.center.select-volume" = "请选择仍然可用的安装位置。";
-"package.center.failed" = "套件操作未完成。请刷新套件列表，并在 DSM 套件中心查看原因后重试。";
-"package.center.unverified" = "暂时无法确认安装结果。请恢复连接后检查结果；不要再次安装同一套件。";
+"package.center.failed" = "套件操作未完成。请刷新套件列表；如果仍无法继续，请在 DSM 套件中心处理。";
+"package.center.unverified" = "暂时无法获取安装状态。请恢复连接后刷新，也可在 DSM 套件中心查看；请勿重复安装。";
 "package.center.options-required" = "请完成必填选项，并在需要时同意套件许可协议。";
-"package.center.cannot-cancel" = "安装已进入不能安全取消的阶段。请等待完成，或检查安装结果。";
+"package.center.cannot-cancel" = "安装已开始，无法取消。请等待完成或刷新状态。";
 "package.center.purchase-required" = "此套件需要购买或激活。请先在 DSM 套件中心完成授权。";
 "package.center.invalid-file" = "请选择有效的 .spk 套件文件。";
-"package.center.upload-failed" = "套件文件上传未完成。请检查连接，并在 DSM 套件中心确认后重试。";
+"package.center.upload-failed" = "未能完成套件文件上传。请恢复连接后重新选择文件；也可在 DSM 套件中心操作。";
 "package.center.signature-failed" = "无法确认套件文件的签名。请从可信来源重新下载；此文件没有安装。";
 "package.center.custom-options" = "此套件的安装选项需要在网页中完成。请在 DSM 套件中心继续安装。";
 "package.center.settings" = "套件中心设置";
@@ -6921,3 +6921,23 @@
 "mobile.package.sourceSaved" = "套件来源已保存。";
 "mobile.package.sourceRemoved" = "套件来源已移除。";
 "mobile.package.failed" = "未能完成套件修改。请刷新后重新操作。";
+
+"mobile.package.browseInstall" = "浏览与安装";
+
+"mobile.package.selectUpload" = "选择套件文件并上传";
+
+"mobile.package.install.progress" = "安装进度";
+
+"mobile.package.install.discard" = "放弃安装";
+
+"mobile.package.install.active" = "套件操作尚未结束";
+
+"mobile.package.install.partial" = "部分套件已安装";
+
+"mobile.package.install.partialHelp" = "已完成的套件会保留。请重新选择剩余套件继续安装。";
+
+"mobile.package.install.interrupted" = "安装准备已中断";
+
+"mobile.package.install.interruptedHelp" = "尚未开始正式安装。请重新选择套件；如果 NAS 仍在下载，可在 DSM 套件中心处理。";
+
+"mobile.package.install.fileReadError" = "无法打开所选套件文件。请在“文件”App 中完成下载，或选择其他文件后重试。";

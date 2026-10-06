@@ -36,16 +36,20 @@ struct PackageInstallationJobState: Sendable {
     var finalInstallationSubmitted = false
     var cancelRequested = false
     var isWriteOutcomeUnknown = false
+    var checkpoint: NasPackageInstallationObserver?
     var current: PackageCatalogCandidate { candidates[min(index, candidates.count - 1)] }
     var progress: NasPackageInstallProgress {
         NasPackageInstallProgress(id: id, packageName: current.entry.name, completedCount: index,
-            totalCount: candidates.count, phase: phase, fraction: fraction, configuration: configuration, messageKey: messageKey, canCancel: phase == .downloading || phase == .needsOptions || (phase == .unverified && checkedPackage != nil && !finalInstallationSubmitted))
+            totalCount: candidates.count, phase: phase, fraction: fraction, configuration: configuration, messageKey: messageKey,
+            canCancel: (checkpoint == nil || !cancelRequested) && (phase == .downloading || phase == .needsOptions || (phase == .unverified && checkedPackage != nil && !finalInstallationSubmitted)))
     }
 }
 
 extension DsmNasAdministrationRepository {
-    public func loadPackageCatalog() async throws -> NasPackageCatalog {
-        let installed = try await loadPackages(includingIcons: false)
+    public func loadPackageCatalog() async throws -> NasPackageCatalog { try await loadPackageCatalog(management: false) }
+    public func loadPackageCatalogForManagement() async throws -> NasPackageCatalog { try await loadPackageCatalog(management: true) }
+    func loadPackageCatalog(management: Bool) async throws -> NasPackageCatalog {
+        let installed = try await loadPackages(includingIcons: false, management: management)
         let official = try await call(DsmAPIName.corePackageServer, method: "list", version: 2,
             parameters: ["blforcereload": .boolean(false), "blloadothers": .boolean(false)])
         guard let stable = official["packages"]?.array, let beta = official["beta_packages"]?.array else {
@@ -61,6 +65,7 @@ extension DsmNasAdministrationRepository {
             rows += community
         } catch {
             if Task.isCancelled { throw CancellationError() }
+            if management, Self.packagePreferenceTrustFailure(error) { throw error }
             // 第三方来源失败不隐藏官方目录；界面单独提示该分类不可用。
             communityAvailable = false
         }
@@ -90,10 +95,16 @@ extension DsmNasAdministrationRepository {
     }
 
     public func preparePackageInstallation(catalogIDs: [String]) async throws -> NasPackageInstallPlan {
+        try await preparePackageInstallation(catalogIDs: catalogIDs, management: false)
+    }
+    public func preparePackageInstallationForManagement(catalogIDs: [String]) async throws -> NasPackageInstallPlan {
+        try await preparePackageInstallation(catalogIDs: catalogIDs, management: true)
+    }
+    private func preparePackageInstallation(catalogIDs: [String], management: Bool) async throws -> NasPackageInstallPlan {
         try requirePackageInstallationIdle()
         packageInstallationRequestActive = true
         defer { packageInstallationRequestActive = false }
-        _ = try await loadPackageCatalog()
+        _ = try await loadPackageCatalog(management: management)
         try Task.checkCancellation()
         let requested = try catalogIDs.map { id -> PackageCatalogCandidate in
             guard let candidate = packageCatalogCandidates[id],
@@ -105,13 +116,13 @@ extension DsmNasAdministrationRepository {
         guard !requested.isEmpty, Set(catalogIDs).count == catalogIDs.count else {
             throw packageCenterError("package.center.changed")
         }
-        let state = try await buildPackageInstallPlan(requested: requested)
+        let state = try await buildPackageInstallPlan(requested: requested, management: management)
         try Task.checkCancellation()
         packageInstallPlan = state
         return state.plan
     }
 
-    func buildPackageInstallPlan(requested: [PackageCatalogCandidate]) async throws -> PackageInstallationPlanState {
+    func buildPackageInstallPlan(requested: [PackageCatalogCandidate], management: Bool = false) async throws -> PackageInstallationPlanState {
         if requested.contains(where: { $0.entry.isBeta }) { try await requirePackageBetaAgreement() }
         try await packageInstallFeasibility(requested.map { $0.entry.packageID })
         let queue = try await installationQueue(requested)
@@ -138,7 +149,7 @@ extension DsmNasAdministrationRepository {
         guard requested.allSatisfy({ request in candidates.contains(where: { $0.entry.id == request.entry.id }) }) else {
             throw packageCenterError("package.center.incomplete")
         }
-        let installed = try await loadPackages(includingIcons: false)
+        let installed = try await loadPackages(includingIcons: false, management: management)
         return PackageInstallationPlanState(plan: NasPackageInstallPlan(items: items, affectedPackages: Array(Set(affected)).sorted()),
             requestedIDs: requested.map { $0.entry.id }, candidates: candidates, queue: queue,
             installedVersions: Dictionary(uniqueKeysWithValues: installed.map { ($0.id, $0.version ?? "") }))

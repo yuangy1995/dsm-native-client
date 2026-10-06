@@ -2746,3 +2746,51 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 首轮两个命令只有结果路径少 `-final`，iPhone 通过、iPad 的取消按钮作用域失败保持原记录。云端旧提交的 iPhone 工作区仍为失败，必须等含本修正的后续云端运行确认，不把本地复验当云端已绿。当前两个模块组仍在运行，继续等待完整结果，不通过推送取消它们。
 
 此次已读云端结果包、临时导出/层级/录屏提帧均已按独立目录清理，正式 CI 日志、本地结果与上述两张模拟器截图保留。
+
+
+## 2026-10-06 移动 M6e3 套件安装、更新与手动上传
+
+起始基线 `26391a5d`，main 工作区干净、领先远端三个已完成本地提交；旧云端两个模块组仍在运行，未通过推送取消。M6e2 Mac 套件停止反馈与此前三处 Mac 设置反馈仍等待对应范围决定，本片没有修改 Mac App、Windows 或 Android。
+
+本片复用共享目录/计划/上传/安装/取消管线，新增兼容观察检查点；移动目录分类/搜索/详情、依赖与位置确认、许可及原生选项、系统文件选择器、下载/安装进度、受保护摘要记录已接。写前重新授权和保存阶段，接受及每项完成保存失败停止下一副作用；证书和读取权限失败不通过备用读取覆盖，清理或取消只提交一次。恢复文件不含 NAS 任务标识、路径、来源 URL、选项口令或会话，不自动重放跨重启请求或未提交依赖。共享旧 Mac 方法保持调用方式，必要结果文案同步中英。
+
+共享初次原 31 项回归通过；新增 16 项后两轮各 47 项全通过。再补取消时下载恰好完成仅清理本次暂存、状态超时后目录证书错误立即停止，完整共享为 **2875 XCTest、172 条既有跳过、0 失败，另 12 Swift Testing 通过**。随后独立审查补上分步安装最终 check 返回占用/位置变化拒绝，新增一条回归；这一最后共享变化尚需最终复测，不把此前全量当作最新源码证据。
+
+移动首轮 build-for-testing 失败，仅为新测试构造 NasPackage 时漏了必要可选字段；补齐测试参数后第二次构建通过。首轮聚焦安装与原套件设置/来源行为 **43 项通过**。第三次构建通过并包含十项新 UITest；R1 正在两端执行完整单元、十项安装 UI 及原有普通设置 UI，iPhone 浅色、iPad 深色。iPhone 完整单元已取得 **1457 项、4 条既有跳过、0 失败**，完整两端界面结果仍待收齐。
+
+初次本地化命令误用了不存在的 validate_localizations.py，退出 2、没有执行检查；改用项目既有 check_localization.py 后 **6639/2188/3402** 双语、占位符、资源引用与硬编码扫描通过。独立审查随后补上旧账号视图的冻结会话边界与选项键盘完成按钮，需下次移动构建/界面复验；不能将正在运行的 R1 二进制视作已经包含这些修正。
+
+已实际执行的命令：
+
+```sh
+swift test --package-path apple --jobs 2 --filter DsmPackageCenterTests
+swift test --package-path apple --jobs 2 --filter 'NasPackageInstallationFlowTests|DsmPackageCenterTests'
+swift test --package-path apple --jobs 2
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e3-phone-unit-r1.xcresult -only-testing:DsmMobileTests/MobilePackageInstallationTests -only-testing:DsmMobileTests/MobilePackageCenterTests -parallel-testing-enabled NO
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e3-phone-r1.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobilePackageInstallationUITests -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test普通设置单位置隐藏选择器且取消保存结果正确 -parallel-testing-enabled NO
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e3-pad-r1.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobilePackageInstallationUITests -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test普通设置单位置隐藏选择器且取消保存结果正确 -parallel-testing-enabled NO
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+```
+
+本片未访问真实 NAS、套件来源或付费服务。正式真机验收表与最终交付状态将在两端实际结果及独立复核收齐后更新；当前不能把未完成验收写成全部通过。
+
+
+R1 两端完整单元均为 **1457 项、4 条既有跳过、0 失败**。iPad 十项新界面与一项原设置回归全通过（11/11，exit 0）；iPhone 10/11 通过，唯一失败为中文大字确认按钮定位（exit 65）。该次失败截图显示确认按钮完整可见，辅助功能树中弹窗表单占满剩余区域，按钮框 y=756.7、高 63.7；后台标签栏仍存在于层级，测试却扣除其 90 点，把按钮中心误判在可见范围之外。修正为只有可点击的实际标签栏才扣除高度，保留按钮存在、可用和可点击断言，未修改该页布局。
+
+已查看 R1 iPhone 许可选项浅色、iPad 中文大字依赖确认深色，以及上述失败截图。选项已有值时原 TextField 只显示值而隐藏字段名称，现补上始终可见的字段标签和无障碍名称；在下一轮两端实际 UI 中同时检查标签和原输入控件。系统文件选择器两端均实际出现并可取消；SPK 上传/选项/安装走真实共享适配的合成行为测试，未在系统选择器内选择真实用户文件。
+
+独立复核另补最终位置变化、直接上传的证书错误映射、原账号文件选择/确认隔离、目录能力缺失时独立手动上传与摘要恢复、同版本异步接受不得认领完成，以及新准备失败清除旧成功页面。最新完整共享 **2877 XCTest（172 条既有跳过、0 失败）与 12 Swift Testing 通过**，日志 m6e3-shared-final.log；Mac 初次与最终 Release 构建均通过。R4 移动构建通过，R5 为固定输入字段标签再构建；最新二十七项移动安装行为测试和最终两端 UI 尚待执行。
+
+
+**M6e3 最终 R2 两端均 exit 0：各 1463 单元（各 4 条既有条件跳过、0 失败）及全部 10 项新 UI 通过。** 新增的 27 条移动行为均在完整目标测试中执行；R1 两端各通过的旧套件普通设置 UI 保留回归证据。R2 为 iPhone 深色、iPad 浅色，中文大字确认、许可字段固定标签、依赖及版本完成、未知重启恢复均已实际检查截图；预览存于 `apple/Apps/DsmMobile/build/m6e3-preview/`，不是真实 NAS 验收。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e3-phone-r2.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobilePackageInstallationUITests -parallel-testing-enabled NO
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e3-pad-r2.xcresult -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobilePackageInstallationUITests -parallel-testing-enabled NO
+```
+
+R1 编译失败、R2–R5 四次构建通过；首轮 iPhone 中文大字唯一失败不改写成通过。最新共享完整 2877 XCTest/172 跳过/0 失败与 12 Swift Testing，Mac 最终 Release 构建通过，主 App/扩展由 lipo 实核 x86_64/arm64。XcodeGen 2.46.0 再生成前后工程 SHA256 同为 `51b9bf600474760a65d0445c0b55438263f1bd5831e19b2716c3cbd92d4a1449`；两台模拟器均恢复浅色并查询确认。最终本地化 6640/2188/3402、请求 179+1、脱敏 fixture 29/引用 48、文档和差异检查通过。
+
+收尾时，前一批云端 iPhone 模块组已返回 **164 项中 160 通过、4 失败**，均位于 DownloadInventory、NasStorage 两项和 ScheduledTasks 的模块导航步骤；iPad 模块组仍在运行。失败日志已读，正在提取原始合成结果包的界面证据，不提前归因为产品或测试，不把 M6e3 本机通过当作旧云端已绿。此前 Office 唯一工作区失败已有独立本机修复证据。本片只完成安装切片，M6e2、网卡/安全/硬件与 M7/M8 仍不算完成。

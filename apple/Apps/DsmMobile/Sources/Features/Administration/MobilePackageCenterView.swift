@@ -9,6 +9,11 @@ struct MobilePackageCenterScreen: View {
     private var filtered: [NasPackage] { model.installed.filter { MobileNasReadFormatting.matches(query, values: [$0.name, $0.id, $0.version ?? ""]) } }
     var body: some View {
         List {
+            Section {
+                NavigationLink { MobilePackageCatalogScreen(model: model.installation) } label: {
+                    Label(L10n.string("mobile.package.browseInstall"), systemImage: "shippingbox")
+                }.accessibilityIdentifier("mobile.package.catalog")
+            }
             Section { TextField(L10n.string("package.center.search"), text: $query).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("mobile.package.search") }
             MobilePackageReadStatus(model: model, page: .installed)
             if model.section(.installed).phase == .content {
@@ -22,6 +27,7 @@ struct MobilePackageCenterScreen: View {
                 }
             }
             MobilePackageActivitySection(model: model)
+            MobilePackageInstallationActivity(model: model.installation)
         }
         .accessibilityIdentifier("mobile.package.list").listStyle(.insetGrouped)
         .navigationTitle(L10n.string("mobile.nas-details.section.packages")).navigationBarTitleDisplayMode(.inline)
