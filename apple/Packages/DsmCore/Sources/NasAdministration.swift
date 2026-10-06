@@ -398,6 +398,8 @@ public struct NasPackage: Identifiable, Equatable, Sendable {
     public let canUninstall: Bool
     public let isUpgradeAvailable: Bool
     public let canUpgrade: Bool
+    /// 只来自本次套件列表；nil 表示字段缺失或不可信，不能猜作空集合。
+    public let dsmApps: [String]?
 
     public init(
         id: String,
@@ -413,7 +415,8 @@ public struct NasPackage: Identifiable, Equatable, Sendable {
         canStop: Bool = true,
         canUninstall: Bool = false,
         isUpgradeAvailable: Bool = false,
-        canUpgrade: Bool = false
+        canUpgrade: Bool = false,
+        dsmApps: [String]? = nil
     ) {
         self.id = id
         self.name = name
@@ -429,6 +432,7 @@ public struct NasPackage: Identifiable, Equatable, Sendable {
         self.canUninstall = canUninstall
         self.isUpgradeAvailable = isUpgradeAvailable
         self.canUpgrade = canUpgrade
+        self.dsmApps = dsmApps
     }
 }
 

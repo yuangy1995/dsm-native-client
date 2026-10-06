@@ -6912,11 +6912,11 @@
 "mobile.package.running" = "Running";
 "mobile.package.stopped" = "Stopped";
 "mobile.package.readError" = "Package information could not be read. Check the NAS connection and try again.";
-"mobile.package.denied" = "This account cannot change package settings or sources. Sign in with an account that has permission.";
+"mobile.package.denied" = "This account cannot manage packages. Sign in with an account that has permission.";
 "mobile.package.unavailable" = "The required package settings are unavailable on this NAS. Change them in DSM Package Center.";
-"mobile.package.changed" = "Package or source information changed or could not be fully read. Refresh before editing again.";
+"mobile.package.changed" = "Package or source information changed or could not be fully read. Refresh before trying again.";
 "mobile.package.storageError" = "The package operation record could not be saved. Unlock your device, check available storage, and try again.";
-"mobile.package.pending" = "The latest save status is unavailable. Restore the connection and refresh before changing package settings or sources again.";
+"mobile.package.pending" = "The latest package status is unavailable. Restore the connection and refresh before making more package changes.";
 "mobile.package.settingsSaved" = "Package settings saved.";
 "mobile.package.sourceSaved" = "Package source saved.";
 "mobile.package.sourceRemoved" = "Package source removed.";
@@ -7122,3 +7122,14 @@
 "mobile.nas.hardware.upsWarning" = "These settings control protection during a power failure. An incorrect connection, delay or shutdown setting may interrupt service or leave data unprotected.";
 
 "mobile.nas.hardware.lightResultUnavailable" = "The result of this indicator change is not available. Use DSM to view or change the lights. LanStash will not repeat this change.";
+"mobile.package.action.start" = "Start";
+"mobile.package.action.stop" = "Stop";
+"mobile.package.action.uninstall" = "Uninstall";
+"mobile.package.risk.start" = "Starting this package may begin background tasks and increase NAS resource usage.";
+"mobile.package.risk.stop" = "Stopping this package will interrupt its features and connections. Wait for any important tasks to finish before stopping it.";
+"mobile.package.risk.uninstall" = "Uninstalling this package will stop its services and may permanently remove its settings and data. Back up anything you need before continuing.";
+"mobile.package.status" = "Status";
+"mobile.package.installedAt" = "Installed";
+"mobile.package.controlUnavailable" = "This package cannot be managed in its current state. Refresh or open Package Center in DSM.";
+"mobile.package.notInstalled" = "Package is no longer installed";
+"mobile.package.returnToList" = "Go back to view your installed packages.";

@@ -353,6 +353,63 @@ final class NasAdministrationModelTests: XCTestCase {
         XCTAssertFalse(model.packageOperationIDs.contains("Example"))
     }
 
+    func test套件操作页面相等不能覆盖拒绝未提交或未知结果() async throws {
+        let statuses: [MutationResultStatus] = [.permissionDenied, .unsupported, .confirmedFailure, .submittedButUnverified]
+        for action in [NasPackageAction.start, .stop, .uninstall] {
+            for status in statuses {
+                let original = package(status: action == .start ? "stopped" : "running",
+                    canStart: action == .start, canStop: action != .start, canUninstall: true)
+                let current = package(status: action == .start ? "running" : "stopped",
+                    canStart: action != .start, canStop: action == .start, canUninstall: true)
+                let repository = NasAdministrationRepositoryStub(packages: [original])
+                let model = NasSettingsModel(repository: repository)
+                model.setModuleEnabled(true)
+                await model.activate(.packages)
+                let unknown = status == .submittedButUnverified
+                await repository.setPackageResult(try MutationResult(status: status,
+                    operation: "packageTest", submitted: unknown, requiresRefresh: true,
+                    counts: .init(succeeded: 0, failed: unknown ? 0 : 1, unknown: unknown ? 1 : 0)),
+                    packages: action == .uninstall ? [] : [current])
+                do {
+                    _ = try await model.controlPackage(id: "Example", action: action)
+                    XCTFail("页面相等不能覆盖原操作结果：\(action) / \(status)")
+                } catch let error as AppError {
+                    if action == .uninstall {
+                        let feedback = NasSettingsModel.packageUninstallFeedback(for: status)
+                        XCTAssertEqual(error.category, feedback.category)
+                        XCTAssertEqual(error.safeUserMessage, L10n.string(feedback.resourceKey))
+                    } else {
+                        let feedback = NasSettingsModel.packageControlFeedback(for: status, action: action)
+                        XCTAssertEqual(error.category, feedback.category)
+                        XCTAssertEqual(error.safeUserMessage, L10n.string(feedback.resourceKey))
+                    }
+                }
+                XCTAssertFalse(model.packageOperationIDs.contains("Example"))
+            }
+        }
+    }
+
+    func test套件停止不能把未知状态认作成功() async throws {
+        for state: String? in [nil, "unknown", "starting", "broken"] {
+            let repository = NasAdministrationRepositoryStub(packages: [
+                package(status: "running", canStart: false, canStop: true, canUninstall: true)
+            ])
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            await model.activate(.packages)
+            let current = package(status: state, canStart: false, canStop: false, canUninstall: true)
+            await repository.setPackageResult(try MutationResult(status: .submittedButUnverified,
+                operation: "packageStop", submitted: true, requiresRefresh: true,
+                counts: .init(succeeded: 0, failed: 0, unknown: 1)), packages: [current])
+            do {
+                _ = try await model.controlPackage(id: "Example", action: .stop)
+                XCTFail("未知状态不能表示停止成功")
+            } catch let error as AppError {
+                XCTAssertEqual(error.safeUserMessage, L10n.string("package.stop.unverified"))
+            }
+        }
+    }
+
     func test套件控制在模型层阻止同一套件重复提交() async throws {
         let repository = NasAdministrationRepositoryStub(
             delayNanoseconds: 50_000_000,
@@ -1948,7 +2005,7 @@ final class NasAdministrationModelTests: XCTestCase {
     }
 
     private func package(
-        status: String,
+        status: String?,
         canStart: Bool,
         canStop: Bool,
         canUninstall: Bool,
@@ -2172,6 +2229,12 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
     private var packages: [NasPackage]
     private let packageControlStatus: MutationResultStatus
     private let packageUninstallStatus: MutationResultStatus
+    private var overriddenPackageResult: MutationResult?
+    private var packagesAfterOverriddenResult: [NasPackage] = []
+    func setPackageResult(_ value: MutationResult, packages: [NasPackage]) {
+        overriddenPackageResult = value
+        packagesAfterOverriddenResult = packages
+    }
     private var accountDirectory = NasAccountDirectory(
         users: [
             NasAccount(
@@ -3202,6 +3265,10 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
         action: NasPackageAction
     ) async throws -> MutationResult {
         packageControlRequests += 1
+        if let overriddenPackageResult {
+            packages = packagesAfterOverriddenResult
+            return overriddenPackageResult
+        }
         if delayNanoseconds > 0 {
             try await Task.sleep(nanoseconds: delayNanoseconds)
         }
@@ -3266,6 +3333,10 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
 
     func uninstallPackageResult(id: String) async throws -> MutationResult {
         packageControlRequests += 1
+        if let overriddenPackageResult {
+            packages = packagesAfterOverriddenResult
+            return overriddenPackageResult
+        }
         switch packageUninstallStatus {
         case .confirmedSuccess:
             packages.removeAll { $0.id == id }

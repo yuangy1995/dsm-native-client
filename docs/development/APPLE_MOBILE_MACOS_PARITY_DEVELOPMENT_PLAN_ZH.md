@@ -22,6 +22,28 @@
 - 用户授权必要的隔离测试及模拟器操作，禁止影响 NAS 真实数据；官方已登录页面只作必要只读核对。TestFlight 和移动正式发布不在本次发布范围。
 - 共享目标不增加第三方依赖；恢复队列独立版本化，不迁移旧配置、不存明文凭据；回滚停用新增入口并保留原配置。M8 的扩展身份、共享权限及存储在实施前列明必要性、影响和回滚。
 
+## 2026-10-06 M6e2 套件启停与卸载
+
+开始基线 `c528eb0e`，main 工作区干净，硬件/UPS 已独立完成本机验收并提交。当前负责人单一修改既有套件读取/启停/卸载流水线、移动套件中心详情及现有恢复记录、双语资源、正式测试、工程生成和对应文档；Mac 仅修正已授权的套件反馈并补回归。继续用户离线自主决策授权，不修改 Windows/Android 源码，不对现有 NAS 套件执行自动写测试。
+
+| macOS 证据 | 两端等价结果与交互转换 | 契约与安全依赖 | 当前验证及明确非目标 |
+| --- | --- | --- | --- |
+| `PackageCenterView`、`NasSettingsModel.controlPackage`；共享 `controlPackageResult/uninstallPackageResult` | 已安装列表/搜索进入原生详情，启动/停止/卸载显示具体后果并确认；绑定原套件、逐次权限，提交前记录、未知不重放和原账号只读恢复 | 已记录 Package.list v2、feasibility v1、Control/Uninstallation v1；稳定 ID、完整列表、可用操作与原安装身份；与安装/更新、设置/来源互斥 | 只读基线发现 Mac 页面状态可覆盖明确拒绝或未提交结果，未知状态也可能被判作停止；共享卸载缺少与确认对象绑定的重读和持久检查点。已合成复现并最小修正，移动主流程、恢复和两端 UI 已完成本机验收；安装/更新/SPK 沿 M6e3，不新增其他套件动作 |
+
+复用移动现有套件恢复体系，持久化原账号上下文、操作、目标/原状态摘要及提交阶段，不保存名称、说明、凭据或任意控制参数。采用当前开发数据结构，不为未发布移动端增加旧格式迁移；Mac 登录和存储保持。回滚停用新增入口并保留未完成操作记录，不自动恢复被卸载内容。此调整属于既有 M0–M8 独立恢复授权，不增加依赖、权限、应用身份或最低版本。全部运行时能力、危险确认、原对象和重复提交保护必须保留；真实环境缺口后续列为具体 `PENDING_USER_VALIDATION`，不把尚未完成源码写成设备待验。
+
+已接移动原生详情和三种独立后果确认，并沿用 M6e1 同一记录文件扩展动作摘要；没有平行控制实现。共享层保留旧调用签名，移动增加确认时的原对象和提交/接受检查点。原目标的版本、安装类别、时间、状态、应用标识及可用操作逐次比较；固定版本，卸载补齐写前重读，应用标识来自本次读取，不依赖可被覆盖的缓存。Mac 页面误报先由两条测试复现 16 条断言失败，最小修正后相关 14 条通过。
+
+实现后独立集成及只读对抗复核由当前负责人单独执行，不冒称另一模型。检查原安装、三类管理互斥、完整列表、权限/证书、记录失败、未提交/明确拒绝、账号切换和迟到结果。复核补充：记录目录损坏或内存中的在途记录文件消失不能解除保护；NAS 明确输入拒绝不能混成响应损坏再认领状态。共享 41 条聚焦初轮通过；最终共享 2968 项 XCTest（172 条既有跳过）及 12 项 Swift Testing、Mac 主 App/扩展双架构构建、两端完整各 1578 项单元（各 4 条既有跳过）通过。七项新控制 UI、三项旧设置/来源 UI 以及浅深色/中文大字在两端均有分轮通过证据，72 张合成截图已逐张检查；最终空/错误标题换行、恢复按钮及目标显示专项两端通过。精确命令、初轮失败及修正见[本片验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-06-移动-m6e2-套件启停卸载与恢复)。
+
+`PENDING_USER_VALIDATION`（仅已实现套件操作的真实环境条件）：
+
+| 前置条件 | 操作与预期结果 | 脱敏回传及范围 |
+| --- | --- | --- |
+| 已记录 DSM 与套件版本、可中断的专用 NAS、管理员及普通账号、Agent/操作者新建的可丢弃测试套件与数据 | 启动、停止分别取消和确认，检查真实服务/后台任务；卸载先备份其专用数据，取消零写，确认后核对列表、相关服务及专用数据后果。系统套件、依赖拒绝、繁忙和未知状态不能冒报成功 | DSM/套件版本、权限类别、动作阶段与脱敏错误；不回传地址、账号、路径、响应或凭据。合成测试不证明真实服务停止或卸载数据处理 |
+| 可断网、终止 App、撤权、换证书或从另一客户端重装同一测试套件的隔离环境 | 三动作提交前后分别中断，重启只读恢复且其他套件写保持互斥；明确拒绝不因后来同状态成功。版本/安装时间变化不认领旧动作，部分列表不证明卸载完成，证书异常停止请求 | 原字段是否存在、阶段与请求数量类别。若列表没有安装时间，同版本同类型重装可能无法由其余字段区分；并发 NAS 修改与写前检查不是原子事务，需验证具体返回字段/时序 |
+| iPhone/iPad 真机、锁屏和低剩余空间、VoiceOver、键盘、最大动态文字与 iPad 分屏 | 存储无法保存时零写，解锁后保留原阶段；详情/确认/取消/返回/刷新可触达，卸载风险完整显示。切换账号不显示或续写旧账号内容 | OS/设备类别、控件与脱敏失败步骤；系统文件保护与完整辅助功能需独立验收，不改变本次客户端能力/权限/确认门 |
+
 ## 2026-10-06 M6c2 硬件与 UPS 设置
 
 开始基线 `a776993c`，main 工作区干净。当前负责人单一修改共享硬件读取/保存和既有服务管理恢复链、移动硬件表单、双语资源、正式测试、工程生成及对应文档；Mac 仅修正已授权的硬件保存反馈并补回归。继续已有用户离线自主决策授权，不修改 Windows/Android 实现，不执行影响真实 NAS 散热、电源或 UPS 的写测试。
@@ -267,7 +289,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M6 账号、群组、网络、安全 | NasAdministrationView | 分步表单/当前账号保护；User/Group/Ethernet/FileServ/Security；高风险 | M6b1 账号/群组与 M6b2 文件服务/终端/代理已接并通过两端验收；M6b3 远程访问、M6b4 网卡原配置编辑与断连恢复、M6b5 安全四组保存与原防火墙任务恢复已完成当前环境验收 |
 | M6 硬件、UPS、内存、电源计划 | PowerScheduleEntryEditor、NasAdministrationView | 原生编辑器；Hardware/UPS/ZRAM/PowerSchedule；系统写 | M6c1 内存压缩/电源计划与 M6c2 硬件/UPS 已接并完成两端本机验收；六组独立结果、灯光两步回执和主动续接，未知字段不补 false |
 | M6 计划任务、连接、电源 | NasAdministrationModel | 后果确认与断连恢复；TaskScheduler/CurrentConnection/System；高风险 | M6d1 计划任务及 M6d2 连接/即时电源已接完整管理与持久恢复。接受不代表脚本完成或已重启，未知不重发 |
-| M6 套件中心 | PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 安装准备/卷/许可/进度、更新/SPK/设置；Package；内部写 | M6e1 设置/自动更新与来源、M6e3 目录/安装/更新/SPK 和分步恢复已接并完成当前环境验收；控制继续独立 M6e2，提交前取消与提交后恢复分别处理 |
+| M6 套件中心 | PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 安装准备/卷/许可/进度、更新/SPK/设置；Package；内部写 | M6e1 设置/自动更新与来源、M6e3 目录/安装/更新/SPK 和分步恢复已接并完成当前环境验收；M6e2 启停/卸载及持久恢复已接，共享/Mac、两端完整单元及实际 UI 已通过，提交前取消与提交后恢复分别处理 |
 | M7 容器生命周期/日志 | ServiceManagementView、ServiceManagementModel | 详情及操作确认；Docker 稳定身份；高风险 | M7a 单项/多项启停重启、逐项恢复、活动正文/用户和现有资源字段已完成两端回归；按明确套件授权开放，删除另片继续 |
 | M7 映像、网络、项目 | ContainerImagePullModel、ServiceManagementView | 搜索/tag/拉取、网络/项目表单；Registry.search v1；内部写 | M7b 搜索/标签/下载及跨重启恢复已通过两端单元和实际 UI；读取暂失保留原任务，明确 1202 失败结束。M7c1 单项/多项映像删除与恢复已通过两端回归；网络管理另片继续，项目写及容器创建编辑的基线/契约缺口不猜实现 |
 | M7 VMM 操作与创建 | ServiceManagementView、ServiceManagementModel | 分步配置/稳定目标；Virtualization；高风险 | 只有只读包装器；先修正同名即成功不足，创建归属和配置不足保持未知 |
@@ -332,13 +354,13 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 | terminal / Model.saveTerminal | SSH/Telnet/端口及风险说明 | dsm-terminal-settings；管理写 | M6b2 完整编辑、风险确认与未知恢复已接，两端实际 UI/共享及 Mac 回归通过 |
 | network / Model.saveProxy | 代理开关/地址/端口；未知字段不可编辑 | dsm-proxy-settings；网络写 | M6b2 启用/停用与配置编辑恢复已接，两端实际 UI/共享及 Mac 回归通过 |
 | interfaces / Model.saveEthernetInterface | 网卡详情/原配置编辑与断连恢复 | dsm-ethernet-settings；高风险网络写 | M6b4 已接列表/搜索、DHCP/静态地址、MTU/VLAN、单目标保存、明确新地址恢复；两端单元/实际 UI、共享/Mac 回归通过，真实网络另验 |
-| hardware / Model.saveHardware | 风扇/灯光/蜂鸣/休眠/UPS 原字段编辑 | dsm-hardware-settings；系统写 | 待 M6c |
+| hardware / Model.saveHardware | 风扇/灯光/蜂鸣/休眠/UPS 原字段编辑 | dsm-hardware-settings；系统写 | M6c2 六组保存、灯光分步回执和明确续接已完成两端本机验收；真实物理行为另验 |
 | powerSchedule / View 电源计划编辑器 | NAS 当地时间、筛选、完整清单草稿及整体保存 | dsm-power-schedule；高风险写 | M6c1 完整管理与恢复已接，两端实际 UI、共享及 Mac 回归通过 |
 | remoteAccess / Model.saveRemoteAccess | QuickConnect/路由设置及中继断连保护 | dsm-remote-access-settings；网络写 | M6b3 两项管理/当前中继保护/持久恢复已接，两端实际 UI、共享及 Mac 回归通过 |
 | security / Model.saveSecurity | 自动封锁/DoS/防火墙原状态及差量 | dsm-security-settings；权限/高风险写 | M6b5 四组保存/部分结果/原任务恢复已接；两端完整单元及六项新 UI、共享/Mac 回归通过，真实安全设置另验 |
 | region / Model.saveRegion | 区域格式/时区/时间源/校时 | dsm-region-time-settings；管理写 | M6a3 已接完整表单与分步恢复，两端实际操作及当前环境验收通过 |
 | ddns / Model.saveDDNS、testDDNS | 服务商/条目及明确提交；不持久保存口令 | dsm-ddns-settings；凭据/网络写 | M6a3 已接完整管理与恢复，两端实际交互通过 |
-| packages / PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 列表/目录、卷、许可、SPK、更新、进度、来源和设置 | dsm-package-control/installation；套件写 | M6e1 设置/自动更新与来源、M6e3 目录/安装/更新/SPK 及恢复已完成当前环境验收；M6e2 控制继续后续 |
+| packages / PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 列表/目录、卷、许可、SPK、更新、进度、来源和设置 | dsm-package-control/installation；套件写 | M6e1 设置/自动更新与来源、M6e3 目录/安装/更新/SPK 及恢复已完成当前环境验收；M6e2 三动作及持久恢复已接；共享/Mac、两端完整单元与七项新 UI 已通过，最终窄列标题与恢复显示也已复验通过 |
 | tasks / Model.saveTask、runTask、loadTaskResults | 草稿、启停/执行/删除、结果与输出 | dsm-task-scheduler；脚本高风险写 | M6d1 完整管理、记录/输出和恢复已接，十项新实际 UI 两端都有通过证据；真实执行待验 |
 | accounts / Model.saveAccount、saveGroup | 账号/群组表单与当前账号保护 | dsm-account-directory；权限高风险写 | M6b1 完整管理与恢复已接，两端单元/实际 UI 及共享/Mac 回归通过 |
 | shareAccess / View 共享访问 | 当前账号可见共享权限摘要与搜索 | FileStation.List / dsm-share-access；只读 | M6a1 读取/两端交互通过；不冒充完整 ACL 管理 |
@@ -540,7 +562,7 @@ Apple 共享读取只增补本管理入口所需的单项失败信息，旧 Mac 
 
 ### M6e 套件中心实施拆分
 
-M6e3 于 2026-10-06 从 `26391a5d` 开始，工作区干净；当前三个本地提交等待前一批云端模块组结束后正常推送。该片已完成源码与当前环境验收；真实 NAS 和系统条件另列下表。唯一修改范围为共享安装管线的兼容检查点、移动目录/安装表单/进度与受保护恢复记录、对应合成与两端测试、必要组合根/双语资源/生成工程及本账本。先补共享唯一写入与逐依赖检查，再接移动原生主流程，随后独立集成/对抗复核和两端实际界面验收；M6e2 的 Mac 反馈范围仍独立待决定。
+M6e3 于 2026-10-06 从 `26391a5d` 开始，工作区干净；当前三个本地提交等待前一批云端模块组结束后正常推送。该片已完成源码与当前环境验收；真实 NAS 和系统条件另列下表。唯一修改范围为共享安装管线的兼容检查点、移动目录/安装表单/进度与受保护恢复记录、对应合成与两端测试、必要组合根/双语资源/生成工程及本账本。先补共享唯一写入与逐依赖检查，再接移动原生主流程，随后独立集成/对抗复核和两端实际界面验收；M6e2 的 Mac 反馈现已按 2026-10-06 离线授权纳入独立切片，见本页顶部账本。
 
 macOS 依据为 `PackageCenterView.swift`、`PackageInstallationSheet.swift`、`NasAdministrationModel.prepare/start/configure/advancePackageInstallation`；共享依据为 `NasPackageCenter.swift` 与 `DsmNasAdministrationRepository+Package{Catalog,Installation,Upload}.swift`。两端等价结果包括目录分类/搜索/详情、安装/更新依赖清单与位置确认、许可和受支持的原生选项、系统 SPK 选择、进度与仅限下载/本次暂存的取消。后台常驻不照搬桌面，离开页面仍可继续当前 App 进程内的读取，退出后仅恢复有证据的状态，不自动重放任何安装或后续依赖。
 
@@ -551,7 +573,7 @@ macOS 依据为 `PackageCenterView.swift`、`PackageInstallationSheet.swift`、`
 | 切片 / macOS 证据 | 两端用户结果与交互转换 | 契约、风险和当前状态 |
 | --- | --- | --- |
 | M6e1 设置与来源 / PackageCenterSettingsView、Model.load/savePackageCenterSettings、load/save/deletePackageSource | 已安装列表入口→原生设置/自动更新表单；来源列表、添加/编辑/移除；自动安装与来源信任分别说明实际后果 | Package.Setting/Feed v1、Package list v2；内部写/来源信任。原请求复用；逐次权限、完整基线和持久恢复已接，十一项新实际 UI 均有两端通过结果 |
-| M6e2 已安装套件控制 / PackageCenterView、Model.controlPackage | 列表/搜索/详情、启动/停止/卸载独立确认、稳定目标与未知恢复；不照搬右键或悬停 | Package/Control/Uninstallation。只读发现 Model.packageActionIsVerified 把任意非 running/active（包括未知）判作停止，并可在结果分支后覆盖；已请求仅该 Mac 反馈及回归的范围决定，未改 Mac 或开始此控制切片 |
+| M6e2 已安装套件控制 / PackageCenterView、Model.controlPackage | 列表/搜索/详情、启动/停止/卸载独立确认、稳定目标与未知恢复；不照搬右键或悬停 | Package/Control/Uninstallation。已按离线自主授权修正 Mac 缓存覆盖及未知状态误报，移动原对象管理/记录/只读恢复已接；共享 2968 XCTest/12 Swift Testing、Mac 双架构、两端各 1578 单元及七项新 UI/三项旧 UI 分轮通过，最终窄列标题与恢复显示复验通过 |
 | M6e3 安装、更新与 SPK / PackageInstallationSheet、Model.prepare/start/configure/advancePackageInstallation | 官方/第三方/测试版目录、分类/搜索/详情、安装清单与依赖、卷、许可/字段、SPK 选择、进度、取消下载和中断恢复 | Package.Server/Installation/Info/Download。共享检查点、移动目录/确认/选项/进度和摘要恢复已接，两端完整 1463 单元与全部十项实际 UI 通过；不把未知当失败重试，不保存口令或外部下载地址，不以旧同版本认领重装成功；付费/测试版首次协议及不支持表单沿用 DSM 路径 |
 
 首片 M6e1 的唯一修改范围为：移动套件列表/设置/来源模型、原生表单/确认、受保护记录、合成环境及对应测试；共享 Package 设置/来源复用原参数并增量加入管理快照、写前/接受回执检查点与当前权限回调；必要组合根、路由、生成工程、双语资源和本账本。M6e2 的 macOS 反馈范围决定不阻塞独立的 M6e1；Mac App 继续只读，Windows/Android 只记录影响。

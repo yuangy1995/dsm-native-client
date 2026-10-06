@@ -6912,11 +6912,11 @@
 "mobile.package.running" = "运行中";
 "mobile.package.stopped" = "已停止";
 "mobile.package.readError" = "无法读取套件信息。请检查 NAS 连接后重试。";
-"mobile.package.denied" = "当前账号无权修改套件设置或来源。请使用具备权限的账号重新登录。";
+"mobile.package.denied" = "当前账号无权管理套件。请使用具备权限的账号重新登录。";
 "mobile.package.unavailable" = "当前 NAS 不提供所需的套件设置。请在 DSM 套件中心修改。";
-"mobile.package.changed" = "套件或来源信息已变化，或未能完整读取。请刷新后重新编辑。";
+"mobile.package.changed" = "套件或来源信息已变化，或未能完整读取。请刷新后重新操作。";
 "mobile.package.storageError" = "无法保存套件操作记录。请解锁设备、检查剩余空间后重试。";
-"mobile.package.pending" = "暂时无法取得最新保存状态。请恢复连接后刷新，之后才能继续修改套件设置或来源。";
+"mobile.package.pending" = "暂时无法取得套件最新状态。请恢复连接后刷新，之后才能继续操作套件。";
 "mobile.package.settingsSaved" = "套件设置已保存。";
 "mobile.package.sourceSaved" = "套件来源已保存。";
 "mobile.package.sourceRemoved" = "套件来源已移除。";
@@ -7122,3 +7122,14 @@
 "mobile.nas.hardware.upsWarning" = "这些设置决定断电时的保护方式。连接、等待时间或关机设置不正确，可能中断服务或使数据失去保护。";
 
 "mobile.nas.hardware.lightResultUnavailable" = "无法获取这次灯光修改的结果。请通过 DSM 查看或调整灯光，LanStash 不会重复执行这次修改。";
+"mobile.package.action.start" = "启动";
+"mobile.package.action.stop" = "停止";
+"mobile.package.action.uninstall" = "卸载";
+"mobile.package.risk.start" = "启动后，套件可能开始后台任务并增加 NAS 资源占用。";
+"mobile.package.risk.stop" = "停止会中断此套件的功能和连接。请在重要任务完成后再停止。";
+"mobile.package.risk.uninstall" = "卸载会停止此套件的服务，并可能永久删除其设置和数据。请先备份需要保留的内容。";
+"mobile.package.status" = "状态";
+"mobile.package.installedAt" = "安装时间";
+"mobile.package.controlUnavailable" = "此套件当前无法操作。请刷新，或在 DSM 套件中心处理。";
+"mobile.package.notInstalled" = "套件已不在安装列表中";
+"mobile.package.returnToList" = "返回查看其他已安装套件。";

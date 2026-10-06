@@ -3249,3 +3249,51 @@ git diff --check
 ```
 
 九项新增硬件 UI 与原终端回归均已有两端分轮通过证据。逐张检查加载、空内容、错误/缺字段、不支持、权限、未知范围、普通保存、UPS、灯光拒绝与重启恢复、浅深主题和中文大字操作截图，保留最终场景及主题审查图于 `apple/Apps/DsmMobile/build/m6c2-preview/`；临时附件导出、活动索引、导出日志和重复预览已精确清理，正式结果包与验证日志保留。工程用锁定 XcodeGen 重新生成后与当前文件一致；双语 6780/2188/3402 项、契约 179 项/1 项结果、fixture 29 组/48 项私有引用、API 目录、文档和差异检查均通过。提交前 fetch 确认 origin/main 仍为 `a776993c`，没有远端新提交。本片为本机验收完成，未发布安装包，也不代表云端或真实 NAS 验收完成。
+
+
+## 2026-10-06 移动 M6e2 套件启停卸载与恢复
+
+开始于 `c528eb0e`，main 工作区只有本片新增账本。Mac 页面同状态/目标消失可以覆盖明确拒绝或未知、未知状态可误报停止，先新增两条测试复现 **16 条断言失败**；删除页面覆盖分支后，14 项相关回归通过。仅修已授权的结果反馈，未安装或启动 Mac 应用。新 Swift 测试最初两处编译错误（测试反馈类型不同、只读状态属性赋值）先修正，未当作行为复现证据。
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'test套件操作页面相等|test套件停止不能把未知状态'
+swift test --package-path apple --jobs 2 --filter 'NasAdministrationModelTests.test套件|NasAdministrationModelTests.test暂停套件|NasAdministrationModelTests.test系统套件'
+swift test --package-path apple --jobs 2 --filter 'NasPackageControlFlowTests|NasAdministrationModelTests.test套件|DsmNasAdministrationRepositoryTests.test套件|DsmNasAdministrationRepositoryTests.test启动套件|DsmNasAdministrationRepositoryTests.test卸载套件'
+swift test --package-path apple --jobs 2
+```
+
+本片日志与结果置于忽略目录 `build/m6e2-*`。共享最初聚焦运行在旧卸载输入缺少新预读的情况下失败，并停在等待尚未到达的写边界，已终止该次进程；调整输入为操作内部预读、保留原断言。新增测试首次辅助构造参数与现有 Repository 初始化签名不符，修正后 R3 聚焦 **41 项通过**。完整共享首轮 **2967 XCTest、172 条既有条件跳过、1 失败**，唯一失败为 `RequestFixtureContractTests.test套件卸载请求与共享Fixture一致` 的旧预先加载输入且缺安装类别；将其改为真实新预读顺序并补合成 `install_type`，请求 Fixture 与精确写参数断言不改。R2 完整 **2967 XCTest（172 条既有跳过）和 12 Swift Testing 通过**。之后独立复核新增 NAS 明确输入拒绝回归，最终完整结果继续记于本节。
+
+移动 `build-for-testing` 两轮均成功，均使用本机临时签名 `CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`，没有修改应用身份、正式权限或凭据保护。工程经既定 XcodeGen 生成。首轮两端完整各 **1578 项单元（各 4 条既有跳过）仅一项失败**：既有损坏记录测试期望存储错误，因新增目录损坏识别发生得更早，后续普通前置判断把提示覆盖成信息变化；零写入断言及新增 15 项控制行为均通过。修正模型保留存储错误归属，未降低既有断言；后续复验见本节续记。
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/m6e2-phone.xcresult '-only-testing:DsmMobileTests' '-only-testing:DsmMobileUITests/MobilePackageControlUITests' '-only-testing:DsmMobileUITests/MobilePackageCenterUITests/test未知设置跨页面禁用且重启只读恢复'
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+```
+
+iPad 同样选择，设备为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果包 `build/m6e2-pad.xcresult`。首轮主题 iPhone 浅色、iPad 深色。命令末尾额外选择的旧设置测试名不存在，所以该选择未执行，不能宣称旧 UI 已覆盖；后续用源码中真实名称分别运行受共用文案影响的三项旧 UI，保留本次新类的实际结果。
+
+本片将新控制 UI 类纳入每设备 administration 组，三组互补覆盖回归 3 项通过；双语资源 6791/2188/3402、179 个请求 Fixture/1 个结果示例、29 组 Fixture/48 项私有 API 文档引用均通过。真实 NAS 套件未参与写测试，实际服务/卸载数据、并发重装及设备锁屏/辅助功能按移动主计划三行 `PENDING_USER_VALIDATION` 单独验收。
+
+
+最终共享 R3 为 **2968 XCTest（172 条既有条件跳过、0 失败）及 12 Swift Testing 通过**，`build/m6e2-shared-full-r3.log`；Mac Release 构建成功，主 App 和 File Provider 的 `lipo -archs` 均为 `x86_64 arm64`，`build/m6e2-mac-build.log`。未安装或启动 Mac 包。
+
+首轮新控制 UI 两端七项全部通过：iPhone 415.795 秒、iPad 422.858 秒，但因上述单元提示分类失败整条命令 exit 65。实际导出并检查两端 36 张合成截图，确认输入/确认/取消、五态、拒绝和重启恢复；截图另外发现 iPad 双侧栏下空状态与错误标题截断，最后改为完整换行。活动记录补充当前套件名称用于区分目标，未知记录的恢复按钮改用“刷新”，不再误称“刷新设置”。
+
+正确保留存储错误后 R2 两端完整各 **1578 单元、4 条既有跳过、0 失败**，iPhone 49.107 秒、iPad 47.362 秒；两端三项旧套件 UI 与新启动/中文大字两项全部通过，命令均 exit 0。结果包 `build/m6e2-phone-r2.xcresult` / `build/m6e2-pad-r2.xcresult`；主题交换为 iPhone 深色、iPad 浅色。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/m6e2-phone-r2.xcresult '-only-testing:DsmMobileTests' '-only-testing:DsmMobileUITests/MobilePackageCenterUITests/test未知设置重启后只读恢复且不允许再次保存' '-only-testing:DsmMobileUITests/MobilePackageCenterUITests/test未知来源重启后按原目标恢复且不能清记录重发' '-only-testing:DsmMobileUITests/MobilePackageCenterUITests/test明确权限拒绝保留失败而不显示保存成功' '-only-testing:DsmMobileUITests/MobilePackageControlUITests/test启动取消零写后确认再停止并查看结果' '-only-testing:DsmMobileUITests/MobilePackageControlUITests/test中文大字详情与风险确认取消均可触达'
+```
+
+iPad 替换为相应设备及 `build/m6e2-pad-r2.xcresult`，选择完全一致。最终只针对标题换行、恢复按钮及目标显示的 UI 复验继续记录如下，不无故重复共享/Mac 全量。
+
+
+R2 五项 UI 的总用例时间为 iPhone **305.773 秒**、iPad **317.868 秒**，24 张实际截图已检查。R4 签名构建后，最终 R3 专项两项 UI 两端全部通过：iPhone **168.301 秒**、iPad **162.321 秒**，两条命令 exit 0；实际 12 张截图确认 iPad 窄列标题没有省略号截断，未知操作显示原套件和“刷新”，重启仍只读恢复。源码/行为层没有后续修改，因此不重复共享/Mac 全量。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/m6e2-phone-r3.xcresult '-only-testing:DsmMobileUITests/MobilePackageControlUITests/test列表加载空内容失败恢复和搜索为空' '-only-testing:DsmMobileUITests/MobilePackageControlUITests/test未知启动保持保护重启后只读恢复'
+```
+
+iPad 同样选择并使用对应设备/`build/m6e2-pad-r3.xcresult`。各轮共 72 张合成截图均已实际查看，预览保留在 `build/m6e2-preview/`；临时导出目录、清单、导出日志、审查网格和无关实时截图已清理，正式测试结果保留供复核。两端模拟器已恢复浅色。工程重新生成一致，双语/硬编码、契约/Fixture、API 目录、文档和差异检查通过；本片没有真实 NAS 写入，没有正式发布。

@@ -137,10 +137,6 @@ enum DsmDynamicJSON: Decodable, Sendable, Equatable {
     }
 }
 
-struct PackageControlMetadata: Sendable {
-    let dsmApps: [String]
-}
-
 struct DiskTestHistorySnapshot: Sendable {
     let lastQuickTest: String?
     let lastExtendedTest: String?

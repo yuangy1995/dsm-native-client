@@ -16,6 +16,7 @@ final class MobilePackageCenterModel {
     private(set) var sections: [Page: MobileNasDetailsSection<Content>] = [:]
     private(set) var permissions: [Page: Bool] = [:]
     private(set) var errors: [Page: Failure] = [:]
+    private(set) var supportedActions: [NasPackageAction] = []
     private var activeIDs: Set<UUID> = []
     let recovery: MobilePackageOperationStore
     let installation: MobilePackageInstallationModel
@@ -39,7 +40,7 @@ final class MobilePackageCenterModel {
     }
     func deactivate() {
         activation = UUID(); installation.deactivate(); cancelReads(); operations.values.forEach { $0.cancel() }
-        context = nil; repository = nil; authorize = nil; sections = [:]; permissions = [:]; errors = [:]
+        context = nil; repository = nil; authorize = nil; sections = [:]; permissions = [:]; errors = [:]; supportedActions = []
     }
     func cancelReads() { Page.allCases.forEach(cancelRead); installation.cancelRead() }
     func cancelRead(_ page: Page) { generations[page] = UUID(); reads[page]?.cancel(); reads[page] = nil; sections[page]?.cancelLoading() }
@@ -63,22 +64,24 @@ final class MobilePackageCenterModel {
             do {
                 let value: Content
                 switch page {
-                case .installed: value = .installed(try await repository.loadPackages())
+                case .installed: value = .installed(try await repository.loadPackagesForManagement())
                 case .preferences: value = .preferences(try await repository.loadPackagePreferencesForManagement())
                 case .sources: value = .sources(try await repository.loadPackageSourcesForManagement())
                 }
                 let allowed: Bool, failure: Failure?
                 do { allowed = try await authorize?() == true; failure = allowed ? nil : .denied }
                 catch { if error is CancellationError || Self.failure(error) == .trust { throw error }; allowed = false; failure = Self.failure(error) }
+                let actions = page == .installed ? await repository.availablePackageActions() : []
                 guard let self, self.activation == token, self.generations[page] == generation, !Task.isCancelled else { return }
                 self.sections[page, default: .init()].finish(value, isEmpty: value.isEmpty)
+                if page == .installed { self.supportedActions = actions }
                 self.permissions[page] = allowed; self.errors[page] = failure; self.recovery.reload()
                 if allowed {
                     do {
                         switch value {
                         case .preferences(let value): try self.recovery.resolve(value, context: context)
                         case .sources(let value): try self.recovery.resolve(value, context: context)
-                        case .installed: break
+                        case .installed(let value): try self.recovery.resolve(value, context: context)
                         }
                     } catch { self.errors[page] = .storage }
                 }
@@ -113,7 +116,7 @@ final class MobilePackageCenterModel {
     }
     @discardableResult func perform(_ change: NasPackagePreferenceChange, activation token: UUID) -> UUID? {
         guard token == activation else { return nil }
-        guard canPerform(change), let repository, let context, let authorize else { errors[change.page] = .changed; return nil }
+        guard canPerform(change), let repository, let context, let authorize else { errors[change.page] = recovery.failed ? .storage : .changed; return nil }
         let store = recovery, entry: MobilePackageOperationStore.Entry
         do { entry = try store.reserve(change, context: context) } catch { errors[change.page] = .storage; return nil }
         activeIDs.insert(entry.id); errors[change.page] = nil
@@ -159,9 +162,61 @@ final class MobilePackageCenterModel {
         return entry.id
     }
     func waitForOperation(_ id: UUID) async { await operations[id]?.value }
+    func canControl(_ package: NasPackage, action: NasPackageAction) -> Bool {
+        canEdit(.installed) && supportedActions.contains(action) && package.allowsControl(action)
+            && installed.first(where: { $0.id == package.id })?.matchesControlBaseline(package) == true
+    }
+    @discardableResult func performControl(_ package: NasPackage, action: NasPackageAction, activation token: UUID) -> UUID? {
+        guard token == activation else { return nil }
+        guard canControl(package, action: action), let repository, let context, let authorize else { errors[.installed] = recovery.failed ? .storage : .changed; return nil }
+        let store = recovery, entry: MobilePackageOperationStore.Entry
+        do { entry = try store.reserve(package, action: action, context: context) } catch { errors[.installed] = .storage; return nil }
+        activeIDs.insert(entry.id); errors[.installed] = nil
+        operations[entry.id] = Task { [weak self] in
+            defer { store.end(entry.id); self?.activeIDs.remove(entry.id); self?.operations[entry.id] = nil }
+            do {
+                let result = try await repository.controlPackageResult(package, action: action) { [weak self] stage in
+                    if stage == .willSubmit {
+                        guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+                    }
+                    try await MainActor.run {
+                        if stage == .willSubmit {
+                            guard let self, self.activation == token, !Task.isCancelled else { throw CancellationError() }
+                            self.cancelRead(.installed)
+                        }
+                        try store.checkpoint(entry.id, stage)
+                    }
+                }
+                switch result.status {
+                case .confirmedSuccess: try store.finish(entry.id, phase: .succeeded)
+                case .cancelledBeforeSubmission: try store.finish(entry.id, phase: .cancelled)
+                case .permissionDenied:
+                    try store.finish(entry.id, phase: .failed, failure: .denied)
+                    if self?.activation == token { self?.permissions[.installed] = false; self?.errors[.installed] = .denied }
+                case .unsupported:
+                    try store.finish(entry.id, phase: .failed, failure: .unavailable)
+                    if self?.activation == token { self?.permissions[.installed] = false; self?.errors[.installed] = .unavailable }
+                case .confirmedFailure:
+                    try store.finish(entry.id, phase: .failed, failure: result.errorCategory == .conflict || result.errorCategory == .validation ? .changed : .failed)
+                default: break
+                }
+            } catch {
+                let failure = Self.failure(error)
+                if !store.failed, store.entry(entry.id)?.phase == .prepared {
+                    try? store.finish(entry.id, phase: error is CancellationError ? .cancelled : .failed,
+                                      failure: error is CancellationError ? nil : (failure == .denied ? .denied : .failed))
+                }
+                if self?.activation == token { self?.errors[.installed] = store.failed ? .storage : failure }
+                if failure == .trust { if self?.activation == token { self?.permissions[.installed] = false }; return }
+            }
+            store.end(entry.id)
+            if self?.activation == token { await self?.refresh(.installed) }
+        }
+        return entry.id
+    }
     func removeRecord(_ id: UUID) {
         guard let context, let entry = recovery.entry(id), entry.context == context else { return }
-        do { try recovery.remove(id, context: context) } catch { errors[entry.kind == .settings ? .preferences : .sources] = .storage }
+        do { try recovery.remove(id, context: context) } catch { errors[entry.kind.page] = .storage }
     }
     static func failure(_ error: Error) -> Failure {
         if error is DsmCertificateTrustError { return .trust }
@@ -177,4 +232,10 @@ final class MobilePackageCenterModel {
 
 extension NasPackagePreferenceChange {
     var page: MobilePackageCenterModel.Page { kind == .settings ? .preferences : .sources }
+}
+
+extension MobilePackageOperationStore.Kind {
+    var page: MobilePackageCenterModel.Page {
+        switch self { case .settings: .preferences; case .saveSource, .removeSource: .sources; case .start, .stop, .uninstall: .installed }
+    }
 }

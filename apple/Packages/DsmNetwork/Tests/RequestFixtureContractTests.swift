@@ -435,7 +435,7 @@ final class RequestFixtureContractTests: XCTestCase {
         )
         let transport = MockHTTPTransport(responses: [
             response(
-                #"{"success":true,"data":{"packages":[{"id":"<synthetic-package>","name":"Synthetic Package","version":"1.0","additional":{"status":"stopped","dsm_apps":"<synthetic-app-one> <synthetic-app-two>","ctl_uninstall":true,"available_operation":["uninstall"]}}]}}"#
+                #"{"success":true,"data":{"packages":[{"id":"<synthetic-package>","name":"Synthetic Package","version":"1.0","additional":{"status":"stopped","install_type":"user","dsm_apps":"<synthetic-app-one> <synthetic-app-two>","ctl_uninstall":true,"available_operation":["uninstall"]}}]}}"#
             ),
             response(#"{"success":true}"#),
             response(#"{"success":true}"#),
@@ -444,7 +444,6 @@ final class RequestFixtureContractTests: XCTestCase {
         let repository = try makePackageAdministrationRepository(
             transport: transport
         )
-        _ = try await repository.loadPackages()
 
         _ = try await repository.uninstallPackageResult(
             id: "<synthetic-package>"

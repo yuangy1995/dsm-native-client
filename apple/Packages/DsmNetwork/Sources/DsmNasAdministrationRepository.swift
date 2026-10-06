@@ -11,7 +11,6 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     let client: DsmAPIClient
     let transport: any DsmHTTPTransport
     private let isConnectedThroughQuickConnectRelay: Bool
-    var packageControlMetadata: [String: PackageControlMetadata] = [:]
     var packageIconCache: [String: Data] = [:]
     var activePackageMutationIDs: Set<String> = []
     var packageCatalogCandidates: [String: PackageCatalogCandidate] = [:]
@@ -7814,16 +7813,24 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    /// 套件启动与停止按稳定套件 ID 去重；写请求不自动重放，只通过列表状态确认结果。
-    public func controlPackageResult(
-        id: String,
-        action: NasPackageAction
-    ) async throws -> MutationResult {
+    /// 旧调用沿用同一流水线，移动端另外绑定确认时看到的对象和持久化边界。
+    public func controlPackageResult(id: String, action: NasPackageAction) async throws -> MutationResult {
+        try await controlPackageResult(id: id, action: action, replacing: nil, checkpoint: nil)
+    }
+
+    public func controlPackageResult(_ package: NasPackage, action: NasPackageAction,
+        checkpoint: @escaping @Sendable (NasPackageControlCheckpoint) async throws -> Void) async throws -> MutationResult {
+        try await controlPackageResult(id: package.id, action: action, replacing: package, checkpoint: checkpoint)
+    }
+
+    /// 套件启动与停止按稳定套件 ID 去重；写请求不自动重放，只通过原安装状态确认结果。
+    private func controlPackageResult(id: String, action: NasPackageAction, replacing baseline: NasPackage?,
+        checkpoint: (@Sendable (NasPackageControlCheckpoint) async throws -> Void)?) async throws -> MutationResult {
         guard !packageInstallationRequestActive, packageInstallJob == nil || [.completed, .failed, .cancelled].contains(packageInstallJob!.phase) else {
             throw packageCenterError("package.center.busy")
         }
         if action == .uninstall {
-            return try await uninstallPackageResult(id: id)
+            return try await uninstallPackageResult(id: id, replacing: baseline, checkpoint: checkpoint)
         }
 
         let operation: String
@@ -7890,8 +7897,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 diagnosticTag: "\(prefix).invalid-id"
             )
         }
-        guard capabilities[DsmAPIName.corePackage]?.selectedVersion != nil,
-              capabilities[DsmAPIName.corePackageControl]?.selectedVersion != nil else {
+        guard capabilitySupports(DsmAPIName.corePackage, version: 1), capabilitySupports(DsmAPIName.corePackage, version: 2),
+              capabilitySupports(DsmAPIName.corePackageControl, version: 1) else {
             return try packageMutationResult(
                 status: .unsupported,
                 operation: operation,
@@ -7923,14 +7930,16 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
 
         let packages: [NasPackage]
         do {
-            packages = try await loadPackages(includingIcons: false)
+            packages = try await loadPackagesForManagement()
         } catch let error as AppError {
+            if Self.packagePreferenceTrustFailure(error) { throw error }
             return try packageControlPreflightResult(
                 error,
                 operation: operation,
                 prefix: prefix
             )
         } catch {
+            if Self.packagePreferenceTrustFailure(error) { throw error }
             return try packageMutationResult(
                 status: .confirmedFailure,
                 operation: operation,
@@ -7958,8 +7967,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 diagnosticTag: "\(prefix).not-found"
             )
         }
-        let isAvailable = action == .start ? package.canStart : package.canStop
-        guard isAvailable else {
+        let isAvailable = package.allowsControl(action)
+        guard isAvailable, baseline.map(package.matchesControlBaseline) ?? true else {
             return try packageMutationResult(
                 status: .confirmedFailure,
                 operation: operation,
@@ -7985,6 +7994,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 ]
             )
         } catch let error as AppError {
+            if Self.packagePreferenceTrustFailure(error) { throw error }
             return try packageControlPreflightResult(
                 error,
                 operation: operation,
@@ -7992,6 +8002,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
 
+        try await checkpoint?(.willSubmit)
         if Task.isCancelled {
             return try packageMutationResult(
                 status: .cancelledBeforeSubmission,
@@ -8011,23 +8022,26 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         ]
         if action == .start {
             parameters["dsm_apps"] = .stringArray(
-                packageControlMetadata[normalizedID]?.dsmApps ?? []
+                package.dsmApps ?? []
             )
         }
         do {
             try await callVoid(
                 DsmAPIName.corePackageControl,
                 method: method,
+                version: 1,
                 parameters: parameters
             )
         } catch let error as AppError {
-            if packageControlSubmissionMayBeAmbiguous(error.category) {
+            if Self.packagePreferenceTrustFailure(error) { throw error }
+            if packageControlSubmissionMayBeAmbiguous(error.category), !(error.category == .invalidResponse && error.dsmCode != nil) {
                 return try await reconcilePackageControlAfterAmbiguousSubmission(
                     id: normalizedID,
                     action: action,
                     operation: operation,
                     prefix: prefix,
-                    submissionError: error
+                    submissionError: error,
+                    original: package
                 )
             }
             return try packageControlSubmissionResult(
@@ -8036,6 +8050,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 prefix: prefix
             )
         } catch {
+            if Self.packagePreferenceTrustFailure(error) { throw error }
             return try packageMutationResult(
                 status: .submittedButUnverified,
                 operation: operation,
@@ -8050,17 +8065,24 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
 
+        try await checkpoint?(.accepted)
         return try await pollPackageControlState(
             id: normalizedID,
             action: action,
             operation: operation,
             prefix: prefix,
-            maximumAttempts: 10
+            maximumAttempts: 10,
+            original: package
         )
     }
 
     /// 套件卸载属于破坏性操作；请求提交后必须通过套件列表回读确认，未知结果不得自动重放。
     public func uninstallPackageResult(id: String) async throws -> MutationResult {
+        try await uninstallPackageResult(id: id, replacing: nil, checkpoint: nil)
+    }
+
+    private func uninstallPackageResult(id: String, replacing baseline: NasPackage?,
+        checkpoint: (@Sendable (NasPackageControlCheckpoint) async throws -> Void)?) async throws -> MutationResult {
         guard !packageInstallationRequestActive, packageInstallJob == nil || [.completed, .failed, .cancelled].contains(packageInstallJob!.phase) else {
             throw packageCenterError("package.center.busy")
         }
@@ -8093,8 +8115,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 diagnosticTag: "package.uninstall.invalid-input"
             )
         }
-        guard capabilities[DsmAPIName.corePackage]?.selectedVersion != nil,
-              capabilities[DsmAPIName.corePackageUninstallation]?.selectedVersion != nil else {
+        guard capabilitySupports(DsmAPIName.corePackage, version: 1), capabilitySupports(DsmAPIName.corePackage, version: 2),
+              capabilitySupports(DsmAPIName.corePackageUninstallation, version: 1) else {
             return try packageMutationResult(
                 status: .unsupported,
                 operation: operation,
@@ -8124,7 +8146,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
         defer { activePackageMutationIDs.remove(normalizedID) }
 
+        let package: NasPackage
         do {
+            let packages = try await loadPackagesForManagement()
+            guard let current = packages.first(where: { $0.id == normalizedID }), current.allowsControl(.uninstall),
+                  baseline.map(current.matchesControlBaseline) ?? true else {
+                throw packageCenterError("package.control.not-found", category: .conflict)
+            }
+            package = current
             try await callVoid(
                 DsmAPIName.corePackage,
                 method: "feasibility_check",
@@ -8135,6 +8164,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 ]
             )
         } catch let error as AppError {
+            if Self.packagePreferenceTrustFailure(error) { throw error }
             return try packagePreflightResult(
                 error,
                 operation: operation,
@@ -8142,6 +8172,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
 
+        try await checkpoint?(.willSubmit)
         if Task.isCancelled {
             return try packageMutationResult(
                 status: .cancelledBeforeSubmission,
@@ -8159,14 +8190,16 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.corePackageUninstallation,
                 method: "uninstall",
+                version: 1,
                 parameters: [
                     "id": .string(normalizedID),
                     "dsm_apps": .stringArray(
-                        packageControlMetadata[normalizedID]?.dsmApps ?? []
+                        package.dsmApps ?? []
                     ),
                 ]
             )
         } catch let error as AppError {
+            if Self.packagePreferenceTrustFailure(error) { throw error }
             return try packageSubmissionResult(
                 error,
                 operation: operation,
@@ -8174,6 +8207,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
 
+        try await checkpoint?(.accepted)
         if Task.isCancelled {
             return try packageMutationResult(
                 status: .cancellationRequestedAfterSubmission,
@@ -8189,7 +8223,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
 
         do {
-            let packages = try await loadPackages(includingIcons: false)
+            let packages = try await loadPackagesForManagement()
             if packages.contains(where: { $0.id == normalizedID }) {
                 return try packageMutationResult(
                     status: .submittedButUnverified,
@@ -8214,6 +8248,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 diagnosticTag: "package.uninstall.confirmed"
             )
         } catch let error as AppError {
+            if Self.packagePreferenceTrustFailure(error) { throw error }
             let status: MutationResultStatus = error.category == .cancelled
                 ? .cancellationRequestedAfterSubmission
                 : .submittedButUnverified
@@ -8230,6 +8265,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 diagnosticTag: "package.uninstall.readback-unverified"
             )
         } catch {
+            if Self.packagePreferenceTrustFailure(error) { throw error }
             return try packageMutationResult(
                 status: .submittedButUnverified,
                 operation: operation,
@@ -9806,6 +9842,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         operation: String,
         prefix: String
     ) throws -> MutationResult {
+        if error.category == .invalidResponse, error.dsmCode != nil {
+            return try packageMutationResult(status: .confirmedFailure, operation: operation, submitted: true,
+                requiresRefresh: false, succeeded: 0, failed: 1, unknown: 0, errorCategory: .validation,
+                localizationKey: "\(prefix).failed", diagnosticTag: "\(prefix).validation-rejected")
+        }
         switch error.category {
         case .cancelled:
             return try packageMutationResult(
@@ -9952,6 +9993,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         operation: String,
         prefix: String
     ) throws -> MutationResult {
+        if error.category == .invalidResponse, error.dsmCode != nil {
+            return try packageMutationResult(status: .confirmedFailure, operation: operation, submitted: true,
+                requiresRefresh: false, succeeded: 0, failed: 1, unknown: 0, errorCategory: .validation,
+                localizationKey: "package.control.failed", diagnosticTag: "\(prefix).validation-rejected")
+        }
         switch error.category {
         case .permissionDenied:
             return try packageMutationResult(
@@ -10040,17 +10086,20 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         action: NasPackageAction,
         operation: String,
         prefix: String,
-        submissionError: AppError
+        submissionError: AppError,
+        original: NasPackage
     ) async throws -> MutationResult {
         if submissionError.category == .cancelled || Task.isCancelled {
             let readback = await Task.detached {
-                try await self.loadPackages(includingIcons: false)
+                try await self.loadPackagesForManagement()
             }.result
+            if case .failure(let error) = readback, Self.packagePreferenceTrustFailure(error) { throw error }
             if case let .success(packages) = readback,
                packageControlStateMatches(
                    packages: packages,
                    id: id,
-                   action: action
+                   action: action,
+                   original: original
                ) {
                 return try packageMutationResult(
                     status: .confirmedSuccess,
@@ -10077,6 +10126,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             operation: operation,
             prefix: prefix,
             maximumAttempts: 3,
+            original: original,
             fallbackErrorCategory: packageMutationErrorCategory(
                 for: submissionError.category
             )
@@ -10089,16 +10139,18 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         operation: String,
         prefix: String,
         maximumAttempts: Int,
+        original: NasPackage,
         fallbackErrorCategory: MutationErrorCategory? = nil
     ) async throws -> MutationResult {
         var lastErrorCategory = fallbackErrorCategory
         for attempt in 0..<maximumAttempts {
             do {
-                let packages = try await loadPackages(includingIcons: false)
+                let packages = try await loadPackagesForManagement()
                 if packageControlStateMatches(
                     packages: packages,
                     id: id,
-                    action: action
+                    action: action,
+                    original: original
                 ) {
                     return try packageMutationResult(
                         status: .confirmedSuccess,
@@ -10113,6 +10165,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     )
                 }
             } catch let error as AppError {
+                if Self.packagePreferenceTrustFailure(error) { throw error }
+                if [.permissionDenied, .authenticationRequired, .otpRequired, .apiUnavailable, .versionUnsupported].contains(error.category) {
+                    lastErrorCategory = packageMutationErrorCategory(for: error.category)
+                    break
+                }
                 if error.category == .cancelled {
                     return try packageMutationResult(
                         status: .cancellationRequestedAfterSubmission,
@@ -10131,6 +10188,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     for: error.category
                 )
             } catch {
+                if Self.packagePreferenceTrustFailure(error) { throw error }
                 lastErrorCategory = .unknown
             }
 
@@ -10168,30 +10226,9 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
-    private func packageControlStateMatches(
-        packages: [NasPackage],
-        id: String,
-        action: NasPackageAction
-    ) -> Bool {
-        guard let package = packages.first(where: { $0.id == id }) else {
-            return false
-        }
-        let status = package.status?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        switch action {
-        case .start:
-            return package.canStop
-                || status == "running"
-                || status == "active"
-        case .stop:
-            return package.canStart
-                || status == "stopped"
-                || status == "inactive"
-                || status == "disabled"
-        case .uninstall, .upgrade:
-            return false
-        }
+    private func packageControlStateMatches(packages: [NasPackage], id: String,
+        action: NasPackageAction, original: NasPackage) -> Bool {
+        packages.first(where: { $0.id == id })?.matchesControlResult(action, original: original) == true
     }
 
     private func packageControlAppErrorCategory(
@@ -10471,7 +10508,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             canStop: package.canStop,
             canUninstall: package.canUninstall,
             isUpgradeAvailable: package.isUpgradeAvailable,
-            canUpgrade: package.canUpgrade
+            canUpgrade: package.canUpgrade,
+            dsmApps: package.dsmApps
         )
     }
 

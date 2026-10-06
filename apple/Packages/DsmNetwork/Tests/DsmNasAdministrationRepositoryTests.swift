@@ -874,10 +874,10 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
 
     func test套件控制提交超时后只回读且不会重放写请求() async throws {
         let transport = MockHTTPTransport(steps: [
-            .response(response(#"{"success":true,"data":{"packages":[{"id":"Example","name":"示例套件","version":"1.0","additional":{"status":"stopped","startable":true,"available_operation":["start"]}}]}}"#)),
+            .response(response(#"{"success":true,"data":{"packages":[{"id":"Example","name":"示例套件","version":"1.0","additional":{"status":"stopped","startable":true,"dsm_apps":[],"available_operation":["start"]}}]}}"#)),
             .response(response(#"{"success":true}"#)),
             .urlError(.timedOut),
-            .response(response(#"{"success":true,"data":{"packages":[{"id":"Example","name":"示例套件","version":"1.0","additional":{"status":"running","startable":true,"available_operation":["stop"]}}]}}"#)),
+            .response(response(#"{"success":true,"data":{"packages":[{"id":"Example","name":"示例套件","version":"1.0","additional":{"status":"running","startable":true,"dsm_apps":[],"available_operation":["stop"]}}]}}"#)),
         ])
         let repository = try makeRepository(
             apiNames: [
@@ -991,7 +991,6 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
             ],
             transport: transport
         )
-        _ = try await repository.loadPackages()
 
         try await repository.controlPackage(id: "Example", action: .uninstall)
 
@@ -1022,7 +1021,6 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
             ],
             transport: transport
         )
-        _ = try await repository.loadPackages()
 
         let result = try await repository.uninstallPackageResult(id: "Example")
 
@@ -1048,7 +1046,6 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
             ],
             transport: transport
         )
-        _ = try await repository.loadPackages()
 
         let result = try await repository.uninstallPackageResult(id: "Example")
 
@@ -1073,7 +1070,6 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
             ],
             transport: transport
         )
-        _ = try await repository.loadPackages()
 
         let result = try await repository.uninstallPackageResult(id: "Example")
 
@@ -1100,7 +1096,6 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
             ],
             transport: transport
         )
-        _ = try await repository.loadPackages()
 
         let result = try await repository.uninstallPackageResult(id: "Example")
 
@@ -1147,7 +1142,6 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
             ],
             transport: transport
         )
-        _ = try await repository.loadPackages()
         let firstTask = Task {
             try await repository.uninstallPackageResult(id: "Example")
         }

@@ -179,7 +179,7 @@ jobs:
           # 每台设备三组互补覆盖全部测试；管理场景增加后独立运行，避免单个作业超过六小时。
           administration_tests=(
             MobileDDNSUITests MobileDirectoryUITests MobileNasReadUITests MobileNasStorageUITests
-            MobilePackageCenterUITests MobilePackageInstallationUITests MobileRegionUITests
+            MobilePackageCenterUITests MobilePackageControlUITests MobilePackageInstallationUITests MobileRegionUITests
             MobileScheduledTasksUITests MobileServiceSettingsUITests MobileSystemActionsUITests
           )
           case "$MOBILE_SUITE" in
