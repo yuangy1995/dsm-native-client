@@ -2666,3 +2666,59 @@ git diff --check
 
 
 锁定 XcodeGen 2.46.0 再生成工程前后 SHA256 均为 `7683582c35e9dcb762d2fcff3f7e3a5e041cc22ab97670ae12c281a1861f6bcf`。两端模拟器已恢复浅色并读取确认；本片临时附件导出、辅助功能树及录屏目录已精确清理，正式日志/结果包和九张合成预览保留。提交前读取远端 main 与本地基线一致，无远端新提交。前一批 Apple Build 仍有四个移动组运行、共享/macOS 已通过；本片先作语义完整的本地提交，等待这轮完整云端结果后再正常推送，不用推送取消它，也不把本机通过写成新云端已通过。后续继续 M6 套件及其余管理、M7/M8，整体目标尚未完成。
+
+
+## 2026-10-06 移动 M6e1 套件设置与来源
+
+基线 `7bd01c78`，main 领先远端一个 M6d2 提交，工作区开始时干净；前一批完整云端移动回归仍运行，未推送取消。M6e 拆为设置/来源、已安装控制、安装/更新/SPK 三项完整流程；本片只实现第一项及已安装列表入口。Mac 套件停止把未知状态当停止的基线分支已提出范围决定，未修改 Mac App，也未开始依赖该决定的控制片；不阻塞本片独立工作。
+
+新增移动套件列表/筛选、设置摘要和原生编辑器、默认位置、通知、测试版显示、全局/按套件自动更新、来源添加/编辑/移除。自动安装与来源信任/HTTP 风险各自确认；普通通知保存直接由明确按钮提交；单位置不显示选择器。来源与设置读取独立，未知单套件策略不能补为关闭后覆盖整表。Shared 复用 Setting/Feed v1 与 Package list v2 的原编码、互斥和旧 Mac 签名，新增管理快照与写前/接受回执检查点；丢回应不重发，明确拒绝不被后续匹配缓存覆盖，接受后的读取拒绝保持原写未知，证书异常透传。
+
+新增 `NAS/package-operations-v1.json` 仅保存账号上下文、原/目标设置或来源的摘要、阶段和接受标记，不保存来源名称/地址、明细或会话。系统文件保护并排除备份；写前记录失败零请求，未知跨页面阻止重复，重启只读恢复。来源改地址必须同时看到新目标和旧地址消失，移除不能凭部分目录完成；管理权限失效不结算旧未知记录。该存储属于既有 M0–M8 授权，不迁移登录结构，回滚停用新入口并保留记录。Windows/Android 仅登记影响。
+
+初次原有 31 项套件测试通过；新增定向回归首次共 46 项、11 条失败，其中 10 条因新 MutationResult operation 使用了格式不允许的点号，另 1 条为测试对固定版本不可用错误类别的预期与既有 call 行为不符。改为稳定驼峰操作名，类别按已有 apiUnavailable 行为断言，同时保留低版本零请求/不降级与独立来源读取检查；第二轮 46 项全通过。初次本地化扫描指出两处动态拼接资源键，改为现有枚举的明确键映射后通过，资源为 6630/2188/3402。
+
+随后补充默认位置缺省合法/错误类型拒绝、保存后新增手动更新套件不改变既有自动更新清单，以及丢回执时相同选择的恢复。核对依据是实际发送的最新/重要自动更新清单，不能把无关新增手动套件造成的目录变化变成永久未知。完整共享最终已取得 **2857 XCTest（172 条既有条件跳过、0 失败）及 12 Swift Testing 通过**；来源地址校验收敛到同一既有规则，末次 48 项定向回归通过。再次对照契约，附加信息组保持原 `silent_upgrade/autoupdate/status`，不把响应子字段猜作新请求选择器，并增加精确请求断言；这一末次 48 项参数/流程复测已通过。
+
+移动五次 build-for-testing 均已通过；首个聚焦模拟器命令执行 21 项行为测试通过。增加自动更新清单回归后，R1 两端完整 **1436 单元，各 4 条既有条件跳过、0 失败**。11 项新界面测试正在分别运行，iPhone 浅色、iPad 深色；默认位置界面断言已出现失败，尚待完整结果与实际画面定位，不能称界面全过。实际命令如下：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'NasPackagePreferenceFlowTests|DsmPackageCenterTests'
+swift test --package-path apple --jobs 2
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e1-unit-first.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests/MobilePackageCenterTests
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e1-phone-r1.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobilePackageCenterUITests
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e1-pad-r1.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobilePackageCenterUITests
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+```
+
+第一轮及清单判断修正后的 Mac Release 构建均通过；上述末次选择器调整后的最终增量构建也已通过，日志为 `m6e1-macos-final-r2.log`。当前未访问真实 NAS 或外部来源，所有交互测试均使用显式合成模式。
+
+
+R1 两端均为 **11 项界面中 8 通过、3 失败，exit 65**。失败证据逐项确认：默认位置失败树为 `Default install location, Volume 2` 的组合标签，实际画面已显示 Volume 2 和保存成功；不能按单独 `Volume 2` 节点定位。搜索失败树的值仍是 `no-match`；来源替换录屏在实际 41.898/42.995 秒显示输入框被打入箭头符号，随后只删掉部分符号和原文本。根因是测试把 `XCUIKeyboardKey.rightArrow.rawValue` 交给 typeText，当正文输入；已改为既有用例采用的 typeKey 实际方向键，保留清空检查、完整新值断言及恢复列表断言。生产搜索、地址校验、保存/删除保护没有因此放宽。
+
+第一轮中文大字、五类读取/缺能力、单套件自动更新确认、明确拒绝、普通保存、未知来源重启恢复、未知策略/部分来源/读取独立及未知设置恢复均有两端通过证据。R6 构建后定向复验三项失败、普通设置，以及互换浅深色的中文大字确认；同时两端完整单元覆盖最新已记录选择器请求。临时附件与视频只保留在本片检查目录，完成提取后清理。
+
+
+R2 的 iPhone **完整 1436 单元（4 条既有跳过）及五项定向 UI 全部通过，exit 0**；来源新增/编辑/移除已完成，三项首轮失败都有 iPhone 通过结果。iPad 完整 1436 单元同样通过，中文大字浅色和默认位置两项 UI 已过；搜索用例连续方向键事件后，XCTest 多次报告 `App animations complete notification not received`，每步等待约 60 秒，实际截图仍为可见的 no-match 输入和正常无匹配页面。确认该进程仍在运行后主动中止这一停滞测试，未把中止当通过；命令最终 exit 73。iPad 的搜索、普通保存及来源完整流程尚待后续定向完成。
+
+已仅将本片测试的 iPad 文本清空改为项目既有的点击输入框可见末尾后删除；iPhone 保留已经通过的 typeKey 处理。清空、新值、完整地址校验、来源信任/HTTP/删除确认和保存结果断言保留，不关闭动画或改变产品交互。R7 构建后仅补 iPad 剩余三项；无业务源码改变，不重复已过单元、共享或 Mac。
+
+
+R7 构建通过；iPad 三项补验中普通保存和来源新增/编辑/移除通过，搜索在点击输入框最右侧后没有取得键盘焦点，输入事件直接拒绝，命令 exit 65。来源替换同一点击策略已经通过；本次只改搜索的短查询重聚焦为点击输入框本身，继续保留清空检查。R8 构建通过，单独复验 iPad 搜索；其他已通过结果不重复。没有因此修改产品筛选、输入校验或请求实现。
+
+
+**最终 iPad 搜索单项已通过，exit 0；本片十一项界面均有两端实际通过结果。** R1 的两个 8/11、iPad R2 中止、R7 搜索未获焦点均保留原结论，不改写成整轮全绿。最新完整单元为两端各 1436 项（各 4 条既有跳过），业务源码不再变化；仅测试定位/输入修正按受影响场景复验。两端中文大字来源信任确认的浅/深色和来源移除结果已实际查看，预览保留于 `apple/Apps/DsmMobile/build/m6e1-preview/`。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e1-phone-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test中文大字来源信任与未加密风险可取消 -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test多位置可以选择并保存默认安装位置 -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test套件和来源搜索无匹配后清除可恢复原目录 -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test普通设置单位置隐藏选择器且取消保存结果正确 -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test来源地址校验信任取消以及新增编辑移除
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e1-pad-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test中文大字来源信任与未加密风险可取消 -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test多位置可以选择并保存默认安装位置 -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test套件和来源搜索无匹配后清除可恢复原目录 -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test普通设置单位置隐藏选择器且取消保存结果正确 -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test来源地址校验信任取消以及新增编辑移除
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e1-pad-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test套件和来源搜索无匹配后清除可恢复原目录 -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test普通设置单位置隐藏选择器且取消保存结果正确 -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test来源地址校验信任取消以及新增编辑移除
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e1-pad-search-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test套件和来源搜索无匹配后清除可恢复原目录
+```
+
+八次本片移动构建通过；锁定 XcodeGen 2.46.0 再生成前后工程 SHA256 同为 `e20b3c421ffe4ac97ede7fbcd4af281accab32c4613f5c5924c170c3b246bf56`。最终 Mac 主 App/扩展二进制均由 lipo 核为 x86_64/arm64；两台模拟器恢复浅色并读取确认。独立集成与只读对抗复核覆盖权限/目标、当前字段类型、旧账号回执、记录损坏/写失败、原来源改址、API 真实选择器、明确拒绝/接受后失败、未知不重放和快照不保存原文。未操作真实 NAS 或外部来源，真实风险按本片主计划四项 PENDING_USER_VALIDATION 验收。
+
+收尾时前一批 `c622d6ca` 云端出现明确结果：[Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37386239845) 共享/macOS 与 iPad 工作区通过，iPhone 工作区 160 项中 159 通过、1 失败，两个模块组仍运行。失败为 Office 预览→分享→文件选择器用例：关闭分享面板后点击导入，等待 Cancel 未出现。仅日志尚不足以判定是面板过渡、控件定位或产品呈现问题；先读取该次界面证据，不放宽断言、不推送取消剩余整组。此失败基于前一批提交，不混作 M6e1 新界面结果。
+
+本片模拟器临时附件、辅助功能树和录屏提帧目录已精确清理；正式日志/结果包与七张合成预览保留。新云端失败证据另行隔离保存供后续排查，尚未宣称其已修复。

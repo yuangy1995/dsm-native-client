@@ -45,6 +45,7 @@ final class MobileAppModel {
     let serviceSettingsModel: MobileServiceSettingsModel
     let scheduledTasksModel: MobileScheduledTasksModel
     let systemActionsModel: MobileSystemActionsModel
+    let packageCenterModel: MobilePackageCenterModel
     let directoryModel: MobileDirectoryModel
     let regionModel: MobileRegionModel
     let containerInventoryModel = MobileContainerInventoryModel()
@@ -113,6 +114,7 @@ final class MobileAppModel {
                 serviceSettingsModel.deactivate()
                 scheduledTasksModel.deactivate()
                 systemActionsModel.deactivate()
+                packageCenterModel.deactivate()
                 containerInventoryModel.deactivate()
                 virtualMachineInventoryModel.deactivate()
             }
@@ -214,6 +216,7 @@ final class MobileAppModel {
         self.serviceSettingsModel = MobileServiceSettingsModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.scheduledTasksModel = MobileScheduledTasksModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.systemActionsModel = MobileSystemActionsModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
+        self.packageCenterModel = MobilePackageCenterModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.directoryModel = MobileDirectoryModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.regionModel = MobileRegionModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.documentTransferController = MobileDocumentTransferController(

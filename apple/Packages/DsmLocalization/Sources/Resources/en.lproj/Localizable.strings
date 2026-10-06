@@ -6902,3 +6902,22 @@
 "mobile.nas.system.readError" = "The NAS status could not be read. Check the network connection and try again.";
 "mobile.nas.system.storageError" = "The operation record could not be saved. Unlock your device, check available storage, and try again.";
 "mobile.nas.system.trustError" = "The NAS connection could not be trusted. Reconnect and review its security information before continuing.";
+
+"mobile.package.editSettings" = "Edit Package Settings";
+"mobile.package.preferences.unknown" = "Some package update choices are unavailable. Refresh or use DSM before saving with “Choose for each package”.";
+"mobile.package.source.search" = "Search source names or addresses";
+"mobile.package.loading" = "Loading package information…";
+"mobile.package.sources.emptyHint" = "Add a trusted source to get its packages.";
+"mobile.package.emptyHint" = "No installed packages are listed. Refresh or check Package Center in DSM.";
+"mobile.package.running" = "Running";
+"mobile.package.stopped" = "Stopped";
+"mobile.package.readError" = "Package information could not be read. Check the NAS connection and try again.";
+"mobile.package.denied" = "This account cannot change package settings or sources. Sign in with an account that has permission.";
+"mobile.package.unavailable" = "The required package settings are unavailable on this NAS. Change them in DSM Package Center.";
+"mobile.package.changed" = "Package or source information changed or could not be fully read. Refresh before editing again.";
+"mobile.package.storageError" = "The package operation record could not be saved. Unlock your device, check available storage, and try again.";
+"mobile.package.pending" = "The latest save status is unavailable. Restore the connection and refresh before changing package settings or sources again.";
+"mobile.package.settingsSaved" = "Package settings saved.";
+"mobile.package.sourceSaved" = "Package source saved.";
+"mobile.package.sourceRemoved" = "Package source removed.";
+"mobile.package.failed" = "The package change could not be completed. Refresh before trying again.";

@@ -1588,6 +1588,9 @@ public protocol NasSettingsRepository: Sendable {
     func loadConnectionsForManagement() async throws -> NasConnectionPage
     func performSystemActionResult(_ action: NasSystemAction, checkpoint: @escaping @Sendable (NasSystemActionCheckpoint) async throws -> Void) async throws -> MutationResult
     func verifyPowerConnection() async throws
+    func loadPackagePreferencesForManagement() async throws -> NasPackagePreferencesSnapshot
+    func loadPackageSourcesForManagement() async throws -> [NasPackageSource]
+    func changePackagePreferencesResult(_ change: NasPackagePreferenceChange, checkpoint: @escaping @Sendable (NasPackagePreferenceCheckpoint) async throws -> Void) async throws -> MutationResult
     func loadServiceForManagement(_ kind: NasServiceKind) async throws -> NasServiceSettings
     func changeServiceResult(_ change: NasServiceChange, checkpoint: @escaping @Sendable (NasServiceCheckpoint) async throws -> Void) async throws -> MutationResult
     func loadFileServiceSettings() async throws -> NasFileServiceSettings
@@ -1859,6 +1862,12 @@ public extension NasSettingsRepository {
     }
     func loadConnectionsForManagement() async throws -> NasConnectionPage { throw unsupportedManagementOperation() }
     func verifyPowerConnection() async throws { throw unsupportedManagementOperation() }
+    func loadPackagePreferencesForManagement() async throws -> NasPackagePreferencesSnapshot { throw unsupportedManagementOperation() }
+    func loadPackageSourcesForManagement() async throws -> [NasPackageSource] { throw unsupportedManagementOperation() }
+    func changePackagePreferencesResult(_ change: NasPackagePreferenceChange, checkpoint: @escaping @Sendable (NasPackagePreferenceCheckpoint) async throws -> Void) async throws -> MutationResult {
+        try .init(status: .unsupported, operation: change.kind.rawValue, submitted: false, requiresRefresh: false,
+                  counts: .init(succeeded: 0, failed: 1, unknown: 0), errorCategory: .unsupported, diagnosticTag: "package-preference.unsupported")
+    }
     func performSystemActionResult(_ action: NasSystemAction, checkpoint: @escaping @Sendable (NasSystemActionCheckpoint) async throws -> Void) async throws -> MutationResult {
         try .init(status: .unsupported, operation: action.kind.rawValue, submitted: false, requiresRefresh: false,
                   counts: .init(succeeded: 0, failed: 1, unknown: 0), errorCategory: .unsupported, diagnosticTag: "system-action.unsupported")

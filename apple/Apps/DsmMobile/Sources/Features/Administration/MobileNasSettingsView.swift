@@ -35,6 +35,7 @@ struct MobileNasSettingsView: View {
                 model.serviceSettingsModel.cancelReads()
                 model.scheduledTasksModel.cancelRead()
                 model.systemActionsModel.cancelReads()
+                model.packageCenterModel.cancelReads()
                 model.nasStorageModel.cancelAnalysis()
             }
         }
@@ -63,6 +64,8 @@ struct MobileNasSettingsView: View {
                 MobileRegionScreen(model: model.regionModel)
             } else if destination == .connections {
                 MobileConnectionsScreen(model: model.systemActionsModel)
+            } else if destination == .packages {
+                MobilePackageCenterScreen(model: model.packageCenterModel)
             } else if destination == .scheduledTasks {
                 MobileScheduledTasksScreen(model: model.scheduledTasksModel)
             } else if let kind = destination.serviceKind {
@@ -106,6 +109,8 @@ struct MobileNasSettingsView: View {
                 MobileRegionScreen(model: model.regionModel)
             } else if selectedSection == .connections {
                 MobileConnectionsScreen(model: model.systemActionsModel)
+            } else if selectedSection == .packages {
+                MobilePackageCenterScreen(model: model.packageCenterModel)
             } else if selectedSection == .scheduledTasks {
                 MobileScheduledTasksScreen(model: model.scheduledTasksModel)
             } else if let kind = selectedSection.serviceKind {

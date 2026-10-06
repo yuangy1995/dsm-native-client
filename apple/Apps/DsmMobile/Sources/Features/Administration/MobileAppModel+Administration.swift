@@ -8,6 +8,7 @@ extension MobileAppModel {
     var isRefreshingNasAdministration: Bool {
         nasHealthModel.state.isRefreshing || nasDetailsModel.state.isRefreshing || serviceSettingsModel.isRefreshing
             || systemActionsModel.isRefreshing
+            || packageCenterModel.isRefreshing
             || scheduledTasksModel.tasks.isRefreshing || scheduledTasksModel.tasks.phase == .loading
             || nasStorageModel.storage.isRefreshing || nasStorageModel.storage.phase == .loading
             || ddnsModel.directory.isRefreshing || ddnsModel.directory.phase == .loading
@@ -25,6 +26,7 @@ extension MobileAppModel {
         if regionModel.settings.phase != .idle { await regionModel.refresh() }
         await serviceSettingsModel.refreshLoaded()
         await systemActionsModel.refreshLoaded()
+        await packageCenterModel.refreshLoaded()
         if scheduledTasksModel.tasks.phase != .idle { await scheduledTasksModel.refresh() }
     }
 
@@ -38,6 +40,7 @@ extension MobileAppModel {
             serviceSettingsModel.deactivate()
             scheduledTasksModel.deactivate()
             systemActionsModel.deactivate()
+            packageCenterModel.deactivate()
             await nasHealthModel.activate(profileID: nil, repository: nil)
             return
         }
@@ -57,6 +60,7 @@ extension MobileAppModel {
         serviceSettingsModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
         scheduledTasksModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
         systemActionsModel.configure(profile: profile, repository: nasRepository, session: session, authorize: authorize)
+        packageCenterModel.configure(profile: profile, repository: nasRepository, authorize: authorize)
         nasDetailsModel.activate(
             profileID: profileID,
             repository: MobileReadOnlyNasDetailsRepository(

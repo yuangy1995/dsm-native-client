@@ -78,7 +78,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M6 账号、群组、网络、安全 | NasAdministrationView | 分步表单/当前账号保护；User/Group/Ethernet/FileServ/Security；高风险 | M6b1 账号/群组与 M6b2 文件服务/终端/代理已接并通过两端验收；M6b3 远程访问已完成；网卡、安全继续后续切片 |
 | M6 硬件、UPS、内存、电源计划 | PowerScheduleEntryEditor、NasAdministrationView | 原生编辑器；Hardware/UPS/ZRAM/PowerSchedule；系统写 | M6c1 内存压缩与电源计划管理已接；硬件/UPS 待后续，未知字段不补 false |
 | M6 计划任务、连接、电源 | NasAdministrationModel | 后果确认与断连恢复；TaskScheduler/CurrentConnection/System；高风险 | M6d1 计划任务及 M6d2 连接/即时电源已接完整管理与持久恢复。接受不代表脚本完成或已重启，未知不重发 |
-| M6 套件中心 | PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 安装准备/卷/许可/进度、更新/SPK/设置；Package；内部写 | 只有只读列表；提交前取消丢弃迟到结果，提交后关闭不撤销任务 |
+| M6 套件中心 | PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 安装准备/卷/许可/进度、更新/SPK/设置；Package；内部写 | M6e1 设置/自动更新、来源管理及列表搜索已接；控制与安装/更新/SPK 继续 M6e2/e3，提交前取消与提交后恢复分别处理 |
 | M7 容器生命周期/日志 | ServiceManagementView、ServiceManagementModel | 详情及操作确认；Docker 稳定身份；高风险 | 只有只读投影；套件权限不等同 DSM 管理员，写后回读 |
 | M7 映像、网络、项目 | ContainerImagePullModel、ServiceManagementView | 搜索/tag/拉取、网络/项目表单；Registry.search v1；内部写 | 缺入口；读取暂失保留任务，明确 1202 失败不再卡住 |
 | M7 VMM 操作与创建 | ServiceManagementView、ServiceManagementModel | 分步配置/稳定目标；Virtualization；高风险 | 只有只读包装器；先修正同名即成功不足，创建归属和配置不足保持未知 |
@@ -149,7 +149,7 @@ M0 补充查证：Download Station 的 `removeData` 是共享接口历史参数�
 | security / Model.saveSecurity | 自动封锁/DoS/防火墙原状态及差量 | dsm-security-settings；权限/高风险写 | 待 M6b |
 | region / Model.saveRegion | 区域格式/时区/时间源/校时 | dsm-region-time-settings；管理写 | M6a3 已接完整表单与分步恢复，两端实际操作及当前环境验收通过 |
 | ddns / Model.saveDDNS、testDDNS | 服务商/条目及明确提交；不持久保存口令 | dsm-ddns-settings；凭据/网络写 | M6a3 已接完整管理与恢复，两端实际交互通过 |
-| packages / PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 列表/目录、卷、许可、SPK、更新、进度、来源和设置 | dsm-package-control/installation；套件写 | 既有摘要；完整流程待 M6e |
+| packages / PackageCenterView、PackageInstallationSheet、PackageCenterSettingsView | 列表/目录、卷、许可、SPK、更新、进度、来源和设置 | dsm-package-control/installation；套件写 | M6e1 已接设置/自动更新、来源完整管理与恢复；控制及安装/更新/SPK 仍待后续 |
 | tasks / Model.saveTask、runTask、loadTaskResults | 草稿、启停/执行/删除、结果与输出 | dsm-task-scheduler；脚本高风险写 | M6d1 完整管理、记录/输出和恢复已接，十项新实际 UI 两端都有通过证据；真实执行待验 |
 | accounts / Model.saveAccount、saveGroup | 账号/群组表单与当前账号保护 | dsm-account-directory；权限高风险写 | M6b1 完整管理与恢复已接，两端单元/实际 UI 及共享/Mac 回归通过 |
 | shareAccess / View 共享访问 | 当前账号可见共享权限摘要与搜索 | FileStation.List / dsm-share-access；只读 | M6a1 读取/两端交互通过；不冒充完整 ACL 管理 |
@@ -348,6 +348,32 @@ Apple 共享读取只增补本管理入口所需的单项失败信息，旧 Mac 
 | 明确允许关机/重启、无真实工作负载的专用 NAS，可重新开机和登录 | 分别执行关机/重启；取消零提交，接受只表示请求已发送；无回应后不重复发送，同会话重开仍受保护。设备及服务恢复后新登录，取消恢复不解锁，确认恢复且权限/info 可用才开放入口，原记录仍保留接受或未知 | 设备/DSM/OS 版本、阶段和脱敏结果；不回传主机、会话或日志。实际电源执行、重新上线及服务恢复尚未验证，Agent 不自动执行真实电源操作 |
 | 可撤销管理权限、切换账号和模拟证书/网络变化的测试环境 | 提交前失去权限零写入；恢复时失去管理权限不结算旧未知断开。证书变化停止链路；切换账号不显示旧内容，迟到回执只更新原账号记录 | 操作顺序、错误类别和是否重复请求；不回传凭据或恢复文件。权限变更与真实断线时序仍待验 |
 | iPhone/iPad 真机锁屏、低剩余空间、VoiceOver、最大动态文字及 iPad 键盘/分屏 | 记录无法保存时不提交，解锁后保留原未完成状态；确认正文/按钮、长连接详情与结果可滚动、朗读、关闭，窄宽布局可操作 | OS/设备类型、控件及脱敏失败步骤或合成截图。系统文件保护和完整辅助功能不能由模拟器替代 |
+
+### M6e 套件中心实施拆分
+
+2026-10-06 基线为 `7bd01c78`，main 工作区干净、领先远端一个已完成的 M6d2 提交。前一批完整 Apple 云端四个移动组仍在运行，共享/macOS 已通过；继续本地开发，整轮结束前不推送取消它。
+
+| 切片 / macOS 证据 | 两端用户结果与交互转换 | 契约、风险和当前状态 |
+| --- | --- | --- |
+| M6e1 设置与来源 / PackageCenterSettingsView、Model.load/savePackageCenterSettings、load/save/deletePackageSource | 已安装列表入口→原生设置/自动更新表单；来源列表、添加/编辑/移除；自动安装与来源信任分别说明实际后果 | Package.Setting/Feed v1、Package list v2；内部写/来源信任。原请求复用；逐次权限、完整基线和持久恢复已接，十一项新实际 UI 均有两端通过结果 |
+| M6e2 已安装套件控制 / PackageCenterView、Model.controlPackage | 列表/搜索/详情、启动/停止/卸载独立确认、稳定目标与未知恢复；不照搬右键或悬停 | Package/Control/Uninstallation。只读发现 Model.packageActionIsVerified 把任意非 running/active（包括未知）判作停止，并可在结果分支后覆盖；已请求仅该 Mac 反馈及回归的范围决定，未改 Mac 或开始此控制切片 |
+| M6e3 安装、更新与 SPK / PackageInstallationSheet、Model.prepare/start/configure/advancePackageInstallation | 官方/第三方/测试版目录、分类/搜索/详情、安装清单与依赖、卷、许可/字段、SPK 选择、进度、取消下载和中断恢复 | Package.Server/Installation/Info/Download。未实现；不把未知当失败重试，不保存口令或外部下载地址，不以旧同版本认领重装成功；付费/测试版首次协议及不支持表单沿用 DSM 路径 |
+
+本波唯一修改范围为 M6e1：移动套件列表/设置/来源模型、原生表单/确认、受保护记录、合成环境及对应测试；共享 Package 设置/来源复用原参数并增量加入管理快照、写前/接受回执检查点与当前权限回调；必要组合根、路由、生成工程、双语资源和本账本。M6e2 的 macOS 反馈范围决定不阻塞独立的 M6e1；Mac App 继续只读，Windows/Android 只记录影响。
+
+沿用已授权 M0–M8 独立恢复存储范围，记录只保存账号上下文、原/目标设置或来源的摘要、动作和阶段，不保存来源地址/名称、套件明细或会话。记录受系统文件保护并排除备份，写前落盘失败则零请求，未知不重放，重启只读比对；回滚关闭新增入口并保留记录，原登录/凭据格式不迁移。未知的单套件自动更新字段不能被默认关闭后整表覆盖；只有已读完整值的目标可保存，其他来源读取仍独立可用。M6e1 不声称已完成控制、安装或 M7/M8，也不为尚未实现部分先标 PENDING_USER_VALIDATION。
+
+
+M6e1 已完成当前源码与可运行验证：新增 22 条移动行为、17 条共享流程与 11 条实际界面用例；两端最新完整单元各 1436 项（各 4 条既有条件跳过），十一项界面均有两端通过结果，浅深色/中文大字已实际查看。共享完整 2857 XCTest（172 条既有跳过）及 12 Swift Testing、末次 48 项请求/流程回归、Mac Release x86_64/arm64 构建均通过。首轮默认位置节点定位、方向键被当正文、iPad 键盘焦点及测试同步停滞均按实际层级/录屏修正，未放宽产品校验或断言；中止测试不当通过。精确轮次与命令见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-06-移动-m6e1-套件设置与来源)。
+
+`PENDING_USER_VALIDATION`（仅已实现的 M6e1）：
+
+| 前置条件 | 操作与预期 | 脱敏反馈及影响 |
+| --- | --- | --- |
+| 专用 NAS、管理账号、允许变更的套件及可选多卷 | 对照 DSM 保存通知、默认位置、测试版显示与自动更新策略；单卷无多余选择器，按套件选择不把未知值覆盖为关闭。自动更新取消零提交，确认后配置与 NAS 相符；真实自动安装及服务影响须限可丢弃环境 | DSM/套件/App/OS 版本、设置类别、结果和是否重复请求；不回传套件明细、地址或响应。通知送达、自动安装及不同 DSM 字段完整性未验证 |
+| 已授权的测试来源及证书，必要时可使用受控 HTTP 测试地址 | 添加/编辑显示来源信任与未加密后果，取消零写；确认保存后新来源匹配，改址后旧来源消失；移除不卸载现有套件。未知时不重复添加或清记录解除保护 | 连接类别、动作阶段及脱敏错误，不回传来源 URL、查询口令、名称或证书私钥。NAS 实际证书信任和来源访问仍待验 |
+| 可中断网络、撤销权限、切换账号及重启 App 的测试环境 | 写前权限/原值变化零提交；已发送无回应只读恢复，接受后读取拒绝保持未知，明确拒绝不误报成功；不完整目录、旧地址仍在或管理权限失效不能结算，跨账号迟到结果隔离 | 操作次序、错误类别、是否重复发送；不回传恢复文件或会话。写前读取与写入非原子，跨客户端并发仍需实测 |
+| 真机锁屏/低剩余空间、VoiceOver、最大动态文字与 iPad 键盘/分屏 | 保存记录失败零请求，解锁后保留未完成状态；字段、选择器、长地址、风险确认及结果可操作/朗读，取消或关闭不伪装已撤回请求 | OS/设备类型、控件及脱敏复现步骤/合成截图；文件保护、真实键盘与完整辅助功能尚未验证 |
 
 ### M6a3 区域时间与 DDNS
 
