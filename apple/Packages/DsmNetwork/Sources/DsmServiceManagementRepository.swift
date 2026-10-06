@@ -224,7 +224,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private var imagePullBusy = false
     private var imagePullOperations: [UUID: ImagePullOperation] = [:]
     private var activeVirtualMachineDeletionIDs: Set<String> = []
-    private var unverifiedPublicVmmDeletions: [String: Set<String>] = [:]
+    private var unverifiedPublicVmmDeletions: [String: [String: PublicVmmDeletion]] = [:]
     private var activePublicVmmPowerIDs: Set<String> = []
     private var unverifiedPublicVmmPower: [String: PublicVmmPowerTarget] = [:]
     private var activeDeletionIDsByOperation: [String: Set<String>] = [:]
@@ -2309,7 +2309,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private func containerNetworkDefinitions() async throws -> [(network: ContainerNetwork, raw: [String: ServiceJSON])] {
         let value = try await networkRequest(method: "list")
         let objects = try Self.strictRootObjects(value, keys: ["network", "networks"])
-        try Self.requireCompleteContainerManagerList(value, count: objects.count)
+        try Self.requireCompleteServiceList(value, count: objects.count)
         let values = try objects.map { raw in
             guard let network = Self.containerNetwork(raw),
                   Self.officialNonEmptyString(raw["id"] ?? raw["network_id"] ?? raw["Id"]) == network.id,
@@ -3100,6 +3100,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
+    private struct PublicVmmDeletion {
+        var accepted = false
+    }
+
     private struct PublicVmmPowerTarget {
         let name: String
         let action: VirtualMachinePowerAction
@@ -3128,7 +3132,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         guard activePublicVmmPowerIDs.isDisjoint(with: targetSet),
               (activeDeletionIDsByOperation["virtualMachineDelete"] ?? []).isDisjoint(with: targetSet),
               activeVirtualMachineDeletionIDs.isDisjoint(with: targetSet),
-              (unverifiedPublicVmmDeletions[guestAPI] ?? []).isDisjoint(with: targetSet) else {
+              Set(unverifiedPublicVmmDeletions[guestAPI, default: [:]].keys).isDisjoint(with: targetSet) else {
             throw validationError(L10n.string("virtual-machine.power.review-required"))
         }
         activePublicVmmPowerIDs.formUnion(targetSet)
@@ -3289,23 +3293,27 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 localizationSuffix: category == .authentication ? "authentication" : status == .confirmedSuccess ? "completed" : succeeded > 0 ? "partial" : unknown > 0 ? "unverified" : status == .permissionDenied ? "permission-denied" : status == .unsupported ? "unsupported" : "failed",
                 diagnosticSuffix: "public-v1-batch")
         }
+        let prior = Set(unverifiedPublicVmmDeletions[api, default: [:]].keys).intersection(targetSet)
+        submitted = !prior.isEmpty
         let current: Set<String>
         do {
             current = try await publicVmmDeletionIDs(capability: capability, arrayKey: arrayKey, idKey: idKey)
         } catch let error as AppError {
+            if !prior.isEmpty { return try summary(unknown: prior.count, category: serviceMutationErrorCategory(for: error.category)) }
             return try deletionPreflightResult(error, targetCount: targets.count, context: context)
         } catch {
+            if !prior.isEmpty { return try summary(unknown: prior.count, category: Task.isCancelled ? nil : .unknown) }
             if Task.isCancelled { return try deletionCancellationBeforeSubmission(context: context) }
             return try deletionUnexpectedPreflightResult(targetCount: targets.count, context: context)
         }
-        let prior = (unverifiedPublicVmmDeletions[api] ?? []).intersection(targetSet)
         if !prior.isEmpty {
             // 对先前未知的同一目标只核对，不借这次调用启动任何新删除。
-            let resolved = prior.subtracting(current)
-            unverifiedPublicVmmDeletions[api]?.subtract(resolved)
+            // 清单消失只证明当前状态；缺少本次接受回执时不能认领其他客户端的删除。
+            let resolved = prior.filter { !current.contains($0) && unverifiedPublicVmmDeletions[api]?[$0]?.accepted == true }
+            for id in resolved { unverifiedPublicVmmDeletions[api]?[id] = nil }
             succeeded = resolved.count
             submitted = true
-            return try summary(unknown: prior.intersection(current).count)
+            return try summary(unknown: prior.count - resolved.count)
         }
         guard targetSet.isSubset(of: current) else {
             return try deletionMissingTargetResult(targetCount: targets.count, context: context)
@@ -3317,13 +3325,14 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 return try deletionCancellationBeforeSubmission(context: context)
             }
             guard observedIDs.contains(id) else { return try summary(unknown: 0, category: .conflict) }
-            unverifiedPublicVmmDeletions[api, default: []].insert(id)
+            unverifiedPublicVmmDeletions[api, default: [:]][id] = PublicVmmDeletion()
             submitted = true
             var submissionError: AppError?
             var explicitlyRejected = false
             do {
                 try await client.callVoid(path: capability.path, api: api, version: 1, method: "delete",
                     requestFormat: capability.requestFormat, parameters: [idKey: .string(id)], credential: credential)
+                unverifiedPublicVmmDeletions[api]?[id]?.accepted = true
             } catch let error as DsmNetworkError {
                 submissionError = DsmErrorMapper.map(error)
                 if case .api(let code, _) = error, code > 0 { explicitlyRejected = true }
@@ -3333,16 +3342,16 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 return try summary(unknown: 1, category: Task.isCancelled ? nil : .unknown)
             }
             if let error = submissionError, explicitlyRejected {
-                unverifiedPublicVmmDeletions[api]?.remove(id)
+                unverifiedPublicVmmDeletions[api]?[id] = nil
                 return try summary(unknown: 0, category: serviceMutationErrorCategory(for: error.category))
             }
             if Task.isCancelled { return try summary(unknown: 1) }
             do {
                 let remaining = try await publicVmmDeletionIDs(capability: capability, arrayKey: arrayKey, idKey: idKey)
-                guard !remaining.contains(id) else {
+                guard !remaining.contains(id), unverifiedPublicVmmDeletions[api]?[id]?.accepted == true else {
                     return try summary(unknown: 1, category: submissionError.map { serviceMutationErrorCategory(for: $0.category) })
                 }
-                unverifiedPublicVmmDeletions[api]?.remove(id)
+                unverifiedPublicVmmDeletions[api]?[id] = nil
                 observedIDs = remaining
                 succeeded += 1
             } catch let error as AppError {
@@ -3367,6 +3376,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
         try Task.checkCancellation()
         guard case .array(let items)? = value[arrayKey] else { throw invalidServiceResponse() }
+        try Self.requireCompleteServiceList(value, count: items.count)
         var ids = Set<String>()
         for item in items {
             guard case .string(let id)? = item[idKey], Self.isPublicVmmDeletionID(id), ids.insert(id).inserted else {
@@ -5459,7 +5469,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
               case .array(let containers)? = root["containers"] else {
             throw invalidContainerInventoryError()
         }
-        try requireCompleteContainerManagerList(value, count: containers.count)
+        try requireCompleteServiceList(value, count: containers.count)
         var identifiers = Set<String>()
         return try containers.map { node in
             guard case .object(let object) = node,
@@ -5506,7 +5516,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
     private static func containerImages(_ value: ServiceJSON) throws -> [ContainerImage] {
         let rows = try strictRootObjects(value, keys: ["images", "image"])
-        try requireCompleteContainerManagerList(value, count: rows.count)
+        try requireCompleteServiceList(value, count: rows.count)
         var result: [ContainerImage] = []
         for row in rows {
             guard let summary = image(row) else { throw invalidServiceResponseStatic() }
@@ -5530,7 +5540,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         return result
     }
 
-    private static func requireCompleteContainerManagerList(_ value: ServiceJSON, count: Int) throws {
+    private static func requireCompleteServiceList(_ value: ServiceJSON, count: Int) throws {
         if let total = value["total"] {
             guard case .number(let number) = total, number == Double(count) else { throw invalidServiceResponseStatic() }
         }
@@ -5541,7 +5551,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
     private static func containerImageUsage(_ images: [ContainerImage], containers: ServiceJSON) throws -> Set<String> {
         let rows = try strictRootObjects(containers, keys: ["containers", "container"])
-        try requireCompleteContainerManagerList(containers, count: rows.count)
+        try requireCompleteServiceList(containers, count: rows.count)
         var used: Set<String> = []
         for row in rows {
             let rawImage = try imageString(row, "Image") ?? ""

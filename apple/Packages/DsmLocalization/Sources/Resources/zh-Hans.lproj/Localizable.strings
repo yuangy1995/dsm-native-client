@@ -284,7 +284,7 @@
 "virtual-machine.delete.partial" = "部分虚拟机已删除，其余尚未完成。请先在 NAS 上检查，再处理剩余项目。";
 "virtual-machine.delete.permission-denied" = "当前账号不能删除这些虚拟机。请使用管理员账号，或联系管理员授予权限。";
 "virtual-machine.delete.unsupported" = "当前 NAS 不支持通过岚仓删除虚拟机。";
-"virtual-machine.delete.unverified" = "删除可能已经生效。请先刷新虚拟机列表检查，再决定是否重试。";
+"virtual-machine.delete.unverified" = "删除结果暂不可用。请重新连接后刷新列表，或在 Virtual Machine Manager 中查看。";
 "virtual-machine-image.delete.cancelled" = "虚拟机映像删除已取消，没有发送任何更改。";
 "virtual-machine-image.delete.authentication" = "登录已失效。请重新登录并检查映像，再决定是否重新删除。";
 "virtual-machine-image.delete.completed" = "所选虚拟机映像已删除。";
@@ -292,7 +292,7 @@
 "virtual-machine-image.delete.partial" = "部分虚拟机映像已删除，其余尚未完成。请先在 NAS 上检查，再处理剩余项目。";
 "virtual-machine-image.delete.permission-denied" = "当前账号不能删除这些虚拟机映像。请使用管理员账号，或联系管理员授予权限。";
 "virtual-machine-image.delete.unsupported" = "当前 NAS 不支持通过岚仓删除虚拟机映像。";
-"virtual-machine-image.delete.unverified" = "删除可能已经生效。请先刷新虚拟机映像列表检查，再决定是否重试。";
+"virtual-machine-image.delete.unverified" = "删除结果暂不可用。请重新连接后刷新列表，或在 Virtual Machine Manager 中查看。";
 "virtual-machine-network.delete.cancelled" = "虚拟机网络删除已取消，没有发送任何更改。";
 "virtual-machine-network.delete.completed" = "所选虚拟机网络已删除。";
 "virtual-machine-network.delete.failed" = "未能删除所选虚拟机网络。请确认它们仍然存在且未被占用，然后重试。";

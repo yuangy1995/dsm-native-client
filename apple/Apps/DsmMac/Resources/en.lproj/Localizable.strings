@@ -170,14 +170,14 @@
 "virtual-machine.delete.partial" = "Some virtual machines were deleted; the rest are incomplete. Check the NAS before deleting any remaining items.";
 "virtual-machine.delete.permission-denied" = "This account cannot delete these virtual machines. Use an administrator account or ask an administrator for access.";
 "virtual-machine.delete.unsupported" = "This NAS does not support deleting virtual machines through LanStash.";
-"virtual-machine.delete.unverified" = "The deletion may already have taken effect. Refresh the virtual machine list before deciding whether to try again.";
+"virtual-machine.delete.unverified" = "The deletion result is temporarily unavailable. Reconnect and refresh the list, or view it in Virtual Machine Manager.";
 "virtual-machine-image.delete.cancelled" = "Image deletion was cancelled before any changes were sent.";
 "virtual-machine-image.delete.completed" = "The selected virtual machine images were deleted.";
 "virtual-machine-image.delete.failed" = "The virtual machine images could not be deleted. Check that they still exist and are not in use, then try again.";
 "virtual-machine-image.delete.partial" = "Some virtual machine images were deleted; the rest are incomplete. Check the NAS before deleting any remaining items.";
 "virtual-machine-image.delete.permission-denied" = "This account cannot delete these virtual machine images. Use an administrator account or ask an administrator for access.";
 "virtual-machine-image.delete.unsupported" = "This NAS does not support deleting virtual machine images through LanStash.";
-"virtual-machine-image.delete.unverified" = "The deletion may already have taken effect. Refresh the virtual machine image list before deciding whether to try again.";
+"virtual-machine-image.delete.unverified" = "The deletion result is temporarily unavailable. Reconnect and refresh the list, or view it in Virtual Machine Manager.";
 "virtual-machine-network.delete.cancelled" = "Network deletion was cancelled before any changes were sent.";
 "virtual-machine-network.delete.completed" = "The selected virtual machine networks were deleted.";
 "virtual-machine-network.delete.failed" = "The virtual machine networks could not be deleted. Check that they still exist and are not in use, then try again.";
