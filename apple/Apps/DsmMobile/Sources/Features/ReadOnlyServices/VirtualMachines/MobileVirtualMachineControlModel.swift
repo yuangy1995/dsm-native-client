@@ -17,6 +17,20 @@ final class MobileVirtualMachineControlModel {
         let activation: UUID
         let targets: [VirtualMachineNetworkState]
     }
+    struct ImageConfirmation: Identifiable {
+        let id = UUID()
+        let activation: UUID
+        let targets: [VirtualMachineImageState]
+    }
+    private(set) var imageInventory = VirtualMachineImageInventory(source: .official, isFrozen: false, images: [])
+    private(set) var imageHasLoaded = false
+    private(set) var imageIsRefreshing = false
+    private(set) var imageAllowed = false
+    private(set) var imageError: Failure?
+    let imageRecovery: MobileVirtualMachineImageStore
+    private var imageNames: [String: String] = [:]
+    @ObservationIgnored private var imageReadTask: Task<Void, Never>?
+    @ObservationIgnored private var imageGeneration = UUID()
     private(set) var networkInventory = VirtualMachineNetworkInventory(isFrozen: false, networks: [])
     private(set) var networkHasLoaded = false
     private(set) var networkIsRefreshing = false
@@ -46,6 +60,7 @@ final class MobileVirtualMachineControlModel {
     @ObservationIgnored private var operations: [UUID: Task<Void, Never>] = [:]
 
     init(root: URL? = nil) {
+        imageRecovery = MobileVirtualMachineImageStore(root: root)
         networkRecovery = MobileVirtualMachineNetworkStore(root: root)
         recovery = MobileVirtualMachineControlStore(root: root)
         creations = MobileVirtualMachineCreationStore(root: root)
@@ -56,10 +71,13 @@ final class MobileVirtualMachineControlModel {
         guard next != context || self.repository.map(ObjectIdentifier.init) != repository.map(ObjectIdentifier.init) else {
             self.authorize = authorize; return
         }
-        deactivate(); context = next; self.repository = repository; self.authorize = authorize; recovery.reload(); creations.reload(); networkRecovery.reload()
+        deactivate(); context = next; self.repository = repository; self.authorize = authorize
+        recovery.reload(); creations.reload(); networkRecovery.reload(); imageRecovery.reload()
     }
     func deactivate() {
         activation = UUID(); cancelRead(); cancelNetworkRead()
+        cancelImageRead(); imageInventory = .init(source: .official, isFrozen: false, images: []); imageNames = [:]
+        imageHasLoaded = false; imageAllowed = false; imageError = nil
         networkInventory = .init(isFrozen: false, networks: []); networkNames = [:]
         networkHasLoaded = false; networkAllowed = false; networkError = nil
         for task in operations.values { task.cancel() }
@@ -77,7 +95,7 @@ final class MobileVirtualMachineControlModel {
     func name(for item: MobileVirtualMachineControlStore.Item) -> String? {
         submittedNames[item.identity + item.name] ?? targets.first(where: item.matches)?.name
     }
-    var isOperating: Bool { networkEntries.contains { networkRecovery.isExecuting($0.id) } || entries.contains { recovery.isExecuting($0.id) } || creationEntries.contains { creations.isExecuting($0.id) } }
+    var isOperating: Bool { imageEntries.contains { imageRecovery.isExecuting($0.id) } || networkEntries.contains { networkRecovery.isExecuting($0.id) } || entries.contains { recovery.isExecuting($0.id) } || creationEntries.contains { creations.isExecuting($0.id) } }
     func refresh() async {
         guard let repository, let context, let authorize else { return }
         cancelRead(); let generation = generation, token = activation
@@ -93,7 +111,7 @@ final class MobileVirtualMachineControlModel {
                 self.targets = values; self.hasLoaded = true
                 self.supportsSettings = supportsSettings
                 self.supportsCreation = supportsCreation
-                self.recovery.reload(); self.creations.reload(); self.networkRecovery.reload()
+                self.recovery.reload(); self.creations.reload(); self.networkRecovery.reload(); self.imageRecovery.reload()
                 do { try self.recovery.resolve(values, context: context) } catch { self.error = .storage }
                 if self.recovery.failed || self.creations.failed || self.networkRecovery.failed { self.error = .storage }
                 if !self.recovery.failed && !self.creations.failed && !self.networkRecovery.failed {
@@ -278,7 +296,7 @@ final class MobileVirtualMachineControlModel {
         guard let context else { return }
         do { try recovery.remove(id, context: context) } catch { self.error = .storage }
     }
-    var canOpenCreation: Bool { supportsCreation && allowed && error == nil && !isRefreshing && !isOperating && !networkRecovery.failed }
+    var canOpenCreation: Bool { supportsCreation && allowed && error == nil && !isRefreshing && !isOperating && !networkRecovery.failed && !imageRecovery.failed }
     func canCreate(name: String) -> Bool {
         guard canOpenCreation, let context else { return false }
         return !targets.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
@@ -294,12 +312,14 @@ final class MobileVirtualMachineControlModel {
         guard token == activation, let context else { throw CancellationError() }
         return .init(storages: resources.storages,
                      networks: resources.networks.filter { !networkRecovery.protects(networkID: $0.id, context: context) },
-                     images: resources.images, imagesAvailable: resources.imagesAvailable, networksAvailable: resources.networksAvailable)
+                     images: resources.images.filter { !imageRecovery.protects(imageID: $0.id, context: context) },
+                     imagesAvailable: resources.imagesAvailable, networksAvailable: resources.networksAvailable)
     }
     @discardableResult func create(_ configuration: VirtualMachineCreation, resources: VirtualMachineCreationResources,
                                    activation token: UUID) -> UUID? {
         guard token == activation else { return nil }
         guard canCreate(name: configuration.name), let context, let repository, let authorize,
+              configuration.bootImageID.map({ !imageRecovery.protects(imageID: $0, context: context) }) ?? true,
               configuration.networkID.isEmpty || !networkRecovery.protects(networkID: configuration.networkID, context: context) else { error = .changed; return nil }
         let store = creations, entry: MobileVirtualMachineCreationStore.Entry
         do { entry = try store.reserve(name: configuration.name, context: context) }
@@ -464,6 +484,110 @@ final class MobileVirtualMachineControlModel {
     func removeNetworkRecord(_ id: UUID) {
         guard let context else { return }
         do { try networkRecovery.remove(id, context: context) } catch { networkError = .storage }
+    }
+    var imageEntries: [MobileVirtualMachineImageStore.Entry] { imageRecovery.entries.filter { $0.context == context }.reversed() }
+    func name(for item: MobileVirtualMachineImageStore.Item) -> String? {
+        imageNames[item.identity + item.snapshot] ?? imageInventory.images.first(where: item.matches)?.name
+    }
+    func cancelImageRead() {
+        imageGeneration = UUID(); imageReadTask?.cancel(); imageReadTask = nil; imageIsRefreshing = false
+    }
+    func refreshImages() async {
+        guard let repository, let context, let authorize else { return }
+        cancelImageRead(); let generation = imageGeneration, token = activation
+        imageIsRefreshing = true; imageAllowed = false; imageError = nil
+        let task = Task { [weak self] in
+            do {
+                guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+                let inventory = try await repository.loadVirtualMachineImages()
+                try Task.checkCancellation()
+                guard let self, self.activation == token, self.imageGeneration == generation else { return }
+                self.imageInventory = inventory; self.imageHasLoaded = true
+                self.imageRecovery.reload(); self.creations.reload()
+                try self.imageRecovery.resolve(inventory, context: context)
+                if self.imageRecovery.failed || self.creations.failed { self.imageError = .storage }
+                self.imageAllowed = self.imageError == nil && !inventory.isFrozen
+                self.imageIsRefreshing = false
+            } catch {
+                guard let self, self.activation == token, self.imageGeneration == generation else { return }
+                self.imageIsRefreshing = false; self.imageHasLoaded = true; self.imageAllowed = false
+                if !(error is CancellationError) { self.imageError = Self.failure(error) }
+                if self.imageRecovery.failed { self.imageError = .storage }
+            }
+        }
+        imageReadTask = task; await task.value
+    }
+    func canDeleteImages(ids: Set<String>) -> Bool {
+        guard let context, imageAllowed, imageError == nil, !imageIsRefreshing, !isOperating,
+              !ids.isEmpty, !creations.failed, !imageRecovery.failed else { return false }
+        let selected = imageInventory.images.filter { ids.contains($0.id) }
+        return selected.count == ids.count && selected.allSatisfy { image in
+            image.name != nil && image.canDelete && !imageRecovery.protects(imageID: image.id, context: context)
+                && !creations.protectsResource(kind: "image", id: image.id, context: context)
+        }
+    }
+    func imageConfirmation(ids: Set<String>) -> ImageConfirmation? {
+        guard canDeleteImages(ids: ids) else { return nil }
+        return .init(activation: activation, targets: imageInventory.images.filter { ids.contains($0.id) })
+    }
+    @discardableResult func deleteImages(_ confirmation: ImageConfirmation) -> UUID? {
+        guard confirmation.activation == activation else { return nil }
+        let selected = confirmation.targets, token = activation
+        guard canDeleteImages(ids: Set(selected.map(\.id))), selected.allSatisfy({ imageInventory.images.contains($0) }),
+              let repository, let context, let authorize else { imageError = .changed; return nil }
+        let store = imageRecovery, entry: MobileVirtualMachineImageStore.Entry
+        do { entry = try store.reserve(selected, context: context) }
+        catch { imageError = .storage; return nil }
+        for (target, item) in zip(selected, entry.items) { imageNames[item.identity + item.snapshot] = target.name }
+        imageError = nil
+        operations[entry.id] = Task { [weak self] in
+            defer { store.end(entry.id); self?.operations[entry.id] = nil }
+            var failedIndex: Int?, failure: Failure?, canSubmit = false
+            do {
+                guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+                let current = try await repository.loadVirtualMachineImages()
+                try Task.checkCancellation()
+                guard self?.activation == token else { throw CancellationError() }
+                guard !current.isFrozen, selected.allSatisfy({ current.images.contains($0) }) else {
+                    throw AppError(category: .conflict, isRetryable: false, safeUserMessage: "")
+                }
+                canSubmit = true
+            } catch {
+                if !(error is CancellationError) && (error as? AppError)?.category != .cancelled { failedIndex = 0; failure = Self.failure(error) }
+            }
+            for (index, target) in selected.enumerated() where canSubmit && failure == nil {
+                do {
+                    try Task.checkCancellation()
+                    guard self?.activation == token else { throw CancellationError() }
+                    try await repository.deleteVirtualMachineImage(target) { [weak self] stage in
+                        if stage == .willSubmit {
+                            guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+                        }
+                        try await MainActor.run {
+                            if stage == .willSubmit {
+                                guard let self, self.activation == token, !Task.isCancelled else { throw CancellationError() }
+                                self.cancelImageRead()
+                            }
+                            try store.checkpoint(entry.id, index: index, stage: stage)
+                        }
+                    }
+                } catch {
+                    if !(error is CancellationError) && (error as? AppError)?.category != .cancelled { failedIndex = index; failure = Self.failure(error) }
+                    break
+                }
+            }
+            if !store.failed { try? store.finish(entry.id, failedIndex: failedIndex, failure: failure.map(Self.storeFailure)) }
+            store.end(entry.id)
+            guard let self, self.activation == token else { return }
+            if store.failed { self.imageError = .storage; self.imageAllowed = false; return }
+            if let failure, [.trust, .denied].contains(failure) { self.imageError = failure; self.imageAllowed = false; return }
+            await self.refreshImages()
+        }
+        return entry.id
+    }
+    func removeImageRecord(_ id: UUID) {
+        guard let context else { return }
+        do { try imageRecovery.remove(id, context: context) } catch { imageError = .storage }
     }
     private static func storeFailure(_ failure: Failure) -> MobileVirtualMachineControlStore.Failure {
         switch failure { case .denied: .denied; case .unavailable: .unavailable; case .changed: .changed; default: .failed }

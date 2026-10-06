@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "vmm.delete-image.synthetic-internal-image",
+  "module": "vmm",
+  "operation": "deleteImage",
+  "api": { "name": "SYNO.Virtualization.Guest.Image", "method": "delete", "preferredVersion": 2, "resolvedVersion": 2, "resolvedPath": "entry.cgi" },
+  "transport": { "httpMethod": "POST", "requestFormat": "json" },
+  "parameters": [
+    { "name": "id", "valueType": "string", "encodedValue": "\"<synthetic-virtual-machine-image>\"" },
+    { "name": "synovmm_ui_id", "valueType": "string", "encodedValue": "\"<synthetic-operation-id>\"" }
+  ],
+  "authentication": { "required": true, "synoTokenRequired": false, "sessionLocations": ["cookie", "form"], "synoTokenLocations": ["header", "form"] },
+  "policy": { "retryPolicy": "queryStateBeforeDecision", "risk": "destructive", "readbackPolicy": "required" },
+  "source": { "kind": "synthetic", "evidence": "sourceReviewed" }
+}

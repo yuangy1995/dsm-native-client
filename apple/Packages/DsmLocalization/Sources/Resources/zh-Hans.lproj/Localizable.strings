@@ -7328,3 +7328,31 @@
 "mobile.virtual-machines.network.failed" = "未能修改网络。请刷新列表后重试。";
 "mobile.virtual-machines.network.selection" = "选择网络";
 "mobile.virtual-machines.network.refresh" = "刷新";
+
+// 移动虚拟机映像删除。
+"mobile.virtual-machines.image.loading" = "正在加载映像…";
+"mobile.virtual-machines.image.error.title" = "暂时无法显示映像";
+"mobile.virtual-machines.image.empty" = "暂无映像";
+"mobile.virtual-machines.image.empty.message" = "请先在 Virtual Machine Manager 中添加映像，再刷新此页。";
+"mobile.virtual-machines.image.search" = "搜索映像";
+"mobile.virtual-machines.image.refresh" = "刷新映像";
+"mobile.virtual-machines.image.selection" = "选择映像";
+"mobile.virtual-machines.image.delete" = "删除映像";
+"mobile.virtual-machines.image.delete.warning" = "所选映像及其存储副本将被永久删除，之后无法再用它们安装或创建虚拟机。此操作无法撤销。";
+"mobile.virtual-machines.image.delete.count" = "已选择 %lld 个映像";
+"mobile.virtual-machines.image.delete.completed" = "映像已删除";
+"mobile.virtual-machines.image.type" = "类型";
+"mobile.virtual-machines.image.copies" = "存储副本";
+"mobile.virtual-machines.image.in-use" = "虚拟机正在使用此映像。请先在 Virtual Machine Manager 中弹出映像，再删除。";
+"mobile.virtual-machines.image.not-ready" = "此映像暂时无法删除。请稍后刷新，或打开 Virtual Machine Manager 查看。";
+"mobile.virtual-machines.image.gone" = "映像已不在列表中";
+"mobile.virtual-machines.image.gone.message" = "请返回映像列表查看其余映像。";
+"mobile.virtual-machines.image.frozen" = "Virtual Machine Manager 正忙，请稍后再试。";
+"mobile.virtual-machines.image.target" = "映像 %lld";
+"mobile.virtual-machines.image.failed" = "未能删除此映像。请刷新列表后重试。";
+"mobile.virtual-machines.image.changed" = "此映像已发生变化或正在使用中。请刷新列表后再删除。";
+"mobile.virtual-machines.image.read-failed" = "未能加载映像。请检查连接后重试。";
+"mobile.virtual-machines.image.unnamed" = "未命名映像";
+"mobile.virtual-machines.image.iso" = "安装映像";
+"mobile.virtual-machines.image.disk" = "磁盘映像";
+"mobile.virtual-machines.image.type.unknown" = "映像";

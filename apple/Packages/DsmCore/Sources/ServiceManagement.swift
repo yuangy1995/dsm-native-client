@@ -878,6 +878,9 @@ public protocol ServiceManagementRepository: Sendable {
     func deleteVirtualMachineNetworksResult(ids: [String]) async throws -> MutationResult
     func deleteVirtualMachineImages(ids: [String]) async throws
     func deleteVirtualMachineImagesResult(ids: [String]) async throws -> MutationResult
+    func loadVirtualMachineImages() async throws -> VirtualMachineImageInventory
+    func deleteVirtualMachineImage(_ target: VirtualMachineImageState,
+                                   observer: @escaping VirtualMachineControlObserver) async throws
 }
 
 public extension ServiceManagementRepository {
@@ -1094,6 +1097,14 @@ public extension ServiceManagementRepository {
             localizationPrefix: "virtual-machine-image.delete",
             count: ids.count
         )
+    }
+
+    func loadVirtualMachineImages() async throws -> VirtualMachineImageInventory {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("virtual-machine-image.delete.unsupported"))
+    }
+    func deleteVirtualMachineImage(_ target: VirtualMachineImageState,
+                                   observer: @escaping VirtualMachineControlObserver) async throws {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("virtual-machine-image.delete.unsupported"))
     }
 
     private func unsupportedDeletionResult(

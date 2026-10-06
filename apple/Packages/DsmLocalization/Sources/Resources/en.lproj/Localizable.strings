@@ -7328,3 +7328,31 @@
 "mobile.virtual-machines.network.failed" = "The network could not be changed. Refresh the list and try again.";
 "mobile.virtual-machines.network.selection" = "Select Networks";
 "mobile.virtual-machines.network.refresh" = "Refresh";
+
+// 移动虚拟机映像删除。
+"mobile.virtual-machines.image.loading" = "Loading images…";
+"mobile.virtual-machines.image.error.title" = "Images unavailable";
+"mobile.virtual-machines.image.empty" = "No images";
+"mobile.virtual-machines.image.empty.message" = "Add an image in Virtual Machine Manager, then refresh here.";
+"mobile.virtual-machines.image.search" = "Search images";
+"mobile.virtual-machines.image.refresh" = "Refresh images";
+"mobile.virtual-machines.image.selection" = "Select images";
+"mobile.virtual-machines.image.delete" = "Delete images";
+"mobile.virtual-machines.image.delete.warning" = "The selected images and their stored copies will be permanently deleted. They will no longer be available for installing or creating virtual machines. This cannot be undone.";
+"mobile.virtual-machines.image.delete.count" = "Selected images: %lld";
+"mobile.virtual-machines.image.delete.completed" = "Image deleted";
+"mobile.virtual-machines.image.type" = "Type";
+"mobile.virtual-machines.image.copies" = "Stored copies";
+"mobile.virtual-machines.image.in-use" = "A virtual machine is using this image. Eject it in Virtual Machine Manager before deleting.";
+"mobile.virtual-machines.image.not-ready" = "This image is temporarily unavailable for deletion. Refresh later or open Virtual Machine Manager.";
+"mobile.virtual-machines.image.gone" = "Image unavailable";
+"mobile.virtual-machines.image.gone.message" = "Return to the image list to view the remaining images.";
+"mobile.virtual-machines.image.frozen" = "Virtual Machine Manager is busy. Try again later.";
+"mobile.virtual-machines.image.target" = "Image %lld";
+"mobile.virtual-machines.image.failed" = "The image could not be deleted. Refresh the list and try again.";
+"mobile.virtual-machines.image.changed" = "This image has changed or is in use. Refresh the list before deleting it.";
+"mobile.virtual-machines.image.read-failed" = "The images could not be loaded. Check your connection and try again.";
+"mobile.virtual-machines.image.unnamed" = "Unnamed image";
+"mobile.virtual-machines.image.iso" = "Installation image";
+"mobile.virtual-machines.image.disk" = "Disk image";
+"mobile.virtual-machines.image.type.unknown" = "Image";

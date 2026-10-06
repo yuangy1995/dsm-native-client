@@ -13,7 +13,7 @@
 2026-10-06 当前官方页面已补核内部电源 `action=poweron/shutdown/poweroff/reboot`、
 Guest.delete v1 单 `guest_id`、Guest.Image.delete v2 的 `id/synovmm_ui_id` 及网络改名
 保持拓扑的字段。Apple 内部电源 on/off、逗号合并 ID/版本差距已在 2026-10-07 M7d1
-修正；网络 name-only 参数差距已在 M7d4a 修正，映像 image_id 仍待后续切片。新增定义仅为
+修正；网络 name-only 参数差距已在 M7d4a 修正，映像内部 id/synovmm_ui_id 已在 M7d4b 接入。新增定义仅为
 官方静态证据，详见[本次观察](../discovery/environments/2026-10-06-container-vmm-api-read-observation.md)。
 
 ## macOS 当前写入入口
@@ -25,7 +25,7 @@ Guest.delete v1 单 `guest_id`、Guest.Image.delete v2 的 `id/synovmm_ui_id` �
 | 基础设置 `updateVirtualMachine` | 内部 `Guest.set` v1：`guest_id/synovmm_ui_id` 与修改的 `name/desc/vcpu_num/vram_size/cpu_weight/autorun` | CPU/内存修改要求停机；回读同一内部清单，逐字段比较，不接受缺失值或展示默认值 |
 | 删除虚拟机 | 公开/内部 Guest.delete 均固定 v1、逐个 guest_id；内部读取 list v2 | 原名称/停机状态与完整清单、批量逐项结果；已接受且原 ID 消失才完成，丢回执不认领、不重放 |
 | 网络改名 / 删除 | 内部 `Network.set/delete` 固定 v1，读取为 v2 | 当前 name-only 基线不等于完整 VLAN/接口拓扑编辑；名称变化不改变原拓扑 |
-| 映像删除 | 公开/内部 Guest.Image 路径分别处理 | 校验目标、占用及实际删除结果，不能把清理任务记录当删除映像 |
+| 映像删除 | 公开 Guest.Image v1 的 image_id；内部 v2 的 id/synovmm_ui_id | 原身份/完整副本/冻结状态、内部 ISO 挂载检查、逐项确认和接受回执后回读；移动同来源摘要恢复，缺回执不重放，与引用映像的创建互锁；公开占用由 NAS 拒绝，不猜内部字段。不能把清理任务记录当删除映像 |
 
 2026-10-07 Apple 公开虚拟机/映像删除修正结果归属：现有仓库实例按 API 与原 ID 保存
 是否收到本次接受回执。仅“已接受 + 完整清单中原 ID 消失”计为完成；丢回执后即使条目
@@ -60,7 +60,7 @@ Mac 对全部 VMM 删除反馈以仓库最终结果为准，不再用页面刷�
 
 本机验证、独立复核及具体真机待办见
 [M7d1 账本](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-07-m7d1-虚拟机控制与移动恢复)。
-基础编辑、创建与网络管理已分别进入 M7d2、M7d3 与 M7d4a，见下节；映像写与控制台
+基础编辑、创建、网络与映像管理已分别进入 M7d2、M7d3、M7d4a 与 M7d4b，见下节；控制台
 仍为后续源码工作，不把这些缺口写为已完成待真机。
 
 ## iPhone / iPad 基础设置编辑（M7d2）
@@ -94,7 +94,7 @@ Mac 原创建入口和移动共用内部 v1 请求，磁盘最低 10 GiB，已�
 以及所引用的当前实例网络/映像写入互斥。Mac 没有新增跨重启存储，其保护仍限
 当前仓库实例。外部竞争、真实预设/ISO/启动副作用及系统保护仍需受控环境验收，
 不将源码和合成结果提升为版本行为验证。目标平台验证进度见移动主计划 M7d3；
-网络管理见下节 M7d4a；映像管理与控制台仍是后续源码切片。
+网络与映像管理见下节 M7d4a/M7d4b；控制台仍是后续源码切片。
 
 ## iPhone / iPad 网络管理（M7d4a）
 
@@ -119,6 +119,27 @@ is_freeze 均参与检查。get 不含网络 ID，以 list 身份/名称/数量�
 测试、两端实际界面结果和 `PENDING_USER_VALIDATION` 见
 [M7d4a 账本](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-07-m7d4a-虚拟机网络改名与删除)。
 
+## iPhone / iPad 映像删除（M7d4b）
+
+两端共用严格映像清单、详情、搜索、单项/多项删除和逐项操作记录。公开
+Guest.Image list/delete 固定 v1、image_id；内部 list/delete 固定 v2，删除使用
+id 和新的 synovmm_ui_id。内部完整清单的 is_freeze、原映像名称/类型/全部副本
+共同绑定确认，相同映像的不同主机/存储副本合并为一个目标，相同位置重复或身份
+冲突拒绝写入。内部 ISO 的占用只读取已记录 Guest.list v2 和 get_setting v1 的
+iso_images；停止的虚拟机仍可能挂载，必须先在 VMM 弹出。公开清单缺少相同占用
+字段时不猜测，保留 NAS 拒绝与结果核查；没有显示名称的对象仅供读取。
+
+每项删除前保存摘要，收到明确接受回执后，只有同来源、非冻结、完整清单中原 ID
+消失才显示完成；明确拒绝不由外部删除覆盖，缺回执也不因消失认领结果或自动重发。
+第二项未知会停止后项，保留第一项完成。未完成删除与引用该映像的创建双向保护，
+已接受且恢复完成后才解除。移动独立受保护记录不含映像名称、主机/存储位置或凭据；
+Mac 共用同一请求和普通刷新恢复，其保护仍限仓库实例。
+
+映像导入/创建不在现有 macOS 产品基线，两种移动设备统一通过官方 VMM 完成。
+源码、实际两端界面、构建结果和设备待办见
+[M7d4b 账本](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-07-m7d4b-虚拟机映像删除)。
+合成测试不提升真实 NAS 删除兼容等级。
+
 ## 控制台
 
 `openVirtualMachineConsole` 返回受控会话对象：NAS 同源 `webman/3rdparty/Virtualization/noVNC/vnc.html`，WebSocket 路径为 `synovirtualization/ws/<guest id>`。URL 不携带 SID，认证在受控 Cookie/连接上下文；只允许当前主机的资源与握手，不把任意网页变成携带 NAS 凭据的浏览器。
@@ -127,7 +148,7 @@ is_freeze 均参与检查。get 不含网络 ID，以 list 身份/名称/数量�
 
 ## 其他端实施要求
 
-- 功能范围以平台专项计划为准。2026-10-04 用户已批准的移动 M7 包含完整管理与触控控制台；当前已接入电源/删除、基础设置、创建与网络管理；映像写/控制台尚未实施的投影是进度状态，不再是固定“精选”范围，也不代表已有入口已验证。
+- 功能范围以平台专项计划为准。2026-10-04 用户已批准的移动 M7 包含完整管理与触控控制台；当前已接入电源/删除、基础设置、创建、网络管理与映像删除；控制台尚未实施的投影是进度状态，不再是固定“精选”范围，也不代表已有入口已验证。
 - 公开 API 的能力、参数和结果不能用内部字段替代；内部只读结果不能证明内部写兼容。
 - 未确认的关机、强制断电、删除、网络变更不能自动重试或假定可回滚。专用测试资源的授权不等于对真实 VM 的操作授权。
 - 任务已接受、任务完成、资源已按要求创建、创建后开机分别核对，不把一个状态覆盖全部阶段。

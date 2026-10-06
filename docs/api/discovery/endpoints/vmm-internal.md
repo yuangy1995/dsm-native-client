@@ -14,6 +14,30 @@
 
 ## 请求契约
 
+### 2026-10-07 映像删除与移动恢复边界
+
+M7d4b Apple 映像删除优先使用公开 Guest.Image list/delete v1 的 image_id；仅内部
+能力可用时固定 list/delete v2，删除单个 id 并携带随机 synovmm_ui_id，不发送公开
+image_id，也不借官方工具更新路径加入 blocking。共享旧 Mac 协议入口保留，两种
+来源共用逐项删除/接受回执/完整清单回查，异步附加字段不用于猜测新的删除任务。
+
+内部清单要求 is_freeze、映像原 ID/name/type、全部 repo_id/host_id 和健康状态；
+相同映像的不同存储副本合为一个目标，同位置重复或元数据矛盾拒绝。ISO 占用依据
+完整 Guest.list v2 与逐项 get_setting v1 的 iso_images，停止的 VM 仍计为占用；
+未知或不完整响应不能当作未挂载。公开清单未提供同等字段时，不猜占用或内部副本；
+NAS 拒绝保留为失败，原始 ID/可选名称类型、接受回执及完整列表决定结果。
+
+移动原生详情/单多选确认冻结当前对象，提交前重读；新增独立受保护摘要记录仅含
+原账号、对象与快照摘要、来源和阶段/回执，不存名称、主机、存储位置或凭据。
+恢复必须同一读取来源；已接受且完整清单消失才完成，无回执不认领外部删除。
+未执行项重启停止，部分完成逐项保留，未知不重发；删除与引用该映像的创建双向
+互锁。证书和登录异常立即停止；明确拒绝不追加读取来覆盖失败。
+
+Mac 共用正确参数与实例内恢复，普通刷新只补读取已接受结果；没有新增 Mac 持久化。
+Windows 既有公开删除实现及 Android 仅登记字段/结果归属影响，不改源码。
+当前源码、合成及平台进度见移动主计划 M7d4b；真实 NAS 删除未执行，不提升任何
+environment verification。映像导入/创建仍使用官方 VMM，不扩大现有 Mac 功能范围。
+
 ### 2026-10-07 网络改名/删除与移动恢复边界
 
 M7d4a Apple 共用 Network.list/get v2 的严格原生字段读取与 set/delete v1。list 必须
@@ -31,7 +55,7 @@ interfaces_add/remove 空对象数组，private 保留原 host_id，不发未变
 Mac 共用修正但只保留仓库实例内记录，iPhone/iPad 新增独立受保护摘要文件与原生
 表单/详情/逐项记录。Windows/Android 仅登记同一字段与结果归属要求，无源码修改。
 只有源码、合成和目标平台测试进度，真实网络写、副作用和版本 verification 不提升；
-最新构建/界面结果见移动主计划 M7d4a。后续独立处理映像删除及控制台。
+最新构建/界面结果见移动主计划 M7d4a。映像删除已接入 M7d4b（见本页上文），控制台继续独立处理。
 
 ### 2026-10-07 创建任务与恢复实现边界
 
@@ -104,7 +128,7 @@ virtualization.js 的 `static`，没有执行任何写入或控制台连接，�
 | Guest.delete | v1，逐个 guest_id | 官方逐项请求，不发送逗号拼接 ID；Apple 内部分支当前版本选择/合并参数有差距，后续修复须回归公开分支与批量计数 |
 | Guest.Action.pwr_ctl | v1，guest_id、action=poweron/shutdown/poweroff/reboot | poweron 可由 Entry.Request 包装；Apple 内部 on/off 与当前定义不同。API 接受不等于电源最终状态，restart 不能仅凭仍在运行认领成功 |
 | Guest.Action.reset | v1，单 guest_id | 强制重置不同于普通 reboot，不能无确认替换为降级动作 |
-| Guest.Image.delete | v2，id、synovmm_ui_id | 普通删除无 blocking；官方工具更新专用路径另有 blocking=true。Apple 内部 image_id 与当前定义不同；公开 API 的 image_id 仍沿其公开契约 |
+| Guest.Image.delete | v2，id、synovmm_ui_id | 普通删除无 blocking；官方工具更新专用路径另有 blocking=true。Apple M7d4b 已纠正内部 image_id；公开 API 的 image_id 仍沿其公开契约 |
 | Network.set | v1，network_id/name；external 另发 interfaces_add/remove 对象数组，private 发 host_id；vlan_id 仅变化时发送 | 改名需保持原拓扑；Apple 当前只发 ID/name 与官方有差距。接口/主机数组来自原读取，不猜空值为允许断网 |
 | Network.delete | v1，单 network_id | 按原身份/拓扑/关联 VM 检查并逐项核查完整列表；读失败不等于网络已删除 |
 | Cluster.get_total_progress | v1，prefix=virtualization、virtualization_guest 或 virtualization_image | 创建按原 task_id、synovmm_ui_id、回显 API/方法/参数关联；无回执不得按同名 VM 认领 |
