@@ -1721,6 +1721,27 @@ final class NasAdministrationModelTests: XCTestCase {
         XCTAssertEqual(model.hardware?.fanMode, "quietfan")
     }
 
+    func test硬件设置页面相等不能覆盖拒绝部分或未知结果() async throws {
+        for status: MutationResultStatus in [.confirmedFailure, .permissionDenied, .unsupported, .partialSuccess,
+                                            .submittedButUnverified, .cancellationRequestedAfterSubmission] {
+            let repository = NasAdministrationRepositoryStub(hardwareUpdateStatus: status)
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            await model.activate(.hardware)
+            let settings = try XCTUnwrap(model.hardware)
+            do {
+                try await model.saveHardware(settings)
+                XCTFail("相同页面值不得覆盖实际结果：\(status)")
+            } catch let error as AppError {
+                let feedback = NasSettingsModel.hardwareSettingsFeedback(for: status)
+                XCTAssertEqual(error.category, feedback.category)
+                XCTAssertEqual(error.safeUserMessage, L10n.string(feedback.resourceKey))
+            }
+            XCTAssertEqual(model.hardware, settings)
+            XCTAssertFalse(model.isSavingServiceSettings)
+        }
+    }
+
     func test硬件设置反馈覆盖权限和不支持状态() {
         XCTAssertEqual(
             NasSettingsModel.hardwareSettingsFeedback(for: .permissionDenied),

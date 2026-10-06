@@ -172,6 +172,7 @@ final class MobileServiceOperationStore {
     }
     private static func matches(_ value: NasServiceSettings, part: Part) -> Bool {
         if part.requiresFirewallTask && part.firewallTaskSucceeded != true { return false }
+        if (part.step == .ledBrightness || part.step == .ledUpdate) && !part.accepted { return false }
         if part.step == .ethernet {
             guard case .ethernet(let values) = value, let target = part.target,
                   let match = values.first(where: { Self.targetSignature($0.id) == target }) else { return false }
@@ -207,6 +208,7 @@ final class MobileServiceOperationStore {
                       && ($0.firewallTaskSucceeded == nil || $0.firewallTaskID != nil)
                       && (!$0.firewallCleanupRequested || $0.firewallTaskSucceeded != nil)
                       && (!$0.requiresFirewallTask || $0.stage != .verified || $0.firewallTaskSucceeded == true)
+                      && (($0.step != .ledBrightness && $0.step != .ledUpdate) || $0.stage != .verified || $0.accepted)
                       && (!$0.hasPartialFields || $0.stage == .submitted || $0.stage == .verified) }) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             if value.isUnfinished, !targets.insert(value.context + value.kind.rawValue).inserted { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             if value.isUnfinished, let owner = value.networkOwner, !targets.insert("network:" + owner).inserted { throw MobileTransferRecoveryStore.StoreError.invalidRecord }

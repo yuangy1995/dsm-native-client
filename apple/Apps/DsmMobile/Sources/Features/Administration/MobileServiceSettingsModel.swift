@@ -106,7 +106,20 @@ final class MobileServiceSettingsModel {
         guard marker.expected == MobileServiceOperationStore.signature(desired, step: .rebootRequired) else { return nil }
         return .init(original: original, desired: desired)
     }
-    func canPerform(_ change: NasServiceChange) -> Bool { canEdit(change.kind) && section(change.kind).value.map(change.matches) == true }
+    func ledContinuation() -> NasServiceChange? {
+        guard canEdit(.hardware), let original = section(.hardware).value,
+              let latest = entries(.hardware).first(where: { $0.parts.contains { $0.step == .ledUpdate } }),
+              let update = latest.parts.first(where: { $0.step == .ledUpdate }),
+              update.stage == .skipped || update.stage == .rejected,
+              latest.parts.count == 1 || latest.parts.contains(where: { $0.step == .ledBrightness && $0.stage == .verified && $0.accepted }),
+              update.expected == MobileServiceOperationStore.signature(original, step: .ledUpdate) else { return nil }
+        let change = NasServiceChange(original: original, desired: original, appliesSavedLEDBrightness: true)
+        return change.orderedSteps == nil ? nil : change
+    }
+    func canPerform(_ change: NasServiceChange) -> Bool {
+        canEdit(change.kind) && section(change.kind).value.map(change.matches) == true
+            && (!change.appliesSavedLEDBrightness || ledContinuation() == change)
+    }
     @discardableResult
     func perform(_ change: NasServiceChange, activation token: UUID) -> UUID? {
         guard token == activation else { return nil }

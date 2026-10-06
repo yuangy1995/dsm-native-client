@@ -807,7 +807,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "以 Storage.load_info 为主；单项接口失败时保留其他有效数据并关闭对应写入口。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-10-03 macOS 以 BeepControl support_* 过滤不可编辑提示音，FanSpeed cool_fan/fan_type 决定支持模式；未知设备组合与扩展网卡限制由 NAS 拒绝，未执行实际硬件写入。 2026-10-05 Apple 移动 M6a2 接硬盘检测确认、写前摘要记录与重启只读恢复；共享统一原硬盘/确认状态和快速/完整类型匹配，旧 Mac 签名保持。未执行真实 NAS 写入，Windows/Android 仅记录影响，真实证据不提升。",
+      "fallback": "以 Storage.load_info 为主；单项接口失败时保留其他有效数据并关闭对应写入口。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-10-03 macOS 以 BeepControl support_* 过滤不可编辑提示音，FanSpeed cool_fan/fan_type 决定支持模式；未知设备组合与扩展网卡限制由 NAS 拒绝，未执行实际硬件写入。 2026-10-05 Apple 移动 M6a2 接硬盘检测确认、写前摘要记录与重启只读恢复；共享统一原硬盘/确认状态和快速/完整类型匹配，旧 Mac 签名保持。未执行真实 NAS 写入，Windows/Android 仅记录影响，真实证据不提升。 2026-10-06 Apple 移动 M6c2 接硬件/UPS 原配置管理、固定 v1、可信字段与七个写边界。LED 两步分别要求回执，丢失时不得凭暂存亮度认领；原亮度明确完成且应用未提交或拒绝时才允许主动继续。共享旧入口及 Mac 修正拒绝、未提交和 LED 缓存误报。共享 2954 XCTest/12 Swift Testing 通过；移动 UI 与目标构建以专项账本为准。真实硬件写未执行，五端请求契约及证据等级保持。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {
