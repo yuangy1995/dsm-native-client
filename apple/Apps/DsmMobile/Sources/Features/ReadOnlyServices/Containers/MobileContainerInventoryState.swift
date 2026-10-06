@@ -74,12 +74,14 @@ struct MobileContainerImageItem: Identifiable, Equatable, Sendable {
 }
 
 struct MobileContainerNetworkItem: Identifiable, Equatable, Sendable {
+    let network: ContainerNetwork
     let id: String
     let name: String
     let driver: String
     let connectedContainerCount: Int
 
     init(_ value: ContainerNetwork) {
+        network = value
         id = value.id
         name = value.name
         driver = value.driver

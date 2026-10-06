@@ -3370,3 +3370,48 @@ xcodebuild test-without-building \
 最终两项每端均 **0 失败、exit 0**，iPhone **151.607 秒**、iPad **162.503 秒**；因此九项均有两端分轮通过证据。首轮通过场景每端 13 张截图、最终照片每端 4 张，共 **34 张已逐张检查**：LEGACY 已滚入可操作区域，修改/保存/缓存确认及两项禁止操作状态均正确；下载结果、恢复保护、标签空内容与中文大字/深色/横屏保持可用。必要预览保留在 `build/ci-navigation-preview/`，一次性下载检查脚本、视频帧导出与附件清单在交付前清理。
 
 独立集成审查由当前负责人在实现后单独执行：未修改产品、共享契约、权限、合成传输或业务断言，未增加业务重复提交或失败静默跳过；定位改动由原云端截图/录屏与本机失败层级支持。最终本地化、文档、差异检查通过，CI 分组正式三项回归通过。fetch 确认远端无新提交；旧云端另外三组尚未结束，暂不推送以避免取消其完整验证，不能将本机通过写成修正版云端通过。
+
+## 2026-10-06 移动 M7c3 容器网络管理与 API 文档核查
+
+基线 `ce0f32f3`，main 起始工作区干净。新增移动网络表单、地址/关联详情、单/多删及独立摘要恢复；共享旧 Mac 入口继续同一创建/删除流水线。危险删除绑定原快照、默认/占用限制、单项对象数组、完整列表与逐边界记录；明确拒绝/预检不能被外部状态覆盖。新字段 ipRange 为向后兼容可选只读值，不改变登录、权限、依赖或发布配置。
+
+用户追加的 API 文档核查独立保持只读：Chrome 官方信息中心/套件中心确认 DSM 7.2.1-69057 Update 12、Container Manager 24.0.2-1535、VMM 2.6.5-12202；必要官方 XHR 只保存脱敏字段类型，官方脚本只在内存核对。补容器 profile/内存/端口/项目 CRUD 与流式操作、VMM 固定版本/参数及现有 Apple 内部兼容差距。没有真实写、VM 连接、HAR、用户配置正文或脚本落盘；临时观察器已恢复删除，DevTools 关闭。证据边界及摘要指纹见对应发现记录，未提升历史 lab-a 或任何新增写行为等级。
+
+实际共享与构建命令：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'ContainerNetworkManagementTests|ContainerNetworkCreationTests|DsmServiceManagementRepositoryTests|ServiceManagementModelTests'
+swift test --package-path apple --jobs 2
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+```
+
+工程使用仓库既定 XcodeGen 2.46.0 生成，新文件由工程流程加入。工具旧临时路径已失效，首次命令未开始构建；随后系统 2.45.4 的生成物已经用正式 2.46.0 重新生成替换，没有手改工程文件。中间两次移动编译的枚举类别拼写已纠正；正式单元/UI 测试源码保留，不提交一次性工具。
+
+基线共享三项测试实际复现 **5 条断言失败**（创建拒绝后同名认领、删除拒绝/预检被外部消失覆盖），日志 `build/m7c3-baseline.log`；修复后首轮 16 项和后续 209 项聚焦通过。完整共享中间轮 **2994 XCTest/172 条既有跳过及 12 Swift Testing 通过**。实现后独立集成/只读对抗复核另加两条旧入口回归，丢删除回执用例实际复现 **2 条断言失败**，`build/m7c3-review-baseline.log`。补接受标记后 **211 项聚焦通过**，最终完整共享 **2996 XCTest（172 条既有跳过、0 失败，84.786 秒）与 12 Swift Testing 通过**，`build/m7c3-shared-final.log`。
+
+移动中间轮全量各 1606 项有一条精确资源集合断言失败，原因是共享详情提取后资源引用文件变化；同步原精确集合，未删除/放宽断言，随后两端 **1606 项/各 4 条既有跳过/0 失败**。对抗复核再加“未知删除重启后原 ID 改名”用例，iPhone 在修复前实际出现 **2 条断言失败**：改名后仍能生成删除确认。`build/m7c3-identity-baseline.xcresult/log`。恢复保护同时匹配原 ID/名称后，两端最终 **1607 项/各 4 条既有跳过/0 失败**；iPhone 56.190 秒、iPad 56.284 秒，结果见 final 两端包。
+
+实际完整网络 UI 命令；iPad 使用相同工程/选择，将设备换为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`、结果换为 `build/m7c3-pad-ui-r4.xcresult`：
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/m7c3-phone-ui-r4.xcresult -only-testing:DsmMobileUITests/MobileContainerNetworkUITests
+```
+
+最初测试在用户新输入中断时没有形成完整结果包，不能当作通过。R2 两端各 **5 UI 通过/3 失败**；真实截图/层级确认键盘挡住手动 IPv6 输入，表单滑动需以导航栏和键盘之间的可见区域定位；长风险文字触发 XCTest 128 字符 identifier 限制，改为完整 label 谓词。详情显示正确，但 LabeledContent 将字段/值组合为一个无障碍标签；R3 两端各 **2 通过/2 失败**仍复现原错误查找方式，最终改为精确完整“字段, 值”断言，不放宽值或跳过业务流程。输入后字段标签保留，创建按钮缩短。
+
+R4 两端 **8 UI 全通过**，每端 18 张、共 **36 张合成截图逐张复核**，覆盖中文大字/旋转、五态/搜索、自动与手动创建、详情、默认/占用保护、取消/批量、部分权限拒绝、丢回执和跨重启只读恢复。iPhone 深色、iPad 浅色；此前 R2 五个成功场景采用相反主题。截图又发现英文导航标题截断及空输入重复标签，改用已有 Networks 标题资源，字段保持 caption 与单一无障碍 label，移除重复 placeholder。
+
+最后构建成功后，两端全单元加三个受影响 UI 使用下列命令。iPad 同样替换设备与 `build/m7c3-pad-final.xcresult`；单元结果已见上文，UI 与 Mac 最终结果随后续记。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/m7c3-phone-final.xcresult -only-testing:DsmMobileTests '-only-testing:DsmMobileUITests/MobileContainerNetworkUITests/test手动IPv4IPv6与伪装完整填写可创建' '-only-testing:DsmMobileUITests/MobileContainerNetworkUITests/test未知删除重启不重放原网络消失只显示当前结果' '-only-testing:DsmMobileUITests/MobileContainerNetworkUITests/test加载空列表错误重试与搜索为空'
+```
+
+已通过本地化/硬编码检查 **Apple 6824、Android 2188、Windows 3402**；请求契约 **179 Fixture/1 写结果示例**；Fixture **29 组**与私有 API 文档引用 **48 项**；API 参数目录和 CI 三项分组回归通过。文档链接与差异在最终交付前再查。真实网络路由/IPv6/伪装副作用、权限/证书/断网竞争、锁屏文件保护与 VoiceOver/键盘/分屏仍按主计划三行 `PENDING_USER_VALIDATION`，不声称模拟器等同 NAS 验收。
+
+2026-10-07 凌晨最终续记：两端三个专项 UI 均 **0 失败、exit 0**，iPhone **344.647 秒**、iPad **389.989 秒**；final 包包含上述各 1607 单元。最后 **16 张截图**已逐张检查，Networks 标题无截断，空地址字段不重复标签，手动创建和重启删除保护保持正确；与 R4 共 **52 张成功场景截图**。R4 完整八项用例时长 iPhone **564.663 秒**、iPad **606.739 秒**。Mac 最终 Release 构建 exit 0，主 App 与 LanStashFileProvider.appex 的 `lipo -archs` 均为 **x86_64 arm64**；日志 `build/m7c3-mac-build-final.log`。
+
+工程以 XcodeGen 2.46.0 再生成，project.pbxproj 字节一致。最终本地化、API 目录、契约/Fixture、文档、CI 分组三项与差异检查通过。截图预览保留于 `build/m7c3-preview/`，正式日志/完整结果包保留；一次性生成工具、视频抽帧脚本、附件导出目录和中断的不完整结果包清理。实际 API 文档核查与所有合成测试没有操作真实用户网络、容器、VM 或文件。
+
+旧云端 `37450968329` 随后全部结束，整体 failure；共享/macOS 通过，六个设备分组均失败（已有五项导航/表单失败在先前专项处理，最后管理/模块组日志继续核查）。这属于旧 a776993c 的结果，不冒称当前未推送变更已通过完整云端。fetch 确认 origin/main 没有新提交，后续同步与新云端结果另记。

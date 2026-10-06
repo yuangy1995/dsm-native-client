@@ -52,6 +52,7 @@ final class MobileAppModel {
     let containerControls: MobileContainerControlModel
     let containerImagePulls: MobileContainerImagePullModel
     let containerImageDeletions: MobileContainerImageDeletionModel
+    let containerNetworks: MobileContainerNetworkModel
     let virtualMachineInventoryModel = MobileVirtualMachineInventoryModel()
     let downloads: MobileDownloadsModel
 
@@ -119,7 +120,7 @@ final class MobileAppModel {
                 systemActionsModel.deactivate()
                 packageCenterModel.deactivate()
                 containerInventoryModel.deactivate()
-                containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate()
+                containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate(); containerNetworks.deactivate()
                 virtualMachineInventoryModel.deactivate()
             }
         }
@@ -156,7 +157,7 @@ final class MobileAppModel {
     var serviceRepository: DsmServiceManagementRepository? {
         didSet {
             downloads.configure(profile: activeProfile, repository: serviceRepository)
-            if oldValue.map(ObjectIdentifier.init) != serviceRepository.map(ObjectIdentifier.init) { containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate() }
+            if oldValue.map(ObjectIdentifier.init) != serviceRepository.map(ObjectIdentifier.init) { containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate(); containerNetworks.deactivate() }
         }
     }
     var chatRepository: (any ChatRepository)?
@@ -227,6 +228,7 @@ final class MobileAppModel {
         self.containerControls = MobileContainerControlModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("Containers", isDirectory: true))
         self.containerImagePulls = MobileContainerImagePullModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("Containers", isDirectory: true))
         self.containerImageDeletions = MobileContainerImageDeletionModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("Containers", isDirectory: true))
+        self.containerNetworks = MobileContainerNetworkModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("Containers", isDirectory: true))
         self.directoryModel = MobileDirectoryModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.regionModel = MobileRegionModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.documentTransferController = MobileDocumentTransferController(

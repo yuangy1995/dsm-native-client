@@ -381,7 +381,7 @@ extension MobileAppModel {
         return (
             file: try DsmFileRepository(profile: profile, capabilities: capabilities, session: session),
             photos: photos,
-            service: try DsmServiceManagementRepository(profile: profile, capabilities: capabilities, session: session),
+            service: try DsmServiceManagementRepository(profile: profile, capabilities: capabilities, session: session, containerNetworkCreationEnabled: true),
             chat: try DsmChatRepository(profile: profile, capabilities: capabilities, session: session),
             nas: try DsmNasAdministrationRepository(profile: profile, capabilities: capabilities, session: session),
             modules: MobileModuleAccessReader(capabilities: capabilities,
@@ -649,6 +649,7 @@ extension MobileAppModel {
         nasHealthModel.deactivate()
         containerInventoryModel.deactivate()
         containerControls.deactivate()
+        containerNetworks.deactivate()
         virtualMachineInventoryModel.deactivate()
         documentTransferController.resetForDisconnectedWorkspace()
         isConnected = false

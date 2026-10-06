@@ -6,11 +6,13 @@ struct MobileContainersView: View {
     @Bindable var controls: MobileContainerControlModel
     @Bindable var imagePulls: MobileContainerImagePullModel
     @Bindable var imageDeletions: MobileContainerImageDeletionModel
+    @Bindable var networks: MobileContainerNetworkModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsSelection = false
     @State private var showsImagePulls = false
     @State private var showsImageDeletions = false
+    @State private var showsNetworks = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -39,6 +41,10 @@ struct MobileContainersView: View {
         .sheet(isPresented: $showsSelection) { MobileContainerSelectionView(model: controls) }
         .sheet(isPresented: $showsImagePulls) { MobileContainerImagePullView(model: imagePulls) }
         .sheet(isPresented: $showsImageDeletions) { MobileContainerImageDeletionView(model: imageDeletions) }
+        .sheet(isPresented: $showsNetworks) { MobileContainerNetworkView(model: networks) }
+        .onChange(of: networks.completedCount) { previous, count in
+            if count > previous { Task { await inventory.refresh() } }
+        }
         .onChange(of: imageDeletions.removedCount) { previous, count in
             if count > previous { Task { await inventory.refresh() } }
         }
@@ -136,6 +142,8 @@ struct MobileContainersView: View {
                 .frame(minHeight: 44).accessibilityIdentifier("image-pull.open")
             Button(L10n.string("mobile.containers.image-delete.title"), systemImage: "trash") { showsImageDeletions = true }
                 .frame(minHeight: 44).accessibilityIdentifier("image-delete.open")
+            Button(L10n.string("mobile.containers.network.title"), systemImage: "network") { showsNetworks = true }
+                .frame(minHeight: 44).accessibilityIdentifier("network.open")
             MobileContainerControlNotice(model: controls)
             NavigationLink { MobileContainerControlRecordsView(model: controls) } label: {
                 Label(L10n.string("mobile.containers.control.records"), systemImage: "clock.arrow.circlepath")
@@ -424,11 +432,7 @@ private struct MobileContainerSectionView: View {
         case .networks:
             if let item = inventory.state.networks.first(where: { $0.id == id }) {
                 detailForm(title: item.name) {
-                    LabeledContent(L10n.string("mobile.containers.field.driver"), value: item.driver)
-                    LabeledContent(
-                        L10n.string("mobile.containers.field.connected-containers"),
-                        value: item.connectedContainerCount.formatted(.number.locale(L10n.locale))
-                    )
+                    MobileContainerNetworkDetails(network: item.network)
                 }
             }
         case .projects:

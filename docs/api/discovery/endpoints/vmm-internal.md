@@ -14,6 +14,47 @@
 
 ## 请求契约
 
+### 2026-10-06 缺口补全与 Apple 内部兼容分支差距
+
+[当前官方页面观察](../environments/2026-10-06-container-vmm-api-read-observation.md) 已核实
+DSM 7.2.1-69057 Update 12 / VMM 2.6.5-12202，设备待归属、群组角色未单独核实。
+只有 Cluster.get v2 当前成功结构为本次 `read-verified`：cluster_status 字符串，
+guest_summ/host_summ/license_summ/repo_summ 对象，reasons 数组。下表为当前
+virtualization.js 的 `static`，没有执行任何写入或控制台连接，也没有提升历史设备等级。
+
+| 内部 API / 方法 | 固定版本与字段 | 结果、失败及现有实现影响 |
+| --- | --- | --- |
+| Guest.get/get_basic | v2，单 guest_id；get_basic 部分用途 additional=[guest_repo] | 与 list_basic 清单不同；响应字段以历史只读记录为准，不把模型默认值当响应 |
+| Guest.get_setting/list_resource | get_setting v1 单 guest_id；list_resource v1 无额外参数 | 创建/编辑资源读取；内部内存读 KiB、写 MiB，缺失资源/字段只关闭依赖操作 |
+| Guest.create | v1，向导合并字段及 poweron_after_create、synovmm_ui_id | 完整字段、原生数字 allocated_size、两种内存单位与 task_id 关联见下节及历史高级创建记录；现 Mac 同名清单判断不足以证明本次创建 |
+| Guest.set | v1，单 guest_id、synovmm_ui_id 与改动字段 | 不随 get/list 使用 v2；未变字段不补默认值，内存写 MiB、autorun 0/1/2、CPU 五档见原记录 |
+| Guest.delete | v1，逐个 guest_id | 官方逐项请求，不发送逗号拼接 ID；Apple 内部分支当前版本选择/合并参数有差距，后续修复须回归公开分支与批量计数 |
+| Guest.Action.pwr_ctl | v1，guest_id、action=poweron/shutdown/poweroff/reboot | poweron 可由 Entry.Request 包装；Apple 内部 on/off 与当前定义不同。API 接受不等于电源最终状态，restart 不能仅凭仍在运行认领成功 |
+| Guest.Action.reset | v1，单 guest_id | 强制重置不同于普通 reboot，不能无确认替换为降级动作 |
+| Guest.Image.delete | v2，id、synovmm_ui_id | 普通删除无 blocking；官方工具更新专用路径另有 blocking=true。Apple 内部 image_id 与当前定义不同；公开 API 的 image_id 仍沿其公开契约 |
+| Network.set | v1，network_id/name；external 另发 interfaces_add/remove 对象数组，private 发 host_id；vlan_id 仅变化时发送 | 改名需保持原拓扑；Apple 当前只发 ID/name 与官方有差距。接口/主机数组来自原读取，不猜空值为允许断网 |
+| Network.delete | v1，单 network_id | 按原身份/拓扑/关联 VM 检查并逐项核查完整列表；读失败不等于网络已删除 |
+| Cluster.get_total_progress | v1，prefix=virtualization、virtualization_guest 或 virtualization_image | 创建按原 task_id、synovmm_ui_id、回显 API/方法/参数关联；无回执不得按同名 VM 认领 |
+
+Guest.create 的历史已核参数按组整理如下，来源是 2026-09-20 的官方静态定义、读取与
+唯一专用样本，而非本次重新创建：
+
+- 身份/规格：name、desc、vcpu_num、vram_size（MiB）、cpu_weight、autorun、synovmm_ui_id。
+- 存储/主机：repo_id、repo_name、host_id、repo_host_name、allocated_size（原生整数）、size（字符串）、increaseAllocatedSize。
+- 磁盘/网卡：vdisks 中 add、vdisk_mode、vdisk_size（GiB）、idx 与限速/unmap 字段；vnics 中 add、network_id、mac、vnic_type、prefer_sriov；vdisk_struct。
+- 启动/预设：bios、use_ovmf、boot_from、iso_images、usb_version、usbs、kb_layout、video_card、is_windows_vm、is_general_vm、cpu_passthru、hyperv_enlighten、cpu_pin_num、auto_switch、guest_privilege、poweron_after_create。ISO/USB 空槽使用 unmounted；不是把 OS radio 名称直接当 API 字段。
+
+单台 Linux/UEFI 空白盘样本证明 task_id → finish/success/data.guest_id 与请求身份关联，
+随后 get/get_setting 核对配置；不证明其他预设、挂载、启动、权限或失败行为。控制台的
+同源固定页面、别名、窗口 app_id、Default 键盘设置与资源限制沿 2026-09-20/21 记录，
+现 Apple 默认 en-us/空别名仍需后续修正，不能把当前客户端缺陷变成接口约定。
+
+五端影响：macOS/Apple 共享兼容分支的上述差距随后独立修复并回归；iPhone/iPad 以准确
+方法及原生交互接入后续 VMM；Windows 对照自身已实现任务绑定/网络/控制台及请求测试；
+Android 只登记，本片无源码修改。优先公开 API，内部方法不得混用公开参数。当前文档
+不改变入口授权、公开 Schema、权限、存储或发布配置；未知、证书/认证失败和明确拒绝
+保留原语义，不自动重放或扩展到其他写方法。
+
 | 字段 | 值 |
 | --- | --- |
 | API 名称 | `SYNO.Virtualization.Guest`、`SYNO.Virtualization.Guest.Action`、`SYNO.Virtualization.Guest.Image`、`SYNO.Virtualization.Host`、`SYNO.Virtualization.Repo`、`SYNO.Virtualization.Network`、`SYNO.Virtualization.GuestProtect.Plan`、`SYNO.Virtualization.Log` |
@@ -240,7 +281,7 @@ HTML 明确引用的七种套件图标，语言 JSON 另走受限消息桥，
 [Microsoft 非 HTTP 请求事件说明](https://github.com/MicrosoftEdge/WebView2Feedback/blob/main/specs/WebResourceRequested-CustomScheme.md)
 和本地 SDK 1.0.3719.77 ServerCertificateErrorDetected 文档。
 
-- 除日志外各内部 API 的完整参数、响应 Schema、权限与错误码。
-- 网络 `set/delete` 的实际方法、参数和写后状态。
-- 虚拟机与镜像的创建、修改、删除及生命周期动作。
+- 当前未读取的响应字段、具体权限组合与失败码；不能由静态表单推定服务端完整 Schema。
+- 网络 set/delete 的版本、参数已由静态核实；写后状态与副作用仍待专用环境验证。
+- 除历史单台受控创建样本外的虚拟机/映像创建、修改、删除及生命周期行为；新增静态参数不提升行为证据。
 - 不同 DSM build、VMM 版本、账号权限与连接方式下的兼容性。
