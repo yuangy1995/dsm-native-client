@@ -11,6 +11,14 @@ enum MobileUITestNavigation {
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, file: file, line: line)
         // 外层辅助功能框包含整行，中心不是开关；在实际控件上完成一次按下/抬起后检查状态。
         if toggle.value as? String == "0" { control.press(forDuration: 0.15) }
+        // 开启聊天会插入通知区域；大字号下原开关会移出可见列表，先滚回原控件再读取新值。
+        let settings = app.collectionViews["mobile.settings.page"]
+        for _ in 0..<8 {
+            if toggle.exists && toggle.isHittable { break }
+            settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.8)).press(forDuration: 0.1,
+                thenDragTo: settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.3)),
+                withVelocity: .slow, thenHoldForDuration: 0.2)
+        }
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: toggle)
         let result = XCTWaiter.wait(for: [enabled], timeout: 10)
         if result != .completed {

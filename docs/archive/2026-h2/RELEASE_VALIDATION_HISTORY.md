@@ -3180,3 +3180,19 @@ iPad 目标为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果包为 `m6-ci-dire
 
 
 提交前读取到旧 iPad 模块作业 `112106031303` 从 UTC 04:20:13 开始，UTC 10:21:44 时测试步骤已 cancelled、结果上传仍 in_progress。最终作业原因与已执行用例仍待日志确认；当前没有手动取消，不把终止测试算作通过。新的三组分配尚未获得云端执行结果。提交前 fetch 确认 origin/main 仍为 `cdc889cc`，没有远端新提交；推送等待原结果上传结束，避免损失原始失败证据。
+
+
+旧 iPad 模块最终为 cancelled，检查注释通过 `gh api repos/yuangy1995/dsm-native-client/check-runs/112106031303/annotations` 取得明确的六小时执行上限说明。`gh api repos/yuangy1995/dsm-native-client/actions/jobs/112106031303/logs` 返回的日志截止 UTC 08:53:56；1469 单元（4 条既有跳过）通过，按 UI 开始/终态行可确认 158 项开始、156 通过、1 失败、1 没有终态。日志未覆盖后续时段，不能视为完整执行统计；artifact 清单未包含 iPad 模块包，上传没有保留下可下载的完整结果。
+
+唯一可见 UI 失败为 `MobileChatManagementUITests.test中文深色大字公告筛选空状态` 的开关值断言。原版在本机 iPad 连续两次都复现（24.354/23.488 秒，exit 65），结果包 `m6-ci-chat-toggle-pad-baseline.xcresult`。实际截图和辅助功能树均显示聊天已经出现在侧栏、新通知区域已插入设置表单，而原功能开关已移出可见列表；持续读取的目标查询只有查询链，没有当前元素。不是聊天实际仍关闭，也不能以根快照推断崩溃。公共 helper 在单次开启后，沿已有设置表单标识滚回原开关，再保留值为 1 的检查；没有第二次开关输入、跳过或放宽后续聊天/筛选断言。修复只涉及 UI 测试及证据文档。
+
+
+聊天开关修复最终构建通过；iPhone/iPad 各四项专项 UI 全部通过（166.593/167.682 秒，两命令 exit 0），覆盖原失败、公告跨重启恢复、中文大字定时列表/筛选和管理员六模块开关。十二张最终截图已逐张查看，连同一张原版失败图保留在忽略目录 `apple/Apps/DsmMobile/build/m6-ci-chat-toggle-preview/`；全部临时导出、原始录屏和层级文件已清理。极大字号下公告附件按钮出现换行是既有呈现，本片不扩展为聊天页面重排，也不把专项通过称为全面视觉验收。
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6-ci-chat-toggle-pad-baseline.xcresult -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileChatManagementUITests/test中文深色大字公告筛选空状态' -test-iterations 2
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6-ci-chat-toggle-phone-r1.xcresult -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileChatManagementUITests/test中文深色大字公告筛选空状态' '-only-testing:DsmMobileUITests/MobileChatManagementUITests/test置顶中断重启仅恢复原操作' '-only-testing:DsmMobileUITests/MobileChatTimedActionUITests/test中文深色大字定时列表及筛选空状态' '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test管理员六种模块均需开启且设置始终可达'
+```
+
+iPad 最终采用相同四项选择，设备为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果为 `m6-ci-chat-toggle-pad-r1.xcresult`。基线双次运行发生在修改前；命令列表中的构建是随后修正版。独立差异复核确认只在开关离屏时滚动，仍单次输入、精确检查开启值并保留原业务断言。文档检查、本地化资源与硬编码扫描均通过，资源数量 6741/2188/3402；此前测试分组三项正式回归仍有效。fetch 确认 origin/main 没有新提交，旧作业现已结束，可以正常推送本批完成提交触发完整新分组。
