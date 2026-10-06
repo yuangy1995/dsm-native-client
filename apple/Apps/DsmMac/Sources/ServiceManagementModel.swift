@@ -647,7 +647,8 @@ final class ServiceManagementModel {
                 await activate(module, force: true)
             }
             isPerformingAction = false
-            let canConfirmFromRefresh = result.submitted && result.counts.failed == 0
+            // VMM 的清单消失不能证明本次写入已被接受；最终结果由仓库持有的回执决定。
+            let canConfirmFromRefresh = module != .virtualMachines && result.submitted && result.counts.failed == 0
                 && [.submittedButUnverified, .cancellationRequestedAfterSubmission, .partialSuccess].contains(result.status)
             if result.status == .confirmedSuccess || (canConfirmFromRefresh && isVerified()) {
                 message = L10n.string(successKey)

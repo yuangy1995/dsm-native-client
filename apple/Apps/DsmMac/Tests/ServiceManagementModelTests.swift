@@ -330,7 +330,7 @@ final class ServiceManagementModelTests: XCTestCase {
         XCTAssertFalse(model.messageIsError)
     }
 
-    func test部分删除只有未知项可由刷新确认而明确失败项保留() async throws {
+    func test部分虚拟机删除不因刷新消失覆盖未知或失败() async throws {
         for failed in [0, 1] {
             let result = try MutationResult(status: .partialSuccess, operation: "virtualMachineDelete", submitted: true,
                 requiresRefresh: true, counts: .init(succeeded: 1, failed: failed, unknown: 1 - failed))
@@ -340,14 +340,14 @@ final class ServiceManagementModelTests: XCTestCase {
             let model = ServiceManagementModel(repository: repository)
             await model.activate(.virtualMachines); model.virtualMachineSelection = ["vm-1", "vm-2"]
             let succeeded = await model.deleteVirtualMachines()
-            XCTAssertEqual(succeeded, failed == 0)
+            XCTAssertFalse(succeeded)
             XCTAssertTrue(model.virtualMachines?.machines.isEmpty == true)
-            XCTAssertEqual(model.messageIsError, failed > 0)
-            XCTAssertEqual(model.message, L10n.string(failed == 0 ? "virtual-machine.delete.completed" : "virtual-machine.delete.partial"))
+            XCTAssertTrue(model.messageIsError)
+            XCTAssertEqual(model.message, L10n.string("virtual-machine.delete.partial"))
         }
     }
 
-    func test未确认虚拟机删除可由随后刷新确认完成() async {
+    func test未确认虚拟机删除不由随后刷新认领完成() async {
         let repository = ServiceManagementRepositoryStub(
             virtualMachineStatus: .submittedButUnverified,
             removeVirtualMachineOnDelete: true
@@ -358,14 +358,14 @@ final class ServiceManagementModelTests: XCTestCase {
 
         let succeeded = await model.deleteVirtualMachines()
 
-        XCTAssertTrue(succeeded)
+        XCTAssertFalse(succeeded)
         XCTAssertTrue(model.virtualMachines?.machines.isEmpty == true)
         XCTAssertTrue(model.virtualMachineSelection.isEmpty)
         XCTAssertEqual(
             model.message,
-            L10n.string("virtual-machine.delete.completed")
+            L10n.string("virtual-machine.delete.unverified")
         )
-        XCTAssertFalse(model.messageIsError)
+        XCTAssertTrue(model.messageIsError)
     }
 
     func test删除反馈覆盖部分成功权限不足和不支持() {
@@ -505,7 +505,7 @@ final class ServiceManagementModelTests: XCTestCase {
         )
     }
 
-    func test未确认虚拟机映像删除可由刷新确认完成() async {
+    func test未确认虚拟机映像删除不由刷新认领完成() async {
         let repository = ServiceManagementRepositoryStub(
             secondaryStatus: .submittedButUnverified,
             removeSecondaryOnDelete: true
@@ -516,12 +516,23 @@ final class ServiceManagementModelTests: XCTestCase {
 
         let succeeded = await model.deleteVirtualMachineImages()
 
-        XCTAssertTrue(succeeded)
+        XCTAssertFalse(succeeded)
         XCTAssertTrue(model.virtualMachineImageSelection.isEmpty)
         XCTAssertEqual(
             model.message,
-            L10n.string("virtual-machine-image.delete.completed")
+            L10n.string("virtual-machine-image.delete.unverified")
         )
+    }
+
+    func test未确认虚拟机网络删除不由刷新认领完成() async {
+        let repository = ServiceManagementRepositoryStub(secondaryStatus: .submittedButUnverified, removeSecondaryOnDelete: true)
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.virtualMachines); model.virtualMachineNetworkSelection = ["vm-network-1"]
+        let succeeded = await model.deleteVirtualMachineNetworks()
+        XCTAssertFalse(succeeded); XCTAssertTrue(model.virtualMachineNetworkSelection.isEmpty)
+        XCTAssertTrue(model.virtualMachines?.networks.isEmpty == true)
+        XCTAssertEqual(model.message, L10n.string("virtual-machine-network.delete.unverified"))
+        XCTAssertTrue(model.messageIsError)
     }
 
     func test虚拟机网络删除权限不足时显示可恢复反馈() async {

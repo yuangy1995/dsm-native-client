@@ -3471,3 +3471,32 @@ git diff --check
 修改前九项使用上述相同设备/派生目录，结果路径为 `ci-final-before-{phone,pad}.xcresult`，选择器不含追加的 NAS 中文大字、套件来源中文大字、账号重启恢复三项；原命令保留在各 before 日志首行。最终双语资源 6824/2188/3402、文档、CI 分组三项和差异检查均通过。
 
 两端各二十张成功截图已逐张检查并保留于 `build/ci-final-preview/{phone,pad}/`：英文与中文大字、iPhone 深色/iPad 浅色及两端下载深色横屏、账号/硬盘/区域/计划任务恢复均有实际画面。来源移除页 iPhone 的中间标题被系统省略，但完整操作按钮和风险正文可见；作为已有展示细节记录，没有扩大本片产品修改。原八张失败证据保留，一次性附件导出和导出日志清理，正式结果包/日志保留。独立集成审查由当前负责人实现后单独执行：七份测试仅改变导航准备、实际值等待和结果定位，保留权限、危险确认、业务值、防重复及重启断言，未增加业务重试、静默跳过或产品改动。fetch 复核 origin/main 仍为 a776993c，没有远端新提交；同步后云端状态单独记录，不冒称完整门禁或真实 NAS 已通过。
+
+2026-10-07 00:54 同步完成：本片提交 `04d692ab` 与前五个已验证功能/测试提交一并正常推送至 origin/main，远端核对 0 behind / 0 ahead，工作区干净。新 [Apple Build 37499218894](https://github.com/yuangy1995/dsm-native-client/actions/runs/37499218894) 对应该提交，初查 queued；不是发布或云端已通过。
+
+## 2026-10-07 M7d0 虚拟机删除结果归属
+
+基线 `04d692ab` 与 origin/main 一致、工作区干净；仅修 Apple 共享公开 VMM 删除的接受回执与完整清单判断、Mac VMM 结果反馈、两份 Bundle 中英文恢复提示及正式回归。无真实 NAS 写入，没有改变 API 参数、公开契约、身份、权限、存储、依赖或最低版本。
+
+原先公开删除把丢回执后的目标消失计为成功；恢复读取失败又可丢掉原提交状态，Mac 刷新还可覆盖未知/部分结果。先新增六项共享用例中的前四项，并将原错误语义的四个既有测试改为更严格的“无接受证据不得成功”断言；基线十三项实际七个用例失败、四十一条断言失败（`build/m7d0-before.log`，exit 1）。修正接受标记、恢复未知计数、单项写后/批量停止，并复用原列表完整性检查；首轮六十五项聚焦通过（`build/m7d0-focused.log`，exit 0）。随后补齐首项缺回执时停止后项、预检不完整列表零写及 Mac 网络未知不被页面覆盖，全部纳入最终完整测试。
+
+当前最终共享 **3003 XCTest、172 条既有跳过、0 失败**，另 **12 Swift Testing 通过**（`build/m7d0-shared.log`，exit 0）；移动构建成功，两端实际模拟器各 **22 项 VMM 清单/呈现模型测试、0 失败**（`build/m7d0-{phone,pad}.xcresult/log`，均 exit 0）。本片没有新增或修改移动页面，未把这些模型测试当作 UI 操作；前片两端十二项实际 UI 与四十张截图仍属对应 CI 修复证据。Mac Release 双架构构建成功（`build/m7d0-mac-build.log`，exit 0），实际 `lipo -archs` 确认主 App 与嵌入的 File Provider 扩展均为 x86_64/arm64；未打包、安装、启动或发布。
+
+实际命令：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'DsmServiceManagementRepositoryTests/test公开删除|ServiceManagementModelTests/test未确认虚拟机|ServiceManagementModelTests/test部分虚拟机'
+swift test --package-path apple --jobs 2 --filter 'DsmServiceManagementRepositoryTests/test公开|ServiceManagementModelTests'
+swift test --package-path apple --jobs 2
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination generic/platform=macOS -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 "ARCHS=arm64 x86_64" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination "platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F" -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination "platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F" -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/m7d0-phone.xcresult "-only-testing:DsmMobileTests/MobileVirtualMachineInventoryModelTests" "-only-testing:DsmMobileTests/MobileVirtualMachinePresentationTests"
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination "platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289" -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/m7d0-pad.xcresult "-only-testing:DsmMobileTests/MobileVirtualMachineInventoryModelTests" "-only-testing:DsmMobileTests/MobileVirtualMachinePresentationTests"
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+独立集成与只读对抗复核由当前负责人在实现后单独执行，覆盖接受回执边界、明确拒绝、缺回执/回读失败、完整清单、批量后项停止、原 ID 防重复和 Mac 反馈。没有扩大写权限或弱化确认，没有新增静默跳过。最终本地化、文档及差异检查通过；没有一次性脚本/下载/附件导出残留，正式日志与结果包保留。Mac 标记仍限原仓库实例，真实时序、跨进程条件及尚未开发的移动操作不能视为已完成；具体条件见主计划。
+
+最新读取 [Apple Build 37499218894](https://github.com/yuangy1995/dsm-native-client/actions/runs/37499218894)：对应 `04d692ab`，共享/Mac、iPad 工作区与 iPhone 三组运行中，iPad 管理/模块排队，尚无终态。为保留这一轮完整结果，本片先在 main 保存，不通过重复推送取消刚启动的验证；后续成组同步与云端结论另记。

@@ -3097,6 +3097,95 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         }
     }
 
+    func test公开删除缺回执后目标消失仍不认领成功() async throws {
+        for api in [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationAPIGuestImage] {
+            let key = api == DsmAPIName.virtualizationAPIGuest ? "guests" : "images"
+            let idKey = api == DsmAPIName.virtualizationAPIGuest ? "guest_id" : "image_id"
+            let initial = "{\"success\":true,\"data\":{\"\(key)\":[{\"\(idKey)\":\"synthetic-1\"}]}}"
+            let empty = "{\"success\":true,\"data\":{\"\(key)\":[]}}"
+            let transport = MockHTTPTransport(steps: [.response(response(initial)), .urlError(.timedOut),
+                .response(response(empty)), .response(response(empty))])
+            let repository = try makeRepository(apiNames: [api], transport: transport)
+            for _ in 0..<2 {
+                let result = api == DsmAPIName.virtualizationAPIGuest
+                    ? try await repository.deleteVirtualMachinesResult(ids: ["synthetic-1"])
+                    : try await repository.deleteVirtualMachineImagesResult(ids: ["synthetic-1"])
+                XCTAssertEqual(result.status, .submittedButUnverified)
+                XCTAssertTrue(result.submitted); XCTAssertEqual(result.counts.succeeded, 0)
+                XCTAssertEqual(result.counts.unknown, 1); XCTAssertEqual(result.counts.failed, 0)
+            }
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["list", "delete", "list", "list"])
+        }
+    }
+
+    func test公开删除首项丢回执后消失仍停止批量后项() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(virtualMachineListResponse(ids: ["vm-1", "vm-2"]))), .urlError(.timedOut),
+            .response(response(virtualMachineListResponse(ids: ["vm-2"]))),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+        let result = try await repository.deleteVirtualMachinesResult(ids: ["vm-1", "vm-2"])
+        XCTAssertEqual(result.status, .submittedButUnverified); XCTAssertEqual(result.counts.succeeded, 0)
+        XCTAssertEqual(result.counts.unknown, 1); XCTAssertEqual(result.counts.failed, 1)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.compactMap { requestValue("guest_id", in: $0) }, ["vm-1"])
+    }
+
+    func test公开删除预检不完整清单在写入前失败() async throws {
+        let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1"}],"total":2}}"#)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+        let result = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+        XCTAssertFalse(result.submitted); XCTAssertEqual(result.counts.succeeded, 0)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["list"])
+    }
+
+    func test公开删除已接受后回读中断仍可只读确认() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(virtualMachineListResponse(ids: ["vm-1"]))),
+            .response(response(#"{"success":true}"#)), .urlError(.networkConnectionLost),
+            .response(response(virtualMachineListResponse(ids: []))),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+        let initial = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+        XCTAssertEqual(initial.status, .submittedButUnverified)
+        let reviewed = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+        XCTAssertEqual(reviewed.status, .confirmedSuccess); XCTAssertEqual(reviewed.counts.succeeded, 1)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["list", "delete", "list", "list"])
+    }
+
+    func test公开删除恢复读取失败保留原提交与未知计数() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(virtualMachineListResponse(ids: ["vm-1"]))), .urlError(.timedOut),
+            .response(response(virtualMachineListResponse(ids: ["vm-1"]))), .urlError(.networkConnectionLost),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+        _ = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+        let reviewed = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+        XCTAssertEqual(reviewed.status, .submittedButUnverified); XCTAssertTrue(reviewed.submitted)
+        XCTAssertEqual(reviewed.counts.succeeded, 0); XCTAssertEqual(reviewed.counts.unknown, 1)
+        XCTAssertEqual(reviewed.counts.failed, 0); XCTAssertEqual(reviewed.errorCategory, .network)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.count, 1)
+    }
+
+    func test公开删除不完整回读不能确认且接受回执仍保留() async throws {
+        for metadata in [#""total":1"#, #""offset":1"#, #""total":"0""#, #""offset":false"#] {
+            let transport = MockHTTPTransport(responses: [response(virtualMachineListResponse(ids: ["vm-1"])),
+                response(#"{"success":true}"#), response("{\"success\":true,\"data\":{\"guests\":[],\(metadata)}}"),
+                response(virtualMachineListResponse(ids: []))])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+            let initial = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+            XCTAssertEqual(initial.status, .submittedButUnverified); XCTAssertEqual(initial.counts.unknown, 1)
+            let reviewed = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+            XCTAssertEqual(reviewed.status, .confirmedSuccess)
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.count, 1)
+        }
+    }
+
     func test公开删除未知后重复调用只读且不启动未执行项() async throws {
         let transport = MockHTTPTransport(steps: [
             .response(response(virtualMachineListResponse(ids: ["vm-1", "vm-2"]))), .urlError(.timedOut),
@@ -3112,7 +3201,8 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         let retry = try await repository.deleteVirtualMachinesResult(ids: ["vm-1", "vm-2"])
         XCTAssertEqual(retry.counts.unknown, 1)
         let reviewed = try await repository.deleteVirtualMachinesResult(ids: ["vm-1", "vm-2"])
-        XCTAssertEqual(reviewed.status, .partialSuccess); XCTAssertEqual(reviewed.counts.succeeded, 1); XCTAssertEqual(reviewed.counts.failed, 1)
+        XCTAssertEqual(reviewed.status, .submittedButUnverified); XCTAssertEqual(reviewed.counts.succeeded, 0)
+        XCTAssertEqual(reviewed.counts.unknown, 1); XCTAssertEqual(reviewed.counts.failed, 1)
         var requests = await transport.recordedRequests()
         XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.count, 1)
         let remaining = try await repository.deleteVirtualMachinesResult(ids: ["vm-2"])
