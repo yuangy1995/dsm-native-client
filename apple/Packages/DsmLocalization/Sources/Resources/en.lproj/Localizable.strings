@@ -4087,9 +4087,9 @@
 "remote-mount.recovery.confirm-required" = "Choose the connection operation to continue.";
 "remote-mount.recovery.session-limit" = "Records last only for this NAS session. Check unconfirmed operations on the NAS website before reconnecting or quitting the app.";
 "virtual-machine.power.restart-unavailable" = "Restart is not supported by this connection. Restart from inside the virtual machine instead.";
-"virtual-machine.power.review-required" = "A previous power or deletion operation still needs checking. Check its result before making another change.";
-"virtual-machine.power.unverified" = "The power change is not yet confirmed. Choose the same action again to check its result without resending it. Check on the NAS website before reconnecting.";
-"virtual-machine.power.review-only" = "Only the previous operation was checked; no new operations were started. Refresh and select any virtual machines that still need changing.";
+"virtual-machine.power.review-required" = "A previous operation has no final result yet. Reconnect to refresh its status before making more changes.";
+"virtual-machine.power.unverified" = "The operation result is not available yet. Reconnect to refresh its status, or view the virtual machine in Virtual Machine Manager.";
+"virtual-machine.power.review-only" = "No new operations were sent. Refresh the list before choosing another virtual machine.";
 "virtual-machine.power.target-changed" = "A selected virtual machine has changed or is not in the required state. Refresh its status and select again; some earlier items may already be complete.";
 "virtual-machine.startup.title" = "When the NAS starts";
 "virtual-machine.startup.off" = "Leave off";
@@ -7169,3 +7169,72 @@
 "mobile.containers.network.name" = "Name";
 "mobile.containers.network.create-submit" = "Create";
 "mobile.containers.network.delete-one" = "Delete network";
+
+"virtual-machine.power.unavailable" = "Virtual machine controls are unavailable. Reconnect or use Virtual Machine Manager.";
+
+"mobile.virtual-machines.control.powerOn" = "Power On";
+
+"mobile.virtual-machines.control.shutdown" = "Shut Down";
+
+"mobile.virtual-machines.control.powerOff" = "Force Power Off";
+
+"mobile.virtual-machines.control.restart" = "Restart";
+
+"mobile.virtual-machines.control.delete" = "Delete";
+
+"mobile.virtual-machines.control.selection" = "Select Virtual Machines";
+
+"mobile.virtual-machines.control.cancel" = "Cancel";
+
+"mobile.virtual-machines.control.shutdown.warning" = "Shutting down interrupts services provided by these virtual machines. Save your work before continuing.";
+
+"mobile.virtual-machines.control.powerOff.warning" = "Forcing power off immediately interrupts these virtual machines and may lose unsaved data or damage their disks.";
+
+"mobile.virtual-machines.control.restart.warning" = "Restarting interrupts services provided by these virtual machines. Save your work before continuing.";
+
+"mobile.virtual-machines.control.delete.warning" = "Deleting these virtual machines permanently removes their virtual disks and the data stored on them. This cannot be undone.";
+
+"mobile.virtual-machines.control.error.read" = "Unable to read the current virtual machine state. Reconnect and refresh before trying again.";
+
+"mobile.virtual-machines.control.error.denied" = "You no longer have permission to manage these virtual machines. Sign in again or contact an administrator.";
+
+"mobile.virtual-machines.control.error.unavailable" = "These controls are unavailable on this connection. Reconnect or use Virtual Machine Manager.";
+
+"mobile.virtual-machines.control.error.changed" = "The virtual machine changed. Refresh the list and select it again.";
+
+"mobile.virtual-machines.control.error.storage" = "Unable to save the operation record on this device. Free up storage, unlock the device and reopen the app.";
+
+"mobile.virtual-machines.control.error.trust" = "The secure connection changed. Reconnect from the NAS list before continuing.";
+
+"mobile.virtual-machines.control.error.failed" = "The operation could not be completed. Reconnect and refresh the list before trying again.";
+
+"mobile.virtual-machines.control.records" = "Operation History";
+
+"mobile.virtual-machines.control.records.empty" = "No Operations Yet";
+
+"mobile.virtual-machines.control.records.empty.message" = "Virtual machine operations from this device appear here.";
+
+"mobile.virtual-machines.control.record.remove" = "Remove Record";
+
+"mobile.virtual-machines.control.record.title" = "%1$@ · %2$@";
+
+"mobile.virtual-machines.control.target" = "Virtual machine %d";
+
+"mobile.virtual-machines.control.processing" = "Processing…";
+
+"mobile.virtual-machines.control.unavailable-result" = "The result is not available yet. Reconnect and refresh, or view the virtual machine in Virtual Machine Manager.";
+
+"mobile.virtual-machines.control.powerOn.completed" = "Powered on";
+
+"mobile.virtual-machines.control.shutdown.completed" = "Shut down";
+
+"mobile.virtual-machines.control.powerOff.completed" = "Powered off";
+
+"mobile.virtual-machines.control.restart.accepted" = "The restart request was accepted. Its completion status is not available; view the virtual machine in Virtual Machine Manager.";
+
+"mobile.virtual-machines.control.delete.completed" = "Deleted";
+
+"mobile.virtual-machines.control.skipped" = "Not started";
+
+"mobile.virtual-machines.control.removed.title" = "Virtual Machine No Longer Listed";
+"mobile.virtual-machines.control.removed.message" = "Refresh the list or view the operation history.";

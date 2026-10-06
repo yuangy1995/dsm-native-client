@@ -211,7 +211,7 @@ struct MobileWorkspaceView: View {
                 MobileContainersView(inventory: model.containerInventoryModel, controls: model.containerControls,
                     imagePulls: model.containerImagePulls, imageDeletions: model.containerImageDeletions, networks: model.containerNetworks)
             case .virtualMachines:
-                MobileVirtualMachinesView(inventory: model.virtualMachineInventoryModel)
+                MobileVirtualMachinesView(inventory: model.virtualMachineInventoryModel, controls: model.virtualMachineControls)
             case .nasSettings:
                 MobileNasSettingsView(model: model)
             case .transfers:
@@ -251,7 +251,7 @@ struct MobileWorkspaceView: View {
                         } else if module == .containers {
                             Task { await model.containerInventoryModel.refresh(); await model.containerControls.refresh() }
                         } else if module == .virtualMachines {
-                            Task { await model.virtualMachineInventoryModel.refresh() }
+                            Task { await model.virtualMachineInventoryModel.refresh(); await model.virtualMachineControls.refresh() }
                         } else {
                             model.selectModule(module)
                         }

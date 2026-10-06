@@ -3,22 +3,41 @@ import SwiftUI
 
 struct MobileVirtualMachinesView: View {
     @Bindable var inventory: MobileVirtualMachineInventoryModel
+    @Bindable var controls: MobileVirtualMachineControlModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showsSelection = false
 
     var body: some View {
-        Group {
-            if inventory.state.pageState == .loading {
-                ProgressView(L10n.string("mobile.virtual-machines.loading"))
-                    .fillsAvailableContentArea()
-            } else if horizontalSizeClass == .regular {
-                regularLayout
-            } else {
-                compactLayout
+        GeometryReader { geometry in
+            Group {
+                if inventory.state.pageState == .loading {
+                    ProgressView(L10n.string("mobile.virtual-machines.loading"))
+                        .fillsAvailableContentArea()
+                        .accessibilityIdentifier("virtual-machine.loading")
+                } else if horizontalSizeClass == .regular && geometry.size.width >= 680 && !dynamicTypeSize.isAccessibilitySize {
+                    regularLayout(inlineDetails: geometry.size.width >= 1040)
+                } else {
+                    compactLayout
+                }
             }
         }
         .fillsAvailableContentArea(
             alignment: inventory.state.pageState.layout == .topLeading ? .topLeading : .center
         )
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(L10n.string("mobile.virtual-machines.control.selection"), systemImage: "checklist") { showsSelection = true }
+                    .disabled(!controls.allowed || controls.targets.isEmpty)
+                    .accessibilityIdentifier("virtual-machine.selection")
+            }
+        }
+        .sheet(isPresented: $showsSelection) { MobileVirtualMachineSelectionView(model: controls) }
+        .onChange(of: controls.targets) { previous, _ in
+            if !previous.isEmpty && !controls.isOperating && controls.error != .trust && controls.error != .denied {
+                Task { await inventory.refresh() }
+            }
+        }
     }
 
     private var compactLayout: some View {
@@ -27,7 +46,7 @@ struct MobileVirtualMachinesView: View {
             Section {
                 ForEach(MobileVirtualMachineSection.allCases) { section in
                     NavigationLink {
-                        MobileVirtualMachineSectionView(inventory: inventory, section: section)
+                        MobileVirtualMachineSectionView(inventory: inventory, controls: controls, section: section)
                     } label: {
                         MobileVirtualMachineSectionRow(
                             section: section,
@@ -36,14 +55,16 @@ struct MobileVirtualMachinesView: View {
                         )
                     }
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("virtual-machine.section.\(section.rawValue)")
                 }
             }
         }
         .listStyle(.insetGrouped)
-        .refreshable { await inventory.refresh() }
+        .accessibilityIdentifier("virtual-machine.sections")
+        .refreshable { await inventory.refresh(); await controls.refresh() }
     }
 
-    private var regularLayout: some View {
+    private func regularLayout(inlineDetails: Bool) -> some View {
         HStack(spacing: 0) {
             List(selection: sectionSelection) {
                 noticeSections
@@ -56,18 +77,20 @@ struct MobileVirtualMachinesView: View {
                         )
                         .tag(section)
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("virtual-machine.section.\(section.rawValue)")
                     }
                 }
             }
             .listStyle(.sidebar)
             .frame(minWidth: 220, idealWidth: 260, maxWidth: 320)
-            .refreshable { await inventory.refresh() }
+            .refreshable { await inventory.refresh(); await controls.refresh() }
 
             Divider()
             MobileVirtualMachineSectionView(
                 inventory: inventory,
+                controls: controls,
                 section: inventory.state.selectedSection,
-                supportsSelection: true
+                supportsSelection: inlineDetails
             )
         }
     }
@@ -96,10 +119,11 @@ struct MobileVirtualMachinesView: View {
             }
         }
         Section {
-            Label(L10n.string("mobile.virtual-machines.read-only.notice"), systemImage: "eye")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
+            MobileVirtualMachineControlNotice(model: controls)
+            NavigationLink { MobileVirtualMachineControlRecordsView(model: controls) } label: {
+                Label(L10n.string("mobile.virtual-machines.control.records"), systemImage: "clock.arrow.circlepath")
+            }
+            .frame(minHeight: 44).accessibilityIdentifier("virtual-machine.records.open")
         }
     }
 
@@ -142,6 +166,7 @@ private struct MobileVirtualMachineSectionRow: View {
 
 private struct MobileVirtualMachineSectionView: View {
     @Bindable var inventory: MobileVirtualMachineInventoryModel
+    @Bindable var controls: MobileVirtualMachineControlModel
     let section: MobileVirtualMachineSection
     var supportsSelection = false
 
@@ -261,6 +286,7 @@ private struct MobileVirtualMachineSectionView: View {
                         Text(filter.title).tag(filter)
                     }
                 }
+                .accessibilityIdentifier("virtual-machine.filter")
                 ForEach(inventory.state.visibleMachines) { item in itemLink(item.id, selectionMode: selectionMode) { machineRow(item) } }
             case .hosts:
                 ForEach(inventory.state.hosts) { item in itemLink(item.id, selectionMode: selectionMode) { resourceRow(item) } }
@@ -277,7 +303,8 @@ private struct MobileVirtualMachineSectionView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .refreshable { await inventory.refresh() }
+        .accessibilityIdentifier("virtual-machine.items")
+        .refreshable { await inventory.refresh(); await controls.refresh() }
     }
 
     @ViewBuilder
@@ -292,9 +319,10 @@ private struct MobileVirtualMachineSectionView: View {
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
                 .accessibilityAddTraits(inventory.state.selectedItemID == id ? .isSelected : [])
+                .accessibilityIdentifier("virtual-machine.item.\(id)")
         } else {
             NavigationLink { detail(for: id) } label: { label() }
-                .frame(minHeight: 44)
+                .frame(minHeight: 44).accessibilityIdentifier("virtual-machine.item.\(id)")
         }
     }
 
@@ -347,6 +375,12 @@ private struct MobileVirtualMachineSectionView: View {
         case .machines:
             if let item = inventory.state.machines.first(where: { $0.id == id }) {
                 detailForm(title: item.name) {
+                    MobileVirtualMachineControlNotice(model: controls)
+                    MobileVirtualMachineActions(model: controls, ids: [id])
+                    NavigationLink { MobileVirtualMachineControlRecordsView(model: controls) } label: {
+                        Label(L10n.string("mobile.virtual-machines.control.records"), systemImage: "clock.arrow.circlepath")
+                    }
+                    .accessibilityIdentifier("virtual-machine.detail.records")
                     LabeledContent(L10n.string("mobile.virtual-machines.field.status"), value: item.status.title)
                     if let cpu = item.cpuCount {
                         LabeledContent(L10n.string("mobile.virtual-machines.field.cpu"), value: cpu.formatted())
@@ -366,6 +400,18 @@ private struct MobileVirtualMachineSectionView: View {
                         value: L10n.string(item.startupBehavior?.localizationKey ?? "virtual-machine.setting.unknown")
                     )
                 }
+            } else {
+                ContentUnavailableView {
+                    Label(L10n.string("mobile.virtual-machines.control.removed.title"), systemImage: "desktopcomputer")
+                } description: {
+                    Text(L10n.string("mobile.virtual-machines.control.removed.message"))
+                } actions: {
+                    NavigationLink { MobileVirtualMachineControlRecordsView(model: controls) } label: {
+                        Text(L10n.string("mobile.virtual-machines.control.records"))
+                    }
+                    .accessibilityIdentifier("virtual-machine.detail.records")
+                }
+                .fillsAvailableContentArea()
             }
         case .hosts, .storages, .networks, .images:
             if let item = resources.first(where: { $0.id == id }) {
@@ -419,14 +465,10 @@ private struct MobileVirtualMachineSectionView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         Form {
-            Section {
-                Label(L10n.string("mobile.virtual-machines.read-only.notice"), systemImage: "eye")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
             Section(title) { content() }
         }
         .formStyle(.grouped)
+        .accessibilityIdentifier("virtual-machine.detail")
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .fillsAvailableContentArea(alignment: .topLeading)

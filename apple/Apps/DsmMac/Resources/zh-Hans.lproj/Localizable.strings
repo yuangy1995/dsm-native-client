@@ -2205,3 +2205,78 @@
 "download.speed.none" = "--";
 "nas.overview.defaultName" = "NAS";
 "download.remaining.none" = "--";
+
+"virtual-machine.power.unavailable" = "暂时无法控制虚拟机。请重新连接，或在 Virtual Machine Manager 中操作。";
+
+"virtual-machine.power.review-required" = "此前的操作结果暂不可用。请重新连接刷新状态，再进行其他更改。";
+
+"virtual-machine.power.unverified" = "操作结果暂不可用。请重新连接刷新状态，或在 Virtual Machine Manager 中查看虚拟机。";
+
+"virtual-machine.power.review-only" = "没有执行新操作。请刷新列表后重新选择虚拟机。";
+
+"mobile.virtual-machines.control.powerOn" = "开机";
+
+"mobile.virtual-machines.control.shutdown" = "关机";
+
+"mobile.virtual-machines.control.powerOff" = "强制断电";
+
+"mobile.virtual-machines.control.restart" = "重启";
+
+"mobile.virtual-machines.control.delete" = "删除";
+
+"mobile.virtual-machines.control.selection" = "选择虚拟机";
+
+"mobile.virtual-machines.control.cancel" = "取消";
+
+"mobile.virtual-machines.control.shutdown.warning" = "关机将中断这些虚拟机提供的服务。请先保存正在处理的内容。";
+
+"mobile.virtual-machines.control.powerOff.warning" = "强制断电会立即中断这些虚拟机，可能丢失未保存的数据或损坏虚拟磁盘。";
+
+"mobile.virtual-machines.control.restart.warning" = "重启将中断这些虚拟机提供的服务。请先保存正在处理的内容。";
+
+"mobile.virtual-machines.control.delete.warning" = "删除这些虚拟机会永久删除其虚拟磁盘及其中的数据，无法撤销。";
+
+"mobile.virtual-machines.control.error.read" = "无法读取虚拟机当前状态。请重新连接并刷新后再试。";
+
+"mobile.virtual-machines.control.error.denied" = "你目前没有权限管理这些虚拟机。请重新登录或联系管理员。";
+
+"mobile.virtual-machines.control.error.unavailable" = "当前连接无法使用这些操作。请重新连接，或在 Virtual Machine Manager 中操作。";
+
+"mobile.virtual-machines.control.error.changed" = "虚拟机已发生变化。请刷新列表后重新选择。";
+
+"mobile.virtual-machines.control.error.storage" = "无法在此设备保存操作记录。请腾出存储空间，解锁设备后重新打开 App。";
+
+"mobile.virtual-machines.control.error.trust" = "安全连接已发生变化。请返回 NAS 列表重新连接后再操作。";
+
+"mobile.virtual-machines.control.error.failed" = "未能完成操作。请重新连接并刷新列表后再试。";
+
+"mobile.virtual-machines.control.records" = "操作记录";
+
+"mobile.virtual-machines.control.records.empty" = "暂无操作记录";
+
+"mobile.virtual-machines.control.records.empty.message" = "在此设备进行的虚拟机操作会显示在这里。";
+
+"mobile.virtual-machines.control.record.remove" = "移除记录";
+
+"mobile.virtual-machines.control.record.title" = "%1$@ · %2$@";
+
+"mobile.virtual-machines.control.target" = "虚拟机 %d";
+
+"mobile.virtual-machines.control.processing" = "正在处理…";
+
+"mobile.virtual-machines.control.unavailable-result" = "操作结果暂不可用。请重新连接并刷新，或在 Virtual Machine Manager 中查看虚拟机。";
+
+"mobile.virtual-machines.control.powerOn.completed" = "已开机";
+
+"mobile.virtual-machines.control.shutdown.completed" = "已关机";
+
+"mobile.virtual-machines.control.powerOff.completed" = "已断电";
+
+"mobile.virtual-machines.control.restart.accepted" = "已发送重启请求，完成状态暂不可用。请在 Virtual Machine Manager 中查看虚拟机。";
+
+"mobile.virtual-machines.control.delete.completed" = "已删除";
+
+"mobile.virtual-machines.control.skipped" = "未执行";
+
+"mobile.virtual-machines.control.removed.title" = "虚拟机已不在列表中";
+"mobile.virtual-machines.control.removed.message" = "请刷新列表，或查看操作记录。";

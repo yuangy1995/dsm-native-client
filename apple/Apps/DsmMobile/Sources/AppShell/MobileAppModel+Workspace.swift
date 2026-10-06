@@ -36,7 +36,7 @@ extension MobileAppModel {
             containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate(); containerNetworks.deactivate()
         }
         if selectedModule == .virtualMachines, module != .virtualMachines {
-            virtualMachineInventoryModel.deactivate()
+            virtualMachineInventoryModel.deactivate(); virtualMachineControls.deactivate()
         }
         selectedModule = module
         if !selectedTopLevel.childModules.contains(module),
@@ -171,15 +171,20 @@ extension MobileAppModel {
                 )
                 await containerControls.refresh()
             case .virtualMachines:
-                guard let profileID = activeProfile?.id,
-                      let serviceRepository else { break }
-                await virtualMachineInventoryModel.activate(
-                    profileID: profileID,
-                    repository: MobileReadOnlyVirtualMachineRepository(
-                        profileID: profileID,
-                        base: serviceRepository
-                    )
-                )
+                guard let profile = activeProfile, let serviceRepository else { break }
+                let profileID = profile.id, identity = MobileWorkspaceIdentity(profile), reader = moduleAccessReader
+                let authorize: @MainActor @Sendable () async throws -> Bool = { [weak self] in
+                    guard let self, self.activeProfile.map(MobileWorkspaceIdentity.init) == identity,
+                          self.isConnected, self.isModuleVisible(.virtualMachines), let reader else { throw CancellationError() }
+                    let privileges = try await reader.readPrivileges()
+                    guard self.activeProfile.map(MobileWorkspaceIdentity.init) == identity,
+                          self.isConnected, self.isModuleVisible(.virtualMachines), !Task.isCancelled else { throw CancellationError() }
+                    return privileges.applications[.virtualMachines] == true
+                }
+                virtualMachineControls.configure(profile: profile, repository: serviceRepository, authorize: authorize)
+                await virtualMachineInventoryModel.activate(profileID: profileID,
+                    repository: MobileReadOnlyVirtualMachineRepository(profileID: profileID, base: serviceRepository))
+                await virtualMachineControls.refresh()
             case .nasSettings:
                 await loadNasHealth()
             case .transfers, .settings:
