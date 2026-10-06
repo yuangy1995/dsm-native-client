@@ -865,6 +865,11 @@ public protocol ServiceManagementRepository: Sendable {
     func controlVirtualMachines(ids: [String], action: VirtualMachinePowerAction) async throws
     func deleteVirtualMachines(ids: [String]) async throws
     func deleteVirtualMachinesResult(ids: [String]) async throws -> MutationResult
+    func loadVirtualMachineNetworks() async throws -> VirtualMachineNetworkInventory
+    func updateVirtualMachineNetwork(_ target: VirtualMachineNetworkState, configuration: VirtualMachineNetworkUpdate,
+                                     observer: @escaping VirtualMachineControlObserver) async throws
+    func deleteVirtualMachineNetwork(_ target: VirtualMachineNetworkState,
+                                     observer: @escaping VirtualMachineControlObserver) async throws
     func updateVirtualMachineNetwork(
         id: String,
         configuration: VirtualMachineNetworkUpdate
@@ -1069,6 +1074,18 @@ public extension ServiceManagementRepository {
             localizationPrefix: "virtual-machine-network.delete",
             count: ids.count
         )
+    }
+
+    func loadVirtualMachineNetworks() async throws -> VirtualMachineNetworkInventory {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("virtual-machine-network.unavailable"))
+    }
+    func updateVirtualMachineNetwork(_ target: VirtualMachineNetworkState, configuration: VirtualMachineNetworkUpdate,
+                                     observer: @escaping VirtualMachineControlObserver) async throws {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("virtual-machine-network.unavailable"))
+    }
+    func deleteVirtualMachineNetwork(_ target: VirtualMachineNetworkState,
+                                     observer: @escaping VirtualMachineControlObserver) async throws {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("virtual-machine-network.unavailable"))
     }
 
     func deleteVirtualMachineImagesResult(ids: [String]) async throws -> MutationResult {

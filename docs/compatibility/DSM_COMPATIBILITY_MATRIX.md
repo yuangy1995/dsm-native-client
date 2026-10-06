@@ -19,6 +19,12 @@ M7d3 创建共用 Guest.create v1、内部资源 list v2 与 Cluster.get_total_p
 已替换，移动新增分步表单与摘要恢复；目标验证见主计划实时账本。没有本片真实 NAS
 写入，不提升旧单台 Linux/UEFI 样本之外的兼容结论；Windows/Android 仅登记影响。
 
+M7d4a 网络管理共用 Network.list/get v2、set/delete v1，修正 external 改名空增量
+数组与 private 原 host_id；严格原身份/拓扑/关联数量/冻结状态、接受回执与只读结果。
+移动新网络详情、改名/单多删和摘要持久恢复，与关联 VM 和引用网络的创建互斥，
+缺回执不认领或重发；Mac 保持实例内恢复。无真实网络写或版本等级提升，Windows/
+Android 无源码变化；本机结果与具体设备待办以主计划 M7d4a 为准。
+
 ## 2026-10-06 容器与 VMM 文档核查边界
 
 DSM 7.2.1-69057 Update 12、Container Manager 24.0.2-1535、VMM 2.6.5-12202 的当前官方页面

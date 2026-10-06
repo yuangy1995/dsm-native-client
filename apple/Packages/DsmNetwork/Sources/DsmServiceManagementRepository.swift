@@ -5,6 +5,10 @@ import DsmLocalization
 
 private actor NetworkDeletionTracking {
     var state = (submitted: false, rejected: false)
+    func recordVmm(_ stage: VirtualMachineControlStage) {
+        if stage == .willSubmit { state.submitted = true }
+        if stage == .rejected { state.rejected = true }
+    }
     func record(_ stage: ContainerNetworkMutationStage) {
         if case .willSubmit = stage { state.submitted = true }
         if case .rejected = stage { state.rejected = true }
@@ -231,6 +235,9 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private var activeVmmCreationNames: Set<String> = []
     private var activeVmmCreationResources: [String: [String: String]] = [:]
     private var activeVmmNetworkMutationIDs: Set<String> = []
+    private var activeVmmNetworkNames: Set<String> = []
+    private var activeVmmNetworkGuests: [String: Set<String>] = [:]
+    private var pendingVmmNetworks: [String: VmmNetworkSubmission] = [:]
     private var pendingVmmCreations: [String: (configuration: VirtualMachineCreation?, tracking: VirtualMachineCreationTracking)] = [:]
     private var activeDeletionIDsByOperation: [String: Set<String>] = [:]
     private let containerNetworkCreationEnabled: Bool
@@ -2544,6 +2551,15 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             failedSections: &failedSections
         )
 
+        // Mac 使用此普通刷新入口；只有原操作已接受时追加严格恢复读取，不能借展示摘要解锁。
+        if pendingVmmNetworks.contains(where: { $0.value.accepted && !activeVmmNetworkMutationIDs.contains($0.key) }) {
+            do { _ = try await loadVirtualMachineNetworks() }
+            catch {
+                try throwCreationReadBoundary(error)
+                failedSections.insert(.networks)
+            }
+        }
+
         return VirtualMachineManagerSnapshot(
             source: official ? .official : .internalAPI,
             machines: machines,
@@ -2670,7 +2686,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
         var referencedResources = ["storage": Self.creationIdentityDigest(configuration.storageID)]
         if !configuration.networkID.isEmpty {
-            guard !activeVmmNetworkMutationIDs.contains(configuration.networkID),
+            guard !activeVmmNetworkMutationIDs.contains(configuration.networkID), pendingVmmNetworks[configuration.networkID] == nil,
                   activeDeletionIDsByOperation["virtualMachineNetworkDelete"]?.contains(configuration.networkID) != true else {
                 throw verificationError(L10n.string("virtual-machine.creation.resources-changed"))
             }
@@ -3091,7 +3107,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                                       expected: VirtualMachineSettingsState?, observer: VirtualMachineControlObserver?) async throws {
         try Task.checkCancellation()
         guard Self.isVmmDeletionID(id) else { throw validationError(L10n.string("shared.706d4bbb975fcdc6")) }
-        guard !activeVmmSettingsIDs.contains(id), !activeVmmPowerIDs.contains(id), unverifiedVmmPower[id] == nil,
+        guard !activeVmmSettingsIDs.contains(id), !activeVmmPowerIDs.contains(id), unverifiedVmmPower[id] == nil, !networkProtectsGuest(id),
               !(activeDeletionIDsByOperation["virtualMachineDelete"] ?? []).contains(id),
               [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest].allSatisfy({
                   unverifiedVmmDeletions[$0]?[id] == nil
@@ -3378,100 +3394,291 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             expected: expected, observer: observer)
     }
 
-    /// VMM 网页端网络修改使用的内部接口；公开 API 仅支持读取。
-    public func updateVirtualMachineNetwork(
-        id: String,
-        configuration: VirtualMachineNetworkUpdate
-    ) async throws {
-        guard supportsInternalVmmWrite(DsmAPIName.virtualizationNetwork) else {
+    public var supportsVirtualMachineNetworks: Bool {
+        vmmCapability(DsmAPIName.virtualizationNetwork, version: 1) != nil
+            && vmmCapability(DsmAPIName.virtualizationNetwork, version: 2) != nil
+    }
+
+    private struct VmmNetworkSubmission {
+        let target: VirtualMachineNetworkState
+        let newName: String?
+        var accepted = false
+    }
+    private struct VmmNetworkList {
+        let frozen: Bool
+        let networks: [VirtualMachineNetworkState]
+        let guestCounts: [String: Int]
+    }
+
+    /// 只读详情中的 get 不含网络 ID，必须结合完整 list 的唯一身份、名称及关联数量。
+    public func loadVirtualMachineNetworks() async throws -> VirtualMachineNetworkInventory {
+        let list = try await vmmNetworkList()
+        var networks: [VirtualMachineNetworkState] = []
+        for network in list.networks {
+            networks.append(try await vmmNetworkDetail(network, guestCount: list.guestCounts[network.id]!))
+        }
+        if !list.frozen {
+            for (id, pending) in pendingVmmNetworks where pending.accepted && !activeVmmNetworkMutationIDs.contains(id) {
+                let current = networks.first { $0.id == id }
+                let matches = pending.newName.map { name in current?.name == name && current?.hasSameTopology(as: pending.target) == true }
+                    ?? (current == nil)
+                if matches { pendingVmmNetworks[id] = nil }
+            }
+        }
+        return .init(isFrozen: list.frozen, networks: networks)
+    }
+
+    private func vmmNetworkList() async throws -> VmmNetworkList {
+        guard vmmCapability(DsmAPIName.virtualizationNetwork, version: 2) != nil else { throw unavailableError() }
+        let value = try await call(DsmAPIName.virtualizationNetwork, method: "list", fixedVersion: 2)
+        let frozen = try creationBool(value, "is_freeze")
+        var ids = Set<String>(), names = Set<String>(), counts: [String: Int] = [:]
+        let networks = try creationRows(value, "networks").map { row in
+            let id = try creationText(row, "network_id"), name = try creationText(row, "name")
+            let type = try creationText(row, "type"), vlan = try creationInteger(row, "vlan_id")
+            guard case .string(let host)? = row["host_id"], ["external", "private"].contains(type),
+                  type != "private" || Self.isVmmDeletionID(host), vlan <= 4094,
+                  VirtualMachineNetworkState.isValidName(name), ids.insert(id).inserted,
+                  names.insert(Self.creationNameDigest(name)).inserted else { throw invalidServiceResponse() }
+            let interfaces = try creationRows(row, "interfaces").map { item in
+                let host = try creationText(item, "host_id"), interface = try creationText(item, "interface_id")
+                guard Self.isVmmDeletionID(interface) else { throw invalidServiceResponse() }
+                return VirtualMachineNetworkState.Interface(hostID: host, id: interface)
+            }
+            guard type != "external" || !interfaces.isEmpty, Set(interfaces).count == interfaces.count,
+                  try creationInteger(row, "num_interfaces") == interfaces.count else { throw invalidServiceResponse() }
+            _ = try creationInteger(row, "num_hosts"); _ = try creationInteger(row, "num_vinterfaces")
+            counts[id] = try creationInteger(row, "num_guests")
+            return VirtualMachineNetworkState(id: id, name: name, type: type, hostID: host, vlanID: vlan, interfaces: interfaces, guests: [])
+        }
+        try Task.checkCancellation()
+        return VmmNetworkList(frozen: frozen, networks: networks, guestCounts: counts)
+    }
+
+    private func vmmNetworkDetail(_ network: VirtualMachineNetworkState, guestCount: Int) async throws -> VirtualMachineNetworkState {
+        let value = try await call(DsmAPIName.virtualizationNetwork, method: "get",
+            parameters: ["network_id": .string(network.id)], fixedVersion: 2)
+        guard try creationText(value, "name") == network.name else { throw invalidServiceResponse() }
+        // 详情接口只有主机/接口显示名与实时指标，不用这些字段猜测拓扑 ID。
+        _ = try creationRows(value, "interfaces")
+        let guests = try creationRows(value, "guests").map { item in
+            guard case .string(let mac)? = item["mac_addr"], case .string(let interfaces)? = item["vinterface_names"] else {
+                throw invalidServiceResponse()
+            }
+            return VirtualMachineNetworkState.Guest(id: try creationText(item, "guest_id"), name: try creationText(item, "name"),
+                isRunning: try creationBool(item, "running"), prefersSriov: try creationBool(item, "prefer_sriov"),
+                usesVirtualFunction: try creationBool(item, "use_vf"), macAddress: mac, interfaceNames: interfaces)
+        }
+        guard guests.count == guestCount, Set(guests.map(\.id)).count == guests.count else { throw invalidServiceResponse() }
+        try Task.checkCancellation()
+        return .init(id: network.id, name: network.name, type: network.type, hostID: network.hostID,
+                     vlanID: network.vlanID, interfaces: network.interfaces, guests: guests)
+    }
+
+    public func updateVirtualMachineNetwork(id: String, configuration: VirtualMachineNetworkUpdate) async throws {
+        try await mutateVmmNetwork(id: id, expected: nil, newName: configuration.name, observer: nil)
+    }
+    public func updateVirtualMachineNetwork(_ target: VirtualMachineNetworkState, configuration: VirtualMachineNetworkUpdate,
+                                            observer: @escaping VirtualMachineControlObserver) async throws {
+        try await mutateVmmNetwork(id: target.id, expected: target, newName: configuration.name, observer: observer)
+    }
+    public func deleteVirtualMachineNetwork(_ target: VirtualMachineNetworkState,
+                                            observer: @escaping VirtualMachineControlObserver) async throws {
+        try await mutateVmmNetwork(id: target.id, expected: target, newName: nil, observer: observer)
+    }
+
+    private func networkProtectsGuest(_ id: String) -> Bool {
+        activeVmmNetworkGuests.values.contains { $0.contains(id) }
+            || pendingVmmNetworks.values.contains { $0.target.guests.contains { $0.id == id } }
+    }
+    private func networkGuestsAreAvailable(_ target: VirtualMachineNetworkState) -> Bool {
+        !target.guests.contains { guest in
+            networkProtectsGuest(guest.id) || activeVmmPowerIDs.contains(guest.id) || unverifiedVmmPower[guest.id] != nil
+                || activeVmmSettingsIDs.contains(guest.id) || unverifiedVmmSettings[guest.id] != nil
+                || activeDeletionIDsByOperation["virtualMachineDelete"]?.contains(guest.id) == true
+                || [DsmAPIName.virtualizationGuest, DsmAPIName.virtualizationAPIGuest].contains {
+                    unverifiedVmmDeletions[$0]?[guest.id] != nil
+                } || creationProtects(id: guest.id, name: guest.name)
+        }
+    }
+
+    /// 旧 Mac 入口与移动确认共用；回执丢失不会由同名/消失清单认领或重发。
+    private func mutateVmmNetwork(id: String, expected: VirtualMachineNetworkState?, newName: String?,
+                                  observer: VirtualMachineControlObserver?) async throws {
+        try Task.checkCancellation()
+        guard supportsVirtualMachineNetworks, let capability = vmmCapability(DsmAPIName.virtualizationNetwork, version: 1) else {
             throw unavailableError()
         }
-        let id = try validatedName(id, message: L10n.string("shared.ca7aaa6738684c9c"))
+        guard Self.isVmmDeletionID(id), newName.map(VirtualMachineNetworkState.isValidName) ?? true else {
+            throw validationError(L10n.string("virtual-machine-network.invalid-name"))
+        }
         guard !creationReferences("network", id: id), activeVmmNetworkMutationIDs.insert(id).inserted else {
-            throw verificationError(L10n.string("virtual-machine.creation.pending"))
+            throw verificationError(L10n.string("virtual-machine-network.pending"))
         }
-        defer { activeVmmNetworkMutationIDs.remove(id) }
-        let name = try validatedName(configuration.name, message: L10n.string("shared.1750af3117ab4301"))
-        let current = try await loadVirtualMachineManager()
-        guard current.networks.contains(where: { $0.id == id }) else {
-            throw validationError(L10n.string("shared.27a4ede65c142b84"))
+        defer { activeVmmNetworkMutationIDs.remove(id); activeVmmNetworkGuests[id] = nil }
+        if let pending = pendingVmmNetworks[id] {
+            guard expected == nil, pending.newName == newName, try await vmmNetworkResultMatches(pending) else {
+                throw verificationError(L10n.string("virtual-machine-network.pending"))
+            }
+            pendingVmmNetworks[id] = nil
+            return
         }
-        guard !current.networks.contains(where: {
-            $0.id != id && $0.name.caseInsensitiveCompare(name) == .orderedSame
-        }) else {
-            throw validationError(L10n.string("shared.ec86275315f695af"))
+        let reservedName = newName.map(Self.creationNameDigest)
+        if let reservedName {
+            guard !pendingVmmNetworks.values.contains(where: { $0.newName.map(Self.creationNameDigest) == reservedName }),
+                  activeVmmNetworkNames.insert(reservedName).inserted else {
+                throw verificationError(L10n.string("virtual-machine-network.pending"))
+            }
         }
-
-        try await callVoid(
-            DsmAPIName.virtualizationNetwork,
-            method: "set",
-            parameters: [
-                "network_id": .string(id),
-                "name": .string(name)
-            ],
-            fixedVersion: 1
-        )
-        let updated = try await loadVirtualMachineManager()
-        guard updated.networks.contains(where: { $0.id == id && $0.name == name }) else {
-            throw verificationError(L10n.string("shared.35129033ee98c3ee"))
+        defer { if let reservedName { activeVmmNetworkNames.remove(reservedName) } }
+        let list = try await vmmNetworkList()
+        guard !list.frozen, let row = list.networks.first(where: { $0.id == id }),
+              newName == nil || !list.networks.contains(where: { $0.id != id && $0.name.caseInsensitiveCompare(newName!) == .orderedSame }) else {
+            throw validationError(L10n.string("virtual-machine-network.changed"))
         }
+        let target = try await vmmNetworkDetail(row, guestCount: list.guestCounts[id]!)
+        guard expected == nil || expected == target, networkGuestsAreAvailable(target), !creationReferences("network", id: id) else {
+            throw validationError(L10n.string("virtual-machine-network.changed"))
+        }
+        activeVmmNetworkGuests[id] = Set(target.guests.map(\.id))
+        // 纯改名不发送 VLAN 或整份接口列表，保留原网络类型/主机及官方空增量字段。
+        var parameters: [String: DsmParameterValue] = ["network_id": .string(id)]
+        if let newName {
+            // 保留 Mac 旧表单的未修改保存行为，已严格核对原对象后直接结束且零写。
+            if newName == target.name && expected == nil { return }
+            guard newName != target.name else { throw validationError(L10n.string("virtual-machine-network.invalid-name")) }
+            parameters["name"] = .string(newName)
+            if target.type == "external" {
+                parameters["interfaces_add"] = .objectArray([]); parameters["interfaces_remove"] = .objectArray([])
+            } else { parameters["host_id"] = .string(target.hostID) }
+        }
+        try Task.checkCancellation()
+        try await observer?(.willSubmit)
+        pendingVmmNetworks[id] = VmmNetworkSubmission(target: target, newName: newName)
+        do {
+            try await client.callVoid(path: capability.path, api: capability.name, version: 1,
+                method: newName == nil ? "delete" : "set", requestFormat: capability.requestFormat,
+                parameters: parameters, credential: credential)
+        } catch let error as DsmNetworkError {
+            let mapped = DsmErrorMapper.map(error)
+            if Self.imageManagementTrustError(mapped) { throw mapped }
+            let rejected: Bool = switch error { case .api(let code, _) where code > 0: true; case .invalidRequest: true; default: false }
+            if rejected {
+                pendingVmmNetworks[id] = nil
+                try await observer?(.rejected)
+                throw mapped
+            }
+            if case .cancelled = error { throw CancellationError() }
+            if [.authenticationRequired, .otpRequired, .permissionDenied].contains(mapped.category) { throw mapped }
+            throw verificationError(L10n.string("virtual-machine-network.pending"))
+        } catch {
+            if Self.imageManagementTrustError(error)
+                || (error as? AppError).map({ [.authenticationRequired, .otpRequired].contains($0.category) }) == true { throw error }
+            if error is CancellationError { throw error }
+            throw verificationError(L10n.string("virtual-machine-network.pending"))
+        }
+        pendingVmmNetworks[id]?.accepted = true
+        try await observer?(.accepted)
+        try Task.checkCancellation()
+        guard let pending = pendingVmmNetworks[id], try await vmmNetworkResultMatches(pending) else {
+            throw verificationError(L10n.string("virtual-machine-network.pending"))
+        }
+        pendingVmmNetworks[id] = nil
+        try await observer?(.verified)
     }
 
-    /// VMM 网页端网络删除使用的内部接口；删除前由界面确认，提交后回读校验。
+    private func vmmNetworkResultMatches(_ pending: VmmNetworkSubmission) async throws -> Bool {
+        guard pending.accepted else { return false }
+        let list = try await vmmNetworkList()
+        guard !list.frozen else { return false }
+        let row = list.networks.first { $0.id == pending.target.id }
+        guard let name = pending.newName else { return row == nil }
+        guard let row, row.name == name else { return false }
+        let current = try await vmmNetworkDetail(row, guestCount: list.guestCounts[row.id]!)
+        return current.hasSameTopology(as: pending.target)
+    }
+
     public func deleteVirtualMachineNetworks(ids: [String]) async throws {
-        guard supportsInternalVmmWrite(DsmAPIName.virtualizationNetwork) else {
-            throw unavailableError()
-        }
-        let ids = try validatedIDs(ids)
-        guard ids.allSatisfy({ !creationReferences("network", id: $0) }), activeVmmNetworkMutationIDs.isDisjoint(with: ids) else {
-            throw verificationError(L10n.string("virtual-machine.creation.pending"))
-        }
-        activeVmmNetworkMutationIDs.formUnion(ids)
-        defer { activeVmmNetworkMutationIDs.subtract(ids) }
-        let currentIDs = Set(try await loadVirtualMachineManager().networks.map(\.id))
-        guard ids.allSatisfy(currentIDs.contains) else {
-            throw validationError(L10n.string("shared.d7cae8f9ca59d2d3"))
-        }
-        for id in ids {
-            try await callVoid(
-                DsmAPIName.virtualizationNetwork,
-                method: "delete",
-                parameters: ["network_id": .string(id)],
-                fixedVersion: 1
-            )
-        }
-        let remaining = Set(try await loadVirtualMachineManager().networks.map(\.id))
-        guard ids.allSatisfy({ !remaining.contains($0) }) else {
-            throw verificationError(L10n.string("shared.3f7da50cab7bd49a"))
+        guard supportsVirtualMachineNetworks else { throw unavailableError() }
+        let result = try await deleteVirtualMachineNetworksResult(ids: ids)
+        guard result.status == .confirmedSuccess else {
+            throw AppError(category: result.errorCategory == .authentication ? .authenticationRequired
+                : result.status == .permissionDenied ? .permissionDenied : .partialFailure, isRetryable: false,
+                safeUserMessage: L10n.string(result.localizationKey ?? "virtual-machine-network.delete.unverified"))
         }
     }
 
-    /// VMM 网络删除使用内部接口；提交后通过网络列表逐项确认。
+    /// 多项删除先核对全选集合，再逐项提交与只读回查；未知后停止余项。
     public func deleteVirtualMachineNetworksResult(ids: [String]) async throws -> MutationResult {
+        let context = ServiceDeletionContext(operation: "virtualMachineNetworkDelete", localizationPrefix: "virtual-machine-network.delete")
+        if Task.isCancelled { return try deletionCancellationBeforeSubmission(context: context) }
+        guard !ids.isEmpty, ids.allSatisfy(Self.isVmmDeletionID) else {
+            return try deletionUnexpectedPreflightResult(targetCount: max(1, ids.count), context: context)
+        }
+        let ids = Array(Set(ids)).sorted()
+        guard supportsVirtualMachineNetworks else { return try deletionUnsupportedResult(targetCount: ids.count, context: context) }
         guard ids.allSatisfy({ !creationReferences("network", id: $0) }) else {
             throw verificationError(L10n.string("virtual-machine.creation.pending"))
         }
-        return try await performServiceDeletion(
-            ids: ids,
-            context: ServiceDeletionContext(
-                operation: "virtualMachineNetworkDelete",
-                localizationPrefix: "virtual-machine-network.delete"
-            ),
-            isSupported: supportsInternalVmmWrite(DsmAPIName.virtualizationNetwork),
-            loadCurrentIDs: {
-                Set(try await self.loadVirtualMachineManager().networks.map(\.id))
-            },
-            submit: { targets in
-                for id in targets {
-                    try await self.callVoid(
-                        DsmAPIName.virtualizationNetwork,
-                        method: "delete",
-                        parameters: ["network_id": .string(id)],
-                        fixedVersion: 1
-                    )
+        guard activeVmmNetworkMutationIDs.isDisjoint(with: ids) else {
+            return try deletionDuplicateResult(targetCount: ids.count, context: context)
+        }
+        var succeeded = 0, submitted = false
+        func summary(unknown: Int, category: MutationErrorCategory? = nil) throws -> MutationResult {
+            let status: MutationResultStatus = Task.isCancelled && submitted ? .cancellationRequestedAfterSubmission
+                : succeeded == ids.count ? .confirmedSuccess : succeeded > 0 ? .partialSuccess
+                : unknown > 0 ? .submittedButUnverified : category == .permission ? .permissionDenied : .confirmedFailure
+            return try serviceDeletionResult(status: status, context: context, submitted: submitted,
+                requiresRefresh: submitted && status != .confirmedSuccess,
+                succeeded: succeeded, failed: ids.count - succeeded - unknown, unknown: unknown, errorCategory: category,
+                localizationSuffix: category == .authentication ? "authentication" : status == .confirmedSuccess ? "completed"
+                    : succeeded > 0 ? "partial" : unknown > 0 ? "unverified" : category == .permission ? "permission-denied" : "failed",
+                diagnosticSuffix: "internal-v1-batch")
+        }
+        do {
+            let prior = ids.filter { pendingVmmNetworks[$0] != nil }
+            if !prior.isEmpty {
+                submitted = true
+                for id in prior {
+                    guard let pending = pendingVmmNetworks[id], pending.newName == nil else {
+                        return try summary(unknown: prior.count - succeeded, category: .conflict)
+                    }
+                    if try await vmmNetworkResultMatches(pending) { pendingVmmNetworks[id] = nil; succeeded += 1 }
+                }
+                return try summary(unknown: prior.count - succeeded)
+            }
+            let list = try await vmmNetworkList()
+            guard !list.frozen, ids.allSatisfy({ id in list.networks.contains { $0.id == id } }) else {
+                return try summary(unknown: 0, category: .conflict)
+            }
+            var targets: [VirtualMachineNetworkState] = []
+            for id in ids {
+                let target = try await vmmNetworkDetail(list.networks.first { $0.id == id }!, guestCount: list.guestCounts[id]!)
+                guard networkGuestsAreAvailable(target) else { return try summary(unknown: 0, category: .conflict) }
+                targets.append(target)
+            }
+            for target in targets {
+                let tracking = NetworkDeletionTracking()
+                do {
+                    try await mutateVmmNetwork(id: target.id, expected: target, newName: nil, observer: { await tracking.recordVmm($0) })
+                    submitted = true; succeeded += 1
+                } catch {
+                    let state = await tracking.state
+                    submitted = submitted || state.submitted
+                    if Self.imageManagementTrustError(error)
+                || (error as? AppError).map({ [.authenticationRequired, .otpRequired].contains($0.category) }) == true { throw error }
+                    let category = (error as? AppError).map { serviceMutationErrorCategory(for: $0.category) }
+                    return try summary(unknown: state.submitted && !state.rejected ? 1 : 0, category: category)
                 }
             }
-        )
+            return try summary(unknown: 0)
+        } catch {
+            if Self.imageManagementTrustError(error)
+                || (error as? AppError).map({ [.authenticationRequired, .otpRequired].contains($0.category) }) == true { throw error }
+            if Task.isCancelled && !submitted { return try deletionCancellationBeforeSubmission(context: context) }
+            let category = (error as? AppError).map { serviceMutationErrorCategory(for: $0.category) }
+            return try summary(unknown: submitted ? ids.filter { pendingVmmNetworks[$0] != nil }.count : 0, category: category)
+        }
     }
 
     /// 映像删除使用同步空响应；公开接口固定 v1，不根据无关字段猜测异步任务。
@@ -3540,7 +3747,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
         let route = try vmmPowerRoute(action)
         let targets = Array(Set(ids)).sorted(), targetSet = Set(targets)
-        guard activeVmmPowerIDs.isDisjoint(with: targetSet),
+        guard !targets.contains(where: networkProtectsGuest), activeVmmPowerIDs.isDisjoint(with: targetSet),
               activeVmmSettingsIDs.isDisjoint(with: targetSet),
               Set(unverifiedVmmSettings.keys).isDisjoint(with: targetSet),
               (activeDeletionIDsByOperation["virtualMachineDelete"] ?? []).isDisjoint(with: targetSet),
@@ -3706,7 +3913,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             return try deletionUnsupportedResult(targetCount: targets.count, context: context)
         }
         let active = activeDeletionIDsByOperation[context.operation] ?? []
-        if isGuest && (!activeVmmPowerIDs.isDisjoint(with: targetSet) || !activeVmmSettingsIDs.isDisjoint(with: targetSet)
+        if isGuest && (targets.contains(where: networkProtectsGuest) || !activeVmmPowerIDs.isDisjoint(with: targetSet) || !activeVmmSettingsIDs.isDisjoint(with: targetSet)
             || targets.contains(where: { unverifiedVmmPower[$0] != nil || unverifiedVmmSettings[$0] != nil })) {
             return try deletionDuplicateResult(targetCount: targets.count, context: context)
         }
@@ -5478,12 +5685,6 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         } catch let error as DsmNetworkError {
             throw DsmErrorMapper.map(error)
         }
-    }
-
-    private func supportsInternalVmmWrite(_ name: String) -> Bool {
-        guard let capability = capabilities[name] else { return false }
-        return capability.name == name && capability.selectedVersion != nil &&
-            capability.minVersion <= 1 && capability.maxVersion >= 1
     }
 
     private func callVoid(

@@ -11,6 +11,7 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
     private var shouldHold = false
     private var waiter: CheckedContinuation<Void, Never>?
     private var waitingForWrite: CheckedContinuation<Void, Never>?
+    private var networks = [["id": "network-1", "name": "Sample network"], ["id": "network-2", "name": "Isolated network"]]
     private var creationParameters: [String: Any] = [:]
     private(set) var calls: [[String: String]] = []
     var writes: [[String: String]] { calls.filter { ["poweron", "shutdown", "poweroff", "pwr_ctl", "delete", "set", "create"].contains($0["method"] ?? "") } }
@@ -20,6 +21,9 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
         machines = [Self.machine(id: "synthetic-vm", name: "Sample virtual machine", running: running),
                     Self.machine(id: "worker-b", name: "Worker B", running: running)]
         if mode == "vmm-delete-recovered" || mode == "vmm-empty" { machines = [] }
+        if mode == "vmm-network-empty" { networks = [] }
+        if mode == "vmm-network-renamed" { networks[0]["name"] = "Renamed network" }
+        if mode == "vmm-network-deleted" { networks.removeFirst() }
         if mode == "vmm-missing-state" { machines[0]["status"] = nil }
         if mode == "vmm-transition" { machines[0]["status"] = "stopping" }
         if mode == "vmm-settings-recovered" { machines[0]["desc"] = "Updated synthetic description" }
@@ -35,6 +39,8 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
             else { machines[0][key] = value }
         }
     }
+    func renameNetwork() { networks[0]["name"] = "Changed network" }
+    func replaceNetwork() { networks[0]["id"] = "replacement-network" }
     func renameFirst() { machines[0]["name"] = "Changed virtual machine" }
     func replaceFirst() { machines[0]["guest_id"] = "replacement-vm" }
     func removeFirst() { if !machines.isEmpty { machines.removeFirst() } }
@@ -53,6 +59,9 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
         })
         calls.append(fields)
         let api = fields["api"] ?? "", method = fields["method"] ?? ""
+        if api == DsmAPIName.virtualizationNetwork, mode.hasPrefix("vmm-network") {
+            return try await networkResponse(method: method, fields: fields)
+        }
         if mode.hasPrefix("vmm-create"), let response = try await creationResponse(api: api, method: method, fields: fields) { return response }
         if ["poweron", "shutdown", "poweroff", "pwr_ctl", "delete", "set"].contains(method) {
             if shouldHold { await withCheckedContinuation { waiter = $0; waitingForWrite?.resume(); waitingForWrite = nil } }
@@ -100,6 +109,39 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
     private func response(_ value: [String: Any], success: Bool = true) -> DsmHTTPResponse {
         .init(data: try! JSONSerialization.data(withJSONObject: ["success": success, success ? "data" : "error": value]),
               statusCode: 200, headers: [:])
+    }
+    private func networkResponse(method: String, fields: [String: String]) async throws -> DsmHTTPResponse {
+        let networkWrites = writes.filter { $0["api"] == DsmAPIName.virtualizationNetwork }
+        if method == "set" || method == "delete" {
+            if shouldHold { await withCheckedContinuation { waiter = $0; waitingForWrite?.resume(); waitingForWrite = nil } }
+            if mode == "vmm-network-reject" { return response(["code": 105], success: false) }
+            if mode == "vmm-network-trust" { throw URLError(.serverCertificateUntrusted) }
+            if mode == "vmm-network-http-unauthorized" { return .init(data: Data(), statusCode: 401) }
+            if mode == "vmm-network-unknown" || mode == "vmm-network-partial" && networkWrites.count == 2 { throw URLError(.networkConnectionLost) }
+            guard let index = networks.firstIndex(where: { $0["id"] == fields["network_id"] }) else { return response(["code": 408], success: false) }
+            if method == "set" { networks[index]["name"] = fields["name"] }
+            else { networks.remove(at: index) }
+            return response([:])
+        }
+        let formRead = calls.filter { $0["api"] == DsmAPIName.virtualizationNetwork && $0["method"] == "list" }.count > 1
+        if formRead && mode == "vmm-network-loading" { try await Task.sleep(for: .seconds(30)) }
+        if formRead && mode == "vmm-network-read-error" { throw URLError(.notConnectedToInternet) }
+        if mode == "vmm-network-accepted-offline" && !networkWrites.isEmpty { throw URLError(.notConnectedToInternet) }
+        if method == "get" {
+            guard let network = networks.first(where: { $0["id"] == fields["network_id"] }) else { return response(["code": 408], success: false) }
+            let guests: [[String: Any]] = network["id"] == "network-1" ? [["guest_id": "synthetic-vm", "name": "Sample virtual machine",
+                "running": machines.first?["status"] as? String == "running", "prefer_sriov": false, "use_vf": false,
+                "mac_addr": "02:00:00:00:00:01", "vinterface_names": "eth0"]] : []
+            return response(["name": network["name"]!, "interfaces": [], "guests": guests])
+        }
+        var rows: [[String: Any]] = networks.map { network in
+            ["network_id": network["id"]!, "name": network["name"]!, "type": "external", "host_id": "host-1", "vlan_id": 0,
+             "num_guests": network["id"] == "network-1" ? 1 : 0, "num_hosts": 1, "num_interfaces": 1,
+             "num_vinterfaces": network["id"] == "network-1" ? 1 : 0,
+             "interfaces": [["host_id": "host-1", "interface_id": "interface-1"]]]
+        }
+        if mode == "vmm-network-incomplete" && !rows.isEmpty { rows[0]["interfaces"] = nil }
+        return response(["is_freeze": mode == "vmm-network-frozen", "networks": rows])
     }
     private func creationResponse(api: String, method: String, fields: [String: String]) async throws -> DsmHTTPResponse? {
         if api == DsmAPIName.virtualizationRepo {
