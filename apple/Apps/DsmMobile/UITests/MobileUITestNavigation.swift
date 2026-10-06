@@ -8,11 +8,16 @@ enum MobileUITestNavigation {
         let toggle = app.switches["mobile.settings.module.\(module)"]
         revealModule(toggle, in: app)
         let control = toggle.switches.firstMatch
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"), object: control)
+        // 云端多属性轮询曾在读完前耗尽十秒；可点击本身已要求存在，避免重复抓取。
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: control)
         let readyResult = XCTWaiter.wait(for: [ready], timeout: 10)
         if readyResult != .completed { capture(app, name: "Enable \(module) readiness", test: test) }
         XCTAssertEqual(readyResult, .completed, "功能开关尚未可操作：\(module)", file: file, line: line)
         guard readyResult == .completed else { return }
+        let isEnabled = control.isEnabled
+        if !isEnabled { capture(app, name: "Enable \(module) disabled", test: test) }
+        XCTAssertTrue(isEnabled, "功能开关当前不可用：\(module)", file: file, line: line)
+        guard isEnabled else { return }
         // 外层辅助功能框包含整行，中心不是开关；在实际控件上完成一次按下/抬起后检查状态。
         if toggle.value as? String == "0" { control.press(forDuration: 0.15) }
         // 开启聊天会插入通知区域；大字号下原开关会移出可见列表，先滚回原控件再读取新值。

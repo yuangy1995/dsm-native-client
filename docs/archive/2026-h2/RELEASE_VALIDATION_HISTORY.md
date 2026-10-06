@@ -3717,3 +3717,53 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 两台模拟器系统外观已恢复并读取为浅色。提交前读取远端 main，无远端新提交；
 当前 04d692ab 云端还有三组运行，先在 main 保存本片，避免推送取消未结束的整轮。
 本片本机通过与云端故障分别记录，不将其视为真实 NAS 验收或发布。
+
+## 2026-10-07 云端模块开关读取与文件启动阻塞复核
+
+本片基线 `4a97752`，只修改正式 UI 共用导航测试和证据文档，不改产品代码、NAS 请求、
+权限或恢复。按已宣布使用的 gh-fix-ci 工作流核对 main 的实际运行，不创建 PR。
+[Apple Build 37499218894](https://github.com/yuangy1995/dsm-native-client/actions/runs/37499218894)
+对应 `04d692ab`。当前共享/macOS 与 iPhone 工作区成功；iPhone 模块组 131 项 UI 中
+128 通过、3 失败，均是 `MobileContainerControlUITests` 的模块开关准备：
+`test多项删除逐项展示完成且托管容器不可选`、`test托管和运行字段缺失均不能提交控制`、
+`test批量删除第二项未知保留第一项完成`。原始日志为
+`build/m7d3-ci-iphone-modules.log`，原始结果包已下载并导出三个精确用例；三张截图
+均逐张检查，开关完整显示且关闭，辅助功能树存在外层标识和内层 Switch，尚无业务写入。
+
+首个失败的复合等待在 28.28 秒开始读取 `exists`，到 34.70 秒才继续定位 Switch，
+37.51 秒随即开始捕获失败信息；连续属性读取消耗整个十秒等待窗口。共用 helper
+现在只轮询内层开关 `hittable`，完成后另行读取/断言 `isEnabled`，再做一次按下/抬起
+并确认外层值变为 1。外层显露和所有业务断言保持，不增加超时或重试，不以截图
+代替可点击性断言。两端聚焦构建/交互结果续记于下，云端仍须实际复验。
+
+iPad 工作区只失败 `MobileWorkspaceUITests.test批量删除文件和文件夹明确后果且刷新源列表`：
+初始等待 Sample folder 时超时，175.383 秒后结束，未进入删除。原日志
+`build/m7d3-ci-ipad-workspace.log`、结果包与失败录屏均已检查；录屏 0.5 秒、20 秒和
+168.9 秒三帧分别为启动与持续的 File 加载页。导出 App 诊断后确认 17:49:02 等待
+主线程空闲，17:50:34、17:51:07、17:51:38 连续三次报告主线程 30 秒无响应，
+直到测试终止阶段才恢复；导出的诊断不含该次阻塞栈，不能断言是产品或 Runner 原因。
+同一原用例未修改并在 M7d3 两端本机通过（27.473 秒 / 23.565 秒），故暂不增加
+重试、放宽断言或修改文件业务；保留未解决结论，后续完整云端再次运行验证。
+
+调整后测试构建及两端实际测试均 **exit 0**。iPhone 五项 UI **212.004 秒**，
+iPad 五项 UI **228.178 秒**，无失败；日志及结果包为
+`build/m7d-ci-readiness-{phone,pad}.log/xcresult`，构建日志为
+`build/m7d-ci-readiness-build.log`。十六张截图逐张复核，三个云端失败用例均已走到
+原业务断言和结果页；中文删除风险、托管限制、字段缺失不能控制、逐项未知保护
+均保持。另记录 iPhone 群公告附件按钮最大字号的既有断行裁切，本次只验证导航/搜索，
+未据此宣称附件布局完善，也未修改聊天产品。
+
+实际执行命令：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination "platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F" -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 -parallel-testing-enabled NO "-only-testing:DsmMobileUITests/MobileContainerControlUITests/test多项删除逐项展示完成且托管容器不可选" "-only-testing:DsmMobileUITests/MobileContainerControlUITests/test托管和运行字段缺失均不能提交控制" "-only-testing:DsmMobileUITests/MobileContainerControlUITests/test批量删除第二项未知保留第一项完成" "-only-testing:DsmMobileUITests/MobileContainerControlUITests/test中文大字删除风险完整可读且取消按钮可用" "-only-testing:DsmMobileUITests/MobileChatManagementUITests/test中文深色大字公告筛选空状态" -destination "platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F" -resultBundlePath build/m7d-ci-readiness-phone.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 -parallel-testing-enabled NO "-only-testing:DsmMobileUITests/MobileContainerControlUITests/test多项删除逐项展示完成且托管容器不可选" "-only-testing:DsmMobileUITests/MobileContainerControlUITests/test托管和运行字段缺失均不能提交控制" "-only-testing:DsmMobileUITests/MobileContainerControlUITests/test批量删除第二项未知保留第一项完成" "-only-testing:DsmMobileUITests/MobileContainerControlUITests/test中文大字删除风险完整可读且取消按钮可用" "-only-testing:DsmMobileUITests/MobileChatManagementUITests/test中文深色大字公告筛选空状态" -destination "platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289" -resultBundlePath build/m7d-ci-readiness-pad.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
+独立复核只涉及测试条件求值，存在/可点击/未禁用/最终开启及所有业务限制仍有断言；
+没有增加等待时长或重试，也没有产品、契约、资源或 Mac 改动，故未重复共享/Mac 门禁。
+两端系统外观恢复并读取为浅色。保留正式日志/结果包和 `build/m7d-ci-preview/` 的
+十一张合成预览（八张本机结果、三张云端原失败）；一次性 CI 下载、诊断、录屏取帧
+及附件导出已精确清理。当前完整云端剩余三组仍运行，不为推送中断，后续再正常
+同步已验证的 main 提交。初始文件加载阻塞仍是待云端复验的未解决问题。
