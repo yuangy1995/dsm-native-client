@@ -173,13 +173,25 @@ final class MobileDirectoryUITests: XCTestCase {
     }
     private func replaceDescription(_ app: XCUIApplication) {
         let field = reveal("mobile.nas.directory.description", in: app)
-        field.tap()
-        let previous = field.value as? String ?? ""
-        // 三击在 iPad 可能只选中一个词；原合成值为单行，明确移至末尾后清空。
-        for _ in previous { field.typeKey(XCUIKeyboardKey.rightArrow.rawValue, modifierFlags: []) }
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
-        XCTAssertTrue((field.value as? String ?? "").isEmpty)
-        field.tap()
+        if app.frame.width > 600 {
+            // 原合成值为单行；iPad 点入可见值末尾，不切换硬件方向键与屏幕键盘。
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap()
+            let previous = field.value as? String ?? ""
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+        } else {
+            // 标签和值共享辅助功能边框；点入实际输入区，用系统全选确定替换范围。
+            let input = field.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.8))
+            input.tap(); input.press(forDuration: 1.2)
+            let selectAll = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label == %@", "Select All", "全选")).firstMatch
+            XCTAssertTrue(selectAll.waitForExistence(timeout: 5)); selectAll.tap()
+            field.typeText(XCUIKeyboardKey.delete.rawValue)
+        }
+        let cleared = field.value as? String ?? ""
+        if !cleared.isEmpty && cleared != field.placeholderValue {
+            let attachment = XCTAttachment(string: app.debugDescription); attachment.name = "Directory description clearing hierarchy"; add(attachment)
+            screenshot(app, "Directory description clearing state")
+        }
+        XCTAssertTrue(cleared.isEmpty || cleared == field.placeholderValue, "说明字段未清空：\(cleared)")
         field.typeText("Updated account")
         XCTAssertEqual(field.value as? String, "Updated account")
     }

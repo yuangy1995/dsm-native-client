@@ -3150,3 +3150,33 @@ git diff --check
 ```
 
 请求契约 179 项/结果示例 1 项、fixture 29 组/48 项私有引用、API 目录检查均通过；本地化 6741/2188/3402 项双语、占位符、引用与硬编码扫描通过。工程按既有 XcodeGen 重新生成后内容一致；最终文档检查通过。独立云端账号输入失败与分组调整另作提交，本片不把本机验收当作云端或真实 NAS 验收。
+
+
+## 2026-10-06 账号输入云端修复与管理测试分组
+
+安全设置提交 `aa88e3b` 后独立收口本片。原运行 [Apple Build 37413207539](https://github.com/yuangy1995/dsm-native-client/actions/runs/37413207539) 的 [iPhone 模块作业 112106031435](https://github.com/yuangy1995/dsm-native-client/actions/runs/37413207539/job/112106031435) 基于 `cdc889cc`，完整 1469 单元（4 条既有条件跳过、0 失败）通过，194 UI 中 192 通过、2 失败。失败为 `MobileDirectoryUITests.test当前账号保护和未知所属组仍可查看`（90.314 秒）和 `test账号编辑群组选择保存取消及删除确认`（73.987 秒），都停在旧第 181 行清空说明的断言。
+
+读取完整原日志、两个失败的活动索引及后一个用例的原始录屏；54/70 秒画面显示屏幕键盘切换，72.8/73.4 秒时仍残留旧说明。证据支持测试的方向键/屏幕输入切换未在清空检查前完成，不能把失败归于 NAS 保存或占位文字。使用按需字节读取与校验获得相关结果对象，没有下载整个 1.12 GB 结果包；不把局部检查称为整包验收。
+
+只修改说明替换 helper：iPhone 使用既有服务测试的实际输入区定位、系统全选和单次删除；iPad 对原单行点到末尾删除。清空（含平台占位值）、精确新值及原有保存、重新打开、群组、取消、删除、当前账号保护、明确拒绝与未知恢复断言全部保留。失败时增加合成界面附件，没有固定等待、重复提交或新增跳过。
+
+原 iPhone 194 UI 耗时 17657.925 秒（墙钟 17658.286 秒）；其中十个 NAS 管理类共 105 项约 10957 秒，其余 89 项约 6701 秒。当前源码另新增 13 项服务与 27 项容器 UI，因此将每设备拆为工作区、其他模块、NAS 管理三个互补组，保留原 Runner、锁定工具链、非并行设备执行和结果上传。共享/macOS 仍为独立组。正式分组回归运行实际工作流参数，逐设备枚举所有源码 XCTestCase 保证每类恰一次、非零退出不被吞掉、未知组失败，3 项通过。
+
+实际命令：
+
+```sh
+gh api repos/yuangy1995/dsm-native-client/actions/jobs/112106031435/logs
+python3 tools/release/test_apple_ci.py
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6-ci-directory-phone-r1.xcresult -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test当前账号保护和未知所属组仍可查看' '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test明确拒绝保持失败而不是成功' '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test账号编辑群组选择保存取消及删除确认' '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test资料保存未知后重启只读恢复'
+```
+
+iPad 目标为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果包为 `m6-ci-directory-pad-r1.xcresult`。两端模拟器均为浅色，构建通过；原云端 iPad 模块作业保留执行，未因本地提交取消。共享 2938 XCTest/12 Swift Testing、两端完整各 1550 单元与 Mac 双架构已由同日 M6b5 验收；本片不改变生产代码，不重复无关整组，也不把本机专项通过当作新云端通过。
+
+
+最终两端四项相关 UI 全部通过，iPhone 248.427 秒、iPad 285.520 秒，两个命令均 exit 0。已查看两端确认、删除完成和重启恢复六张实际截图；`Updated account` 完整值保留，原账号保护和失败断言均通过。另保留原云端失败截帧，共七张合成审查图位于 `apple/Apps/DsmMobile/build/m6-ci-directory-preview/`。按需下载索引、局部结果对象、原始录屏、临时导出、截帧脚本与清单均已精确清理，保留正式本机日志/结果包和原云日志。
+
+独立集成复核检查测试 helper 只操作原说明字段、确认/保存断言未削弱；工作流的十项类清单共用，新增测试类默认仍进入 modules，正式回归保证全量覆盖且失败不被改成通过。本片未对真实 NAS 写入，也未修改生产业务代码。
+
+
+提交前读取到旧 iPad 模块作业 `112106031303` 从 UTC 04:20:13 开始，UTC 10:21:44 时测试步骤已 cancelled、结果上传仍 in_progress。最终作业原因与已执行用例仍待日志确认；当前没有手动取消，不把终止测试算作通过。新的三组分配尚未获得云端执行结果。提交前 fetch 确认 origin/main 仍为 `cdc889cc`，没有远端新提交；推送等待原结果上传结束，避免损失原始失败证据。

@@ -42,12 +42,18 @@ jobs:
           - target: iPhone-modules
             family: iPhone
             suite: modules
+          - target: iPhone-administration
+            family: iPhone
+            suite: administration
           - target: iPad-workspace
             family: iPad
             suite: workspace
           - target: iPad-modules
             family: iPad
             suite: modules
+          - target: iPad-administration
+            family: iPad
+            suite: administration
     steps:
       - name: 检出仓库
         # v7.0.0
@@ -170,13 +176,27 @@ jobs:
           MOBILE_TARGET: ${{ matrix.target }}
           MOBILE_SUITE: ${{ matrix.suite }}
         run: |
-          # 每台设备两组互补覆盖全部测试，避免单个托管作业超过六小时。
+          # 每台设备三组互补覆盖全部测试；管理场景增加后独立运行，避免单个作业超过六小时。
+          administration_tests=(
+            MobileDDNSUITests MobileDirectoryUITests MobileNasReadUITests MobileNasStorageUITests
+            MobilePackageCenterUITests MobilePackageInstallationUITests MobileRegionUITests
+            MobileScheduledTasksUITests MobileServiceSettingsUITests MobileSystemActionsUITests
+          )
           case "$MOBILE_SUITE" in
             workspace)
               test_selection=(-only-testing:DsmMobileUITests/MobileWorkspaceUITests)
               ;;
             modules)
               test_selection=(-only-testing:DsmMobileTests -only-testing:DsmMobileUITests -skip-testing:DsmMobileUITests/MobileWorkspaceUITests)
+              for test_class in "${administration_tests[@]}"; do
+                test_selection+=("-skip-testing:DsmMobileUITests/$test_class")
+              done
+              ;;
+            administration)
+              test_selection=()
+              for test_class in "${administration_tests[@]}"; do
+                test_selection+=("-only-testing:DsmMobileUITests/$test_class")
+              done
               ;;
             *) echo "未知移动测试分组：$MOBILE_SUITE" >&2; exit 1 ;;
           esac
