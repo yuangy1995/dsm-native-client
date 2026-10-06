@@ -650,7 +650,7 @@ extension MobileAppModel {
         containerInventoryModel.deactivate()
         containerControls.deactivate()
         containerNetworks.deactivate()
-        virtualMachineInventoryModel.deactivate()
+        virtualMachineInventoryModel.deactivate(); virtualMachineControls.deactivate()
         documentTransferController.resetForDisconnectedWorkspace()
         isConnected = false
         activeProfile = nil

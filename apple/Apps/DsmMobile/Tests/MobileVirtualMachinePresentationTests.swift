@@ -33,7 +33,7 @@ final class MobileVirtualMachinePresentationTests: XCTestCase {
         XCTAssertFalse(view.contains("withAnimation"))
     }
 
-    func test页面不展示绑定事件正文与桌面写能力() throws {
+    func test页面不展示私有信息或直接调用写接口() throws {
         let view = try source("Sources/Features/ReadOnlyServices/VirtualMachines/MobileVirtualMachinesView.swift")
         for forbidden in [
             "event.message", "event.user", "hostID", "hostName", "ipAddress", "keyboardLayout",
@@ -49,6 +49,9 @@ final class MobileVirtualMachinePresentationTests: XCTestCase {
             "inventory.setFilter(.all)", ".filteredEmpty"
         ] { XCTAssertTrue(view.contains(expected), "缺少：\(expected)") }
         XCTAssertEqual(resourceKeys(in: view), Self.expectedResourceKeys)
+        XCTAssertTrue(view.contains("MobileVirtualMachineActions(model: controls"))
+        XCTAssertTrue(view.contains("MobileVirtualMachineControlRecordsView"))
+        XCTAssertFalse(view.contains("mobile.virtual-machines.read-only.notice"))
         XCTAssertTrue(view.contains("item.startupBehavior?.localizationKey"))
         XCTAssertTrue(view.contains("\"virtual-machine.setting.unknown\""))
         XCTAssertEqual(Set(VirtualMachineStartupBehavior.allCases.map(\.localizationKey)),
@@ -83,7 +86,8 @@ final class MobileVirtualMachinePresentationTests: XCTestCase {
         "mobile.virtual-machines.filter.stopped", "mobile.virtual-machines.filtered-empty.message",
         "mobile.virtual-machines.filtered-empty.title", "mobile.virtual-machines.loading",
         "mobile.virtual-machines.protection.plan", "mobile.virtual-machines.protection.retention",
-        "mobile.virtual-machines.protection.schedule", "mobile.virtual-machines.read-only.notice",
+        "mobile.virtual-machines.protection.schedule", "mobile.virtual-machines.control.selection", "mobile.virtual-machines.control.records",
+        "mobile.virtual-machines.control.removed.title", "mobile.virtual-machines.control.removed.message",
         "mobile.virtual-machines.refresh.failed", "mobile.virtual-machines.section.empty.message",
         "mobile.virtual-machines.session-expired",
         "mobile.virtual-machines.section.empty.title", "mobile.virtual-machines.section.events",

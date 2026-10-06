@@ -223,10 +223,9 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private var completedImageDeletions: [UUID: (ContainerImageDeletionRecovery, ContainerImageDeletionProgress)] = [:]
     private var imagePullBusy = false
     private var imagePullOperations: [UUID: ImagePullOperation] = [:]
-    private var activeVirtualMachineDeletionIDs: Set<String> = []
-    private var unverifiedPublicVmmDeletions: [String: [String: PublicVmmDeletion]] = [:]
-    private var activePublicVmmPowerIDs: Set<String> = []
-    private var unverifiedPublicVmmPower: [String: PublicVmmPowerTarget] = [:]
+    private var unverifiedVmmDeletions: [String: [String: VmmDeletion]] = [:]
+    private var activeVmmPowerIDs: Set<String> = []
+    private var unverifiedVmmPower: [String: VmmPowerTarget] = [:]
     private var activeDeletionIDsByOperation: [String: Set<String>] = [:]
     private let containerNetworkCreationEnabled: Bool
     private var networkMutationActive = false
@@ -2709,7 +2708,11 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         configuration: VirtualMachineUpdate
     ) async throws {
         let id = try validatedIDs([id])[0]
-        guard !activePublicVmmPowerIDs.contains(id), unverifiedPublicVmmPower[id] == nil else {
+        guard !activeVmmPowerIDs.contains(id), unverifiedVmmPower[id] == nil,
+              !(activeDeletionIDsByOperation["virtualMachineDelete"] ?? []).contains(id),
+              [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest].allSatisfy({
+                  unverifiedVmmDeletions[$0]?[id] == nil
+              }) else {
             throw validationError(L10n.string("virtual-machine.power.review-required"))
         }
         guard let capability = capabilities[DsmAPIName.virtualizationGuest],
@@ -2853,28 +2856,49 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         )
     }
 
-    public func controlVirtualMachines(
-        ids: [String],
-        action: VirtualMachinePowerAction
-    ) async throws {
-        if capabilities[DsmAPIName.virtualizationAPIGuestAction]?.selectedVersion != nil {
-            try await controlPublicVirtualMachines(ids: ids, action: action)
-        } else {
-            let ids = try validatedIDs(ids)
-            let command: String = switch action {
-            case .powerOn: "on"
-            case .shutdown: "shutdown"
-            case .powerOff: "off"
-            case .restart: "reboot"
-            }
-            for id in ids {
-                try await callVoid(
-                    DsmAPIName.virtualizationGuestAction,
-                    method: "pwr_ctl",
-                    parameters: ["guest_id": .string(id), "action": .string(command)]
-                )
+    public func controlVirtualMachines(ids: [String], action: VirtualMachinePowerAction) async throws {
+        try await controlVirtualMachines(ids: ids, action: action, expected: nil, observer: nil)
+    }
+
+    public func controlVirtualMachine(_ target: VirtualMachineControlState, action: VirtualMachinePowerAction,
+                                      observer: @escaping VirtualMachineControlObserver) async throws {
+        guard target.supports(action) else { throw validationError(L10n.string("virtual-machine.power.target-changed")) }
+        try await controlVirtualMachines(ids: [target.id], action: action, expected: target, observer: observer)
+    }
+
+    /// 严格读取原始清单；只读恢复不发送电源，也不把没有回执的外部变化归于原操作。
+    public func loadVirtualMachineControlStates() async throws -> [VirtualMachineControlState] {
+        let capability = try vmmGuestCapability()
+        let value: ServiceJSON
+        do {
+            value = try await client.call(path: capability.path, api: capability.name,
+                version: capability.name == DsmAPIName.virtualizationAPIGuest ? 1 : 2,
+                method: "list", requestFormat: capability.requestFormat, parameters: [:],
+                credential: credential, as: ServiceJSON.self)
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+        try Task.checkCancellation()
+        guard case .array(let values)? = value["guests"] else { throw invalidServiceResponse() }
+        try Self.requireCompleteServiceList(value, count: values.count)
+        var identifiers = Set<String>()
+        let targets = try values.map { value in
+            let target = try vmmControlState(value, capability: capability)
+            guard identifiers.insert(target.id).inserted else { throw invalidServiceResponse() }
+            return target
+        }
+        for target in targets {
+            if !activeVmmPowerIDs.contains(target.id), let pending = unverifiedVmmPower[target.id], pending.accepted,
+               target.name == pending.name, target.verifies(pending.action) {
+                unverifiedVmmPower[target.id] = nil
             }
         }
+        let remaining = Set(targets.map(\.id))
+        for api in [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest] {
+            for (id, pending) in unverifiedVmmDeletions[api, default: [:]]
+                where pending.accepted && !remaining.contains(id) && !(activeDeletionIDsByOperation["virtualMachineDelete"] ?? []).contains(id) {
+                unverifiedVmmDeletions[api]?[id] = nil
+            }
+        }
+        return targets
     }
 
     public func deleteVirtualMachines(ids: [String]) async throws {
@@ -2886,124 +2910,35 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
-    /// 虚拟机删除优先使用公开 API；提交后通过虚拟机列表逐项确认，未知结果不得自动重放。
+    /// 公开/内部删除均逐项固定 v1；移动确认与旧入口复用同一状态核查及回执流水线。
     public func deleteVirtualMachinesResult(ids: [String]) async throws -> MutationResult {
-        if capabilities[DsmAPIName.virtualizationAPIGuest]?.selectedVersion != nil {
-            return try await deletePublicVmmResources(ids: ids, api: DsmAPIName.virtualizationAPIGuest,
-                arrayKey: "guests", idKey: "guest_id",
-                context: ServiceDeletionContext(operation: "virtualMachineDelete", localizationPrefix: "virtual-machine.delete"))
-        }
-        let context = ServiceDeletionContext(
-            operation: "virtualMachineDelete",
-            localizationPrefix: "virtual-machine.delete"
-        )
-        if Task.isCancelled {
-            return try deletionCancellationBeforeSubmission(context: context)
-        }
+        try await deleteVirtualMachinesResult(ids: ids, expected: nil, observer: nil)
+    }
 
-        let targets: [String]
-        do {
-            targets = try validatedIDs(ids)
-        } catch let error as AppError {
-            return try deletionPreflightResult(
-                error,
-                targetCount: max(ids.count, 1),
-                context: context
-            )
-        } catch {
-            return try deletionUnexpectedPreflightResult(
-                targetCount: max(ids.count, 1),
-                context: context
-            )
-        }
-        let api = capabilities[DsmAPIName.virtualizationAPIGuest]?.selectedVersion != nil
-            ? DsmAPIName.virtualizationAPIGuest
-            : DsmAPIName.virtualizationGuest
-        guard capabilities[api]?.selectedVersion != nil else {
-            return try deletionUnsupportedResult(
-                targetCount: targets.count,
-                context: context
-            )
-        }
-
-        let targetSet = Set(targets)
-        guard activeVirtualMachineDeletionIDs.isDisjoint(with: targetSet) else {
-            return try deletionDuplicateResult(
-                targetCount: targets.count,
-                context: context
-            )
-        }
-        activeVirtualMachineDeletionIDs.formUnion(targetSet)
-        defer { activeVirtualMachineDeletionIDs.subtract(targetSet) }
-
-        do {
-            let currentIDs = Set(try await loadVirtualMachineManager().machines.map(\.id))
-            guard targetSet.isSubset(of: currentIDs) else {
-                return try deletionMissingTargetResult(
-                    targetCount: targets.count,
-                    context: context
-                )
+    public func deleteVirtualMachine(_ target: VirtualMachineControlState,
+                                     observer: @escaping VirtualMachineControlObserver) async throws {
+        guard target.canDelete else { throw validationError(L10n.string("virtual-machine.power.target-changed")) }
+        let result = try await deleteVirtualMachinesResult(ids: [target.id], expected: target, observer: observer)
+        guard result.status == .confirmedSuccess else {
+            let category: AppErrorCategory = switch result.errorCategory {
+            case .authentication: .authenticationRequired
+            case .permission: .permissionDenied
+            case .unsupported: .apiUnavailable
+            case .validation, .conflict: .conflict
+            default: .partialFailure
             }
-        } catch let error as AppError {
-            return try deletionPreflightResult(
-                error,
-                targetCount: targets.count,
-                context: context
-            )
-        } catch {
-            return try deletionUnexpectedPreflightResult(
-                targetCount: targets.count,
-                context: context
-            )
+            throw AppError(category: category, isRetryable: false,
+                           safeUserMessage: L10n.string(result.localizationKey ?? "virtual-machine.delete.unverified"))
         }
+    }
 
-        if Task.isCancelled {
-            return try deletionCancellationBeforeSubmission(context: context)
-        }
-        do {
-            try await callVoid(
-                api,
-                method: "delete",
-                parameters: ["guest_id": .string(targets.joined(separator: ","))]
-            )
-        } catch let error as AppError {
-            return try deletionSubmissionResult(
-                error,
-                targetCount: targets.count,
-                context: context
-            )
-        } catch {
-            return try deletionUnexpectedSubmissionResult(
-                targetCount: targets.count,
-                context: context
-            )
-        }
-
-        if Task.isCancelled {
-            return try deletionCancellationAfterSubmission(
-                targetCount: targets.count,
-                context: context
-            )
-        }
-        do {
-            let remaining = Set(try await loadVirtualMachineManager().machines.map(\.id))
-            return try deletionReadbackResult(
-                targets: targetSet,
-                remaining: remaining,
-                context: context
-            )
-        } catch let error as AppError {
-            return try deletionReadbackFailureResult(
-                error,
-                targetCount: targets.count,
-                context: context
-            )
-        } catch {
-            return try deletionUnexpectedReadbackResult(
-                targetCount: targets.count,
-                context: context
-            )
-        }
+    private func deleteVirtualMachinesResult(ids: [String], expected: VirtualMachineControlState?,
+                                             observer: VirtualMachineControlObserver?) async throws -> MutationResult {
+        let api = capabilities[DsmAPIName.virtualizationAPIGuest]?.selectedVersion != nil
+            ? DsmAPIName.virtualizationAPIGuest : DsmAPIName.virtualizationGuest
+        return try await deleteVmmResources(ids: ids, api: api, arrayKey: "guests", idKey: "guest_id",
+            context: ServiceDeletionContext(operation: "virtualMachineDelete", localizationPrefix: "virtual-machine.delete"),
+            expected: expected, observer: observer)
     }
 
     /// VMM 网页端网络修改使用的内部接口；公开 API 仅支持读取。
@@ -3100,135 +3035,184 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
-    private struct PublicVmmDeletion {
+    private struct VmmDeletion {
         var accepted = false
     }
 
-    private struct PublicVmmPowerTarget {
+    private struct VmmPowerTarget {
         let name: String
         let action: VirtualMachinePowerAction
+        let guestAPI: String
+        var accepted = false
     }
 
-    /// 公开电源 v1 只接受单台身份。未确认结果留在本次仓库实例内，再次调用只核对。
-    private func controlPublicVirtualMachines(ids: [String], action: VirtualMachinePowerAction) async throws {
-        try Task.checkCancellation()
-        guard !ids.isEmpty, ids.allSatisfy(Self.isPublicVmmDeletionID) else {
-            throw validationError(L10n.string("shared.e594e487c681e714"))
-        }
-        guard action != .restart else {
-            throw AppError(category: .apiUnavailable, isRetryable: false,
-                safeUserMessage: L10n.string("virtual-machine.power.restart-unavailable"))
-        }
-        let actionAPI = DsmAPIName.virtualizationAPIGuestAction
-        let guestAPI = DsmAPIName.virtualizationAPIGuest
-        guard let capability = capabilities[actionAPI], capability.name == actionAPI,
-              capability.minVersion <= 1, capability.maxVersion >= 1,
-              let guest = capabilities[guestAPI], guest.name == guestAPI,
-              guest.selectedVersion != nil, guest.minVersion <= 1, guest.maxVersion >= 1 else {
+    private struct VmmPowerRoute {
+        let action: ApiCapability
+        let guest: ApiCapability
+        var isInternal: Bool { guest.name == DsmAPIName.virtualizationGuest }
+        var readVersion: Int { isInternal ? 2 : 1 }
+    }
+
+    private func vmmCapability(_ api: String, version: Int) -> ApiCapability? {
+        guard let capability = capabilities[api], capability.name == api, capability.selectedVersion != nil,
+              capability.minVersion <= version, capability.maxVersion >= version else { return nil }
+        return capability
+    }
+
+    private func vmmGuestCapability() throws -> ApiCapability {
+        let usesPublic = capabilities[DsmAPIName.virtualizationAPIGuest]?.selectedVersion != nil
+        guard let value = vmmCapability(usesPublic ? DsmAPIName.virtualizationAPIGuest : DsmAPIName.virtualizationGuest,
+                                        version: usesPublic ? 1 : 2) else { throw unavailableError() }
+        return value
+    }
+
+    private func vmmPowerRoute(_ action: VirtualMachinePowerAction) throws -> VmmPowerRoute {
+        // 公开 v1 无 reboot；仅该动作明确使用已经记录的内部接口，不把拒绝改为另一种写法。
+        let usesPublic = action != .restart && capabilities[DsmAPIName.virtualizationAPIGuestAction]?.selectedVersion != nil
+        let actionAPI = usesPublic ? DsmAPIName.virtualizationAPIGuestAction : DsmAPIName.virtualizationGuestAction
+        let guestAPI = usesPublic ? DsmAPIName.virtualizationAPIGuest : DsmAPIName.virtualizationGuest
+        guard let write = vmmCapability(actionAPI, version: 1),
+              let read = vmmCapability(guestAPI, version: usesPublic ? 1 : 2) else {
+            if action == .restart {
+                throw AppError(category: .apiUnavailable, isRetryable: false,
+                               safeUserMessage: L10n.string("virtual-machine.power.restart-unavailable"))
+            }
             throw unavailableError()
         }
-        let targets = Array(Set(ids)).sorted()
-        let targetSet = Set(targets)
-        guard activePublicVmmPowerIDs.isDisjoint(with: targetSet),
+        return VmmPowerRoute(action: write, guest: read)
+    }
+
+    /// 两条已记录接口共享身份、回执和恢复边界；不会因未知结果切换接口或重放。
+    private func controlVirtualMachines(ids: [String], action: VirtualMachinePowerAction,
+                                        expected: VirtualMachineControlState?, observer: VirtualMachineControlObserver?) async throws {
+        try Task.checkCancellation()
+        guard !ids.isEmpty, ids.allSatisfy(Self.isVmmDeletionID) else {
+            throw validationError(L10n.string("shared.e594e487c681e714"))
+        }
+        let route = try vmmPowerRoute(action)
+        let targets = Array(Set(ids)).sorted(), targetSet = Set(targets)
+        guard activeVmmPowerIDs.isDisjoint(with: targetSet),
               (activeDeletionIDsByOperation["virtualMachineDelete"] ?? []).isDisjoint(with: targetSet),
-              activeVirtualMachineDeletionIDs.isDisjoint(with: targetSet),
-              Set(unverifiedPublicVmmDeletions[guestAPI, default: [:]].keys).isDisjoint(with: targetSet) else {
+              [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest].allSatisfy({
+                  Set(unverifiedVmmDeletions[$0, default: [:]].keys).isDisjoint(with: targetSet)
+              }) else {
             throw validationError(L10n.string("virtual-machine.power.review-required"))
         }
-        activePublicVmmPowerIDs.formUnion(targetSet)
-        defer { activePublicVmmPowerIDs.subtract(targetSet) }
+        activeVmmPowerIDs.formUnion(targetSet)
+        defer { activeVmmPowerIDs.subtract(targetSet) }
 
-        let prior = targets.filter { unverifiedPublicVmmPower[$0] != nil }
+        let prior = targets.filter { unverifiedVmmPower[$0] != nil }
         if !prior.isEmpty {
-            // 混合选择中即使旧结果已确认，也不借核对启动尚未执行的其他目标。
+            // 新确认不能消费旧提交；旧入口只恢复原动作，不借混合选择继续未执行目标。
+            guard expected == nil else { throw verificationError(L10n.string("virtual-machine.power.unverified")) }
             for id in prior {
-                guard let pending = unverifiedPublicVmmPower[id], pending.action == action else {
+                guard let pending = unverifiedVmmPower[id], pending.action == action,
+                      pending.guestAPI == route.guest.name else {
                     throw validationError(L10n.string("virtual-machine.power.review-required"))
                 }
             }
             for id in prior {
-                let pending = unverifiedPublicVmmPower[id]!
-                let current = try await readPublicVmmPowerTarget(id: id, capability: guest)
-                guard current.name == pending.name, current.status == publicVmmDesiredState(pending.action) else {
+                let pending = unverifiedVmmPower[id]!
+                let current = try await readVmmPowerTarget(id: id, route: route)
+                guard pending.accepted, current.name == pending.name, current.verifies(action) else {
                     throw verificationError(L10n.string("virtual-machine.power.unverified"))
                 }
-                unverifiedPublicVmmPower.removeValue(forKey: id)
+                unverifiedVmmPower[id] = nil
             }
-            guard prior.count == targets.count else {
-                throw verificationError(L10n.string("virtual-machine.power.review-only"))
-            }
+            guard prior.count == targets.count else { throw verificationError(L10n.string("virtual-machine.power.review-only")) }
             return
         }
 
-        let initialState = action == .powerOn ? "shutdown" : "running"
-        var baselines: [String: String] = [:]
+        var baselines: [String: VirtualMachineControlState] = [:]
         for id in targets {
-            let current = try await readPublicVmmPowerTarget(id: id, capability: guest)
-            guard current.status == initialState else {
+            let current = try await readVmmPowerTarget(id: id, route: route)
+            guard current.supports(action), expected == nil || current == expected else {
                 throw validationError(L10n.string("virtual-machine.power.target-changed"))
             }
-            baselines[id] = current.name
+            baselines[id] = current
         }
         for id in targets {
-            // 首次写入前已核对全部目标；每项提交前再检查其身份与允许状态。
-            let current = try await readPublicVmmPowerTarget(id: id, capability: guest)
-            guard current.name == baselines[id], current.status == initialState else {
+            let current = try await readVmmPowerTarget(id: id, route: route)
+            guard current == baselines[id], current.supports(action) else {
                 throw validationError(L10n.string("virtual-machine.power.target-changed"))
             }
             try Task.checkCancellation()
-            unverifiedPublicVmmPower[id] = PublicVmmPowerTarget(name: current.name, action: action)
-            let method = action == .powerOn ? "poweron" : action == .shutdown ? "shutdown" : "poweroff"
+            try await observer?(.willSubmit)
+            unverifiedVmmPower[id] = VmmPowerTarget(name: current.name, action: action, guestAPI: route.guest.name)
+            let command: String = switch action {
+            case .powerOn: "poweron"
+            case .shutdown: "shutdown"
+            case .powerOff: "poweroff"
+            case .restart: "reboot"
+            }
+            var parameters: [String: DsmParameterValue] = ["guest_id": .string(id)]
+            if route.isInternal { parameters["action"] = .string(command) }
             do {
-                try await client.callVoid(path: capability.path, api: actionAPI, version: 1, method: method,
-                    requestFormat: capability.requestFormat, parameters: ["guest_id": .string(id)], credential: credential)
+                try await client.callVoid(path: route.action.path, api: route.action.name, version: 1,
+                    method: route.isInternal ? "pwr_ctl" : command, requestFormat: route.action.requestFormat,
+                    parameters: parameters, credential: credential)
             } catch let error as DsmNetworkError {
-                if case .api(let code, _) = error, code > 0 {
-                    unverifiedPublicVmmPower.removeValue(forKey: id)
-                    throw DsmErrorMapper.map(error)
+                let mapped = DsmErrorMapper.map(error)
+                if Self.imageManagementTrustError(mapped) { throw mapped }
+                let rejected: Bool = switch error {
+                case .api(let code, _) where code > 0: true
+                case .invalidRequest: true
+                default: false
                 }
-                if case .invalidRequest = error {
-                    unverifiedPublicVmmPower.removeValue(forKey: id)
+                if rejected {
+                    unverifiedVmmPower[id] = nil
+                    try await observer?(.rejected)
                     throw DsmErrorMapper.map(error)
                 }
                 if case .cancelled = error { throw CancellationError() }
                 throw verificationError(L10n.string("virtual-machine.power.unverified"))
-            } catch let error as DsmCertificateTrustError {
-                // 保留证书安全反馈，不重试，也不将其降为普通网络提示。
-                throw error
-            } catch {
+            } catch let error as DsmCertificateTrustError { throw error }
+            catch let error as AppError {
+                if Self.imageManagementTrustError(error) { throw error }
                 throw verificationError(L10n.string("virtual-machine.power.unverified"))
             }
+            catch { throw verificationError(L10n.string("virtual-machine.power.unverified")) }
+            unverifiedVmmPower[id]?.accepted = true
+            try await observer?(.accepted)
             try Task.checkCancellation()
-            let updated = try await readPublicVmmPowerTarget(id: id, capability: guest)
-            guard updated.name == current.name, updated.status == publicVmmDesiredState(action) else {
+            let updated = try await readVmmPowerTarget(id: id, route: route)
+            guard updated.name == current.name, updated.verifies(action) else {
                 throw verificationError(L10n.string("virtual-machine.power.unverified"))
             }
-            unverifiedPublicVmmPower.removeValue(forKey: id)
+            unverifiedVmmPower[id] = nil
+            try await observer?(.verified)
         }
     }
 
-    private func publicVmmDesiredState(_ action: VirtualMachinePowerAction) -> String {
-        action == .powerOn ? "running" : "shutdown"
-    }
-
-    private func readPublicVmmPowerTarget(id: String, capability: ApiCapability) async throws -> (name: String, status: String) {
+    private func readVmmPowerTarget(id: String, route: VmmPowerRoute) async throws -> VirtualMachineControlState {
         let value: ServiceJSON
         do {
-            value = try await client.call(path: capability.path, api: capability.name, version: 1, method: "get",
-                requestFormat: capability.requestFormat, parameters: ["guest_id": .string(id)], credential: credential, as: ServiceJSON.self)
+            value = try await client.call(path: route.guest.path, api: route.guest.name, version: route.readVersion,
+                method: "get", requestFormat: route.guest.requestFormat, parameters: ["guest_id": .string(id)],
+                credential: credential, as: ServiceJSON.self)
         } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
         try Task.checkCancellation()
-        guard case .string(let identity)? = value["guest_id"], identity == id,
-              case .string(let name)? = value["guest_name"], !name.isEmpty,
+        let target = try vmmControlState(value, capability: route.guest)
+        guard target.id == id else { throw invalidServiceResponse() }
+        return target
+    }
+
+    private func vmmControlState(_ value: ServiceJSON, capability: ApiCapability) throws -> VirtualMachineControlState {
+        let usesPublic = capability.name == DsmAPIName.virtualizationAPIGuest
+        guard case .string(let id)? = value["guest_id"], Self.isVmmDeletionID(id),
+              case .string(let name)? = value[usesPublic ? "guest_name" : "name"], !name.isEmpty,
               !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
               case .string(let status)? = value["status"], !status.isEmpty else { throw invalidServiceResponse() }
-        return (name, status)
+        let actions: [VirtualMachinePowerAction] = [.powerOn, .shutdown, .powerOff, .restart]
+        return VirtualMachineControlState(id: id, name: name, status: status,
+            availableActions: Set(actions.filter { (try? vmmPowerRoute($0)) != nil }),
+            allowsDeletion: vmmCapability(capability.name, version: 1) != nil)
     }
 
     public func deleteVirtualMachineImagesResult(ids: [String]) async throws -> MutationResult {
         let context = ServiceDeletionContext(operation: "virtualMachineImageDelete", localizationPrefix: "virtual-machine-image.delete")
         if capabilities[DsmAPIName.virtualizationAPIGuestImage]?.selectedVersion != nil {
-            return try await deletePublicVmmResources(ids: ids, api: DsmAPIName.virtualizationAPIGuestImage,
+            return try await deleteVmmResources(ids: ids, api: DsmAPIName.virtualizationAPIGuestImage,
                 arrayKey: "images", idKey: "image_id", context: context)
         }
         // 内部兼容分支沿用已记录契约；读取失败不能当作映像已消失。
@@ -3252,138 +3236,151 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         )
     }
 
-    /// 公开 VMM 删除逐项闭环；未执行项计入未完成，未知项单独保留，不自动重发。
-    private func deletePublicVmmResources(
-        ids: [String], api: String, arrayKey: String, idKey: String, context: ServiceDeletionContext
-    ) async throws -> MutationResult {
+    /// VM 两种来源与公开映像删除逐项闭环；未知和未执行项分别计数，不自动重发。
+    private func deleteVmmResources(ids: [String], api: String, arrayKey: String, idKey: String,
+                                     context: ServiceDeletionContext, expected: VirtualMachineControlState? = nil,
+                                     observer: VirtualMachineControlObserver? = nil) async throws -> MutationResult {
         if Task.isCancelled { return try deletionCancellationBeforeSubmission(context: context) }
-        guard !ids.isEmpty, ids.allSatisfy(Self.isPublicVmmDeletionID) else {
+        guard !ids.isEmpty, ids.allSatisfy(Self.isVmmDeletionID) else {
             return try deletionUnexpectedPreflightResult(targetCount: max(1, ids.count), context: context)
         }
-        let targets = Array(Set(ids)).sorted()
-        guard let capability = capabilities[api], capability.name == api, capability.selectedVersion != nil,
-              capability.minVersion <= 1, capability.maxVersion >= 1 else {
+        let targets = Array(Set(ids)).sorted(), targetSet = Set(ids)
+        let isGuest = api == DsmAPIName.virtualizationAPIGuest || api == DsmAPIName.virtualizationGuest
+        guard let capability = vmmCapability(api, version: 1),
+              api != DsmAPIName.virtualizationGuest || vmmCapability(api, version: 2) != nil else {
             return try deletionUnsupportedResult(targetCount: targets.count, context: context)
         }
-        let targetSet = Set(targets)
         let active = activeDeletionIDsByOperation[context.operation] ?? []
-        if api == DsmAPIName.virtualizationAPIGuest,
-           (!activePublicVmmPowerIDs.isDisjoint(with: targetSet) || targets.contains(where: { unverifiedPublicVmmPower[$0] != nil })) {
+        if isGuest && (!activeVmmPowerIDs.isDisjoint(with: targetSet) || targets.contains(where: { unverifiedVmmPower[$0] != nil })) {
             return try deletionDuplicateResult(targetCount: targets.count, context: context)
         }
-        guard active.isDisjoint(with: targetSet) else {
-            return try deletionDuplicateResult(targetCount: targets.count, context: context)
-        }
+        guard active.isDisjoint(with: targetSet) else { return try deletionDuplicateResult(targetCount: targets.count, context: context) }
         activeDeletionIDsByOperation[context.operation] = active.union(targetSet)
-        defer {
-            activeDeletionIDsByOperation[context.operation]?.subtract(targetSet)
-        }
-        var succeeded = 0
-        var submitted = false
+        defer { activeDeletionIDsByOperation[context.operation]?.subtract(targetSet) }
+        var succeeded = 0, submitted = false
         func summary(unknown: Int, category: MutationErrorCategory? = nil) throws -> MutationResult {
             let failed = targets.count - succeeded - unknown
             let status: MutationResultStatus = Task.isCancelled && submitted ? .cancellationRequestedAfterSubmission
-                : succeeded == targets.count ? .confirmedSuccess
-                : succeeded > 0 ? .partialSuccess
+                : succeeded == targets.count ? .confirmedSuccess : succeeded > 0 ? .partialSuccess
                 : unknown > 0 ? .submittedButUnverified
                 : category == .permission ? .permissionDenied : category == .unsupported ? .unsupported : .confirmedFailure
             return try serviceDeletionResult(status: status, context: context, submitted: submitted,
                 requiresRefresh: submitted && status != .confirmedSuccess,
                 succeeded: succeeded, failed: failed, unknown: unknown, errorCategory: category,
-                localizationSuffix: category == .authentication ? "authentication" : status == .confirmedSuccess ? "completed" : succeeded > 0 ? "partial" : unknown > 0 ? "unverified" : status == .permissionDenied ? "permission-denied" : status == .unsupported ? "unsupported" : "failed",
-                diagnosticSuffix: "public-v1-batch")
+                localizationSuffix: category == .authentication ? "authentication" : status == .confirmedSuccess ? "completed"
+                    : succeeded > 0 ? "partial" : unknown > 0 ? "unverified" : status == .permissionDenied ? "permission-denied"
+                    : status == .unsupported ? "unsupported" : "failed",
+                diagnosticSuffix: api == DsmAPIName.virtualizationGuest ? "internal-v1-batch" : "public-v1-batch")
         }
-        let prior = Set(unverifiedPublicVmmDeletions[api, default: [:]].keys).intersection(targetSet)
+        let prior = Set(unverifiedVmmDeletions[api, default: [:]].keys).intersection(targetSet)
         submitted = !prior.isEmpty
-        let current: Set<String>
-        do {
-            current = try await publicVmmDeletionIDs(capability: capability, arrayKey: arrayKey, idKey: idKey)
-        } catch let error as AppError {
+        if expected != nil && !prior.isEmpty { throw verificationError(L10n.string("virtual-machine.delete.unverified")) }
+        let initial: VmmDeletionSnapshot
+        do { initial = try await vmmDeletionSnapshot(capability: capability, arrayKey: arrayKey, idKey: idKey) }
+        catch let error as AppError {
+            if Self.imageManagementTrustError(error) { throw error }
             if !prior.isEmpty { return try summary(unknown: prior.count, category: serviceMutationErrorCategory(for: error.category)) }
             return try deletionPreflightResult(error, targetCount: targets.count, context: context)
         } catch {
+            if Self.imageManagementTrustError(error) { throw error }
             if !prior.isEmpty { return try summary(unknown: prior.count, category: Task.isCancelled ? nil : .unknown) }
             if Task.isCancelled { return try deletionCancellationBeforeSubmission(context: context) }
             return try deletionUnexpectedPreflightResult(targetCount: targets.count, context: context)
         }
         if !prior.isEmpty {
-            // 对先前未知的同一目标只核对，不借这次调用启动任何新删除。
-            // 清单消失只证明当前状态；缺少本次接受回执时不能认领其他客户端的删除。
-            let resolved = prior.filter { !current.contains($0) && unverifiedPublicVmmDeletions[api]?[$0]?.accepted == true }
-            for id in resolved { unverifiedPublicVmmDeletions[api]?[id] = nil }
+            let resolved = prior.filter { !initial.ids.contains($0) && unverifiedVmmDeletions[api]?[$0]?.accepted == true }
+            for id in resolved { unverifiedVmmDeletions[api]?[id] = nil }
             succeeded = resolved.count
-            submitted = true
             return try summary(unknown: prior.count - resolved.count)
         }
-        guard targetSet.isSubset(of: current) else {
-            return try deletionMissingTargetResult(targetCount: targets.count, context: context)
+        guard targetSet.isSubset(of: initial.ids) else { return try deletionMissingTargetResult(targetCount: targets.count, context: context) }
+        if isGuest && !targets.allSatisfy({ initial.guests[$0]?.canDelete == true }) {
+            return try summary(unknown: 0, category: .conflict)
         }
-        var observedIDs = current
+        if let expected, initial.guests[expected.id] != expected { return try summary(unknown: 0, category: .conflict) }
+        var observed = initial
         for id in targets {
             if Task.isCancelled {
                 if submitted { return try summary(unknown: 0) }
                 return try deletionCancellationBeforeSubmission(context: context)
             }
-            guard observedIDs.contains(id) else { return try summary(unknown: 0, category: .conflict) }
-            unverifiedPublicVmmDeletions[api, default: [:]][id] = PublicVmmDeletion()
+            guard observed.ids.contains(id), !isGuest || (observed.guests[id] == initial.guests[id] && observed.guests[id]?.canDelete == true) else {
+                return try summary(unknown: 0, category: .conflict)
+            }
+            try await observer?(.willSubmit)
+            unverifiedVmmDeletions[api, default: [:]][id] = VmmDeletion()
             submitted = true
-            var submissionError: AppError?
-            var explicitlyRejected = false
+            var submissionError: AppError?, explicitlyRejected = false
             do {
                 try await client.callVoid(path: capability.path, api: api, version: 1, method: "delete",
                     requestFormat: capability.requestFormat, parameters: [idKey: .string(id)], credential: credential)
-                unverifiedPublicVmmDeletions[api]?[id]?.accepted = true
+                unverifiedVmmDeletions[api]?[id]?.accepted = true
             } catch let error as DsmNetworkError {
-                submissionError = DsmErrorMapper.map(error)
+                let mapped = DsmErrorMapper.map(error)
+                if Self.imageManagementTrustError(mapped) { throw mapped }
+                submissionError = mapped
                 if case .api(let code, _) = error, code > 0 { explicitlyRejected = true }
+                if case .invalidRequest = error { explicitlyRejected = true }
             } catch let error as AppError {
+                if Self.imageManagementTrustError(error) { throw error }
                 submissionError = error
             } catch {
+                if Self.imageManagementTrustError(error) { throw error }
                 return try summary(unknown: 1, category: Task.isCancelled ? nil : .unknown)
             }
             if let error = submissionError, explicitlyRejected {
-                unverifiedPublicVmmDeletions[api]?[id] = nil
+                unverifiedVmmDeletions[api]?[id] = nil
+                try await observer?(.rejected)
+                if observer != nil { throw error }
                 return try summary(unknown: 0, category: serviceMutationErrorCategory(for: error.category))
             }
+            if unverifiedVmmDeletions[api]?[id]?.accepted == true { try await observer?(.accepted) }
             if Task.isCancelled { return try summary(unknown: 1) }
             do {
-                let remaining = try await publicVmmDeletionIDs(capability: capability, arrayKey: arrayKey, idKey: idKey)
-                guard !remaining.contains(id), unverifiedPublicVmmDeletions[api]?[id]?.accepted == true else {
-                    return try summary(unknown: 1, category: submissionError.map { serviceMutationErrorCategory(for: $0.category) })
-                }
-                unverifiedPublicVmmDeletions[api]?[id] = nil
-                observedIDs = remaining
-                succeeded += 1
+                observed = try await vmmDeletionSnapshot(capability: capability, arrayKey: arrayKey, idKey: idKey)
             } catch let error as AppError {
+                if Self.imageManagementTrustError(error) { throw error }
                 return try summary(unknown: 1, category: serviceMutationErrorCategory(for: submissionError?.category ?? error.category))
             } catch {
+                if Self.imageManagementTrustError(error) { throw error }
                 return try summary(unknown: 1, category: Task.isCancelled ? nil : .unknown)
             }
+            guard !observed.ids.contains(id), unverifiedVmmDeletions[api]?[id]?.accepted == true else {
+                return try summary(unknown: 1, category: submissionError.map { serviceMutationErrorCategory(for: $0.category) })
+            }
+            unverifiedVmmDeletions[api]?[id] = nil
+            try await observer?(.verified)
+            succeeded += 1
         }
         return try summary(unknown: 0)
     }
 
-    private static func isPublicVmmDeletionID(_ id: String) -> Bool {
+    private static func isVmmDeletionID(_ id: String) -> Bool {
         !id.isEmpty && id == id.trimmingCharacters(in: .whitespacesAndNewlines) && !id.contains(",") && !id.contains("\\") &&
             !id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
     }
 
-    private func publicVmmDeletionIDs(capability: ApiCapability, arrayKey: String, idKey: String) async throws -> Set<String> {
+    private struct VmmDeletionSnapshot {
+        let ids: Set<String>
+        let guests: [String: VirtualMachineControlState]
+    }
+
+    private func vmmDeletionSnapshot(capability: ApiCapability, arrayKey: String, idKey: String) async throws -> VmmDeletionSnapshot {
         let value: ServiceJSON
         do {
-            value = try await client.call(path: capability.path, api: capability.name, version: 1, method: "list",
+            value = try await client.call(path: capability.path, api: capability.name,
+                version: capability.name == DsmAPIName.virtualizationGuest ? 2 : 1, method: "list",
                 requestFormat: capability.requestFormat, parameters: [:], credential: credential, as: ServiceJSON.self)
         } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
         try Task.checkCancellation()
         guard case .array(let items)? = value[arrayKey] else { throw invalidServiceResponse() }
         try Self.requireCompleteServiceList(value, count: items.count)
-        var ids = Set<String>()
+        var ids = Set<String>(), guests: [String: VirtualMachineControlState] = [:]
         for item in items {
-            guard case .string(let id)? = item[idKey], Self.isPublicVmmDeletionID(id), ids.insert(id).inserted else {
-                throw invalidServiceResponse()
-            }
+            guard case .string(let id)? = item[idKey], Self.isVmmDeletionID(id), ids.insert(id).inserted else { throw invalidServiceResponse() }
+            if idKey == "guest_id" { guests[id] = try vmmControlState(item, capability: capability) }
         }
-        return ids
+        return VmmDeletionSnapshot(ids: ids, guests: guests)
     }
 
     private struct ServiceDeletionContext {

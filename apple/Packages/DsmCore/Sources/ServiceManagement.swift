@@ -791,7 +791,7 @@ public struct VirtualMachineManagerSnapshot: Equatable, Sendable {
     }
 }
 
-public enum VirtualMachinePowerAction: String, Sendable {
+public enum VirtualMachinePowerAction: String, Hashable, Sendable {
     case powerOn
     case shutdown
     case powerOff
@@ -854,6 +854,11 @@ public protocol ServiceManagementRepository: Sendable {
     func deleteContainerNetworksResult(ids: [String]) async throws -> MutationResult
 
     func loadVirtualMachineManager() async throws -> VirtualMachineManagerSnapshot
+    func loadVirtualMachineControlStates() async throws -> [VirtualMachineControlState]
+    func controlVirtualMachine(_ target: VirtualMachineControlState, action: VirtualMachinePowerAction,
+                               observer: @escaping VirtualMachineControlObserver) async throws
+    func deleteVirtualMachine(_ target: VirtualMachineControlState,
+                              observer: @escaping VirtualMachineControlObserver) async throws
     func createVirtualMachine(_ configuration: VirtualMachineCreation) async throws
     func updateVirtualMachine(id: String, configuration: VirtualMachineUpdate) async throws
     func openVirtualMachineConsole(id: String) async throws -> VirtualMachineConsoleSession
@@ -1031,6 +1036,23 @@ public extension ServiceManagementRepository {
             localizationPrefix: "container-network.delete",
             count: ids.count
         )
+    }
+
+    func loadVirtualMachineControlStates() async throws -> [VirtualMachineControlState] {
+        throw AppError(category: .apiUnavailable, isRetryable: false,
+                       safeUserMessage: L10n.string("virtual-machine.power.unavailable"))
+    }
+
+    func controlVirtualMachine(_ target: VirtualMachineControlState, action: VirtualMachinePowerAction,
+                               observer: @escaping VirtualMachineControlObserver) async throws {
+        throw AppError(category: .apiUnavailable, isRetryable: false,
+                       safeUserMessage: L10n.string("virtual-machine.power.unavailable"))
+    }
+
+    func deleteVirtualMachine(_ target: VirtualMachineControlState,
+                              observer: @escaping VirtualMachineControlObserver) async throws {
+        throw AppError(category: .apiUnavailable, isRetryable: false,
+                       safeUserMessage: L10n.string("virtual-machine.power.unavailable"))
     }
 
     func deleteVirtualMachinesResult(ids: [String]) async throws -> MutationResult {

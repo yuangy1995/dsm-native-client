@@ -594,7 +594,7 @@ final class RequestFixtureContractTests: XCTestCase {
             "vmm/delete/synthetic-virtual-machine/request.json"
         )
         let transport = MockHTTPTransport(responses: [
-            response(#"{"success":true,"data":{"guests":[{"guest_id":"<synthetic-virtual-machine>"}]}}"#),
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"<synthetic-virtual-machine>","guest_name":"Synthetic VM","status":"shutdown"}]}}"#),
             response(#"{"success":true}"#),
             response(#"{"success":true,"data":{"guests":[]}}"#),
         ])

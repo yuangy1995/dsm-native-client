@@ -54,6 +54,7 @@ final class MobileAppModel {
     let containerImageDeletions: MobileContainerImageDeletionModel
     let containerNetworks: MobileContainerNetworkModel
     let virtualMachineInventoryModel = MobileVirtualMachineInventoryModel()
+    let virtualMachineControls: MobileVirtualMachineControlModel
     let downloads: MobileDownloadsModel
 
 #if DEBUG
@@ -121,7 +122,7 @@ final class MobileAppModel {
                 packageCenterModel.deactivate()
                 containerInventoryModel.deactivate()
                 containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate(); containerNetworks.deactivate()
-                virtualMachineInventoryModel.deactivate()
+                virtualMachineInventoryModel.deactivate(); virtualMachineControls.deactivate()
             }
         }
     }
@@ -157,7 +158,7 @@ final class MobileAppModel {
     var serviceRepository: DsmServiceManagementRepository? {
         didSet {
             downloads.configure(profile: activeProfile, repository: serviceRepository)
-            if oldValue.map(ObjectIdentifier.init) != serviceRepository.map(ObjectIdentifier.init) { containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate(); containerNetworks.deactivate() }
+            if oldValue.map(ObjectIdentifier.init) != serviceRepository.map(ObjectIdentifier.init) { containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate(); containerNetworks.deactivate(); virtualMachineControls.deactivate() }
         }
     }
     var chatRepository: (any ChatRepository)?
@@ -226,6 +227,7 @@ final class MobileAppModel {
         self.systemActionsModel = MobileSystemActionsModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.packageCenterModel = MobilePackageCenterModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.containerControls = MobileContainerControlModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("Containers", isDirectory: true))
+        self.virtualMachineControls = MobileVirtualMachineControlModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("VirtualMachines", isDirectory: true))
         self.containerImagePulls = MobileContainerImagePullModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("Containers", isDirectory: true))
         self.containerImageDeletions = MobileContainerImageDeletionModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("Containers", isDirectory: true))
         self.containerNetworks = MobileContainerNetworkModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("Containers", isDirectory: true))

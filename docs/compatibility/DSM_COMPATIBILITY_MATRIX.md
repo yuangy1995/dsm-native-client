@@ -1,5 +1,14 @@
 # DSM 兼容矩阵
 
+2026-10-07 VMM 同版本只读静态补核：pwr_ctl 的官方成功回调没有消费重启任务身份；
+uptime 的原生类型、单位和 reboot 后变化尚未验证，不能用仍 running 作为重启完成依据。
+见[电源观察](../api/discovery/environments/2026-10-07-vmm-power-read-observation.md)。
+五端均须区分请求接受和最终完成；本次没有真实写入，不提升版本/行为验证等级。
+同日 M7d1 Apple 已修正内部电源枚举和 Guest.delete v1 逐项 ID，并接入 iPhone/iPad
+原生控制、摘要持久恢复和只读结果核查；Mac 复用同一请求路径。没有接受回执不认领外部
+状态，重启只记录接受，证书异常停止后续请求。Windows/Android 无源码变化；下节其他
+差距仍待后续切片，不将合成回归或构建当作真实写兼容。
+
 ## 2026-10-06 容器与 VMM 文档核查边界
 
 DSM 7.2.1-69057 Update 12、Container Manager 24.0.2-1535、VMM 2.6.5-12202 的当前官方页面
