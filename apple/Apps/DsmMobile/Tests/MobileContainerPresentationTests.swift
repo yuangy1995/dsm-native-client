@@ -32,10 +32,12 @@ final class MobileContainerPresentationTests: XCTestCase {
         XCTAssertFalse(view.contains("withAnimation"))
     }
 
-    func test页面不展示事件正文用户或容器运行时隐私字段() throws {
+    func test页面展示已授权详情并且不加入缺少契约的终端或删除入口() throws {
         let view = try source("Sources/Features/ReadOnlyServices/Containers/MobileContainersView.swift")
+        for expected in ["item.message", "item.user", "item.cpuUsage", "item.memoryBytes", "MobileContainerActions"] {
+            XCTAssertTrue(view.contains(expected))
+        }
         for forbidden in [
-            "event.message", "event.user", "cpuUsage", "memoryBytes", "createdAt",
             "registry", "terminal", "compose", "deleteContainers", "controlContainers"
         ] { XCTAssertFalse(view.localizedCaseInsensitiveContains(forbidden), "不应出现：\(forbidden)") }
     }
@@ -75,7 +77,9 @@ final class MobileContainerPresentationTests: XCTestCase {
         "mobile.containers.filter.attention", "mobile.containers.filter.label",
         "mobile.containers.filter.running", "mobile.containers.filter.stopped",
         "mobile.containers.filtered-empty.message", "mobile.containers.filtered-empty.title",
-        "mobile.containers.loading", "mobile.containers.read-only.notice",
+        "mobile.containers.loading", "mobile.containers.control.selection", "mobile.containers.control.records",
+        "mobile.containers.field.project", "mobile.containers.field.cpu", "mobile.containers.field.memory",
+        "mobile.containers.field.user", "mobile.containers.value.cpu",
         "mobile.containers.refresh.failed", "mobile.containers.section.containers",
         "mobile.containers.session-expired",
         "mobile.containers.section.empty.message", "mobile.containers.section.empty.title",

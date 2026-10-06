@@ -3,22 +3,41 @@ import SwiftUI
 
 struct MobileContainersView: View {
     @Bindable var inventory: MobileContainerInventoryModel
+    @Bindable var controls: MobileContainerControlModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showsSelection = false
 
     var body: some View {
-        Group {
-            if inventory.state.pageState == .loading {
-                ProgressView(L10n.string("mobile.containers.loading"))
-                    .fillsAvailableContentArea()
-            } else if horizontalSizeClass == .regular {
-                regularLayout
-            } else {
-                compactLayout
+        GeometryReader { geometry in
+            Group {
+                if inventory.state.pageState == .loading {
+                    ProgressView(L10n.string("mobile.containers.loading"))
+                        .fillsAvailableContentArea()
+                        .accessibilityIdentifier("container.loading")
+                } else if horizontalSizeClass == .regular && geometry.size.width >= 680 && !dynamicTypeSize.isAccessibilitySize {
+                    regularLayout(inlineDetails: geometry.size.width >= 1040)
+                } else {
+                    compactLayout
+                }
             }
         }
         .fillsAvailableContentArea(
             alignment: inventory.state.pageState.layout == .topLeading ? .topLeading : .center
         )
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(L10n.string("mobile.containers.control.selection"), systemImage: "checklist") { showsSelection = true }
+                    .disabled(!controls.allowed || controls.targets.isEmpty)
+                    .accessibilityIdentifier("container.selection")
+            }
+        }
+        .sheet(isPresented: $showsSelection) { MobileContainerSelectionView(model: controls) }
+        .onChange(of: controls.targets) { previous, _ in
+            if !previous.isEmpty && !controls.isOperating && controls.error != .trust && controls.error != .denied {
+                Task { await inventory.refresh() }
+            }
+        }
     }
 
     private var compactLayout: some View {
@@ -27,7 +46,7 @@ struct MobileContainersView: View {
             Section {
                 ForEach(MobileContainerSection.allCases) { section in
                     NavigationLink {
-                        MobileContainerSectionView(inventory: inventory, section: section)
+                        MobileContainerSectionView(inventory: inventory, controls: controls, section: section)
                     } label: {
                         MobileContainerSectionRow(
                             section: section,
@@ -36,14 +55,16 @@ struct MobileContainersView: View {
                         )
                     }
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("container.section.\(section.rawValue)")
                 }
             }
         }
         .listStyle(.insetGrouped)
-        .refreshable { await inventory.refresh() }
+        .accessibilityIdentifier("container.sections")
+        .refreshable { await inventory.refresh(); await controls.refresh() }
     }
 
-    private var regularLayout: some View {
+    private func regularLayout(inlineDetails: Bool) -> some View {
         HStack(spacing: 0) {
             List(selection: sectionSelection) {
                 noticeSections
@@ -56,18 +77,21 @@ struct MobileContainersView: View {
                         )
                         .tag(section)
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("container.section.\(section.rawValue)")
                     }
                 }
             }
             .listStyle(.sidebar)
+            .accessibilityIdentifier("container.sections")
             .frame(minWidth: 220, idealWidth: 260, maxWidth: 320)
-            .refreshable { await inventory.refresh() }
+            .refreshable { await inventory.refresh(); await controls.refresh() }
 
             Divider()
             MobileContainerSectionView(
                 inventory: inventory,
+                controls: controls,
                 section: inventory.state.selectedSection,
-                supportsSelection: true
+                supportsSelection: inlineDetails
             )
         }
     }
@@ -96,10 +120,12 @@ struct MobileContainersView: View {
             }
         }
         Section {
-            Label(L10n.string("mobile.containers.read-only.notice"), systemImage: "eye")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
+            MobileContainerControlNotice(model: controls)
+            NavigationLink { MobileContainerControlRecordsView(model: controls) } label: {
+                Label(L10n.string("mobile.containers.control.records"), systemImage: "clock.arrow.circlepath")
+            }
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("container.records.open")
         }
     }
 
@@ -139,6 +165,7 @@ private struct MobileContainerSectionRow: View {
 
 private struct MobileContainerSectionView: View {
     @Bindable var inventory: MobileContainerInventoryModel
+    @Bindable var controls: MobileContainerControlModel
     let section: MobileContainerSection
     var supportsSelection = false
 
@@ -204,6 +231,7 @@ private struct MobileContainerSectionView: View {
             systemImage: section.systemImage,
             description: Text(L10n.string("mobile.containers.section.empty.message"))
         )
+        .accessibilityIdentifier("container.empty")
     }
 
     private var filteredEmptyView: some View {
@@ -262,6 +290,7 @@ private struct MobileContainerSectionView: View {
                         Text(filter.title).tag(filter)
                     }
                 }
+                .accessibilityIdentifier("container.filter")
                 ForEach(inventory.state.visibleContainers) { item in itemLink(item.id, selectionMode: selectionMode) { containerRow(item) } }
             case .images:
                 ForEach(inventory.state.images) { item in itemLink(item.id, selectionMode: selectionMode) { imageRow(item) } }
@@ -274,7 +303,8 @@ private struct MobileContainerSectionView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .refreshable { await inventory.refresh() }
+        .accessibilityIdentifier("container.items")
+        .refreshable { await inventory.refresh(); await controls.refresh() }
     }
 
     @ViewBuilder
@@ -289,9 +319,11 @@ private struct MobileContainerSectionView: View {
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
                 .accessibilityAddTraits(inventory.state.selectedItemID == id ? .isSelected : [])
+                .accessibilityIdentifier("container.item.\(id)")
         } else {
             NavigationLink { detail(for: id) } label: { label() }
                 .frame(minHeight: 44)
+                .accessibilityIdentifier("container.item.\(id)")
         }
     }
 
@@ -332,8 +364,8 @@ private struct MobileContainerSectionView: View {
 
     private func eventRow(_ item: MobileContainerEventItem) -> some View {
         MobileReadOnlySummaryRow(
-            title: item.level,
-            subtitle: item.timestamp?.formatted(date: .abbreviated, time: .shortened)
+            title: item.message,
+            subtitle: item.timestamp?.formatted(.dateTime.year().month().day().hour().minute().locale(L10n.locale))
                 ?? L10n.string("mobile.containers.value.time-unavailable"),
             systemImage: "clock.arrow.circlepath"
         )
@@ -347,6 +379,14 @@ private struct MobileContainerSectionView: View {
                 detailForm(title: item.name) {
                     LabeledContent(L10n.string("mobile.containers.field.status"), value: item.status.title)
                     LabeledContent(L10n.string("mobile.containers.field.image"), value: item.image)
+                    if let project = item.project { LabeledContent(L10n.string("mobile.containers.field.project"), value: project) }
+                    if let cpu = item.cpuUsage { LabeledContent(L10n.string("mobile.containers.field.cpu"), value: L10n.string("mobile.containers.value.cpu", cpu)) }
+                    if let memory = item.memoryBytes {
+                        LabeledContent(L10n.string("mobile.containers.field.memory")) { Text(memory, format: .byteCount(style: .memory)) }
+                    }
+                    MobileContainerControlNotice(model: controls)
+                    MobileContainerActions(model: controls, ids: [item.id])
+                    NavigationLink(L10n.string("mobile.containers.control.records")) { MobileContainerControlRecordsView(model: controls) }
                 }
             }
         case .images:
@@ -371,7 +411,7 @@ private struct MobileContainerSectionView: View {
                     LabeledContent(L10n.string("mobile.containers.field.driver"), value: item.driver)
                     LabeledContent(
                         L10n.string("mobile.containers.field.connected-containers"),
-                        value: item.connectedContainerCount.formatted()
+                        value: item.connectedContainerCount.formatted(.number.locale(L10n.locale))
                     )
                 }
             }
@@ -381,19 +421,21 @@ private struct MobileContainerSectionView: View {
                     LabeledContent(L10n.string("mobile.containers.field.status"), value: item.status.title)
                     LabeledContent(
                         L10n.string("mobile.containers.field.container-count"),
-                        value: item.containerCount.formatted()
+                        value: item.containerCount.formatted(.number.locale(L10n.locale))
                     )
                 }
             }
         case .events:
             if let item = inventory.state.events.first(where: { $0.id == id }) {
-                detailForm(title: item.level) {
+                detailForm(title: L10n.string("mobile.containers.section.events")) {
                     LabeledContent(L10n.string("mobile.containers.field.level"), value: item.level)
                     LabeledContent(
                         L10n.string("mobile.containers.field.time"),
-                        value: item.timestamp?.formatted(date: .abbreviated, time: .shortened)
+                        value: item.timestamp?.formatted(.dateTime.year().month().day().hour().minute().locale(L10n.locale))
                             ?? L10n.string("mobile.containers.value.time-unavailable")
                     )
+                    if let user = item.user { LabeledContent(L10n.string("mobile.containers.field.user"), value: user) }
+                    Text(item.message).textSelection(.enabled)
                 }
             }
         }
@@ -404,14 +446,10 @@ private struct MobileContainerSectionView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         Form {
-            Section {
-                Label(L10n.string("mobile.containers.read-only.notice"), systemImage: "eye")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Section(title) { content() }
+            Section { content() }
         }
         .formStyle(.grouped)
+        .accessibilityIdentifier("container.detail")
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .fillsAvailableContentArea(alignment: .topLeading)

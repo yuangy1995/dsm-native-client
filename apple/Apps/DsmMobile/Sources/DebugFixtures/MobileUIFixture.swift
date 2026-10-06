@@ -25,7 +25,7 @@ enum MobileUIFixture {
             defaults.removePersistentDomain(forName: "LanStash.Mobile.UITests.Fixture")
             let officeState = ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? ""
             let officeTransport = MobileOfficeUITransport(state: officeState)
-            let uploadFixture = officeState.hasPrefix("nas-package") || officeState.hasPrefix("nas-system") || officeState.hasPrefix("nas-tasks") || officeState.hasPrefix("nas-services") || officeState.hasPrefix("nas-directory") || officeState.hasPrefix("nas-region") || officeState.hasPrefix("nas-ddns") || officeState.hasPrefix("nas-storage") || officeState.hasPrefix("nas-logs") || officeState.hasPrefix("nas-analysis") || officeState.hasPrefix("office-") || officeState.hasPrefix("chat-") || officeState.hasPrefix("downloads-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
+            let uploadFixture = officeState.hasPrefix("containers-") || officeState.hasPrefix("nas-package") || officeState.hasPrefix("nas-system") || officeState.hasPrefix("nas-tasks") || officeState.hasPrefix("nas-services") || officeState.hasPrefix("nas-directory") || officeState.hasPrefix("nas-region") || officeState.hasPrefix("nas-ddns") || officeState.hasPrefix("nas-storage") || officeState.hasPrefix("nas-logs") || officeState.hasPrefix("nas-analysis") || officeState.hasPrefix("office-") || officeState.hasPrefix("chat-") || officeState.hasPrefix("downloads-") || ["upload", "archive", "sharing", "permissions-acl", "permissions-posix", "remote", "favorites", "file-settings", "file-settings-error", "file-settings-readonly", "file-settings-loading", "copy-move", "copy-conflict", "copy-unknown", "copy-readonly", "recycle-delete", "recycle-readonly", "recycle-unknown", "recycle-restore", "recycle-restore-conflict", "recycle-permanent", "download-archive", "download-failure", "download-readonly", "cross-copy", "cross-unknown", "cross-conflict", "cross-readonly"].contains(ProcessInfo.processInfo.environment["LANSTASH_UI_STATE"] ?? "")
             let fixtureRoot = FileManager.default.temporaryDirectory.appendingPathComponent("LanStashUITestTransfers")
             if uploadFixture && !ProcessInfo.processInfo.arguments.contains("--ui-preserve-transfer-fixture") {
                 try? FileManager.default.removeItem(at: fixtureRoot)
@@ -51,6 +51,10 @@ enum MobileUIFixture {
                             DsmAPIName.chatChannel: officeState.hasPrefix("chat-management-") ? 5 : 2, DsmAPIName.chatUser: 1, DsmAPIName.chatPost: 8, DsmAPIName.chatAdminSetting: 3, DsmAPIName.chatPostVote: 1, DsmAPIName.chatPostReminder: 1, DsmAPIName.chatPostSchedule: 1,
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
+            if officeState.hasPrefix("containers-") {
+                versions[DsmAPIName.dockerImage] = 1; versions[DsmAPIName.dockerNetwork] = 1
+                versions[DsmAPIName.dockerProject] = 1; versions[DsmAPIName.dockerLog] = 1
+            }
             if officeState.hasPrefix("nas-storage") || officeState.hasPrefix("nas-logs") || officeState.hasPrefix("nas-analysis") {
                 versions[DsmAPIName.storageOverview] = 1; versions[DsmAPIName.coreSystemLog] = 1
                 if officeState != "nas-storage-unsupported" { versions[DsmAPIName.coreStorageDisk] = 1 }
@@ -142,6 +146,10 @@ enum MobileUIFixture {
                 }
                 model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
                     session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses, settings: settings, destinations: destinations, removedTaskIDs: removedTaskIDs))
+            }
+            if officeState.hasPrefix("containers-") {
+                model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
+                    session: session, transport: MobileContainerUITransport(mode: officeState))
             }
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             if officeState.hasPrefix("nas-package") {
@@ -417,7 +425,8 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
             result = ["AppPrivilege": ["SYNO.SDS.App.FileStation3.Instance": pageState == "sharing" || isPermissionFixture,
                 "SYNO.SDS.DownloadStation.Application": grantsDownloads,
                 "SYNO.SDS.Chat.Application": pageState == "modules-all" || pageState.hasPrefix("chat-"),
-                "SYNO.SDS.Virtualization.Application": pageState == "modules-all"],
+                "SYNO.SDS.Virtualization.Application": pageState == "modules-all",
+                "SYNO.SDS.ContainerManager.Application": pageState == "modules-all" || pageState.hasPrefix("containers-")],
                 "Session": ["is_admin": isPermissionFixture || pageState == "modules-all" || pageState.hasPrefix("nas-read-") || ((pageState.hasPrefix("nas-services") || pageState.hasPrefix("nas-tasks")) && !serviceManagementRevoked) || pageState.hasPrefix("nas-system") || pageState.hasPrefix("nas-package") || pageState.hasPrefix("nas-directory") || pageState.hasPrefix("nas-region") || pageState.hasPrefix("nas-ddns") || pageState.hasPrefix("nas-storage") || pageState.hasPrefix("nas-logs") || pageState.hasPrefix("nas-analysis")]]
         case ("SYNO.Foto.UserInfo", "me"):
             result = ["enabled": pageState == "modules-all" || pageState.hasPrefix("photo-"), "id": 1]

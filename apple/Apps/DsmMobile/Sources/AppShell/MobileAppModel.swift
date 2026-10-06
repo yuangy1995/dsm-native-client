@@ -49,6 +49,7 @@ final class MobileAppModel {
     let directoryModel: MobileDirectoryModel
     let regionModel: MobileRegionModel
     let containerInventoryModel = MobileContainerInventoryModel()
+    let containerControls: MobileContainerControlModel
     let virtualMachineInventoryModel = MobileVirtualMachineInventoryModel()
     let downloads: MobileDownloadsModel
 
@@ -116,6 +117,7 @@ final class MobileAppModel {
                 systemActionsModel.deactivate()
                 packageCenterModel.deactivate()
                 containerInventoryModel.deactivate()
+                containerControls.deactivate()
                 virtualMachineInventoryModel.deactivate()
             }
         }
@@ -150,7 +152,10 @@ final class MobileAppModel {
         }
     }
     var serviceRepository: DsmServiceManagementRepository? {
-        didSet { downloads.configure(profile: activeProfile, repository: serviceRepository) }
+        didSet {
+            downloads.configure(profile: activeProfile, repository: serviceRepository)
+            if oldValue.map(ObjectIdentifier.init) != serviceRepository.map(ObjectIdentifier.init) { containerControls.deactivate() }
+        }
     }
     var chatRepository: (any ChatRepository)?
     var nasRepository: DsmNasAdministrationRepository?
@@ -217,6 +222,7 @@ final class MobileAppModel {
         self.scheduledTasksModel = MobileScheduledTasksModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.systemActionsModel = MobileSystemActionsModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.packageCenterModel = MobilePackageCenterModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
+        self.containerControls = MobileContainerControlModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("Containers", isDirectory: true))
         self.directoryModel = MobileDirectoryModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.regionModel = MobileRegionModel(root: transferRecoveryStore?.rootURL.appendingPathComponent("NAS", isDirectory: true))
         self.documentTransferController = MobileDocumentTransferController(

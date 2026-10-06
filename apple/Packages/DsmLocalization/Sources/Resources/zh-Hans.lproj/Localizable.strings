@@ -6941,3 +6941,67 @@
 "mobile.package.install.interruptedHelp" = "尚未开始正式安装。请重新选择套件；如果 NAS 仍在下载，可在 DSM 套件中心处理。";
 
 "mobile.package.install.fileReadError" = "无法打开所选套件文件。请在“文件”App 中完成下载，或选择其他文件后重试。";
+
+"mobile.containers.control.start" = "启动";
+
+"mobile.containers.control.stop" = "停止";
+
+"mobile.containers.control.restart" = "重新启动";
+
+"mobile.containers.control.selection" = "选择容器";
+
+"mobile.containers.control.cancel" = "取消";
+
+"mobile.containers.control.stop.warning" = "停止后，容器提供的服务将不可用。";
+
+"mobile.containers.control.restart.warning" = "重新启动会暂时中断容器提供的服务。";
+
+"mobile.containers.control.records" = "操作记录";
+
+"mobile.containers.control.records.empty" = "暂无操作记录";
+
+"mobile.containers.control.records.empty.message" = "启动、停止或重新启动容器后，可在这里查看结果。";
+
+"mobile.containers.control.record.remove" = "移除此记录";
+
+"mobile.containers.control.record.title" = "%1$@ · %2$@";
+
+"mobile.containers.control.target" = "容器 %d";
+
+"mobile.containers.control.processing" = "正在处理…";
+
+"mobile.containers.control.unavailable-result" = "暂时无法获取操作结果。恢复连接后刷新查看。";
+
+"mobile.containers.control.skipped" = "尚未执行，请重新选择容器操作。";
+
+"mobile.containers.control.start.completed" = "已启动";
+
+"mobile.containers.control.stop.completed" = "已停止";
+
+"mobile.containers.control.restart.completed" = "已重新启动";
+
+"mobile.containers.control.error.read" = "暂时无法读取容器状态。检查连接后刷新。";
+
+"mobile.containers.control.error.denied" = "当前账号无法管理容器。请联系管理员检查权限，或重新登录。";
+
+"mobile.containers.control.error.unavailable" = "当前 NAS 不支持此操作。请在 DSM 的 Container Manager 中管理。";
+
+"mobile.containers.control.error.changed" = "容器状态已变化，操作未执行。刷新后重新选择。";
+
+"mobile.containers.control.error.storage" = "操作记录无法保存，已暂停新的操作。请腾出本机空间后重新打开应用。";
+
+"mobile.containers.control.error.trust" = "无法安全连接到 NAS。请返回连接设置重新连接。";
+
+"mobile.containers.control.error.failed" = "操作未完成。刷新容器状态后重试。";
+
+"mobile.containers.field.project" = "项目";
+
+"mobile.containers.field.cpu" = "处理器用量";
+
+"mobile.containers.field.memory" = "内存用量";
+
+"mobile.containers.field.user" = "用户";
+
+"mobile.containers.value.cpu" = "%.1f%%";
+
+"mobile.containers.control.managed" = "此容器由套件管理。请在套件中心管理对应套件。";

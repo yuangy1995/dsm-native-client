@@ -46,12 +46,16 @@ struct MobileContainerItem: Identifiable, Equatable, Sendable {
     let name: String
     let status: MobileContainerStatus
     let image: String
+    let project: String?
+    let cpuUsage: Double?
+    let memoryBytes: Int64?
 
     init(_ value: ContainerInstance) {
         id = value.id
         name = value.name
         status = MobileContainerStatus(serverValue: value.status)
         image = value.image
+        project = value.project; cpuUsage = value.cpuUsage; memoryBytes = value.memoryBytes
     }
 }
 
@@ -101,11 +105,14 @@ struct MobileContainerEventItem: Identifiable, Equatable, Sendable {
     let id: String
     let timestamp: Date?
     let level: String
+    let user: String?
+    let message: String
 
     init(_ value: ServiceEvent) {
         id = value.id
         timestamp = value.timestamp
         level = value.level
+        user = value.user; message = value.message
     }
 }
 

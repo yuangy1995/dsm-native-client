@@ -648,6 +648,7 @@ extension MobileAppModel {
         chatModel.deactivate()
         nasHealthModel.deactivate()
         containerInventoryModel.deactivate()
+        containerControls.deactivate()
         virtualMachineInventoryModel.deactivate()
         documentTransferController.resetForDisconnectedWorkspace()
         isConnected = false

@@ -2867,3 +2867,56 @@ git diff --check
 最终本地化 **6640/2188/3402**、请求契约 **179+1**、脱敏 fixture **29 组/48 项引用**、文档与差异检查均通过。未新增文件或更改工程清单，不需要重生成工程。独立集成与只读安全复核覆盖入口/登录恢复调用链、照片只读实例隔离、文件/照片相反授权、缺能力、已知拒绝、证书/会话/取消、权限撤回与本机偏好。两台模拟器已恢复浅色并查询确认；临时附件、辅助功能树和录屏提帧已清理，正式日志/结果包与预览保留。
 
 真实普通账号的相反权限组合、权限撤回、保存登录恢复仍按[专项 PENDING_USER_VALIDATION](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-06-photos-入口权限专项审计)执行；Agent 未访问或写入真实 NAS，没有提高任何环境证据等级。仍继续 M6 剩余独立切片与 M7–M8，未把本片权限修复表述为整体完成。
+
+## 2026-10-06 移动 M7a 容器控制与活动详情
+
+起点 `cdc889cc`，main 与 origin/main 一致且工作区干净。当前负责人单独修改移动容器控制/恢复、权限及组合根、活动详情、共享容器管理增量、正式测试、双语资源和相关文档。Mac App、Windows、Android 源码未修改；共享沿用原 Container v1 请求，旧 Mac 方法兼容。当前[Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37413207539) 的共享/macOS 已通过，四个移动工作区/模块组仍在运行，未连续推送取消这轮全量。
+
+实际能力为单项/多项启动、停止、重启，具体服务中断确认、逐项目结果、未知跨进程只读恢复、普通套件账号授权和已有活动记录正文/用户/时间及容器资源字段。详情按可用宽度与文字大小适配，不照搬桌面四列。容器/映像/网络删除、映像拉取、网络创建和 VMM 仍在后续切片；没有把未实现项列为待真机验证。
+
+共享新增 7 项真实适配器测试，容器聚焦共 **41 项、0 失败**；完整 `swift test --package-path apple --jobs 2` **2890 项 XCTest、172 条既有跳过、0 失败，另 12 项 Swift Testing 通过**。早期过窄筛选仅执行 2 项，不作为全容器覆盖。Release macOS 及最新资源增量构建均通过，主 App 和 File Provider 扩展实际为 x86_64/arm64；未打包、安装或启动 Mac App。
+
+```sh
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/PlugIns/LanStashFileProvider.appex/Contents/MacOS/LanStashFileProvider
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
+首轮移动编译因 catch 中局部 error 遮蔽模型属性而失败，修正为 `self.error` 后 R2–R7 构建通过；首轮本地化扫描不识别动态拼接键，改显式 switch 后通过，最终新增 32 对资源键。工程由固定 XcodeGen 2.46.0 生成，不直接编辑工程文件。
+
+移动测试轮次保留如下：
+
+- **R1**：两端各运行 38 项聚焦单元（18 项新控制、4 项容器展示、16 项模块权限），各 1 项失败：取消后尚未提交的批次后项错误标为失败；修正取消分支，后项改为未执行。首项中文大字 UI 两端均失败：iPhone 的 ForEach 上 sheet 未稳定呈现；iPad 原四列布局使详情位于屏幕外、宽度为零。已查看实际失败图、辅助功能树和输入事件；改稳定 VStack 承载确认、按实际宽度与动态文字选择单页/分栏。主动中止余下 UI，两个命令最终 exit 73，不能记成整轮通过。首轮过早导出结果包的 Info.plist 尚未完成，等待测试进程退出后导出成功。
+- **R2**：两端各 18 项新增行为与两项实际 UI（中文大字确认、非管理员启动）全部通过、exit 0。已实际查看两端确认截图：iPhone 深色、iPad 浅色，风险正文、目标及取消/停止按钮完整可见。
+- **R3**：两端完整单元各 1488 项、4 条既有跳过，各 1 条失败：旧活动投影测试仍禁止正文/用户，已经不符合本片授权范围。更新为精确字段集合与五项实际值断言，保留只读清单协议没有写方法的断言，不删除测试或降低安全门。此轮全部十项新容器 UI 与既有六模块开关 UI 继续执行，终态另记。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7a-phone-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests/MobileContainerControlTests -only-testing:DsmMobileUITests/MobileContainerControlUITests/test中文大字停止确认按钮和正文完整可用 -only-testing:DsmMobileUITests/MobileContainerControlUITests/test普通套件账号可以启动并查看结果
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7a-pad-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests/MobileContainerControlTests -only-testing:DsmMobileUITests/MobileContainerControlUITests/test中文大字停止确认按钮和正文完整可用 -only-testing:DsmMobileUITests/MobileContainerControlUITests/test普通套件账号可以启动并查看结果
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7a-phone-r3.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileContainerControlUITests -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test管理员六种模块均需开启且设置始终可达
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7a-pad-r3.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileContainerControlUITests -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test管理员六种模块均需开启且设置始终可达
+```
+
+独立集成及只读对抗复核覆盖套件权限和撤权、原 ID/名称/运行快照、项目托管、状态缺失、重启时间、同名替换与改名、逐项落盘、损坏/写失败、明确拒绝、未知恢复、取消后剩余项以及跨账号迟到。记录采用完整文件保护并排除备份，只保存摘要和阶段，不持久化名称、正文或凭据。测试通过真实 DsmServiceManagementRepository 与合成网络服务执行，Agent 未访问或写入真实 NAS；[具体设备待办](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-06-m7a-容器启停重启与活动记录)不提高真实证据等级，也不以尚无真实验收静态关闭已实现入口。
+
+R3 最终两端均 exit 65。十项容器 UI 中 iPhone 7/10、iPad 8/10 通过，既有六模块开关 UI 两端通过。除上述旧单元断言外，失败为两端批量结果文字计数、两端活动用户文字定位，以及 iPhone 错误恢复场景。已从精确用例导出附件并检查录屏帧/辅助功能树：批量页两项都为 Started；活动详情显示 `User, Sample user` 组合标签且正文完整；iPhone 错误场景实际已呈现容器列表，合成服务把首次并发失败给了其他分区。修正为按包含完成状态的两行逐项断言名称、按真实组合标签核对用户并补返回动作；合成失败固定给 Container.list，不改变生产网络行为。没有放宽结果、数量或恢复断言。实际页面另把 `info` 作为标题的旧细节改为本地化活动标题，并去掉重复分组标题；因此重建后完整重跑十项容器 UI。
+
+**R8 构建与最终 R4 两端测试均 exit 0：每端 1488 单元（4 条既有条件跳过、0 失败）及全部 10 项新容器 UI 通过。** 18 项新控制行为、一项新增套件授权测试及更新后的完整活动字段断言均包含于整轮。实际 UI 覆盖普通账号启动、停止确认/取消/重新确认、重启、两项批量逐行结果、未知跨进程恢复、活动正文/用户与返回、加载/空/错误/恢复/筛选空、托管及缺字段限制、中文大字和横竖屏。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7a-phone-r4.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileContainerControlUITests
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7a-pad-r4.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileContainerControlUITests
+```
+
+截图复核另发现横屏 `app.screenshot()` 附件出现旋转后的窗口裁切；项目既有聊天 UI 已使用 `XCUIScreen.main.screenshot()` 处理同类采集问题。本片复用该方式，仅更改测试截图帮助方法，R9 构建通过，不改生产布局或断言。两端重新运行旋转用例均 exit 0，实际查看完整设备截图，两端横屏详情及返回竖屏确认正常；旧裁切图已替换，不作为产品布局缺陷。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7a-phone-rotation.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileContainerControlUITests/test旋转后容器详情和确认仍可操作
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7a-pad-rotation.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileContainerControlUITests/test旋转后容器详情和确认仍可操作
+```
+
+最终 XcodeGen 2.46.0 再生成前后工程 SHA256 同为 `7224e543b29b36691571b9cb32f4420fc0fc5bdb3efd59e67830435df0eb273d`。`python3 tools/localization/check_localization.py` **6672/2188/3402**、`python3 tools/request-contract/validate_contracts.py` **179+1**、`python3 tools/contract-validation/validate_fixtures.py` **29 组/48 引用**、`python3 tools/codex/generate_api_reference.py --check`、文档和差异检查均通过。构建/正式结果包保留在忽略的 build 目录；最终两端确认、批量结果、活动详情、重启恢复和横屏预览共十张，位于 `apple/Apps/DsmMobile/build/m7a-preview/`。两台模拟器均恢复浅色并查询确认；本片临时附件、层级、录屏、提帧脚本和诊断图已精确清理。
+
+本片无第三方依赖、最低版本、App 身份、系统权限或登录格式变更，没有真实 NAS 操作。提交前重新读取 origin/main，远端没有新提交；既有云端四个移动组仍运行，先本地提交本片，继续后续独立工作，避免推送取消唯一完整云端运行。整体 M6–M8 尚未完成，下一片为容器映像搜索/下载及恢复，不把未开发删除/网络/VMM/系统扩展记为仅待设备验收。
