@@ -2743,7 +2743,7 @@ struct CreateVirtualMachineSheet: View {
                                 Text(resource.name).tag(resource.id)
                             }
                         }
-                        Stepper(L10n.string("ui.7c6d6431eee3c5ee", String(describing: diskGiB)), value: $diskGiB, in: 1...1_048_576)
+                        Stepper(L10n.string("ui.7c6d6431eee3c5ee", String(describing: diskGiB)), value: $diskGiB, in: 10...1_048_576)
                         Picker(L10n.string("ui.97b31b5d63f57e51"), selection: $networkID) {
                             ForEach(snapshot?.networks ?? []) { resource in
                                 Text(resource.name).tag(resource.id)

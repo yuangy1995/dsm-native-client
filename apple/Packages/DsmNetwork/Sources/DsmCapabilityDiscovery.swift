@@ -94,6 +94,7 @@ public enum DsmAPIName {
     public static let virtualizationAPINetwork = "SYNO.Virtualization.API.Network"
     // VMM 当前网页使用的内部接口。
     public static let virtualizationGuest = "SYNO.Virtualization.Guest"
+    public static let virtualizationCluster = "SYNO.Virtualization.Cluster"
     public static let virtualizationGuestAction = "SYNO.Virtualization.Guest.Action"
     public static let virtualizationGuestImage = "SYNO.Virtualization.Guest.Image"
     public static let virtualizationHost = "SYNO.Virtualization.Host"
@@ -300,6 +301,7 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.virtualizationAPIStorage,
         DsmAPIName.virtualizationAPINetwork,
         DsmAPIName.virtualizationGuest,
+        DsmAPIName.virtualizationCluster,
         DsmAPIName.virtualizationGuestAction,
         DsmAPIName.virtualizationGuestImage,
         DsmAPIName.virtualizationHost,
@@ -524,6 +526,7 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.virtualizationAPIStorage: 1...1,
         DsmAPIName.virtualizationAPINetwork: 1...1,
         DsmAPIName.virtualizationGuest: 1...2,
+        DsmAPIName.virtualizationCluster: 1...2,
         DsmAPIName.virtualizationGuestAction: 1...1,
         DsmAPIName.virtualizationGuestImage: 1...2,
         DsmAPIName.virtualizationHost: 1...2,

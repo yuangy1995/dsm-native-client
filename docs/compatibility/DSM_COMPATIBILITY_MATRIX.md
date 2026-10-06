@@ -14,6 +14,11 @@ M7d2 基础编辑现共用内部 get/list v2 与 set v1，移动原生表单、�
 此为源码/合成进度，构建与实际两端结果见主计划；Windows/Android 无源码变化，
 没有本片真实保存或新增版本行为证据。
 
+M7d3 创建共用 Guest.create v1、内部资源 list v2 与 Cluster.get_total_progress v1；
+任务回执/原 UUID/完整参数摘要和新 guest_id 共同关联，再读取原配置。Mac 同名认领
+已替换，移动新增分步表单与摘要恢复；目标验证见主计划实时账本。没有本片真实 NAS
+写入，不提升旧单台 Linux/UEFI 样本之外的兼容结论；Windows/Android 仅登记影响。
+
 ## 2026-10-06 容器与 VMM 文档核查边界
 
 DSM 7.2.1-69057 Update 12、Container Manager 24.0.2-1535、VMM 2.6.5-12202 的当前官方页面

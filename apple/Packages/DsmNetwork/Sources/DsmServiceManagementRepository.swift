@@ -228,6 +228,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private var unverifiedVmmPower: [String: VmmPowerTarget] = [:]
     private var activeVmmSettingsIDs: Set<String> = []
     private var unverifiedVmmSettings: [String: VmmSettingsSubmission] = [:]
+    private var activeVmmCreationNames: Set<String> = []
+    private var activeVmmCreationResources: [String: [String: String]] = [:]
+    private var activeVmmNetworkMutationIDs: Set<String> = []
+    private var pendingVmmCreations: [String: (configuration: VirtualMachineCreation?, tracking: VirtualMachineCreationTracking)] = [:]
     private var activeDeletionIDsByOperation: [String: Set<String>] = [:]
     private let containerNetworkCreationEnabled: Bool
     private var networkMutationActive = false
@@ -2586,8 +2590,333 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         )
     }
 
-    /// VMM 官方界面使用的内部创建契约；只有能力发现明确返回该接口时才启用。
+    public var supportsVirtualMachineCreation: Bool {
+        supportsVirtualMachineSettings && vmmCapability(DsmAPIName.virtualizationRepo, version: 2) != nil
+            && vmmCapability(DsmAPIName.virtualizationCluster, version: 1) != nil
+    }
+
+    public func loadVirtualMachineCreationResources() async throws -> VirtualMachineCreationResources {
+        guard supportsVirtualMachineCreation else { throw unavailableError() }
+        let repos = try await call(DsmAPIName.virtualizationRepo, method: "list", fixedVersion: 2)
+        guard try !creationBool(repos, "is_freeze") else {
+            throw validationError(L10n.string("virtual-machine.creation.resources-changed"))
+        }
+        let storages = try creationRows(repos, "repos").map { row in
+            VirtualMachineCreationStorage(id: try creationText(row, "repo_id"), name: try creationText(row, "name"),
+                hostID: try creationText(row, "host_id"), hostName: try creationText(row, "host_name"),
+                allocatedBytes: try creationInteger(row, "allocated_size"), capacityBytes: try creationText(row, "size"),
+                status: try creationText(row, "status"), statusType: try creationText(row, "status_type"))
+        }
+        guard Set(storages.map(\.id)).count == storages.count,
+              storages.allSatisfy({ UInt64($0.capacityBytes) != nil }) else { throw invalidServiceResponse() }
+        var networks: [VirtualizationResource] = [], images: [VirtualMachineCreationImage] = []
+        var networksAvailable = false, imagesAvailable = false
+        if vmmCapability(DsmAPIName.virtualizationNetwork, version: 2) != nil {
+            do {
+                let value = try await call(DsmAPIName.virtualizationNetwork, method: "list", fixedVersion: 2)
+                if try !creationBool(value, "is_freeze") {
+                    networks = try creationRows(value, "networks").map {
+                        VirtualizationResource(id: try creationText($0, "network_id"), name: try creationText($0, "name"))
+                    }
+                    guard Set(networks.map(\.id)).count == networks.count else { throw invalidServiceResponse() }
+                    networksAvailable = true
+                }
+            } catch { try throwCreationReadBoundary(error) }
+        }
+        if vmmCapability(DsmAPIName.virtualizationGuestImage, version: 2) != nil {
+            do {
+                let value = try await call(DsmAPIName.virtualizationGuestImage, method: "list", fixedVersion: 2)
+                if try !creationBool(value, "is_freeze") {
+                    for row in try creationRows(value, "images") {
+                        let image = VirtualMachineCreationImage(id: try creationText(row, "id"), name: try creationText(row, "name"),
+                            storageID: try creationText(row, "repo_id"), hostID: try creationText(row, "host_id"))
+                        let type = try creationText(row, "type"), status = try creationText(row, "status"), statusType = try creationText(row, "status_type")
+                        if type == "iso", status == "online", statusType == "healthy" { images.append(image) }
+                    }
+                    guard Set(images.map { [$0.id, $0.storageID, $0.hostID] }).count == images.count else { throw invalidServiceResponse() }
+                    imagesAvailable = true
+                }
+            } catch { try throwCreationReadBoundary(error) }
+        }
+        try Task.checkCancellation()
+        return .init(storages: storages, networks: networksAvailable ? networks : [], images: imagesAvailable ? images : [],
+                     imagesAvailable: imagesAvailable, networksAvailable: networksAvailable)
+    }
+
+    /// 保留 Mac 旧调用入口；再次操作同一未完成配置只能读取原任务，不能重发。
     public func createVirtualMachine(_ configuration: VirtualMachineCreation) async throws {
+        let result = try await createVirtualMachine(configuration, expectedResources: nil, observer: nil)
+        switch result {
+        case .succeeded: return
+        case .pending: throw verificationError(L10n.string("virtual-machine.creation.pending"))
+        case .failed: throw validationError(L10n.string("virtual-machine.creation.failed"))
+        }
+    }
+
+    public func createVirtualMachine(_ configuration: VirtualMachineCreation,
+                                    expectedResources: VirtualMachineCreationResources?,
+                                    observer: VirtualMachineCreationObserver?) async throws -> VirtualMachineCreationReview {
+        guard supportsVirtualMachineCreation else { throw unavailableError() }
+        let name = Self.creationNameDigest(configuration.name)
+        guard activeVmmCreationNames.insert(name).inserted else {
+            throw verificationError(L10n.string("virtual-machine.creation.pending"))
+        }
+        defer { activeVmmCreationNames.remove(name); activeVmmCreationResources[name] = nil }
+        if let pending = pendingVmmCreations[name] {
+            guard pending.configuration == configuration else {
+                throw verificationError(L10n.string("virtual-machine.creation.pending"))
+            }
+            return try await reviewVmmCreation(pending.tracking, observer: observer)
+        }
+        var referencedResources = ["storage": Self.creationIdentityDigest(configuration.storageID)]
+        if !configuration.networkID.isEmpty {
+            guard !activeVmmNetworkMutationIDs.contains(configuration.networkID),
+                  activeDeletionIDsByOperation["virtualMachineNetworkDelete"]?.contains(configuration.networkID) != true else {
+                throw verificationError(L10n.string("virtual-machine.creation.resources-changed"))
+            }
+            referencedResources["network"] = Self.creationIdentityDigest(configuration.networkID)
+        }
+        if let image = configuration.bootImageID {
+            guard activeDeletionIDsByOperation["virtualMachineImageDelete"]?.contains(image) != true,
+                  unverifiedVmmDeletions[DsmAPIName.virtualizationAPIGuestImage]?[image] == nil else {
+                throw verificationError(L10n.string("virtual-machine.creation.resources-changed"))
+            }
+            referencedResources["image"] = Self.creationIdentityDigest(image)
+        }
+        activeVmmCreationResources[name] = referencedResources
+        let resources = try await loadVirtualMachineCreationResources(), requestID = UUID()
+        let parameters = try vmmCreationParameters(configuration, resources: resources, requestID: requestID)
+        if let expectedResources {
+            let storage = resources.storages.first { $0.id == configuration.storageID }
+            let expected = expectedResources.storages.first { $0.id == configuration.storageID }
+            guard let storage, let expected, storage.id == expected.id, storage.name == expected.name,
+                  storage.hostID == expected.hostID, storage.hostName == expected.hostName,
+                  configuration.networkID.isEmpty || resources.networks.first(where: { $0.id == configuration.networkID })
+                    == expectedResources.networks.first(where: { $0.id == configuration.networkID }),
+                  configuration.bootImageID == nil || resources.images.filter({ $0.id == configuration.bootImageID && $0.storageID == storage.id && $0.hostID == storage.hostID })
+                    == expectedResources.images.filter({ $0.id == configuration.bootImageID && $0.storageID == storage.id && $0.hostID == storage.hostID }) else {
+                throw validationError(L10n.string("virtual-machine.creation.resources-changed"))
+            }
+        }
+        guard let guest = vmmCapability(DsmAPIName.virtualizationGuest, version: 2) else { throw unavailableError() }
+        let initial = try await vmmDeletionSnapshot(capability: guest, arrayKey: "guests", idKey: "guest_id")
+        guard activeVmmSettingsIDs.isEmpty,
+              !initial.guests.values.contains(where: { $0.name.caseInsensitiveCompare(configuration.name) == .orderedSame }),
+              !unverifiedVmmSettings.values.contains(where: { Self.creationNameDigest($0.configuration.name ?? $0.name) == name }) else {
+            throw validationError(L10n.string("shared.433935ad21c1d3da"))
+        }
+        let json = Self.creationJSON(parameters)
+        var tracking = VirtualMachineCreationTracking(requestID: requestID, nameDigest: name,
+            parameterDigests: try json.mapValues(Self.creationDigest), configurationDigest: try creationExpectedDigest(json),
+            existingIdentityDigests: Set(initial.ids.map(Self.creationIdentityDigest)), resourceIdentityDigests: referencedResources)
+        try Task.checkCancellation()
+        try await observer?(.willSubmit(tracking))
+        pendingVmmCreations[name] = (configuration, tracking)
+        do {
+            let receipt = try await client.call(path: guest.path, api: guest.name, version: 1, method: "create",
+                requestFormat: guest.requestFormat, parameters: parameters, credential: credential, as: ServiceJSON.self)
+            let taskID = try creationText(receipt, "task_id")
+            tracking.taskIdentityDigest = Self.creationIdentityDigest(taskID)
+        } catch let error as DsmNetworkError {
+            let mapped = DsmErrorMapper.map(error)
+            if Self.imageManagementTrustError(mapped) { throw mapped }
+            let rejected: Bool = switch error { case .api(let code, _) where code > 0: true; case .invalidRequest: true; default: false }
+            if rejected {
+                pendingVmmCreations[name] = nil; try await observer?(.rejected); throw mapped
+            }
+            if case .cancelled = error { throw CancellationError() }
+            if [.authenticationRequired, .otpRequired, .permissionDenied].contains(mapped.category) { throw mapped }
+        } catch { try throwCreationReadBoundary(error) }
+        pendingVmmCreations[name] = (configuration, tracking)
+        if tracking.taskIdentityDigest != nil { try await observer?(.accepted(tracking)) }
+        return try await reviewVmmCreation(tracking, observer: observer)
+    }
+
+    public func reviewVirtualMachineCreation(_ tracking: VirtualMachineCreationTracking,
+                                             observer: VirtualMachineCreationObserver? = nil) async throws -> VirtualMachineCreationReview {
+        guard tracking.isValid else { throw invalidServiceResponse() }
+        guard activeVmmCreationNames.insert(tracking.nameDigest).inserted else { return .pending }
+        defer { activeVmmCreationNames.remove(tracking.nameDigest) }
+        return try await reviewVmmCreation(tracking, observer: observer)
+    }
+
+    private func reviewVmmCreation(_ original: VirtualMachineCreationTracking,
+                                   observer: VirtualMachineCreationObserver?) async throws -> VirtualMachineCreationReview {
+        guard original.isValid, supportsVirtualMachineCreation else { throw unavailableError() }
+        var tracking = original
+        let configuration = pendingVmmCreations[tracking.nameDigest]?.configuration
+        pendingVmmCreations[tracking.nameDigest] = (configuration, tracking)
+        try Task.checkCancellation()
+        if tracking.guestIdentityDigest == nil {
+            let progress = try await call(DsmAPIName.virtualizationCluster, method: "get_total_progress",
+                parameters: ["prefix": .string("virtualization_guest")], fixedVersion: 1)
+            guard let hosts = progress.object else { throw invalidServiceResponse() }
+            var matches: [(String, ServiceJSON)] = []
+            for (host, group) in hosts where host != "local_host" && host != "has_fail" {
+                guard let tasks = group.object else { throw invalidServiceResponse() }
+                for (id, task) in tasks {
+                    let expectedID = tracking.taskIdentityDigest == Self.creationIdentityDigest(id)
+                    let expectedContext = task["info"]?["param"]?["synovmm_ui_id"]?.stringValue == tracking.requestID.uuidString.lowercased()
+                    if expectedID || expectedContext { matches.append((id, task)) }
+                }
+            }
+            guard matches.count == 1 else { return .pending }
+            let (taskID, task) = matches[0]
+            guard Self.isVmmDeletionID(taskID), tracking.taskIdentityDigest == nil || tracking.taskIdentityDigest == Self.creationIdentityDigest(taskID),
+                  let info = task["info"], try creationText(info, "api") == DsmAPIName.virtualizationGuest,
+                  try creationText(info, "method") == "create", try creationInteger(info, "version") == 1,
+                  try creationText(info, "prefix") == "virtualization_guest_create", let sent = info["param"]?.object else { return .pending }
+            for (key, digest) in tracking.parameterDigests {
+                guard let value = sent[key], try Self.creationDigest(Self.creationJSON(value)) == digest else { return .pending }
+            }
+            if tracking.taskIdentityDigest == nil {
+                tracking.taskIdentityDigest = Self.creationIdentityDigest(taskID)
+                pendingVmmCreations[tracking.nameDigest] = (configuration, tracking)
+                try await observer?(.accepted(tracking))
+            }
+            guard try creationBool(task, "finish") else { return .pending }
+            guard try creationBool(task, "success") else {
+                pendingVmmCreations[tracking.nameDigest] = nil; try await observer?(.rejected); return .failed
+            }
+            guard let data = task["data"] else { throw invalidServiceResponse() }
+            let id = try creationText(data, "guest_id"), digest = Self.creationIdentityDigest(id)
+            guard !tracking.existingIdentityDigests.contains(digest) else { return .pending }
+            tracking.guestIdentityDigest = digest
+            pendingVmmCreations[tracking.nameDigest] = (configuration, tracking)
+            try await observer?(.taskSucceeded(tracking))
+        }
+        guard let guest = vmmCapability(DsmAPIName.virtualizationGuest, version: 2) else { throw unavailableError() }
+        let inventory = try await vmmDeletionSnapshot(capability: guest, arrayKey: "guests", idKey: "guest_id")
+        let ids = inventory.ids.filter { Self.creationIdentityDigest($0) == tracking.guestIdentityDigest }
+        guard ids.count == 1, let id = ids.first else { return .pending }
+        let before = try await call(guest.name, method: "get", parameters: ["guest_id": .string(id)], fixedVersion: 2)
+        let baseline = try vmmSettingsState(before)
+        guard baseline.id == id else { return .pending }
+        let settings = try await call(guest.name, method: "get_setting", parameters: ["guest_id": .string(id)], fixedVersion: 1)
+        let digest = try creationObservedDigest(settings, baseline: before)
+        let after = try await call(guest.name, method: "get", parameters: ["guest_id": .string(id)], fixedVersion: 2)
+        try Task.checkCancellation()
+        guard try vmmSettingsState(after) == baseline, digest == tracking.configurationDigest else { return .pending }
+        try await observer?(.succeeded(guestID: id))
+        pendingVmmCreations[tracking.nameDigest] = nil
+        return .succeeded(guestID: id)
+    }
+
+    private func throwCreationReadBoundary(_ error: Error) throws {
+        if error is CancellationError || error is DsmCertificateTrustError { throw error }
+        if let value = error as? AppError, Self.imageManagementTrustError(value)
+            || [.authenticationRequired, .otpRequired, .cancelled].contains(value.category) { throw error }
+    }
+    private func creationRows(_ value: ServiceJSON, _ key: String) throws -> [ServiceJSON] {
+        guard case .array(let rows)? = value[key], rows.allSatisfy({ $0.object != nil }) else { throw invalidServiceResponse() }
+        try Self.requireCompleteServiceList(value, count: rows.count)
+        return rows
+    }
+    private func creationText(_ value: ServiceJSON, _ key: String) throws -> String {
+        guard case .string(let text)? = value[key], !text.isEmpty,
+              !text.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw invalidServiceResponse() }
+        if ["repo_id", "network_id", "host_id", "guest_id", "task_id", "id"].contains(key), !Self.isVmmDeletionID(text) {
+            throw invalidServiceResponse()
+        }
+        return text
+    }
+    private func creationInteger(_ value: ServiceJSON, _ key: String) throws -> Int {
+        guard case .number(let number)? = value[key], number.isFinite, number >= 0, number < Double(Int.max),
+              number.rounded() == number else { throw invalidServiceResponse() }
+        return Int(number)
+    }
+    private func creationBool(_ value: ServiceJSON, _ key: String) throws -> Bool {
+        guard case .boolean(let flag)? = value[key] else { throw invalidServiceResponse() }; return flag
+    }
+    private static func creationIdentityDigest(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    private static func creationNameDigest(_ value: String) -> String {
+        creationIdentityDigest(value.folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX")))
+    }
+    private func creationProtects(id: String, name: String) -> Bool {
+        let name = Self.creationNameDigest(name), id = Self.creationIdentityDigest(id)
+        return activeVmmCreationNames.contains(name) || pendingVmmCreations[name] != nil
+            || pendingVmmCreations.values.contains { $0.tracking.guestIdentityDigest == id }
+    }
+    private func creationReferences(_ kind: String, id: String) -> Bool {
+        let digest = Self.creationIdentityDigest(id)
+        return activeVmmCreationResources.values.contains { $0[kind] == digest }
+            || pendingVmmCreations.values.contains { $0.tracking.resourceIdentityDigests[kind] == digest }
+    }
+    private static func creationDigest(_ value: DsmJSONValue) throws -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return SHA256.hash(data: try encoder.encode(value)).map { String(format: "%02x", $0) }.joined()
+    }
+    private static func creationJSON(_ value: ServiceJSON) -> DsmJSONValue {
+        switch value {
+        case .object(let values): .object(values.mapValues(creationJSON))
+        case .array(let values): .array(values.map(creationJSON))
+        case .string(let text): .string(text)
+        case .number(let number): .decimal(number)
+        case .boolean(let flag): .boolean(flag)
+        case .null: .null
+        }
+    }
+    private static func creationJSON(_ values: [String: DsmParameterValue]) -> [String: DsmJSONValue] {
+        values.mapValues { value in
+            switch value {
+            case .string(let value): .string(value)
+            case .integer(let value): .integer(value)
+            case .boolean(let value): .boolean(value)
+            case .stringArray(let value): .array(value.map(DsmJSONValue.string))
+            case .integerArray(let value): .array(value.map(DsmJSONValue.integer))
+            case .object(let value): .object(value)
+            case .objectArray(let value): .array(value.map(DsmJSONValue.object))
+            }
+        }
+    }
+    private static let creationResultKeys: Set<String> = ["name", "desc", "vcpu_num", "vram_size", "cpu_weight", "autorun",
+        "repo_id", "is_general_vm", "use_ovmf", "boot_from", "iso_images", "video_card", "cpu_passthru", "hyperv_enlighten",
+        "cpu_pin_num", "kb_layout", "usb_version", "usbs"]
+    private func creationExpectedDigest(_ sent: [String: DsmJSONValue]) throws -> String {
+        var value = sent.filter { Self.creationResultKeys.contains($0.key) }
+        guard case .array(let disks)? = sent["vdisks"], case .array(let nics)? = sent["vnics"] else { throw invalidServiceResponse() }
+        value["vdisks"] = .array(try disks.map { disk in
+            guard case .object(let disk) = disk, case .integer(let size)? = disk["vdisk_size"], let mode = disk["vdisk_mode"] else { throw invalidServiceResponse() }
+            return .object(["size": .string(String(Int64(size) * 1_024 * 1_024 * 1_024)), "vdisk_mode": mode, "unmap": .boolean(false)])
+        })
+        value["vnics"] = .array(try nics.map { nic in
+            guard case .object(let nic) = nic else { throw invalidServiceResponse() }
+            return .object(nic.filter { ["network_id", "mac", "vnic_type", "prefer_sriov"].contains($0.key) })
+        })
+        value["status"] = .string(sent["poweron_after_create"] == .boolean(true) ? "running" : "shutdown")
+        return try Self.creationDigest(.object(value))
+    }
+    private func creationObservedDigest(_ settings: ServiceJSON, baseline: ServiceJSON) throws -> String {
+        var value: [String: DsmJSONValue] = [:]
+        for key in Self.creationResultKeys {
+            guard let raw = settings[key] else { throw invalidServiceResponse() }
+            if ["name", "desc", "vcpu_num", "vram_size", "cpu_weight", "autorun"].contains(key) {
+                guard let basic = baseline[key], try Self.creationDigest(Self.creationJSON(basic)) == Self.creationDigest(Self.creationJSON(raw)) else {
+                    throw invalidServiceResponse()
+                }
+            }
+            if key == "vram_size" {
+                let memory = try creationInteger(settings, key)
+                guard memory.isMultiple(of: 1_024) else { throw invalidServiceResponse() }
+                value[key] = .integer(memory / 1_024)
+            } else { value[key] = Self.creationJSON(raw) }
+        }
+        value["status"] = .string(try creationText(baseline, "status"))
+        value["vdisks"] = .array(try creationRows(settings, "vdisks").map { row in
+            guard let object = row.object else { throw invalidServiceResponse() }
+            return .object(object.filter { ["size", "vdisk_mode", "unmap"].contains($0.key) }.mapValues(Self.creationJSON))
+        })
+        value["vnics"] = .array(try creationRows(settings, "vnics").map { row in
+            guard let object = row.object else { throw invalidServiceResponse() }
+            return .object(object.filter { ["network_id", "mac", "vnic_type", "prefer_sriov"].contains($0.key) }.mapValues(Self.creationJSON))
+        })
+        return try Self.creationDigest(.object(value))
+    }
+
+    private func vmmCreationParameters(_ configuration: VirtualMachineCreation, resources: VirtualMachineCreationResources,
+                                       requestID: UUID) throws -> [String: DsmParameterValue] {
         let name = try validatedName(configuration.name, message: L10n.string("shared.5350a51d42c2c339"))
         guard (1...64).contains(configuration.cpuCount) else {
             throw validationError(L10n.string("shared.f41be5e7aec143e3"))
@@ -2595,47 +2924,39 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         guard (128...1_048_576).contains(configuration.memoryMiB) else {
             throw validationError(L10n.string("shared.4d40041e1ad34be1"))
         }
-        guard (1...1_048_576).contains(configuration.diskGiB) else {
+        guard (10...1_048_576).contains(configuration.diskGiB) else {
             throw validationError(L10n.string("shared.2b4d322a593abfbb"))
         }
         let storageID = try validatedName(
             configuration.storageID,
             message: L10n.string("shared.90d0c55da0db0537")
         )
-        let networkID = try validatedName(
-            configuration.networkID,
-            message: L10n.string("shared.2b03964bdff5a681")
-        )
-        guard supportsInternalVmmWrite(DsmAPIName.virtualizationGuest) else {
-            throw unavailableError()
+        let networkID = configuration.networkID
+        guard name == configuration.name, !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+              (configuration.description ?? "").count <= 1_024,
+              let storage = resources.storages.first(where: { $0.id == storageID }), storage.isAvailable else {
+            throw validationError(L10n.string("virtual-machine.creation.resources-changed"))
         }
-        let snapshot = try await loadVirtualMachineManager()
-        guard !snapshot.machines.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
-            throw validationError(L10n.string("shared.433935ad21c1d3da"))
+        if !networkID.isEmpty {
+            guard resources.networksAvailable, resources.networks.contains(where: { $0.id == networkID }) else {
+                throw validationError(L10n.string("shared.6f6895462cc6e8ed"))
+            }
         }
-        guard let storage = snapshot.storages.first(where: { $0.id == storageID }) else {
-            throw validationError(L10n.string("shared.893d2afe816fc362"))
+        if let imageID = configuration.bootImageID {
+            guard !imageID.isEmpty, resources.imagesAvailable,
+                  resources.images.contains(where: { $0.id == imageID && $0.storageID == storageID && $0.hostID == storage.hostID }) else {
+                throw validationError(L10n.string("shared.015a36c415279fb5"))
+            }
         }
-        guard let hostID = Self.nonEmpty(storage.hostID),
-              let hostName = Self.nonEmpty(storage.hostName) else {
-            throw unavailableError()
-        }
-        guard snapshot.networks.contains(where: { $0.id == networkID }) else {
-            throw validationError(L10n.string("shared.6f6895462cc6e8ed"))
-        }
-        if let imageID = configuration.bootImageID,
-           !imageID.isEmpty,
-           !snapshot.images.contains(where: { $0.id == imageID }) {
-            throw validationError(L10n.string("shared.015a36c415279fb5"))
-        }
-
+        let hostID = storage.hostID, hostName = storage.hostName
+        let isLinux = configuration.operatingSystem == .linux
         let isWindows = configuration.operatingSystem == .windows
         let usesUEFI = configuration.firmware == .uefi
         let bootImages = [Self.nonEmpty(configuration.bootImageID) ?? "unmounted", "unmounted"]
         let disk: [String: DsmJSONValue] = [
             "type": .string("add"),
-            "vdisk_mode": .integer(1),
-            "name": .string(L10n.string("shared.41781e3b2a5ef2db")),
+            "vdisk_mode": .integer(isLinux ? 1 : 2),
+            "name": .string("disk-1"),
             "unmap": .boolean(false),
             "iops_enable": .boolean(false),
             "dev_limit": .integer(0),
@@ -2646,16 +2967,16 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         ]
         let network: [String: DsmJSONValue] = [
             "prefer_sriov": .boolean(false),
-            "vnic_type": .integer(1),
+            "vnic_type": .integer(isLinux ? 1 : 2),
             "type": .string("add"),
             "mac": .string(Self.randomVirtualMACAddress()),
             "network_id": .string(networkID)
         ]
-        var parameters: [String: DsmParameterValue] = [
+        let parameters: [String: DsmParameterValue] = [
             "guest_privilege": .objectArray([]),
             "iso_images": .stringArray(bootImages),
             "autorun": .integer(configuration.startupBehavior.rawValue),
-            "boot_from": .string(Self.nonEmpty(configuration.bootImageID) == nil ? "disk" : "iso"),
+            "boot_from": .string("disk"),
             "bios": .string(usesUEFI ? "uefi" : "legacy"),
             "kb_layout": .string("Default"),
             "usb_version": .integer(0),
@@ -2666,12 +2987,12 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             "is_general_vm": .boolean(true),
             "increaseAllocatedSize": .integer(configuration.diskGiB),
             "vdisks": .objectArray([disk]),
-            "auto_switch": .integer(0),
+            "auto_switch": .integer(isWindows ? 1 : 0),
             "vdisk_struct": .objectArray([]),
             "name": .string(name),
             "vcpu_num": .integer(configuration.cpuCount),
             "vram_size": .integer(configuration.memoryMiB),
-            "video_card": .string(isWindows ? "vga" : "vmvga"),
+            "video_card": .string(isLinux ? "vmvga" : "vga"),
             "cpu_weight": .integer(256),
             "desc": .string(configuration.description ?? ""),
             "cpu_passthru": .boolean(true),
@@ -2682,26 +3003,11 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             "host_id": .string(hostID),
             "repo_host_name": .string(hostName),
             "poweron_after_create": .boolean(configuration.powerOnAfterCreation),
-            "synovmm_ui_id": .string(UUID().uuidString.lowercased())
+            "synovmm_ui_id": .string(requestID.uuidString.lowercased()),
+            "allocated_size": .integer(storage.allocatedBytes),
+            "size": .string(storage.capacityBytes)
         ]
-        if let allocated = storage.allocatedBytes {
-            guard let exact = Int(exactly: allocated), exact >= 0 else { throw unavailableError() }
-            parameters["allocated_size"] = .integer(exact)
-        }
-        if let capacity = storage.capacityBytes {
-            parameters["size"] = .string(String(capacity))
-        }
-
-        try await callVoid(
-            DsmAPIName.virtualizationGuest,
-            method: "create",
-            parameters: parameters,
-            fixedVersion: 1
-        )
-        let updated = try await loadVirtualMachineManager()
-        guard updated.machines.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
-            throw verificationError(L10n.string("shared.9d66b1d56aebefdb"))
-        }
+        return parameters
     }
 
     private struct VmmSettingsSubmission {
@@ -2869,6 +3175,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
         guard parameters.count > 2 else {
             throw validationError(L10n.string("shared.c01558c4918833c0"))
+        }
+        guard !creationProtects(id: id, name: current.name),
+              !creationProtects(id: id, name: configuration.name ?? current.name) else {
+            throw verificationError(L10n.string("virtual-machine.creation.pending"))
         }
         try Task.checkCancellation()
         try await observer?(.willSubmit)
@@ -3077,6 +3387,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             throw unavailableError()
         }
         let id = try validatedName(id, message: L10n.string("shared.ca7aaa6738684c9c"))
+        guard !creationReferences("network", id: id), activeVmmNetworkMutationIDs.insert(id).inserted else {
+            throw verificationError(L10n.string("virtual-machine.creation.pending"))
+        }
+        defer { activeVmmNetworkMutationIDs.remove(id) }
         let name = try validatedName(configuration.name, message: L10n.string("shared.1750af3117ab4301"))
         let current = try await loadVirtualMachineManager()
         guard current.networks.contains(where: { $0.id == id }) else {
@@ -3109,6 +3423,11 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             throw unavailableError()
         }
         let ids = try validatedIDs(ids)
+        guard ids.allSatisfy({ !creationReferences("network", id: $0) }), activeVmmNetworkMutationIDs.isDisjoint(with: ids) else {
+            throw verificationError(L10n.string("virtual-machine.creation.pending"))
+        }
+        activeVmmNetworkMutationIDs.formUnion(ids)
+        defer { activeVmmNetworkMutationIDs.subtract(ids) }
         let currentIDs = Set(try await loadVirtualMachineManager().networks.map(\.id))
         guard ids.allSatisfy(currentIDs.contains) else {
             throw validationError(L10n.string("shared.d7cae8f9ca59d2d3"))
@@ -3129,7 +3448,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
     /// VMM 网络删除使用内部接口；提交后通过网络列表逐项确认。
     public func deleteVirtualMachineNetworksResult(ids: [String]) async throws -> MutationResult {
-        try await performServiceDeletion(
+        guard ids.allSatisfy({ !creationReferences("network", id: $0) }) else {
+            throw verificationError(L10n.string("virtual-machine.creation.pending"))
+        }
+        return try await performServiceDeletion(
             ids: ids,
             context: ServiceDeletionContext(
                 operation: "virtualMachineNetworkDelete",
@@ -3255,14 +3577,15 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         var baselines: [String: VirtualMachineControlState] = [:]
         for id in targets {
             let current = try await readVmmPowerTarget(id: id, route: route)
-            guard current.supports(action), expected == nil || current == expected else {
+            guard current.supports(action), expected == nil || current == expected,
+                  !creationProtects(id: id, name: current.name) else {
                 throw validationError(L10n.string("virtual-machine.power.target-changed"))
             }
             baselines[id] = current
         }
         for id in targets {
             let current = try await readVmmPowerTarget(id: id, route: route)
-            guard current == baselines[id], current.supports(action) else {
+            guard current == baselines[id], current.supports(action), !creationProtects(id: id, name: current.name) else {
                 throw validationError(L10n.string("virtual-machine.power.target-changed"))
             }
             try Task.checkCancellation()
@@ -3339,6 +3662,9 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     public func deleteVirtualMachineImagesResult(ids: [String]) async throws -> MutationResult {
+        guard ids.allSatisfy({ !creationReferences("image", id: $0) }) else {
+            throw verificationError(L10n.string("virtual-machine.creation.pending"))
+        }
         let context = ServiceDeletionContext(operation: "virtualMachineImageDelete", localizationPrefix: "virtual-machine-image.delete")
         if capabilities[DsmAPIName.virtualizationAPIGuestImage]?.selectedVersion != nil {
             return try await deleteVmmResources(ids: ids, api: DsmAPIName.virtualizationAPIGuestImage,
@@ -3424,7 +3750,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             return try summary(unknown: prior.count - resolved.count)
         }
         guard targetSet.isSubset(of: initial.ids) else { return try deletionMissingTargetResult(targetCount: targets.count, context: context) }
-        if isGuest && !targets.allSatisfy({ initial.guests[$0]?.canDelete == true }) {
+        if isGuest && !targets.allSatisfy({ id in
+            guard let target = initial.guests[id] else { return false }
+            return target.canDelete && !creationProtects(id: id, name: target.name)
+        }) {
             return try summary(unknown: 0, category: .conflict)
         }
         if let expected, initial.guests[expected.id] != expected { return try summary(unknown: 0, category: .conflict) }

@@ -14,6 +14,32 @@
 
 ## 请求契约
 
+### 2026-10-07 创建任务与恢复实现边界
+
+M7d3 Apple 共用内部 Guest.create v1，不再将同名清单作为创建成功。创建资源独立读取
+Repo/Network/Guest.Image.list v2；存储必须 online/healthy 且未冻结，可不连接网卡、
+不挂载 ISO。所选映像绑定原存储及主机，空 ISO/USB 槽仍为 unmounted，磁盘最小
+10 GiB，内存写 MiB。按已记录静态预设区分 Linux 与 Windows/Other 的磁盘/网卡/
+视频值及 Windows auto_switch；add 的 boot_from 固定 disk。未取得额外静态或行为
+证据的 CPU 透传/Hyper-V 等字段沿既有基线，不因本次修正宣称全部预设已实测。
+
+写前记录随机 synovmm_ui_id、完整发送参数摘要和原有 VM ID 集合摘要；create 返回
+task_id 后单独记录接受。Cluster.get_total_progress v1 的 prefix=virtualization_guest，
+只接受唯一匹配任务、Guest/create/1、virtualization_guest_create 与全部原参数回显。
+丢回执可通过原请求 UUID 与完整参数恢复接受，不能通过名称恢复；任务消失不能认领
+成功或重发。finish/success 与新 guest_id 确认后保存身份摘要，再按 get v2 /
+get_setting v1 / get v2 校对基础、存储、磁盘、网卡、ISO/USB、固件与启动结果；
+已经保存完成任务身份时，任务被官方清理不妨碍只读恢复原 ID。
+
+移动新增独立受保护摘要记录，现有控制记录追加折叠大小写的名称摘要，避免跨重启
+改名与创建相互绕过；保持当前开发格式，不迁移旧开发文件或 Mac 数据。创建与相同
+VM 的电源/编辑/删除、所引用网络/映像的当前实例写入相互保护；外部客户端竞争和
+旧资源写分支的完整未知恢复仍按相应切片处理。Mac 保留原协议入口，同一未完成
+配置再次调用只读查询，不重复创建；其任务记录限仓库实例。
+
+本片只有源码和合成证据，移动页面、目标平台验证与限制以主计划 M7d3 实时账本为准。
+Windows/Android 仅同步上述契约与任务归属要求，无源码修改，不提升任何环境 verification。
+
 ### 2026-10-07 基础编辑实现边界
 
 M7d2 Apple 共用内部 get/list v2 与 set v1：读取原 ID/名称/状态及可选原始设置，缺失

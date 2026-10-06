@@ -2427,25 +2427,12 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
     }
 
     func test创建虚拟机提交已核对的内部契约并回读确认() async throws {
-        let transport = SequencedServiceRoutingTransport(responses: [
-            DsmAPIName.virtualizationGuest: [
-                response(#"{"success":true,"data":{"guests":[]}}"#),
-                response(#"{"success":true,"data":{"guests":[]}}"#),
-                response(#"{"success":true}"#),
-                response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-new","name":"新虚拟机","status":"shutdown"}]}}"#)
-            ],
-            DsmAPIName.virtualizationRepo: [
-                response(#"{"success":true,"data":[{"repo_id":"repo-1","repo_name":"虚拟机存储","host_id":"host-1","host_name":"主机","allocated_size":100,"size":1000}]}"#)
-            ],
-            DsmAPIName.virtualizationNetwork: [
-                response(#"{"success":true,"data":[{"network_id":"network-1","network_name":"默认网络"}]}"#)
-            ]
-        ])
+        let transport = CreationWorkflowTransport()
         let repository = try makeRepository(
             apiNames: [
                 DsmAPIName.virtualizationGuest,
                 DsmAPIName.virtualizationRepo,
-                DsmAPIName.virtualizationNetwork
+                DsmAPIName.virtualizationNetwork, DsmAPIName.virtualizationGuestImage, DsmAPIName.virtualizationCluster
             ],
             requestFormatOverrides: [
                 DsmAPIName.virtualizationGuest: .json,
