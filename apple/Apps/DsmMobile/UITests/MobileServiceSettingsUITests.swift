@@ -2,6 +2,144 @@ import XCTest
 
 @MainActor
 final class MobileServiceSettingsUITests: XCTestCase {
+    func test硬件五组编辑确认取消与保存结果() {
+        let app = launch("nas-services", kind: "hardware"); defer { app.terminate() }
+        screenshot(app, "Hardware current settings"); openEditor(app)
+        reveal("mobile.nas.hardware.powerRecovery", in: app).switches.firstMatch.tap()
+        increaseBrightness(app)
+        reveal("mobile.nas.hardware.fan", in: app).tap()
+        let cool = app.buttons["cool mode"]; XCTAssertTrue(cool.waitForExistence(timeout: 5)); cool.tap()
+        reveal("mobile.nas.hardware.volumeFailure", in: app).switches.firstMatch.tap()
+        reveal("mobile.nas.hardware.wakeLog", in: app).switches.firstMatch.tap()
+        screenshot(app, "Hardware sound and sleep controls")
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "starts automatically")).firstMatch.waitForExistence(timeout: 5))
+        screenshot(app, "Hardware concrete risks and selected values")
+        element("mobile.nas.service.cancel", app).tap()
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        expect(reveal("mobile.nas.hardware.summary.powerRecovery", in: app), contains: "On")
+        expect(reveal("mobile.nas.hardware.summary.brightness", in: app), contains: "5")
+        expect(reveal("mobile.nas.hardware.summary.fan", in: app), contains: "cool mode")
+        expect(reveal("mobile.nas.hardware.summary.volumeFailure", in: app), contains: "Off")
+        expect(reveal("mobile.nas.hardware.summary.wakeLog", in: app), contains: "On")
+        expect(reveal("mobile.nas.service.activity.succeeded", in: app), contains: "saved")
+        screenshot(app, "Hardware all changed groups saved")
+    }
+    func testUPS网络连接等待时间校验及保存() {
+        let app = launch("nas-services", kind: "hardware"); defer { app.terminate() }; openEditor(app)
+        reveal("mobile.nas.hardware.upsEnabled", in: app).switches.firstMatch.tap()
+        reveal("mobile.nas.hardware.upsMode", in: app).tap()
+        let mode = app.buttons["Network UPS server"]; XCTAssertTrue(mode.waitForExistence(timeout: 5)); mode.tap()
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        let address = app.textFields["mobile.nas.hardware.upsNetwork"]; _ = reveal("mobile.nas.hardware.upsNetwork", in: app)
+        address.tap(); address.typeText("192.0.2.20"); finishTextEditing(app)
+        XCTAssertEqual(address.value as? String, "192.0.2.20")
+        replace("upsDelay", text: "604801", app, prefix: "mobile.nas.hardware", separateLabel: true)
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        replace("upsDelay", text: "180", app, prefix: "mobile.nas.hardware", separateLabel: true)
+        reveal("mobile.nas.hardware.upsShutdown", in: app).switches.firstMatch.tap()
+        screenshot(app, "UPS native configuration")
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "leave data unprotected")).firstMatch.waitForExistence(timeout: 5))
+        screenshot(app, "UPS protection risk and chosen connection")
+        element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        expect(reveal("mobile.nas.hardware.summary.upsEnabled", in: app), contains: "On")
+        expect(reveal("mobile.nas.hardware.summary.upsMode", in: app), contains: "Network UPS server")
+        expect(reveal("mobile.nas.hardware.summary.upsDelay", in: app), contains: "180")
+        expect(reveal("mobile.nas.hardware.summary.upsNetwork", in: app), contains: "192.0.2.20")
+        screenshot(app, "UPS saved configuration")
+    }
+    func test灯光单独保存直接完成且无需额外确认() {
+        let app = launch("nas-services", kind: "hardware"); defer { app.terminate() }
+        openEditor(app); increaseBrightness(app); app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertFalse(element("mobile.nas.service.confirm", app).exists); waitEditorClosed(app)
+        expect(reveal("mobile.nas.hardware.summary.brightness", in: app), contains: "5")
+        expect(reveal("mobile.nas.service.activity.succeeded", in: app), contains: "saved")
+        screenshot(app, "Indicator brightness saved without an extra confirmation")
+    }
+    func test灯光应用被拒绝后可明确继续而不重新设置亮度() {
+        let app = launch("nas-services-hardware-led-denied-once", kind: "hardware"); defer { app.terminate() }
+        openEditor(app); increaseBrightness(app)
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertFalse(element("mobile.nas.service.confirm", app).exists)
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "permission")
+        element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
+        screenshot(app, "Indicator brightness saved with application refused")
+        reveal("mobile.nas.hardware.continueLED", in: app).tap()
+        XCTAssertTrue(element("mobile.nas.hardware.continueLED", app).waitForNonExistence(timeout: 5))
+        XCTAssertFalse(element("mobile.nas.service.confirm", app).exists)
+        XCTAssertFalse(element("mobile.nas.hardware.continueLED", app).exists)
+        expect(reveal("mobile.nas.service.activity.succeeded", in: app), contains: "saved")
+        screenshot(app, "Indicator application completed explicitly")
+    }
+    func test灯光应用缺回执重启仍保护并提供刷新() {
+        let app = launch("nas-services-hardware-led-update-unknown", kind: "hardware"); openEditor(app); increaseBrightness(app)
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertFalse(element("mobile.nas.service.confirm", app).exists)
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "Use DSM"); app.terminate()
+        let next = launch("nas-services-hardware-led-recover", kind: "hardware", preserve: true); defer { next.terminate() }
+        XCTAssertFalse(reveal("mobile.nas.service.edit", in: next).isEnabled)
+        XCTAssertFalse(element("mobile.nas.hardware.continueLED", next).exists)
+        expect(reveal("mobile.nas.service.activity.submitted", in: next), contains: "Use DSM")
+        reveal("mobile.nas.service.recover", in: next).tap()
+        expect(reveal("mobile.nas.service.activity.submitted", in: next), contains: "Use DSM")
+        XCTAssertFalse(element("mobile.nas.service.removeRecord", next).exists)
+        screenshot(next, "Indicator missing receipt remains protected after restart")
+    }
+    func test灯光接受后断线重启只恢复保存状态且主动应用() {
+        let app = launch("nas-services-accepted-offline", kind: "hardware"); openEditor(app); increaseBrightness(app)
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertFalse(element("mobile.nas.service.confirm", app).exists)
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "not available yet"); app.terminate()
+        let next = launch("nas-services-hardware-led-recover", kind: "hardware", preserve: true); defer { next.terminate() }
+        _ = reveal("mobile.nas.hardware.continueLED", in: next)
+        expect(reveal("mobile.nas.hardware.summary.brightness", in: next), contains: "5")
+        screenshot(next, "Saved indicator brightness can be applied explicitly")
+        reveal("mobile.nas.hardware.continueLED", in: next).tap()
+        XCTAssertFalse(element("mobile.nas.service.confirm", next).exists)
+        expect(reveal("mobile.nas.service.activity.succeeded", in: next), contains: "saved")
+    }
+    func test硬件加载空内容错误与不支持分别显示() {
+        for (state, label) in [("nas-services-loading", "Loading settings"), ("nas-services-empty", "No settings"),
+                               ("nas-services-error", "Unable to load"), ("nas-services-hardware-incomplete", "Unable to load"),
+                               ("nas-services-unsupported", "not supported")] {
+            let app = launch(state, kind: "hardware")
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", label)).firstMatch.waitForExistence(timeout: 5))
+            XCTAssertFalse(element("mobile.nas.service.edit", app).exists)
+            screenshot(app, "Hardware state " + state); app.terminate()
+        }
+    }
+    func test硬件未知范围保持只读且账号权限限制可见() {
+        let limited = launch("nas-services-hardware-limited", kind: "hardware"); openEditor(limited)
+        XCTAssertFalse(limited.steppers["mobile.nas.hardware.brightness"].exists)
+        XCTAssertTrue(limited.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "supported range")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(element("mobile.nas.hardware.fan", limited).exists)
+        XCTAssertFalse(element("mobile.nas.hardware.resetSound", limited).exists)
+        screenshot(limited, "Hardware missing device ranges remains readable"); limited.terminate()
+        let readOnly = launch("nas-services-readonly", kind: "hardware"); defer { readOnly.terminate() }
+        XCTAssertFalse(reveal("mobile.nas.service.edit", in: readOnly).isEnabled)
+        expect(reveal("mobile.nas.service.error", in: readOnly), contains: "permission")
+        screenshot(readOnly, "Hardware permissions prevent changes")
+    }
+    func test硬件中文大字表单风险和取消均可触达() {
+        let app = launch("nas-services", kind: "hardware", chinese: true, large: true); defer { app.terminate() }; openEditor(app)
+        reveal("mobile.nas.hardware.powerRecovery", in: app).switches.firstMatch.tap()
+        screenshot(app, "Chinese large Hardware form")
+        reveal("mobile.nas.hardware.upsEnabled", in: app).switches.firstMatch.tap()
+        replace("upsDelay", text: "180", app, prefix: "mobile.nas.hardware", separateLabel: true)
+        screenshot(app, "Chinese large UPS controls")
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertTrue(element("mobile.nas.service.confirm", app).waitForExistence(timeout: 5))
+        screenshot(app, "Chinese large Hardware protection warning")
+        element("mobile.nas.service.cancel", app).tap(); element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
+        XCTAssertFalse(element("mobile.nas.service.activity.succeeded", app).exists)
+    }
+    private func increaseBrightness(_ app: XCUIApplication) {
+        _ = reveal("mobile.nas.hardware.brightness", in: app)
+        let stepper = app.steppers["mobile.nas.hardware.brightness"]
+        XCTAssertTrue(stepper.exists); stepper.buttons.element(boundBy: 1).tap(); stepper.buttons.element(boundBy: 1).tap()
+    }
+
     func test安全四组编辑输入校验风险取消及完整保存() {
         let app = launch("nas-services", kind: "security"); defer { app.terminate() }
         screenshot(app, "Security current configuration"); openEditor(app)
@@ -494,11 +632,12 @@ final class MobileServiceSettingsUITests: XCTestCase {
     }
     private func openEditor(_ app: XCUIApplication) { reveal("mobile.nas.service.edit", in: app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].waitForExistence(timeout: 5)) }
     private func toggle(_ key: String, in app: XCUIApplication) { reveal("mobile.nas.service.\(key)", in: app).switches.firstMatch.tap() }
-    private func replace(_ key: String, text: String, _ app: XCUIApplication, prefix: String = "mobile.nas.service") {
+    private func replace(_ key: String, text: String, _ app: XCUIApplication, prefix: String = "mobile.nas.service", separateLabel: Bool = false) {
         let field = app.textFields["\(prefix).\(key)"]; _ = reveal("\(prefix).\(key)", in: app)
-        if app.frame.width > 600 {
-            // iPad 可连接硬件键盘；将光标放在可见值末尾后删除原值，不依赖长按菜单。
-            field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap()
+        if app.frame.width > 600 || separateLabel {
+            // 独立标题的左对齐短数字框使用控件点击；iPad 行内值仍定位末尾，不依赖长按菜单。
+            if separateLabel { field.tap() }
+            else { field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap() }
             let previous = field.value as? String ?? ""
             field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
             // 空 TextField 的辅助功能值可能是占位提示，不能把它当作残留输入。

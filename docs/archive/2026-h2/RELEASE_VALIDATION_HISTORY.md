@@ -3196,3 +3196,56 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 ```
 
 iPad 最终采用相同四项选择，设备为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果为 `m6-ci-chat-toggle-pad-r1.xcresult`。基线双次运行发生在修改前；命令列表中的构建是随后修正版。独立差异复核确认只在开关离屏时滚动，仍单次输入、精确检查开启值并保留原业务断言。文档检查、本地化资源与硬编码扫描均通过，资源数量 6741/2188/3402；此前测试分组三项正式回归仍有效。fetch 确认 origin/main 没有新提交，旧作业现已结束，可以正常推送本批完成提交触发完整新分组。
+
+
+## 2026-10-06 移动 M6c2 硬件与 UPS 设置
+
+本片从 `a776993c` 的干净 main 开始，沿既有 M6–M8 与离线自主决策授权实施。新增移动来电启动、亮度、实际风扇模式、提示音、休眠和 UPS 表单，复用服务管理逐步持久恢复。共享管理读取固定已记录 v1，保留缺失与可信空字段；LED 的设置与应用分别保存回执。Mac 仅修正已授权的硬件保存反馈，不扩展桌面功能。Windows/Android 只登记契约影响。
+
+基线新增五项复现测试先出现 16 条断言失败：Mac 页面相等掩盖失败，共享回读认领明确拒绝或未提交组，以及把 LED 暂存亮度误当实际应用。修正后硬件相关 21 项通过，进一步共享服务/硬件聚焦 89 项通过；完整共享为 2954 项 XCTest（172 条既有条件跳过、零失败，73.254 秒）和 12 项 Swift Testing。实际命令及日志前缀：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'test硬件设置(明确拒绝不能|超时只认领|灯光|页面相等)'
+swift test --package-path apple --jobs 2 --filter 'test硬件设置|test提示音|test风扇|test硬件休眠|testUPS'
+swift test --package-path apple --jobs 2 --filter 'NasServiceFlowTests|test硬件设置|test提示音|test风扇'
+swift test --package-path apple --jobs 2
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+```
+
+日志位于忽略目录 `apple/Apps/DsmMobile/build/m0-m8/`，分别为 `m6c2-baseline-before.log`、`m6c2-baseline-after.log`、`m6c2-shared-focused.log`、`m6c2-shared-full.log` 和 `m6c2-mac-build.log`；最终资源变更后增量 Mac 构建记录为 `m6c2-mac-final-build.log`，均真实成功。`lipo -archs` 确認主 App 与内嵌 File Provider 均为 `x86_64 arm64`，没有安装或启动 Mac 包。
+
+首轮移动构建使用 `CODE_SIGNING_ALLOWED=NO`，可构建但 App 只有链接器签名，签名标识为 `DsmMobile` 且未绑定 Info.plist；两端完整 1563 项单元均只有既有 `MobileSecureStoreDefaultsTests.testSimulatorDefaultStoresRoundTripSessionAndPassword` 报 `secureKeyUnavailable`，各 4 条既有跳过，新 13 项硬件行为均通过。两端各执行八项新硬件 UI 和原终端回归：iPhone 九项中 UPS 输入一项失败（合计 1049.558 秒），iPad 九项全部通过（1246.077 秒）。由于单元失败，两条首轮命令均 exit 65；结果包 `m6c2-phone.xcresult`、`m6c2-pad.xcresult`，不能写成整轮通过。
+
+首轮 iPhone UPS 失败停在系统全选菜单。实际截图及辅助功能树显示等待时间长标题换行，控件辅助功能区域包含标题和值，原点击点没有进入最右侧数字输入，键盘未出现。调整为与地址一致的上下布局，并在中文大字用例增加实际等待时间输入，继续保留范围校验、精确输入值、保存后回读与取消零写断言。另将灯光缺回执提示改为通过 DSM 调整，不暗示反复刷新能认领暂存亮度。
+
+正确签名后重新构建，`codesign -dvv` 确認临时签名与应用标识、Info.plist 绑定正常。没有修改任何凭据保护代码或测试断言；R2 两端完整各 1563 项单元（各 4 条既有跳过）零失败，分别 40.688/40.493 秒，原凭据存储测试也通过。R2 iPad 三项专项 UI 全部通过（463.936 秒、exit 0）；iPhone 灯光提示通过，UPS 普通输入与中文大字输入仍停在全选菜单（合计 316.620 秒、exit 65）。两张失败截图都没有数字输入焦点或键盘；不能以布局调整代替交互通过。
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath apple/Apps/DsmMobile/build/m0-m8/m6c2-phone-r2.xcresult '-only-testing:DsmMobileTests' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/testUPS网络连接等待时间校验及保存' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test灯光应用缺回执重启仍保护并提供刷新' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test硬件中文大字表单风险和取消均可触达'
+```
+
+iPad 使用同一选择与 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果包为 `m6c2-pad-r2.xcresult`。首轮均浅色；R2 iPhone 浅色、iPad 深色。独立集成及只读对抗复核由当前负责人在实现后单独执行，检查原配置/范围/权限、逐步保存、LED 两步边界、明确拒绝、未知不重放、记录故障和旧账号迟到响应，不冒称另一模型或真实设备结论。
+
+真实 NAS 没有参与本片写测试；物理风扇/灯光、电源与 UPS 行为、真机锁屏文件保护及完整辅助功能按主计划四行 `PENDING_USER_VALIDATION` 单独验收。已有云端运行 [Apple Build 37450968329](https://github.com/yuangy1995/dsm-native-client/actions/runs/37450968329) 验证的是 `a776993c`，共享/macOS 作业成功，移动各组仍在执行或排队；没有为了本片提前推送而取消该运行。
+
+
+R3 将测试的独立标题短数字框改为直接点击控件，按原字符数删除并检查清空，再输入精确新值；iPad 原行内数字和其他字段测试路径保持原样。没有跳过范围、保存、回读或取消断言。使用相同签名命令再次构建后，两端只选择 UPS 与中文大字两项 UI，结果均通过：iPhone 233.843 秒、iPad 294.713 秒，两条命令 exit 0。结果包 `m6c2-phone-r3.xcresult` / `m6c2-pad-r3.xcresult`；主题为 iPhone 深色、iPad 浅色。十二张输入/确认/保存和大字截图已逐张检查。
+
+随后按项目普通保存交互约定去掉灯光单独保存的无风险重复确认；“应用已保存亮度”直接触发原记录绑定的单次应用。涉及电源、风扇、声音、休眠或 UPS 的变更仍走原具体后果确认。底层权限、记录、原值绑定与防重复逻辑不变。新增普通亮度保存 UI，并调整三项灯光恢复 UI 检查不出现额外确认；R4 构建成功，两端运行硬件 13 项单元、四项灯光 UI 及中文大字风险确认。R4 最终两端 13 项硬件行为与五项 UI 全部通过：iPhone UI 540.052 秒、iPad UI 643.678 秒，命令均 exit 0。
+
+
+R4 完整命令如下，iPad 换为同一前述设备并将结果包改为 `m6c2-pad-r4.xcresult`；此前 R3 使用同一命令基础，仅选择 UPS 与中文大字两个用例。R4 为 iPhone 浅色、iPad 深色，最后两端均恢复浅色并回读确认。
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath apple/Apps/DsmMobile/build/m0-m8/m6c2-phone-r4.xcresult '-only-testing:DsmMobileTests/MobileHardwareSettingsTests' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test灯光单独保存直接完成且无需额外确认' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test灯光应用被拒绝后可明确继续而不重新设置亮度' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test灯光应用缺回执重启仍保护并提供刷新' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test灯光接受后断线重启只恢复保存状态且主动应用' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test硬件中文大字表单风险和取消均可触达'
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/generate_api_reference.py --check
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+九项新增硬件 UI 与原终端回归均已有两端分轮通过证据。逐张检查加载、空内容、错误/缺字段、不支持、权限、未知范围、普通保存、UPS、灯光拒绝与重启恢复、浅深主题和中文大字操作截图，保留最终场景及主题审查图于 `apple/Apps/DsmMobile/build/m6c2-preview/`；临时附件导出、活动索引、导出日志和重复预览已精确清理，正式结果包与验证日志保留。工程用锁定 XcodeGen 重新生成后与当前文件一致；双语 6780/2188/3402 项、契约 179 项/1 项结果、fixture 29 组/48 项私有引用、API 目录、文档和差异检查均通过。提交前 fetch 确认 origin/main 仍为 `a776993c`，没有远端新提交。本片为本机验收完成，未发布安装包，也不代表云端或真实 NAS 验收完成。

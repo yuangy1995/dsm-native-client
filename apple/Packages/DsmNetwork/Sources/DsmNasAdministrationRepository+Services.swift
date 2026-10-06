@@ -15,6 +15,7 @@ extension DsmNasAdministrationRepository {
         case .remoteAccess: return .remoteAccess(try await loadRemoteAccessForManagement())
         case .ethernet: return .ethernet(try await loadEthernetForManagement())
         case .security: return .security(try await loadSecuritySettings(managed: true))
+        case .hardware: return .hardware(try await loadHardwareSettings(managed: true))
         case .powerSchedule:
             guard serviceVersion(.powerSchedule) != nil else { throw unavailableError() }
             return .powerSchedule(try await loadPowerSchedule())
@@ -142,6 +143,12 @@ extension DsmNasAdministrationRepository {
         case .denialOfService: DsmAPIName.coreSecurityDoS
         case .firewallNotifications: DsmAPIName.coreSecurityFirewallConf
         case .firewall: DsmAPIName.coreSecurityFirewall
+        case .powerRecovery: DsmAPIName.coreHardwarePowerRecovery
+        case .ledBrightness, .ledUpdate: DsmAPIName.coreHardwareLEDBrightness
+        case .fanMode: DsmAPIName.coreHardwareFanSpeed
+        case .beep: DsmAPIName.coreHardwareBeepControl
+        case .hibernation: DsmAPIName.coreHardwareHibernation
+        case .ups: DsmAPIName.coreExternalDeviceUPS
         }
     }
     func serviceVersion(_ step: NasServiceStep) -> Int? {
@@ -183,7 +190,8 @@ extension DsmNasAdministrationRepository {
         switch change.kind { case .fileServices: active = isFileServiceSettingsUpdateActive; case .terminal: active = isTerminalSettingsUpdateActive; case .proxy: active = isProxySettingsUpdateActive; case .remoteAccess: active = isRemoteAccessSettingsUpdateActive
         case .zram: active = isZRAMUpdateActive; case .powerSchedule: active = isPowerScheduleUpdateActive
         case .ethernet: active = isManagedEthernetUpdateActive || !activeEthernetUpdateIDs.isEmpty
-        case .security: active = isSecuritySettingsUpdateActive }
+        case .security: active = isSecuritySettingsUpdateActive
+        case .hardware: active = isHardwareSettingsUpdateActive }
         guard !active else { return try result(.confirmedFailure, category: .conflict) }
         setServiceActive(change.kind, true)
         defer { setServiceActive(change.kind, false) }
@@ -207,7 +215,7 @@ extension DsmNasAdministrationRepository {
                 if step == .firewall && appliesFirewall, case .security(let value) = submittedSettings, let profile = value.firewallProfileName {
                     firewallTask = try await startManagedFirewallProfile(profile)
                 } else {
-                    try await submitManagedServiceStep(step, settings: submittedSettings, version: serviceVersion(step)!)
+                    try await submitManagedServiceStep(step, settings: submittedSettings, current: expected, version: serviceVersion(step)!)
                 }
                 accepted = true
             } catch {
@@ -225,6 +233,10 @@ extension DsmNasAdministrationRepository {
             if let firewallTask { try await checkpoint(.firewallTaskStarted(firewallTask)) }
             if accepted { try await checkpoint(.accepted(step)) }
             if Task.isCancelled { return try result(.cancellationRequestedAfterSubmission, unknown: 1) }
+            // LED 读取可能只反映暂存亮度。两个写边界各自缺回执时均保留未知，不继续应用。
+            if (step == .ledBrightness || step == .ledUpdate) && !accepted {
+                return try result(completed > 0 ? .partialSuccess : .submittedButUnverified, unknown: 1)
+            }
             if step == .firewall && appliesFirewall {
                 // 未拿到回执不能仅凭开关变化认领任务；回执写盘错误也不能被当作网络错误吞掉。
                 guard let firewallTask else { return try result(completed > 0 ? .partialSuccess : .submittedButUnverified, unknown: 1) }
@@ -283,6 +295,7 @@ extension DsmNasAdministrationRepository {
         switch kind { case .fileServices: isFileServiceSettingsUpdateActive = active; case .terminal: isTerminalSettingsUpdateActive = active; case .proxy: isProxySettingsUpdateActive = active; case .remoteAccess: isRemoteAccessSettingsUpdateActive = active
         case .zram: isZRAMUpdateActive = active; case .powerSchedule: isPowerScheduleUpdateActive = active
         case .ethernet: isManagedEthernetUpdateActive = active
-        case .security: isSecuritySettingsUpdateActive = active }
+        case .security: isSecuritySettingsUpdateActive = active
+        case .hardware: isHardwareSettingsUpdateActive = active }
     }
 }

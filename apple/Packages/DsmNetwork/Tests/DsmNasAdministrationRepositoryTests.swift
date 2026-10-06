@@ -2712,6 +2712,80 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
         )
     }
 
+    func test硬件设置明确拒绝不能认领外部变化或未提交项目() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"rc_power_config":false}}"#),
+            response(#"{"success":true,"data":{"dual_fan_speed":"quietfan"}}"#),
+            response(#"{"success":false,"error":{"code":105}}"#),
+            response(#"{"success":true,"data":{"rc_power_config":true}}"#),
+            response(#"{"success":true,"data":{"dual_fan_speed":"coolfan"}}"#)
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwarePowerRecovery, DsmAPIName.coreHardwareFanSpeed], transport: transport)
+        let result = try await repository.saveHardwareSettingsResult(.init(restartsAfterPowerFailure: true,
+            ledBrightness: nil, ledBrightnessRange: nil, fanMode: "coolfan"))
+        XCTAssertEqual(result.status, .permissionDenied)
+        XCTAssertEqual(result.counts, try .init(succeeded: 0, failed: 2, unknown: 0))
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "set" }.count, 1)
+        XCTAssertFalse(requests.contains { requestValue("dual_fan_speed", in: $0) == "coolfan" })
+    }
+
+    func test硬件设置超时只认领实际提交项目而非后续相同值() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(#"{"success":true,"data":{"rc_power_config":false}}"#)),
+            .response(response(#"{"success":true,"data":{"dual_fan_speed":"quietfan"}}"#)),
+            .urlError(.timedOut),
+            .response(response(#"{"success":true,"data":{"rc_power_config":true}}"#)),
+            .response(response(#"{"success":true,"data":{"dual_fan_speed":"coolfan"}}"#))
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwarePowerRecovery, DsmAPIName.coreHardwareFanSpeed], transport: transport)
+        let result = try await repository.saveHardwareSettingsResult(.init(restartsAfterPowerFailure: true,
+            ledBrightness: nil, ledBrightnessRange: nil, fanMode: "coolfan"))
+        XCTAssertEqual(result.status, .partialSuccess)
+        XCTAssertEqual(result.counts, try .init(succeeded: 1, failed: 1, unknown: 0))
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "set" }.count, 1)
+    }
+
+    func test硬件设置灯光两阶段丢回执不能凭暂存亮度确认() async throws {
+        for failsDuringUpdate in [false, true] {
+            var responses: [MockHTTPTransport.Step] = [
+                .response(response(#"{"success":true,"data":{"led_brightness":3}}"#)),
+                .response(response(#"{"success":true,"data":{"min":0,"max":7}}"#))
+            ]
+            if failsDuringUpdate { responses.append(.response(response(#"{"success":true}"#))) }
+            responses += [.urlError(.timedOut),
+                .response(response(#"{"success":true,"data":{"led_brightness":5}}"#)),
+                .response(response(#"{"success":true,"data":{"min":0,"max":7}}"#))]
+            let transport = MockHTTPTransport(steps: responses)
+            let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwareLEDBrightness], transport: transport)
+            let result = try await repository.saveHardwareSettingsResult(.init(restartsAfterPowerFailure: nil,
+                ledBrightness: 5, ledBrightnessRange: 0...7))
+            XCTAssertEqual(result.status, .submittedButUnverified)
+            XCTAssertEqual(result.counts, try .init(succeeded: 0, failed: 0, unknown: 1))
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "set_current_brightness" }.count, 1)
+            XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "update" }.count, failsDuringUpdate ? 1 : 0)
+        }
+    }
+
+    func test硬件设置灯光应用明确拒绝不能被暂存值覆盖() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"led_brightness":3}}"#),
+            response(#"{"success":true,"data":{"min":0,"max":7}}"#),
+            response(#"{"success":true}"#), response(#"{"success":false,"error":{"code":105}}"#),
+            response(#"{"success":true,"data":{"led_brightness":5}}"#),
+            response(#"{"success":true,"data":{"min":0,"max":7}}"#)
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwareLEDBrightness], transport: transport)
+        let result = try await repository.saveHardwareSettingsResult(.init(restartsAfterPowerFailure: nil,
+            ledBrightness: 5, ledBrightnessRange: 0...7))
+        XCTAssertEqual(result.status, .permissionDenied)
+        XCTAssertEqual(result.counts, try .init(succeeded: 0, failed: 1, unknown: 0))
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "update" }.count, 1)
+    }
+
     func test硬件设置预检拒绝越界亮度且不提交() async throws {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"led_brightness":3}}"#),

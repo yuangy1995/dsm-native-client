@@ -32,7 +32,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     var isTerminalSettingsUpdateActive = false
     var isProxySettingsUpdateActive = false
     var isSecuritySettingsUpdateActive = false
-    private var isHardwareSettingsUpdateActive = false
+    var isHardwareSettingsUpdateActive = false
     var isRemoteAccessSettingsUpdateActive = false
     private var isRegionSettingsUpdateActive = false
     private var activeDDNSProviderIDs: Set<String> = []
@@ -549,7 +549,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    func submitManagedServiceStep(_ step: NasServiceStep, settings: NasServiceSettings, version: Int) async throws {
+    func submitManagedServiceStep(_ step: NasServiceStep, settings: NasServiceSettings, current: NasServiceSettings, version: Int) async throws {
         switch settings {
         case .fileServices(let value):
             let part: FileServiceSettingsMutationStep
@@ -601,6 +601,23 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             default: throw unavailableError()
             }
             try await submitSecurityMutationStep(part, settings: value, current: value, version: version)
+        case .hardware(let value):
+            guard case .hardware(let original) = current else { throw unavailableError() }
+            if step == .ledUpdate {
+                try await callVoid(DsmAPIName.coreHardwareLEDBrightness, method: "update", version: version)
+            } else {
+                let part: HardwareSettingsMutationStep
+                switch step {
+                case .powerRecovery: part = .powerRecovery
+                case .ledBrightness: part = .ledBrightness
+                case .fanMode: part = .fanMode
+                case .beep: part = .beep
+                case .hibernation: part = .hibernation
+                case .ups: part = .ups
+                default: throw unavailableError()
+                }
+                try await submitHardwareMutationStep(part, settings: value, current: original, version: version, applyLED: false)
+            }
         }
     }
 
@@ -2323,82 +2340,119 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    public func loadHardwareSettings() async throws -> NasHardwareSettings {
+    public func loadHardwareSettings() async throws -> NasHardwareSettings { try await loadHardwareSettings(managed: false) }
+
+    func loadHardwareSettings(managed: Bool) async throws -> NasHardwareSettings {
+        func supports(_ api: String) -> Bool {
+            managed ? capabilitySupports(api, version: 1) : capabilities[api]?.selectedVersion != nil
+        }
+        func number(_ value: DsmDynamicJSON?, _ key: String, range: ClosedRange<Int>? = nil) throws -> Int? {
+            guard managed else { return value?.number([key]).map(Int.init) }
+            guard let field = value?[key], field != .null else { return nil }
+            let raw: Double?
+            switch field { case .number(let value): raw = value; case .string(let value): raw = Double(value); default: raw = nil }
+            guard let raw, let result = Int(exactly: raw), range?.contains(result) != false else {
+                throw verificationError(L10n.string("hardware.settings.failed"))
+            }
+            return result
+        }
+        func text(_ value: DsmDynamicJSON?, _ key: String) throws -> String? {
+            guard managed else { return value?.string([key]) }
+            guard let field = value?[key], field != .null else { return nil }
+            guard case .string(let string) = field else { throw verificationError(L10n.string("hardware.settings.failed")) }
+            return string.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func flag(_ value: DsmDynamicJSON?, _ key: String) throws -> Bool? {
+            try serviceBoolean(value, key, managed: managed)
+        }
+        func sound(_ value: DsmDynamicJSON?, _ key: String, support: String) throws -> Bool? {
+            let supported = try flag(value, support)
+            return supported == false ? nil : try flag(value, key)
+        }
         let hasPowerRecovery =
-            capabilities[DsmAPIName.coreHardwarePowerRecovery]?.selectedVersion != nil
+            supports(DsmAPIName.coreHardwarePowerRecovery)
         let hasLED =
-            capabilities[DsmAPIName.coreHardwareLEDBrightness]?.selectedVersion != nil
-        let hasFan = capabilities[DsmAPIName.coreHardwareFanSpeed]?.selectedVersion != nil
-        let hasBeep = capabilities[DsmAPIName.coreHardwareBeepControl]?.selectedVersion != nil
+            supports(DsmAPIName.coreHardwareLEDBrightness)
+        let hasFan = supports(DsmAPIName.coreHardwareFanSpeed)
+        let hasBeep = supports(DsmAPIName.coreHardwareBeepControl)
         let hasHibernation =
-            capabilities[DsmAPIName.coreHardwareHibernation]?.selectedVersion != nil
-        let hasUPS = capabilities[DsmAPIName.coreExternalDeviceUPS]?.selectedVersion != nil
+            supports(DsmAPIName.coreHardwareHibernation)
+        let hasUPS = supports(DsmAPIName.coreExternalDeviceUPS)
         guard hasPowerRecovery || hasLED || hasFan || hasBeep || hasHibernation || hasUPS else {
             throw unavailableError()
         }
 
         let power = hasPowerRecovery
-            ? try await call(DsmAPIName.coreHardwarePowerRecovery, method: "get")
+            ? try await call(DsmAPIName.coreHardwarePowerRecovery, method: "get", version: managed ? 1 : nil)
             : nil
         let led = hasLED
-            ? try await call(DsmAPIName.coreHardwareLEDBrightness, method: "get")
+            ? try await call(DsmAPIName.coreHardwareLEDBrightness, method: "get", version: managed ? 1 : nil)
             : nil
         let ledStatic = hasLED
             ? try await call(
                 DsmAPIName.coreHardwareLEDBrightness,
-                method: "get_static_data"
+                method: "get_static_data", version: managed ? 1 : nil
             )
             : nil
         let fan = hasFan
-            ? try await call(DsmAPIName.coreHardwareFanSpeed, method: "get")
+            ? try await call(DsmAPIName.coreHardwareFanSpeed, method: "get", version: managed ? 1 : nil)
             : nil
         let beep = hasBeep
-            ? try await call(DsmAPIName.coreHardwareBeepControl, method: "get")
+            ? try await call(DsmAPIName.coreHardwareBeepControl, method: "get", version: managed ? 1 : nil)
             : nil
         let hibernation = hasHibernation
-            ? try await call(DsmAPIName.coreHardwareHibernation, method: "get")
+            ? try await call(DsmAPIName.coreHardwareHibernation, method: "get", version: managed ? 1 : nil)
             : nil
         let ups = hasUPS
-            ? try await call(DsmAPIName.coreExternalDeviceUPS, method: "get")
+            ? try await call(DsmAPIName.coreExternalDeviceUPS, method: "get", version: managed ? 1 : nil)
             : nil
+        if managed {
+            guard [power, led, ledStatic, fan, beep, hibernation, ups].compactMap({ $0 }).allSatisfy({ $0.object != nil }) else {
+                throw verificationError(L10n.string("hardware.settings.failed"))
+            }
+            // 本次读取必须重新确定真实字段，不能沿用其他快照留下的字段名。
+            beepVolumeFieldName = nil
+        }
         if beep?["volume_or_cache_crash"] != nil {
             beepVolumeFieldName = "volume_or_cache_crash"
         } else if beep?["volume_crash"] != nil {
             beepVolumeFieldName = "volume_crash"
         }
-        let minimum = ledStatic?.number(["min"]).map(Int.init)
-        let maximum = ledStatic?.number(["max"]).map(Int.init)
+        let minimum = try number(ledStatic, "min")
+        let maximum = try number(ledStatic, "max")
         let range = minimum.flatMap { minValue in
             maximum.flatMap { maxValue in
                 minValue <= maxValue ? minValue...maxValue : nil
             }
         }
-        return NasHardwareSettings(
-            restartsAfterPowerFailure: power?.boolean(["rc_power_config"]),
-            ledBrightness: led?.number(["led_brightness"]).map(Int.init),
+        if managed, minimum != nil, maximum != nil, range == nil { throw verificationError(L10n.string("hardware.settings.failed")) }
+        let upsValue: NasUPSSettings?
+        if managed, let ups {
+            let enabled = try flag(ups, "enable"), mode = try text(ups, "mode")
+            let delay = try number(ups, "delay_time", range: 0...604_800)
+            let lowBattery = try flag(ups, "ups_set_safemode_until_lowbatt"), shutdown = try flag(ups, "shutdown_device")
+            let network = try text(ups, "net_server_ip"), snmp = try text(ups, "snmp_server_ip")
+            if let enabled, let mode, ["USB", "SNMP", "SLAVE"].contains(mode) {
+                upsValue = .init(isEnabled: enabled, mode: mode, safeModeDelaySeconds: delay, waitsUntilLowBattery: lowBattery,
+                    shutsDownUPSAfterSafeMode: shutdown, networkServerAddress: network, snmpServerAddress: snmp)
+            } else { upsValue = nil }
+        } else { upsValue = Self.upsSettings(from: ups) }
+        return try NasHardwareSettings(
+            restartsAfterPowerFailure: flag(power, "rc_power_config"),
+            ledBrightness: number(led, "led_brightness", range: range),
             ledBrightnessRange: range,
-            fanMode: fan?.string(["dual_fan_speed"]),
-            isFanFailureAlertEnabled: beep?.boolean(["support_fan_fail"]) == false
-                ? nil : beep?.boolean(["fan_fail"]),
-            isVolumeFailureAlertEnabled: beep?.boolean(["support_volume_crash"]) == false
-                ? nil : beep?.boolean([
-                "volume_or_cache_crash",
-                "volume_crash"
-            ]),
-            isPowerOnSoundEnabled: beep?.boolean(["support_poweron_beep"]) == false
-                ? nil : beep?.boolean(["poweron_beep"]),
-            isPowerOffSoundEnabled: beep?.boolean(["support_poweroff_beep"]) == false
-                ? nil : beep?.boolean(["poweroff_beep"]),
-            isResetSoundEnabled: beep?.boolean(["support_reset_beep"]) == false
-                ? nil : beep?.boolean(["reset_beep"]),
-            isExternalDriveDeepSleepEnabled: hibernation?.boolean(["eunit_deep_sleep"]),
-            isWakeUpLogEnabled: hibernation?.boolean(["enable_log"]),
-            isSATASleepEnabled: hibernation?.boolean(["sata_deep_sleep"]),
-            ignoresNetworkDiscoveryDuringSleep: hibernation?.boolean([
-                "ignore_netbios_broadcast"
-            ]),
-            isAutomaticPowerOffEnabled: hibernation?.boolean(["auto_poweroff_enable"]),
-            ups: Self.upsSettings(from: ups),
+            fanMode: text(fan, "dual_fan_speed"),
+            isFanFailureAlertEnabled: sound(beep, "fan_fail", support: "support_fan_fail"),
+            isVolumeFailureAlertEnabled: sound(beep, beepVolumeFieldName ?? "volume_crash", support: "support_volume_crash"),
+            isPowerOnSoundEnabled: sound(beep, "poweron_beep", support: "support_poweron_beep"),
+            isPowerOffSoundEnabled: sound(beep, "poweroff_beep", support: "support_poweroff_beep"),
+            isResetSoundEnabled: sound(beep, "reset_beep", support: "support_reset_beep"),
+            isExternalDriveDeepSleepEnabled: flag(hibernation, "eunit_deep_sleep"),
+            isWakeUpLogEnabled: flag(hibernation, "enable_log"),
+            isSATASleepEnabled: flag(hibernation, "sata_deep_sleep"),
+            ignoresNetworkDiscoveryDuringSleep: flag(hibernation, "ignore_netbios_broadcast"),
+            isAutomaticPowerOffEnabled: flag(hibernation, "auto_poweroff_enable"),
+            ups: upsValue,
             supportedFanModes: Self.supportedFanModes(from: fan)
         )
     }
@@ -2821,6 +2875,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 verified,
                 expected: settings,
                 steps: steps,
+                acceptedCount: acceptedCount,
                 operation: operation,
                 prefix: prefix
             )
@@ -2967,7 +3022,9 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private func submitHardwareMutationStep(
         _ step: HardwareSettingsMutationStep,
         settings: NasHardwareSettings,
-        current: NasHardwareSettings
+        current: NasHardwareSettings,
+        version: Int? = nil,
+        applyLED: Bool = true
     ) async throws {
         switch step {
         case .powerRecovery:
@@ -2977,6 +3034,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.coreHardwarePowerRecovery,
                 method: "set",
+                version: version,
                 parameters: ["rc_power_config": .boolean(value)]
             )
         case .ledBrightness:
@@ -2986,12 +3044,13 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.coreHardwareLEDBrightness,
                 method: "set_current_brightness",
+                version: version,
                 parameters: ["led_brightness": .integer(brightness)]
             )
-            try await callVoid(
-                DsmAPIName.coreHardwareLEDBrightness,
-                method: "update"
-            )
+            if applyLED {
+                try Task.checkCancellation()
+                try await callVoid(DsmAPIName.coreHardwareLEDBrightness, method: "update", version: version)
+            }
         case .fanMode:
             guard let fanMode = settings.fanMode else {
                 throw verificationError(L10n.string("shared.9e2bef35ff2e4491"))
@@ -2999,24 +3058,28 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.coreHardwareFanSpeed,
                 method: "set",
+                version: version,
                 parameters: ["dual_fan_speed": .string(fanMode)]
             )
         case .beep:
             try await callVoid(
                 DsmAPIName.coreHardwareBeepControl,
                 method: "set",
+                version: version,
                 parameters: hardwareBeepParameters(settings, current: current)
             )
         case .hibernation:
             try await callVoid(
                 DsmAPIName.coreHardwareHibernation,
                 method: "set",
+                version: version,
                 parameters: hardwareHibernationParameters(settings, current: current)
             )
         case .ups:
             try await callVoid(
                 DsmAPIName.coreExternalDeviceUPS,
                 method: "set",
+                version: version,
                 parameters: try hardwareUPSParameters(settings, current: current)
             )
         }
@@ -3173,6 +3236,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 verified,
                 expected: settings,
                 steps: steps,
+                acceptedCount: acceptedCount,
                 operation: operation,
                 prefix: prefix,
                 failureCategory: submissionError.category,
@@ -3224,6 +3288,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 verified,
                 expected: settings,
                 steps: steps,
+                acceptedCount: acceptedCount,
                 operation: operation,
                 prefix: prefix,
                 failureCategory: .unknown,
@@ -3250,13 +3315,17 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         _ actual: NasHardwareSettings,
         expected: NasHardwareSettings,
         steps: [HardwareSettingsMutationStep],
+        acceptedCount: Int,
         operation: String,
         prefix: String,
         failureCategory: AppErrorCategory? = nil,
         uncertainCount: Int = 0
     ) throws -> MutationResult {
-        let succeeded = steps.filter {
-            Self.hardwareMutationStep($0, matches: actual, expected: expected)
+        let succeeded = steps.enumerated().filter { index, step in
+            // 拒绝或未执行的组不能被外部变化认领。灯光必须完成设置与应用两次回执，
+            // get 返回的暂存亮度不能证明第二次 update 已执行。
+            (index < acceptedCount || (index < uncertainCount && step != .ledBrightness))
+                && Self.hardwareMutationStep(step, matches: actual, expected: expected)
         }.count
         let remaining = steps.count - succeeded
         if succeeded == steps.count {

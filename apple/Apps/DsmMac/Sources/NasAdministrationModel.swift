@@ -1768,8 +1768,7 @@ final class NasSettingsModel {
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.hardware, force: true)
         }
-        if hardware == settings
-            || result.status == .confirmedSuccess
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }

@@ -1,15 +1,17 @@
 import Foundation
 
-public enum NasServiceKind: String, CaseIterable, Codable, Sendable { case fileServices, terminal, proxy, remoteAccess, zram, powerSchedule, ethernet, security }
+public enum NasServiceKind: String, CaseIterable, Codable, Sendable { case fileServices, terminal, proxy, remoteAccess, zram, powerSchedule, ethernet, security, hardware }
 
 /// 与实际写请求一一对应；同组字段不能拆成多个请求。
 public enum NasServiceStep: String, CaseIterable, Codable, Sendable {
     case smb, nfs, ftp, sftp, webDiscovery, fileDiscovery, terminal, proxy, relay, routerConfiguration, zram, rebootRequired, powerSchedule, ethernet
     case autoBlock, denialOfService, firewallNotifications, firewall
+    case powerRecovery, ledBrightness, ledUpdate, fanMode, beep, hibernation, ups
     public var kind: NasServiceKind {
         switch self { case .terminal: .terminal; case .proxy: .proxy; case .relay, .routerConfiguration: .remoteAccess
         case .zram, .rebootRequired: .zram; case .powerSchedule: .powerSchedule; case .ethernet: .ethernet
-        case .autoBlock, .denialOfService, .firewallNotifications, .firewall: .security; default: .fileServices }
+        case .autoBlock, .denialOfService, .firewallNotifications, .firewall: .security
+        case .powerRecovery, .ledBrightness, .ledUpdate, .fanMode, .beep, .hibernation, .ups: .hardware; default: .fileServices }
     }
 }
 
@@ -23,9 +25,10 @@ public enum NasServiceSettings: Equatable, Sendable {
     case zram(NasZRAMSnapshot, needsReboot: Bool?), powerSchedule(NasPowerScheduleSnapshot)
     case ethernet([NasEthernetInterface])
     case security(NasSecuritySettings)
+    case hardware(NasHardwareSettings)
     public var kind: NasServiceKind {
         switch self { case .fileServices: .fileServices; case .terminal: .terminal; case .proxy: .proxy; case .remoteAccess: .remoteAccess
-        case .zram: .zram; case .powerSchedule: .powerSchedule; case .ethernet: .ethernet; case .security: .security }
+        case .zram: .zram; case .powerSchedule: .powerSchedule; case .ethernet: .ethernet; case .security: .security; case .hardware: .hardware }
     }
     public var isEmpty: Bool {
         switch self {
@@ -40,6 +43,13 @@ public enum NasServiceSettings: Equatable, Sendable {
         case .zram(let value, let needsReboot): return value.isEnabled != nil && needsReboot != nil
         case .powerSchedule(let value): return value.canEdit
         case .ethernet(let values): return !values.isEmpty && Set(values.map(\.id)).count == values.count && values.allSatisfy(\.isValidForSaving)
+        case .hardware(let value):
+            return steps.contains { step in
+                if step == .ledUpdate { return false }
+                if step == .ledBrightness { return value.ledBrightness != nil && value.ledBrightnessRange != nil }
+                if step == .fanMode { return value.fanMode != nil && value.supportedFanModes?.isEmpty == false }
+                return fields(for: step).contains { $0 != nil }
+            }
         default: return !isEmpty
         }
     }
@@ -67,6 +77,20 @@ public enum NasServiceSettings: Equatable, Sendable {
         case (.security(let value), .denialOfService): return value.dosProtection.sorted { $0.id < $1.id }.flatMap { [$0.id, String($0.isEnabled)] }
         case (.security(let value), .firewallNotifications): return [value.isPortScanProtectionEnabled.map(String.init)]
         case (.security(let value), .firewall): return [value.isFirewallEnabled.map(String.init), value.firewallProfileName]
+        case (.hardware(let value), .powerRecovery): return [value.restartsAfterPowerFailure.map(String.init)]
+        case (.hardware(let value), .ledBrightness), (.hardware(let value), .ledUpdate): return [value.ledBrightness.map(String.init)]
+        case (.hardware(let value), .fanMode): return [value.fanMode]
+        case (.hardware(let value), .beep):
+            return [value.isFanFailureAlertEnabled, value.isVolumeFailureAlertEnabled, value.isPowerOnSoundEnabled,
+                    value.isPowerOffSoundEnabled, value.isResetSoundEnabled].map { $0.map(String.init) }
+        case (.hardware(let value), .hibernation):
+            return [value.isExternalDriveDeepSleepEnabled, value.isWakeUpLogEnabled, value.isSATASleepEnabled,
+                    value.ignoresNetworkDiscoveryDuringSleep, value.isAutomaticPowerOffEnabled].map { $0.map(String.init) }
+        case (.hardware(let value), .ups):
+            return [value.ups.map { String($0.isEnabled) }, value.ups?.mode, value.ups?.safeModeDelaySeconds.map(String.init),
+                    value.ups?.waitsUntilLowBattery.map(String.init), value.ups?.shutsDownUPSAfterSafeMode.map(String.init),
+                    value.ups?.networkServerAddress?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    value.ups?.snmpServerAddress?.trimmingCharacters(in: .whitespacesAndNewlines)]
         case (.proxy(let value), .proxy):
             if verifying && !value.isEnabled { return [String(false)] }
             return [String(value.isEnabled), value.normalizedHost, value.port.map(String.init)]
@@ -107,6 +131,23 @@ public enum NasServiceSettings: Equatable, Sendable {
             return .security(value)
         case (.proxy(let previous), .proxy(let next)) where step == .proxy:
             return .proxy(.init(isEnabled: next.isEnabled, host: next.isEnabled ? next.normalizedHost : previous.host, port: next.isEnabled ? next.port : previous.port))
+        case (.hardware(var value), .hardware(let next)):
+            switch step {
+            case .powerRecovery: value.restartsAfterPowerFailure = next.restartsAfterPowerFailure
+            case .ledBrightness: value.ledBrightness = next.ledBrightness
+            case .fanMode: value.fanMode = next.fanMode
+            case .beep:
+                value.isFanFailureAlertEnabled = next.isFanFailureAlertEnabled; value.isVolumeFailureAlertEnabled = next.isVolumeFailureAlertEnabled
+                value.isPowerOnSoundEnabled = next.isPowerOnSoundEnabled; value.isPowerOffSoundEnabled = next.isPowerOffSoundEnabled
+                value.isResetSoundEnabled = next.isResetSoundEnabled
+            case .hibernation:
+                value.isExternalDriveDeepSleepEnabled = next.isExternalDriveDeepSleepEnabled; value.isWakeUpLogEnabled = next.isWakeUpLogEnabled
+                value.isSATASleepEnabled = next.isSATASleepEnabled; value.ignoresNetworkDiscoveryDuringSleep = next.ignoresNetworkDiscoveryDuringSleep
+                value.isAutomaticPowerOffEnabled = next.isAutomaticPowerOffEnabled
+            case .ups: value.ups = next.ups
+            default: break
+            }
+            return .hardware(value)
         default: return self
         }
     }
@@ -125,6 +166,10 @@ public enum NasServiceSettings: Equatable, Sendable {
         case .zram: return supportsEditing
         case .powerSchedule(let value): return value.canEdit && NasPowerScheduleSnapshot.replacementIsValid(value.entries)
         case .ethernet: return supportsEditing
+        case .hardware(let value):
+            return (value.ledBrightness.map { value.ledBrightnessRange?.contains($0) ?? true } ?? true)
+                && (value.ups?.safeModeDelaySeconds.map { (0...604_800).contains($0) } ?? true)
+                && (value.ups.map { ["USB", "SNMP", "SLAVE"].contains($0.mode) } ?? true)
         case .security(let value):
             return (1...9999).contains(value.failedAttempts) && (1...9999999).contains(value.withinMinutes)
                 && (value.expirationDays.map { (1...999).contains($0) } ?? true)
@@ -142,6 +187,9 @@ public enum NasServiceSettings: Equatable, Sendable {
             return supportsEditing && other.supportsEditing && value.isEnabled == next.isEnabled
         case (.ethernet, .ethernet): return supportsEditing && other.supportsEditing && fields(for: .ethernet) == other.fields(for: .ethernet)
         case (.security, .security): return isValid && other.isValid && steps.allSatisfy { fields(for: $0) == other.fields(for: $0) }
+        case (.hardware(let value), .hardware(let next)):
+            return value.ledBrightnessRange == next.ledBrightnessRange && value.supportedFanModes == next.supportedFanModes
+                && steps.allSatisfy { fields(for: $0) == other.fields(for: $0) }
         default: return self == other
         }
     }
@@ -150,7 +198,11 @@ public enum NasServiceSettings: Equatable, Sendable {
 public struct NasServiceChange: Equatable, Sendable {
     public let original: NasServiceSettings
     public let desired: NasServiceSettings
-    public init(original: NasServiceSettings, desired: NasServiceSettings) { self.original = original; self.desired = desired }
+    /// 仅继续已保存亮度的应用步骤；调用端须绑定之前明确完成的亮度记录。
+    public let appliesSavedLEDBrightness: Bool
+    public init(original: NasServiceSettings, desired: NasServiceSettings, appliesSavedLEDBrightness: Bool = false) {
+        self.original = original; self.desired = desired; self.appliesSavedLEDBrightness = appliesSavedLEDBrightness
+    }
     public var kind: NasServiceKind { original.kind }
     /// 一个保存动作只能改变一张已有网卡，不能新增、移除或顺带保存其他网卡。
     public var ethernetTarget: NasEthernetInterface? {
@@ -162,6 +214,7 @@ public struct NasServiceChange: Equatable, Sendable {
     }
     public var changedSteps: [NasServiceStep] {
         guard kind == desired.kind else { return [] }
+        if appliesSavedLEDBrightness { return kind == .hardware ? [.ledUpdate] : [] }
         if case .zram(let before, _) = original, case .zram(let after, _) = desired, before.isEnabled != after.isEnabled {
             // 与官方保存一致，即使之前已有重启要求，也为这次压缩更改执行两个边界。
             return [.zram, .rebootRequired]
@@ -176,6 +229,20 @@ public struct NasServiceChange: Equatable, Sendable {
     /// 顺序必须使每个中间状态满足已有依赖；不能暗中增加开关操作。
     public var orderedSteps: [NasServiceStep]? {
         guard kind == desired.kind, original.supportsEditing, desired.isValid, !changedSteps.isEmpty else { return nil }
+        if case .hardware(let before) = original, case .hardware(let after) = desired {
+            guard before.ledBrightnessRange == after.ledBrightnessRange, before.supportedFanModes == after.supportedFanModes else { return nil }
+            if changedSteps.contains(.ledBrightness) || changedSteps.contains(.ledUpdate) {
+                guard let brightness = after.ledBrightness, before.ledBrightnessRange?.contains(brightness) == true else { return nil }
+            }
+            if appliesSavedLEDBrightness, !original.hasSameConfiguration(as: desired) { return nil }
+            if changedSteps.contains(.fanMode) {
+                guard let mode = after.fanMode, before.supportedFanModes?.contains(mode) == true else { return nil }
+            }
+            if changedSteps.contains(.ups), let ups = after.ups, ups.isEnabled {
+                if ups.mode == "SLAVE", ups.networkServerAddress?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false { return nil }
+                if ups.mode == "SNMP", ups.snmpServerAddress?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false { return nil }
+            }
+        } else if appliesSavedLEDBrightness { return nil }
         if kind == .ethernet, ethernetTarget == nil { return nil }
         if case .security(let before) = original, case .security(let after) = desired {
             guard before.firewallProfileName == after.firewallProfileName,
@@ -208,7 +275,7 @@ public struct NasServiceChange: Equatable, Sendable {
     }
     public func hasPartialResult(_ settings: NasServiceSettings, step: NasServiceStep) -> Bool {
         guard settings.kind == kind else { return false }
-        if kind == .zram { return false }
+        if kind == .zram || step == .ledBrightness || step == .ledUpdate { return false }
         if kind == .ethernet, let target = ethernetTarget,
            case .ethernet(let before) = original, case .ethernet(let actual) = settings,
            let previous = before.first(where: { $0.id == target.id }), let current = actual.first(where: { $0.id == target.id }) {

@@ -4,6 +4,163 @@ import XCTest
 @testable import DsmNetwork
 
 final class NasServiceFlowTests: XCTestCase {
+    func test硬件管理六组使用v1和七个独立写边界() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let original = try await repository.loadServiceForManagement(.hardware)
+        guard case .hardware(var value) = original else { return XCTFail() }
+        value.restartsAfterPowerFailure = true; value.ledBrightness = 5; value.fanMode = "coolfan"
+        value.isVolumeFailureAlertEnabled = false; value.isWakeUpLogEnabled = true
+        value.ups?.isEnabled = true; value.ups?.mode = "SLAVE"; value.ups?.networkServerAddress = "192.0.2.20"
+        let result = try await repository.changeServiceResult(.init(original: original, desired: .hardware(value))) { await log.append($0) }
+        XCTAssertEqual(result.status, .confirmedSuccess); XCTAssertEqual(result.counts.succeeded, 7)
+        let writes = await transport.writes, calls = await transport.calls, checkpoints = await log.values
+        XCTAssertEqual(writes.map { $0["api"] }, [DsmAPIName.coreHardwarePowerRecovery, DsmAPIName.coreHardwareLEDBrightness,
+            DsmAPIName.coreHardwareLEDBrightness, DsmAPIName.coreHardwareFanSpeed, DsmAPIName.coreHardwareBeepControl,
+            DsmAPIName.coreHardwareHibernation, DsmAPIName.coreExternalDeviceUPS])
+        XCTAssertEqual(writes.map { $0["method"] }, ["set", "set_current_brightness", "update", "set", "set", "set", "set"])
+        XCTAssertTrue(calls.allSatisfy { $0["version"] == "1" }); XCTAssertEqual(checkpoints.count, 21)
+        XCTAssertEqual(writes[4]["volume_or_cache_crash"], "false"); XCTAssertNil(writes[4]["volume_crash"]); XCTAssertNil(writes[4]["fan_fail"])
+        XCTAssertEqual(writes[5]["enable_log"], "true"); XCTAssertNil(writes[5]["auto_poweroff_enable"])
+        XCTAssertEqual(writes[6]["net_server_ip"], "192.0.2.20"); XCTAssertEqual(writes[6]["snmp_server_ip"], "")
+    }
+
+    func test硬件管理严格类型整数和范围错误不能作为可写快照() async throws {
+        let cases: [(String, String, any Sendable)] = [
+            (DsmAPIName.coreHardwarePowerRecovery, "rc_power_config", "perhaps"),
+            (DsmAPIName.coreHardwareLEDBrightness, "led_brightness", 3.5),
+            (DsmAPIName.coreHardwareLEDBrightness, "max", 1),
+            (DsmAPIName.coreHardwareBeepControl, "support_reset_beep", "unknown"),
+            (DsmAPIName.coreHardwareHibernation, "enable_log", 2),
+            (DsmAPIName.coreExternalDeviceUPS, "delay_time", 604801),
+            (DsmAPIName.coreExternalDeviceUPS, "delay_time", 1.25),
+            (DsmAPIName.coreExternalDeviceUPS, "net_server_ip", false)]
+        for (api, key, value) in cases {
+            let transport = ServiceFlowTransport(), repository = try repository(transport)
+            await transport.set(api, key: key, value: value)
+            do { _ = try await repository.loadServiceForManagement(.hardware); XCTFail("畸形字段：\(key)") } catch { XCTAssertTrue(error is AppError) }
+            let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+        }
+    }
+
+    func test硬件管理只使用实际支持档位和原有可选字段() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport)
+        await transport.set(DsmAPIName.coreHardwareBeepControl, key: "support_reset_beep", value: false)
+        await transport.remove(DsmAPIName.coreExternalDeviceUPS, key: "net_server_ip")
+        let original = try await repository.loadServiceForManagement(.hardware)
+        guard case .hardware(let value) = original else { return XCTFail() }
+        XCTAssertNil(value.isResetSoundEnabled); XCTAssertNil(value.ups?.networkServerAddress); XCTAssertEqual(value.ups?.snmpServerAddress, "")
+        var badFan = value; badFan.fanMode = "quietstopfan"
+        var missingSound = value; missingSound.isResetSoundEnabled = true
+        var missingAddress = value; missingAddress.ups?.networkServerAddress = "192.0.2.20"
+        var missingDelay = value; missingDelay.ups?.safeModeDelaySeconds = nil
+        for next in [badFan, missingSound, missingAddress, missingDelay] {
+            let change = NasServiceChange(original: original, desired: .hardware(next))
+            XCTAssertNil(change.orderedSteps)
+            let result = try await repository.changeServiceResult(change) { _ in XCTFail() }
+            XCTAssertFalse(result.submitted)
+        }
+        let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+    }
+
+    func test硬件管理缺亮度范围与风扇范围时仍可编辑其他可信设置() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport)
+        await transport.remove(DsmAPIName.coreHardwareLEDBrightness, key: "min")
+        await transport.remove(DsmAPIName.coreHardwareFanSpeed, key: "cool_fan")
+        let original = try await repository.loadServiceForManagement(.hardware)
+        guard case .hardware(let value) = original else { return XCTFail() }
+        XCTAssertTrue(original.supportsEditing)
+        var led = value; led.ledBrightness = 5
+        var fan = value; fan.fanMode = "coolfan"
+        XCTAssertNil(NasServiceChange(original: original, desired: .hardware(led)).orderedSteps)
+        XCTAssertNil(NasServiceChange(original: original, desired: .hardware(fan)).orderedSteps)
+        let result = try await repository.changeServiceResult(change(original)) { _ in }
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let writes = await transport.writes; XCTAssertEqual(writes.map { $0["api"] }, [DsmAPIName.coreHardwarePowerRecovery])
+    }
+
+    func test硬件管理UPS可信空地址可编辑但启用网络模式必须有地址() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport)
+        let original = try await repository.loadServiceForManagement(.hardware)
+        guard case .hardware(var value) = original else { return XCTFail() }
+        XCTAssertEqual(value.ups?.networkServerAddress, "")
+        value.ups?.isEnabled = true; value.ups?.mode = "SLAVE"
+        XCTAssertNil(NasServiceChange(original: original, desired: .hardware(value)).orderedSteps)
+        value.ups?.networkServerAddress = " 192.0.2.20 "
+        let result = try await repository.changeServiceResult(.init(original: original, desired: .hardware(value))) { _ in }
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes[0]["net_server_ip"], "192.0.2.20")
+    }
+
+    func test硬件管理蜂鸣使用当前真实字段且能力没有v1时零写() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport)
+        await transport.remove(DsmAPIName.coreHardwareBeepControl, key: "volume_or_cache_crash")
+        await transport.set(DsmAPIName.coreHardwareBeepControl, key: "volume_crash", value: true)
+        let original = try await repository.loadServiceForManagement(.hardware)
+        guard case .hardware(var value) = original else { return XCTFail() }; value.isVolumeFailureAlertEnabled = false
+        let change = NasServiceChange(original: original, desired: .hardware(value))
+        let noVersion = try self.repository(transport, minimum: [DsmAPIName.coreHardwareBeepControl: 2])
+        let refused = try await noVersion.changeServiceResult(change) { _ in XCTFail() }
+        XCTAssertEqual(refused.status, .unsupported); XCTAssertFalse(refused.submitted)
+        let result = try await repository.changeServiceResult(change) { _ in }; XCTAssertEqual(result.status, .confirmedSuccess)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes[0]["volume_crash"], "false"); XCTAssertNil(writes[0]["volume_or_cache_crash"])
+    }
+
+    func test硬件管理LED首步丢回执不调用应用且不能凭亮度认领() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let change = try await ledChange(repository); await transport.setMode("lost-ack")
+        let result = try await repository.changeServiceResult(change) { await log.append($0) }
+        XCTAssertEqual(result.status, .submittedButUnverified); XCTAssertEqual(result.counts.unknown, 1)
+        let stages = await log.values, writes = await transport.writes
+        XCTAssertEqual(stages, [.willSubmit(.ledBrightness)]); XCTAssertEqual(writes.map { $0["method"] }, ["set_current_brightness"])
+    }
+
+    func test硬件管理LED第二步丢回执保留第一步且不误报全部成功() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let change = try await ledChange(repository); await transport.setMode("led-update-lost-ack")
+        let result = try await repository.changeServiceResult(change) { await log.append($0) }
+        XCTAssertEqual(result.status, .partialSuccess); XCTAssertEqual(result.counts, try .init(succeeded: 1, failed: 0, unknown: 1))
+        let stages = await log.values, writes = await transport.writes
+        XCTAssertEqual(stages, [.willSubmit(.ledBrightness), .accepted(.ledBrightness), .verified(.ledBrightness), .willSubmit(.ledUpdate)])
+        XCTAssertEqual(writes.map { $0["method"] }, ["set_current_brightness", "update"])
+    }
+
+    func test硬件管理LED应用被拒绝后显式继续只应用不重写亮度() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport)
+        let change = try await ledChange(repository); await transport.setMode("led-update-denied")
+        let result = try await repository.changeServiceResult(change) { _ in }
+        XCTAssertEqual(result.status, .partialSuccess); XCTAssertEqual(result.errorCategory, .permission)
+        await transport.setMode("normal")
+        let original = try await repository.loadServiceForManagement(.hardware)
+        let continued = try await repository.changeServiceResult(.init(original: original, desired: original, appliesSavedLEDBrightness: true)) { _ in }
+        XCTAssertEqual(continued.status, .confirmedSuccess)
+        let writes = await transport.writes; XCTAssertEqual(writes.map { $0["method"] }, ["set_current_brightness", "update", "update"])
+    }
+
+    func test硬件管理LED应用前撤权或回执无法保存时不继续写入() async throws {
+        for stop: NasServiceCheckpoint in [.accepted(.ledBrightness), .willSubmit(.ledUpdate)] {
+            let transport = ServiceFlowTransport(), repository = try repository(transport), change = try await ledChange(repository)
+            do {
+                _ = try await repository.changeServiceResult(change) { if $0 == stop { throw ServiceJournalFailure.failed } }; XCTFail()
+            } catch { XCTAssertTrue(error is ServiceJournalFailure) }
+            let writes = await transport.writes; XCTAssertEqual(writes.map { $0["method"] }, ["set_current_brightness"])
+        }
+    }
+
+    func test硬件管理LED应用前范围变化必须停止() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), change = try await ledChange(repository)
+        let result = try await repository.changeServiceResult(change) {
+            if $0 == .verified(.ledBrightness) { await transport.set(DsmAPIName.coreHardwareLEDBrightness, key: "max", value: 6) }
+        }
+        XCTAssertEqual(result.status, .partialSuccess); XCTAssertEqual(result.errorCategory, .conflict)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
+    }
+
+    private func ledChange(_ repository: DsmNasAdministrationRepository) async throws -> NasServiceChange {
+        let original = try await repository.loadServiceForManagement(.hardware)
+        guard case .hardware(var value) = original else { throw ServiceJournalFailure.failed }
+        value.ledBrightness = 5; return .init(original: original, desired: .hardware(value))
+    }
+
     func test压缩保存两个边界分别确认且不包含重启请求() async throws {
         let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
         let original = try await repository.loadServiceForManagement(.zram)
@@ -684,6 +841,7 @@ final class NasServiceFlowTests: XCTestCase {
         case .terminal(var value): value.isSSHEnabled.toggle(); desired = .terminal(value)
         case .ethernet(var values): values[0].mtu = 1400; desired = .ethernet(values)
         case .security(var value): value.isAutoBlockEnabled.toggle(); desired = .security(value)
+        case .hardware(var value): value.restartsAfterPowerFailure?.toggle(); desired = .hardware(value)
         case .proxy(var value): value.isEnabled.toggle(); desired = .proxy(value)
         case .remoteAccess(var value): value.isRelayEnabled?.toggle(); desired = .remoteAccess(value)
         case .zram(let value, _): desired = .zram(.init(isEnabled: value.isEnabled.map { !$0 }, configuredBytes: value.configuredBytes, algorithm: value.algorithm), needsReboot: true)
@@ -706,13 +864,21 @@ private actor ServiceFlowTransport: DsmHTTPTransport {
     static let apis = [DsmAPIName.coreFileServiceSMB, DsmAPIName.coreFileServiceNFS, DsmAPIName.coreFileServiceFTP,
         DsmAPIName.coreFileServiceSFTP, DsmAPIName.coreWebDSM, DsmAPIName.coreFileServiceDiscovery, DsmAPIName.coreTerminal, DsmAPIName.coreNetworkProxy, DsmAPIName.coreQuickConnect, DsmAPIName.coreQuickConnectUPnP,
         DsmAPIName.coreHardwareZRAM, DsmAPIName.coreHardwareNeedReboot, DsmAPIName.coreHardwarePowerSchedule, DsmAPIName.coreNetworkEthernet,
-        DsmAPIName.coreSecurityAutoBlock, DsmAPIName.coreSecurityDoS, DsmAPIName.coreSecurityFirewall, DsmAPIName.coreSecurityFirewallConf, DsmAPIName.coreSecurityFirewallProfileApply]
+        DsmAPIName.coreSecurityAutoBlock, DsmAPIName.coreSecurityDoS, DsmAPIName.coreSecurityFirewall, DsmAPIName.coreSecurityFirewallConf, DsmAPIName.coreSecurityFirewallProfileApply,
+        DsmAPIName.coreHardwarePowerRecovery, DsmAPIName.coreHardwareLEDBrightness, DsmAPIName.coreHardwareFanSpeed,
+        DsmAPIName.coreHardwareBeepControl, DsmAPIName.coreHardwareHibernation, DsmAPIName.coreExternalDeviceUPS]
     private(set) var calls: [[String: String]] = []
-    var writes: [[String: String]] { calls.filter { ["set", "set_misc_config", "save", "start", "stop"].contains($0["method"] ?? "") } }
+    var writes: [[String: String]] { calls.filter { ["set", "set_misc_config", "save", "start", "stop", "set_current_brightness", "update"].contains($0["method"] ?? "") } }
     private var mode = "normal"
     private var readFailure: AppErrorCategory?
     func setReadFailure(_ value: AppErrorCategory) { readFailure = value }
     private var payloads: [String: [String: Any]] = [
+        DsmAPIName.coreHardwarePowerRecovery: ["rc_power_config": false],
+        DsmAPIName.coreHardwareLEDBrightness: ["led_brightness": 3, "min": 0, "max": 7],
+        DsmAPIName.coreHardwareFanSpeed: ["dual_fan_speed": "quietfan", "cool_fan": "yes", "fan_type": 11],
+        DsmAPIName.coreHardwareBeepControl: ["fan_fail": true, "volume_or_cache_crash": true, "poweron_beep": false, "poweroff_beep": false, "reset_beep": true],
+        DsmAPIName.coreHardwareHibernation: ["eunit_deep_sleep": false, "enable_log": false, "sata_deep_sleep": false, "ignore_netbios_broadcast": false, "auto_poweroff_enable": false],
+        DsmAPIName.coreExternalDeviceUPS: ["enable": false, "mode": "USB", "delay_time": 120, "ups_set_safemode_until_lowbatt": false, "shutdown_device": false, "net_server_ip": "", "snmp_server_ip": ""],
         DsmAPIName.coreSecurityAutoBlock: ["enable": false, "attempts": 5, "within_mins": 10, "expire_day": 0],
         DsmAPIName.coreSecurityFirewall: ["enable_firewall": false, "profile_name": "synthetic-profile"],
         DsmAPIName.coreSecurityFirewallConf: ["enable_port_check": false],
@@ -729,6 +895,7 @@ private actor ServiceFlowTransport: DsmHTTPTransport {
         DsmAPIName.coreHardwarePowerSchedule: ["poweron_tasks": [], "poweroff_tasks": [], "timezone": "Asia/Shanghai"]]
     func setMode(_ value: String) { mode = value }
     func set(_ api: String, key: String, value: any Sendable) { payloads[api]?[key] = value }
+    func remove(_ api: String, key: String) { payloads[api]?.removeValue(forKey: key) }
     func removeOptionalFields() { payloads[DsmAPIName.coreTerminal]?.removeValue(forKey: "ssh_port"); payloads[DsmAPIName.coreFileServiceFTP]?.removeValue(forKey: "enable_ftps") }
     func changeUneditedField(_ kind: NasServiceKind) {
         switch kind { case .fileServices: payloads[DsmAPIName.coreFileServiceNFS]?["enable_nfs"] = true
@@ -738,6 +905,7 @@ private actor ServiceFlowTransport: DsmHTTPTransport {
         case .zram: payloads[DsmAPIName.coreHardwareZRAM]?["enable_zram"] = true
         case .powerSchedule: payloads[DsmAPIName.coreHardwarePowerSchedule]?["timezone"] = "Europe/London"
         case .security: payloads[DsmAPIName.coreSecurityAutoBlock]?["attempts"] = 8
+        case .hardware: payloads[DsmAPIName.coreHardwareLEDBrightness]?["led_brightness"] = 4
         case .ethernet: payloads[DsmAPIName.coreNetworkEthernet]?["enable_vlan"] = true; payloads[DsmAPIName.coreNetworkEthernet]?["vlan_id"] = 10 }
     }
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
@@ -762,7 +930,7 @@ private actor ServiceFlowTransport: DsmHTTPTransport {
             default: break
             }
         }
-        if ["list", "get", "get_misc_config", "load"].contains(fields["method"] ?? "") {
+        if ["list", "get", "get_misc_config", "load", "get_static_data"].contains(fields["method"] ?? "") {
             if let readFailure {
                 if readFailure == .authenticationRequired { return .init(data: Data(#"{"success":false,"error":{"code":106}}"#.utf8), statusCode: 200) }
                 if readFailure == .tlsUntrusted { throw URLError(.serverCertificateUntrusted) }
@@ -773,7 +941,7 @@ private actor ServiceFlowTransport: DsmHTTPTransport {
             if api == DsmAPIName.coreNetworkEthernet && fields["method"] == "list" { return response(["interfaces": [["ifname": "eth0"]]]) }
             return response(payloads[api] ?? [:])
         }
-        if mode == "denied" || mode == "second-denied" && writes.count == 2 { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
+        if mode == "denied" || mode == "second-denied" && writes.count == 2 || mode == "led-update-denied" && fields["method"] == "update" { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
         if api == DsmAPIName.coreNetworkEthernet, let data = fields["configs"], let values = try JSONSerialization.jsonObject(with: Data(data.utf8)) as? [[String: Any]], let value = values.first { payloads[api] = value }
         if api == DsmAPIName.coreSecurityDoS, let data = fields["configs"] { payloads[api]?["configs"] = try JSONSerialization.jsonObject(with: Data(data.utf8)) }
         if api == DsmAPIName.coreSecurityFirewall, fields["set_type"] == "disable" { payloads[api]?["enable_firewall"] = false }
@@ -789,6 +957,7 @@ private actor ServiceFlowTransport: DsmHTTPTransport {
         if mode == "power-timezone-changed-after-save" && api == DsmAPIName.coreHardwarePowerSchedule { payloads[api]?["timezone"] = "Europe/London" }
         if mode == "revert-first" && writes.count == 2 { payloads[DsmAPIName.coreFileServiceSMB]?["enable_samba"] = false }
         if mode == "lost-ack" || mode == "offline" { throw URLError(.networkConnectionLost) }
+        if mode == "led-update-lost-ack" && fields["method"] == "update" { throw URLError(.networkConnectionLost) }
         return response([:])
     }
     private func response(_ payload: [String: Any]) -> DsmHTTPResponse { .init(data: try! JSONSerialization.data(withJSONObject: ["success": true, "data": payload]), statusCode: 200) }
