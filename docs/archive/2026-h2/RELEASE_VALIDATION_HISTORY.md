@@ -2794,3 +2794,43 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 R1 编译失败、R2–R5 四次构建通过；首轮 iPhone 中文大字唯一失败不改写成通过。最新共享完整 2877 XCTest/172 跳过/0 失败与 12 Swift Testing，Mac 最终 Release 构建通过，主 App/扩展由 lipo 实核 x86_64/arm64。XcodeGen 2.46.0 再生成前后工程 SHA256 同为 `51b9bf600474760a65d0445c0b55438263f1bd5831e19b2716c3cbd92d4a1449`；两台模拟器均恢复浅色并查询确认。最终本地化 6640/2188/3402、请求 179+1、脱敏 fixture 29/引用 48、文档和差异检查通过。
 
 收尾时，前一批云端 iPhone 模块组已返回 **164 项中 160 通过、4 失败**，均位于 DownloadInventory、NasStorage 两项和 ScheduledTasks 的模块导航步骤；iPad 模块组仍在运行。失败日志已读，正在提取原始合成结果包的界面证据，不提前归因为产品或测试，不把 M6e3 本机通过当作旧云端已绿。此前 Office 唯一工作区失败已有独立本机修复证据。本片只完成安装切片，M6e2、网卡/安全/硬件与 M7/M8 仍不算完成。
+
+
+## 2026-10-06 Apple 模块组的导航准备、聊天合成列表与表单定位修正
+
+起始基线 `1d7deb14`，main 工作区干净、领先远端四个已完成提交；没有其他人的未提交改动。[前一批 Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37386239845) 已完整结束：共享/macOS、iPad 工作区通过；iPhone 工作区 160 项中 1 项 Office 系统选择器等待失败，已由 `26391a5d` 独立修复并两端本机通过。两个模块组各 164 项、各 4 项失败，本片逐项读取对应原日志、辅助功能树及合成录屏，未通过取消或跳过回避结果。
+
+| 原云端失败 | 实际证据与修正范围 |
+| --- | --- |
+| iPhone 下载中文深色大字、卷/存储池详情、硬盘未知重启、计划任务中文大字；iPad 公告恢复、部分电源清单 | 四项 iPhone 现场及 iPad 公告失败均仍在设置页，NAS/下载/聊天开关为 0，目标导航入口未出现；部分云端快照只有 Application 根，不能把根快照解释成 App 崩溃。改为从稳定标识的 Toggle 定位实际开关，完成一次按下/抬起，先断言可操作和开启值 1，再使用既有公共导航等待；失败保留开关现场。不新增重试点击、跳过或放宽后续业务断言，也不声称已证明系统漏掉事件的根因。 |
+| iPad 移除发送记录后消息消失 | 失败树已回到聊天页，只剩最初两条合成消息。合成服务只在单条回读中返回刚发送的消息，普通列表刷新仍委托给初始数据；生产发送/删除逻辑未改。修正 Debug fixture 的列表、频道/线程范围和分页，保留读取失败场景；新增真实 Repository 回归，断言移除本地记录后列表仍包含原消息且其他聊天不混入。实际 UI 增加主动刷新后消息仍在的断言。 |
+| iPad 电源计划未知保存 | 原失败使用“包含结果行的 CollectionView”作为滚动容器；结果行尚未在惰性表单中出现时，容器查询失效。原树仍有电源编辑表单、禁用保存及读取失败说明。改用已有稳定表单标识选择当前滚动容器，保留未知提示、不能重复保存及重启只读恢复全部断言。 |
+
+本机原代码先运行八个云端失败用例：第一批四项在两端全部通过；第二批 iPhone 四项通过，iPad 三项通过，电源未知保存复现同一容器查询失败（exit 65）。不能把其余本机通过当作云端已修复。结果包分别为 `m6e3-ci-{phone,pad}-baseline.xcresult`、`m6e3-ci-{phone,pad}-baseline2.xcresult`，均位于忽略的移动 build 目录。
+
+本次唯一 App 目录源修改为 `#if DEBUG` 合成聊天服务；其余为正式单元/界面测试及验证文档。没有改生产功能、真实请求、会话/文件存储、资源、权限或 Mac/Windows/Android。独立差异复核保留原业务断言、唯一发送和未知保护，没有为云端改宽任何产品权限或固定能力门。
+
+定向构建通过。R1 正在两端运行完整单元及十三项 UI：八项原失败、聊天发送完整四态（含已计入原失败的一项）、中文大字内存/电源与文件服务端口编辑。未完成的结果不记为通过。
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
+
+R1 两端完整单元各 **1464 项、4 条既有跳过、0 失败**，新增“记录移除后列表刷新仍保留消息”测试通过。R1 开始界面阶段后，整行 Toggle 外层点击未开启聊天，新增开启值断言两端直接失败；外层辅助功能框包含整行而不是实际拨动控件，不能采用该点击点。主动中止余下界面批次，保留失败与中止状态，不将整轮称为通过。最终修改为在实际内层开关上按住 0.15 秒后松开，仅一次手势，不自动重试；保持开启值断言及失败附件。
+
+
+R2 iPhone **13/13 UI 通过、exit 0**；iPad **12/13 通过、exit 65**，仍为电源未知结果的滚动定位。此次原始云端异常查询已消除，但辅助功能将禁用表单标为不可点击，选择器因 `isHittable` 排除了仍可滚动的编辑器，退回整个 App。已查看 R2 录屏实际 108.672 秒画面及事件：弹窗横向范围 120–700 点，测试却在 x=808 点滑动，结果提示始终在折叠区域以下。只移除滚动容器的可点击条件，按稳定且存在的最上层表单选择区域，实际按钮的可点击/可用及结果断言保持。该修改将随 Photos 权限修复的移动构建，在两端重跑四项受影响服务设置 UI；其余 R2 已通过的场景无需重复。
+
+
+R2 的真实定向命令如下；R1 同组额外执行 `-only-testing:DsmMobileTests`，使用各自 `-r1.xcresult` 结果路径，并保留上述中止结果。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e3-ci-phone-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileDownloadInventoryUITests/test中文深色大字详情可阅读缺失速度保持横线 -only-testing:DsmMobileUITests/MobileNasStorageUITests/test卷与存储池详情区分明确状态并可以返回 -only-testing:DsmMobileUITests/MobileNasStorageUITests/test硬盘未知结果重启后只恢复状态 -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test中文大字编辑与脚本风险确认可取消 -only-testing:DsmMobileUITests/MobileChatManagementUITests/test置顶中断重启仅恢复原操作 -only-testing:DsmMobileUITests/MobileChatSendUITests -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源清单不完整和压缩字段未知保留读取与限制 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源计划未知保存重启只读恢复 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test中文大字内存与电源确认可取消 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test文件服务端口校验确认取消和保存回读
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e3-ci-pad-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileDownloadInventoryUITests/test中文深色大字详情可阅读缺失速度保持横线 -only-testing:DsmMobileUITests/MobileNasStorageUITests/test卷与存储池详情区分明确状态并可以返回 -only-testing:DsmMobileUITests/MobileNasStorageUITests/test硬盘未知结果重启后只恢复状态 -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test中文大字编辑与脚本风险确认可取消 -only-testing:DsmMobileUITests/MobileChatManagementUITests/test置顶中断重启仅恢复原操作 -only-testing:DsmMobileUITests/MobileChatSendUITests -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源清单不完整和压缩字段未知保留读取与限制 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源计划未知保存重启只读恢复 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test中文大字内存与电源确认可取消 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test文件服务端口校验确认取消和保存回读
+```
+
+
+**最终受影响的四项服务设置 UI 在 iPhone、iPad 均通过。** 该补验与下述 Photos 专项共用 `photos-access-{phone,pad}-final.xcresult`，两个命令均 exit 0；精确命令与新增专项测试数分开记在 Photos 条目。本片十三项场景均已有两端实际通过证据，iPad R2 的 12/13 与 R1 的中止仍保留原结果。聊天移除记录后主动刷新、两端电源恢复的截图已检查，保留于 `apple/Apps/DsmMobile/build/m6e3-ci-preview/`。
+
+本地化 6640/2188/3402、文档及差异检查通过。两个临时云端结果包和本片全部导出/层级/录屏提帧已精确清理；正式 CI 日志、本地结果和四张合成预览保留。两台模拟器恢复浅色并读取确认。新云端须由包含修正的后续 main 推送取得，不把旧失败或本机通过写成云端成功。

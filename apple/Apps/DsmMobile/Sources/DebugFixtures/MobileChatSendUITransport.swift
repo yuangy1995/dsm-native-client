@@ -44,6 +44,21 @@ actor MobileChatSendUITransport: DsmBinaryHTTPTransport {
             if readUnavailable { throw URLError(.notConnectedToInternet) }
             return try response(["success": true, "data": ["posts": [posts[id]!]]])
         }
+        if field("api") == DsmAPIName.chatPost, field("method") == "list", field("prev_count") != "0" {
+            if readUnavailable && !posts.isEmpty { throw URLError(.notConnectedToInternet) }
+            let original = try await base.send(request)
+            let payload = try JSONSerialization.jsonObject(with: original.data) as? [String: Any]
+            let data = payload?["data"] as? [String: Any]
+            let conversation = Int(field("channel_id") ?? "") ?? 0, thread = field("thread_id") ?? "0"
+            var values = ((data?["posts"] as? [[String: Any]] ?? []) + Array(posts.values)).filter {
+                $0["channel_id"] as? Int == conversation && $0["thread_id"] as? String == thread
+            }.sorted { ($0["create_at"] as? Int64 ?? 0) < ($1["create_at"] as? Int64 ?? 0) }
+            if let cursor = field("post_id"), let index = values.firstIndex(where: { $0["post_id"] as? String == cursor }) {
+                values = Array(values.prefix(index + 1))
+            }
+            let limit = (Int(field("prev_count") ?? "50") ?? 50) + (field("post_id") == nil ? 0 : 1)
+            return try response(["success": true, "data": ["posts": Array(values.suffix(limit))]])
+        }
         return try await base.send(request)
     }
     func upload(_ request: URLRequest, from bodyFileURL: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
@@ -83,7 +98,7 @@ actor MobileChatSendUITransport: DsmBinaryHTTPTransport {
     }
     private static func post(id: String, conversation: String, thread: String?, text: String?, name: String?, size: Int64?) -> [String: Any] {
         var value: [String: Any] = ["post_id": id, "channel_id": Int(conversation) ?? 0, "creator_id": 1,
-            "create_at": 1_790_000_000_000, "thread_id": thread ?? "0", "type": "normal", "message": text ?? ""]
+            "create_at": 1_790_000_000_000 + (Int64(id) ?? 0), "thread_id": thread ?? "0", "type": "normal", "message": text ?? ""]
         if let name, let size { value["files"] = [["file_id": "attachment", "name": name, "size": size, "content_type": "application/octet-stream"]] }
         return value
     }

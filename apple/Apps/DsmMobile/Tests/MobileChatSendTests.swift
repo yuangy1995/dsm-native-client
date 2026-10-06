@@ -6,6 +6,21 @@ import XCTest
 
 @MainActor
 final class MobileChatSendTests: XCTestCase {
+    func test移除发送记录后刷新列表仍返回原消息且不混入其他聊天() async throws {
+        let root = try root(), transport = MobileChatSendUITransport(), model = try await model(root, transport)
+        let sent = await model.send(conversationID: "27", text: "Persistent sample message")
+        XCTAssertTrue(sent)
+        model.remove(try XCTUnwrap(model.entries.first).id)
+        XCTAssertTrue(model.entries.isEmpty)
+        let repository = try repository(transport)
+        let page = try await repository.listMessages(conversationID: "27", before: nil, limit: 50)
+        XCTAssertEqual(page.messages.map(\.id), ["9001", "9002", "9301"])
+        XCTAssertEqual(page.messages.last?.text, "Persistent sample message")
+        let another = try await repository.listMessages(conversationID: "28", before: nil, limit: 50)
+        XCTAssertTrue(another.messages.isEmpty)
+        let counts = await transport.counts(); XCTAssertEqual(counts.writes, 1)
+    }
+
     func test普通发送真实请求成功后只保留回执并允许新的同文消息() async throws {
         let root = try root(), transport = MobileChatSendUITransport(), model = try await model(root, transport)
         let sent = await model.send(conversationID: "27", text: "  Private draft  ")
@@ -199,16 +214,19 @@ final class MobileChatSendTests: XCTestCase {
     }
 
     private func model(_ root: URL, _ transport: MobileChatSendUITransport, context: String = "account-a", store: MobileChatSendStore? = nil, copier: any MobileDocumentImportCopying = MobileSecurityScopedDocumentCopier()) async throws -> MobileChatSendModel {
+        let repository = try repository(transport)
+        let model = MobileChatSendModel(context: context, repository: repository, recovery: store ?? MobileChatSendStore(root: root), copier: copier)
+        model.updateAvailability(await repository.availability()); return model
+    }
+    private func repository(_ transport: MobileChatSendUITransport) throws -> MobileReadOnlyChatRepository {
         let profile = try NasProfile(displayName: "Synthetic", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
         let versions = [DsmAPIName.chatChannel: 2, DsmAPIName.chatUser: 1, DsmAPIName.chatPost: 8, DsmAPIName.chatPostFile: 2]
         let capabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: versions.map { name, version in
             (name, ApiCapability(name: name, path: "entry.cgi", minVersion: 1, maxVersion: version,
                 requestFormat: .form, selectedVersion: version, verified: false))
         }))
-        let repository = MobileReadOnlyChatRepository(base: try DsmChatRepository(profile: profile, capabilities: capabilities,
+        return MobileReadOnlyChatRepository(base: try DsmChatRepository(profile: profile, capabilities: capabilities,
             session: .init(sid: "synthetic", synoToken: nil, did: nil, isPortalPort: false), transport: transport))
-        let model = MobileChatSendModel(context: context, repository: repository, recovery: store ?? MobileChatSendStore(root: root), copier: copier)
-        model.updateAvailability(await repository.availability()); return model
     }
     private func entry() throws -> MobileChatSendStore.Entry {
         let payload = MobileChatSendStore.Payload(text: "Private draft", attachment: nil)

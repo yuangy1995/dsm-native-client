@@ -182,7 +182,8 @@ final class MobileNasStorageUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        reveal("mobile.settings.module.nasSettings", in: app).switches.firstMatch.tap()
+        _ = reveal("mobile.settings.module.nasSettings", in: app)
+        MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         navigate("nasSettings", title: chinese ? "NAS 设置" : "NAS settings", app)
         return app
     }

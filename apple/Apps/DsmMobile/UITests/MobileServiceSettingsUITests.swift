@@ -364,19 +364,14 @@ final class MobileServiceSettingsUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch()
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         navigate("settings", title: chinese ? "App 设置" : "App settings", app)
-        reveal("mobile.settings.module.nasSettings", in: app).switches.firstMatch.tap()
+        _ = reveal("mobile.settings.module.nasSettings", in: app)
+        MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         navigate("nasSettings", title: chinese ? "NAS 设置" : "NAS settings", app)
         reveal("mobile.nas.page.\(kind)", in: app).tap()
         return app
     }
     private func navigate(_ destination: String, title: String, _ app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title], sidebar = element("mobile.navigation.\(destination)", app)
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            (tab.exists && tab.isHittable) || (sidebar.exists && sidebar.isHittable)
-        }, object: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
-        if tab.exists && tab.isHittable { tab.tap() }
-        else { XCTAssertTrue(sidebar.exists); XCTAssertTrue(sidebar.isHittable); sidebar.tap() }
+        MobileUITestNavigation.open(app, destination: destination, title: title, test: self)
     }
     private func expect(_ value: XCUIElement, contains text: String) {
         XCTAssertTrue(value.waitForExistence(timeout: 8))
@@ -385,9 +380,13 @@ final class MobileServiceSettingsUITests: XCTestCase {
     private func reveal(_ id: String, in app: XCUIApplication) -> XCUIElement {
         let value = element(id, app)
         for attempt in 0..<14 {
-            let list = app.collectionViews.containing(.any, identifier: id).firstMatch
-            let form = app.collectionViews["mobile.nas.service.editor"]
-            let scroller: XCUIElement = list.exists ? list : (form.exists ? form : app)
+            let forms = ["mobile.nas.power.entryEditor", "mobile.nas.service.confirmation", "mobile.nas.service.editor",
+                         "mobile.nas.service.list", "mobile.nas.navigation", "mobile.settings.page"]
+                .map { app.collectionViews[$0] }
+            // 结果行可能尚未被惰性表单创建；滚动容器不能依赖这行先存在。
+            // 表单内控件禁用后，容器可能不可点击但仍可滚动；按最上层表单的稳定标识选区域。
+            let scroller = forms.first(where: { $0.exists })
+                ?? app
             if value.waitForExistence(timeout: 1), !value.frame.isEmpty {
                 let top = app.navigationBars.allElementsBoundByIndex.filter { $0.isHittable }.map { $0.frame.maxY }.max() ?? app.frame.minY + 110
                 let tab = app.tabBars.firstMatch

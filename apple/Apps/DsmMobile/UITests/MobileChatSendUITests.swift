@@ -14,7 +14,12 @@ final class MobileChatSendUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No sent messages"].waitForExistence(timeout: 5))
         screenshot(app, "Removing the last local record shows an empty list")
         app.buttons["Close"].tap()
+        XCTAssertTrue(app.navigationBars["Sent messages"].waitForNonExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["New sample message"].waitForExistence(timeout: 5))
+        let refresh = app.buttons["Refresh messages"]
+        XCTAssertTrue(refresh.waitForExistence(timeout: 5)); refresh.tap()
+        XCTAssertTrue(app.staticTexts["New sample message"].waitForExistence(timeout: 8))
+        screenshot(app, "Message survives record removal and a fresh conversation read")
     }
 
     func test发送后读取中断重启仅刷新原消息并恢复成功() {
