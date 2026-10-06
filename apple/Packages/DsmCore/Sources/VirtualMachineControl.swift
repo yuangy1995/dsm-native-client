@@ -35,3 +35,26 @@ public enum VirtualMachineControlStage: String, Codable, Sendable {
 }
 
 public typealias VirtualMachineControlObserver = @Sendable (VirtualMachineControlStage) async throws -> Void
+
+/// 内部设置的原始快照；缺失字段保持未知，不使用展示默认值作为保存依据。
+public struct VirtualMachineSettingsState: Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let status: String
+    public let description: String?
+    public let cpuCount: Int?
+    public let memoryMiB: Int?
+    public let cpuWeight: Int?
+    public let startupBehavior: VirtualMachineStartupBehavior?
+
+    public init(id: String, name: String, status: String, description: String? = nil,
+                cpuCount: Int? = nil, memoryMiB: Int? = nil, cpuWeight: Int? = nil,
+                startupBehavior: VirtualMachineStartupBehavior? = nil) {
+        self.id = id; self.name = name; self.status = status; self.description = description
+        self.cpuCount = cpuCount; self.memoryMiB = memoryMiB; self.cpuWeight = cpuWeight
+        self.startupBehavior = startupBehavior
+    }
+
+    public var canEdit: Bool { status == "shutdown" || status == "running" }
+    public var canEditHardware: Bool { status == "shutdown" }
+}

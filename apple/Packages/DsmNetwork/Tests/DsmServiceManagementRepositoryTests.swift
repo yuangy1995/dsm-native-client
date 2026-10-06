@@ -2761,13 +2761,13 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
     func test虚拟机内部修改不使用公开清单确认内部字段() async throws {
         let transport = SequencedServiceRoutingTransport(responses: [
             DsmAPIName.virtualizationAPIGuest: [response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"测试","status":"shutdown"}]}}"#)],
-            DsmAPIName.virtualizationGuest: [response(#"{"success":true}"#), response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","desc":"new","cpu_weight":64,"autorun":2}]}}"#)]
+            DsmAPIName.virtualizationGuest: [response(vmmSettingsList()), response(#"{"success":true}"#), response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"Synthetic","desc":"new","cpu_weight":64,"autorun":2}]}}"#)]
         ])
         let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest], transport: transport)
         try await repository.updateVirtualMachine(id: "vm-1", configuration: VirtualMachineUpdate(description: "new", cpuWeight: 64, autoStart: true))
         let requests = await transport.recordedRequests()
         XCTAssertEqual(requests.count, 3)
-        XCTAssertEqual(requestValue("api", in: requests[0]), DsmAPIName.virtualizationAPIGuest)
+        XCTAssertEqual(requestValue("api", in: requests[0]), DsmAPIName.virtualizationGuest)
         XCTAssertEqual(requestValue("api", in: requests[2]), DsmAPIName.virtualizationGuest)
         XCTAssertEqual(requestValue("method", in: requests[2]), "list")
     }
@@ -3659,7 +3659,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 let transport = MockHTTPTransport(responses: [
                     response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"Synthetic","status":"shutdown"}]}}"#),
                     response(#"{"success":true}"#),
-                    response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","cpu_weight":\#(weight),"autorun":\#(mode.rawValue)}]}}"#),
+                    response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"Synthetic","cpu_weight":\#(weight),"autorun":\#(mode.rawValue)}]}}"#),
                 ])
                 let api = DsmAPIName.virtualizationGuest
                 let repository = try makeRepository(apiNames: [api], requestFormatOverrides: [api: format], selectedVersionOverrides: [api: 2], transport: transport)
@@ -3690,6 +3690,137 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             XCTAssertEqual(requests.count, 1)
             XCTAssertFalse(requests.contains { requestValue("method", in: $0) == "set" })
         }
+    }
+
+    func test虚拟机编辑非明确关机状态不能修改硬件() async throws {
+        for status in ["starting", "paused", "unknown", ""] {
+            let transport = MockHTTPTransport(responses: [response(vmmSettingsList(status: status))])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+            do {
+                try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(cpuCount: 4))
+                XCTFail("非关机状态不能写硬件")
+            } catch {}
+            let requests = await transport.recordedRequests()
+            XCTAssertFalse(requests.contains { requestValue("method", in: $0) == "set" })
+        }
+    }
+
+    func test虚拟机编辑丢回执后不重放也不认领外部变化() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(vmmSettingsList())), .urlError(.networkConnectionLost),
+            .response(response(vmmSettingsList(description: "new"))), .response(response(#"{"success":true}"#)),
+            .response(response(vmmSettingsList(description: "new")))
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+        do { try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(description: "new")); XCTFail("丢回执不是成功") } catch {}
+        do { try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(description: "new")); XCTFail("外部变化不是本次接受证据") } catch {}
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "set" }.count, 1)
+    }
+
+    func test虚拟机编辑未知结果阻止电源与删除交叉操作() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(vmmSettingsList())), .urlError(.networkConnectionLost)
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest, DsmAPIName.virtualizationGuestAction], transport: transport)
+        do { try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(description: "new")) } catch {}
+        do { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOn); XCTFail("未知编辑必须保护目标") } catch {}
+        _ = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2, "交叉操作必须在任何新请求前被阻止")
+    }
+
+    func test虚拟机编辑原快照变化与不完整清单零写() async throws {
+        let original = VirtualMachineSettingsState(id: "vm-1", name: "Synthetic", status: "shutdown", description: "old",
+            cpuCount: 2, memoryMiB: 2048, cpuWeight: 256, startupBehavior: .off)
+        for data in [vmmSettingsList(description: "changed elsewhere"), vmmSettingsList(status: "running"),
+                     vmmSettingsList().replacingOccurrences(of: "\"guests\":", with: "\"total\":2,\"guests\":")] {
+            let transport = MockHTTPTransport(responses: [response(data)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+            let probe = VmmControlStageProbe()
+            do { try await repository.updateVirtualMachine(original, configuration: .init(description: "new")) { try await probe.record($0) }; XCTFail("原快照不一致不能保存") } catch {}
+            let requests = await transport.recordedRequests(), stages = await probe.stages
+            XCTAssertEqual(requests.count, 1); XCTAssertTrue(stages.isEmpty)
+        }
+    }
+
+    func test虚拟机编辑写前与接受记录失败不会补发() async throws {
+        let original = VirtualMachineSettingsState(id: "vm-1", name: "Synthetic", status: "shutdown", description: "old",
+            cpuCount: 2, memoryMiB: 2048, cpuWeight: 256, startupBehavior: .off)
+        for stage in [VirtualMachineControlStage.willSubmit, .accepted] {
+            let transport = MockHTTPTransport(responses: [response(vmmSettingsList()), response(#"{"success":true}"#)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+            let probe = VmmControlStageProbe(failAt: stage)
+            do { try await repository.updateVirtualMachine(original, configuration: .init(description: "new")) { try await probe.record($0) }; XCTFail("落盘失败不得完成") } catch {}
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.count, stage == .willSubmit ? 1 : 2)
+            if stage == .accepted {
+                do { try await repository.updateVirtualMachine(original, configuration: .init(description: "new")) { _ in }; XCTFail("新确认不能消费旧提交") } catch {}
+                let repeated = await transport.recordedRequests(); XCTAssertEqual(repeated.count, 2)
+            }
+        }
+    }
+
+    func test虚拟机编辑已接受后只读恢复且只认原名称或本次改名() async throws {
+        for rename in [false, true] {
+            let updated = vmmSettingsList(description: "new").replacingOccurrences(of: "Synthetic", with: rename ? "Somebody else" : "Synthetic")
+            let transport = MockHTTPTransport(steps: [.response(response(vmmSettingsList())), .response(response(#"{"success":true}"#)),
+                .urlError(.notConnectedToInternet), .response(response(updated))])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+            do { try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(description: "new")); XCTFail("未回读不能完成") } catch {}
+            do { try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(description: "new")); XCTAssertFalse(rename) }
+            catch { XCTAssertTrue(rename) }
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["list", "set", "list", "list"])
+        }
+    }
+
+    func test虚拟机编辑明确拒绝保持认证语义并允许重新准备() async throws {
+        let transport = MockHTTPTransport(responses: [response(vmmSettingsList()), response(#"{"success":false,"error":{"code":119}}"#),
+            response(vmmSettingsList()), response(#"{"success":true}"#), response(vmmSettingsList(description: "new"))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+        do { try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(description: "new")); XCTFail("拒绝不能成功") }
+        catch let error as AppError { XCTAssertEqual(error.category, .authenticationRequired) }
+        try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(description: "new"))
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 5)
+    }
+
+    func test虚拟机编辑在途阻止另一保存电源与删除() async throws {
+        let base = MockHTTPTransport(responses: [response(vmmSettingsList()), response(#"{"success":true}"#), response(vmmSettingsList(description: "new"))])
+        let transport = HoldingServiceReadTransport(base: base)
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest, DsmAPIName.virtualizationGuestAction], transport: transport)
+        let task = Task { try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(description: "new")) }
+        await transport.waitForRead()
+        do { try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(description: "new")); XCTFail("不得并发保存") } catch {}
+        do { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOn); XCTFail("不得并发开机") } catch {}
+        _ = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+        let before = await base.recordedRequests(); XCTAssertTrue(before.isEmpty)
+        await transport.release(); try await task.value
+        let requests = await base.recordedRequests(); XCTAssertEqual(requests.count, 3)
+    }
+
+    func test虚拟机设置读取固定内部V2并严格区分缺失和畸形字段() async throws {
+        for fields in [#""vram_size":524288,"cpu_weight":128,"autorun":1"#, ""] {
+            let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"guest_id":"vm-1","name":"Synthetic","status":"shutdown"\#(fields.isEmpty ? "" : "," + fields)}}"#)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest], transport: transport)
+            let state = try await repository.loadVirtualMachineSettings(id: "vm-1")
+            XCTAssertEqual(state.memoryMiB, fields.isEmpty ? nil : 512)
+            XCTAssertEqual(state.cpuWeight, fields.isEmpty ? nil : 128)
+            XCTAssertNil(state.cpuCount); XCTAssertNil(state.description)
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requestValue("api", in: requests[0]), DsmAPIName.virtualizationGuest)
+            XCTAssertEqual(requestValue("version", in: requests[0]), "2")
+            XCTAssertEqual(requestValue("guest_id", in: requests[0]), "vm-1")
+        }
+        for field in [#""autorun":true"#, #""vram_size":512"#, #""cpu_weight":"256""#, #""desc":null"#] {
+            let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"guest_id":"vm-1","name":"Synthetic","status":"shutdown",\#(field)}}"#)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+            do { _ = try await repository.loadVirtualMachineSettings(id: "vm-1"); XCTFail("畸形字段不能转换成可编辑默认值") } catch {}
+        }
+    }
+
+    private func vmmSettingsList(status: String = "shutdown", description: String = "old") -> String {
+        #"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"Synthetic","status":"\#(status)","desc":"\#(description)","vcpu_num":2,"vram_size":2097152,"cpu_weight":256,"autorun":0}]}}"#
     }
 
     private func makeRepository(

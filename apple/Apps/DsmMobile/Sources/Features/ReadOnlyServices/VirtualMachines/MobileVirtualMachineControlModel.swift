@@ -19,6 +19,7 @@ final class MobileVirtualMachineControlModel {
     private(set) var isRefreshing = false
     private(set) var hasLoaded = false
     private(set) var allowed = false
+    private(set) var supportsSettings = false
     private(set) var error: Failure?
     let recovery: MobileVirtualMachineControlStore
     @ObservationIgnored private var repository: DsmServiceManagementRepository?
@@ -39,7 +40,7 @@ final class MobileVirtualMachineControlModel {
     func deactivate() {
         activation = UUID(); cancelRead()
         for task in operations.values { task.cancel() }
-        context = nil; repository = nil; authorize = nil; targets = []; submittedNames = [:]; allowed = false; hasLoaded = false; error = nil
+        context = nil; repository = nil; authorize = nil; targets = []; submittedNames = [:]; allowed = false; supportsSettings = false; hasLoaded = false; error = nil
     }
     func cancelRead() {
         generation = UUID(); readTask?.cancel(); readTask = nil; isRefreshing = false
@@ -57,12 +58,23 @@ final class MobileVirtualMachineControlModel {
             do {
                 guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
                 let values = try await repository.loadVirtualMachineControlStates()
+                let supportsSettings = await repository.supportsVirtualMachineSettings
                 try Task.checkCancellation()
                 guard let self, self.activation == token, self.generation == generation else { return }
-                self.targets = values; self.allowed = true; self.hasLoaded = true; self.isRefreshing = false
+                self.targets = values; self.hasLoaded = true
+                self.supportsSettings = supportsSettings
                 self.recovery.reload()
                 do { try self.recovery.resolve(values, context: context) } catch { self.error = .storage }
                 if self.recovery.failed { self.error = .storage }
+                if !self.recovery.failed {
+                    for target in values where self.recovery.needsSettings(target, context: context) {
+                        let settings = try await repository.loadVirtualMachineSettings(id: target.id)
+                        try Task.checkCancellation()
+                        guard self.activation == token, self.generation == generation else { return }
+                        do { try self.recovery.resolveSettings(settings, context: context) } catch { self.error = .storage }
+                    }
+                }
+                self.isRefreshing = false; self.allowed = self.error == nil
             } catch {
                 guard let self, self.activation == token, self.generation == generation else { return }
                 self.isRefreshing = false; self.hasLoaded = true; self.allowed = false
@@ -75,7 +87,7 @@ final class MobileVirtualMachineControlModel {
         canPerform(ids: ids, kind: .init(action))
     }
     func canPerform(ids: Set<String>, kind: MobileVirtualMachineControlStore.Kind) -> Bool {
-        guard let context, allowed, error == nil, !isRefreshing, !isOperating, !ids.isEmpty else { return false }
+        guard kind != .edit, let context, allowed, error == nil, !isRefreshing, !isOperating, !ids.isEmpty else { return false }
         let selected = targets.filter { ids.contains($0.id) }
         return selected.count == ids.count && selected.allSatisfy(kind.supports)
             && !recovery.protects(selected, context: context)
@@ -137,7 +149,7 @@ final class MobileVirtualMachineControlModel {
                     }
                     if let controlAction = action.controlAction {
                         try await repository.controlVirtualMachine(target, action: controlAction, observer: observer)
-                    } else {
+                    } else if action == .delete {
                         try await repository.deleteVirtualMachine(target, observer: observer)
                     }
                 } catch {
@@ -159,6 +171,65 @@ final class MobileVirtualMachineControlModel {
         return entry.id
     }
     func waitForOperation(_ id: UUID) async { await operations[id]?.value }
+    func canEdit(id: String) -> Bool {
+        guard let context, supportsSettings, allowed, error == nil, !isRefreshing, !isOperating,
+              let target = targets.first(where: { $0.id == id }), ["shutdown", "running"].contains(target.status) else { return false }
+        return !recovery.protects([target], context: context)
+    }
+    func loadSettings(id: String, activation token: UUID) async throws -> VirtualMachineSettingsState {
+        guard token == activation, canEdit(id: id), let repository, let authorize,
+              let target = targets.first(where: { $0.id == id }) else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: "")
+        }
+        guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+        let settings = try await repository.loadVirtualMachineSettings(id: id)
+        try Task.checkCancellation()
+        guard token == activation, canEdit(id: id), settings.name == target.name, settings.status == target.status else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: "")
+        }
+        return settings
+    }
+    @discardableResult func saveSettings(_ target: VirtualMachineSettingsState, configuration: VirtualMachineUpdate,
+                                         activation token: UUID) -> UUID? {
+        guard token == activation else { return nil }
+        guard canEdit(id: target.id), let repository, let context, let authorize,
+              targets.contains(where: { $0.id == target.id && $0.name == target.name && $0.status == target.status }) else { error = .changed; return nil }
+        let store = recovery, entry: MobileVirtualMachineControlStore.Entry
+        do { entry = try store.reserveEdit(target, update: configuration, context: context) }
+        catch { self.error = .storage; return nil }
+        submittedNames[MobileVirtualMachineControlStore.digest(target.id) + MobileVirtualMachineControlStore.digest(target.name)] = target.name
+        error = nil
+        operations[entry.id] = Task { [weak self] in
+            defer { store.end(entry.id); self?.operations[entry.id] = nil }
+            var failure: Failure?
+            do {
+                guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+                try Task.checkCancellation()
+                guard self?.activation == token else { throw CancellationError() }
+                try await repository.updateVirtualMachine(target, configuration: configuration) { [weak self] stage in
+                    if stage == .willSubmit {
+                        guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+                    }
+                    try await MainActor.run {
+                        if stage == .willSubmit {
+                            guard let self, self.activation == token, !Task.isCancelled else { throw CancellationError() }
+                            self.cancelRead()
+                        }
+                        try store.checkpoint(entry.id, index: 0, stage: stage)
+                    }
+                }
+            } catch {
+                if !(error is CancellationError) && (error as? AppError)?.category != .cancelled { failure = Self.failure(error) }
+            }
+            if !store.failed { try? store.finish(entry.id, failedIndex: failure == nil ? nil : 0, failure: failure.map(Self.storeFailure)) }
+            store.end(entry.id)
+            guard let self, self.activation == token else { return }
+            if store.failed { self.error = .storage; self.allowed = false; return }
+            if let failure, [.trust, .denied].contains(failure) { self.error = failure; self.allowed = false; return }
+            await self.refresh()
+        }
+        return entry.id
+    }
     func removeRecord(_ id: UUID) {
         guard let context else { return }
         do { try recovery.remove(id, context: context) } catch { self.error = .storage }
@@ -166,7 +237,7 @@ final class MobileVirtualMachineControlModel {
     private static func storeFailure(_ failure: Failure) -> MobileVirtualMachineControlStore.Failure {
         switch failure { case .denied: .denied; case .unavailable: .unavailable; case .changed: .changed; default: .failed }
     }
-    private static func failure(_ error: Error) -> Failure {
+    static func failure(_ error: Error) -> Failure {
         if error is DsmCertificateTrustError { return .trust }
         switch (error as? AppError)?.category {
         case .permissionDenied, .authenticationRequired, .otpRequired: return .denied

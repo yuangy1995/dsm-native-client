@@ -7,14 +7,15 @@ import Observation
 @MainActor @Observable
 final class MobileVirtualMachineControlStore {
     enum Kind: String, Codable, CaseIterable {
-        case powerOn, shutdown, powerOff, restart, delete
+        case powerOn, shutdown, powerOff, restart, delete, edit
+        static var controlCases: [Self] { allCases.filter { $0 != .edit } }
         init(_ action: VirtualMachinePowerAction) {
             switch action { case .powerOn: self = .powerOn; case .shutdown: self = .shutdown; case .powerOff: self = .powerOff; case .restart: self = .restart }
         }
         var controlAction: VirtualMachinePowerAction? { VirtualMachinePowerAction(rawValue: rawValue) }
         func supports(_ target: VirtualMachineControlState) -> Bool {
             if let controlAction { return target.supports(controlAction) }
-            return target.canDelete
+            return self == .delete && target.canDelete
         }
     }
     enum Phase: String, Codable { case prepared, submitted, succeeded, failed, skipped }
@@ -25,8 +26,9 @@ final class MobileVirtualMachineControlStore {
         var phase: Phase = .prepared
         var accepted = false
         var failure: Failure?
+        var settings: [String: String]?
         func matches(_ target: VirtualMachineControlState) -> Bool {
-            identity == digest(target.id) && name == digest(target.name)
+            identity == digest(target.id) && (name == digest(target.name) || settings?["name"] == digest(target.name))
         }
     }
     struct Entry: Identifiable, Equatable, Codable {
@@ -56,7 +58,7 @@ final class MobileVirtualMachineControlStore {
         failed || entries.contains { entry in
             entry.context == context && entry.items.contains { item in
                 (item.phase == .prepared || item.phase == .submitted || isExecuting(entry.id)) && targets.contains {
-                    item.identity == Self.digest($0.id) || item.name == Self.digest($0.name)
+                    item.identity == Self.digest($0.id) || item.name == Self.digest($0.name) || item.settings?["name"] == Self.digest($0.name)
                 }
             }
         }
@@ -95,6 +97,44 @@ final class MobileVirtualMachineControlStore {
             Item(identity: Self.digest($0.id), name: Self.digest($0.name))
         })
         try persist(entries + [entry]); executing.insert(entry.id); return entry
+    }
+    func protects(_ target: VirtualMachineSettingsState, context: String) -> Bool {
+        protects([.init(id: target.id, name: target.name, status: target.status, availableActions: [], allowsDeletion: false)], context: context)
+    }
+    func reserveEdit(_ target: VirtualMachineSettingsState, update: VirtualMachineUpdate, context: String) throws -> Entry {
+        guard target.canEdit, !protects(target, context: context) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+        var values = ["name": update.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? target.name]
+        if let value = update.description { values["desc"] = value }
+        if let value = update.cpuCount { values["vcpu_num"] = String(value) }
+        if let value = update.memoryMiB { values["memory_mib"] = String(value) }
+        if let value = update.cpuWeight { values["cpu_weight"] = String(value) }
+        if let value = update.startupBehavior { values["autorun"] = String(value.rawValue) }
+        let entry = Entry(id: UUID(), context: context, action: .edit, createdAt: Date(), items: [
+            Item(identity: Self.digest(target.id), name: Self.digest(target.name), settings: values.mapValues(Self.digest))
+        ])
+        try persist(entries + [entry]); executing.insert(entry.id); return entry
+    }
+    func needsSettings(_ target: VirtualMachineControlState, context: String) -> Bool {
+        entries.contains { entry in
+            entry.context == context && entry.action == .edit && !isExecuting(entry.id) && entry.items.contains {
+                $0.identity == Self.digest(target.id) && $0.phase == .submitted && $0.accepted
+            }
+        }
+    }
+    func resolveSettings(_ target: VirtualMachineSettingsState, context: String) throws {
+        var fields = ["name": Self.digest(target.name)]
+        if let value = target.description { fields["desc"] = Self.digest(value) }
+        if let value = target.cpuCount { fields["vcpu_num"] = Self.digest(String(value)) }
+        if let value = target.memoryMiB { fields["memory_mib"] = Self.digest(String(value)) }
+        if let value = target.cpuWeight { fields["cpu_weight"] = Self.digest(String(value)) }
+        if let value = target.startupBehavior { fields["autorun"] = Self.digest(String(value.rawValue)) }
+        var values = entries
+        for position in values.indices where values[position].context == context && values[position].action == .edit && !isExecuting(values[position].id) {
+            guard let item = values[position].items.first, item.identity == Self.digest(target.id), item.phase == .submitted,
+                  item.accepted, let settings = item.settings, settings.allSatisfy({ fields[$0.key] == $0.value }) else { continue }
+            values[position].items[0].phase = .succeeded
+        }
+        if values != entries { try persist(values) }
     }
     func checkpoint(_ id: UUID, index: Int, stage: VirtualMachineControlStage) throws {
         guard let position = entries.firstIndex(where: { $0.id == id }), executing.contains(id),
@@ -171,9 +211,15 @@ final class MobileVirtualMachineControlStore {
         var ids: Set<UUID> = [], protectedIDs: Set<String> = [], protectedNames: Set<String> = []
         for entry in values {
             guard ids.insert(entry.id).inserted, isDigest(entry.context), entry.createdAt.timeIntervalSince1970.isFinite,
+                  entry.action != .edit || entry.items.count == 1,
                   !entry.items.isEmpty, Set(entry.items.map(\.identity)).count == entry.items.count,
                   Set(entry.items.map(\.name)).count == entry.items.count else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             for item in entry.items {
+                if entry.action == .edit {
+                    guard let settings = item.settings, settings["name"] != nil,
+                          Set(settings.keys).isSubset(of: ["name", "desc", "vcpu_num", "memory_mib", "cpu_weight", "autorun"]),
+                          settings.values.allSatisfy(isDigest) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+                } else if item.settings != nil { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
                 guard isDigest(item.identity), isDigest(item.name),
                       item.phase != .succeeded || item.accepted,
                       entry.action != .restart || item.phase != .succeeded,
@@ -182,6 +228,9 @@ final class MobileVirtualMachineControlStore {
                 if item.phase == .prepared || item.phase == .submitted {
                     guard protectedIDs.insert(entry.context + item.identity).inserted,
                           protectedNames.insert(entry.context + item.name).inserted else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+                    if let newName = item.settings?["name"], newName != item.name {
+                        guard protectedNames.insert(entry.context + newName).inserted else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+                    }
                 }
             }
         }

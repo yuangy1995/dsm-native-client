@@ -226,6 +226,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private var unverifiedVmmDeletions: [String: [String: VmmDeletion]] = [:]
     private var activeVmmPowerIDs: Set<String> = []
     private var unverifiedVmmPower: [String: VmmPowerTarget] = [:]
+    private var activeVmmSettingsIDs: Set<String> = []
+    private var unverifiedVmmSettings: [String: VmmSettingsSubmission] = [:]
     private var activeDeletionIDsByOperation: [String: Set<String>] = [:]
     private let containerNetworkCreationEnabled: Bool
     private var networkMutationActive = false
@@ -2702,27 +2704,122 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
-    /// VMM 官方界面使用的内部修改契约；运行中的虚拟机只提交允许在线调整的字段。
+    private struct VmmSettingsSubmission {
+        let name: String
+        let configuration: VirtualMachineUpdate
+        let parameters: [String: DsmParameterValue]
+        var accepted = false
+    }
+
+    /// 设置只使用已记录的内部读取，不能由公开摘要或展示默认值补全。
+    public var supportsVirtualMachineSettings: Bool {
+        vmmCapability(DsmAPIName.virtualizationGuest, version: 1) != nil
+            && vmmCapability(DsmAPIName.virtualizationGuest, version: 2) != nil
+    }
+
+    public func loadVirtualMachineSettings(id: String) async throws -> VirtualMachineSettingsState {
+        guard Self.isVmmDeletionID(id), let capability = vmmCapability(DsmAPIName.virtualizationGuest, version: 2),
+              vmmCapability(DsmAPIName.virtualizationGuest, version: 1) != nil else { throw unavailableError() }
+        let value: ServiceJSON
+        do {
+            value = try await client.call(path: capability.path, api: capability.name, version: 2, method: "get",
+                requestFormat: capability.requestFormat, parameters: ["guest_id": .string(id)],
+                credential: credential, as: ServiceJSON.self)
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+        try Task.checkCancellation()
+        let target = try vmmSettingsState(value)
+        guard target.id == id else { throw invalidServiceResponse() }
+        if !activeVmmSettingsIDs.contains(id), let pending = unverifiedVmmSettings[id], pending.accepted,
+           try Self.virtualMachineUpdateMatches(.object(["guests": .array([value])]), id: id,
+                                                name: pending.name, parameters: pending.parameters) {
+            unverifiedVmmSettings[id] = nil
+        }
+        return target
+    }
+
+    private func vmmSettingsList(_ capability: ApiCapability) async throws -> ServiceJSON {
+        do {
+            return try await client.call(path: capability.path, api: capability.name, version: 2, method: "list",
+                requestFormat: capability.requestFormat, parameters: [:], credential: credential, as: ServiceJSON.self)
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+    }
+
+    private func vmmSettingsState(_ value: ServiceJSON) throws -> VirtualMachineSettingsState {
+        guard case .string(let id)? = value["guest_id"], Self.isVmmDeletionID(id),
+              case .string(let name)? = value["name"], !name.isEmpty,
+              !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+              case .string(let status)? = value["status"], !status.isEmpty else { throw invalidServiceResponse() }
+        func integer(_ key: String, range: ClosedRange<Int>) throws -> Int? {
+            guard let raw = value[key] else { return nil }
+            guard case .number(let number) = raw, number.isFinite, number.rounded() == number,
+                  number >= Double(range.lowerBound), number <= Double(range.upperBound) else { throw invalidServiceResponse() }
+            return Int(number)
+        }
+        let description: String?
+        if let raw = value["desc"] {
+            guard case .string(let text) = raw else { throw invalidServiceResponse() }
+            description = text
+        } else { description = nil }
+        let memoryKiB = try integer("vram_size", range: 1...1_073_741_824)
+        guard memoryKiB == nil || memoryKiB! % 1_024 == 0 else { throw invalidServiceResponse() }
+        return VirtualMachineSettingsState(id: id, name: name, status: status, description: description,
+            cpuCount: try integer("vcpu_num", range: 1...64), memoryMiB: memoryKiB.map { $0 / 1_024 },
+            cpuWeight: try integer("cpu_weight", range: 1...Int(Int32.max)),
+            startupBehavior: try integer("autorun", range: 0...2).flatMap(VirtualMachineStartupBehavior.init(rawValue:)))
+    }
+
+    /// 兼容 Mac 调用；同一实例未知结果只读恢复，不重新发送保存。
     public func updateVirtualMachine(
         id: String,
         configuration: VirtualMachineUpdate
     ) async throws {
-        let id = try validatedIDs([id])[0]
-        guard !activeVmmPowerIDs.contains(id), unverifiedVmmPower[id] == nil,
+        try await updateVirtualMachine(id: id, configuration: configuration, expected: nil, observer: nil)
+    }
+
+    public func updateVirtualMachine(_ target: VirtualMachineSettingsState, configuration: VirtualMachineUpdate,
+                                     observer: @escaping VirtualMachineControlObserver) async throws {
+        try await updateVirtualMachine(id: target.id, configuration: configuration, expected: target, observer: observer)
+    }
+
+    private func updateVirtualMachine(id: String, configuration: VirtualMachineUpdate,
+                                      expected: VirtualMachineSettingsState?, observer: VirtualMachineControlObserver?) async throws {
+        try Task.checkCancellation()
+        guard Self.isVmmDeletionID(id) else { throw validationError(L10n.string("shared.706d4bbb975fcdc6")) }
+        guard !activeVmmSettingsIDs.contains(id), !activeVmmPowerIDs.contains(id), unverifiedVmmPower[id] == nil,
               !(activeDeletionIDsByOperation["virtualMachineDelete"] ?? []).contains(id),
               [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest].allSatisfy({
                   unverifiedVmmDeletions[$0]?[id] == nil
               }) else {
             throw validationError(L10n.string("virtual-machine.power.review-required"))
         }
-        guard let capability = capabilities[DsmAPIName.virtualizationGuest],
-              capability.name == DsmAPIName.virtualizationGuest, capability.selectedVersion != nil,
-              capability.minVersion <= 1, capability.maxVersion >= 1 else {
+        guard let capability = vmmCapability(DsmAPIName.virtualizationGuest, version: 1),
+              vmmCapability(DsmAPIName.virtualizationGuest, version: 2) != nil else {
             throw unavailableError()
         }
-        let snapshot = try await loadVirtualMachineManager()
-        guard let current = snapshot.machines.first(where: { $0.id == id }) else {
+        activeVmmSettingsIDs.insert(id)
+        defer { activeVmmSettingsIDs.remove(id) }
+        if let pending = unverifiedVmmSettings[id] {
+            guard expected == nil, pending.configuration == configuration else {
+                throw verificationError(L10n.string("virtual-machine.settings.unverified"))
+            }
+            let values = try await vmmSettingsList(capability)
+            guard pending.accepted,
+                  try Self.virtualMachineUpdateMatches(values, id: id, name: pending.name, parameters: pending.parameters) else {
+                throw verificationError(L10n.string("virtual-machine.settings.unverified"))
+            }
+            unverifiedVmmSettings[id] = nil
+            return
+        }
+        let raw = try await vmmSettingsList(capability)
+        let objects = try Self.strictRootObjects(raw, keys: ["guests", "guest", "vms"])
+        let machines = try objects.map { try vmmSettingsState(.object($0)) }
+        try Self.requireCompleteServiceList(raw, count: machines.count)
+        guard Set(machines.map(\.id)).count == machines.count else { throw invalidServiceResponse() }
+        guard let current = machines.first(where: { $0.id == id }) else {
             throw validationError(L10n.string("shared.706d4bbb975fcdc6"))
+        }
+        guard current.canEdit, expected == nil || expected == current else {
+            throw validationError(L10n.string("virtual-machine.settings.changed"))
         }
         var parameters: [String: DsmParameterValue] = [
             "guest_id": .string(id),
@@ -2730,7 +2827,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         ]
         if let name = configuration.name {
             let name = try validatedName(name, message: L10n.string("shared.5350a51d42c2c339"))
-            guard !snapshot.machines.contains(where: {
+            guard !machines.contains(where: {
                 $0.id != id && $0.name.caseInsensitiveCompare(name) == .orderedSame
             }) else {
                 throw validationError(L10n.string("shared.433935ad21c1d3da"))
@@ -2753,9 +2850,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             parameters["autorun"] = .integer(startupBehavior.rawValue)
         }
 
-        let isRunning = Self.isVirtualMachineRunning(current.status)
         if configuration.cpuCount != nil || configuration.memoryMiB != nil {
-            guard !isRunning else {
+            guard current.canEditHardware else {
                 throw validationError(L10n.string("shared.b67ec1a7e6173fed"))
             }
             if let cpuCount = configuration.cpuCount {
@@ -2774,30 +2870,61 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         guard parameters.count > 2 else {
             throw validationError(L10n.string("shared.c01558c4918833c0"))
         }
-
+        try Task.checkCancellation()
+        try await observer?(.willSubmit)
+        unverifiedVmmSettings[id] = VmmSettingsSubmission(name: current.name, configuration: configuration, parameters: parameters)
         // 当前官方编辑器固定 Guest.set v1；不能跟随只读 get/list 的 v2。
         do {
             try await client.callVoid(path: capability.path, api: DsmAPIName.virtualizationGuest, version: 1,
                 method: "set", requestFormat: capability.requestFormat, parameters: parameters, credential: credential)
-        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+        } catch let error as DsmNetworkError {
+            let mapped = DsmErrorMapper.map(error)
+            if Self.imageManagementTrustError(mapped) { throw mapped }
+            let rejected: Bool = switch error {
+            case .api(let code, _) where code > 0: true
+            case .invalidRequest: true
+            default: false
+            }
+            if rejected {
+                unverifiedVmmSettings[id] = nil
+                try await observer?(.rejected)
+                throw mapped
+            }
+            if case .cancelled = error { throw CancellationError() }
+            throw verificationError(L10n.string("virtual-machine.settings.unverified"))
+        } catch let error as DsmCertificateTrustError { throw error }
+        catch let error as AppError {
+            if Self.imageManagementTrustError(error) { throw error }
+            throw verificationError(L10n.string("virtual-machine.settings.unverified"))
+        } catch { throw verificationError(L10n.string("virtual-machine.settings.unverified")) }
+        unverifiedVmmSettings[id]?.accepted = true
+        try await observer?(.accepted)
+        try Task.checkCancellation()
         // 内部写只按同一内部清单的原始字段核查，不能用公开清单或展示默认值证明保存。
-        let updated = try await call(DsmAPIName.virtualizationGuest, method: "list")
-        guard try Self.virtualMachineUpdateMatches(updated, id: id, parameters: parameters) else {
-            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("shared.f7c1562e7a9e3cd8"))
+        let updated = try await vmmSettingsList(capability)
+        guard try Self.virtualMachineUpdateMatches(updated, id: id, name: current.name, parameters: parameters) else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("virtual-machine.settings.unverified"))
         }
+        unverifiedVmmSettings[id] = nil
+        try await observer?(.verified)
     }
 
     private static func virtualMachineUpdateMatches(
         _ value: ServiceJSON,
         id: String,
+        name: String,
         parameters: [String: DsmParameterValue]
     ) throws -> Bool {
         let machines = try strictRootObjects(value, keys: ["guests", "guest", "vms"])
+        try requireCompleteServiceList(value, count: machines.count)
         let targets = machines.filter { machine in
             if case .string(let actual)? = machine["guest_id"] { return actual == id }
             return false
         }
         guard targets.count == 1, let target = targets.first else { return false }
+        let expectedName: String
+        if case .string(let updatedName)? = parameters["name"] { expectedName = updatedName } else { expectedName = name }
+        guard case .string(let actualName)? = target["name"], actualName == expectedName else { return false }
         // 保留空说明和精确数字；不将缺失、布尔、小数或展示层默认值转换为已保存。
         for key in ["name", "desc", "vcpu_num", "vram_size", "cpu_weight", "autorun"] {
             guard let expected = parameters[key] else { continue }
@@ -3092,6 +3219,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         let route = try vmmPowerRoute(action)
         let targets = Array(Set(ids)).sorted(), targetSet = Set(targets)
         guard activeVmmPowerIDs.isDisjoint(with: targetSet),
+              activeVmmSettingsIDs.isDisjoint(with: targetSet),
+              Set(unverifiedVmmSettings.keys).isDisjoint(with: targetSet),
               (activeDeletionIDsByOperation["virtualMachineDelete"] ?? []).isDisjoint(with: targetSet),
               [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest].allSatisfy({
                   Set(unverifiedVmmDeletions[$0, default: [:]].keys).isDisjoint(with: targetSet)
@@ -3251,7 +3380,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             return try deletionUnsupportedResult(targetCount: targets.count, context: context)
         }
         let active = activeDeletionIDsByOperation[context.operation] ?? []
-        if isGuest && (!activeVmmPowerIDs.isDisjoint(with: targetSet) || targets.contains(where: { unverifiedVmmPower[$0] != nil })) {
+        if isGuest && (!activeVmmPowerIDs.isDisjoint(with: targetSet) || !activeVmmSettingsIDs.isDisjoint(with: targetSet)
+            || targets.contains(where: { unverifiedVmmPower[$0] != nil || unverifiedVmmSettings[$0] != nil })) {
             return try deletionDuplicateResult(targetCount: targets.count, context: context)
         }
         guard active.isDisjoint(with: targetSet) else { return try deletionDuplicateResult(targetCount: targets.count, context: context) }

@@ -9,9 +9,10 @@ final class RequestFixtureContractTests: XCTestCase {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"guests":[{"guest_id":"<synthetic-virtual-machine>","name":"Synthetic","status":"shutdown"}]}}"#),
             response(#"{"success":true}"#),
-            response(#"{"success":true,"data":{"guests":[{"guest_id":"<synthetic-virtual-machine>","cpu_weight":1024,"autorun":2}]}}"#),
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"<synthetic-virtual-machine>","name":"Synthetic","cpu_weight":1024,"autorun":2}]}}"#),
         ])
-        let repository = try makeServiceManagementRepository(apiNames: [DsmAPIName.virtualizationGuest], requestFormat: .json, transport: transport)
+        let repository = try makeServiceManagementRepository(apiNames: [DsmAPIName.virtualizationGuest], requestFormat: .json,
+            versions: [DsmAPIName.virtualizationGuest: 2], transport: transport)
         try await repository.updateVirtualMachine(id: "<synthetic-virtual-machine>", configuration: .init(cpuWeight: 1024, startupBehavior: .powerOn))
         let requests = await transport.recordedRequests()
         let request = try XCTUnwrap(requests.first { (try? decodeForm($0.httpBody)["method"]) == "set" })
@@ -1815,6 +1816,7 @@ final class RequestFixtureContractTests: XCTestCase {
     private func makeServiceManagementRepository(
         apiNames: [String],
         requestFormat: DsmRequestFormat = .form,
+        versions: [String: Int] = [:],
         transport: MockHTTPTransport
     ) throws -> DsmServiceManagementRepository {
         let profile = try NasProfile(
@@ -1827,7 +1829,7 @@ final class RequestFixtureContractTests: XCTestCase {
             capabilities: CapabilitySet(
                 Dictionary(
                     uniqueKeysWithValues: apiNames.map {
-                        ($0, capability($0, version: 1, requestFormat: requestFormat))
+                        ($0, capability($0, version: versions[$0] ?? 1, requestFormat: requestFormat))
                     }
                 )
             ),
