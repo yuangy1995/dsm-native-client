@@ -352,15 +352,18 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test人脸触控框选移动与辅助控件保存() {
         let app = launchFixture(state: "photo-recognition"); defer { app.terminate() }
         openPhotos(app); openPhotoFaceEditor(in: app)
-        let add = app.buttons["mobile.photos.faces.centered"]; XCTAssertTrue(add.waitForExistence(timeout: 5)); add.tap()
+        addCenteredPhotoFace(in: app)
         let name = app.textFields["mobile.photos.faces.name"]; revealPhotoFaceField(name, in: app); name.tap(); name.typeText("New face\n")
         let horizontal = app.sliders["mobile.photos.faces.horizontal"]; revealPhotoFaceField(horizontal, in: app); horizontal.adjust(toNormalizedSliderPosition: 0.25)
         attachScreenshot(app, name: "Face box with accessible position controls")
         let remove = app.buttons["mobile.photos.faces.remove"]; revealPhotoFaceField(remove, in: app); remove.tap()
         XCTAssertFalse(app.buttons["mobile.photos.faces.save"].isEnabled)
-        app.buttons["mobile.photos.faces.draw"].tap()
+        let draw = app.buttons["mobile.photos.faces.draw"]; draw.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "selected == true"), object: draw)], timeout: 5), .completed)
         let canvas = element("mobile.photos.faces.canvas", in: app)
         canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).press(forDuration: 0.05, thenDragTo: canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.7)))
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
         revealPhotoFaceField(name, in: app); name.tap(); name.typeText("Drawn face")
         XCTAssertTrue(app.buttons["mobile.photos.faces.save"].isEnabled); attachScreenshot(app, name: "Drawn face ready to save")
         app.buttons["mobile.photos.faces.save"].tap(); XCTAssertTrue(app.staticTexts["Operation completed."].waitForExistence(timeout: 8))
@@ -409,11 +412,24 @@ final class MobileWorkspaceUITests: XCTestCase {
         let photo = app.buttons["Sample 1.jpg"]
         for _ in 0..<8 { if photo.exists && photo.isHittable { break }; app.swipeUp() }
         openPhotoFaceEditor(in: app)
-        let add = app.buttons["mobile.photos.faces.centered"]; XCTAssertTrue(add.waitForExistence(timeout: 5)); XCTAssertTrue(add.isHittable); add.tap()
+        addCenteredPhotoFace(in: app)
         let name = app.textFields["mobile.photos.faces.name"]; revealPhotoFaceField(name, in: app); name.tap(); name.typeText("Family")
         let save = app.buttons["mobile.photos.faces.save"]; XCTAssertTrue(save.isEnabled); XCTAssertTrue(save.isHittable)
         attachScreenshot(app, name: "人脸编辑中文无障碍大字"); save.tap()
         XCTAssertTrue(app.staticTexts["操作已完成。"].waitForExistence(timeout: 8))
+    }
+
+    private func addCenteredPhotoFace(in app: XCUIApplication) {
+        let canvas = element("mobile.photos.faces.canvas", in: app)
+        let loading = element("mobile.photos.faces.loading", in: app)
+        let add = app.buttons["mobile.photos.faces.centered"]
+        // 云端可能先看到辅助功能元素，再完成加载页切换；单次点击前等待实际可操作状态。
+        XCTAssertTrue(canvas.waitForExistence(timeout: 8))
+        XCTAssertTrue(loading.waitForNonExistence(timeout: 8))
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"), object: add)], timeout: 8), .completed)
+        add.tap()
+        XCTAssertTrue(app.textFields["mobile.photos.faces.name"].waitForExistence(timeout: 5))
     }
 
     private func revealPhotoFaceField(_ item: XCUIElement, in app: XCUIApplication) {

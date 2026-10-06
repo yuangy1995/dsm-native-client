@@ -3026,3 +3026,22 @@ lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Co
 修正后聚焦 36 项零失败；完整 2915 项 XCTest（172 条既有跳过、0 失败）及 12 项 Swift Testing 通过；Mac Release 构建成功，主 App 和内嵌 File Provider 均实际核实 x86_64/arm64。日志分别为 `m7-mac-deletion-before.log`（预期复现失败）、`m7-mac-deletion-focused.log`、`m7-mac-deletion-full.log`、`m7-mac-deletion-macos.log`，保留在本机构建目录，不提交。
 
 独立复核确认拒绝不再调用页面消失兜底，正常未知读取保留，映像删除原本的严格仓库判断不受影响。没有真实 NAS 删除、签名发布或安装包启动。用户已允许后续真实账号测试，但只能操作 Agent 自行生成的隔离数据；本次缺陷已用模型可靠复现，无需为反馈测试删除真实目标。真实设备/NAS 结论不由本片提升，M6 其余管理及 M7/M8 继续推进。
+
+## 2026-10-06 iPhone 人脸编辑界面等待修复
+
+`cdc889cc` 的 [Apple Build 37413207539](https://github.com/yuangy1995/dsm-native-client/actions/runs/37413207539) 中，iPad 工作区及共享/macOS 通过；[iPhone 工作区](https://github.com/yuangy1995/dsm-native-client/actions/runs/37413207539/job/112106031350) 的 161 项实际 UI 为 160 通过、1 失败。原始日志与原生结果包均确认唯一失败为 `MobileWorkspaceUITests.test人脸触控框选移动与辅助控件保存`，原提交文件第 428 行无法找到姓名输入框，失败发生在首次添加居中框之后、绘制拖动之前。两个模块组当时仍运行，未取消它们。
+
+先在当前工作区核实人脸应用源码及原测试与 `cdc889cc` 一致，再按“中文大字空内容→触控框选”顺序在两端运行；原版两项均通过，不能声称本机复现了同一失败。云端结果包约 656 MB，完整读取较慢，后改为校验过的按需读取，仅取根/测试/失败用例元数据、对应录屏及输入事件。原生解析给出 161/1 的计数；录屏中加载状态切换到原先两个人脸，首次点击未产生新框，之后十二次滚动没有新姓名字段。输入事件坐标为测试画布上方居中添加按钮区域；这些证据指向测试过早点击的就绪时机，未据此推断真实 NAS 或人脸保存 API 故障。
+
+仅修改 UITest：两个人脸用例共用添加步骤，先等画布出现、加载态消失、按钮存在/可点击/可用，再单次点击并等待姓名字段出现；进入绘制模式后等待选中状态，再执行原拖拽并检查新姓名字段。滑块移动、移除、手工绘制、命名、保存与重新打开的原断言全部保留，无固定睡眠、重复添加、跳过或降低断言。应用、共享协议、存储和 NAS 请求均未改。
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7-ci-face-phone-r2.xcresult '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test人脸大字中文空内容仍可命名保存' '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test人脸触控框选移动与辅助控件保存' -parallel-testing-enabled NO
+```
+
+iPad 使用目标 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 和 `m7-ci-face-pad-r2.xcresult`。两次移动构建通过；最终两端两项 UI 均 exit 0，iPhone 为 49.324/49.657 秒，iPad 为 48.784/50.812 秒。原版基线使用 `r1` 结果包，最终使用 `r2`；原始云端日志保存为 `m7-ci-phone-workspace-37413207539.log`。已实际查看 iPhone 保存后重开及 iPad 中文最大字号页面，当前合成预览保留在 `apple/Apps/DsmMobile/build/m7-ci-face-preview/`。
+
+原版和修正后的本机结果均记录了 UIKitToolbar 的系统运行时警告，当前未导致两项用例失败；本次没有扩大修改应用布局，也不宣称该既有警告消失。完整共享/Mac 回归由同日已授权的删除反馈专项执行（2915 XCTest/12 Swift Testing、双架构通过）；本片只有 UI 测试变化，未重复无关整组测试。新的云端执行仍待同步后的完整门禁，不将本机通过等同云端已修复。
+
+临时部分下载、按需读取索引/脚本、原始录屏/输入事件、截帧及导出清单已精确清理，保留五张合成审查图和正式日志/本机结果包。曾尝试普通 Range 请求但服务返回整包，识别后终止该额外下载；随后按服务支持的范围读取并校验所取对象，不将部分结果包误称完整下载。
