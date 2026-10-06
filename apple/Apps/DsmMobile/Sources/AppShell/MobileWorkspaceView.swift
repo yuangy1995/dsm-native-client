@@ -208,7 +208,7 @@ struct MobileWorkspaceView: View {
                 MobileDownloadsView(model: model.downloads, fileRepository: model.fileRepository,
                     openFiles: model.isModuleVisible(.files) ? { model.selectModule(.files) } : nil)
             case .containers:
-                MobileContainersView(inventory: model.containerInventoryModel)
+                MobileContainersView(inventory: model.containerInventoryModel, controls: model.containerControls)
             case .virtualMachines:
                 MobileVirtualMachinesView(inventory: model.virtualMachineInventoryModel)
             case .nasSettings:
@@ -248,7 +248,7 @@ struct MobileWorkspaceView: View {
                         if module == .nasSettings {
                             Task { await model.refreshNasAdministration() }
                         } else if module == .containers {
-                            Task { await model.containerInventoryModel.refresh() }
+                            Task { await model.containerInventoryModel.refresh(); await model.containerControls.refresh() }
                         } else if module == .virtualMachines {
                             Task { await model.virtualMachineInventoryModel.refresh() }
                         } else {

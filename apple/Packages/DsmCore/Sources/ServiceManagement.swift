@@ -521,7 +521,7 @@ public struct ContainerManagerSnapshot: Equatable, Sendable {
     }
 }
 
-public enum ContainerAction: String, Sendable {
+public enum ContainerAction: String, Codable, CaseIterable, Sendable {
     case start
     case stop
     case restart
@@ -823,6 +823,9 @@ public protocol ServiceManagementRepository: Sendable {
 
     func loadContainerManager() async throws -> ContainerManagerSnapshot
     func controlContainers(ids: [String], action: ContainerAction) async throws
+    func loadContainerControlStates() async throws -> [ContainerControlState]
+    func controlContainer(_ target: ContainerControlState, action: ContainerAction,
+                          observer: @escaping ContainerControlObserver) async throws
     func deleteContainers(ids: [String]) async throws
     func deleteContainersResult(ids: [String]) async throws -> MutationResult
     func searchContainerImages(query: String) async throws -> [ContainerRegistryImage]
@@ -950,6 +953,17 @@ public extension ServiceManagementRepository {
             localizationPrefix: "download-task.delete",
             count: ids.count
         )
+    }
+
+    func loadContainerControlStates() async throws -> [ContainerControlState] {
+        throw AppError(category: .apiUnavailable, isRetryable: false,
+                       safeUserMessage: L10n.string("container.control.changed"))
+    }
+
+    func controlContainer(_ target: ContainerControlState, action: ContainerAction,
+                          observer: @escaping ContainerControlObserver) async throws {
+        throw AppError(category: .apiUnavailable, isRetryable: false,
+                       safeUserMessage: L10n.string("container.control.changed"))
     }
 
     func deleteContainersResult(ids: [String]) async throws -> MutationResult {

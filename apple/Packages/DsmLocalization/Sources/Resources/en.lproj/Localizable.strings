@@ -6941,3 +6941,67 @@
 "mobile.package.install.interruptedHelp" = "Installation did not start. Select the package again. If the NAS is still downloading it, manage the download in DSM Package Center.";
 
 "mobile.package.install.fileReadError" = "The selected package file could not be opened. Finish downloading it in Files, or choose another file and try again.";
+
+"mobile.containers.control.start" = "Start";
+
+"mobile.containers.control.stop" = "Stop";
+
+"mobile.containers.control.restart" = "Restart";
+
+"mobile.containers.control.selection" = "Select containers";
+
+"mobile.containers.control.cancel" = "Cancel";
+
+"mobile.containers.control.stop.warning" = "Stopping these containers will make their services unavailable.";
+
+"mobile.containers.control.restart.warning" = "Restarting these containers will temporarily interrupt their services.";
+
+"mobile.containers.control.records" = "Activity";
+
+"mobile.containers.control.records.empty" = "No activity yet";
+
+"mobile.containers.control.records.empty.message" = "Start, stop, or restart a container to see its result here.";
+
+"mobile.containers.control.record.remove" = "Remove this record";
+
+"mobile.containers.control.record.title" = "%1$@ · %2$@";
+
+"mobile.containers.control.target" = "Container %d";
+
+"mobile.containers.control.processing" = "Working…";
+
+"mobile.containers.control.unavailable-result" = "The result is temporarily unavailable. Reconnect and refresh.";
+
+"mobile.containers.control.skipped" = "Not performed. Select the container again to continue.";
+
+"mobile.containers.control.start.completed" = "Started";
+
+"mobile.containers.control.stop.completed" = "Stopped";
+
+"mobile.containers.control.restart.completed" = "Restarted";
+
+"mobile.containers.control.error.read" = "Container status is unavailable. Check your connection and refresh.";
+
+"mobile.containers.control.error.denied" = "This account cannot manage containers. Ask an administrator to check its permissions, or sign in again.";
+
+"mobile.containers.control.error.unavailable" = "This NAS does not support this action. Manage containers in DSM Container Manager.";
+
+"mobile.containers.control.error.changed" = "The container changed, so the action was not performed. Refresh and select it again.";
+
+"mobile.containers.control.error.storage" = "Activity could not be saved, so new actions are paused. Free up device storage and reopen the app.";
+
+"mobile.containers.control.error.trust" = "A secure connection to the NAS could not be established. Return to connection settings and reconnect.";
+
+"mobile.containers.control.error.failed" = "The action could not be completed. Refresh the container status and try again.";
+
+"mobile.containers.field.project" = "Project";
+
+"mobile.containers.field.cpu" = "CPU usage";
+
+"mobile.containers.field.memory" = "Memory usage";
+
+"mobile.containers.field.user" = "User";
+
+"mobile.containers.value.cpu" = "%.1f%%";
+
+"mobile.containers.control.managed" = "This container is managed by a package. Manage that package in Package Center.";

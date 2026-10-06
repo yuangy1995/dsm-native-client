@@ -42,7 +42,7 @@ struct MobileModuleAccessReader: Sendable {
             (.containers, .containers), (.nasSettings, .nasSettings)
         ]
         return Set(mappings.compactMap { module, application in
-            let allowed = [.containers, .nasSettings].contains(module)
+            let allowed = module == .nasSettings
                 ? privileges.isAdministrator && privileges.applications[application] != false
                 : privileges.applications[application] == true
             return allowed && module.isAvailable(in: capabilities) ? module : nil
@@ -84,6 +84,7 @@ extension MobileAppModel {
         }
         availableOptionalModules = snapshot.allowed
         if !isModuleVisible(.chat) { chatModel.deactivate() }
+        if !isModuleVisible(.containers) { containerControls.deactivate(); containerInventoryModel.deactivate() }
         moduleAccessLookupFailed = snapshot.lookupFailed
         isLoadingModuleAccess = false
         if !isModuleVisible(selectedModule) { selectModule(.settings) }

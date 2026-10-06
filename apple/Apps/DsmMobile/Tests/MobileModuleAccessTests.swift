@@ -50,8 +50,19 @@ final class MobileModuleAccessTests: XCTestCase {
     }
 
     func test管理员入口允许缺失键但不能覆盖明确拒绝() {
-        XCTAssertEqual(MobileModuleAccessReader.resolve(.init(applications: [:], isAdministrator: true), capabilities: Self.capabilities), [.containers, .nasSettings])
+        XCTAssertEqual(MobileModuleAccessReader.resolve(.init(applications: [:], isAdministrator: true), capabilities: Self.capabilities), [.nasSettings])
         XCTAssertEqual(MobileModuleAccessReader.resolve(.init(applications: [.containers: false, .nasSettings: false, .virtualMachines: true], isAdministrator: true), capabilities: Self.capabilities), [.virtualMachines])
+    }
+
+    func test容器授权独立于管理员且缺失或拒绝不能被管理员覆盖() {
+        for administrator in [false, true] {
+            let expected: Set<MobileModule> = administrator ? [.containers, .nasSettings] : [.containers]
+            XCTAssertEqual(MobileModuleAccessReader.resolve(.init(applications: [.containers: true], isAdministrator: administrator), capabilities: Self.capabilities), expected)
+            for value in [nil, false] as [Bool?] {
+                var applications: [DsmDesktopApplication: Bool] = [:]; applications[.containers] = value
+                XCTAssertFalse(MobileModuleAccessReader.resolve(.init(applications: applications, isAdministrator: administrator), capabilities: Self.capabilities).contains(.containers))
+            }
+        }
     }
 
     func test照片采用独立授权且拒绝不误报整个权限加载失败() async {

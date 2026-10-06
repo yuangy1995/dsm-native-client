@@ -1601,6 +1601,117 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         }
     }
 
+    func test移动容器控制读取保留运行三态且不把缺失字段当停止() async throws {
+        for key in ["Running", "Paused", "Restarting"] {
+            let raw = containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z")
+                .replacingOccurrences(of: "\"\(key)\":false,", with: "")
+            let transport = MockHTTPTransport(responses: [response(raw)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+            let values = try await repository.loadContainerControlStates()
+            XCTAssertEqual(values.count, 1)
+            XCTAssertFalse(ContainerAction.allCases.contains(where: values[0].supports))
+        }
+    }
+
+    func test移动容器控制固定确认快照并记录真正提交边界() async throws {
+        for format in [DsmRequestFormat.form, .json] {
+            for action in ContainerAction.allCases {
+                let initial = containerControlResponse(running: action != .start, startedAt: "2026-01-01T00:00:00Z")
+                let transport = MockHTTPTransport(responses: [response(initial), response(initial), response(#"{"success":true}"#),
+                    response(containerControlResponse(running: action != .stop, startedAt: "2026-01-01T01:00:00Z"))])
+                let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], requestFormatOverrides: [DsmAPIName.dockerContainer: format], transport: transport)
+                let target = try await controlState(repository)
+                let probe = ContainerControlStageProbe()
+                try await repository.controlContainer(target, action: action) { try await probe.record($0) }
+                let stages = await probe.values
+                XCTAssertEqual(stages, [.willSubmit, .accepted, .verified])
+                let requests = await transport.recordedRequests(), submitted = requests.filter { requestValue("method", in: $0) == action.rawValue }
+                XCTAssertEqual(submitted.count, 1)
+                XCTAssertEqual(requestValue("version", in: submitted[0]), "1")
+                XCTAssertNil(requestValue("id", in: submitted[0]))
+                XCTAssertEqual(requestValue("name", in: submitted[0]), format == .json ? #""synthetic-worker""# : "synthetic-worker")
+            }
+        }
+    }
+
+    func test移动容器控制目标或运行状态变化零写() async throws {
+        let initial = containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z")
+        for altered in [initial.replacingOccurrences(of: "synthetic-id", with: "replacement-id"),
+                        initial.replacingOccurrences(of: "synthetic-worker", with: "renamed"),
+                        containerControlResponse(running: true, startedAt: "2026-01-01T01:00:00Z"),
+                        initial.replacingOccurrences(of: #""is_package":false"#, with: #""is_package":true"#)] {
+            let transport = MockHTTPTransport(responses: [response(initial), response(altered)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+            let target = try await controlState(repository), probe = ContainerControlStageProbe()
+            do { try await repository.controlContainer(target, action: .start) { try await probe.record($0) }; XCTFail("旧确认不能提交") }
+            catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+            let stages = await probe.values, requests = await transport.recordedRequests()
+            XCTAssertTrue(stages.isEmpty); XCTAssertEqual(requests.count, 2)
+            XCTAssertTrue(requests.allSatisfy { requestValue("method", in: $0) == "list" })
+        }
+    }
+
+    func test移动容器检查点失败不会越过落盘边界() async throws {
+        for failure in [ContainerControlStage.willSubmit, .accepted] {
+            let initial = containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z")
+            let transport = MockHTTPTransport(responses: [response(initial), response(initial), response(#"{"success":true}"#)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+            let target = try await controlState(repository), probe = ContainerControlStageProbe(failure: failure)
+            do { try await repository.controlContainer(target, action: .start) { try await probe.record($0) }; XCTFail("记录失败必须停止") }
+            catch is ContainerControlStageProbe.Failure { }
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.count, failure == .willSubmit ? 2 : 3)
+            XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "start" }.count, failure == .willSubmit ? 0 : 1)
+        }
+    }
+
+    func test移动容器明确拒绝会记拒绝且不追加结果读取() async throws {
+        let initial = containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z")
+        let transport = MockHTTPTransport(responses: [response(initial), response(initial), response(#"{"success":false,"error":{"code":105}}"#)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+        let target = try await controlState(repository), probe = ContainerControlStageProbe()
+        do { try await repository.controlContainer(target, action: .start) { try await probe.record($0) }; XCTFail("拒绝不能成功") }
+        catch let error as AppError { XCTAssertEqual(error.category, .permissionDenied) }
+        let stages = await probe.values, requests = await transport.recordedRequests()
+        XCTAssertEqual(stages, [.willSubmit, .rejected]); XCTAssertEqual(requests.count, 3)
+    }
+
+    func test移动容器断线后独立读取解除会话锁且不重发() async throws {
+        let initial = containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z")
+        let running = containerControlResponse(running: true, startedAt: "2026-01-01T01:00:00Z")
+        let transport = MockHTTPTransport(steps: [.response(response(initial)), .response(response(initial)), .urlError(.networkConnectionLost),
+            .response(response(running)), .response(response(running)), .response(response(#"{"success":true}"#)), .response(response(initial))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+        let target = try await controlState(repository), probe = ContainerControlStageProbe()
+        do { try await repository.controlContainer(target, action: .start) { try await probe.record($0) }; XCTFail("丢失回执不能成功") } catch { }
+        let stages = await probe.values; XCTAssertEqual(stages, [.willSubmit])
+        let recovered = try await controlState(repository)
+        XCTAssertTrue(recovered.verifies(.start, previousStartedAt: target.startedAt))
+        try await repository.controlContainer(recovered, action: .stop) { _ in }
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "start" }.count, 1)
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "stop" }.count, 1)
+    }
+
+    func test移动容器重启读取必须实际启动时间增大() async throws {
+        let initial = containerControlResponse(running: true, startedAt: "2026-01-01T00:00:00Z")
+        let transport = MockHTTPTransport(responses: [response(initial), response(initial), response(#"{"success":true}"#), response(initial), response(initial)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+        let target = try await controlState(repository), probe = ContainerControlStageProbe()
+        do { try await repository.controlContainer(target, action: .restart) { try await probe.record($0) }; XCTFail("原运行状态不是重启成功") }
+        catch let error as AppError { XCTAssertEqual(error.category, .partialFailure) }
+        let stages = await probe.values; XCTAssertEqual(stages, [.willSubmit, .accepted])
+        let reread = try await controlState(repository)
+        XCTAssertFalse(reread.verifies(.restart, previousStartedAt: target.startedAt))
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "restart" }.count, 1)
+    }
+
+    private func controlState(_ repository: DsmServiceManagementRepository) async throws -> ContainerControlState {
+        let values = try await repository.loadContainerControlStates()
+        return try XCTUnwrap(values.first)
+    }
+
     private func containerControlResponse(running: Bool, startedAt: String, restarting: Bool = false) -> String {
         let state = running ? "running" : "stopped"
         return #"{"success":true,"data":{"containers":[{"id":"synthetic-id","name":"synthetic-worker","status":"\#(state)","image":"synthetic:latest","is_package":false,"Labels":{},"State":{"Running":\#(running),"Paused":false,"Restarting":\#(restarting),"StartedAt":"\#(startedAt)"}}]}}"#
@@ -3435,6 +3546,17 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             .queryItems?
             .first(where: { $0.name == name })?
             .value
+    }
+}
+
+private actor ContainerControlStageProbe {
+    enum Failure: Error { case storage }
+    let failure: ContainerControlStage?
+    private(set) var values: [ContainerControlStage] = []
+    init(failure: ContainerControlStage? = nil) { self.failure = failure }
+    func record(_ stage: ContainerControlStage) throws {
+        values.append(stage)
+        if failure == stage { throw Failure.storage }
     }
 }
 

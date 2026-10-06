@@ -1316,6 +1316,28 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     public func controlContainers(ids: [String], action: ContainerAction) async throws {
+        try await controlContainers(ids: ids, action: action, expected: nil, observer: nil)
+    }
+
+    public func loadContainerControlStates() async throws -> [ContainerControlState] {
+        let values = try await containerControlTargets(requiredIDs: nil)
+        for target in values {
+            if let review = pendingContainerControls[target.item.id],
+               Self.containerControlVerified(target, review: review) {
+                pendingContainerControls[target.item.id] = nil
+            }
+        }
+        return values.map(\.controlState)
+    }
+
+    public func controlContainer(_ target: ContainerControlState, action: ContainerAction,
+                                 observer: @escaping ContainerControlObserver) async throws {
+        guard target.supports(action) else { throw containerMutationChangedError() }
+        try await controlContainers(ids: [target.id], action: action, expected: target, observer: observer)
+    }
+
+    private func controlContainers(ids: [String], action: ContainerAction, expected: ContainerControlState?,
+                                   observer: ContainerControlObserver?) async throws {
         let ids = try validatedIDs(ids)
         let targets = Set(ids)
         guard activeContainerMutationIDs.isDisjoint(with: targets), targets.isDisjoint(with: Set(pendingContainerDeletions.keys)) else {
@@ -1328,9 +1350,12 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             let current = try await containerControlTargets(requiredIDs: [id])
             guard let target = current.first(where: { $0.item.id == id }),
                   current.filter({ $0.item.name == target.item.name }).count == 1 else { throw containerMutationChangedError() }
+            if let expected, target.controlState != expected { throw containerMutationChangedError() }
             guard !pendingContainerControls.contains(where: { $0.key != id && $0.value.name == target.item.name }),
                   !pendingContainerDeletions.values.contains(target.item.name) else { throw containerMutationChangedError() }
             if let pending = pendingContainerControls[id] {
+                // 移动恢复只通过独立读取解除旧操作，不能借新确认重放原提交。
+                guard expected == nil else { throw containerControlUnverifiedError() }
                 guard pending.action == action else { throw containerMutationChangedError() }
                 guard Self.containerControlVerified(target, review: pending) else { throw containerControlUnverifiedError() }
                 pendingContainerControls[id] = nil
@@ -1342,18 +1367,24 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             if (action == .start && running) || (action == .stop && !running && !restarting) { continue }
             if action == .restart && (!(running || restarting) || target.startedAt == nil) { throw containerMutationChangedError() }
             let review = ContainerControlReview(action: action, name: target.item.name, startedAt: target.startedAt)
+            try await observer?(.willSubmit)
             pendingContainerControls[id] = review
             do {
                 try await callContainerMutation(method: action.rawValue, name: target.item.name)
             } catch let error as AppError {
-                if error.dsmCode != nil { pendingContainerControls[id] = nil }
+                if error.dsmCode != nil {
+                    pendingContainerControls[id] = nil
+                    try await observer?(.rejected)
+                }
                 throw error
             }
+            try await observer?(.accepted)
             let refreshed = try await containerControlTargets(requiredIDs: [id])
             guard let after = refreshed.first(where: { $0.item.id == id }), Self.containerControlVerified(after, review: review) else {
                 throw containerControlUnverifiedError()
             }
             pendingContainerControls[id] = nil
+            try await observer?(.verified)
         }
     }
 
@@ -1543,6 +1574,11 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         let startedAt: Date?
         var managedByPackage: Bool?
         let projectName: String?
+
+        var controlState: ContainerControlState {
+            .init(id: item.id, name: item.name, running: running, paused: paused,
+                  restarting: restarting, startedAt: startedAt, managedByPackage: managedByPackage)
+        }
     }
 
     private struct ContainerControlReview {
@@ -1551,7 +1587,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         let startedAt: Date?
     }
 
-    private func containerControlTargets(requiredIDs: Set<String>) async throws -> [ContainerControlTarget] {
+    private func containerControlTargets(requiredIDs: Set<String>?) async throws -> [ContainerControlTarget] {
         let value = try await containerInventoryPayload()
         let items = try Self.internalContainerV1Inventory(from: value)
         let objects = try Self.strictRootObjects(value, keys: ["containers"])
@@ -1585,7 +1621,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             return ContainerControlTarget(item: item, running: flag("Running"), paused: flag("Paused"),
                 restarting: flag("Restarting"), startedAt: startedAt, managedByPackage: managed, projectName: projectName)
         }
-        if targets.contains(where: { requiredIDs.contains($0.item.id) && $0.managedByPackage == false && $0.projectName != nil }) {
+        if targets.contains(where: { (requiredIDs?.contains($0.item.id) ?? true) && $0.managedByPackage == false && $0.projectName != nil }) {
             guard let capability = capabilities[DsmAPIName.dockerProject], capability.name == DsmAPIName.dockerProject, capability.minVersion == 1,
                   capability.maxVersion >= 1, capability.selectedVersion != nil else { throw unavailableError() }
             let projects: ServiceJSON
@@ -1604,7 +1640,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 } else { managed = false }
                 ownership[name] = managed
             }
-            for index in targets.indices where requiredIDs.contains(targets[index].item.id) && targets[index].managedByPackage == false {
+            for index in targets.indices where (requiredIDs?.contains(targets[index].item.id) ?? true) && targets[index].managedByPackage == false {
                 if let name = targets[index].projectName { targets[index].managedByPackage = ownership[name] ?? false }
             }
         }
@@ -1612,14 +1648,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     private static func containerControlVerified(_ target: ContainerControlTarget, review: ContainerControlReview) -> Bool {
-        guard target.item.name == review.name, target.managedByPackage == false, target.paused == false, target.restarting == false else { return false }
-        switch review.action {
-        case .start: return target.running == true
-        case .stop: return target.running == false
-        case .restart:
-            guard target.running == true, let before = review.startedAt, let after = target.startedAt else { return false }
-            return after > before
-        }
+        target.item.name == review.name && target.controlState.verifies(review.action, previousStartedAt: review.startedAt)
     }
 
     private func containerMutationChangedError() -> AppError {

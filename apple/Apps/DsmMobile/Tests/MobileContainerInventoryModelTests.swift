@@ -350,11 +350,17 @@ final class MobileContainerInventoryModelTests: XCTestCase {
         XCTAssertTrue(model.profiles.isEmpty)
     }
 
-    func test白名单事件不保留用户与正文且仓库协议无写能力() throws {
+    func test活动详情保留正文与用户且读取仓库协议无写能力() throws {
+        let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
         let item = MobileContainerEventItem(
-            ServiceEvent(id: "event", timestamp: nil, level: "warning", user: "private", message: "private")
+            ServiceEvent(id: "event", timestamp: timestamp, level: "warning", user: "Sample user", message: "Sample activity")
         )
-        XCTAssertEqual(Set(Mirror(reflecting: item).children.compactMap(\.label)), ["id", "timestamp", "level"])
+        XCTAssertEqual(Set(Mirror(reflecting: item).children.compactMap(\.label)), ["id", "timestamp", "level", "user", "message"])
+        XCTAssertEqual(item.id, "event")
+        XCTAssertEqual(item.timestamp, timestamp)
+        XCTAssertEqual(item.level, "warning")
+        XCTAssertEqual(item.user, "Sample user")
+        XCTAssertEqual(item.message, "Sample activity")
 
         let source = try source("Sources/Features/ReadOnlyServices/Containers/MobileReadOnlyContainerRepository.swift")
         let protocolSource = try XCTUnwrap(
