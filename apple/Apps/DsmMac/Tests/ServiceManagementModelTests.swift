@@ -300,6 +300,53 @@ final class ServiceManagementModelTests: XCTestCase {
         XCTAssertTrue(model.messageIsError)
     }
 
+    func test明确删除失败不因刷新后目标消失而变为成功() async throws {
+        for status in [MutationResultStatus.confirmedFailure, .permissionDenied, .unsupported] {
+            for submitted in [false, true] {
+                let result = try MutationResult(status: status, operation: "virtualMachineDelete", submitted: submitted,
+                    requiresRefresh: true, counts: .init(succeeded: 0, failed: 1, unknown: 0))
+                // 模拟另一客户端使条目消失，原操作仍明确返回失败。
+                let repository = ServiceManagementRepositoryStub(removeVirtualMachineOnDelete: true, deletionResultOverride: result)
+                let model = ServiceManagementModel(repository: repository)
+                await model.activate(.virtualMachines); model.virtualMachineSelection = ["vm-1"]
+                let succeeded = await model.deleteVirtualMachines()
+                XCTAssertFalse(succeeded, "\(status), submitted=\(submitted)")
+                XCTAssertTrue(model.virtualMachines?.machines.isEmpty == true)
+                XCTAssertTrue(model.messageIsError)
+                XCTAssertEqual(model.message, L10n.string(ServiceManagementModel.deletionFeedback(for: status,
+                    keyPrefix: "virtual-machine.delete").resourceKey))
+            }
+        }
+    }
+
+    func test提交前取消不因旧目标已从页面消失而显示删除完成() async {
+        let snapshot = ContainerManagerSnapshot(containers: [], images: [], networks: [], projects: [], events: [])
+        let repository = ServiceManagementRepositoryStub(containerStatus: .cancelledBeforeSubmission, containerSnapshot: snapshot)
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.containers); model.containerSelection = ["container-1"]
+        let succeeded = await model.deleteContainers()
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(model.message, L10n.string("container.delete.cancelled"))
+        XCTAssertFalse(model.messageIsError)
+    }
+
+    func test部分删除只有未知项可由刷新确认而明确失败项保留() async throws {
+        for failed in [0, 1] {
+            let result = try MutationResult(status: .partialSuccess, operation: "virtualMachineDelete", submitted: true,
+                requiresRefresh: true, counts: .init(succeeded: 1, failed: failed, unknown: 1 - failed))
+            let repository = ServiceManagementRepositoryStub(removeVirtualMachineOnDelete: true,
+                virtualMachines: [.init(id: "vm-1", name: "测试虚拟机一", status: "shutdown"),
+                                  .init(id: "vm-2", name: "测试虚拟机二", status: "shutdown")], deletionResultOverride: result)
+            let model = ServiceManagementModel(repository: repository)
+            await model.activate(.virtualMachines); model.virtualMachineSelection = ["vm-1", "vm-2"]
+            let succeeded = await model.deleteVirtualMachines()
+            XCTAssertEqual(succeeded, failed == 0)
+            XCTAssertTrue(model.virtualMachines?.machines.isEmpty == true)
+            XCTAssertEqual(model.messageIsError, failed > 0)
+            XCTAssertEqual(model.message, L10n.string(failed == 0 ? "virtual-machine.delete.completed" : "virtual-machine.delete.partial"))
+        }
+    }
+
     func test未确认虚拟机删除可由随后刷新确认完成() async {
         let repository = ServiceManagementRepositoryStub(
             virtualMachineStatus: .submittedButUnverified,
@@ -605,6 +652,7 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
     private let removeVirtualMachineOnDelete: Bool
     private let secondaryStatus: MutationResultStatus
     private let removeSecondaryOnDelete: Bool
+    private let deletionResultOverride: MutationResult?
 
     init(
         containerStatus: MutationResultStatus = .confirmedSuccess,
@@ -615,7 +663,9 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         virtualMachineStorages: [VirtualizationResource] = [],
         downloadTasks: [DownloadStationTask]? = nil,
         hasBTSearch: Bool = false,
-        containerSnapshot: ContainerManagerSnapshot? = nil
+        containerSnapshot: ContainerManagerSnapshot? = nil,
+        virtualMachines: [VirtualMachine]? = nil,
+        deletionResultOverride: MutationResult? = nil
     ) {
         self.hasBTSearch = hasBTSearch
         self.containerStatus = containerStatus
@@ -625,6 +675,8 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         self.removeSecondaryOnDelete = removeSecondaryOnDelete
         self.virtualMachineStorages = virtualMachineStorages
         self.containerSnapshot = containerSnapshot
+        self.deletionResultOverride = deletionResultOverride
+        if let virtualMachines { self.machines = virtualMachines }
         if let downloadTasks { self.downloadTasks = downloadTasks }
     }
 
@@ -679,6 +731,7 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         operation: String,
         count: Int
     ) throws -> MutationResult {
+        if let deletionResultOverride { return deletionResultOverride }
         let submitted: Bool
         let requiresRefresh: Bool
         let counts: MutationResultCounts
