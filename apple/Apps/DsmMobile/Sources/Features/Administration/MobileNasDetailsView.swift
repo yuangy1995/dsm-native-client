@@ -37,7 +37,7 @@ struct MobileNasDetailsSectionView: View {
             case .connections: connectionsSection
             case .externalStorage, .processes, .shareAccess, .zram, .powerSchedule:
                 MobileNasReadSections(model: model, destination: destination, showsSectionTitle: showsSectionTitle).id(destination)
-            case .system, .performance, .storage, .update, .ddns, .region, .accounts, .fileServices, .terminal, .proxy, .remoteAccess, .ethernet: EmptyView()
+            case .system, .performance, .storage, .update, .ddns, .region, .accounts, .fileServices, .terminal, .proxy, .remoteAccess, .ethernet, .security: EmptyView()
             }
         }
         .task(id: destination) { await model.loadIfNeeded(destination) }
@@ -323,6 +323,7 @@ extension MobileNasAdministrationDestination {
         case .proxy: NasServiceKind.proxy.title
         case .remoteAccess: NasServiceKind.remoteAccess.title
         case .ethernet: NasServiceKind.ethernet.title
+        case .security: NasServiceKind.security.title
         }
     }
 
@@ -344,7 +345,7 @@ extension MobileNasAdministrationDestination {
         case .ddns: L10n.string("mobile.nas.ddns.loading")
         case .region: L10n.string("mobile.nas.region.loading")
         case .accounts: L10n.string("mobile.nas.directory.loading")
-        case .fileServices, .terminal, .proxy, .remoteAccess, .ethernet: L10n.string("mobile.nas.service.loading")
+        case .fileServices, .terminal, .proxy, .remoteAccess, .ethernet, .security: L10n.string("mobile.nas.service.loading")
         }
     }
 
@@ -371,6 +372,7 @@ extension MobileNasAdministrationDestination {
         case .proxy: "network"
         case .remoteAccess: "network.badge.shield.half.filled"
         case .ethernet: "cable.connector"
+        case .security: "shield.lefthalf.filled"
         }
     }
 }

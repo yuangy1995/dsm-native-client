@@ -4239,6 +4239,33 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
         XCTAssertEqual(requestValue("method", in: requests[4]), "stop")
     }
 
+    func test安全旧入口防火墙任务未知时不清理也不凭开关报告成功() async throws {
+        let autoBlock = securityAutoBlock(enabled: true, attempts: 5, within: 10, expiration: 0)
+        let responses = [response(autoBlock), response(securityFirewall(enabled: false)),
+            response(#"{"success":true,"data":{"task_id":"synthetic-task"}}"#)]
+            + Array(repeating: response(#"{"success":true,"data":{}}"#), count: 30)
+            + [response(#"{"success":true}"#), response(autoBlock), response(securityFirewall(enabled: true))]
+        let transport = MockHTTPTransport(responses: responses)
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreSecurityAutoBlock, DsmAPIName.coreSecurityFirewall, DsmAPIName.coreSecurityFirewallProfileApply], transport: transport)
+        let result = try await repository.saveSecuritySettingsResult(.init(isAutoBlockEnabled: true, failedAttempts: 5, withinMinutes: 10, expirationDays: nil, isFirewallEnabled: true, firewallProfileName: "synthetic-profile"))
+        XCTAssertEqual(result.status, .submittedButUnverified)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 33)
+        XCTAssertFalse(requests.contains { requestValue("method", in: $0) == "stop" })
+    }
+
+    func test安全旧入口防火墙清理权限拒绝必须传播() async throws {
+        let autoBlock = securityAutoBlock(enabled: true, attempts: 5, within: 10, expiration: 0)
+        let transport = MockHTTPTransport(responses: [response(autoBlock), response(securityFirewall(enabled: false)),
+            response(#"{"success":true,"data":{"task_id":"synthetic-task"}}"#),
+            response(#"{"success":true,"data":{"success":true}}"#),
+            response(#"{"success":false,"error":{"code":105}}"#), response(autoBlock), response(securityFirewall(enabled: true))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreSecurityAutoBlock, DsmAPIName.coreSecurityFirewall, DsmAPIName.coreSecurityFirewallProfileApply], transport: transport)
+        do { _ = try await repository.saveSecuritySettingsResult(.init(isAutoBlockEnabled: true, failedAttempts: 5, withinMinutes: 10, expirationDays: nil, isFirewallEnabled: true, firewallProfileName: "synthetic-profile")); XCTFail("清理拒绝不能被吞掉") }
+        catch { XCTAssertEqual((error as? AppError)?.category, .permissionDenied) }
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 5)
+    }
+
     func test读取电源计划时仅保留白名单字段且不提交写操作() async throws {
         let transport = MockHTTPTransport(responses: [
             response(

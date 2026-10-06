@@ -7065,3 +7065,19 @@
 "mobile.nas.ethernet.recoveryTitle" = "Read the result on this NAS?";
 "mobile.nas.ethernet.readResult" = "Read Saved Result";
 "mobile.nas.ethernet.recoveryWarning" = "Continue only if this is the NAS whose network settings you just changed. Matching settings on another NAS cannot confirm the original change. This only reads network settings; it does not save any settings.";
+
+// 移动安全设置
+"mobile.nas.security.title" = "Security";
+"mobile.nas.security.autoBlock" = "Auto Block";
+"mobile.nas.security.attempts" = "Failed login attempts";
+"mobile.nas.security.withinMinutes" = "Time window (minutes)";
+"mobile.nas.security.expiration" = "Unblock automatically";
+"mobile.nas.security.expirationDays" = "Days until unblocked";
+"mobile.nas.security.never" = "Keep blocked";
+"mobile.nas.security.dos" = "Network attack protection";
+"mobile.nas.security.firewall" = "Firewall";
+"mobile.nas.security.notifications" = "Firewall notifications";
+"mobile.nas.security.profile" = "Current profile";
+"mobile.nas.security.noAdapters" = "Your NAS has no available network adapter protection settings.";
+"mobile.nas.security.warning" = "Changing security settings may block your account or disconnect your NAS. Make sure you have another way to manage it.";
+"mobile.nas.security.invalid" = "Enter 1–9,999 login attempts, 1–9,999,999 minutes and, when enabled, 1–999 days. The firewall must use an available profile.";

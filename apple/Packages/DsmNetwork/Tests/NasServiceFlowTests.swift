@@ -536,12 +536,154 @@ final class NasServiceFlowTests: XCTestCase {
         let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
     }
 
+    func test安全四组逐步保存版本参数与原配置档一致() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let original = try await repository.loadServiceForManagement(.security)
+        guard case .security(var value) = original else { return XCTFail() }
+        value.isAutoBlockEnabled = true; value.expirationDays = 7; value.dosProtection[0].isEnabled = true
+        value.isPortScanProtectionEnabled = true; value.isFirewallEnabled = true
+        let result = try await repository.changeServiceResult(.init(original: original, desired: .security(value))) { await log.append($0) }
+        XCTAssertEqual(result.status, .confirmedSuccess); XCTAssertEqual(result.counts.succeeded, 4)
+        let writes = await transport.writes
+        XCTAssertEqual(writes.map { $0["api"] }, [DsmAPIName.coreSecurityAutoBlock, DsmAPIName.coreSecurityDoS, DsmAPIName.coreSecurityFirewallConf, DsmAPIName.coreSecurityFirewallProfileApply, DsmAPIName.coreSecurityFirewallProfileApply])
+        XCTAssertEqual(writes.map { $0["version"] }, ["1", "2", "1", "1", "1"])
+        guard writes.count == 5 else { return }
+        XCTAssertEqual(writes[0]["expire_day"], "7"); XCTAssertEqual(writes[2]["enable_port_check"], "true")
+        XCTAssertEqual(writes[3]["name"], "synthetic-profile"); XCTAssertEqual(writes[3]["profile_applying"], "false")
+        XCTAssertEqual(writes[4]["method"], "stop")
+        let stages = await log.values
+        XCTAssertEqual(Array(stages.suffix(6)), [.willSubmit(.firewall), .firewallTaskStarted("synthetic-task"), .accepted(.firewall), .firewallTaskFinished(true), .willCleanFirewallTask, .verified(.firewall)])
+    }
+    func test安全缺失期限小数越界和DoS不完整不能猜测保存() async throws {
+        for (api, key, value) in [(DsmAPIName.coreSecurityAutoBlock, "expire_day", NSNull() as any Sendable),
+                                  (DsmAPIName.coreSecurityAutoBlock, "attempts", 2.5),
+                                  (DsmAPIName.coreSecurityAutoBlock, "within_mins", 10000000),
+                                  (DsmAPIName.coreSecurityDoS, "configs", [["adapter": "eth0"]]),
+                                  (DsmAPIName.coreSecurityFirewall, "enable_firewall", "unknown")] {
+            let transport = ServiceFlowTransport(), repository = try repository(transport)
+            await transport.set(api, key: key, value: value)
+            do { _ = try await repository.loadServiceForManagement(.security); XCTFail("不完整设置不能作为写入基线") } catch {}
+            let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+        }
+    }
+    func testDoS重复状态使用末值且比较不依赖显示名称和顺序() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport)
+        await transport.set(DsmAPIName.coreSecurityDoS, key: "configs", value: [["adapter": "eth0", "dos_protect_enable": false], ["adapter": "eth0", "dos_protect_enable": true]] as [[String: any Sendable]])
+        let original = try await repository.loadServiceForManagement(.security)
+        guard case .security(var value) = original else { return XCTFail() }
+        XCTAssertEqual(value.dosProtection.map(\.isEnabled), [true])
+        value.dosProtection = [.init(id: "eth0", displayName: "Another label", isEnabled: true)]
+        XCTAssertTrue(original.hasSameConfiguration(as: .security(value)))
+    }
+    func test安全变更不能更换配置档新增网卡或填充未知开关() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport)
+        let original = try await repository.loadServiceForManagement(.security)
+        guard case .security(let base) = original else { return XCTFail() }
+        var profile = base; profile.firewallProfileName = "different"; profile.isFirewallEnabled = true
+        var adapter = base; adapter.dosProtection.append(.init(id: "eth-new", displayName: "New", isEnabled: true))
+        var invalid = base; invalid.failedAttempts = 0
+        for value in [profile, adapter, invalid] {
+            let result = try await repository.changeServiceResult(.init(original: original, desired: .security(value))) { _ in XCTFail() }
+            XCTAssertFalse(result.submitted)
+        }
+        var missing = base; missing.isFirewallEnabled = nil
+        XCTAssertNil(NasServiceChange(original: .security(missing), desired: .security(base)).orderedSteps)
+        let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+    }
+    func test缺少防火墙任务版本在所有安全写入之前拒绝() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport, minimum: [DsmAPIName.coreSecurityFirewallProfileApply: 2])
+        let original = try await repository.loadServiceForManagement(.security)
+        guard case .security(var value) = original else { return XCTFail() }
+        value.isAutoBlockEnabled = true; value.isFirewallEnabled = true
+        let result = try await repository.changeServiceResult(.init(original: original, desired: .security(value))) { _ in XCTFail() }
+        XCTAssertEqual(result.status, .unsupported); XCTAssertFalse(result.submitted)
+        let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+    }
+    func test安全后组拒绝保留已保存组且停止防火墙任务() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let original = try await repository.loadServiceForManagement(.security)
+        guard case .security(var value) = original else { return XCTFail() }
+        value.isAutoBlockEnabled = true; value.dosProtection[0].isEnabled = true; value.isFirewallEnabled = true
+        await transport.setMode("second-denied")
+        let result = try await repository.changeServiceResult(.init(original: original, desired: .security(value))) { await log.append($0) }
+        XCTAssertEqual(result.status, .partialSuccess); XCTAssertEqual(result.counts.succeeded, 1); XCTAssertEqual(result.errorCategory, .permission)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 2); XCTAssertFalse(writes.contains { $0["method"] == "start" })
+        let stages = await log.values; XCTAssertEqual(stages.last, .rejected(.denialOfService))
+    }
+    func test防火墙缺回执即使开关开启也保持未知并不重放() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let change = try await firewallChange(repository)
+        await transport.setMode("firewall-lost-receipt")
+        let result = try await repository.changeServiceResult(change) { await log.append($0) }
+        XCTAssertEqual(result.status, .submittedButUnverified); XCTAssertEqual(result.counts.unknown, 1)
+        let actual = try await repository.loadServiceForManagement(.security)
+        XCTAssertTrue(change.savedFieldsMatch(actual, step: .firewall), "配置吻合仍不能替代原任务回执")
+        let stages = await log.values; XCTAssertEqual(stages, [.willSubmit(.firewall)])
+        let writes = await transport.writes; XCTAssertEqual(writes.map { $0["method"] }, ["start"])
+    }
+    func test防火墙轮询断线保留原回执且不清理未知任务() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let change = try await firewallChange(repository)
+        await transport.setMode("firewall-poll-offline")
+        let result = try await repository.changeServiceResult(change) { await log.append($0) }
+        XCTAssertEqual(result.status, .submittedButUnverified)
+        let stages = await log.values; XCTAssertEqual(stages, [.willSubmit(.firewall), .firewallTaskStarted("synthetic-task"), .accepted(.firewall)])
+        await transport.setMode("normal")
+        let outcome = try await repository.readFirewallApplication("synthetic-task"); XCTAssertEqual(outcome, true)
+        let writes = await transport.writes; XCTAssertEqual(writes.map { $0["method"] }, ["start"])
+    }
+    func test防火墙明确任务失败不被当前开关认领为成功() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let change = try await firewallChange(repository)
+        await transport.setMode("firewall-failed")
+        let result = try await repository.changeServiceResult(change) { await log.append($0) }
+        XCTAssertEqual(result.status, .confirmedFailure); XCTAssertEqual(result.counts.failed, 1)
+        let stages = await log.values; XCTAssertEqual(Array(stages.suffix(3)), [.firewallTaskFinished(false), .willCleanFirewallTask, .rejected(.firewall)])
+    }
+    func test防火墙回执或完成记录失败均不能继续任务流程() async throws {
+        for failed in [NasServiceCheckpoint.firewallTaskStarted("synthetic-task"), .firewallTaskFinished(true), .willCleanFirewallTask] {
+            let transport = ServiceFlowTransport(), repository = try repository(transport)
+            let change = try await firewallChange(repository)
+            do { _ = try await repository.changeServiceResult(change) { if $0 == failed { throw ServiceJournalFailure.failed } }; XCTFail() }
+            catch { XCTAssertTrue(error is ServiceJournalFailure) }
+            let writes = await transport.writes; XCTAssertEqual(writes.map { $0["method"] }, ["start"])
+            let calls = await transport.calls
+            if case .firewallTaskStarted = failed { XCTAssertFalse(calls.contains { $0["method"] == "status" }) }
+        }
+    }
+    func test防火墙任务与清理撤权立即停止且不吞权限错误() async throws {
+        for mode in ["firewall-poll-denied", "firewall-clean-denied"] {
+            let transport = ServiceFlowTransport(), repository = try repository(transport)
+            let change = try await firewallChange(repository)
+            await transport.setMode(mode)
+            do { _ = try await repository.changeServiceResult(change) { _ in }; XCTFail() }
+            catch { XCTAssertEqual((error as? AppError)?.category, .permissionDenied) }
+            let writes = await transport.writes; XCTAssertEqual(writes.count, mode == "firewall-poll-denied" ? 1 : 2)
+            let calls = await transport.calls; XCTAssertEqual(calls.last?["method"], mode == "firewall-poll-denied" ? "status" : "stop")
+        }
+    }
+    func test关闭防火墙只用停用动作且不需要任务能力() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport, missing: [DsmAPIName.coreSecurityFirewallProfileApply])
+        await transport.set(DsmAPIName.coreSecurityFirewall, key: "enable_firewall", value: true)
+        let original = try await repository.loadServiceForManagement(.security)
+        guard case .security(var value) = original else { return XCTFail() }; value.isFirewallEnabled = false
+        let result = try await repository.changeServiceResult(.init(original: original, desired: .security(value))) { _ in }
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes[0]["set_type"], "disable"); XCTAssertEqual(writes[0]["version"], "1")
+    }
+    private func firewallChange(_ repository: DsmNasAdministrationRepository) async throws -> NasServiceChange {
+        let original = try await repository.loadServiceForManagement(.security)
+        guard case .security(var value) = original else { throw ServiceJournalFailure.failed }
+        value.isFirewallEnabled = true; return .init(original: original, desired: .security(value))
+    }
+
     private func change(_ original: NasServiceSettings) -> NasServiceChange {
         let desired: NasServiceSettings
         switch original {
         case .fileServices(var value): value.isSMBEnabled?.toggle(); desired = .fileServices(value)
         case .terminal(var value): value.isSSHEnabled.toggle(); desired = .terminal(value)
         case .ethernet(var values): values[0].mtu = 1400; desired = .ethernet(values)
+        case .security(var value): value.isAutoBlockEnabled.toggle(); desired = .security(value)
         case .proxy(var value): value.isEnabled.toggle(); desired = .proxy(value)
         case .remoteAccess(var value): value.isRelayEnabled?.toggle(); desired = .remoteAccess(value)
         case .zram(let value, _): desired = .zram(.init(isEnabled: value.isEnabled.map { !$0 }, configuredBytes: value.configuredBytes, algorithm: value.algorithm), needsReboot: true)
@@ -563,13 +705,18 @@ private actor ServiceCheckpointLog {
 private actor ServiceFlowTransport: DsmHTTPTransport {
     static let apis = [DsmAPIName.coreFileServiceSMB, DsmAPIName.coreFileServiceNFS, DsmAPIName.coreFileServiceFTP,
         DsmAPIName.coreFileServiceSFTP, DsmAPIName.coreWebDSM, DsmAPIName.coreFileServiceDiscovery, DsmAPIName.coreTerminal, DsmAPIName.coreNetworkProxy, DsmAPIName.coreQuickConnect, DsmAPIName.coreQuickConnectUPnP,
-        DsmAPIName.coreHardwareZRAM, DsmAPIName.coreHardwareNeedReboot, DsmAPIName.coreHardwarePowerSchedule, DsmAPIName.coreNetworkEthernet]
+        DsmAPIName.coreHardwareZRAM, DsmAPIName.coreHardwareNeedReboot, DsmAPIName.coreHardwarePowerSchedule, DsmAPIName.coreNetworkEthernet,
+        DsmAPIName.coreSecurityAutoBlock, DsmAPIName.coreSecurityDoS, DsmAPIName.coreSecurityFirewall, DsmAPIName.coreSecurityFirewallConf, DsmAPIName.coreSecurityFirewallProfileApply]
     private(set) var calls: [[String: String]] = []
-    var writes: [[String: String]] { calls.filter { ["set", "set_misc_config", "save"].contains($0["method"] ?? "") } }
+    var writes: [[String: String]] { calls.filter { ["set", "set_misc_config", "save", "start", "stop"].contains($0["method"] ?? "") } }
     private var mode = "normal"
     private var readFailure: AppErrorCategory?
     func setReadFailure(_ value: AppErrorCategory) { readFailure = value }
     private var payloads: [String: [String: Any]] = [
+        DsmAPIName.coreSecurityAutoBlock: ["enable": false, "attempts": 5, "within_mins": 10, "expire_day": 0],
+        DsmAPIName.coreSecurityFirewall: ["enable_firewall": false, "profile_name": "synthetic-profile"],
+        DsmAPIName.coreSecurityFirewallConf: ["enable_port_check": false],
+        DsmAPIName.coreSecurityDoS: ["configs": [["adapter": "eth0", "dos_protect_enable": false]]],
         DsmAPIName.coreNetworkEthernet: ["ifname": "eth0", "use_dhcp": true, "is_default_gateway": true, "mtu": 1500, "enable_vlan": false],
         DsmAPIName.coreFileServiceSMB: ["enable_samba": false], DsmAPIName.coreFileServiceNFS: ["enable_nfs": false],
         DsmAPIName.coreFileServiceFTP: ["enable_ftp": false, "enable_ftps": false, "portnum": 21],
@@ -590,12 +737,31 @@ private actor ServiceFlowTransport: DsmHTTPTransport {
         case .remoteAccess: payloads[DsmAPIName.coreQuickConnectUPnP]?["enabled"] = true
         case .zram: payloads[DsmAPIName.coreHardwareZRAM]?["enable_zram"] = true
         case .powerSchedule: payloads[DsmAPIName.coreHardwarePowerSchedule]?["timezone"] = "Europe/London"
+        case .security: payloads[DsmAPIName.coreSecurityAutoBlock]?["attempts"] = 8
         case .ethernet: payloads[DsmAPIName.coreNetworkEthernet]?["enable_vlan"] = true; payloads[DsmAPIName.coreNetworkEthernet]?["vlan_id"] = 10 }
     }
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         let body = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
         let fields = Dictionary(uniqueKeysWithValues: (URLComponents(string: "https://fixture.invalid/?" + body)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         calls.append(fields); let api = fields["api"] ?? ""
+        if api == DsmAPIName.coreSecurityFirewallProfileApply {
+            if mode == "denied" { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
+            switch fields["method"] {
+            case "start":
+                if mode == "firewall-lost-receipt" { payloads[DsmAPIName.coreSecurityFirewall]?["enable_firewall"] = true; throw URLError(.networkConnectionLost) }
+                return response(["task_id": "synthetic-task"])
+            case "status":
+                if mode == "firewall-poll-offline" { throw URLError(.notConnectedToInternet) }
+                if mode == "firewall-poll-denied" { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
+                if mode == "firewall-failed" { return response(["success": false]) }
+                payloads[DsmAPIName.coreSecurityFirewall]?["enable_firewall"] = true
+                return response(["success": true])
+            case "stop":
+                if mode == "firewall-clean-denied" { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
+                return response([:])
+            default: break
+            }
+        }
         if ["list", "get", "get_misc_config", "load"].contains(fields["method"] ?? "") {
             if let readFailure {
                 if readFailure == .authenticationRequired { return .init(data: Data(#"{"success":false,"error":{"code":106}}"#.utf8), statusCode: 200) }
@@ -609,11 +775,13 @@ private actor ServiceFlowTransport: DsmHTTPTransport {
         }
         if mode == "denied" || mode == "second-denied" && writes.count == 2 { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
         if api == DsmAPIName.coreNetworkEthernet, let data = fields["configs"], let values = try JSONSerialization.jsonObject(with: Data(data.utf8)) as? [[String: Any]], let value = values.first { payloads[api] = value }
+        if api == DsmAPIName.coreSecurityDoS, let data = fields["configs"] { payloads[api]?["configs"] = try JSONSerialization.jsonObject(with: Data(data.utf8)) }
+        if api == DsmAPIName.coreSecurityFirewall, fields["set_type"] == "disable" { payloads[api]?["enable_firewall"] = false }
         for (key, value) in fields where payloads[api]?[key] != nil {
             if mode != "partial" || key == "enable_ssh" {
                 if value == "true" || value == "false" { payloads[api]?[key] = value == "true" }
                 else if let port = Int(value) { payloads[api]?[key] = port }
-                else if ["poweron_tasks", "poweroff_tasks"].contains(key) { payloads[api]?[key] = try JSONSerialization.jsonObject(with: Data(value.utf8)) }
+                else if ["poweron_tasks", "poweroff_tasks", "configs"].contains(key) { payloads[api]?[key] = try JSONSerialization.jsonObject(with: Data(value.utf8)) }
                 else { payloads[api]?[key] = value }
             }
         }

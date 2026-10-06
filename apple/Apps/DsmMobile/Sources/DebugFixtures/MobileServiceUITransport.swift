@@ -8,9 +8,11 @@ actor MobileServiceUITransport: DsmHTTPTransport {
     static let versions = [DsmAPIName.coreNetworkEthernet: 2, DsmAPIName.coreFileServiceSMB: 3, DsmAPIName.coreFileServiceNFS: 3, DsmAPIName.coreFileServiceFTP: 1,
         DsmAPIName.coreFileServiceSFTP: 1, DsmAPIName.coreWebDSM: 2, DsmAPIName.coreFileServiceDiscovery: 1,
         DsmAPIName.coreTerminal: 3, DsmAPIName.coreNetworkProxy: 1, DsmAPIName.coreQuickConnect: 3, DsmAPIName.coreQuickConnectUPnP: 1,
-        DsmAPIName.coreHardwareZRAM: 1, DsmAPIName.coreHardwareNeedReboot: 1, DsmAPIName.coreHardwarePowerSchedule: 1]
+        DsmAPIName.coreHardwareZRAM: 1, DsmAPIName.coreHardwareNeedReboot: 1, DsmAPIName.coreHardwarePowerSchedule: 1,
+        DsmAPIName.coreSecurityAutoBlock: 1, DsmAPIName.coreSecurityDoS: 2, DsmAPIName.coreSecurityFirewall: 1,
+        DsmAPIName.coreSecurityFirewallConf: 1, DsmAPIName.coreSecurityFirewallProfileApply: 1]
     private(set) var requests: [[String: String]] = []
-    var writes: [[String: String]] { requests.filter { ["set", "set_misc_config", "save"].contains($0["method"] ?? "") } }
+    var writes: [[String: String]] { requests.filter { ["set", "set_misc_config", "save", "start", "stop"].contains($0["method"] ?? "") } }
     private var mode: String
     private let onRead: @Sendable () async -> Void
     private var didFail = false
@@ -18,6 +20,10 @@ actor MobileServiceUITransport: DsmHTTPTransport {
     private var holdWrites = false
     private var waiting: CheckedContinuation<Void, Never>?
     private var payloads: [String: [String: Any]] = [
+        DsmAPIName.coreSecurityAutoBlock: ["enable": false, "attempts": 5, "within_mins": 10, "expire_day": 0],
+        DsmAPIName.coreSecurityFirewall: ["enable_firewall": false, "profile_name": "Sample profile"],
+        DsmAPIName.coreSecurityFirewallConf: ["enable_port_check": false],
+        DsmAPIName.coreSecurityDoS: ["configs": [["adapter": "eth0", "dos_protect_enable": false]]],
         DsmAPIName.coreNetworkEthernet: ["ifname": "eth0", "title": "LAN 1", "status": "connected", "use_dhcp": true, "ip": "192.0.2.10", "mask": "255.255.255.0", "gateway": "192.0.2.1", "dns": "192.0.2.1", "is_default_gateway": true, "mtu": 1500, "enable_vlan": false],
         DsmAPIName.coreFileServiceSMB: ["enable_samba": false], DsmAPIName.coreFileServiceNFS: ["enable_nfs": false],
         DsmAPIName.coreFileServiceFTP: ["enable_ftp": false, "enable_ftps": false, "portnum": 21],
@@ -30,6 +36,10 @@ actor MobileServiceUITransport: DsmHTTPTransport {
         DsmAPIName.coreHardwarePowerSchedule: ["poweron_tasks": [], "poweroff_tasks": [], "timezone": "Asia/Taipei"]]
     init(mode: String = "nas-services", onRead: @escaping @Sendable () async -> Void = {}) {
         self.mode = mode; self.onRead = onRead
+        if mode == "nas-services-security-no-adapters" { payloads[DsmAPIName.coreSecurityDoS]?["configs"] = [] }
+        if mode == "nas-services-security-incomplete" { payloads[DsmAPIName.coreSecurityAutoBlock]?.removeValue(forKey: "expire_day") }
+        if mode == "nas-services-security-config-recover" { payloads[DsmAPIName.coreSecurityAutoBlock]?["enable"] = true }
+        if mode == "nas-services-security-task-recover" { payloads[DsmAPIName.coreSecurityFirewall]?["enable_firewall"] = true }
         if ["nas-services-ethernet-recover", "nas-services-ethernet-new-address"].contains(mode) { payloads[DsmAPIName.coreNetworkEthernet]?["mtu"] = 1400 }
         if mode == "nas-services-ethernet-incomplete" { payloads[DsmAPIName.coreNetworkEthernet]?.removeValue(forKey: "enable_vlan") }
         if mode == "nas-services-recover" { payloads[DsmAPIName.coreTerminal]?["enable_ssh"] = true }
@@ -52,6 +62,9 @@ actor MobileServiceUITransport: DsmHTTPTransport {
         }
     }
     func setEthernetMTU(_ value: Int) { payloads[DsmAPIName.coreNetworkEthernet]?["mtu"] = value }
+    func setSecurityAutoBlock(enabled: Bool) { payloads[DsmAPIName.coreSecurityAutoBlock]?["enable"] = enabled }
+    func setFirewall(enabled: Bool) { payloads[DsmAPIName.coreSecurityFirewall]?["enable_firewall"] = enabled }
+    func changeFirewallProfile() { payloads[DsmAPIName.coreSecurityFirewall]?["profile_name"] = "Changed sample profile" }
     func setMode(_ mode: String) { self.mode = mode }
     func suspendWrites() { holdWrites = true }
     func resumeWrites() { holdWrites = false; waiting?.resume(); waiting = nil }
@@ -63,6 +76,26 @@ actor MobileServiceUITransport: DsmHTTPTransport {
         let body = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
         let fields = Dictionary(uniqueKeysWithValues: (URLComponents(string: "https://fixture.invalid/?" + body)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         requests.append(fields); let api = fields["api"] ?? ""
+        if api == DsmAPIName.coreSecurityFirewallProfileApply {
+            if mode == "nas-services-denied" { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
+            switch fields["method"] {
+            case "start":
+                if holdWrites { await withCheckedContinuation { waiting = $0 } }
+                if mode == "nas-services-security-lost-receipt" { payloads[DsmAPIName.coreSecurityFirewall]?["enable_firewall"] = true; throw URLError(.networkConnectionLost) }
+                return response(["task_id": "sample-firewall-task"])
+            case "status":
+                if mode == "nas-services-security-task-offline" { throw URLError(.notConnectedToInternet) }
+                if mode == "nas-services-security-task-denied" { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
+                if mode == "nas-services-security-task-trust" { throw DsmCertificateTrustError.changed(.init(host: "fixture.example.invalid", subjectSummary: "Synthetic", sha256Fingerprint: String(repeating: "a", count: 64), canBePinned: true)) }
+                if mode == "nas-services-security-task-failed" { return response(["success": false]) }
+                payloads[DsmAPIName.coreSecurityFirewall]?["enable_firewall"] = true
+                return response(["success": true])
+            case "stop":
+                if mode == "nas-services-security-clean-denied" { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
+                return response([:])
+            default: break
+            }
+        }
         if ["list", "get", "get_misc_config", "load"].contains(fields["method"] ?? "") {
             if mode == "nas-services-readonly", payloads[api] != nil { await onRead() }
             if mode == "nas-services-ethernet-trust-after-save" && !writes.isEmpty {
@@ -82,7 +115,7 @@ actor MobileServiceUITransport: DsmHTTPTransport {
             if mode == "nas-services-zram-marker-unknown" && writes.count >= 2 { throw URLError(.notConnectedToInternet) }
             if mode == "nas-services-empty" { return response(api == DsmAPIName.coreNetworkEthernet ? ["interfaces": []] : [:]) }
             if mode == "nas-services-malformed" { return response(["enable_ssh": "unrecognized", "enable_telnet": false]) }
-            if api == DsmAPIName.coreNetworkEthernet && fields["method"] == "list" { return response(["interfaces": [["ifname": "eth0"]]]) }
+            if api == DsmAPIName.coreNetworkEthernet && fields["method"] == "list" { return response(["interfaces": mode == "nas-services-security-no-adapters" ? [] : [["ifname": "eth0", "display": "LAN 1"]]]) }
             return response(payloads[api] ?? [:])
         }
         guard ["set", "set_misc_config", "save"].contains(fields["method"] ?? ""), payloads[api] != nil else { return response([:]) }
@@ -91,11 +124,12 @@ actor MobileServiceUITransport: DsmHTTPTransport {
             return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200)
         }
         if api == DsmAPIName.coreNetworkEthernet, let data = fields["configs"], let values = try JSONSerialization.jsonObject(with: Data(data.utf8)) as? [[String: Any]], let value = values.first { payloads[api]?.merge(value) { _, new in new }; if mode == "nas-services-ethernet-partial" { payloads[api]?["mtu"] = 1500 } }
+        if api == DsmAPIName.coreSecurityFirewall, fields["set_type"] == "disable" { payloads[api]?["enable_firewall"] = false }
         for (key, value) in fields where payloads[api]?[key] != nil {
             if mode != "nas-services-partial-terminal" || key == "enable_ssh" {
                 if value == "true" || value == "false" { payloads[api]?[key] = value == "true" }
                 else if let port = Int(value) { payloads[api]?[key] = port }
-                else if ["poweron_tasks", "poweroff_tasks"].contains(key) { payloads[api]?[key] = try JSONSerialization.jsonObject(with: Data(value.utf8)) }
+                else if ["poweron_tasks", "poweroff_tasks", "configs"].contains(key) { payloads[api]?[key] = try JSONSerialization.jsonObject(with: Data(value.utf8)) }
                 else { payloads[api]?[key] = value }
             }
         }

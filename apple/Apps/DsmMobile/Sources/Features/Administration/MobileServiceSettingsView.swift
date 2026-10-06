@@ -63,6 +63,8 @@ struct MobileServiceSettingsScreen: View {
                             }
                         } else if kind == .zram || kind == .powerSchedule {
                             MobilePowerSettingsSummary(value: value)
+                        } else if case .security(let settings) = value {
+                            MobileSecuritySettingsSummary(value: settings)
                         } else {
                         // 搜索使用稳定的服务标识，不把翻译后的开关状态用于筛选。
                         let needle = query.filter { !$0.isWhitespace }
@@ -165,7 +167,7 @@ private struct MobileServiceSettingsEditor: View {
         case .fileServices(let value): ports = ["ftpPort": value.ftpPort.map(String.init) ?? "", "sftpPort": value.sftpPort.map(String.init) ?? ""]
         case .terminal(let value): ports = ["sshPort": value.sshPort.map(String.init) ?? ""]
         case .proxy(let value): ports = ["proxyPort": value.port.map(String.init) ?? ""]; host = value.host
-        case .remoteAccess, .zram, .powerSchedule, .ethernet: break
+        case .remoteAccess, .zram, .powerSchedule, .ethernet, .security: break
         }
         _ports = State(initialValue: ports); _proxyHost = State(initialValue: host)
     }
@@ -178,7 +180,7 @@ private struct MobileServiceSettingsEditor: View {
             desired = .fileServices(value)
         case .terminal(var value): if value.sshPort != nil { value.sshPort = parsedPort("sshPort") }; desired = .terminal(value)
         case .proxy(var value): value.host = proxyHost; value.port = parsedPort("proxyPort"); desired = .proxy(value)
-        case .remoteAccess, .ethernet: desired = draft
+        case .remoteAccess, .ethernet, .security: desired = draft
         case .powerSchedule: desired = draft
         case .zram(let value, _):
             if source.initialDraft == nil, case .zram(let original, _) = source.original, value.isEnabled == original.isEnabled { desired = source.original }
@@ -248,6 +250,8 @@ private struct MobileServiceSettingsEditor: View {
                                 MobileEthernetSummary(value: target)
                             } else if confirmation.kind == .zram || confirmation.kind == .powerSchedule {
                                 MobilePowerSettingsSummary(value: confirmation.desired, showsFilter: false)
+                            } else if case .security(let settings) = confirmation.desired {
+                                MobileSecuritySettingsSummary(value: settings, steps: confirmation.changedSteps)
                             } else {
                             ForEach(confirmation.changedSteps, id: \.self) { step in
                                 ForEach(confirmation.desired.mobileRows.filter { $0.step == step }) { row in LabeledContent(row.title, value: row.value) }
@@ -320,6 +324,8 @@ private struct MobileServiceSettingsEditor: View {
             }
         case .zram, .powerSchedule:
             MobilePowerSettingsFields(draft: $draft, original: source.original, editing: $editingPowerEntry)
+        case .security(let value):
+            MobileSecuritySettingsFields(value: Binding(get: { if case .security(let current) = draft { return current }; return value }, set: { draft = .security($0) }), focused: $focused)
         case .ethernet(let values):
             if let value = values.first(where: { $0.id == source.ethernetID }) {
                 MobileEthernetSettingsFields(value: Binding(get: {
@@ -376,7 +382,7 @@ private extension NasServiceSettings {
                 if !value.host.isEmpty { rows.append(.init(id: .proxyHost, value: value.host, step: .proxy)) }
                 port(.proxyPort, value.port, .proxy)
             }
-        case .zram, .powerSchedule, .ethernet: break
+        case .zram, .powerSchedule, .ethernet, .security: break
         }
         return rows
     }
@@ -411,15 +417,15 @@ private enum MobileServiceField: String {
 
 extension NasServiceKind {
     var title: String {
-        let key = switch self { case .fileServices: "mobile.nas.service.fileServices"; case .terminal: "mobile.nas.service.terminal"; case .proxy: "mobile.nas.service.proxy"; case .remoteAccess: "mobile.nas.service.remoteAccess"; case .zram: "zram.title"; case .powerSchedule: "power-schedule.title"; case .ethernet: "mobile.nas.ethernet.title" }
+        let key = switch self { case .fileServices: "mobile.nas.service.fileServices"; case .terminal: "mobile.nas.service.terminal"; case .proxy: "mobile.nas.service.proxy"; case .remoteAccess: "mobile.nas.service.remoteAccess"; case .zram: "zram.title"; case .powerSchedule: "power-schedule.title"; case .ethernet: "mobile.nas.ethernet.title"; case .security: "mobile.nas.security.title" }
         return L10n.string(key)
     }
     var warning: String {
-        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesWarning"; case .terminal: "mobile.nas.service.terminalWarning"; case .proxy: "mobile.nas.service.proxyWarning"; case .remoteAccess: "mobile.nas.service.remoteAccessWarning"; case .zram: "zram.edit.confirm-message"; case .powerSchedule: "power-schedule.edit.confirm-message"; case .ethernet: "mobile.nas.ethernet.warning" }
+        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesWarning"; case .terminal: "mobile.nas.service.terminalWarning"; case .proxy: "mobile.nas.service.proxyWarning"; case .remoteAccess: "mobile.nas.service.remoteAccessWarning"; case .zram: "zram.edit.confirm-message"; case .powerSchedule: "power-schedule.edit.confirm-message"; case .ethernet: "mobile.nas.ethernet.warning"; case .security: "mobile.nas.security.warning" }
         return L10n.string(key)
     }
     var invalidMessage: String {
-        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesInvalid"; case .terminal: "mobile.nas.service.terminalInvalid"; case .proxy: "mobile.nas.service.proxyInvalid"; case .remoteAccess: "mobile.nas.service.relayProtection"; case .zram: "mobile.nas.power.compressionUnavailable"; case .powerSchedule: "power-schedule.edit.invalid"; case .ethernet: "mobile.nas.ethernet.invalid" }
+        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesInvalid"; case .terminal: "mobile.nas.service.terminalInvalid"; case .proxy: "mobile.nas.service.proxyInvalid"; case .remoteAccess: "mobile.nas.service.relayProtection"; case .zram: "mobile.nas.power.compressionUnavailable"; case .powerSchedule: "power-schedule.edit.invalid"; case .ethernet: "mobile.nas.ethernet.invalid"; case .security: "mobile.nas.security.invalid" }
         return L10n.string(key)
     }
 }
@@ -428,7 +434,8 @@ private extension NasServiceStep {
         let key: String
         switch self { case .smb: key = "mobile.nas.service.smb"; case .nfs: key = "mobile.nas.service.nfs"; case .ftp: key = "mobile.nas.service.ftpGroup"; case .sftp: key = "mobile.nas.service.sftp"
         case .webDiscovery: key = "mobile.nas.service.discovery"; case .fileDiscovery: key = "mobile.nas.service.timeMachine"; case .terminal: key = "mobile.nas.service.terminal"; case .proxy: key = "mobile.nas.service.proxy"; case .relay: key = "mobile.nas.service.relay"; case .routerConfiguration: key = "mobile.nas.service.routerConfiguration"
-        case .zram: key = "zram.title"; case .rebootRequired: key = "mobile.nas.power.restartRequirement"; case .powerSchedule: key = "power-schedule.title"; case .ethernet: key = "mobile.nas.ethernet.title" }
+        case .zram: key = "zram.title"; case .rebootRequired: key = "mobile.nas.power.restartRequirement"; case .powerSchedule: key = "power-schedule.title"; case .ethernet: key = "mobile.nas.ethernet.title"
+        case .autoBlock: key = "mobile.nas.security.autoBlock"; case .denialOfService: key = "mobile.nas.security.dos"; case .firewallNotifications: key = "mobile.nas.security.notifications"; case .firewall: key = "mobile.nas.security.firewall" }
         return L10n.string(key)
     }
 }

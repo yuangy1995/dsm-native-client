@@ -3101,3 +3101,52 @@ git diff --check
 | R3 | pad | 2 | 全部通过；中文大字 53.436 秒，静态地址/VLAN 96.639 秒 |
 
 已实际查看并保留 28 张合成审查图于 `apple/Apps/DsmMobile/build/m6b4-preview/`。临时附件导出、清单和导出日志已精确清理，正式日志与结果包保留；没有安装或启动 Mac 包，没有真实网络写入。结束时旧云端两个模块组仍运行，保持原轮次不取消；本片提交尚未取得新云端结果，不将本机通过表述为云端通过。
+
+
+## 2026-10-06 移动 M6b5 安全设置与防火墙恢复
+
+基线 `6bef197e`。两端新增自动封锁次数、时间与解除期限、逐网卡 DoS、防火墙通知和当前防火墙配置启停。复用服务设置原快照、逐组权限与恢复记录；四组分别保存，开启防火墙必须先获得原任务回执、等待明确终态，再读取原配置。缺少回执、断网或超时不能依据当前开关宣布完成。规则及配置档创建/编辑没有现有 Mac 表单基线，不进入本片。
+
+`NAS/service-operations-v1.json` 仅增加安全摘要、原任务回执和阶段，不保存配置正文、网卡/配置档名称或凭据。持续执行期间，只有原任务结束、重新通过权限/取消检查且清理边界落盘后才调用一次全局清理。重启恢复只查询原任务和配置，不重新应用或补发无目标参数的 stop；已结束但未清理的 DSM 上下文对后续保存的影响列入专用环境待验。明确任务失败不会被后来开启状态覆盖。
+
+按已明确的离线授权修复 Mac 安全保存缓存覆盖实际结果，以及共享旧防火墙 helper 在任务超时后仍清理、清理权限错误被吞掉的问题。新增缓存回归在旧实现中实际出现六条失败，修正后 103 项 Mac 模型测试全部通过。旧任务 helper 两条专项在旧实现中共五条断言失败，修正后通过；共享最终聚焦 170 项及完整 2938 项 XCTest（172 条既有条件跳过、0 失败）与 12 项 Swift Testing 通过。没有修改 Mac 页面布局、会话或持久存储。
+
+实际命令：
+
+```sh
+swift test --package-path apple --jobs 2 --filter NasAdministrationModelTests
+swift test --package-path apple --jobs 2 --filter 'NasServiceFlowTests|NasAdministrationModelTests|DsmNasAdministrationRepositoryTests/test安全|DsmNasAdministrationRepositoryTests/test开启防火墙|DsmNasAdministrationRepositoryTests/test关闭防火墙'
+swift test --package-path apple --jobs 2
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/PlugIns/LanStashFileProvider.appex/Contents/MacOS/LanStashFileProvider
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b5-phone-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test安全四组编辑输入校验风险取消及完整保存' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test防火墙中断重启查询原任务后恢复保存结果' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test防火墙缺回执重启仍保留保护和刷新入口' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test安全后组拒绝显示部分保存且原值可读' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test安全加载缺字段错误不支持无网卡及权限状态' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test安全中文大字表单和危险确认完整可操作' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test终端端口校验Telnet风险及保存回读'
+```
+
+iPad 使用目标 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 与 `m6b5-pad-r2.xcresult`。R1 各运行 66 项聚焦单元及前两项新 UI；新增 13 项安全行为全部通过，旧服务测试因新增类别使实际保存次数由 8 增至 9 而失败，修正准确总数并增加自动封锁只写一次的断言。两项新 UI 均已完成真实保存/重启，但错误期待 Enabled；实际辅助功能树与资源均为 On，已修改为准确资源值并保留全部保存、风险、取消和恢复断言。不是页面未保存或隐藏控件问题。
+
+移动首轮构建漏穷举详情路由，补齐后 R2–R4 构建通过；首轮共享合成 transport 把 DoS 数组写成字符串导致用例后续索引越界，修正合成数据并保留精确请求检查。R2 完整两端各 1550 项单元（4 条既有条件跳过、0 失败）通过。Mac Release 构建成功，主 App 与内嵌 File Provider 均实际核为 x86_64/arm64；没有安装或启动 Mac 包。
+
+独立集成与只读对抗复核由当前负责人在实现后分别执行，覆盖完整原字段、网卡与配置档、固定版本、部分完成、权限撤回、证书中断、原账号迟到、任务回执/终态与清理阶段、存储失败和未知防重。复核不是另一模型或真实环境结论。真实安全配置可能封锁账号或阻断现有连接，本片未对真实 NAS 执行写入；专用网络环境、锁屏文件保护及完整辅助功能按主计划四行 `PENDING_USER_VALIDATION` 验收。
+
+
+最终 R2 两端六项新安全 UI 及原终端回归全部通过，iPhone 7 项为 759.595 秒、iPad 7 项为 841.729 秒，命令均 exit 0。R2 使用 iPhone 浅色、iPad 深色；R3 交换主题，仅运行同一 `test安全中文大字表单和危险确认完整可操作`，结果包为 `m6b5-phone-r3.xcresult` 和 `m6b5-pad-r3.xcresult`，分别 80.008/89.238 秒通过。R3 前移动增量构建通过（日志 `m6-ci-directory-build-r1.log` 同时包含独立账号输入测试修复，未改变安全实现或测试）。随后两端均恢复浅色。
+
+已实际检查两端原生表单、确认、保存、部分结果、缺回执/原任务恢复、加载、缺字段/错误、不支持、权限受限及无网卡状态，并检查反向主题的中文大字输入和风险确认；保留 38 张合成审查图于 `apple/Apps/DsmMobile/build/m6b5-preview/`。本片临时附件导出、清单和六个导出日志已清理，正式测试日志/结果包保留。
+
+其他门禁命令：
+
+```sh
+xcrun simctl ui 8145D5B0-65A7-46E3-A0CF-17850E4EFA3F appearance dark
+xcrun simctl ui A31ABDE2-186F-43DD-8D40-5EB9511A9289 appearance light
+xcrun simctl ui 8145D5B0-65A7-46E3-A0CF-17850E4EFA3F appearance light
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/generate_api_reference.py --check
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+请求契约 179 项/结果示例 1 项、fixture 29 组/48 项私有引用、API 目录检查均通过；本地化 6741/2188/3402 项双语、占位符、引用与硬编码扫描通过。工程按既有 XcodeGen 重新生成后内容一致；最终文档检查通过。独立云端账号输入失败与分组调整另作提交，本片不把本机验收当作云端或真实 NAS 验收。

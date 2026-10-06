@@ -1829,6 +1829,25 @@ final class NasAdministrationModelTests: XCTestCase {
         )
     }
 
+    func test安全相同缓存不能覆盖拒绝部分完成或未知结果() async throws {
+        for status: MutationResultStatus in [.permissionDenied, .unsupported, .partialSuccess, .submittedButUnverified, .cancellationRequestedAfterSubmission, .confirmedFailure] {
+            let repository = NasAdministrationRepositoryStub(securityUpdateStatus: status)
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            await model.activate(.security)
+            let expected = try XCTUnwrap(model.security)
+            do { try await model.saveSecurity(expected); XCTFail("相同配置不能覆盖安全操作结果：\(status)") }
+            catch let error as AppError {
+                let feedback = NasSettingsModel.securitySettingsFeedback(for: status)
+                XCTAssertEqual(error.category, feedback.category)
+                XCTAssertEqual(error.safeUserMessage, L10n.string(feedback.resourceKey))
+                XCTAssertFalse(error.isRetryable)
+            }
+            XCTAssertEqual(model.security, expected)
+            XCTAssertFalse(model.isSavingServiceSettings)
+        }
+    }
+
     func test安全设置确认成功后刷新模型状态() async throws {
         let repository = NasAdministrationRepositoryStub()
         let model = NasSettingsModel(repository: repository)
