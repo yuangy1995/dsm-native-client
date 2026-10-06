@@ -1,13 +1,13 @@
 import Foundation
 
-public enum NasServiceKind: String, CaseIterable, Codable, Sendable { case fileServices, terminal, proxy, remoteAccess, zram, powerSchedule }
+public enum NasServiceKind: String, CaseIterable, Codable, Sendable { case fileServices, terminal, proxy, remoteAccess, zram, powerSchedule, ethernet }
 
 /// 与实际写请求一一对应；同组字段不能拆成多个请求。
 public enum NasServiceStep: String, CaseIterable, Codable, Sendable {
-    case smb, nfs, ftp, sftp, webDiscovery, fileDiscovery, terminal, proxy, relay, routerConfiguration, zram, rebootRequired, powerSchedule
+    case smb, nfs, ftp, sftp, webDiscovery, fileDiscovery, terminal, proxy, relay, routerConfiguration, zram, rebootRequired, powerSchedule, ethernet
     public var kind: NasServiceKind {
         switch self { case .terminal: .terminal; case .proxy: .proxy; case .relay, .routerConfiguration: .remoteAccess
-        case .zram, .rebootRequired: .zram; case .powerSchedule: .powerSchedule; default: .fileServices }
+        case .zram, .rebootRequired: .zram; case .powerSchedule: .powerSchedule; case .ethernet: .ethernet; default: .fileServices }
     }
 }
 
@@ -18,13 +18,15 @@ public enum NasServiceCheckpoint: Equatable, Sendable {
 public enum NasServiceSettings: Equatable, Sendable {
     case fileServices(NasFileServiceSettings), terminal(NasTerminalSettings), proxy(NasProxySettings), remoteAccess(NasRemoteAccessSettings)
     case zram(NasZRAMSnapshot, needsReboot: Bool?), powerSchedule(NasPowerScheduleSnapshot)
+    case ethernet([NasEthernetInterface])
     public var kind: NasServiceKind {
         switch self { case .fileServices: .fileServices; case .terminal: .terminal; case .proxy: .proxy; case .remoteAccess: .remoteAccess
-        case .zram: .zram; case .powerSchedule: .powerSchedule }
+        case .zram: .zram; case .powerSchedule: .powerSchedule; case .ethernet: .ethernet }
     }
     public var isEmpty: Bool {
         switch self {
         case .zram: return false
+        case .ethernet(let values): return values.isEmpty
         case .powerSchedule(let value): return value.entries.isEmpty && !value.isTruncated
         default: return steps.allSatisfy { fields(for: $0).allSatisfy { $0 == nil } }
         }
@@ -33,6 +35,7 @@ public enum NasServiceSettings: Equatable, Sendable {
         switch self {
         case .zram(let value, let needsReboot): return value.isEnabled != nil && needsReboot != nil
         case .powerSchedule(let value): return value.canEdit
+        case .ethernet(let values): return !values.isEmpty && Set(values.map(\.id)).count == values.count && values.allSatisfy(\.isValidForSaving)
         default: return !isEmpty
         }
     }
@@ -55,6 +58,7 @@ public enum NasServiceSettings: Equatable, Sendable {
         case (.powerSchedule(let value), .powerSchedule):
             // 空的完整清单也有确定摘要；不完整读取不能用于恢复或覆盖。
             return [value.canEdit ? value.entries.map(\.scheduleComparisonKey).sorted().joined(separator: "|") : nil, value.timeZoneIdentifier]
+        case (.ethernet(let values), .ethernet): return values.sorted { $0.id < $1.id }.flatMap(\.configurationFields)
         case (.proxy(let value), .proxy):
             if verifying && !value.isEnabled { return [String(false)] }
             return [String(value.isEnabled), value.normalizedHost, value.port.map(String.init)]
@@ -83,6 +87,7 @@ public enum NasServiceSettings: Equatable, Sendable {
         case (.zram(let value, let needsReboot), .zram(let next, let reboot)):
             return .zram(step == .zram ? next : value, needsReboot: step == .rebootRequired ? reboot : needsReboot)
         case (.powerSchedule, .powerSchedule) where step == .powerSchedule: return desired
+        case (.ethernet, .ethernet) where step == .ethernet: return desired
         case (.proxy(let previous), .proxy(let next)) where step == .proxy:
             return .proxy(.init(isEnabled: next.isEnabled, host: next.isEnabled ? next.normalizedHost : previous.host, port: next.isEnabled ? next.port : previous.port))
         default: return self
@@ -102,6 +107,7 @@ public enum NasServiceSettings: Equatable, Sendable {
         case .remoteAccess: return true
         case .zram: return supportsEditing
         case .powerSchedule(let value): return value.canEdit && NasPowerScheduleSnapshot.replacementIsValid(value.entries)
+        case .ethernet: return supportsEditing
         }
     }
 
@@ -112,6 +118,7 @@ public enum NasServiceSettings: Equatable, Sendable {
             return value.timeZoneIdentifier == next.timeZoneIdentifier && value.hasSameSchedule(as: next.entries) && next.canEdit
         case (.zram(let value, _), .zram(let next, _)):
             return supportsEditing && other.supportsEditing && value.isEnabled == next.isEnabled
+        case (.ethernet, .ethernet): return supportsEditing && other.supportsEditing && fields(for: .ethernet) == other.fields(for: .ethernet)
         default: return self == other
         }
     }
@@ -122,6 +129,14 @@ public struct NasServiceChange: Equatable, Sendable {
     public let desired: NasServiceSettings
     public init(original: NasServiceSettings, desired: NasServiceSettings) { self.original = original; self.desired = desired }
     public var kind: NasServiceKind { original.kind }
+    /// 一个保存动作只能改变一张已有网卡，不能新增、移除或顺带保存其他网卡。
+    public var ethernetTarget: NasEthernetInterface? {
+        guard case .ethernet(let before) = original, case .ethernet(let after) = desired,
+              Set(before.map(\.id)) == Set(after.map(\.id)), before.count == after.count,
+              Set(before.map(\.id)).count == before.count else { return nil }
+        let changed = after.filter { next in before.first(where: { $0.id == next.id })?.configurationFields != next.configurationFields }
+        return changed.count == 1 ? changed[0] : nil
+    }
     public var changedSteps: [NasServiceStep] {
         guard kind == desired.kind else { return [] }
         if case .zram(let before, _) = original, case .zram(let after, _) = desired, before.isEnabled != after.isEnabled {
@@ -138,6 +153,7 @@ public struct NasServiceChange: Equatable, Sendable {
     /// 顺序必须使每个中间状态满足已有依赖；不能暗中增加开关操作。
     public var orderedSteps: [NasServiceStep]? {
         guard kind == desired.kind, original.supportsEditing, desired.isValid, !changedSteps.isEmpty else { return nil }
+        if kind == .ethernet, ethernetTarget == nil { return nil }
         if case .zram(_, let reboot) = desired, reboot != true { return nil }
         if case .remoteAccess(let before) = original, case .remoteAccess(let after) = desired {
             guard before.canDisableRelay == after.canDisableRelay,
@@ -157,11 +173,19 @@ public struct NasServiceChange: Equatable, Sendable {
     }
     public func matches(_ settings: NasServiceSettings) -> Bool { original.hasSameConfiguration(as: settings) && orderedSteps != nil }
     public func savedFieldsMatch(_ settings: NasServiceSettings, step: NasServiceStep) -> Bool {
-        settings.kind == kind && settings.fields(for: step, verifying: true) == desired.fields(for: step, verifying: true)
+        if step == .ethernet, let target = ethernetTarget, case .ethernet(let values) = settings {
+            return values.first { $0.id == target.id }?.configurationFields == target.configurationFields
+        }
+        return settings.kind == kind && settings.fields(for: step, verifying: true) == desired.fields(for: step, verifying: true)
     }
     public func hasPartialResult(_ settings: NasServiceSettings, step: NasServiceStep) -> Bool {
         guard settings.kind == kind else { return false }
         if kind == .zram { return false }
+        if kind == .ethernet, let target = ethernetTarget,
+           case .ethernet(let before) = original, case .ethernet(let actual) = settings,
+           let previous = before.first(where: { $0.id == target.id }), let current = actual.first(where: { $0.id == target.id }) {
+            return zip(zip(previous.configurationFields, target.configurationFields), current.configurationFields).contains { $0.0.0 != $0.0.1 && $0.0.1 == $0.1 }
+        }
         // 停用代理只提交一个开关，保留地址变化不能算成本次部分生效。
         if case .proxy(let value) = desired, !value.isEnabled { return false }
         let before = original.fields(for: step), after = desired.fields(for: step), actual = settings.fields(for: step)

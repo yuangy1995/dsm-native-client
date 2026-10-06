@@ -26,7 +26,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     var activeConnectionKeys: Set<String> = []
     private var activeAccountDeletionNames: Set<String> = []
     private var activeGroupDeletionNames: Set<String> = []
-    private var activeEthernetUpdateIDs: Set<String> = []
+    var activeEthernetUpdateIDs: Set<String> = []
+    var isManagedEthernetUpdateActive = false
     var isFileServiceSettingsUpdateActive = false
     var isTerminalSettingsUpdateActive = false
     var isProxySettingsUpdateActive = false
@@ -585,6 +586,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         case .powerSchedule(let value):
             guard step == .powerSchedule else { throw unavailableError() }
             try await submitPowerSchedule(value.entries)
+        case .ethernet(let values):
+            guard step == .ethernet, values.count == 1, let value = values.first else { throw unavailableError() }
+            try Self.validateEthernetInterface(value)
+            try await callVoid(DsmAPIName.coreNetworkEthernet, method: "set", version: 1,
+                parameters: ["configs": .objectArray([Self.ethernetConfiguration(value)])])
         }
     }
 
@@ -2119,7 +2125,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 diagnosticTag: "\(prefix).unsupported"
             )
         }
-        guard activeEthernetUpdateIDs.insert(interface.id).inserted else {
+        guard !isManagedEthernetUpdateActive, activeEthernetUpdateIDs.insert(interface.id).inserted else {
             return try ethernetMutationResult(
                 status: .confirmedFailure,
                 operation: operation,

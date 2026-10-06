@@ -7,10 +7,11 @@ struct MobileServiceSettingsScreen: View {
     let kind: NasServiceKind
     @State private var editor: MobileServiceEditorSource?
     @State private var query = ""
+    @State private var networkRecovery: UUID?
 
     var body: some View {
         List {
-            if model.section(kind).value?.supportsEditing == true {
+            if model.section(kind).value?.supportsEditing == true && kind != .ethernet {
                 Section {
                     Button(L10n.string(kind == .powerSchedule ? "mobile.nas.power.editSchedules" : "mobile.nas.service.edit")) {
                         if let value = model.section(kind).value { editor = .init(original: value, activation: model.activation) }
@@ -27,6 +28,13 @@ struct MobileServiceSettingsScreen: View {
                     }
                 }
             }
+            if kind == .ethernet, model.section(kind).value?.isEmpty == false {
+                Section {
+                    TextField(L10n.string("mobile.nas.ethernet.search"), text: $query)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search)
+                        .accessibilityIdentifier("mobile.nas.ethernet.search")
+                }
+            }
             Section {
                 if [.error, .unavailable].contains(model.section(kind).phase), let error = model.errors[kind] {
                     VStack(alignment: .leading, spacing: 8) {
@@ -37,9 +45,23 @@ struct MobileServiceSettingsScreen: View {
                     }.frame(maxWidth: .infinity, minHeight: 120, alignment: .leading).padding(.vertical, 8)
                 } else {
                     MobileNasDetailsSectionContent(section: model.section(kind), loading: kind == .zram ? MobileNasAdministrationDestination.zram.loadingLabel : (kind == .powerSchedule ? MobileNasAdministrationDestination.powerSchedule.loadingLabel : L10n.string("mobile.nas.service.loading")),
-                        emptyTitle: L10n.string(kind == .powerSchedule ? "power-schedule.empty-title" : "mobile.nas.service.empty"), emptyMessage: L10n.string(kind == .powerSchedule ? (model.section(kind).value?.supportsEditing == true ? "mobile.nas.power.empty" : "power-schedule.edit.unavailable") : "mobile.nas.service.emptyHint"),
+                        emptyTitle: L10n.string(kind == .ethernet ? "mobile.nas.ethernet.empty" : kind == .powerSchedule ? "power-schedule.empty-title" : "mobile.nas.service.empty"), emptyMessage: L10n.string(kind == .ethernet ? "mobile.nas.ethernet.emptyHint" : kind == .powerSchedule ? (model.section(kind).value?.supportsEditing == true ? "mobile.nas.power.empty" : "power-schedule.edit.unavailable") : "mobile.nas.service.emptyHint"),
                         retry: { Task { await model.refresh(kind) } }) { value in
-                        if kind == .zram || kind == .powerSchedule {
+                        if case .ethernet(let interfaces) = value {
+                            let matches = interfaces.filter { MobileNasReadFormatting.matches(query, values: [$0.id, $0.displayName, $0.address]) }
+                            if matches.isEmpty {
+                                ContentUnavailableView(L10n.string("mobile.nas.filter.empty"), systemImage: "magnifyingglass", description: Text(L10n.string("mobile.nas.filter.retry")))
+                                    .accessibilityIdentifier("mobile.nas.ethernet.filteredEmpty")
+                            }
+                            ForEach(matches) { interface in
+                                VStack(alignment: .leading, spacing: 12) {
+                                    MobileEthernetSummary(value: interface, compact: true)
+                                    Button(L10n.string("mobile.nas.service.edit")) { editor = .init(original: value, activation: model.activation, ethernetID: interface.id) }
+                                        .disabled(!model.canEdit(.ethernet)).frame(minHeight: 44)
+                                        .accessibilityIdentifier("mobile.nas.ethernet.edit.\(interface.id)")
+                                }
+                            }
+                        } else if kind == .zram || kind == .powerSchedule {
                             MobilePowerSettingsSummary(value: value)
                         } else {
                         // 搜索使用稳定的服务标识，不把翻译后的开关状态用于筛选。
@@ -77,8 +99,12 @@ struct MobileServiceSettingsScreen: View {
                             Text(entry.createdAt.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(L10n.locale)))
                                 .font(.caption).foregroundStyle(.secondary)
                             if entry.isUnfinished {
-                                Button(L10n.string("mobile.nas.service.refresh")) { Task { await model.refresh(kind) } }
-                                    .disabled(model.isOperating || model.section(kind).isRefreshing).accessibilityIdentifier("mobile.nas.service.recover")
+                                if kind == .ethernet { Text(L10n.string("mobile.nas.ethernet.reconnectHint")).foregroundStyle(.secondary) }
+                                Button(L10n.string("mobile.nas.service.refresh")) {
+                                    if kind == .ethernet, entry.context != model.context { networkRecovery = entry.id }
+                                    else { Task { await model.refresh(kind) } }
+                                }
+                                    .disabled(model.isOperating || model.recovery.isExecuting(entry.id) || model.section(kind).isRefreshing).accessibilityIdentifier("mobile.nas.service.recover")
                             } else if !model.recovery.isExecuting(entry.id) {
                                 Button(L10n.string("mobile.nas.service.removeRecord")) { model.removeRecord(entry.id, kind: kind) }
                                     .accessibilityIdentifier("mobile.nas.service.removeRecord")
@@ -93,7 +119,14 @@ struct MobileServiceSettingsScreen: View {
         .accessibilityIdentifier("mobile.nas.service.list")
         .task(id: model.activation) { await model.loadIfNeeded(kind) }.refreshable { await model.refresh(kind) }
         .onDisappear { model.cancelRead(kind) }
-        .onChange(of: model.activation) { _, _ in editor = nil; query = "" }
+        .onChange(of: model.activation) { _, _ in editor = nil; query = ""; networkRecovery = nil }
+        .confirmationDialog(L10n.string("mobile.nas.ethernet.recoveryTitle"), isPresented: Binding(get: { networkRecovery != nil }, set: { if !$0 { networkRecovery = nil } }), titleVisibility: .visible) {
+            Button(L10n.string("mobile.nas.ethernet.readResult")) {
+                if let id = networkRecovery { let token = model.activation; Task { await model.readNetworkResult(id, activation: token) } }
+                networkRecovery = nil
+            }
+            Button(L10n.string("mobile.nas.service.cancel"), role: .cancel) { networkRecovery = nil }
+        } message: { Text(L10n.string("mobile.nas.ethernet.recoveryWarning")) }
         .sheet(item: $editor) { source in NavigationStack { MobileServiceSettingsEditor(model: model, source: source, onClose: { editor = nil }) } }
         .fillsAvailableContentArea(alignment: .topLeading)
     }
@@ -104,8 +137,10 @@ private struct MobileServiceEditorSource: Identifiable {
     let original: NasServiceSettings
     let activation: UUID
     let initialDraft: NasServiceSettings?
-    init(original: NasServiceSettings, activation: UUID, initialDraft: NasServiceSettings? = nil) {
+    let ethernetID: String?
+    init(original: NasServiceSettings, activation: UUID, initialDraft: NasServiceSettings? = nil, ethernetID: String? = nil) {
         self.original = original; self.activation = activation; self.initialDraft = initialDraft
+        self.ethernetID = ethernetID
     }
 }
 
@@ -130,7 +165,7 @@ private struct MobileServiceSettingsEditor: View {
         case .fileServices(let value): ports = ["ftpPort": value.ftpPort.map(String.init) ?? "", "sftpPort": value.sftpPort.map(String.init) ?? ""]
         case .terminal(let value): ports = ["sshPort": value.sshPort.map(String.init) ?? ""]
         case .proxy(let value): ports = ["proxyPort": value.port.map(String.init) ?? ""]; host = value.host
-        case .remoteAccess, .zram, .powerSchedule: break
+        case .remoteAccess, .zram, .powerSchedule, .ethernet: break
         }
         _ports = State(initialValue: ports); _proxyHost = State(initialValue: host)
     }
@@ -143,7 +178,7 @@ private struct MobileServiceSettingsEditor: View {
             desired = .fileServices(value)
         case .terminal(var value): if value.sshPort != nil { value.sshPort = parsedPort("sshPort") }; desired = .terminal(value)
         case .proxy(var value): value.host = proxyHost; value.port = parsedPort("proxyPort"); desired = .proxy(value)
-        case .remoteAccess: desired = draft
+        case .remoteAccess, .ethernet: desired = draft
         case .powerSchedule: desired = draft
         case .zram(let value, _):
             if source.initialDraft == nil, case .zram(let original, _) = source.original, value.isEnabled == original.isEnabled { desired = source.original }
@@ -209,7 +244,9 @@ private struct MobileServiceSettingsEditor: View {
                     Form {
                         Section { Text(confirmation.kind.warning) }
                         Section(L10n.string("mobile.nas.service.changes")) {
-                            if confirmation.kind == .zram || confirmation.kind == .powerSchedule {
+                            if let target = confirmation.ethernetTarget {
+                                MobileEthernetSummary(value: target)
+                            } else if confirmation.kind == .zram || confirmation.kind == .powerSchedule {
                                 MobilePowerSettingsSummary(value: confirmation.desired, showsFilter: false)
                             } else {
                             ForEach(confirmation.changedSteps, id: \.self) { step in
@@ -283,6 +320,14 @@ private struct MobileServiceSettingsEditor: View {
             }
         case .zram, .powerSchedule:
             MobilePowerSettingsFields(draft: $draft, original: source.original, editing: $editingPowerEntry)
+        case .ethernet(let values):
+            if let value = values.first(where: { $0.id == source.ethernetID }) {
+                MobileEthernetSettingsFields(value: Binding(get: {
+                    if case .ethernet(let current) = draft { return current.first { $0.id == value.id } ?? value }; return value
+                }, set: { next in
+                    if case .ethernet(var current) = draft, let index = current.firstIndex(where: { $0.id == next.id }) { current[index] = next; draft = .ethernet(current) }
+                }), focused: $focused)
+            }
         }
     }
     @ViewBuilder private func optionalToggle(_ key: MobileServiceField, _ value: Binding<Bool?>) -> some View {
@@ -331,7 +376,7 @@ private extension NasServiceSettings {
                 if !value.host.isEmpty { rows.append(.init(id: .proxyHost, value: value.host, step: .proxy)) }
                 port(.proxyPort, value.port, .proxy)
             }
-        case .zram, .powerSchedule: break
+        case .zram, .powerSchedule, .ethernet: break
         }
         return rows
     }
@@ -366,15 +411,15 @@ private enum MobileServiceField: String {
 
 extension NasServiceKind {
     var title: String {
-        let key = switch self { case .fileServices: "mobile.nas.service.fileServices"; case .terminal: "mobile.nas.service.terminal"; case .proxy: "mobile.nas.service.proxy"; case .remoteAccess: "mobile.nas.service.remoteAccess"; case .zram: "zram.title"; case .powerSchedule: "power-schedule.title" }
+        let key = switch self { case .fileServices: "mobile.nas.service.fileServices"; case .terminal: "mobile.nas.service.terminal"; case .proxy: "mobile.nas.service.proxy"; case .remoteAccess: "mobile.nas.service.remoteAccess"; case .zram: "zram.title"; case .powerSchedule: "power-schedule.title"; case .ethernet: "mobile.nas.ethernet.title" }
         return L10n.string(key)
     }
     var warning: String {
-        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesWarning"; case .terminal: "mobile.nas.service.terminalWarning"; case .proxy: "mobile.nas.service.proxyWarning"; case .remoteAccess: "mobile.nas.service.remoteAccessWarning"; case .zram: "zram.edit.confirm-message"; case .powerSchedule: "power-schedule.edit.confirm-message" }
+        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesWarning"; case .terminal: "mobile.nas.service.terminalWarning"; case .proxy: "mobile.nas.service.proxyWarning"; case .remoteAccess: "mobile.nas.service.remoteAccessWarning"; case .zram: "zram.edit.confirm-message"; case .powerSchedule: "power-schedule.edit.confirm-message"; case .ethernet: "mobile.nas.ethernet.warning" }
         return L10n.string(key)
     }
     var invalidMessage: String {
-        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesInvalid"; case .terminal: "mobile.nas.service.terminalInvalid"; case .proxy: "mobile.nas.service.proxyInvalid"; case .remoteAccess: "mobile.nas.service.relayProtection"; case .zram: "mobile.nas.power.compressionUnavailable"; case .powerSchedule: "power-schedule.edit.invalid" }
+        let key = switch self { case .fileServices: "mobile.nas.service.fileServicesInvalid"; case .terminal: "mobile.nas.service.terminalInvalid"; case .proxy: "mobile.nas.service.proxyInvalid"; case .remoteAccess: "mobile.nas.service.relayProtection"; case .zram: "mobile.nas.power.compressionUnavailable"; case .powerSchedule: "power-schedule.edit.invalid"; case .ethernet: "mobile.nas.ethernet.invalid" }
         return L10n.string(key)
     }
 }
@@ -383,7 +428,7 @@ private extension NasServiceStep {
         let key: String
         switch self { case .smb: key = "mobile.nas.service.smb"; case .nfs: key = "mobile.nas.service.nfs"; case .ftp: key = "mobile.nas.service.ftpGroup"; case .sftp: key = "mobile.nas.service.sftp"
         case .webDiscovery: key = "mobile.nas.service.discovery"; case .fileDiscovery: key = "mobile.nas.service.timeMachine"; case .terminal: key = "mobile.nas.service.terminal"; case .proxy: key = "mobile.nas.service.proxy"; case .relay: key = "mobile.nas.service.relay"; case .routerConfiguration: key = "mobile.nas.service.routerConfiguration"
-        case .zram: key = "zram.title"; case .rebootRequired: key = "mobile.nas.power.restartRequirement"; case .powerSchedule: key = "power-schedule.title" }
+        case .zram: key = "zram.title"; case .rebootRequired: key = "mobile.nas.power.restartRequirement"; case .powerSchedule: key = "power-schedule.title"; case .ethernet: key = "mobile.nas.ethernet.title" }
         return L10n.string(key)
     }
 }

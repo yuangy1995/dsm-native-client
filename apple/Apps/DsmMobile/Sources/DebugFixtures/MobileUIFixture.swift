@@ -37,7 +37,7 @@ enum MobileUIFixture {
                 chatNotificationDriver: MobileChatNotificationUIDriver(denied: officeState == "chat-realtime-notifications-denied"),
                 chatPollingIntervalNanoseconds: officeState.hasPrefix("chat-realtime-") ? 1_000_000_000 : 30_000_000_000)
             let profile = try NasProfile(id: UUID(uuidString: "00000000-0000-4000-8000-000000000010")!,
-                                         displayName: "Sample NAS", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
+                                         displayName: "Sample NAS", host: officeState == "nas-services-ethernet-new-address" ? "new.example.invalid" : "fixture.example.invalid", port: 5001, usernameHint: "fixture")
             var versions = [DsmAPIName.fileStationMD5: 2, DsmAPIName.fileStationDelete: 2, DsmAPIName.fileStationCopyMove: 3, DsmAPIName.fileStationSettings: 1, DsmAPIName.fileStationVFSUser: 1,
                             DsmAPIName.coreBandwidthControl: 1, DsmAPIName.coreFileSharingTheme: 1, DsmAPIName.coreThemeImage: 1,
                             DsmAPIName.coreDirectoryLDAP: 1, DsmAPIName.coreDirectoryDomain: 2, DsmAPIName.fileStationFavorite: 2, DsmAPIName.fileStationMount: 1, DsmAPIName.fileStationMountList: 1,

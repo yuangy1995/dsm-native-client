@@ -7042,3 +7042,26 @@
 "mobile.containers.image-delete.image-risk" = "Untagged images will be deleted entirely. This cannot be undone.";
 "mobile.containers.image-delete.download-protected" = "This image has an unfinished deletion. Refresh its deletion records before downloading it.";
 "mobile.containers.image-delete.target" = "Image %lld";
+
+"mobile.nas.ethernet.title" = "Network Interfaces";
+"mobile.nas.ethernet.search" = "Search interfaces or addresses";
+"mobile.nas.ethernet.mode" = "Address assignment";
+"mobile.nas.ethernet.automatic" = "Obtain an address automatically";
+"mobile.nas.ethernet.manual" = "Use a fixed address";
+"mobile.nas.ethernet.address" = "IP address";
+"mobile.nas.ethernet.mask" = "Subnet mask";
+"mobile.nas.ethernet.gateway" = "Gateway";
+"mobile.nas.ethernet.dns" = "DNS servers";
+"mobile.nas.ethernet.none" = "Not set";
+"mobile.nas.ethernet.defaultGateway" = "Use as default gateway";
+"mobile.nas.ethernet.mtu" = "MTU";
+"mobile.nas.ethernet.vlan" = "VLAN ID";
+"mobile.nas.ethernet.vlanEnabled" = "Enable VLAN";
+"mobile.nas.ethernet.warning" = "Changing this interface may disconnect this app and other devices, or make the NAS unreachable. Continue only if you can reconnect through DSM or another network interface to restore access. Only the interface shown below will be changed.";
+"mobile.nas.ethernet.invalid" = "Enter valid IPv4 addresses, an MTU from 576 to 9000, and a VLAN ID from 1 to 4094 when VLAN is enabled. Change one existing interface at a time.";
+"mobile.nas.ethernet.empty" = "No physical interfaces available";
+"mobile.nas.ethernet.emptyHint" = "Refresh later, or open Network in DSM to view this NAS’s interfaces.";
+"mobile.nas.ethernet.reconnectHint" = "If the NAS address changed, sign out and reconnect using the same saved connection and account with the new address. Then return here to read the saved result. Do not save the changes again.";
+"mobile.nas.ethernet.recoveryTitle" = "Read the result on this NAS?";
+"mobile.nas.ethernet.readResult" = "Read Saved Result";
+"mobile.nas.ethernet.recoveryWarning" = "Continue only if this is the NAS whose network settings you just changed. Matching settings on another NAS cannot confirm the original change. This only reads network settings; it does not save any settings.";
