@@ -36,6 +36,12 @@ final class MobileVirtualMachineCreationStore {
                 && ($0.nameDigest == Self.nameDigest(name) || (id != nil && $0.tracking?.guestIdentityDigest == MobileVirtualMachineControlStore.digest(id!)))
         }
     }
+    func protectsResource(kind: String, id: String, context: String) -> Bool {
+        failed || entries.contains {
+            $0.context == context && ($0.isProtected || isExecuting($0.id))
+                && $0.tracking?.resourceIdentityDigests[kind] == MobileVirtualMachineControlStore.digest(id)
+        }
+    }
     func reload() {
         guard executing.isEmpty else { return }
         do {

@@ -2928,20 +2928,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
     }
 
     func test修改虚拟机网络使用内部接口并回读确认() async throws {
-        let transport = SequencedServiceRoutingTransport(responses: [
-            DsmAPIName.virtualizationGuest: [
-                response(#"{"success":true,"data":{"guests":[]}}"#)
-            ],
-            DsmAPIName.virtualizationNetwork: [
-                response(
-                    #"{"success":true,"data":{"networks":[{"network_id":"network-1","network_name":"旧名称"}]}}"#
-                ),
-                response(#"{"success":true}"#),
-                response(
-                    #"{"success":true,"data":{"networks":[{"network_id":"network-1","network_name":"新名称"}]}}"#
-                )
-            ]
-        ])
+        let transport = NetworkWorkflowTransport(name: "旧名称")
         let repository = try makeRepository(
             apiNames: [
                 DsmAPIName.virtualizationGuest,
@@ -2968,18 +2955,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
     }
 
     func test删除虚拟机网络使用内部接口并回读确认() async throws {
-        let transport = SequencedServiceRoutingTransport(responses: [
-            DsmAPIName.virtualizationGuest: [
-                response(#"{"success":true,"data":{"guests":[]}}"#)
-            ],
-            DsmAPIName.virtualizationNetwork: [
-                response(
-                    #"{"success":true,"data":{"networks":[{"network_id":"network-1","network_name":"待删除网络"}]}}"#
-                ),
-                response(#"{"success":true}"#),
-                response(#"{"success":true,"data":{"networks":[]}}"#)
-            ]
-        ])
+        let transport = NetworkWorkflowTransport(name: "待删除网络")
         let repository = try makeRepository(
             apiNames: [
                 DsmAPIName.virtualizationGuest,
@@ -3002,19 +2978,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
     }
 
     func test虚拟机网络统一删除结果回读确认后返回成功() async throws {
-        let transport = SequencedServiceRoutingTransport(responses: [
-            DsmAPIName.virtualizationGuest: [
-                response(#"{"success":true,"data":{"guests":[]}}"#),
-                response(#"{"success":true,"data":{"guests":[]}}"#),
-            ],
-            DsmAPIName.virtualizationNetwork: [
-                response(
-                    #"{"success":true,"data":{"networks":[{"network_id":"network-1","network_name":"待删除网络"}]}}"#
-                ),
-                response(#"{"success":true}"#),
-                response(#"{"success":true,"data":{"networks":[]}}"#),
-            ],
-        ])
+        let transport = NetworkWorkflowTransport(name: "待删除网络")
         let repository = try makeRepository(
             apiNames: [
                 DsmAPIName.virtualizationGuest,

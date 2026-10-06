@@ -12,6 +12,20 @@ final class MobileVirtualMachineControlModel {
         let action: MobileVirtualMachineControlStore.Kind
         let targets: [VirtualMachineControlState]
     }
+    struct NetworkConfirmation: Identifiable {
+        let id = UUID()
+        let activation: UUID
+        let targets: [VirtualMachineNetworkState]
+    }
+    private(set) var networkInventory = VirtualMachineNetworkInventory(isFrozen: false, networks: [])
+    private(set) var networkHasLoaded = false
+    private(set) var networkIsRefreshing = false
+    private(set) var networkAllowed = false
+    private(set) var networkError: Failure?
+    let networkRecovery: MobileVirtualMachineNetworkStore
+    private var networkNames: [String: String] = [:]
+    @ObservationIgnored private var networkReadTask: Task<Void, Never>?
+    @ObservationIgnored private var networkGeneration = UUID()
     private(set) var context: String?
     private(set) var activation = UUID()
     private(set) var targets: [VirtualMachineControlState] = []
@@ -32,6 +46,7 @@ final class MobileVirtualMachineControlModel {
     @ObservationIgnored private var operations: [UUID: Task<Void, Never>] = [:]
 
     init(root: URL? = nil) {
+        networkRecovery = MobileVirtualMachineNetworkStore(root: root)
         recovery = MobileVirtualMachineControlStore(root: root)
         creations = MobileVirtualMachineCreationStore(root: root)
     }
@@ -41,10 +56,12 @@ final class MobileVirtualMachineControlModel {
         guard next != context || self.repository.map(ObjectIdentifier.init) != repository.map(ObjectIdentifier.init) else {
             self.authorize = authorize; return
         }
-        deactivate(); context = next; self.repository = repository; self.authorize = authorize; recovery.reload(); creations.reload()
+        deactivate(); context = next; self.repository = repository; self.authorize = authorize; recovery.reload(); creations.reload(); networkRecovery.reload()
     }
     func deactivate() {
-        activation = UUID(); cancelRead()
+        activation = UUID(); cancelRead(); cancelNetworkRead()
+        networkInventory = .init(isFrozen: false, networks: []); networkNames = [:]
+        networkHasLoaded = false; networkAllowed = false; networkError = nil
         for task in operations.values { task.cancel() }
         context = nil; repository = nil; authorize = nil; targets = []; submittedNames = [:]; allowed = false; supportsSettings = false; hasLoaded = false; error = nil
         supportsCreation = false; creationNames = [:]
@@ -60,7 +77,7 @@ final class MobileVirtualMachineControlModel {
     func name(for item: MobileVirtualMachineControlStore.Item) -> String? {
         submittedNames[item.identity + item.name] ?? targets.first(where: item.matches)?.name
     }
-    var isOperating: Bool { entries.contains { recovery.isExecuting($0.id) } || creationEntries.contains { creations.isExecuting($0.id) } }
+    var isOperating: Bool { networkEntries.contains { networkRecovery.isExecuting($0.id) } || entries.contains { recovery.isExecuting($0.id) } || creationEntries.contains { creations.isExecuting($0.id) } }
     func refresh() async {
         guard let repository, let context, let authorize else { return }
         cancelRead(); let generation = generation, token = activation
@@ -76,10 +93,10 @@ final class MobileVirtualMachineControlModel {
                 self.targets = values; self.hasLoaded = true
                 self.supportsSettings = supportsSettings
                 self.supportsCreation = supportsCreation
-                self.recovery.reload(); self.creations.reload()
+                self.recovery.reload(); self.creations.reload(); self.networkRecovery.reload()
                 do { try self.recovery.resolve(values, context: context) } catch { self.error = .storage }
-                if self.recovery.failed || self.creations.failed { self.error = .storage }
-                if !self.recovery.failed && !self.creations.failed {
+                if self.recovery.failed || self.creations.failed || self.networkRecovery.failed { self.error = .storage }
+                if !self.recovery.failed && !self.creations.failed && !self.networkRecovery.failed {
                     for target in values where self.recovery.needsSettings(target, context: context) {
                         let settings = try await repository.loadVirtualMachineSettings(id: target.id)
                         try Task.checkCancellation()
@@ -115,7 +132,7 @@ final class MobileVirtualMachineControlModel {
         let selected = targets.filter { ids.contains($0.id) }
         return selected.count == ids.count && selected.allSatisfy(kind.supports)
             && !recovery.protects(selected, context: context)
-            && !selected.contains { creations.protects(name: $0.name, id: $0.id, context: context) }
+            && !selected.contains { creations.protects(name: $0.name, id: $0.id, context: context) || networkRecovery.protects(guestID: $0.id, context: context) }
     }
     func confirmation(ids: Set<String>, action: VirtualMachinePowerAction) -> Confirmation? {
         confirmation(ids: ids, kind: .init(action))
@@ -200,6 +217,7 @@ final class MobileVirtualMachineControlModel {
         guard let context, supportsSettings, allowed, error == nil, !isRefreshing, !isOperating,
               let target = targets.first(where: { $0.id == id }), ["shutdown", "running"].contains(target.status) else { return false }
         return !recovery.protects([target], context: context) && !creations.protects(name: target.name, id: target.id, context: context)
+            && !networkRecovery.protects(guestID: target.id, context: context)
     }
     func loadSettings(id: String, activation token: UUID) async throws -> VirtualMachineSettingsState {
         guard token == activation, canEdit(id: id), let repository, let authorize,
@@ -260,7 +278,7 @@ final class MobileVirtualMachineControlModel {
         guard let context else { return }
         do { try recovery.remove(id, context: context) } catch { self.error = .storage }
     }
-    var canOpenCreation: Bool { supportsCreation && allowed && error == nil && !isRefreshing && !isOperating }
+    var canOpenCreation: Bool { supportsCreation && allowed && error == nil && !isRefreshing && !isOperating && !networkRecovery.failed }
     func canCreate(name: String) -> Bool {
         guard canOpenCreation, let context else { return false }
         return !targets.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
@@ -273,12 +291,16 @@ final class MobileVirtualMachineControlModel {
         guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
         let resources = try await repository.loadVirtualMachineCreationResources()
         try Task.checkCancellation()
-        guard token == activation else { throw CancellationError() }; return resources
+        guard token == activation, let context else { throw CancellationError() }
+        return .init(storages: resources.storages,
+                     networks: resources.networks.filter { !networkRecovery.protects(networkID: $0.id, context: context) },
+                     images: resources.images, imagesAvailable: resources.imagesAvailable, networksAvailable: resources.networksAvailable)
     }
     @discardableResult func create(_ configuration: VirtualMachineCreation, resources: VirtualMachineCreationResources,
                                    activation token: UUID) -> UUID? {
         guard token == activation else { return nil }
-        guard canCreate(name: configuration.name), let context, let repository, let authorize else { error = .changed; return nil }
+        guard canCreate(name: configuration.name), let context, let repository, let authorize,
+              configuration.networkID.isEmpty || !networkRecovery.protects(networkID: configuration.networkID, context: context) else { error = .changed; return nil }
         let store = creations, entry: MobileVirtualMachineCreationStore.Entry
         do { entry = try store.reserve(name: configuration.name, context: context) }
         catch { self.error = .storage; return nil }
@@ -317,6 +339,131 @@ final class MobileVirtualMachineControlModel {
     func removeCreationRecord(_ id: UUID) {
         guard let context else { return }
         do { try creations.remove(id, context: context); creationNames[id] = nil } catch { self.error = .storage }
+    }
+    var networkEntries: [MobileVirtualMachineNetworkStore.Entry] { networkRecovery.entries.filter { $0.context == context }.reversed() }
+    func name(for item: MobileVirtualMachineNetworkStore.Item) -> String? {
+        networkNames[item.identity + item.name] ?? networkInventory.networks.first(where: item.matches)?.name
+    }
+    func cancelNetworkRead() {
+        networkGeneration = UUID(); networkReadTask?.cancel(); networkReadTask = nil; networkIsRefreshing = false
+    }
+    func refreshNetworks() async {
+        guard let repository, let context, let authorize else { return }
+        cancelNetworkRead(); let generation = networkGeneration, token = activation
+        networkIsRefreshing = true; networkAllowed = false; networkError = nil
+        let task = Task { [weak self] in
+            do {
+                guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+                let inventory = try await repository.loadVirtualMachineNetworks()
+                let supported = await repository.supportsVirtualMachineNetworks
+                try Task.checkCancellation()
+                guard let self, self.activation == token, self.networkGeneration == generation else { return }
+                self.networkInventory = inventory; self.networkHasLoaded = true
+                self.networkRecovery.reload(); self.recovery.reload(); self.creations.reload()
+                try self.networkRecovery.resolve(inventory, context: context)
+                if self.networkRecovery.failed || self.recovery.failed || self.creations.failed { self.networkError = .storage }
+                self.networkAllowed = supported && self.networkError == nil && !inventory.isFrozen
+                self.networkIsRefreshing = false
+            } catch {
+                guard let self, self.activation == token, self.networkGeneration == generation else { return }
+                self.networkIsRefreshing = false; self.networkHasLoaded = true; self.networkAllowed = false
+                if !(error is CancellationError) { self.networkError = Self.failure(error) }
+                if self.networkRecovery.failed { self.networkError = .storage }
+            }
+        }
+        networkReadTask = task; await task.value
+    }
+    func canManageNetworks(ids: Set<String>) -> Bool {
+        guard let context, networkAllowed, networkError == nil, !networkIsRefreshing, !isOperating,
+              !ids.isEmpty, !recovery.failed, !creations.failed else { return false }
+        let selected = networkInventory.networks.filter { ids.contains($0.id) }
+        return selected.count == ids.count && selected.allSatisfy { network in
+            !networkRecovery.protects(networkID: network.id, context: context)
+                && !creations.protectsResource(kind: "network", id: network.id, context: context)
+                && !network.guests.contains { guest in
+                    let target = VirtualMachineControlState(id: guest.id, name: guest.name, status: guest.isRunning ? "running" : "shutdown",
+                        availableActions: [], allowsDeletion: false)
+                    return recovery.protects([target], context: context) || creations.protects(name: guest.name, id: guest.id, context: context)
+                        || networkRecovery.protects(guestID: guest.id, context: context)
+                }
+        }
+    }
+    func canRenameNetwork(_ target: VirtualMachineNetworkState, name: String) -> Bool {
+        guard let context, VirtualMachineNetworkState.isValidName(name), target.name != name,
+              canManageNetworks(ids: [target.id]), networkInventory.networks.contains(target) else { return false }
+        return !networkInventory.networks.contains { $0.id != target.id && $0.name.caseInsensitiveCompare(name) == .orderedSame }
+            && !networkRecovery.protects(name: name, context: context)
+    }
+    func networkConfirmation(ids: Set<String>) -> NetworkConfirmation? {
+        guard canManageNetworks(ids: ids) else { return nil }
+        return .init(activation: activation, targets: networkInventory.networks.filter { ids.contains($0.id) })
+    }
+    @discardableResult func deleteNetworks(_ confirmation: NetworkConfirmation) -> UUID? {
+        performNetworks(confirmation.targets, newName: nil, activation: confirmation.activation)
+    }
+    @discardableResult func renameNetwork(_ target: VirtualMachineNetworkState, name: String, activation: UUID) -> UUID? {
+        guard canRenameNetwork(target, name: name) else { return nil }
+        return performNetworks([target], newName: name, activation: activation)
+    }
+    private func performNetworks(_ selected: [VirtualMachineNetworkState], newName: String?, activation token: UUID) -> UUID? {
+        guard token == activation else { return nil }
+        guard canManageNetworks(ids: Set(selected.map(\.id))), selected.allSatisfy({ networkInventory.networks.contains($0) }),
+              let repository, let context, let authorize else { networkError = .changed; return nil }
+        let store = networkRecovery, entry: MobileVirtualMachineNetworkStore.Entry
+        do { entry = try store.reserve(selected, newName: newName, context: context) }
+        catch { networkError = .storage; return nil }
+        for target in selected { networkNames[MobileVirtualMachineNetworkStore.digest(target.id) + MobileVirtualMachineNetworkStore.digest(target.name)] = target.name }
+        networkError = nil
+        operations[entry.id] = Task { [weak self] in
+            defer { store.end(entry.id); self?.operations[entry.id] = nil }
+            var failedIndex: Int?, failure: Failure?, canSubmit = false
+            do {
+                guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+                let current = try await repository.loadVirtualMachineNetworks()
+                try Task.checkCancellation()
+                guard self?.activation == token else { throw CancellationError() }
+                guard !current.isFrozen, selected.allSatisfy({ current.networks.contains($0) }) else {
+                    throw AppError(category: .conflict, isRetryable: false, safeUserMessage: "")
+                }
+                canSubmit = true
+            } catch {
+                if !(error is CancellationError) && (error as? AppError)?.category != .cancelled { failedIndex = 0; failure = Self.failure(error) }
+            }
+            for (index, target) in selected.enumerated() where canSubmit && failure == nil {
+                do {
+                    try Task.checkCancellation()
+                    guard self?.activation == token else { throw CancellationError() }
+                    let observer: VirtualMachineControlObserver = { [weak self] stage in
+                        if stage == .willSubmit {
+                            guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+                        }
+                        try await MainActor.run {
+                            if stage == .willSubmit {
+                                guard let self, self.activation == token, !Task.isCancelled else { throw CancellationError() }
+                                self.cancelNetworkRead()
+                            }
+                            try store.checkpoint(entry.id, index: index, stage: stage)
+                        }
+                    }
+                    if let newName { try await repository.updateVirtualMachineNetwork(target, configuration: .init(name: newName), observer: observer) }
+                    else { try await repository.deleteVirtualMachineNetwork(target, observer: observer) }
+                } catch {
+                    if !(error is CancellationError) && (error as? AppError)?.category != .cancelled { failedIndex = index; failure = Self.failure(error) }
+                    break
+                }
+            }
+            if !store.failed { try? store.finish(entry.id, failedIndex: failedIndex, failure: failure.map(Self.storeFailure)) }
+            store.end(entry.id)
+            guard let self, self.activation == token else { return }
+            if store.failed { self.networkError = .storage; self.networkAllowed = false; return }
+            if let failure, [.trust, .denied].contains(failure) { self.networkError = failure; self.networkAllowed = false; return }
+            await self.refreshNetworks()
+        }
+        return entry.id
+    }
+    func removeNetworkRecord(_ id: UUID) {
+        guard let context else { return }
+        do { try networkRecovery.remove(id, context: context) } catch { networkError = .storage }
     }
     private static func storeFailure(_ failure: Failure) -> MobileVirtualMachineControlStore.Failure {
         switch failure { case .denied: .denied; case .unavailable: .unavailable; case .changed: .changed; default: .failed }

@@ -41,6 +41,11 @@ struct MobileVirtualMachinesView: View {
         }
         .sheet(isPresented: $showsSelection) { MobileVirtualMachineSelectionView(model: controls) }
         .sheet(item: $creationRequest) { MobileVirtualMachineCreationView(model: controls, request: $0) }
+        .onChange(of: controls.networkEntries) { previous, current in
+            if current.contains(where: { entry in entry.items.contains { $0.phase == .succeeded } && !previous.contains(entry) }) {
+                Task { await inventory.refresh() }
+            }
+        }
         .onChange(of: controls.creationEntries) { previous, current in
             if current.contains(where: { entry in entry.phase == .succeeded && !previous.contains(entry) }) {
                 Task { await inventory.refresh() }
@@ -185,7 +190,9 @@ private struct MobileVirtualMachineSectionView: View {
 
     var body: some View {
         Group {
-            if section == .machines, inventory.state.pageState == .filteredEmpty {
+            if section == .networks {
+                MobileVirtualMachineNetworksView(model: controls, summaries: inventory.state.networks)
+            } else if section == .machines, inventory.state.pageState == .filteredEmpty {
                 filteredEmptyView
             } else {
                 switch inventory.state.sectionState(section) {

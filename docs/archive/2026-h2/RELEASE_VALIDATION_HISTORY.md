@@ -3767,3 +3767,70 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 十一张合成预览（八张本机结果、三张云端原失败）；一次性 CI 下载、诊断、录屏取帧
 及附件导出已精确清理。当前完整云端剩余三组仍运行，不为推送中断，后续再正常
 同步已验证的 main 提交。初始文件加载阻塞仍是待云端复验的未解决问题。
+
+## 2026-10-07 M7d4a 虚拟机网络改名、删除与恢复
+
+基线 `43bf176`，沿已批准 M6–M8 和必要 Mac 基线修正范围，单一修改共享网络领域/
+仓库、移动详情/改名/单多删/摘要恢复、正式测试、双语资源、生成工程及契约说明。
+Mac App、Windows、Android 源码无改动；Mac 原协议调用使用同一共享修正。没有
+连接或写入真实 NAS，也没有新增依赖、权限、应用身份或最低系统版本。
+
+Network.list/get 固定 v2，严格原生类型/完整数组/唯一 ID 与名称/冻结/关联数量；
+get 没有 ID，结合原 list、名称和数量绑定。仅改名固定 set v1，external 空接口增量
+数组、private 原 host_id，不改 VLAN/接口；delete v1 单 ID 逐项提交，未知后停止
+后项。写前/接受/拒绝/完成阶段分别落盘，摘要不含名称、地址或凭据明文。没有接受
+回执不由外部同名或列表消失认领结果。同名网络、关联 VM 写与引用网络的创建互斥；
+已接受且原结果符合后才解除保护。Mac 未改名称保存保留零写行为，普通页面刷新也
+追加必要的严格恢复读取，其记录仍限仓库实例；其他分区不因网络恢复读取失败中断。
+
+独立集成及只读对抗复核由当前负责人进行，不冒称另一模型或真实 NAS 验收。
+首先用 5 项合成测试复现 8 条旧行为失败断言（冻结仍写、两类改名字段缺失、重复
+改名、丢回执删除误报完成）。首次新增 16 项时 HTTP 登录失效误归为普通未知的
+断言失败，已修正并保证不继续查询。后续复核补同名/关联 VM/资源互锁；另一个
+Mac 普通刷新恢复用例再次复现失败，已将该入口接入原严格读取后通过。
+
+实际验证：
+
+- 共享首轮聚焦 36 项通过；最后对共享服务管理、创建、网络和 Mac 模型运行 252 项，
+  全部通过（0.485 秒）。`build/m7d4a-integration-final.log`。
+- 最终完整共享 3055 项 XCTest，172 条既有环境条件跳过，零失败（88.746 秒）；
+  另 12 项 Swift Testing 通过。`build/m7d4a-shared-final.log`。先前完整 3054 项
+  通过属于增加 Mac 普通刷新回归前的结果，不能代替本次最终结果。
+- 移动两次测试包构建均通过；最后为 `build/m7d4a-mobile-final-build.log`。
+  工程由校验 SHA256 的 XcodeGen 2.46.0 生成，只增加两个产品源文件及两个测试文件。
+- 首轮 iPhone/iPad 各 78 项模型全部通过（1.112/1.195 秒）。旧开机和分步创建 UI
+  均通过；六项新网络 UI 各五项通过，一项在完成改名和记录检查后查找搜索框失败。
+  日志、原层级和截图证明返回列表后 SearchField 不在页面，按既有容器网络模式改为
+  常驻导航搜索栏，没有放宽断言。iPhone 八项 UI 总用时 494.734 秒，iPad 574.732 秒。
+- 首轮两端各 24 张、共 48 张实际截图逐张复核。中文深色大字号后果/取消、原生弹窗、
+  恢复、部分结果、加载/空/错误/冻结均有证据；发现网络选择标签误用 VM 资源键，已
+  改为双语“选择网络”，并统一按钮内容的完整点击区域。首轮素材仍不能证明最终搜索
+  已修，后续目标复验单独记录。
+- 最终两端新增网络模型各 19 项已通过，补充未完成创建保护所引用网络以及创建资源
+  排除未完成网络；最终四项网络界面专项各自全部通过，iPhone 193.316 秒、iPad
+  211.832 秒，两个结果包均为 23/23 通过。搜索为空、中文大字号、部分结果和接受后
+  恢复已实际复验；最终 22 张截图全部复核，连首轮共 70 张。
+- 最终 Mac Release 增量构建通过，`lipo -archs` 核对主 App 与 File Provider 扩展
+  均实际包含 x86_64/arm64。`build/m7d4a-mac-final-build.log`。没有安装/启动测试包
+  或执行正式签名发布。临时下载工具和四份附件导出在交付前清理，正式日志/结果包
+  与精选预览保留在本机 build 下。
+
+实际命令（均从仓库根目录执行）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'VirtualMachineNetworkWorkflowTests|DsmServiceManagementRepositoryTests|VirtualMachineCreationWorkflowTests|ServiceManagementModelTests'
+swift test --package-path apple --jobs 2 --skip-build
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination generic/platform=macOS -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 -parallel-testing-enabled NO -only-testing:DsmMobileTests/MobileVirtualMachineNetworkTests '-only-testing:DsmMobileUITests/MobileVirtualMachineNetworkUITests/test网络详情改名搜索和完成记录' '-only-testing:DsmMobileUITests/MobileVirtualMachineNetworkUITests/test中文深色大字删除后果和取消' '-only-testing:DsmMobileUITests/MobileVirtualMachineNetworkUITests/test网络多选第二项未知仍保留第一项成功' '-only-testing:DsmMobileUITests/MobileVirtualMachineNetworkUITests/test已接受改名跨重启恢复且解除保护' -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -resultBundlePath build/m7d4a-phone-final.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
+iPad 最终使用相同命令，将设备替换为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，
+结果路径替换为 `build/m7d4a-pad-final.xcresult`。首轮包括全部五组 VM 模型、六项
+`MobileVirtualMachineNetworkUITests`，以及旧开机和分步创建各一项 UI，使用同一
+构建/签名设置，结果为 `build/m7d4a-{phone,pad}.xcresult`。
+
+真实 external/private 网络字段、连接副作用、SR-IOV 拒绝、外部客户端竞态、系统
+文件保护/锁屏和完整辅助功能未验证。专用网络及 VM 的前置条件、操作、预期结果
+与允许回传的脱敏信息见主计划 M7d4a 的四项 `PENDING_USER_VALIDATION`；不对既有
+真实网络测试写入。映像删除、控制台和 M8 仍继续源码切片，不列作本片待设备验证。
