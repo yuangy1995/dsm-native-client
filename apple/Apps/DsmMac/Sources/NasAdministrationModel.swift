@@ -1675,10 +1675,7 @@ final class NasSettingsModel {
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.interfaces, force: true)
         }
-        if ethernetInterfaces.contains(where: {
-            Self.ethernetInterface($0, matches: interface)
-        }) || result.status == .confirmedSuccess
-            || result.status == .cancelledBeforeSubmission {
+        if result.status == .confirmedSuccess || result.status == .cancelledBeforeSubmission {
             return
         }
         let feedback = Self.ethernetUpdateFeedback(for: result.status)
@@ -1734,22 +1731,6 @@ final class NasSettingsModel {
                 category: .cancelled
             )
         }
-    }
-
-    private static func ethernetInterface(
-        _ actual: NasEthernetInterface,
-        matches expected: NasEthernetInterface
-    ) -> Bool {
-        actual.id == expected.id
-            && actual.usesDHCP == expected.usesDHCP
-            && (expected.usesDHCP || actual.address == expected.address)
-            && (expected.usesDHCP || actual.subnetMask == expected.subnetMask)
-            && (expected.usesDHCP || actual.gateway == expected.gateway)
-            && (expected.usesDHCP || actual.dnsServers == expected.dnsServers)
-            && actual.isDefaultGateway == expected.isDefaultGateway
-            && actual.mtu == expected.mtu
-            && actual.isVLANEnabled == expected.isVLANEnabled
-            && (!expected.isVLANEnabled || actual.vlanID == expected.vlanID)
     }
 
     func saveZRAM(enabled: Bool, baseline: NasZRAMSnapshot) async throws {

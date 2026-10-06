@@ -456,11 +456,92 @@ final class NasServiceFlowTests: XCTestCase {
         let calls = await transport.calls; XCTAssertTrue(calls.isEmpty)
     }
 
+    func test网卡DHCP只提交目标且忽略动态租约状态变化() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let original = try await repository.loadServiceForManagement(.ethernet)
+        await transport.set(DsmAPIName.coreNetworkEthernet, key: "ip", value: "192.0.2.55")
+        await transport.set(DsmAPIName.coreNetworkEthernet, key: "status", value: "disconnected")
+        let result = try await repository.changeServiceResult(change(original)) { await log.append($0) }
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1); XCTAssertEqual(writes[0]["version"], "1")
+        let configs = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try XCTUnwrap(writes[0]["configs"]).utf8)) as? [[String: Any]])
+        XCTAssertEqual(configs.count, 1); XCTAssertEqual(configs[0]["ifname"] as? String, "eth0")
+        XCTAssertEqual(configs[0]["mtu"] as? Int, 1400); XCTAssertNil(configs[0]["ip"]); XCTAssertNil(configs[0]["vlan_id"])
+        let stages = await log.values; XCTAssertEqual(stages, [.willSubmit(.ethernet), .accepted(.ethernet), .verified(.ethernet)])
+        let reads = await transport.calls.filter { $0["method"] != "set" }
+        XCTAssertTrue(reads.filter { $0["method"] == "list" }.allSatisfy { $0["version"] == "2" })
+        XCTAssertTrue(reads.filter { $0["method"] == "get" }.allSatisfy { $0["version"] == "1" })
+    }
+    func test网卡静态地址与VLAN保存所有原生字段() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport)
+        let original = try await repository.loadServiceForManagement(.ethernet)
+        guard case .ethernet(var values) = original else { return XCTFail() }
+        values[0].usesDHCP = false; values[0].address = "192.0.2.42"; values[0].subnetMask = "255.255.255.0"
+        values[0].gateway = "192.0.2.1"; values[0].dnsServers = "192.0.2.53"; values[0].isVLANEnabled = true; values[0].vlanID = 12
+        let result = try await repository.changeServiceResult(.init(original: original, desired: .ethernet(values))) { _ in }
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let writes = await transport.writes
+        let configs = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try XCTUnwrap(writes.first?["configs"]).utf8)) as? [[String: Any]])
+        XCTAssertEqual(configs[0]["ip"] as? String, "192.0.2.42"); XCTAssertEqual(configs[0]["mask"] as? String, "255.255.255.0")
+        XCTAssertEqual(configs[0]["gateway"] as? String, "192.0.2.1"); XCTAssertEqual(configs[0]["dns"] as? String, "192.0.2.53")
+        XCTAssertEqual(configs[0]["vlan_id"] as? Int, 12)
+    }
+    func test网卡所需版本不足时零请求() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport, minimum: [DsmAPIName.coreNetworkEthernet: 2])
+        do { _ = try await repository.loadServiceForManagement(.ethernet); XCTFail() } catch { XCTAssertEqual((error as? AppError)?.category, .apiUnavailable) }
+        let requests = await transport.calls; XCTAssertTrue(requests.isEmpty)
+    }
+    func test网卡畸形和缺失字段不能用默认值编辑() async throws {
+        for (key, value): (String, any Sendable) in [("use_dhcp", "unknown"), ("is_default_gateway", 3), ("enable_vlan", "unknown"), ("mtu", 1e30), ("mtu", 1500.5), ("mtu", true)] {
+            let transport = ServiceFlowTransport(), repository = try repository(transport)
+            await transport.set(DsmAPIName.coreNetworkEthernet, key: key, value: value)
+            do { _ = try await repository.loadServiceForManagement(.ethernet); XCTFail(key) } catch { XCTAssertEqual((error as? AppError)?.category, .invalidResponse) }
+            let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+        }
+    }
+    func test网卡非法输入新增删除和多目标更改全部零写() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport)
+        let original = try await repository.loadServiceForManagement(.ethernet)
+        guard case .ethernet(let base) = original else { return XCTFail() }
+        var invalid = base; invalid[0].mtu = 9001
+        var address = base; address[0].usesDHCP = false; address[0].address = "999.0.0.1"
+        var vlan = base; vlan[0].isVLANEnabled = true; vlan[0].vlanID = 4095
+        for next in [invalid, address, vlan, [], base + base] {
+            let result = try await repository.changeServiceResult(.init(original: original, desired: .ethernet(next))) { _ in XCTFail() }
+            XCTAssertFalse(result.submitted)
+        }
+        let first = base[0], second = NasEthernetInterface(id: "eth1", displayName: "LAN 2", status: nil, usesDHCP: true, address: "", subnetMask: "", gateway: "", dnsServers: "", isDefaultGateway: false, mtu: 1500, isVLANEnabled: false, vlanID: nil)
+        var next = [first, second]; next[0].mtu = 1400; next[1].mtu = 1400
+        let result = try await repository.changeServiceResult(.init(original: .ethernet([first, second]), desired: .ethernet(next))) { _ in XCTFail() }
+        XCTAssertFalse(result.submitted); let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+    }
+    func test网卡只比较原目标的保存结果不认领其他网卡() throws {
+        let first = NasEthernetInterface(id: "eth0", displayName: "LAN 1", status: nil, usesDHCP: true, address: "", subnetMask: "", gateway: "", dnsServers: "", isDefaultGateway: false, mtu: 1500, isVLANEnabled: false, vlanID: nil)
+        var next = first; next.mtu = 1400
+        let change = NasServiceChange(original: .ethernet([first]), desired: .ethernet([next]))
+        let other = NasEthernetInterface(id: "eth1", displayName: "LAN 2", status: nil, usesDHCP: true, address: "", subnetMask: "", gateway: "", dnsServers: "", isDefaultGateway: false, mtu: 1400, isVLANEnabled: false, vlanID: nil)
+        XCTAssertFalse(change.savedFieldsMatch(.ethernet([other]), step: .ethernet))
+        XCTAssertTrue(change.savedFieldsMatch(.ethernet([next, other]), step: .ethernet))
+    }
+    func test网卡未知结果保留提交检查点且只读不重发() async throws {
+        let transport = ServiceFlowTransport(), repository = try repository(transport), log = ServiceCheckpointLog()
+        let original = try await repository.loadServiceForManagement(.ethernet), change = change(original)
+        await transport.setMode("offline")
+        let result = try await repository.changeServiceResult(change) { await log.append($0) }
+        XCTAssertEqual(result.status, .submittedButUnverified)
+        let stages = await log.values; XCTAssertEqual(stages, [.willSubmit(.ethernet)])
+        await transport.setMode("normal")
+        let current = try await repository.loadServiceForManagement(.ethernet)
+        XCTAssertTrue(change.savedFieldsMatch(current, step: .ethernet))
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
+    }
+
     private func change(_ original: NasServiceSettings) -> NasServiceChange {
         let desired: NasServiceSettings
         switch original {
         case .fileServices(var value): value.isSMBEnabled?.toggle(); desired = .fileServices(value)
         case .terminal(var value): value.isSSHEnabled.toggle(); desired = .terminal(value)
+        case .ethernet(var values): values[0].mtu = 1400; desired = .ethernet(values)
         case .proxy(var value): value.isEnabled.toggle(); desired = .proxy(value)
         case .remoteAccess(var value): value.isRelayEnabled?.toggle(); desired = .remoteAccess(value)
         case .zram(let value, _): desired = .zram(.init(isEnabled: value.isEnabled.map { !$0 }, configuredBytes: value.configuredBytes, algorithm: value.algorithm), needsReboot: true)
@@ -482,13 +563,14 @@ private actor ServiceCheckpointLog {
 private actor ServiceFlowTransport: DsmHTTPTransport {
     static let apis = [DsmAPIName.coreFileServiceSMB, DsmAPIName.coreFileServiceNFS, DsmAPIName.coreFileServiceFTP,
         DsmAPIName.coreFileServiceSFTP, DsmAPIName.coreWebDSM, DsmAPIName.coreFileServiceDiscovery, DsmAPIName.coreTerminal, DsmAPIName.coreNetworkProxy, DsmAPIName.coreQuickConnect, DsmAPIName.coreQuickConnectUPnP,
-        DsmAPIName.coreHardwareZRAM, DsmAPIName.coreHardwareNeedReboot, DsmAPIName.coreHardwarePowerSchedule]
+        DsmAPIName.coreHardwareZRAM, DsmAPIName.coreHardwareNeedReboot, DsmAPIName.coreHardwarePowerSchedule, DsmAPIName.coreNetworkEthernet]
     private(set) var calls: [[String: String]] = []
     var writes: [[String: String]] { calls.filter { ["set", "set_misc_config", "save"].contains($0["method"] ?? "") } }
     private var mode = "normal"
     private var readFailure: AppErrorCategory?
     func setReadFailure(_ value: AppErrorCategory) { readFailure = value }
     private var payloads: [String: [String: Any]] = [
+        DsmAPIName.coreNetworkEthernet: ["ifname": "eth0", "use_dhcp": true, "is_default_gateway": true, "mtu": 1500, "enable_vlan": false],
         DsmAPIName.coreFileServiceSMB: ["enable_samba": false], DsmAPIName.coreFileServiceNFS: ["enable_nfs": false],
         DsmAPIName.coreFileServiceFTP: ["enable_ftp": false, "enable_ftps": false, "portnum": 21],
         DsmAPIName.coreFileServiceSFTP: ["enable": false, "portnum": 22], DsmAPIName.coreWebDSM: ["enable_ssdp": false, "enable_avahi": false],
@@ -507,13 +589,14 @@ private actor ServiceFlowTransport: DsmHTTPTransport {
         case .proxy: payloads[DsmAPIName.coreNetworkProxy]?["http_port"] = 8080
         case .remoteAccess: payloads[DsmAPIName.coreQuickConnectUPnP]?["enabled"] = true
         case .zram: payloads[DsmAPIName.coreHardwareZRAM]?["enable_zram"] = true
-        case .powerSchedule: payloads[DsmAPIName.coreHardwarePowerSchedule]?["timezone"] = "Europe/London" }
+        case .powerSchedule: payloads[DsmAPIName.coreHardwarePowerSchedule]?["timezone"] = "Europe/London"
+        case .ethernet: payloads[DsmAPIName.coreNetworkEthernet]?["enable_vlan"] = true; payloads[DsmAPIName.coreNetworkEthernet]?["vlan_id"] = 10 }
     }
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         let body = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
         let fields = Dictionary(uniqueKeysWithValues: (URLComponents(string: "https://fixture.invalid/?" + body)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         calls.append(fields); let api = fields["api"] ?? ""
-        if ["get", "get_misc_config", "load"].contains(fields["method"] ?? "") {
+        if ["list", "get", "get_misc_config", "load"].contains(fields["method"] ?? "") {
             if let readFailure {
                 if readFailure == .authenticationRequired { return .init(data: Data(#"{"success":false,"error":{"code":106}}"#.utf8), statusCode: 200) }
                 if readFailure == .tlsUntrusted { throw URLError(.serverCertificateUntrusted) }
@@ -521,9 +604,11 @@ private actor ServiceFlowTransport: DsmHTTPTransport {
             }
             if mode == "remote-read-error" || mode == "relay-read-error" && api == DsmAPIName.coreQuickConnect || mode == "remote-second-offline" && writes.count == 2 { throw URLError(.notConnectedToInternet) }
             if mode == "offline" && !writes.isEmpty { throw URLError(.notConnectedToInternet) }
+            if api == DsmAPIName.coreNetworkEthernet && fields["method"] == "list" { return response(["interfaces": [["ifname": "eth0"]]]) }
             return response(payloads[api] ?? [:])
         }
         if mode == "denied" || mode == "second-denied" && writes.count == 2 { return .init(data: Data(#"{"success":false,"error":{"code":105}}"#.utf8), statusCode: 200) }
+        if api == DsmAPIName.coreNetworkEthernet, let data = fields["configs"], let values = try JSONSerialization.jsonObject(with: Data(data.utf8)) as? [[String: Any]], let value = values.first { payloads[api] = value }
         for (key, value) in fields where payloads[api]?[key] != nil {
             if mode != "partial" || key == "enable_ssh" {
                 if value == "true" || value == "false" { payloads[api]?[key] = value == "true" }

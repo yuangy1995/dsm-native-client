@@ -796,6 +796,25 @@ final class NasAdministrationModelTests: XCTestCase {
         XCTAssertEqual(groupUnsupported.category, .apiUnavailable)
     }
 
+    func test网卡相同缓存不能覆盖拒绝部分完成或未知结果() async throws {
+        for status: MutationResultStatus in [.permissionDenied, .unsupported, .partialSuccess, .submittedButUnverified, .cancellationRequestedAfterSubmission, .confirmedFailure] {
+            let repository = NasAdministrationRepositoryStub(ethernetUpdateStatus: status)
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            await model.activate(.interfaces)
+            let expected = try XCTUnwrap(model.ethernetInterfaces.first)
+            do { try await model.saveEthernetInterface(expected); XCTFail("相同配置不能覆盖操作结果：\(status)") }
+            catch let error as AppError {
+                let feedback = NasSettingsModel.ethernetUpdateFeedback(for: status)
+                XCTAssertEqual(error.category, feedback.category)
+                XCTAssertEqual(error.safeUserMessage, L10n.string(feedback.resourceKey))
+                XCTAssertFalse(error.isRetryable)
+            }
+            XCTAssertEqual(model.ethernetInterfaces.first, expected)
+            XCTAssertTrue(model.networkOperationIDs.isEmpty)
+        }
+    }
+
     func test网卡设置只有确认成功后才更新当前配置() async throws {
         let repository = NasAdministrationRepositoryStub()
         let model = NasSettingsModel(repository: repository)
@@ -2989,6 +3008,10 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
     ) async throws -> MutationResult {
         if ethernetUpdateStatus == .confirmedSuccess {
             ethernetInterfaces = [interface]
+        }
+        if ethernetUpdateStatus == .partialSuccess {
+            return try MutationResult(status: .partialSuccess, operation: "ethernetUpdate", submitted: true,
+                requiresRefresh: true, counts: .init(succeeded: 1, failed: 1, unknown: 0))
         }
         return try deletionResult(
             status: ethernetUpdateStatus,

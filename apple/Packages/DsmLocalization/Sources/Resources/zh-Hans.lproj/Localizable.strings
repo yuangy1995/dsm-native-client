@@ -7042,3 +7042,26 @@
 "mobile.containers.image-delete.image-risk" = "无标签映像将整体删除，无法撤销。";
 "mobile.containers.image-delete.download-protected" = "此映像的删除尚未结束，请先刷新删除记录，再下载映像。";
 "mobile.containers.image-delete.target" = "映像 %lld";
+
+"mobile.nas.ethernet.title" = "网卡";
+"mobile.nas.ethernet.search" = "搜索网卡或地址";
+"mobile.nas.ethernet.mode" = "地址分配";
+"mobile.nas.ethernet.automatic" = "自动获取地址";
+"mobile.nas.ethernet.manual" = "使用固定地址";
+"mobile.nas.ethernet.address" = "IP 地址";
+"mobile.nas.ethernet.mask" = "子网掩码";
+"mobile.nas.ethernet.gateway" = "网关";
+"mobile.nas.ethernet.dns" = "DNS 服务器";
+"mobile.nas.ethernet.none" = "未设置";
+"mobile.nas.ethernet.defaultGateway" = "用作默认网关";
+"mobile.nas.ethernet.mtu" = "MTU";
+"mobile.nas.ethernet.vlan" = "VLAN ID";
+"mobile.nas.ethernet.vlanEnabled" = "启用 VLAN";
+"mobile.nas.ethernet.warning" = "修改这张网卡可能中断本 App 和其他设备的连接，或导致无法访问 NAS。请确保可以通过 DSM 或另一张网卡恢复连接，再保存以下配置。仅修改下方这张网卡。";
+"mobile.nas.ethernet.invalid" = "请填写有效的 IPv4 地址，MTU 须为 576–9000，启用 VLAN 时编号须为 1–4094。每次只能修改一张已有网卡。";
+"mobile.nas.ethernet.empty" = "没有可用的物理网卡";
+"mobile.nas.ethernet.emptyHint" = "请稍后刷新，或在 DSM 的网络设置中查看网卡。";
+"mobile.nas.ethernet.reconnectHint" = "如果 NAS 地址已改变，请退出登录，在原连接配置中填写新地址并使用原账号重新连接，然后返回这里读取保存结果。请勿再次保存相同修改。";
+"mobile.nas.ethernet.recoveryTitle" = "在当前 NAS 读取保存结果？";
+"mobile.nas.ethernet.readResult" = "读取保存结果";
+"mobile.nas.ethernet.recoveryWarning" = "仅在当前连接是刚才修改网卡的那台 NAS 时继续。其他 NAS 上相同的配置不能说明原修改已完成。此操作只读取网卡配置，不会再次保存设置。";

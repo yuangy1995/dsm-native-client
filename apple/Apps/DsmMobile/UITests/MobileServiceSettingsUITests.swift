@@ -313,10 +313,97 @@ final class MobileServiceSettingsUITests: XCTestCase {
         element("mobile.nas.service.cancel", app).tap(); element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
         expect(reveal("mobile.nas.service.row.routerConfiguration", in: app), contains: "已关闭")
     }
+    func test网卡编辑校验风险取消后只保存所选配置() {
+        let app = launch("nas-services", kind: "ethernet"); defer { app.terminate() }
+        openEthernetEditor(app)
+        replace("mtu", text: "9001", app, prefix: "mobile.nas.ethernet")
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        replace("mtu", text: "1400", app, prefix: "mobile.nas.ethernet")
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "may disconnect")).firstMatch.waitForExistence(timeout: 5))
+        screenshot(app, "Ethernet connection loss warning")
+        element("mobile.nas.service.cancel", app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].isEnabled)
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap()
+        waitEditorClosed(app, editID: "mobile.nas.ethernet.edit.eth0")
+        expect(reveal("mobile.nas.service.activity.succeeded", in: app), contains: "saved")
+        _ = reveal("mobile.nas.ethernet.edit.eth0", in: app)
+        XCTAssertTrue(app.staticTexts["MTU, 1400"].exists); screenshot(app, "Ethernet saved with target configuration")
+    }
+    func test网卡静态地址和VLAN表单完整保存() {
+        let app = launch("nas-services", kind: "ethernet"); defer { app.terminate() }; openEthernetEditor(app)
+        reveal("mobile.nas.ethernet.dhcp", in: app).switches.firstMatch.tap()
+        replace("address", text: "192.0.2.42", app, prefix: "mobile.nas.ethernet")
+        reveal("mobile.nas.ethernet.vlanEnabled", in: app).switches.firstMatch.tap()
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        let field = app.textFields["mobile.nas.ethernet.vlan"]; _ = reveal("mobile.nas.ethernet.vlan", in: app); field.tap(); field.typeText("12")
+        finishTextEditing(app)
+        XCTAssertEqual(field.value as? String, "12")
+        XCTAssertTrue(app.buttons["mobile.nas.service.save"].isEnabled); XCTAssertTrue(app.buttons["mobile.nas.service.save"].isHittable)
+        app.buttons["mobile.nas.service.save"].tap()
+        XCTAssertTrue(element("mobile.nas.service.confirm", app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["IP address, 192.0.2.42"].exists); XCTAssertTrue(app.staticTexts["VLAN ID, 12"].exists)
+        screenshot(app, "Static address and VLAN confirmation")
+        element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app, editID: "mobile.nas.ethernet.edit.eth0")
+        expect(reveal("mobile.nas.service.activity.succeeded", in: app), contains: "saved")
+        _ = reveal("mobile.nas.ethernet.edit.eth0", in: app)
+        XCTAssertTrue(app.staticTexts["IP address, 192.0.2.42"].exists)
+    }
+    func test网卡未知保存重启后只读恢复且不可重发() {
+        let app = launch("nas-services-unknown", kind: "ethernet"); openEthernetEditor(app)
+        replace("mtu", text: "1400", app, prefix: "mobile.nas.ethernet")
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap()
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "not available yet")
+        XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled); screenshot(app, "Ethernet unknown result remains protected"); app.terminate()
+        let next = launch("nas-services-ethernet-recover", kind: "ethernet", preserve: true); defer { next.terminate() }
+        expect(reveal("mobile.nas.service.activity.succeeded", in: next), contains: "saved")
+        XCTAssertTrue(reveal("mobile.nas.ethernet.edit.eth0", in: next).isEnabled); screenshot(next, "Ethernet recovered by reading original interface")
+    }
+    func test网卡新地址重新登录后明确恢复原记录() {
+        let app = launch("nas-services-unknown", kind: "ethernet"); openEthernetEditor(app)
+        replace("mtu", text: "1400", app, prefix: "mobile.nas.ethernet")
+        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap()
+        expect(reveal("mobile.nas.service.editorResult", in: app), contains: "not available yet"); app.terminate()
+        let next = launch("nas-services-ethernet-new-address", kind: "ethernet", preserve: true); defer { next.terminate() }
+        XCTAssertFalse(reveal("mobile.nas.ethernet.edit.eth0", in: next).isEnabled)
+        reveal("mobile.nas.service.recover", in: next).tap()
+        XCTAssertTrue(next.buttons["Read Saved Result"].waitForExistence(timeout: 5)); screenshot(next, "Explicit result reading after new address login")
+        next.buttons["Read Saved Result"].tap()
+        expect(reveal("mobile.nas.service.activity.succeeded", in: next), contains: "saved")
+        XCTAssertTrue(reveal("mobile.nas.ethernet.edit.eth0", in: next).isEnabled)
+    }
+    func test网卡加载空内容错误与不支持可恢复() {
+        for (state, label) in [("nas-services-loading", "Reading settings"), ("nas-services-empty", "No physical interfaces available"), ("nas-services-ethernet-incomplete", "Unable to load settings"), ("nas-services-unsupported", "not supported")] {
+            let app = launch(state, kind: "ethernet")
+            if state == "nas-services-loading" { XCTAssertTrue(app.activityIndicators.firstMatch.waitForExistence(timeout: 5)) }
+            else { XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", label)).firstMatch.waitForExistence(timeout: 5)) }
+            XCTAssertFalse(element("mobile.nas.ethernet.edit.eth0", app).exists)
+            screenshot(app, "Ethernet state " + state); app.terminate()
+        }
+    }
+    func test网卡搜索无结果与权限限制() {
+        let app = launch("nas-services-readonly", kind: "ethernet")
+        XCTAssertFalse(reveal("mobile.nas.ethernet.edit.eth0", in: app).isEnabled)
+        let search = app.textFields["mobile.nas.ethernet.search"]; _ = reveal("mobile.nas.ethernet.search", in: app)
+        search.tap(); search.typeText("no-such-interface\n")
+        XCTAssertTrue(element("mobile.nas.ethernet.filteredEmpty", app).waitForExistence(timeout: 5)); screenshot(app, "Ethernet filtered empty with restricted account"); app.terminate()
+    }
+    func test网卡中文大字表单风险和取消均可触达() {
+        let app = launch("nas-services", kind: "ethernet", chinese: true, large: true); defer { app.terminate() }; openEthernetEditor(app)
+        replace("mtu", text: "1400", app, prefix: "mobile.nas.ethernet")
+        screenshot(app, "Chinese large Ethernet form")
+        app.buttons["mobile.nas.service.save"].tap(); XCTAssertTrue(element("mobile.nas.service.confirm", app).waitForExistence(timeout: 5))
+        screenshot(app, "Chinese large Ethernet warning")
+        element("mobile.nas.service.cancel", app).tap(); element("mobile.nas.service.done", app).tap()
+        waitEditorClosed(app, editID: "mobile.nas.ethernet.edit.eth0")
+        XCTAssertFalse(element("mobile.nas.service.activity.succeeded", app).exists)
+    }
+    private func openEthernetEditor(_ app: XCUIApplication) {
+        reveal("mobile.nas.ethernet.edit.eth0", in: app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].waitForExistence(timeout: 5))
+    }
     private func openEditor(_ app: XCUIApplication) { reveal("mobile.nas.service.edit", in: app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].waitForExistence(timeout: 5)) }
     private func toggle(_ key: String, in app: XCUIApplication) { reveal("mobile.nas.service.\(key)", in: app).switches.firstMatch.tap() }
-    private func replace(_ key: String, text: String, _ app: XCUIApplication) {
-        let field = app.textFields["mobile.nas.service.\(key)"]; _ = reveal("mobile.nas.service.\(key)", in: app)
+    private func replace(_ key: String, text: String, _ app: XCUIApplication, prefix: String = "mobile.nas.service") {
+        let field = app.textFields["\(prefix).\(key)"]; _ = reveal("\(prefix).\(key)", in: app)
         if app.frame.width > 600 {
             // iPad 可连接硬件键盘；将光标放在可见值末尾后删除原值，不依赖长按菜单。
             field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap()
@@ -339,6 +426,10 @@ final class MobileServiceSettingsUITests: XCTestCase {
             XCTAssertTrue(selectAll.exists); selectAll.tap(); field.typeText(text)
         }
         XCTAssertEqual(field.value as? String, text)
+        finishTextEditing(app)
+        XCTAssertEqual(field.value as? String, text)
+    }
+    private func finishTextEditing(_ app: XCUIApplication) {
         if app.frame.width > 600, app.popovers.firstMatch.exists {
             // 数字键盘的弹出层会拦截底部完成按钮，先点击编辑器标题栏空白处收起它。
             let bar = app.navigationBars.containing(.button, identifier: "mobile.nas.service.save").firstMatch
@@ -347,10 +438,9 @@ final class MobileServiceSettingsUITests: XCTestCase {
         }
         let done = app.buttons["mobile.nas.service.keyboardDone"]
         if done.exists && done.isHittable { done.tap() }
-        XCTAssertEqual(field.value as? String, text)
     }
-    private func waitEditorClosed(_ app: XCUIApplication) {
-        let edit = app.buttons["mobile.nas.service.edit"]
+    private func waitEditorClosed(_ app: XCUIApplication, editID: String = "mobile.nas.service.edit") {
+        let edit = app.buttons[editID]
         let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: edit)], timeout: 10)
         if result != .completed { let attachment = XCTAttachment(string: app.debugDescription); attachment.name = "Service editor result hierarchy"; add(attachment); screenshot(app, "Service editor result") }
         XCTAssertEqual(result, .completed); XCTAssertFalse(app.collectionViews["mobile.nas.service.editor"].exists)

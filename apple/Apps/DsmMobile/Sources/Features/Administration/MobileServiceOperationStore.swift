@@ -12,6 +12,7 @@ final class MobileServiceOperationStore {
     struct Part: Equatable, Codable {
         let step: NasServiceStep
         let expected: String
+        var target: String? = nil
         var stage: Stage = .prepared
         var accepted = false
         var hasPartialFields = false
@@ -20,6 +21,7 @@ final class MobileServiceOperationStore {
         let id: UUID
         let context: String
         let kind: NasServiceKind
+        var networkOwner: String? = nil
         let createdAt: Date
         var parts: [Part]
         var failure: Failure?
@@ -46,6 +48,9 @@ final class MobileServiceOperationStore {
         let data = (try? JSONEncoder().encode(value.fields(for: step, verifying: true))) ?? Data()
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
+    static func targetSignature(_ id: String) -> String {
+        SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
     func reload() {
         guard executing.isEmpty else { return }
         do {
@@ -71,10 +76,17 @@ final class MobileServiceOperationStore {
     func protects(_ kind: NasServiceKind, context: String) -> Bool {
         failed || entries.contains { $0.context == context && $0.kind == kind && ($0.isUnfinished || executing.contains($0.id)) }
     }
-    func reserve(_ change: NasServiceChange, context: String) throws -> Entry {
+    func networkEntries(owner: String) -> [Entry] { entries.filter { $0.kind == .ethernet && $0.networkOwner == owner } }
+    func protectsNetwork(owner: String) -> Bool { failed || networkEntries(owner: owner).contains { $0.isUnfinished || executing.contains($0.id) } }
+    func reserve(_ change: NasServiceChange, context: String, networkOwner: String? = nil) throws -> Entry {
         guard !protects(change.kind, context: context), let steps = change.orderedSteps else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
-        let value = Entry(id: UUID(), context: context, kind: change.kind, createdAt: Date(),
-            parts: steps.map { .init(step: $0, expected: Self.signature(change.desired, step: $0)) })
+        if change.kind == .ethernet {
+            guard let networkOwner, !protectsNetwork(owner: networkOwner) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+        }
+        let target = change.ethernetTarget
+        let value = Entry(id: UUID(), context: context, kind: change.kind, networkOwner: change.kind == .ethernet ? networkOwner : nil, createdAt: Date(),
+            parts: steps.map { .init(step: $0, expected: Self.signature(target.map { .ethernet([$0]) } ?? change.desired, step: $0),
+                                   target: target.map { Self.targetSignature($0.id) }) })
         try persist(entries + [value]); executing.insert(value.id); return value
     }
     func checkpoint(_ id: UUID, _ checkpoint: NasServiceCheckpoint) throws {
@@ -112,12 +124,30 @@ final class MobileServiceOperationStore {
         var values = entries
         for index in values.indices where values[index].context == context && values[index].kind == value.kind && !executing.contains(values[index].id) {
             for part in values[index].parts.indices where values[index].parts[part].stage == .submitted {
-                if Self.signature(value, step: values[index].parts[part].step) == values[index].parts[part].expected {
+                if Self.matches(value, part: values[index].parts[part]) {
                     values[index].parts[part].stage = .verified
                 }
             }
         }
         if values != entries { try persist(values) }
+    }
+    /// 仅在重新登录并明确选择原记录后调用；不会移动记录账号或触发任何设置请求。
+    func resolveNetwork(_ id: UUID, value: NasServiceSettings, owner: String) throws {
+        guard let index = entries.firstIndex(where: { $0.id == id }), entries[index].networkOwner == owner,
+              entries[index].kind == .ethernet, !executing.contains(id), value.kind == .ethernet else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+        var values = entries
+        for part in values[index].parts.indices where values[index].parts[part].stage == .submitted {
+            if Self.matches(value, part: values[index].parts[part]) { values[index].parts[part].stage = .verified }
+        }
+        if values != entries { try persist(values) }
+    }
+    private static func matches(_ value: NasServiceSettings, part: Part) -> Bool {
+        if part.step == .ethernet {
+            guard case .ethernet(let values) = value, let target = part.target,
+                  let match = values.first(where: { Self.targetSignature($0.id) == target }) else { return false }
+            return Self.signature(.ethernet([match]), step: .ethernet) == part.expected
+        }
+        return Self.signature(value, step: part.step) == part.expected
     }
     func remove(_ id: UUID, context: String) throws {
         guard let value = entry(id), value.context == context, !value.isUnfinished, !executing.contains(id) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
@@ -140,9 +170,11 @@ final class MobileServiceOperationStore {
                   Set(value.parts.map(\.step)).count == value.parts.count,
                   value.parts.filter({ $0.stage == .submitted }).count <= 1,
                   value.parts.allSatisfy({ $0.step.kind == value.kind && Self.isDigest($0.expected)
+                      && (value.kind == .ethernet ? $0.target.map(Self.isDigest) == true && value.networkOwner.map(Self.isDigest) == true : $0.target == nil && value.networkOwner == nil)
                       && (!$0.accepted || $0.stage == .submitted || $0.stage == .verified)
                       && (!$0.hasPartialFields || $0.stage == .submitted || $0.stage == .verified) }) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             if value.isUnfinished, !targets.insert(value.context + value.kind.rawValue).inserted { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+            if value.isUnfinished, let owner = value.networkOwner, !targets.insert("network:" + owner).inserted { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             if let pending = value.parts.firstIndex(where: { $0.stage == .submitted }) {
                 guard value.parts.prefix(pending).allSatisfy({ $0.stage == .verified }),
                       value.parts.dropFirst(pending + 1).allSatisfy({ $0.stage == .prepared || $0.stage == .skipped }) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }

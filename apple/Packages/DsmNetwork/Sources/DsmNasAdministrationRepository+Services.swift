@@ -13,6 +13,7 @@ extension DsmNasAdministrationRepository {
         case .terminal: return .terminal(try await loadTerminalSettings(managed: true))
         case .proxy: return .proxy(try await loadProxySettings(managed: true))
         case .remoteAccess: return .remoteAccess(try await loadRemoteAccessForManagement())
+        case .ethernet: return .ethernet(try await loadEthernetForManagement())
         case .powerSchedule:
             guard serviceVersion(.powerSchedule) != nil else { throw unavailableError() }
             return .powerSchedule(try await loadPowerSchedule())
@@ -135,10 +136,12 @@ extension DsmNasAdministrationRepository {
         case .zram: DsmAPIName.coreHardwareZRAM
         case .rebootRequired: DsmAPIName.coreHardwareNeedReboot
         case .powerSchedule: DsmAPIName.coreHardwarePowerSchedule
+        case .ethernet: DsmAPIName.coreNetworkEthernet
         }
     }
     func serviceVersion(_ step: NasServiceStep) -> Int? {
         guard let capability = capabilities[serviceAPI(step)], capability.selectedVersion != nil else { return nil }
+        if step == .ethernet { return capability.minVersion <= 1 && capability.maxVersion >= 2 ? 1 : nil }
         let version: Int
         switch step { case .smb, .nfs, .terminal: version = min(3, capability.maxVersion); case .webDiscovery: version = 2; case .relay: version = 3; default: version = 1 }
         return version >= 1 && capability.minVersion <= version && version <= capability.maxVersion ? version : nil
@@ -173,7 +176,8 @@ extension DsmNasAdministrationRepository {
         guard !steps.isEmpty else { return try result(.confirmedFailure, category: .validation) }
         let active: Bool
         switch change.kind { case .fileServices: active = isFileServiceSettingsUpdateActive; case .terminal: active = isTerminalSettingsUpdateActive; case .proxy: active = isProxySettingsUpdateActive; case .remoteAccess: active = isRemoteAccessSettingsUpdateActive
-        case .zram: active = isZRAMUpdateActive; case .powerSchedule: active = isPowerScheduleUpdateActive }
+        case .zram: active = isZRAMUpdateActive; case .powerSchedule: active = isPowerScheduleUpdateActive
+        case .ethernet: active = isManagedEthernetUpdateActive || !activeEthernetUpdateIDs.isEmpty }
         guard !active else { return try result(.confirmedFailure, category: .conflict) }
         setServiceActive(change.kind, true)
         defer { setServiceActive(change.kind, false) }
@@ -190,7 +194,8 @@ extension DsmNasAdministrationRepository {
             submitted = true
             var accepted = false, rejection: Error?
             do {
-                try await submitManagedServiceStep(step, settings: change.desired, version: serviceVersion(step)!)
+                let submittedSettings = change.ethernetTarget.map { NasServiceSettings.ethernet([$0]) } ?? change.desired
+                try await submitManagedServiceStep(step, settings: submittedSettings, version: serviceVersion(step)!)
                 accepted = true
             } catch {
                 if error is DsmCertificateTrustError { throw error }
@@ -207,7 +212,12 @@ extension DsmNasAdministrationRepository {
             if Task.isCancelled { return try result(.cancellationRequestedAfterSubmission, unknown: 1) }
             let current: NasServiceSettings
             do { current = try await loadServiceForManagement(change.kind) }
-            catch { return try result(completed > 0 ? .partialSuccess : .submittedButUnverified, unknown: 1) }
+            catch {
+                if error is DsmCertificateTrustError { throw error }
+                if let value = error as? AppError,
+                   [.authenticationRequired, .permissionDenied, .tlsUntrusted, .tlsCertificateChanged].contains(value.category) { throw error }
+                return try result(completed > 0 ? .partialSuccess : .submittedButUnverified, unknown: 1)
+            }
             if change.savedFieldsMatch(current, step: step) {
                 try await checkpoint(.verified(step)); completed += 1
                 expected = expected.replacing(step, with: change.desired)
@@ -230,6 +240,7 @@ extension DsmNasAdministrationRepository {
 
     private func setServiceActive(_ kind: NasServiceKind, _ active: Bool) {
         switch kind { case .fileServices: isFileServiceSettingsUpdateActive = active; case .terminal: isTerminalSettingsUpdateActive = active; case .proxy: isProxySettingsUpdateActive = active; case .remoteAccess: isRemoteAccessSettingsUpdateActive = active
-        case .zram: isZRAMUpdateActive = active; case .powerSchedule: isPowerScheduleUpdateActive = active }
+        case .zram: isZRAMUpdateActive = active; case .powerSchedule: isPowerScheduleUpdateActive = active
+        case .ethernet: isManagedEthernetUpdateActive = active }
     }
 }

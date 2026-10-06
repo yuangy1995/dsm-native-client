@@ -7,6 +7,7 @@ import Observation
 final class MobileServiceSettingsModel {
     enum Failure: Equatable { case read, denied, unavailable, changed, storage, trust }
     private(set) var context: String?
+    private(set) var networkOwner: String?
     private(set) var activation = UUID()
     private(set) var sections: [NasServiceKind: MobileNasDetailsSection<NasServiceSettings>] = [:]
     private(set) var permissions: [NasServiceKind: Bool] = [:]
@@ -23,11 +24,12 @@ final class MobileServiceSettingsModel {
     func configure(profile: NasProfile?, repository: DsmNasAdministrationRepository?, authorize: (@MainActor @Sendable () async throws -> Bool)?) {
         let next = profile.map { MobileWorkspaceIdentity($0).storageIdentifier }
         guard next != context || self.repository.map(ObjectIdentifier.init) != repository.map(ObjectIdentifier.init) else { self.authorize = authorize; return }
-        deactivate(); context = next; self.repository = repository; self.authorize = authorize; recovery.reload()
+        deactivate(); context = next; networkOwner = profile.map { MobileServiceOperationStore.targetSignature($0.id.uuidString + "\n" + ($0.usernameHint ?? "")) }
+        self.repository = repository; self.authorize = authorize; recovery.reload()
     }
     func deactivate() {
         activation = UUID(); cancelReads(); for task in operations.values { task.cancel() }
-        context = nil; repository = nil; authorize = nil; sections = [:]; permissions = [:]; errors = [:]
+        context = nil; networkOwner = nil; repository = nil; authorize = nil; sections = [:]; permissions = [:]; errors = [:]
     }
     func cancelReads() { for kind in NasServiceKind.allCases { cancelRead(kind) } }
     func cancelRead(_ kind: NasServiceKind) {
@@ -64,12 +66,16 @@ final class MobileServiceSettingsModel {
         }
         readTasks[kind] = task; await task.value
     }
-    func entries(_ kind: NasServiceKind) -> [MobileServiceOperationStore.Entry] { recovery.entries.filter { $0.context == context && $0.kind == kind }.reversed() }
-    var isOperating: Bool { recovery.entries.contains { $0.context == context && activeOperationIDs.contains($0.id) } }
+    func entries(_ kind: NasServiceKind) -> [MobileServiceOperationStore.Entry] {
+        if kind == .ethernet, let networkOwner { return recovery.networkEntries(owner: networkOwner).reversed() }
+        return recovery.entries.filter { $0.context == context && $0.kind == kind }.reversed()
+    }
+    var isOperating: Bool { recovery.entries.contains { ($0.context == context || networkOwner != nil && $0.networkOwner == networkOwner) && activeOperationIDs.contains($0.id) } }
     func canEdit(_ kind: NasServiceKind) -> Bool {
         let section = section(kind)
         return permissions[kind] == true && !isOperating && !section.isRefreshing && !section.hasRefreshError
             && section.value?.supportsEditing == true && context.map { !recovery.protects(kind, context: $0) } == true
+            && (kind != .ethernet || networkOwner.map { !recovery.protectsNetwork(owner: $0) } == true)
     }
     /// 只继续明确保存过的压缩设置，不因别处已有重启要求而认领未提交的步骤。
     func rebootContinuation() -> NasServiceChange? {
@@ -89,7 +95,7 @@ final class MobileServiceSettingsModel {
         guard token == activation else { return nil }
         guard canPerform(change), let repository, let authorize, let context else { errors[change.kind] = .changed; return nil }
         let store = recovery, entry: MobileServiceOperationStore.Entry
-        do { entry = try store.reserve(change, context: context) } catch { errors[change.kind] = .storage; return nil }
+        do { entry = try store.reserve(change, context: context, networkOwner: networkOwner) } catch { errors[change.kind] = .storage; return nil }
         activeOperationIDs.insert(entry.id); errors[change.kind] = nil
         operations[entry.id] = Task { [weak self] in
             defer { store.end(entry.id); self?.operations[entry.id] = nil; self?.activeOperationIDs.remove(entry.id) }
@@ -118,9 +124,10 @@ final class MobileServiceSettingsModel {
                 try store.stop(entry.id, failure: failure)
             } catch {
                 let failure = Self.failure(error)
-                if !store.failed { try? store.stop(entry.id, failure: error is CancellationError ? nil : (failure == .denied ? .denied : .failed)) }
+                let hasUnknownStep = store.entry(entry.id)?.parts.contains { $0.stage == .submitted } == true
+                if !store.failed { try? store.stop(entry.id, failure: error is CancellationError || hasUnknownStep ? nil : (failure == .denied ? .denied : .failed)) }
                 if self?.activation == token { self?.errors[change.kind] = store.failed ? .storage : failure }
-                if failure == .trust {
+                if failure == .trust || failure == .denied {
                     if self?.activation == token { self?.permissions[change.kind] = false }
                     return
                 }
@@ -133,7 +140,34 @@ final class MobileServiceSettingsModel {
     func waitForOperation(_ id: UUID) async { await operations[id]?.value }
     func removeRecord(_ id: UUID, kind: NasServiceKind) {
         guard let context else { return }
-        do { try recovery.remove(id, context: context) } catch { errors[kind] = .storage }
+        let recordContext = kind == .ethernet && entries(.ethernet).contains(where: { $0.id == id }) ? recovery.entry(id)?.context : context
+        guard let recordContext else { return }
+        do { try recovery.remove(id, context: recordContext) } catch { errors[kind] = .storage }
+    }
+    func readNetworkResult(_ id: UUID, activation token: UUID) async {
+        guard token == activation, let owner = networkOwner, let repository, let authorize,
+              !isOperating, let entry = recovery.entry(id), entry.networkOwner == owner, entry.isUnfinished, !recovery.isExecuting(id) else { return }
+        cancelRead(.ethernet); let generation = generations[.ethernet]
+        sections[.ethernet, default: .init()].beginLoading(); errors[.ethernet] = nil
+        let task = Task { [weak self] in
+            do {
+                guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+                try Task.checkCancellation()
+                let value = try await repository.loadServiceForManagement(.ethernet)
+                guard let self, self.activation == token, self.generations[.ethernet] == generation, !Task.isCancelled else { return }
+                self.sections[.ethernet, default: .init()].finish(value, isEmpty: value.isEmpty)
+                self.permissions[.ethernet] = true
+                do { try self.recovery.resolveNetwork(id, value: value, owner: owner) } catch { self.errors[.ethernet] = .storage }
+            } catch {
+                guard let self, self.activation == token, self.generations[.ethernet] == generation else { return }
+                if error is CancellationError { self.sections[.ethernet]?.cancelLoading() }
+                else {
+                    self.errors[.ethernet] = Self.failure(error); self.permissions[.ethernet] = false
+                    self.sections[.ethernet, default: .init()].fail(isUnavailable: self.errors[.ethernet] == .unavailable)
+                }
+            }
+        }
+        readTasks[.ethernet] = task; await task.value
     }
     private static func failure(_ error: Error) -> Failure {
         if error is DsmCertificateTrustError { return .trust }

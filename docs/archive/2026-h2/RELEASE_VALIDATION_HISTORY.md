@@ -3045,3 +3045,59 @@ iPad 使用目标 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 和 `m7-ci-face-pad-r2.
 原版和修正后的本机结果均记录了 UIKitToolbar 的系统运行时警告，当前未导致两项用例失败；本次没有扩大修改应用布局，也不宣称该既有警告消失。完整共享/Mac 回归由同日已授权的删除反馈专项执行（2915 XCTest/12 Swift Testing、双架构通过）；本片只有 UI 测试变化，未重复无关整组测试。新的云端执行仍待同步后的完整门禁，不将本机通过等同云端已修复。
 
 临时部分下载、按需读取索引/脚本、原始录屏/输入事件、截帧及导出清单已精确清理，保留五张合成审查图和正式日志/本机结果包。曾尝试普通 Range 请求但服务返回整包，识别后终止该额外下载；随后按服务支持的范围读取并校验所取对象，不将部分结果包误称完整下载。
+
+## 2026-10-06 移动 M6b4 网卡设置与断连恢复
+
+基线 `44bc3243`。两端复用服务设置和恢复模型，补网卡列表、搜索、DHCP/静态 IPv4、掩码、网关、DNS、默认网关、MTU、VLAN 和断连风险确认。每次只能保存一张已有网卡，提交只带一个 configs；管理读取要求已记录的 list v2/get v1/set v1 及完整原配置，缺字段不猜默认值。DHCP 租约、显示名称和连接状态不参与配置比较，其他网卡在保存后变化不认领也不影响原目标恢复。
+
+复用 `NAS/service-operations-v1.json`，只增加目标/配置及原连接配置加账号的摘要，不保存地址、网卡名或凭据。同地址重连只读恢复；改地址后须在原配置重新登录原账号，明确选择原 NAS 才读取原记录，保留旧上下文，不自动探测、不复用旧会话、不重发。不同账号或新建配置不能认领；原账号在途操作继续保护同一配置的新地址。共享保存后遇到权限或证书错误立即停止关联读取，未确定的已提交步骤保留未知，恢复只依据原目标完整配置。
+
+按当日已明确的离线授权，仅修正 Mac 网卡保存反馈中“页面缓存相同即视为完成”的判断。新用例在旧实现中实际复现权限拒绝及不支持两条失败；首轮第三条失败来自测试 stub 的 partialSuccess 计数不合法，随后修正 stub。不能把三条均当作产品缺陷。修正后六种拒绝/失败/部分/未知结果均保留实际反馈，confirmedSuccess 和提交前取消维持原语义。没有改变旧 Mac 请求编码、登录存储或其他平台源码。
+
+实际命令：
+
+```sh
+swift test --package-path apple --jobs 2 --filter NasAdministrationModelTests
+swift test --package-path apple --jobs 2 --filter 'NasServiceFlowTests|NasAdministrationModelTests'
+swift test --package-path apple --jobs 2
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/PlugIns/LanStashFileProvider.appex/Contents/MacOS/LanStashFileProvider
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6b4-phone-r2.xcresult '-only-testing:DsmMobileTests' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test网卡编辑校验风险取消后只保存所选配置' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test网卡静态地址和VLAN表单完整保存' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test网卡未知保存重启后只读恢复且不可重发' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test网卡新地址重新登录后明确恢复原记录' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test网卡加载空内容错误与不支持可恢复' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test网卡搜索无结果与权限限制' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test网卡中文大字表单风险和取消均可触达' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test终端端口校验Telnet风险及保存回读' -parallel-testing-enabled NO
+```
+
+iPad 使用目标 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 和 `m6b4-pad-r2.xcresult`。R1 先各运行 53 项聚焦行为测试和前两项网卡 UI；完整 R2 包含新增 15 项网卡行为、既有 38 项服务行为、其余移动单元和七项新 UI 及原终端回归。共享新增七项覆盖版本/字段、单目标编码、非法多目标、原目标比较和未知不重放。
+
+已确认 Mac 聚焦 102 项、共享聚焦 148 项、完整共享 2923 项 XCTest（172 条既有跳过、0 失败）与 12 项 Swift Testing 通过；Mac Release 构建成功，主 App 与内嵌 File Provider 实际核实 x86_64/arm64。两端 R1 的各 53 项行为通过；R2 完整各 1537 项单元（4 条既有跳过、0 失败）通过。R2 两端七项新网卡 UI 及原终端回归共各八项全部通过，iPhone/iPad 命令均 exit 0。R2 使用 iPhone 浅色、iPad 深色；已实际查看两端表单、确认、保存、未知、新地址恢复、加载、空内容、筛选为空、错误与不支持页面。R3 改为 iPhone 深色、iPad 浅色，仅重复中文最大字号及静态地址/VLAN 两项，均 exit 0；随后实际查看六张反向主题截图，两端已恢复浅色。
+
+首轮共享测试失败是旧 fixture 用 prefix(6) 选择能力而新增 Ethernet 插入头部，改为追加能力，保留原语义。首轮移动构建发现详情模型未穷举新增类别，补齐路由和映射后 R2–R5 构建通过。R1 两端两项 UI 均失败：保存/确认已经出现，断言错误地假定 LabeledContent 的值是独立辅助功能元素；iPad VLAN 输入还留下浮动数字键盘遮住保存按钮。实际读取两端辅助功能树和截图后，测试改用完整标签核对数值，并沿既有方式结束输入，保留风险、取消、保存和回读断言；未削弱断言、重复写请求或加固定等待。
+
+契约检查通过 179 个请求及 1 个结果示例，fixture 29 组/48 项私有引用通过，API 目录生成校验通过，本地化 6727/2188/3402 项通过（双语、占位符、引用及硬编码）。私有契约只增加五端管理和恢复说明，不提升真实证据等级。验证日志与结果包保留在 `apple/Apps/DsmMobile/build/m6b4-*`；生成工程通过既有 XcodeGen 更新。
+
+独立集成及只读对抗复核由当前负责人在实现后分别执行，覆盖原配置变化、单目标、提交/回执边界、拒绝、未知部分生效、重复操作、保存失败、权限/证书停止、原账号迟到、新地址明确恢复及损坏记录；不冒称其他模型或真实 NAS 审查。真实网络变更会影响现有环境，本片未对真实 NAS 写入。设备、网络生效、锁屏保护、VoiceOver 和键盘/分屏按主计划四行 PENDING_USER_VALIDATION 验收；聚合网卡、IPv6、创建网卡及全局 DNS 未实现，不混作仅待真机。
+
+R3 使用上述两端 test-without-building 命令，仅保留 `test网卡中文大字表单风险和取消均可触达` 与 `test网卡静态地址和VLAN表单完整保存` 两个选择器，结果路径分别改为 `m6b4-phone-r3.xcresult`、`m6b4-pad-r3.xcresult`。主题设置及其他门禁命令：
+
+```sh
+xcrun simctl ui 8145D5B0-65A7-46E3-A0CF-17850E4EFA3F appearance dark
+xcrun simctl ui A31ABDE2-186F-43DD-8D40-5EB9511A9289 appearance light
+xcrun simctl ui 8145D5B0-65A7-46E3-A0CF-17850E4EFA3F appearance light
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/generate_api_reference.py --check
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+最终 UI 精确计数由两端 R2/R3 日志核对：
+
+| 轮次 | 设备 | 场景数 | 结果 |
+| --- | --- | --- | --- |
+| R2 | phone | 8 | 全部通过；七项网卡和原终端回归 |
+| R2 | pad | 8 | 全部通过；七项网卡和原终端回归 |
+| R3 | phone | 2 | 全部通过；中文大字 62.985 秒，静态地址/VLAN 73.543 秒 |
+| R3 | pad | 2 | 全部通过；中文大字 53.436 秒，静态地址/VLAN 96.639 秒 |
+
+已实际查看并保留 28 张合成审查图于 `apple/Apps/DsmMobile/build/m6b4-preview/`。临时附件导出、清单和导出日志已精确清理，正式日志与结果包保留；没有安装或启动 Mac 包，没有真实网络写入。结束时旧云端两个模块组仍运行，保持原轮次不取消；本片提交尚未取得新云端结果，不将本机通过表述为云端通过。
