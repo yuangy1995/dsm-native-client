@@ -1328,6 +1328,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 pendingContainerControls[target.item.id] = nil
             }
         }
+        let remaining = Set(values.map { $0.item.id })
+        for id in Set(pendingContainerDeletions.keys).subtracting(remaining) { pendingContainerDeletions[id] = nil }
         return values.map(\.controlState)
     }
 
@@ -1400,11 +1402,27 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
     /// 容器删除使用内部接口；提交后通过容器列表逐项确认，未知结果不得自动重放。
     public func deleteContainersResult(ids: [String]) async throws -> MutationResult {
+        try await deleteContainersResult(ids: ids, expected: nil, observer: nil)
+    }
+
+    /// 移动端沿同一删除流水线绑定确认快照，并在每个不可重放边界保存原记录。
+    public func deleteContainer(_ target: ContainerControlState,
+                                observer: @escaping ContainerControlObserver) async throws {
+        guard target.canDelete else { throw containerMutationChangedError() }
+        let result = try await deleteContainersResult(ids: [target.id], expected: target, observer: observer)
+        guard result.status == .confirmedSuccess else {
+            throw containerControlUnverifiedError()
+        }
+    }
+
+    private func deleteContainersResult(ids: [String], expected: ContainerControlState?,
+                                        observer: ContainerControlObserver?) async throws -> MutationResult {
         let context = ServiceDeletionContext(
             operation: "containerDelete",
             localizationPrefix: "container.delete"
         )
         if Task.isCancelled {
+            if expected != nil { throw CancellationError() }
             return try deletionCancellationBeforeSubmission(context: context)
         }
 
@@ -1412,18 +1430,21 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         do {
             targets = try validatedIDs(ids)
         } catch let error as AppError {
+            if expected != nil || Self.imageManagementTrustError(error) { throw error }
             return try deletionPreflightResult(
                 error,
                 targetCount: max(ids.count, 1),
                 context: context
             )
         } catch {
+            if expected != nil || Self.imageManagementTrustError(error) { throw error }
             return try deletionUnexpectedPreflightResult(
                 targetCount: max(ids.count, 1),
                 context: context
             )
         }
         guard capabilities[DsmAPIName.dockerContainer]?.selectedVersion != nil else {
+            if expected != nil { throw unavailableError() }
             return try deletionUnsupportedResult(
                 targetCount: targets.count,
                 context: context
@@ -1432,6 +1453,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
         let targetSet = Set(targets)
         guard activeContainerMutationIDs.isDisjoint(with: targetSet), targetSet.isDisjoint(with: Set(pendingContainerControls.keys)) else {
+            if expected != nil { throw containerMutationChangedError() }
             return try deletionDuplicateResult(
                 targetCount: targets.count,
                 context: context
@@ -1442,6 +1464,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
         let pendingIDs = Set(pendingContainerDeletions.keys)
         if !pendingIDs.isDisjoint(with: targetSet) {
+            guard expected == nil else { throw containerControlUnverifiedError() }
             guard targetSet.isSubset(of: pendingIDs) else {
                 return try deletionDuplicateResult(targetCount: targets.count, context: context)
             }
@@ -1450,8 +1473,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 for id in targetSet.subtracting(remaining) { pendingContainerDeletions[id] = nil }
                 return try deletionReadbackResult(targets: targetSet, remaining: remaining, context: context)
             } catch let error as AppError {
+                if Self.imageManagementTrustError(error) { throw error }
                 return try deletionReadbackFailureResult(error, targetCount: targets.count, context: context)
             } catch {
+                if Self.imageManagementTrustError(error) { throw error }
                 return try deletionUnexpectedReadbackResult(targetCount: targets.count, context: context)
             }
         }
@@ -1462,6 +1487,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             let inventory = definitions.map(\.item)
             let currentIDs = Set(inventory.map(\.id))
             guard targetSet.isSubset(of: currentIDs) else {
+                if expected != nil { throw containerMutationChangedError() }
                 return try deletionMissingTargetResult(
                     targetCount: targets.count,
                     context: context
@@ -1469,6 +1495,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             }
             guard Set(inventory.map(\.name)).count == inventory.count else { throw containerMutationChangedError() }
             for target in definitions where targetSet.contains(target.item.id) {
+                if let expected, target.controlState != expected { throw containerMutationChangedError() }
                 if target.managedByPackage == true { throw containerManagedError() }
                 guard target.managedByPackage == false, target.running == false, target.restarting == false, target.paused == false else { throw containerMutationChangedError() }
                 guard !pendingContainerDeletions.values.contains(target.item.name),
@@ -1476,12 +1503,14 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             }
             names = Dictionary(uniqueKeysWithValues: inventory.map { ($0.id, $0.name) })
         } catch let error as AppError {
+            if expected != nil || Self.imageManagementTrustError(error) { throw error }
             return try deletionPreflightResult(
                 error,
                 targetCount: targets.count,
                 context: context
             )
         } catch {
+            if expected != nil || Self.imageManagementTrustError(error) { throw error }
             return try deletionUnexpectedPreflightResult(
                 targetCount: targets.count,
                 context: context
@@ -1489,66 +1518,85 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
 
         if Task.isCancelled {
+            if expected != nil { throw CancellationError() }
             return try deletionCancellationBeforeSubmission(context: context)
         }
 
+        var submittedCount = 0
+        // 旧批量调用也须保留已发送前项与明确未提交后项的区别。
+        func stopped(_ result: MutationResult, unknown: Int) throws -> MutationResult {
+            guard submittedCount > 0 else { return result }
+            return try MutationResult(status: result.status == .cancelledBeforeSubmission ? .cancellationRequestedAfterSubmission : result.status,
+                operation: context.operation, submitted: true, requiresRefresh: result.requiresRefresh || unknown > 0,
+                counts: .init(succeeded: 0, failed: targets.count - unknown, unknown: unknown),
+                errorCategory: result.errorCategory, localizationKey: result.localizationKey, diagnosticTag: result.diagnosticTag)
+        }
         for id in targets {
             if Task.isCancelled {
-                return try deletionCancellationAfterSubmission(
-                    targetCount: targets.count,
-                    context: context
-                )
+                if expected != nil { throw CancellationError() }
+                if submittedCount == 0 { return try deletionCancellationBeforeSubmission(context: context) }
+                return try deletionCancellationAfterSubmission(targetCount: submittedCount, context: context)
             }
+            // 批量前项等待期间名称可能被复用；后续项在提交边界之前单独预检。
             do {
-                // 批量前项等待期间名称可能被复用；后续项必须重新确认同一 ID/名称与托管状态。
                 if id != targets.first {
                     let refreshed = try await containerControlTargets(requiredIDs: [id])
                     guard let current = refreshed.first(where: { $0.item.id == id }), current.item.name == names[id],
-                          current.managedByPackage == false, current.running == false, current.restarting == false, current.paused == false else { throw containerMutationChangedError() }
+                          current.controlState.canDelete else { throw containerMutationChangedError() }
                 }
-                pendingContainerDeletions[id] = names[id]!
+            } catch let error as AppError {
+                if expected != nil || Self.imageManagementTrustError(error) { throw error }
+                let result = try deletionPreflightResult(error, targetCount: targets.count, context: context)
+                return try stopped(result, unknown: submittedCount)
+            } catch {
+                if expected != nil || Self.imageManagementTrustError(error) { throw error }
+                let result = try deletionUnexpectedPreflightResult(targetCount: targets.count, context: context)
+                return try stopped(result, unknown: submittedCount)
+            }
+            // 本地保存/权限失败不进入网络提交的 catch，不能被包装为已发送。
+            try await observer?(.willSubmit)
+            pendingContainerDeletions[id] = names[id]!
+            submittedCount += 1
+            do {
                 try await callContainerMutation(method: "delete", name: names[id]!)
             } catch let error as AppError {
-                if error.dsmCode != nil { pendingContainerDeletions[id] = nil }
-                return try deletionSubmissionResult(
-                    error,
-                    targetCount: targets.count,
-                    context: context
-                )
+                let rejected = error.dsmCode != nil
+                if rejected {
+                    pendingContainerDeletions[id] = nil
+                    try await observer?(.rejected)
+                }
+                if expected != nil || Self.imageManagementTrustError(error) { throw error }
+                let result = try deletionSubmissionResult(error, targetCount: targets.count, context: context)
+                return try stopped(result, unknown: submittedCount - (rejected ? 1 : 0))
             } catch {
-                return try deletionUnexpectedSubmissionResult(
-                    targetCount: targets.count,
-                    context: context
-                )
+                if expected != nil || Self.imageManagementTrustError(error) { throw error }
+                let result = try deletionUnexpectedSubmissionResult(targetCount: targets.count, context: context)
+                return try stopped(result, unknown: submittedCount)
             }
+            try await observer?(.accepted)
         }
 
         if Task.isCancelled {
+            if expected != nil { throw CancellationError() }
             return try deletionCancellationAfterSubmission(
                 targetCount: targets.count,
                 context: context
             )
         }
+        let remaining: Set<String>
         do {
-            let remaining = Set(try await loadContainerInventory().containers.map(\.id))
-            for id in targetSet.subtracting(remaining) { pendingContainerDeletions[id] = nil }
-            return try deletionReadbackResult(
-                targets: targetSet,
-                remaining: remaining,
-                context: context
-            )
+            remaining = Set(try await loadContainerInventory().containers.map(\.id))
         } catch let error as AppError {
-            return try deletionReadbackFailureResult(
-                error,
-                targetCount: targets.count,
-                context: context
-            )
+            if expected != nil || Self.imageManagementTrustError(error) { throw error }
+            return try deletionReadbackFailureResult(error, targetCount: targets.count, context: context)
         } catch {
-            return try deletionUnexpectedReadbackResult(
-                targetCount: targets.count,
-                context: context
-            )
+            if expected != nil || Self.imageManagementTrustError(error) { throw error }
+            return try deletionUnexpectedReadbackResult(targetCount: targets.count, context: context)
         }
+        for id in targetSet.subtracting(remaining) { pendingContainerDeletions[id] = nil }
+        let result = try deletionReadbackResult(targets: targetSet, remaining: remaining, context: context)
+        if result.status == .confirmedSuccess { try await observer?(.verified) }
+        return result
     }
 
     /// 官方内部 v1 使用名称寻址；名称只能来自当前 ID 对应的实例清单。
@@ -5313,6 +5361,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
               case .array(let containers)? = root["containers"] else {
             throw invalidContainerInventoryError()
         }
+        try requireCompleteContainerManagerList(value, count: containers.count)
         var identifiers = Set<String>()
         return try containers.map { node in
             guard case .object(let object) = node,
@@ -5359,7 +5408,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
     private static func containerImages(_ value: ServiceJSON) throws -> [ContainerImage] {
         let rows = try strictRootObjects(value, keys: ["images", "image"])
-        try requireCompleteImageList(value, count: rows.count)
+        try requireCompleteContainerManagerList(value, count: rows.count)
         var result: [ContainerImage] = []
         for row in rows {
             guard let summary = image(row) else { throw invalidServiceResponseStatic() }
@@ -5383,7 +5432,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         return result
     }
 
-    private static func requireCompleteImageList(_ value: ServiceJSON, count: Int) throws {
+    private static func requireCompleteContainerManagerList(_ value: ServiceJSON, count: Int) throws {
         if let total = value["total"] {
             guard case .number(let number) = total, number == Double(count) else { throw invalidServiceResponseStatic() }
         }
@@ -5394,7 +5443,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
     private static func containerImageUsage(_ images: [ContainerImage], containers: ServiceJSON) throws -> Set<String> {
         let rows = try strictRootObjects(containers, keys: ["containers", "container"])
-        try requireCompleteImageList(containers, count: rows.count)
+        try requireCompleteContainerManagerList(containers, count: rows.count)
         var used: Set<String> = []
         for row in rows {
             let rawImage = try imageString(row, "Image") ?? ""

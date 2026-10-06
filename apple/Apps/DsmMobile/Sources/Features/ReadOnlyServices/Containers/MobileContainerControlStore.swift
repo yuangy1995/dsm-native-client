@@ -6,6 +6,17 @@ import Observation
 /// 只持久化账号/目标摘要、启动时间与逐项提交边界；名称和日志正文留在内存。
 @MainActor @Observable
 final class MobileContainerControlStore {
+    enum Kind: String, Codable, CaseIterable {
+        case start, stop, restart, delete
+        init(_ action: ContainerAction) {
+            switch action { case .start: self = .start; case .stop: self = .stop; case .restart: self = .restart }
+        }
+        var controlAction: ContainerAction? { ContainerAction(rawValue: rawValue) }
+        func supports(_ target: ContainerControlState) -> Bool {
+            if let controlAction { return target.supports(controlAction) }
+            return target.canDelete
+        }
+    }
     enum Phase: String, Codable { case prepared, submitted, succeeded, failed, skipped }
     enum Failure: String, Codable { case denied, unavailable, changed, failed }
     struct Item: Equatable, Codable {
@@ -22,7 +33,7 @@ final class MobileContainerControlStore {
     struct Entry: Identifiable, Equatable, Codable {
         let id: UUID
         let context: String
-        let action: ContainerAction
+        let action: Kind
         let createdAt: Date
         var items: [Item]
         var isProtected: Bool { items.contains { $0.phase == .prepared || $0.phase == .submitted } }
@@ -56,10 +67,16 @@ final class MobileContainerControlStore {
         do {
             let url = root.appendingPathComponent("container-controls-v1.json")
             var values: [Entry] = []
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+                throw MobileTransferRecoveryStore.StoreError.invalidRecord
+            }
             if FileManager.default.fileExists(atPath: url.path) {
                 let envelope = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: url))
                 guard envelope.version == 1 else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
                 try validate(envelope.entries); values = envelope.entries
+            } else if entries.contains(where: \.isProtected) {
+                throw MobileTransferRecoveryStore.StoreError.invalidRecord
             }
             entries = values; failed = false
             let restored = values.map { entry in
@@ -70,8 +87,8 @@ final class MobileContainerControlStore {
             if values != restored { try persist(restored) }
         } catch { failed = true }
     }
-    func reserve(_ targets: [ContainerControlState], action: ContainerAction, context: String) throws -> Entry {
-        guard !targets.isEmpty, targets.allSatisfy({ $0.supports(action) }), !protects(targets, context: context),
+    func reserve(_ targets: [ContainerControlState], action: Kind, context: String) throws -> Entry {
+        guard !targets.isEmpty, targets.allSatisfy(action.supports), !protects(targets, context: context),
               Set(targets.map(\.id)).count == targets.count, Set(targets.map(\.name)).count == targets.count else {
             throw MobileTransferRecoveryStore.StoreError.invalidRecord
         }
@@ -119,8 +136,14 @@ final class MobileContainerControlStore {
         for position in values.indices where values[position].context == context && !isExecuting(values[position].id) {
             for index in values[position].items.indices where values[position].items[index].phase == .submitted {
                 let item = values[position].items[index]
-                if let target = targets.first(where: item.matches),
-                   target.verifies(values[position].action, previousStartedAt: item.previousStartedAt) {
+                let action = values[position].action
+                if action == .delete {
+                    // 只由共享层严格解析的完整目录证明原 ID 已消失；同名新实例不是删除目标。
+                    if !targets.contains(where: { Self.digest($0.id) == item.identity }) {
+                        values[position].items[index].phase = .succeeded
+                    }
+                } else if let action = action.controlAction, let target = targets.first(where: item.matches),
+                          target.verifies(action, previousStartedAt: item.previousStartedAt) {
                     values[position].items[index].phase = .succeeded
                 }
             }

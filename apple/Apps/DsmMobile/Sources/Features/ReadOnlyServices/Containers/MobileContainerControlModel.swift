@@ -9,12 +9,13 @@ final class MobileContainerControlModel {
     struct Confirmation: Identifiable {
         let id = UUID()
         let activation: UUID
-        let action: ContainerAction
+        let action: MobileContainerControlStore.Kind
         let targets: [ContainerControlState]
     }
     private(set) var context: String?
     private(set) var activation = UUID()
     private(set) var targets: [ContainerControlState] = []
+    private var submittedNames: [String: String] = [:]
     private(set) var isRefreshing = false
     private(set) var hasLoaded = false
     private(set) var allowed = false
@@ -38,12 +39,15 @@ final class MobileContainerControlModel {
     func deactivate() {
         activation = UUID(); cancelRead()
         for task in operations.values { task.cancel() }
-        context = nil; repository = nil; authorize = nil; targets = []; allowed = false; hasLoaded = false; error = nil
+        context = nil; repository = nil; authorize = nil; targets = []; submittedNames = [:]; allowed = false; hasLoaded = false; error = nil
     }
     func cancelRead() {
         generation = UUID(); readTask?.cancel(); readTask = nil; isRefreshing = false
     }
     var entries: [MobileContainerControlStore.Entry] { recovery.entries.filter { $0.context == context }.reversed() }
+    func name(for item: MobileContainerControlStore.Item) -> String? {
+        submittedNames[item.identity + item.name] ?? targets.first(where: item.matches)?.name
+    }
     var isOperating: Bool { entries.contains { recovery.isExecuting($0.id) } }
     func refresh() async {
         guard let repository, let context, let authorize else { return }
@@ -68,23 +72,33 @@ final class MobileContainerControlModel {
         readTask = task; await task.value
     }
     func canPerform(ids: Set<String>, action: ContainerAction) -> Bool {
+        canPerform(ids: ids, kind: .init(action))
+    }
+    func canPerform(ids: Set<String>, kind: MobileContainerControlStore.Kind) -> Bool {
         guard let context, allowed, error == nil, !isRefreshing, !isOperating, !ids.isEmpty else { return false }
         let selected = targets.filter { ids.contains($0.id) }
-        return selected.count == ids.count && selected.allSatisfy { $0.supports(action) }
+        return selected.count == ids.count && selected.allSatisfy(kind.supports)
             && !recovery.protects(selected, context: context)
     }
     func confirmation(ids: Set<String>, action: ContainerAction) -> Confirmation? {
-        guard canPerform(ids: ids, action: action) else { return nil }
-        return .init(activation: activation, action: action, targets: targets.filter { ids.contains($0.id) })
+        confirmation(ids: ids, kind: .init(action))
+    }
+    func confirmation(ids: Set<String>, kind: MobileContainerControlStore.Kind) -> Confirmation? {
+        guard canPerform(ids: ids, kind: kind) else { return nil }
+        return .init(activation: activation, action: kind, targets: targets.filter { ids.contains($0.id) })
     }
     @discardableResult func perform(_ confirmation: Confirmation) -> UUID? {
         guard confirmation.activation == activation else { return nil }
         let selected = confirmation.targets, ids = Set(selected.map(\.id)), action = confirmation.action
-        guard canPerform(ids: ids, action: action), selected.allSatisfy({ targets.contains($0) }),
+        guard canPerform(ids: ids, kind: action), selected.allSatisfy({ targets.contains($0) }),
               let repository, let context, let authorize else { error = .changed; return nil }
         let store = recovery, entry: MobileContainerControlStore.Entry, token = activation
         do { entry = try store.reserve(selected, action: action, context: context) }
         catch { self.error = .storage; return nil }
+        // 已删除目标的名称只保留在当前账号内存中，便于对照逐项结果。
+        for target in selected {
+            submittedNames[MobileContainerControlStore.digest(target.id) + MobileContainerControlStore.digest(target.name)] = target.name
+        }
         error = nil
         operations[entry.id] = Task { [weak self] in
             defer { store.end(entry.id); self?.operations[entry.id] = nil }
@@ -93,7 +107,7 @@ final class MobileContainerControlModel {
                 do {
                     try Task.checkCancellation()
                     guard self?.activation == token else { throw CancellationError() }
-                    try await repository.controlContainer(target, action: action) { [weak self] stage in
+                    let observer: ContainerControlObserver = { [weak self] stage in
                         if stage == .willSubmit {
                             guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
                         }
@@ -105,6 +119,11 @@ final class MobileContainerControlModel {
                             // 已提交旧账号的回执只写原记录，不更新当前页面。
                             try store.checkpoint(entry.id, index: index, stage: stage)
                         }
+                    }
+                    if let controlAction = action.controlAction {
+                        try await repository.controlContainer(target, action: controlAction, observer: observer)
+                    } else {
+                        try await repository.deleteContainer(target, observer: observer)
                     }
                 } catch {
                     if !(error is CancellationError) && (error as? AppError)?.category != .cancelled {

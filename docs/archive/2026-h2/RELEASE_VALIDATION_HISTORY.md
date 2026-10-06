@@ -3297,3 +3297,27 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 ```
 
 iPad 同样选择并使用对应设备/`build/m6e2-pad-r3.xcresult`。各轮共 72 张合成截图均已实际查看，预览保留在 `build/m6e2-preview/`；临时导出目录、清单、导出日志、审查网格和无关实时截图已清理，正式测试结果保留供复核。两端模拟器已恢复浅色。工程重新生成一致，双语/硬编码、契约/Fixture、API 目录、文档和差异检查通过；本片没有真实 NAS 写入，没有正式发布。
+
+## 2026-10-06 移动 M7c2 容器删除与恢复
+
+基线 `645b6f7e`，main 原工作区仅有本片新账本。沿现容器控制记录接入单项/多项删除及原快照观察边界，Mac App 没有新增改动；共享旧批量删除同步区分后项预检/明确拒绝和已发送前项。没有连接真实 NAS 执行写入。
+
+```sh
+swift test --package-path apple --filter 'ContainerDeletionFlowTests|DsmServiceManagementRepositoryTests'
+swift test --package-path apple --jobs 2
+xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build-for-testing
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/m7c2-phone.xcresult '-only-testing:DsmMobileTests' '-only-testing:DsmMobileUITests/MobileContainerControlUITests'
+```
+
+iPad 使用相同选择，设备 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果包 `build/m7c2-pad.xcresult`。iPhone 浅色、iPad 深色；UI 类包含七项新删除和十项旧启停/五态/旋转回归。
+
+首轮共享聚焦 **170 项、2 条断言失败**，实际复现 `containers=[]/total=1` 被误报删除成功。复用原列表完整性检查并补分页类型回归，R2 **171 项通过**，日志 `apple/Apps/DsmMobile/build/m7c2-shared-focused*.log`。完整共享 **2982 XCTest（172 条既有跳过、0 失败）与 12 Swift Testing 通过**，`build/m7c2-shared-full.log`。移动两次构建均成功；第二次包含当前账号内存中的已删除目标名称，不写入恢复文件。两端完整单元均为 **1590 项、4 条既有跳过、0 失败**。Mac Release 构建 exit 0，主 App/扩展 `lipo -archs` 均返回 x86_64 arm64；日志 `build/m7c2-mac-build.log`。两端 UI 最终结果见下文续记。
+
+双语/硬编码检查 6794/2188/3402、请求契约 179 个 Fixture/1 个结果示例、29 组 Fixture/48 项私有 API 文档引用、API 参数目录及文档检查通过。独立集成审查和只读对抗复核由当前负责人在实现后单独执行，结论与三行真实条件见移动主计划，不冒称真实 NAS 或另一模型验证。
+
+两端完整 17 项 UI 均 exit 0：iPhone **697.749 秒**、iPad **753.526 秒**，含七项新删除、十项既有控制/五态/旋转。随后交换主题（iPhone 深色、iPad 浅色），只选择 `test删除明确后果取消零改变再确认删除` 与 `test中文大字删除风险完整可读且取消按钮可用`，每端两项均通过，分别 **68.524 / 68.843 秒**；结果包 `build/m7c2-phone-theme.xcresult` / `build/m7c2-pad-theme.xcresult`。这轮仅用于缺少的主题覆盖，不重复全量。
+
+四个结果包共导出并逐张查看 **66 张合成截图**，确认固定目标和具体删除后果、逐项结果、未知保护、取消、匿名重启恢复、普通套件账号、加载/空/筛选空/错误/正常、中文大字及旋转均可读可操作。预览保留在 `build/m7c2-preview/`；临时附件导出目录、清单与导出日志已清理。两端已恢复浅色。工程经既定 XcodeGen 再生成与已提交生成物一致；本地化、契约、Fixture、API 目录、文档、三组 CI 覆盖测试及差异检查通过。
+
+另行取得旧提交 a776993c 的云端 run `37450968329` 部分终态：共享/macOS 通过，iPhone 工作区 1 项与模块组 3 项失败，均为设置开关或导航阶段；iPad 工作区随后也返回失败，正在读取原日志，其余分组仍在运行。这些失败独立按原云端日志和截图排查，不冒称本片或整个云端已通过，也没有为本片取消当前运行。

@@ -16,6 +16,10 @@ public struct ContainerControlState: Equatable, Sendable {
         self.restarting = restarting; self.startedAt = startedAt; self.managedByPackage = managedByPackage
     }
 
+    public var canDelete: Bool {
+        managedByPackage == false && running == false && paused == false && restarting == false
+    }
+
     public func supports(_ action: ContainerAction) -> Bool {
         guard managedByPackage == false, paused == false, let running, let restarting else { return false }
         switch action {

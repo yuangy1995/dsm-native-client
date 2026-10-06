@@ -7133,3 +7133,9 @@
 "mobile.package.controlUnavailable" = "This package cannot be managed in its current state. Refresh or open Package Center in DSM.";
 "mobile.package.notInstalled" = "Package is no longer installed";
 "mobile.package.returnToList" = "Go back to view your installed packages.";
+
+"mobile.containers.control.delete" = "Delete";
+
+"mobile.containers.control.delete.warning" = "Deleting a container permanently removes it and any files stored only inside it. Images and data in shared folders are kept.";
+
+"mobile.containers.control.delete.completed" = "Deleted";

@@ -109,6 +109,74 @@ import XCTest
         XCTAssertTrue(app.collectionViews["container.confirmation"].waitForNonExistence(timeout: 5))
     }
 
+    func test删除明确后果取消零改变再确认删除() {
+        let app = launch(); defer { app.terminate() }; detail("synthetic-id", app)
+        reveal("container.action.delete", app).tap()
+        XCTAssertTrue(app.staticTexts["Deleting a container permanently removes it and any files stored only inside it. Images and data in shared folders are kept."].exists)
+        screenshot(app, "Container deletion warns about files stored only inside")
+        app.buttons["Cancel"].tap(); XCTAssertTrue(app.collectionViews["container.confirmation"].waitForNonExistence(timeout: 5))
+        waitEnabled(reveal("container.action.delete", app))
+        reveal("container.action.delete", app).tap(); reveal("container.confirm", app).tap()
+        openRecords(app); expectPhase("succeeded", app); XCTAssertTrue(app.staticTexts["Deleted"].exists)
+        XCTAssertTrue(app.staticTexts["Sample container"].exists)
+        screenshot(app, "Container deletion result remains accessible after the target disappears")
+    }
+    func test多项删除逐项展示完成且托管容器不可选() {
+        let app = launch(); defer { app.terminate() }
+        let select = app.buttons["container.selection"]; waitEnabled(select); select.tap()
+        XCTAssertFalse(reveal("container.select.managed-id", app).isEnabled)
+        reveal("container.select.synthetic-id", app).tap(); reveal("container.select.worker-b", app).tap()
+        reveal("container.action.delete", app).tap()
+        XCTAssertTrue(app.staticTexts["Sample container"].exists); XCTAssertTrue(app.staticTexts["Worker B"].exists)
+        screenshot(app, "Fixed two-container deletion confirmation")
+        reveal("container.confirm", app).tap(); app.buttons["Done"].tap(); openRecords(app)
+        expectPhase("succeeded", app)
+        let completed = app.cells.containing(.any, identifier: "container.record.succeeded")
+        let two = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [two], timeout: 8), .completed)
+        screenshot(app, "Two deleted containers retain separate results")
+    }
+    func test删除未知跨重启只读恢复且原记录不能移除() {
+        let app = launch("containers-unknown"); detail("synthetic-id", app)
+        reveal("container.action.delete", app).tap(); reveal("container.confirm", app).tap()
+        openRecords(app); expectPhase("submitted", app)
+        XCTAssertFalse(app.buttons["Remove this record"].exists)
+        screenshot(app, "Unknown container deletion remains protected"); app.terminate()
+        let next = launch("containers-delete-recovered", preserve: true); defer { next.terminate() }
+        openRecords(next); expectPhase("succeeded", next); XCTAssertTrue(next.staticTexts["Deleted"].exists)
+        screenshot(next, "Container deletion recovered without another write after relaunch")
+    }
+    func test删除被拒绝显示失败而不会显示已删除() {
+        let app = launch("containers-reject"); defer { app.terminate() }; detail("synthetic-id", app)
+        reveal("container.action.delete", app).tap(); reveal("container.confirm", app).tap()
+        openRecords(app); expectPhase("failed", app); XCTAssertFalse(app.staticTexts["Deleted"].exists)
+        screenshot(app, "Container deletion permission denial preserves the failed result")
+    }
+    func test批量删除第二项未知保留第一项完成() {
+        let app = launch("containers-partial"); defer { app.terminate() }
+        let select = app.buttons["container.selection"]; waitEnabled(select); select.tap()
+        reveal("container.select.synthetic-id", app).tap(); reveal("container.select.worker-b", app).tap()
+        reveal("container.action.delete", app).tap(); reveal("container.confirm", app).tap()
+        app.buttons["Done"].tap(); openRecords(app); expectPhase("succeeded", app); expectPhase("submitted", app)
+        XCTAssertFalse(app.buttons["Remove this record"].exists)
+        screenshot(app, "Partial container deletion separates completed and unknown targets")
+    }
+    func test运行托管与缺失状态均不能删除() {
+        for mode in ["containers-running", "containers-control", "containers-missing-state"] {
+            let app = launch(mode); detail(mode == "containers-control" ? "managed-id" : "synthetic-id", app)
+            XCTAssertFalse(reveal("container.action.delete", app).isEnabled)
+            screenshot(app, "Unavailable container deletion \(mode)"); app.terminate()
+        }
+    }
+    func test中文大字删除风险完整可读且取消按钮可用() {
+        let app = launch(chinese: true, large: true); defer { app.terminate() }; detail("synthetic-id", app)
+        reveal("container.action.delete", app).tap()
+        XCTAssertTrue(app.staticTexts["删除后，容器及仅保存在容器内部的文件将无法恢复。映像和共享文件夹中的数据会保留。"].exists)
+        waitEnabled(reveal("container.confirm", app)); screenshot(app, "Chinese large text container deletion risk and action")
+        app.buttons["取消"].tap(); XCTAssertTrue(app.collectionViews["container.confirmation"].waitForNonExistence(timeout: 8))
+        XCTAssertTrue(reveal("container.action.delete", app).isEnabled)
+    }
+
     private func launch(_ mode: String = "containers-control", preserve: Bool = false, chinese: Bool = false, large: Bool = false) -> XCUIApplication {
         continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["--ui-fixture", "-lanstash.app-language.v1", chinese ? "zh-Hans" : "en"]

@@ -12,13 +12,14 @@ actor MobileContainerUITransport: DsmHTTPTransport {
     private var waiter: CheckedContinuation<Void, Never>?
     private var waitingForWrite: CheckedContinuation<Void, Never>?
     private(set) var calls: [[String: String]] = []
-    var writes: [[String: String]] { calls.filter { ["start", "stop", "restart"].contains($0["method"] ?? "") } }
+    var writes: [[String: String]] { calls.filter { ["start", "stop", "restart", "delete"].contains($0["method"] ?? "") } }
     init(mode: String = "containers-control") {
         self.mode = mode
         let running = ["containers-running", "containers-recover", "containers-restarting"].contains(mode)
         containers = [Self.container(id: "synthetic-id", name: "Sample container", running: running),
                       Self.container(id: "worker-b", name: "Worker B", running: running),
                       Self.container(id: "managed-id", name: "Package service", running: true, managed: true)]
+        if mode == "containers-delete-recovered" { containers.removeFirst(2) }
         if mode == "containers-empty" { containers = [] }
         if mode == "containers-restarting" { Self.setInitialState(&containers, key: "Restarting", value: true) }
         if mode == "containers-missing-state" { Self.setInitialState(&containers, key: "Running", value: nil) }
@@ -35,6 +36,7 @@ actor MobileContainerUITransport: DsmHTTPTransport {
     func setMode(_ value: String) { mode = value }
     func renameFirst() { containers[0]["name"] = "Changed container" }
     func replaceFirst() { containers[0]["id"] = "replacement-id" }
+    func removeFirst() { if !containers.isEmpty { containers.removeFirst() } }
     func holdWrites() { shouldHold = true }
     func waitForWrite() async { if waiter == nil { await withCheckedContinuation { waitingForWrite = $0 } } }
     func release() { shouldHold = false; waiter?.resume(); waiter = nil }
@@ -50,7 +52,7 @@ actor MobileContainerUITransport: DsmHTTPTransport {
         let fields = Dictionary(uniqueKeysWithValues: (parts.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         calls.append(fields)
         let api = fields["api"] ?? "", method = fields["method"] ?? ""
-        if let action = ContainerAction(rawValue: method) {
+        if ContainerAction(rawValue: method) != nil || method == "delete" {
             if shouldHold {
                 await withCheckedContinuation { waiter = $0; waitingForWrite?.resume(); waitingForWrite = nil }
             }
@@ -58,7 +60,11 @@ actor MobileContainerUITransport: DsmHTTPTransport {
             if mode == "containers-write-trust" { throw URLError(.serverCertificateUntrusted) }
             if mode == "containers-unknown" || (mode == "containers-partial" && writes.count == 2) { throw URLError(.networkConnectionLost) }
             guard let index = containers.firstIndex(where: { $0["name"] as? String == fields["name"] }) else { return response(["code": 408], success: false) }
-            if mode != "containers-restart-unchanged" { apply(action, index: index) }
+            if method == "delete" {
+                containers.remove(at: index)
+            } else if let action = ContainerAction(rawValue: method), mode != "containers-restart-unchanged" {
+                apply(action, index: index)
+            }
             return response([:])
         }
         if mode == "containers-loading" { try await Task.sleep(for: .seconds(30)) }
@@ -68,7 +74,9 @@ actor MobileContainerUITransport: DsmHTTPTransport {
         }
         if mode == "containers-accepted-offline", !writes.isEmpty { throw URLError(.notConnectedToInternet) }
         switch api {
-        case DsmAPIName.dockerContainer: return response(["containers": containers])
+        case DsmAPIName.dockerContainer:
+            if mode == "containers-incomplete" { return response(["containers": [], "total": 2]) }
+            return response(["containers": containers])
         case DsmAPIName.dockerImage: return response(["images": [], "total": 0, "offset": 0])
         case DsmAPIName.dockerNetwork: return response(["networks": []])
         case DsmAPIName.dockerProject: return response([:])

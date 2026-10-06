@@ -7133,3 +7133,9 @@
 "mobile.package.controlUnavailable" = "此套件当前无法操作。请刷新，或在 DSM 套件中心处理。";
 "mobile.package.notInstalled" = "套件已不在安装列表中";
 "mobile.package.returnToList" = "返回查看其他已安装套件。";
+
+"mobile.containers.control.delete" = "删除";
+
+"mobile.containers.control.delete.warning" = "删除后，容器及仅保存在容器内部的文件将无法恢复。映像和共享文件夹中的数据会保留。";
+
+"mobile.containers.control.delete.completed" = "已删除";
