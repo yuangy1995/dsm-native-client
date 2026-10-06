@@ -9,7 +9,7 @@ struct MobileVirtualMachinesView: View {
     @State private var showsSelection = false
     @State private var creationRequest: MobileVirtualMachineCreationRequest?
 
-    var body: some View {
+    private var content: some View {
         GeometryReader { geometry in
             Group {
                 if inventory.state.pageState == .loading {
@@ -23,6 +23,10 @@ struct MobileVirtualMachinesView: View {
                 }
             }
         }
+    }
+
+    var body: some View {
+        content
         .fillsAvailableContentArea(
             alignment: inventory.state.pageState.layout == .topLeading ? .topLeading : .center
         )
@@ -41,6 +45,11 @@ struct MobileVirtualMachinesView: View {
         }
         .sheet(isPresented: $showsSelection) { MobileVirtualMachineSelectionView(model: controls) }
         .sheet(item: $creationRequest) { MobileVirtualMachineCreationView(model: controls, request: $0) }
+        .onChange(of: controls.imageEntries) { previous, current in
+            if current.contains(where: { entry in entry.items.contains { $0.phase == .succeeded } && !previous.contains(entry) }) {
+                Task { await inventory.refresh() }
+            }
+        }
         .onChange(of: controls.networkEntries) { previous, current in
             if current.contains(where: { entry in entry.items.contains { $0.phase == .succeeded } && !previous.contains(entry) }) {
                 Task { await inventory.refresh() }
@@ -192,6 +201,8 @@ private struct MobileVirtualMachineSectionView: View {
         Group {
             if section == .networks {
                 MobileVirtualMachineNetworksView(model: controls, summaries: inventory.state.networks)
+            } else if section == .images {
+                MobileVirtualMachineImagesView(model: controls, summaries: inventory.state.images)
             } else if section == .machines, inventory.state.pageState == .filteredEmpty {
                 filteredEmptyView
             } else {

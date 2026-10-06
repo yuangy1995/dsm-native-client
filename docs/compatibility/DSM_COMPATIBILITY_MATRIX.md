@@ -25,6 +25,13 @@ M7d4a 网络管理共用 Network.list/get v2、set/delete v1，修正 external �
 缺回执不认领或重发；Mac 保持实例内恢复。无真实网络写或版本等级提升，Windows/
 Android 无源码变化；本机结果与具体设备待办以主计划 M7d4a 为准。
 
+M7d4b 映像删除共用公开 list/delete v1 的 image_id，内部固定 v2 并使用
+id/synovmm_ui_id；完整清单、冻结状态、健康副本、原身份和 ISO 挂载按已记录字段
+核查。移动详情/单多删/摘要恢复已接，Mac 普通刷新可恢复已接受操作；与创建引用
+互锁，缺回执不按外部消失认领成功。共享及两端合成、界面、Mac 双架构通过，实际
+NAS 删除/多副本副作用未验证，具体待办见 M7d4b 主计划；Windows/Android 无源码
+修改，不提升下表任何历史环境或行为等级。
+
 ## 2026-10-06 容器与 VMM 文档核查边界
 
 DSM 7.2.1-69057 Update 12、Container Manager 24.0.2-1535、VMM 2.6.5-12202 的当前官方页面

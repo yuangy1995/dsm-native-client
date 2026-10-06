@@ -3834,3 +3834,76 @@ iPad 最终使用相同命令，将设备替换为 `A31ABDE2-186F-43DD-8D40-5EB9
 文件保护/锁屏和完整辅助功能未验证。专用网络及 VM 的前置条件、操作、预期结果
 与允许回传的脱敏信息见主计划 M7d4a 的四项 `PENDING_USER_VALIDATION`；不对既有
 真实网络测试写入。映像删除、控制台和 M8 仍继续源码切片，不列作本片待设备验证。
+
+## 2026-10-07 M7d4b 虚拟机映像删除与恢复
+
+基线 `0dbf302d`，单一修改共享映像领域/严格读取/逐项删除、移动原生详情/选择/确认/
+结果和独立摘要恢复、正式测试、双语资源、生成工程与五端影响说明。Mac App 源码
+未改，既有 Mac 协议调用共用修正；Windows/Android 仅记录影响，没有访问或写入
+真实 NAS。沿已批准恢复范围新增受保护、排除备份的映像操作摘要文件，不迁移
+登录或已发布 Mac 数据；无第三方依赖、权限、应用身份或最低系统版本变化。
+
+公开 Guest.Image list/delete 固定 v1、image_id；内部固定 v2、id/synovmm_ui_id。
+内部完整 is_freeze、名称/类型与所有主机/存储副本共同绑定原对象；同位置重复或
+身份冲突拒绝写入。ISO 只通过已记录 Guest.list v2/get_setting v1 的 iso_images
+检查占用，停止 VM 仍不能删除挂载映像。公开未提供的属性不伪造，仍依赖 NAS
+拒绝与完整结果。创建与未完成映像删除双向互锁，Mac 普通刷新只恢复已接受结果。
+移动记录只保存原上下文/映像身份/快照摘要、来源、阶段、回执与时间，不含名称、
+位置或凭据；未知不重放，第二项未知停止后项，已完成项保留。
+
+当前负责人另做独立集成与只读对抗复核，未冒称其他模型或真实 NAS 验收。覆盖
+完整清单/副本、来源变化、挂载、冻结、原确认对象、丢回执和外部删除、接受保存
+失败、迟到回执、账号隔离和创建互锁。初始五项测试复现旧实现十三条失败断言
+（`build/m7d4b-shared-before.log`）。统一删除流程的取消分支曾导致两个旧 VM
+删除测试失败，恢复原取消结果计数后通过；认证/证书异常仍立即停止，不追加读。
+最终增加 Mac 普通刷新和内部未完成删除保护创建的回归，全部通过。
+
+实际验证：
+
+- 共享最终聚焦 `DsmServiceManagementRepositoryTests`、创建/网络/映像工作流及
+  `ServiceManagementModelTests` 共 266 项通过；新增映像工作流 14 项。
+  日志 `build/m7d4b-integration.log`。
+- 最终完整共享 3069 项 XCTest，172 条既有环境条件跳过、零失败（81.562 秒），
+  另 12 项 Swift Testing 通过。`build/m7d4b-shared-full.log`。
+- 移动首次测试包构建因复杂 SwiftUI 根视图类型检查超时失败；将原内容拆为私有
+  content 后第二次通过。修正 UI 断言后的最终测试包也通过，日志分别为
+  `build/m7d4b-mobile-build-second.log`、`build/m7d4b-mobile-final-build.log`。
+  XcodeGen 2.46.0 生成工程，只新增四个移动文件引用，重复生成哈希一致。
+- 两端首轮各 74 项 VM 模型全部通过（iPhone 1.444 秒、iPad 1.420 秒），包括
+  25 项控制、14 项创建、19 项网络及新增 16 项映像测试。旧分步创建 UI 两端通过。
+- 六项新映像 UI 首轮每端五项通过，一项详情断言失败；原层级显示 SwiftUI 将
+  LabeledContent 合并为 `Type, Installation image`，而测试错误地寻找独立
+  `Installation image`。仅修正完整辅助功能文本定位，不改产品、不放宽结果。
+  首轮七项 UI 用时 479.090/600.981 秒，结果在 `build/m7d4b-{iphone,ipad}.xcresult`。
+- 最终完整单项删除、完成记录及搜索空态专项两端通过（49.148/54.524 秒），结果
+  在 `build/m7d4b-{iphone,ipad}-final.xcresult`。其余五项首轮已覆盖中文深色大字号
+  后果/取消、多项部分成功、丢回执重启、接受后断网恢复，以及加载/空/错误/冻结/占用。
+  首轮 38 张、最终 10 张，共 48 张实际截图逐张复核。
+- Mac Release 增量构建通过，`lipo -archs` 核对主 App 与 File Provider 扩展均含
+  x86_64/arm64；日志 `build/m7d4b-mac-build.log`。没有安装、启动或发布 Mac 包。
+- 本地化与硬编码检查为 Apple 6972、Android 2188、Windows 3402 键；请求契约
+  180 个请求 fixture/1 个结果 fixture，以及 29 个发现 fixture/48 个私有文档引用
+  检查通过。文档与差异空白检查通过；内部新增请求 fixture 只用合成 ID。
+
+实际命令（仓库根目录）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'DsmServiceManagementRepositoryTests|VirtualMachineCreationWorkflowTests|VirtualMachineNetworkWorkflowTests|VirtualMachineImageWorkflowTests|ServiceManagementModelTests'
+swift test --package-path apple --jobs 2 --skip-build
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination generic/platform=macOS -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 '-only-testing:DsmMobileUITests/MobileVirtualMachineImageUITests/test映像详情单项删除记录和搜索空态' -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -resultBundlePath build/m7d4b-iphone-final.xcresult
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/codex/check_documentation.py
+```
+
+iPad 最终替换目的设备为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果为
+`build/m7d4b-ipad-final.xcresult`。首轮同一 test-without-building 命令同时选取上述
+四组模型、全部六项 `MobileVirtualMachineImageUITests` 和旧
+`MobileVirtualMachineCreationUITests/test分步创建保留精确内存并显示完成记录`。
+
+真实 NAS 删除、ISO 占用、多副本/跨客户端竞态、文件保护/锁屏、权限变化与完整
+辅助功能未验证；专用可丢弃目标的四项 `PENDING_USER_VALIDATION` 见主计划 M7d4b。
+这些待办不固定禁用已实现入口，也不提升真实 API 等级。映像导入/创建无当前 Mac
+产品基线，两端使用官方 VMM；触控控制台与 M8 仍需源码实施。

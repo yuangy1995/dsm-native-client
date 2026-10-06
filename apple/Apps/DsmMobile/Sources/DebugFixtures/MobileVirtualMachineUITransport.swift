@@ -13,6 +13,7 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
     private var waitingForWrite: CheckedContinuation<Void, Never>?
     private var networks = [["id": "network-1", "name": "Sample network"], ["id": "network-2", "name": "Isolated network"]]
     private var creationParameters: [String: Any] = [:]
+    private var images = [["id": "image-1", "name": "Sample installer.iso"], ["id": "image-2", "name": "Recovery disk"]]
     private(set) var calls: [[String: String]] = []
     var writes: [[String: String]] { calls.filter { ["poweron", "shutdown", "poweroff", "pwr_ctl", "delete", "set", "create"].contains($0["method"] ?? "") } }
     init(mode: String = "vmm-control") {
@@ -24,6 +25,8 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
         if mode == "vmm-network-empty" { networks = [] }
         if mode == "vmm-network-renamed" { networks[0]["name"] = "Renamed network" }
         if mode == "vmm-network-deleted" { networks.removeFirst() }
+        if mode == "vmm-image-empty" { images = [] }
+        if mode == "vmm-image-deleted" { images.removeFirst() }
         if mode == "vmm-missing-state" { machines[0]["status"] = nil }
         if mode == "vmm-transition" { machines[0]["status"] = "stopping" }
         if mode == "vmm-settings-recovered" { machines[0]["desc"] = "Updated synthetic description" }
@@ -41,6 +44,8 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
     }
     func renameNetwork() { networks[0]["name"] = "Changed network" }
     func replaceNetwork() { networks[0]["id"] = "replacement-network" }
+    func renameImage() { images[0]["name"] = "Changed image" }
+    func replaceImage() { images[0]["id"] = "replacement-image" }
     func renameFirst() { machines[0]["name"] = "Changed virtual machine" }
     func replaceFirst() { machines[0]["guest_id"] = "replacement-vm" }
     func removeFirst() { if !machines.isEmpty { machines.removeFirst() } }
@@ -59,6 +64,12 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
         })
         calls.append(fields)
         let api = fields["api"] ?? "", method = fields["method"] ?? ""
+        if api == DsmAPIName.virtualizationGuestImage, mode.hasPrefix("vmm-image") {
+            return try await imageResponse(method: method, fields: fields)
+        }
+        if api == DsmAPIName.virtualizationGuest, method == "get_setting", mode.hasPrefix("vmm-image") {
+            return response(["iso_images": mode == "vmm-image-in-use" ? ["image-1", "unmounted"] : ["unmounted", "unmounted"]])
+        }
         if api == DsmAPIName.virtualizationNetwork, mode.hasPrefix("vmm-network") {
             return try await networkResponse(method: method, fields: fields)
         }
@@ -142,6 +153,28 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
         }
         if mode == "vmm-network-incomplete" && !rows.isEmpty { rows[0]["interfaces"] = nil }
         return response(["is_freeze": mode == "vmm-network-frozen", "networks": rows])
+    }
+    private func imageResponse(method: String, fields: [String: String]) async throws -> DsmHTTPResponse {
+        let imageWrites = writes.filter { $0["api"] == DsmAPIName.virtualizationGuestImage }
+        if method == "delete" {
+            if shouldHold { await withCheckedContinuation { waiter = $0; waitingForWrite?.resume(); waitingForWrite = nil } }
+            if mode == "vmm-image-reject" { return response(["code": 105], success: false) }
+            if mode == "vmm-image-trust" { throw URLError(.serverCertificateUntrusted) }
+            if mode == "vmm-image-http-unauthorized" { return .init(data: Data(), statusCode: 401) }
+            if mode == "vmm-image-unknown" || mode == "vmm-image-partial" && imageWrites.count == 2 { throw URLError(.networkConnectionLost) }
+            guard let index = images.firstIndex(where: { $0["id"] == fields["id"] }) else { return response(["code": 408], success: false) }
+            images.remove(at: index); return response([:])
+        }
+        let formRead = calls.filter { $0["api"] == DsmAPIName.virtualizationGuestImage && $0["method"] == "list" }.count > 1
+        if formRead && mode == "vmm-image-loading" { try await Task.sleep(for: .seconds(30)) }
+        if formRead && mode == "vmm-image-read-error" { throw URLError(.notConnectedToInternet) }
+        if mode == "vmm-image-accepted-offline" && !imageWrites.isEmpty { throw URLError(.notConnectedToInternet) }
+        var rows: [[String: Any]] = images.map { image in
+            ["id": image["id"]!, "name": image["name"]!, "type": image["id"] == "image-1" ? "iso" : "disk",
+             "repo_id": "repo-1", "host_id": "host-1", "status": "online", "status_type": "healthy"]
+        }
+        if mode == "vmm-image-incomplete" && !rows.isEmpty { rows[0]["host_id"] = nil }
+        return response(["is_freeze": mode == "vmm-image-frozen", "images": rows])
     }
     private func creationResponse(api: String, method: String, fields: [String: String]) async throws -> DsmHTTPResponse? {
         if api == DsmAPIName.virtualizationRepo {
