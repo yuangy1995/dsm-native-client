@@ -4,6 +4,8 @@ import SwiftUI
 struct MobileNasSettingsView: View {
     @Bindable var model: MobileAppModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var powerPrompt: MobileSystemActionPrompt?
+    @State private var confirmedPowerPrompt: MobileSystemActionPrompt?
     @State private var selectedLog: MobileNasLogDetail?
     @State private var selectedSection: MobileNasAdministrationDestination = .system
 
@@ -16,6 +18,13 @@ struct MobileNasSettingsView: View {
             }
         }
         .fillsAvailableContentArea(alignment: .topLeading)
+        .sheet(item: $powerPrompt, onDismiss: {
+            if let confirmedPowerPrompt { confirmedPowerPrompt.perform(on: model.systemActionsModel); self.confirmedPowerPrompt = nil }
+        }) { source in
+            MobileSystemActionConfirmation(model: model.systemActionsModel, source: source,
+                cancel: { powerPrompt = nil }, confirm: { confirmedPowerPrompt = source; powerPrompt = nil })
+        }
+        .onChange(of: model.systemActionsModel.activation) { _, _ in powerPrompt = nil; confirmedPowerPrompt = nil }
         .onDisappear {
             if model.selectedModule != .nasSettings {
                 model.nasDetailsModel.deactivate()
@@ -25,6 +34,7 @@ struct MobileNasSettingsView: View {
                 model.directoryModel.cancelRead()
                 model.serviceSettingsModel.cancelReads()
                 model.scheduledTasksModel.cancelRead()
+                model.systemActionsModel.cancelReads()
                 model.nasStorageModel.cancelAnalysis()
             }
         }
@@ -34,6 +44,7 @@ struct MobileNasSettingsView: View {
         List {
             detailsNavigationSection
             systemSection
+            systemPowerSection
             performanceSection
             storageSection
             updateSection
@@ -50,6 +61,8 @@ struct MobileNasSettingsView: View {
                 MobileDirectoryScreen(model: model.directoryModel)
             } else if destination == .region {
                 MobileRegionScreen(model: model.regionModel)
+            } else if destination == .connections {
+                MobileConnectionsScreen(model: model.systemActionsModel)
             } else if destination == .scheduledTasks {
                 MobileScheduledTasksScreen(model: model.scheduledTasksModel)
             } else if let kind = destination.serviceKind {
@@ -91,12 +104,15 @@ struct MobileNasSettingsView: View {
                 MobileDirectoryScreen(model: model.directoryModel)
             } else if selectedSection == .region {
                 MobileRegionScreen(model: model.regionModel)
+            } else if selectedSection == .connections {
+                MobileConnectionsScreen(model: model.systemActionsModel)
             } else if selectedSection == .scheduledTasks {
                 MobileScheduledTasksScreen(model: model.scheduledTasksModel)
             } else if let kind = selectedSection.serviceKind {
                 MobileServiceSettingsScreen(model: model.serviceSettingsModel, kind: kind).id(kind)
             } else {
                 List { selectedDetail }
+                    .accessibilityIdentifier("mobile.nas.health")
                     .listStyle(.insetGrouped)
                     .refreshable {
                         await model.nasHealthModel.refresh()
@@ -142,7 +158,9 @@ struct MobileNasSettingsView: View {
     @ViewBuilder
     private var selectedDetail: some View {
         switch selectedSection {
-        case .system: systemSection
+        case .system:
+            systemSection
+            systemPowerSection
         case .performance: performanceSection
         case .storage: storageSection
         case .ddns, .region, .accounts, .fileServices, .terminal, .proxy, .remoteAccess: EmptyView()
@@ -154,6 +172,14 @@ struct MobileNasSettingsView: View {
                 onSelectLog: { selectedLog = $0 }
             )
         }
+    }
+
+    private var systemPowerSection: some View {
+        MobileSystemPowerSection(model: model.systemActionsModel, request: { action in
+            powerPrompt = .init(action: action, activation: model.systemActionsModel.activation, nasName: model.activeProfile?.displayName ?? "")
+        }, restore: {
+            powerPrompt = .init(action: nil, activation: model.systemActionsModel.activation)
+        }, relogin: { model.logout() })
     }
 
     private var systemSection: some View {

@@ -23,6 +23,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     var packageSourcesNeedRefresh = false
     var activeDirectoryChangeKeys: Set<String> = []
     var activeScheduledTaskKeys: Set<String> = []
+    var activeConnectionKeys: Set<String> = []
     private var activeAccountDeletionNames: Set<String> = []
     private var activeGroupDeletionNames: Set<String> = []
     private var activeEthernetUpdateIDs: Set<String> = []

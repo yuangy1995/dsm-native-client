@@ -1585,6 +1585,9 @@ public protocol NasSettingsRepository: Sendable {
     func loadSystemProcesses(start: Int, limit: Int) async throws -> NasProcessDirectory
     func loadConnections(offset: Int, limit: Int) async throws -> NasConnectionPage
     func disconnectConnection(_ connection: NasConnection) async throws
+    func loadConnectionsForManagement() async throws -> NasConnectionPage
+    func performSystemActionResult(_ action: NasSystemAction, checkpoint: @escaping @Sendable (NasSystemActionCheckpoint) async throws -> Void) async throws -> MutationResult
+    func verifyPowerConnection() async throws
     func loadServiceForManagement(_ kind: NasServiceKind) async throws -> NasServiceSettings
     func changeServiceResult(_ change: NasServiceChange, checkpoint: @escaping @Sendable (NasServiceCheckpoint) async throws -> Void) async throws -> MutationResult
     func loadFileServiceSettings() async throws -> NasFileServiceSettings
@@ -1853,6 +1856,12 @@ public extension NasSettingsRepository {
     }
     func disconnectConnection(_ connection: NasConnection) async throws {
         throw unsupportedManagementOperation()
+    }
+    func loadConnectionsForManagement() async throws -> NasConnectionPage { throw unsupportedManagementOperation() }
+    func verifyPowerConnection() async throws { throw unsupportedManagementOperation() }
+    func performSystemActionResult(_ action: NasSystemAction, checkpoint: @escaping @Sendable (NasSystemActionCheckpoint) async throws -> Void) async throws -> MutationResult {
+        try .init(status: .unsupported, operation: action.kind.rawValue, submitted: false, requiresRefresh: false,
+                  counts: .init(succeeded: 0, failed: 1, unknown: 0), errorCategory: .unsupported, diagnosticTag: "system-action.unsupported")
     }
     func loadFileServiceSettings() async throws -> NasFileServiceSettings {
         throw unsupportedManagementOperation()
