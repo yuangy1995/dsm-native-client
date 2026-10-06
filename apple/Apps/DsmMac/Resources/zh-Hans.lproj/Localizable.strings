@@ -2280,3 +2280,15 @@
 
 "mobile.virtual-machines.control.removed.title" = "虚拟机已不在列表中";
 "mobile.virtual-machines.control.removed.message" = "请刷新列表，或查看操作记录。";
+
+"virtual-machine.console.connecting" = "正在连接虚拟机…";
+"virtual-machine.console.disconnected" = "控制台已断开。请关闭或重新连接后继续。";
+"virtual-machine.console.failed" = "无法连接控制台。请检查连接并确认虚拟机正在运行，然后重新连接。";
+
+"mobile.virtual-machines.console.open" = "打开控制台";
+"mobile.virtual-machines.console.title" = "虚拟机控制台";
+"mobile.virtual-machines.console.close" = "关闭";
+"mobile.virtual-machines.console.reconnect" = "重新连接";
+
+"virtual-machine.console.access-denied" = "当前账号无法打开此控制台。请重新登录，或请管理员检查你的访问权限。";
+"virtual-machine.console.trust-required" = "无法确认 NAS 的身份。请关闭控制台，重新连接 NAS 后再试。";

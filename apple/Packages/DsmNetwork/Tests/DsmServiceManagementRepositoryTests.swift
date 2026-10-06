@@ -2776,7 +2776,8 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
 
     func test远程控制台地址不包含会话凭据并使用虚拟机通道() async throws {
         let transport = MockHTTPTransport(responses: [
-            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"测试虚拟机","status":"running","kb_layout":"Default"}]}}"#)
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"测试虚拟机","status":"running","kb_layout":"Default"}]}}"#),
+            response(#"{"success":true,"data":{"guest_id":"vm-1","name":"测试虚拟机","is_online":true,"kb_layout":"en-us"}}"#)
         ])
         let repository = try makeRepository(
             apiNames: [DsmAPIName.virtualizationGuest],

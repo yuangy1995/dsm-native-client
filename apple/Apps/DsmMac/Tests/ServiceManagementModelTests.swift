@@ -929,8 +929,17 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         id: String,
         configuration: VirtualMachineUpdate
     ) async throws { throw unavailable() }
+    private var consoleSession: VirtualMachineConsoleSession?
+    private var holdsConsole = false
+    private var consoleWaiter: CheckedContinuation<Void, Never>?
+    private var consoleStarted: CheckedContinuation<Void, Never>?
+    func setConsoleSession(_ value: VirtualMachineConsoleSession, held: Bool = false) { consoleSession = value; holdsConsole = held }
+    func waitForConsole() async { if consoleWaiter == nil { await withCheckedContinuation { consoleStarted = $0 } } }
+    func releaseConsolePreparation() { holdsConsole = false; consoleWaiter?.resume(); consoleWaiter = nil }
     func openVirtualMachineConsole(id: String) async throws -> VirtualMachineConsoleSession {
-        throw unavailable()
+        if holdsConsole { await withCheckedContinuation { consoleWaiter = $0; consoleStarted?.resume(); consoleStarted = nil } }
+        guard let consoleSession else { throw unavailable() }
+        return consoleSession
     }
     private(set) var virtualMachinePowerCalls: [(ids: [String], action: VirtualMachinePowerAction)] = []
     func controlVirtualMachines(

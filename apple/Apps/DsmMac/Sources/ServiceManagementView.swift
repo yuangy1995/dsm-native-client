@@ -1,5 +1,6 @@
 import AppKit
 import DsmCore
+import DsmVirtualMachineConsoleFeature
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
@@ -2196,22 +2197,25 @@ private struct VirtualMachineManagerView: View {
                 }
                 .disabled(selectedMachine == nil || model.isPerformingAction)
                 Button {
-                    if let consoleWindowController {
+                    guard let machine = selectedMachine else { return }
+                    if let consoleWindowController, consoleWindowController.machineID == machine.id {
                         consoleWindowController.show()
                         return
                     }
-                    guard let machine = selectedMachine else { return }
+                    consoleWindowController?.close()
                     Task {
                         guard let session = await model.openVirtualMachineConsole(id: machine.id) else {
                             return
                         }
                         let controller = VirtualMachineConsoleWindowController(
-                            machineName: machine.name,
+                            machineID: machine.id, machineName: machine.name,
                             session: session
                         )
                         controller.onClose = {
+                            model.releaseConsole(session.id)
                             consoleWindowController = nil
                         }
+                        guard model.registerConsoleWindow(session, close: { controller.close() }) else { return }
                         consoleWindowController = controller
                         controller.show()
                     }
@@ -3028,8 +3032,10 @@ struct EditVirtualMachineSheet: View {
 @MainActor
 private final class VirtualMachineConsoleWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
+    let machineID: String
 
-    init(machineName: String, session: VirtualMachineConsoleSession) {
+    init(machineID: String, machineName: String, session: VirtualMachineConsoleSession) {
+        self.machineID = machineID
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1_100, height: 760),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -3093,9 +3099,6 @@ struct VirtualMachineConsoleWindowView: View {
                 Label(machineName, systemImage: "display")
                     .font(.headline)
                 Spacer()
-                Text(L10n.string("ui.4f9880bb8182fd14"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
                 Button {
                     toggleFullScreen()
                 } label: {
@@ -3112,7 +3115,7 @@ struct VirtualMachineConsoleWindowView: View {
             .padding(.vertical, 12)
             .background(MacGlassSurface(role: .toolbar))
             Divider()
-            VirtualMachineConsoleWebView(session: session)
+            VirtualMachineConsoleView(session: session)
                 .accessibilityLabel(L10n.string("ui.c3247acb301cfeb0", String(describing: machineName)))
         }
         .background(MacGlassSurface(role: .sidebar).ignoresSafeArea())
@@ -3122,36 +3125,6 @@ struct VirtualMachineConsoleWindowView: View {
     }
 }
 
-private struct VirtualMachineConsoleWebView: NSViewRepresentable {
-    let session: VirtualMachineConsoleSession
-
-    func makeNSView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.allowsMagnification = true
-        guard let host = session.url.host,
-              let cookie = HTTPCookie(properties: [
-                  .domain: host,
-                  .path: "/",
-                  .name: "id",
-                  .value: session.sessionCookieValue,
-                  .secure: "TRUE"
-              ]) else {
-            return webView
-        }
-        configuration.websiteDataStore.httpCookieStore.setCookie(cookie) {
-            webView.load(URLRequest(url: session.url))
-        }
-        return webView
-    }
-
-    func updateNSView(_ webView: WKWebView, context: Context) {}
-
-    static func dismantleNSView(_ webView: WKWebView, coordinator: ()) {
-        webView.stopLoading()
-    }
-}
 
 struct SummaryCard: View {
     let title: String

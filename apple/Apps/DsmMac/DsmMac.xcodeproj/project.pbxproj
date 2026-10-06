@@ -52,6 +52,7 @@
 		836B31D0C4FF095E4FC1EFCF /* PhotoFolderDestinationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */; };
 		83D0BC284CA9C38A297A70BF /* MacFilePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9665B8659CF3AEC71209382 /* MacFilePresentation.swift */; };
 		841D608F0BAF7C2CEC96234A /* DsmNetwork in Frameworks */ = {isa = PBXBuildFile; productRef = 3B2A8675E12B02AFDAD476A1 /* DsmNetwork */; };
+		84E8C0EC3727EA21E5B1E942 /* DsmVirtualMachineConsoleFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 40D41841D275B1D94D028F1C /* DsmVirtualMachineConsoleFeature */; };
 		89BA1323D0D84BB246D213BA /* DsmLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = DD19F00B3A61C5DB02ADB503 /* DsmLocalization */; };
 		9728A7945A860E79C3166107 /* ProviderOperationRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AEB908BC08B01E03B6B4BC6 /* ProviderOperationRegistry.swift */; };
 		9B3EFFB8C8D9612E2180DE97 /* RemoteMountRecoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3879993A5ED04BE900402F59 /* RemoteMountRecoveryView.swift */; };
@@ -220,6 +221,7 @@
 				3D2E5047C4CC4EA551E248FA /* DsmNetwork in Frameworks */,
 				FA75DBF3BA945D79778D9FC8 /* DsmPhotosFeature in Frameworks */,
 				DE708B411FCC5D6A7892A1BB /* DsmFileFeature in Frameworks */,
+				84E8C0EC3727EA21E5B1E942 /* DsmVirtualMachineConsoleFeature in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -395,6 +397,7 @@
 				6A578FB6D5B34A59438162B6 /* DsmNetwork */,
 				F2E8EE0FEEC51582BD4E6286 /* DsmPhotosFeature */,
 				0331834533939195B7F64607 /* DsmFileFeature */,
+				40D41841D275B1D94D028F1C /* DsmVirtualMachineConsoleFeature */,
 			);
 			productName = DsmMac;
 			productReference = 73A190EAB72D1587728A072E /* LanStash.app */;
@@ -436,8 +439,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A4FE15DAB3C35747621D9326 /* DsmMac */,
 				6E7F102405CE46BF9FADEA71 /* DsmFileProvider */,
+				A4FE15DAB3C35747621D9326 /* DsmMac */,
 			);
 		};
 /* End PBXProject section */
@@ -864,6 +867,10 @@
 		3B2A8675E12B02AFDAD476A1 /* DsmNetwork */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DsmNetwork;
+		};
+		40D41841D275B1D94D028F1C /* DsmVirtualMachineConsoleFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DsmVirtualMachineConsoleFeature;
 		};
 		6A578FB6D5B34A59438162B6 /* DsmNetwork */ = {
 			isa = XCSwiftPackageProductDependency;

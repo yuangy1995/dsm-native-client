@@ -2280,3 +2280,15 @@
 
 "mobile.virtual-machines.control.removed.title" = "Virtual Machine No Longer Listed";
 "mobile.virtual-machines.control.removed.message" = "Refresh the list or view the operation history.";
+
+"virtual-machine.console.connecting" = "Connecting to the virtual machine…";
+"virtual-machine.console.disconnected" = "The console is disconnected. Close it or reconnect to continue.";
+"virtual-machine.console.failed" = "The console could not connect. Check the connection and that the virtual machine is running, then reconnect.";
+
+"mobile.virtual-machines.console.open" = "Open Console";
+"mobile.virtual-machines.console.title" = "Virtual machine console";
+"mobile.virtual-machines.console.close" = "Close";
+"mobile.virtual-machines.console.reconnect" = "Reconnect";
+
+"virtual-machine.console.access-denied" = "This account cannot open this console. Sign in again or ask an administrator to check your access.";
+"virtual-machine.console.trust-required" = "The identity of the NAS could not be confirmed. Close the console and reconnect to the NAS.";

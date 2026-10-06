@@ -3680,6 +3680,7 @@ final class WorkspaceModel {
     }
 
     func cancelAllWork() {
+        serviceManagement.closeVirtualMachineConsoles()
         suspendFileModule()
         photoLibrary.cancel()
         chat.cancelAllWork()

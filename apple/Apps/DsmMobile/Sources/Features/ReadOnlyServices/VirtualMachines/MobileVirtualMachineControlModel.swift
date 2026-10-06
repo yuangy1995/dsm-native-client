@@ -48,6 +48,9 @@ final class MobileVirtualMachineControlModel {
     private(set) var hasLoaded = false
     private(set) var allowed = false
     private(set) var supportsSettings = false
+    private(set) var supportsConsole = false
+    private(set) var consoleSession: VirtualMachineConsoleSession?
+    private var consolePreparation = UUID()
     private(set) var supportsCreation = false
     private(set) var error: Failure?
     let recovery: MobileVirtualMachineControlStore
@@ -75,6 +78,7 @@ final class MobileVirtualMachineControlModel {
         recovery.reload(); creations.reload(); networkRecovery.reload(); imageRecovery.reload()
     }
     func deactivate() {
+        closeConsole(); supportsConsole = false
         activation = UUID(); cancelRead(); cancelNetworkRead()
         cancelImageRead(); imageInventory = .init(source: .official, isFrozen: false, images: []); imageNames = [:]
         imageHasLoaded = false; imageAllowed = false; imageError = nil
@@ -105,11 +109,13 @@ final class MobileVirtualMachineControlModel {
                 guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
                 let values = try await repository.loadVirtualMachineControlStates()
                 let supportsSettings = await repository.supportsVirtualMachineSettings
+                let supportsConsole = await repository.supportsVirtualMachineConsole
                 let supportsCreation = await repository.supportsVirtualMachineCreation
                 try Task.checkCancellation()
                 guard let self, self.activation == token, self.generation == generation else { return }
                 self.targets = values; self.hasLoaded = true
                 self.supportsSettings = supportsSettings
+                self.supportsConsole = supportsConsole
                 self.supportsCreation = supportsCreation
                 self.recovery.reload(); self.creations.reload(); self.networkRecovery.reload(); self.imageRecovery.reload()
                 do { try self.recovery.resolve(values, context: context) } catch { self.error = .storage }
@@ -137,11 +143,39 @@ final class MobileVirtualMachineControlModel {
             } catch {
                 guard let self, self.activation == token, self.generation == generation else { return }
                 self.isRefreshing = false; self.hasLoaded = true; self.allowed = false
+                self.closeConsole()
                 if !(error is CancellationError) { self.error = Self.failure(error) }
             }
         }
         readTask = task; await task.value
     }
+    func canOpenConsole(id: String) -> Bool {
+        guard supportsConsole, allowed, error == nil, !isRefreshing, !isOperating, let context,
+              let target = targets.first(where: { $0.id == id }), target.status == "running" else { return false }
+        return !recovery.protects([target], context: context) && !creations.protects(name: target.name, id: target.id, context: context)
+            && !networkRecovery.protects(guestID: id, context: context)
+    }
+    func openConsole(_ target: VirtualMachineControlState, activation token: UUID) async throws -> VirtualMachineConsoleSession {
+        guard token == activation, canOpenConsole(id: target.id), targets.contains(target), let repository, let authorize else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: "")
+        }
+        closeConsole(); let preparation = consolePreparation
+        guard try await authorize() else { throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: "") }
+        try Task.checkCancellation()
+        guard token == activation, preparation == consolePreparation, canOpenConsole(id: target.id) else { throw CancellationError() }
+        let session = try await repository.openVirtualMachineConsole(target)
+        guard !Task.isCancelled, token == activation, preparation == consolePreparation, canOpenConsole(id: target.id) else {
+            await session.transport.close(); throw CancellationError()
+        }
+        consoleSession = session
+        return session
+    }
+    func closeConsole() {
+        consolePreparation = UUID()
+        let old = consoleSession; consoleSession = nil
+        if let old { Task { await old.transport.close() } }
+    }
+
     func canPerform(ids: Set<String>, action: VirtualMachinePowerAction) -> Bool {
         canPerform(ids: ids, kind: .init(action))
     }

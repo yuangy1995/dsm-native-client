@@ -189,7 +189,8 @@ public final class URLSessionTransport: DsmBinaryHTTPTransport, @unchecked Senda
         expectedHost: String? = nil,
         pinnedCertificateSHA256: String? = nil,
         requiresSystemCertificateTrust: Bool = false,
-        maximumResponseBytes: Int = 8 * 1_024 * 1_024
+        maximumResponseBytes: Int = 8 * 1_024 * 1_024,
+        allowsRedirects: Bool = true
     ) {
         configuration.timeoutIntervalForRequest = 120
         configuration.timeoutIntervalForResource = 60 * 60
@@ -201,7 +202,8 @@ public final class URLSessionTransport: DsmBinaryHTTPTransport, @unchecked Senda
         tlsDelegate = DsmTLSDelegate(
             expectedHost: expectedHost,
             pinnedFingerprint: pinnedCertificateSHA256,
-            requiresSystemTrust: requiresSystemCertificateTrust
+            requiresSystemTrust: requiresSystemCertificateTrust,
+            allowsRedirects: allowsRedirects
         )
         session = URLSession(
             configuration: configuration,

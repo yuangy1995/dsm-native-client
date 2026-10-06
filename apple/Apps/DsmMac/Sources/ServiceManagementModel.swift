@@ -93,6 +93,9 @@ final class ServiceManagementModel {
     private(set) var isLoading = false
     private(set) var isPerformingAction = false
     private var enabledModules = Set(Module.allCases)
+    private var consoleGeneration = UUID()
+    @ObservationIgnored private var consoleSessions: [UUID: VirtualMachineConsoleSession] = [:]
+    @ObservationIgnored private var consoleWindows: [UUID: @MainActor () -> Void] = [:]
     var message: String?
     var messageIsError = false
     var downloadSelection: Set<String> = []
@@ -140,6 +143,7 @@ final class ServiceManagementModel {
             containerSelection = []; imageSelection = []; networkSelection = []
         }
         if !modules.contains(.virtualMachines) {
+            closeVirtualMachineConsoles()
             virtualMachines = nil
             virtualMachineSelection = []; virtualMachineNetworkSelection = []; virtualMachineImageSelection = []
         }
@@ -513,17 +517,38 @@ final class ServiceManagementModel {
 
     func openVirtualMachineConsole(id: String) async -> VirtualMachineConsoleSession? {
         guard enabledModules.contains(.virtualMachines), !isPerformingAction else { return nil }
+        let generation = consoleGeneration
         isPerformingAction = true
         message = nil
+        defer { isPerformingAction = false }
         do {
             let session = try await repository.openVirtualMachineConsole(id: id)
-            isPerformingAction = false
+            guard !Task.isCancelled, generation == consoleGeneration, enabledModules.contains(.virtualMachines) else {
+                await session.transport.close(); return nil
+            }
+            consoleSessions[session.id] = session
             return session
         } catch {
-            isPerformingAction = false
-            show(error)
+            if generation == consoleGeneration { show(error) }
             return nil
         }
+    }
+
+    @discardableResult func registerConsoleWindow(_ session: VirtualMachineConsoleSession, close: @escaping @MainActor () -> Void) -> Bool {
+        guard consoleSessions[session.id] != nil else { close(); return false }
+        consoleWindows[session.id] = close
+        return true
+    }
+    func releaseConsole(_ id: UUID) {
+        consoleWindows[id] = nil
+        if let session = consoleSessions.removeValue(forKey: id) { Task { await session.transport.close() } }
+    }
+    func closeVirtualMachineConsoles() {
+        consoleGeneration = UUID()
+        let windows = consoleWindows.values, sessions = consoleSessions.values
+        consoleWindows = [:]; consoleSessions = [:]
+        for close in windows { close() }
+        for session in sessions { Task { await session.transport.close() } }
     }
 
     func deleteVirtualMachines() async -> Bool {

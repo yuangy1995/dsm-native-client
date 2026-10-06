@@ -57,7 +57,7 @@ enum MobileUIFixture {
                     for api in [DsmAPIName.virtualizationGuest, DsmAPIName.virtualizationRepo,
                                 DsmAPIName.virtualizationNetwork, DsmAPIName.virtualizationGuestImage, DsmAPIName.virtualizationCluster] { versions[api] = 2 }
                 }
-                if officeState.hasPrefix("vmm-settings") { versions[DsmAPIName.virtualizationGuest] = 2 }
+                if officeState.hasPrefix("vmm-settings") || officeState.hasPrefix("vmm-console") { versions[DsmAPIName.virtualizationGuest] = 2 }
                 if officeState == "vmm-restart" || officeState.hasPrefix("vmm-internal") {
                     versions[DsmAPIName.virtualizationGuest] = 2; versions[DsmAPIName.virtualizationGuestAction] = 1
                 }
@@ -167,8 +167,10 @@ enum MobileUIFixture {
                     session: session, transport: MobileDownloadUITransport(state: officeState, statuses: statuses, settings: settings, destinations: destinations, removedTaskIDs: removedTaskIDs))
             }
             if officeState.hasPrefix("vmm-") {
+                let consoleFactory = MobileConsoleUIFactory(mode: officeState)
                 model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
-                    session: session, transport: MobileVirtualMachineUITransport(mode: officeState))
+                    session: session, transport: MobileVirtualMachineUITransport(mode: officeState),
+                    consoleTransportFactory: { policy, _ in consoleFactory.make(policy: policy) })
             }
             if officeState.hasPrefix("containers-") {
                 model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
