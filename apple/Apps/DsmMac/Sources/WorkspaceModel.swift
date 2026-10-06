@@ -946,10 +946,12 @@ final class WorkspaceModel {
         moduleAccessLookupFailed = snapshot.lookupFailed
         hasCheckedModuleAccess = true
         synchronizeModuleAvailability()
-        if case .authenticationRequired(let error) = moduleAccess[.files] {
-            show(error)
-            if section == nil { section = .files("/") }
-            return
+        for module in [WorkspaceModule.files, .photos] {
+            if case .authenticationRequired(let error) = moduleAccess[module] {
+                show(error)
+                if section == nil { section = module == .files ? .files("/") : .settings }
+                return
+            }
         }
         if startsWorkspace, !hasStartedModules {
             await startInitialModule()

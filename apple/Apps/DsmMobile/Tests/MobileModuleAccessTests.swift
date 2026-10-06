@@ -65,6 +65,88 @@ final class MobileModuleAccessTests: XCTestCase {
         XCTAssertFalse(denied.lookupFailed)
     }
 
+    func test文件授权不能覆盖照片拒绝且缺少照片能力不发读取() async {
+        let probe = ModuleAccessProbe()
+        await probe.set([.files: true]); await probe.failPhotos(.permissionDenied)
+        let denied = await reader(probe).read()
+        XCTAssertFalse(denied.allowed.contains(.photos)); XCTAssertFalse(denied.lookupFailed)
+        for missing in ["SYNO.Foto.UserInfo", "SYNO.Foto.Setting.User", "SYNO.Foto.Setting.Admin", "SYNO.Foto.Setting.TeamSpace"] {
+            let fresh = ModuleAccessProbe()
+            await fresh.set([.files: true])
+            let capabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: Self.capabilities.all
+                .filter { $0.name != missing }.map { ($0.name, $0) }))
+            let result = await MobileModuleAccessReader(capabilities: capabilities,
+                readPrivileges: { try await fresh.read() }, readPhotoAccess: { try await fresh.photos() }).read()
+            XCTAssertFalse(result.allowed.contains(.photos))
+            let reads = await fresh.photoReads; XCTAssertEqual(reads, 0)
+        }
+    }
+
+    @MainActor
+    func test恢复登录文件权限或能力受限时必须单独读取照片() async throws {
+        for category in [nil, .permissionDenied, .apiUnavailable, .versionUnsupported] as [AppErrorCategory?] {
+            let probe = ModuleAccessProbe(); await probe.fail(category)
+            try await MobileAppModel.validateRestoredSession(readFileAccess: { _ = try await probe.read() },
+                readPhotoAccess: { try await probe.photos() })
+            let fileReads = await probe.reads, photoReads = await probe.photoReads
+            XCTAssertEqual(fileReads, 1); XCTAssertEqual(photoReads, category == nil ? 0 : 1)
+        }
+    }
+
+    @MainActor
+    func test恢复登录安全或网络错误不改用照片请求() async {
+        for category in [AppErrorCategory.authenticationRequired, .tlsUntrusted, .tlsCertificateChanged, .cancelled, .networkUnavailable] {
+            let probe = ModuleAccessProbe(); await probe.fail(category)
+            do {
+                try await MobileAppModel.validateRestoredSession(readFileAccess: { _ = try await probe.read() },
+                    readPhotoAccess: { try await probe.photos() })
+                XCTFail("不能忽略原连接错误")
+            } catch { XCTAssertEqual((error as? AppError)?.category, category) }
+            let photoReads = await probe.photoReads; XCTAssertEqual(photoReads, 0)
+        }
+        let probe = ModuleAccessProbe()
+        let issue = DsmCertificateTrustError.changed(.init(host: "example.invalid", subjectSummary: "Synthetic",
+            sha256Fingerprint: String(repeating: "0", count: 64), canBePinned: true))
+        do {
+            try await MobileAppModel.validateRestoredSession(readFileAccess: { throw issue }, readPhotoAccess: { try await probe.photos() })
+            XCTFail("证书变化不能恢复登录")
+        } catch { XCTAssertTrue(error is DsmCertificateTrustError) }
+        let photoReads = await probe.photoReads; XCTAssertEqual(photoReads, 0)
+    }
+
+    @MainActor
+    func test恢复登录照片拒绝或会话失效不能算作成功() async {
+        for category in [AppErrorCategory.permissionDenied, .authenticationRequired, .apiUnavailable] {
+            let probe = ModuleAccessProbe(); await probe.fail(.permissionDenied); await probe.failPhotos(category)
+            do {
+                try await MobileAppModel.validateRestoredSession(readFileAccess: { _ = try await probe.read() },
+                    readPhotoAccess: { try await probe.photos() })
+                XCTFail("Photos 没有确认会话时不能恢复工作区")
+            } catch { XCTAssertEqual((error as? AppError)?.category, category) }
+            let photoReads = await probe.photoReads; XCTAssertEqual(photoReads, 1)
+        }
+    }
+
+    @MainActor
+    func test只有照片权限时入口可开启撤权后退出且保留选择() async throws {
+        try await withModel { model in
+            let probe = ModuleAccessProbe(); await probe.set([.files: false])
+            model.moduleAccessReader = reader(probe)
+            await model.refreshModuleAccess()
+            XCTAssertEqual(model.optionalModulesAvailableForPreference(), [.photos])
+            model.setModule(.photos, isVisible: true); model.selectModule(.photos)
+            XCTAssertEqual(model.selectedModule, .photos)
+            XCTAssertTrue(model.visibleTopLevelDestinations.contains(.photos))
+            await probe.set([.files: true]); await probe.failPhotos(.permissionDenied)
+            await model.refreshModuleAccess()
+            XCTAssertEqual(model.selectedModule, .settings)
+            XCTAssertFalse(model.visibleTopLevelDestinations.contains(.photos))
+            XCTAssertTrue(model.settingsStore.isVisible(.photos))
+            await probe.failPhotos(nil); await model.refreshModuleAccess()
+            XCTAssertTrue(model.visibleTopLevelDestinations.contains(.photos))
+        }
+    }
+
     func test摘要网络失败保留独立照片授权并显示刷新恢复() async {
         let probe = ModuleAccessProbe()
         await probe.fail(.networkUnavailable)

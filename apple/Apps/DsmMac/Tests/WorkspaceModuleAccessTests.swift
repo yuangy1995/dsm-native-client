@@ -18,7 +18,8 @@ final class WorkspaceModuleAccessTests: XCTestCase {
             DsmDesktopAppPrivileges(applications: [.files: true, .chat: true, .downloads: false,
                                                   .nasSettings: true, .containers: true], isAdministrator: false),
             capabilities: capabilities)
-        XCTAssertEqual(Set(result.modules.filter { $0.value.isVisible }.keys), [.files, .photos, .chat])
+        XCTAssertEqual(Set(result.modules.filter { $0.value.isVisible }.keys), [.files, .chat])
+        XCTAssertEqual(result.modules[.photos], .denied, "应用摘要不能代替 Photos 自身授权")
         XCTAssertEqual(result.modules[.nasSettings], .denied)
         XCTAssertEqual(result.modules[.containers], .denied)
         XCTAssertEqual(result.modules[.virtualMachines], .denied)
@@ -59,7 +60,8 @@ final class WorkspaceModuleAccessTests: XCTestCase {
         let profile = try profile()
         let transport = AccessTransport()
         let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: transport),
-            capabilities: capabilities, readPrivileges: { DsmDesktopAppPrivileges(applications: [:], isAdministrator: false) })
+            capabilities: capabilities, readPrivileges: { DsmDesktopAppPrivileges(applications: [:], isAdministrator: false) },
+            readPhotoAccess: { XCTFail("缺少照片能力时不能读取照片权限") })
         let snapshot = await reader.read()
         XCTAssertFalse(snapshot.lookupFailed)
         XCTAssertFalse(snapshot.modules.values.contains(where: \.isVisible))
@@ -71,13 +73,110 @@ final class WorkspaceModuleAccessTests: XCTestCase {
         let profile = try profile()
         let transport = AccessTransport()
         let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: transport),
-            capabilities: capabilities, readPrivileges: { throw URLError(.cannotConnectToHost) })
+            capabilities: capabilities, readPrivileges: { throw URLError(.cannotConnectToHost) },
+            readPhotoAccess: { XCTFail("缺少照片能力时不能读取照片权限") })
         let snapshot = await reader.read()
         XCTAssertTrue(snapshot.lookupFailed)
-        XCTAssertEqual(snapshot.modules, [.files: .available])
+        XCTAssertEqual(snapshot.modules, [.files: .available, .photos: .unavailable])
         let calls = await transport.requests
         XCTAssertEqual(calls.count, 1)
         XCTAssertTrue(String(decoding: try XCTUnwrap(calls[0].httpBody), as: UTF8.self).contains("method=list_share"))
+    }
+
+    func test照片授权与文件应用授权及文件能力相互独立() async throws {
+        for applications in [[DsmDesktopApplication.files: true], [.files: false], [:]] {
+            for includesFiles in [true, false] {
+                let profile = try profile(), transport = AccessTransport(), photos = PhotoAccessProbe()
+                let capabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: photoCapabilities.all
+                    .filter { includesFiles || $0.name != DsmAPIName.fileStationList }.map { ($0.name, $0) }))
+                let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: transport),
+                    capabilities: capabilities, readPrivileges: { .init(applications: applications, isAdministrator: false) },
+                    readPhotoAccess: { try await photos.read() })
+                let snapshot = await reader.read()
+                XCTAssertEqual(snapshot.modules[.photos], .available)
+                XCTAssertEqual(snapshot.modules[.files], applications[.files] == true && includesFiles ? .available : .denied)
+                XCTAssertFalse(snapshot.lookupFailed)
+                let photoReads = await photos.reads, fileCalls = await transport.requests
+                XCTAssertEqual(photoReads, 1); XCTAssertTrue(fileCalls.isEmpty)
+            }
+        }
+    }
+
+    func test文件已授权不覆盖照片明确拒绝或缺少能力() async throws {
+        let profile = try profile(), transport = AccessTransport(), photos = PhotoAccessProbe(failure: .permissionDenied)
+        let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: transport),
+            capabilities: photoCapabilities, readPrivileges: { .init(applications: [.files: true], isAdministrator: false) },
+            readPhotoAccess: { try await photos.read() })
+        let denied = await reader.read()
+        XCTAssertEqual(denied.modules[.files], .available); XCTAssertEqual(denied.modules[.photos], .denied)
+        XCTAssertFalse(denied.lookupFailed)
+        let missing = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: transport),
+            capabilities: capabilities, readPrivileges: { .init(applications: [.files: true], isAdministrator: false) },
+            readPhotoAccess: { XCTFail("照片能力缺失不应发请求") })
+        let unavailable = await missing.read()
+        XCTAssertEqual(unavailable.modules[.files], .available); XCTAssertEqual(unavailable.modules[.photos], .unavailable)
+        let calls = await transport.requests; XCTAssertTrue(calls.isEmpty)
+    }
+
+    func test摘要失败和文件拒绝不替代独立照片授权() async throws {
+        for errorCode in [nil, 105] as [Int?] {
+            let profile = try profile(), transport = AccessTransport(errorCode: errorCode), photos = PhotoAccessProbe()
+            let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: transport),
+                capabilities: photoCapabilities, readPrivileges: { throw URLError(.cannotConnectToHost) },
+                readPhotoAccess: { try await photos.read() })
+            let snapshot = await reader.read()
+            XCTAssertTrue(snapshot.lookupFailed); XCTAssertEqual(snapshot.modules[.photos], .available)
+            XCTAssertEqual(snapshot.modules[.files], errorCode == nil ? .available : .denied)
+            let photoReads = await photos.reads, fileCalls = await transport.requests
+            XCTAssertEqual(photoReads, 1); XCTAssertEqual(fileCalls.count, 1)
+        }
+    }
+
+    func test摘要安全错误与文件会话失效不继续读取照片() async throws {
+        var failures: [any Error] = [AppErrorCategory.tlsUntrusted, .tlsCertificateChanged, .authenticationRequired, .cancelled]
+            .map { AppError(category: $0, isRetryable: false, safeUserMessage: "") }
+        failures.append(CancellationError())
+        failures.append(DsmCertificateTrustError.changed(.init(host: "example.invalid", subjectSummary: "Synthetic",
+            sha256Fingerprint: String(repeating: "0", count: 64), canBePinned: true)))
+        for failure in failures {
+            let profile = try profile(), transport = AccessTransport(), photos = PhotoAccessProbe()
+            let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: transport),
+                capabilities: photoCapabilities, readPrivileges: { throw failure }, readPhotoAccess: { try await photos.read() })
+            let snapshot = await reader.read()
+            XCTAssertTrue(snapshot.lookupFailed); XCTAssertNil(snapshot.modules[.photos])
+            let photoReads = await photos.reads, fileCalls = await transport.requests
+            XCTAssertEqual(photoReads, 0); XCTAssertTrue(fileCalls.isEmpty)
+        }
+        let profile = try profile(), transport = AccessTransport(errorCode: 119), photos = PhotoAccessProbe()
+        let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: transport),
+            capabilities: photoCapabilities, readPrivileges: { throw URLError(.notConnectedToInternet) },
+            readPhotoAccess: { try await photos.read() })
+        let snapshot = await reader.read()
+        guard case .authenticationRequired = snapshot.modules[.files] else { return XCTFail("必须保留文件会话失效") }
+        let photoReads = await photos.reads; XCTAssertEqual(photoReads, 0)
+    }
+
+    func test照片读取失败不冒充拒绝也不影响已授权文件() async throws {
+        let profile = try profile(), transport = AccessTransport(), photos = PhotoAccessProbe(failure: .networkUnavailable)
+        let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: transport),
+            capabilities: photoCapabilities, readPrivileges: { .init(applications: [.files: true], isAdministrator: false) },
+            readPhotoAccess: { try await photos.read() })
+        let snapshot = await reader.read()
+        XCTAssertEqual(snapshot.modules[.files], .available); XCTAssertEqual(snapshot.modules[.photos], .failed)
+        XCTAssertTrue(snapshot.lookupFailed)
+    }
+
+    func test照片会话失效进入重新登录且不先启动模块() async throws {
+        let profile = try profile(); defer { cleanPreferences(profile.id) }
+        let issue = AppError(category: .authenticationRequired, isRetryable: false, safeUserMessage: "private-response",
+                             dsmCode: 119, httpStatus: 200)
+        let model = try makeModel(profile: profile) {
+            WorkspaceModuleAccessSnapshot(modules: [.files: .denied, .photos: .authenticationRequired(issue)], lookupFailed: true)
+        }
+        await model.startEnabledModules()
+        XCTAssertTrue(model.requiresReauthentication)
+        XCTAssertEqual(model.statusMessage, L10n.string("connection.session.rejected"))
+        XCTAssertEqual(model.section, .settings)
     }
 
     func test文件认证失败保留原始错误且诊断不包含私密文本() async throws {
@@ -116,7 +215,7 @@ final class WorkspaceModuleAccessTests: XCTestCase {
         XCTAssertFalse(model.chat.isModuleEnabled)
         XCTAssertFalse(model.nasSettings.isModuleEnabled)
         XCTAssertFalse(model.photoLibrary.isModuleEnabled)
-        for destination in [WorkspaceSection.chat, .nasSettings, .downloadStation,
+        for destination in [WorkspaceSection.photos(.timeline), .chat, .nasSettings, .downloadStation,
                             .containerManager(.images), .virtualMachineManager(.networks)] {
             XCTAssertFalse(model.canActivate(destination))
             model.section = destination
@@ -170,7 +269,7 @@ final class WorkspaceModuleAccessTests: XCTestCase {
     }
 
     func test首次NAS只默认启用已授权文件照片并保存默认选择() async throws {
-        for allowed in [[WorkspaceModule.files, .photos, .virtualMachines], [.files, .virtualMachines], [.virtualMachines]] {
+        for allowed in [[WorkspaceModule.files, .photos, .virtualMachines], [.photos], [.files, .virtualMachines], [.virtualMachines]] {
             let profile = try profile()
             defer { cleanPreferences(profile.id) }
             let values = Dictionary(uniqueKeysWithValues: allowed.map { ($0, WorkspaceModuleAccess.available) })
@@ -249,6 +348,12 @@ final class WorkspaceModuleAccessTests: XCTestCase {
         XCTAssertTrue(requests.isEmpty)
     }
 
+    private var photoCapabilities: CapabilitySet {
+        let photos = ["SYNO.Foto.UserInfo", "SYNO.Foto.Setting.User", "SYNO.Foto.Setting.Admin", "SYNO.Foto.Setting.TeamSpace"].map {
+            ApiCapability(name: $0, path: "entry.cgi", minVersion: 1, maxVersion: 1, requestFormat: .form, selectedVersion: 1)
+        }
+        return CapabilitySet(Dictionary(uniqueKeysWithValues: (capabilities.all + photos).map { ($0.name, $0) }))
+    }
     private func profile() throws -> NasProfile {
         try NasProfile(displayName: "Synthetic NAS", host: "example.invalid", port: 5001)
     }
@@ -279,9 +384,12 @@ private actor AccessSnapshots {
 }
 
 private actor AccessTransport: DsmBinaryHTTPTransport {
+    private let errorCode: Int?
+    init(errorCode: Int? = nil) { self.errorCode = errorCode }
     private(set) var requests: [URLRequest] = []
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         requests.append(request)
+        if let errorCode { return DsmHTTPResponse(data: Data("{\"success\":false,\"error\":{\"code\":\(errorCode)}}".utf8), statusCode: 200) }
         return DsmHTTPResponse(data: Data(#"{"success":true,"data":{"shares":[],"files":[],"total":0}}"#.utf8), statusCode: 200)
     }
     func download(_ request: URLRequest, to destinationURL: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
@@ -291,5 +399,15 @@ private actor AccessTransport: DsmBinaryHTTPTransport {
     func upload(_ request: URLRequest, from bodyFileURL: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
         requests.append(request)
         throw URLError(.unsupportedURL)
+    }
+}
+
+private actor PhotoAccessProbe {
+    let failure: AppErrorCategory?
+    private(set) var reads = 0
+    init(failure: AppErrorCategory? = nil) { self.failure = failure }
+    func read() throws {
+        reads += 1
+        if let failure { throw AppError(category: failure, isRetryable: false, safeUserMessage: "") }
     }
 }

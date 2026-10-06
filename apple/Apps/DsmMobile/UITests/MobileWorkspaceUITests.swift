@@ -1755,6 +1755,28 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(begin.waitForExistence(timeout: 8)); XCTAssertTrue(begin.isEnabled); begin.tap()
     }
 
+    func test照片入口独立于文件应用授权() {
+        // photo-export 的文件应用授权为 false、Photos 为 enabled；sharing 则相反。
+        let photos = launchFixture(state: "photo-export")
+        XCTAssertTrue(photos.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        navigate("settings", title: "App settings", in: photos)
+        MobileUITestNavigation.enableModule(photos, module: "photos", test: self)
+        navigate("photos", title: "Photos", in: photos)
+        XCTAssertTrue(element("mobile.photos.actions", in: photos).waitForExistence(timeout: 8))
+        XCTAssertTrue(photos.buttons["Sample 1.jpg"].waitForExistence(timeout: 8))
+        attachScreenshot(photos, name: "Photos authorized independently of File Station")
+        photos.terminate()
+
+        let files = launchFixture(state: "sharing"); defer { files.terminate() }
+        XCTAssertTrue(files.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        navigate("settings", title: "App settings", in: files)
+        XCTAssertTrue(element("mobile.settings.module.downloads", in: files).waitForExistence(timeout: 8))
+        XCTAssertFalse(element("mobile.settings.module.photos", in: files).exists)
+        XCTAssertFalse(files.buttons["mobile.navigation.photos"].exists)
+        XCTAssertFalse(files.tabBars.buttons["Photos"].exists)
+        attachScreenshot(files, name: "File Station authorization does not grant Photos")
+    }
+
     func test默认仅文件与App设置并按当前账号筛选开关() {
         let app = launchFixture()
         defer { app.terminate() }
