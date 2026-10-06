@@ -29,6 +29,7 @@ final class MobileContainerImagePullModel {
     let recovery: MobileContainerImagePullStore
     @ObservationIgnored private var repository: DsmServiceManagementRepository?
     @ObservationIgnored private var authorize: (@MainActor @Sendable () async throws -> Bool)?
+    @ObservationIgnored private var deletionRecovery: MobileContainerImageDeletionStore?
     @ObservationIgnored private var readTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var tagTask: Task<Void, Never>?
@@ -39,18 +40,20 @@ final class MobileContainerImagePullModel {
 
     init(root: URL? = nil) { recovery = MobileContainerImagePullStore(root: root) }
     func configure(profile: NasProfile?, repository: DsmServiceManagementRepository?,
+                   deletionRecovery: MobileContainerImageDeletionStore? = nil,
                    authorize: (@MainActor @Sendable () async throws -> Bool)?) {
         let next = profile.map { MobileWorkspaceIdentity($0).storageIdentifier }
         guard next != context || self.repository.map(ObjectIdentifier.init) != repository.map(ObjectIdentifier.init) else {
-            self.authorize = authorize; return
+            self.authorize = authorize; self.deletionRecovery = deletionRecovery; return
         }
         deactivate(); context = next; self.repository = repository; self.authorize = authorize; recovery.reload()
+        self.deletionRecovery = deletionRecovery
     }
     func deactivate() {
         activation = UUID(); cancelRead(); searchTask?.cancel(); tagTask?.cancel()
         searchGeneration = UUID(); tagGeneration = UUID()
         for task in operations.values { task.cancel() }
-        context = nil; repository = nil; authorize = nil; available = false; allowed = false; error = nil
+        context = nil; repository = nil; authorize = nil; deletionRecovery = nil; available = false; allowed = false; error = nil
         results = []; hasSearched = false; isSearching = false; searchError = nil
         selectedImage = nil; tags = []; isLoadingTags = false; tagsError = nil; names = [:]
     }
@@ -78,7 +81,9 @@ final class MobileContainerImagePullModel {
                 try Task.checkCancellation()
                 guard let self, self.activation == token, self.generation == generation else { return }
                 self.available = available; self.allowed = true; self.recovery.reload()
-                guard !self.recovery.failed else { self.error = .storage; self.isRefreshing = false; return }
+                guard !self.recovery.failed, self.deletionRecovery?.failed != true else {
+                    self.error = .storage; self.allowed = false; self.isRefreshing = false; return
+                }
                 for entry in self.entries where entry.isProtected && entry.phase != .prepared && !self.recovery.isExecuting(entry.id) {
                     guard try await authorize() else { throw Self.denied() }
                     try Task.checkCancellation()
@@ -146,6 +151,11 @@ final class MobileContainerImagePullModel {
               selectedImage?.name == repository, !isLoadingTags, tagsError == nil, tags.contains(tag),
               ContainerImagePullRequest.isValidTarget(repository: repository, tag: tag) else { return false }
         return !recovery.protects(repository: repository, tag: tag, context: context)
+            && deletionRecovery?.protectsPull(repository: repository, tag: tag, context: context) != true
+    }
+    func hasPendingDeletion(repository: String, tag: String) -> Bool {
+        guard let context, deletionRecovery?.failed != true else { return false }
+        return deletionRecovery?.protectsPull(repository: repository, tag: tag, context: context) == true
     }
     func confirmation(repository: String, tag: String) -> Confirmation? {
         guard canDownload(repository: repository, tag: tag) else { return nil }
@@ -169,8 +179,11 @@ final class MobileContainerImagePullModel {
                         guard try await authorize() else { throw Self.denied() }
                     }
                     try await MainActor.run {
-                        if case .willSubmit = checkpoint {
+                        if case .willSubmit(let recovery) = checkpoint {
                             guard let self, self.activation == token, !Task.isCancelled else { throw CancellationError() }
+                            guard self.deletionRecovery?.protectsPull(recovery, context: context) != true else {
+                                throw AppError(category: .conflict, isRetryable: false, safeUserMessage: "")
+                            }
                             self.cancelRead()
                         }
                         // 已发出的旧账号回执只能落在原记录中。

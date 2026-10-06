@@ -7024,3 +7024,21 @@
 "mobile.containers.pull.download" = "Download";
 "mobile.containers.pull.read-error" = "Unable to load this information. Check your NAS connection and try again.";
 "mobile.containers.pull.preparing" = "Preparing download…";
+
+// 移动映像删除与恢复。
+"mobile.containers.image-delete.title" = "Delete images";
+"mobile.containers.image-delete.selected" = "Delete selected (%lld)";
+"mobile.containers.image-delete.load-failed" = "Unable to load images";
+"mobile.containers.image-delete.empty" = "No images";
+"mobile.containers.image-delete.empty-help" = "Downloaded images will appear here.";
+"mobile.containers.image-delete.protected" = "This image has an unfinished operation. Refresh its records before trying again.";
+"mobile.containers.image-delete.other-tags" = "This image has other tags. Select those tags to delete them separately.";
+"mobile.containers.image-delete.records-help" = "Your image deletion results will appear here.";
+"mobile.containers.image-delete.completed" = "Deleted.";
+"mobile.containers.image-delete.not-sent" = "Deletion did not start. Your image was not changed.";
+"mobile.containers.image-delete.processing" = "Deleting…";
+"mobile.containers.image-delete.unknown" = "Deletion progress is unavailable. Check your NAS connection and refresh.";
+"mobile.containers.image-delete.tag-risk" = "The selected tags will be deleted from your NAS. This cannot be undone. Other tags for the same image will remain.";
+"mobile.containers.image-delete.image-risk" = "Untagged images will be deleted entirely. This cannot be undone.";
+"mobile.containers.image-delete.download-protected" = "This image has an unfinished deletion. Refresh its deletion records before downloading it.";
+"mobile.containers.image-delete.target" = "Image %lld";

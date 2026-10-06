@@ -151,6 +151,9 @@ private struct MobileContainerImageTagView: View {
                     }
                     Section {
                         Text(L10n.string("mobile.containers.pull.risk"))
+                        if model.hasPendingDeletion(repository: image.name, tag: tag) {
+                            Text(L10n.string("mobile.containers.image-delete.download-protected")).foregroundStyle(.secondary)
+                        }
                         if !model.available { Text(L10n.string("container-image.pull.unavailable")).foregroundStyle(.secondary) }
                         if let error = model.error { Text(error.message).foregroundStyle(.secondary) }
                         Button(L10n.string("mobile.containers.pull.download"), systemImage: "arrow.down.circle") {

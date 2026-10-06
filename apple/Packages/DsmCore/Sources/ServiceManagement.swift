@@ -840,6 +840,9 @@ public protocol ServiceManagementRepository: Sendable {
     func deleteContainerImages(ids: [String]) async throws
     func deleteContainerImagesResult(ids: [String]) async throws -> MutationResult
     func reviewContainerImageDeletion(ids: [String]) async throws -> MutationResult
+    func loadContainerImageDeletionTargets() async throws -> [ContainerImage]
+    func deleteContainerImages(_ request: ContainerImageDeletionRequest, observer: @escaping ContainerImageDeletionObserver) async throws -> ContainerImageDeletionProgress
+    func restoreContainerImageDeletion(_ recovery: ContainerImageDeletionRecovery) async throws -> ContainerImageDeletionProgress
     func createContainerNetwork(_ configuration: ContainerNetworkCreation) async throws
     func deleteContainerNetworks(ids: [String]) async throws
     func deleteContainerNetworksResult(ids: [String]) async throws -> MutationResult
@@ -1004,6 +1007,16 @@ public extension ServiceManagementRepository {
     // 只读核查不能默认转调删除，旧适配器不实现时明确返回不支持。
     func reviewContainerImageDeletion(ids: [String]) async throws -> MutationResult {
         try unsupportedDeletionResult(operation: "containerImageDelete", localizationPrefix: "container-image.delete", count: ids.count)
+    }
+
+    func loadContainerImageDeletionTargets() async throws -> [ContainerImage] {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("container-image.delete.unsupported"))
+    }
+    func deleteContainerImages(_ request: ContainerImageDeletionRequest, observer: @escaping ContainerImageDeletionObserver) async throws -> ContainerImageDeletionProgress {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("container-image.delete.unsupported"))
+    }
+    func restoreContainerImageDeletion(_ recovery: ContainerImageDeletionRecovery) async throws -> ContainerImageDeletionProgress {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("container-image.delete.unsupported"))
     }
 
     func deleteContainerNetworksResult(ids: [String]) async throws -> MutationResult {
