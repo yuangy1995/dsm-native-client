@@ -2825,11 +2825,21 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(sharedFilename.waitForExistence(timeout: 5))
         attachScreenshot(app, name: "Office system editing handoff")
         app.buttons["header.closeButton"].tap()
-        element("files.office.import", in: app).tap()
+        XCTAssertTrue(element("ActivityListView", in: app).waitForNonExistence(timeout: 10))
+        let importFile = app.buttons["files.office.import"]
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"), object: importFile)], timeout: 8), .completed)
+        importFile.tap()
+        // 系统文件界面由独立进程提供，先等实际选择器出现，再读取它的取消按钮。
+        let picker = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 15))
+        // iPad 的取消按钮在系统侧栏；选择器就绪后定位可点击按钮，不限定在文件导航栏内。
         let cancel = app.buttons.matching(NSPredicate(format: "label == 'Cancel' OR label == '取消'")).firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 10))
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"), object: cancel)], timeout: 10), .completed)
         attachScreenshot(app, name: "Office system document picker")
         cancel.tap()
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Editing copy ready"].waitForExistence(timeout: 5))
     }
 

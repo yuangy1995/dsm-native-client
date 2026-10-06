@@ -2722,3 +2722,27 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 收尾时前一批 `c622d6ca` 云端出现明确结果：[Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37386239845) 共享/macOS 与 iPad 工作区通过，iPhone 工作区 160 项中 159 通过、1 失败，两个模块组仍运行。失败为 Office 预览→分享→文件选择器用例：关闭分享面板后点击导入，等待 Cancel 未出现。仅日志尚不足以判定是面板过渡、控件定位或产品呈现问题；先读取该次界面证据，不放宽断言、不推送取消剩余整组。此失败基于前一批提交，不混作 M6e1 新界面结果。
 
 本片模拟器临时附件、辅助功能树和录屏提帧目录已精确清理；正式日志/结果包与七张合成预览保留。新云端失败证据另行隔离保存供后续排查，尚未宣称其已修复。
+
+
+## 2026-10-06 Office 云端系统面板等待修正
+
+修复基线为已完成并本地提交的 `166143c2`，main 工作区干净，前两波尚未推送，以保留正在运行的完整云端模块组。[前一批 Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37386239845) 的 iPhone 工作区 160 项中只有 `testOffice预览并交给系统分享及文件选择器` 失败；iPad 工作区与共享/macOS 已通过，两个模块组尚未结束。
+
+原日志显示分享面板关闭后直接点击导入，随后全局查找 Cancel 超时。已读取该云端结果包：失败辅助功能树包含系统 DocumentManager 的导航栏、Cancel、Recents/Shared/Browse 和 No Recents；所以不能断言产品未打开选择器。录屏请求 45.5 秒取得实际 44.683 秒的白色画面，也不足以证明系统远程界面已经完成可交互呈现。没有改动 Office 保存、权限、文件数据或产品面板代码。
+
+唯一代码修改为该界面用例：等待分享面板真正消失，确认实际导入按钮可用/可点击；导入后先等待已观察到的系统选择器导航栏，再在它的范围内查找并点击 Cancel，最后确认选择器已消失且编辑状态仍在。保留 Quick Look 正文、分享文件名、系统选择器与返回状态全部断言，没有新增跳过或静默降级。两端定向复验尚在准备中，不能把修正源码当作云端已通过。
+
+
+首轮定向构建通过，iPhone 用例通过；iPad 失败树显示系统选择器已就绪，但“取消”在系统侧栏，并不在文件导航栏内。已保留导航栏作为选择器就绪标志，取消按钮改为就绪之后查找可见、可点击且可用的实际按钮，不将 iPhone 的控件层级套到 iPad。没有改变系统面板或业务代码，继续双端同用例复验。
+
+
+最终两端同用例均通过，两个 test-without-building 命令 exit 0；Quick Look 正文、系统分享文件名、选择器出现/取消/退出与原编辑状态全部有实际通过证据，系统选择器截图已查看并保留在 `apple/Apps/DsmMobile/build/m6e1-office-preview/`。本次仅 UITest 修改，没有重复无变化的 1436 项单元或共享/Mac；相应完整证据沿用 M6e1。两次定向构建均通过，文档与差异检查通过。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e1-office-ci-phone-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileWorkspaceUITests/testOffice预览并交给系统分享及文件选择器
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6e1-office-ci-pad-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileUITests/MobileWorkspaceUITests/testOffice预览并交给系统分享及文件选择器
+```
+
+首轮两个命令只有结果路径少 `-final`，iPhone 通过、iPad 的取消按钮作用域失败保持原记录。云端旧提交的 iPhone 工作区仍为失败，必须等含本修正的后续云端运行确认，不把本地复验当云端已绿。当前两个模块组仍在运行，继续等待完整结果，不通过推送取消它们。
+
+此次已读云端结果包、临时导出/层级/录屏提帧均已按独立目录清理，正式 CI 日志、本地结果与上述两张模拟器截图保留。
