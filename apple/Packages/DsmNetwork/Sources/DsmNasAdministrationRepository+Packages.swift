@@ -7,12 +7,17 @@ extension DsmNasAdministrationRepository {
         try await loadPackages(includingIcons: true)
     }
 
+    public func loadPackagesForManagement() async throws -> [NasPackage] {
+        try await loadPackages(includingIcons: false, management: true)
+    }
+
     func loadPackages(
-        includingIcons: Bool
+        includingIcons: Bool, management: Bool = false
     ) async throws -> [NasPackage] {
         let value = try await call(
             DsmAPIName.corePackage,
             method: "list",
+            version: management ? 2 : nil,
             parameters: [
                 "offset": .integer(0),
                 "limit": .integer(1_000),
@@ -31,6 +36,11 @@ extension DsmNasAdministrationRepository {
         // 写后回读也使用此列表；畸形/截断目录不能被解释为目标已经卸载。
         guard let rows = value["packages"]?.array, rows.count < 1_000 else {
             throw verificationError(L10n.string("nas.packages.response-incomplete"))
+        }
+        if management, let total = value["total"], total != .null {
+            guard case .number(let count) = total, Int(exactly: count) == rows.count else {
+                throw verificationError(L10n.string("nas.packages.response-incomplete"))
+            }
         }
         var seenIDs: Set<String> = []
         var metadata: [String: PackageControlMetadata] = [:]

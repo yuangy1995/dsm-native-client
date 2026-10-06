@@ -1550,6 +1550,9 @@ public protocol NasSettingsRepository: Sendable {
     ) async throws -> MutationResult
     func loadPackages() async throws -> [NasPackage]
     func loadPackageCatalog() async throws -> NasPackageCatalog
+    func loadPackageCatalogForManagement() async throws -> NasPackageCatalog
+    func loadPackagesForManagement() async throws -> [NasPackage]
+    func preparePackageInstallationForManagement(catalogIDs: [String]) async throws -> NasPackageInstallPlan
     func loadPackageCenterSettings() async throws -> NasPackageCenterSettings
     func savePackageCenterSettings(_ settings: NasPackageCenterSettings, replacing baseline: NasPackageCenterSettings) async throws -> NasPackageCenterSettings
     func loadPackageSources() async throws -> [NasPackageSource]
@@ -1557,10 +1560,12 @@ public protocol NasSettingsRepository: Sendable {
     func deletePackageSource(_ source: NasPackageSource) async throws -> [NasPackageSource]
     func preparePackageInstallation(catalogIDs: [String]) async throws -> NasPackageInstallPlan
     func startPackageInstallation(planID: UUID, volumes: [String: String], startAfterInstall: Bool) async throws -> NasPackageInstallProgress
+    func startPackageInstallation(planID: UUID, volumes: [String: String], startAfterInstall: Bool, checkpoint: @escaping NasPackageInstallationObserver) async throws -> NasPackageInstallProgress
     func advancePackageInstallation(id: UUID) async throws -> NasPackageInstallProgress
     func configurePackageInstallation(id: UUID, volumeID: String, startAfterInstall: Bool, licenseAccepted: Bool, values: [String: NasPackageOptionValue]) async throws -> NasPackageInstallProgress
     func cancelPackageInstallation(id: UUID) async throws -> NasPackageInstallProgress
     func uploadPackageForInstallation(fileURL: URL) async throws -> NasPackageInstallProgress
+    func uploadPackageForInstallation(fileURL: URL, checkpoint: @escaping NasPackageInstallationObserver) async throws -> NasPackageInstallProgress
     func loadScheduledTasks() async throws -> [NasScheduledTask]
     func loadScheduledTaskDraft(id: Int?, realOwner: String?) async throws -> NasScheduledTaskDraft
     func loadScheduledTaskResults(taskName: String) async throws -> [NasScheduledTaskResult]

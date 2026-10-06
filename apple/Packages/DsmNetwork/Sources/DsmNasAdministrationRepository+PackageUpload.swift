@@ -9,6 +9,18 @@ enum PackagePreparationFailure: Error {
 
 extension DsmNasAdministrationRepository {
     public func uploadPackageForInstallation(fileURL: URL) async throws -> NasPackageInstallProgress {
+        try await uploadPackageForInstallationChecked(fileURL: fileURL, checkpoint: nil)
+    }
+
+    public func uploadPackageForInstallation(fileURL: URL,
+        checkpoint: @escaping NasPackageInstallationObserver) async throws -> NasPackageInstallProgress {
+        do { return try await uploadPackageForInstallationChecked(fileURL: fileURL, checkpoint: checkpoint) }
+        catch let failure as PackageInstallationCheckpointFailure { throw failure.underlying }
+        catch let failure as URLError { throw DsmErrorMapper.map(.transport(code: failure.code.rawValue, requestID: UUID())) }
+    }
+
+    private func uploadPackageForInstallationChecked(fileURL: URL,
+        checkpoint: NasPackageInstallationObserver?) async throws -> NasPackageInstallProgress {
         try requirePackageInstallationIdle()
         guard let capability = capabilities[DsmAPIName.corePackageInstallation], capability.selectedVersion != nil,
               let binaryTransport = transport as? any DsmBinaryHTTPTransport,
@@ -30,37 +42,53 @@ extension DsmNasAdministrationRepository {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue(String(try bodyURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0), forHTTPHeaderField: "Content-Length")
         try Task.checkCancellation()
+        let operationID = UUID()
+        try await notifyPackageInstallation(.init(id: operationID, step: .upload, stage: .willSubmit,
+            package: nil, completedCount: 0, totalCount: 1), observer: checkpoint)
+        try Task.checkCancellation()
         let response = try await binaryTransport.upload(request, from: bodyURL) { _, _ in }
         guard (200..<300).contains(response.statusCode),
               let envelope = try? JSONDecoder().decode(DsmDynamicJSON.self, from: response.data) else {
             throw packageCenterError("package.center.upload-failed")
         }
         if let code = packageInteger(envelope["error"]?["code"]) {
+            try await notifyPackageInstallation(.init(id: operationID, step: .upload, stage: .rejected,
+                package: nil, completedCount: 0, totalCount: 1), observer: checkpoint)
             throw DsmErrorMapper.map(.api(code: Int(code), requestID: UUID()))
         }
         guard envelope["success"] == .boolean(true), let checked = envelope["data"] else {
             throw packageCenterError("package.center.upload-failed")
         }
+        // 上传接受以后即使后续元数据读取失败，也不重新发送文件。
+        try await notifyPackageInstallation(.init(id: operationID, step: .upload, stage: .accepted,
+            package: nil, completedCount: 0, totalCount: 1), observer: checkpoint)
+        var ownedJob: PackageInstallationJobState?
         do {
             guard let id = packageMetadata(checked, "id")?.scalarString,
                   let name = packageMetadata(checked, "name")?.scalarString,
                   let version = packageMetadata(checked, "version")?.scalarString else {
                 throw packageCenterError("package.center.incomplete")
             }
-            let installed = try await loadPackages(includingIcons: false)
+            let installed = try await loadPackages(includingIcons: false, management: checkpoint != nil)
             let current = installed.first { $0.id == id }
             let entry = NasPackageCatalogEntry(packageID: id, name: name, version: version,
                 description: packageMetadata(checked, "description")?.scalarString ?? "", isOfficial: false,
                 installedVersion: current?.version, isUpdateAvailable: current != nil && current?.version != version)
-            let configuration = try await packageConfiguration(checked, expected: entry)
             let candidate = PackageCatalogCandidate(entry: entry, raw: checked)
-            let item = NasPackageInstallItem(package: entry, volumes: configuration.volumes, defaultVolumeID: configuration.defaultVolumeID)
-            var job = PackageInstallationJobState(id: UUID(), candidates: [candidate], items: [item], volumes: [:], startAfterInstall: true)
+            var job = PackageInstallationJobState(id: operationID, candidates: [candidate], items: [NasPackageInstallItem(package: entry)],
+                volumes: [:], startAfterInstall: true, checkpoint: checkpoint)
+            job.checkedPackage = checked; job.manual = true; ownedJob = job
+            let configuration = try await packageConfiguration(checked, expected: entry)
             job.phase = .needsOptions; job.configuration = configuration; job.checkedPackage = checked; job.manual = true
             packageInstallJob = job
+            try await recordPackageInstallation(job, step: .upload, stage: .prepared)
             return job.progress
         } catch {
-            try? await cleanOwnedPackageUpload(checked)
+            if error is PackageInstallationCheckpointFailure || (checkpoint != nil && Self.packagePreferenceTrustFailure(error)) { throw error }
+            if checkpoint != nil {
+                // 仅清理本次上传响应内的目标；无法识别的元数据不猜测清理路径。
+                if let ownedJob { try await cleanOwnedPackageUpload(checked, job: ownedJob) }
+            } else { try? await cleanOwnedPackageUpload(checked) }
             if let failure = error as? PackagePreparationFailure { throw packageCenterError(failure.messageKey) }
             throw error
         }

@@ -5594,30 +5594,30 @@
 "package.center.restart-required" = "This package requires a NAS restart after installation.";
 "package.center.queue-progress" = "Completed %@ of %@ packages";
 "package.center.cancel-download" = "Cancel download";
-"package.center.check-status" = "Check installation status";
+"package.center.check-status" = "Refresh Status";
 "package.center.continue-background" = "Continue in background";
 "package.center.phase.downloading" = "Downloading";
 "package.center.phase.installing" = "Installing";
 "package.center.phase.needsOptions" = "Installation options required";
 "package.center.phase.completed" = "Installation complete";
 "package.center.phase.failed" = "Installation did not complete";
-"package.center.phase.unverified" = "Installation status unknown";
+"package.center.phase.unverified" = "Installation status is unavailable";
 "package.center.phase.cancelled" = "Cancelled";
 "package.center.unavailable" = "Package installation is unavailable on this NAS. Use DSM Package Center or refresh later.";
 "package.center.catalog-failed" = "Could not load the package catalog. Check your connection and refresh, or check package sources in DSM Package Center.";
 "package.center.incomplete" = "The NAS returned incomplete package information. Refresh and try again, or continue in DSM Package Center.";
 "package.center.changed" = "Package versions, dependencies, or install locations have changed. Refresh the catalog and review the installation plan again.";
 "package.center.dependencies" = "A required package is missing or conflicts with another package. Resolve this in DSM Package Center and try again.";
-"package.center.busy" = "Another package action is running or awaiting confirmation. Finish it before continuing.";
+"package.center.busy" = "Another package operation is unfinished. Complete it before continuing.";
 "package.center.no-volume" = "No install location is available. Check volumes in DSM Storage Manager.";
 "package.center.select-volume" = "Choose an install location that is still available.";
-"package.center.failed" = "The package action did not complete. Refresh the package list and check DSM Package Center for the cause before trying again.";
-"package.center.unverified" = "The installation result cannot be confirmed yet. Restore the connection and check its status; do not install the same package again.";
+"package.center.failed" = "The package operation did not complete. Refresh the package list. If you still cannot continue, use DSM Package Center.";
+"package.center.unverified" = "Installation status is unavailable. Reconnect and refresh, or open DSM Package Center. Do not install the package again.";
 "package.center.options-required" = "Complete the required options and accept the package license agreement if shown.";
-"package.center.cannot-cancel" = "Installation has reached a stage that cannot be safely cancelled. Wait for it to finish or check its status.";
+"package.center.cannot-cancel" = "Installation has started and cannot be cancelled. Wait for it to finish or refresh its status.";
 "package.center.purchase-required" = "This package requires a purchase or activation. Complete authorization in DSM Package Center first.";
 "package.center.invalid-file" = "Choose a valid .spk package file.";
-"package.center.upload-failed" = "The package file upload did not complete. Check your connection and DSM Package Center before trying again.";
+"package.center.upload-failed" = "The package file could not be uploaded. Reconnect and choose the file again, or use DSM Package Center.";
 "package.center.signature-failed" = "The package signature could not be verified. Download it again from a trusted source; this file was not installed.";
 "package.center.custom-options" = "This package requires installation options that must be completed in a browser. Continue in DSM Package Center.";
 "package.center.settings" = "Package Center settings";
@@ -6921,3 +6921,23 @@
 "mobile.package.sourceSaved" = "Package source saved.";
 "mobile.package.sourceRemoved" = "Package source removed.";
 "mobile.package.failed" = "The package change could not be completed. Refresh before trying again.";
+
+"mobile.package.browseInstall" = "Browse & Install";
+
+"mobile.package.selectUpload" = "Choose & Upload Package";
+
+"mobile.package.install.progress" = "Installation Progress";
+
+"mobile.package.install.discard" = "Discard Installation";
+
+"mobile.package.install.active" = "Package operation is unfinished";
+
+"mobile.package.install.partial" = "Some packages were installed";
+
+"mobile.package.install.partialHelp" = "Completed packages are kept. Select the remaining packages to continue installing.";
+
+"mobile.package.install.interrupted" = "Installation preparation was interrupted";
+
+"mobile.package.install.interruptedHelp" = "Installation did not start. Select the package again. If the NAS is still downloading it, manage the download in DSM Package Center.";
+
+"mobile.package.install.fileReadError" = "The selected package file could not be opened. Finish downloading it in Files, or choose another file and try again.";

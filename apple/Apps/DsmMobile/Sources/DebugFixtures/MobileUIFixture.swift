@@ -55,6 +55,11 @@ enum MobileUIFixture {
                 versions[DsmAPIName.storageOverview] = 1; versions[DsmAPIName.coreSystemLog] = 1
                 if officeState != "nas-storage-unsupported" { versions[DsmAPIName.coreStorageDisk] = 1 }
             }
+            if officeState.hasPrefix("nas-package-install"), officeState != "nas-package-install-unsupported" {
+                versions[DsmAPIName.corePackageServer] = 2; versions[DsmAPIName.corePackageInstallation] = 2
+                versions[DsmAPIName.corePackageDownload] = 1; versions[DsmAPIName.corePackageInfo] = 1
+                versions[DsmAPIName.corePackageSettingVolume] = 1
+            }
             if officeState.hasPrefix("nas-package") {
                 versions[DsmAPIName.corePackage] = 2
                 if officeState != "nas-package-unsupported" { versions[DsmAPIName.corePackageSetting] = 1; versions[DsmAPIName.corePackageFeed] = 1 }
@@ -142,6 +147,10 @@ enum MobileUIFixture {
             if officeState.hasPrefix("nas-package") {
                 model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities,
                     session: session, transport: MobilePackageUITransport(mode: officeState))
+            }
+            if officeState.hasPrefix("nas-package-install") {
+                model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities,
+                    session: session, transport: MobilePackageInstallationUITransport(mode: officeState))
             }
             if officeState.hasPrefix("nas-system") {
                 model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities,
