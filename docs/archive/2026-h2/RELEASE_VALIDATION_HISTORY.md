@@ -3907,3 +3907,46 @@ iPad 最终替换目的设备为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果
 辅助功能未验证；专用可丢弃目标的四项 `PENDING_USER_VALIDATION` 见主计划 M7d4b。
 这些待办不固定禁用已实现入口，也不提升真实 API 等级。映像导入/创建无当前 Mac
 产品基线，两端使用官方 VMM；触控控制台与 M8 仍需源码实施。
+
+## 2026-10-07 云端 NAS 模块开关操作复核
+
+基线 `00261f2`、main 工作区干净，只修改 `MobileUITestNavigation` 的模块开启
+手势、`MobileDDNSUITests` 的共用导航/开启调用，以及证据文档。产品、NAS 请求、
+权限及全部业务断言未改；不增加自动重复触摸，不改变共用等待上限。
+
+旧提交 `04d692ab` 的 [Apple Build iPhone-administration](https://github.com/yuangy1995/dsm-native-client/actions/runs/37499218894/job/112391591908)
+共 134 项、132 通过、两项失败：DDNS 已有记录保存/取消/删除在模块开启后找不到
+导航，存储卷/池详情在开启后最终值仍为 0。原结果包按精确用例导出截图/层级与
+录屏。存储层级及合成事件证明开关可见、启用，触点位于内层开关中心；按下后仍
+关闭。DDNS 录屏也停在未开启的设置页。两段录屏各四帧已查看，未读取真实 NAS。
+`--only-failures` 导出未得到附件，因为这些诊断附件关联标记为 false；后续改用
+精确 `--test-id` 导出，不能把空导出当作没有失败证据。
+
+本机改前直接运行原两项，iPhone 88.733 秒、iPad 117.228 秒，均通过；没有复现
+云端单次触摸未生效的底层原因，也不把它归因于产品或宣称已被前片等待修正解决。
+本次用内层原生开关从关闭位置到开启位置的一次拖动表达明确目标，再验证值为 1；
+DDNS 接既有导航帮助方法，检查设置页已呈现后才开启。独立集成审查确认没有修改
+数据或降低断言，失败仍保留层级/截图供下一云端诊断。
+
+实际验证：
+
+- 测试包构建通过：`build/m7d-ci-admin-build.log`。
+- 原两项加 DDNS 中文大字号取消、容器中文大字号删除取消、聊天中文深色大字
+  公告搜索，共五项 UI 每端全部通过：iPhone 211.747 秒、iPad 247.203 秒；结果为
+  `build/m7d-ci-admin-{phone,pad}.xcresult`，日志同名。
+- 改前八张与改后十六张，共二十四张实际截图逐张复核。iPhone 群公告最大字号
+  附件按钮裁切仍是前片已记录的产品相邻问题，不在本测试操作修正中宣称解决。
+- 文档、差异检查通过。本片没有产品/共享源码变化，不重复共享或 Mac 构建，沿用
+  紧邻 M7d4b 的真实构建结果；两端 UI 测试包使用本片最终测试源码重新构建。
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 '-only-testing:DsmMobileUITests/MobileDDNSUITests/test已有记录保存开关并可取消或确认删除' '-only-testing:DsmMobileUITests/MobileNasStorageUITests/test卷与存储池详情区分明确状态并可以返回' '-only-testing:DsmMobileUITests/MobileDDNSUITests/test中文大字详情与风险确认可触达并取消' '-only-testing:DsmMobileUITests/MobileContainerControlUITests/test中文大字删除风险完整可读且取消按钮可用' '-only-testing:DsmMobileUITests/MobileChatManagementUITests/test中文深色大字公告筛选空状态' -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -resultBundlePath build/m7d-ci-admin-phone.xcresult
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+iPad 用相同测试选择，设备替换为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果
+替换为 `build/m7d-ci-admin-pad.xcresult`。改前仅选择原两个失败用例，结果文件名
+含 `-before`。云端仍有两组 iPad 作业运行，没有主动取消；此修正尚未经过下一轮
+完整云端，不将本机通过表述为云端已修复。后续继续控制台与 M8 源码切片。
