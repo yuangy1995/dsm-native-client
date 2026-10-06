@@ -2607,3 +2607,62 @@ git diff --check
 独立差异复核确认生产侧只有两个账号子弹窗的辅助功能标识，另有仅合成环境的精确密码检查；当前授权、密码一致性、危险确认与未知状态保护未削弱，没有改变工具链、身份、权限或协议。真实两端账号创建、代理确认/关闭截图保留于 `apple/Apps/DsmMobile/build/m6-ci2-preview/`，已实际检查相关画面，两台模拟器恢复浅色并读取确认。新云端整轮须在推送本批 main 后取得真实结果，不能由本地通过推定。M6 余项、M7/M8 和具体真实 NAS 待办继续按移动主计划推进。
 
 本轮临时云端结果下载、辅助功能树、录屏提帧和测试选择文件已按独立目录清理；正式本机日志、结果包与上述五张合成预览保留。
+
+
+## 2026-10-06 移动 M6d2 连接管理与即时电源
+
+基线为 main 的 `c622d6ca`，与远端一致且开始时工作区干净。完成连接目录/筛选/详情、服务与当前网页连接的具体后果确认、关机/重启独立确认、请求接受与未知状态、跨 App 重启只读恢复及新登录后的明确恢复操作。复用 CurrentConnection v1 与 System v3 的既有请求，Mac 旧调用继续原签名和语义；未自动操作真实 NAS。Windows/Android 只登记兼容影响。
+
+新增记录为独立 `NAS/system-actions-v1.json`，仅保存账号上下文、目标/会话摘要和动作阶段；系统保护并排除备份，不保存账号、地址、连接标识或会话原文。连接断开前重新读取完整目录、核对全部原目标信息及当前管理员权限；部分目录、缺标识、受保护目标、明确拒绝、证书异常与记录失败均不误报成功。电源接受只说明请求被接受，不轮询或推断最终执行；未知不重发，同会话重启不能解除限制，新会话还需明确设备恢复确认及当前权限/info 读取。已批准恢复存储范围内新增，不迁移登录结构，回滚关闭新增入口并保留记录。
+
+初次共享定向编译因测试使用了不存在的请求类型失败，修正为实际 `send(URLRequest)` / body 边界。第二次 200 项定向测试出现 6 条失败：测试直接抛 AppError 被真实 APIClient 包装成一般传输错误，无法表达所需的 NAS 明确拒绝和传输故障；改为真实 105 响应、CancellationError、URLError 超时/证书和结构化证书变更错误，不改产品判断或降低断言。最终定向 200 项全通过；完整共享 **2839 XCTest，172 条既有条件跳过，0 失败，另 12 Swift Testing 通过**。新增 15 条系统操作请求/互斥/断连测试。
+
+移动初次构建因确认源访问 MainActor 模型缺少隔离声明失败，补充 MainActor 并修正 Swift switch 表达式位置后，后续两次构建通过。R1 两端完整 **1413 单元，各 4 条既有条件跳过，0 失败**；新增 18 条覆盖真实适配器、部分/缺标识目录、权限撤销、替换目标、未知与接受后离线、跨账号迟到回执、损坏/无法写入记录、明文不落盘及电源恢复。macOS Release x86_64/arm64 构建通过。完整共享与 Mac 源码已覆盖本片共享改动。
+
+```sh
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d2-phone-r1.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileSystemActionsUITests
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d2-pad-r1.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileSystemActionsUITests
+```
+
+R1 界面测试最终 iPhone 5/9 通过、4 失败，iPad 7/9 通过、2 失败，两个命令 exit 65。失败对应以下两个测试场景问题：新增 nas-system 合成模式未纳入既有持久测试目录选择，导致重启用例拿到新的临时目录；实际 App 使用 application 恢复根，不受这个合成分类遗漏影响。iPhone 从系统页底部寻找连接入口时只向下滚动，未先回到分类列表。已补合成模式的隔离持久目录与保留参数，以及手机回到列表顶部后按顺序定位的动作；没有放宽风险确认、记录保护或结果断言。另在复核中补上电源恢复入口对当前读取状态的要求、恢复时权限撤销即时禁用及清记录的当前账号校验；这些移动末次更改尚待 R2 重新构建、完整单元和相关 UI 覆盖。
+
+
+R1 导出的实际截图确认 iPad 重启后已有新目录、旧动作记录缺失，与合成模式目录选择遗漏一致；中文大字当前连接确认的风险正文、取消和确认按钮均可见。独立只读对抗复核进一步发现共享日期解析使用当前设备时区，缺原始标识的相似连接不能因时间解释变化被认定为已消失。新恢复判断不再用连接时间排除该类相似项，记录同时去掉不再需要的时间摘要；写前完整目标预检仍比较当次原始目标信息。新增共享回归和移动重启输入验证“无标识＋时间变化”保持未知且只有一次原写入。因本次实际共享改动，重新执行完整共享测试与 macOS 双架构构建，而非沿用前次结果。
+
+R4 移动构建包括合成目录、手机向上返回定位、末次移动权限/恢复检查、时间边界及双语恢复提示修正。R2 将在两台模拟器深色下重新运行完整单元和本片九项实际 UI；R1 已保留浅色通过截图。当前尚无 R2 结果，不能把修正源码当作通过证据。
+
+
+R4 移动构建已通过；时间边界修正后的完整共享 **2840 XCTest / 172 条既有跳过 / 0 失败，另 12 Swift Testing 通过**，日志 `m6d2-shared-final.log`。R2 两端完整 **1413 单元 / 各 4 条既有跳过 / 0 失败**。界面复测仍在运行；时间边界改动后的 macOS Release 双架构末次构建已通过（`m6d2-macos-final.log`）。
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcrun simctl ui 8145D5B0-65A7-46E3-A0CF-17850E4EFA3F appearance dark
+xcrun simctl ui A31ABDE2-186F-43DD-8D40-5EB9511A9289 appearance dark
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d2-phone-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileSystemActionsUITests
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d2-pad-r2.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileSystemActionsUITests
+```
+
+
+R2 终态为两端 **完整 1413 单元（各 4 条既有跳过）和 9 项新增实际 UI 全部通过，命令均 exit 0**。覆盖服务/当前网页连接独立确认、关机接受、未知断开重启只读恢复、未知电源同会话保护与新登录恢复的取消/确认、权限拒绝、低电源版本不阻塞连接、部分/缺标识/受保护目标及五类页面状态。浅色和深色、中文大字截图均实际导出并复核，确认正文及取消/确认按钮可见；恢复后的旧电源记录仍显示此前未知，而非伪造完成。Mac 末次主 App 与 File Provider 二进制也由 `lipo -archs` 核对为 x86_64/arm64。
+
+最后的权限复核补充：当前管理员检查失败时，即使列表仍可读取，也不能据此把旧未知断开标记为已完成；必须保留原保护，恢复权限并重新取得完整目录后才能结算。新增第 19 条移动行为回归覆盖权限撤销、可读空目录、恢复权限后只读完成和唯一原写；修改仅移动模型与测试，不涉及共享/Mac。R5 构建与两端完整单元、未知断开/明确拒绝两项 UI 定向复测继续验证此边界，其他已通过 UI 不重复。
+
+
+**最终 R5 构建、两端完整 1414 单元（各 4 条既有条件跳过）及两项定向 UI 全部通过，命令均 exit 0。** 新的权限撤销恢复回归保持旧记录，重新取得权限和完整目录后只读完成，累计仍只有一次原写。最终新源码由 19 条移动行为、16 条共享流程及九项双端实际 UI 覆盖；末次仅移动模型的更改又完整运行两端单元，并重复未知断开恢复及明确拒绝两项 UI，不重复未变化的共享/Mac 或其他已过 UI。最后两端均处于浅色。
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d2-phone-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileSystemActionsUITests/test未知断开重启后只读恢复且不能重发或清记录 -only-testing:DsmMobileUITests/MobileSystemActionsUITests/test权限拒绝不显示连接成功或电源接受
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m6d2-pad-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileSystemActionsUITests/test未知断开重启后只读恢复且不能重发或清记录 -only-testing:DsmMobileUITests/MobileSystemActionsUITests/test权限拒绝不显示连接成功或电源接受
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+双语资源/硬编码检查为 6612/2188/3402，179+1 请求契约、29 组 Fixture/48 项引用及文档/差异检查通过。两端中文大字深色确认、连接重启恢复、电源恢复保留旧未知的截图已实际查看，预览保留在 `apple/Apps/DsmMobile/build/m6d2-preview/`；截图仅使用合成环境，不冒称真实 NAS。独立集成及只读对抗复核已完成，本片没有修改 Mac/Windows/Android App、签名、权限、最低系统或登录格式，没有真实 NAS 写入。接口的非原子目标预检及真实电源/连接行为保留在主计划具体 PENDING_USER_VALIDATION。
+
+
+锁定 XcodeGen 2.46.0 再生成工程前后 SHA256 均为 `7683582c35e9dcb762d2fcff3f7e3a5e041cc22ab97670ae12c281a1861f6bcf`。两端模拟器已恢复浅色并读取确认；本片临时附件导出、辅助功能树及录屏目录已精确清理，正式日志/结果包和九张合成预览保留。提交前读取远端 main 与本地基线一致，无远端新提交。前一批 Apple Build 仍有四个移动组运行、共享/macOS 已通过；本片先作语义完整的本地提交，等待这轮完整云端结果后再正常推送，不用推送取消它，也不把本机通过写成新云端已通过。后续继续 M6 套件及其余管理、M7/M8，整体目标尚未完成。

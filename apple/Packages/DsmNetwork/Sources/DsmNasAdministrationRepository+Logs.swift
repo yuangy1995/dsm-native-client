@@ -51,9 +51,16 @@ extension DsmNasAdministrationRepository {
     }
 
     public func loadConnections(offset: Int, limit: Int) async throws -> NasConnectionPage {
+        try await loadConnections(offset: offset, limit: limit, version: nil)
+    }
+    public func loadConnectionsForManagement() async throws -> NasConnectionPage {
+        try await loadConnections(offset: 0, limit: 500, version: 1)
+    }
+    func loadConnections(offset: Int, limit: Int, version: Int?) async throws -> NasConnectionPage {
         let value = try await call(
             DsmAPIName.coreCurrentConnection,
             method: "list",
+            version: version,
             parameters: [
                 "start": .integer(max(0, offset)),
                 "limit": .integer(min(500, max(1, limit))),
@@ -128,6 +135,19 @@ extension DsmNasAdministrationRepository {
     }
 
     public func disconnectConnection(_ connection: NasConnection) async throws {
+        let key = try beginConnectionMutation(connection)
+        defer { activeConnectionKeys.remove(key) }
+        try await prepareConnectionDisconnect(connection, version: nil)
+        try await submitConnectionDisconnect(connection, version: nil)
+    }
+    func beginConnectionMutation(_ connection: NasConnection) throws -> String {
+        let key = (connection.isWebConnection ? "web:" : "service:") + ((connection.isWebConnection ? connection.deviceID : connection.processID) ?? "")
+        guard activeConnectionKeys.insert(key).inserted else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("nas.connections.response-incomplete"))
+        }
+        return key
+    }
+    func prepareConnectionDisconnect(_ connection: NasConnection, version: Int?) async throws {
         guard connection.canDisconnect else {
             throw AppError(
                 category: .permissionDenied,
@@ -136,7 +156,7 @@ extension DsmNasAdministrationRepository {
             )
         }
 
-        let directory = try await loadConnections(offset: 0, limit: 500)
+        let directory = try await loadConnections(offset: 0, limit: 500, version: version)
         let matches = directory.connections.filter { current in
             connection.type?.uppercased() == "HTTP/HTTPS" ? current.deviceID == connection.deviceID : current.processID == connection.processID
         }
@@ -150,6 +170,8 @@ extension DsmNasAdministrationRepository {
             throw verificationError(L10n.string("nas.connections.response-incomplete"))
         }
 
+    }
+    func submitConnectionDisconnect(_ connection: NasConnection, version: Int?) async throws {
         let common: [String: DsmJSONValue] = [
             "who": .string(connection.account),
             "from": .string(connection.source!)
@@ -183,6 +205,7 @@ extension DsmNasAdministrationRepository {
         try await callVoid(
             DsmAPIName.coreCurrentConnection,
             method: "kick_connection",
+            version: version,
             parameters: [
                 "service_conn": .objectArray(serviceConnections),
                 "http_conn": .objectArray(httpConnections)
