@@ -209,7 +209,7 @@ struct MobileWorkspaceView: View {
                     openFiles: model.isModuleVisible(.files) ? { model.selectModule(.files) } : nil)
             case .containers:
                 MobileContainersView(inventory: model.containerInventoryModel, controls: model.containerControls,
-                    imagePulls: model.containerImagePulls, imageDeletions: model.containerImageDeletions)
+                    imagePulls: model.containerImagePulls, imageDeletions: model.containerImageDeletions, networks: model.containerNetworks)
             case .virtualMachines:
                 MobileVirtualMachinesView(inventory: model.virtualMachineInventoryModel)
             case .nasSettings:

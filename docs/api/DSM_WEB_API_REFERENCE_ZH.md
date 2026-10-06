@@ -319,6 +319,11 @@ macOS 模型两层防重复；界面提交前说明影响并确认，执行中�
 
 ### 8.8 Container Manager/Docker - 内部
 
+2026-10-06 已补容器创建/编辑 profile、资源单位、项目 CRUD/流式操作及网络连接候选的
+准确静态字段，当前列表/空项目成功结构单独记录。详见[稳定端点说明](discovery/endpoints/container-manager-internal.md)
+及[带版本的只读观察](discovery/environments/2026-10-06-container-vmm-api-read-observation.md)；
+不能将本节方法名表或 static 定义视为真实写入已验证。
+
 | API | 观察到的方法 | 风险 |
 | --- | --- | --- |
 | `SYNO.Docker.Container` | `list`, `get`, `create`, `set`, `start`, `restart`, `stop`, `signal`, `delete`, `stats`, `get_process` | 高 |

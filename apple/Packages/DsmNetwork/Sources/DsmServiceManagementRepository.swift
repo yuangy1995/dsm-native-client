@@ -3,6 +3,14 @@ import CryptoKit
 import Foundation
 import DsmLocalization
 
+private actor NetworkDeletionTracking {
+    var state = (submitted: false, rejected: false)
+    func record(_ stage: ContainerNetworkMutationStage) {
+        if case .willSubmit = stage { state.submitted = true }
+        if case .rejected = stage { state.rejected = true }
+    }
+}
+
 private enum ServiceJSON: Decodable, Sendable {
     case object([String: ServiceJSON])
     case array([ServiceJSON])
@@ -221,8 +229,9 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private var unverifiedPublicVmmPower: [String: PublicVmmPowerTarget] = [:]
     private var activeDeletionIDsByOperation: [String: Set<String>] = [:]
     private let containerNetworkCreationEnabled: Bool
-    private var activeNetworkCreationNames: Set<String> = []
-    private var pendingNetworkCreations: [String: ContainerNetworkCreation] = [:]
+    private var networkMutationActive = false
+    private var pendingNetworkCreations: [String: (configuration: ContainerNetworkCreation, accepted: Bool)] = [:]
+    private var pendingNetworkDeletions: [String: (network: ContainerNetwork, accepted: Bool)] = [:]
 
     public init(
         profile: NasProfile,
@@ -1244,7 +1253,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             events: events,
             unavailableSections: unavailableSections,
             failedSections: failedSections,
-            canCreateNetworks: containerNetworkCreationEnabled && capabilities[DsmAPIName.dockerNetwork]?.selectedVersion == 1
+            canCreateNetworks: containerNetworkCreationEnabled && supportsContainerNetworkManagement
         )
     }
 
@@ -2214,25 +2223,38 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     public func createContainerNetwork(_ configuration: ContainerNetworkCreation) async throws {
-        guard containerNetworkCreationEnabled, capabilities[DsmAPIName.dockerNetwork]?.selectedVersion == 1 else {
+        try await createContainerNetwork(configuration, observer: nil)
+    }
+
+    public var supportsContainerNetworkManagement: Bool {
+        guard let capability = capabilities[DsmAPIName.dockerNetwork] else { return false }
+        return capability.name == DsmAPIName.dockerNetwork && capability.minVersion == 1
+            && capability.maxVersion >= 1 && capability.selectedVersion != nil
+    }
+    public var canCreateContainerNetworks: Bool { containerNetworkCreationEnabled && supportsContainerNetworkManagement }
+
+    public func createContainerNetwork(_ configuration: ContainerNetworkCreation,
+                                       observer: ContainerNetworkMutationObserver?) async throws {
+        guard canCreateContainerNetworks else {
             throw validationError(L10n.string("container.network.creation.unavailable"))
         }
         if let issue = configuration.validationIssue { throw validationError(L10n.string(issue.rawValue)) }
         let name = configuration.name
-        guard activeNetworkCreationNames.insert(name).inserted else {
+        guard !networkMutationActive, !pendingNetworkDeletions.values.contains(where: { $0.network.name == name }) else {
             throw validationError(L10n.string("container.network.creation.inProgress"))
         }
-        defer { activeNetworkCreationNames.remove(name) }
+        networkMutationActive = true
+        defer { networkMutationActive = false }
         if let pending = pendingNetworkCreations[name] {
-            guard pending == configuration else { throw verificationError(L10n.string("container.network.creation.review")) }
-            try await verifyCreatedNetwork(configuration)
+            guard pending.configuration == configuration else { throw verificationError(L10n.string("container.network.creation.review")) }
+            let outcome = try await reviewContainerNetworkCreation(.init(configuration), accepted: pending.accepted)
+            guard outcome == .created else { throw verificationError(L10n.string("container.network.creation.review")) }
             pendingNetworkCreations.removeValue(forKey: name)
             return
         }
         // 先核对读取权限与名称占用；创建权限仍由 NAS 在写入时裁决。
-        let before = try await call(DsmAPIName.dockerNetwork, method: "list")
-        let networks = try Self.strictRootObjects(before, keys: ["networks", "network"])
-        guard !networks.contains(where: { ServiceJSON.object($0).firstString(["name", "Name"]) == name }) else {
+        let networks = try await loadContainerNetworks()
+        guard !networks.contains(where: { $0.name == name }) else {
             throw validationError(L10n.string("container.network.creation.nameTaken"))
         }
         try Task.checkCancellation()
@@ -2250,99 +2272,175 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             parameters["ipv6_iprange"] = .string(configuration.ipv6Range)
             parameters["ipv6_gateway"] = .string(configuration.ipv6Gateway)
         }
-        pendingNetworkCreations[name] = configuration
+        try await observer?(.willSubmit)
+        pendingNetworkCreations[name] = (configuration, false)
         do {
-            try await callVoid(DsmAPIName.dockerNetwork, method: "create", parameters: parameters)
-            try await verifyCreatedNetwork(configuration)
-            pendingNetworkCreations.removeValue(forKey: name)
-        } catch {
-            // 写入后结果不明只允许再次回读；不得因超时或取消自动重放创建。
-            if let error = error as? AppError,
-               [.authenticationRequired, .otpRequired, .tlsUntrusted, .tlsCertificateChanged, .permissionDenied, .cancelled].contains(error.category) {
-                throw error
+            try await networkCreateRequest(parameters)
+        } catch let error as AppError {
+            if error.dsmCode != nil {
+                pendingNetworkCreations[name] = nil
+                try await observer?(.rejected)
             }
+            throw error
+        }
+        pendingNetworkCreations[name]?.accepted = true
+        try await observer?(.accepted)
+        guard try await reviewContainerNetworkCreation(.init(configuration), accepted: true) == .created else {
             throw verificationError(L10n.string("container.network.creation.review"))
         }
+        try await observer?(.verified)
     }
 
-    private func verifyCreatedNetwork(_ configuration: ContainerNetworkCreation) async throws {
-        let value = try await call(DsmAPIName.dockerNetwork, method: "list")
-        let networks = try Self.strictRootObjects(value, keys: ["network", "networks"])
-        guard let raw = networks.first(where: { ServiceJSON.object($0).firstString(["name", "Name"]) == configuration.name }),
-              let network = Self.containerNetwork(raw), network.driver == "bridge",
-              network.isIPv6Enabled == configuration.isIPv6Enabled,
-              !configuration.usesManualIPv4 || (network.subnet == configuration.subnet && network.gateway == configuration.gateway
-                  && (ServiceJSON.object(raw).firstString(["iprange"]) ?? "") == configuration.ipRange) else {
-            throw verificationError(L10n.string("container.network.creation.review"))
+    /// 无创建回执时只表达同名对象已存在，不认领为本次创建成功。
+    public func reviewContainerNetworkCreation(_ identity: ContainerNetworkCreationIdentity,
+                                               accepted: Bool) async throws -> ContainerNetworkCreationOutcome {
+        guard identity.isValid else { throw Self.invalidServiceResponseStatic() }
+        let values = try await loadContainerNetworks()
+        guard let network = values.first(where: identity.matchesName) else { return .pending }
+        let result: ContainerNetworkCreationOutcome = accepted && identity.matches(network) ? .created : accepted ? .pending : .existing
+        if result != .pending { pendingNetworkCreations[network.name] = nil }
+        return result
+    }
+
+    public func loadContainerNetworks() async throws -> [ContainerNetwork] {
+        try await containerNetworkDefinitions().map(\.network)
+    }
+
+    private func containerNetworkDefinitions() async throws -> [(network: ContainerNetwork, raw: [String: ServiceJSON])] {
+        let value = try await networkRequest(method: "list")
+        let objects = try Self.strictRootObjects(value, keys: ["network", "networks"])
+        try Self.requireCompleteContainerManagerList(value, count: objects.count)
+        let values = try objects.map { raw in
+            guard let network = Self.containerNetwork(raw),
+                  Self.officialNonEmptyString(raw["id"] ?? raw["network_id"] ?? raw["Id"]) == network.id,
+                  Self.officialNonEmptyString(raw["name"] ?? raw["Name"]) == network.name,
+                  Self.officialNonEmptyString(raw["driver"] ?? raw["Driver"] ?? raw["type"]) == network.driver else {
+                throw Self.invalidServiceResponseStatic()
+            }
+            return (network: network, raw: raw)
         }
+        guard Set(values.map { $0.network.id }).count == values.count,
+              Set(values.map { $0.network.name }).count == values.count else { throw Self.invalidServiceResponseStatic() }
+        return values
+    }
+
+    private func networkRequest(method: String, parameters: [String: DsmParameterValue] = [:]) async throws -> ServiceJSON {
+        guard supportsContainerNetworkManagement, let capability = capabilities[DsmAPIName.dockerNetwork] else { throw unavailableError() }
+        do { return try await client.call(path: capability.path, api: capability.name, version: 1, method: method,
+            requestFormat: capability.requestFormat, parameters: parameters, credential: credential, as: ServiceJSON.self) }
+        catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+    }
+    private func networkCreateRequest(_ parameters: [String: DsmParameterValue]) async throws {
+        guard supportsContainerNetworkManagement, let capability = capabilities[DsmAPIName.dockerNetwork] else { throw unavailableError() }
+        do { try await client.callVoid(path: capability.path, api: capability.name, version: 1, method: "create",
+            requestFormat: capability.requestFormat, parameters: parameters, credential: credential) }
+        catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
     }
 
     public func deleteContainerNetworks(ids: [String]) async throws {
-        let ids = try validatedIDs(ids)
-        try await removeContainerNetworks(ids)
-        let remaining = try await loadContainerNetworkIDs()
-        guard ids.allSatisfy({ !remaining.contains($0) }) else {
+        let result = try await deleteContainerNetworksResult(ids: ids)
+        guard result.status == .confirmedSuccess else {
             throw verificationError(L10n.string("shared.3f7da50cab7bd49a"))
         }
     }
 
     /// 容器网络删除使用内部接口；提交后重新读取网络列表确认。
     public func deleteContainerNetworksResult(ids: [String]) async throws -> MutationResult {
-        try await performServiceDeletion(
-            ids: ids,
-            context: ServiceDeletionContext(
-                operation: "containerNetworkDelete",
-                localizationPrefix: "container-network.delete"
-            ),
-            isSupported: capabilities[DsmAPIName.dockerNetwork]?.selectedVersion != nil,
-            loadCurrentIDs: {
-                try await self.loadContainerNetworkIDs()
-            },
-            submit: { targets in
-                try await self.removeContainerNetworks(targets)
+        let context = ServiceDeletionContext(operation: "containerNetworkDelete", localizationPrefix: "container-network.delete")
+        if Task.isCancelled { return try deletionCancellationBeforeSubmission(context: context) }
+        let targets: [ContainerNetwork]
+        do {
+            let ids = try validatedIDs(ids), values = try await loadContainerNetworks()
+            targets = ids.compactMap { id in values.first { $0.id == id } ?? pendingNetworkDeletions[id]?.network }
+            guard targets.count == ids.count else { throw containerMutationChangedError() }
+        } catch {
+            if Self.imageManagementTrustError(error) { throw error }
+            if let error = error as? AppError { return try deletionPreflightResult(error, targetCount: max(1, ids.count), context: context) }
+            return try deletionUnexpectedPreflightResult(targetCount: max(1, ids.count), context: context)
+        }
+        var succeeded = 0
+        for target in targets {
+            let tracking = NetworkDeletionTracking()
+            do {
+                if let pending = pendingNetworkDeletions[target.id] {
+                    await tracking.record(.willSubmit)
+                    let absent = try await reviewContainerNetworkDeletion(.init(pending.network))
+                    // 丢回执后的原 ID 消失只证明当前缺失，旧入口同样不能认领本次成功。
+                    guard absent && pending.accepted else { throw containerControlUnverifiedError() }
+                } else {
+                    try await deleteContainerNetwork(target) { stage in await tracking.record(stage) }
+                }
+                succeeded += 1
+            } catch {
+                if Self.imageManagementTrustError(error) { throw error }
+                let (submitted, rejected) = await tracking.state
+                let unknown = (submitted && !rejected) || pendingNetworkDeletions[target.id] != nil ? 1 : 0
+                let mapped = error as? AppError
+                return try serviceDeletionResult(status: succeeded > 0 ? .partialSuccess : mapped?.category == .permissionDenied ? .permissionDenied : unknown > 0 ? .submittedButUnverified : .confirmedFailure,
+                    context: context, submitted: succeeded > 0 || submitted || unknown > 0, requiresRefresh: unknown > 0,
+                    succeeded: succeeded, failed: targets.count - succeeded - unknown, unknown: unknown,
+                    errorCategory: mapped.map { serviceMutationErrorCategory(for: $0.category) } ?? .unknown,
+                    localizationSuffix: unknown > 0 ? "unverified" : "failed", diagnosticSuffix: "network-stopped")
             }
-        )
-    }
-
-    private func loadContainerNetworkIDs() async throws -> Set<String> {
-        let value = try await call(DsmAPIName.dockerNetwork, method: "list")
-        let networks = try Self.strictMappedItems(value, keys: ["network", "networks"], parser: Self.containerNetwork)
-        return Set(networks.map(\.id))
+        }
+        return try deletionReadbackResult(targets: Set(targets.map(\.id)), remaining: [], context: context)
     }
 
     /// 官方 remove 接收所选网络对象数组，而不是单个 id；只复制已观察的字段。
-    private func removeContainerNetworks(_ ids: [String]) async throws {
-        let value = try await call(DsmAPIName.dockerNetwork, method: "list")
-        let objects = try Self.strictRootObjects(value, keys: ["network", "networks"])
-        var targets: [[String: DsmJSONValue]] = []
-        for id in ids {
-            guard let raw = objects.first(where: { ServiceJSON.object($0).firstString(["id", "network_id", "Id"]) == id }),
-                  let network = Self.containerNetwork(raw) else {
-                throw validationError(L10n.string("shared.d7cae8f9ca59d2d3"))
-            }
-            guard !["bridge", "host", "none"].contains(network.name) else {
-                throw validationError(L10n.string("container.network.delete.protected"))
-            }
-            guard network.connectedContainerCount == 0 else {
-                throw validationError(L10n.string("container.network.delete.inUse"))
-            }
-            let source = ServiceJSON.object(raw)
-            var target: [String: DsmJSONValue] = [
-                "id": .string(id), "_key": .string(id), "name": .string(network.name),
-                "driver": .string(network.driver), "containers": .array([]),
-                "enable_ipv6": .boolean(network.isIPv6Enabled ?? false),
-                "disable_masquerade": .boolean(source.firstBoolean(["disable_masquerade"]) ?? false)
-            ]
-            for key in ["subnet", "gateway", "iprange", "ipv6_subnet", "ipv6_gateway", "ipv6_iprange"] {
-                target[key] = .string(source.firstString([key]) ?? "")
-            }
-            targets.append(target)
+    public func deleteContainerNetwork(_ original: ContainerNetwork, observer: @escaping ContainerNetworkMutationObserver) async throws {
+        guard !networkMutationActive, pendingNetworkDeletions[original.id] == nil,
+              pendingNetworkCreations[original.name] == nil else { throw containerMutationChangedError() }
+        networkMutationActive = true
+        defer { networkMutationActive = false }
+        let definitions = try await containerNetworkDefinitions()
+        guard let definition = definitions.first(where: { $0.network.id == original.id }), definition.network == original else {
+            throw containerMutationChangedError()
+        }
+        let network = definition.network, id = network.id
+        guard !["bridge", "host", "none"].contains(network.name) else {
+            throw validationError(L10n.string("container.network.delete.protected"))
+        }
+        guard network.connectedContainerCount == 0 else {
+            throw validationError(L10n.string("container.network.delete.inUse"))
+        }
+        let source = ServiceJSON.object(definition.raw)
+        var target: [String: DsmJSONValue] = [
+            "id": .string(id), "_key": .string(id), "name": .string(network.name),
+            "driver": .string(network.driver), "containers": .array([]),
+            "enable_ipv6": .boolean(network.isIPv6Enabled ?? false),
+            "disable_masquerade": .boolean(source.firstBoolean(["disable_masquerade"]) ?? false)
+        ]
+        for key in ["subnet", "gateway", "iprange", "ipv6_subnet", "ipv6_gateway", "ipv6_iprange"] {
+            target[key] = .string(source.firstString([key]) ?? "")
         }
         try Task.checkCancellation()
-        let result = try await call(DsmAPIName.dockerNetwork, method: "remove", parameters: ["networks": .objectArray(targets)])
-        guard let failed = result["failed"]?.array, failed.isEmpty else {
+        try await observer(.willSubmit)
+        pendingNetworkDeletions[id] = (original, false)
+        let result: ServiceJSON
+        do { result = try await networkRequest(method: "remove", parameters: ["networks": .objectArray([target])]) }
+        catch let error as AppError {
+            if error.dsmCode != nil { pendingNetworkDeletions[id] = nil; try await observer(.rejected) }
+            throw error
+        }
+        guard let failed = result["failed"]?.array else { throw Self.invalidServiceResponseStatic() }
+        guard failed.isEmpty else {
+            // 单项删除的失败数组非空即为明确失败，不猜测其中目标字段。
+            pendingNetworkDeletions[id] = nil
+            try await observer(.rejected)
             throw verificationError(L10n.string("shared.3f7da50cab7bd49a"))
         }
+        pendingNetworkDeletions[id]?.accepted = true
+        try await observer(.accepted)
+        guard try await reviewContainerNetworkDeletion(.init(original)) else { throw containerControlUnverifiedError() }
+        try await observer(.verified)
+    }
+
+    public func reviewContainerNetworkDeletion(_ identity: ContainerNetworkDeletionIdentity) async throws -> Bool {
+        guard identity.isValid else { throw Self.invalidServiceResponseStatic() }
+        let values = try await loadContainerNetworks()
+        guard !values.contains(where: identity.remains) else { return false }
+        for id in pendingNetworkDeletions.keys where ContainerImagePullRecovery.digest(id) == identity.id { pendingNetworkDeletions[id] = nil }
+        return true
     }
 
     public func loadVirtualMachineManager() async throws -> VirtualMachineManagerSnapshot {
@@ -5532,7 +5630,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             subnet: value.firstString(["subnet"]),
             gateway: value.firstString(["gateway"]),
             isIPv6Enabled: ipv6,
-            connectedContainerNames: value["containers"]?.array?.compactMap(\.stringValue)
+            connectedContainerNames: value["containers"]?.array?.compactMap(\.stringValue),
+            ipRange: value.firstString(["iprange"])
         )
     }
 

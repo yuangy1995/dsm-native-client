@@ -436,11 +436,12 @@ public struct ContainerNetwork: Identifiable, Equatable, Sendable {
     public let gateway: String?
     public let isIPv6Enabled: Bool?
     public let connectedContainerNames: [String]?
+    public let ipRange: String?
 
     public init(
         id: String, name: String, driver: String, connectedContainerCount: Int = 0,
         subnet: String? = nil, gateway: String? = nil, isIPv6Enabled: Bool? = nil,
-        connectedContainerNames: [String]? = nil
+        connectedContainerNames: [String]? = nil, ipRange: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -450,6 +451,11 @@ public struct ContainerNetwork: Identifiable, Equatable, Sendable {
         self.gateway = gateway
         self.isIPv6Enabled = isIPv6Enabled
         self.connectedContainerNames = connectedContainerNames
+        self.ipRange = ipRange
+    }
+
+    public var canDelete: Bool {
+        connectedContainerCount == 0 && !["bridge", "host", "none"].contains(name)
     }
 }
 

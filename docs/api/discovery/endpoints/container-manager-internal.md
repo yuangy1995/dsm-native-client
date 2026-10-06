@@ -12,6 +12,78 @@
 | 操作性质 | `mixed` |
 | 风险等级 | `critical` |
 
+## 2026-10-06 缺失请求字段补全（只读与静态）
+
+[本次观察](../environments/2026-10-06-container-vmm-api-read-observation.md) 已从当前官方页面
+重新核实 DSM 7.2.1-69057 Update 12 / Container Manager 24.0.2-1535。设备待归属，账号
+群组角色未单独核实；不修改旧 lab-a verification。Container/Network/Image/Registry 列表
+与空 Project.list 成功结构为 `read-verified`，下列新增写定义均为官方 MainVue.js `static`。
+请求仍由运行时 API.Info 决定路径/编码，不能把当前网页的 entry.cgi/API-name 路由固定到客户端。
+
+| API / 方法 / 版本 | 参数与已知响应消费 | 权限、副作用及结果边界 |
+| --- | --- | --- |
+| `Container.get` v1 | 原 `name`；官方读取后交给 profile 状态模型 | 配置可能含路径、变量及秘密；本次未读取真实配置，不允许普通日志记录 profile |
+| `Container.create` v1 | `is_run_instantly:boolean`、`profile:object`；成功处理消费 services、start_dependent_container、dependent_container | 创建及可选立即运行可能写文件、开放端口或启动依赖；需专用授权目标、套件/目录权限、固定配置与防重复。未观察真实写响应，不用同名对象认领未知创建 |
+| `Container.set` v1 | 原 `name`、`edit_name=profile.name`、`profile`；使用与 create 相同端口转换 | 更改配置/名称/资源/挂载可能中断应用。局部能力编辑另仅提交 privileged=false、CapAdd、CapDrop；不得默认扩大权限 |
+| `Project.get_share_info` v1 | `path`；静态消费 is_docker_compose_yml_exist、content、compose_path | 只读文件候选；本次未读取用户路径或 Compose 正文 |
+| `Project.create` v1 | 直接发送 name、content、share_path、enable_service_portal、service_portal_name、service_portal_port、service_portal_protocol；成功处理消费 id/name/enable_service_portal/services | 本地 is_run_instantly 不在此 profile 中；它在接受 create 后另开 build_stream。创建项目记录不等于服务已启动 |
+| `Project.get` v1 | 单 `id`；静态状态字段包括 id/name/path/share_path/content/schema/containerIds/status/created_at/updated_at 及门户/is_package 字段 | 当前空 Project.list 不证明非空类型；按原项目身份绑定，不根据显示名称关联写入 |
+| `Project.update` v1 | 原 `id`；Compose 编辑追加 content，门户编辑追加 enable_service_portal/service_portal_name/service_portal_port/service_portal_protocol | 配置保存与重新构建是不同动作；官方保存后另询问是否构建。Compose 可能挂载目录、创建资源或开放端口，不能在没有明确后果的普通保存中自动部署 |
+| `Project.build_stream/start_stream/stop_stream/restart_stream/clean_stream` v1 | 单 `id`；官方采用 text 响应与下载进度回调 | 写方法与普通 JSON API 不同，流式终态/断开语义未验证；不猜成功标记或自动重放。clean 不等于 delete，不假定删除数据范围 |
+| `Project.delete/log` v1 | 单 `id` | delete 是项目写操作，log 是内容读取；本次未执行。托管项目与具体状态限制仍需保留 |
+| `Network.list_container/set` v1 | list_container 为 limit=-1/offset=0；set 为 networkName、containers 名称数组 | set 修改连接关系，与 Network.create/remove 不同；未实现/未验证，不能借网络详情读取扩大为连接修改 |
+
+容器 profile 的已知字段：
+
+| 字段 | 类型/转换 |
+| --- | --- |
+| name、image、cmd | 字符串；默认 cmd 为空；映像来自明确选择 |
+| cpu_priority、memory_limit | 数字；关闭资源限制时均为 0，开启时 CPU 10/50/90，内存界面 MB 转字节（×1024²），最低界面值 6 MB；非 VMM 的 MiB 写字段 |
+| port_bindings | `{host_port:number,container_port:number,type:string}[]`；自动主机端口为 0；UI tcp_udp 必须拆 tcp/udp 两项 |
+| volume_bindings | `{host_volume_file:string,mount_point:string,type:string,is_directory:boolean}[]`；默认 rw，不推断目录访问权限 |
+| env_variables | `{key:string,value:string}[]`；敏感值不入普通日志、fixture 或恢复摘要原文 |
+| network、use_host_network | `{name,driver}[]` 与布尔；host 模式 network=[]，普通模式保留选择网络 |
+| privileged、CapAdd、CapDrop | 布尔及能力数组；开启 privileged 时官方清空两个能力数组，不由客户端暗中升权 |
+| enable_restart_policy | 布尔，不泛化为 Docker 的任意重启策略字符串 |
+| enable_service_portal、service_portals | 布尔及 `{port,protocol}[]`，依赖 Web Station；端口最终类型仍缺实际响应/提交证据 |
+
+没有真实新增写回执、错误码、流式终态或非空项目响应，以上不等于完整服务端 Schema。
+新 Adapter 接入时按这些来源建立合成请求断言；断线或取消保留未知，只读恢复，明确拒绝
+不能被随后外部变化覆盖。能力/权限不足只限制相关操作，不阻断已有容器清单。
+五端影响：macOS 与 Windows 对照现有实现补对应缺口；iPhone/iPad 同一共享接口及触控
+流程，尚未实施创建/编辑/项目写；Android 仅记录。此次文档不开放新写入口，不变更公开
+Schema、权限、持久化或依赖；旧环境写兼容等级保持。Network.list 的本次字段继续支持
+M7c3，但仍没有可用于验证 IPv6 地址/IP 伪装结果的新字段。
+
+## 2026-10-06 Apple 移动网络管理增量
+
+M7c3 沿既有 Network.list/create/remove v1 实现 iPhone/iPad 创建、详情、单项/多项删除和
+持久恢复；共享旧 Mac 签名进入同一网络流水线，不改变 NAS 字段。实际组合根开放已实现
+创建，继续核对 v1 能力范围和当前 Container Manager 授权，不额外强加 DSM 管理员身份。
+只删除非默认且无关联容器的网络，写前重读比较确认时原 ID、名称与可读配置；每次 remove
+只包含一个已确认网络对象，非空 failed 数组即该项拒绝，不猜测数组内未验证的目标字段。
+批量失败停止后项，明确拒绝和预检失败不能被外部移除覆盖。本轮已用合成测试复现旧误报。
+
+创建继续只发已记录默认/手动字段，不传 driver。接受回执与完整列表中的原名称、bridge、
+IPv6 开关、手动 IPv4 配置共同确认；历史 list 未验证 IPv6 地址和 IP 伪装结果字段，不能
+因此猜测响应或声称每个选项已核对。没有创建回执但出现同名对象时只显示“已找到同名网络”，
+不冒称本次创建成功。无删除回执时，原 ID 消失只显示当前已不在列表中，不认领写入成功。
+未找到目标的未知创建、仍存在的未知删除保持保护，刷新只读取，不自动重新提交。
+
+创建/删除分别保存写前、接受、明确拒绝与完成边界；保存失败停止后续请求。独立受保护的
+Containers/network-operations-v1.json 仅保存账号、目标/配置摘要与阶段，名称/地址仅在
+当前内存；重启后的未发送项停止，已发送项只读恢复。完整列表检查已有可选 total/offset
+类型和数量，缺失/重复身份不作为成功证据。后续对抗复核另补旧批量入口的删除接受标记：
+丢回执后原 ID 消失仍不能认领本次成功；移动恢复同时保护原 ID/名称，外部改名不能绕过。
+共享 ContainerNetwork 增加默认 nil 的 ipRange
+只读字段，延续已记录 list 字段，不增加持久化配置迁移。
+
+五端影响：iPhone/iPad 原生表单、触控多选、详情和活动记录；macOS 保留页面与调用，获得
+同一拒绝/预检修正并运行回归；Windows/Android 仅登记同等安全语义，不改代码。当前移动
+开发格式不提供旧开发记录迁移，登录、权限、App 身份、依赖与最低版本不变。回滚停用
+入口并保留未完成记录，不自动恢复已删除网络。实际验证见移动主计划和验证历史，真实
+创建/副作用及新环境未验证，不提升历史证据等级。
+
 ## 2026-10-06 Apple 移动容器删除与恢复增量
 
 iPhone/iPad M7c2 沿用 Container.list/delete v1，发送当前原 ID 对应的 name、force=false、

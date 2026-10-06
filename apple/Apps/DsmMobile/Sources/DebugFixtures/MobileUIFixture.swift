@@ -164,6 +164,10 @@ enum MobileUIFixture {
                 model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
                     session: session, transport: MobileContainerImageDeletionUITransport(mode: officeState))
             }
+            if officeState.hasPrefix("containers-networks") {
+                model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
+                    session: session, transport: MobileContainerNetworkUITransport(mode: officeState), containerNetworkCreationEnabled: true)
+            }
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             if officeState.hasPrefix("nas-package") {
                 model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities,

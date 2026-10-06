@@ -33,7 +33,7 @@ extension MobileAppModel {
         }
         if selectedModule == .containers, module != .containers {
             containerInventoryModel.deactivate()
-            containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate()
+            containerControls.deactivate(); containerImagePulls.deactivate(); containerImageDeletions.deactivate(); containerNetworks.deactivate()
         }
         if selectedModule == .virtualMachines, module != .virtualMachines {
             virtualMachineInventoryModel.deactivate()
@@ -156,6 +156,7 @@ extension MobileAppModel {
                           self.isConnected, self.isModuleVisible(.containers), !Task.isCancelled else { throw CancellationError() }
                     return privileges.applications[.containers] == true
                 }
+                containerNetworks.configure(profile: profile, repository: serviceRepository, authorize: authorize)
                 containerControls.configure(profile: profile, repository: serviceRepository, authorize: authorize)
                 containerImagePulls.configure(profile: profile, repository: serviceRepository,
                     deletionRecovery: containerImageDeletions.recovery, authorize: authorize)

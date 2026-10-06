@@ -1,5 +1,17 @@
 # DSM 兼容矩阵
 
+## 2026-10-06 容器与 VMM 文档核查边界
+
+DSM 7.2.1-69057 Update 12、Container Manager 24.0.2-1535、VMM 2.6.5-12202 的当前官方页面
+版本已重新核实，设备待归属，群组角色未单独核实；不修改 lab-a 基线。容器/网络/映像/仓库
+列表、空项目与 Cluster.get 的成功字段只证明当前只读兼容；容器创建/编辑 profile、项目
+create/update/逐项 ID 与流式构建/启停、VMM pwr_ctl/delete/映像 ID 等新增字段只有 static。
+静态核对发现 Apple 内部电源 on/off、VM 删除版本/逗号 ID、映像删除 image_id、网络改名
+拓扑字段，以及创建/控制台结果绑定的差距，需后续独立修复，不将现有客户端行为当作契约。
+macOS/共享 Apple 与 iPhone/iPad 同步评估，Windows 对照自身实现，Android 只登记；本次
+文档未开放新入口或执行真实写。详见[观察记录](../api/discovery/environments/2026-10-06-container-vmm-api-read-observation.md)、
+[容器稳定说明](../api/discovery/endpoints/container-manager-internal.md)、[VMM 稳定说明](../api/discovery/endpoints/vmm-internal.md)。
+
 ## Download Station M5 的兼容边界
 
 2026-10-05 Apple 移动完整任务目录/单项详情依据官方公开 Task.list/getinfo v1 实现，Task.edit 后续按字段表使用 v2；官方示例 v1 与字段表冲突，Android 既有 v1 实现另列源码待办。新分页与结果读取不构成新的 DSM/套件实测版本，内部备用摘要也不因此获得完整列表或写兼容结论。iPhone/iPad 同步实现，macOS 仅共享读取修正并回归，Windows/Android 仅登记影响。源码及合成样本边界见[下载接口说明](../api/reference/download-station.md)。
