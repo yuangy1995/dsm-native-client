@@ -53,7 +53,7 @@ import XCTest
     func test未知设置重启后只读恢复且不允许再次保存() {
         let app = launch("nas-package-unknown"); openSettings(app); editSettings(app)
         toggle("mobile.package.email", app).tap(); app.buttons["mobile.package.save"].tap()
-        expectText(reveal("mobile.package.activity.submitted", app), "latest save status")
+        expectText(reveal("mobile.package.activity.submitted", app), "latest package status")
         XCTAssertFalse(app.buttons["mobile.package.save"].isEnabled); XCTAssertFalse(app.buttons["mobile.package.removeRecord"].exists)
         screenshot(app, "Unknown package settings stay protected"); app.terminate()
         let next = launch("nas-package-recover-settings", preserve: true); defer { next.terminate() }; openSettings(next)
@@ -65,7 +65,7 @@ import XCTest
         let app = launch("nas-package-unknown"); openSettings(app); openSources(app); addSource(app)
         replace("name", "New source", app); replace("url", "https://packages.example.invalid/new", app)
         app.buttons["mobile.package.save"].tap(); app.buttons["mobile.package.confirm"].tap()
-        expectText(reveal("mobile.package.activity.submitted", app), "latest save status")
+        expectText(reveal("mobile.package.activity.submitted", app), "latest package status")
         XCTAssertFalse(app.buttons["mobile.package.save"].isEnabled); XCTAssertFalse(app.buttons["mobile.package.removeRecord"].exists)
         screenshot(app, "Unknown package source stays protected"); app.terminate()
         let next = launch("nas-package-recover-source", preserve: true); defer { next.terminate() }; openSettings(next); openSources(next)
@@ -107,7 +107,7 @@ import XCTest
     func test明确权限拒绝保留失败而不显示保存成功() {
         let app = launch("nas-package-denied"); defer { app.terminate() }; openSettings(app); editSettings(app)
         toggle("mobile.package.email", app).tap(); app.buttons["mobile.package.save"].tap()
-        expectText(reveal("mobile.package.activity.failed", app), "cannot change package settings")
+        expectText(reveal("mobile.package.activity.failed", app), "cannot manage packages")
         XCTAssertFalse(element("mobile.package.activity.succeeded", app).exists); screenshot(app, "Package setting rejection remains a failure")
     }
     func test套件和来源搜索无匹配后清除可恢复原目录() {

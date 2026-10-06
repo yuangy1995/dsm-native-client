@@ -6,16 +6,27 @@ import Observation
 /// 套件记录只保存摘要和阶段，不保存来源地址、配置正文或凭据。
 @MainActor @Observable
 final class MobilePackageOperationStore {
+    enum Kind: String, Codable {
+        case settings, saveSource, removeSource, start, stop, uninstall
+        init(_ value: NasPackagePreferenceKind) {
+            switch value { case .settings: self = .settings; case .saveSource: self = .saveSource; case .removeSource: self = .removeSource }
+        }
+        var action: NasPackageAction? {
+            switch self { case .start: .start; case .stop: .stop; case .uninstall: .uninstall; default: nil }
+        }
+    }
     enum Phase: String, Codable { case prepared, submitted, succeeded, failed, cancelled }
     enum Failure: String, Codable { case denied, unavailable, changed, failed }
     struct Entry: Identifiable, Equatable, Codable {
         let id: UUID
         let context: String
-        let kind: NasPackagePreferenceKind
+        let kind: Kind
         let original: String?
         let target: String?
         let sourceURL: String?
         let oldSourceURL: String?
+        var packageID: String?
+        var packageIdentity: String?
         let createdAt: Date
         var phase: Phase = .prepared
         var accepted = false
@@ -41,16 +52,23 @@ final class MobilePackageOperationStore {
             packages: settings.updatePolicy == .selected ? settings.packageUpdates.filter { $0.policy != .manual }.sorted { $0.id < $1.id }.map { [$0.id, $0.policy.rawValue] } : []))
     }
     nonisolated static func signature(_ source: NasPackageSource) -> String { digest([source.name, source.url]) }
+    nonisolated static func identity(_ package: NasPackage) -> String {
+        digest([package.id, package.version, package.installType, package.installedAt.map { String($0.timeIntervalSince1970) }])
+    }
     func reload() {
         guard executing.isEmpty else { return }
         do {
             let url = root.appendingPathComponent("package-operations-v1.json")
+            var directory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: root.path, isDirectory: &directory), !directory.boolValue {
+                throw MobileTransferRecoveryStore.StoreError.invalidRecord
+            }
             var values: [Entry] = []
             if FileManager.default.fileExists(atPath: url.path) {
                 let envelope = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: url))
                 guard envelope.version == 1 else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
                 try validate(envelope.entries); values = envelope.entries
-            }
+            } else if entries.contains(where: \.isProtected) { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             entries = values; failed = false
             let restored = values.map { entry in var value = entry; if value.phase == .prepared { value.phase = .cancelled }; return value }
             if restored != values { try persist(restored) }
@@ -72,14 +90,29 @@ final class MobilePackageOperationStore {
         case .removeSource(let value):
             original = Self.signature(value); target = nil; sourceURL = nil; oldSourceURL = Self.digest(value.url)
         }
-        let value = Entry(id: UUID(), context: context, kind: change.kind, original: original, target: target,
+        let value = Entry(id: UUID(), context: context, kind: .init(change.kind), original: original, target: target,
             sourceURL: sourceURL, oldSourceURL: oldSourceURL, createdAt: Date())
         try persist(entries + [value]); executing.insert(value.id); return value
     }
     func checkpoint(_ id: UUID, _ checkpoint: NasPackagePreferenceCheckpoint) throws {
+        try recordCheckpoint(id, willSubmit: checkpoint == .willSubmit)
+    }
+    func checkpoint(_ id: UUID, _ checkpoint: NasPackageControlCheckpoint) throws {
+        try recordCheckpoint(id, willSubmit: checkpoint == .willSubmit)
+    }
+    func reserve(_ package: NasPackage, action: NasPackageAction, context: String) throws -> Entry {
+        guard package.allowsControl(action), !protects(context: context), let kind = Kind(rawValue: action.rawValue), kind.action != nil else {
+            throw MobileTransferRecoveryStore.StoreError.invalidRecord
+        }
+        let value = Entry(id: UUID(), context: context, kind: kind,
+            original: Self.digest([Self.identity(package), package.status]), target: nil, sourceURL: nil, oldSourceURL: nil,
+            packageID: Self.digest(package.id), packageIdentity: Self.identity(package), createdAt: Date())
+        try persist(entries + [value]); executing.insert(value.id); return value
+    }
+    private func recordCheckpoint(_ id: UUID, willSubmit: Bool) throws {
         guard let index = entries.firstIndex(where: { $0.id == id }), executing.contains(id) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
         var values = entries
-        if checkpoint == .willSubmit {
+        if willSubmit {
             guard values[index].phase == .prepared else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             values[index].phase = .submitted
         } else {
@@ -103,10 +136,24 @@ final class MobilePackageOperationStore {
     }
     func resolve(_ sources: [NasPackageSource], context: String) throws {
         let urls = Set(sources.map { Self.digest($0.url) }), targets = Set(sources.map(Self.signature))
-        for value in entries where value.context == context && value.kind != .settings && value.phase == .submitted && !isExecuting(value.id) {
+        for value in entries where value.context == context && [.saveSource, .removeSource].contains(value.kind) && value.phase == .submitted && !isExecuting(value.id) {
             let matches: Bool
             if value.kind == .removeSource { matches = value.oldSourceURL.map { !urls.contains($0) } == true }
             else { matches = value.target.map(targets.contains) == true && (value.oldSourceURL == nil || value.oldSourceURL == value.sourceURL || value.oldSourceURL.map { !urls.contains($0) } == true) }
+            if matches { try finish(value.id, phase: .succeeded) }
+        }
+    }
+    /// 调用方必须使用完整管理列表；未知动作只认领原安装，明确失败和未提交记录永不重新解释。
+    func resolve(_ packages: [NasPackage], context: String) throws {
+        for value in entries where value.context == context && value.kind.action != nil && value.phase == .submitted && !isExecuting(value.id) {
+            let current = packages.first { Self.digest($0.id) == value.packageID }
+            let matches: Bool
+            switch value.kind {
+            case .uninstall: matches = current == nil
+            case .start: matches = current.map { Self.identity($0) == value.packageIdentity && ["running", "active"].contains($0.status?.lowercased() ?? "") } == true
+            case .stop: matches = current.map { Self.identity($0) == value.packageIdentity && ["stopped", "inactive", "disabled"].contains($0.status?.lowercased() ?? "") } == true
+            default: matches = false
+            }
             if matches { try finish(value.id, phase: .succeeded) }
         }
     }
@@ -127,12 +174,15 @@ final class MobilePackageOperationStore {
         var ids: Set<UUID> = [], contexts: Set<String> = []
         for value in values {
             guard ids.insert(value.id).inserted, Self.isDigest(value.context), value.createdAt.timeIntervalSince1970.isFinite,
-                  [value.original, value.target, value.sourceURL, value.oldSourceURL].allSatisfy({ $0.map(Self.isDigest) ?? true }),
+                  [value.original, value.target, value.sourceURL, value.oldSourceURL, value.packageID, value.packageIdentity].allSatisfy({ $0.map(Self.isDigest) ?? true }),
+                  value.kind.action != nil ? (value.packageID != nil && value.packageIdentity != nil) : (value.packageID == nil && value.packageIdentity == nil),
                   !value.accepted || [.submitted, .succeeded].contains(value.phase) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             switch value.kind {
             case .settings: guard value.original != nil, value.target != nil, value.sourceURL == nil, value.oldSourceURL == nil else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             case .saveSource: guard value.target != nil, value.sourceURL != nil, (value.original == nil) == (value.oldSourceURL == nil) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             case .removeSource: guard value.original != nil, value.oldSourceURL != nil, value.target == nil, value.sourceURL == nil else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+            case .start, .stop, .uninstall:
+                guard value.original != nil, value.target == nil, value.sourceURL == nil, value.oldSourceURL == nil else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
             }
             if value.isProtected, !contexts.insert(value.context).inserted { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
         }

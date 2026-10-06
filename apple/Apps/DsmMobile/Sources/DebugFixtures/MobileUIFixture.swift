@@ -69,6 +69,9 @@ enum MobileUIFixture {
             if officeState.hasPrefix("nas-package") {
                 versions[DsmAPIName.corePackage] = 2
                 if officeState != "nas-package-unsupported" { versions[DsmAPIName.corePackageSetting] = 1; versions[DsmAPIName.corePackageFeed] = 1 }
+                if officeState != "nas-package-control-unsupported" {
+                    versions[DsmAPIName.corePackageControl] = 1; versions[DsmAPIName.corePackageUninstallation] = 1
+                }
             }
             if officeState.hasPrefix("nas-system") {
                 if officeState != "nas-system-unsupported" { versions[DsmAPIName.coreCurrentConnection] = 1 }

@@ -3,6 +3,13 @@ import DsmLocalization
 import Foundation
 
 extension DsmNasAdministrationRepository {
+    public func availablePackageActions() -> [NasPackageAction] {
+        guard capabilitySupports(DsmAPIName.corePackage, version: 1), capabilitySupports(DsmAPIName.corePackage, version: 2) else { return [] }
+        var actions: [NasPackageAction] = []
+        if capabilitySupports(DsmAPIName.corePackageControl, version: 1) { actions += [.start, .stop] }
+        if capabilitySupports(DsmAPIName.corePackageUninstallation, version: 1) { actions.append(.uninstall) }
+        return actions
+    }
     public func loadPackages() async throws -> [NasPackage] {
         try await loadPackages(includingIcons: true)
     }
@@ -37,13 +44,12 @@ extension DsmNasAdministrationRepository {
         guard let rows = value["packages"]?.array, rows.count < 1_000 else {
             throw verificationError(L10n.string("nas.packages.response-incomplete"))
         }
-        if management, let total = value["total"], total != .null {
+        if let total = value["total"], total != .null {
             guard case .number(let count) = total, Int(exactly: count) == rows.count else {
                 throw verificationError(L10n.string("nas.packages.response-incomplete"))
             }
         }
         var seenIDs: Set<String> = []
-        var metadata: [String: PackageControlMetadata] = [:]
         var upgrades: [String: DsmDynamicJSON] = [:]
         var packages = try rows.map { entry -> NasPackage in
             guard let raw = entry.object, case .string(let id)? = raw["id"],
@@ -54,6 +60,19 @@ extension DsmNasAdministrationRepository {
             }
             let item = DsmDynamicJSON.object(raw)
             let additional = item["additional"] ?? .object([:])
+            if management {
+                guard additional.object != nil else { throw verificationError(L10n.string("nas.packages.response-incomplete")) }
+                for field in [item["version"], additional["status"], additional["status_code"], additional["install_type"]] {
+                    if let field, field != .null, case .string = field {} else if field != nil && field != .null {
+                        throw verificationError(L10n.string("nas.packages.response-incomplete"))
+                    }
+                }
+                if let timestamp = item["timestamp"], timestamp != .null {
+                    guard case .number(let value) = timestamp, value.isFinite, value >= 0 else {
+                        throw verificationError(L10n.string("nas.packages.response-incomplete"))
+                    }
+                }
+            }
             let rawStatus = additional.string(["status", "status_code"])
             let rawOrigin = additional.string(["status_origin"])
             let rawDesc = additional.string(["status_description"])
@@ -82,9 +101,14 @@ extension DsmNasAdministrationRepository {
             let isUpgradeAvailable = operationDetails?["upgrade"]?.object != nil
                 || availableOperations.contains("upgrade")
 
-            metadata[id] = PackageControlMetadata(
-                dsmApps: additional.strings(["dsm_apps"])
-            )
+            let dsmApps: [String]?
+            switch additional["dsm_apps"] {
+            case .string(let value): dsmApps = value.split(whereSeparator: \.isWhitespace).map(String.init)
+            case .array(let values):
+                let strings = values.compactMap { value -> String? in if case .string(let text) = value { return text }; return nil }
+                dsmApps = strings.count == values.count ? strings : nil
+            default: dsmApps = nil
+            }
 
             // 精细化清洗后台底层状态日志，避免暴露英文调试文本
             let formattedStatusDesc = cleanPackageStatusDescription(
@@ -110,11 +134,11 @@ extension DsmNasAdministrationRepository {
                 canUninstall: canUninstall,
                 isUpgradeAvailable: isUpgradeAvailable,
                 // 更新需要安装来源、空间与依赖检查，不能复用列表接口直接触发。
-                canUpgrade: false
+                canUpgrade: false,
+                dsmApps: dsmApps
             )
         }
         .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        packageControlMetadata = metadata
         packageUpgradeCandidates = upgrades
 
         guard includingIcons else { return packages }

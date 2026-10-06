@@ -853,8 +853,7 @@ final class NasSettingsModel {
             if result.requiresRefresh || result.status == .confirmedSuccess {
                 await activate(.packages, force: true)
             }
-            if packageActionIsVerified(id: id, action: action)
-                || result.status == .confirmedSuccess
+            if result.status == .confirmedSuccess
                 || result.status == .cancelledBeforeSubmission {
                 return result
             }
@@ -876,22 +875,6 @@ final class NasSettingsModel {
         if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return result
-        }
-        if packageActionIsVerified(id: id, action: action) {
-            let prefix = action == .start ? "package.start" : "package.stop"
-            return try MutationResult(
-                status: .confirmedSuccess,
-                operation: action == .start ? "packageStart" : "packageStop",
-                submitted: true,
-                requiresRefresh: false,
-                counts: MutationResultCounts(
-                    succeeded: 1,
-                    failed: 0,
-                    unknown: 0
-                ),
-                localizationKey: "\(prefix).completed",
-                diagnosticTag: "\(prefix).confirmed-after-model-refresh"
-            )
         }
         let feedback = Self.packageControlFeedback(
             for: result.status,
@@ -2155,23 +2138,6 @@ final class NasSettingsModel {
             isRetryable: true,
             safeUserMessage: L10n.string("ui.981825780cae2565")
         )
-    }
-
-    private func packageActionIsVerified(id: String, action: NasPackageAction) -> Bool {
-        guard let package = packages.first(where: { $0.id == id }) else {
-            return action == .uninstall
-        }
-        let status = package.status?.lowercased() ?? ""
-        switch action {
-        case .start:
-            return status == "running" || status == "active"
-        case .stop:
-            return status != "running" && status != "active"
-        case .uninstall:
-            return false
-        case .upgrade:
-            return true
-        }
     }
 
     private func unavailablePackageAction(_ message: String) -> AppError {

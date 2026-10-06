@@ -19,10 +19,12 @@ struct MobilePackageCenterScreen: View {
             if model.section(.installed).phase == .content {
                 if filtered.isEmpty { ContentUnavailableView(L10n.string("mobile.nas.filter.empty"), systemImage: "magnifyingglass", description: Text(L10n.string("mobile.nas.filter.retry"))).accessibilityIdentifier("mobile.package.filteredEmpty") }
                 ForEach(filtered) { value in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(value.name).font(.headline)
-                        if let version = value.version { Text(version).font(.subheadline).foregroundStyle(.secondary) }
-                        Text(value.mobilePackageStatus).foregroundStyle(.secondary)
+                    NavigationLink { MobilePackageControlScreen(model: model, source: value) } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(value.name).font(.headline)
+                            if let version = value.version { Text(version).font(.subheadline).foregroundStyle(.secondary) }
+                            Text(value.mobilePackageStatus).foregroundStyle(.secondary)
+                        }
                     }.accessibilityElement(children: .combine).accessibilityIdentifier("mobile.package.row.\(value.id)")
                 }
             }
@@ -293,7 +295,7 @@ private struct MobilePackageChangeConfirmation: View {
     }
 }
 
-private struct MobilePackageReadStatus: View {
+struct MobilePackageReadStatus: View {
     @Bindable var model: MobilePackageCenterModel
     let page: MobilePackageCenterModel.Page
     var body: some View {
@@ -302,20 +304,28 @@ private struct MobilePackageReadStatus: View {
         case .idle, .loading: Section { ProgressView(L10n.string("mobile.package.loading")).accessibilityIdentifier("mobile.package.loading") }
         case .error, .unavailable:
             Section {
-                ContentUnavailableView(L10n.string("package.center.load-failed"), systemImage: "exclamationmark.triangle", description: Text((model.errors[page] ?? .read).mobilePackageMessage))
+                ContentUnavailableView {
+                    Label {
+                        Text(L10n.string("package.center.load-failed")).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                    } icon: { Image(systemName: "exclamationmark.triangle") }
+                } description: { Text((model.errors[page] ?? .read).mobilePackageMessage) }
                 Button(L10n.string("package.center.refresh")) { Task { await model.refresh(page) } }.accessibilityIdentifier("mobile.package.retry")
             }
         case .empty:
             Section {
-                ContentUnavailableView(L10n.string(page == .sources ? "package.center.sources-empty" : "mobile.nas-details.packages.empty.title"), systemImage: "shippingbox",
-                    description: Text(L10n.string(page == .sources ? "mobile.package.sources.emptyHint" : "mobile.package.emptyHint")))
+                ContentUnavailableView {
+                    Label {
+                        Text(L10n.string(page == .sources ? "package.center.sources-empty" : "mobile.nas-details.packages.empty.title"))
+                            .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                    } icon: { Image(systemName: "shippingbox") }
+                } description: { Text(L10n.string(page == .sources ? "mobile.package.sources.emptyHint" : "mobile.package.emptyHint")) }
             }
         case .content: EmptyView()
         }
         if let error = model.errors[page], [.content, .empty].contains(section.phase) { Section { Text(error.mobilePackageMessage) } }
     }
 }
-private struct MobilePackageActivitySection: View {
+struct MobilePackageActivitySection: View {
     @Bindable var model: MobilePackageCenterModel
     var body: some View {
         if !model.entries.isEmpty { Section(L10n.string("mobile.nas.service.activity")) { ForEach(model.entries) { MobilePackageRecord(model: model, entry: $0) } } }
@@ -327,10 +337,13 @@ private struct MobilePackageRecord: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(entry.kind.mobilePackageTitle).font(.headline)
+            if let package = model.installed.first(where: { MobilePackageOperationStore.digest($0.id) == entry.packageID }) {
+                Text(package.name).font(.subheadline)
+            }
             Text(model.recovery.isExecuting(entry.id) ? L10n.string("mobile.nas.service.working") : entry.mobilePackageMessage).accessibilityIdentifier("mobile.package.activity.\(entry.phase.rawValue)")
             Text(entry.createdAt.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(L10n.locale))).font(.caption).foregroundStyle(.secondary)
             if entry.isProtected {
-                Button(L10n.string("mobile.nas.service.refresh")) { Task { await model.refresh(entry.kind == .settings ? .preferences : .sources) } }
+                Button(L10n.string("package.center.refresh")) { Task { await model.refresh(entry.kind.page) } }
                     .disabled(model.isOperating).accessibilityIdentifier("mobile.package.recover")
             } else {
                 Button(L10n.string("mobile.nas.service.removeRecord")) { model.removeRecord(entry.id) }.disabled(model.recovery.isExecuting(entry.id)).accessibilityIdentifier("mobile.package.removeRecord")
@@ -351,9 +364,16 @@ extension NasPackagePreferenceKind {
         return L10n.string(key)
     }
 }
+extension MobilePackageOperationStore.Kind {
+    var mobilePackageTitle: String {
+        if let action { return action.mobileControlTitle }
+        let key = switch self { case .settings: "package.center.save-settings"; case .saveSource: "package.center.source-save"; default: "package.center.source-remove" }
+        return L10n.string(key)
+    }
+}
 extension NasPackage {
     var mobilePackageStatus: String {
-        let key = switch status?.lowercased() { case "running", "active": "mobile.package.running"; case "stopped", "inactive": "mobile.package.stopped"; default: "mobile.nas-health.status.unknown" }
+        let key = switch status?.lowercased() { case "running", "active": "mobile.package.running"; case "stopped", "inactive", "disabled": "mobile.package.stopped"; default: "mobile.nas-health.status.unknown" }
         return L10n.string(key)
     }
 }
@@ -369,7 +389,15 @@ extension MobilePackageOperationStore.Entry {
         switch phase {
         case .prepared: key = "mobile.nas.service.working"
         case .submitted: key = "mobile.package.pending"
-        case .succeeded: key = kind == .settings ? "mobile.package.settingsSaved" : kind == .saveSource ? "mobile.package.sourceSaved" : "mobile.package.sourceRemoved"
+        case .succeeded:
+            key = switch kind {
+            case .settings: "mobile.package.settingsSaved"
+            case .saveSource: "mobile.package.sourceSaved"
+            case .removeSource: "mobile.package.sourceRemoved"
+            case .start: "package.start.completed"
+            case .stop: "package.stop.completed"
+            case .uninstall: "package.uninstall.completed"
+            }
         case .cancelled: key = "mobile.nas.system.cancelled"
         case .failed:
             switch failure { case .denied: key = "mobile.package.denied"; case .unavailable: key = "mobile.package.unavailable"; case .changed: key = "mobile.package.changed"; default: key = "mobile.package.failed" }
