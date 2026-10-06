@@ -964,7 +964,11 @@ final class AppModel {
         )
         let accessReader = WorkspaceModuleAccessReader(
             files: repository, capabilities: capabilities,
-            readPrivileges: { try await privilegesService.read(capabilities: capabilities, session: session) }
+            readPrivileges: { try await privilegesService.read(capabilities: capabilities, session: session) },
+            readPhotoAccess: {
+                // 独立读取实例，权限刷新不清空照片工作区的对象权限和预览缓存。
+                _ = try await SynologyPhotosRepository(profile: connectionProfile, capabilities: capabilities, session: session).access()
+            }
         )
         activeConnectionProfile = connectionProfile
         let openedWorkspace = WorkspaceModel(

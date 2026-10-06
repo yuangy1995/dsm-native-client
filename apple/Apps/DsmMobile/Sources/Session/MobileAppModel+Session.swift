@@ -218,7 +218,10 @@ extension MobileAppModel {
                     capabilities: connection.capabilities,
                     session: session
                 )
-                _ = try await workspace.file.listShares(offset: 0, limit: 1)
+                try await Self.validateRestoredSession(
+                    readFileAccess: { _ = try await workspace.file.listShares(offset: 0, limit: 1) },
+                    readPhotoAccess: { _ = try await workspace.photos.access() }
+                )
                 try requireCurrentConnectionAttempt(attemptID)
                 await prepareWorkspaceContext(for: profile)
                 try requireCurrentConnectionAttempt(attemptID)
@@ -274,6 +277,18 @@ extension MobileAppModel {
                     finishConnectionAttempt(attemptID)
                 }
             }
+        }
+    }
+
+    /// 文件应用受限不代表 Photos 登录失效；仍须由 Photos 自身成功读取确认会话。
+    static func validateRestoredSession(
+        readFileAccess: @Sendable () async throws -> Void,
+        readPhotoAccess: @Sendable () async throws -> Void
+    ) async throws {
+        do { try await readFileAccess() }
+        catch let error as AppError where [.permissionDenied, .apiUnavailable, .versionUnsupported].contains(error.category) {
+            try Task.checkCancellation()
+            try await readPhotoAccess()
         }
     }
 

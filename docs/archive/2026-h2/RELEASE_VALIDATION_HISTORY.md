@@ -2834,3 +2834,36 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 **最终受影响的四项服务设置 UI 在 iPhone、iPad 均通过。** 该补验与下述 Photos 专项共用 `photos-access-{phone,pad}-final.xcresult`，两个命令均 exit 0；精确命令与新增专项测试数分开记在 Photos 条目。本片十三项场景均已有两端实际通过证据，iPad R2 的 12/13 与 R1 的中止仍保留原结果。聊天移除记录后主动刷新、两端电源恢复的截图已检查，保留于 `apple/Apps/DsmMobile/build/m6e3-ci-preview/`。
 
 本地化 6640/2188/3402、文档及差异检查通过。两个临时云端结果包和本片全部导出/层级/录屏提帧已精确清理；正式 CI 日志、本地结果和四张合成预览保留。两台模拟器恢复浅色并读取确认。新云端须由包含修正的后续 main 推送取得，不把旧失败或本机通过写成云端成功。
+
+
+## 2026-10-06 Photos 独立授权与移动保存会话恢复
+
+用户明确授权修正 Mac 的旧 Photos/File Station 入口权限绑定，并检查 iPhone/iPad；当前 main 基线为前述 CI 修复 `668ea51`。本片只修改 Photos 入口权限读取、必要登录装配/认证反馈及移动保存会话恢复，不扩张其他 Mac 管理反馈范围，不修改 Windows/Android 实现。
+
+Mac 的 `WorkspaceModuleAccessReader.resolve` 原来直接令 photos 等于 files，旧注释把正式 Synology Photos 当作文件视图，确与 `WorkspaceView` 当前入口不符。现在照片按已有 UserInfo/Setting.User/Setting.Admin/Setting.TeamSpace 的 `access()` 独立确认；文件授权或文件能力不决定照片授权，照片拒绝/缺能力不被文件权限覆盖。权限读取使用独立 Repository 实例，不清空正在使用的照片工作区缓存；照片会话失效接入既有重新登录反馈。接口、凭据传递、存储和 App 身份均未改变。
+
+iPhone/iPad 的入口与会话装配原本已独立读取 Photos；进一步检查发现 `restore` 无条件要求文件列表成功，导致仅有 Photos 权限的账号不能恢复已保存登录。现仅在文件权限/能力明确受限时，由 Photos 自身成功读取证明会话可恢复；Photos 拒绝或失效继续失败，文件认证/证书/网络错误与取消不改用 Photos。原保存会话删除条件、连接代次、账号隔离和后续具体操作权限均保留。跨 NAS 文件传输仍使用自身文件授权条件。
+
+Mac 新增六项权限回归，扩展原有照片撤权与 Photos-only 初始偏好用例。首次聚焦 20 项中 1 项失败：新测试用未带 DSM 119 的通用 AppError，却期待既有 119 专用提示；按真实会话失效数据补齐 119/HTTP 200，断言不降低。随后聚焦 **20/20 通过**；完整共享/Mac **2883 XCTest、172 条既有跳过、0 失败，另 12 Swift Testing 通过**。Mac Release 构建通过，主 App 与 File Provider 实际二进制均核为 x86_64/arm64。
+
+移动新增五项行为测试：两项授权/缺能力/撤权偏好、三项保存会话恢复与安全失败。最新构建通过；iPhone、iPad 最终各 **1469 单元、4 条既有条件跳过、0 失败**，以及 **5/5 UI 通过，两个命令 exit 0**。其中一项新 UI 使用已有合成普通账号权限组合，确认“文件应用 false、Photos enabled”可开启并浏览照片，反向组合不出现照片开关和导航；另四项是前述服务设置滚动修正回归。iPhone 深色与 iPad 浅色截图均实际查看，保留于 `apple/Apps/DsmMobile/build/photos-access-preview/`；不把合成 UI 当作真实 NAS 或完整恢复登录的实机证据。
+
+实际命令：
+
+```sh
+swift test --package-path apple --jobs 2 --filter WorkspaceModuleAccessTests
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/photos-access-phone-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片入口独立于文件应用授权 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test中文大字内存与电源确认可取消 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test文件服务端口校验确认取消和保存回读 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源清单不完整和压缩字段未知保留读取与限制 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源计划未知保存重启只读恢复
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/photos-access-pad-final.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片入口独立于文件应用授权 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test中文大字内存与电源确认可取消 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test文件服务端口校验确认取消和保存回读 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源清单不完整和压缩字段未知保留读取与限制 -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test电源计划未知保存重启只读恢复
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+最终本地化 **6640/2188/3402**、请求契约 **179+1**、脱敏 fixture **29 组/48 项引用**、文档与差异检查均通过。未新增文件或更改工程清单，不需要重生成工程。独立集成与只读安全复核覆盖入口/登录恢复调用链、照片只读实例隔离、文件/照片相反授权、缺能力、已知拒绝、证书/会话/取消、权限撤回与本机偏好。两台模拟器已恢复浅色并查询确认；临时附件、辅助功能树和录屏提帧已清理，正式日志/结果包与预览保留。
+
+真实普通账号的相反权限组合、权限撤回、保存登录恢复仍按[专项 PENDING_USER_VALIDATION](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-06-photos-入口权限专项审计)执行；Agent 未访问或写入真实 NAS，没有提高任何环境证据等级。仍继续 M6 剩余独立切片与 M7–M8，未把本片权限修复表述为整体完成。

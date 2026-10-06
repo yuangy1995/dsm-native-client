@@ -33,35 +33,58 @@ enum WorkspaceModuleAccess: Equatable, Sendable {
 }
 
 struct WorkspaceModuleAccessSnapshot: Sendable {
-    let modules: [WorkspaceModule: WorkspaceModuleAccess]
+    var modules: [WorkspaceModule: WorkspaceModuleAccess]
     var lookupFailed = false
 }
 
-/// 一次读取权限摘要；不再用业务列表加载试探应用权限。
+/// 读取应用权限摘要与独立的 Photos 访问设置，不用套件业务列表试探权限。
 struct WorkspaceModuleAccessReader: Sendable {
     let files: any FileRepository
     let capabilities: CapabilitySet
     let readPrivileges: @Sendable () async throws -> DsmDesktopAppPrivileges
+    let readPhotoAccess: @Sendable () async throws -> Void
 
     func read() async -> WorkspaceModuleAccessSnapshot {
+        var snapshot: WorkspaceModuleAccessSnapshot
         do {
             let privileges = try await readPrivileges()
-            return Self.resolve(privileges, capabilities: capabilities)
+            snapshot = Self.resolve(privileges, capabilities: capabilities)
         } catch {
-            // 摘要不可读不等于文件会话失效；只核实文件，其他套件保持关闭。
+            // 摘要不可读不等于文件或 Photos 会话失效；两者分别核实，其他套件保持关闭。
             // 安全错误和取消不额外发出网络请求，交由连接恢复入口处理。
-            if Task.isCancelled { return WorkspaceModuleAccessSnapshot(modules: [:], lookupFailed: true) }
-            if let issue = error as? AppError,
-               [.tlsUntrusted, .tlsCertificateChanged, .cancelled].contains(issue.category) {
-                return WorkspaceModuleAccessSnapshot(modules: [:], lookupFailed: true)
+            if Task.isCancelled || Self.stopsFurtherReads(error) {
+                let modules: [WorkspaceModule: WorkspaceModuleAccess] = (error as? AppError)?.category == .authenticationRequired
+                    ? [.files: .result(for: error)] : [:]
+                return WorkspaceModuleAccessSnapshot(modules: modules, lookupFailed: true)
             }
             do {
                 _ = try await files.listShares(offset: 0, limit: 1)
-                return WorkspaceModuleAccessSnapshot(modules: [.files: .available], lookupFailed: true)
+                snapshot = WorkspaceModuleAccessSnapshot(modules: [.files: .available], lookupFailed: true)
             } catch {
-                return WorkspaceModuleAccessSnapshot(modules: [.files: .result(for: error)], lookupFailed: true)
+                snapshot = WorkspaceModuleAccessSnapshot(modules: [.files: .result(for: error)], lookupFailed: true)
+                if Self.stopsFurtherReads(error) { return snapshot }
             }
         }
+        guard !Task.isCancelled else { return WorkspaceModuleAccessSnapshot(modules: [:], lookupFailed: true) }
+        guard ["SYNO.Foto.UserInfo", "SYNO.Foto.Setting.User", "SYNO.Foto.Setting.Admin", "SYNO.Foto.Setting.TeamSpace"]
+            .allSatisfy({ capabilities[$0]?.selectedVersion != nil }) else {
+            snapshot.modules[.photos] = .unavailable
+            return snapshot
+        }
+        do {
+            try await readPhotoAccess()
+            snapshot.modules[.photos] = .available
+        } catch {
+            snapshot.modules[.photos] = .result(for: error)
+            if snapshot.modules[.photos] != .denied && snapshot.modules[.photos] != .unavailable { snapshot.lookupFailed = true }
+        }
+        return snapshot
+    }
+
+    private static func stopsFurtherReads(_ error: Error) -> Bool {
+        if error is CancellationError || error is DsmCertificateTrustError { return true }
+        guard let error = error as? AppError else { return false }
+        return [.tlsUntrusted, .tlsCertificateChanged, .cancelled, .authenticationRequired].contains(error.category)
     }
 
     static func resolve(_ privileges: DsmDesktopAppPrivileges, capabilities: CapabilitySet) -> WorkspaceModuleAccessSnapshot {
@@ -77,8 +100,8 @@ struct WorkspaceModuleAccessReader: Sendable {
         let files = granted(.files) && supports(DsmAPIName.fileStationList)
         let allowed: [WorkspaceModule: Bool] = [
             .files: files,
-            // 当前照片是 File Station 的文件视图，不请求 Synology Photos 内部接口。
-            .photos: files,
+            // Photos 必须由自身访问设置明确授权，不能继承 File Station 权限。
+            .photos: false,
             .chat: granted(.chat) && supports(DsmAPIName.chatChannel) && supports(DsmAPIName.chatUser),
             .downloads: granted(.downloads) && supports(DsmAPIName.downloadStationTask, DsmAPIName.downloadStation2Task),
             .virtualMachines: granted(.virtualMachines) && supports(DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest),
