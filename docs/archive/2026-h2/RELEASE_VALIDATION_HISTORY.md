@@ -3321,3 +3321,52 @@ iPad 使用相同选择，设备 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果
 四个结果包共导出并逐张查看 **66 张合成截图**，确认固定目标和具体删除后果、逐项结果、未知保护、取消、匿名重启恢复、普通套件账号、加载/空/筛选空/错误/正常、中文大字及旋转均可读可操作。预览保留在 `build/m7c2-preview/`；临时附件导出目录、清单与导出日志已清理。两端已恢复浅色。工程经既定 XcodeGen 再生成与已提交生成物一致；本地化、契约、Fixture、API 目录、文档、三组 CI 覆盖测试及差异检查通过。
 
 另行取得旧提交 a776993c 的云端 run `37450968329` 部分终态：共享/macOS 通过，iPhone 工作区 1 项与模块组 3 项失败，均为设置开关或导航阶段；iPad 工作区随后也返回失败，正在读取原日志，其余分组仍在运行。这些失败独立按原云端日志和截图排查，不冒称本片或整个云端已通过，也没有为本片取消当前运行。
+
+## 2026-10-06 功能开关导航与照片表单云端复验
+
+基线为 `40cc0a1`。原云端 [Apple Build 37450968329](https://github.com/yuangy1995/dsm-native-client/actions/runs/37450968329) 验证 `a776993c`：iPhone 工作区 161 项中 1 项失败，模块组 1550 项单元（4 条既有跳过）通过、116 项 UI 中 3 项失败；iPad 工作区 161 项中 1 项失败。共享/macOS 成功，其余三个作业仍运行，不能宣布完整云端成功。
+
+从三个失败作业的正式结果包中只读取必要测试记录与附件，没有导出凭据、上传 NAS 数据或使用真实环境复现。照片人物重启和两个下载场景的失败截图及辅助功能树均显示开关仍为 0，原导航因此没有目标入口。容器映像标签场景的录屏显示点击 App settings 后一直停留 File 页；不是已证实的开关离屏。iPad 格式列表录屏 86 秒处 LEGACY 已被浮动标题遮挡，随后整屏向上滑动，94 秒到了列表末尾，原辅助函数越过了目标。
+
+修改限于三个正式 UI 测试文件及本文档：照片/下载开启步骤复用单次控件按下/抬起与状态检查，保留大字滚动；共用标签/侧栏导航使用 0.15 秒按下/抬起并检查设置页，准备失败保存截图与层级。照片辅助函数只在当前可操作表单内慢拖，并根据行位置反向滚动；进入格式页后先等待导航标题。业务操作、原保存/重启/防重复断言、权限及产品代码均不改变。
+
+修改前分别用两端运行原五项，全部通过：iPhone **260.546 秒**、iPad **270.365 秒**，结果包 `build/ci-navigation-before-phone.xcresult`、`build/ci-navigation-before-pad.xcresult`。因此本机没有复现上述云端失败，不能将原版通过当作根因验证。修改后保留相同五项，并增加中文大字映像下载、中文深色下载横屏、中文深色大字聊天三态和照片最后图库/缓存忙碌限制四项回归。
+
+实际构建命令（初轮及最终增量均成功）：
+
+```sh
+xcodebuild build-for-testing \
+  -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
+实际 iPhone 专项命令；iPad 使用相同九项选择，将设备替换为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`、结果包替换为 `build/ci-navigation-after-pad.xcresult`：
+
+```sh
+xcodebuild test-without-building \
+  -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile \
+  -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' \
+  -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO \
+  -resultBundlePath build/ci-navigation-after-phone.xcresult \
+  '-only-testing:DsmMobileUITests/MobileContainerImagePullUITests/test标签失败重试空标签与筛选为空' \
+  '-only-testing:DsmMobileUITests/MobileContainerImagePullUITests/test中文大字下载按钮与风险说明可用' \
+  '-only-testing:DsmMobileUITests/MobileDownloadControlUITests/test取消剩余项目后空任务列表仍可查看与清除已结束记录' \
+  '-only-testing:DsmMobileUITests/MobileDownloadControlUITests/test多选暂停与继续分别处理符合状态的任务' \
+  '-only-testing:DsmMobileUITests/MobileDownloadControlUITests/test中文深色大字多选与结果支持横屏' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test人物保存中断重启不可重复提交' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片全局格式保留未知项及缓存清理' \
+  '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片共享最后图库与正在清理缓存保持限制' \
+  '-only-testing:DsmMobileUITests/MobileChatUITests/test中文深色大字号新建联系人空列表和加载失败'
+```
+
+原五项基线命令使用同样设备/派生目录/禁并行配置，仅选择上面原失败的五项，结果路径如前述。本地化及硬编码检查为 6794/2188/3402 项、文档检查、`python3 -m unittest discover -s tools/release -p test_apple_ci.py` 三项分组检查均通过；没有改动共享或产品源码，不重复前片已通过的共享/macOS 全量。修正后两端专项结果和截图复核续记如下。
+
+首轮九项两端均为 **7 通过、2 失败**；失败均为新照片辅助函数错误要求列表容器本身 `isHittable`。两端录屏显示表单已呈现，随后只在该失败分支补充正式诊断附件，iPhone 原格式用例再次失败（25.186 秒）；其辅助功能树确认当前弹层最后的 CollectionView 包含可操作的格式按钮，但容器自身不可点击。最终定位改为当前弹层的最后列表/导航栏，保留每个目标控件自身的可点击、标题遮挡、位置和反向滚动判断，不把容器属性当作用户操作能力。诊断没有修改产品或降低业务断言。
+
+最终构建仍使用上面的同一命令，日志为 `build/ci-photo-scroll-final-build.log`，结果成功。仅重跑受该辅助函数影响的 `test照片全局格式保留未知项及缓存清理` 和 `test照片共享最后图库与正在清理缓存保持限制`；仍使用上述两端设备、工程、派生目录与禁并行配置，结果包为 `build/ci-photo-scroll-final-phone.xcresult`、`build/ci-photo-scroll-final-pad.xcresult`。其他七项源码没有后续变动，保留首轮已通过结果。
+
+最终两项每端均 **0 失败、exit 0**，iPhone **151.607 秒**、iPad **162.503 秒**；因此九项均有两端分轮通过证据。首轮通过场景每端 13 张截图、最终照片每端 4 张，共 **34 张已逐张检查**：LEGACY 已滚入可操作区域，修改/保存/缓存确认及两项禁止操作状态均正确；下载结果、恢复保护、标签空内容与中文大字/深色/横屏保持可用。必要预览保留在 `build/ci-navigation-preview/`，一次性下载检查脚本、视频帧导出与附件清单在交付前清理。
+
+独立集成审查由当前负责人在实现后单独执行：未修改产品、共享契约、权限、合成传输或业务断言，未增加业务重复提交或失败静默跳过；定位改动由原云端截图/录屏与本机失败层级支持。最终本地化、文档、差异检查通过，CI 分组正式三项回归通过。fetch 确认远端无新提交；旧云端另外三组尚未结束，暂不推送以避免取消其完整验证，不能将本机通过写成修正版云端通过。

@@ -102,8 +102,7 @@ final class MobileDownloadControlUITests: XCTestCase {
     private func enableDownloads(_ app: XCUIApplication, chinese: Bool = false) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         navigate("settings", chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.downloads", app)
-        scrollTo(toggle, app); XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "downloads", test: self)
         navigate("downloads", chinese ? "下载管理" : "Downloads", app)
     }
     private func navigate(_ id: String, _ title: String, _ app: XCUIApplication) {

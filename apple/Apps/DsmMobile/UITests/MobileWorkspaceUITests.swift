@@ -478,6 +478,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "photo-admin"); defer { app.terminate() }
         openPhotos(app); openPhotoAdministration("global", in: app)
         let formats = element("mobile.photos.administration.excluded", in: app); revealPhotoAdministration(formats, in: app); formats.tap()
+        XCTAssertTrue(app.navigationBars["Excluded file formats"].waitForExistence(timeout: 5))
         let legacy = app.switches["LEGACY"]; revealPhotoAdministration(legacy, in: app); XCTAssertEqual(legacy.value as? String, "1")
         legacy.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         XCTAssertEqual(legacy.value as? String, "0")
@@ -567,18 +568,28 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
     private func revealPhotoAdministration(_ item: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<8 {
-            if item.exists && item.isHittable {
-                // 浮动导航栏下的行仍可能报告可点击，先把整行移到标题下方。
-                if let bar = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable }), item.frame.minY < bar.frame.maxY {
-                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.05,
-                        thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.62)))
-                    continue
-                }
-                return
+            // 表单容器本身可报告不可点击，但其中的行仍可操作；最后一个列表是当前弹层。
+            guard let list = app.collectionViews.allElementsBoundByIndex.last else {
+                let hierarchy = XCTAttachment(string: app.debugDescription)
+                hierarchy.name = "Photo administration form hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+                attachScreenshot(app, name: "Photo administration form state")
+                XCTFail("找不到照片管理表单"); return
             }
-            app.swipeUp()
+            let frame = list.frame.intersection(app.frame)
+            let barBottom = app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? frame.minY
+            let top = max(frame.minY, barBottom) + 12, bottom = frame.maxY - 24
+            if item.exists, item.isHittable, item.frame.minY >= top, item.frame.midY < bottom { return }
+            // 被浮动标题遮住的行也可能不可点击；按位置回滚，不能继续上滑越过目标。
+            let reverse = item.exists && item.frame.minY < top
+            let x = frame.midX, high = top + (bottom - top) * 0.3, low = top + (bottom - top) * 0.75
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: reverse ? high : low))
+                .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: x, dy: reverse ? low : high)), withVelocity: .slow, thenHoldForDuration: 0.2)
         }
-        XCTAssertTrue(item.exists && item.isHittable)
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "Photo administration scroll hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+        attachScreenshot(app, name: "Photo administration scroll state")
+        XCTFail("目标没有进入照片管理表单的可操作区域")
     }
 
     func test自动预览处理中暂停再继续保持可操作() {
@@ -1758,9 +1769,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     private func openPhotos(_ app: XCUIApplication, chinese: Bool = false) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         navigate("settings", title: chinese ? "App 设置" : "App settings", in: app)
-        let toggle = element("mobile.settings.module.photos", in: app)
-        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
-        toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "photos", test: self)
         navigate("photos", title: chinese ? "照片" : "Photos", in: app)
         XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8))
     }

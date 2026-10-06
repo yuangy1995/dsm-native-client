@@ -6,27 +6,20 @@ enum MobileUITestNavigation {
     static func enableModule(_ app: XCUIApplication, module: String, test: XCTestCase,
                              file: StaticString = #filePath, line: UInt = #line) {
         let toggle = app.switches["mobile.settings.module.\(module)"]
+        revealModule(toggle, in: app)
         let control = toggle.switches.firstMatch
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"), object: control)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, file: file, line: line)
+        let readyResult = XCTWaiter.wait(for: [ready], timeout: 10)
+        if readyResult != .completed { capture(app, name: "Enable \(module) readiness", test: test) }
+        XCTAssertEqual(readyResult, .completed, "功能开关尚未可操作：\(module)", file: file, line: line)
+        guard readyResult == .completed else { return }
         // 外层辅助功能框包含整行，中心不是开关；在实际控件上完成一次按下/抬起后检查状态。
         if toggle.value as? String == "0" { control.press(forDuration: 0.15) }
         // 开启聊天会插入通知区域；大字号下原开关会移出可见列表，先滚回原控件再读取新值。
-        let settings = app.collectionViews["mobile.settings.page"]
-        for _ in 0..<8 {
-            if toggle.exists && toggle.isHittable { break }
-            settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.8)).press(forDuration: 0.1,
-                thenDragTo: settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.3)),
-                withVelocity: .slow, thenHoldForDuration: 0.2)
-        }
+        revealModule(toggle, in: app)
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: toggle)
         let result = XCTWaiter.wait(for: [enabled], timeout: 10)
-        if result != .completed {
-            let hierarchy = XCTAttachment(string: app.debugDescription)
-            hierarchy.name = "Enable \(module) hierarchy"; hierarchy.lifetime = .keepAlways; test.add(hierarchy)
-            let screenshot = XCTAttachment(screenshot: app.screenshot())
-            screenshot.name = "Enable \(module) state"; screenshot.lifetime = .keepAlways; test.add(screenshot)
-        }
+        if result != .completed { capture(app, name: "Enable \(module)", test: test) }
         XCTAssertEqual(result, .completed, "功能开关没有开启：\(module)", file: file, line: line)
     }
 
@@ -40,21 +33,40 @@ enum MobileUITestNavigation {
         }, object: app)
         // 云端一次辅助功能快照可耗时数秒，须留出再次读取重建后按钮的机会。
         let result = XCTWaiter.wait(for: [ready], timeout: 10)
-        if result != .completed {
-            let hierarchy = XCTAttachment(string: app.debugDescription)
-            hierarchy.name = "Navigation to \(destination) hierarchy"; hierarchy.lifetime = .keepAlways; test.add(hierarchy)
-            let screenshot = XCTAttachment(screenshot: app.screenshot())
-            screenshot.name = "Navigation to \(destination) state"; screenshot.lifetime = .keepAlways; test.add(screenshot)
-        }
+        if result != .completed { capture(app, name: "Navigation to \(destination)", test: test) }
         XCTAssertEqual(result, .completed, "目标导航按钮尚未可操作：\(destination)", file: file, line: line)
         guard result == .completed else { return }
-        if tab.exists && tab.isHittable { tab.tap() }
-        else if sidebar.exists && sidebar.isHittable { sidebar.tap() }
+        // 云端曾在一次瞬时点击后仍停留原页；使用完整按下/抬起，并检查设置页确已呈现。
+        if tab.exists && tab.isHittable { tab.press(forDuration: 0.15) }
+        else if sidebar.exists && sidebar.isHittable { sidebar.press(forDuration: 0.15) }
         else {
             XCTAssertTrue(more.exists, file: file, line: line); XCTAssertTrue(more.isHittable, file: file, line: line); more.tap()
             let item = app.staticTexts[title].firstMatch
             XCTAssertTrue(item.waitForExistence(timeout: 10), file: file, line: line)
             XCTAssertTrue(item.isHittable, file: file, line: line); item.tap()
+        }
+        if destination == "settings" {
+            let page = app.collectionViews["mobile.settings.page"]
+            let appeared = page.waitForExistence(timeout: 10)
+            if !appeared { capture(app, name: "Settings presentation", test: test) }
+            XCTAssertTrue(appeared, "设置页尚未呈现", file: file, line: line)
+        }
+    }
+
+    private static func capture(_ app: XCUIApplication, name: String, test: XCTestCase) {
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "\(name) hierarchy"; hierarchy.lifetime = .keepAlways; test.add(hierarchy)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "\(name) state"; screenshot.lifetime = .keepAlways; test.add(screenshot)
+    }
+
+    private static func revealModule(_ toggle: XCUIElement, in app: XCUIApplication) {
+        let settings = app.collectionViews["mobile.settings.page"]
+        for _ in 0..<8 {
+            if toggle.exists && toggle.isHittable { return }
+            settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.8)).press(forDuration: 0.1,
+                thenDragTo: settings.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.3)),
+                withVelocity: .slow, thenHoldForDuration: 0.2)
         }
     }
 }
