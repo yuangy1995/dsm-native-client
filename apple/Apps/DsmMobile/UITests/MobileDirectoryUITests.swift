@@ -186,14 +186,20 @@ final class MobileDirectoryUITests: XCTestCase {
             XCTAssertTrue(selectAll.waitForExistence(timeout: 5)); selectAll.tap()
             field.typeText(XCUIKeyboardKey.delete.rawValue)
         }
-        let cleared = field.value as? String ?? ""
-        if !cleared.isEmpty && cleared != field.placeholderValue {
+        // 云端输入完成后的首份快照仍可能带有删除过程中的旧值；等待实际空值，不再次发送删除。
+        let empty = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let current = field.value as? String else { return false }
+            return current.isEmpty || current == field.placeholderValue
+        }, object: field)
+        let cleared = XCTWaiter.wait(for: [empty], timeout: 5)
+        if cleared != .completed {
             let attachment = XCTAttachment(string: app.debugDescription); attachment.name = "Directory description clearing hierarchy"; add(attachment)
             screenshot(app, "Directory description clearing state")
         }
-        XCTAssertTrue(cleared.isEmpty || cleared == field.placeholderValue, "说明字段未清空：\(cleared)")
+        XCTAssertEqual(cleared, .completed, "说明字段未清空：\(field.value as? String ?? "")")
         field.typeText("Updated account")
-        XCTAssertEqual(field.value as? String, "Updated account")
+        let entered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Updated account"), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [entered], timeout: 5), .completed)
     }
     private func launch(_ state: String, preserve: Bool = false, chinese: Bool = false, large: Bool = false) -> XCUIApplication {
         continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait

@@ -167,8 +167,15 @@ import XCTest
             if app.frame.width < 600 { for _ in 0..<count { field.typeKey(XCUIKeyboardKey.rightArrow.rawValue, modifierFlags: []) } }
             field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: count))
         }
-        let empty = field.value as? String ?? ""; XCTAssertTrue(empty.isEmpty || empty == field.placeholderValue)
-        field.typeText(text); XCTAssertEqual(field.value as? String, text)
+        // 云端可能在按键仍逐字生效时返回；等原值真正清空，保留同一次输入与精确值断言。
+        let empty = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let current = field.value as? String else { return false }
+            return current.isEmpty || current == field.placeholderValue
+        }, object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [empty], timeout: 5), .completed)
+        field.typeText(text)
+        let entered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", text), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [entered], timeout: 5), .completed)
         if app.frame.width > 600, app.popovers.firstMatch.exists {
             app.navigationBars.containing(.button, identifier: "mobile.package.save").firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
             XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))

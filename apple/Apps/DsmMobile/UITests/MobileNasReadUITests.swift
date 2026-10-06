@@ -100,13 +100,7 @@ final class MobileNasReadUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         navigate("settings", title: chinese ? "App 设置" : "App settings", in: app)
-        let toggle = element("mobile.settings.module.nasSettings", in: app)
-        for _ in 0..<4 {
-            if toggle.exists && toggle.isHittable { break }
-            app.swipeUp()
-        }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
-        toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         navigate("nasSettings", title: chinese ? "NAS 设置" : "NAS settings", in: app)
         return app
     }

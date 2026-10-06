@@ -69,8 +69,16 @@ final class MobileNasStorageUITests: XCTestCase {
         let app = launch("nas-storage-unknown")
         openDisk(app); reveal("mobile.nas.disk.quick", in: app).tap()
         element("mobile.nas.disk.confirm", app).tap()
-        let pending = reveal("mobile.nas.disk.operation.submitted", in: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "temporarily unavailable"), object: pending)], timeout: 12), .completed)
+        _ = reveal("mobile.nas.disk.operation.submitted", in: app)
+        // 云端画面已有状态文字但全类型查询未返回；滚动后直接定位同标识的静态文本，并保留失败证据。
+        let pending = app.staticTexts["mobile.nas.disk.operation.submitted"]
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "temporarily unavailable"), object: pending)], timeout: 12)
+        if result != .completed {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Drive pending status hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+            screenshot(app, "Drive pending status unavailable to test")
+        }
+        XCTAssertEqual(result, .completed)
         XCTAssertFalse(element("mobile.nas.disk.quick", app).exists)
         screenshot(app, "Drive test interrupted with no repeated start")
         app.terminate()

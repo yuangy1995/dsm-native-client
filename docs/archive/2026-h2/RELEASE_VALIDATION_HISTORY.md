@@ -3415,3 +3415,59 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 工程以 XcodeGen 2.46.0 再生成，project.pbxproj 字节一致。最终本地化、API 目录、契约/Fixture、文档、CI 分组三项与差异检查通过。截图预览保留于 `build/m7c3-preview/`，正式日志/完整结果包保留；一次性生成工具、视频抽帧脚本、附件导出目录和中断的不完整结果包清理。实际 API 文档核查与所有合成测试没有操作真实用户网络、容器、VM 或文件。
 
 旧云端 `37450968329` 随后全部结束，整体 failure；共享/macOS 通过，六个设备分组均失败（已有五项导航/表单失败在先前专项处理，最后管理/模块组日志继续核查）。这属于旧 a776993c 的结果，不冒称当前未推送变更已通过完整云端。fetch 确认 origin/main 没有新提交，后续同步与新云端结果另记。
+
+## 2026-10-07 剩余管理与下载云端失败复核
+
+基线 `0512125f`，main 工作区干净；沿既有提交/推送、CI 修复及离线自主授权，仅修改正式移动 UI 测试和对应文档。原 [Apple Build 37450968329](https://github.com/yuangy1995/dsm-native-client/actions/runs/37450968329) 对应 `a776993c`，已全部结束且失败；共享/macOS 通过。最后 iPhone administration 三次、iPad administration 四次、iPad modules 两次失败，共九个不同用例；前片五次导航/照片失败已另有修复与证据，不混算。
+
+原完整日志为 `build/ci-a776993c-phone-administration.log`、`build/ci-a776993c-pad-administration.log`、`build/ci-a776993c-pad-modules-final.log`。按需读取 GitHub 测试产物的失败对象、截图、层级和三段录屏，没有下载整份大压缩包，没有输出或保存访问凭据/签名地址。证据结论：
+
+- NAS 读取/区域设置和下载导航失败时，截图/层级的相应开关仍为 0；下载控制沿前片已修，NAS 读取/区域及下载移除改用同一共用导航和单次开关输入/值为 1 的检查，不重试业务操作。
+- 账号说明首份值残余 `Samp`，随后保留的层级与截图已经为空；来源地址录屏结束前仍在逐字删除。输入改为等待原字段实际空值及输入后的精确目标值，不把残余文字当作成功，也不追加删除输入。
+- 计划任务确认页关闭后，原测试仍引用该旧列表；最终层级已有编辑页和正确未知结果。未知编辑场景明确等待确认页消失，再读取原编辑页中的结果，不改变业务提交/恢复。
+- 硬盘恢复的 87 秒与 99 秒画面均已有预期状态文字，原全类型查询却没有返回目标；当前只收敛到相同标识的静态文本并增加失败层级/截图，保留十二秒时限和原状态/防重/重启断言。没有证据证明产品状态错误，也尚不能宣称云端查询原因已完全复现。
+
+修改前九项 iPhone **9 通过、0 失败、784.216 秒、exit 0**；iPad **8 通过、1 失败、819.825 秒、exit 65**，唯一失败是来源流程后段重命名时名称字段未及时清空（原 line 170），与云端地址字段清空属于同一辅助步骤，但不混称同设备重现。结果为 `build/ci-final-before-{phone,pad}.xcresult/log`；其余八项本机未复现云端问题。本机 iPad 失败录屏末帧也确认名称已经清空，定位与删除并未失败，修正使用实际空值等待。必要八张云端/本机失败画面及计划任务层级保留于 `build/ci-final-preview/`，一次性下载/录屏/抽帧/导出已清理。修正版构建 `build/ci-final-build.log` 已成功，十二项两端回归全部通过：iPhone **12/12、958.333 秒、exit 0**；iPad **12/12、1044.074 秒、exit 0**，结果为 `build/ci-final-after-{phone,pad}.xcresult/log`。本专项没有产品源码、契约、权限、NAS 请求、持久记录、依赖、工具链或应用身份变化，不需要重跑未受影响的共享/Mac 验证；前片最终完整结果继续有效。真实 NAS/真机仍按对应功能既有 `PENDING_USER_VALIDATION`，本机聚焦通过不代替修正版完整云端。
+
+实际运行命令（两端分别执行，日志头保留完整参数）：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/ci-final-after-phone.xcresult \
+  '-only-testing:DsmMobileUITests/MobileNasReadUITests/test外接存储切换筛选不把无匹配当设备消失' \
+  '-only-testing:DsmMobileUITests/MobilePackageCenterUITests/test来源地址校验信任取消以及新增编辑移除' \
+  '-only-testing:DsmMobileUITests/MobileRegionUITests/test未知保存重启恢复原设置并保护重复提交' \
+  '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test当前账号保护和未知所属组仍可查看' \
+  '-only-testing:DsmMobileUITests/MobileNasStorageUITests/test硬盘未知结果重启后只恢复状态' \
+  '-only-testing:DsmMobileUITests/MobileRegionUITests/test格式与可搜索时区编辑保存及确认取消' \
+  '-only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test编辑未知重启后完整回读恢复' \
+  '-only-testing:DsmMobileUITests/MobileDownloadControlUITests/test取消剩余项目后空任务列表仍可查看与清除已结束记录' \
+  '-only-testing:DsmMobileUITests/MobileDownloadRemovalUITests/test中文深色最大字号确认与结果支持横屏' \
+  '-only-testing:DsmMobileUITests/MobileNasReadUITests/test中文大字号未知开关有独立状态' \
+  '-only-testing:DsmMobileUITests/MobilePackageCenterUITests/test中文大字来源信任与未加密风险可取消' \
+  '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test资料保存未知后重启只读恢复'
+
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/ci-final-after-pad.xcresult \
+  '-only-testing:DsmMobileUITests/MobileNasReadUITests/test外接存储切换筛选不把无匹配当设备消失' \
+  '-only-testing:DsmMobileUITests/MobilePackageCenterUITests/test来源地址校验信任取消以及新增编辑移除' \
+  '-only-testing:DsmMobileUITests/MobileRegionUITests/test未知保存重启恢复原设置并保护重复提交' \
+  '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test当前账号保护和未知所属组仍可查看' \
+  '-only-testing:DsmMobileUITests/MobileNasStorageUITests/test硬盘未知结果重启后只恢复状态' \
+  '-only-testing:DsmMobileUITests/MobileRegionUITests/test格式与可搜索时区编辑保存及确认取消' \
+  '-only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test编辑未知重启后完整回读恢复' \
+  '-only-testing:DsmMobileUITests/MobileDownloadControlUITests/test取消剩余项目后空任务列表仍可查看与清除已结束记录' \
+  '-only-testing:DsmMobileUITests/MobileDownloadRemovalUITests/test中文深色最大字号确认与结果支持横屏' \
+  '-only-testing:DsmMobileUITests/MobileNasReadUITests/test中文大字号未知开关有独立状态' \
+  '-only-testing:DsmMobileUITests/MobilePackageCenterUITests/test中文大字来源信任与未加密风险可取消' \
+  '-only-testing:DsmMobileUITests/MobileDirectoryUITests/test资料保存未知后重启只读恢复'
+
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+python3 tools/release/test_apple_ci.py
+git diff --check
+```
+
+修改前九项使用上述相同设备/派生目录，结果路径为 `ci-final-before-{phone,pad}.xcresult`，选择器不含追加的 NAS 中文大字、套件来源中文大字、账号重启恢复三项；原命令保留在各 before 日志首行。最终双语资源 6824/2188/3402、文档、CI 分组三项和差异检查均通过。
+
+两端各二十张成功截图已逐张检查并保留于 `build/ci-final-preview/{phone,pad}/`：英文与中文大字、iPhone 深色/iPad 浅色及两端下载深色横屏、账号/硬盘/区域/计划任务恢复均有实际画面。来源移除页 iPhone 的中间标题被系统省略，但完整操作按钮和风险正文可见；作为已有展示细节记录，没有扩大本片产品修改。原八张失败证据保留，一次性附件导出和导出日志清理，正式结果包/日志保留。独立集成审查由当前负责人实现后单独执行：七份测试仅改变导航准备、实际值等待和结果定位，保留权限、危险确认、业务值、防重复及重启断言，未增加业务重试、静默跳过或产品改动。fetch 复核 origin/main 仍为 a776993c，没有远端新提交；同步后云端状态单独记录，不冒称完整门禁或真实 NAS 已通过。

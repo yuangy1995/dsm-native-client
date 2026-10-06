@@ -41,6 +41,8 @@ final class MobileScheduledTasksUITests: XCTestCase {
         openTask("12", app); reveal("mobile.nas.task.edit", in: app).tap()
         replace("name", text: "Updated Task", app); replace("script", text: "echo updated", app)
         app.buttons["mobile.nas.task.save"].tap(); tap("mobile.nas.task.confirm", app)
+        // 提交后确认页会关闭，先等原编辑页恢复，再查找其中的操作结果。
+        XCTAssertTrue(app.collectionViews["mobile.nas.task.confirmation"].waitForNonExistence(timeout: 8))
         expect(reveal("mobile.nas.task.operationResult", in: app), contains: "not available yet")
         XCTAssertFalse(app.buttons["mobile.nas.task.save"].isEnabled); screenshot(app, "Unknown task edit keeps its operation record"); app.terminate()
         let next = launch("nas-tasks-recover", preserve: true); defer { next.terminate() }
