@@ -3008,3 +3008,21 @@ XcodeGen 2.46.0 最终再生成前后工程 SHA-256 同为 `eacbffdfabb194090fde
 本片临时 `m7c1-inspection`（含首轮工具栏警告附件和各轮导出清单）已精确清理；保留当前预览、正式日志和结果包。两台模拟器均已恢复浅色。
 
 本片提交前读取云端 [37413207539](https://github.com/yuangy1995/dsm-native-client/actions/runs/37413207539)：基于 cdc889cc 的共享/macOS 与 iPad 工作区通过，iPhone 工作区失败，两个模块组仍运行。映像删除本机结果独立保存，云端失败另行读取具体日志修复，暂不推送取消仍在执行的组；不将本地提交当作云端通过。
+
+## 2026-10-06 macOS 删除反馈保留明确失败
+
+用户单独明确授权修复 `ServiceManagementModel.performDeletion` 的结果判断及必要回归，随后又授权当前 M6–M8 目标内后续选择自主处理。修改前先以三个模型用例复现旧行为：明确失败/权限拒绝/不支持（分别覆盖已提交与未提交）后模拟其他客户端使列表目标消失；提交前取消但旧选择已经不在页面；部分删除含已知失败项。旧实现因 `confirmedSuccess || isVerified()` 错误显示完成，36 项测试中产生 23 条失败断言，均来自这三项新用例，其他用例继续通过。
+
+修正仅允许“已提交、没有明确失败项、状态为未知/提交后取消/部分成功”的结果沿原刷新路径补充确认；明确失败、未提交或已知失败项保留对应反馈。请求、权限、危险确认、目标选择、持久化及双语资源均未改变。原未知结果和无明确失败的部分结果回读成功仍有通过证据，没有删除旧恢复能力。
+
+```sh
+swift test --package-path apple --jobs 2 --filter ServiceManagementModelTests
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/PlugIns/LanStashFileProvider.appex/Contents/MacOS/LanStashFileProvider
+```
+
+修正后聚焦 36 项零失败；完整 2915 项 XCTest（172 条既有跳过、0 失败）及 12 项 Swift Testing 通过；Mac Release 构建成功，主 App 和内嵌 File Provider 均实际核实 x86_64/arm64。日志分别为 `m7-mac-deletion-before.log`（预期复现失败）、`m7-mac-deletion-focused.log`、`m7-mac-deletion-full.log`、`m7-mac-deletion-macos.log`，保留在本机构建目录，不提交。
+
+独立复核确认拒绝不再调用页面消失兜底，正常未知读取保留，映像删除原本的严格仓库判断不受影响。没有真实 NAS 删除、签名发布或安装包启动。用户已允许后续真实账号测试，但只能操作 Agent 自行生成的隔离数据；本次缺陷已用模型可靠复现，无需为反馈测试删除真实目标。真实设备/NAS 结论不由本片提升，M6 其余管理及 M7/M8 继续推进。

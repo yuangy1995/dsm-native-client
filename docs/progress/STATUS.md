@@ -12,6 +12,7 @@
 | macOS Photos | 已登记网页对齐开发及本机可执行验证完成，包含管理、上传恢复和预览；有部分版本只读及受控单项写证据，不能推定所有功能/版本真实通过 | 已修复局部操作误报图库失败及刷新残留，照片入口改按 Synology Photos 独立授权，不继承文件权限；原始触发步骤与真实 NAS/辅助功能按[二次反馈账本](../development/PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)继续验收 |
 | macOS File Station | 高级搜索/全文、逐项分享、目录上传、归档、权限、ISO/VFS/云授权、设置与任务控制已接入；本机合成与 Release 测试包完成 | 专用数据下验证权限、回调、连接和最终结果；见[macOS 说明](../../apple/Apps/DsmMac/README.md) |
 | macOS NAS 设置 / 套件中心 | 21 页网页核对及读取、硬件支持位、文案修正完成；内存压缩、电源计划和套件安装/更新/上传/设置/来源已形成主流程及本机回归 | 预检/设置及资源覆盖修复后，补齐系统套件缺省位置与准备取消；真实客户端更新按[二次反馈账本](../development/PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)继续验收 |
+| macOS 服务删除反馈 | 下载、容器/网络和虚拟机通用反馈已纠正：明确拒绝、未提交或已有失败项不能被列表消失覆盖；36 项聚焦、完整 2915 XCTest/12 Swift Testing 与 Mac 双架构通过 | 实际删除仍只在专用可丢弃目标验证，结果与实际 NAS 分别记录 |
 | macOS Office | 系统预览、本机应用编辑、保存后自动回传、冲突/未知核查已完成本机验证 | 真实 Office/Pages/Numbers/Keynote、旧格式、正式签名沙盒及 NAS 验收 |
 | macOS UI / 远程位置 | 完整 WebDAV URL、工具栏/路径、照片来源、连接成功结束、保存进度及外置浏览入口已修正并有原生回归 | 用户实际连接、窄窗口与完整辅助功能反馈 |
 | Windows | 2026-09-21 范围的业务对齐、云盘写回/恢复及 x64/ARM64 云端验证完成；后续 Mac 增量未自动移植 | Photos 管理、File Station 增量、Office 按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)逐项开发 |

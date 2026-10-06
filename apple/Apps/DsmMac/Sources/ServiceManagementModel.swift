@@ -647,7 +647,9 @@ final class ServiceManagementModel {
                 await activate(module, force: true)
             }
             isPerformingAction = false
-            if result.status == .confirmedSuccess || isVerified() {
+            let canConfirmFromRefresh = result.submitted && result.counts.failed == 0
+                && [.submittedButUnverified, .cancellationRequestedAfterSubmission, .partialSuccess].contains(result.status)
+            if result.status == .confirmedSuccess || (canConfirmFromRefresh && isVerified()) {
                 message = L10n.string(successKey)
                 messageIsError = false
                 return true
