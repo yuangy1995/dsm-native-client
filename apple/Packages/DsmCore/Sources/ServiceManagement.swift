@@ -737,17 +737,6 @@ public struct VirtualMachineUpdate: Equatable, Sendable {
     }
 }
 
-/// 远程控制台凭据只保存在内存中，不应记录、持久化或拼入地址。
-public struct VirtualMachineConsoleSession: Equatable, Sendable {
-    public let url: URL
-    public let sessionCookieValue: String
-
-    public init(url: URL, sessionCookieValue: String) {
-        self.url = url
-        self.sessionCookieValue = sessionCookieValue
-    }
-}
-
 public struct VirtualMachineManagerSnapshot: Equatable, Sendable {
     public let source: ServiceContractSource
     public let machines: [VirtualMachine]

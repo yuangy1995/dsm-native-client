@@ -3950,3 +3950,77 @@ iPad 用相同测试选择，设备替换为 `A31ABDE2-186F-43DD-8D40-5EB9511A92
 替换为 `build/m7d-ci-admin-pad.xcresult`。改前仅选择原两个失败用例，结果文件名
 含 `-before`。云端仍有两组 iPad 作业运行，没有主动取消；此修正尚未经过下一轮
 完整云端，不将本机通过表述为云端已修复。后续继续控制台与 M8 源码切片。
+
+
+## 2026-10-07 M7d5 虚拟机触控控制台与共享安全宿主
+
+开始于 main `4d19f623`，沿用户既有共享提取、必要 Mac 基线修复和两种模拟器授权。
+新增 `DsmCore/VirtualMachineConsole`、`DsmNetwork/DsmVirtualMachineConsoleTransport`、
+共享 `DsmVirtualMachineConsoleFeature`，移动入口/完整页面/生命周期和合成 UI 场景；
+修改原仓库准备、General 能力发现、TLS/HTTP 可选拒绝重定向、Mac 窗口及退出清理、
+双语资源和正式生成工程。正式测试覆盖原身份/状态、默认键盘、权限、证书、网页
+来源、消息顺序与生命周期；Windows/Android 未改源码。
+
+凭据始终留在原生内存，网页资源和固定 VM/app_id 的 WSS 统一沿既有信任配置。
+非持久 WebKit 使用自定义单窗口来源、有限静态文件及语言桥，保留服务器 CSP，
+禁止网页直接联网、导航外站、新窗口、frame/object/worker。关闭、切账号与移动
+离开前台会停止连接，重连由用户主动发起，不自动重发输入。实际 NAS noVNC/RFB
+未连接，不把合成页面或本机 WSS 握手写成真实 VNC 已验证。
+
+验证及中间修正：
+
+- 新共享类型接线过程首轮编译尚未完成；随后修复新组件测试中 await 位于 XCTest
+  autoclosure 的编译错误。21 项初轮专项、252 项相关共享/Mac 回归通过。
+- 临时生成证书与回环 HTTPS/WSS 初轮 5 项通过；测试 HTTPServer 起初进行了不必要
+  的回环反向 DNS，改为固定本机服务名后复验通过。随后加入真实 WSS 重定向及
+  HTTPS/WSS 权限拒绝，最终 TLS 7 项通过。密钥与证书只生成在临时目录并自动清理。
+- 控制台实际 WK 6 项、Mac 生命周期 2 项、地址策略 5 项、TLS 7 项、传输 7 项、
+  准备 5 项，共 32 项纳入最终完整共享 3101 项 XCTest（172 条既有环境跳过）及
+  12 项 Swift Testing；全部通过，XCTest 101.543 秒。
+- 移动首次使用了新的派生目录，未运行测试即停止；改回原 m0-m8 增量目录。新模型
+  测试缺少 try/requestFormat 的编译错误修正后，后续测试包构建均成功。两端各
+  101 项 VM 模型通过（1.316/1.280 秒）；首轮各六项 UI 通过（244.125/287.273 秒）。
+  截图发现连接后断开仍用首次失败提示，改为“已断开”，两端单项复验通过
+  （48.532/53.102 秒）。再补权限/身份恢复后，最终两项 UI 各通过
+  （109.470/127.523 秒）。六项新控制台 UI 与原开机 UI 分轮通过，未连接 NAS。
+- Mac 外壳绘制首次在 WK 尚未完成时沿用同步 isLoading 断言，三处失败；保留原
+  断言并等待真实完成后，一项双语/浅深外壳检查通过（1.454 秒）。移除同一工具栏
+  重复“远程控制台”标签。首轮 26 张、最终恢复 8 张、Mac 两轮 8 张共 42 张截图
+  已逐张检查；测试图仅含自造内容。
+- 本地化/硬编码扫描 6981/2188/3402 通过；180 个请求 fixture / 1 个写结果示例、
+  29 组 fixture / 48 个私有文档引用通过；CI 分组覆盖三项测试通过。工程通过
+  xcodegen 更新，无手改生成文件。最终 Mac Release 构建通过，lipo 检查主 App 与
+  File Provider 扩展均为 x86_64/arm64；未安装、启动或发布正式 App。
+
+主要可复现命令（两设备及结果路径来自日志；每组禁止并行 simulator；工作区绝对前缀以 `$PWD` 脱敏）：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'VirtualMachineConsole'
+swift test --package-path apple --jobs 2
+xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodegen generate --spec apple/Apps/DsmMac/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -only-testing:DsmMobileTests/MobileVirtualMachineConsoleTests -only-testing:DsmMobileTests/MobileVirtualMachineControlTests -only-testing:DsmMobileTests/MobileVirtualMachineCreationTests -only-testing:DsmMobileTests/MobileVirtualMachineImageTests -only-testing:DsmMobileTests/MobileVirtualMachineNetworkTests -only-testing:DsmMobileTests/MobileVirtualMachineInventoryModelTests -only-testing:DsmMobileTests/MobileVirtualMachinePresentationTests -only-testing:DsmMobileUITests/MobileVirtualMachineConsoleUITests -only-testing:DsmMobileUITests/MobileVirtualMachineControlUITests/test普通套件账号开机并查看逐项结果 -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -resultBundlePath build/m7d5-phone.xcresult
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -only-testing:DsmMobileUITests/MobileVirtualMachineConsoleUITests/test中途断开不会自动重连 -only-testing:DsmMobileUITests/MobileVirtualMachineConsoleUITests/test权限拒绝与身份变化提供准确恢复提示 -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -resultBundlePath build/m7d5-pad-recovery.xcresult
+LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests/test控制台窗口双语主题保留非持久网页且不连接设备' bash tools/codex/run_macos_ui_checks.sh "$PWD/build/m7d5-mac-preview-final"
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 -m unittest discover -s tools/release -p test_apple_ci.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+首轮同组 iPad 将 destination 改为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果为
+`build/m7d5-pad.xcresult`；最终恢复同组 iPhone 使用 `8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`，
+结果为 `build/m7d5-phone-recovery.xcresult`。日志分别为 `build/m7d5-{phone,pad}.log`、
+`build/m7d5-{phone,pad}-recovery.log`、`build/m7d5-shared-final.log`、
+`build/m7d5-mac-ui-final.log` 和 `build/m7d5-mac-build-final.log`。
+
+当前负责人独立集成及只读对抗复核已完成；真实套件资源、VNC 输入/画面、根反代、
+两类真机的前后台/锁屏与辅助功能按主计划 M7d5 的具体 `PENDING_USER_VALIDATION`
+执行。非根应用门户当前没有 Apple 配置入口，使用根反代/官方 VMM，不写成待真机。
+M8 系统后台、分享扩展与 Files 尚未实现，本片不把它们视为完成或仅待真机。
+
+已清理新增临时派生目录、诊断采样及原始截图导出目录；正式日志/xcresult 保留于忽略的 build，16 张精选合成截图位于 `build/m7d5-preview`。

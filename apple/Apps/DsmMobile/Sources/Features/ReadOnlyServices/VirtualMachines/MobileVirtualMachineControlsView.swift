@@ -7,6 +7,7 @@ struct MobileVirtualMachineActions: View {
     let ids: Set<String>
     @State private var confirmation: MobileVirtualMachineControlModel.Confirmation?
     @State private var settings: MobileVirtualMachineSettingsRequest?
+    @State private var console: MobileVirtualMachineConsoleRequest?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -15,6 +16,13 @@ struct MobileVirtualMachineActions: View {
                 Text(L10n.string("virtual-machine.power.restart-unavailable")).font(.subheadline).foregroundStyle(.secondary)
             }
             if ids.count == 1, let id = ids.first {
+                Button {
+                    if let target = model.targets.first(where: { $0.id == id }) { console = .init(target: target, activation: model.activation) }
+                } label: {
+                    Label(L10n.string("mobile.virtual-machines.console.open"), systemImage: "display").frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered).disabled(!model.canOpenConsole(id: id))
+                .accessibilityIdentifier("virtual-machine.console.open")
                 Button {
                     settings = .init(targetID: id, activation: model.activation)
                 } label: {
@@ -36,6 +44,7 @@ struct MobileVirtualMachineActions: View {
             MobileVirtualMachineConfirmationView(model: model, confirmation: value)
         }
         .sheet(item: $settings) { value in MobileVirtualMachineSettingsView(model: model, request: value) }
+        .fullScreenCover(item: $console) { value in MobileVirtualMachineConsoleView(model: model, request: value) }
     }
 }
 

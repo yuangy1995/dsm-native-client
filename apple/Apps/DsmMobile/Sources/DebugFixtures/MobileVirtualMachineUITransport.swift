@@ -18,7 +18,7 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
     var writes: [[String: String]] { calls.filter { ["poweron", "shutdown", "poweroff", "pwr_ctl", "delete", "set", "create"].contains($0["method"] ?? "") } }
     init(mode: String = "vmm-control") {
         self.mode = mode
-        let running = mode.contains("running") || mode == "vmm-recover" || mode == "vmm-restart"
+        let running = mode.contains("running") || mode == "vmm-recover" || mode == "vmm-restart" || mode.hasPrefix("vmm-console") && mode != "vmm-console-stopped"
         machines = [Self.machine(id: "synthetic-vm", name: "Sample virtual machine", running: running),
                     Self.machine(id: "worker-b", name: "Worker B", running: running)]
         if mode == "vmm-delete-recovered" || mode == "vmm-empty" { machines = [] }
@@ -109,9 +109,10 @@ actor MobileVirtualMachineUITransport: DsmHTTPTransport {
             return item
         }
         if method == "get" {
-            guard let item = values.first(where: { $0["guest_id"] as? String == fields["guest_id"] }) else {
+            guard var item = values.first(where: { $0["guest_id"] as? String == fields["guest_id"] }) else {
                 return response(["code": 408], success: false)
             }
+            item["is_online"] = item["status"] as? String == "running"; item["kb_layout"] = "en-us"
             return response(item)
         }
         if mode == "vmm-incomplete" { return response(["guests": [], "total": 2]) }

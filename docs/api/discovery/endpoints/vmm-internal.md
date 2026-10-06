@@ -14,6 +14,31 @@
 
 ## 请求契约
 
+### 2026-10-07 Apple 控制台凭据与来源边界
+
+M7d5 复用既有 Guest 严格清单、内部 Guest.get v2 的 guest_id/name/is_online/
+kb_layout；Default 布局固定调用 Setting.General.get v1，缺失不补 en-us。准备时
+保留原 VM 名称与运行状态、权限拒绝、未完成电源/编辑/删除/网络/创建互锁。只读
+准备不启动 VM，不创建分享链接，不自动发送输入。
+
+Apple 三端共用非持久 WebKit 宿主；页面地址和资源使用仅限单窗口的自定义来源，
+网页没有 Cookie/SID/SynoToken。HTTP 静态资源与固定 VM/app_id 的 WSS 均由原生
+URLSession 与既有 DsmTLSDelegate 处理，固定证书与 QuickConnect 强制系统信任
+规则一致，HTTP/WSS 均拒绝重定向。语言 JSON 只读桥限 1 MiB；启动 HTML 限
+4 MiB、其他静态资源限 8 MiB，资源路径沿 2026-09-21 记录，图标仅七种尺寸。
+保留 NAS CSP 并附加禁止网页直连网络、frame/object/worker、表单和来源变更。
+
+画面单条原生消息限制 32 MiB，再按 256 KiB 有序交付；输入单条 1 MiB、网页发送
+队列 4 MiB，不自动重连或重发。关闭、账号退出/切换、移动离开前台会停止资源和
+连接；准备或读取的迟到结果被丢弃。独立 Mac 窗口按原 VM 绑定并随退出关闭。
+现有 Apple 配置只支持主机/端口根地址，非根应用别名入口不在本片新增；策略层
+有别名合成覆盖，不能当作实际门户连接证据。
+
+本机真实 WebKit、临时证书回环 HTTPS/WSS 和合成原请求已检查；具体构建及设备
+进度见移动主计划 M7d5。尚未使用真实 NAS noVNC 资源、实际 VNC 握手/画面或键鼠，
+不提升任何已记录环境的 observed/read-verified/behavior-verified 等级。Windows
+继续既有实现并登记相同边界，Android 只登记影响，二者没有源码、API 或存储迁移。
+
 ### 2026-10-07 映像删除与移动恢复边界
 
 M7d4b Apple 映像删除优先使用公开 Guest.Image list/delete v1 的 image_id；仅内部

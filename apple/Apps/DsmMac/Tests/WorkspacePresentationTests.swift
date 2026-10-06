@@ -4870,8 +4870,9 @@ final class WorkspacePresentationTests: XCTestCase {
     func test控制台窗口双语主题保留非持久网页且不连接设备() async throws {
         let previousLanguage = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = previousLanguage }
-        // 无主机地址，命中现有的无效会话分支；只检查真实窗口外壳，不伪造控制台内容。
-        let session = VirtualMachineConsoleSession(url: try XCTUnwrap(URL(string: "about:blank")), sessionCookieValue: "")
+        // 使用完全内存的合成传输器；外壳检查不访问真实网络或虚拟机。
+        let policy = try VirtualMachineConsolePolicy(baseURL: XCTUnwrap(URL(string: "https://example.invalid")), machineID: "vm-1", name: "Synthetic", keyboardLayout: "en-us")
+        let session = VirtualMachineConsoleSession(policy: policy, transport: ConsoleShellTransport())
         for language in [AppLanguageSelection.simplifiedChinese, .english] {
             AppLanguageStore.shared.selection = language
             for scheme in [ColorScheme.light, .dark] {
@@ -4885,15 +4886,19 @@ final class WorkspacePresentationTests: XCTestCase {
                 let window = attach(host, size: NSSize(width: 720, height: 480))
                 defer { window.contentView = nil; window.close() }
                 try await settle(host)
-                try snapshot(host, name: "console-shell-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
                 func findWebView(_ view: NSView) -> WKWebView? {
                     if let webView = view as? WKWebView { return webView }
                     return view.subviews.lazy.compactMap(findWebView).first
                 }
                 let webView = try XCTUnwrap(findWebView(host))
                 XCTAssertFalse(webView.configuration.websiteDataStore.isPersistent)
-                XCTAssertNil(webView.url)
+                XCTAssertEqual(webView.url, policy.localDocumentURL)
+                for _ in 0..<100 {
+                    if !webView.isLoading { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
                 XCTAssertFalse(webView.isLoading)
+                try snapshot(host, name: "console-shell-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
                 XCTAssertGreaterThan(webView.bounds.height, 300)
                 XCTAssertEqual(host.bounds.width, 720, accuracy: 1)
             }
@@ -7601,4 +7606,12 @@ final class FileArchiveWorkflowTests: XCTestCase {
         XCTAssertEqual(edits.count, 1)
         guard case .remove = edits.first?.password else { return XCTFail("移除密码意图必须传递给仓库") }
     }
+}
+
+private actor ConsoleShellTransport: VirtualMachineConsoleTransport {
+    func resource(_ url: URL) async throws -> VirtualMachineConsoleResource { .init(data: Data("<html><body></body></html>".utf8), mediaType: "text/html") }
+    func connect() async throws { throw VirtualMachineConsoleError.unavailable }
+    func receive() async throws -> Data { throw VirtualMachineConsoleError.unavailable }
+    func send(_ data: Data) async throws { throw VirtualMachineConsoleError.unavailable }
+    func close() async {}
 }

@@ -207,6 +207,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private let baseURL: URL
     private let client: DsmAPIClient
     private let transport: any DsmHTTPTransport
+    private let consoleTransportFactory: @Sendable (VirtualMachineConsolePolicy, String) throws -> any VirtualMachineConsoleTransport
     private var activeDownloadSettings = false
     private var pendingDownloadSettings: [DownloadSettingsField.Group: DownloadSettingsChange] = [:]
     private var activeDownloadRSSUpdates: Set<Int> = []
@@ -250,7 +251,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         capabilities: CapabilitySet,
         session: AuthSession,
         transport: (any DsmHTTPTransport)? = nil,
-        containerNetworkCreationEnabled: Bool = false
+        containerNetworkCreationEnabled: Bool = false,
+        consoleTransportFactory: (@Sendable (VirtualMachineConsolePolicy, String) throws -> any VirtualMachineConsoleTransport)? = nil
     ) throws {
         let resolvedTransport = transport ?? URLSessionTransport(
             expectedHost: profile.host,
@@ -264,6 +266,15 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         credential = DsmSessionCredential(sid: session.sid, synoToken: session.synoToken)
         self.baseURL = baseURL
         self.transport = resolvedTransport
+        let host = profile.host, fingerprint = profile.pinnedCertificateSHA256
+        let requiresSystemTrust = DsmQuickConnectResolver.isTrustedRelayHost(host)
+        let consoleHTTP = transport ?? URLSessionTransport(expectedHost: host, pinnedCertificateSHA256: fingerprint,
+            requiresSystemCertificateTrust: requiresSystemTrust, allowsRedirects: false)
+        self.consoleTransportFactory = consoleTransportFactory ?? { policy, cookie in
+            try DsmVirtualMachineConsoleTransport(policy: policy, cookie: cookie, http: consoleHTTP) { request in
+                DsmNativeConsoleSocket(request: request, expectedHost: host, fingerprint: fingerprint, requiresSystemTrust: requiresSystemTrust)
+            }
+        }
         client = DsmAPIClient(
             baseURL: baseURL,
             transport: resolvedTransport
@@ -3275,45 +3286,53 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         return true
     }
 
+    public var supportsVirtualMachineConsole: Bool {
+        vmmCapability(DsmAPIName.virtualizationGuest, version: 2) != nil
+    }
+
     public func openVirtualMachineConsole(id: String) async throws -> VirtualMachineConsoleSession {
-        let id = try validatedIDs([id])[0]
-        let snapshot = try await loadVirtualMachineManager()
-        guard let machine = snapshot.machines.first(where: { $0.id == id }) else {
-            throw validationError(L10n.string("shared.706d4bbb975fcdc6"))
+        try await prepareVirtualMachineConsole(id: id, expected: nil)
+    }
+
+    public func openVirtualMachineConsole(_ target: VirtualMachineControlState) async throws -> VirtualMachineConsoleSession {
+        try await prepareVirtualMachineConsole(id: target.id, expected: target)
+    }
+
+    private func prepareVirtualMachineConsole(id: String, expected: VirtualMachineControlState?) async throws -> VirtualMachineConsoleSession {
+        guard Self.isVmmDeletionID(id), supportsVirtualMachineConsole else { throw unavailableError() }
+        try requireConsoleTargetAvailable(id)
+        let targets = try await loadVirtualMachineControlStates()
+        guard let target = targets.first(where: { $0.id == id }), target.status == "running",
+              expected == nil || expected?.name == target.name && expected?.status == target.status,
+              !creationProtects(id: id, name: target.name) else {
+            throw validationError(L10n.string("virtual-machine.power.target-changed"))
         }
-        guard Self.isVirtualMachineRunning(machine.status) else {
-            throw validationError(L10n.string("shared.7047a09e87d95943"))
+        let value = try await call(DsmAPIName.virtualizationGuest, method: "get", parameters: ["guest_id": .string(id)], fixedVersion: 2)
+        guard case .string(let actualID)? = value["guest_id"], actualID == id,
+              case .string(let actualName)? = value["name"], actualName == target.name,
+              case .boolean(true)? = value["is_online"],
+              case .string(var keyboard)? = value["kb_layout"], !keyboard.isEmpty else { throw invalidServiceResponse() }
+        if keyboard == "Default" {
+            guard vmmCapability(DsmAPIName.virtualizationSettingGeneral, version: 1) != nil else { throw unavailableError() }
+            let general = try await call(DsmAPIName.virtualizationSettingGeneral, method: "get", parameters: [:], fixedVersion: 1)
+            guard case .string(let layout)? = general["kb_layout"], !layout.isEmpty, layout != "Default" else { throw invalidServiceResponse() }
+            keyboard = layout
         }
-        var components = URLComponents(
-            url: baseURL
-                .appendingPathComponent("webman", isDirectory: true)
-                .appendingPathComponent("3rdparty", isDirectory: true)
-                .appendingPathComponent("Virtualization", isDirectory: true)
-                .appendingPathComponent("noVNC", isDirectory: true)
-                .appendingPathComponent("vnc.html"),
-            resolvingAgainstBaseURL: false
-        )
-        components?.queryItems = [
-            URLQueryItem(name: "autoconnect", value: "true"),
-            URLQueryItem(name: "reconnect", value: "true"),
-            URLQueryItem(name: "path", value: "synovirtualization/ws/\(id)"),
-            URLQueryItem(name: "title", value: machine.name),
-            URLQueryItem(name: "app_id", value: UUID().uuidString.lowercased()),
-            URLQueryItem(
-                name: "kb_layout",
-                value: machine.keyboardLayout == "Default"
-                    ? "en-us"
-                    : machine.keyboardLayout ?? "en-us"
-            ),
-            URLQueryItem(name: "app_alias", value: "")
-        ]
-        guard let url = components?.url else {
-            throw verificationError(L10n.string("shared.59faeb679e4861af"))
+        try Task.checkCancellation()
+        try requireConsoleTargetAvailable(id)
+        let policy: VirtualMachineConsolePolicy
+        do { policy = try .init(baseURL: baseURL, machineID: id, name: target.name, keyboardLayout: keyboard) }
+        catch { throw invalidServiceResponse() }
+        return try .init(policy: policy, transport: consoleTransportFactory(policy, credential.sid))
+    }
+
+    private func requireConsoleTargetAvailable(_ id: String) throws {
+        guard !activeVmmSettingsIDs.contains(id), !activeVmmPowerIDs.contains(id), unverifiedVmmPower[id] == nil,
+              unverifiedVmmSettings[id] == nil, !networkProtectsGuest(id),
+              !(activeDeletionIDsByOperation["virtualMachineDelete"] ?? []).contains(id),
+              [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest].allSatisfy({ unverifiedVmmDeletions[$0]?[id] == nil }) else {
+            throw validationError(L10n.string("virtual-machine.power.review-required"))
         }
-        return VirtualMachineConsoleSession(
-            url: url,
-            sessionCookieValue: credential.sid
-        )
     }
 
     public func controlVirtualMachines(ids: [String], action: VirtualMachinePowerAction) async throws {

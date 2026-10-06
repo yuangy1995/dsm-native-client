@@ -241,6 +241,7 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
     private let expectedHost: String?
     private let pinnedFingerprint: String?
     private let requiresSystemTrust: Bool
+    private let allowsRedirects: Bool
     private let lock = NSLock()
     private let taskFailures = TaskScopedTLSFailureStore()
     private let sessionFailures = SessionScopedTLSFailureStore()
@@ -256,13 +257,15 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
     init(
         expectedHost: String?,
         pinnedFingerprint: String?,
-        requiresSystemTrust: Bool = false
+        requiresSystemTrust: Bool = false,
+        allowsRedirects: Bool = true
     ) {
         self.expectedHost = expectedHost
         self.pinnedFingerprint = pinnedFingerprint?
             .replacingOccurrences(of: ":", with: "")
             .uppercased()
         self.requiresSystemTrust = requiresSystemTrust
+        self.allowsRedirects = allowsRedirects
     }
 
     func consumeFailure(for task: URLSessionTask) -> DsmCertificateTrustError? {
@@ -303,6 +306,7 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
+        guard allowsRedirects else { completionHandler(nil); return }
         completionHandler(
             DsmRedirectPolicy.redirectedRequest(
                 from: task.currentRequest?.url ?? task.originalRequest?.url,

@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "DsmCore", targets: ["DsmCore"]),
         .library(name: "DsmNetwork", targets: ["DsmNetwork"]),
         .library(name: "DsmLocalization", targets: ["DsmLocalization"]),
+        .library(name: "DsmVirtualMachineConsoleFeature", targets: ["DsmVirtualMachineConsoleFeature"]),
         .library(name: "DsmFileFeature", targets: ["DsmFileFeature"]),
         .library(name: "DsmPhotosFeature", targets: ["DsmPhotosFeature"]),
         .executable(name: "LanStash", targets: ["DsmMacExecutable"])
@@ -42,6 +43,11 @@ let package = Package(
             ]
         ),
         .target(
+            name: "DsmVirtualMachineConsoleFeature",
+            dependencies: ["DsmCore", "DsmLocalization"],
+            path: "Packages/DsmVirtualMachineConsoleFeature/Sources"
+        ),
+        .target(
             name: "DsmFileFeature",
             dependencies: ["DsmCore", "DsmLocalization"],
             path: "Packages/DsmFileFeature/Sources"
@@ -54,7 +60,7 @@ let package = Package(
         .executableTarget(
             name: "DsmMacExecutable",
             dependencies: [
-                "DsmCore", "DsmNetwork", "DsmLocalization", "DsmPhotosFeature", "DsmFileFeature",
+                "DsmCore", "DsmNetwork", "DsmLocalization", "DsmPhotosFeature", "DsmFileFeature", "DsmVirtualMachineConsoleFeature",
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS]))
             ],
             path: "Apps/DsmMac/Sources",
@@ -80,6 +86,11 @@ let package = Package(
                 "ProviderEnumerator.swift",
                 "ProviderOperationRegistry.swift"
             ]
+        ),
+        .testTarget(
+            name: "DsmVirtualMachineConsoleFeatureTests",
+            dependencies: ["DsmCore", "DsmVirtualMachineConsoleFeature"],
+            path: "Packages/DsmVirtualMachineConsoleFeature/Tests"
         ),
         .testTarget(
             name: "DsmCoreTests",

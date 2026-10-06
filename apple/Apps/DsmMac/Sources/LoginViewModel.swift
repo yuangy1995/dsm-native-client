@@ -759,6 +759,7 @@ final class AppModel {
     }
 
     private func closeCurrentWorkspace() {
+        workspace?.serviceManagement.closeVirtualMachineConsoles()
         invalidateConnectionAttempt()
         workspace = nil
         activeConnectionProfile = nil

@@ -44,6 +44,8 @@ targets:
         product: DsmPhotosFeature
       - package: DsmShared
         product: DsmFileFeature
+      - package: DsmShared
+        product: DsmVirtualMachineConsoleFeature
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MAC_APP_BUNDLE_ID)"
