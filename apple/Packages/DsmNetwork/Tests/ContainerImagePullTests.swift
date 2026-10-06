@@ -214,6 +214,142 @@ final class ContainerImagePullTests: XCTestCase {
         XCTAssertEqual(result.outcome.status, .submittedButUnverified)
     }
 
+    func test提交前存储失败不得启动下载() async throws {
+        let transport = MockHTTPTransport(responses: [reply(tags), reply(images)])
+        let repository = try makeRepository(transport)
+        do {
+            _ = try await repository.startContainerImagePull(makeRequest()) { _ in throw PullStorageError() }
+            XCTFail("应返回存储失败")
+        } catch { XCTAssertTrue(error is PullStorageError) }
+        let calls = await transport.recordedRequests()
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertFalse(calls.contains { parameter("method", $0) == "pull_start" })
+    }
+
+    func test回执保存失败必须停止后续读取且保留原任务() async throws {
+        let transport = MockHTTPTransport(responses: [reply(tags), reply(images), reply(receipt)])
+        let repository = try makeRepository(transport), probe = PullCheckpointProbe()
+        do {
+            _ = try await repository.startContainerImagePull(makeRequest()) { point in
+                await probe.capture(point)
+                if case .accepted = point { throw PullStorageError() }
+            }
+            XCTFail("应返回存储失败")
+        } catch { XCTAssertTrue(error is PullStorageError) }
+        let recovery = await probe.accepted
+        XCTAssertEqual(recovery?.taskID, .text("synthetic-task"))
+        XCTAssertEqual(recovery?.baselineImageIDs, [ContainerImagePullRecovery.digest("synthetic-id")])
+        let calls = await transport.recordedRequests()
+        XCTAssertEqual(calls.count, 3)
+        let pending = try await repository.loadContainerImagePulls()
+        XCTAssertEqual(pending.count, 1)
+    }
+
+    func test明确拒绝检查点失败不能吞成未知或回读() async throws {
+        let transport = MockHTTPTransport(responses: [reply(tags), reply(images), reply(#"{"success":false,"error":{"code":105}}"#)])
+        do {
+            _ = try await makeRepository(transport).startContainerImagePull(makeRequest()) { point in
+                if case .rejected = point { throw PullStorageError() }
+            }
+            XCTFail("应返回存储失败")
+        } catch { XCTAssertTrue(error is PullStorageError) }
+        let calls = await transport.recordedRequests(); XCTAssertEqual(calls.count, 3)
+    }
+
+    func test重建仓库仅原任务读取保留编号类型且不依赖Registry() async throws {
+        for taskID in [ContainerImagePullRecovery.TaskID.text("synthetic-task"), .integer(42)] {
+            let transport = MockHTTPTransport(responses: [reply(status()), reply(status(finished: true)), reply(images)])
+            let repository = try makeRepository(transport, format: .json, registry: false)
+            let recovery = makeRecovery(taskID: taskID)
+            let first = try await repository.restoreContainerImagePull(recovery)
+            XCTAssertEqual(first.stage, .downloading); XCTAssertEqual(first.percentage, 25)
+            XCTAssertEqual(first.repository, "docker.io/synthetic/web")
+            let final = try await repository.restoreContainerImagePull(recovery)
+            XCTAssertEqual(final.stage, .ready)
+            let repeated = try await repository.restoreContainerImagePull(recovery)
+            XCTAssertEqual(repeated, final)
+            let calls = await transport.recordedRequests()
+            XCTAssertEqual(calls.count, 3)
+            XCTAssertTrue(calls.allSatisfy { parameter("method", $0) != "pull_start" })
+            XCTAssertEqual(parameter("task_id", calls[0]), taskID == .integer(42) ? "42" : #""synthetic-task""#)
+        }
+    }
+
+    func test无回执恢复零请求且保护原目标不认领旧映像() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(transport), recovery = makeRecovery(taskID: nil)
+        let first = try await repository.restoreContainerImagePull(recovery)
+        XCTAssertEqual(first.stage, .awaitingReceipt)
+        XCTAssertTrue(first.repository.isEmpty)
+        let retry = try await repository.startContainerImagePull(makeRequest())
+        XCTAssertFalse(retry.outcome.submitted); XCTAssertEqual(retry.outcome.errorCategory, .conflict)
+        let calls = await transport.recordedRequests(); XCTAssertTrue(calls.isEmpty)
+    }
+
+    func test恢复回显不匹配不得读取清单或覆盖目标() async throws {
+        let transport = MockHTTPTransport(responses: [reply(status(finished: true).replacingOccurrences(of: "stable", with: "latest"))])
+        let result = try await makeRepository(transport).restoreContainerImagePull(makeRecovery())
+        XCTAssertEqual(result.stage, .needsReview); XCTAssertTrue(result.repository.isEmpty)
+        let calls = await transport.recordedRequests(); XCTAssertEqual(calls.count, 1)
+    }
+
+    func test恢复任务明确失败结束而读取权限拒绝保留保护() async throws {
+        for code in [1202, 105] {
+            let transport = MockHTTPTransport(responses: [reply("{\"success\":false,\"error\":{\"code\":\(code)}}")])
+            let result = try await makeRepository(transport).restoreContainerImagePull(makeRecovery())
+            XCTAssertEqual(result.stage, code == 1202 ? .rejected : .needsReview)
+            XCTAssertEqual(result.outcome.errorCategory, code == 1202 ? .server : .permission)
+            let calls = await transport.recordedRequests(); XCTAssertEqual(calls.count, 1)
+        }
+    }
+
+    func test恢复仍保护原标签和裸映像删除() async throws {
+        for bare in [false, true] {
+            let payload = bare ? images.replacingOccurrences(of: "stable", with: "<none>") : images
+            let transport = MockHTTPTransport(responses: [reply(payload)])
+            let repository = try makeRepository(transport)
+            _ = try await repository.restoreContainerImagePull(makeRecovery(taskID: nil))
+            let result = try await repository.deleteContainerImagesResult(ids: [ContainerImage.selectionID(imageID: "synthetic-id", repository: "synthetic/web", tag: bare ? "<none>" : "stable")])
+            XCTAssertFalse(result.submitted); XCTAssertEqual(result.errorCategory, .conflict)
+            let calls = await transport.recordedRequests(); XCTAssertEqual(calls.count, 1)
+        }
+    }
+
+    func test损坏恢复记录不得读取且同编号不能替换目标() async throws {
+        let transport = MockHTTPTransport(responses: []), id = UUID()
+        let repository = try makeRepository(transport)
+        for recovery in [ContainerImagePullRecovery(id: id, target: "bad", baselineImageIDs: []),
+                         ContainerImagePullRecovery(id: id, target: makeRecovery().target, baselineImageIDs: [], taskID: .integer(-1))] {
+            do { _ = try await repository.restoreContainerImagePull(recovery); XCTFail("损坏记录必须拒绝") } catch { }
+        }
+        let original = makeRecovery(taskID: nil)
+        _ = try await repository.restoreContainerImagePull(original)
+        let changed = ContainerImagePullRecovery(id: original.id, target: ContainerImagePullRecovery.digest("other"), baselineImageIDs: [])
+        do { _ = try await repository.restoreContainerImagePull(changed); XCTFail("不得替换目标") } catch { }
+        let calls = await transport.recordedRequests(); XCTAssertTrue(calls.isEmpty)
+    }
+
+    func test管理路径证书失败直接抛出且不继续读取() async throws {
+        for step in [0, 2, 3] {
+            var steps: [MockHTTPTransport.Step] = [.response(reply(tags)), .response(reply(images)), .response(reply(receipt))]
+            steps = Array(steps.prefix(step)); steps.append(.urlError(.serverCertificateUntrusted))
+            let transport = MockHTTPTransport(steps: steps)
+            do {
+                _ = try await makeRepository(transport).startContainerImagePull(makeRequest()) { _ in }
+                XCTFail("证书错误不得降级为普通网络结果")
+            } catch { XCTAssertEqual((error as? AppError)?.category, .tlsUntrusted) }
+            let calls = await transport.recordedRequests(); XCTAssertEqual(calls.count, step + 1)
+        }
+        let transport = MockHTTPTransport(steps: [.urlError(.serverCertificateUntrusted)])
+        do { _ = try await makeRepository(transport).restoreContainerImagePull(makeRecovery()); XCTFail("恢复同样保留证书失败") }
+        catch { XCTAssertEqual((error as? AppError)?.category, .tlsUntrusted) }
+        let calls = await transport.recordedRequests(); XCTAssertEqual(calls.count, 1)
+    }
+
+    private func makeRecovery(taskID: ContainerImagePullRecovery.TaskID? = .text("synthetic-task")) -> ContainerImagePullRecovery {
+        .init(id: UUID(), target: ContainerImagePullRecovery.target(repository: "synthetic/web", tag: "stable"),
+              baselineImageIDs: [ContainerImagePullRecovery.digest("synthetic-id")], taskID: taskID)
+    }
     private var tags: String { "{\"success\":true,\"data\":{\"tags\":[\"stable\"]}}" }
     private var images: String { "{\"success\":true,\"data\":{\"offset\":0,\"total\":1,\"images\":[{\"id\":\"synthetic-id\",\"repository\":\"synthetic/web\",\"tags\":[\"stable\"]}]}}" }
     private var receipt: String { "{\"success\":true,\"data\":{\"task_id\":\"synthetic-task\"}}" }
@@ -222,8 +358,9 @@ final class ContainerImagePullTests: XCTestCase {
     }
     private func makeRequest() -> ContainerImagePullRequest { .init(repository: "synthetic/web", tag: "stable", isConfirmed: true) }
     private func reply(_ json: String) -> DsmHTTPResponse { .init(data: Data(json.utf8), statusCode: 200) }
-    private func makeRepository(_ transport: any DsmHTTPTransport, format: DsmRequestFormat = .form) throws -> DsmServiceManagementRepository {
-        let values = [DsmAPIName.dockerImage, DsmAPIName.dockerRegistry, DsmAPIName.dockerContainer].map { name in
+    private func makeRepository(_ transport: any DsmHTTPTransport, format: DsmRequestFormat = .form, registry: Bool = true) throws -> DsmServiceManagementRepository {
+        let names = registry ? [DsmAPIName.dockerImage, DsmAPIName.dockerRegistry, DsmAPIName.dockerContainer] : [DsmAPIName.dockerImage]
+        let values = names.map { name in
             (name, ApiCapability(name: name, path: "entry.cgi", minVersion: 1, maxVersion: 2, requestFormat: format, selectedVersion: 2))
         }
         return try DsmServiceManagementRepository(profile: NasProfile(displayName: "Synthetic", host: "nas.example.invalid", port: 5001),
@@ -233,5 +370,13 @@ final class ContainerImagePullTests: XCTestCase {
     private func parameter(_ name: String, _ request: URLRequest) -> String? {
         guard let body = request.httpBody, let text = String(data: body, encoding: .utf8) else { return nil }
         return URLComponents(string: "https://fixture.invalid/?" + text)?.queryItems?.first { $0.name == name }?.value
+    }
+}
+
+private struct PullStorageError: Error { }
+private actor PullCheckpointProbe {
+    var accepted: ContainerImagePullRecovery?
+    func capture(_ checkpoint: ContainerImagePullCheckpoint) {
+        if case .accepted(let value) = checkpoint { accepted = value }
     }
 }

@@ -51,6 +51,7 @@ enum MobileUIFixture {
                             DsmAPIName.chatChannel: officeState.hasPrefix("chat-management-") ? 5 : 2, DsmAPIName.chatUser: 1, DsmAPIName.chatPost: 8, DsmAPIName.chatAdminSetting: 3, DsmAPIName.chatPostVote: 1, DsmAPIName.chatPostReminder: 1, DsmAPIName.chatPostSchedule: 1,
                             "SYNO.Foto.UserInfo": 1, "SYNO.Foto.Setting.User": 1, "SYNO.Foto.Setting.Admin": 1, "SYNO.Foto.Setting.TeamSpace": 1,
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
+            if officeState.hasPrefix("containers-images"), officeState != "containers-images-unsupported" { versions[DsmAPIName.dockerRegistry] = 1 }
             if officeState.hasPrefix("containers-") {
                 versions[DsmAPIName.dockerImage] = 1; versions[DsmAPIName.dockerNetwork] = 1
                 versions[DsmAPIName.dockerProject] = 1; versions[DsmAPIName.dockerLog] = 1
@@ -150,6 +151,10 @@ enum MobileUIFixture {
             if officeState.hasPrefix("containers-") {
                 model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
                     session: session, transport: MobileContainerUITransport(mode: officeState))
+            }
+            if officeState.hasPrefix("containers-images") {
+                model.serviceRepository = try DsmServiceManagementRepository(profile: profile, capabilities: fixtureCapabilities,
+                    session: session, transport: MobileContainerImageUITransport(mode: officeState))
             }
             model.nasRepository = try DsmNasAdministrationRepository(profile: profile, capabilities: fixtureCapabilities, session: session, transport: transport)
             if officeState.hasPrefix("nas-package") {

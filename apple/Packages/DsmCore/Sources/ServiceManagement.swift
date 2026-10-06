@@ -833,6 +833,8 @@ public protocol ServiceManagementRepository: Sendable {
     func pullContainerImage(repository: String, tag: String) async throws
     func canStartContainerImagePull() async -> Bool
     func startContainerImagePull(_ request: ContainerImagePullRequest) async throws -> ContainerImagePullProgress
+    func startContainerImagePull(_ request: ContainerImagePullRequest, observer: @escaping ContainerImagePullObserver) async throws -> ContainerImagePullProgress
+    func restoreContainerImagePull(_ recovery: ContainerImagePullRecovery) async throws -> ContainerImagePullProgress
     func loadContainerImagePulls() async throws -> [ContainerImagePullProgress]
     func reviewContainerImagePull(id: UUID) async throws -> ContainerImagePullProgress?
     func deleteContainerImages(ids: [String]) async throws
@@ -988,6 +990,14 @@ public extension ServiceManagementRepository {
             outcome: unsupportedDeletionResult(operation: "containerImagePull", localizationPrefix: "container-image.pull", count: 1))
     }
     func loadContainerImagePulls() async throws -> [ContainerImagePullProgress] { [] }
+
+    func startContainerImagePull(_ request: ContainerImagePullRequest, observer: @escaping ContainerImagePullObserver) async throws -> ContainerImagePullProgress {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("container-image.pull.unavailable"))
+    }
+
+    func restoreContainerImagePull(_ recovery: ContainerImagePullRecovery) async throws -> ContainerImagePullProgress {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("container-image.pull.unavailable"))
+    }
     // 默认核查绝不回退到启动请求，旧适配器没有任务记录时返回未知。
     func reviewContainerImagePull(id: UUID) async throws -> ContainerImagePullProgress? { nil }
 
