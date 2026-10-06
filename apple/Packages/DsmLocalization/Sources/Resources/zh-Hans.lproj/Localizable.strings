@@ -7238,3 +7238,22 @@
 
 "mobile.virtual-machines.control.removed.title" = "虚拟机已不在列表中";
 "mobile.virtual-machines.control.removed.message" = "请刷新列表，或查看操作记录。";
+
+"virtual-machine.settings.unverified" = "暂时无法获取保存结果。请稍后刷新虚拟机；程序不会自动再次发送这些修改。";
+"mobile.virtual-machines.settings.unverified" = "暂时无法获取保存结果。请稍后刷新操作记录；程序不会自动再次发送这些修改。";
+"virtual-machine.settings.changed" = "虚拟机已发生变化。请关闭此页面、刷新列表后重新打开设置。";
+"mobile.virtual-machines.settings.title" = "编辑设置";
+"mobile.virtual-machines.settings.save" = "保存修改";
+"mobile.virtual-machines.settings.completed" = "修改已保存";
+"mobile.virtual-machines.settings.loading" = "正在读取设置…";
+"mobile.virtual-machines.settings.unavailable" = "暂时无法打开设置";
+"mobile.virtual-machines.settings.error.read" = "无法读取虚拟机设置。请检查连接后重试。";
+"mobile.virtual-machines.settings.name" = "名称";
+"mobile.virtual-machines.settings.description" = "说明";
+"mobile.virtual-machines.settings.cpu" = "CPU 核心数";
+"mobile.virtual-machines.settings.memory" = "内存（MiB）";
+"mobile.virtual-machines.settings.priority" = "CPU 优先级";
+"mobile.virtual-machines.settings.priority.normal" = "普通";
+"mobile.virtual-machines.settings.shutdown-required" = "修改 CPU 核心数或内存前，请先关闭虚拟机。";
+"mobile.virtual-machines.settings.invalid" = "名称最多 255 字，说明最多 1,024 字；CPU 核心数为 1–64，内存为 128–1,048,576 MiB。";
+"mobile.virtual-machines.settings.failed" = "修改未保存。请关闭此页面、刷新列表后重试。";

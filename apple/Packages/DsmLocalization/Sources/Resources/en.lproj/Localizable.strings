@@ -7238,3 +7238,22 @@
 
 "mobile.virtual-machines.control.removed.title" = "Virtual Machine No Longer Listed";
 "mobile.virtual-machines.control.removed.message" = "Refresh the list or view the operation history.";
+
+"virtual-machine.settings.unverified" = "The save result is unavailable. Refresh the virtual machine later; these changes will not be sent again automatically.";
+"mobile.virtual-machines.settings.unverified" = "The save result is unavailable. Refresh the operation history later; these changes will not be sent again automatically.";
+"virtual-machine.settings.changed" = "The virtual machine has changed. Close this form, refresh the list, and reopen its settings.";
+"mobile.virtual-machines.settings.title" = "Edit Settings";
+"mobile.virtual-machines.settings.save" = "Save Changes";
+"mobile.virtual-machines.settings.completed" = "Changes saved";
+"mobile.virtual-machines.settings.loading" = "Loading settings…";
+"mobile.virtual-machines.settings.unavailable" = "Settings Unavailable";
+"mobile.virtual-machines.settings.error.read" = "Could not read the virtual machine settings. Check your connection and try again.";
+"mobile.virtual-machines.settings.name" = "Name";
+"mobile.virtual-machines.settings.description" = "Description";
+"mobile.virtual-machines.settings.cpu" = "CPU cores";
+"mobile.virtual-machines.settings.memory" = "Memory (MiB)";
+"mobile.virtual-machines.settings.priority" = "CPU priority";
+"mobile.virtual-machines.settings.priority.normal" = "Normal";
+"mobile.virtual-machines.settings.shutdown-required" = "Shut down the virtual machine before changing CPU cores or memory.";
+"mobile.virtual-machines.settings.invalid" = "Use a name of up to 255 characters and a description of up to 1,024 characters. CPU cores must be 1–64 and memory 128–1,048,576 MiB.";
+"mobile.virtual-machines.settings.failed" = "Changes were not saved. Close this form, refresh the list, and try again.";

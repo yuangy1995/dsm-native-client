@@ -6,6 +6,7 @@ struct MobileVirtualMachineActions: View {
     @Bindable var model: MobileVirtualMachineControlModel
     let ids: Set<String>
     @State private var confirmation: MobileVirtualMachineControlModel.Confirmation?
+    @State private var settings: MobileVirtualMachineSettingsRequest?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -13,7 +14,16 @@ struct MobileVirtualMachineActions: View {
                target.status == "running", !target.availableActions.contains(.restart) {
                 Text(L10n.string("virtual-machine.power.restart-unavailable")).font(.subheadline).foregroundStyle(.secondary)
             }
-            ForEach(MobileVirtualMachineControlStore.Kind.allCases, id: \.rawValue) { action in
+            if ids.count == 1, let id = ids.first {
+                Button {
+                    settings = .init(targetID: id, activation: model.activation)
+                } label: {
+                    Text(L10n.string("mobile.virtual-machines.settings.title")).frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered).disabled(!model.canEdit(id: id))
+                .accessibilityIdentifier("virtual-machine.action.edit")
+            }
+            ForEach(MobileVirtualMachineControlStore.Kind.controlCases, id: \.rawValue) { action in
                 Button(role: action == .delete ? .destructive : nil) { confirmation = model.confirmation(ids: ids, kind: action) } label: {
                     Text(action.mobileTitle).frame(maxWidth: .infinity, minHeight: 44)
                 }
@@ -25,6 +35,7 @@ struct MobileVirtualMachineActions: View {
         .sheet(item: $confirmation) { value in
             MobileVirtualMachineConfirmationView(model: model, confirmation: value)
         }
+        .sheet(item: $settings) { value in MobileVirtualMachineSettingsView(model: model, request: value) }
     }
 }
 
@@ -82,6 +93,7 @@ private struct MobileVirtualMachineConfirmationView: View {
                         case .powerOff: "mobile.virtual-machines.control.powerOff.warning"
                         case .restart: "mobile.virtual-machines.control.restart.warning"
                         case .delete: "mobile.virtual-machines.control.delete.warning"
+                        case .edit: "mobile.virtual-machines.settings.title"
                         }
                         Text(L10n.string(warningKey))
                     }
@@ -186,6 +198,7 @@ struct MobileVirtualMachineControlRecordsView: View {
             case .powerOff: "mobile.virtual-machines.control.powerOff.completed"
             case .restart: "mobile.virtual-machines.control.restart.accepted"
             case .delete: "mobile.virtual-machines.control.delete.completed"
+            case .edit: "mobile.virtual-machines.settings.completed"
             }
             return L10n.string(key)
         case .skipped: return L10n.string("mobile.virtual-machines.control.skipped")
@@ -215,6 +228,6 @@ extension VirtualMachinePowerAction {
 extension MobileVirtualMachineControlStore.Kind {
     var mobileTitle: String {
         if let controlAction { return controlAction.mobileTitle }
-        return L10n.string("mobile.virtual-machines.control.delete")
+        return L10n.string(self == .edit ? "mobile.virtual-machines.settings.save" : "mobile.virtual-machines.control.delete")
     }
 }

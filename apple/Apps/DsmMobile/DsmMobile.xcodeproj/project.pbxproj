@@ -172,6 +172,7 @@
 		4CBE077967C5F4DED6B32C08 /* MobileChatAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 695E56167B0E793BE9796CCD /* MobileChatAttachmentTests.swift */; };
 		4CC63DDE05C8C2522FF49A18 /* MobileDownloadControlStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E888C96AEE633E537E5BEE1 /* MobileDownloadControlStore.swift */; };
 		4D80021CA07621B79A440A4F /* MobileHardwareSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D6F1EE46B3625A35383761 /* MobileHardwareSettingsTests.swift */; };
+		4D9B8786020338CA8DB6923A /* MobileVirtualMachineSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 722D0BB5A7F6B2A3FBD35D24 /* MobileVirtualMachineSettingsView.swift */; };
 		4F138F5398AB8686EF11F0B6 /* MobileDownloadsModel+Removal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF029B88C92B35405553949 /* MobileDownloadsModel+Removal.swift */; };
 		5012541C2E5AA16637891833 /* MobileContainerImageDeletionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57093D974186CDB69D26AB22 /* MobileContainerImageDeletionUITests.swift */; };
 		50B8AFE135A387C4D0A11CB7 /* MobileChatAttachmentSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10D7D9F4CBF78029C56975CA /* MobileChatAttachmentSelection.swift */; };
@@ -680,6 +681,7 @@
 		70A12B8787A2A01F887067C8 /* MobileFilePreviewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFilePreviewModelTests.swift; sourceTree = "<group>"; };
 		717C1DBED31361EB7F2F2884 /* MobileChatTimedActionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileChatTimedActionView.swift; sourceTree = "<group>"; };
 		7203FBDEADFF8BBEDE9D2E63 /* MobileChatSendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileChatSendTests.swift; sourceTree = "<group>"; };
+		722D0BB5A7F6B2A3FBD35D24 /* MobileVirtualMachineSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileVirtualMachineSettingsView.swift; sourceTree = "<group>"; };
 		7383F444C9E41E1B664CFFEC /* MobileFileLocationsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFileLocationsModelTests.swift; sourceTree = "<group>"; };
 		748AEBE10DD2AE1F285EA14E /* MobileNasHealthModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileNasHealthModelTests.swift; sourceTree = "<group>"; };
 		74E52268BBEBC1C1129F3890 /* MobileFileShareEditors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFileShareEditors.swift; sourceTree = "<group>"; };
@@ -1412,6 +1414,7 @@
 				9496938DE58C7620BA8254D7 /* MobileVirtualMachineControlsView.swift */,
 				60249569946CF43222058C6F /* MobileVirtualMachineInventoryModel.swift */,
 				BA4355F071E7D057D4D861A2 /* MobileVirtualMachineInventoryState.swift */,
+				722D0BB5A7F6B2A3FBD35D24 /* MobileVirtualMachineSettingsView.swift */,
 				1580A58CC5112D0E8A6586B8 /* MobileVirtualMachinesView.swift */,
 			);
 			path = VirtualMachines;
@@ -2157,6 +2160,7 @@
 				54496E47AF9E77EF5BC775F7 /* MobileVirtualMachineControlsView.swift in Sources */,
 				D5338AE8B4F01F3AB687B9F7 /* MobileVirtualMachineInventoryModel.swift in Sources */,
 				BA9E48676E340964A14E021A /* MobileVirtualMachineInventoryState.swift in Sources */,
+				4D9B8786020338CA8DB6923A /* MobileVirtualMachineSettingsView.swift in Sources */,
 				FB32C7A3C179CBBBBD8C2417 /* MobileVirtualMachineUITransport.swift in Sources */,
 				8648818FF4ECAFE35910E55D /* MobileVirtualMachinesView.swift in Sources */,
 				28AC401D88964D2543687189 /* MobileWorkspaceIdentity.swift in Sources */,

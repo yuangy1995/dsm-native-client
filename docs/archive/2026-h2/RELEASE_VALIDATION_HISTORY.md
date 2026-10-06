@@ -3547,3 +3547,99 @@ git diff --check
 已读取远端 main，没有新提交；最新 `04d692ab` 的 Apple Build 37499218894 共享/Mac 成功，
 移动五组运行/一组排队，尚无整轮终态。M7d0/M7d1 先在 main 保存，后续正常成组推送，
 避免取消当前完整验证；本机通过不等于该云端已包含本片，也不代表真实 NAS 或正式发布。
+
+## 2026-10-07 M7d2 虚拟机基础设置编辑
+
+从 `53a75fda` 的干净 main 开始，领先远端两个已验证的 VMM 提交；沿离线自主及必要
+Mac 基线修正授权实施。新增移动名称/说明、CPU/精确 MiB 内存、五档 CPU 优先级、
+三态自动启动编辑；只传变更字段，只有明确停机才允许硬件变更，未知读取不补默认值。
+共享内部 get/list 固定 v2、set 固定 v1，保存前比对原快照和完整清单，写前/接受/
+拒绝/完成分别落盘；编辑与电源/删除互斥，未知不重发，已接受记录按原身份及字段
+摘要只读恢复。Mac 旧调用复用修正但不新增持久恢复，Windows/Android 无源码修改。
+工程使用锁定 XcodeGen 2.46.0 生成，只增加新表单文件；无依赖、身份、权限或最低
+系统版本变化。移动恢复格式与回滚范围见主计划，不迁移登录配置或已发布 Mac 数据。
+
+实际中间失败保留如下：
+
+- 基线三项测试七条失败断言复现过渡状态仍能改硬件、丢回执重发和编辑/电源交叉
+  操作未保护（`build/m7d2-baseline.log`）。修正后共享仓库最终 **182 项全通过**
+  （`build/m7d2-shared-focused3.log`）。新增 helper 初次缺参数、随后测试文字替换
+  参数标签错误已修正；旧测试预读公开来源/回读缺名称已补准确内部原字段，未降低断言。
+- 完整共享首轮 3022 XCTest 只有一份请求 fixture 失败，其能力只声明 Guest v1；
+  该用例已补实际读取需要的 v1–v2 范围和原名称，set v1 请求精确断言保持。最终
+  **3022 XCTest，172 条既有跳过，0 失败；12 Swift Testing 全通过**
+  （`build/m7d2-shared-final.log`，exit 0）。
+- 移动首次构建发现 catch 中 `error` 遮蔽模型属性，已修为 `self.error`；第二轮
+  **TEST BUILD SUCCEEDED**（`build/m7d2-mobile-build2.log`，exit 0）。两端各
+  **47 项 VMM 模型均通过**，含 25 项控制/编辑行为；实际 UI 终态续记于下。
+
+Mac Release 增量构建 **BUILD SUCCEEDED、exit 0**（`build/m7d2-mac-build.log`）；
+`lipo -archs` 确认 `LanStash.app/Contents/MacOS/LanStash` 及
+`LanStashFileProvider.appex/Contents/MacOS/LanStashFileProvider` 均为 x86_64/arm64。
+构建路径为 `apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/`，未打包、
+安装、启动或发布 Mac 应用。
+
+实现后独立集成/只读对抗复核覆盖固定版本、严格原字段、原快照、逐阶段持久化、
+接受与未知、改名前后名保护、交叉操作、损坏记录、账号切换和证书停止。复核发现
+旧账号表单保存会向新账号写错误状态，已把激活身份检查前置，并补正式回归。
+复核由当前负责人单独执行，不冒称另一模型或真实 NAS 验收；没有操作现有真实 VM。
+
+实际执行命令：
+
+```sh
+swift test --package-path apple --jobs 2 --filter DsmServiceManagementRepositoryTests
+swift test --package-path apple --jobs 2
+xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination generic/platform=macOS -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 -parallel-testing-enabled NO -only-testing:DsmMobileTests/MobileVirtualMachineControlTests -only-testing:DsmMobileTests/MobileVirtualMachineInventoryModelTests -only-testing:DsmMobileTests/MobileVirtualMachinePresentationTests -only-testing:DsmMobileUITests/MobileVirtualMachineControlUITests -resultBundlePath build/m7d2-phone.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 -parallel-testing-enabled NO -only-testing:DsmMobileTests/MobileVirtualMachineControlTests -only-testing:DsmMobileTests/MobileVirtualMachineInventoryModelTests -only-testing:DsmMobileTests/MobileVirtualMachinePresentationTests -only-testing:DsmMobileUITests/MobileVirtualMachineControlUITests -resultBundlePath build/m7d2-pad.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
+首轮实际 UI：iPhone 14 项中 12 通过、2 失败（751.809 秒），iPad 14 项中 13 通过、
+1 失败（881.467 秒），两个组合进程均 exit 65；两端 47 项模型均通过不受影响。
+旧九项电源/删除 UI 两端全部通过。iPhone 说明清空时键盘事件尚未结束，录屏末段
+显示文本仍在递减，旧测试立即读取因而失败；现等待字段确实清空，再输入并核对完整
+新值，不重复退格或降低断言。两端错误页重试按钮实际可见，但 ContentUnavailableView
+整页标识覆盖了子按钮标识；现把状态标识移到标题，保留按钮独立标识，并补失败层级
+与截图附件。没有改请求、权限或恢复语义。
+
+另将共享保存结果提示与移动“操作记录”导航分开：Mac 提示刷新虚拟机，不引用仅移动
+存在的操作记录入口。英文和简体中文资源同步，最后六项本地化测试通过
+（`build/m7d2-localization-final.log`，exit 0）；移动最终测试构建与 Mac 最终资源
+增量构建均 exit 0，分别见 `build/m7d2-mobile-build-final.log`、
+`build/m7d2-mac-build-final.log`。首轮 52 张合成截图已逐张复核，覆盖两端正常表单、
+512/768 MiB、中文大字深色、取消、记录、恢复及旧控制五态；另检查三张 iPhone 失败
+录屏取帧。
+
+最终五项编辑场景两端均 **0 失败、exit 0**：iPhone **332.112 秒**，iPad
+**371.760 秒**（`build/m7d2-final-{phone,pad}.xcresult/log`）。最终 20 张截图已
+逐张检查，正常/修改表单、中文大字深色、丢回执、接受后恢复、加载与错误重试均
+有实际证据；连首轮共 72 张成功场景截图。原九项控制和两端各 47 项模型沿用本轮
+首轮通过结果，最后只修改标识/文案/输入等待，不重复无关整组。
+
+最终 UI 的两个实际命令使用本节同一 project/scheme/derivedDataPath、对应设备、
+`-jobs 2 -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`，
+各自结果路径为 `build/m7d2-final-phone.xcresult` 与 `build/m7d2-final-pad.xcresult`，
+选择器准确如下：
+
+```sh
+-only-testing:DsmMobileUITests/MobileVirtualMachineControlUITests/test编辑丢回执跨重启仍保护原目标
+-only-testing:DsmMobileUITests/MobileVirtualMachineControlUITests/test编辑中文大字深色运行中硬件禁用与取消
+-only-testing:DsmMobileUITests/MobileVirtualMachineControlUITests/test编辑名称说明与精确内存保存后显示记录
+-only-testing:DsmMobileUITests/MobileVirtualMachineControlUITests/test编辑接受后断网跨重启只读恢复
+-only-testing:DsmMobileUITests/MobileVirtualMachineControlUITests/test编辑读取加载与错误可关闭重试
+```
+
+最终本地化完整性/硬编码扫描通过（Apple 6877、Android 2188、Windows 3402）；
+请求契约 179 fixture/1 写结果示例、响应 29 组与 48 私有端点文档引用检查通过。
+分别执行 `python3 tools/localization/check_localization.py`、
+`python3 tools/request-contract/validate_contracts.py`、
+`python3 tools/contract-validation/validate_fixtures.py`；文档及差异检查通过。
+重新读取远端 main 无新提交；既有 `04d692ab` 云端共享/Mac 成功，五个移动组运行、
+一个排队，尚无整轮结果。继续先在 main 保存本片，后续正常成组同步，不通过推送
+取消当前完整回归，也不将本机结果当作云端、真实 NAS 或正式发布结果。
+
+收尾保留八张最终合成预览于 `build/m7d2-preview/`，正式测试结果包和构建/测试日志
+继续保留；一次性附件导出、录屏取帧、临时脚本及下载的锁定工程生成工具已精确清理。
+两台模拟器系统外观均恢复/读取为浅色；App 最后一项实际场景也为浅色。没有真实
+NAS 写入、安装包发布或用户数据修改。

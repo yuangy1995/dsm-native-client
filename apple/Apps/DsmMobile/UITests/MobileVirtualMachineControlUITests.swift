@@ -83,6 +83,92 @@ import XCTest
         XCTAssertTrue(retry.buttons["Show All"].waitForExistence(timeout: 6)); screenshot("Virtual machine filter has no results")
         retry.buttons["Show All"].tap(); XCTAssertTrue(element("virtual-machine.item.synthetic-vm", retry).exists); retry.terminate()
     }
+    func test编辑名称说明与精确内存保存后显示记录() {
+        let app = launch("vmm-settings"); defer { app.terminate() }; openSettings(app)
+        XCTAssertEqual(app.textFields["virtual-machine.settings.memory"].value as? String, "512")
+        XCTAssertFalse(app.buttons["virtual-machine.settings.save"].isEnabled)
+        screenshot("Virtual machine edit settings light appearance")
+        replaceSetting("name", "Updated virtual machine", app)
+        replaceSetting("description", "Updated synthetic description", app)
+        replaceSetting("memory", "768", app)
+        waitEnabled(app.buttons["virtual-machine.settings.save"]); screenshot("Virtual machine edit exact memory and changed fields")
+        app.buttons["virtual-machine.settings.save"].tap()
+        XCTAssertTrue(app.collectionViews["virtual-machine.settings.form"].waitForNonExistence(timeout: 12))
+        openRecords(app); expectPhase("succeeded", app)
+        XCTAssertTrue(app.staticTexts["Changes saved"].exists); screenshot("Virtual machine settings saved result")
+    }
+    func test编辑中文大字深色运行中硬件禁用与取消() {
+        let app = launch("vmm-settings-running", chinese: true, large: true, dark: true); defer { app.terminate() }; openSettings(app)
+        XCTAssertFalse(reveal("virtual-machine.settings.cpu", app).isEnabled)
+        XCTAssertFalse(reveal("virtual-machine.settings.memory", app).isEnabled)
+        XCTAssertTrue(app.staticTexts["修改 CPU 核心数或内存前，请先关闭虚拟机。"].exists)
+        screenshot("Chinese large dark running virtual machine settings")
+        reveal("virtual-machine.settings.priority", app).tap()
+        XCTAssertTrue(app.buttons["高"].waitForExistence(timeout: 6)); app.buttons["高"].tap()
+        reveal("virtual-machine.settings.startup", app).tap()
+        XCTAssertTrue(app.buttons["恢复原状态"].waitForExistence(timeout: 6)); app.buttons["恢复原状态"].tap()
+        waitEnabled(app.buttons["virtual-machine.settings.save"]); screenshot("Chinese priority and startup selections")
+        app.buttons["virtual-machine.settings.cancel"].tap()
+        XCTAssertTrue(app.collectionViews["virtual-machine.settings.form"].waitForNonExistence(timeout: 6))
+        openRecords(app); XCTAssertTrue(app.staticTexts["暂无操作记录"].waitForExistence(timeout: 8))
+    }
+    func test编辑丢回执跨重启仍保护原目标() {
+        let first = launch("vmm-settings-unknown"); openSettings(first)
+        replaceSetting("description", "Updated synthetic description", first); first.buttons["virtual-machine.settings.save"].tap()
+        XCTAssertTrue(first.staticTexts["virtual-machine.settings.result"].waitForExistence(timeout: 12))
+        XCTAssertFalse(first.buttons["virtual-machine.settings.save"].isEnabled)
+        screenshot("Virtual machine edit result unavailable after lost response"); first.terminate()
+        let next = launch("vmm-settings-recovered", preserve: true); defer { next.terminate() }
+        detail("synthetic-vm", next)
+        XCTAssertFalse(reveal("virtual-machine.action.edit", next).isEnabled)
+        XCTAssertFalse(reveal("virtual-machine.action.delete", next).isEnabled)
+        openRecords(next); expectPhase("submitted", next)
+        XCTAssertFalse(next.buttons["Remove Record"].exists); screenshot("Virtual machine edit lost response remains protected")
+    }
+    func test编辑接受后断网跨重启只读恢复() {
+        let first = launch("vmm-settings-accepted-offline"); openSettings(first)
+        replaceSetting("description", "Updated synthetic description", first); first.buttons["virtual-machine.settings.save"].tap()
+        XCTAssertTrue(first.staticTexts["virtual-machine.settings.result"].waitForExistence(timeout: 12)); first.terminate()
+        let next = launch("vmm-settings-recovered", preserve: true); defer { next.terminate() }; openRecords(next)
+        expectPhase("succeeded", next); XCTAssertTrue(next.staticTexts["Changes saved"].exists)
+        screenshot("Virtual machine edit accepted result restored")
+    }
+    func test编辑读取加载与错误可关闭重试() {
+        let loading = launch("vmm-settings-loading"); detail("synthetic-vm", loading)
+        reveal("virtual-machine.action.edit", loading).tap()
+        XCTAssertTrue(element("virtual-machine.settings.loading", loading).waitForExistence(timeout: 6)); screenshot("Virtual machine settings loading")
+        loading.buttons["virtual-machine.settings.cancel"].tap(); loading.terminate()
+        let failed = launch("vmm-settings-error"); defer { failed.terminate() }; detail("synthetic-vm", failed)
+        reveal("virtual-machine.action.edit", failed).tap()
+        XCTAssertTrue(element("virtual-machine.settings.error", failed).waitForExistence(timeout: 8))
+        waitEnabled(failed.buttons["virtual-machine.settings.retry"]); screenshot("Virtual machine settings read error recovery")
+        failed.buttons["virtual-machine.settings.retry"].tap()
+        XCTAssertTrue(element("virtual-machine.settings.error", failed).waitForExistence(timeout: 8))
+        failed.buttons["virtual-machine.settings.cancel"].tap()
+    }
+    private func openSettings(_ app: XCUIApplication) {
+        detail("synthetic-vm", app); reveal("virtual-machine.action.edit", app).tap()
+        XCTAssertTrue(app.collectionViews["virtual-machine.settings.form"].waitForExistence(timeout: 10))
+    }
+    private func replaceSetting(_ key: String, _ text: String, _ app: XCUIApplication) {
+        let field = reveal("virtual-machine.settings.\(key)", app)
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap()
+        let previous = field.value as? String ?? ""
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+        // 键盘事件返回后文本仍可能在变化，等到实际清空后再继续输入，保留完整值断言。
+        let empty = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@ OR value == %@", "", field.placeholderValue ?? ""), object: field)
+        let cleared = XCTWaiter.wait(for: [empty], timeout: 6)
+        if cleared != .completed { screenshot("Virtual machine setting did not finish clearing") }
+        XCTAssertEqual(cleared, .completed, "输入框未清空：\(field.value as? String ?? "")")
+        field.typeText(text)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", text), object: field)], timeout: 6), .completed)
+        if app.frame.width > 600, app.popovers.firstMatch.exists {
+            app.navigationBars.containing(.button, identifier: "virtual-machine.settings.save").firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
+            XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        }
+        let done = app.buttons["virtual-machine.settings.keyboardDone"]; if done.exists && done.isHittable { done.tap() }
+        XCTAssertEqual(field.value as? String, text)
+    }
     private func launch(_ mode: String = "vmm-control", preserve: Bool = false, chinese: Bool = false,
                         large: Bool = false, dark: Bool = false) -> XCUIApplication {
         continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait
@@ -114,11 +200,16 @@ import XCTest
     private func expectPhase(_ phase: String, _ app: XCUIApplication) { XCTAssertTrue(element("virtual-machine.record.\(phase)", app).waitForExistence(timeout: 12)) }
     private func waitEnabled(_ value: XCUIElement) {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"), object: value)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 12), .completed)
+        let result = XCTWaiter.wait(for: [ready], timeout: 12)
+        if result != .completed {
+            let tree = XCTAttachment(string: XCUIApplication().debugDescription); tree.name = "Virtual machine unavailable control hierarchy"; tree.lifetime = .keepAlways; add(tree)
+            screenshot("Virtual machine expected control is unavailable")
+        }
+        XCTAssertEqual(result, .completed)
     }
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     @discardableResult private func reveal(_ id: String, _ app: XCUIApplication) -> XCUIElement {
-        let list = ["virtual-machine.confirmation", "virtual-machine.selection.list", "virtual-machine.detail", "virtual-machine.items"].map { app.collectionViews[$0] }.first { $0.exists } ?? app.collectionViews.firstMatch
+        let list = ["virtual-machine.settings.form", "virtual-machine.confirmation", "virtual-machine.selection.list", "virtual-machine.detail", "virtual-machine.items"].map { app.collectionViews[$0] }.first { $0.exists } ?? app.collectionViews.firstMatch
         let value = element(id, app)
         if !list.exists { waitEnabled(value); return value }
         for _ in 0..<14 {

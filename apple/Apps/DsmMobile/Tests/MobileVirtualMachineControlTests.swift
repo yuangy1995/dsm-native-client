@@ -190,6 +190,101 @@ import XCTest
         XCTAssertFalse(model.canPerform(ids: ["synthetic-vm"], kind: .powerOn))
         XCTAssertFalse(model.canPerform(ids: ["synthetic-vm"], kind: .delete))
     }
+    func test编辑草稿保留缺失值与半GiB内存且只提交变化() {
+        let unknown = VirtualMachineSettingsState(id: "vm", name: "Sample", status: "shutdown")
+        var empty = MobileVirtualMachineSettingsDraft(unknown)
+        XCTAssertNil(empty.cpuCount); XCTAssertNil(empty.memoryMiB); XCTAssertNil(empty.cpuWeight); XCTAssertNil(empty.startupBehavior)
+        XCTAssertFalse(empty.hasChanges); empty.name = "Renamed"
+        XCTAssertTrue(empty.isValid); XCTAssertNil(empty.update.memoryMiB); XCTAssertNil(empty.update.cpuCount)
+        let known = VirtualMachineSettingsState(id: "vm", name: "Sample", status: "running", description: "old", cpuCount: 1, memoryMiB: 512, cpuWeight: 128, startupBehavior: .restorePreviousState)
+        var draft = MobileVirtualMachineSettingsDraft(known)
+        XCTAssertEqual(draft.memoryMiB, 512); XCTAssertEqual(draft.cpuWeight, 128)
+        draft.description = ""; draft.memoryMiB = 2048
+        XCTAssertEqual(draft.update.description, ""); XCTAssertNil(draft.update.memoryMiB); XCTAssertNil(draft.update.cpuWeight)
+        var invalid = MobileVirtualMachineSettingsDraft(unknown); invalid.cpuCount = 0; XCTAssertFalse(invalid.isValid)
+    }
+    func test编辑全部字段保持精确单位与逐阶段结果() async throws {
+        let (model, transport, _, _) = try make(internalAPI: true); await model.refresh()
+        XCTAssertTrue(model.canEdit(id: "synthetic-vm"))
+        let target = try await model.loadSettings(id: "synthetic-vm", activation: model.activation)
+        XCTAssertEqual(target.memoryMiB, 512)
+        let id = try XCTUnwrap(model.saveSettings(target, configuration: .init(name: "Renamed", description: "", cpuCount: 4, memoryMiB: 1536,
+            cpuWeight: 1024, startupBehavior: .restorePreviousState), activation: model.activation))
+        await model.waitForOperation(id)
+        XCTAssertEqual(model.recovery.entry(id)?.items.first?.phase, .succeeded)
+        XCTAssertEqual(model.targets.first?.name, "Renamed")
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
+        XCTAssertEqual(writes[0]["vram_size"], "1536"); XCTAssertEqual(writes[0]["cpu_weight"], "1024")
+        XCTAssertEqual(writes[0]["autorun"], "1"); XCTAssertEqual(writes[0]["version"], "1")
+    }
+    func test编辑丢回执或已接受跨重启只读恢复并阻止交叉操作() async throws {
+        for accepted in [false, true] {
+            let (model, transport, _, root) = try make(mode: accepted ? "vmm-accepted-offline" : "vmm-unknown", internalAPI: true)
+            await model.refresh(); let target = try await model.loadSettings(id: "synthetic-vm", activation: model.activation)
+            let id = try XCTUnwrap(model.saveSettings(target, configuration: .init(description: "Updated synthetic description"), activation: model.activation))
+            await model.waitForOperation(id)
+            XCTAssertEqual(model.recovery.entry(id)?.items.first?.phase, .submitted)
+            XCTAssertEqual(model.recovery.entry(id)?.items.first?.accepted, accepted)
+            let (next, fresh, _, _) = try make(mode: "vmm-settings-recovered", root: root, internalAPI: true); await next.refresh()
+            XCTAssertEqual(next.recovery.entry(id)?.items.first?.phase, accepted ? .succeeded : .submitted)
+            XCTAssertEqual(next.canEdit(id: "synthetic-vm"), accepted)
+            XCTAssertEqual(next.canPerform(ids: ["synthetic-vm"], kind: .powerOn), accepted)
+            XCTAssertEqual(next.canPerform(ids: ["synthetic-vm"], kind: .delete), accepted)
+            let writes = await transport.writes, newWrites = await fresh.writes
+            XCTAssertEqual(writes.count, 1); XCTAssertTrue(newWrites.isEmpty)
+        }
+    }
+    func test编辑表单打开后状态字段变化或撤权零写() async throws {
+        for change in ["state", "field", "denied"] {
+            let (model, transport, gate, _) = try make(internalAPI: true); await model.refresh()
+            let target = try await model.loadSettings(id: "synthetic-vm", activation: model.activation)
+            if change == "state" { await transport.apply(.powerOn) }
+            else if change == "field" { await transport.setSettings(["desc": "Changed elsewhere"]) }
+            else { await gate.set(false) }
+            let id = try XCTUnwrap(model.saveSettings(target, configuration: .init(description: "new"), activation: model.activation))
+            await model.waitForOperation(id)
+            XCTAssertEqual(model.recovery.entry(id)?.items.first?.phase, .failed)
+            XCTAssertEqual(model.recovery.entry(id)?.items.first?.failure, change == "denied" ? .denied : .changed)
+            let writes = await transport.writes; XCTAssertTrue(writes.isEmpty)
+        }
+    }
+    func test编辑重复点击和电源删除在途均不进入请求() async throws {
+        let (model, transport, _, _) = try make(internalAPI: true); await model.refresh()
+        let target = try await model.loadSettings(id: "synthetic-vm", activation: model.activation)
+        await transport.holdWrites()
+        let id = try XCTUnwrap(model.saveSettings(target, configuration: .init(description: "new"), activation: model.activation))
+        await transport.waitForWrite()
+        XCTAssertFalse(model.canEdit(id: target.id)); XCTAssertFalse(model.canPerform(ids: [target.id], kind: .delete))
+        XCTAssertFalse(model.canPerform(ids: [target.id], kind: .powerOn))
+        XCTAssertNil(model.saveSettings(target, configuration: .init(description: "new"), activation: model.activation))
+        await transport.release(); await model.waitForOperation(id)
+        let writes = await transport.writes; XCTAssertEqual(writes.count, 1)
+    }
+    func test编辑证书失败停止后续请求并保留原记录() async throws {
+        let (model, transport, _, _) = try make(internalAPI: true); await model.refresh()
+        let target = try await model.loadSettings(id: "synthetic-vm", activation: model.activation)
+        await transport.setMode("vmm-write-trust")
+        let id = try XCTUnwrap(model.saveSettings(target, configuration: .init(description: "new"), activation: model.activation))
+        await model.waitForOperation(id)
+        XCTAssertEqual(model.error, .trust); XCTAssertEqual(model.recovery.entry(id)?.items.first?.phase, .submitted)
+        let calls = await transport.calls; XCTAssertEqual(calls.last?["method"], "set")
+    }
+    func test编辑换账号旧回执不更新新界面且记录无字段明文() async throws {
+        let (model, transport, _, root) = try make(internalAPI: true); await model.refresh()
+        let activation = model.activation, context = model.context
+        let target = try await model.loadSettings(id: "synthetic-vm", activation: activation)
+        await transport.holdWrites()
+        let id = try XCTUnwrap(model.saveSettings(target, configuration: .init(name: "Private VM", description: "Private notes"), activation: activation))
+        await transport.waitForWrite()
+        let nextProfile = try profile(username: "second"), next = MobileVirtualMachineUITransport()
+        model.configure(profile: nextProfile, repository: try repository(next, profile: nextProfile, internalAPI: true), authorize: { true })
+        await model.refresh(); await transport.release(); await model.waitForOperation(id)
+        XCTAssertTrue(model.entries.isEmpty); XCTAssertEqual(model.recovery.entry(id)?.context, context)
+        XCTAssertNil(model.saveSettings(target, configuration: .init(description: "new"), activation: activation))
+        XCTAssertNil(model.error)
+        let text = try String(contentsOf: root.appendingPathComponent("virtual-machine-controls-v1.json"), encoding: .utf8)
+        for forbidden in ["Private VM", "Private notes", "synthetic-vm", "operator", "synthetic-session"] { XCTAssertFalse(text.contains(forbidden)) }
+    }
     private func perform(_ model: MobileVirtualMachineControlModel, _ kind: MobileVirtualMachineControlStore.Kind = .powerOn,
                          ids: Set<String> = ["synthetic-vm"]) throws -> UUID {
         try XCTUnwrap(model.perform(try XCTUnwrap(model.confirmation(ids: ids, kind: kind))))

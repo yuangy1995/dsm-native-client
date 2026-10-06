@@ -53,6 +53,7 @@ enum MobileUIFixture {
                             DsmAPIName.coreSystem: 3, DsmAPIName.dockerContainer: 1, DsmAPIName.virtualizationAPIGuest: 1]
             if officeState.hasPrefix("vmm-") {
                 versions[DsmAPIName.virtualizationAPIGuestAction] = 1
+                if officeState.hasPrefix("vmm-settings") { versions[DsmAPIName.virtualizationGuest] = 2 }
                 if officeState == "vmm-restart" || officeState.hasPrefix("vmm-internal") {
                     versions[DsmAPIName.virtualizationGuest] = 2; versions[DsmAPIName.virtualizationGuestAction] = 1
                 }
