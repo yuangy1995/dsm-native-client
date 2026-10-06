@@ -98,7 +98,7 @@ Feed.add/set 的 `list` 为 JSON 文本 `{name,feed,orifeed?}`；delete 为 JSON
 ## 五端影响、验证与定位
 
 - macOS：上述原生主流程；真实写入、第三方来源、不同卷/DSM、断线和权限场景均为 `PENDING_USER_VALIDATION`。
-- Apple 共享层：新增可选 Repository 方法与默认不支持实现，不改变认证、存储格式或既有控制方法；iPhone/iPad 未增加页面，需按各自范围迁移。
+- Apple 共享层：新增可选 Repository 方法与默认不支持实现，不改变认证、存储格式或既有控制方法；iPhone/iPad 的设置与来源管理已进入 M6e1，安装/更新流程仍需后续迁移。
 - Windows、Android：本轮没有改代码，仍保留原来的已安装管理/更新提示；迁移需采用本记录的对象字段、队列、确认、恢复与结果语义，不能照搬旧 `.upgrade` 控制。
 - 正式自动化：`DsmPackageCenterTests`、`NasAdministrationModelTests`、`WorkspacePresentationTests`。合成测试不构成真实写行为验证。
 - 源码：`NasPackageCenter.swift`、`DsmNasAdministrationRepository+Package*.swift`、`PackageCenterView.swift`、`PackageInstallationSheet.swift`、`PackageCenterSettingsView.swift`。
@@ -108,3 +108,14 @@ Feed.add/set 的 `list` 为 JSON 文本 `{name,feed,orifeed?}`；delete 为 JSON
 
 
 2026-10-03 二次反馈：系统安装类型与准备取消的源码、合成样本和验证见[后续观察](../environments/2026-10-03-photos-package-followup.md)。本轮只观察清单和官方静态分支，没有执行新的 NAS 更新。
+
+
+## 2026-10-06 Apple 移动设置与来源管理
+
+M6e1 仅迁移设置/自动更新、来源添加/编辑/移除及已安装列表入口，不代表安装/更新/SPK 或启停卸载已经实现。管理读取继续使用 Setting/Feed v1 与 Package list v2，附加信息组保持既有 `silent_upgrade/autoupdate/status`；响应子字段不能擅自增加为请求选择器。已知字段要求实际类型，列表截断不用于覆盖或移除判断；单套件自动更新字段未知时保留未知，不补 false 后整表提交。
+
+新 `NasPackagePreferencesSnapshot` 和 `changePackagePreferencesResult` 为 Apple 兼容增量。旧 Mac 方法继续原签名/参数；新移动调用在完整原快照预检后重新检查当前管理权限，在唯一写入前及接受回执后保存阶段。明确拒绝不因稍后列表匹配而被改为成功；接受之后的读取拒绝保留已发送结果未知，证书身份异常停止链路。设置按目标字段及实际发送的自动更新清单回读，新增且采用手动更新的套件不改变选择；来源改地址同时要求新目标匹配、旧地址消失，移除须完整目录中原地址消失。
+
+移动受保护的 `NAS/package-operations-v1.json` 只保存账号上下文、原/目标摘要、阶段和接受标记，排除备份，不保存来源名称/地址、套件明细或凭据。未知跨重启只读恢复，不重放原请求，当前管理权限失效时不结算旧未知记录；损坏或写失败关闭本片写入并保留原文件。记录属于已授权的移动恢复范围，回滚停用新入口并保留记录，不迁移登录格式。安装任务/计划仍沿用原内存范围，未因本片增加安装恢复能力。
+
+Mac App 未修改；共享回归和目标构建按移动主计划执行。Windows/Android 仅记录完整读取、未知字段及恢复要求，无实现修改。所有本片新增证据均为源码、合成请求和模拟器，既有真实环境等级不提升。来源信任、NAS 自动安装、邮件/桌面通知及不同 DSM 字段完整性仍需专用环境验收，细节见[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6e-套件中心实施拆分)。
