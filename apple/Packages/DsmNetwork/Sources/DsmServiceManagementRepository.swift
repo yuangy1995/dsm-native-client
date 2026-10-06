@@ -1751,9 +1751,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     private struct ImagePullOperation: Sendable {
-        let request: ContainerImagePullRequest
-        let baselineIDs: Set<String>
-        var taskID: DsmParameterValue?
+        var request: ContainerImagePullRequest?
+        var recovery: ContainerImagePullRecovery
         var progress: ContainerImagePullProgress
     }
 
@@ -1765,6 +1764,14 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     public func startContainerImagePull(_ request: ContainerImagePullRequest) async throws -> ContainerImagePullProgress {
+        try await startImagePull(request, observer: nil)
+    }
+
+    public func startContainerImagePull(_ request: ContainerImagePullRequest, observer: @escaping ContainerImagePullObserver) async throws -> ContainerImagePullProgress {
+        try await startImagePull(request, observer: observer)
+    }
+
+    private func startImagePull(_ request: ContainerImagePullRequest, observer: ContainerImagePullObserver?) async throws -> ContainerImagePullProgress {
         if Task.isCancelled { return try imagePullProgress(request, stage: .rejected, status: .cancelledBeforeSubmission, submitted: false) }
         guard request.isValid, request.isConfirmed else { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .validation) }
         guard !imagePullBusy, !imageDeletionActive else { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .conflict) }
@@ -1773,10 +1780,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         if let previous = imagePullOperations[request.id] {
             guard previous.request == request else { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .conflict) }
             if previous.progress.stage.isTerminal { return previous.progress }
-            return try await reviewImagePullOperation(id: request.id)
+            return try await reviewImagePullOperation(id: request.id, preservesTrustError: observer != nil)
         }
         guard await canStartContainerImagePull() else { return try imagePullProgress(request, stage: .rejected, status: .unsupported, submitted: false, error: .unsupported) }
-        guard !imagePullOperations.values.contains(where: { !$0.progress.stage.isTerminal && $0.request.referenceKey == request.referenceKey }) else {
+        guard !imagePullOperations.values.contains(where: { !$0.progress.stage.isTerminal && $0.recovery.matches(repository: request.repository, tag: request.tag) }) else {
             return try imagePullProgress(request, stage: .rejected, submitted: false, error: .conflict)
         }
         let baselineIDs: Set<String>
@@ -1792,23 +1799,59 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             try Task.checkCancellation()
         } catch is CancellationError { return try imagePullProgress(request, stage: .rejected, status: .cancelledBeforeSubmission, submitted: false) }
         catch let error as AppError {
+            if observer != nil, Self.imagePullTrustError(error) { throw error }
             if error.category == .cancelled || Task.isCancelled { return try imagePullProgress(request, stage: .rejected, status: .cancelledBeforeSubmission, submitted: false) }
             return try imagePullProgress(request, stage: .rejected, submitted: false, error: serviceMutationErrorCategory(for: error.category))
         }
-        catch { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .network) }
+        catch {
+            if observer != nil, Self.imagePullTrustError(error) { throw error }
+            return try imagePullProgress(request, stage: .rejected, submitted: false, error: .network)
+        }
 
         let initial = try imagePullProgress(request, stage: .awaitingReceipt)
-        imagePullOperations[request.id] = ImagePullOperation(request: request, baselineIDs: baselineIDs, taskID: nil, progress: initial)
+        var recovery = ContainerImagePullRecovery(id: request.id,
+            target: ContainerImagePullRecovery.target(repository: request.repository, tag: request.tag),
+            baselineImageIDs: Set(baselineIDs.map(ContainerImagePullRecovery.digest)))
+        try await observer?(.willSubmit(recovery))
+        imagePullOperations[request.id] = ImagePullOperation(request: request, recovery: recovery, progress: initial)
+        var accepted = false
         do {
             let response = try await containerImageRequest(method: "pull_start", parameters: ["repository": .string(request.repository), "tag": .string(request.tag)])
-            imagePullOperations[request.id]?.taskID = Self.imagePullTaskID(response["task_id"])
+            recovery.taskID = Self.imagePullTaskID(response["task_id"])
+            imagePullOperations[request.id]?.recovery = recovery
+            accepted = true
         } catch let error as AppError where error.dsmCode != nil {
             let result = try imagePullProgress(request, stage: .rejected, status: error.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
                 error: serviceMutationErrorCategory(for: error.category))
             imagePullOperations[request.id]?.progress = result
+            try await observer?(.rejected)
             return result
-        } catch { /* 可能已经启动：保留原请求，无回执不得按名称重绑或重发。 */ }
-        return try await reviewImagePullOperation(id: request.id)
+        } catch {
+            if observer != nil, Self.imagePullTrustError(error) { throw error }
+            // 可能已经启动：保留原请求，无回执不得按名称重绑或重发。
+        }
+        // 回执必须先保存；存储失败不能被当作网络未知后继续读取。
+        if accepted { try await observer?(.accepted(recovery)) }
+        return try await reviewImagePullOperation(id: request.id, preservesTrustError: observer != nil)
+    }
+
+    public func restoreContainerImagePull(_ recovery: ContainerImagePullRecovery) async throws -> ContainerImagePullProgress {
+        guard recovery.isValid else { throw Self.invalidServiceResponseStatic() }
+        guard !imagePullBusy, !imageDeletionActive else { throw containerMutationChangedError() }
+        imagePullBusy = true
+        defer { imagePullBusy = false }
+        if let previous = imagePullOperations[recovery.id] {
+            guard previous.recovery == recovery else { throw containerMutationChangedError() }
+            if previous.progress.stage.isTerminal { return previous.progress }
+        } else {
+            guard !imagePullOperations.values.contains(where: { !$0.progress.stage.isTerminal && $0.recovery.target == recovery.target }) else {
+                throw containerMutationChangedError()
+            }
+            imagePullOperations[recovery.id] = ImagePullOperation(request: nil, recovery: recovery,
+                progress: try imagePullProgress(nil, id: recovery.id, stage: recovery.taskID == nil ? .awaitingReceipt : .needsReview))
+        }
+        // 只有原任务编号可以恢复；无回执时只恢复保护记录，不从清单猜测任务。
+        return try await reviewImagePullOperation(id: recovery.id, preservesTrustError: true)
     }
 
     public func loadContainerImagePulls() async throws -> [ContainerImagePullProgress] {
@@ -1823,46 +1866,66 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         return try await reviewImagePullOperation(id: id)
     }
 
-    private func reviewImagePullOperation(id: UUID) async throws -> ContainerImagePullProgress {
+    private func reviewImagePullOperation(id: UUID, preservesTrustError: Bool = false) async throws -> ContainerImagePullProgress {
         guard let operation = imagePullOperations[id] else { throw Self.invalidServiceResponseStatic() }
-        let request = operation.request
+        var request = operation.request
         var result: ContainerImagePullProgress
         if Task.isCancelled {
-            result = try imagePullProgress(request, stage: operation.taskID == nil ? .awaitingReceipt : .needsReview, status: .cancellationRequestedAfterSubmission)
-        } else if let taskID = operation.taskID {
+            result = try imagePullProgress(request, id: id, stage: operation.recovery.taskID == nil ? .awaitingReceipt : .needsReview, status: .cancellationRequestedAfterSubmission)
+        } else if let taskID = operation.recovery.taskID {
             var hasReadTaskStatus = false
             do {
-                let value = try await containerImageRequest(method: "pull_status", parameters: ["task_id": taskID])
+                let parameter: DsmParameterValue
+                switch taskID { case .text(let value): parameter = .string(value); case .integer(let value): parameter = .integer(value) }
+                let value = try await containerImageRequest(method: "pull_status", parameters: ["task_id": parameter])
                 hasReadTaskStatus = true
                 guard let row = value.object, let repository = try Self.imageString(row, "repository"), let tag = try Self.imageString(row, "tag"),
-                      Self.normalizedImageName("\(repository):\(tag)") == request.referenceKey,
+                      ContainerImagePullRequest.isValidTarget(repository: repository, tag: tag),
+                      operation.recovery.matches(repository: repository, tag: tag),
                       case .boolean(let finished) = row["finished"] else { throw Self.invalidServiceResponseStatic() }
+                if request == nil {
+                    request = .init(id: id, repository: repository, tag: tag, isConfirmed: true)
+                    imagePullOperations[id]?.request = request
+                }
                 var percentage: Double?
                 if case .number(let current) = row["current"], case .number(let total) = row["total"],
                    current.isFinite, total.isFinite, total > 0, current >= 0, current <= total { percentage = current / total * 100 }
                 if finished {
                     let images = try await loadContainerImageDefinitions()
-                    guard images.allSatisfy({ $0.sourceImageID != nil }), images.contains(where: { Self.imageAddress($0) == request.referenceKey }) else {
+                    guard images.allSatisfy({ $0.sourceImageID != nil }), images.contains(where: {
+                        ContainerImagePullRecovery.digest(Self.imageAddress($0)) == operation.recovery.target
+                    }) else {
                         throw Self.invalidServiceResponseStatic()
                     }
-                    result = try imagePullProgress(request, stage: .ready, percentage: 100)
-                } else { result = try imagePullProgress(request, stage: .downloading, percentage: percentage) }
+                    result = try imagePullProgress(request, id: id, stage: .ready, percentage: 100)
+                } else { result = try imagePullProgress(request, id: id, stage: .downloading, percentage: percentage) }
             } catch let error as AppError where !hasReadTaskStatus && error.dsmCode == 1202 {
                 // 24.0.2-1535 的受控下载实测：任务先运行，再以 Docker 错误结束；
                 // 后续读取只剩任务不存在，不能丢弃首次明确失败并永久显示正在恢复。
-                result = try imagePullProgress(request, stage: .rejected, error: .server)
+                result = try imagePullProgress(request, id: id, stage: .rejected, error: .server)
             } catch {
-                result = try imagePullProgress(request, stage: .needsReview, status: Task.isCancelled ? .cancellationRequestedAfterSubmission : nil,
+                if preservesTrustError, Self.imagePullTrustError(error) { throw error }
+                result = try imagePullProgress(request, id: id, stage: .needsReview, status: Task.isCancelled ? .cancellationRequestedAfterSubmission : nil,
                     error: (error as? AppError).map { serviceMutationErrorCategory(for: $0.category) } ?? .network)
             }
-        } else { result = try imagePullProgress(request, stage: .awaitingReceipt) }
+        } else { result = try imagePullProgress(request, id: id, stage: .awaitingReceipt) }
         imagePullOperations[id]?.progress = result
         return result
     }
 
-    private static func imagePullTaskID(_ value: ServiceJSON?) -> DsmParameterValue? {
+    private static func imagePullTrustError(_ error: Error) -> Bool {
+        if error is DsmCertificateTrustError { return true }
+        if let error = error as? AppError { return error.category == .tlsUntrusted || error.category == .tlsCertificateChanged }
+        if let error = error as? URLError {
+            return [.serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot,
+                    .serverCertificateNotYetValid, .secureConnectionFailed, .clientCertificateRejected, .clientCertificateRequired].contains(error.code)
+        }
+        return false
+    }
+
+    private static func imagePullTaskID(_ value: ServiceJSON?) -> ContainerImagePullRecovery.TaskID? {
         switch value {
-        case .string(let text) where stableImageText(text): return .string(text)
+        case .string(let text) where stableImageText(text): return .text(text)
         // ServiceJSON 的数字为 Double，超出安全整数范围的任务编号不能无损回传。
         case .number(let number) where number.isFinite && number >= 0 && number.rounded() == number && number <= 9_007_199_254_740_991:
             return .integer(Int(number))
@@ -1870,10 +1933,11 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
-    private func imagePullProgress(_ request: ContainerImagePullRequest, stage: ContainerImagePullStage, percentage: Double? = nil,
+    private func imagePullProgress(_ request: ContainerImagePullRequest?, id: UUID? = nil, stage: ContainerImagePullStage, percentage: Double? = nil,
         status: MutationResultStatus? = nil, submitted: Bool = true, error: MutationErrorCategory? = nil) throws -> ContainerImagePullProgress {
         let status = status ?? (stage == .ready ? .confirmedSuccess : stage == .rejected ? .confirmedFailure : .submittedButUnverified)
-        return try ContainerImagePullProgress(id: request.id, repository: request.repository, tag: request.tag, stage: stage, percentage: percentage,
+        guard let id = request?.id ?? id else { throw Self.invalidServiceResponseStatic() }
+        return try ContainerImagePullProgress(id: id, repository: request?.repository ?? "", tag: request?.tag ?? "", stage: stage, percentage: percentage,
             outcome: MutationResult(status: status, operation: "containerImagePull", submitted: submitted, requiresRefresh: stage != .rejected,
                 counts: MutationResultCounts(succeeded: stage == .ready ? 1 : 0,
                     failed: stage == .rejected && status != .cancelledBeforeSubmission ? 1 : 0,
@@ -1916,7 +1980,9 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             selected = images.filter { targetIDs.contains($0.id) }
             guard selected.count == targetIDs.count else { return try deletionMissingTargetResult(targetCount: targetIDs.count, context: context) }
             guard !imagePullOperations.values.contains(where: { pull in !pull.progress.stage.isTerminal && selected.contains(where: {
-                Self.imageAddress($0) == pull.request.referenceKey || ($0.tag == "<none>" && $0.sourceImageID.map(pull.baselineIDs.contains) == true)
+                ContainerImagePullRecovery.digest(Self.imageAddress($0)) == pull.recovery.target || ($0.tag == "<none>" && $0.sourceImageID.map {
+                    pull.recovery.baselineImageIDs.contains(ContainerImagePullRecovery.digest($0))
+                } == true)
             }) }) else { return try deletionDuplicateResult(targetCount: targetIDs.count, context: context) }
             let pendingTargets = pendingImageDeletions.values.flatMap { $0 }
             guard !selected.contains(where: { target in pendingTargets.contains(where: { Self.imageTargetsOverlap(target, $0) }) }) else {

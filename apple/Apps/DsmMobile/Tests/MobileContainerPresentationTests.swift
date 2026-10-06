@@ -78,6 +78,7 @@ final class MobileContainerPresentationTests: XCTestCase {
         "mobile.containers.filter.running", "mobile.containers.filter.stopped",
         "mobile.containers.filtered-empty.message", "mobile.containers.filtered-empty.title",
         "mobile.containers.loading", "mobile.containers.control.selection", "mobile.containers.control.records",
+        "mobile.containers.pull.title",
         "mobile.containers.field.project", "mobile.containers.field.cpu", "mobile.containers.field.memory",
         "mobile.containers.field.user", "mobile.containers.value.cpu",
         "mobile.containers.refresh.failed", "mobile.containers.section.containers",

@@ -2920,3 +2920,48 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 最终 XcodeGen 2.46.0 再生成前后工程 SHA256 同为 `7224e543b29b36691571b9cb32f4420fc0fc5bdb3efd59e67830435df0eb273d`。`python3 tools/localization/check_localization.py` **6672/2188/3402**、`python3 tools/request-contract/validate_contracts.py` **179+1**、`python3 tools/contract-validation/validate_fixtures.py` **29 组/48 引用**、`python3 tools/codex/generate_api_reference.py --check`、文档和差异检查均通过。构建/正式结果包保留在忽略的 build 目录；最终两端确认、批量结果、活动详情、重启恢复和横屏预览共十张，位于 `apple/Apps/DsmMobile/build/m7a-preview/`。两台模拟器均恢复浅色并查询确认；本片临时附件、层级、录屏、提帧脚本和诊断图已精确清理。
 
 本片无第三方依赖、最低版本、App 身份、系统权限或登录格式变更，没有真实 NAS 操作。提交前重新读取 origin/main，远端没有新提交；既有云端四个移动组仍运行，先本地提交本片，继续后续独立工作，避免推送取消唯一完整云端运行。整体 M6–M8 尚未完成，下一片为容器映像搜索/下载及恢复，不把未开发删除/网络/VMM/系统扩展记为仅待设备验收。
+
+## 2026-10-06 移动 M7b 映像搜索、下载与恢复
+
+基线为 `27bd34c6`（M7a 已完成本地提交，远端仍为 `cdc889cc`）。本片实现过程记录如下，最终状态在后续结果区补齐，不能把定向测试代替全部界面验收。源码范围、原任务恢复格式和五端边界见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-06-m7b-映像搜索下载与恢复)。
+
+- 共享沿原 Image/Registry v1 请求，新增摘要恢复与 willSubmit/accepted/rejected 检查点；旧 macOS 调用继续共用同一请求/状态/删除互斥。无回执不猜任务，原回执按原类型保存；恢复以回显目标摘要、原生完成标记和完整映像列表共同判定。移动受保护存储与账号隔离、可见时轮询、原生搜索/标签/记录均已接入。
+- 初始 `swift test --package-path apple --jobs 2 --filter ContainerImagePullTests` 通过旧 16 项；新增 9 项后 25 项通过，再补证书错误停止链路后最终 26 项通过。日志依次为 `m7b-shared-initial.log`、`m7b-shared-focused.log`、`m7b-shared-focused-final.log`。最终 `swift test --package-path apple --jobs 2` 为 2900 项 XCTest（172 条既有跳过、0 失败）和 12 项 Swift Testing 通过，日志 `m7b-shared-full.log`。
+- Mac Release 通用构建通过，主 App 和 File Provider 二进制实际核实均有 x86_64/arm64；没有安装、启动或发布包。日志 `m7b-macos-build.log`。
+- 移动首次构建发现模型 catch 内两处错误变量遮蔽属性，修为 `self.error`；R2/R3 构建通过。新增 16 项移动行为测试在 R1 两端均通过；两项定向 UI 中中文大字下载两端通过，普通选择标签下载两端失败于最终目标断言。导出截图证实用户已选 stable 后返回页面却显示 latest，根因为标签页重新出现时重复执行加载并应用默认值。修复为首次进入加载、返回保留选择，重新读取时也只在原选择不可用时设置默认值；补返回后的完整标签值断言，没有放宽最终下载目标检查。R1 两端均 exit 65，保留真实失败。
+- 本地化第一轮通过：Apple 6689、Android 2188、Windows 3402。请求契约 179 个 fixture/1 个结果示例、私有 fixture 29 组/引用 48 项、文档和 diff 检查通过。最初误用了不存在的三个校验脚本路径，退出 2 未执行检查；随后按仓库实际路径重新运行上述检查，不将失败调用记为通过。
+
+实际验证命令（设备 ID 分别为 iPhone `8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`、iPad `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，均为授权隔离模拟器）：
+
+```sh
+/tmp/lanstash-release-1.0.15.1x6wUX/generator/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=<设备ID>' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7b-<phone或pad>-r1.xcresult -only-testing:DsmMobileTests/MobileContainerImagePullTests '-only-testing:DsmMobileUITests/MobileContainerImagePullUITests/test搜索选择标签下载完成并移除记录' '-only-testing:DsmMobileUITests/MobileContainerImagePullUITests/test中文大字下载按钮与风险说明可用' -parallel-testing-enabled NO
+swift test --package-path apple --jobs 2 --filter ContainerImagePullTests
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+R4 移动构建通过后，R2 两端运行完整 `-only-testing:DsmMobileTests` 和整组 `-only-testing:DsmMobileUITests/MobileContainerImagePullUITests`。每端 1504 项单元（4 条既有跳过）出现一处旧页面资源键集合失败：新增下载入口的 `mobile.containers.pull.title` 未加入精确预期集合；已补齐该键，保留集合完全相等检查。R2 两端均 exit 65，仅此单元失败；全部八项新增 UI 两端均通过，分别耗时 475.560/465.037 秒。
+
+本轮再次通过本地化 6689/2188/3402、请求契约 179/1、私有 fixture 29/48、API 参数目录一致性和文档检查。API 目录检查曾误用不存在的脚本路径退出 2，随后使用 `python3 tools/codex/generate_api_reference.py --check` 正式通过；二进制核对曾误用中文显示名作为路径失败，随后根据实际产物对 `LanStash.app/Contents/MacOS/LanStash` 及内嵌 `LanStashFileProvider.appex` 成功核实双架构，不将失败路径视为构建失败或有效验证。
+
+R5 移动构建通过，仅补旧单元预期键，未改变业务或 UI。R3 重新运行完整移动单元，两端各 1504 项（各 4 条既有条件跳过、0 失败）均 exit 0；R2 的八项实际 UI 保持最终源码证据，不重复无变更界面测试。没有新增跳过或降低断言。本片未写入真实 NAS，不将模拟器结果提升为私有 API 行为验证。
+
+最终移动单元命令如下，iPad 将目标替换为上方对应 ID，结果包/日志前缀替换为 `m7b-pad-r3`；R2 命令另加 `-only-testing:DsmMobileUITests/MobileContainerImagePullUITests`：
+
+```sh
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7b-phone-r3.xcresult -only-testing:DsmMobileTests -parallel-testing-enabled NO
+python3 tools/codex/generate_api_reference.py --check
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/MacOS/LanStash
+lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Contents/PlugIns/LanStashFileProvider.appex/Contents/MacOS/LanStashFileProvider
+```
+
+锁定 XcodeGen 2.46.0 再生成前后工程 SHA-256 同为 `f0868d2e28f0f675a96cb5afdf16a3202131d5dc63d115118419167cc054c219`。实际查看两端中文大字、非默认 stable 标签、横屏，以及 iPhone 恢复/搜索错误、iPad 无回执保护页面截图，未发现本片布局遮挡。正式合成预览保留在 `apple/Apps/DsmMobile/build/m7b-preview/`；一次性 `m7b-inspection` 目录中的失败截图、录屏、层次文本和导出清单已清理，日志和结果包继续忽略。两台模拟器恢复浅色。
+
+独立集成与只读对抗复核及四项具体 `PENDING_USER_VALIDATION` 见移动主计划。真实下载成功、各版本 1202、权限/锁屏/网络与完整辅助功能仍需用户在专用环境验收；Agent 未写 NAS。没有修改 macOS App、Windows 或 Android 源码，没有签名发布、移动分发或安装 Mac 包。M6 剩余、容器创建/删除、映像删除、网络及 VMM/M8 继续后续实现，不计为仅待真机。

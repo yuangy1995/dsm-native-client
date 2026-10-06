@@ -33,7 +33,7 @@ extension MobileAppModel {
         }
         if selectedModule == .containers, module != .containers {
             containerInventoryModel.deactivate()
-            containerControls.deactivate()
+            containerControls.deactivate(); containerImagePulls.deactivate()
         }
         if selectedModule == .virtualMachines, module != .virtualMachines {
             virtualMachineInventoryModel.deactivate()
@@ -148,7 +148,7 @@ extension MobileAppModel {
                 guard let profile = activeProfile,
                       let serviceRepository else { break }
                 let profileID = profile.id, identity = MobileWorkspaceIdentity(profile), reader = moduleAccessReader
-                containerControls.configure(profile: profile, repository: serviceRepository) { [weak self] in
+                let authorize: @MainActor @Sendable () async throws -> Bool = { [weak self] in
                     guard let self, self.activeProfile.map(MobileWorkspaceIdentity.init) == identity,
                           self.isConnected, self.isModuleVisible(.containers), let reader else { throw CancellationError() }
                     let privileges = try await reader.readPrivileges()
@@ -156,6 +156,8 @@ extension MobileAppModel {
                           self.isConnected, self.isModuleVisible(.containers), !Task.isCancelled else { throw CancellationError() }
                     return privileges.applications[.containers] == true
                 }
+                containerControls.configure(profile: profile, repository: serviceRepository, authorize: authorize)
+                containerImagePulls.configure(profile: profile, repository: serviceRepository, authorize: authorize)
                 await containerInventoryModel.activate(
                     profileID: profileID,
                     repository: MobileReadOnlyContainerRepository(

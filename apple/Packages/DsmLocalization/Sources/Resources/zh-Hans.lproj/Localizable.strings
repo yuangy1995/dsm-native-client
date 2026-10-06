@@ -7005,3 +7005,22 @@
 "mobile.containers.value.cpu" = "%.1f%%";
 
 "mobile.containers.control.managed" = "此容器由套件管理。请在套件中心管理对应套件。";
+
+// 移动映像搜索与下载恢复。
+"mobile.containers.pull.title" = "下载映像";
+"mobile.containers.pull.searching" = "正在搜索映像…";
+"mobile.containers.pull.no-results" = "没有匹配的映像";
+"mobile.containers.pull.search-help" = "输入映像名称，或换一个关键词搜索。";
+"mobile.containers.pull.search-limit" = "当前显示前 50 项结果。缩小搜索范围以查找其他映像。";
+"mobile.containers.pull.query" = "映像名称";
+"mobile.containers.pull.empty-help" = "搜索映像并选择标签，将其下载到 NAS。";
+"mobile.containers.pull.saved-download" = "已保存的下载";
+"mobile.containers.pull.loading-tags" = "正在读取标签…";
+"mobile.containers.pull.tags-failed" = "无法读取标签";
+"mobile.containers.pull.no-tags" = "没有可用标签";
+"mobile.containers.pull.tags-help" = "返回搜索并选择其他映像。";
+"mobile.containers.pull.tag" = "标签";
+"mobile.containers.pull.risk" = "下载会占用 NAS 存储空间，也可能更新现有标签。离开页面不会停止下载。";
+"mobile.containers.pull.download" = "下载";
+"mobile.containers.pull.read-error" = "无法读取这些信息。请检查 NAS 连接后重试。";
+"mobile.containers.pull.preparing" = "正在准备下载…";

@@ -7005,3 +7005,22 @@
 "mobile.containers.value.cpu" = "%.1f%%";
 
 "mobile.containers.control.managed" = "This container is managed by a package. Manage that package in Package Center.";
+
+// 移动映像搜索与下载恢复。
+"mobile.containers.pull.title" = "Download images";
+"mobile.containers.pull.searching" = "Searching images…";
+"mobile.containers.pull.no-results" = "No matching images";
+"mobile.containers.pull.search-help" = "Enter an image name or try a different search.";
+"mobile.containers.pull.search-limit" = "Showing the first 50 results. Refine your search to find another image.";
+"mobile.containers.pull.query" = "Image name";
+"mobile.containers.pull.empty-help" = "Search for an image and choose a tag to download it to your NAS.";
+"mobile.containers.pull.saved-download" = "Saved download";
+"mobile.containers.pull.loading-tags" = "Loading tags…";
+"mobile.containers.pull.tags-failed" = "Unable to load tags";
+"mobile.containers.pull.no-tags" = "No tags available";
+"mobile.containers.pull.tags-help" = "Return to search and choose another image.";
+"mobile.containers.pull.tag" = "Tag";
+"mobile.containers.pull.risk" = "Downloading uses NAS storage and may update an existing tag. Leaving this page does not stop the download.";
+"mobile.containers.pull.download" = "Download";
+"mobile.containers.pull.read-error" = "Unable to load this information. Check your NAS connection and try again.";
+"mobile.containers.pull.preparing" = "Preparing download…";

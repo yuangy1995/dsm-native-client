@@ -4,9 +4,11 @@ import SwiftUI
 struct MobileContainersView: View {
     @Bindable var inventory: MobileContainerInventoryModel
     @Bindable var controls: MobileContainerControlModel
+    @Bindable var imagePulls: MobileContainerImagePullModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsSelection = false
+    @State private var showsImagePulls = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -33,6 +35,10 @@ struct MobileContainersView: View {
             }
         }
         .sheet(isPresented: $showsSelection) { MobileContainerSelectionView(model: controls) }
+        .sheet(isPresented: $showsImagePulls) { MobileContainerImagePullView(model: imagePulls) }
+        .onChange(of: imagePulls.readyCount) { previous, count in
+            if count > previous { Task { await inventory.refresh() } }
+        }
         .onChange(of: controls.targets) { previous, _ in
             if !previous.isEmpty && !controls.isOperating && controls.error != .trust && controls.error != .denied {
                 Task { await inventory.refresh() }
@@ -120,6 +126,8 @@ struct MobileContainersView: View {
             }
         }
         Section {
+            Button(L10n.string("mobile.containers.pull.title"), systemImage: "arrow.down.circle") { showsImagePulls = true }
+                .frame(minHeight: 44).accessibilityIdentifier("image-pull.open")
             MobileContainerControlNotice(model: controls)
             NavigationLink { MobileContainerControlRecordsView(model: controls) } label: {
                 Label(L10n.string("mobile.containers.control.records"), systemImage: "clock.arrow.circlepath")

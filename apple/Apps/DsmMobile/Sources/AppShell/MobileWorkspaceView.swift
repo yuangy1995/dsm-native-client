@@ -208,7 +208,7 @@ struct MobileWorkspaceView: View {
                 MobileDownloadsView(model: model.downloads, fileRepository: model.fileRepository,
                     openFiles: model.isModuleVisible(.files) ? { model.selectModule(.files) } : nil)
             case .containers:
-                MobileContainersView(inventory: model.containerInventoryModel, controls: model.containerControls)
+                MobileContainersView(inventory: model.containerInventoryModel, controls: model.containerControls, imagePulls: model.containerImagePulls)
             case .virtualMachines:
                 MobileVirtualMachinesView(inventory: model.virtualMachineInventoryModel)
             case .nasSettings:
