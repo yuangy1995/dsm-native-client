@@ -13,7 +13,7 @@ final class MobileFilesProviderUITests: XCTestCase {
         let browse = element("mobile.files.test-browse", app)
         XCTAssertTrue(browse.waitForExistence(timeout: 8), app.debugDescription); browse.tap()
         openLocation(app)
-        let shared = app.staticTexts["Shared"].firstMatch
+        let shared = sharedFolder(in: app)
         XCTAssertTrue(shared.waitForExistence(timeout: 15), app.debugDescription); shared.tap()
         let file = app.cells["Sample, txt"].firstMatch
         XCTAssertTrue(file.waitForExistence(timeout: 15), app.debugDescription); file.tap()
@@ -44,7 +44,7 @@ final class MobileFilesProviderUITests: XCTestCase {
         let browse = element("mobile.files.test-browse", app)
         XCTAssertTrue(browse.waitForExistence(timeout: 8), app.debugDescription); browse.tap()
         openLocation(app)
-        let shared = app.staticTexts["Shared"].firstMatch
+        let shared = sharedFolder(in: app)
         XCTAssertTrue(shared.waitForExistence(timeout: 15), app.debugDescription); shared.tap()
         // “文件”默认隐藏扩展名，完整类型仍保留在项目的可访问标识中。
         let file = app.cells["Sample, txt"].firstMatch
@@ -132,8 +132,14 @@ final class MobileFilesProviderUITests: XCTestCase {
         let files = XCUIApplication(bundleIdentifier: "com.apple.DocumentsApp")
         files.launch()
         openLocation(files, enable: true)
-        XCTAssertTrue(files.staticTexts["Shared"].firstMatch.waitForExistence(timeout: 20), files.debugDescription)
+        XCTAssertTrue(sharedFolder(in: files).waitForExistence(timeout: 20), files.debugDescription)
         screenshot(files, "files-system-location-enabled")
+    }
+
+    private func sharedFolder(in app: XCUIApplication) -> XCUIElement {
+        // iPad 侧栏也有 Shared；只接受目录列表中的合成文件夹，不能误入系统共享页。
+        app.cells.matching(NSPredicate(format: "NOT identifier BEGINSWITH %@", "DOC.sidebar."))
+            .containing(.staticText, identifier: "Shared").firstMatch
     }
 
     private func openLocation(_ app: XCUIApplication, enable: Bool = false) {

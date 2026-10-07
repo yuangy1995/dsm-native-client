@@ -4972,3 +4972,133 @@ Developer ID、描述文件、权限、Sparkle 组件、Gatekeeper、公证票�
 本机 main 的照片修复、后续 Files 修正及本记录暂未推送主分支，待该轮检查结束后
 读取远端并正常同步，不取消检查、不强推、不移动正式标签。发布与主分支同步分开
 记录；M6–M8 仍继续处理首次 Files 呈现、默认只读和完整云端结果，尚未整体完成。
+
+
+## 2026-10-07 Files 首次显示与重新打开的独立诊断
+
+在全新 iOS 26.5 iPad Air 11-inch（M4）上，以当前正常临时签名产物执行原中文
+位置管理和一次性同域对照。原中文流程 78.690 秒通过；对照总计 99.774 秒，
+明确记录首次 20 秒等待 `Shared` 为 false，关闭并重新打开系统 Files 后为 true。
+两张截图分别显示空位置与同一位置中的合成 Shared 目录，期间没有重新注册位置、
+改变授权、重新发送 NAS 操作或生成另一测试域。
+
+命令为 `xcodebuild test -project apple/Apps/DsmMobile/DsmMobile.xcodeproj
+-scheme DsmMobile -destination 'platform=iOS Simulator,id=<本次专用iPad>'
+-derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 -parallel-testing-enabled NO
+-only-testing:DsmMobileUITests/MobileFilesProviderUITests/test中文深色大字位置权限确认暂停恢复与取消移除
+-only-testing:DsmMobileUITests/MobileFilesProviderUITests/test诊断首次文件目录与重新打开
+-resultBundlePath build/m8l-files-first-open.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`。
+该诊断命令退出 0，只说明记录及重新打开对照完成，不能覆盖首次 false 或替代原
+可编辑验收用例。首次设备启动 3 分 38 秒后才构建；中间本机内存压力较高，采样
+显示构建仍在扫描工程文件，关闭本任务两个闲置模拟器后继续，未将等待写成构建失败。
+
+[Apple DTS 的目录书签讨论](https://developer.apple.com/forums/thread/797469?answerId=855165022)
+提供首次枚举为空的排查线索；其场景与本项目不同，不能提升为已确认同一系统缺陷。
+本片没有修改产品或原业务断言；一次性测试方法已经精确移除，原测试文件无差异。
+专用设备、导出截图、采样和临时日志清理；原有测试设备只关闭并保留全部数据。
+接下来恢复移动 UI 验证前须正常增量重建，移除测试缓存中的诊断方法。用户随后要求
+先修 Mac 旋转与提示呈现，移动端保持原云端运行并继续保留此缺口。
+
+同一完整云端 `37616066715` 的两端工作区组终态均成功：
+[iPad 112774569093](https://github.com/yuangy1995/dsm-native-client/actions/runs/37616066715/job/112774569093)
+166 项 UI、0 失败，10098.241 秒；
+[iPhone 112774569047](https://github.com/yuangy1995/dsm-native-client/actions/runs/37616066715/job/112774569047)
+166 项 UI、0 失败，10438.777 秒。两份终态日志均核对来源 `7fe646b2`；其他组继续
+执行，不据此宣布整轮通过。指定 26.2 的云端 iPhone 对照已开始构建，结果另记。
+
+
+## 2026-10-08 原移动云端门禁新增终态
+
+- `37621927965` 的 iPhone iOS 26.2 对照（job `112794046127`）：原三项系统 Files UI
+  总计 279.593 秒、2 通过/1 失败；中文管理与完整可编辑主流程通过，只读目录在
+  `MobileFilesProviderUITests.swift:131` 失败。没有改权限、放松断言或重跑覆盖失败；
+  iPad 组（job `112794046537`）随后也失败：原 3 项均失败，186.052 秒；中文与
+  可编辑用例在来源版本第 121 行等添加结果弹窗失败，只读在第 131 行等 Shared
+  失败。已直接核对 `7fe646b2` 对应行号，未把前两项记成系统目录或写回已执行失败。
+- 原完整 `37616066715` 的 iPad services（job `112774569073`）：46 项 UI、1 失败，
+  总计 9889.750 秒。失败仅为 `test灯光接受后断线重启只恢复保存状态且主动应用`，
+  495.222 秒；最终 `reveal` 在第 732 行找不到 `mobile.nas.service.activity.succeeded`。
+  其余 45 项通过。仅凭日志尚不能区分成功状态未出现或测试定位问题，保留失败，后续
+  读取合成结果附件复核；不取消其他原始分组，不据此宣布整轮成功。
+
+原完整运行的 iPad modules（job `112774569123`）也已结束并保留失败：首先执行的
+10 项系统主流程中有 2 项失败（616.010 秒），均为 Files：可编辑用例点按同名 Shared
+后找不到 Sample 单元格（后续确认误入系统侧栏，见 M8m；来源第 51 行，110.036 秒），默认只读在第 131 行找不到
+Shared（92.257 秒）。后续 169 项模块 UI 全部通过（13567.098 秒）。脚本保留前组
+失败并最终退出 65；不能仅引用最后一组的成功输出宣布整组通过。结果附件
+`11496435246` 已上传，尚未下载；不取消另外仍在执行的原分组。
+
+## 2026-10-08 M8m 原云端失败结果复核（进行中）
+
+本波单一范围为原 Files 系统主流程与 iPad 灯光恢复失败的证据定位及相应移动正式
+测试/必要产品修复，不改 NAS 协议、权限或已有 Mac 修复。原运行 `37616066715`
+仍有 iPhone modules、两端 administration 三组执行中，保留原运行，不重新派发。
+Mac 旋转/浮层修复已先交付独立测试包；其未提交源码和原移动记录保持在工作区。
+
+已用锁定 Xcode 26.6（17F113）、XcodeGen 2.46.0 执行
+`xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj
+-scheme DsmMobile -destination 'generic/platform=iOS Simulator'
+-derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4
+-disableAutomaticPackageResolution -skipPackageUpdates CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`，
+退出 0。该构建纳入最新 Apple 共享改动并移除前轮已删除的一次性诊断方法缓存；
+模拟器系统仍为既有 iOS 26.5，不改变最低版本或权限。
+
+原 iPad services 结果包 `11493032774` 已下载并解压，`xcresulttool` 确认 46 项中
+45 通过、1 失败。灯光用例的应用按钮点击有记录，但最终仅见原来的部分完成条目，
+新成功状态未出现。已查看前置截图、失败层级和录像；首轮视频解码的默认时间容差
+返回了邻近后续帧，已改为记录实际帧时间，不能据后续滚动画面断言点击时按钮被遮挡。
+本机仍先执行原用例，尚无新的产品修复结论。提取附件只含云端合成数据，未连接或写入
+真实 NAS。
+
+较早系统对照准备：`xcodebuild -downloadPlatform iOS -buildVersion 18.5
+-architectureVariant arm64 -exportPath "$PWD/build/m8m-ios18.5-runtime"` 返回
+`arm64Only is not available for download`（退出 70）；按提示对应的另一官方架构选项
+改为 `universal` 仍不可下载（退出 70）。未安装新运行时，未改变 Xcode、最低版本或
+现有模拟器，没有据此声明 iOS 18.5 兼容或不兼容。
+
+本机未修改的灯光原用例 `test灯光接受后断线重启只恢复保存状态且主动应用`
+通过（iPad Air 11 / iOS 26.5，355.529 秒，1 项 0 失败）；结果为
+`build/m8m-pad-led-baseline.xcresult`。相同逻辑仍待云端复核，不凭本机成功覆盖原失败，
+不根据尚未证实的触点假设修改产品或重发亮度操作。
+
+iPad Files 可编辑失败得到新明确证据：原 job `112774569123` 第 51 行失败层级中，
+选中的是 `DOC.sidebar.item.Shared`，浏览内容来源是系统 `com.apple.DocumentManager.SharedItems`，
+标题为 Shared、内容为 No Shared Files；它不是 NAS 的合成 Shared 目录。
+原 `app.staticTexts["Shared"].firstMatch` 在 iPad 分栏中会先匹配系统侧栏同名项。
+本波正式测试单一改动范围新增 `MobileFilesProviderUITests.swift`：把目录断言/点击
+绑定到非侧栏目录单元格，保持原等待期限、目标内容、下载/写回/权限断言，禁止盲重试。
+不改产品源代码或 NAS 权限。两端复验结果另记。
+
+目录定位修正后，同一测试产物分别执行
+`xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun
+-destination 'platform=iOS Simulator,id=<目标设备>' -parallel-testing-enabled NO
+-only-testing:DsmMobileUITests/MobileFilesProviderUITests -resultBundlePath <结果目录>`。
+iPad `A31ABDE2-186F-43DD-8D40-5EB9511A9289`：中文权限管理 52.080 秒、可编辑下载/
+原位编辑/回传 72.195 秒通过，只读位置 58.939 秒失败；结果
+`build/m8m-files-selector-pad.xcresult`。iPhone `8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`：
+前三项相应为 69.098 秒通过、66.129 秒通过、58.648 秒失败；结果
+`build/m8m-files-selector-phone.xcresult`。两次均退出 65，各 3 项中 2 通过/1 失败，
+失败都位于新第 135 行真实目录显示断言。两端目录及编辑成功的四张截图已逐张复核。
+两端使用自造文件，未连接真实 NAS；没有用编辑成功代替默认只读验收。
+
+本机两端系统“文件”为中文，故另补英文系统的 iPad 原可编辑用例，覆盖云端侧栏和
+目录都叫 Shared 的碰撞条件。仅临时调整该专用模拟器语言，原值
+`AppleLanguages=[zh-Hans-US,en-US]`、`AppleLocale=zh-Hans_US`，完成后恢复；
+不修改用户 Mac 语言、产品资源或用例成功标准。英文结果另记。
+
+英文系统补验使用同一 `xcodebuild test-without-building` 命令，限定原
+`MobileFilesProviderUITests/test系统文件位置可浏览下载并从外部编辑后上传`，结果
+`build/m8m-files-selector-english-pad.xcresult`：69.202 秒、1 项 0 失败、退出 0。
+两张实际截图确认英文系统侧栏 Shared 与 NAS Shared 同时存在，选择器已进入后者，
+并完成原文件名/内容、协调编辑及合成 NAS 写回检查。未修改或放宽原用例。
+完成后回写并读回模拟器原 AppleLanguages/AppleLocale，随后关闭两台专用模拟器；
+没有清空设备、修改主机语言或安装正式 App。
+
+独立集成审查与只读对抗复核：三处查询都限定目录单元格，排除系统侧栏；目录等待、
+下载、实际内容、编辑回传、权限、错误传播和清理仍保持原断言。此次只改正式测试，
+不修改产品运行时、NAS 契约或读写能力。两端只读失败继续保留，不能因中文和英文
+可编辑成功提高默认只读等级。当前没有修改灯光产品或正式用例。
+`python3 tools/localization/check_localization.py`、
+`python3 tools/codex/check_documentation.py`、`git diff --check` 均通过；
+本波未改变用户可见字符串。正式结果包保留，导出的原始附件、视频帧脚本/图片和
+临时日志在摘录后清理；Mac 已交付的包与示例图保留，不进入移动提交。

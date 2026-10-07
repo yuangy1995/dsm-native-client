@@ -1,9 +1,9 @@
 <!-- doc-role: status -->
-<!-- last-reviewed: 2026-10-07 -->
+<!-- last-reviewed: 2026-10-08 -->
 
 # 当前开发进度
 
-更新至 2026-10-07。本页只记录当前结论和下一步；精确提交/构建/测试/包记录集中在[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。源码、契约与实际结果优先于历史描述。
+更新至 2026-10-08。本页只记录当前结论和下一步；精确提交/构建/测试/包记录集中在[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。源码、契约与实际结果优先于历史描述。
 
 ## 当前结论
 
@@ -17,7 +17,7 @@
 | macOS Office | 系统预览、本机应用编辑、保存后自动回传、冲突/未知核查已完成本机验证 | 真实 Office/Pages/Numbers/Keynote、旧格式、正式签名沙盒及 NAS 验收 |
 | macOS UI / 远程位置 | 完整 WebDAV URL、工具栏/路径、照片来源、连接成功结束、保存进度及外置浏览入口已修正并有原生回归 | 用户实际连接、窄窗口与完整辅助功能反馈 |
 | Windows | 2026-09-21 范围的业务对齐、云盘写回/恢复及 x64/ARM64 云端验证完成；后续 Mac 增量未自动移植 | Photos 管理、File Station 增量、Office 按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)逐项开发 |
-| iPhone / iPad | M0–M7 已批准源码范围已实现；M8a 普通文件后台、M8b 系统分享上传与跨进程恢复、M8d 照片/跨 NAS/Office 后台已接。两端各 1846 项移动单元（4 项既有真机条件跳过）本机及当前云端通过；本机各五项前后台 UI、完整共享 3103 XCTest/12 Swift Testing 与 260 项 Mac 照片回归通过。M8c 已实现共享 Files 运行时与移动读写入口，可编辑系统主流程本机两端曾通过，新增全新 iPad 对照在目录加载失败；默认只读目录本机及云端均失败，云端另有添加位置阶段失败。具体证据与真机条件见[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) | 继续定位 Files 及云端界面失败，不能宣告 M6–M8 整体完成。当前云端 a1b7753d 的共享/Mac、iPhone 工作区 166 项、iPad 管理 88 项及服务 46 项通过；两端分享与普通文件前后台 UI 通过，iPad 模块组提前取消，完整界面覆盖需重跑。Files 只读元数据失败、可编辑首次加载与添加位置失败分别追踪；启动停顿仍待调用栈。公告和 DDNS 失败录像确认内容已消失，等待方式修正保持原期限，两端聚焦通过但尚待云端复验；模块开关修正也仍待云端复验。系统集成先运行并独立封存结果；取消或部分通过的作业不计为全过。已实现入口保留能力、权限、危险确认与未知恢复，真实 NAS、正式权限和真机另验 |
+| iPhone / iPad | M0–M7 已批准源码范围及 M8a 普通文件后台、M8b 系统分享、M8d 照片/跨 NAS/Office 后台已实现，已有两端全部移动单元、分片实际 UI、共享/Mac 回归及构建证据。M8c 已接 Files 位置管理和读写恢复；修正测试误入系统同名侧栏后，本机两端中文管理及可编辑下载/回传通过，默认只读目录仍失败。全新位置首次呈现与添加扩展发现问题另行追踪，具体见[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) | M6–M8 整体未完成。当前完整云端的共享/Mac、两端工作区、iPhone 服务组已通过；iPad 模块的先行系统段失败、其他模块界面段通过，iPad 服务组灯光恢复失败；iPhone 模块及两端管理组仍在执行。目录定位修正已在英文 iPad 同名条件下通过，尚待云端复验；灯光原用例本机通过但不抹去云端失败。默认只读在两种模拟器系统和云端均有失败，不能只转交真机或通过开放写权限绕过。保留能力、权限、危险确认与未知恢复；真实 NAS、正式权限和真机另验 |
 | Android | Compose 客户端、导航改版、后台/传输、Synology Photos 与质量门已建立；当前 Task.edit 仍使用 v1，需独立修正为官方字段表要求的 v2；既有 Chat 投票请求差异造成云端单测失败 | 按[Android 计划](../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)继续结构收敛与目标设备验证；Mac 新增只作接口参考 |
 
 ## 系统集成与发布
