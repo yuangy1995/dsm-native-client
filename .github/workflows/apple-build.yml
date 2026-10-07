@@ -188,6 +188,7 @@ jobs:
             MobilePackageCenterUITests MobilePackageControlUITests MobilePackageInstallationUITests MobileRegionUITests
             MobileScheduledTasksUITests MobileSystemActionsUITests
           )
+          system_tests=(MobileFilesProviderUITests MobileShareExtensionUITests MobileTransferBackgroundUITests)
           case "$MOBILE_SUITE" in
             workspace)
               test_selection=(-only-testing:DsmMobileUITests/MobileWorkspaceUITests)
@@ -195,6 +196,9 @@ jobs:
             modules)
               test_selection=(-only-testing:DsmMobileTests -only-testing:DsmMobileUITests -skip-testing:DsmMobileUITests/MobileWorkspaceUITests -skip-testing:DsmMobileUITests/MobileServiceSettingsUITests)
               for test_class in "${administration_tests[@]}"; do
+                test_selection+=("-skip-testing:DsmMobileUITests/$test_class")
+              done
+              for test_class in "${system_tests[@]}"; do
                 test_selection+=("-skip-testing:DsmMobileUITests/$test_class")
               done
               ;;
@@ -209,13 +213,29 @@ jobs:
               ;;
             *) echo "未知移动测试分组：$MOBILE_SUITE" >&2; exit 1 ;;
           esac
-          xcodebuild test-without-building \
-            -project DsmMobile.xcodeproj -scheme DsmMobile \
-            -destination "platform=iOS Simulator,id=$MOBILE_DEVICE" \
-            -derivedDataPath "$RUNNER_TEMP/DsmMobile-build" \
-            -parallel-testing-enabled NO \
+          test_arguments=(
+            test-without-building -project DsmMobile.xcodeproj -scheme DsmMobile
+            -destination "platform=iOS Simulator,id=$MOBILE_DEVICE"
+            -derivedDataPath "$RUNNER_TEMP/DsmMobile-build" -parallel-testing-enabled NO
+          )
+          system_result=0
+          if [[ "$MOBILE_SUITE" == modules ]]; then
+            # 系统集成先完成独立结果，避免长组被中断时只留下未封存的测试记录。
+            system_selection=()
+            for test_class in "${system_tests[@]}"; do
+              system_selection+=("-only-testing:DsmMobileUITests/$test_class")
+            done
+            xcodebuild "${test_arguments[@]}" \
+              -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET-system.xcresult" \
+              "${system_selection[@]}" || system_result=$?
+          fi
+          suite_result=0
+          xcodebuild "${test_arguments[@]}" \
             -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET.xcresult" \
-            "${test_selection[@]}"
+            "${test_selection[@]}" || suite_result=$?
+          # 首段失败仍运行余下测试，两段任一失败均保留失败退出码。
+          if [[ "$system_result" -ne 0 ]]; then exit "$system_result"; fi
+          exit "$suite_result"
 
       - name: 上传移动端测试结果
         if: always() && matrix.target != 'shared-macos'

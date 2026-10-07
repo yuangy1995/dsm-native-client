@@ -85,8 +85,7 @@ final class MobileChatGroupCreationUITests: XCTestCase {
     private func openChat(_ app: XCUIApplication, chinese: Bool = false) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         navigate("settings", chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.chat", app)
-        reveal(toggle, app); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "chat", test: self)
         navigate("chat", chinese ? "聊天" : "Chat", app)
         XCTAssertTrue(app.staticTexts["Sample chat"].firstMatch.waitForExistence(timeout: 8))
     }

@@ -8,9 +8,9 @@ enum MobileUITestNavigation {
         let toggle = app.switches["mobile.settings.module.\(module)"]
         revealModule(toggle, in: app)
         let control = toggle.switches.firstMatch
-        // 云端多属性轮询曾在读完前耗尽十秒；可点击本身已要求存在，避免重复抓取。
+        // 云端单次查询已实测超过十秒，不能在快照返回前中断；仍断言真实可点击状态。
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: control)
-        let readyResult = XCTWaiter.wait(for: [ready], timeout: 10)
+        let readyResult = XCTWaiter.wait(for: [ready], timeout: 30)
         if readyResult != .completed { capture(app, name: "Enable \(module) readiness", test: test) }
         XCTAssertEqual(readyResult, .completed, "功能开关尚未可操作：\(module)", file: file, line: line)
         guard readyResult == .completed else { return }

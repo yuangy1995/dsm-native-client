@@ -4220,3 +4220,62 @@ xcodebuild test -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMob
 
 iPhone 3 项 165.439 秒、iPad 3 项 175.186 秒，均 0 失败。原云端运行其余作业仍在进行，
 本轮修正尚待下一次云端确认；不将两端本机通过记作完整云端门禁通过。
+
+## 2026-10-07 云端模块启用与系统集成结果分段
+
+主功能基线 `2d841fdc` 已同步 main。旧运行 `37549707212` 被后续正常推送替换后，
+从已取消作业中继续取回失败事件与合成截图：iPad 的损坏聊天音频恢复和中文深色
+大字号消息删除两个场景仍停留在设置页，聊天开关未开启；iPhone 的取消临时相册
+分享场景在模块准备阶段超时。后者事件明确记录单次辅助功能快照耗时 10.579 秒，
+超过原十秒等待，不将其解释成照片不可用或产品权限错误。
+
+测试统一使用已有模块启用方法进行一次明确拖动并检查实际值；同类聊天、下载和
+管理测试的重复准备步骤一并复用该方法。模块可操作等待改为三十秒，保留可点击、
+可用和开启值断言；中文删除场景导航复用已有导航方法。没有自动重试或改变产品
+业务逻辑、操作次数和业务结果断言。取消作业的部分通过结果不计为完整门禁通过。
+
+三个实际失败场景修正后两端均通过：损坏音频恢复 iPhone 30.925 秒、iPad 37.933 秒；
+中文删除场景 109.335/106.070 秒；取消临时分享 41.233/43.245 秒。结果包为
+`build/m8e-navigation-{phone,pad}.xcresult`，当前环境仍为 Xcode/iOS 模拟器 26.5。
+
+其他十五个修改过准备步骤的测试类各选一个完整业务场景，在两端分别通过，iPhone
+881.725 秒、iPad 1009.891 秒，均 0 失败、0 跳过。覆盖聊天发送/建群/阅读/定时/
+联系人/转发、下载订阅/编辑/创建/设置、账号管理、套件设置/控制/安装和系统操作。
+合计每端十八个不同界面场景通过；这不是整套 UI 全量运行。独立结果为
+`build/m8e-setup-{phone,pad}.xcresult`，iPhone 重新编译测试，iPad 复用该产物。
+
+实际命令如下；iPad 使用 `test-without-building -xctestrun
+apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun`，
+设备替换为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 并使用独立结果路径。
+
+```sh
+xcodebuild test -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/m8e-navigation-phone.xcresult '-only-testing:DsmMobileUITests/MobileChatAudioUITests/test播放损坏音频显示恢复提示并允许重新加载' '-only-testing:DsmMobileUITests/MobileChatDeletionUITests/test中文深色大字号删除选择加载空内容和错误' '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test取消临时分享设置会清理相册并保留原照片' -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+python3 -m unittest tools.release.test_apple_ci -v
+python3 -m unittest discover -s tools/release -p 'test_*.py'
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+十五项代表场景的实际 iPhone 命令如下，iPad 按上文替换测试入口、设备与结果路径，
+使用同一组方法选择：
+
+```sh
+xcodebuild test -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -destination "platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F" -parallel-testing-enabled NO -resultBundlePath build/m8e-setup-phone.xcresult "-only-testing:DsmMobileUITests/MobileChatSendUITests/test普通消息发送成功后记录可移除且不会删除聊天消息" "-only-testing:DsmMobileUITests/MobileChatGroupCreationUITests/test新建群聊选择成员后进入对应会话" "-only-testing:DsmMobileUITests/MobileChatRealtimeUITests/test阅读历史保留未读跳到最新才清除" "-only-testing:DsmMobileUITests/MobileChatTimedActionUITests/test定时消息创建列表与取消确认" "-only-testing:DsmMobileUITests/MobileChatUITests/test新联系人打开单聊并进入会话" "-only-testing:DsmMobileUITests/MobileChatForwardUITests/test多条消息搜索接收人并转发到已有会话和新联系人" "-only-testing:DsmMobileUITests/MobileDownloadRSSUITests/test订阅条目通过统一表单创建下载并更新订阅" "-only-testing:DsmMobileUITests/MobileDownloadEditUITests/test单任务选择文件夹保存后详情显示新位置" "-only-testing:DsmMobileUITests/MobileDownloadCreationUITests/test链接草稿取消不添加且目录可恢复默认再选择提交" "-only-testing:DsmMobileUITests/MobileDownloadSettingsUITests/test选择默认文件夹与常规计划分步保存" "-only-testing:DsmMobileUITests/MobileDirectoryUITests/test账号编辑群组选择保存取消及删除确认" "-only-testing:DsmMobileUITests/MobilePackageCenterUITests/test普通设置单位置隐藏选择器且取消保存结果正确" "-only-testing:DsmMobileUITests/MobilePackageControlUITests/test启动取消零写后确认再停止并查看结果" "-only-testing:DsmMobileUITests/MobilePackageInstallationUITests/test安装计划可取消再确认并回读完成" "-only-testing:DsmMobileUITests/MobileSystemActionsUITests/test服务及当前网页连接各自确认取消和断开"
+```
+
+现有九个 Apple 矩阵作业保持不变；modules 组先运行 Files、分享扩展和普通后台
+传输三个系统测试类，生成独立 `-system.xcresult`，之后运行原组的其他全部测试。
+首段失败仍执行第二段，两段任一失败均返回失败；没有重试、跳过或缩减覆盖。
+先封存系统结果可避免长组取消时只留下无法解析的未完成结果包，上传仍使用原结果
+路径通配符。五项实际 shell 参数回归确认两端各测试类恰好执行一次、系统顺序、
+结果包分离、前后段失败传播和未知分组拒绝；完整发布脚本 39 项也全部通过。
+
+独立集成复核逐项检查开关调用目标、幂等行为、导航、两段退出码及全部测试类分配；
+仅本片测试和工作流有变化，不借此重跑或替代前片的 1846 项移动单元、共享回归与
+Release 构建结果。Files 默认只读目录失败仍单独追踪，未改为跳过或待真机占位。
+
+云端 `37572581607` 的 `shared-macos` 已独立成功，实际日志记录 3103 项 XCTest
+（172 项既有跳过）、12 项 Swift Testing、当时的 37 项发布脚本回归通过；Mac
+临时测试包生成及权限/Sparkle 实际加载校验通过。这一结论只覆盖 `2d841fdc` 对应
+共享/Mac 作业，不代表仍在运行的八个移动分组或后续测试修正全部通过。

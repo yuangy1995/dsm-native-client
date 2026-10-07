@@ -17,7 +17,7 @@
 | macOS Office | 系统预览、本机应用编辑、保存后自动回传、冲突/未知核查已完成本机验证 | 真实 Office/Pages/Numbers/Keynote、旧格式、正式签名沙盒及 NAS 验收 |
 | macOS UI / 远程位置 | 完整 WebDAV URL、工具栏/路径、照片来源、连接成功结束、保存进度及外置浏览入口已修正并有原生回归 | 用户实际连接、窄窗口与完整辅助功能反馈 |
 | Windows | 2026-09-21 范围的业务对齐、云盘写回/恢复及 x64/ARM64 云端验证完成；后续 Mac 增量未自动移植 | Photos 管理、File Station 增量、Office 按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)逐项开发 |
-| iPhone / iPad | M0–M7 已批准源码范围已实现；M8a 普通文件后台、M8b 系统分享上传与跨进程恢复、M8d 照片/跨 NAS/Office 后台已接。最终两端各 1846 项移动单元（4 项既有真机条件跳过）、各五项前后台 UI、完整共享 3103 XCTest/12 Swift Testing 与 260 项 Mac 照片回归通过。M8c 已实现共享 Files 运行时与移动读写入口，可编辑系统主流程两端通过；默认只读目录仍有可复现系统元数据失败。具体证据与真机条件见[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) | 继续定位 Files 默认只读失败及云端界面失败，不能宣告 M6–M8 整体完成。当前云端 539de49f 两个服务组通过；管理组的 DDNS/硬盘状态、iPhone 模块组的 RSS/旋转确认有失败。四类交互修正已在两端通过，需由最新提交重跑云端；该旧轮未结束作业不记作通过。已实现入口保留能力、权限、危险确认与未知恢复，真实 NAS、正式权限和真机另验 |
+| iPhone / iPad | M0–M7 已批准源码范围已实现；M8a 普通文件后台、M8b 系统分享上传与跨进程恢复、M8d 照片/跨 NAS/Office 后台已接。最终两端各 1846 项移动单元（4 项既有真机条件跳过）、各五项前后台 UI、完整共享 3103 XCTest/12 Swift Testing 与 260 项 Mac 照片回归通过。M8c 已实现共享 Files 运行时与移动读写入口，可编辑系统主流程两端通过；默认只读目录仍有可复现系统元数据失败。具体证据与真机条件见[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) | 继续定位 Files 默认只读失败及云端界面失败，不能宣告 M6–M8 整体完成。功能提交 2d841fdc 的共享/Mac 云端及临时包检查已通过；先前四类交互修正、随后三项模块准备失败和十五项同类代表场景均有两端本机通过证据。完整移动云端仍待最新测试修正复验，系统集成已改为先运行并独立封存结果；取消或部分通过的作业不计为全过。已实现入口保留能力、权限、危险确认与未知恢复，真实 NAS、正式权限和真机另验 |
 | Android | Compose 客户端、导航改版、后台/传输、Synology Photos 与质量门已建立；当前 Task.edit 仍使用 v1，需独立修正为官方字段表要求的 v2；既有 Chat 投票请求差异造成云端单测失败 | 按[Android 计划](../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)继续结构收敛与目标设备验证；Mac 新增只作接口参考 |
 
 ## 系统集成与发布

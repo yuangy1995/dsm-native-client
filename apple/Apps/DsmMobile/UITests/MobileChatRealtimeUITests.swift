@@ -72,9 +72,7 @@ final class MobileChatRealtimeUITests: XCTestCase {
     private func enableChat(_ app: XCUIApplication, chinese: Bool = false) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         navigate("settings", chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.chat", app)
-        for _ in 0..<7 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "chat", test: self)
     }
     private func navigate(_ id: String, _ title: String, _ app: XCUIApplication) {
         if app.tabBars.buttons[title].exists { app.tabBars.buttons[title].tap() }

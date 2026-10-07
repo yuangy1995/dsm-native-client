@@ -101,9 +101,7 @@ final class MobileDownloadRSSUITests: XCTestCase {
     private func openRSS(_ app: XCUIApplication, chinese: Bool = false) {
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         navigate("settings", chinese ? "App 设置" : "App settings", app)
-        let toggle = element("mobile.settings.module.downloads", app)
-        for _ in 0..<10 { if toggle.exists && toggle.isHittable { break }; app.collectionViews.firstMatch.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.switches.firstMatch.tap()
+        MobileUITestNavigation.enableModule(app, module: "downloads", test: self)
         navigate("downloads", chinese ? "下载管理" : "Downloads", app)
         let rss = element("downloads.rss.open", app)
         if rss.exists && rss.isHittable { rss.tap() }

@@ -142,8 +142,7 @@ import XCTest
         app.launchEnvironment["LANSTASH_UI_STATE"] = mode; app.launch()
         XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
         MobileUITestNavigation.open(app, destination: "settings", title: chinese ? "App 设置" : "App settings", test: self)
-        let enabled = reveal("mobile.settings.module.nasSettings", app).switches.firstMatch
-        if enabled.value as? String == "0" { enabled.tap() }
+        MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         MobileUITestNavigation.open(app, destination: "nasSettings", title: chinese ? "NAS 设置" : "NAS settings", test: self)
         reveal("mobile.nas.page.packages", app).tap()
         XCTAssertTrue(app.collectionViews["mobile.package.list"].waitForExistence(timeout: 8)); return app
