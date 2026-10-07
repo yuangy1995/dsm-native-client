@@ -4926,3 +4926,49 @@ apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-ar
 删除；系统列表确认原有 26.5 仍为 Ready，原有两台测试设备和构建缓存保留。
 本片恢复提示与测试准备的实际改动、原失败、复验成功和全新环境剩余失败分别保留，
 不能据已通过部分宣告 M8c 或 M6–M8 整体完成。
+
+
+## 2026-10-07 macOS 1.0.17 正式发布与公开回读
+
+用户明确授权修复照片入口后发布新 Mac 版本。来源为
+`155ecab96f84dadc055b01cfc0f5a5ded8cbb86d`，版本标签 `macos/v1.0.17`；
+[正式流程 37632652225](https://github.com/yuangy1995/dsm-native-client/actions/runs/37632652225)
+已成功，双目标均为 1.0.17（27）。[正式发布页](https://github.com/yuangy1995/dsm-native-client/releases/tag/macos/v1.0.17)
+于 14:35:41 UTC 公开，正式 `macos-updates` 更新源于 14:35:43 UTC 更新。
+没有修改既有发布身份、权限、更新密钥或门禁开关，没有覆盖旧版本附件。
+
+云端本次来源的完整共享结果为 3119 项 XCTest、177 项既有条件跳过、0 失败，
+以及 12 项 Swift Testing 通过；45 项发布/签名脚本回归通过。Apple 7074、Android
+2188、Windows 3402 的双语资源与硬编码检查通过；发布来源没有混入移动端随后
+新增的错误提示资源。双架构正式签名、公证与工作流内回读全部通过。
+
+发布结束后独立下载公开版本的双 DMG、appcast.xml、SHA256SUMS.txt 及正式更新源：
+
+| 公开文件 | 字节数 | SHA-256 |
+| --- | --- | --- |
+| LanStash-1.0.17-arm64.dmg | 37589077 | c752a9212c65d34b3db69327d005a77861378d2568bbb4b816238b05b920c18d |
+| LanStash-1.0.17-x86_64.dmg | 41582822 | 7276259392eed27a553b69c8c83159373ffc66f68cf531054eee6fcd721953a9 |
+| appcast.xml | 4018 | 22cf45e4f11f84efcd1fb28a9e83d64662817060b09cbb19b9f960c987a494c5 |
+
+`shasum -a 256 -c SHA256SUMS.txt` 全部匹配；版本附件与正式更新源逐字节相同。
+更新源两个条目均为 1.0.17/27、最低 macOS 14、下载地址及长度匹配；Apple Silicon
+条目在前并限定 arm64，Intel 条目在后。将两份 DMG 内应用分别复制到临时目录并卸载
+镜像，再运行 `bash tools/release/verify_macos_distribution.sh <临时App> <公开DMG>
+155ecab96f84dadc055b01cfc0f5a5ded8cbb86d`，均通过版本/来源、主 App 与扩展架构、
+Developer ID、描述文件、权限、Sparkle 组件、Gatekeeper、公证票据及镜像一致性检查。
+
+使用应用内相同公钥和 `swift tools/release/verify_update_signature.swift` 独立验证
+两份 DMG 的 Ed25519 签名，以及更新源前 3874 字节的签名，全部通过。验证过程中
+没有读取私钥、安装或启动应用；临时解包目录和挂载点已清理。当前正式下载与更新
+源已完成核对，不将自动化结果替代用户原 NAS 的照片权限与时间线复验。
+
+`PENDING_USER_VALIDATION`：原来受 1.0.16 影响且具有 Photos 权限的账号升级后，
+侧栏“照片”与功能设置开关应恢复；仅有照片权限的账号可正常进入，无照片权限
+继续隐藏。真实 NAS、Intel/Apple Silicon/Rosetta 的实际升级、挂载保留和完整辅助
+功能仍按原条件验收；只需回传版本、设备/连接类别、脱敏步骤和错误，不提交照片
+或凭据。
+
+为保留正在运行的完整移动检查 `37616066715`，本次先按已授权版本标签独立发布；
+本机 main 的照片修复、后续 Files 修正及本记录暂未推送主分支，待该轮检查结束后
+读取远端并正常同步，不取消检查、不强推、不移动正式标签。发布与主分支同步分开
+记录；M6–M8 仍继续处理首次 Files 呈现、默认只读和完整云端结果，尚未整体完成。

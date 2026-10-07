@@ -26,7 +26,7 @@ M4d 已完成前台工作区聊天更新、实际阅读位置同步、通知授�
 
 桌面挂载默认只读，按映射启用编辑，删除另外确认；当前平台差异、根保护、日志兼容与恢复见[桌面云盘计划](../development/NATIVE_DSM_DESKTOP_CLOUD_DRIVE_DEVELOPMENT_PLAN_ZH.md)。历史版本已有正式发布及部分用户升级/挂载反馈；未覆盖场景仍独立验收。本机临时签名测试包不含 Finder 扩展，不自动安装或启动，也不替代正式分发。
 
-当前正式版本为 [macOS 1.0.16（26）](https://github.com/yuangy1995/dsm-native-client/releases/tag/macos/v1.0.16)，已完成 Apple Silicon/Intel 双架构签名、公证、公开附件及正式更新源回读核对，包含上传批次统一传输中心、照片下载提示自动消失、文件多选与高亮、多 NAS 容量读取修正。精确结果见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-07-macos-1016-正式发布与公开回读)。Android 投票契约的既有失败仍未纳入本轮修复，不代表 Android 已完成适配。
+当前正式版本为 [macOS 1.0.17（27）](https://github.com/yuangy1995/dsm-native-client/releases/tag/macos/v1.0.17)，已修复 1.0.16 将正常照片入口误隐藏的问题，保留 Photos 独立权限判断；Apple Silicon/Intel 双架构签名、公证、公开安装包及正式更新源独立回读均通过。精确结果见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-07-macos-1017-正式发布与公开回读)。Android 投票契约的既有失败仍未纳入本轮修复，不代表 Android 已完成适配。
 
 | PENDING_USER_VALIDATION 条件 | 影响与验证路径 |
 | --- | --- |
