@@ -5,13 +5,13 @@
 
 本片属于用户已批准的 M6–M8 目标及离线自主决策范围，依赖 M8b 的移动专用共享
 账号、会话撤销和文件保护。M8b 已在 `dc2f2fb0` 完成。共享提取、移动位置管理和
-系统读写已实现；本机默认只读系统流程仍有可复现失败，原因尚未确认，不能宣告本片完整验收。
+系统读写已实现；本机及云端默认只读系统流程均失败，原因尚未确认，不能宣告本片完整验收。
 
 ## 事实基线与范围
 
 | macOS 证据 | iPhone/iPad 等价用户结果 | 依赖、安全与当前等级 |
 | --- | --- | --- |
-| `dc2f2fb0` 的 `apple/Apps/DsmMac/FileProviderExtension/ProviderRuntime.swift`、`ProviderItem.swift`、`ProviderEnumerator.swift`（现提取到 `apple/Packages/DsmFileProviderRuntime/Sources`） | 在系统“文件”中查看同一 NAS 目录，按需下载、使用本机缓存、保留稳定文件身份与同步锚点 | 复用公开 File Station List/Download/GetInfo；版本与大小校验、容量限制、账号/路径隔离。共享和移动聚焦自动化通过，两端系统读写流程通过 |
+| `dc2f2fb0` 的 `apple/Apps/DsmMac/FileProviderExtension/ProviderRuntime.swift`、`ProviderItem.swift`、`ProviderEnumerator.swift`（现提取到 `apple/Packages/DsmFileProviderRuntime/Sources`） | 在系统“文件”中查看同一 NAS 目录，按需下载、使用本机缓存、保留稳定文件身份与同步锚点 | 复用公开 File Station List/Download/GetInfo；版本与大小校验、容量限制、账号/路径隔离。共享和移动聚焦自动化通过；两端可编辑系统流程早期曾通过，首次加载及默认只读另有下文失败 |
 | 同目录 `FileProviderExtension.swift`、`ProviderOperationRegistry.swift`、`ProviderErrorMapper.swift` | 系统原生取消、错误与重试，不复制 Finder 外壳或桌面菜单 | 当前 Mac 的平台桥接需要提取共享行为并保留独立平台入口；现有 SPM `DsmFileProviderRuntime` 测试是回归依据 |
 | `DesktopDriveWriteback.swift` 与 `ProviderRuntime.writeItem/deleteItem` | 在其他 App 编辑后写回、遇到版本冲突停止覆盖，支持创建、改名、移动与明确删除 | 复用既有写前检查、稳定副本、持久恢复、写互斥与结果回读；新增系统入口属于数据写/删除高风险。编辑、删除分别主动授权；合成自动化及系统编辑回传通过，真实 NAS 待验 |
 | `MobileExtensionAccounts`、`MobileExtensionTransport` | 用户主动为已登录连接启用 Files；退出或换账号后不能继续请求原 NAS，更不能接管新账号 | 原始账号身份与系统映射绑定，不能只比较 profile UUID；已实现的 M8b 会话桥接作为依赖 |
@@ -81,7 +81,8 @@ iPhone 和 iPad 的业务范围相同，位置管理与确认采用各自原生�
   副本导出和停止操作。移除先等待系统、拒绝未完成记录，再停止远端访问并移除域；
   失败保留暂停，允许明确恢复。移除不自动删除恢复目录。未被用户启用的新位置不等待
   尚不能进行的系统同步；原账号/信任失效时仍能保存本机副本并明确移除旧位置。
-  两端系统浏览、原位下载与编辑回传已通过；真实 NAS 和设备生命周期仍需验收。
+  两端系统浏览、原位下载与编辑回传早期曾通过，后续全新及云端首次加载仍有下文
+  失败；真实 NAS 和设备生命周期仍需验收。
 - iOS 的单位置临时缓存上限设置为 512 MiB，系统管理实际已下载副本。SDK 的
   `contentPolicy.downloadEagerlyAndKeepDownloaded/downloadLazily` 与
   `versionNoLongerAvailable` 为 Mac 专有；移动不暴露永久固定下载承诺，指定旧版本
@@ -142,8 +143,8 @@ Mac 最终 Release 主 App 与 File Provider 已构建通过并确认 x86_64/arm
 已分别尝试不发布目录大小、显式对齐只读文件系统标志、仅允许文件回收，单个 iPad
 用例均仍失败。这三项尝试全部撤回，不保留未证明的兼容分支，不扩大读取/编辑权限。
 失败用例与原断言保留，没有删除、跳过或改成预期成功。当前只能确认系统落盘阶段
-失败，尚未确认是产品元数据适配还是本机系统问题；需继续对照云端模拟器及正式签名
-真机，不能把该缺口当作已完成验收或冒称 Apple 已确认的 iOS 缺陷。
+失败，尚未确认是产品元数据适配还是系统问题；云端对照见下文，仍需正式签名真机
+及系统诊断，不能把该缺口当作已完成验收或冒称 Apple 已确认的 iOS 缺陷。
 
 这一问题不阻塞独立的 M8 照片、跨 NAS 与 Office 后台源码工作；完整收口仍须明确
 记录其最终结论及可用范围。
@@ -154,6 +155,141 @@ Mac 最终 Release 主 App 与 File Provider 已构建通过并确认 x86_64/arm
 `CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-` 后不再出现该启动崩溃。云端现有构建
 已使用正确临时签名，不需变更生产权限。后一次结果包为
 `build/m8d-readonly-signed-phone.xcresult`；只读目录问题与该中间构建错误分别记录。
+
+### 独立最小扩展对照（2026-10-07）
+
+为排除 NAS 请求、账号共享、缓存和恢复实现的影响，在同一 iPhone 模拟器中建立了
+临时独立 App、App Group 和 `NSFileProviderReplicatedExtension`，不引用本项目任何
+Package，不联网，只返回 `Shared/Probe.txt` 固定合成内容。项仅实现标识、父项、名称、
+类型、能力、固定版本、文件大小和 `isUploaded`；不提供日期、目录大小或缓存策略。
+目录能力为 `allowsReading + allowsContentEnumerating`，文件只有 `allowsReading`。
+枚举同步返回固定项，所有创建、修改和删除回调均明确拒绝。
+
+- 只读版本在系统启用后仍不显示目录，界面用例于 45.201 秒失败。该独立提供器的
+  系统日志同样在 `create-item` 报 POSIX 1，内层为 `cannotSetMetadata`，请求标记
+  `8119226119`、失败标记 `8085606151`，与产品用例完全相同。
+- 对照只给两个合成子项追加 `allowsWriting`，根项保持只读，写入回调仍全部拒绝。
+  使用新域并清除旧诊断域后，目录出现，文档选择器读取固定文本的完整流程在
+  38.066 秒通过。两张系统截图已逐张复核。此标记仅用于临时实验，未进入产品源码，
+  不能作为给只读用户开放写权限的解决方案。
+- 临时工程首次编译用了当前 SDK 不存在的错误枚举，改为公开的写权限错误后构建
+  成功；首次对照已通过目录检查，但宿主短按未打开选择器。改为单次完整按下/抬起后
+  全流程通过，未自动重试、放宽内容断言或把中间失败记作通过。
+
+实际命令为 `xcodebuild test -project build/m8e-minimal-provider/ReadOnlyProbe.xcodeproj
+-scheme ReadOnlyProbe -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F'
+-derivedDataPath build/m8e-minimal-provider/DerivedData -jobs 2 -parallel-testing-enabled NO
+-resultBundlePath build/m8e-minimal-readonly-r2.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`；
+最终对照增加 `SWIFT_ACTIVE_COMPILATION_CONDITIONS='DEBUG PROBE_CONTROL'`，结果路径为
+`build/m8e-minimal-control-r2.xcresult`。系统诊断只筛选临时提供器，未读取其他提供器内容。
+两个临时域、诊断 App 和测试 Runner 已从模拟器移除；临时项目、导出图片及原始系统
+记录清理，不提交另一套提供器或临时签名配置。原正式失败用例及断言继续保留。
+
+这组结果证明失败可以在没有项目业务依赖的最小只读实现中重现，将排查范围缩小到
+系统对只读能力的处理和基本接口适配。它仍不能单独证明 Apple 已确认缺陷、所有 iOS
+版本均受影响或真机已经通过；后续云端日志结果见下文，正式签名设备对照仍未完成。
+
+### 云端系统阶段结果（2026-10-07）
+
+同一 `a1b7753d` 的 [iPhone modules](https://github.com/yuangy1995/dsm-native-client/actions/runs/37575438355/job/112643552160)
+及 [iPad modules](https://github.com/yuangy1995/dsm-native-client/actions/runs/37575438355/job/112643552237)
+iPhone 作业已结束，iPad 后续界面测试提前取消；两端先行系统阶段均已封存并明确失败：
+
+- 两端默认只读用例均在 `activateSystemLocation` 等待 `Shared` 目录时失败，
+  失败层级为系统“文件”的 `LanStash is Empty`，分别 90.884/75.382 秒。
+  两端结果包中的系统日志均已确认相同 POSIX 1、`cannotCreate/cannotSetMetadata`，
+  请求/失败标记均与本机及独立最小只读扩展一致。
+- iPhone 中文位置管理通过；可编辑用例在等待目录 20 秒后失败，随后收集的层级
+  已有 `Shared`。此次尚未进入文档选择器、下载或写回，不能计为可编辑流程通过，
+  也不因失败后的目录出现直接放宽等待断言。
+- iPad 中文管理和可编辑用例均在添加位置阶段失败，页面显示“无法更新‘文件’位置”
+  的恢复提示，尚未进入系统浏览。封存系统日志确认点击添加时系统尚未发现本 App
+  的 Files 扩展；该问题与只读目录落盘分别追踪，详见下方发现时序。
+
+两端先行系统阶段各 10 项，iPhone 8 通过/2 失败，iPad 7 通过/3 失败；各 4 项分享
+扩展、3 项普通文件前后台 UI 通过。两端其后的 1846 项移动单元均 0 失败、4 项既有
+条件跳过。以上是明确结束的测试段，不代表整个 modules 作业或完整移动云端已通过。
+本机此前的可编辑通过证据继续保留，不能替代本次云端失败或正式签名设备验收。
+
+iPhone 可编辑用例的逐步活动与对应域日志进一步区分了加载时序：06:03:30 UTC
+通过系统开关启用位置，06:03:36.726 开始等待目录；扩展进程于 06:03:40 启动，
+06:03:53.162 才收到根枚举，06:03:54.330 已成功创建合成目录，06:03:56.832
+的最后一次存在检查仍未找到它，06:04:00.498 的失败层级已有目录。该域未出现
+只读场景的 `cannotSetMetadata`；`failed to clear import cookie` 发生在目录创建
+成功之后，不能凭这条日志认定目录创建失败。当前结论为系统首次加载超出本次界面
+等待，延迟根因仍未确认，不扩大等待或将尚未执行的下载/编辑计为通过。
+
+证据来自 `build/m8j-phone-modules/DsmMobile-iPhone-modules-system.xcresult`，
+按本扩展域、进程和用例时间窗筛选。原始诊断、活动导出及临时截图在摘录后清理，
+保留可重新导出的正式结果包；不提交合成域编号、宿主路径或原始系统记录。
+
+iPad 系统结果包 `build/m8j-pad-modules/DsmMobile-iPad-modules-system.xcresult`
+完整保留。中文用例 08:28:27.185 UTC 点击添加后，系统于 08:28:27.593 报
+`No provider found`；可编辑用例 08:29:20.942 点击后，08:29:21.309 再报同类
+错误。08:29:22.983 才记录本扩展注册，第三个只读用例在 08:30:01 已能添加域，
+随后复现前述只读元数据失败。第一次清理合成位置也返回 `providerNotFound`
+（-2001），内层为 `applicationExtensionNotFound`（-2014）；当前 SDK
+`NSFileProviderError.h` 将后者定义为系统没有发现该 App 可启动的文件扩展。
+
+这些证据把添加失败定位到系统扩展发现尚未就绪，不能将其解释为 NAS 权限拒绝，
+也不能把后续成功注册当作前两项通过。真实首次安装及云端初始化时序仍需复验；
+现有固定阶段日志将区分列表、添加和回读失败，不自动重试真实添加、不放宽断言。
+针对已确认的未发现扩展错误，移动页面现在给出稍后重试、持续失败时重新打开 App
+的双语提示，不再误导用户检查 NAS 网络或存储空间。只识别明确的
+`applicationExtensionNotFound` 或已观察到的 `providerNotFound` 内层该错误；
+普通域缺失和其他错误继续沿用原恢复方式。添加仍保留同一位置，系统列表读取失败时
+不发注册请求；恢复后由用户主动重试且只注册一次。两端位置管理回归通过，精确证据
+见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-07-files-扩展发现失败的恢复提示)。
+此项只修正错误恢复提示，不宣告系统首次注册或只读目录问题已经解决。
+同一上传目录中的剩余模块结果因中断没有 `Info.plist`，不是有效完整结果包；
+已完成单元段仅保留完整作业日志证据，不能据此宣告全部模块 UI 完成。
+
+### 全新本机 iPad 对照（2026-10-07）
+
+为区分既有设备状态，在全新 iOS 26.5 iPad Air 11-inch（M4）模拟器中使用同一
+临时签名测试产物，顺序运行中文管理与可编辑系统流程。中文管理 57.528 秒通过；
+可编辑用例 70.813 秒失败，同样在第 131 行等待 `Shared` 目录，最终系统界面为空。
+因此不能概括为本机可编辑流程始终通过，也未复现云端 iPad 的添加位置阶段失败。
+失败前系统日志记录了扩展启动及 `failed to clear import cookie`（POSIX 0）；
+该时间窗没有前述只读对照的 `cannotSetMetadata`，尚不能认定为同一根因。
+
+实际结果为 `build/m8h-files-fresh-pad.xcresult`，使用
+`xcodebuild test-without-building` 与已有 `DsmMobile_iphonesimulator26.5-arm64.xctestrun`，
+明确选择这两项原用例并禁用并行。专用临时模拟器已删除，导出的原始诊断在提取脱敏
+结论后清理；原结果包保留。没有修改、重复自动重试或放宽业务断言。
+
+### 指定系统版本的云端对照（2026-10-07）
+
+本机只有 iOS 26.5 且当前无可连接真机。[GitHub 官方执行环境清单](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md#installed-simulators)
+列有 iOS 26.2、26.4 系列及 26.5 模拟器，因此增加仅手动运行的
+`Apple Files Compatibility`。保持现有 Xcode 26.6、SDK、XcodeGen、应用身份和
+临时签名，指定原仓库完整提交与已安装系统版本，在 iPhone/iPad 运行完整的原
+`MobileFilesProviderUITests` 类。目的为区分只读失败是否跨系统版本存在；不改
+用例、等待期限、业务断言或产品能力。缺少指定版本直接失败，不能替换为其他版本。
+
+该工作流与完整 Apple Build 独立，分组串行，失败仍封存原始结果包；不申请生产
+签名、不联网测试真实 NAS，也不替代完整移动门禁。先以 `7fe646b2` 对照 iOS 26.2，
+尚未取得结果时不能声称旧系统通过。移除该手动工作流即可回滚，不涉及产品或数据
+迁移，也不改变正在运行的完整验证。
+
+### 本机 iOS 26.2 与测试准备复核（2026-10-07）
+
+在云端对照排队期间，临时安装 Apple 官方 iOS 26.2（23C52）模拟器系统，使用
+原 Xcode 26.6、SDK 26.5 与既有测试产物，在全新 iPhone 17 Pro、iPad Air 11-inch
+（M3）运行原三项 Files UI。iPhone 三项失败，iPad 中文管理通过、两项系统浏览
+失败；两端只读目录仍有 `cannotCreate/cannotSetMetadata`，不能归为仅 26.5 问题。
+iPad 可编辑用例的目录等待失败与只读错误分别记录，不能仅凭相邻日志归为同因。
+
+iPhone 中文失败录像显示测试在位置载入中点击了禁用的添加按钮；可编辑用例已经
+进入系统位置并显示 Shared，但 App 文档选择器停在“最近项目”，导航帮助方法在
+“浏览”标签出现前已结束瞬时检查。当前单一修改范围为正式测试的按钮可用等待与
+系统导航准备，产品、权限、目录加载/下载/写回断言不变；后续复验结果另记，不将
+测试准备修正视为只读落盘问题已经解决。修正后两端原设备的中文管理与完整编辑
+流程均通过，但再建全新 iPad 时只有中文管理通过，首次目录仍失败。该新域根枚举
+与合成子目录的本地创建已成功，系统 Files 随后仍未显示，未出现只读的元数据错误；
+首次呈现原因继续未确定，不用重复运行成功覆盖首次失败。精确命令、时序与结果
+见[本轮历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-07-本机-ios-262-files-原用例对照)。
+三台临时设备、26.2 系统及下载副本已精确清理，原有 26.5 系统与设备保留。
 
 ## PENDING_USER_VALIDATION
 

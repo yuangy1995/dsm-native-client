@@ -117,7 +117,11 @@ final class MobileFilesProviderUITests: XCTestCase {
         let settings = element("mobile.files.test-settings", app)
         XCTAssertTrue(settings.waitForExistence(timeout: 15), app.debugDescription); settings.tap()
         let add = app.buttons["mobile.files-location.add"]
-        XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap()
+        // 首次载入期间按钮已存在但不可用；必须等真实可操作状态后再提交一次。
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND enabled == true"), object: add)], timeout: 10), .completed)
+        for _ in 0..<4 where !add.isHittable { app.swipeUp() }
+        XCTAssertTrue(add.isHittable); add.tap()
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         app.alerts.buttons[chinese ? "关闭" : "Close"].tap()
         XCTAssertTrue(element("mobile.files-location.row", app).waitForExistence(timeout: 10))
@@ -137,9 +141,16 @@ final class MobileFilesProviderUITests: XCTestCase {
         if sidebar.waitForExistence(timeout: 3) { sidebar.tap() }
         let identifiers = ["DOC.sidebar.item.岚仓", "DOC.sidebar.item.LanStash", "DOC.sidebar.item.Sample NAS"]
         let provider = app.descendants(matching: .any).matching(NSPredicate(format: "identifier IN %@", identifiers)).firstMatch
+        let navigationDeadline = Date().addingTimeInterval(8)
         for _ in 0..<3 where !provider.exists {
             let back = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
             let tab = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
+            // 首次打开选择器时导航元素晚于容器出现，不能以瞬时空查询跳过“浏览”。
+            let navigation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                provider.exists || back.exists || tab.exists
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [navigation], timeout: max(0, navigationDeadline.timeIntervalSinceNow)), .completed, app.debugDescription)
+            if provider.exists { break }
             if back.exists { back.tap() }
             else if tab.exists { tab.tap() }
         }

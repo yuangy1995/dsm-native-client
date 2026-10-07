@@ -1,4 +1,5 @@
 import DsmCore
+import DsmLocalization
 @testable import DsmFileProviderRuntime
 import DsmNetwork
 @testable import DsmMobile
@@ -47,6 +48,46 @@ final class MobileFilesProviderTests: XCTestCase {
         await fixture.model.add()
         XCTAssertEqual(fixture.model.rows.map(\.id), [location.id])
         _ = try await fixture.runtime(location).enumerate(containerIdentifier: .rootContainer, offset: 0, limit: 10)
+    }
+
+    @available(iOS 17.1, *)
+    func test系统尚未发现扩展时说明恢复方式并保留同一位置供手动重试() async throws {
+        let fixture = try await Fixture(); defer { fixture.cleanup() }
+        let error = NSError(domain: NSFileProviderErrorDomain,
+            code: NSFileProviderError.providerNotFound.rawValue,
+            userInfo: [NSUnderlyingErrorKey: NSFileProviderError(.applicationExtensionNotFound)])
+        await fixture.domains.setRegistrationError(error)
+        await fixture.model.reload()
+        XCTAssertEqual(fixture.model.error, L10n.string("mobile.files-location.extension-unavailable"))
+        XCTAssertFalse(fixture.model.hasLoaded)
+        await fixture.model.add()
+        XCTAssertEqual(fixture.model.error, L10n.string("mobile.files-location.extension-unavailable"))
+        XCTAssertFalse(fixture.model.addedLocation)
+        let location = try XCTUnwrap(fixture.locations.locations().first)
+        let additions = await fixture.domains.additions
+        XCTAssertEqual(additions, 0)
+        await fixture.domains.setRegistrationError(nil)
+        await fixture.model.add()
+        XCTAssertNil(fixture.model.error)
+        XCTAssertTrue(fixture.model.addedLocation)
+        XCTAssertEqual(fixture.model.rows.map(\.id), [location.id])
+        let completedAdditions = await fixture.domains.additions
+        XCTAssertEqual(completedAdditions, 1)
+    }
+
+    @available(iOS 17.1, *)
+    func test只有明确未发现扩展才显示系统恢复提示() async throws {
+        let fixture = try await Fixture(); defer { fixture.cleanup() }
+        await fixture.domains.setRegistrationError(NSFileProviderError(.applicationExtensionNotFound) as NSError)
+        await fixture.model.reload()
+        XCTAssertEqual(fixture.model.error, L10n.string("mobile.files-location.extension-unavailable"))
+        await fixture.domains.setRegistrationError(NSFileProviderError(.providerNotFound) as NSError)
+        await fixture.model.reload()
+        XCTAssertEqual(fixture.model.error, L10n.string("mobile.files-location.error"))
+        await fixture.domains.setRegistrationError(NSError(domain: NSCocoaErrorDomain,
+            code: NSFileProviderError.applicationExtensionNotFound.rawValue))
+        await fixture.model.reload()
+        XCTAssertEqual(fixture.model.error, L10n.string("mobile.files-location.error"))
     }
 
     func test相同配置编号换账号不能接管旧位置() async throws {
@@ -392,8 +433,12 @@ final class MobileFilesProviderTests: XCTestCase {
         var additions = 0, removals = 0
         var enabled = true
         var fail = false, shouldSuspend = false, waiting = false
+        var registrationError: NSError?
         var continuation: CheckedContinuation<Void, Never>?
-        func registrations() async throws -> [UUID: Bool] { Dictionary(uniqueKeysWithValues: registered.map { ($0, enabled) }) }
+        func registrations() async throws -> [UUID: Bool] {
+            if let registrationError { throw registrationError }
+            return Dictionary(uniqueKeysWithValues: registered.map { ($0, enabled) })
+        }
         func add(_ location: MobileFilesLocation) async throws {
             additions += 1
             if fail { throw NSFileProviderError(.providerNotFound) }
@@ -411,6 +456,7 @@ final class MobileFilesProviderTests: XCTestCase {
         }
         func setEnabled(_ value: Bool) { enabled = value }
         func setFailure(_ value: Bool) { fail = value }
+        func setRegistrationError(_ error: NSError?) { registrationError = error }
         func suspendSettle() { shouldSuspend = true }
         func releaseSettle() { continuation?.resume(); continuation = nil; shouldSuspend = false }
     }
