@@ -39,7 +39,9 @@ struct DsmMobileApp: App {
         #if DEBUG
         if MobileUIFixture.isEnabled { return MobileUIFixture.makeModel() }
         #endif
-        return MobileAppModel(transferRecoveryStore: .application)
+        return MobileAppModel(transferRecoveryStore: .application,
+            transferBackgroundExecution: MobileTransferBackgroundExecution(driver: MobileSystemTransferBackgroundDriver(),
+                identifierPrefix: (Bundle.main.bundleIdentifier ?? "io.github.qwertyuiop1995.dsmnativeclient.mobile") + ".transfer"))
     }
 
     private var chatForegroundContext: MobileChatForegroundContext {

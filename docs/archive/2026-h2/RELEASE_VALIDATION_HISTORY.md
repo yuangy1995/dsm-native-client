@@ -4103,3 +4103,32 @@ swift test --package-path apple --jobs 2
 - 完整共享/macOS 3101 项 XCTest（172 条既有跳过）与 12 项 Swift Testing 通过，未新增跳过。
 - 生成物复验：锁定 XcodeGen 2.46.0，两端重复生成哈希保持一致；Mac 差异只有两个 target 排序。
 - 证据：`build/m8a-ci-shared-job.log`、`build/m8a-console-regression.log`、`build/m8a-shared-final.log`。该修复尚未由下一次云端运行确认；同轮其余移动作业仍在进行，不把本机通过写成云端全绿。
+
+## 2026-10-07 移动 M8a 文件后台传输
+
+基于已完成 M7 的 main，文件下载与上传批次接入系统执行时间。iOS/iPadOS 26 使用用户主动发起的 BGContinuedProcessingTask、真实进度和系统取消，即时提交失败时降级；17–25 使用有限后台时间。保留原网络、同源重定向拦截、证书策略、受保护副本和恢复存储，不使用自动跟随重定向的 Background URLSession。进程被终止后不承诺继续或字节续传。
+
+到期先取消网络并保存恢复阶段，后释放系统资格；旧执行回调不影响后来继续的任务。上传到期同时暂停未开始批次，避免结算后继续写；共享 FileUploadBatch.pause 只增加对未开始批次的暂停支持。系统进度在原结果校验成功后才完成。Info 增加当前 App 的 transfer.* 任务声明与 processing 模式，主 App 身份、最低版本、签名、文件保护和登录结构不变。独立集成及只读对抗复核与设备条件见[专项账本](../../development/APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md)。
+
+实际命令（iPad 以 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 替换设备 ID；原始结果包名各自独立）：
+
+```sh
+build/m8a-xcodegen/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -only-testing:DsmMobileTests/MobileTransferBackgroundExecutionTests -only-testing:DsmMobileTests/MobileTransferStateTests -only-testing:DsmMobileTests/MobileTransferRecoveryTests -only-testing:DsmMobileTests/MobileDocumentTransferTests -only-testing:DsmMobileTests/MobileFileUploadQueueTests -only-testing:DsmMobileTests/MobileActivityPresentationTests -only-testing:DsmMobileUITests/MobileTransferBackgroundUITests -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test多选仅一个文件保持原格式且下载失败能从活动重试 -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -resultBundlePath build/m8a-phone.xcresult
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+python3 tools/localization/check_localization.py
+python3 tools/release/test_apple_ci.py
+python3 tools/codex/check_documentation.py
+```
+
+- 两端各 73 项聚焦单元全部通过；包括 7 项新系统执行管理、4 项新协调器、4 项新队列行为回归，未新增跳过。不是两端全部移动单元。
+- 首轮 UI：iPhone 4 项中 2 项失败，iPad 4 项中 1 项失败。失败证据确认 iPhone 系统溢出菜单使用中文“更多”，新测试只查英文；两端中文最大文字表单的文件行在屏幕外，测试未滚动。修正测试读取实际菜单语言并滚动至目标，没有删断言或修改产品来适配测试。
+- 针对失败项复测：iPhone 下载分享、中文大字 2 项通过（81.451 秒）；iPad 中文大字 1 项通过（47.296 秒）。首轮两端上传后台/重启结果，以及原下载失败恢复已通过；iPad 下载分享亦已通过。合计两端各四个不同 UI 场景全部取得通过证据。
+- 六张最终截图逐张检查：两端浅色上传结果、系统分享、中文深色最大文字。长路径和按钮可换行、滚动后可触达；不宣称所有大字内容同时在一屏显示。测试以真实 UIApplication/BGTaskScheduler 接线切到桌面停留 13 秒后返回，网络为合成响应；不把该结果提升为真机持续调度、锁屏或真实 NAS 通过。
+- 共享/macOS 3101 项 XCTest（172 条既有跳过）与 12 项 Swift Testing 通过；Mac Release 主 App 和 File Provider 构建成功，实际检查均含 x86_64/arm64。期间控制台测试服务器退出等待问题已单独修正并记录于前条。
+- 本地化 6984 Apple / 2188 Android / 3402 Windows 检查通过；三项 CI 分组完整性测试与文档检查通过。源码无新增第三方依赖，不修改 Windows/Android，实现范围仅文件下载及上传批次。
+- 证据：`build/m8a-{phone,pad}.xcresult`、`build/m8a-{phone,pad}-ui-final.xcresult`、`build/m8a-build-ui-fix.log`、`build/m8a-shared-final.log`、`build/m8a-macos.log`；最终六张 PNG 位于 `build/m8a-previews/`。导出录像和临时诊断已清理，正式测试源码与结果保留。
+
+分享扩展、Files/外部编辑写回，以及照片、跨 NAS、Office 等其他独立执行器仍有源码工作；M8 及 M6–M8 总目标未完成。真机正式签名、持续任务授予/资源回收、系统取消、锁屏保护、实际服务器取消/重复保护和辅助功能列为具体 PENDING_USER_VALIDATION，不以这些缺口阻塞独立扩展开发。

@@ -2899,6 +2899,9 @@
 "mobile.activity.filter-label" = "Task Status";
 "mobile.activity.retry-from-beginning" = "Start Over";
 "mobile.activity.review-message" = "The connection was interrupted. Refresh the status to see whether the upload finished.";
+"mobile.transfer.background.upload" = "Uploading files";
+"mobile.transfer.background.download" = "Downloading files";
+"mobile.transfer.background.progress" = "Transfer in progress";
 "mobile.activity.direction-upload" = "Upload to NAS";
 "mobile.activity.direction-download" = "Download from NAS";
 "mobile.activity.status-accessibility" = "Status: %@";

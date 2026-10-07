@@ -47,6 +47,7 @@
 		11E12DB2A00CC5D338BF0D4A /* MobileChatSendUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F8F0FDE7C047FA803C1B8DA /* MobileChatSendUITests.swift */; };
 		122C8F0FA6E4A59AEECB0BD5 /* MobileCopyMoveUIFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8DEDE32A43272AE85ED5AF /* MobileCopyMoveUIFixture.swift */; };
 		12B7874985BDDF0ED9DD0C2D /* MobilePhotoUploadViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6648C409F28BF69354C197A5 /* MobilePhotoUploadViews.swift */; };
+		130AE5AE83847332319E3AD4 /* MobileTransferBackgroundUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7076BEAFEA7986AF700C26CF /* MobileTransferBackgroundUITests.swift */; };
 		137480890CB8E3ADECD48228 /* MobileVirtualMachineConsoleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E924D45F9E1A9200E34698E8 /* MobileVirtualMachineConsoleUITests.swift */; };
 		1426FE1B006C7564A67E6441 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 313CF1924503C1EB6667424B /* Localizable.strings */; };
 		1564B10942809CFE4E0F4E43 /* MobilePackageInstallationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA2281946AE3A73687FCFDE /* MobilePackageInstallationStore.swift */; };
@@ -84,6 +85,7 @@
 		24A7692799665B5A60AEE119 /* MobilePackageInstallationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FB9CE894F44E5DB5C04A9CC /* MobilePackageInstallationTests.swift */; };
 		25609D226070D477B2B0D56F /* MobileFileStationPrincipalPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A3F5A76CCC26FC09247962 /* MobileFileStationPrincipalPicker.swift */; };
 		25BFE595A4035B82B11A24FB /* MobileSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBA7A2040AE214D55509151C /* MobileSettingsStore.swift */; };
+		26DDCFA01E90C4DB77DF75F4 /* MobileTransferBackgroundExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8801293E59CC7531D351EE98 /* MobileTransferBackgroundExecutionTests.swift */; };
 		26F4F5240F6D4FC1B5EA83BE /* MobileReadOnlyNasHealthRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC387C853D1B6489742ED826 /* MobileReadOnlyNasHealthRepository.swift */; };
 		271DC61198259C2E57745F7F /* MobilePhotosPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0C4213FAEC799690834446E /* MobilePhotosPresentationTests.swift */; };
 		27E13B459BF6EB2E2FC4BE9A /* MobileChatPollUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B8E61B25D660E27A333FB2 /* MobileChatPollUITests.swift */; };
@@ -464,6 +466,7 @@
 		ECC4302A23AC4EDCA6604B7C /* MobileSynologyPhotosSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BF7E702C605BC093BE73C69 /* MobileSynologyPhotosSession.swift */; };
 		ECD35840EDBEF5119A2E8AB1 /* MobileDownloadRemovalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91551E60D730A6B73BD3CAA4 /* MobileDownloadRemovalStore.swift */; };
 		ECD4718B22672D8830AD4D69 /* MobileArchiveDownloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41F529D2045F564BFDF54C2 /* MobileArchiveDownloadTests.swift */; };
+		ED54022350252A7E167FFEED /* MobileTransferBackgroundExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6B23431F6AF29AFADD576D /* MobileTransferBackgroundExecution.swift */; };
 		EE0273D20F87B7CB740684E5 /* MobileChatState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C1465865FA0F0DD22BD75F5 /* MobileChatState.swift */; };
 		EEDD948167BD6F450280E4E4 /* DsmVirtualMachineConsoleFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 3ABE3ED0511BA07043B39068 /* DsmVirtualMachineConsoleFeature */; };
 		F1B3E806C63D54D61D760081 /* MobilePhotoConditionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F508ED1D3C9474C23D108C1 /* MobilePhotoConditionViews.swift */; };
@@ -531,6 +534,7 @@
 		093C6BBFC18A7FCF346A6B7A /* MobileContainerNetworkUITransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileContainerNetworkUITransport.swift; sourceTree = "<group>"; };
 		097C67D88F0CB60D14D53AFB /* MobileChatAttachmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileChatAttachmentView.swift; sourceTree = "<group>"; };
 		0A122762B5EC8D08816295AF /* MobileFileShareRecoveryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFileShareRecoveryStore.swift; sourceTree = "<group>"; };
+		0B6B23431F6AF29AFADD576D /* MobileTransferBackgroundExecution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTransferBackgroundExecution.swift; sourceTree = "<group>"; };
 		0BA77BCD1CACBAB1760DE09D /* MobileFilePreviewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFilePreviewState.swift; sourceTree = "<group>"; };
 		0BD6B4A0DE23896EA9CF72B7 /* MobileSystemActionUITransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileSystemActionUITransport.swift; sourceTree = "<group>"; };
 		0C979F9D39053E11F127A7B0 /* MobileDDNSUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDDNSUITests.swift; sourceTree = "<group>"; };
@@ -703,6 +707,7 @@
 		6F9E38759B7DD990E18561CD /* MobilePackageCenterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePackageCenterTests.swift; sourceTree = "<group>"; };
 		6FB9CE894F44E5DB5C04A9CC /* MobilePackageInstallationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePackageInstallationTests.swift; sourceTree = "<group>"; };
 		6FBEDA87DD38606AF73B3D3E /* MobileFileBrowserPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFileBrowserPresentationTests.swift; sourceTree = "<group>"; };
+		7076BEAFEA7986AF700C26CF /* MobileTransferBackgroundUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTransferBackgroundUITests.swift; sourceTree = "<group>"; };
 		70A12B8787A2A01F887067C8 /* MobileFilePreviewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFilePreviewModelTests.swift; sourceTree = "<group>"; };
 		717C1DBED31361EB7F2F2884 /* MobileChatTimedActionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileChatTimedActionView.swift; sourceTree = "<group>"; };
 		7203FBDEADFF8BBEDE9D2E63 /* MobileChatSendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileChatSendTests.swift; sourceTree = "<group>"; };
@@ -744,6 +749,7 @@
 		8653D56E6307362408C52C1B /* MobileChatSendStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileChatSendStore.swift; sourceTree = "<group>"; };
 		867CA44926B1C720A56C3E3D /* MobileDownloadsModel+Control.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MobileDownloadsModel+Control.swift"; sourceTree = "<group>"; };
 		86BA53A529AED531365D4D44 /* MobileDownloadSettingsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDownloadSettingsUITests.swift; sourceTree = "<group>"; };
+		8801293E59CC7531D351EE98 /* MobileTransferBackgroundExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTransferBackgroundExecutionTests.swift; sourceTree = "<group>"; };
 		888350244564C82E3E6CBAFF /* MobileFileActivityModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFileActivityModel.swift; sourceTree = "<group>"; };
 		89847992780883EDB630E8FC /* MobileNasStorageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileNasStorageView.swift; sourceTree = "<group>"; };
 		8AA7A3514665A3FFE403D4A6 /* MobileLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileLoginView.swift; sourceTree = "<group>"; };
@@ -1213,6 +1219,7 @@
 				4BCE88850D54A6797D40610E /* MobileServiceSettingsUITests.swift */,
 				B14FEF4F7B201B28C593C7AC /* MobileSessionUITests.swift */,
 				E382E0FD5B20B6A8B2FD27A2 /* MobileSystemActionsUITests.swift */,
+				7076BEAFEA7986AF700C26CF /* MobileTransferBackgroundUITests.swift */,
 				BDD96B097DAAC15BE175B1D8 /* MobileUITestNavigation.swift */,
 				E924D45F9E1A9200E34698E8 /* MobileVirtualMachineConsoleUITests.swift */,
 				9CE85F0E6B3B035A257C7FF2 /* MobileVirtualMachineControlUITests.swift */,
@@ -1267,6 +1274,7 @@
 				357810527D8B82717F681250 /* MobileDocumentExporter.swift */,
 				8F77F7EA2BA0380BFBDC4A16 /* MobileDocumentTransferController.swift */,
 				D3DA32210EE689A1BCF38C8F /* MobileShareSheet.swift */,
+				0B6B23431F6AF29AFADD576D /* MobileTransferBackgroundExecution.swift */,
 			);
 			path = Documents;
 			sourceTree = "<group>";
@@ -1648,6 +1656,7 @@
 				B8482E65435CAE758544DF70 /* MobileSettingsTests.swift */,
 				8BCDA7E3A307002062074311 /* MobileSynologyPhotosTests.swift */,
 				6A0FB1CA5DA0C8E98E33A4B6 /* MobileSystemActionsTests.swift */,
+				8801293E59CC7531D351EE98 /* MobileTransferBackgroundExecutionTests.swift */,
 				91BB5CAB30B18B794A9BC6CC /* MobileTransferRecoveryTests.swift */,
 				6F84FD2D182696A03E63509A /* MobileTransferStateTests.swift */,
 				92D290AF10D3BCF95AFE4E1D /* MobileVFSCloudAuthorizationTests.swift */,
@@ -2200,6 +2209,7 @@
 				0DCC038AF30F8433AD20B8BB /* MobileSystemActionUITransport.swift in Sources */,
 				38B03BBC1C687269CA5D45B0 /* MobileSystemActionsModel.swift in Sources */,
 				979AAB19DD7F952DD2F5F885 /* MobileSystemActionsView.swift in Sources */,
+				ED54022350252A7E167FFEED /* MobileTransferBackgroundExecution.swift in Sources */,
 				63BF5103A417F4791B19DB91 /* MobileTransferCoordinator.swift in Sources */,
 				7DC48D63FC105163FE335228 /* MobileTransferRecoveryStore.swift in Sources */,
 				D1E09752EBF2D04D11515A51 /* MobileTransferServing.swift in Sources */,
@@ -2352,6 +2362,7 @@
 				37516C021D25FCB4AE7CF7F1 /* MobileSettingsTests.swift in Sources */,
 				90D377972686897BF7F3EC30 /* MobileSynologyPhotosTests.swift in Sources */,
 				B595E37F0AD313E58A288310 /* MobileSystemActionsTests.swift in Sources */,
+				26DDCFA01E90C4DB77DF75F4 /* MobileTransferBackgroundExecutionTests.swift in Sources */,
 				4B819AFACBCCDC66E502005E /* MobileTransferRecoveryTests.swift in Sources */,
 				1E20ADF3FA6939191A58942C /* MobileTransferStateTests.swift in Sources */,
 				19FB6ED3106A7EF76ABFD831 /* MobileVFSCloudAuthorizationTests.swift in Sources */,
@@ -2403,6 +2414,7 @@
 				087D4C518D93360B302E07CD /* MobileServiceSettingsUITests.swift in Sources */,
 				412053C16987E4F3ECE78F31 /* MobileSessionUITests.swift in Sources */,
 				52C7DE87E987AC497D64C8DE /* MobileSystemActionsUITests.swift in Sources */,
+				130AE5AE83847332319E3AD4 /* MobileTransferBackgroundUITests.swift in Sources */,
 				E48FB62FCFCAC169D9215FA5 /* MobileUITestNavigation.swift in Sources */,
 				137480890CB8E3ADECD48228 /* MobileVirtualMachineConsoleUITests.swift in Sources */,
 				2A0A7D0937117F75B3D4A0FD /* MobileVirtualMachineControlUITests.swift in Sources */,

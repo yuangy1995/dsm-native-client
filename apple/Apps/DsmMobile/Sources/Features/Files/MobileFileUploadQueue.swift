@@ -23,6 +23,8 @@ final class MobileFileUploadQueue {
         var entries: [FileUploadEntryCheckpoint]
     }
     private struct Envelope: Codable { let version: Int; let records: [Record] }
+    private let backgroundExecution: MobileTransferBackgroundExecution?
+    private var backgroundRun: (batchID: UUID, generation: UUID, token: UUID)?
     private let rootURL: URL
     private var records: [Record] = []
     private var live: [UUID: FileUploadBatch] = [:]
@@ -41,7 +43,8 @@ final class MobileFileUploadQueue {
     private(set) var error: String?
     private(set) var recoveryError: String?
 
-    init(rootURL: URL? = nil) {
+    init(rootURL: URL? = nil, backgroundExecution: MobileTransferBackgroundExecution? = nil) {
+        self.backgroundExecution = backgroundExecution
         self.rootURL = rootURL ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("MobileUploadQueue-\(UUID().uuidString)", isDirectory: true)
         let url = self.rootURL.appendingPathComponent("queue-v1.json")
@@ -209,6 +212,9 @@ final class MobileFileUploadQueue {
             guard let self, let batch else { return }
             let prior = records.first { $0.id == batch.id }?.entries.first { $0.id == entry.id }?.state
             update(batch)
+            if let run = backgroundRun, run.batchID == batch.id {
+                backgroundExecution?.update(run.token, completed: batch.completedBytes, total: batch.totalBytes)
+            }
             if prior != entry.state || Date().timeIntervalSince(lastProgressSave) >= 1 {
                 lastProgressSave = Date()
                 try? save()
@@ -232,7 +238,12 @@ final class MobileFileUploadQueue {
         }
         batch.onSettled = { [weak self, weak batch] in
             guard let self, let batch else { return }
-            update(batch); try? save(); startNext()
+            update(batch); try? save()
+            if let run = backgroundRun, run.batchID == batch.id {
+                backgroundRun = nil
+                backgroundExecution?.finish(run.token, success: batch.entries.allSatisfy { [.succeeded, .skipped].contains($0.state) })
+            }
+            startNext()
         }
     }
 
@@ -243,7 +254,23 @@ final class MobileFileUploadQueue {
 
     private func startNext() {
         guard !isConfiguring, !loadFailed, !live.values.contains(where: \.isRunning) else { return }
-        batches.first { !$0.isPaused && $0.hasPending }?.start()
+        guard let batch = batches.first(where: { !$0.isPaused && $0.hasPending }) else { return }
+        if let backgroundExecution {
+            let generation = UUID()
+            let token = backgroundExecution.begin(taskID: batch.id, direction: .upload) { [weak self] in
+                guard let self, backgroundRun?.generation == generation else { return }
+                backgroundRun = nil
+                // 时间耗尽时也暂停尚未开始的批次，防止结算回调继续提交后项。
+                for pending in batches where pending.isRunning || pending.hasPending {
+                    pending.pause()
+                    update(pending)
+                }
+                try? save()
+            }
+            backgroundRun = (batch.id, generation, token)
+            backgroundExecution.update(token, completed: batch.completedBytes, total: batch.totalBytes)
+        }
+        batch.start()
     }
 
     private func save() throws {

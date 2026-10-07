@@ -173,6 +173,7 @@ final class MobileAppModel {
         mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator(),
         previewModel: MobileFilePreviewModel = MobileFilePreviewModel(),
         transferRecoveryStore: MobileTransferRecoveryStore? = nil,
+        transferBackgroundExecution: MobileTransferBackgroundExecution? = nil,
         chatAudioDriver: (any MobileChatAudioDriving)? = nil,
         chatNotificationDriver: (any MobileChatNotificationDriving)? = nil,
         chatPollingIntervalNanoseconds: UInt64 = 30_000_000_000
@@ -210,13 +211,15 @@ final class MobileAppModel {
         )
         self.settingsStore = MobileSettingsStore(defaults: defaults)
         let transferCoordinator = MobileTransferCoordinator(
-            mutationCoordinator: mutationCoordinator, recoveryStore: transferRecoveryStore
+            mutationCoordinator: mutationCoordinator, recoveryStore: transferRecoveryStore,
+            backgroundExecution: transferBackgroundExecution
         )
         self.transferCoordinator = transferCoordinator
         self.fileActivityModel = MobileFileActivityModel(coordinator: transferCoordinator, rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("NasControls", isDirectory: true))
         self.office = MobileOfficeModel(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Office", isDirectory: true))
         self.crossNAS = MobileCrossNASQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("CrossNAS", isDirectory: true))
-        self.fileUploadQueue = MobileFileUploadQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("UploadBatches", isDirectory: true))
+        self.fileUploadQueue = MobileFileUploadQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("UploadBatches", isDirectory: true),
+            backgroundExecution: transferBackgroundExecution)
         self.fileArchiveQueue = MobileFileArchiveQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Archives", isDirectory: true))
         self.downloads = MobileDownloadsModel(transferCoordinator: transferCoordinator,
             controlRoot: transferRecoveryStore?.rootURL.appendingPathComponent("Downloads", isDirectory: true))

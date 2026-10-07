@@ -24,6 +24,14 @@
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Record voice messages that you choose to send in Chat.</string>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>$(PRODUCT_BUNDLE_IDENTIFIER).transfer.*</string>
+    </array>
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>processing</string>
+    </array>
     <key>UILaunchScreen</key>
     <dict>
         <key>UIColorName</key>
