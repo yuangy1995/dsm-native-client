@@ -143,8 +143,7 @@ final class MobileScheduledTasksUITests: XCTestCase {
         let field: XCUIElement = id == "script" ? app.textViews["mobile.nas.task.script"] : app.textFields["mobile.nas.task.\(id)"]
         _ = reveal("mobile.nas.task.\(id)", in: app); field.tap()
         let original = field.value as? String ?? ""
-        if original.isEmpty || original == field.placeholderValue { field.typeText(text) }
-        else {
+        if !original.isEmpty && original != field.placeholderValue {
             // 合成原值均为单行：点入末尾后退格替换，并严格核对完整文本，不依赖全选菜单或快捷键。
             if id == "script", app.frame.width < 600 {
                 // iPhone 的 TextEditor 点击空白后可能仍在行首，用方向键明确移动到原值末尾。
@@ -152,8 +151,17 @@ final class MobileScheduledTasksUITests: XCTestCase {
             } else {
                 field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: id == "script" ? 0.12 : 0.8)).tap()
             }
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: original.count) + text)
+            // 云端一次混合退格/输入事件曾只完成部分退格；分别发送并等待真实字段更新。
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: original.count))
+            let cleared = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                let value = field.value as? String ?? ""
+                return value.isEmpty || value == field.placeholderValue
+            }, object: field)
+            XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 10), .completed, "输入框未清空")
         }
+        field.typeText(text)
+        let entered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", text), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [entered], timeout: 10), .completed)
         XCTAssertEqual(field.value as? String, text)
         let done = element("mobile.nas.task.keyboardDone", app)
         if done.exists && done.isHittable { done.tap() }

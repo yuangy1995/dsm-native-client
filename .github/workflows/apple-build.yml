@@ -45,6 +45,9 @@ jobs:
           - target: iPhone-administration
             family: iPhone
             suite: administration
+          - target: iPhone-services
+            family: iPhone
+            suite: services
           - target: iPad-workspace
             family: iPad
             suite: workspace
@@ -54,6 +57,9 @@ jobs:
           - target: iPad-administration
             family: iPad
             suite: administration
+          - target: iPad-services
+            family: iPad
+            suite: services
     steps:
       - name: 检出仓库
         # v7.0.0
@@ -176,21 +182,24 @@ jobs:
           MOBILE_TARGET: ${{ matrix.target }}
           MOBILE_SUITE: ${{ matrix.suite }}
         run: |
-          # 每台设备三组互补覆盖全部测试；管理场景增加后独立运行，避免单个作业超过六小时。
+          # 每台设备四组互补覆盖全部测试；服务设置单独运行，避免已发生的六小时超时。
           administration_tests=(
             MobileDDNSUITests MobileDirectoryUITests MobileNasReadUITests MobileNasStorageUITests
             MobilePackageCenterUITests MobilePackageControlUITests MobilePackageInstallationUITests MobileRegionUITests
-            MobileScheduledTasksUITests MobileServiceSettingsUITests MobileSystemActionsUITests
+            MobileScheduledTasksUITests MobileSystemActionsUITests
           )
           case "$MOBILE_SUITE" in
             workspace)
               test_selection=(-only-testing:DsmMobileUITests/MobileWorkspaceUITests)
               ;;
             modules)
-              test_selection=(-only-testing:DsmMobileTests -only-testing:DsmMobileUITests -skip-testing:DsmMobileUITests/MobileWorkspaceUITests)
+              test_selection=(-only-testing:DsmMobileTests -only-testing:DsmMobileUITests -skip-testing:DsmMobileUITests/MobileWorkspaceUITests -skip-testing:DsmMobileUITests/MobileServiceSettingsUITests)
               for test_class in "${administration_tests[@]}"; do
                 test_selection+=("-skip-testing:DsmMobileUITests/$test_class")
               done
+              ;;
+            services)
+              test_selection=(-only-testing:DsmMobileUITests/MobileServiceSettingsUITests)
               ;;
             administration)
               test_selection=()

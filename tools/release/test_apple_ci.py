@@ -29,9 +29,9 @@ class AppleCIShardTests(unittest.TestCase):
         source = WORKFLOW.read_text()
         matrix = source.split("      matrix:\n", 1)[1].split("    steps:\n", 1)[0]
         rows = re.findall(r"- target: (\S+)\n\s+family: (\S+)\n\s+suite: (\S+)", matrix)
-        self.assertEqual(len(rows), 6)
-        self.assertEqual(len({target for target, _, _ in rows}), 6)
-        self.assertEqual(Counter(family for _, family, _ in rows), {"iPhone": 3, "iPad": 3})
+        self.assertEqual(len(rows), 8)
+        self.assertEqual(len({target for target, _, _ in rows}), 8)
+        self.assertEqual(Counter(family for _, family, _ in rows), {"iPhone": 4, "iPad": 4})
         suites = set()
         for directory, target in [("Tests", "DsmMobileTests"), ("UITests", "DsmMobileUITests")]:
             for path in (ROOT / "apple/Apps/DsmMobile" / directory).glob("*.swift"):
@@ -58,7 +58,7 @@ class AppleCIShardTests(unittest.TestCase):
             self.assertEqual(coverage, Counter({name: 1 for name in suites}), family)
 
     def test_test_failure_remains_a_failed_job(self):
-        for suite in ["workspace", "modules", "administration"]:
+        for suite in ["workspace", "modules", "administration", "services"]:
             result = self.run_selection(suite, exit_code=65)
             self.assertEqual(result.returncode, 65)
 

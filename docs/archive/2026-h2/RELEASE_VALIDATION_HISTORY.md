@@ -4024,3 +4024,62 @@ git diff --check
 M8 系统后台、分享扩展与 Files 尚未实现，本片不把它们视为完成或仅待真机。
 
 已清理新增临时派生目录、诊断采样及原始截图导出目录；正式日志/xcresult 保留于忽略的 build，16 张精选合成截图位于 `build/m7d5-preview`。
+
+## 2026-10-07 iPad 云端输入、导航与测试分组
+
+旧 [Apple Build 37499218894](https://github.com/yuangy1995/dsm-native-client/actions/runs/37499218894)
+针对 `04d692ab` 最终失败。共享/macOS 与 iPhone workspace 通过，其余失败按前片及
+本片证据修正；iPad administration 的 134 UI 全部执行完毕，3 项失败，耗时
+20669.735 秒，其中 ServiceSettings 46 项占 9646.153 秒；作业最终 cancelled，
+GitHub 注释明确达到 6 小时执行上限。现每设备使用 workspace/modules/administration/
+services 四组，服务设置不再重复落入 modules 或 administration。分组覆盖测试同时
+检查所有模型/UI 类恰好一次及 exit 65 仍使作业失败，不添加重试或跳过。
+
+实际原始失败证据：存储分析停在可见但未开启的模块开关；计划任务一次混合退格/
+输入后名称只剩 `Sampl`，未得到 `Updated Task`；代理第二次保存仍停在确认页，
+原通配元素查询命中外层 Other。对应修正使用已存在的功能开关/导航辅助方法、
+分开发送退格和新文本并等待完整值、定位确认按钮并等待可点击后按下/抬起一次。
+全部业务结果断言保留。投票启用后导航超时改用定向共享导航；另一条初始文件
+加载长时间不结束仍未确定根因，本机复跑通过不能证明该云端现象已经根治。
+
+本机原 5 失败场景在改动前分别于 iPhone/iPad 全部通过（449.315/540.175 秒）；
+不是靠本片重跑把原云端失败变为通过。随后本片正常签名构建成功，iPhone 的
+8 项相关实际 UI 全通过，737.518 秒；iPad 同组八项全通过，833.035 秒。
+独立集成审查逐条检查修改范围、完整文字/最终代理状态与恢复断言、四组互补及
+失败传播，未修改产品行为、认证或 API。两端各六张精选截图已逐张复核，覆盖中文
+深色大字投票、投票/存储错误、任务确认与重启后脚本、代理关闭结果。大字投票及
+任务长表单使用滚动内容，实际 UI 已操作滚动后提交；不把视口外内容描述成全部可见。
+
+实际命令：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj \
+  -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 \
+  -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F'
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj \
+  -scheme DsmMobile -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 \
+  -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
+  -only-testing:DsmMobileUITests/MobileChatPollUITests \
+  -only-testing:DsmMobileUITests/MobileNasStorageUITests/test空间分析加载可取消失败可重试 \
+  -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test编辑未知重启后完整回读恢复 \
+  -only-testing:DsmMobileUITests/MobileScheduledTasksUITests/test空目录新建完整表单与确认取消再保存 \
+  -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test代理地址校验保存并关闭代理 \
+  -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' \
+  -resultBundlePath build/m7d-ci-pad-phone-after.xcresult
+python3 -m unittest tools.release.test_apple_ci
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+iPad 使用 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，对应结果改为
+`build/m7d-ci-pad-pad-after.xcresult`。基线只选上面的两条原失败 Poll 方法和三个管理
+方法，结果为 `build/m7d-ci-pad-{phone,pad}-before.xcresult`。3 项分组测试通过；
+本片本地化检查 6981/2188/3402 双语资源、参数/引用及硬编码扫描通过，文档检查和
+差异检查通过。最初误用 generic/无签名构建触发了不需要的双架构编译，主动中止，
+随后改为上述正常签名目标构建；中止不记为构建通过。
+
+旧云端结果已完成取证，原始下载、录像、诊断和一次性提帧工具已清理；六张脱敏
+失败截图位于 `build/m7d-ci-pad-evidence`，十二张本机精选位于 `build/m7d-ci-pad-preview`。
+正式本机构建/UI 日志与结果仍保留于
+忽略的 build。新的完整云端四组结果尚未运行，不以本地通过或代码同步代替。

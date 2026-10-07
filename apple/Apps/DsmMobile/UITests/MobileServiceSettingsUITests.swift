@@ -408,11 +408,11 @@ final class MobileServiceSettingsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["mobile.nas.service.save"].isHittable)
         app.buttons["mobile.nas.service.save"].tap(); screenshot(app, "Proxy connection warning")
         element("mobile.nas.service.cancel", app).tap(); app.buttons["mobile.nas.service.save"].tap()
-        element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        confirmServiceChanges(app); waitEditorClosed(app)
         expect(reveal("mobile.nas.service.row.proxyHost", in: app), contains: "outbound.example.invalid")
         openEditor(app); toggle("proxyEnabled", in: app)
         XCTAssertFalse(app.textFields["mobile.nas.service.proxyHost"].isEnabled)
-        app.buttons["mobile.nas.service.save"].tap(); element("mobile.nas.service.confirm", app).tap(); waitEditorClosed(app)
+        app.buttons["mobile.nas.service.save"].tap(); confirmServiceChanges(app); waitEditorClosed(app)
         expect(reveal("mobile.nas.service.row.proxyEnabled", in: app), contains: "Off")
         screenshot(app, "Proxy disabled with original address retained")
     }
@@ -669,6 +669,14 @@ final class MobileServiceSettingsUITests: XCTestCase {
         }
         let done = app.buttons["mobile.nas.service.keyboardDone"]
         if done.exists && done.isHittable { done.tap() }
+    }
+    private func confirmServiceChanges(_ app: XCUIApplication) {
+        // 云端命中了确认按钮的外层 Other，但确认页未关闭；只操作实际按钮且不重发。
+        let confirm = app.buttons["mobile.nas.service.confirm"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: confirm)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+        XCTAssertTrue(confirm.isEnabled)
+        confirm.press(forDuration: 0.15)
     }
     private func waitEditorClosed(_ app: XCUIApplication, editID: String = "mobile.nas.service.edit") {
         let edit = app.buttons[editID]
