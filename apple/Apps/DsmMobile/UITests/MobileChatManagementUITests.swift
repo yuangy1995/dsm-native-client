@@ -23,10 +23,9 @@ final class MobileChatManagementUITests: XCTestCase {
         XCTAssertTrue(original.waitForExistence(timeout: 5))
         original.press(forDuration: 1)
         element("chat-pin-9001", app).tap()
-        let gone = NSPredicate(format: "exists == false")
-        expectation(for: gone, evaluatedWith: original)
-        waitForExpectations(timeout: 8)
-        XCTAssertTrue(attachmentRow.exists)
+        // 云端录像已剩一条公告；用当前查询和系统消失等待保留原来的八秒断言。
+        XCTAssertTrue(element("chat-announcement-row-9001", app).waitForNonExistence(timeout: 8), app.debugDescription)
+        XCTAssertTrue(element("chat-announcement-row-9002", app).exists)
     }
     func test会话多选取消确认和关闭结果() {
         let app = launch(); defer { app.terminate() }; openChat(app)

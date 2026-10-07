@@ -4,6 +4,7 @@
 import os
 import re
 import subprocess
+import tempfile
 import textwrap
 import unittest
 from collections import Counter
@@ -20,19 +21,25 @@ class AppleCIShardTests(unittest.TestCase):
         step = source.split("      - name: 分组运行全部移动单元与界面回归\n", 1)[1].split("\n      - name:", 1)[0]
         script = textwrap.dedent(step.split("        run: |\n", 1)[1])
         stub = textwrap.dedent('''\
-            synthetic_call=0
             xcodebuild() {
               printf "%s\\0" __XCODEBUILD__ "$@"
+              synthetic_call=$(cat "$SYNTHETIC_CALL_STATE")
               synthetic_call=$((synthetic_call + 1))
+              printf "%s" "$synthetic_call" > "$SYNTHETIC_CALL_STATE"
               if [[ "$synthetic_call" -eq 1 ]]; then return "$SYNTHETIC_BUILD_EXIT"; fi
               return "$SYNTHETIC_SECOND_EXIT"
             }
         ''')
         environment = dict(os.environ, MOBILE_SUITE=suite, MOBILE_TARGET=f"synthetic-{suite}",
                            MOBILE_DEVICE="synthetic-device", RUNNER_TEMP="/synthetic root",
+                           GITHUB_WORKSPACE=str(ROOT),
                            SYNTHETIC_BUILD_EXIT=str(exit_code),
                            SYNTHETIC_SECOND_EXIT=str(exit_code if second_exit_code is None else second_exit_code))
-        return subprocess.run(["bash", "-euo", "pipefail", "-c", stub + script], env=environment, capture_output=True)
+        with tempfile.TemporaryDirectory(prefix="lanstash-ci-shard-") as directory:
+            counter = Path(directory) / "call-count"
+            counter.write_text("0")
+            environment["SYNTHETIC_CALL_STATE"] = str(counter)
+            return subprocess.run(["bash", "-euo", "pipefail", "-c", stub + script], env=environment, capture_output=True)
 
     def invocations(self, result):
         return [call.rstrip("\0").split("\0")

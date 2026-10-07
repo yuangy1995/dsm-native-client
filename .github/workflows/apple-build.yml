@@ -3,6 +3,9 @@ name: Apple Build
 on:
   workflow_dispatch:
   push:
+    # 标签由正式发布流程验收，避免重复启动整轮移动测试并占用发布执行资源。
+    branches:
+      - "**"
     paths:
       - "apple/**"
       - "tools/release/**"
@@ -183,6 +186,7 @@ jobs:
           MOBILE_SUITE: ${{ matrix.suite }}
         run: |
           # 每台设备四组互补覆盖全部测试；服务设置单独运行，避免已发生的六小时超时。
+          set -o pipefail
           administration_tests=(
             MobileDDNSUITests MobileDirectoryUITests MobileNasReadUITests MobileNasStorageUITests
             MobilePackageCenterUITests MobilePackageControlUITests MobilePackageInstallationUITests MobileRegionUITests
@@ -218,6 +222,10 @@ jobs:
             -destination "platform=iOS Simulator,id=$MOBILE_DEVICE"
             -derivedDataPath "$RUNNER_TEMP/DsmMobile-build" -parallel-testing-enabled NO
           )
+          capture_diagnostics=(
+            python3 "$GITHUB_WORKSPACE/tools/release/capture_apple_ui_hangs.py"
+            --device "$MOBILE_DEVICE" --output "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET-diagnostics"
+          )
           system_result=0
           if [[ "$MOBILE_SUITE" == modules ]]; then
             # 系统集成先完成独立结果，避免长组被中断时只留下未封存的测试记录。
@@ -227,12 +235,12 @@ jobs:
             done
             xcodebuild "${test_arguments[@]}" \
               -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET-system.xcresult" \
-              "${system_selection[@]}" || system_result=$?
+              "${system_selection[@]}" 2>&1 | "${capture_diagnostics[@]}" || system_result=$?
           fi
           suite_result=0
           xcodebuild "${test_arguments[@]}" \
             -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET.xcresult" \
-            "${test_selection[@]}" || suite_result=$?
+            "${test_selection[@]}" 2>&1 | "${capture_diagnostics[@]}" || suite_result=$?
           # 首段失败仍运行余下测试，两段任一失败均保留失败退出码。
           if [[ "$system_result" -ne 0 ]]; then exit "$system_result"; fi
           exit "$suite_result"
@@ -242,7 +250,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: LanStash-Apple-mobile-tests-${{ matrix.target }}
-          path: ${{ runner.temp }}/DsmMobile-*.xcresult
+          path: |
+            ${{ runner.temp }}/DsmMobile-*.xcresult
+            ${{ runner.temp }}/DsmMobile-*-diagnostics
           if-no-files-found: warn
 
       - name: 打包 macOS 应用

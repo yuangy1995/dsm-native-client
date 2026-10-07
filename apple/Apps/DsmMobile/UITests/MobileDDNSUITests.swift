@@ -10,7 +10,8 @@ final class MobileDDNSUITests: XCTestCase {
         expect(result, contains: "Connection test succeeded")
         screenshot(app, "DDNS connection test does not save the record")
         setUpdates(false, in: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: result)], timeout: 5), .completed)
+        // 云端录像中提示已消失；重新查询并使用系统消失等待，仍限定五秒。
+        XCTAssertTrue(element("mobile.nas.ddns.testResult", app).waitForNonExistence(timeout: 5), app.debugDescription)
         setUpdates(true, in: app)
         element("mobile.nas.ddns.save", app).tap()
         let confirm = element("mobile.nas.ddns.confirm", app)

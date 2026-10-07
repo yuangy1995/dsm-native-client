@@ -32,8 +32,9 @@ M8a 普通文件传输与 M8b 系统分享已有独立验收；M8d 照片上传/
 具体开始/取消/持久恢复边界、命令和真机条件见[后台执行器账本](APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md)。
 
 M8c 已复用 Mac 的共享 File Provider 运行时并接移动域注册、读取/缓存、原位编辑、
-冲突/未知恢复及独立删除授权；两端可编辑系统主流程已通过。默认只读目录在当前
-本机系统中仍发生元数据落盘错误，须继续对照其他运行环境，见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)。
+冲突/未知恢复及独立删除授权；两端可编辑系统主流程曾通过，但全新 iPad 对照与
+云端首次加载仍有失败。默认只读目录在本机与云端 iPhone 均确认相同元数据落盘
+错误，云端 iPad 另有添加位置失败，见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)。
 不以写权限绕过只读失败，不把它转写成仅待用户真机验收。该问题及仍在处理的完整云端
 失败解决前，M6–M8 整体目标保持未完成；其他独立切片的已验证结果保留。
 
@@ -43,6 +44,13 @@ Testing、37 项发布脚本及临时测试包权限/组件加载检查成功。
 两端分别通过。现有 modules 组将 Files、分享扩展和后台传输先运行并封存独立结果，
 随后仍执行全部其他测试，两段任一失败均保留失败。该调整不代表完整移动云端已通过；
 新一轮继续核对 Files 只读失败及各分组结果，精确证据见[本轮验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-07-云端模块启用与系统集成结果分段)。
+
+`a1b7753d` 云端 iPhone 工作区、iPad 管理与 iPad 服务组 UI 通过；iPad 工作区
+启动停顿、iPhone 服务开关及 Files 仍有实际失败。公告取消与
+DDNS 提示清除的失败录像确认内容已经消失，但保留元素的否定谓词未及时完成；
+改为当前查询的系统消失等待，保留原期限和业务断言，本机两端聚焦验证通过。
+该测试修正尚待云端复验，不能用本机结果提升整轮结论。启动停顿采样与 Files
+固定阶段错误日志已加入后续诊断，未新增重试、跳过或扩大权限。
 
 ## 2026-10-07 云端 iPad 启动、输入与分组复核
 
@@ -762,8 +770,8 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M2 收藏与 File Station 设置 | WorkspaceModel.toggleFavorite、FileStationSettingsView、FileStationBandwidthView | 文件菜单/位置列表、分步设置表单；Favorite、Setting、Mount、Bandwidth、SharingDownload；普通写/内部管理写 | M2g1 收藏与 M2g2 常规/账号/限速/分享页面设置已接入并通过两端单元/实际 UI；保留权限、原快照回读与未知防重放，真实 NAS 待用户验证 |
 | M2 NAS 任务 | FileBackgroundTaskActions | Activity 绑定 NAS/原任务；状态及取消；写 | M2c 完整分页、原任务停止/清除、未知控制恢复已接；两端单元/实际 UI 通过，真实 NAS 待验 |
 | M2 跨 NAS 传输 | WorkspaceModel | 源/目标明确绑定；复制后核对目标再确认源删除；高风险 | M2h4 已接两端独立会话、目录/文件复制、内容比对、活动恢复与独立确认删源；两端单元和实际 UI 通过，目标未核对不得删源，未知及已完成步骤不重放 |
-| M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | M2i 已接六种格式预览、系统编辑副本、主动回传及冲突/未知恢复，两端自动化通过；M8 再接 Files 写回 |
-| M2 可恢复活动队列 | WorkspaceModel | 独立版本化任务、来源/目标身份与进度；持久化 | M2a 接独立受保护记录/副本；重启后暂停未提交项，未知上传只查询，下载可从头恢复；后台执行仍属 M8 |
+| M2 Office 编辑 | OfficeDocumentPreview、OfficeDocumentEditing | Quick Look→系统编辑/分享→主动回传；数据写 | M2i 已接六种格式预览、系统编辑副本、主动回传及冲突/未知恢复，两端自动化通过；M8c 已接 Files 原位写回与冲突恢复，可编辑系统流程两端通过，默认只读目录问题另行追踪 |
+| M2 可恢复活动队列 | WorkspaceModel | 独立版本化任务、来源/目标身份与进度；持久化 | M2a 接独立受保护记录/副本；重启后暂停未提交项，未知上传只查询，下载可从头恢复；M8a/M8d 已接系统执行时间与到期取消，不承诺进程终止后继续 |
 | M3 Photos 上传 | SynologyPhotosModel、SynologyPhotosView | Photos/Files 选择与队列；上传/相册加入；写 | M3a 已接系统多选、受保护副本及队列恢复；两端单元/实际 UI 通过，相册加入失败只补后一步，真实 NAS 待验 |
 | M3 批量及资料 | PhotoManagementPanel | 多选、标签/日期/资料表单；原件权限；写 | M3c 已接评分/描述/日期/时间偏移与标签创建/添加/移除，M3f1 补齐预览旋转；多选及单张预览、版本 7/10 摘要恢复均经两端单元/实际 UI；原件权限与相册贡献权限分别检查 |
 | M3 目录及移动复制 | PhotoFolderDestinationPicker、PhotoManagementPanel | 分步目的地选择、图库内拖放；Folder/Move/Copy；数据写 | M3d 已接目录创建/重命名/排序/封面、混合移动复制/删除及版本 8 恢复；两端单元与实际 UI 通过；M3e 已接共享目录权限、成员/密码/子目录确认和完整任务控制及版本 9 恢复 |
@@ -780,7 +788,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M5 详情、编辑、批量 | ServiceManagementView、ServiceManagementModel | 多选、详情/编辑表单；Download Station Task；写 | M5a1 完整目录/详情、M5a2 多选暂停/继续与 M5c1 单项/多项保存位置编辑及持久恢复已验证；M5d 已接停止做种及移除恢复 |
 | M5 RSS、设置与搜索创建 | ServiceManagementView | RSS/设置/搜索创建表单；现有共享 Download 协议；写 | M5b 下载设置与分步恢复、M5c2 链接/文件与搜索创建的持久记录已验证；M5c2b 统一表单、逐次目录/文件密码及 M5c3 已有 RSS 订阅/条目、更新与创建已通过两端回归 |
 | M5 删除与数值 | ServiceManagementModel | 记录删除与文件删除分别确认；数据删除 | M5a1 已统一缺失数值为 --；M5d 单项/多项任务移除与恢复、结束并移出未完成文件均通过两端回归；实际文件由用户进入既有 M2 文件管理另行选择，不自动关联删除 |
-| M6 21 页读取与普通设置 | NasAdministrationView、NasAdministrationModel | 分类设置/并列详情；系统日志存储区域代理等；内部写 | M6a1–M6a3 已接五项读取、存储/日志及区域时间/DDNS，M6b2 服务设置已完成；其余逐页继续，仅编辑实际支持字段 |
+| M6 21 页读取与普通设置 | NasAdministrationView、NasAdministrationModel | 分类设置/并列详情；系统日志存储区域代理等；内部写 | M6a1–M6a3 已接五项读取、存储/日志及区域时间/DDNS，M6b2 服务设置及其余 M6 分组见下列行；21 页范围已接入，仅编辑实际支持字段，真实 NAS 行为另验 |
 | M6 账号、群组、网络、安全 | NasAdministrationView | 分步表单/当前账号保护；User/Group/Ethernet/FileServ/Security；高风险 | M6b1 账号/群组与 M6b2 文件服务/终端/代理已接并通过两端验收；M6b3 远程访问、M6b4 网卡原配置编辑与断连恢复、M6b5 安全四组保存与原防火墙任务恢复已完成当前环境验收 |
 | M6 硬件、UPS、内存、电源计划 | PowerScheduleEntryEditor、NasAdministrationView | 原生编辑器；Hardware/UPS/ZRAM/PowerSchedule；系统写 | M6c1 内存压缩/电源计划与 M6c2 硬件/UPS 已接并完成两端本机验收；六组独立结果、灯光两步回执和主动续接，未知字段不补 false |
 | M6 计划任务、连接、电源 | NasAdministrationModel | 后果确认与断连恢复；TaskScheduler/CurrentConnection/System；高风险 | M6d1 计划任务及 M6d2 连接/即时电源已接完整管理与持久恢复。接受不代表脚本完成或已重启，未知不重发 |
@@ -788,7 +796,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M7 容器生命周期/日志 | ServiceManagementView、ServiceManagementModel | 详情及操作确认；Docker 稳定身份；高风险 | M7a 单项/多项启停重启、逐项恢复、活动正文/用户和现有资源字段已完成两端回归；按明确套件授权开放；M7c2 单项/多项删除和同一记录中的只读恢复已完成两端验收 |
 | M7 映像、网络、项目 | ContainerImagePullModel、ServiceManagementView | 搜索/tag/拉取、网络/项目表单；Registry.search v1；内部写 | M7b 搜索/标签/下载及跨重启恢复已通过两端单元和实际 UI；读取暂失保留原任务，明确 1202 失败结束。M7c1 单项/多项映像删除与恢复已通过两端回归；M7c3 网络表单/详情/单多删与持久恢复已实现并有两端 UI 证据；项目写及容器创建编辑已补官方静态字段，产品基线/源码缺口仍单独记录 |
 | M7 VMM 操作与创建 | ServiceManagementView、ServiceManagementModel | 分步配置/稳定目标；Virtualization；高风险 | M7d1 电源/删除与摘要恢复已完成本机验证；M7d2 基础编辑、摘要恢复、共享全量与两端模型/五项实际 UI 已通过；M7d3 分步创建、原任务/完整配置关联与独立持久恢复已完成共享/Mac/两端模型及六项创建 UI 验收；同名不认领，归属/配置不足保持未知 |
-| M7 VMM 网络/映像/控制台 | ServiceManagementView | 资源表单及触控 WebKit；控制台会话；凭据/内部写 | M7d4a 网络详情/改名/单多删与 M7d4b 映像详情/单多删及独立摘要恢复已完成本机验收，保留关联 VM/创建引用互斥、回执与只读恢复；控制台继续 M7d5。控制台须临时隔离 Cookie、限定源站，URL 禁止原始会话秘密 |
+| M7 VMM 网络/映像/控制台 | ServiceManagementView | 资源表单及触控 WebKit；控制台会话；凭据/内部写 | M7d4a 网络详情/改名/单多删与 M7d4b 映像详情/单多删及独立摘要恢复已完成本机验收，保留关联 VM/创建引用互斥、回执与只读恢复；M7d5 已接触控控制台、关闭/手动重连与前后台清理，共用受限原生资源/WSS 及非持久 WebKit，网页不持有会话凭据；两端合成组件/UI 和 Mac 回归通过，真实 noVNC/RFB 另验 |
 | M8 系统后台传输 | WorkspaceModel（业务语义） | 系统持续任务、受保护文件及恢复；后台/凭据 | M8a 普通文件与 M8d 照片上传/导出、跨 NAS 复制及独立删源、Office 下载/主动回传已接系统时间；135 项聚焦回归和两端各五项前后台 UI 通过。保留原证书/同源保护、旧系统有限时间和未知写恢复，不承诺进程终止续传；见[普通传输账本](APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md)与[其他执行器账本](APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md) |
 | M8 分享扩展 | FileUploadPlan（上传语义） | 分享→NAS/位置→持久任务；独立扩展最小共享权限 | M8b 已实现扩展内选择与上传、最小共享会话撤销、独立持久记录及主 App 接手；两端各 81 项聚焦单元及四项真实系统分享 UI 通过，正式签名/真实 NAS 另验，见[专项账本](APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md) |
 | M8 Files 与外部编辑 | DesktopCloudDriveManager；Mac FileProviderExtension | iOS File Provider 先读/下载/缓存，再写回/冲突/删除；系统集成 | M8c 已提取共享运行时并实现移动注册、缓存、原位编辑/冲突恢复及独立删除授权；两端可编辑系统主流程通过。默认只读系统目录仍可复现元数据错误，尚未完整验收，不放宽写权限绕过。见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)；正式权限/真机另验 |

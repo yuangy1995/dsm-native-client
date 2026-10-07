@@ -3,6 +3,7 @@ import DsmLocalization
 import FileProvider
 import Foundation
 import Observation
+import OSLog
 
 struct MobileFilesLocationState: Identifiable {
     let location: MobileFilesLocation
@@ -18,6 +19,7 @@ struct MobileFilesLocationState: Identifiable {
 
 @MainActor @Observable
 final class MobileFilesSettingsModel {
+    private static let logger = Logger(subsystem: "io.github.qwertyuiop1995.dsmnativeclient.mobile", category: "FilesLocation")
     let locations: MobileFilesLocationStore
     let accounts: MobileExtensionAccountStore
     let domains: any MobileFilesDomainControlling
@@ -83,19 +85,35 @@ final class MobileFilesSettingsModel {
 
     func add() async {
         await perform {
-            let account = try self.account()
-            let location = try self.locations.reserve(account: account)
-            let store = try self.locations.configurationStore(id: location.id)
-            if try await store.configuration(mappingID: location.id) == nil {
-                try await store.saveConnection(profile: account.connection.profile, capabilities: account.connection.capabilitySet)
-                try await store.saveMapping(location.mapping)
-                try await store.setMappingState(.available, mappingID: location.id)
+            var stage = "account"
+            do {
+                let account = try self.account()
+                stage = "reserve"
+                let location = try self.locations.reserve(account: account)
+                stage = "configuration"
+                let store = try self.locations.configurationStore(id: location.id)
+                if try await store.configuration(mappingID: location.id) == nil {
+                    try await store.saveConnection(profile: account.connection.profile, capabilities: account.connection.capabilitySet)
+                    try await store.saveMapping(location.mapping)
+                    try await store.setMappingState(.available, mappingID: location.id)
+                }
+                stage = "account-recheck"
+                try self.requireCurrent(location)
+                stage = "registration-list"
+                let isRegistered = try await self.domains.registrations()[location.id] != nil
+                if !isRegistered {
+                    stage = "registration-add"
+                    try await self.domains.add(location)
+                }
+                stage = "account-recheck"
+                try self.requireCurrent(location)
+                stage = "registration-readback"
+                guard try await self.domains.registrations()[location.id] != nil else { throw NSFileProviderError(.providerNotFound) }
+                self.addedLocation = true
+            } catch {
+                Self.logFailure(error, stage: stage)
+                throw error
             }
-            try self.requireCurrent(location)
-            if try await self.domains.registrations()[location.id] == nil { try await self.domains.add(location) }
-            try self.requireCurrent(location)
-            guard try await self.domains.registrations()[location.id] != nil else { throw NSFileProviderError(.providerNotFound) }
-            self.addedLocation = true
         }
     }
 
@@ -194,8 +212,23 @@ final class MobileFilesSettingsModel {
         guard !busy else { return }
         busy = true; error = nil
         defer { busy = false }
-        do { try await operation(); try await readRows(); hasLoaded = true }
-        catch { self.error = message(error); try? await readRows() }
+        var readingRows = false
+        do {
+            try await operation()
+            readingRows = true
+            try await readRows()
+            hasLoaded = true
+        } catch {
+            if readingRows { Self.logFailure(error, stage: "rows-readback") }
+            self.error = message(error)
+            try? await readRows()
+        }
+    }
+
+    private static func logFailure(_ error: Error, stage: String) {
+        let issue = error as NSError
+        // 只记录固定阶段与系统错误类别/码，不记录描述、userInfo、身份、地址或本机路径。
+        logger.error("files-location failed stage=\(stage, privacy: .public) domain=\(issue.domain, privacy: .public) code=\(issue.code, privacy: .public)")
     }
 
     private func message(_ error: Error) -> String {

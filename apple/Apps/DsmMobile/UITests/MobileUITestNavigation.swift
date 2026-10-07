@@ -18,9 +18,10 @@ enum MobileUITestNavigation {
         if !isEnabled { capture(app, name: "Enable \(module) disabled", test: test) }
         XCTAssertTrue(isEnabled, "功能开关当前不可用：\(module)", file: file, line: line)
         guard isEnabled else { return }
-        // 云端原生开关中心点击后曾仍为关闭；只做一次从关闭位置到开启位置的明确拖动。
+        // 云端已观察到触控分发延后约 0.31 秒；按住后再拖动，为原生开关接收起始触控留出时间。
+        // 仍只操作一次，不在失败后重试，随后检查真实开启状态。
         if toggle.value as? String == "0" {
-            control.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).press(forDuration: 0.1,
+            control.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).press(forDuration: 0.5,
                 thenDragTo: control.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)),
                 withVelocity: .slow, thenHoldForDuration: 0.1)
         }

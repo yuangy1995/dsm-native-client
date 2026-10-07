@@ -4280,6 +4280,196 @@ Release 构建结果。Files 默认只读目录失败仍单独追踪，未改为
 临时测试包生成及权限/Sparkle 实际加载校验通过。这一结论只覆盖 `2d841fdc` 对应
 共享/Mac 作业，不代表仍在运行的八个移动分组或后续测试修正全部通过。
 
+补充复核被取消的 `37572581607`：iPhone services 在取消前完成 4 项并有 1 项失败，
+为 `MobileServiceSettingsUITests.test五态搜索与读取失败恢复`；其余已运行的
+iPad modules、iPhone administration、iPad services 没有已结束的失败项，仍不计为
+完整通过。失败位于最后的 `nas-services-unsupported` 启动，模块开关最终值仍为 0；
+截图中开关完整可见。事件显示控件框为 `(309, 545.7, 63, 28)`，一次触控从
+`(324.8, 559.7)` 到 `(356.2, 559.7)`，共 0.33 秒；系统已回报事件完成，但开启值
+断言超时。这与此前页面快照十秒超时不同，不能仅靠延长等待解释为已修复。
+
+在当前 `a1b7753d` 测试代码上，用 `xcodebuild test-without-building -xctestrun
+apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun
+-destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F'
+-parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test五态搜索与读取失败恢复'
+-resultBundlePath build/m8e-service-five-states-phone.xcresult` 运行完整五态场景；iPad
+替换设备为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 并使用独立结果路径。iPhone
+150.104 秒、iPad 164.588 秒均通过，未改产品或测试源码，也未据此认定云端已解决。
+下一证据为正在执行的 `37575438355` 对应 services 作业；暂不凭推测调整手势、
+增加重试或绕过模块启用步骤。
+
+`37575438355` / `a1b7753d` 的共享/Mac 作业 `112643551860` 已完成并通过。
+实际日志确认 `swift test --package-path apple` 执行 3103 项 XCTest（172 项既有
+跳过、0 失败）及 12 项 Swift Testing；`python3 -m unittest discover -s tools/release
+-p 'test_*.py'` 的 39 项回归全部通过。Mac 临时测试包构建、权限和 Sparkle 实际
+加载检查均成功。八个移动作业另行核对，此记录不代表完整移动云端已通过。
+
+### 同轮 iPhone 服务设置完整结果与触控分发差异
+
+`37575438355` 的 [iPhone services 作业](https://github.com/yuangy1995/dsm-native-client/actions/runs/37575438355/job/112643552111)
+完成 46 项 UI：45 项通过、1 项失败，总计 6120.883 秒。失败仍为五态用例，
+本轮在第二次启动的 `nas-services-empty` 开启 NAS 模块时失败，83.126 秒结束；
+不是旧运行的最后一个 unsupported 场景，也不是页面加载等待超时。
+结果包确认云端为 macOS 26.6.2、Xcode 26.6（17F113）、arm64 iPhone 17 Pro，
+实际模拟器仍为 iOS 26.5（23F77），不能把 Xcode 版本写成模拟器系统版本。
+
+失败截图和完整层级确认 NAS 开关可见、可操作且保持关闭，没有弹窗遮挡或跳离设置页。
+同一用例中成功与失败的合成触控记录完全一致：起点 `(324.75, 559.67)`、终点
+`(356.25, 559.67)`，开始按住 0.1 秒、移动 0.126 秒、结束按住 0.1 秒。
+系统日志进一步显示：成功操作在请求后 22 毫秒首次进入 App，触控分发跨
+369 毫秒、共 10 次；失败操作在请求后 312 毫秒才首次进入 App，后续分发仅跨
+71 毫秒、共 3 次。两者均收到系统事件完成回调。录像抽帧没有显示开关中途已开启，
+因此不能将失败解释为导航切换或过期的控件查询。
+
+据此仅把共用模块开启手势的起始按住时间从 0.1 秒改为 0.5 秒，为已观察到的
+触控分发延迟留出时间；保留坐标、移动速度、结束按住时间、单次操作、可操作性与
+开启值断言，以及原五种场景和业务检查。没有加入失败重试、预先开启模块、放宽权限
+或更改产品逻辑。该修改针对短合成手势在云端的时序差异，仍需本机和云端复验，
+不能由日志相关性宣称已确定系统根因或修复通过。
+
+修改前的旧编译产物在本机 iPhone 连续五轮完整五态场景全部通过，合计 712.755 秒，
+说明本机尚未复现云端偶发失败。随后用正常临时签名重新构建新手势测试，iPhone 与
+iPad 各执行五轮同一完整场景，遇到首次失败即停止；两端均五轮全过、0 失败、0 跳过，
+分别 708.238/757.892 秒。这里是一个场景的五次执行，不是五个不同测试。
+新结果包为 `build/m8f-services-{phone,pad}.xcresult`；旧对照结果为
+`build/m8e-services-repeat-phone.xcresult`，不得把旧版本通过计为新修改通过。
+
+实际新构建和 iPhone 命令如下；iPad 复用同一新编译产物，设备替换为
+`A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果路径替换为
+`build/m8f-services-pad.xcresult`。旧对照在新构建前使用相同测试选择与重复参数，
+结果路径为 `build/m8e-services-repeat-phone.xcresult`。
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test五态搜索与读取失败恢复' -test-iterations 5 -run-tests-until-failure -resultBundlePath build/m8f-services-phone.xcresult
+```
+
+其他五个模块各选一个完整业务流程，两端全部通过：中文深色最大字号聊天删除、
+容器启动及结果、下载默认目录与计划保存、虚拟机开机及逐项结果、取消照片临时
+分享并保留原件。iPhone 五项 258.195 秒、iPad 五项 257.417 秒，均 0 失败、0 跳过；
+结果包为 `build/m8f-modules-{phone,pad}.xcresult`。因此本片每端覆盖六个不同 UI
+场景，其中服务五态场景各执行五次；不将重复次数算作不同场景数。
+
+```sh
+xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileChatDeletionUITests/test中文深色大字号删除选择加载空内容和错误' '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test取消临时分享设置会清理相册并保留原照片' '-only-testing:DsmMobileUITests/MobileDownloadSettingsUITests/test选择默认文件夹与常规计划分步保存' '-only-testing:DsmMobileUITests/MobileContainerControlUITests/test普通套件账号可以启动并查看结果' '-only-testing:DsmMobileUITests/MobileVirtualMachineControlUITests/test普通套件账号开机并查看逐项结果' -resultBundlePath build/m8f-modules-phone.xcresult
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+iPad 同样替换设备和结果路径。双语资源、引用、参数与硬编码检查通过，文档和
+差异检查通过。当前负责人另行复核共用方法差异及六种模块调用：仅起始按住时间
+变化，仍检查可操作、启用和最终开启值，保留失败截图与层级；没有重试、预开模块
+或减少业务断言，没有修改产品、权限及云端覆盖。本片不涉及共享生产代码，不重复
+此前已完成的全量单元及 Mac 构建，也不以这些聚焦结果替代完整云端。
+
+本机通过只确认该调整没有破坏上述流程；因为旧版本本机也通过，不能据此宣称已经
+消除云端故障。现有云端其余七个移动作业仍在运行或排队，待收齐后统一处理再推送，
+避免新推送取消本轮。Files 默认只读目录问题保持原失败记录及权限边界，未在本片解决。
+
+## 2026-10-07 云端工作区结果与启动停顿诊断
+
+继续核对同一 `37575438355` / `a1b7753d`，没有取消或重新启动整轮：
+
+- [iPhone 工作区](https://github.com/yuangy1995/dsm-native-client/actions/runs/37575438355/job/112643552033)
+  166 项 UI 全部通过，0 失败，9456.907 秒。
+- [iPad 工作区](https://github.com/yuangy1995/dsm-native-client/actions/runs/37575438355/job/112643552105)
+  166 项 UI 中 165 通过、1 失败，0 跳过，9515.568 秒。结果包确认 arm64
+  iPad Air 11-inch（M4）、iOS 26.5（23F77），构建宿主 macOS 26.6.2。
+- [iPad 管理组](https://github.com/yuangy1995/dsm-native-client/actions/runs/37575438355/job/112643552149)
+  88 项 UI 全部通过，0 失败，10511.686 秒。其余四个移动作业仍在执行，完整门禁尚未通过。
+
+iPad 唯一失败为 `MobileWorkspaceUITests.test批量复制文件和文件夹逐项成功且源内容保留`，
+133.368 秒结束。失败在 `beginCopyMoveBatch` 的初始目录等待，尚未点击目录、选择
+对象或提交复制。与旧运行的批删启动失败分别记录，不能归为复制操作丢失来源。
+
+该次启动在 5.27 秒开始等待界面空闲，60 秒后仍未收到回调。原始 App 诊断确认
+06:12:16、06:12:46 两次主线程 30 秒无响应；06:12:47 才恢复处理辅助功能请求，
+06:12:49 发回空闲信号。录屏按精确时间提取 0.5、30、70、105、131 秒共五帧并逐张
+检查：中段一直为文件加载页，131 秒才进入读取状态；随后失败附件中的层级已有目录。
+这些证据说明启动阶段确实长期无响应，不能仅因最后层级含目录而放宽存在断言。
+现有诊断仍没有停顿期间的调用栈，尚不能确定产品或模拟器根因。
+
+原用例未修改，在本机 iPad 用以下命令通过，21.990 秒、0 失败。它未复现云端停顿，
+不据此声明云端已修复；iPhone 同一用例已包含于本轮完整工作区通过结果。
+
+```sh
+xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test批量复制文件和文件夹逐项成功且源内容保留' -resultBundlePath build/m8g-copy-baseline-pad.xcresult
+```
+
+为下一次实际停顿取得调用栈，增加正式 CI 诊断脚本
+`tools/release/capture_apple_ui_hangs.py`：原样转发 Xcode 输出，只在出现界面空闲
+超时通知后异步采样三秒；通过指定模拟器返回的 App 路径和显式合成环境参数限定
+当前进程，同一进程只尝试一次。不按通用进程名采样其他模拟器、真实连接或系统进程；
+获取路径或采样被拒绝时只报告未取得诊断，不重试或扩大权限。采样不阻塞日志转发，
+结束前等待采样完成；结果随原作业上传。原两段测试、所有选择、断言和失败退出保留。
+
+六项诊断测试及五项现有 CI 实际 shell 参数回归通过；完整发布脚本 45 项通过，
+12.337 秒。额外在本机显式合成 App 上实际执行 `HangSampler.capture()`，生成包含
+主线程及源码符号的三秒调用栈；这是正常进程的诊断工具验证，不是复现或修复了停顿。
+随后终止本次启动的合成 App，并清理临时采样。独立复核确认数据范围仅限测试 App、
+未修改生产音频/文件实现，未增加 UI 重试、跳过或超时宽限。
+
+```sh
+python3 -m unittest tools.release.test_capture_apple_ui_hangs tools.release.test_apple_ci -v
+python3 -m unittest discover -s tools/release -p 'test_*.py'
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+本次修正及诊断尚未推送，待收齐当前云端其余作业后统一处理。Files 默认只读目录
+仍等待 modules 组的完整系统结果；不将启动诊断能力、本机通过或其他分组通过视为
+这两个未解决问题的验收完成。
+
+## 2026-10-07 运行中云端系统段与新增界面失败
+
+通过 GitHub 作业日志接口读取同一 `37575438355` 的已输出内容；作业还在执行，
+但先行系统段已明确结束并报告失败。运行中日志是截至各自末行的快照，未输出的
+后续测试不算通过，也不能将 HTTP 暂无日志误判成作业已停止。
+
+| 已结束测试段 | iPhone | iPad |
+| --- | --- | --- |
+| Files 系统集成 3 项 | 1 通过、2 失败；284.031 秒 | 0 通过、3 失败；178.002 秒 |
+| 分享扩展 4 项 | 4 通过；197.968 秒 | 4 通过；193.968 秒 |
+| 普通文件前后台 UI 3 项 | 3 通过；133.004 秒 | 3 通过；139.058 秒 |
+| 全部移动单元 1846 项 | 0 失败、4 项既有条件跳过；77.119 秒 | 0 失败、4 项既有条件跳过；79.996 秒 |
+
+Files 两端默认只读用例分别于 90.884/75.382 秒失败，系统“文件”的层级显示空目录。
+这补充了另一云端环境的实际失败证据；尚无对应云端系统日志，不能直接把本机
+`cannotSetMetadata` 根因套用到云端。iPhone 可编辑用例于 113.742 秒失败：系统
+位置已启用，等目录 20 秒未满足断言，随后层级中已出现 `Shared`，尚未下载或编辑。
+iPad 中文位置管理与可编辑用例分别在 62.795/39.826 秒失败，均是添加位置后未出现
+成功提示，页面已显示位置更新失败；这是独立的注册问题。详情与权限边界同步到
+[Files 账本](../../development/APPLE_MOBILE_FILES_PROVIDER_ZH.md#云端系统阶段结果2026-10-07)。
+
+运行中的 iPhone modules 另已发现
+`MobileChatManagementUITests.test置顶公告查看附件并取消公告` 失败（110.983 秒）：
+完成附件预览并返回，长按原公告、点取消后，原公告行没有在 8 秒内消失。
+iPhone administration 另已发现
+`MobileDDNSUITests.test新建连接测试与保存分离且修改输入清除旧测试结果` 失败
+（100.582 秒）：开关关闭值断言已通过，但旧连接测试结果未在随后 5 秒内消失。
+这两项不能归因于共用模块开启动作；需结合完整结果包的失败录屏和层级核对，
+当前未改业务代码、扩大等待或放宽原业务断言。
+
+本机使用现有临时签名产物（含前述共用模块开启按住时间调整）运行两项原业务用例：
+公告 iPhone/iPad 分别 45.767/53.579 秒通过，DDNS 分别 68.427/74.325 秒通过，
+四次均 0 失败、0 跳过。仅证明本机这些路径仍可用，不代表复现并修复了云端故障。
+
+```sh
+gh api repos/yuangy1995/dsm-native-client/actions/jobs/112643552160/logs
+gh api repos/yuangy1995/dsm-native-client/actions/jobs/112643552237/logs
+gh api repos/yuangy1995/dsm-native-client/actions/jobs/112643552164/logs
+xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileChatManagementUITests/test置顶公告查看附件并取消公告' -resultBundlePath build/m8h-chat-announcement-baseline-phone.xcresult
+xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileDDNSUITests/test新建连接测试与保存分离且修改输入清除旧测试结果' -resultBundlePath build/m8h-ddns-baseline-phone.xcresult
+xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileChatManagementUITests/test置顶公告查看附件并取消公告' '-only-testing:DsmMobileUITests/MobileDDNSUITests/test新建连接测试与保存分离且修改输入清除旧测试结果' -resultBundlePath build/m8h-cloud-cases-baseline-pad.xcresult
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+当前仅新增证据与账本修正。未操作真实 NAS，未修改 Mac、Windows、Android 或
+系统权限；保留只读失败用例，不把单元通过替代系统失败，不取消当前四个运行中的作业。
+
+
 ## 2026-10-07 macOS 文件上传合并传输中心
 
 用户明确授权按此前评审方案修改上传重复详情。移除上传后自动弹窗及两个独立
@@ -4423,3 +4613,46 @@ python3 -m unittest discover -s tools/release -p 'test_*.py'
 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.version GIT_CONFIG_VALUE_0=HTTP/1.1 LANSTASH_NON_INTERACTIVE=1 LANSTASH_BUILD_TYPE=Release LANSTASH_TARGET_ARCH=native LANSTASH_SIGNING_IDENTITY=- LANSTASH_RUN_AFTER_PACKAGE=0 LANSTASH_DIST_DIR="$PWD/build/mac-three-fixes-package" bash apple/Apps/DsmMac/package.sh
 build/m8a-xcodegen/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMac/project.yml
 ```
+
+## 2026-10-07 云端消失等待与 Files 系统日志复核
+
+同一 `a1b7753d` 的 iPhone modules、iPhone administration 及 iPad services 已结束；
+前两组分别在 169/88 项 UI 中各有 1 项失败，iPad services 46 项全部通过。
+旧整轮只剩 iPad modules，不能将尚未完成的分组写成通过。
+
+从原结果包导出并实际查看 DDNS 与公告失败录像：DDNS 97 秒画面中开关已关闭、
+连接成功提示已消失；公告 106 秒画面已只剩另一条附件公告。逐步活动显示原来对
+保留元素执行的 `exists == false` 谓词未及时完成。画面与等待判定不一致是已确认
+事实，辅助功能缓存或框架内部原因尚未证明。
+
+两项测试改为重新查询并调用现有 XCTest 的 `waitForNonExistence`；DDNS 继续
+限定 5 秒，公告继续限定 8 秒，并仍检查另一条公告存在。没有修改产品业务、增加
+重试、扩大期限或取消断言。重新编译后 iPhone 两项 111.493 秒、iPad 两项
+118.209 秒均通过，0 失败；这属于本机修正验证，尚不能写成云端修复已通过。
+
+```sh
+xcodebuild test -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 4 -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileDDNSUITests/test新建连接测试与保存分离且修改输入清除旧测试结果' '-only-testing:DsmMobileUITests/MobileChatManagementUITests/test置顶公告查看附件并取消公告' -resultBundlePath build/m8j-current-query-phone.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -parallel-testing-enabled NO '-only-testing:DsmMobileUITests/MobileDDNSUITests/test新建连接测试与保存分离且修改输入清除旧测试结果' '-only-testing:DsmMobileUITests/MobileChatManagementUITests/test置顶公告查看附件并取消公告' -resultBundlePath build/m8j-current-query-pad.xcresult
+```
+
+`build/m8j-phone-modules/DsmMobile-iPhone-modules-system.xcresult` 的 10 项系统
+UI 仍为 8 通过、2 失败。日志按本扩展及对应测试域筛选，默认只读目录确认在系统
+`create-item` 阶段发生 POSIX 1、`cannotCreate/cannotSetMetadata`；请求标记
+8119226119、失败标记 8085606151 与本机及无业务依赖的最小扩展相同。可编辑域
+06:03:54.330 UTC 已成功创建目录，界面 06:03:56.832 的最后一次检查未找到它，
+06:04:00.498 的失败层级才含目录；这次没有只读场景的元数据错误，尚未执行下载
+或上传。系统首次加载延迟与只读落盘失败分别追踪，不放宽原等待，不计为通过。
+完整边界见 [Files 账本](../../development/APPLE_MOBILE_FILES_PROVIDER_ZH.md)。
+
+独立复核确认此次移动变更只涉及测试等待、合成环境启动采样及固定阶段错误日志。
+错误日志不包含描述、userInfo、账号、地址或文件路径；采样只匹配指定模拟器和显式
+合成参数的 App。注册顺序、原账号绑定、编辑/删除权限、冲突恢复及失败退出均保留。
+Mac 发布前增量移动构建及 24 项照片导出、22 项 Files 管理单元共 46 项通过。
+正式结果包保留；附件、原始日志、活动导出和中间图片摘录后清理，不提交用户数据。
+
+发布调度补充：macOS 标签还自动触发了独立 Apple Build 整轮，正式发布作业排队，
+其中四个移动作业已在运行。Apple Build 的 push 增加全部分支匹配，保留原有分支
+路径过滤、PR 与手动触发；正式发布继续由独立 macOS Release 标签流程负责共享
+测试、双架构构建、签名、公证和更新验证。该规则依据
+[GitHub 工作流语法](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushbranchestagsbranches-ignoretags-ignore)：只配置分支时不响应标签，且标签不会应用路径过滤。
+调整后原 CI 分组与诊断脚本 11 项回归通过（1.558 秒）；未降低任何测试段失败退出。
