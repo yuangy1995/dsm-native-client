@@ -337,7 +337,17 @@ public final class SynologyPhotosModel {
 
     public private(set) var isSaving = false
     public private(set) var saveProgress: Double?
-    public private(set) var saveMessage: String?
+    public private(set) var saveMessage: String? {
+        didSet {
+            saveMessageDismissTask?.cancel()
+            guard saveMessage != nil else { return }
+            saveMessageDismissTask = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                guard !Task.isCancelled else { return }
+                self?.saveMessage = nil
+            }
+        }
+    }
     public var deletionCandidates: [SynologyPhoto] = []
     // 保留单项调用兼容；批量界面使用完整目标快照。
     public var deletionCandidate: SynologyPhoto? {
@@ -423,6 +433,7 @@ public final class SynologyPhotosModel {
     @ObservationIgnored private var slideshowVideoFinished = false
     @ObservationIgnored private let slideshowDelay: @Sendable () async throws -> Void
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var saveMessageDismissTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var nextOffset = 0
     @ObservationIgnored private var query: SynologyPhotoQuery = .recentlyAdded
@@ -1220,6 +1231,7 @@ public final class SynologyPhotosModel {
         stopUploadQueue()
         managementTask?.cancel()
         saveTask?.cancel()
+        saveMessage = nil
     }
 
     public func setModuleEnabled(_ enabled: Bool) {

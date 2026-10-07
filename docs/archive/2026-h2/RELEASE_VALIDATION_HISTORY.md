@@ -4279,3 +4279,147 @@ Release 构建结果。Files 默认只读目录失败仍单独追踪，未改为
 （172 项既有跳过）、12 项 Swift Testing、当时的 37 项发布脚本回归通过；Mac
 临时测试包生成及权限/Sparkle 实际加载校验通过。这一结论只覆盖 `2d841fdc` 对应
 共享/Mac 作业，不代表仍在运行的八个移动分组或后续测试修正全部通过。
+
+## 2026-10-07 macOS 文件上传合并传输中心
+
+用户明确授权按此前评审方案修改上传重复详情。移除上传后自动弹窗及两个独立
+“上传详情”入口；文件页保留上传确认、短提示与“查看传输”。传输中心以可展开批次
+显示文件、目录、跳过原因与错误，不再重复显示关联的逐文件任务。暂停、继续、取消
+与重试放在批次级。进行中显示百分比和实际字节，跳过项不计入待传字节；结束后
+隐藏进度条，分别显示上传、目录、跳过、失败、取消与中断数量。
+
+“清除已结束”按当前 NAS 范围清理，“移除记录”同步清除批次及关联任务；两者只清
+记录，不删除 NAS 内容。运行、暂停或未知结果批次不可批量清除。上传中断后自动
+进行一次只读恢复，普通刷新可再次读取；重入标记避免回调循环，结果不明不重传。
+默认界面去除要求用户核对结果的按钮和常驻开发提示，保留暂停后重新发送未完成
+文件的实际限制。上传确认和同名替换风险确认仍保留。
+
+修改集中于 Mac 的 `FileUploadViews.swift`、`WorkspaceModel.swift`、`WorkspaceView.swift`、
+两份 Mac 测试、README 及 Apple 双语资源。共享 `FileUploadBatch` 状态机、契约、
+持久化结构、其他平台实现及签名配置未改变。旧存储没有跳过状态，因此当前会话
+批次保留跳过详情，历史占位不再伪装为成功或取消；重启仍沿用逐文件历史，旧版本
+已存为取消的历史不反推为跳过。目录与跳过明细的跨重启保存不在本片范围。
+
+验证结果：
+
+- 13 项上传 XCTest 全部通过（8 项既有、5 项新增），覆盖目录、同名冲突、
+  最大并发、未知结果不重发、暂停恢复，以及跳过进度、批次与历史同步清理、活动
+  批次不能被清除、自动只读恢复次数及防重入。
+- 6 项本地化 Swift Testing 通过；五端双语、参数与硬编码扫描通过，Apple 7074、
+  Android 2188、Windows 3402 项。文档检查与 `git diff --check` 通过。
+- 两项 Mac 合成界面用例通过，覆盖中英、浅深色、大字号、空内容、暂停、失败、
+  完成及清除，断言没有独立弹窗、辅助功能可以展开并读取文件名、清除只影响记录。
+  新批次用例的稳定帧复验 10.859 秒通过，开启原生窗口截图后再次 15.226 秒通过，
+  生成 20 张原生窗口截图；已复核覆盖四种语言/主题组合的代表画面，明细完整可见。
+  一次初始测试误用只读环境属性、旧视图引用及展开坐标，已修正测试宿主与原生
+  辅助功能操作；最终断言保留。初始缓存截图的展开动画中间帧未算最终视觉证据。
+- Release arm64 独立临时签名包已生成，主 App 深度签名校验、实际 Sparkle 加载、
+  arm64 架构和 DMG 完整性验证全部通过。输出为 `build/mac-upload-center-package/` 下的
+  `LanStash Test.app` 与 `LanStash-1.0.15-arm64.dmg`；沿用开发版本 1.0.15（25），
+  含当前未提交上传改动，不代表正式发布。本机临签流程移除 Finder 挂载扩展，未安装
+  或启动成品，也未覆盖旧测试包。首轮在 GitHub 下载 Sparkle 时遇到 HTTP/2
+  网络错误，未进入编译；HTTP/1.1 重试取得源码后二进制下载仍停滞，已结束该次构建，
+  复用本机既有 Xcode 缓存。两份缓存源码均为锁定的 Sparkle 2.9.6 / `ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a`，
+  二进制缓存校验记录也与包声明一致。只恢复忽略目录中的缓存，不修改依赖、工具链、
+  仓库或系统 Git 配置。
+
+```sh
+swift test --package-path apple --jobs 4 --filter 'FileUploadWorkflowTests|DsmLocalizationTests'
+LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests/test上传批次统一传输中心双语主题与清理|WorkspacePresentationTests/test文件新表单双语浅深色大字与取消不提交' bash tools/codex/run_macos_ui_checks.sh "$PWD/build/mac-upload-center-ui"
+LANSTASH_UI_TEST_ISOLATED=1 LANSTASH_UI_ARTIFACTS="$PWD/build/mac-upload-center-ui" LANSTASH_UI_NATIVE_SCREENSHOTS=1 swift test --package-path apple --skip-build --filter 'WorkspacePresentationTests/test上传批次统一传输中心双语主题与清理'
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.version GIT_CONFIG_VALUE_0=HTTP/1.1 LANSTASH_NON_INTERACTIVE=1 LANSTASH_BUILD_TYPE=Release LANSTASH_TARGET_ARCH=native LANSTASH_SIGNING_IDENTITY=- LANSTASH_RUN_AFTER_PACKAGE=0 LANSTASH_DIST_DIR="$PWD/build/mac-upload-center-package" bash apple/Apps/DsmMac/package.sh
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+独立集成与只读对抗复核由当前负责人另轮完成：核对批次与逐项记录的互斥显示、
+清理前终态门禁、延迟上传回调、暂停与取消后的恢复、只读检查重入、重启不可自动
+重放及同名替换确认。未调用其他模型，未向真实 NAS 发送请求。工作区保留既有
+移动端与 CI 改动，本片尚未提交或推送。
+
+`PENDING_USER_VALIDATION`：使用独立测试包与专用可丢弃 NAS 目录，上传含同名文件、
+子目录、空目录的批次；预期留在文件页、传输中心只有一条可展开批次，跳过不显示
+失败或取消，结束无未满进度条。进行中暂停、继续、取消并尝试清除记录，预期保留
+活跃/暂停/中断批次，取消保留已上传文件。另在专用环境中断连接后恢复，预期不会
+自动重复覆盖；刷新可恢复结果。真实 NAS、完整 VoiceOver/键盘遍历及降低动态效果
+尚未人工验收。仅回传版本、步骤、状态与脱敏截图，不回传主机、账号、路径、文件
+正文或凭据；这些实际环境结果不由合成测试代替。
+
+## 2026-10-07 macOS 照片提示、文件多选与多 NAS 容量修复
+
+本片由用户反馈明确授权，保留上一片上传传输中心改动。照片预览底部此前直接读取
+全局管理状态，后台自动生成预览或上传时也显示转圈；现将其与当前照片预览进度分开。
+照片下载成功、失败和部分完成提示统一在 3 秒后消失，再次操作取消旧计时并重新
+计时。错误提示消失不代表下载成功，也不改已有文件覆盖保护或下载权限。
+
+文件宫格以当前窗口实际鼠标事件读取 Command／Shift，支持切换单项、连续范围和
+空白处拖动框选；仅系统标记的普通双击打开项目。事件仍交给系统拖放、菜单与滚动，
+离开视图移除监听。选中项增加清晰边框、勾选及文件名高亮，辅助功能动作区分选择与
+取消选择。列表保留原生多选模型，使用更明显的主题选中色。完整工作区回归复现出
+侧栏主题设置越过所属区域覆盖文件表格；现限制为与各背景实际重叠的滚动区域，
+同时检查失焦后高亮保留，下载管理与虚拟机表格既有配色不变。
+
+多 NAS 容量问题的可复现链路是：切走工作区取消容量读取，共享目录已经缓存，返回
+时跳过原始加载，因而没有补读容量。重新进入时补齐未完成的容量读取；取消刷新不再
+清空该 NAS 已有结果。新增测试经过真实 DsmFileRepository 与两份合成传输，检查两台
+返回不同容量、请求各自使用所属目标与会话、旧值保留以及关闭文件模块不发容量请求。
+没有修改网络会话或凭据存储，也没有访问用户真实 NAS。
+
+当前验证：
+
+- 252 项照片模型、13 项上传、20 项模块权限、2 项容量生命周期、29 项 Mac 外观
+  测试通过；6 项本地化 Swift Testing 通过。新增计时用例覆盖成功、失败和旧计时
+  不得提前清除新提示。
+- 宫格输入检查在浅深主题通过实际 NSEvent 分发验证 Command、Shift、8 段框选及
+  双击导航；列表检查经原生 NSTableView 选择接口验证 SwiftUI 绑定、实际行背景和
+  失焦选择，不声称合成宿主完成物理鼠标验收。完整工作区、列表复制快捷键、下载/
+  虚拟机配色回归通过，修正后的外观与界面一轮为 33 项、零失败。
+- 照片预览检查覆盖中英与浅深主题，后台处理仍进行时无错误转圈、下载成功提示
+  出现后消失，预览保持打开；生成并检查合成窗口画面。失败提示由模型计时测试覆盖。
+- iPhone 模拟器增量构建和 24 项照片导出、22 项 Files Provider 测试通过，共 46 项，
+  使用独立的 `mac-three-fixes-mobile-regression.xcresult`。后者同时覆盖此前移动端诊断
+  日志变动；这些移动端诊断不属于本次 Mac 发布变更。
+- 双语资源、变量及硬编码扫描通过：Apple 7074、Android 2188、Windows 3402。
+  文档检查与差异空白检查通过。初版整窗检查发现高亮被侧栏覆盖，未把只读属性或
+  局部界面通过当作最终视觉证据；调整作用范围后已复验实际背景和原生窗口截图。
+
+```sh
+LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests/(test文件列表原生多选使用清晰高亮且失焦仍保留选择|test完整工作区文件多选不被侧栏高亮覆盖|test原生文件列表焦点保留复制快捷键|test下载与虚拟机选中行使用低饱和主题色并保留原生选择)|MacAppearanceTests' LANSTASH_UI_NATIVE_SCREENSHOTS=1 bash tools/codex/run_macos_ui_checks.sh "$PWD/build/mac-three-fixes-ui"
+xcodebuild test -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 4 -parallel-testing-enabled NO '-only-testing:DsmMobileTests/MobilePhotoExportTests' '-only-testing:DsmMobileTests/MobileFilesProviderTests' -resultBundlePath build/mac-three-fixes-mobile-regression.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+独立集成与只读对抗复核由当前负责人另轮执行：检查输入监听的窗口/区域与移除时机、
+系统拖放不被消费、选择不触发写入、列表跨区观察、提示计时取消与弱引用，以及容量
+请求所属 NAS、取消结果和权限门禁。未调用其他模型。未新增依赖、契约、权限或
+存储格式；保留既有移动端与 CI 工作区差异。
+
+`PENDING_USER_VALIDATION`：在实际 Mac 上分别使用 Command、Shift 和空白处拖动多选，
+切换列表与浅深主题，移开焦点后仍应看清选择；双击只打开目标，拖入文件夹仍使用
+已有确认与权限流程。打开照片并下载成功/失败，预期提示约 3 秒消失且可再次下载，
+后台生成预览不占用当前照片底部。登录两台以上 NAS，读取期间切走再返回，预期
+分别显示各自容量，刷新被取消保留旧值。实际 NAS、物理鼠标/触控板、VoiceOver 和
+完整降低动态效果尚待用户验证；仅回传版本、步骤及脱敏错误，不回传私有文件或凭据。
+
+发布前补充验证：用户随后明确授权发布 macOS 新版本并继续 M6–M8。完整共享与 Mac
+回归为 3117 项 XCTest、177 项既有条件跳过、零失败；另有 12 项 Swift Testing 通过。
+跳过项包括未开启的合成绘制、性能基准和需要真实 QuickConnect 环境的测试，不能
+表述为这些场景已通过。发布工具 45 项测试通过；其中移动 CI 诊断测试仅存在于本机
+工作区，本次 Mac 发布不携带尚未提交的移动诊断与工作流调整。
+
+修改源码的独立 Release arm64 临时签名包已完成深度签名、实际 Sparkle 加载、架构及
+DMG 完整性校验，位于 `build/mac-three-fixes-package/`，保留此前上传中心测试包。
+该预发布验证包仍标记 1.0.15（25），未安装、未启动、不含 Finder 挂载扩展。
+正式候选随后将主 App 与扩展同步递增为 1.0.16（26），使用锁定 XcodeGen 2.46.0
+生成工程，生成差异只有版本与构建号；正式双架构签名、公证、公开发布及更新源结果
+须以该版本的云端发布记录为准，不能由本机临签结果替代。
+
+```sh
+swift test --package-path apple --jobs 4
+python3 -m unittest discover -s tools/release -p 'test_*.py'
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.version GIT_CONFIG_VALUE_0=HTTP/1.1 LANSTASH_NON_INTERACTIVE=1 LANSTASH_BUILD_TYPE=Release LANSTASH_TARGET_ARCH=native LANSTASH_SIGNING_IDENTITY=- LANSTASH_RUN_AFTER_PACKAGE=0 LANSTASH_DIST_DIR="$PWD/build/mac-three-fixes-package" bash apple/Apps/DsmMac/package.sh
+build/m8a-xcodegen/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMac/project.yml
+```

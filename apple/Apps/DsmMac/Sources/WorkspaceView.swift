@@ -216,9 +216,6 @@ struct WorkspaceView: View {
         .macSheet(item: $model.uploadSelection) { selection in
             FileUploadConfirmationView(model: model, selection: selection)
         }
-        .macSheet(isPresented: $model.showsUploadQueue) {
-            FileUploadQueueView(model: model)
-        }
         .macSheet(isPresented: $showsFileStationSettings) { FileStationSettingsView(model: model) }
         .macSheet(isPresented: $showsFileStationPendingChanges) { FileStationPendingChangesView(model: model) }
         .macSheet(isPresented: $showsOfficeEditingSessions) { OfficeEditingSessionsView(profileID: model.profile.id) }
@@ -307,14 +304,6 @@ struct WorkspaceView: View {
                     .disabled(model.photoLibrary.isLoading)
                     .accessibilityIdentifier("photos.rescan")
                 } else if model.section == .transfers {
-                    if !model.uploadBatches.isEmpty {
-                        Button(L10n.string("files.upload.queue")) { model.showsUploadQueue = true }
-                    }
-                    Button(L10n.string("ui.349c4b7eb1f36c5a")) {
-                        clearCompleted()
-                    }
-                    .disabled(!canClearCompleted)
-
                     Button {
                         restoreFileBrowser()
                     } label: {
@@ -415,9 +404,9 @@ struct WorkspaceView: View {
             }
             .labelStyle(.iconOnly)
             if !model.uploadBatches.isEmpty {
-                Button { model.showsUploadQueue = true } label: {
-                    Label(L10n.string("files.upload.queue"), systemImage: "arrow.up.circle")
-                }.labelStyle(.iconOnly).buttonStyle(MacToolbarButtonStyle()).help(L10n.string("files.upload.queue"))
+                Button { model.section = .transfers } label: {
+                    Label(L10n.string("mac.upload.viewTransfers"), systemImage: "arrow.up.arrow.down")
+                }.buttonStyle(MacToolbarButtonStyle()).help(L10n.string("mac.upload.viewTransfers"))
             }
             Button { showsFileStationPendingChanges = true } label: {
                 Label(L10n.string("files.pending.title"), systemImage: "clock.badge.questionmark")
@@ -498,18 +487,6 @@ struct WorkspaceView: View {
             return L10n.string("appSettings.title")
         default:
             return (model.currentPath.isEmpty || model.currentPath == "/") ? model.profile.displayName : (model.currentPath.split(separator: "/").last.map(String.init) ?? model.currentPath)
-        }
-    }
-
-    private var canClearCompleted: Bool {
-        connectedWorkspaces.contains(where: { ws in
-            ws.transfers.contains(where: { $0.state == .succeeded || $0.state == .cancelled })
-        })
-    }
-
-    private func clearCompleted() {
-        for ws in connectedWorkspaces {
-            ws.clearCompletedTransfers()
         }
     }
 
@@ -1904,6 +1881,9 @@ struct FileBrowserView: View {
     @State private var hoveredItemID: FileItem.ID?
     @State private var dropTargetItemID: FileItem.ID?
     @State private var gridItemFrames: [FileItem.ID: CGRect] = [:]
+    @State private var gridSelectionAnchor: FileItem.ID?
+    @State private var gridMouseStart: CGPoint?
+    @State private var gridMouseModifiers: NSEvent.ModifierFlags = []
     @State private var marqueeStart: CGPoint?
     @State private var marqueeCurrent: CGPoint?
     @State private var marqueeBaseSelection: Set<FileItem.ID> = []
@@ -2670,17 +2650,8 @@ struct FileBrowserView: View {
                                         gridSize: gridSize,
                                         isSelected: model.selection.contains(item.id),
                                         isDropTarget: dropTargetItemID == item.id,
-                                        onSelect: {
-                                            gridHasKeyboardFocus = true
-                                            if NSEvent.modifierFlags.contains(.command) {
-                                                if model.selection.contains(item.id) {
-                                                    model.selection.remove(item.id)
-                                                } else {
-                                                    model.selection.insert(item.id)
-                                                }
-                                            } else {
-                                                model.selection = [item.id]
-                                            }
+                                        onSelect: { modifiers in
+                                            selectGridItem(item, in: groups.flatMap(\.items).map(\.id), modifiers: modifiers)
                                         },
                                         onOpen: {
                                             Task { await model.open(item) }
@@ -2725,15 +2696,40 @@ struct FileBrowserView: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .simultaneousGesture(marqueeSelectionGesture)
-                .simultaneousGesture(
-                    SpatialTapGesture().onEnded { value in
-                        gridHasKeyboardFocus = true
-                        if !gridItemFrames.values.contains(where: { $0.contains(value.location) }) {
-                            model.selection.removeAll()
+                .background {
+                    FileGridMouseInput(
+                        onMouseDown: { point, modifiers in
+                            gridHasKeyboardFocus = true
+                            gridMouseStart = point
+                            gridMouseModifiers = modifiers
+                            marqueeBaseSelection = modifiers.intersection([.command, .shift]).isEmpty ? [] : model.selection
+                        },
+                        onMouseDragged: updateMarqueeSelection,
+                        onMouseUp: { point, count in
+                            defer {
+                                gridMouseStart = nil; marqueeStart = nil; marqueeCurrent = nil
+                                marqueeBaseSelection.removeAll()
+                            }
+                            guard marqueeStart == nil, let start = gridMouseStart else { return }
+                            // 从项目开始的拖放由系统处理，松开时不再当作点击。
+                            guard hypot(point.x - start.x, point.y - start.y) < 3 else { return }
+                            if let item = groups.flatMap(\.items).first(where: { gridItemFrames[$0.id]?.contains(point) == true }) {
+                                if count == 2, gridMouseModifiers.intersection([.command, .shift, .control, .option]).isEmpty {
+                                    Task { await model.open(item) }
+                                } else {
+                                    selectGridItem(item, in: groups.flatMap(\.items).map(\.id), modifiers: gridMouseModifiers)
+                                }
+                            } else {
+                                model.selection.removeAll(); gridSelectionAnchor = nil
+                            }
+                        },
+                        onRightMouseDown: { point in
+                            if let item = groups.flatMap(\.items).first(where: { gridItemFrames[$0.id]?.contains(point) == true }) {
+                                selectIfUnselected(item)
+                            }
                         }
-                    }
-                )
+                    )
+                }
                 .onPreferenceChange(FileGridFramePreferenceKey.self) { gridItemFrames = $0 }
                 .padding(16)
             }
@@ -2754,30 +2750,30 @@ struct FileBrowserView: View {
         )
     }
 
-    private var marqueeSelectionGesture: some Gesture {
-        DragGesture(minimumDistance: 3, coordinateSpace: .named("FileGridSelectionSpace"))
-            .onChanged { value in
-                if marqueeStart == nil {
-                    guard !gridItemFrames.values.contains(where: { $0.contains(value.startLocation) }) else { return }
-                    gridHasKeyboardFocus = true
-                    marqueeStart = value.startLocation
-                    marqueeBaseSelection = NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty
-                        ? []
-                        : model.selection
-                }
-                guard marqueeStart != nil else { return }
-                marqueeCurrent = value.location
-                guard let rectangle = marqueeRectangle else { return }
-                let enclosed = Set(gridItemFrames.compactMap { id, frame in
-                    frame.intersects(rectangle) ? id : nil
-                })
-                model.selection = marqueeBaseSelection.union(enclosed)
-            }
-            .onEnded { _ in
-                marqueeStart = nil
-                marqueeCurrent = nil
-                marqueeBaseSelection.removeAll()
-            }
+    private func selectGridItem(_ item: FileItem, in ordered: [FileItem.ID], modifiers: NSEvent.ModifierFlags) {
+        gridHasKeyboardFocus = true
+        if modifiers.contains(.shift), let anchor = gridSelectionAnchor,
+           let first = ordered.firstIndex(of: anchor), let last = ordered.firstIndex(of: item.id) {
+            let range = Set(ordered[min(first, last)...max(first, last)])
+            model.selection = modifiers.contains(.command) ? model.selection.union(range) : range
+        } else if modifiers.contains(.command) {
+            if model.selection.contains(item.id) { model.selection.remove(item.id) }
+            else { model.selection.insert(item.id) }
+            gridSelectionAnchor = item.id
+        } else {
+            model.selection = [item.id]
+            gridSelectionAnchor = item.id
+        }
+    }
+
+    private func updateMarqueeSelection(_ point: CGPoint) {
+        guard let start = gridMouseStart,
+              !gridItemFrames.values.contains(where: { $0.contains(start) }),
+              hypot(point.x - start.x, point.y - start.y) >= 3 else { return }
+        marqueeStart = start; marqueeCurrent = point
+        guard let rectangle = marqueeRectangle else { return }
+        let enclosed = Set(gridItemFrames.compactMap { id, frame in frame.intersects(rectangle) ? id : nil })
+        model.selection = marqueeBaseSelection.union(enclosed)
     }
 
     private func updateDropTarget(_ item: FileItem, isTargeted: Bool) {
@@ -2939,7 +2935,7 @@ struct FileBrowserView: View {
             .width(min: 80, ideal: 100)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
-        .macThemedScrollContent(selection: model.selection)
+        .macThemedScrollContent(selection: model.selection, emphasizesSelection: true)
         .accessibilityLabel(L10n.string("ui.b37e64a8db35fd15", String(describing: model.currentPath)))
         .background {
             TableDoubleClickHandler(items: sortedItems) { itemID in
@@ -3532,116 +3528,69 @@ struct TransferCenterView: View {
             case .upload: return L10n.string("ui.9e07e3c0532d4976")
             case .download: return L10n.string("ui.4673a23061656125")
             case .fileOperation: return L10n.string("ui.a6a7e454cf11a050")
-            case .completed: return L10n.string("ui.f28461bb49c85647")
+            case .completed: return L10n.string("mac.upload.finishedFilter")
             case .failed: return L10n.string("ui.7e9ef4d39655399e")
             }
         }
     }
 
-    private var allConnectedTasks: [ActivityTask] {
-        connectedWorkspaces.flatMap { $0.transfers }
-    }
-
     private var baseTasks: [ActivityTask] {
-        if let selectedNasID {
-            if let ws = connectedWorkspaces.first(where: { $0.profile.id == selectedNasID }) {
-                return ws.transfers
-            }
-            return []
-        } else {
-            return allConnectedTasks
-        }
+        selectedWorkspaces.flatMap(\.ungroupedTransfers)
     }
 
-    private func isTaskFinished(_ task: ActivityTask) -> Bool {
-        task.state == .succeeded || task.state == .failed || task.state == .cancelled
+    private var baseBatches: [FileUploadBatch] {
+        selectedWorkspaces.flatMap(\.uploadBatches)
     }
 
     private var availableFilters: [TaskFilterType] {
-        var filters: [TaskFilterType] = []
-        if baseTasks.contains(where: { $0.kind == .upload && !isTaskFinished($0) }) {
-            filters.append(.upload)
-        }
-        if baseTasks.contains(where: { $0.kind == .download && !isTaskFinished($0) }) {
-            filters.append(.download)
-        }
-        if baseTasks.contains(where: { ($0.kind == .copy || $0.kind == .move || $0.kind == .delete || $0.kind == .restore || $0.kind == .compress || $0.kind == .extract) && !isTaskFinished($0) }) {
-            filters.append(.fileOperation)
-        }
-        if baseTasks.contains(where: { $0.state == .succeeded }) {
-            filters.append(.completed)
-        }
-        if baseTasks.contains(where: { $0.state == .failed || $0.state == .cancelled }) {
-            filters.append(.failed)
-        }
-        return filters
+        [.upload, .download, .fileOperation, .completed, .failed].filter { countForFilter($0) > 0 }
     }
 
     private var currentActiveFilter: TaskFilterType? {
-        let available = availableFilters
-        if let activeFilter, available.contains(activeFilter) {
-            return activeFilter
-        }
+        if let activeFilter, availableFilters.contains(activeFilter) { return activeFilter }
         return nil
     }
 
-    private var filteredTasks: [ActivityTask] {
-        let tasks = baseTasks
-        guard let filter = currentActiveFilter else {
-            return tasks
-        }
+    private func matches(_ task: ActivityTask, filter: TaskFilterType) -> Bool {
         switch filter {
-        case .upload:
-            return tasks.filter { $0.kind == .upload && !isTaskFinished($0) }
-        case .download:
-            return tasks.filter { $0.kind == .download && !isTaskFinished($0) }
-        case .fileOperation:
-            return tasks.filter { ($0.kind == .copy || $0.kind == .move || $0.kind == .delete || $0.kind == .restore || $0.kind == .compress || $0.kind == .extract) && !isTaskFinished($0) }
-        case .completed:
-            return tasks.filter { $0.state == .succeeded }
-        case .failed:
-            return tasks.filter { $0.state == .failed || $0.state == .cancelled }
+        case .upload: return task.kind == .upload
+        case .download: return task.kind == .download
+        case .fileOperation: return task.kind != .upload && task.kind != .download
+        case .completed: return [.succeeded, .failed, .cancelled].contains(task.state)
+        case .failed: return task.state == .failed
         }
+    }
+
+    private func matches(_ batch: FileUploadBatch, filter: TaskFilterType) -> Bool {
+        switch filter {
+        case .upload: return true
+        case .download, .fileOperation: return false
+        case .completed: return batch.canRemoveFromTransferCenter
+        case .failed: return batch.hasUploadFailures
+        }
+    }
+
+    private var filteredTasks: [ActivityTask] {
+        guard let filter = currentActiveFilter else { return baseTasks }
+        return baseTasks.filter { matches($0, filter: filter) }
+    }
+
+    private var filteredBatches: [FileUploadBatch] {
+        guard let filter = currentActiveFilter else { return baseBatches }
+        return baseBatches.filter { matches($0, filter: filter) }
     }
 
     private func countForFilter(_ filter: TaskFilterType) -> Int {
-        switch filter {
-        case .upload:
-            return baseTasks.filter { $0.kind == .upload && !isTaskFinished($0) }.count
-        case .download:
-            return baseTasks.filter { $0.kind == .download && !isTaskFinished($0) }.count
-        case .fileOperation:
-            return baseTasks.filter { ($0.kind == .copy || $0.kind == .move || $0.kind == .delete || $0.kind == .restore || $0.kind == .compress || $0.kind == .extract) && !isTaskFinished($0) }.count
-        case .completed:
-            return baseTasks.filter { $0.state == .succeeded }.count
-        case .failed:
-            return baseTasks.filter { $0.state == .failed || $0.state == .cancelled }.count
-        }
+        baseTasks.filter { matches($0, filter: filter) }.count
+            + baseBatches.filter { matches($0, filter: filter) }.count
     }
 
     private var canClearCompleted: Bool {
-        if let selectedNasID {
-            if let ws = connectedWorkspaces.first(where: { $0.profile.id == selectedNasID }) {
-                return ws.transfers.contains(where: { $0.state == .succeeded || $0.state == .cancelled })
-            }
-            return false
-        } else {
-            return connectedWorkspaces.contains(where: { ws in
-                ws.transfers.contains(where: { $0.state == .succeeded || $0.state == .cancelled })
-            })
-        }
+        selectedWorkspaces.contains(where: \.canClearFinishedTransfers)
     }
 
     private func clearCompleted() {
-        if let selectedNasID {
-            if let ws = connectedWorkspaces.first(where: { $0.profile.id == selectedNasID }) {
-                ws.clearCompletedTransfers()
-            }
-        } else {
-            for ws in connectedWorkspaces {
-                ws.clearCompletedTransfers()
-            }
-        }
+        selectedWorkspaces.forEach { $0.clearCompletedTransfers() }
     }
 
     private var selectedWorkspaces: [WorkspaceModel] {
@@ -3651,17 +3600,6 @@ struct TransferCenterView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text(L10n.string("ui.cebeae3f4b78f233", String(describing: model.profile.displayName)))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 6)
-            .background(MacGlassSurface(role: .toolbar))
-
             HStack(spacing: 12) {
                 MacPageTabs(options: [TransferSource.app, .nas], selection: $source, title: { $0.title })
                 .frame(maxWidth: 320)
@@ -3680,7 +3618,16 @@ struct TransferCenterView: View {
                     .frame(maxWidth: 240)
                 }
                 Spacer()
+                if source == .app {
+                    Button(L10n.string("background-tasks.refresh")) {
+                        selectedWorkspaces.forEach { $0.refreshUploadResults() }
+                    }
+                    Button(L10n.string("mac.upload.clearFinished"), action: clearCompleted)
+                        .disabled(!canClearCompleted)
+                }
             }
+            .buttonStyle(.bordered)
+            .padding(.top, 12)
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
             .background(MacGlassSurface(role: .toolbar))
@@ -3700,7 +3647,7 @@ struct TransferCenterView: View {
 
                             ForEach(activeFilters, id: \.self) { filter in
                                 let count = countForFilter(filter)
-                                FilterChip(title: "\(filter.displayName) (\(count))", isSelected: currentActiveFilter == filter) {
+                                FilterChip(title: L10n.string("mac.upload.filterCount", filter.displayName, count.formatted(.number.locale(L10n.locale))), isSelected: currentActiveFilter == filter) {
                                     activeFilter = activeFilter == filter ? nil : filter
                                 }
                             }
@@ -3718,14 +3665,14 @@ struct TransferCenterView: View {
 
             if source == .nas {
                 NASBackgroundTaskCenter(workspaces: selectedWorkspaces)
-            } else if baseTasks.isEmpty {
+            } else if baseTasks.isEmpty && baseBatches.isEmpty {
                 ContentUnavailableView(
                     L10n.string("ui.d01c644a2d1f3570"),
                     systemImage: "arrow.up.arrow.down.circle",
                     description: Text(L10n.string("ui.f7503c0037f86224"))
                 )
                 .fillsAvailableContentArea()
-            } else if filteredTasks.isEmpty {
+            } else if filteredTasks.isEmpty && filteredBatches.isEmpty {
                 ContentUnavailableView(
                     L10n.string("ui.e8c286bbf6e5bd12"),
                     systemImage: "arrow.up.arrow.down.circle",
@@ -3735,6 +3682,11 @@ struct TransferCenterView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
+                        ForEach(filteredBatches) { batch in
+                            if let owner = selectedWorkspaces.first(where: { $0.uploadBatches.contains { $0.id == batch.id } }) {
+                                FileUploadBatchRow(model: owner, batch: batch)
+                            }
+                        }
                         ForEach(filteredTasks) { task in
                             let taskWorkspace = connectedWorkspaces.first(where: { ws in
                                 ws.transfers.contains(where: { $0.id == task.id })
@@ -3761,6 +3713,7 @@ struct TransferCenterView: View {
             if selectedNasID == nil {
                 selectedNasID = model.profile.id
             }
+            selectedWorkspaces.forEach { $0.refreshUploadResults() }
         }
     }
 }
@@ -4118,7 +4071,7 @@ private struct TransferRow: View {
             }
 
             // 进度条
-            if let total = task.totalUnits, total > 0 {
+            if !isFinishedState, let total = task.totalUnits, total > 0 {
                 ProgressView(
                     value: Double(min(max(task.completedUnits, 0), total)),
                     total: Double(total)
@@ -4147,7 +4100,7 @@ private struct TransferRow: View {
                 HStack(spacing: 8) {
                     if task.state == .running, task.kind == .download || task.kind == .upload {
                         TransferActionButton(icon: "pause.fill", label: L10n.string("ui.8d12fc0d4eb26021"), color: .blue, action: onPause)
-                    } else if task.state == .paused {
+                    } else if task.state == .paused, canRetry {
                         TransferActionButton(icon: "play.fill", label: task.kind == .upload ? L10n.string("ui.11b7c7173da21db8") : L10n.string("ui.7c9691192f1b7340"), color: .green, action: onResume)
                     } else if canRetry && (task.state == .failed || task.state == .cancelled) {
                         TransferActionButton(icon: "arrow.clockwise", label: L10n.string("ui.b8784c8dd5636ff2"), color: .blue, action: onRetry)
@@ -4190,7 +4143,7 @@ private struct TransferRow: View {
             if task.state == .running, task.kind == .download || task.kind == .upload {
                 Button(L10n.string("ui.8d12fc0d4eb26021"), action: onPause)
             }
-            if task.state == .paused {
+            if task.state == .paused, canRetry {
                 Button(task.kind == .upload ? L10n.string("ui.11b7c7173da21db8") : L10n.string("ui.7c9691192f1b7340"), action: onResume)
             }
             if canRetry && (task.state == .failed || task.state == .cancelled) {
@@ -5544,7 +5497,7 @@ struct FileGridCell: View {
     var gridSize: FileGridSize = .medium
     let isSelected: Bool
     let isDropTarget: Bool
-    let onSelect: () -> Void
+    let onSelect: (NSEvent.ModifierFlags) -> Void
     let onOpen: () -> Void
     let contextMenuContent: AnyView
     @State private var isHovered = false
@@ -5561,9 +5514,13 @@ struct FileGridCell: View {
             
             Text(item.name)
                 .font(.system(size: gridSize.fontSize * scale))
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .frame(height: gridSize.fontSize * 2.6 * scale, alignment: .top)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(isSelected ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 4))
                 .help(item.name)
         }
         .padding(8)
@@ -5571,17 +5528,12 @@ struct FileGridCell: View {
         .frame(height: gridSize.itemHeight * scale)
         .contentShape(Rectangle())
         .background(
-            RightClickDetector {
-                onSelect()
-            }
-        )
-        .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(
                     isDropTarget
                         ? Color.accentColor.opacity(0.22)
                         : isSelected
-                        ? palette.selection
+                        ? Color.accentColor.opacity(appearanceContrast == .increased ? 0.35 : 0.20)
                         : (isHovered ? palette.hover : Color.clear)
                 )
         )
@@ -5591,7 +5543,7 @@ struct FileGridCell: View {
                     isDropTarget
                         ? Color.accentColor.opacity(0.90)
                         : isSelected
-                        ? palette.selectionBorder
+                        ? Color.accentColor.opacity(appearanceContrast == .increased ? 1 : 0.75)
                         : (isHovered ? palette.separator : Color.clear),
                     lineWidth: isDropTarget ? 2 : 1
                 )
@@ -5610,14 +5562,6 @@ struct FileGridCell: View {
         .onHover { isHovered = $0 }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHovered)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isSelected)
-        .onTapGesture {
-            onSelect()
-        }
-        .simultaneousGesture(
-            TapGesture(count: 2).onEnded {
-                onOpen()
-            }
-        )
         .contextMenu {
             contextMenuContent
         }
@@ -5626,7 +5570,7 @@ struct FileGridCell: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityAction { onOpen() }
-        .accessibilityAction(named: Text(L10n.string("workspace.selection.select"))) { onSelect() }
+        .accessibilityAction(named: Text(L10n.string(isSelected ? "ui.74966e20df2ea9fd" : "workspace.selection.select"))) { onSelect(.command) }
     }
 }
 
@@ -6194,31 +6138,66 @@ struct SelectiveCacheCleanupSheet: View {
     }
 }
 
-struct RightClickDetector: NSViewRepresentable {
-    let action: () -> Void
+/// 在文件网格范围内读取实际鼠标事件；不接管系统拖放、滚动、菜单或键盘焦点。
+private struct FileGridMouseInput: NSViewRepresentable {
+    let onMouseDown: (CGPoint, NSEvent.ModifierFlags) -> Void
+    let onMouseDragged: (CGPoint) -> Void
+    let onMouseUp: (CGPoint, Int) -> Void
+    let onRightMouseDown: (CGPoint) -> Void
 
-    func makeNSView(context: Context) -> NSView {
-        RightClickNSView(action: action)
+    func makeNSView(context: Context) -> FileGridMouseView { FileGridMouseView() }
+    func updateNSView(_ view: FileGridMouseView, context: Context) {
+        view.onMouseDown = onMouseDown; view.onMouseDragged = onMouseDragged
+        view.onMouseUp = onMouseUp; view.onRightMouseDown = onRightMouseDown
     }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-class RightClickNSView: NSView {
-    let action: () -> Void
+private final class FileGridMouseView: NSView {
+    var onMouseDown: (CGPoint, NSEvent.ModifierFlags) -> Void = { _, _ in }
+    var onMouseDragged: (CGPoint) -> Void = { _ in }
+    var onMouseUp: (CGPoint, Int) -> Void = { _, _ in }
+    var onRightMouseDown: (CGPoint) -> Void = { _ in }
+    private var monitor: Any?
+    private var isInsideGrid = false
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    init(action: @escaping () -> Void) {
-        self.action = action
-        super.init(frame: .zero)
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, monitor == nil else { return }
+        // 与文件列表共用 AppKit 的窗口事件来源，空白处也能开始框选。
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown]) { @MainActor [weak self] event in
+            guard let self, event.window === self.window, !self.isHiddenOrHasHiddenAncestor else { return event }
+            let point = self.convert(event.locationInWindow, from: nil)
+            switch event.type {
+            case .leftMouseDown:
+                self.isInsideGrid = self.visibleRect.contains(point)
+                if self.isInsideGrid {
+                    if event.modifierFlags.contains(.control) {
+                        self.onRightMouseDown(point); self.isInsideGrid = false
+                    } else {
+                        self.onMouseDown(point, event.modifierFlags)
+                    }
+                }
+            case .leftMouseDragged:
+                if self.isInsideGrid { self.onMouseDragged(point) }
+            case .leftMouseUp:
+                if self.isInsideGrid { self.onMouseUp(point, event.clickCount) }
+                self.isInsideGrid = false
+            case .rightMouseDown:
+                if self.visibleRect.contains(point) { self.onRightMouseDown(point) }
+            default: break
+            }
+            return event
+        }
     }
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func rightMouseDown(with event: NSEvent) {
-        action()
-        super.rightMouseDown(with: event)
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow !== window, let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil; isInsideGrid = false
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
 }
 

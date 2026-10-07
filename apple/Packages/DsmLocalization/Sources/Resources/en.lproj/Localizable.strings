@@ -7440,3 +7440,30 @@
 
 "mobile.transfer.background.crossNASCopy" = "Copying between NAS devices";
 "mobile.transfer.background.crossNASRemoval" = "Removing copied originals";
+
+/* macOS 上传传输中心 */
+"mac.upload.added" = "Added to uploads";
+"mac.upload.viewTransfers" = "View Transfers";
+"mac.upload.ended" = "Upload ended";
+"mac.upload.interrupted" = "Upload interrupted";
+"mac.upload.interruptedMessage" = "The upload result is unavailable. Check your connection and refresh; these files will not be uploaded again automatically.";
+"mac.upload.uploadedCount" = "Uploaded: %@";
+"mac.upload.folderCount" = "Folders processed: %@";
+"mac.upload.skippedCount" = "Skipped: %@";
+"mac.upload.failedCount" = "Failed: %@";
+"mac.upload.cancelledCount" = "Cancelled: %@";
+"mac.upload.interruptedCount" = "Interrupted: %@";
+"mac.upload.batchTitle" = "Upload items: %@";
+"mac.upload.progress" = "Upload progress";
+"mac.upload.byteProgress" = "%@ · Uploaded %@ of %@";
+"mac.upload.resumeNotice" = "Incomplete files will restart when you resume.";
+"mac.upload.pauseBatch" = "Pause Batch";
+"mac.upload.cancelBatch" = "Cancel Batch";
+"mac.upload.resumeBatch" = "Resume Batch";
+"mac.upload.retryFailed" = "Retry Failed Items";
+"mac.upload.removeRecord" = "Remove Record";
+"mac.upload.items" = "View Items";
+"mac.upload.finishedFilter" = "Finished";
+"mac.upload.clearFinished" = "Clear Finished";
+"mac.upload.filterCount" = "%@ (%@)";
+"mac.upload.updating" = "Updating…";

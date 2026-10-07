@@ -66,55 +66,150 @@ struct FileUploadConfirmationView: View {
     }
 }
 
-struct FileUploadQueueView: View {
+// 仅供 macOS 传输中心使用，不改变共享上传状态或历史存储格式。
+extension FileUploadBatch {
+    var canRemoveFromTransferCenter: Bool {
+        !isRunning && !isPaused && entries.allSatisfy {
+            [.succeeded, .skipped, .failed, .conflict, .cancelled].contains($0.state)
+        }
+    }
+
+    var hasUploadFailures: Bool {
+        entries.contains { [.failed, .conflict].contains($0.state) }
+    }
+
+    var uploadProgressTotal: Int64 {
+        entries.filter { $0.source.kind == .file && $0.state != .skipped }.reduce(0) { $0 + $1.source.size }
+    }
+
+    var uploadProgressBytes: Int64 {
+        entries.filter { $0.source.kind == .file && $0.state != .skipped }
+            .reduce(0) { $0 + min(max($1.completedBytes, 0), $1.source.size) }
+    }
+
+    var hasActiveUploadItems: Bool {
+        entries.contains { [.pending, .running].contains($0.state) }
+    }
+
+    var transferStatusTitle: String {
+        if isPaused { return L10n.string("files.upload.state.paused") }
+        if isRunning { return L10n.string(hasActiveUploadItems ? "files.upload.state.running" : "mac.upload.updating") }
+        if hasPending { return L10n.string("files.upload.state.pending") }
+        if entries.contains(where: { $0.state == .unverified }) { return L10n.string("mac.upload.interrupted") }
+        return L10n.string("mac.upload.ended")
+    }
+
+    var transferSummary: String {
+        let groups: [(String, Int)] = [
+            ("mac.upload.uploadedCount", entries.filter { $0.state == .succeeded && $0.source.kind == .file }.count),
+            ("mac.upload.folderCount", entries.filter { $0.state == .succeeded && $0.source.kind == .directory }.count),
+            ("mac.upload.skippedCount", entries.filter { $0.state == .skipped }.count),
+            ("mac.upload.failedCount", entries.filter { [.failed, .conflict].contains($0.state) }.count),
+            ("mac.upload.cancelledCount", entries.filter { $0.state == .cancelled }.count),
+            ("mac.upload.interruptedCount", entries.filter { $0.state == .unverified }.count)
+        ]
+        return groups.filter { $0.1 > 0 }.map { L10n.string($0.0, $0.1.formatted(.number.locale(L10n.locale))) }
+            .joined(separator: " · ")
+    }
+}
+
+struct FileUploadBatchRow: View {
     @Bindable var model: WorkspaceModel
-    @Environment(\.dismiss) private var dismiss
+    let batch: FileUploadBatch
+    @State private var isExpanded = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.string("files.upload.queue")).font(.title2.bold())
-            if model.uploadBatches.isEmpty {
-                ContentUnavailableView(L10n.string("files.upload.empty"), systemImage: "arrow.up.doc",
-                    description: Text(L10n.string("files.upload.chooseAgain")))
-            } else {
-                List(model.uploadBatches) { batch in
-                    Section {
-                        ForEach(batch.entries) { entry in
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack { Text(entry.source.relativePath); Spacer(); Text(entry.state.title).foregroundStyle(.secondary) }
-                                if entry.state == .running {
-                                    ProgressView(value: Double(entry.completedBytes), total: Double(max(entry.source.size, 1)))
-                                }
-                                if let message = entry.message { Text(message).font(.caption).foregroundStyle(.secondary) }
-                            }.padding(.vertical, 3)
-                        }
-                    } header: {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(batch.destination).textSelection(.enabled)
-                            ProgressView(value: Double(batch.completedBytes), total: Double(max(batch.totalBytes, 1)))
-                            Text(L10n.string("files.upload.summary", batch.finishedCount.formatted(.number.locale(L10n.locale)),
-                                             batch.entries.count.formatted(.number.locale(L10n.locale))))
-                            HStack {
-                                if batch.isRunning {
-                                    Button(L10n.string("files.upload.pause")) { batch.pause() }
-                                    Button(L10n.string("files.upload.cancel")) { batch.cancel() }
-                                } else {
-                                    if batch.isPaused { Button(L10n.string("files.upload.resume")) { batch.resume(); model.startNextUploadBatch() } }
-                                    if batch.entries.contains(where: { [.failed, .conflict].contains($0.state) && $0.retryAllowed }) {
-                                        Button(L10n.string("files.upload.retryFailed")) { batch.retryFailed(); model.startNextUploadBatch() }
-                                    }
-                                    if batch.entries.contains(where: { $0.state == .unverified }) {
-                                        Button(L10n.string("files.upload.checkResults")) { Task { await batch.reconcileUnknown() } }
-                                    }
-                                    if batch.hasPending || batch.isPaused { Button(L10n.string("files.upload.cancel")) { batch.cancel() } }
-                                }
-                            }.buttonStyle(.bordered)
-                        }.padding(.vertical, 8)
-                    }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                Image(systemName: "arrow.up.circle.fill").foregroundStyle(.blue).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.string("mac.upload.batchTitle", batch.entries.count.formatted(.number.locale(L10n.locale))))
+                        .font(.headline)
+                    Text(batch.destination).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                }
+                Spacer()
+                Text(batch.transferStatusTitle).font(.caption)
+                    .foregroundStyle(batch.hasUploadFailures ? Color.red : Color.secondary)
+            }
+            if batch.hasActiveUploadItems || batch.isPaused {
+                if batch.uploadProgressTotal > 0 {
+                    ProgressView(value: Double(batch.uploadProgressBytes), total: Double(batch.uploadProgressTotal))
+                        .accessibilityLabel(L10n.string("mac.upload.progress"))
+                    Text(L10n.string("mac.upload.byteProgress", percentage,
+                                     formatBytes(batch.uploadProgressBytes), formatBytes(batch.uploadProgressTotal)))
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                } else if batch.isRunning {
+                    ProgressView().controlSize(.small)
                 }
             }
-            Text(L10n.string("files.upload.cancelNotice")).font(.caption).foregroundStyle(.secondary)
-            HStack { Spacer(); Button(L10n.string("files.common.close")) { dismiss() } }
+            if !batch.transferSummary.isEmpty {
+                Text(batch.transferSummary).font(.caption).foregroundStyle(.secondary)
+            }
+            if batch.isPaused {
+                Text(L10n.string("mac.upload.resumeNotice")).font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                if batch.isRunning && batch.hasActiveUploadItems && !batch.isPaused {
+                    Button(L10n.string("mac.upload.pauseBatch")) { batch.pause() }
+                    Button(L10n.string("mac.upload.cancelBatch")) { batch.cancel() }
+                } else if !batch.isRunning {
+                    if batch.isPaused {
+                        Button(L10n.string("mac.upload.resumeBatch")) { batch.resume(); model.startNextUploadBatch() }
+                    }
+                    if !batch.isPaused, batch.entries.contains(where: { [.failed, .conflict].contains($0.state) && $0.retryAllowed }) {
+                        Button(L10n.string("mac.upload.retryFailed")) { batch.retryFailed(); model.startNextUploadBatch() }
+                    }
+                    if batch.hasPending || batch.isPaused {
+                        Button(L10n.string("mac.upload.cancelBatch")) { batch.cancel() }
+                    }
+                }
+                Spacer()
+                if batch.canRemoveFromTransferCenter {
+                    Button(L10n.string("mac.upload.removeRecord")) { model.removeUploadBatch(batch) }
+                }
+            }.buttonStyle(.bordered)
+            DisclosureGroup(L10n.string("mac.upload.items"), isExpanded: $isExpanded) {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(batch.entries) { entry in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(alignment: .top) {
+                                Image(systemName: entry.source.kind == .directory ? "folder" : "doc")
+                                    .accessibilityHidden(true)
+                                Text(entry.source.relativePath).textSelection(.enabled)
+                                Spacer()
+                                Text(entry.state == .unverified ? L10n.string("mac.upload.interrupted") : entry.state.title)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if entry.state == .running, entry.source.size > 0 {
+                                ProgressView(value: Double(min(max(entry.completedBytes, 0), entry.source.size)),
+                                             total: Double(entry.source.size))
+                                    .accessibilityLabel(entry.source.relativePath)
+                            }
+                            if entry.state == .unverified {
+                                Text(L10n.string("mac.upload.interruptedMessage")).foregroundStyle(.secondary)
+                            } else if entry.state == .paused && entry.needsReconciliation {
+                                Text(L10n.string("mac.upload.resumeNotice")).foregroundStyle(.secondary)
+                            } else if let message = entry.message {
+                                Text(message).foregroundStyle(.secondary)
+                            }
+                        }.font(.caption)
+                    }
+                }.padding(.top, 8)
+            }
         }
-        .padding(24).frame(width: 680, height: 560)
+        .padding(14)
+        .background(MacCardFill(), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var percentage: String {
+        let value = Double(batch.uploadProgressBytes) / Double(max(batch.uploadProgressTotal, 1))
+        return value.formatted(.percent.precision(.fractionLength(0)).locale(L10n.locale))
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        bytes.formatted(.byteCount(style: .file).locale(L10n.locale))
     }
 }

@@ -7,6 +7,43 @@ import XCTest
 
 @MainActor
 final class SynologyPhotosModelTests: XCTestCase {
+    func test照片保存成功提示自动消失且不关闭预览() async throws {
+        let repository = PhotoServiceStub(pages: [], saveData: Data([1, 2, 3]))
+        let model = SynologyPhotosModel(repository: repository)
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+        defer { model.cancel(); try? FileManager.default.removeItem(at: destination) }
+        model.showPreview(Self.photo)
+        model.save(Self.photo, to: destination)
+        for _ in 0..<200 where model.isSaving { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(model.isSaving)
+        XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saved"))
+        try await Task.sleep(for: .milliseconds(3_150))
+        XCTAssertNil(model.saveMessage)
+        XCTAssertEqual(model.previewPhoto?.id, Self.photo.id)
+        XCTAssertEqual(try Data(contentsOf: destination), Data([1, 2, 3]))
+    }
+
+    func test保存失败提示自动消失且从新提示出现时重新计时() async throws {
+        let repository = PhotoServiceStub(pages: [], saveData: Data([1, 2, 3]))
+        let model = SynologyPhotosModel(repository: repository)
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+        defer { model.cancel(); try? FileManager.default.removeItem(at: destination) }
+        model.save(Self.photo, to: destination)
+        for _ in 0..<200 where model.isSaving { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saved"))
+        try await Task.sleep(for: .milliseconds(1_600))
+        await repository.failSaving(AppError(category: .invalidResponse, isRetryable: false,
+            safeUserMessage: L10n.string("photos.service.invalidResponse")))
+        model.save(Self.photo, to: destination)
+        for _ in 0..<200 where model.isSaving { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saveFailed"))
+        try await Task.sleep(for: .milliseconds(1_600))
+        XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saveFailed"), "上一笔提示的计时不能提前清除新错误")
+        try await Task.sleep(for: .milliseconds(1_550))
+        XCTAssertNil(model.saveMessage)
+        XCTAssertEqual(try Data(contentsOf: destination), Data([1, 2, 3]))
+    }
+
     func test局部操作解析失败不误报图库失败且刷新清除过期提示() async throws {
         let service = DatePhotoServiceStub()
         await service.enableManagement()
@@ -4842,6 +4879,17 @@ private actor PhotoServiceStub: SynologyPhotosServing {
 
 /// 不接触真实文件或 NAS，分别模拟上传回执、加入相册失败和等待中的结果。
 actor PhotoUploadServiceStub: SynologyPhotosServing {
+    private var previewFixture: Data?
+    func setPreviewFixture(_ data: Data) { previewFixture = data }
+    func previewImage(for photo: SynologyPhoto) async throws -> Data {
+        guard let previewFixture else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Thumbnail") }
+        return previewFixture
+    }
+    func downloadOriginal(_ photo: SynologyPhoto, to destination: URL, progress: @escaping FileTransferProgress) async throws {
+        guard let previewFixture else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Download") }
+        try previewFixture.write(to: destination)
+        progress(Int64(previewFixture.count), Int64(previewFixture.count))
+    }
     private var automaticFailureRecorded = false
     func recordNextAutomaticFailure() { automaticFailureRecorded = true }
     private var automaticEnabled: Bool?
