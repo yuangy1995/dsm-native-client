@@ -45,7 +45,7 @@ final class ProviderEnumerator: NSObject, NSFileProviderEnumerator, @unchecked S
                 }
                 observerBox.value.finishEnumerating(upTo: nextPage)
             } catch {
-                observerBox.value.finishEnumeratingWithError(error)
+                observerBox.value.finishEnumeratingWithError(ProviderErrorMapper.map(error, itemIdentifier: containerIdentifier))
             }
         }
         operations.insert(operation, id: operationID)
@@ -78,7 +78,7 @@ final class ProviderEnumerator: NSObject, NSFileProviderEnumerator, @unchecked S
                     moreComing: result.moreComing
                 )
             } catch {
-                observerBox.value.finishEnumeratingWithError(error)
+                observerBox.value.finishEnumeratingWithError(ProviderErrorMapper.map(error, itemIdentifier: containerIdentifier))
             }
         }
         operations.insert(operation, id: operationID)

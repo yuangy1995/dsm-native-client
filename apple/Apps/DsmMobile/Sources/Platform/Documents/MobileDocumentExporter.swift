@@ -4,12 +4,13 @@ import UIKit
 struct MobileDocumentExporter: UIViewControllerRepresentable {
     let urls: [URL]
     let completion: () -> Void
+    var exported: (([URL]) -> Void)? = nil
 
     init(url: URL, completion: @escaping () -> Void) { self.init(urls: [url], completion: completion) }
     init(urls: [URL], completion: @escaping () -> Void) { self.urls = urls; self.completion = completion }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(completion: completion)
+        Coordinator(completion: completion, exported: exported)
     }
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
@@ -25,9 +26,10 @@ struct MobileDocumentExporter: UIViewControllerRepresentable {
     final class Coordinator: NSObject, UIDocumentPickerDelegate {
         private var didComplete = false
         private let completion: () -> Void
+        private let exported: (([URL]) -> Void)?
 
-        init(completion: @escaping () -> Void) {
-            self.completion = completion
+        init(completion: @escaping () -> Void, exported: (([URL]) -> Void)?) {
+            self.completion = completion; self.exported = exported
         }
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
@@ -38,6 +40,8 @@ struct MobileDocumentExporter: UIViewControllerRepresentable {
             _ controller: UIDocumentPickerViewController,
             didPickDocumentsAt urls: [URL]
         ) {
+            guard !didComplete else { return }
+            if !urls.isEmpty { exported?(urls) }
             finishOnce()
         }
 

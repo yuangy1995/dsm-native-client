@@ -35,10 +35,12 @@ final class MobilePhotosPresentationTests: XCTestCase {
         }
     }
 
-    func test系统全屏预览覆盖图库时保留会话而后台停用() throws {
+    func test系统全屏预览与后台传输保留会话而主动离开停用() throws {
         let source = try sourceFile("MobileSynologyPhotosView.swift")
-        XCTAssertTrue(source.contains("if model.previewPhoto == nil { session.deactivate() }"))
-        XCTAssertTrue(source.contains("if phase == .background { session.deactivate() }"))
+        // M8 已开始的传输需跨后台保留；主动离开仍停用，行为由上传/导出生命周期测试覆盖。
+        XCTAssertTrue(source.contains("if model.previewPhoto == nil, scenePhase == .active { session.deactivate() }"))
+        XCTAssertTrue(source.contains("if phase == .background { session.enterBackground() }"))
+        XCTAssertFalse(source.contains("if phase == .background { session.deactivate() }"))
         XCTAssertTrue(source.contains("await session.activate()"))
         XCTAssertTrue(source.contains("model.closePreview()"))
     }
@@ -74,7 +76,7 @@ final class MobilePhotosPresentationTests: XCTestCase {
     func test已移除旧路径图库且Shell只装配正式会话() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let shell = try String(contentsOf: root.appendingPathComponent("Sources/AppShell/MobileAppModel.swift"), encoding: .utf8)
-        XCTAssertTrue(shell.contains("MobileSynologyPhotosSession()"))
+        XCTAssertTrue(shell.contains("MobileSynologyPhotosSession(backgroundExecution: transferBackgroundExecution)"))
         XCTAssertFalse(shell.contains("MobilePhotoLibraryModel"))
         XCTAssertFalse(shell.contains("FileStationPhotoRepository"))
         for file in ["MobilePhotosView.swift", "MobilePhotoLibraryModel.swift", "MobilePhotoGrid.swift", "MobilePhotoCell.swift",

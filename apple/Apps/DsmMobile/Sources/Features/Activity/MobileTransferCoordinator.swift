@@ -410,7 +410,7 @@ actor MobileTransferCoordinator {
             return
         }
 
-        let backgroundToken = await backgroundExecution?.begin(taskID: id, direction: request.direction) { [weak self] in
+        let backgroundToken = await backgroundExecution?.begin(taskID: id, activity: request.direction == .upload ? .upload : .download) { [weak self] in
             await self?.expireBackgroundExecution(id, generation: generation)
         }
         guard !Task.isCancelled, isCurrentExecution(id, generation: generation),

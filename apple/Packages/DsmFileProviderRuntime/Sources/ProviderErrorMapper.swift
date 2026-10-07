@@ -17,7 +17,7 @@ enum ProviderErrorMapper {
         default: return map(error, itemIdentifier: itemIdentifier)
         }
         return NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.cannotSynchronize.rawValue,
-                       userInfo: [NSLocalizedDescriptionKey: L10n.string(key)])
+                       userInfo: [NSLocalizedDescriptionKey: message(key)])
     }
 
     static func map(
@@ -36,7 +36,7 @@ enum ProviderErrorMapper {
             case .keptLocally: key = "desktopDrive.writeback.stopped"
             }
             return NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.cannotSynchronize.rawValue,
-                           userInfo: [NSLocalizedDescriptionKey: L10n.string(key)])
+                           userInfo: [NSLocalizedDescriptionKey: message(key)])
         }
         if error is CancellationError {
             return CocoaError(.userCancelled)
@@ -70,4 +70,20 @@ enum ProviderErrorMapper {
         }
         return NSFileProviderError(.serverUnreachable)
     }
+    private static func message(_ key: String) -> String {
+        #if os(iOS)
+        switch key {
+        case "desktopDrive.writeback.conflict": return L10n.string("mobile.files-location.conflict-error")
+        case "desktopDrive.writeback.unknown": return L10n.string("mobile.files-location.unknown-error")
+        case "desktopDrive.writeback.pending": return L10n.string("mobile.files-location.pending-error")
+        case "desktopDrive.delete.disabled": return L10n.string("mobile.files-location.delete-disabled-error")
+        case "desktopDrive.delete.invalid": return L10n.string("mobile.files-location.delete-invalid-error")
+        case "desktopDrive.delete.conflict": return L10n.string("mobile.files-location.delete-conflict-error")
+        case "desktopDrive.delete.unknown": return L10n.string("mobile.files-location.delete-unknown-error")
+        default: break
+        }
+        #endif
+        return L10n.string(key)
+    }
+
 }

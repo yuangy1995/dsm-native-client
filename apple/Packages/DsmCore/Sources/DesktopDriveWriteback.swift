@@ -74,6 +74,21 @@ public final class DesktopDriveWritebackLease: @unchecked Sendable {
 
 public struct DesktopDriveWritebackStore: Sendable {
     private let directory: URL?
+    private var writeOptions: Data.WritingOptions {
+        #if os(iOS)
+        [.atomic, .completeFileProtection]
+        #else
+        [.atomic]
+        #endif
+    }
+
+    private var directoryAttributes: [FileAttributeKey: Any] {
+        #if os(iOS)
+        [.posixPermissions: 0o700, .protectionKey: FileProtectionType.complete]
+        #else
+        [.posixPermissions: 0o700]
+        #endif
+    }
 
     public init(directory: URL? = FileManager.default.containerURL(
         forSecurityApplicationGroupIdentifier: DesktopDriveSharedContainer.appGroupIdentifier)) {
@@ -84,7 +99,14 @@ public struct DesktopDriveWritebackStore: Sendable {
         guard let directory else { throw DesktopDriveConfigurationStoreError.sharedContainerUnavailable }
         let root = directory.appendingPathComponent(mappingID.uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
-                                               attributes: [.posixPermissions: 0o700])
+                                               attributes: directoryAttributes)
+        #if os(iOS)
+        try FileManager.default.setAttributes(directoryAttributes, ofItemAtPath: root.path)
+        var protectedRoot = root
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try protectedRoot.setResourceValues(values)
+        #endif
         return root
     }
 
@@ -111,7 +133,7 @@ public struct DesktopDriveWritebackStore: Sendable {
             try requireNoPendingChanges(mappingID: mappingID)
             try setDeletionEnabled(false, mappingID: mappingID)
         }
-        try JSONEncoder().encode(enabled).write(to: root(mappingID).appendingPathComponent("enabled.json"), options: .atomic)
+        try JSONEncoder().encode(enabled).write(to: root(mappingID).appendingPathComponent("enabled.json"), options: writeOptions)
     }
 
     public func isDeletionEnabled(mappingID: UUID) throws -> Bool {
@@ -131,7 +153,7 @@ public struct DesktopDriveWritebackStore: Sendable {
             }
         }
         // 使用独立状态文件，不让旧版将授权开关误读为待处理操作。
-        try JSONEncoder().encode(enabled).write(to: root(mappingID).appendingPathComponent("deletion-enabled.state"), options: .atomic)
+        try JSONEncoder().encode(enabled).write(to: root(mappingID).appendingPathComponent("deletion-enabled.state"), options: writeOptions)
     }
 
     public func records(mappingID: UUID) throws -> [DesktopDriveWritebackRecord] {
@@ -180,7 +202,7 @@ public struct DesktopDriveWritebackStore: Sendable {
         if let contents {
             let folder = try recordDirectory(requested)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
-                                                   attributes: [.posixPermissions: 0o700])
+                                                   attributes: directoryAttributes)
             let destination = try contentURL(for: requested)
             if FileManager.default.fileExists(atPath: destination.path) {
                 // 仅清理本记录在发布前遗留的副本；源文件始终由系统持有。
@@ -188,14 +210,17 @@ public struct DesktopDriveWritebackStore: Sendable {
             }
             try FileManager.default.copyItem(at: contents, to: destination)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+            #if os(iOS)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
+            #endif
             let handle = try FileHandle(forWritingTo: destination)
             defer { try? handle.close() }
             try handle.synchronize()
             guard try Self.hash(of: destination) == requested.contentHash else { throw DesktopDriveWritebackError.invalidItem }
         } else if requested.contentHash != nil {
             try FileManager.default.createDirectory(at: recordDirectory(requested), withIntermediateDirectories: true,
-                                                   attributes: [.posixPermissions: 0o700])
-            try Data().write(to: contentURL(for: requested), options: .atomic)
+                                                   attributes: directoryAttributes)
+            try Data().write(to: contentURL(for: requested), options: writeOptions)
         }
         try save(requested)
         return requested
@@ -204,7 +229,7 @@ public struct DesktopDriveWritebackStore: Sendable {
     public func save(_ record: DesktopDriveWritebackRecord) throws {
         _ = try recordDirectory(record)
         let url = try root(record.mappingID).appendingPathComponent(record.id + ".json")
-        try JSONEncoder().encode(record).write(to: url, options: .atomic)
+        try JSONEncoder().encode(record).write(to: url, options: writeOptions)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         let handle = try FileHandle(forWritingTo: url)
         defer { try? handle.close() }

@@ -291,7 +291,11 @@ public actor DesktopDriveConfigurationStore {
     public init(directoryURL: URL, fileManager: FileManager = .default) {
         self.directoryURL = directoryURL
         self.fileManager = fileManager
+        #if os(iOS)
+        writeOptions = [.atomic, .completeFileProtection]
+        #else
         writeOptions = [.atomic]
+        #endif
     }
 
     public func saveConnection(

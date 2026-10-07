@@ -303,6 +303,8 @@ public final class SynologyPhotosModel {
     public private(set) var isOpeningUploadDestination = false
     public private(set) var uploadNavigationError: String?
     public private(set) var isUploading = false
+    /// 平台执行器只观察本轮上传的开始、真实进度和落盘结束，不接管上传算法。
+    @ObservationIgnored public var uploadExecutionDidChange: (@MainActor () -> Void)?
     public var isBrowsingBlocked: Bool { (isManaging && !isUploading && !isGeneratingAutomaticPreview) || isPreparingSimilarBatch }
     public private(set) var stopsAfterCurrentUpload = false
     @ObservationIgnored private var pendingUploadID: UUID?
@@ -1206,12 +1208,17 @@ public final class SynologyPhotosModel {
         saveTask?.cancel()
     }
 
-    public func cancel() {
+    /// 暂停图库读取、预览及前台管理；已明确开始的上传仍由平台执行器管理其生存期。
+    public func suspendForegroundWork() {
         leaveGallery()
         backgroundControlTask?.cancel()
+        if temporarySharingCleanup != nil { temporarySharingCleanupNeedsRetry = true }
+    }
+
+    public func cancel() {
+        suspendForegroundWork()
         stopUploadQueue()
         managementTask?.cancel()
-        if temporarySharingCleanup != nil { temporarySharingCleanupNeedsRetry = true }
         saveTask?.cancel()
     }
 
@@ -2855,6 +2862,15 @@ public final class SynologyPhotosModel {
             uploadQueue[index].state = .cancelled
         }
         persistUploadQueue()
+        uploadExecutionDidChange?()
+    }
+
+    /// 后台时间结束只取消上传及后续队列，等待未知结果保存，不重置无关浏览状态。
+    public func interruptUploads() async {
+        guard isUploading, let task = managementTask else { return }
+        stopUploadQueue()
+        task.cancel()
+        await task.value
     }
 
     public func retryUpload(_ id: UUID) {
@@ -2968,9 +2984,11 @@ public final class SynologyPhotosModel {
         guard isModuleEnabled, deletionRecoveryAllowsWrites, similarRecoveryAllowsWrites, uploadRecoveryReady, uploadPersistenceError == nil, !isManaging, pendingMutationID == nil,
               uploadQueue.contains(where: { $0.state == .queued }) else { return }
         isManaging = true; isUploading = true; managementLink = nil
-        managementTask = Task { [weak self] in
-            guard let self else { return }
-            defer { self.isManaging = false; self.isUploading = false; self.persistUploadQueue() }
+        managementTask = Task { [self] in
+            defer {
+                self.isManaging = false; self.isUploading = false; self.persistUploadQueue()
+                self.uploadExecutionDidChange?()
+            }
             while !Task.isCancelled, self.isModuleEnabled, !self.stopsAfterCurrentUpload,
                   let index = self.uploadQueue.firstIndex(where: { $0.state == .queued }) {
                 let entry = self.uploadQueue[index]
@@ -3002,6 +3020,7 @@ public final class SynologyPhotosModel {
                                 guard let self, let row = self.uploadQueue.firstIndex(where: { $0.id == entry.id }),
                                       self.uploadQueue[row].state == .uploading else { return }
                                 self.uploadQueue[row].progress = total.flatMap { $0 > 0 ? min(1, Double(done) / Double($0)) : nil } ?? 0
+                                self.uploadExecutionDidChange?()
                             }
                         }
                         guard await self.acceptUploadResult(result, id: entry.id) else { break }
@@ -3028,6 +3047,7 @@ public final class SynologyPhotosModel {
                 }
             }
         }
+        uploadExecutionDidChange?()
     }
 
     /// 只在当前父目录中复用同名目录；创建回执未知时停止，不能靠名称猜测并重建。
@@ -3057,7 +3077,7 @@ public final class SynologyPhotosModel {
     @discardableResult
     private func acceptUploadResult(_ result: SynologyPhotosMutationResult?, id: UUID) async -> Bool {
         guard let index = uploadQueue.firstIndex(where: { $0.id == id }) else { return false }
-        defer { persistUploadQueue() }
+        defer { persistUploadQueue(); uploadExecutionDidChange?() }
         guard let result else { uploadQueue[index].state = .pendingReview; return false }
         pendingUploadID = nil
         guard result.state == .confirmed else {

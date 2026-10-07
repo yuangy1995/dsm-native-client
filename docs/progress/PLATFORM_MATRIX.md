@@ -3,7 +3,7 @@
 
 # 平台功能矩阵
 
-2026-10-07 M8 增量：iPhone/iPad 已接文件上传/下载的系统执行时间，以及独立系统分享扩展的 NAS/目录选择、上传和跨进程持久恢复；两端各 81 项分享相关聚焦单元与四项实际系统分享 UI 通过。Files 注册/读写、其他执行器后台接线仍未完成，正式共享权限、真机与真实 NAS 另验；范围和证据见[系统集成账本](../development/APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md)。macOS 共享回归通过，Windows/Android 没有本轮实现变化。
+2026-10-07 M8 增量：iPhone/iPad 已接普通文件、照片上传/导出、跨 NAS 复制与独立删源、Office 下载/主动保存的系统执行时间；分享扩展已接 NAS/目录选择、上传及跨进程恢复。M8d 135 项聚焦回归、两端各五项前后台 UI 及最终各 1846 项全部移动单元（4 项既有真机条件跳过）通过；Files 共享运行时、移动位置管理和可编辑系统主流程已实现，默认只读系统目录仍有可复现失败，尚未完整验收。见[系统传输/分享](../development/APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md)、[Files](../development/APPLE_MOBILE_FILES_PROVIDER_ZH.md)及[其他后台执行器](../development/APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md)账本。正式签名、真机与真实 NAS 单独验收；Windows/Android 无本轮代码变化。
 
 2026-10-05 M5 源码与本机验证完成：iPhone/iPad 已接完整目录/筛选/详情、多选暂停/继续、设置、位置编辑、统一链接/文件/搜索创建、RSS 订阅/条目/更新，以及 M5d 单项/多项任务移除、结束并移出未完成文件、停止做种与持久恢复。未知只查询，未开始项明确继续/取消，实际文件由用户在 M2 文件管理另行选择；不自动关联删除。最新两端各 1251 项单元和本波 12 个相关 UI 场景均有两端通过证据，共享/Mac 回归通过；云端与真机不由此提升等级。Windows/Android 本波只登记影响。剩余 M6–M8 按[会话交接](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m5-完成后的会话交接)继续；Android Task.edit v1、链接创建 v1/v2 与投票 choices 差异仍需独立修正。
 

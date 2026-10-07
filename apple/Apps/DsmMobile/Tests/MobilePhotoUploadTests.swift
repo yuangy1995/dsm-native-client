@@ -6,17 +6,107 @@ import XCTest
 
 @MainActor
 final class MobilePhotoUploadTests: XCTestCase {
-    private func fixture(_ state: String = "photo-upload") async throws -> (URL, URL, MobilePhotoUploadStorage, MobilePhotosUIService, MobileSynologyPhotosSession) {
+    private func fixture(_ state: String = "photo-upload", background: (any MobileTransferBackgroundManaging)? = nil) async throws -> (URL, URL, MobilePhotoUploadStorage, MobilePhotosUIService, MobileSynologyPhotosSession) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-photo-upload-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let source = root.appendingPathComponent("Sample image.jpg")
         try MobilePhotosUIService.image.write(to: source)
         let storage = MobilePhotoUploadStorage(recordURL: root.appendingPathComponent("Recovery/queue.json"))
         let service = MobilePhotosUIService(state: state)
-        let session = MobileSynologyPhotosSession()
+        let session = MobileSynologyPhotosSession(backgroundExecution: background)
         session.configure(service, uploadStorage: storage, reviewDelay: { _ in })
         await session.activate()
         return (root, source, storage, service, session)
+    }
+
+    func test上传到期取消当前网络并停止后续照片且保留浏览状态() async throws {
+        let driver = BackgroundDriverFixture()
+        let (root, source, storage, service, session) = try await fixture("photo-background-held", background: MobileTransferBackgroundExecution(driver: driver))
+        defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
+        let second = root.appendingPathComponent("Second.jpg"); try MobilePhotosUIService.image.write(to: second)
+        let uploads = try XCTUnwrap(session.uploads)
+        uploads.begin(); uploads.prepareFiles([source, second], draftID: try XCTUnwrap(uploads.draftID))
+        try await wait { !uploads.isPreparing }
+        XCTAssertEqual(uploads.files.count, 2)
+        XCTAssertTrue(uploads.submit()); XCTAssertEqual(driver.jobs.count, 1)
+        for _ in 0..<200 { if await service.isUploadHeld { break }; try await Task.sleep(for: .milliseconds(5)) }
+        let held = await service.isUploadHeld; XCTAssertTrue(held)
+        let section = session.model.section, items = session.model.items
+        await driver.jobs[0].expiration()
+        XCTAssertFalse(session.model.isUploading); XCTAssertTrue(session.model.isModuleEnabled)
+        XCTAssertEqual(session.model.section, section); XCTAssertEqual(session.model.items, items)
+        XCTAssertEqual(session.model.uploadQueue.map(\.state), [.pendingReview, .cancelled])
+        XCTAssertEqual(driver.limited[0].completions, [false])
+        let commands = await service.commands, cancelled = await service.uploadCancellations
+        XCTAssertEqual(commands.count, 1); XCTAssertEqual(cancelled, 1)
+        session.model.retryUpload(session.model.uploadQueue[0].id)
+        let after = await service.commands; XCTAssertEqual(after.count, 1)
+        session.deactivate()
+        let restoredService = MobilePhotosUIService(profileID: service.profileID), restored = MobileSynologyPhotosSession()
+        restored.configure(restoredService, uploadStorage: storage, reviewDelay: { _ in }); await restored.activate()
+        XCTAssertEqual(restored.model.uploadQueue.map(\.state), [.pendingReview, .cancelled])
+        let newCommands = await restoredService.commands; XCTAssertTrue(newCommands.isEmpty)
+        restored.deactivate()
+    }
+
+    func test系统拒绝持续任务仍完成上传并在落盘后报告成功() async throws {
+        let driver = BackgroundDriverFixture(); driver.rejectsSubmission = true
+        let (root, source, storage, _, session) = try await fixture(background: MobileTransferBackgroundExecution(driver: driver))
+        defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
+        let uploads = try await prepare(source, session: session)
+        XCTAssertTrue(uploads.submit()); XCTAssertEqual(driver.jobs.count, 1)
+        try await wait { !session.model.isUploading }
+        XCTAssertEqual(session.model.uploadQueue[0].state, .completed)
+        XCTAssertEqual(driver.limited[0].completions, [true])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storage.recordURL.path))
+    }
+
+    func test上传尚未开始立即换会话仍结束原后台时间且零写入() async throws {
+        let driver = BackgroundDriverFixture()
+        let (root, source, _, service, session) = try await fixture(background: MobileTransferBackgroundExecution(driver: driver))
+        defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
+        let uploads = try await prepare(source, session: session)
+        XCTAssertTrue(uploads.submit())
+        session.configure(nil)
+        try await wait { !driver.limited[0].completions.isEmpty }
+        XCTAssertEqual(driver.limited[0].completions, [false])
+        let calls = await service.commands; XCTAssertTrue(calls.isEmpty)
+    }
+
+    func test照片页面进入后台保留已开始上传而停用模块仍取消() async throws {
+        let driver = BackgroundDriverFixture()
+        let (root, source, _, service, session) = try await fixture("photo-held", background: MobileTransferBackgroundExecution(driver: driver))
+        defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
+        let uploads = try await prepare(source, session: session); XCTAssertTrue(uploads.submit())
+        for _ in 0..<200 { if await service.isUploadHeld { break }; try await Task.sleep(for: .milliseconds(5)) }
+        session.enterBackground()
+        XCTAssertTrue(session.model.isModuleEnabled); XCTAssertTrue(session.model.isUploading)
+        XCTAssertTrue(driver.limited[0].completions.isEmpty)
+        await service.releaseUpload(); try await wait { !session.model.isUploading }
+        XCTAssertEqual(session.model.uploadQueue[0].state, .completed)
+        XCTAssertEqual(driver.limited[0].completions, [true])
+        session.deactivate(); XCTAssertFalse(session.model.isModuleEnabled)
+    }
+
+    func test换账号后旧上传收尾及到期不会干扰新队列() async throws {
+        let driver = BackgroundDriverFixture()
+        let (root, source, _, service, session) = try await fixture("photo-held", background: MobileTransferBackgroundExecution(driver: driver))
+        defer { session.deactivate(); try? FileManager.default.removeItem(at: root) }
+        let uploads = try await prepare(source, session: session); XCTAssertTrue(uploads.submit())
+        for _ in 0..<200 { if await service.isUploadHeld { break }; try await Task.sleep(for: .milliseconds(5)) }
+        let old = session.model
+        let second = MobilePhotosUIService(state: "photo-held")
+        session.configure(second, uploadStorage: .init(recordURL: root.appendingPathComponent("Other/queue.json")), reviewDelay: { _ in })
+        await session.activate()
+        let next = try await prepare(source, session: session); XCTAssertTrue(next.submit())
+        for _ in 0..<200 { if await second.isUploadHeld { break }; try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertTrue(driver.limited[0].completions.isEmpty)
+        await service.releaseUpload(); try await wait { !old.isUploading }
+        await driver.jobs[0].expiration()
+        XCTAssertTrue(session.model.isUploading); XCTAssertTrue(driver.limited[1].completions.isEmpty)
+        await second.releaseUpload(); try await wait { !session.model.isUploading }
+        XCTAssertEqual(session.model.uploadQueue[0].state, .completed)
+        XCTAssertEqual(driver.limited[1].completions, [true])
     }
 
     private func prepare(_ source: URL, session: MobileSynologyPhotosSession) async throws -> MobilePhotoUploadImportModel {

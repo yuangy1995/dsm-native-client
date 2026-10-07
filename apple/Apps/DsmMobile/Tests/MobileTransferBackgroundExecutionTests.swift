@@ -9,7 +9,7 @@ final class MobileTransferBackgroundExecutionTests: XCTestCase {
         let model = MobileTransferBackgroundExecution(driver: driver)
         let id = UUID()
         var expirations = 0
-        let token = model.begin(taskID: id, direction: .upload) { expirations += 1 }
+        let token = model.begin(taskID: id, activity: .upload) { expirations += 1 }
         XCTAssertEqual(model.modes[id], .limited)
         let expire = driver.limitedExpirations[0]
         await expire(); await expire()
@@ -23,7 +23,7 @@ final class MobileTransferBackgroundExecutionTests: XCTestCase {
         let driver = BackgroundDriverFixture()
         let model = MobileTransferBackgroundExecution(driver: driver)
         let id = UUID()
-        let token = model.begin(taskID: id, direction: .download) {}
+        let token = model.begin(taskID: id, activity: .download) {}
         model.update(token, completed: 12, total: 48)
         let continuous = BackgroundLeaseFixture()
         driver.jobs[0].started(continuous)
@@ -43,7 +43,7 @@ final class MobileTransferBackgroundExecutionTests: XCTestCase {
         let model = MobileTransferBackgroundExecution(driver: driver)
         let id = UUID()
         var expired = false
-        let token = model.begin(taskID: id, direction: .upload) { expired = true }
+        let token = model.begin(taskID: id, activity: .upload) { expired = true }
         let continuous = BackgroundLeaseFixture()
         driver.jobs[0].started(continuous)
         await driver.limitedExpirations[0]()
@@ -58,7 +58,7 @@ final class MobileTransferBackgroundExecutionTests: XCTestCase {
         let model = MobileTransferBackgroundExecution(driver: driver)
         let id = UUID()
         var expirations = 0
-        let token = model.begin(taskID: id, direction: .download) { expirations += 1 }
+        let token = model.begin(taskID: id, activity: .download) { expirations += 1 }
         model.finish(token, success: true)
         let continuous = BackgroundLeaseFixture()
         driver.jobs[0].started(continuous)
@@ -75,9 +75,9 @@ final class MobileTransferBackgroundExecutionTests: XCTestCase {
         let id = UUID()
         var oldExpired = false
         var newExpired = false
-        let old = model.begin(taskID: id, direction: .upload) { oldExpired = true }
+        let old = model.begin(taskID: id, activity: .upload) { oldExpired = true }
         model.finish(old, success: false)
-        let current = model.begin(taskID: id, direction: .upload) { newExpired = true }
+        let current = model.begin(taskID: id, activity: .upload) { newExpired = true }
         XCTAssertNotEqual(driver.jobs[0].identifier, driver.jobs[1].identifier)
         await driver.jobs[0].expiration(); await driver.limitedExpirations[0]()
         XCTAssertFalse(oldExpired)
@@ -93,7 +93,7 @@ final class MobileTransferBackgroundExecutionTests: XCTestCase {
         let driver = BackgroundDriverFixture()
         let model = MobileTransferBackgroundExecution(driver: driver)
         var saved = false
-        _ = model.begin(taskID: UUID(), direction: .upload) {
+        _ = model.begin(taskID: UUID(), activity: .upload) {
             XCTAssertTrue(driver.limited[0].completions.isEmpty)
             saved = true
         }
@@ -108,7 +108,7 @@ final class MobileTransferBackgroundExecutionTests: XCTestCase {
         driver.rejectsSubmission = true
         let model = MobileTransferBackgroundExecution(driver: driver)
         let id = UUID()
-        let token = model.begin(taskID: id, direction: .download) {}
+        let token = model.begin(taskID: id, activity: .download) {}
         XCTAssertEqual(model.modes[id], .unavailable)
         model.update(token, completed: 34, total: nil)
         XCTAssertTrue(driver.limited.isEmpty)
@@ -129,6 +129,7 @@ final class BackgroundLeaseFixture: MobileTransferBackgroundLease {
 final class BackgroundDriverFixture: MobileTransferBackgroundDriving {
     struct Job {
         let identifier: String
+        let activity: MobileTransferBackgroundActivity
         let started: @MainActor @Sendable (any MobileTransferBackgroundLease) -> Void
         let expiration: @MainActor @Sendable () async -> Void
     }
@@ -138,6 +139,7 @@ final class BackgroundDriverFixture: MobileTransferBackgroundDriving {
     var cancelled: [String] = []
     var rejectsSubmission = false
     var offersLimited = true
+    var onSubmit: (@MainActor () -> Void)?
 
     func beginLimited(expiration: @escaping @MainActor @Sendable () async -> Void) -> (any MobileTransferBackgroundLease)? {
         guard offersLimited else { return nil }
@@ -145,10 +147,11 @@ final class BackgroundDriverFixture: MobileTransferBackgroundDriving {
         limited.append(lease); limitedExpirations.append(expiration)
         return lease
     }
-    func submit(identifier: String, direction: MobileTransferDirection,
+    func submit(identifier: String, activity: MobileTransferBackgroundActivity,
                 started: @escaping @MainActor @Sendable (any MobileTransferBackgroundLease) -> Void,
                 expiration: @escaping @MainActor @Sendable () async -> Void) throws -> Bool {
-        jobs.append(Job(identifier: identifier, started: started, expiration: expiration))
+        jobs.append(Job(identifier: identifier, activity: activity, started: started, expiration: expiration))
+        onSubmit?()
         if rejectsSubmission { throw CocoaError(.featureUnsupported) }
         return true
     }

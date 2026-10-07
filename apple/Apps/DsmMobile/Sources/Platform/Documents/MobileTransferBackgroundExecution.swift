@@ -20,7 +20,7 @@ protocol MobileTransferBackgroundLease: AnyObject {
 @MainActor
 protocol MobileTransferBackgroundDriving: AnyObject {
     func beginLimited(expiration: @escaping @MainActor @Sendable () async -> Void) -> (any MobileTransferBackgroundLease)?
-    func submit(identifier: String, direction: MobileTransferDirection,
+    func submit(identifier: String, activity: MobileTransferBackgroundActivity,
                 started: @escaping @MainActor @Sendable (any MobileTransferBackgroundLease) -> Void,
                 expiration: @escaping @MainActor @Sendable () async -> Void) throws -> Bool
     func cancelPending(identifier: String)
@@ -51,7 +51,7 @@ final class MobileTransferBackgroundExecution: MobileTransferBackgroundManaging 
     }
 
     @discardableResult
-    func begin(taskID: UUID, direction: MobileTransferDirection,
+    func begin(taskID: UUID, activity: MobileTransferBackgroundActivity,
                expiration: @escaping @MainActor @Sendable () async -> Void) -> UUID {
         let token = UUID()
         let identifier = identifierPrefix + "." + token.uuidString
@@ -63,7 +63,7 @@ final class MobileTransferBackgroundExecution: MobileTransferBackgroundManaging 
         executions[token] = Execution(taskID: taskID, identifier: identifier, expiration: expiration, limited: limited)
         modes[taskID] = limited == nil ? .unavailable : .limited
         do {
-            _ = try driver.submit(identifier: identifier, direction: direction, started: { [weak self] lease in
+            _ = try driver.submit(identifier: identifier, activity: activity, started: { [weak self] lease in
                 guard let self, var execution = executions[token] else {
                     lease.finish(success: false)
                     return
@@ -124,7 +124,7 @@ final class MobileSystemTransferBackgroundDriver: MobileTransferBackgroundDrivin
         return LimitedLease(identifier: identifier)
     }
 
-    func submit(identifier: String, direction: MobileTransferDirection,
+    func submit(identifier: String, activity: MobileTransferBackgroundActivity,
                 started: @escaping @MainActor @Sendable (any MobileTransferBackgroundLease) -> Void,
                 expiration: @escaping @MainActor @Sendable () async -> Void) throws -> Bool {
         guard #available(iOS 26.0, *), UIApplication.shared.applicationState == .active else { return false }
@@ -141,7 +141,7 @@ final class MobileSystemTransferBackgroundDriver: MobileTransferBackgroundDrivin
         }
         guard registered else { return false }
         let request = BGContinuedProcessingTaskRequest(identifier: identifier,
-            title: L10n.string(direction == .upload ? "mobile.transfer.background.upload" : "mobile.transfer.background.download"),
+            title: L10n.string(activity.titleKey),
             subtitle: L10n.string("mobile.transfer.background.progress"))
         request.strategy = .fail
         try BGTaskScheduler.shared.submit(request)
@@ -188,6 +188,17 @@ final class MobileSystemTransferBackgroundDriver: MobileTransferBackgroundDrivin
             }
             task.expirationHandler = nil
             task.setTaskCompleted(success: success)
+        }
+    }
+}
+
+private extension MobileTransferBackgroundActivity {
+    var titleKey: String {
+        switch self {
+        case .upload: "mobile.transfer.background.upload"
+        case .download: "mobile.transfer.background.download"
+        case .crossNASCopy: "mobile.transfer.background.crossNASCopy"
+        case .crossNASRemoval: "mobile.transfer.background.crossNASRemoval"
         }
     }
 }

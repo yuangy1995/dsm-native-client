@@ -24,6 +24,7 @@ actor MobileOfficeUITransport: DsmBinaryHTTPTransport, MobileSecureRangeReading 
     }
     func upload(_ request: URLRequest, from bodyFileURL: URL, progress: @escaping FileTransferProgress) async throws -> DsmHTTPResponse {
         guard state != "office-readonly" else { throw URLError(.noPermissionsToReadFile) }
+        if state == "office-background" { try await Task.sleep(for: .seconds(8)) }
         let body = try Data(contentsOf: bodyFileURL)
         let header = Data("filename=\"Document.docx\"".utf8)
         guard let name = body.range(of: header), let start = body.range(of: Data("\r\n\r\n".utf8), in: name.upperBound..<body.endIndex),

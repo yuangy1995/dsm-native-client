@@ -8,7 +8,9 @@ struct MobileRootView: View {
     var body: some View {
         Group {
             #if DEBUG
-            if MobileShareUIFixture.isEnabled {
+            if MobileFilesUIFixture.isEnabled {
+                MobileFilesUIFixtureView(app: model)
+            } else if MobileShareUIFixture.isEnabled {
                 MobileShareUIFixtureView(model: model)
             } else {
                 content

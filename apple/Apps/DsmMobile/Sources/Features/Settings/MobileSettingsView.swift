@@ -124,6 +124,14 @@ struct MobileSettingsView: View {
                 Text(L10n.string("mobile.settings.cache.footer"))
             }
 
+            Section {
+                NavigationLink {
+                    MobileFilesSettingsView(app: model)
+                } label: {
+                    Label(L10n.string("mobile.files-location.title"), systemImage: "folder.badge.gearshape")
+                }.accessibilityIdentifier("mobile.files-location.settings")
+            }
+
             Section(L10n.string("mobile.settings.privacy.title")) {
                 Label(
                     L10n.string("mobile.settings.privacy.summary"),

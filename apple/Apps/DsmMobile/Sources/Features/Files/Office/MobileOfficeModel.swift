@@ -20,6 +20,8 @@ final class MobileOfficeModel {
     @ObservationIgnored let store: MobileOfficeStore
     @ObservationIgnored private var repository: (any MobileOfficeServing)?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private let backgroundExecution: (any MobileTransferBackgroundManaging)?
+    @ObservationIgnored private var execution: (id: UUID, cancel: @Sendable () -> Void, settle: @Sendable () async -> Void, token: UUID?)?
     private var allRecords: [MobileOfficeRecord] = []
     private(set) var context: String?
     private(set) var profileID: UUID?
@@ -30,7 +32,8 @@ final class MobileOfficeModel {
     private(set) var recoveryFailed = false
     var onChanged: (@MainActor (String) async -> Void)?
 
-    init(rootURL: URL? = nil) {
+    init(rootURL: URL? = nil, backgroundExecution: (any MobileTransferBackgroundManaging)? = nil) {
+        self.backgroundExecution = backgroundExecution
         store = MobileOfficeStore(root: rootURL ?? MobileTransferRecoveryStore.application.rootURL
             .appendingPathComponent("Office", isDirectory: true))
         do { allRecords = try store.load() }
@@ -42,6 +45,7 @@ final class MobileOfficeModel {
     func configure(profile: NasProfile?, repository: (any MobileOfficeServing)?) {
         let next = profile.map { MobileWorkspaceIdentity($0).storageIdentifier }
         guard next != context || self.repository.map(ObjectIdentifier.init) != repository.map(ObjectIdentifier.init) else { return }
+        execution?.cancel()
         generation &+= 1
         for index in allRecords.indices where allRecords[index].phase == .saving { allRecords[index].phase = .uncertain }
         self.repository = repository; context = next; profileID = profile?.id
@@ -57,6 +61,10 @@ final class MobileOfficeModel {
             if !isBusy { failure = nil }
             return record.id
         }
+        return await execute(activity: .download, action: { await self.prepareCopy(item) }, success: { $0 != nil }) ?? nil
+    }
+
+    private func prepareCopy(_ item: FileItem) async -> UUID? {
         guard MobileOfficePolicy.supports(item), item.profileID == profileID,
               let operation = begin(), let context else { return nil }
         defer { finish(operation.generation) }
@@ -124,6 +132,14 @@ final class MobileOfficeModel {
     }
 
     func save(_ id: UUID) async {
+        guard record(id)?.phase == .changed else { return }
+        _ = await execute(activity: .upload, action: {
+            await self.saveCopy(id)
+            return self.record(id)?.phase == .saved
+        }, success: { $0 })
+    }
+
+    private func saveCopy(_ id: UUID) async {
         guard var record = record(id), record.phase == .changed,
               let candidate = record.candidateID, let fingerprint = record.candidateFingerprint,
               let operation = begin(id) else { return }
@@ -218,6 +234,29 @@ final class MobileOfficeModel {
         let repository: any MobileOfficeServing
     }
 
+    /// 持有实际网络任务，系统到期先取消并等待原流程收尾，不能只丢弃迟到的界面结果。
+    private func execute<Value: Sendable>(activity: MobileTransferBackgroundActivity,
+        action: @escaping @MainActor () async -> Value,
+        success: @escaping @MainActor (Value) -> Bool) async -> Value? {
+        guard execution == nil, !isBusy, !recoveryFailed, context != nil, repository != nil else { return nil }
+        let id = UUID(), expectedGeneration = generation
+        let task = Task<Value?, Never> {
+            guard self.generation == expectedGeneration, !Task.isCancelled else { return nil }
+            return await action()
+        }
+        execution = (id, { task.cancel() }, { _ = await task.value }, nil)
+        let token = backgroundExecution?.begin(taskID: id, activity: activity) { [weak self] in
+            guard let current = self?.execution, current.id == id else { return }
+            current.cancel()
+            await current.settle()
+        }
+        execution?.token = token
+        let value = await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        if execution?.id == id { execution = nil }
+        if let token { backgroundExecution?.finish(token, success: !task.isCancelled && value.map(success) == true) }
+        return value
+    }
+
     private func begin(_ id: UUID? = nil) -> Operation? {
         guard !isBusy, !recoveryFailed, context != nil, let repository else { return nil }
         generation &+= 1
@@ -274,6 +313,9 @@ final class MobileOfficeModel {
             Task { @MainActor in
                 guard let self, self.isCurrent(token), self.isBusy else { return }
                 self.progress = total.flatMap { $0 > 0 ? min(1, Double(completed) / Double($0)) : nil }
+                if let backgroundToken = self.execution?.token {
+                    self.backgroundExecution?.update(backgroundToken, completed: completed, total: total)
+                }
             }
         }
     }

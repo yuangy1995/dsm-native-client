@@ -258,7 +258,7 @@ final class MobileFileUploadQueue {
         guard let batch = batches.first(where: { !$0.isPaused && $0.hasPending }) else { return }
         if let backgroundExecution {
             let generation = UUID()
-            let token = backgroundExecution.begin(taskID: batch.id, direction: .upload) { [weak self] in
+            let token = backgroundExecution.begin(taskID: batch.id, activity: .upload) { [weak self] in
                 guard let self, backgroundRun?.generation == generation else { return }
                 backgroundRun = nil
                 // 时间耗尽时也暂停尚未开始的批次，防止结算回调继续提交后项。

@@ -25,6 +25,10 @@ private actor OfficeRepository: MobileOfficeServing {
     var uploadGate: OfficeGate?
     var downloadGate: OfficeGate?
     var permissionGate: OfficeGate?
+    var holdsDownload = false
+    var holdsUpload = false
+    private(set) var downloads = 0
+    private(set) var cancellations = 0
     private(set) var uploads = 0
     private(set) var permissionChecks = 0
     private(set) var targets: [String] = []
@@ -42,6 +46,11 @@ private actor OfficeRepository: MobileOfficeServing {
     func gateUpload(_ gate: OfficeGate) { uploadGate = gate }
     func gateDownload(_ gate: OfficeGate) { downloadGate = gate }
     func gatePermission(_ gate: OfficeGate) { permissionGate = gate }
+    func hold(download: Bool = false, upload: Bool = false) { holdsDownload = download; holdsUpload = upload }
+    private func waitForCancellation() async throws {
+        do { try await Task.sleep(for: .seconds(60)) }
+        catch { cancellations += 1; throw error }
+    }
     func getInfo(paths: [String]) throws -> [FileItem] {
         if readFailure { throw URLError(.networkConnectionLost) }
         return paths.contains("/sample/Document.docx") ? [item()] : []
@@ -57,6 +66,8 @@ private actor OfficeRepository: MobileOfficeServing {
         if permissionFailure { throw MobileOfficeFailure.permission }
     }
     func download(remotePath: String, to localURL: URL, expectedSize: Int64?, progress: @escaping FileTransferProgress) async throws {
+        downloads += 1
+        if holdsDownload { try await waitForCancellation() }
         let data = content
         if let downloadGate { await downloadGate.wait() }
         try data.write(to: localURL)
@@ -65,6 +76,7 @@ private actor OfficeRepository: MobileOfficeServing {
     func upload(localURL: URL, to folderPath: String, overwrite: Bool, progress: @escaping FileTransferProgress) async throws {
         guard folderPath == "/sample", localURL.lastPathComponent == "Document.docx", overwrite else { throw MobileOfficeFailure.changed }
         uploads += 1; targets.append(folderPath + "/" + localURL.lastPathComponent)
+        if holdsUpload { try await waitForCancellation() }
         if let uploadGate { await uploadGate.wait() }
         if rejectUpload { throw MobileOfficeFailure.permission }
         content = try Data(contentsOf: localURL); revision += 1
@@ -80,10 +92,10 @@ private actor OfficeRepository: MobileOfficeServing {
         let profile: NasProfile
         let repository: OfficeRepository
         let model: MobileOfficeModel
-        init() throws {
+        init(background: (any MobileTransferBackgroundManaging)? = nil) throws {
             profile = try NasProfile(displayName: "Sample NAS", host: "sample.invalid", port: 5001, usernameHint: "writer")
             repository = OfficeRepository(profile.id)
-            model = MobileOfficeModel(rootURL: root.appendingPathComponent("Office"))
+            model = MobileOfficeModel(rootURL: root.appendingPathComponent("Office"), backgroundExecution: background)
             model.configure(profile: profile, repository: repository)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         }
@@ -102,6 +114,87 @@ private actor OfficeRepository: MobileOfficeServing {
             return id
         }
         func cleanup() { try? FileManager.default.removeItem(at: root) }
+    }
+
+    func test后台到期取消下载并清理未完成副本() async throws {
+        let driver = BackgroundDriverFixture()
+        let f = try Fixture(background: MobileTransferBackgroundExecution(driver: driver)); defer { f.cleanup() }
+        await f.repository.hold(download: true)
+        let task = Task { await f.model.prepare(await f.repository.item()) }
+        while await f.repository.downloads == 0 { await Task.yield() }
+        await driver.jobs[0].expiration()
+        let result = await task.value, cancelled = await f.repository.cancellations
+        XCTAssertNil(result); XCTAssertEqual(cancelled, 1)
+        XCTAssertTrue(f.model.records.isEmpty); XCTAssertFalse(f.model.isBusy)
+        XCTAssertEqual(driver.limited[0].completions, [false])
+        let contents = (try? FileManager.default.contentsOfDirectory(at: f.model.store.root, includingPropertiesForKeys: nil)) ?? []
+        XCTAssertTrue(contents.isEmpty)
+    }
+
+    func test申请后台时间期间换同UUID账号不会向新账号开始旧下载() async throws {
+        let driver = BackgroundDriverFixture()
+        let f = try Fixture(background: MobileTransferBackgroundExecution(driver: driver)); defer { f.cleanup() }
+        let other = try NasProfile(id: f.profile.id, displayName: "Other", host: "sample.invalid", port: 5001, usernameHint: "other")
+        let repository = OfficeRepository(other.id)
+        driver.onSubmit = { f.model.configure(profile: other, repository: repository) }
+        let result = await f.model.prepare(await f.repository.item())
+        XCTAssertNil(result)
+        let oldCount = await f.repository.downloads, newCount = await repository.downloads
+        XCTAssertEqual(oldCount, 0); XCTAssertEqual(newCount, 0)
+        XCTAssertTrue(f.model.records.isEmpty); XCTAssertEqual(driver.limited[0].completions, [false])
+    }
+
+    func test后台到期取消覆盖并持久保留未知结果且不重传() async throws {
+        let driver = BackgroundDriverFixture()
+        let f = try Fixture(background: MobileTransferBackgroundExecution(driver: driver)); defer { f.cleanup() }
+        let id = try await f.changed()
+        await f.repository.hold(upload: true)
+        let task = Task { await f.model.save(id) }
+        while await f.repository.uploads == 0 { await Task.yield() }
+        await driver.jobs[1].expiration(); await task.value
+        let cancelled = await f.repository.cancellations
+        XCTAssertEqual(cancelled, 1); XCTAssertEqual(f.model.record(id)?.phase, .uncertain)
+        XCTAssertEqual(driver.limited[1].completions, [false])
+        let restored = MobileOfficeModel(rootURL: f.model.store.root)
+        restored.configure(profile: f.profile, repository: f.repository)
+        XCTAssertEqual(restored.record(id)?.phase, .uncertain)
+        await restored.save(id); await f.model.save(id)
+        let count = await f.repository.uploads; XCTAssertEqual(count, 1)
+        XCTAssertNotNil(f.model.copyURL(id))
+    }
+
+    func test权限请求尚未返回时到期等待收尾且不提交覆盖() async throws {
+        let driver = BackgroundDriverFixture()
+        let f = try Fixture(background: MobileTransferBackgroundExecution(driver: driver)); defer { f.cleanup() }
+        let id = try await f.changed(), gate = OfficeGate()
+        await f.repository.gatePermission(gate)
+        let task = Task { await f.model.save(id) }
+        while !(await gate.waiting) { await Task.yield() }
+        let expiration = Task { await driver.jobs[1].expiration() }
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertTrue(driver.limited[1].completions.isEmpty)
+        await gate.release(); await expiration.value; await task.value
+        let count = await f.repository.uploads; XCTAssertEqual(count, 0)
+        XCTAssertEqual(f.model.record(id)?.phase, .changed)
+        XCTAssertEqual(driver.limited[1].completions, [false])
+    }
+
+    func test持续时间被拒绝仍可完成副本和回传且旧到期不干扰新任务() async throws {
+        let driver = BackgroundDriverFixture(); driver.rejectsSubmission = true
+        let f = try Fixture(background: MobileTransferBackgroundExecution(driver: driver)); defer { f.cleanup() }
+        let id = try await f.changed()
+        await f.model.save(id)
+        XCTAssertEqual(f.model.record(id)?.phase, .saved)
+        XCTAssertEqual(driver.limited.map(\.completions), [[true], [true]])
+        await f.model.importEdited(try f.candidate("next edit"), id: id, expectedContext: try XCTUnwrap(f.model.context))
+        let gate = OfficeGate(); await f.repository.gateUpload(gate)
+        let task = Task { await f.model.save(id) }
+        while !(await gate.waiting) { await Task.yield() }
+        await driver.jobs[1].expiration()
+        XCTAssertTrue(f.model.isBusy); XCTAssertTrue(driver.limited[2].completions.isEmpty)
+        await gate.release(); await task.value
+        XCTAssertEqual(f.model.record(id)?.phase, .saved)
+        XCTAssertEqual(driver.limited[2].completions, [true])
     }
 
     func test主动回传保持原名称并从当前内容建立下一轮基线() async throws {

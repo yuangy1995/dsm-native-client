@@ -5,6 +5,16 @@ import XCTest
 @testable import DsmFileProviderRuntime
 
 final class ProviderWritebackTests: XCTestCase {
+    func test真实配置直接调用与协议调用都执行原状态检查() async throws {
+        let context = try await makeContext()
+        try await context.store.validateWritebackState(mappingID: context.mapping.id)
+        let provider: any ProviderRuntimeConfigurationStoring = context.store
+        try await provider.validateWritebackState(mappingID: context.mapping.id)
+        try await context.store.setMappingPaused(true, mappingID: context.mapping.id)
+        await expect(.disabled) { try await context.store.validateWritebackState(mappingID: context.mapping.id) }
+        await expect(.disabled) { try await provider.validateWritebackState(mappingID: context.mapping.id) }
+    }
+
     func test更改编辑删除授权更新元数据并使旧枚举锚点失效() async throws {
         for scope in [DesktopDriveScope.folder(path: "/share/work"), .allShares] {
             let context = try await makeContext(enabled: false, scope: scope)

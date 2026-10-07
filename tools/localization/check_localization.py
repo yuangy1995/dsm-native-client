@@ -130,7 +130,8 @@ def scan_visible_literal_calls(validation: Validation) -> None:
         r"accessibilityLabel|accessibilityHint|alert|confirmationDialog)\(\s*\"([^\"]*)\""
     )
     for base in [ROOT / "apple/Apps/DsmMac/Sources", ROOT / "apple/Apps/DsmMobile/Sources",
-                 ROOT / "apple/Apps/DsmMobile/ExtensionShared", ROOT / "apple/Apps/DsmMobile/ShareExtension"]:
+                 ROOT / "apple/Apps/DsmMobile/ExtensionShared", ROOT / "apple/Apps/DsmMobile/ShareExtension",
+                 ROOT / "apple/Apps/DsmMobile/FilesShared", ROOT / "apple/Apps/DsmMobile/FileProviderExtension"]:
         for path in base.rglob("*.swift"):
             for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 match = swift_call.search(line)
@@ -176,7 +177,8 @@ def scan_apple_app_locale_bypasses(validation: Validation) -> None:
         r'|Locale\s*\(\s*identifier:\s*"zh(?:[_-]|")'
     )
     for base in [ROOT / "apple/Apps/DsmMac/Sources", ROOT / "apple/Apps/DsmMobile/Sources",
-                 ROOT / "apple/Apps/DsmMobile/ExtensionShared", ROOT / "apple/Apps/DsmMobile/ShareExtension"]:
+                 ROOT / "apple/Apps/DsmMobile/ExtensionShared", ROOT / "apple/Apps/DsmMobile/ShareExtension",
+                 ROOT / "apple/Apps/DsmMobile/FilesShared", ROOT / "apple/Apps/DsmMobile/FileProviderExtension"]:
         for path in base.rglob("*.swift"):
             for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 if pattern.search(line):
@@ -281,6 +283,9 @@ def main() -> None:
             ROOT / "apple/Apps/DsmMobile/Sources",
             ROOT / "apple/Apps/DsmMobile/ExtensionShared",
             ROOT / "apple/Apps/DsmMobile/ShareExtension",
+            ROOT / "apple/Apps/DsmMobile/FilesShared",
+            ROOT / "apple/Apps/DsmMobile/FileProviderExtension",
+            ROOT / "apple/Packages/DsmFileProviderRuntime/Sources",
             ROOT / "apple/Packages/DsmCore/Sources",
             ROOT / "apple/Packages/DsmNetwork/Sources",
         ],
@@ -309,6 +314,9 @@ def main() -> None:
             ROOT / "apple/Apps/DsmMobile/Sources",
             ROOT / "apple/Apps/DsmMobile/ExtensionShared",
             ROOT / "apple/Apps/DsmMobile/ShareExtension",
+            ROOT / "apple/Apps/DsmMobile/FilesShared",
+            ROOT / "apple/Apps/DsmMobile/FileProviderExtension",
+            ROOT / "apple/Packages/DsmFileProviderRuntime/Sources",
             ROOT / "apple/Packages/DsmCore/Sources",
             ROOT / "apple/Packages/DsmNetwork/Sources",
         ],
