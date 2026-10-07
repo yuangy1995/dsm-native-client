@@ -192,7 +192,7 @@ Package，不联网，只返回 `Shared/Probe.txt` 固定合成内容。项仅�
 
 同一 `a1b7753d` 的 [iPhone modules](https://github.com/yuangy1995/dsm-native-client/actions/runs/37575438355/job/112643552160)
 及 [iPad modules](https://github.com/yuangy1995/dsm-native-client/actions/runs/37575438355/job/112643552237)
-iPhone 作业已结束，iPad 仍在执行其余界面测试；两端先行系统阶段均已明确失败：
+iPhone 作业已结束，iPad 后续界面测试提前取消；两端先行系统阶段均已封存并明确失败：
 
 - 两端默认只读用例均在 `activateSystemLocation` 等待 `Shared` 目录时失败，
   失败层级为系统“文件”的 `LanStash is Empty`，分别 90.884/75.382 秒。
