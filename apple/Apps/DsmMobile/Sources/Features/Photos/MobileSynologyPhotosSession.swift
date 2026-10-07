@@ -41,6 +41,8 @@ final class MobileSynologyPhotosSession {
     @ObservationIgnored private var exportTask: Task<Void, Never>?
     @ObservationIgnored private var exportDirectory: URL?
     @ObservationIgnored private var exportGeneration = UUID()
+    @ObservationIgnored private let backgroundExecution: (any MobileTransferBackgroundManaging)?
+    @ObservationIgnored private var exportBackground: (id: UUID, token: UUID)?
     @ObservationIgnored private var uploadRecoveryStore: PhotoUploadRecoveryStore?
     @ObservationIgnored private var hasCleanedUploadDrafts = false
     @ObservationIgnored private var albumRecoveryStore: PhotoAlbumRecoveryStore?
@@ -48,6 +50,10 @@ final class MobileSynologyPhotosSession {
     @ObservationIgnored private var deletionRecoveryStore: PhotoDeletionRecoveryStore?
     @ObservationIgnored private var similarRecoveryStore: PhotoSimilarRecoveryStore?
     private static var hasCleanedExportFiles = false
+
+    init(backgroundExecution: (any MobileTransferBackgroundManaging)? = nil) {
+        self.backgroundExecution = backgroundExecution
+    }
 
     func configure(_ repository: (any SynologyPhotosServing)?, uploadStorage: MobilePhotoUploadStorage? = nil,
                    reviewDelay: @escaping @Sendable (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
@@ -64,6 +70,7 @@ final class MobileSynologyPhotosSession {
         identity = UUID()
         self.repository = repository
         model = SynologyPhotosModel(repository: repository, deletionReviewDelay: reviewDelay)
+        if let backgroundExecution { MobilePhotoUploadBackgroundExecution.connect(model, background: backgroundExecution) }
         uploadRecoveryStore = uploadStorage?.recoveryStore()
         model.configureUploadRecovery(uploadRecoveryStore)
         albumRecoveryStore = uploadStorage.map { PhotoAlbumRecoveryStore(url: $0.recordURL.deletingPathExtension().appendingPathComponent("Albums/pending-v1.json")) }
@@ -104,6 +111,19 @@ final class MobileSynologyPhotosSession {
     }
 
     func deactivate() {
+        cancelPresentations()
+        model.setModuleEnabled(false)
+        cancelExport()
+        Task { await thumbnails.removeAll() }
+    }
+
+    func enterBackground() {
+        cancelPresentations()
+        model.suspendForegroundWork()
+        Task { await thumbnails.removeAll() }
+    }
+
+    private func cancelPresentations() {
         uploads?.cancel()
         albums?.cancel()
         editor?.cancel()
@@ -119,9 +139,6 @@ final class MobileSynologyPhotosSession {
         temporarySharing?.clear()
         requests?.cancel()
         conditions?.cancel()
-        model.setModuleEnabled(false)
-        cancelExport()
-        Task { await thumbnails.removeAll() }
     }
 
     func thumbnail(_ photo: SynologyPhoto) async -> Data? {
@@ -176,9 +193,20 @@ final class MobileSynologyPhotosSession {
         isExporting = true
         exportError = nil
         exportProgress = nil
-        exportTask = Task { [weak self] in
-            guard let self else { return }
-            defer { if self.exportGeneration == request { self.isExporting = false } }
+        let backgroundToken = backgroundExecution?.begin(taskID: request, activity: .download) { [weak self] in
+            guard let self, self.exportGeneration == request else { return }
+            let task = self.exportTask
+            self.cancelExport()
+            await task?.value
+        }
+        if let backgroundToken { exportBackground = (request, backgroundToken) }
+        exportTask = Task { [self] in
+            var succeeded = false
+            defer {
+                if self.exportGeneration == request { self.isExporting = false; self.exportTask = nil }
+                if self.exportBackground?.id == request { self.exportBackground = nil }
+                if let backgroundToken { self.backgroundExecution?.finish(backgroundToken, success: succeeded) }
+            }
             var directory: URL?
             var files: [URL] = []
             var requestedCount = 0
@@ -239,6 +267,7 @@ final class MobileSynologyPhotosSession {
                 }
             }
             if !files.isEmpty, self.identity == current, self.exportGeneration == request, self.model.isModuleEnabled, !Task.isCancelled {
+                succeeded = requestedCount > 0 && files.count == requestedCount
                 self.exportDirectory = directory
                 self.export = Export(id: request, urls: files, sharing: sharing)
                 directory = nil
@@ -257,6 +286,11 @@ final class MobileSynologyPhotosSession {
             Task { @MainActor in
                 guard let self, self.identity == identity, self.exportGeneration == request, self.isExporting else { return }
                 self.exportProgress = total.flatMap { $0 > 0 ? (Double(completed) + min(1, max(0, Double(done) / Double($0)))) / Double(count) : nil }
+                if let background = self.exportBackground, background.id == request {
+                    self.backgroundExecution?.update(background.token,
+                        completed: Int64((self.exportProgress ?? Double(completed) / Double(count)) * Double(count) * 1_000),
+                        total: total == nil ? nil : Int64(count) * 1_000)
+                }
             }
         }
     }
@@ -300,6 +334,47 @@ final class MobileSynologyPhotosSession {
             let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard values.isDirectory == true, values.isSymbolicLink != true else { continue }
             try FileManager.default.removeItem(at: child)
+        }
+    }
+}
+
+/// 旧模型在取消收尾前仍持有此观察者；弱引用避免与模型形成环，也不接触新账号的队列。
+@MainActor
+private final class MobilePhotoUploadBackgroundExecution {
+    private weak var model: SynologyPhotosModel?
+    private let background: any MobileTransferBackgroundManaging
+    private var run: (id: UUID, token: UUID, entries: Set<UUID>)?
+
+    private init(_ model: SynologyPhotosModel, background: any MobileTransferBackgroundManaging) {
+        self.model = model; self.background = background
+    }
+
+    static func connect(_ model: SynologyPhotosModel, background: any MobileTransferBackgroundManaging) {
+        let observer = MobilePhotoUploadBackgroundExecution(model, background: background)
+        model.uploadExecutionDidChange = { observer.changed() }
+    }
+
+    private func changed() {
+        guard let model else { return }
+        if model.isUploading, run == nil {
+            let id = UUID(), entries = Set(model.uploadQueue.filter { $0.state == .queued }.map(\.id))
+            let token = background.begin(taskID: id, activity: .upload) { [weak self] in
+                guard let self, self.run?.id == id else { return }
+                await self.model?.interruptUploads()
+            }
+            run = (id, token, entries)
+        }
+        guard let run else { return }
+        let entries = model.uploadQueue.filter { run.entries.contains($0.id) }
+        if !model.isUploading {
+            self.run = nil
+            background.finish(run.token, success: model.uploadPersistenceError == nil && entries.count == run.entries.count &&
+                !entries.isEmpty && entries.allSatisfy { [.completed, .skipped].contains($0.state) })
+        } else {
+            let completed = entries.reduce(Int64(0)) { result, entry in
+                result + ([.completed, .skipped].contains(entry.state) ? 1_000 : Int64(min(1, max(0, entry.progress)) * 1_000))
+            }
+            background.update(run.token, completed: completed, total: Int64(run.entries.count) * 1_000)
         }
     }
 }

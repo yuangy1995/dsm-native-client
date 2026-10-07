@@ -23,6 +23,7 @@ targets:
     sources:
       - Sources
       - ExtensionShared
+      - FilesShared
       - path: Resources
     dependencies:
       - package: DsmShared
@@ -37,6 +38,10 @@ targets:
         product: DsmFileFeature
       - package: DsmShared
         product: DsmVirtualMachineConsoleFeature
+      - package: DsmShared
+        product: DsmFileProviderRuntime
+      - target: DsmFiles
+        embed: true
       - target: DsmShare
         embed: true
     settings:
@@ -74,11 +79,40 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: YES
         INFOPLIST_FILE: SupportingFiles/DsmShare-Info.plist
         CODE_SIGN_ENTITLEMENTS: SupportingFiles/DsmMobileExtension.entitlements
+  DsmFiles:
+    type: app-extension
+    platform: iOS
+    sources:
+      - FileProviderExtension
+      - FilesShared
+      - ExtensionShared/MobileExtensionAccounts.swift
+      - ExtensionShared/MobileExtensionTransport.swift
+      - Sources/Session/MobileWorkspaceIdentity.swift
+      - path: Resources/en.lproj
+      - path: Resources/zh-Hans.lproj
+    dependencies:
+      - package: DsmShared
+        product: DsmLocalization
+      - package: DsmShared
+        product: DsmCore
+      - package: DsmShared
+        product: DsmNetwork
+      - package: DsmShared
+        product: DsmFileProviderRuntime
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MOBILE_BUNDLE_ID).files"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        APPLICATION_EXTENSION_API_ONLY: YES
+        INFOPLIST_FILE: SupportingFiles/DsmFiles-Info.plist
+        CODE_SIGN_ENTITLEMENTS: SupportingFiles/DsmMobileExtension.entitlements
   DsmMobileTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - Tests
+      - ../../Packages/DsmFileProviderRuntime/Tests
     dependencies:
       - target: DsmMobile
     settings:

@@ -4161,3 +4161,62 @@ git diff --check
 - 本地证据：`build/m8b-final-{phone,pad}.xcresult`、`build/m8b-final-build.log`、`build/m8b-shared.log`、`build/m8b-macos.log`、`build/m8b-mobile-release.log`、`build/m8b-previews/`。正式签名、真实来源 App、锁屏文件保护、系统终止时序、真实 NAS 写入、VoiceOver 与外接键盘仍为账本列明的 `PENDING_USER_VALIDATION`。Files 的实现不由本片宣告完成。
 
 布局收尾：返回按钮与完整路径合并，大字模式的同名处理改为原生内联选择。两端针对正常分享和中文大字的两项 UI 再次通过（iPhone 64.454 秒、iPad 71.118 秒，`build/m8b-layout-{phone,pad}.xcresult`）；随后发现跨进程 `isHittable` 可把视口外文件当成可点，补入实际滚动和屏幕坐标断言，两端中文用例再次通过（39.467/39.393 秒，`build/m8b-scroll-{phone,pad}.xcresult`）。最后 20 张场景 PNG 已逐张复核，长内容能滚动到文件名；没有放宽原业务断言。增量构建使用上文 build-for-testing 命令并增加 `-disableAutomaticPackageResolution -skipPackageUpdates -jobs 2`，复测使用相同 test-without-building 命令，仅按上述两个或单个 UI 方法选择，不重复未改动的单元。临时附件导出、录像与提帧脚本已清理；两台模拟器合成分享标记和任务目录亦已清理，保留正式结果包及选取的证据图。
+
+
+## 2026-10-07 移动 M8d 照片、跨 NAS 与 Office 后台
+
+基线 `dc2f2fb0`，同一工作区另有 M8c Files 共享提取，未据此宣告默认只读系统流程通过。
+本片保持 NAS API、认证、文件保护及恢复格式，复用 M8a 的系统执行桥接；只为明确
+开始的照片上传/导出、跨 NAS 复制与独立确认的删源、Office 下载/主动覆盖授予时间。
+中断先取消实际网络，等待原流程保存未知结果及清理，再归还系统资格；无自动重传。
+共享新增上传生命周期/取消与前台暂停入口，Mac 调用行为保持。对齐账本、独立集成与
+只读对抗复核、精确命令和五项真机待办见[后台执行器账本](../../development/APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md)。
+
+本机最终结果：
+
+- iPhone 135 项八类模型/传输聚焦测试：0 失败，4.528 秒。
+- 五项新增实际前后台 UI，iPhone 266.809 秒、iPad 293.593 秒，均 0 失败；覆盖照片上传、
+  中文深色最大字号状态、批量导出到系统文件面板、跨 NAS 复制后独立删源和 Office 回传。
+  两端 12 张最终截图逐张复核；没有把模拟器后台运行当作真机持续资格已获准。
+- 完整共享 `swift test --package-path apple --parallel` 成功结束 3103 项 XCTest 和 12 项
+  Swift Testing；最后共享生命周期修正后补跑 260 项 Mac 照片模型/恢复及 2 项适配测试，0 失败。
+- Mac Release 主程序/File Provider 及移动 Release 主 App/Share/Files 均构建成功，
+  实际二进制检查全部含 x86_64/arm64；移动三组件不含本片合成服务及 Files/Share 调试入口符号。
+- 本地化 7049 Apple 键、双语/硬编码扫描、文档链接与差异检查通过。
+
+中间失败如实保留：第一轮合成照片服务把提交后取消当成提交前抛错，2 个未知结果
+断言失败；按现有 Repository 契约改回 pendingReview 后通过，未降低断言。首轮实际
+前后台 UI 发现照片页在 background 时调用整模块停用，造成三项照片 UI 失败；
+改为暂停前台读取/预览并保留已开始传输，两端最终全过。独立复核还发现新 Task
+调度前换同 UUID 账号的间隙，以及模型立即退出时未归还资格的收尾问题，已补冻结
+身份、持有任务至结束及零写/释放回归。
+
+同轮原云端失败的 DDNS/硬盘状态本机回归另计：两端各 3 UI 通过，不计作新增后台场景；
+DDNS 明确拖动后验证真实值，硬盘原用例当时未修改且未复现。随后云端其余 UI 修复和
+M8c 默认只读元数据问题另按独立证据继续，不以本片结果冒充完整云端通过。
+
+## 2026-10-07 Apple 云端按钮与开关交互回归
+
+核实运行 `37549707212` 的提交为 `539de49f3b1c533e82179dafb8e20995b711baed`。
+两类设备的 services 已成功；iPad administration 的 DDNS、iPhone administration 的
+硬盘停止状态，以及 iPhone modules 的 RSS 进入订阅和 VMM 旋转后取消确认存在失败。
+逐项读取对应 XCTest 事件和合成场景录像，DDNS 点击后开关仍为原值；RSS 仍停留列表，
+VMM 仍显示确认页，硬盘确认页已关闭但最终状态仍为检测中。本机原用例均未复现，
+这些证据不能证明产品逻辑有故障，也不能把硬盘问题推定为轮询竞态。
+
+测试修正仅限交互：DDNS 明确拖动一次并先断言真实值再等待原结果消失；RSS 检查目标
+可点击并按下 0.15 秒；硬盘两次确认、VMM 该旋转场景的取消按钮各按下 0.15 秒。
+没有自动重试危险操作、修改业务实现或放宽最终状态断言。独立复核确认仍检查连接
+测试失效、实际硬盘状态、原订阅恢复及确认页消失，失败会直接中止。
+
+修正后 DDNS 两项已在两端通过，见上一节最终结果；随后三个用例分别用下列命令
+执行，iPad 使用同一编译产物的 `test-without-building -xctestrun
+apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun`，
+设备 ID 替换为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，结果路径独立。
+
+```sh
+xcodebuild test -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -resultBundlePath build/m8d-ci-fixed-phone.xcresult '-only-testing:DsmMobileUITests/MobileDownloadRSSUITests/test更新中断后重启通过读取原订阅恢复' '-only-testing:DsmMobileUITests/MobileNasStorageUITests/test硬盘快速检测和停止均可确认并显示实际状态' '-only-testing:DsmMobileUITests/MobileVirtualMachineControlUITests/test旋转后详情和关机确认保持可用' CODE_SIGNING_ALLOWED=NO
+```
+
+iPhone 3 项 165.439 秒、iPad 3 项 175.186 秒，均 0 失败。原云端运行其余作业仍在进行，
+本轮修正尚待下一次云端确认；不将两端本机通过记作完整云端门禁通过。

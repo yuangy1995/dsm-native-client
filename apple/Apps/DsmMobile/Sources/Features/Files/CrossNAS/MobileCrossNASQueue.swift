@@ -15,6 +15,8 @@ final class MobileCrossNASQueue {
     private var generation = UUID()
     private var preparingTargetID: UUID?
     private var loadFailed = false
+    @ObservationIgnored private let backgroundExecution: (any MobileTransferBackgroundManaging)?
+    @ObservationIgnored private var backgroundRun: (id: UUID, token: UUID)?
     private(set) var isPreparing = false
     private(set) var runningID: UUID?
     private(set) var completedBytes: Int64 = 0
@@ -22,7 +24,8 @@ final class MobileCrossNASQueue {
     private(set) var error: MobileCrossNASFailure?
     private(set) var recoveryFailed = false
 
-    init(rootURL: URL? = nil) {
+    init(rootURL: URL? = nil, backgroundExecution: (any MobileTransferBackgroundManaging)? = nil) {
+        self.backgroundExecution = backgroundExecution
         store = MobileCrossNASStore(root: rootURL ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("MobileCrossNAS-" + UUID().uuidString, isDirectory: true))
         do { stored = try store.load() }
@@ -51,7 +54,12 @@ final class MobileCrossNASQueue {
         guard let source, !isWorking, !loadFailed, !recoveryFailed else { return nil }
         isPreparing = true; preparingTargetID = target.profile.id; error = nil
         let token = generation
-        defer { isPreparing = false; preparation = nil; preparingTargetID = nil }
+        startBackground(taskID: UUID(), activity: .crossNASCopy)
+        var started = false
+        defer {
+            isPreparing = false; preparation = nil; preparingTargetID = nil
+            if !started { finishBackground(success: false) }
+        }
         do {
             let task = Task { try await MobileCrossNASPlan.prepare(items: items, source: source, target: target,
                 destination: destination, moveSource: moveSource) }
@@ -68,6 +76,7 @@ final class MobileCrossNASQueue {
             stored.append(record)
             guard save() else { stored.removeAll { $0.id == record.id }; return nil }
             run(record.id, source: source, target: target, deleting: false)
+            started = execution != nil
             return record.id
         } catch {
             if token == generation { self.error = Self.failure(error) }
@@ -140,11 +149,17 @@ final class MobileCrossNASQueue {
             update(id) { $0.phase = .interrupted; $0.failure = .recovery }
             runningID = nil; return
         }
-        execution = Task { [weak self] in
-            guard let self else { return }
-            defer { self.execution = nil; self.runningID = nil }
+        if backgroundRun == nil { startBackground(taskID: id, activity: deleting ? .crossNASRemoval : .crossNASCopy) }
+        let backgroundID = backgroundRun?.id
+        execution = Task { [self] in
+            var succeeded = false
+            defer {
+                self.execution = nil; self.runningID = nil
+                self.finishBackground(success: succeeded)
+            }
             do {
                 guard let record = self.record(id) else { return }
+                self.updateBackground(id, deleting: deleting)
                 if deleting {
                     try await self.verify(record, source: source, target: target, deletion: true)
                     for index in record.entries.indices.reversed() {
@@ -176,6 +191,7 @@ final class MobileCrossNASQueue {
                         guard !remaining.contains(where: { $0.path == entry.source.path }) else { throw MobileCrossNASFailure.interrupted }
                         self.update(id) { $0.entries[index].status = .removed }
                         guard self.save() else { throw MobileCrossNASFailure.recovery }
+                        self.updateBackground(id, deleting: true)
                     }
                 } else {
                     for index in record.entries.indices {
@@ -204,8 +220,10 @@ final class MobileCrossNASQueue {
                             try await source.repository.copyCrossNAS(entry.source, to: target.repository, folder: parent) { [weak self] completed, total in
                                 Task { @MainActor in
                                     guard let self, self.runningID == id, self.source?.context == source.context,
+                                          self.backgroundRun?.id == backgroundID,
                                           self.record(id)?.entries[index].status == .writing else { return }
                                     self.completedBytes = completed; self.totalBytes = total
+                                    self.updateBackground(id, deleting: false, completed: completed, total: total)
                                 }
                             }
                         }
@@ -214,6 +232,7 @@ final class MobileCrossNASQueue {
                         try await MobileCrossNASPlan.checkTarget(entry, repository: target.repository)
                         self.update(id) { $0.entries[index].status = .copied }
                         guard self.save() else { throw MobileCrossNASFailure.recovery }
+                        self.updateBackground(id, deleting: false)
                     }
                     guard let current = self.record(id) else { return }
                     try await self.verify(current, source: source, target: target, deletion: false)
@@ -229,9 +248,38 @@ final class MobileCrossNASQueue {
                     record.failure = Self.failure(error)
                 }
             }
-            _ = self.save()
+            let saved = self.save()
+            succeeded = saved && !Task.isCancelled && self.record(id)?.phase == (deleting ? .finished : .copied)
             if deleting { await self.onSourceChanged?(source.context) }
         }
+    }
+
+    private func startBackground(taskID: UUID, activity: MobileTransferBackgroundActivity) {
+        guard let backgroundExecution else { return }
+        let id = UUID()
+        let token = backgroundExecution.begin(taskID: taskID, activity: activity) { [weak self] in
+            guard let self, self.backgroundRun?.id == id else { return }
+            let preparation = self.preparation, execution = self.execution
+            self.pause()
+            _ = await preparation?.result
+            await execution?.value
+        }
+        backgroundRun = (id, token)
+    }
+
+    private func finishBackground(success: Bool) {
+        guard let run = backgroundRun else { return }
+        backgroundRun = nil
+        backgroundExecution?.finish(run.token, success: success)
+    }
+
+    private func updateBackground(_ id: UUID, deleting: Bool, completed: Int64 = 0, total: Int64? = nil) {
+        guard let run = backgroundRun, let record = record(id) else { return }
+        let finished = record.entries.filter { $0.status == (deleting ? .removed : .copied) }.count
+        // 每个已核对项目占一份，当前文件只按真实网络进度折算；最终校验仍占用系统时间。
+        let fraction = total.flatMap { $0 > 0 ? min(1, max(0, Double(completed) / Double($0))) : nil } ?? 0
+        backgroundExecution?.update(run.token, completed: Int64(finished) * 1_000 + Int64(fraction * 1_000),
+                                    total: Int64(record.entries.count) * 1_000)
     }
 
     private func verify(_ record: MobileCrossNASRecord, source: MobileCrossNASEndpoint,

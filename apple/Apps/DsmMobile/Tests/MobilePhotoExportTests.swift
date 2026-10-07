@@ -6,8 +6,72 @@ import XCTest
 
 @MainActor
 final class MobilePhotoExportTests: XCTestCase {
-    private func session(_ service: ExportPhotoService) async -> MobileSynologyPhotosSession {
-        let session = MobileSynologyPhotosSession(); session.configure(service); await session.activate(); return session
+    private func session(_ service: ExportPhotoService, background: (any MobileTransferBackgroundManaging)? = nil) async -> MobileSynologyPhotosSession {
+        let session = MobileSynologyPhotosSession(backgroundExecution: background); session.configure(service); await session.activate(); return session
+    }
+
+    func test导出到期取消网络清理整批并不继续后续照片() async throws {
+        let driver = BackgroundDriverFixture(), service = ExportPhotoService(heldID: 2, cancellable: true)
+        let session = await session(service, background: MobileTransferBackgroundExecution(driver: driver)); defer { session.deactivate() }
+        session.exportPhotos(session.model.items, format: .original)
+        try await held(service)
+        let destinations = await service.destinations
+        await driver.jobs[0].expiration()
+        XCTAssertFalse(session.isExporting); XCTAssertNil(session.export)
+        let cancelled = await service.cancellations, downloads = await service.downloads
+        XCTAssertEqual(cancelled, 1); XCTAssertEqual(downloads.map(\.id), [1, 2])
+        XCTAssertEqual(driver.limited[0].completions, [false])
+        for destination in destinations { XCTAssertFalse(FileManager.default.fileExists(atPath: destination.deletingLastPathComponent().path)) }
+    }
+
+    func test完整相册下载也在到期时取消且不展示部分归档() async throws {
+        let driver = BackgroundDriverFixture(), service = ExportPhotoService(holdArchive: true)
+        let session = await session(service, background: MobileTransferBackgroundExecution(driver: driver)); defer { session.deactivate() }
+        session.exportArchive(.album(id: 42), format: .original, name: "Album")
+        try await held(service); await driver.jobs[0].expiration()
+        let cancelled = await service.cancellations, archives = await service.archives
+        XCTAssertEqual(cancelled, 1); XCTAssertEqual(archives.count, 1)
+        XCTAssertNil(session.export); XCTAssertFalse(session.isExporting)
+        XCTAssertEqual(driver.limited[0].completions, [false])
+    }
+
+    func test照片页面进入后台不会取消明确选择的整批导出() async throws {
+        let driver = BackgroundDriverFixture(), service = ExportPhotoService(heldID: 1)
+        let session = await session(service, background: MobileTransferBackgroundExecution(driver: driver)); defer { session.deactivate() }
+        session.exportPhotos(session.model.items, format: .original); try await held(service)
+        session.enterBackground()
+        XCTAssertTrue(session.isExporting); XCTAssertTrue(session.model.isModuleEnabled)
+        await service.release(); try await idle(session)
+        XCTAssertEqual(session.export?.urls.count, 3); XCTAssertEqual(driver.limited[0].completions, [true])
+    }
+
+    func test系统拒绝持续任务时完整导出成功而部分结果不能报整批成功() async throws {
+        for failed in [false, true] {
+            let driver = BackgroundDriverFixture(); driver.rejectsSubmission = true
+            let service = ExportPhotoService(failureID: failed ? 2 : nil)
+            let session = await session(service, background: MobileTransferBackgroundExecution(driver: driver)); defer { session.deactivate() }
+            session.exportPhotos(session.model.items, format: .original); try await idle(session)
+            XCTAssertEqual(session.export?.urls.count, failed ? 1 : 3)
+            XCTAssertEqual(driver.limited[0].completions, [!failed])
+        }
+    }
+
+    func test旧导出到期不会取消新账号导出且旧收尾才归还执行时间() async throws {
+        let driver = BackgroundDriverFixture(), service = ExportPhotoService(heldID: 1)
+        let session = await session(service, background: MobileTransferBackgroundExecution(driver: driver))
+        defer { session.deactivate() }
+        session.exportPhotos(session.model.items, format: .original); try await held(service)
+        let second = ExportPhotoService(heldID: 1)
+        session.configure(second); await session.activate()
+        session.exportPhotos(session.model.items, format: .original); try await held(second)
+        XCTAssertTrue(driver.limited[0].completions.isEmpty)
+        await service.release()
+        for _ in 0..<200 { if !driver.limited[0].completions.isEmpty { break }; try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(driver.limited[0].completions, [false])
+        await driver.jobs[0].expiration()
+        XCTAssertTrue(session.isExporting); XCTAssertTrue(driver.limited[1].completions.isEmpty)
+        await second.release(); try await idle(session)
+        XCTAssertEqual(session.export?.urls.count, 3); XCTAssertEqual(driver.limited[1].completions, [true])
     }
     private func idle(_ session: MobileSynologyPhotosSession) async throws {
         for _ in 0..<400 {
@@ -244,13 +308,18 @@ private actor ExportPhotoService: SynologyPhotosServing {
     nonisolated let photos: [SynologyPhoto]
     let failureID: Int?
     let heldID: Int?
+    let cancellable: Bool
+    let holdArchive: Bool
+    private(set) var cancellations = 0
     private(set) var downloads: [Download] = []
     private(set) var archives: [SynologyPhotoArchiveTarget] = []
     private(set) var destinations: [URL] = []
     private(set) var isHeld = false
     private var continuation: CheckedContinuation<Void, Never>?
 
-    init(failureID: Int? = nil, heldID: Int? = nil, invalidName: Bool = false, similar: Bool = false) {
+    init(failureID: Int? = nil, heldID: Int? = nil, invalidName: Bool = false, similar: Bool = false,
+         cancellable: Bool = false, holdArchive: Bool = false) {
+        self.cancellable = cancellable; self.holdArchive = holdArchive
         let profile = UUID()
         photos = (1...3).map { index in
             var value = SynologyPhoto(id: .init(profileID: profile, space: .personal, unitID: index),
@@ -278,13 +347,23 @@ private actor ExportPhotoService: SynologyPhotosServing {
     }
     func download(_ photo: SynologyPhoto, format: SynologyPhotoDownloadFormat, to destination: URL, progress: @escaping FileTransferProgress) async throws -> SynologyPhotoDownloadFormat {
         downloads.append(.init(id: photo.id.unitID, format: format)); destinations.append(destination)
-        if heldID == photo.id.unitID { isHeld = true; await withCheckedContinuation { continuation = $0 } }
+        if heldID == photo.id.unitID {
+            isHeld = true
+            if cancellable { try await waitForCancellation() }
+            else { await withCheckedContinuation { continuation = $0 } }
+        }
         try Data([UInt8(photo.id.unitID)]).write(to: destination); progress(1, 1)
         if failureID == photo.id.unitID { throw URLError(.networkConnectionLost) }
         return photo.mediaType == "video" ? .original : format
     }
     func downloadArchive(_ target: SynologyPhotoArchiveTarget, format: SynologyPhotoDownloadFormat, to destination: URL, progress: @escaping FileTransferProgress) async throws {
-        archives.append(target); try Data([0x50, 0x4b]).write(to: destination); progress(2, 2)
+        archives.append(target)
+        if holdArchive { isHeld = true; try await waitForCancellation() }
+        try Data([0x50, 0x4b]).write(to: destination); progress(2, 2)
+    }
+    private func waitForCancellation() async throws {
+        do { try await Task.sleep(for: .seconds(60)) }
+        catch { cancellations += 1; throw error }
     }
     func release() { continuation?.resume(); continuation = nil }
 }

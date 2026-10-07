@@ -12,9 +12,13 @@ actor MobileCrossNASUITransport: DsmBinaryHTTPTransport {
     private let readOnly: Bool
     private var md5Path = ""
     private let expectedSID: String?
+    private let backgroundScenario: Bool
+    private var delayedCopy = false
+    private var delayedRemoval = false
 
     init(target: Bool, state: String, expectedSID: String? = nil) {
         self.expectedSID = expectedSID
+        backgroundScenario = state == "cross-background"
         items = target ? ["/output": true] : ["/fixture": true, "/fixture/Inbox": true,
             "/fixture/Inbox/Empty": true, "/fixture/Inbox/Nested.txt": false, "/fixture/Sample document.txt": false]
         contents = target ? [:] : ["/fixture/Inbox/Nested.txt": Data("0123456789".utf8),
@@ -65,6 +69,7 @@ actor MobileCrossNASUITransport: DsmBinaryHTTPTransport {
             guard let data = contents[md5Path] else { throw URLError(.fileDoesNotExist) }
             result = ["finished": true, "md5": Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()]
         case (DsmAPIName.fileStationDownload, "download"):
+            if backgroundScenario, !delayedCopy { delayedCopy = true; try await Task.sleep(for: .seconds(8)) }
             let paths = try JSONDecoder().decode([String].self, from: Data(field("path").utf8))
             guard let path = paths.first, let data = contents[path] else { throw URLError(.fileDoesNotExist) }
             return .init(data: data, statusCode: 206, headers: ["Content-Type": "application/octet-stream",
@@ -99,6 +104,7 @@ actor MobileCrossNASUITransport: DsmBinaryHTTPTransport {
         case (DsmAPIName.fileStationCheckPermission, "write"):
             guard !readOnly else { throw URLError(.noPermissionsToReadFile) }; result = [:]
         case (DsmAPIName.fileStationDelete, "start"):
+            if backgroundScenario, !delayedRemoval { delayedRemoval = true; try await Task.sleep(for: .seconds(8)) }
             let paths = try JSONDecoder().decode([String].self, from: Data(field("path").utf8))
             guard field("recursive") == "false", !items.keys.contains(where: { path in paths.contains { path.hasPrefix($0 + "/") } }) else {
                 throw URLError(.noPermissionsToReadFile)

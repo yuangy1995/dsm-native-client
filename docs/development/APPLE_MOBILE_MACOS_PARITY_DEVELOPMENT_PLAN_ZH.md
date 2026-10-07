@@ -22,6 +22,21 @@
 - 用户授权必要的隔离测试及模拟器操作，禁止影响 NAS 真实数据；官方已登录页面只作必要只读核对。TestFlight 和移动正式发布不在本次发布范围。
 - 共享目标不增加第三方依赖；恢复队列独立版本化，不迁移旧配置、不存明文凭据；回滚停用新增入口并保留原配置。M8 的扩展身份、共享权限及存储在实施前列明必要性、影响和回滚。
 
+## M8 当前收口边界（2026-10-07）
+
+M8a 普通文件传输与 M8b 系统分享已有独立验收；M8d 照片上传/导出、跨 NAS 两阶段
+和 Office 副本下载/主动保存已接系统时间，完成 135 项移动聚焦回归、两端各五项真实
+前后台 UI、共享及 Mac 回归、移动/Mac Release 双架构构建与 12 张截图复核。
+最终整合又在两端各运行全部 1846 项移动单元，均 0 失败、4 项既有真机文件保护检查跳过；
+同步了仍要求后台完整停用照片会话的旧界面源码断言，未降低上传/导出的行为检查。
+具体开始/取消/持久恢复边界、命令和真机条件见[后台执行器账本](APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md)。
+
+M8c 已复用 Mac 的共享 File Provider 运行时并接移动域注册、读取/缓存、原位编辑、
+冲突/未知恢复及独立删除授权；两端可编辑系统主流程已通过。默认只读目录在当前
+本机系统中仍发生元数据落盘错误，须继续对照其他运行环境，见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)。
+不以写权限绕过只读失败，不把它转写成仅待用户真机验收。该问题及仍在处理的完整云端
+失败解决前，M6–M8 整体目标保持未完成；其他独立切片的已验证结果保留。
+
 ## 2026-10-07 云端 iPad 启动、输入与分组复核
 
 开始基线 `bd285f41`，main 工作区干净，控制台本机验收与提交已完成。旧完整云端
@@ -767,9 +782,9 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M7 映像、网络、项目 | ContainerImagePullModel、ServiceManagementView | 搜索/tag/拉取、网络/项目表单；Registry.search v1；内部写 | M7b 搜索/标签/下载及跨重启恢复已通过两端单元和实际 UI；读取暂失保留原任务，明确 1202 失败结束。M7c1 单项/多项映像删除与恢复已通过两端回归；M7c3 网络表单/详情/单多删与持久恢复已实现并有两端 UI 证据；项目写及容器创建编辑已补官方静态字段，产品基线/源码缺口仍单独记录 |
 | M7 VMM 操作与创建 | ServiceManagementView、ServiceManagementModel | 分步配置/稳定目标；Virtualization；高风险 | M7d1 电源/删除与摘要恢复已完成本机验证；M7d2 基础编辑、摘要恢复、共享全量与两端模型/五项实际 UI 已通过；M7d3 分步创建、原任务/完整配置关联与独立持久恢复已完成共享/Mac/两端模型及六项创建 UI 验收；同名不认领，归属/配置不足保持未知 |
 | M7 VMM 网络/映像/控制台 | ServiceManagementView | 资源表单及触控 WebKit；控制台会话；凭据/内部写 | M7d4a 网络详情/改名/单多删与 M7d4b 映像详情/单多删及独立摘要恢复已完成本机验收，保留关联 VM/创建引用互斥、回执与只读恢复；控制台继续 M7d5。控制台须临时隔离 Cookie、限定源站，URL 禁止原始会话秘密 |
-| M8 系统后台传输 | WorkspaceModel（业务语义） | 系统持续任务、受保护文件及恢复；后台/凭据 | M8a 文件下载/上传源码与两端聚焦验收完成；系统持续任务保留既有证书/同源网络路径，旧系统有限时间降级，不承诺进程终止续传。其他执行器逐入口接入，依据与验证见[专项账本](APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md) |
+| M8 系统后台传输 | WorkspaceModel（业务语义） | 系统持续任务、受保护文件及恢复；后台/凭据 | M8a 普通文件与 M8d 照片上传/导出、跨 NAS 复制及独立删源、Office 下载/主动回传已接系统时间；135 项聚焦回归和两端各五项前后台 UI 通过。保留原证书/同源保护、旧系统有限时间和未知写恢复，不承诺进程终止续传；见[普通传输账本](APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md)与[其他执行器账本](APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md) |
 | M8 分享扩展 | FileUploadPlan（上传语义） | 分享→NAS/位置→持久任务；独立扩展最小共享权限 | M8b 已实现扩展内选择与上传、最小共享会话撤销、独立持久记录及主 App 接手；两端各 81 项聚焦单元及四项真实系统分享 UI 通过，正式签名/真实 NAS 另验，见[专项账本](APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md) |
-| M8 Files 与外部编辑 | DesktopCloudDriveManager；Mac FileProviderExtension | iOS File Provider 先读/下载/缓存，再写回/冲突/删除；系统集成 | 未实现；不复制 Mac 外壳；正式 entitlement 与真机另验 |
+| M8 Files 与外部编辑 | DesktopCloudDriveManager；Mac FileProviderExtension | iOS File Provider 先读/下载/缓存，再写回/冲突/删除；系统集成 | M8c 已提取共享运行时并实现移动注册、缓存、原位编辑/冲突恢复及独立删除授权；两端可编辑系统主流程通过。默认只读系统目录仍可复现元数据错误，尚未完整验收，不放宽写权限绕过。见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)；正式权限/真机另验 |
 
 ## 顺序、所有权与质量门
 

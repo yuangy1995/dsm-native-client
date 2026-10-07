@@ -3,6 +3,74 @@ import XCTest
 @MainActor
 final class MobileWorkspaceUITests: XCTestCase {
 
+    func test照片上传离开前台完成后仍能清理本机记录() {
+        let app = launchFixture(state: "photo-upload-background", background: true); defer { app.terminate() }
+        openPhotos(app); beginPhotoUpload(app)
+        XCTAssertTrue(app.staticTexts["Sample image.jpg"].waitForExistence(timeout: 8))
+        element("mobile.photos.upload.submit", in: app).tap()
+        leaveDuringTransfer(app)
+        XCTAssertTrue(element("mobile.photos.upload.state.completed", in: app).waitForExistence(timeout: 10))
+        attachScreenshot(app, name: "Photos background upload completed")
+        element("mobile.photos.upload.clear", in: app).tap()
+        XCTAssertTrue(app.staticTexts["No upload tasks"].waitForExistence(timeout: 5))
+    }
+
+    func test照片导出离开前台后返回系统文件面板() {
+        let app = launchFixture(state: "photo-export-background", background: true); defer { app.terminate() }
+        openPhotos(app); selectPhotoItems(app)
+        element("mobile.photos.selection.actions", in: app).tap()
+        element("mobile.photos.export.save", in: app).tap(); element("mobile.photos.export.original", in: app).tap()
+        leaveDuringTransfer(app)
+        XCTAssertTrue(element("mobile.documents.export-panel", in: app).waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Save", "保存"])).firstMatch.waitForExistence(timeout: 15))
+        attachScreenshot(app, name: "Photos background export system panel")
+    }
+
+    func test跨NAS后台复制后另行确认后台删源() {
+        let app = launchFixture(state: "cross-background", background: true); defer { app.terminate() }
+        beginCrossNAS(app, move: true); app.buttons["files.cross.start"].tap()
+        leaveDuringTransfer(app); openTransfers(app)
+        XCTAssertTrue(app.staticTexts["Copy Complete"].waitForExistence(timeout: 15))
+        let remove = app.buttons["files.cross.remove"]
+        XCTAssertTrue(remove.exists); attachScreenshot(app, name: "Cross NAS background copy keeps originals")
+        remove.tap()
+        let confirm = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Remove Originals", "files.cross.remove")).firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+        leaveDuringTransfer(app)
+        XCTAssertTrue(app.staticTexts["Move Complete"].waitForExistence(timeout: 15))
+        XCTAssertFalse(remove.exists)
+        attachScreenshot(app, name: "Cross NAS explicitly confirmed background removal")
+    }
+
+    func testOffice覆盖回传离开前台后显示实际保存结果() {
+        let app = launchFixture(state: "office-background", background: true); defer { app.terminate() }
+        openOfficeEditor(app)
+        XCTAssertTrue(app.staticTexts["Changes ready to save"].waitForExistence(timeout: 10))
+        element("files.office.save", in: app).tap(); leaveDuringTransfer(app)
+        XCTAssertTrue(app.staticTexts["Changes saved to NAS"].waitForExistence(timeout: 15))
+        XCTAssertFalse(element("files.office.save", in: app).exists)
+        attachScreenshot(app, name: "Office background overwrite verified")
+    }
+
+    func test照片后台上传中文深色大字完成状态可读() {
+        let app = launchFixture(state: "photo-upload-background", language: "zh-Hans", background: true); defer { app.terminate() }
+        openPhotos(app, chinese: true); beginPhotoUpload(app)
+        let start = element("mobile.photos.upload.submit", in: app)
+        XCTAssertTrue(start.waitForExistence(timeout: 10)); XCTAssertTrue(start.isHittable); start.tap()
+        leaveDuringTransfer(app)
+        XCTAssertTrue(element("mobile.photos.upload.state.completed", in: app).waitForExistence(timeout: 10))
+        attachScreenshot(app, name: "Photos background upload Chinese dark large")
+    }
+
+    private func leaveDuringTransfer(_ app: XCUIApplication) {
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
+        let deadline = Date().addingTimeInterval(13)
+        let elapsed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in Date() >= deadline }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [elapsed], timeout: 16), .completed)
+        app.activate(); XCTAssertTrue(app.wait(for: .runningForeground, timeout: 8))
+    }
+
     func test照片批量原件交给系统文件面板并能取消() {
         let app = launchFixture(state: "photo-export"); defer { app.terminate() }
         openPhotos(app)
@@ -2947,11 +3015,18 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 5)); edit.tap()
     }
 
-    private func launchFixture(state: String = "content", language: String = "en") -> XCUIApplication {
+    private func launchFixture(state: String = "content", language: String = "en", background: Bool = false) -> XCUIApplication {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["--ui-fixture", "-lanstash.app-language.v1", language]
+        if background {
+            app.launchArguments.append("--ui-transfer-background")
+            if language == "zh-Hans" {
+                app.launchArguments += ["-lanstash.mobile.settings.appearance.v1", "dark",
+                    "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+            }
+        }
         app.launchEnvironment["LANSTASH_UI_STATE"] = state
         app.launch()
         return app

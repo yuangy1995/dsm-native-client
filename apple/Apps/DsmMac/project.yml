@@ -67,6 +67,8 @@ targets:
       - path: FileProviderExtension
     dependencies:
       - package: DsmShared
+        product: DsmFileProviderRuntime
+      - package: DsmShared
         product: DsmLocalization
       - package: DsmShared
         product: DsmCore

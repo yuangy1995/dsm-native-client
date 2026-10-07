@@ -4,7 +4,7 @@ import DsmNetwork
 import FileProvider
 import Foundation
 
-protocol ProviderRuntimeConfigurationStoring: Sendable {
+public protocol ProviderRuntimeConfigurationStoring: Sendable {
     func configuration(
         mappingID: UUID
     ) async throws -> DesktopDriveProviderConfiguration?
@@ -42,21 +42,9 @@ protocol ProviderRuntimeConfigurationStoring: Sendable {
     func removeDeletedItemPaths(mappingID: UUID, remotePath: String, maximumEntryCount: Int) async throws
 }
 
-extension ProviderRuntimeConfigurationStoring {
-    func validateWritebackState(mappingID: UUID) async throws {
-        throw DesktopDriveWritebackError.disabled
-    }
-    func relocateItemPaths(mappingID: UUID, source: String, destination: String) async throws {
-        throw DesktopDriveWritebackError.disabled
-    }
-    func removeDeletedItemPaths(mappingID: UUID, remotePath: String, maximumEntryCount: Int) async throws {
-        throw DesktopDriveWritebackError.disabled
-    }
-}
-
 extension DesktopDriveConfigurationStore: ProviderRuntimeConfigurationStoring {}
 
-protocol ProviderRuntimeRepository: Sendable {
+public protocol ProviderRuntimeRepository: Sendable {
     func listShares(offset: Int, limit: Int) async throws -> FilePage
     func listFolder(path: String, offset: Int, limit: Int) async throws -> FilePage
     func getInfo(paths: [String]) async throws -> [FileItem]
@@ -71,7 +59,7 @@ protocol ProviderRuntimeRepository: Sendable {
 
 extension DsmFileRepository: ProviderRuntimeRepository {}
 
-protocol ProviderWritebackRepository: ProviderRuntimeRepository {
+public protocol ProviderWritebackRepository: ProviderRuntimeRepository {
     func upload(localURL: URL, to folderPath: String, overwrite: Bool, progress: @escaping FileTransferProgress) async throws
     func createFolderResult(parentPath: String, name: String) async throws -> FileItemMutationOutcome
     func renameResult(path: String, newName: String) async throws -> FileItemMutationOutcome
@@ -81,7 +69,7 @@ protocol ProviderWritebackRepository: ProviderRuntimeRepository {
 
 extension DsmFileRepository: ProviderWritebackRepository {}
 
-struct ProviderRuntimeDependencies: Sendable {
+public struct ProviderRuntimeDependencies: Sendable {
     var configurationStore: any ProviderRuntimeConfigurationStoring
     var makeRepository: @Sendable (
         DesktopDriveProviderConfiguration
@@ -95,28 +83,47 @@ struct ProviderRuntimeDependencies: Sendable {
     var removeItem: @Sendable (URL) -> Void
     var capacityRecheckIntervalBytes: Int64
     var changeJournalMaximumEntries: Int
-    var writebackStore: DesktopDriveWritebackStore = .init()
-    var writebackAvailable: Bool = DesktopDriveWritebackAvailability.isEnabled
-    var waitForChildren: @Sendable (NSFileProviderItemIdentifier, DesktopDriveMapping) async throws -> Void = { _, _ in }
-    var signalDeletion: @Sendable (DesktopDriveMapping) async throws -> Void = { _ in }
+    var writebackStore: DesktopDriveWritebackStore
+    var writebackAvailable: Bool
+    var waitForChildren: @Sendable (NSFileProviderItemIdentifier, DesktopDriveMapping) async throws -> Void
+    var signalDeletion: @Sendable (DesktopDriveMapping) async throws -> Void
 
-    static func live() -> Self {
-        let configurationStore = DesktopDriveConfigurationStore()
-        let sessionStore = SharedKeychainSessionStore()
-        return .init(
-            configurationStore: configurationStore,
-            makeRepository: { configuration in
-                guard let session: AuthSession = try await sessionStore.load(
-                    for: configuration.mapping.profileID
-                ) else {
-                    throw NSFileProviderError(.notAuthenticated)
-                }
-                return try DsmFileRepository(
-                    profile: configuration.connection.profile,
-                    capabilities: configuration.connection.capabilitySet,
-                    session: session
-                )
-            },
+    public init(
+        configurationStore: any ProviderRuntimeConfigurationStoring,
+        makeRepository: @escaping @Sendable (DesktopDriveProviderConfiguration) async throws -> any ProviderRuntimeRepository,
+        temporaryDirectory: @escaping @Sendable (DesktopDriveMapping) throws -> URL,
+        ensureCacheSpace: @escaping @Sendable (Int64?, URL) throws -> Void,
+        evictItem: @escaping @Sendable (NSFileProviderItemIdentifier, DesktopDriveMapping) async throws -> Void,
+        removeItem: @escaping @Sendable (URL) -> Void,
+        capacityRecheckIntervalBytes: Int64,
+        changeJournalMaximumEntries: Int,
+        writebackStore: DesktopDriveWritebackStore = .init(),
+        writebackAvailable: Bool = DesktopDriveWritebackAvailability.isEnabled,
+        waitForChildren: @escaping @Sendable (NSFileProviderItemIdentifier, DesktopDriveMapping) async throws -> Void = { _, _ in },
+        signalDeletion: @escaping @Sendable (DesktopDriveMapping) async throws -> Void = { _ in }
+    ) {
+        self.configurationStore = configurationStore
+        self.makeRepository = makeRepository
+        self.temporaryDirectory = temporaryDirectory
+        self.ensureCacheSpace = ensureCacheSpace
+        self.evictItem = evictItem
+        self.removeItem = removeItem
+        self.writebackStore = writebackStore
+        self.writebackAvailable = writebackAvailable
+        self.capacityRecheckIntervalBytes = capacityRecheckIntervalBytes
+        self.changeJournalMaximumEntries = changeJournalMaximumEntries
+        self.waitForChildren = waitForChildren
+        self.signalDeletion = signalDeletion
+    }
+
+    /// 平台提供账号与存储；枚举、版本、缓存和写回继续共用同一实现。
+    public static func system(
+        configurationStore: any ProviderRuntimeConfigurationStoring,
+        writebackStore: DesktopDriveWritebackStore,
+        writebackAvailable: Bool = true,
+        makeRepository: @escaping @Sendable (DesktopDriveProviderConfiguration) async throws -> any ProviderRuntimeRepository
+    ) -> Self {
+        .init(configurationStore: configurationStore, makeRepository: makeRepository,
             temporaryDirectory: { mapping in
                 let domain = ProviderRuntime.domain(for: mapping)
                 guard let manager = NSFileProviderManager(for: domain) else {
@@ -139,6 +146,8 @@ struct ProviderRuntimeDependencies: Sendable {
             capacityRecheckIntervalBytes: 8 * 1_024 * 1_024,
             // 仅保留有限增量；更旧锚点交给系统完整重新枚举，避免无限增长。
             changeJournalMaximumEntries: 2_048,
+            writebackStore: writebackStore,
+            writebackAvailable: writebackAvailable,
             waitForChildren: { identifier, mapping in
                 guard let manager = NSFileProviderManager(for: ProviderRuntime.domain(for: mapping)) else {
                     throw NSFileProviderError(.providerNotFound)
@@ -154,6 +163,27 @@ struct ProviderRuntimeDependencies: Sendable {
             }
         )
     }
+
+    #if os(macOS)
+    public static func live() -> Self {
+        let sessionStore = SharedKeychainSessionStore()
+        return .system(configurationStore: DesktopDriveConfigurationStore(), writebackStore: .init(),
+            writebackAvailable: DesktopDriveWritebackAvailability.isEnabled,
+            makeRepository: { configuration in
+                guard let session: AuthSession = try await sessionStore.load(
+                    for: configuration.mapping.profileID
+                ) else {
+                    throw NSFileProviderError(.notAuthenticated)
+                }
+                return try DsmFileRepository(
+                    profile: configuration.connection.profile,
+                    capabilities: configuration.connection.capabilitySet,
+                    session: session
+                )
+            }
+        )
+    }
+    #endif
 }
 
 struct ProviderRequestedVersion: Equatable, Sendable {
@@ -264,12 +294,14 @@ actor ProviderRuntime {
     private var temporaryAdmissionIsLocked = false
     private var temporaryAdmissionWaiters: [CheckedContinuation<Void, Never>] = []
 
+    #if os(macOS)
     init(mappingIdentifier: String) {
         self.init(
             mappingIdentifier: mappingIdentifier,
             dependencies: .live()
         )
     }
+    #endif
 
     init(
         mappingIdentifier: String,
@@ -518,7 +550,12 @@ actor ProviderRuntime {
             metadata: providerItem.itemVersion.metadataVersion
         )
         if let requestedVersion, requestedVersion.content != currentVersion.content {
+            #if os(macOS)
             throw NSFileProviderError(.versionNoLongerAvailable)
+            #else
+            // iOS 不提供版本过期错误；停止本次读取，绝不把新版内容冒充指定旧版。
+            throw NSFileProviderError(.cannotSynchronize)
+            #endif
         }
         guard let fileName = DesktopDriveStagingIdentity.contentFileName(
             mappingID: context.configuration.mapping.id,
@@ -1722,7 +1759,9 @@ actor ProviderRuntime {
             ),
             displayName: mapping.displayName
         )
-        domain.supportsSyncingTrash = false
+        if #available(iOS 18.0, macOS 13.0, *) {
+            domain.supportsSyncingTrash = false
+        }
         return domain
     }
 }

@@ -10,6 +10,7 @@ let package = Package(
         .iOS(.v17)
     ],
     products: [
+        .library(name: "DsmFileProviderRuntime", targets: ["DsmFileProviderRuntime"]),
         .library(name: "DsmCore", targets: ["DsmCore"]),
         .library(name: "DsmNetwork", targets: ["DsmNetwork"]),
         .library(name: "DsmLocalization", targets: ["DsmLocalization"]),
@@ -74,18 +75,8 @@ let package = Package(
         ),
         .target(
             name: "DsmFileProviderRuntime",
-            dependencies: ["DsmCore", "DsmNetwork"],
-            path: "Apps/DsmMac/FileProviderExtension",
-            exclude: [
-                "FileProviderExtension.swift",
-                "ProviderErrorMapper.swift"
-            ],
-            sources: [
-                "ProviderItem.swift",
-                "ProviderRuntime.swift",
-                "ProviderEnumerator.swift",
-                "ProviderOperationRegistry.swift"
-            ]
+            dependencies: ["DsmCore", "DsmNetwork", "DsmLocalization"],
+            path: "Packages/DsmFileProviderRuntime/Sources"
         ),
         .testTarget(
             name: "DsmVirtualMachineConsoleFeatureTests",
@@ -121,7 +112,7 @@ let package = Package(
         .testTarget(
             name: "DsmFileProviderRuntimeTests",
             dependencies: ["DsmCore", "DsmFileProviderRuntime"],
-            path: "Apps/DsmMac/FileProviderExtensionTests"
+            path: "Packages/DsmFileProviderRuntime/Tests"
         )
     ]
 )

@@ -39,7 +39,7 @@ final class MobileAppModel {
     let favorites: MobileFavoritesModel
     let fileSettings: MobileFileSettingsModel
     let remoteLocations: MobileRemoteLocationsModel
-    let synologyPhotos = MobileSynologyPhotosSession()
+    let synologyPhotos: MobileSynologyPhotosSession
     let chatModel: MobileChatModel
     let nasHealthModel = MobileNasHealthModel()
     let nasDetailsModel = MobileNasDetailsModel()
@@ -185,6 +185,7 @@ final class MobileAppModel {
         chatPollingIntervalNanoseconds: UInt64 = 30_000_000_000
     ) {
         self.filePreviewModel = previewModel
+        self.synologyPhotos = MobileSynologyPhotosSession(backgroundExecution: transferBackgroundExecution)
         self.chatModel = MobileChatModel(realtimePollingIntervalNanoseconds: chatPollingIntervalNanoseconds,
             interactionRecoveryRoot: transferRecoveryStore?.rootURL.appendingPathComponent("Chat", isDirectory: true), audioDriver: chatAudioDriver,
             notifications: MobileChatNotifications(defaults: defaults, driver: chatNotificationDriver ?? MobileSystemChatNotificationDriver()))
@@ -226,8 +227,10 @@ final class MobileAppModel {
         )
         self.transferCoordinator = transferCoordinator
         self.fileActivityModel = MobileFileActivityModel(coordinator: transferCoordinator, rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("NasControls", isDirectory: true))
-        self.office = MobileOfficeModel(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Office", isDirectory: true))
-        self.crossNAS = MobileCrossNASQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("CrossNAS", isDirectory: true))
+        self.office = MobileOfficeModel(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Office", isDirectory: true),
+            backgroundExecution: transferBackgroundExecution)
+        self.crossNAS = MobileCrossNASQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("CrossNAS", isDirectory: true),
+            backgroundExecution: transferBackgroundExecution)
         self.fileUploadQueue = MobileFileUploadQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("UploadBatches", isDirectory: true),
             backgroundExecution: transferBackgroundExecution)
         self.fileArchiveQueue = MobileFileArchiveQueue(rootURL: transferRecoveryStore?.rootURL.appendingPathComponent("Archives", isDirectory: true))

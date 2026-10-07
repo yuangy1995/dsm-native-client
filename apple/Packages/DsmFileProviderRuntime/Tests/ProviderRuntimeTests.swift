@@ -875,6 +875,25 @@ final class ProviderRuntimeTests: XCTestCase {
         XCTAssertNotEqual(snapshot.anchor, anchor)
     }
 
+    func test指定版本已变化时拒绝下载且不交付错误版本() async throws {
+        let context = try makeContext()
+        let runtime = ProviderRuntime(mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: context.dependencies(capacity: .init(results: [])))
+        let page = try await runtime.enumerate(containerIdentifier: .rootContainer, offset: 0, limit: 10)
+        let identifier = try XCTUnwrap(page.items.first?.itemIdentifier)
+        let error = await capturedError {
+            _ = try await runtime.fetchContents(for: identifier,
+                requestedVersion: .init(content: Data("outdated".utf8), metadata: Data()), progress: { _, _ in })
+        }
+        #if os(macOS)
+        XCTAssertEqual((error as NSError?)?.code, NSFileProviderError.versionNoLongerAvailable.rawValue)
+        #else
+        XCTAssertEqual((error as NSError?)?.code, NSFileProviderError.cannotSynchronize.rawValue)
+        #endif
+        let snapshot = await context.repository.snapshot()
+        XCTAssertEqual(snapshot.downloadCount, 0)
+    }
+
     private func makeContext(
         progressValues: [Int64] = [],
         temporaryLimitBytes: Int64 = DesktopDriveCachePolicy
@@ -1234,6 +1253,10 @@ private final class CapacityProbe: @unchecked Sendable {
 
 private actor ProviderConfigurationStoreStub:
     ProviderRuntimeConfigurationStoring {
+    func validateWritebackState(mappingID: UUID) async throws { throw DesktopDriveWritebackError.disabled }
+    func relocateItemPaths(mappingID: UUID, source: String, destination: String) async throws { throw DesktopDriveWritebackError.disabled }
+    func removeDeletedItemPaths(mappingID: UUID, remotePath: String, maximumEntryCount: Int) async throws { throw DesktopDriveWritebackError.disabled }
+
     let configurationValue: DesktopDriveProviderConfiguration
     let remotePathValue: String
     private(set) var recordedEntries: [DesktopDriveCacheEntry] = []

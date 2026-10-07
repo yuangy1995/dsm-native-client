@@ -133,6 +133,10 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
     var capabilities: NSFileProviderItemCapabilities {
         var result: NSFileProviderItemCapabilities = [.allowsReading]
         if directory { result.insert(.allowsContentEnumerating) }
+        #if os(iOS)
+        // iOS 没有 Mac 的 contentPolicy，须显式允许系统回收已上传且未被编辑的副本。
+        if !keptOffline, identifier != .rootContainer, identifier != .trashContainer { result.insert(.allowsEvicting) }
+        #endif
         if deletable { result.insert(.allowsDeleting) }
         if writable {
             result.insert(.allowsWriting)
@@ -140,9 +144,11 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
         }
         return result
     }
+    #if os(macOS)
     var contentPolicy: NSFileProviderContentPolicy {
         keptOffline ? .downloadEagerlyAndKeepDownloaded : .downloadLazily
     }
+    #endif
     var isUploaded: Bool { true }
 
     private static func identifier(

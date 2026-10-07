@@ -337,10 +337,10 @@ private struct MobileSynologyPhotosContent: View {
         }
         .onDisappear {
             // 全屏预览暂时遮住网格时仍保留会话；实际模块切换和退出由 Shell 停用。
-            if model.previewPhoto == nil { session.deactivate() }
+            if model.previewPhoto == nil, scenePhase == .active { session.deactivate() }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { session.deactivate() }
+            if phase == .background { session.enterBackground() }
             else if phase == .active { Task { await session.activate() } }
         }
     }

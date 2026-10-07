@@ -62,6 +62,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     private(set) var isEditHeld = false
     private var heldUpload: CheckedContinuation<Void, Never>?
     private(set) var isUploadHeld = false
+    private(set) var uploadCancellations = 0
     private var folderList: [SynologyPhotoCollection] = []
     private var folderSorts: [String: SynologyPhotoSort] = [:]
     private var heldFolder: CheckedContinuation<Void, Never>?
@@ -539,6 +540,7 @@ actor MobilePhotosUIService: SynologyPhotosServing {
     func download(_ photo: SynologyPhoto, format: SynologyPhotoDownloadFormat, to destination: URL, progress: @escaping FileTransferProgress) async throws -> SynologyPhotoDownloadFormat {
         guard state.hasPrefix("photo-export") else { throw CapabilitySelectionError.unsupported(apiName: "Photos.Download") }
         if state == "photo-export-loading" { try await Task.sleep(for: .seconds(30)) }
+        if state == "photo-export-background", photo.id.unitID == 1 { try await Task.sleep(for: .seconds(8)) }
         if state == "photo-export-error" || (state == "photo-export-partial" && photo.id.unitID == 2) { throw URLError(.notConnectedToInternet) }
         try Self.exportImage.write(to: destination); progress(Int64(Self.exportImage.count), Int64(Self.exportImage.count))
         return .original
@@ -767,9 +769,23 @@ actor MobilePhotosUIService: SynologyPhotosServing {
         }
         records[operationID] = record
         try checkpoint(record)
+        if state == "photo-upload-background" {
+            do { try await Task.sleep(for: .seconds(8)) }
+            catch { return .init(state: .pendingReview) }
+        }
         if state == "photo-held" {
             isUploadHeld = true
             await withCheckedContinuation { heldUpload = $0 }
+        }
+        if state == "photo-background-held" {
+            isUploadHeld = true
+            progress(1, 2)
+            do { try await Task.sleep(for: .seconds(60)) }
+            catch {
+                // 与真实 Repository 一致：写入开始后的取消返回未知，不伪装成提交前失败。
+                uploadCancellations += 1
+                return .init(state: .pendingReview)
+            }
         }
         return result(record)
     }

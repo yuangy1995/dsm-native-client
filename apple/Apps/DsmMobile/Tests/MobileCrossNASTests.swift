@@ -18,6 +18,9 @@ private actor CrossNASRepository: MobileCrossNASRepository {
     var delayed = false
     var repeatPage = false
     var delayedReads = false
+    var holdsCopy = false
+    var holdsDelete = false
+    private(set) var cancellations = 0
     init(_ id: UUID) { profileID = id }
     func set(_ path: String, directory: Bool = false, value: String = "sample", writable: Bool = true, deletable: Bool = true) {
         items[path] = FileItem(profileID: profileID, name: MobileCrossNASPlan.leaf(path), path: path,
@@ -32,6 +35,11 @@ private actor CrossNASRepository: MobileCrossNASRepository {
     func setDelayed() { delayed = true }
     func setDelayedReads() { delayedReads = true }
     func setRepeatPage() { repeatPage = true }
+    func hold(copy: Bool = false, deletion: Bool = false) { holdsCopy = copy; holdsDelete = deletion }
+    private func waitForCancellation() async throws {
+        do { try await Task.sleep(for: .seconds(60)) }
+        catch { cancellations += 1; throw error }
+    }
     func listFolder(path: String, offset: Int, limit: Int) async throws -> FilePage {
         let children = items.values.filter { MobileCrossNASPlan.parent($0.path) == path }.sorted { $0.path < $1.path }
         let page = Array(children.dropFirst(repeatPage && offset > 0 ? 0 : offset).prefix(limit))
@@ -54,6 +62,7 @@ private actor CrossNASRepository: MobileCrossNASRepository {
     func copyCrossNAS(_ item: FileItem, to target: any MobileCrossNASRepository,
                       folder: String, progress: @escaping FileTransferProgress) async throws {
         copies.append(item.path)
+        if holdsCopy { try await waitForCancellation() }
         if delayed {
             await withCheckedContinuation { continuation in
                 Task { try? await Task.sleep(for: .milliseconds(120)); continuation.resume() }
@@ -73,6 +82,7 @@ private actor CrossNASRepository: MobileCrossNASRepository {
             deletions.append((path, recursive))
             guard !recursive, !items.keys.contains(where: { $0.hasPrefix(path + "/") }) else { throw MobileCrossNASFailure.changed }
             items[path] = nil; data[path] = nil
+            if holdsDelete { try await waitForCancellation() }
         }
         if loseDeletion { loseDeletion = false; throw URLError(.networkConnectionLost) }
         return try .init(status: .confirmedSuccess, operation: "fileDelete", submitted: true,
@@ -112,7 +122,7 @@ final class MobileCrossNASTests: XCTestCase {
         let sourceRepo: CrossNASRepository
         let targetRepo: CrossNASRepository
         let queue: MobileCrossNASQueue
-        init() async throws {
+        init(background: (any MobileTransferBackgroundManaging)? = nil) async throws {
             let a = try NasProfile(displayName: "Source", host: "source.invalid", port: 5001, usernameHint: "reader")
             let b = try NasProfile(displayName: "Target", host: "target.invalid", port: 5001, usernameHint: "writer")
             sourceRepo = CrossNASRepository(a.id); targetRepo = CrossNASRepository(b.id)
@@ -123,12 +133,83 @@ final class MobileCrossNASTests: XCTestCase {
             await sourceRepo.set("/source/Folder/Empty", directory: true)
             await sourceRepo.set("/source/Folder/Child.txt", value: "nested")
             await targetRepo.set("/target", directory: true)
-            queue = MobileCrossNASQueue(rootURL: root); queue.configure(source: source)
+            queue = MobileCrossNASQueue(rootURL: root, backgroundExecution: background); queue.configure(source: source)
         }
         func selected() async -> [FileItem] { try! await sourceRepo.getInfo(paths: ["/source/File.txt", "/source/Folder"]) }
         func cleanup() { try? FileManager.default.removeItem(at: root) }
     }
     private func unwrap(_ value: UUID?) throws -> UUID { try XCTUnwrap(value) }
+
+    func test复制到期取消网络落盘未知结果且后续项不启动() async throws {
+        let driver = BackgroundDriverFixture()
+        let f = try await Fixture(background: MobileTransferBackgroundExecution(driver: driver)); defer { f.cleanup() }
+        await f.sourceRepo.hold(copy: true)
+        let id = try unwrap(await f.queue.submit(items: await f.selected(), target: f.target, destination: "/target", moveSource: true))
+        while await f.sourceRepo.copies.isEmpty { await Task.yield() }
+        await driver.jobs[0].expiration()
+        XCTAssertFalse(f.queue.isWorking)
+        XCTAssertEqual(f.queue.records[0].entries[0].status, .uncertain)
+        XCTAssertTrue(f.queue.records[0].entries.dropFirst().allSatisfy { $0.status == .pending })
+        XCTAssertEqual(driver.limited[0].completions, [false])
+        let cancelled = await f.sourceRepo.cancellations, copies = await f.sourceRepo.copies, deletes = await f.sourceRepo.deletions
+        XCTAssertEqual(cancelled, 1); XCTAssertEqual(copies.count, 1); XCTAssertTrue(deletes.isEmpty)
+        let restored = MobileCrossNASQueue(rootURL: f.root); restored.configure(source: f.source)
+        XCTAssertEqual(restored.records, f.queue.records)
+        restored.resume(id, target: f.target); f.queue.resume(id, target: f.target)
+        let unchanged = await f.sourceRepo.copies; XCTAssertEqual(unchanged.count, 1)
+    }
+
+    func test准备清单到期不创建记录或开始复制() async throws {
+        let driver = BackgroundDriverFixture()
+        let f = try await Fixture(background: MobileTransferBackgroundExecution(driver: driver)); defer { f.cleanup() }
+        let selected = await f.selected(); await f.sourceRepo.setDelayedReads()
+        let task = Task { await f.queue.submit(items: selected, target: f.target, destination: "/target", moveSource: false) }
+        while driver.jobs.isEmpty { await Task.yield() }
+        await driver.jobs[0].expiration()
+        let result = await task.value
+        XCTAssertNil(result); XCTAssertTrue(f.queue.records.isEmpty); XCTAssertFalse(f.queue.isWorking)
+        let copies = await f.sourceRepo.copies; XCTAssertTrue(copies.isEmpty)
+        XCTAssertEqual(driver.limited[0].completions, [false])
+    }
+
+    func test删源到期保留未知且只读恢复后不重复已删除项目() async throws {
+        let driver = BackgroundDriverFixture()
+        let f = try await Fixture(background: MobileTransferBackgroundExecution(driver: driver)); defer { f.cleanup() }
+        let id = try unwrap(await f.queue.submit(items: await f.selected(), target: f.target, destination: "/target", moveSource: true))
+        try await wait(f.queue)
+        XCTAssertEqual(driver.limited[0].completions, [true])
+        await f.sourceRepo.hold(deletion: true)
+        f.queue.removeSource(id, target: f.target)
+        while await f.sourceRepo.deletions.isEmpty { await Task.yield() }
+        // 上一轮复制的迟到到期不能取消已明确开始的删源。
+        await driver.jobs[0].expiration()
+        XCTAssertTrue(f.queue.isWorking); XCTAssertTrue(driver.limited[1].completions.isEmpty)
+        await driver.jobs[1].expiration()
+        XCTAssertFalse(f.queue.isWorking); XCTAssertTrue(f.queue.records[0].hasUnknown)
+        XCTAssertEqual(driver.limited[1].completions, [false])
+        f.queue.removeSource(id, target: f.target)
+        let before = await f.sourceRepo.deletions; XCTAssertEqual(before.count, 1)
+        await f.sourceRepo.hold()
+        await f.queue.refresh(id, target: f.target)
+        f.queue.removeSource(id, target: f.target); try await wait(f.queue)
+        let after = await f.sourceRepo.deletions
+        XCTAssertEqual(Set(after.map(\.0)).count, 4); XCTAssertEqual(after.count, 4)
+        XCTAssertEqual(f.queue.records[0].phase, .finished)
+        XCTAssertEqual(driver.limited[2].completions, [true])
+    }
+
+    func test系统拒绝持续时间仍用有限时间完成且两阶段单独申请() async throws {
+        let driver = BackgroundDriverFixture(); driver.rejectsSubmission = true
+        let f = try await Fixture(background: MobileTransferBackgroundExecution(driver: driver)); defer { f.cleanup() }
+        let id = try unwrap(await f.queue.submit(items: await f.selected(), target: f.target, destination: "/target", moveSource: true))
+        try await wait(f.queue)
+        XCTAssertEqual(driver.jobs.count, 1)
+        let deletes = await f.sourceRepo.deletions; XCTAssertTrue(deletes.isEmpty)
+        f.queue.removeSource(id, target: f.target); try await wait(f.queue)
+        XCTAssertEqual(driver.jobs.count, 2)
+        XCTAssertEqual(driver.limited.map(\.completions), [[true], [true]])
+        XCTAssertEqual(f.queue.records[0].phase, .finished)
+    }
 
     private func wait(_ queue: MobileCrossNASQueue) async throws {
         for _ in 0..<250 {

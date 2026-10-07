@@ -40,6 +40,7 @@ struct DsmMobileApp: App {
 
     private static func initialModel() -> MobileAppModel {
         #if DEBUG
+        if MobileFilesUIFixture.isEnabled { return MobileFilesUIFixture.makeModel() }
         if MobileShareUIFixture.isEnabled { return MobileShareUIFixture.makeModel() }
         if MobileUIFixture.isEnabled { return MobileUIFixture.makeModel() }
         #endif
