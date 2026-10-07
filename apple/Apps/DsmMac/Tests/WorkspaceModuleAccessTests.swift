@@ -102,6 +102,63 @@ final class WorkspaceModuleAccessTests: XCTestCase {
         }
     }
 
+    func test真实能力发现与照片授权决定入口且不依赖自动选版() async throws {
+        for enabled in [true, false] {
+            for filesGranted in [true, false] {
+                let profile = try profile()
+                defer { cleanPreferences(profile.id) }
+                let transport = PhotoDiscoveryTransport(enabled: enabled)
+                let client = DsmAPIClient(baseURL: try XCTUnwrap(URL(string: "https://example.invalid:5001")), transport: transport)
+                let discovered = try await DsmCapabilityDiscovery(client: client).discover()
+                for name in PhotoDiscoveryTransport.accessAPIs {
+                    let capability = try XCTUnwrap(discovered[name])
+                    XCTAssertNil(capability.selectedVersion, "Photos 按具体方法指定版本，不使用全局自动选版")
+                    XCTAssertEqual(capability.requestFormat, .json)
+                }
+                let photos = try SynologyPhotosRepository(profile: profile, capabilities: discovered,
+                    session: session(), transport: transport)
+                let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: AccessTransport()),
+                    capabilities: discovered,
+                    readPrivileges: { .init(applications: [.files: filesGranted], isAdministrator: false) },
+                    readPhotoAccess: { _ = try await photos.access() })
+                let model = try makeModel(profile: profile) { await reader.read() }
+                await model.refreshModuleAccess()
+                XCTAssertEqual(model.isModuleVisible(.photos), enabled, "功能设置必须根据 Photos 自身授权显示照片开关")
+                XCTAssertEqual(model.isPhotosModuleEnabled, enabled, "侧栏照片入口不能被未使用的选版字段隐藏")
+                XCTAssertEqual(model.canActivate(.photos(.timeline)), enabled)
+                XCTAssertEqual(model.isModuleVisible(.files), filesGranted)
+                XCTAssertFalse(model.moduleAccessLookupFailed)
+                let calls = await transport.calls
+                let accessCalls = enabled ? PhotoDiscoveryTransport.accessAPIs : ["SYNO.Foto.UserInfo"]
+                XCTAssertEqual(calls, ["SYNO.API.Info:1:query"] + accessCalls.map {
+                    "\($0):1:\($0 == "SYNO.Foto.UserInfo" ? "me" : "get")"
+                }, "仅读取已约定的访问设置；拒绝时不继续读取其他设置")
+            }
+        }
+    }
+
+    func test照片访问设置缺少接口版本或JSON支持时不发请求() async throws {
+        for name in PhotoDiscoveryTransport.accessAPIs {
+            let unsupported: [ApiCapability?] = [nil,
+                ApiCapability(name: name, path: "entry.cgi", minVersion: 2, maxVersion: 2, requestFormat: .json),
+                ApiCapability(name: name, path: "entry.cgi", minVersion: 1, maxVersion: 1, requestFormat: .form)]
+            for replacement in unsupported {
+                var entries = Dictionary(uniqueKeysWithValues: photoCapabilities.all.map { ($0.name, $0) })
+                entries[name] = replacement
+                let profile = try profile(), photos = PhotoAccessProbe()
+                let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: AccessTransport()),
+                    capabilities: CapabilitySet(entries),
+                    readPrivileges: { .init(applications: [.files: true], isAdministrator: false) },
+                    readPhotoAccess: { try await photos.read() })
+                let snapshot = await reader.read()
+                XCTAssertEqual(snapshot.modules[.photos], .unavailable)
+                XCTAssertEqual(snapshot.modules[.files], .available)
+                let reads = await photos.reads
+                XCTAssertEqual(reads, 0)
+            }
+        }
+    }
+
     func test文件已授权不覆盖照片明确拒绝或缺少能力() async throws {
         let profile = try profile(), transport = AccessTransport(), photos = PhotoAccessProbe(failure: .permissionDenied)
         let reader = WorkspaceModuleAccessReader(files: try fileRepository(profile: profile, transport: transport),
@@ -350,7 +407,7 @@ final class WorkspaceModuleAccessTests: XCTestCase {
 
     private var photoCapabilities: CapabilitySet {
         let photos = ["SYNO.Foto.UserInfo", "SYNO.Foto.Setting.User", "SYNO.Foto.Setting.Admin", "SYNO.Foto.Setting.TeamSpace"].map {
-            ApiCapability(name: $0, path: "entry.cgi", minVersion: 1, maxVersion: 1, requestFormat: .form, selectedVersion: 1)
+            ApiCapability(name: $0, path: "entry.cgi", minVersion: 1, maxVersion: 1, requestFormat: .json)
         }
         return CapabilitySet(Dictionary(uniqueKeysWithValues: (capabilities.all + photos).map { ($0.name, $0) }))
     }
@@ -409,5 +466,38 @@ private actor PhotoAccessProbe {
     func read() throws {
         reads += 1
         if let failure { throw AppError(category: failure, isRetryable: false, safeUserMessage: "") }
+    }
+}
+
+/// 使用合成响应经过真实能力解析与 Photos Repository，避免手造选版结果掩盖入口回归。
+private actor PhotoDiscoveryTransport: DsmHTTPTransport {
+    static let accessAPIs = ["SYNO.Foto.UserInfo", "SYNO.Foto.Setting.User", "SYNO.Foto.Setting.Admin", "SYNO.Foto.Setting.TeamSpace"]
+    let enabled: Bool
+    private(set) var calls: [String] = []
+    init(enabled: Bool) { self.enabled = enabled }
+
+    func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
+        let parameters = URLComponents(string: "?" + String(decoding: request.httpBody ?? Data(), as: UTF8.self))?.queryItems ?? []
+        let api = parameters.first { $0.name == "api" }?.value ?? ""
+        let version = parameters.first { $0.name == "version" }?.value ?? ""
+        let method = parameters.first { $0.name == "method" }?.value ?? ""
+        calls.append("\(api):\(version):\(method)")
+        let payload: [String: Any]
+        switch api {
+        case "SYNO.API.Info":
+            let queried = Set((parameters.first { $0.name == "query" }?.value ?? "").split(separator: ",").map(String.init))
+            guard Set(Self.accessAPIs).isSubset(of: queried) else { throw URLError(.badServerResponse) }
+            var capabilities = Dictionary(uniqueKeysWithValues: Self.accessAPIs.map {
+                ($0, ["path": "entry.cgi", "minVersion": 1, "maxVersion": 1, "requestFormat": "JSON"] as [String: Any])
+            })
+            capabilities[DsmAPIName.fileStationList] = ["path": "entry.cgi", "minVersion": 1, "maxVersion": 2, "requestFormat": "FORM"]
+            payload = capabilities
+        case "SYNO.Foto.UserInfo": payload = ["enabled": enabled, "is_admin": false, "id": 7]
+        case "SYNO.Foto.Setting.User": payload = ["enable_home_service": true, "team_space_permission": "none"]
+        case "SYNO.Foto.Setting.Admin": payload = ["package_version": "1.0.synthetic"]
+        case "SYNO.Foto.Setting.TeamSpace": payload = ["enabled": false]
+        default: throw URLError(.unsupportedURL)
+        }
+        return DsmHTTPResponse(data: try JSONSerialization.data(withJSONObject: ["success": true, "data": payload]), statusCode: 200)
     }
 }
