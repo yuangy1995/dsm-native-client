@@ -7371,3 +7371,20 @@
 
 "virtual-machine.console.access-denied" = "This account cannot open this console. Sign in again or ask an administrator to check your access.";
 "virtual-machine.console.trust-required" = "The identity of the NAS could not be confirmed. Close the console and reconnect to the NAS.";
+
+"mobile.extensions.sign-in-again" = "This connection is no longer available. Open LanStash and sign in again, then retry.";
+"mobile.extensions.unavailable" = "Sharing and Files access could not be prepared. Reopen LanStash and sign in again to retry.";
+"mobile.extensions.revoke-error" = "Access from other apps could not be stopped. Unlock your device, reopen LanStash, and try again.";
+"mobile.share.title" = "Upload to NAS";
+"mobile.share.no-account" = "Open LanStash and sign in, then share these files again.";
+"mobile.share.receive-error" = "These files could not be opened. Return to the source app and share them again.";
+"mobile.share.upload-error" = "The files could not be prepared or the folder could not be opened. Check your connection and available storage, then try again.";
+"mobile.share.close" = "Close";
+"mobile.share.connection" = "NAS";
+"mobile.share.empty-folder" = "No subfolders. You can upload here.";
+"mobile.share.completed" = "Upload complete";
+"mobile.share.resume-in-app" = "If you close this window, open Activity in LanStash to continue unfinished uploads.";
+"mobile.share.activity-title" = "Shared from another app";
+"mobile.share.active-elsewhere" = "Upload is open in another app. Return there to view its progress or close it.";
+"mobile.share.empty-transfer" = "No upload was started. You can remove this saved share.";
+"mobile.share.remove" = "Remove share record";

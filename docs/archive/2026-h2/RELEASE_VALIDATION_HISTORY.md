@@ -4132,3 +4132,32 @@ python3 tools/codex/check_documentation.py
 - 证据：`build/m8a-{phone,pad}.xcresult`、`build/m8a-{phone,pad}-ui-final.xcresult`、`build/m8a-build-ui-fix.log`、`build/m8a-shared-final.log`、`build/m8a-macos.log`；最终六张 PNG 位于 `build/m8a-previews/`。导出录像和临时诊断已清理，正式测试源码与结果保留。
 
 分享扩展、Files/外部编辑写回，以及照片、跨 NAS、Office 等其他独立执行器仍有源码工作；M8 及 M6–M8 总目标未完成。真机正式签名、持续任务授予/资源回收、系统取消、锁屏保护、实际服务器取消/重复保护和辅助功能列为具体 PENDING_USER_VALIDATION，不以这些缺口阻塞独立扩展开发。
+
+## 2026-10-07 移动 M8b 系统分享与账号共享
+
+基于 M8a 的 main，新增独立 DsmShare 扩展，接收系统文件/照片/视频分享，在扩展内选择已登录 NAS 与文件夹，明确上传后保存任务，关闭后由主 App 活动继续处理原记录。文件上传复用 MobileFileUploadQueue/FileUploadBatch；每条分享有独立目录与进程间所有权，不在扩展仍运行时重复接手。账号发布使用独立共享会话编号，去除 DID，不共享密码；退出、删除、取消、身份与证书变化有撤销保护，快照或任务身份损坏不覆盖、不误清理。必要权限、平台差异、独立集成与只读对抗复核见[系统集成账本](../../development/APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md)。
+
+实际命令（第二次移动测试以 iPad ID `A31ABDE2-186F-43DD-8D40-5EB9511A9289` 替换 iPhone ID，并使用独立结果路径）：
+
+```sh
+build/m8a-xcodegen/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -parallel-testing-enabled NO -only-testing:DsmMobileTests/MobileShareTransferTests -only-testing:DsmMobileTests/MobileExtensionAccountTests -only-testing:DsmMobileTests/MobileSessionShellTests -only-testing:DsmMobileTests/MobileDocumentTransferTests -only-testing:DsmMobileTests/MobileFileUploadQueueTests -only-testing:DsmMobileTests/MobileTransferBackgroundExecutionTests -only-testing:DsmMobileUITests/MobileShareExtensionUITests -resultBundlePath build/m8b-final-phone.xcresult
+swift test --package-path apple --jobs 2
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Release -destination 'generic/platform=macOS' -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=NO
+xcodebuild build -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+python3 tools/localization/check_localization.py
+python3 tools/release/test_apple_ci.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+- 两端各 81 项聚焦单元通过：15 共享账号、15 分享任务、15 会话、17 文档、12 上传队列、7 后台资格；无新增跳过。覆盖发布延迟/失败/取消、退休会话清理、退出和删除、跨实例并发、撤销进行中请求、真实附件回调冻结、文件名/符号链接边界、重复提交、锁交接、未知结果只读恢复和损坏身份不误删。
+- 两端各四项实际系统 UI 通过，分别为完成上传并回到主 App 清理、关闭后重启明确继续、丢回执后只读恢复、中文深色最大动态文字；iPhone 四项 140.513 秒、iPad 四项 143.943 秒。系统确实启动独立分享扩展并跨进程使用共享 Keychain/App Group；全部网络响应与文件内容为合成数据，不是对真实 NAS 的写测试。
+- 首轮两端 57 项相关单元、后续两端 27 项新增单元已取得通过。初次系统 UI 因按按钮/英文名称查找系统 shareCell 失败；根据实际 AX 记录改为中英文 cell 查询。第二次因为 Any 代理的 enabled 值与实际工具栏按钮不同失败；录像确认根目录 Upload 灰色，改为按钮查询并保留禁用断言后通过。中间两处 Swift actor/错误变量遮蔽的编译问题已修正，不把首次失败记成通过。
+- 共享/macOS 3101 项 XCTest（172 项既有跳过）及 12 项 Swift Testing 无失败；Mac Release 主 App/File Provider、移动 Release 主 App/Share 扩展构建通过，四个产物均以 lipo 确认包含 x86_64 和 arm64。移动 Release 不编译合成环境。未安装或启动 Mac 成品，没有发布安装包。
+- 双语/硬编码扫描覆盖新增 ExtensionShared 与 ShareExtension 目录，Apple 7000、Android 2188、Windows 3402 项检查通过；云端分组覆盖三项测试、文档和差异检查通过。本轮没有变更 NAS 契约、Windows/Android 源码或最低系统版本。
+- 已逐张复核两端共 18 张场景截图。活动页上的 NAS 后台任务读取错误来自合成服务未提供该独立接口，本机分享记录仍准确显示且能继续/清理；该截图不代表真实 NAS 的任务读取失败。大字同名选项与路径行随后作布局调整，补充验证单独记录。
+- 本地证据：`build/m8b-final-{phone,pad}.xcresult`、`build/m8b-final-build.log`、`build/m8b-shared.log`、`build/m8b-macos.log`、`build/m8b-mobile-release.log`、`build/m8b-previews/`。正式签名、真实来源 App、锁屏文件保护、系统终止时序、真实 NAS 写入、VoiceOver 与外接键盘仍为账本列明的 `PENDING_USER_VALIDATION`。Files 的实现不由本片宣告完成。
+
+布局收尾：返回按钮与完整路径合并，大字模式的同名处理改为原生内联选择。两端针对正常分享和中文大字的两项 UI 再次通过（iPhone 64.454 秒、iPad 71.118 秒，`build/m8b-layout-{phone,pad}.xcresult`）；随后发现跨进程 `isHittable` 可把视口外文件当成可点，补入实际滚动和屏幕坐标断言，两端中文用例再次通过（39.467/39.393 秒，`build/m8b-scroll-{phone,pad}.xcresult`）。最后 20 张场景 PNG 已逐张复核，长内容能滚动到文件名；没有放宽原业务断言。增量构建使用上文 build-for-testing 命令并增加 `-disableAutomaticPackageResolution -skipPackageUpdates -jobs 2`，复测使用相同 test-without-building 命令，仅按上述两个或单个 UI 方法选择，不重复未改动的单元。临时附件导出、录像与提帧脚本已清理；两台模拟器合成分享标记和任务目录亦已清理，保留正式结果包及选取的证据图。

@@ -23,7 +23,7 @@ final class MobileFileUploadQueue {
         var entries: [FileUploadEntryCheckpoint]
     }
     private struct Envelope: Codable { let version: Int; let records: [Record] }
-    private let backgroundExecution: MobileTransferBackgroundExecution?
+    private let backgroundExecution: (any MobileTransferBackgroundManaging)?
     private var backgroundRun: (batchID: UUID, generation: UUID, token: UUID)?
     private let rootURL: URL
     private var records: [Record] = []
@@ -43,7 +43,7 @@ final class MobileFileUploadQueue {
     private(set) var error: String?
     private(set) var recoveryError: String?
 
-    init(rootURL: URL? = nil, backgroundExecution: MobileTransferBackgroundExecution? = nil) {
+    init(rootURL: URL? = nil, backgroundExecution: (any MobileTransferBackgroundManaging)? = nil, expectedContext: String? = nil) {
         self.backgroundExecution = backgroundExecution
         self.rootURL = rootURL ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("MobileUploadQueue-\(UUID().uuidString)", isDirectory: true)
@@ -53,10 +53,11 @@ final class MobileFileUploadQueue {
                 let envelope = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: url))
                 guard envelope.version == 1,
                       Set(envelope.records.map(\.id)).count == envelope.records.count,
+                      envelope.records.allSatisfy({ expectedContext == nil || $0.context == expectedContext }),
                       envelope.records.allSatisfy({ record in
                           !record.context.isEmpty && record.destination.hasPrefix("/")
                             && record.sources.allSatisfy { Self.validRelativePath($0.relativePath) }
-                      }) else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
+                      }) else { throw CocoaError(.fileReadCorruptFile) }
                 records = envelope.records
             }
         } catch {
@@ -130,7 +131,7 @@ final class MobileFileUploadQueue {
         let target = destination
         isPreparing = true; error = nil
         do {
-            try MobileTransferRecoveryStore.prepareDirectory(directory)
+            try MobileExtensionStorage.prepareDirectory(directory)
             var copies: [SourceRecord] = []
             for source in originalSources {
                 try Task.checkCancellation()
@@ -140,7 +141,7 @@ final class MobileFileUploadQueue {
                 var kind = source.kind
                 do {
                     if kind == .directory {
-                        try MobileTransferRecoveryStore.prepareDirectory(local)
+                        try MobileExtensionStorage.prepareDirectory(local)
                     } else if kind == .file, !FileManager.default.fileExists(atPath: local.path) {
                         try await MobileSecurityScopedDocumentCopier().copySecurityScopedFile(from: source.url,
                             to: local, in: local.deletingLastPathComponent())
@@ -275,8 +276,8 @@ final class MobileFileUploadQueue {
 
     private func save() throws {
         do {
-            guard !loadFailed else { throw MobileTransferRecoveryStore.StoreError.invalidRecord }
-            try MobileTransferRecoveryStore.prepareDirectory(rootURL)
+            guard !loadFailed else { throw CocoaError(.fileReadCorruptFile) }
+            try MobileExtensionStorage.prepareDirectory(rootURL)
             let data = try JSONEncoder().encode(Envelope(version: 1, records: records))
             try data.write(to: rootURL.appendingPathComponent("queue-v1.json"), options: [.atomic, .completeFileProtection])
             recoveryError = nil

@@ -73,6 +73,8 @@ struct MobileFileUploadSelectionView: View {
 struct MobileFileUploadSections: View {
     @Bindable var queue: MobileFileUploadQueue
     let filter: MobileActivityFilter
+    var sourceTitle: String? = nil
+    var onEmpty: (() -> Void)? = nil
 
     var body: some View {
         if let error = queue.recoveryError {
@@ -99,6 +101,7 @@ struct MobileFileUploadSections: View {
                 controls(batch)
             } header: {
                 VStack(alignment: .leading, spacing: MobileSpacing.compact) {
+                    if let sourceTitle { Text(sourceTitle) }
                     Label(batch.destination, systemImage: "arrow.up.doc")
                     Text(L10n.string("files.upload.summary", batch.finishedCount.formatted(.number.locale(L10n.locale)),
                                      batch.entries.count.formatted(.number.locale(L10n.locale))))
@@ -136,7 +139,10 @@ struct MobileFileUploadSections: View {
                 Button(L10n.string("files.upload.cancel"), role: .cancel) { batch.cancel() }
             }
             if batch.entries.allSatisfy({ [.succeeded, .skipped, .cancelled].contains($0.state) }) {
-                Button(L10n.string("mobile.files.upload-clear")) { queue.removeFinished(batch) }
+                Button(L10n.string("mobile.files.upload-clear")) {
+                    queue.removeFinished(batch)
+                    if queue.batches.isEmpty { onEmpty?() }
+                }
             }
         }
     }

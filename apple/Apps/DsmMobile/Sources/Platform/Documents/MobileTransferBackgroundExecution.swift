@@ -28,7 +28,7 @@ protocol MobileTransferBackgroundDriving: AnyObject {
 
 /// 每次执行拥有独立系统身份；旧回调不能取消或结束用户后来继续的传输。
 @MainActor @Observable
-final class MobileTransferBackgroundExecution {
+final class MobileTransferBackgroundExecution: MobileTransferBackgroundManaging {
     private struct Execution {
         let taskID: UUID
         let identifier: String

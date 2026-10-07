@@ -7371,3 +7371,20 @@
 
 "virtual-machine.console.access-denied" = "当前账号无法打开此控制台。请重新登录，或请管理员检查你的访问权限。";
 "virtual-machine.console.trust-required" = "无法确认 NAS 的身份。请关闭控制台，重新连接 NAS 后再试。";
+
+"mobile.extensions.sign-in-again" = "此连接已不可用。请打开 LanStash 重新登录后再试。";
+"mobile.extensions.unavailable" = "暂时无法从其他 App 分享或访问文件。请重新打开 LanStash 并登录后再试。";
+"mobile.extensions.revoke-error" = "未能停止其他 App 的文件访问。请解锁设备，重新打开 LanStash 后再试。";
+"mobile.share.title" = "上传到 NAS";
+"mobile.share.no-account" = "请先打开 LanStash 登录，再分享这些文件。";
+"mobile.share.receive-error" = "未能打开这些文件。请返回原 App 重新分享。";
+"mobile.share.upload-error" = "未能准备文件或打开文件夹。请检查连接和剩余空间后再试。";
+"mobile.share.close" = "关闭";
+"mobile.share.connection" = "NAS";
+"mobile.share.empty-folder" = "没有子文件夹，可以上传到这里。";
+"mobile.share.completed" = "上传完成";
+"mobile.share.resume-in-app" = "关闭后，可在 LanStash 的活动中继续处理未完成的上传。";
+"mobile.share.activity-title" = "来自其他 App 的分享";
+"mobile.share.active-elsewhere" = "上传正在其他 App 中进行。可返回该 App 查看进度或关闭上传。";
+"mobile.share.empty-transfer" = "尚未开始上传，可以移除此分享记录。";
+"mobile.share.remove" = "移除分享记录";

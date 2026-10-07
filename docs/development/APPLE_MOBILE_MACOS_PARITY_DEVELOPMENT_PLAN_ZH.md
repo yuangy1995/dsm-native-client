@@ -768,7 +768,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M7 VMM 操作与创建 | ServiceManagementView、ServiceManagementModel | 分步配置/稳定目标；Virtualization；高风险 | M7d1 电源/删除与摘要恢复已完成本机验证；M7d2 基础编辑、摘要恢复、共享全量与两端模型/五项实际 UI 已通过；M7d3 分步创建、原任务/完整配置关联与独立持久恢复已完成共享/Mac/两端模型及六项创建 UI 验收；同名不认领，归属/配置不足保持未知 |
 | M7 VMM 网络/映像/控制台 | ServiceManagementView | 资源表单及触控 WebKit；控制台会话；凭据/内部写 | M7d4a 网络详情/改名/单多删与 M7d4b 映像详情/单多删及独立摘要恢复已完成本机验收，保留关联 VM/创建引用互斥、回执与只读恢复；控制台继续 M7d5。控制台须临时隔离 Cookie、限定源站，URL 禁止原始会话秘密 |
 | M8 系统后台传输 | WorkspaceModel（业务语义） | 系统持续任务、受保护文件及恢复；后台/凭据 | M8a 文件下载/上传源码与两端聚焦验收完成；系统持续任务保留既有证书/同源网络路径，旧系统有限时间降级，不承诺进程终止续传。其他执行器逐入口接入，依据与验证见[专项账本](APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md) |
-| M8 分享扩展 | FileUploadPlan（上传语义） | 分享→NAS/位置→持久任务；独立扩展最小共享权限 | 未实现；账号隔离、取消、重复接收及系统终止恢复 |
+| M8 分享扩展 | FileUploadPlan（上传语义） | 分享→NAS/位置→持久任务；独立扩展最小共享权限 | M8b 已实现扩展内选择与上传、最小共享会话撤销、独立持久记录及主 App 接手；两端各 81 项聚焦单元及四项真实系统分享 UI 通过，正式签名/真实 NAS 另验，见[专项账本](APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md) |
 | M8 Files 与外部编辑 | DesktopCloudDriveManager；Mac FileProviderExtension | iOS File Provider 先读/下载/缓存，再写回/冲突/删除；系统集成 | 未实现；不复制 Mac 外壳；正式 entitlement 与真机另验 |
 
 ## 顺序、所有权与质量门

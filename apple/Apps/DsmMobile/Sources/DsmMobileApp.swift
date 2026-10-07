@@ -12,6 +12,9 @@ struct DsmMobileApp: App {
             MobileRootView(model: model)
                 .environment(language)
                 .environment(\.locale, language.locale)
+                .onChange(of: language.selection, initial: true) { _, selection in
+                    MobileExtensionStorage.preferences?.set(selection.rawValue, forKey: AppLanguageStore.preferenceKey)
+                }
                 #if DEBUG
                 .task {
                     if MobileUIFixture.isEnabled, let profile = model.activeProfile {
@@ -37,11 +40,17 @@ struct DsmMobileApp: App {
 
     private static func initialModel() -> MobileAppModel {
         #if DEBUG
+        if MobileShareUIFixture.isEnabled { return MobileShareUIFixture.makeModel() }
         if MobileUIFixture.isEnabled { return MobileUIFixture.makeModel() }
         #endif
-        return MobileAppModel(transferRecoveryStore: .application,
+        let access = try? MobileExtensionAccess.live()
+        let model = MobileAppModel(transferRecoveryStore: .application,
             transferBackgroundExecution: MobileTransferBackgroundExecution(driver: MobileSystemTransferBackgroundDriver(),
-                identifierPrefix: (Bundle.main.bundleIdentifier ?? "io.github.qwertyuiop1995.dsmnativeclient.mobile") + ".transfer"))
+                identifierPrefix: (Bundle.main.bundleIdentifier ?? "io.github.qwertyuiop1995.dsmnativeclient.mobile") + ".transfer"),
+            extensionAccess: access)
+        if access == nil { model.extensionAccessError = L10n.string("mobile.extensions.unavailable") }
+        Task { await access?.cleanRetiredSessions() }
+        return model
     }
 
     private var chatForegroundContext: MobileChatForegroundContext {
