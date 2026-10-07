@@ -5102,3 +5102,91 @@ iPad `A31ABDE2-186F-43DD-8D40-5EB9511A9289`：中文权限管理 52.080 秒、�
 `python3 tools/codex/check_documentation.py`、`git diff --check` 均通过；
 本波未改变用户可见字符串。正式结果包保留，导出的原始附件、视频帧脚本/图片和
 临时日志在摘录后清理；Mac 已交付的包与示例图保留，不进入移动提交。
+
+## 2026-10-08 M8n 原云端管理组终态与只读边界复核
+
+原完整运行 `37616066715`、来源 `7fe646b2` 的
+[iPhone administration](https://github.com/yuangy1995/dsm-native-client/actions/runs/37616066715/job/112774569083)
+已于 2026-10-07 17:33:12 UTC 结束并成功。直接核对作业状态及完整终态日志，
+`xcodebuild test-without-building` 执行 88 项 UI、0 失败，8636.415 秒，最终
+`TEST EXECUTE SUCCEEDED`；构建及结果上传均成功。结果附件 `11499374495` 已封存，
+本波未重复下载成功组的大型结果包。iPhone modules 和 iPad administration 仍在
+执行，继续等待原运行，不因部分通过推送并取消，也不将整轮记作成功。
+
+只读问题再核：当前 SDK 将 capabilities 定义为项目自身允许的界面操作，子项不继承
+父目录能力；fileSystemFlags 包含 POSIX 权限，不能将写标志解释为独立的元数据权限。
+[Apple 论坛 805882](https://developer.apple.com/forums/thread/805882) 的只读下载问题仅
+报告于 Intel macOS 26，发帖者称 macOS 26.5 已修复，未包含当前 iOS 目录创建错误。
+本波没有因此修改产品、放宽写权限、重复既有三个元数据实验或下载不可用的旧系统。
+M6/M7 范围按主计划再次核对：容器创建/编辑和项目写不属于已声明完成的 Mac 基线，
+仍保留其源码缺口说明，不将静态接口记录等同实现或待真机验收。
+
+
+原完整运行的 [iPhone modules](https://github.com/yuangy1995/dsm-native-client/actions/runs/37616066715/job/112774569029)
+于 2026-10-07 18:41:01 UTC 结束并失败。完整日志确认来源仍为 `7fe646b2`：
+先行 10 项系统 UI 中 8 通过/2 失败，595.731 秒；两项均属 Files。可编辑用例
+102.134 秒在旧第 168 行失败，AX 来源明确为 `com.apple.DocumentManager.RecentDocuments`，
+显示 Recents/No Recents，底部 Browse 已存在；此前三轮瞬时查询结束时导航尚未就绪。
+这与 `8e1e4529` 的已验证本机导航准备修正吻合，旧运行并未包含该修正，不冒称云端
+已经验证修复。默认只读 91.584 秒在旧第 131 行等 Shared 失败。结果附件
+`11503119243` 已封存，终态日志和完整失败 AX 足以定位本次阶段，未重复下载整包。
+
+后续 1846 项移动单元为 0 失败、4 项既有条件跳过（83.349 秒）；随后 169 项
+其他模块 UI 为 0 失败（12587.541 秒）。最后一段 `TEST EXECUTE SUCCEEDED`
+不能覆盖先行系统段失败，分组脚本实际以 65 退出。分享扩展 4 项及普通文件前后台
+3 项已包含在先行成功项中。此时仅 iPad administration 仍运行；原完整运行继续保留，
+没有因观察等待时间较长而取消。灯光附件再次只读复核仍未形成新根因，导出临时件
+已清理，产品和测试源码无新修改。
+
+
+原完整运行 `37616066715` 最后一组
+[iPad administration](https://github.com/yuangy1995/dsm-native-client/actions/runs/37616066715/job/112774569078)
+于 2026-10-07 18:53:18 UTC 结束：88 项 UI、87 通过/1 失败，11507.906 秒。
+唯一失败 `MobileNasReadUITests/test中文大字号未知开关有独立状态` 在来源第 101 行
+等待首页 Sample folder 失败（108.346 秒）；尚未进入 zram 或未知状态断言，不能
+称为未知开关显示错误。日志有主线程空闲通知等待超时，随后启动采样也记录
+TimeoutExpired；相关结果附件 `11504491448` 另行下载复核，不据空闲超时直接推断
+产品死锁或靠增加业务等待时间掩盖。其余 87 项完成，最终测试段退出 65。
+
+同一运行的九个目标组至此全部终态：5 成功、4 失败；汇总 test-and-build 按实际
+失败传播而失败，没有被 Agent 提前取消。原 watch 进程已结束，退出 1 与云端
+失败一致；不再将其当作活进程重启。旧来源的两项 Files 测试准备问题已有本机修正，
+默认只读和 iPad 灯光/启动失败仍分别处理，完整移动门禁未通过。
+
+
+iPad 管理结果包已完整下载并安全解压到
+`build/m8n-pad-admin/DsmMobile-iPad-administration.xcresult`；`xcresulttool` 确认
+87 通过/1 失败。原失败附件的完整 AX 显示文件首页停在 `mobile.page.loading`
+“正在加载文件…”及“正在读取…”，不是 zram 页面；压缩包中没有诊断目录或任何
+sample 文件。不能仅凭页面加载状态确认主线程死锁，也不能据缺失调用栈判断是哪个
+采集步骤超时。
+
+未修改的原用例在既有 iOS 26.5 iPad Air 11 上通过（36.294 秒，1 项 0 失败）：
+`xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun
+-destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289'
+-parallel-testing-enabled NO
+-only-testing:DsmMobileUITests/MobileNasReadUITests/test中文大字号未知开关有独立状态
+-resultBundlePath build/m8n-pad-launch-baseline.xcresult`。
+本机通过不覆盖云端失败，正式用例和业务等待时间没有变化。
+
+为验证诊断组件，在同一专用模拟器用 `simctl launch` 启动明确带 `--ui-fixture`
+的 `nas-read-unknown` 合成 App，直接调用现有 `HangSampler.capture()`，只包装
+三个子进程调用以记录步骤耗时。定位容器 0.343 秒、读取进程 0.087 秒、采集调用栈
+9.591 秒，成功生成指定测试 PID 的 sample 文件。该运行是健康进程下的诊断组件
+验证，不是云端停顿复现；未查询其他 App 内存或连接真实 NAS，完成后已终止该
+合成 App 并关闭模拟器。
+
+本波新增的唯一源码范围为 `tools/release/capture_apple_ui_hangs.py` 及正式测试：
+超时/拒绝信息标明容器定位、进程读取或调用栈采集阶段，仅输出固定阶段和异常类型，
+不记录原始命令输出。系统 sample 的三秒仅是采样窗口；本机包含符号整理已耗时
+9.591 秒，因此把独立采集上限由 15 调整为 45 秒。定位/进程读取上限不变，仍使用
+单后台线程且每个合成测试进程最多采集一次；不增加重试、不扩大进程范围、不放宽
+应用测试等待或改变原始退出码。这是补足后续失败证据，未宣告启动问题已修复。
+
+`python3 -m unittest tools.release.test_capture_apple_ui_hangs -v`：7 项通过；新增
+三阶段超时分支、原始输出不泄露和原测试结果保留检查。完整
+`python3 -m unittest discover -s tools/release -p 'test_*.py'`：46 项通过，17.222 秒。
+本地化扫描、文档检查和 `git diff --check` 通过。独立复核确认主线程采样仍严格绑定
+所选模拟器、实际 App 路径和显式 fixture 标志，定位拒绝时不改用名称扫描或其他进程。
+保留正式 xcresult，原下载包、导出附件、健康进程 sample 与临时日志清理；原 Mac
+旋转/浮层源码和已交付包不纳入此次移动诊断提交。

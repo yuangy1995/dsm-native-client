@@ -22,6 +22,7 @@ class HangSampler:
         self.sampled = set()
 
     def capture(self):
+        stage = "定位测试应用"
         try:
             container = self.run(
                 ["xcrun", "simctl", "get_app_container", self.device, BUNDLE_ID, "app"],
@@ -31,6 +32,7 @@ class HangSampler:
                 self.report("移动启动诊断未采集：无法确定当前模拟器的 App 路径。")
                 return
             executable = str(Path(container) / "DsmMobile")
+            stage = "读取测试进程"
             processes = self.run(
                 ["ps", "-axo", "pid=,command="],
                 capture_output=True, text=True, check=True, timeout=5,
@@ -47,16 +49,18 @@ class HangSampler:
                 if not FIXTURE_ARGUMENTS.intersection(arguments) or pid in self.sampled:
                     continue
                 self.sampled.add(pid)
+                stage = "采集调用栈"
                 self.output.mkdir(parents=True, exist_ok=True)
                 target = self.output / f"DsmMobile-{pid}.sample.txt"
+                # sample 的 3 秒只计采样，后续符号解析也需要时间；该预算不延长业务测试。
                 self.run(
                     ["/usr/bin/sample", pid, "3", "10", "-file", str(target)],
-                    capture_output=True, text=True, check=True, timeout=15,
+                    capture_output=True, text=True, check=True, timeout=45,
                 )
                 self.report(f"移动启动诊断已采集：{target.name}")
         except (OSError, subprocess.SubprocessError) as error:
             # 诊断不能改变测试结论；工作流的 pipefail 保留 xcodebuild 原退出码。
-            self.report(f"移动启动诊断未采集：{type(error).__name__}。原测试结果仍保留。")
+            self.report(f"移动启动诊断未采集（{stage}）：{type(error).__name__}。原测试结果仍保留。")
 
 
 def forward_output(source, destination, sampler):

@@ -86,8 +86,31 @@ class AppleUIHangCaptureTests(unittest.TestCase):
         self.assertEqual(len(samples), 3)
         for arguments, options in samples:
             self.assertEqual(arguments[2:5], ["3", "10", "-file"])
-            self.assertEqual(options["timeout"], 15)
+            self.assertEqual(options["timeout"], 45)
         self.assertEqual(len(reports), 3)
+
+    def test_timeout_identifies_the_failed_stage_without_exposing_command_output(self):
+        for command, stage in [("xcrun", "定位测试应用"), ("ps", "读取测试进程"),
+                               ("/usr/bin/sample", "采集调用栈")]:
+            with self.subTest(command=command), tempfile.TemporaryDirectory(prefix="lanstash-hang-test-") as directory:
+                calls = []
+                reports = []
+
+                def run(arguments, **options):
+                    calls.append(arguments[0])
+                    if arguments[0] == command:
+                        raise subprocess.TimeoutExpired(arguments, options["timeout"],
+                                                        output="unfiltered process data", stderr="unfiltered error")
+                    output = "/selected/App.app\n" if arguments[0] == "xcrun" else "123 /selected/App.app/DsmMobile --ui-fixture\n"
+                    return subprocess.CompletedProcess(arguments, 0, stdout=output)
+
+                HangSampler("selected-device", directory, run=run, report=reports.append).capture()
+                self.assertEqual(calls[-1], command)
+                self.assertEqual(len(reports), 1)
+                self.assertIn(stage, reports[0])
+                self.assertIn("TimeoutExpired", reports[0])
+                self.assertIn("原测试结果仍保留", reports[0])
+                self.assertNotIn("unfiltered", reports[0])
 
     def test_container_lookup_denial_does_not_scan_or_sample_other_processes(self):
         calls = []
