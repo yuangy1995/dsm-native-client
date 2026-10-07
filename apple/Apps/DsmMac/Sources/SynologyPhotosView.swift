@@ -1343,15 +1343,21 @@ struct SynologyPhotoPreview: View {
                     ProgressView(value: model.saveProgress)
                     Button(L10n.string("photos.download.cancel")) { model.cancelSave() }
                 }.padding(.horizontal)
+                    .accessibilityIdentifier("photos.preview.saveProgress")
             }
-            if let message = model.saveMessage { Text(message).font(.callout).padding(8) }
+            if let message = model.saveMessage {
+                Text(message).font(.callout).padding(8).accessibilityIdentifier("photos.preview.saveMessage")
+            }
             if model.similarUndoMutation != nil {
                 Button(L10n.string("photos.similar.undo")) { model.undoSimilarChanges() }
                     .disabled(model.isManaging || model.pendingMutationID != nil || model.hasSimilarBatchToContinue).padding(8)
             }
-            if model.isManaging { ProgressView().padding(8) }
+            // 后台预览生成和上传有各自的进度入口，不占用当前照片的预览状态栏。
+            if model.isManaging, !model.isGeneratingAutomaticPreview, !model.isUploading {
+                ProgressView().padding(8).accessibilityIdentifier("photos.preview.managementProgress")
+            }
             if let message = model.managementMessage { Text(message).font(.callout).padding(8) }
-            if model.pendingMutationID != nil, !model.isManaging {
+            if model.pendingMutationID != nil, !model.hasPendingAutomaticPreview, !model.isManaging {
                 Button(L10n.string("photos.retry")) { model.reviewPendingMutation() }.padding(.bottom, 8)
             }
         }

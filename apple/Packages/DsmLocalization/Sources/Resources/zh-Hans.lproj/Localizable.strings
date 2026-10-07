@@ -7440,3 +7440,30 @@
 
 "mobile.transfer.background.crossNASCopy" = "正在跨 NAS 复制";
 "mobile.transfer.background.crossNASRemoval" = "正在删除已复制的原文件";
+
+/* macOS 上传传输中心 */
+"mac.upload.added" = "已加入上传队列";
+"mac.upload.viewTransfers" = "查看传输";
+"mac.upload.ended" = "上传结束";
+"mac.upload.interrupted" = "上传已中断";
+"mac.upload.interruptedMessage" = "暂时无法获取上传结果。请检查连接后刷新；这些文件不会自动重复上传。";
+"mac.upload.uploadedCount" = "已上传 %@ 项";
+"mac.upload.folderCount" = "已处理 %@ 个文件夹";
+"mac.upload.skippedCount" = "已跳过 %@ 项";
+"mac.upload.failedCount" = "失败 %@ 项";
+"mac.upload.cancelledCount" = "已取消 %@ 项";
+"mac.upload.interruptedCount" = "已中断 %@ 项";
+"mac.upload.batchTitle" = "上传项目：%@";
+"mac.upload.progress" = "上传进度";
+"mac.upload.byteProgress" = "%@ · 已上传 %@ / %@";
+"mac.upload.resumeNotice" = "继续时，未完成的文件会重新上传。";
+"mac.upload.pauseBatch" = "暂停这批上传";
+"mac.upload.cancelBatch" = "取消这批上传";
+"mac.upload.resumeBatch" = "继续这批上传";
+"mac.upload.retryFailed" = "重试失败项";
+"mac.upload.removeRecord" = "移除记录";
+"mac.upload.items" = "查看项目";
+"mac.upload.finishedFilter" = "已结束";
+"mac.upload.clearFinished" = "清除已结束";
+"mac.upload.filterCount" = "%@（%@）";
+"mac.upload.updating" = "正在更新…";

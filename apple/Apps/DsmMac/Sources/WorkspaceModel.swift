@@ -424,10 +424,10 @@ final class WorkspaceModel {
     var remoteLocationsHasLoaded = false
     var uploadSelection: FileUploadSelection?
     var uploadBatches: [FileUploadBatch] = []
-    var showsUploadQueue = false
     var controllingServerTaskIDs = Set<String>()
     var serverTaskControlMessage: String?
     @ObservationIgnored private var uploadTransferIDs: [UUID: UUID] = [:]
+    @ObservationIgnored private var reconcilingUploadIDs: Set<UUID> = []
     var shareLinks: [FileShareLink] = []
     var isLoadingShareLinks = false
     var shareLinksError: String?
@@ -888,9 +888,13 @@ final class WorkspaceModel {
         if isChatModuleEnabled { chat.startBackgroundSync() }
         if hasStartedModules {
             await activate(section)
-            return
+        } else {
+            await startInitialModule()
         }
-        await startInitialModule()
+        // 切换 NAS 会取消旧视图的读取，但共享目录已经缓存；重新进入时补齐未完成的容量读取。
+        if !Task.isCancelled, !requiresReauthentication, storageSpaceSummary == nil {
+            await loadStorageSpace()
+        }
     }
 
     private func startInitialModule() async {
@@ -1263,12 +1267,16 @@ final class WorkspaceModel {
     }
 
     func loadStorageSpace() async {
-        guard isFileModuleEnabled, !isLoadingStorageSpace else { return }
+        guard isFileModuleEnabled, !isLoadingStorageSpace, !Task.isCancelled else { return }
         isLoadingStorageSpace = true
         defer { isLoadingStorageSpace = false }
         do {
-            storageSpaceSummary = try await repository.storageSpaceSummary()
+            let summary = try await repository.storageSpaceSummary()
+            guard !Task.isCancelled, isFileModuleEnabled else { return }
+            storageSpaceSummary = summary
         } catch {
+            // 视图离开导致的取消不是容量读取失败，也不能清空这个 NAS 已有的结果。
+            guard !Task.isCancelled, isFileModuleEnabled else { return }
             // 容量信息是辅助内容，读取失败不应阻断文件浏览。
             storageSpaceSummary = nil
         }
@@ -2486,13 +2494,14 @@ final class WorkspaceModel {
         }
         batch.onChange = { [weak self] entry in self?.updateUploadTransfer(entry) }
         batch.entries.forEach(updateUploadTransfer)
-        batch.onSettled = { [weak self] in
-            guard let self else { return }
+        batch.onSettled = { [weak self, weak batch] in
+            guard let self, let batch else { return }
             self.startNextUploadBatch()
+            self.reconcileUpload(batch)
             Task { await self.refresh() }
         }
         uploadBatches.append(batch)
-        showsUploadQueue = true
+        showToast(L10n.string("mac.upload.added"), icon: "arrow.up.circle", style: .info)
         saveTransfers()
         startNextUploadBatch()
     }
@@ -2507,20 +2516,68 @@ final class WorkspaceModel {
         return uploadBatches.first { batch in batch.entries.contains { $0.id == entryID } }
     }
 
-    private func updateUploadTransfer(_ entry: FileUploadEntry) {
-        guard let id = uploadTransferIDs[entry.id], let index = transfers.firstIndex(where: { $0.id == id }) else { return }
-        let state: ActivityState = switch entry.state {
-        case .pending: .queued
-        case .running: .running
-        case .succeeded: .succeeded
-        case .skipped, .cancelled: .cancelled
-        case .failed, .conflict, .unverified: .failed
-        case .paused: .paused
+    var ungroupedTransfers: [ActivityTask] {
+        let groupedIDs = Set(uploadTransferIDs.values)
+        return transfers.filter { !groupedIDs.contains($0.id) }
+    }
+
+    var canClearFinishedTransfers: Bool {
+        uploadBatches.contains(where: \.canRemoveFromTransferCenter)
+            || ungroupedTransfers.contains { [.succeeded, .failed, .cancelled].contains($0.state) }
+    }
+
+    func removeUploadBatch(_ batch: FileUploadBatch) {
+        guard batch.canRemoveFromTransferCenter else { return }
+        let taskIDs = Set(batch.entries.compactMap { uploadTransferIDs.removeValue(forKey: $0.id) })
+        for id in taskIDs {
+            restartableTransfers[id] = nil
+            progressEstimators[id] = nil
         }
+        transfers.removeAll { taskIDs.contains($0.id) }
+        batch.onChange = nil
+        batch.onSettled = nil
+        uploadBatches.removeAll { $0.id == batch.id }
+        saveTransfers()
+    }
+
+    func refreshUploadResults() {
+        for batch in uploadBatches { reconcileUpload(batch) }
+    }
+
+    private func reconcileUpload(_ batch: FileUploadBatch) {
+        guard isFileModuleEnabled, !batch.isRunning,
+              batch.entries.contains(where: { $0.state == .unverified }),
+              reconcilingUploadIDs.insert(batch.id).inserted else { return }
+        Task { [weak self] in
+            // 只读检查不自动重发；回调发生时保留标记，避免未解决的结果反复循环。
+            await batch.reconcileUnknown()
+            self?.reconcilingUploadIDs.remove(batch.id)
+        }
+    }
+
+    private func updateUploadTransfer(_ entry: FileUploadEntry) {
+        guard let id = uploadTransferIDs[entry.id] else { return }
+        let state: ActivityState
+        switch entry.state {
+        case .skipped:
+            // 跳过项由批次保留；旧任务存储没有跳过状态，不伪装成取消或成功。
+            transfers.removeAll { $0.id == id }
+            restartableTransfers[id] = nil
+            saveTransfers()
+            return
+        case .pending: state = .queued
+        case .running: state = .running
+        case .succeeded: state = .succeeded
+        case .cancelled: state = .cancelled
+        case .failed, .conflict: state = .failed
+        case .paused, .unverified: state = .paused
+        }
+        guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }
         let stateChanged = transfers[index].state != state
         transfers[index].completedUnits = entry.completedBytes
         transfers[index].state = state
-        transfers[index].failureMessage = entry.message
+        transfers[index].failureMessage = entry.state == .unverified || (entry.state == .paused && entry.needsReconciliation)
+            ? L10n.string("mac.upload.interruptedMessage") : entry.message
         // 进行中的上传退出后不能从旧存储自动重放；会话内恢复由批次先核对结果。
         if entry.state == .running || entry.needsReconciliation || entry.state == .unverified {
             restartableTransfers[id] = nil
@@ -3583,8 +3640,9 @@ final class WorkspaceModel {
     }
 
     func clearCompletedTransfers() {
-        let taskIDs = transfers.compactMap { task in
-            task.state == .succeeded || task.state == .cancelled ? task.id : nil
+        uploadBatches.filter(\.canRemoveFromTransferCenter).forEach(removeUploadBatch)
+        let taskIDs = ungroupedTransfers.compactMap { task in
+            [.succeeded, .failed, .cancelled].contains(task.state) ? task.id : nil
         }
         taskIDs.forEach(deleteTransfer)
     }
@@ -3658,9 +3716,9 @@ final class WorkspaceModel {
     }
 
     func deleteTransfer(_ taskID: UUID) {
-        if let batch = uploadBatch(for: taskID),
-           batch.entries.contains(where: { uploadTransferIDs[$0.id] == taskID && [.pending, .running, .paused].contains($0.state) }) {
-            batch.cancel()
+        if let batch = uploadBatch(for: taskID) {
+            removeUploadBatch(batch)
+            return
         }
         let runningTask = runningTasks[taskID]
         let restartableTransfer = restartableTransfers[taskID]

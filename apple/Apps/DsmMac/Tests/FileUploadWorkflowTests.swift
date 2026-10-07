@@ -1,5 +1,6 @@
 import DsmFileFeature
 import DsmCore
+import DsmLocalization
 import DsmNetwork
 import Foundation
 import XCTest
@@ -120,6 +121,132 @@ final class FileUploadWorkflowTests: XCTestCase {
         let remaining = await transport.existing; XCTAssertEqual(remaining.count, 2)
     }
 
+    func test跳过文件不计入上传进度且结束可移除() throws {
+        let root = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let files = try makeFiles(root, names: ["uploaded", "skipped"])
+        try Data(repeating: 1, count: 100).write(to: files[0])
+        try Data(repeating: 1, count: 300).write(to: files[1])
+        let sources = try FileUploadPlan.collect(files)
+        let entries = zip(sources, [FileUploadItemState.succeeded, .skipped]).map { source, state in
+            FileUploadEntryCheckpoint(id: source.id, state: state, completedBytes: state == .succeeded ? source.size : 0,
+                                      needsReconciliation: false, retryAllowed: false)
+        }
+        let batch = FileUploadBatch(sources: sources, destination: "/synthetic", overwrite: false,
+                                    repository: try makeRepository(transport: UploadWorkflowTransport()), restoredEntries: entries)
+        XCTAssertEqual(batch.uploadProgressBytes, 100)
+        XCTAssertEqual(batch.uploadProgressTotal, 100)
+        XCTAssertTrue(batch.canRemoveFromTransferCenter)
+        XCTAssertFalse(batch.hasUploadFailures)
+        XCTAssertTrue(batch.transferSummary.contains(L10n.string("mac.upload.skippedCount", 1.formatted(.number.locale(L10n.locale)))))
+    }
+
+    func test工作区跳过不伪装取消且批量清除同步删除批次不改远端() async throws {
+        let root = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transport = UploadWorkflowTransport(existing: ["existing": false])
+        let model = try makeWorkspace(transport: transport)
+        defer { clean(model) }
+        model.beginUploadBatch(sources: try FileUploadPlan.collect(makeFiles(root, names: ["existing", "new"])),
+                               destination: "/synthetic", overwrite: false)
+        let batch = try XCTUnwrap(model.uploadBatches.first)
+        XCTAssertTrue(model.ungroupedTransfers.isEmpty, "同一上传不能再次逐项出现在传输中心")
+        try await finish(batch)
+        XCTAssertEqual(batch.entries.map(\.state), [.skipped, .succeeded])
+        XCTAssertEqual(model.transfers.map(\.state), [.succeeded])
+        XCTAssertTrue(model.canClearFinishedTransfers)
+        model.clearCompletedTransfers()
+        model.clearCompletedTransfers()
+        XCTAssertTrue(model.uploadBatches.isEmpty)
+        XCTAssertTrue(model.transfers.isEmpty)
+        let saved = try XCTUnwrap(UserDefaults.standard.data(forKey: "LanStash_Transfers_\(model.profile.id.uuidString)"))
+        XCTAssertTrue(try JSONDecoder().decode([ActivityTask].self, from: saved).isEmpty)
+        let writes = await transport.uploadCount; XCTAssertEqual(writes, 1)
+        let remote = await transport.existing; XCTAssertEqual(remote, ["existing": false, "new": false])
+    }
+
+    func test清除及单条移除不会取消正在上传或暂停的批次() async throws {
+        let root = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transport = UploadWorkflowTransport(uploadDelay: .milliseconds(100))
+        let model = try makeWorkspace(transport: transport)
+        defer { clean(model) }
+        model.beginUploadBatch(sources: try FileUploadPlan.collect(makeFiles(root, names: ["a", "b", "c", "d", "e"])),
+                               destination: "/synthetic", overwrite: false)
+        let batch = try XCTUnwrap(model.uploadBatches.first)
+        for _ in 0..<150 {
+            if await transport.uploadCount >= 3 { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(batch.isRunning)
+        XCTAssertEqual(batch.entries.filter { $0.state == .succeeded }.count, 2)
+        model.clearCompletedTransfers()
+        model.deleteTransfer(try XCTUnwrap(model.transfers.first?.id))
+        XCTAssertEqual(model.transfers.count, 5)
+        XCTAssertTrue(batch.isRunning)
+        batch.pause(); try await finish(batch)
+        model.clearCompletedTransfers()
+        XCTAssertEqual(model.uploadBatches.count, 1)
+        XCTAssertEqual(model.transfers.count, 5)
+        XCTAssertTrue(batch.isPaused)
+        XCTAssertFalse(batch.canRemoveFromTransferCenter)
+    }
+
+    func test未知结果自动只读恢复且刷新不重发或批量清除() async throws {
+        let root = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transport = UploadWorkflowTransport(failsUpload: true)
+        let model = try makeWorkspace(transport: transport)
+        defer { clean(model) }
+        model.beginUploadBatch(sources: try FileUploadPlan.collect(makeFiles(root, names: ["interrupted"])),
+                               destination: "/synthetic", overwrite: false)
+        let batch = try XCTUnwrap(model.uploadBatches.first)
+        try await finish(batch)
+        // 等待 onSettled 安排的一次只读恢复完成。
+        try await Task.sleep(for: .milliseconds(80)); try await finish(batch)
+        let initialReads = await transport.listCount
+        XCTAssertGreaterThanOrEqual(initialReads, 2)
+        XCTAssertEqual(batch.entries[0].state, .unverified)
+        XCTAssertEqual(model.transfers[0].state, .paused)
+        model.clearCompletedTransfers()
+        XCTAssertEqual(model.uploadBatches.count, 1)
+        XCTAssertEqual(model.transfers.count, 1)
+        model.refreshUploadResults()
+        try await Task.sleep(for: .milliseconds(80)); try await finish(batch)
+        let reads = await transport.listCount; XCTAssertEqual(reads, initialReads + 1)
+        let writes = await transport.uploadCount; XCTAssertEqual(writes, 1)
+        XCTAssertFalse(model.canRetryTransfer(model.transfers[0].id))
+    }
+
+    func test单条移除已结束上传同步清理整批记录() async throws {
+        let root = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transport = UploadWorkflowTransport()
+        let model = try makeWorkspace(transport: transport)
+        defer { clean(model) }
+        model.beginUploadBatch(sources: try FileUploadPlan.collect(makeFiles(root, names: ["a", "b"])),
+                               destination: "/synthetic", overwrite: false)
+        let batch = try XCTUnwrap(model.uploadBatches.first)
+        try await finish(batch)
+        model.deleteTransfer(try XCTUnwrap(model.transfers.first?.id))
+        XCTAssertTrue(model.uploadBatches.isEmpty)
+        XCTAssertTrue(model.transfers.isEmpty)
+        let writes = await transport.uploadCount; XCTAssertEqual(writes, 2)
+    }
+
+    private func makeWorkspace(transport: UploadWorkflowTransport) throws -> WorkspaceModel {
+        let profile = try NasProfile(displayName: "Synthetic", host: "nas.invalid", port: 5001)
+        return WorkspaceModel(profile: profile, repository: try makeRepository(transport: transport),
+                              transferNotifier: NoopTransferNotifier(), preparePreviewCache: {})
+    }
+
+    private func clean(_ model: WorkspaceModel) {
+        model.cancelAllWork()
+        for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasSuffix(model.profile.id.uuidString) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
     private func temporaryFolder() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -129,6 +256,10 @@ final class FileUploadWorkflowTests: XCTestCase {
         try names.map { name in let url = root.appendingPathComponent(name); try Data().write(to: url); return url }
     }
     private func makeBatch(_ urls: [URL], transport: UploadWorkflowTransport) throws -> FileUploadBatch {
+        FileUploadBatch(sources: try FileUploadPlan.collect(urls), destination: "/synthetic", overwrite: false,
+                        repository: try makeRepository(transport: transport))
+    }
+    private func makeRepository(transport: UploadWorkflowTransport) throws -> DsmFileRepository {
         let profile = try NasProfile(displayName: "Synthetic", host: "nas.invalid", port: 5001)
         let names = [DsmAPIName.fileStationList, DsmAPIName.fileStationUpload, DsmAPIName.fileStationCheckPermission, DsmAPIName.fileStationCreateFolder]
         let capabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: names.map {
@@ -136,7 +267,7 @@ final class FileUploadWorkflowTests: XCTestCase {
         }))
         let repository = try DsmFileRepository(profile: profile, capabilities: capabilities,
             session: AuthSession(sid: "synthetic-session", synoToken: nil, did: nil, isPortalPort: false), transport: transport)
-        return FileUploadBatch(sources: try FileUploadPlan.collect(urls), destination: "/synthetic", overwrite: false, repository: repository)
+        return repository
     }
     private func finish(_ batch: FileUploadBatch) async throws {
         for _ in 0..<200 where batch.isRunning { try await Task.sleep(for: .milliseconds(10)) }
@@ -149,6 +280,7 @@ private actor UploadWorkflowTransport: DsmBinaryHTTPTransport {
     let failsUpload: Bool
     let uploadDelay: Duration
     private(set) var uploadCount = 0
+    private(set) var listCount = 0
     private(set) var createdFolders: [String] = []
     private var concurrent = 0
     private(set) var maximumConcurrent = 0
@@ -176,6 +308,7 @@ private actor UploadWorkflowTransport: DsmBinaryHTTPTransport {
             return try response([:])
         }
         guard method == "list" else { throw URLError(.unsupportedURL) }
+        listCount += 1
         let children = existing.filter { (("/synthetic/" + $0.key) as NSString).deletingLastPathComponent == parameters["folder_path"] }
         return try response(["offset": 0, "total": children.count,
             "files": children.map { item("/synthetic/" + $0.key, directory: $0.value) }])

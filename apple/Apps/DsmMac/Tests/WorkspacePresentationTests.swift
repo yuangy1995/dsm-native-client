@@ -878,7 +878,7 @@ final class WorkspacePresentationTests: XCTestCase {
                     ("create", AnyView(ShareCreationView(model: fixture.model, targets: fixture.model.items, onClose: { closed = true })), NSSize(width: 520, height: 380)),
                     ("edit", AnyView(FileShareEditView(model: fixture.model, links: [link], onClose: { closed = true })), NSSize(width: 540, height: 390)),
                     ("search", AnyView(FileAdvancedSearchView(model: fixture.model)), NSSize(width: 1000, height: 420)),
-                    ("uploads", AnyView(FileUploadQueueView(model: fixture.model)), NSSize(width: 680, height: 560))
+                    ("uploads", AnyView(TransferCenterView(model: fixture.model, connectedWorkspaces: [fixture.model])), NSSize(width: 680, height: 560))
                 ]
                 for (name, view, size) in views {
                     let host = NSHostingView(rootView: view.environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
@@ -894,6 +894,79 @@ final class WorkspacePresentationTests: XCTestCase {
                             characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
                         window.sendEvent(event); try await settle(host)
                         XCTAssertTrue(closed, "\(name) 应响应 Esc"); closed = false
+                    }
+                }
+                let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
+    func test上传批次统一传输中心双语主题与清理() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer {
+            AppLanguageStore.shared.selection = previousLanguage
+            NSApp.accessibilitySetValue(previousAX, forAttribute: attribute)
+            NSApp.setActivationPolicy(.accessory)
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("upload-ui-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let urls = ["报告 Report.txt", "已存在 Existing.txt"].map { root.appendingPathComponent($0) }
+        for url in urls { try Data(repeating: 1, count: 100).write(to: url) }
+        let sources = try FileUploadPlan.collect(urls)
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let fixture = try WorkspaceViewFixture(count: 0)
+                let host = NSHostingView(rootView: TransferCenterView(model: fixture.model, connectedWorkspaces: [fixture.model])
+                    .environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                    .dynamicTypeSize(.accessibility3)
+                    .preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 900, height: 620))
+                window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                defer { window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+                window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                try await settle(host)
+                try snapshot(host, name: "upload-center-empty-\(language.rawValue)-\(scheme)")
+                let states: [[FileUploadItemState]] = [[.paused, .skipped], [.failed, .skipped], [.succeeded, .skipped]]
+                for state in states {
+                    let checkpoint = zip(sources, state).map { source, state in
+                        FileUploadEntryCheckpoint(id: source.id, state: state, completedBytes: state == .succeeded ? source.size : 25,
+                                                  needsReconciliation: false, retryAllowed: true)
+                    }
+                    let batch = FileUploadBatch(sources: sources, destination: "/synthetic/资料 Folder", overwrite: false,
+                                                repository: fixture.repository, restoredEntries: checkpoint)
+                    fixture.model.uploadBatches = [batch]
+                    try await settle(host)
+                    XCTAssertNil(window.attachedSheet)
+                    let elements = remoteFlowElements(host)
+                    XCTAssertFalse(elements.contains { ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.upload.queue") })
+                    let disclosure = try XCTUnwrap(elements.first {
+                        $0.accessibilityRole() == .disclosureTriangle
+                            && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("mac.upload.items")
+                    })
+                    // 展开原生 DisclosureGroup，确保辅助功能可访问同一页面的批次详情。
+                    XCTAssertEqual(disclosure.value("accessibilityPerformPress") as? Bool, true)
+                    // 等待系统展开动画结束后再取图，避免把中间裁剪帧当作最终布局。
+                    try await Task.sleep(for: .milliseconds(350))
+                    try await settle(host)
+                    XCTAssertTrue(remoteFlowElements(host).contains {
+                        ($0.value("accessibilityValue") as? String ?? $0.accessibilityLabel() ?? $0.accessibilityTitle()) == sources[0].relativePath
+                    }, "展开后应能通过辅助功能访问文件名")
+                    try snapshot(host, name: "upload-center-\(state[0].rawValue)-\(language.rawValue)-\(scheme)")
+                    if state[0] == .succeeded {
+                        let clear = try XCTUnwrap(remoteFlowElements(host).first {
+                            $0.accessibilityRole() == .button
+                                && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("mac.upload.clearFinished")
+                        })
+                        try click(window, at: window.convertPoint(fromScreen: .init(x: clear.accessibilityFrame().midX, y: clear.accessibilityFrame().midY)))
+                        try await settle(host)
+                        XCTAssertTrue(fixture.model.uploadBatches.isEmpty)
+                        try snapshot(host, name: "upload-center-cleared-\(language.rawValue)-\(scheme)")
                     }
                 }
                 let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
@@ -3009,6 +3082,63 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test照片预览后台生成不转圈且保存成功提示自动消失双语主题() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer { NSApp.accessibilitySetValue(previousAX, forAttribute: attribute); NSApp.setActivationPolicy(.accessory) }
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        let context = try XCTUnwrap(CGContext(data: nil, width: 160, height: 120, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(NSColor.systemBlue.cgColor); context.fill(CGRect(x: 0, y: 0, width: 160, height: 120))
+        let data = try XCTUnwrap(NSBitmapImageRep(cgImage: XCTUnwrap(context.makeImage())).representation(using: .png, properties: [:]))
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = PhotoUploadServiceStub()
+                let task = SynologyPhotoAutomaticPreviewTask(profileID: UUID(), space: .personal, unitID: 701,
+                    filename: "Fixture.heic", typeCode: 0, needsThumbnail: true, needsVideo: false)
+                let photo = SynologyPhoto(id: .init(profileID: task.profileID, space: .personal, unitID: 7),
+                    filename: task.filename, sizeBytes: Int64(data.count), takenAt: Date(timeIntervalSince1970: 1583107200),
+                    indexedAt: .distantPast, folderID: 9, mediaType: "photo", thumbnail: .init(unitID: 701, revision: "old"))
+                await service.configureAutomatic(enabled: true, tasks: [task]); await service.holdFirstUpload()
+                await service.configureDisplay(.init(), photos: [photo]); await service.setPreviewFixture(data)
+                let model = SynologyPhotosModel(repository: service, previewConversionSupport: .init(hevc: true, vc1: false, video: true))
+                await model.refresh(); model.showPreview(photo)
+                for _ in 0..<100 where model.isPreparingPreview { try await Task.sleep(for: .milliseconds(5)) }
+                XCTAssertEqual(model.previewData, data)
+                let host = NSHostingView(rootView: SynologyPhotoPreview(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1040, height: 720))
+                let destination = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+                defer {
+                    Task { await service.releaseUpload() }
+                    model.cancel(); try? FileManager.default.removeItem(at: destination)
+                    window.contentView = nil; window.close()
+                }
+                window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                let worker = Task { await model.processAutomaticPreview() }
+                await service.waitUntilHeld(); try await settle(host)
+                XCTAssertTrue(model.isManaging); XCTAssertTrue(model.isGeneratingAutomaticPreview)
+                XCTAssertFalse(remoteFlowElements(host).contains { $0.value("accessibilityIdentifier") as? String == "photos.preview.managementProgress" })
+                try snapshot(host, name: "photos-preview-background-\(language.rawValue)-\(scheme)")
+                model.save(photo, to: destination)
+                for _ in 0..<200 where model.isSaving { try await Task.sleep(for: .milliseconds(5)) }
+                try await settle(host)
+                XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saved"))
+                XCTAssertTrue(remoteFlowElements(host).contains { $0.value("accessibilityIdentifier") as? String == "photos.preview.saveMessage" })
+                try snapshot(host, name: "photos-preview-saved-\(language.rawValue)-\(scheme)")
+                try await Task.sleep(for: .milliseconds(3_150)); try await settle(host)
+                XCTAssertNil(model.saveMessage)
+                XCTAssertFalse(remoteFlowElements(host).contains { $0.value("accessibilityIdentifier") as? String == "photos.preview.saveMessage" })
+                XCTAssertTrue(model.isGeneratingAutomaticPreview)
+                try snapshot(host, name: "photos-preview-dismissed-\(language.rawValue)-\(scheme)")
+                await service.releaseUpload(); await worker.value
+            }
+        }
+    }
+
     func test预览重建工具栏中英浅深色显示并打开确认() async throws {
         let original = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = original }
@@ -4638,6 +4768,151 @@ final class WorkspacePresentationTests: XCTestCase {
                 let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
             }
         }
+    }
+
+    func test文件宫格点击组合键与拖动框选实际更新选择() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer { NSApp.accessibilitySetValue(previousAX, forAttribute: attribute); NSApp.setActivationPolicy(.accessory) }
+        for scheme in [ColorScheme.light, .dark] {
+            let fixture = try WorkspaceViewFixture(count: 12)
+            let items = fixture.model.items
+            defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+            let host = makeHost(fixture: fixture, mode: .grid, scheme: scheme)
+            let window = attach(host, size: NSSize(width: 900, height: 650))
+            defer { window.contentView = nil; window.close() }
+            window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+            try await settle(host)
+            func cell(_ index: Int) throws -> UIElement {
+                try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .button &&
+                    $0.accessibilityLabel() == items[index].name })
+            }
+            func clickCell(_ index: Int, flags: NSEvent.ModifierFlags = [], count: Int = 1) throws {
+                let rect = try cell(index).accessibilityFrame()
+                let point = window.convertPoint(fromScreen: .init(x: rect.midX, y: rect.midY))
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: flags,
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                        context: nil, eventNumber: 0, clickCount: count, pressure: type == .leftMouseDown ? 1 : 0))
+                    NSApp.sendEvent(event)
+                }
+            }
+            try clickCell(0); try await settle(host)
+            XCTAssertEqual(fixture.model.selection, [items[0].id])
+            try clickCell(2, flags: .command); try await settle(host)
+            XCTAssertEqual(fixture.model.selection, Set([0, 2].map { items[$0].id }))
+            try clickCell(2, flags: .command); try await settle(host)
+            XCTAssertEqual(fixture.model.selection, [items[0].id])
+            try clickCell(0); try clickCell(3, flags: .shift); try await settle(host)
+            XCTAssertEqual(fixture.model.selection, Set(items.prefix(4).map(\.id)))
+            XCTAssertEqual(fixture.model.items, items)
+            XCTAssertEqual(fixture.model.currentPath, "/synthetic")
+            try snapshot(host, name: "files-grid-range-selection-\(scheme)")
+            let frames = try items.indices.map { try cell($0).accessibilityFrame() }
+            let start = NSPoint(x: (frames[0].maxX + frames[1].minX) / 2, y: frames.map(\.minY).min()! - 12)
+            let end = NSPoint(x: frames[0].minX + 8, y: frames[0].maxY - 6)
+            let rectangle = CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                                   width: abs(start.x - end.x), height: abs(start.y - end.y))
+            let enclosed = Set(items.indices.filter { frames[$0].intersects(rectangle) }.map { items[$0].id })
+            XCTAssertGreaterThanOrEqual(enclosed.count, 2)
+            for step in 0...9 {
+                let fraction = CGFloat(min(step, 8)) / 8
+                let screenPoint = NSPoint(x: start.x + (end.x - start.x) * fraction, y: start.y + (end.y - start.y) * fraction)
+                let type: NSEvent.EventType = step == 0 ? .leftMouseDown : step == 9 ? .leftMouseUp : .leftMouseDragged
+                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: window.convertPoint(fromScreen: screenPoint),
+                    modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: 0, clickCount: 1, pressure: step == 9 ? 0 : 1))
+                NSApp.sendEvent(event)
+                try await settle(host)
+                if step == 8 { try snapshot(host, name: "files-grid-marquee-\(scheme)") }
+            }
+            XCTAssertEqual(fixture.model.selection, enclosed)
+            XCTAssertEqual(fixture.model.currentPath, "/synthetic")
+            // 只有系统标记的普通双击才打开，组合键选择不能触发导航。
+            try clickCell(0, count: 2); try await settle(host)
+            XCTAssertEqual(fixture.model.currentPath, items[0].path)
+        }
+    }
+
+    func test文件列表原生多选使用清晰高亮且失焦仍保留选择() async throws {
+        NSApp.setActivationPolicy(.regular)
+        defer { NSApp.setActivationPolicy(.accessory) }
+        for scheme in [ColorScheme.light, .dark] {
+            let fixture = try WorkspaceViewFixture(count: 12)
+            defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+            let host = makeHost(fixture: fixture, mode: .list, scheme: scheme)
+            let window = attach(host, size: NSSize(width: 900, height: 650))
+            defer { window.contentView = nil; window.close() }
+            window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+            try await settle(host)
+            let table = try XCTUnwrap(nativeViews(host, of: NSTableView.self).first)
+            // 直接驱动原生表格的选择接口，验证 SwiftUI 绑定、高亮及失焦；不伪造应用激活状态。
+            table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            try await settle(host)
+            XCTAssertEqual(fixture.model.selection, [fixture.model.items[0].id])
+            table.selectRowIndexes(IndexSet(1...2), byExtendingSelection: true)
+            try await settle(host)
+            XCTAssertEqual(fixture.model.selection, Set(fixture.model.items.prefix(3).map(\.id)))
+            XCTAssertEqual(table.selectionHighlightStyle, .none)
+            XCTAssertEqual(table.selectedRowIndexes, IndexSet(0...2))
+            for index in 0...2 {
+                let row = try XCTUnwrap(table.rowView(atRow: index, makeIfNecessary: false))
+                XCTAssertTrue(row.isSelected)
+                XCTAssertEqual(row.selectionHighlightStyle, .none)
+                XCTAssertEqual(row.backgroundColor, MacAppearancePalette(scheme: scheme, increasedContrast: false).nativeFileSelection)
+            }
+            try snapshot(host, name: "files-list-range-selection-\(scheme)")
+            window.makeFirstResponder(nil); try await settle(host)
+            XCTAssertEqual(table.selectedRowIndexes, IndexSet(0...2))
+            for index in 0...2 {
+                XCTAssertEqual(table.rowView(atRow: index, makeIfNecessary: false)?.backgroundColor,
+                               MacAppearancePalette(scheme: scheme, increasedContrast: false).nativeFileSelection)
+            }
+            try snapshot(host, name: "files-list-inactive-selection-\(scheme)")
+            table.deselectRow(1); try await settle(host)
+            XCTAssertEqual(fixture.model.selection, Set([0, 2].map { fixture.model.items[$0].id }))
+        }
+    }
+
+    func test完整工作区文件多选不被侧栏高亮覆盖() async throws {
+        NSApp.setActivationPolicy(.regular)
+        defer { NSApp.setActivationPolicy(.accessory) }
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer { NSApp.accessibilitySetValue(previousAX, forAttribute: attribute) }
+        let fixture = try WorkspaceViewFixture(count: 12)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        let items = fixture.model.items
+        let host = makeWorkspaceHost(fixture: fixture)
+        let window = attach(host, size: NSSize(width: 1200, height: 740))
+        defer { window.contentView = nil; window.close() }
+        window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        try await settle(host)
+        // 根工作区会启动首页；启动结束后恢复合成目录内容。
+        fixture.model.shares = items; fixture.model.items = items
+        fixture.model.currentPath = "/synthetic"; fixture.model.section = .files("/synthetic")
+        try await settle(host)
+        let mode = try XCTUnwrap(remoteFlowElements(host).first {
+            $0.accessibilityRole() == .button && $0.accessibilityLabel() == L10n.string("ui.aedd6814ff8c516c")
+        })
+        XCTAssertEqual(mode.value("accessibilityPerformPress") as? Bool, true)
+        try await settle(host)
+        let table = try XCTUnwrap(nativeViews(host, of: NSTableView.self).first { $0.numberOfColumns == 5 })
+        table.selectRowIndexes(IndexSet(0...2), byExtendingSelection: false)
+        try await settle(host)
+        XCTAssertEqual(fixture.model.selection, Set(fixture.model.items.prefix(3).map(\.id)))
+        XCTAssertEqual(table.selectionHighlightStyle, .none)
+        for index in 0...2 {
+            let row = try XCTUnwrap(table.rowView(atRow: index, makeIfNecessary: false))
+            XCTAssertTrue(row.isSelected)
+            XCTAssertEqual(row.selectionHighlightStyle, .none)
+            XCTAssertEqual(row.backgroundColor, MacAppearancePalette(scheme: MacAppearanceStore.shared.mode.colorScheme ?? .light,
+                                                                     increasedContrast: false).nativeFileSelection)
+        }
+        try snapshot(host, name: "whole-workspace-file-selection")
     }
 
     func test三档文件网格保持选择且文件与文件夹共同缩放() async throws {

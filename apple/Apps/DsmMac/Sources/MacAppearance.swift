@@ -138,6 +138,9 @@ struct MacAppearancePalette {
     var nativeSelection: NSColor {
         NSColor(red: 0.36, green: 0.48, blue: 0.62, alpha: increasedContrast ? 0.30 : (scheme == .dark ? 0.24 : 0.16))
     }
+    var nativeFileSelection: NSColor {
+        NSColor.controlAccentColor.withAlphaComponent(increasedContrast ? 0.50 : (scheme == .dark ? 0.42 : 0.28))
+    }
     var selection: Color { Color(nsColor: nativeSelection) }
     var selectionBorder: Color {
         Color(red: 0.36, green: 0.48, blue: 0.62).opacity(increasedContrast ? 0.9 : 0.5)
@@ -353,9 +356,9 @@ extension View {
     }
 
     /// 仅作用于当前滚动区域，清除传统滚动条轨道的实色底；保留滚动与可见性设置。
-    func macThemedScrollContent(selection: AnyHashable? = nil) -> some View {
+    func macThemedScrollContent(selection: AnyHashable? = nil, emphasizesSelection: Bool = false) -> some View {
         scrollContentBackground(.hidden)
-            .background(MacScrollBackground(selection: selection))
+            .background(MacScrollBackground(selection: selection, emphasizesSelection: emphasizesSelection))
     }
 
     func macPageActions<Actions: View>(title: String = "", @ViewBuilder _ actions: @escaping () -> Actions) -> some View {
@@ -398,6 +401,7 @@ struct MacSelectionSurface: View {
 
 struct MacScrollBackground: NSViewRepresentable {
     var selection: AnyHashable? = nil
+    var emphasizesSelection = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -455,6 +459,9 @@ struct MacScrollBackground: NSViewRepresentable {
         }
 
         private func configureTable(_ table: NSTableView) {
+            // SwiftUI 的多个滚动区可共享祖先；只调整和本背景实际重叠的表格。
+            guard let scroll = table.enclosingScrollView,
+                  convert(bounds, to: scroll).intersects(scroll.bounds) else { return }
             table.selectionHighlightStyle = .none
             applySelection(to: table)
             guard !observedTables.contains(table) else { return }
@@ -482,6 +489,8 @@ struct MacScrollBackground: NSViewRepresentable {
         }
 
         private func applySelection(to table: NSTableView) {
+            guard let scroll = table.enclosingScrollView,
+                  convert(bounds, to: scroll).intersects(scroll.bounds) else { return }
             // 不改 List/Table 的选择模型、焦点和快捷键，只替换原生蓝/灰色高亮。
             let visible = table.rows(in: table.visibleRect)
             guard visible.location != NSNotFound else { return }
@@ -512,7 +521,8 @@ struct MacScrollBackground: NSViewRepresentable {
 
     func makeNSView(context: Context) -> HostView { HostView() }
     func updateNSView(_ view: HostView, context: Context) {
-        view.selectionColor = MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).nativeSelection
+        let palette = MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased)
+        view.selectionColor = emphasizesSelection ? palette.nativeFileSelection : palette.nativeSelection
         DispatchQueue.main.async { [weak view] in view?.configure() }
     }
 }
