@@ -4735,3 +4735,65 @@ DMG 的 Ed25519 签名及签名更新源指定长度的原始内容均验证通�
 工作流与说明，不修改完整 Apple Build 的选择规则，不以小范围对照替代完整门禁。
 下一步从 `7fe646b2` 运行 iOS 26.2 原用例；运行结果另记，当前不能宣称任何新的
 系统版本已通过。回滚移除该手动入口，不涉及应用、权限或持久化变化。
+
+## 2026-10-07 macOS 1.0.16 照片入口消失回归
+
+用户反馈两个 NAS 的侧栏照片入口与功能设置开关同时消失。定位到 `cdc889cc`
+新增的 Photos 权限预检：要求四个访问设置接口的 `selectedVersion` 非空，但真实
+`DsmCapabilityDiscovery` 不为 Photos 做全局自动选版；`SynologyPhotosRepository`
+原本按方法指定 v1。因此正常的 JSON 接口在发出权限读取前就被误判不可用。
+原测试手造 FORM 和已选版本，未经过真实发现解析，掩盖了这个回归。
+
+仅修正 Mac `WorkspaceModuleAccessReader` 的预检，使其与既有 Photos 访问读取
+一致：四项接口存在、支持 v1 且为 JSON，然后继续读取 Photos 自身授权。没有回退
+继承文件权限，不改 NAS 数据、用户开关、登录存储或五端 API 契约。源码复核覆盖
+登录接线、侧栏与设置共同读取的模型状态、权限撤回、会话/证书失败和用户手动关闭
+偏好；原有拒绝及停止后续请求逻辑保留。
+
+回归使用合成响应经过真实能力发现、Photos Repository、权限读取与工作区模型，
+覆盖文件授权与照片授权的四种组合，并验证每次实际请求的 API/版本/方法和拒绝后
+不继续读取设置；另覆盖四项接口分别缺失、不支持 v1 或非 JSON 时零权限读取。
+修复前新用例在入口与请求链断言上产生 10 个失败，修复后通过。首次测试编译错误
+为测试引用了非公开的端点辅助类型，改用合成 URL 后完成上述红绿验证。
+
+```sh
+swift test --package-path apple --jobs 4 --filter WorkspaceModuleAccessTests.test真实能力发现与照片授权决定入口且不依赖自动选版
+swift test --package-path apple --jobs 4 --filter 'WorkspaceModuleAccessTests|LoginViewModelTests|SynologyPhotos'
+LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests.test受限账号菜单功能设置与多NAS列表双语主题绘制|WorkspacePresentationTests.test无应用权限时保留本机设置并隐藏应用入口' LANSTASH_UI_NATIVE_SCREENSHOTS=1 bash tools/codex/run_macos_ui_checks.sh "$PWD/build/mac-photos-entry-ui"
+python3 tools/localization/check_localization.py
+```
+
+聚焦登录/照片/模块权限 **930 项 0 失败**，包含 22 项模块权限测试；两项实际原生
+UI 测试 0 失败。已查看中英文、浅色/深色四组设置截图，照片入口与开关可见；
+无权限两种主题仍隐藏入口。本地化 7075/2188/3402 资源及硬编码扫描通过。
+以上使用合成账号和响应，没有读取或修改用户 NAS 资料。
+
+用户随后明确要求修复后发布新 macOS 版本。主 App 与 File Provider 版本同步为
+1.0.17（27），由固定 XcodeGen 2.46.0 生成工程，仅版本字段变化。发布说明同步
+中英文；不改变正式身份、权限、更新通道或最低系统版本。
+
+新增发布范围验证：`swift test --package-path apple --jobs 4` 为 **3119 项 XCTest、
+177 项既有条件跳过、0 失败**，以及 **12 项 Swift Testing 全通过**；
+`python3 -m unittest discover -s tools/release -p 'test_*.py'` 为 **45 项通过**。
+严格发布文档与差异检查通过。两项原生 UI 已单独显式通过，未用条件跳过代替 UI
+证据；完整共享包结果也不能代替真实 NAS 或正式签名升级验收。
+
+本机 1.0.17（27）arm64 Release 独立临时包完成，签名、Hardened Runtime 权限、
+Sparkle 实际加载与 DMG 校验全部通过。新构建目录的前两轮依赖获取未完成，已终止；
+最终使用与 `apple/Package.resolved` 一致的本地 Sparkle 2.9.6 缓存，未改依赖或打包
+源码。仅本次 `xcodebuild` 增加 `-disableAutomaticPackageResolution`、
+`-skipPackageUpdates` 与 `-clonedSourcePackagesDirPath`，随后执行原打包签名流程。
+
+```sh
+LANSTASH_NON_INTERACTIVE=1 LANSTASH_BUILD_TYPE=Release LANSTASH_TARGET_ARCH=arm64 LANSTASH_SIGNING_IDENTITY=- LANSTASH_RUN_AFTER_PACKAGE=0 LANSTASH_BUILD_ROOT="$PWD/build/mac-photos-entry-fix-package" LANSTASH_DIST_DIR="$PWD/apple/Apps/DsmMac/dist/photos-entry-fix" bash apple/Apps/DsmMac/package.sh
+```
+
+测试成品为 `apple/Apps/DsmMac/dist/photos-entry-fix/LanStash-1.0.17-arm64.dmg`；
+沿用既有独立测试身份，不包含本地磁盘挂载扩展，未安装或启动，未覆盖旧成品。
+正式双架构签名、公证与更新源必须由 GitHub 发布流程独立完成。
+
+`PENDING_USER_VALIDATION`：使用修复测试包连接原有已授权 Photos 的 NAS，确认
+侧栏与设置入口出现、照片时间线可读取；仅照片授权账号应不受 File Station 拒绝
+影响，明确拒绝 Photos 的账号应继续隐藏入口。只需回传版本、连接方式类别、
+脱敏操作步骤和错误类别；无需导出照片、账户、地址或会话资料。合成回归不代替
+这次真实 NAS 复验。发布状态在正式流程完成后另记，不提前把源码修复记为已发布。

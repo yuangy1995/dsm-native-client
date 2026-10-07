@@ -66,8 +66,12 @@ struct WorkspaceModuleAccessReader: Sendable {
             }
         }
         guard !Task.isCancelled else { return WorkspaceModuleAccessSnapshot(modules: [:], lookupFailed: true) }
+        // Photos 按方法固定使用 v1，不参与全局自动选版；与 access() 的接口要求保持一致。
         guard ["SYNO.Foto.UserInfo", "SYNO.Foto.Setting.User", "SYNO.Foto.Setting.Admin", "SYNO.Foto.Setting.TeamSpace"]
-            .allSatisfy({ capabilities[$0]?.selectedVersion != nil }) else {
+            .allSatisfy({ name in
+                guard let capability = capabilities[name] else { return false }
+                return capability.minVersion <= 1 && capability.maxVersion >= 1 && capability.requestFormat == .json
+            }) else {
             snapshot.modules[.photos] = .unavailable
             return snapshot
         }
