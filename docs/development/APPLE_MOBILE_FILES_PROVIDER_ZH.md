@@ -155,6 +155,39 @@ Mac 最终 Release 主 App 与 File Provider 已构建通过并确认 x86_64/arm
 已使用正确临时签名，不需变更生产权限。后一次结果包为
 `build/m8d-readonly-signed-phone.xcresult`；只读目录问题与该中间构建错误分别记录。
 
+### 独立最小扩展对照（2026-10-07）
+
+为排除 NAS 请求、账号共享、缓存和恢复实现的影响，在同一 iPhone 模拟器中建立了
+临时独立 App、App Group 和 `NSFileProviderReplicatedExtension`，不引用本项目任何
+Package，不联网，只返回 `Shared/Probe.txt` 固定合成内容。项仅实现标识、父项、名称、
+类型、能力、固定版本、文件大小和 `isUploaded`；不提供日期、目录大小或缓存策略。
+目录能力为 `allowsReading + allowsContentEnumerating`，文件只有 `allowsReading`。
+枚举同步返回固定项，所有创建、修改和删除回调均明确拒绝。
+
+- 只读版本在系统启用后仍不显示目录，界面用例于 45.201 秒失败。该独立提供器的
+  系统日志同样在 `create-item` 报 POSIX 1，内层为 `cannotSetMetadata`，请求标记
+  `8119226119`、失败标记 `8085606151`，与产品用例完全相同。
+- 对照只给两个合成子项追加 `allowsWriting`，根项保持只读，写入回调仍全部拒绝。
+  使用新域并清除旧诊断域后，目录出现，文档选择器读取固定文本的完整流程在
+  38.066 秒通过。两张系统截图已逐张复核。此标记仅用于临时实验，未进入产品源码，
+  不能作为给只读用户开放写权限的解决方案。
+- 临时工程首次编译用了当前 SDK 不存在的错误枚举，改为公开的写权限错误后构建
+  成功；首次对照已通过目录检查，但宿主短按未打开选择器。改为单次完整按下/抬起后
+  全流程通过，未自动重试、放宽内容断言或把中间失败记作通过。
+
+实际命令为 `xcodebuild test -project build/m8e-minimal-provider/ReadOnlyProbe.xcodeproj
+-scheme ReadOnlyProbe -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F'
+-derivedDataPath build/m8e-minimal-provider/DerivedData -jobs 2 -parallel-testing-enabled NO
+-resultBundlePath build/m8e-minimal-readonly-r2.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`；
+最终对照增加 `SWIFT_ACTIVE_COMPILATION_CONDITIONS='DEBUG PROBE_CONTROL'`，结果路径为
+`build/m8e-minimal-control-r2.xcresult`。系统诊断只筛选临时提供器，未读取其他提供器内容。
+两个临时域、诊断 App 和测试 Runner 已从模拟器移除；临时项目、导出图片及原始系统
+记录清理，不提交另一套提供器或临时签名配置。原正式失败用例及断言继续保留。
+
+这组结果证明失败可以在没有项目业务依赖的最小只读实现中重现，将排查范围缩小到
+系统对只读能力的处理和基本接口适配。它仍不能单独证明 Apple 已确认缺陷、所有 iOS
+版本均受影响或真机已经通过；下一证据仍是云端另一版本环境及正式签名设备对照。
+
 ## PENDING_USER_VALIDATION
 
 | 前置条件 | 操作与预期结果 | 脱敏反馈与未验证影响 |
