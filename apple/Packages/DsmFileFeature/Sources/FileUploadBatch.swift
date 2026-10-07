@@ -115,7 +115,7 @@ public final class FileUploadBatch: Identifiable {
     }
 
     public func pause() {
-        guard isRunning else { return }
+        guard isRunning || hasPending else { return }
         isPaused = true
         for index in entries.indices where entries[index].state == .pending { set(index, state: .paused) }
         operation?.cancel()

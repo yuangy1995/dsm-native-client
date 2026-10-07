@@ -2899,6 +2899,9 @@
 "mobile.activity.filter-label" = "任务状态";
 "mobile.activity.retry-from-beginning" = "从头重试";
 "mobile.activity.review-message" = "连接已中断。刷新状态以获取上传结果。";
+"mobile.transfer.background.upload" = "正在上传文件";
+"mobile.transfer.background.download" = "正在下载文件";
+"mobile.transfer.background.progress" = "文件传输中";
 "mobile.activity.direction-upload" = "上传到 NAS";
 "mobile.activity.direction-download" = "从 NAS 下载";
 "mobile.activity.status-accessibility" = "状态：%@";

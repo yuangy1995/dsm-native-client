@@ -7,6 +7,116 @@ import XCTest
 
 @MainActor
 final class MobileFileUploadQueueTests: XCTestCase {
+    func test系统到期暂停当前及后续批次重启不自动上传() async throws {
+        let fixture = try Fixture(uploadDelay: .seconds(30))
+        defer { fixture.cleanup() }
+        let driver = BackgroundDriverFixture()
+        let background = MobileTransferBackgroundExecution(driver: driver)
+        let queue = MobileFileUploadQueue(rootURL: fixture.root, backgroundExecution: background)
+        queue.configure(profile: fixture.profile, repository: fixture.repository)
+        try await ready(queue)
+        for name in ["first.txt", "second.txt"] {
+            let file = fixture.base.appendingPathComponent(name)
+            try Data().write(to: file)
+            await queue.prepare([file], destination: "/synthetic")
+            await queue.submit(overwrite: false)
+        }
+        for _ in 0..<100 {
+            if await fixture.transport.uploadCount == 1 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let before = await fixture.transport.uploadCount
+        XCTAssertEqual(before, 1)
+        XCTAssertEqual(queue.batches.count, 2)
+        await driver.limitedExpirations[0]()
+        for batch in queue.batches { try await settled(batch) }
+        XCTAssertTrue(queue.batches.allSatisfy(\.isPaused))
+        XCTAssertTrue(queue.batches.allSatisfy { $0.entries.allSatisfy { $0.state == .paused } })
+        XCTAssertEqual(driver.limited[0].completions, [false])
+        XCTAssertTrue(background.modes.isEmpty)
+        let restored = MobileFileUploadQueue(rootURL: fixture.root, backgroundExecution: background)
+        restored.configure(profile: fixture.profile, repository: fixture.repository)
+        try await ready(restored)
+        XCTAssertEqual(restored.batches.count, 2)
+        XCTAssertTrue(restored.batches.allSatisfy(\.isPaused))
+        let writes = await fixture.transport.uploadCount
+        XCTAssertEqual(writes, 1)
+        XCTAssertEqual(driver.jobs.count, 1)
+    }
+
+    func test上传完成归还后台资格且结果重启保留() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let file = fixture.base.appendingPathComponent("sample.txt")
+        try Data().write(to: file)
+        let driver = BackgroundDriverFixture()
+        let background = MobileTransferBackgroundExecution(driver: driver)
+        let queue = MobileFileUploadQueue(rootURL: fixture.root, backgroundExecution: background)
+        queue.configure(profile: fixture.profile, repository: fixture.repository)
+        try await ready(queue)
+        await queue.prepare([file], destination: "/synthetic")
+        await queue.submit(overwrite: false)
+        let batch = try XCTUnwrap(queue.batches.first)
+        let continuous = BackgroundLeaseFixture()
+        driver.jobs[0].started(continuous)
+        try await settled(batch)
+        XCTAssertEqual(batch.entries.map(\.state), [.succeeded])
+        XCTAssertEqual(continuous.completions, [true])
+        XCTAssertTrue(background.modes.isEmpty)
+        await driver.jobs[0].expiration()
+        XCTAssertFalse(batch.isPaused)
+        let restored = MobileFileUploadQueue(rootURL: fixture.root)
+        restored.configure(profile: fixture.profile, repository: fixture.repository)
+        try await ready(restored)
+        XCTAssertEqual(restored.batches.first?.entries.map(\.state), [.succeeded])
+    }
+
+    func test后台上传切换账号停止旧网络且不启动旧队列() async throws {
+        let fixture = try Fixture(uploadDelay: .seconds(30))
+        defer { fixture.cleanup() }
+        let file = fixture.base.appendingPathComponent("sample.txt")
+        try Data().write(to: file)
+        let driver = BackgroundDriverFixture()
+        let background = MobileTransferBackgroundExecution(driver: driver)
+        let queue = MobileFileUploadQueue(rootURL: fixture.root, backgroundExecution: background)
+        queue.configure(profile: fixture.profile, repository: fixture.repository)
+        try await ready(queue)
+        await queue.prepare([file], destination: "/synthetic")
+        await queue.submit(overwrite: false)
+        for _ in 0..<100 {
+            if await fixture.transport.uploadCount == 1 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        queue.configure(profile: nil, repository: nil)
+        try await ready(queue)
+        XCTAssertTrue(queue.batches.isEmpty)
+        XCTAssertTrue(background.modes.isEmpty)
+        XCTAssertEqual(driver.limited[0].completions, [false])
+        await driver.jobs[0].expiration()
+        let writes = await fixture.transport.uploadCount
+        XCTAssertEqual(writes, 1)
+    }
+
+    func test未开始批次可暂停且只有主动继续才提交() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let file = fixture.base.appendingPathComponent("sample.txt")
+        try Data().write(to: file)
+        let sources = try FileUploadPlan.collect([file])
+        let batch = FileUploadBatch(sources: sources, destination: "/synthetic", overwrite: false, repository: fixture.repository)
+        batch.pause()
+        XCTAssertTrue(batch.isPaused)
+        XCTAssertEqual(batch.entries.map(\.state), [.paused])
+        batch.start()
+        let before = await fixture.transport.uploadCount
+        XCTAssertEqual(before, 0)
+        batch.resume(); batch.start()
+        try await settled(batch)
+        let after = await fixture.transport.uploadCount
+        XCTAssertEqual(after, 1)
+        XCTAssertEqual(batch.entries.map(\.state), [.succeeded])
+    }
+
     func test共享根或无效目标不能准备及提交上传() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
@@ -187,12 +297,12 @@ final class MobileFileUploadQueueTests: XCTestCase {
         let profile: NasProfile
         let transport: MobileUploadQueueTransport
         let repository: DsmFileRepository
-        init(failsUpload: Bool = false) throws {
+        init(failsUpload: Bool = false, uploadDelay: Duration = .milliseconds(40)) throws {
             base = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-upload-\(UUID().uuidString)")
             root = base.appendingPathComponent("Queue")
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
             profile = try NasProfile(displayName: "Synthetic", host: "fixture.example.invalid", port: 5001, usernameHint: "fixture")
-            transport = MobileUploadQueueTransport(failsUpload: failsUpload)
+            transport = MobileUploadQueueTransport(failsUpload: failsUpload, uploadDelay: uploadDelay)
             let names = [DsmAPIName.fileStationList, DsmAPIName.fileStationUpload, DsmAPIName.fileStationCheckPermission, DsmAPIName.fileStationCreateFolder, DsmAPIName.fileStationMD5]
             let capabilities = CapabilitySet(Dictionary(uniqueKeysWithValues: names.map {
                 ($0, ApiCapability(name: $0, path: "entry.cgi", minVersion: 1, maxVersion: 2, requestFormat: .form, selectedVersion: 2))

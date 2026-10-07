@@ -111,6 +111,86 @@ private actor RecordingTransferService: MobileTransferServing {
 }
 
 final class MobileTransferStateTests: XCTestCase {
+    @MainActor
+    func test后台下载传入真实进度并在系统取消后清理副本() async throws {
+        let driver = BackgroundDriverFixture()
+        let background = MobileTransferBackgroundExecution(driver: driver)
+        let coordinator = MobileTransferCoordinator(backgroundExecution: background)
+        let service = RecordingTransferService(downloadBehavior: .suspend)
+        let id = await coordinator.enqueueDownload(downloadRequest())
+        await coordinator.start(id, using: service)
+        try await waitForTransfer { await service.downloadCount == 1 }
+        let lease = BackgroundLeaseFixture()
+        driver.jobs[0].started(lease)
+        try await waitForTransfer { await MainActor.run { lease.progress.last?.completed == 25 } }
+        XCTAssertEqual(lease.progress.last?.total, 100)
+        await driver.jobs[0].expiration()
+        try await waitForTransfer { await coordinator.task(id: id)?.status == .cancelled }
+        let cleanup = await service.cleanupCount
+        XCTAssertEqual(cleanup, 1)
+        XCTAssertEqual(lease.completions, [false])
+        XCTAssertNil(background.modes[id])
+        let downloads = await service.downloadCount
+        XCTAssertEqual(downloads, 1)
+    }
+
+    @MainActor
+    func test系统时间到期的上传只读恢复且不自动重放() async throws {
+        let driver = BackgroundDriverFixture()
+        driver.rejectsSubmission = true
+        let coordinator = MobileTransferCoordinator(backgroundExecution: MobileTransferBackgroundExecution(driver: driver))
+        let service = RecordingTransferService(uploadBehavior: .suspend)
+        let id = await coordinator.enqueueUpload(uploadRequest())
+        await coordinator.start(id, using: service)
+        try await waitForTransfer { await service.uploadCount == 1 }
+        await driver.limitedExpirations[0]()
+        try await waitForTransfer { await coordinator.task(id: id)?.status == .resultNeedsReview }
+        await coordinator.retryFromBeginning(id, using: service)
+        await coordinator.resume(id, using: service)
+        let writes = await service.uploadCount
+        let reviews = await service.reviewCount
+        XCTAssertEqual(writes, 1)
+        XCTAssertEqual(reviews, 1)
+        XCTAssertEqual(driver.limited[0].completions, [false])
+    }
+
+    @MainActor
+    func test旧后台回调不能取消用户重新开始的下载() async throws {
+        let driver = BackgroundDriverFixture()
+        let background = MobileTransferBackgroundExecution(driver: driver)
+        let coordinator = MobileTransferCoordinator(backgroundExecution: background)
+        let service = RecordingTransferService(downloadBehavior: .suspend)
+        let id = await coordinator.enqueueDownload(downloadRequest())
+        await coordinator.start(id, using: service)
+        try await waitForTransfer { await service.downloadCount == 1 }
+        await driver.limitedExpirations[0]()
+        try await waitForTransfer { await coordinator.task(id: id)?.status == .cancelled }
+        await coordinator.retryFromBeginning(id, using: service)
+        try await waitForTransfer { await service.downloadCount == 2 }
+        await driver.jobs[0].expiration()
+        let status = await coordinator.task(id: id)?.status
+        XCTAssertEqual(status, .running)
+        XCTAssertEqual(background.modes[id], .limited)
+        await coordinator.cancel(id)
+        try await waitForTransfer { await coordinator.task(id: id)?.status == .cancelled }
+    }
+
+    @MainActor
+    func test前台传输完成归还系统时间且迟到回调不改变成功() async throws {
+        let driver = BackgroundDriverFixture()
+        let background = MobileTransferBackgroundExecution(driver: driver)
+        let coordinator = MobileTransferCoordinator(backgroundExecution: background)
+        let service = RecordingTransferService()
+        let id = await coordinator.enqueueDownload(downloadRequest())
+        await coordinator.start(id, using: service)
+        try await waitForTransfer { await MainActor.run { !driver.limited.isEmpty && !driver.limited[0].completions.isEmpty } }
+        await driver.limitedExpirations[0]()
+        let status = await coordinator.task(id: id)?.status
+        XCTAssertEqual(status, .succeeded)
+        XCTAssertEqual(driver.limited[0].completions, [true])
+        XCTAssertNil(background.modes[id])
+    }
+
     func test初始化不会自动创建或恢复任务() async {
         let coordinator = MobileTransferCoordinator()
         let tasks = await coordinator.allTasks()

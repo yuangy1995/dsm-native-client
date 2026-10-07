@@ -9,7 +9,7 @@ enum MobileDocumentIntent: String, Codable, Equatable, Sendable {
 }
 
 enum MobileDocumentTransferPolicy {
-    static let supportsBackgroundTransfer = false
+    static let supportsTransferAfterTermination = false
     static let supportsMultipleSelection = true
     static let supportsResume = false
 }

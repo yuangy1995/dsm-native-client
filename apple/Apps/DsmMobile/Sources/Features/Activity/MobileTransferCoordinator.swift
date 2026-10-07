@@ -3,6 +3,7 @@ import Foundation
 
 /// 管理用户主动发起的传输；恢复时保留提交边界，未知上传绝不自动重放。
 actor MobileTransferCoordinator {
+    private let backgroundExecution: MobileTransferBackgroundExecution?
     private let recoveryStore: MobileTransferRecoveryStore?
     private var recoveryLoadFailed = false
     private(set) var recoveryFailure = false
@@ -18,7 +19,9 @@ actor MobileTransferCoordinator {
     private var fileStationObservationTokensByProfile: [UUID: UUID] = [:]
 
     init(mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator(),
-         recoveryStore: MobileTransferRecoveryStore? = nil) {
+         recoveryStore: MobileTransferRecoveryStore? = nil,
+         backgroundExecution: MobileTransferBackgroundExecution? = nil) {
+        self.backgroundExecution = backgroundExecution
         self.mutationCoordinator = mutationCoordinator
         self.recoveryStore = recoveryStore
         do {
@@ -407,6 +410,16 @@ actor MobileTransferCoordinator {
             return
         }
 
+        let backgroundToken = await backgroundExecution?.begin(taskID: id, direction: request.direction) { [weak self] in
+            await self?.expireBackgroundExecution(id, generation: generation)
+        }
+        guard !Task.isCancelled, isCurrentExecution(id, generation: generation),
+              tasksByID[id]?.status == .preparing else {
+            if let backgroundToken { await backgroundExecution?.finish(backgroundToken, success: false) }
+            clearExecution(id, generation: generation)
+            return
+        }
+
         do {
             let outcome = try await mutationCoordinator.perform(
                 profileID: request.profileID,
@@ -425,6 +438,7 @@ actor MobileTransferCoordinator {
                             await self.updateProgress(
                                 id,
                                 generation: generation,
+                                backgroundToken: backgroundToken,
                                 completed: completed,
                                 total: total
                             )
@@ -436,6 +450,7 @@ actor MobileTransferCoordinator {
                             await self.updateProgress(
                                 id,
                                 generation: generation,
+                                backgroundToken: backgroundToken,
                                 completed: completed,
                                 total: total
                             )
@@ -443,7 +458,10 @@ actor MobileTransferCoordinator {
                     }
                 }
             }
-            guard isCurrentExecution(id, generation: generation) else { return }
+            guard isCurrentExecution(id, generation: generation) else {
+                if let backgroundToken { await backgroundExecution?.finish(backgroundToken, success: false) }
+                return
+            }
             switch outcome {
             case .submitted:
                 if Task.isCancelled || tasksByID[id]?.status == .cancelling {
@@ -459,10 +477,20 @@ actor MobileTransferCoordinator {
                 complete(id, status: .cancelledBeforeSubmission, clearsProgress: true)
             }
         } catch {
-            guard isCurrentExecution(id, generation: generation) else { return }
+            guard isCurrentExecution(id, generation: generation) else {
+                if let backgroundToken { await backgroundExecution?.finish(backgroundToken, success: false) }
+                return
+            }
             await handleExecutionError(id, request: request, error: error, service: service)
         }
+        let succeeded = tasksByID[id]?.status == .succeeded
         clearExecution(id, generation: generation)
+        if let backgroundToken { await backgroundExecution?.finish(backgroundToken, success: succeeded) }
+    }
+
+    private func expireBackgroundExecution(_ id: UUID, generation: UUID) {
+        guard isCurrentExecution(id, generation: generation) else { return }
+        cancel(id)
     }
 
     private func markRunning(_ id: UUID, generation: UUID) -> Bool {
@@ -480,9 +508,10 @@ actor MobileTransferCoordinator {
     private func updateProgress(
         _ id: UUID,
         generation: UUID,
+        backgroundToken: UUID?,
         completed: Int64,
         total: Int64?
-    ) {
+    ) async {
         guard isCurrentExecution(id, generation: generation),
               let status = tasksByID[id]?.status,
               status == .running || status == .cancelling else { return }
@@ -494,6 +523,7 @@ actor MobileTransferCoordinator {
             lastProgressSave = Date()
             _ = persist()
         }
+        if let backgroundToken { await backgroundExecution?.update(backgroundToken, completed: completed, total: total) }
     }
 
     private func handleExecutionError(

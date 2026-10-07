@@ -33,6 +33,8 @@ enum MobileUIFixture {
             let model = MobileAppModel(defaults: defaults, sessionStore: FixtureSessionStore(), passwordStore: FixturePasswordStore(),
                 previewModel: officeState.hasPrefix("office-") ? MobileFilePreviewModel(rangeReader: officeTransport) : MobileFilePreviewModel(),
                 transferRecoveryStore: uploadFixture ? MobileTransferRecoveryStore(rootURL: fixtureRoot) : nil,
+                transferBackgroundExecution: ProcessInfo.processInfo.arguments.contains("--ui-transfer-background")
+                    ? MobileTransferBackgroundExecution(driver: MobileSystemTransferBackgroundDriver()) : nil,
                 chatAudioDriver: officeState.hasPrefix("chat-audio-") ? MobileChatAudioUIDriver(denied: officeState == "chat-audio-permission-denied") : nil,
                 chatNotificationDriver: MobileChatNotificationUIDriver(denied: officeState == "chat-realtime-notifications-denied"),
                 chatPollingIntervalNanoseconds: officeState.hasPrefix("chat-realtime-") ? 1_000_000_000 : 30_000_000_000)
@@ -602,6 +604,12 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
                 : paths == ["/fixture/Inbox"] ? Data(base64Encoded: "UEsDBBQAAAAAAAAAIVBt57LFFgAAABYAAAAQAAAASW5ib3gvTmVzdGVkLnR4dFNhbXBsZSBuZXN0ZWQgZG9jdW1lbnRQSwECFAMUAAAAAAAAACFQbeeyxRYAAAAWAAAAEAAAAAAAAAAAAAAAgAEAAAAASW5ib3gvTmVzdGVkLnR4dFBLBQYAAAAAAQABAD4AAABEAAAAAAA=")!
                 : Data(base64Encoded: "UEsDBBQAAAAAAAAAIVBt57LFFgAAABYAAAAQAAAASW5ib3gvTmVzdGVkLnR4dFNhbXBsZSBuZXN0ZWQgZG9jdW1lbnRQSwMEFAAAAAAAAAAhUFDEymYPAAAADwAAABMAAABTYW1wbGUgZG9jdW1lbnQudHh0U2FtcGxlIGRvY3VtZW50UEsBAhQDFAAAAAAAAAAhUG3nssUWAAAAFgAAABAAAAAAAAAAAAAAAIABAAAAAEluYm94L05lc3RlZC50eHRQSwECFAMUAAAAAAAAACFQUMTKZg8AAAAPAAAAEwAAAAAAAAAAAAAAgAFEAAAAU2FtcGxlIGRvY3VtZW50LnR4dFBLBQYAAAAAAgACAH8AAACEAAAAAAA=")!
         } else { data = Data("Sample remote document".utf8) }
+        if ProcessInfo.processInfo.arguments.contains("--ui-transfer-background") {
+            for second in 1...12 {
+                try await Task.sleep(for: .seconds(1))
+                progress(Int64(data.count * second / 12), Int64(data.count))
+            }
+        }
         try data.write(to: destinationURL); progress(Int64(data.count), Int64(data.count))
         return .init(data: Data(), statusCode: 200, headers: ["Content-Type": "application/octet-stream", "Content-Length": String(data.count)])
     }
@@ -614,6 +622,12 @@ private actor FixtureTransport: DsmBinaryHTTPTransport {
               let pathEnd = body[pathStart...].range(of: "\r\n")?.lowerBound else { throw URLError(.badServerResponse) }
         let path = String(body[pathStart..<pathEnd])
         guard path == "/fixture" || path.hasPrefix("/fixture/") else { throw URLError(.unsupportedURL) }
+        if ProcessInfo.processInfo.arguments.contains("--ui-transfer-background") {
+            for second in 1...12 {
+                try await Task.sleep(for: .seconds(1))
+                progress(Int64(second), 12)
+            }
+        }
         uploaded[path + "/" + String(body[nameStart..<nameEnd])] = false
         progress(1, 1)
         return .init(data: Data("{\"success\":true,\"data\":{}}".utf8), statusCode: 200)
