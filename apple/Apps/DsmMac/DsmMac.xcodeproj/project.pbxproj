@@ -439,8 +439,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				6E7F102405CE46BF9FADEA71 /* DsmFileProvider */,
 				A4FE15DAB3C35747621D9326 /* DsmMac */,
+				6E7F102405CE46BF9FADEA71 /* DsmFileProvider */,
 			);
 		};
 /* End PBXProject section */

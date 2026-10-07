@@ -4083,3 +4083,23 @@ iPad 使用 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，对应结果改为
 失败截图位于 `build/m7d-ci-pad-evidence`，十二张本机精选位于 `build/m7d-ci-pad-preview`。
 正式本机构建/UI 日志与结果仍保留于
 忽略的 build。新的完整云端四组结果尚未运行，不以本地通过或代码同步代替。
+
+## 2026-10-07 macOS 工程生成与控制台测试退出等待
+
+完整 Apple 运行 `37549707212` 的 `shared-macos` 作业 `112562018841` 失败于工程生成物检查；共享测试和发布签名回归此前已通过，打包步骤未执行。读取作业原日志确认差异仅为 PBXProject 的两个 target 顺序：本机默认 XcodeGen 为 2.45.4，CI 锁定 2.46.0。使用仓库锁定版本及既定 SHA-256 校验下载后重新生成 Mac/移动工程，两次生成哈希一致；不手改生成文件，不改变工具链版本。
+
+M8a 本机完整共享回归第一次运行卡住。进程采样明确停在 `VirtualMachineConsoleTLSTests.test要求系统信任时不能使用自签名固定证书` 的 `ConsoleLoopbackServer.stop()` → `Process.waitUntilExit()`，对应测试服务进程已不存在。该次运行手动中断（exit 130），不是通过。测试服务器改为启动前安装退出回调、通过 AsyncStream 异步等待退出；成功和抛错均等待并清理自建证书，不修改连接实现、TLS 断言或跳过测试。中断留下的唯一合成证书目录已清理。
+
+实际验证：
+
+```sh
+build/m8a-xcodegen/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMac/project.yml
+build/m8a-xcodegen/xcodegen/bin/xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+swift test --package-path apple --jobs 2 --filter VirtualMachineConsole
+swift test --package-path apple --jobs 2
+```
+
+- 控制台聚焦 32 项通过；包含真实回环 HTTPS/WSS、临时自签名证书、系统信任要求、证书变化、重定向、权限拒绝和文本帧。
+- 完整共享/macOS 3101 项 XCTest（172 条既有跳过）与 12 项 Swift Testing 通过，未新增跳过。
+- 生成物复验：锁定 XcodeGen 2.46.0，两端重复生成哈希保持一致；Mac 差异只有两个 target 排序。
+- 证据：`build/m8a-ci-shared-job.log`、`build/m8a-console-regression.log`、`build/m8a-shared-final.log`。该修复尚未由下一次云端运行确认；同轮其余移动作业仍在进行，不把本机通过写成云端全绿。
