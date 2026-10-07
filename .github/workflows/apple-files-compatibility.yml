@@ -1,0 +1,123 @@
+name: Apple Files Compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_revision:
+        description: "要复验的仓库完整提交 SHA"
+        required: true
+        type: string
+      ios_runtime:
+        description: "执行原 Files 系统用例的已安装模拟器完整版本"
+        required: true
+        type: string
+        default: "26.2"
+
+permissions:
+  contents: read
+
+# 独立手动兼容检查不替代完整 Apple Build，也不取消其运行。
+env:
+  XCODE_VERSION: "26.6"
+  XCODE_BUILD_VERSION: "17F113"
+  XCODE_DEVELOPER_DIR: "/Applications/Xcode_26.6.app/Contents/Developer"
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+
+jobs:
+  files-system:
+    name: ${{ matrix.family }}-iOS-${{ inputs.ios_runtime }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        family: [iPhone, iPad]
+    steps:
+      - name: 校验固定来源
+        shell: bash
+        env:
+          SOURCE_REVISION: ${{ inputs.source_revision }}
+        run: '[[ "$SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]]'
+
+      - name: 检出待复验提交
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_revision }}
+
+      - name: 选择现有锁定工具链
+        shell: bash
+        run: |
+          test -d "$XCODE_DEVELOPER_DIR"
+          echo "DEVELOPER_DIR=$XCODE_DEVELOPER_DIR" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE_DEVELOPER_DIR"
+          test "$(xcodebuild -version | awk 'NR == 1 { print $2 }')" = "$XCODE_VERSION"
+          test "$(xcodebuild -version | awk 'NR == 2 { print $3 }')" = "$XCODE_BUILD_VERSION"
+          xcodebuild -version
+          git rev-parse HEAD
+
+      - name: 安装并校验锁定的 XcodeGen
+        shell: bash
+        run: |
+          xcodegen_archive="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION.zip"
+          xcodegen_root="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION"
+          curl -fsSL --retry 3 --output "$xcodegen_archive" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          printf '%s  %s\n' "$XCODEGEN_SHA256" "$xcodegen_archive" | shasum -a 256 -c -
+          unzip -q "$xcodegen_archive" -d "$xcodegen_root"
+          test "$("$xcodegen_root/xcodegen/bin/xcodegen" --version | awk '{ print $2 }')" = "$XCODEGEN_VERSION"
+          echo "$xcodegen_root/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: 选择指定版本的模拟器
+        shell: bash
+        env:
+          MOBILE_FAMILY: ${{ matrix.family }}
+          MOBILE_RUNTIME: ${{ inputs.ios_runtime }}
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/files-simulators.json"
+          python3 - "$RUNNER_TEMP/files-simulators.json" "$MOBILE_FAMILY" "$MOBILE_RUNTIME" >> "$GITHUB_ENV" <<'PYTHON'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          family, version = sys.argv[2:]
+          runtime = "com.apple.CoreSimulator.SimRuntime.iOS-" + version.replace(".", "-")
+          preferred = {"iPhone": ["iPhone 17 Pro"], "iPad": ["iPad Air 11-inch (M4)", "iPad Air 11-inch (M3)"]}[family]
+          candidates = []
+          for device in data["devices"].get(runtime, []):
+              if device.get("isAvailable") and device["name"].startswith(family):
+                  rank = len(preferred) - preferred.index(device["name"]) if device["name"] in preferred else 0
+                  candidates.append((rank, device["name"], device["udid"]))
+          if not candidates:
+              installed = sorted(key for key in data["devices"] if ".iOS-" in key)
+              raise SystemExit(f"缺少 iOS {version} 的 {family}，不能换版本或跳过对照。已安装：{installed}")
+          _, name, device = max(candidates)
+          print(f"MOBILE_DEVICE={device}")
+          print(f"MOBILE_DEVICE_NAME={name}")
+          PYTHON
+
+      - name: 生成工程并运行原 Files 系统用例
+        working-directory: apple/Apps/DsmMobile
+        shell: bash
+        env:
+          MOBILE_FAMILY: ${{ matrix.family }}
+          MOBILE_RUNTIME: ${{ inputs.ios_runtime }}
+        run: |
+          xcodegen generate
+          git diff --exit-code -- DsmMobile.xcodeproj/project.pbxproj
+          echo "Testing $MOBILE_DEVICE_NAME on iOS $MOBILE_RUNTIME"
+          xcrun simctl bootstatus "$MOBILE_DEVICE" -b
+          # 只选择既有系统测试类，不修改用例、断言、权限或测试重试策略。
+          xcodebuild test -project DsmMobile.xcodeproj -scheme DsmMobile \
+            -sdk iphonesimulator -destination "platform=iOS Simulator,id=$MOBILE_DEVICE" \
+            -derivedDataPath "$RUNNER_TEMP/Files-build" -jobs 3 -parallel-testing-enabled NO \
+            -only-testing:DsmMobileUITests/MobileFilesProviderUITests \
+            -resultBundlePath "$RUNNER_TEMP/Files-$MOBILE_FAMILY-$MOBILE_RUNTIME.xcresult" \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+
+      - name: 封存系统测试结果
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: LanStash-Files-${{ matrix.family }}-iOS-${{ inputs.ios_runtime }}
+          path: ${{ runner.temp }}/Files-*.xcresult
+          if-no-files-found: warn

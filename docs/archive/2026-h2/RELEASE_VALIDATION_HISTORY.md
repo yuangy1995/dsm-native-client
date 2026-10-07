@@ -4718,3 +4718,20 @@ DMG 的 Ed25519 签名及签名更新源指定长度的原始内容均验证通�
 真实 NAS 上传与多选操作、照片提示和多 NAS 容量。按本页对应修复操作复验，保留
 已有配置和恢复记录；只回传架构/版本、脱敏步骤和错误类别。自动化与签名回读不
 代替这些实机结果。M6–M8 和新的移动云端仍独立进行，不能因 Mac 发布成功标为完成。
+
+## 2026-10-07 Files 指定系统版本云端对照入口
+
+在本机仅有 iOS 26.5、物理设备均不可连接的条件下，核对 GitHub 官方
+[macos-26 执行环境清单](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md#installed-simulators)，
+确认其列有 iOS 26.2 和其他 26.x 模拟器。新增仅手动运行的
+`.github/workflows/apple-files-compatibility.yml`，固定原仓库完整提交 SHA，使用
+现有锁定 Xcode 26.6（17F113）与 XcodeGen 2.46.0，在指定已安装系统的 iPhone/iPad
+执行完整原 `MobileFilesProviderUITests` 类。保持原用例与等待断言、临时签名和
+产品权限；没有真实 NAS 请求或正式发布。两个设备串行，结果包失败也上传。
+
+本机已用 Ruby YAML 解析并执行所有 shell 步骤的 `bash -n`，以及选择器的两端
+固定版本/缺少版本拒绝替代合成检查，全部通过。独立复核确认该入口只有手动触发、
+只读仓库权限，不含取消当前完整 CI、跳过失败或重试测试的设置。此次仅新增独立
+工作流与说明，不修改完整 Apple Build 的选择规则，不以小范围对照替代完整门禁。
+下一步从 `7fe646b2` 运行 iOS 26.2 原用例；运行结果另记，当前不能宣称任何新的
+系统版本已通过。回滚移除该手动入口，不涉及应用、权限或持久化变化。

@@ -235,6 +235,20 @@ iPhone 可编辑用例的逐步活动与对应域日志进一步区分了加载�
 明确选择这两项原用例并禁用并行。专用临时模拟器已删除，导出的原始诊断在提取脱敏
 结论后清理；原结果包保留。没有修改、重复自动重试或放宽业务断言。
 
+### 指定系统版本的云端对照（2026-10-07）
+
+本机只有 iOS 26.5 且当前无可连接真机。[GitHub 官方执行环境清单](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md#installed-simulators)
+列有 iOS 26.2、26.4 系列及 26.5 模拟器，因此增加仅手动运行的
+`Apple Files Compatibility`。保持现有 Xcode 26.6、SDK、XcodeGen、应用身份和
+临时签名，指定原仓库完整提交与已安装系统版本，在 iPhone/iPad 运行完整的原
+`MobileFilesProviderUITests` 类。目的为区分只读失败是否跨系统版本存在；不改
+用例、等待期限、业务断言或产品能力。缺少指定版本直接失败，不能替换为其他版本。
+
+该工作流与完整 Apple Build 独立，分组串行，失败仍封存原始结果包；不申请生产
+签名、不联网测试真实 NAS，也不替代完整移动门禁。先以 `7fe646b2` 对照 iOS 26.2，
+尚未取得结果时不能声称旧系统通过。移除该手动工作流即可回滚，不涉及产品或数据
+迁移，也不改变正在运行的完整验证。
+
 ## PENDING_USER_VALIDATION
 
 | 前置条件 | 操作与预期结果 | 脱敏反馈与未验证影响 |
