@@ -70,7 +70,8 @@ import XCTest
         screenshot("Landscape virtual machine controls")
         XCUIDevice.shared.orientation = .portrait; reveal("virtual-machine.action.shutdown", app).tap()
         waitEnabled(reveal("virtual-machine.confirm", app)); screenshot("Virtual machine shutdown confirmation after rotation")
-        app.buttons["Cancel"].tap(); XCTAssertTrue(app.collectionViews["virtual-machine.confirmation"].waitForNonExistence(timeout: 6))
+        // 云端旋转后短点击未关闭确认页；明确按下/抬起一次，不重试危险操作。
+        app.buttons["Cancel"].press(forDuration: 0.15); XCTAssertTrue(app.collectionViews["virtual-machine.confirmation"].waitForNonExistence(timeout: 6))
     }
     func test加载空列表恢复与筛选五态() {
         let loading = launch("vmm-loading"); XCTAssertTrue(element("virtual-machine.loading", loading).waitForExistence(timeout: 8)); screenshot("Virtual machines loading"); loading.terminate()

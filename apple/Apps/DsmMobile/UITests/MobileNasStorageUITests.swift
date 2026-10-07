@@ -47,10 +47,10 @@ final class MobileNasStorageUITests: XCTestCase {
         reveal("mobile.nas.disk.quick", in: app).tap()
         XCTAssertTrue(element("mobile.nas.disk.confirm", app).waitForExistence(timeout: 5))
         screenshot(app, "Quick drive test confirmation")
-        element("mobile.nas.disk.confirm", app).tap()
+        element("mobile.nas.disk.confirm", app).press(forDuration: 0.15)
         assertTestState("Quick test running", app)
         reveal("mobile.nas.disk.stop", in: app).tap()
-        XCTAssertTrue(element("mobile.nas.disk.confirm", app).waitForExistence(timeout: 5)); element("mobile.nas.disk.confirm", app).tap()
+        XCTAssertTrue(element("mobile.nas.disk.confirm", app).waitForExistence(timeout: 5)); element("mobile.nas.disk.confirm", app).press(forDuration: 0.15)
         assertTestState("No test running", app)
         screenshot(app, "Drive test stopped and history retained")
     }

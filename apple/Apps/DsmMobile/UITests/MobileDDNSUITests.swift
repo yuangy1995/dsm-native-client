@@ -9,9 +9,9 @@ final class MobileDDNSUITests: XCTestCase {
         let result = element("mobile.nas.ddns.testResult", app)
         expect(result, contains: "Connection test succeeded")
         screenshot(app, "DDNS connection test does not save the record")
-        reveal("mobile.nas.ddns.enabled", in: app).switches.firstMatch.tap()
-        XCTAssertFalse(result.exists)
-        reveal("mobile.nas.ddns.enabled", in: app).switches.firstMatch.tap()
+        setUpdates(false, in: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: result)], timeout: 5), .completed)
+        setUpdates(true, in: app)
         element("mobile.nas.ddns.save", app).tap()
         let confirm = element("mobile.nas.ddns.confirm", app)
         XCTAssertTrue(confirm.waitForExistence(timeout: 5)); screenshot(app, "DDNS save risk confirmation"); confirm.tap()
@@ -23,7 +23,7 @@ final class MobileDDNSUITests: XCTestCase {
     func test已有记录保存开关并可取消或确认删除() {
         let app = launch("nas-ddns"); defer { app.terminate() }
         openRecord(app)
-        reveal("mobile.nas.ddns.enabled", in: app).switches.firstMatch.tap()
+        setUpdates(false, in: app)
         element("mobile.nas.ddns.save", app).tap(); element("mobile.nas.ddns.confirm", app).tap()
         let record = element("mobile.nas.ddns.record.Example", app)
         expect(record, contains: "Updates Off")
@@ -127,6 +127,18 @@ final class MobileDDNSUITests: XCTestCase {
         username.tap(); username.typeText("synthetic-user\n")
         let password = app.secureTextFields["mobile.nas.ddns.password"]
         password.tap(); password.typeText("synthetic-only\n")
+    }
+    private func setUpdates(_ enabled: Bool, in app: XCUIApplication) {
+        let toggle = reveal("mobile.nas.ddns.enabled", in: app), control = toggle.switches.firstMatch
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: control)], timeout: 10), .completed)
+        // 云端录像显示中心点击后开关仍保持原值；明确拖动一次，并先断言实际值再检查结果清除。
+        let from = control.coordinate(withNormalizedOffset: CGVector(dx: enabled ? 0.25 : 0.75, dy: 0.5))
+        let to = control.coordinate(withNormalizedOffset: CGVector(dx: enabled ? 0.75 : 0.25, dy: 0.5))
+        from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.1)
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", enabled ? "1" : "0"), object: toggle)
+        let result = XCTWaiter.wait(for: [changed], timeout: 10)
+        if result != .completed { screenshot(app, "DDNS switch did not reach the requested value") }
+        XCTAssertEqual(result, .completed)
     }
     private func openRecord(_ app: XCUIApplication) {
         let record = element("mobile.nas.ddns.record.Example", app)

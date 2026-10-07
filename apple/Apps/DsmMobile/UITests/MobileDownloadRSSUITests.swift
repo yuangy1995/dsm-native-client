@@ -116,7 +116,9 @@ final class MobileDownloadRSSUITests: XCTestCase {
     }
     private func openFeed(_ app: XCUIApplication) {
         let site = element("downloads.rss.site.7", app)
-        XCTAssertTrue(site.waitForExistence(timeout: 8)); site.tap()
+        XCTAssertTrue(site.waitForExistence(timeout: 8)); XCTAssertTrue(site.isHittable)
+        // 云端短点击后仍停在订阅列表，使用一次完整按下/抬起并保留下方页面断言。
+        site.press(forDuration: 0.15)
         XCTAssertTrue(element("downloads.rss.update", app).waitForExistence(timeout: 5))
     }
     private func navigate(_ id: String, _ title: String, _ app: XCUIApplication) {
