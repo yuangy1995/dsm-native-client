@@ -7423,6 +7423,7 @@
 "mobile.files-location.export-error" = "The copy could not be saved. Check device storage and try again.";
 "mobile.files-location.pending-error" = "A change is still in progress. Refresh, then finish or save its copy before changing this setting.";
 "mobile.files-location.error" = "The Files location could not be updated. Check the connection and device storage, then refresh and try again.";
+"mobile.files-location.extension-unavailable" = "The system has not made LanStash available in Files yet. Try again shortly. If this continues, close and reopen LanStash.";
 "mobile.files-location.browse" = "Browse Files";
 "mobile.files-location.save" = "Save edit";
 "mobile.files-location.test-saved" = "Edit saved";

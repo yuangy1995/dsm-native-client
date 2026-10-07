@@ -33,8 +33,8 @@ M8a 普通文件传输与 M8b 系统分享已有独立验收；M8d 照片上传/
 
 M8c 已复用 Mac 的共享 File Provider 运行时并接移动域注册、读取/缓存、原位编辑、
 冲突/未知恢复及独立删除授权；两端可编辑系统主流程曾通过，但全新 iPad 对照与
-云端首次加载仍有失败。默认只读目录在本机与云端 iPhone 均确认相同元数据落盘
-错误，云端 iPad 另有添加位置失败，见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)。
+云端首次加载仍有失败。默认只读目录在本机与云端两种设备均确认相同元数据落盘
+错误；云端 iPad 添加位置失败另已定位到系统尚未发现扩展，见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)。
 不以写权限绕过只读失败，不把它转写成仅待用户真机验收。该问题及仍在处理的完整云端
 失败解决前，M6–M8 整体目标保持未完成；其他独立切片的已验证结果保留。
 
@@ -799,7 +799,7 @@ Mac 源路径前缀为 `apple/Apps/DsmMac/Sources/`，移动为 `apple/Apps/DsmM
 | M7 VMM 网络/映像/控制台 | ServiceManagementView | 资源表单及触控 WebKit；控制台会话；凭据/内部写 | M7d4a 网络详情/改名/单多删与 M7d4b 映像详情/单多删及独立摘要恢复已完成本机验收，保留关联 VM/创建引用互斥、回执与只读恢复；M7d5 已接触控控制台、关闭/手动重连与前后台清理，共用受限原生资源/WSS 及非持久 WebKit，网页不持有会话凭据；两端合成组件/UI 和 Mac 回归通过，真实 noVNC/RFB 另验 |
 | M8 系统后台传输 | WorkspaceModel（业务语义） | 系统持续任务、受保护文件及恢复；后台/凭据 | M8a 普通文件与 M8d 照片上传/导出、跨 NAS 复制及独立删源、Office 下载/主动回传已接系统时间；135 项聚焦回归和两端各五项前后台 UI 通过。保留原证书/同源保护、旧系统有限时间和未知写恢复，不承诺进程终止续传；见[普通传输账本](APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md)与[其他执行器账本](APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md) |
 | M8 分享扩展 | FileUploadPlan（上传语义） | 分享→NAS/位置→持久任务；独立扩展最小共享权限 | M8b 已实现扩展内选择与上传、最小共享会话撤销、独立持久记录及主 App 接手；两端各 81 项聚焦单元及四项真实系统分享 UI 通过，正式签名/真实 NAS 另验，见[专项账本](APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md) |
-| M8 Files 与外部编辑 | DesktopCloudDriveManager；Mac FileProviderExtension | iOS File Provider 先读/下载/缓存，再写回/冲突/删除；系统集成 | M8c 已提取共享运行时并实现移动注册、缓存、原位编辑/冲突恢复及独立删除授权；两端可编辑系统主流程通过。默认只读系统目录仍可复现元数据错误，尚未完整验收，不放宽写权限绕过。见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)；正式权限/真机另验 |
+| M8 Files 与外部编辑 | DesktopCloudDriveManager；Mac FileProviderExtension | iOS File Provider 先读/下载/缓存，再写回/冲突/删除；系统集成 | M8c 已提取共享运行时并实现移动注册、缓存、原位编辑/冲突恢复及独立删除授权；两端可编辑系统主流程本机早期曾通过，全新 iPad 与云端首次加载仍有失败。默认只读系统目录在本机及云端两端均复现元数据错误，尚未完整验收，不放宽写权限绕过。见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)；正式权限/真机另验 |
 
 ## 顺序、所有权与质量门
 

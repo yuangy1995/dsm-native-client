@@ -233,6 +233,18 @@ final class MobileFilesSettingsModel {
 
     private func message(_ error: Error) -> String {
         if (error as? NSFileProviderError)?.code == .notAuthenticated { return L10n.string("mobile.extensions.sign-in-again") }
+        if #available(iOS 17.1, *) {
+            let issue = error as NSError
+            let underlying = issue.userInfo[NSUnderlyingErrorKey] as? NSError
+            // 系统可能在首次安装后尚未发现扩展；不能误导用户检查 NAS 或存储空间。
+            if issue.domain == NSFileProviderErrorDomain,
+               issue.code == NSFileProviderError.applicationExtensionNotFound.rawValue
+                || (issue.code == NSFileProviderError.providerNotFound.rawValue
+                    && underlying?.domain == NSFileProviderErrorDomain
+                    && underlying?.code == NSFileProviderError.applicationExtensionNotFound.rawValue) {
+                return L10n.string("mobile.files-location.extension-unavailable")
+            }
+        }
         if let failure = error as? DesktopDriveWritebackError, failure == .pendingChanges || failure == .busy {
             return L10n.string("mobile.files-location.pending-error")
         }

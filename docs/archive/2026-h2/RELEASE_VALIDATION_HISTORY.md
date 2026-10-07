@@ -4682,6 +4682,31 @@ Mac 发布前增量移动构建及 24 项照片导出、22 项 Files 管理单�
 后续以明确结束的测试段、封存结果及实际调用栈判断进度；运行中日志仅作片段证据，
 不能因观测超时推断运行停止。
 
+## 2026-10-07 iPad Files 扩展发现与只读失败封存证据
+
+旧 iPad modules 的系统结果包已独立封存，10 项为 7 通过、3 失败。默认只读用例
+08:30:33 UTC 起在系统 `create-item` 重复报告 POSIX 1、`cannotSetMetadata`，
+请求标记 8119226119、失败标记 8085606151，与 iPhone、本机及最小扩展一致。
+
+中文与可编辑场景未到系统浏览：分别在 08:28:27.185、08:29:20.942 点击添加，
+系统于 08:28:27.593、08:29:21.309 报找不到调用 App 的提供器。日志直到
+08:29:22.983 才记录 Files 扩展注册，第三项只读用例于 08:30:01 可以添加域。
+第一次清理合成位置也返回 -2001，内层 -2014；实际 Xcode 26.5 SDK
+`NSFileProviderError.h` 将 -2014 定义为没有发现可启动的文件扩展。故前两项
+添加失败属于系统扩展发现时序，不能与只读落盘错误或 NAS 权限拒绝合并。
+
+读取命令为 `xcrun xcresulttool get test-results summary/activities --path ...`，
+并用 `xcrun xcresulttool export diagnostics` 导出、`log show --archive` 按本 App、
+扩展标识和用例时窗筛选。实际保留结果路径为
+`build/m8j-pad-modules/DsmMobile-iPad-modules-system.xcresult`；临时 zip、活动与
+日志导出摘录后清理。旁边的非系统模块结果缺少 `Info.plist`，不能由
+`xcresulttool` 打开，未伪称完整封存或测试全过；已完成的单元段仍有最终作业日志。
+
+移动修正及日志更正已正常同步 `origin/main`，提交 `7fe646b2`；新
+[Apple Build 37616066715](https://github.com/yuangy1995/dsm-native-client/actions/runs/37616066715)
+已建立并开始执行。仓库与文档预检通过，移动完整结果仍待完成。Mac 发布继续绑定
+独立 `macos/v1.0.16` 的 `9f0ff6e0`，没有移动标签、覆盖公开附件或重复触发发布。
+
 ## 2026-10-07 macOS 1.0.16 正式发布与公开回读
 
 用户明确要求修复完成后发布 macOS 新版本，同时继续 M6–M8。正式标签
@@ -4719,6 +4744,46 @@ DMG 的 Ed25519 签名及签名更新源指定长度的原始内容均验证通�
 已有配置和恢复记录；只回传架构/版本、脱敏步骤和错误类别。自动化与签名回读不
 代替这些实机结果。M6–M8 和新的移动云端仍独立进行，不能因 Mac 发布成功标为完成。
 
+## 2026-10-07 Files 扩展发现失败的恢复提示
+
+在 `7fe646b2` 基线上处理旧云端已封存的系统错误：系统尚未发现本 App 扩展时，
+原页面错误要求检查连接和存储空间，与实际错误层级不符。单一修改移动位置模型、
+对应测试及双语资源；没有改变 Files 权限、注册流程、共享运行时、持久化或 NAS 请求。
+只在 iOS 17.1 起识别 SDK 明确公开的 `applicationExtensionNotFound`，包括已观察到
+的 `providerNotFound` 包裹形式；其他域缺失或同码不同错误域不归入此提示。
+
+新增回归覆盖列表读取失败后的准确提示、零注册请求、不假报成功、保留位置、系统
+恢复后手动重试复用原位置且只注册一次，以及其他错误不误归类。iPhone 构建并运行
+24 项位置管理测试，0 失败（1.733 秒）；同一产物 iPad 24 项 0 失败（1.685 秒）。
+本地化 7075/2188/3402 资源及硬编码扫描、文档与差异检查通过。
+
+```sh
+xcodebuild test -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -disableAutomaticPackageResolution -skipPackageUpdates -jobs 4 -parallel-testing-enabled NO '-only-testing:DsmMobileTests/MobileFilesProviderTests' -resultBundlePath build/m8k-files-recovery-phone.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -parallel-testing-enabled NO '-only-testing:DsmMobileTests/MobileFilesProviderTests' -resultBundlePath build/m8k-files-recovery-pad.xcresult
+python3 tools/localization/check_localization.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
+
+独立集成与只读对抗复核确认此变化仅映射已知系统错误，不自动重试、重复注册、
+输出底层错误资料或改变原账号/权限边界。页面沿用现有错误区域，没有新增界面流程；
+此次模型证据不代替云端或真机首次发现失败的完整页面复验。系统首次发现时序与
+默认只读目录落盘仍未解决，也未把重启提示当作已验证的修复方案。当前新的完整
+Apple Build 继续运行，未因这一未推送的增量改变其验证源码或取消作业。
+
+## 2026-10-07 移动整合提交的共享与 macOS 云端门禁
+
+`7fe646b2` 的 [shared-macos 作业](https://github.com/yuangy1995/dsm-native-client/actions/runs/37616066715/job/112774569014)
+已完成且为 success。终态日志确认 `swift test` 的 3117 项 XCTest（177 项既有
+条件跳过）0 失败、12 项 Swift Testing 通过；发布脚本回归 45 项通过。临时包权限
+与 Sparkle 实际加载检查、按来源提交核对的临时签名 CI 产物校验均通过，产物上传
+成功。此项属于移动整合提交的共享/Mac 回归，与前述正式发布签名和公证分别记录。
+
+移动分组仍在运行，尚不能宣告整轮 Apple Build 通过。Files 恢复提示的后续本机
+增量未包含在 `7fe646b2`，不能用此作业替代它的两端聚焦结果；默认只读目录及
+首次加载失败仍按 Files 账本追踪。当前设备清单无可连接真机，本机仅 iOS 26.5
+模拟器，尚不能进行不同系统版本或正式签名设备对照。
+
 ## 2026-10-07 Files 指定系统版本云端对照入口
 
 在本机仅有 iOS 26.5、物理设备均不可连接的条件下，核对 GitHub 官方
@@ -4735,6 +4800,12 @@ DMG 的 Ed25519 签名及签名更新源指定长度的原始内容均验证通�
 工作流与说明，不修改完整 Apple Build 的选择规则，不以小范围对照替代完整门禁。
 下一步从 `7fe646b2` 运行 iOS 26.2 原用例；运行结果另记，当前不能宣称任何新的
 系统版本已通过。回滚移除该手动入口，不涉及应用、权限或持久化变化。
+
+手动入口与对应说明已在 `6127c427` 正常推送 `main`，没有变更正式标签或完整
+Apple Build。[iOS 26.2 对照 37621927965](https://github.com/yuangy1995/dsm-native-client/actions/runs/37621927965)
+已建立，参数为 `source_revision=7fe646b29b81ddc6c4756923e399da08ea6f65de`、
+`ios_runtime=26.2`；两端将串行执行同一原测试类。完整运行 `37616066715` 仍在
+进行，没有被本次提交取消。对照仍待结果，不记为通过。
 
 ## 2026-10-07 macOS 1.0.16 照片入口消失回归
 
@@ -4797,3 +4868,61 @@ LANSTASH_NON_INTERACTIVE=1 LANSTASH_BUILD_TYPE=Release LANSTASH_TARGET_ARCH=arm6
 影响，明确拒绝 Photos 的账号应继续隐藏入口。只需回传版本、连接方式类别、
 脱敏操作步骤和错误类别；无需导出照片、账户、地址或会话资料。合成回归不代替
 这次真实 NAS 复验。发布状态在正式流程完成后另记，不提前把源码修复记为已发布。
+
+
+## 2026-10-07 本机 iOS 26.2 Files 原用例对照
+
+云端指定系统检查尚在排队，本机临时从 Apple 官方安装 iOS 26.2（23C52），新建
+iPhone 17 Pro 与 iPad Air 11-inch（M3）模拟器，保持 Xcode 26.6（17F113）、
+SDK 26.5、正常临时签名、既有应用及扩展身份。运行既有编译产物中的原三项 Files
+UI，未更改用例、重试或替换权限；产物另包含上节尚未提交的扩展发现恢复提示。
+
+使用 `xcodebuild test-without-building -xctestrun
+apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun
+-destination 'platform=iOS Simulator,id=<本次专用设备>' -parallel-testing-enabled NO
+-only-testing:DsmMobileUITests/MobileFilesProviderUITests -resultBundlePath <结果路径>`，
+分别保留 `build/m8k-files-ios26.2-phone.xcresult` 与
+`build/m8k-files-ios26.2-pad.xcresult`，两次命令均退出 65。
+
+| 用例 | iPhone | iPad | 本轮实际证据 |
+| --- | --- | --- | --- |
+| 中文深色最大字号位置管理 | 68.412 秒失败 | 65.097 秒通过 | iPhone 点击添加时录像仍为“正在载入位置”且按钮禁用；失败后已载入为空，没有发出添加成功提示，不能归为系统未发现扩展 |
+| 可编辑系统浏览、下载与回传 | 86.501 秒失败 | 67.856 秒失败 | iPhone 系统“文件”已显示 Shared，回到 App 的文档选择器后停在“最近项目”，旧导航只作瞬时查询，未等待“浏览”标签；iPad 在系统目录等待时失败，未进入下载，尚未确认底层根因 |
+| 默认只读下载 | 70.816 秒失败 | 64.390 秒失败 | 两端系统创建合成目录时均报 cannotCreate/cannotSetMetadata，请求/失败标记 8119226119/8085606151，与 26.5 一致；不能宣称 Apple 已确认缺陷或真机同样失败 |
+
+原系统日志仅按本测试提供器与用例时间窗提取，未读取 NAS。iPad 可编辑域出现
+`failed to clear import cookie`（POSIX 0），该时间窗没有只读域的元数据错误，
+不能将两者合并成同一根因。iPhone 添加阶段和选择器导航采用单独的正式测试准备
+修正：等待添加按钮启用、需要时滚动使其可点击，以及等待实际“浏览”导航元素；
+仍只提交一次，保留原目录加载、下载内容与写回断言。复验结果在完成后追加。
+
+同一完整云端 `37616066715` 的 iPhone 服务组
+[112774569143](https://github.com/yuangy1995/dsm-native-client/actions/runs/37616066715/job/112774569143)
+已结束并成功，终态日志为 46 项 UI、0 失败，6972.249 秒；其余分组继续执行，
+不能将该组通过当作整个移动门禁通过。
+
+测试准备修正后使用正常签名 `xcodebuild build-for-testing` 成功，再按相同
+`test-without-building` 选择中文管理与可编辑完整流程：iPhone 两项通过
+（58.231/75.110 秒），iPad 两项通过（52.062/71.841 秒）。结果分别为
+`build/m8k-files-navigation-phone.xcresult` 与 `build/m8k-files-navigation-pad.xcresult`。
+逐张查看两端各四张关键截图：中文添加成功、移除确认末尾与取消、下载原文、
+修改后上传成功。没有产品界面改动，全部为合成测试内容。
+
+当前负责人独立复核仅有测试准备变化及前片准确错误提示，未修改读写权限、注册
+算法、重试策略或系统结果断言；未调用另一模型。双语/硬编码扫描和严格文档检查
+通过。此次两端复验使用已执行过测试的设备，不能据此宣布全新环境首次加载稳定，
+因此再建一台全新 iPad 作同两项对照，结果另记；只读原失败不改写为通过。已摘录
+的原始诊断、导出截图和录像已清理，正式结果包保留；前两台临时 26.2 设备已删除。
+
+全新 iPad 复验为中文管理 74.370 秒通过、可编辑流程 67.373 秒失败，命令退出 65，
+结果 `build/m8k-files-navigation-fresh-pad.xcresult`。失败仍在首次系统目录等待，
+并非添加按钮或选择器导航：22:24:17.385 本扩展根枚举返回一个目录，17.500 子目录
+已在本地创建成功、17.606 根目录准备完成；21.077 系统 Files 新建根枚举器，
+22.544 开始的原 20 秒等待仍未显示 Shared。该时间窗没有 `cannotSetMetadata`，
+说明本轮可编辑首次呈现与只读落盘是不同阶段的问题；尚不能归因或宣告修复。
+保留原失败与等待断言，不增加刷新重试、不扩大权限。
+
+三台本轮专用 26.2 模拟器、临时 26.2 系统及下载副本、原始诊断/临时截图均已精确
+删除；系统列表确认原有 26.5 仍为 Ready，原有两台测试设备和构建缓存保留。
+本片恢复提示与测试准备的实际改动、原失败、复验成功和全新环境剩余失败分别保留，
+不能据已通过部分宣告 M8c 或 M6–M8 整体完成。

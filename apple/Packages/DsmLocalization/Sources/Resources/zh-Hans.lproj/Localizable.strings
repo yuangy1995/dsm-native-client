@@ -7423,6 +7423,7 @@
 "mobile.files-location.export-error" = "无法保存副本。请检查设备存储空间后重试。";
 "mobile.files-location.pending-error" = "仍有修改未结束。请刷新，完成修改或保存副本后再更改此设置。";
 "mobile.files-location.error" = "无法更新“文件”位置。请检查连接及设备存储空间，刷新后重试。";
+"mobile.files-location.extension-unavailable" = "系统尚未识别岚仓的“文件”功能。请稍后重试；若仍无法使用，请关闭并重新打开岚仓。";
 "mobile.files-location.browse" = "浏览文件";
 "mobile.files-location.save" = "保存修改";
 "mobile.files-location.test-saved" = "修改已保存";

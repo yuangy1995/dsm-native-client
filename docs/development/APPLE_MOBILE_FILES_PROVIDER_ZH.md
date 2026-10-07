@@ -11,7 +11,7 @@
 
 | macOS 证据 | iPhone/iPad 等价用户结果 | 依赖、安全与当前等级 |
 | --- | --- | --- |
-| `dc2f2fb0` 的 `apple/Apps/DsmMac/FileProviderExtension/ProviderRuntime.swift`、`ProviderItem.swift`、`ProviderEnumerator.swift`（现提取到 `apple/Packages/DsmFileProviderRuntime/Sources`） | 在系统“文件”中查看同一 NAS 目录，按需下载、使用本机缓存、保留稳定文件身份与同步锚点 | 复用公开 File Station List/Download/GetInfo；版本与大小校验、容量限制、账号/路径隔离。共享和移动聚焦自动化通过，两端系统读写流程通过 |
+| `dc2f2fb0` 的 `apple/Apps/DsmMac/FileProviderExtension/ProviderRuntime.swift`、`ProviderItem.swift`、`ProviderEnumerator.swift`（现提取到 `apple/Packages/DsmFileProviderRuntime/Sources`） | 在系统“文件”中查看同一 NAS 目录，按需下载、使用本机缓存、保留稳定文件身份与同步锚点 | 复用公开 File Station List/Download/GetInfo；版本与大小校验、容量限制、账号/路径隔离。共享和移动聚焦自动化通过；两端可编辑系统流程早期曾通过，首次加载及默认只读另有下文失败 |
 | 同目录 `FileProviderExtension.swift`、`ProviderOperationRegistry.swift`、`ProviderErrorMapper.swift` | 系统原生取消、错误与重试，不复制 Finder 外壳或桌面菜单 | 当前 Mac 的平台桥接需要提取共享行为并保留独立平台入口；现有 SPM `DsmFileProviderRuntime` 测试是回归依据 |
 | `DesktopDriveWriteback.swift` 与 `ProviderRuntime.writeItem/deleteItem` | 在其他 App 编辑后写回、遇到版本冲突停止覆盖，支持创建、改名、移动与明确删除 | 复用既有写前检查、稳定副本、持久恢复、写互斥与结果回读；新增系统入口属于数据写/删除高风险。编辑、删除分别主动授权；合成自动化及系统编辑回传通过，真实 NAS 待验 |
 | `MobileExtensionAccounts`、`MobileExtensionTransport` | 用户主动为已登录连接启用 Files；退出或换账号后不能继续请求原 NAS，更不能接管新账号 | 原始账号身份与系统映射绑定，不能只比较 profile UUID；已实现的 M8b 会话桥接作为依赖 |
@@ -81,7 +81,8 @@ iPhone 和 iPad 的业务范围相同，位置管理与确认采用各自原生�
   副本导出和停止操作。移除先等待系统、拒绝未完成记录，再停止远端访问并移除域；
   失败保留暂停，允许明确恢复。移除不自动删除恢复目录。未被用户启用的新位置不等待
   尚不能进行的系统同步；原账号/信任失效时仍能保存本机副本并明确移除旧位置。
-  两端系统浏览、原位下载与编辑回传已通过；真实 NAS 和设备生命周期仍需验收。
+  两端系统浏览、原位下载与编辑回传早期曾通过，后续全新及云端首次加载仍有下文
+  失败；真实 NAS 和设备生命周期仍需验收。
 - iOS 的单位置临时缓存上限设置为 512 MiB，系统管理实际已下载副本。SDK 的
   `contentPolicy.downloadEagerlyAndKeepDownloaded/downloadLazily` 与
   `versionNoLongerAvailable` 为 Mac 专有；移动不暴露永久固定下载承诺，指定旧版本
@@ -196,13 +197,14 @@ iPhone 作业已结束，iPad 后续界面测试提前取消；两端先行系�
 
 - 两端默认只读用例均在 `activateSystemLocation` 等待 `Shared` 目录时失败，
   失败层级为系统“文件”的 `LanStash is Empty`，分别 90.884/75.382 秒。
-  iPhone 结果包中的系统日志已确认相同 POSIX 1、`cannotCreate/cannotSetMetadata`，
-  请求/失败标记均与本机及独立最小只读扩展一致；iPad 底层日志仍待结果包核对。
+  两端结果包中的系统日志均已确认相同 POSIX 1、`cannotCreate/cannotSetMetadata`，
+  请求/失败标记均与本机及独立最小只读扩展一致。
 - iPhone 中文位置管理通过；可编辑用例在等待目录 20 秒后失败，随后收集的层级
   已有 `Shared`。此次尚未进入文档选择器、下载或写回，不能计为可编辑流程通过，
   也不因失败后的目录出现直接放宽等待断言。
 - iPad 中文管理和可编辑用例均在添加位置阶段失败，页面显示“无法更新‘文件’位置”
-  的恢复提示，尚未进入系统浏览。该添加阶段问题与默认只读空目录分别追踪，尚未确定失败发生于配置保存还是系统注册。
+  的恢复提示，尚未进入系统浏览。封存系统日志确认点击添加时系统尚未发现本 App
+  的 Files 扩展；该问题与只读目录落盘分别追踪，详见下方发现时序。
 
 两端先行系统阶段各 10 项，iPhone 8 通过/2 失败，iPad 7 通过/3 失败；各 4 项分享
 扩展、3 项普通文件前后台 UI 通过。两端其后的 1846 项移动单元均 0 失败、4 项既有
@@ -220,6 +222,27 @@ iPhone 可编辑用例的逐步活动与对应域日志进一步区分了加载�
 证据来自 `build/m8j-phone-modules/DsmMobile-iPhone-modules-system.xcresult`，
 按本扩展域、进程和用例时间窗筛选。原始诊断、活动导出及临时截图在摘录后清理，
 保留可重新导出的正式结果包；不提交合成域编号、宿主路径或原始系统记录。
+
+iPad 系统结果包 `build/m8j-pad-modules/DsmMobile-iPad-modules-system.xcresult`
+完整保留。中文用例 08:28:27.185 UTC 点击添加后，系统于 08:28:27.593 报
+`No provider found`；可编辑用例 08:29:20.942 点击后，08:29:21.309 再报同类
+错误。08:29:22.983 才记录本扩展注册，第三个只读用例在 08:30:01 已能添加域，
+随后复现前述只读元数据失败。第一次清理合成位置也返回 `providerNotFound`
+（-2001），内层为 `applicationExtensionNotFound`（-2014）；当前 SDK
+`NSFileProviderError.h` 将后者定义为系统没有发现该 App 可启动的文件扩展。
+
+这些证据把添加失败定位到系统扩展发现尚未就绪，不能将其解释为 NAS 权限拒绝，
+也不能把后续成功注册当作前两项通过。真实首次安装及云端初始化时序仍需复验；
+现有固定阶段日志将区分列表、添加和回读失败，不自动重试真实添加、不放宽断言。
+针对已确认的未发现扩展错误，移动页面现在给出稍后重试、持续失败时重新打开 App
+的双语提示，不再误导用户检查 NAS 网络或存储空间。只识别明确的
+`applicationExtensionNotFound` 或已观察到的 `providerNotFound` 内层该错误；
+普通域缺失和其他错误继续沿用原恢复方式。添加仍保留同一位置，系统列表读取失败时
+不发注册请求；恢复后由用户主动重试且只注册一次。两端位置管理回归通过，精确证据
+见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-07-files-扩展发现失败的恢复提示)。
+此项只修正错误恢复提示，不宣告系统首次注册或只读目录问题已经解决。
+同一上传目录中的剩余模块结果因中断没有 `Info.plist`，不是有效完整结果包；
+已完成单元段仅保留完整作业日志证据，不能据此宣告全部模块 UI 完成。
 
 ### 全新本机 iPad 对照（2026-10-07）
 
@@ -248,6 +271,25 @@ iPhone 可编辑用例的逐步活动与对应域日志进一步区分了加载�
 签名、不联网测试真实 NAS，也不替代完整移动门禁。先以 `7fe646b2` 对照 iOS 26.2，
 尚未取得结果时不能声称旧系统通过。移除该手动工作流即可回滚，不涉及产品或数据
 迁移，也不改变正在运行的完整验证。
+
+### 本机 iOS 26.2 与测试准备复核（2026-10-07）
+
+在云端对照排队期间，临时安装 Apple 官方 iOS 26.2（23C52）模拟器系统，使用
+原 Xcode 26.6、SDK 26.5 与既有测试产物，在全新 iPhone 17 Pro、iPad Air 11-inch
+（M3）运行原三项 Files UI。iPhone 三项失败，iPad 中文管理通过、两项系统浏览
+失败；两端只读目录仍有 `cannotCreate/cannotSetMetadata`，不能归为仅 26.5 问题。
+iPad 可编辑用例的目录等待失败与只读错误分别记录，不能仅凭相邻日志归为同因。
+
+iPhone 中文失败录像显示测试在位置载入中点击了禁用的添加按钮；可编辑用例已经
+进入系统位置并显示 Shared，但 App 文档选择器停在“最近项目”，导航帮助方法在
+“浏览”标签出现前已结束瞬时检查。当前单一修改范围为正式测试的按钮可用等待与
+系统导航准备，产品、权限、目录加载/下载/写回断言不变；后续复验结果另记，不将
+测试准备修正视为只读落盘问题已经解决。修正后两端原设备的中文管理与完整编辑
+流程均通过，但再建全新 iPad 时只有中文管理通过，首次目录仍失败。该新域根枚举
+与合成子目录的本地创建已成功，系统 Files 随后仍未显示，未出现只读的元数据错误；
+首次呈现原因继续未确定，不用重复运行成功覆盖首次失败。精确命令、时序与结果
+见[本轮历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-07-本机-ios-262-files-原用例对照)。
+三台临时设备、26.2 系统及下载副本已精确清理，原有 26.5 系统与设备保留。
 
 ## PENDING_USER_VALIDATION
 
