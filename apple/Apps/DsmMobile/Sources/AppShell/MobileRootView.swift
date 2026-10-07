@@ -7,14 +7,26 @@ struct MobileRootView: View {
 
     var body: some View {
         Group {
-            if model.isConnected {
-                MobileWorkspaceView(model: model)
-                    .id(model.activeProfile.map(MobileWorkspaceIdentity.init))
+            #if DEBUG
+            if MobileShareUIFixture.isEnabled {
+                MobileShareUIFixtureView(model: model)
             } else {
-                MobileLoginView(model: model)
+                content
             }
+            #else
+            content
+            #endif
         }
         .tint(.blue)
         .preferredColorScheme(model.settingsStore.appearance.colorScheme)
+    }
+
+    @ViewBuilder private var content: some View {
+        if model.isConnected {
+            MobileWorkspaceView(model: model)
+                .id(model.activeProfile.map(MobileWorkspaceIdentity.init))
+        } else {
+            MobileLoginView(model: model)
+        }
     }
 }

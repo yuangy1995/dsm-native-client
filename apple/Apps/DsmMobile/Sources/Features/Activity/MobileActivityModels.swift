@@ -6,11 +6,6 @@ enum MobileActivitySource: String, Codable, CaseIterable, Sendable {
     case nas
 }
 
-enum MobileTransferDirection: String, Codable, CaseIterable, Sendable {
-    case upload
-    case download
-}
-
 enum MobileActivityOperation: String, Codable, CaseIterable, Equatable, Sendable {
     case appUpload = "app.upload"
     case appDownload = "app.download"

@@ -9,6 +9,8 @@ settings:
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
     LANSTASH_MOBILE_BUNDLE_ID: io.github.qwertyuiop1995.dsmnativeclient.mobile
+    LANSTASH_MOBILE_APP_GROUP: group.io.github.qwertyuiop1995.dsmnativeclient.mobile
+    LANSTASH_MOBILE_SHARED_KEYCHAIN_GROUP: "$(AppIdentifierPrefix)io.github.qwertyuiop1995.dsmnativeclient.mobile.shared"
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
 packages:
@@ -20,6 +22,7 @@ targets:
     platform: iOS
     sources:
       - Sources
+      - ExtensionShared
       - path: Resources
     dependencies:
       - package: DsmShared
@@ -34,6 +37,8 @@ targets:
         product: DsmFileFeature
       - package: DsmShared
         product: DsmVirtualMachineConsoleFeature
+      - target: DsmShare
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MOBILE_BUNDLE_ID)"
@@ -42,6 +47,33 @@ targets:
         SUPPORTS_MACCATALYST: NO
         INFOPLIST_FILE: SupportingFiles/Info.plist
         CODE_SIGN_ENTITLEMENTS: SupportingFiles/DsmMobile.entitlements
+  DsmShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - ShareExtension
+      - ExtensionShared
+      - Sources/Session/MobileWorkspaceIdentity.swift
+      - Sources/Features/Files/MobileFileUploadQueue.swift
+      - path: Resources/en.lproj
+      - path: Resources/zh-Hans.lproj
+    dependencies:
+      - package: DsmShared
+        product: DsmLocalization
+      - package: DsmShared
+        product: DsmCore
+      - package: DsmShared
+        product: DsmNetwork
+      - package: DsmShared
+        product: DsmFileFeature
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MOBILE_BUNDLE_ID).share"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        APPLICATION_EXTENSION_API_ONLY: YES
+        INFOPLIST_FILE: SupportingFiles/DsmShare-Info.plist
+        CODE_SIGN_ENTITLEMENTS: SupportingFiles/DsmMobileExtension.entitlements
   DsmMobileTests:
     type: bundle.unit-test
     platform: iOS

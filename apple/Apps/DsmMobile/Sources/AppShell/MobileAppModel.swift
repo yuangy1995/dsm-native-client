@@ -17,6 +17,8 @@ final class MobileAppModel {
     let autoLoginKeyPrefix = "lanstash.mobile.auto-login.v1."
     let defaults: UserDefaults
     let sessionStore: any SessionSecureStoring
+    let extensionAccess: MobileExtensionAccess?
+    var extensionAccessError: String?
     let passwordStore: any PasswordSecureStoring
     let authRepository: any AuthRepository
     let quickConnectResolver: any QuickConnectResolving
@@ -25,6 +27,7 @@ final class MobileAppModel {
     let office: MobileOfficeModel
     let crossNAS: MobileCrossNASQueue
     let fileUploadQueue: MobileFileUploadQueue
+    let sharedUploads: MobileShareTransferRecovery
     let fileArchiveQueue: MobileFileArchiveQueue
     let fileActivityModel: MobileFileActivityModel
     let documentTransferController: MobileDocumentTransferController
@@ -98,6 +101,7 @@ final class MobileAppModel {
             })
             office.configure(profile: activeProfile, repository: fileRepository)
             fileUploadQueue.configure(profile: activeProfile, repository: fileRepository)
+            sharedUploads.configure(profile: activeProfile, repository: fileRepository)
             fileArchiveQueue.configure(profile: activeProfile, repository: fileRepository)
             filePermissionModel.configure(profile: activeProfile, repository: fileRepository)
             remoteLocations.configure(profile: activeProfile, repository: fileRepository)
@@ -148,6 +152,7 @@ final class MobileAppModel {
             })
             office.configure(profile: activeProfile, repository: fileRepository)
             fileUploadQueue.configure(profile: activeProfile, repository: fileRepository)
+            sharedUploads.configure(profile: activeProfile, repository: fileRepository)
             fileArchiveQueue.configure(profile: activeProfile, repository: fileRepository)
             filePermissionModel.configure(profile: activeProfile, repository: fileRepository)
             remoteLocations.configure(profile: activeProfile, repository: fileRepository)
@@ -174,6 +179,7 @@ final class MobileAppModel {
         previewModel: MobileFilePreviewModel = MobileFilePreviewModel(),
         transferRecoveryStore: MobileTransferRecoveryStore? = nil,
         transferBackgroundExecution: MobileTransferBackgroundExecution? = nil,
+        extensionAccess: MobileExtensionAccess? = nil,
         chatAudioDriver: (any MobileChatAudioDriving)? = nil,
         chatNotificationDriver: (any MobileChatNotificationDriving)? = nil,
         chatPollingIntervalNanoseconds: UInt64 = 30_000_000_000
@@ -184,6 +190,10 @@ final class MobileAppModel {
             notifications: MobileChatNotifications(defaults: defaults, driver: chatNotificationDriver ?? MobileSystemChatNotificationDriver()))
         self.defaults = defaults
         self.sessionStore = sessionStore
+        self.extensionAccess = extensionAccess
+        self.sharedUploads = MobileShareTransferRecovery(store: extensionAccess.map {
+            MobileShareTransferStore(rootURL: $0.accounts.rootURL.appendingPathComponent("ShareTransfers", isDirectory: true))
+        }, backgroundExecution: transferBackgroundExecution)
         self.passwordStore = passwordStore
         self.authRepository = authRepository ?? DsmAuthRepository(sessionStore: sessionStore)
         self.quickConnectResolver = quickConnectResolver
@@ -278,6 +288,10 @@ final class MobileAppModel {
             await fileBrowserModel.locations.refresh(repository: repository)
         }
         loadProfiles()
+        if let extensionAccess {
+            do { try extensionAccess.accounts.reconcileProfiles(profiles) }
+            catch { extensionAccessError = L10n.string("mobile.extensions.unavailable") }
+        }
         if let profile = profiles.first(where: {
             $0.id.uuidString == defaults.string(forKey: lastProfileKey)
         }) ?? profiles.first {

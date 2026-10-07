@@ -129,6 +129,10 @@ struct MobileSettingsView: View {
                     L10n.string("mobile.settings.privacy.summary"),
                     systemImage: "lock.shield"
                 )
+                if let error = model.extensionAccessError {
+                    Text(error).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("mobile.extensions.error")
+                }
             }
             Section {
                 Button(L10n.string("ui.3ab8cc15939f3b5c"), role: .destructive) {

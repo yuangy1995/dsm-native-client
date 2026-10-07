@@ -24,14 +24,22 @@ struct MobileActivityView: View {
         tasks.filter(filter.includes)
     }
 
+    private var sharedUploadsVisible: Bool {
+        model.sharedUploads.jobs.contains { job in
+            guard let queue = job.queue else { return filter.includes(active: true) }
+            if queue.batches.isEmpty { return filter.includes(active: false) }
+            return queue.batches.contains { filter.includes(active: $0.isRunning || $0.isPaused || $0.hasPending) }
+        }
+    }
+
     private var state: MobileActivityPresentationState {
-        if model.fileArchiveQueue.recoveryError != nil || model.fileUploadQueue.recoveryError != nil || model.crossNAS.recoveryFailed || model.office.recoveryFailed { return .content }
-        if !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty || !model.crossNAS.records.isEmpty || !model.office.records.isEmpty {
+        if model.sharedUploads.error != nil || model.fileArchiveQueue.recoveryError != nil || model.fileUploadQueue.recoveryError != nil || model.crossNAS.recoveryFailed || model.office.recoveryFailed { return .content }
+        if !model.sharedUploads.jobs.isEmpty || !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty || !model.crossNAS.records.isEmpty || !model.office.records.isEmpty {
             let archivesVisible = model.fileArchiveQueue.records.contains { filter.includes(active: $0.isActive) }
             let uploadsVisible = model.fileUploadQueue.batches.contains { filter.includes(active: $0.isRunning || $0.isPaused || $0.hasPending) }
             let crossVisible = model.crossNAS.records.contains { filter.includes(active: $0.isRunning || $0.canContinue || $0.hasUnknown) }
             let officeVisible = model.office.records.contains { filter.includes(active: $0.phase.isActive) }
-            return archivesVisible || uploadsVisible || crossVisible || officeVisible || !visibleTasks.isEmpty ? .content : .filteredEmpty
+            return sharedUploadsVisible || archivesVisible || uploadsVisible || crossVisible || officeVisible || !visibleTasks.isEmpty ? .content : .filteredEmpty
         }
         return .resolve(
             isLoading: isLoading,
@@ -109,7 +117,7 @@ struct MobileActivityView: View {
                     .font(.callout).padding().frame(maxWidth: .infinity, alignment: .leading)
                     .background(.bar)
             }
-            if !tasks.isEmpty || !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty || !model.crossNAS.records.isEmpty || !model.office.records.isEmpty {
+            if !model.sharedUploads.jobs.isEmpty || !tasks.isEmpty || !model.fileArchiveQueue.records.isEmpty || !model.fileUploadQueue.batches.isEmpty || !model.crossNAS.records.isEmpty || !model.office.records.isEmpty {
                 filterPicker
             }
         }
@@ -157,6 +165,7 @@ struct MobileActivityView: View {
             MobileCrossNASSections(model: model, filter: filter)
             MobileFileArchiveSections(queue: model.fileArchiveQueue, filter: filter)
             MobileFileUploadSections(queue: model.fileUploadQueue, filter: filter)
+            MobileShareTransferSections(model: model.sharedUploads, filter: filter)
             taskSection(source: .app)
             taskSection(source: .nas)
         }
@@ -235,6 +244,7 @@ struct MobileActivityView: View {
     }
 
     private func observeCurrentProfile() async {
+        model.sharedUploads.refresh()
         isLoading = true
         hasError = false
         await fileActivityModel.activate(
@@ -250,6 +260,7 @@ struct MobileActivityView: View {
             guard !Task.isCancelled else { return }
             await refresh()
             localRefreshes += 1
+            if localRefreshes % 4 == 0 { model.sharedUploads.refresh() }
             if localRefreshes == 120 {
                 localRefreshes = 0
                 await refreshFileActivity()
@@ -258,6 +269,7 @@ struct MobileActivityView: View {
     }
 
     private func refreshFileActivity() async {
+        model.sharedUploads.refresh()
         await fileActivityModel.refresh()
         await refresh()
     }

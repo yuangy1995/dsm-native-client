@@ -62,6 +62,7 @@ extension MobileAppModel {
     }
 
     func removeProfile(_ profile: NasProfile) {
+        guard revokeExtensionAccess(profileID: profile.id) else { return }
         let removesActiveProfile = activeProfile?.id == profile.id
         if selectedProfileID == profile.id || removesActiveProfile {
             cancelConnection()
@@ -154,6 +155,8 @@ extension MobileAppModel {
                 try requireCurrentConnectionAttempt(attemptID)
                 await prepareWorkspaceContext(for: submission.profile)
                 try requireCurrentConnectionAttempt(attemptID)
+                try await publishExtensionSession(profile: submission.profile, connection: connection, session: session)
+                try requireCurrentConnectionAttempt(attemptID)
                 applyWorkspaceRepositories(workspace, profile: submission.profile)
                 saveProfile(submission.profile)
                 self.capabilities = connection.capabilities
@@ -225,6 +228,8 @@ extension MobileAppModel {
                 try requireCurrentConnectionAttempt(attemptID)
                 await prepareWorkspaceContext(for: profile)
                 try requireCurrentConnectionAttempt(attemptID)
+                try await publishExtensionSession(profile: profile, connection: connection, session: session)
+                try requireCurrentConnectionAttempt(attemptID)
                 applyWorkspaceRepositories(workspace, profile: profile)
                 self.capabilities = connection.capabilities
                 self.session = session
@@ -255,6 +260,10 @@ extension MobileAppModel {
                 let invalidSession = appError?.category == .authenticationRequired
                     || appError?.category == .otpRequired
                 if invalidSession {
+                    guard revokeExtensionAccess(profileID: profile.id) else {
+                        finishConnectionAttempt(attemptID)
+                        return
+                    }
                     try? await sessionStore.remove(for: profile.id)
                     do {
                         try requireCurrentConnectionAttempt(attemptID)
@@ -320,6 +329,7 @@ extension MobileAppModel {
             let updated = try profile.updating(
                 pinnedCertificateSHA256: prompt.review.sha256Fingerprint
             )
+            guard revokeExtensionAccess(profileID: profile.id) else { return }
             saveProfile(updated)
             pendingCertificate = nil
             certificateRetryContext = nil
@@ -400,6 +410,8 @@ extension MobileAppModel {
 
     func logout() {
         guard let profile = activeProfile else { return }
+        guard revokeExtensionAccess(profileID: profile.id) else { return }
+        cancelConnection()
         let profileID = profile.id
         saveNavigationState()
         let connectionProfile = activeConnectionProfile ?? profile
@@ -423,6 +435,33 @@ extension MobileAppModel {
         containerInventoryModel.purge(profileID: profileID)
         virtualMachineInventoryModel.purge(profileID: profileID)
         clearWorkspace()
+    }
+
+    private func publishExtensionSession(profile: NasProfile, connection: DiscoveredConnection, session: AuthSession) async throws {
+        guard let extensionAccess else { return }
+        do {
+            try await extensionAccess.publish(profile: profile, connection: connection.profile,
+                capabilities: connection.capabilities, session: session)
+            extensionAccessError = nil
+        } catch is CancellationError { throw CancellationError() }
+        catch {
+            // 扩展不可用不阻断主 App 登录；撤销记录与独立编号保证失败发布不能被使用。
+            extensionAccessError = L10n.string("mobile.extensions.unavailable")
+        }
+    }
+
+    @discardableResult
+    private func revokeExtensionAccess(profileID: UUID) -> Bool {
+        do {
+            try extensionAccess?.revoke(profileID: profileID)
+            extensionAccessError = nil
+            return true
+        } catch {
+            extensionAccessError = L10n.string("mobile.extensions.revoke-error")
+            message = extensionAccessError
+            loginError = extensionAccessError
+            return false
+        }
     }
 
 
