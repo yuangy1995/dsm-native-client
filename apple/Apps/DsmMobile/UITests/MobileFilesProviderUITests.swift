@@ -147,14 +147,15 @@ final class MobileFilesProviderUITests: XCTestCase {
         if sidebar.waitForExistence(timeout: 3) { sidebar.tap() }
         let identifiers = ["DOC.sidebar.item.岚仓", "DOC.sidebar.item.LanStash", "DOC.sidebar.item.Sample NAS"]
         let provider = app.descendants(matching: .any).matching(NSPredicate(format: "identifier IN %@", identifiers)).firstMatch
+        let ready = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier IN %@ OR (elementType == %d AND label IN %@)",
+            identifiers, XCUIElement.ElementType.button.rawValue, ["Browse", "浏览"])).firstMatch
         let navigationDeadline = Date().addingTimeInterval(8)
-        for _ in 0..<3 where !provider.exists {
+        for _ in 0..<3 {
             let back = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
             let tab = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
-            // 首次打开选择器时导航元素晚于容器出现，不能以瞬时空查询跳过“浏览”。
-            let navigation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                provider.exists || back.exists || tab.exists
-            }, object: nil)
+            // 在同一快照中等待位置或导航，避免串行 AX 查询耗尽首次加载期限。
+            let navigation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true"), object: ready)
             XCTAssertEqual(XCTWaiter.wait(for: [navigation], timeout: max(0, navigationDeadline.timeIntervalSinceNow)), .completed, app.debugDescription)
             if provider.exists { break }
             if back.exists { back.tap() }

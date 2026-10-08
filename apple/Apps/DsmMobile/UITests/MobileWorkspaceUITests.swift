@@ -157,11 +157,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test中文大字号缩略图调节及按日选择不隐藏导出入口() {
         let app = launchFixture(state: "photo-export", language: "zh-Hans"); app.terminate()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]; app.launch(); defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); navigate("settings", title: "App 设置", in: app)
-        let toggle = element("mobile.settings.module.photos", in: app)
-        for _ in 0..<8 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        toggle.switches.firstMatch.tap(); navigate("photos", title: "照片", in: app)
-        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8))
+        openPhotos(app, chinese: true)
         element("mobile.photos.actions", in: app).tap(); element("mobile.photos.thumbnail.size", in: app).tap()
         element("mobile.photos.thumbnail.larger", in: app).tap()
         element("mobile.photos.selection.begin", in: app).tap(); element("mobile.photos.selection.day", in: app).tap()
@@ -246,11 +242,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test相似照片中文最大字号选择与确认可触达() {
         let app = launchFixture(state: "photo-similar", language: "zh-Hans"); app.terminate()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]; app.launch(); defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); navigate("settings", title: "App 设置", in: app)
-        let toggle = element("mobile.settings.module.photos", in: app)
-        for _ in 0..<8 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        toggle.switches.firstMatch.tap(); navigate("photos", title: "照片", in: app)
-        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8)); openPhotoSection("相册", app: app)
+        openPhotos(app, chinese: true); openPhotoSection("相册", app: app)
         let category = app.buttons["相似照片"].firstMatch
         for _ in 0..<8 { if category.exists && category.isHittable { break }; app.swipeUp() }
         category.tap()
@@ -341,11 +333,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test照片删除中文大字确认和剩余操作仍可触达() {
         let app = launchFixture(state: "photo-deletion-unknown", language: "zh-Hans"); app.terminate()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]; app.launch(); defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); navigate("settings", title: "App 设置", in: app)
-        let toggle = element("mobile.settings.module.photos", in: app)
-        for _ in 0..<8 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(toggle.exists); toggle.switches.firstMatch.tap(); navigate("photos", title: "照片", in: app)
-        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8))
+        openPhotos(app, chinese: true)
         let photo = app.buttons["Sample 1.jpg"]
         for _ in 0..<8 { if photo.exists && photo.isHittable { break }; app.swipeUp() }
         selectPhotoItems(app); beginPhotoDeletion(in: app)
@@ -472,11 +460,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "photo-recognition-empty", language: "zh-Hans"); app.terminate()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch(); defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); navigate("settings", title: "App 设置", in: app)
-        let toggle = element("mobile.settings.module.photos", in: app)
-        for _ in 0..<8 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(toggle.exists); toggle.switches.firstMatch.tap(); navigate("photos", title: "照片", in: app)
-        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8))
+        openPhotos(app, chinese: true)
         let photo = app.buttons["Sample 1.jpg"]
         for _ in 0..<8 { if photo.exists && photo.isHittable { break }; app.swipeUp() }
         openPhotoFaceEditor(in: app)

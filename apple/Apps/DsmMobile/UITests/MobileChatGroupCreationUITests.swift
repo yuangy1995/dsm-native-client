@@ -63,7 +63,7 @@ final class MobileChatGroupCreationUITests: XCTestCase {
         let continueButton = element("chat-group-continue", app)
         reveal(continueButton, app); XCTAssertTrue(continueButton.isEnabled)
         screenshot(app, "Chinese dark large-text partial group creation")
-        continueButton.tap()
+        tapVisible(continueButton, app)
         XCTAssertTrue(element("chat-group-create-status", app).waitForExistence(timeout: 8))
         reveal(element("chat-group-continue", app), app)
         XCTAssertTrue(element("chat-group-continue", app).isEnabled)
@@ -103,13 +103,35 @@ final class MobileChatGroupCreationUITests: XCTestCase {
         let field = element("chat-create-group-name", app)
         XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap(); field.typeText(title)
         let first = element("chat-create-user-2", app), second = element("chat-create-user-3", app)
-        reveal(first, app); first.tap(); reveal(second, app); second.tap()
+        tapVisible(first, app); XCTAssertTrue(first.isSelected)
+        tapVisible(second, app); XCTAssertTrue(second.isSelected)
         XCTAssertTrue(element("chat-create-submit", app).isEnabled)
         screenshot(app, "Group title and selected members")
     }
     private func reveal(_ element: XCUIElement, _ app: XCUIApplication) {
-        for _ in 0..<6 { if element.exists && element.isHittable { return }; app.swipeUp() }
-        XCTAssertTrue(element.waitForExistence(timeout: 5)); XCTAssertTrue(element.isHittable)
+        let form = app.collectionViews["chat-create-form"]
+        XCTAssertTrue(form.waitForExistence(timeout: 5))
+        let navigation = app.navigationBars.containing(.button, identifier: "chat-create-submit").firstMatch
+        for _ in 0..<6 {
+            var visible = form.frame.intersection(app.frame)
+            let top = max(visible.minY, navigation.frame.maxY)
+            let keyboard = app.keyboards.firstMatch
+            let bottom = keyboard.exists ? min(visible.maxY, keyboard.frame.minY) : visible.maxY
+            visible = CGRect(x: visible.minX, y: top, width: visible.width, height: bottom - top).insetBy(dx: 8, dy: 8)
+            if element.exists, !element.frame.isEmpty, visible.contains(element.frame) { return }
+            // iPad 弹窗和键盘有独立区域；只在表单的可见范围内滚动。
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            origin.withOffset(CGVector(dx: visible.midX, dy: visible.minY + visible.height * 0.8))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: visible.midX, dy: visible.minY + visible.height * 0.2)))
+        }
+        XCTFail("群聊表单中的目标控件未完整显示")
+    }
+    private func tapVisible(_ element: XCUIElement, _ app: XCUIApplication) {
+        reveal(element, app)
+        XCTAssertTrue(element.isEnabled)
+        // 系统自动点击会错误地再次滚动；对已完整可见的控件仅点击一次，并由后续状态断言确认结果。
+        let frame = element.frame
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
     }
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
