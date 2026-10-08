@@ -141,15 +141,11 @@ final class MobileFilesProviderUITests: XCTestCase {
         if sidebar.waitForExistence(timeout: 3) { sidebar.tap() }
         let identifiers = ["DOC.sidebar.item.岚仓", "DOC.sidebar.item.LanStash", "DOC.sidebar.item.Sample NAS"]
         let provider = app.descendants(matching: .any).matching(NSPredicate(format: "identifier IN %@", identifiers)).firstMatch
-        let navigationDeadline = Date().addingTimeInterval(8)
         for _ in 0..<3 where !provider.exists {
             let back = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
             let tab = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
-            // 首次打开选择器时导航元素晚于容器出现，不能以瞬时空查询跳过“浏览”。
-            let navigation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                provider.exists || back.exists || tab.exists
-            }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [navigation], timeout: max(0, navigationDeadline.timeIntervalSinceNow)), .completed, app.debugDescription)
+            // 标签切换、返回位置列表是不同导航步骤，各自等待；不能耗尽后续步骤的期限。
+            XCTAssertTrue(ready.waitForExistence(timeout: 8), app.debugDescription)
             if provider.exists { break }
             if back.exists { back.tap() }
             else if tab.exists { tab.tap() }

@@ -341,8 +341,9 @@ public final class SynologyPhotosModel {
         didSet {
             saveMessageDismissTask?.cancel()
             guard saveMessage != nil else { return }
+            let delay = saveMessageDelay
             saveMessageDismissTask = Task { [weak self] in
-                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                do { try await delay() } catch { return }
                 guard !Task.isCancelled else { return }
                 self?.saveMessage = nil
             }
@@ -432,6 +433,7 @@ public final class SynologyPhotosModel {
     @ObservationIgnored private var slideshowHasMore = false
     @ObservationIgnored private var slideshowVideoFinished = false
     @ObservationIgnored private let slideshowDelay: @Sendable () async throws -> Void
+    @ObservationIgnored private let saveMessageDelay: @Sendable () async throws -> Void
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var saveMessageDismissTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
@@ -442,6 +444,7 @@ public final class SynologyPhotosModel {
     public init(repository: (any SynologyPhotosServing)? = nil, pageSize: Int = 100,
          deletionReviewDelay: @escaping @Sendable (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
          previewConversionSupport: SynologyPhotoPreviewConversionSupport? = nil,
+         saveMessageDelay: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(3)) },
          slideshowDelay: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(3)) }) {
         self.previewConversionSupport = previewConversionSupport ?? .init(
             hevc: (CGImageSourceCopyTypeIdentifiers() as? [String])?.contains(UTType.heic.identifier) == true,
@@ -450,6 +453,7 @@ public final class SynologyPhotosModel {
         self.pageSize = pageSize
         self.deletionReviewDelay = deletionReviewDelay
         self.slideshowDelay = slideshowDelay
+        self.saveMessageDelay = saveMessageDelay
     }
 
     public func loadIfNeeded() async {
