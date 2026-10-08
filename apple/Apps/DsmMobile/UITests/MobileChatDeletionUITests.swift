@@ -4,9 +4,13 @@ import XCTest
 final class MobileChatDeletionUITests: XCTestCase {
     func test单条菜单删除沿用确认并进入统一记录() {
         let app = launch(); defer { app.terminate() }; openChat(app)
-        app.staticTexts["Sample message 1"].firstMatch.press(forDuration: 1)
+        // 正文支持系统选词；长按同一消息的作者区域打开整条消息菜单。
+        let message = app.cells.containing(.staticText, identifier: "Sample message 1").firstMatch
+        let author = message.staticTexts["Sample author"].firstMatch
+        XCTAssertTrue(author.waitForExistence(timeout: 5)); XCTAssertTrue(author.isHittable)
+        author.press(forDuration: 1)
         let action = app.buttons["Delete"].firstMatch
-        XCTAssertTrue(action.waitForExistence(timeout: 5)); action.tap()
+        XCTAssertTrue(action.waitForExistence(timeout: 5)); screenshot(app, "Single message action menu"); action.tap()
         XCTAssertTrue(app.staticTexts["Delete message?"].waitForExistence(timeout: 5))
         app.buttons["Delete"].firstMatch.tap()
         let removed = NSPredicate(format: "exists == false")

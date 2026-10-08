@@ -185,6 +185,15 @@ final class MobileFilesProviderUITests: XCTestCase {
             screenshot(app, "files-native-locations")
             name.tap()
         }
+        // 系统选择器可能再次要求启用本测试提供器；只处理已观察到的专属确认。
+        let activation = app.alerts["Turn On “LanStash”?"]
+        if activation.waitForExistence(timeout: 3) {
+            let turnOn = activation.buttons["Turn On"]
+            XCTAssertTrue(turnOn.isEnabled); XCTAssertTrue(turnOn.isHittable)
+            screenshot(app, "files-system-picker-enable-confirmation")
+            turnOn.press(forDuration: 0.15)
+            XCTAssertTrue(activation.waitForNonExistence(timeout: 5), app.debugDescription)
+        }
     }
 
     private func tapSwitch(_ row: XCUIElement) {

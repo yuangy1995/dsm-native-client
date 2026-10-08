@@ -228,14 +228,32 @@ jobs:
           )
           system_result=0
           if [[ "$MOBILE_SUITE" == modules ]]; then
-            # 系统集成先完成独立结果，避免长组被中断时只留下未封存的测试记录。
-            system_selection=()
-            for test_class in "${system_tests[@]}"; do
-              system_selection+=("-only-testing:DsmMobileUITests/$test_class")
+            # Files 服务曾晚于安装登记才发现扩展；只读等待实际提供器，不重试产品添加。
+            mobile_app="$RUNNER_TEMP/DsmMobile-build/Build/Products/Debug-iphonesimulator/DsmMobile.app"
+            files_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$mobile_app/PlugIns/DsmFiles.appex/Info.plist")
+            xcrun simctl install "$MOBILE_DEVICE" "$mobile_app"
+            files_discovered=false
+            for attempt in {1..60}; do
+              discovered=$(xcrun simctl spawn "$MOBILE_DEVICE" fileproviderctl dump "$files_bundle_id")
+              if printf '%s\n' "$discovered" | grep -Fx "$files_bundle_id" >/dev/null; then
+                files_discovered=true
+                break
+              fi
+              sleep 2
             done
-            xcodebuild "${test_arguments[@]}" \
-              -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET-system.xcresult" \
-              "${system_selection[@]}" 2>&1 | "${capture_diagnostics[@]}" || system_result=$?
+            if [[ "$files_discovered" != true ]]; then
+              echo "系统尚未发现本次构建的 Files 扩展，不能开始系统集成测试。" >&2
+              system_result=1
+            else
+              # 系统集成先完成独立结果，避免长组被中断时只留下未封存的测试记录。
+              system_selection=()
+              for test_class in "${system_tests[@]}"; do
+                system_selection+=("-only-testing:DsmMobileUITests/$test_class")
+              done
+              xcodebuild "${test_arguments[@]}" \
+                -resultBundlePath "$RUNNER_TEMP/DsmMobile-$MOBILE_TARGET-system.xcresult" \
+                "${system_selection[@]}" 2>&1 | "${capture_diagnostics[@]}" || system_result=$?
+            fi
           fi
           suite_result=0
           xcodebuild "${test_arguments[@]}" \

@@ -2724,9 +2724,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(element("LP.CaptionBar.BottomCaption", in: app).label.contains("ZIP"))
         attachScreenshot(app, name: "Read-only mixed selection ZIP share")
         app.buttons["header.closeButton"].tap()
-        let panel = element("ActivityListView", in: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"), object: panel)], timeout: 5), .completed)
+        XCTAssertTrue(element("ActivityListView", in: app).waitForNonExistence(timeout: 5))
     }
 
     func test多选仅一个文件保持原格式且下载失败能从活动重试() {
@@ -2890,7 +2888,9 @@ final class MobileWorkspaceUITests: XCTestCase {
         app.staticTexts["Sample document.txt"].tap(); app.staticTexts["Inbox"].tap()
         element("files.batch.more", in: app).tap()
         let operation = element(restore ? "files.batch.restore" : "files.batch.delete", in: app)
-        XCTAssertTrue(operation.waitForExistence(timeout: 5)); XCTAssertTrue(operation.isEnabled); operation.tap()
+        XCTAssertTrue(operation.waitForExistence(timeout: 5)); XCTAssertTrue(operation.isEnabled); XCTAssertTrue(operation.isHittable)
+        // 云端短按后菜单仍打开；完成单次按下/抬起，再检查危险操作确认页。
+        operation.press(forDuration: 0.15)
         XCTAssertTrue(element("files.recycle.submit", in: app).waitForExistence(timeout: 5))
     }
 
@@ -2934,8 +2934,9 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(picker.waitForExistence(timeout: 15))
         // iPad 的取消按钮在系统侧栏；选择器就绪后定位可点击按钮，不限定在文件导航栏内。
         let cancel = app.buttons.matching(NSPredicate(format: "label == 'Cancel' OR label == '取消'")).firstMatch
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"), object: cancel)], timeout: 10), .completed)
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(cancel.isHittable)
+        XCTAssertTrue(cancel.isEnabled)
         attachScreenshot(app, name: "Office system document picker")
         cancel.tap()
         XCTAssertTrue(picker.waitForNonExistence(timeout: 10))

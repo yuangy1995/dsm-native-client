@@ -61,8 +61,8 @@ final class MobileServiceSettingsUITests: XCTestCase {
         let app = launch("nas-services-hardware-led-denied-once", kind: "hardware"); defer { app.terminate() }
         openEditor(app); increaseBrightness(app)
         app.buttons["mobile.nas.service.save"].tap()
-        XCTAssertFalse(element("mobile.nas.service.confirm", app).exists)
         expect(reveal("mobile.nas.service.editorResult", in: app), contains: "permission")
+        XCTAssertFalse(element("mobile.nas.service.confirm", app).exists)
         element("mobile.nas.service.done", app).tap(); waitEditorClosed(app)
         screenshot(app, "Indicator brightness saved with application refused")
         reveal("mobile.nas.hardware.continueLED", in: app).tap()
@@ -681,9 +681,10 @@ final class MobileServiceSettingsUITests: XCTestCase {
     }
     private func waitEditorClosed(_ app: XCUIApplication, editID: String = "mobile.nas.service.edit") {
         let edit = app.buttons[editID]
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: edit)], timeout: 10)
-        if result != .completed { let attachment = XCTAttachment(string: app.debugDescription); attachment.name = "Service editor result hierarchy"; add(attachment); screenshot(app, "Service editor result") }
-        XCTAssertEqual(result, .completed); XCTAssertFalse(app.collectionViews["mobile.nas.service.editor"].exists)
+        // 原复合谓词超时时列表已恢复；直接等待实际可点击状态，保留原期限和关闭断言。
+        let result = edit.wait(for: \.isHittable, toEqual: true, timeout: 10)
+        if !result { let attachment = XCTAttachment(string: app.debugDescription); attachment.name = "Service editor result hierarchy"; add(attachment); screenshot(app, "Service editor result") }
+        XCTAssertTrue(result); XCTAssertTrue(edit.exists); XCTAssertFalse(app.collectionViews["mobile.nas.service.editor"].exists)
     }
     private func launch(_ state: String, kind: String = "fileServices", preserve: Bool = false, chinese: Bool = false, large: Bool = false) -> XCUIApplication {
         continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait
