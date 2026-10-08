@@ -5679,3 +5679,226 @@ xcodebuild test-without-building \
 差异检查通过。本波不改共享/Mac 实现，不重复其既有门禁；全程只用本机合成数据。
 两台模拟器由测试进程关闭后已实查无启动设备。当前新修正仍待云端复验，
 Files 默认只读和首次呈现问题继续保持未解决，M6–M8 整体不计为完成。
+
+## 2026-10-08 M8z 移动测试修正整合与推送
+
+已将 M8r/M8t/M8v/M8y 的 8 个移动源码/测试文件及 4 份移动记录整合为
+`c26eb3cce39fca61aa1e6eacd3c13848461d3e26`（修正移动端异步测试状态与界面输入定位），
+正常提交并推送 `origin/main`。推送前 fetch 与远端比较为 0/0，推送后独立读取
+远端 main 确认同一完整提交；没有强推或改写历史。暂存检查仅 12 个目标文件，
+验证历史只暂存移动部分，独立 Mac 旋转/浮层段及其空行共 74 行继续留在工作区，
+其余 Mac、共享 Photos、资源和私有接口观察改动均未纳入。
+
+本波本机门禁与中间失败见上述各节；M8y 临时日志、原始附件导出及不完整下载
+已清理，三份正式结果保留，两台模拟器已关闭。新
+[Apple Build](https://github.com/yuangy1995/dsm-native-client/actions/runs/37713732061)
+来源确认为 `c26eb3cc`，已开始执行/排队，尚无完整结论；此前 `e1f3c38d` 的完整
+检查已经全部结束并失败，不会被新推送中断。代码同步不等于云端通过或发布，
+默认只读 Files、首次呈现和真实设备边界继续保留。
+
+同提交的 Repository Check（`37713732041`）及 Documentation & Quality Preflight
+（`37713732046`）均已完成且通过；Apple 各目标仍在执行/排队，不能据预检通过
+替代目标平台测试。以上推送后状态记录先留在本机，随后续验收结果一并维护。
+
+## 2026-10-08 M8aa 非复制式文件扩展隔离对照
+
+当前来源仍为 `c26eb3cc`，完整云端 `37713732061` 正在运行，本波不取消或重启它。
+此前独立复制式扩展已复现只读目录落盘失败；本次仅验证另一种公开扩展方式是否
+值得进一步研究，不以替换框架、放宽权限或缩小正式验收范围预设成功。
+
+依据 Apple [File Provider](https://developer.apple.com/documentation/fileprovider) 与
+[非复制式扩展](https://developer.apple.com/documentation/fileprovider/nonreplicated-file-provider-extension)
+公开说明，`NSFileProviderExtension` 仍提供 iOS 枚举、占位、下载与文件操作入口；
+当前 SDK 的对应类没有整体弃用标记。它由扩展负责本地副本，不能直接视为复制式
+实现的等价替换；若后续采用，缓存、原位写回、冲突、删除与会话撤销仍须完整评估。
+
+本波单一修改范围是忽略目录中的独立临时 App/扩展/UI 对照及本节证据。使用独立
+测试身份、共享容器与临时签名，只返回 `Shared/Probe.txt` 固定合成内容，不引用
+产品 Package、不联网、不访问 NAS 或用户文件。先在 iPhone 进行目录首次呈现及
+选择器原位读取；取得有意义结果后再作 iPad 对照。目录与文件均只报告读取能力，
+所有数据写回调拒绝；保持原正式只读用例的等待和内容检查要求。
+
+产品身份、权限、数据格式、共享运行时、Mac 与原正式测试均不改。临时工程与设备
+内容在取证后清理，保留可复核的结果包和脱敏结论；本机结果不能提升为真实设备
+或完整云端通过，也不能单凭最小对照宣布 M8c 已完成。
+
+首轮 iPhone 对照构建成功，实际 UI 于 64.445 秒失败：位置注册成功，但系统在
+点击位置后显示要求打开测试 App 的提示，未进入目录/内容验收。系统记录中的新域
+仍为关闭状态，独立帮助方法在侧栏开关已经显示开启时跳过了切换；原正式用例则
+始终先关再开本测试位置。下一轮仅对齐这一准备步骤并增加固定回调诊断，原 20 秒
+目录等待和完整文本/零数据写检查保持不变。首轮结果包独立保留，不将该失败直接
+解释为非复制式只读能力失败；目前只有 AX 与日志，未取得首轮像素截图。
+
+第二轮构建成功，原 iPhone 在 51.135 秒完成整个独立只读流程，1 通过、0 失败、
+0 跳过。已逐张查看三张截图：系统目录和选择器均明确显示“只读”，固定文本完整
+读出，数据写回调计数为 0。为区分准备修正与已有设备状态的影响，随后以同一最终
+产物在全新 iPhone/iPad 模拟器分别作首次安装对照，均通过；原失败结论保留，
+零写回调计数不表述为已执行破坏性写入攻击测试。
+
+| 对照 | 实际结果 | 正式结果包 |
+| --- | --- | --- |
+| 原 iPhone 首轮 | 1 失败，64.445 秒；系统要求打开 App，未进入目录验收 | `build/m8aa-nonreplicated-phone.xcresult` |
+| 原 iPhone 准备修正后 | 1 通过，51.135 秒；完整只读流程，0 跳过 | `build/m8aa-nonreplicated-phone-r2.xcresult` |
+| 全新 iPhone 17 Pro / iOS 26.5 | 1 通过，60.664 秒；首次目录、原位文本读取、零数据写回调，0 跳过 | `build/m8aa-nonreplicated-fresh-phone.xcresult` |
+| 全新 iPad Air 11-inch（M4）/ iPadOS 26.5 | 1 通过，58.330 秒；相同完整只读流程，0 跳过 | `build/m8aa-nonreplicated-fresh-pad.xcresult` |
+
+已逐张查看三次成功运行的九张截图：实际系统目录、选择器和主 App 读回内容均
+正确，系统标明“只读”。未改变原等待、完整文件名/文本及零数据写回调断言。
+只读对抗复核确认临时 App 没有网络实现，读权限没有混入新增子项、重命名或删除；
+缓存的固定文本设置为本机只读。此复核不是外部 App 写入攻击或真实 NAS 权限验证。
+
+实际生成/构建命令（同一构建命令在准备修正前后各成功一次）：
+
+```sh
+build/m8a-xcodegen/xcodegen/bin/xcodegen generate --spec build/m8aa-nonreplicated-probe/project.yml
+xcodebuild build-for-testing \
+  -project build/m8aa-nonreplicated-probe/NonreplicatedProbe.xcodeproj \
+  -scheme NonreplicatedProbe -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,id=8145D5B0-65A7-46E3-A0CF-17850E4EFA3F' \
+  -derivedDataPath build/m8aa-nonreplicated-probe/DerivedData -jobs 2 \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building \
+  -xctestrun build/m8aa-nonreplicated-probe/DerivedData/Build/Products/NonreplicatedProbe_iphonesimulator26.5-arm64.xctestrun \
+  -destination 'platform=iOS Simulator,id=F371A072-D764-4981-80AC-597E24D639E3' \
+  -parallel-testing-enabled NO \
+  -resultBundlePath build/m8aa-nonreplicated-fresh-phone.xcresult
+```
+
+全新 iPad 使用同一测试命令，设备为 `E772A89A-0707-4800-A4E4-C9A4B0E3B7BC`，
+结果路径改为表中的 iPad 包；前两轮使用原 iPhone ID 与各自表中结果路径。
+生成器实查为锁定的 2.46.0，未使用全局旧版本；不改变产品工程、工具链或身份。
+
+结论是非复制式最小只读路径在当前两种模拟器上可工作，提供了新候选方向；现有
+产品的复制式路径仍未修复。下一切片须先核对原位写回的基线版本、冲突/未知恢复、
+缓存回收、目录删除与位置移除的等价性，再决定完整适配，不能只交付只读子集。
+本波未改共享/Mac 源码，不重复其已有门禁，也不据最小对照提升整轮云端结论。
+
+收尾已删除两个专用模拟器，并从原 iPhone 卸载本波测试 App 与 Runner；独立回读
+确认测试身份不存在且没有启动中的模拟器。临时工程、构建/测试日志、原始诊断和
+导出截图已精确清理，仅保留上表四个结果包。文档与差异检查通过，产品源码与暂存区
+均无本波改动；四份移动记录仍未提交，用户 Mac/共享 Photos 等原改动完整保留。
+北京时间 11:38 的云端复核仍为五组测试运行、四组排队，尚无测试步骤或作业终态。
+
+
+## 2026-10-08 M8ab 正式移动文件扩展适配与回归
+
+基线为 `c26eb3cc`，本波使用现有 main。单一修改范围为移动 Files 平台入口、
+共享模块内仅 iOS 的本地副本/桥接、原枚举器的可选转换、位置恢复与对应测试；
+另按实际云端失败修正套件搜索测试的清空方法。用户已有 Mac/共享 Photos/资源、
+契约与观察记录保留，不归入本波代码。无真实 NAS 请求、发布或身份/签名变更。
+
+正式扩展改用 `NSFileProviderExtension`，仍调用同一 `ProviderRuntime`。本地副本
+元数据保存在既有移动共享容器，完整文件保护并排除备份；记录取回时版本与摘要，
+远端列表刷新不能更新脏副本的原版本。系统编辑先冻结到原写回记录，再经原权限、
+互斥、版本和结果回读路径处理；未知结果不重发。主 App 的恢复页明确继续同一
+记录；删除和位置移除先检查本机未保存修改及原未完成记录。旧开发位置不自动
+迁移或删除，回滚保留副本。完整范围与设备条件见[Files 账本](../../development/APPLE_MOBILE_FILES_PROVIDER_ZH.md)。
+
+独立集成及只读对抗复核由当前负责人在实现后进行：检查 Mac 仍使用默认空转换、
+原运行时写前/写后门、账号绑定、原位副本与冻结副本、变更版本、符号链接和位置
+身份隔离、删除及移除。新增桥接测试实际验证远端冲突零上传、未知上传重启只读
+恢复且不覆盖后来编辑。复核发现根项目不参与子项枚举，原初始化只读能力会挡住
+已授权目录创建；已按位置范围/授权刷新，并增加与共享运行时相等的对照测试。
+
+中间结果如实保留：首轮新类型属性与系统协议同名导致构建失败，修正名称；另一次
+测试的可选能力缺少解包导致编译失败，使用严格解包修正。R4 八项本地存储行为通过；
+R5 增加位置隔离后的全部 1857 项单元通过（4 项既有设备保护条件跳过）。原 iPhone
+的中文 Files 管理通过，但另外两项在系统导航阶段失败，尚未进入 NAS 目录。
+原扩展采样只有加载器帧，不能据此宣称业务死锁。R6 明确未配置默认入口，Debug
+清理只移除本测试 UUID 的系统副本，再用全新设备对照；二者同时改变，不能将
+导航失败的唯一原因归于默认入口。最终正式测试没有放宽等待或断言。
+
+| 运行 | 实际结果 | 结果包 |
+| --- | --- | --- |
+| R4 iPhone 本地存储 | 8 通过、0 失败/跳过 | `build/m8ab-local-storage-phone.xcresult` |
+| R5 原 iPhone 全单元及 Files | 单元 1857 项 0 失败/4 既有跳过；UI 1 通过、2 系统导航失败 | `build/m8ab-phone-full-unit-files.xcresult` |
+| R6 全新 iPhone 原 Files 三项 | 中文权限 49.056 秒、编辑回传 72.080 秒、默认只读 55.404 秒；3 通过、0 失败/跳过 | `build/m8ab-fresh-phone-files.xcresult` |
+| R6 全新 iPad 全单元及原 Files 三项 | 共 1860 项：1856 通过、4 既有跳过、0 失败；三项 UI 全通过 | `build/m8ab-fresh-pad-full-unit-files.xcresult` |
+| R7 iPad 恢复及云端原失败对照 | 79 单元与 4 UI，83 通过、0 失败/跳过 | `build/m8ab-pad-recovery-cloud-regression.xcresult` |
+| R8 iPad 根目录修正后 | 61 项缓存/写回单元与原 3 项 Files UI，64 通过、0 失败/跳过 | `build/m8ab-final-pad-files.xcresult` |
+| R9 iPad 删除恢复修正后 | 62 项缓存/写回单元，全部通过、0 失败/跳过；同时覆盖文件与目录删除 | `build/m8ab-final-pad-recovery.xcresult` |
+| R9 iPhone 最终整合 | 1861 单元零失败/4 既有跳过，Files 三项及套件搜索一项 UI 全通过；总计 1865 项、1861 通过、4 跳过 | `build/m8ab-final-phone-unit-files.xcresult` |
+
+R7 的四项 UI 是套件与来源搜索清空、日志翻页及本页筛选、无权限批量删除、未知
+批量删除重启不重放。套件清空用系统全选加删除，保留完整空值与恢复目录断言；
+其余三项原用例本机直接通过，未据此改写云端失败或宣称产品已修复。
+云端另有回调授权测试 `CancellationError`、人脸归属测试准备超时；两类原单元
+在本次完整单元及 R7 聚焦对照均通过，当前没有足够证据修改其产品行为。
+
+已逐张复核十张关键截图（两端各五张）：系统目录、只读正文、编辑回传、中文
+深色最大字号编辑/移除风险及取消入口。iPhone 另确认长正文可滚动至保留 NAS
+原件说明。结果属于真实模拟器系统交互，不提升为实际 NAS、正式签名或真机结论。
+
+实际构建命令如下；R7/R8/R9 使用表中 iPad，均构建成功。R6 使用下方原 iPhone
+ID，其余参数相同，也构建成功：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj \
+  -scheme DsmMobile -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,id=051F696E-AD5C-47D8-8C7A-5EE61B88D13E' \
+  -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 4 \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building \
+  -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun \
+  -destination 'platform=iOS Simulator,id=051F696E-AD5C-47D8-8C7A-5EE61B88D13E' \
+  -parallel-testing-enabled NO -resultBundlePath build/m8ab-fresh-pad-full-unit-files.xcresult \
+  -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileFilesProviderUITests
+```
+
+全新 iPhone ID 为 `647DEBA5-2BAA-49C6-9510-EC801436DE99`，原 iPhone 为
+`8145D5B0-65A7-46E3-A0CF-17850E4EFA3F`。R7 使用同一测试命令，选择
+`ProviderWritebackTests`、`ProviderLocalStorageTests`、`MobileVFSCloudAuthorizationTests`、
+`MobilePhotoRecognitionTests` 四个单元类，以及上述四个原 UI 方法，结果路径见表。
+R8 根项目修正后 iPad 原三项系统 UI 再次通过。后续对抗复核发现两个删除恢复
+衔接问题：递归恢复会被自己的原删除记录阻止，已确认删除的旧错误标记会阻止
+本地清理。R9 仅允许同一删除越过自身待处理记录，位置移除和其他未完成写仍阻止；
+只有已确认原删除可越过旧错误，当前内容变化继续阻止回收。恢复前重新检查本机
+编辑。默认删除通知复用原依赖注入，并将仅 iOS 域构造对齐实际相对目录，Mac
+分支不变。新增行为测试覆盖文件/目录丢失回执、一次删除、后来编辑保留及最终
+清理，R9 全部 62 项通过。iPhone 最终整合也已通过，结果见表。
+
+`swift test --package-path apple --jobs 4` 已通过：3124 项 XCTest、179 项既有条件
+跳过、0 失败，另 12 项 Swift Testing 通过。此运行包含用户当前 Mac/共享 Photos
+工作区；其后仅 iOS 的域/删除适配与测试变化不影响 Mac 编译分支。
+双语完整性、资源引用、参数与硬编码扫描已通过（Apple 7080、Android 2188、Windows 3402）。
+
+旧来源 `c26eb3cc` 的 Apple Build `37713732061` 不含本波 Files 修正。已确认
+共享/Mac 与 iPhone 工作区通过；两端 modules、iPad 工作区和 iPad 管理失败。
+两端 modules 的其他模块 UI 段各 169 项均通过，但系统 Files 段仍有旧失败；
+另有上述单元准备/取消失败。iPad 工作区 166 项 UI 中 2 项启动后 AX 查询超时，
+iPad 管理 88 项中日志 AX 查询与套件搜索清空各失败 1 项。诊断脚本定位应用超时，
+没有取得挂起调用栈；不把日志中的等待时间当作业务死锁证据。其余作业尚无最终
+结果；本机通过、代码同步和完整云端通过必须分别报告。
+
+
+最终构建与收尾：
+
+```sh
+xcodebuild test-without-building \
+  -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun \
+  -destination 'platform=iOS Simulator,id=647DEBA5-2BAA-49C6-9510-EC801436DE99' \
+  -parallel-testing-enabled NO -resultBundlePath build/m8ab-final-phone-unit-files.xcresult \
+  -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileFilesProviderUITests \
+  -only-testing:DsmMobileUITests/MobilePackageCenterUITests/test套件和来源搜索无匹配后清除可恢复原目录
+xcodebuild build -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile \
+  -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac \
+  -configuration Release -destination 'generic/platform=macOS' \
+  -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 4 CODE_SIGNING_ALLOWED=NO
+```
+
+以上均成功退出 0。`lipo -archs` 确认移动主 App、Share、Files 以及 Mac 主 App、
+File Provider 全部包含 arm64/x86_64；移动 Release 符号检查无合成 Files/Share
+测试入口。Mac 仅工程回归构建，未安装、启动或发布。iPhone 最后实际 UI 为中文
+权限 46.278 秒、编辑回传 69.772 秒、默认只读 59.356 秒及套件搜索清空；四项全通过。
+另查看两端套件与来源清空后的四张实际截图，本波共查看十四张成功截图。
+
+本片源码、两端实际系统流程、恢复自动化、共享及 Mac 回归已完成。完整云端仍需
+在包含新适配的提交复验，不把旧源码的失败改写为成功。旧轮已有确定失败，且三个
+未结束分组不含本次 Files 修正；本机验收后优先同步新代码，允许既定并发规则中止
+旧轮剩余分组，保留其已完成结果和未完成边界，避免继续等待旧代码。同步结果另记。
+
+本波两个专用模拟器已删除并独立回读确认；精确清理 40 项临时日志、采样和截图
+导出，仅保留表中八份正式结果包。原模拟器、用户 Mac 测试包及其他任务资料保留。
+最终严格文档、本地化与差异检查通过。

@@ -5,6 +5,94 @@ import XCTest
 @testable import DsmFileProviderRuntime
 
 final class ProviderWritebackTests: XCTestCase {
+#if os(iOS)
+    func test移动桥接未知删除恢复不重发且清理已确认副本() async throws {
+        for directory in [false, true] {
+            let context = try await makeContext(deletionEnabled: true)
+            if directory {
+                await context.repository.removeExternally(context.path)
+                await context.repository.addFolder(context.path)
+            }
+            let bridge = try await context.localBridge()
+            await context.repository.setDeletion(applies: true, losesResponse: true)
+            let error: Error? = await withCheckedContinuation { continuation in
+                bridge.delete(context.identifier) { continuation.resume(returning: $0) }
+            }
+            XCTAssertNotNil(error)
+            let record = try XCTUnwrap(context.journal.pendingRecords(mappingID: context.mapping.id).first)
+            XCTAssertTrue(record.isDeletion)
+            XCTAssertThrowsError(try bridge.storage.requireNoUnsavedChanges(), "位置移除仍须被原未完成删除阻止")
+            let restored = try context.restoredLocalBridge()
+            if !directory {
+                let url = try restored.url(for: context.identifier)
+                try Data("later edits".utf8).write(to: url)
+                await expect(.pendingChanges) { try await restored.recover(record) }
+                XCTAssertEqual(try Data(contentsOf: url), Data("later edits".utf8))
+                try Data("original".utf8).write(to: url)
+            }
+            try await restored.recover(record)
+            let deletes = await context.repository.deletes
+            XCTAssertEqual(deletes, 1)
+            XCTAssertTrue(try context.journal.pendingRecords(mappingID: context.mapping.id).isEmpty)
+            XCTAssertThrowsError(try restored.item(for: context.identifier))
+            try restored.storage.requireNoUnsavedChanges()
+        }
+    }
+
+    func test移动桥接根目录能力与共享运行时保持一致() async throws {
+        for scope in [DesktopDriveScope.folder(path: "/share/work"), .allShares] {
+            let context = try await makeContext(scope: scope)
+            let bridge = try context.restoredLocalBridge()
+            for enabled in [false, true, false] {
+                try context.journal.setEnabled(enabled, mappingID: context.mapping.id)
+                let expected = try await context.runtime.item(for: .rootContainer)
+                XCTAssertEqual(try bridge.item(for: .rootContainer).capabilities, expected.capabilities)
+            }
+        }
+    }
+
+    func test移动桥接刷新远端后仍以打开时版本保护本机编辑() async throws {
+        let context = try await makeContext()
+        let bridge = try await context.localBridge()
+        let url = try bridge.url(for: context.identifier)
+        try Data("local edits".utf8).write(to: url)
+        await context.repository.externalEdit()
+        let remote = try await context.runtime.item(for: context.identifier)
+        try bridge.storage.store(remote, remotePath: context.path)
+        let record = try XCTUnwrap(bridge.storage.captureChanges(context.identifier))
+
+        await expect(.conflict) { try await bridge.recover(record) }
+        let uploads = await context.repository.uploads
+        XCTAssertEqual(uploads, 0)
+        XCTAssertEqual(try context.journal.pendingRecords(mappingID: context.mapping.id).first?.phase, .conflict)
+        XCTAssertEqual(try Data(contentsOf: context.journal.contentURL(for: record)), Data("local edits".utf8))
+        XCTAssertEqual(try Data(contentsOf: url), Data("local edits".utf8))
+    }
+
+    func test移动桥接重启恢复未知上传不重发并保留后续编辑() async throws {
+        let context = try await makeContext()
+        let bridge = try await context.localBridge()
+        let url = try bridge.url(for: context.identifier)
+        try Data("local edits".utf8).write(to: url)
+        let record = try XCTUnwrap(bridge.storage.captureChanges(context.identifier))
+        await context.repository.setLoseResponse(true)
+        do { try await bridge.recover(record); XCTFail("丢失响应不能报告写入成功") } catch {}
+        XCTAssertEqual(try context.journal.pendingRecords(mappingID: context.mapping.id).count, 1)
+        try Data("later edits".utf8).write(to: url)
+
+        let restored = try context.restoredLocalBridge()
+        try await restored.recover(record)
+        let uploads = await context.repository.uploads
+        XCTAssertEqual(uploads, 1)
+        XCTAssertTrue(try context.journal.pendingRecords(mappingID: context.mapping.id).isEmpty)
+        XCTAssertEqual(try Data(contentsOf: url), Data("later edits".utf8))
+        let next = try XCTUnwrap(restored.storage.captureChanges(context.identifier))
+        XCTAssertNotEqual(next.id, record.id)
+        XCTAssertNotEqual(next.baseContentVersion, record.baseContentVersion)
+        XCTAssertEqual(try Data(contentsOf: context.journal.contentURL(for: next)), Data("later edits".utf8))
+    }
+#endif
+
     func test真实配置直接调用与协议调用都执行原状态检查() async throws {
         let context = try await makeContext()
         try await context.store.validateWritebackState(mappingID: context.mapping.id)
@@ -774,6 +862,29 @@ private struct WritebackTestContext {
     let repository: WritebackRepositoryProbe
     let dependencies: ProviderRuntimeDependencies
     let runtime: ProviderRuntime
+#if os(iOS)
+    func restoredLocalBridge() throws -> ProviderLocalBridge {
+        let directory = localFile.deletingLastPathComponent()
+        let storage = try ProviderLocalStorage(mapping: mapping,
+            documentStorageURL: directory.appendingPathComponent("Documents"),
+            stateDirectory: directory.appendingPathComponent("LocalFiles"),
+            journal: journal, purposeIdentifier: "ProviderWritebackTests")
+        return ProviderLocalBridge(storage: storage, dependencies: dependencies)
+    }
+    func localBridge() async throws -> ProviderLocalBridge {
+        let bridge = try restoredLocalBridge()
+        let item = try await runtime.item(for: identifier)
+        if item.contentType == .folder {
+            try bridge.storage.store(item, remotePath: path)
+            _ = try bridge.url(for: identifier)
+        } else {
+            let source = localFile.deletingLastPathComponent().appendingPathComponent("original.txt")
+            try Data("original".utf8).write(to: source)
+            try bridge.storage.materialize(source, item: item, remotePath: path)
+        }
+        return bridge
+    }
+#endif
     var template: ProviderImportedItemTemplate { .init(identifier: identifier, parentIdentifier: .rootContainer, filename: "example.txt", isDirectory: false) }
     func save(base: ProviderRequestedVersion? = nil) async throws -> ProviderItem {
         try await runtime.writeItem(template, baseVersion: base, contents: localFile, creating: false, progress: { _, _ in })

@@ -446,6 +446,8 @@ final class MobileFilesProviderTests: XCTestCase {
             registered.insert(location.id)
         }
         func signal(_ location: MobileFilesLocation) async throws {}
+        func captureLocalChanges(_ location: MobileFilesLocation) async throws {}
+        func recover(_ record: DesktopDriveWritebackRecord, location: MobileFilesLocation) async throws {}
         func settle(_ location: MobileFilesLocation) async throws {
             if shouldSuspend { waiting = true; await withCheckedContinuation { continuation = $0 }; waiting = false }
         }

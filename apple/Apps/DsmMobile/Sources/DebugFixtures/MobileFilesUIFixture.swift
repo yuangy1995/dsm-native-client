@@ -85,6 +85,10 @@ struct MobileFilesUIFixtureView: View {
                         for location in try fixture.locations.locations() {
                             guard location.profile.id == fixture.id, location.profile.host == "files-ui.invalid" else { throw CocoaError(.fileReadNoPermission) }
                             try await MobileFilesDomainController().remove(location)
+                            // 仅清理本次保留域名/独立身份的系统副本，不处理真实位置。
+                            let local = NSFileProviderManager.default.documentStorageURL
+                                .appendingPathComponent(location.domain.pathRelativeToDocumentStorage, isDirectory: true)
+                            if FileManager.default.fileExists(atPath: local.path) { try FileManager.default.removeItem(at: local) }
                         }
                         for account in try access.accounts.accounts() { try access.revoke(profileID: account.profile.id) }
                         await access.cleanRetiredSessions()

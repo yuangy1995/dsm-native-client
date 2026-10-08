@@ -70,6 +70,7 @@ final class MobileFilesSettingsModel {
         let registrations = try await domains.registrations()
         var result: [MobileFilesLocationState] = []
         for location in try locations.locations() where location.identity == identity {
+            if registrations[location.id] != nil { try await domains.captureLocalChanges(location) }
             let store = try locations.configurationStore(id: location.id)
             let journal = try locations.writebackStore(id: location.id)
             let runtime = try await store.runtime(mappingID: location.id)
@@ -152,13 +153,22 @@ final class MobileFilesSettingsModel {
     }
 
     func retry(_ record: DesktopDriveWritebackRecord, location: MobileFilesLocation) async {
-        await changeAuthorization(location) { journal in
-            guard var current = try journal.pendingRecords(mappingID: location.id).first(where: { $0.id == record.id }),
-                  try journal.isEnabled(mappingID: location.id),
-                  try (!current.isDeletion || journal.isDeletionEnabled(mappingID: location.id)) else { throw DesktopDriveWritebackError.disabled }
-            current.allowOverwrite = true
-            if current.phase == .conflict { current.phase = .prepared }
-            try journal.save(current)
+        await perform {
+            try self.requireCurrent(location)
+            let journal = try self.locations.writebackStore(id: location.id)
+            do {
+                let lease = try journal.lock(mappingID: location.id)
+                defer { withExtendedLifetime(lease) {} }
+                guard var current = try journal.pendingRecords(mappingID: location.id).first(where: { $0.id == record.id }),
+                      try journal.isEnabled(mappingID: location.id),
+                      try (!current.isDeletion || journal.isDeletionEnabled(mappingID: location.id)) else {
+                    throw DesktopDriveWritebackError.disabled
+                }
+                current.allowOverwrite = true
+                if current.phase == .conflict { current.phase = .prepared }
+                try journal.save(current)
+            }
+            try await self.domains.recover(record, location: location)
         }
     }
 

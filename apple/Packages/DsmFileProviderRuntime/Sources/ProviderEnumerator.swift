@@ -7,13 +7,19 @@ final class ProviderEnumerator: NSObject, NSFileProviderEnumerator, @unchecked S
     private let operations = ProviderOperationRegistry()
     private let pageSize = 500
     private let changePageSize = 200
+    private let prepareItems: (@Sendable ([ProviderItem]) async throws -> [NSFileProviderItem])?
+    private let prepareDeletions: (@Sendable ([NSFileProviderItemIdentifier]) async throws -> [NSFileProviderItemIdentifier])?
 
     init(
         containerIdentifier: NSFileProviderItemIdentifier,
-        runtime: ProviderRuntime
+        runtime: ProviderRuntime,
+        prepareItems: (@Sendable ([ProviderItem]) async throws -> [NSFileProviderItem])? = nil,
+        prepareDeletions: (@Sendable ([NSFileProviderItemIdentifier]) async throws -> [NSFileProviderItemIdentifier])? = nil
     ) {
         self.containerIdentifier = containerIdentifier
         self.runtime = runtime
+        self.prepareItems = prepareItems
+        self.prepareDeletions = prepareDeletions
         super.init()
     }
 
@@ -39,7 +45,10 @@ final class ProviderEnumerator: NSObject, NSFileProviderEnumerator, @unchecked S
                     offset: offset,
                     limit: pageSize
                 )
-                observerBox.value.didEnumerate(result.items)
+                let items: [NSFileProviderItem]
+                if let prepareItems { items = try await prepareItems(result.items) }
+                else { items = result.items }
+                observerBox.value.didEnumerate(items)
                 let nextPage = result.nextOffset.map {
                     NSFileProviderPage(Data(String($0).utf8))
                 }
@@ -66,11 +75,17 @@ final class ProviderEnumerator: NSObject, NSFileProviderEnumerator, @unchecked S
                     limit: changePageSize
                 )
                 if !result.updatedItems.isEmpty {
-                    observerBox.value.didUpdate(result.updatedItems)
+                    let items: [NSFileProviderItem]
+                    if let prepareItems { items = try await prepareItems(result.updatedItems) }
+                    else { items = result.updatedItems }
+                    observerBox.value.didUpdate(items)
                 }
                 if !result.deletedItemIdentifiers.isEmpty {
+                    let identifiers: [NSFileProviderItemIdentifier]
+                    if let prepareDeletions { identifiers = try await prepareDeletions(result.deletedItemIdentifiers) }
+                    else { identifiers = result.deletedItemIdentifiers }
                     observerBox.value.didDeleteItems(
-                        withIdentifiers: result.deletedItemIdentifiers
+                        withIdentifiers: identifiers
                     )
                 }
                 observerBox.value.finishEnumeratingChanges(
