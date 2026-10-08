@@ -402,8 +402,8 @@ final class MobileServiceSettingsUITests: XCTestCase {
     func test代理地址校验保存并关闭代理() {
         let app = launch("nas-services", kind: "proxy"); defer { app.terminate() }
         openEditor(app); toggle("proxyEnabled", in: app)
-        replace("proxyHost", text: "https://proxy.example.invalid/path", app, selectAll: true); XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
-        replace("proxyHost", text: "outbound.example.invalid", app, selectAll: true); replace("proxyPort", text: "8080", app)
+        replace("proxyHost", text: "https://proxy.example.invalid/path", app, clearAtEnd: true); XCTAssertFalse(app.buttons["mobile.nas.service.save"].isEnabled)
+        replace("proxyHost", text: "outbound.example.invalid", app, clearAtEnd: true); replace("proxyPort", text: "8080", app)
         XCTAssertTrue(app.buttons["mobile.nas.service.save"].isEnabled)
         XCTAssertTrue(app.buttons["mobile.nas.service.save"].isHittable)
         app.buttons["mobile.nas.service.save"].tap(); screenshot(app, "Proxy connection warning")
@@ -632,19 +632,15 @@ final class MobileServiceSettingsUITests: XCTestCase {
     }
     private func openEditor(_ app: XCUIApplication) { reveal("mobile.nas.service.edit", in: app).tap(); XCTAssertTrue(app.buttons["mobile.nas.service.save"].waitForExistence(timeout: 5)) }
     private func toggle(_ key: String, in app: XCUIApplication) { reveal("mobile.nas.service.\(key)", in: app).switches.firstMatch.tap() }
-    private func replace(_ key: String, text: String, _ app: XCUIApplication, prefix: String = "mobile.nas.service", separateLabel: Bool = false, selectAll: Bool = false) {
+    private func replace(_ key: String, text: String, _ app: XCUIApplication, prefix: String = "mobile.nas.service", separateLabel: Bool = false, clearAtEnd: Bool = false) {
         let field = app.textFields["\(prefix).\(key)"]; _ = reveal("\(prefix).\(key)", in: app)
-        if selectAll {
-            // 长地址使用系统全选快捷键，避免光标位置、连续退格和隐藏的编辑菜单影响替换范围。
-            field.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.8)).tap()
-            field.typeKey("a", modifierFlags: .command)
-            field.typeText(text)
-        } else if app.frame.width > 600 || separateLabel {
+        if app.frame.width > 600 || separateLabel || clearAtEnd {
             // 独立标题的左对齐短数字框使用控件点击；iPad 行内值仍定位末尾，不依赖长按菜单。
             if separateLabel { field.tap() }
             else { field.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.8)).tap() }
             let previous = field.value as? String ?? ""
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+            // 每次退格等待输入事件完成，避免一次发送多个退格时留下未清除的字符。
+            for _ in previous { field.typeText(XCUIKeyboardKey.delete.rawValue) }
             // 空 TextField 的辅助功能值可能是占位提示，不能把它当作残留输入。
             let cleared = field.value as? String ?? ""
             XCTAssertTrue(cleared.isEmpty || cleared == field.placeholderValue, "输入框未清空：\(cleared)")

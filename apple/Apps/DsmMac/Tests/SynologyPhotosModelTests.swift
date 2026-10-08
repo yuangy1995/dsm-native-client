@@ -9,7 +9,8 @@ import XCTest
 final class SynologyPhotosModelTests: XCTestCase {
     func test照片保存成功提示自动消失且不关闭预览() async throws {
         let repository = PhotoServiceStub(pages: [], saveData: Data([1, 2, 3]))
-        let model = SynologyPhotosModel(repository: repository)
+        let clock = SlideshowTestClock()
+        let model = SynologyPhotosModel(repository: repository, saveMessageDelay: { try await clock.wait() })
         let destination = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
         defer { model.cancel(); try? FileManager.default.removeItem(at: destination) }
         model.showPreview(Self.photo)
@@ -17,7 +18,10 @@ final class SynologyPhotosModelTests: XCTestCase {
         for _ in 0..<200 where model.isSaving { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(model.isSaving)
         XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saved"))
-        try await Task.sleep(for: .milliseconds(3_150))
+        try await waitForMessageClock(clock, started: 1)
+        XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saved"))
+        await clock.tick()
+        try await waitFor { model.saveMessage == nil }
         XCTAssertNil(model.saveMessage)
         XCTAssertEqual(model.previewPhoto?.id, Self.photo.id)
         XCTAssertEqual(try Data(contentsOf: destination), Data([1, 2, 3]))
@@ -25,21 +29,24 @@ final class SynologyPhotosModelTests: XCTestCase {
 
     func test保存失败提示自动消失且从新提示出现时重新计时() async throws {
         let repository = PhotoServiceStub(pages: [], saveData: Data([1, 2, 3]))
-        let model = SynologyPhotosModel(repository: repository)
+        let clock = SlideshowTestClock()
+        let model = SynologyPhotosModel(repository: repository, saveMessageDelay: { try await clock.wait() })
         let destination = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
         defer { model.cancel(); try? FileManager.default.removeItem(at: destination) }
         model.save(Self.photo, to: destination)
         for _ in 0..<200 where model.isSaving { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saved"))
-        try await Task.sleep(for: .milliseconds(1_600))
+        try await waitForMessageClock(clock, started: 1)
         await repository.failSaving(AppError(category: .invalidResponse, isRetryable: false,
             safeUserMessage: L10n.string("photos.service.invalidResponse")))
         model.save(Self.photo, to: destination)
         for _ in 0..<200 where model.isSaving { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saveFailed"))
-        try await Task.sleep(for: .milliseconds(1_600))
+        // 新计时已经开始且只剩一个等待，说明前一条提示的计时已被取消。
+        try await waitForMessageClock(clock, started: 2)
         XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saveFailed"), "上一笔提示的计时不能提前清除新错误")
-        try await Task.sleep(for: .milliseconds(1_550))
+        await clock.tick()
+        try await waitFor { model.saveMessage == nil }
         XCTAssertNil(model.saveMessage)
         XCTAssertEqual(try Data(contentsOf: destination), Data([1, 2, 3]))
     }
@@ -4227,6 +4234,16 @@ final class SynologyPhotosModelTests: XCTestCase {
         XCTAssertTrue(reviews.isEmpty)
     }
 
+    private func waitForMessageClock(_ clock: SlideshowTestClock, started: Int) async throws {
+        for _ in 0..<1000 {
+            let starts = await clock.started
+            let pending = await clock.pending
+            if starts == started, pending == 1 { return }
+            try await Task.sleep(for: .milliseconds(2))
+        }
+        XCTFail("保存提示未建立独立计时或旧计时未取消")
+    }
+
     private func waitFor(_ predicate: () -> Bool) async throws {
         for _ in 0..<1000 {
             if predicate() { return }
@@ -5592,10 +5609,12 @@ actor SharedCategoryServiceStub: SynologyPhotosServing {
 /// 可控时钟验证取消，不依赖真实三秒等待或不断轮询推进照片。
 actor SlideshowTestClock {
     private var waits: [UUID: CheckedContinuation<Void, Error>] = [:]
+    private(set) var started = 0
     var pending: Int { waits.count }
     func wait() async throws {
         let id = UUID()
         try Task.checkCancellation()
+        started += 1
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { waits[id] = $0 }
         } onCancel: { Task { await self.cancel(id) } }

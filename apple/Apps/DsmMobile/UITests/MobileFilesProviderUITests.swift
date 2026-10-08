@@ -150,13 +150,11 @@ final class MobileFilesProviderUITests: XCTestCase {
         let ready = app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier IN %@ OR (elementType == %d AND label IN %@)",
             identifiers, XCUIElement.ElementType.button.rawValue, ["Browse", "浏览"])).firstMatch
-        let navigationDeadline = Date().addingTimeInterval(8)
         for _ in 0..<3 {
             let back = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
             let tab = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
-            // 在同一快照中等待位置或导航，避免串行 AX 查询耗尽首次加载期限。
-            let navigation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true"), object: ready)
-            XCTAssertEqual(XCTWaiter.wait(for: [navigation], timeout: max(0, navigationDeadline.timeIntervalSinceNow)), .completed, app.debugDescription)
+            // 标签切换、返回位置列表是不同导航步骤，各自等待；不能耗尽后续步骤的期限。
+            XCTAssertTrue(ready.waitForExistence(timeout: 8), app.debugDescription)
             if provider.exists { break }
             if back.exists { back.tap() }
             else if tab.exists { tab.tap() }

@@ -10,8 +10,14 @@ final class MobileDirectoryUITests: XCTestCase {
         let group = app.collectionViews["mobile.nas.directory.groupPicker"].switches["mobile.nas.directory.group.sample-team"]
         XCTAssertTrue(group.waitForExistence(timeout: 5)); XCTAssertTrue(group.isHittable)
         XCTAssertTrue(group.isEnabled); XCTAssertEqual(group.value as? String, "0")
-        group.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let control = group.switches.firstMatch
+        XCTAssertTrue(control.exists); XCTAssertTrue(control.isHittable); XCTAssertTrue(control.isEnabled)
+        // 云端短按后实际开关仍关闭；与模块开关一致，单次按住拖动实际控件。
+        control.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).press(forDuration: 0.5,
+            thenDragTo: control.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)),
+            withVelocity: .slow, thenHoldForDuration: 0.1)
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: group)], timeout: 5), .completed)
+        screenshot(app, "Account group selection enabled")
         app.buttons["mobile.nas.directory.groupsDone"].tap()
         XCTAssertTrue(app.collectionViews["mobile.nas.directory.groupPicker"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["sample-team"].exists)

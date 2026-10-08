@@ -5914,3 +5914,169 @@ Mac/共享 Photos/资源、契约与观察改动全部保留；验证历史的�
 Documentation & Quality Preflight `37738588055` 已通过。为释放新代码验证，已明确请求停止旧轮并回读其终态为 `cancelled`；
 既有四个失败组与两个成功组保留，三个未结束分组不计通过。此推送后记录暂留本机，
 随新云端结论维护；代码同步不等于全量云端通过或发布。
+
+## 2026-10-08 移动服务输入与共享计时回归
+
+M8ac 至 M8ae 基线为 main `9467712c`，当前云端产品来源为 `4cad5e28`；
+二者之间没有 Apple 产品源码差异。本波未取消或重跑
+[Apple Build 37738588086](https://github.com/yuangy1995/dsm-native-client/actions/runs/37738588086)，
+已结束作业的日志及失败附件分别核对，结果如下：
+
+| 作业 | 已结束的真实结果 | 失败范围 |
+| --- | --- | --- |
+| iPhone 工作区 `113184820588` | 166 UI 全通过 | 无 |
+| iPad 工作区 `113184820433` | 165 通过、1 失败 | 照片后台上传用例启动后等待首页失败，尚未进入照片页；AX 和原录像仍为文件页加载，没有可用挂起调用栈 |
+| iPad 服务 `113184820468` | 45 通过、1 失败 | 网卡新地址恢复用例清空 MTU 时连续退格后残留 `1`，尚未提交保存 |
+| iPhone 管理 `113184820460` | 87 通过、1 失败 | 账号群组开关短按后仍关闭；原五秒开启断言失败，AX 与录像一致 |
+| 共享/Mac `113184820565` | 3119 XCTest 中 1 失败、177 既有跳过；12 Swift Testing 通过 | 照片保存提示测试固定等待 3.15 秒后仍有提示，后续 Mac 构建因测试失败未执行 |
+
+上述不代表整轮终态；两端模块、iPhone 服务和 iPad 管理继续运行。
+当前没有完整的新云端 Files 结论，不能以本机结果冒充其通过。
+
+M8ac 仅修改 `MobileServiceSettingsUITests` 的已有输入帮助方法。首轮改用全选
+快捷键在全新设备未稳定生效：iPhone 四项中一项失败，iPad 八项中六项失败。
+未修改的代理快捷键分支也失败；iPhone 已结束后，iPad 仍出现相同问题，因此
+没有把失败归因于并行。该方案已撤回，保留正式失败结果包。最终定位输入末尾，
+逐次完成退格，再输入新值；保留清空、输入后、收起键盘后的原完整值断言。
+长代理地址也进入同一输入分支，不依赖硬件全选键，不增加重试、跳过或期限。
+
+M8ad 仅为共享照片模型增加默认仍等待三秒的 `saveMessageDelay` 初始化参数，
+沿用已有延迟注入方式；参数放在原末尾 `slideshowDelay` 之前，保留原尾随闭包
+调用语义。原任务取消、弱引用及取消后禁止清提示的检查不变。两个 Mac 测试
+复用已有可控时钟，明确等到当前计时注册且旧计时已取消后推进，继续断言提示、
+预览和保存内容。没有通过扩大固定等待时间掩盖竞态，也未修改用户的旋转功能。
+
+M8ae 仅修改账号编辑原 UI 用例：选择真实开关子控件，沿用已有模块开关的单次
+按住拖动手势；保留原五秒开启断言及后续保存、取消、删除确认和列表结果。
+原录像精确取帧后可见短按前后开关均关闭；不能将它解释为已开启但断言误报。
+
+| 本机结果包 | 实际结果 |
+| --- | --- |
+| `build/m8ac-phone-service-input.xcresult` | 首轮全选方案：3 通过、1 失败，保留 |
+| `build/m8ac-pad-service-input.xcresult` | 首轮全选方案：2 通过、6 失败，保留 |
+| `build/m8ac-pad-individual-delete.xcresult` | 原 MTU 新地址恢复 93.972 秒、文件服务端口 110.720 秒，2 项全通过 |
+| `build/m8ac-phone-final-input.xcresult` | UPS 143.923 秒、代理 101.657 秒、中文大字硬件 90.382 秒，3 项全通过 |
+| `build/m8ad-pad-input-workspace.xcresult` | 代理 128.106 秒、中文大字硬件 113.670 秒、静态 IP/VLAN 116.367 秒；原照片后台用例 52.349 秒，4 项全通过 |
+| `build/m8ae-phone-group-selection.xcresult` | 原账号编辑/群组/取消/删除完整用例 92.274 秒通过 |
+| `build/m8ae-pad-group-selection.xcresult` | 同一完整用例 107.466 秒通过 |
+
+最终通过的以上 UI 均无跳过。iPad 照片后台用例没有源码改动，本机通过仅为
+原失败对照，不宣称修复云端首页加载；其余输入/手势修正仍需新来源云端复验。
+已复核两端十五张成功关键截图，覆盖数字/地址、中文大字风险、网卡恢复、
+后台上传完成、群组选中与账号保存确认；另检查原失败 AX 和录像，不只依赖日志。
+
+实际命令使用下列构建与测试参数。专用 iPhone 为
+`DB11DD7B-338E-4910-B049-EE536E34CC47`，专用 iPad 为
+`C0650D56-F3DA-4175-A847-157C43D51414`，均为 iOS 26.5；Phone 为 17 Pro，Pad 为 Air 11 M4。
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj \
+  -scheme DsmMobile -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,id=DB11DD7B-338E-4910-B049-EE536E34CC47' \
+  -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building \
+  -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun \
+  -destination 'platform=iOS Simulator,id=DB11DD7B-338E-4910-B049-EE536E34CC47' \
+  -parallel-testing-enabled NO -resultBundlePath build/m8ac-phone-final-input.xcresult \
+  -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/testUPS网络连接等待时间校验及保存 \
+  -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test硬件中文大字表单风险和取消均可触达 \
+  -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test代理地址校验保存并关闭代理
+xcodebuild test-without-building \
+  -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun \
+  -destination 'platform=iOS Simulator,id=C0650D56-F3DA-4175-A847-157C43D51414' \
+  -parallel-testing-enabled NO -resultBundlePath build/m8ad-pad-input-workspace.xcresult \
+  -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test代理地址校验保存并关闭代理 \
+  -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test硬件中文大字表单风险和取消均可触达 \
+  -only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test网卡静态地址和VLAN表单完整保存 \
+  -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片上传离开前台完成后仍能清理本机记录
+```
+
+iPad 两项退格对照使用同一 iPad/测试参数，结果为表中的
+`m8ac-pad-individual-delete.xcresult`，选择
+`MobileServiceSettingsUITests/test网卡新地址重新登录后明确恢复原记录` 与
+`MobileServiceSettingsUITests/test文件服务端口校验确认取消和保存回读`。
+两端账号用例同样使用对应设备和表中结果路径，唯一选择为
+`-only-testing:DsmMobileUITests/MobileDirectoryUITests/test账号编辑群组选择保存取消及删除确认`。
+
+共享与构建命令：
+
+```sh
+swift test --package-path apple --jobs 2 --filter 'SynologyPhotosModelTests/(test照片保存成功提示自动消失且不关闭预览|test保存失败提示自动消失且从新提示出现时重新计时|test幻灯片自动推进暂停取消计时并恢复且关闭不再读取)'
+swift test --package-path apple --jobs 3
+xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac \
+  -configuration Release -destination 'generic/platform=macOS' \
+  -derivedDataPath apple/Apps/DsmMac/build/m0-m8 -jobs 3 CODE_SIGNING_ALLOWED=NO
+xcodebuild build -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile \
+  -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath apple/Apps/DsmMobile/build/m8ad-release -jobs 3 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
+三个聚焦测试全部通过；最终当前工作区完整回归为 3124 项 XCTest、179 项既有
+条件跳过、0 失败，另 12 项 Swift Testing 通过。该本机工作区包含用户未提交的
+Mac/Photos 改动，与云端原来源 3119 项分别记录。Mac 与移动 Release 构建均退出 0，
+`lipo -archs` 确认 Mac 主 App/扩展、移动主 App/分享/Files 五个组件都有 arm64/x86_64；
+移动 Release 的 `nm -gU` 未检出两个 Files/分享合成入口符号。未安装、启动或发布 Mac 包。
+
+独立集成复核检查了输入断言/风险取消未削弱、手势只执行一次、计时取消/弱引用、
+初始化参数默认值及原尾随闭包语义；未改 NAS 请求、权限、账号/存储身份、正式签名、
+依赖或其他平台。真实 NAS、正式设备和系统生命周期仍按原 `PENDING_USER_VALIDATION`
+账本验收。本波完整目标仍未完成，继续处理同轮其余云端结果。
+
+本波收尾：严格文档、本地化完整性/参数/引用/硬编码扫描及差异检查通过；资源数
+为 Apple 7080、Android 2188、Windows 3402。两台专用模拟器已删除并重新读取
+清单确认；精确清理 43 项本波日志、云端下载副本、截图导出及独立 Release 缓存，
+保留表中的七份正式结果包。原设备、既有结果、用户 Mac 测试包和用户未提交
+改动保留。上述独立收尾时源码与证据尚未提交，随后与 M8af 一并整合，具体同步另记。
+
+## 2026-10-08 M8af Files 分步导航与两端复验
+
+来源 `4cad5e28` 的 iPhone 模块作业 `113184820324` 已结束失败。系统结果包
+10 项中 9 通过、1 失败；正式默认只读 92.355 秒、中文权限 82.233 秒通过。
+唯一失败为可编辑用例的系统导航，尚未进入 NAS 目录。主结果为 2030 项中
+2026 通过、4 既有跳过、0 失败，包含 1861 项移动单元和 169 项其他模块 UI；
+不能用主结果成功覆盖先行系统段失败。已读取两个正式结果包的 summary。
+
+原日志显示，导航等待已完成一次，随后点击 Browse 标签；下一步出现 On My iPhone
+和返回 Browse 的按钮时，三个步骤共用的八秒截止期限已经耗尽。AX 与精确取帧
+一致；同一用例先前在系统 Files 中已成功显示提供器的 Shared 目录。这不是只读
+元数据重新失败，也没有足够依据修改正式提供器。本波唯一源码变化为原
+`MobileFilesProviderUITests.openLocation`：使用系统 `waitForExistence`，每个实际
+导航步骤各为八秒、仍最多三步。总等待不再跨不同页面共用；位置启用、目录、
+下载正文、真实原位编辑回传和权限确认断言保持不变，没有业务写重试。
+
+| 设备 / 结果包 | 中文权限 | 可编辑系统流程 | 默认只读 | 汇总 |
+| --- | --- | --- | --- | --- |
+| iPhone 17 Pro / `build/m8af-phone-files.xcresult` | 50.127 秒 | 71.675 秒 | 56.027 秒 | 3 通过、0 失败/跳过 |
+| iPad Air 11 M4 / `build/m8af-pad-files.xcresult` | 54.876 秒 | 67.202 秒 | 57.800 秒 | 3 通过、0 失败/跳过 |
+
+两端使用本波新建的 iOS 26.5 模拟器。实际命令如下：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj \
+  -scheme DsmMobile -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,id=B3DAE355-801E-4942-B401-128FAA5BBDD1' \
+  -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building \
+  -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun \
+  -destination 'platform=iOS Simulator,id=B3DAE355-801E-4942-B401-128FAA5BBDD1' \
+  -parallel-testing-enabled NO -resultBundlePath build/m8af-phone-files.xcresult \
+  -only-testing:DsmMobileUITests/MobileFilesProviderUITests
+xcodebuild test-without-building \
+  -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun \
+  -destination 'platform=iOS Simulator,id=47AFF234-02AF-4230-BD36-512C673DACEC' \
+  -parallel-testing-enabled NO -resultBundlePath build/m8af-pad-files.xcresult \
+  -only-testing:DsmMobileUITests/MobileFilesProviderUITests
+```
+
+三条命令均退出 0。已逐张查看八张成功关键截图（两端各四张：实际目录、只读
+正文、编辑回传、中文深色最大字号移除说明末尾及取消）和两张原云端画面。
+独立复核确认只改测试等待边界，没有改变提供器、共享代码、权限或 NAS 接口；
+本片不重复上一片已经完成且源码未变的共享/Mac/Release 门禁。
+
+整合决定：当前轮次已有五组失败，四项可定位的问题已经修正并完成本机复验；
+另外的 iPad 首页加载原用例本机通过，仍无产品根因结论。优先同步 M8ac 至 M8af
+并验证新来源，允许既定 main 并发规则中止旧轮其余三组；旧一组通过与五组失败
+保留，中止分组不计通过。新来源的完整云端结果另记，M6–M8 整体未完成。
+
+M8af 收尾：两端专用模拟器已删除并重新读取清单确认；精确清理 11 项本片日志、
+云端下载副本和截图导出，保留两份正式结果包。严格文档、本地化与差异检查通过。
