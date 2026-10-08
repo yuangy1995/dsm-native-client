@@ -1753,6 +1753,10 @@ actor ProviderRuntime {
     fileprivate static func domain(
         for mapping: DesktopDriveMapping
     ) -> NSFileProviderDomain {
+        #if os(iOS)
+        return NSFileProviderDomain(identifier: .init(mapping.id.uuidString), displayName: mapping.displayName,
+                                    pathRelativeToDocumentStorage: mapping.id.uuidString)
+        #else
         let domain = NSFileProviderDomain(
             identifier: NSFileProviderDomainIdentifier(
                 mapping.providerDomainIdentifier ?? mapping.id.uuidString
@@ -1763,6 +1767,7 @@ actor ProviderRuntime {
             domain.supportsSyncingTrash = false
         }
         return domain
+        #endif
     }
 }
 

@@ -1,10 +1,13 @@
 import FileProvider
 import Foundation
+import DsmCore
 
 protocol MobileFilesDomainControlling: Sendable {
     func registrations() async throws -> [UUID: Bool]
     func add(_ location: MobileFilesLocation) async throws
     func signal(_ location: MobileFilesLocation) async throws
+    func captureLocalChanges(_ location: MobileFilesLocation) async throws
+    func recover(_ record: DesktopDriveWritebackRecord, location: MobileFilesLocation) async throws
     func settle(_ location: MobileFilesLocation) async throws
     func remove(_ location: MobileFilesLocation) async throws
 }
@@ -33,15 +36,18 @@ struct MobileFilesDomainController: MobileFilesDomainControlling {
         let manager = try manager(location)
         try await manager.signalEnumerator(for: .rootContainer)
         try await manager.signalEnumerator(for: .workingSet)
-        try await manager.signalErrorResolved(NSFileProviderError(.cannotSynchronize))
-        try await manager.signalErrorResolved(NSFileProviderError(.notAuthenticated))
-        try await manager.signalErrorResolved(NSFileProviderError(.serverUnreachable))
+    }
+
+    func captureLocalChanges(_ location: MobileFilesLocation) async throws {
+        try MobileFilesDependencies.localBridge(for: location).storage.capturePendingFiles()
+    }
+
+    func recover(_ record: DesktopDriveWritebackRecord, location: MobileFilesLocation) async throws {
+        try await MobileFilesDependencies.localBridge(for: location).recover(record)
     }
 
     func settle(_ location: MobileFilesLocation) async throws {
-        let manager = try manager(location)
-        try await manager.waitForChanges(below: .rootContainer)
-        try await manager.waitForStabilization()
+        try MobileFilesDependencies.localBridge(for: location).storage.requireNoUnsavedChanges()
     }
 
     func remove(_ location: MobileFilesLocation) async throws {

@@ -118,8 +118,9 @@ import XCTest
             XCTAssertTrue(search.waitForExistence(timeout: 8)); search.tap(); search.typeText("no-match\n")
             XCTAssertTrue(element(source ? "mobile.package.source.filteredEmpty" : "mobile.package.filteredEmpty", app).waitForExistence(timeout: 5))
             search.tap()
-            if app.frame.width < 600 { for _ in 0..<8 { search.typeKey(XCUIKeyboardKey.rightArrow.rawValue, modifierFlags: []) } }
-            search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8))
+            // 不依赖再次聚焦后的光标位置，完整清除本次搜索词。
+            search.typeKey("a", modifierFlags: .command)
+            search.typeText(XCUIKeyboardKey.delete.rawValue)
             let cleared = search.value as? String ?? ""; XCTAssertTrue(cleared.isEmpty || cleared == search.placeholderValue)
             search.typeText("\n")
             XCTAssertTrue((source ? sourceRow("Sample source", app) : element("mobile.package.row.SyntheticPackage", app)).waitForExistence(timeout: 5))

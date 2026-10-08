@@ -16,9 +16,8 @@ struct MobileFilesLocation: Identifiable, Codable, Equatable, Sendable {
     }
 
     var domain: NSFileProviderDomain {
-        let domain = NSFileProviderDomain(identifier: .init(id.uuidString), displayName: profile.displayName)
-        if #available(iOS 18.0, *) { domain.supportsSyncingTrash = false }
-        return domain
+        NSFileProviderDomain(identifier: .init(id.uuidString), displayName: profile.displayName,
+                             pathRelativeToDocumentStorage: id.uuidString)
     }
 }
 
