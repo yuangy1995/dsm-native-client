@@ -198,6 +198,15 @@ final class MobileFilesProviderUITests: XCTestCase {
             // 云端启用后仍停在位置列表；进入刚启用的同一位置，不重新添加或操作文件。
             XCTAssertTrue(location.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
             location.press(forDuration: 0.15)
+            // iPad 启用完成后的一次导航曾仍留在本机位置；先等目录，再仅恢复未选中的位置导航。
+            if !sharedFolder(in: app).waitForExistence(timeout: 8) {
+                let hierarchy = XCTAttachment(string: app.debugDescription)
+                hierarchy.name = "Files enabled location first navigation"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+                screenshot(app, "files-enabled-location-first-navigation")
+                if location.exists && location.isEnabled && location.isHittable && !location.isSelected {
+                    location.press(forDuration: 0.15)
+                }
+            }
         }
     }
 

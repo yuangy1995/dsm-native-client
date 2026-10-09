@@ -1,12 +1,17 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-07 -->
+<!-- last-reviewed: 2026-10-09 -->
 
 # M8 系统传输、分享与 Files 实施账本
 
 当前总状态：M8a 普通文件后台与 M8b 系统分享已完成源码和本机两端验收，
 照片、跨 NAS 与 Office 后台的后续接入见[执行器账本](APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md)。
-M8c Files 已实现共享运行时与移动读写，默认只读目录仍有可复现系统元数据失败，
-见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)；完整移动云端也仍在复验。
+M8c Files 已实现共享运行时与移动读写；M8ab 的非复制式适配已通过两端本机
+默认只读和编辑回传，旧复制式元数据失败保留历史。后续云端仍有首次启用导航
+及 iPad 编辑时系统读访问占用的失败，见[Files 账本](APPLE_MOBILE_FILES_PROVIDER_ZH.md)。
+当前 `a149335f` 的 iPhone 全部分组已通过，其中 Files 3 项、分享扩展 4 项和
+后台传输 3 项原系统 UI 均完整通过；iPad 系统段 9/10 通过，仅 Files 默认只读
+在启用后的位置导航失败。完整 Apple 检查已失败结束，M8aw 修正后待新来源复验，
+不能宣布整体验收完成。
 下文按各切片实施时点保留原始基线和决策，其中的“后续”不替代上述当前结论。
 
 本片属于已批准的 M6–M8 目标，沿用 2026-10-06 用户离线自主决策授权。开始时

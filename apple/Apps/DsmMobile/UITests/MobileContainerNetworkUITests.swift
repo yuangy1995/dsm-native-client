@@ -134,8 +134,9 @@ import XCTest
     private func phase(_ value: String, _ app: XCUIApplication) { XCTAssertTrue(element("network.record.\(value)", app).waitForExistence(timeout: 15)) }
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func ready(_ element: XCUIElement) {
-        let check = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"), object: element)
-        XCTAssertEqual(XCTWaiter.wait(for: [check], timeout: 12), .completed)
+        // 云端每次 AX 查询可耗时数秒；只轮询可点击状态，避免三次串行查询耗尽同一期限。
+        XCTAssertTrue(element.wait(for: \.isHittable, toEqual: true, timeout: 12))
+        XCTAssertTrue(element.exists); XCTAssertTrue(element.isEnabled)
     }
     private func detailValue(_ label: String, _ value: String, _ app: XCUIApplication) {
         let detail = element("network.details", app)

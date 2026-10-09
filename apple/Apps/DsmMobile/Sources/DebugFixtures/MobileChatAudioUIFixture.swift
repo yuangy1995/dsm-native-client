@@ -106,14 +106,16 @@ actor MobileChatAudioUITransport: DsmBinaryHTTPTransport {
         .init(data: try JSONSerialization.data(withJSONObject: object), statusCode: 200)
     }
 
-    /// 10 秒、8kHz、单声道静音 WAV，用于原生播放，不含任何用户声音。
+    /// 180 秒、8kHz、单声道静音 WAV，用于原生播放，不含任何用户声音。
+    /// 云端旋转后的动画空闲等待实测阻塞 60 秒；素材须覆盖观察和暂停操作，避免提前自然结束。
     static var wave: Data {
+        let byteCount = 180 * 8_000 * 2
         var data = Data("RIFF".utf8)
         func integer<T: FixedWidthInteger>(_ value: T) { var little = value.littleEndian; withUnsafeBytes(of: &little) { data.append(contentsOf: $0) } }
-        integer(UInt32(160_036)); data.append(Data("WAVEfmt ".utf8)); integer(UInt32(16))
+        integer(UInt32(byteCount + 36)); data.append(Data("WAVEfmt ".utf8)); integer(UInt32(16))
         integer(UInt16(1)); integer(UInt16(1)); integer(UInt32(8_000)); integer(UInt32(16_000))
-        integer(UInt16(2)); integer(UInt16(16)); data.append(Data("data".utf8)); integer(UInt32(160_000))
-        data.append(Data(count: 160_000)); return data
+        integer(UInt16(2)); integer(UInt16(16)); data.append(Data("data".utf8)); integer(UInt32(byteCount))
+        data.append(Data(count: byteCount)); return data
     }
 }
 #endif

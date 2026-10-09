@@ -36,7 +36,19 @@ import XCTest
         let app = launch("vmm-image-partial"); defer { app.terminate() }; openImages(app)
         app.buttons["virtual-machine.image.selection"].tap()
         app.buttons["virtual-machine.image.select.image-1"].tap(); app.buttons["virtual-machine.image.select.image-2"].tap()
-        app.buttons["virtual-machine.image.selection.delete"].tap()
+        let openConfirmation = app.buttons["virtual-machine.image.selection.delete"]
+        let confirmation = element("virtual-machine.image.confirmation", app)
+        openConfirmation.tap()
+        if !confirmation.waitForExistence(timeout: 6) {
+            // 云端曾取消此触控；只恢复打开确认页，最终删除按钮仍严格单次提交。
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Image confirmation first navigation"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+            screenshot("Image confirmation first navigation state")
+            if openConfirmation.exists && openConfirmation.isEnabled && openConfirmation.isHittable && !confirmation.exists {
+                openConfirmation.tap()
+            }
+        }
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 6))
         XCTAssertTrue(app.staticTexts["Selected images: 2"].waitForExistence(timeout: 6))
         screenshot("Virtual machine batch image deletion confirmation")
         app.buttons["virtual-machine.image.confirm"].tap()

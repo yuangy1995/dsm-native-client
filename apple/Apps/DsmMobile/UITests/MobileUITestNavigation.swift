@@ -49,9 +49,18 @@ enum MobileUITestNavigation {
         // 云端曾在一次瞬时点击后仍停留原页；使用完整按下/抬起，并检查设置页确已呈现。
         if tab.exists && tab.isHittable { tab.press(forDuration: 0.15) }
         else if sidebar.exists && sidebar.isHittable {
-            // iPad 的 0.15 秒按压仍曾留在原页；给已观察到的触控分发延迟留出余量。
+            // 保留完整按下/抬起；仅侧栏导航允许恢复已观察到的模拟器触控取消。
             sidebar.press(forDuration: 0.4)
-            let selected = sidebar.wait(for: \.isSelected, toEqual: true, timeout: 10)
+            var selected = sidebar.wait(for: \.isSelected, toEqual: true, timeout: 10)
+            if !selected {
+                // 云端 HID 重复登记会丢弃抬起并取消本次触控；延长按压不能补回事件。
+                // 先封存第一次未切换的证据，再至多补一次只读导航；不用于任何业务提交。
+                capture(app, name: "Sidebar first selection to \(destination)", test: test)
+                if sidebar.exists && sidebar.isEnabled && sidebar.isHittable && !sidebar.isSelected {
+                    sidebar.press(forDuration: 0.4)
+                }
+                selected = sidebar.wait(for: \.isSelected, toEqual: true, timeout: 10)
+            }
             if !selected { capture(app, name: "Sidebar selection to \(destination)", test: test) }
             XCTAssertTrue(selected, "侧栏尚未切换到目标功能：\(destination)", file: file, line: line)
             guard selected else { return }
