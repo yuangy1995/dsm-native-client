@@ -744,7 +744,8 @@ final class MobileServiceSettingsUITests: XCTestCase {
         let end = origin.withOffset(CGVector(dx: center.x - app.frame.minX, dy: center.y - offset - app.frame.minY))
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
     }
-    private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
+    // 云端逐属性 firstMatch 查询超过文案等待期限；仍按相同标识取完整匹配的首项。
+    private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).element(boundBy: 0) }
     private func screenshot(_ app: XCUIApplication, _ title: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = title; attachment.lifetime = .keepAlways; add(attachment)
     }

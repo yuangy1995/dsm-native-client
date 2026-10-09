@@ -805,8 +805,18 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "photo-preferences"); defer { app.terminate() }
         openPhotos(app); element("mobile.photos.actions", in: app).tap(); element("mobile.photos.preferences.duplicates", in: app).tap()
         let transfer = element("mobile.photos.preferences.transfer", in: app)
-        XCTAssertTrue(transfer.waitForExistence(timeout: 5)); transfer.tap(); app.buttons["Overwrite existing items"].tap()
-        app.buttons["mobile.photos.preferences.save"].tap(); XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(transfer.waitForExistence(timeout: 5)); transfer.tap()
+        let overwrite = app.buttons["Overwrite existing items"]
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"), object: overwrite)], timeout: 5), .completed)
+        // 菜单短触控曾未改变选项；单次明确触控后先检查草稿，不能直接点击禁用的保存。
+        overwrite.press(forDuration: 0.15)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS %@", "Overwrite existing items"), object: transfer)], timeout: 5), .completed)
+        let save = app.buttons["mobile.photos.preferences.save"]
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true"), object: save)], timeout: 5), .completed)
+        XCTAssertTrue(save.isHittable); save.tap(); XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "Future moves and copies will default to replacing items with the same name at the destination. You can change this option for each operation.")).firstMatch.exists)
         attachScreenshot(app, name: "Default duplicate overwrite consequences")
         app.alerts.firstMatch.buttons["Cancel"].firstMatch.tap(); app.buttons["mobile.photos.preferences.save"].tap(); app.alerts.firstMatch.buttons["mobile.photos.preferences.confirm"].firstMatch.tap()

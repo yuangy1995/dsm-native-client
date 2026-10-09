@@ -82,20 +82,28 @@ struct MobileFilesUIFixtureView: View {
                       let profile = app.activeProfile, let session = app.session, let access = app.extensionAccess else { return }
                 do {
                     if ProcessInfo.processInfo.arguments.contains("--ui-clean-files") {
+                        // 仅记录固定阶段，供系统清理超时时定位，不输出账号、路径或域编号。
+                        NSLog("[Files UI cleanup] locations.begin")
                         for location in try fixture.locations.locations() {
                             guard location.profile.id == fixture.id, location.profile.host == "files-ui.invalid" else { throw CocoaError(.fileReadNoPermission) }
+                            NSLog("[Files UI cleanup] domain.remove.begin")
                             try await MobileFilesDomainController().remove(location)
+                            NSLog("[Files UI cleanup] domain.remove.end")
                             // 仅清理本次保留域名/独立身份的系统副本，不处理真实位置。
                             let local = NSFileProviderManager.default.documentStorageURL
                                 .appendingPathComponent(location.domain.pathRelativeToDocumentStorage, isDirectory: true)
                             if FileManager.default.fileExists(atPath: local.path) { try FileManager.default.removeItem(at: local) }
                         }
+                        NSLog("[Files UI cleanup] local.remove.end")
                         for account in try access.accounts.accounts() { try access.revoke(profileID: account.profile.id) }
+                        NSLog("[Files UI cleanup] sessions.clean.begin")
                         await access.cleanRetiredSessions()
+                        NSLog("[Files UI cleanup] sessions.clean.end")
                         try FileManager.default.removeItem(at: fixture.rootURL())
                         if MobileFilesDebugEnvironment.active()?.id == fixture.id {
                             try FileManager.default.removeItem(at: MobileExtensionStorage.rootURL().appendingPathComponent("ui-files-fixture.json"))
                         }
+                        NSLog("[Files UI cleanup] fixture.remove.end")
                         cleaned = true; return
                     }
                     if try access.accounts.accounts().isEmpty {

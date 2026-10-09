@@ -202,7 +202,7 @@ final class MobileNasStorageUITests: XCTestCase {
     private func reveal(_ id: String, in app: XCUIApplication) -> XCUIElement {
         let value = element(id, app)
         for attempt in 0..<12 {
-            let list = app.collectionViews.containing(.any, identifier: id).firstMatch
+            let list = app.collectionViews.containing(.any, identifier: id).element(boundBy: 0)
             let scroller: XCUIElement = list.exists ? list : app
             if value.waitForExistence(timeout: 1), !value.frame.isEmpty {
                 let navigationBottom = app.navigationBars.allElementsBoundByIndex.filter { $0.isHittable }.map { $0.frame.maxY }.max() ?? app.frame.minY + 110
@@ -230,7 +230,8 @@ final class MobileNasStorageUITests: XCTestCase {
         let end = origin.withOffset(CGVector(dx: center.x - app.frame.minX, dy: center.y - offset - app.frame.minY))
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
     }
-    private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
+    // 云端 firstMatch 逐属性遍历曾超过查询期限；从完整匹配结果取同一个首项，保留原断言。
+    private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).element(boundBy: 0) }
     private func screenshot(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }

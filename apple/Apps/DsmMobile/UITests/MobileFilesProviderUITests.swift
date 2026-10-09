@@ -130,6 +130,8 @@ final class MobileFilesProviderUITests: XCTestCase {
 
     private func activateSystemLocation() {
         let files = XCUIApplication(bundleIdentifier: "com.apple.DocumentsApp")
+        // 先结束本测试启动的系统浏览会话，再执行 launch 注册的位置清理；不干预业务断言。
+        addTeardownBlock { @MainActor in files.terminate() }
         files.launch()
         openLocation(files, enable: true)
         XCTAssertTrue(sharedFolder(in: files).waitForExistence(timeout: 20), files.debugDescription)
