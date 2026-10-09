@@ -230,7 +230,7 @@ jobs:
           if [[ "$MOBILE_SUITE" == modules ]]; then
             # Files 服务曾晚于安装登记才发现扩展；只读等待实际提供器，不重试产品添加。
             mobile_app="$RUNNER_TEMP/DsmMobile-build/Build/Products/Debug-iphonesimulator/DsmMobile.app"
-            files_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$mobile_app/PlugIns/DsmFiles.appex/Info.plist")
+            files_bundle_id=$(python3 -c 'import plistlib, sys; print(plistlib.load(open(sys.argv[1], "rb"))["CFBundleIdentifier"])' "$mobile_app/PlugIns/DsmFiles.appex/Info.plist")
             xcrun simctl install "$MOBILE_DEVICE" "$mobile_app"
             files_discovered=false
             for attempt in {1..60}; do

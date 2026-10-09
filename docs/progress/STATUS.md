@@ -1,9 +1,9 @@
 <!-- doc-role: status -->
-<!-- last-reviewed: 2026-10-08 -->
+<!-- last-reviewed: 2026-10-09 -->
 
 # 当前开发进度
 
-更新至 2026-10-08。本页只记录当前结论和下一步；精确提交/构建/测试/包记录集中在[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。源码、契约与实际结果优先于历史描述。
+更新至 2026-10-09。本页只记录当前结论和下一步；精确提交/构建/测试/包记录集中在[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。源码、契约与实际结果优先于历史描述。
 
 ## 当前结论
 
@@ -17,7 +17,7 @@
 | macOS Office | 系统预览、本机应用编辑、保存后自动回传、冲突/未知核查已完成本机验证 | 真实 Office/Pages/Numbers/Keynote、旧格式、正式签名沙盒及 NAS 验收 |
 | macOS UI / 远程位置 | 完整 WebDAV URL、工具栏/路径、照片来源、连接成功结束、保存进度及外置浏览入口已修正并有原生回归 | 用户实际连接、窄窗口与完整辅助功能反馈 |
 | Windows | 2026-09-21 范围的业务对齐、云盘写回/恢复及 x64/ARM64 云端验证完成；后续 Mac 增量未自动移植 | Photos 管理、File Station 增量、Office 按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)逐项开发 |
-| iPhone / iPad | M0–M7 已批准源码范围及 M8 普通文件/照片/跨 NAS/Office 后台、系统分享与 Files 已实现；正式 Files 保留共享读写、安全与恢复逻辑，全新两端的默认只读、编辑回传及中文权限原三项系统流程均通过 | M6–M8 整体仍未完成：上一轮修正已随 `9e19cc34` 正常同步 main；[新 Apple 全量检查](https://github.com/yuangy1995/dsm-native-client/actions/runs/37768818473)的共享/Mac、iPad 管理及 iPhone 服务设置已通过，两端移动单元通过并保留既有跳过。部分系统面板、导航、Files 初始化与确认、映像恢复和聊天菜单用例失败；本轮测试修正已完成两端相关页面与操作复验、增量编译及本地化检查；原云端已全部结束失败，失败证据与对应测试交互修正已完成处理；最后服务三项也已两端通过，仍待整合提交与新来源完整云端检查。灯光缺回执原快照故障未在本机复现，继续保留新云端验证要求。精确计数、原失败及中止记录集中在[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)，不以本机通过替代云端结论。真实 NAS、正式签名设备与生命周期按具体 PENDING_USER_VALIDATION 验收；保留实际权限、危险确认、防重复与未知恢复。范围和步骤见[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)及[Files 账本](../development/APPLE_MOBILE_FILES_PROVIDER_ZH.md) |
+| iPhone / iPad | M0–M7 已批准源码范围及 M8 普通文件/照片/跨 NAS/Office 后台、系统分享与 Files 已实现；正式 Files 保留共享读写、安全与恢复逻辑，全新两端的默认只读、编辑回传及中文权限原三项系统流程均通过 | M6–M8 整体仍未完成。`4864a08d` 的[Apple 检查](https://github.com/yuangy1995/dsm-native-client/actions/runs/37829368327)已全部结束：两端工作区各 166 项、服务各 46 项、管理各 88 项 UI 全部通过、0 跳过；两端模块仍有系统及其他模块 UI 实际失败。M8ap 交互修正本机两端各七项通过；M8ar 相关十一项 iPhone 全通过，iPad 10 通过/1 失败，失败用例在单模拟器下独立通过，原整组不改为通过。Files 保存的系统读访问占用保留原检查。共享源码回归零失败，工具环境缺失已由 M8al 修正并通过本机 48 项工具回归，原来源 Mac 后续构建/打包未执行。整轮仍失败，本机修正与八张两端截图已完成复核，新来源云端复验尚未完成。证据与原失败见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。真实 NAS、正式签名设备与生命周期按具体 PENDING_USER_VALIDATION 验收，保留实际权限、危险确认、防重复与未知恢复；范围见[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)及[Files 账本](../development/APPLE_MOBILE_FILES_PROVIDER_ZH.md) |
 | Android | Compose 客户端、导航改版、后台/传输、Synology Photos 与质量门已建立；当前 Task.edit 仍使用 v1，需独立修正为官方字段表要求的 v2；既有 Chat 投票请求差异造成云端单测失败 | 按[Android 计划](../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)继续结构收敛与目标设备验证；Mac 新增只作接口参考 |
 
 ## 系统集成与发布

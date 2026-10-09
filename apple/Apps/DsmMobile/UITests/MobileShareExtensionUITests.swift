@@ -115,6 +115,8 @@ final class MobileShareExtensionUITests: XCTestCase {
         XCTAssertTrue(start.waitForExistence(timeout: 10))
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: start)], timeout: 10), .completed)
         start.tap()
+        // 云端首次呈现曾只有遮罩；先等系统面板真正出现，再查询其中的分享入口。
+        XCTAssertTrue(element("ActivityListView", app).waitForExistence(timeout: 20), app.debugDescription)
         let activity = app.cells.matching(NSPredicate(format: "label IN %@", ["LanStash", "岚仓"])).firstMatch
         if !activity.waitForExistence(timeout: 5) {
             let more = app.cells.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch

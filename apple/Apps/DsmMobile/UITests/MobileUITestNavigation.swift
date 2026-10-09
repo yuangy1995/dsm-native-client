@@ -48,7 +48,14 @@ enum MobileUITestNavigation {
         guard result == .completed else { return }
         // 云端曾在一次瞬时点击后仍停留原页；使用完整按下/抬起，并检查设置页确已呈现。
         if tab.exists && tab.isHittable { tab.press(forDuration: 0.15) }
-        else if sidebar.exists && sidebar.isHittable { sidebar.press(forDuration: 0.15) }
+        else if sidebar.exists && sidebar.isHittable {
+            // iPad 的 0.15 秒按压仍曾留在原页；给已观察到的触控分发延迟留出余量。
+            sidebar.press(forDuration: 0.4)
+            let selected = sidebar.wait(for: \.isSelected, toEqual: true, timeout: 10)
+            if !selected { capture(app, name: "Sidebar selection to \(destination)", test: test) }
+            XCTAssertTrue(selected, "侧栏尚未切换到目标功能：\(destination)", file: file, line: line)
+            guard selected else { return }
+        }
         else {
             XCTAssertTrue(more.exists, file: file, line: line); XCTAssertTrue(more.isHittable, file: file, line: line); more.tap()
             let item = app.staticTexts[title].firstMatch

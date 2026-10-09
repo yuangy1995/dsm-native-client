@@ -159,6 +159,7 @@ final class MobileFilesProviderUITests: XCTestCase {
             if back.exists { back.tap() }
             else if tab.exists { tab.tap() }
         }
+        let location: XCUIElement
         if provider.waitForExistence(timeout: 8) {
             if enable {
                 let more = app.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch
@@ -178,13 +179,14 @@ final class MobileFilesProviderUITests: XCTestCase {
                 app.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "完成"])).firstMatch.tap()
             }
             screenshot(app, "files-native-locations")
-            provider.tap()
+            location = provider
         } else {
             let name = app.staticTexts.matching(NSPredicate(format: "label IN %@", ["Sample NAS", "岚仓", "LanStash"])).firstMatch
             XCTAssertTrue(name.waitForExistence(timeout: 8), app.debugDescription)
             screenshot(app, "files-native-locations")
-            name.tap()
+            location = name
         }
+        location.tap()
         // 系统选择器可能再次要求启用本测试提供器；只处理已观察到的专属确认。
         let activation = app.alerts["Turn On “LanStash”?"]
         if activation.waitForExistence(timeout: 3) {
@@ -193,6 +195,9 @@ final class MobileFilesProviderUITests: XCTestCase {
             screenshot(app, "files-system-picker-enable-confirmation")
             turnOn.press(forDuration: 0.15)
             XCTAssertTrue(activation.waitForNonExistence(timeout: 5), app.debugDescription)
+            // 云端启用后仍停在位置列表；进入刚启用的同一位置，不重新添加或操作文件。
+            XCTAssertTrue(location.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription)
+            location.press(forDuration: 0.15)
         }
     }
 

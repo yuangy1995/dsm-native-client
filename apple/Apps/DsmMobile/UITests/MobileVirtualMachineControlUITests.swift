@@ -148,7 +148,11 @@ import XCTest
         failed.buttons["virtual-machine.settings.cancel"].tap()
     }
     private func openSettings(_ app: XCUIApplication) {
-        detail("synthetic-vm", app); reveal("virtual-machine.action.edit", app).tap()
+        detail("synthetic-vm", app)
+        let edit = reveal("virtual-machine.action.edit", app)
+        waitEnabled(edit)
+        // 云端可用按钮短按后仍停在详情；明确按下/抬起一次，仍须实际打开表单。
+        edit.press(forDuration: 0.15)
         XCTAssertTrue(app.collectionViews["virtual-machine.settings.form"].waitForExistence(timeout: 10))
     }
     private func replaceSetting(_ key: String, _ text: String, _ app: XCUIApplication) {
