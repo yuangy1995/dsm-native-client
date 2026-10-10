@@ -1,6 +1,9 @@
-# DSM 套件管理三端实现计划
+<!-- doc-role: development-plan -->
+<!-- last-reviewed: 2026-10-10 -->
 
-2026-10-04 移动范围：用户已授权按 [Apple 移动主计划](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) 实施 M5 Download Station 与 M7 Container/VMM。iPhone/iPad 能力一致而采用各自原生布局；本页历史只读/精选限制不再排除该范围，当前实现与验收以移动账本为准，不由共享接口存在推断完成。Windows/Android 范围及现有安全边界不变。
+# 下载、容器与虚拟机功能计划
+
+iPhone/iPad 已接入 M5 Download Station 与 M7 Container/VMM 的批准范围，两端业务一致、布局原生；当前交付与待验见[移动主计划](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)。Windows/Android 继续按各自计划维护，不能由 Apple 共享实现推定完成。
 
 > 当前完成情况和验证结果以[当前开发进度](../progress/STATUS.md)为准。本文只维护范围、契约、安全门槛、未完成工作和验收条件。
 
@@ -12,19 +15,12 @@
 
 ## 2. 契约与接口优先级
 
-1. Download Station 优先使用公开 `SYNO.DownloadStation.*`。只有能力发现未返回公开接口时，才使用独立的 `SYNO.DownloadStation2.*` 适配分支。
-2. VMM 优先使用公开 `SYNO.Virtualization.API.*`。内部 `SYNO.Virtualization.*` 不复用公开接口的参数或响应模型。
-3. Container Manager 当前依赖 `SYNO.Docker.*` 内部接口。每个 API、版本和方法必须由运行时能力发现明确返回后才可调用。
-4. 未知状态必须原样保留，界面不得将未知值误报为失败或成功。
-5. SID、SynoToken、Cookie、DID、下载链接、Tracker、容器环境变量、挂载路径、Registry 凭据、虚拟机控制台凭据和日志正文不得进入分析日志。
-6. 容器主列表固定按当前已验证契约提交 `offset=0`、`limit=-1`、`type=all`；映像、网络、项目和活动记录属于附属读取，单项不可用不得遮蔽已成功读取的容器。
-7. VMM 主列表优先读取官方 `SYNO.Virtualization.API.Guest`；只有官方读取明确不兼容且内部 Guest 能力同时存在时，才允许只读降级。主列表成功后，主机、存储、网络、映像、保护和日志单项失败不阻断页面；日志 `list` 必须携带网页端要求的筛选、日期和排序参数。各端必须区分“确实为空”和“读取不可用”，登录失效、证书变化与取消仍必须立即上报。
-8. 镜像仓库使用已验证的内部契约：`SYNO.Docker.Registry.search` 提交 `offset=0`、`limit=50`、`page_size=50` 和 `q`，`tags` 使用 `repo`；下载由 `SYNO.Docker.Image.pull_start` 提交 `repository` 与 `tag`。三端不得退回未验证的 `pull` 方法。
-9. VMM 基础创建和常规修改优先使用 Synology 官方 VMM API Guide 公开的 `SYNO.Virtualization.API.Guest` v1，并配合公开 Task、Storage、Network 与 Guest Image v1；内部 `SYNO.Virtualization.Guest.create/set` 只能作为经版本化验收的降级。控制台使用套件 noVNC 页面与 `synovirtualization/ws/{guest_id}` 通道。会话 Cookie 只注入非持久 WebView，不写入 URL、日志或磁盘。
-10. VMM 从 NAS 已有文件创建映像使用公开 `SYNO.Virtualization.API.Guest.Image.create` v1，固定提交 `auto_clean_task=false`、`storage_ids`、`type`、`ds_file_path` 与 `image_name`；提交前复核源文件、存储和名称占用基线，提交后只跟踪返回的稳定任务 ID，以 `Task.Info.get` 终态的 `image_id` 严格核对映像名称和类型，再调用 `Task.Info.clear`。断线与取消不得重放 `create`。映像删除优先使用公开 `Guest.Image.delete`；网络修改和删除没有公开写接口，只允许在内部 `SYNO.Virtualization.Network` 能力存在、当前 DSM/VMM 版本通过契约验收后开放，并保持确认、防重复提交和写后回读。
-11. Android 本机映像导入通过系统 `OpenDocument` 取得持久只读授权，先以 File Station 无覆盖上传到用户选择的暂存目录，再沿公开 `Guest.Image.create → Task.Info.get → 映像列表回读 → Task.Info.clear` 完成创建，最后仅按完整暂存文件基线删除临时文件。恢复记录保存在既有加密传输存储；同资料同映像名原子插入并领取，上传、创建或清理处于不明确提交边界时只读核对、不重放。持久结构为向后兼容新增；若回滚到不了解该记录的旧版本，应先让当前版本收敛或清理导入任务。
-12. Apple、Android 与 Windows 共用 `VirtualMachineManagerSnapshot` 的保护计划、计划策略、保留策略、日志和分区可用性语义；Android/Windows 实现界面时不得把读取失败呈现为空数据。
-13. 下载任务文件使用官方 `SYNO.DownloadStation.Task.create` multipart 契约，文件是正文的最后一个字段；基础设置使用官方 `Info.getconfig/setserverconfig`，计划使用 `Schedule.getconfig/setconfig`，保存后必须回读核验。
+- [Download Station](../api/reference/download-station.md) 优先公开接口，内部 `DownloadStation2` 独立适配，不复用字段或猜测方法。缺失速率不冒充零，摘要失败不遮蔽任务列表；`force_complete` 是结束并移出未完成文件，不是删除文件。
+- [Container Manager](../api/reference/containers.md) 使用已记录的内部接口；搜索固定 `Registry.search` v1，下载使用 `Image.pull_start` 与原任务回读。主列表及映像/网络/项目/活动局部读取分别处理，失败不当空列表。
+- [VMM](../api/reference/virtual-machines.md) 的公开与内部 API 保持独立参数和结果。公开读取优先并按明确兼容规则降级；Apple 当前基础编辑与创建已按记录的内部路径实现，不能把其他端公开创建方法写成所有端共用。原任务、返回资源身份和完整配置共同决定结果。
+- Apple 控制台使用受限原生资源/WSS 与非持久 WebKit，网页不持有 NAS 会话凭据；Windows 的 WebView2 与证书适配按本端计划，Android 控制台未实现部分保持关闭。实际画面、键鼠及长连接另验。
+- 映像创建、删除、网络写与异步任务严格按原稳定身份、资源占用和终态核查；清理任务不丢失恢复依据，断线/取消不自动重放创建。相应字段只在 API 目录维护。
+- SID、SynoToken、Cookie、DID、下载链接、Tracker、容器环境变量、挂载路径、Registry/控制台凭据及日志正文不进入分析日志。未知状态保留，权限/证书/会话错误不能被局部降级吞掉。
 
 ## 3. 写操作安全门槛
 
@@ -60,17 +56,13 @@
 
 ## 5. 后续里程碑
 
-### M2：Download Station 完整功能
+### M2：Download Station 当前差距
 
-- Tracker、Peer、BT 文件选择与优先级。
-- BT 搜索模块、类别、搜索结果和直接下载。Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 已建立官方 `SYNO.DownloadStation.BTSearch` v1 完整闭环，覆盖 `getModule`、`getCategory`、`start`、`list` 与 `clean`；两端均有能力门、会话内隐私、搜索/取消/空态、条件迟到隔离和复用既有单链接创建链。Apple 本机共享聚焦 65/65、全量 675 XCTest（2 跳过）+10 Swift Testing、iPhone 模拟器 11/11；Windows 专项自动化为 26 项。正式提交 `5850f4c` 已通过 Apple Build run `31356270194`、Windows Build run `31356270192`、Android Build run `31356270244` 与 Repository Check run `31356270189`，其中 Windows 为 886/886 项 xUnit 且 WinUI x64/ARM64 均 0 警告、0 错误。iPad/真机、Windows/Narrator/键盘和真实 NAS 验收继续后置。
-- RSS 站点、条目、下载过滤器。Windows 本轮仅完成 RSS 站点/条目数量只读摘要，刷新、编辑和过滤规则仍关闭。
-- 已完成官方基础设置：默认位置、eMule、自动解压、BT/HTTP/FTP/NZB/eMule 限速与计划；继续补齐套件内部的 BT 协议高级设置、监听目录、NZB 服务器、RSS 与通知设置。
-- Android 已完成官方任务文件、Tracker、Peer 详情、RSS 站点/条目浏览、RSS 单站点手动刷新和 BT 实际搜索。BT Search v1 通过 `getModule/getCategory` 读取提供方和类别，支持全部、已启用或明确选定提供方、类别、标题过滤、排序字段和方向，并在搜索完成、失败、超时或取消后尝试清理本次临时服务端搜索任务；清理失败不冒充记录已经移除。这不代表 BT 协议高级设置已完成。RSS 条目和搜索结果可经可写目录选择后直接创建任务。RSS 刷新具备目标预检、同站点防重复、写后回读和未确认结果；官方指南未公开 RSS 完整编辑或文件优先级写参数，相关能力与其他高级设置保持关闭并等待版本化契约和真实 NAS 验收。
-- Android、Windows 与 Apple 公开 Download Station 路径均使用官方 `SYNO.DownloadStation.Statistic.getinfo` v1 显示当前标准/eMule 上下行聚合字节速率；Apple 既有 `DownloadStation2` 降级路径仍 best-effort 调用内部 `SYNO.DownloadStation2.Task.Statistic.get`。Android/Windows 对缺失、负数或错误类型进入摘要独立错误，Apple 当前兼容字段别名并在读取失败时隐藏摘要；三端都不得让摘要失败遮蔽任务列表，也不得把结果冒充历史流量、单任务速度或传输结果。
-- Windows 已完成 `WIN-DL-ADV-READ` 只读摘要：公开 Task v1 任务列表读取 `detail/transfer/file/tracker/peer`，展示优先级、文件/Tracker/Peer、做种和下载中节点；`Info.getconfig`、可选 `Schedule.getconfig`、`RSS.Site.list` 与 `RSS.Feed.list` 仅进入摘要卡。设置保存、RSS 刷新/编辑、文件优先级写、任务目标修改、删除已下载数据和内部 `DownloadStation2` 继续关闭；本机 DownloadStation 聚焦 97/97、Release 完整 xUnit 1506/1506 通过，真实 NAS/Windows/辅助功能待验收。
-- Android 已按官方 `SYNO.DownloadStation.Task.edit` v1 接入单任务保存位置修改：选择可写目录、明确提示可能移动已有文件，写前复核任务与目录完整基线，提交后严格回读，断线和取消不自动重放；该能力不复用 `DownloadStation2`。
-- BTSearch 门禁完成后的 ACT-01 首片已在当前分支落盘并通过云端门禁：Apple 与 Windows 均把 Download Station 已加载任务快照投影到 Activity 的 NAS 来源，保留只读展示和不同控制能力；真机与真实 NAS 验收尚未完成。下一步顺序调整为 CHAT-03 先补 Apple 单附件 typed outcome 与 Windows 上传/缩略图/下载 typed 契约；NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS 刷新/编辑、文件优先级写、BT 协议高级设置、Container/VMM 高危写和 Activity 主动后台轮询不并入该波。
+- Apple/Windows 已有公开 BTSearch 的提供方、类别、搜索、清理和复用链接创建；Android 已有实际搜索与结果创建。历史测试来源见验证历史，真实 NAS 与输入/辅助功能另验。
+- 移动 M5 已接完整目录、设置、任务位置编辑、统一创建、RSS 查看/更新/条目创建及恢复。Windows 的设置与批量已接入，RSS 仍以站点/条目只读摘要为边界，不能沿用早期“全部设置关闭”的描述。
+- Android 已有任务文件、Tracker/Peer 详情、RSS 浏览/单站点刷新及结果创建；当前 Task.edit 实现仍为 v1，需按官方字段表要求的 v2 独立修正，不将现状称为正确版本。
+- 各端尚未覆盖的 BT 协议高级设置、监听目录、NZB 服务器、RSS 完整编辑/过滤和文件优先级写，须先核对已有实现与版本化契约，再决定目标范围。没有稳定写参数的功能继续关闭。
+- 聚合字节速率仅表示当前标准/eMule 上下行，不是历史流量、单任务速度或传输结果。Activity 展示与主动后台控制分开验收。
 
 ### M3：Container Manager 完整功能
 

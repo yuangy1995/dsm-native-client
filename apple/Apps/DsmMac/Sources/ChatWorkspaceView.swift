@@ -42,13 +42,6 @@ struct ChatWorkspaceView: View {
                 .disabled(model.isLoading)
                 .help(L10n.string("ui.550b0751f537f74e"))
             }
-            if model.canUseMessaging, model.statusIsError, let statusMessage = model.statusMessage {
-                ChatActionStatusBanner(
-                    message: statusMessage,
-                    isError: model.statusIsError,
-                    onDismiss: model.clearStatus
-                )
-            }
             HSplitView {
                 conversationColumn
                     .frame(minWidth: 240, idealWidth: 280, maxWidth: 360)
@@ -57,15 +50,14 @@ struct ChatWorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .overlay(alignment: .bottom) {
+        .macOperationOverlay {
+            if model.canUseMessaging, model.statusIsError, let message = model.statusMessage {
+                MacOperationFeedback(message: message, isError: true, onDismiss: model.clearStatus)
+            }
             if let toast = model.activeToast {
                 InAppToastOverlayView(toast: toast)
-                    .padding(.bottom, 24)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .zIndex(10)
-                    .onTapGesture {
-                        model.dismissToast()
-                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onTapGesture { model.dismissToast() }
                     .accessibilityHint(L10n.string("ui.4fdf8b59f329f5ba"))
             }
         }
@@ -280,34 +272,6 @@ struct ChatWorkspaceView: View {
         } else {
             ChatUnavailableDetail(status: model.availability.status)
         }
-    }
-}
-
-private struct ChatActionStatusBanner: View {
-    let message: String
-    let isError: Bool
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: isError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
-                .accessibilityHidden(true)
-            Text(message)
-                .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            Button(action: onDismiss) {
-                Label(L10n.string("ui.d301bc1258334c7c"), systemImage: "xmark")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel(L10n.string("ui.d301bc1258334c7c"))
-        }
-        .foregroundStyle(isError ? Color.red : Color.secondary)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(isError ? Color.red.opacity(0.08) : Color.accentColor.opacity(0.08))
     }
 }
 
@@ -1769,9 +1733,6 @@ struct ScheduledMessageComposerSheet: View {
             }
             .disabled(isResuming || model.isPerformingAction)
 
-            if model.statusIsError, let error = model.statusMessage {
-                Text(error).font(.callout).foregroundStyle(.secondary).padding(.horizontal, 20)
-            }
             HStack {
                 Spacer()
                 Button {
@@ -1802,6 +1763,11 @@ struct ScheduledMessageComposerSheet: View {
         }
         .frame(minWidth: 460, minHeight: 300)
         .background(MacGlassSurface(role: .sidebar))
+        .macOperationOverlay {
+            if model.statusIsError, let message = model.statusMessage {
+                MacOperationFeedback(message: message, isError: true, onDismiss: model.clearStatus)
+            }
+        }
         .onAppear {
             if let draft = model.pendingScheduledMessage(for: conversation.id) {
                 text = draft.text
@@ -2172,9 +2138,6 @@ struct CreatePollSheet: View {
             }
             .disabled(isResuming || model.isPerformingAction)
 
-            if model.statusIsError, let error = model.statusMessage {
-                Text(error).font(.callout).foregroundStyle(.secondary).padding(.horizontal, 20)
-            }
 
             HStack {
                 Text(L10n.string("ui.83abddba8f54950a"))
@@ -2210,6 +2173,11 @@ struct CreatePollSheet: View {
         }
         .frame(minWidth: 460, minHeight: 390)
         .background(MacGlassSurface(role: .sidebar))
+        .macOperationOverlay {
+            if model.statusIsError, let message = model.statusMessage {
+                MacOperationFeedback(message: message, isError: true, onDismiss: model.clearStatus)
+            }
+        }
         .onAppear {
             if let draft = model.pendingPollDraft(for: conversation.id) {
                 question = draft.question
@@ -2698,9 +2666,6 @@ struct NewChatSheet: View {
                 Toggle(L10n.string("ui.d33475f3928dbe36"), isOn: $createsEncryptedConversation)
             }
 
-            if model.statusIsError, let error = model.statusMessage {
-                Text(error).font(.callout).foregroundStyle(.secondary)
-            }
 
             HStack {
                 if model.users.isEmpty {
@@ -2728,6 +2693,11 @@ struct NewChatSheet: View {
         .padding(20)
         .frame(minWidth: 460, minHeight: 460)
         .background(MacGlassSurface(role: .sidebar))
+        .macOperationOverlay {
+            if model.statusIsError, let message = model.statusMessage {
+                MacOperationFeedback(message: message, isError: true, onDismiss: model.clearStatus)
+            }
+        }
         .onChange(of: mode) { _, _ in
             guard !model.hasPendingConversationCreation else { return }
             selectedUserIDs = []

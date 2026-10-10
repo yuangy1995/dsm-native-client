@@ -7444,7 +7444,6 @@
 
 /* macOS 上传传输中心 */
 "mac.upload.added" = "Added to uploads";
-"mac.upload.viewTransfers" = "View Transfers";
 "mac.upload.ended" = "Upload ended";
 "mac.upload.interrupted" = "Upload interrupted";
 "mac.upload.interruptedMessage" = "The upload result is unavailable. Check your connection and refresh; these files will not be uploaded again automatically.";
@@ -7468,3 +7467,10 @@
 "mac.upload.clearFinished" = "Clear Finished";
 "mac.upload.filterCount" = "%@ (%@)";
 "mac.upload.updating" = "Updating…";
+
+// 照片旋转保存反馈。
+"photos.rotation.saving" = "Saving rotation…";
+"photos.rotation.saved" = "Rotation saved.";
+"photos.rotation.failed" = "Could not save the rotation. The previous orientation has been restored. Try again.";
+"photos.rotation.pending" = "The rotation has not finished saving. Reconnect, then try refreshing its status.";
+"photos.download.saving" = "Downloading photos…";

@@ -123,4 +123,4 @@ macOS 当前从 `start=0` 读取单个最多 500 项的快照，不持续轮询�
 
 ## 2026-10-05 移动 M6a1 接入
 
-iPhone/iPad M6a1 已接既有最多 500 项进程/服务组快照、本地搜索、截断与局部错误展示。无结束进程、发送信号、命令行或环境变量入口。当前环境命令与两端页面验证集中在[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a1-五项读取与筛选)及其验证历史；真实 NAS 证据不提升。
+iPhone/iPad M6a1 已接既有最多 500 项进程/服务组快照、本地搜索、截断与局部错误展示。无结束进程、发送信号、命令行或环境变量入口。当前环境命令与两端页面验证集中在[移动主计划](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a1-五项读取与筛选)及其验证历史；真实 NAS 证据不提升。

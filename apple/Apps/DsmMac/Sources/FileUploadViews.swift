@@ -136,9 +136,13 @@ struct FileUploadBatchRow: View {
                 if batch.uploadProgressTotal > 0 {
                     ProgressView(value: Double(batch.uploadProgressBytes), total: Double(batch.uploadProgressTotal))
                         .accessibilityLabel(L10n.string("mac.upload.progress"))
-                    Text(L10n.string("mac.upload.byteProgress", percentage,
-                                     formatBytes(batch.uploadProgressBytes), formatBytes(batch.uploadProgressTotal)))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Text(L10n.string("mac.upload.byteProgress", percentage,
+                                         formatBytes(batch.uploadProgressBytes), formatBytes(batch.uploadProgressTotal)))
+                        if let speed = uploadSpeed {
+                            Text(speedText(speed)).accessibilityIdentifier("upload.batch.speed")
+                        }
+                    }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 } else if batch.isRunning {
                     ProgressView().controlSize(.small)
                 }
@@ -182,9 +186,15 @@ struct FileUploadBatchRow: View {
                                     .foregroundStyle(.secondary)
                             }
                             if entry.state == .running, entry.source.size > 0 {
-                                ProgressView(value: Double(min(max(entry.completedBytes, 0), entry.source.size)),
-                                             total: Double(entry.source.size))
-                                    .accessibilityLabel(entry.source.relativePath)
+                                HStack(spacing: 12) {
+                                    ProgressView(value: Double(min(max(entry.completedBytes, 0), entry.source.size)),
+                                                 total: Double(entry.source.size))
+                                        .accessibilityLabel(entry.source.relativePath)
+                                    if let speed = model.uploadSpeed(for: entry) {
+                                        Text(speedText(speed)).monospacedDigit().foregroundStyle(.secondary)
+                                            .accessibilityIdentifier("upload.item.speed")
+                                    }
+                                }
                             }
                             if entry.state == .unverified {
                                 Text(L10n.string("mac.upload.interruptedMessage")).foregroundStyle(.secondary)
@@ -207,6 +217,15 @@ struct FileUploadBatchRow: View {
     private var percentage: String {
         let value = Double(batch.uploadProgressBytes) / Double(max(batch.uploadProgressTotal, 1))
         return value.formatted(.percent.precision(.fractionLength(0)).locale(L10n.locale))
+    }
+
+    private var uploadSpeed: Double? {
+        let speeds = batch.entries.compactMap { model.uploadSpeed(for: $0) }
+        return speeds.isEmpty ? nil : speeds.reduce(0, +)
+    }
+
+    private func speedText(_ bytesPerSecond: Double) -> String {
+        L10n.string("ui.3b14d1af77ab3e3e", formatBytes(Int64(bytesPerSecond)))
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

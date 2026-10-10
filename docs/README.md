@@ -1,5 +1,5 @@
 <!-- doc-role: documentation-index -->
-<!-- last-reviewed: 2026-10-04 -->
+<!-- last-reviewed: 2026-10-10 -->
 
 # 项目文档
 
@@ -8,9 +8,11 @@
 ## 当前状态与计划
 
 - [开发进度](progress/STATUS.md)、[平台功能矩阵](progress/PLATFORM_MATRIX.md)、[产品路线图](progress/ROADMAP.md)
-- [macOS 使用与功能说明](../apple/Apps/DsmMac/README.md)
+- [macOS 使用与功能说明](../apple/Apps/DsmMac/README.md)、[iPhone/iPad 使用与构建](../apple/Apps/DsmMobile/README.md)
 - [跨端总控](development/MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)、[Windows 计划](development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)、[iPhone/iPad 计划](development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)、[Android 计划](development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)
-- [Photos](development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)、[Chat](development/NATIVE_DSM_CHAT_DEVELOPMENT_PLAN_ZH.md)、[套件管理](development/NATIVE_DSM_SERVICE_MANAGEMENT_PLAN_ZH.md)、[存储管理](development/NATIVE_DSM_STORAGE_MANAGEMENT_PLAN_ZH.md)、[桌面挂载与缓存](development/NATIVE_DSM_DESKTOP_CLOUD_DRIVE_DEVELOPMENT_PLAN_ZH.md)
+- [Photos](development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)、[Chat](development/NATIVE_DSM_CHAT_DEVELOPMENT_PLAN_ZH.md)、[下载、容器与虚拟机](development/NATIVE_DSM_SERVICE_MANAGEMENT_PLAN_ZH.md)、[存储管理](development/NATIVE_DSM_STORAGE_MANAGEMENT_PLAN_ZH.md)、[桌面挂载与缓存](development/NATIVE_DSM_DESKTOP_CLOUD_DRIVE_DEVELOPMENT_PLAN_ZH.md)
+
+- 移动系统集成：[普通传输与分享](development/APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md)、[Files 与原位编辑](development/APPLE_MOBILE_FILES_PROVIDER_ZH.md)、[照片/跨 NAS/Office 后台](development/APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md)
 
 ## API 与架构
 
@@ -25,6 +27,13 @@
 - [macOS 发布就绪与安全整改](quality/MACOS_BETA_READINESS_ZH.md)、[桌面云盘发布/升级及现场矩阵](compatibility/DESKTOP_CLOUD_DRIVE_RELEASE_ACCEPTANCE_ZH.md)、[性能基准](quality/DESKTOP_CLOUD_DRIVE_BENCHMARK_ZH.md)
 - [Apple CI 签名配置](development/APPLE_GITHUB_ACTIONS_SIGNING_ZH.md)、[macOS 发布与升级](releases/MACOS_GITHUB_RELEASE_ZH.md)
 - [历史验证记录](archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)：已执行的提交/测试/包及手工反馈；不作为新候选通过的证明
+
+## 历史与查证
+
+- [macOS 功能与使用反馈](archive/2026-h2/MACOS_FEEDBACK_HISTORY.md)：原八份日期账本合并，保留当时范围、结果和未验条件。
+- [移动 M0–M8 实施历史](archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md)：逐波决策、交接和原失败。
+- [移动 Files 调查历史](archive/2026-h2/APPLE_MOBILE_FILES_INVESTIGATION_HISTORY.md)：平台适配对照与系统生命周期调查。
+- [验证历史](archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)：精确提交、命令、CI 与发布产物。历史的“当前”和授权只针对记录当时，不作为后续任务许可。
 
 ## 维护约定
 

@@ -3134,6 +3134,28 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         }
     }
 
+    func test旋转成功回执与预期方向不依赖原始分辨率是否对调() async throws {
+        for space in SynologyPhotoSpace.allCases {
+            for (orientation, expected) in [(1, 8), (2, 5), (3, 6), (4, 7), (5, 4), (6, 1), (7, 2), (8, 3)] {
+                let before = itemPage.replacingOccurrences(of: #""orientation":1"#, with: "\"orientation\":\(orientation)")
+                let after = before.replacingOccurrences(of: "\"orientation\":\(orientation)", with: "\"orientation\":\(expected)")
+                let transport = MockHTTPTransport(responses: accessResponses(teamPermission: "entry", homeEnabled: space == .personal) +
+                    [before, before, managedFolder, emptySuccess, after].map(response))
+                let repository = try makeRepository(transport); _ = try await repository.access()
+                let page = try await repository.photos(in: space, query: .recentlyAdded, offset: 0, limit: 20)
+                let command = SynologyPhotosMutation.rotatePhoto(try XCTUnwrap(page.items.first)), id = UUID()
+                let result = try await repository.performMutation(command, operationID: id) { _, _ in }
+                XCTAssertEqual(result.state, .confirmed)
+                XCTAssertEqual(result.photos.first?.orientation, expected)
+                XCTAssertEqual(result.photos.first?.width, 100)
+                XCTAssertEqual(result.photos.first?.height, 80)
+                _ = try await repository.performMutation(command, operationID: id) { _, _ in }
+                let writes = try await transport.recordedRequests().map(decode).filter { $0["method"] == "set" }
+                XCTAssertEqual(writes.count, 1)
+            }
+        }
+    }
+
     func test旋转丢回执只读核对旧方向和错误尺寸不能误报成功() async throws {
         let after = itemPage.replacingOccurrences(of: #""orientation":1"#, with: #""orientation":8"#)
         let confirmed = after.replacingOccurrences(of: #""width":100,"height":80"#, with: #""width":80,"height":100"#)

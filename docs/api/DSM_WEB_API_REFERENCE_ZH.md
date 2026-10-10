@@ -434,5 +434,5 @@ macOS 模型两层防重复；界面提交前说明影响并确认，执行中�
 日期/时间格式选择、ZRAM 字段及防火墙通知含义。电源计划已按官方前端完整双数组
 `load/save` v1 和 200 条上限实现本地草稿与整表确认；详见
 [电源计划记录](discovery/endpoints/dsm-power-schedule.md)和
-[实施/验证账本](../development/NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
+[实施/验证账本](../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#nas-设置网页核对与修正账本)。
 新写入口遵循用户本轮授权，未执行真实 NAS 写入；静态/合成结论不提升历史环境等级。

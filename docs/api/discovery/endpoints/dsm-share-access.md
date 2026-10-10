@@ -102,4 +102,4 @@
 
 ## 2026-10-05 移动 M6a1 接入
 
-iPhone/iPad M6a1 接入既有 FileStationShareAccessRepository 的分页与权限摘要。实际 UI 暴露 Apple listShares 缺少权限时默认可读、误显示只读的问题，已修正：共享根缺少权限保持未知，普通目录原行为保留；没有新增 NAS 请求、权限或存储字段。该共享修正同时影响 macOS，执行共享与桌面回归；Windows/Android 仅记录语义参考，不改代码。当前环境命令与两端页面验证集中在[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a1-五项读取与筛选)及其验证历史；真实 NAS 证据不提升。
+iPhone/iPad M6a1 接入既有 FileStationShareAccessRepository 的分页与权限摘要。实际 UI 暴露 Apple listShares 缺少权限时默认可读、误显示只读的问题，已修正：共享根缺少权限保持未知，普通目录原行为保留；没有新增 NAS 请求、权限或存储字段。该共享修正同时影响 macOS，执行共享与桌面回归；Windows/Android 仅记录语义参考，不改代码。当前环境命令与两端页面验证集中在[移动主计划](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a1-五项读取与筛选)及其验证历史；真实 NAS 证据不提升。

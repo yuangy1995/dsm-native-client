@@ -1587,6 +1587,8 @@ private typealias PhotosGlobalStep = SynologyPhotosAlbumCheckpoint.Administratio
 private typealias PhotosPreviewFailureKind = SynologyPhotosAlbumCheckpoint.AutomaticPreview.FailureKind
 
 private struct PhotosMutationRecord: Sendable {
+    // 仅本次会话内的明确写回执；恢复记录不据此推断历史操作已成功。
+    var rotationAcknowledged = false
     var automaticFailureKind: PhotosPreviewFailureKind?
     var automaticFailureAcknowledged = false
     var codecGenerationAcknowledged = false
@@ -3731,6 +3733,7 @@ extension SynologyPhotosRepository {
                     mutations[operationID] = record
                     return record.result
                 }
+                record.rotationAcknowledged = true
             case .edit(let photos, let edit):
                 let generation = accessGeneration
                 for space in SynologyPhotoSpace.allCases {
@@ -4150,10 +4153,13 @@ extension SynologyPhotosRepository {
             guard photo.filename == original.filename, photo.sizeBytes == original.sizeBytes,
                   photo.folderID == original.folderID, photo.indexedAt == original.indexedAt,
                   photo.mediaType == original.mediaType else { throw Self.failure(.conflict) }
-            // 旋转不可重放；只接受预期方向和尺寸，旧快照不能证明成功。
+            // 官方网页在 set 成功后交换的是显示尺寸，不能要求原始分辨率必定一起改变。
+            // 有明确回执仍须读到预期方向和同一对象；丢失回执/重启恢复沿用更严格的核对，不重放旋转。
+            let swappedDimensions = (original.width == nil || photo.height == original.width) &&
+                (original.height == nil || photo.width == original.height)
+            let unchangedDimensions = photo.width == original.width && photo.height == original.height
             if let expected = original.counterClockwiseOrientation, photo.orientation == expected,
-               original.width == nil || photo.height == original.width,
-               original.height == nil || photo.width == original.height {
+               swappedDimensions || (record.rotationAcknowledged && unchangedDimensions) {
                 result = .init(state: .confirmed, photos: [photo], completedCount: 1)
             }
         case .setGlobalSettings(let original, let enabled, let extensions):

@@ -88,7 +88,7 @@
 
 本轮未确认匿名投票、关闭投票操作、普通账号、其他 DSM/Chat 版本及 QuickConnect 中继组合。
 来源、源码、正式测试及 `PENDING_USER_VALIDATION` 条件见
-[五组功能账本](../../../development/MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md)。
+[五组功能账本](../../../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#macos-chat-五组功能补齐账本)。
 
 ## 2026-10-03 置顶搜索修正
 
@@ -113,4 +113,4 @@ M4b1 沿用上表 Vote.create/get_choices/vote 与 Post.list，不增加 NAS 请
 
 iOS/iPadOS 的原生创建、结果与投票采用独立受保护 `Chat/polls-v1.json`，保存账号摘要、操作/消息 ID、草稿与完整选择摘要；不保存问题正文、选项文字、凭据或投票者名单。收到创建 ID 才能在重启后认领同一对象，完全丢回执时不以同内容消息推断归属。恢复只读；写前存储失败零提交，未知目标跨重启继续限制，其他账号和无关聊天不受污染。当前开发格式不附加旧版本兼容。
 
-五端影响：iOS/iPadOS 获得原生投票流程及恢复；macOS 继续原 UI/存储，通过兼容的共享调用与回归；Windows/Android 无请求、代码或存储变化，仅登记本协议增量。客户端合成测试、模拟器及真实设备验收分别记入[移动 M4b1 账本](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b1-投票创建参与与恢复)；不操作真实 NAS，也不将普通账号、匿名规则或其他版本标为已实测。
+五端影响：iOS/iPadOS 获得原生投票流程及恢复；macOS 继续原 UI/存储，通过兼容的共享调用与回归；Windows/Android 无请求、代码或存储变化，仅登记本协议增量。客户端合成测试、模拟器及真实设备验收分别记入[移动 M4b1 账本](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m4b1-投票创建参与与恢复)；不操作真实 NAS，也不将普通账号、匿名规则或其他版本标为已实测。

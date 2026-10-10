@@ -2,15 +2,11 @@
 
 [English](CONTRIBUTING.en.md)
 
-## 分支命名
+## 仓库工作方式
 
-```text
-feature/auth-apple
-feature/file-browser-android
-feature/download-windows
-fix/session-expired-apple
-docs/recycle-contract
-```
+在现有 `main` 主分支工作，开始前阅读 [AGENTS.md](AGENTS.md)、检查工作区与相关差异并保留已有改动。不要自动创建功能分支或临时验证分支。
+
+用户明确要求提交时，将当前任务相关改动在 `main` 提交并推送 `origin/main`：先完成适度验证，再核对远端新提交，按正常历史整合，不强制推送或改写共享历史。未获请求时不暂存、提交、推送或创建 PR；提交请求不包含发布安装包、标签或 PR 的授权。
 
 ## 提交要求
 

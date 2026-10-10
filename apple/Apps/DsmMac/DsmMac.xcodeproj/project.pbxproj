@@ -19,6 +19,7 @@
 		29374504B5910AFF6B40F0A3 /* FileStationMountAccountList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F9356097F9C9523ED5CCE8 /* FileStationMountAccountList.swift */; };
 		2A69EEBF1B390DD0CEF825CB /* ChatDetailsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0AE4A56B6501BEF57BE763 /* ChatDetailsViews.swift */; };
 		2D18591BF21FB97FE8F7010F /* FileAdvancedSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E40BD82223C91C25D32C0C1 /* FileAdvancedSearchView.swift */; };
+		3075E145DD458DA9296BDAFB /* MacOperationFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B890530FA2B03B8CA7B6570 /* MacOperationFeedback.swift */; };
 		3588633B6EF10C5FA9B4D316 /* FileStationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77AC18D23D4D54011B4BD6FF /* FileStationSettingsView.swift */; };
 		3676E27ABA39476E47068AE4 /* FileBackgroundTaskActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F06210A92C55890615D9D36 /* FileBackgroundTaskActions.swift */; };
 		3679216DDA49A20D83B8411A /* NasAdministrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F276AF6EC0C343DF594E76B /* NasAdministrationView.swift */; };
@@ -80,6 +81,7 @@
 		E53088EB1BE1BCBA9B672B12 /* PhotoLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */; };
 		E6BE5B8B9C8EBE612DD198CD /* ContainerImagePullModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA801D49D6F2CE2300B5374A /* ContainerImagePullModel.swift */; };
 		EAD9392C707659F2DAA7E29C /* PackageCenterSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50CEA4FE573C206036BCDC35 /* PackageCenterSettingsView.swift */; };
+		EB547B837D773814630B83B4 /* PhotoOperationFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24234957C4C74E3D998F7CE0 /* PhotoOperationFeedback.swift */; };
 		ED5CE92C2E629DA8387E9E20 /* FileStationThemeImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B2EB7CAB40E81F9AA56CD9A /* FileStationThemeImagePicker.swift */; };
 		F06931669E2EB893B31BBBE0 /* LoginViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D54FCCE59BEF04898E541CE /* LoginViewModel.swift */; };
 		F7F5489C7BAA445C74E15F68 /* ArchiveExtractionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12CB8707A3C36F92BC55DBE /* ArchiveExtractionView.swift */; };
@@ -125,6 +127,7 @@
 		20D1575DF13DD10E0CD1EC3A /* FileLocationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileLocationPicker.swift; sourceTree = "<group>"; };
 		21F2702AC3558C7DD3F3EA25 /* LanStashFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LanStashFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		226606003B75B91F9FA03683 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		24234957C4C74E3D998F7CE0 /* PhotoOperationFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoOperationFeedback.swift; sourceTree = "<group>"; };
 		2578503BB6C863138963CE6B /* ServiceManagementModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceManagementModel.swift; sourceTree = "<group>"; };
 		2712B93FA47D4BCFAF3CDB1B /* SynologyPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynologyPhotosView.swift; sourceTree = "<group>"; };
 		27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryView.swift; sourceTree = "<group>"; };
@@ -158,6 +161,7 @@
 		8E0AE4A56B6501BEF57BE763 /* ChatDetailsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDetailsViews.swift; sourceTree = "<group>"; };
 		903CFF29712CF8E5FC9DAB8F /* AppIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = AppIcon.png; sourceTree = "<group>"; };
 		90BA11590C411CC95F58F85C /* FileStationBandwidthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationBandwidthView.swift; sourceTree = "<group>"; };
+		9B890530FA2B03B8CA7B6570 /* MacOperationFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOperationFeedback.swift; sourceTree = "<group>"; };
 		9C86C1E7AC50E2616225F51D /* apple */ = {isa = PBXFileReference; lastKnownFileType = folder; name = apple; path = ../..; sourceTree = SOURCE_ROOT; };
 		9D89D62711D2351506A6E681 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		9E40BD82223C91C25D32C0C1 /* FileAdvancedSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAdvancedSearchView.swift; sourceTree = "<group>"; };
@@ -292,6 +296,7 @@
 				4D54FCCE59BEF04898E541CE /* LoginViewModel.swift */,
 				DF1E6D2F66C1068D2E20A49C /* MacAppearance.swift */,
 				B9665B8659CF3AEC71209382 /* MacFilePresentation.swift */,
+				9B890530FA2B03B8CA7B6570 /* MacOperationFeedback.swift */,
 				E6FC011F3531054EAFEB7F62 /* MediaStreamRedirectPolicy.swift */,
 				BF05BE448D0653B1A065559A /* NasAdministrationModel.swift */,
 				3F276AF6EC0C343DF594E76B /* NasAdministrationView.swift */,
@@ -306,6 +311,7 @@
 				27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */,
 				7F81E8889172BBA148AAF813 /* PhotoManagementPanel.swift */,
 				8BC9C9961187B8013EEE5911 /* PhotoMetadataExtractor.swift */,
+				24234957C4C74E3D998F7CE0 /* PhotoOperationFeedback.swift */,
 				74943FAB49D2FB051152CBEE /* PhotoUploadRecoveryStore.swift */,
 				5ADD12D65EC6ADCDBA5EE892 /* PowerScheduleEntryEditor.swift */,
 				3879993A5ED04BE900402F59 /* RemoteMountRecoveryView.swift */,
@@ -501,6 +507,7 @@
 				F06931669E2EB893B31BBBE0 /* LoginViewModel.swift in Sources */,
 				B748536108879BA2D705F5CE /* MacAppearance.swift in Sources */,
 				83D0BC284CA9C38A297A70BF /* MacFilePresentation.swift in Sources */,
+				3075E145DD458DA9296BDAFB /* MacOperationFeedback.swift in Sources */,
 				108966A1F81EFB36786F3660 /* MediaStreamRedirectPolicy.swift in Sources */,
 				B6FA5CB7DA8790CA0A105940 /* NasAdministrationModel.swift in Sources */,
 				3679216DDA49A20D83B8411A /* NasAdministrationView.swift in Sources */,
@@ -515,6 +522,7 @@
 				E53088EB1BE1BCBA9B672B12 /* PhotoLibraryView.swift in Sources */,
 				4B1D1A6C8E02EE02141476E3 /* PhotoManagementPanel.swift in Sources */,
 				D733D79BB2B46B2F6E5C06E9 /* PhotoMetadataExtractor.swift in Sources */,
+				EB547B837D773814630B83B4 /* PhotoOperationFeedback.swift in Sources */,
 				7A69FF0E5AC572DB1C2EE0D5 /* PhotoUploadRecoveryStore.swift in Sources */,
 				63DC646A757815086EB81E87 /* PowerScheduleEntryEditor.swift in Sources */,
 				9B3EFFB8C8D9612E2180DE97 /* RemoteMountRecoveryView.swift in Sources */,

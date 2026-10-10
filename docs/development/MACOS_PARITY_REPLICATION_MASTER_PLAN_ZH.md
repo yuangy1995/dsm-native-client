@@ -1,55 +1,22 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-04 -->
+<!-- last-reviewed: 2026-10-10 -->
 
-# macOS 语义基线下的 Windows 与 Apple 移动端对齐总控计划
+# macOS 语义基线下的跨端对齐总控
 
-## 当前移动实施决策（2026-10-04）
+本页只维护 Windows 与 Apple 移动端对齐的方法、所有权和质量门。当前进度见[开发状态](../progress/STATUS.md)，能力差异见[平台矩阵](../progress/PLATFORM_MATRIX.md)，请求与恢复语义见[API 目录](../api/README.md)。旧波次的范围与授权归入[历史记录](../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#跨端历史范围与决策补充)，不能作为新任务许可。
 
-用户已确认并要求执行 [Apple 移动主计划 M0→M8](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)：iPhone/iPad 尽量完整对齐 macOS 1.0.15 业务、能力一致而布局各自原生；允许必要共享逻辑提取及 macOS 引用调整，须保持其行为并回归。Files、后台传输和分享扩展在 M8 独立实施。本页及历史条目中的“精选、复杂管理当前不做、Mac 完全只读”由本次范围取代，但不能据此宣布功能已经实现或移除权限/危险写/未知结果门禁。Windows/Android 实施范围不变，NAS 真实数据不得用于自动写测试。
+## 当前范围
 
-## NAS 设置新基线与五端边界（2026-10-03）
-
-本轮是用户单独授权的 macOS NAS 设置全项核对、内存压缩/电源计划补齐和套件中心实现。只有 macOS 形成新原生流程；共享 Apple 为兼容增量，Windows 与 Android 仅记录契约影响，iPhone/iPad 的复杂 NAS 运维仍为当前不做。后续跨端任务继续遵循 macOS 只读参考边界，不因本次授权解除未来只读限制。新私有写开放供用户测试不等于真实行为已验证；实际能力、权限、签名/许可、确认、互斥和结果核查不可移除。逐端取舍见对应计划，源码、私有端点、合成请求及验证证据集中在 [NAS 设置核对账本](NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
-
-同日反馈修复补充：套件预检成功可以没有 data；Setting.get 的 update_channel 为 Boolean，set 仍为 stable/beta，单卷 default_vol 可缺省。macOS 已修正并同步应用实际加载的双语资源；其他平台实现范围保持上述取舍。官方单个 MediaServer 更新已成功，但不能代替任何目标客户端的真实提交验收。详见[反馈修复账本](PACKAGE_CENTER_FIX_20261003_ZH.md)。 后续确认 system/system_hidden 可以缺省普通存储列表；安装准备取消须丢弃迟到结果，已提交安装只关闭窗口后台继续。照片过期操作反馈修复仅涉及 macOS 模型，不改变五端照片读取/写入契约。见[二次反馈账本](PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)。
-
-## 决策摘要
-
-macOS 是 Files、Photos、Chat、Download Station、NAS 管理、桌面云盘与安全行为的业务语义
-基准。Windows 的目标是完整业务语义对齐；iPhone/iPad 按最新移动专项计划 M0→M8 实施同等用户结果及原生交互转换。Android 不属于本计划的一般实施线；2026-09-15 用户已单独授权四端 Photos 对齐，因此仅该历史波次包含 Android，详细账本集中在[照片计划](NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)，不扩大其他模块范围。
-
-当前状态见[开发进度](../progress/STATUS.md)，能力边界见[平台功能矩阵](../progress/PLATFORM_MATRIX.md)，
-已结束的阶段性账本见[跨端功能对齐历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。
-
-2026-09-16 Windows 用户明确授权按 macOS 浅深色截图重建视觉与原生交互；当前实现和验收集中在
-[Windows 原生重建账本](WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)。这不改变 Apple 移动范围，也不开放未经验证的私有写操作。
+- macOS 是文件、照片、聊天、下载、NAS 管理、桌面云盘与安全行为的参考，固定对齐基线和后续增量须分别记录。
+- Windows 以完整业务语义对齐为目标；2026-09-21 范围已形成实现与云端证据，后续 Photos 管理、File Station 和 Office 等增量按 [Windows 计划](WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)推进。
+- iPhone/iPad 按已确认的 [M0–M8](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)实现相同业务范围与原生布局。目前批准的源码范围已接入，包括 NAS/套件管理、容器/VMM、系统后台时间、分享与 Files；完整云端复验及真机另验，不能沿用旧“精选/只读管理”限制描述。
+- Office 在 macOS 使用本机编辑自动回传；移动支持编辑副本后主动回传与 Files 原位编辑，并使用系统授予的后台时间，不保证进程终止后继续。Windows 同类能力仍按其计划开发。
+- Android 不属于这两条实施线。历史 Photos 波次的单独授权不扩张到其他模块；契约变化须评估五端，未获授权时只记录 Android 影响。
 
 ## 基本规则
 
-- 2026-10-02 macOS 文件基线追加：用户已单独授权并完成 [Office 预览与本机编辑自动回传](../../apple/Apps/DsmMac/README.md) 的源码、本机自动化与独立测试包。后续 Windows 对齐须保留内容不变零上传、稳定快照、冲突暂停、未知结果只核查和会话退出边界；本轮没有实现 Windows 同类功能。iPhone/iPad 的外部编辑后自动回传不进入当前移动范围，仍采用既有前台下载/系统分享或另存流程，回传需用户主动上传，两端范围一致；不将未开发能力列为待真机验证。Android 仅记录影响，不扩张到本总控实施线。本次 macOS 授权仅适用于该独立波次，不解除后续跨端任务的只读参考边界。
+既有功能的主动测试开放按对应平台与功能的明确决定执行，保留能力、实际权限、具体风险确认、防重复和未知恢复；不因共享方法存在自动开放其他端，也不把待用户验证当作安全检查的替代。历史波次允许过的基线修复不解除后续任务的只读参考边界。
 
-- 2026-09-20 用户补充：后续所有不涉及真实数据的隔离测试均授权推进，不限于本次
-  专用虚拟机测试，不重复询问普通测试步骤。该范围允许本次专用测试 VM 按官方
-  最低值改为 10 GiB；继续保持断网、无 ISO、不开机，不改既有 VM/真实文件。
-  外部工具要求的永久删除、扩大安全敏感权限、弱化保护等操作时确认仍保留；
-  该授权不扩大到真实数据、提交/推送或正式发布，也不自动提升验证等级。
-
-- 2026-09-19 用户进一步明确：待真实验证不计为剩余源码开发，不得在交付给用户验证的
-  版本中仅因“尚无行为验证”将已实现功能永久禁用。后续交付前必须逐项收敛硬编码
-  关闭门，改以已记录接口、能力/版本、实际权限、目标绑定、风险确认、防重复和结果
-  核查决定是否可操作；缺接口、缺权限或尚未实现的能力不能伪装可用。此授权覆盖
-  用户主动操作的验证入口，不授权 Agent 自动执行真实 NAS 高危操作，也不提升验证
-  等级、不绕过证书或越权。历史“生产门关闭”属于当时事实，不能作为后续测试版
-  继续永久禁用已实现功能的理由。代码开放尚需逐项实施与回归，不把本决策写成已开放。
-
-- 2026-09-17 用户已明确批准后续兼容接口扩展及非高危操作；Windows 容器/VMM 请求、
-  能力、结果模型可按已记录契约增量实施，不再等待此前的同项代码审批。此授权不含
-  Agent 在真实 NAS 上执行删除、强制断电、权限/网络更改等高危操作，也不放宽既有
-  危险写确认/重复保护/回读及真实验收门；不自动授权依赖、身份或持久化迁移。
-
-- 2026-09-16 用户明确授权：修复本轮发现的 macOS Download Station `force_complete` 语义/
-  文案错误，并一并修复后续有证据的同类 API 语义或误导性入口问题。此例外仅覆盖相应缺陷
-  与必要回归，不解除其他 macOS 只读边界，不授权真实 NAS 危险写验证或提交/推送。
 - 只读参考范围：`apple/Apps/DsmMac/**`。发现需要修改此范围时停止当前切片并请求用户
   明确授权，不能顺手修复。
 - 共享 Apple Package 可做向后兼容的增量修改，但必须运行 macOS 回归；“未改 macOS App
@@ -88,8 +55,7 @@ macOS 是 Files、Photos、Chat、Download Station、NAS 管理、桌面云盘�
 
 ### 2. 用户主流程
 
-按登录与会话、Files、传输、Photos、Chat、Download Station、只读 NAS/套件摘要的顺序
-推进。Windows 逐步达到完整业务语义；移动端按“用户目标 → 移动替代 → 不可用能力 →
+先建立登录与会话，再按目标平台账本推进文件、传输、照片、聊天、下载、NAS/套件与系统集成。Windows 逐步达到完整业务语义；移动端按“用户目标 → 移动替代 → 不可用能力 →
 降级”记录。
 
 ### 3. 平台系统集成
@@ -107,7 +73,7 @@ macOS 是 Files、Photos、Chat、Download Station、NAS 管理、桌面云盘�
 | --- | --- |
 | 每个切片 | `git diff --check`、相关契约/fixture 脱敏/本地化与聚焦测试。 |
 | Apple 共享层 | `swift test --package-path apple` 与 macOS 回归。 |
-| Apple 移动端 | iPhone 和 iPad 模拟器构建；页面五态和可访问性检查。 |
+| Apple 移动端 | iPhone 和 iPad 独立模拟器构建与实际 UI；页面五态和可访问性检查。 |
 | Windows | 托管 Runner 的 x64、ARM64、xUnit 与 WinUI XAML。 |
 | Android 交叉影响 | 仅在契约改变时评估 Android，不得擅自修改 Android。 |
 | 高风险路径 | 构建/实机前执行认证、证书、后台、跨 NAS、File Provider/Cloud Files 和私有 API 的只读对抗复核。 |
@@ -135,7 +101,7 @@ macOS 是 Files、Photos、Chat、Download Station、NAS 管理、桌面云盘�
 2. 用户操作步骤；
 3. 预期用户可见结果；
 4. 允许回传的脱敏失败信息；
-5. 受影响范围与入口当前关闭状态。
+5. 受影响范围、入口的实际能力/权限保护与待验限制。
 
 ## 长期非目标与决策门
 

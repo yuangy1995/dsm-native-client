@@ -2,15 +2,11 @@
 
 [简体中文](CONTRIBUTING.md)
 
-## Branch names
+## Working in this repository
 
-```text
-feature/auth-apple
-feature/file-browser-android
-feature/download-windows
-fix/session-expired-apple
-docs/recycle-contract
-```
+Work on the existing `main` branch. Read [AGENTS.md](AGENTS.md), inspect the working tree and relevant diffs, and preserve existing changes. Do not automatically create feature or temporary validation branches.
+
+When the user explicitly requests a commit, commit the task-related changes on `main` and push to `origin/main`: complete appropriate checks, inspect incoming remote commits, and integrate through normal history. Do not force-push or rewrite shared history. Without a request, do not stage, commit, push, or create a PR. A commit request does not authorize releases, tags, or PRs.
 
 ## Commit requirements
 

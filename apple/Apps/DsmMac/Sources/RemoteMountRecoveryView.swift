@@ -64,9 +64,6 @@ struct RemoteMountRecoveryView: View {
             } else {
                 Text(L10n.string("remote-mount.recovery.empty"))
             }
-            if let message = model.statusMessage, model.statusIsError || selected == nil {
-                Text(message).font(.callout).foregroundStyle(model.statusIsError ? Color.red : Color.secondary)
-            }
             HStack {
                 Spacer()
                 Button(L10n.string("remote-mount.recovery.close")) { dismiss() }.keyboardShortcut(.cancelAction)
@@ -74,6 +71,11 @@ struct RemoteMountRecoveryView: View {
           }.padding(24)
         }
         .frame(width: 560).frame(maxHeight: 600)
+        .macOperationOverlay {
+            if let message = model.statusMessage, model.statusIsError || selected == nil {
+                MacOperationFeedback(message: message, isWorking: model.isManagingRemoteMount, isError: model.statusIsError)
+            }
+        }
         .task {
             await model.refreshRemoteMountOperations()
             guard !Task.isCancelled else { return }
