@@ -7444,7 +7444,6 @@
 
 /* macOS 上传传输中心 */
 "mac.upload.added" = "已加入上传队列";
-"mac.upload.viewTransfers" = "查看传输";
 "mac.upload.ended" = "上传结束";
 "mac.upload.interrupted" = "上传已中断";
 "mac.upload.interruptedMessage" = "暂时无法获取上传结果。请检查连接后刷新；这些文件不会自动重复上传。";
@@ -7468,3 +7467,10 @@
 "mac.upload.clearFinished" = "清除已结束";
 "mac.upload.filterCount" = "%@（%@）";
 "mac.upload.updating" = "正在更新…";
+
+// 照片旋转保存反馈。
+"photos.rotation.saving" = "正在保存旋转…";
+"photos.rotation.saved" = "已保存旋转。";
+"photos.rotation.failed" = "旋转未能保存，已恢复原方向。请重试。";
+"photos.rotation.pending" = "旋转尚未完成保存。请恢复连接后重试刷新状态。";
+"photos.download.saving" = "正在下载照片…";

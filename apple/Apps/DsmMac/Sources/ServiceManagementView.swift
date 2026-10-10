@@ -57,7 +57,6 @@ extension VirtualMachineManagerPane {
 }
 
 struct ServiceManagementView: View {
-    @Environment(\.accessibilityReduceMotion) private var reducesMotion
     let module: ServiceManagementModel.Module
     @Bindable var model: ServiceManagementModel
     let containerPane: ContainerManagerPane
@@ -82,53 +81,28 @@ struct ServiceManagementView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .top) {
-                Group {
-                    switch module {
-                    case .downloads:
-                        DownloadStationView(model: model)
-                    case .containers:
-                        ContainerManagerView(
-                            model: model,
-                            pane: containerPane,
-                            onSelectPane: onSelectContainerPane
-                        )
-                    case .virtualMachines:
-                        VirtualMachineManagerView(
-                            model: model,
-                            pane: virtualMachinePane,
-                            onSelectPane: onSelectVirtualMachinePane
-                        )
-                    }
-                }
-
-                if let message = model.message {
-                    FloatingToastView(
-                        message: message,
-                        isError: model.messageIsError,
-                        onDismiss: { model.message = nil }
-                    )
-                    .padding(.top, max(24, geo.size.height * 0.20))
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(999)
-                }
+        Group {
+            switch module {
+            case .downloads:
+                DownloadStationView(model: model)
+            case .containers:
+                ContainerManagerView(model: model, pane: containerPane, onSelectPane: onSelectContainerPane)
+            case .virtualMachines:
+                VirtualMachineManagerView(model: model, pane: virtualMachinePane, onSelectPane: onSelectVirtualMachinePane)
             }
         }
-        .animation(reducesMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: model.message)
+        .macOperationOverlay {
+            if let message = model.message {
+                MacOperationFeedback(message: message, isError: model.messageIsError, autoDismiss: !model.messageIsError,
+                    onDismiss: { model.message = nil })
+            }
+        }
         .macThemedScrollContent(selection: [model.downloadSelection, model.containerSelection, model.imageSelection,
             model.networkSelection, model.virtualMachineSelection, model.virtualMachineNetworkSelection, model.virtualMachineImageSelection])
         .task(id: module) {
             await model.activate(module)
         }
-        .task(id: model.message) {
-            if model.message != nil {
-                try? await Task.sleep(for: .seconds(3.5))
-                withAnimation(reducesMotion ? nil : .default) {
-                    model.message = nil
-                }
-            }
-        }
+
     }
 }
 
@@ -150,56 +124,6 @@ private struct ServiceHeader: View {
             .keyboardShortcut("r", modifiers: .command)
             .buttonStyle(MacToolbarButtonStyle())
         }
-    }
-}
-
-private struct FloatingToastView: View {
-    let message: String
-    let isError: Bool
-    let onDismiss: () -> Void
-
-    private var statusColor: Color {
-        isError ? .red : .green
-    }
-
-    private var statusIcon: String {
-        isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: statusIcon)
-                .font(.headline)
-                .foregroundStyle(statusColor)
-
-            Text(message)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-
-            Button {
-                onDismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 4)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: Capsule())
-        .background(
-            Capsule()
-                .fill(statusColor.opacity(0.12))
-        )
-        .overlay(
-            Capsule()
-                .stroke(statusColor.opacity(0.3), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
-        .accessibilityElement(children: .combine)
     }
 }
 

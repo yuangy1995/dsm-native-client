@@ -148,12 +148,7 @@ struct PhotoSelectionSharingPanel: View {
                                 .textFieldStyle(.roundedBorder).disabled(creationStarted)
                             Text(L10n.string("photos.selectionShare.hint")).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
-                            if creationStarted {
-                                HStack {
-                                    ProgressView().controlSize(.small)
-                                    Text(L10n.string("photos.selectionShare.preparing"))
-                                }
-                            } else if let error { Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+
                         }
                     }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     Divider()
@@ -167,6 +162,12 @@ struct PhotoSelectionSharingPanel: View {
                     }.padding(20)
                 }.frame(width: 580, height: 330)
                     .background(Color(nsColor: .windowBackgroundColor))
+            }
+        }
+        .macOperationOverlay {
+            if album == nil {
+                if creationStarted { PhotoOperationFeedback(model: model) }
+                else if let error { MacOperationFeedback(message: error, isError: true) }
             }
         }
         .interactiveDismissDisabled()
@@ -362,6 +363,9 @@ struct PhotoManagementPanel: View {
             Button(L10n.string("photos.temporary.keep")) { stopTemporary(keepCopy: true) }
             Button(L10n.string("photos.delete.cancel"), role: .cancel) { }
         } message: { Text(L10n.string("photos.temporary.stopHint")) }
+        .macOperationOverlay {
+            if requestAlbumCreationStarted { PhotoOperationFeedback(model: model) }
+        }
         .interactiveDismissDisabled(onCancel != nil)
         .frame(width: usesLargeForm ? 680 : 560, height: sheet.kind == .createFolder ? 270 : sheet.kind == .renameFolder ? 220 : (sheet.kind == .deleteFolders ? 360 : (usesLargeForm ? 660 : 470)))
         .background(Color(nsColor: .windowBackgroundColor))
@@ -893,13 +897,7 @@ struct PhotoManagementPanel: View {
                     Button(L10n.string("photos.manage.createAlbum")) { createRequestAlbum() }
                         .disabled(!canCreateRequestAlbum || newRequestAlbumName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isManaging || model.pendingMutationID != nil)
                 }
-                if requestAlbumCreationStarted, let message = model.managementMessage {
-                    Text(message).font(.callout).foregroundStyle(.secondary)
-                    if model.isManaging { ProgressView().controlSize(.small) }
-                    else if model.pendingMutationID != nil {
-                        Button(L10n.string("photos.selection.retryReview")) { model.reviewPendingMutation() }
-                    }
-                }
+
             }
             if requestAlbums.contains(where: { $0.albumID == requestSettings.albumID && $0.passphrase == requestSettings.albumPassphrase && !$0.shared }) {
                 Text(L10n.string("photos.request.privateAlbumHint")).font(.callout).foregroundStyle(.secondary)
@@ -2051,15 +2049,7 @@ struct PhotoFolderCoverPanel: View {
                     if isLoading { ProgressView() }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            if submitted {
-                HStack {
-                    if model.isManaging { ProgressView().controlSize(.small) }
-                    if let message = model.managementMessage { Text(message).font(.callout) }
-                    if model.pendingMutationID != nil && !model.isManaging {
-                        Button(L10n.string("photos.selection.retryReview")) { model.reviewPendingMutation() }
-                    }
-                }.padding(8)
-            }
+
             Divider()
             HStack {
                 Text(L10n.string("photos.folderCover.hint")).font(.callout).foregroundStyle(.secondary)
@@ -2077,6 +2067,7 @@ struct PhotoFolderCoverPanel: View {
             }.padding(16)
         }.frame(width: 680, height: 620)
         .background(Color(nsColor: .windowBackgroundColor))
+        .macOperationOverlay { if submitted { PhotoOperationFeedback(model: model) } }
         .onAppear { isVisible = true }
         .onDisappear { isVisible = false; loadID = UUID() }
         .task(id: current) { await load(reset: true) }
@@ -3604,9 +3595,6 @@ struct PhotoBackgroundTasksPanel: View {
             } else {
                 List(visibleTasks) { task in taskRow(task).padding(.vertical, 6) }
             }
-            if let error, !tasks.isEmpty { Text(error).font(.callout).foregroundStyle(.secondary).padding(12) }
-            if let error = model.backgroundNavigationError { Text(error).font(.callout).foregroundStyle(.secondary).padding(12) }
-            if let message = model.backgroundTaskMessage { Text(message).font(.callout).padding(12) }
             Divider()
             HStack {
                 Button(L10n.string("photos.tasks.clearCompleted")) {
@@ -3621,6 +3609,13 @@ struct PhotoBackgroundTasksPanel: View {
         }
         .frame(minWidth: 600, idealWidth: 680, minHeight: 460, idealHeight: 580)
         .fillsAvailableContentArea(alignment: .topLeading)
+        .macOperationOverlay {
+            if let error, !tasks.isEmpty { MacOperationFeedback(message: error, isError: true) }
+            if let error = model.backgroundNavigationError { MacOperationFeedback(message: error, isError: true) }
+            if let message = model.backgroundTaskMessage {
+                MacOperationFeedback(message: message, isWorking: model.isManagingBackgroundTask)
+            }
+        }
         .task {
             repeat {
                 await refresh()

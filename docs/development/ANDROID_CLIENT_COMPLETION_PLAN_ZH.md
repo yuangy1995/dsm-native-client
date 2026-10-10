@@ -31,9 +31,9 @@ Apple 移动 M5c2b 将链接/文件/搜索统一为显式提交表单，逐次�
 
 ## NAS 设置与套件中心契约影响（2026-10-03）
 
-本轮只实现 macOS，Android 未改代码、未排入当前工作。后续若获授权接入，需同步 enable_zram、提示音 support_*、风扇模式位、防火墙通知 enable_port_check、200 条电源计划完整保存以及 available_operation 对象的含义。安装/更新不能只接一个按钮：须一起实现依赖确认、目标卷、签名/许可、队列互斥、任务查询、未知结果不重放及最终版本核对；手动上传使用 SAF URI 与受控临时文件，长任务遵循 Android 前台/后台限制。自动更新和来源信任须保留具体风险确认。本轮共享样本与静态结构不是 Android 或 NAS 真实验收，资料见 [NAS 设置账本](NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
+本轮只实现 macOS，Android 未改代码、未排入当前工作。后续若获授权接入，需同步 enable_zram、提示音 support_*、风扇模式位、防火墙通知 enable_port_check、200 条电源计划完整保存以及 available_operation 对象的含义。安装/更新不能只接一个按钮：须一起实现依赖确认、目标卷、签名/许可、队列互斥、任务查询、未知结果不重放及最终版本核对；手动上传使用 SAF URI 与受控临时文件，长任务遵循 Android 前台/后台限制。自动更新和来源信任须保留具体风险确认。本轮共享样本与静态结构不是 Android 或 NAS 真实验收，资料见 [NAS 设置账本](../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#nas-设置网页核对与修正账本)。
 
-同日反馈修复补充：套件预检成功可以没有 data；Setting.get 的 update_channel 为 Boolean，set 仍为 stable/beta，单卷 default_vol 可缺省。macOS 已修正并同步应用实际加载的双语资源；其他平台实现范围保持上述取舍。官方单个 MediaServer 更新已成功，但不能代替任何目标客户端的真实提交验收。详见[反馈修复账本](PACKAGE_CENTER_FIX_20261003_ZH.md)。 后续确认 system/system_hidden 可以缺省普通存储列表；安装准备取消须丢弃迟到结果，已提交安装只关闭窗口后台继续。照片过期操作反馈修复仅涉及 macOS 模型，不改变五端照片读取/写入契约。见[二次反馈账本](PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)。
+同日反馈修复补充：套件预检成功可以没有 data；Setting.get 的 update_channel 为 Boolean，set 仍为 stable/beta，单卷 default_vol 可缺省。macOS 已修正并同步应用实际加载的双语资源；其他平台实现范围保持上述取舍。官方单个 MediaServer 更新已成功，但不能代替任何目标客户端的真实提交验收。详见[反馈修复账本](../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#套件中心反馈修复账本2026-10-03)。 后续确认 system/system_hidden 可以缺省普通存储列表；安装准备取消须丢弃迟到结果，已提交安装只关闭窗口后台继续。照片过期操作反馈修复仅涉及 macOS 模型，不改变五端照片读取/写入契约。见[二次反馈账本](../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#照片与套件更新二次反馈修复2026-10-03)。
 
 ## File Station 后续适配影响
 
@@ -221,4 +221,4 @@ macOS 上传、相册、分享、人物、目录、预览转换、任务恢复�
 
 导航偏好只保存本机模块标识与顺序，独立于 NAS/账号；可显示 0–5 项，隐藏不禁用能力，全部功能入口始终可达。保存前只改草稿，继续走原导航/退出保护。登录全局进度可取消，迟到结果不能保存旧连接。页面仍由原 ViewModel/Repository 提供业务，不建立第二套认证或数据层。
 
-2026-10-03 容器契约补充：Registry.search 必须固定 v1（v2 实测 103）；下载任务 1202 为已观察的 Docker 失败路径，传输读取失败应保留原任务自动恢复。详见 `MACOS_CONTAINER_IMAGE_PULL_FIX_20261003_ZH.md` 和当日发现记录。本端未新增功能或私有写开放结论；Apple 共享层另做构建回归。
+2026-10-03 容器契约补充：Registry.search 必须固定 v1（v2 实测 103）；下载任务 1202 为已观察的 Docker 失败路径，传输读取失败应保留原任务自动恢复。详见 [历史账本](../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#macos-容器映像搜索与下载修复) 和当日发现记录。本端未新增功能或私有写开放结论；Apple 共享层另做构建回归。

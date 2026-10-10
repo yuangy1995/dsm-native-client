@@ -1,5 +1,5 @@
 <!-- doc-role: entrypoint -->
-<!-- last-reviewed: 2026-10-02 -->
+<!-- last-reviewed: 2026-10-10 -->
 
 # LanStash
 
@@ -16,10 +16,10 @@ The current milestone is native-client alignment and device validation across al
 | Client | Technology | Current status |
 | --- | --- | --- |
 | macOS | Swift 6, SwiftUI, Swift Package Manager | Most mature; primary Files, Photos, Messages, Downloads, Containers, Virtual Machines, and NAS management flows are implemented |
-| iPhone | Swift 6, SwiftUI | Mobile flows now cover sign-in, Files, Photos, limited text Chat, common single-task Download Station actions, and read-only management pages; see the [development status](docs/progress/STATUS.md) for exact scope and device-validation gaps |
+| iPhone | Swift 6, SwiftUI | Implemented flows cover file/photo management, Chat and voice, downloads, NAS/packages, containers/VMs, system background time, sharing, and Files; see the [development status](docs/progress/STATUS.md) for exact scope and device-validation gaps |
 | iPad | Swift 6, SwiftUI | Shares the universal iPhone project and includes split layouts, keyboard paths, and large-screen adaptation; real iPad and NAS interaction remains tracked in the [development status](docs/progress/STATUS.md) |
 | Android | Kotlin, Jetpack Compose | Major native modules and automated safety flows are established; current completion, remaining scope, and device-validation gaps are tracked in the [development status](docs/progress/STATUS.md) |
-| Windows | C#, WinUI 3 | Native flows now cover authentication, Files, Photos, limited text Chat, Download Station, local settings, and desktop integration; cloud-build evidence and real-device gaps are tracked in the [development status](docs/progress/STATUS.md) |
+| Windows | C#, WinUI 3 | Native flows now cover authentication, Files, Photos, Chat text, attachments, reminders, schedules and polls, Download Station, local settings, and desktop integration; cloud-build evidence and real-device gaps are tracked in the [development status](docs/progress/STATUS.md) |
 
 “Implemented” means that the source path and automated tests exist. It does not mean that every DSM model, DSM release, or package version has completed device compatibility testing. High-impact writes still require capability discovery, permission checks, user confirmation, duplicate-submission protection, and result verification.
 
@@ -37,7 +37,7 @@ The current milestone is native-client alignment and device validation across al
 
 Some capabilities depend on DSM or package versions. LanStash prefers Synology's public APIs. Internal APIs are explicitly marked in the implementation and compatibility documentation and isolated behind capability discovery.
 
-Document auto save requires LanStash to keep running. Conflicts or uncertain save results pause further uploads and preserve the local copy. Quitting stops synchronization, and restarting does not restore editing sessions. This workflow is implemented only on macOS; validation with real editors and a NAS remains pending. See the [Office preview and editing record](apple/Apps/DsmMac/README.md) for usage, the isolated test package, and validation scope.
+On macOS, document auto save requires LanStash to keep running. Conflicts or uncertain save results pause further uploads and preserve the local copy. Quitting stops synchronization, and restarting does not restore editing sessions. On iPhone/iPad, users can return an edited system copy or edit through Files. Transfers use system-granted background time and preserve recovery state when it expires; continuation after process termination is not promised. Real editors, signed devices, and NAS validation remain pending. See the [Office preview and editing record](apple/Apps/DsmMac/README.md) for usage, the isolated test package, and validation scope.
 
 All five production Photos routes use Synology Photos directly, without falling back to File Station scanning when the package is unavailable. Sharing an original through the operating system does not create a Photos sharing link. Uploads, album editing, shared spaces, and automatic backup retain their separate scope. See the [Photos plan](docs/development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md) for implementation, performance boundaries, and per-platform validation.
 
@@ -74,7 +74,7 @@ tools/                     localization, contract, and repository validation too
 
 ### Apple
 
-Use a current stable Xcode release and XcodeGen.
+Use the pinned Xcode 26.6 (17F113) and XcodeGen 2.46.0 from the [Apple build workflow](.github/workflows/apple-build.yml).
 
 ```bash
 swift test --package-path apple

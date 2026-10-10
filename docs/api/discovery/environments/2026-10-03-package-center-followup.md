@@ -38,7 +38,7 @@
 相关文档或 fixture：
 
 - `docs/api/discovery/endpoints/dsm-package-installation.md`
-- `docs/development/PACKAGE_CENTER_FIX_20261003_ZH.md`
+- [历史账本](../../../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#套件中心反馈修复账本2026-10-03)
 
 ## 发现范围
 

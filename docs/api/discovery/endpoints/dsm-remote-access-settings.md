@@ -128,4 +128,4 @@ iPhone/iPad 复用 M6b2 的服务设置表单、逐请求检查点与受保护�
 
 恢复文件仍为 `NAS/service-operations-v1.json`，只保存上下文/目标状态摘要、类别、阶段、回执和日期。原有三类记录保持可读；移动未发布，不新增旧开发格式迁移。回滚在当前版本停用新增入口并保留记录。NAS 设置保存成功只表示两项状态已读取到目标值，不承诺外部路由或端口映射已经可用。
 
-五端影响：Apple 共享类型只增管理读取的失败提示，Mac 原方法和请求保持；iPhone/iPad 完整管理与恢复新增；Windows/Android 仅记录同配置身份、局部失败及逐步结果语义，未改源码。合成测试及实际模拟器 UI 不提升 `observed / degraded`。具体命令、各轮结果和真机条件见[移动 M6b3 账本](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6b3-远程访问)。
+五端影响：Apple 共享类型只增管理读取的失败提示，Mac 原方法和请求保持；iPhone/iPad 完整管理与恢复新增；Windows/Android 仅记录同配置身份、局部失败及逐步结果语义，未改源码。合成测试及实际模拟器 UI 不提升 `observed / degraded`。具体命令、各轮结果和真机条件见[移动 M6b3 账本](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6b3-远程访问)。

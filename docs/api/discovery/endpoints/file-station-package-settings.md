@@ -77,4 +77,4 @@ upload 为 multipart，type 与 upload_image 文件字段，成功 data.path 作
 
 ## 2026-10-04 Apple 移动设置接入
 
-iPhone/iPad 已接入上述现有设置、账号目录、限速时间表和分享主题接口；五端请求、版本、字段及验证等级不变。两端使用触控表单与逐日/逐时编辑，保留 `notexist`、管理员不可修改账号、来源请求值、完整分页及原快照回读规则。独立未结束目标记录与上传摘要不保存设置内容或图片，重启不自动重放；共享接口仍是唯一请求实现。macOS 仅资源/构建回归，Windows/Android 无代码变化。真实写入未验证，准确移动自动化与设备条件见 [M2g2 实施账本](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m2g2-file-station-设置)。
+iPhone/iPad 已接入上述现有设置、账号目录、限速时间表和分享主题接口；五端请求、版本、字段及验证等级不变。两端使用触控表单与逐日/逐时编辑，保留 `notexist`、管理员不可修改账号、来源请求值、完整分页及原快照回读规则。独立未结束目标记录与上传摘要不保存设置内容或图片，重启不自动重放；共享接口仍是唯一请求实现。macOS 仅资源/构建回归，Windows/Android 无代码变化。真实写入未验证，准确移动自动化与设备条件见 [M2g2 实施账本](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m2g2-file-station-设置)。

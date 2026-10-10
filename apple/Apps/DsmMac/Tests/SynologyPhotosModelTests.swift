@@ -400,10 +400,14 @@ final class SynologyPhotosModelTests: XCTestCase {
         try await waitFor { !model.isPreparingPreview }
         XCTAssertTrue(model.canRotatePreview)
         model.rotatePreview(); model.rotatePreview()
+        XCTAssertEqual(model.previewRotationDegrees, -90)
+        XCTAssertEqual(model.previewPhoto?.orientation, photo.orientation)
+        XCTAssertFalse(model.canRotatePreview)
         await waitForManagement(model)
         try await waitFor { !model.isPreparingPreview }
         XCTAssertEqual(model.previewPhoto?.orientation, 8)
         XCTAssertEqual(model.previewData, Data([2]))
+        XCTAssertEqual(model.previewRotationDegrees, 0)
         XCTAssertEqual(model.items.map(\.id), before)
         XCTAssertEqual(model.items.first?.orientation, 8)
         XCTAssertEqual(model.selectedPhotoIDs, selected)
@@ -419,13 +423,54 @@ final class SynologyPhotosModelTests: XCTestCase {
         await model.refresh()
         model.showPreview(try XCTUnwrap(model.items.first)); try await waitFor { !model.isPreparingPreview }
         model.rotatePreview(); await waitForManagement(model)
+        XCTAssertEqual(model.previewRotationDegrees, -90)
         XCTAssertNotNil(model.pendingMutationID); XCTAssertFalse(model.canRotatePreview)
         model.rotatePreview()
         model.closePreview()
+        XCTAssertEqual(model.previewRotationDegrees, 0)
         await service.resolveRotation()
         model.reviewPendingMutation(); await waitForManagement(model)
         XCTAssertNil(model.previewPhoto); XCTAssertNil(model.previewData)
         let writes = await service.rotationWrites; XCTAssertEqual(writes, 1)
+    }
+
+    func test旋转明确失败恢复显示且提交前错误不留下旋转角度() async throws {
+        for failsBeforeSubmission in [false, true] {
+            let service = SlideshowPhotoServiceStub()
+            await service.enableRotation()
+            await service.rejectRotation(beforeSubmission: failsBeforeSubmission)
+            let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+            await model.refresh()
+            let photo = try XCTUnwrap(model.items.first)
+            model.showPreview(photo); try await waitFor { !model.isPreparingPreview }
+            let original = model.previewData
+            model.rotatePreview()
+            XCTAssertEqual(model.previewRotationDegrees, -90)
+            await waitForManagement(model)
+            XCTAssertEqual(model.previewRotationDegrees, 0)
+            XCTAssertEqual(model.previewData, original)
+            XCTAssertEqual(model.previewPhoto?.orientation, photo.orientation)
+            XCTAssertNil(model.pendingMutationID)
+            XCTAssertTrue(model.canRotatePreview)
+        }
+    }
+
+    func test旋转处理中切换照片不沿用角度且完成不会覆盖新照片() async throws {
+        let service = SlideshowPhotoServiceStub()
+        await service.enableRotation(pending: true)
+        let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+        await model.refresh()
+        model.showPreview(try XCTUnwrap(model.items.first)); try await waitFor { !model.isPreparingPreview }
+        model.rotatePreview(); await waitForManagement(model)
+        let other = try XCTUnwrap(model.items.dropFirst().first)
+        model.showPreview(other); try await waitFor { !model.isPreparingPreview }
+        XCTAssertEqual(model.previewRotationDegrees, 0)
+        await service.resolveRotation()
+        model.reviewPendingMutation(); await waitForManagement(model)
+        XCTAssertEqual(model.previewPhoto?.id, other.id)
+        XCTAssertEqual(model.previewRotationDegrees, 0)
+        let writes = await service.rotationWrites
+        XCTAssertEqual(writes, 1)
     }
 
     func test实况旋转后隐藏动态播放恢复原方向后仍可播放() async throws {
@@ -5630,6 +5675,8 @@ actor SlideshowPhotoServiceStub: SynologyPhotosServing {
     private let displayPreferences: SynologyPhotoDisplaySettings?
     private var rotationEnabled = false
     private var rotationPending = false
+    private var rotationRejected = false
+    private var rotationPreparationFails = false
     private var rotationPhoto: SynologyPhoto?
     private var rotatedPhotos: [SynologyPhotoID: SynologyPhoto] = [:]
     var rotationWrites = 0
@@ -5637,12 +5684,16 @@ actor SlideshowPhotoServiceStub: SynologyPhotosServing {
     private var rotatedImage = Data([2])
     func enableRotation(pending: Bool = false) { rotationEnabled = true; rotationPending = pending }
     func resolveRotation() { rotationPending = false }
+    func rejectRotation(beforeSubmission: Bool) { rotationRejected = true; rotationPreparationFails = beforeSubmission }
     func setRotatedImage(_ data: Data) { rotatedImage = data }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> { rotationEnabled ? [.rotation] : [] }
-    func prepareMutation(_ mutation: SynologyPhotosMutation) async throws { }
+    func prepareMutation(_ mutation: SynologyPhotosMutation) async throws {
+        if rotationPreparationFails { throw URLError(.notConnectedToInternet) }
+    }
     func performMutation(_ mutation: SynologyPhotosMutation, operationID: UUID, progress: @escaping FileTransferProgress) async throws -> SynologyPhotosMutationResult {
         guard case .rotatePhoto(let photo) = mutation else { throw URLError(.unsupportedURL) }
         rotationWrites += 1; rotationPhoto = photo
+        if rotationRejected { return .init(state: .rejected) }
         return .init(state: .pendingReview)
     }
     func reviewMutation(operationID: UUID) async throws -> SynologyPhotosMutationResult {

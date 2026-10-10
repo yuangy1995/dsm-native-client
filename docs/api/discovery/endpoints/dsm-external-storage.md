@@ -100,4 +100,4 @@ Fixture 或界面。未来启用前必须取得版本化设备标识、占用检
 
 ## 2026-10-05 移动 M6a1 接入
 
-iPhone/iPad M6a1 已接既有读取适配器、USB/eSATA 筛选、容量/状态、截断和局部不可用提示，继续没有 eject 入口。未新增请求或放宽字段白名单。当前环境命令与两端页面验证集中在[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a1-五项读取与筛选)及其验证历史；真实 NAS 证据不提升。
+iPhone/iPad M6a1 已接既有读取适配器、USB/eSATA 筛选、容量/状态、截断和局部不可用提示，继续没有 eject 入口。未新增请求或放宽字段白名单。当前环境命令与两端页面验证集中在[移动主计划](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a1-五项读取与筛选)及其验证历史；真实 NAS 证据不提升。

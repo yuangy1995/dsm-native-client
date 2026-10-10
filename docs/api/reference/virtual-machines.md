@@ -37,7 +37,7 @@ Mac 对全部 VMM 删除反馈以仓库最终结果为准，不再用页面刷�
 虚拟机和映像的中英文提示只引导重新连接和查看，不建议重发。该修正不改变请求参数、公开契约、
 账号权限或存储；Mac 记录限当前仓库实例，不声称已有跨重启删除恢复。后续 M7d1 已为移动端
 接入写入口与独立持久恢复，详见下节；Windows/Android 无源码变化。合成复现和本机回归见
-[M7d0 账本](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-07-m7d0-虚拟机删除结果归属)，
+[M7d0 账本](../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#2026-10-07-m7d0-虚拟机删除结果归属)，
 未增加真实 NAS 或版本行为证据；其他内部参数差距仍按上文独立处理。
 
 ## iPhone / iPad 电源与删除（M7d1）
@@ -59,7 +59,7 @@ Mac 对全部 VMM 删除反馈以仓库最终结果为准，不再用页面刷�
 认领完成。证书异常立即停止后续请求，不降级为普通未知后继续读取。
 
 本机验证、独立复核及具体真机待办见
-[M7d1 账本](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-07-m7d1-虚拟机控制与移动恢复)。
+[M7d1 账本](../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#2026-10-07-m7d1-虚拟机控制与移动恢复)。
 基础编辑、创建、网络与映像管理已分别进入 M7d2、M7d3、M7d4a 与 M7d4b，见下节；控制台
 仍为后续源码工作，不把这些缺口写为已完成待真机。
 
@@ -94,7 +94,7 @@ Mac 原创建入口和移动共用内部 v1 请求，磁盘最低 10 GiB，已�
 以及所引用的当前实例网络/映像写入互斥。Mac 没有新增跨重启存储，其保护仍限
 当前仓库实例。外部竞争、真实预设/ISO/启动副作用及系统保护仍需受控环境验收，
 不将源码和合成结果提升为版本行为验证。目标平台验证进度见移动主计划 M7d3；
-网络与映像管理见下节 M7d4a/M7d4b；控制台仍是后续源码切片。
+网络与映像管理见下节 M7d4a/M7d4b；控制台已由 M7d5 接入，见下节控制台边界。
 
 ## iPhone / iPad 网络管理（M7d4a）
 
@@ -117,7 +117,7 @@ is_freeze 均参与检查。get 不含网络 ID，以 list 身份/名称/数量�
 持久化；Windows/Android 无本片源码变化，不提升任何真实版本行为证据。
 
 测试、两端实际界面结果和 `PENDING_USER_VALIDATION` 见
-[M7d4a 账本](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-07-m7d4a-虚拟机网络改名与删除)。
+[M7d4a 账本](../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#2026-10-07-m7d4a-虚拟机网络改名与删除)。
 
 ## iPhone / iPad 映像删除（M7d4b）
 
@@ -137,18 +137,20 @@ Mac 共用同一请求和普通刷新恢复，其保护仍限仓库实例。
 
 映像导入/创建不在现有 macOS 产品基线，两种移动设备统一通过官方 VMM 完成。
 源码、实际两端界面、构建结果和设备待办见
-[M7d4b 账本](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-07-m7d4b-虚拟机映像删除)。
+[M7d4b 账本](../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#2026-10-07-m7d4b-虚拟机映像删除)。
 合成测试不提升真实 NAS 删除兼容等级。
 
 ## 控制台
 
 `openVirtualMachineConsole` 返回受控会话对象：NAS 同源 `webman/3rdparty/Virtualization/noVNC/vnc.html`，WebSocket 路径为 `synovirtualization/ws/<guest id>`。URL 不携带 SID，认证在受控 Cookie/连接上下文；只允许当前主机的资源与握手，不把任意网页变成携带 NAS 凭据的浏览器。
 
+Apple M7d5 使用共享 `DsmVirtualMachineConsoleFeature` 的非持久 WebKit 宿主，静态资源与 WSS 由 `DsmVirtualMachineConsoleTransport` 沿原证书/会话边界获取，网页只接受受限资源和二进制消息，不向网页安装 NAS Cookie。Mac 按 VM 绑定窗口，移动使用触控宿主；退出、切账号、关闭模块或移动进入后台清理，会话断开后手动重连。源码与合成证据见[M7d5 历史](../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#2026-10-07-m7d5-虚拟机触控控制台)。
+
 控制台打开、成功握手、虚拟机实际运行是不同状态。目标平台采用自己的 WebView/窗口及证书处理，不复制 AppKit。真实键盘、剪贴板、代理与网络重连单独验收。
 
 ## 其他端实施要求
 
-- 功能范围以平台专项计划为准。2026-10-04 用户已批准的移动 M7 包含完整管理与触控控制台；当前已接入电源/删除、基础设置、创建、网络管理与映像删除；控制台尚未实施的投影是进度状态，不再是固定“精选”范围，也不代表已有入口已验证。
+- 功能范围以平台专项计划为准。2026-10-04 用户已批准的移动 M7 包含完整管理与触控控制台；当前已接入电源/删除、基础设置、创建、网络管理、映像删除与触控控制台；源码接入不代表真实 NAS、正式签名或设备验收通过。
 - 公开 API 的能力、参数和结果不能用内部字段替代；内部只读结果不能证明内部写兼容。
 - 未确认的关机、强制断电、删除、网络变更不能自动重试或假定可回滚。专用测试资源的授权不等于对真实 VM 的操作授权。
 - 任务已接受、任务完成、资源已按要求创建、创建后开机分别核对，不把一个状态覆盖全部阶段。

@@ -120,4 +120,4 @@ LanStash 的 DSM 会话使用 HTTP/HTTPS，不把它误判为 SSH 或 Telnet 会
 
 移动的 `NAS/service-operations-v1.json` 仅保存账号上下文/配置摘要、服务类别、逐组阶段/回执和日期，使用完整系统文件保护并排除备份，不存主机、端口正文、账号或密码。准备阶段重启取消；已提交部分等待只读恢复；未完成记录不可直接移除重发。保护仅限制相关服务，读取失败不影响其他页面。实际系统锁屏保护尚待真机验证，模拟器不作通过结论。
 
-本片不新增 DSM 参数，不改变证据等级；五端中 Mac 复用请求并执行回归，iPhone/iPad 增加完整管理与恢复，Windows/Android 只登记语义影响。逐轮测试及设备待办见[移动 M6b2 账本](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6b2-文件服务终端与代理)。
+本片不新增 DSM 参数，不改变证据等级；五端中 Mac 复用请求并执行回归，iPhone/iPad 增加完整管理与恢复，Windows/Android 只登记语义影响。逐轮测试及设备待办见[移动 M6b2 账本](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6b2-文件服务终端与代理)。

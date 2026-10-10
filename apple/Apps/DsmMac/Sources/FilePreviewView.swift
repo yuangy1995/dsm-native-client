@@ -785,18 +785,6 @@ struct FileDetailView: View {
                 .padding(.vertical, 8)
                 .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
 
-                if let message = model.textEditingMessage {
-                    Label(
-                        message,
-                        systemImage: model.textEditingMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(model.textEditingMessageIsError ? .red : .secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
                 if model.isEditingText {
                     TextEditor(text: $model.editableText)
                         .font(.system(.callout, design: .monospaced))
@@ -812,6 +800,11 @@ struct FileDetailView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(16)
                     }
+                }
+            }
+            .macOperationOverlay {
+                if let message = model.textEditingMessage {
+                    MacOperationFeedback(message: message, isWorking: model.isSavingText, isError: model.textEditingMessageIsError)
                 }
             }
         case .pdf(let url):
@@ -1157,6 +1150,7 @@ struct FittedImagePreview: View {
     let orientation: Image.Orientation
     var showsControls = true
     var isZoomEnabled = true
+    var savedRotationDegrees = 0
     @State private var zoom: CGFloat = 1
     @State private var rotation = 0
     @State private var panOffset: CGSize = .zero
@@ -1188,7 +1182,8 @@ struct FittedImagePreview: View {
             let availableHeight = max(1, geometry.size.height - 32)
             let baseWidth = isBaseQuarterTurn ? originalHeight : originalWidth
             let baseHeight = isBaseQuarterTurn ? originalWidth : originalHeight
-            let isQuarterTurn = abs(rotation) % 180 == 90
+            let displayedRotation = rotation + savedRotationDegrees
+            let isQuarterTurn = abs(displayedRotation) % 180 == 90
             let rotatedWidth = isQuarterTurn ? baseHeight : baseWidth
             let rotatedHeight = isQuarterTurn ? baseWidth : baseHeight
             let fittedScale = min(1, availableWidth / rotatedWidth, availableHeight / rotatedHeight)
@@ -1204,7 +1199,7 @@ struct FittedImagePreview: View {
                     .resizable()
                     .interpolation(.high)
                     .frame(width: imageWidth, height: imageHeight)
-                    .rotationEffect(.degrees(Double(rotation)))
+                    .rotationEffect(.degrees(Double(displayedRotation)))
                     .frame(width: visualWidth, height: visualHeight)
                     .clipped()
                     .offset(
@@ -1224,6 +1219,7 @@ struct FittedImagePreview: View {
                     )
                 })
             .onChange(of: geometry.size) { _, _ in panOffset = .zero }
+            .onChange(of: savedRotationDegrees) { _, _ in panOffset = .zero }
             .background {
                 ImageZoomGestureReader(onScroll: { delta, isPrecise in
                     guard isZoomEnabled else { return }

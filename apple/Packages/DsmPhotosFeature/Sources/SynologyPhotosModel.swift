@@ -226,6 +226,8 @@ public final class SynologyPhotosModel {
     public private(set) var isModuleEnabled = true
     public var previewPhoto: SynologyPhoto?
     public private(set) var previewData: Data?
+    /// 当前预览的即时显示角度；保存确认与原件信息仍由操作结果决定。
+    public private(set) var previewRotationDegrees = 0
     public private(set) var previewSource: MediaStreamSource?
     public private(set) var previewError: String?
     public private(set) var isPreparingPreview = false
@@ -1453,6 +1455,7 @@ public final class SynologyPhotosModel {
         isLoadingSimilarPreview = photo.similarGroup != nil && similarDetail == nil
         isPlayingMotion = false
         previewData = nil
+        previewRotationDegrees = 0
         previewSource = nil
         previewError = nil
         isPreparingPreview = true
@@ -1472,6 +1475,7 @@ public final class SynologyPhotosModel {
                     let data = try await service.previewImage(for: detail)
                     guard current == self.previewGeneration, !Task.isCancelled else { return }
                     self.previewData = data
+                    self.previewRotationDegrees = 0
                 }
                 self.isPreparingPreview = false
                 if photo.similarGroup != nil, similarDetail == nil { await self.loadSimilarPreview(for: detail, generation: current) }
@@ -1521,6 +1525,7 @@ public final class SynologyPhotosModel {
         previewSimilarDetail = nil; similarPreviewError = nil; isLoadingSimilarPreview = false
         similarSelectedIDs = []
         previewData = nil
+        previewRotationDegrees = 0
         previewSource = nil
         isPreparingPreview = false
         isPlayingMotion = false
@@ -2019,7 +2024,7 @@ public final class SynologyPhotosModel {
 
     public var canRotatePreview: Bool {
         guard let photo = previewPhoto else { return false }
-        return canStartManagementMutation && photo.supportsRotation && previewData != nil && !isPreparingPreview &&
+        return canStartManagementMutation && photo.supportsRotation && previewData != nil && previewError == nil && !isPreparingPreview &&
             canEditPhoto(photo) && managementFeatures.contains(.rotation) &&
             !isManaging && pendingMutationID == nil && !isDeleting && !isCheckingDeletion
     }
@@ -2028,6 +2033,7 @@ public final class SynologyPhotosModel {
         guard canRotatePreview, let photo = previewPhoto else { return }
         finishMotion()
         submitMutation(.rotatePhoto(photo))
+        if isManaging { previewRotationDegrees = -90 }
     }
 
     public func submitMutation(_ mutation: SynologyPhotosMutation, onCompletion: ((SynologyPhotosMutationResult) -> Void)? = nil) {
@@ -2047,6 +2053,7 @@ public final class SynologyPhotosModel {
         let isContinuation = retryableManagementMutation == mutation
         retryableManagementMutation = nil
         isManaging = true; managementMessage = L10n.string("photos.manage.working"); managementLink = nil
+        if case .rotatePhoto = mutation { managementMessage = L10n.string("photos.rotation.saving") }
         if case .regeneratePreviews = mutation { managementMessage = L10n.string("photos.preview.rebuilding") }
         managementTask = Task { [weak self] in
             guard let self else { return }
@@ -2067,11 +2074,17 @@ public final class SynologyPhotosModel {
                 let result = try await self.executeMutation(mutation, id: id)
                 if isContinuation, result?.state == .rejected { self.retryableManagementMutation = mutation }
             } catch is CancellationError {
+                if self.pendingMutationID == nil, case .rotatePhoto(let photo) = mutation, self.previewPhoto?.id == photo.id {
+                    self.previewRotationDegrees = 0
+                }
                 if isContinuation, self.pendingMutationID == nil { self.retryableManagementMutation = mutation }
                 self.clearUnsubmittedTemporaryCreation(id: id)
                 self.managementMessage = self.pendingMutationID == nil ? nil : L10n.string("photos.manage.pending")
             } catch {
                 // 新操作只有提交前错误才会抛出；提交后的未知状态由结果返回。
+                if case .rotatePhoto(let photo) = mutation, self.previewPhoto?.id == photo.id {
+                    self.previewRotationDegrees = 0
+                }
                 self.pendingMutationID = nil; self.pendingMutation = nil
                 self.clearUnsubmittedTemporaryCreation(id: id)
                 if isContinuation { self.retryableManagementMutation = mutation }
@@ -2593,6 +2606,7 @@ public final class SynologyPhotosModel {
     }
 
     private var pendingManagementMessage: String {
+        if case .rotatePhoto = pendingMutation { return L10n.string("photos.rotation.pending") }
         if pendingMutation?.feature == .similarGroups, similarRecoveryStore != nil { return L10n.string("mobile.photos.similar.pending") }
         if albumRecoveryStore != nil, let feature = pendingMutation?.feature,
            [.peopleNames, .peopleMerge, .peopleFaces, .peopleCover, .peopleVisibility, .manualFaces, .conceptCover, .conceptItems, .conceptVisibility].contains(feature) { return L10n.string("photos.recognition.pending") }
@@ -3256,6 +3270,10 @@ public final class SynologyPhotosModel {
             temporaryCreationID = nil; cancelledTemporaryCreation = false
         }
         managementMessage = L10n.string(result.state == .confirmed ? "photos.manage.completed" : (result.state == .rejected ? "photos.manage.failed" : "photos.manage.partial"))
+        if case .rotatePhoto(let photo) = mutation {
+            managementMessage = L10n.string(result.state == .confirmed ? "photos.rotation.saved" : "photos.rotation.failed")
+            if result.state != .confirmed, previewPhoto?.id == photo.id { previewRotationDegrees = 0 }
+        }
         managementLink = result.sharingURL
         if case .respondToCodecPrompt(let original, let generate) = mutation {
             if result.state == .confirmed {
@@ -3305,7 +3323,14 @@ public final class SynologyPhotosModel {
         let reloadsPreview: Bool = switch mutation { case .regeneratePreviews, .rotatePhoto: true; default: false }
         if reloadsPreview, let current = previewPhoto,
            let updated = result.photos.first(where: { $0.id == current.id }) {
+            let previousData = previewData
+            let previousRotation = previewRotationDegrees
             showPreview(updated)
+            if case .rotatePhoto = mutation {
+                // 新图下载完成前继续显示已旋转的旧图，避免整张照片闪成加载状态。
+                previewData = previousData
+                previewRotationDegrees = previousRotation
+            }
         }
         if result.state == .confirmed, !isUploading,
            case .createFolder(let parentID, _, let space) = mutation,

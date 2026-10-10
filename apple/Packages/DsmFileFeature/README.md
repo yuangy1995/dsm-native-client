@@ -9,3 +9,5 @@ M2 将 macOS 已有的 `FileUploadPlan` 和 `FileUploadBatch` 迁入此内部模
 `FileArchiveBrowserModel` 同时共用压缩包分页、编码处理、条目选择和解压清单。Mac 保留原交互，仅引用迁移后的模型；移动端提供原生表单和目录选择。平台归档队列单独记录输出与完成回执，不存密码、不自动重发未知操作。共享模型不直接承担平台持久化或导航。
 
 M6a2 将 Mac 原 `StorageAnalysisEngine` 及内存结果类型迁入本模块，两端使用同一共享遍历、搜索和内容摘要比较流程。Mac 只调整引用，旧容量小计和页面调用保留；分类使用稳定枚举，未知文件大小和部分重复比较单独标记，移动端不把不完整容量展示为零。分页声明未完成但没有条目时不生成空报告。分析不持久保存文件信息，不增加 NAS 文件写入、第三方依赖或旧数据迁移。
+
+当前模块还包含 `FileVFSForm`、`FileVFSCloudAuthorizationSession` 和 `OfficeDocumentSupport`，共用远程位置表单、云授权校验及 Office 格式/内容判断。平台仍负责选择器、编辑器生命周期、凭据、存储与 UI；系统 Files 的枚举、缓存和写回位于独立 `DsmFileProviderRuntime`。

@@ -43,7 +43,7 @@
 | Windows | 仅记录分页、未知总数、正文隐私及会话隔离语义，本轮不改实现。 |
 | Android | 同上，本轮不改实现或触发本机重负载验证。 |
 
-共享合成测试为 `NasStorageFlowTests`，移动为 `MobileNasLogsTests` 和 `MobileNasStorageUITests`；当前命令和两端结果见[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a2-存储分析硬盘检测与完整日志)。
+共享合成测试为 `NasStorageFlowTests`，移动为 `MobileNasLogsTests` 和 `MobileNasStorageUITests`；当前命令和两端结果见[移动主计划](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a2-存储分析硬盘检测与完整日志)。
 
 ## 环境证据与待验
 

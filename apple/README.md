@@ -1,5 +1,5 @@
 <!-- doc-role: platform-readme -->
-<!-- last-reviewed: 2026-10-04 -->
+<!-- last-reviewed: 2026-10-10 -->
 
 # Apple 原生客户端
 
@@ -12,7 +12,8 @@ Apps/DsmMobile/                iPhone/iPad 通用 SwiftUI 应用
 Packages/DsmCore/              领域模型、错误和 Repository 协议
 Packages/DsmNetwork/           DSM HTTP、会话和参数编码
 Packages/DsmPhotosFeature/     共用 Photos 状态机与上传恢复，文件授权由平台适配
-Packages/DsmFileFeature/       文件编排预留目录，当前实现仍在 Core/Network/App
+Packages/DsmFileFeature/       共用上传计划、归档、远程位置、Office 与存储分析
+Packages/DsmFileProviderRuntime/ 共用枚举、缓存、写回、冲突与恢复
 Packages/DsmTransferFeature/   传输编排预留目录，移动队列在 App 中按阶段完善
 ```
 
@@ -24,6 +25,8 @@ Packages/DsmTransferFeature/   传输编排预留目录，移动队列在 App �
 - iPhone/iPad 不复制菜单栏、悬停、右键或常驻进程；管理功能采用分步表单。范围与证据分别见[平台矩阵](../docs/progress/PLATFORM_MATRIX.md)及移动主计划。
 
 ## 本地验证
+
+使用 [Apple 工作流](../.github/workflows/apple-build.yml)锁定的 Xcode 26.6（17F113）与 XcodeGen 2.46.0。下列通用构建不等于两端实际 UI 测试；设备选择与结果分别记录。
 
 ```bash
 swift test --package-path apple

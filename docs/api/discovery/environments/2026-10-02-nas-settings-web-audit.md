@@ -36,7 +36,7 @@
 
 相关文档或 fixture：
 
-- [21 页核对账本](../../../development/NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)
+- [21 页核对账本](../../../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#nas-设置网页核对与修正账本)
 
 ## 发现范围
 

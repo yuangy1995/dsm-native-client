@@ -331,7 +331,7 @@ arm64 Release 构建、`codesign --verify --deep --strict`、`verify_macos_local
 编辑及原生套件中心主流程。新增安装/更新/手动上传、依赖与位置确认、进度/下载取消、
 设置和来源管理；签名、许可、权限、危险确认、互斥与结果检查保持有效。本轮未提交
 或推送。具体范围、静态/读取证据与五端影响见
-[NAS 设置账本](../../development/NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
+[NAS 设置账本](MACOS_FEEDBACK_HISTORY.md#nas-设置网页核对与修正账本)。
 
 实际验证：
 
@@ -364,7 +364,7 @@ UPS/外设/扩展网卡、正式签名和 Finder 行为均未在本轮验证；�
 
 ## 2026-10-03 套件中心反馈修复测试包
 
-同一工作分支保留前轮未提交改动，未暂存、提交、推送或发布。新增修复：成功预检无 data 的解码、Setting.get 布尔频道与单卷缺省位置、设置弹窗错误态布局及保存门、App 主语言资源覆盖共享修正文案。详细源码、决策、失败记录、命令和待验收范围见[反馈修复账本](../../development/PACKAGE_CENTER_FIX_20261003_ZH.md)。
+同一工作分支保留前轮未提交改动，未暂存、提交、推送或发布。新增修复：成功预检无 data 的解码、Setting.get 布尔频道与单卷缺省位置、设置弹窗错误态布局及保存门、App 主语言资源覆盖共享修正文案。详细源码、决策、失败记录、命令和待验收范围见[反馈修复账本](MACOS_FEEDBACK_HISTORY.md#套件中心反馈修复账本2026-10-03)。
 
 用户明确授权的一次官方网页更新已完成：DSM 7.2.1-69057 Update 12，MediaServer 2.2.1-3406 → 2.2.2-3412，最终“已启动”；未保存套件或系统设置。此单目标官方行为不能替代修复后岚仓客户端真实写入验收，不提升匿名关系未确认的 lab-a 历史记录。
 
@@ -392,7 +392,7 @@ SHA-256：`74c77b62c664cb9a3a7e3702ad539ff4fc86442ce92bdc7718adf925d110c00a`。
 
 ## 2026-10-03 照片反馈与套件准备取消修复测试包
 
-保留既有未提交功能与全部旧测试包；未暂存、提交、推送或发布。范围为照片局部错误归属/刷新后旧提示残留、系统套件缺省普通位置的合法形状，以及可立即取消的只读安装准备。准备取消丢弃迟到成功/失败，已确认提交提供后台继续，未知安装不重放。具体源文件、静态/只读证据、测试命令和边界见[二次反馈账本](../../development/PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)。
+保留既有未提交功能与全部旧测试包；未暂存、提交、推送或发布。范围为照片局部错误归属/刷新后旧提示残留、系统套件缺省普通位置的合法形状，以及可立即取消的只读安装准备。准备取消丢弃迟到成功/失败，已确认提交提供后台继续，未知安装不重放。具体源文件、静态/只读证据、测试命令和边界见[二次反馈账本](MACOS_FEEDBACK_HISTORY.md#照片与套件更新二次反馈修复2026-10-03)。
 
 实际验证：
 
@@ -420,7 +420,7 @@ SHA-256：`2f585372c284a50d721bc72c439b6848f7dcc7427cc9170d7699649833894db3`。
 
 用户明确授权在现有 `main` 发布新版本，不创建测试、功能或验证分支。版本更新为 1.0.14（24），主 App 与 File Provider 同步；沿用 Developer ID、公证、App Group、共享钥匙串、Sparkle 更新源和独立双架构发布流程。保留既有 1.0.13 发布附件，不覆盖同版本产物；回滚通过更高版本修复或恢复已签名的上一份更新源。
 
-本次包含主分支上尚未发布的 NAS 设置/套件、QuickConnect/照片/文件修复，以及 Chat 补齐、容器下载跟踪和挂载读写修复。具体实现和验收边界见 [Chat 账本](../../development/MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md)、[容器账本](../../development/MACOS_CONTAINER_IMAGE_PULL_FIX_20261003_ZH.md)、[挂载账本](../../development/MACOS_MOUNT_WRITABILITY_FIX_20261003_ZH.md)；双语用户说明见[版本说明](../../releases/MACOS_RELEASE_NOTES.md)。
+本次包含主分支上尚未发布的 NAS 设置/套件、QuickConnect/照片/文件修复，以及 Chat 补齐、容器下载跟踪和挂载读写修复。具体实现和验收边界见 [Chat 账本](MACOS_FEEDBACK_HISTORY.md#macos-chat-五组功能补齐账本)、[容器账本](MACOS_FEEDBACK_HISTORY.md#macos-容器映像搜索与下载修复)、[挂载账本](MACOS_FEEDBACK_HISTORY.md#本地磁盘挂载开启读写后仍只读修复账本)；双语用户说明见[版本说明](../../releases/MACOS_RELEASE_NOTES.md)。
 
 发布前本地证据：最终源码 `swift test --package-path apple --jobs 4` 为 2,417 XCTest（2,248 通过、169 按既有门禁跳过、0 失败），另 12 Swift Testing 通过；macOS Release arm64 主 App/扩展与 iPhone/iPad 通用模拟器 Debug 构建通过。Chat 与容器合成界面检查已分别通过，完整命令保留在对应账本。追加 `python3 -m unittest discover -s tools/release -p 'test_*.py'` 为 32 项通过；本地化、169 个请求样本、29 组响应样本及 48 项私有接口引用校验通过；文档与差异检查通过。
 
@@ -936,7 +936,7 @@ Mac 最终回归命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcode
 
 ## 2026-10-04 移动 M3b4 照片收集请求
 
-仅使用合成服务/响应、iPhone/iPad 模拟器和本机工具，没有对真实 NAS 进行写测试。实现范围和恢复格式取舍见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m3b4-照片收集请求)。本轮结果保存在 `/tmp/lanstash-release-1.0.15.1x6wUX/m3b4-*`，不提交一次性产物。
+仅使用合成服务/响应、iPhone/iPad 模拟器和本机工具，没有对真实 NAS 进行写测试。实现范围和恢复格式取舍见[移动主计划](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m3b4-照片收集请求)。本轮结果保存在 `/tmp/lanstash-release-1.0.15.1x6wUX/m3b4-*`，不提交一次性产物。
 
 - `swift test --package-path apple --filter SynologyPhotosRepositoryTests`：首轮编译发现摘要比较中的短路表达式未标记可抛出，改为显式空间判断；第二轮 **527/527 通过（2.097 秒）**。加入后页及重复分页用例后，`swift test --package-path apple --jobs 4 --filter SynologyPhotosRepositoryTests` **528/528 通过（3.433 秒）**，日志 `m3b4-repository-final.log`。
 - `swift test --package-path apple --jobs 4`：**2447 项 XCTest、172 项既有条件跳过、0 失败（31.449 秒）**，另 **12 项 Swift Testing 通过（0.036 秒）**，日志 `m3b4-shared1.log`。此后只新增一项网络分页测试，不改变共享业务实现；新增项已纳入上述 528 项聚焦回归。
@@ -956,7 +956,7 @@ Mac 命令 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme
 
 ## 2026-10-04 移动 M3b5 条件相册
 
-范围、Mac 证据、存储版本 5 边界和真实设备步骤见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m3b5-条件相册)。本轮接入条件相册新建/编辑、来源草稿、媒体/日期/目录/评分/规则、建议与预览计数；共享请求和只读恢复共用原有集合归一化，未知字段与顺序保留，创建必须有返回编号。独立集成及只读对抗复核检查了所有者/目录权限、原快照、损坏摘要、跨账号、迟到响应、写前保存失败和丢回执不按名称猜测。全部自动化使用合成资料，没有真实 NAS 写操作。
+范围、Mac 证据、存储版本 5 边界和真实设备步骤见[移动主计划](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m3b5-条件相册)。本轮接入条件相册新建/编辑、来源草稿、媒体/日期/目录/评分/规则、建议与预览计数；共享请求和只读恢复共用原有集合归一化，未知字段与顺序保留，创建必须有返回编号。独立集成及只读对抗复核检查了所有者/目录权限、原快照、损坏摘要、跨账号、迟到响应、写前保存失败和丢回执不按名称猜测。全部自动化使用合成资料，没有真实 NAS 写操作。
 
 实际命令（仓库根目录，Xcode 26.6、iOS Simulator 26.5）：
 
@@ -983,7 +983,7 @@ git diff --check
 
 ## 2026-10-04 移动 M3b6 冻结相册恢复
 
-范围对应[移动主计划 M3b6](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m3b6-冻结相册恢复)。复用条件表单与既有冻结快照，恢复普通相册无需条件功能/个人图库；重建明确确认旧册移除、原件保留、分享不转移。版本 6 独立记录仅含摘要/编号和删除阶段，兼容读取 1–5；删除前保存失败零删除，重启只读、未尝试删除则保留两册。Mac 原非恢复调用保持，NAS 请求契约不变，Windows/Android 无代码变化。所有验证使用合成内容，无真实 NAS 写入。
+范围对应[移动主计划 M3b6](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m3b6-冻结相册恢复)。复用条件表单与既有冻结快照，恢复普通相册无需条件功能/个人图库；重建明确确认旧册移除、原件保留、分享不转移。版本 6 独立记录仅含摘要/编号和删除阶段，兼容读取 1–5；删除前保存失败零删除，重启只读、未尝试删除则保留两册。Mac 原非恢复调用保持，NAS 请求契约不变，Windows/Android 无代码变化。所有验证使用合成内容，无真实 NAS 写入。
 
 构建前独立集成及只读对抗复核覆盖原快照、账号权限、来源、未知回执、真实返回编号、阶段保存失败、重复点击、恢复不重放删除、原件保留与摘要隐私。新增网络用例包含普通恢复/关闭个人图库、五种重建恢复阶段、删除前保存失败及同实例后续只读、正常/明确拒绝删除、错误身份与另一快照；移动增加七项冻结行为测试及四项实际 UI。
 
@@ -1202,7 +1202,7 @@ Mac 两轮 `xcodebuild build -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme
 
 用户在本切片明确补充：移动端未发布，后续按开发阶段处理，不保留旧开发数据兼容模式，无用旧代码直接删除。依此将相册管理检查点统一为唯一当前格式 **16**，删去按操作选择 1–15 以及接受这些旧编号的分支；操作、账号、原目标、回执、写入阶段和损坏数据校验保持。仅移动端装配这套磁盘存储，Mac 共享调用按当前类型回归，NAS 方法、参数及其他端实现均未改变。旧开发记录不自动转换、删除或重放；格式往返与拒绝旧/未知编号新增两项 Core 测试，现有各类恢复用例改为断言当前格式，未移除写前保存或只读恢复断言。
 
-旧 Library/Timeline 的目录扫描、视频排除和永久路径缓存断言随无入口实现退休；仍有效的会话、分页失败/偏移、迟到响应、空间权限、预览、系统选择及清理转到正式模型。五项缩略图缓存测试迁入 `MobilePhotoThumbnailStoreTests` 后逐函数与原代码比对完全一致；取消用例单独迁移并保留释放槽位、零取消缓存和可重试检查。完整映射和替代语义见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m3h3b-旧图库迁移账本)。移动单元总数由 939 收敛为 910；共享正式模型与 Repository 的已有回归继续覆盖原件身份、权限及分页，不能将数量变化解释为删除安全门禁。
+旧 Library/Timeline 的目录扫描、视频排除和永久路径缓存断言随无入口实现退休；仍有效的会话、分页失败/偏移、迟到响应、空间权限、预览、系统选择及清理转到正式模型。五项缩略图缓存测试迁入 `MobilePhotoThumbnailStoreTests` 后逐函数与原代码比对完全一致；取消用例单独迁移并保留释放槽位、零取消缓存和可重试检查。完整映射和替代语义见[移动主计划](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m3h3b-旧图库迁移账本)。移动单元总数由 939 收敛为 910；共享正式模型与 Repository 的已有回归继续覆盖原件身份、权限及分页，不能将数量变化解释为删除安全门禁。
 
 实际验证与结果：
 
@@ -1270,7 +1270,7 @@ UI 在相同两台设备及 `test-without-building` 参数下运行：首轮同�
 
 中间失败如实保留：第一轮两端各 948 项单元有同一创建恢复测试两条断言失败，原因是新 Repository 没有当前账号身份缓存；恢复改为读取当前账号/会话及原投票后解决。另一个首次测试脚本错误将现有 `Try Again` 按钮写成 `Retry`，导致每端四项投票 UI 中一项失败，修正准确按钮定位后通过；未降低恢复断言。复核补充同一连接恢复后继续改选、提交前/后取消和缺 Post v5 的零写入测试。第二轮两端 951 项单元均通过，最终加入能力门测试后为 952 项。截图复核还将选项正文/票数显式采用系统前景色，避免按钮内继承浅蓝色；第二轮实际截图已确认两种主题、大字与触控可用，iPad 大字结果可滚动。
 
-结果保留在本机本轮工作目录的 `m4b1-build1..4.log`、`m4b1-iphone1..3`/`m4b1-ipad1..3` 结果包与日志、`m4b1-shared2.log`、`m4b1-macos.log`；导出的临时截图在复核后清理。生成工程 SHA-256 为 `8bb7d41394ed9e316fa076b0d76476f74728c6d851085586d7eb287b4fcaf504`。`PENDING_USER_VALIDATION` 的专用账号/可丢弃投票、匿名规则、断网、十选项、VoiceOver/硬件键盘与锁屏保护步骤见[移动 M4b1](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b1-投票创建参与与恢复)。本轮没有真实 NAS 写入或移动分发，继续 M4b2 提醒/定时及 M4 后续切片。
+结果保留在本机本轮工作目录的 `m4b1-build1..4.log`、`m4b1-iphone1..3`/`m4b1-ipad1..3` 结果包与日志、`m4b1-shared2.log`、`m4b1-macos.log`；导出的临时截图在复核后清理。生成工程 SHA-256 为 `8bb7d41394ed9e316fa076b0d76476f74728c6d851085586d7eb287b4fcaf504`。`PENDING_USER_VALIDATION` 的专用账号/可丢弃投票、匿名规则、断网、十选项、VoiceOver/硬件键盘与锁屏保护步骤见[移动 M4b1](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m4b1-投票创建参与与恢复)。本轮没有真实 NAS 写入或移动分发，继续 M4b2 提醒/定时及 M4 后续切片。
 
 ## 2026-10-04 移动 M4b2 提醒与定时消息
 
@@ -1310,7 +1310,7 @@ git diff --check
 
 中间失败如实保留：首轮移动构建将会话消息缓存误写为不存在的顶层属性；本地化首次只增加 App 资源，缺共享资源，随后同步并通过。首轮两端 975 项单元的两个旧展示测试共三条断言失败：菜单合并遗漏公告/成员无障碍提示，以及图标由 Image 改为原生 Label；已恢复提示并精确检查 Label 图标，未删安全或隐私断言。iPad 中文筛选脚本误点弹窗下方的“搜索会话”，改为准确的“搜索消息”后通过；提醒关闭同样定位当前导航栏。复核再增加两项迟到结果/错误的会话隔离测试，使最终为 977 项。实际截图已查看两端浅色表单/列表、中文深色最大字号、错误和筛选空态，并移除表单空白提示行；最终截图复验确认空白行消失及 iPad 搜索可用。
 
-日志和结果包留在本机本轮工作目录的 `m4b2-mobile-build1..4.log`、`m4b2-iphone1..2`/`m4b2-ipad1..2`、`m4b2-shared1.log`、`m4b2-mac-build1.log`；导出的临时截图/文本检查后清理，不纳入提交。真实 NAS 未参与写测试，移动端未分发；跨时区、到期实际投递、VoiceOver/硬件键盘和锁屏保护按[移动 M4b2 待办](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b2-提醒与定时消息)验收。下一切片为 M4b3 转发/置顶/会话操作，M4–M8 尚未整体完成。
+日志和结果包留在本机本轮工作目录的 `m4b2-mobile-build1..4.log`、`m4b2-iphone1..2`/`m4b2-ipad1..2`、`m4b2-shared1.log`、`m4b2-mac-build1.log`；导出的临时截图/文本检查后清理，不纳入提交。真实 NAS 未参与写测试，移动端未分发；跨时区、到期实际投递、VoiceOver/硬件键盘和锁屏保护按[移动 M4b2 待办](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m4b2-提醒与定时消息)验收。下一切片为 M4b3 转发/置顶/会话操作，M4–M8 尚未整体完成。
 
 ## 2026-10-04 移动 M4b3a 公告置顶与会话关闭
 
@@ -1350,7 +1350,7 @@ iPad 使用 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，两者运行 iOS 26.5，不
 
 保留失败证据及修复：第 1 轮各 997 项单元仅旧实时源码断言失败，已将“不额外加载公告”的约束限定到实时同步函数，未删除安全断言；公告 UI 原先匹配底层相同文字，改为按公告原消息 ID 定位。第 2 轮发现普通样式列表行的透明区不能点击，补整行触控范围与选中状态断言；第 3 轮确认 Quick Look 已加载但缺导航栏，补文件标题和显式关闭。第 5 轮 iPhone 退出管理后仍显示加载消息；第 6 轮立即返回又提前关闭结果窗口，改为管理窗口退出后再返回，iPad 保留并列详情语义。所有原断言保留或按新的完整功能语义加强，未将失败改为跳过。
 
-已查看两端中英文、浅深主题、超大字号、公告原内容、取消确认、批量结果与系统预览截图；iPad 背景聊天分栏/输入区的窄宽度问题留在 M4c，不能据新弹窗通过宣称整个聊天布局完成。临时导出截图/视频与诊断文本复核后清理；本机日志和结果包保留在本轮工作目录，不提交。锁定 XcodeGen 2.46.0 重复生成后的工程 SHA-256 均为 `3bdb87d5b82bc96368bb47861bd15419183b4aa57bef98085e5c77478b7819dc`。真实 NAS 不参与自动写测试，设备步骤见[移动 M4b3a](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3a-公告置顶与会话关闭)。继续 M4b3b 转发、多条本人消息删除与 M4b4 发送/创建恢复，M4–M8 尚未整体完成。
+已查看两端中英文、浅深主题、超大字号、公告原内容、取消确认、批量结果与系统预览截图；iPad 背景聊天分栏/输入区的窄宽度问题留在 M4c，不能据新弹窗通过宣称整个聊天布局完成。临时导出截图/视频与诊断文本复核后清理；本机日志和结果包保留在本轮工作目录，不提交。锁定 XcodeGen 2.46.0 重复生成后的工程 SHA-256 均为 `3bdb87d5b82bc96368bb47861bd15419183b4aa57bef98085e5c77478b7819dc`。真实 NAS 不参与自动写测试，设备步骤见[移动 M4b3a](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m4b3a-公告置顶与会话关闭)。继续 M4b3b 转发、多条本人消息删除与 M4b4 发送/创建恢复，M4–M8 尚未整体完成。
 
 
 ## 2026-10-04 移动 M4b3b1 转发恢复共享前置
@@ -1429,7 +1429,7 @@ iPad 将目标改为 `A31ABDE2-186F-43DD-8D40-5EB9511A9289`，使用 `m4b3b-dire
 | Mac 双架构 | `m4b3b-direct-mac-build1.log` 通过；实际二进制包含 `x86_64 arm64`，未安装或启动 |
 | 本地化与契约 | Apple 5972 / Android 2188 / Windows 3402；29 组响应 / 48 私有引用；170 组请求 / 1 写结果通过 |
 
-已查看首轮恢复页及第二轮普通联系人、中文深色大字号错误页截图。界面去掉恢复/加载/错误页无效搜索框，仅一种会话能力时不显示类型选择，待恢复不依赖联系人列表成功；所有提示描述聊天和恢复动作。最终已检查 iPhone 第 4 轮及 iPad 第 3 轮截图，两端正常、加载、空内容、筛选为空、错误与恢复状态均有实际证据。既有消息页在 iPhone 多按钮时标题被挤压、iPad 窄分栏和大字号背景布局的问题继续 M4c，本切片的新建弹窗验收不代表整个聊天布局完成。临时日志、截图、结果包不进入源码。真实 NAS、系统文件保护与完整辅助功能为 `PENDING_USER_VALIDATION`，具体条件和步骤见[移动主计划 M4b3b2](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3b2-新联系人单聊恢复)。
+已查看首轮恢复页及第二轮普通联系人、中文深色大字号错误页截图。界面去掉恢复/加载/错误页无效搜索框，仅一种会话能力时不显示类型选择，待恢复不依赖联系人列表成功；所有提示描述聊天和恢复动作。最终已检查 iPhone 第 4 轮及 iPad 第 3 轮截图，两端正常、加载、空内容、筛选为空、错误与恢复状态均有实际证据。既有消息页在 iPhone 多按钮时标题被挤压、iPad 窄分栏和大字号背景布局的问题继续 M4c，本切片的新建弹窗验收不代表整个聊天布局完成。临时日志、截图、结果包不进入源码。真实 NAS、系统文件保护与完整辅助功能为 `PENDING_USER_VALIDATION`，具体条件和步骤见[移动主计划 M4b3b2](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m4b3b2-新联系人单聊恢复)。
 
 ## 2026-10-05 移动 M4b3b3 批量转发与恢复
 
@@ -1502,7 +1502,7 @@ iPad 使用相同测试命令，将目标改为 `A31ABDE2-186F-43DD-8D40-5EB9511
 | 第二轮实际 UI | 两端各 5 项零失败；iPhone 231.132 秒，iPad 239.527 秒；最终截图已复核恢复后第一项已删除/第二项未删除、逐项完成及中文深色大字号空状态 |
 | 静态门禁 | 双语资源 6031/2188/3402、29 组 fixture/48 私有引用、170 请求/1 写结果、最终严格文档和差异格式检查通过 |
 
-真实 NAS 的删除权限、并发分页、其他客户端编辑与删除之间的竞态、附件实际删除范围及真机锁屏保护/辅助功能仍为 `PENDING_USER_VALIDATION`，步骤见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4b3c-本人消息批量删除)。Post.delete 不是带原内容条件的原子删除，不能把合成回读通过写成跨客户端事务保证。M4b4/c/d 与 M5–M8 继续后续实施。
+真实 NAS 的删除权限、并发分页、其他客户端编辑与删除之间的竞态、附件实际删除范围及真机锁屏保护/辅助功能仍为 `PENDING_USER_VALIDATION`，步骤见[移动主计划](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m4b3c-本人消息批量删除)。Post.delete 不是带原内容条件的原子删除，不能把合成回读通过写成跨客户端事务保证。M4b4/c/d 与 M5–M8 继续后续实施。
 
 ## 2026-10-05 移动 M4b4a 共享发送持久回执
 
@@ -1712,7 +1712,7 @@ git diff --check
 
 保留失败与修复记录：第 2 次构建的 Swift 6 通知回调跨 actor 访问失败，改为在主 actor 执行回调；第 3 次构建的测试闭包访问主 actor 失败，改用明确的主 actor 检查。初轮 iPhone 100 项聚焦测试一项精确请求计数失败，是启动补读与故障注入重叠；明确等待启动同步后再注入，保持原计数和状态断言。第 2 轮两端完整单元通过，但 UI 各 9 项中 2 项找不到“最新消息”标识：截图显示按钮可见，页面容器覆盖了子按钮无障碍标识；增加可访问容器后，保留点击、真实末尾可见、未读变化及拒绝后未读保留的断言，第 3/4 轮均通过。没有删除测试、降低断言或把未运行实机项目改成通过。
 
-已查看两端长历史/末尾消息、未读保留、搜索线程以及中文深色超大字号通知恢复截图。实际系统权限弹窗、锁屏通知、系统终止/点击、提醒调度、真实 NAS/多客户端及完整辅助功能为 `PENDING_USER_VALIDATION`，条件、步骤、预期和脱敏反馈见[移动主计划 M4d](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m4d-前台实时阅读同步与本地提醒)。M4 源码范围收口；继续 M5–M8，不发布移动安装包，不把后台远程新消息推送列为待设备验证。
+已查看两端长历史/末尾消息、未读保留、搜索线程以及中文深色超大字号通知恢复截图。实际系统权限弹窗、锁屏通知、系统终止/点击、提醒调度、真实 NAS/多客户端及完整辅助功能为 `PENDING_USER_VALIDATION`，条件、步骤、预期和脱敏反馈见[移动主计划 M4d](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m4d-前台实时阅读同步与本地提醒)。M4 源码范围收口；继续 M5–M8，不发布移动安装包，不把后台远程新消息推送列为待设备验证。
 
 
 ## 2026-10-05 移动 M5a1 下载完整目录与详情
@@ -1998,7 +1998,7 @@ R3 仅选择 `MobileDownloadRemovalUITests/test单项确认取消保持任务随
 
 ## 2026-10-05 移动 M6a1 NAS 五项读取与入口开放约定
 
-新会话接手基线 `bf68dc962f9796c0f51574c284265589603a8082`，起始工作区干净，main 与 origin/main 一致。完成 Mac 21 页实际源码账本后，先接外接存储、进程/服务组、共享访问、内存压缩和电源计划的读取、筛选与错误恢复；ZRAM/计划保存尚属 M6c，不能由读取页存在宣称完成。唯一修改范围与实际设备待办见[主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a1-五项读取与筛选)。
+新会话接手基线 `bf68dc962f9796c0f51574c284265589603a8082`，起始工作区干净，main 与 origin/main 一致。完成 Mac 21 页实际源码账本后，先接外接存储、进程/服务组、共享访问、内存压缩和电源计划的读取、筛选与错误恢复；ZRAM/计划保存尚属 M6c，不能由读取页存在宣称完成。唯一修改范围与实际设备待办见[主计划](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a1-五项读取与筛选)。
 
 用户在本片补充两项交付条件：已实现功能移除仅因缺少实机证据而固定关闭的限制，保留真实权限/能力/危险确认和防重复；每片分别执行 iPhone/iPad 模拟器交互和截图复核。初步核实 Photos 删除已从移动组合根开放；容器网络默认关闭参数及容器入口强加 DSM 管理员的旧条件随 M7 完整流程修正。该审计没有代替尚未实施的 M6–M8。
 
@@ -2069,7 +2069,7 @@ python3 tools/codex/check_documentation.py
 git diff --check
 ```
 
-R1/R2/R4 全部移动单元命令将上方存储单元 selector 改为 `-only-testing:DsmMobileTests`；R1/R2 的 UI 组为当时九项，R4 增为十项。当前负责人在独立复核阶段检查权限撤回、身份变更、持久化失败、取消、迟到响应和只读恢复；没有虚称由另一模型审查。真实硬盘负载、NAS 版本/权限、锁屏文件保护及辅助功能另见[主计划 M6a2](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a2-存储分析硬盘检测与完整日志)中的具体 `PENDING_USER_VALIDATION`。
+R1/R2/R4 全部移动单元命令将上方存储单元 selector 改为 `-only-testing:DsmMobileTests`；R1/R2 的 UI 组为当时九项，R4 增为十项。当前负责人在独立复核阶段检查权限撤回、身份变更、持久化失败、取消、迟到响应和只读恢复；没有虚称由另一模型审查。真实硬盘负载、NAS 版本/权限、锁屏文件保护及辅助功能另见[主计划 M6a2](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a2-存储分析硬盘检测与完整日志)中的具体 `PENDING_USER_VALIDATION`。
 
 收尾结果：
 
@@ -2151,7 +2151,7 @@ DDNS 提交 `83af8606` 的 [Apple Build 37300934405](https://github.com/yuangy19
 
 从已推送的 `83af8606` 继续区域时间，起始工作区干净。先核实上述云端 DMG 失败并以 `f0432d7` 独立提交修复；两端云端完整 UI 仍运行时不再次推送取消它。区域切片新增九种日期格式、12/24 小时、时区搜索、网络服务器、手动日期时间和单独立即校时；所有入口按实际权限与状态开放，没有缺实机证据的固定关闭常量。
 
-共享沿用原 get/listzone/set/sync 管线，为移动增量增加原配置确认、写前/接受回执/完整配置回读检查点，旧 Mac 签名保持。单独重试校时不重新 set；未主动编辑手动时间使用 NAS 新值，小幅一分钟调整也按明确意图提交。独立受保护记录保存摘要、阶段和明确选择的墙上时间，不保存服务器或账号正文。手动改时无回执不能仅以相近读数恢复成功；网络校时无任务编号，未知不自动重放，新操作需明确确认。具体风险和回滚/真机条件见[主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a3-区域时间与-ddns)。
+共享沿用原 get/listzone/set/sync 管线，为移动增量增加原配置确认、写前/接受回执/完整配置回读检查点，旧 Mac 签名保持。单独重试校时不重新 set；未主动编辑手动时间使用 NAS 新值，小幅一分钟调整也按明确意图提交。独立受保护记录保存摘要、阶段和明确选择的墙上时间，不保存服务器或账号正文。手动改时无回执不能仅以相近读数恢复成功；网络校时无任务编号，未知不自动重放，新操作需明确确认。具体风险和回滚/真机条件见[主计划](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a3-区域时间与-ddns)。
 
 沿用 Xcode 26.6（17F113）、iOS SDK/模拟器 26.5、XcodeGen 2.46.0 和两台专用模拟器。实际记录位于 `apple/Apps/DsmMobile/build/m6a3-region-*`，测试运行期间不重建其使用的派生目录。
 
@@ -2866,7 +2866,7 @@ git diff --check
 
 最终本地化 **6640/2188/3402**、请求契约 **179+1**、脱敏 fixture **29 组/48 项引用**、文档与差异检查均通过。未新增文件或更改工程清单，不需要重生成工程。独立集成与只读安全复核覆盖入口/登录恢复调用链、照片只读实例隔离、文件/照片相反授权、缺能力、已知拒绝、证书/会话/取消、权限撤回与本机偏好。两台模拟器已恢复浅色并查询确认；临时附件、辅助功能树和录屏提帧已清理，正式日志/结果包与预览保留。
 
-真实普通账号的相反权限组合、权限撤回、保存登录恢复仍按[专项 PENDING_USER_VALIDATION](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-06-photos-入口权限专项审计)执行；Agent 未访问或写入真实 NAS，没有提高任何环境证据等级。仍继续 M6 剩余独立切片与 M7–M8，未把本片权限修复表述为整体完成。
+真实普通账号的相反权限组合、权限撤回、保存登录恢复仍按[专项 PENDING_USER_VALIDATION](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#2026-10-06-photos-入口权限专项审计)执行；Agent 未访问或写入真实 NAS，没有提高任何环境证据等级。仍继续 M6 剩余独立切片与 M7–M8，未把本片权限修复表述为整体完成。
 
 ## 2026-10-06 移动 M7a 容器控制与活动详情
 
@@ -2899,7 +2899,7 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=A31ABDE2-186F-43DD-8D40-5EB9511A9289' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -resultBundlePath apple/Apps/DsmMobile/build/m7a-pad-r3.xcresult -parallel-testing-enabled NO -only-testing:DsmMobileTests -only-testing:DsmMobileUITests/MobileContainerControlUITests -only-testing:DsmMobileUITests/MobileWorkspaceUITests/test管理员六种模块均需开启且设置始终可达
 ```
 
-独立集成及只读对抗复核覆盖套件权限和撤权、原 ID/名称/运行快照、项目托管、状态缺失、重启时间、同名替换与改名、逐项落盘、损坏/写失败、明确拒绝、未知恢复、取消后剩余项以及跨账号迟到。记录采用完整文件保护并排除备份，只保存摘要和阶段，不持久化名称、正文或凭据。测试通过真实 DsmServiceManagementRepository 与合成网络服务执行，Agent 未访问或写入真实 NAS；[具体设备待办](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-06-m7a-容器启停重启与活动记录)不提高真实证据等级，也不以尚无真实验收静态关闭已实现入口。
+独立集成及只读对抗复核覆盖套件权限和撤权、原 ID/名称/运行快照、项目托管、状态缺失、重启时间、同名替换与改名、逐项落盘、损坏/写失败、明确拒绝、未知恢复、取消后剩余项以及跨账号迟到。记录采用完整文件保护并排除备份，只保存摘要和阶段，不持久化名称、正文或凭据。测试通过真实 DsmServiceManagementRepository 与合成网络服务执行，Agent 未访问或写入真实 NAS；[具体设备待办](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#2026-10-06-m7a-容器启停重启与活动记录)不提高真实证据等级，也不以尚无真实验收静态关闭已实现入口。
 
 R3 最终两端均 exit 65。十项容器 UI 中 iPhone 7/10、iPad 8/10 通过，既有六模块开关 UI 两端通过。除上述旧单元断言外，失败为两端批量结果文字计数、两端活动用户文字定位，以及 iPhone 错误恢复场景。已从精确用例导出附件并检查录屏帧/辅助功能树：批量页两项都为 Started；活动详情显示 `User, Sample user` 组合标签且正文完整；iPhone 错误场景实际已呈现容器列表，合成服务把首次并发失败给了其他分区。修正为按包含完成状态的两行逐项断言名称、按真实组合标签核对用户并补返回动作；合成失败固定给 Container.list，不改变生产网络行为。没有放宽结果、数量或恢复断言。实际页面另把 `info` 作为标题的旧细节改为本地化活动标题，并去掉重复分组标题；因此重建后完整重跑十项容器 UI。
 
@@ -2923,7 +2923,7 @@ xcodebuild test-without-building -project apple/Apps/DsmMobile/DsmMobile.xcodepr
 
 ## 2026-10-06 移动 M7b 映像搜索、下载与恢复
 
-基线为 `27bd34c6`（M7a 已完成本地提交，远端仍为 `cdc889cc`）。本片实现过程记录如下，最终状态在后续结果区补齐，不能把定向测试代替全部界面验收。源码范围、原任务恢复格式和五端边界见[移动主计划](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-06-m7b-映像搜索下载与恢复)。
+基线为 `27bd34c6`（M7a 已完成本地提交，远端仍为 `cdc889cc`）。本片实现过程记录如下，最终状态在后续结果区补齐，不能把定向测试代替全部界面验收。源码范围、原任务恢复格式和五端边界见[移动主计划](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#2026-10-06-m7b-映像搜索下载与恢复)。
 
 - 共享沿原 Image/Registry v1 请求，新增摘要恢复与 willSubmit/accepted/rejected 检查点；旧 macOS 调用继续共用同一请求/状态/删除互斥。无回执不猜任务，原回执按原类型保存；恢复以回显目标摘要、原生完成标记和完整映像列表共同判定。移动受保护存储与账号隔离、可见时轮询、原生搜索/标签/记录均已接入。
 - 初始 `swift test --package-path apple --jobs 2 --filter ContainerImagePullTests` 通过旧 16 项；新增 9 项后 25 项通过，再补证书错误停止链路后最终 26 项通过。日志依次为 `m7b-shared-initial.log`、`m7b-shared-focused.log`、`m7b-shared-focused-final.log`。最终 `swift test --package-path apple --jobs 2` 为 2900 项 XCTest（172 条既有跳过、0 失败）和 12 项 Swift Testing 通过，日志 `m7b-shared-full.log`。
@@ -2968,7 +2968,7 @@ lipo -archs apple/Apps/DsmMac/build/m0-m8/Build/Products/Release/LanStash.app/Co
 
 ## 2026-10-06 移动 M7c1 映像删除与恢复
 
-基线为 `d2b9311c`；M7a/M7b 已在本地 `main` 提交，远端仍为 `cdc889cc`，没有创建分支。macOS 通用删除反馈的列表消失兜底可能覆盖明确拒绝/未提交，已记录源码证据并单独请求授权；映像路径原本已关闭该兜底，本片继续独立实现，不修改 Mac App。源码、安全及持久化范围见[主计划 M7c1](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-06-m7c1-映像删除与恢复)。
+基线为 `d2b9311c`；M7a/M7b 已在本地 `main` 提交，远端仍为 `cdc889cc`，没有创建分支。macOS 通用删除反馈的列表消失兜底可能覆盖明确拒绝/未提交，已记录源码证据并单独请求授权；映像路径原本已关闭该兜底，本片继续独立实现，不修改 Mac App。源码、安全及持久化范围见[主计划 M7c1](APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#2026-10-06-m7c1-映像删除与恢复)。
 
 - 共享新增固定原目标的删除请求、摘要恢复、逐项结果和写前/接受/拒绝检查点；旧 Mac 与移动共用 Image.delete v1 编码、占用预检及完整列表回读。恢复仅依赖映像读取，标签换 ID 仍未知；明确拒绝不被后来外部删除覆盖，已完成请求编号不能再写同标签。下载/删除的原标签和裸映像交叉保护保留。
 - 初始聚焦 42 项通过（旧映像筛选 16 项及下载 26 项）；新增 12 项删除恢复测试后聚焦 54 项通过。随后完整 `swift test` 为 2912 项 XCTest（172 条既有跳过、0 失败）及 12 项 Swift Testing 通过。日志为 `m7c1-shared-initial.log`、`m7c1-shared-focused.log` 和 `m7c1-shared-full.log`。
@@ -4440,7 +4440,7 @@ Files 两端默认只读用例分别于 90.884/75.382 秒失败，系统“文�
 位置已启用，等目录 20 秒未满足断言，随后层级中已出现 `Shared`，尚未下载或编辑。
 iPad 中文位置管理与可编辑用例分别在 62.795/39.826 秒失败，均是添加位置后未出现
 成功提示，页面已显示位置更新失败；这是独立的注册问题。详情与权限边界同步到
-[Files 账本](../../development/APPLE_MOBILE_FILES_PROVIDER_ZH.md#云端系统阶段结果2026-10-07)。
+[Files 账本](APPLE_MOBILE_FILES_INVESTIGATION_HISTORY.md#云端系统阶段结果2026-10-07)。
 
 运行中的 iPhone modules 另已发现
 `MobileChatManagementUITests.test置顶公告查看附件并取消公告` 失败（110.983 秒）：
@@ -5028,6 +5028,79 @@ Shared（92.257 秒）。后续 169 项模块 UI 全部通过（13567.098 秒）
 失败并最终退出 65；不能仅引用最后一组的成功输出宣布整组通过。结果附件
 `11496435246` 已上传，尚未下载；不取消另外仍在执行的原分组。
 
+## 2026-10-08 macOS 旋转与操作浮层修复
+
+用户反馈旋转长期处理中且最终失败，并要求各页面/弹窗的操作提示弹出显示。此前
+源码直到保存及多轮回读后才更新图片；同时把官方前端布局交换错误推断为 NAS 的
+原始分辨率必须交换。本轮通过官方静态成功回调核实这两者不同，未执行真实照片写入，
+未把推断提升为用户现场失败已经复现。依据与五端影响见[旋转记录](../../api/discovery/environments/2026-10-07-photos-rotation-observation.md)。
+
+源码变更：
+
+- 预览点击立即逆时针显示；保存回执与原件快照保持独立。失败恢复、切换清除、重复
+  点击互锁，成功下载新图前保留已有图像，刷新失败提供恢复入口。
+- 只有明确成功回执、原件身份不变且读到预期方向时，接受原始分辨率不变或对调；
+  丢回执/历史恢复仍沿原严格条件只读核对，不重新旋转，不改持久化格式或权限。
+- 共用 `MacOperationFeedback` 浮层覆盖照片主页、预览、临时分享/请求创建相册、
+  目录封面、后台任务提示、文件操作及撤销、文本保存、挂载恢复、服务管理与聊天
+  主页面/相关表单。保留业务结果列表、字段校验、加载空态和危险操作确认；原有恢复
+  按钮迁入浮层。文件反馈关闭时清除展示消息，保证下一次相同结果仍能显示。
+- Apple 双语资源同步；工程通过 `xcodegen generate --spec apple/Apps/DsmMac/project.yml`
+  纳入两个新源码文件，无新依赖、签名权限或数据格式变更。
+
+实际验证：
+
+- `swift test --package-path apple -j 4 --filter 'SynologyPhotosModelTests|SynologyPhotosRepositoryTests.*旋转'`：
+  261 项、0 失败，包含新的成功回执/原分辨率用例及原丢回执/错误方向/持久恢复/权限回归。
+- `swift test --package-path apple -j 4`：3123 项 XCTest、178 项既有条件/隔离 UI 跳过、
+  0 失败，另 12 项 Swift Testing 通过。此轮之后仅补文件浮层的关闭重现修复及聚焦 UI；
+  新增聚焦结果另行记录，不把先前完整运行表述为包含后续源码。
+- `LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests.test旋转即时显示且操作浮层不挤占预览双语主题|WorkspacePresentationTests.test照片预览后台生成不转圈且保存成功提示自动消失双语主题|WorkspacePresentationTests.test消息新增操作面板双语主题不自动发送或录音|WorkspacePresentationTests.test照片管理表单标题内容与操作区对齐' LANSTASH_UI_NATIVE_SCREENSHOTS=1 bash tools/codex/run_macos_ui_checks.sh "$PWD/build/mac-rotation-popup-ui"`：
+  4 项通过；中英/浅深/原生高对比窗口与大字绘制，已人工查看中文浅色、英文深色实际截图。
+  降低动态与透明度路径沿系统值实现，本轮未改变系统辅助功能偏好，不声称已实测两开关。
+- `python3 tools/localization/check_localization.py`：Apple 7080、Android 2188、Windows 3402，
+  双语、参数、引用及硬编码通过；`python3 tools/codex/check_documentation.py --strict-release`
+  与 `git diff --check` 通过。
+- 第一轮开发中构建遇到输入文件变更；新增 UI 测试曾错误注入只读辅助环境值，已改用
+  原生窗口外观。上述最终测试已正常完成，不将中间失败记为通过。
+
+独立只读集成/对抗复核已检查新旧预览切换、确定失败、未知结果、防重复写入、恢复
+记录、权限和各浮层恢复入口；发现并补回文件同文案再次显示问题。最终该项 UI 结果见本节末追加；正式编译/签名仍需在测试包完成后记录。当前未提交此批改动或发布新正式版本。
+
+`PENDING_USER_VALIDATION`：在当前 NAS 用自造照片验证普通/镜像方向、重新打开与
+断网恢复，只回传脱敏版本和完整错误提示；当前用户那次失败尚未直接复现，原件大小
+若确实变化仍需独立证据，不放宽身份校验。真实 VoiceOver、降低动态/透明度开关与
+不同屏幕尺寸仍需用户设备验证；临时测试包不包含本地磁盘挂载扩展。
+
+末次浮层补回归：`LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests.test文件操作浮层关闭后同样结果仍可再次显示' LANSTASH_UI_NATIVE_SCREENSHOTS=1 bash tools/codex/run_macos_ui_checks.sh "$PWD/build/mac-rotation-popup-ui"`，1 项、0 失败（6.383 秒）。已实际查看原生文件浮层截图，连续两次显示相同结果并关闭均成功；本次后本地化、严格文档与差异检查再次通过。
+
+测试包终态（2026-10-08 00:32）：既定 `apple/Apps/DsmMac/package.sh` 成功退出 0，
+`LANSTASH_NON_INTERACTIVE=1 LANSTASH_BUILD_TYPE=Release LANSTASH_TARGET_ARCH=arm64
+LANSTASH_SIGNING_IDENTITY=- LANSTASH_RUN_AFTER_PACKAGE=0
+LANSTASH_BUILD_ROOT="$PWD/build/mac-rotation-popup-package"
+LANSTASH_DIST_DIR="$PWD/apple/Apps/DsmMac/dist/rotation-popup-fix"`。
+本轮临时命令包装为 Xcode 传入既有且核对为 Sparkle 2.9.6 的
+`-clonedSourcePackagesDirPath apple/Apps/DsmMac/build/m0-m8/SourcePackages
+-disableAutomaticPackageResolution -skipPackageUpdates`，未更换依赖或工具链；第一次包
+构建在追加同文案恢复修复前已明确停止，只有最后成功包作为交付。
+
+产物为 `apple/Apps/DsmMac/dist/rotation-popup-fix/LanStash-1.0.17-arm64.dmg`，
+28,799,981 字节，SHA-256 `75a5d6fd2392183153865498f34f839108a9a390cf184ee5c0ba4a475897b83f`。
+版本保持 1.0.17 (27)，来自 `main@6557e710` 加本轮未提交源码；独立测试标识、独立
+存储组及关闭在线更新由既有临签流程设置。主应用严格签名校验、临签权限集合、
+Sparkle 实际加载（`library loaded`）、arm64 架构及 DMG 完整性全部通过。未安装、
+未启动成品，不覆盖原正式包，不包含本地磁盘挂载扩展；本轮没有创建新发布或标签。
+
+已清理本轮构建目录、临时命令包装、测试/打包日志和多余合成截图；保留 App、DMG
+与 `build/mac-rotation-feedback-preview.png` 交付示例。浏览器临时脚本不存在、控制台
+及本轮两个 Photos 标签页均关闭，未执行 NAS 写操作。最终工作区在 main 保留本轮
+未提交修复与原移动端记录，未混合暂存或提交。
+
+工程生成补核：随后回到移动工作时发现全局 XcodeGen 为 2.45.4；已使用项目缓存的
+锁定 2.46.0 重新生成 Mac 与移动工程。Mac 差异现仅为两个新文件的 8 条引用，生成器
+产生的目标排序差异已消除；移动工程无差异。安装包采用的源文件、目标依赖、编译
+设置与签名设置均未改变。此处记录生成工具复核，不伪称第一次生成使用了锁定版本。
+
 ## 2026-10-08 M8m 原云端失败结果复核（进行中）
 
 本波单一范围为原 Files 系统主流程与 iPad 灯光恢复失败的证据定位及相应移动正式
@@ -5102,6 +5175,7 @@ iPad `A31ABDE2-186F-43DD-8D40-5EB9511A9289`：中文权限管理 52.080 秒、�
 `python3 tools/codex/check_documentation.py`、`git diff --check` 均通过；
 本波未改变用户可见字符串。正式结果包保留，导出的原始附件、视频帧脚本/图片和
 临时日志在摘录后清理；Mac 已交付的包与示例图保留，不进入移动提交。
+
 
 ## 2026-10-08 M8n 原云端管理组终态与只读边界复核
 
@@ -5206,7 +5280,7 @@ sample 文件。不能仅凭页面加载状态确认主线程死锁，也不能�
 
 当前基线 `e1f3c38d` 已同步 main，新 Apple `37672252534` 保持运行。公开 iOS
 ReplicatedExtension 只读实现提供未显式实现 isUploaded 的源码线索，SDK 对回收
-条件也明确允许缺省；具体引用见[Files 账本](../../development/APPLE_MOBILE_FILES_PROVIDER_ZH.md#可选上传标记对照2026-10-08)。
+条件也明确允许缺省；具体引用见[Files 账本](APPLE_MOBILE_FILES_INVESTIGATION_HISTORY.md#可选上传标记对照2026-10-08)。
 本波单一临时源码差异是在 iOS 省略原恒 true getter，Mac 原 getter 保留；所有
 能力、原三项 Files UI 和等待期限不变，没有复制第三方代码或增加依赖。
 
@@ -7501,3 +7575,39 @@ xcrun xcresulttool get test-results summary --path build/m8be-phone-cloud-failur
 结果包保留。本次没有新增源码改动；本地化资源与硬编码扫描（Apple 7079、
 Android 2188、Windows 3402）、严格文档和差异检查通过。最终仅提交本轮
 移动计划与验证历史新增记录，原有 Mac/Photos 改动和历史原 74 行继续保留。
+
+## 服务计划早期 Download Station 验证摘录
+
+以下来自早期服务计划，保留原来源、测试及当时缺口；其中“当前”“下一步”和关闭范围不代表最新状态。现行范围见[服务计划](../../development/NATIVE_DSM_SERVICE_MANAGEMENT_PLAN_ZH.md)。
+
+### M2：Download Station 完整功能
+
+- Tracker、Peer、BT 文件选择与优先级。
+- BT 搜索模块、类别、搜索结果和直接下载。Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 已建立官方 `SYNO.DownloadStation.BTSearch` v1 完整闭环，覆盖 `getModule`、`getCategory`、`start`、`list` 与 `clean`；两端均有能力门、会话内隐私、搜索/取消/空态、条件迟到隔离和复用既有单链接创建链。Apple 本机共享聚焦 65/65、全量 675 XCTest（2 跳过）+10 Swift Testing、iPhone 模拟器 11/11；Windows 专项自动化为 26 项。正式提交 `5850f4c` 已通过 Apple Build run `31356270194`、Windows Build run `31356270192`、Android Build run `31356270244` 与 Repository Check run `31356270189`，其中 Windows 为 886/886 项 xUnit 且 WinUI x64/ARM64 均 0 警告、0 错误。iPad/真机、Windows/Narrator/键盘和真实 NAS 验收继续后置。
+- RSS 站点、条目、下载过滤器。Windows 本轮仅完成 RSS 站点/条目数量只读摘要，刷新、编辑和过滤规则仍关闭。
+- 已完成官方基础设置：默认位置、eMule、自动解压、BT/HTTP/FTP/NZB/eMule 限速与计划；继续补齐套件内部的 BT 协议高级设置、监听目录、NZB 服务器、RSS 与通知设置。
+- Android 已完成官方任务文件、Tracker、Peer 详情、RSS 站点/条目浏览、RSS 单站点手动刷新和 BT 实际搜索。BT Search v1 通过 `getModule/getCategory` 读取提供方和类别，支持全部、已启用或明确选定提供方、类别、标题过滤、排序字段和方向，并在搜索完成、失败、超时或取消后尝试清理本次临时服务端搜索任务；清理失败不冒充记录已经移除。这不代表 BT 协议高级设置已完成。RSS 条目和搜索结果可经可写目录选择后直接创建任务。RSS 刷新具备目标预检、同站点防重复、写后回读和未确认结果；官方指南未公开 RSS 完整编辑或文件优先级写参数，相关能力与其他高级设置保持关闭并等待版本化契约和真实 NAS 验收。
+- Android、Windows 与 Apple 公开 Download Station 路径均使用官方 `SYNO.DownloadStation.Statistic.getinfo` v1 显示当前标准/eMule 上下行聚合字节速率；Apple 既有 `DownloadStation2` 降级路径仍 best-effort 调用内部 `SYNO.DownloadStation2.Task.Statistic.get`。Android/Windows 对缺失、负数或错误类型进入摘要独立错误，Apple 当前兼容字段别名并在读取失败时隐藏摘要；三端都不得让摘要失败遮蔽任务列表，也不得把结果冒充历史流量、单任务速度或传输结果。
+- Windows 已完成 `WIN-DL-ADV-READ` 只读摘要：公开 Task v1 任务列表读取 `detail/transfer/file/tracker/peer`，展示优先级、文件/Tracker/Peer、做种和下载中节点；`Info.getconfig`、可选 `Schedule.getconfig`、`RSS.Site.list` 与 `RSS.Feed.list` 仅进入摘要卡。设置保存、RSS 刷新/编辑、文件优先级写、任务目标修改、删除已下载数据和内部 `DownloadStation2` 继续关闭；本机 DownloadStation 聚焦 97/97、Release 完整 xUnit 1506/1506 通过，真实 NAS/Windows/辅助功能待验收。
+- Android 已按官方 `SYNO.DownloadStation.Task.edit` v1 接入单任务保存位置修改：选择可写目录、明确提示可能移动已有文件，写前复核任务与目录完整基线，提交后严格回读，断线和取消不自动重放；该能力不复用 `DownloadStation2`。
+- BTSearch 门禁完成后的 ACT-01 首片已在当前分支落盘并通过云端门禁：Apple 与 Windows 均把 Download Station 已加载任务快照投影到 Activity 的 NAS 来源，保留只读展示和不同控制能力；真机与真实 NAS 验收尚未完成。下一步顺序调整为 CHAT-03 先补 Apple 单附件 typed outcome 与 Windows 上传/缩略图/下载 typed 契约；NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS 刷新/编辑、文件优先级写、BT 协议高级设置、Container/VMM 高危写和 Activity 主动后台轮询不并入该波。
+
+## 2026-10-10 本地源码与文档统一提交前检查
+
+用户明确要求将本地代码提交到已配置云端，使 `origin/main` 与本地一致。本次范围包括已有 macOS 照片即时旋转、操作反馈浮层与恢复入口、共享旋转回读及回归测试，以及全仓文档整理、八份日期账本合并和三份历史归档。历史未提交记录保留当时事实；正式版本、真实 NAS 与设备验收不由提交提升等级。
+
+提交前 `git fetch origin main` 后本地/远端均为 `2c3e00a1`，双向差异为零。当前工作区执行 `swift test --package-path apple --skip-update --jobs 4 --filter 'SynologyPhotosRepositoryTests|SynologyPhotosModelTests'`：870 项、0 failures；这是照片网络与模型聚焦结果，不代替整轮跨端或系统 UI 验收。既有 Mac 实际 UI 和临时签名包证据仍见原旋转/反馈记录，本次未重打包或正式发布。
+
+以下命令均通过：
+
+```sh
+python3 tools/codex/check_documentation.py --strict-release
+python3 tools/codex/generate_api_reference.py --check
+python3 tools/community-compatibility/generate.py --check
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/localization/check_localization.py
+git diff --check
+```
+
+数据样例 29 组、私有 API 文档引用 48 项、请求样例 180 项与写结果示例 1 项通过；新增文件与新增行已检查常见密钥格式，不包含构建产物、临时日志或本机配置。提交/推送沿现有 `main` 正常历史，不创建分支、PR 或发布标签；新来源完整云端门禁须在推送后独立查看，不能把代码同步称为全部门禁通过。

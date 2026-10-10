@@ -403,19 +403,18 @@ struct WorkspaceView: View {
                 .accessibilityAddTraits(viewMode == .list ? .isSelected : [])
             }
             .labelStyle(.iconOnly)
-            if !model.uploadBatches.isEmpty {
-                Button { model.section = .transfers } label: {
-                    Label(L10n.string("mac.upload.viewTransfers"), systemImage: "arrow.up.arrow.down")
-                }.buttonStyle(MacToolbarButtonStyle()).help(L10n.string("mac.upload.viewTransfers"))
+            if model.hasPendingFileStationChanges {
+                Button { showsFileStationPendingChanges = true } label: {
+                    Label(L10n.string("files.pending.title"), systemImage: "clock.badge.questionmark")
+                }.labelStyle(.iconOnly).buttonStyle(MacToolbarButtonStyle()).help(L10n.string("files.pending.title"))
+                    .accessibilityIdentifier("workspace.pendingChanges")
             }
-            Button { showsFileStationPendingChanges = true } label: {
-                Label(L10n.string("files.pending.title"), systemImage: "clock.badge.questionmark")
-            }.labelStyle(.iconOnly).buttonStyle(MacToolbarButtonStyle()).help(L10n.string("files.pending.title"))
-                .accessibilityIdentifier("workspace.pendingChanges")
-            Button { showsOfficeEditingSessions = true } label: {
-                Label(L10n.string("files.office.sessions"), systemImage: "doc.badge.arrow.up")
-            }.labelStyle(.iconOnly).buttonStyle(MacToolbarButtonStyle()).help(L10n.string("files.office.sessions"))
-                .accessibilityIdentifier("workspace.officeSessions")
+            if OfficeEditingCoordinator.shared.sessions.contains(where: { $0.item.profileID == model.profile.id }) {
+                Button { showsOfficeEditingSessions = true } label: {
+                    Label(L10n.string("files.office.sessions"), systemImage: "doc.badge.arrow.up")
+                }.labelStyle(.iconOnly).buttonStyle(MacToolbarButtonStyle()).help(L10n.string("files.office.sessions"))
+                    .accessibilityIdentifier("workspace.officeSessions")
+            }
             Button { showsFileStationSettings = true } label: {
                 Label(L10n.string("files.settings.title"), systemImage: "gearshape")
             }.labelStyle(.iconOnly).buttonStyle(MacToolbarButtonStyle()).help(L10n.string("files.settings.title"))
@@ -2062,41 +2061,18 @@ struct FileBrowserView: View {
         GeometryReader { availableSpace in
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    if model.searchIndexCoverage == .incomplete || model.searchErrorMessage != nil || model.statusMessage != nil || (desktopDriveManager?.statusSource == .userAction && desktopDriveManager?.statusMessage != nil) {
+                    if model.searchIndexCoverage == .incomplete || model.searchErrorMessage != nil {
                         VStack(alignment: .leading, spacing: 6) {
                             if model.searchIndexCoverage == .incomplete {
                                 Label(L10n.string("files.search.indexIncomplete"), systemImage: "info.circle")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
-                            if let message = model.searchErrorMessage ?? model.statusMessage {
-                                Label(
-                                    message,
-                                    systemImage: model.searchErrorMessage != nil || model.statusIsError
-                                        ? "exclamationmark.triangle.fill"
-                                        : "info.circle"
-                                )
-                                    .font(.caption)
-                                    .foregroundStyle(model.searchErrorMessage != nil || model.statusIsError ? .red : .secondary)
+                            if let message = model.searchErrorMessage {
+                                Label(message, systemImage: "exclamationmark.triangle.fill")
+                                    .font(.caption).foregroundStyle(.red)
                             }
-                            if let manager = desktopDriveManager,
-                               manager.statusSource == .userAction,
-                               let message = manager.statusMessage {
-                                Label(
-                                    message,
-                                    systemImage: manager.statusIsError
-                                        ? "exclamationmark.triangle.fill"
-                                        : "externaldrive.badge.checkmark"
-                                )
-                                .font(.caption)
-                                .foregroundStyle(manager.statusIsError ? .red : .secondary)
-                            }
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 8)
-                        .background(MacGlassSurface(role: .toolbar))
-
+                        }.padding(.horizontal, 24).padding(.vertical, 8)
                         Divider()
-
                     }
                     if model.showsAdvancedSearch {
                         FileAdvancedSearchView(model: model)
@@ -2225,25 +2201,20 @@ struct FileBrowserView: View {
                 .contentShape(Rectangle())
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(model.isSearching ? L10n.string("ui.6b7b618b0639aa8b") : L10n.string("ui.d5e639d4eab3fbaf"))
-            } else if let undoMessage = model.recentDragMoveUndoMessage {
-                VStack {
-                    Spacer()
-                    HStack(spacing: 12) {
-                        Label(undoMessage, systemImage: "arrowshape.turn.up.backward.circle.fill")
-                            .lineLimit(1)
-                        Button(L10n.string("ui.926a50b98ece2667")) {
-                            model.undoRecentDragMove()
-                        }
+            }
+        }
+        .macOperationOverlay {
+            if let message = model.statusMessage {
+                MacOperationFeedback(message: message, isError: model.statusIsError, onDismiss: { model.statusMessage = nil })
+            }
+            if let manager = desktopDriveManager, manager.statusSource == .userAction, let message = manager.statusMessage {
+                MacOperationFeedback(message: message, isWorking: manager.isBusy, isError: manager.statusIsError)
+            }
+            if let undoMessage = model.recentDragMoveUndoMessage {
+                MacOperationFeedback(message: undoMessage, keepsVisible: true) {
+                    Button(L10n.string("ui.926a50b98ece2667")) { model.undoRecentDragMove() }
                         .keyboardShortcut("z", modifiers: .command)
                         .disabled(model.isMovingItemsByDrag)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-                    .shadow(radius: 8, y: 3)
-                    .padding(.bottom, 18)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(L10n.string("ui.69113f5c36207312", String(describing: undoMessage)))
                 }
             }
         }
@@ -3552,18 +3523,19 @@ struct TransferCenterView: View {
     }
 
     private func matches(_ task: ActivityTask, filter: TaskFilterType) -> Bool {
+        let hasEnded = [.succeeded, .failed, .cancelled].contains(task.state)
         switch filter {
-        case .upload: return task.kind == .upload
-        case .download: return task.kind == .download
-        case .fileOperation: return task.kind != .upload && task.kind != .download
-        case .completed: return [.succeeded, .failed, .cancelled].contains(task.state)
+        case .upload: return task.kind == .upload && !hasEnded
+        case .download: return task.kind == .download && !hasEnded
+        case .fileOperation: return task.kind != .upload && task.kind != .download && !hasEnded
+        case .completed: return hasEnded
         case .failed: return task.state == .failed
         }
     }
 
     private func matches(_ batch: FileUploadBatch, filter: TaskFilterType) -> Bool {
         switch filter {
-        case .upload: return true
+        case .upload: return !batch.canRemoveFromTransferCenter
         case .download, .fileOperation: return false
         case .completed: return batch.canRemoveFromTransferCenter
         case .failed: return batch.hasUploadFailures

@@ -1,5 +1,5 @@
 <!-- doc-role: roadmap -->
-<!-- last-reviewed: 2026-10-02 -->
+<!-- last-reviewed: 2026-10-10 -->
 
 # 产品路线图
 
@@ -17,14 +17,14 @@
 
 ### macOS 后续候选与覆盖补齐
 
-- 在受控环境完成 Developer ID 签名、公证、票据装订、Gatekeeper、安装、升级和回退验收。
+- 为后续候选保留 Developer ID 签名、公证、票据装订与公开回读，并补齐未覆盖的 Gatekeeper、安装、升级和回退验收；已发布版本证据见验证历史。
 - 使用专用 NAS 验证 Finder/File Provider、会话隔离、缓存、取消、恢复和危险写最终回读。
 - 在正式签名和真实环境结论形成前，不发布、不宣称稳定支持，高风险功能按实际授权、能力与权限保护，不把功能开放等同于验收通过。
 
 ### Android 发布门
 
 - 保持 Android 质量基线、契约、fixture 脱敏、本地化和结构债务门禁为可重跑状态。
-- 在专用验证分支由托管 Runner 完整验证 JVM、Debug、Release/R8、仪器测试 APK 与 lint。
+- 使用获授权推送的 `main` 提交或既有工作流，由托管 Runner 完整验证 JVM、Debug、Release/R8、仪器测试 APK 与 lint。
 - 在真实设备上验证登录、证书、WorkManager、后台恢复、跨 NAS、危险写和辅助功能。
 
 ### Windows 发布门
@@ -35,7 +35,7 @@
 
 ## P1：跨端增量与可维护性
 
-macOS 新增 Photos 管理、File Station 扩展与 Office 本机编辑形成 Windows 后续语义基线，按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)先形成用户主流程，再完成聚焦自动化与可用构建；iPhone/iPad 只实施移动计划中的核心/受限范围，Android 需独立确定范围。
+macOS 新增 Photos 管理、File Station 扩展与 Office 本机编辑形成 Windows 后续语义基线，按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)先形成用户主流程，再完成聚焦自动化与可用构建；iPhone/iPad 的 M0–M8 源码范围已接入，继续完成延期云端复验及明确设备待办，Android 需独立确定范围。
 
 
 ### Android
@@ -74,11 +74,11 @@ macOS 新增 Photos 管理、File Station 扩展与 Office 本机编辑形成 Wi
 
 ## P3：后续产品候选
 
-- Apple 移动端自动照片备份、后台常驻传输、iPad 多窗口与 File Provider。
+- Apple 移动端自动照片备份与 iPad 多窗口。Files 和系统允许的后台执行时间已经接入，按当前计划验收；不承诺不受系统限制的后台常驻。
 - File Station 尚未覆盖的远程服务扩展和更完整的后台任务恢复；已有 macOS 功能与边界见 [File Station 账本](../../apple/Apps/DsmMac/README.md)。
-- Download Station 尚未接入的 RSS 与更高阶协议选项；已实现的创建、设置、批量与删除语义见[下载 API](../api/reference/download-station.md)，不重复列为新功能。
+- Download Station 各端尚未覆盖的更高阶协议选项；移动端已有 RSS 查看、更新与条目创建，其他端是否接入按矩阵分别记录；已实现的创建、设置、批量与删除语义见[下载 API](../api/reference/download-station.md)，不重复列为新功能。
 - Container Manager / VMM 的未覆盖高级拓扑与迁移；已有生命周期、网络管理和控制台按[容器](../api/reference/containers.md)及[虚拟机](../api/reference/virtual-machines.md)记录范围。
-- Synology Chat 的语音、投票参与、加密会话、多附件和实时通话。
+- Synology Chat 的加密会话、多附件和实时通话；语音、投票参与已在 macOS 与 Apple 移动端接入，其他端按各自范围评估。
 - Audio Station、Video Station、Note Station、Synology Drive、Calendar、Contacts、
   Surveillance Station、Hyper Backup、Active Backup 和 Synology Office。这里的 Synology Office 指 NAS 协作文档套件，与已接入的 macOS 本机 Office 文档预览/编辑不同。
 

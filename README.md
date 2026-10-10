@@ -1,5 +1,5 @@
 <!-- doc-role: entrypoint -->
-<!-- last-reviewed: 2026-10-02 -->
+<!-- last-reviewed: 2026-10-10 -->
 
 # 岚仓（LanStash）
 
@@ -16,10 +16,10 @@
 | 客户端 | 技术栈 | 当前状态 |
 | --- | --- | --- |
 | macOS | Swift 6、SwiftUI、Swift Package Manager | 完成度最高；文件、照片、消息、下载、容器、虚拟机和 NAS 管理主流程已建立 |
-| iPhone | Swift 6、SwiftUI | 已形成登录、Files、Photos、受限 Chat 文字、Download Station 常用单任务与只读管理页等移动闭环；当前范围和实机缺口见[开发状态](docs/progress/STATUS.md) |
+| iPhone | Swift 6、SwiftUI | 已接文件/照片管理、聊天与语音、下载、NAS/套件、容器/VMM，以及后台时间、系统分享与 Files；完整云端复验及真机缺口见[开发状态](docs/progress/STATUS.md) |
 | iPad | Swift 6、SwiftUI | 与 iPhone 共用通用工程，并已接入分栏、键盘和大屏自适应路径；真实 iPad 与 NAS 交互仍按[开发状态](docs/progress/STATUS.md)验收 |
 | Android | Kotlin、Jetpack Compose | 主要模块源码和自动化闭环已建立；当前范围、验证状态与验收缺口见[开发状态](docs/progress/STATUS.md) |
-| Windows | C#、WinUI 3 | 已形成认证、Files、Photos、受限 Chat 文字、Download Station、本地设置与桌面集成等原生闭环；云端构建证据和真实设备缺口见[开发状态](docs/progress/STATUS.md) |
+| Windows | C#、WinUI 3 | 已形成认证、Files、Photos、Chat 文字与附件/提醒/定时/投票、Download Station、本地设置与桌面集成等原生闭环；云端构建证据和真实设备缺口见[开发状态](docs/progress/STATUS.md) |
 
 “已建立”表示源码路径和自动化测试存在，不等于所有 DSM 型号、系统版本和套件版本都已完成实机兼容验证。高影响写操作仍需能力发现、权限检查、用户确认、重复提交保护和结果校验。
 
@@ -37,7 +37,7 @@
 
 部分能力依赖 DSM 或套件版本。项目优先使用 Synology 官方公开 API；必须使用内部 API 时，会在实现与兼容文档中明确标注并通过能力探测隔离。
 
-macOS 文档自动保存需保持岚仓运行；冲突或结果不明时暂停并保留本机副本，退出后不继续同步，重启不自动恢复。移动端采用系统编辑副本后主动回传，仍不支持离开 App 后自动同步；真实编辑器与 NAS 验收仍待完成；使用步骤、独立测试包和验证范围见 [Office 预览与编辑记录](apple/Apps/DsmMac/README.md)。
+macOS 文档自动保存需保持岚仓运行；冲突或结果不明时暂停并保留本机副本，退出后不继续同步，重启不自动恢复。移动端支持系统编辑副本后主动回传，以及 Files 原位编辑；已接系统授予的后台执行时间，到期保存恢复状态，不承诺进程终止后继续同步。真实编辑器、正式签名设备与 NAS 验收仍待完成；使用步骤、独立测试包和验证范围见 [Office 预览与编辑记录](apple/Apps/DsmMac/README.md)。
 
 五端正式照片入口均直接使用 Synology Photos，套件不可用时不会退回 File Station 扫描。系统原件分享不代表支持创建 Photos 分享链接；上传、相册编辑、共享空间和自动备份按各自范围控制。实现、性能边界与逐端验收统一见[照片计划](docs/development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。
 
@@ -74,7 +74,7 @@ tools/                     本地化、契约和仓库校验工具
 
 ### Apple
 
-需要当前稳定版 Xcode 和 XcodeGen。
+使用项目锁定的 Xcode 26.6（17F113）和 XcodeGen 2.46.0；以 [Apple 构建工作流](.github/workflows/apple-build.yml)为准。
 
 ```bash
 swift test --package-path apple

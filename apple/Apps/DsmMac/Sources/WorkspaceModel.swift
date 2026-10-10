@@ -417,6 +417,7 @@ final class WorkspaceModel {
     var remoteVFSProfiles: [FileVFSProfile] = []
     var remoteVFSProfilesError: String?
     private(set) var fileVFSConnectionActivities: [String: FileVFSConnectionActivity] = [:]
+    private(set) var hasPendingFileStationChanges = false
     var unavailableRemoteLocationProtocols: [FileVirtualProtocol] = []
     var remoteLocationsAreTruncated = false
     var remoteLocationsError: String?
@@ -885,6 +886,7 @@ final class WorkspaceModel {
     func startEnabledModules() async {
         if needsModuleAccessCheck { await refreshModuleAccess(startsWorkspace: true) }
         guard !Task.isCancelled, !requiresReauthentication else { return }
+        if isFileModuleEnabled { _ = await pendingFileStationChanges() }
         if isChatModuleEnabled { chat.startBackgroundSync() }
         if hasStartedModules {
             await activate(section)
@@ -1675,9 +1677,22 @@ final class WorkspaceModel {
         }
     }
 
-    func pendingFileStationChanges() async -> [FileStationPendingChange] { await repository.pendingFileStationChanges() }
+    func pendingFileStationChanges() async -> [FileStationPendingChange] {
+        let changes = await repository.pendingFileStationChanges()
+        hasPendingFileStationChanges = !changes.isEmpty
+        return changes
+    }
     func reviewPendingFileStationChange(id: String) async throws -> MutationResult {
-        try await repository.reviewPendingFileStationChange(id: id)
+        try await updatingPendingFileStationChanges { try await repository.reviewPendingFileStationChange(id: id) }
+    }
+
+    /// 提交或只读恢复结束后同步本机会话记录；抛错也可能留下需要恢复的操作。
+    private func updatingPendingFileStationChanges(_ operation: () async throws -> MutationResult) async throws -> MutationResult {
+        let result: Result<MutationResult, Error>
+        do { result = .success(try await operation()) }
+        catch { result = .failure(error) }
+        _ = await pendingFileStationChanges()
+        return try result.get()
     }
 
     func listFileStationMountAccounts(source: FileStationMountAccountSource = .local, kind: FileStationPrincipal.Kind, query: String, offset: Int) async throws -> FileStationMountAccountPage {
@@ -1713,7 +1728,9 @@ final class WorkspaceModel {
         guard isFileModuleEnabled else {
             throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
         }
-        let result = try await repository.authorizeFileVFS(change, authorization: authorization, confirmed: true)
+        let result = try await updatingPendingFileStationChanges {
+            try await repository.authorizeFileVFS(change, authorization: authorization, confirmed: true)
+        }
         if result.status == .confirmedSuccess { await refreshRemoteLocations() }
         return result
     }
@@ -1756,7 +1773,9 @@ final class WorkspaceModel {
         guard isFileModuleEnabled else {
             throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
         }
-        let result = try await (review ? repository.reviewFileVFS(change) : repository.changeFileVFS(change, password: password, confirmed: true))
+        let result = try await updatingPendingFileStationChanges {
+            try await (review ? repository.reviewFileVFS(change) : repository.changeFileVFS(change, password: password, confirmed: true))
+        }
         if result.status == .confirmedSuccess { await refreshRemoteLocations() }
         return result
     }
@@ -1774,7 +1793,9 @@ final class WorkspaceModel {
         guard isFileModuleEnabled else {
             throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
         }
-        return try await (review ? repository.reviewFileStationSettings(change) : repository.changeFileStationSettings(change, confirmed: true))
+        return try await updatingPendingFileStationChanges {
+            try await (review ? repository.reviewFileStationSettings(change) : repository.changeFileStationSettings(change, confirmed: true))
+        }
     }
 
     func loadFilePermissions(_ item: FileItem) async throws -> FilePermissionSnapshot {
@@ -1784,7 +1805,9 @@ final class WorkspaceModel {
         guard isFileModuleEnabled else {
             throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
         }
-        return try await (reviewOnly ? repository.reviewFilePermissions(change) : repository.changeFilePermissions(change))
+        return try await updatingPendingFileStationChanges {
+            try await (reviewOnly ? repository.reviewFilePermissions(change) : repository.changeFilePermissions(change))
+        }
     }
 
     func loadISOMounts() async throws -> [FileISOMountConnection] {
@@ -1803,7 +1826,9 @@ final class WorkspaceModel {
         guard isFileModuleEnabled else {
             throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
         }
-        let result = try await (reviewOnly ? repository.reviewISOMount(change) : repository.changeISOMount(change))
+        let result = try await updatingPendingFileStationChanges {
+            try await (reviewOnly ? repository.reviewISOMount(change) : repository.changeISOMount(change))
+        }
         if result.status == .confirmedSuccess { await refreshRemoteLocations() }
         return result
     }
@@ -2521,6 +2546,13 @@ final class WorkspaceModel {
         return transfers.filter { !groupedIDs.contains($0.id) }
     }
 
+    func uploadSpeed(for entry: FileUploadEntry) -> Double? {
+        guard entry.state == .running, let taskID = uploadTransferIDs[entry.id],
+              let task = transfers.first(where: { $0.id == taskID }), task.state == .running,
+              let speed = task.bytesPerSecond, speed > 0 else { return nil }
+        return speed
+    }
+
     var canClearFinishedTransfers: Bool {
         uploadBatches.contains(where: \.canRemoveFromTransferCenter)
             || ungroupedTransfers.contains { [.succeeded, .failed, .cancelled].contains($0.state) }
@@ -2563,6 +2595,7 @@ final class WorkspaceModel {
             // 跳过项由批次保留；旧任务存储没有跳过状态，不伪装成取消或成功。
             transfers.removeAll { $0.id == id }
             restartableTransfers[id] = nil
+            progressEstimators[id] = nil
             saveTransfers()
             return
         case .pending: state = .queued
@@ -2576,6 +2609,17 @@ final class WorkspaceModel {
         let stateChanged = transfers[index].state != state
         transfers[index].completedUnits = entry.completedBytes
         transfers[index].state = state
+        if state == .running {
+            var estimator = stateChanged ? TransferProgressEstimator() : (progressEstimators[id] ?? TransferProgressEstimator())
+            let metrics = estimator.update(completed: entry.completedBytes, total: entry.source.size)
+            progressEstimators[id] = estimator
+            transfers[index].bytesPerSecond = metrics.speed
+            transfers[index].estimatedSecondsRemaining = metrics.remaining
+        } else {
+            progressEstimators[id] = nil
+            transfers[index].bytesPerSecond = nil
+            transfers[index].estimatedSecondsRemaining = nil
+        }
         transfers[index].failureMessage = entry.state == .unverified || (entry.state == .paused && entry.needsReconciliation)
             ? L10n.string("mac.upload.interruptedMessage") : entry.message
         // 进行中的上传退出后不能从旧存储自动重放；会话内恢复由批次先核对结果。

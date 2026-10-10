@@ -150,4 +150,4 @@ Apple 共享新增 `NasDiskTestChange` 和带 `beforeSubmission` 的统一结果
 
 移动 `NAS/disk-tests-v1.json` 独立记录账号/设备身份摘要、动作和阶段，受系统文件保护并排除备份，不含原始硬盘标识、序列号、凭据或状态正文。重启后的未发送记录取消；已发送未知操作仅查询原目标。恢复启动必须正在运行且类型一致，恢复停止必须明确没有运行；无法证明的操作不重发。开始成功表示检测已开始，不表示硬盘检测已完成。关闭详情不会发送停止请求；离开账号只取消本地等待并保留原记录。
 
-本次没有新 NAS 请求参数和真实 NAS 写入。Mac 原调用方式和存储不变，共享回归与双架构构建另记；Windows/Android 仅记录上述精确类型及发送边界语义，不改代码。测试见 `NasStorageFlowTests`、`MobileNasStorageTests`、`MobileNasStorageUITests`；所有接口真实行为和硬件条件继续按[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#m6a2-存储分析硬盘检测与完整日志)待验，不继承其他端的通过结论。
+本次没有新 NAS 请求参数和真实 NAS 写入。Mac 原调用方式和存储不变，共享回归与双架构构建另记；Windows/Android 仅记录上述精确类型及发送边界语义，不改代码。测试见 `NasStorageFlowTests`、`MobileNasStorageTests`、`MobileNasStorageUITests`；所有接口真实行为和硬件条件继续按[移动主计划](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a2-存储分析硬盘检测与完整日志)待验，不继承其他端的通过结论。

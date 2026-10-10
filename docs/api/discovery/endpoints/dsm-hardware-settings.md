@@ -128,7 +128,7 @@ LED 拆成 `set_current_brightness` 和 `update` 两个独立边界，共七个�
 完整两步回执的 LED 不会被当前相同值覆盖。Mac 模型同样不再以页面相等覆盖保存结果。
 新增五项基线测试在修正前有 16 条失败断言，修正后的硬件相关 21 项通过；随后共享完整
 2954 项 XCTest（172 条既有跳过）及 12 项 Swift Testing 通过。移动与 Mac 构建、实际 UI
-和详细设备待办以[移动 M6c2 账本](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-10-06-m6c2-硬件与-ups-设置)为准。
+和详细设备待办以[移动 M6c2 账本](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#2026-10-06-m6c2-硬件与-ups-设置)为准。
 
 五端影响：macOS 使用修正后的旧入口；iPhone/iPad 使用新增管理入口与同一受保护摘要
 记录，UPS 地址和配置正文不落盘；Windows/Android 仅登记这一结果核查语义，未修改源码、

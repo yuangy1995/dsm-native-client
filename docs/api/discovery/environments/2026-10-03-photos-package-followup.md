@@ -38,7 +38,7 @@
 相关文档或 fixture：
 
 - `docs/api/discovery/endpoints/dsm-package-installation.md`
-- `docs/development/PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md`
+- [历史账本](../../../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#照片与套件更新二次反馈修复2026-10-03)
 
 ## 发现范围
 

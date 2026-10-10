@@ -76,3 +76,5 @@
 - [2026-10-02 File Station 官方页面续查](2026-10-02-file-station-live-observation.md)：DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559；待归属；全文 start 与设置读取、静态扩展契约，无真实写验证。
 
 - [2026-10-03 置顶搜索复验](2026-10-03-chat-pinned-read-observation.md)：旧 channel_id 过滤失效，in 数字数组只读验证有效；待归属，不提升旧基线。
+
+- [2026-10-07 Photos 旋转保存条件](2026-10-07-photos-rotation-observation.md)：官方静态成功分支更新布局并刷新缩略图；纠正显示尺寸与原始分辨率的混用，实际 NAS 旋转仍未验证。

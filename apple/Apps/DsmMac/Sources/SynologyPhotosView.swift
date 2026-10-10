@@ -324,56 +324,6 @@ struct SynologyPhotosView: View {
                     Button(L10n.string("photos.upload.queue")) { showsUploadQueue = true }
                 }.padding(.horizontal, 16).padding(.vertical, 8)
             }
-            if model.isManaging && !model.isGeneratingAutomaticPreview { ProgressView().controlSize(.small).padding(8) }
-            if let message = model.managementMessage {
-                HStack {
-                    Text(message).font(.callout)
-                    if model.managementFeatures.contains(.backgroundTasks), model.isManaging || model.pendingMutationID != nil {
-                        Button(L10n.string("photos.tasks.title")) { showsBackgroundTasks = true }
-                    }
-                    if model.needsSharedListRefresh {
-                        Button(L10n.string("photos.library.refresh")) { Task { await model.retrySharedListRefresh() } }
-                            .disabled(model.isManaging || model.isLoadingMore)
-                    }
-                    if model.hasSimilarBatchToContinue {
-                        Button(L10n.string("photos.similar.continueGroups")) { model.continueSimilarBatch() }
-                        Button(L10n.string("photos.similar.cancelRemaining")) { model.cancelRemainingSimilarGroups() }
-                    }
-                    if model.similarUndoMutation != nil {
-                        Button(L10n.string("photos.similar.undo")) { model.undoSimilarChanges() }
-                            .disabled(model.isManaging || model.pendingMutationID != nil || model.hasSimilarBatchToContinue)
-                    }
-                    if model.pendingMutationID != nil && model.automaticMutationReviewID == nil && !model.isManaging {
-                        Button(L10n.string("photos.selection.retryReview")) { model.reviewPendingMutation() }
-                    }
-                    if model.temporarySharingCleanupNeedsRetry {
-                        Button(L10n.string("photos.retry")) { model.retryTemporarySharingCleanup() }
-                            .disabled(model.isManaging || model.pendingMutationID != nil)
-                        Button(L10n.string("photos.temporary.keepExisting")) { model.keepTemporarySharingAlbums() }
-                            .disabled(model.isManaging || model.pendingMutationID != nil)
-                    }
-                    if model.retryableManagementMutation != nil {
-                        Button(L10n.string("photos.manage.continueRemaining")) { model.continuePartialManagement() }
-                            .disabled(model.isManaging || model.pendingMutationID != nil)
-                    }
-                    if let url = model.managementLink {
-                        Button(L10n.string("photos.copyLink")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string) }
-                    }
-                }.padding(8)
-            }
-            if model.isSaving {
-                HStack {
-                    ProgressView(value: model.saveProgress)
-                    Button(L10n.string("photos.download.cancel")) { model.cancelSave() }
-                }.padding(.horizontal)
-            }
-            if let message = model.saveMessage { Text(message).font(.callout).foregroundStyle(.secondary).padding(8) }
-            if let error = model.similarRefreshError {
-                HStack {
-                    Text(error).font(.callout)
-                    Button(L10n.string("photos.retry")) { Task { await model.refreshAffectedSimilarGroups() } }
-                }.padding(8)
-            }
             if model.showsAutomaticPreviewStatus {
                 HStack(spacing: 10) {
                     if model.isGeneratingAutomaticPreview { ProgressView().controlSize(.small) }
@@ -389,15 +339,11 @@ struct SynologyPhotosView: View {
                     }
                 }.padding(8)
             }
-            if model.isDeleting || model.isCheckingDeletion { ProgressView().controlSize(.small).padding(8) }
-            if let message = model.deletionMessage {
-                HStack {
-                    Text(message).font(.callout)
-                }.padding(8)
-            }
+
         }
         .fillsAvailableContentArea(alignment: .topLeading)
         .background(MacGlassSurface(role: .content))
+        .macOperationOverlay { PhotoOperationFeedback(model: model, showBackgroundTasks: { showsBackgroundTasks = true }) }
         .task {
             await model.loadIfNeeded()
             model.continueTemporarySharingCleanup()
@@ -1209,7 +1155,8 @@ struct SynologyPhotoPreview: View {
                 ZStack {
                     if let data = model.previewData, let image = NSImage(data: data),
                        let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                        FittedImagePreview(cgImage: cgImage, orientation: .up, showsControls: false, isZoomEnabled: !model.isPlayingMotion)
+                        FittedImagePreview(cgImage: cgImage, orientation: .up, showsControls: false, isZoomEnabled: !model.isPlayingMotion,
+                            savedRotationDegrees: model.previewRotationDegrees)
                             .id(model.previewPhoto?.id)
                             .id(model.isPlayingMotion)
                         if model.isPlayingMotion, let source = model.previewSource {
@@ -1338,28 +1285,7 @@ struct SynologyPhotoPreview: View {
                     }.frame(height: 112)
                 }.padding(12).background(MacGlassSurface(role: .toolbar))
             }
-            if model.isSaving {
-                HStack {
-                    ProgressView(value: model.saveProgress)
-                    Button(L10n.string("photos.download.cancel")) { model.cancelSave() }
-                }.padding(.horizontal)
-                    .accessibilityIdentifier("photos.preview.saveProgress")
-            }
-            if let message = model.saveMessage {
-                Text(message).font(.callout).padding(8).accessibilityIdentifier("photos.preview.saveMessage")
-            }
-            if model.similarUndoMutation != nil {
-                Button(L10n.string("photos.similar.undo")) { model.undoSimilarChanges() }
-                    .disabled(model.isManaging || model.pendingMutationID != nil || model.hasSimilarBatchToContinue).padding(8)
-            }
-            // 后台预览生成和上传有各自的进度入口，不占用当前照片的预览状态栏。
-            if model.isManaging, !model.isGeneratingAutomaticPreview, !model.isUploading {
-                ProgressView().padding(8).accessibilityIdentifier("photos.preview.managementProgress")
-            }
-            if let message = model.managementMessage { Text(message).font(.callout).padding(8) }
-            if model.pendingMutationID != nil, !model.hasPendingAutomaticPreview, !model.isManaging {
-                Button(L10n.string("photos.retry")) { model.reviewPendingMutation() }.padding(.bottom, 8)
-            }
+
         }
         .alert(L10n.string("photos.similar.manage"), isPresented: Binding(
             get: { pendingSimilarMutation != nil }, set: { if !$0 { pendingSimilarMutation = nil } }), presenting: pendingSimilarMutation) { mutation in
@@ -1374,6 +1300,7 @@ struct SynologyPhotoPreview: View {
         .sheet(item: $faceEditorTarget) { target in PhotoFaceEditor(model: model, target: target) }
         .frame(minWidth: 820, idealWidth: 1000, minHeight: 600, idealHeight: 720)
         .background(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).content)
+        .macOperationOverlay { PhotoOperationFeedback(model: model) }
     }
 
     private func managementButton(_ kind: PhotoManagementKind, photo: SynologyPhoto) -> some View {
