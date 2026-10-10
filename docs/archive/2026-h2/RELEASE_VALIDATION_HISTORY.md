@@ -7411,3 +7411,93 @@ M8bb。没有契约、生产写逻辑、权限、存储、签名或依赖变更�
 检查完整源码差异，原超时和业务断言保持，新增 Files 日志仅固定文本且只在
 DEBUG fixture 中；所有用户原有 Mac/Photos 等改动与本历史原 74 行继续保留。
 准备按现有 main 正常提交推送，再收齐新来源完整 Apple 结果。
+
+## 2026-10-10 M8bd 整合修正来源完整 Apple 复验
+
+M8bc 已提交并推送 `7f411313ea32ed31a84640da499036340acf14f2`，提交题为
+“修正移动测试查询超时与 Files 清理生命周期”，9 文件、633 行新增/16 行删除。
+提交前 `git fetch origin main` 及 `git rev-list --left-right --count HEAD...origin/main`
+为 0/0；`git push origin main` 正常从 `5019da83` 前进至新来源，无强推/分支/PR。
+暂存包含五个移动测试/DEBUG 文件、三份计划和本历史自 M8ax 起的新增段；用户
+原 74 行历史、其他 Mac/Photos 未暂存差异以及三个未跟踪文件的内容哈希在
+提交前后完全一致。此前两端本机聚焦、最后本地化/严格文档/差异检查均通过。
+所有本轮临时诊断/日志与专用模拟器已清理，正式本机结果包保留。
+
+[新来源完整 Apple 检查](https://github.com/yuangy1995/dsm-native-client/actions/runs/38006897143)
+于 UTC 2026-10-09 23:57:28 创建，来源 SHA 已核对，初始 queued。原来源
+`37919284624` 的九组与最终 failure 已完整保留，本次没有中断有效验证。
+当前只代表代码已同步；新来源完整云端、真实 NAS 与正式签名的验证结论
+继续分别记录，不宣称整体通过或正式发布。
+
+同一来源的 [仓库检查](https://github.com/yuangy1995/dsm-native-client/actions/runs/38006897120)
+及 [文档质量检查](https://github.com/yuangy1995/dsm-native-client/actions/runs/38006897128)
+均已成功。初次回读时 Apple 九个分组均为 queued，执行机器尚未分配；预检查成功不能
+替代 Apple 构建、移动单元、系统集成与 UI 完整结果。
+
+### M8bd 共享包与 macOS 完整结果
+
+同一来源 `shared-macos` 作业 `114077646069` 于 UTC 2026-10-10 01:04:46
+启动、01:26:04 以 success 结束。完整日志确认：3119 XCTest、177 既有
+skipped、0 failures，87.272 秒（含框架统计 87.877 秒）；12 Swift Testing
+全部通过、0.066 秒；48 项发布与升级工具测试全部通过、32.376 秒。XcodeGen
+生成一致性、正式发布门禁入口的缺产物拒绝、macOS Release arm64 构建均通过。
+临时签名包排除本地磁盘挂载扩展，权限校验、Sparkle `library loaded` 实际
+加载、DMG 及产物校验通过，未据此宣称正式签名、公证、双架构或 Finder 验收。
+
+产物 `LanStash-macOS`，ID `11655151314`、53,572,706 字节，未下载、安装
+或启动。八个移动分组仍待完整结果，不能以共享分组成功替代移动验收。
+
+```sh
+gh api repos/yuangy1995/dsm-native-client/actions/jobs/114077646069/logs
+gh api repos/yuangy1995/dsm-native-client/actions/runs/38006897143/artifacts
+```
+
+## 2026-10-10 M8be 云端失败用例本机复跑
+
+用户明确要求将云端失败用例在本地运行。范围为 `5019da83` 完整来源的六项
+失败，按原失败机型选择：iPad 存储快速检测/停止、存储未知结果重启恢复、
+内存压缩部分保存续接、Files 默认只读；iPhone 照片覆盖设置确认/取消/保存、
+Files 默认只读。沿用 M8ay/M8az/M8ba/M8bb 功能账本、业务断言与安全边界，
+不增加功能或修改源码，不扩大为全套本机测试。当前 HEAD 为 `7f411313`，
+五个相关源码文件相对提交无差异；本机工作区仍包含用户原有 Mac/Photos 等
+未提交改动，因此结果记录为当前工作区验证，不冒充干净检出的云端来源结果。
+
+本机 Xcode 26.6（17F113）、iOS 26.5（23F77），新建专用 iPad Air 11-inch
+(M4) 与 iPhone 17 Pro；原有三台模拟器保持不动。云端 M8bd 保持运行，
+不以本次本机复跑改写原失败或替代完整云端结果。
+
+M8be build-for-testing 成功。iPad 四项 264.605 秒全部通过，iPhone 两项
+123.629 秒全部通过；两个结果包的 `test-results summary` 独立确认 Passed、
+分别 4/4 与 2/2、0 failures、0 skipped，没有预期失败或静默跳过。
+
+| 原云端失败机型 | 正式用例 | 本机结果 | 耗时（秒） |
+| --- | --- | --- | --- |
+| iPad | Files 默认只读位置通过系统文件下载 | passed（含原清理断言） | 77.528 |
+| iPad | 硬盘快速检测和停止均可确认并显示实际状态 | passed | 50.841 |
+| iPad | 硬盘未知结果重启后只恢复状态 | passed | 68.125 |
+| iPad | 内存压缩部分保存可单独继续后一步 | passed | 68.111 |
+| iPhone | Files 默认只读位置通过系统文件下载 | passed（含原清理断言） | 83.649 |
+| iPhone | 照片重复默认覆盖确认可取消再保存 | passed | 39.980 |
+
+实际命令：
+
+```sh
+xcodebuild build-for-testing -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -destination 'platform=iOS Simulator,id=3ED4659E-B3A2-4ED4-9FA1-63492CFF2EAD' -derivedDataPath apple/Apps/DsmMobile/build/m0-m8 -jobs 3 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun -destination 'platform=iOS Simulator,id=3ED4659E-B3A2-4ED4-9FA1-63492CFF2EAD' -parallel-testing-enabled NO -testLanguage en -testRegion US -resultBundlePath build/m8be-pad-cloud-failures.xcresult '-only-testing:DsmMobileUITests/MobileNasStorageUITests/test硬盘快速检测和停止均可确认并显示实际状态' '-only-testing:DsmMobileUITests/MobileNasStorageUITests/test硬盘未知结果重启后只恢复状态' '-only-testing:DsmMobileUITests/MobileServiceSettingsUITests/test内存压缩部分保存可单独继续后一步' '-only-testing:DsmMobileUITests/MobileFilesProviderUITests/test默认只读位置通过系统文件下载'
+xcodebuild test-without-building -xctestrun apple/Apps/DsmMobile/build/m0-m8/Build/Products/DsmMobile_iphonesimulator26.5-arm64.xctestrun -destination 'platform=iOS Simulator,id=C56909D6-BFA3-4BD4-A0D5-DE511BD61036' -parallel-testing-enabled NO -testLanguage en -testRegion US -resultBundlePath build/m8be-phone-cloud-failures.xcresult '-only-testing:DsmMobileUITests/MobileWorkspaceUITests/test照片重复默认覆盖确认可取消再保存' '-only-testing:DsmMobileUITests/MobileFilesProviderUITests/test默认只读位置通过系统文件下载'
+xcrun xcresulttool get test-results summary --path build/m8be-pad-cloud-failures.xcresult --compact
+xcrun xcresulttool get test-results summary --path build/m8be-phone-cloud-failures.xcresult --compact
+```
+
+用户在本轮运行中明确询问本机通过后能否跳过云端等待，本次按“完成本机
+复测交付、完整云端验收延期”处理。`7f411313` 的共享/macOS 与两项预检查
+已通过，交付核对时八个移动分组仍排队；保留现有运行与原失败，没有取消
+其他来源测试或修改工作流、忽略失败、放宽断言。六项本机成功不能证明云端
+有故障，也未证明云端负载/时序风险已消除；真实 NAS、签名、真机等待验
+边界沿用原账本。后续若继续完整验收，仍需收齐同一来源的真实云端结果。
+
+本机收尾完成：两台专用模拟器已关闭并删除，前后回读确认原三台设备的标识、
+名称及状态完全一致；六项临时日志/设备快照已清理，两个正式 `.xcresult`
+结果包保留。本次没有新增源码改动；本地化资源与硬编码扫描（Apple 7079、
+Android 2188、Windows 3402）、严格文档和差异检查通过。最终仅提交本轮
+移动计划与验证历史新增记录，原有 Mac/Photos 改动和历史原 74 行继续保留。
