@@ -200,6 +200,9 @@ python3 tools/localization/check_localization.py
 完整 JVM、Release/R8 与 lint 等高负载门禁优先交由 GitHub 托管 Runner。
 Android Build 工作流通过 `ANDROID_HOME` 定位 Runner 预装的 `sdkmanager`，
 检查工具可执行后安装 API 37.0 与 Build Tools 36.0.0，不依赖命令行工具已加入 `PATH`。
+CI 依次运行全部单元测试与 Debug 构建、Release/R8、仪器测试包与 lint，保留全部检查。
+云端 Kotlin 编译堆设为 6 GiB，Gradle worker 限为 1；编译进程失败时直接保留错误，
+不再回退到较小堆重复编译。本机默认内存配置保持不变。
 本机可生成必要的 Debug/仪器包并逐台运行隔离模拟器。仅使用已获授权推送的 `main`
 或既有工作流，不创建验证分支；未获推送授权时保留云端待办，不把增量结果表述为完整发布验证。
 

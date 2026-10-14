@@ -72,6 +72,11 @@ tools/                     localization, contract, and repository validation too
 
 ## Build and test
 
+Every GitHub Actions job has a 120-minute timeout, including each matrix job.
+This is not a limit on the total workflow duration. Jobs finish as soon as their work is done,
+and test failures still fail the job. Windows per-test hang diagnostics, release approvals,
+and signing gates remain in place.
+
 ### Apple
 
 Use the pinned Xcode 26.6 (17F113) and XcodeGen 2.46.0 from the [Apple build workflow](.github/workflows/apple-build.yml).

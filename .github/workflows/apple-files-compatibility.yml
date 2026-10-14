@@ -28,7 +28,7 @@ jobs:
   files-system:
     name: ${{ matrix.family }}-iOS-${{ inputs.ios_runtime }}
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       max-parallel: 1
