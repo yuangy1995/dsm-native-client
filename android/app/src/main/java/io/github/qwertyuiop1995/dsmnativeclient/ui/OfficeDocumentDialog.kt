@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.ui.platform.LocalResources
 import android.content.ClipData
 import android.content.Intent
 import android.text.format.Formatter
@@ -32,6 +33,7 @@ internal fun OfficeDocumentDialog(feature: OfficeDocumentFeatureModel, profile: 
     val state by feature.state.collectAsStateWithLifecycle()
     if (!state.visible) return
     val context = LocalContext.current
+    val resources = LocalResources.current
     val row = state.selected
     val connection = connectionConfirmationName(context, profile, profiles)
     val enabled = !state.busy && state.picker == null
@@ -106,7 +108,7 @@ internal fun OfficeDocumentDialog(feature: OfficeDocumentFeatureModel, profile: 
     state.exported?.let { exported -> LaunchedEffect(exported.request.token) {
         var opened = true
         if (exported.request.kind != OfficePickerKind.EXPORT) {
-            try { context.startActivity(Intent.createChooser(officeExternalIntent(exported), context.getString(R.string.office_open))) }
+            try { context.startActivity(Intent.createChooser(officeExternalIntent(exported), resources.getString(R.string.office_open))) }
             catch (_: android.content.ActivityNotFoundException) { opened = false }
             catch (_: SecurityException) { opened = false }
         }

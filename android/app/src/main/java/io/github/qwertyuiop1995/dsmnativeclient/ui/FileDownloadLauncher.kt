@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.ui.platform.LocalResources
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,6 +26,7 @@ internal class FileDownloadLauncher(private val launch: (List<FileItem>, io.gith
 @Composable
 internal fun rememberFileDownloadLauncher(state: WorkspaceState, model: AppViewModel): FileDownloadLauncher {
     val context = LocalContext.current
+    val resources = LocalResources.current
     var pendingDownload by rememberSaveable(
         state.profile.id,
         stateSaver = PendingDownloadRequestStateSaver,
@@ -82,7 +84,7 @@ internal fun rememberFileDownloadLauncher(state: WorkspaceState, model: AppViewM
         if (items.isEmpty() || items.any { !it.canRead } || pendingDownload.request != null) return
         if (source != null && (source.profile.owner != owner || items.size != 1 || !source.matches(items.single()))) return
         val archive = items.size > 1 || items.single().isDirectory
-        val title = if (items.size > 1) context.getString(R.string.download_selected_zip_name)
+        val title = if (items.size > 1) resources.getString(R.string.download_selected_zip_name)
             else if (archive) "${items.single().name}.zip" else items.single().name
         pendingDownload = PendingDownloadRequestState(if (source == null) pendingDownloadRequest(owner, items, title)
             else PendingDownloadRequest(owner, items, title, source))

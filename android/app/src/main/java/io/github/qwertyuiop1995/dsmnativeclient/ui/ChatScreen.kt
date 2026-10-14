@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.ui.platform.LocalResources
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -169,6 +170,7 @@ internal fun ChatScreen(rawState: WorkspaceState, model: AppViewModel) {
 internal fun NewConversationDialog(state: WorkspaceState, model: AppViewModel) {
     val selectedCount = state.chatSelectedUserIds.size
     val context = LocalContext.current
+    val resources = LocalResources.current
     val mutationInProgress = state.chatMutationInProgress(
         ChatMutationOperation.DIRECT_CONVERSATION_CREATE,
         ChatMutationOperation.PRIVATE_GROUP_CREATE,
@@ -241,7 +243,7 @@ internal fun NewConversationDialog(state: WorkspaceState, model: AppViewModel) {
                 if (mutationInProgress) {
                     LinearProgressIndicator(
                         modifier = Modifier.fillMaxWidth().semantics {
-                            contentDescription = context.getString(
+                            contentDescription = resources.getString(
                                 R.string.chat_conversation_change_in_progress,
                             )
                         },
@@ -321,6 +323,7 @@ internal fun ChatMembersDialog(state: WorkspaceState, model: AppViewModel) {
 @Composable
 internal fun ChatRemindersDialog(state: WorkspaceState, model: AppViewModel) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val mutationInProgress = state.chatMutationInProgress(
         ChatMutationOperation.REMINDER_SET,
         ChatMutationOperation.REMINDER_DELETE,
@@ -335,7 +338,7 @@ internal fun ChatRemindersDialog(state: WorkspaceState, model: AppViewModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .semantics {
-                                contentDescription = context.getString(
+                                contentDescription = resources.getString(
                                     R.string.chat_reminder_change_in_progress,
                                 )
                             },
@@ -428,6 +431,7 @@ internal fun showChatReminderPicker(context: Context, onSelected: (Long) -> Unit
 @Composable
 internal fun ChatScheduledMessagesDialog(state: WorkspaceState, model: AppViewModel) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val mutationInProgress = state.chatMutationInProgress(
         ChatMutationOperation.SCHEDULE_CREATE,
         ChatMutationOperation.SCHEDULE_DELETE,
@@ -442,7 +446,7 @@ internal fun ChatScheduledMessagesDialog(state: WorkspaceState, model: AppViewMo
                         modifier = Modifier
                             .fillMaxWidth()
                             .semantics {
-                                contentDescription = context.getString(
+                                contentDescription = resources.getString(
                                     R.string.chat_schedule_change_in_progress,
                                 )
                             },

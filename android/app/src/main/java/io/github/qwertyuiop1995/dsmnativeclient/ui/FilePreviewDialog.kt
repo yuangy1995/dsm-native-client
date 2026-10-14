@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.ui.platform.LocalConfiguration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -257,7 +258,7 @@ internal fun PreviewDetails(item: FileItem, preview: Loadable<FilePreviewContent
             ?.let { epochSeconds ->
             DetailLine(
                 stringResource(R.string.file_detail_modified),
-                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, context.resources.configuration.locales[0])
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, LocalConfiguration.current.locales[0])
                     .format(Date(epochSeconds * 1000)),
             )
         }
@@ -287,7 +288,7 @@ internal fun PreviewDetails(item: FileItem, preview: Loadable<FilePreviewContent
         mediaDetails?.capturedAtEpochMillis?.let { capturedAt ->
             DetailLine(
                 stringResource(R.string.file_detail_taken),
-                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, context.resources.configuration.locales[0])
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, LocalConfiguration.current.locales[0])
                     .format(Date(capturedAt)),
             )
         }

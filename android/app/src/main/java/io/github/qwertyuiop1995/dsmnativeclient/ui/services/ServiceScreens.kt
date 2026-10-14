@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.services
 
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.activity.compose.BackHandler
 import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
 import io.github.qwertyuiop1995.dsmnativeclient.virtualMachineMutationBlocksWorkspaceExit
@@ -552,7 +553,7 @@ internal fun LogList(
                                     listOfNotNull(
                                         log.user,
                                         log.localTime?.format(java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM)
-                                            .withLocale(androidx.compose.ui.platform.LocalContext.current.resources.configuration.locales[0]))
+                                            .withLocale(LocalConfiguration.current.locales[0]))
                                             ?: log.timeEpochSeconds?.let(::formatDate),
                                     ).joinToString(" · "),
                                 )

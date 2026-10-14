@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.photos
 
+import androidx.compose.ui.platform.LocalResources
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -60,6 +61,7 @@ internal fun SynologyPhotosLibrary(model: SynologyPhotosModel, canBackup: Boolea
     val writing = similarState?.working == true || conceptsState?.working == true || peopleState?.working == true || previewsState?.working == true || codecState?.working == true || maintenanceState?.working == true || sharedMembersState?.working == true || backgroundState?.working == true || export.busy || deletionState.writing || editState?.working == true || albumState?.working == true || requestState?.working == true || folderState?.working == true || fileState?.working == true || folderSharingState?.working == true || settingsState?.working == true
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val context = LocalContext.current
+    val resources = LocalResources.current
     var search by rememberSaveable(model.profileId) { mutableStateOf("") }
     var filters by remember { mutableStateOf(false) }
     var months by remember { mutableStateOf(false) }
@@ -142,7 +144,7 @@ internal fun SynologyPhotosLibrary(model: SynologyPhotosModel, canBackup: Boolea
                     if (state.items.isNotEmpty()) DropdownMenuItem(text = { Text(stringResource(R.string.sp_slideshow_start)) },
                         enabled = model.canStartSlideshow, onClick = { more = false; model.startSlideshow() })
                     val archive = state.navigation.album?.let { SynologyPhotoArchiveTarget.Album(it.id) to it.name }
-                        ?: state.navigation.folders.lastOrNull()?.takeIf { state.navigation.section == SynologyPhotosSection.FOLDERS }?.let { SynologyPhotoArchiveTarget.Folder(it.id, it.space) to it.name.takeUnless { name -> name == "/" }.orEmpty().ifEmpty { context.getString(R.string.sp_library_folders) } }
+                        ?: state.navigation.folders.lastOrNull()?.takeIf { state.navigation.section == SynologyPhotosSection.FOLDERS }?.let { SynologyPhotoArchiveTarget.Folder(it.id, it.space) to it.name.takeUnless { name -> name == "/" }.orEmpty().ifEmpty { resources.getString(R.string.sp_library_folders) } }
                     if (archive != null) DropdownMenuItem(text = { Text(stringResource(if (archive.first is SynologyPhotoArchiveTarget.Album) R.string.sp_export_album else R.string.sp_export_folder)) },
                         enabled = !writing && !state.loading, onClick = { more = false; model.exports.open(SynologyPhotoExportRequest.Archive(archive.first, archive.second)) })
                     if (state.navigation.category == SynologyPhotoCategory.SIMILAR) model.similar?.let { similar ->
@@ -228,7 +230,7 @@ internal fun SynologyPhotosLibrary(model: SynologyPhotosModel, canBackup: Boolea
                 TextButton(onClick = {
                     val request = if (editState.selectedFolders.isEmpty()) SynologyPhotoExportRequest.Items(editState.selected)
                         else SynologyPhotoExportRequest.Archive(SynologyPhotoArchiveTarget.Selection(editState.selected, editState.selectedFolders),
-                            context.getString(R.string.sp_export_selection_filename))
+                            resources.getString(R.string.sp_export_selection_filename))
                     if (state.navigation.category == SynologyPhotoCategory.SIMILAR && editState.selectedFolders.isEmpty() && model.similar != null)
                         model.similar.exportGroups(editState.selected)
                     else model.exports.open(request, state.access?.supportsOriginalSizeJPEG == true)

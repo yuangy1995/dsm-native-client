@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalConfiguration
 import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Link
@@ -109,6 +111,7 @@ internal fun ConversationDetail(
 ) {
     val conversation = state.selectedConversation ?: return
     val context = LocalContext.current
+    val resources = LocalResources.current
     val reminderMutationInProgress = state.chatMutationInProgress(
         ChatMutationOperation.REMINDER_SET,
         ChatMutationOperation.REMINDER_DELETE,
@@ -122,7 +125,7 @@ internal fun ConversationDetail(
     val selectedMessages = (state.chatMessages as? Loadable.Ready)?.value?.messages.orEmpty().filter { it.id in selectedIds }
     var pendingSave by remember { mutableStateOf<Pair<String, ChatAttachment>?>(null) }
     val voicePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) model.chatVoice.start(conversation.id, conversation.title, context.getString(R.string.chat_voice_filename))
+        if (granted) model.chatVoice.start(conversation.id, conversation.title, resources.getString(R.string.chat_voice_filename))
         else model.chatVoice.permissionDenied()
     }
     val attachmentPicker = rememberLauncherForActivityResult(
@@ -341,7 +344,7 @@ internal fun MessageBubble(
     onMore: (() -> Unit)? = null,
 ) {
     val sender = message.sender?.displayName ?: stringResource(R.string.unknown_sender)
-    val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, LocalContext.current.resources.configuration.locales[0])
+    val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, LocalConfiguration.current.locales[0])
         .format(Date(message.createdAtEpochSeconds * 1_000))
     val mutationDelivery = if (mutation != null) chatMutationFeedbackMessage(mutation) else null
     val delivery = mutationDelivery ?: when (

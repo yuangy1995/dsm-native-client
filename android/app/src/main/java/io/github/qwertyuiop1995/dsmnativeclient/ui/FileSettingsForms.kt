@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
@@ -115,7 +116,7 @@ private fun FileSettingsNumber(title: String, value: String, change: (String) ->
 @Composable
 internal fun FileSettingsSchedule(value: String, perAccount: Boolean, enabled: Boolean, change: (String) -> Unit) {
     var day by remember { mutableIntStateOf(0) }; var painting by remember { mutableStateOf('1') }
-    val locale = LocalContext.current.resources.configuration.locales[0]
+    val locale = LocalConfiguration.current.locales[0]
     val dayNames = remember(locale) { (0..6).map { DayOfWeek.of((it + 6) % 7 + 1).getDisplayName(TextStyle.FULL, locale) } }
     val hours = remember(locale) { (0..23).map { LocalTime.of(it, 0).format(DateTimeFormatter.ofPattern("HH:mm", locale)) } }
     Text(stringResource(R.string.file_settings_schedule_clock), style = MaterialTheme.typography.bodySmall)
