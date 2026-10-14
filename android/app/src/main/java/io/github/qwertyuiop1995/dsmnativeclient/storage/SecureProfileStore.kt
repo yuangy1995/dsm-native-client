@@ -320,11 +320,12 @@ class SecureProfileStore internal constructor(
     }
 
     /** 通知只能绑定已有任务的原身份；退出后仍可查看本机记录，不授予网络操作权限。 */
-    internal fun issueLocalTransferTarget(kind: WorkspaceRecordKind, id: String): String? = synchronized(workspaceStoreLock) {
+    internal fun issueLocalTransferTarget(kind: WorkspaceRecordKind, id: String,
+        createdAtEpochMillis: Long = System.currentTimeMillis()): String? = synchronized(workspaceStoreLock) {
         val taskKind = io.github.qwertyuiop1995.dsmnativeclient.domain.LocalTransferKind.entries.firstOrNull { it.name == kind.name } ?: return null
         val owner = recordOwner(kind, id) ?: return null
         if (profileForOwner(owner) == null) return null
-        issueOwnedOpaqueTarget(owner.profileId, OpaqueWorkspaceTarget.LocalTransfer(taskKind, id), owner, System.currentTimeMillis())
+        issueOwnedOpaqueTarget(owner.profileId, OpaqueWorkspaceTarget.LocalTransfer(taskKind, id), owner, createdAtEpochMillis)
     }
 
     private fun issueOwnedOpaqueTarget(profileId: String, target: OpaqueWorkspaceTarget,
