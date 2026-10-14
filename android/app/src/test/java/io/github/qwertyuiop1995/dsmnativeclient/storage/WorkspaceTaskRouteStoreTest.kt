@@ -65,7 +65,8 @@ class WorkspaceTaskRouteStoreTest {
         repeat(MAX_OPAQUE_WORKSPACE_ROUTES_PER_PROFILE + 1) { index ->
             val id = "backup-$index"
             store.bindRecord(WorkspaceRecordKind.UPLOAD, id, owner)
-            val token = store.issueLocalTransferTarget(WorkspaceRecordKind.UPLOAD, id)
+            // 明确最早记录，避免高速执行时多个真实时钟读数落在同一毫秒。
+            val token = store.issueLocalTransferTarget(WorkspaceRecordKind.UPLOAD, id, createdAtEpochMillis = 1_000L + index)
             assertNotNull(token)
             if (index == 0) firstTask = token
         }
