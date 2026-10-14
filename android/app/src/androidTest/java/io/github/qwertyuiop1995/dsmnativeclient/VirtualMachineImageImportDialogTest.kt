@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -158,8 +159,8 @@ class VirtualMachineImageImportDialogTest {
                 ),
             )
         }
-        rule.onNodeWithText("images").performClick()
-        rule.onNodeWithText("synthetic.img").performClick()
+        rule.onNodeWithText("images").performScrollTo().assertIsDisplayed().performClick()
+        rule.onNodeWithText("synthetic.img").performScrollTo().assertIsDisplayed().performClick()
         rule.runOnIdle {
             check(opened == "/share/images")
             check(selected == "/share/synthetic.img")
@@ -195,7 +196,7 @@ class VirtualMachineImageImportDialogTest {
         rule.onNode(hasText("Synthetic storage") and radioRole)
             .assertIsSelected()
             .assertIsNotEnabled()
-        rule.onNodeWithText(context.getString(R.string.virtual_machine_image_import_confirm))
+        rule.onNode(hasText(context.getString(R.string.virtual_machine_image_import_confirm)) and hasClickAction())
             .assertIsNotEnabled()
         rule.onNodeWithText(context.getString(R.string.cancel)).assertIsNotEnabled()
         rule.runOnIdle {

@@ -38,9 +38,6 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.TransferDirection
 import io.github.qwertyuiop1995.dsmnativeclient.domain.TransferState
 import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineImageType
-import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
-import io.github.qwertyuiop1995.dsmnativeclient.network.DsmConnectionResolver
-import io.github.qwertyuiop1995.dsmnativeclient.storage.SecureProfileStore
 import java.io.IOException
 import java.util.UUID
 import java.security.MessageDigest
@@ -66,25 +63,27 @@ class VirtualMachineImageImportWorker(
                 0,
                 initial.expectedBytes,
                 TransferDirection.UPLOAD,
+                recordKind = io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceRecordKind.VMM_IMPORT,
             ),
         )
-        val secureStore = SecureProfileStore(applicationContext)
-        val profile = secureStore.profiles().firstOrNull { it.id == initial.profileId }
-            ?: return Result.failure(errorData(DsmErrorKind.NO_SAVED_SESSION))
-        val session = secureStore.session(initial.profileId)
-            ?: return Result.failure(errorData(DsmErrorKind.NO_SAVED_SESSION))
-        val api = DsmApiClient()
-        val discovered = try {
-            DsmConnectionResolver(api).discover(profile)
+        val repository = try {
+            restoreTaskRepository(applicationContext,
+                io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceRecordKind.VMM_IMPORT, recordId, initial.profileId)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
+            val kind = (error as? io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure)?.kind
+            if (kind == DsmErrorKind.WORKSPACE_CHANGED || kind == DsmErrorKind.NO_SAVED_SESSION) {
+                store.updateVirtualMachineImageImport(recordId) { current ->
+                    if (current.workId != executionId) current else current.copy(errorKind = kind.name)
+                }
+                return Result.failure(errorData(kind))
+            }
             return Result.retry()
         }
-        val repository = DsmRepository(discovered.profile, session, api, discovered.capabilities)
         val runner = VirtualMachineImageImportRunner(
             store = TransferStoreVmmImportRecords(store),
-            operations = RepositoryVmmImageImportOperations(applicationContext, repository),
+            operations = RepositoryVmmImageImportOperations(applicationContext, repository, recordId),
         )
         return when (runner.run(recordId, initial.profileId, executionId)) {
             VirtualMachineImageImportRunResult.SUCCEEDED -> Result.success()
@@ -423,6 +422,7 @@ internal class VirtualMachineImageImportRunner(
 private class RepositoryVmmImageImportOperations(
     private val context: Context,
     private val repository: DsmRepository,
+    private val recordId: String,
 ) : VirtualMachineImageImportOperations {
     override suspend fun file(path: String) = repository.fileInfo(path)
 
@@ -471,22 +471,8 @@ private class RepositoryVmmImageImportOperations(
     override suspend fun deleteTemporary(baseline: FileItem): Boolean =
         repository.deleteResult(baseline).status == MutationResultStatus.CONFIRMED_SUCCESS
 
-    override fun releaseReadGrant(sourceUri: String): Boolean {
-        val uri = Uri.parse(sourceUri)
-        if (context.contentResolver.persistedUriPermissions.none {
-                it.uri == uri && it.isReadPermission
-            }
-        ) return true
-        runCatching {
-            context.contentResolver.releasePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        }
-        return context.contentResolver.persistedUriPermissions.none {
-            it.uri == uri && it.isReadPermission
-        }
-    }
+    override fun releaseReadGrant(sourceUri: String): Boolean =
+        TransferUriAccess(context, TransferStore(context)).releaseRead(Uri.parse(sourceUri), recordId)
 
     private fun PersistedVirtualMachineImageType.toDomain() = when (this) {
         PersistedVirtualMachineImageType.DISK -> VirtualMachineImageType.DISK

@@ -43,8 +43,11 @@ private class CancellingUsersGateway(
         return JsonObject(emptyMap())
     }
 
-    override suspend fun messagesData(conversationId: String, offset: Int, limit: Int): JsonObject =
-        JsonObject(emptyMap())
+    override suspend fun call(api: String, method: String, version: Int,
+        parameters: Map<String, kotlinx.serialization.json.JsonElement>, oneShot: Boolean): JsonObject = JsonObject(emptyMap())
+    override suspend fun upload(channelId: String, text: String, source: io.github.qwertyuiop1995.dsmnativeclient.data.UploadSource,
+        willSubmit: () -> Unit, onProgress: (Long, Long) -> Unit): JsonObject = error("No attachment in this fixture")
+    override fun supports(api: String, version: Int) = false
 
     override suspend fun conversationMembersData(conversationId: String): JsonObject =
         JsonObject(emptyMap())
@@ -59,7 +62,6 @@ private class CancellingUsersGateway(
 
     override fun currentUserId(): String? = null
 
-    override fun updateCurrentUserId(userId: String) = Unit
+    override fun updateCurrentUserId(userId: String?) = Unit
 
-    override fun poll(post: JsonObject, messageId: String): ChatPoll? = null
 }

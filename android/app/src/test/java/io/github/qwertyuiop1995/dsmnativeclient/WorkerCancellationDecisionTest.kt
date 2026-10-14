@@ -80,13 +80,16 @@ class WorkerCancellationDecisionTest {
     }
 
     @Test
-    fun `上传显式取消按已提交字节决定是否需要刷新`() {
+    fun `上传与备份显式取消保留已发出请求的不确定性包括空文件`() {
         val ordinary = upload(TransferState.CANCELLING, completedBytes = 7, backupMode = false)
         val backup = upload(TransferState.CANCELLING, completedBytes = 7, backupMode = true)
 
         assertEquals(TransferState.CANCELLED, ordinary.cancelUploadExecution("execution").state)
         assertEquals(true, ordinary.cancelUploadExecution("execution").requiresRefresh)
-        assertEquals(false, backup.cancelUploadExecution("execution").requiresRefresh)
+        assertEquals(true, backup.cancelUploadExecution("execution").requiresRefresh)
+        val empty = upload(TransferState.CANCELLING, completedBytes = 0, backupMode = true)
+        assertEquals(true, empty.cancelUploadExecution("execution", attemptStarted = true).requiresRefresh)
+        assertEquals(false, empty.cancelUploadExecution("execution", attemptStarted = false).requiresRefresh)
     }
 
     @Test

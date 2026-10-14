@@ -247,7 +247,9 @@ internal fun FileStationMutationConfirmationDialog(
             stringResource(R.string.create_share_link_message, sourceName)
         FileStationMutationOperation.SHARE_DELETE -> {
             val link = target.shareLinkBaselines.first()
-            stringResource(
+            if (target.shareLinkBaselines.size > 1) stringResource(R.string.file_share_delete_many_confirmation,
+                target.shareLinkBaselines.size, target.shareLinkBaselines.joinToString("\n") { it.name })
+            else stringResource(
                 R.string.delete_share_link_confirmation,
                 link.name.ifBlank { stringResource(R.string.share_link_unnamed) },
             )

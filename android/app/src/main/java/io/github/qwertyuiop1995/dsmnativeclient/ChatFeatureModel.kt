@@ -41,6 +41,14 @@ internal class ChatFeatureModel(
     private var localReadMarkers: Map<String, ChatLocalReadMarker> = emptyMap()
     private val readRevisions = ChatReadResourceRevisions()
     private var paginationLoadingOwner: PaginationLoadingOwner? = null
+    private var noticeObserver: (() -> Unit)? = null
+
+    fun observeNotices(callback: (() -> Unit)?) {
+        noticeObserver = callback
+        if (callback == null) {
+            if (workspace.value?.selectedModule != Module.CHAT) stopForModuleExit()
+        } else sourceProvider()?.let { source -> ensureSession(source)?.let { startRealtime(source, it) } }
+    }
 
     fun loadModule(repository: DsmRepository) {
         if (repositoryProvider() !== repository) return
@@ -189,8 +197,8 @@ internal class ChatFeatureModel(
         val conversation = state.selectedConversation ?: return
         val page = (state.chatMessages as? Loadable.Ready)?.value ?: return
         if (!page.hasMore || state.chatIsLoadingMore) return
-        val expectedOffset = page.nextOffset ?: return
-        loadMessages(source, token, conversation, ChatMessageReadLane.PAGINATION, expectedOffset)
+        val expectedCursor = page.previousCursor ?: return
+        loadMessages(source, token, conversation, ChatMessageReadLane.PAGINATION, expectedCursor)
     }
 
     fun toggleConversationPin(conversationId: String) {
@@ -237,9 +245,11 @@ internal class ChatFeatureModel(
             clearPaginationLoadingOwnerLocked()
         }
         stopRealtimeClient()
+        if (noticeObserver != null) sourceProvider()?.let { source -> ensureSession(source)?.let { startRealtime(source, it) } }
     }
 
     fun clearForProfileSwitch() {
+        noticeObserver = null
         stopForModuleExit()
         clearLocalReadMarkers()
     }
@@ -329,22 +339,13 @@ internal class ChatFeatureModel(
                         ?.value
                         ?.firstOrNull { it.id == requested.id }
                         ?: requested
-                    val marker = canonical.toChatLocalReadMarker()
-                    val markers = if (marker == null) {
-                        localReadMarkers - canonical.id
-                    } else {
-                        localReadMarkers + (canonical.id to marker)
-                    }
-                    val conversations = (current.conversations as? Loadable.Ready)?.value
+                    // 进入页面不代表消息已显示。只有可见位置同步成功后才采用NAS返回的未读数。
                     val next = current.copy(
-                        selectedConversation = canonical.copy(unreadCount = 0),
+                        selectedConversation = canonical,
                         chatMessages = Loadable.Loading,
                         chatIsLoadingMore = false,
-                        conversations = conversations?.map { item ->
-                            if (item.id == canonical.id) item.copy(unreadCount = 0) else item
-                        }?.let { Loadable.Ready(it) } ?: current.conversations,
                     )
-                    ChatStatePublication(next, ChatConversationOpenCommit(canonical, markers))
+                    ChatStatePublication(next, ChatConversationOpenCommit(canonical, emptyMap()))
                 }
             },
             compareAndSet = workspace::compareAndSet,
@@ -427,7 +428,7 @@ internal class ChatFeatureModel(
         taskToken: ChatTaskToken,
         conversation: ChatConversation,
         revision: Long,
-        expectedOffset: Int,
+        expectedCursor: String,
     ): PaginationLoadingOwner? = synchronized(lifecycleLock) {
         val candidate = PaginationLoadingOwner(
             taskToken = taskToken,
@@ -435,7 +436,7 @@ internal class ChatFeatureModel(
             profileId = taskToken.session.profileId,
             sourceIdentity = source.identity,
             conversationId = conversation.id,
-            expectedOffset = expectedOffset,
+            expectedCursor = expectedCursor,
         )
         val claimed = retryChatStatePublication(
             readCurrent = { workspace.value },
@@ -455,7 +456,7 @@ internal class ChatFeatureModel(
                     val previousOwner = paginationLoadingOwner
                     val canReplaceOwner = previousOwner == null ||
                         !previousOwner.matches(candidate) && !jobOwner.isCurrent(previousOwner.taskToken)
-                    if (page?.nextOffset != expectedOffset || !page.hasMore ||
+                    if (page?.previousCursor != expectedCursor || !page.hasMore ||
                         !canReplaceOwner || previousOwner == null && current.chatIsLoadingMore
                     ) {
                         null
@@ -509,7 +510,7 @@ internal class ChatFeatureModel(
     private fun PaginationLoadingOwner.matches(other: PaginationLoadingOwner): Boolean =
         taskToken == other.taskToken && revision == other.revision && profileId == other.profileId &&
             sourceIdentity === other.sourceIdentity && conversationId == other.conversationId &&
-            expectedOffset == other.expectedOffset
+            expectedCursor == other.expectedCursor
 
     private fun PaginationLoadingOwner?.orEmptyMatches(other: PaginationLoadingOwner): Boolean =
         this?.matches(other) == true
@@ -571,12 +572,12 @@ internal class ChatFeatureModel(
         token: ChatFeatureToken,
         conversation: ChatConversation,
         lane: ChatMessageReadLane,
-        expectedOffset: Int? = null,
+        expectedCursor: String? = null,
         headMode: ChatHeadLoadMode? = null,
     ) {
-        val offset = when (lane) {
-            ChatMessageReadLane.HEAD -> 0
-            ChatMessageReadLane.PAGINATION -> expectedOffset ?: return
+        val cursor = when (lane) {
+            ChatMessageReadLane.HEAD -> null
+            ChatMessageReadLane.PAGINATION -> expectedCursor ?: return
         }
         var paginationOwner: PaginationLoadingOwner? = null
         jobOwner.launch(
@@ -608,15 +609,15 @@ internal class ChatFeatureModel(
                         taskToken,
                         conversation,
                         revision,
-                        expectedOffset = offset,
+                        expectedCursor = requireNotNull(cursor),
                     ) ?: return@launch null
                     paginationOwner = owner
                 }
                 val outcome = ChatMessageLoadOutcome(
                     lane = lane,
                     revision = revision,
-                    expectedOffset = expectedOffset,
-                    result = suspendRunCatching { source.messages(conversation.id, offset) },
+                    expectedCursor = expectedCursor,
+                    result = suspendRunCatching { source.messages(conversation.id, cursor) },
                 )
                 if (!isTaskCurrent(source, taskToken)) return@launch null
                 outcome
@@ -644,7 +645,7 @@ internal class ChatFeatureModel(
                                 current.copy(chatMessages = Loadable.Ready(merged))
                             }
                             ChatMessageReadLane.PAGINATION -> {
-                                if (visible == null || visible.nextOffset != outcome.expectedOffset) {
+                                if (visible == null || visible.previousCursor != outcome.expectedCursor) {
                                     null
                                 } else {
                                     val merged = reconcileChatMessagePage(
@@ -693,7 +694,7 @@ internal class ChatFeatureModel(
     ) {
         if (!isTaskCurrent(source, token)) return
         val revision = beginMessageRead(source, token, conversation, ChatMessageReadLane.HEAD) ?: return
-        val result = suspendRunCatching { source.messages(conversation.id, 0) }
+        val result = suspendRunCatching { source.messages(conversation.id, null) }
         if (!isTaskCurrent(source, token)) return
         val latest = result.getOrNull()
         if (latest == null) {
@@ -889,6 +890,7 @@ internal class ChatFeatureModel(
                     block = { taskToken ->
                         delay(CHAT_REALTIME_COALESCE_MILLIS)
                         if (!isTaskCurrent(source, taskToken)) return@launch
+                        noticeObserver?.invoke()
                         val state = workspace.value
                         if (state?.selectedModule != Module.CHAT) return@launch
                         state.selectedConversation?.let { conversation ->
@@ -952,13 +954,13 @@ internal class ChatFeatureModel(
         val profileId: String,
         val sourceIdentity: Any,
         val conversationId: String,
-        val expectedOffset: Int,
+        val expectedCursor: String,
     )
 
     private data class ChatMessageLoadOutcome(
         val lane: ChatMessageReadLane,
         val revision: Long,
-        val expectedOffset: Int?,
+        val expectedCursor: String?,
         val result: Result<ChatMessagePage>,
     )
 

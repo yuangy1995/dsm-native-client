@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
@@ -176,7 +178,7 @@ class PhotoRestoreRepositoryTest {
         assertTrue(transport.requests.isEmpty())
     }
 
-    private fun repository(interceptor: Interceptor, supportsCopyMove: Boolean = true) = DsmRepository(
+    private fun repository(interceptor: Interceptor, supportsCopyMove: Boolean = true) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
         DsmApiClient(OkHttpClient.Builder().retryOnConnectionFailure(false).addInterceptor(interceptor).build()),

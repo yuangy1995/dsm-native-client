@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -27,10 +28,15 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceValue
+import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
@@ -54,59 +60,43 @@ internal fun NasHardwareSettingsScreen(
     state: WorkspaceState,
     model: AppViewModel,
 ) {
+    val power by model.nasPower.state.collectAsState()
+    val services = model.nasServices
+    val states by services.state.collectAsState()
+    val editor = states.getValue(NasServiceKind.HARDWARE)
+    val powerSettingsBusy = states.getValue(NasServiceKind.MEMORY_COMPRESSION).busy || states.getValue(NasServiceKind.POWER_SCHEDULE).busy
+    val baseline = (editor.original as? NasServiceValue.Hardware)?.settings
+    val draft = (editor.draft as? NasServiceValue.Hardware)?.settings
+    var editing by remember { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf(false) }
+    LaunchedEffect(services) { services.refresh(NasServiceKind.HARDWARE, notify = false) }
     HardwareSettingsContent(
-        settings = settings,
-        settingsAvailable = settingsAvailable,
-        baseline = state.hardwareSettingsBaseline,
-        draft = state.hardwareSettingsDraft,
-        mutationInProgress = state.hardwareSettingsMutationInProgress,
-        mutationResult = state.hardwareSettingsMutationResult,
-        mutationFailure = state.hardwareSettingsMutationFailure,
-        refreshFailure = state.hardwareSettingsMutationRefreshFailure,
-        refreshInProgress = state.hardwareSettingsMutationRefreshInProgress,
-        refreshCompleted = state.hardwareSettingsMutationRefreshCompleted,
-        powerAction = state.pendingPowerAction,
-        powerInProgress = state.powerMutationInProgress,
-        powerResult = state.powerMutationResult,
-        powerFailure = state.powerMutationFailure,
-        enabled = !state.isPerformingAction && !state.hardwareSettingsMutationInProgress &&
-            !state.hardwareSettingsMutationRefreshInProgress && state.hardwareSettingsMutationResult == null &&
-            state.hardwareSettingsMutationFailure == null && !state.powerMutationInProgress &&
-            state.powerMutationResult == null && state.powerMutationFailure == null,
-        onEdit = { settings?.let(model::requestHardwareSettingsEditing) },
-        onRefresh = model::refreshHardwareSettingsMutation,
-        onContinueEditing = { model.dismissHardwareSettingsMutationResult(discardDraft = false) },
-        onDismissResult = { model.dismissHardwareSettingsMutationResult(discardDraft = true) },
-        onPowerAction = { model.requestPowerAction(it) },
-        onDismissPowerResult = { model.dismissPowerActionResult() },
+        settings, settingsAvailable, baseline, draft, editor.saving, editor.result, editor.failure,
+        refreshFailure = editor.failure, refreshInProgress = editor.busy && !editor.saving, refreshCompleted = false,
+        powerAction = null, powerInProgress = false, powerResult = null, powerFailure = null,
+        enabled = !state.isPerformingAction && !editor.blocked && !powerSettingsBusy && !power.busy,
+        onEdit = { if (settings != null && services.begin(NasServiceValue.Hardware(settings))) editing = true },
+        onRefresh = { services.refresh(NasServiceKind.HARDWARE) },
+        onContinueEditing = { services.dismiss(NasServiceKind.HARDWARE); editing = true },
+        onDismissResult = { services.dismiss(NasServiceKind.HARDWARE, discard = true) },
+        onPowerAction = {}, onDismissPowerResult = {},
+        powerControls = { NasPowerActionSection(model.nasPower, !state.isPerformingAction && !editor.busy && !powerSettingsBusy) },
+        canContinueEditing = !editor.blocked && draft != null && editor.result?.errorCategory != MutationErrorCategory.CONFLICT,
+        canDismiss = !editor.blocked,
+        additionalSettings = { NasPowerSettingsSections(services, !state.isPerformingAction && !editor.busy && !power.busy) },
+        onContinueLed = if (!editor.blocked && editor.draft == null && editor.record?.canContinueLed == true) ({ editor.record?.let { services.continuePendingStep(it) } }) else null,
     )
-    if (state.hardwareSettingsEditorVisible && state.hardwareSettingsBaseline != null && state.hardwareSettingsDraft != null) {
-        HardwareSettingsDialog(
-            initial = state.hardwareSettingsBaseline,
-            draft = state.hardwareSettingsDraft,
-            enabled = !state.isPerformingAction,
-            onDraftChange = model::updateHardwareSettingsDraft,
-            onContinue = model::requestHardwareSettingsConfirmation,
-            onDismiss = model::cancelHardwareSettingsEditing,
-        )
-    }
-    if (state.hardwareSettingsConfirmationRequested && state.hardwareSettingsBaseline != null && state.hardwareSettingsDraft != null) {
-        HardwareConfirmationDialog(
-            baseline = state.hardwareSettingsBaseline,
-            draft = state.hardwareSettingsDraft,
-            onConfirm = model::confirmHardwareSettingsMutation,
-            onDismiss = model::cancelHardwareSettingsConfirmation,
-        )
-    }
-    state.pendingPowerAction?.takeIf {
-        !state.powerMutationInProgress && state.powerMutationResult == null && state.powerMutationFailure == null
-    }?.let { action ->
-        PowerActionConfirmationDialog(
-            action = action,
-            onConfirm = model::confirmPowerAction,
-            onDismiss = model::cancelPowerActionConfirmation,
-        )
-    }
+    if (editing && baseline != null && draft != null && !editor.blocked) HardwareSettingsDialog(
+        initial = baseline, draft = draft, enabled = !state.isPerformingAction,
+        onDraftChange = { services.draft(NasServiceKind.HARDWARE, NasServiceValue.Hardware(it)) },
+        onContinue = { editing = false; confirming = true; true },
+        onDismiss = { editing = false; services.draft(NasServiceKind.HARDWARE, null) },
+    )
+    if (confirming && baseline != null && draft != null && !editor.blocked) HardwareConfirmationDialog(
+        baseline, draft, onConfirm = { services.save(NasServiceKind.HARDWARE).also { if (it) confirming = false } },
+        onDismiss = { confirming = false; editing = true },
+    )
+
 }
 
 @Composable
@@ -132,38 +122,50 @@ internal fun HardwareSettingsContent(
     onDismissResult: () -> Unit,
     onPowerAction: (NasPowerAction) -> Unit,
     onDismissPowerResult: () -> Unit,
+    canContinueEditing: Boolean? = null,
+    canDismiss: Boolean? = null,
+    onContinueLed: (() -> Unit)? = null,
+    additionalSettings: @Composable () -> Unit = {},
+    powerControls: (@Composable () -> Unit)? = null,
 ) {
     Column(Modifier.verticalScroll(rememberScrollState())) {
+        TextButton(onClick = onRefresh, enabled = !mutationInProgress && !refreshInProgress, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.refresh_and_check_hardware_settings))
+        }
+        if (refreshInProgress) LinearProgressIndicator(Modifier.fillMaxWidth())
+        onContinueLed?.let { action -> TextButton(onClick = action, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.hardware_continue_led)) } }
         when {
-            mutationInProgress && draft != null -> StructuredSettingsSavingCard(
+            mutationInProgress -> StructuredSettingsSavingCard(
                 R.string.hardware_saving_title,
                 R.string.hardware_saving_message,
             )
-            mutationResult != null && baseline != null && draft != null -> SettingsMutationFeedbackCard(
+            mutationResult != null -> SettingsMutationFeedbackCard(
                 result = mutationResult,
                 failure = null,
                 refreshFailure = refreshFailure,
                 refreshInProgress = refreshInProgress,
                 refreshCompleted = refreshCompleted,
-                currentMatches = settings?.let { hardwareSettingsMatch(it, draft) },
+                currentMatches = if (draft != null) settings?.let { hardwareSettingsMatch(it, draft) } else null,
                 countsLabel = R.string.hardware_feedback_counts,
                 refreshLabel = R.string.refresh_and_check_hardware_settings,
                 onRefresh = onRefresh,
                 onContinueEditing = onContinueEditing,
                 onDismiss = onDismissResult,
+                canContinueEditing = canContinueEditing, canDismiss = canDismiss,
             )
-            mutationFailure != null && baseline != null && draft != null -> SettingsMutationFeedbackCard(
+            mutationFailure != null -> SettingsMutationFeedbackCard(
                 result = null,
                 failure = mutationFailure,
                 refreshFailure = refreshFailure,
                 refreshInProgress = refreshInProgress,
                 refreshCompleted = refreshCompleted,
-                currentMatches = settings?.let { hardwareSettingsMatch(it, draft) },
+                currentMatches = if (draft != null) settings?.let { hardwareSettingsMatch(it, draft) } else null,
                 countsLabel = R.string.hardware_feedback_counts,
                 refreshLabel = R.string.refresh_and_check_hardware_settings,
                 onRefresh = onRefresh,
                 onContinueEditing = onContinueEditing,
                 onDismiss = onDismissResult,
+                canContinueEditing = canContinueEditing, canDismiss = canDismiss,
             )
         }
         when {
@@ -182,12 +184,15 @@ internal fun HardwareSettingsContent(
                 supportingContent = { Text(stringResource(R.string.hardware_settings_summary)) },
                 leadingContent = { Icon(Icons.Outlined.SettingsSuggest, null) },
                 trailingContent = {
-                    TextButton(enabled = enabled, onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp)) {
+                    val editDescription = stringResource(R.string.nas_edit_settings_accessibility, stringResource(R.string.hardware_settings))
+                    TextButton(enabled = enabled, onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = editDescription }) {
                         Text(stringResource(R.string.edit))
                     }
                 },
             )
         }
+        additionalSettings()
+        if (powerControls != null) powerControls() else {
         ListItem(
             headlineContent = { Text(stringResource(R.string.nas_power)) },
             supportingContent = { Text(stringResource(R.string.nas_power_hint)) },
@@ -204,6 +209,7 @@ internal fun HardwareSettingsContent(
                 onClick = { onPowerAction(NasPowerAction.SHUTDOWN) },
                 modifier = Modifier.weight(1f).heightIn(min = 48.dp),
             ) { Text(stringResource(R.string.shut_down_nas), color = MaterialTheme.colorScheme.error) }
+        }
         }
     }
 }
@@ -245,9 +251,9 @@ internal fun HardwareSettingsDialog(
                     )
                 }
                 draft.fanMode?.let { mode ->
-                    Text(stringResource(R.string.fan_mode))
+                    Text(stringResource(R.string.fan_current_mode, fanModeLabel(mode)))
                     ModeSelector(
-                        options = listOf("quietfan", "coolfan", "fullfan"),
+                        options = draft.supportedFanModes.orEmpty(),
                         selected = mode,
                         enabled = enabled,
                         label = { fanModeLabel(it) },
@@ -260,18 +266,16 @@ internal fun HardwareSettingsDialog(
                         onDraftChange(draft.copy(ups = currentUps.copy(isEnabled = it)))
                     }
                     ModeSelector(
-                        options = listOf("USB", "SLAVE", "SNMP"),
+                        options = listOf("USB", "SLAVE", "SNMP").filter { it == "USB" || it == currentUps.mode || if (it == "SLAVE") currentUps.networkServerAddress != null else currentUps.snmpServerAddress != null },
                         selected = currentUps.mode,
                         enabled = enabled,
                         label = { upsModeLabel(it) },
                     ) { mode ->
                         onDraftChange(draft.copy(ups = currentUps.copy(
                             mode = mode,
-                            networkServerAddress = if (mode == "SLAVE") currentUps.networkServerAddress.orEmpty() else currentUps.networkServerAddress,
-                            snmpServerAddress = if (mode == "SNMP") currentUps.snmpServerAddress.orEmpty() else currentUps.snmpServerAddress,
                         )))
                     }
-                    OutlinedTextField(
+                    if (currentUps.safeModeDelaySeconds != null) OutlinedTextField(
                         value = currentUps.safeModeDelaySeconds?.toString().orEmpty(),
                         onValueChange = { text -> text.filter(Char::isDigit).toIntOrNull()?.takeIf { it in 0..604_800 }?.let { seconds ->
                             onDraftChange(draft.copy(ups = currentUps.copy(safeModeDelaySeconds = seconds)))
@@ -282,7 +286,7 @@ internal fun HardwareSettingsDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (currentUps.mode != "USB") {
+                    if (currentUps.mode != "USB" && (if (currentUps.mode == "SNMP") currentUps.snmpServerAddress else currentUps.networkServerAddress) != null) {
                         OutlinedTextField(
                             value = address,
                             onValueChange = { value -> onDraftChange(draft.copy(ups = if (currentUps.mode == "SNMP") {
@@ -339,10 +343,10 @@ private fun HardwareSwitches(value: NasHardwareSettings, enabled: Boolean, onCha
 
 @Composable
 private fun ModeSelector(options: List<String>, selected: String, enabled: Boolean, label: @Composable (String) -> String, onSelect: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         options.forEach { option ->
             Row(
-                Modifier.weight(1f).heightIn(min = 48.dp).selectable(
+                Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp).selectable(
                     selected = selected == option,
                     enabled = enabled,
                     role = Role.RadioButton,
@@ -462,11 +466,15 @@ internal fun hardwareSettingsMatch(current: NasHardwareSettings, draft: NasHardw
     normalizedWritableHardwareSettings(current) == normalizedWritableHardwareSettings(draft)
 
 @Composable
-private fun fanModeLabel(mode: String) = stringResource(when (mode) {
-    "quietfan" -> R.string.fan_quiet
-    "coolfan" -> R.string.fan_cool
-    else -> R.string.fan_full
-})
+private fun fanModeLabel(mode: String): String = when (mode) {
+    "quietfan" -> stringResource(R.string.fan_quiet)
+    "coolfan" -> stringResource(R.string.fan_cool)
+    "fullfan" -> stringResource(R.string.fan_full)
+    "highfan" -> stringResource(R.string.fan_high)
+    "lowfan" -> stringResource(R.string.fan_low)
+    "quietstopfan" -> stringResource(R.string.fan_quiet_stop)
+    else -> mode
+}
 
 @Composable
 private fun upsModeLabel(mode: String) = stringResource(when (mode) {

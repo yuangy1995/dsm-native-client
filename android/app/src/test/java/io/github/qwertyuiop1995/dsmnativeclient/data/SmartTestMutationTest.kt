@@ -1,9 +1,9 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasDiskTestStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasDiskTestType
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
@@ -17,7 +17,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import okio.BufferedSource
-import okhttp3.FormBody
+import okio.Buffer
+import java.net.URLDecoder
+import kotlinx.coroutines.CancellationException
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.NasSmartAction
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.NasSmartStage
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.smartIdentity
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -38,11 +45,11 @@ class SmartTestMutationTest {
             ok(storage()), ok(stopped()), ok(), ok(storage()), ok(running("quick")),
         )
 
-        val result = repository(transport).changeDiskTestResult(
+        val result = repository(transport).probeSmart(
             disk(), status(), NasDiskTestType.QUICK,
         )
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertConfirmed(result)
         RequestFixtureAssertions.assertRequest(
             transport.requests[2],
             "storage/start-smart-test/synthetic-disk/request.json",
@@ -62,11 +69,11 @@ class SmartTestMutationTest {
             ok(storage()), ok(running("extend")), ok(), ok(storage()), ok(stopped()),
         )
 
-        val result = repository(transport).changeDiskTestResult(
+        val result = repository(transport).probeSmart(
             disk(), status(runningType = NasDiskTestType.EXTENDED), null,
         )
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertConfirmed(result)
         RequestFixtureAssertions.assertRequest(
             transport.requests[2],
             "storage/stop-smart-test/synthetic-disk/request.json",
@@ -78,12 +85,12 @@ class SmartTestMutationTest {
     fun `其他检测占用时零写请求`() = runBlocking {
         val transport = SmartInterceptor(ok(storage()), ok(otherTestBusy()))
 
-        val result = repository(transport).changeDiskTestResult(
+        val result = repository(transport).probeSmart(
             disk(), status(busy = true), NasDiskTestType.EXTENDED,
         )
 
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertFalse(result.submitted)
+        assertNotSubmitted(result)
+        assertFalse(NasSmartStage.SUBMITTED in result.stages)
         assertTrue(transport.methods().none { it == "do_smart_test" })
     }
 
@@ -94,11 +101,11 @@ class SmartTestMutationTest {
             ok(storage()), ok(running("extend")),
         )
 
-        val result = repository(transport).changeDiskTestResult(
+        val result = repository(transport).probeSmart(
             disk(), status(), NasDiskTestType.EXTENDED,
         )
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertConfirmed(result)
         assertEquals(1, transport.methods().count { it == "do_smart_test" })
     }
 
@@ -112,7 +119,7 @@ class SmartTestMutationTest {
             ]}"""),
         )
 
-        val status = repository(transport).loadDiskTestStatus(disk())
+        val status = repository(transport).nasSmart.read(disk(), history = true).status
 
         assertTrue(status.isRunning)
         assertEquals(NasDiskTestType.QUICK, status.runningType)
@@ -126,10 +133,10 @@ class SmartTestMutationTest {
         val transport = SmartInterceptor()
 
         val result = repository(transport, storageMinVersion = 2)
-            .changeDiskTestResult(disk(), status(), NasDiskTestType.QUICK)
+            .probeSmart(disk(), status(), NasDiskTestType.QUICK)
 
-        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
-        assertFalse(result.submitted)
+        assertEquals(DsmErrorKind.FEATURE_UNSUPPORTED, (result.failure as DsmFailure).kind)
+        assertFalse(NasSmartStage.SUBMITTED in result.stages)
         assertTrue(transport.requests.isEmpty())
     }
 
@@ -138,9 +145,9 @@ class SmartTestMutationTest {
         val transport = SmartInterceptor()
 
         val result = repository(transport, diskMinVersion = 2)
-            .changeDiskTestResult(disk(), status(), NasDiskTestType.QUICK)
+            .probeSmart(disk(), status(), NasDiskTestType.QUICK)
 
-        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
+        assertEquals(DsmErrorKind.FEATURE_UNSUPPORTED, (result.failure as DsmFailure).kind)
         assertTrue(transport.requests.isEmpty())
     }
 
@@ -154,9 +161,9 @@ class SmartTestMutationTest {
             transport,
             storageMaxVersion = 3,
             diskMaxVersion = 3,
-        ).changeDiskTestResult(disk(), status(), NasDiskTestType.QUICK)
+        ).probeSmart(disk(), status(), NasDiskTestType.QUICK)
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertConfirmed(result)
         assertEquals(listOf("1", "1", "1", "1", "1"), transport.versions())
     }
 
@@ -164,7 +171,7 @@ class SmartTestMutationTest {
     fun `操作专项状态回读不依赖历史接口`() = runBlocking {
         val transport = SmartInterceptor(ok(storage()), ok(running("quick")))
 
-        val status = repository(transport).activeDiskTestStatus(disk())
+        val status = repository(transport).nasSmart.read(disk(), history = false).status
 
         assertTrue(status.isRunning)
         assertFalse(status.isHistoryAvailable)
@@ -176,9 +183,9 @@ class SmartTestMutationTest {
         val transport = SmartInterceptor()
         val invalid = status(runningType = NasDiskTestType.QUICK, busy = true)
 
-        val result = repository(transport).changeDiskTestResult(disk(), invalid, null)
+        val result = repository(transport).probeSmart(disk(), invalid, null)
 
-        assertEquals(MutationErrorCategory.VALIDATION, result.errorCategory)
+        assertEquals(DsmErrorKind.NAS_SMART_CHANGED, (result.failure as DsmFailure).kind)
         assertTrue(transport.requests.isEmpty())
     }
 
@@ -189,12 +196,12 @@ class SmartTestMutationTest {
             ok(storage(temperature = 33, smartStatus = "warning")), ok(running("quick")),
         )
 
-        val result = repository(transport).changeDiskTestResult(
+        val result = repository(transport).probeSmart(
             disk(), status(), NasDiskTestType.QUICK,
         )
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-        assertTrue(result.submitted)
+        assertConfirmed(result)
+        assertTrue(NasSmartStage.SUBMITTED in result.stages)
     }
 
     @Test
@@ -202,17 +209,17 @@ class SmartTestMutationTest {
         val deviceDrift = SmartInterceptor(ok(storage(deviceId = "changed-device")))
         val capabilityDrift = SmartInterceptor(ok(storage(supportsSmartTest = false)))
 
-        val deviceResult = repository(deviceDrift).changeDiskTestResult(
+        val deviceResult = repository(deviceDrift).probeSmart(
             disk(), status(), NasDiskTestType.QUICK,
         )
-        val capabilityResult = repository(capabilityDrift).changeDiskTestResult(
+        val capabilityResult = repository(capabilityDrift).probeSmart(
             disk(), status(), NasDiskTestType.QUICK,
         )
 
         listOf(deviceResult, capabilityResult).forEach { result ->
-            assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-            assertEquals(MutationErrorCategory.CONFLICT, result.errorCategory)
-            assertFalse(result.submitted)
+            assertNotSubmitted(result)
+            assertEquals(DsmErrorKind.NAS_SMART_CHANGED, (result.failure as DsmFailure).kind)
+            assertFalse(NasSmartStage.SUBMITTED in result.stages)
         }
         assertTrue(deviceDrift.methods().none { it == "do_smart_test" })
         assertTrue(capabilityDrift.methods().none { it == "do_smart_test" })
@@ -223,15 +230,15 @@ class SmartTestMutationTest {
         val drift = SmartInterceptor(ok(storage()), ok(running("quick")))
         val missing = SmartInterceptor(ok("""{"disks":[]}"""))
 
-        val driftResult = repository(drift).changeDiskTestResult(
+        val driftResult = repository(drift).probeSmart(
             disk(), status(), NasDiskTestType.QUICK,
         )
-        val missingResult = repository(missing).changeDiskTestResult(
+        val missingResult = repository(missing).probeSmart(
             disk(), status(), NasDiskTestType.QUICK,
         )
 
-        assertEquals(MutationErrorCategory.CONFLICT, driftResult.errorCategory)
-        assertEquals(MutationErrorCategory.CONFLICT, missingResult.errorCategory)
+        assertEquals(DsmErrorKind.NAS_SMART_CHANGED, (driftResult.failure as DsmFailure).kind)
+        assertEquals(DsmErrorKind.NAS_SMART_CHANGED, (missingResult.failure as DsmFailure).kind)
         assertTrue(drift.methods().none { it == "do_smart_test" })
         assertTrue(missing.methods().none { it == "do_smart_test" })
     }
@@ -244,11 +251,11 @@ class SmartTestMutationTest {
             ok(storage()), ok("""{"testInfo":[]}"""),
         )
 
-        val result = repository(transport).changeDiskTestResult(
+        val result = repository(transport).probeSmart(
             disk(), status(), NasDiskTestType.QUICK,
         )
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
+        assertPending(result)
         assertEquals(1, transport.methods().count { it == "do_smart_test" })
     }
 
@@ -266,11 +273,11 @@ class SmartTestMutationTest {
 
         malformed.forEach { response ->
             val transport = SmartInterceptor(ok(storage()), ok(response))
-            val result = repository(transport).changeDiskTestResult(
+            val result = repository(transport).probeSmart(
                 disk(), status(), NasDiskTestType.QUICK,
             )
-            assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-            assertFalse(result.submitted)
+            assertNotSubmitted(result)
+            assertFalse(NasSmartStage.SUBMITTED in result.stages)
             assertTrue(transport.methods().none { it == "do_smart_test" })
         }
     }
@@ -287,12 +294,12 @@ class SmartTestMutationTest {
         conflicting.forEach { response ->
             val transport = SmartInterceptor(ok(storage()), ok(response))
 
-            val result = repository(transport).changeDiskTestResult(
+            val result = repository(transport).probeSmart(
                 disk(), status(), NasDiskTestType.QUICK,
             )
 
-            assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-            assertFalse(result.submitted)
+            assertNotSubmitted(result)
+            assertFalse(NasSmartStage.SUBMITTED in result.stages)
             assertTrue(transport.methods().none { it == "do_smart_test" })
         }
     }
@@ -305,11 +312,11 @@ class SmartTestMutationTest {
             ok(storage()), ok(running("quick")),
         )
 
-        val result = repository(transport).changeDiskTestResult(
+        val result = repository(transport).probeSmart(
             disk(), status(), NasDiskTestType.QUICK,
         )
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertConfirmed(result)
         assertEquals(1, transport.methods().count { it == "do_smart_test" })
         assertEquals(3, transport.methods().count { it == "load_info" })
     }
@@ -322,11 +329,11 @@ class SmartTestMutationTest {
             ok(storage()), ok(running("extend")),
         )
 
-        val result = repository(transport).changeDiskTestResult(
+        val result = repository(transport).probeSmart(
             disk(), status(), NasDiskTestType.EXTENDED,
         )
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertConfirmed(result)
         assertEquals(1, transport.methods().count { it == "do_smart_test" })
         assertEquals(3, transport.methods().count { it == "load_info" })
     }
@@ -337,12 +344,12 @@ class SmartTestMutationTest {
             ok(storage()), ok(stopped()), ok(), ok(storage(supportsSmartTest = false)),
         )
 
-        val result = repository(transport).changeDiskTestResult(
+        val result = repository(transport).probeSmart(
             disk(), status(), NasDiskTestType.QUICK,
         )
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.submitted)
+        assertPending(result)
+        assertTrue(NasSmartStage.SUBMITTED in result.stages)
         assertEquals(1, transport.methods().count { it == "do_smart_test" })
     }
 
@@ -354,17 +361,18 @@ class SmartTestMutationTest {
         )
         val repo = repository(transport)
 
-        val cancelled = repo.changeDiskTestResult(disk(), status(), NasDiskTestType.QUICK)
-        val retry = repo.changeDiskTestResult(disk(), status(), NasDiskTestType.QUICK)
+        val cancelled = repo.probeSmart(disk(), status(), NasDiskTestType.QUICK)
+        val retry = repo.probeSmart(disk(), status(), NasDiskTestType.QUICK)
 
-        assertEquals(MutationResultStatus.CANCELLED_BEFORE_SUBMISSION, cancelled.status)
-        assertFalse(cancelled.submitted)
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, retry.status)
+        assertTrue(cancelled.failure is CancellationException)
+        assertEquals(listOf(NasSmartStage.CANCELLED), cancelled.stages)
+        assertFalse(NasSmartStage.SUBMITTED in cancelled.stages)
+        assertConfirmed(retry)
         assertEquals(1, transport.methods().count { it == "do_smart_test" })
     }
 
     @Test
-    fun `写入阶段取消只专项回读一次且释放跨动作锁`() = runBlocking {
+    fun `写入阶段取消保留提交阶段仅主动恢复回读且释放跨动作锁`() = runBlocking {
         val transport = SmartInterceptor(
             ok(storage()), ok(stopped()), SmartStep.Cancellation,
             ok(storage()), ok(running("quick")),
@@ -372,13 +380,15 @@ class SmartTestMutationTest {
         )
         val repo = repository(transport)
 
-        val started = repo.changeDiskTestResult(disk(), status(), NasDiskTestType.QUICK)
-        val stopped = repo.changeDiskTestResult(
-            disk(), status(runningType = NasDiskTestType.QUICK), null,
-        )
+        val started = repo.probeSmart(disk(), status(), NasDiskTestType.QUICK)
+        assertTrue(started.failure is CancellationException)
+        assertPending(started)
+        assertEquals(listOf("load_info", "get_smart_test_log", "do_smart_test"), transport.methods())
+        val recovered = repo.nasSmart.recover(smartIdentity(disk()))
+        assertEquals(NasDiskTestType.QUICK, recovered.status.runningType)
+        val stopped = repo.probeSmart(disk(), recovered.status, null)
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, started.status)
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, stopped.status)
+        assertConfirmed(stopped)
         assertEquals(2, transport.methods().count { it == "do_smart_test" })
         assertEquals(4, transport.methods().count { it == "get_smart_test_log" })
     }
@@ -388,17 +398,40 @@ class SmartTestMutationTest {
         val transport = BlockingSmartInterceptor()
         val repo = repository(transport)
         val first = async(Dispatchers.IO) {
-            repo.changeDiskTestResult(disk(), status(), NasDiskTestType.QUICK)
+            repo.probeSmart(disk(), status(), NasDiskTestType.QUICK)
         }
         assertTrue(transport.submissionStarted.await(2, TimeUnit.SECONDS))
 
-        val duplicate = repo.changeDiskTestResult(disk(), status(), NasDiskTestType.EXTENDED)
+        val duplicate = repo.probeSmart(disk(), status(), NasDiskTestType.EXTENDED)
 
-        assertEquals(MutationErrorCategory.CONFLICT, duplicate.errorCategory)
-        assertFalse(duplicate.submitted)
+        assertEquals(DsmErrorKind.NAS_SMART_CHANGED, (duplicate.failure as DsmFailure).kind)
+        assertFalse(NasSmartStage.SUBMITTED in duplicate.stages)
         transport.allowSubmission.countDown()
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, first.await().status)
+        assertConfirmed(first.await())
         assertEquals(1, transport.methods().count { it == "do_smart_test" })
+    }
+
+    /** 直接观察当前执行器，不复刻旧 Result 门面的分类与恢复逻辑。 */
+    private data class SmartProbe(val stages: List<NasSmartStage>, val failure: Throwable?)
+    private suspend fun DsmRepository.probeSmart(
+        disk: NasStorageDisk, baseline: NasDiskTestStatus, type: NasDiskTestType?,
+    ): SmartProbe {
+        val stages = mutableListOf<NasSmartStage>()
+        val result = runCatching { nasSmart.perform(disk, baseline, NasSmartAction.from(type), stages::add) }
+        return SmartProbe(stages, result.exceptionOrNull())
+    }
+    private fun assertConfirmed(result: SmartProbe) {
+        assertEquals(null, result.failure)
+        assertEquals(NasSmartStage.VERIFIED, result.stages.last())
+        assertEquals(1, result.stages.count { it == NasSmartStage.SUBMITTED })
+    }
+    private fun assertNotSubmitted(result: SmartProbe) {
+        assertTrue(result.failure != null)
+        assertEquals(listOf(NasSmartStage.CANCELLED), result.stages)
+    }
+    private fun assertPending(result: SmartProbe) {
+        assertEquals(1, result.stages.count { it == NasSmartStage.SUBMITTED })
+        assertFalse(result.stages.any { it in setOf(NasSmartStage.VERIFIED, NasSmartStage.REJECTED, NasSmartStage.CANCELLED) })
     }
 
     private fun repository(
@@ -407,11 +440,19 @@ class SmartTestMutationTest {
         diskMinVersion: Int = 1,
         storageMaxVersion: Int = 5,
         diskMaxVersion: Int = 5,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "operator"),
         DsmSession("test", "test-session", "test-token"),
-        DsmApiClient(OkHttpClient.Builder().retryOnConnectionFailure(false).addInterceptor(interceptor).build()),
+        DsmApiClient(OkHttpClient.Builder().retryOnConnectionFailure(false).addInterceptor { chain ->
+            val request = chain.request()
+            if (request.smartFields()["api"] == "SYNO.Core.System") {
+                Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("Synthetic")
+                    .body("""{"success":true,"data":{"firmware_ver":"DSM 7.2.1-69057 Update 12","buildnumber":69057,"smallfixnumber":12}}"""
+                        .toResponseBody("application/json".toMediaType())).build()
+            } else chain.proceed(request)
+        }.addInterceptor(interceptor).build()),
         mapOf(
+            "SYNO.Core.System" to ApiCapability("SYNO.Core.System", "entry.cgi", 1, 3),
             "SYNO.Storage.CGI.Storage" to ApiCapability(
                 "SYNO.Storage.CGI.Storage", "entry.cgi", storageMinVersion, storageMaxVersion,
             ),
@@ -498,10 +539,7 @@ private class SmartInterceptor(vararg steps: SmartStep) : Interceptor {
         }
     }
 
-    fun fields(): List<Map<String, String>> = requests.map { request ->
-        val form = request.body as? FormBody
-        buildMap { if (form != null) repeat(form.size) { put(form.name(it), form.value(it)) } }
-    }
+    fun fields(): List<Map<String, String>> = requests.map { it.smartFields() }
     fun methods() = fields().map { it["method"].orEmpty() }
     fun versions() = fields().map { it["version"].orEmpty() }
 }
@@ -548,6 +586,9 @@ private class BlockingSmartInterceptor : Interceptor {
 }
 
 private fun Request.smartFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
-    return buildMap { repeat(form.size) { put(form.name(it), form.value(it)) } }
+    val encoded = Buffer().also { body?.writeTo(it) }.readUtf8()
+    return encoded.split('&').associate { field ->
+        val pair = field.split('=', limit = 2)
+        URLDecoder.decode(pair[0], "UTF-8") to URLDecoder.decode(pair.getOrElse(1) { "" }, "UTF-8")
+    }
 }

@@ -1,5 +1,9 @@
 package io.github.qwertyuiop1995.dsmnativeclient
 
+import io.github.qwertyuiop1995.dsmnativeclient.downloads.*
+import io.github.qwertyuiop1995.dsmnativeclient.chat.*
+import io.github.qwertyuiop1995.dsmnativeclient.data.chat.reminders
+import io.github.qwertyuiop1995.dsmnativeclient.data.chat.schedules
 import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -25,8 +29,13 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import io.github.qwertyuiop1995.dsmnativeclient.data.isArchiveDownload
+import io.github.qwertyuiop1995.dsmnativeclient.data.isVFSDownload
+import io.github.qwertyuiop1995.dsmnativeclient.data.ArchiveDownloadPlan
+import io.github.qwertyuiop1995.dsmnativeclient.data.ArchiveDownloadSource
+import io.github.qwertyuiop1995.dsmnativeclient.data.newArchiveDownloadId
+import io.github.qwertyuiop1995.dsmnativeclient.ui.PendingDownloadRequest
 import io.github.qwertyuiop1995.dsmnativeclient.data.DsmRepository
-import io.github.qwertyuiop1995.dsmnativeclient.data.CrossNasTransferCoordinator
 import io.github.qwertyuiop1995.dsmnativeclient.data.RepositoryCrossNasTransferEndpoint
 import io.github.qwertyuiop1995.dsmnativeclient.data.PersistedDownload
 import io.github.qwertyuiop1995.dsmnativeclient.data.PersistedPhotoBackupSource
@@ -39,10 +48,12 @@ import io.github.qwertyuiop1995.dsmnativeclient.data.PersistedVirtualMachineImag
 import io.github.qwertyuiop1995.dsmnativeclient.data.PhotoRepository
 import io.github.qwertyuiop1995.dsmnativeclient.data.TransferStore
 import io.github.qwertyuiop1995.dsmnativeclient.data.hasIncompleteDownloadDestination
+import io.github.qwertyuiop1995.dsmnativeclient.data.canRemoveFromHistory
 import io.github.qwertyuiop1995.dsmnativeclient.data.canRemoveFinishedUpload
 import io.github.qwertyuiop1995.dsmnativeclient.data.toMutationResult
 import io.github.qwertyuiop1995.dsmnativeclient.data.toFileBackgroundTaskPage
 import io.github.qwertyuiop1995.dsmnativeclient.data.toFileServerMutationTarget
+import io.github.qwertyuiop1995.dsmnativeclient.data.canRemoveFinishedServer
 import io.github.qwertyuiop1995.dsmnativeclient.data.toFileServerMutationVerification
 import io.github.qwertyuiop1995.dsmnativeclient.data.toPersistedFileBackgroundTaskSnapshot
 import io.github.qwertyuiop1995.dsmnativeclient.data.toPersistedMutationResult
@@ -138,8 +149,8 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.WorkspaceRouteStack
 import io.github.qwertyuiop1995.dsmnativeclient.domain.deriveWorkspaceRouteStack
 import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
 import io.github.qwertyuiop1995.dsmnativeclient.network.DsmConnectionResolver
-import io.github.qwertyuiop1995.dsmnativeclient.network.ConnectionStatus
 import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
+import io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceRecordKind
 import io.github.qwertyuiop1995.dsmnativeclient.storage.SecureProfileStore
 import io.github.qwertyuiop1995.dsmnativeclient.storage.PersistedWorkspaceUiState
 import java.util.UUID
@@ -173,22 +184,99 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class AppViewModel(application: Application) : AndroidViewModel(application) {
-    private val api = DsmApiClient()
+class AppViewModel internal constructor(
+    application: Application,
+    selectedProfileId: String?,
+    restoreOnCreate: Boolean,
+    selectLastProfile: Boolean,
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(application, null, true, true)
+    internal var onConnectionsRequested: (() -> Boolean)? = null
+    internal var onSignInRequested: (() -> Boolean)? = null
+    internal var onSystemFilesRequested: (() -> Unit)? = null
+    internal val workspaceOwner get() = repository?.owner
+    internal fun systemFileRepository(): DsmRepository? = repository?.takeIf {
+        _workspace.value != null && runCatching { it.requireCurrentOwner() }.isSuccess
+    }
+    internal fun enqueueSharedUploads(records: List<PersistedUpload>) {
+        records.forEach { record ->
+            val current = transferStore.upload(record.id) ?: return@forEach
+            if (current != record || current.workId != null) return@forEach
+            try {
+                enqueuePersistedFileUpload(current)
+                transferStore.updateUpload(current.id) {
+                    if (it.workId == null && it.state == TransferState.PAUSED) it.copy(state = TransferState.FAILED) else it
+                }
+            }
+            catch (_: Exception) { transferStore.updateUpload(current.id) {
+                if (it.workId == null) it.copy(state = TransferState.FAILED, errorKind = DsmErrorKind.LOCAL_STORAGE_FAILED.name) else it
+            } }
+        }
+        records.firstOrNull()?.let { syncPersistedDownloads(it.profileId) }
+    }
+    private val api = DsmApiClient(io.github.qwertyuiop1995.dsmnativeclient.network.LocalNetworkAccess(application).httpClient())
     private val connectionResolver = DsmConnectionResolver(api)
     private val store = SecureProfileStore(application)
+    private val cacheDirectories = io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceCacheDirectories(application.cacheDir)
+    private val taskOwnership = WorkspaceTaskOwnership(store)
+    internal val localNetworkPermission = LocalNetworkPermissionRequest()
+    private val connections = WorkspaceConnectionService(store, api, connectionResolver, localNetworkPermission::request)
     private val transferStore = TransferStore(application)
+    private val transferPresentation = TransferTaskPresentation(application)
+    private val transferUris = TransferUriAccess(application, transferStore)
     private val workManager = WorkManager.getInstance(application)
-    private val photosSession = io.github.qwertyuiop1995.dsmnativeclient.photos.SynologyPhotosSession(viewModelScope)
+    private val workspaceExecution = io.github.qwertyuiop1995.dsmnativeclient.background.AndroidWorkspaceExecution(application)
+    private val photosSession = io.github.qwertyuiop1995.dsmnativeclient.photos.SynologyPhotosSession(viewModelScope, application, workspaceExecution)
     private var repository: DsmRepository? by photosSession
     internal fun photoLibraryFor(profileId: String) = photosSession.modelFor(profileId, _workspace.value?.profile?.id)
+    internal val fileSearch = FileSearchFeatureModel(viewModelScope, { repository }, { _workspace.value },
+        { browser -> _workspace.update { it?.copy(fileBrowser = browser) } }) { browser ->
+        _workspace.update { it?.copy(fileBrowser = browser) }
+        repository?.let { repo -> viewModelScope.launch { loadFileBrowser(repo) } }
+    }
+    internal val fileSharing = FileSharingFeatureModel(viewModelScope, { repository }, { _workspace.value },
+        { links -> _workspace.update { it?.copy(fileShareLinks = links) } },
+        { busy -> _workspace.update { it?.copy(isPerformingAction = busy) } })
+    internal val fileArchive = FileArchiveFeatureModel(viewModelScope, { repository }, { _workspace.value },
+        { application.getString(R.string.archive_default_name) }, ::extractFile, ::compressFiles)
+    internal val filePermissions = FilePermissionFeatureModel(viewModelScope, { repository }, { _workspace.value },
+        { busy -> _workspace.update { it?.copy(isPerformingAction = busy) } }, ::refreshFileMetadata)
+    internal val fileISOMounts = FileISOMountFeatureModel(viewModelScope, { repository }, { _workspace.value },
+        { busy -> _workspace.update { it?.copy(isPerformingAction = busy) } }, ::refreshFileMetadata, ::openDirectory)
+    internal val fileRemoteMounts = FileRemoteMountFeatureModel(viewModelScope, { repository }, { _workspace.value },
+        { busy -> _workspace.update { it?.copy(isPerformingAction = busy) } }, ::refreshFileMetadata, ::openDirectory)
+    internal val fileVFS = FileVFSFeatureModel(viewModelScope, { repository }, { _workspace.value },
+        { busy -> _workspace.update { it?.copy(isPerformingAction = busy) } })
+    internal val fileSettings = FileSettingsFeatureModel(viewModelScope, { repository }, { _workspace.value },
+        { busy -> _workspace.update { it?.copy(isPerformingAction = busy) } })
+    internal val fileBackgroundTaskControls = FileBackgroundTaskFeatureModel(viewModelScope, { repository }, { _workspace.value },
+        { busy -> _workspace.update { it?.copy(isPerformingAction = busy) } }, ::refreshFileBackgroundTasks)
+    private fun refreshFileMetadata() {
+        fileBrowserRequestGeneration.incrementAndGet()
+        fileSearch.invalidate()
+        _workspace.update { it?.copy(files = Loadable.Idle, fileDirectoryBaselines = emptyMap()) }
+        repository?.let { repo -> viewModelScope.launch { loadFileBrowser(repo) } }
+    }
+    private val fileRecovery by lazy { io.github.qwertyuiop1995.dsmnativeclient.data.files.FileRecoveryStores(application) }
     private var workspacePersistenceJob: Job? = null
     private var nasSwitchJob: Job? = null
-    private val loginAttempt = LoginAttemptOwner()
     private var isSwitchingNas = false
     private val transferCoordinator = TransferCoordinator()
+    internal val folderUploads = FolderUploadFeatureModel(application, viewModelScope, transferStore, store,
+        transferCoordinator, workManager, { repository }, ::syncPersistedDownloads, ::monitorUpload)
     private val crossNasRepositories = mutableMapOf<String, DsmRepository>()
-    private val crossNasTransferCoordinator = CrossNasTransferCoordinator()
+    internal val crossNasTransfers by lazy { CrossNasTransferFeatureModel(viewModelScope, fileRecovery.crossNas,
+        { repository?.let(::RepositoryCrossNasTransferEndpoint) },
+        { owner -> resolveCrossNasTarget(owner, store, crossNasRepositories) { profile, session -> connections.restore(profile, session, makeLastProfile = false) {} } },
+        { _workspace.value?.let { it.selectedModule in setOf(Module.FILES, Module.TRANSFERS) && it.availability.allows(Module.FILES) } == true },
+        { busy -> _workspace.update { it?.copy(isPerformingAction = busy) } },
+        { _workspace.update { it?.copy(fileCopyMove = null, fileCopyMoveFolders = Loadable.Idle,
+            fileBrowser = it.fileBrowser.clearSelection(), fileStationMutationState = FileStationMutationWorkspaceState()) } }, ::refreshFileMetadata, profileForOwner = store::profileForOwner, execution = workspaceExecution) }
+    internal val officeDocuments by lazy { OfficeDocumentFeatureModel(viewModelScope, fileRecovery.office, { application.contentResolver },
+        { repository?.let { io.github.qwertyuiop1995.dsmnativeclient.data.files.RepositoryOfficeDocumentEndpoint(it) } },
+        { _workspace.value?.let { it.selectedModule == Module.FILES && it.availability.allows(Module.FILES) } == true },
+        { busy -> _workspace.update { it?.copy(isPerformingAction = busy) } }, ::refreshFileMetadata,
+        { _workspace.value?.isPerformingAction == false }, execution = workspaceExecution) }
     private var fileBackgroundTaskJob: Job? = null
     private val fileUploadPreflightJobs = mutableMapOf<String, Job>()
     private var fileUploadPreflightBusyToken: FileUploadPreflightToken? = null
@@ -214,8 +302,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _opaqueExternalNavigationRevision.asStateFlow()
     private var photoTimelineJob: Job? = null
     private var chatAttachmentPreviewJob: Job? = null
-    private val chatAttachmentJobs = mutableMapOf<String, Job>()
-    private val chatMutationJobs = mutableMapOf<String, Job>()
+    private val chatAttachmentPreviewGeneration = AtomicLong(0)
     private var storageAnalysisJob: Job? = null
     private var nasPerformanceJob: Job? = null
     private var nasPerformanceVisible = false
@@ -239,13 +326,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val downloadRssRefreshMutationGeneration = AtomicLong(0)
     private val downloadDiscoveryGeneration = AtomicLong(0)
     private val downloadActivityGeneration = AtomicLong(0)
-    private val virtualMachineMutationGeneration = AtomicLong(0)
     private val virtualMachineOverviewRequestGeneration = AtomicLong(0)
     private val virtualMachineGuestDetailsGeneration = AtomicLong(0)
     private val virtualMachineTaskPollingGeneration = AtomicLong(0)
     private val virtualMachineImageBrowserGeneration = AtomicLong(0)
-    private val chatMutationGeneration = AtomicLong(0)
-    private val chatMutationGenerations = ConcurrentHashMap<String, Long>()
     private val chatAttachmentPreflightGeneration = AtomicLong(0)
     private val previewRequestGeneration = AtomicLong(0)
     // 下载创建、任务控制、设置保存和工作区退出共用同一 claim 边界，避免跨线程旧状态覆盖。
@@ -258,10 +342,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val downloadRssRefreshMutationLock = downloadMutationCoordinatorLock
     // VMM 创建、设置、生命周期写操作与工作区退出共用同步 claim 边界。
     private val virtualMachineMutationLock = downloadMutationCoordinatorLock
-    private val diskTestStatusRequestGeneration = AtomicLong(0)
-    private val diskTestStatusRequestGenerations = ConcurrentHashMap<String, Long>()
-    private val containerRegistrySearchGeneration = AtomicLong(0)
-    private val containerRegistryTagsGeneration = AtomicLong(0)
     private val thumbnailJobs = mutableMapOf<String, Job>()
     private val thumbnailReferences = mutableMapOf<String, Int>()
     private val thumbnailCache = object : LruCache<String, Bitmap>(32 * 1024 * 1024) {
@@ -274,23 +354,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _packageIconGeneration = MutableStateFlow(0)
     val packageIconGeneration: StateFlow<Int> = _packageIconGeneration.asStateFlow()
 
-    private val initialProfiles = store.profiles()
-    private val initialProfile = initialProfiles.firstOrNull { it.id == store.lastProfileId() }
-        ?: initialProfiles.firstOrNull()
-    private val initialPassword = initialProfile?.let { store.password(it.id) }.orEmpty()
-    private val _login = MutableStateFlow(
-        LoginState(
-            profiles = initialProfiles,
-            selectedProfileId = initialProfile?.id,
-            savedPassword = initialPassword,
-            rememberPassword = initialPassword.isNotEmpty(),
-            autoLoginEnabled = initialPassword.isNotEmpty() &&
-                initialProfile?.let { store.isAutoLoginEnabled(it.id) } == true,
-        )
-    )
+    private val _login = MutableStateFlow(initialWorkspaceLoginState(store, selectedProfileId, selectLastProfile))
     val login: StateFlow<LoginState> = _login.asStateFlow()
 
-    private val _workspace = MutableStateFlow<WorkspaceState?>(null)
+    private val _workspace = WorkspaceStateStore(availability = { repository?.availability() })
     val workspace: StateFlow<WorkspaceState?> = _workspace.asStateFlow()
     private val _moduleNavigation = MutableStateFlow<ModuleNavigationSignal?>(null)
     internal val moduleNavigation: StateFlow<ModuleNavigationSignal?> = _moduleNavigation.asStateFlow()
@@ -305,19 +372,256 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         repositoryProvider = { repository },
         localizedFailure = { failure -> failure.localize(getApplication<Application>()).combined },
     )
+    private val downloadActionStore by lazy { DownloadActionStore(getApplication<Application>()) }
+    internal val downloadActions = DownloadActionModel(viewModelScope, { repository }, { downloadActionStore }, onChanged = {
+        if (_workspace.value?.selectedModule == Module.DOWNLOADS) load(Module.DOWNLOADS)
+    })
+    internal val downloadCreation = DownloadCreationModel(viewModelScope, { repository },
+        { java.io.File(cacheDirectories.previews, "download-inputs") }, downloadActions)
+
+    private val serviceActivityStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.nas.NasServiceActivityStore(getApplication<Application>()) }
+    internal val nasServices = io.github.qwertyuiop1995.dsmnativeclient.nas.NasServiceSettingsModel(viewModelScope, { repository }, { serviceActivityStore }, onChanged = {
+        viewModelScope.launch { if (_workspace.value?.selectedModule == Module.NAS_SETTINGS) load(Module.NAS_SETTINGS) }
+    })
+
+    private val smartActivityStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.nas.NasSmartActivityStore(getApplication<Application>()) }
+    private val vmmControlStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmControlStore(getApplication<Application>()) }
+    private val vmmSettingsStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmSettingsStore(getApplication<Application>()) }
+    private val vmmCreationStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmCreationStore(getApplication<Application>()) }
+    private val vmmAssetStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmAssetStore(getApplication<Application>()) }
+    private val vmmTaskStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmTaskStore(getApplication<Application>()) }
+    private fun vmmExistingFlowAvailable(ignoreConsole: Boolean = false, ignoreTasks: Boolean = false, ignoreImport: Boolean = false): Boolean = _workspace.value?.let { current ->
+        val state = current.virtualMachineMutationState
+        (ignoreTasks || !vmmTasks.state.value.active) && (ignoreConsole || vmmConsole.state.value.target == null) && current.selectedModule == Module.VIRTUAL_MACHINES && current.availability.allows(Module.VIRTUAL_MACHINES) &&
+            !current.isPerformingAction && (ignoreImport || !state.imageImportEditorVisible)
+    } == true
+    internal val vmmControls: io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmControlModel =
+        io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmControlModel(viewModelScope, { repository }, { vmmControlStore }, canStart = { targets ->
+            val owner = repository?.owner
+            vmmExistingFlowAvailable() && owner != null && !vmmCreation.state.value.busy && !vmmCreation.state.value.editor && vmmCreation.state.value.reviewId == null &&
+                vmmCreationStore.records(owner).none { record -> record.pending && targets.any { it.id == record.progress.guest || it.name.equals(record.snapshot.plan.configuration.name, ignoreCase = true) } } &&
+                !vmmSettings.state.value.busy && !vmmSettings.state.value.editor &&
+                vmmSettingsStore.records(owner).none { it.pending && targets.any { target -> io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(target.id) == it.target } } && !vmmAssets.state.value.busy && vmmAssets.state.value.confirmation == null &&
+                vmmAssetStore.records(owner).flatMap { it.items }.none { item -> item.pending && targets.any { io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(it.id) in item.guests } }
+        }, onChanged = { if (_workspace.value?.selectedModule == Module.VIRTUAL_MACHINES) load(Module.VIRTUAL_MACHINES) })
+    internal val vmmAssets: io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmAssetModel =
+        io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmAssetModel(viewModelScope, { repository }, { vmmAssetStore }, canStart = { confirmation ->
+            val owner = repository?.owner
+            vmmExistingFlowAvailable() && owner != null && confirmation.images.none { vmmTasks.protectsImage(it.id, it.name) } && !vmmCreation.state.value.busy && !vmmCreation.state.value.editor && vmmCreation.state.value.reviewId == null &&
+                vmmCreationStore.records(owner).none { record -> record.pending && (confirmation.networks.any { network -> record.snapshot.plan.networks.any { it?.id == network.id } } ||
+                    confirmation.images.any { image -> record.snapshot.plan.disks.any { it.image?.id == image.id } || record.snapshot.plan.iso?.ref?.id == image.id }) } &&
+                !vmmSettings.state.value.busy && !vmmSettings.state.value.editor &&
+                vmmSettingsStore.records(owner).none { it.pending && confirmation.networks.any { network -> network.guests.any { guest -> io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(guest.id) == it.target } } } && !vmmControls.state.value.busy && vmmControls.state.value.confirmation == null &&
+                vmmControlStore.records(owner).flatMap { it.items }.none { item -> item.pending && confirmation.networks.any { network ->
+                    network.guests.any { io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(it.id) == item.id }
+                } }
+        }, onChanged = { if (_workspace.value?.selectedModule == Module.VIRTUAL_MACHINES) load(Module.VIRTUAL_MACHINES) })
+    internal val vmmSettings: io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmSettingsModel =
+        io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmSettingsModel(viewModelScope, { repository }, { vmmSettingsStore }, canStart = { id ->
+            val owner = repository?.owner
+            vmmExistingFlowAvailable() && owner != null && !vmmCreation.hasPending() && !vmmControls.hasPending(id) && !vmmAssets.state.value.busy && vmmAssets.state.value.confirmation == null &&
+                vmmAssetStore.records(owner).flatMap { it.items }.none { it.pending && io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(id) in it.guests }
+        }, onChanged = { if (_workspace.value?.selectedModule == Module.VIRTUAL_MACHINES) { vmmControls.refresh(); load(Module.VIRTUAL_MACHINES) } })
+    internal val vmmCreation: io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmCreationModel =
+        io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmCreationModel(viewModelScope, { repository }, { vmmCreationStore }, canStart = { plan ->
+            val owner = repository?.owner
+            vmmExistingFlowAvailable() && owner != null && !vmmControls.state.value.busy && vmmControls.state.value.confirmation == null &&
+                !vmmSettings.state.value.busy && !vmmSettings.state.value.editor && !vmmAssets.state.value.busy && vmmAssets.state.value.confirmation == null &&
+                (plan == null || (plan.disks.mapNotNull { it.image } + listOfNotNull(plan.iso?.ref)).none { vmmTasks.protectsImage(it.id, it.name) } && vmmSettingsStore.records(owner).none { it.pending && io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(plan.configuration.name.lowercase()) in setOf(it.name, it.desiredName) } &&
+                    vmmControlStore.records(owner).flatMap { it.items }.none { it.pending && it.name == io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(plan.configuration.name) } &&
+                    vmmAssetStore.records(owner).none { record -> record.items.any { item -> item.pending && (if (record.kind == io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmAssetKind.NETWORK)
+                        plan.networks.filterNotNull().any { io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(it.id) == item.id }
+                        else (plan.disks.mapNotNull { it.image?.id } + listOfNotNull(plan.iso?.ref?.id)).any { io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(it) == item.id }) } })
+        }, onChanged = { if (_workspace.value?.selectedModule == Module.VIRTUAL_MACHINES) { vmmControls.refresh(); load(Module.VIRTUAL_MACHINES) } })
+    internal val vmmConsole: io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmConsoleModel =
+        io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmConsoleModel(viewModelScope, { repository }, canStart = { target ->
+            val owner = repository?.owner
+            vmmExistingFlowAvailable(ignoreConsole = true) && owner != null && !vmmCreation.state.value.busy && !vmmCreation.state.value.editor && vmmCreation.state.value.reviewId == null &&
+                vmmCreationStore.records(owner).none { it.pending && (it.progress.guest == target.id || it.snapshot.plan.configuration.name.equals(target.name, ignoreCase = true)) } &&
+                !vmmSettings.state.value.busy && !vmmSettings.state.value.editor && !vmmControls.hasPending(target.id) &&
+                vmmSettingsStore.records(owner).none { it.pending && it.target == io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(target.id) } &&
+                !vmmAssets.state.value.busy && vmmAssets.state.value.confirmation == null &&
+                vmmAssetStore.records(owner).flatMap { it.items }.none { it.pending && io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.vmmDigest(target.id) in it.guests }
+        })
+    internal val vmmTasks: io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmTaskModel =
+        io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmTaskModel(viewModelScope, { repository }, { vmmTaskStore }, canStart = { action ->
+            vmmExistingFlowAvailable(ignoreTasks = true, ignoreImport = action == io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmTaskAction.IMPORT) &&
+                !vmmCreation.state.value.busy && !vmmCreation.state.value.editor && vmmCreation.state.value.reviewId == null &&
+                !vmmSettings.state.value.busy && !vmmSettings.state.value.editor && !vmmAssets.state.value.busy && vmmAssets.state.value.confirmation == null &&
+                !vmmControls.state.value.busy && vmmControls.state.value.confirmation == null &&
+                (action != io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmTaskAction.CLEANUP || !vmmCreation.hasPending() && !vmmLocalImportsPending())
+        }, onChanged = { if (_workspace.value?.selectedModule == Module.VIRTUAL_MACHINES) { vmmAssets.refresh(io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmAssetKind.IMAGE); load(Module.VIRTUAL_MACHINES) } })
+    internal fun vmmLocalImportsPending(): Boolean = _workspace.value?.profile?.id?.let { id ->
+        transferStore.virtualMachineImageImports(id).any { !it.canRemoveFromHistory() }
+    } ?: true
+    private fun vmmAssetPending(): Boolean = repository?.owner?.let { owner ->
+        vmmAssets.state.value.busy || vmmAssets.state.value.confirmation != null || runCatching { vmmAssetStore.records(owner).any { it.pending } }.getOrDefault(true)
+    } ?: true
+    private val containerControlStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.containers.ContainerControlStore(getApplication<Application>()) }
+    private val containerImageStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.containers.ContainerImageStore(getApplication<Application>()) }
+    private val containerNetworkStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.containers.ContainerNetworkStore(getApplication<Application>()) }
+    internal val containerNetworks = io.github.qwertyuiop1995.dsmnativeclient.containers.ContainerNetworkModel(viewModelScope, { repository }, { containerNetworkStore }, canStart = {
+        _workspace.value?.let { it.selectedModule == Module.CONTAINERS && it.availability.allows(Module.CONTAINERS) && !it.isPerformingAction } == true
+    }, onChanged = { if (_workspace.value?.selectedModule == Module.CONTAINERS) load(Module.CONTAINERS) })
+    internal val containerImages = io.github.qwertyuiop1995.dsmnativeclient.containers.ContainerImageModel(viewModelScope, { repository }, { containerImageStore }, canStart = {
+        _workspace.value?.let { it.selectedModule == Module.CONTAINERS && it.availability.allows(Module.CONTAINERS) && !it.isPerformingAction } == true
+    }, onChanged = { if (_workspace.value?.selectedModule == Module.CONTAINERS) load(Module.CONTAINERS) })
+    internal val containerControls = io.github.qwertyuiop1995.dsmnativeclient.containers.ContainerControlModel(viewModelScope, { repository }, { containerControlStore }, canStart = {
+        _workspace.value?.let { it.selectedModule == Module.CONTAINERS && it.availability.allows(Module.CONTAINERS) && !it.isPerformingAction } == true
+    }, onChanged = { if (_workspace.value?.selectedModule == Module.CONTAINERS) load(Module.CONTAINERS) })
+    internal val nasSmart: io.github.qwertyuiop1995.dsmnativeclient.nas.NasSmartTestModel = io.github.qwertyuiop1995.dsmnativeclient.nas.NasSmartTestModel(viewModelScope, { repository }, { smartActivityStore }, canStart = {
+        _workspace.value?.isPerformingAction == false && !nasPower.state.value.busy
+    })
+
+    private val connectionActivityStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.nas.NasConnectionActivityStore(getApplication<Application>()) }
+    internal val nasConnections = io.github.qwertyuiop1995.dsmnativeclient.nas.NasConnectionModel(viewModelScope, { repository }, { connectionActivityStore }, canStart = {
+        _workspace.value?.isPerformingAction == false && !nasPower.state.value.busy
+    })
+
+    private val powerActivityStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.nas.NasPowerActivityStore(getApplication<Application>()) }
+    internal val nasPower: io.github.qwertyuiop1995.dsmnativeclient.nas.NasPowerActionModel = io.github.qwertyuiop1995.dsmnativeclient.nas.NasPowerActionModel(viewModelScope, { repository }, { powerActivityStore }, canStart = {
+        _workspace.value?.isPerformingAction == false && nasServices.state.value.values.none { it.busy } && !nasSmart.state.value.busy && !packageCenter.isActive
+    })
+
+    private val ddnsActivityStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.nas.NasDdnsActivityStore(getApplication<Application>()) }
+    internal val nasDdns = io.github.qwertyuiop1995.dsmnativeclient.nas.NasDdnsModel(viewModelScope, { repository }, { ddnsActivityStore })
+
+    private val regionActivityStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.nas.NasRegionActivityStore(getApplication<Application>()) }
+    internal val nasRegion = io.github.qwertyuiop1995.dsmnativeclient.nas.NasRegionSettingsModel(viewModelScope, { repository }, { regionActivityStore }, onChanged = {
+        viewModelScope.launch { if (_workspace.value?.selectedModule == Module.NAS_SETTINGS) load(Module.NAS_SETTINGS) }
+    })
+
+    internal val nasObservation = io.github.qwertyuiop1995.dsmnativeclient.nas.NasObservationModel(viewModelScope, { repository })
+
+    private val scheduledTaskActivityStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.nas.NasTaskActivityStore(getApplication<Application>()) }
+    internal val nasScheduledTasks = io.github.qwertyuiop1995.dsmnativeclient.nas.NasScheduledTaskModel(viewModelScope, { repository }, { scheduledTaskActivityStore })
+
+    private val directoryActivityStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.nas.NasDirectoryActivityStore(getApplication<Application>()) }
+    internal val nasDirectory = io.github.qwertyuiop1995.dsmnativeclient.nas.NasDirectoryModel(viewModelScope, { repository }, { directoryActivityStore })
+
+    private val packageActivityStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.nas.PackageActivityStore(getApplication<Application>()) }
+    internal val packageCenter: io.github.qwertyuiop1995.dsmnativeclient.nas.NasPackageCenterModel = io.github.qwertyuiop1995.dsmnativeclient.nas.NasPackageCenterModel(viewModelScope, { repository },
+        { packageActivityStore }, { java.io.File(cacheDirectories.previews, "package-inputs") }, onChanged = {
+            if (_workspace.value?.selectedModule == Module.NAS_SETTINGS) load(Module.NAS_SETTINGS)
+        }, canStart = { _workspace.value?.isPerformingAction == false && !nasPower.state.value.busy })
+    internal fun choosePackageFile(uri: Uri, token: Long) = packageCenter.chooseFile(token) { resolveUploadSource(uri) }
+
+    private val chatActionStore by lazy { ChatActionStore(getApplication<Application>()) }
+    private val chatDraftStore by lazy { ChatDraftStore(getApplication<Application>()) }
+    internal val chatActions = ChatActionModel(viewModelScope, _workspace,
+        sourceProvider = { repository?.takeIf { it.owner != null }?.let(::DsmChatActionSource) }, storeProvider = { chatActionStore },
+        draftsProvider = { chatDraftStore },
+        onConversation = ::openConversation, onChanged = { outcome ->
+            chatContent.changed(outcome)
+            chatNotices.changed()
+            if (outcome.checkpoint.kind == ChatActionKind.CLOSE && _workspace.value?.selectedConversation?.id == outcome.checkpoint.channelId) closeConversation()
+            if (_workspace.value?.chatRemindersVisible == true) showChatReminders()
+            if (_workspace.value?.chatScheduledMessagesVisible == true) showChatScheduledMessages()
+        })
+    internal val chatContent: ChatContentModel = ChatContentModel(viewModelScope, _workspace,
+        sourceProvider = { repository?.let(::DsmChatContentSource) }, actions = chatActions)
+    internal val chatBatches = ChatBatchModel(viewModelScope, chatActions,
+        sourceProvider = { repository?.takeIf { it.owner != null }?.let(::DsmChatActionSource) }, drafts = { chatDraftStore })
+    private val chatNoticeStore by lazy { io.github.qwertyuiop1995.dsmnativeclient.chat.ChatNoticeStore(getApplication<Application>()) }
+    internal val chatNotices: io.github.qwertyuiop1995.dsmnativeclient.chat.ChatNoticeModel by lazy {
+        io.github.qwertyuiop1995.dsmnativeclient.chat.ChatNoticeModel(viewModelScope, chatNoticeStore, store,
+            io.github.qwertyuiop1995.dsmnativeclient.chat.ChatNoticeDriver(getApplication<Application>(), chatNoticeStore, store),
+            source = { repository?.takeIf { it.owner != null && it.availability().allows(Module.CHAT) }
+                ?.let { io.github.qwertyuiop1995.dsmnativeclient.chat.DsmChatNoticeSource(it) } },
+            seen = { chatContent.hasSeen(it) }, observe = { enabled ->
+                chatFeature.observeNotices(if (enabled) ({ chatNotices.contentChanged() }) else null)
+            })
+    }
+    internal val chatVoice = ChatVoiceModel(getApplication<Application>(), viewModelScope, chatActions, ownerProvider = { repository?.owner })
     private val nasSettingsRequestGeneration: AtomicLong
         get() = nasAdministrationFeature.settingsRequestGeneration
     private val nasSettingsStructuredMutationLock: Any
         get() = nasAdministrationFeature.mutationLock
+    private val containerReadFeature = ContainerReadFeatureModel(viewModelScope, _workspace) { repository }
+    private val workspaceAccess = WorkspaceAccessFeatureModel(viewModelScope, _workspace,
+        repository = { repository }, onRevoked = ::stopRevokedModuleReads, onReload = { module ->
+            load(module)
+            chatNotices.connectionChanged()
+            if (module == Module.NAS_SETTINGS) setNasPerformanceVisible(true)
+        },
+        onBackground = {
+            vmmConsole.disconnect()
+            chatFeature.stopForModuleExit()
+            stopNasPerformanceSampling(resetPause = false)
+            stopVirtualMachineTaskPolling()
+        })
+    internal fun refreshWorkspaceAccess(module: Module? = null) = workspaceAccess.refresh(module ?: _workspace.value?.selectedModule)
+    internal fun setWorkspaceForeground(value: Boolean) {
+        chatNotices.foreground(value)
+        workspaceAccess.setForeground(value)
+        chatContent.setVisible(value)
+        if (!value) chatVoice.pause()
+    }
+
+    private val loginFeature = WorkspaceLoginModel(viewModelScope, _login, store, connections,
+        { isSwitchingNas }, { _workspace.value?.profile?.id }, chatFeature::clearLocalReadMarkers, ::installConnectedWorkspace)
+
+    private fun stopRevokedModuleReads(modules: Set<Module>, before: WorkspaceState) {
+        filePermissions.authorizationChanged(); fileISOMounts.authorizationChanged(); fileRemoteMounts.authorizationChanged(); fileVFS.authorizationChanged(); fileSettings.authorizationChanged(); fileBackgroundTaskControls.authorizationChanged(); crossNasTransfers.authorizationChanged(); officeDocuments.authorizationChanged()
+        if (Module.FILES in modules) {
+            fileSearch.invalidate(); fileSharing.invalidate(); fileArchive.invalidate(); filePermissions.invalidate(); fileISOMounts.invalidate(); fileRemoteMounts.invalidate(); fileVFS.invalidate(); fileSettings.invalidate(); fileBackgroundTaskControls.invalidate(); crossNasTransfers.invalidate(); officeDocuments.invalidate()
+            fileBrowserRequestGeneration.incrementAndGet()
+            invalidateFileUploadPreflights()
+            invalidateFileBackgroundTaskRequests()
+            if (_workspace.value?.previewOwner != PreviewOwner.PHOTOS) closePreviewImmediately()
+            if (before.previewOwner == PreviewOwner.FILES) cleanupPreviewFile(before.preview)
+            thumbnailJobs.values.forEach(Job::cancel)
+            thumbnailJobs.clear(); thumbnailReferences.clear(); thumbnailCache.evictAll()
+        }
+        if (Module.PHOTOS in modules) {
+            photosSession.revokeAccess()
+            photoTimelineJob?.cancel()
+            if (_workspace.value?.previewOwner != PreviewOwner.FILES) closePreviewImmediately()
+            if (before.previewOwner == PreviewOwner.PHOTOS) cleanupPreviewFile(before.preview)
+        }
+        if (Module.CHAT in modules) {
+            chatNotices.revoke(before.profile.id)
+            chatFeature.clearForProfileSwitch()
+        chatActions.clear()
+        chatContent.clear()
+        chatBatches.clear()
+        chatVoice.clear()
+            invalidateChatAttachmentPreflights()
+            closeChatAttachmentPreview()
+            before.chatAttachmentPreviewVideoFile?.delete()
+        }
+        if (Module.DOWNLOADS in modules) {
+            downloadActions.clear(); downloadCreation.clear()
+            downloadListRequestGeneration.incrementAndGet()
+            downloadActivityGeneration.incrementAndGet()
+            downloadDiscoveryGeneration.incrementAndGet()
+            listOf(downloadActivityJob, downloadDiscoveryLoadJob, downloadBtCatalogJob, downloadDiscoverySearchJob).forEach { it?.cancel() }
+        }
+        if (Module.CONTAINERS in modules) {
+            containerReadFeature.invalidate()
+            containerControls.clear()
+            containerImages.clear()
+            containerNetworks.clear()
+        }
+        if (Module.VIRTUAL_MACHINES in modules) {
+            vmmTasks.clear(); vmmConsole.clear(); vmmCreation.clear(); vmmSettings.clear(); vmmAssets.clear(); vmmControls.clear()
+            virtualMachineOverviewRequestGeneration.incrementAndGet()
+            virtualMachineGuestDetailsGeneration.incrementAndGet()
+            virtualMachineGuestDetailsJob?.cancel()
+            stopVirtualMachineTaskPolling()
+        }
+        if (Module.NAS_SETTINGS in modules) {
+            nasAdministrationFeature.clearForProfileSwitch()
+            packageCenter.clear(); nasDirectory.clear(); nasScheduledTasks.clear(); nasObservation.clear(); nasServices.clear(); nasRegion.clear(); nasDdns.clear(); nasPower.clear(); nasConnections.clear(); nasSmart.clear()
+            stopNasPerformanceSampling(resetPause = true)
+            storageAnalysisJob?.cancel()
+            clearPackageIconCache()
+        }
+    }
 
     init {
         startWorkspacePersistence()
-        if (initialProfile != null &&
-            store.isAutoLoginEnabled(initialProfile.id) &&
-            initialPassword.isNotEmpty()
-        ) {
-            restore(initialProfile, initialPassword)
-        }
+        if (restoreOnCreate) loginFeature.restoreAutomatically()
     }
 
     private fun startWorkspacePersistence() {
@@ -326,169 +630,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _workspace.filterNotNull()
                 .map { state -> state.profile.id to state.persistedUiState() }
                 .distinctUntilChanged()
-                .collect { (profileId, state) -> store.saveWorkspaceUiState(profileId, state) }
+                .collect { (profileId, state) -> store.saveWorkspaceUiState(profileId, state, repository?.owner) }
         }
     }
 
-    fun selectProfile(profile: NasProfile) {
-        if (isSwitchingNas) return
-        if (_workspace.value?.profile?.id != profile.id) chatFeature.clearLocalReadMarkers()
-        store.setLastProfileId(profile.id)
-        val storedPassword = store.password(profile.id).orEmpty()
-        _login.update {
-            it.copy(
-                selectedProfileId = profile.id,
-                savedPassword = storedPassword,
-                rememberPassword = storedPassword.isNotEmpty(),
-                autoLoginEnabled = storedPassword.isNotEmpty() &&
-                    store.isAutoLoginEnabled(profile.id),
-                error = null,
-                needsOtp = false,
-            )
-        }
-    }
-
-    fun newProfile() {
-        if (isSwitchingNas) return
-        chatFeature.clearLocalReadMarkers()
-        store.setLastProfileId(null)
-        _login.update {
-            it.copy(
-                selectedProfileId = null,
-                savedPassword = "",
-                rememberPassword = false,
-                autoLoginEnabled = false,
-                error = null,
-                needsOtp = false,
-            )
-        }
-    }
-
-    fun connect(
-        profileId: String?,
-        name: String,
-        address: String,
-        portText: String,
-        username: String,
-        password: String,
-        otp: String,
-        rememberPassword: Boolean,
-        autoLoginEnabled: Boolean,
-    ) {
-        if (isSwitchingNas) return
-        if (_login.value.isConnecting) return
-        val existing = profileId?.let { id -> _login.value.profiles.firstOrNull { it.id == id } }
-        val profile = NasProfile(
-            id = existing?.id ?: UUID.randomUUID().toString(),
-            name = name.trim().ifBlank { "NAS" },
-            address = address.trim(),
-            username = username.trim(),
-            port = portText.toIntOrNull(),
-            rememberSession = rememberPassword,
-        )
-        if (profile.address.isBlank() || profile.username.isBlank() || password.isBlank()) {
-            _login.update {
-                it.copy(
-                    error = DsmFailure(
-                        null,
-                        "NAS address, account, and password are required",
-                        "Complete the sign-in information and connect again.",
-                        kind = DsmErrorKind.MISSING_LOGIN_FIELDS,
-                    )
-                )
-            }
-            return
-        }
-        loginAttempt.launch(viewModelScope) {
-            _login.update {
-                it.copy(
-                    isConnecting = true,
-                    connectionStatus = ConnectionStatus.PREPARING,
-                    error = null,
-                )
-            }
-            suspendRunCatching {
-                val discovered = connectionResolver.discover(profile) { status ->
-                    if (isActive) _login.update { it.copy(connectionStatus = status) }
-                }.also { currentCoroutineContext().ensureActive() }
-                val previousSession = store.session(profile.id)
-                _login.update { it.copy(connectionStatus = ConnectionStatus.AUTHENTICATING) }
-                val session = api.login(
-                    profile = discovered.profile,
-                    password = password,
-                    otp = otp.ifBlank { null },
-                    deviceId = previousSession?.deviceId,
-                )
-                currentCoroutineContext().ensureActive()
-                store.saveProfile(profile)
-                store.setLastProfileId(profile.id)
-                if (rememberPassword) {
-                    store.savePassword(profile.id, password)
-                    store.saveSession(session)
-                    store.setAutoLoginEnabled(profile.id, autoLoginEnabled)
-                } else {
-                    store.clearPassword(profile.id)
-                    store.clearSession(profile.id)
-                }
-                DsmRepository(discovered.profile, session, api, discovered.capabilities)
-            }.onSuccess { repo ->
-                currentCoroutineContext().ensureActive()
-                _moduleNavigation.value = null
-                chatFeature.clearLocalReadMarkers()
-                fileBrowserRequestGeneration.incrementAndGet()
-                downloadListRequestGeneration.incrementAndGet()
-                fileBackgroundTaskRequestGeneration.incrementAndGet()
-                clearPackageIconCache()
-                repository = repo
-                _login.value = LoginState(
-                    profiles = store.profiles(),
-                    selectedProfileId = profile.id,
-                    savedPassword = if (rememberPassword) password else "",
-                    rememberPassword = rememberPassword,
-                    autoLoginEnabled = rememberPassword && autoLoginEnabled,
-                )
-                val availability = repo.availability()
-                val restoredUi = restoredWorkspaceUi(profile.id, availability)
-                val backgroundTaskSnapshot = transferStore.fileBackgroundTaskSnapshot(profile.id)
-                val photoBackupSource = transferStore.photoBackupSource(profile.id)
-                _workspace.value = connectedWorkspace(profile, repo, availability, restoredUi, backgroundTaskSnapshot, photoBackupSource,
-                    photoBackupCoordinator.sourceRestoreMessage(getApplication(), photoBackupSource), restoredPinnedConversationIds(profile.id))
-                viewModelScope.launch { refreshFavorites(repo) }
-                when {
-                    photoBackupSource?.needsAttention == true ->
-                        photoBackupCoordinator.cancelSourceWork(workManager, profile.id)
-                    photoBackupSource?.let(::shouldScanPhotoBackupSource) == true &&
-                        !schedulePhotoBackupSource(photoBackupSource) -> {
-                        _workspace.update {
-                            it?.copy(
-                                message = getApplication<Application>().getString(
-                                    R.string.photo_backup_source_state_unavailable,
-                                ),
-                            )
-                        }
-                    }
-                }
-                restoreDownloads(profile.id)
-                load(restoredUi.first)
-            }.onFailure { error -> currentCoroutineContext().ensureActive()
-                val failure = error.asDsmFailure()
-                _login.update {
-                    it.copy(
-                        isConnecting = false,
-                        connectionStatus = null,
-                        error = failure,
-                        needsOtp = failure.code in setOf(406, 407),
-                    )
-                }
-            }
-        }
-    }
-
-    internal fun cancelLogin(): Boolean {
-        if (isSwitchingNas || _workspace.value != null || !loginAttempt.cancel()) return false
-        _login.update { it.copy(isConnecting = false, connectionStatus = null, error = null) }
-        return true
-    }
+    fun selectProfile(profile: NasProfile) = loginFeature.selectProfile(profile)
+    fun newProfile() = loginFeature.newProfile()
+    fun connect(profileId: String?, name: String, address: String, portText: String, username: String,
+        password: String, otp: String, rememberPassword: Boolean, autoLoginEnabled: Boolean) =
+        loginFeature.connect(profileId, name, address, portText, username, password, otp, rememberPassword, autoLoginEnabled)
+    internal fun cancelLogin(): Boolean = loginFeature.cancelLogin()
+    internal fun clearLoginAutofill() = loginFeature.clearAutofill()
 
     internal fun recentDirectories(): List<String> =
         _workspace.value?.profile?.id?.let(store::recentDirectories).orEmpty()
@@ -521,138 +673,85 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun restore(profile: NasProfile, fallbackPassword: String? = null) {
-        if (isSwitchingNas) return
-        store.setLastProfileId(profile.id)
-        val session = store.session(profile.id)
-        if (session == null) {
-            if (!fallbackPassword.isNullOrEmpty()) {
-                connect(
-                    profile.id,
-                    profile.name,
-                    profile.address,
-                    profile.port?.toString().orEmpty(),
-                    profile.username,
-                    fallbackPassword,
-                    "",
-                    rememberPassword = true,
-                    autoLoginEnabled = store.isAutoLoginEnabled(profile.id),
-                )
-            } else {
-                selectProfile(profile)
-                _login.update {
-                    it.copy(
-                        error = DsmFailure(
-                            null,
-                            "No saved session is available",
-                            "Enter the password and connect again.",
-                            true,
-                            DsmErrorKind.NO_SAVED_SESSION,
-                        )
+    fun restore(profile: NasProfile, fallbackPassword: String? = null) = loginFeature.restore(profile, fallbackPassword)
+
+    private fun installConnectedWorkspace(profile: NasProfile, repo: DsmRepository) {
+        fileSearch.invalidate(); fileSharing.invalidate(); fileArchive.invalidate(); filePermissions.invalidate(); fileISOMounts.invalidate(); fileRemoteMounts.invalidate(); fileVFS.invalidate(); fileSettings.invalidate(); fileBackgroundTaskControls.invalidate(); crossNasTransfers.invalidate(); officeDocuments.invalidate()
+        _moduleNavigation.value = null
+        chatFeature.clearLocalReadMarkers()
+        fileBrowserRequestGeneration.incrementAndGet()
+        downloadListRequestGeneration.incrementAndGet()
+        fileBackgroundTaskRequestGeneration.incrementAndGet()
+        clearPackageIconCache()
+        repository = repo
+        fileRecovery.bind(repo)
+        repo.owner?.let { cacheDirectories.bind(it); pauseUnownedTransfers(store, transferStore, it) }
+        workspaceAccess.reset()
+        val availability = repo.availability()
+        val restoredUi = restoredWorkspaceUi(profile.id, availability)
+        val backgroundTaskSnapshot = transferStore.fileBackgroundTaskSnapshot(profile.id)
+        val photoBackupSource = transferStore.photoBackupSource(profile.id)
+        _workspace.value = connectedWorkspace(profile, repo, availability, restoredUi, backgroundTaskSnapshot, photoBackupSource,
+            photoBackupCoordinator.sourceRestoreMessage(getApplication(), photoBackupSource), restoredPinnedConversationIds(profile.id))
+        if (repo.availability().any { it.module == Module.FILES && it.isAvailable }) viewModelScope.launch { refreshFavorites(repo) }
+        when {
+            photoBackupSource?.needsAttention == true ->
+                photoBackupCoordinator.cancelSourceWork(workManager, profile.id)
+            photoBackupSource?.let(::shouldScanPhotoBackupSource) == true &&
+                !schedulePhotoBackupSource(photoBackupSource) -> {
+                _workspace.update {
+                    it?.copy(
+                        message = getApplication<Application>().getString(
+                            R.string.photo_backup_source_state_unavailable,
+                        ),
                     )
                 }
             }
-            return
         }
-        if (_login.value.isConnecting) return
-        loginAttempt.launch(viewModelScope) {
-            _login.update {
-                it.copy(
-                    isConnecting = true,
-                    connectionStatus = ConnectionStatus.RESTORING_SESSION,
-                    error = null,
-                )
-            }
-            suspendRunCatching {
-                val discovered = connectionResolver.discover(profile) { status ->
-                    if (isActive) _login.update { it.copy(connectionStatus = status) }
-                }.also { currentCoroutineContext().ensureActive() }
-                val repo = DsmRepository(
-                    discovered.profile,
-                    session,
-                    api,
-                    discovered.capabilities,
-                )
-                repo.listShares()
-                repo
-            }.onSuccess { repo ->
-                currentCoroutineContext().ensureActive()
-                _moduleNavigation.value = null
-                chatFeature.clearLocalReadMarkers()
-                fileBrowserRequestGeneration.incrementAndGet()
-                downloadListRequestGeneration.incrementAndGet()
-                fileBackgroundTaskRequestGeneration.incrementAndGet()
-                clearPackageIconCache()
-                repository = repo
-                _login.update { it.copy(isConnecting = false, connectionStatus = null) }
-                val availability = repo.availability()
-                val restoredUi = restoredWorkspaceUi(profile.id, availability)
-                val backgroundTaskSnapshot = transferStore.fileBackgroundTaskSnapshot(profile.id)
-                val photoBackupSource = transferStore.photoBackupSource(profile.id)
-                _workspace.value = connectedWorkspace(profile, repo, availability, restoredUi, backgroundTaskSnapshot, photoBackupSource,
-                    photoBackupCoordinator.sourceRestoreMessage(getApplication(), photoBackupSource), restoredPinnedConversationIds(profile.id))
-                viewModelScope.launch { refreshFavorites(repo) }
-                when {
-                    photoBackupSource?.needsAttention == true ->
-                        photoBackupCoordinator.cancelSourceWork(workManager, profile.id)
-                    photoBackupSource?.let(::shouldScanPhotoBackupSource) == true &&
-                        !schedulePhotoBackupSource(photoBackupSource) -> {
-                        _workspace.update {
-                            it?.copy(
-                                message = getApplication<Application>().getString(
-                                    R.string.photo_backup_source_state_unavailable,
-                                ),
-                            )
-                        }
-                    }
-                }
-                restoreDownloads(profile.id)
-                load(restoredUi.first)
-            }.onFailure { currentCoroutineContext().ensureActive()
-                store.clearSession(profile.id)
-                val savedPassword = fallbackPassword ?: store.password(profile.id)
-                _login.update { it.copy(isConnecting = false, connectionStatus = null) }
-                if (!savedPassword.isNullOrEmpty() && store.isAutoLoginEnabled(profile.id)) {
-                    connect(
-                        profile.id,
-                        profile.name,
-                        profile.address,
-                        profile.port?.toString().orEmpty(),
-                        profile.username,
-                        savedPassword,
-                        "",
-                        rememberPassword = true,
-                        autoLoginEnabled = true,
-                    )
-                } else {
-                    selectProfile(profile)
-                    _login.update {
-                        it.copy(
-                            error = DsmFailure(
-                                null,
-                                "The saved session expired",
-                                "The saved password is filled in. Connect again.",
-                                true,
-                                DsmErrorKind.SAVED_SESSION_EXPIRED,
-                            ),
-                        )
-                    }
-                }
-            }
-        }
+        restoreDownloads(profile.id)
+        load(restoredUi.first)
     }
 
     fun removeProfile(profile: NasProfile) {
         if (isSwitchingNas) return
+        if (!canRemoveSavedConnection(profile.id)) { reportConnectionBusy(); return }
+        try {
+            io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmExecutionGate.requireIdle(profile.id)
+            chatDraftStore.removeProfile(profile.id)
+            chatActionStore.removeProfile(profile.id)
+            downloadActionStore.removeProfile(profile.id)
+            packageActivityStore.removeProfile(profile.id)
+            directoryActivityStore.removeProfile(profile.id)
+            scheduledTaskActivityStore.removeProfile(profile.id)
+            serviceActivityStore.removeProfile(profile.id)
+            regionActivityStore.removeProfile(profile.id)
+            ddnsActivityStore.removeProfile(profile.id)
+            powerActivityStore.removeProfile(profile.id)
+            connectionActivityStore.removeProfile(profile.id)
+            smartActivityStore.removeProfile(profile.id)
+            vmmControlStore.removeProfile(profile.id)
+            vmmAssetStore.removeProfile(profile.id)
+            vmmSettingsStore.removeProfile(profile.id)
+            vmmCreationStore.removeProfile(profile.id)
+            vmmTaskStore.removeProfile(profile.id)
+            containerControlStore.removeProfile(profile.id)
+            containerImageStore.removeProfile(profile.id)
+            containerNetworkStore.removeProfile(profile.id)
+        } catch (error: Exception) {
+            val failure = error.asDsmFailure()
+            if (_workspace.value == null) _login.update { it.copy(error = failure) }
+            else _workspace.update { it?.copy(message = failure.localize(getApplication()).combined) }
+            return
+        }
         val previousSelection = _login.value.selectedProfileId
         transferStore.downloads(profile.id).forEach { download ->
             if (download.state != TransferState.SUCCEEDED) {
                 download.workId?.let { value ->
                     runCatching { workManager.cancelWorkById(UUID.fromString(value)) }
                 }
-                deleteIncompleteDownload(Uri.parse(download.destinationUri))
+                deleteIncompleteDownload(Uri.parse(download.destinationUri), download.id)
             }
-            releasePersistedDownloadPermission(Uri.parse(download.destinationUri))
+            releasePersistedDownloadPermission(Uri.parse(download.destinationUri), download.id)
         }
         transferStore.uploads(profile.id).forEach { upload ->
             upload.workId?.let { value ->
@@ -680,7 +779,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             releasePendingVirtualMachineLocalImageGrant()
         }
         transferStore.removeProfile(profile.id)
+        io.github.qwertyuiop1995.dsmnativeclient.systemfiles.SharedInputStore(getApplication()).reconcile(transferStore)
+        fileRecovery.removeProfile(profile.id)
+        io.github.qwertyuiop1995.dsmnativeclient.systemfiles.SystemDocumentStore(getApplication<Application>()).removeProfile(profile.id)
+        photosSession.removeProfile(profile.id)
         store.removeProfile(profile.id)
+        chatNotices.revoke(profile.id)
         val profiles = store.profiles()
         val selected = profiles.firstOrNull { it.id == previousSelection }
             ?: profiles.firstOrNull()
@@ -764,11 +868,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             return@synchronized WorkspaceNavigationResult.REJECTED
         }
-        if (state.availability.firstOrNull { it.module == module }?.isAvailable == false) {
-            val unavailable = state.availability.first { item -> item.module == module }
+        if (!state.availability.allows(module)) {
+            val unavailable = state.availability.firstOrNull { item -> item.module == module }
             _workspace.update {
                 it?.copy(
-                    message = unavailable.reason?.localize(getApplication<Application>())
+                    message = unavailable?.reason?.localize(getApplication<Application>())
                         ?: getApplication<Application>().getString(R.string.module_unavailable_generic)
                 )
             }
@@ -794,17 +898,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             closePreviewImmediately()
         }
         if (state.selectedModule == Module.CONTAINERS && module != Module.CONTAINERS) {
-            containerRegistrySearchGeneration.incrementAndGet()
-            containerRegistryTagsGeneration.incrementAndGet()
+            containerReadFeature.invalidate()
         }
         if (state.selectedModule == Module.CHAT && module != Module.CHAT) {
             invalidateChatAttachmentPreflights()
         }
-        if (state.selectedModule == Module.FILES && module != Module.FILES) {
-            invalidateFileUploadPreflights()
-        }
+        if (state.selectedModule == Module.FILES && module != Module.FILES) { fileSearch.invalidate(); fileSharing.invalidate(); fileArchive.invalidate(); filePermissions.invalidate(); fileISOMounts.invalidate(); fileRemoteMounts.invalidate(); fileVFS.invalidate(); fileSettings.invalidate(); fileBackgroundTaskControls.invalidate(); crossNasTransfers.invalidate(); officeDocuments.invalidate(); invalidateFileUploadPreflights() }
         if (state.selectedModule == Module.TRANSFERS && module != Module.TRANSFERS) {
-            invalidateFileBackgroundTaskRequests()
+            fileBackgroundTaskControls.invalidate(); crossNasTransfers.invalidate(); officeDocuments.invalidate(); invalidateFileBackgroundTaskRequests()
         }
         val discardSettledFileMutation = state.selectedModule != module &&
             shouldDiscardSettledFileStationMutationOnModuleChange(
@@ -1073,6 +1174,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return try {
         if (!opaqueExternalNavigationMatches(request)) return OpaqueExternalNavigationResolution.STALE
         when (val target = request.target) {
+            is OpaqueWorkspaceTarget.LocalTransfer -> OpaqueExternalNavigationResolution.REJECTED
+            is OpaqueWorkspaceTarget.Page -> prepareOpaqueObjectNavigation(request, target.page.module).let { prepared ->
+                if (prepared != OpaqueExternalNavigationResolution.APPLIED) prepared
+                else {
+                    when (target.page) {
+                        io.github.qwertyuiop1995.dsmnativeclient.domain.WorkspacePage.CONTAINER_REGISTRY -> navigateToContainerRegistry()
+                        io.github.qwertyuiop1995.dsmnativeclient.domain.WorkspacePage.VIRTUAL_MACHINE_TASKS -> navigateToVirtualMachineTasks()
+                        io.github.qwertyuiop1995.dsmnativeclient.domain.WorkspacePage.NAS_PERFORMANCE -> navigateToNasSettingsPerformance()
+                        else -> {
+                            if (target.page.module == Module.CONTAINERS) closeContainerRegistry()
+                            if (target.page.module == Module.VIRTUAL_MACHINES) closeVirtualMachineTasks()
+                            if (target.page.module == Module.NAS_SETTINGS) closeNasSettingsPerformance()
+                        }
+                    }
+                    OpaqueExternalNavigationResolution.APPLIED
+                }
+            }
             is OpaqueWorkspaceTarget.FileDirectory -> {
                 val browser = FileBrowserState.fromCanonicalDirectoryPath(target.canonicalPath)
                     ?: return OpaqueExternalNavigationResolution.REJECTED
@@ -1093,7 +1211,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 if (!opaqueExternalNavigationMatches(request)) {
                     OpaqueExternalNavigationResolution.STALE
                 } else if (item == null || item.isDirectory || !item.canRead ||
-                    item.previewKind() == FilePreviewKind.UNSUPPORTED
+                    item.previewKind() == FilePreviewKind.UNSUPPORTED && !io.github.qwertyuiop1995.dsmnativeclient.data.files.OfficeDocumentPolicy.supports(item)
                 ) {
                     OpaqueExternalNavigationResolution.REJECTED
                 } else {
@@ -1586,6 +1704,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             stopNasPerformanceSampling(resetPause = true)
         }
+        repository?.let(nasAdministrationFeature::loadSettings)
     }
 
     internal fun closeVirtualMachineTasks() {
@@ -1647,6 +1766,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun load(module: Module? = null) {
         val targetModule = module ?: _workspace.value?.selectedModule ?: return
         val repo = repository ?: return
+        if (_workspace.value?.availability?.none { it.module == targetModule && it.isAvailable } == true) return
         if (targetModule == Module.PHOTOS) {
             _workspace.value?.profile?.id?.let(::photoLibraryFor)?.activate()
             return
@@ -1661,6 +1781,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 Module.PHOTOS -> Unit
                 Module.DOWNLOADS -> {
+                    downloadActions.restore()
                     var refreshStructuredMutation = false
                     val token = synchronized(downloadControlMutationLock) {
                         val current = _workspace.value ?: return@synchronized null
@@ -1682,7 +1803,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             generation = downloadListRequestGeneration.incrementAndGet(),
                             profileId = current.profile.id,
                         ).also {
-                            _workspace.value = current.copy(downloads = Loadable.Loading)
+                            _workspace.value = current.withDownloads(Loadable.Loading)
                         }
                     }
                     if (token == null) {
@@ -1712,15 +1833,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         },
                     )
                 }
-                Module.CONTAINERS -> {
-                    _workspace.update { it?.copy(containers = Loadable.Loading) }
-                    capture(
-                        block = { repo.containerOverview() },
-                        update = { value -> _workspace.update { it?.copy(containers = value) } },
-                    )
-                }
+                Module.CONTAINERS -> containerReadFeature.loadModule(repo)
                 Module.VIRTUAL_MACHINES -> {
-                    var refreshStructuredMutation = false
                     val token = synchronized(virtualMachineMutationLock) {
                         val current = _workspace.value ?: return@synchronized null
                         if (repository !== repo || current.selectedModule != Module.VIRTUAL_MACHINES) {
@@ -1728,9 +1842,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         val mutation = current.virtualMachineMutationState
                         if (virtualMachineOrdinaryLoadBlocked(mutation)) {
-                            refreshStructuredMutation = mutation.target != null &&
-                                !mutation.mutationInProgress && !mutation.mutationRefreshInProgress &&
-                                (mutation.mutationResult != null || mutation.mutationFailure != null)
                             return@synchronized null
                         }
                         VirtualMachineOverviewRequestToken(
@@ -1740,10 +1851,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             _workspace.value = current.copy(virtualMachines = Loadable.Loading)
                         }
                     }
-                    if (token == null) {
-                        if (refreshStructuredMutation) refreshVirtualMachineMutation()
-                        return@launch
-                    }
+                    if (token == null) return@launch
                     capture(
                         block = { repo.virtualMachineOverview() },
                         update = { value ->
@@ -1783,8 +1891,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 Module.CHAT -> {
                     chatFeature.loadModule(repo)
+                    chatActions.restore()
+                    chatBatches.restore()
                 }
                 Module.NAS_SETTINGS -> {
+                    packageCenter.restore()
                     nasAdministrationFeature.loadSettings(repo)
                 }
                 Module.TRANSFERS -> {
@@ -2032,12 +2143,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             fileBackgroundTasksLoadMoreFailure = when {
                                 failure != null -> failure
                                 snapshotFailure != null -> snapshotFailure
-                                merged == null -> DsmFailure(
-                                    null,
-                                    "The NAS returned an unrecognized task page",
-                                    "Refresh the NAS tasks and try again.",
-                                    kind = DsmErrorKind.INVALID_RESPONSE,
-                                )
+                                merged == null -> io.github.qwertyuiop1995.dsmnativeclient.data.files.backgroundTaskChanged()
                                 else -> null
                             },
                         )
@@ -2090,190 +2196,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         chatFeature.closeConversation()
     }
 
-    private fun WorkspaceState.hasActiveChatMutation(
-        vararg operations: ChatMutationOperation,
-    ): Boolean = chatMutationState.entries.values.any { entry ->
-        entry.target.operation in operations &&
-            (entry.confirmationRequested || entry.mutationInProgress ||
-                entry.mutationRefreshInProgress)
-    }
-
-    private fun claimChatMutation(
-        target: ChatMutationTarget,
-        confirmationRequested: Boolean = false,
-    ): ChatMutationClaim? = synchronized(downloadMutationCoordinatorLock) {
-        val repo = repository ?: return@synchronized null
-        val current = _workspace.value ?: return@synchronized null
-        if (current.profile.id != target.profileId || current.selectedModule != Module.CHAT ||
-            current.chatMutationState.entries.containsKey(target.requestId)
-        ) return@synchronized null
-        if (!target.operation.isOutgoingMessage && current.chatMutationState.entries.values.any {
-                !it.target.operation.isOutgoingMessage &&
-                    (it.confirmationRequested || it.mutationInProgress ||
-                        it.mutationRefreshInProgress || chatMutationRequiresRefresh(it) &&
-                        !it.mutationRefreshCompleted)
-            }
-        ) return@synchronized null
-        val generation = chatMutationGeneration.incrementAndGet()
-        chatMutationGenerations[target.requestId] = generation
-        val entry = ChatMutationEntry(
-            target = target,
-            confirmationRequested = confirmationRequested,
-            mutationInProgress = !confirmationRequested,
-            generation = generation,
-        )
-        _workspace.value = current.copy(
-            chatMutationState = current.chatMutationState.copy(
-                entries = current.chatMutationState.entries + (target.requestId to entry),
-            ),
-            message = null,
-        )
-        ChatMutationClaim(repo, current.profile.id, target, generation)
-    }
-
-    private fun claimConfirmedChatMutation(requestId: String): ChatMutationClaim? =
-        synchronized(downloadMutationCoordinatorLock) {
-            val repo = repository ?: return@synchronized null
-            val current = _workspace.value ?: return@synchronized null
-            val entry = current.chatMutationState.entries[requestId] ?: return@synchronized null
-            val target = entry.target
-            if (!entry.confirmationRequested || entry.mutationInProgress ||
-                current.profile.id != target.profileId || current.selectedModule != Module.CHAT ||
-                chatMutationGenerations[requestId] != entry.generation
-            ) return@synchronized null
-            _workspace.value = current.copy(
-                chatMutationState = current.chatMutationState.copy(
-                    entries = current.chatMutationState.entries + (
-                        requestId to entry.copy(
-                            confirmationRequested = false,
-                            mutationInProgress = true,
-                        )
-                    ),
-                ),
-                message = null,
-            )
-            ChatMutationClaim(repo, current.profile.id, target, entry.generation)
-        }
-
-    private fun reclaimChatMutation(
-        target: ChatMutationTarget,
-        expectedRepository: DsmRepository,
-    ): ChatMutationClaim? {
-        synchronized(downloadMutationCoordinatorLock) {
-            val current = _workspace.value ?: return null
-            val entry = current.chatMutationState.entries[target.requestId] ?: return null
-            if (entry.mutationInProgress || entry.mutationRefreshInProgress ||
-                current.profile.id != target.profileId || repository !== expectedRepository
-            ) return null
-            chatMutationGenerations.remove(target.requestId)
-            _workspace.value = current.copy(
-                chatMutationState = current.chatMutationState.copy(
-                    entries = current.chatMutationState.entries - target.requestId,
-                ),
-            )
-        }
-        return claimChatMutation(target)
-    }
-
-    private fun launchChatMutation(
-        claim: ChatMutationClaim,
-        block: suspend (DsmRepository) -> ChatMutationCompletion,
-    ) {
-        val job = viewModelScope.launch {
-            try {
-                val completion = block(claim.repository)
-                if (finishChatMutation(claim, completion)) completion.afterApply?.invoke()
-            } catch (error: CancellationException) {
-                finishChatMutation(
-                    claim,
-                    ChatMutationCompletion(cancelledChatMutationResult(claim.target)),
-                )
-                throw error
-            } catch (error: Throwable) {
-                failChatMutation(claim, error.asDsmFailure())
-            }
-        }
-        chatMutationJobs[claim.target.requestId] = job
-        job.invokeOnCompletion {
-            chatMutationJobs.removeIfSame(claim.target.requestId, job)
-        }
-    }
-
-    private fun finishChatMutation(
-        claim: ChatMutationClaim,
-        completion: ChatMutationCompletion,
-    ): Boolean = synchronized(downloadMutationCoordinatorLock) {
-        val current = _workspace.value ?: return@synchronized false
-        val entry = current.chatMutationState.entries[claim.target.requestId]
-        if (!chatMutationCallbackMatches(
-                repositoryMatches = repository === claim.repository,
-                profileMatches = current.profile.id == claim.profileId,
-                stateEntry = entry,
-                callbackTarget = claim.target,
-                callbackGeneration = claim.generation,
-                registeredGeneration = chatMutationGenerations[claim.target.requestId],
-            )
-        ) return@synchronized false
-        val applied = completion.apply(current)
-        val updatedEntry = checkNotNull(
-            applied.chatMutationState.entries[claim.target.requestId] ?: entry,
-        ).copy(
-            confirmationRequested = false,
-            mutationInProgress = false,
-            mutationResult = completion.result,
-            mutationFailure = null,
-            mutationRefreshFailure = null,
-            mutationRefreshInProgress = false,
-            mutationRefreshCompleted = !completion.result.requiresRefresh &&
-                completion.result.counts.unknown == 0 &&
-                completion.result.status !in setOf(
-                    MutationResultStatus.PARTIAL_SUCCESS,
-                    MutationResultStatus.SUBMITTED_BUT_UNVERIFIED,
-                    MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-                ) && completion.verification != null &&
-                completion.verification != ChatMutationVerification.UNAVAILABLE,
-            mutationVerification = completion.verification,
-        )
-        _workspace.value = applied.copy(
-            chatMutationState = applied.chatMutationState.copy(
-                entries = applied.chatMutationState.entries +
-                    (claim.target.requestId to updatedEntry),
-            ),
-        )
-        true
-    }
-
-    private fun failChatMutation(claim: ChatMutationClaim, failure: DsmFailure): Boolean =
-        synchronized(downloadMutationCoordinatorLock) {
-            val current = _workspace.value ?: return@synchronized false
-            val entry = current.chatMutationState.entries[claim.target.requestId]
-            if (!chatMutationCallbackMatches(
-                    repositoryMatches = repository === claim.repository,
-                    profileMatches = current.profile.id == claim.profileId,
-                    stateEntry = entry,
-                    callbackTarget = claim.target,
-                    callbackGeneration = claim.generation,
-                    registeredGeneration = chatMutationGenerations[claim.target.requestId],
-                )
-            ) return@synchronized false
-            val failedState = if (claim.target.operation.isOutgoingMessage) {
-                current.chatOutgoingMessages.values.flatten()
-                    .firstOrNull { it.clientRequestId == claim.target.requestId }
-                    ?.let { current.withFailedOutgoingChatMessage(it) } ?: current
-            } else current
-            _workspace.value = failedState.copy(
-                chatMutationState = failedState.chatMutationState.copy(
-                    entries = failedState.chatMutationState.entries + (
-                        claim.target.requestId to checkNotNull(entry).copy(
-                            confirmationRequested = false,
-                            mutationInProgress = false,
-                            mutationFailure = failure,
-                        )
-                    ),
-                ),
-            )
-            true
-        }
+    private fun WorkspaceState.hasActiveChatMutation(vararg operations: ChatMutationOperation): Boolean =
+        chatActions.state.value.items.any { it.kind.legacyOperation() in operations && (it.busy || it.confirmation) }
 
     fun openNewChatConversation() {
         val repo = repository ?: return
@@ -2290,7 +2214,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 block = { repo.chatUsers().filterNot { it.isCurrent || it.isDisabled } },
                 update = { value ->
                     _workspace.update { state ->
-                        if (state?.chatNewConversationVisible == true) state.copy(chatUsers = value) else state
+                        if (repository === repo && state?.chatNewConversationVisible == true) state.copy(chatUsers = value) else state
                     }
                 },
             )
@@ -2298,11 +2222,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeNewChatConversation() {
-        if (_workspace.value?.hasActiveChatMutation(
-                ChatMutationOperation.DIRECT_CONVERSATION_CREATE,
-                ChatMutationOperation.PRIVATE_GROUP_CREATE,
-            ) == true
-        ) return
         _workspace.update {
             it?.copy(
                 chatNewConversationVisible = false,
@@ -2338,59 +2257,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun submitChatConversation() {
         val state = _workspace.value ?: return
         val selected = state.chatSelectedUserIds.sorted()
-        if (selected.isEmpty() || state.hasActiveChatMutation(
-                ChatMutationOperation.DIRECT_CONVERSATION_CREATE,
-                ChatMutationOperation.PRIVATE_GROUP_CREATE,
-            )
-        ) return
-        if (selected.size > 1 && state.chatGroupTitle.isBlank()) return
-        val requestId = UUID.randomUUID().toString()
-        val operation = if (selected.size == 1) {
-            ChatMutationOperation.DIRECT_CONVERSATION_CREATE
-        } else {
-            ChatMutationOperation.PRIVATE_GROUP_CREATE
-        }
-        val target = chatMutationTarget(
-            profileId = state.profile.id,
-            operation = operation,
-            requestId = requestId,
-            resourceIds = selected,
-            requestParts = if (selected.size == 1) selected else listOf(state.chatGroupTitle) + selected,
-        )
-        val claim = claimChatMutation(target) ?: return
-        launchChatMutation(claim) { repo ->
-            val outcome = if (selected.size == 1) {
-                repo.openDirectChatConversationResult(selected.single(), requestId)
-            } else {
-                repo.createPrivateChatGroupResult(state.chatGroupTitle, selected, requestId)
-            }
-            val verification = chatMutationVerification(
-                target,
-                conversations = outcome.conversations,
-            )
-            ChatMutationCompletion(
-                result = outcome.result,
-                verification = verification,
-                apply = { current ->
-                    val conversations = outcome.conversations?.let {
-                        Loadable.Ready(
-                            applyChatConversationPreferences(it, current.chatPinnedConversationIds),
-                        )
-                    } ?: current.conversations
-                    if (outcome.result.status == MutationResultStatus.CONFIRMED_SUCCESS &&
-                        outcome.conversation != null
-                    ) current.copy(
-                        conversations = conversations,
-                        chatNewConversationVisible = false,
-                        chatSelectedUserIds = emptySet(),
-                        chatGroupTitle = "",
-                    ) else current.copy(conversations = conversations)
-                },
-                afterApply = outcome.conversation?.takeIf {
-                    outcome.result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                }?.let { conversation -> { openConversation(conversation) } },
-            )
-        }
+        if (selected.isEmpty() || selected.size > 1 && state.chatGroupTitle.isBlank()) return
+        chatActions.request(ChatActionDraft(if (selected.size == 1) ChatActionKind.DIRECT else ChatActionKind.GROUP,
+            if (selected.size == 1) "new-direct:${selected.single()}" else "new-group", text = state.chatGroupTitle, memberIds = selected))
     }
 
     fun showChatMembers() {
@@ -2402,7 +2271,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 block = { repo.chatConversationMembers(conversation.id) },
                 update = { value ->
                     _workspace.update { state ->
-                        if (state?.chatMembersVisible == true &&
+                        if (repository === repo && state?.chatMembersVisible == true &&
                             state.selectedConversation?.id == conversation.id
                         ) state.copy(chatMembers = value) else state
                     }
@@ -2422,10 +2291,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             capture(
-                block = { repo.chatReminders(conversation.id) },
+                block = { repo.chatRepository.reminders(conversation.id) },
                 update = { value ->
                     _workspace.update { state ->
-                        if (state?.chatRemindersVisible == true) {
+                        if (repository === repo && state?.chatRemindersVisible == true && state.selectedConversation?.id == conversation.id) {
                             state.copy(chatReminders = value)
                         } else state
                     }
@@ -2435,304 +2304,41 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeChatReminders() {
-        if (_workspace.value?.hasActiveChatMutation(
-                ChatMutationOperation.REMINDER_SET,
-                ChatMutationOperation.REMINDER_DELETE,
-            ) == true
-        ) return
         _workspace.update { it?.copy(chatRemindersVisible = false) }
     }
 
     fun setChatReminder(messageId: String, remindAtEpochMillis: Long) {
         val state = _workspace.value ?: return
         val conversation = state.selectedConversation ?: return
-        val requestId = UUID.randomUUID().toString()
-        val target = chatMutationTarget(
-            state.profile.id,
-            ChatMutationOperation.REMINDER_SET,
-            requestId,
-            conversation.id,
-            resourceIds = listOf(messageId),
-            expectedEpochMillis = remindAtEpochMillis,
-            requestParts = listOf(messageId, remindAtEpochMillis.toString()),
-        )
-        val claim = claimChatMutation(target) ?: return
-        launchChatMutation(claim) { repo ->
-            val outcome = repo.setChatReminderResult(
-                conversation.id,
-                messageId,
-                remindAtEpochMillis,
-                requestId,
-            )
-            ChatMutationCompletion(
-                outcome.result,
-                chatMutationVerification(target, reminders = outcome.reminders),
-                apply = { current ->
-                    current.copy(
-                        chatReminders = outcome.reminders?.let { Loadable.Ready(it) }
-                            ?: current.chatReminders,
-                    )
-                },
-            )
-        }
+        val message = (state.chatMessages as? Loadable.Ready)?.value?.messages?.firstOrNull { it.id == messageId } ?: return
+        chatActions.request(ChatActionDraft(ChatActionKind.REMINDER_SET, conversation.id, original = message,
+            atMillis = remindAtEpochMillis, reminder = (state.chatReminders as? Loadable.Ready)?.value?.firstOrNull { it.messageId == messageId }))
     }
 
     fun requestDeleteChatReminder(messageId: String): Boolean {
         val state = _workspace.value ?: return false
-        val conversation = state.selectedConversation ?: return false
-        val baseline = (state.chatReminders as? Loadable.Ready)?.value
-            ?.firstOrNull { it.messageId == messageId } ?: return false
-        val requestId = UUID.randomUUID().toString()
-        val target = chatMutationTarget(
-            state.profile.id,
-            ChatMutationOperation.REMINDER_DELETE,
-            requestId,
-            conversation.id,
-            resourceIds = listOf(messageId),
-            requestParts = listOf(messageId, baseline.id),
-            reminderBaseline = baseline,
-        )
-        return claimChatMutation(target, confirmationRequested = true) != null
+        val channel = state.selectedConversation?.id ?: return false
+        val reminder = (state.chatReminders as? Loadable.Ready)?.value?.firstOrNull { it.messageId == messageId } ?: return false
+        return chatActions.request(ChatActionDraft(ChatActionKind.REMINDER_DELETE, channel, reminder = reminder), confirm = true) != null
     }
 
     fun deleteChatReminder(messageId: String) {
         requestDeleteChatReminder(messageId)
     }
 
-    fun confirmChatMutation(requestId: String): Boolean {
-        val claim = claimConfirmedChatMutation(requestId) ?: return false
-        when (claim.target.operation) {
-            ChatMutationOperation.REMINDER_DELETE -> {
-                val baseline = claim.target.reminderBaseline ?: return false
-                launchChatMutation(claim) { repo ->
-                    val outcome = repo.deleteChatReminderResult(
-                        checkNotNull(claim.target.conversationId),
-                        baseline,
-                        requestId,
-                    )
-                    ChatMutationCompletion(
-                        outcome.result,
-                        chatMutationVerification(claim.target, reminders = outcome.reminders),
-                        apply = { current ->
-                            current.copy(
-                                chatReminders = outcome.reminders?.let { Loadable.Ready(it) }
-                                    ?: current.chatReminders,
-                            )
-                        },
-                    )
-                }
-            }
-            ChatMutationOperation.SCHEDULE_DELETE -> {
-                val baseline = claim.target.scheduleBaseline ?: return false
-                launchChatMutation(claim) { repo ->
-                    val outcome = repo.deleteChatScheduledMessageResult(
-                        checkNotNull(claim.target.conversationId),
-                        baseline,
-                        requestId,
-                    )
-                    ChatMutationCompletion(
-                        outcome.result,
-                        chatMutationVerification(
-                            claim.target,
-                            schedules = outcome.scheduledMessages,
-                        ),
-                        apply = { current ->
-                            current.copy(
-                                chatScheduledMessages = outcome.scheduledMessages
-                                    ?.let { Loadable.Ready(it) }
-                                    ?: current.chatScheduledMessages,
-                            )
-                        },
-                    )
-                }
-            }
-            else -> return false
-        }
-        return true
-    }
+    fun cancelChatMutation(requestId: String): Boolean = chatActions.cancel(requestId)
 
-    fun cancelChatMutation(requestId: String): Boolean {
-        val entry = _workspace.value?.chatMutationState?.entries?.get(requestId) ?: return false
-        if (entry.confirmationRequested) {
-            synchronized(downloadMutationCoordinatorLock) {
-                val current = _workspace.value ?: return@synchronized
-                if (current.chatMutationState.entries[requestId] == entry) {
-                    chatMutationGenerations.remove(requestId)
-                    _workspace.value = current.copy(
-                        chatMutationState = current.chatMutationState.copy(
-                            entries = current.chatMutationState.entries - requestId,
-                        ),
-                    )
-                }
-            }
-            return true
-        }
-        val job = chatMutationJobs[requestId] ?: return false
-        job.cancel()
-        return true
-    }
-
-    fun refreshChatMutation(requestId: String): Boolean {
-        val repo = repository ?: return false
-        val current = _workspace.value ?: return false
-        val entry = current.chatMutationState.entries[requestId] ?: return false
-        if (entry.mutationInProgress || entry.mutationRefreshInProgress ||
-            current.profile.id != entry.target.profileId
-        ) return false
-        _workspace.value = current.copy(
-            chatMutationState = current.chatMutationState.copy(
-                entries = current.chatMutationState.entries +
-                    (requestId to entry.copy(
-                        mutationRefreshInProgress = true,
-                        mutationRefreshFailure = null,
-                    )),
-            ),
-        )
-        viewModelScope.launch {
-            val target = entry.target
-            val refreshed = suspendRunCatching {
-                when (target.operation) {
-                    ChatMutationOperation.DIRECT_CONVERSATION_CREATE,
-                    ChatMutationOperation.PRIVATE_GROUP_CREATE,
-                    -> ChatMutationRefreshSnapshot(conversations = repo.chatConversations())
-                    ChatMutationOperation.REMINDER_SET,
-                    ChatMutationOperation.REMINDER_DELETE,
-                    -> ChatMutationRefreshSnapshot(
-                        reminders = repo.chatReminders(checkNotNull(target.conversationId)),
-                    )
-                    ChatMutationOperation.SCHEDULE_CREATE,
-                    ChatMutationOperation.SCHEDULE_DELETE,
-                    -> ChatMutationRefreshSnapshot(
-                        schedules = repo.chatScheduledMessages(checkNotNull(target.conversationId)),
-                    )
-                    ChatMutationOperation.POLL_CREATE,
-                    ChatMutationOperation.TEXT_SEND,
-                    ChatMutationOperation.ATTACHMENT_SEND,
-                    -> ChatMutationRefreshSnapshot(
-                        messages = repo.chatMessages(checkNotNull(target.conversationId), 0, 50).messages,
-                    )
-                }
-            }
-            synchronized(downloadMutationCoordinatorLock) {
-                val state = _workspace.value ?: return@synchronized
-                val active = state.chatMutationState.entries[requestId] ?: return@synchronized
-                if (!chatMutationCallbackMatches(
-                        repository === repo,
-                        state.profile.id == target.profileId,
-                        active,
-                        target,
-                        entry.generation,
-                        chatMutationGenerations[requestId],
-                    )
-                ) return@synchronized
-                refreshed.fold(
-                    onSuccess = { snapshot ->
-                        val verification = chatMutationVerification(
-                            target,
-                            conversations = snapshot.conversations,
-                            reminders = snapshot.reminders,
-                            schedules = snapshot.schedules,
-                            messages = snapshot.messages,
-                        )
-                        val attachmentUriToRelease = if (
-                            verification == ChatMutationVerification.MATCHES &&
-                            target.operation == ChatMutationOperation.ATTACHMENT_SEND
-                        ) {
-                            state.chatOutgoingMessages.values.flatten()
-                                .firstOrNull { it.clientRequestId == target.requestId }
-                                ?.let { state.chatPendingAttachmentUris[it.id] }
-                        } else null
-                        val converged = if (verification == ChatMutationVerification.MATCHES) {
-                            convergeChatMutationRefreshMatch(state, target, snapshot.messages.orEmpty())
-                        } else state
-                        _workspace.value = converged.copy(
-                            conversations = snapshot.conversations?.let { Loadable.Ready(it) }
-                                ?: converged.conversations,
-                            chatReminders = snapshot.reminders?.let { Loadable.Ready(it) }
-                                ?: converged.chatReminders,
-                            chatScheduledMessages = snapshot.schedules?.let { Loadable.Ready(it) }
-                                ?: converged.chatScheduledMessages,
-                            chatMutationState = converged.chatMutationState.copy(
-                                entries = converged.chatMutationState.entries +
-                                    (requestId to active.copy(
-                                        mutationRefreshInProgress = false,
-                                        mutationRefreshCompleted = true,
-                                        mutationRefreshFailure = null,
-                                        mutationFailure = if (
-                                            verification == ChatMutationVerification.MATCHES
-                                        ) null else active.mutationFailure,
-                                        mutationVerification = verification,
-                                    )),
-                            ),
-                        )
-                        attachmentUriToRelease?.let(::releasePersistedReadPermission)
-                    },
-                    onFailure = { error ->
-                        _workspace.value = state.copy(
-                            chatMutationState = state.chatMutationState.copy(
-                                entries = state.chatMutationState.entries +
-                                    (requestId to active.copy(
-                                        mutationRefreshInProgress = false,
-                                        mutationRefreshFailure = error.asDsmFailure(),
-                                    )),
-                            ),
-                        )
-                    },
-                )
-            }
-        }
-        return true
-    }
+    fun refreshChatMutation(requestId: String): Boolean = chatActions.refresh(requestId)
 
     fun dismissChatMutation(requestId: String, discardDraft: Boolean = false): Boolean =
-        synchronized(downloadMutationCoordinatorLock) {
-            val current = _workspace.value ?: return@synchronized false
-            val entry = current.chatMutationState.entries[requestId] ?: return@synchronized false
-            if (!canDismissChatMutation(entry)) return@synchronized false
-            val local = current.chatOutgoingMessages.values.flatten().firstOrNull {
-                it.clientRequestId == requestId && it.deliveryState == ChatDeliveryState.FAILED
-            }
-            val attachmentUri = local?.let { current.chatPendingAttachmentUris[it.id] }
-            val withoutFailed = local?.let { removeLocalChatMessage(current, it) } ?: current
-            chatMutationGenerations.remove(requestId)
-            _workspace.value = withoutFailed.copy(
-                chatMutationState = withoutFailed.chatMutationState.copy(
-                    entries = withoutFailed.chatMutationState.entries - requestId,
-                ),
-                chatDrafts = if (discardDraft && entry.target.operation.isOutgoingMessage) {
-                    entry.target.conversationId?.let { withoutFailed.chatDrafts + (it to "") }
-                        ?: withoutFailed.chatDrafts
-                } else withoutFailed.chatDrafts,
-            )
-            attachmentUri?.let(::releasePersistedReadPermission)
-            true
-        }
+        if (discardDraft) chatActions.discard(requestId) else chatActions.dismiss(requestId)
 
     fun continueEditingChatMutation(requestId: String): Boolean {
-        return synchronized(downloadMutationCoordinatorLock) {
-            val current = _workspace.value ?: return@synchronized false
-            val entry = current.chatMutationState.entries[requestId] ?: return@synchronized false
-            if (!chatMutationCanContinueEditing(entry)) {
-                return@synchronized false
-            }
-            val local = current.chatOutgoingMessages.values.flatten()
-                .firstOrNull { it.clientRequestId == requestId }
-            val attachmentUri = local?.let { current.chatPendingAttachmentUris[it.id] }
-            val withoutFailed = local?.takeIf {
-                it.deliveryState == ChatDeliveryState.FAILED
-            }?.let { removeLocalChatMessage(current, it) } ?: current
-            chatMutationGenerations.remove(requestId)
-            _workspace.value = withoutFailed.copy(
-                chatDrafts = if (local?.body?.isNotBlank() == true) {
-                    withoutFailed.chatDrafts + (local.conversationId to local.body)
-                } else withoutFailed.chatDrafts,
-                chatMutationState = withoutFailed.chatMutationState.copy(
-                    entries = withoutFailed.chatMutationState.entries - requestId,
-                ),
-            )
-            attachmentUri?.let(::releasePersistedReadPermission)
-            true
-        }
+        val item = chatActions.state.value.items.firstOrNull { it.id == requestId && it.canEdit } ?: return false
+        val draft = item.draft ?: return false
+        if (!chatActions.discard(requestId)) return false
+        _workspace.update { state -> state?.copy(chatDrafts = state.chatDrafts + (draft.channelId to draft.text)) }
+        return true
     }
 
     fun showChatScheduledMessages() {
@@ -2746,10 +2352,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             capture(
-                block = { repo.chatScheduledMessages(conversation.id) },
+                block = { repo.chatRepository.schedules(conversation.id) },
                 update = { value ->
                     _workspace.update { state ->
-                        if (state?.chatScheduledMessagesVisible == true) {
+                        if (repository === repo && state?.chatScheduledMessagesVisible == true && state.selectedConversation?.id == conversation.id) {
                             state.copy(chatScheduledMessages = value)
                         } else state
                     }
@@ -2759,11 +2365,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeChatScheduledMessages() {
-        if (_workspace.value?.hasActiveChatMutation(
-                ChatMutationOperation.SCHEDULE_CREATE,
-                ChatMutationOperation.SCHEDULE_DELETE,
-            ) == true
-        ) return
         _workspace.update {
             it?.copy(
                 chatScheduledMessagesVisible = false,
@@ -2783,11 +2384,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeChatScheduleComposer() {
-        if (_workspace.value?.hasActiveChatMutation(
-                ChatMutationOperation.SCHEDULE_CREATE,
-                ChatMutationOperation.SCHEDULE_DELETE,
-            ) == true
-        ) return
         _workspace.update { it?.copy(chatScheduleComposerVisible = false) }
     }
 
@@ -2804,50 +2400,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun createChatScheduledMessage() {
         val state = _workspace.value ?: return
-        val conversation = state.selectedConversation ?: return
-        val sendAt = state.chatScheduleSendAtEpochMillis ?: return
-        if (state.hasActiveChatMutation(
-                ChatMutationOperation.SCHEDULE_CREATE,
-                ChatMutationOperation.SCHEDULE_DELETE,
-            ) || state.chatScheduleDraft.isBlank()
-        ) return
-        val requestId = UUID.randomUUID().toString()
-        val target = chatMutationTarget(
-            state.profile.id,
-            ChatMutationOperation.SCHEDULE_CREATE,
-            requestId,
-            conversation.id,
-            expectedEpochMillis = sendAt,
-            requestParts = listOf(state.chatScheduleDraft),
-        )
-        val claim = claimChatMutation(target) ?: return
-        launchChatMutation(claim) { repo ->
-            val outcome = repo.createChatScheduledMessageResult(
-                conversation.id,
-                state.chatScheduleDraft,
-                sendAt,
-                requestId,
-            )
-            ChatMutationCompletion(
-                outcome.result,
-                chatMutationVerification(target, schedules = outcome.scheduledMessages),
-                apply = { current ->
-                    current.copy(
-                        chatScheduledMessages = outcome.scheduledMessages?.let { Loadable.Ready(it) }
-                            ?: current.chatScheduledMessages,
-                        chatScheduleComposerVisible = if (outcome.result.status ==
-                            MutationResultStatus.CONFIRMED_SUCCESS
-                        ) false else current.chatScheduleComposerVisible,
-                        chatScheduleDraft = if (outcome.result.status ==
-                            MutationResultStatus.CONFIRMED_SUCCESS
-                        ) "" else current.chatScheduleDraft,
-                        chatScheduleSendAtEpochMillis = if (outcome.result.status ==
-                            MutationResultStatus.CONFIRMED_SUCCESS
-                        ) null else current.chatScheduleSendAtEpochMillis,
-                    )
-                },
-            )
-        }
+        val channel = state.selectedConversation?.id ?: return
+        chatActions.request(ChatActionDraft(ChatActionKind.SCHEDULE_CREATE, channel,
+            text = state.chatScheduleDraft, atMillis = state.chatScheduleSendAtEpochMillis))
     }
 
     fun deleteChatScheduledMessage(id: String) {
@@ -2856,36 +2411,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun requestDeleteChatScheduledMessage(id: String): Boolean {
         val state = _workspace.value ?: return false
-        val conversation = state.selectedConversation ?: return false
-        val baseline = (state.chatScheduledMessages as? Loadable.Ready)?.value
-            ?.firstOrNull { it.id == id } ?: return false
-        val requestId = UUID.randomUUID().toString()
-        val target = chatMutationTarget(
-            state.profile.id,
-            ChatMutationOperation.SCHEDULE_DELETE,
-            requestId,
-            conversation.id,
-            resourceIds = listOf(id),
-            expectedEpochMillis = baseline.sendAtEpochMillis,
-            requestParts = listOf(id, baseline.text),
-            scheduleBaseline = baseline,
-        )
-        val claimed = claimChatMutation(target, confirmationRequested = true) != null
-        return claimed
-    }
-
-    fun cancelDeleteChatScheduledMessage() {
-        val entry = _workspace.value?.chatMutationState?.latestManagementEntry
-        if (entry?.target?.operation == ChatMutationOperation.SCHEDULE_DELETE) {
-            cancelChatMutation(entry.target.requestId)
-        }
-    }
-
-    fun confirmDeleteChatScheduledMessage() {
-        val entry = _workspace.value?.chatMutationState?.latestManagementEntry ?: return
-        if (entry.target.operation == ChatMutationOperation.SCHEDULE_DELETE) {
-            confirmChatMutation(entry.target.requestId)
-        }
+        val channel = state.selectedConversation?.id ?: return false
+        val scheduled = (state.chatScheduledMessages as? Loadable.Ready)?.value?.firstOrNull { it.id == id } ?: return false
+        return chatActions.request(ChatActionDraft(ChatActionKind.SCHEDULE_DELETE, channel, schedule = scheduled), confirm = true) != null
     }
 
     fun openChatPollComposer() {
@@ -2901,7 +2429,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeChatPollComposer() {
-        if (_workspace.value?.hasActiveChatMutation(ChatMutationOperation.POLL_CREATE) == true) return
         _workspace.update { it?.copy(chatPollComposerVisible = false) }
     }
 
@@ -2946,50 +2473,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun createChatPoll() {
         val state = _workspace.value ?: return
-        val conversation = state.selectedConversation ?: return
-        if (state.hasActiveChatMutation(ChatMutationOperation.POLL_CREATE)) return
-        val requestId = UUID.randomUUID().toString()
-        val target = chatMutationTarget(
-            state.profile.id,
-            ChatMutationOperation.POLL_CREATE,
-            requestId,
-            conversation.id,
-            expectedEpochMillis = System.currentTimeMillis(),
-            requestParts = listOf(
-                state.chatPollQuestion,
-                state.chatPollAllowsMultiple.toString(),
-                state.chatPollIsAnonymous.toString(),
-            ) + state.chatPollOptions,
-        )
-        val claim = claimChatMutation(target) ?: return
-        launchChatMutation(claim) { repo ->
-            val outcome = repo.createChatPollResult(
-                conversation.id,
-                state.chatPollQuestion,
-                state.chatPollOptions,
-                state.chatPollAllowsMultiple,
-                state.chatPollIsAnonymous,
-                requestId,
-            )
-            ChatMutationCompletion(
-                outcome.result,
-                chatMutationVerification(target, messages = listOfNotNull(outcome.message)),
-                apply = { current ->
-                    val success = outcome.result.status == MutationResultStatus.CONFIRMED_SUCCESS &&
-                        outcome.message != null
-                    current.copy(
-                        chatPollComposerVisible = if (success) false else current.chatPollComposerVisible,
-                        chatPollQuestion = if (success) "" else current.chatPollQuestion,
-                        chatPollOptions = if (success) listOf("", "") else current.chatPollOptions,
-                    )
-                },
-                afterApply = outcome.message?.takeIf {
-                    outcome.result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                }?.let { message ->
-                    { updateOutgoingChatMessage(message) }
-                },
-            )
-        }
+        val channel = state.selectedConversation?.id ?: return
+        chatActions.request(ChatActionDraft(ChatActionKind.POLL_CREATE, channel, text = state.chatPollQuestion,
+            options = state.chatPollOptions, multiple = state.chatPollAllowsMultiple, anonymous = state.chatPollIsAnonymous))
     }
 
     fun closeChatMembers() {
@@ -3002,242 +2488,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateChatDraft(value: String) {
         val conversationId = _workspace.value?.selectedConversation?.id ?: return
-        if (value.length > MAX_CHAT_MESSAGE_CHARACTERS) return
-        _workspace.update { state ->
-            state?.copy(chatDrafts = state.chatDrafts + (conversationId to value))
-        }
+        chatActions.updateComposer(conversationId, value)
     }
 
     fun sendChatMessage() {
         val state = _workspace.value ?: return
-        val conversation = state.selectedConversation ?: return
-        val text = state.chatDrafts[conversation.id]?.trim().orEmpty()
-        if (text.isEmpty() || text.length > MAX_CHAT_MESSAGE_CHARACTERS) return
-        val requestId = UUID.randomUUID().toString()
-        val createdAtEpochSeconds = System.currentTimeMillis() / 1_000
-        val target = chatMutationTarget(
-            state.profile.id,
-            ChatMutationOperation.TEXT_SEND,
-            requestId,
-            conversation.id,
-            expectedEpochMillis = createdAtEpochSeconds * 1_000,
-            requestParts = listOf(text),
-        )
-        val claim = claimChatMutation(target) ?: return
-        val local = ChatMessage(
-            id = "local:$requestId",
-            conversationId = conversation.id,
-            sender = io.github.qwertyuiop1995.dsmnativeclient.domain.ChatUser(
-                "current", state.profile.username, state.profile.username,
-            ),
-            body = text,
-            createdAtEpochSeconds = createdAtEpochSeconds,
-            isMine = true,
-            clientRequestId = requestId,
-            deliveryState = ChatDeliveryState.SENDING,
-        )
-        updateOutgoingChatMessage(local, clearsDraft = true)
-        performChatSend(claim, local)
+        val channel = state.selectedConversation?.id ?: return
+        val text = state.chatDrafts[channel].orEmpty()
+        if (text.isBlank()) return
+        chatActions.request(ChatActionDraft(ChatActionKind.SEND, channel, text = text))
     }
 
     fun sendChatAttachment(uri: Uri) {
         val repo = repository ?: return
         val state = _workspace.value ?: return
-        val conversation = state.selectedConversation ?: return
-        val preflight = ChatAttachmentPreflightToken(
-            repo,
-            state.profile.id,
-            conversation.id,
-            chatAttachmentPreflightGeneration.get(),
-            System.currentTimeMillis() / 1_000,
-        )
-        val text = state.chatDrafts[conversation.id]?.trim().orEmpty()
-        val requestId = UUID.randomUUID().toString()
-        val localId = "local:$requestId"
-        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            var persistedPermissionAcquired = false
-            try {
-                suspendRunCatching {
-                persistedPermissionAcquired = runCatching {
-                    getApplication<Application>().contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                    )
-                }.isSuccess
-                resolveUploadSource(uri)
-            }.onSuccess { source ->
-                if (!chatAttachmentPreflightMatches(preflight)) {
-                    if (releaseChatAttachmentPermissionAfterPreflight(
-                            persistedPermissionAcquired,
-                            preflightMatches = false,
-                            claimSucceeded = false,
-                        )
-                    ) releasePersistedReadPermission(uri)
-                    return@onSuccess
-                }
-                val createdAtEpochSeconds = System.currentTimeMillis() / 1_000
-                val target = chatMutationTarget(
-                    state.profile.id,
-                    ChatMutationOperation.ATTACHMENT_SEND,
-                    requestId,
-                    conversation.id,
-                    expectedEpochMillis = createdAtEpochSeconds * 1_000,
-                    requestParts = listOf(
-                        text,
-                        source.displayName,
-                        source.contentLength?.toString().orEmpty(),
-                    ),
-                )
-                val claim = claimChatMutation(target)
-                if (claim == null) {
-                    if (releaseChatAttachmentPermissionAfterPreflight(
-                            persistedPermissionAcquired,
-                            preflightMatches = true,
-                            claimSucceeded = false,
-                        )
-                    ) releasePersistedReadPermission(uri)
-                    return@onSuccess
-                }
-                val local = ChatMessage(
-                    id = localId,
-                    conversationId = conversation.id,
-                    sender = ChatUser(
-                        "current", state.profile.username, state.profile.username, isCurrent = true,
-                    ),
-                    body = text,
-                    createdAtEpochSeconds = createdAtEpochSeconds,
-                    isMine = true,
-                    attachments = listOf(
-                        io.github.qwertyuiop1995.dsmnativeclient.domain.ChatAttachment(
-                            "local-file:$requestId",
-                            source.displayName,
-                            source.contentType,
-                            source.contentLength,
-                        ),
-                    ),
-                    clientRequestId = requestId,
-                    deliveryState = ChatDeliveryState.SENDING,
-                    attachmentProgress = 0f,
-                )
-                _workspace.update { current ->
-                    current?.copy(
-                        chatPendingAttachmentUris = current.chatPendingAttachmentUris + (local.id to uri),
-                    )
-                }
-                updateOutgoingChatMessage(local, clearsDraft = true)
-                performChatAttachmentSend(claim, local, source, uri)
-                }.onFailure { error ->
-                if (!chatAttachmentPreflightMatches(preflight)) {
-                    if (persistedPermissionAcquired) releasePersistedReadPermission(uri)
-                    return@onFailure
-                }
-                if (persistedPermissionAcquired) releasePersistedReadPermission(uri)
-                recordChatAttachmentPreflightFailure(
-                    preflight,
-                    requestId,
-                    localId,
-                    text,
-                    uri,
-                    error.asDsmFailure(),
-                )
-                }
-            } catch (cancelled: CancellationException) {
-                // 取消不会进入 Result.onFailure；预检尚未把授权交给持久化消息时必须主动归还。
-                if (persistedPermissionAcquired) releasePersistedReadPermission(uri)
-                throw cancelled
-            } finally {
-                chatAttachmentJobs.remove(localId)
-            }
+        val channel = state.selectedConversation?.id ?: return
+        val generation = chatAttachmentPreflightGeneration.get()
+        viewModelScope.launch {
+            suspendRunCatching { resolveUploadSource(uri) }.onSuccess { source ->
+                if (repository === repo && _workspace.value?.selectedConversation?.id == channel &&
+                    _workspace.value?.selectedModule == Module.CHAT && chatAttachmentPreflightGeneration.get() == generation)
+                    chatActions.request(ChatActionDraft(ChatActionKind.ATTACHMENT, channel,
+                        text = state.chatDrafts[channel].orEmpty(), attachment = source))
+            }.onFailure { error -> if (repository === repo) _workspace.update { it?.copy(message = error.asDsmFailure().localize(getApplication<Application>()).combined) } }
         }
-        chatAttachmentJobs[localId] = job
-        job.start()
     }
 
-    private fun chatAttachmentPreflightMatches(token: ChatAttachmentPreflightToken): Boolean =
-        synchronized(downloadMutationCoordinatorLock) {
-            val current = _workspace.value ?: return@synchronized false
-            chatAttachmentPreflightIsCurrent(
-                repository === token.repository,
-                current.profile.id == token.profileId,
-                current.selectedModule == Module.CHAT,
-                current.selectedConversation?.id == token.conversationId,
-                chatAttachmentPreflightGeneration.get() == token.generation,
-            )
-        }
+    private fun invalidateChatAttachmentPreflights() { chatAttachmentPreflightGeneration.incrementAndGet() }
 
-    private fun invalidateChatAttachmentPreflights() {
-        chatAttachmentPreflightGeneration.incrementAndGet()
-        chatAttachmentJobs.values.forEach(Job::cancel)
-        chatAttachmentJobs.clear()
-    }
-
-    private fun recordChatAttachmentPreflightFailure(
-        token: ChatAttachmentPreflightToken,
-        requestId: String,
-        localId: String,
-        body: String,
-        uri: Uri,
-        failure: DsmFailure,
-    ): Boolean = synchronized(downloadMutationCoordinatorLock) {
-        if (!chatAttachmentPreflightMatches(token)) return@synchronized false
-        val current = _workspace.value ?: return@synchronized false
-        val target = chatMutationTarget(
-            token.profileId,
-            ChatMutationOperation.ATTACHMENT_SEND,
-            requestId,
-            token.conversationId,
-            expectedEpochMillis = token.createdAtEpochSeconds * 1_000,
-            requestParts = listOf(body),
-        )
-        val generation = chatMutationGeneration.incrementAndGet()
-        chatMutationGenerations[requestId] = generation
-        val local = ChatMessage(
-            id = localId,
-            conversationId = token.conversationId,
-            sender = ChatUser(
-                "current",
-                current.profile.username,
-                current.profile.username,
-                isCurrent = true,
-            ),
-            body = body,
-            createdAtEpochSeconds = token.createdAtEpochSeconds,
-            isMine = true,
-            clientRequestId = requestId,
-            deliveryState = ChatDeliveryState.FAILED,
-        )
-        val outgoing = (current.chatOutgoingMessages[token.conversationId].orEmpty() + local)
-            .distinctBy(ChatMessage::id)
-        val page = (current.chatMessages as? Loadable.Ready)?.value
-        _workspace.value = current.copy(
-            chatMutationState = current.chatMutationState.copy(
-                entries = current.chatMutationState.entries + (
-                    requestId to ChatMutationEntry(
-                        target = target,
-                        mutationResult = chatMutationFailedBeforeSubmissionResult(target),
-                        mutationFailure = failure,
-                        mutationRefreshCompleted = true,
-                        generation = generation,
-                    )
-                ),
-            ),
-            chatOutgoingMessages = current.chatOutgoingMessages +
-                (token.conversationId to outgoing),
-            chatMessages = page?.copy(
-                messages = (page.messages + local).distinctBy(ChatMessage::id)
-                    .sortedBy(ChatMessage::createdAtEpochSeconds),
-            )?.let { Loadable.Ready(it) } ?: current.chatMessages,
-            chatPendingAttachmentUris = current.chatPendingAttachmentUris + (localId to uri),
-        )
-        true
-    }
-
-    fun cancelChatAttachment(localId: String) {
-        chatAttachmentJobs.remove(localId)?.cancel()
-        val requestId = _workspace.value?.chatOutgoingMessages?.values?.flatten()
-            ?.firstOrNull { it.id == localId }?.clientRequestId ?: return
-        cancelChatMutation(requestId)
-    }
+    fun cancelChatAttachment(localId: String) { chatActions.cancel(localId.removePrefix("local:")) }
 
     fun saveChatAttachment(
         messageId: String,
@@ -3261,11 +2540,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }.onSuccess {
                 _workspace.update {
+                    if (repository !== repo) return@update it
                     it?.copy(message = getApplication<Application>().getString(R.string.attachment_saved))
                 }
             }.onFailure { error ->
                 if (error is CancellationException) return@onFailure
                 _workspace.update {
+                    if (repository !== repo) return@update it
                     it?.copy(message = error.asDsmFailure().localize(getApplication<Application>()).combined)
                 }
             }
@@ -3278,8 +2559,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         val repo = repository ?: return
         closeChatAttachmentPreview()
-        if (attachment.isVideoAttachment()) {
-            previewChatVideoAttachment(repo, messageId, attachment)
+        val previewGeneration = chatAttachmentPreviewGeneration.get()
+        if (attachment.isVideoAttachment() || attachment.mimeType?.startsWith("audio/", ignoreCase = true) == true ||
+            attachment.name.substringAfterLast('.', "").lowercase() in setOf("m4a", "mp3", "aac", "wav", "ogg", "flac")) {
+            previewChatMediaAttachment(repo, messageId, attachment)
             return
         }
         val cached = _workspace.value?.chatAttachmentThumbnails?.get(messageId)
@@ -3305,7 +2588,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             suspendRunCatching { repo.chatAttachmentThumbnail(messageId) }
                 .onSuccess { bytes ->
                     _workspace.update {
-                        if (it?.chatAttachmentPreviewName != attachment.name ||
+                        if (repository !== repo || chatAttachmentPreviewGeneration.get() != previewGeneration || it?.chatAttachmentPreviewName != attachment.name ||
                             it.chatAttachmentPreviewIsVideo
                         ) return@update it
                         it?.copy(
@@ -3320,6 +2603,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     if (error is CancellationException) return@onFailure
                     val failure = error.asDsmFailure()
                     _workspace.update {
+                        if (repository !== repo || chatAttachmentPreviewGeneration.get() != previewGeneration) return@update it
                         it?.copy(
                             chatAttachmentThumbnails = it.chatAttachmentThumbnails +
                                 (messageId to Loadable.Failed(failure)),
@@ -3333,6 +2617,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeChatAttachmentPreview() {
+        chatAttachmentPreviewGeneration.incrementAndGet()
         chatAttachmentPreviewJob?.cancel()
         chatAttachmentPreviewJob = null
         _workspace.value?.chatAttachmentPreviewVideoFile?.delete()
@@ -3342,6 +2627,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 chatAttachmentPreviewBytes = null,
                 chatAttachmentPreviewVideoFile = null,
                 chatAttachmentPreviewIsVideo = false,
+                chatAttachmentPreviewIsAudio = false,
                 chatAttachmentPreviewIsLoading = false,
                 chatAttachmentPreviewProgress = null,
                 chatAttachmentPreviewError = null,
@@ -3349,15 +2635,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun previewChatVideoAttachment(
+    private fun previewChatMediaAttachment(
         repo: DsmRepository,
         messageId: String,
         attachment: io.github.qwertyuiop1995.dsmnativeclient.domain.ChatAttachment,
     ) {
+        val previewGeneration = chatAttachmentPreviewGeneration.get()
         _workspace.update {
             it?.copy(
                 chatAttachmentPreviewName = attachment.name,
                 chatAttachmentPreviewIsVideo = true,
+                chatAttachmentPreviewIsAudio = !attachment.isVideoAttachment(),
                 chatAttachmentPreviewIsLoading = true,
                 chatAttachmentPreviewProgress = 0f,
             )
@@ -3367,7 +2655,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 suspendRunCatching {
                 withContext(Dispatchers.IO) {
-                    val directory = File(getApplication<Application>().cacheDir, "chat-preview")
+                    val directory = cacheDirectories.chatPreviews
                         .also { it.mkdirs() }
                     val extension = attachment.name.substringAfterLast('.', "mp4")
                         .lowercase(Locale.ROOT)
@@ -3386,7 +2674,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                     (completed.toFloat() / total).coerceIn(0f, 1f)
                                 } else null
                                 _workspace.update { state ->
-                                    if (state?.chatAttachmentPreviewName == attachment.name &&
+                                    if (repository === repo && chatAttachmentPreviewGeneration.get() == previewGeneration && state?.chatAttachmentPreviewName == attachment.name &&
                                         state.chatAttachmentPreviewIsVideo
                                     ) state.copy(chatAttachmentPreviewProgress = progress) else state
                                 }
@@ -3396,7 +2684,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }.onSuccess { file ->
                 _workspace.update { state ->
-                    if (state?.chatAttachmentPreviewName == attachment.name &&
+                    if (repository === repo && chatAttachmentPreviewGeneration.get() == previewGeneration && state?.chatAttachmentPreviewName == attachment.name &&
                         state.chatAttachmentPreviewIsVideo
                     ) state.copy(
                         chatAttachmentPreviewVideoFile = file,
@@ -3410,7 +2698,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }.onFailure { error ->
                 temporaryFile?.delete()
                 _workspace.update { state ->
-                    if (state?.chatAttachmentPreviewName == attachment.name &&
+                    if (repository === repo && chatAttachmentPreviewGeneration.get() == previewGeneration && state?.chatAttachmentPreviewName == attachment.name &&
                         state.chatAttachmentPreviewIsVideo
                     ) state.copy(
                         chatAttachmentPreviewIsLoading = false,
@@ -3428,175 +2716,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun retryChatMessage(localId: String) {
-        val repo = repository ?: return
-        val state = _workspace.value ?: return
-        val failed = state.chatOutgoingMessages.values.flatten().firstOrNull {
-            it.id == localId && it.deliveryState == ChatDeliveryState.FAILED
-        } ?: return
-        val existingEntry = state.chatMutationState.entry(failed.clientRequestId) ?: return
-        synchronized(downloadMutationCoordinatorLock) {
-            val current = _workspace.value ?: return
-            val active = current.chatMutationState.entry(existingEntry.target.requestId) ?: return
-            if (!chatMutationCallbackMatches(
-                    repository === repo,
-                    current.profile.id == existingEntry.target.profileId,
-                    active,
-                    existingEntry.target,
-                    existingEntry.generation,
-                    chatMutationGenerations[existingEntry.target.requestId],
-                ) || active.mutationInProgress || active.mutationRefreshInProgress
-            ) return
-            _workspace.value = current.copy(
-                chatMutationState = current.chatMutationState.copy(
-                    entries = current.chatMutationState.entries +
-                        (existingEntry.target.requestId to active.copy(
-                            mutationRefreshInProgress = true,
-                            mutationRefreshFailure = null,
-                        )),
-                ),
-            )
-        }
-        viewModelScope.launch {
-            val recentResult = suspendRunCatching { repo.chatMessages(failed.conversationId, 0, 50) }
-            val recent = recentResult.getOrNull()
-            val canResend = synchronized(downloadMutationCoordinatorLock) {
-                val current = _workspace.value ?: return@synchronized false
-                val active = current.chatMutationState.entry(existingEntry.target.requestId)
-                    ?: return@synchronized false
-                if (!chatMutationCallbackMatches(
-                        repository === repo,
-                        current.profile.id == existingEntry.target.profileId,
-                        active,
-                        existingEntry.target,
-                        existingEntry.generation,
-                        chatMutationGenerations[existingEntry.target.requestId],
-                    )
-                ) return@synchronized false
-                recentResult.fold(
-                    onSuccess = { page ->
-                        val verification = chatMutationVerification(
-                            existingEntry.target,
-                            messages = page.messages,
-                        )
-                        val decision = chatRetryReadbackDecision(true, null, verification)
-                        val attachmentUriToRelease = if (
-                            decision == ChatRetryReadbackDecision.CONVERGE &&
-                            existingEntry.target.operation == ChatMutationOperation.ATTACHMENT_SEND
-                        ) current.chatPendingAttachmentUris[failed.id] else null
-                        val converged = if (decision == ChatRetryReadbackDecision.CONVERGE) {
-                            convergeChatMutationRefreshMatch(current, existingEntry.target, page.messages)
-                        } else current
-                        _workspace.value = converged.copy(
-                            chatMutationState = converged.chatMutationState.copy(
-                                entries = converged.chatMutationState.entries +
-                                    (existingEntry.target.requestId to active.copy(
-                                        mutationRefreshInProgress = false,
-                                        mutationRefreshCompleted = true,
-                                        mutationRefreshFailure = null,
-                                        mutationFailure = if (
-                                            verification == ChatMutationVerification.MATCHES
-                                        ) null else active.mutationFailure,
-                                        mutationVerification = verification,
-                                    )),
-                            ),
-                        )
-                        attachmentUriToRelease?.let(::releasePersistedReadPermission)
-                        decision == ChatRetryReadbackDecision.RESEND
-                    },
-                    onFailure = { error ->
-                        val failure = error.asDsmFailure()
-                        _workspace.value = current.copy(
-                            chatMutationState = current.chatMutationState.copy(
-                                entries = current.chatMutationState.entries +
-                                    (existingEntry.target.requestId to active.copy(
-                                        mutationRefreshInProgress = false,
-                                        mutationRefreshCompleted = false,
-                                        mutationRefreshFailure = failure,
-                                    )),
-                            ),
-                        )
-                        false
-                    },
-                )
-            }
-            if (!canResend || recent == null) {
-                return@launch
-            }
-            val uri = state.chatPendingAttachmentUris[failed.id]
-            if (uri == null) {
-                val claim = reclaimChatMutation(existingEntry.target, repo) ?: return@launch
-                val sending = failed.copy(deliveryState = ChatDeliveryState.SENDING)
-                updateOutgoingChatMessage(sending)
-                performChatSend(claim, sending)
-            } else {
-                suspendRunCatching { resolveUploadSource(uri) }
-                    .onSuccess { source ->
-                        val retryTarget = chatMutationTarget(
-                            existingEntry.target.profileId,
-                            ChatMutationOperation.ATTACHMENT_SEND,
-                            existingEntry.target.requestId,
-                            existingEntry.target.conversationId,
-                            expectedEpochMillis = existingEntry.target.expectedEpochMillis,
-                            requestParts = listOf(
-                                failed.body,
-                                source.displayName,
-                                source.contentLength.toString(),
-                            ),
-                        )
-                        val claim = reclaimChatMutation(retryTarget, repo) ?: return@onSuccess
-                        val sending = failed.copy(deliveryState = ChatDeliveryState.SENDING)
-                        updateOutgoingChatMessage(sending)
-                        performChatAttachmentSend(claim, sending, source, uri)
-                    }
-                    .onFailure { error ->
-                        synchronized(downloadMutationCoordinatorLock) {
-                            val current = _workspace.value ?: return@synchronized
-                            val active = current.chatMutationState.entry(existingEntry.target.requestId)
-                                ?: return@synchronized
-                            if (!chatMutationCallbackMatches(
-                                    repository === repo,
-                                    current.profile.id == existingEntry.target.profileId,
-                                    active,
-                                    existingEntry.target,
-                                    existingEntry.generation,
-                                    chatMutationGenerations[existingEntry.target.requestId],
-                                )
-                            ) return@synchronized
-                            _workspace.value = current.copy(
-                                chatMutationState = current.chatMutationState.copy(
-                                    entries = current.chatMutationState.entries +
-                                        (existingEntry.target.requestId to active.copy(
-                                            mutationFailure = error.asDsmFailure(),
-                                        )),
-                                ),
-                            )
-                        }
-                    }
-            }
-        }
-    }
+    fun retryChatMessage(localId: String) { chatActions.refresh(localId.removePrefix("local:")) }
 
-    fun removeFailedChatMessage(localId: String): Boolean =
-        synchronized(downloadMutationCoordinatorLock) {
-            val state = _workspace.value ?: return@synchronized false
-            val failed = state.chatOutgoingMessages.values.flatten().firstOrNull {
-                it.id == localId && it.deliveryState == ChatDeliveryState.FAILED
-            } ?: return@synchronized false
-            val requestId = failed.clientRequestId ?: return@synchronized false
-            val entry = state.chatMutationState.entry(requestId) ?: return@synchronized false
-            if (!chatMutationCanRemoveFailed(entry)) return@synchronized false
-            val attachmentUri = state.chatPendingAttachmentUris[localId]
-            val withoutFailed = removeLocalChatMessage(state, failed)
-            chatMutationGenerations.remove(requestId)
-            _workspace.value = withoutFailed.copy(
-                chatMutationState = withoutFailed.chatMutationState.copy(
-                    entries = withoutFailed.chatMutationState.entries - requestId,
-                ),
-            )
-            attachmentUri?.let(::releasePersistedReadPermission)
-            true
-        }
+    fun removeFailedChatMessage(localId: String): Boolean = chatActions.discard(localId.removePrefix("local:"))
 
     fun openDirectory(item: FileItem) {
         if (!item.isDirectory) return
@@ -3610,7 +2732,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 fileDirectoryBaselines = it.fileDirectoryBaselines + (item.path to item),
             )
         }
-        store.recordRecentDirectory(current.profile.id, item.path)
+        store.recordRecentDirectory(current.profile.id, item.path, repository?.owner)
         repository?.let { repo ->
             viewModelScope.launch { loadFileBrowser(repo) }
         }
@@ -3675,39 +2797,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         repository?.let { repo -> viewModelScope.launch { loadFileBrowser(repo) } }
     }
 
-    fun loadFileRemoteLocations() {
-        val repo = repository ?: return
-        if (_workspace.value?.supportsRemoteLocations != true) return
-        _workspace.update { it?.copy(fileRemoteLocations = Loadable.Loading) }
-        viewModelScope.launch {
-            suspendRunCatching { repo.listRemoteLocations(limit = MAX_FILE_REMOTE_LOCATIONS).items }
-                .onSuccess { locations ->
-                    _workspace.update { it?.copy(fileRemoteLocations = Loadable.Ready(locations)) }
-                }
-                .onFailure { error ->
-                    if (error is CancellationException) return@onFailure
-                    _workspace.update {
-                        it?.copy(fileRemoteLocations = Loadable.Failed(error.asDsmFailure()))
-                    }
-                }
-        }
-    }
-
-    fun closeFileRemoteLocations() {
-        _workspace.update { it?.copy(fileRemoteLocations = Loadable.Idle) }
-    }
-
-    fun openFileRemoteLocation(item: FileItem) {
-        _workspace.update {
-            it?.copy(
-                fileBrowser = it.fileBrowser.openShortcut(item.path),
-                fileRemoteLocations = Loadable.Idle,
-                fileDirectoryBaselines = it.fileDirectoryBaselines + (item.path to item),
-            )
-        }
-        repository?.let { repo -> viewModelScope.launch { loadFileBrowser(repo) } }
-    }
-
     fun loadFileRecentLocations() {
         val repo = repository ?: return
         val profileId = _workspace.value?.profile?.id ?: return
@@ -3726,7 +2815,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openFileRecentLocation(item: FileItem) {
         val profileId = _workspace.value?.profile?.id ?: return
-        store.recordRecentDirectory(profileId, item.path)
+        store.recordRecentDirectory(profileId, item.path, repository?.owner)
         _workspace.update {
             it?.copy(
                 fileBrowser = it.fileBrowser.openShortcut(item.path),
@@ -3765,7 +2854,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun changeFileSort(option: FileSortOption) {
         val state = _workspace.value ?: return
         _workspace.update { it?.copy(fileBrowser = state.fileBrowser.changeSort(option)) }
-        repository?.let { repo -> viewModelScope.launch { loadFileBrowser(repo) } }
+        if (state.fileBrowser.activeSearchQuery == null || state.files !is Loadable.Ready) repository?.let { repo -> viewModelScope.launch { loadFileBrowser(repo) } }
     }
 
     fun changeFileFilter(filter: FileTypeFilter) {
@@ -3875,22 +2964,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         ) ?: current
                     }
                 }
-        }
-    }
-
-    fun updateFileSearchQuery(query: String) {
-        _workspace.update {
-            it?.copy(fileBrowser = it.fileBrowser.editSearchQuery(query))
-        }
-    }
-
-    fun searchFiles() {
-        val repo = repository ?: return
-        val state = _workspace.value ?: return
-        val browser = state.fileBrowser.submitSearch()
-        _workspace.update { it?.copy(fileBrowser = browser) }
-        viewModelScope.launch {
-            loadFileBrowser(repo)
         }
     }
 
@@ -4012,86 +3085,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    fun compressFiles(
-        items: List<FileItem>,
-        archiveName: String,
-        format: ArchiveFormat,
-        password: String?,
-    ) {
-        val current = _workspace.value ?: return
-        val folder = current.fileBrowser.path
-        val destinationBaseline = current.fileDirectoryBaselines[folder] ?: return
-        val requestedName = archiveName.trim()
-        val cleanName = requestedName.substringBeforeLast('.', requestedName)
-        if (items.isEmpty() || folder.isBlank() || cleanName.isBlank() || '/' in cleanName) return
-        val title = "$cleanName.${format.fileExtension}"
-        val destinationPath = "$folder/$title"
-        val target = FileServerMutationTarget(
-            profileId = current.profile.id,
-            module = Module.FILES,
-            operation = FileServerMutationOperation.COMPRESS,
-            sourceBaselines = items,
-            destinationFolderBaseline = destinationBaseline,
-            expectedOutputs = listOf(
-                FileServerMutationExpectedOutput(
-                    destinationPath,
-                    isDirectory = false,
-                    requiresNonEmptyFile = true,
-                ),
-            ),
-        )
-        enqueueServerTransfer(title, target) { repo, progress, beforeSubmit, taskStarted, _ ->
-            val result = repo.compressResult(
-                sourceBaselines = items,
-                destinationBaseline = destinationBaseline,
-                destinationFilePath = destinationPath,
-                format = format,
-                level = ArchiveCompressionLevel.MODERATE,
-                password = password,
-                onProgress = progress,
-                onBeforeSubmit = beforeSubmit,
-                onTaskStarted = taskStarted,
-            )
-            if ((result.submitted || result.requiresRefresh) && currentCoroutineContext().isActive) {
-                loadFileBrowser(repo)
-            }
+    internal fun compressFiles(request: io.github.qwertyuiop1995.dsmnativeclient.domain.FileCompressionRequest): Boolean {
+        val current = _workspace.value ?: return false
+        if (!request.isValid) return false
+        val destinationPath = request.destination.path.trimEnd('/') + "/" + request.filename
+        val target = FileServerMutationTarget(current.profile.id, Module.FILES, FileServerMutationOperation.COMPRESS,
+            request.sources, request.destination, listOf(FileServerMutationExpectedOutput(destinationPath, false, requiresNonEmptyFile = true)))
+        return enqueueServerTransfer(request.filename, target) { repo, progress, beforeSubmit, taskStarted, _ ->
+            val result = repo.compressResult(sourceBaselines = request.sources, destinationBaseline = request.destination,
+                destinationFilePath = destinationPath, format = request.format, level = request.level, password = request.password,
+                onProgress = progress, onBeforeSubmit = beforeSubmit, onTaskStarted = taskStarted)
+            if ((result.submitted || result.requiresRefresh) && currentCoroutineContext().isActive) loadFileBrowser(repo)
             FileServerMutationExecution(result, target.expectedOutputs)
         }
     }
 
-    fun extractFile(item: FileItem, password: String?) {
-        val current = _workspace.value ?: return
-        val folder = current.fileBrowser.path
-        val destinationBaseline = current.fileDirectoryBaselines[folder] ?: return
-        if (folder.isBlank() || item.isDirectory || !item.canRead) return
-        val target = FileServerMutationTarget(
-            profileId = current.profile.id,
-            module = Module.FILES,
-            operation = FileServerMutationOperation.EXTRACT,
-            sourceBaselines = listOf(item),
-            destinationFolderBaseline = destinationBaseline,
-        )
-        enqueueServerTransfer(
-            item.name,
-            target,
-        ) { repo, progress, beforeSubmit, taskStarted, expectedOutputsChanged ->
-            var expectedOutputs = emptyList<FileServerMutationExpectedOutput>()
-            val result = repo.extractResult(
-                sourceBaseline = item,
-                destinationBaseline = destinationBaseline,
-                password = password,
-                onProgress = progress,
-                onExpectedOutputs = {
-                    expectedOutputs = it
-                    expectedOutputsChanged(it)
-                },
-                onBeforeSubmit = beforeSubmit,
-                onTaskStarted = taskStarted,
-            )
-            if ((result.submitted || result.requiresRefresh) && currentCoroutineContext().isActive) {
-                loadFileBrowser(repo)
-            }
-            FileServerMutationExecution(result, expectedOutputs)
+    internal fun extractFile(request: io.github.qwertyuiop1995.dsmnativeclient.domain.FileExtractionRequest): Boolean {
+        val current = _workspace.value ?: return false
+        if (!request.options.isValid || request.source.isDirectory || !request.source.canRead || !request.destination.canWrite) return false
+        val target = FileServerMutationTarget(current.profile.id, Module.FILES, FileServerMutationOperation.EXTRACT,
+            listOf(request.source), request.destination)
+        return enqueueServerTransfer(request.source.name, target) { repo, progress, beforeSubmit, taskStarted, expectedOutputsChanged ->
+            var outputs = emptyList<FileServerMutationExpectedOutput>()
+            val result = repo.extractResult(request, onProgress = progress,
+                onExpectedOutputs = { outputs = it; expectedOutputsChanged(it) }, onBeforeSubmit = beforeSubmit, onTaskStarted = taskStarted)
+            if ((result.submitted || result.requiresRefresh) && currentCoroutineContext().isActive) loadFileBrowser(repo)
+            FileServerMutationExecution(result, outputs)
         }
     }
 
@@ -4427,14 +3446,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val operation = current.fileCopyMove ?: return false
         if (!operation.location.canWrite) return false
         val destinationBaseline = operation.destinationBaselines[operation.location.path] ?: return false
+        if (operation.targetProfileId != operation.sourceProfileId) {
+            if (current.isPerformingAction) return false
+            val destinationRepo = fileCopyMoveRepository(operation) ?: return false
+            val started = crossNasTransfers.start(RepositoryCrossNasTransferEndpoint(destinationRepo), operation.items,
+                destinationBaseline, operation.operation == FileCopyMoveOperation.MOVE, current.profile.name,
+                operation.targetProfiles.firstOrNull { it.id == operation.targetProfileId }?.name ?: return false)
+            if (started) _workspace.update { it?.copy(fileStationMutationState = FileStationMutationWorkspaceState(editorVisible = true)) }
+            return started
+        }
         val target = FileStationMutationTarget(
             profileId = current.profile.id,
             module = Module.FILES,
-            operation = if (operation.operation == FileCopyMoveOperation.COPY) {
-                FileStationMutationOperation.COPY
-            } else {
-                FileStationMutationOperation.MOVE
-            },
+            operation = if (operation.operation == FileCopyMoveOperation.COPY) FileStationMutationOperation.COPY else FileStationMutationOperation.MOVE,
             sourceBaselines = operation.items,
             destinationPath = operation.location.path,
             destinationBaseline = destinationBaseline,
@@ -4443,7 +3467,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             target,
             FileStationMutationRefresh.FILE_BROWSER,
             ::fileCopyMoveMessageResource,
-            verifyOnRefresh = operation.targetProfileId == operation.sourceProfileId,
             applyResult = { workspace, result ->
                 workspace.copy(
                     fileBrowser = if (result.submitted || result.counts.succeeded > 0) {
@@ -4457,20 +3480,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 )
             },
         ) { repo ->
-            if (operation.targetProfileId == operation.sourceProfileId) {
-                when (operation.operation) {
-                    FileCopyMoveOperation.COPY -> repo.copyResult(operation.items, destinationBaseline)
-                    FileCopyMoveOperation.MOVE -> repo.moveResult(operation.items, destinationBaseline)
-                }
-            } else {
-                val targetRepository = checkNotNull(fileCopyMoveRepository(operation))
-                crossNasTransferCoordinator.transfer(
-                    source = RepositoryCrossNasTransferEndpoint(repo),
-                    target = RepositoryCrossNasTransferEndpoint(targetRepository),
-                    items = operation.items,
-                    destination = destinationBaseline,
-                    moveSource = operation.operation == FileCopyMoveOperation.MOVE,
-                )
+            when (operation.operation) {
+                FileCopyMoveOperation.COPY -> repo.copyResult(operation.items, destinationBaseline)
+                FileCopyMoveOperation.MOVE -> repo.moveResult(operation.items, destinationBaseline)
             }
         }
     }
@@ -4530,16 +3542,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         ) { repo -> repo.removeFavoriteResult(item) }
     }
 
-    fun loadFileShareLinks() {
-        val repo = repository ?: return
-        _workspace.update { it?.copy(fileShareLinks = Loadable.Loading) }
-        viewModelScope.launch {
-            capture(
-                block = repo::listShareLinks,
-                update = { value -> _workspace.update { it?.copy(fileShareLinks = value) } },
-            )
-        }
-    }
+    fun loadFileShareLinks() = fileSharing.refreshLinks()
 
     fun copyFileShareLink(link: FileShareLink) {
         val application = getApplication<Application>()
@@ -4560,11 +3563,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun copyCurrentPageLink() {
         val state = _workspace.value ?: return
+        val owner = repository?.owner ?: return
         val uri = when (val destination = state.pageLinkDestination()) {
-            is WorkspacePageLinkDestination.Fixed -> destination.uri
+            is WorkspacePageLinkDestination.Fixed -> destination.uri.workspacePageOrNull()?.let { page ->
+                store.issueOpaqueWorkspaceTarget(state.profile.id, OpaqueWorkspaceTarget.Page(page), owner)
+                    ?.let(::opaqueObjectExternalWorkspaceUri)
+            }
             is WorkspacePageLinkDestination.Opaque -> store.issueOpaqueWorkspaceTarget(
                 profileId = state.profile.id,
                 target = destination.target,
+                owner = owner,
             )?.let(::opaqueObjectExternalWorkspaceUri)
 
             WorkspacePageLinkDestination.Unavailable -> null
@@ -4589,18 +3597,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun requestFileShareLinkCreation(item: FileItem): Boolean {
-        if (!item.canRead) return false
-        val current = _workspace.value ?: return false
-        return requestFileStationLifecycleMutation(
-            FileStationMutationTarget(
-                profileId = current.profile.id,
-                module = Module.FILES,
-                operation = FileStationMutationOperation.SHARE_CREATE,
-                sourceBaselines = listOf(item),
-            ),
-        )
-    }
+    fun requestFileShareLinkCreation(item: FileItem): Boolean = fileSharing.openCreate(listOf(item))
 
     fun requestFileShareLinkDeletion(ids: List<String>): Boolean {
         val current = _workspace.value ?: return false
@@ -4650,49 +3647,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             },
             ::fileRestoreMessageResource,
         ) { repo -> repo.restoreFromRecycleResult(item) }
-    }
-
-    fun requestPhotoShareLinkCreation(item: PhotoItem): Boolean {
-        if (!item.file.canRead) return false
-        val current = _workspace.value ?: return false
-        return requestFileStationLifecycleMutation(
-            FileStationMutationTarget(
-                profileId = current.profile.id,
-                module = Module.PHOTOS,
-                operation = FileStationMutationOperation.SHARE_CREATE,
-                sourceBaselines = listOf(item.file),
-            ),
-        )
-    }
-
-    fun requestPhotoRestore(item: PhotoItem): Boolean {
-        val current = _workspace.value ?: return false
-        return requestFileStationLifecycleMutation(
-            FileStationMutationTarget(
-                profileId = current.profile.id,
-                module = Module.PHOTOS,
-                operation = FileStationMutationOperation.RESTORE,
-                sourceBaselines = listOf(item.file),
-            ),
-        )
-    }
-
-    fun requestPhotoDeletion(item: PhotoItem): Boolean {
-        if (!item.file.canDelete) {
-            _workspace.update {
-                it?.copy(message = getApplication<Application>().getString(R.string.photo_delete_not_allowed))
-            }
-            return false
-        }
-        val current = _workspace.value ?: return false
-        return requestFileStationLifecycleMutation(
-            FileStationMutationTarget(
-                profileId = current.profile.id,
-                module = Module.PHOTOS,
-                operation = FileStationMutationOperation.DELETE,
-                sourceBaselines = listOf(item.file),
-            ),
-        )
     }
 
     private fun executePhotoMove(target: FileStationMutationTarget): Boolean {
@@ -4953,6 +3907,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             backupMode = false,
                             overwrite = overwrite,
                         )
+                        if (!checkTransferOwner(WorkspaceRecordKind.UPLOAD, record.id, claim.repository, create = true)) return@synchronized
                         transferStore.upsert(record)
                         grantClaimed = true
                         enqueuePersistedFileUpload(record)
@@ -4961,44 +3916,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     if (!grantClaimed) releasePersistedReadPermission(uri)
                 }
             }
-        }
-    }
-
-    fun enqueueUpload(
-        uri: Uri,
-        overwrite: Boolean = false,
-        destinationSnapshot: String? = null,
-    ) {
-        val destination = resolveUploadDestination(
-            destinationSnapshot = destinationSnapshot,
-            currentBrowserPath = _workspace.value?.fileBrowser?.path.orEmpty(),
-        )
-        if (destination.isBlank()) {
-            _workspace.update {
-                it?.copy(message = getApplication<Application>().getString(R.string.open_folder_before_upload))
-            }
-            return
-        }
-        val claim = claimFileUploadPreflight(destination, markWorkspaceBusy = false) ?: return
-        launchFileUploadPreflight(claim) {
-            val source = try {
-                resolveUploadSource(uri)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                synchronized(fileStationMutationLock) {
-                    val current = _workspace.value ?: return@synchronized
-                    if (fileUploadPreflightMatches(claim, current)) {
-                        _workspace.value = current.copy(
-                            message = error.asDsmFailure()
-                                .localize(getApplication<Application>())
-                                .combined,
-                        )
-                    }
-                }
-                return@launchFileUploadPreflight
-            }
-            startForegroundUpload(claim, source, overwrite)
         }
     }
 
@@ -5196,6 +4113,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun invalidateFileUploadPreflights() = synchronized(fileStationMutationLock) {
+        folderUploads.invalidatePreview()
         val busyToken = fileUploadPreflightBusyToken
         val current = _workspace.value
         if (busyToken != null && current != null && current.isPerformingAction &&
@@ -5213,6 +4131,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun enqueuePhotoBackups(uris: List<Uri>) {
+        val repo = repository ?: return
         val state = _workspace.value ?: return
         if (uris.isEmpty()) return
         if (store.session(state.profile.id) == null) {
@@ -5250,6 +4169,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     expectedBytes = source.contentLength,
                     destinationPath = destination,
                 )
+                if (!checkTransferOwner(WorkspaceRecordKind.UPLOAD, record.id, repo, create = true)) {
+                    releasePersistedReadPermission(uri)
+                    return@forEach
+                }
                 transferStore.upsert(record)
                 enqueuePhotoBackup(record)
                 added++
@@ -5268,6 +4191,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun configurePhotoBackupSource(treeUri: Uri) {
+        val repo = repository ?: return
         val state = _workspace.value ?: return
         if (store.session(state.profile.id) == null) {
             _workspace.update {
@@ -5296,8 +4220,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             profileId = state.profile.id,
             treeUri = treeUri.toString(),
             destinationPath = state.photoBrowser.folderPath,
+            sourceId = UUID.randomUUID().toString(),
         )
-        if (!schedulePhotoBackupSource(source)) {
+        if (!checkTransferOwner(WorkspaceRecordKind.PHOTO_SOURCE, requireNotNull(source.sourceId), repo, create = true) ||
+            !schedulePhotoBackupSource(source)) {
             if (acquiredPersistedReadGrant) releasePersistedReadPermission(treeUri)
             _workspace.update {
                 it?.copy(
@@ -5321,113 +4247,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun enqueueFileTree(treeUri: Uri) {
-        val state = _workspace.value ?: return
-        val destinationRoot = state.fileBrowser.path
-        if (destinationRoot.isBlank()) return
-        if (store.session(state.profile.id) == null) {
-            _workspace.update {
-                it?.copy(message = getApplication<Application>().getString(R.string.folder_upload_requires_saved_session))
-            }
-            return
-        }
-        val granted = runCatching {
-            getApplication<Application>().contentResolver.takePersistableUriPermission(
-                treeUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        }.isSuccess
-        if (!granted) {
-            _workspace.update {
-                it?.copy(message = getApplication<Application>().getString(R.string.folder_upload_permission_failed))
-            }
-            return
-        }
-        viewModelScope.launch {
-            _workspace.update { it?.copy(isPerformingAction = true, message = null) }
+        val destination = _workspace.value?.fileBrowser?.path.orEmpty()
+        if (destination.isBlank()) return
+        val claim = claimFileUploadPreflight(destination, markWorkspaceBusy = true) ?: return
+        launchFileUploadPreflight(claim) {
             try {
-                suspendRunCatching {
-                withContext(Dispatchers.IO) {
-                    scanDocumentTree(
-                        getApplication(),
-                        treeUri,
-                        MAX_FILE_TREE_DOCUMENTS,
-                    ) { true }
+                folderUploads.prepare(treeUri, destination, claim.token.profileId, claim.repository) {
+                    _workspace.value?.let { fileUploadPreflightMatches(claim, it) } == true
                 }
-            }.onSuccess { scan ->
-                if (scan.truncated) {
-                    releasePersistedReadPermission(treeUri)
-                    _workspace.update {
-                        it?.copy(
-                            isPerformingAction = false,
-                            message = getApplication<Application>().getString(
-                                R.string.folder_upload_too_large,
-                                MAX_FILE_TREE_DOCUMENTS,
-                            ),
-                        )
+            } finally {
+                synchronized(fileStationMutationLock) {
+                    val current = _workspace.value
+                    if (current != null && fileUploadPreflightMatches(claim, current)) {
+                        fileUploadPreflightBusyToken = null
+                        _workspace.value = current.copy(isPerformingAction = false)
                     }
-                    return@onSuccess
                 }
-                if (scan.files.isEmpty()) {
-                    releasePersistedReadPermission(treeUri)
-                    _workspace.update {
-                        it?.copy(
-                            isPerformingAction = false,
-                            message = getApplication<Application>().getString(R.string.folder_upload_empty),
-                        )
-                    }
-                    return@onSuccess
-                }
-                val existing = transferStore.uploads(state.profile.id)
-                var queued = 0
-                scan.files.forEach { item ->
-                    val destination = backupDestination(destinationRoot, item.relativeFolder)
-                    val duplicate = existing.any {
-                        it.sourceUri == item.uri.toString() &&
-                            it.destinationPath == destination &&
-                            it.state !in TERMINAL_TRANSFER_STATES
-                    }
-                    if (duplicate) return@forEach
-                    val record = PersistedUpload(
-                        id = UUID.randomUUID().toString(),
-                        profileId = state.profile.id,
-                        sourceUri = item.uri.toString(),
-                        title = item.name,
-                        contentType = item.mimeType,
-                        expectedBytes = item.size,
-                        destinationPath = destination,
-                        destinationRootPath = destinationRoot,
-                        ownsPersistedReadGrant = false,
-                        sourceTreeUri = treeUri.toString(),
-                        backupMode = false,
-                        overwrite = false,
-                        mirrorDirectories = true,
-                    )
-                    transferStore.upsert(record)
-                    enqueuePersistedFileUpload(record)
-                    queued++
-                }
-                _workspace.update {
-                    it?.copy(
-                        isPerformingAction = false,
-                        message = getApplication<Application>().getString(
-                            R.string.folder_upload_queued,
-                            queued,
-                        ),
-                    )
-                }
-            }.onFailure {
-                releasePersistedReadPermission(treeUri)
-                _workspace.update {
-                    it?.copy(
-                        isPerformingAction = false,
-                        message = getApplication<Application>().getString(R.string.folder_upload_scan_failed),
-                    )
-                }
-            }
-            } catch (cancelled: CancellationException) {
-                // 取消不会进入 Result.onFailure；目录扫描尚未生成持久化上传记录时必须归还授权。
-                releasePersistedReadPermission(treeUri)
-                throw cancelled
             }
         }
     }
@@ -5458,7 +4293,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    internal fun enqueueDownload(item: FileItem, destination: Uri): DownloadEnqueueResult {
+    internal fun enqueueDownload(request: PendingDownloadRequest, destination: Uri): DownloadEnqueueResult {
         val repo = repository ?: run {
             deleteIncompleteDownload(destination)
             return DownloadEnqueueResult.REJECTED
@@ -5467,7 +4302,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             deleteIncompleteDownload(destination)
             return DownloadEnqueueResult.REJECTED
         }
-        if (!item.canRead) {
+        if (repo.owner != request.owner || request.owner.profileId != state.profile.id ||
+            runCatching { repo.requireCurrentOwner() }.isFailure) {
+            discardUnmatchedDownloadDestination(destination)
+            return DownloadEnqueueResult.REJECTED
+        }
+        val items = request.items
+        val remote = request.vfsSource
+        val validSource = if (remote == null) items.all { io.github.qwertyuiop1995.dsmnativeclient.data.files.isFileMutationPath(it.path) }
+            else remote.profile.owner == request.owner && items.size == 1 && remote.matches(items.single())
+        if (items.isEmpty() || items.any { !it.canRead } || !validSource) {
             deleteIncompleteDownload(destination)
             _workspace.update {
                 it?.copy(message = getApplication<Application>().getString(R.string.download_not_allowed))
@@ -5507,7 +4351,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             return DownloadEnqueueResult.REJECTED
         }
-        val taskId = UUID.randomUUID().toString()
+        val archive = request.isArchive
+        val item = items.first()
+        val taskId = if (remote != null) io.github.qwertyuiop1995.dsmnativeclient.data.newVFSDownloadId() else if (archive) newArchiveDownloadId() else UUID.randomUUID().toString()
         val savedSessionAvailable = store.session(state.profile.id) != null
         val backgroundCapable = canRunDownloadInBackground(
             savedSessionAvailable = savedSessionAvailable,
@@ -5522,14 +4368,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             id = taskId,
             profileId = state.profile.id,
             sourcePath = item.path,
-            title = item.name,
+            title = request.title,
             destinationUri = destination.toString(),
-            isDirectory = item.isDirectory,
-            expectedBytes = item.size.takeIf { !item.isDirectory && it > 0 },
+            isDirectory = archive,
+            expectedBytes = item.size.takeIf { !archive && it > 0 },
             backgroundCapable = backgroundCapable,
             workId = backgroundRequest?.id?.toString(),
         )
-        val persisted = if (backgroundCapable) {
+        val owned = checkTransferOwner(WorkspaceRecordKind.DOWNLOAD, record.id, repo, create = true)
+        val persisted = if (!owned) false else if (remote != null) {
+            runCatching { transferStore.createVFSDownloadDurably(record, io.github.qwertyuiop1995.dsmnativeclient.data.FileVFSDownloadPlan(
+                taskId = taskId, destinationUri = record.destinationUri, source = remote)) }.getOrDefault(false)
+        } else if (archive) {
+            runCatching { transferStore.createArchiveDownloadDurably(record, ArchiveDownloadPlan(
+                taskId = taskId, profileId = record.profileId, destinationUri = record.destinationUri,
+                sources = items.distinctBy(FileItem::path).map { ArchiveDownloadSource(it.path, it.name, it.isDirectory) },
+            )) }.getOrDefault(false)
+        } else if (backgroundCapable) {
             runCatching { transferStore.upsertDownloadDurably(record) }.getOrDefault(false)
         } else {
             runCatching {
@@ -5593,25 +4448,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return false
     }
 
-    fun fileUploadsUseBackgroundWork(): Boolean =
-        _workspace.value?.profile?.id?.let(store::session) != null
-
-    fun selectPhotoSpace(spaceId: String) {
-        cancelOpaqueExternalNavigation(consumePending = true)
-        val state = _workspace.value ?: return
-        val next = state.photoBrowser.selectSpace(spaceId)
-        if (next == state.photoBrowser) return
-        photoTimelineJob?.cancel()
-        _workspace.update {
-            it?.copy(
-                photoBrowser = next,
-                photos = Loadable.Idle,
-                photoTimeline = Loadable.Idle,
-            )
-        }
-        load(Module.PHOTOS)
-    }
-
     fun openPhotoFolder(item: PhotoItem) {
         if (item.kind != PhotoItemKind.FOLDER) return
         cancelOpaqueExternalNavigation(consumePending = true)
@@ -5636,24 +4472,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updatePhotoSearchQuery(query: String) {
-        _workspace.update {
-            it?.copy(photoBrowser = it.photoBrowser.copy(searchQuery = query))
-        }
-    }
-
-    fun searchPhotos() {
-        _workspace.update {
-            it?.copy(photoBrowser = it.photoBrowser.submitSearch())
-        }
-    }
-
-    fun setPhotoFilter(filter: PhotoMediaFilter) {
-        _workspace.update {
-            it?.copy(photoBrowser = it.photoBrowser.copy(filter = filter))
-        }
-    }
-
     fun setPhotoMode(mode: PhotoBrowseMode) {
         val current = _workspace.value ?: return
         if (current.photoBrowser.mode == mode) return
@@ -5668,70 +4486,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         load(Module.PHOTOS)
-    }
-
-    fun selectPhotoYear(year: Int?) {
-        _workspace.update {
-            it?.copy(photoBrowser = it.photoBrowser.selectYear(year))
-        }
-    }
-
-    fun selectPhotoMonth(month: Int?) {
-        _workspace.update {
-            it?.copy(photoBrowser = it.photoBrowser.selectMonth(month))
-        }
-    }
-
-    fun clearPhotoFilters() {
-        _workspace.update {
-            it?.copy(
-                photoBrowser = it.photoBrowser.copy(
-                    searchQuery = "",
-                    activeSearchQuery = null,
-                    filter = PhotoMediaFilter.ALL,
-                    selectedYear = null,
-                    selectedMonth = null,
-                ),
-            )
-        }
-    }
-
-    fun beginPhotoMove(item: PhotoItem) {
-        val repo = repository ?: return
-        val workspace = _workspace.value ?: return
-        if (workspace.selectedModule != Module.PHOTOS || workspace.isPerformingAction ||
-            fileStationMutationBlocksOrdinaryLoad(workspace.fileStationMutationState)
-        ) return
-        if (!workspace.supportsCopyMove) {
-            _workspace.update {
-                it?.copy(message = getApplication<Application>().getString(R.string.photo_move_unavailable))
-            }
-            return
-        }
-        val space = workspace.photoBrowser.spaces.firstOrNull { candidate ->
-            item.file.path == candidate.rootPath || item.file.path.startsWith("${candidate.rootPath}/")
-        } ?: return
-        val move = PhotoMoveState(
-            item = item,
-            space = space,
-            location = PhotoMoveLocation(space.rootPath, canWrite = false),
-        )
-        _workspace.update {
-            it?.copy(
-                photoMove = move,
-                photoMoveFolders = Loadable.Loading,
-                fileStationMutationState = FileStationMutationWorkspaceState(
-                    draftTarget = FileStationMutationTarget(
-                        profileId = workspace.profile.id,
-                        module = Module.PHOTOS,
-                        operation = FileStationMutationOperation.MOVE,
-                        sourceBaselines = listOf(item.file),
-                    ),
-                    editorVisible = true,
-                ),
-            )
-        }
-        viewModelScope.launch { loadPhotoMoveFolders(repo, move) }
     }
 
     fun openPhotoMoveFolder(folder: PhotoItem) {
@@ -5973,27 +4727,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val bytes = withContext(Dispatchers.IO) {
                 sequenceOf(
                     thumbnailDiskDirectory(),
-                    File(getApplication<Application>().cacheDir, "preview"),
+                    cacheDirectories.previews,
                 ).sumOf { directory -> directory.listFiles()?.sumOf(File::length) ?: 0L }
             }
             _workspace.update { it?.copy(regenerableCacheBytes = bytes) }
         }
     }
 
-    fun openPreview(item: FileItem) {
-        cancelOpaqueExternalNavigation(consumePending = true)
-        val state = _workspace.value ?: return
-        if (state.selectedModule != Module.FILES) return
-        if (state.previewOwner == PreviewOwner.FILES && state.previewItem?.path == item.path) return
-        if (state.previewItem?.path != item.path && state.hasDirtyTextPreview()) {
-            requestClosePreview()
-            return
-        }
-        _workspace.update {
-            it?.copy(photoViewer = null, filePreviewSequence = null, previewOwner = PreviewOwner.FILES)
-        }
-        startPreview(item, PreviewOwner.FILES)
-    }
+    fun openPreview(item: FileItem) = openPreview(item, emptyList())
 
     fun openPreview(item: FileItem, visibleItems: List<FileItem>) {
         cancelOpaqueExternalNavigation(consumePending = true)
@@ -6049,21 +4790,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         startPreview(item.file, PreviewOwner.PHOTOS)
     }
 
-    fun showPreviousPhoto() {
-        val viewer = _workspace.value?.photoViewer?.takeIf(PhotoViewerState::hasPrevious) ?: return
-        val next = viewer.copy(index = viewer.index - 1)
-        _workspace.update { it?.copy(photoViewer = next) }
-        startPreview(next.current, PreviewOwner.PHOTOS)
-    }
-
-    fun showNextPhoto() {
-        val viewer = _workspace.value?.photoViewer?.takeIf(PhotoViewerState::hasNext) ?: return
-        val next = viewer.copy(index = viewer.index + 1)
-        _workspace.update { it?.copy(photoViewer = next) }
-        startPreview(next.current, PreviewOwner.PHOTOS)
-    }
-
     private fun startPreview(item: FileItem, owner: PreviewOwner) {
+        if (owner == PreviewOwner.FILES && io.github.qwertyuiop1995.dsmnativeclient.data.files.OfficeDocumentPolicy.supports(item)) {
+            closePreviewImmediately(); officeDocuments.open(item); return
+        }
         if (item.previewKind() == FilePreviewKind.UNSUPPORTED) {
             _workspace.update {
                 it?.copy(message = getApplication<Application>().getString(R.string.preview_not_supported))
@@ -6132,10 +4862,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             expectedContentByteCount = bytes.size.toLong(),
         )
         return requestFileStationLifecycleMutation(target)
-    }
-
-    fun saveTextPreview(item: FileItem, value: String) {
-        requestTextPreviewSave(item, value)
     }
 
     private fun executeTextPreviewSave(target: FileStationMutationTarget): Boolean {
@@ -6343,10 +5069,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun checkTransferOwner(kind: WorkspaceRecordKind, id: String, repo: DsmRepository?, create: Boolean = false): Boolean =
+        runCatching {
+            val target = repo ?: throw io.github.qwertyuiop1995.dsmnativeclient.storage.workspaceChangedFailure()
+            if (create) taskOwnership.bind(kind, id, target) else taskOwnership.require(kind, id, target)
+        }.onFailure { error -> _workspace.update { it?.copy(message = error.asDsmFailure().localize(getApplication()).combined) } }.isSuccess
+
     fun canResumeTransfer(id: String): Boolean =
-        transferStore.download(id)?.canResumeDownload() == true
+        transferStore.download(id)?.canResumeDownload() == true && taskOwnership.canUse(WorkspaceRecordKind.DOWNLOAD, id, repository)
 
     fun resumeTransfer(id: String) {
+        if (!checkTransferOwner(WorkspaceRecordKind.DOWNLOAD, id, repository)) return
         val download = transferStore.download(id)?.takeIf(PersistedDownload::canResumeDownload)
             ?: return
         val usesBackgroundWork = download.backgroundCapable && store.session(download.profileId) != null
@@ -6383,9 +5116,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun canRetryTransfer(id: String): Boolean {
         val download = transferStore.download(id)
-        if (download?.state == TransferState.FAILED && !download.isDirectory) return true
+        if (download?.canRetryDownload() == true) return taskOwnership.canUse(WorkspaceRecordKind.DOWNLOAD, id, repository)
         val upload = transferStore.upload(id) ?: return false
-        return upload.state in setOf(
+        if (folderUploads.isFolder(id)) return taskOwnership.canUse(WorkspaceRecordKind.UPLOAD, id, repository) &&
+            upload.state in setOf(TransferState.FAILED, TransferState.CANCELLED, TransferState.PAUSED)
+        return taskOwnership.canUse(WorkspaceRecordKind.UPLOAD, id, repository) && upload.state in setOf(
             TransferState.FAILED,
             TransferState.CANCELLED,
         )
@@ -6394,8 +5129,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun retryTransfer(id: String) {
         val repo = repository ?: return
         transferStore.download(id)?.takeIf {
-            it.state == TransferState.FAILED && !it.isDirectory
+            it.canRetryDownload()
         }?.let { download ->
+            if (!checkTransferOwner(WorkspaceRecordKind.DOWNLOAD, id, repo)) return
             val next = transferStore.update(id) {
                 it.copy(
                     state = TransferState.WAITING,
@@ -6415,89 +5151,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val upload = transferStore.upload(id) ?: return
+        if (!checkTransferOwner(WorkspaceRecordKind.UPLOAD, id, repo)) return
         if (!canRetryTransfer(id) || _workspace.value?.isPerformingAction == true) return
-        if (store.session(upload.profileId) == null) {
-            _workspace.update {
-                it?.copy(message = getApplication<Application>().getString(R.string.upload_retry_requires_login))
-            }
-            return
-        }
+        if (folderUploads.isFolder(id)) { folderUploads.retry(id); return }
         viewModelScope.launch {
             _workspace.update { it?.copy(isPerformingAction = true, message = null) }
             suspendRunCatching {
-                val target = upload.destinationPath.trimEnd('/') + "/" + upload.title
-                val existing = if (repo.itemExists(target)) repo.fileInfo(target) else null
-                retryUploadDecision(existing, upload.expectedBytes, upload.overwrite)
-            }.onSuccess { decision ->
-                when (decision) {
-                    RetryUploadDecision.ALREADY_COMPLETE -> {
-                        transferStore.updateUpload(id) {
-                            it.copy(
-                                state = TransferState.SUCCEEDED,
-                                completedBytes = it.expectedBytes,
-                                errorKind = null,
-                                requiresRefresh = false,
-                                uploadMutationResult = confirmedUploadReadbackResult()
-                                    .toPersistedMutationResult(writeSubmitted = false),
-                            )
-                        }
-                        syncPersistedDownloads(upload.profileId)
-                        _workspace.update {
-                            it?.copy(
-                                isPerformingAction = false,
-                                message = getApplication<Application>().getString(
-                                    R.string.upload_retry_already_complete,
-                                ),
-                            )
-                        }
-                    }
-                    RetryUploadDecision.CONFLICT -> {
-                        transferStore.updateUpload(id) {
-                            it.copy(
-                                state = TransferState.FAILED,
-                                errorKind = DsmErrorKind.UPLOAD_FAILED.name,
-                                requiresRefresh = false,
-                                uploadMutationResult = uploadTargetConflictResult()
-                                    .toPersistedMutationResult(writeSubmitted = false),
-                            )
-                        }
-                        syncPersistedDownloads(upload.profileId)
-                        _workspace.update {
-                            it?.copy(
-                                isPerformingAction = false,
-                                message = getApplication<Application>().getString(
-                                    R.string.upload_retry_conflict,
-                                ),
-                            )
-                        }
-                    }
-                    RetryUploadDecision.REQUEUE -> {
-                        val next = transferStore.updateUpload(id) {
-                            it.copy(
-                                state = TransferState.WAITING,
-                                completedBytes = 0,
-                                errorKind = null,
-                                workId = null,
-                                requiresRefresh = false,
-                                directoryMutationResult = null,
-                                uploadMutationResult = null,
-                            )
-                        }
-                        _workspace.update {
-                            it?.copy(
-                                isPerformingAction = false,
-                                message = getApplication<Application>().getString(R.string.upload_retry_queued),
-                            )
-                        }
-                        next?.let {
-                            enqueuePersistedFileUpload(
-                                it,
-                                existingWorkPolicy = transferEnqueuePolicy(
-                                    TransferEnqueueReason.USER_RETRY,
-                                ),
-                            )
-                        }
-                    }
+                retryStoredUpload(repo, upload, transferStore, store, UploadSource(
+                    displayName = upload.title, contentType = upload.contentType, contentLength = upload.expectedBytes,
+                    openInputStream = { getApplication<Application>().contentResolver.openInputStream(Uri.parse(upload.sourceUri))
+                        ?: throw java.io.IOException("The selected file is unavailable") },
+                ))
+            }.onSuccess { (decision, next) ->
+                syncPersistedDownloads(upload.profileId)
+                _workspace.update { it?.copy(isPerformingAction = false,
+                    message = getApplication<Application>().getString(decision.message)) }
+                if (decision == RetryUploadDecision.REQUEUE) {
+                    enqueuePersistedFileUpload(next,
+                        existingWorkPolicy = transferEnqueuePolicy(TransferEnqueueReason.USER_RETRY))
                 }
             }.onFailure { error ->
                 _workspace.update {
@@ -6512,14 +5183,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun canOpenUploadTarget(id: String): Boolean = transferStore.upload(id) != null &&
+        taskOwnership.canUse(WorkspaceRecordKind.UPLOAD, id, repository)
+
+    fun openUploadTarget(id: String) {
+        val repo = repository ?: return
+        val upload = transferStore.upload(id) ?: return
+        if (!checkTransferOwner(WorkspaceRecordKind.UPLOAD, id, repo)) return
+        val token = store.issueOpaqueWorkspaceTarget(upload.profileId,
+            OpaqueWorkspaceTarget.FileDirectory(upload.destinationPath), repo.owner ?: return) ?: return
+        navigateToOpaqueExternalRoute(token)
+    }
+
     fun clearFinishedTransfers() {
         _workspace.value?.profile?.id?.let { profileId ->
             transferStore.downloads(profileId)
                 .filter { it.state in TERMINAL_TRANSFER_STATES }
                 .forEach {
                     val destination = Uri.parse(it.destinationUri)
-                    if (it.state == TransferState.FAILED) deleteIncompleteDownload(destination)
-                    releasePersistedDownloadPermission(destination)
+                    if (it.state == TransferState.FAILED) deleteIncompleteDownload(destination, it.id)
+                    releasePersistedDownloadPermission(destination, it.id)
                 }
             val uploads = transferStore.uploads(profileId)
             val clearableUploads = uploads.filter(PersistedUpload::canRemoveFinishedUpload)
@@ -6537,6 +5220,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .distinct()
                 .forEach { releasePersistedReadPermission(Uri.parse(it)) }
             transferStore.removeTerminal(profileId)
+            io.github.qwertyuiop1995.dsmnativeclient.systemfiles.SharedInputStore(getApplication()).reconcile(transferStore)
         }
         _workspace.update { current ->
             current?.copy(
@@ -6559,11 +5243,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             ?.fileServerMutation ?: return false
         val needsRecovery = lifecycle.refreshFailure != null || !lifecycle.refreshCompleted &&
             (lifecycle.result?.requiresRefresh == true || lifecycle.failure != null)
-        return repository != null && lifecycle.target.profileId == current.profile.id &&
+        return taskOwnership.canUse(WorkspaceRecordKind.SERVER, id, repository) && lifecycle.target.profileId == current.profile.id &&
             !lifecycle.refreshInProgress && needsRecovery
     }
 
     fun refreshFileServerTransfer(id: String): Boolean {
+        if (!checkTransferOwner(WorkspaceRecordKind.SERVER, id, repository)) return false
         val claim = synchronized(fileStationMutationLock) {
             val repo = repository ?: return false
             val current = _workspace.value ?: return false
@@ -6592,7 +5277,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             val outcome = suspendRunCatching {
-                verifyFileServerMutation(claim.repository, claim.target)
+                verifyFileServerMutation(claim.repository, claim.target, transferStore.server(id), transferStore)
             }
             val persistenceFailure = runCatching {
                 updateServerTransfer(claim, id) { task ->
@@ -7037,250 +5722,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshSelectedDownloadRssSite() {
-        val claim = synchronized(downloadRssRefreshMutationLock) {
-            val repo = repository ?: return@synchronized null
-            val current = _workspace.value ?: return@synchronized null
-            val siteId = current.selectedDownloadRssSite?.id?.trim()?.takeIf(String::isNotEmpty)
-                ?: return@synchronized null
-            if (current.selectedModule != Module.DOWNLOADS || !current.supportsDownloadRss ||
-                current.isPerformingAction || current.downloadRssRefreshState.target != null ||
-                current.downloadCreationState.target != null ||
-                current.downloadControlState.target != null ||
-                current.downloadSettingsState.editorVisible
-            ) return@synchronized null
-            downloadDiscoveryLoadJob?.cancel()
-            downloadDiscoveryLoadJob = null
-            val target = DownloadRssRefreshTarget(
-                profileId = current.profile.id,
-                siteId = siteId,
-                baselineLastUpdatedAtEpochSeconds = current.selectedDownloadRssSite
-                    ?.lastUpdatedAtEpochSeconds,
-            )
-            val generation = downloadRssRefreshMutationGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                downloadRssRefreshState = DownloadRssRefreshWorkspaceState(
-                    target = target,
-                    mutationInProgress = true,
-                    mutationGeneration = generation,
-                ),
-            )
-            DownloadRssRefreshClaim(repo, current.profile.id, target, generation)
-        } ?: return
-        viewModelScope.launch {
-            try {
-                val result = claim.repository.refreshDownloadRssSiteResult(claim.target.siteId)
-                if (!finishDownloadRssRefreshSubmission(claim, result)) return@launch
-                if (downloadRssRefreshRequiresReadback(
-                        DownloadRssRefreshWorkspaceState(
-                            target = claim.target,
-                            mutationResult = result,
-                        ),
-                    )
-                ) {
-                    startDownloadRssRefreshReadback(claim)
-                }
-            } catch (error: CancellationException) {
-                finishDownloadRssRefreshSubmission(claim, cancelledDownloadRssRefreshResult())
-                throw error
-            } catch (error: Throwable) {
-                if (finishDownloadRssRefreshFailure(claim, error.asDsmFailure())) {
-                    startDownloadRssRefreshReadback(claim)
-                }
-            }
-        }
+        _workspace.value?.selectedDownloadRssSite?.let(downloadActions::requestRss)
     }
-
-    private fun finishDownloadRssRefreshSubmission(
-        claim: DownloadRssRefreshClaim,
-        result: MutationResult,
-    ): Boolean = synchronized(downloadRssRefreshMutationLock) {
-        val current = _workspace.value ?: return false
-        if (!downloadRssRefreshCallbackMatches(
-                repositoryMatches = repository === claim.repository,
-                profileMatches = current.profile.id == claim.profileId,
-                selectedModule = current.selectedModule,
-                selectedSiteId = current.selectedDownloadRssSite?.id,
-                stateTarget = current.downloadRssRefreshState.target,
-                callbackTarget = claim.target,
-                stateGeneration = current.downloadRssRefreshState.mutationGeneration,
-                callbackGeneration = claim.generation,
-                globalGeneration = downloadRssRefreshMutationGeneration.get(),
-            )
-        ) return false
-        _workspace.value = current.copy(
-            downloadRssRefreshState = current.downloadRssRefreshState.copy(
-                mutationInProgress = false,
-                mutationResult = result,
-                mutationFailure = null,
-            ),
-        )
-        true
-    }
-
-    private fun finishDownloadRssRefreshFailure(
-        claim: DownloadRssRefreshClaim,
-        failure: DsmFailure,
-    ): Boolean = synchronized(downloadRssRefreshMutationLock) {
-        val current = _workspace.value ?: return false
-        if (!downloadRssRefreshCallbackMatches(
-                repositoryMatches = repository === claim.repository,
-                profileMatches = current.profile.id == claim.profileId,
-                selectedModule = current.selectedModule,
-                selectedSiteId = current.selectedDownloadRssSite?.id,
-                stateTarget = current.downloadRssRefreshState.target,
-                callbackTarget = claim.target,
-                stateGeneration = current.downloadRssRefreshState.mutationGeneration,
-                callbackGeneration = claim.generation,
-                globalGeneration = downloadRssRefreshMutationGeneration.get(),
-            )
-        ) return false
-        _workspace.value = current.copy(
-            downloadRssRefreshState = current.downloadRssRefreshState.copy(
-                mutationInProgress = false,
-                mutationFailure = failure,
-            ),
-        )
-        true
-    }
-
-    fun recheckDownloadRssRefresh(): Boolean {
-        val claim = synchronized(downloadRssRefreshMutationLock) {
-            val repo = repository ?: return@synchronized null
-            val current = _workspace.value ?: return@synchronized null
-            val state = current.downloadRssRefreshState
-            val target = state.target ?: return@synchronized null
-            if (current.selectedModule != Module.DOWNLOADS ||
-                current.selectedDownloadRssSite?.id != target.siteId || state.mutationInProgress ||
-                state.mutationRefreshInProgress ||
-                state.mutationResult == null && state.mutationFailure == null
-            ) return@synchronized null
-            val generation = downloadRssRefreshMutationGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                downloadRssRefreshState = state.copy(
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = true,
-                    mutationRefreshCompleted = false,
-                    mutationVerification = null,
-                    mutationGeneration = generation,
-                ),
-            )
-            DownloadRssRefreshClaim(repo, current.profile.id, target, generation)
-        } ?: return false
-        viewModelScope.launch { performDownloadRssRefreshReadback(claim) }
-        return true
-    }
-
-    private fun startDownloadRssRefreshReadback(claim: DownloadRssRefreshClaim) {
-        val accepted = synchronized(downloadRssRefreshMutationLock) {
-            val current = _workspace.value ?: return
-            if (!downloadRssRefreshCallbackMatches(
-                    repositoryMatches = repository === claim.repository,
-                    profileMatches = current.profile.id == claim.profileId,
-                    selectedModule = current.selectedModule,
-                    selectedSiteId = current.selectedDownloadRssSite?.id,
-                    stateTarget = current.downloadRssRefreshState.target,
-                    callbackTarget = claim.target,
-                    stateGeneration = current.downloadRssRefreshState.mutationGeneration,
-                    callbackGeneration = claim.generation,
-                    globalGeneration = downloadRssRefreshMutationGeneration.get(),
-                )
-            ) return
-            _workspace.value = current.copy(
-                downloadRssRefreshState = current.downloadRssRefreshState.copy(
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = true,
-                    mutationRefreshCompleted = false,
-                    mutationVerification = null,
-                ),
-            )
-            true
-        }
-        if (accepted) viewModelScope.launch { performDownloadRssRefreshReadback(claim) }
-    }
-
-    private suspend fun performDownloadRssRefreshReadback(claim: DownloadRssRefreshClaim) {
-        try {
-            val sites = claim.repository.listDownloadRssSites()
-            val matchingSites = sites.filter { it.id.trim() == claim.target.siteId }
-            val feeds = if (matchingSites.size == 1) {
-                claim.repository.listDownloadRssFeeds(claim.target.siteId)
-            } else {
-                null
-            }
-            val verification = downloadRssRefreshVerification(claim.target, sites, feeds)
-            synchronized(downloadRssRefreshMutationLock) {
-                val current = _workspace.value ?: return@synchronized
-                if (!downloadRssRefreshCallbackMatches(
-                        repositoryMatches = repository === claim.repository,
-                        profileMatches = current.profile.id == claim.profileId,
-                        selectedModule = current.selectedModule,
-                        selectedSiteId = current.selectedDownloadRssSite?.id,
-                        stateTarget = current.downloadRssRefreshState.target,
-                        callbackTarget = claim.target,
-                        stateGeneration = current.downloadRssRefreshState.mutationGeneration,
-                        callbackGeneration = claim.generation,
-                        globalGeneration = downloadRssRefreshMutationGeneration.get(),
-                    )
-                ) return@synchronized
-                _workspace.value = current.copy(
-                    downloadRssSites = Loadable.Ready(sites),
-                    selectedDownloadRssSite = matchingSites.singleOrNull()
-                        ?: current.selectedDownloadRssSite,
-                    downloadRssFeeds = feeds?.let { Loadable.Ready(it) } ?: current.downloadRssFeeds,
-                    downloadRssRefreshState = current.downloadRssRefreshState.copy(
-                        mutationRefreshFailure = null,
-                        mutationRefreshInProgress = false,
-                        mutationRefreshCompleted = true,
-                        mutationVerification = verification,
-                    ),
-                )
-            }
-        } catch (error: CancellationException) {
-            finishDownloadRssRefreshReadbackFailure(claim, null)
-            throw error
-        } catch (error: Throwable) {
-            finishDownloadRssRefreshReadbackFailure(claim, error.asDsmFailure())
-        }
-    }
-
-    private fun finishDownloadRssRefreshReadbackFailure(
-        claim: DownloadRssRefreshClaim,
-        failure: DsmFailure?,
-    ) {
-        synchronized(downloadRssRefreshMutationLock) {
-            val current = _workspace.value ?: return
-            if (!downloadRssRefreshCallbackMatches(
-                    repositoryMatches = repository === claim.repository,
-                    profileMatches = current.profile.id == claim.profileId,
-                    selectedModule = current.selectedModule,
-                    selectedSiteId = current.selectedDownloadRssSite?.id,
-                    stateTarget = current.downloadRssRefreshState.target,
-                    callbackTarget = claim.target,
-                    stateGeneration = current.downloadRssRefreshState.mutationGeneration,
-                    callbackGeneration = claim.generation,
-                    globalGeneration = downloadRssRefreshMutationGeneration.get(),
-                )
-            ) return
-            _workspace.value = current.copy(
-                downloadRssRefreshState = current.downloadRssRefreshState.copy(
-                    mutationRefreshFailure = failure,
-                    mutationRefreshInProgress = false,
-                    mutationRefreshCompleted = false,
-                    mutationVerification = DownloadRssRefreshVerification.UNAVAILABLE,
-                ),
-            )
-        }
-    }
-
-    fun dismissDownloadRssRefreshMutation(): Boolean = synchronized(downloadRssRefreshMutationLock) {
-        val current = _workspace.value ?: return false
-        if (!canDismissDownloadRssRefreshMutation(current.downloadRssRefreshState)) return false
-        downloadRssRefreshMutationGeneration.incrementAndGet()
-        _workspace.value = current.copy(
-            downloadRssRefreshState = DownloadRssRefreshWorkspaceState(),
-        )
-        true
-    }
+    fun recheckDownloadRssRefresh(): Boolean { downloadActions.show(); return true }
+    fun dismissDownloadRssRefreshMutation(): Boolean { downloadActions.show(false); return true }
 
     fun searchDownloadBt(keyword: String) {
         val current = _workspace.value ?: return
@@ -7382,145 +5827,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveDownloadSettings(settings: DownloadSettings): Boolean {
-        val claim = synchronized(downloadSettingsMutationLock) {
-            val repo = repository ?: return@synchronized null
-            val current = _workspace.value ?: return@synchronized null
-            val state = current.downloadSettingsState
-            val baseline = state.baseline ?: return@synchronized null
-            val expected = state.draft?.toSettingsOrNull(current.supportsDownloadSchedule)
-                ?: return@synchronized null
-            if (settings != expected || settings == baseline ||
-                current.selectedModule != Module.DOWNLOADS || !state.editorVisible ||
-                current.isPerformingAction || state.mutationInProgress ||
-                state.mutationRefreshInProgress || state.mutationResult != null ||
-                state.mutationFailure != null || current.downloadCreationState.target != null ||
-                current.downloadControlState.target != null ||
-                current.downloadRssRefreshState.target != null
-            ) return@synchronized null
-            val generation = downloadSettingsMutationGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                downloadSettingsState = state.copy(
-                    mutationInProgress = true,
-                    mutationResult = null,
-                    mutationFailure = null,
-                    mutationRefreshFailure = null,
-                    mutationRefreshCompleted = false,
-                    mutationGeneration = generation,
-                ),
-                message = null,
-            )
-            DownloadSettingsMutationClaim(
-                repository = repo,
-                profileId = current.profile.id,
-                generation = generation,
-                baseline = baseline,
-                desired = settings,
-            )
-        } ?: return false
-        val repo = claim.repository
-        val profileId = claim.profileId
-        val generation = claim.generation
-        val baseline = claim.baseline
-        val desired = claim.desired
-        viewModelScope.launch {
-            val outcome = runCatching { repo.saveDownloadSettingsResult(baseline, desired) }
-            val result = outcome.getOrNull() ?: outcome.exceptionOrNull()
-                ?.takeIf { it is CancellationException }
-                ?.let { cancelledDownloadSettingsResult() }
-            val refreshedOutcome = if (result?.submitted == true || result?.requiresRefresh == true) {
-                runCatching { repo.loadDownloadSettings() }
-            } else {
-                null
-            }
-            synchronized(downloadSettingsMutationLock) {
-                val current = _workspace.value ?: return@synchronized
-                val state = current.downloadSettingsState
-                if (repository !== repo || current.profile.id != profileId ||
-                    state.mutationGeneration != generation ||
-                    downloadSettingsMutationGeneration.get() != generation
-                ) return@synchronized
-                val refreshed = refreshedOutcome?.getOrNull()
-                val failure = outcome.exceptionOrNull()?.takeUnless { it is CancellationException }
-                    ?.asDsmFailure()
-                val refreshFailure = refreshedOutcome?.exceptionOrNull()
-                    ?.takeUnless { it is CancellationException }?.asDsmFailure()
-                _workspace.value = current.copy(
-                    downloadSettings = refreshed?.let { Loadable.Ready(it) } ?: current.downloadSettings,
-                    downloadSettingsState = state.copy(
-                        baseline = refreshed ?: state.baseline,
-                        draft = refreshed?.let(DownloadSettingsDraftState::from) ?: state.draft,
-                        mutationInProgress = false,
-                        mutationResult = result,
-                        mutationFailure = failure,
-                        mutationRefreshFailure = refreshFailure,
-                        mutationRefreshCompleted = refreshed != null,
-                    ),
-                )
-            }
-        }
-        return true
+        val original = _workspace.value?.downloadSettingsState?.baseline ?: return false
+        val accepted = downloadActions.requestSettings(original, settings)
+        if (accepted) closeDownloadSettings()
+        return accepted
     }
-
-    fun refreshDownloadSettingsMutation() {
-        val claim = synchronized(downloadSettingsMutationLock) {
-            val repo = repository ?: return@synchronized null
-            val current = _workspace.value ?: return@synchronized null
-            val state = current.downloadSettingsState
-            if (!state.editorVisible || state.mutationInProgress || state.mutationRefreshInProgress ||
-                (state.mutationResult == null && state.mutationFailure == null)
-            ) return@synchronized null
-            val generation = state.mutationGeneration
-            _workspace.value = current.copy(
-                downloadSettingsState = state.copy(
-                    mutationRefreshInProgress = true,
-                    mutationRefreshFailure = null,
-                    mutationRefreshCompleted = false,
-                ),
-            )
-            Triple(repo, current.profile.id, generation)
-        } ?: return
-        viewModelScope.launch {
-            val outcome = suspendRunCatching { claim.first.loadDownloadSettings() }
-            synchronized(downloadSettingsMutationLock) {
-                val current = _workspace.value ?: return@synchronized
-                val state = current.downloadSettingsState
-                if (repository !== claim.first || current.profile.id != claim.second ||
-                    state.mutationGeneration != claim.third ||
-                    downloadSettingsMutationGeneration.get() != claim.third
-                ) return@synchronized
-                val refreshed = outcome.getOrNull()
-                val failure = outcome.exceptionOrNull()?.takeUnless { it is CancellationException }
-                    ?.asDsmFailure()
-                _workspace.value = current.copy(
-                    downloadSettings = refreshed?.let { Loadable.Ready(it) } ?: current.downloadSettings,
-                    downloadSettingsState = state.copy(
-                        baseline = refreshed ?: state.baseline,
-                        draft = refreshed?.let(DownloadSettingsDraftState::from) ?: state.draft,
-                        mutationRefreshInProgress = false,
-                        mutationRefreshFailure = failure,
-                        mutationRefreshCompleted = refreshed != null,
-                    ),
-                )
-            }
-        }
-    }
-
-    fun dismissDownloadSettingsMutation(): Boolean = synchronized(downloadSettingsMutationLock) {
-        val current = _workspace.value ?: return@synchronized false
-        val state = current.downloadSettingsState
-        if ((state.mutationResult == null && state.mutationFailure == null) ||
-            !canDismissDownloadSettingsMutation(state)
-        ) return@synchronized false
-        _workspace.value = current.copy(
-            downloadSettingsState = state.copy(
-                mutationResult = null,
-                mutationFailure = null,
-                mutationRefreshFailure = null,
-                mutationRefreshCompleted = false,
-            ),
-        )
-        true
-    }
+    fun refreshDownloadSettingsMutation() { downloadActions.show() }
+    fun dismissDownloadSettingsMutation(): Boolean { downloadActions.show(false); return true }
 
     fun openDownloadDestinationFolder(folder: FileItem) {
         if (!folder.isDirectory) return
@@ -7600,800 +5913,57 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             true
         }
 
-    fun requestDownloadDestinationEdit(): Boolean = synchronized(downloadDestinationEditMutationLock) {
-        val current = _workspace.value ?: return@synchronized false
-        val state = current.downloadDestinationEditState
-        val task = state.selectionTaskBaseline ?: return@synchronized false
-        val destination = current.downloadDestinationPicker?.location?.baseline
-            ?: return@synchronized false
-        val target = downloadDestinationEditTarget(
-            current.profile.id,
-            current.downloads,
-            task.id,
-            destination,
-        ) ?: return@synchronized false
-        if (DownloadTaskMutationBaseline.from(target.taskBaseline) !=
-            DownloadTaskMutationBaseline.from(task)
-        ) return@synchronized false
-        val generation = downloadDestinationEditMutationGeneration.incrementAndGet()
-        downloadListRequestGeneration.incrementAndGet()
-        _workspace.value = current.copy(
-            downloadDestinationPicker = null,
-            downloadDestinationFolders = Loadable.Idle,
-            downloadDestinationEditState = DownloadDestinationEditWorkspaceState(
-                target = target.copy(taskBaseline = task),
-                confirmationRequested = true,
-                mutationGeneration = generation,
-            ),
-        )
-        true
+    fun beginDownloadTasksDestinationSelection(ids: Set<String>): Boolean {
+        val tasks = ids.map { currentDownloadTask(it) ?: return false }
+        if (tasks.isEmpty() || !beginDownloadTaskDestinationSelection(tasks.first().id)) return false
+        _workspace.update { it?.copy(downloadDestinationEditState = it.downloadDestinationEditState.copy(selectionTasks = tasks)) }
+        return true
     }
 
-    fun cancelDownloadDestinationEdit() {
-        synchronized(downloadDestinationEditMutationLock) {
-            val current = _workspace.value ?: return
-            val state = current.downloadDestinationEditState
-            if (!state.confirmationRequested || state.mutationInProgress) return
-            downloadDestinationEditMutationGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                downloadDestinationEditState = DownloadDestinationEditWorkspaceState(),
-            )
-        }
-    }
-
-    fun openDownloadCreationEditor(): Boolean = synchronized(downloadCreationMutationLock) {
+    fun requestDownloadDestinationEdit(): Boolean {
         val current = _workspace.value ?: return false
-        if (
-            current.selectedModule != Module.DOWNLOADS || current.downloadControlState.target != null ||
-            current.downloadSettingsState.editorVisible || current.downloadRssRefreshState.target != null ||
-            current.downloadDestinationEditState != DownloadDestinationEditWorkspaceState() ||
-            !canStartDownloadCreation(current.isPerformingAction, current.downloadCreationState)
-        ) {
-            return false
-        }
-        if (current.downloadCreationState.pendingDiscoveryUri != null) return false
-        _workspace.value = current.copy(
-            downloadCreationState = current.downloadCreationState.copy(editorVisible = true),
-        )
-        true
+        val task = current.downloadDestinationEditState.selectionTaskBaseline ?: return false
+        val destination = current.downloadDestinationPicker?.location?.baseline ?: return false
+        val accepted = downloadActions.requestTasks(current.downloadDestinationEditState.selectionTasks.ifEmpty { listOf(task) }, DownloadActionKind.EDIT, destination)
+        if (accepted) cancelDownloadDestinationSelection()
+        return accepted
     }
 
-    fun updateDownloadCreationDraft(uri: String, destination: String) =
-        synchronized(downloadCreationMutationLock) {
-            val current = _workspace.value ?: return
-            val creation = current.downloadCreationState
-            if (!creation.editorVisible || creation.mutationInProgress) return
-            _workspace.value = current.copy(
-                downloadCreationState = creation.copy(
-                    uriDraft = uri.take(MAX_DOWNLOAD_CREATION_DRAFT_CHARACTERS),
-                    destinationDraft = destination.take(MAX_DOWNLOAD_CREATION_DESTINATION_CHARACTERS),
-                ),
-            )
-        }
-
-    fun closeDownloadCreationEditor(): Boolean = synchronized(downloadCreationMutationLock) {
-        val current = _workspace.value ?: return false
-        val creation = current.downloadCreationState
-        if (creation.mutationInProgress || creation.mutationRefreshInProgress) return false
-        _workspace.value = current.copy(
-            downloadCreationState = creation.copy(
-                editorVisible = false,
-                uriDraft = "",
-                destinationDraft = "",
-                pendingDiscoveryTitle = null,
-                pendingDiscoveryUri = null,
-                pendingDiscoverySource = null,
-            ),
-        )
-        true
+    fun openDownloadCreationEditor(): Boolean = downloadCreation.open()
+    fun updateDownloadCreationDraft(uri: String, destination: String) = downloadCreation.update(uri, destination)
+    fun closeDownloadCreationEditor(): Boolean { downloadCreation.clear(); return true }
+    fun beginDiscoveryDownloadCreation(title: String, uri: String, sourceKind: DownloadCreationSourceKind): Boolean {
+        if (sourceKind !in setOf(DownloadCreationSourceKind.RSS, DownloadCreationSourceKind.BT_SEARCH)) return false
+        closeDownloadDiscovery()
+        return downloadCreation.open(uri, title)
     }
-
-    fun beginDiscoveryDownloadCreation(
-        title: String,
-        uri: String,
-        sourceKind: DownloadCreationSourceKind,
-    ): Boolean = synchronized(downloadCreationMutationLock) {
-        val current = _workspace.value ?: return false
-        if (sourceKind !in setOf(DownloadCreationSourceKind.RSS, DownloadCreationSourceKind.BT_SEARCH) ||
-            current.selectedModule != Module.DOWNLOADS || current.downloadControlState.target != null ||
-            current.downloadSettingsState.editorVisible || current.downloadRssRefreshState.target != null ||
-            current.downloadDestinationEditState != DownloadDestinationEditWorkspaceState() ||
-            !canStartDownloadCreation(current.isPerformingAction, current.downloadCreationState) ||
-            current.downloadCreationState.editorVisible ||
-            current.downloadCreationState.pendingDiscoveryUri != null
-        ) return false
-        _workspace.value = current.copy(
-            downloadCreationState = current.downloadCreationState.copy(
-                pendingDiscoveryTitle = title.take(MAX_DOWNLOAD_CREATION_TITLE_CHARACTERS),
-                pendingDiscoveryUri = uri.take(MAX_DOWNLOAD_CREATION_DRAFT_CHARACTERS),
-                pendingDiscoverySource = sourceKind,
-            ),
-        )
-        true
-    }
-
-    fun cancelDiscoveryDownloadCreation() = synchronized(downloadCreationMutationLock) {
-        val current = _workspace.value ?: return
-        if (current.downloadCreationState.mutationInProgress) return
-        _workspace.value = current.copy(
-            downloadCreationState = current.downloadCreationState.copy(
-                pendingDiscoveryTitle = null,
-                pendingDiscoveryUri = null,
-                pendingDiscoverySource = null,
-            ),
-        )
-    }
-
-    fun createDownload(
-        uri: String,
-        destination: String?,
-        sourceKind: DownloadCreationSourceKind = if (
-            uri.trim().startsWith("magnet:", ignoreCase = true)
-        ) DownloadCreationSourceKind.MAGNET else DownloadCreationSourceKind.LINK,
-    ): Boolean {
-        val normalizedDestination = destination?.trim()?.takeIf(String::isNotEmpty)
-        val target = downloadCreationTarget(
-            profileId = _workspace.value?.profile?.id ?: return false,
-            sourceKind = sourceKind,
-            sourceIdentity = uri.trim(),
-            destination = normalizedDestination,
-        )
-        val editableDraft = if (sourceKind in setOf(
-                DownloadCreationSourceKind.LINK,
-                DownloadCreationSourceKind.MAGNET,
-            )
-        ) uri to destination.orEmpty() else null
-        return launchDownloadCreation(target, editableDraft) { repo ->
-            repo.createDownloadResult(uri, normalizedDestination)
-        }
-    }
-
-    fun createDownloadFromFile(uri: Uri): Boolean {
-        val target = downloadCreationTarget(
-            profileId = _workspace.value?.profile?.id ?: return false,
-            sourceKind = DownloadCreationSourceKind.TASK_FILE,
-            sourceIdentity = uri.toString(),
-            destination = null,
-        )
-        return launchDownloadCreation(target, editableDraft = null) { repo ->
-            repo.createDownloadFromFileResult(resolveUploadSource(uri))
-        }
-    }
+    fun createDownloadFromFile(uri: Uri, selectionToken: Long = downloadCreation.selectionToken): Boolean = downloadCreation.chooseFile(selectionToken) { resolveUploadSource(uri) }
 
     fun openDownloadTaskDetails(task: DownloadTask) {
         cancelOpaqueExternalNavigation(consumePending = true)
-        _workspace.update { current ->
-            val currentTask = current
-                ?.takeIf { it.selectedModule == Module.DOWNLOADS }
-                ?.downloads
-                ?.let { it as? Loadable.Ready }
-                ?.value
-                ?.firstOrNull { candidate -> candidate.id == task.id }
-            current?.copy(downloadDetailsTask = currentTask) ?: current
+        val repo = repository ?: return
+        _workspace.update { it?.copy(downloadDetailsTask = task, downloadAdvancedRead = it.downloadAdvancedRead.copy(downloadDetails = Loadable.Loading)) }
+        viewModelScope.launch {
+            val result = try { Loadable.Ready(repo.downloadTaskDetails(task.id)) }
+                catch (error: Exception) { if (error is CancellationException) return@launch; Loadable.Failed(error.asDsmFailure()) }
+            _workspace.update { current -> if (repository === repo && current?.downloadDetailsTask?.id == task.id)
+                current.copy(downloadAdvancedRead = current.downloadAdvancedRead.copy(downloadDetails = result)) else current }
         }
     }
 
     fun closeDownloadTaskDetails() {
-        _workspace.update { it?.copy(downloadDetailsTask = null) }
+        _workspace.update { it?.copy(downloadDetailsTask = null, downloadAdvancedRead = it.downloadAdvancedRead.copy(downloadDetails = Loadable.Idle)) }
     }
 
-    fun requestDownloadPause(taskId: String): Boolean =
-        requestDownloadControl(taskId, DownloadControlOperation.PAUSE)
-
-    fun requestDownloadResume(taskId: String): Boolean =
-        requestDownloadControl(taskId, DownloadControlOperation.RESUME)
-
-    fun requestDownloadDeletion(taskId: String, deleteFiles: Boolean): Boolean =
-        synchronized(downloadControlMutationLock) {
-            val current = _workspace.value ?: return false
-            val operation = if (deleteFiles) {
-                DownloadControlOperation.DELETE_TASK_AND_FILES
-            } else {
-                DownloadControlOperation.DELETE_TASK
-            }
-            if (!canStartDownloadControlMutation(
-                    current.isPerformingAction,
-                    current.downloadControlState,
-                ) || current.selectedModule != Module.DOWNLOADS ||
-                current.downloadCreationState.target != null ||
-                current.downloadDestinationEditState != DownloadDestinationEditWorkspaceState() ||
-                current.downloadSettingsState.editorVisible || current.downloadRssRefreshState.target != null
-            ) return false
-            val target = downloadControlTarget(
-                current.profile.id,
-                current.downloads,
-                taskId,
-                operation,
-            ) ?: return false
-            val generation = downloadControlMutationGeneration.incrementAndGet()
-            downloadListRequestGeneration.incrementAndGet()
-            downloadActivityGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                downloadControlState = DownloadControlWorkspaceState(
-                    target = target,
-                    confirmationRequested = true,
-                    mutationGeneration = generation,
-                ),
-            )
-            true
-        }
-
-    fun cancelDownloadDeletion() {
-        synchronized(downloadControlMutationLock) {
-            val current = _workspace.value ?: return
-            val control = current.downloadControlState
-            if (!control.confirmationRequested || control.mutationInProgress) return
-            downloadControlMutationGeneration.incrementAndGet()
-            _workspace.value = current.copy(downloadControlState = DownloadControlWorkspaceState())
-        }
-    }
-
-    fun confirmDownloadDeletion(): Boolean {
-        val repo = repository ?: return false
-        lateinit var target: DownloadControlTarget
-        var generation = 0L
-        val profileId = synchronized(downloadControlMutationLock) {
-            val current = _workspace.value ?: return false
-            val control = current.downloadControlState
-            val requested = control.target
-            if (
-                repository !== repo || current.isPerformingAction || !control.confirmationRequested ||
-                current.selectedModule != Module.DOWNLOADS || current.downloadCreationState.target != null ||
-                current.downloadSettingsState.editorVisible ||
-                current.downloadDestinationEditState != DownloadDestinationEditWorkspaceState() ||
-                control.mutationInProgress || requested == null || !requested.operation.isDeletion
-            ) return false
-            if (!downloadControlTargetIsCurrent(requested, current.profile.id, current.downloads)) {
-                _workspace.value = current.copy(
-                    downloadControlState = control.copy(
-                        mutationFailure = downloadControlTargetChangedFailure(),
-                    ),
-                )
-                return false
-            }
-            target = requested
-            generation = downloadControlMutationGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                downloadControlState = control.copy(
-                    confirmationRequested = false,
-                    mutationInProgress = true,
-                    mutationResult = null,
-                    mutationFailure = null,
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = false,
-                    mutationRefreshCompleted = false,
-                    mutationRefreshMatches = null,
-                    mutationGeneration = generation,
-                ),
-            )
-            current.profile.id
-        }
-        launchDownloadControlMutation(repo, profileId, target, generation)
-        return true
-    }
-
-    private fun requestDownloadControl(
-        taskId: String,
-        operation: DownloadControlOperation,
-    ): Boolean {
-        require(!operation.isDeletion) { "download_control.confirmation_required" }
-        val repo = repository ?: return false
-        lateinit var target: DownloadControlTarget
-        var generation = 0L
-        val profileId = synchronized(downloadControlMutationLock) {
-            val current = _workspace.value ?: return false
-            if (repository !== repo || current.selectedModule != Module.DOWNLOADS ||
-                current.downloadCreationState.target != null ||
-                current.downloadSettingsState.editorVisible ||
-                current.downloadDestinationEditState != DownloadDestinationEditWorkspaceState() ||
-                current.downloadRssRefreshState.target != null || !canStartDownloadControlMutation(
-                    current.isPerformingAction,
-                    current.downloadControlState,
-                )
-            ) return false
-            target = downloadControlTarget(
-                current.profile.id,
-                current.downloads,
-                taskId,
-                operation,
-            ) ?: return false
-            generation = downloadControlMutationGeneration.incrementAndGet()
-            downloadListRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                downloadControlState = DownloadControlWorkspaceState(
-                    target = target,
-                    mutationInProgress = true,
-                    mutationGeneration = generation,
-                ),
-            )
-            current.profile.id
-        }
-        launchDownloadControlMutation(repo, profileId, target, generation)
-        return true
-    }
-
-    private fun launchDownloadControlMutation(
-        repo: DsmRepository,
-        profileId: String,
-        target: DownloadControlTarget,
-        generation: Long,
-    ) {
-        viewModelScope.launch {
-            try {
-                val result = repo.controlDownloadsResult(
-                    listOf(DownloadTaskMutationBaseline.from(target.taskBaseline)),
-                    target.operation.repositoryAction,
-                )
-                val accepted = synchronized(downloadControlMutationLock) {
-                    val current = _workspace.value
-                    if (current == null || !downloadControlCallbackMatches(
-                            repositoryMatches = repository === repo,
-                            profileMatches = current.profile.id == profileId,
-                            stateTarget = current.downloadControlState.target,
-                            callbackTarget = target,
-                            stateGeneration = current.downloadControlState.mutationGeneration,
-                            callbackGeneration = generation,
-                            globalGeneration = downloadControlMutationGeneration.get(),
-                        )
-                    ) return@synchronized false
-                    _workspace.value = current.copy(
-                        isPerformingAction = false,
-                        downloadControlState = current.downloadControlState.copy(
-                            mutationInProgress = false,
-                            mutationResult = result,
-                            mutationFailure = null,
-                        ),
-                    )
-                    true
-                }
-                if (accepted && (result.submitted || result.requiresRefresh)) {
-                    refreshDownloadControlMutation()
-                }
-            } catch (error: CancellationException) {
-                if (finishDownloadControlMutationCancellation(repo, profileId, target, generation)) {
-                    refreshDownloadControlMutation()
-                }
-                throw error
-            } catch (error: Throwable) {
-                finishDownloadControlMutationFailure(
-                    repo,
-                    profileId,
-                    target,
-                    generation,
-                    error.asDsmFailure(),
-                )
-            }
-        }
-    }
-
-    private fun finishDownloadControlMutationCancellation(
-        repo: DsmRepository,
-        profileId: String,
-        target: DownloadControlTarget,
-        generation: Long,
-    ): Boolean = synchronized(downloadControlMutationLock) {
-        val current = _workspace.value ?: return false
-        if (!downloadControlCallbackMatches(
-                repositoryMatches = repository === repo,
-                profileMatches = current.profile.id == profileId,
-                stateTarget = current.downloadControlState.target,
-                callbackTarget = target,
-                stateGeneration = current.downloadControlState.mutationGeneration,
-                callbackGeneration = generation,
-                globalGeneration = downloadControlMutationGeneration.get(),
-            )
-        ) return false
-        _workspace.value = current.copy(
-            isPerformingAction = false,
-            downloadControlState = current.downloadControlState.copy(
-                mutationInProgress = false,
-                mutationResult = cancelledDownloadControlResult(target),
-                mutationFailure = null,
-            ),
-        )
-        true
-    }
-
-    private fun finishDownloadControlMutationFailure(
-        repo: DsmRepository,
-        profileId: String,
-        target: DownloadControlTarget,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        synchronized(downloadControlMutationLock) {
-            val current = _workspace.value ?: return
-            if (!downloadControlCallbackMatches(
-                    repositoryMatches = repository === repo,
-                    profileMatches = current.profile.id == profileId,
-                    stateTarget = current.downloadControlState.target,
-                    callbackTarget = target,
-                    stateGeneration = current.downloadControlState.mutationGeneration,
-                    callbackGeneration = generation,
-                    globalGeneration = downloadControlMutationGeneration.get(),
-                )
-            ) return
-            _workspace.value = current.copy(
-                isPerformingAction = false,
-                downloadControlState = current.downloadControlState.copy(
-                    mutationInProgress = false,
-                    mutationFailure = failure,
-                ),
-            )
-        }
-    }
-
-    fun refreshDownloadControlMutation() {
-        val repo = repository ?: return
-        lateinit var target: DownloadControlTarget
-        var generation = 0L
-        val profileId = synchronized(downloadControlMutationLock) {
-            val current = _workspace.value ?: return
-            val control = current.downloadControlState
-            if (
-                repository !== repo || current.isPerformingAction || control.target == null ||
-                control.confirmationRequested || control.mutationInProgress ||
-                control.mutationRefreshInProgress ||
-                control.mutationResult == null && control.mutationFailure == null
-            ) return
-            target = control.target
-            generation = downloadControlMutationGeneration.incrementAndGet()
-            downloadListRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                downloadControlState = control.copy(
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = true,
-                    mutationRefreshCompleted = false,
-                    mutationRefreshMatches = null,
-                    mutationGeneration = generation,
-                ),
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val refreshed = repo.activeDownloadTasksForMutation()
-                synchronized(downloadControlMutationLock) {
-                    val current = _workspace.value ?: return@synchronized
-                    if (!downloadControlCallbackMatches(
-                            repositoryMatches = repository === repo,
-                            profileMatches = current.profile.id == profileId,
-                            stateTarget = current.downloadControlState.target,
-                            callbackTarget = target,
-                            stateGeneration = current.downloadControlState.mutationGeneration,
-                            callbackGeneration = generation,
-                            globalGeneration = downloadControlMutationGeneration.get(),
-                        )
-                    ) return@synchronized
-                    _workspace.value = current.withDownloads(Loadable.Ready(refreshed)).copy(
-                        isPerformingAction = false,
-                        downloadControlState = current.downloadControlState.copy(
-                            mutationRefreshFailure = null,
-                            mutationRefreshInProgress = false,
-                            // 表示严格作用域列表读取已经成功；目标是否匹配由
-                            // 同代严格快照单独记录，不能把“不同”伪装成读取失败。
-                            mutationRefreshCompleted = true,
-                            mutationRefreshMatches = downloadControlRefreshMatches(target, refreshed),
-                        ),
-                    )
-                }
-            } catch (error: CancellationException) {
-                finishDownloadControlRefreshFailure(repo, profileId, target, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishDownloadControlRefreshFailure(
-                    repo,
-                    profileId,
-                    target,
-                    generation,
-                    error.asDsmFailure(),
-                )
-            }
-        }
-    }
-
-    private fun finishDownloadControlRefreshFailure(
-        repo: DsmRepository,
-        profileId: String,
-        target: DownloadControlTarget,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        synchronized(downloadControlMutationLock) {
-            val current = _workspace.value ?: return
-            if (!downloadControlCallbackMatches(
-                    repositoryMatches = repository === repo,
-                    profileMatches = current.profile.id == profileId,
-                    stateTarget = current.downloadControlState.target,
-                    callbackTarget = target,
-                    stateGeneration = current.downloadControlState.mutationGeneration,
-                    callbackGeneration = generation,
-                    globalGeneration = downloadControlMutationGeneration.get(),
-                )
-            ) return
-            _workspace.value = current.copy(
-                isPerformingAction = false,
-                downloadControlState = current.downloadControlState.copy(
-                    mutationRefreshFailure = failure,
-                    mutationRefreshInProgress = false,
-                    mutationRefreshCompleted = false,
-                    mutationRefreshMatches = null,
-                ),
-            )
-        }
-    }
-
-    fun dismissDownloadControlMutation(): Boolean = synchronized(downloadControlMutationLock) {
-        val current = _workspace.value ?: return false
-        if (!canDismissDownloadControlMutation(current.downloadControlState)) return false
-        downloadControlMutationGeneration.incrementAndGet()
-        _workspace.value = current.copy(downloadControlState = DownloadControlWorkspaceState())
-        true
-    }
-
-    fun confirmDownloadDestinationEdit(): Boolean {
-        val repo = repository ?: return false
-        lateinit var target: DownloadDestinationEditTarget
-        var generation = 0L
-        val profileId = synchronized(downloadDestinationEditMutationLock) {
-            val current = _workspace.value ?: return false
-            val state = current.downloadDestinationEditState
-            val requested = state.target
-            if (repository !== repo || current.isPerformingAction ||
-                current.selectedModule != Module.DOWNLOADS || !state.confirmationRequested ||
-                state.mutationInProgress || requested == null ||
-                current.downloadCreationState.target != null || current.downloadControlState.target != null ||
-                current.downloadSettingsState.editorVisible || current.downloadRssRefreshState.target != null
-            ) return false
-            if (!downloadDestinationEditTargetIsCurrent(requested, current.profile.id, current.downloads)) {
-                _workspace.value = current.copy(
-                    downloadDestinationEditState = state.copy(
-                        mutationFailure = downloadControlTargetChangedFailure(),
-                    ),
-                )
-                return false
-            }
-            target = requested
-            generation = downloadDestinationEditMutationGeneration.incrementAndGet()
-            downloadListRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                downloadDestinationEditState = state.copy(
-                    confirmationRequested = false,
-                    mutationInProgress = true,
-                    mutationResult = null,
-                    mutationFailure = null,
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = false,
-                    mutationRefreshCompleted = false,
-                    mutationRefreshMatches = null,
-                    mutationGeneration = generation,
-                ),
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            val outcome = try {
-                Result.success(
-                repo.editDownloadDestinationResult(
-                    DownloadTaskMutationBaseline.from(target.taskBaseline),
-                    target.destinationBaseline,
-                ),
-                )
-            } catch (error: CancellationException) {
-                val accepted = finishDownloadDestinationEditCancellation(
-                    repo,
-                    profileId,
-                    target,
-                    generation,
-                )
-                if (accepted) refreshDownloadDestinationEditMutation()
-                throw error
-            } catch (error: Throwable) {
-                Result.failure(error)
-            }
-            val result = outcome.getOrNull()
-            val failure = outcome.exceptionOrNull()?.asDsmFailure()
-            val persistentResult = result
-            val accepted = synchronized(downloadDestinationEditMutationLock) {
-                val current = _workspace.value
-                if (current == null || !downloadDestinationEditCallbackMatches(
-                        repositoryMatches = repository === repo,
-                        profileMatches = current.profile.id == profileId,
-                        stateTarget = current.downloadDestinationEditState.target,
-                        callbackTarget = target,
-                        stateGeneration = current.downloadDestinationEditState.mutationGeneration,
-                        callbackGeneration = generation,
-                        globalGeneration = downloadDestinationEditMutationGeneration.get(),
-                    )
-                ) return@synchronized false
-                _workspace.value = current.copy(
-                    isPerformingAction = false,
-                    downloadDestinationEditState = current.downloadDestinationEditState.copy(
-                        mutationInProgress = false,
-                        mutationResult = persistentResult,
-                        mutationFailure = failure,
-                    ),
-                )
-                true
-            }
-            if (accepted && (failure != null || persistentResult?.let {
-                    it.submitted || it.requiresRefresh || it.counts.unknown > 0
-                } == true)
-            ) {
-                refreshDownloadDestinationEditMutation()
-            }
-        }
-        return true
-    }
-
-    private fun finishDownloadDestinationEditCancellation(
-        repo: DsmRepository,
-        profileId: String,
-        target: DownloadDestinationEditTarget,
-        generation: Long,
-    ): Boolean = synchronized(downloadDestinationEditMutationLock) {
-        val current = _workspace.value ?: return@synchronized false
-        val state = current.downloadDestinationEditState
-        if (!downloadDestinationEditCallbackMatches(
-                repositoryMatches = repository === repo,
-                profileMatches = current.profile.id == profileId,
-                stateTarget = state.target,
-                callbackTarget = target,
-                stateGeneration = state.mutationGeneration,
-                callbackGeneration = generation,
-                globalGeneration = downloadDestinationEditMutationGeneration.get(),
-            )
-        ) return@synchronized false
-        _workspace.value = current.copy(
-            isPerformingAction = false,
-            downloadDestinationEditState = state.copy(
-                mutationInProgress = false,
-                mutationResult = cancelledDownloadDestinationEditResult(),
-                mutationFailure = null,
-            ),
-        )
-        true
-    }
-
-    fun refreshDownloadDestinationEditMutation() {
-        val repo = repository ?: return
-        lateinit var target: DownloadDestinationEditTarget
-        var generation = 0L
-        val profileId = synchronized(downloadDestinationEditMutationLock) {
-            val current = _workspace.value ?: return
-            val state = current.downloadDestinationEditState
-            if (repository !== repo || current.isPerformingAction || state.target == null ||
-                state.confirmationRequested || state.mutationInProgress || state.mutationRefreshInProgress ||
-                state.mutationResult == null && state.mutationFailure == null
-            ) return
-            target = state.target
-            generation = downloadDestinationEditMutationGeneration.incrementAndGet()
-            downloadListRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                downloadDestinationEditState = state.copy(
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = true,
-                    mutationRefreshCompleted = false,
-                    mutationRefreshMatches = null,
-                    mutationGeneration = generation,
-                ),
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            val outcome = try {
-                Result.success(repo.activeDownloadTasksForMutation())
-            } catch (error: CancellationException) {
-                synchronized(downloadDestinationEditMutationLock) {
-                    val current = _workspace.value ?: return@synchronized
-                    val state = current.downloadDestinationEditState
-                    if (downloadDestinationEditCallbackMatches(
-                            repositoryMatches = repository === repo,
-                            profileMatches = current.profile.id == profileId,
-                            stateTarget = state.target,
-                            callbackTarget = target,
-                            stateGeneration = state.mutationGeneration,
-                            callbackGeneration = generation,
-                            globalGeneration = downloadDestinationEditMutationGeneration.get(),
-                        )
-                    ) {
-                        _workspace.value = current.copy(
-                            isPerformingAction = false,
-                            downloadDestinationEditState = state.copy(
-                                mutationRefreshInProgress = false,
-                                mutationRefreshCompleted = false,
-                                mutationRefreshMatches = null,
-                            ),
-                        )
-                    }
-                }
-                throw error
-            } catch (error: Throwable) {
-                Result.failure(error)
-            }
-            synchronized(downloadDestinationEditMutationLock) {
-                val current = _workspace.value ?: return@synchronized
-                val state = current.downloadDestinationEditState
-                if (!downloadDestinationEditCallbackMatches(
-                        repositoryMatches = repository === repo,
-                        profileMatches = current.profile.id == profileId,
-                        stateTarget = state.target,
-                        callbackTarget = target,
-                        stateGeneration = state.mutationGeneration,
-                        callbackGeneration = generation,
-                        globalGeneration = downloadDestinationEditMutationGeneration.get(),
-                    )
-                ) return@synchronized
-                val refreshed = outcome.getOrNull()
-                _workspace.value = current.withDownloads(
-                    refreshed?.let { Loadable.Ready(it) } ?: current.downloads,
-                ).copy(
-                    isPerformingAction = false,
-                    downloadDestinationEditState = state.copy(
-                        mutationRefreshFailure = outcome.exceptionOrNull()
-                            ?.takeUnless { it is CancellationException }
-                            ?.asDsmFailure(),
-                        mutationRefreshInProgress = false,
-                        mutationRefreshCompleted = refreshed != null,
-                        mutationRefreshMatches = refreshed?.let {
-                            downloadDestinationEditRefreshMatches(target, it)
-                        },
-                    ),
-                )
-            }
-        }
-    }
-
-    fun dismissDownloadDestinationEditMutation(): Boolean =
-        synchronized(downloadDestinationEditMutationLock) {
-            val current = _workspace.value ?: return@synchronized false
-            if (!canDismissDownloadDestinationEditMutation(current.downloadDestinationEditState)) {
-                return@synchronized false
-            }
-            downloadDestinationEditMutationGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                downloadDestinationEditState = DownloadDestinationEditWorkspaceState(),
-            )
-            true
-        }
-
-    fun controlContainer(id: String, command: String) = containerMutation(
-        success = R.string.container_state_updated,
-    ) { repo ->
-        repo.controlContainerResult(id, command)
-    }
-
-    fun deleteContainer(id: String) = containerMutation(
-        success = R.string.container_deleted,
-    ) { repo ->
-        repo.deleteContainerResult(id)
-    }
-
-    fun deleteContainerImage(id: String) = containerMutation(
-        success = R.string.image_deleted,
-    ) { repo ->
-        repo.deleteContainerImageResult(id)
-    }
-
-    fun createContainerNetwork(name: String, driver: String) = containerMutation(
-        success = R.string.network_created,
-    ) { repo ->
-        repo.createContainerNetworkResult(name, driver)
-    }
-
-    fun deleteContainerNetwork(id: String) = containerMutation(
-        success = R.string.network_deleted,
-    ) { repo ->
-        repo.deleteContainerNetworkResult(id)
-    }
+    private fun currentDownloadTask(id: String): DownloadTask? = (_workspace.value?.downloads as? Loadable.Ready)?.value?.singleOrNull { it.id == id }
+    fun requestDownloadPause(taskId: String): Boolean = currentDownloadTask(taskId)?.let {
+        downloadActions.requestTasks(listOf(it), DownloadActionKind.PAUSE) } == true
+    fun requestDownloadResume(taskId: String): Boolean = currentDownloadTask(taskId)?.let {
+        downloadActions.requestTasks(listOf(it), DownloadActionKind.RESUME) } == true
+    fun requestDownloadDeletion(taskId: String, deleteFiles: Boolean): Boolean = currentDownloadTask(taskId)?.let {
+        downloadActions.requestTasks(listOf(it), if (deleteFiles) DownloadActionKind.END_AND_MOVE else DownloadActionKind.REMOVE) } == true
+    fun refreshDownloadControlMutation() { downloadActions.show() }
+    fun refreshDownloadDestinationEditMutation() { downloadActions.show() }
 
     /** 外部固定页只在当前容器模块与既有能力门禁均满足时打开。 */
     internal fun navigateToContainerRegistry(): WorkspaceNavigationResult {
@@ -8421,189 +5991,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun showContainerRegistry() {
-        val state = _workspace.value ?: return
-        if (state.selectedModule != Module.CONTAINERS || !state.supportsContainerRegistry) return
-        if (state.containerRegistryVisible) return
-        containerRegistrySearchGeneration.incrementAndGet()
-        containerRegistryTagsGeneration.incrementAndGet()
-        _workspace.update { current ->
-            current?.takeIf {
-                it.selectedModule == Module.CONTAINERS && it.supportsContainerRegistry
-            }?.copy(
-                containerRegistryVisible = true,
-                containerRegistryResults = current.containerRegistryResults.takeUnless { value ->
-                    value is Loadable.Loading
-                } ?: Loadable.Idle,
-                selectedContainerRegistryImage = null,
-                containerRegistryTags = Loadable.Idle,
-            ) ?: current
-        }
-    }
-
-    fun closeContainerRegistry() {
-        containerRegistrySearchGeneration.incrementAndGet()
-        containerRegistryTagsGeneration.incrementAndGet()
-        _workspace.update {
-            it?.copy(
-                containerRegistryVisible = false,
-                containerRegistryResults = it.containerRegistryResults.takeUnless { value ->
-                    value is Loadable.Loading
-                } ?: Loadable.Idle,
-                selectedContainerRegistryImage = null,
-                containerRegistryTags = Loadable.Idle,
-            )
-        }
-    }
-
-    fun updateContainerRegistryQuery(value: String) {
-        if (value.length > 200) return
-        if (_workspace.value?.containerRegistryQuery == value) return
-        containerRegistrySearchGeneration.incrementAndGet()
-        containerRegistryTagsGeneration.incrementAndGet()
-        _workspace.update {
-            it?.copy(
-                containerRegistryQuery = value,
-                containerRegistryResults = Loadable.Idle,
-                selectedContainerRegistryImage = null,
-                containerRegistryTags = Loadable.Idle,
-            )
-        }
-    }
-
-    fun searchContainerRegistry() {
-        val repo = repository ?: return
-        val state = _workspace.value ?: return
-        if (!state.containerRegistryVisible || state.selectedModule != Module.CONTAINERS) return
-        val query = state.containerRegistryQuery.trim()
-        if (query.isEmpty()) return
-        val token = ContainerRegistrySearchToken(
-            generation = containerRegistrySearchGeneration.incrementAndGet(),
-            profileId = state.profile.id,
-            query = query,
-        )
-        containerRegistryTagsGeneration.incrementAndGet()
-        _workspace.update {
-            it?.copy(
-                containerRegistryResults = Loadable.Loading,
-                selectedContainerRegistryImage = null,
-                containerRegistryTags = Loadable.Idle,
-            )
-        }
-        viewModelScope.launch {
-            capture(
-                block = { repo.searchContainerRegistry(query) },
-                update = { value ->
-                    _workspace.update { state ->
-                        if (repository === repo && state?.matchesContainerRegistrySearch(
-                                token,
-                                containerRegistrySearchGeneration.get(),
-                            ) == true
-                        ) {
-                            state.copy(containerRegistryResults = value)
-                        } else state
-                    }
-                },
-            )
-        }
-    }
-
-    fun selectContainerRegistryImage(image: ContainerRegistryImage) {
-        val repo = repository ?: return
-        val state = _workspace.value ?: return
-        if (!state.containerRegistryVisible || state.selectedModule != Module.CONTAINERS) return
-        val token = ContainerRegistryTagsToken(
-            generation = containerRegistryTagsGeneration.incrementAndGet(),
-            profileId = state.profile.id,
-            imageId = image.id,
-        )
-        _workspace.update {
-            it?.copy(
-                selectedContainerRegistryImage = image,
-                containerRegistryTags = Loadable.Loading,
-            )
-        }
-        viewModelScope.launch {
-            capture(
-                block = { repo.containerRegistryTags(image.name) },
-                update = { value ->
-                    _workspace.update { state ->
-                        if (repository === repo && state?.matchesContainerRegistryTags(
-                                token,
-                                containerRegistryTagsGeneration.get(),
-                            ) == true
-                        ) {
-                            state.copy(containerRegistryTags = value)
-                        } else state
-                    }
-                },
-            )
-        }
-    }
-
-    fun openVirtualMachineCreationEditor(): Boolean = synchronized(virtualMachineMutationLock) {
-        val current = _workspace.value ?: return false
-        val overview = (current.virtualMachines as? Loadable.Ready)?.value ?: return false
-        val state = current.virtualMachineMutationState
-        if (current.selectedModule != Module.VIRTUAL_MACHINES ||
-            !current.supportsOfficialVirtualMachineCreation || overview.storages.isEmpty() ||
-            state.creationEditorVisible || state.settingsEditorVisible ||
-            state.imageImportEditorVisible ||
-            state.lifecycleConfirmationRequested ||
-            state.taskCleanupConfirmationRequested ||
-            !canStartVirtualMachineMutation(current.isPerformingAction, state)
-        ) return false
-        _workspace.value = current.copy(
-            virtualMachineMutationState = state.copy(
-                creationEditorVisible = true,
-                creationDraft = VirtualMachineCreationDraftState(
-                    storageId = overview.storages.first().id,
-                ),
-            ),
-        )
-        true
-    }
-
-    fun updateVirtualMachineCreationDraft(
-        draft: VirtualMachineCreationDraftState,
-    ): Boolean = synchronized(virtualMachineMutationLock) {
-        val current = _workspace.value ?: return false
-        val state = current.virtualMachineMutationState
-        if (!state.creationEditorVisible || state.target != null || state.mutationInProgress ||
-            state.mutationRefreshInProgress || draft.step !in 0..2
-        ) return false
-        _workspace.value = current.copy(
-            virtualMachineMutationState = state.copy(creationDraft = draft),
-        )
-        true
-    }
-
-    fun closeVirtualMachineCreationEditor(): Boolean = synchronized(virtualMachineMutationLock) {
-        val current = _workspace.value ?: return false
-        val state = current.virtualMachineMutationState
-        if (!state.creationEditorVisible || state.target != null || state.mutationInProgress ||
-            state.mutationRefreshInProgress
-        ) return false
-        _workspace.value = current.copy(
-            virtualMachineMutationState = state.copy(
-                creationEditorVisible = false,
-                creationDraft = null,
-            ),
-        )
-        true
-    }
-
-    fun confirmVirtualMachineCreation(): Boolean {
-        val desired = synchronized(virtualMachineMutationLock) {
-            val current = _workspace.value ?: return false
-            val state = current.virtualMachineMutationState
-            if (!state.creationEditorVisible || state.target != null ||
-                state.mutationInProgress || state.mutationRefreshInProgress
-            ) return false
-            state.creationDraft?.toCreationOrNull()
-        } ?: return false
-        return createVirtualMachine(desired)
-    }
+    fun showContainerRegistry() = containerReadFeature.showRegistry()
+    fun closeContainerRegistry() = containerReadFeature.closeRegistry()
+    fun updateContainerRegistryQuery(value: String) = containerReadFeature.updateQuery(value)
+    fun searchContainerRegistry() = containerReadFeature.searchRegistry()
+    fun selectContainerRegistryImage(image: ContainerRegistryImage) = containerReadFeature.selectImage(image)
+    internal val containerEvents get() = containerReadFeature.events
+    internal fun loadContainerEvents() = containerReadFeature.loadEvents()
+    internal fun stopContainerEvents() = containerReadFeature.stopEvents()
 
     fun openVirtualMachineImageImportEditor(): Boolean = synchronized(virtualMachineMutationLock) {
         val repo = repository ?: return false
@@ -8615,10 +6010,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         } ?: return false
         if (current.selectedModule != Module.VIRTUAL_MACHINES ||
             !current.supportsOfficialVirtualMachineImageImport ||
-            state.creationEditorVisible || state.imageImportEditorVisible ||
-            state.settingsEditorVisible || state.lifecycleConfirmationRequested ||
-            state.taskCleanupConfirmationRequested ||
-            !canStartVirtualMachineMutation(current.isPerformingAction, state)
+            state.imageImportEditorVisible ||
+            (vmmTasks.state.value.active || vmmConsole.state.value.target != null || vmmAssetPending() || vmmControls.hasPending() || vmmSettings.hasPending() || vmmCreation.hasPending() || current.isPerformingAction)
         ) return false
         val generation = virtualMachineImageBrowserGeneration.incrementAndGet()
         val draft = VirtualMachineImageImportDraftState(
@@ -8642,8 +6035,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val current = _workspace.value ?: return false
         val state = current.virtualMachineMutationState
         val existing = state.imageImportDraft ?: return false
-        if (!state.imageImportEditorVisible || state.target != null || state.mutationInProgress ||
-            state.mutationRefreshInProgress || draft.browserPath != existing.browserPath ||
+        if (!state.imageImportEditorVisible || draft.browserPath != existing.browserPath ||
             draft.browserHistory != existing.browserHistory ||
             draft.browserItems != existing.browserItems
         ) return false
@@ -8689,8 +6081,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val current = _workspace.value ?: return@synchronized false
             val state = current.virtualMachineMutationState
             val draft = state.imageImportDraft ?: return@synchronized false
-            if (!state.imageImportEditorVisible || draft.source != VirtualMachineImageImportSource.LOCAL ||
-                state.target != null || state.mutationInProgress || state.mutationRefreshInProgress
+            if (!state.imageImportEditorVisible || draft.source != VirtualMachineImageImportSource.LOCAL
             ) return@synchronized false
             val previous = pendingVirtualMachineLocalImageUri
             pendingVirtualMachineLocalImageUri = uri
@@ -8735,8 +6126,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val selected = page.items.singleOrNull { it == item } ?: return false
             if (!state.imageImportEditorVisible ||
                 draft.source != VirtualMachineImageImportSource.LOCAL ||
-                !selected.isDirectory || !selected.canWrite || state.target != null ||
-                state.mutationInProgress || state.mutationRefreshInProgress
+                !selected.isDirectory || !selected.canWrite
             ) return false
             _workspace.value = current.copy(
                 virtualMachineMutationState = state.copy(
@@ -8754,8 +6144,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val draft = state.imageImportDraft ?: return false
             val page = (draft.browserItems as? Loadable.Ready)?.value ?: return false
             val selected = page.items.singleOrNull { it == item } ?: return false
-            if (!state.imageImportEditorVisible || !selected.isDirectory || !selected.canRead ||
-                state.target != null || state.mutationInProgress || state.mutationRefreshInProgress
+            if (!state.imageImportEditorVisible || !selected.isDirectory || !selected.canRead
             ) return false
             val generation = virtualMachineImageBrowserGeneration.incrementAndGet()
             val next = draft.copy(
@@ -8777,9 +6166,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val state = current.virtualMachineMutationState
         val draft = state.imageImportDraft ?: return false
         val previous = draft.browserHistory.lastOrNull() ?: return false
-        if (!state.imageImportEditorVisible || state.target != null || state.mutationInProgress ||
-            state.mutationRefreshInProgress
-        ) return false
+        if (!state.imageImportEditorVisible) return false
         val generation = virtualMachineImageBrowserGeneration.incrementAndGet()
         _workspace.value = current.copy(
             virtualMachineMutationState = state.copy(
@@ -8802,8 +6189,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val draft = state.imageImportDraft ?: return false
             val page = (draft.browserItems as? Loadable.Ready)?.value ?: return false
             val selected = page.items.singleOrNull { it == item } ?: return false
-            if (!state.imageImportEditorVisible || selected.isDirectory || !selected.canRead ||
-                state.target != null || state.mutationInProgress || state.mutationRefreshInProgress
+            if (!state.imageImportEditorVisible || selected.isDirectory || !selected.canRead
             ) return false
             _workspace.value = current.copy(
                 virtualMachineMutationState = state.copy(
@@ -8821,8 +6207,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val current = _workspace.value ?: return false
         val state = current.virtualMachineMutationState
         val draft = state.imageImportDraft ?: return false
-        if (!state.imageImportEditorVisible || draft.browserItems !is Loadable.Failed ||
-            state.target != null || state.mutationInProgress || state.mutationRefreshInProgress
+        if (!state.imageImportEditorVisible || draft.browserItems !is Loadable.Failed
         ) return false
         val generation = virtualMachineImageBrowserGeneration.incrementAndGet()
         _workspace.value = current.copy(
@@ -8837,9 +6222,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun closeVirtualMachineImageImportEditor(): Boolean = synchronized(virtualMachineMutationLock) {
         val current = _workspace.value ?: return false
         val state = current.virtualMachineMutationState
-        if (!state.imageImportEditorVisible || state.target != null || state.mutationInProgress ||
-            state.mutationRefreshInProgress
-        ) return false
+        if (!state.imageImportEditorVisible) return false
         virtualMachineImageBrowserGeneration.incrementAndGet()
         releasePendingVirtualMachineLocalImageGrant()
         _workspace.value = current.copy(
@@ -8855,25 +6238,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val desired = synchronized(virtualMachineMutationLock) {
             val current = _workspace.value ?: return false
             val state = current.virtualMachineMutationState
-            if (!state.imageImportEditorVisible || state.target != null || state.mutationInProgress ||
-                state.mutationRefreshInProgress
-            ) return false
+            if (!state.imageImportEditorVisible) return false
             state.imageImportDraft?.toImportOrNull()
         } ?: return false
-        return importVirtualMachineImage(desired)
+        val profileId = _workspace.value?.profile?.id ?: return false
+        if (vmmTasks.conflictsWithImport(desired.imageName) || transferStore.virtualMachineImageImports(profileId).any { it.imageName.equals(desired.imageName, ignoreCase = true) &&
+                !it.canRemoveFromHistory() }) return reportVmmImportNameBusy()
+        if (!vmmTasks.startImport(desired)) return false
+        closeVirtualMachineImageImportEditor()
+        return true
+    }
+
+    private fun reportVmmImportNameBusy(): Boolean {
+        val failure = vmmTasks.state.value.failure
+        val message = if (failure is io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.VmmFailure && failure.problem == io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.VmmProblem.STORAGE) R.string.vm_storage else R.string.vm_image_import_name_busy
+        _workspace.update { it?.copy(message = getApplication<Application>().getString(message)) }
+        return false
     }
 
     fun confirmVirtualMachineLocalImageImport(
         submission: VirtualMachineLocalImageImportSubmission,
     ): Boolean {
+        if (vmmTasks.state.value.active) return false
+        if (vmmTasks.conflictsWithImport(submission.imageName)) return reportVmmImportNameBusy()
         val prepared = synchronized(virtualMachineMutationLock) {
             val current = _workspace.value ?: return false
             val state = current.virtualMachineMutationState
             val expected = state.imageImportDraft?.toLocalSubmissionOrNull()
             val uri = pendingVirtualMachineLocalImageUri
-            if (!state.imageImportEditorVisible || state.target != null ||
-                state.mutationInProgress || state.mutationRefreshInProgress ||
-                expected != submission || uri == null
+            if (!state.imageImportEditorVisible || expected != submission || uri == null
             ) return false
             val displayName = state.imageImportDraft?.localFile?.displayName ?: return false
             VirtualMachineLocalImagePreparation(
@@ -8900,7 +6293,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             storageName = submission.storage.name,
             storageStatus = submission.storage.metadata["status"].orEmpty(),
         )
-        val workId = VirtualMachineImageImportWorker.enqueue(getApplication(), record)
+        val workId = if (checkTransferOwner(WorkspaceRecordKind.VMM_IMPORT, record.id, repository, create = true))
+            VirtualMachineImageImportWorker.enqueue(getApplication(), record) else null
         if (workId == null) {
             releaseVirtualMachineLocalImageGrant(prepared.uri)
             synchronized(virtualMachineMutationLock) {
@@ -8935,3235 +6329,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    fun openVirtualMachineSettingsEditor(id: String): Boolean = synchronized(virtualMachineMutationLock) {
-        val current = _workspace.value ?: return false
-        val overview = (current.virtualMachines as? Loadable.Ready)?.value ?: return false
-        val resource = overview.machines.firstOrNull { it.id == id } ?: return false
-        val state = current.virtualMachineMutationState
-        if (current.selectedModule != Module.VIRTUAL_MACHINES ||
-            !current.supportsOfficialVirtualMachineSettings || state.creationEditorVisible ||
-            state.imageImportEditorVisible || state.settingsEditorVisible ||
-            state.lifecycleConfirmationRequested ||
-            state.taskCleanupConfirmationRequested ||
-            !canStartVirtualMachineMutation(current.isPerformingAction, state)
-        ) return false
-        val baseline = virtualMachineSettingsBaseline(resource) ?: return false
-        _workspace.value = current.copy(
-            virtualMachineMutationState = state.copy(
-                settingsEditorVisible = true,
-                settingsTargetId = resource.id,
-                settingsBaseline = baseline,
-                settingsDraft = VirtualMachineSettingsDraftState.from(baseline),
-            ),
-        )
-        true
-    }
-
-    fun updateVirtualMachineSettingsDraft(
-        draft: VirtualMachineSettingsDraftState,
-    ): Boolean = synchronized(virtualMachineMutationLock) {
-        val current = _workspace.value ?: return false
-        val state = current.virtualMachineMutationState
-        if (!state.settingsEditorVisible || state.target != null || state.mutationInProgress ||
-            state.mutationRefreshInProgress
-        ) return false
-        _workspace.value = current.copy(
-            virtualMachineMutationState = state.copy(settingsDraft = draft),
-        )
-        true
-    }
-
-    fun closeVirtualMachineSettingsEditor(): Boolean = synchronized(virtualMachineMutationLock) {
-        val current = _workspace.value ?: return false
-        val state = current.virtualMachineMutationState
-        if (!state.settingsEditorVisible || state.target != null || state.mutationInProgress ||
-            state.mutationRefreshInProgress
-        ) return false
-        _workspace.value = current.copy(
-            virtualMachineMutationState = state.copy(
-                settingsEditorVisible = false,
-                settingsTargetId = null,
-                settingsBaseline = null,
-                settingsDraft = null,
-            ),
-        )
-        true
-    }
-
-    fun confirmVirtualMachineSettings(): Boolean {
-        val claim = synchronized(virtualMachineMutationLock) {
-            val current = _workspace.value ?: return false
-            val state = current.virtualMachineMutationState
-            val id = state.settingsTargetId ?: return false
-            val desired = state.settingsDraft?.toSettingsOrNull() ?: return false
-            if (!state.settingsEditorVisible || state.settingsBaseline == null ||
-                desired == state.settingsBaseline || state.target != null ||
-                state.mutationInProgress || state.mutationRefreshInProgress
-            ) return false
-            id to desired
-        }
-        return updateVirtualMachineSettings(claim.first, claim.second)
-    }
-
-    fun requestVirtualMachineLifecycleConfirmation(
-        id: String,
-        operation: VirtualMachineLifecycleOperation,
-        command: String? = null,
-    ): Boolean = synchronized(virtualMachineMutationLock) {
-        val current = _workspace.value ?: return false
-        val overview = (current.virtualMachines as? Loadable.Ready)?.value ?: return false
-        val state = current.virtualMachineMutationState
-        val normalizedId = id.trim()
-        val resource = when (operation) {
-            VirtualMachineLifecycleOperation.DELETE_IMAGE -> overview.images
-            VirtualMachineLifecycleOperation.DELETE_NETWORK,
-            VirtualMachineLifecycleOperation.RENAME_NETWORK,
-            -> overview.networks
-            else -> overview.machines
-        }.firstOrNull { it.id == normalizedId }
-        if (resource == null || current.selectedModule != Module.VIRTUAL_MACHINES ||
-            state.creationEditorVisible || state.settingsEditorVisible ||
-            state.imageImportEditorVisible ||
-            state.lifecycleConfirmationRequested ||
-            !canStartVirtualMachineMutation(current.isPerformingAction, state)
-        ) return false
-        val target = runCatching {
-            VirtualMachineLifecycleTarget(
-                profileId = current.profile.id,
-                resourceId = normalizedId,
-                operation = operation,
-                baselineState = resource.state,
-                command = command?.trim(),
-            )
-        }.getOrNull() ?: return false
-        _workspace.value = current.copy(
-            virtualMachineMutationState = state.copy(
-                lifecycleConfirmationTarget = target,
-                lifecycleConfirmationRequested = true,
-            ),
-        )
-        true
-    }
-
-    fun cancelVirtualMachineLifecycleConfirmation(): Boolean =
-        synchronized(virtualMachineMutationLock) {
-            val current = _workspace.value ?: return false
-            val state = current.virtualMachineMutationState
-            if (!state.lifecycleConfirmationRequested || state.mutationInProgress) return false
-            _workspace.value = current.copy(
-                virtualMachineMutationState = state.copy(
-                    lifecycleConfirmationTarget = null,
-                    lifecycleConfirmationRequested = false,
-                ),
-            )
-            true
-        }
-
-    fun requestVirtualMachineTaskCleanupConfirmation(): Boolean =
-        synchronized(virtualMachineMutationLock) {
-            val current = _workspace.value ?: return false
-            val overview = (current.virtualMachines as? Loadable.Ready)?.value ?: return false
-            val state = current.virtualMachineMutationState
-            val finished = overview.tasks.filter(VirtualMachineTask::isFinished)
-            if (current.selectedModule != Module.VIRTUAL_MACHINES || finished.isEmpty() ||
-                state.creationEditorVisible || state.imageImportEditorVisible ||
-                state.settingsEditorVisible || state.lifecycleConfirmationRequested ||
-                state.taskCleanupConfirmationRequested ||
-                !canStartVirtualMachineMutation(current.isPerformingAction, state)
-            ) return false
-            _workspace.value = current.copy(
-                virtualMachineMutationState = state.copy(
-                    taskCleanupConfirmationRequested = true,
-                    taskCleanupBaseline = overview.tasks,
-                ),
-            )
-            true
-        }
-
-    fun cancelVirtualMachineTaskCleanupConfirmation(): Boolean =
-        synchronized(virtualMachineMutationLock) {
-            val current = _workspace.value ?: return false
-            val state = current.virtualMachineMutationState
-            if (!state.taskCleanupConfirmationRequested || state.mutationInProgress) return false
-            _workspace.value = current.copy(
-                virtualMachineMutationState = state.copy(
-                    taskCleanupConfirmationRequested = false,
-                    taskCleanupBaseline = emptyList(),
-                ),
-            )
-            true
-        }
-
-    fun confirmVirtualMachineTaskCleanup(): Boolean {
-        val baseline = synchronized(virtualMachineMutationLock) {
-            val state = _workspace.value?.virtualMachineMutationState ?: return false
-            if (!state.taskCleanupConfirmationRequested ||
-                state.taskCleanupBaseline.none(VirtualMachineTask::isFinished) ||
-                state.mutationInProgress || state.mutationRefreshInProgress
-            ) return false
-            state.taskCleanupBaseline
-        }
-        return clearFinishedVirtualMachineTasks(baseline)
-    }
-
-    fun confirmVirtualMachineLifecycle(): Boolean = synchronized(virtualMachineMutationLock) {
-        val state = _workspace.value?.virtualMachineMutationState ?: return false
-        val target = state.lifecycleConfirmationTarget ?: return false
-        if (!state.lifecycleConfirmationRequested || state.mutationInProgress ||
-            state.mutationRefreshInProgress
-        ) return false
-        when (target.operation) {
-            VirtualMachineLifecycleOperation.CONTROL ->
-                controlVirtualMachine(
-                    target.resourceId,
-                    target.baselineState,
-                    checkNotNull(target.command),
-                )
-            VirtualMachineLifecycleOperation.DELETE_MACHINE ->
-                deleteVirtualMachine(target.resourceId, target.baselineState)
-            VirtualMachineLifecycleOperation.DELETE_IMAGE ->
-                deleteVirtualMachineImage(target.resourceId, target.baselineState)
-            VirtualMachineLifecycleOperation.DELETE_NETWORK ->
-                deleteVirtualMachineNetwork(target.resourceId, target.baselineState)
-            VirtualMachineLifecycleOperation.RENAME_NETWORK ->
-                renameVirtualMachineNetwork(
-                    target.resourceId,
-                    target.baselineState,
-                    checkNotNull(target.command),
-                )
-        }
-    }
-
-    fun controlVirtualMachine(id: String, command: String): Boolean {
-        val current = _workspace.value ?: return false
-        val overview = (current.virtualMachines as? Loadable.Ready)?.value ?: return false
-        val normalizedId = id.trim()
-        val baselineState = overview.machines.firstOrNull { it.id == normalizedId }?.state
-            ?: return false
-        return controlVirtualMachine(normalizedId, baselineState, command.trim())
-    }
-
-    private fun controlVirtualMachine(
-        id: String,
-        baselineState: ResourceState,
-        command: String,
-    ): Boolean {
-        val profileId = _workspace.value?.profile?.id ?: return false
-        val normalizedCommand = command.trim()
-        if (virtualMachineControlExpectedState(baselineState, normalizedCommand) == null) return false
-        val lifecycle = VirtualMachineLifecycleTarget(
-            profileId = profileId,
-            resourceId = id.trim(),
-            operation = VirtualMachineLifecycleOperation.CONTROL,
-            baselineState = baselineState,
-            command = normalizedCommand,
-        )
-        val target = virtualMachineMutationTarget(
-            profileId,
-            VirtualMachineMutationKind.LIFECYCLE,
-            "virtualMachineControl",
-            id,
-            listOf(baselineState.name, normalizedCommand),
-        )
-        return virtualMachineMutation(
-            target,
-            R.string.virtual_machine_state_updated,
-            lifecycleTarget = lifecycle,
-        ) { repo, _ ->
-            repo.controlVirtualMachineResult(id, baselineState, normalizedCommand)
-        }
-    }
-
-    private fun clearFinishedVirtualMachineTasks(baseline: List<VirtualMachineTask>): Boolean {
-        val profileId = _workspace.value?.profile?.id ?: return false
-        val finished = baseline.filter(VirtualMachineTask::isFinished)
-        if (finished.isEmpty()) return false
-        val target = virtualMachineMutationTarget(
-            profileId = profileId,
-            kind = VirtualMachineMutationKind.TASK_CLEANUP,
-            operation = "virtualMachineTaskCleanup",
-            resourceId = null,
-            requestParts = finished.map(VirtualMachineTask::taskToken).sorted(),
-        )
-        return virtualMachineMutation(
-            target = target,
-            success = R.string.virtual_machine_tasks_cleared,
-            taskCleanupBaseline = baseline,
-        ) { repo, generation ->
-            repo.clearFinishedVirtualMachineTasksResult(baseline) { resolved ->
-                recordVirtualMachineTaskCleanupResolvedResult(
-                    repo,
-                    profileId,
-                    target,
-                    generation,
-                    resolved,
-                )
-            }
-        }
-    }
-
-    private fun recordVirtualMachineTaskCleanupResolvedResult(
-        repo: DsmRepository,
-        profileId: String,
-        target: VirtualMachineMutationTarget,
-        generation: Long,
-        result: MutationResult,
-    ) {
-        synchronized(virtualMachineMutationLock) {
-            val current = _workspace.value ?: return
-            val state = current.virtualMachineMutationState
-            if (!virtualMachineMutationCallbackMatches(
-                    repositoryMatches = repository === repo,
-                    profileMatches = current.profile.id == profileId,
-                    stateTarget = state.target,
-                    callbackTarget = target,
-                    stateGeneration = state.mutationGeneration,
-                    callbackGeneration = generation,
-                    globalGeneration = virtualMachineMutationGeneration.get(),
-                )
-            ) return
-            _workspace.value = current.copy(
-                virtualMachineMutationState = state.copy(taskCleanupResolvedResult = result),
-            )
-        }
-    }
-
-    fun createVirtualMachine(configuration: VirtualMachineCreation): Boolean {
-        val profileId = _workspace.value?.profile?.id ?: return false
-        val target = virtualMachineMutationTarget(
-            profileId,
-            VirtualMachineMutationKind.CREATION,
-            "virtualMachineCreate",
-            resourceId = null,
-            requestParts = listOf(
-                configuration.name.trim(),
-                configuration.description.trim(),
-                configuration.cpuCount.toString(),
-                configuration.memoryMiB.toString(),
-                configuration.diskGiB.toString(),
-                configuration.storageId.trim(),
-                configuration.networkId?.trim().orEmpty(),
-                configuration.diskImageId?.trim().orEmpty(),
-                configuration.autoStart.toString(),
-            ) + configuration.additionalDisks.flatMapIndexed { index, disk ->
-                listOf(
-                    "disk:$index",
-                    disk.sizeGiB.toString(),
-                    disk.diskImageId?.trim().orEmpty(),
-                )
-            } + configuration.additionalNetworkInterfaces.flatMapIndexed { index, network ->
-                listOf("network:$index", network.networkId?.trim().orEmpty())
-            },
-        )
-        return virtualMachineMutation(
-            target,
-            R.string.virtual_machine_created,
-            creationDraft = VirtualMachineCreationDraftState.from(configuration),
-        ) { repo, _ ->
-            repo.createVirtualMachineResult(configuration)
-        }
-    }
-
-    fun importVirtualMachineImage(configuration: VirtualMachineImageImport): Boolean {
-        val profileId = _workspace.value?.profile?.id ?: return false
-        val target = virtualMachineMutationTarget(
-            profileId,
-            VirtualMachineMutationKind.IMAGE_IMPORT,
-            "virtualMachineImageImport",
-            resourceId = null,
-            requestParts = listOf(
-                configuration.imageName.trim(),
-                configuration.imageType.apiValue,
-                configuration.sourceFile.path,
-                configuration.sourceFile.size.toString(),
-                configuration.sourceFile.modifiedAtEpochSeconds?.toString().orEmpty(),
-                configuration.storage.id,
-                configuration.storage.name,
-                configuration.storage.state.name,
-            ),
-        )
-        val draft = _workspace.value?.virtualMachineMutationState?.imageImportDraft ?: return false
-        return virtualMachineMutation(
-            target,
-            R.string.virtual_machine_image_imported,
-            imageImportDraft = draft,
-        ) { repo, claimGeneration ->
-            repo.importVirtualMachineImageResult(
-                configuration,
-                onTaskStarted = { taskId ->
-                    synchronized(virtualMachineMutationLock) {
-                        val current = _workspace.value ?: return@synchronized
-                        val state = current.virtualMachineMutationState
-                        if (virtualMachineMutationCallbackMatches(
-                                repositoryMatches = repository === repo,
-                                profileMatches = current.profile.id == target.profileId,
-                                stateTarget = state.target,
-                                callbackTarget = target,
-                                stateGeneration = state.mutationGeneration,
-                                callbackGeneration = claimGeneration,
-                                globalGeneration = virtualMachineMutationGeneration.get(),
-                            ) && state.mutationInProgress && state.imageImportTaskId == null
-                        ) {
-                            _workspace.value = current.copy(
-                                virtualMachineMutationState = state.copy(imageImportTaskId = taskId),
-                            )
-                        }
-                    }
-                },
-            )
-        }
-    }
-
-    fun updateVirtualMachineSettings(id: String, settings: VirtualMachineSettings): Boolean {
-        val current = _workspace.value ?: return false
-        val profileId = current.profile.id
-        val mutation = current.virtualMachineMutationState
-        val baseline = mutation.settingsBaseline?.takeIf { mutation.settingsTargetId == id } ?: run {
-            val overview = (current.virtualMachines as? Loadable.Ready)?.value ?: return false
-            overview.machines.firstOrNull { it.id == id }?.let(::virtualMachineSettingsBaseline)
-                ?: return false
-        }
-        val target = virtualMachineMutationTarget(
-            profileId,
-            VirtualMachineMutationKind.SETTINGS,
-            "virtualMachineSettings",
-            id,
-            listOf(
-                settings.name.trim(),
-                settings.description.trim(),
-                settings.cpuCount.toString(),
-                settings.memoryMiB.toString(),
-                settings.autoStart.toString(),
-            ),
-        )
-        return virtualMachineMutation(
-            target,
-            R.string.virtual_machine_settings_updated,
-            settingsTargetId = id,
-            settingsBaseline = baseline,
-            settingsDraft = VirtualMachineSettingsDraftState.from(settings),
-        ) { repo, _ ->
-            repo.updateVirtualMachineSettingsResult(id, baseline, settings)
-        }
-    }
-
-    fun deleteVirtualMachine(id: String): Boolean {
-        val current = _workspace.value ?: return false
-        val overview = (current.virtualMachines as? Loadable.Ready)?.value ?: return false
-        val normalizedId = id.trim()
-        val baselineState = overview.machines.firstOrNull { it.id == normalizedId }?.state
-            ?: return false
-        return deleteVirtualMachine(normalizedId, baselineState)
-    }
-
-    private fun deleteVirtualMachine(id: String, baselineState: ResourceState): Boolean {
-        val profileId = _workspace.value?.profile?.id ?: return false
-        val lifecycle = VirtualMachineLifecycleTarget(
-            profileId = profileId,
-            resourceId = id.trim(),
-            operation = VirtualMachineLifecycleOperation.DELETE_MACHINE,
-            baselineState = baselineState,
-        )
-        val target = virtualMachineMutationTarget(
-            profileId,
-            VirtualMachineMutationKind.LIFECYCLE,
-            "virtualMachineDelete",
-            id,
-            listOf(baselineState.name),
-        )
-        return virtualMachineMutation(
-            target,
-            R.string.virtual_machine_deleted,
-            lifecycleTarget = lifecycle,
-        ) { repo, _ ->
-            repo.deleteVirtualMachineResult(id)
-        }
-    }
-
-    fun deleteVirtualMachineImage(id: String): Boolean {
-        val current = _workspace.value ?: return false
-        val overview = (current.virtualMachines as? Loadable.Ready)?.value ?: return false
-        val normalizedId = id.trim()
-        val baselineState = overview.images.firstOrNull { it.id == normalizedId }?.state
-            ?: return false
-        return deleteVirtualMachineImage(normalizedId, baselineState)
-    }
-
-    private fun deleteVirtualMachineImage(id: String, baselineState: ResourceState): Boolean {
-        val profileId = _workspace.value?.profile?.id ?: return false
-        val lifecycle = VirtualMachineLifecycleTarget(
-            profileId = profileId,
-            resourceId = id.trim(),
-            operation = VirtualMachineLifecycleOperation.DELETE_IMAGE,
-            baselineState = baselineState,
-        )
-        val target = virtualMachineMutationTarget(
-            profileId,
-            VirtualMachineMutationKind.LIFECYCLE,
-            "virtualMachineImageDelete",
-            id,
-            listOf(baselineState.name),
-        )
-        return virtualMachineMutation(target, R.string.image_deleted, lifecycleTarget = lifecycle) { repo, _ ->
-            repo.deleteVirtualMachineImageResult(id)
-        }
-    }
-
-    fun renameVirtualMachineNetwork(id: String, name: String): Boolean {
-        val current = _workspace.value ?: return false
-        val overview = (current.virtualMachines as? Loadable.Ready)?.value ?: return false
-        val normalizedId = id.trim()
-        val baselineState = overview.networks.firstOrNull { it.id == normalizedId }?.state
-            ?: return false
-        return renameVirtualMachineNetwork(normalizedId, baselineState, name.trim())
-    }
-
-    private fun renameVirtualMachineNetwork(
-        id: String,
-        baselineState: ResourceState,
-        name: String,
-    ): Boolean {
-        val profileId = _workspace.value?.profile?.id ?: return false
-        val lifecycle = VirtualMachineLifecycleTarget(
-            profileId = profileId,
-            resourceId = id.trim(),
-            operation = VirtualMachineLifecycleOperation.RENAME_NETWORK,
-            baselineState = baselineState,
-            command = name.trim(),
-        )
-        val target = virtualMachineMutationTarget(
-            profileId,
-            VirtualMachineMutationKind.LIFECYCLE,
-            "virtualMachineNetworkRename",
-            id,
-            listOf(baselineState.name, name.trim()),
-        )
-        return virtualMachineMutation(target, R.string.network_changed, lifecycleTarget = lifecycle) { repo, _ ->
-            repo.renameVirtualMachineNetworkResult(id, name)
-        }
-    }
-
-    fun deleteVirtualMachineNetwork(id: String): Boolean {
-        val current = _workspace.value ?: return false
-        val overview = (current.virtualMachines as? Loadable.Ready)?.value ?: return false
-        val normalizedId = id.trim()
-        val baselineState = overview.networks.firstOrNull { it.id == normalizedId }?.state
-            ?: return false
-        return deleteVirtualMachineNetwork(normalizedId, baselineState)
-    }
-
-    private fun deleteVirtualMachineNetwork(id: String, baselineState: ResourceState): Boolean {
-        val profileId = _workspace.value?.profile?.id ?: return false
-        val lifecycle = VirtualMachineLifecycleTarget(
-            profileId = profileId,
-            resourceId = id.trim(),
-            operation = VirtualMachineLifecycleOperation.DELETE_NETWORK,
-            baselineState = baselineState,
-        )
-        val target = virtualMachineMutationTarget(
-            profileId,
-            VirtualMachineMutationKind.LIFECYCLE,
-            "virtualMachineNetworkDelete",
-            id,
-            listOf(baselineState.name),
-        )
-        return virtualMachineMutation(target, R.string.network_deleted, lifecycleTarget = lifecycle) { repo, _ ->
-            repo.deleteVirtualMachineNetworkResult(id)
-        }
-    }
-
-    fun requestPackageMutation(
-        target: PackageInfo,
-        operation: PackageMutationOperation,
-    ): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val snapshot = (current?.nasSettings as? Loadable.Ready)?.value
-        if (
-            current == null || snapshot == null || !canRequestPackageMutation(snapshot, target, operation) ||
-            current.isPerformingAction || current.packageMutationTarget != null ||
-            current.packageMutationConfirmationRequested || current.packageMutationInProgress ||
-            current.packageMutationRefreshInProgress || current.packageMutationResult != null ||
-            current.packageMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(
-                packageMutationTarget = target,
-                packageMutationOperation = operation,
-                packageMutationConfirmationRequested = true,
-                packageMutationRefreshFailure = null,
-                packageMutationRefreshCompleted = false,
-            )
-            true
-        }
-    }
-
-    fun cancelPackageMutationConfirmation(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current == null || !current.packageMutationConfirmationRequested ||
-            current.packageMutationInProgress || current.packageMutationResult != null ||
-            current.packageMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(
-                packageMutationTarget = null,
-                packageMutationOperation = null,
-                packageMutationConfirmationRequested = false,
-            )
-            true
-        }
-    }
-
-    fun confirmPackageMutation(): Boolean {
-        val repo = repository ?: return false
-        lateinit var target: PackageInfo
-        lateinit var operation: PackageMutationOperation
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            val snapshot = (current.nasSettings as? Loadable.Ready)?.value ?: return false
-            target = current.packageMutationTarget ?: return false
-            operation = current.packageMutationOperation ?: return false
-            if (
-                repository !== repo || current.isPerformingAction ||
-                !current.packageMutationConfirmationRequested ||
-                !canRequestPackageMutation(snapshot, target, operation) ||
-                current.packageMutationInProgress || current.packageMutationResult != null ||
-                current.packageMutationFailure != null
-            ) return false
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                packageMutationConfirmationRequested = false,
-                packageMutationInProgress = true,
-                packageMutationResult = null,
-                packageMutationFailure = null,
-                packageMutationRefreshFailure = null,
-                packageMutationRefreshInProgress = true,
-                packageMutationRefreshCompleted = false,
-                packageMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = when (operation) {
-                    PackageMutationOperation.START -> repo.controlPackageResult(target, "start")
-                    PackageMutationOperation.STOP -> repo.controlPackageResult(target, "stop")
-                    PackageMutationOperation.UNINSTALL -> repo.uninstallPackageResult(target)
-                }
-                val shouldRefresh = result.submitted || result.requiresRefresh ||
-                    destructiveServiceMutationRequiresRefreshBeforeDismiss(result)
-                var refreshFailure: DsmFailure? = null
-                val packages = if (shouldRefresh) try {
-                    when (operation) {
-                        PackageMutationOperation.START,
-                        PackageMutationOperation.STOP,
-                        -> repo.activePackagesForControl()
-                        PackageMutationOperation.UNINSTALL -> repo.activePackagesForUninstall()
-                    }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    refreshFailure = error.asDsmFailure()
-                    null
-                } else null
-                _workspace.update { current ->
-                    current?.takeIf {
-                        scopedMutationCallbackMatches(
-                            repository === repo, it.profile.id == profileId,
-                            it.packageMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                        )
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        val updated = when {
-                            snapshot != null && packages != null -> snapshot.copy(
-                                packages = packages,
-                                packagesAvailable = true,
-                            )
-                            snapshot != null && result.status == MutationResultStatus.CONFIRMED_SUCCESS ->
-                                confirmedPackageMutationFallback(snapshot, target, operation)
-                            else -> null
-                        }
-                        active.copy(
-                            nasSettings = updated?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            packageMutationInProgress = false,
-                            packageMutationResult = result,
-                            packageMutationRefreshFailure = refreshFailure,
-                            packageMutationRefreshInProgress = false,
-                            packageMutationRefreshCompleted = packages != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                finishPackageMutationFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishPackageMutationFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-        return true
-    }
-
-    private fun finishPackageMutationFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                scopedMutationCallbackMatches(
-                    repository === repo, it.profile.id == profileId,
-                    it.packageMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                )
-            }?.copy(
-                isPerformingAction = false,
-                packageMutationInProgress = false,
-                packageMutationFailure = failure,
-                packageMutationRefreshInProgress = false,
-            ) ?: current
-        }
-    }
-
-    fun refreshPackageMutation() {
-        val repo = repository ?: return
-        lateinit var operation: PackageMutationOperation
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return
-            if (
-                repository !== repo || current.isPerformingAction || current.packageMutationTarget == null ||
-                current.packageMutationInProgress || current.packageMutationRefreshInProgress ||
-                current.packageMutationResult == null && current.packageMutationFailure == null
-            ) return
-            operation = current.packageMutationOperation ?: return
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                packageMutationRefreshFailure = null,
-                packageMutationRefreshInProgress = true,
-                packageMutationRefreshCompleted = false,
-                packageMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val packages = when (operation) {
-                    PackageMutationOperation.START,
-                    PackageMutationOperation.STOP,
-                    -> repo.activePackagesForControl()
-                    PackageMutationOperation.UNINSTALL -> repo.activePackagesForUninstall()
-                }
-                _workspace.update { current ->
-                    current?.takeIf {
-                        scopedMutationCallbackMatches(
-                            repository === repo, it.profile.id == profileId,
-                            it.packageMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                        )
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        active.copy(
-                            nasSettings = snapshot?.copy(
-                                packages = packages,
-                                packagesAvailable = true,
-                            )?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            packageMutationRefreshInProgress = false,
-                            packageMutationRefreshCompleted = snapshot != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                finishPackageRefreshFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishPackageRefreshFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-    }
-
-    private fun finishPackageRefreshFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                scopedMutationCallbackMatches(
-                    repository === repo, it.profile.id == profileId,
-                    it.packageMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                )
-            }?.copy(
-                isPerformingAction = false,
-                packageMutationRefreshFailure = failure,
-                packageMutationRefreshInProgress = false,
-            ) ?: current
-        }
-    }
-
-    fun dismissPackageMutationResult(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val result = current?.packageMutationResult
-        val requiresRefresh = result?.let(::destructiveServiceMutationRequiresRefreshBeforeDismiss) == true ||
-            current?.packageMutationFailure != null
-        if (
-            current == null || current.isPerformingAction || current.packageMutationInProgress ||
-            current.packageMutationRefreshInProgress ||
-            requiresRefresh && !current.packageMutationRefreshCompleted
-        ) false else {
-            _workspace.value = current.copy(
-                packageMutationTarget = null,
-                packageMutationOperation = null,
-                packageMutationConfirmationRequested = false,
-                packageMutationResult = null,
-                packageMutationFailure = null,
-                packageMutationRefreshFailure = null,
-                packageMutationRefreshInProgress = false,
-                packageMutationRefreshCompleted = false,
-            )
-            true
-        }
-    }
-
-    @Deprecated("Use the stable PackageInfo target and persistent confirmation state")
-    fun controlPackage(id: String, command: String): Boolean {
-        val operation = when (command) {
-            "start" -> PackageMutationOperation.START
-            "stop" -> PackageMutationOperation.STOP
-            else -> return false
-        }
-        val target = ((_workspace.value?.nasSettings as? Loadable.Ready)?.value?.packages)
-            ?.firstOrNull { it.id == id } ?: return false
-        return requestPackageMutation(target, operation) && confirmPackageMutation()
-    }
-
-    @Deprecated("Use the stable PackageInfo target and persistent confirmation state")
-    fun uninstallPackage(id: String): Boolean {
-        val target = ((_workspace.value?.nasSettings as? Loadable.Ready)?.value?.packages)
-            ?.firstOrNull { it.id == id } ?: return false
-        return requestPackageMutation(target, PackageMutationOperation.UNINSTALL) && confirmPackageMutation()
-    }
-
-    fun requestConnectionDisconnect(
-        connection: io.github.qwertyuiop1995.dsmnativeclient.domain.ActiveConnection,
-    ): Boolean {
-        return synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value
-            val canonical = (current?.nasSettings as? Loadable.Ready)?.value?.connections
-                ?.firstOrNull { it.id == connection.id }
-            if (
-                current == null || current.isPerformingAction || canonical?.canDisconnect != true ||
-                current.connectionMutationInProgress || current.connectionMutationResult != null ||
-                current.connectionMutationFailure != null
-            ) {
-                false
-            } else {
-                _workspace.value = current.copy(
-                    connectionMutationTarget = canonical,
-                    connectionMutationRefreshFailure = null,
-                    connectionMutationRefreshCompleted = false,
-                )
-                true
-            }
-        }
-    }
-
-    fun cancelConnectionDisconnectRequest() {
-        _workspace.update { current ->
-            if (
-                current?.connectionMutationInProgress == true ||
-                current?.connectionMutationResult != null ||
-                current?.connectionMutationFailure != null
-            ) current else current?.copy(connectionMutationTarget = null)
-        }
-    }
-
-    fun confirmConnectionDisconnect(): Boolean {
-        val repo = repository ?: return false
-        lateinit var connection: io.github.qwertyuiop1995.dsmnativeclient.domain.ActiveConnection
-        var mutationGeneration = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            if (current.isPerformingAction || repository !== repo) return false
-            connection = current.connectionMutationTarget ?: return false
-            val canonical = (current.nasSettings as? Loadable.Ready)?.value?.connections
-                ?.firstOrNull { it.id == connection.id }
-            if (canonical?.canDisconnect != true || canonical != connection) return false
-            mutationGeneration = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                connectionMutationInProgress = true,
-                connectionMutationResult = null,
-                connectionMutationFailure = null,
-                connectionMutationRefreshFailure = null,
-                connectionMutationRefreshInProgress = true,
-                connectionMutationRefreshCompleted = false,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.disconnectConnectionResult(connection.id)
-                var automaticRefreshFailure: DsmFailure? = null
-                val refreshedConnections = if (result.submitted || result.requiresRefresh) {
-                    try {
-                        repo.activeConnections()
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Throwable) {
-                        automaticRefreshFailure = error.asDsmFailure()
-                        null
-                    }
-                } else {
-                    null
-                }
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == mutationGeneration
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        val verifiedConnections = refreshedConnections ?: snapshot?.connections?.let { cached ->
-                            cached.filterNot { item ->
-                                result.status == MutationResultStatus.CONFIRMED_SUCCESS &&
-                                    item.id == connection.id
-                            }
-                        }
-                        active.copy(
-                            nasSettings = if (snapshot != null && verifiedConnections != null) {
-                                Loadable.Ready(
-                                    snapshot.copy(
-                                        connections = verifiedConnections,
-                                        connectionsAvailable = refreshedConnections != null ||
-                                            snapshot.connectionsAvailable,
-                                    ),
-                                )
-                            } else {
-                                active.nasSettings
-                            },
-                            isPerformingAction = false,
-                            connectionMutationInProgress = false,
-                            connectionMutationResult = result,
-                            connectionMutationRefreshFailure = automaticRefreshFailure,
-                            connectionMutationRefreshCompleted = refreshedConnections != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == mutationGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        connectionMutationInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == mutationGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        connectionMutationInProgress = false,
-                        connectionMutationFailure = error.asDsmFailure(),
-                    ) ?: current
-                }
-            }
-        }
-        return true
-    }
-
-    fun refreshConnectionMutation() {
-        val repo = repository ?: return
-        var refreshGeneration = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return
-            if (
-                current.isPerformingAction || repository !== repo ||
-                current.connectionMutationTarget == null || current.connectionMutationResult == null
-            ) return
-            refreshGeneration = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                connectionMutationRefreshFailure = null,
-                connectionMutationRefreshCompleted = false,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val connections = repo.activeConnections()
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == refreshGeneration
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        active.copy(
-                            nasSettings = snapshot?.copy(
-                                connections = connections,
-                                connectionsAvailable = true,
-                            )
-                                ?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            connectionMutationRefreshInProgress = false,
-                            connectionMutationRefreshCompleted = true,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == refreshGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        connectionMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == refreshGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        connectionMutationRefreshInProgress = false,
-                        connectionMutationRefreshFailure = error.asDsmFailure(),
-                    ) ?: current
-                }
-            }
-        }
-    }
-
-    fun dismissConnectionMutationResult() {
-        _workspace.update { current ->
-            val result = current?.connectionMutationResult
-            if (
-                current == null || current.connectionMutationInProgress || current.isPerformingAction ||
-                result != null && connectionMutationRequiresRefreshBeforeDismiss(result) &&
-                !current.connectionMutationRefreshCompleted
-            ) return@update current
-            current.copy(
-                connectionMutationTarget = null,
-                connectionMutationResult = null,
-                connectionMutationFailure = null,
-                connectionMutationRefreshFailure = null,
-                connectionMutationRefreshInProgress = false,
-                connectionMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun requestDirectoryDeletion(
-        account: io.github.qwertyuiop1995.dsmnativeclient.domain.NasAccount,
-    ): Boolean = requestDirectoryDeletion(
-        DirectoryEntryMutationTarget(DirectoryEntryKind.ACCOUNT, account = account),
-    )
-
-    fun requestDirectoryDeletion(
-        group: io.github.qwertyuiop1995.dsmnativeclient.domain.NasGroup,
-    ): Boolean = requestDirectoryDeletion(
-        DirectoryEntryMutationTarget(DirectoryEntryKind.GROUP, group = group),
-    )
-
-    fun requestDirectoryDeletion(target: DirectoryEntryMutationTarget): Boolean =
-        synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value
-            val snapshot = (current?.nasSettings as? Loadable.Ready)?.value
-            if (
-                current == null || snapshot == null || !canRequestDirectoryDeletion(snapshot, target) ||
-                current.isPerformingAction || current.directoryMutationTarget != null ||
-                current.directoryMutationConfirmationRequested || current.directoryMutationInProgress ||
-                current.directoryMutationRefreshInProgress || current.directoryMutationResult != null ||
-                current.directoryMutationFailure != null
-            ) false else {
-                _workspace.value = current.copy(
-                    directoryMutationTarget = target,
-                    directoryMutationConfirmationRequested = true,
-                    directoryMutationRefreshFailure = null,
-                    directoryMutationRefreshCompleted = false,
-                )
-                true
-            }
-        }
-
-    fun cancelDirectoryDeletionConfirmation(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current == null || !current.directoryMutationConfirmationRequested ||
-            current.directoryMutationInProgress || current.directoryMutationResult != null ||
-            current.directoryMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(
-                directoryMutationTarget = null,
-                directoryMutationConfirmationRequested = false,
-            )
-            true
-        }
-    }
-
-    fun confirmDirectoryDeletion(): Boolean {
-        val repo = repository ?: return false
-        lateinit var target: DirectoryEntryMutationTarget
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            val snapshot = (current.nasSettings as? Loadable.Ready)?.value ?: return false
-            target = current.directoryMutationTarget ?: return false
-            if (
-                repository !== repo || current.isPerformingAction ||
-                !current.directoryMutationConfirmationRequested ||
-                !canRequestDirectoryDeletion(snapshot, target) ||
-                current.directoryMutationInProgress || current.directoryMutationResult != null ||
-                current.directoryMutationFailure != null
-            ) return false
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                directoryMutationConfirmationRequested = false,
-                directoryMutationInProgress = true,
-                directoryMutationResult = null,
-                directoryMutationFailure = null,
-                directoryMutationRefreshFailure = null,
-                directoryMutationRefreshInProgress = true,
-                directoryMutationRefreshCompleted = false,
-                directoryMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = when (target.kind) {
-                    DirectoryEntryKind.ACCOUNT -> repo.deleteAccountResult(checkNotNull(target.account))
-                    DirectoryEntryKind.GROUP -> repo.deleteGroupResult(checkNotNull(target.group))
-                }
-                val shouldRefresh = result.submitted || result.requiresRefresh ||
-                    destructiveServiceMutationRequiresRefreshBeforeDismiss(result)
-                var refreshFailure: DsmFailure? = null
-                var accounts: List<io.github.qwertyuiop1995.dsmnativeclient.domain.NasAccount>? = null
-                var groups: List<io.github.qwertyuiop1995.dsmnativeclient.domain.NasGroup>? = null
-                if (shouldRefresh) try {
-                    when (target.kind) {
-                        DirectoryEntryKind.ACCOUNT -> accounts = repo.activeAccounts()
-                        DirectoryEntryKind.GROUP -> groups = repo.activeGroups()
-                    }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    refreshFailure = error.asDsmFailure()
-                }
-                val refreshed = accounts != null || groups != null
-                _workspace.update { current ->
-                    current?.takeIf {
-                        scopedMutationCallbackMatches(
-                            repository === repo, it.profile.id == profileId,
-                            it.directoryMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                        )
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        val updated = when {
-                            snapshot != null && accounts != null -> snapshot.copy(
-                                accounts = checkNotNull(accounts),
-                                accountsAvailable = true,
-                            )
-                            snapshot != null && groups != null -> snapshot.copy(
-                                groups = checkNotNull(groups),
-                                groupsAvailable = true,
-                            )
-                            snapshot != null && result.status == MutationResultStatus.CONFIRMED_SUCCESS ->
-                                confirmedDirectoryDeletionFallback(snapshot, target)
-                            else -> null
-                        }
-                        active.copy(
-                            nasSettings = updated?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            directoryMutationInProgress = false,
-                            directoryMutationResult = result,
-                            directoryMutationRefreshFailure = refreshFailure,
-                            directoryMutationRefreshInProgress = false,
-                            directoryMutationRefreshCompleted = refreshed,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                finishDirectoryMutationFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishDirectoryMutationFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-        return true
-    }
-
-    private fun finishDirectoryMutationFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                scopedMutationCallbackMatches(
-                    repository === repo, it.profile.id == profileId,
-                    it.directoryMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                )
-            }?.copy(
-                isPerformingAction = false,
-                directoryMutationInProgress = false,
-                directoryMutationFailure = failure,
-                directoryMutationRefreshInProgress = false,
-            ) ?: current
-        }
-    }
-
-    fun refreshDirectoryDeletionMutation() {
-        val repo = repository ?: return
-        lateinit var kind: DirectoryEntryKind
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return
-            kind = current.directoryMutationTarget?.kind ?: return
-            if (
-                repository !== repo || current.isPerformingAction || current.directoryMutationInProgress ||
-                current.directoryMutationRefreshInProgress ||
-                current.directoryMutationResult == null && current.directoryMutationFailure == null
-            ) return
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                directoryMutationRefreshFailure = null,
-                directoryMutationRefreshInProgress = true,
-                directoryMutationRefreshCompleted = false,
-                directoryMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val accounts = if (kind == DirectoryEntryKind.ACCOUNT) repo.activeAccounts() else null
-                val groups = if (kind == DirectoryEntryKind.GROUP) repo.activeGroups() else null
-                _workspace.update { current ->
-                    current?.takeIf {
-                        scopedMutationCallbackMatches(
-                            repository === repo, it.profile.id == profileId,
-                            it.directoryMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                        )
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        active.copy(
-                            nasSettings = snapshot?.let {
-                                if (accounts != null) it.copy(accounts = accounts, accountsAvailable = true)
-                                else it.copy(groups = checkNotNull(groups), groupsAvailable = true)
-                            }?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            directoryMutationRefreshInProgress = false,
-                            directoryMutationRefreshCompleted = snapshot != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                finishDirectoryRefreshFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishDirectoryRefreshFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-    }
-
-    private fun finishDirectoryRefreshFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                scopedMutationCallbackMatches(
-                    repository === repo, it.profile.id == profileId,
-                    it.directoryMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                )
-            }?.copy(
-                isPerformingAction = false,
-                directoryMutationRefreshFailure = failure,
-                directoryMutationRefreshInProgress = false,
-            ) ?: current
-        }
-    }
-
-    fun dismissDirectoryDeletionResult(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val result = current?.directoryMutationResult
-        val requiresRefresh = result?.let(::destructiveServiceMutationRequiresRefreshBeforeDismiss) == true ||
-            current?.directoryMutationFailure != null
-        if (
-            current == null || current.isPerformingAction || current.directoryMutationInProgress ||
-            current.directoryMutationRefreshInProgress ||
-            requiresRefresh && !current.directoryMutationRefreshCompleted
-        ) false else {
-            _workspace.value = current.copy(
-                directoryMutationTarget = null,
-                directoryMutationConfirmationRequested = false,
-                directoryMutationResult = null,
-                directoryMutationFailure = null,
-                directoryMutationRefreshFailure = null,
-                directoryMutationRefreshInProgress = false,
-                directoryMutationRefreshCompleted = false,
-            )
-            true
-        }
-    }
-
-    @Deprecated("Use the stable NasAccount target and persistent confirmation state")
-    fun deleteAccount(name: String): Boolean {
-        val target = ((_workspace.value?.nasSettings as? Loadable.Ready)?.value?.accounts)
-            ?.firstOrNull { it.name == name } ?: return false
-        return requestDirectoryDeletion(target) && confirmDirectoryDeletion()
-    }
-
-    @Deprecated("Use the stable NasGroup target and persistent confirmation state")
-    fun deleteGroup(name: String): Boolean {
-        val target = ((_workspace.value?.nasSettings as? Loadable.Ready)?.value?.groups)
-            ?.firstOrNull { it.name == name } ?: return false
-        return requestDirectoryDeletion(target) && confirmDirectoryDeletion()
-    }
-
-    fun requestEthernetEditing(id: String): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val canonical = (current?.nasSettings as? Loadable.Ready)?.value?.networkInterfaces
-            ?.firstOrNull { it.id == id }
-        if (
-            current == null || canonical == null || current.isPerformingAction ||
-            current.ethernetEditorVisible || current.ethernetConfirmationRequested ||
-            current.ethernetMutationInProgress || current.ethernetMutationRefreshInProgress ||
-            current.ethernetMutationResult != null || current.ethernetMutationFailure != null
-        ) {
-            false
-        } else {
-            _workspace.value = current.copy(
-                ethernetBaseline = canonical,
-                ethernetSettingsDraft = canonical,
-                ethernetEditorVisible = true,
-                ethernetConfirmationRequested = false,
-                ethernetMutationRefreshFailure = null,
-                ethernetMutationRefreshCompleted = false,
-            )
-            true
-        }
-    }
-
-    fun updateEthernetSettingsDraft(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasEthernetInterface,
-    ) {
-        _workspace.update { current ->
-            val baseline = current?.ethernetBaseline
-            if (
-                current == null || baseline == null || !current.ethernetEditorVisible ||
-                current.ethernetConfirmationRequested || current.ethernetMutationInProgress ||
-                current.ethernetMutationResult != null || current.ethernetMutationFailure != null ||
-                value.id != baseline.id || value.displayName != baseline.displayName ||
-                value.status != baseline.status
-            ) {
-                current
-            } else {
-                current.copy(ethernetSettingsDraft = value)
-            }
-        }
-    }
-
-    fun cancelEthernetEditing() {
-        _workspace.update { current ->
-            if (
-                current == null || current.ethernetConfirmationRequested ||
-                current.ethernetMutationInProgress || current.ethernetMutationResult != null ||
-                current.ethernetMutationFailure != null
-            ) {
-                current
-            } else {
-                current.copy(
-                    ethernetBaseline = null,
-                    ethernetSettingsDraft = null,
-                    ethernetEditorVisible = false,
-                    ethernetMutationRefreshFailure = null,
-                    ethernetMutationRefreshCompleted = false,
-                )
-            }
-        }
-    }
-
-    fun requestEthernetSaveConfirmation(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val baseline = current?.ethernetBaseline
-        val draft = current?.ethernetSettingsDraft
-        if (
-            current == null || baseline == null || draft == null || !current.ethernetEditorVisible ||
-            current.isPerformingAction || current.ethernetMutationInProgress ||
-            current.ethernetMutationResult != null || current.ethernetMutationFailure != null ||
-            draft.id != baseline.id || draft.displayName != baseline.displayName ||
-            draft.status != baseline.status || draft == baseline
-        ) {
-            false
-        } else {
-            _workspace.value = current.copy(
-                ethernetEditorVisible = false,
-                ethernetConfirmationRequested = true,
-            )
-            true
-        }
-    }
-
-    fun cancelEthernetSaveConfirmation() {
-        _workspace.update { current ->
-            if (
-                current == null || !current.ethernetConfirmationRequested ||
-                current.ethernetMutationInProgress || current.ethernetMutationResult != null ||
-                current.ethernetMutationFailure != null
-            ) {
-                current
-            } else {
-                current.copy(
-                    ethernetEditorVisible = true,
-                    ethernetConfirmationRequested = false,
-                )
-            }
-        }
-    }
-
-    fun confirmEthernetSettings(): Boolean {
-        val repo = repository ?: return false
-        lateinit var baseline: io.github.qwertyuiop1995.dsmnativeclient.domain.NasEthernetInterface
-        lateinit var draft: io.github.qwertyuiop1995.dsmnativeclient.domain.NasEthernetInterface
-        var mutationGeneration = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            if (
-                current.isPerformingAction || repository !== repo ||
-                !current.ethernetConfirmationRequested || current.ethernetMutationInProgress ||
-                current.ethernetMutationRefreshInProgress || current.ethernetMutationResult != null ||
-                current.ethernetMutationFailure != null
-            ) return false
-            baseline = current.ethernetBaseline ?: return false
-            draft = current.ethernetSettingsDraft ?: return false
-            val canonical = (current.nasSettings as? Loadable.Ready)?.value?.networkInterfaces
-                ?.firstOrNull { it.id == baseline.id }
-            if (
-                canonical != baseline || draft.id != baseline.id ||
-                draft.displayName != baseline.displayName || draft.status != baseline.status ||
-                draft == baseline
-            ) return false
-            mutationGeneration = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                ethernetEditorVisible = false,
-                ethernetMutationInProgress = true,
-                ethernetMutationResult = null,
-                ethernetMutationFailure = null,
-                ethernetMutationRefreshFailure = null,
-                ethernetMutationRefreshInProgress = true,
-                ethernetMutationRefreshCompleted = false,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.saveEthernetInterfaceResult(baseline, draft)
-                val shouldRefresh = result.submitted || result.requiresRefresh ||
-                    ethernetMutationRequiresRefreshBeforeDismiss(result)
-                var automaticRefreshFailure: DsmFailure? = null
-                val refreshedInterfaces = if (shouldRefresh) {
-                    try {
-                        repo.activeEthernetInterfaces()
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Throwable) {
-                        automaticRefreshFailure = error.asDsmFailure()
-                        null
-                    }
-                } else {
-                    null
-                }
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == mutationGeneration
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        val verifiedFallback = if (
-                            refreshedInterfaces == null &&
-                            result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                        ) {
-                            snapshot?.let { confirmedEthernetSettingsFallback(it, draft) }
-                        } else {
-                            null
-                        }
-                        val updatedSnapshot = when {
-                            snapshot != null && refreshedInterfaces != null -> snapshot.copy(
-                                networkInterfaces = refreshedInterfaces,
-                                networkInterfacesAvailable = true,
-                            )
-                            else -> verifiedFallback
-                        }
-                        active.copy(
-                            nasSettings = updatedSnapshot?.let { Loadable.Ready(it) }
-                                ?: active.nasSettings,
-                            isPerformingAction = false,
-                            ethernetConfirmationRequested = false,
-                            ethernetMutationInProgress = false,
-                            ethernetMutationResult = result,
-                            ethernetMutationRefreshFailure = automaticRefreshFailure,
-                            ethernetMutationRefreshInProgress = false,
-                            ethernetMutationRefreshCompleted = refreshedInterfaces != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == mutationGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        ethernetMutationInProgress = false,
-                        ethernetMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == mutationGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        ethernetConfirmationRequested = false,
-                        ethernetMutationInProgress = false,
-                        ethernetMutationFailure = error.asDsmFailure(),
-                        ethernetMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-            }
-        }
-        return true
-    }
-
-    fun refreshEthernetMutation() {
-        val repo = repository ?: return
-        var refreshGeneration = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return
-            if (
-                current.isPerformingAction || repository !== repo ||
-                current.ethernetBaseline == null || current.ethernetSettingsDraft == null ||
-                current.ethernetMutationInProgress || current.ethernetMutationRefreshInProgress ||
-                current.ethernetMutationResult == null && current.ethernetMutationFailure == null
-            ) return
-            refreshGeneration = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                ethernetMutationRefreshFailure = null,
-                ethernetMutationRefreshInProgress = true,
-                ethernetMutationRefreshCompleted = false,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val interfaces = repo.activeEthernetInterfaces()
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == refreshGeneration
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        active.copy(
-                            nasSettings = snapshot?.copy(
-                                networkInterfaces = interfaces,
-                                networkInterfacesAvailable = true,
-                            )
-                                ?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            ethernetMutationRefreshInProgress = false,
-                            ethernetMutationRefreshCompleted = true,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == refreshGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        ethernetMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == refreshGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        ethernetMutationRefreshFailure = error.asDsmFailure(),
-                        ethernetMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-            }
-        }
-    }
-
-    fun dismissEthernetMutationResult(discardDraft: Boolean = false) {
-        _workspace.update { current ->
-            val result = current?.ethernetMutationResult
-            if (
-                current == null || current.isPerformingAction || current.ethernetMutationInProgress ||
-                current.ethernetMutationRefreshInProgress ||
-                result != null && ethernetMutationRequiresRefreshBeforeDismiss(result) &&
-                !current.ethernetMutationRefreshCompleted ||
-                current.ethernetMutationFailure != null && !current.ethernetMutationRefreshCompleted
-            ) return@update current
-            val rebased = if (discardDraft) {
-                null
-            } else {
-                val snapshot = (current.nasSettings as? Loadable.Ready)?.value
-                val draft = current.ethernetSettingsDraft
-                if (snapshot != null && draft != null) {
-                    rebasedEthernetSettingsDraft(snapshot, draft)
-                } else {
-                    null
-                }
-            }
-            current.copy(
-                ethernetBaseline = rebased?.first,
-                ethernetSettingsDraft = rebased?.second,
-                ethernetEditorVisible = rebased != null,
-                ethernetConfirmationRequested = false,
-                ethernetMutationResult = null,
-                ethernetMutationFailure = null,
-                ethernetMutationRefreshFailure = null,
-                ethernetMutationRefreshInProgress = false,
-                ethernetMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun requestDdnsEditing(
-        draft: io.github.qwertyuiop1995.dsmnativeclient.domain.NasDdnsDraft,
-    ): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val directory = (current?.nasSettings as? Loadable.Ready)?.value?.ddnsDirectory
-        val baseline = draft.originalProviderId?.let { originalId ->
-            directory?.records?.firstOrNull { it.providerId == originalId }
-        }
-        val validTarget = directory?.providers?.any { it.id == draft.providerId } == true &&
-            if (draft.originalProviderId == null) {
-                directory.records.none { it.providerId == draft.providerId }
-            } else {
-                draft.originalProviderId == draft.providerId && baseline != null
-            }
-        if (
-            current == null || !validTarget || current.isPerformingAction || current.ddnsEditorVisible ||
-            current.ddnsConfirmationOperation != null || current.ddnsMutationInProgress ||
-            current.ddnsMutationRefreshInProgress || current.ddnsMutationResult != null ||
-            current.ddnsMutationFailure != null
-        ) {
-            false
-        } else {
-            _workspace.value = current.copy(
-                ddnsBaseline = baseline,
-                ddnsSettingsDraft = draft,
-                ddnsEditorVisible = true,
-                ddnsConfirmationOperation = null,
-                ddnsDeleteTarget = null,
-                ddnsAddressRefreshTargetProviderIds = emptySet(),
-                ddnsAddressRefreshTargets = emptyList(),
-                ddnsMutationOperation = null,
-                ddnsMutationTargetProviderId = null,
-                ddnsMutationRefreshFailure = null,
-                ddnsMutationRefreshCompleted = false,
-            )
-            true
-        }
-    }
-
-    fun updateDdnsSettingsDraft(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasDdnsDraft,
-    ) {
-        _workspace.update { current ->
-            val snapshot = (current?.nasSettings as? Loadable.Ready)?.value
-            val baseline = current?.ddnsBaseline
-            val directory = snapshot?.ddnsDirectory
-            val identityIsValid = if (baseline == null) {
-                value.originalProviderId == null &&
-                    directory?.providers?.any { it.id == value.providerId } == true &&
-                    directory.records.none { it.providerId == value.providerId }
-            } else {
-                value.originalProviderId == baseline.providerId && value.providerId == baseline.providerId
-            }
-            if (
-                current == null || !current.ddnsEditorVisible || !identityIsValid ||
-                current.ddnsConfirmationOperation != null || current.ddnsMutationInProgress ||
-                current.ddnsMutationResult != null || current.ddnsMutationFailure != null
-            ) current else current.copy(ddnsSettingsDraft = value)
-        }
-    }
-
-    fun cancelDdnsEditing() {
-        _workspace.update { current ->
-            if (
-                current == null || current.ddnsConfirmationOperation != null ||
-                current.ddnsMutationInProgress || current.ddnsMutationResult != null ||
-                current.ddnsMutationFailure != null
-            ) current else current.copy(
-                ddnsBaseline = null,
-                ddnsSettingsDraft = null,
-                ddnsEditorVisible = false,
-                ddnsMutationRefreshFailure = null,
-                ddnsMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun requestDdnsConfirmation(operation: DdnsMutationOperation): Boolean =
-        synchronized(nasSettingsStructuredMutationLock) {
-            if (operation !in setOf(DdnsMutationOperation.TEST, DdnsMutationOperation.SAVE)) return false
-            val current = _workspace.value
-            val draft = current?.ddnsSettingsDraft
-            val directory = (current?.nasSettings as? Loadable.Ready)?.value?.ddnsDirectory
-            val canonical = draft?.providerId?.let { providerId ->
-                directory?.records?.firstOrNull { it.providerId == providerId }
-            }
-            val targetIsCurrent = draft != null &&
-                directory?.providers?.any { it.id == draft.providerId } == true &&
-                if (draft.originalProviderId == null) canonical == null
-                else draft.originalProviderId == draft.providerId && canonical == current?.ddnsBaseline
-            if (
-                current == null || !current.ddnsEditorVisible || !targetIsCurrent ||
-                current.isPerformingAction || current.ddnsConfirmationOperation != null ||
-                current.ddnsMutationInProgress || current.ddnsMutationResult != null ||
-                current.ddnsMutationFailure != null
-            ) {
-                false
-            } else {
-                _workspace.value = current.copy(
-                    ddnsEditorVisible = false,
-                    ddnsConfirmationOperation = operation,
-                )
-                true
-            }
-        }
-
-    fun requestDdnsDelete(
-        record: io.github.qwertyuiop1995.dsmnativeclient.domain.NasDdnsRecord,
-    ): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val canonical = (current?.nasSettings as? Loadable.Ready)?.value?.ddnsDirectory?.records
-            ?.firstOrNull { it.providerId == record.providerId }
-        if (
-            current == null || canonical != record || current.isPerformingAction ||
-            current.ddnsEditorVisible || current.ddnsConfirmationOperation != null ||
-            current.ddnsMutationInProgress || current.ddnsMutationResult != null ||
-            current.ddnsMutationFailure != null
-        ) {
-            false
-        } else {
-            _workspace.value = current.copy(
-                ddnsDeleteTarget = canonical,
-                ddnsConfirmationOperation = DdnsMutationOperation.DELETE,
-                ddnsAddressRefreshTargetProviderIds = emptySet(),
-                ddnsAddressRefreshTargets = emptyList(),
-            )
-            true
-        }
-    }
-
-    fun requestDdnsAddressRefresh(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val records = (current?.nasSettings as? Loadable.Ready)?.value?.ddnsDirectory?.records.orEmpty()
-        val providerIds = records.map { it.providerId }.toSet()
-        if (
-            current == null || providerIds.isEmpty() || current.isPerformingAction ||
-            current.ddnsEditorVisible || current.ddnsConfirmationOperation != null ||
-            current.ddnsMutationInProgress || current.ddnsMutationResult != null ||
-            current.ddnsMutationFailure != null
-        ) {
-            false
-        } else {
-            _workspace.value = current.copy(
-                ddnsDeleteTarget = null,
-                ddnsAddressRefreshTargetProviderIds = providerIds,
-                ddnsAddressRefreshTargets = records,
-                ddnsConfirmationOperation = DdnsMutationOperation.ADDRESS_REFRESH,
-            )
-            true
-        }
-    }
-
-    fun cancelDdnsConfirmation() {
-        _workspace.update { current ->
-            if (
-                current == null || current.ddnsConfirmationOperation == null ||
-                current.ddnsMutationInProgress || current.ddnsMutationResult != null ||
-                current.ddnsMutationFailure != null
-            ) {
-                current
-            } else {
-                val returnsToEditor = current.ddnsConfirmationOperation in setOf(
-                    DdnsMutationOperation.TEST,
-                    DdnsMutationOperation.SAVE,
-                )
-                current.copy(
-                    ddnsEditorVisible = returnsToEditor,
-                    ddnsConfirmationOperation = null,
-                    ddnsDeleteTarget = null,
-                    ddnsAddressRefreshTargetProviderIds = emptySet(),
-                    ddnsAddressRefreshTargets = emptyList(),
-                )
-            }
-        }
-    }
-
-    fun confirmDdnsMutation(): Boolean {
-        val repo = repository ?: return false
-        lateinit var operation: DdnsMutationOperation
-        var submittedDraft: io.github.qwertyuiop1995.dsmnativeclient.domain.NasDdnsDraft? = null
-        var baseline: io.github.qwertyuiop1995.dsmnativeclient.domain.NasDdnsRecord? = null
-        var deleteTarget: io.github.qwertyuiop1995.dsmnativeclient.domain.NasDdnsRecord? = null
-        var refreshProviderIds: Set<String> = emptySet()
-        var mutationGeneration = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            if (
-                current.isPerformingAction || repository !== repo || current.ddnsMutationInProgress ||
-                current.ddnsMutationRefreshInProgress || current.ddnsMutationResult != null ||
-                current.ddnsMutationFailure != null
-            ) return false
-            operation = current.ddnsConfirmationOperation ?: return false
-            val directory = (current.nasSettings as? Loadable.Ready)?.value?.ddnsDirectory ?: return false
-            when (operation) {
-                DdnsMutationOperation.TEST,
-                DdnsMutationOperation.SAVE,
-                -> {
-                    val draft = current.ddnsSettingsDraft ?: return false
-                    val canonical = directory.records.firstOrNull { it.providerId == draft.providerId }
-                    if (
-                        directory.providers.none { it.id == draft.providerId } ||
-                        (draft.originalProviderId == null && canonical != null) ||
-                        (draft.originalProviderId != null && (
-                            draft.originalProviderId != draft.providerId || canonical != current.ddnsBaseline
-                            ))
-                    ) return false
-                    submittedDraft = draft
-                    baseline = current.ddnsBaseline
-                }
-                DdnsMutationOperation.DELETE -> {
-                    val target = current.ddnsDeleteTarget ?: return false
-                    if (directory.records.firstOrNull { it.providerId == target.providerId } != target) return false
-                    deleteTarget = target
-                }
-                DdnsMutationOperation.ADDRESS_REFRESH -> {
-                    val currentIds = directory.records.map { it.providerId }.toSet()
-                    if (
-                        current.ddnsAddressRefreshTargetProviderIds.isEmpty() ||
-                        currentIds != current.ddnsAddressRefreshTargetProviderIds
-                    ) return false
-                    refreshProviderIds = currentIds
-                }
-            }
-            mutationGeneration = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                ddnsSettingsDraft = current.ddnsSettingsDraft?.let(::scrubDdnsPassword),
-                ddnsEditorVisible = false,
-                ddnsConfirmationOperation = null,
-                ddnsMutationOperation = operation,
-                ddnsMutationTargetProviderId = submittedDraft?.providerId ?: deleteTarget?.providerId,
-                ddnsMutationInProgress = true,
-                ddnsMutationResult = null,
-                ddnsMutationFailure = null,
-                ddnsMutationRefreshFailure = null,
-                ddnsMutationRefreshInProgress = operation != DdnsMutationOperation.TEST,
-                ddnsMutationRefreshCompleted = false,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = when (operation) {
-                    DdnsMutationOperation.TEST -> repo.testDdnsResult(checkNotNull(submittedDraft))
-                    DdnsMutationOperation.SAVE -> repo.saveDdnsResult(baseline, checkNotNull(submittedDraft))
-                    DdnsMutationOperation.DELETE -> repo.deleteDdnsResult(checkNotNull(deleteTarget))
-                    DdnsMutationOperation.ADDRESS_REFRESH -> repo.refreshDdnsResult(refreshProviderIds)
-                }
-                val shouldRefresh = operation != DdnsMutationOperation.TEST &&
-                    (result.submitted || result.requiresRefresh ||
-                        ddnsMutationRequiresRefreshBeforeDismiss(operation, result))
-                var automaticRefreshFailure: DsmFailure? = null
-                val refreshedDirectory = if (shouldRefresh) {
-                    try {
-                        repo.activeDdnsDirectory()
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Throwable) {
-                        automaticRefreshFailure = error.asDsmFailure()
-                        null
-                    }
-                } else null
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == mutationGeneration
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        val fallback = if (
-                            refreshedDirectory == null && result.status == MutationResultStatus.CONFIRMED_SUCCESS &&
-                            snapshot != null
-                        ) when (operation) {
-                            DdnsMutationOperation.SAVE -> confirmedDdnsSaveFallback(
-                                snapshot,
-                                checkNotNull(submittedDraft),
-                            )
-                            DdnsMutationOperation.DELETE -> confirmedDdnsDeleteFallback(
-                                snapshot,
-                                checkNotNull(deleteTarget).providerId,
-                            )
-                            DdnsMutationOperation.TEST,
-                            DdnsMutationOperation.ADDRESS_REFRESH,
-                            -> null
-                        } else null
-                        val updated = if (snapshot != null && refreshedDirectory != null) {
-                            snapshot.copy(
-                                ddnsDirectory = refreshedDirectory,
-                                ddnsDirectoryAvailable = true,
-                            )
-                        } else fallback
-                        active.copy(
-                            nasSettings = updated?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            ddnsMutationInProgress = false,
-                            ddnsMutationResult = result,
-                            ddnsMutationRefreshFailure = automaticRefreshFailure,
-                            ddnsMutationRefreshInProgress = false,
-                            ddnsMutationRefreshCompleted = refreshedDirectory != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == mutationGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        ddnsMutationInProgress = false,
-                        ddnsMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == mutationGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        ddnsMutationInProgress = false,
-                        ddnsMutationFailure = error.asDsmFailure(),
-                        ddnsMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-            }
-        }
-        return true
-    }
-
-    fun refreshDdnsMutation() {
-        val repo = repository ?: return
-        var refreshGeneration = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return
-            val operation = current.ddnsMutationOperation ?: return
-            if (
-                operation == DdnsMutationOperation.TEST || current.isPerformingAction || repository !== repo ||
-                current.ddnsMutationInProgress || current.ddnsMutationRefreshInProgress ||
-                current.ddnsMutationResult == null && current.ddnsMutationFailure == null
-            ) return
-            refreshGeneration = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                ddnsMutationRefreshFailure = null,
-                ddnsMutationRefreshInProgress = true,
-                ddnsMutationRefreshCompleted = false,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val directory = repo.activeDdnsDirectory()
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == refreshGeneration
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        active.copy(
-                            nasSettings = snapshot?.copy(
-                                ddnsDirectory = directory,
-                                ddnsDirectoryAvailable = true,
-                            )?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            ddnsMutationRefreshInProgress = false,
-                            ddnsMutationRefreshCompleted = true,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == refreshGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        ddnsMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            nasSettingsRequestGeneration.get() == refreshGeneration
-                    }?.copy(
-                        isPerformingAction = false,
-                        ddnsMutationRefreshFailure = error.asDsmFailure(),
-                        ddnsMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-            }
-        }
-    }
-
-    fun dismissDdnsMutationResult(discardDraft: Boolean = false) {
-        _workspace.update { current ->
-            val operation = current?.ddnsMutationOperation
-            val result = current?.ddnsMutationResult
-            val requiresRefresh = operation != null && result != null &&
-                ddnsMutationRequiresRefreshBeforeDismiss(operation, result)
-            val failureRequiresRefresh = operation != null && operation != DdnsMutationOperation.TEST &&
-                current?.ddnsMutationFailure != null
-            if (
-                current == null || current.isPerformingAction || current.ddnsMutationInProgress ||
-                current.ddnsMutationRefreshInProgress ||
-                (requiresRefresh || failureRequiresRefresh) && !current.ddnsMutationRefreshCompleted
-            ) return@update current
-            val rebased = if (
-                !discardDraft && operation in setOf(DdnsMutationOperation.TEST, DdnsMutationOperation.SAVE)
-            ) {
-                val snapshot = (current.nasSettings as? Loadable.Ready)?.value
-                val draft = current.ddnsSettingsDraft
-                if (snapshot != null && draft != null) {
-                    rebasedDdnsSettingsDraft(
-                        snapshot,
-                        draft,
-                        adoptExistingRecord = operation == DdnsMutationOperation.SAVE,
-                    )
-                } else null
-            } else null
-            current.copy(
-                ddnsBaseline = rebased?.baseline,
-                ddnsSettingsDraft = rebased?.draft,
-                ddnsEditorVisible = rebased != null,
-                ddnsConfirmationOperation = null,
-                ddnsDeleteTarget = null,
-                ddnsAddressRefreshTargetProviderIds = emptySet(),
-                ddnsAddressRefreshTargets = emptyList(),
-                ddnsMutationOperation = null,
-                ddnsMutationTargetProviderId = null,
-                ddnsMutationResult = null,
-                ddnsMutationFailure = null,
-                ddnsMutationRefreshFailure = null,
-                ddnsMutationRefreshInProgress = false,
-                ddnsMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun saveFileServiceSettings(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasFileServiceSettings,
-    ): Boolean {
-        val repo = repository ?: return false
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            if (current.isPerformingAction || repository !== repo) return false
-            nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                fileServiceSettingsDraft = value,
-                fileServiceMutationInProgress = true,
-                fileServiceMutationResult = null,
-                fileServiceMutationFailure = null,
-                fileServiceMutationRefreshCompleted = false,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.saveFileServiceSettingsResult(value)
-                val refreshed = if (result.submitted || result.requiresRefresh) {
-                    suspendRunCatching { repo.nasSettings() }.getOrNull()
-                        ?.takeIf { it.fileServiceSettings != null }
-                } else {
-                    null
-                }
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.let { active ->
-                        val verifiedFallback = if (
-                            result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                        ) {
-                            (active.nasSettings as? Loadable.Ready)?.value?.copy(
-                                fileServiceSettings = value,
-                            )
-                        } else {
-                            null
-                        }
-                        active.copy(
-                        nasSettings = (refreshed ?: verifiedFallback)?.let { Loadable.Ready(it) }
-                            ?: active.nasSettings,
-                        isPerformingAction = false,
-                        fileServiceMutationInProgress = false,
-                        fileServiceSettingsDraft = active.fileServiceSettingsDraft.takeUnless {
-                            result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                        },
-                        fileServiceMutationResult = result,
-                        fileServiceMutationRefreshCompleted = refreshed != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.copy(
-                        isPerformingAction = false,
-                        fileServiceMutationInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                val failure = error.asDsmFailure()
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.copy(
-                        isPerformingAction = false,
-                        fileServiceMutationInProgress = false,
-                        fileServiceMutationFailure = failure,
-                    ) ?: current
-                }
-            }
-        }
-        return true
-    }
-
-    fun dismissFileServiceMutationResult(discardDraft: Boolean = false) {
-        _workspace.update {
-            if (it?.fileServiceMutationInProgress == true) return@update it
-            it?.copy(
-                fileServiceSettingsDraft = it.fileServiceSettingsDraft.takeUnless { discardDraft },
-                fileServiceMutationResult = null,
-                fileServiceMutationFailure = null,
-                fileServiceMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun updateFileServiceSettingsDraft(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasFileServiceSettings?,
-    ) {
-        _workspace.update {
-            if (it?.fileServiceMutationInProgress == true) it
-            else it?.copy(fileServiceSettingsDraft = value)
-        }
-    }
-
-    fun saveTerminalSettings(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasTerminalSettings,
-    ): Boolean {
-        val repo = repository ?: return false
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            if (current.isPerformingAction || repository !== repo) return false
-            nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                terminalSettingsDraft = value,
-                terminalMutationInProgress = true,
-                terminalMutationResult = null,
-                terminalMutationFailure = null,
-                terminalMutationRefreshCompleted = false,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.saveTerminalSettingsResult(value)
-                val refreshed = if (result.submitted || result.requiresRefresh) {
-                    suspendRunCatching { repo.nasSettings() }.getOrNull()
-                        ?.takeIf { it.terminalSettings != null }
-                } else {
-                    null
-                }
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.let { active ->
-                        val verifiedFallback = if (
-                            result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                        ) {
-                            (active.nasSettings as? Loadable.Ready)?.value?.copy(
-                                terminalSettings = value,
-                            )
-                        } else {
-                            null
-                        }
-                        active.copy(
-                            nasSettings = (refreshed ?: verifiedFallback)?.let { Loadable.Ready(it) }
-                                ?: active.nasSettings,
-                            isPerformingAction = false,
-                            terminalMutationInProgress = false,
-                            terminalSettingsDraft = active.terminalSettingsDraft.takeUnless {
-                                result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                            },
-                            terminalMutationResult = result,
-                            terminalMutationRefreshCompleted = refreshed != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.copy(
-                        isPerformingAction = false,
-                        terminalMutationInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                val failure = error.asDsmFailure()
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.copy(
-                        isPerformingAction = false,
-                        terminalMutationInProgress = false,
-                        terminalMutationFailure = failure,
-                    ) ?: current
-                }
-            }
-        }
-        return true
-    }
-
-    fun dismissTerminalMutationResult(discardDraft: Boolean = false) {
-        _workspace.update {
-            if (it?.terminalMutationInProgress == true) return@update it
-            it?.copy(
-                terminalSettingsDraft = it.terminalSettingsDraft.takeUnless { discardDraft },
-                terminalMutationResult = null,
-                terminalMutationFailure = null,
-                terminalMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun updateTerminalSettingsDraft(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasTerminalSettings?,
-    ) {
-        _workspace.update {
-            if (it?.terminalMutationInProgress == true) it
-            else it?.copy(terminalSettingsDraft = value)
-        }
-    }
-
-    fun saveProxySettings(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasProxySettings,
-    ): Boolean {
-        val repo = repository ?: return false
-        val normalizedValue = value.copy(host = value.host.trim())
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            if (current.isPerformingAction || repository !== repo) return false
-            nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                proxySettingsDraft = normalizedValue,
-                proxyMutationInProgress = true,
-                proxyMutationResult = null,
-                proxyMutationFailure = null,
-                proxyMutationRefreshCompleted = false,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.saveProxySettingsResult(normalizedValue)
-                val refreshed = if (result.submitted || result.requiresRefresh) {
-                    suspendRunCatching { repo.nasSettings() }.getOrNull()
-                        ?.takeIf { it.proxySettings != null }
-                } else {
-                    null
-                }
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.let { active ->
-                        val verifiedFallback = if (
-                            result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                        ) {
-                            (active.nasSettings as? Loadable.Ready)?.value?.let { snapshot ->
-                                confirmedProxySettingsFallback(snapshot, normalizedValue)
-                            }
-                        } else {
-                            null
-                        }
-                        active.copy(
-                            nasSettings = (refreshed ?: verifiedFallback)?.let { Loadable.Ready(it) }
-                                ?: active.nasSettings,
-                            isPerformingAction = false,
-                            proxyMutationInProgress = false,
-                            proxySettingsDraft = active.proxySettingsDraft.takeUnless {
-                                result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                            },
-                            proxyMutationResult = result,
-                            proxyMutationRefreshCompleted = refreshed != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.copy(
-                        isPerformingAction = false,
-                        proxyMutationInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                val failure = error.asDsmFailure()
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.copy(
-                        isPerformingAction = false,
-                        proxyMutationInProgress = false,
-                        proxyMutationFailure = failure,
-                    ) ?: current
-                }
-            }
-        }
-        return true
-    }
-
-    fun dismissProxyMutationResult(discardDraft: Boolean = false) {
-        _workspace.update {
-            if (it?.proxyMutationInProgress == true) return@update it
-            it?.copy(
-                proxySettingsDraft = it.proxySettingsDraft.takeUnless { discardDraft },
-                proxyMutationResult = null,
-                proxyMutationFailure = null,
-                proxyMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun updateProxySettingsDraft(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasProxySettings?,
-    ) {
-        _workspace.update {
-            if (it?.proxyMutationInProgress == true) it
-            else it?.copy(proxySettingsDraft = value)
-        }
-    }
-
-    fun saveRegionSettings(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasRegionSettings,
-    ): Boolean {
-        val repo = repository ?: return false
-        val normalizedValue = value.copy(
-            dateFormat = value.dateFormat.trim(),
-            timeFormat = value.timeFormat.trim(),
-            timeServers = value.timeServers.map(String::trim).filter(String::isNotEmpty),
-        )
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            if (current.isPerformingAction || repository !== repo) return false
-            nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                regionSettingsDraft = normalizedValue,
-                regionMutationInProgress = true,
-                regionMutationResult = null,
-                regionMutationFailure = null,
-                regionMutationRefreshCompleted = false,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.saveRegionSettingsResult(normalizedValue)
-                val refreshed = if (result.submitted || result.requiresRefresh) {
-                    suspendRunCatching { repo.nasSettings() }.getOrNull()
-                        ?.takeIf { it.regionSettings != null }
-                } else {
-                    null
-                }
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.let { active ->
-                        val verifiedFallback = if (
-                            result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                        ) {
-                            (active.nasSettings as? Loadable.Ready)?.value?.let { snapshot ->
-                                confirmedRegionSettingsFallback(snapshot, normalizedValue)
-                            }
-                        } else {
-                            null
-                        }
-                        active.copy(
-                            nasSettings = (refreshed ?: verifiedFallback)?.let { Loadable.Ready(it) }
-                                ?: active.nasSettings,
-                            isPerformingAction = false,
-                            regionMutationInProgress = false,
-                            regionSettingsDraft = active.regionSettingsDraft.takeUnless {
-                                result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                            },
-                            regionMutationResult = result,
-                            regionMutationRefreshCompleted = refreshed != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.copy(
-                        isPerformingAction = false,
-                        regionMutationInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                val failure = error.asDsmFailure()
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId
-                    }?.copy(
-                        isPerformingAction = false,
-                        regionMutationInProgress = false,
-                        regionMutationFailure = failure,
-                    ) ?: current
-                }
-            }
-        }
-        return true
-    }
-
-    fun dismissRegionMutationResult(discardDraft: Boolean = false) {
-        _workspace.update {
-            if (it?.regionMutationInProgress == true) return@update it
-            it?.copy(
-                regionSettingsDraft = it.regionSettingsDraft.takeUnless { discardDraft },
-                regionMutationResult = null,
-                regionMutationFailure = null,
-                regionMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun updateRegionSettingsDraft(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasRegionSettings?,
-    ) {
-        _workspace.update {
-            if (it?.regionMutationInProgress == true) it
-            else it?.copy(regionSettingsDraft = value)
-        }
-    }
-
-    fun requestRemoteAccessEditing(value: NasRemoteAccessSettings): Boolean =
-        synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value
-            val snapshot = (current?.nasSettings as? Loadable.Ready)?.value
-            if (
-                current == null || snapshot == null || !canRequestRemoteAccessEditing(snapshot, value) ||
-                current.isPerformingAction || current.remoteAccessEditorVisible ||
-                current.remoteAccessConfirmationRequested || current.remoteAccessMutationInProgress ||
-                current.remoteAccessMutationRefreshInProgress || current.remoteAccessMutationResult != null ||
-                current.remoteAccessMutationFailure != null
-            ) false else {
-                _workspace.value = current.copy(
-                    remoteAccessState = current.remoteAccessState.copy(
-                        settingsBaseline = value,
-                        settingsDraft = value,
-                        editorVisible = true,
-                        mutationRefreshFailure = null,
-                        mutationRefreshCompleted = false,
-                    ),
-                )
-                true
-            }
-        }
-
-    fun updateRemoteAccessSettingsDraft(value: NasRemoteAccessSettings) =
-        synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value
-            val baseline = current?.remoteAccessSettingsBaseline
-            val normalized = baseline?.let { normalizedRemoteAccessSettingsDraft(it, value) }
-            if (
-                current != null && normalized != null && current.remoteAccessEditorVisible &&
-                !current.remoteAccessConfirmationRequested && !current.remoteAccessMutationInProgress &&
-                current.remoteAccessMutationResult == null && current.remoteAccessMutationFailure == null
-            ) _workspace.value = current.copy(
-                remoteAccessState = current.remoteAccessState.copy(settingsDraft = normalized),
-            )
-        }
-
-    fun cancelRemoteAccessEditing() = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current != null && !current.remoteAccessConfirmationRequested &&
-            !current.remoteAccessMutationInProgress && current.remoteAccessMutationResult == null &&
-            current.remoteAccessMutationFailure == null
-        ) {
-            _workspace.value = current.copy(
-                remoteAccessState = current.remoteAccessState.copy(
-                    settingsBaseline = null,
-                    settingsDraft = null,
-                    editorVisible = false,
-                    mutationRefreshFailure = null,
-                    mutationRefreshCompleted = false,
-                ),
-            )
-        }
-    }
-
-    fun requestRemoteAccessConfirmation(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val snapshot = (current?.nasSettings as? Loadable.Ready)?.value
-        val baseline = current?.remoteAccessSettingsBaseline
-        val draft = current?.remoteAccessSettingsDraft
-        if (
-            current == null || snapshot == null || baseline == null || draft == null ||
-            !current.remoteAccessEditorVisible ||
-            !canRequestRemoteAccessConfirmation(snapshot, baseline, draft) || current.isPerformingAction ||
-            current.remoteAccessConfirmationRequested || current.remoteAccessMutationInProgress ||
-            current.remoteAccessMutationResult != null || current.remoteAccessMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(
-                remoteAccessState = current.remoteAccessState.copy(
-                    editorVisible = false,
-                    confirmationRequested = true,
-                ),
-            )
-            true
-        }
-    }
-
-    fun cancelRemoteAccessConfirmation() = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current != null && current.remoteAccessConfirmationRequested &&
-            !current.remoteAccessMutationInProgress
-        ) {
-            _workspace.value = current.copy(
-                remoteAccessState = current.remoteAccessState.copy(
-                    editorVisible = true,
-                    confirmationRequested = false,
-                ),
-            )
-        }
-    }
-
-    fun confirmRemoteAccessMutation(): Boolean {
-        val repo = repository ?: return false
-        lateinit var baseline: NasRemoteAccessSettings
-        lateinit var expected: NasRemoteAccessSettings
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            val snapshot = (current.nasSettings as? Loadable.Ready)?.value ?: return false
-            baseline = current.remoteAccessSettingsBaseline ?: return false
-            expected = current.remoteAccessSettingsDraft ?: return false
-            if (
-                repository === repo && current.remoteAccessConfirmationRequested &&
-                remoteAccessCanonicalHasDrifted(snapshot, baseline)
-            ) {
-                _workspace.value = current.copy(
-                    remoteAccessState = current.remoteAccessState.copy(
-                        editorVisible = false,
-                        confirmationRequested = false,
-                        mutationFailure = DsmFailure(
-                            null,
-                            "Remote access settings changed",
-                            "Review the latest settings before trying again.",
-                            kind = DsmErrorKind.CHANGE_NOT_CONFIRMED,
-                        ),
-                        mutationRefreshCompleted = snapshot.remoteAccessSettingsAvailable &&
-                            snapshot.remoteAccessSettings != null,
-                    ),
-                )
-                return false
-            }
-            if (
-                repository !== repo || current.isPerformingAction ||
-                !current.remoteAccessConfirmationRequested ||
-                !canRequestRemoteAccessConfirmation(snapshot, baseline, expected) ||
-                current.remoteAccessMutationInProgress || current.remoteAccessMutationResult != null ||
-                current.remoteAccessMutationFailure != null
-            ) return false
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                remoteAccessState = current.remoteAccessState.copy(
-                    editorVisible = false,
-                    confirmationRequested = false,
-                    mutationInProgress = true,
-                    mutationResult = null,
-                    mutationFailure = null,
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = true,
-                    mutationRefreshCompleted = false,
-                    mutationGeneration = generation,
-                ),
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.saveRemoteAccessSettingsResult(baseline, expected)
-                val shouldRefresh = result.status == MutationResultStatus.CONFIRMED_SUCCESS ||
-                    result.submitted || result.requiresRefresh ||
-                    structuredSettingsMutationRequiresRefreshBeforeDismiss(result)
-                var refreshFailure: DsmFailure? = null
-                val refreshed = if (shouldRefresh) try {
-                    repo.activeRemoteAccessSettings()
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    refreshFailure = error.asDsmFailure()
-                    null
-                } else null
-                _workspace.update { current ->
-                    current?.takeIf {
-                        remoteAccessCallbackMatches(
-                            repository === repo,
-                            it.profile.id == profileId,
-                            it.remoteAccessMutationGeneration,
-                            generation,
-                            nasSettingsRequestGeneration.get(),
-                        )
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        val fallback = if (
-                            snapshot != null && refreshed == null &&
-                            result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                        ) confirmedRemoteAccessSettingsFallback(snapshot, baseline, expected) else null
-                        val updated = when {
-                            snapshot != null && refreshed != null -> snapshot.copy(
-                                remoteAccessSettings = refreshed,
-                                remoteAccessSettingsAvailable = true,
-                            )
-                            fallback != null -> fallback
-                            else -> null
-                        }
-                        val targetConfirmed = refreshed?.let {
-                            remoteAccessMutationTargetReached(baseline, it, expected)
-                        } ?: (fallback != null)
-                        val refreshCompleted = snapshot != null &&
-                            remoteAccessMutationRefreshIsComplete(baseline, expected, refreshed)
-                        active.copy(
-                            nasSettings = updated?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            remoteAccessState = active.remoteAccessState.copy(
-                                mutationInProgress = false,
-                                mutationResult = remoteAccessMutationResultAfterStateCheck(
-                                    result,
-                                    targetConfirmed,
-                                ),
-                                mutationRefreshFailure = refreshFailure,
-                                mutationRefreshInProgress = false,
-                                mutationRefreshCompleted = refreshCompleted,
-                            ),
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                finishRemoteAccessMutationFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishRemoteAccessMutationFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-        return true
-    }
-
-    private fun finishRemoteAccessMutationFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                remoteAccessCallbackMatches(
-                    repository === repo,
-                    it.profile.id == profileId,
-                    it.remoteAccessMutationGeneration,
-                    generation,
-                    nasSettingsRequestGeneration.get(),
-                )
-            }?.copy(
-                isPerformingAction = false,
-                remoteAccessState = current.remoteAccessState.copy(
-                    mutationInProgress = false,
-                    mutationFailure = failure,
-                    mutationRefreshInProgress = false,
-                ),
-            ) ?: current
-        }
-    }
-
-    fun refreshRemoteAccessMutation() {
-        val repo = repository ?: return
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return
-            if (
-                repository !== repo || current.isPerformingAction || current.remoteAccessMutationInProgress ||
-                current.remoteAccessMutationRefreshInProgress ||
-                current.remoteAccessMutationResult == null && current.remoteAccessMutationFailure == null
-            ) return
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                remoteAccessState = current.remoteAccessState.copy(
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = true,
-                    mutationRefreshCompleted = false,
-                    mutationGeneration = generation,
-                ),
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val refreshed = repo.activeRemoteAccessSettings()
-                _workspace.update { current ->
-                    current?.takeIf {
-                        remoteAccessCallbackMatches(
-                            repository === repo,
-                            it.profile.id == profileId,
-                            it.remoteAccessMutationGeneration,
-                            generation,
-                            nasSettingsRequestGeneration.get(),
-                        )
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        active.copy(
-                            nasSettings = snapshot?.copy(
-                                remoteAccessSettings = refreshed,
-                                remoteAccessSettingsAvailable = true,
-                            )?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            remoteAccessState = active.remoteAccessState.copy(
-                                mutationRefreshInProgress = false,
-                                mutationRefreshCompleted = snapshot != null &&
-                                    remoteAccessMutationRefreshIsComplete(
-                                        active.remoteAccessSettingsBaseline,
-                                        active.remoteAccessSettingsDraft,
-                                        refreshed,
-                                    ),
-                            ),
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                finishRemoteAccessRefreshFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishRemoteAccessRefreshFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-    }
-
-    private fun finishRemoteAccessRefreshFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                remoteAccessCallbackMatches(
-                    repository === repo,
-                    it.profile.id == profileId,
-                    it.remoteAccessMutationGeneration,
-                    generation,
-                    nasSettingsRequestGeneration.get(),
-                )
-            }?.copy(
-                isPerformingAction = false,
-                remoteAccessState = current.remoteAccessState.copy(
-                    mutationRefreshFailure = failure,
-                    mutationRefreshInProgress = false,
-                ),
-            ) ?: current
-        }
-    }
-
-    fun dismissRemoteAccessMutationResult(discardDraft: Boolean = false): Boolean =
-        synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            val requiresRefresh = current.remoteAccessMutationResult?.let(
-                ::structuredSettingsMutationRequiresRefreshBeforeDismiss,
-            ) == true || current.remoteAccessMutationFailure != null ||
-                current.remoteAccessMutationRefreshFailure != null
-            if (
-                current.isPerformingAction || current.remoteAccessMutationInProgress ||
-                current.remoteAccessMutationRefreshInProgress ||
-                requiresRefresh && !current.remoteAccessMutationRefreshCompleted
-            ) return false
-            val rebased = if (!discardDraft) {
-                val snapshot = (current.nasSettings as? Loadable.Ready)?.value
-                val draft = current.remoteAccessSettingsDraft
-                if (snapshot != null && draft != null) {
-                    rebasedRemoteAccessSettingsDraft(snapshot, draft)
-                } else null
-            } else null
-            _workspace.value = current.copy(
-                remoteAccessState = current.remoteAccessState.copy(
-                    settingsBaseline = rebased?.first,
-                    settingsDraft = rebased?.second,
-                    editorVisible = rebased != null,
-                    confirmationRequested = false,
-                    mutationResult = null,
-                    mutationFailure = null,
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = false,
-                    mutationRefreshCompleted = false,
-                ),
-            )
-            true
-        }
-
-    fun requestSecuritySettingsEditing(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasSecuritySettings,
-    ): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val snapshot = (current?.nasSettings as? Loadable.Ready)?.value
-        val canonical = snapshot?.securitySettings?.takeIf { snapshot.securitySettingsAvailable }
-        if (
-            current == null || canonical != value || current.isPerformingAction ||
-            current.securitySettingsEditorVisible || current.securitySettingsConfirmationRequested ||
-            current.securitySettingsMutationInProgress || current.securitySettingsMutationRefreshInProgress ||
-            current.securitySettingsMutationResult != null || current.securitySettingsMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(
-                securitySettingsBaseline = canonical,
-                securitySettingsDraft = value,
-                securitySettingsEditorVisible = true,
-                securitySettingsMutationRefreshFailure = null,
-                securitySettingsMutationRefreshCompleted = false,
-            )
-            true
-        }
-    }
-
-    fun updateSecuritySettingsDraft(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasSecuritySettings,
-    ) = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current != null && current.securitySettingsEditorVisible &&
-            !current.securitySettingsConfirmationRequested && !current.securitySettingsMutationInProgress &&
-            current.securitySettingsMutationResult == null && current.securitySettingsMutationFailure == null
-        ) _workspace.value = current.copy(securitySettingsDraft = value)
-    }
-
-    fun cancelSecuritySettingsEditing() = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current != null && !current.securitySettingsConfirmationRequested &&
-            !current.securitySettingsMutationInProgress && current.securitySettingsMutationResult == null &&
-            current.securitySettingsMutationFailure == null
-        ) {
-            _workspace.value = current.copy(
-                securitySettingsBaseline = null,
-                securitySettingsDraft = null,
-                securitySettingsEditorVisible = false,
-                securitySettingsMutationRefreshFailure = null,
-                securitySettingsMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun requestSecuritySettingsConfirmation(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val snapshot = (current?.nasSettings as? Loadable.Ready)?.value
-        if (
-            current == null || !current.securitySettingsEditorVisible ||
-            current.securitySettingsDraft == null || snapshot?.securitySettingsAvailable != true ||
-            snapshot?.securitySettings != current.securitySettingsBaseline || current.isPerformingAction ||
-            current.securitySettingsConfirmationRequested || current.securitySettingsMutationInProgress ||
-            current.securitySettingsMutationResult != null || current.securitySettingsMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(
-                securitySettingsEditorVisible = false,
-                securitySettingsConfirmationRequested = true,
-            )
-            true
-        }
-    }
-
-    fun cancelSecuritySettingsConfirmation() = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current != null && current.securitySettingsConfirmationRequested &&
-            !current.securitySettingsMutationInProgress
-        ) {
-            _workspace.value = current.copy(
-                securitySettingsEditorVisible = true,
-                securitySettingsConfirmationRequested = false,
-            )
-        }
-    }
-
-    fun confirmSecuritySettingsMutation(): Boolean {
-        val repo = repository ?: return false
-        lateinit var baseline: io.github.qwertyuiop1995.dsmnativeclient.domain.NasSecuritySettings
-        lateinit var expected: io.github.qwertyuiop1995.dsmnativeclient.domain.NasSecuritySettings
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            val snapshot = (current.nasSettings as? Loadable.Ready)?.value ?: return false
-            baseline = current.securitySettingsBaseline ?: return false
-            expected = current.securitySettingsDraft ?: return false
-            if (
-                repository !== repo || current.isPerformingAction ||
-                !current.securitySettingsConfirmationRequested || !snapshot.securitySettingsAvailable ||
-                snapshot.securitySettings != baseline || current.securitySettingsMutationInProgress ||
-                current.securitySettingsMutationResult != null || current.securitySettingsMutationFailure != null
-            ) return false
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                securitySettingsEditorVisible = false,
-                securitySettingsConfirmationRequested = false,
-                securitySettingsMutationInProgress = true,
-                securitySettingsMutationResult = null,
-                securitySettingsMutationFailure = null,
-                securitySettingsMutationRefreshFailure = null,
-                securitySettingsMutationRefreshInProgress = true,
-                securitySettingsMutationRefreshCompleted = false,
-                securitySettingsMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.saveSecuritySettingsResult(baseline, expected)
-                val shouldRefresh = result.submitted || result.requiresRefresh ||
-                    structuredSettingsMutationRequiresRefreshBeforeDismiss(result)
-                var refreshFailure: DsmFailure? = null
-                val refreshed = if (shouldRefresh) try {
-                    repo.activeSecuritySettings()
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    refreshFailure = error.asDsmFailure()
-                    null
-                } else null
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            it.securitySettingsMutationGeneration == generation &&
-                            nasSettingsRequestGeneration.get() == generation
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        val updated = when {
-                            snapshot != null && refreshed != null -> snapshot.copy(
-                                securitySettings = refreshed,
-                                securitySettingsAvailable = true,
-                            )
-                            snapshot != null && result.status == MutationResultStatus.CONFIRMED_SUCCESS ->
-                                confirmedSecuritySettingsFallback(snapshot, baseline, expected)
-                            else -> null
-                        }
-                        active.copy(
-                            nasSettings = updated?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            securitySettingsMutationInProgress = false,
-                            securitySettingsMutationResult = result,
-                            securitySettingsMutationRefreshFailure = refreshFailure,
-                            securitySettingsMutationRefreshInProgress = false,
-                            securitySettingsMutationRefreshCompleted = refreshed != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            it.securitySettingsMutationGeneration == generation &&
-                            nasSettingsRequestGeneration.get() == generation
-                    }?.copy(
-                        isPerformingAction = false,
-                        securitySettingsMutationInProgress = false,
-                        securitySettingsMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            it.securitySettingsMutationGeneration == generation &&
-                            nasSettingsRequestGeneration.get() == generation
-                    }?.copy(
-                        isPerformingAction = false,
-                        securitySettingsMutationInProgress = false,
-                        securitySettingsMutationFailure = error.asDsmFailure(),
-                        securitySettingsMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-            }
-        }
-        return true
-    }
-
-    fun refreshSecuritySettingsMutation() {
-        val repo = repository ?: return
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return
-            if (
-                repository !== repo || current.isPerformingAction || current.securitySettingsMutationInProgress ||
-                current.securitySettingsMutationRefreshInProgress ||
-                current.securitySettingsMutationResult == null && current.securitySettingsMutationFailure == null
-            ) return
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                securitySettingsMutationRefreshFailure = null,
-                securitySettingsMutationRefreshInProgress = true,
-                securitySettingsMutationRefreshCompleted = false,
-                securitySettingsMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val refreshed = repo.activeSecuritySettings()
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            it.securitySettingsMutationGeneration == generation &&
-                            nasSettingsRequestGeneration.get() == generation
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        active.copy(
-                            nasSettings = snapshot?.copy(
-                                securitySettings = refreshed,
-                                securitySettingsAvailable = true,
-                            )?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            securitySettingsMutationRefreshInProgress = false,
-                            securitySettingsMutationRefreshCompleted = snapshot != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                finishSecuritySettingsRefreshFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishSecuritySettingsRefreshFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-    }
-
-    private fun finishSecuritySettingsRefreshFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                repository === repo && it.profile.id == profileId &&
-                    it.securitySettingsMutationGeneration == generation &&
-                    nasSettingsRequestGeneration.get() == generation
-            }?.copy(
-                isPerformingAction = false,
-                securitySettingsMutationRefreshFailure = failure,
-                securitySettingsMutationRefreshInProgress = false,
-            ) ?: current
-        }
-    }
-
-    fun dismissSecuritySettingsMutationResult(discardDraft: Boolean = false) {
-        _workspace.update { current ->
-            val requiresRefresh = current?.securitySettingsMutationResult?.let(
-                ::structuredSettingsMutationRequiresRefreshBeforeDismiss,
-            ) == true || current?.securitySettingsMutationFailure != null
-            if (
-                current == null || current.isPerformingAction || current.securitySettingsMutationInProgress ||
-                current.securitySettingsMutationRefreshInProgress ||
-                requiresRefresh && !current.securitySettingsMutationRefreshCompleted
-            ) return@update current
-            val rebased = if (!discardDraft) {
-                val snapshot = (current.nasSettings as? Loadable.Ready)?.value
-                val draft = current.securitySettingsDraft
-                if (snapshot != null && draft != null) rebasedSecuritySettingsDraft(snapshot, draft) else null
-            } else null
-            current.copy(
-                securitySettingsBaseline = rebased?.first,
-                securitySettingsDraft = rebased?.second,
-                securitySettingsEditorVisible = rebased != null,
-                securitySettingsConfirmationRequested = false,
-                securitySettingsMutationResult = null,
-                securitySettingsMutationFailure = null,
-                securitySettingsMutationRefreshFailure = null,
-                securitySettingsMutationRefreshInProgress = false,
-                securitySettingsMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun requestPowerAction(
-        action: io.github.qwertyuiop1995.dsmnativeclient.domain.NasPowerAction,
-    ): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current == null || current.isPerformingAction || current.pendingPowerAction != null ||
-            current.powerMutationInProgress || current.powerMutationResult != null ||
-            current.powerMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(pendingPowerAction = action)
-            true
-        }
-    }
-
-    fun cancelPowerActionConfirmation(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current == null || current.pendingPowerAction == null || current.powerMutationInProgress ||
-            current.powerMutationResult != null || current.powerMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(pendingPowerAction = null)
-            true
-        }
-    }
-
-    fun confirmPowerAction(): Boolean {
-        val repo = repository ?: return false
-        lateinit var action: io.github.qwertyuiop1995.dsmnativeclient.domain.NasPowerAction
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            action = current.pendingPowerAction ?: return false
-            if (
-                repository !== repo || current.isPerformingAction || current.powerMutationInProgress ||
-                current.powerMutationResult != null || current.powerMutationFailure != null
-            ) return false
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                powerMutationInProgress = true,
-                powerMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.performPowerActionResult(action)
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            it.powerMutationGeneration == generation &&
-                            nasSettingsRequestGeneration.get() == generation
-                    }?.copy(
-                        isPerformingAction = false,
-                        powerMutationInProgress = false,
-                        powerMutationResult = result,
-                    ) ?: current
-                }
-            } catch (error: CancellationException) {
-                finishPowerMutationFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishPowerMutationFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-        return true
-    }
-
-    private fun finishPowerMutationFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                repository === repo && it.profile.id == profileId &&
-                    it.powerMutationGeneration == generation && nasSettingsRequestGeneration.get() == generation
-            }?.copy(
-                isPerformingAction = false,
-                powerMutationInProgress = false,
-                powerMutationFailure = failure,
-            ) ?: current
-        }
-    }
-
-    fun dismissPowerActionResult(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val result = current?.powerMutationResult
-        if (
-            current == null || current.pendingPowerAction == null || current.isPerformingAction ||
-            current.powerMutationInProgress || result == null || !canDismissPowerMutationResult(result)
-        ) false else {
-            _workspace.value = current.copy(
-                pendingPowerAction = null,
-                powerMutationResult = null,
-                powerMutationFailure = null,
-            )
-            true
-        }
-    }
-
     fun checkNasSystemUpdate() {
         val repo = repository ?: return
         if (_workspace.value?.nasSystemUpdate is Loadable.Loading) return
@@ -12178,290 +6343,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         it?.copy(nasSystemUpdate = Loadable.Failed(error.asDsmFailure()))
                     }
                 }
-        }
-    }
-
-    fun requestHardwareSettingsEditing(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasHardwareSettings,
-    ): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val snapshot = (current?.nasSettings as? Loadable.Ready)?.value
-        val canonical = snapshot?.hardwareSettings?.takeIf { snapshot.hardwareSettingsAvailable }
-        if (
-            current == null || canonical != value || current.isPerformingAction ||
-            current.hardwareSettingsEditorVisible || current.hardwareSettingsConfirmationRequested ||
-            current.hardwareSettingsMutationInProgress || current.hardwareSettingsMutationRefreshInProgress ||
-            current.hardwareSettingsMutationResult != null || current.hardwareSettingsMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(
-                hardwareSettingsBaseline = canonical,
-                hardwareSettingsDraft = value,
-                hardwareSettingsEditorVisible = true,
-                hardwareSettingsMutationRefreshFailure = null,
-                hardwareSettingsMutationRefreshCompleted = false,
-            )
-            true
-        }
-    }
-
-    fun updateHardwareSettingsDraft(
-        value: io.github.qwertyuiop1995.dsmnativeclient.domain.NasHardwareSettings,
-    ) = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current != null && current.hardwareSettingsEditorVisible &&
-            !current.hardwareSettingsConfirmationRequested && !current.hardwareSettingsMutationInProgress &&
-            current.hardwareSettingsMutationResult == null && current.hardwareSettingsMutationFailure == null
-        ) _workspace.value = current.copy(hardwareSettingsDraft = value)
-    }
-
-    fun cancelHardwareSettingsEditing() = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current != null && !current.hardwareSettingsConfirmationRequested &&
-            !current.hardwareSettingsMutationInProgress && current.hardwareSettingsMutationResult == null &&
-            current.hardwareSettingsMutationFailure == null
-        ) {
-            _workspace.value = current.copy(
-                hardwareSettingsBaseline = null,
-                hardwareSettingsDraft = null,
-                hardwareSettingsEditorVisible = false,
-                hardwareSettingsMutationRefreshFailure = null,
-                hardwareSettingsMutationRefreshCompleted = false,
-            )
-        }
-    }
-
-    fun requestHardwareSettingsConfirmation(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val snapshot = (current?.nasSettings as? Loadable.Ready)?.value
-        if (
-            current == null || !current.hardwareSettingsEditorVisible ||
-            current.hardwareSettingsDraft == null || snapshot?.hardwareSettingsAvailable != true ||
-            snapshot?.hardwareSettings != current.hardwareSettingsBaseline || current.isPerformingAction ||
-            current.hardwareSettingsConfirmationRequested || current.hardwareSettingsMutationInProgress ||
-            current.hardwareSettingsMutationResult != null || current.hardwareSettingsMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(
-                hardwareSettingsEditorVisible = false,
-                hardwareSettingsConfirmationRequested = true,
-            )
-            true
-        }
-    }
-
-    fun cancelHardwareSettingsConfirmation() = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current != null && current.hardwareSettingsConfirmationRequested &&
-            !current.hardwareSettingsMutationInProgress
-        ) {
-            _workspace.value = current.copy(
-                hardwareSettingsEditorVisible = true,
-                hardwareSettingsConfirmationRequested = false,
-            )
-        }
-    }
-
-    fun confirmHardwareSettingsMutation(): Boolean {
-        val repo = repository ?: return false
-        lateinit var baseline: io.github.qwertyuiop1995.dsmnativeclient.domain.NasHardwareSettings
-        lateinit var expected: io.github.qwertyuiop1995.dsmnativeclient.domain.NasHardwareSettings
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            val snapshot = (current.nasSettings as? Loadable.Ready)?.value ?: return false
-            baseline = current.hardwareSettingsBaseline ?: return false
-            expected = current.hardwareSettingsDraft ?: return false
-            if (
-                repository !== repo || current.isPerformingAction ||
-                !current.hardwareSettingsConfirmationRequested || !snapshot.hardwareSettingsAvailable ||
-                snapshot.hardwareSettings != baseline || current.hardwareSettingsMutationInProgress ||
-                current.hardwareSettingsMutationResult != null || current.hardwareSettingsMutationFailure != null
-            ) return false
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                hardwareSettingsEditorVisible = false,
-                hardwareSettingsConfirmationRequested = false,
-                hardwareSettingsMutationInProgress = true,
-                hardwareSettingsMutationResult = null,
-                hardwareSettingsMutationFailure = null,
-                hardwareSettingsMutationRefreshFailure = null,
-                hardwareSettingsMutationRefreshInProgress = true,
-                hardwareSettingsMutationRefreshCompleted = false,
-                hardwareSettingsMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.saveHardwareSettingsResult(baseline, expected)
-                val shouldRefresh = result.submitted || result.requiresRefresh ||
-                    structuredSettingsMutationRequiresRefreshBeforeDismiss(result)
-                var refreshFailure: DsmFailure? = null
-                val refreshed = if (shouldRefresh) try {
-                    repo.activeHardwareSettings()
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    refreshFailure = error.asDsmFailure()
-                    null
-                } else null
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            it.hardwareSettingsMutationGeneration == generation &&
-                            nasSettingsRequestGeneration.get() == generation
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        val updated = when {
-                            snapshot != null && refreshed != null -> snapshot.copy(
-                                hardwareSettings = refreshed,
-                                hardwareSettingsAvailable = true,
-                            )
-                            snapshot != null && result.status == MutationResultStatus.CONFIRMED_SUCCESS ->
-                                confirmedHardwareSettingsFallback(snapshot, baseline, expected)
-                            else -> null
-                        }
-                        active.copy(
-                            nasSettings = updated?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            hardwareSettingsMutationInProgress = false,
-                            hardwareSettingsMutationResult = result,
-                            hardwareSettingsMutationRefreshFailure = refreshFailure,
-                            hardwareSettingsMutationRefreshInProgress = false,
-                            hardwareSettingsMutationRefreshCompleted = refreshed != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            it.hardwareSettingsMutationGeneration == generation &&
-                            nasSettingsRequestGeneration.get() == generation
-                    }?.copy(
-                        isPerformingAction = false,
-                        hardwareSettingsMutationInProgress = false,
-                        hardwareSettingsMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-                throw error
-            } catch (error: Throwable) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            it.hardwareSettingsMutationGeneration == generation &&
-                            nasSettingsRequestGeneration.get() == generation
-                    }?.copy(
-                        isPerformingAction = false,
-                        hardwareSettingsMutationInProgress = false,
-                        hardwareSettingsMutationFailure = error.asDsmFailure(),
-                        hardwareSettingsMutationRefreshInProgress = false,
-                    ) ?: current
-                }
-            }
-        }
-        return true
-    }
-
-    fun refreshHardwareSettingsMutation() {
-        val repo = repository ?: return
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return
-            if (
-                repository !== repo || current.isPerformingAction || current.hardwareSettingsMutationInProgress ||
-                current.hardwareSettingsMutationRefreshInProgress ||
-                current.hardwareSettingsMutationResult == null && current.hardwareSettingsMutationFailure == null
-            ) return
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                hardwareSettingsMutationRefreshFailure = null,
-                hardwareSettingsMutationRefreshInProgress = true,
-                hardwareSettingsMutationRefreshCompleted = false,
-                hardwareSettingsMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val refreshed = repo.activeHardwareSettings()
-                _workspace.update { current ->
-                    current?.takeIf {
-                        repository === repo && it.profile.id == profileId &&
-                            it.hardwareSettingsMutationGeneration == generation &&
-                            nasSettingsRequestGeneration.get() == generation
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        active.copy(
-                            nasSettings = snapshot?.copy(
-                                hardwareSettings = refreshed,
-                                hardwareSettingsAvailable = true,
-                            )?.let { Loadable.Ready(it) } ?: active.nasSettings,
-                            isPerformingAction = false,
-                            hardwareSettingsMutationRefreshInProgress = false,
-                            hardwareSettingsMutationRefreshCompleted = snapshot != null,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                finishHardwareSettingsRefreshFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishHardwareSettingsRefreshFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-    }
-
-    private fun finishHardwareSettingsRefreshFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                repository === repo && it.profile.id == profileId &&
-                    it.hardwareSettingsMutationGeneration == generation &&
-                    nasSettingsRequestGeneration.get() == generation
-            }?.copy(
-                isPerformingAction = false,
-                hardwareSettingsMutationRefreshFailure = failure,
-                hardwareSettingsMutationRefreshInProgress = false,
-            ) ?: current
-        }
-    }
-
-    fun dismissHardwareSettingsMutationResult(discardDraft: Boolean = false) {
-        _workspace.update { current ->
-            val requiresRefresh = current?.hardwareSettingsMutationResult?.let(
-                ::structuredSettingsMutationRequiresRefreshBeforeDismiss,
-            ) == true || current?.hardwareSettingsMutationFailure != null
-            if (
-                current == null || current.isPerformingAction || current.hardwareSettingsMutationInProgress ||
-                current.hardwareSettingsMutationRefreshInProgress ||
-                requiresRefresh && !current.hardwareSettingsMutationRefreshCompleted
-            ) return@update current
-            val rebased = if (!discardDraft) {
-                val snapshot = (current.nasSettings as? Loadable.Ready)?.value
-                val draft = current.hardwareSettingsDraft
-                if (snapshot != null && draft != null) rebasedHardwareSettingsDraft(snapshot, draft) else null
-            } else null
-            current.copy(
-                hardwareSettingsBaseline = rebased?.first,
-                hardwareSettingsDraft = rebased?.second,
-                hardwareSettingsEditorVisible = rebased != null,
-                hardwareSettingsConfirmationRequested = false,
-                hardwareSettingsMutationResult = null,
-                hardwareSettingsMutationFailure = null,
-                hardwareSettingsMutationRefreshFailure = null,
-                hardwareSettingsMutationRefreshInProgress = false,
-                hardwareSettingsMutationRefreshCompleted = false,
-            )
         }
     }
 
@@ -12506,364 +6387,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelStorageAnalysis() {
         storageAnalysisJob?.cancel()
-    }
-
-    fun loadDiskTestStatus(diskId: String) {
-        val repo = repository ?: return
-        lateinit var disk: NasStorageDisk
-        var generation = 0L
-        var settingsGeneration = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return
-            val snapshot = (current.nasSettings as? Loadable.Ready)?.value ?: return
-            disk = snapshot.storageDisks.firstOrNull { it.id == diskId } ?: return
-            if (
-                current.diskTestStatuses[diskId] is Loadable.Loading ||
-                current.diskTestMutationTarget?.id == diskId
-            ) return
-            generation = diskTestStatusRequestGeneration.incrementAndGet()
-            settingsGeneration = nasSettingsRequestGeneration.get()
-            diskTestStatusRequestGenerations[diskId] = generation
-            _workspace.value = current.copy(
-                diskTestStatuses = current.diskTestStatuses + (diskId to Loadable.Loading),
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val status = repo.loadDiskTestStatus(disk)
-                _workspace.update { current ->
-                    current?.takeIf {
-                        diskTestStatusLoadCallbackMatches(
-                            repositoryMatches = repository === repo,
-                            profileMatches = it.profile.id == profileId,
-                            requestGeneration = generation,
-                            currentGeneration = diskTestStatusRequestGenerations[diskId],
-                            settingsGeneration = settingsGeneration,
-                            currentSettingsGeneration = nasSettingsRequestGeneration.get(),
-                            requestedDisk = disk,
-                            currentDisk = (it.nasSettings as? Loadable.Ready)?.value?.storageDisks
-                                ?.firstOrNull { candidate -> candidate.id == diskId },
-                        )
-                    }?.copy(
-                        diskTestStatuses = current.diskTestStatuses + (diskId to Loadable.Ready(status)),
-                    ) ?: current
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                _workspace.update { current ->
-                    current?.takeIf {
-                        diskTestStatusLoadCallbackMatches(
-                            repositoryMatches = repository === repo,
-                            profileMatches = it.profile.id == profileId,
-                            requestGeneration = generation,
-                            currentGeneration = diskTestStatusRequestGenerations[diskId],
-                            settingsGeneration = settingsGeneration,
-                            currentSettingsGeneration = nasSettingsRequestGeneration.get(),
-                            requestedDisk = disk,
-                            currentDisk = (it.nasSettings as? Loadable.Ready)?.value?.storageDisks
-                                ?.firstOrNull { candidate -> candidate.id == diskId },
-                        )
-                    }?.copy(
-                        diskTestStatuses = current.diskTestStatuses +
-                            (diskId to Loadable.Failed(error.asDsmFailure())),
-                    ) ?: current
-                }
-            }
-        }
-    }
-
-    fun requestDiskTestMutation(
-        disk: NasStorageDisk,
-        baseline: NasDiskTestStatus,
-        operation: NasDiskTestType?,
-    ): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val snapshot = (current?.nasSettings as? Loadable.Ready)?.value
-        val canonical = snapshot?.storageDisks?.firstOrNull { it.id == disk.id }
-        if (
-            current == null || snapshot == null ||
-            !canRequestDiskTestMutation(snapshot, current.diskTestStatuses, disk, baseline, operation) ||
-            current.isPerformingAction || current.diskTestMutationTarget != null ||
-            current.diskTestMutationConfirmationRequested || current.diskTestMutationInProgress ||
-            current.diskTestMutationRefreshInProgress || current.diskTestMutationResult != null ||
-            current.diskTestMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(
-                diskTestMutationTarget = checkNotNull(canonical),
-                diskTestMutationBaseline = baseline,
-                diskTestMutationOperation = operation,
-                diskTestMutationConfirmationRequested = true,
-                diskTestMutationRefreshFailure = null,
-                diskTestMutationRefreshCompleted = false,
-            )
-            true
-        }
-    }
-
-    fun cancelDiskTestMutationConfirmation(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        if (
-            current == null || !current.diskTestMutationConfirmationRequested ||
-            current.diskTestMutationInProgress || current.diskTestMutationResult != null ||
-            current.diskTestMutationFailure != null
-        ) false else {
-            _workspace.value = current.copy(
-                diskTestMutationTarget = null,
-                diskTestMutationBaseline = null,
-                diskTestMutationOperation = null,
-                diskTestMutationConfirmationRequested = false,
-            )
-            true
-        }
-    }
-
-    fun confirmDiskTestMutation(): Boolean {
-        val repo = repository ?: return false
-        lateinit var disk: NasStorageDisk
-        lateinit var baseline: NasDiskTestStatus
-        var operation: NasDiskTestType? = null
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return false
-            val snapshot = (current.nasSettings as? Loadable.Ready)?.value ?: return false
-            val requestedDisk = current.diskTestMutationTarget ?: return false
-            disk = snapshot.storageDisks.firstOrNull {
-                it.id == requestedDisk.id && sameDiskTestTarget(requestedDisk, it)
-            } ?: return false
-            baseline = current.diskTestMutationBaseline ?: return false
-            operation = current.diskTestMutationOperation
-            if (
-                repository !== repo || current.isPerformingAction ||
-                !current.diskTestMutationConfirmationRequested ||
-                !canRequestDiskTestMutation(snapshot, current.diskTestStatuses, disk, baseline, operation) ||
-                current.diskTestMutationInProgress || current.diskTestMutationResult != null ||
-                current.diskTestMutationFailure != null
-            ) return false
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            diskTestStatusRequestGenerations[disk.id] = diskTestStatusRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                diskTestMutationTarget = disk,
-                diskTestMutationConfirmationRequested = false,
-                diskTestMutationInProgress = true,
-                diskTestMutationResult = null,
-                diskTestMutationFailure = null,
-                diskTestMutationRefreshFailure = null,
-                diskTestMutationRefreshInProgress = true,
-                diskTestMutationRefreshCompleted = false,
-                diskTestMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val result = repo.changeDiskTestResult(disk, baseline, operation)
-                val shouldRefresh = result.submitted || result.requiresRefresh ||
-                    destructiveServiceMutationRequiresRefreshBeforeDismiss(result)
-                var refreshFailure: DsmFailure? = null
-                val status = if (shouldRefresh) try {
-                    repo.activeDiskTestStatus(disk)
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    refreshFailure = error.asDsmFailure()
-                    null
-                } else null
-                _workspace.update { current ->
-                    current?.takeIf {
-                        scopedMutationCallbackMatches(
-                            repository === repo, it.profile.id == profileId,
-                            it.diskTestMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                        )
-                    }?.let { active ->
-                        val snapshot = (active.nasSettings as? Loadable.Ready)?.value
-                        val mergedStatus = status?.let {
-                            mergeDiskTestStatusHistory(
-                                it,
-                                (active.diskTestStatuses[disk.id] as? Loadable.Ready)?.value ?: baseline,
-                            )
-                        }
-                        val trustedRefresh = mergedStatus != null &&
-                            isTrustedDiskTestStatus(disk, mergedStatus)
-                        val refreshedTargetReached = trustedRefresh &&
-                            diskTestMutationTargetReached(disk, checkNotNull(mergedStatus), operation)
-                        val fallback = if (
-                            !trustedRefresh && snapshot != null &&
-                            result.status == MutationResultStatus.CONFIRMED_SUCCESS
-                        ) {
-                            confirmedDiskTestMutationFallback(
-                                snapshot, active.diskTestStatuses, disk, baseline, operation,
-                            )
-                        } else null
-                        val statuses = when {
-                            trustedRefresh -> active.diskTestStatuses +
-                                (disk.id to Loadable.Ready(checkNotNull(mergedStatus)))
-                            fallback != null -> fallback
-                            else -> active.diskTestStatuses
-                        }
-                        active.copy(
-                            diskTestStatuses = statuses,
-                            isPerformingAction = false,
-                            diskTestMutationInProgress = false,
-                            diskTestMutationResult = diskTestMutationResultAfterStateCheck(
-                                result,
-                                targetStateConfirmed = refreshedTargetReached || fallback != null,
-                            ),
-                            diskTestMutationRefreshFailure = refreshFailure,
-                            diskTestMutationRefreshInProgress = false,
-                            diskTestMutationRefreshCompleted = trustedRefresh,
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                finishDiskTestMutationFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishDiskTestMutationFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-        return true
-    }
-
-    private fun finishDiskTestMutationFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                scopedMutationCallbackMatches(
-                    repository === repo, it.profile.id == profileId,
-                    it.diskTestMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                )
-            }?.copy(
-                isPerformingAction = false,
-                diskTestMutationInProgress = false,
-                diskTestMutationFailure = failure,
-                diskTestMutationRefreshInProgress = false,
-            ) ?: current
-        }
-    }
-
-    fun refreshDiskTestMutation() {
-        val repo = repository ?: return
-        lateinit var disk: NasStorageDisk
-        var generation = 0L
-        val profileId = synchronized(nasSettingsStructuredMutationLock) {
-            val current = _workspace.value ?: return
-            disk = current.diskTestMutationTarget ?: return
-            if (
-                repository !== repo || current.isPerformingAction || current.diskTestMutationInProgress ||
-                current.diskTestMutationRefreshInProgress ||
-                current.diskTestMutationResult == null && current.diskTestMutationFailure == null
-            ) return
-            generation = nasSettingsRequestGeneration.incrementAndGet()
-            diskTestStatusRequestGenerations[disk.id] = diskTestStatusRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                diskTestMutationRefreshFailure = null,
-                diskTestMutationRefreshInProgress = true,
-                diskTestMutationRefreshCompleted = false,
-                diskTestMutationGeneration = generation,
-            )
-            current.profile.id
-        }
-        viewModelScope.launch {
-            try {
-                val status = repo.activeDiskTestStatus(disk)
-                _workspace.update { current ->
-                    current?.takeIf {
-                        scopedMutationCallbackMatches(
-                            repository === repo, it.profile.id == profileId,
-                            it.diskTestMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                        )
-                    }?.let { active ->
-                        val mergedStatus = mergeDiskTestStatusHistory(
-                            status,
-                            (active.diskTestStatuses[disk.id] as? Loadable.Ready)?.value
-                                ?: active.diskTestMutationBaseline,
-                        )
-                        val trusted = isTrustedDiskTestStatus(disk, mergedStatus)
-                        active.copy(
-                            diskTestStatuses = if (trusted) {
-                                active.diskTestStatuses + (disk.id to Loadable.Ready(mergedStatus))
-                            } else active.diskTestStatuses,
-                            isPerformingAction = false,
-                            diskTestMutationRefreshInProgress = false,
-                            diskTestMutationRefreshCompleted = trusted,
-                            diskTestMutationRefreshFailure = if (trusted) null else DsmFailure(
-                                null,
-                                "The drive test status could not be verified",
-                                "Refresh storage information and check the drive again.",
-                                kind = DsmErrorKind.INVALID_RESPONSE,
-                            ),
-                        )
-                    } ?: current
-                }
-            } catch (error: CancellationException) {
-                finishDiskTestRefreshFailure(repo, profileId, generation, null)
-                throw error
-            } catch (error: Throwable) {
-                finishDiskTestRefreshFailure(repo, profileId, generation, error.asDsmFailure())
-            }
-        }
-    }
-
-    private fun finishDiskTestRefreshFailure(
-        repo: DsmRepository,
-        profileId: String,
-        generation: Long,
-        failure: DsmFailure?,
-    ) {
-        _workspace.update { current ->
-            current?.takeIf {
-                scopedMutationCallbackMatches(
-                    repository === repo, it.profile.id == profileId,
-                    it.diskTestMutationGeneration, generation, nasSettingsRequestGeneration.get(),
-                )
-            }?.copy(
-                isPerformingAction = false,
-                diskTestMutationRefreshFailure = failure,
-                diskTestMutationRefreshInProgress = false,
-            ) ?: current
-        }
-    }
-
-    fun dismissDiskTestMutationResult(): Boolean = synchronized(nasSettingsStructuredMutationLock) {
-        val current = _workspace.value
-        val result = current?.diskTestMutationResult
-        val requiresRefresh = result?.let(::destructiveServiceMutationRequiresRefreshBeforeDismiss) == true ||
-            current?.diskTestMutationFailure != null
-        if (
-            current == null || current.isPerformingAction || current.diskTestMutationInProgress ||
-            current.diskTestMutationRefreshInProgress || requiresRefresh && !current.diskTestMutationRefreshCompleted
-        ) false else {
-            _workspace.value = current.copy(
-                diskTestMutationTarget = null,
-                diskTestMutationBaseline = null,
-                diskTestMutationOperation = null,
-                diskTestMutationConfirmationRequested = false,
-                diskTestMutationResult = null,
-                diskTestMutationFailure = null,
-                diskTestMutationRefreshFailure = null,
-                diskTestMutationRefreshInProgress = false,
-                diskTestMutationRefreshCompleted = false,
-            )
-            true
-        }
-    }
-
-    @Deprecated("Use the full disk target, original test status, and persistent confirmation flow")
-    fun changeDiskTest(diskId: String, type: NasDiskTestType?) {
-        val current = _workspace.value ?: return
-        val snapshot = (current.nasSettings as? Loadable.Ready)?.value ?: return
-        val disk = snapshot.storageDisks.firstOrNull { it.id == diskId } ?: return
-        val baseline = (current.diskTestStatuses[diskId] as? Loadable.Ready)?.value ?: return
-        if (requestDiskTestMutation(disk, baseline, type)) confirmDiskTestMutation()
     }
 
     fun clearMessage() {
@@ -13005,41 +6528,51 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun switchNas(): Boolean {
+    fun switchNas(): Boolean = onConnectionsRequested?.invoke() ?: returnToLogin()
+    internal fun requestSignIn(): Boolean = onSignInRequested?.invoke() ?: returnToLogin()
+
+    internal fun canSwitchWorkspace(): Boolean = synchronized(downloadMutationCoordinatorLock) {
+        val current = _workspace.value ?: return true
+        if (isSwitchingNas) return false
+        val blocked = workspaceSwitchIsBlocked(current, transferStore)
+        if (blocked) _workspace.value = current.copy(message = getApplication<Application>().getString(R.string.switch_nas_blocked_active_operation))
+        !blocked
+    }
+
+    internal fun refreshSavedProfiles() {
+        val profiles = store.profiles()
+        _login.update { it.copy(profiles = profiles) }
+        val repo = repository ?: return
+        if (runCatching { repo.requireCurrentOwner() }.isFailure) return
+        _workspace.update { current -> current?.let { state -> profiles.firstOrNull { it.id == state.profile.id }
+            ?.let { state.copy(profile = it) } ?: state } }
+    }
+
+    internal fun reportConnectionUnavailable() {
+        val failure = io.github.qwertyuiop1995.dsmnativeclient.storage.workspaceChangedFailure()
+        if (_workspace.value == null) _login.update { it.copy(error = failure) }
+        else _workspace.update { it?.copy(message = failure.localize(getApplication()).combined) }
+    }
+
+    internal fun canRemoveSavedConnection(profileId: String): Boolean =
+        runCatching { fileRecovery.office.canRemoveProfile(profileId) }.getOrDefault(false) &&
+        !(_login.value.selectedProfileId == profileId && _login.value.isConnecting) &&
+            (_workspace.value?.profile?.id != profileId || canSwitchWorkspace() &&
+                chatActions.state.value.items.none { it.busy } && chatBatches.state.value.items.none { it.busy } &&
+                downloadActions.state.value.busy.isEmpty() && !downloadCreation.state.value.copying && !packageCenter.isActive && !nasDirectory.state.value.busy && !nasScheduledTasks.state.value.busy &&
+                !chatVoice.state.value.recording && !chatVoice.state.value.saving)
+
+    internal fun reportConnectionBusy() {
+        val failure = DsmFailure(null, "An operation is still active", "Return to the connection and finish the operation.", kind = DsmErrorKind.WORKSPACE_BUSY)
+        if (_workspace.value == null) _login.update { it.copy(error = failure) }
+        else _workspace.update { it?.copy(message = failure.localize(getApplication()).combined) }
+    }
+
+    internal fun returnToLogin(): Boolean {
         val state = synchronized(downloadMutationCoordinatorLock) {
             val candidate = _workspace.value ?: return true
             if (isSwitchingNas) return false
-            val downloads = transferStore.downloads(candidate.profile.id)
-            val uploads = transferStore.uploads(candidate.profile.id)
-            val hasActiveChatMutation = chatMutationBlocksWorkspaceExit(candidate.chatMutationState) ||
-                candidate.chatOutgoingMessages.values.flatten().any {
-                    it.deliveryState == ChatDeliveryState.SENDING
-                } ||
-                (candidate.chatMessages as? Loadable.Ready)?.value?.messages.orEmpty().any {
-                    it.deliveryState == ChatDeliveryState.SENDING
-                }
-            if (candidate.hasBlockingStructuredNasMutation() ||
-                fileStationMutationBlocksWorkspaceExit(candidate.fileStationMutationState) ||
-                downloadCreationBlocksWorkspaceExit(candidate.downloadCreationState) ||
-                downloadControlBlocksWorkspaceExit(candidate.downloadControlState) ||
-                downloadDestinationEditBlocksWorkspaceExit(candidate.downloadDestinationEditState) ||
-                downloadSettingsBlocksWorkspaceExit(candidate.downloadSettingsState) ||
-                downloadRssRefreshBlocksWorkspaceExit(candidate.downloadRssRefreshState) ||
-                virtualMachineMutationBlocksWorkspaceExit(candidate.virtualMachineMutationState) ||
-                !canSafelySwitchNas(
-                    downloads = downloads,
-                    uploads = uploads,
-                    transfers = candidate.transfers,
-                    isPerformingAction = candidate.isPerformingAction,
-                    hasActiveChatMutation = hasActiveChatMutation,
-                )
-            ) {
-                _workspace.value = candidate.copy(
-                    message = getApplication<Application>()
-                        .getString(R.string.switch_nas_blocked_active_operation),
-                )
-                return false
-            }
+            if (!canSwitchWorkspace()) return false
             isSwitchingNas = true
             fileBrowserRequestGeneration.incrementAndGet()
             fileStationMutationGeneration.incrementAndGet()
@@ -13051,23 +6584,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             downloadDestinationEditMutationGeneration.incrementAndGet()
             downloadSettingsMutationGeneration.incrementAndGet()
             downloadRssRefreshMutationGeneration.incrementAndGet()
-            virtualMachineMutationGeneration.incrementAndGet()
             virtualMachineOverviewRequestGeneration.incrementAndGet()
             virtualMachineTaskPollingGeneration.incrementAndGet()
-            chatMutationGeneration.incrementAndGet()
             chatAttachmentPreflightGeneration.incrementAndGet()
-            chatMutationGenerations.clear()
+            fileSearch.invalidate(); fileSharing.invalidate(); fileArchive.invalidate(); filePermissions.invalidate(); fileISOMounts.invalidate(); fileRemoteMounts.invalidate(); fileVFS.invalidate(); fileSettings.invalidate(); fileBackgroundTaskControls.invalidate(); crossNasTransfers.invalidate(); officeDocuments.invalidate()
+            chatNotices.revoke(candidate.profile.id)
+            repository?.invalidateAccess()
             repository = null
             clearPackageIconCache()
+            crossNasRepositories.values.forEach(DsmRepository::invalidateAccess)
             crossNasRepositories.clear()
             _workspace.value = null
             candidate
         }
         cancelOpaqueExternalNavigation(consumePending = true)
         nasAdministrationFeature.clearForProfileSwitch()
+        chatNotices.clear()
         chatFeature.clearForProfileSwitch()
+        chatActions.clear()
+        chatContent.clear()
+        chatBatches.clear()
+        chatVoice.clear()
+        downloadActions.clear(); downloadCreation.clear(); vmmTasks.clear(); vmmConsole.clear(); vmmCreation.clear(); vmmSettings.clear(); vmmAssets.clear(); vmmControls.clear(); containerControls.clear(); containerImages.clear(); containerNetworks.clear(); packageCenter.clear(); nasDirectory.clear(); nasScheduledTasks.clear(); nasObservation.clear(); nasServices.clear(); nasRegion.clear(); nasDdns.clear(); nasPower.clear(); nasConnections.clear(); nasSmart.clear()
+        containerReadFeature.invalidate()
         releasePendingVirtualMachineLocalImageGrant()
-        store.saveWorkspaceUiState(state.profile.id, state.persistedUiState())
         chatPendingAttachmentUrisForRelease(state).forEach(::releasePersistedReadPermission)
         _login.update {
             it.copy(
@@ -13100,19 +6640,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             downloadActivityJob = null
             virtualMachineTaskPollingJob = null
             chatAttachmentPreviewJob = null
-            chatAttachmentJobs.clear()
-            chatMutationJobs.clear()
             thumbnailJobs.clear()
             thumbnailReferences.clear()
             thumbnailCache.evictAll()
             cleanupPreviewFile(state.preview)
             state.chatAttachmentPreviewVideoFile?.delete()
-            File(getApplication<Application>().cacheDir, "preview")
-                .listFiles()
-                ?.forEach(File::delete)
-            File(getApplication<Application>().cacheDir, "chat-preview")
-                .listFiles()
-                ?.forEach(File::delete)
+            cacheDirectories.clearPreviews()
 
             val profile = state.profile
             val savedPassword = store.password(profile.id).orEmpty()
@@ -13139,6 +6672,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun logout() {
+        val owner = repository?.owner
+        if (owner != null && runCatching { store.requireCurrentOwner(owner) }.isFailure) {
+            reportConnectionUnavailable(); return
+        }
         val state = synchronized(downloadMutationCoordinatorLock) {
             val candidate = _workspace.value ?: return
             if (candidate.isPerformingAction || candidate.hasBlockingStructuredNasMutation() ||
@@ -13168,20 +6705,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             downloadDestinationEditMutationGeneration.incrementAndGet()
             downloadSettingsMutationGeneration.incrementAndGet()
             downloadRssRefreshMutationGeneration.incrementAndGet()
-            virtualMachineMutationGeneration.incrementAndGet()
             virtualMachineOverviewRequestGeneration.incrementAndGet()
-            chatMutationGeneration.incrementAndGet()
             chatAttachmentPreflightGeneration.incrementAndGet()
-            chatMutationGenerations.clear()
+            fileSearch.invalidate(); fileSharing.invalidate(); fileArchive.invalidate(); filePermissions.invalidate(); fileISOMounts.invalidate(); fileRemoteMounts.invalidate(); fileVFS.invalidate(); fileSettings.invalidate(); fileBackgroundTaskControls.invalidate(); crossNasTransfers.invalidate(); officeDocuments.invalidate()
+            chatNotices.revoke(candidate.profile.id)
+            repository?.invalidateAccess()
             repository = null
             clearPackageIconCache()
+            crossNasRepositories.values.forEach(DsmRepository::invalidateAccess)
             crossNasRepositories.clear()
             _workspace.value = null
             candidate
         }
         cancelOpaqueExternalNavigation(consumePending = true)
         nasAdministrationFeature.clearForProfileSwitch()
+        chatNotices.clear()
         chatFeature.clearForProfileSwitch()
+        chatActions.clear()
+        chatContent.clear()
+        chatBatches.clear()
+        chatVoice.clear()
+        downloadActions.clear(); downloadCreation.clear(); vmmTasks.clear(); vmmConsole.clear(); vmmCreation.clear(); vmmSettings.clear(); vmmAssets.clear(); vmmControls.clear(); containerControls.clear(); containerImages.clear(); containerNetworks.clear(); packageCenter.clear(); nasDirectory.clear(); nasScheduledTasks.clear(); nasObservation.clear(); nasServices.clear(); nasRegion.clear(); nasDdns.clear(); nasPower.clear(); nasConnections.clear(); nasSmart.clear()
+        containerReadFeature.invalidate()
         releasePendingVirtualMachineLocalImageGrant()
         chatPendingAttachmentUrisForRelease(state).forEach(::releasePersistedReadPermission)
         transferCoordinator.cancelAndClear()
@@ -13193,16 +6738,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         storageAnalysisJob?.cancel()
         storageAnalysisJob = null
         stopNasPerformanceSampling(resetPause = true)
-        chatAttachmentJobs.values.forEach(Job::cancel)
-        chatAttachmentJobs.clear()
-        chatMutationJobs.values.forEach(Job::cancel)
-        chatMutationJobs.clear()
         closeChatAttachmentPreview()
         transferStore.downloads(state.profile.id).forEach { download ->
             if (download.state.hasIncompleteDownloadDestination()) {
                 download.workId?.let { runCatching { workManager.cancelWorkById(UUID.fromString(it)) } }
-                deleteIncompleteDownload(Uri.parse(download.destinationUri))
-                releasePersistedDownloadPermission(Uri.parse(download.destinationUri))
+                deleteIncompleteDownload(Uri.parse(download.destinationUri), download.id)
+                releasePersistedDownloadPermission(Uri.parse(download.destinationUri), download.id)
                 transferStore.update(download.id) { it.copy(state = TransferState.CANCELLED) }
             }
         }
@@ -13218,8 +6759,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         clearPreviewCaches()
         val repoProfile = state.profile
-        store.clearSession(repoProfile.id)
-        store.setAutoLoginEnabled(repoProfile.id, false)
+        if (owner != null) store.signOut(owner) else {
+            store.clearSession(repoProfile.id)
+            store.setAutoLoginEnabled(repoProfile.id, false)
+        }
         val savedPassword = store.password(repoProfile.id).orEmpty()
         _login.update {
             it.copy(
@@ -13233,14 +6776,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 needsOtp = false,
             )
         }
-    }
-
-    private suspend fun loadFiles(repo: DsmRepository, path: String) {
-        _workspace.update { it?.copy(files = Loadable.Loading) }
-        capture(
-            block = { if (path.isBlank()) repo.listShares() else repo.listDirectory(path) },
-            update = { value -> _workspace.update { it?.copy(files = value) } },
-        )
     }
 
     private suspend fun refreshFavorites(repo: DsmRepository) {
@@ -13260,6 +6795,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (repo !== repository) return
         val state = _workspace.value ?: return
         if (state.selectedModule != Module.FILES) return
+        fileSearch.cancelSearch()
         val browser = state.fileBrowser
         val requestToken = FileBrowserRequestToken(
             generation = fileBrowserRequestGeneration.incrementAndGet(),
@@ -13273,7 +6809,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         requestToken,
                         fileBrowserRequestGeneration.get(),
                     )
-            }?.copy(files = Loadable.Loading, fileIsLoadingMore = false)
+            }?.copy(files = Loadable.Loading, fileIsLoadingMore = false, fileSearchCoverage = io.github.qwertyuiop1995.dsmnativeclient.domain.FileSearchIndexCoverage.NOT_REQUESTED)
                 ?: current
         }
         val activeState = _workspace.value
@@ -13293,10 +6829,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     null
                 }
             }
-            val page = browser.activeSearchQuery?.let { repo.search(browser.path, it) }
-                ?: listFilePage(repo, browser, 0)
-            directoryBaseline to page
-        }.onSuccess { (directoryBaseline, page) ->
+            val result = if (browser.activeSearchQuery != null) fileSearch.search(repo, browser)
+                else io.github.qwertyuiop1995.dsmnativeclient.domain.FileSearchResult(listFilePage(repo, browser, 0))
+            directoryBaseline to result
+        }.onSuccess { (directoryBaseline, result) ->
+            val page = result.page
             _workspace.update { current ->
                 current?.takeIf {
                     repo === repository &&
@@ -13306,6 +6843,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             fileBrowserRequestGeneration.get(),
                         )
                 }?.copy(
+                    fileSearchCoverage = result.indexCoverage,
                     fileDirectoryBaselines = directoryBaseline?.let { baseline ->
                         current.fileDirectoryBaselines + (baseline.path to baseline)
                     } ?: current.fileDirectoryBaselines,
@@ -13329,205 +6867,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         )
                 }?.copy(files = Loadable.Failed(error.asDsmFailure())) ?: current
             }
-        }
-    }
-
-    private suspend fun listFilePage(
-        repo: DsmRepository,
-        browser: FileBrowserState,
-        offset: Int,
-    ): FilePage {
-        val sortBy = when (browser.sortOption) {
-            FileSortOption.NAME -> "name"
-            FileSortOption.MODIFIED_TIME -> "mtime"
-            FileSortOption.SIZE -> "size"
-        }
-        return if (browser.path.isBlank()) {
-            repo.listShares(offset, FILE_PAGE_SIZE, sortBy, browser.sortAscending)
-        } else {
-            repo.listDirectory(
-                browser.path,
-                offset,
-                FILE_PAGE_SIZE,
-                sortBy,
-                browser.sortAscending,
-                when (browser.typeFilter) {
-                    FileTypeFilter.ALL -> "all"
-                    FileTypeFilter.FOLDERS -> "dir"
-                    FileTypeFilter.FILES -> "file"
-                },
-            )
-        }
-    }
-
-    private fun performChatSend(claim: ChatMutationClaim, local: ChatMessage) {
-        val requestId = local.clientRequestId ?: return
-        launchChatMutation(claim) { repo ->
-            val outcome = repo.sendChatTextMessageResult(local.conversationId, local.body, requestId)
-            val sent = outcome.message
-            val confirmed = outcome.result.status == MutationResultStatus.CONFIRMED_SUCCESS &&
-                sent != null
-            ChatMutationCompletion(
-                outcome.result,
-                chatMutationVerification(claim.target, messages = listOfNotNull(sent)),
-                apply = { current ->
-                    if (confirmed) current.withCompletedOutgoingChatMessage(local, checkNotNull(sent))
-                    else current.withFailedOutgoingChatMessage(local)
-                },
-            )
-        }
-    }
-
-    private fun performChatAttachmentSend(
-        claim: ChatMutationClaim,
-        local: ChatMessage,
-        source: UploadSource,
-        persistedUri: Uri,
-    ) {
-        val requestId = local.clientRequestId ?: return
-        launchChatMutation(claim) { repo ->
-            val outcome =
-            repo.sendChatAttachmentMessageResult(
-                local.conversationId,
-                local.body,
-                source,
-                requestId,
-            ) { completed, total ->
-                val progress = if (total > 0) {
-                    (completed.toFloat() / total).coerceIn(0f, 1f)
-                } else null
-                synchronized(downloadMutationCoordinatorLock) {
-                    val state = _workspace.value ?: return@synchronized
-                    val entry = state.chatMutationState.entries[requestId]
-                    if (!chatMutationCallbackMatches(
-                            repository === claim.repository,
-                            state.profile.id == claim.profileId,
-                            entry,
-                            claim.target,
-                            claim.generation,
-                            chatMutationGenerations[requestId],
-                        )
-                    ) return@synchronized
-                    val outgoing = state?.chatOutgoingMessages?.get(local.conversationId)
-                        ?: return@synchronized
-                    val updated = outgoing.map {
-                        if (it.id == local.id) it.copy(attachmentProgress = progress) else it
-                    }
-                    val page = (state.chatMessages as? Loadable.Ready)?.value
-                    _workspace.value = state.copy(
-                        chatOutgoingMessages = state.chatOutgoingMessages +
-                            (local.conversationId to updated),
-                        chatMessages = page?.takeIf {
-                            state.selectedConversation?.id == local.conversationId
-                        }?.copy(
-                            messages = page.messages.map {
-                                if (it.id == local.id) it.copy(attachmentProgress = progress) else it
-                            },
-                        )?.let { Loadable.Ready(it) } ?: state.chatMessages,
-                    )
-                }
-            }
-            val sent = outcome.message
-            val confirmed = outcome.result.status == MutationResultStatus.CONFIRMED_SUCCESS &&
-                sent != null
-            ChatMutationCompletion(
-                outcome.result,
-                chatMutationVerification(claim.target, messages = listOfNotNull(sent)),
-                apply = { current ->
-                    if (confirmed) current.withCompletedOutgoingChatMessage(local, checkNotNull(sent))
-                        .copy(chatPendingAttachmentUris = current.chatPendingAttachmentUris - local.id)
-                    else current.withFailedOutgoingChatMessage(local)
-                },
-                afterApply = if (confirmed) {
-                    { releasePersistedReadPermission(persistedUri) }
-                } else null,
-            )
-        }
-    }
-
-    private fun WorkspaceState.withFailedOutgoingChatMessage(local: ChatMessage): WorkspaceState {
-        val failed = local.copy(deliveryState = ChatDeliveryState.FAILED, attachmentProgress = null)
-        val outgoing = chatOutgoingMessages[local.conversationId].orEmpty().map {
-            if (it.id == local.id) failed else it
-        }
-        val page = (chatMessages as? Loadable.Ready)?.value
-        return copy(
-            chatOutgoingMessages = chatOutgoingMessages + (local.conversationId to outgoing),
-            chatMessages = page?.takeIf {
-                selectedConversation?.id == local.conversationId
-            }?.copy(
-                messages = page.messages.map { if (it.id == local.id) failed else it },
-            )?.let { Loadable.Ready(it) } ?: chatMessages,
-        )
-    }
-
-    private fun WorkspaceState.withCompletedOutgoingChatMessage(
-        local: ChatMessage,
-        sent: ChatMessage,
-    ): WorkspaceState {
-        val confirmed = sent.copy(clientRequestId = local.clientRequestId)
-        val outgoing = chatOutgoingMessages[local.conversationId].orEmpty()
-            .filterNot { it.id == local.id || it.id == confirmed.id } + confirmed
-        val page = (chatMessages as? Loadable.Ready)?.value
-        return copy(
-            chatOutgoingMessages = chatOutgoingMessages + (local.conversationId to outgoing),
-            chatMessages = page?.takeIf {
-                selectedConversation?.id == local.conversationId
-            }?.copy(
-                messages = (page.messages.filterNot { it.id == local.id || it.id == confirmed.id } + confirmed)
-                    .sortedBy(ChatMessage::createdAtEpochSeconds),
-            )?.let { Loadable.Ready(it) } ?: chatMessages,
-        )
-    }
-
-    private fun updateOutgoingChatMessage(message: ChatMessage, clearsDraft: Boolean = false) {
-        _workspace.update { state ->
-            state ?: return@update state
-            val outgoing = state.chatOutgoingMessages[message.conversationId].orEmpty()
-            val updated = (outgoing.filterNot { it.id == message.id } + message)
-                .sortedBy(ChatMessage::createdAtEpochSeconds)
-                .takeLast(MAX_LOCAL_CHAT_MESSAGES_PER_CONVERSATION)
-            val page = (state.chatMessages as? Loadable.Ready)?.value
-            val visible = if (state.selectedConversation?.id == message.conversationId && page != null) {
-                Loadable.Ready(
-                    page.copy(
-                        messages = (page.messages.filterNot { it.id == message.id } + message)
-                            .distinctBy(ChatMessage::id)
-                            .sortedBy(ChatMessage::createdAtEpochSeconds),
-                    ),
-                )
-            } else {
-                state.chatMessages
-            }
-            state.copy(
-                chatDrafts = if (clearsDraft) state.chatDrafts + (message.conversationId to "") else state.chatDrafts,
-                chatOutgoingMessages = state.chatOutgoingMessages + (message.conversationId to updated),
-                chatMessages = visible,
-            )
-        }
-    }
-
-    private fun replaceOutgoingChatMessage(local: ChatMessage, sent: ChatMessage) {
-        _workspace.update { state ->
-            state ?: return@update state
-            val confirmed = sent.copy(deliveryState = ChatDeliveryState.SENT)
-            val outgoing = state.chatOutgoingMessages[local.conversationId].orEmpty()
-                .filterNot { it.id == local.id }.plus(confirmed)
-                .takeLast(MAX_LOCAL_CHAT_MESSAGES_PER_CONVERSATION)
-            val page = (state.chatMessages as? Loadable.Ready)?.value
-            state.copy(
-                chatOutgoingMessages = state.chatOutgoingMessages +
-                    (local.conversationId to outgoing.distinctBy(ChatMessage::id)),
-                chatMessages = if (state.selectedConversation?.id == local.conversationId && page != null) {
-                    Loadable.Ready(
-                        page.copy(
-                            messages = (page.messages.filterNot { it.id == local.id } + confirmed)
-                                .distinctBy(ChatMessage::id)
-                                .sortedBy(ChatMessage::createdAtEpochSeconds),
-                        ),
-                    )
-                } else state.chatMessages,
-            )
         }
     }
 
@@ -13696,7 +7035,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun resolveFileCopyMoveRepository(
         operation: FileCopyMoveState,
     ): DsmRepository {
-        fileCopyMoveRepository(operation)?.let { return it }
+        fileCopyMoveRepository(operation)?.let { it.requireCurrentOwner(); return it }
         val profile = operation.targetProfiles.firstOrNull { it.id == operation.targetProfileId }
             ?: throw DsmFailure(
                 null,
@@ -13711,40 +7050,34 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             true,
             DsmErrorKind.NO_SAVED_SESSION,
         )
-        val discovered = connectionResolver.discover(profile)
-        return DsmRepository(discovered.profile, session, api, discovered.capabilities).also {
+        return connections.restore(profile, session, makeLastProfile = false) {}.also {
             crossNasRepositories[profile.id] = it
         }
     }
 
-    private suspend fun loadDownloadDestinationFolders(
-        repo: DsmRepository,
-        picker: DownloadDestinationPickerState,
-    ) {
+    private suspend fun loadDownloadDestinationFolders(repo: DsmRepository, picker: DownloadDestinationPickerState) {
         suspendRunCatching {
-            if (picker.location.path.isBlank()) {
-                repo.listShares(limit = 500)
-            } else {
-                repo.listDirectory(
-                    path = picker.location.path,
-                    limit = 500,
-                    fileType = "dir",
-                )
+            val items = mutableListOf<FileItem>()
+            val seen = mutableSetOf<String>()
+            var total: Int? = null
+            while (true) {
+                val page = if (picker.location.path.isEmpty()) repo.listShares(offset = items.size, limit = 500)
+                    else repo.listDirectory(picker.location.path, offset = items.size, limit = 500, fileType = "dir")
+                if (total == null) total = page.total
+                if (page.total != total || page.offset != items.size || page.items.any { !seen.add(it.path) } || page.items.size > 500)
+                    throw DsmFailure(null, "The folder list changed", "Refresh the folder and try again.", kind = DsmErrorKind.INVALID_RESPONSE)
+                items += page.items
+                if (items.size == total) break
+                if (page.items.isEmpty() || items.size > requireNotNull(total)) throw DsmFailure(null, "The folder list is incomplete", "Refresh the folder and try again.", kind = DsmErrorKind.INVALID_RESPONSE)
             }
+            FilePage(items, items.size, 0)
         }.onSuccess { page ->
-            _workspace.update { current ->
-                current?.takeIf {
-                    it.downloadDestinationPicker?.location?.path == picker.location.path
-                }?.copy(downloadDestinationFolders = Loadable.Ready(page)) ?: current
-            }
+            _workspace.update { current -> current?.takeIf { repository === repo && it.downloadDestinationPicker == picker }
+                ?.copy(downloadDestinationFolders = Loadable.Ready(page)) ?: current }
         }.onFailure { error ->
-            _workspace.update { current ->
-                current?.takeIf {
-                    it.downloadDestinationPicker?.location?.path == picker.location.path
-                }?.copy(
-                    downloadDestinationFolders = Loadable.Failed(error.asDsmFailure()),
-                ) ?: current
-            }
+            if (error is CancellationException) return@onFailure
+            _workspace.update { current -> current?.takeIf { repository === repo && it.downloadDestinationPicker == picker }
+                ?.copy(downloadDestinationFolders = Loadable.Failed(error.asDsmFailure())) ?: current }
         }
     }
 
@@ -13792,64 +7125,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun startPhotoTimelineLoad(repo: DsmRepository) {
-        photoTimelineJob?.cancel()
-        val browser = _workspace.value?.photoBrowser ?: return
-        _workspace.update { current ->
-            current?.takeIf {
-                it.selectedModule == Module.PHOTOS &&
-                    it.photoBrowser.selectedSpaceId == browser.selectedSpaceId &&
-                    it.photoBrowser.mode == PhotoBrowseMode.TIMELINE
-            }?.copy(photoTimeline = Loadable.Loading) ?: current
-        }
-        photoTimelineJob = viewModelScope.launch {
-            suspendRunCatching {
-                PhotoRepository(repo).scanTimeline(browser.selectedSpace) { progress ->
-                    _workspace.update { current ->
-                        current?.takeIf {
-                            it.selectedModule == Module.PHOTOS &&
-                                it.photoBrowser.selectedSpaceId == browser.selectedSpaceId &&
-                                it.photoBrowser.mode == PhotoBrowseMode.TIMELINE
-                        }?.copy(photoTimeline = Loadable.Ready(progress)) ?: current
-                    }
-                }
-            }.onSuccess { progress ->
-                _workspace.update { current ->
-                    current?.takeIf {
-                        it.selectedModule == Module.PHOTOS &&
-                            it.photoBrowser.selectedSpaceId == browser.selectedSpaceId &&
-                            it.photoBrowser.mode == PhotoBrowseMode.TIMELINE
-                    }?.copy(
-                        photoTimeline = Loadable.Ready(progress),
-                        photoBrowser = current.photoBrowser.copy(
-                            spaceAccess = current.photoBrowser.spaceAccess +
-                                (browser.selectedSpaceId to PhotoSpaceAccess.AVAILABLE),
-                        ),
-                    ) ?: current
-                }
-            }.onFailure { error ->
-                if (error is CancellationException) return@onFailure
-                _workspace.update { current ->
-                    current?.takeIf {
-                        it.selectedModule == Module.PHOTOS &&
-                            it.photoBrowser.selectedSpaceId == browser.selectedSpaceId &&
-                            it.photoBrowser.mode == PhotoBrowseMode.TIMELINE
-                    }?.copy(
-                        photoTimeline = Loadable.Failed(error.asDsmFailure()),
-                        photoBrowser = current.photoBrowser.copy(
-                            spaceAccess = current.photoBrowser.spaceAccess +
-                                (browser.selectedSpaceId to PhotoSpaceAccess.UNAVAILABLE),
-                        ),
-                    ) ?: current
-                }
-            }
-        }.also { job ->
-            job.invokeOnCompletion {
-                if (photoTimelineJob == job) photoTimelineJob = null
-            }
-        }
-    }
-
     private fun thumbnailKey(profileId: String, path: String): String = "$profileId\u0000$path"
 
     private fun clearPackageIconCache() {
@@ -13883,7 +7158,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun thumbnailDiskDirectory() =
-        File(getApplication<Application>().cacheDir, "file-thumbnails-v1")
+        cacheDirectories.thumbnails
 
     private fun thumbnailDiskFile(key: String): File {
         val digest = MessageDigest.getInstance("SHA-256").digest(key.encodeToByteArray())
@@ -14107,7 +7382,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 FileStationMutationRefresh.SHARE_LINKS -> {
                     val links = claim.repository.listShareLinks()
-                    _workspace.update { it?.copy(fileShareLinks = Loadable.Ready(links)) }
+                    _workspace.update { current ->
+                        if (repository === claim.repository && current?.profile?.id == claim.profileId)
+                            current.copy(fileShareLinks = Loadable.Ready(links)) else current
+                    }
                 }
                 FileStationMutationRefresh.TEXT_PREVIEW -> Unit
             }
@@ -14116,7 +7394,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } else if (claim.target.operation == FileStationMutationOperation.TEXT_SAVE) {
                 verifyTextPreviewSave(claim.repository, claim.target)
             } else {
-                verifyFileStationMutation(claim.repository, claim.target) to null
+                _workspace.value.verifyFileStationMutation(claim.target, claim.repository::fileInfo) to null
             }
         }
         synchronized(fileStationMutationLock) {
@@ -14170,20 +7448,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         else FileStationMutationVerification.DIFFERS) to content
     }
 
-    private suspend fun verifyFileStationMutation(
-        repo: DsmRepository,
-        target: FileStationMutationTarget,
-    ): FileStationMutationVerification {
-        val current = _workspace.value ?: return FileStationMutationVerification.UNAVAILABLE
-        return verifyFileStationMutationOutcome(
-            target = target,
-            fileInfo = repo::fileInfo,
-            favoritePaths = current.favoritePaths,
-            shareLinks = (current.fileShareLinks as? Loadable.Ready)?.value,
-            createdShareLink = current.fileStationMutationState.createdShareLink,
-        )
-    }
-
     private fun createShareLinkMutation(item: FileItem): Boolean {
         val current = _workspace.value ?: return false
         val target = FileStationMutationTarget(
@@ -14222,616 +7486,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun launchDownloadCreation(
-        target: DownloadCreationTarget,
-        editableDraft: Pair<String, String>?,
-        block: suspend (DsmRepository) -> MutationResult,
-    ): Boolean {
-        val repo = repository ?: return false
-        val generation = synchronized(downloadCreationMutationLock) {
-            val current = _workspace.value ?: return false
-            if (
-                repository !== repo || current.profile.id != target.profileId ||
-                current.selectedModule != Module.DOWNLOADS || current.downloadControlState.target != null ||
-                current.downloadSettingsState.editorVisible ||
-                current.downloadDestinationEditState != DownloadDestinationEditWorkspaceState() ||
-                !canStartDownloadCreation(current.isPerformingAction, current.downloadCreationState)
-            ) return false
-            val nextGeneration = downloadCreationMutationGeneration.incrementAndGet()
-            downloadListRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                downloadCreationState = current.downloadCreationState.copy(
-                    editorVisible = false,
-                    uriDraft = "",
-                    destinationDraft = "",
-                    pendingDiscoveryTitle = null,
-                    pendingDiscoveryUri = null,
-                    pendingDiscoverySource = null,
-                    target = target,
-                    mutationInProgress = true,
-                    mutationResult = null,
-                    mutationFailure = null,
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = false,
-                    mutationRefreshCompleted = false,
-                    mutationGeneration = nextGeneration,
-                ),
-            )
-            nextGeneration
-        }
-        viewModelScope.launch {
-            val outcome = runCatching { block(repo) }
-            val result = outcome.getOrNull()
-            val failure = outcome.exceptionOrNull()?.takeUnless { it is CancellationException }
-                ?.asDsmFailure()
-            val cancelled = outcome.exceptionOrNull() is CancellationException
-            val persistentResult = result ?: if (cancelled) {
-                cancelledDownloadCreationResult(target)
-            } else {
-                null
-            }
-            val needsRefresh = failure != null || persistentResult?.let {
-                it.submitted || it.requiresRefresh || it.counts.unknown > 0
-            } == true
-            val refreshOutcome = if (needsRefresh) {
-                runCatching { repo.activeDownloadTasksForMutation() }
-            } else {
-                null
-            }
-            synchronized(downloadCreationMutationLock) {
-                val current = _workspace.value ?: return@synchronized
-                val creation = current.downloadCreationState
-                if (!downloadCreationCallbackMatches(
-                        repositoryMatches = repository === repo,
-                        profileMatches = current.profile.id == target.profileId,
-                        stateTarget = creation.target,
-                        callbackTarget = target,
-                        stateGeneration = creation.mutationGeneration,
-                        callbackGeneration = generation,
-                        globalGeneration = downloadCreationMutationGeneration.get(),
-                    )
-                ) return@synchronized
-                val refreshed = refreshOutcome?.getOrNull()
-                val refreshFailure = refreshOutcome?.exceptionOrNull()
-                    ?.takeUnless { it is CancellationException }
-                    ?.asDsmFailure()
-                _workspace.value = current.withDownloads(
-                    refreshed?.let { Loadable.Ready(it) } ?: current.downloads,
-                ).copy(
-                    isPerformingAction = false,
-                    downloadCreationState = creation.copy(
-                        uriDraft = editableDraft?.first.takeIf {
-                            persistentResult?.submitted == false
-                        }.orEmpty(),
-                        destinationDraft = editableDraft?.second.takeIf {
-                            persistentResult?.submitted == false
-                        }.orEmpty(),
-                        mutationInProgress = false,
-                        mutationResult = persistentResult,
-                        mutationFailure = failure,
-                        mutationRefreshFailure = refreshFailure,
-                        mutationRefreshInProgress = false,
-                        mutationRefreshCompleted = needsRefresh && refreshed != null,
-                    ),
-                )
-            }
-        }
-        return true
-    }
-
-    fun refreshDownloadCreationMutation() {
-        val repo = repository ?: return
-        val target: DownloadCreationTarget
-        val generation: Long
-        synchronized(downloadCreationMutationLock) {
-            val current = _workspace.value ?: return
-            val creation = current.downloadCreationState
-            if (
-                repository !== repo || current.isPerformingAction || creation.target == null ||
-                creation.mutationInProgress || creation.mutationRefreshInProgress ||
-                creation.mutationResult == null && creation.mutationFailure == null
-            ) return
-            target = creation.target
-            generation = downloadCreationMutationGeneration.incrementAndGet()
-            downloadListRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                downloadCreationState = creation.copy(
-                    mutationRefreshInProgress = true,
-                    mutationRefreshFailure = null,
-                    mutationRefreshCompleted = false,
-                    mutationGeneration = generation,
-                ),
-            )
-        }
-        viewModelScope.launch {
-            val refresh = suspendRunCatching { repo.activeDownloadTasksForMutation() }
-            synchronized(downloadCreationMutationLock) {
-                val current = _workspace.value ?: return@synchronized
-                val creation = current.downloadCreationState
-                if (!downloadCreationCallbackMatches(
-                        repositoryMatches = repository === repo,
-                        profileMatches = current.profile.id == target.profileId,
-                        stateTarget = creation.target,
-                        callbackTarget = target,
-                        stateGeneration = creation.mutationGeneration,
-                        callbackGeneration = generation,
-                        globalGeneration = downloadCreationMutationGeneration.get(),
-                    )
-                ) return@synchronized
-                val refreshed = refresh.getOrNull()
-                _workspace.value = current.withDownloads(
-                    refreshed?.let { Loadable.Ready(it) } ?: current.downloads,
-                ).copy(
-                    isPerformingAction = false,
-                    downloadCreationState = creation.copy(
-                        mutationRefreshInProgress = false,
-                        mutationRefreshFailure = refresh.exceptionOrNull()
-                            ?.takeUnless { it is CancellationException }
-                            ?.asDsmFailure(),
-                        mutationRefreshCompleted = refreshed != null,
-                    ),
-                )
-            }
-        }
-    }
-
-    fun dismissDownloadCreationMutation(): Boolean = synchronized(downloadCreationMutationLock) {
-        val current = _workspace.value ?: return false
-        if (!canDismissDownloadCreationMutation(current.downloadCreationState)) return false
-        downloadCreationMutationGeneration.incrementAndGet()
-        _workspace.value = current.copy(downloadCreationState = DownloadCreationWorkspaceState())
-        true
-    }
-
-    fun editDownloadCreationAfterResult(): Boolean = synchronized(downloadCreationMutationLock) {
-        val current = _workspace.value ?: return false
-        val creation = current.downloadCreationState
-        if (
-            !canDismissDownloadCreationMutation(creation) || creation.mutationResult?.submitted != false ||
-            creation.target?.sourceKind !in setOf(
-                DownloadCreationSourceKind.LINK,
-                DownloadCreationSourceKind.MAGNET,
-            )
-        ) {
-            return false
-        }
-        downloadCreationMutationGeneration.incrementAndGet()
-        _workspace.value = current.copy(
-            downloadCreationState = DownloadCreationWorkspaceState(
-                editorVisible = true,
-                uriDraft = creation.uriDraft,
-                destinationDraft = creation.destinationDraft,
-            ),
-        )
-        true
-    }
-
-    private fun containerMutation(
-        @StringRes success: Int,
-        block: suspend (DsmRepository) -> MutationResult,
-    ) {
-        if (!containerWriteActionsEnabled()) {
-            _workspace.update {
-                it?.copy(
-                    isPerformingAction = false,
-                    message = getApplication<Application>().getString(
-                        R.string.container_management_read_only,
-                    ),
-                )
-            }
-            return
-        }
-        val repo = repository ?: return
-        if (_workspace.value?.isPerformingAction == true) return
-        viewModelScope.launch {
-            _workspace.update { it?.copy(isPerformingAction = true, message = null) }
-            suspendRunCatching { block(repo) }
-                .onSuccess { result ->
-                    val refreshed = if (result.submitted || result.requiresRefresh) {
-                        suspendRunCatching { repo.containerOverview() }.getOrNull()
-                    } else {
-                        null
-                    }
-                    _workspace.update { current ->
-                        current?.copy(
-                            containers = refreshed?.let { Loadable.Ready(it) } ?: current.containers,
-                            isPerformingAction = false,
-                            message = serviceMutationResultMessage(result, success),
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    _workspace.update {
-                        it?.copy(
-                            isPerformingAction = false,
-                            message = error.asDsmFailure()
-                                .localize(getApplication<Application>())
-                                .combined,
-                        )
-                    }
-                }
-        }
-    }
-
-    private fun virtualMachineMutation(
-        target: VirtualMachineMutationTarget,
-        @StringRes success: Int,
-        creationDraft: VirtualMachineCreationDraftState? = null,
-        imageImportDraft: VirtualMachineImageImportDraftState? = null,
-        settingsTargetId: String? = null,
-        settingsBaseline: VirtualMachineSettings? = null,
-        settingsDraft: VirtualMachineSettingsDraftState? = null,
-        lifecycleTarget: VirtualMachineLifecycleTarget? = null,
-        taskCleanupBaseline: List<VirtualMachineTask> = emptyList(),
-        block: suspend (DsmRepository, Long) -> MutationResult,
-    ): Boolean {
-        val claim = synchronized(virtualMachineMutationLock) {
-            val repo = repository ?: return@synchronized null
-            val current = _workspace.value ?: return@synchronized null
-            val state = current.virtualMachineMutationState
-            val editorMatches = when (target.kind) {
-                VirtualMachineMutationKind.CREATION ->
-                    !state.imageImportEditorVisible && !state.settingsEditorVisible &&
-                        !state.lifecycleConfirmationRequested &&
-                        !state.taskCleanupConfirmationRequested
-                VirtualMachineMutationKind.IMAGE_IMPORT ->
-                    !state.creationEditorVisible && !state.settingsEditorVisible &&
-                        !state.lifecycleConfirmationRequested &&
-                        !state.taskCleanupConfirmationRequested && state.imageImportEditorVisible
-                VirtualMachineMutationKind.TASK_CLEANUP ->
-                    !state.creationEditorVisible && !state.imageImportEditorVisible &&
-                        !state.settingsEditorVisible && !state.lifecycleConfirmationRequested &&
-                        state.taskCleanupConfirmationRequested &&
-                        state.taskCleanupBaseline == taskCleanupBaseline
-                VirtualMachineMutationKind.SETTINGS ->
-                    !state.creationEditorVisible && !state.imageImportEditorVisible &&
-                        !state.lifecycleConfirmationRequested &&
-                        !state.taskCleanupConfirmationRequested
-                VirtualMachineMutationKind.LIFECYCLE ->
-                    !state.creationEditorVisible && !state.imageImportEditorVisible &&
-                        !state.settingsEditorVisible &&
-                        !state.taskCleanupConfirmationRequested &&
-                        (!state.lifecycleConfirmationRequested ||
-                            state.lifecycleConfirmationTarget == lifecycleTarget)
-            }
-            if (repository !== repo || current.profile.id != target.profileId ||
-                current.selectedModule != Module.VIRTUAL_MACHINES ||
-                !editorMatches ||
-                !canStartVirtualMachineMutation(
-                    current.isPerformingAction,
-                    state,
-                )
-            ) return@synchronized null
-            val generation = virtualMachineMutationGeneration.incrementAndGet()
-            virtualMachineOverviewRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                message = null,
-                virtualMachineMutationState = VirtualMachineMutationWorkspaceState(
-                    selectedTab = state.selectedTab,
-                    supportsOfficialTasks = state.supportsOfficialTasks,
-                    creationEditorVisible = state.creationEditorVisible,
-                    target = target,
-                    creationDraft = creationDraft,
-                    imageImportEditorVisible = state.imageImportEditorVisible,
-                    imageImportDraft = imageImportDraft,
-                    settingsEditorVisible = state.settingsEditorVisible,
-                    settingsTargetId = settingsTargetId,
-                    settingsBaseline = settingsBaseline,
-                    settingsDraft = settingsDraft,
-                    lifecycleConfirmationTarget = lifecycleTarget,
-                    lifecycleConfirmationRequested = false,
-                    taskCleanupConfirmationRequested = false,
-                    taskCleanupBaseline = taskCleanupBaseline,
-                    taskCleanupResolvedResult = null,
-                    mutationInProgress = true,
-                    mutationGeneration = generation,
-                ),
-            )
-            VirtualMachineMutationClaim(repo, current.profile.id, target, generation)
-        } ?: return false
-        viewModelScope.launch {
-            try {
-                val result = block(claim.repository, claim.generation)
-                val accepted = synchronized(virtualMachineMutationLock) {
-                    val current = _workspace.value ?: return@synchronized false
-                    if (!virtualMachineMutationCallbackMatches(
-                            repositoryMatches = repository === claim.repository,
-                            profileMatches = current.profile.id == claim.profileId,
-                            stateTarget = current.virtualMachineMutationState.target,
-                            callbackTarget = claim.target,
-                            stateGeneration = current.virtualMachineMutationState.mutationGeneration,
-                            callbackGeneration = claim.generation,
-                            globalGeneration = virtualMachineMutationGeneration.get(),
-                        )
-                    ) return@synchronized false
-                    _workspace.value = current.copy(
-                        isPerformingAction = false,
-                        message = serviceMutationResultMessage(result, success),
-                        virtualMachineMutationState = current.virtualMachineMutationState.copy(
-                            mutationInProgress = false,
-                            mutationResult = result,
-                            mutationFailure = null,
-                        ),
-                    )
-                    true
-                }
-                if (accepted && (result.submitted || result.requiresRefresh)) {
-                    refreshVirtualMachineMutation()
-                }
-            } catch (error: CancellationException) {
-                val cancellationResult = finishVirtualMachineMutationCancellation(claim)
-                if (cancellationResult?.let { it.submitted || it.requiresRefresh } == true) {
-                    refreshVirtualMachineMutation()
-                }
-                throw error
-            } catch (error: Throwable) {
-                finishVirtualMachineMutationFailure(claim, error.asDsmFailure())
-            }
-        }
-        return true
-    }
-
-    private fun finishVirtualMachineMutationCancellation(
-        claim: VirtualMachineMutationClaim,
-    ): MutationResult? = synchronized(virtualMachineMutationLock) {
-        val current = _workspace.value ?: return null
-        if (!virtualMachineMutationCallbackMatches(
-                repositoryMatches = repository === claim.repository,
-                profileMatches = current.profile.id == claim.profileId,
-                stateTarget = current.virtualMachineMutationState.target,
-                callbackTarget = claim.target,
-                stateGeneration = current.virtualMachineMutationState.mutationGeneration,
-                callbackGeneration = claim.generation,
-                globalGeneration = virtualMachineMutationGeneration.get(),
-            )
-        ) return null
-        val state = current.virtualMachineMutationState
-        val result = cancelledVirtualMachineMutationResult(
-            claim.target,
-            state.taskCleanupResolvedResult,
-        )
-        _workspace.value = current.copy(
-            isPerformingAction = false,
-            virtualMachineMutationState = state.copy(
-                mutationInProgress = false,
-                mutationResult = result,
-                mutationFailure = null,
-            ),
-        )
-        result
-    }
-
-    private fun finishVirtualMachineMutationFailure(
-        claim: VirtualMachineMutationClaim,
-        failure: DsmFailure,
-    ) {
-        synchronized(virtualMachineMutationLock) {
-            val current = _workspace.value ?: return
-            if (!virtualMachineMutationCallbackMatches(
-                    repositoryMatches = repository === claim.repository,
-                    profileMatches = current.profile.id == claim.profileId,
-                    stateTarget = current.virtualMachineMutationState.target,
-                    callbackTarget = claim.target,
-                    stateGeneration = current.virtualMachineMutationState.mutationGeneration,
-                    callbackGeneration = claim.generation,
-                    globalGeneration = virtualMachineMutationGeneration.get(),
-                )
-            ) return
-            _workspace.value = current.copy(
-                isPerformingAction = false,
-                message = failure.localize(getApplication<Application>()).combined,
-                virtualMachineMutationState = current.virtualMachineMutationState.copy(
-                    mutationInProgress = false,
-                    mutationFailure = failure,
-                ),
-            )
-        }
-    }
-
-    fun refreshVirtualMachineMutation(): Boolean {
-        val claim = synchronized(virtualMachineMutationLock) {
-            val repo = repository ?: return@synchronized null
-            val current = _workspace.value ?: return@synchronized null
-            val state = current.virtualMachineMutationState
-            val target = state.target ?: return@synchronized null
-            if (repository !== repo || current.profile.id != target.profileId ||
-                state.mutationInProgress || state.mutationRefreshInProgress ||
-                state.mutationResult == null && state.mutationFailure == null
-            ) return@synchronized null
-            val generation = virtualMachineMutationGeneration.incrementAndGet()
-            virtualMachineOverviewRequestGeneration.incrementAndGet()
-            _workspace.value = current.copy(
-                isPerformingAction = true,
-                virtualMachineMutationState = state.copy(
-                    mutationRefreshFailure = null,
-                    mutationRefreshInProgress = true,
-                    mutationRefreshCompleted = false,
-                    mutationVerification = null,
-                    mutationGeneration = generation,
-                ),
-            )
-            VirtualMachineMutationClaim(repo, current.profile.id, target, generation)
-        } ?: return false
-        viewModelScope.launch {
-            try {
-                val imageImportVerification = if (claim.target.kind == VirtualMachineMutationKind.IMAGE_IMPORT) {
-                    val importState = _workspace.value?.virtualMachineMutationState
-                    val importTarget = importState?.imageImportDraft?.toImportOrNull()
-                    val taskId = importState?.imageImportTaskId
-                    if (taskId != null && importTarget != null) {
-                        claim.repository.verifyVirtualMachineImageImportTask(
-                            taskId,
-                            importTarget.imageName,
-                            importTarget.imageType,
-                            onTaskCleared = { clearedTaskId ->
-                                synchronized(virtualMachineMutationLock) {
-                                    val current = _workspace.value ?: return@synchronized
-                                    val state = current.virtualMachineMutationState
-                                    if (virtualMachineMutationCallbackMatches(
-                                            repositoryMatches = repository === claim.repository,
-                                            profileMatches = current.profile.id == claim.profileId,
-                                            stateTarget = state.target,
-                                            callbackTarget = claim.target,
-                                            stateGeneration = state.mutationGeneration,
-                                            callbackGeneration = claim.generation,
-                                            globalGeneration = virtualMachineMutationGeneration.get(),
-                                        ) && state.imageImportTaskId == clearedTaskId
-                                    ) {
-                                        _workspace.value = current.copy(
-                                            virtualMachineMutationState = state.copy(
-                                                imageImportTaskId = null,
-                                            ),
-                                        )
-                                    }
-                                }
-                            },
-                        )
-                    } else null
-                } else null
-                if (imageImportVerification == VirtualMachineImageImportVerification.PENDING) {
-                    synchronized(virtualMachineMutationLock) {
-                        val current = _workspace.value ?: return@synchronized
-                        if (!virtualMachineMutationCallbackMatches(
-                                repositoryMatches = repository === claim.repository,
-                                profileMatches = current.profile.id == claim.profileId,
-                                stateTarget = current.virtualMachineMutationState.target,
-                                callbackTarget = claim.target,
-                                stateGeneration = current.virtualMachineMutationState.mutationGeneration,
-                                callbackGeneration = claim.generation,
-                                globalGeneration = virtualMachineMutationGeneration.get(),
-                            )
-                        ) return@synchronized
-                        _workspace.value = current.copy(
-                            isPerformingAction = false,
-                            virtualMachineMutationState = current.virtualMachineMutationState.copy(
-                                mutationRefreshFailure = null,
-                                mutationRefreshInProgress = false,
-                                mutationRefreshCompleted = false,
-                                mutationVerification = null,
-                            ),
-                        )
-                    }
-                    return@launch
-                }
-                val refreshed = claim.repository.virtualMachineOverview()
-                synchronized(virtualMachineMutationLock) {
-                    val current = _workspace.value ?: return@synchronized
-                    if (!virtualMachineMutationCallbackMatches(
-                            repositoryMatches = repository === claim.repository,
-                            profileMatches = current.profile.id == claim.profileId,
-                            stateTarget = current.virtualMachineMutationState.target,
-                            callbackTarget = claim.target,
-                            stateGeneration = current.virtualMachineMutationState.mutationGeneration,
-                            callbackGeneration = claim.generation,
-                            globalGeneration = virtualMachineMutationGeneration.get(),
-                        )
-                    ) return@synchronized
-                    _workspace.value = current.copy(
-                        virtualMachines = Loadable.Ready(refreshed),
-                        isPerformingAction = false,
-                        virtualMachineMutationState = current.virtualMachineMutationState.copy(
-                            mutationRefreshFailure = null,
-                            mutationRefreshInProgress = false,
-                            mutationRefreshCompleted = true,
-                            mutationVerification = when (imageImportVerification) {
-                                VirtualMachineImageImportVerification.MATCHES ->
-                                    VirtualMachineMutationVerification.MATCHES
-                                VirtualMachineImageImportVerification.DIFFERS ->
-                                    VirtualMachineMutationVerification.DIFFERS
-                                VirtualMachineImageImportVerification.PENDING -> null
-                                null -> virtualMachineMutationVerification(
-                                    current.virtualMachineMutationState,
-                                    refreshed,
-                                )
-                            },
-                            imageImportTaskId = current.virtualMachineMutationState.imageImportTaskId
-                                ?.takeUnless {
-                                    imageImportVerification ==
-                                        VirtualMachineImageImportVerification.MATCHES
-                                },
-                        ),
-                    )
-                }
-            } catch (error: CancellationException) {
-                finishVirtualMachineMutationRefreshFailure(claim, null)
-                throw error
-            } catch (error: Throwable) {
-                finishVirtualMachineMutationRefreshFailure(claim, error.asDsmFailure())
-            }
-        }
-        return true
-    }
-
-    private fun finishVirtualMachineMutationRefreshFailure(
-        claim: VirtualMachineMutationClaim,
-        failure: DsmFailure?,
-    ) {
-        synchronized(virtualMachineMutationLock) {
-            val current = _workspace.value ?: return
-            if (!virtualMachineMutationCallbackMatches(
-                    repositoryMatches = repository === claim.repository,
-                    profileMatches = current.profile.id == claim.profileId,
-                    stateTarget = current.virtualMachineMutationState.target,
-                    callbackTarget = claim.target,
-                    stateGeneration = current.virtualMachineMutationState.mutationGeneration,
-                    callbackGeneration = claim.generation,
-                    globalGeneration = virtualMachineMutationGeneration.get(),
-                )
-            ) return
-            _workspace.value = current.copy(
-                isPerformingAction = false,
-                virtualMachineMutationState = current.virtualMachineMutationState.copy(
-                    mutationRefreshFailure = failure,
-                    mutationRefreshInProgress = false,
-                    mutationRefreshCompleted = false,
-                    mutationVerification = null,
-                ),
-            )
-        }
-    }
-
-    fun dismissVirtualMachineMutation(): Boolean = synchronized(virtualMachineMutationLock) {
-        val current = _workspace.value ?: return false
-        if (!canDismissVirtualMachineMutation(current.virtualMachineMutationState)) return false
-        virtualMachineMutationGeneration.incrementAndGet()
-        _workspace.value = current.copy(
-            virtualMachineMutationState = VirtualMachineMutationWorkspaceState(
-                selectedTab = current.virtualMachineMutationState.selectedTab,
-                supportsOfficialTasks = current.virtualMachineMutationState.supportsOfficialTasks,
-            ),
-        )
-        true
-    }
-
-    fun continueEditingVirtualMachineMutation(): Boolean = synchronized(virtualMachineMutationLock) {
-        val current = _workspace.value ?: return false
-        val state = current.virtualMachineMutationState
-        if (!canContinueEditingVirtualMachineMutation(state)) return false
-        val generation = virtualMachineMutationGeneration.incrementAndGet()
-        _workspace.value = current.copy(
-            isPerformingAction = false,
-            message = null,
-            virtualMachineMutationState = state.copy(
-                lifecycleConfirmationTarget = null,
-                lifecycleConfirmationRequested = false,
-                target = null,
-                mutationInProgress = false,
-                mutationResult = null,
-                mutationFailure = null,
-                mutationRefreshFailure = null,
-                mutationRefreshInProgress = false,
-                mutationRefreshCompleted = false,
-                mutationVerification = null,
-                imageImportTaskId = null,
-                mutationGeneration = generation,
-            ),
-        )
-        true
-    }
+    fun refreshDownloadCreationMutation() { downloadActions.show() }
 
     private fun serviceMutationResultMessage(
         result: MutationResult,
@@ -14839,26 +7494,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     ): String {
         val context = getApplication<Application>()
         return context.getString(serviceMutationMessageResource(result, success))
-    }
-
-    private fun favoriteResultMessage(result: MutationResult): String {
-        val removing = result.operation == "favoriteRemove"
-        val resource = when {
-            result.status == MutationResultStatus.CONFIRMED_SUCCESS -> if (removing) {
-                R.string.favorite_removed
-            } else {
-                R.string.favorite_added
-            }
-            result.errorCategory == MutationErrorCategory.CONFLICT -> R.string.favorite_add_in_progress
-            result.status == MutationResultStatus.SUBMITTED_BUT_UNVERIFIED ||
-                result.status == MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION ->
-                R.string.favorite_add_unverified
-            result.status == MutationResultStatus.PERMISSION_DENIED -> R.string.favorite_add_permission_denied
-            result.status == MutationResultStatus.UNSUPPORTED -> R.string.favorite_add_unsupported
-            result.status == MutationResultStatus.CANCELLED_BEFORE_SUBMISSION -> R.string.favorite_add_cancelled
-            else -> R.string.favorite_add_failed
-        }
-        return getApplication<Application>().getString(resource)
     }
 
     private fun fileDeleteResultMessage(result: MutationResult): String {
@@ -14874,57 +7509,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 result.counts.failed + result.counts.unknown,
             )
             else -> application.getString(fileDeleteMutationMessageResource(result))
-        }
-    }
-
-    private fun fileCopyMoveResultMessage(result: MutationResult): String {
-        val application = getApplication<Application>()
-        return when (result.status) {
-            MutationResultStatus.CONFIRMED_SUCCESS -> application.getString(
-                if (result.operation == "fileCopy") R.string.files_copied else R.string.files_moved,
-                result.counts.succeeded,
-            )
-            MutationResultStatus.PARTIAL_SUCCESS -> application.getString(
-                R.string.file_copy_move_partial,
-                result.counts.succeeded,
-                result.counts.failed + result.counts.unknown,
-            )
-            else -> application.getString(fileCopyMoveMessageResource(result))
-        }
-    }
-
-    private fun downloadMutationResultMessage(result: MutationResult): String {
-        val application = getApplication<Application>()
-        return when (result.status) {
-            MutationResultStatus.CONFIRMED_SUCCESS -> application.getString(
-                when (result.operation) {
-                    "downloadPause" -> R.string.download_pause_confirmed
-                    "downloadResume" -> R.string.download_resume_confirmed
-                    else -> R.string.download_delete_confirmed
-                },
-                result.counts.succeeded,
-            )
-            MutationResultStatus.PARTIAL_SUCCESS -> application.getString(
-                R.string.download_action_partial,
-                result.counts.succeeded,
-                result.counts.failed + result.counts.unknown,
-            )
-            MutationResultStatus.SUBMITTED_BUT_UNVERIFIED,
-            MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-            -> application.getString(R.string.download_action_unverified)
-            MutationResultStatus.PERMISSION_DENIED ->
-                application.getString(R.string.download_action_permission_denied)
-            MutationResultStatus.UNSUPPORTED ->
-                application.getString(R.string.download_action_unsupported)
-            MutationResultStatus.CANCELLED_BEFORE_SUBMISSION ->
-                application.getString(R.string.download_action_cancelled)
-            MutationResultStatus.CONFIRMED_FAILURE -> if (
-                result.errorCategory == MutationErrorCategory.CONFLICT
-            ) {
-                application.getString(R.string.download_action_conflict)
-            } else {
-                application.getString(R.string.download_action_failed)
-            }
         }
     }
 
@@ -14997,8 +7581,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 val extension = item.extension.take(8).takeIf { it.isNotBlank() } ?: "bin"
                 val file = File(
-                    getApplication<Application>().cacheDir,
-                    "preview/preview-${UUID.randomUUID()}.$extension",
+                    cacheDirectories.previews,
+                    "preview-${UUID.randomUUID()}.$extension",
                 )
                 withTemporaryFileOwnership(file) { ownedFile ->
                     repo.downloadPreview(item, ownedFile)
@@ -15022,8 +7606,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             -> {
                 val extension = item.extension.take(8).takeIf { it.isNotBlank() } ?: "bin"
                 val file = File(
-                    getApplication<Application>().cacheDir,
-                    "preview/preview-${UUID.randomUUID()}.$extension",
+                    cacheDirectories.previews,
+                    "preview-${UUID.randomUUID()}.$extension",
                 )
                 withTemporaryFileOwnership(file) { ownedFile ->
                     repo.downloadPreview(item, ownedFile)
@@ -15123,12 +7707,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             thumbnailCache.evictAll()
         }
         cleanupPreviewFile(_workspace.value?.preview)
-        File(getApplication<Application>().cacheDir, "preview")
-            .listFiles()
-            ?.forEach(File::delete)
-        File(getApplication<Application>().cacheDir, "chat-preview")
-            .listFiles()
-            ?.forEach(File::delete)
+        cacheDirectories.clearPreviews()
     }
 
     private fun enqueueBackgroundDownload(
@@ -15205,6 +7784,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         request: OneTimeWorkRequest,
         existingWorkPolicy: ExistingWorkPolicy,
     ) {
+        if (!checkTransferOwner(WorkspaceRecordKind.DOWNLOAD, record.id, repository)) {
+            transferStore.update(record.id) { it.copy(state = TransferState.PAUSED, errorKind = DsmErrorKind.WORKSPACE_CHANGED.name) }
+            return
+        }
         workManager.enqueueUniqueWork(
             FileDownloadWorker.UNIQUE_WORK_PREFIX + record.id,
             existingWorkPolicy,
@@ -15215,6 +7798,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun enqueuePhotoBackup(record: PersistedUpload) {
+        if (!checkTransferOwner(WorkspaceRecordKind.UPLOAD, record.id, repository)) {
+            transferStore.updateUpload(record.id) { it.copy(state = TransferState.PAUSED, errorKind = DsmErrorKind.WORKSPACE_CHANGED.name) }
+            return
+        }
         val request = OneTimeWorkRequestBuilder<PhotoBackupWorker>()
             .setInputData(workDataOf(PhotoBackupWorker.KEY_TASK_ID to record.id))
             .setConstraints(photoBackupConstraints())
@@ -15233,6 +7820,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         record: PersistedUpload,
         existingWorkPolicy: ExistingWorkPolicy = transferEnqueuePolicy(TransferEnqueueReason.INITIAL),
     ) {
+        if (!checkTransferOwner(WorkspaceRecordKind.UPLOAD, record.id, repository)) {
+            transferStore.updateUpload(record.id) { it.copy(state = TransferState.PAUSED, errorKind = DsmErrorKind.WORKSPACE_CHANGED.name) }
+            return
+        }
         val request = OneTimeWorkRequestBuilder<PhotoBackupWorker>()
             .setInputData(workDataOf(PhotoBackupWorker.KEY_TASK_ID to record.id))
             .setConstraints(
@@ -15256,7 +7847,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (!shouldScanPhotoBackupSource(source)) return true
         val profileId = source.profileId
         val periodicWorkName = PhotoBackupScanWorker.UNIQUE_WORK_PREFIX + profileId
-        val input = workDataOf(PhotoBackupScanWorker.KEY_PROFILE_ID to profileId)
+        val sourceId = source.sourceId ?: return false
+        if (!checkTransferOwner(WorkspaceRecordKind.PHOTO_SOURCE, sourceId, repository)) return false
+        val input = workDataOf(PhotoBackupScanWorker.KEY_PROFILE_ID to profileId, PhotoBackupScanWorker.KEY_SOURCE_ID to sourceId)
         val periodic = PeriodicWorkRequestBuilder<PhotoBackupScanWorker>(6, TimeUnit.HOURS)
             .setInputData(input)
             .setConstraints(photoBackupConstraints())
@@ -15481,51 +8074,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             try {
-                val descriptor = getApplication<Application>().contentResolver
-                    .openFileDescriptor(destination, "rw")
-                    ?: throw java.io.IOException("The destination could not be opened")
-                descriptor.use { parcel ->
-                    FileOutputStream(parcel.fileDescriptor).use { stream ->
-                        val requestedResume = if (!record.isDirectory) record.completedBytes else 0L
-                        val resumeFrom = runCatching {
-                            if (requestedResume > 0 && stream.channel.size() == requestedResume) {
-                                stream.channel.position(requestedResume)
-                                requestedResume
-                            } else if (requireExactResume && requestedResume > 0) {
-                                throw java.io.IOException(
-                                    "The saved partial download does not match its resume offset",
-                                )
-                            } else {
-                                stream.channel.truncate(0)
-                                stream.channel.position(0)
-                                0L
-                            }
-                        }.getOrElse {
-                            throw java.io.IOException("The destination does not support safe resume", it)
+                val written = executeFileDownload(getApplication(), repo, record, transferStore, requireExactResume,
+                    requireActive = {
+                        if (!ownsExecution() || transferStore.download(record.id)?.state != TransferState.RUNNING)
+                            throw CancellationException("Download execution changed")
+                    },
+                    onReset = { transferStore.update(record.id) { current ->
+                        if (ownsExecution()) current.copy(completedBytes = 0, totalBytes = current.expectedBytes) else current
+                    } },
+                ) { completed, total ->
+                    transferStore.update(record.id) { current ->
+                        if (ownsExecution()) {
+                            current.copy(
+                                completedBytes = completed,
+                                totalBytes = total ?: current.expectedBytes,
+                            )
+                        } else {
+                            current
                         }
-                        if (resumeFrom == 0L) {
-                            transferStore.update(record.id) { current ->
-                                if (ownsExecution()) {
-                                    current.copy(completedBytes = 0)
-                                } else {
-                                    current
-                                }
-                            }
-                        }
-                    repo.download(record.toDownloadFileItem(), stream, resumeFrom = resumeFrom) { completed, total ->
-                        transferStore.update(record.id) { current ->
-                            if (ownsExecution()) {
-                                current.copy(
-                                    completedBytes = completed,
-                                    totalBytes = total ?: current.expectedBytes,
-                                )
-                            } else {
-                                current
-                            }
-                        }
-                        syncPersistedDownloads(record.profileId)
                     }
-                    }
+                    syncPersistedDownloads(record.profileId)
                 }
                 val completed = transferStore.update(record.id) { current ->
                     if (!ownsExecution() || current.state != TransferState.RUNNING) {
@@ -15533,13 +8101,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         current.copy(
                             state = TransferState.SUCCEEDED,
-                            completedBytes = current.totalBytes ?: current.completedBytes,
+                            completedBytes = written,
+                            totalBytes = written,
                             errorKind = null,
                         )
                     }
                 }
                 if (ownsExecution() && completed?.state == TransferState.SUCCEEDED) {
-                    releasePersistedDownloadPermission(destination)
+                    releasePersistedDownloadPermission(destination, record.id)
                     TransferNotifications.completion(getApplication(), record.id, succeeded = true)
                     _workspace.update {
                         it?.copy(message = getApplication<Application>().getString(R.string.download_completed))
@@ -15553,8 +8122,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         executionId,
                     )
                 ) {
-                    deleteIncompleteDownload(destination)
-                    releasePersistedDownloadPermission(destination)
+                    deleteIncompleteDownload(destination, record.id)
+                    releasePersistedDownloadPermission(destination, record.id)
                     transferStore.update(record.id) { latest ->
                         if (ownsExecution() && latest.state != TransferState.PAUSED) {
                             latest.copy(state = TransferState.CANCELLED)
@@ -15569,13 +8138,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     if (!ownsExecution() || current.state != TransferState.RUNNING) {
                         current
                     } else {
-                        current.copy(state = TransferState.FAILED, errorKind = kind.name)
+                        current.copy(state = if (kind == DsmErrorKind.WORKSPACE_CHANGED) TransferState.PAUSED else TransferState.FAILED, errorKind = kind.name)
                     }
                 }
                 if (ownsExecution() && failed?.state == TransferState.FAILED) {
                     if (shouldDeleteFailedForegroundDownload(failed, ownsExecution = true)) {
-                        deleteIncompleteDownload(destination)
-                        releasePersistedDownloadPermission(destination)
+                        deleteIncompleteDownload(destination, record.id)
+                        releasePersistedDownloadPermission(destination, record.id)
                     }
                     TransferNotifications.completion(getApplication(), record.id, succeeded = false)
                 }
@@ -15599,8 +8168,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 cancelled.workId == null
             ) {
                 val destination = Uri.parse(cancelled.destinationUri)
-                deleteIncompleteDownload(destination)
-                releasePersistedDownloadPermission(destination)
+                deleteIncompleteDownload(destination, record.id)
+                releasePersistedDownloadPermission(destination, record.id)
                 syncPersistedDownloads(cancelled.profileId)
             }
         }, afterRemoval = {
@@ -15619,16 +8188,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 Unit
             } else if (workId != null && record.state !in TERMINAL_TRANSFER_STATES) {
                 restorePersistedBackgroundDownload(profileId, record, workId)
+            } else if (workId == null && (record.isArchiveDownload || record.isVFSDownload) && record.state !in TERMINAL_TRANSFER_STATES) {
+                transferStore.update(record.id) { it.copy(state = TransferState.PAUSED) }
             } else if (workId == null && record.state !in TERMINAL_TRANSFER_STATES) {
                 val destination = Uri.parse(record.destinationUri)
-                deleteIncompleteDownload(destination)
-                releasePersistedDownloadPermission(destination)
+                deleteIncompleteDownload(destination, record.id)
+                releasePersistedDownloadPermission(destination, record.id)
                 transferStore.update(record.id) {
                     it.copy(state = TransferState.FAILED, errorKind = DsmErrorKind.DOWNLOAD_FAILED.name)
                 }
             }
         }
         transferStore.uploads(profileId).forEach { record ->
+            if (folderUploads.isFolder(record.id)) { folderUploads.restore(record); return@forEach }
+            if (record.state == TransferState.PAUSED) return@forEach
             val workId = record.workId?.let { value ->
                 runCatching { UUID.fromString(value) }.getOrNull()
             }
@@ -15641,7 +8214,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         transferStore.servers(profileId).forEach { record ->
-            if (record.state in TERMINAL_TRANSFER_STATES) return@forEach
+            if (record.state in TERMINAL_TRANSFER_STATES || record.state == TransferState.PAUSED) return@forEach
             val target = record.toFileServerMutationTarget()
             when {
                 target == null -> transferStore.removeInvalidServer(record.id)
@@ -15759,6 +8332,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         target: FileServerMutationTarget,
     ) {
         val repo = repository ?: return
+        if (!checkTransferOwner(WorkspaceRecordKind.SERVER, record.id, repo)) return
         val taskId = record.nasTaskId ?: return
         val generation = fileServerMutationGeneration.incrementAndGet()
         transferStore.updateServer(record.id) {
@@ -15773,7 +8347,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val result = repo.resumeArchiveMutationResult(
                     operation = target.operation,
                     taskId = taskId,
-                    expectedOutputs = target.expectedOutputs,
+                    expectedOutputs = transferStore.extractionOutputs(record),
                 ) { completed, total ->
                     updatePersistedServerRecord(repo, profileId, record.id, generation) {
                         it.copy(completedUnits = completed, totalUnits = total)
@@ -15866,6 +8440,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun retryVirtualMachineLocalImageImport(id: String): Boolean {
+        if (!checkTransferOwner(WorkspaceRecordKind.VMM_IMPORT, id, repository)) return false
         val profileId = _workspace.value?.profile?.id ?: return false
         val record = transferStore.virtualMachineImageImport(id)?.takeIf {
             it.profileId == profileId &&
@@ -15898,7 +8473,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun monitorVirtualMachineImageImport(recordId: String, workId: UUID) {
         virtualMachineImageImportWatchJobs.remove(recordId)?.cancel()
         virtualMachineImageImportWatchJobs[recordId] = viewModelScope.launch {
-            workManager.getWorkInfoByIdFlow(workId).collectLatest { info ->
+            workManager.getWorkInfoByIdFlow(workId).filterNotNull().collectLatest { info ->
                 val profileId = transferStore.virtualMachineImageImport(recordId)?.profileId
                     ?: return@collectLatest
                 syncVirtualMachineLocalImageImports(profileId)
@@ -15919,43 +8494,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         pendingVirtualMachineLocalImageContentType = null
     }
 
-    private fun releaseVirtualMachineLocalImageGrant(uri: Uri) {
-        runCatching {
-            getApplication<Application>().contentResolver.releasePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        }
-    }
+    private fun releaseVirtualMachineLocalImageGrant(uri: Uri) { transferUris.releaseRead(uri) }
 
-    private fun monitorUpload(taskId: String, workId: UUID) {
-        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            workManager.getWorkInfoByIdFlow(workId).collectLatest { info ->
-                val completed = info.progress.getLong(PhotoBackupWorker.KEY_COMPLETED_BYTES, 0)
-                transferStore.updateUpload(taskId) { current ->
-                    current.applyUploadWorkObservation(
-                        executionId = workId.toString(),
-                        workState = info.state,
-                        observedCompletedBytes = completed,
-                        observedErrorKind = info.outputData.getString(PhotoBackupWorker.KEY_ERROR_KIND),
-                    )
-                }?.let { syncPersistedDownloads(it.profileId) }
-                if (info.state.isFinished) {
-                    transferCoordinator.removeWorkObservation(
-                        taskId,
-                        currentCoroutineContext()[Job],
-                    )
-                    currentCoroutineContext()[Job]?.cancel()
-                }
-            }
-        }
-        transferCoordinator.replaceWorkObservation(taskId, job)
-        job.start()
-    }
+    private fun monitorUpload(taskId: String, workId: UUID) = transferCoordinator.observeUpload(
+        viewModelScope, workManager, transferStore, taskId, workId, ::syncPersistedDownloads,
+    )
 
     private fun monitorDownload(taskId: String, workId: UUID) {
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            workManager.getWorkInfoByIdFlow(workId).collectLatest { info ->
+            workManager.getWorkInfoByIdFlow(workId).filterNotNull().collectLatest { info ->
                 val completed = info.progress.getLong(FileDownloadWorker.KEY_COMPLETED_BYTES, 0)
                 val total = info.progress.takeIf {
                     it.getBoolean(FileDownloadWorker.KEY_HAS_TOTAL, false)
@@ -15997,11 +8544,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun syncPersistedDownloads(profileId: String) {
-        val downloads = transferStore.downloads(profileId).map(::downloadTransferTask)
-        val uploads = transferStore.uploads(profileId).map(::uploadTransferTask)
+        val downloads = transferStore.downloads(profileId).map(transferPresentation::download)
+        val uploads = transferStore.uploads(profileId).map(transferPresentation::upload)
         val servers = transferStore.servers(profileId)
             .sortedByDescending(PersistedServerTransfer::startedAtEpochMillis)
-            .mapNotNull(::serverTransferTask)
+            .mapNotNull(transferPresentation::server)
         val persistedIds = (downloads + uploads + servers).mapTo(mutableSetOf(), TransferTask::id)
         _workspace.update { current ->
             current?.takeIf { it.profile.id == profileId }?.copy(
@@ -16011,176 +8558,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun serverTransferTask(server: PersistedServerTransfer): TransferTask? {
-        val target = server.toFileServerMutationTarget() ?: return null
-        val application = getApplication<Application>()
-        val operationName = when (target.operation) {
-            FileServerMutationOperation.COMPRESS -> "archiveCompress"
-            FileServerMutationOperation.EXTRACT -> "archiveExtract"
-        }
-        val result = server.mutationResult?.toMutationResult(operationName)
-        val failure = server.errorKind?.let { value ->
-            val kind = runCatching { DsmErrorKind.valueOf(value) }.getOrDefault(DsmErrorKind.UNKNOWN)
-            DsmFailure(null, "", "", kind = kind)
-        }
-        val refreshFailure = server.refreshFailureKind?.let { value ->
-            val kind = runCatching { DsmErrorKind.valueOf(value) }.getOrDefault(DsmErrorKind.UNKNOWN)
-            DsmFailure(null, "", "", kind = kind)
-        }
-        val detail = when (server.state) {
-            TransferState.WAITING, TransferState.RUNNING -> application.getString(
-                if (target.operation == FileServerMutationOperation.COMPRESS) {
-                    R.string.archive_creating
-                } else {
-                    R.string.archive_extracting
-                },
-            )
-            TransferState.CANCELLING -> application.getString(R.string.transfer_cancelling)
-            TransferState.SUCCEEDED,
-            TransferState.FAILED,
-            TransferState.CANCELLED,
-            -> result?.let { application.getString(archiveMutationMessageResource(it)) }
-                ?: application.getString(
-                    if (server.requiresRefresh) R.string.transfer_refresh_before_retry
-                    else R.string.transfer_failed,
-                )
-            TransferState.PAUSED -> application.getString(R.string.transfer_waiting)
-        }
-        return TransferTask(
-            id = server.id,
-            title = server.title,
-            detail = detail,
-            direction = TransferDirection.SERVER,
-            state = server.state,
-            completedBytes = server.completedUnits,
-            totalBytes = server.totalUnits,
-            errorMessage = failure?.localize(application)?.combined,
-            requiresRefresh = server.requiresRefresh,
-            startedAtEpochMillis = server.startedAtEpochMillis,
-            fileServerMutation = FileServerMutationLifecycle(
-                target = target,
-                result = result,
-                failure = failure,
-                refreshCompleted = server.refreshCompleted,
-                refreshFailure = refreshFailure,
-                verification = server.toFileServerMutationVerification(),
-                generation = server.executionGeneration,
-            ),
-            canCancel = !server.readOnlyObservation,
-        )
-    }
-
-    private fun uploadTransferTask(upload: PersistedUpload): TransferTask {
-        val application = getApplication<Application>()
-        val uploadMutation = UploadMutationLifecycle(
-            directoryResult = upload.directoryMutationResult?.toMutationResult("backupFolderEnsure"),
-            uploadResult = upload.uploadMutationResult?.toMutationResult("fileUpload"),
-        ).takeIf { it.directoryResult != null || it.uploadResult != null }
-        val hasTerminalMutationFeedback = upload.uploadMutationResult != null ||
-            upload.directoryMutationResult?.status?.let {
-                it != MutationResultStatus.CONFIRMED_SUCCESS
-            } == true
-        val detail = when (upload.state) {
-            TransferState.WAITING -> application.getString(
-                if (upload.backupMode) R.string.transfer_waiting_to_backup else R.string.transfer_waiting,
-            )
-            TransferState.RUNNING -> application.getString(
-                if (upload.backupMode) R.string.transfer_backing_up else R.string.transfer_uploading,
-            )
-            TransferState.CANCELLING -> application.getString(R.string.transfer_cancelling)
-            TransferState.SUCCEEDED -> application.getString(
-                if (upload.skippedExisting) R.string.transfer_backup_already_exists
-                else R.string.transfer_completed,
-            )
-            TransferState.FAILED -> application.getString(
-                if (upload.backupMode) R.string.transfer_backup_failed else R.string.transfer_failed,
-            )
-            TransferState.CANCELLED -> application.getString(
-                if (upload.requiresRefresh) R.string.transfer_cancelled_refresh
-                else R.string.transfer_cancelled,
-            )
-            TransferState.PAUSED -> application.getString(
-                if (upload.backupMode) R.string.transfer_waiting_to_backup else R.string.transfer_waiting,
-            )
-        }
-        val errorMessage = if (hasTerminalMutationFeedback) {
-            null
-        } else if (upload.requiresRefresh && upload.state == TransferState.FAILED) {
-            application.getString(R.string.upload_unverified)
-        } else upload.errorKind?.let { name ->
-            val kind = runCatching { DsmErrorKind.valueOf(name) }.getOrDefault(DsmErrorKind.UPLOAD_FAILED)
-            DsmFailure(null, "", "", kind = kind).localize(application).combined
-        }
-        return TransferTask(
-            id = upload.id,
-            title = upload.title,
-            detail = detail,
-            direction = TransferDirection.UPLOAD,
-            state = upload.state,
-            completedBytes = upload.completedBytes,
-            totalBytes = upload.expectedBytes,
-            errorMessage = errorMessage,
-            requiresRefresh = upload.requiresRefresh,
-            startedAtEpochMillis = upload.startedAtEpochMillis,
-            uploadMutation = uploadMutation,
-        )
-    }
-
-    private fun downloadTransferTask(download: PersistedDownload): TransferTask {
-        val application = getApplication<Application>()
-        val detail = when (download.state) {
-            TransferState.WAITING -> application.getString(R.string.transfer_waiting_to_download)
-            TransferState.RUNNING -> application.getString(
-                if (download.backgroundCapable) {
-                    R.string.transfer_downloading
-                } else {
-                    R.string.transfer_downloading_keep_open
-                },
-            )
-            TransferState.CANCELLING -> application.getString(R.string.transfer_cancelling)
-            TransferState.SUCCEEDED -> application.getString(R.string.transfer_completed)
-            TransferState.FAILED -> application.getString(R.string.transfer_download_failed)
-            TransferState.CANCELLED -> application.getString(R.string.transfer_download_cancelled)
-            TransferState.PAUSED -> application.getString(R.string.transfer_download_paused)
-        }
-        val errorMessage = download.errorKind?.let { name ->
-            val kind = runCatching { DsmErrorKind.valueOf(name) }.getOrDefault(DsmErrorKind.DOWNLOAD_FAILED)
-            DsmFailure(null, "", "", kind = kind).localize(application).combined
-        }
-        return TransferTask(
-            id = download.id,
-            title = download.title,
-            detail = detail,
-            direction = TransferDirection.DOWNLOAD,
-            state = download.state,
-            completedBytes = download.completedBytes,
-            totalBytes = download.totalBytes,
-            errorMessage = errorMessage,
-            startedAtEpochMillis = download.startedAtEpochMillis,
-        )
-    }
-
-    private fun deleteIncompleteDownload(uri: Uri) {
-        runCatching { getApplication<Application>().contentResolver.delete(uri, null, null) }
-    }
-
-    private fun releasePersistedReadPermission(uri: Uri) {
-        runCatching {
-            getApplication<Application>().contentResolver.releasePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        }
-    }
-
-    private fun releasePersistedDownloadPermission(uri: Uri) {
-        runCatching {
-            getApplication<Application>().contentResolver.releasePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-            )
-        }
-    }
+    private fun deleteIncompleteDownload(uri: Uri, excludingRecordId: String? = null) = transferUris.deleteIncomplete(uri, excludingRecordId)
+    private fun releasePersistedReadPermission(uri: Uri) { transferUris.releaseRead(uri) }
+    private fun releasePersistedDownloadPermission(uri: Uri, excludingRecordId: String? = null) = transferUris.releaseDownload(uri, excludingRecordId)
 
     private fun updateTransfer(id: String, transform: (TransferTask) -> TransferTask) {
         _workspace.update { current ->
@@ -16217,15 +8597,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             (String) -> Unit,
             (List<FileServerMutationExpectedOutput>) -> Unit,
         ) -> FileServerMutationExecution,
-    ) {
-        val repo = repository ?: return
-        val taskId = UUID.randomUUID().toString()
+    ): Boolean {
+        val repo = repository ?: return false
+        val taskId = if (target.operation == FileServerMutationOperation.EXTRACT) io.github.qwertyuiop1995.dsmnativeclient.data.newFileExtractionId() else UUID.randomUUID().toString()
         val application = getApplication<Application>()
         val generation = fileServerMutationGeneration.incrementAndGet()
         val startedAt = System.currentTimeMillis()
         val claim = synchronized(fileStationMutationLock) {
-            val current = _workspace.value ?: return
-            if (repository !== repo || current.selectedModule != Module.FILES) return
+            val current = _workspace.value ?: return false
+            if (repository !== repo || current.selectedModule != Module.FILES || current.isPerformingAction ||
+                fileStationMutationBlocksOrdinaryLoad(current.fileStationMutationState)) return false
+            if (transferStore.servers(current.profile.id).any { previous ->
+                !previous.canRemoveFinishedServer() && taskOwnership.canUse(WorkspaceRecordKind.SERVER, previous.id, repo) &&
+                    previous.toFileServerMutationTarget()?.let(target::overlapsArchiveTarget) == true
+            }) return false
             val persisted = target.toPersistedServerTransfer(
                 id = taskId,
                 title = title,
@@ -16233,11 +8618,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 submissionPhase = PersistedServerSubmissionPhase.PREPARING,
                 startedAtEpochMillis = startedAt,
             ).copy(executionGeneration = generation)
-            if (runCatching { transferStore.upsert(persisted) }.isFailure) {
+            if (!checkTransferOwner(WorkspaceRecordKind.SERVER, taskId, repo, create = true) ||
+                runCatching { transferStore.upsert(persisted) }.isFailure) {
                 _workspace.value = current.copy(
                     message = application.getString(R.string.server_transfer_state_unavailable),
                 )
-                return
+                return false
             }
             _workspace.value = current.copy(message = null)
             syncPersistedDownloads(current.profile.id)
@@ -16260,6 +8646,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     },
                     {
+                        val active = checkNotNull(transferStore.server(taskId))
+                        if (target.operation == FileServerMutationOperation.EXTRACT) transferStore.extractionOutputs(active)
                         checkNotNull(updatePersistedServerRecord(repo, claim.profileId, taskId, generation) {
                             it.copy(submissionPhase = PersistedServerSubmissionPhase.SUBMITTING)
                         }) { "transfer.server_state_not_persisted" }
@@ -16273,13 +8661,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         }) { "transfer.server_state_not_persisted" }
                     },
                     { outputs ->
-                        checkNotNull(updatePersistedServerRecord(repo, claim.profileId, taskId, generation) {
-                            it.copy(
-                                expectedOutputs = outputs.map(
-                                    FileServerMutationExpectedOutput::toPersistedServerExpectedOutput,
-                                ),
-                            )
-                        }) { "transfer.server_state_not_persisted" }
+                        repo.requireCurrentOwner()
+                        check(repository === repo) { "transfer.server_state_not_persisted" }
+                        checkNotNull(transferStore.updateExtractionOutputs(taskId, generation, outputs)) { "transfer.server_state_not_persisted" }
+                        syncPersistedDownloads(claim.profileId)
                     },
                 )
                 val result = execution.result
@@ -16365,6 +8750,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         transferCoordinator.registerForegroundTask(taskId, job)
         job.start()
+        return true
     }
 
     private fun updateServerTransfer(
@@ -16373,7 +8759,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         transform: (TransferTask) -> TransferTask,
     ) {
         val current = transferStore.server(taskId) ?: return
-        val projected = serverTransferTask(current) ?: return
+        val projected = transferPresentation.server(current) ?: return
         if (!fileServerMutationCallbackMatches(projected, claim)) return
         val transformed = transform(projected)
         val lifecycle = transformed.fileServerMutation ?: return
@@ -16427,26 +8813,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             lifecycle.generation == claim.generation
     }
 
-    private suspend fun verifyFileServerMutation(
-        repo: DsmRepository,
-        target: FileServerMutationTarget,
-    ): FileServerMutationVerification {
-        val destination = repo.fileInfo(target.destinationFolderBaseline.path)
-            ?: return FileServerMutationVerification.DISAPPEARED
-        if (!destination.isDirectory) return FileServerMutationVerification.DIFFERS
-        if (target.expectedOutputs.isEmpty()) return FileServerMutationVerification.UNAVAILABLE
-        val outputsMatch = target.expectedOutputs.all { expected ->
-                repo.fileInfo(expected.path)?.let { actual ->
-                    actual.path == expected.path && actual.isDirectory == expected.isDirectory &&
-                        (!expected.requiresNonEmptyFile || actual.size > 0)
-                } == true
-            }
-        return when {
-            !outputsMatch -> FileServerMutationVerification.DIFFERS
-            else -> FileServerMutationVerification.MATCHES
-        }
-    }
-
     private fun updateServerTransferMessage(claim: FileServerTransferClaim, message: String) {
         _workspace.update { current ->
             current?.takeIf {
@@ -16464,9 +8830,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        fileSearch.invalidate(); fileSharing.invalidate(); fileArchive.invalidate(); filePermissions.invalidate(); fileISOMounts.invalidate(); fileRemoteMounts.invalidate(); fileVFS.invalidate(); fileSettings.invalidate(); fileBackgroundTaskControls.invalidate(); crossNasTransfers.invalidate(); officeDocuments.invalidate()
+        repository?.invalidateAccess()
+        crossNasRepositories.values.forEach(DsmRepository::invalidateAccess)
+        repository = null
         releasePendingVirtualMachineLocalImageGrant()
         nasAdministrationFeature.clearForProfileSwitch()
+        chatNotices.clear()
         chatFeature.clearForProfileSwitch()
+        chatActions.clear()
+        chatContent.clear()
+        chatBatches.clear()
+        chatVoice.clear()
+        downloadActions.clear(); downloadCreation.clear(); vmmTasks.clear(); vmmConsole.clear(); vmmCreation.clear(); vmmSettings.clear(); vmmAssets.clear(); vmmControls.clear(); containerControls.clear(); containerImages.clear(); containerNetworks.clear(); packageCenter.clear(); nasDirectory.clear(); nasScheduledTasks.clear(); nasObservation.clear(); nasServices.clear(); nasRegion.clear(); nasDdns.clear(); nasPower.clear(); nasConnections.clear(); nasSmart.clear()
+        containerReadFeature.invalidate()
         photoBackupCoordinator.clearForProfileSwitch()
         super.onCleared()
     }

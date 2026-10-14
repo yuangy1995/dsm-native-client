@@ -3,7 +3,6 @@ package io.github.qwertyuiop1995.dsmnativeclient.data
 import io.github.qwertyuiop1995.dsmnativeclient.domain.*
 import java.io.IOException
 import java.time.LocalDate
-import java.util.UUID
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
@@ -17,15 +16,20 @@ class SynologyPhotosRepositoryTest {
         val requests = mutableListOf<Request>()
         var userEnabled = enabled
         var homeEnabled = true
+        var teamPermission = "unknown"
+        var teamEnabled = true
+        var userFlags = ""
+        var adminFlags = ""
+        var teamFlags = ""
         var reply: suspend (Request) -> JsonObject = { obj("""{"list":[]}""") }
         val repository = SynologyPhotosRepository("profile-a", capabilities, { capability, method, fields ->
             val request = Request(capability, method, fields)
             requests += request
             when (capability.name) {
-                "SYNO.Foto.UserInfo" -> obj("""{"enabled":$userEnabled}""")
-                "SYNO.Foto.Setting.User" -> obj("""{"enable_home_service":$homeEnabled,"team_space_permission":"unknown"}""")
-                "SYNO.Foto.Setting.Admin" -> obj("""{"package_version":"fixture"}""")
-                "SYNO.Foto.Setting.TeamSpace" -> obj("""{"enabled":true}""")
+                "SYNO.Foto.UserInfo" -> obj("""{"enabled":$userEnabled,"id":41}""")
+                "SYNO.Foto.Setting.User" -> obj("""{"enable_home_service":$homeEnabled,"team_space_permission":"$teamPermission"$userFlags}""")
+                "SYNO.Foto.Setting.Admin" -> obj("""{"package_version":"fixture"$adminFlags}""")
+                "SYNO.Foto.Setting.TeamSpace" -> obj("""{"enabled":$teamEnabled$teamFlags}""")
                 else -> reply(request)
             }
         }, canDeleteOriginals = deletion)
@@ -178,12 +182,12 @@ class SynologyPhotosRepositoryTest {
     }
 
     @Test fun `目录权限父身份相册和分类分别使用对应Photos接口`() = runTest {
-        val fixture = Fixture()
+        val fixture = Fixture().apply { userFlags = ",\"enable_similar\":true" }
         val repository = fixture.ready()
         fixture.reply = { request -> when {
             request.method == "get" && request.capability.name.endsWith("Folder") -> obj("""{"folder":{"id":5,"name":"/","parent":0,"additional":{"access_permission":{"view":true}}}}""")
             request.capability.name.endsWith("Folder") -> obj("""{"list":[{"id":6,"name":"/Photos/Trips","parent":5}]}""")
-            request.capability.name.endsWith("Category") -> obj("""{"list":[{"id":"recently_added"},{"id":"person"},{"id":"concept"},{"id":"geocoding"},{"id":"general_tag"},{"id":"video"},{"id":"not-observed"}]}""")
+            request.capability.name.endsWith("Category") -> obj("""{"list":[{"id":"recently_added"},{"id":"person"},{"id":"concept"},{"id":"geocoding"},{"id":"general_tag"},{"id":"video"},{"id":"similar"},{"id":"not-observed"}]}""")
             else -> obj("""{"list":[]}""")
         } }
         assertEquals(5L, repository.rootFolder(SynologyPhotoSpace.PERSONAL).id)
@@ -274,7 +278,7 @@ class SynologyPhotosRepositoryTest {
     @Test fun `默认关闭删除且不发送危险请求`() = runTest {
         val fixture = Fixture()
         val repository = fixture.ready()
-        failure(SynologyPhotoFailureKind.DELETION_UNVERIFIED) { repository.deletePhoto(photo(), UUID.randomUUID()) }
+        failure(SynologyPhotoFailureKind.DELETION_UNVERIFIED) { repository.performPhotoDeletion(photo(), deletionCheckpoint()) {} }
         assertTrue(fixture.requests.isEmpty())
         assertFalse(repository.canDeleteOriginals)
     }
@@ -287,7 +291,7 @@ class SynologyPhotosRepositoryTest {
                 request.capability.name.endsWith("Item") -> obj("""{"list":[${item(if (mode == "changed") 12 else 11)}]}""")
                 else -> obj("""{"folder":{"id":5,"additional":{"access_permission":{"view":true,"manage":false}}}}""")
             } }
-            try { repository.deletePhoto(photo(), UUID.randomUUID()); fail("错误允许删除") } catch (_: SynologyPhotoFailure) { }
+            try { repository.performPhotoDeletion(photo(), deletionCheckpoint()) {}; fail("错误允许删除") } catch (_: SynologyPhotoFailure) { }
             assertTrue(fixture.requests.none { it.method == "delete" })
         }
     }
@@ -304,14 +308,14 @@ class SynologyPhotosRepositoryTest {
             deleted -> obj("{}")
             else -> obj("""{"list":[${item(11)}]}""")
         } }
-        val operation = UUID.randomUUID()
-        assertEquals(SynologyPhotoDeletionResult.PENDING_REVIEW, repository.deletePhoto(photo(), operation))
-        failure(SynologyPhotoFailureKind.INVALID_RESPONSE) { repository.reviewDeletion(photo()) }
-        failure(SynologyPhotoFailureKind.INVALID_RESPONSE) { repository.deletePhoto(photo(), UUID.randomUUID()) }
+        var checkpoint = deletionCheckpoint()
+        assertEquals(SynologyPhotoDeletionPhase.SUBMITTED, repository.performPhotoDeletion(photo(), checkpoint) { checkpoint = it }.phase)
+        failure(SynologyPhotoFailureKind.INVALID_RESPONSE) { repository.reviewPhotoDeletion(checkpoint) { checkpoint = it } }
+        failure(SynologyPhotoFailureKind.INVALID_RESPONSE) { repository.performPhotoDeletion(photo(), checkpoint) { checkpoint = it } }
         assertEquals(1, fixture.requests.count { it.method == "delete" })
         empty = true
-        assertEquals(SynologyPhotoDeletionResult.CONFIRMED, repository.reviewDeletion(photo()))
-        assertEquals(SynologyPhotoDeletionResult.CONFIRMED, repository.deletePhoto(photo(), operation))
+        assertEquals(SynologyPhotoDeletionPhase.CONFIRMED, repository.reviewPhotoDeletion(checkpoint) { checkpoint = it }.phase)
+        assertEquals(SynologyPhotoDeletionPhase.CONFIRMED, repository.performPhotoDeletion(photo(), checkpoint) { checkpoint = it }.phase)
         assertEquals(1, fixture.requests.count { it.method == "delete" })
         val write = fixture.requests.single { it.method == "delete" }
         assertEquals(mapOf("item_id" to "[11]", "folder_id" to "[]"), write.fields)
@@ -325,11 +329,170 @@ class SynologyPhotosRepositoryTest {
             request.method == "delete" -> throw IOException("synthetic loss")
             else -> obj("""{"list":[${item(11)}]}""")
         } }
-        val operation = UUID.randomUUID()
-        repository.deletePhoto(photo(), operation)
-        failure(SynologyPhotoFailureKind.TARGET_CHANGED) { repository.deletePhoto(photo().copy(sizeBytes = 99), operation) }
-        failure(SynologyPhotoFailureKind.TARGET_CHANGED) { repository.deletePhoto(photo(12), operation) }
+        val checkpoint = deletionCheckpoint()
+        repository.performPhotoDeletion(photo(), checkpoint) {}
+        failure(SynologyPhotoFailureKind.TARGET_CHANGED) {
+            val changed = photo().copy(sizeBytes = 99)
+            repository.performPhotoDeletion(changed, checkpoint.copy(target = SynologyPhotoDeletionTarget(changed))) {}
+        }
+        failure(SynologyPhotoFailureKind.TARGET_CHANGED) { repository.performPhotoDeletion(photo(12), checkpoint.copy(target = SynologyPhotoDeletionTarget(photo(12)))) {} }
         assertEquals(1, fixture.requests.count { it.method == "delete" })
+    }
+
+    @Test fun `共享来源仅接受已启用且明确entry或management而不猜测未知权限`() = runTest {
+        val fixture = Fixture().apply { homeEnabled = false }
+        for (permission in listOf("none", "unknown", "entry", "management")) {
+            fixture.teamPermission = permission
+            val access = fixture.repository.access()
+            assertEquals(if (permission in setOf("entry", "management")) listOf(SynologyPhotoSpace.SHARED) else emptyList<SynologyPhotoSpace>(), access.spaces)
+            assertEquals(permission == "management", access.canManageSharedSpace)
+        }
+        fixture.teamEnabled = false
+        assertTrue(fixture.repository.access().spaces.isEmpty())
+    }
+
+    @Test fun `共享时间线目录搜索分类和筛选使用已发现的来源能力`() = runTest {
+        val fixture = Fixture().apply { homeEnabled = false; teamPermission = "management" }
+        val repository = fixture.ready()
+        fixture.reply = { request -> when {
+            request.capability.name.endsWith("Timeline") || request.method == "get_search_timeline" -> obj("""{"section":[]}""")
+            request.capability.name.endsWith("Category") -> obj("""{"list":[{"id":"person"},{"id":"concept"},{"id":"geocoding"},{"id":"video"}]}""")
+            request.capability.name.endsWith("Search.Filter") -> obj("""{"person":[],"geocoding":[]}""")
+            request.capability.name.endsWith("Folder") && request.method == "get" -> obj("""{"folder":{"id":5,"name":"/","parent":0}}""")
+            request.capability.name.endsWith("Item") -> obj("""{"list":[${item(11)}]}""")
+            else -> obj("""{"list":[]}""")
+        } }
+        val shared = SynologyPhotoSpace.SHARED
+        repository.timeline(shared)
+        repository.timeline(shared, SynologyPhotoQuery.Search("sample", 1, 9))
+        assertEquals(shared, repository.photos(shared, query, 0, 2).items.single().id.space)
+        assertEquals(shared, repository.rootFolder(shared).space)
+        repository.folders(shared, 5, 0, 2)
+        assertEquals(setOf(SynologyPhotoCategory.LOCATIONS, SynologyPhotoCategory.VIDEOS), repository.categories(shared))
+        repository.categoryItems(SynologyPhotoCategory.LOCATIONS, 0, 2, shared)
+        repository.filterOptions(shared)
+        assertTrue(fixture.requests.all { it.capability.name.startsWith("SYNO.FotoTeam.") || it.capability.name == "SYNO.Foto.Browse.Category" })
+        assertTrue(fixture.requests.none { it.capability.name == "SYNO.FotoTeam.Browse.Category" })
+    }
+
+    @Test fun `共享entry目录逐项查看且不授予全局分类管理权限`() = runTest {
+        val fixture = Fixture().apply { teamPermission = "entry" }
+        val repository = fixture.ready()
+        assertTrue(repository.categories(SynologyPhotoSpace.SHARED).isEmpty())
+        failure(SynologyPhotoFailureKind.PERMISSION) { repository.categoryItems(SynologyPhotoCategory.LOCATIONS, 0, 2, SynologyPhotoSpace.SHARED) }
+        assertTrue(fixture.requests.isEmpty())
+        fixture.reply = { obj("""{"folder":{"id":5,"name":"/","parent":0,"additional":{"access_permission":{"view":false}}}}""") }
+        failure(SynologyPhotoFailureKind.PERMISSION) { repository.rootFolder(SynologyPhotoSpace.SHARED) }
+        fixture.reply = { obj("""{"person":[],"geocoding":[]}""") }
+        repository.filterOptions(SynologyPhotoSpace.SHARED)
+        assertEquals("SYNO.FotoTeam.Search.Filter", fixture.requests.last().capability.name)
+    }
+
+    @Test fun `识别设置关闭会收回对应分类且共享还需实际版本能力`() = runTest {
+        val fixture = Fixture().apply { teamPermission = "management"; teamFlags = ",\"enable_person\":true,\"enable_concept\":true"; adminFlags = ",\"enable_person\":false" }
+        val repository = fixture.ready()
+        fixture.reply = { obj("""{"list":[{"id":"person"},{"id":"concept"}]}""") }
+        assertEquals(setOf(SynologyPhotoCategory.SUBJECTS), repository.categories(SynologyPhotoSpace.PERSONAL))
+        assertEquals(setOf(SynologyPhotoCategory.SUBJECTS), repository.categories(SynologyPhotoSpace.SHARED))
+        failure(SynologyPhotoFailureKind.PERMISSION) { repository.categoryItems(SynologyPhotoCategory.PEOPLE, 0, 2) }
+        val unavailable = Fixture(capabilities = capabilities() - "SYNO.FotoTeam.Browse.Concept").apply { teamPermission = "management"; teamFlags = ",\"enable_concept\":true" }
+        unavailable.reply = fixture.reply
+        assertTrue(unavailable.ready().categories(SynologyPhotoSpace.SHARED).isEmpty())
+    }
+
+    @Test fun `没有原来源权限也可从相册读取混合来源且详情保持相册授权`() = runTest {
+        val fixture = Fixture().apply { homeEnabled = false; teamPermission = "none" }
+        val repository = fixture.ready()
+        fixture.reply = { request ->
+            if (request.method == "get") obj("""{"list":[${item(12).replace("\"folder_id\":5", "\"folder_id\":5,\"owner_user_id\":0")}]}""")
+            else obj("""{"list":[${item(11).replace("\"folder_id\":5", "\"folder_id\":5,\"owner_user_id\":42")},${item(12).replace("\"folder_id\":5", "\"folder_id\":5,\"owner_user_id\":0")}]}""")
+        }
+        val photos = repository.photos(SynologyPhotoSpace.PERSONAL, SynologyPhotoQuery.Album(7), 0, 2).items
+        assertEquals(listOf(SynologyPhotoSpace.PERSONAL, SynologyPhotoSpace.SHARED), photos.map { it.id.space })
+        assertEquals(listOf(42L, 0L), photos.map { it.albumContext!!.ownerUserId })
+        assertEquals(photos.last().albumContext, repository.details(photos.last()).albumContext)
+        assertTrue(fixture.requests.all { it.capability.name == "SYNO.Foto.Browse.Item" && it.fields["album_id"] == "7" })
+        assertFalse(repository.canDelete(photos.first()))
+        assertFalse(repository.canDelete(photos.last()))
+        fixture.requests.clear()
+        failure(SynologyPhotoFailureKind.PERMISSION) { repository.details(photos.last().copy(albumContext = null)) }
+        assertTrue(fixture.requests.isEmpty())
+    }
+
+    @Test fun `相册缺失所有者负值或详情所有者变化都拒绝且不回退来源`() = runTest {
+        val fixture = Fixture()
+        val repository = fixture.ready()
+        for (owner in listOf("", ",\"owner_user_id\":-1", ",\"owner_user_id\":\"0\"")) {
+            fixture.reply = { obj("""{"list":[${item(11).replace("\"folder_id\":5", "\"folder_id\":5$owner")}]}""") }
+            failure(SynologyPhotoFailureKind.INVALID_RESPONSE) { repository.photos(SynologyPhotoSpace.PERSONAL, SynologyPhotoQuery.Album(7), 0, 2) }
+        }
+        val photo = photo().copy(albumContext = SynologyPhotoAlbumContext(7, 42))
+        fixture.reply = { obj("""{"list":[${item(11).replace("\"folder_id\":5", "\"folder_id\":5,\"owner_user_id\":43")}]}""") }
+        failure(SynologyPhotoFailureKind.INVALID_RESPONSE) { repository.details(photo) }
+        fixture.requests.clear()
+        fixture.reply = { throw SynologyPhotoFailure(SynologyPhotoFailureKind.PERMISSION) }
+        failure(SynologyPhotoFailureKind.PERMISSION) { repository.details(photo) }
+        assertEquals(1, fixture.requests.size)
+        assertEquals("7", fixture.requests.single().fields["album_id"])
+    }
+
+    @Test fun `相册影片和实况选源保留album而共享原来源使用FotoTeam`() = runTest {
+        val fixture = Fixture().apply { teamPermission = "entry" }
+        val repository = fixture.ready()
+        fixture.reply = { obj("""{"list":[${item(11, "video", ",\"video_convert\":[{\"quality\":\"high\"}]")}]}""") }
+        val video = photo(type = "video").copy(id = photo().id.copy(space = SynologyPhotoSpace.SHARED))
+        val shared = repository.videoRequest(video)
+        assertEquals("SYNO.FotoTeam.Streaming", shared.first.name)
+        assertFalse(shared.second.second.containsKey("album_id"))
+        val album = repository.videoRequest(video.copy(albumContext = SynologyPhotoAlbumContext(7, 0)))
+        assertEquals("SYNO.Foto.Streaming", album.first.name)
+        assertEquals("7", album.second.second["album_id"])
+        fixture.reply = { obj("""{"list":[{"id_item":11,"unit":[{"id":88,"live_type":"video","additional":{"video_convert":[]}}]}]}""") }
+        val live = repository.videoRequest(video.copy(mediaType = "live", albumContext = SynologyPhotoAlbumContext(9, 0)))
+        assertEquals("SYNO.Foto.Download", live.first.name)
+        assertEquals(mapOf("unit_id" to "[88]", "album_id" to "9"), live.second.second)
+        assertEquals("9", fixture.requests.last().fields["album_id"])
+    }
+
+    @Test fun `共享删除按实际原命名空间预检而贡献权不能删除他人原件`() = runTest {
+        val fixture = Fixture(deletion = true).apply { teamPermission = "management" }
+        val repository = fixture.ready()
+        val foreign = photo().copy(albumContext = SynologyPhotoAlbumContext(7, 42, 41))
+        assertFalse(repository.canDelete(foreign))
+        failure(SynologyPhotoFailureKind.PERMISSION) { repository.prepareDeletion(foreign) }
+        assertTrue(fixture.requests.isEmpty())
+        val shared = photo().copy(id = photo().id.copy(space = SynologyPhotoSpace.SHARED))
+        assertTrue(repository.canDelete(shared))
+        fixture.reply = { request -> if (request.capability.name.endsWith("Item")) obj("""{"list":[${item(11)}]}""")
+            else obj("""{"folder":{"id":5}}""") }
+        repository.prepareDeletion(shared)
+        assertTrue(fixture.requests.all { it.capability.name.startsWith("SYNO.FotoTeam.") })
+        assertTrue(fixture.requests.none { it.method == "delete" })
+    }
+
+    @Test fun `文件夹读取独立回退用户排序且共享分页保留字段方向与原游标`() = runTest {
+        val fixture = Fixture().apply { teamPermission = "entry"; userFlags = ",\"item_sort_by\":\"filesize\",\"sort_direction\":\"desc\"" }
+        val repository = fixture.ready()
+        fixture.reply = { request -> if (request.method == "get") obj("""{"folder":{"id":5,"parent":1,"name":"/Synthetic","sort_by":"future","sort_direction":"asc","additional":{"access_permission":{"view":true}}}}""") else obj("""{"list":[]}""") }
+        val access = repository.folderAccess(SynologyPhotoSpace.SHARED, 5)
+        assertEquals(SynologyPhotoSort(SynologyPhotoSort.Field.FILESIZE, SynologyPhotoSort.Direction.ASCENDING), access.sort)
+        assertNull(access.explicitSort); assertFalse(access.canManage)
+        repository.photos(SynologyPhotoSpace.SHARED, SynologyPhotoQuery.Folder(5, access.sort), 200, 100)
+        val photos = fixture.requests.last(); assertEquals("SYNO.FotoTeam.Browse.Item", photos.capability.name)
+        assertEquals("\"filesize\"", photos.fields["sort_by"]); assertEquals("\"asc\"", photos.fields["sort_direction"])
+        assertEquals("200", photos.fields["offset"]); assertEquals("100", photos.fields["limit"]); assertEquals("5", photos.fields["folder_id"])
+        repository.folders(SynologyPhotoSpace.SHARED, 5, 100, 100, SynologyPhotoSort.Direction.DESCENDING)
+        val folders = fixture.requests.last(); assertEquals("SYNO.FotoTeam.Browse.Folder", folders.capability.name)
+        assertEquals("\"filename\"", folders.fields["sort_by"]); assertEquals("\"desc\"", folders.fields["sort_direction"])
+    }
+
+    @Test fun `默认排序字段与方向分别回退且账号刷新不保留上个用户偏好`() = runTest {
+        val fixture = Fixture().apply { userFlags = ",\"item_sort_by\":\"filename\",\"sort_direction\":\"desc\"" }
+        val repository = fixture.ready()
+        fixture.reply = { obj("""{"folder":{"id":5,"parent":0,"name":"/","sort_by":"item_type","additional":{"access_permission":{"view":true}}}}""") }
+        assertEquals(SynologyPhotoSort(SynologyPhotoSort.Field.ITEM_TYPE, SynologyPhotoSort.Direction.DESCENDING), repository.folderAccess(SynologyPhotoSpace.PERSONAL, 5).sort)
+        fixture.userFlags = ""; repository.access()
+        assertEquals(SynologyPhotoSort(SynologyPhotoSort.Field.ITEM_TYPE, SynologyPhotoSort.Direction.ASCENDING), repository.folderAccess(SynologyPhotoSpace.PERSONAL, 5).sort)
     }
 
     private suspend fun failure(kind: SynologyPhotoFailureKind, action: suspend () -> Any?) {
@@ -340,13 +503,17 @@ class SynologyPhotosRepositoryTest {
         val query = SynologyPhotoQuery.Timeline(1, 999)
         fun obj(value: String) = Json.parseToJsonElement(value).jsonObject
         fun item(id: Long, type: String = "photo", extra: String = "") = """{"id":$id,"filename":"sample.heic","filesize":4,"time":100.25,"indexed_time":101.75,"folder_id":5,"type":"$type","additional":{"thumbnail":{"unit_id":91,"cache_key":"revision"}$extra}}"""
+        fun deletionCheckpoint(photo: SynologyPhoto = photo()) = SynologyPhotoDeletionCheckpoint(userId = 41, target = SynologyPhotoDeletionTarget(photo))
         fun photo(id: Long = 11, type: String = "photo") = SynologyPhotosCodec.photo(obj(item(id, type)), "profile-a", SynologyPhotoSpace.PERSONAL)
         fun capabilities(): Map<String, ApiCapability> = listOf("UserInfo", "Setting.User", "Setting.Admin", "Setting.TeamSpace", "Browse.Timeline",
             "Browse.Item", "Browse.Folder", "Browse.Album", "Browse.Category", "Browse.RecentlyAdded", "Browse.Person", "Browse.Concept",
-            "Browse.Geocoding", "Browse.GeneralTag", "Browse.Unit", "Search.Search", "Search.Filter", "Sharing.Misc", "PhotoRequest",
+            "Browse.Geocoding", "Browse.GeneralTag", "Browse.Unit", "Browse.Similar", "Browse.SimilarItem", "Browse.SimilarTimeline", "Search.Search", "Search.Filter", "Sharing.Misc", "PhotoRequest",
             "Download", "Streaming", "BackgroundTask.File").associate { suffix ->
             val name = "SYNO.Foto.$suffix"
             name to ApiCapability(name, "entry.cgi", 1, 5, "JSON")
-        }
+        }.let { personal -> personal + personal.values.filter { it.name !in setOf("SYNO.Foto.Browse.Album", "SYNO.Foto.Browse.Category") }.associate {
+            val name = it.name.replace("SYNO.Foto.", "SYNO.FotoTeam.")
+            name to it.copy(name = name)
+        } }
     }
 }

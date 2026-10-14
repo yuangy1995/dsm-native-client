@@ -98,28 +98,16 @@ internal fun uploadMutationFeedbackPolicy(
     val lifecycle = task.uploadMutation ?: return null
     val uploadResult = lifecycle.uploadResult
     val result = uploadResult ?: lifecycle.directoryResult ?: return null
-    if (uploadResult == null && result.status == MutationResultStatus.CONFIRMED_SUCCESS &&
-        task.state == TransferState.FAILED
-    ) return null
+    if (result.status == MutationResultStatus.CONFIRMED_SUCCESS) return null
     val stage = if (uploadResult != null) {
         R.string.transfer_mutation_upload_stage
     } else {
         R.string.transfer_mutation_folder_stage
     }
-    val message = when (result.status) {
-        MutationResultStatus.CONFIRMED_SUCCESS -> if (uploadResult != null) {
-            R.string.transfer_mutation_upload_confirmed
-        } else {
-            R.string.transfer_mutation_folder_confirmed
-        }
-        MutationResultStatus.PARTIAL_SUCCESS -> R.string.service_action_partial
-        MutationResultStatus.SUBMITTED_BUT_UNVERIFIED,
-        MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-        -> R.string.service_action_unverified
-        MutationResultStatus.PERMISSION_DENIED -> R.string.service_action_permission_denied
-        MutationResultStatus.UNSUPPORTED -> R.string.service_action_unsupported
-        MutationResultStatus.CANCELLED_BEFORE_SUBMISSION -> R.string.service_action_cancelled
-        MutationResultStatus.CONFIRMED_FAILURE -> R.string.service_action_failed
+    val message = if (uploadResult != null) {
+        io.github.qwertyuiop1995.dsmnativeclient.uploadMutationMessageResource(result)
+    } else {
+        io.github.qwertyuiop1995.dsmnativeclient.fileEntryMutationMessageResource(result.copy(operation = "folderCreate"))
     }
     return UploadMutationFeedbackPolicy(stage, message, result)
 }
@@ -142,6 +130,7 @@ internal fun TransfersScreen(state: WorkspaceState, model: AppViewModel) {
 
 @Composable
 internal fun AppTransfersContent(state: WorkspaceState, model: AppViewModel) {
+    io.github.qwertyuiop1995.dsmnativeclient.ui.FolderUploadDialog(model.folderUploads)
     if (state.transfers.isEmpty()) {
         EmptyState(
             stringResource(R.string.no_transfer_tasks),
@@ -230,6 +219,9 @@ internal fun AppTransfersContent(state: WorkspaceState, model: AppViewModel) {
                     canRefreshTarget = model.canRefreshFileServerTransfer(task.id),
                     isRefreshingTarget = task.fileServerMutation?.refreshInProgress == true,
                     onOpenAndRefreshTarget = { model.openAndRefreshFileServerTransferTarget(task.id) },
+                    footer = if (task.direction == TransferDirection.UPLOAD && model.canOpenUploadTarget(task.id)) ({
+                        TransferUploadTargetButton(onDetails = if (model.folderUploads.isFolder(task.id)) ({ model.folderUploads.show(task.id) }) else null) { model.openUploadTarget(task.id) }
+                    }) else null,
                 )
             }
         }
@@ -247,6 +239,7 @@ internal fun FileBackgroundTasksContent(
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
+    onDetails: ((FileBackgroundTaskSummary) -> Unit)? = null,
 ) {
     var filter by rememberSaveable { mutableStateOf(FileBackgroundTaskFilter.ALL) }
     Column(Modifier.fillMaxSize()) {
@@ -352,7 +345,7 @@ internal fun FileBackgroundTasksContent(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         items(visibleTasks, key = FileBackgroundTaskSummary::id) { task ->
-                            FileBackgroundTaskCard(task)
+                            FileBackgroundTaskCard(task, onDetails?.let { { it(task) } })
                         }
                         if (page.hasMore) {
                             item {
@@ -477,7 +470,7 @@ private fun FileBackgroundTasksLoadMoreFooter(
 }
 
 @Composable
-internal fun FileBackgroundTaskCard(task: FileBackgroundTaskSummary) {
+internal fun FileBackgroundTaskCard(task: FileBackgroundTaskSummary, onDetails: (() -> Unit)? = null) {
     Card {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -525,6 +518,7 @@ internal fun FileBackgroundTaskCard(task: FileBackgroundTaskSummary) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            onDetails?.let { TextButton(it, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.file_background_task_details)) } }
         }
     }
 }
@@ -542,6 +536,8 @@ internal fun TransferTaskCard(
     canRefreshTarget: Boolean = false,
     isRefreshingTarget: Boolean = false,
     onOpenAndRefreshTarget: () -> Unit = {},
+    connectionLabel: String? = null,
+    footer: (@Composable () -> Unit)? = null,
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
@@ -566,7 +562,12 @@ internal fun TransferTaskCard(
                     headlineContent = {
                         Text(task.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     },
-                    supportingContent = { TransferTaskDetails(task) },
+                    supportingContent = {
+                        Column {
+                            connectionLabel?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                            TransferTaskDetails(task)
+                        }
+                    },
                     leadingContent = {
                         Icon(
                             when (task.state) {
@@ -597,6 +598,7 @@ internal fun TransferTaskCard(
                         actions()
                     }
                 }
+                footer?.invoke()
                 if (canRefreshTarget || isRefreshingTarget) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -717,7 +719,7 @@ internal fun TransferTaskDetails(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            if (task.requiresRefresh) {
+            if (task.requiresRefresh && task.direction != TransferDirection.UPLOAD) {
                 Text(
                     stringResource(
                         if (task.direction == TransferDirection.SERVER) {
@@ -731,7 +733,7 @@ internal fun TransferTaskDetails(
                 )
             }
             uploadMutationFeedback?.let { feedback ->
-                Text(
+                if (feedback.stage == R.string.transfer_mutation_folder_stage) Text(
                     stringResource(feedback.stage),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -746,7 +748,7 @@ internal fun TransferTaskDetails(
                     },
                 )
                 feedback.result.counts.takeIf {
-                    it.succeeded > 0 || it.failed > 0 || it.unknown > 0
+                    it.succeeded + it.failed + it.unknown > 1
                 }?.let { counts ->
                     Text(
                         stringResource(
@@ -786,7 +788,7 @@ private fun FileServerMutationVerification.messageResource(): Int = when (this) 
 }
 
 @androidx.annotation.StringRes
-private fun TransferSourceFilter.labelResource(): Int = when (this) {
+internal fun TransferSourceFilter.labelResource(): Int = when (this) {
     TransferSourceFilter.ALL -> R.string.transfer_filter_all
     TransferSourceFilter.DOWNLOADS -> R.string.transfer_filter_downloads
     TransferSourceFilter.UPLOADS -> R.string.transfer_filter_uploads
@@ -810,16 +812,24 @@ private fun FileBackgroundTaskFilter.labelResource(): Int = when (this) {
     FileBackgroundTaskFilter.FINISHED -> R.string.file_background_task_filter_finished
 }
 
-private fun FileBackgroundTaskKind.labelResource(): Int = when (this) {
+internal fun FileBackgroundTaskKind.labelResource(): Int = when (this) {
     FileBackgroundTaskKind.COPY_OR_MOVE -> R.string.file_background_task_kind_copy_move
     FileBackgroundTaskKind.DELETE -> R.string.file_background_task_kind_delete
     FileBackgroundTaskKind.COMPRESS -> R.string.file_background_task_kind_compress
     FileBackgroundTaskKind.EXTRACT -> R.string.file_background_task_kind_extract
 }
 
-private fun FileBackgroundTaskState.labelResource(): Int = when (this) {
+internal fun FileBackgroundTaskState.labelResource(): Int = when (this) {
     FileBackgroundTaskState.ACTIVE -> R.string.file_background_task_state_active
     FileBackgroundTaskState.FINISHED -> R.string.file_background_task_state_finished
+}
+
+@Composable
+internal fun TransferUploadTargetButton(onDetails: (() -> Unit)? = null, onOpen: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
+        onDetails?.let { TextButton(it, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.folder_upload_details)) } }
+        TextButton(onOpen, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.upload_open_target_folder)) }
+    }
 }
 
 @Composable
@@ -859,6 +869,8 @@ internal fun TransferActions(
                 stringResource(
                     if (direction == TransferDirection.DOWNLOAD) {
                         R.string.resume_download
+                    } else if (direction == TransferDirection.UPLOAD) {
+                        R.string.retry
                     } else {
                         R.string.retry_from_start
                     },

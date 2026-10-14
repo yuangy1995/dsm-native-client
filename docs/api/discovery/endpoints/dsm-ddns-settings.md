@@ -87,7 +87,7 @@
 ## 客户端与测试
 
 - Apple Adapter：`DsmNasAdministrationRepository`。
-- Android Adapter：`DsmRepository` 的 `testDdnsResult`、`saveDdnsResult(original, desired)`、`deleteDdnsResult(original)` 与 `refreshDdnsResult(expectedProviderIds)`；四类操作保持独立，固定使用 Provider/Record v1。Provider/Record 根、对象项、稳定身份与重复项均严格校验；Record 仅要求契约承诺的 `provider/hostname/username/enable/heartbeat`，可选网络字段若出现则严格检查。
+- Android Adapter：`NasDdnsRepository.plan/perform` 与当前DDNS模型；测试、保存、删除和地址刷新各自构造计划，共用互斥，固定使用 Provider/Record v1；A10已删除旧根仓储写门面。Provider/Record 根、对象项、稳定身份与重复项均严格校验；Record 仅要求契约承诺的 `provider/hostname/username/enable/heartbeat`，可选网络字段若出现则严格检查。
 - Windows：Provider/Record v1 双能力门与严格记录读取已接，记录身份固定为 provider；
   提供商协议重复项按已记录行为归并并保留友好显示名，记录重复则失败。可选网络字段
   保留未知/空值，返回密码不进入模型；读取与写权限分离，原生只读入口已接线。
@@ -144,3 +144,12 @@
 保存/删除未知结果保留原目标保护，刷新只读取；仅改凭据时，公开字段匹配不能代替接受回执。连接测试/立即更新是瞬时动作，缺少回执的历史不能从列表推断成功；新的显式操作可另行发起，但程序不会自动重放旧动作。接受地址更新不等于公网 DNS 已生效。
 
 五端影响：iPhone/iPad 使用上述完整流程；Mac 旧签名与存储保持，共享变化执行回归；Windows/Android 只登记严格读取、原快照、提交边界与恢复语义，本波不改实现。自动化使用合成数据，实际命令、两端交互与中间失败见移动主计划及验证历史。
+
+
+## 2026-10-13 Android A7 管理与恢复增量
+
+- 产品入口已切换至 `NasDdnsRepository`、`NasDdnsModel` 和独立加密 `NasDdnsActivityStore`，根模型旧四操作入口移除。Provider/Record v1 与严格目录解析共用，未增加网络端点。旧 `DsmRepository` 四操作仅保留兼容测试，待 A10 统一清理，不能接回页面。
+- 原服务商集合、完整可观察原记录与可选网络字段存在性随确认固定；逐次检查权限及已登记 DSM。公网地址、状态和更新时间不造成配置冲突，已知接口/网络类别变化仍拒绝；编辑使用预检新网络值，缺失字段与空密码省略，新建沿已记录的初始参数。结果只核对契约承诺的五个保存字段。
+- 测试、保存、删除、立即更新各发送一次，所有实际副作用都先保存提交边界。保存/删除未知只读恢复且不重放；明确拒绝不被同值列表改判。仅改密码必须收到接受回执。测试和立即更新未知只保存历史，不从列表推断成功，用户可另行明确发起新动作；地址更新接受不代表公网解析传播。
+- 密码只留在编辑和当次调用内存，确认后从编辑状态清除，离页或换账号清除草稿；记录只含原账号与不可逆摘要/阶段/接受事实。新编辑不继承旧成功提示，旧会话确认不能提交。手机/平板随 A7 整模块验收。
+- 最终61项聚焦及兼容 JVM、双语资源检查通过；23项新增仓储/模型/存储测试覆盖真实 FORM/JSON 单次传输和冷恢复。没有真实 DSM/服务商写入，`PENDING_USER_VALIDATION` 条件见 Android 完成计划；其他端未改，不提升既有 `observed` 等级。

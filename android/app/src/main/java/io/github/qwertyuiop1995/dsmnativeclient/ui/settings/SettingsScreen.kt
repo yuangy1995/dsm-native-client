@@ -7,6 +7,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Folder
 
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Arrangement
@@ -73,6 +74,10 @@ internal fun SettingsScreen(state: WorkspaceState, model: AppViewModel, onCustom
                     HorizontalDivider()
                     ClientRow(stringResource(R.string.client_custom_navigation), Icons.Outlined.Tune, onClick = onCustomizeNavigation)
                 }
+                model.onSystemFilesRequested?.let { open ->
+                    HorizontalDivider()
+                    ClientRow(stringResource(R.string.system_files_title), Icons.Outlined.Folder, onClick = open)
+                }
             }
         }
         item {
@@ -88,6 +93,7 @@ internal fun SettingsScreen(state: WorkspaceState, model: AppViewModel, onCustom
                 }
             }
         }
+        item { ClientGroup { ChatNoticePreferences(model.chatNotices) } }
         item { ClientSectionTitle(stringResource(R.string.client_feature_availability)) }
         item {
             ClientGroup {

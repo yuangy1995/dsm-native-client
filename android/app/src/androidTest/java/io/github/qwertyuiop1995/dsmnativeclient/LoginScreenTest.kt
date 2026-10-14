@@ -12,6 +12,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
@@ -55,6 +56,8 @@ class LoginScreenTest {
         rule.onNodeWithTag("login_address").performScrollTo().performTextInput("nas.example.invalid")
         rule.onNodeWithTag("login_username").performScrollTo().performTextInput("synthetic-user")
         rule.onNodeWithTag("login_password").performScrollTo().performTextInput("temporary-password")
+        // 填完目标信息后模拟 NAS 要求验证码；编辑目标会正确清除旧挑战。
+        showSyntheticLoginState(needsOtp = true)
         rule.onNodeWithTag("login_otp").performScrollTo().performTextInput("123456")
 
         rule.activityRule.scenario.recreate()
@@ -82,6 +85,21 @@ class LoginScreenTest {
         assertTrue(editableText("login_otp").isEmpty())
     }
 
+    @Test
+    fun 修改连接目标后不会将原密码和验证码恢复到新目标() {
+        showSyntheticLoginState(needsOtp = true, savedPassword = "synthetic-saved-password", rememberPassword = true)
+        rule.onNodeWithTag("login_otp").performScrollTo().performTextInput("123456")
+        rule.onNodeWithTag("login_address").performScrollTo().performTextReplacement("https://other.example.invalid")
+        rule.waitForIdle()
+        assertTrue(editableText("login_password").isEmpty())
+        rule.onNodeWithTag("login_otp").assertDoesNotExist()
+        rule.activityRule.scenario.recreate()
+        rule.waitForIdle()
+        assertEquals("https://other.example.invalid", editableText("login_address"))
+        assertTrue(editableText("login_password").isEmpty())
+        rule.onNodeWithTag("login_otp").assertDoesNotExist()
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun showSyntheticLoginState(
         needsOtp: Boolean,
@@ -89,12 +107,16 @@ class LoginScreenTest {
         rememberPassword: Boolean = false,
     ) {
         rule.runOnUiThread {
-            val model = ViewModelProvider(rule.activity)[AppViewModel::class.java]
+            val model = ViewModelProvider(rule.activity)[WorkspaceHostModel::class.java].active.value.model
             val loginField = AppViewModel::class.java.getDeclaredField("_login").apply {
                 isAccessible = true
             }
             val loginState = loginField.get(model) as MutableStateFlow<LoginState>
+            val profile = io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile(
+                "synthetic-login-profile", "Synthetic NAS", "https://nas.example.invalid", "synthetic-user")
             loginState.value = LoginState(
+                profiles = if (rememberPassword) listOf(profile) else emptyList(),
+                selectedProfileId = profile.id.takeIf { rememberPassword },
                 savedPassword = savedPassword,
                 rememberPassword = rememberPassword,
                 needsOtp = needsOtp,

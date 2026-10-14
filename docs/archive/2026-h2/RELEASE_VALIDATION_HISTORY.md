@@ -7611,3 +7611,2188 @@ git diff --check
 ```
 
 数据样例 29 组、私有 API 文档引用 48 项、请求样例 180 项与写结果示例 1 项通过；新增文件与新增行已检查常见密钥格式，不包含构建产物、临时日志或本机配置。提交/推送沿现有 `main` 正常历史，不创建分支、PR 或发布标签；新来源完整云端门禁须在推送后独立查看，不能把代码同步称为全部门禁通过。
+
+
+## 2026-10-11 Android A0a 配套升级与已确认首页
+
+用户已确认 Android 交互预览，要求保留 Logo、严格按该 UI 实现，并追加首页模块显示/隐藏。授权范围为现有 main 上的完整 A0—A10 重写、必要的测试数据实机交互和文档同步；没有提交、推送或发布授权。本片基于 `1bf340ae` 后的未提交工作区，其他平台源码未改。
+
+已创建独立 API 35 手机、API 37 手机和平板，原有模拟器保持不变；逐台启动使用。API 35 实际启动内存为 2560 MB，API 37 模拟器按系统镜像要求自动提高至 4096 MB，均限制为 2 核。没有导出 Chrome 会话、使用真实 NAS 账号或修改远端数据。
+
+配置迁移为 Java 25、Gradle 9.6.1、AGP 9.4.1、内置 Kotlin 2.2.10、Compose BOM 2026.09.00、WorkManager 2.12.0、compile/target API 37，最低 API 29 与 JVM 17 输出保留。Wrapper 使用旧版和新版 Gradle 各执行一次既定生成任务，并核对官方分发 SHA-256；Windows 换行通过 `.gitattributes` 规范化，不手改生成器输出。仅配套更新测试依赖 Espresso 3.7.0，生产包不引入该构件。
+
+本片 UI 实现：四个首页模块的本机显隐偏好、草稿取消、保存/失败重试、恢复默认、全隐藏恢复入口、权限临时过滤和持久读取；手机面板与平板对话框、原 Logo、首页布局、底栏选中背景及平板顶部操作栏/原生侧栏。首页数据来自当前工作区和实际本机记录，示意数据只在仪器测试夹具；多 NAS 会话、完整权限摘要及其他页面仍在后续范围，不据此称为重写完成。
+
+### 实际验证
+
+| 环境/范围 | 结果 |
+| --- | --- |
+| 新工具链增量编译、Debug APK、仪器 APK | 通过；保留现有弃用警告，不把它们包装成零警告 |
+| JVM：HomeLayoutTest / WorkerCancellationDecisionTest | 5 项与 33 项均通过 |
+| API 35 手机：HomeCustomizationUiTest / ApprovedWorkspaceUiTest，最终来源 | 19 项通过，无忽略 |
+| API 37 手机：上述两类，最终中文来源 | 19 项通过，无忽略 |
+| API 37 平板：上述两类 + FileBrowserAdaptiveScreenTest + WorkspaceMediumNavigationTest | 26 项通过，无忽略；覆盖实际宽屏列表/预览及窗口收窄 |
+| API 37 手机与平板：中文、系统 font_scale=2.0 | 各单独执行当前系统字号首页/面板用例，均通过；恢复 font_scale=1.0 |
+| 界面实际图像 | 已检查手机/平板、深色、四开关和真实系统二倍字号截图，均为合成工作区，不含用户内容 |
+| 本地化、写入口、点击目标、动效、结构、文档和差异检查 | 通过；双语资源 Android 2194 项 |
+
+早期 API 37 手机执行 FileBrowserAdaptiveScreenTest 时，21 个发现用例中有 19 个成功、2 个按已有宽屏条件跳过。没有将其记为手机上的宽屏通过；两项随后在平板实际运行并通过。最终首页/工作区手机集合使用无跳过的 19 项记录。
+
+关键命令（初次 Wrapper 生成使用 Java 17，新版生成与后续构建/测试使用 Java 25；设备编号仅表示本片隔离模拟器）：
+
+```sh
+cd android
+./gradlew wrapper --gradle-version 9.6.1 --distribution-type bin --gradle-distribution-sha256-sum 9c0f7faeeb306cb14e4279a3e084ca6b596894089a0638e68a07c945a32c9e14 --no-parallel --max-workers=2
+./gradlew :app:compileDebugKotlin :app:testDebugUnitTest --tests 'io.github.qwertyuiop1995.dsmnativeclient.ui.home.HomeLayoutTest' --no-parallel --max-workers=2 --console=plain
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain
+./gradlew :app:testDebugUnitTest --tests 'io.github.qwertyuiop1995.dsmnativeclient.ui.home.HomeLayoutTest' --tests 'io.github.qwertyuiop1995.dsmnativeclient.WorkerCancellationDecisionTest' --no-parallel --max-workers=2 --console=plain
+adb -s emulator-5556 shell am instrument -w -r -e class 'io.github.qwertyuiop1995.dsmnativeclient.HomeCustomizationUiTest,io.github.qwertyuiop1995.dsmnativeclient.ApprovedWorkspaceUiTest' io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb -s emulator-5558 shell cmd locale set-app-locales io.github.qwertyuiop1995.dsmnativeclient.debug --user 0 --locales zh-CN
+adb -s emulator-5558 shell am instrument -w -r -e captureHomeUi true -e class 'io.github.qwertyuiop1995.dsmnativeclient.HomeCustomizationUiTest,io.github.qwertyuiop1995.dsmnativeclient.ApprovedWorkspaceUiTest' io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb -s emulator-5560 shell am instrument -w -r -e captureHomeUi true -e class 'io.github.qwertyuiop1995.dsmnativeclient.HomeCustomizationUiTest,io.github.qwertyuiop1995.dsmnativeclient.ApprovedWorkspaceUiTest,io.github.qwertyuiop1995.dsmnativeclient.FileBrowserAdaptiveScreenTest,io.github.qwertyuiop1995.dsmnativeclient.WorkspaceMediumNavigationTest' io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb -s emulator-5560 shell settings put system font_scale 2.0
+adb -s emulator-5560 shell cmd locale set-app-locales io.github.qwertyuiop1995.dsmnativeclient.debug --user 0 --locales zh-CN
+adb -s emulator-5560 shell am instrument -w -r -e captureHomeUi true -e class 'io.github.qwertyuiop1995.dsmnativeclient.HomeCustomizationUiTest#当前系统字号下首页与自定义面板保持可操作' io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb -s emulator-5560 shell settings put system font_scale 1.0
+```
+
+手机二倍字号使用相同方法在 emulator-5558 执行。截图使用测试参数 `captureHomeUi=true`，来自设备 UIAutomation 实际画面；报告及必要图像保存在本机 `build/android-rewrite-a0/`，不提交生成物。
+
+最终候选 APK SHA-256：主包 `edd3f98f9207b3cc4d76cb762be800b3cb25a48857c2cd2559916b1741264a8a`，仪器包 `569b971f319e75a3e5f10498ad4827811623ae782028a04d6049ea50a85e0b1a`。
+
+### 原失败与修正
+
+- 初次升级编译因 WorkManager 新版 `WorkInfo?` 不可直接解引用而失败。三个观察入口过滤空发射，保留原持久事实，不把缺失当作成功、失败或重放依据；取消策略回归随后通过。
+- 旧 Photos 导航夹具只注入 File Station 照片字段，没有正式 Photos 会话。已补仅供测试且拒绝所有网络的仓储会话，保留原备份入口断言；初始化同时遵守现有禁止重定向/自动重试的媒体策略，没有削弱生产检查。
+- API 37 首次全部 UI 用例在框架初始化阶段失败：`InputManager.getInstance` 已不存在。依赖树确认 Compose 传递引入 Espresso 3.5.0；显式锁定 3.7.0 后重新执行通过。[官方发布说明](https://developer.android.com/jetpack/androidx/releases/test)已记录改用系统服务的修复。
+- 平板暴露侧栏无障碍名称与手机不一致，已补齐；另一个旧断言只查底栏，改为查当前底栏或侧栏，仍要求文件操作未结束时保持文件选中，不删断言、不改业务保护。
+- 仅覆盖局部 Compose Density 不能证明对话框的系统大字体验，因此最终改用隔离设备真实 font_scale=2.0，记录实际配置与截图；临时局部覆盖图不作为系统字号证据。
+
+单独差异复核确认：首页只写自己的界面偏好键，不发 NAS 请求或停止任务；原未完成文件操作的导航保护保留，手机与平板均有对应断言；新版后台空状态不会被映射为成功或触发重放。照片测试夹具禁止网络，媒体重定向与自动重试检查未削弱。临时局部字号截图和构建日志已清理，最终报告与必要设备图像保留。
+
+尚未执行完整 JVM、Release/R8、lint 与云端门禁，也未执行真实 NAS。既有 Chat 投票 `choices[0] 应为对象` 的 JVM 失败保留，待 A5 修复；API 37 局域网权限随 A1/A2 登录/恢复一起接入。下一片为身份隔离、多 NAS 会话与分层授权，不能把 A0a 的结果视为全部 A0—A10 完成。
+
+## 2026-10-11 Android A2a 登录授权与恢复错误分类
+
+在当前未提交 `main` 工作区接续 A0a，其他平台代码保持只读。按既有摘要契约加入 `WorkspaceAccessReader`、`WorkspaceAccessController`，白名单解码账号应用权限，管理员入口保留显式拒绝，Photos 按四个 JSON v1 接口独立读取。有效空表不执行文件探测；摘要读取失败才请求 `list_share(offset=0,limit=1)`。登录/恢复共用连接后装配，替换原“接口存在即入口允许”的初始策略。
+
+恢复流程仅在明确会话过期时清旧会话并执行既有重登录；网络、权限、能力、响应格式和证书错误保留会话。通用 104 更正为能力错误，106/107/119 与 HTTP 401 为会话过期，HTTP 403 为权限拒绝；登录专有 400 段不套用到业务请求。TLS 失败不再丢失分类，权限读取不继续追加请求。
+
+实际命令（`android/`，Java 25 / SDK 37，2 workers）：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests '*WorkspaceAccessReaderTest' --tests '*WorkspaceAccessTransportTest' --tests '*ConnectedWorkspaceTest' --tests '*DsmApiClientTest' --tests '*BinaryPreviewTest' --no-parallel --max-workers=2 --console=plain
+```
+
+最终 38 项通过、0 失败、0 跳过，包含 Reader 17、Transport 9、工作区装配 1、API 地址 4、二进制预览 7；增量 `compileDebugKotlin` 同时通过。XML 本机证据保存于 `build/android-rewrite-a2a/jvm/`。首轮测试编译因合成 `SSLHandshakeException` 缺少必需消息参数失败，已修正；第二轮一个测试误期望原始 `IOException`，复核实际传输层已返回 `CONNECTION_FAILED` 后改为精确断言该分类，并额外补上 TLS 不追加请求测试，未放宽安全断言。
+
+独立复核：再次检查网络差异、白名单输出、GET 无 URL 凭据、有效空表不降级、证书/取消停止、仅照片恢复以及入口与请求边界。A2a 仅完成登录/恢复阶段；权限撤销后停止业务请求、前台刷新、Worker/外部入口及账号身份隔离继续按 A1/A2 实施，不把本片标作完整权限验收。首次改名提取传输方法时的无关 `source.request` 替换已在差异复核中纠正，二进制预览 7 项回归通过。
+
+`PENDING_USER_VALIDATION`：真实测试账号组合（普通/管理员、仅文件/仅 Photos、明确拒绝与空表）下登录及重连；期望模块与当前账号权限一致，短时断网不清会话。回传 App/DSM/Photos 版本、连接类别和脱敏错误类别，不回传地址、账号、凭据或原始响应。该缺项不阻塞下一独立切片，也不提升已观察到的网页接口证据等级。
+
+## 2026-10-11 Android A2b 账号授权请求边界
+
+接续 A2a 为每个 Repository 绑定独立权限控制器，统一检查表单、上传、二进制、Photos 媒体及 Chat 建连。Photos 既有播放源每次范围读取和缓存命中都检查授权。Worker 和跨 NAS 新建仓储先读取授权；切换/退出失效旧控制器，旧摘要不能恢复已关闭工作区；同账号并发刷新合并读取。摘要自身使用隔离的只读路径，不依赖待确认权限。
+
+既有 64 个领域/界面测试文件仅迁移 Repository 构造前置条件到 `authorizedRepository` 合成 fixture，显式注入授权读取依赖，保留原对象权限、能力、请求次数/参数与结果断言。正式入口均用实际读取器；权限专属测试未走该 fixture。旧 `DefaultSynologyPhotosProvider` 已移除，避免继续绕过本账号传输门禁。
+
+实际运行（`android/`，相同 Java/SDK 和 2 workers）：
+
+```bash
+./gradlew :app:compileDebugKotlin :app:compileDebugUnitTestKotlin :app:compileDebugAndroidTestKotlin --no-parallel --max-workers=2 --console=plain
+./gradlew :app:testDebugUnitTest --tests '*WorkspaceAccess*Test' --tests '*WorkspaceAuthorizedTransportTest' --tests '*DownloadCreationResultTest' --tests '*SynologyPhotosMediaTransportTest' --no-parallel --max-workers=2 --console=plain
+./gradlew :app:testDebugUnitTest --tests '*FileUploadTest' --tests '*WorkerCancellationDecisionTest' --tests '*WorkspaceAccess*Test' --tests '*WorkspaceAuthorizedTransportTest' --no-parallel --max-workers=2 --console=plain
+```
+
+三个源码编译任务通过；权限/下载/Photos 组 73 项通过，上传/Worker 组 84 项通过（Worker 33、上传 16、权限 35），本机 XML 在 `build/android-rewrite-a2b/jvm-upload-worker/`。二者均 0 失败、0 跳过。新增传输边界测试首轮因 Chat 附件调用遗漏会话目标和消息参数编译失败，按实际签名补齐后通过，没有改变断言。证据目录 `build/android-rewrite-a2b/jvm-authorization/` 保存前一组 XML。
+
+独立差异/对抗复核已检查：原始 API 仅被授权读取器使用，全部 Repository 业务调用使用绑定后的客户端；未读取/拒绝时无业务网络请求，上传拒绝不打开来源，下载拒绝不创建目标，失效控制器拒绝刷新，播放缓存也不绕过撤销。该检查与 73 项合成测试不代替运行中对象权限撤销、现有长连接关闭和界面敏感内容清理；这些与前台刷新、完整多 NAS 身份隔离仍在继续实施。
+
+本地化（Android 2200 个键）、结构行数 ratchet、写入口/五态/计划与严格文档检查及 `git diff --check` 通过。结构上限保持低于本轮起始 `main`；本片不修改包名、最低版本、存储格式或其他平台代码。尚未打包/安装本片 APK、未运行本片设备 UI 或真实 NAS，不把 A0a 的 UI 通过结果冒用为本片验证。
+
+
+## 2026-10-11 Android A2c 权限刷新与撤销展示
+
+当前源码为每个工作区接入前台、手动与明确权限拒绝后的合并刷新；对象拒绝只触发授权摘要读取，不直接推断整个模块被禁用，不重发原请求。`WorkspaceStateStore` 在所有展示写入中使用当前 Repository 授权，清理失去权限的读取缓存；导航临时过滤，全部功能保留原因与刷新，当前业务页面、NAS 任务和设备页提供恢复操作。本机传输记录、已提交写的目标/回执与未知结果保留。Photos 撤销会关闭媒体、取消读取并保留未定删除供恢复后只读回查。
+
+容器读取从主模型迁入 `ContainerReadFeatureModel`，总览、搜索与标签分开拥有取消任务和响应代次；关闭搜索不取消无关总览，失效或新查询后的旧响应不再发布。退后台清除待重载目标，防止迟到权限刷新重开订阅。手机底栏和平板侧栏过滤不写入导航偏好；原 Logo、主题与布局保留。
+
+实际命令（`android/`；Java 25、SDK 37、2 workers）：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests '*WorkspaceAccess*Test' --tests '*WorkspaceAuthorizedTransportTest' --tests '*FileUploadTest' --tests '*BinaryPreviewTest' --tests '*SynologyPhotosMediaTransportTest' --no-parallel --max-workers=2 --console=plain
+./gradlew :app:testDebugUnitTest --tests '*WorkspaceAccess*Test' --tests '*WorkspaceAuthorizedTransportTest' --tests '*ContainerReadFeatureModelTest' --tests '*ContainerRegistryRequestTokenTest' --tests '*ContainerRegistryRepositoryTest' --tests '*SynologyPhotosModelTest' --no-parallel --max-workers=2 --console=plain
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain
+```
+
+第一组 80 项通过；容器/Photos 与权限最终组 67 项通过（读取器 17、控制器 4、请求 12、授权传输 2、状态 5、前台生命周期 7、容器取消 2、容器代次 2、容器请求 3、Photos 模型 13），均无失败或跳过。两个 APK 构建成功。中间 64 项组同样通过，后续增加 2 个容器取消与 1 个后台迟到用例，未删断言。
+
+设备命令使用正式 Debug 测试包名 `io.github.qwertyuiop1995.dsmnativeclient.debug.test`，首次误用不带 `.debug` 的测试包名导致 runner 未启动，改为设备登记的名称后运行；该次不算测试执行。主片 API 37 手机 `WorkspaceAccessUiTest` + `ApprovedWorkspaceUiTest` 为 16/16 通过；平板同组加 `WorkspaceUnavailableNavigationTest` 为 17/17 通过，平板实际系统字号为 2.0。最后增加设备页重新登录回调与滚动断言后重新打包，最终包手机/平板标准字号权限组各 6/6 通过，手机显式系统字号 2.0 的文件撤销、设备恢复与深色登录提示三项均通过；结束后两台设备字号读取为 1.0 并停止模拟器。
+
+```bash
+adb -s emulator-5558 shell am instrument -w -r -e captureAccessUi true -e class 'io.github.qwertyuiop1995.dsmnativeclient.WorkspaceAccessUiTest,io.github.qwertyuiop1995.dsmnativeclient.WorkspaceUnavailableNavigationTest' io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb -s emulator-5560 shell am instrument -w -r -e captureAccessUi true -e class 'io.github.qwertyuiop1995.dsmnativeclient.WorkspaceAccessUiTest,io.github.qwertyuiop1995.dsmnativeclient.ApprovedWorkspaceUiTest,io.github.qwertyuiop1995.dsmnativeclient.WorkspaceUnavailableNavigationTest' io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+截图复核发现最初的独立深色 fixture 没有铺设主题背景，不能作为深色证据；已补 `Surface` 并重新检查实际深色截图。设备不可用页支持滚动，功能卡片保持同一行等高；权限撤销时不保留无效搜索入口。模拟器重启若读取旧快照可能恢复之前字号，因此最终运行显式设置并读取系统字号，不从旧记录推定。重启使用 `-no-snapshot-load -no-snapshot-save`，不改原有模拟器数据。
+
+独立集成/对抗复核重新检查了所有展示写入、请求前授权、Photos 删除取消/未知结果、普通对象拒绝、切换仓储迟到响应、前后台订阅、手机/设备/任务旁路与固定偏好。正式测试新增于源码，合成结果与截图在忽略目录 `build/android-rewrite-a2c/`；未读取真实 NAS 数据，未执行远端写、提交、推送或发布。完整 A2 对象权限与系统入口、多 NAS 身份和独立持久恢复仍在计划内，未据本片宣布完成。真实账号撤销/恢复组合按主计划 `PENDING_USER_VALIDATION` 验收。
+
+最终 APK SHA-256：主包 `9a1b4f01ea113925880ebeeed80fafcb7ae56c271a919120cd0df80d8530418e`，仪器包 `84fda16237e7ad32b7f2a6125eafb9bba76886226c737e25eea2b7e8b6d39ef5`。最终权限组结果在 `api37-phone/ui-final.txt`、`api37-tablet/ui-final.txt`，手机大字号在 `api37-phone/ui-font-2.txt`；子目录 `standard/workspace-access-review/` 和 `font-2/workspace-access-review/` 为已检查的相应截图。最初无深色背景的截图已删除，不作为证据。
+
+`git diff --check`、本地化 2201 个 Android 键、生成报告一致性、写入口、五态（36 个页面/弹窗）、点击目标（39 处）、动效、结构（AppViewModel 16397、DsmRepository 14919 行）、计划及严格文档门禁通过。工作区保持 `main` 上未提交改动，未触碰 Apple/Windows 实现；完整云端、Release/R8/lint、API 35 本片 UI 与真实 NAS 未运行。
+
+## 2026-10-11 Android A1ab 多账号与独立工作区
+
+接续未提交的 `main` 工作区实现身份/会话代次、持久任务归属、独立工作区、设备选择、单连接退出、重命名与缓存隔离。新增 `WorkspaceHostModel`、`WorkspaceLoginModel`、`WorkspaceConnectionService` 和独立身份记录；既有业务模型由各连接单独拥有。其他平台源码未改，未提交、推送或发布。
+
+- 已保存密码仅对原账号/目标回填，修改地址、端口或用户名清空内存密码与验证码，Activity 重建不能带入旧密码。显示名使用独立条件保存，只更新文字，保留会话与目录，并阻止重复保存。
+- 下载、备份和 VMM Worker 按受保护归属恢复；旧任务缺归属时保留事实并暂停，账号变更不认领旧任务。URI 撤销检查其他持久任务是否仍引用，缓存按账号身份分目录。未迁移的前台写操作保留切换保护。
+- 单一进程内的存储更新共享锁；租约在身份变化时重新读取受保护记录，普通媒体块不重复解密。新增公开 API、共享平台协议或未授权依赖均无。
+
+聚焦 JVM 分组均为 0 失败、0 跳过，分组存在重叠，不累加为独立测试总数：
+
+| 证据目录（仓库忽略的 `build/android-rewrite-a1b/` 下） | 实际范围与结果 |
+| --- | --- |
+| `jvm-initial/` | 身份、连接、恢复、缓存与权限组 81 项通过 |
+| `jvm-transfer-final/` | 身份 16、任务恢复 11、切换保护 2、Worker 取消 33，共 62 项通过 |
+| `jvm-login-binding/` | 登录字段 3、身份 16、连接 6、权限模型 8，共 33 项通过 |
+| `jvm-lease-final/` | 租约 3、连接 6、权限相关 48，共 57 项通过 |
+| `jvm-rename-final/` | 身份 17、租约 3、登录字段 3，共 23 项通过 |
+
+使用以下命令的对应筛选组运行，Java 25、API 37，限制两个 Worker：
+
+```bash
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
+ANDROID_HOME='/Users/yuangy/Library/Android/sdk' \
+android/gradlew -p android :app:testDebugUnitTest \
+  --tests '*WorkspaceIdentityStoreTest' --tests '*WorkspaceOwnerLeaseTest' \
+  --tests '*SavedLoginFieldsTest' --no-parallel --max-workers=2 --console=plain
+```
+
+`compileDebugKotlin`、`compileDebugUnitTestKotlin`、`compileDebugAndroidTestKotlin`、`assembleDebug`、`assembleDebugAndroidTest` 已执行并通过；最后 A1b 打包记录为 `single-rename-build.log`。APK 摘要：主包 `8df977457900043039e4709e0fb6a8a91ec8bde12d9829d664123805fd039a17`，测试包 `0a5354505e334d955a8a1e4213d9aa3a13e10b32f19af55167c4f2453e60d00f`。后续 A1c 会继续更新 APK，这两个摘要仅标识本片产物。
+
+API 37 手机主组 49 项通过（`api37-phone/ui-final-zh-49.txt`），含账号切换、首页、权限、登录和不透明导航；随后新增登录目标密码绑定，手机深色系统字号 2.0 的 13 项通过（`ui-dark-font-2-final.txt`）。最终重命名与租约版本在平板普通字号 30 项、深色系统字号 2.0 的 14 项通过（`api37-tablet/ui-final-standard.txt`、`ui-final-dark-font-2.txt`），0 失败、0 跳过。普通平板组为 `WorkspaceHostUiTest`、`LoginScreenTest`、`OpaqueWorkspaceNavigationTest`、`SecureProfileStoreTest`、`FileBrowserAdaptiveScreenTest`、`WorkspaceMediumNavigationTest`，深色组为前两个类。设备命令：
+
+```bash
+adb -s emulator-5560 install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5560 install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s emulator-5560 shell am instrument -w -r -e captureWorkspaceUi true \
+  -e class io.github.qwertyuiop1995.dsmnativeclient.WorkspaceHostUiTest,io.github.qwertyuiop1995.dsmnativeclient.LoginScreenTest,io.github.qwertyuiop1995.dsmnativeclient.OpaqueWorkspaceNavigationTest,io.github.qwertyuiop1995.dsmnativeclient.SecureProfileStoreTest,io.github.qwertyuiop1995.dsmnativeclient.FileBrowserAdaptiveScreenTest,io.github.qwertyuiop1995.dsmnativeclient.WorkspaceMediumNavigationTest \
+  io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb -s emulator-5560 shell settings put system font_scale 2.0
+adb -s emulator-5560 shell cmd uimode night yes
+```
+
+已查看真实渲染截图：手机中文选择面板、平板英文选择对话框、必要账号说明、全局 NAS 标题及深色二倍字号；截图仅为合成账号，不表示真实 NAS。各设备结束后恢复字号 1.0、浅色并关闭，保留原有 AVD。手机重命名新增用例未单独执行，不能把前一组 49 项称为最终全部源码验收。
+
+初始失败已保留：旧不透明导航 fixture 缺已授权 Repository/Photos 会话及前台剪贴板条件；键盘测试在触控模式下无法取得焦点，按系统非触控模式设置后验证真实 Enter 操作；平板原侧栏断言仍期待无权限下载入口，已更新为隐藏并在全部功能显示原因，保留点击与选择断言。最后上述组均通过，没有删除测试或降低业务断言。键盘依据 [Compose 焦点规则](https://developer.android.com/develop/ui/compose/touch-input/focus/change-focus-behavior)，未为测试升级依赖或新增产品键盘绕路。
+
+独立集成及安全复核检查了所有权条件保存、账号变化、迟到回调、单连接缓存/退出和任务继续路径；真实双 NAS、同 NAS 双账号、OS URI 生命周期、后台/通知和长期切换仍为 `PENDING_USER_VALIDATION`，具体前置条件和脱敏反馈见主计划 A1b。未运行完整 JVM、Release/R8、lint、云端或真实 NAS；局域网授权、全局任务与通知归属继续实施。
+
+## 2026-10-11 Android A1c 局域网授权与连接回退
+
+按用户已批准的目标 API 37 和局域网权限接入 `ACCESS_LOCAL_NETWORK` 与普通 `ACCESS_NETWORK_STATE`。后者仅用于区分局域网、VPN/蜂窝和 IPv6 路由，不申请位置或扫描网络。依据 [Android 局域网权限](https://developer.android.com/privacy-and-security/local-network-permission)与[网络定义](https://developer.android.com/privacy-and-security/local-network-definition)。
+
+统一连接在 `.local` DNS 查询、实际套接字连接以及复用连接发送前执行授权检查；公网与本机回环不要求附近设备权限，VPN/蜂窝按系统网络类型排除。登录/恢复遇到明确拒绝后由原连接请求系统授权，只重做无凭据的只读发现。随机尝试编号和取消关联防止迟到授权继续另一个账号；不删除会话、自动重发认证或业务写。Worker 使用同一受限传输，但不弹授权窗口。QuickConnect 的控制、直连与中继发生权限、TLS 或身份错误立即停止，不继续换路径。
+
+实际命令：
+
+```bash
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
+ANDROID_HOME='/Users/yuangy/Library/Android/sdk' \
+android/gradlew -p android :app:testDebugUnitTest \
+  --tests '*LocalNetworkAccessTest' --tests '*LocalNetworkPermissionRequestTest' \
+  --tests '*WorkspaceConnectionServiceTest' --tests '*WorkspaceAccessTransportTest' \
+  --tests '*DsmQuickConnect*Test' --no-parallel --max-workers=2 --console=plain
+# 随后独立运行 --tests '*DsmConnectionFallbackTest'
+# UI 增量构建：:app:assembleDebug :app:assembleDebugAndroidTest，相同 Java/SDK 与并发参数
+```
+
+首组 44 项、回退 3 项全部通过，0 失败、0 跳过；XML 分别在忽略的 `build/android-rewrite-a1c/jvm-initial/` 与 `jvm-fallback/`。覆盖本地/公网/IP/DNS 边界、取消与迟到、拒绝保留密码会话、允许后只登录一次、摘要拒绝不追加探测、QuickConnect 安全错误不回退及普通断连继续可信公网候选。没有使用真实 NAS。
+
+API 37 手机运行 `LocalNetworkPermissionUiTest`，真实操作系统拒绝/允许按钮，验证拒绝可恢复、弹窗期间 Activity 重建后保持原模型并继续原等待，最终 1 项通过（`ui-permission-recreate.txt`）。首次测试使用 `ActivityScenario.recreate()`，系统弹窗使页面处于 PAUSED，框架强等 RESUMED 而失败；改为在主线程直接请求 Activity 重建，保留新 Activity、原模型和原请求完成断言。生产代码未为该测试放宽权限。随后 `WorkspaceHostUiTest`、`LoginScreenTest`、`WorkspaceAccessUiTest` 共 19 项通过（`ui-host-login-access.txt`），包含最终手机重命名保护。手机本组已明确设置普通字号和浅色；系统弹窗采用系统语言，不要求其跟随 App 语言。
+
+本片主 APK SHA-256 `9fa9df7c140200ec136794064bdd4564b05192db9edca09debc35d4538217304`；测试 APK `92a3974b2108c4ce60887d6dd0989fe4356e367df60fb14054043310c46b6f7e`。主源码、两种测试源码与 Debug/仪器包构建通过。双语完整性/硬编码检查通过（Android 2219 个键）；结构、写入口、点击、动效、计划、严格文档及差异检查通过。五态基线为 37 页面、0 生产状态缺口、1 自动化缺口：连接重命名的存储失败 UI 分支仍未专项验证，未虚报自动化完整。
+
+只读集成与安全复核检查了无凭据发现的重试边界、权限错误不被当成过期、所有正式客户端/Worker 复用受限网络和 TLS/重定向策略。真实 Wi-Fi/以太网、VPN 路由、不同 IPv6 子网、系统撤销后后台任务及真实 NAS 登录仍为 `PENDING_USER_VALIDATION`；本机模拟器与合成地址测试不代表这些场景已通过。完整 JVM/Release/R8/lint 和云端仍未执行。A1d 全局任务/路由继续实施。
+
+## 2026-10-11 Android A1d 全局任务与账号路由
+
+已确认 UI 的全部设备/当前 NAS 与进行中/已结束筛选接入真实本机任务记录，包含上传、下载、压缩解压与 VMM 本地导入；与已打开工作区的前台进度合并，读取在后台线程且不自动连接全部 NAS。原任务展示提取到 `TransferTaskPresentation`，主 ViewModel 减至 16068 行。操作重新检查原身份，需要网络的继续/重试进入原账号任务页；账号变更后的旧标题隐藏且无法继续。当前清理仍要求可识别的原工作区，并保留 URI 与不确定写保护。
+
+新复制的固定页与通知使用原身份的不透明映射；每个任务有独立 PendingIntent，Worker 进度复用入口，任务令牌与页面令牌分别有容量上限。Activity 采用 singleTop，冷启动任务历史不恢复无关连接；页面重建只保存历史开关和令牌，不写入任务 ID、NAS 或路径。源码变化限 Android 与相关文档，其他平台不变。
+
+实际本机命令使用 Java/SDK 路径及 `--no-parallel --max-workers=2 --console=plain` 与 A1c 相同：
+
+```bash
+android/gradlew -p android :app:testDebugUnitTest \
+  --tests '*WorkspaceTaskRouteStoreTest' --tests '*WorkspaceIdentityStoreTest' \
+  --tests '*OpaqueWorkspaceRouteStoreModelTest' --tests '*TransferNotificationContentTest' \
+  --tests '*InternalNavigationStateTest' --no-parallel --max-workers=2 --console=plain
+# 实际匹配 4 个测试类，33 项；最后一个名称未匹配额外测试，不计入覆盖。
+android/gradlew -p android :app:testDebugUnitTest \
+  --tests '*WorkspaceTaskRouteStoreTest' --tests '*OpaqueWorkspaceRouteStoreModelTest' \
+  :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain
+```
+
+首组 33 项与新增通知容量隔离后的 13 项均通过，0 失败/跳过，两组重叠不相加。XML 保存在忽略的 `build/android-rewrite-a1d/jvm-route/`、`jvm-task-routes-final/`。随后增量构建均完成；最终主题修正对应 `build-history-theme.log`。
+
+仪器命令为 `adb -s <测试模拟器> shell am instrument -w -r -e class <以下测试类> -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`，只使用合成资料：
+
+- API 37 手机：`WorkspaceHostUiTest`（12）+ `OpaqueWorkspaceNavigationTest`（6），18 项通过（`ui-host-page-final.txt`）；`GlobalTaskCenterUiTest` 普通字号 5 项在 `ui-task-lifecycle-final.txt` 中通过，该轮冷启动夹具另有失败，未把整组视为通过；冷启动 1 项与登录 4 项在后续 `ui-host-routes-final.txt` 中通过。任务深色系统二倍字号 5 项通过（`ui-global-phone-dark-font2.txt`）；最终主题修正后相同模式专项 1 项通过（`ui-phone-theme-final.txt`）。
+- API 37 平板：`GlobalTaskCenterUiTest`（5）+ `WorkspaceHostUiTest`（12）+ `OpaqueWorkspaceNavigationTest`（6）+ `LocalTaskColdStartTest`（1），24 项通过（`ui-tablet-final.txt`）；真实系统二倍字号与深色下，Global（5）+ Host（12）17 项通过（`ui-tablet-dark-font2.txt`）。这些最终成功组均 0 失败/跳过；平板截图英语、手机中文，未混同语言证据。
+- 已查看最终手机/平板任务图、账号筛选图，深色筛选图标和长文换行可读。两台专用模拟器恢复字体 1.0、浅色后停止；未连接真实 NAS。
+
+原失败及修正：首次命令误用了无 `.debug` 的测试包名，未运行测试；通知原有 CLEAR_TOP 会重建主页面，生产入口增加 singleTop。ActivityScenario 会因新 Intent 失去生命周期识别，测试恢复启动标识后用实际 Activity 重建，冷启动改用实际启动和生命周期读取，保留目标、原模型、重建与无自动登录断言；冷启动夹具复用任务 ID 被正确拒绝，改为独立随机 ID 并清理本测试残留。旧固定链接断言更新为原账号 Page 令牌及 URI 无身份断言；重命名一次出现默认 1 秒等待超时，改为 10 秒异步等待，单次保存与原会话/目录断言不变。截图发现独立历史页未包主题 Surface 导致深色图标对比不足，修正后完成最终主题复验。
+
+最终 A1d 主 APK SHA-256 为 `6ee9db568b68678f8904a13474f6794627331d345319864bbca06245312d1a57`，测试 APK 为 `a15b4c6d327cb2a58483f57140e840e30da262dc5388ff52f0535f1999445a45`。双语完整性/硬编码通过（Android 2228 键），写入口登记随展示函数移动同步；结构、点击、动效、计划、严格文档和差异检查通过。五态为 38 页面、0 生产缺口、2 自动化未闭环页面（重命名存储失败及全局任务读取失败 UI 注入）。
+
+独立只读集成与安全复核检查了账号变更、退出后历史、旧按钮、URI/Bundle 内容、通知隔离/容量、进度读取成本、冷启动和重新登录不重放。实际 NAS 与系统后台限制为 `PENDING_USER_VALIDATION`，按主计划只用测试数据；完整 JVM/Release/R8/lint、云端与完整远端任务/业务仍未验收。A1d 不等于完整 A1/A2，继续 A3–A9。
+
+## 2026-10-11 Android A3a 上传认证移出网址
+
+`DsmApiClient.upload` 移除 URL 查询中的 `_sid`、`SynoToken`、`synotoken`；仍以 Cookie、请求头和 multipart 正文认证，保留 api/version/method 路由、文件末尾位置、明确长度、写权限检查及写后回读。公共上传合成 Fixture 同步移除 query 认证位置；Android 增加完整 URI 无会话/令牌、正文与头一致，以及可选令牌缺失的断言。其他平台生产源码及测试源码没有修改。
+
+实际验证：
+
+```bash
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
+ANDROID_HOME='/Users/yuangy/Library/Android/sdk' \
+android/gradlew -p android :app:testDebugUnitTest --tests '*FileUploadTest' \
+  --tests '*NetworkRequestFixtureContractTest' --tests '*WorkspaceAuthorizedTransportTest' \
+  --no-parallel --max-workers=2 --console=plain
+python3 tools/request-contract/validate_contracts.py
+swift test --package-path apple --jobs 2 --skip-update --filter RequestFixtureContractTests
+DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj \
+  --filter 'FullyQualifiedName~FileUploadContractTests' -p:EnableWindowsTargeting=true \
+  -m:2 --nologo --verbosity minimal
+```
+
+Android 17+1+2 共 20 项 JVM 通过，0 失败/跳过；共享 Apple 35 项 XCTest 通过，180 个请求样例及 1 个结果示例校验通过。证据在忽略的 `build/android-rewrite-a3a/`。首次新增的两个正文断言错误假设 multipart 文本布局，改为逐字段读取实际值，完整 URI、Cookie/头、正文值和文件末尾断言全部保留，随后全组通过。
+
+Windows 命令失败于 `MakePri.exe` 的 `Exec format error`，未进入测试运行；没有调整 Windows 配置、跳过资源生成或把生成 DLL 当作 Windows 门禁通过。需在 Windows Runner 运行同一聚焦测试；本机 `git status --short apple windows` 为空。Mac/iPhone/iPad 的共享上传已使用无凭据 URL，既有安全断言继续保留；不能据此宣称五端当前版本或真实 NAS 全部通过。
+
+最终 `:app:assembleDebug` 增量构建通过（`build-debug.log`），A3a 主 APK SHA-256 为 `721adb85067b82c97fdb91807632ce1f333ba5ab0b251fd547ca18731e7aa046`。API 参数目录通过既定生成器更新；请求目录一致性、严格文档、本地化、Android 写入口/五态/结构和差异检查通过。
+
+本片只完成上传认证位置安全切片。审查发现既有上传不确定结果与重试仍存在仅按大小判定输出的路径，已纳入下一片；不据本片 JVM 通过宣布完整上传/文件业务收口。真实 NAS 认证兼容及上述 Windows 门禁列入主计划待验证项。
+
+## 2026-10-11 Android A3b 上传内容恢复与安全重试
+
+本片完成 Android 上传中断、显式重试与照片备份同名判断的内容核对，继续遵守已确认 UI。正常上传仅在实际发送时增量计算 SHA-256；已收到成功响应后按精确目标元数据回读，断线/不明/取消后的成功则要求目标正文与原摘要一致。取消后的读取最多 15 秒，失败仍保留未知事实，不自动发送第二次上传。目录名称末尾空格保留，目标读取改用 getinfo，避免首屏目录列表遗漏。
+
+原任务摘要另存在既有加密传输存储的新版本键，绑定任务/连接/执行编号，旧上传 JSON 不变。恢复前后重查原账号，迟到结果不能覆盖新任务；目标不同、来源改变、无旧摘要或目标暂时缺失不能冒充完成。只有明确失败且目标不存在才可重排，并撤销旧的覆盖选择。当前连接未保存会话时仍可只读恢复；继续后台上传需要保存登录信息，也可从文件页重新选择来源。
+
+任务卡片增加原账号目标目录入口，复用既有权限与未保存编辑保护；上传结果不明使用“重试”，不再承诺从头发送。成功卡片不重复阶段、完成说明和单项计数；未知结果的恢复说明不要求用户核对内部流程。照片备份的同名同大小文件先比较内容，取消后包括空文件也保留已发出请求的不确定状态。
+
+实际源码包括 `UploadContentFingerprint.kt`、`UploadRetry.kt`、`UploadSource.kt`、`DsmApi.kt`、`DsmRepository.kt`、`TransferStore.kt`、`PhotoBackupWorker.kt`、`AppViewModel.kt`/Support、WorkspaceHost、两种任务页面及双语资源；新增正式恢复、存储和实际宿主 UI 测试。其他平台实现只读，未新增 NAS API/字段、权限、第三方依赖或旧持久化格式。
+
+本机环境沿用 A0a 配套版本，JBR 25 与 Android SDK 使用本机已配置目录，Gradle 限制两个 worker，不运行完整 JVM/Release/R8/lint。实际命令：
+
+```bash
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' \
+  android/gradlew -p android :app:testDebugUnitTest \
+  --tests '*FileUploadTest' --tests '*PhotoBackupDecisionTest' --tests '*WorkerCancellationDecisionTest' \
+  --tests '*UploadRetryTest' --tests '*UploadContentStoreTest' \
+  :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' \
+  android/gradlew -p android :app:testDebugUnitTest --tests '*UploadRetryTest' \
+  --tests '*DownloadTaskFileTest' --tests '*ChatAttachmentRepositoryTest' \
+  --tests '*NetworkRequestFixtureContractTest' --no-parallel --max-workers=2 --console=plain
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' \
+  android/gradlew -p android :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain
+```
+
+第一组 84 项通过、无失败/跳过：上传 22、备份决策 13、Worker 取消 33、独立摘要存储 6、恢复 10。随后补充“未保存会话只读恢复/后台重排限制”，第二组 18 项通过：恢复 11、Chat 附件 5、下载任务文件 1、请求样例 1；重叠组不累加为单次结果。覆盖同大小不同内容、来源变化、空文件、权限拒绝、取消、16 MiB 固定缓冲、跨执行器/账号、存储失败及并发迟到结果。最后界面文案增量重新构建 Debug/仪器 APK 通过。
+
+最终仪器命令分别对 `emulator-5558` 手机和 `emulator-5560` 平板运行，包名含既有 `.debug` 后缀：
+
+```bash
+adb -s <测试模拟器> shell am instrument -w -r \
+  -e class io.github.qwertyuiop1995.dsmnativeclient.UploadRecoveryUiTest,io.github.qwertyuiop1995.dsmnativeclient.UploadMutationUiTest \
+  -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+最终手机浅色/标准字号 4 项通过（18.830 秒），深色/系统二倍字号 4 项通过（17.718 秒）；平板浅色/标准字号 4 项通过（6.589 秒），深色/系统二倍字号 4 项通过（14.942 秒），均无跳过。测试在真实 MainActivity、宿主、任务存储、Repository 与按钮上使用合成只读响应；验证完成后移至已结束、冲突保留原任务、原目录导航及结果提示。手机中文与平板英文截图已查看，原 Logo、颜色、窄屏/侧栏布局和大字号按钮保持可读。两台模拟器均恢复字号 1.0、关闭深色并停止。
+
+失败与修正保留：新增存储测试最初引用私有常量导致测试编译失败，改为检查既有序列化键，未放宽生产可见性；一次仪器启动遗漏 `.debug`，未执行任何测试；首轮真实界面两项超时暴露只读恢复被保存会话要求拦截，已修复产品逻辑；随后一项在后台写入刚完成、主线程提示尚未应用时过早断言，改为等待同一预期提示后继续断言。最终各组结果如上，不以早期失败组代替最终通过。
+
+当前 APK SHA-256：主包 `942c5619d1dcf3e0ff34127ee85b09e5e2bac1c45b0faa63a6c1c5817d060fba`；仪器包 `4feda833e116040b7cae1c470749cb1b4a17e9d50a92037aae88ceab08f58de5`。局部证据位于忽略目录 `build/android-rewrite-a3b/` 的日志/XML/截图；产品不带合成资料。中英文资源、写入口矩阵、页面五态、48dp 点击目标、动效、结构 ratchet 和差异检查通过；既有页面自动化缺口仍为两项，不宣称整端验收完成。
+
+独立集成与对抗复核检查了原归属/会话变更、原正文摘要、旧无摘要记录、零字节取消、旧覆盖授权、目标路径与并发状态替换；未发现未知上传重放路径。本片没有真实 NAS 上传或读取验证，也没有正式发布、云端门禁、全量 JVM、Release/R8/lint 或 TalkBack 引擎验收。`PENDING_USER_VALIDATION`：在专用 NAS 测试目录比较真实内容，上传时断网/终止系统后台再恢复、撤销原账号读取权；预期未知保留、目标变化不覆盖、原账号外不能恢复。仅回传脱敏系统/套件版本、步骤与错误类别。
+
+## 2026-10-11 Android A3c 高级条件与正文搜索
+
+本片在已确认的文件页中接入多目录、包含子目录、关键词/正文、扩展名、文件/目录类型、大小区间与单位、修改/创建/访问日期、所有者和群组。条件面板、只读目录选择与原生日期/时间窗口使用现有 Compose/Android 样式，草稿归属当前工作区，取消不应用，Activity 重建保留草稿。高级类型与文件页既有类型筛选同步，避免旧类型隐藏有效结果；修改类型重新查询，完成后的排序复用完整结果。列表和图标视图显示文件位置，区分不同目录中的同名结果。
+
+旧搜索只读取一次最多 1000 条后停止，本片改为等待 finished，完整分页并按原始条目数前进，路径去重但不改变下一页偏移。缺失页、结束状态、总数或字段类型异常显示读取失败；未结束空页不冒充零结果。正文使用已记录 Search v2 扩展，要求原生布尔索引覆盖，不回退名称搜索，也不按文件名丢弃正文命中。读取五分钟超时，异常/取消只停止和清理本次任务，清理最多五秒并保留原权限门禁。
+
+修改包括新增 `FileSearchRequest`、`DsmFileSearchRepository`、`FileSearchFeatureModel`、`FileAdvancedSearchDialog`，以及原文件浏览器、请求身份、模块撤销处理、类型联动与双语资源。查询状态不写入旧持久化结构；没有新增 NAS API/字段、系统权限或第三方依赖。Apple 三端和 Windows 源码只读；共享请求 Fixture 不变，端点记录与兼容矩阵只更新 Android 实现说明，不提高原 NAS 观察等级。
+
+实际构建和最终聚焦回归命令：
+
+```bash
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' \
+  android/gradlew -p android :app:testDebugUnitTest \
+  --tests '*FileSearchRepositoryTest' --tests '*FileSearchFeatureModelTest' \
+  --tests '*FileBrowserRequestIdentityTest' --tests '*StorageAnalysisRepositoryTest' \
+  :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain
+```
+
+最终 33 项 JVM 通过、无失败/跳过：请求与分页 13、草稿/目录/类型联动 9、请求身份 7、既有存储分析 4。正式测试覆盖共享请求样例全部高级字段、500+1 分页、重复路径原始偏移、未结束空页、缺失页、索引字段缺失/类型错误、真实零结果、权限失败、取消、超时、非法条件零请求、大小溢出、错误目录偏移、旧 Repository 和过期条件。Debug 与仪器 APK 构建通过。
+
+仪器测试在隔离 API 37 手机与平板上使用真实 MainActivity、宿主、文件页、条件/目录控件、原生 DatePicker/TimePicker 与实际按钮，所有响应明确为合成，任何未定义请求失败：
+
+```bash
+adb -s <测试模拟器> shell am instrument -w -r \
+  -e class io.github.qwertyuiop1995.dsmnativeclient.FileAdvancedSearchUiTest \
+  -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+最终同一安装包：手机浅色/标准字号 6 项通过（32.927 秒），深色/系统二倍字号 6 项通过（38.619 秒）；平板浅色/标准字号 6 项通过（26.906 秒），深色/系统二倍字号 6 项通过（32.860 秒）。各组无跳过，覆盖条件/类型联动、多目录、原生日期、重建、正文结果及列表/图标位置、取消/清理、错误恢复、空结果与目录选择五态。手机中文、平板英文及浅深色/大字号截图已查看；结束后恢复字号 1.0 和浅色并停止两台模拟器。
+
+最终主 APK SHA-256 为 `3ca9931968e08fc62fa62c0775ecca30b2c6ce28169ae9e6847e71938df72892`，仪器 APK 为 `7b22c8ea8e017659b6fed3c92b0846819d0d70cd2c318b480eca6ac19e00b5e6`。本片局部日志、XML 与截图位于忽略目录 `build/android-rewrite-a3c/`。早期中间构建的设备结果单独保留，不用它们替代最终类型联动后的安装包复验。
+
+原失败与修正：初次编译遇到新界面的 R 星号导入歧义，改为明确资源导入；新增目录测试曾错写 `Loadable.Failed` 属性，修正测试而未改变生产可见性。取消界面测试曾两次在等待读取请求时超时，未取得足以确认产品根因的现场；追加诊断后单项通过，随后测试明确收起键盘、确认面板关闭及查询已应用，再检查读取与取消。原等待断言仍为十秒，未删除取消或清理断言，原失败日志保留。原生日期选择另补清除输入焦点/关闭键盘，截图等待原生窗口过渡结束。后续完整设备分组结果分别记录，不把重跑本身表述为根因修复。
+
+独立复核确认查询仅走原 Repository/账号门禁，条件与代次进入迟到结果检查，退出/撤权/离开文件模块会取消当前搜索，清理不会猜测其他 taskid。Mac 还支持 `/表达式/i` 本机名称正则，Android 本片尚未实现，作为后续文件差异保留，不能将本片表述为全部文件能力对齐。完整 JVM/Release/R8/lint、云端及真实 NAS 未运行；`PENDING_USER_VALIDATION` 需专用合成文档、普通账号与多共享范围验证真实正文召回、索引不足、权限变化和取消。只回传脱敏系统/套件版本、操作与错误类别。
+
+## 2026-10-11 Android A3d 文件操作路径身份
+
+- 来源：`main` / `1bf340ae` 上连续开发的未提交工作区。本片修正 File Station 写操作对 NAS 原始路径的空白裁剪；不新增写能力、权限、公开请求字段或持久格式，Apple/Windows 源码仍无改动。
+- 新建目录父路径、重命名源、删除、复制/移动、分享创建与链接删除路径锁、压缩/解压均保留文件名空白。相对路径、点路径、空路径与不允许的根目标提交前拒绝；既有目录分隔符兼容和用户输入新名称处理不变。两个仅末尾空格不同的文件不会因去重或身份比较合并。
+- 聚焦验证使用 Java 25、API 37、双 worker、无并行；首轮新测试误用了不存在的压缩级别 `NORMAL`，测试源码编译失败，改用领域现有 `MODERATE` 后 10 项通过。随后下列 8 组共 **123 项，0 失败、0 错误、0 跳过**：路径身份 10、文件条目 19、快照基线 18、删除 15、归档 30、分享删除 11、跨 NAS 协调 13、备份目录 7。命令同时执行目标主源码及测试源码增量编译，23 秒结束。
+
+```bash
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
+ANDROID_HOME='/Users/yuangy/Library/Android/sdk' \
+android/gradlew -p android :app:testDebugUnitTest \
+  --tests '*FileMutationPathIdentityTest' --tests '*FileEntryMutationResultTest' \
+  --tests '*FileStationBaselineRepositoryTest' --tests '*FileDeleteResultTest' \
+  --tests '*ArchiveRepositoryTest' --tests '*ShareLinkDeletionTest' \
+  --tests '*CrossNasTransferCoordinatorTest' --tests '*BackupFolderRepositoryTest' \
+  --no-parallel --max-workers=2 --console=plain
+```
+
+- 证据：本机忽略目录 `build/android-rewrite-a3d/jvm-paths-initial.log` 保留初始编译失败，`jvm-paths-corrected.log`、`jvm-regression.log` 和对应 XML 保存通过结果。结构行数收紧为 DsmRepository 14889，质量报告按生成器更新；写入口矩阵和差异空白检查通过。
+- 独立只读集成/对抗复核：检查原快照入口、逐项预检、路径互斥、明确权限拒绝、断线/取消不重放和精确回读；回归未降低既有断言。新增测试覆盖普通同名文件仍存在时重命名带空格目标、两个不同路径同时删除/复制、归档内容保留空格和无效别名零请求。
+- 本片未改变界面，没有另跑设备 UI；未生成新候选安装包、运行完整 JVM/Release/R8/lint 或云端测试。真实 NAS 的文件系统特殊名称兼容为 `PENDING_USER_VALIDATION`：只使用可丢弃目录和合成文件验证上述动作，预期仅原目标变化；回传 DSM/套件版本、步骤及脱敏错误类别，不回传账号、地址、路径或原始响应。完整 A3–A10 仍在实施。
+
+
+## 2026-10-11 Android A3e 完整目录上传
+
+- 范围：Android 单一系统目录扫描器、固定目录上传计划/独立加密键、目录执行器与 Worker、原文件入口、清单预览、任务详情和继续/取消。保留根目录、空目录与原名称；未读取的条目明确失败，父目录失败不触碰子项，无关分支继续。默认不覆盖，选择覆盖后说明替换后果；前台/后台使用同一固定清单和原账号身份。
+- 安全复核：提交前同步保存逐项阶段，未知项只有原完整摘要匹配才收敛；取消不删除 NAS 内容，旧执行器的迟到更新不能覆盖新执行。已完成目录也在下一项写入前检查可写父目录，NAS 共享根通过直接元数据读取判断，不能误用普通子项查找。账号或认证失效暂停整组，源名称/大小/修改时间在实际打开前读取；持久保存失败不继续 NAS 写入。没有新增第三方依赖、API、旧上传格式或其他平台代码改动。独立只读集成/对抗复核由当前执行者另行完成；当前环境无可用子 Agent 工具，未声称多人复核。
+- 新模型与边界：`DocumentTreeScanner.kt`、`data/FolderUploadPlan.kt`、`FolderUploadCoordinator.kt`、`RepositoryFolderUploadEndpoint.kt`、`FolderUploadFeatureModel.kt` 和 `FolderUploadWorker.kt`；`TransferStore` 保留旧单文件任务兼容，单文件 Worker 拒绝处理新目录计划或损坏计划。详情通过既有任务身份连接全局任务中心。来源预览和任务清单沿用 Client 组件，以惰性列表显示，不一次绘制千项。
+- 精确本机构建/测试：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*FolderUploadCoordinatorTest' --tests '*FolderUploadPlanStoreTest' --tests '*DocumentTreeScannerTest' --tests '*PhotoBackupDecisionTest' --tests '*BackupFolderRepositoryTest' --tests '*UploadContentStoreTest' --tests '*FileUploadTest' --tests '*WorkerCancellationDecisionTest' --tests '*TransferCoordinatorTest' :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain`：通过，共 **130 项**（16/8/10/13/9/6/22/33/13，0 失败/错误/跳过），11 秒；最后的通配过滤实际覆盖 `CrossNasTransferCoordinatorTest` 13 项。日志 `build/android-rewrite-a3e/acceptance-progress.log`，JUnit XML `jvm-progress-final/`。此前界面整行最小高度声明与英文原生复数资源修正均已包含在此包中。没有本机整轮 Release/R8/lint 或云端通过结论。
+- 原始失败保留：目录执行器首轮 30 项中 1 项将磁盘不可写误期望为已保存暂停；实际 `transfer.upload_state_not_persisted` 不得被当成可持久暂停。前台/Worker 接收失败，不把磁盘不可写误报为保存成功；测试明确断言保存失败且 NAS 零写；修正后同类回归通过。独立复核又用 15 项执行器测试复现两项取消边界失败（`cancel-boundary-reproduction.log`）：执行前取消未结束、最后一项已完成仍留在取消状态。统一取消收敛后两项通过；前台完成回调、Worker 和 WorkManager 观察均调用同一收敛逻辑，已有确定成功不变未知。同名文件全部跳过时，进度按已处理内容完成、逐项仍显示跳过并断言 NAS 无文件写入；目录任务不把跳过内容算成网络速度。初轮设备命令曾误用无 `.debug` 的测试包名，另一次类名分隔符拼写错误已停止该次并修正；这些命令错误不算产品测试通过或源码故障，原日志保留在本片目录。首次正确手机 7 项为 99.981 秒，加入实际任务中心后 8 项 63.196 秒；最终只采用下列最新包结果。
+- 最新产物：`android/app/build/outputs/apk/debug/app-debug.apk` SHA-256 `a7f45d2830f5af1a342b169e2465cb9ece24894bcfb66616f2df67a488a59add`；`android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk` SHA-256 `c732e2b5cc13373d02bd5d69aa903bc716eb9681f63c7885949cc8b1f77ec2a6`。未提交、推送、发布或安装到用户真实设备。
+- 设备命令：`adb -s <serial> shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.FolderUploadUiTest,io.github.qwertyuiop1995.dsmnativeclient.FolderUploadRepositoryIntegrationTest,io.github.qwertyuiop1995.dsmnativeclient.FolderUploadRecoveryUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。每组 8 项：生产 UI 的预览/覆盖/忙碌/筛选空/错误恢复/千项列表，系统 Cursor 与实际内容流到真实请求编码/回读，来源变化拒绝上传，以及实际全局任务卡片恢复。合成端点不会连接真实 NAS；完整源内容使用独立合成文件，测试后清理。
+- 最终同包设备结果：手机浅色常规字号 **8 项通过，8.705 秒**，深色系统字号 2.0 **8 项通过，9.123 秒**；平板浅色常规字号 **8 项通过，9.004 秒**，深色系统字号 2.0 **8 项通过，8.791 秒**，合计四组 32 次执行，均无失败/跳过。日志 `ui-phone-progress-light.txt`、`ui-phone-progress-dark.txt`、`ui-tablet-progress-light.txt`、`ui-tablet-progress-dark.txt`，截图位于同名去掉 `ui-` 的目录。中文手机与英文平板的正常/大字、浅/深色已人工查看。一次手机重启后保留了旧主题/字号，截图识别后将该记录改名为 `ui-phone-progress-boot-dark.txt`，显式重新设置并读取配置后补跑浅色，不将误标的那组计入四组结果。设备结束后恢复常规字号/浅色并关闭。
+- 页面、写入口、结构、点击区域、动效、双语资源和文档检查通过；Android 2290 个资源键，40 个页面/弹窗、0 个生产状态缺口，目录上传页面已闭环，其他两处原有局部自动化不因此宣称完成。原始失败、截图、JUnit XML 与最新 APK 保留在忽略的构建目录，临时模拟器运行日志在设备停止后清理。
+- `PENDING_USER_VALIDATION`：使用可丢弃测试目录和 Android 系统文件夹选择器，覆盖本地/云端提供器、空目录、同名跳过/明确覆盖、撤销来源授权、后台/锁屏/进程终止和原账号重新登录。预期不动未选目录、不漏报不可读项、取消保留已写文件、未知项只读恢复且不重复发送；回传 Android/DSM 版本、提供器类别、步骤和脱敏错误，不回传源正文、凭据、实际 URI 或路径。真实 NAS/提供器/Doze 尚未验证；这不是名称正则、ZIP、其余 A3–A9 或整体 Android 完成结论。
+
+## 2026-10-11 Android A3f 文件名正则搜索
+
+- 改动：沿用已确认搜索栏与高级条件面板，接入 `/表达式/` 和 `/表达式/i`。使用公开 Search v2 的 `pattern=*` 读取完整结果后，在后台线程仅匹配名称，保留原路径与其他条件；未闭合分隔符/非 `i` 标志保持普通关键词语义。无效表达式与正文/正则组合阻止开始搜索，并有中英文纠错提示。未新增 API、依赖、权限或持久化格式，其他平台源码只读。
+- 独立集成复核：原搜索清理、完整分页、原工作区和完整条件的迟到回调保护仍有效；筛选结果总数按实际命中计，空结果不冒充错误；正文搜索不经过名称筛选。匹配使用平台原生引擎，当前 Android 与 JVM 的 Unicode/大小写实例均经过测试，不声称所有高级语法与 macOS 完全相同。未执行真实 NAS。
+- 本机命令：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*FileNameSearchTest' --tests '*FileSearchRepositoryTest' --tests '*FileSearchFeatureModelTest' --tests '*FileBrowserStateTest' --tests '*FileBrowserRequestIdentityTest' :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain`，`BUILD SUCCESSFUL in 35s`；51 项、0 失败/错误/跳过。分组为名称解析 5、仓储 17、功能模型 11、文件状态 11、请求身份 7。末页命中、原路径、Unicode/大小写、普通关键词、无效条件、正文组合、根目录无效表达式零枚举均有正式断言。日志与 XML 保留于忽略目录 `build/android-rewrite-a3f/focused-build.log` 和 `jvm/`。
+- 同包设备验证：API 37 手机浅色常规字号执行完整 `FileAdvancedSearchUiTest`，8 项通过，34.315 秒；新增 `regexSearchFiltersNativeResultsAndKeepsOriginalQuery`、`regexErrorsAreActionableAndRejectRequestsUntilCorrected` 两项在手机深色二倍字号 9.311 秒、平板浅色常规字号 9.961 秒、平板深色二倍字号 9.582 秒均通过。没有把后面三组描述为完整 8 项。已查看当前中文手机与英文平板的结果和错误截图，输入、面板滚动、修改后重新搜索与原位置保留均正常。
+- 仪器命令：手机 `adb -s emulator-5558 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.FileAdvancedSearchUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`；新增两项使用 `-e class 'io.github.qwertyuiop1995.dsmnativeclient.FileAdvancedSearchUiTest#regexSearchFiltersNativeResultsAndKeepsOriginalQuery,io.github.qwertyuiop1995.dsmnativeclient.FileAdvancedSearchUiTest#regexErrorsAreActionableAndRejectRequestsUntilCorrected'`，平板设备号为 `emulator-5560`。配置在运行前明确设置 `settings put system font_scale 1/2` 与 `cmd uimode night no/yes`，切换配置后停止原应用再运行。日志为 `ui-phone-light.txt`、`ui-phone-dark.txt`、`ui-tablet-light.txt`、`ui-tablet-dark.txt`，对应目录中 `search-regex-*.png` 为本片截图；不以沿用的其他截图声称本片重验。
+- 最终 APK SHA-256：Debug `679591fd4fbd441b24f1f7dbc838b50d76a7910b5a1f71c00e28a864f090a8da`；测试包 `2e17de9c782e3c0573990174bf895521754d5c9103de45e4bfbd07b3e39b6de3`。没有降低断言或重复运行掩盖失败。
+- 本地化 2294 项资源及硬编码扫描、写入口证据、点击目标 42 处、结构行数、动效检查通过；页面基线仍为 40 个页面/弹窗、0 个生产状态缺口、2 个既有自动化未闭环页面。质量报告经既有生成流程更新。真实 NAS 召回按主计划保留 `PENDING_USER_VALIDATION`，全局 Release/R8/lint、云端和其余 A3–A10 不属于本片完成结论。
+
+## 2026-10-11 Android A3g 多选与目录 ZIP 下载
+
+- 实际范围：多选操作栏的“下载为 ZIP”、单目录 ZIP 与普通单文件保存，系统 CreateDocument 选择器、固定来源/原账号、任务中心暂停/继续/取消及失败重试。ZIP 每次从零输出，普通单文件仍保留 Range 与长度校验；不调用 Compress，不在 NAS 新建压缩文件。
+- 实现边界：新增 `data/ArchiveDownloadPlan.kt`、`data/files/DsmFileDownloadRepository.kt`、`FileDownloadExecution.kt` 与 `ui/FileDownloadLauncher.kt`；来源清单与旧任务在一次加密存储提交中保存，旧下载字段不变。独立任务类型确保丢失或损坏清单不能退回首项/父目录；选择器重建保留最小来源和随机账号/会话代次。现有 Worker 与前台共用实际输出逻辑，打开/截断前检查原账号/清单/执行归属，同一目标等待旧输出关闭，不阻塞其他目标。完成记录使用实际写入总数，失败 ZIP 保留目标供明确重试，取消/历史清理继续检查其他任务的 URI 引用。
+- 独立只读集成与对抗复核：原路径不裁剪、无凭据 URL、ZIP 不带 Range、不按源文件大小限流，清单损坏及账号变化在本地输出前停止；错误要求重新选择来源，不循环显示可重试。当前无可用子 Agent 工具，复核由当前执行者单独重新阅读完成，不声称多人审查。未变更其他平台源码、依赖、系统权限或旧任务结构。按既有结构约束拆出下载相关逻辑，AppViewModel/AppViewModelSupport/DsmRepository 上限收紧为 15900/1671/14866 行，文件页 938 行并移出大文件例外，不放宽检查。
+- 最终本机命令：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*ArchiveDownloadPlanStoreTest' --tests '*FileDownloadTest' --tests '*FileDownloadExecutionLockTest' --tests '*PendingDownloadRequestStateTest' --tests '*DownloadEnqueuePolicyTest' --tests '*WorkerCancellationDecisionTest' --tests '*WorkspaceSwitchGuardTest' :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain`：通过，**73 项**，0 失败/错误/跳过。分组为清单 6、请求/下载 18、输出互斥 1、保存请求 8、入队 5、Worker 取消 33、工作区保护 2。最后一次增量为 3 秒；`build/android-rewrite-a3g/focused-build.log` 和 `jvm/` 保留日志/XML。
+- 当前包：Debug APK SHA-256 `70f055a480f8146ad6208433f770baab74bb0626640f3473f83b04e84144379f`，仪器测试 APK `0f57fb4eb0d8da36cb15b3c868659a2d1e57fcd2a9ec063be9c305d82d9f3396`。所有最终设备分组使用同一对包。未提交、推送、发布或安装到用户真实设备。
+- 手机 API 37 浅色/标准字号：`adb -s emulator-5558 shell am instrument -w -r -e class 'io.github.qwertyuiop1995.dsmnativeclient.ArchiveDownloadExecutionTest,io.github.qwertyuiop1995.dsmnativeclient.PendingDownloadRequestRestorationTest,io.github.qwertyuiop1995.dsmnativeclient.ArchiveDownloadUiTest' -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`，**9 项通过，14.254 秒**。覆盖系统文件描述符、原账号和过时执行、缺失清单零打开/零截断、实际保存请求重建，以及多选/目录/普通文件经真实系统保存窗口写入后逐字节读取和任务中心暂停继续。
+- 同包新增下载 UI 4 项使用 `-e class io.github.qwertyuiop1995.dsmnativeclient.ArchiveDownloadUiTest`：手机深色/系统二倍字号 **4 项 12.344 秒**，平板 API 37 浅色/标准字号 **4 项 12.269 秒**，平板深色/系统二倍字号 **4 项 11.611 秒**，均通过。配置明确使用 `settings put system font_scale 1/2` 和 `cmd uimode night no/yes`；中英文、多选操作栏、暂停卡片和完成卡片截图已实际查看。结果在 `ui-phone-light-final.txt`、`ui-phone-dark.txt`、`ui-tablet-light.txt`、`ui-tablet-dark.txt`，截图在对应 `phone-light/phone-dark/tablet-light/tablet-dark/`；旧失败截图单独放在 `failure-evidence/`。
+- 失败证据与修正：首轮 7 项中 5 项执行器/重建通过，2 项 UI 因测试把长按误当直接选择而失败；修正为长按菜单点“选择”。第二轮已完成 ZIP 内容检查，但测试未切到“已结束”列表，以及任务中心继续操作实际被同工作区切换保护挡住；进一步诊断复现 `PAUSED`、仅一次请求，未发生恢复。`WorkspaceHostModel.actOnTask` 现在仅在目标不是当前工作区时调用切换流程，仍保留身份检查与跨账号切换保护；同一实际 UI 回归恢复为两次原路径请求并读回完整 ZIP。原始失败日志为 `ui-phone-light-initial.txt`、`ui-phone-light-second.txt` 与 `ui-phone-light-recovery.txt`，不将失败计为通过。
+- 静态门禁：本地化完整性/占位符/硬编码（Android 2298 键）、点击目标、写入口、页面五态、动效、结构约束及生成报告一致性通过；页面五态仍有 2 个既有自动化缺口，未称整轮关闭。文档与平台/主计划同步，严格文档和计划结构检查通过。没有本机完整 JVM/Release/R8/lint、云端或真实 NAS 通过结论。
+- `PENDING_USER_VALIDATION`：真实 NAS 专用测试目录的 ZIP 条目/空目录、真实系统终止与 WorkManager 后台重启、云文档提供器/撤销保存授权、重新登录原账号及辅助功能全流程。预期只下载所选原路径，ZIP 重启无 Range，不覆盖未选目标，不跨账号恢复；只回传平台/DSM 版本、提供器类别、步骤与脱敏错误。独立加密键无需旧任务迁移，回退二进制前暂停相关任务；旧版本不理解新来源清单，不承诺活动任务直接降级安全。
+
+## 2026-10-11 Android A3h 分享与文件收集
+
+- 实际范围：沿用已确认 UI，逐目标批量创建、编辑和撤销分享，日期与密码保留/设置/清除、指定用户/群组分页选择、访问次数、可写目录收集、复制、系统分享及离线二维码。密码只在提交内存中持有；保护字段缺失不解释为公开，保留日期不截断原时分秒。当前明确保存结果后才显示可复制链接，未知写只读恢复，不认领同名/同路径的新链接。
+- 代码拆分：`domain/FileSharing.kt`、`data/files/DsmFileSharingRepository.kt`、`FileSharePayloads.kt`、`FileShareRecovery.kt`、`FileSharingFeatureModel.kt` 和四个专用分享面板接入既有文件页；恢复使用原账号绑定的独立加密记录，不改旧记录结构。用户明确批准 `com.google.zxing:core:3.5.4` 仅作本地编码，随包保留 LICENSE/NOTICE；没有新权限、网络目的地或其他端源码修改。
+- 独立只读集成与对抗复核：逐字段回读、完整分页、原目标/链接快照、成员仍有效、日期保留、密码不持久化、未知不重放、系统分享仅打开选择器、旧调用也须重读权限。无可用子 Agent 工具，由当前执行者独立重读检查，不声称多人审查。AppViewModel/DsmRepository 行数上限收紧为 15889/14570，文件页 808 行，未放宽结构约束。
+- 权限协议修复：原解码器只读扁平 `perm.read/write/delete` 且缺失 read 默认允许。按官方 File Station API Guide 第 27、33、36 页读取 `perm.acl.read/write/del`；包括 `is_acl_mode=false` 时 NAS 返回的派生权限。ACL 节点存在时缺项/格式错误不回退宽权限；根共享目录的 `share_right=RO/RW` 仅作已记录语义，单独 POSIX 位不能推算当前用户权限。保留既有显式扁平字段兼容，未改变公开请求或其他平台。
+- 失败与修正：新权限测试首次 **6 项中 5 项失败**，修正后通过。共同权限回归首轮 **484 项中 10 项失败**，定位为上传/搜索的旧正向夹具省略权限；仅补齐官方权限字段，未删断言或改预期。原 XML/日志保留在 `build/android-rewrite-a3h/failure-evidence/permissions-before.xml`、`permission-initial-jvm/`、`permissions-before.log` 与 `permission-integration-initial.log`。
+- 最终 JVM 第一组：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*File*' --tests '*Archive*' --tests '*Photo*' --tests '*Favorite*' --tests '*Upload*' --tests '*Folder*' --tests '*CrossNas*' --tests '*RequestFixture*' --no-parallel --max-workers=2 --console=plain`，**484 项，0 失败/错误/跳过，27 秒通过**，日志 `permission-integration-second.log`、XML `permission-jvm/`。随后增加旧路径入口缺失/拒绝权限零创建回归，运行 `:app:testDebugUnitTest --tests '*FileStationPermissionDecoderTest' --tests '*PhotoShareRepositoryTest' :app:assembleDebug :app:assembleDebugAndroidTest`，同环境和并发参数，**17 项通过，5 秒**，日志 `permissions-final-build.log`、XML `permission-final-jvm/`；两组去重覆盖 **485 项**，不累计重复执行数量。仪器夹具同步官方权限字段后测试包增量构建也通过，`permission-device-build.log`。
+- 交互真实失败：`ClientSheet` 原生返回/拖动可先隐藏面板，再被业务 close 拒绝，导致保存仍执行而编辑页消失。新增设备回归先重现失败；修复共用面板的动态关闭许可与显式按钮禁用，当前只有分享保存调用受此限制。第二次平板检查进一步暴露 Close 未重组禁用，再以明确状态参数修正；未删除断言。原日志 `ui-save-dismiss-before.txt`、`ui-tablet-light.txt`，失败截图 `failure-evidence/save-dismiss-before.png`、`save-dismiss-fixed.png`。旧 `ShareLinksDialogTest` 的工作区 fixture 原先没声明文件模块可用，真实投影把页面变成加载态；改为真实状态观察、显式模块可用和生命周期清理后通过，原失败另保留。
+- 最终包：Debug SHA-256 `a6905aadedfb8fd7459481cb623198153d4688c5cb8ff30e63eb50962399bdae`；仪器测试包 `5f96a440888c1d6699ebffbb668042e057c32691a69bfb74379ce95f6993e3e3`。以下最终分组使用同一对包，不将权限修复前的旧 UI 结果算入当前包。
+- API 37 手机浅色/标准字号：`adb -s emulator-5558 shell am instrument -w -r -e class 'io.github.qwertyuiop1995.dsmnativeclient.FileSharingUiTest,io.github.qwertyuiop1995.dsmnativeclient.ShareLinksDialogTest,io.github.qwertyuiop1995.dsmnativeclient.ArchiveDownloadUiTest,io.github.qwertyuiop1995.dsmnativeclient.FileAdvancedSearchUiTest,io.github.qwertyuiop1995.dsmnativeclient.UploadRecoveryUiTest,io.github.qwertyuiop1995.dsmnativeclient.FolderUploadRecoveryUiTest,io.github.qwertyuiop1995.dsmnativeclient.FolderUploadRepositoryIntegrationTest' -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`，**29 项通过，186.075 秒**，`ui-phone-permissions-final.txt`。分享 11 项包含五态、表单纠错、批量与重建、保持时间、成员、收集风险、原链接删除、未知只读恢复、保存返回保护、实际二维码解码和系统分享选择器；另 18 项覆盖旧分享与共同权限影响的搜索、下载和上传。
+- 手机深色/系统二倍字号同包仅运行 `FileSharingUiTest`，**11 项通过，80.731 秒**，`ui-phone-permissions-dark.txt`。最终手机截图为 `phone-permissions-light/`、`phone-permissions-dark/`，已实际查看管理和逐项结果界面。
+- 平板 API 37 同包 `FileSharingUiTest`：浅色/标准字号 **11 项通过，125.714 秒**，深色/系统二倍字号 **11 项通过，124.587 秒**；日志 `ui-tablet-permissions-light.txt`、`ui-tablet-permissions-dark.txt`，截图 `tablet-permissions-light/`、`tablet-permissions-dark/`。实际查看收集风险、保存期间禁用关闭、深色二维码与大字号排版。四组配置明确使用 `settings put system font_scale 1/2` 和 `cmd uimode night no/yes`，结束恢复默认并关闭本轮模拟器。
+- 最终静态门禁：`git diff --check`、本地化完整性/参数/硬编码（Android 2366 键）、点击目标（45 处）、写入口、页面五态（44 页，0 生产缺口、2 个既有自动化缺口）、动效、结构约束、生成报告一致性、主计划与严格文档检查均通过。再次核对当前两包指纹及包内 LICENSE 13320 字节/NOTICE 663 字节，Apple/Windows 源码无差异。
+- `PENDING_USER_VALIDATION`：真实 NAS 的密码、日期、具名访问/次数、收集上传与撤销；只用专用测试目标。系统终止后恢复、实际分享接收 App 和完整 TalkBack 仍待验。预期保留原账号/目标、拒绝无权限写、未知不重复创建；仅回传系统/DSM/套件版本、步骤和脱敏错误，不提供链接、密码、成员名或真实路径。独立恢复键无需迁移旧记录；回退前结束新写任务，保留未知恢复事实。未提交、推送、发布；完整 JVM/Release/R8/lint、云端和真实 NAS 未形成通过结论。
+
+## 2026-10-12 Android A3i 压缩包浏览与选择解压
+
+- 实际范围：压缩包内部目录、分页与当前已显示内容筛选，明确选择部分条目、密码/名称语言、目标目录、保留结构、新建同名目录及覆盖确认；压缩接入四种级别、ZIP/7z、密码及保留名称点号。支持公开 Extract 文档列出的 zip/gz/tar/tgz/tbz/bz2/rar/7z/iso；界面沿用已确认面板、原生返回、可滚动列表和任务中心，没有另一套模拟业务。
+- 实现：`FileArchiveFeatureModel` 持有每工作区的内存草稿，`FileArchiveReader` 读取完整树并核对原编号/路径，`FileExtraction` 显式区分全部和所选，两个专用界面文件替换文件页旧 AlertDialog。旧解压接口改用相同读取/执行流程；真实源读取权限和目标写入权限仍须具备，异常条目不丢弃后当作完整清单，空选择不会成为全部。沿用 Extract v2/Compress v3 及现有请求样本，其他四端源码不变，无新依赖或系统权限。
+- 输出与恢复：保存逐项路径/类型/可用尺寸，已有目录与覆盖文件另要求观察原任务结束；启动断线、缺编号、状态读取失败及取消不能因原文件存在而误报成功。独立加密 `file_archive_verification_v1_` 清单与原任务输出一次保存，密码不落盘；新任务编号前缀保证清单丢失时拒绝降级。原账号只读原任务编号恢复，当前仍未结束的交叠目标不能重复入队；同账号其他不相交目标保留可用。旧任务结构不变，结束后随历史清理独立清单。
+- 独立集成与对抗复核：重新检查完整分页/重复编号、路径穿越/错层、所选目录展开、扁平同名冲突、原账号与目标基线、保存失败零 start、覆盖回读、缺清单及只读恢复。当前无子 Agent 工具，由当前执行者独立重读与实际回归完成，不声称多人审查。普通旧压缩快照已比较读写权限，新增撤销用例验证其原有拒绝；不把此既有保护写成新修复。
+- 原失败：首轮 70 项 JVM 中 3 项新测试失败，两项请求样本夹具未提供合成 SynoToken，一项在网络线程直接抛取消异常未实际取消调用协程。补齐样本所需测试认证字段、改为取消真实挂起 Job 后第二组 84 项通过；原断言目的保留。另一个新增权限撤销用例起初误期望权限类别，实际既有快照匹配已返回冲突并零提交；按原合同验证冲突。日志/XML 在 `build/android-rewrite-a3i/focused-initial.log`、`initial-jvm/`、`focused-second.log`、`second-jvm/`、`focused-build.log`、`third-jvm/`。
+- 真实设备恢复故障：首轮手机 7 项中 6 项通过，未知任务用例先因测试错误切到“已结束”而找不到仍在进行中的卡片；切回正确页后，实际点击“打开并刷新受影响的文件夹”仍超时。`WorkspaceHostModel` 的 OPEN_TARGET 对当前工作区也调用切换检查，未结束任务挡住自身恢复；修复为当前模型直接打开原目标，跨账号仍走原切换保护。故障日志 `ui-phone-light-initial.txt`、`ui-recovery-before.txt`，截图 `archive-recovery-before.png`。
+- 密码边界修复：压缩代码原来以 `isNotBlank` 省略密码，全空格输入会创建无密码压缩包。新增聚焦用例先失败（`password-before.log`、`password-before.xml`），修改为仅省略空字符串，其他密码原样发送；没有把输入裁剪后静默降级。
+- 归档业务最终本机命令：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*FileArchive*' --tests '*FileExtractionRepositoryTest' --tests '*ArchiveRepositoryTest' --tests '*FileMutationPathIdentityTest' --tests '*ServerTransfer*' --tests '*FileServerMutationStatePolicyTest' --tests '*WorkspaceSwitchGuardTest' :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain`，**88 项，0 失败/错误/跳过，32 秒通过**，`final-build.log` 与 `final-jvm/`。分组为读取 9、独立清单 5、表单 8、新解压仓储 11、旧归档及新增边界 32、原路径 10、任务存储 5、任务恢复策略 6、工作区保护 2。普通增量编译曾因遗漏扩展导入失败，补导入后通过，未升级工具链或放宽编译检查。
+- 修复恢复入口后的手机浅色/标准字号设备回归：`adb -s emulator-5558 shell am instrument -w -r -e class 'io.github.qwertyuiop1995.dsmnativeclient.FileArchiveUiTest,io.github.qwertyuiop1995.dsmnativeclient.GlobalTaskCenterUiTest,io.github.qwertyuiop1995.dsmnativeclient.UploadRecoveryUiTest,io.github.qwertyuiop1995.dsmnativeclient.ArchiveDownloadUiTest' -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`，**18 项通过，102.428 秒**；`ui-phone-light-pre-password.txt`、`phone-light-pre-password/`。此分组在仅改空白密码传递前完成，不能冒充最终安装包；共享任务入口及既有上传/下载回归保留独立结果。
+- 密码修复后的首个包：Debug SHA-256 `2f1263f9bc30e16aade25478e7c4878943210f182ed876e5103c550f461a5cd3`，仪器测试包 `5eeadc7ecf584b61ef334a015661ee55cc0eff9cb9a6dfac4e7558425eec2ae5`。这一轮手机分组使用同一 Debug APK。手机浅色/标准字号的 `FileArchiveUiTest` **7 项通过，55.281 秒**（`ui-phone-light-final.txt`、`phone-light-final/`）。手机深色/系统二倍字号首轮 7 项中 6 项通过，一项修改密码/名称语言后等待读取超时；保留 `ui-phone-dark-initial.txt`，未声称发现确定的业务故障。仅增加失败状态/错误类别/读取计数与截图诊断，原操作和断言未变，仪器包摘要更新为 `4b55ca2fc3051d462b1894738dc91bbe6173f87e047ceb3b43bf9c2d0902d84e`。该流程单项 **1 项 13.572 秒通过**，完整深色组 **7 项 52.709 秒通过**（`ui-phone-dark-read-diagnosis.txt`、`ui-phone-dark-diagnosis-full.txt`、`phone-dark-final/`）；初次超时未稳定复现，保留 UI 时序风险，不把复跑通过描述为根因已修复。平板首组 7 项也有一次错误后重试等待超时（`ui-tablet-light-initial.txt`），原失败保留。
+- 键盘与交互调整：在弹窗自身的焦点作用域内，读取/浏览、选项选择、切换目录、重试及提交先结束文本输入；密码键盘的完成动作明确关闭输入。测试同步增加真实键盘完成操作与错误页面实际显示断言，保留原请求/结果断言及失败诊断。`keyboard-final-build.log` 构建通过（8 秒）；此包 Debug 摘要 `887bdb383d7c7c60818835ce48a403705be2a36c675ee0ecef202fc908d8bf1e`，测试包 `86cd600bbd1e1c04943731d6c3b08e4def731b92e09c8e87db38a3324794127d`。平板浅色/标准字号 **7 项通过，80.336 秒**，深色/系统二倍字号 **7 项通过，81.091 秒**（`ui-tablet-keyboard-light.txt`、`ui-tablet-keyboard-dark.txt`，截图同名目录去掉 `ui-`）。初次超时没有单独证实网络或归档业务失败，不用后续通过抹去时序风险。
+- 最后修正英文数量单复数，沿用平台数量资源；`plurals-build.log` 构建通过（11 秒），Debug 摘要 `bce482faa04558fa911a2bf22cb31524eecd3e3311df74b7e93ad7fa94ba717a`，测试包仍为 `86cd600bbd1e1c04943731d6c3b08e4def731b92e09c8e87db38a3324794127d`。该包手机浅色/标准字号 **7 项通过，55.749 秒**，深色/系统二倍字号 **7 项通过，54.789 秒**（`ui-phone-keyboard-light.txt`、`ui-phone-keyboard-dark.txt`，对应截图 `phone-keyboard-light/`、`phone-keyboard-dark/`）。数量文案影响的完整选择流程在平板浅色/标准字号 **1 项 17.937 秒通过**，深色/系统二倍字号 **1 项 19.765 秒通过**；深色日志 `ui-tablet-plurals-dark.txt`，浅色日志 `ui-tablet-plurals-light.txt`，截图 `tablet-plurals-light/`、`tablet-plurals-dark/`。实际查看英文单数、所选内容、目标位置、键盘收起后的面板及大字号排版；数量文案修改未扩大业务回归范围。手机恢复旧模拟器快照时曾因 ColorBuffer 错误退出，改为同一 AVD 冷启动并保留数据；发生在安装/测试前，不作为 App 测试失败，脱敏环境诊断见 `emulator-start-failure.txt`。
+- 最终静态门禁（`quality-final.log`）：差异空白检查、生成报告一致性、写入口、页面五态、点击目标、动效、结构约束、主计划、本地化和严格文档均通过。当前 46 个生产页面/弹窗、0 个生产状态缺口、2 个既有自动化缺口，47 处自定义点击目标，Android 2410 个语言资源键；AppViewModel/AppViewModelSupport/DsmRepository 上限收紧到 15823/1634/14450 行，文件页 673 行。模拟器均恢复标准字号/浅色并关闭，临时运行日志和重复旧截图已清理，保留脱敏失败与正式测试证据；Apple/Windows 源码无差异，仍在 `main`，未暂存或提交。
+- `PENDING_USER_VALIDATION`：真实 NAS 上的各归档格式/密码/名称语言、选中目录与所选文件、覆盖不同内容、权限撤销、取消/网络中断及系统进程回收。只使用专用可丢弃归档和目标目录，预期不扩大选区、不重放未知写、不以旧文件存在认定成功；回传系统/DSM 版本、选项、步骤及脱敏失败类别，不提供密码或实际路径。完整 TalkBack、极大归档的实际响应与系统后台仍待验；回退前结束新解压任务，不承诺活动记录可直接降级。没有提交、推送、发布、完整 JVM/Release/R8/lint 或真实 NAS 通过结论。
+
+## 2026-10-12 Android A3j 所有者与访问权限
+
+- 实际修改：文件菜单接入所有者、账号/群组选择、显式访问规则和继承只读详情；覆盖十三项动作、四项应用范围、允许/拒绝、规则新增/移除及传统三组读写执行权限。保存确认列出账号、修改前后和当前项/子项范围，传统权限差异使用动作名称；不增加重复确认勾选。归属为原工作区，旋转保留草稿，管理员资格变化撤销旧草稿和确认。
+- 业务与安全：`FilePermissionReader`/`DsmFilePermissionRepository` 使用既有 List v2、Core.ACL/Property/ACLOwner v1 和 UserGrp；保留真实管理员角色及明确 File Station 授权，最小会话降级不授予私有写权限。提交前两次授权/映射/完整快照读取，自锁检查必须明确允许；继承项不得混入提交，共享根、回收站和挂载只读。写前同步保存独立加密日志，记录仅含原账号/逻辑目标、不可逆结果摘要与原任务回执，不保存内部路径、完整权限表或可重放请求。未知和重启只读恢复，已有成员编号与继承规则完整匹配；递归必须有完成回执，部分失败不被根项匹配清除。
+- 集成：权限修改后使当前账号目录基线与搜索缓存失效，关闭表单后的迟到结果不能回写其他工作区。独立只读集成与对抗复核检查了授权降级、管理员撤销、自锁缺字段、两次快照漂移、重复提交、存储失败、原路径/成员编号、继承条目及递归子项错误。文件写后检查的薄封装移至现有 `FileStationViewModelState`，逻辑与调用参数保持；移除无人调用的旧分享便捷方法和重复列表解码包装，主模型/仓储行数分别收紧至 15820/14448，没有放宽结构门禁。其他四端源码未改。
+- 最终业务组命令：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*FilePermissionRepositoryTest' --tests '*WorkspaceAccessReaderTest' --tests '*WorkspaceAccessControllerTest' --tests '*FileStationMutationStatePolicyTest' --tests '*FileMutationPathIdentityTest' --tests '*PhotoShareRepositoryTest' :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain`，**77 项、0 失败/错误/跳过，31 秒通过**。分组为权限仓储 21、授权读取 18、授权门禁 5、文件写结果 12、路径身份 10、照片分享 11。日志 `build/android-rewrite-a3j/final-build.log`、XML `final-jvm/`。
+- 随后仅增加模型聚焦测试，同环境运行 `:app:testDebugUnitTest --tests '*FilePermissionFeatureModelTest' --no-parallel --max-workers=2 --console=plain`，**4 项通过，6 秒**；覆盖草稿改变撤销确认、离开模块/换工作区零提交、迟到读取丢弃，以及损坏恢复记录仍可查看但不能编辑。日志 `model-jvm.log`，XML 合并保存至 `final-jvm/`。两组去重 **81 项**；后续相交范围修正另列，不把未运行的完整 JVM、Release/R8/lint 或云端检查称为通过。
+- 相交范围补充前 Debug APK SHA-256：`7625960487e5ab8129380c873daf6219d2bdf8f51da0dfb0a5b92a71bf0da0a2`；仪器包：`6d4e84303a5cad01ef0e7ec53c7d55f5ccde285da7aff7580f179b2f81f553b9`。测试命令为 `adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.FilePermissionUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。仅安装到专用 API 37 模拟器，未安装到真实设备或连接 NAS。
+- 相交范围补充前手机包：浅色常规字号 **10 项通过，77.134 秒**（`ui-phone-light-final.txt`、`phone-light-final/`）；深色系统字号 2.0 **10 项通过，72.281 秒**（`ui-phone-dark.txt`、`phone-dark/`）。真实入口覆盖所有者/群组、显式/继承规则、四种应用范围、旋转、具体确认、自锁拒绝、未知重开/原任务只读恢复、部分失败、空规则、成员源空/搜索空/加载/错误/分页以及管理员撤销。实际查看两种配色的规则、范围、确认和传统权限截图；字号来自系统设置，未以局部字体覆盖代替。
+- 初始失败保留：`initial-jvm.log` 因测试介质属性误写为 `failCommit` 编译失败，改为现有 `commitSucceeds` 后首组 **42 项通过，10 秒**（`core-jvm.log`、`core-jvm/`）；生产源码当时已增量编译通过。首次仪器包因合成响应分支少闭合括号失败（`ui-build.log`），修正后 13 秒构建通过（`ui-build-second.log`）。首版手机 **9 项通过，69.067 秒**（`ui-phone-light.txt`、`phone-light/`），对应 App `65741a1db1831680600d790628e9ea4a7617078e59fc13e33dfe06c4784a99d0`、Test `5c22224253658dfc38950d67c4ef9e976c599a4d34a62a53ebbcce8a79b02048`；随后补成员加载/失败/分页和完整范围断言，并使用上述当前包复验，不累计重复测试数量。
+- `PENDING_USER_VALIDATION`：只用可丢弃测试目录和专用账号，在实际 DSM/File Station 版本上检查共享根只读、普通账号/管理员、用户/群组、继承、自锁、子项应用、断网和重启。预期只修改指定范围，不误报部分成功，不重发未知请求；部分失败在 DSM 查看受影响范围后处理。回传版本、位置类别、步骤及脱敏失败信息，不提供账号、实际路径、权限表、会话或原始响应。端点仍为 static/synthetic；未修改 API 字段/版本、依赖或系统权限，独立恢复键不迁移旧数据，回退须保留未解决记录。
+- 平板相交范围补充前：浅色常规字号 **10 项通过，111.134 秒**（`ui-tablet-light.txt`、`tablet-light/`）；深色系统字号 2.0 **10 项执行、1 项失败，104.236 秒**（`ui-tablet-dark.txt`）。失败发生在管理员资格撤销后再次长按文件行：确认框已撤销，但合并语义树的文件节点还不可用。测试改为等待实际文件行唯一且可见后再点击，保留撤销、禁用及零提交断言，没有改为直接调用模型。下述当前测试包已按原平板深色路径复验通过。
+- 独立对抗复核补充：旧实现仅阻止相同目标重复权限修改，未结束父目录操作后仍可能对子目录发起另一权限修改。已把祖先/子项相交检查加入仓储预检及跨实例同步恢复日志；兄弟目录不受阻。子目录表单显示关联原项目并提供“查看之前的修改”，只读恢复原任务。新增两项仓储/跨实例回归；`related-final-build.log` 同环境执行 `:app:testDebugUnitTest --tests '*FilePermissionRepositoryTest' --tests '*FilePermissionFeatureModelTest' :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain`，**27 项通过（23+4），32 秒**，XML `related-jvm/`，连同上述未改变部分去重 **83 项**。中间 `overlap-final-build.log` 10 秒构建通过；随后补齐关联项目恢复入口及仪器断言。
+- 相交范围补充后当前 App SHA-256：`0329784c80984468d6fed212cb07454ad9c309ffc0be247996e3d14762423d86`，Test：`09bebf1f321b98fbc1de3efd021f7bbbabab8de4f316eb74f782ed32c0e80a26`。仪器用例增加至 11 项，四组均使用这两个当前安装包；每组 0 失败/错误/跳过。手机中文浅色常规字号 **11 项通过，83.366 秒**（`ui-phone-light-related.txt`、`phone-light-related/`），深色系统字号 2.0 **11 项通过，83.544 秒**（`ui-phone-dark-related.txt`、`phone-dark-related/`）；平板英语浅色常规字号 **11 项通过，126.640 秒**（`ui-tablet-light-related.txt`、`tablet-light-related/`），深色系统字号 2.0 **11 项通过，120.660 秒**（`ui-tablet-dark-related.txt`、`tablet-dark-related/`）。每组 17 张合成截图，实际查看父子关联恢复、确认、规则范围与传统权限等画面。平板撤销旧确认的原失败路径通过；设备逐台运行，完成后恢复浅色/字号 1.0 并关闭，没有清空数据。
+
+- 本片最终静态检查 **10 项通过**：`git diff --check`、`generate_android_quality_baseline.py --check`、`check_android_write_test_matrix.py`、`check_android_page_state_matrix.py`、`check_android_touch_targets.py`、`check_android_motion_audit.py`、`check_android_structure_debt.py`、`check_android_plan_progress.py`、`tools/localization/check_localization.py` 与 `check_documentation.py --strict-release`；除本地化脚本外其余 Python 脚本均位于 `tools/codex/` 并使用 `python3`。日志 `build/android-rewrite-a3j/quality-final.log`；48 个页面、0 个生产五态缺口、2 个既有自动化缺口、49 处点击目标，Android 双语资源 2476。仅清理本片原始模拟器日志，保留正式自动化、合成截图和失败/通过证据。继续 A3k ISO 及剩余 A3–A10；未提交、推送或发布。
+
+
+## 2026-10-12 Android A3k ISO 挂载与断开
+
+- 实际修改：ISO 文件菜单接入现有空目录选择、默认关闭的开机自动连接、挂载列表/筛选/浏览及原身份断开。普通挂载由按钮确认，自动连接另行说明持久后果；断开表单明确保留 ISO 与目录。界面沿用原面板/列表/目录选择样式，双语资源同步。
+- 安全与恢复：仅使用已记录 Mount/Mount.List v1 与 List v2，明确应用授权与管理员身份、两次授权/清单/目标预检、空目录及相关权限操作互斥。提交前同步保存独立加密记录，关闭或重启后只读恢复，不重放未知操作或删除目录。结果同时比较来源、位置、自动连接标志及实际目录类型。只读集成/对抗复核发现跨权限检查须位于路径锁之后，已调整并补回归。
+- 契约兼容：已有文件契约明确普通位置可返回精确空挂载类型，因此 ISO 与权限编辑都接受这一已记录形式；缺字段仍未知，不把普通目录误判为不可操作。没有修改请求字段、版本、系统权限或第三方依赖；其余四端源码未改，真实端点等级不变。
+- 结构：既有远程位置读取移入挂载仓储，参数、默认版本、分页及解码保持，正式 RemoteLocationsRepositoryTest 继续验证；文件页分页选择函数移入既有 FileStationViewModelState，原排序/过滤/页大小不变，FileBrowserRequestIdentityTest 回归通过。主模型/仓储行数收紧为 15798/14441，没有放宽结构门禁。
+- 初次增量 `:app:compileDebugKotlin --no-parallel --max-workers=2 --console=plain` **失败，3 秒**（`build/android-rewrite-a3k/initial-compile.log`）：相互引用的惰性仓储缺少显式类型，新增界面调用未提供既有五态组件的必需参数；修正后生产编译通过。
+- 聚焦命令：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*FileMountRepositoryTest' --tests '*FilePermissionRepositoryTest' --tests '*FilePermissionFeatureModelTest' --tests '*RemoteLocationsRepositoryTest' --tests '*FileBrowserRequestIdentityTest' --no-parallel --max-workers=2 --console=plain`，**51 项通过，31 秒**（`core-jvm.log`、`core-jvm/`）。随后增加交错提交回归，并附加 `:app:assembleDebug :app:assembleDebugAndroidTest`，**52 项通过、构建通过，25 秒**（`ui-build.log`、`expanded-jvm/`）。补精确空类型后同一组 **54 项通过、构建通过，6 秒**（`mount-type-build.log`、`mount-type-jvm/`）：挂载仓储 17、权限仓储 25、权限模型 4、文件页身份 7、既有远程位置 1；不累计重复运行数量。
+- `ui-ready-build.log` 为中间界面恢复与用例断言修正后的 Debug/仪器包构建，6 秒通过；随后把精确空类型纳入正式挂载/权限 UI 用例。对应正式界面运行及后续修复见下方分组记录。
+- `PENDING_USER_VALIDATION`：专用可丢弃 ISO 与空目录、实际 DSM/File Station 版本，检查普通账号/管理员、自动连接、浏览、断开保留目录、断网和重启后只读恢复。回传版本、选项、位置类别、步骤与脱敏失败，不提供真实路径、账号、会话或原始响应。未进行真实挂载、NAS 写入、完整 JVM、Release/R8/lint 或云端验证。
+
+- 手机首次正式仪器组命令为 `adb -s emulator-5554 shell am instrument -w -r -e class 'io.github.qwertyuiop1995.dsmnativeclient.FileISOMountUiTest,io.github.qwertyuiop1995.dsmnativeclient.FilePermissionUiTest#explicitRuleSurvivesRotationAndSavesOnlyAfterConcreteConfirmation,io.github.qwertyuiop1995.dsmnativeclient.FilePermissionUiTest#childPermissionEditorLinksToUnfinishedParentWithoutStartingAnotherChange' -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。**9 项运行、1 项失败，89.332 秒**（`ui-phone-light.txt`、`phone-light/`）：ISO 挂载成功后“打开”错误复用了只接受最近/收藏目录的入口，新挂载点因此未导航。原包 App `61ea1bde5369d5163e8de9a074f530b54efc03cd67e2a62419ee1d357c0a442c`、Test `9375adcbf1e330847002ca08e6fcd5caa97a54621bcba34de74d0db7bafb3db7`；另两项权限 UI（含精确空挂载类型及父子操作恢复）通过。首次 `iso-editor.png` 在面板绘制前取景，未作为表单通过证据；截图同步已补原生 UI 空闲等待。
+- 已修复生产浏览入口：重新读取原挂载身份和可读目录后，传递真实 FileItem 给现有文件导航，不改最近/收藏入口限制。新增 `FileISOMountFeatureModelTest` 覆盖新目录浏览、身份替换/读取撤销和离开文件页后的迟到回调；同环境运行 `:app:testDebugUnitTest --tests '*FileISOMountFeatureModelTest' :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain`，**3 项通过、构建通过，22 秒**（`browse-fix-build.log`、`browse-jvm/`）。连同上述未变更业务组去重 **57 项**。
+- 浏览修复后 App SHA-256 `f4e3804233c1a809f7b1751af3a0ca772aa50aae5316f6cd85efb5298b1acf39`，Test `b3ba55eba72ce36594fee074d770c9b0e8f491df4be47c88b2c3773c9b52c5a5`：手机中文浅色常规字号 **9 项通过，74.921 秒**（`ui-phone-light-final.txt`、`phone-light-final/`），深色系统字号 2.0 的 ISO 组 **7 项通过，57.879 秒**（`ui-phone-dark.txt`、`phone-dark/`）。每组 17 张 ISO 合成截图，实际查看编辑、确认、断开和恢复等画面；权限对应三张本片截图另存 `permission-light-final/`。
+
+- 手机深色的只读目录截图仍取到加载帧，因此补充“空目录说明及无写权限恢复提示实际可见”的 UI 断言，未改生产代码或放宽原按钮禁用检查。`folder-state-ui-build.log` 仪器包构建 **3 秒通过**，新 Test SHA-256 `9299eddaea73062547a614fdc3a0b4a2eb71a2ce49c8b3aa1b590a1d2894d73a`，App 仍为上述 `f4e380…`。同 App 与新仪器包的平板英语 ISO 组：浅色常规字号 **7 项通过，86.008 秒**（`ui-tablet-light.txt`、`tablet-light/`），深色系统字号 2.0 **7 项通过，83.983 秒**（`ui-tablet-dark.txt`、`tablet-dark/`）；实际查看两种配色的表单、完整只读空状态与自动连接确认。手机中文深色系统字号 2.0 的原目录选择单项以新断言补验 **1 项通过，10.393 秒**（`ui-phone-dark-folder-final.txt`、`phone-dark-folder-final/`），实际查看完整空状态/只读提示/禁用按钮；不把旧加载截图当作这一状态的证据。
+
+- 本片最终十项静态检查全部通过，完整命令与输出保存于 `build/android-rewrite-a3k/quality-final.log`：差异、生成报告、写操作、页面五态、点击目标、动效、结构、长期计划、本地化和严格文档检查。当前 50 个页面、0 个生产五态缺口、2 个既有自动化缺口、51 处点击目标，Android 双语资源 2506。新增计划中的 NFS 版本写法曾误命中完成率校验，改为“3 与 4”，未改校验器；主计划不维护新的动态数量。全部专用设备逐台运行，最终恢复浅色/字号 1.0 并关闭，三份本片原始模拟器日志已删除；正式测试及合成验证证据保留。继续 A3l 远程连接及其余 A3–A10，未提交、推送或发布。
+
+
+## 2026-10-12 Android A3l SMB/NFS 连接与分步恢复
+
+- 在既有 `main` 未提交工作区接续 Android 总计划；其他平台只读，没有真实 NAS/远程共享写操作，也未提交、推送或发布。旧 A3k 证据保留，后续 VFS/云连接、设置、任务与其余 A3–A10 继续推进。
+- 新增 `FileRemoteMountSetup`、`FileRemoteMountRecoveryStore`、`DsmRemoteMountRepository`、独立功能模型和管理/编辑/恢复页面。沿用内部 v1 CIFS/NFS/断开参数及完整清单，NFS 4 固定 TCP，SMB 凭据只在 HTTPS 正文。新位置为空且可写的现有目录，原位置/来源/协议/自动标志严格绑定；同位置先断开，换位置先连接，每次明确继续只提交一步，未知不重放、不自动回滚或删目录。
+- 写前两次核对授权、目录/身份与相交的 ISO/权限/远程恢复记录；普通已授权账号可使用非自动连接，自动行为及原自动标志未知时须管理员。独立加密记录绑定账号，同步保存后才提交，只有已知未执行的剩余阶段可以结束。密码不进入模型保存状态和记录；表单重建、协议切换、关闭及提交后清空。共享空目录读取/选择器由 ISO 与远程连接复用；必要绑定与账号清理已接主模型。旧只读远程位置读取也复用既有 `captureLoadable`，忽略关闭后及旧 Repository 的迟到结果；无请求参数变化。
+- 独立集成/只读对抗复核覆盖：原连接替换、嵌套目录、缺字段、网络错误误作不存在、提交后取消、同一账号换会话、不同账号隔离、HTTPS、双重授权、保存失败及只结束未执行步骤。第二步取消新增正式回归，仍保留未知阶段，不能重新连接或遗忘记录。完整源码检查与最终门禁结果在本节继续补充。
+- 初次命令：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*RemoteMountRepositoryTest' --tests '*FileMountRepositoryTest' --tests '*FilePermissionFeatureModelTest' --tests '*FileISOMountFeatureModelTest' --no-parallel --max-workers=2 --console=plain`，**44 项通过、28 秒**。`build/android-rewrite-a3l/core-jvm.log`、`core-jvm/`。随后 `:app:compileDebugKotlin :app:compileDebugAndroidTestKotlin` 同参数，**12 秒通过**，`ui-compile.log`。
+- 加入权限仓储组并构建：上述测试加 `--tests '*FilePermissionRepositoryTest' :app:assembleDebug :app:assembleDebugAndroidTest`，**69 项通过、构建通过、25 秒**，`ui-build.log`、`expanded-jvm/`。再运行 `--tests '*FileRemoteMountFeatureModelTest'`，**3 项通过、5 秒**，`model-jvm.log`、`model-jvm/`，覆盖真实目录浏览、身份替换/读取撤权与离开后的迟到结果。
+- 手机 API 37 中文浅色首次仪器测试 `adb -s emulator-5554 shell am instrument -w -e class io.github.qwertyuiop1995.dsmnativeclient.FileRemoteMountUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`：**10 项通过、112.001 秒**。日志 `ui-phone-light.txt`，截图 `phone-light/`；APK `545482239401c5ba8a63041a07e6eaad0617cd6e6491a8b06d3f5748efec2cb1`，测试包 `506f15ea26a60053ecd1b92c229afa0b46162e00c4a98d6d8e99993a43e1f2eb`。实际查看 SMB/NFS、继续连接及换位置确认截图发现两处错误复用 ISO 专用说明，随后改为远程连接文案并单独说明自动行为，原截图保留，不作为修复后文案验收。
+- 修正后命令：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*RemoteMountRepositoryTest' --tests '*FileRemoteMountFeatureModelTest' --tests '*RemoteLocationsRepositoryTest' :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain`，**25 项通过、构建通过、28 秒**，`review-build.log`、`review-jvm/`；远程仓储 21、模型 3、既有位置读取 1。本片业务去重 **74 项**，不累计重复运行数量。当前 APK `afdb025822f974b53adff872a5c9307485280e598daf4b23f8f03bd24ee735d2`，测试包 `61ce198f4327b77bca1798e93e876119bd20c0b070146f028c8a13d9fa8ecb58`；当前包界面逐组验证进行中，后续结果继续写入此处。
+- 后续补充 `FileMountRepositoryTest` 的真实远程恢复记录与 ISO 路径冲突回归：同构建环境运行 `:app:testDebugUnitTest --tests '*FileMountRepositoryTest' :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain`，**18 项通过、构建通过、8 秒**，`feedback-build.log`、`feedback-jvm/`。本片业务去重增至 **75 项**；以上 74 为新增此断言前的结果。
+- 文案修复包 `afdb0258…` 的手机浅色组 **12 项通过、116.61 秒**，包含远程组 10 项与 ISO 挂载/目录选择各一项（`ui-phone-light-final.txt`）；手机深色系统字号 2.0 **11 项通过、106.1 秒**，包含远程 10 项与权限规则旋转/确认一项（`ui-phone-dark.txt`）。浅色命令还传入了一个不存在的权限方法名，该方法被过滤、没有执行，不计为通过；深色已使用正确方法名补验。
+- 删除恢复页重复提示后的 App `5a95fea095f8a79160eb4e1a9e78d18b64d3c8c377d299ce8905dda0683315ae`：深色恢复三项 **通过、33.824 秒**（`ui-phone-dark-feedback.txt`）；浅色三项 **2 通过、1 失败、40.203 秒**（`ui-phone-light-feedback.txt`），失败为输入服务器后点击目录选择、等待根目录超时，当次尚无挂载写入。输入辅助增加“完成”动作后单项暴露 `ImeAction.Default` 未声明，保留 `ui-phone-keyboard-recheck.txt`；五个生产输入框补 `ImeAction.Done`。不能单凭后续通过断言初次超时唯一根因已证明。
+- 键盘修复后 App SHA-256 `3d859485b5778939543179b51aedb7126cf9e0d1eb19ce04967dd7410a3a7350`、Test `a7f6aa02ff6865780c15ca60e8f74701763aa025d40ffc92a9a6180bdd803051`；增量两包构建 **5 秒通过**（`keyboard-action-build.log`）。相同远程组 10 项：手机中文浅色/字号 1.0 **通过、110.785 秒**（`ui-phone-light-keyboard-final.txt`），深色/系统字号 2.0 **通过、114.428 秒**（`ui-phone-dark-keyboard-final.txt`）。两组各保留 20 张截图；实际查看发现部分截图仍在上一表单绘制阶段，不能以这些过渡画面作为恢复页面证据。
+- 截图同步尝试调用未公开的 `syncInputTransactions` 导致仪器源码编译失败（`capture-sync-build.log`），已移除；改用两个真实窗口帧等待后 **2 秒构建通过**（`capture-frame-build.log`）。生产 App 不变，仅仪器包变为 `dff953cdf4c92718eef7ef4ba37778cb6a1e3710568a89306633036e4795ae24`；原业务断言保留，补验截图结果另记。
+- 帧同步后，手机深色/系统字号 2.0 的同位置、换位置、未知恢复三项 **通过、35.637 秒**（`ui-phone-dark-frame.txt`）；浅色/字号 1.0 同三项 **通过、35.026 秒**（`ui-phone-light-frame.txt`）。每组只提取这三项的新截图到 `phone-dark-frame/`、`phone-light-frame/`，实际查看的未知和换位置页面已是稳定恢复画面，没有把早先过渡截图算为最终证据。
+- 同一 App `3d859485…`、仪器包 `dff953cd…` 的平板 API 37 英语远程组：浅色/字号 1.0 **10 项通过、165.469 秒**（`ui-tablet-light.txt`、`tablet-light/`）；深色/系统字号 2.0 **10 项通过、162.318 秒**（`ui-tablet-dark.txt`、`tablet-dark/`）。每组 20 张合成截图，实际查看 NFS 选项、自动连接确认、SMB 表单、下一步连接/断开和未知恢复。目录/输入字段可滚动，下一步按钮在对应阶段可见；同包四种配置的远程组均为 0 失败/错误/跳过。专用设备逐台运行，完成后恢复浅色/字号 1.0 并关闭，未清空设备数据。
+- 本片最终十项静态检查通过，命令与输出位于 `build/android-rewrite-a3l/quality-final.log`：差异、生成报告、写操作、五态、点击目标、动效、结构、主计划、本地化、严格文档。当前 51 个页面、0 个生产五态缺口、2 个既有自动化缺口、52 处点击目标，Android 双语资源 2552。本片三份原始模拟器日志已删除，正式用例、失败和合成截图证据保留。VFS 读取/表单的首批独立源码已开始，尚无新增产品入口，不把下一片当前状态算作此安装包内容；继续其余 A3–A10，未提交或推送。
+- `PENDING_USER_VALIDATION`：专用可恢复 SMB/NFS 共享及空目录，测试域账号、NFS 各选项、自动连接、同位置/换位置修改、断开、断网重启恢复与权限撤销。预期每次按钮只执行当前一步，未知不重发，断开保留所有文件。回传版本、选项、步骤及脱敏失败类别；不回传密码、账号、实际路径、主机或原始响应。没有提高端点 `verifications` 的等级，也未运行完整 JVM、Release/R8、lint、云端或真实 NAS 验收。
+
+## 2026-10-12 Android A3m 服务器与云盘连接
+
+- 已建立主计划账本并读取现有 VFS 契约、macOS 领域/表单/连接仓储/浏览与云授权参考。当前新增 Android 连接领域、白名单读取、地址解析、两步写入、独立加密恢复和本机云回调；尚未接入产品入口、系统保存下载和手机/平板界面，不作为整片完成或当前 APK 的新增功能。
+- `FileVFSReader` 保留不透明连接 id 与原始远程 URI，逐页检查原账号/连接和根目录范围；`Profile.get` 的密码被忽略，缺字段、格式错误与不完整分页不会变成空列表。服务器表单区分 FTP/SFTP/WebDAV、完整地址与独立字段，编辑不能切换协议；隐藏的高级字段仍保留 NAS 已保存值，不因当前协议表单不显示就清空。
+- `DsmFileVFSRepository` 使用已记录的 v1 请求；新建/修改分别写 Connection 与 Profile，只发送改变的编辑字段，保留密码与显式空白替换不同语义。连接、断开、删除已断开的保存配置是独立操作，固定 `force=false`。每一步先同步保存提交事实，再保存回执；未知与部分结果只读，不重发、补写或自动回滚。两个回执及完整身份/详情都匹配后才确认组合操作完成。
+- 云授权由原账号、协议、尝试编号及有效期绑定，一次使用；本机只监听 `127.0.0.1` 的临时端口与随机路径。GET/query、POST/form、JSON/data 按已有封装处理，检查 Host、路径、回调名、长度与字段。授权仅在内存中，响应页面不含令牌，完成/取消/超时/所属协程结束后关闭监听。真实官方中继与云账号授权仍未验证。
+- 首组命令：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*FileVFSReaderTest' --tests '*FileVFSFormTest' --no-parallel --max-workers=2 --console=plain`，**11 项通过、9 秒**（`build/android-rewrite-a3m/read-form-jvm.log`、`read-form-jvm/`）。加入 `--tests '*FileVFSRepositoryTest'` 后 **26 项通过、5 秒**（`core-jvm.log`、`core-jvm/`）。随后保留原高级字段、补专用双语错误和云回调源码，同组 **26 项通过、23 秒**（`authorization-compile.log`）。
+- 云回调测试首次编译因公开测试方法推导为内部授权类型而失败（`cloud-jvm.log`），显式返回 Unit 后，以上分组再加 `--tests '*FileVFSCloudAuthorizationTest'`，**35 项通过、3 秒**（`cloud-jvm-final.log`、`cloud-jvm/`）：读取 7、表单 4、仓储 15、云回调 9。包含真实本机 socket 的成功/无效后再成功/超时/取消，均只使用合成令牌，无外部云登录或 NAS 请求。
+- 当前 Android 双语 2562，资源与硬编码扫描、差异及严格文档检查通过；完整写入口/页面基线将在界面接入后同步。仍需完成主模型归属、系统浏览器、连接管理/编辑/恢复、原 URI 浏览/下载、UI 五态与设备验证，以及完整集成和只读对抗复核。真实服务器与云账号按账本列为 `PENDING_USER_VALIDATION`；没有提高私有端点证据等级，未提交、推送或发布。
+
+
+- A3m 后续接入正式模型、文件菜单、动态协议表单、系统浏览器、恢复列表与原 URI 分页；移除被替代的旧远程位置弹窗/状态，旧只读仓储方法保留。下载沿用系统保存选择器和共用执行器，来源清单独立加密并绑定原账号/连接/文件；失效清单禁止降级为裸 URI，前台中断保留暂停，失败目标保留引用。旧 NAS 路径写限制没有放宽。
+- 首次 `:app:compileDebugKotlin --no-parallel --max-workers=2 --console=plain` 因新模型错误使用 `Loadable.Failed.failure` 而失败，已改为现有 `error` 字段，保留 `integration-compile.log`。接入 UI 后同命令 **22 秒通过**（`ui-compile.log`）。
+- 同前述 Java/Android 环境运行 `:app:testDebugUnitTest --tests '*FileVFS*Test' --tests '*ArchiveDownloadPlanStoreTest' --no-parallel --max-workers=2 --console=plain`，**55 项通过、7 秒**（`feature-download-jvm.log`、`feature-download-jvm/`）。其中新模型 8、下载清单 6，其余为先前 VFS 35 与 ZIP 清单 6。
+- 独立集成/只读对抗复核补充“读取目录期间连接被替换”的二次身份核对、来源父目录一致、失败来源的目标引用保护及前台重启暂停；不把登录回调当作保存成功。运行同测试并加 `--tests '*FileDownloadTest' --tests '*DownloadNotificationPermissionTest'`，实际 **74 项通过、0 失败/错误/跳过，10 秒**（`review-download-jvm.log`、`review-download-jvm/`）。其中 VFS 下载清单新增 1 项；实际类清单以 XML 为准，未运行完整 JVM。
+- `:app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain` **26 秒通过**（`ui-build.log`）。随后修正仪器断言的整数/长整数类型，仪器包 **2 秒通过**（`ui-assertion-build.log`）。App SHA-256 `5646c94b77c7839daf2061caf4c7e417f4061a18bb142ffc7cbeb60b7f3aea5d`、首次 Test `57cee1e10b06c195166c253c52e57498b6fbbed4508e33bc6be2d4f6e748518d`。
+- 手机 API 37 中文浅色首轮包含 `FileVFSUiTest,FileVFSDownloadExecutionTest,PendingDownloadRequestRestorationTest` 15 项：界面夹具漏绑 `FileVFSRecoveryStore`，导致多个管理列表超时，未完成整组即停止；日志 `ui-phone-light.txt`、截图 `phone-light-initial/`。截图实际为存储错误而非网络错误，不能当作五态成功证据。生产连接流程已有对应绑定，仅补齐夹具；`ui-binding-build.log` **3 秒通过**，当前同组重跑中，尚不报告 UI 通过。
+- 写操作登记、页面五态、点击目标、动效和结构门禁已经同步；结构约束只收紧，AppViewModel 15782 行、AppViewModelSupport 1633 行。新增页面自动化暂标局部，待本轮模拟器结果后更新。未运行真实 NAS/云登录、完整 JVM、Release/R8/lint 或云端，未提交、推送、发布。
+
+- 补齐夹具绑定后，同 App `5646c94b…`、Test `cef52415af889850adf6fd43a047bf19b3949e8d11d8849a78cf25b2351c39df` 的手机中文浅色 **15 项通过、90.737 秒**（`ui-phone-light-binding.txt`、`phone-light-binding/`），包括真实文件描述符的完整下载/Range 续传、来源变化前零打开目标及保存请求重建。实际查看 FTP 表单、远程文件列表与 WebDAV 编辑截图。
+- 当前目录文字改为可读的正常文本，添加系统保存窗口取消测试与本组被中止后合成资料清理；`:app:assembleDebug :app:assembleDebugAndroidTest` **7 秒通过**（`ui-picker-build.log`）。新 App `b06378b51f3ade043c08b313c07766843296c653f03b466ab01e5627105bfefb`、Test `92e5d78f2c94689e9a0049389115ce1756b46b107b417798e17e08c4b0e2385b`。手机中文浅色的保存窗口/目录五态两项 **通过、23.021 秒**（`ui-phone-light-picker.txt`）；`phone-light-picker/` 只有浏览器相关 7 张为该补验新截图，其余为前次相同目录内文件，不重复计作新包证据。已实际查看 Android 系统保存窗口，取消没有建立任务。
+- 同 App/仪器包手机中文深色、系统字号 2.0 的完整 **16 项通过、99.582 秒**（`ui-phone-dark.txt`、`phone-dark/`）；实际查看连接列表、明文风险确认和云登录入口，按钮可达、文字可读。云登录 UI 只检查入口与重建，没有打开外部授权页。
+- 仪器测试进一步补充真实系统保存按钮、完整下载内容与任务中心结果；仅扩充合成网络夹具和正式测试，未改 App。`:app:assembleDebugAndroidTest` **3 秒通过**（`ui-download-flow-build.log`），当前 Test `74488208ea7d7df9675b005f105b1b71fc3e816369a64632f657f66c2beb8cb4`；此新增流程与平板测试正在运行，后续结果继续补充。
+
+- 真实系统保存→前台下载→内容逐字节检查→任务中心的新增单项，在手机中文深色系统字号 2.0 **通过、11.261 秒**（`ui-phone-dark-download-flow.txt`），浅色常规字号 **通过、9.991 秒**（`ui-phone-light-download-flow.txt`）。每组只单独拉取新增任务完成截图，实际查看深色完成卡片及 8 B/8 B；测试结束清理本项创建的文档和任务。
+- 同 App `b06378b5…` / Test `74488208…` 的平板英语完整 17 项：浅色常规字号 **通过、150.821 秒**（`ui-tablet-light-installed.txt`、`tablet-light/`），深色系统字号 2.0 **通过、163.381 秒**（`ui-tablet-dark.txt`、`tablet-dark/`）。首个 `ui-tablet-light.txt` 因安装尚未结束就启动仪器进程而中止，未执行测试；完成安装后正式启动，上述通过记录与该中止记录分开。实际查看表单与键盘、系统保存窗口、风险确认、只读恢复及完成任务，均使用合成资料。
+- 末轮复核修正浏览器/本机授权失败被误报为 NAS 不支持：新增具体登录失败与恢复资源；保存已开始后停止登录等待计时并移交短期授权，避免已提交期间出现过时的登录到期提示。保留旧 Repository/账号操作不覆盖新授权的代次检查，新增两个模型回归。运行 `:app:testDebugUnitTest --tests '*FileVFSFeatureModelTest' --tests '*FileVFSCloudAuthorizationTest' :app:assembleDebug :app:assembleDebugAndroidTest` 同并发限制，**19 项通过、构建通过，1 分 2 秒**（`cloud-feedback-build.log`、`cloud-feedback-jvm/`）。将迟到场景补为不同资料编号并新增浏览器启动边界的 UI 故障注入后，同两组 JVM 与 `:app:assembleDebugAndroidTest` **19 项通过、7 秒**（`cloud-feedback-review.log`、`cloud-feedback-review-jvm/`）。本片聚焦 JVM 去重 **76 项**；没有运行完整 JVM。
+- 最终 App SHA-256 `157fc54c99cb83131de3ee04c1af45fa2426901c94069cfe7d81ac435185ee69`、Test `a963dabcec7d87803ea5695145423cb8da385cb970c0d605adbd5f600ef9777e`。对应三项云入口/浏览器不可用重试/撤权聚焦复验，平板深色二倍字号 **通过、32.236 秒**（`ui-tablet-dark-cloud-final.txt`），平板浅色常规字号 **通过、34.375 秒**（`ui-tablet-light-cloud-final.txt`）；手机对应组进行中。每组仅拉取本次两张云页面截图，已查看深色错误及恢复全文；测试在 Instrumentation 的 ActivityMonitor 阻止实际浏览器启动，真实 loopback 会打开并清理，没有外部页面请求或云账号登录。
+
+- 同最终 App/Test 的手机对应三项聚焦复验：中文浅色常规字号 **通过、22.959 秒**（`ui-phone-light-cloud-final.txt`），中文深色系统字号 2.0 **通过、20.615 秒**（`ui-phone-dark-cloud-final.txt`）；只拉取各组本次云登录两张截图，实际查看中英文恢复说明。最终改动为云授权失败反馈/授权等待清理及其回归，其他连接/目录/下载场景保留上述先前包证据，不把先前完整组改写成最终包全量执行。
+- A3m 当前源码已完成文件菜单、原生管理/表单/动作确认、系统浏览器授权接入、加密未知恢复、原 URI 分页浏览、系统保存与前台/Worker 共用下载；本片仪器场景去重 18，分组及 APK 来源如上。真实 NAS/云账号、系统终止后的后台行为、其他文档提供器、TalkBack 实机仍为 `PENDING_USER_VALIDATION`，不增加固件验证等级。两台模拟器逐台运行，已恢复浅色/字号 1.0 后关闭，仅删除本片三份原始模拟器日志，正式测试/合成截图/失败证据保留。
+- 下一片为 A3n File Station 设置，已在主计划建立账本并读取常规/使用名单/限速/分享页契约；尚未修改设置源码，不以本片通过代表其余 A3–A10 完成。仍在既有 main 未提交工作区继续，没有 Git add、提交、推送、PR 或发布。
+
+- 本片最终十项静态检查全部通过，实际命令/输出见 `build/android-rewrite-a3m/quality-final.log`：差异、生成报告、写操作、页面五态、点击目标、动效、结构、长期计划、本地化和严格文档检查。当前页面文件 52、生产五态缺口 0、既有自动化缺口 2、自定义点击目标 52、Android 双语 2612；私有 API `verifications` 未改，Apple/Windows 源码无本轮差异。
+
+## 2026-10-12 Android A3n 常规、访问名单与限速
+
+本片仍在实施。已接入正式文件菜单、常规与分享/收集账号差量、服务器/云盘访问范围、三类目录来源名单、六类账号限速和服务/账号周时间表；后续外观与图片实现见本节追加记录。沿用现有 Compose 组件和双语资源，不修改其他平台源码、依赖、权限、包名或旧传输记录。
+
+写前两次完整基线与实际管理员/文件授权检查，跨页名单检查重复身份、总数及管理员限制；域/LDAP 来源失效不能继续保存旧名单。独立加密恢复只保存原账号、目标/期望摘要与回执，未知操作不重放、新草稿不替代期望摘要，其他分区可用。现有文件恢复存储统一绑定/按连接清理；旧远程位置 UI 已由 A3m 迁移，本片移除未使用的门面方法，原回归移至已有 `fileMounts.remoteLocations`，保留原断言。AppViewModel 结构阈值由 15,782 收紧到 15,772，DsmRepository 阈值未增加。
+
+本机命令均使用 `JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android` 与 `--no-parallel --max-workers=2 --console=plain`；日志位于忽略目录 `build/android-rewrite-a3n/`：
+
+- `:app:compileDebugKotlin`：核心 **22 秒通过**（`core-compile.log`）；表单集成 **12 秒通过**（`ui-compile.log`）。
+- `:app:testDebugUnitTest --tests '*FileSettingsReaderTest' --tests '*FileSettingsRepositoryTest' --tests '*RemoteLocationsRepositoryTest'`：**27 项通过、12 秒**（`core-jvm.log`）。加入模型后 `--tests '*FileSettings*Test' --tests '*RemoteLocationsRepositoryTest'`：**35 项通过、6 秒**（`feature-jvm.log`）；增加发送中取消、接受后撤权、目录来源失效的对抗回归后，同命令 **38 项通过、6 秒**（`review-jvm.log`，Reader 9、Repository 20、FeatureModel 8、既有远程位置 1）。
+- `:app:assembleDebug :app:assembleDebugAndroidTest` **21 秒通过**（`ui-build.log`）；数字键盘完成行为及测试调整后 **5 秒通过**（`ui-keyboard-build.log`）。首轮实际使用 App SHA-256 `c6d7ca3b4f1b16da97cda07f490b57365bcee5409b4df8396ae08076d0ac4bb0`、仪器包 `d645a216ea39e5f627885dfd2c8616c1ccaf90a07a7000fe2c7b7fc75969b5c8`。
+- API 37 专用手机，中文、浅色、标准字号，命令 `adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.FileSettingsUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`：**8 项、1 项失败、94.745 秒**（`ui-phone-light.txt`，`phone-light-initial/`）。失败为限速保存成功返回列表时清除了完成反馈，导致等待完成结果超时；其他 7 项通过，不能将此组标为全通过。实际查看常规表单、权限扩大确认和限速/时间表截图。
+- 修复返回列表的完成反馈并补模型断言，新增第二页账号选择仪器测试；`:app:testDebugUnitTest --tests '*FileSettingsFeatureModelTest' :app:assembleDebug :app:assembleDebugAndroidTest` **8 项 JVM 通过、7 秒构建完成**（`ui-feedback-build.log`，`xml-feedback-jvm/` 只包含本次 8 项）。当前 App SHA-256 `6305fdecf7b9accee319f84ac65b379420614c73a2f5127ca26aae9d4b2210ef`、仪器包 `e66e73a9cac957a056a09c8e236cdcd32b958416be5ef558cdd343db6a7f5f60`。
+- 当前包同一手机配置完整重跑：**9 项通过、93.718 秒**（`ui-phone-light-feedback.txt`，`phone-light-final/` 16 张合成截图）。包括正式入口、加载/读取失败重试、普通单按钮保存、账号选择重建保留、具体权限扩大确认、访问范围/域群组分别保存、名单空与筛选空、未配置限速、四个速率和星期日 24 小时时间表、空数字拒绝保存、未知状态重开只读恢复、权限撤销清理，以及第二页账号实际选择/保存。
+
+同一当前包在手机中文深色、系统二倍字号完整组 **9 项通过、95.635 秒**（`ui-phone-dark.txt`，`phone-dark/` 16 张合成截图）；实际查看权限确认及域群组列表，大字号下内容和按钮均可读、可操作。同一包在 API 37 专用平板英文浅色标准字号 **9 项通过、142.109 秒**（`ui-tablet-light.txt`，`tablet-light/` 16 张）；英文深色系统二倍字号 **9 项通过、138.22 秒**（`ui-tablet-dark.txt`，`tablet-dark/` 16 张）。实际查看英文时间表、权限确认及深色域名单，内容可读、按钮可达。两台设备均已恢复浅色/标准字号并关闭。写入口/页面清单、生成报告、结构约束、双语硬编码、触控/动效、主计划、文档严格检查及 `git diff --check` 已通过当前静态检查；设置页面继续记局部，外观/图片仪器组仍在进行。
+
+独立集成审查确认：新设置与其他文件功能共用原工作区和实际请求门禁；Core 管理明确拒绝时不发对应请求，常规设置仍可用；恢复的摘要与原账号固定，重复保存、跨账号、改变来源和旧响应均不能换目标；实际写入后撤权保留恢复事实。没有调用真实 NAS、外部云盘或真实目录账号，没有提交/推送/发布。仅使用正式测试中的合成名单与设置。`PENDING_USER_VALIDATION` 仍包括专用 NAS 实际保存、域/LDAP 权限、限速和群组继承效果、NAS 时区周表及断网恢复；回传版本、操作顺序与脱敏失败信息即可，不回传真实账号名单、路径或会话。
+
+### A3n 分享页外观与图片追加
+
+新增 `FileSharingTheme`、主题字段/序列读取、完整布局保存及图片来源校验，已接入常规设置同一恢复与写入互斥。已确认回执且各选图对应序列变化后才报告换图完成；丢失回执不能只凭序列变化判成功。摘要记录兼容新增可选序列摘要与独立上传类型，不保存布局正文、图片或路径。图片上传与页面应用分别确认；相同内容的未知上传不重放，其他图片和布局仍可使用。图片历史每次按稳定路径重新定位当前编号，NAS 图片通过正式 getinfo/Thumb 检查，默认背景只读当前 NAS 固定资源且不带凭据。
+
+新增 `FileThemePickerFeatureModel`、原生外观表单和图片选择页，支持历史/NAS/本机/默认背景、实际图片预览、原始列表分页与文件名筛选；本机图片从系统选择结果复制到私有临时文件，解码与摘要通过后才可上传。图片按显示区域采样，完整图片传输不放入内存，也不猜测 NAS 上传上限。取消/切换账号清理所属临时文件，迟到结果不更新新页面。现有文件缩略图移至共用受控图片传输，原请求字段/版本/8 MiB 缩略图内存上限保持；DsmRepository ratchet 由 14,441 收紧到 14,431。
+
+本机新增验证（同上环境与低并行参数）：
+
+- `:app:compileDebugKotlin` 先因文件下载 helper 需要最大长度参数失败，随后误传空值再次失败；改为已有流式输出接口后 **24 秒通过**（`theme-core-compile-stream.log`），不修改原 helper 契约。
+- `:app:testDebugUnitTest --tests '*FileSharingThemeRepositoryTest' --tests '*FileSettings*Test' --tests '*FilePreviewRepositoryTest'` 首次编译因测试账号字段名写错失败，修正后 **56 项、1 项失败**：合成权限拒绝错误作为传输异常抛出，实际客户端将其归类为连接失败；修正夹具返回正式错误响应，原拒绝断言保留，**56 项全通过、3 秒**（`theme-core-jvm-envelope.log`，`xml-theme-core/`）。
+- 原生表单 `:app:compileDebugKotlin` **4 秒通过**（`theme-ui-compile.log`）。新增主题模型测试后 `:app:testDebugUnitTest --tests '*FileSettingsFeatureModelTest'` **11 项通过、5 秒**（`theme-feature-jvm.log`）。
+- 首次仪器 APK 编译有测试历史列表闭合括号遗漏，修正后 `:app:assembleDebug :app:assembleDebugAndroidTest` **9 秒通过**（`theme-ui-build-fixed.log`）。
+- 增加上传取消与回查缺项测试、登记正式写入口后，`:app:testDebugUnitTest --tests '*FileSharingThemeRepositoryTest' --tests '*FileSettings*Test' --tests '*FilePreviewRepositoryTest' :app:assembleDebug :app:assembleDebugAndroidTest` **61 项 JVM 通过、9 秒构建完成**（`theme-integrated-build.log`，`xml-theme-integrated/`）。包含主题 16、设置 Reader 9、Repository 20、FeatureModel 11、原预览 5。当前 App SHA-256 `8e245ac778bc7f2991b667104b04ee4ae3397af55bf89437a9c76615c44c23ea`；仪器包 `000800f14eed5867ec1f2973a2c5feb737c550c91bf53ff6bba6563ddbe823be`。
+
+`FileThemeUiTest` 的目标设备检查正在进行，尚不声明通过；Android 系统图片选择器本身、真实 NAS 历史图片/上传/布局效果、其他图片格式与账号权限仍为 `PENDING_USER_VALIDATION`。沿用已授权范围，没有真实图片、NAS 设置写入、提交、推送或发布。
+
+外观首轮手机中文浅色/标准字号，`adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.FileThemeUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`：**9 项、3 项失败、73.025 秒**（`theme-ui-phone-light.txt`，`theme-phone-light-initial/` 11 张）。实际流程中历史/NAS 预览、本机上传、未知保存恢复与权限撤销已通过；失败为默认背景搜索词同时匹配输入框和列表、页脚文字断言漏了可见提示，以及上传未知提示与来源菜单有同名入口。测试改为列表/弹出菜单作用域并保留完整页脚断言，没有弱化业务断言。仪器包增量重建 **2 秒通过**（`theme-ui-selectors-build.log`），整组复跑 **9 项通过、84.389 秒**（`theme-ui-phone-light-selectors.txt`，`theme-phone-light-selectors/` 13 张）。查看实际本机图片预览、外观表单与默认背景预览，键盘关闭、主要操作可达。
+
+只读集成/对抗复核另发现并修正两处边界：NAS 图片路径不得额外禁止合法的字面反斜杠；系统选图回调不能只靠进程内递增编号归属，现已绑定每次打开的随机标识和读取代次，关闭重开及新模型不能复用旧票据。新增断言保留原路径并检查重开/新模型票据不同，`:app:testDebugUnitTest --tests '*FileSharingThemeRepositoryTest' --tests '*FileSettingsFeatureModelTest' :app:assembleDebug :app:assembleDebugAndroidTest` **27 项 JVM 通过、11 秒构建完成**（`theme-review-build.log`，`xml-theme-review/`）。本次 App SHA-256 `7aa20aa11b4077df9df5f8d720b7fa507c5b2d62463cb68c535107be6c9dc9b2`，仪器包 `88c650f674d7c4667680a1bbe8645c9a26f282b16eea90d8e5904764f110c27e`，正在复验手机并继续平板。兼容表补记既有图片预览 GET，字段与版本不变；其他四端无需代码变化，真实证据等级未提升。
+
+上述复核包手机中文浅色标准字号 **9 项通过、81.041 秒**（`theme-ui-phone-light-review.txt`，`theme-phone-light-final/`）；深色系统二倍字号 **9 项通过、78.725 秒**（`theme-ui-phone-dark.txt`，`theme-phone-dark-initial/`）。截图核查发现 NAS 图片解码失败仍显示通用地址恢复提示，已增加明确的图片错误类别与双语恢复文字，保留连接/授权异常原分类；仪器测试新增精确文案断言。`:app:assembleDebug :app:assembleDebugAndroidTest` **29 秒通过**（`theme-image-error-build.log`）。当前 App SHA-256 `51611202efd18e9f223e187e055f869ed6ab2070a4966c932b200fe8a94a367e`，仪器包 `ff3137c690bb30fa5b9919c5aca0c8fee24337a1336d6d53da63f8845a122afb`，手机复验中；前述通过不替代当前包的最终设备检查。双语资源 2739 键与硬编码、写测试矩阵、页面五态、结构 ratchet 和差异空白检查均通过。下一片 A3o 后台文件任务控制已建账本，当前仅完成基线阅读。
+
+末次图片错误提示包（App `51611202…`、仪器包 `ff3137c6…`）`FileThemeUiTest` 四组最终设备证据：
+
+- 手机 API 37 中文浅色/字号 1.0 **9 项通过、76.227 秒**（`theme-ui-phone-light-error-final.txt`，`theme-phone-light-error-final/`）；深色/系统字号 2.0 **9 项通过、78.865 秒**（`theme-ui-phone-dark-final.txt`，`theme-phone-dark-final/`）。实际查看新的图片失败提示，已能说明重试或换图，没有误导用户修改 NAS 地址。
+- 平板 API 37 英文首组 **9 项通过、113.775 秒**（`theme-ui-tablet-light.txt`、`theme-tablet-light/`），但当时没有显式重置上次设备配置，截图实际为深色大字号，不能作为浅色证据。随后明确设置 `cmd uimode night yes` 与 `settings put system font_scale 2.0`，完整深色组 **9 项通过、132.619 秒**（`theme-ui-tablet-dark.txt`、`theme-tablet-dark/`）。再设置 night no、字号 1.0，完整浅色组 **9 项通过、120.811 秒**（`theme-ui-tablet-light-final.txt`、`theme-tablet-light-final/`）。每组 13 张合成界面截图，实际查看英文外观表单、深色大字号本机预览/上传按钮及浅色正常字号，内容可滚动且操作可达。
+- 手机和平板末次检查均没有留下 `file-theme-*` 私有临时目录，恢复浅色/标准字号后关闭。仅删除本片两份原始模拟器日志，正式测试和脱敏失败/截图证据保留。此 APK 不包含同期开始的 A3o 后台任务控制源码，A3o 的 JVM 结果不得当作该 APK 的能力。
+
+A3n 已完成常规/访问名单/六类账号限速与周表，以及分享页布局/历史、NAS、本机和默认图片主流程及当前可执行的聚焦验收。独立集成/只读对抗复核、语言资源与原缩略图回归已完成；API 实际证据等级没有提升。`PENDING_USER_VALIDATION`：正式系统图片选择器、真实 NAS 各图片格式/布局效果、专用账号的设置与群组继承/实际限速、真实权限撤销/断网恢复及 TalkBack 人工操作。完整 JVM、Release/R8、lint、云端与真实 NAS 验收未运行，继续 A3o 和其余总计划。
+
+## 2026-10-12 Android A3o NAS 后台文件任务控制
+
+已从门面提取原脱敏任务读取，保留五项既有测试与请求语义，控制使用单独的严格分页：offset/total、完整原始行、跨页总数和重复身份检查。新增 method、API 版本及完整小数创建时间仅用于内存控制身份，旧任务快照格式不变、刷新前只读。独立加密恢复保存原账号/任务身份、动作和回执；清理仅传单个 taskid 数组，停止按四类既有公开版本，未知仅回读。
+
+`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android :app:testDebugUnitTest --tests '*FileBackgroundTaskRepositoryTest' --no-parallel --max-workers=2 --console=plain`：原读取 **5 项通过、65 秒**（`build/android-rewrite-a3o/read-regression.log`，`xml-read/`）。随后 `--tests '*FileBackgroundTask*RepositoryTest'` **19 项通过、9 秒**（`control-jvm.log`、`xml-control/`）：新增控制 14 项、原读取 5 项，覆盖四类停止、指定记录清理、小数时间/版本/方法替换、缺页/重复任务、写前撤权、确认门禁、未知与丢失回执、恢复隔离、存储失败及提交后取消。原生详情、恢复与确认界面正在接入，尚未构建或验证本片 UI。
+
+A3o 原生任务详情、独立确认及持久恢复列表已接入现有任务中心，跨页筛选和原只读列表保留。旧缓存必须刷新取得控制身份；恢复记录即使对应任务已不在列表仍可打开，不恢复或重放停止。复用任务错误分类与本地化恢复提示，DsmRepository 的读取提取后收紧到 14,327 行，AppViewModel 使用独立模型和现有刷新接入后收紧到 15,769 行。
+
+首次界面编译因连接显示字段误用 `displayName` 而失败（`ui-compile.log`），改为现有 `name` 后，`:app:testDebugUnitTest --tests '*FileBackgroundTask*Test'` **28 项通过、15 秒**（`model-jvm.log`、`xml-model/`），包含仓储 19、状态策略 5、功能模型 4。同组加 `:app:assembleDebug :app:assembleDebugAndroidTest` **28 项通过、35 秒构建完成**（`ui-build.log`）。只读对抗复核补充提交后原账号撤销仍保留恢复事实，沿用命名和写入口矩阵，原命令 **29 项通过、16 秒构建完成**（`review-build.log`、`xml-review/`）。当前 App SHA-256 `adaee79a4665c3cfc5d68ba19bd46dac388c2c0b3d756fe3badb6337319befe6`；仪器包 `634a30fb3f616ed3101f9f53338c927465245e19b1da960531507a0e7acb0dd9`。原生新增 6 项控制与原有 7 项读取列表的组合设备检查进行中。
+
+本次静态检查：写测试矩阵、55 个页面/弹窗的五态清单（0 生产缺口、3 个自动化未闭环页面）、结构 ratchet、本地化 2761 双语资源/占位符/硬编码及严格文档检查通过。A3n 末次静态检查与本片早期变化一起运行，不能把尚在设备验证的 A3o 标成完成。
+
+A3o 手机中文首轮组合 13 项 **7 通过、6 失败、34.516 秒**（`ui-phone-light.txt`）：7 项既有读取列表均通过，新 6 项在测试初始化时直接寻找尚未展开的“NAS 文件任务”入口而失败，没有执行控制写操作。按现有任务中心从“来源筛选”菜单进入，仪器 APK 增量构建 **3 秒通过**（`ui-entry-build.log`），新 6 项完整通过 **42.727 秒**（`ui-phone-light-entry.txt`、`phone-light-entry/`）；同 App 深色系统字号 2.0 **6 项通过、40.411 秒**（`ui-phone-dark.txt`、`phone-dark-initial/`）。实际查看详情、停止确认及未知恢复，具体后果和刷新按钮清楚可达。
+
+集成复核进一步修正状态反馈：确认停止后的提示只关联已回读的原任务，不额外读取后用同一编号的新任务覆盖；用户再刷新时清除旧完成提示，避免编号被 NAS 复用后出现“进行中/已结束”并列。新增模型和界面断言，没有弱化任务身份检查。`:app:testDebugUnitTest --tests '*FileBackgroundTask*Test' :app:assembleDebug :app:assembleDebugAndroidTest --no-parallel --max-workers=2 --console=plain` **30 项 JVM 通过、9 秒构建完成**（`completion-feedback-build.log`、`xml-feedback/`），当前 App SHA-256 `9a7c5983e88ed4a0bc047cda22f2a9068a9709d0c8669601d00eab0b51c60411`、仪器包 `638230e921ae1d86dee9d06d0f3288bec132f9fc70c333603d38637c8e54fdb7`。当前包手机复验与平板检查继续进行，前组结果不替代当前包。
+
+完成反馈修正后的 App `9a7c5983…`、仪器包 `638230e9…` 手机中文：深色系统字号 2.0 **6 项通过、44.178 秒**（`ui-phone-dark-final.txt`、`phone-dark-final/`）；浅色字号 1.0 **6 项通过、43.767 秒**（`ui-phone-light-final.txt`、`phone-light-final/`），每组 12 张合成截图。随后只补仪器夹具清理：测试后移除本测试账号的只读任务快照，下一次运行按专用 `background-ui-` 前缀清理同夹具历史快照；不改产品包或其他账号数据。
+
+仅仪器清理修改构建 **3 秒通过**（`ui-cleanup-build.log`），手机单项停止/编号复用/清理断言 **通过、11.326 秒**（`ui-phone-cleanup.txt`），App 不变、仪器包 `7ed18118…`。最后将单独的“已处理项目数”改用平台复数资源，避免英语 1 item 显示为 items，并在详情用例加入精确单数断言；没有修改控制或恢复逻辑。增量两包构建 **12 秒通过**（`plural-build.log`），本次 App SHA-256 `c2f05405d80fff511fadf4824cff473c9158c2acef8e70843c3dafde0394b2a2`、仪器包 `30c9ec03a0f135828efb525356dd6cc82d6b3f77a0b815f2bd56b359625e3b12`；手机只针对这一受影响详情路径补验浅深色，平板继续完整六项。
+
+末次复数资源包的手机详情路径：浅色标准字号 **1 项通过、8.37 秒**（`ui-phone-light-plural.txt`），深色系统二倍字号 **1 项通过、7.801 秒**（`ui-phone-dark-plural.txt`）。`phone-light-plural/`、`phone-dark-plural/` 各仅保留本次生成的加载/错误/详情三张图，没有把远端目录中其他旧截图计为新证据。控制、恢复完整六项的前述版本/分组不混同为这次单项结果。手机已恢复浅色标准字号并关闭，清理本片原始模拟器日志；平板使用当前同一 App/仪器包继续完整组。
+
+当前复数文案包平板 API 37 英文完整控制组：浅色标准字号 **6 项通过、66.571 秒**（`ui-tablet-light.txt`、`tablet-light/`）；深色系统字号 2.0 **6 项通过、62.264 秒**（`ui-tablet-dark.txt`、`tablet-dark/`），各 12 张合成截图。实际查看英文单数详情、清理确认和大字号恢复列表，内容与按钮可读可达。夹具仅清理自身账号、恢复及任务快照，保留其他账号；两台设备均已恢复浅色/标准字号并关闭，本片两份原始模拟器日志已删除。
+
+A3o 已完成原生详情、四类任务指定停止、单条已结束记录清理与重启/缺失任务只读恢复，沿用既有公开请求，不修改其他平台或原缓存格式。独立集成/对抗复核覆盖完整分页、原身份和小数时间、重复点击/跨实例恢复、提交后取消/撤权、丢失回执、任务编号复用与不确定结果；没有真实 NAS 写入、提交、推送或发布。`PENDING_USER_VALIDATION`：专用合成文件任务分别尝试四类停止与单条清理、普通账号权限拒绝、真实断网/重启及 TalkBack/键盘人工操作；预期已处理文件不回滚、清理不删除文件，未知只刷新不重发。回传 DSM/套件版本、任务类别、阶段、步骤和脱敏失败；不回传真实任务编号、路径、内容或会话。完整 JVM、Release/R8、lint、云端与真实 NAS 验收未运行；继续已建立账本的 A3p 跨 NAS、Office 及 A4–A10。
+
+A3o 最终十项静态门禁输出保存在 `build/android-rewrite-a3o/quality-final.log`：写入口、五态、点击目标、动效、结构、主计划、双语、生成报告及严格文档通过；差异检查发现本次移动 README 段落留下一个末尾空行，删除后 `git diff --check` 通过。55 个页面、0 个生产五态缺口、2 个既有自动化未闭环页面，Android 双语资源 2761，门面/主模型行数限制均已收紧。工作区仍为既有 `main` 的本任务未提交变更，其他平台源码差异为空。
+
+
+## 2026-10-12 Android A3p 跨 NAS 复制、分步移动与持久恢复
+
+- 已实现独立加密记录、完整分页/元数据读取、冻结目录清单、MD5 比对、固定容量管道复用、逐项写前保存/恢复、独立确认非递归删源及原名称空格保留。普通删除仍使用既有递归语义；跨 NAS 单项删源发送 `recursive=false`。未修改其他平台或 API 版本、认证位置和旧任务存储。此时原界面仍走旧协调方法，入口替换与全局任务展示尚未完成。
+- 实际命令统一使用 `JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android … --no-parallel --max-workers=2 --console=plain`。`:app:compileDebugKotlin` 成功（22 秒，`build/android-rewrite-a3p/core-compile.log`）。首轮 JVM 测试夹具遗漏 `MutationResultCounts` 两个必需字段导致编译失败；补齐后执行 34 项，发现 2 项持久记录比较失败。进一步缩小执行 24 项、再单项复现，定位为动态默认创建时间被序列化省略，跨秒恢复得到新时间。存储改为显式编码全部字段，并增加时间持久化断言，未降低恢复或内容比对断言，临时诊断文案已删除。
+- 修正后 `:app:testDebugUnitTest --tests '*CrossNas*Test' --tests '*FileMutationPathIdentityTest'` 48 项成功（11 秒，`core-jvm-durable.log` / `xml-durable`）。追加写状态转换、真实仓储非递归参数/空格目录名与撤销/新增子项回归后，同命令 54 项成功（14 秒，`core-review-jvm.log` / `xml-core-review`）：新队列 26、严格读取 3、原协调器 13、路径身份 12；均 0 失败、0 错误、0 跳过。原协调器 13 项仍属于迁移前流程回归，后续入口替换必须同步迁移其业务预期，不能据此认定新 UI 已验证。
+- 未运行本片模拟器界面、真实双 NAS、完整 JVM/Release/R8/lint/云端门禁；未提交、推送或发布。`PENDING_USER_VALIDATION`：专用合成源/目标目录、普通账号、断网与系统结束、复制后改源及非递归删源；源/目标内容需按各步确认，不能将内容摘要与删除之间的外部并发窗口描述成原子保护。后续集成继续同一 A3p 账本。
+- 随后将严格读取绑定到既有 `DsmFileStationRepository`，复用 `createFolderResult(..., preserveSourceName=true)` 与 `deleteResult(..., recursive=false)` 参数，避免新增平行写入口；补任务状态模型。相同聚焦命令 59 项成功（26 秒，`core-integration-jvm.log` / `xml-core-integration`），其中状态模型 5 项。针对权限观察回调尚未触发时的忙状态清理追加回归后，`:app:testDebugUnitTest --tests '*CrossNasTransferFeatureModelTest'` 6 项成功（`feature-revocation-jvm.log` / `xml-feature-final`）；其余底层未再改动。当前 UI 与全局任务集成仍未完成。
+
+
+### A3p 原生入口、全局任务与结束选择集成
+
+- AppViewModel 目的地流程已使用唯一 `CrossNasTransferFeatureModel/Queue`；旧整树执行/自动删源代码移除，原 13 个场景迁到同一队列并按独立确认的业务要求加强断言，固定内存管道只负责一次文件传输。新增全局任务记录合并/变化通知、原身份路由、两端标识与记录清理；任务重开仅读本机，刷新不重传。跨 NAS 文件夹移动先复制后单独删源，文件逐项、目录仅空目录且 `recursive=false`。
+- 复制后允许“保留原文件并结束”。仅已明确复制完成且没有未知步骤才能结束为 `KEPT`；结束事实不可回退，刷新不重新开放删源，清理只删本机记录。新清单尚未正式发布，沿用已批准的独立格式，不迁移旧任务。共享连接标识规则仅提取已有逻辑供选择器/确认/任务复用，账号和地址从当前身份读取，不新增持久字段或保存翻译文字。
+- 首轮 UI 编译发现目标 Owner 可空与详情资源键引用错误，修正后主源码通过；仪器构建发现旧目录移动 UI 测试仍引用已删除的“不支持”资源，按本片批准的目录分步移动重写预期，保留旧选择器业务断言并新增同名账号回归。没有删除测试或降低保护。
+- 新流程聚焦命令 `:app:testDebugUnitTest --tests '*CrossNas*Test' --tests '*FileMutationPathIdentityTest'` 60 项通过（`ui-integration-jvm.log` / `xml-ui-integration`）；追加 401 文件完整三页读取后 61 项通过（`integration-final-jvm.log` / `xml-integration-final`）。增加保留原文件结束且不可重新删源后，相同聚焦命令连同 `:app:assembleDebug :app:assembleDebugAndroidTest` **62 项、0 失败/错误/跳过，构建成功，35 秒**（`keep-final-build.log` / `xml-final`）。App APK SHA-256 `862c9960f5b0a921c225d25b24b481eac395f17ba90d764e2af61a0f227ba187`，当时仪器 APK `6153cfa27273aba3832a9360a9fe95dbbdb25468e02c61524f1ecd81432907c8`；后续只补五态仪器用例，不改生产 APK。
+- 首轮 API 37 手机 UI 5 项失败：四项为夹具 `commitConnection` 未要求保存目标会话，选择器正确过滤；一项发现生产空状态的内部滚动被嵌入 LazyColumn 无限高度，导致布局异常。夹具显式持久合成会话，空状态改为占满可用区域的独立布局；原失败保留 `ui-phone-light-first.txt`，修正构建 `ui-build-empty-fixed.log` 8 秒成功。
+- 修正后手机中文浅色标准字号 5 项 **51.566 秒**，深色系统二倍字号 5 项 **51.341 秒**，原选择器 6 项 **18.531 秒**，均通过（`ui-phone-light-fixed.txt`、`ui-phone-dark.txt`、`ui-picker-regression.txt`）。生产包当时为 `499a00ec56bcd86c9e13154a954d0a10f7268a76afb5336485e05145e4d1cc55`，仪器包 `2b5facbdf058aab8e790d2c974a1ba2458ad51e82e00f75743d56ecbd57306ee`。随后仅调整错误标点和不确定结果提示，手机深色恢复路径 1 项 **10.58 秒**通过（`ui-phone-wording-dark.txt`）。`phone-light/`、`phone-dark/` 各 10 张图已实际查看独立删源确认、正常清单和大字号未知状态，未把后续新结束按钮当作此组已验。
+- 复用账号区分并增加全局清理/目标身份变更之后，平板英文浅色标准字号 14 项 **120.929 秒**通过（`ui-tablet-light.txt`、`tablet-light/`），含跨 NAS 7 项和选择器 7 项；对应生产包 `fd4e25a2f1a3f395c9b7996d5ef6c7d2d0a0b64c31dec98de78bc042d070c130`。随后加入保留原件结束，当前生产包的分组继续验证，不能把前一包结果当作新增结束行为已验。
+- 证据目录均为忽略的 `build/android-rewrite-a3p/`。独立集成/只读对抗复核检查所有者失效、撤权、同名目标、分页漂移、源/目标内容变化、同步持久化失败、失去回执/取消、未知目录不认领、目录新增子项、非递归删除及已结束事实不可重新开放。真实双 NAS 和与内容摘要联动的原子删除均未验证；公开 API 不承诺后者。完整 JVM、Release/R8、lint、云端仍未运行，未提交/推送/发布。
+
+A3p 当前生产包 `862c9960…b187` 的平板英文浅色标准字号：结束选择/原有跨 NAS/同名选择器共 **8 项通过、102.186 秒**（`ui-tablet-light-final.txt`），随后仅新增加载/记录错误恢复用例 **1 项通过、6.166 秒**（`ui-tablet-light-states.txt`）。仪器增量构建 **4 秒通过**（`ui-build-states.log`），仪器 SHA-256 `36247d7f1d2a17ed7caa4b7560f226533dcd659784e5121cbee72c060a7a7caa`；此版本平板深色系统二倍字号 **9 项通过、100.525 秒**（`ui-tablet-dark-final.txt`）。加载/本机记录读取失败为明确 UI 状态夹具，重试使用真实存储；不声称模拟了真实磁盘故障。
+
+同一当前 App/仪器包的手机中文：浅色标准字号 **9 项通过、76.460 秒**（`ui-phone-light-final.txt`），深色系统二倍字号 **9 项通过、70.201 秒**（`ui-phone-dark-final.txt`）。设备命令为 `adb -s <对应模拟器> shell am instrument -w -e captureWorkspaceUi true -e class 'io.github.qwertyuiop1995.dsmnativeclient.CrossNasTransferUiTest,io.github.qwertyuiop1995.dsmnativeclient.FileStationMutationWorkspaceUiTest#同名Nas选择器使用账号区别源和目标' io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。`phone-light-final/`、`phone-dark-final/`、`tablet-light-final/`、`tablet-dark-final/` 各 13 张合成截图，实际查看保留原件结束、恢复错误及深色大字号独立删除确认，内容和操作可达。两台模拟器均恢复浅色标准字号并关闭，本片原始模拟器日志已清理。
+
+A3p 已完成本片实现及当前环境聚焦验证；全局任务重开、活动重建、目标账号变化、权限撤销、冲突和不确定上传不重放均有原生操作证据。没有真实 NAS 网络调用，测试拦截器只返回明确合成资料。`PENDING_USER_VALIDATION` 保留双 NAS、真实编辑并发、普通账号/网络与系统中断及 TalkBack/键盘人工操作；完整 JVM/Release/R8/lint/云端未运行，不以本片通过宣称 A0–A10 全部完成。继续 A3q Office。
+
+A3p 十项最终静态门禁均通过，分别保存在 `build/android-rewrite-a3p/quality-final-0.log` 至 `quality-final-9.log`：差异、生成报告、写入口、56 页五态、点击目标、动效、结构、主计划、本地化和严格发布文档。Android 资源 2790，其他平台源码差异为空；这些检查先于 A3q 源码接入。
+
+## 2026-10-12 Android A3q Office 系统副本与主动回传
+
+新增独立 `OfficeDocumentRecord/Store/Transfer`、功能状态模型和原生整页详情，文件点击及文件选项可进入。系统文件选择器导出副本并交外部应用打开/编辑，导入修改后冻结本机文件，确认保存回原文件；Activity 返回不自动上传。独立加密索引绑定原账号身份，私有副本保留原件和候选，不使用可再生缓存或长期系统 URI；未知不重新上传或移除事实。普通上传仍走原实现，Office 在同一路径锁内完成实际权限读取后的最终原件检查与写前落盘；纯上传结果映射移到原 `UploadSource` 文件，两个重复预览入口合并委托，语义保持。
+
+实际命令统一为 `JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android … --no-parallel --max-workers=2 --console=plain`。首组 `:app:testDebugUnitTest --tests '*OfficeDocumentTransferTest'` **13 项通过，29 秒构建/测试完成**（`build/android-rewrite-a3q/core-jvm.log`、`xml-core/`）。UI 增量 `:app:compileDebugKotlin` **10 秒通过**（`ui-compile.log`）。随后 `:app:testDebugUnitTest --tests '*OfficeDocument*Test' --tests '*FileUploadTest' --tests '*FilePreviewTest' --tests '*FilePreviewRepositoryTest' --tests '*FileMutationPathIdentityTest'` **62 项通过，15 秒**（`integration-jvm.log`）。增加实际提交前检查/锁释放回归后同组 **63 项通过，4 秒**（`review-jvm.log`、`xml-review/`）：Office 底层 13、状态 6、上传 23、预览领域 4、预览仓储 5、路径身份 12，0 失败/错误/跳过。
+
+上述 62 项组加 `:app:assembleDebug :app:assembleDebugAndroidTest` **27 秒通过**（`ui-build.log`）；当前 App SHA-256 `8fee65177c9fbeb50cec85536d75a4bf26a8b01a37de7c7343d0bad07e16ad26`，当时仪器包 `ad90ece650da106a2f75ece2d0a5fded42e28fb8b71ffec0b985c9ca8b55111c`。手机 API 37 中文浅色标准字号首组 **6 项中 5 项通过、1 项失败，43.044 秒**（`ui-phone-light.txt`）；失败为恢复列表中的同名文档选择器同时匹配背景文件列表，并非上传或恢复失败。限定到编辑页祖先节点，仪器增量 **3 秒通过**（`ui-build-selector.log`），仪器包 `dbe2ad6784981e1a54f05def86bb33cbef0a9d4f9e5c0818030fe3b48060ebc9`；原失败恢复路径补验 **1 项通过、10.249 秒**（`ui-phone-light-recovery.txt`），生产包未改变。
+
+同一生产包手机深色系统二倍字号完整 **6 项通过、42.464 秒**（`ui-phone-dark.txt`）；一次运行指令包名分隔符输入错误未启动测试，保留 `ui-phone-dark-command.txt`，不计作测试结果。`phone-light-final/` 与 `phone-dark/` 各 12 张合成截图，已实际查看完整操作页、保存确认和大字号显示。测试通过正式 ContentResolver 包装的合成文档提供器读写本机文件；ActivityMonitor 仅代替系统选择器选择结果与外部编辑器启动回执，检查 MIME、明确导出位置及读/写授权，没有验证真实 Office 渲染或真实选择器界面。
+
+独立集成/只读对抗复核覆盖：同大小/时间但内容变化、稳定候选、写前持久化失败零上传、原账号和会话、迟到系统回执、撤权后的忙状态清理、同路径并发、取消后未知、跨实例恢复只读、未改零上传及原上传兼容。新增读取失败的原位置重试、取消入口与实际保存状态；移除连接的双语确认说明会删除本机编辑副本。没有新依赖、系统权限、包名、旧存储迁移或其他平台修改；门面/主模型 ratchet 收紧到 14305/15762 行。平板同版本浅深色检查继续；完整 JVM/Release/R8/lint/云端和真实 NAS/编辑器仍待后续验收。
+
+A3q 平板 API 37 英文同一 `8fee6517…` App 与 `dbe2ad67…` 仪器包：浅色标准字号 **6 项通过、62.145 秒**（`ui-tablet-light.txt`、`tablet-light/`），深色系统二倍字号 **6 项通过、65.364 秒**（`ui-tablet-dark.txt`、`tablet-dark-initial/`），各 12 张合成截图。查看平板冲突页发现同一原因/恢复提示重复，展示层只保留详情中的一处；增加界面单一提示断言。另为系统选择器记录已发起状态，配置重建时不再次主动弹出同一请求；记录/上传逻辑未改变。
+
+冲突提示构建 **10 秒成功**（`ui-build-feedback.log`），随后选择器已发起状态增量构建 **6 秒成功**（`ui-build-final.log`）。末次 App SHA-256 `cb011640517cc3c27e08f9aad7edae02ce27895b6ca4fb98df6edf36bcd4ab6c`，仪器包 `754d018b54d181b40a6c624efd20c6317b3e30bacab07f0fbef060bdfb049648`。只针对受影响的“冲突保留/导出”与“打开编辑器/选择副本/确认保存”两条完整路径补验：平板深色二倍字号 **2 项通过、24.894 秒**（`ui-tablet-dark-final.txt`、`tablet-dark-final/`），浅色标准字号 **2 项通过、27.987 秒**（`ui-tablet-light-final.txt`、`tablet-light-final/`）；每组只含本轮 5 张新截图，旧图未混入。已查看末次英文冲突页，原因与恢复各显示一次，操作仍可达。
+
+末次 `cb011640…` / `754d018b…` 包的手机中文同两条受影响路径：浅色标准字号 **2 项通过、19.015 秒**（`ui-phone-light-final.txt`、`phone-light-feedback-final/`），深色系统二倍字号 **2 项通过、18.427 秒**（`ui-phone-dark-final.txt`、`phone-dark-feedback-final/`），各 5 张当前截图。前述完整六项属于上一展示版本的明确分组，末次不重复执行未受影响的流程。两台模拟器已恢复浅色标准字号并关闭，本片原始模拟器日志清除，正式报告/截图保留。
+
+A3q 已完成系统副本打开/编辑、主动导入和回传、冲突保留及未完成保存恢复的实现、独立集成/对抗复核和当前环境聚焦验证。`PENDING_USER_VALIDATION`：真实 Office/第三方编辑器、真实系统文档提供器在旋转/另存/进程终止后的行为、专用 NAS 文件与普通账号权限、外部并发修改、断网后完整内容和 TalkBack/键盘操作；仅使用合成测试文档并回传版本、格式、阶段和脱敏失败。NAS Upload 不提供摘要条件原子覆盖，不能把预检描述成多人协作锁；这些设备/NAS 缺项不阻塞 A4。完整 JVM/Release/R8/lint/云端未执行，未提交/推送/发布。
+
+A3q 最终十项静态门禁均通过，结果为 `build/android-rewrite-a3q/quality-final-0.log` 至 `quality-final-9.log`；57 个页面/弹窗、0 个生产五态缺口、2 个既有自动化未闭环页面，Android 双语资源 2822。生成报告、写入口、点击目标、动效、结构、主计划和严格发布文档一致；`git diff --check` 通过，其他平台源码差异为空。既有 `main` 保留全部本任务未提交改动，下一片 A4a 已建立账本但尚无 Photos 源码变更。
+
+
+## 2026-10-12 Android A4a Photos 来源与相册读取
+
+范围为来源切换、共享只读路径、相册身份/权限与媒体，不代表完整 A4。当前 `main` 工作区保留 A0–A3 改动；本片没有提交、推送、发布或修改其他四端源码。复用已记录 `photos-library-read.md`，没有发起真实 NAS 请求、私有 API 发现或新增接口版本。
+
+### 实际实现与复核
+
+- `SynologyPhotoModels/Codec/Repository` 增加内存来源、相册 owner/provider/album 上下文；个人启用与共享 entry/management 分别判断，未知角色不授权。零原来源仍允许统一相册/分享读取。所有媒体按原来源或原相册路由；相册拒绝后不回退，详情所有者改变明确失败。
+- `SynologyPhotosModel/State` 保留导航来源，来源改变重置目录/分页/筛选，权限改变规范到仍允许的来源或相册。原始页身份同时检查账号、来源、相册和 owner；切换前的同编号目录快照不得打开新来源目录。缩略图缓存与 Compose 请求身份包括相册，刷新先清理原缓存，旧筛选/图库迟到响应不能回填。
+- `SynologyPhotosMediaTransport` 支持已记录 FotoTeam 媒体与共享缩略图 t 路径；相册统一 Foto/p 且保留 album_id。原有同源、头部凭据、重定向禁止、有界图片、原件精确大小/临时文件与视频 Range 限制保留。
+- `WorkspaceAccessController/Reader` 将 FotoTeam 纳入 Photos 门禁，并正确区分 Photos 的权限拒绝与能力缺失。个人单项删除仍需自身来源/所有者和已有准备确认；新共享/他人相册原件不显示删除入口，读取没有扩大写授权。
+- 原生图库使用现有工具栏/网格/全屏预览；只有两种来源均可用时显示“我的照片／共享照片”，零原来源保留相册与分享。两种语言新增两项来源资源，现有备份入口不变。独立集成和只读对抗复核覆盖未知枚举、共享能力版本缺失、entry 分类限制、相册 owner 变化、无来源协作相册、取消/迟到、同编号跨来源快照及删除边界；复核中实际修正了 Photos 拒绝误归类与同编号旧点击问题。
+
+### 聚焦命令与结果
+
+环境：`JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home`、`ANDROID_HOME=/Users/yuangy/Library/Android/sdk`；Gradle 均使用 `--no-parallel --max-workers=2 --console=plain`。
+
+- 首轮 `:app:testDebugUnitTest --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoThumbnailStoreTest' --tests '*SynologyPhotosMediaTransportTest' --tests '*WorkspaceAccessControllerTest'`：51 项，50 通过、1 失败，11 秒。旧测试把零原来源视为全部无权，与已记录协作相册语义不符；更新为显示相册并继续断言不请求无权来源。测试夹具新增来源、相册上下文，未删除既有保护断言。
+- 新回归首次编译失败来自测试引用不存在的 `DesktopApplication.PHOTOS`；Photos 采用独立访问读取，修正夹具走该读取。下一轮 66 项有 1 项失败，暴露主工作区将 Photos.PERMISSION 映射为一般失败；修正生产分类后 `ui-build.log` 执行同选择器加 `*WorkspaceAccessReaderTest`、`:app:assembleDebug :app:assembleDebugAndroidTest`，84 项全部通过，15 秒。
+- 最终 `review-build.log`：同六个 JVM 选择器加 `:app:assembleDebug`，85 项、0 失败/错误/跳过，8 秒。分组为 Repository 27、Model 17、ThumbnailStore 4、MediaTransport 13、WorkspaceAccessController 6、WorkspaceAccessReader 18；JUnit XML 保存在 `build/android-rewrite-a4a/xml-review/`。
+- `SynologyPhotosSourceUiTest` 使用实际 Photos Repository、媒体传输和原生图库，JSON/图片为合成资料；响应拦截阻止真实网络。五项流程覆盖双来源/搜索/目录/大图，单共享来源，零原来源混合相册，加载/失败/重试/空内容/撤权和 entry 分类限制。触控、筛选空、48dp 来源按钮及原件删除入口边界均有断言。该测试直接装配图库内容，不宣称外部系统选择器、TalkBack 或真实 NAS 验收。
+- 手机初轮 5 项中 3 通过、2 失败（36.175 秒）：媒体夹具未给 Content-Type，应用正确拒绝图片。单项诊断 1 失败确认 MEDIA；补齐媒体响应后 5 项中 4 通过、1 失败（18.882 秒），来自测试使用“关闭”而实际通用预览使用“返回”；改用实际按钮，受影响路径 1 通过（6.795 秒），手机深色/二倍字号 5 通过（18.900 秒）。截图复核发现独立测试容器没有正式外层 Surface 和安全边距；补齐测试容器，生产界面未因此改动。随后平板浅色 5 通过（31.835 秒），深色/二倍字号 5 通过（30.706 秒）。这些初轮结果与末次快照身份修正后的验证分开保存。
+
+最终 App SHA-256：`6a42ac22912a3b59c9afe5dd625184d997270e5f6fec4f7874c5550006ad67b2`；最终测试 APK：`be9e3e449aa8ba31ce640113fceb7e0f3818919c9ce2557a4f348c5ab8c66ef8`。最后仅把截图改为 Compose 实际渲染根节点，避免系统截图取得上一帧；没有修改断言或生产代码。最终 App/测试 APK 的四组完整流程均通过：
+
+| API 37 配置 | 当前五项结果 | 报告与实际截图 |
+| --- | --- | --- |
+| 手机中文、浅色、字号 1 | 5 通过，20.948 秒 | `ui-phone-light-capture.txt`、`phone-light-capture/` |
+| 手机中文、深色、字号 2 | 5 通过，20.143 秒 | `ui-phone-dark-capture.txt`、`phone-dark-capture/` |
+| 平板英文、浅色、字号 1 | 5 通过，31.526 秒 | `ui-tablet-light-capture.txt`、`tablet-light-capture/` |
+| 平板英文、深色、字号 2 | 5 通过，28.800 秒 | `ui-tablet-dark-capture.txt`、`tablet-dark-capture/` |
+
+设备命令为 `adb -s emulator-5558/5560 shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSourceUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`，分别使用对应序号，非同时运行。最终四组每组 11 张截图，检查来源工具栏、大字号横向标签、空/错误/加载、筛选空、相册与共享预览；测试图片为合成纯色 PNG。两个本轮模拟器已恢复字号 1／浅色并关闭，临时启动日志删除。
+
+十项检查全部通过（`quality-0..9.log`）：`git diff --check`、`generate_android_quality_baseline.py --check`、Android write/page/touch/motion/structure/plan 六项检查、本地化与 `check_documentation.py --strict-release`。五态矩阵 57 页、0 生产状态缺口、2 个原有自动化未闭环项；Android 2824 个资源，中英资源、占位符、引用和硬编码扫描通过。没有执行完整 JVM、Release/R8/lint；源码与聚焦结果不等于完整 Android 或真实环境验收。
+
+`PENDING_USER_VALIDATION`：真实 Photos 普通/管理员、仅个人/仅共享/零原来源协作相册、entry/management、撤权/重登录、实际照片/视频/实况和原件下载；前置为专用测试资料，操作为来源切换→打开相册/媒体→改变权限→刷新，预期只展示当前授权内容且拒绝后不回退。回传 App/DSM/Photos 版本、角色类别、失败步骤和脱敏错误，不含账号、地址、真实文件名或媒体。TalkBack、键盘与真实系统生命周期另验；完整 JVM/Release/R8/lint 和云端门禁未执行，未获推送授权。上传/管理/完整导出/持久删除恢复继续后续 A4，未因本片标为完成。
+
+## 2026-10-12 Android A4b Photos 上传与恢复
+
+范围为设备照片/视频多选、文件夹导入、Photos 原生上传与相册贡献、固定批次和独立持久恢复，保留既有自动备份。本片沿已有私有接口记录，没有真实 NAS 写入或新增接口版本，没有改变其他四端源码；所有工作保留在 `main` 未提交工作区。
+
+### 实际实现与复核
+
+- 新 `SynologyPhotoUploadModels`、`SynologyPhotosUploadRepository` 接入 Foto/FotoTeam Upload.Item、普通相册直传、重复策略、实际目录权限及编号回读。所有者/贡献者参数互斥，零原来源仍可贡献获授权相册，直传成功不重复加入相册。未知回执保留原操作，不能用新编号或改变重复策略绕过防重。
+- `DsmApi.uploadPhoto` 复用同源认证、TLS、取消和长度/摘要检查，业务字段 JSON 编码，文件头固定为 upload；认证仅在请求头，分享口令仅在请求体。真实测试发现 OkHttp 外层 MultipartBody 不继承内部文件体的 isOneShot；修正照片上传最外层为一次性请求后，503/408 回归不重放。其他旧 multipart 路径的同类风险登记到 A10 后续集成复核，不宣称本片已逐个修复。
+- 新 `SynologyPhotoUploadBatch/Store/Execution/Sources/Model` 通过系统选择器读取并建立私有稳定副本，再持久保存固定目标、原件摘要和提交边界。索引沿已有加密库独立存储；副本位于 noBackup 私有目录，目录/文件仅账号可访问。不保存凭据、分享口令或外部 URI。目录逐层创建并用回读编号定位子项；相册导入扁平处理。
+- 写前同步保存、状态单向推进，恢复只读；明确未开始项可由用户继续，不明项不自动重传。跨批次冲突、预先排队第二批、冷启动与重新登录归属均检查。完成/跳过项目在保存终态后释放本机副本，未知项目保留；清除任务不删除设备原件或 NAS 内容。全局账号切换沿已有 WorkspaceSwitchGuard 纳入上传占用。
+- 新生产上传表单/队列沿现有主题和完整对话框，目标、重复策略、目录层级、进度、暂停、只读刷新、取消未完成批次和清除记录均接实际模型。36 个新增双语资源；读取阶段不显示 0/0，目录项目显示相对路径，当前来源不重复写成大标题，读取失败提供实际“重试”。
+- 独立集成及只读对抗复核检查写前落盘失败、来源内容变更、缺失回执、假成功、相册 provider、共享管理权限、同账号代次变化、跨批次重放、取消与副本释放。复核修正普通多选误改根目录、multipart 外层可重放及预排队第二批绕过未知结果问题；未削弱原断言。
+
+### 聚焦验证
+
+环境沿 A4a：JBR、Android SDK/API 37；Gradle 使用 `--no-parallel --max-workers=2 --console=plain`，设备逐个运行，未启动云端全量门禁。
+
+- 最终 `android/gradlew -p android ... :app:testDebugUnitTest --tests '*SynologyPhotoUpload*Test' --tests '*SynologyPhotosUpload*Test' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosModelTest' --tests '*WorkspaceSwitchGuardTest' :app:assembleDebug :app:assembleDebugAndroidTest`：`final-review-build.log` 27 秒成功，88 项、0 失败/错误/跳过。分组为上传 Repository 18、传输 5、执行/存储 11、上传模型 7、原 Photos Repository 27、原模型 17、工作区切换 3，JUnit XML 保存于 `build/android-rewrite-a4b/xml-final/`。
+- 初轮传输失败定位外层 multipart 可重放，原夹具另有不允许 Content-Length 行的错误预期，分别修正生产层与夹具；首次 UI 编译引用不存在的加载更多资源和旧字节格式函数，修正为现有资源及当前语言格式。执行回归曾发现普通多选被改为根目录，修正后全部通过；后续加入预排队跨批次冲突与切换保护回归，最终数量为 88，不以中间 84/85 项替代。
+- `SynologyPhotosUploadUiTest` 六项使用生产图库、Repository、DsmApi、私有副本和加密记录，HTTP 响应均为合成并拦截外网。真正打开系统文档选择器选择自建 PNG，核对原件未改、私有副本权限和上传终态；另覆盖目录层级、零原来源贡献者、丢失回执后重建模型、读取/权限失败、取消读取、空任务和上传暂停。只删除测试自己创建的媒体及随机测试账号记录。
+- 首轮手机 6 项中 5 通过、1 失败（44.346 秒），系统选择器记住 Downloads，而夹具照片位于 Pictures；单项诊断确认后把测试照片放到 Downloads，单项 8.788 秒通过。随后手机浅色 33.605 秒、深色二倍字号 33.987 秒各 6 项通过；增加明确重试按钮后平板浅色 53.348 秒 6 项通过。最终加入切换保护的组合后，平板浅色 44.462 秒 6 项通过。首轮平板深色 49.270 秒虽报六项通过，但结束收集与下一配置切换时间相邻，该轮不作为最终主题截图依据，重新独立运行并收集下表。
+
+最终 App SHA-256：`f97462073644f54afc6234c239f7dd83606ee09b75abb343556bf92d58efea21`；测试 APK：`bd3722204866bee09667022d618a475121614732f5fd69e6c86ffa46a44af3c3`。当前包的最终界面配置结果继续记录于本节，不把此前不同构建的结果混算为同一包验收。
+
+| API 37 最终配置 | 六项结果 | 报告与实际截图 |
+| --- | --- | --- |
+| 手机中文、浅色、字号 1 | 6 通过，35.375 秒 | `ui-phone-light-final.txt`、`phone-light-final/` |
+| 手机中文、深色、字号 2 | 6 通过，33.086 秒 | `ui-phone-dark-final.txt`、`phone-dark-final/` |
+| 平板英文、浅色、字号 1 | 6 通过，44.462 秒 | `ui-tablet-light-final.txt`、`tablet-light-final/` |
+| 平板英文、深色、字号 2 | 6 通过，47.456 秒 | `ui-tablet-dark-final.txt`、`tablet-dark-final/` |
+
+设备命令：`adb -s emulator-5558/5560 shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosUploadUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`，分别使用对应序号且顺序运行。每组 14 张实际界面截图，复核了表单、目录待上传/完成、相册贡献、读取和权限错误、读取中取消、空任务、暂停及不明结果恢复；手机/平板均已恢复字号 1/浅色并关闭，临时模拟器启动日志已删除。截图与报告位于忽略的 `build/android-rewrite-a4b/`，合成媒体不包含真实资料。
+
+初次结构检查发现 AppViewModel 超出既有体积限制 3 行；把当前账号任务汇总和照片上传占用判断归回现有 WorkspaceSwitchGuard，增加实际阻止切换/暂停后放行断言后，主模型为 15760 行，基线从 15762 收紧到 15760，再由生成器更新文档。没有抬高限额或缩排隐藏增长。
+
+`PENDING_USER_VALIDATION`：真实 Photos 普通/管理员、个人/共享 entry/management、相册所有者/贡献者、照片/视频、重复策略、目录树、撤权/重新登录及回执/网络中断。前置为专用合成资料和可丢弃目录/相册；按选择→准备→开始→暂停/重启→在原账号恢复操作，预期目标固定、原件保留、明确完成释放本机副本、未知项目不重放。回传 App/DSM/Photos 版本、角色类别、步骤和脱敏失败，不提供原始响应、路径、账号或媒体。TalkBack、键盘和真实进程生命周期仍待验；完整 JVM、Release/R8/lint、云端门禁与真实 NAS 未执行，未获提交/推送授权。本片完成不表示完整 A4 或 Android 重写完成。
+
+最终十项检查均通过（`final-quality-0..9.log`）：`git diff --check`、质量基线生成一致性、Android write/page/touch/motion/structure/plan 六项、本地化及文档严格预检。页面矩阵 57 页、0 生产状态缺口、2 个原有自动化未闭环项；56 处点击目标和动效规则通过；Android 2860 个中英资源、占位符、引用与硬编码扫描通过。Apple/Windows 源码差异仍为空，未扩大到其他平台。
+
+
+## 2026-10-12 Android A4c Photos 资料与标签
+
+范围为单张/最多百张评分、描述、绝对日期/相对调整、标签增删和新建/应用，以及独立加密恢复。沿既有私有契约，没有真实 NAS 请求、接口发现、新参数或其他平台源码修改；继续使用 `main` 未提交工作区，未提交、推送或发布。完整 A4、A5–A9 与 A10 尚未完成。
+
+### 实际实现与独立复核
+
+- `SynologyPhotoEditModels`、`SynologyPhotosEditRepository` 与独立验证函数接入 Item.set v2、add_tag/remove_tag v1、GeneralTag.create/list v1。全部目标先读取身份和原空间实际权限；相册按当前提供者/所有者与条件/冻结类型判断，共享 upload 权不替代管理，混合来源只允许评分/日期且保持额外管理/提供者规则。标签缺失与空数组严格区分。
+- 评分/绝对日期按来源分组，相对时间从持久原始时间计算固定目标逐张提交。opaque error_list 不猜单项编号，最终按原件身份和值逐项回读；未知操作不重放。新标签回执编号先保存再应用，没有编号不按同名认领；创建已完成而未应用可由用户继续剩余修改。
+- `SynologyPhotoEditStore/Model` 使用独立版本 1 加密记录保存必要照片身份、目标与提交/完成集合，账号及 NAS 目标版本隔离，不保存媒体、EXIF、GPS、会话或口令。写前同步落盘，冷恢复只读；损坏/未来格式、保存失败与跨操作冲突均拒绝新写。现有 PhotosSession 持有两类照片存储，AppViewModel 由 15760 缩短为 15759 行，质量限制同步收紧并通过生成器更新。
+- 多选网格与预览编辑沿既有 Compose 风格，包含评分、描述、系统日期/时间选择、相对时间、已有标签和独立新建标签；修改记录展示涉及照片及逐项状态、部分继续与只读刷新。44 个新增双语资源；未获取结果时不显示“已保存 0 张”，权限提示明确为缺少编辑权限。
+- 集成与只读对抗复核补上原件删除前的持久修改保护：准备和最终确认均读取未完成编辑，不能仅依赖当前界面是否已加载记录；保存时阻止切换账号。另确认现有普通 FormBody 不具备单次发送标记，Photos 仓储所有表单调用显式单次发送，矛盾成功/错误回执拒绝；通过实际生产仓储装配测试核对。其他模块旧 multipart 路径仍留 A10 统一复核，不由本片宣称已修复。
+
+### 实际验证与失败记录
+
+环境为 JBR 与 Android API 37，Gradle `--no-parallel --max-workers=2 --console=plain`。最终命令：
+
+```sh
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' android/gradlew -p android --no-parallel --max-workers=2 --console=plain :app:testDebugUnitTest --tests '*SynologyPhotoEdit*Test' --tests '*SynologyPhotosEdit*Test' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosUploadRepositoryTest' --tests '*SynologyPhotosUploadTransportTest' --tests '*WorkspaceSwitchGuardTest'
+```
+
+`final-jvm.log` 5 秒成功，115 项、0 失败/错误/跳过；编辑 Repository 20、编辑传输 5、存储 7、模型 12、Photos Repository 27、Photos Model 17、上传 Repository 18、上传传输 5、切换保护 4。XML 保存在 `build/android-rewrite-a4c/xml-final/`。初始仓储聚焦通过，模型/存储首编译因测试返回了 internal Record 而失败，补显式 Unit 后通过；删除保护首次集成触发 Kotlin 属性类型递归推断，声明两属性类型后通过。未删断言或静默跳过。
+
+增量 `:app:assembleDebug :app:assembleDebugAndroidTest` 及聚焦回归多次通过：`review-build-repaired.log` 15 秒；记录界面 `record-ui-build.log` 12 秒；单次发送 `transport-review-build.log` 16 秒，随后生产装配传输 5 项 `production-transport-tests.log` 3 秒通过。最终仅测试选择器焦点调整构建 `picker-focus-build.log` 2 秒成功。App SHA-256 `7ab4924c9c4c627b1d2077472f54597985c4aeb84f666f0d6e564f54d148202d`；仪器 APK `f7695b6c92f01c8716320a6a8d0e306aa6992bed086f7eb479774a980c10219f`。
+
+`SynologyPhotosEditUiTest` 六项使用生产图库、Repository、加密存储与实际 Android 日期/时间选择器，网络与媒体均为合成夹具，禁止真实网络。覆盖长按/多选/复选语义、预览编辑多行描述、日期及固定相对调整、标签增删/新建应用/独立新建、记录展开/移除、断网后重建模型只读恢复、加载/读取错误重试及目录无管理权限零写。初轮六项未找到照片，定位夹具 Int 与 Long 编号混用造成空列表；修正类型并断言加载两张后，手机六项 54.078 秒通过。
+
+补充记录照片名称后的手机组五项通过、一项失败（`ui-phone-light-final.txt`）；Espresso 选中了失焦基础窗口而非系统日期对话框。读取本机 SDK 的系统选择器布局后，改为按当前活动窗口的 datePicker/timePicker 与确认按钮操作，受影响单项 `ui-phone-picker-fixed.txt` 11.867 秒通过。没有改生产日期行为。最初点击目标检查无法追踪分离的 Modifier 尺寸，把网格两条交互链分别声明至少 48dp 后通过，未豁免检查。
+
+结构复核前的展示版本已完成手机浅色 53.431 秒、手机深色 54.302 秒及平板浅色 86.996 秒，各六项通过。之后发现 DsmApi 因两份同样的正文包装代码达到 1008 行；把照片表单与上传实际共用的一次性正文抽到 OneShotRequestBody，主文件回到 996 行，没有提高限制。末次 `final-structure-build.log` 25 秒完成 115 项聚焦 JVM 及两个 APK 构建，全部通过，XML 位于 `xml-final-structure/`。最终 App SHA-256 为 `ad0d69c7e4abb3e01bd6b9bfafbf18648696f702178c3c7c64bffe2f82967a0e`，仪器 APK 仍为 `f7695b6c92f01c8716320a6a8d0e306aa6992bed086f7eb479774a980c10219f`。
+
+完整六项的分组结果（手机使用上述 `7ab4924c…` 包，平板使用抽取正文组件后的 `ad0d69c7…` 包，界面代码一致）：
+
+| API 37 配置 | 结果 | 报告与实际截图 |
+| --- | --- | --- |
+| 手机中文、浅色、字号 1 | 6 通过，53.431 秒 | `ui-phone-light-verified.txt`、`phone-light-verified/` |
+| 手机中文、深色、字号 2 | 6 通过，54.302 秒 | `ui-phone-dark-verified.txt`、`phone-dark-verified/` |
+| 平板英文、浅色、字号 1 | 6 通过，82.281 秒 | `ui-tablet-light-final.txt`、`tablet-light-final/` |
+| 平板英文、深色、字号 2 | 6 通过，79.229 秒 | `ui-tablet-dark-final.txt`、`tablet-dark-final/` |
+
+设备命令为 `adb -s emulator-5558/5560 shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosEditUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`，设备依次运行。四组每组 18 张实际截图，已查看表单、修改记录/照片展开、权限与中断提示。平板英文二倍字号下，相对时间 Minutes/Seconds 因固定 110dp 输入宽度被拆行；已改为随系统字号放大宽度，继续对手机/平板四配置补验唯一受影响的日期与相对调整流程，不把较早整组结果混称为末次整包验收。
+
+`PENDING_USER_VALIDATION`：真实 DSM/Photos 上的个人/共享管理、相册本人贡献/条件与冻结相册、混合来源权限、照片与视频资料、标签与断网/撤权/重新登录，以及 TalkBack、硬件键盘和系统进程终止。使用专用可丢弃测试照片，按选择→修改→中断/重启→原账号刷新操作，预期原件保留、权限不足零写、时间不重复偏移、未知项不重放、部分结果准确。回传版本、角色、步骤和脱敏错误，不含照片、真实描述、路径或凭据。完整 JVM/Release/R8/lint、云端与真实 NAS 未运行，不提高私有 API 证据等级。
+
+
+末次字号修正 `dynamic-width-build.log` 8 秒完成 Debug/仪器 APK，新增系统日期确认按钮可见/可用断言后 `dynamic-width-test-build.log` 3 秒成功。当前 App SHA-256 `5b869ba1d364c5c19a4a77a52fb2c6f9a307d008c1b5e77c263b1dd31c4debd3`，测试 APK `47c3fbea945ad85a708aa0eeee647201259fe8440712b4c2ff684f7036e2f117`。此后没有生产源码改动；针对唯一受影响的日期/相对时间路径补验，未重复其他五项无变化流程：
+
+| API 37 末次配置 | 日期完整路径 | 报告与两张实际截图 |
+| --- | --- | --- |
+| 手机中文、浅色、字号 1 | 1 通过，11.803 秒 | `ui-phone-light-date-final.txt`、`phone-light-date-final/` |
+| 手机中文、深色、字号 2 | 1 通过，12.676 秒 | `ui-phone-dark-date-final.txt`、`phone-dark-date-final/` |
+| 平板英文、浅色、字号 1 | 1 通过，17.407 秒 | `ui-tablet-light-date-final.txt`、`tablet-light-date-final/` |
+| 平板英文、深色、字号 2 | 1 通过，16.220 秒 | `ui-tablet-dark-date-final.txt`、`tablet-dark-date-final/` |
+
+命令在上述 class 后追加 `#系统日期时间选择与相对时间修改均使用固定目标`。已实际查看末次手机中文深色及平板英文深色：单位完整显示，输入框不挤压标签，保存按钮可达。两台模拟器恢复字号 1／浅色后关闭，三个临时模拟器启动日志已删除；正式截图和失败/通过记录保留。
+
+A4c 完成范围内实现、集成/对抗复核与当前环境聚焦验证。最终十项检查均通过（`final-quality-0..9.log`）：差异格式、生成一致性、写入口/五态/点击/动效/结构/计划、本地化和文档严格预检。五态矩阵 57 页、0 生产缺口、2 个原有自动化未闭环项；58 处点击目标、Android 2904 个中英资源、占位符、引用与硬编码检查通过。其他平台源码差异为空。A4 普通相册等后续管理继续独立切片，不把本片聚焦结果表述为完整 Android 或真实环境验收。
+
+## 2026-10-12 Android A4d Photos 普通相册管理
+
+范围为新建空/已选照片相册、加入/移出、改名、封面、删除容器及独立加密恢复。所有者/贡献者/仅查看者分别检查；没有原来源的相册贡献者仍可移出本人提供的项目，添加原件检查实际来源。移出/删相册保留原件。统一 Foto 请求沿既有契约，不新增字段、不改变其他端源码，不提升 NAS 证据等级。
+
+新增 Album 领域快照/操作、参数校验、Repository、版本 1 加密记录、功能模型和原生表单；在既有多选网格/相册列表接入，封面复用会话媒体和有界缓存。上传、资料编辑及原件删除在提交前读取相关未决记录；创建绑定回执编号，缺编号不认领同名，提交前同步落盘，恢复只读。部分成员失败按完整成员身份回读，不推测 error_list 内部编号。没有迁移既有登录/上传/编辑格式、依赖、权限或包名变更。
+
+### JVM 与构建
+
+使用 Android Studio 内置 JBR；本机仅运行相关聚焦测试与增量 Debug/仪器 APK，未运行完整 JVM、Release/R8/lint 或云端门禁。输出保存在忽略的 `build/android-rewrite-a4d/`。
+
+```sh
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' android/gradlew -p android --no-parallel --max-workers=2 --console=plain \
+  :app:testDebugUnitTest \
+  --tests '*SynologyPhotoAlbum*Test' --tests '*SynologyPhotosAlbum*Test' \
+  --tests '*SynologyPhotoEdit*Test' --tests '*SynologyPhotosEdit*Test' \
+  --tests '*SynologyPhotoUpload*Test' --tests '*SynologyPhotosUpload*Test' \
+  --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosModelTest' \
+  --tests '*WorkspaceSwitchGuardTest' :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+- `model-ui-tests-build.log`：**169 项，0 失败/错误/跳过，构建通过，25 秒**；XML 保存在 `xml-model-ui/`。相册仓储 17、模型 12、加密存储 6，另外覆盖旧读取、上传/编辑仓储和传输、恢复与工作区切换。
+- 前置局部构建为 `core-build.log`（5 秒）、`model-build.log`（9 秒）、`ui-build.log`（3 秒）；`core-tests.log` 为 82 项子集通过，不能与 169 累加。
+- 原生测试集首轮构建 `native-build.log` 3 秒；列表标识修复 `native-key-build.log` 7 秒；测试选择器修复 `native-selector-build.log` 3 秒。
+- 完成处理顺序修复：`native-completion-build.log`，**相册模型 12 项通过、两 APK 构建通过，13 秒**。将工作状态保持到记录重读结束，随后同步导航/刷新，消除旧标题和过早重新操作窗口。
+- 键盘稳定检查构建 `native-keyboard-build.log`；名称框采用明确输入法“完成”后，`native-ime-build.log` 两 APK **9 秒通过**。后续原生分组以本次包为准。
+
+### 原生失败与修正
+
+- 首次手机中文浅色 `ui-phone-light.txt` 在第一项多选创建时崩溃；隔离空/多选创建 `ui-phone-create-isolated.txt` 再现。原始原因是相册表单 LazyColumn 使用不可放入 Android Bundle 的 SynologyPhotoId 对象作为 key，外层最终显示布局异常。已沿现有网格改为稳定字符串；`native-diagnostic.txt` 只包含合成测试诊断。
+- 修复后 `ui-phone-key-fixed.txt`：**6 项、4 项失败、73.168 秒**。创建和重建恢复已通过；四个失败均为测试同时匹配相册底页与当前弹窗的返回按钮，改为当前 Dialog 作用域，没有移除业务断言。
+- 选择器修复后 `ui-phone-light-final.txt`：**6 项、1 项失败、68.956 秒**。改名记录已完成，但模型提前结束 working，重读记录期间导航仍为旧名称。完成顺序修复后的 `ui-phone-completion-light.txt` **6 项通过、61.131 秒**，`ui-phone-dark.txt` **6 项通过、62.571 秒**。
+- 上述完成顺序版本 App SHA-256 为 `fab80a4b65787d7a17c69bc3d126e7e460f7bf06bd69d55fd4ad41000d40d769`，Test 为 `8ac40a5766016023d8f9863627a7cdf100dc69157fc5e90926c815efa58db96b`；手机浅深色截图各 21 张。输入后部分截图抓到键盘退出过渡帧，不作为键盘已收起后的布局证据。
+- 加入键盘退出后的页脚位置检查，平板 `ui-tablet-light.txt` **6 项、2 项失败**：测试可能在输入法完全显示前按返回键，键盘随后仍弹出。名称框明确使用 Done 并清除焦点/收起键盘，测试使用同一输入法动作，保留实际按钮回到页面底部的断言；不靠固定等待或删除断言忽略问题。
+
+仪器测试 `SynologyPhotosAlbumUiTest` 使用生产图库、真实相册仓储及实际加密存储，所有照片/响应均为合成测试数据。六项包括空/多选创建、加入/封面/移出、改名/删除后的导航与原件保留、中断重建/跨编辑防重/只读刷新/记录移除、加载与权限错误/无可加入相册、零原来源贡献者移出。首次安装因专用设备尚未完成启动而拒绝；等待 boot_completed 后安装成功，不记为 App 测试结果。`ui-phone-selectors.txt` 为一次测试组件路径拼写错误，未启动测试，修正后的正式结果单独记录。
+
+### 独立集成与对抗复核
+
+另行从实际源码检查了统一 Foto 参数、原件来源与相册 provider 分离、空原来源授权、相册/照片快照、写前记录、持久归属与防重、未知结果和最终状态读取。DsmApi 的单次正文沿既有 Photos 装配，提交失败不自动回退、切来源或重放；贡献口令仅当次读取并使用，不进入记录。共享/个人裸编号冲突在写前拒绝，封面必须属于当前完整成员；删除读取失败保留未决，不能以异常代替“已不存在”。
+
+跨功能检查覆盖了相关相册上传、资料编辑和原件删除的互斥回调、冷启动未决记录读取、账号切换忙碌保护、撤权取消及模型关闭。新建未返编号不阻止完全无关的照片，也不能按同名绕过原操作。原生试验实际证明相册恢复期间相关照片编辑零写，完成记录可清除且原操作只读取结果。修复后的完成处理在读取记录期间继续保持 working；本片不新增无关重试、依赖或路由。
+
+`PENDING_USER_VALIDATION`：专用可丢弃普通相册和合成照片；覆盖所有者、贡献者、仅查看、零原来源、个人/共享与混合成员，以及创建/加入/移出/封面/改名/删相册、断线/撤权/重启。预期原件保留、权限不足零写、目标固定、未知不重放、部分完成准确。需回传 DSM/Photos 版本、角色类别、步骤及脱敏失败；不要回传名称、路径、照片、口令或凭据。本片未连接真实 NAS、未做真实照片写入；真实权限和 TalkBack 仍未验证，完整 Android 门禁不由本片替代。
+
+### 最终同包界面结果
+
+最终 App SHA-256：`26eeaa1da0a5cc6d197bd95c6354a28a5557e25dc6f2c5dfdfea2c4a50ea3b03`；Test：`a884b8adcefc8d0669d35a62fa5a015380c8784913a481b83e5a1ffccd68cdaa`。同一包四组全部通过：
+
+| 配置 | 结果 | 时间 | 本机证据 |
+| --- | --- | --- | --- |
+| 手机中文、浅色/标准字号 | 6 项通过 | 61.788 秒 | `ui-phone-ime-light.txt`、`phone-ime-light/` |
+| 手机中文、深色/系统二倍字号 | 6 项通过 | 72.811 秒 | `ui-phone-ime-dark.txt`、`phone-ime-dark/` |
+| 平板英文、浅色/标准字号 | 6 项通过 | 81.582 秒 | `ui-tablet-ime-light.txt`、`tablet-ime-light/` |
+| 平板英文、深色/系统二倍字号 | 6 项通过 | 101.896 秒 | `ui-tablet-ime-dark.txt`、`tablet-ime-dark/` |
+
+命令：`adb -s <对应专用模拟器> shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosAlbumUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。手机为 emulator-5554，平板为 emulator-5560，顺序运行；运行前明确设置 `settings put system font_scale 1.0/2.0`、`cmd uimode night no/yes`，应用语言分别为 zh-CN/en。四组各 21 张合成界面截图，实际复核名称输入收起、相册列表、移出/删除确认、贡献者、未决与跨编辑冲突、大字号排版。上述初轮失败与最终结果分别保留，不累加为测试数量。
+
+最终十项检查全部通过（`final-quality-0..9.log`）：差异格式、基线生成一致性、写入口/五态/点击/动效/结构/计划、本地化和严格文档预检。五态矩阵 57 页、0 生产缺口、2 个原有自动化未闭环项；59 处点击目标、Android 2929 个双语资源及参数/引用/硬编码扫描通过。两台专用模拟器已恢复标准字号/浅色并关闭，临时启动日志删除；正式测试、失败证据与最终截图保留在忽略的构建目录。仍在 main，保留整个任务现有改动；未暂存、提交、推送、创建分支/PR或发布。A4d 完成当前环境内范围验证，继续 A4 条件相册等后续切片及 A5–A10。
+
+
+## 2026-10-12 Android A4e Photos 条件相册
+
+本片完成当前环境的条件相册创建/规则编辑、实际目录与建议选择、数量预览和加密恢复。延续确认过的 Android Photos 页面、完整表单、系统日期/时间选择与固定保存按钮；名称修改仍单独操作。共享来源只向实际管理者提供；无名引用、已有闪光灯与其他未知规则保留，闪光灯不编造新选项。条件相册的封面、改名和删除容器可用，手工成员增删及直接上传仍限制。
+
+修改集中于 Android 条件领域、ConditionCodec/ConditionRepository、现有相册仓储/模型/版本 1 加密记录、条件表单、图库/上传入口及双语资源；新增条件仓储 16 项、条件模型 10 项和六组原生流程，并扩展相册/上传/存储回归。未改其他四端源码或 NAS 契约，未增加依赖、系统权限、应用标识或发布版本。
+
+### 契约与恢复决策
+
+- 统一 Foto ConditionAlbum v3 create/get/set_condition/suggest/peek_item_count，来源为当前 Photos 用户或共享 0，写前读取目录 view。创建固定回执编号；修改再次比对所有者、原相册和完整原条件；写后核对实际规则与必要名称，不以成功回执代替结果。
+- 已知引用从 id/name 对象转换，缺名称保留编号；已知集合排序，未知空数组与数组顺序保留。曝光/焦距范围保留实际数值类型，地点同名末级归父编号。数值比较将普通小数与科学计数法视为同一精确值，字符串仍不等同数字；请求值不因比较而改变。
+- 新旧规则值复用现有相册加密记录，以支持未发送操作继续和已提交操作只读恢复；不保存建议列表、显示名称、分享口令或凭据。旧普通相册记录缺少新字段仍可读取，未来/损坏记录仍失败关闭。缺创建编号不按同名认领，已提交不重放，冲突相册写继续由原通道阻止。
+- 来源草稿相互隔离；查询代次和独立请求序号防止旧数量、同词旧建议覆盖新状态。目录按实际列表分页读取；搜索、数量、目录错误分别呈现恢复入口，不把读取失败当成空内容。
+
+### 本机命令与结果
+
+统一前缀为 `JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain`；证据位于忽略目录 `build/android-rewrite-a4e/`。
+
+最终业务与集成回归命令：
+
+```sh
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain :app:testDebugUnitTest --tests '*SynologyPhotoConditionModelTest' --tests '*SynologyPhotosConditionRepositoryTest' --tests '*SynologyPhotoAlbum*Test' --tests '*SynologyPhotosAlbumRepositoryTest' --tests '*SynologyPhotoUploadModelTest' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosModelTest' :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+`numeric-comparison-build.log` 12 秒成功，**116 项、0 失败/错误/跳过**，XML 为 `xml-numeric/`：相册仓储 18、条件仓储 16、Photos 读取仓储 27、条件模型 10、相册存储 8、上传模型 8、相册模型 12、Photos 模型 17。普通相册封面、条件相册封面、条件/冻结相册上传目标、旧记录兼容和未决恢复均保留实际断言。Debug 和仪器 APK 同轮通过；完整 JVM、Release/R8、lint 与云端门禁未运行。
+
+### 原生流程、失败与修复
+
+原生测试类 `SynologyPhotosConditionUiTest` 使用生产 Photos 根模型、实际仓储和加密存储，NAS 资料全部为合成 fixture。六项分组覆盖：创建与一星/多星及一项/多项数量；来源/目录/日期/相机/短曝光建议选择并重新打开编辑；无名引用/未知条件保留与闪光灯移除；加载、空搜索、查询/数量错误及写前撤权；已知编号冷恢复只读刷新；丢失创建回执不按同名认领。均实际点击界面、核对写入参数和最终记录，不使用展示成功代替业务结果。
+
+开发过程中保留以下失败证据，未删除断言或跳过测试：
+
+- `core-compile.log` 因 Kotlin 对象通配导入失败；改为显式导入。`core-jvm.log` 首轮 36 项有两项把撤权取消误当普通业务异常；断言改为明确期待取消，保持零写要求。`core-model-jvm.log` 修复可空属性在闭包内的编译问题后，`ui-jvm.log` 48 项通过，`integration-jvm.log` 111 项通过。
+- `native-build.log` 的业务测试与 Debug 成功，仪器测试因把返回 Unit 的文本替换与 IME 动作链式调用而编译失败；拆分调用，`native-build-fixed.log` 两包成功，初次手机六项通过（62.756 秒）。
+- 增加键盘 Done/Search 后，`ui-phone-final-light.txt` 六项中一项建议等待超时；`ui-phone-search-diagnostic.txt` 单项未复现（18.248 秒）。该输入流程改为实际键盘 Search，并断言发送了查询；按钮搜索仍由空内容/错误流程覆盖。临时诊断代码已清理。随后 IME 版本四配置各六项通过；不能以单项重跑作为全部通过的依据。
+- 首次平板启动与安装未完成重叠，`ui-tablet-ime-light.txt` 无测试项即进程中止；确认两次安装成功后重新启动，`ui-tablet-ime-light-installed.txt` 六项通过。未取得 Java 崩溃记录，未将此启动时序问题宣称为产品缺陷。
+- 平板英文截图发现 `1 stars`，评分和匹配数量改为双语 plurals；增加 1/5 星及 1/3 项的实际文本与保存断言。短曝光显示由默认三位小数改为保留足够精度。`ui-tablet-range-light.txt` 的数值字面量断言进一步暴露了持久化后科学计数法与普通小数不相等的问题；新增实际序列化、写前原规则及写后回读回归，并在原生流程中保存后重新打开编辑。最终比较按精确数值处理，仍严格区分数字/字符串和未知数组顺序。
+
+最终四配置使用完全相同的 APK：
+
+- App SHA-256：`52b194c7160b94b7c793295d7f2411b35f7d1f18173a1c888107837dabf2e146`。
+- 仪器 APK SHA-256：`127fdb60f4a77b06d3555a88a3790f6f7627d74c8cb2e9cce8d51d48a458030a`。
+
+```sh
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosConditionUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+平板同命令将设备改为 `emulator-5560`；每组显式设置 `settings put system font_scale 1.0/2.0` 和 `cmd uimode night no/yes`，切换后重新启动测试进程。
+
+| 最终配置 | 结果 | 耗时 | 日志与截图 |
+| --- | --- | --- | --- |
+| 手机中文，浅色，1× | 6/6 | 65.091 秒 | `ui-phone-numeric-light.txt`、`phone-numeric-light/` |
+| 手机中文，深色，2× | 6/6 | 64.416 秒 | `ui-phone-numeric-dark.txt`、`phone-numeric-dark/` |
+| 平板英文，浅色，1× | 6/6 | 90.785 秒 | `ui-tablet-numeric-light.txt`、`tablet-numeric-light/` |
+| 平板英文，深色，2× | 6/6 | 93.201 秒 | `ui-tablet-numeric-dark.txt`、`tablet-numeric-dark/` |
+
+每组保存 22 张合成截图。实际查看中英文浅深色的规则、日期、原引用、数量、短曝光及再次编辑结果；大字号换行和底部按钮保持可用，使用 Android 既有控件与样式。两台 AVD 均恢复浅色/1×并关闭，一次性模拟器启动日志、空诊断日志和临时诊断代码已清理，正式测试及必要失败/最终证据保留于忽略目录。
+
+### 独立集成与只读对抗复核
+
+重新审查实际领域、转换、仓储、存储、模型、组合根与界面连接，核对当前来源/用户/访问代次、共享 management、完整旧规则冲突、目录权限、条件与普通成员语义、创建回执持久化顺序、恢复不重放及旧格式兼容。生产传输继续使用既有 oneShot 请求；未知创建与读失败不会借名称或数量推定完成。规则记录不含会话或分享材料，旧查询结果无法跨来源或请求覆盖。数值表示问题已由仓储与原生“创建后编辑”双层回归覆盖，未降低安全门禁。
+
+收尾十项检查全部通过（`final-quality-0.log` 至 `final-quality-9.log`）：`git diff --check`、质量生成器 `--check`、写操作矩阵、页面五态、点击目标、动效、结构、计划、本地化和文档 `--strict-release`。当前为 57 个页面/弹窗、0 个生产状态缺口与 2 个既有自动化未闭环页面；60 处自定义点击目标通过，Android 双语资源统计 2979，未新增缺失翻译、参数差异或硬编码。README、Photos API 说明、Android 主计划、状态页、平台矩阵和质量基线同步当前实现。工作区继续为现有 main 上的累计开发改动，没有暂存、提交、推送、分支、PR 或发布动作。
+
+`PENDING_USER_VALIDATION`：仅使用专用测试照片/相册，验收真实 NAS 版本中的个人/共享管理、目录权限、旧无名与未知规则、建议范围值、日期边界、并发修改、断线与重启；预期权限不足零写、规则无损、结果未知不重放。回传版本、角色、步骤与脱敏错误，不含真实条件、名称、照片或凭据。TalkBack、真实设备和真实 NAS 尚未运行，不提升原 static 证据等级。下一切片为 A4f 冻结相册保存/重建，其余 Photos 管理、A5–A9 与 A10 继续主计划。
+
+## 2026-10-12 Android A4f Photos 冻结相册
+
+本片在既有 Android Photos 相册管理页接入“保存为普通相册”和“按条件重建”，复用完整规则表单与加密相册记录。冻结状态不按相册类型或名称推断；仅有共享来源编号的旧规则只提供普通恢复。重建页列出不再支持的条件，明确原始照片保留、新相册不继承分享以及旧链接失效的后果。新相册已创建但旧相册未移除时，显示两者保留，并跳转实际新编号；普通恢复保持原编号并恢复普通管理入口。
+
+实际修改集中于 Android 冻结快照/摘要转换、相册领域/仓储/检查点校验/存储/模型、Photos 完成导航、管理页/规则表单及 13 项双语资源。新增冻结仓储和原生流程测试，扩展存储、模型、封面和成员限制回归；未增加依赖、权限、应用标识或 NAS 参数，未修改其他四端源码。
+
+### 契约与安全决策
+
+- 使用现有 Album.get v4 的 condition_object、cant_migrate_condition、sharing_info；所有者、冻结标志、名称、数量和完整旧状态参与预检。普通恢复发送 NormalAlbum.set_unfreeze v1 的整数 id，不读取原规则目录；只有明确 freeze_album=false、非条件类型且所有者/原名称/数量匹配才完成。
+- 重建从旧条件提取受支持字段，不把不可迁移或未知旧字段带入新请求；保留这些字段的用户提示。新来源与目录按条件相册原权限检查。ConditionAlbum.create v3 返回新编号后先保存，再核对新相册身份、名称、完整条件、非冻结与明确未分享；旧快照未变才记录删旧尝试并发送一次 Album.delete v1。原件删除接口不参与。
+- 旧分享配置与口令仅在仓储内参与 SHA-256 状态摘要；记录增加摘要、数量/共享标志、替代编号与删除尝试/拒绝标记，不保存原始分享配置、链接、口令。数值按精确含义归一化，未知数组顺序不变；缩略图刷新不影响摘要。既有版本 1 记录缺少新增字段仍可读取，阶段与已知编号不可回退。
+- 缺少创建编号不按同名认领，不重复创建。仅创建的连续执行允许删旧；重启或刷新只读。新册正确但旧状态变化、明确拒绝删旧或冷恢复尚未删旧时返回部分完成；删除结果未知持续锁定双方编号，旧册实际消失后才完成。删除尝试保存失败不得发送删除；密码或分享材料不因恢复需求落盘。
+- 冻结相册所有者仍有封面、删除与既有分享上下文的改名资格；当前普通管理页按已记录菜单只展示恢复及删除，手工成员增删和直接上传受限，向其他相册添加已有照片的语义保留。
+
+### 实际命令与结果
+
+证据位于忽略目录 `build/android-rewrite-a4f/`。首轮 `core-tests.log` 成功，补充模型/存储后 `core-model-build.log` **93 项通过**、Debug 构建成功（15 秒）；`native-build.log` 两个 APK 构建成功（10 秒）。补充冻结封面/成员与上传回归后的最终命令：
+
+```sh
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain :app:testDebugUnitTest --tests '*SynologyPhotosFrozenAlbumRepositoryTest' --tests '*SynologyPhotosAlbumRepositoryTest' --tests '*SynologyPhotosConditionRepositoryTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotoUploadModelTest' --tests '*SynologyPhotosModelTest'
+```
+
+`core-final.log` **102 项、0 失败/错误/跳过，10 秒成功**。`xml-final/` 包括冻结仓储 17、相册仓储 19、条件仓储 16、存储 10、相册模型 15、上传模型 8、Photos 模型 17。测试实际覆盖旧分享/规则变化、源权限、缺失冻结元数据、丢失编号、错误新身份/规则/分享、删除拒绝/未知、删除尝试落盘失败、冷恢复不删旧、双编号冲突与账号切换。冻结封面仍回读成员和实际封面，成员增删拒绝保持零写，上传不选择冻结相册为默认目标。
+
+构建命令为同一环境前缀加 `:app:assembleDebug :app:assembleDebugAndroidTest`。最终四配置均使用同一对 APK：
+
+- App SHA-256：`da3141335e8ff8d86027e9ab9e5fb82024901d31c8afff8ae41d49c4efea6276`。
+- 仪器 APK SHA-256：`329fb6d63b4cddb6db69d4a996f139157df516dbe5c752f2491721e89079a83a`。
+
+```sh
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosFrozenAlbumUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+平板使用 emulator-5560；两台 API 37 AVD 顺序运行，手机 zh-CN、平板 en，安装两个 APK 成功后启动测试，每组显式设置 `settings put system font_scale 1.0/2.0` 和 `cmd uimode night no/yes` 并停止旧测试进程。
+
+| 配置 | 结果 | 耗时 | 日志与截图 |
+| --- | --- | --- | --- |
+| 手机中文、浅色、1× | 6/6 | 49.662 秒 | `ui-phone-light.txt`、`phone-light/` |
+| 手机中文、深色、2× | 6/6 | 47.692 秒 | `ui-phone-dark.txt`、`phone-dark/` |
+| 平板英文、浅色、1× | 6/6 | 62.281 秒 | `ui-tablet-light.txt`、`tablet-light/` |
+| 平板英文、深色、2× | 6/6 | 64.058 秒 | `ui-tablet-dark.txt`、`tablet-dark/` |
+
+六项原生流程使用生产根模型、实际仓储与加密存储，全部 NAS 资料为合成：普通恢复及管理入口转换；重建提示/名称输入/新编号跳转；仅普通恢复及空记录；旧册变化保留两者；删除未知的冷启动只读恢复；读取失败重试与创建回执丢失。每组 18 张截图，实际查看中英文浅深色风险说明、规则表单、二倍字号固定按钮和部分完成页，滚动与键盘提交保持可用。本片测试/构建没有失败或跳过；既有编译器警告不作为失败或清理无关代码的理由。两个 AVD 已恢复浅色/1×并关闭。
+
+### 独立集成与只读对抗复核
+
+实现后重新核对领域、摘要转换、预检/单次写/回读、检查点校验、加密存储、模型、导航和界面。固定账号/访问代次、原所有者与完整摘要；重建前检查创建与删除能力，持久化新编号和删除尝试分别先于下一阶段；已提交调用不再进入删除分支，失败关闭与双编号冲突不会因新操作编号被绕过。普通恢复不依赖失效规则可编辑或目录可读；共享后果在实际共享快照下提示，普通操作没有新增仪式式勾选。未执行真实 NAS 或浏览器写入。
+
+`PENDING_USER_VALIDATION`：专用可丢弃冻结样本，覆盖普通保存成员保持、规则重建的新旧身份/条件、旧链接后果、无效规则与不同角色、创建回执丢失、删旧断线/明确拒绝、重启与撤权；预期原件保留、权限不足零写、不明结果不重放、旧册变化时保留两者。回传版本、角色、动作顺序和脱敏错误，不含真实相册、规则、照片、链接或凭据。真实 NAS、物理设备、TalkBack、完整 JVM、Release/R8、lint 与云端门禁尚未执行；当前证据不提升 static 兼容等级。后续继续相册分享、临时分享/收集和 A4 其余管理/导出，及 A5–A9、A10。
+
+收尾十项检查全部通过（`final-quality-0.log` 至 `final-quality-9.log`）：`git diff --check`、质量生成器 `--check`、写操作矩阵、页面五态、点击目标、动效、结构、计划、本地化和文档 `--strict-release`。当前 57 个页面/弹窗、0 个生产状态缺口、2 个既有自动化未闭环页面、60 处自定义点击目标，Android 2992 项双语资源，缺失翻译/参数差异/硬编码检查通过。README、API 参考、主计划、状态页、平台矩阵和生成质量报告已同步；仅删除本次无用的模拟器启动日志，保留正式测试、XML、截图与结果日志。工作区仍为现有 main 的 446 个累计改动/未跟踪条目，未暂存、提交、推送、开分支、创建 PR 或发布。
+
+
+## 2026-10-12 Android A4g Photos 相册分享
+
+本片沿已批准 Android 完整计划继续 A4g，现有 `main` 工作区；未提交、推送或发布。没有访问真实 NAS、读取真实成员或向外部应用发送链接。macOS/Apple 移动端与 Windows 源码只读；API 证据仍为 static，不构成真实版本或设备验收。
+
+实际修改与决定：
+
+- 新增 `SynologyPhotoSharingModels/Codec`、`SynologyPhotosSharingRepository`、`SynologyPhotoSharingModel` 和现有相册页内的 `SynologyPhotoSharing`；相册 `SHARE` 沿原 Repository 互斥、加密版本 1 记录、账号归属和相册冲突通道，不另建执行引擎。
+- 访问范围支持关闭、受邀成员、持链接查看和下载；原成员按 user/group 与数字/字符串编号保留，只发送实际增删改差量。候选排除本人使用 `UserInfo.uid`，未改变未知角色保留，条件相册不能新增 upload；候选失败不清空成员。打开页面不生成链接。
+- 保存依序关闭、读取关闭及原保护状态、更新、保存回执、读取目标权限/密码/期限与 privacy_type、保存开启尝试、开启；读写前和步骤间检查当前账号、代次和来源权限。开启前保存或检查失败不继续写入；已提交同操作与冷恢复只读，不能重放任何阶段。
+- 密码不裁剪空格/Unicode，设置需更新回执及实际保护状态，清除需明确 false；未修改不发送 password。期限未编辑保留原秒值/未知摘要，选择日期按本地日末；覆盖夏令时短日和长日。记录没有密码、URL、passphrase 或成员名称。未发送改密恢复重新读取实际设置，重新填写并明确保存后替换原记录。
+- 分享页面、候选列表、固定保存按钮、日期选择、复制与系统分享沿原组件；普通冻结管理不显示共享/重命名，“由我共享”的既有冻结相册保留这两个入口。设置变更未保存时不提供旧链接复制/分享按钮。新增 43 组中英文资源；默认界面不显示 API、修订或复核术语。
+- 独立集成与只读对抗复核覆盖身份切换、更新未生效却收到回执、公开范围未生效、未知改密、未保存开启尝试、同相册并发、未读取成员和秘密落盘；相册阶段保存异常取当前最新阶段，防止回退已记录事实。结果未知不会显示成功或自动扩大访问。
+
+实际命令（当前源码、限定两 worker，完整 JVM/Release/R8/lint 仍留云端门禁）：
+
+```sh
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain :app:testDebugUnitTest --tests '*SynologyPhotosSharingRepositoryTest' --tests '*SynologyPhotoSharingModelTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotosAlbumRepositoryTest' --tests '*SynologyPhotosFrozenAlbumRepositoryTest' --tests '*SynologyPhotosConditionRepositoryTest' --tests '*SynologyPhotoUploadModelTest' --tests '*SynologyPhotosModelTest'
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+`core-final.log`：BUILD SUCCESSFUL，9 秒，九套共 **128 项、0 失败/错误/跳过**；Sharing Repository 20、Sharing Model 2、Album Store 11、Album Model 18、Album Repository 19、Frozen Repository 17、Condition Repository 16、Upload Model 8、Photos Model 17。XML 复制到 `build/android-rewrite-a4g/xml-final/`。`native-final-build.log`：Debug 和仪器 APK BUILD SUCCESSFUL，8 秒。
+
+仪器流程使用以下参数，在 API 37 手机/平板逐台执行；每台安装同一最终两个 APK，应用语言手机 `zh-CN`、平板 `en`，浅色 `font_scale=1.0`、深色 `font_scale=2.0`。测试前设置 `cmd locale set-app-locales ... --user 0 --locales ...`、`settings put system font_scale ...`、`cmd uimode night no/yes` 并 force-stop 后重新启动：
+
+```sh
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSharingUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5560 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSharingUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+| 最终同包配置 | 日志，均在 `build/android-rewrite-a4g/` | 结果 |
+| --- | --- | --- |
+| API 37 手机中文浅色 | `ui-phone-light.txt` | 6/6，74.017 秒 |
+| API 37 手机中文深色二倍字号 | `ui-phone-dark.txt` | 6/6，70.440 秒 |
+| API 37 平板英文浅色 | `ui-tablet-light.txt` | 6/6，112.773 秒 |
+| API 37 平板英文深色二倍字号 | `ui-tablet-dark.txt` | 6/6，106.730 秒 |
+
+六个实际根页面流程包括只读打开/加载、复制到剪贴板及系统分享调用、范围/成员/权限/密码/日期保存、条件相册和未知原角色、读取/候选错误及重试/空成员/筛选空、密码关闭清空、未知改密保持关闭、真实“由我共享”冻结入口及未知开启冷恢复。系统分享调用由平台 ActivityMonitor 截获并断言，只验证 chooser 调用，没有向外部应用发送。复制操作实际检查系统剪贴板。
+
+每组 19 张合成截图，共 76 张，分别在 `phone-light/phone-dark/tablet-light/tablet-dark`；实际查看中英文浅深色访问范围、成员、密码/日期及部分完成页面，大字号固定保存操作可用、长内容可滚动，没有观察到遮挡/文字溢出。加载、空、筛选空、错误、正常和结果态均走实际页面。两台模拟器均恢复 1.0 字号和浅色并关闭，adb 设备列表为空；已清理两份启动日志。
+
+最终两包 SHA-256（`apk-manifest.json` 保存大小与摘要，四配置后再次核对一致）：
+
+- `android/app/build/outputs/apk/debug/app-debug.apk`：`f730769f3441ece10f8fefc7195ae87b2fca3396775f0c9f03f9c9499fc57d34`。
+- `android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`：`410e711c4b5f93edd038f619f9f81de225576e9d3bb2e9dda09c37e2f9754e76`。
+
+初轮失败与修正：第一轮 JVM 的存储故障测试没有捕获预期继续抛出的 IOException，补上明确异常断言后通过；未放松“不得发送下一步”的断言。第一轮手机仪器 6 项中 1 项因搜索框和结果按钮同名导致定位不唯一，收窄为非输入控件并收起返回时的键盘后通过。补齐冻结“由我共享”重命名入口后重新生成两包并完整执行上表四组；旧包手机各 6/6 不算最终同包结果，前轮日志单独保留。
+
+`PENDING_USER_VALIDATION`：使用专用可丢弃相册及测试成员，覆盖普通/条件/已有冻结分享的范围、用户/群组权限、密码设改清、期限日界、链接真实访问、每阶段断线/撤权和冷启动。预期不丢已有成员、不误扩大访问，未知换密不确认或重发，未知开启仅回读；仅回传 DSM/Photos 版本、权限类别、动作顺序和脱敏错误，不回传账号、成员名、链接、密码或口令。真实 NAS、物理手机/平板、TalkBack、完整 JVM/Release/R8/lint、云端签名/发布均未验证。
+
+本片收口时工作区累计 454 个已修改/未跟踪条目，保留本任务此前全部改动；Apple/Windows 差异为空，未使用 git add/commit/push/分支/PR。A4 其余管理、完整导出、持久删除恢复及 A5–A10 继续实施；下一片 A4h 临时分享生命周期，不把本片完成当作全部 Photos 或项目完成。
+
+最终质量收口（`quality-final-0.log` 至 `quality-final-9.log`）全部退出 0：`git diff --check`、质量报告生成器 `--check`、`check_android_write_test_matrix.py`、`check_android_page_state_matrix.py`、`check_android_touch_targets.py`、`check_android_motion_audit.py`、`check_android_structure_debt.py`、`check_android_plan_progress.py`、`check_localization.py`、`check_documentation.py --strict-release`。57 个生产页面/弹窗、0 个生产五态缺口、2 个既有自动化未闭环页面、60 处自定义点击目标；Android 3035 组双语资源和硬编码扫描通过。A4h 账本已建立，尚未开始相应代码修改。
+
+
+## 2026-10-12 Android A4h Photos 临时分享
+
+状态：当前功能实现、独立集成与只读对抗复核已完成；151 项聚焦 JVM 和 Debug/仪器 APK 通过，最终同包四配置原生流程各六项通过。整体 Android 计划仍在实施，没有提交、推送、发布或真实 NAS 写入。
+
+实现与关键决策：
+
+- 新增 `domain/SynologyPhotoTemporaryModels.kt`、`data/SynologyPhotosTemporaryRepository.kt`，普通/临时身份明确区分；统一相册互斥及记录，未创建平行写入通道。新增正式 JVM `SynologyPhotosTemporaryRepositoryTest.kt` 和仪器 `SynologyPhotosTemporaryUiTest.kt`。
+- 选片创建发送 name/item/shared=true，回执只认真实 id；复查所有者、名称、临时状态和全部成员。复制发送 name/source_album_id，必须得到不同 id，读回本人所有、普通、未分享和完整成员一致。超过 500 成员分页、重复分页和身份字段变化均有断言，不使用选片 100 项限制截断大相册。
+- 停止依序为可选复制确认、原分享/成员再次核对、关闭并读回、记录关闭修订、重查副本与原来源、保存删除尝试、删除临时容器并读回不存在。仅 Album.delete，不调用照片或目录删除；同名相册、缺少编号、普通/冻结/他人容器不能被认领或清理。
+- 原版本 1 加密相册记录增量保存成员摘要、数量、原分享快照、复制编号、关闭/清理阶段及取消意图，旧字段默认可读；不保存密码、passphrase、链接或完整成员明细。相册创建的原选片必要快照沿现有记录。未知冷热恢复只读，不自动重复或接续创建/复制/关闭/删除。
+- 创建中取消不丢弃回执；本次连续操作取得可靠编号和完整快照后才清理。准备成功后再取消也先保存取消标记，再读取目标并清理。已提交动作的冷恢复只读，后续停止需明确选择；来源变化/清理失败保留记录并提示。共享设置成功结束准备记录，保存为关闭时清理临时容器。
+- 管理入口只给临时相册分享设置与停止，不放开普通容器删除、封面、成员变更或直接上传。共享列表和相册上下文携带真实临时标记；恢复记录可继续配置或打开停止选项，已确认副本可复用且不再复制。新增 11 个中英资源；保留副本为真实选项，使用标准可切换无障碍语义，不是额外风险确认。
+
+独立集成及只读对抗复核：
+
+- 检查实际源权限/provider、当前账号及原分享修订、完整分页身份；检查明确复制编号先保存，关闭与删除尝试单调持久化，未确认副本不进入关闭/删除，存储失败不继续下一步。
+- 检查未完成新旧对象冲突、源/副本在复制或关闭中途变化、密码/访问范围保留、当前窗口取消、冷恢复和无编号场景；自动化使用合成传输，没有访问真实环境。
+- 复查发现快速清理失败可能先显示错误再被 dismiss 隐藏，改为先关闭页面再启动异步清理，正式模型测试保留。准备完成后取消在读目标之前落盘，进程退出不会丢失意图。
+
+实际验证与失败记录：
+
+- 初次增量 Kotlin 编译因临时 helper 的可变 row 两处空值访问失败；修正显式非空访问后编译通过（`initial-compile.log`、`compile.log`）。
+- 初始五组聚焦 JVM 84 项、补充模型和存储后 91 项通过；随后强化完成阶段校验时发现测试假服务没有提供停止/删除阶段，以及上述 dismiss 竞态，修复后 91 项通过，未降低安全断言。`core-initial.log`、`core-model.log`、`ui-build.log` 与 `ui-build-fixed.log` 分开保留。
+- 最终 10 组聚焦 JVM 共 **151 项，0 失败、0 错误**；临时仓储 16、分享仓储 20、普通相册 19、相册存储 13、相册模型 23、冻结仓储 17、条件仓储 16、图库模型 17、上传模型 8、分享模型 2。`xml-final/` 为最后运行的原始 XML。`core-final.log` 单测 8 秒，最后取消意图修正与 APK 的 `final-build.log` 同组 151 项和构建 **13 秒**。
+
+```sh
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain :app:testDebugUnitTest --tests '*SynologyPhotosTemporaryRepositoryTest' --tests '*SynologyPhotosSharingRepositoryTest' --tests '*SynologyPhotosAlbumRepositoryTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotosFrozenAlbumRepositoryTest' --tests '*SynologyPhotosConditionRepositoryTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoUploadModelTest' --tests '*SynologyPhotoSharingModelTest' :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+原生 `SynologyPhotosTemporaryUiTest` 六项使用生产图库、真实 Repository 和加密记录，合成照片与 NAS 响应；图片请求由测试拦截器完整截获。覆盖选片创建/配置/链接可达、准备完成后取消、创建中取消、保留完整普通副本、加载/失败重试、删除回执未知与冷恢复，以及复制缺回执不关闭来源。首轮六项因测试 HTTP 客户端未禁用重定向而被生产安全检查拒绝，未执行页面；修正测试配置后通过，未修改生产传输策略。手机初轮浅色 48.639 秒、深色二倍字号 45.320 秒各 6 项通过，平板初轮浅色 75.526 秒；无障碍语义修正后平板浅色 71.371 秒、深色 67.162 秒各 6 项通过。上述早期包与末次取消记录修正包严格区分，不作为最终包结果。
+
+最终包：App SHA-256 `f23138b071b6a2311c07068e3909037141cdc1ab3f0c82c9b08e0848301fe66b`，106359086 字节；仪器包 `1906618708c841abc4a553ac7f6bd72f394b5fe035a5150f9c05cd7c4936597e`，9651511 字节。哈希与原始报告在忽略目录 `build/android-rewrite-a4h/`，四配置结束后再次计算哈希一致。
+
+```sh
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosTemporaryUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5560 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosTemporaryUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+手机中文、平板英文；每组明确设置 `font_scale 1.0/2.0`、`uimode night no/yes`，顺序运行 API 37 专用模拟器，各 2 核。最终同包结果：
+
+| 配置 | 结果 | 时长 | 报告 |
+| --- | --- | --- | --- |
+| 手机中文、浅色标准字号 | 6/6 通过 | 45.406 秒 | `ui-phone-light-final.txt` |
+| 手机中文、深色二倍字号 | 6/6 通过 | 48.495 秒 | `ui-phone-dark-final.txt` |
+| 平板英文、浅色标准字号 | 6/6 通过 | 68.876 秒 | `ui-tablet-light-final.txt` |
+| 平板英文、深色二倍字号 | 6/6 通过 | 66.433 秒 | `ui-tablet-dark-final.txt` |
+
+每组 19 张合成界面截图，共 76 张，在 `phone-light-final/phone-dark-final/tablet-light-final/tablet-dark-final`。实际查看中英文分享设置、创建取消结束、停止/保留确认和未知副本恢复；大字号内容与按钮可达，没有观察到溢出或遮挡。未把 Compose 的选中语义断言当作完整 TalkBack 验收。两台模拟器恢复浅色标准字号并关闭，三份启动日志及重复中间截图已清理，原始失败与阶段报告保留。
+
+十项质量检查通过：差异空白、质量基线生成一致性、写入口矩阵、页面五态、点击目标、动效、结构、计划、本地化和严格文档；57 个生产页面、0 个生产五态缺口、2 个原有自动化待补页面、61 处自定义触控、3046 对 Android 中英资源。另运行 `python3 tools/contract-validation/validate_fixtures.py` 通过 29 组 fixture 与 48 项私有 API 引用。兼容清单只补充 Android 实现说明及日期，不改 API 参数或真实验证记录。最后文档状态写回后再运行生成一致性、计划、严格文档与 `git diff --check`。
+
+`PENDING_USER_VALIDATION`：仅专用可丢弃照片/相册和测试账号，按 A4h 账本验证真实初始范围、取消准备、保存分享、停止不保留/保留副本、来源/副本变化以及各阶段断网/失权/重启。预期原件保留、未知不重复写、不同/变化对象不被删除；只回传版本、角色、动作和脱敏错误。未运行真实 NAS、物理设备、TalkBack、完整 JVM、Release/R8、lint 或云端门禁，不提升 API static 等级。
+
+工作区仍为 `main`，累计 458 项已修改/未跟踪路径；包含本轮以前的整个获授权任务，不等同本切片变更数量。未 add/commit/push/建分支/PR/发布，无其他四端源码修改。A4i 照片收集已完成基准预读并建立下一账本，后续 A4 其余管理/完整导出/持久删除及 A5–A10 继续，不把本切片当作整项目完成。
+
+
+## 2026-10-12 Android A4i Photos 照片收集
+
+状态：收集主流程已接入，148 项聚焦 JVM 与 Debug/仪器 APK 通过；包含末次保存前失败重试与空相册显示修正，最终同包四配置原生流程各七项通过。无真实 NAS 写入、提交、推送或发布，整体 Android 计划继续。
+
+实际改动与关键决策：
+
+- 新增 `domain/SynologyPhotoRequestModels.kt`、`data/SynologyPhotoRequestCodec.kt`、`data/SynologyPhotosRequestRepository.kt`、`photos/SynologyPhotoRequestState.kt`、`photos/SynologyPhotoRequestModel.kt`、`ui/photos/SynologyPhotoRequests.kt`、`ui/photos/SynologyPhotoRequestTargets.kt`；正式测试新增 RequestRepositoryTest、RequestModelTest 和 RequestUiTest，扩展现有相册存储与图库模型测试。全部接入原 Photos Serving、图库、相册互斥与加密恢复记录，不复制网络栈。
+- 照片操作菜单、文件夹/普通相册快捷入口，以及共享→照片收集列表，连接创建/编辑/删除、标题搜索和复制。来源、默认/已有目录、可贡献相册、说明、日期与大小均为真实参数；已有请求只发差量，不重设未修改的精确秒数/字节数。新普通相册先得到真实编号并核对，未知不按同名选择。
+- 默认目录沿官方标题规则，不提前创建；共享 entry 选择已有可上传目录，目录编号/完整路径/权限重新核对。可贡献相册完整分页并区分本人 id 与他人口令，冻结候选不选。删除只调用 PhotoRequest.delete；旧目录不可用仍可删除链接，所有者快照必须一致。
+- 加密相册版本 1 增量保存请求/设置/原快照摘要、来源与目录编号比较标记；恢复不保存标题、目录路径、请求口令、相册口令或链接，也不把摘要当可写参数。创建编号回执摘要先保存；未知冷热恢复只读，未发送恢复重新填写并明确保存，删除仍保留后果确认。相册与未决收集请求互斥，避免不持久化秘密目标时发生交叉修改。
+- 35 对中英资源同步；文件夹与相册选择页顶部返回保留原草稿，移除重复且错误指向共享设置的返回按钮。照片收集搜索保留当前列表，无匹配继续后页；不会跳到图库搜索。没有第三方依赖、包名、权限、工具链或五端 NAS 契约变更。
+
+独立集成与只读对抗复核检查实际权限、完整分页、更新原快照、创建回执、阶段保存失败、重复提交、跨账号归属、已提交恢复只读及原件保留。复核发现已完成创建对象后来消失时可能重开为空白新建，现明确报目标变化并清除旧结果；未发送删除恢复也保留删除确认，新增两项模型回归。另发现提交前连接失败错误禁用保存按钮，修正为保留有效草稿并可直接再次保存，增加模型与原生重试流程。目标选择页返回经实际原生点击断言保留标题且未偷偷选择目录。清除关联相册后重新打开时，即使返回仍带旧相册名，也按实际无相册目标显示；原生编辑流程已补此断言。没有把页面存在或编译通过当作完整验收。
+
+实际验证：
+
+- `core-compile.log` 增量 Kotlin 编译 9 秒成功；`core-test.log` 首轮 47 项通过（新仓储 15、普通相册 19、相册存储 13），`model-test.log` 第二轮 99 项通过；追加搜索测试后的 `ui-build.log` JVM 101 项通过。
+- 首次仪器 APK 编译因测试引用两个不存在的字符串资源键失败，改用项目已有 `sp_sharing`/`sp_sharing_requests` 后 `ui-build-fixed.log` 10 秒成功。首次手机浅色六项通过，54.058 秒；该包为早期结果，不替代后续最终包。
+- 最终 `final-build.log` **14 秒成功**，9 组 **148 项，0 失败、0 错误、0 跳过**：收集仓储 15、收集模型 13、相册存储 15、普通相册 19、相册模型 23、图库模型 19、临时分享 16、分享 20、上传模型 8。最后空相册显示修正后 `final-ui-build.log` 增量两包构建 8 秒通过；模型/仓储代码未再变更，不重复无关 JVM。最后测试 XML 保存在忽略目录 `build/android-rewrite-a4i/xml-final/`。
+
+```sh
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain :app:testDebugUnitTest --tests '*SynologyPhotosRequestRepositoryTest' --tests '*SynologyPhotoRequestModelTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotosAlbumRepositoryTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotosTemporaryRepositoryTest' --tests '*SynologyPhotosSharingRepositoryTest' --tests '*SynologyPhotoUploadModelTest' :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+最终 App：SHA-256 `449535a8ec4c93f8f6e39b83794c63e8e5468c40a7b81a1c077088b51053baac`，106550494 字节；仪器包：`0ad9fac90520c78efe28c9275db076e5733d8d5909005d96fb608e6add90ad3e`，9692491 字节。摘要和大小在 `build/android-rewrite-a4i/apk-manifest.json`。
+
+```sh
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosRequestUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5560 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosRequestUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+专用 API 37 模拟器各 2 核，手机中文/平板英文，浅色标准字号和深色二倍字号按顺序运行。七条实际流程为共享上传目录/贡献相册/大小/系统日期与复制按钮、编辑差量/移除相册/精确大小保留、删除确认/返回/原件接口零调用、搜索空/加载/读取失败重试、创建丢回执冷恢复，表单内新建相册未知恢复后选择真实编号，以及保存前连接失败后直接重试。
+
+| 最终同包配置 | 结果 | 时长 | `build/android-rewrite-a4i/` 内报告 |
+| --- | --- | --- | --- |
+| 手机中文、浅色标准字号 | 7/7 通过 | 68.173 秒 | `ui-phone-light-final.txt` |
+| 手机中文、深色二倍字号 | 7/7 通过 | 59.538 秒 | `ui-phone-dark-final.txt` |
+| 平板英文、浅色标准字号 | 7/7 通过 | 94.570 秒 | `ui-tablet-light-final.txt` |
+| 平板英文、深色二倍字号 | 7/7 通过 | 92.762 秒 | `ui-tablet-dark-final.txt` |
+
+早期 147 项包手机浅色 53.572 秒、深色二倍字号 58.526 秒各六项通过。平板第一次启动出现 `com.android.systemui` 启动 ANR，系统弹窗遮挡并占据焦点，两组仪器各六项中一项系统日期点击因无焦点失败；`tablet-current.png`、`tablet-systemui-anr.txt` 与 `ui-tablet-*-systemui-failed.txt` 保留证据。冷启动关闭开机动画后确认桌面正常且无 ANR，再跑早期包平板六项通过（79.737 秒；重启后显示设置未重新读取，此组不分配浅/深色验收），未修改生产代码或测试断言规避故障。末次重试修正后重新生成两包，上述早期报告不计最终同包结果。最新包首次平板七项通过（96.454 秒）实际保留了深色二倍字号，已按截图纠正标签为 `ui-tablet-recovered-previous-settings.txt`，不计浅色；其后明确设置颜色/字号并保存配置读回，再分别完整验收。一次平板浅色运行因新相册恢复只等待默认 1 秒而提前失败（`ui-tablet-light-short-wait-failed.txt`）；改为与既有流程一致的 10 秒有界等待，断言内容和生产代码不变。`instrument-waits.log` 构建 2 秒通过，随后平板浅色/深色各七项通过（92.922/89.741 秒）；末次空相册显示修正后另用最终两包执行上表，旧组不混算。
+
+真实 NAS、物理手机/平板、TalkBack、完整 JVM/Release/R8/lint、云端签名或发布均未执行。`PENDING_USER_VALIDATION`：按 A4i 账本使用专用合成目录、相册及访客账号，检查实际链接上传、默认目录创建、权限、关联相册、到期/大小限制、删除后链接与照片状态，以及各阶段断网/撤权/重启。只回传版本、角色、动作与脱敏错误，不回传真实链接、口令、地址、照片或路径；不提升 static 证据等级。
+
+每组 24 张合成界面截图，共 96 张，在 `phone-light-final/phone-dark-final/tablet-light-final/tablet-dark-final`。实际检查中英文浅深色及二倍字号的表单、目录导航、删除后果、读/保存失败、限制和清除相册后的编辑状态；按钮可达、长内容可滚动，未观察到遮挡或溢出。四组结束后 APK 摘要再次核对一致；两台模拟器恢复 1.0 字号及浅色后关闭。已删除早期重复截图及四份启动日志，保留正式报告、系统 ANR 证据和最终截图。
+
+本片质量收口：差异空白、生成一致性、写入口矩阵、页面五态、触控、动效、结构、计划、本地化与严格文档均通过；57 个生产页面/弹窗、0 个生产五态缺口、2 个既有自动化缺口、64 处自定义点击、3081 对 Android 双语资源。另有 29 组契约 fixture 和 48 项私有 API 引用通过。全部正式代码与证据留在原 `main`，累计 468 项工作区变更包含此前整个任务，未 add/commit/push/建分支/PR/发布，Apple/Windows 源码无差异。A4j 目录基础管理/排序/封面已完成基准预读和账本，仍需实施；其余 A4、A5–A10 继续，不把本片当作全部 Photos 或项目完成。
+
+
+## 2026-10-12 Android A4j Photos 目录基础管理
+
+范围：Photos 个人/共享目录新建、重命名、排序、封面，以及同账号加密恢复。继续使用原 main 和已确认的原生界面；不改其他平台、权限、依赖或 NAS 契约。目录共享权限、批量移动/复制/删除、人物/相似、预览/设置、完整导出与持久原件删除均不计本片完成。
+
+实际修改：新增 `SynologyPhotoFolderModels/Codec`、`SynologyPhotosFolderRepository`、`SynologyPhotoFolderModel` 和 `SynologyPhotoFolders`，以及对应仓储/模型/原生界面正式测试。已有管理动作、相册恢复及校验增量增加四个目录动作，创建编号与封面成功回执单调保持；原记录缺省字段仍可读，不迁移登录、上传和原件资料记录。目录读取/查询使用实际排序；图库目录保持接口顺序，路径按钮并入已有工具栏。创建/排序完成重新读取当前目录，改名/封面只更新对应目录与已加载后代路径，保留照片列表和当前位置。封面单选使用 RadioButton 语义，目录菜单放在图片区域上方，给二倍字号名称保留整行宽度。新增 28 对中英文资源，并把共用存储/冲突提示改为对应操作记录，避免目录与收集操作被误引到相册记录。
+
+关键决策与独立集成/只读对抗复核：创建只接受明确 folder.id，并核对同父完整路径与写权限；重命名固定空间/id/原路径/父级并回读新路径，根目录不能改名。排序仅要求 view，四字段双方向读取独立回退，完成判断必须两个明确字段匹配，禁止用默认值补成成功。封面固定目标，源照片重查身份及可查看后代，不要求下载；set_cover 使用单元素 id_item。明确回执先持久保存，再读取自定义序号 0 且实际可解码图片；丢失回执不能凭图片变化完成。未知冷热恢复只读，旧快照不能改换意图/编号/回执；跨账号与未决管理、上传和原件变更保护继续保留。未发现需修改其他平台基准的问题。
+
+验证环境为本机 Android Studio JBR、已有 SDK 和 API 37 AVD；合成接口调用生产仓储与加密存储，图片经已有同源媒体传输与 Android ImageDecoder，未访问真实 NAS。完整 JVM、Release/R8/lint 与云端门禁未运行。
+
+- 首次 `:app:compileDebugKotlin` 12 秒通过。首轮五套聚焦 JVM 共 94 项通过，`core-tests.log` 10 秒，原 XML 保留在 `xml-core/`。
+- 第二轮目录模型、相册存储、图库/相册/收集模型共 81 项通过，`model-build.log` 20 秒，含 Debug/仪器包构建；`xml-model/` 保留证据。
+- 汇总九套聚焦 JVM 共 **160 项，0 失败、0 错误、0 跳过**：目录仓储16、照片仓储29、媒体传输15、相册仓储19、相册存储16、目录模型10、图库模型19、相册模型23、收集模型13。`xml-combined/` 为汇总结果；该轮仪器测试编译因测试引用不存在的 `sp_folders` 失败，4 秒，记录在 `combined-build.log`。已改用现有 `sp_library_folders`，随后 `instrument-build.log` 3 秒构建通过。
+- 封面单选语义补充后 `single-choice-build.log` 14 秒通过；目录卡片大字号布局修正后 `final-ui-build.log` 7 秒通过；宽屏封面选择按屏幕宽度增加列数后 `responsive-cover-build.log` 10 秒通过；共用恢复提示同步后 `recovery-copy-build.log` 4 秒通过。此后生产和测试 APK 保持相同，未改变仓储或模型逻辑，不重复已通过的 JVM。
+
+汇总测试真实命令（参数按原执行）：
+
+```sh
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain :app:testDebugUnitTest --tests '*SynologyPhotosFolderRepositoryTest' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosMediaTransportTest' --tests '*SynologyPhotosAlbumRepositoryTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotoFolderModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotoRequestModelTest' :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+最终 Debug APK SHA-256 为 `6f9aea3d80b80a0fab0eb2e0ae4d2a3c9ac391e05d2a394bac2760834e6edc88`（106697558 字节），仪器 APK 为 `cd71595bdef3d6b6862f58278b60808e626d4efa2eec76fa2ef675b6910ac2b4`（9735287 字节），记录在 `build/android-rewrite-a4j/apk-manifest.json`。两包分别位于 `android/app/build/outputs/apk/debug/app-debug.apk` 和 `android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`。并非签名发布包，不自动安装到用户物理设备。
+
+仪器命令以已安装两包执行 `adb -s <模拟器> shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosFolderUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。当前原生流程涵盖创建/改名、只读排序与实际网格位置、子目录封面、图片解码失败只读恢复、丢失编号冷恢复、读取/保存前失败与空目录、共享 entry 上传资格。每次明确设置并读取应用语言、字号和颜色，截图均为合成内容。
+
+| 最终同包配置 | 结果 | 耗时 | 报告 |
+| --- | --- | --- | --- |
+| 手机中文、浅色标准字号 | 7/7 通过 | 64.309 秒 | `ui-phone-light-final.txt` |
+| 手机中文、深色二倍字号 | 7/7 通过 | 70.682 秒 | `ui-phone-dark-final.txt` |
+| 平板英文、浅色标准字号 | 7/7 通过 | 92.927 秒 | `ui-tablet-light-final.txt` |
+| 平板英文、深色二倍字号 | 7/7 通过 | 88.703 秒 | `ui-tablet-dark-final.txt` |
+
+早期两配置手机各 7 项通过（浅色 66.313 秒、深色二倍字号 70.679 秒），单选语义修正后手机深色 7 项通过（64.870 秒），各报告保留但不计最终同包结果；目录卡片修正后，手机浅/深色各7项通过（61.137/62.225 秒），平板浅/深色各7项通过（92.921/99.359 秒），报告为 `ui-*-before-responsive-cover.txt`；平板截图发现封面固定两列导致图块过大，之后按宽度自适应并重新生成生产包，宽屏修正后平板浅/深色再各7项通过（94.937/95.702 秒，`ui-tablet-*-before-recovery-copy.txt`），最后仅同步共用恢复文案后另用最终包执行上表。一条仪器启动命令误写组件分隔符，系统立即拒绝，未运行测试；保留 `instrument-component-error.txt`，修正组件后正常执行，未改断言或生产行为。
+
+`PENDING_USER_VALIDATION`：使用专用可丢弃个人/共享目录与合成照片，检查实际创建、重命名网页同步/照片保留、四字段双方向跨页和重进顺序、同目录/后代封面、无管理或无下载来源、同名冲突、并发修改、丢失回执及冷恢复。封面确认只证明成功回执和当前自定义图可读，不宣称 NAS 回读了所选 item_id 或排除了另一客户端并发覆盖。物理设备、真实 NAS、TalkBack 和不同版本权限仍未验证；回传版本/角色/动作与脱敏错误即可，不提供真实路径、账号或图片。
+
+宽屏封面适配前的两包（`apk-before-responsive-cover.json`）另跑 `SynologyPhotosRequestUiTest` 手机中文浅色回归，7/7 通过（56.640 秒，`ui-phone-request-regression.txt`），确认新增目录菜单及共用恢复未破坏照片收集入口、目标选择、保存/删除与未知恢复。后续仅调整目录封面表单列数和共用恢复提示文案，未改变这些入口或恢复逻辑。
+
+最终四组各 23 张合成截图，共 92 张，位于 `phone-light-final/phone-dark-final/tablet-light-final/tablet-dark-final`；实际查看了最终手机浅色封面、深色二倍字号目录名称/操作布局及平板英文宽屏封面和重命名表单。单选语义有原生断言，长内容滚动和按钮可达已在流程操作中覆盖，不把这些结果提升为 TalkBack 验收。保留两张早期布局对比图于 `before-layout/`，已清理其余重复截图和一次性预览；正式测试、构建报告、汇总 XML 与各阶段摘要保留。两台模拟器恢复标准字号/浅色后关闭，最终两 APK 摘要复核一致。
+
+本片质量收口：差异空白、生成一致性、写入口矩阵、页面五态、触控、动效、结构、计划、本地化与严格文档均通过，日志 `quality-0..9.log`；57个生产页面/弹窗、0个生产五态缺口、2个既有自动化缺口、65处自定义点击和3109对Android资源。请求契约180个fixture及1个写结果示例、29组fixture与48项私有API引用通过。全部正式代码留在原main，累计476项改动包含此前完整任务；未add/commit/push、建分支、创建PR或发布，Apple/Windows源码无差异。A4k移动复制与混合删除已完成预读和账本，尚未实施；其他A4及A5–A10继续，不能把本片当作全项目完成。
+
+
+## 2026-10-12 Android A4k Photos 移动复制与混合删除
+
+已接入固定目录/照片选择、同 NAS 目标选择、跳过/替换、目录混合删除、现有管理通道与加密任务恢复；代码范围为 Android 文件任务领域/仓储/模型/界面、原照片选择/列表及必要双语资源。主计划 A4k 账本保留契约、权限、取舍、迁移回退和真实环境待验范围；下文按阶段保留实现与失败证据，最终同包四配置原生流程已完成；其他 A4–A10 工作继续。
+
+首轮 `:app:compileDebugKotlin` 11秒通过；文件仓储及相册/目录/存储四组共72项通过（8秒）；新增状态模型编译3秒通过，文件/编辑/相册模型与存储四组64项通过（7秒）；根组合模型编译2秒通过。首次UI编译1秒失败于 `SynologyPhotosGrid.kt` 缺少 `testTag` 导入，随后一次根回归命令亦停在同一编译错误，均未运行测试；已修复。根回归首次实际运行72项、1项失败：测试只读完目录分页即断言照片页，而既有模型按独立游标先读目录再读照片。已补上目录页结束断言和第二次照片读取，保留原 `22` 项目顺序及继续分页断言；相同72项随后全部通过（7秒），没有降低断言或改生产分页行为来迎合夹具。
+
+当前完整聚焦命令（本机增量、限制两个 worker；无Git外部写入）：
+
+```sh
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
+ANDROID_HOME='/Users/yuangy/Library/Android/sdk' \
+android/gradlew -p android --no-parallel --max-workers=2 --console=plain \
+  :app:testDebugUnitTest \
+  --tests '*SynologyPhotosFileRepositoryTest' --tests '*SynologyPhotoFileModelTest' \
+  --tests '*SynologyPhotoEditModelTest' --tests '*SynologyPhotosModelTest' \
+  --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotosFolderRepositoryTest' \
+  --tests '*SynologyPhotoFolderModelTest' --tests '*SynologyPhotoAlbumModelTest' \
+  --tests '*SynologyPhotoRequestModelTest' --tests '*SynologyPhotosRepositoryTest' \
+  --tests '*SynologyPhotosAlbumRepositoryTest' \
+  :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+结果：195项、11组，0失败/错误/跳过，两个APK构建通过，总25秒。组数依次为21、15、13、19、17、16、10、23、13、29、19。覆盖个人/共享权限、跨空间方向与同编号隔离、未知回执冷热不重发、唯一任务编号补查、总数/覆盖/部分结果、完整删除分页、撤权、明确覆盖确认、关闭/重开、自动只读恢复及原位置分页更新。源码实际详情解码只读取原件身份，不依赖EXIF；测试用合成数据，不代表NAS真实写入通过。
+
+证据位于 `build/android-rewrite-a4k/`：compile/model-compile/root-compile、core-tests/model-tests/root-tests-final、integration-build日志；xml-core/xml-model/xml-root-initial-failure/xml-root-final/xml-integration；APK暂存摘要 `apk-before-native-tests.json`。初次结构ratchet、本地化（3137组Android双语/硬编码扫描）、`git diff --check`通过。该阶段尚未启动模拟器或编写本片原生流程；后续原生测试、复核与收口结果见下文，不把该阶段APK当作最终验收包。完整JVM/Release/R8/lint/云端及真实NAS未运行；未提交、推送、创建分支或发布，Apple/Windows源码未修改。
+
+
+A4k 原生流程接入进展：独立集成复核发现首次图库激活会在 access 完成前调用文件记录身份读取，已将恢复激活移至访问确认之后。新增延迟 access 回归，断言提前身份读取为0、访问完成后确实读取；`SynologyPhotoFileModelTest`16项及`SynologyPhotosModelTest`19项共35项通过，`native-build.log`13秒，含Debug与新仪器包构建，XML在`xml-startup/`。实际命令为前述Gradle前缀后接`:app:testDebugUnitTest --tests '*SynologyPhotoFileModelTest' --tests '*SynologyPhotosModelTest' :app:assembleDebug :app:assembleDebugAndroidTest`。其余9组未因仅启动时序变化重复执行，前轮195项按原版本保留，不伪称再次完整通过。
+
+正式新增`SynologyPhotosFileUiTest`经生产图库、仓储、加密存储与实际图片解码覆盖混选移动、共享下载权复制/个人目标、覆盖取消及确认、混合删除、未知与已知任务冷恢复、部分结果、加载/错误/权限/保存前重试、自身/后代禁选、空记录和预览单张复制。合成网络明确隔离，无真实NAS请求。首轮手机中文浅色7项中5项通过、2项失败（135.481秒，`ui-phone-light-initial.txt`）：两个断言未限定弹窗，分别匹配到底层同名“Child”和“取消”，没有产品请求或权限错误；已限定弹窗祖先且保留原断言，另补预览/空记录第8项。`native-selectors-build.log`3秒通过，此后使用新8项流程执行四配置同包验证，最终结果见下表。
+
+本片独立集成/只读对抗复核：源空间路由不会随目标切换；个人相册贡献身份不能代替原件所有者；共享复制的download与目标upload独立检查；覆盖只有明确确认才可提交。写前固定快照、权限代次、管理互斥与持久提交阶段，取得任务编号立即保存。缺失/畸形后续元数据保留编号，恢复不重复写、不按名称认领；任务总数/目标owner/最终权限及同空间搬移后的完整路径仍参与确认。混合删除只在任务完成且无错误/跳过后，通过父目录完整分页与照片成功空读确认，不把权限失败或目录不可见当成功。原列表按空间/完整身份更新，目录和照片游标分别修正；没有发现需修改其他平台参考实现的缺陷。尚无物理设备、真实NAS或TalkBack验收。
+
+
+A4k布局异常证据：同包手机中文浅色8项通过（164.106秒）。深色二倍字号首轮前7项通过，第8项在界面绘制时发生`IllegalArgumentException: performMeasureAndLayout called during measure layout`，进程退出，报告`ui-phone-dark-layout-crash.txt`与`phone-dark-layout-crash-logcat.txt`保留，不能记为通过。对同一冷恢复路径分别关闭截图（24.718秒）及开启截图（29.012秒）独立运行各1项均通过，分别记录`ui-phone-dark-cold-no-capture.txt`与`ui-phone-dark-cold-with-capture.txt`；未修改产品代码、测试断言或工具链，尚不能确认根因或宣称修复，继续完整配置重跑。该一次性布局崩溃保留为模拟器/仪器与真实设备后续观察风险，不推断是NAS或删除回执故障。下一A4l纯照片删除/持久恢复已建立账本，尚未实施。
+
+
+A4k触控声明合并前同包原生结果（生产与仪器APK在以下四组之间均未改变）：
+
+| 配置 | 结果 | 耗时 | 报告 |
+| --- | --- | --- | --- |
+| 手机中文、浅色标准字号 | 8项全部通过 | 164.106秒 | `ui-phone-light-before-touch-chain.txt` |
+| 手机中文、深色二倍字号 | 8项全部通过 | 161.27秒 | `ui-phone-dark-before-touch-chain.txt` |
+| 平板英文、浅色标准字号 | 8项全部通过 | 156.882秒 | `ui-tablet-light-before-touch-chain.txt` |
+| 平板英文、深色二倍字号 | 8项全部通过 | 147.613秒 | `ui-tablet-dark-before-touch-chain.txt` |
+
+该阶段Debug APK为`android/app/build/outputs/apk/debug/app-debug.apk`，SHA-256 `40c525604ee7a49b8c3ee5fe411dc6350e045666ea9f214c5919f680ac82e5ea`（102432058字节）；仪器APK为`android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`，SHA-256 `dc803d2f2ffc4f513fe55c79d9c942f79e6cd6bdd6dd508c47a6840c5f2a8e26`（9785503字节），四组结束后复核一致，摘要见`apk-before-touch-chain.json`。本轮没有执行正式签名发布、完整JVM/Release/R8/lint或云端门禁。
+
+实际仪器命令：`adb -s <本片模拟器> shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosFileUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。每组语言/字号/夜间模式均有`*-config.json`读回；每组26张合成截图，共104张，保存于`phone-light-before-touch-chain/phone-dark-before-touch-chain/tablet-light-before-touch-chain/tablet-dark-before-touch-chain`。实际查看中英文、浅深色与二倍字号的删除/覆盖后果、目标目录、选择清单和工具栏，流程操作确认按钮可达与列表滚动；不把这些结果冒充TalkBack验收。两台AVD逐台运行，结束后恢复标准字号/浅色并关闭。
+
+一次未稳定复现的布局崩溃原始证据继续保留：最后四配置虽均通过，仍不能证明根因已消除。`PENDING_USER_VALIDATION`沿主计划使用专用合成目录与照片，覆盖同空间/允许跨空间、覆盖/跳过、整目录删除、权限/断网/冷恢复；另观察频繁关闭重开目标页和操作记录时的布局稳定性，若再次发生，回传设备/系统/字号/路径类别与脱敏堆栈。真实NAS、物理设备、TalkBack、覆盖后的编号/目录合并与索引时效仍未验收，不扩大历史个人单照片删除证据。
+
+
+最终触控门禁发现目录卡片点击Modifier与外层96dp/全宽声明分离，静态检查无法追踪该组合（`quality-touch-split-chain-failed.log`）。已将原有全宽/96dp声明移至同一Modifier变量，两个交互分支沿该变量追加事件，Card使用完整链；原尺寸、事件与顺序保持一致，不修改检查器或最低48dp规则。触控门禁随后通过，`touch-chain-build.log`7秒增量构建通过；前述32项属于整理前阶段，最终包结果另列如下。
+
+
+A4k最终包四配置结果（触控声明合并后，同一生产与仪器APK）：
+
+| 配置 | 结果 | 耗时 | 报告 |
+| --- | --- | --- | --- |
+| 手机中文、浅色标准字号 | 8项全部通过 | 104.148秒 | `ui-phone-light-final.txt` |
+| 手机中文、深色二倍字号 | 8项全部通过 | 149.415秒 | `ui-phone-dark-final.txt` |
+| 平板英文、浅色标准字号 | 8项全部通过 | 126.867秒 | `ui-tablet-light-final.txt` |
+| 平板英文、深色二倍字号 | 8项全部通过 | 156.97秒 | `ui-tablet-dark-final.txt` |
+
+最终生产APK SHA-256 `6a8074885d0604afd27a3e77a4d475ef0097629a4fe514c322bc6d2cfe626a6b`（102432058字节），仪器APK `dc803d2f2ffc4f513fe55c79d9c942f79e6cd6bdd6dd508c47a6840c5f2a8e26`（9785503字节），路径沿上文，摘要为`apk-manifest.json`。四组结束后再核对两包均未改变，每组26张合成截图、共104张保留在`phone-light-final/phone-dark-final/tablet-light-final/tablet-dark-final`。实际查看最终手机深色二倍字号删除清单与按钮、平板英文深色二倍字号覆盖确认，后果提示完整且按钮可达。两台AVD顺序运行，恢复标准字号/浅色后关闭，设备列表为空。早期重复截图、一次性检查图和模拟器启动日志已清理，原生失败/布局异常/独立复现、各阶段报告与APK摘要继续保留。
+
+本片质量收口：`quality-final-{diff,generated,write,page,touch,motion,structure,plan,docs}.log`均通过；57个生产页面/弹窗、0个生产五态缺口、2个既有自动化缺口、67处自定义点击，3137对Android双语资源的完整性/硬编码扫描与180个请求fixture、1个结果示例、29组fixture和48项私有API引用均沿当前未变资源/契约通过。触控链整理只重建界面，不重复仓储/模型JVM，也不把早期195项与随后35项冒称同次全量测试。一次未稳定复现的Compose布局崩溃仍保留风险；真实NAS、物理设备、TalkBack与完整JVM/Release/R8/lint/云端未验收。代码留在原main，未add/commit/push/新建分支/PR/发布；Apple及Windows源码无差异。A4l已开始身份摘要与独立加密记录实现，尚未接入删除产品流程；其余A4与A5–A10继续。
+
+
+## 2026-10-12 Android A4l Photos 原件删除与持久恢复
+
+已接入个人/共享单张与纯照片多选、固定确认、逐项删除、独立加密摘要批次、已提交只读恢复及剩余重新确认/取消。预览与多选共用一条生产删除器，移除旧会话内写路径；来源权限、原件身份、同步提交边界、明确拒绝与未知不重发继续保留。只保存必要编号、身份摘要和阶段，不保存照片名称或日期正文。图库完成更新原位置与照片游标，其他空间同编号不受影响；本片当前环境实现及聚焦原生验证已完成，最终结果见下表；真实NAS验收仍待用户验证。
+
+实际本机增量命令前缀：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain`。后接任务及结果如下，证据在`build/android-rewrite-a4l/`：
+
+- `:app:testDebugUnitTest --tests '*SynologyPhotoDeletionStoreTest'`：9项，0失败/错误/跳过，7秒；`store-tests.log`与`xml-store/`。
+- `:app:testDebugUnitTest --tests '*SynologyPhotoDeletionStoreTest' --tests '*SynologyPhotosDeletionRepositoryTest'`：23项，0失败/错误/跳过，7秒；`core-tests.log`与`xml-core/`。
+- `:app:compileDebugKotlin`：生产仓储、根组合、会话/切换保护、模型与双语页面接入后15秒通过；`integration-compile.log`。没有此阶段APK或原生结果。
+- `:app:testDebugUnitTest --tests '*SynologyPhotoDeletionStoreTest' --tests '*SynologyPhotosDeletionRepositoryTest' --tests '*SynologyPhotoDeletionModelTest' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoEditModelTest'`：95项中94项通过、1项失败，11秒，`model-tests.log`与`xml-model-initial/`。失败是自动恢复计时测试混用runTest自动前进时钟与真实IO等待，等待期间虚拟时间跳过很多轮，六次断言实际490次。改为独立TestCoroutineScheduler手动推进并等待真实IO完成；保留首次六轮2秒、后续15秒、离开停止及重进只读断言，没有修改生产轮询间隔。
+- `:app:testDebugUnitTest --tests '*SynologyPhotoDeletionModelTest' --tests '*SynologyPhotosModelTest' --tests '*WorkspaceSwitchGuardTest'`：11+21+6共38项，0失败/错误/跳过，5秒；`model-tests-final.log`与`xml-model-final/`。新增历史月份/修正偏移、共享同编号保留、写入期间切换保护；旧权限/防重/撤销断言迁移到同一持久接口。
+
+当前本地化完整性、参数/硬编码扫描3154对Android资源通过，结构ratchet及差异空白通过。独立检查随后补上“建立批次之前预检失败保留固定清单，可再次明确确认”的用户恢复路径，及其新增断言；随后相同命令前缀后接`:app:testDebugUnitTest --tests '*SynologyPhotoDeletionModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoEditModelTest'`，11+21+13共45项通过，8秒，`preflight-retry-tests.log`与`xml-preflight-retry/`保留最终模型证据。本片没有NAS请求、物理设备、TalkBack或完整JVM/Release/R8/lint/云端结果；没有提交、推送、分支、PR或发布，其他平台只读。
+
+
+A4l原生验证准备：新增`SynologyPhotosDeletionUiTest`八条生产界面/仓储/加密记录合成流程，覆盖预览确认/取消、纯照片批量、共享权限、未知冷恢复与剩余确认、取消剩余、明确拒绝、加载与预检错误、原件改变。最终集成命令在上述前缀后接`:app:testDebugUnitTest --tests '*SynologyPhotoDeletion*Test' --tests '*SynologyPhotosDeletionRepositoryTest' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoEditModelTest' --tests '*SynologyPhotoFileModelTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*WorkspaceSwitchGuardTest' :app:assembleDebug :app:assembleDebugAndroidTest`，142项、0失败/错误/跳过，33秒通过。九组为删除存储9、删除仓储14、删除模型11、原仓储29、图库21、编辑13、文件模型16、相册23、切换6。`native-build.log`与`xml-native-build/`保留结果，APK摘要见`apk-manifest.json`；此阶段首轮手机原生流程尚未执行，后续结果单列如下。
+
+
+本片独立集成/只读对抗复核：确认旧deletePhoto/reviewDeletion会话内产品写路径已移除；预览及多选调用同一持久执行器。检查存储失败先于请求、确认后整组与逐项身份/权限重查、未知停止后项、已提交冷热恢复不重发、成员贡献不代替原件所有权、共享管理角色不影响个人权限、跨账号晚到结果只保存原记录、未决删除与其他Photos写入互斥；对应边界由本片14项仓储、11项模型、9项存储和根组合/切换回归支撑。UI沿既有页面、触控与语言资源，确认取消零请求，加载/空记录/错误/正常与原图库筛选空分开覆盖。未以构建或合成响应代替真实NAS结论。
+
+手机首轮8项通过（85.732秒，`ui-phone-light-initial.txt`）。随后只清理旧单张弹窗的5个无引用中英文资源键，双语资源变为3149对，完整性/参数/硬编码检查通过；APK增量15秒通过，`final-build.log`。最终包手机中文浅色8项86.077秒、深色二倍字号8项82.727秒通过，分别`ui-phone-light-final.txt`/`ui-phone-dark-final.txt`，每组24张合成截图；已实际检查确认清单、未知恢复与大字号显示。随后平板最终包浅色与深色二倍字号也通过，四组同包结果如下。质量/契约阶段结果为57个生产页面、0生产五态缺口、2个既有自动化缺口、67处点击目标通过，180个请求fixture/1个写结果示例、29组fixture/48项私有API引用通过。
+
+
+| 配置 | 原生结果 | 用时 | 报告 |
+| --- | --- | --- | --- |
+| 手机中文浅色，标准字号 | 8项通过，0失败 | 86.077秒 | `ui-phone-light-final.txt` |
+| 手机中文深色，二倍字号 | 8项通过，0失败 | 82.727秒 | `ui-phone-dark-final.txt` |
+| 平板英文浅色，标准字号 | 8项通过，0失败 | 107.734秒 | `ui-tablet-light-final.txt` |
+| 平板英文深色，二倍字号 | 8项通过，0失败 | 102.283秒 | `ui-tablet-dark-final.txt` |
+
+最终App SHA-256：`1cb083aa628cfe3c9f90abe78844dbd8dd362ce3522ac33a484842175994d509`（102432058字节）；测试包：`964f753cd3dca7098894d2cf47765b18cbfe64148286cf5eadb91961d40d5afe`（9829139字节）。四组共96张合成截图保留在`{phone,tablet}-{light,dark}-final/`，配置回读和摘要在同目录JSON；已实际查看手机/平板的确认、未知恢复、错误与二倍字号截图。此组未出现A4k曾记录的布局异常，不能据此宣称旧风险已定位或修复。
+
+当前质量收口：3149对Android中英文资源完整性/参数/硬编码扫描通过，57个生产页面、0生产五态缺口、2个既有自动化缺口、67处自定义点击目标通过；契约180个请求fixture/1个结果示例，29组fixture/48项私有API引用通过。保留正式测试、聚焦构建/JUnit/XML、四组报告与必要截图，清理初轮重复截图和模拟器启动日志；两台模拟器恢复标准字号/浅色并关闭，ADB无残留设备。独立集成、只读对抗复核、接口/README/矩阵及生成质量报告同步完成。
+
+真实NAS个人/共享批量、回收站、权限撤回、物理设备和TalkBack仍为PENDING_USER_VALIDATION；完整JVM/Release/R8/lint/云端没有执行。当前工作保留原main，未add/commit/push/新建分支/PR/发布，Apple与Windows源码无差异。A4m共享文件夹权限已建立基准账本，尚未写代码；其余A4及A5–A10继续。
+
+
+## 2026-10-12 Android A4m Photos 共享文件夹权限
+
+已接入共享管理账号前两层目录的现状查看、实际链接复制、四访问范围/四角色、成员搜索添加/移除、密码三态及第一层子目录应用，第二层父限制只读。目录卡片和当前目录菜单沿既有Compose界面；只在权限/成员变化、移除密码、覆盖子目录时冻结并确认，普通换密直接保存。实际保存与默认选项分步记录，冷热恢复仅只读，不重发；回执未知不冒称新密码或后代覆盖成功。只在Android和相应文档/兼容说明中增量实现，NAS API契约与其他平台源码不变。
+
+实际命令前缀：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain`。本片证据位于`build/android-rewrite-a4m/`。
+
+- `:app:compileDebugKotlin`：14秒通过（`compile-initial.log`）。
+- `:app:testDebugUnitTest --tests '*SynologyPhotosFolderSharingRepositoryTest'`：新增测试首次编译失败，缺少合成DsmFailure参数及合成照片构造参数顺序不符，未运行测试；仅修正测试构造（`repository-tests-initial.log`）。
+- `:app:testDebugUnitTest --tests '*SynologyPhotosFolderSharingRepositoryTest' --tests '*SynologyPhotoFolderSharingStoreTest' --tests '*SynologyPhotoFolderSharingModelTest' --tests '*SynologyPhotoAlbumStoreTest'`：56项中55项通过、1项失败，17秒（`focused-tests-initial.log`）。修订稳定性测试把严格目录整数编号改为浮点9.0，产品正确拒绝；改用权限原始响应的数值扩展字段检验摘要归一化，保留目录编号严格类型断言，没有放宽生产校验。
+- `:app:testDebugUnitTest --tests '*SynologyPhotosFolderSharingRepositoryTest' --tests '*SynologyPhotoFolderSharingStoreTest' --tests '*SynologyPhotoFolderSharingModelTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotosSharingRepositoryTest' --tests '*SynologyPhotosFolderRepositoryTest' --tests '*SynologyPhotosFileRepositoryTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoFileModelTest' --tests '*SynologyPhotoFolderModelTest' --tests '*WorkspaceSwitchGuardTest'`：190项、0失败/错误/跳过，12秒（`integration-tests.log`、`xml-integration/`）。十二组依次为21、4、15、17、20、16、21、23、21、16、10、6项，覆盖固定修订/父级、候选/角色、双步骤请求、密码回执、明确拒绝/未知、存储单调推进、账号隔离、确认取消、原位置保留与跨功能保护。
+- `:app:assembleDebug :app:assembleDebugAndroidTest`：20秒通过（`native-build.log`）。随后3171对Android中英文资源、参数和硬编码扫描通过（`localization.log`）。当前静态差异、写矩阵、57页面五态、67点击目标、动效、结构ratchet及计划门禁均通过（`quality-*.log`），生成报告与文档最终检查随后执行。
+
+独立集成及只读对抗复核确认：FolderPermission始终固定FotoTeam v1，候选名单统一Foto且排除系统uid，数字/字符串和用户/群组不合并；无相册set_shared请求。写前完整修订/目录/父级/管理与代次重查，成员扁平且删除带原角色，未知原成员或密码标志不当空/关闭。密码只在内存、受现有HTTPS连接规则保护；恢复不存密码、链接或成员姓名。update尝试先落盘，接受回执保存后才能set_config；存储失败不继续写，未知或冷恢复不重放。子目录或新密码依赖回执，顶层匹配不提升真实后代证据；部分/明确拒绝与未完成记录分别显示。新动作沿原管理记录互斥，上传/编辑/删除/相册/收集/目录/文件入口共享保护，归属改变不显示旧记录。主计划保留真实NAS、物理设备与TalkBack待验条件。
+
+原生测试命令：`/Users/yuangy/Library/Android/sdk/platform-tools/adb -s <对应模拟器> shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosFolderSharingUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。八条使用生产图库/仓储/加密记录与合成NAS，覆盖目录双入口、实际剪贴板、确认取消、成员搜索、权限/密码/子目录、父限制/entry无入口、读取/预检错误、明确拒绝/部分、未知冷热只读。手机中文浅色标准字号8项全部通过，37.472秒（`ui-phone-light-final.txt`、`phone-light-final/`28张）；已实际复核当前权限表单与后果确认截图。其余三配置随后均通过，完整结果和同包摘要如下。
+
+
+| 配置 | 结果 | 用时 | 报告 |
+| --- | --- | --- | --- |
+| 手机中文浅色标准字号 | 8项通过，0失败 | 37.472秒 | `ui-phone-light-final.txt` |
+| 手机中文深色二倍字号 | 8项通过，0失败 | 35.974秒 | `ui-phone-dark-final.txt` |
+| 平板英文浅色标准字号 | 8项通过，0失败 | 39.887秒 | `ui-tablet-light-final.txt` |
+| 平板英文深色二倍字号 | 8项通过，0失败 | 36.598秒 | `ui-tablet-dark-final.txt` |
+
+最终App SHA-256 `5efaad4abcab625b515064508cde4af89ab4df6f0a0289184efe69e80a4abf5c`（102432058字节），仪器包 `5fedb8c4f0a763762df9b234856d4d4fe9293537bf9eb4a35983c195793dbe13`（9871191字节），路径为`android/app/build/outputs/apk/debug/app-debug.apk`与`android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`；四配置结束后校验两包未改变。每组28张、共112张合成截图保存在`{phone,tablet}-{light,dark}-final/`，配置回读与摘要JSON在本片证据目录。实际查看手机中文浅/深色表单与确认、平板英文深色二倍字号确认与浅色部分结果；确认信息和操作按钮可达，长表单可滚动。模拟器恢复标准字号/浅色并关闭，ADB无设备；清理本片模拟器启动日志，保留正式测试、早期失败/修正、最终构建/XML/截图与摘要。
+
+当前完整性检查：3171对Android双语资源与硬编码扫描、57个生产页面五态（0生产缺口、2个既有自动化缺口）、67处自定义点击、写矩阵、动效、结构ratchet、计划/文档与差异检查通过。180个请求fixture/1个结果示例及29组fixture/48项私有API引用通过。真实NAS目录角色、密码、子目录覆盖、非管理员分享设置、物理设备/TalkBack，以及完整JVM/Release/R8/lint/云端均未完成，按A4m账本PENDING_USER_VALIDATION，不增加兼容环境等级。原main保留本任务累计改动，未add/commit/push/分支/PR/发布，Apple和Windows源码无差异。继续照片个人设置及余下A4、A5–A10。
+
+## 2026-10-12 Android A4n Photos 个人显示、重复处理与识别设置
+
+本片继续已批准Android重写，沿既有照片UI完成三个当前用户设置表单、差量保存及恢复：显示六项实际应用、重复文件默认处理与覆盖后果确认、个人识别的已知字段/全局限制/个人来源限制，以及个人分类同步。复用管理操作存储的可选settings字段，提交事实先持久化，完整目标回读完成；拒绝、未知与未发送分开。新入口使用已有页面容器、选择控件、开关和按钮，新增31对资源，未修改其他平台、公开NAS参数、依赖、包名、签名或权限。
+
+实际修改：新增`SynologyPhotoSettingsModels`、`SynologyPhotoSettingsCodec`、`SynologyPhotosSettingsRepository`、`SynologyPhotoSettingsModel`、`SynologyPhotoDisplayFormat`及`SynologyPhotoSettings`表单；接入现有PhotosServing、管理检查点/验证/仓储/加密存储、图库根模型与操作菜单。时间线仍按日请求，只按显示设置合并月份；显示保存保留图库查询、月份、原照片和选择。日期跨年采用公历年，时钟/月份与照片信息使用当前App语言和时区；信息仅图片显示，详情打开时隐藏。后续无显式排序目录采用已读默认，显式目录不变。上传与复制默认由既有新任务读取，队列原意图不改。识别只写可编辑字段，不调用Admin.set或FotoTeam.Setting；相似识别设置不冒充相似组管理。
+
+独立集成和只读对抗复核覆盖：不同Photos用户与身份撤销、各类字段缺失/未知、只读访问失败、完整快照并发变更与二次预检、写前持久失败、拒绝及丢回执/部分应用、冷恢复不重发、未知项不写false、全局/个人条件改变、个人分类停止读取、共享分类保留、无变化零写、普通保存无额外确认与新默认替换的冻结确认。发现分类列表读取失败可能遮挡设置主流程，已将分类错误单独展示、保留设置读取/保存；新增独立回归。没有降低既有断言或跳过缺环境用例。
+
+验证目录为`build/android-rewrite-a4n/`，统一构建前缀：
+
+```sh
+env JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain
+```
+
+- `:app:compileDebugKotlin`：14秒通过（`compile-initial.log`）。
+- `:app:testDebugUnitTest --tests '*SynologyPhotosSettingsRepositoryTest'`：18项、11秒通过（`repository-tests-initial.log`）。
+- `:app:testDebugUnitTest --tests '*SynologyPhotosSettingsRepositoryTest' --tests '*SynologyPhotoSettingsModelTest' --tests '*SynologyPhotoSettingsStoreTest'`：18+14+4=36项，4秒通过（`focused-tests-initial.log`、`xml-focused/`）。
+- 下列集成及构建命令：187项、零失败/错误/跳过，30秒通过（`integration-build.log`、`xml-integration/`）。12组分别为设置仓储18、设置模型14、设置存储4、既有仓储29、图库21、管理存储17、相册模型23、目录仓储16、目录共享模型15、文件模型16、上传模型8与切换6。
+
+```sh
+:app:testDebugUnitTest --tests '*SynologyPhotosSettingsRepositoryTest' --tests '*SynologyPhotoSettingsModelTest' --tests '*SynologyPhotoSettingsStoreTest' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotosFolderRepositoryTest' --tests '*SynologyPhotoFolderSharingModelTest' --tests '*SynologyPhotoFileModelTest' --tests '*SynologyPhotoUploadModelTest' --tests '*WorkspaceSwitchGuardTest' :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+追加分类错误不挡设置的回归后，只运行受影响模型：`:app:testDebugUnitTest --tests '*SynologyPhotoSettingsModelTest'`，15项、10秒通过（`model-regression-final.log`、`xml-model-final/`）。这是追加测试后的独立回归，不把两次重叠计数合称一次全量测试。期间生产代码与原生测试没有再次改变，既有APK继续用于原生验证。
+
+`SynologyPhotosSettingsUiTest`七条流程使用正式图库、设置仓储、加密存储与真实Android图片解码，响应为合成内容，未连接真实NAS。覆盖显示六项/位置保留、预览信息/详情互斥、默认覆盖取消/保存、识别限制/缺字段、个人分类关闭与共享保留、未知冷恢复、空记录/读取失败/并发变化/明确拒绝。设置表单无搜索，筛选空沿现有图库。四配置最终结果见下文。
+
+3202对Android资源、占位符/引用/硬编码扫描已通过（`localization.log`）。差异空白、写矩阵、页面五态、触控、动效与结构检查通过；请求契约180个请求fixture、1个结果示例及29组fixture/48项私有API引用通过。生成质量基线及严格文档初验通过，最终原生结果写回后再次检查文档一致性。真实NAS、物理设备、TalkBack、完整JVM/Release/R8/lint及云端门禁未执行；同名覆盖最终NAS行为、网页重开、管理员变化、真实中断与队列默认应用为`PENDING_USER_VALIDATION`，具体步骤见主计划A4n。工作区保留main上的累计授权修改，无暂存、提交、推送、新分支、PR或发布；后续A4与A5–A10仍未完成。
+
+
+A4n最终同包原生验收：
+
+| 设备/API 37 | App语言/外观/字号 | 本片原生结果 | 耗时 |
+| --- | --- | --- | --- |
+| 独立手机模拟器 | 中文、浅色、1.0 | 7/7通过 | 77.773秒 |
+| 独立手机模拟器 | 中文、深色、2.0 | 7/7通过 | 79.391秒 |
+| 独立平板模拟器 | 英文、浅色、1.0 | 7/7通过 | 98.337秒 |
+| 独立平板模拟器 | 英文、深色、2.0 | 7/7通过 | 93.397秒 |
+
+执行命令使用对应设备：
+
+```sh
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSettingsUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5560 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSettingsUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+四配置无失败或跳过，原生执行后再次核对两包未改变：App SHA-256 `453a12b982c206272f939b3c6780ab41ba37b909d6241fa1cf463347cad85b11`（102432058字节），仪器包 `49be391a2d999237f8c976d5001e95ea0ebe6e43e4419e9a20f3ab2a07074570`（9911843字节）；位于`android/app/build/outputs/apk/debug/app-debug.apk`与`android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`。摘要见`apk-manifest.json`，结果见`ui-{phone,tablet}-{light,dark}-final.txt`，各配置回读JSON与每组24张共96张截图保存在本片证据目录。实际查看手机浅/深色显示表单与预览信息、手机/平板深色二倍字号覆盖确认、平板识别限制；长内容/表单可滚动，确认与保存可达。两台模拟器已恢复1.0字号/浅色并关闭，启动临时日志清理，保留正式测试与必要证据。该包是本地Debug验证包，不是发布安装包。
+
+A4n最终收口：`quality-{generated,docs,plan,diff}-final.log`全部通过；已有写矩阵、页面五态、触控、动效、结构、本地化和契约检查保持通过。57个生产页面/弹窗、0个生产五态缺口、2个既有自动化缺口与67处自定义点击目标不变；3202对Android双语资源。README、API参考、发现说明、兼容清单、主计划/平台状态和生成质量报告同步；内部接口仍为static，未新增真实环境验证。Apple/Windows差异为空，ADB无设备，正式代码未提交。下一片A4o相册内排序及列表偏好已完成预读并建账本，尚未开始代码；其余A4及A5–A10继续。
+
+
+## 2026-10-12 Android A4o Photos 相册排序与列表偏好
+
+沿批准UI与A4o账本完成相册内四字段/升降序、相册首页全部/我的和五字段排序、两个分享列表四字段独立排序。生产变更位于`SynologyPhotoAlbumPreferenceModels/Codec`、已有Settings类型/仓储/模型及表单、`SynologyPhotosRepository`查询与`SynologyPhotosModel/State`分页、`SynologyPhotoAlbumPreferences`原生选择与图库菜单；14对新增资源，共3216对。继续使用SETTINGS动作与既有版本1加密记录，未新增平行存储、依赖、权限或系统版本。统一Foto路由，查看权不要求上传/个人来源；预检与提交前重读原值，按固有相册/列表目标冻结操作，未知只读恢复，普通保存不加风险确认。相册首次缺省值和保存成功证明分离；列表严格解码，读取失败仍浏览，成功偏好独立生效。所有分页固定排序/显示条件；保存后只重载当前匹配视图，旧代次丢弃且选择/位置保留。
+
+独立集成与只读对抗复核覆盖：当前用户/目标身份、可查看但不能管理原件相册、个人来源关闭、字段缺失/未知/类型错误/跨范围、默认适配器不得静默忽略新参数、两次预检冲突、写前存储失败、明确拒绝、无回执/部分字段、冷恢复不重发、账号隔离/记录不可倒退、固定跨页与旧响应迟到、不同位置保存不影响当前图库。新增仓储15项、正式组合模型/存储12项；首轮模型测试只证明数据顺序；最终截图复核另发现UI日期分组重排，修正与补充位置断言见下文。无真实NAS请求、Apple/Windows变更或Git提交推送。
+
+统一构建前缀：
+
+```sh
+env JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain
+```
+
+证据目录`build/android-rewrite-a4o/`：
+
+- `:app:compileDebugKotlin`，12秒通过（`compile-initial.log`）。
+- 首次聚焦测试编译因新增测试使用Kotlin不支持的Companion星号导入失败（`repository-tests-initial.log`，5秒），改为逐项导入，未改变断言；随后相册偏好仓储15、原设置仓储18、设置模型15、设置存储4，共52项通过，15秒（`repository-tests-repaired.log`）。
+- 加入相册偏好模型12项后，五组64项、零失败/错误/跳过，4秒通过（`model-tests-initial.log`）。
+- 下列集成命令实际执行11组178项、零失败/错误/跳过，26秒通过，同时产出Debug与仪器APK（`integration-build.log`、`xml-integration/`）。包含上述64项，以及图库仓储29、图库模型21、相册存储17、相册模型23、上传模型8、文件模型16。命令中的SynologyPhotosSwitchTest筛选没有匹配测试，不把它算作切换测试已执行；随后改用正确类名单独运行`:app:testDebugUnitTest --tests '*WorkspaceSwitchGuardTest'`，6项、零失败/错误/跳过，2秒通过（`switch-guard.log`、`xml-switch/`）。两轮合计184项不同测试，但不是一次完整JVM执行。
+
+```sh
+:app:testDebugUnitTest --tests '*SynologyPhotoAlbumPreferencesModelTest' --tests '*SynologyPhotosAlbumPreferencesRepositoryTest' --tests '*SynologyPhotosSettingsRepositoryTest' --tests '*SynologyPhotoSettingsModelTest' --tests '*SynologyPhotoSettingsStoreTest' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotoUploadModelTest' --tests '*SynologyPhotoFileModelTest' --tests '*SynologyPhotosSwitchTest' :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+原生`SynologyPhotosAlbumPreferencesUiTest`七条使用正式图库/仓储/加密恢复和真实Android缩略图解码，响应均为合成内容：相册照片排序与选择保留、全部/我的和首页五字段、两个分享范围与收集排除、个人关闭的可查看相册、未知冷恢复、读失败/冲突/明确拒绝、空相册/加载/取消。首轮手机中文浅色7项中6项通过、1项测试定位失败，56.252秒（`ui-phone-light-initial.txt`、`phone-light-initial/`24张）。原因是个人关闭后页面标题与可点击标签都为“相册”，onNodeWithText匹配两项；改为同文字且hasClickAction，只定位真实按钮。应用生产代码未改变，未删改业务断言；`:app:assembleDebugAndroidTest`3秒通过（`native-selector-build.log`），随后用同一应用与修正后的仪器包执行四配置。
+
+日期网格修正前包摘要存于`apk-manifest-before-grid-order.json`，首轮摘要存于`apk-manifest-initial.json`。该阶段应用SHA-256 `0824282ae1fd7e112ef3010a44ed46dacb9395271169c0e209b1b92bbb3604cb`（102432058字节）；修正后仪器包 `c938643c73cead5e8f4a7fa1104958ef74a11b0a9a62f78f57a5e1f870ac4be6`（9953291字节）。产物分别为`android/app/build/outputs/apk/debug/app-debug.apk`与`android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`，是本地Debug验证包，无发布授权或发布动作。
+
+日期网格修正前同包四配置均7/7通过：手机中文浅色58.089秒、深色二倍字号61.506秒；平板英文浅色93.025秒、深色二倍字号91.475秒。结果/截图存于`ui-{phone,tablet}-{light,dark}-before-grid-order.txt`与同名目录，各28张。截图复核发现相册仍有日期标题，进一步核查`SynologyPhotosGrid`发现只有目录走平铺分支，相册仍按日期组降序，导致跨日期照片顺序被覆盖；旧合成照片都在同一天，模型顺序断言不足以覆盖此缺陷。已将相册与目录一起按返回顺序平铺，同时把原生合成日期改为与名称顺序不同，增加三张照片实际网格坐标的严格顺序断言。该问题是产品缺陷；不能用前四组通过结果代表修正后包。网格修正后运行`:app:testDebugUnitTest --tests '*SynologyPhotoAlbumPreferencesModelTest' --tests '*SynologyPhotosPresentationTest' --tests '*SynologyPhotosModelTest' :app:assembleDebug :app:assembleDebugAndroidTest`，12+2+21=35项、零失败/错误/跳过及两包构建10秒通过（`grid-order-build.log`、`xml-grid-order/`）；这是修改后的聚焦回归，不将重复项累计为一次全量测试。最终新包四配置另验，结果如下文。命令使用对应隔离模拟器：
+
+```sh
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosAlbumPreferencesUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5560 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosAlbumPreferencesUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+本地化3216对资源、占位符/引用/硬编码扫描通过（`localization.log`）；写矩阵、页面五态、触控、动效和结构检查通过（`quality-{write,page,touch,motion,structure}.log`），57个生产页面/弹窗、0个生产五态缺口、2个既有自动化缺口和67个自定义点击目标不变。请求与fixture契约检查通过，180个请求fixture/1个结果示例、29组fixture及48项私有API引用。README、API参考/发现补记和兼容清单同步，不提升内部接口static证据或新增verifications。真实NAS、物理设备、TalkBack、完整JVM/Release/R8/lint及云端尚未执行；待验证步骤见Android主计划A4o，使用专用合成相册对比网页、重新打开/跨页、权限撤回、并发和中断。整体A4及A5–A10仍继续。
+
+
+A4o最终同包原生结果（相册网格修正后）：
+
+| 设备/API 37 | App语言/外观/字号 | 本片原生结果 | 耗时 |
+| --- | --- | --- | --- |
+| 独立手机模拟器 | 中文、浅色、1.0 | 7/7通过 | 60.814秒 |
+| 独立手机模拟器 | 中文、深色、2.0 | 7/7通过 | 58.707秒 |
+| 独立平板模拟器 | 英文、浅色、1.0 | 7/7通过 | 93.375秒 |
+| 独立平板模拟器 | 英文、深色、2.0 | 7/7通过 | 90.582秒 |
+
+四组无失败或跳过，修正后的跨日期网格位置断言全部通过。最终App SHA-256 `84ed7f905b1308449eeec8ca09e0163266d0f641f7ce5679f1704113ee2577d0`（107141054字节），仪器包 `53386141df9ebed0df85c1662f01f6479fe556a323ec3d7f84946a65da97df28`（9955295字节）；原生执行后再次计算摘要与`apk-manifest.json`一致。结果为`ui-{phone,tablet}-{light,dark}-final.txt`，截图为对应`{phone,tablet}-{light,dark}-final/`，各28张共112张；语言/字号/外观均有配置读回JSON。实际复核最终手机浅色、平板浅/深色二倍字号相册平铺与选择，前一阶段已复核共用表单、读取失败和拒绝记录，相关UI代码在网格修正时未改变。模拟器恢复1.0字号与浅色后关闭，启动日志已清理，ADB无设备。
+
+A4o收口同步主计划、STATUS/平台矩阵、README、API参考/发现补记、私有兼容清单和生成质量报告。真实NAS、物理设备、TalkBack、完整JVM/Release/R8/lint与云端仍未验证，不把合成响应和模拟器等同NAS兼容结论。工作区保持main累计授权修改，无暂存/提交/推送、新分支或发布。下一片A4p幻灯片已建立只读基准与账本，尚无该片代码；其他A4及A5–A10继续。
+
+
+## 2026-10-12 Android A4p Photos 幻灯片
+
+沿批准UI完成图库菜单/普通预览幻灯片入口、上一张/暂停继续/下一张/停止、空格/左右/Escape/系统返回；图片实际解码显示后3秒、视频播放结束才推进。`SynologyPhotoSlideshowModel`冻结原空间、完整时间查询和目录/相册排序，独立游标按需补页、严格校验及首尾循环，保留图库月份/选择/已读范围；媒体失败暂停，重试媒体或失败页。复用`SynologyPhotoPreviewModel`与共享播放器，离开前台暂停，后台/退出/撤权/切换停止读取并释放媒体，迟到结果和旧视频回调不影响新会话。新增5对双语资源，共3221对。无新依赖、权限、接口、持久化格式或NAS写入，不改Apple/Windows、不提交或推送。
+
+独立集成审查重新核对：入口在有效查询/权限及无进行中写操作时可用；只读相册不借下载或原目录权；月份跳转仍播放完整范围；分页去重、偏移/数量/范围/相册身份校验；加载中重复按键、停止后旧页/媒体/结束回调；图片解码计时与视频完成分离；错误后不自动跳过；复用播放器的默认系统控制器、前台播放和资源关闭。正式测试使用生产仓储/媒体范围传输和进程内合成响应，未发出NAS请求。视频由`tools/codex/generate_android_test_video.swift`生成六秒160×120纯色H.264，无外部素材、音轨或用户数据；资产位于`android/app/src/androidTest/assets/synthetic-slideshow.mp4`，4459字节。
+
+本机命令前缀：
+
+```sh
+env JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain
+```
+
+证据目录`build/android-rewrite-a4p/`：
+
+- 首次`:app:compileDebugKotlin`5秒通过（`compile-initial.log`）。首次模型测试编译3秒失败：新fixture将spaces推断为EnumEntries且筛选字段误写generalTagId；改为显式List和真实personId，未改变业务断言（`model-tests-initial.log`）。重跑`:app:testDebugUnitTest --tests '*SynologyPhotoSlideshowModelTest' --tests '*SynologyPhotosModelTest'`，17+21=38项，零失败/错误/跳过，3秒通过（`model-tests-repaired.log`）。
+- `:app:testDebugUnitTest --tests '*SynologyPhotoSlideshowModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosMediaTransportTest' --tests '*SynologyPhotoAlbumPreferencesModelTest' :app:assembleDebug :app:assembleDebugAndroidTest`14秒通过，5组94项、零失败/错误/跳过（17+21+29+15+12；`integration-build.log`、`xml-integration/`）。这是一组聚焦测试，不能作为完整JVM门禁。
+- 原生首轮手机中文浅色执行`SynologyPhotosSlideshowUiTest`8项与`PhotoMediaViewerTest`3项，10/11通过、1失败，76.705秒（`ui-phone-light-initial.txt`）。真实播放器在失败重试后保持暂停，准备回调立即调用pause导致`pause called in state 8`；改为仅正在播放时pause，并在释放时直接reset/release避免错误状态stop。原失败断言保留。
+- 共享预览文件由1060增长至1114行，结构门禁实际失败（`structure.log`）；将完整MediaPreview和原生播放器移入独立`ui/MediaPreview.kt`，保留现有调用方式。FilePreviewDialog降至832行、新媒体文件298行，移除已经低于1000行的旧大文件条目，未放宽门禁（`structure-repaired.log`）。移除后的原文件和新文件均受普通生产文件限制。
+- 修复与拆分后重跑上述38项模型测试并构建两包，14秒通过（`playback-repair-build.log`、`xml-playback-repair/`）；新增`MediaPreviewPlaybackTest`2项后`:app:assembleDebugAndroidTest`2秒通过（`shared-player-test-build.log`）。它们使用同一六秒合成视频，实际检查原默认等待用户播放/系统媒体键，以及可选控制下准备时暂停和完成事件；File Station旧预览3项仍执行。
+
+最终应用SHA-256 `3749d3e5348c19976553563138adcd46ce9be7df69aa65c3f24a2e4fff4c90d8`（107193562字节），仪器包`04b7407e32c8a846a9d8ad840f193e9aa2ace2f41c4d23a954e3d9ede2ef0aa0`（10017247字节），见`apk-manifest.json`。产物为`android/app/build/outputs/apk/debug/app-debug.apk`和`android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`；本地Debug验证包，不是发布。对应原生命令（手机5554、平板5560）：
+
+```sh
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSlideshowUiTest,io.github.qwertyuiop1995.dsmnativeclient.PhotoMediaViewerTest,io.github.qwertyuiop1995.dsmnativeclient.MediaPreviewPlaybackTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+本片8条原生流程覆盖：图库触控/键盘/循环与选择保留；普通预览当前项/真实三秒；真实视频跨三秒、暂停/继续和结束；图片解码/视频失败重试；分页失败/重试；加载暂停、系统返回与撤权；个人关闭且下载权限false的可查看相册；空图库和共享来源。另3项File Station预览与2项共享播放器回归。四配置使用同一应用与仪器包，当前结果如下：
+
+| API 37模拟器 | App语言/外观/字号 | 结果 | 耗时 |
+| --- | --- | --- | --- |
+| 手机 | 中文/浅色/1.0 | 13/13通过 | 87.377秒 |
+| 手机 | 中文/深色/2.0 | 13/13通过 | 88.920秒 |
+| 平板 | 英文/浅色/1.0 | 13/13通过 | 119.121秒 |
+| 平板 | 英文/深色/2.0 | 13/13通过 | 115.835秒 |
+
+结果为`ui-{phone,tablet}-{light,dark}-final.txt`，截图和配置读回分别保存。原生失败、修复前截图与最终结果分开保留。真实NAS、物理设备、TalkBack、完整JVM/Release/R8/lint与云端未执行；主计划A4p列明专用合成媒体、范围、慢网/断网、权限撤回、后台、只读相册、循环及回传脱敏信息。接口证据保持static。
+
+A4p最终四配置全部通过，无失败/错误/跳过，每组19张合成截图，共76张；实际复核手机浅色画面、手机深色二倍字号错误恢复、平板浅色可查看相册及平板深色二倍字号视频错误，按钮/恢复入口没有遮挡。四组结束后两包SHA-256与清单仍一致。模拟器均恢复1.0字号/浅色并关闭，启动日志清理，正式fixture/测试及必要验证证据保留。
+
+3221对双语资源及硬编码检查通过；写矩阵、页面五态、触控、动效、结构通过，仍57个生产页面/弹窗、0个生产五态缺口、2个既有自动化缺口、67处自定义点击。请求契约180个请求fixture/1个写结果示例、29组fixture/48项私有文档引用通过。API参考/发现说明/兼容清单、README、状态/矩阵/主计划和生成质量报告同步，未提升static证据。工作区仍main累计授权修改，Apple/Windows差异为空，无暂存/提交/推送/发布。下一片A4q单张旋转已读现有基准并建立账本，尚未写代码；A4其余功能及A5–A10继续。
+
+## 2026-10-12 Android A4q Photos 单张旋转
+
+本片沿批准UI在照片预览工具栏接入“向左旋转并保存”，复用资料编辑仓储、互斥和版本1加密记录。支持媒体/扩展名与1–8方向映射来自既有静态契约；原件身份、方向/尺寸、原来源与编辑权限在写前重查。Item.set v2仅发送id数组和rotate_action=counter_clockwise，未知/冷恢复不重放。成功回执只保留在仓储内存，回读按2026-10-07修正允许原尺寸或交换尺寸；明确拒绝不以巧合的方向追认成功。预览即时转向、保存中禁用旋转/下载、实况方向限制与未知结果只读刷新已接入；完成精确刷新该照片、日期分组、选择和缓存，不重载列表。
+
+本机命令前缀：
+
+```sh
+env JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/yuangy/Library/Android/sdk' android/gradlew -p android --no-parallel --max-workers=2 --console=plain
+```
+
+证据目录`build/android-rewrite-a4q/`：
+
+- 首次`:app:compileDebugKotlin`12秒通过（`compile-initial.log`）。随后`:app:testDebugUnitTest --tests '*SynologyPhotosRotationRepositoryTest' --tests '*SynologyPhotosEditRepositoryTest' --tests '*SynologyPhotoEditModelTest' --tests '*SynologyPhotoEditStoreTest'`9秒执行51项，50通过、1失败（`repository-tests-initial.log`）。新测试错误地假定原来源关闭后仍可编辑相册贡献；重新核对Mac mutationAccessSpace/ editableAlbumPhoto与已有Android拒绝用例，保留原来源门禁，成功用例恢复真实启用前提，并增加关闭来源必须拒绝的断言，没有放宽产品权限。
+- 增加`--tests '*SynologyPhotoRotationModelTest'`后5组58项全部通过，5秒（`model-tests-initial.log`）。覆盖原始尺寸/八方向、明确/丢失回执与冷恢复、拒绝巧合方向、身份/尺寸变化、权限与持久化、防连点、当前图/图库选择与分页、换图/关闭及撤权。
+- 集成命令如下，9组140项零失败/错误/跳过（旋转仓储11、旋转模型7、编辑仓储20、编辑模型13、编辑存储7、根模型21、幻灯片17、通用仓储29、媒体传输15；`xml-integration/`）。首次整体命令13秒因新仪器测试资源名sp_section_albums不存在而失败；改用实际sp_library_albums后8秒构建成功（`integration-build.log`、`integration-build-repaired.log`）。JVM通过不掩盖首次仪器编译失败。
+
+```sh
+:app:testDebugUnitTest --tests '*SynologyPhotosRotationRepositoryTest' --tests '*SynologyPhotoRotationModelTest' --tests '*SynologyPhotosEditRepositoryTest' --tests '*SynologyPhotoEditModelTest' --tests '*SynologyPhotoEditStoreTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoSlideshowModelTest' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosMediaTransportTest' :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+- 原生首轮手机中文浅色6项全部未通过，92.802秒（`ui-phone-light-initial.txt`）。发现旋转按钮在LazyRow内只读取模型普通getter，图片解码后的可用状态未可靠更新；将计算放在订阅状态的预览层，并把布尔值传入工具栏。另一断言错误地固定列表请求为1，实际图库自动加载下一页；改为操作前后读取次数不增加，保留不刷新列表的业务断言。保存期间补上禁用下载，避免同时读取正在变更的原件（`button-state-build.log`8秒、`preview-write-build.log`7秒）。
+- 修正后5/6通过，15.816秒（`ui-phone-light-repaired.txt`）；剩余失败是测试关闭原来源后直接读取已退回相册首页的空照片列表，修正为实际点击相册再打开照片，未改产品导航或删除断言（`source-navigation-test-build.log`2秒）。随后手机两配置14/14通过，46.948/48.748秒；这些包及截图单列`before-pending-guard`，不充当最终证据。
+- 截图复核发现未知旋转时幻灯片入口仍显示可用、点击却被模型拒绝；统一getter与预览工具栏状态并补原生/模型断言。`:app:testDebugUnitTest --tests '*SynologyPhotoRotationModelTest' --tests '*SynologyPhotoSlideshowModelTest' --tests '*SynologyPhotosModelTest' :app:assembleDebug :app:assembleDebugAndroidTest`11秒通过，7+17+21=45项（`pending-guard-build.log`、`xml-pending-guard/`）。该包四配置均14/14通过，手机44.569/44.406秒、平板45.786/44.626秒，另列`before-completion-lock`。
+- 独立集成与只读对抗复核进一步固定完成操作编号，并在旋转完成后的读取/界面更新期间保持忙碌，防止新操作与旧完成回调交错；追加阻塞回调下第二次操作必须拒绝的测试。`:app:testDebugUnitTest --tests '*SynologyPhotoRotationModelTest' --tests '*SynologyPhotoEditModelTest' --tests '*SynologyPhotoSlideshowModelTest' --tests '*SynologyPhotosModelTest' :app:assembleDebug :app:assembleDebugAndroidTest`9秒通过，8+13+17+21=59项、零失败/错误/跳过（`completion-lock-build.log`、`xml-completion-lock/`）。以上组间有重叠，不合计为完整JVM门禁。
+
+最终原生命令（手机为emulator-5554，平板为emulator-5560）：
+
+```sh
+/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosRotationUiTest,io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSlideshowUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+旋转六条使用正式仓储、加密存储、真实PNG解码和进程内合成响应，覆盖即时保存/连续四转/保留选择、丢回执冷恢复、明确及权限拒绝、格式限制/实况、相册贡献/共享/原来源关闭和换图/撤权。幻灯片八条回归共用预览与媒体读取；每组18张旋转截图和19张幻灯片截图。没有使用真实NAS数据或发送真实写请求。
+
+最终同一组APK的四配置结果：
+
+| 配置 | 结果 | 用时 | 报告 |
+| --- | --- | --- | --- |
+| 手机中文浅色标准字号 | 14/14通过，0失败 | 44.901秒 | `ui-phone-light-final.txt` |
+| 手机中文深色二倍字号 | 14/14通过，0失败 | 43.874秒 | `ui-phone-dark-final.txt` |
+| 平板英文浅色标准字号 | 14/14通过，0失败 | 153.823秒 | `ui-tablet-light-final.txt` |
+| 平板英文深色二倍字号 | 14/14通过，0失败 | 150.532秒 | `ui-tablet-dark-final.txt` |
+
+最终生产APK SHA-256 `74db48bdd96f0f99bf38b201fd43b229f40838a21fd8b016d2c978140fb84348`（107203942字节），仪器APK `79f6256b8883d52b462fab216f193129b8c76301f6456802d76c17769ee62c82`（10065867字节），路径分别为`android/app/build/outputs/apk/debug/app-debug.apk`和`android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`，摘要保存于`apk-manifest.json`。四组完成后已复核两包哈希不变，语言/字号/夜间模式回读见各组`*-final-config.json`，合计148张最终合成截图。实际检查最终手机深色大字号拒绝状态、平板深色大字号未知恢复与按钮，前一同布局包另查看保存即时转向和完成显示。两台AVD顺序运行，均恢复标准字号/浅色并关闭，ADB设备列表为空。
+
+本地化3226对资源及硬编码/占位符检查、页面五态（57个生产页面，0生产缺口，2个既有自动化缺口）、67处自定义点击目标、动效、结构、写操作矩阵、180个请求fixture/1个写结果示例、29组fixture/48项私有API引用均通过。质量报告由既定生成器更新；文档严格检查与计划检查通过。Android之外源码未变，未提交、推送或调用真实NAS。
+
+`PENDING_USER_VALIDATION`：真实NAS与当前套件版本下的原件字节/大小变化、八种镜像EXIF、个人/共享/贡献相册的最终保存效果、物理设备后台/系统交互与TalkBack尚未验收。使用专用生成JPEG，逐次旋转并重开、断网/丢回执和冷恢复应一次点击仅一次写；回传版本、方向/尺寸、阶段与脱敏错误，不发送媒体、路径或凭据。完整JVM/Release/R8/lint和云端门禁尚未运行。A4q结束，A4r完整导出账本已建立，剩余Photos管理及A5–A10继续实施。
+
+
+## 2026-10-12 Android A4r Photos 完整导出
+
+沿已批准Android重写计划与现有Photos界面，接入单张/固定多选原件、压缩JPEG、能力允许的单张原尺寸JPEG，以及完整相册、目录和同级含目录混选ZIP。复用同一媒体传输、原件/相册权限、已有目录身份校验和统一导出模型；单文件准备好后创建文档，多选选择目录后逐项下载/校验/保存。同名另存、实际格式、原格式保留数量、部分完成、取消、账号撤权和选择器前后台均有正式断言。保持图库月份、选择与分页，不把当前加载页当作完整集合。
+
+未改Apple/Windows源码、NAS请求Schema、生产权限、第三方依赖或持久结构。仪器测试新增的ContentProvider仅存在于测试APK，在自身专用cache目录中创建合成文件；真实ContentResolver/DocumentsContract/Binder/文件描述符用于输出检查。系统选择器结果由测试ActivityResultRegistry提供，不能据此宣称真实手机文件管理器验收。生成PNG/JPEG/ZIP与合成请求不包含用户媒体或NAS凭据，不向真实NAS写入。
+
+本机继续只做增量构建、聚焦JVM及必要模拟器测试；Gradle使用Android Studio JBR与现有SDK，统一参数`android/gradlew -p android --no-parallel --max-workers=2 --console=plain`。下列证据位于忽略目录`build/android-rewrite-a4r/`：
+
+- `:app:compileDebugKotlin`初次数据层编译13秒通过（`compile-data-initial.txt`）；模型/UI初编译因移除旧保存逻辑时误删仍用于详情面板的rememberSaveable import失败，恢复该import后通过后续构建（`compile-model-ui-initial.txt`保留失败）。
+- `:app:testDebugUnitTest --tests '*SynologyPhotosExportRepositoryTest' --tests '*SynologyPhotosMediaTransportTest' --tests '*SynologyPhotosModelTest'`首轮45项中44通过；旧删除恢复测试在自动回读仍进行时开始断言，`data-model-tests-initial.txt`及`xml-initial`保留失败。随后新增导出模型/媒体测试的82项集成首轮有2项失败（`integration-build-initial.txt`、`xml-integration-initial`）：同一旧测试，以及新取消路径发现第二个私有目录清理被取消中断。
+- 实际修正将所有私有目录放入同一个不可取消清理过程，目录创建时先登记所有权以处理返回调度取消，并在文档关闭后、离开不可取消边界前记录成功数。旧测试只增强等待条件为checking/recovering均结束，并要求显式review返回任务，三项原断言不变、增加说明；未改变删除生产逻辑或弱化断言。`cancellation-model-tests.txt`11秒、28项（导出7、图库21）通过，XML见`xml-cancellation`。
+- `integration-build-repaired.txt`31秒通过82项聚焦测试及Debug/仪器APK；分别为导出仓储9、导出传输5、导出模型7、既有媒体15、图库21、旋转模型8、幻灯片17，XML见`xml-integration-repaired`。首次原生执行未完成：测试APK独立进程未包含主APK的Kotlin运行时，测试提供器崩溃；改用纯Java平台类实现该测试夹具，未增加依赖/生产权限（`test-provider-initial-crash.txt`、`provider-build.txt`8秒通过）。
+- 修正提供器后手机首轮8项中2通过、6项因新测试定位方式失败（`ui-phone-light-provider-repaired.txt`）：LazyRow未组合远端保存按钮，非滚动多选工具栏不支持performScrollTo。为预览工具栏增加测试标识、按LazyRow扫描到保存按钮，普通多选按钮先断言可见再点击。实际界面“保存原件”同步为“保存”，匹配现在的多格式入口；`native-controls-build.txt`17秒、53项模型回归及两APK通过（`xml-native-controls`）。这一阶段手机8/8通过，75.578秒（`ui-phone-light-controls-repaired.txt`），16张截图在`phone-light-before-final-guards`；该中间包不冒充最终包。
+- 独立集成与只读对抗复核补上两项边界：整册/目录导出重新检查持久未决原件编辑，媒体传输不可用时不能先convert。追加正式回归后`final-guard-build.txt`15秒通过97项聚焦JVM与Debug/仪器APK（`xml-final-guard`）：导出仓储10、导出传输5、导出模型8、既有媒体15、图库21、旋转模型8、幻灯片17、资料编辑模型13。没有把45/28/82/53/97相加表述为同次全量测试。
+
+最终构建命令：
+
+```sh
+android/gradlew -p android --no-parallel --max-workers=2 --console=plain \
+  :app:testDebugUnitTest \
+  --tests '*SynologyPhotosExportRepositoryTest' --tests '*SynologyPhotoExportTransportTest' \
+  --tests '*SynologyPhotoExportModelTest' --tests '*SynologyPhotosMediaTransportTest' \
+  --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoRotationModelTest' \
+  --tests '*SynologyPhotoSlideshowModelTest' --tests '*SynologyPhotoEditModelTest' \
+  :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+最终A4r APK记录（`apk-manifest.json`）：App `c56dedc4fa0157e52d50b3964e07891e246d9c376fa45037ae5fd37eb5316d9a`（111062962字节），仪器APK `87a63d823567c5a20bdb4a1291d3639a616df093710cb731737e9a35eb8e8384`（10131119字节）。这两包由`error-message-build.txt`17秒增量构建生成（`:app:assembleDebug :app:assembleDebugAndroidTest`），四配置均核对相同摘要；结果文件`ui-<设备>-<主题>-final.txt`，系统字号、主题与App语言读取结果在对应`*-final-config.json`。较早包和两组手机结果另存`apk-before-error-message.json`/`before-error-message`，不计作最终结果。下一片A4s在末轮测试期间开始数据层源码，不属于本段APK或验收范围。
+
+原生共22项：新增导出8项、旋转回归6项、幻灯片回归8项。使用专用API37手机/平板模拟器，`adb -s <serial> shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosExportUiTest,io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosRotationUiTest,io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSlideshowUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。
+
+| 配置 | 本片最终结果 |
+| --- | --- |
+| 手机中文、浅色、1.0字号 | 22/22通过，197.733秒，53张截图 |
+| 手机中文、深色、2.0字号 | 22/22通过，192.732秒，53张截图 |
+| 平板英文、浅色、1.0字号 | 22/22通过，300.602秒，53张截图 |
+| 平板英文、深色、2.0字号 | 22/22通过，291.625秒，53张截图 |
+
+截图复核发现本地创建文档失败时复用了媒体打开失败的恢复提示。已改用保存专用提示，增加原生可见文案及旧提示消失的断言；前两组手机结果/截图改名`before-error-message`保留，不能冒充修正后结果。该修改只涉及UI文案和断言，不重复未变的97项仓储/模型测试。
+
+文案修正后已通过3241对Android双语资源、占位符/引用/硬编码检查（`localization-current-final.txt`）；写矩阵、57页面五态（0生产缺口、2既有自动化缺口）、67自定义点击目标、动效、结构、计划与严格文档预检通过。请求契约180个fixture/1个结果示例、29组fixture及48项私有API引用通过。最终四配置合计212张合成截图（每组导出16、旋转18、幻灯片19），已实际复核英文浅/深色及手机中文二倍字号的格式选择、已保存/保留原格式数量与部分失败恢复提示。两台模拟器均恢复1.0字号/浅色后关闭，本片临时基准副本与原始模拟器日志已清理；正式测试和失败/通过证据保留。质量生成报告同步本片结果，不把下一片尚未验证的代码算入完成。
+
+`PENDING_USER_VALIDATION`：真实NAS的原件/压缩回退、HEIC/TIFF/RAW原尺寸转换、相册/目录/贡献者权限、后代目录范围与大ZIP/ZIP64；真实手机文档提供器创建/关闭/失败清理能力、TalkBack和物理媒体查看。ZIP容器结束检查不是逐成员CRC；提供器拒绝清理时无法保证移除不完整目标。转换仅有成功回执才后续下载，取消不能撤回已经接收的NAS派生缓存操作。无完整JVM、Release/R8/lint或云端结论，不提升NAS static证据。工作继续在原main，未暂存、提交、推送、新建分支/PR或发布。
+
+A4r收口：`quality-final-{diff,generated,write,page,touch,motion,structure,plan,docs}.txt`九项检查均通过，配合最终3241对双语资源检查完成本片静态门禁；57个页面/弹窗、0个生产五态缺口、2个既有自动化缺口与67处点击目标不变。README、API参考、发现说明/兼容清单、主计划、STATUS/平台矩阵和生成质量报告已同步；原main累计修改保留，无Git暂存/提交/推送/分支/PR或发布，Apple/Windows无源码差异。A4s账本及任务数据层已开始，仍待集成和验证，其余A4与A5–A10继续。
+
+## 2026-10-12 Android A4s Photos 后台任务中心
+
+沿现有`photos-background-tasks.md`静态契约和Mac只读基准，已接入任务领域、统一Foto列表与错误详情/目标父链、停止数组/清理逐项标量，以及现有相册加密存储中的独立控制记录。固定身份与清理范围、未决搬移不可清理、丢回执仅读取已尝试范围及明确拒绝保护均有初步自动化。列表/筛选/确认/操作记录/错误详情及目标跳转已接入现有Compose页面与图库生命周期；尚未运行本片原生界面验收，模型/集成测试仍在补充。没有真实NAS交互或其他平台源码修改。
+
+存储变更、迁移/回退及安全范围在主计划A4s账本；旧开发记录可读，新增动作不能在旧包读取，不能以删除未决记录完成回退。沿用已获授权的自动方案选择，无新增依赖、权限或工具链。A4r最终APK及四配置结果单独记在上一段，不能当作本片构建或界面证据。
+
+当前本机使用Android Studio JBR和现有SDK，所有Gradle命令使用`android/gradlew -p android --no-parallel --max-workers=2 --console=plain`。忽略目录`build/android-rewrite-a4s/`保存：
+
+- `:app:compileDebugKotlin`数据层初次16秒通过（`compile-data-initial.txt`）。
+- `:app:testDebugUnitTest --tests '*SynologyPhotosBackgroundRepositoryTest' --tests '*SynologyPhotoBackgroundStoreTest' --tests '*SynologyPhotosFileRepositoryTest' --tests '*SynologyPhotoAlbumStoreTest'`10秒、51项全部通过（新后台仓储10、控制存储3、既有文件仓储21、相册存储17），报告`data-tests-initial.txt`及`xml-data-initial`。覆盖统一用户读取、个人来源关闭、非法/未知字段、身份更换、进度变化、逐项清理、新任务保留、回执丢失/冷恢复、明确拒绝、按目标来源补详情、错误降级、目标权限/父循环、存储单向变化和原搬移独立恢复。
+- 模型/UI初次`:app:compileDebugKotlin`4秒通过（`compile-ui-initial.txt`）。随后只调整页面切换时取消读取和原件编辑持久记录检查，需后续测试/构建覆盖；不以此前编译证明末次源码已验收。
+- `tools/localization/check_localization.py`3297对Android资源、占位符/引用/硬编码检查通过（`localization-initial.txt`）；后续将随最终文案再检查。结构ratchet与`git diff --check`当前通过。尚无本片Debug/仪器APK、模拟器、真实NAS、物理设备、TalkBack或云端结论。
+
+工作区仍main，累计552个已修改/未跟踪条目包含此前整个任务，不等同本片文件数。当前没有ADB设备或运行中的模拟器，未暂存/提交/推送/创建分支/PR/发布。后续继续本片模型/集成和原生验证，再完成余下A4及A5–A10。
+
+2026-10-13追加模型与原生验证：本阶段使用环境已有OpenJDK 17作为Gradle进程，SDK/工程配置未改；命令在`android/`执行，统一`./gradlew ... --max-workers=2 --console=plain`。
+
+- 新增12项`SynologyPhotoBackgroundModelTest`，首轮五组62项中61通过、1项夹具失败（`model-tests-initial.txt`/`xml-model-initial`，76秒）：未决原件编辑的合成记录在SUBMITTING时未填既有契约要求的attempted。修正夹具，使原存储断言保留；追加Album/Settings/Export模型集成后108项全部通过，Debug/仪器APK同时通过（`tests-build-initial.txt`，47秒；`xml-model-final`）。
+- 首轮手机中文浅色8项中7通过、1项目标跳转超时（`ui-phone-light-initial.txt`，96.118秒，26张截图）。生产导航读取目录后会补上排序/封面，而新增跳转以完整集合相等判断身份，误中止关闭任务页。改为核对来源、编号、父级、名称、路径，显示元数据不参与身份判断；保留原生断言并新增根模型回归。
+- 独立只读对抗复核发现能力缺失时后台模型可能不创建，而旧已发送控制记录仍需参与其他操作互斥。抽取同一存储检查供存在/不存在入口两条路径使用，不清除或跳过记录；新增缺失能力下导出被持久未决记录拦截的测试。14项后台模型在八组共110项聚焦回归中全部通过，Debug/仪器APK31秒通过（`navigation-guard-build.txt`/`xml-guard-final`）。
+- 当前App摘要`dd425701237d1611d183e1a25e284cc42b84cced69621ac856ae55663d30c167`，106265666字节；仪器包`e630bdf806bf1f7ea8d1d865046f9977135393e3d3aeb18d150b51198ad8a2d3`，10182975字节（`apk-manifest.json`）。初始包`apk-initial.json`单独留证，不代替修正后结果。正在运行8项任务中心加8项原文件搬移回归，四配置结果随后补记。
+- 当前静态检查`quality-stage-{diff,write,page,touch,motion,structure,plan,docs,requests,fixtures}.txt`全部通过：57生产页面/0生产五态缺口/2既有自动化缺口，67处自定义点击目标，180请求fixture/1写结果、29组fixture/48私有接口文档引用。3297对资源当前完整性/占位符/引用/硬编码检查通过（`localization-current.txt`）。
+
+独立集成复核覆盖单一任务仓储/存储接入、所有写入口互斥、固定清理范围、原搬移与控制独立恢复、确认前身份复查、明确拒绝不被后续消失误记成功、关闭页面及账号撤销晚到保护。只读对抗复核没有发出真实NAS请求；初始失败与修复过程保留，最终原生结果尚未在本段宣称通过。
+
+
+2026-10-13 A4s最终结果：上述摘要相同的两APK在四配置各16项全部通过；8项`SynologyPhotosBackgroundUiTest`与8项`SynologyPhotosFileUiTest`使用正式图库、仓储与加密记录，接口内容均为合成数据。执行命令：
+
+```sh
+adb -s <serial> shell am instrument -w -r \
+  -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosBackgroundUiTest,io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosFileUiTest \
+  -e captureWorkspaceUi true \
+  io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+| 配置 | 本片最终结果 |
+| --- | --- |
+| 手机中文、浅色、1.0字号 | 16/16通过，200.515秒，53张截图 |
+| 手机中文、深色、2.0字号 | 16/16通过，207.117秒，53张截图 |
+| 平板英文、浅色、1.0字号 | 16/16通过，238.549秒，53张截图 |
+| 平板英文、深色、2.0字号 | 16/16通过，248.195秒，53张截图 |
+
+日志`ui-<设备>-<主题>-final.txt`、配置读回`*-final-config.json`与212张截图在`build/android-rewrite-a4s/`。手机已恢复标准字号/浅色并关闭；平板恢复同样显示配置，接续下一片专用验证。已实际查看中文深色二倍字号活动任务/清理确认、目标路径跳转，以及英文浅色部分结果/深色大字清理确认，确认文字、数量与按钮可读。
+
+平板首次命令把测试类包名误写为斜线，立即中止修正，记录`ui-tablet-light-command-error.txt`；正确命令首轮在第三项开始后模拟器进程退出，记录`ui-tablet-light-interrupted.txt`，不计入通过，也不声称已确定或修复退出根因。重启原专用设备，重新核对未改变的两APK摘要/安装，完整浅深色重跑结果见表。原生断言没有因中断减少或跳过。
+
+独立集成/只读对抗复核及静态门禁结果见前段。本片确认的风险与未验项：真实NAS的当前套件任务身份、已完成内容保留、逐项清理与错误详情；真实设备网络/后台生命周期、TalkBack仍为`PENDING_USER_VALIDATION`，步骤在A4s账本。没有完整JVM、Release/R8/lint、云端或真实NAS结论；static证据等级不变。main累计改动保留，未暂存、提交、推送、建分支/PR或发布。
+
+下一片A4t在A4s平板最终测试期间开始共享图库设置源码，未纳入本片APK摘要和原生结果。其初次编译27秒通过，首轮72项测试71通过、1项合成夹具缺少统一Foto分类能力声明，保留原断言补齐夹具后继续验证；正式A4t结果在后续条目单独记录。
+
+
+A4s收口：`quality-final-{diff,generated,write,page,touch,motion,structure,plan,docs}.txt`九项通过，57页面/0生产五态缺口/2既有自动化缺口/67处点击目标不变；A4s最后资源3297对通过，接续A4t新增14对后的3311对另记在`build/android-rewrite-a4t/localization-initial.txt`。README、API说明/兼容清单、主计划、STATUS/平台矩阵与生成报告已同步。下一片源码与该片固定APK结果分开，真实环境缺口不阻止继续A4t。
+
+## 2026-10-13 Android A4t Photos 共享图库设置
+
+基准、范围、恢复结构和回退影响见主计划A4t账本。当前接入管理员身份和完整快照重读、三识别/顶层公开开关、独立启停与最后图库限制；复用设置动作/加密记录及现有Compose表单，普通设置差量写入，启停与公开变更按具体后果确认。保存后只更新受影响来源/分类，个人历史位置/选择保持；关闭当前共享来源或不可访问分类时退出。无新增依赖、系统权限或其他端源码修改。
+
+本机现有OpenJDK17/Android SDK，命令统一`android/gradlew -p android --no-parallel --max-workers=2 --console=plain`。证据目录`build/android-rewrite-a4t/`：
+
+- `:app:compileDebugKotlin`27秒通过（`compile-initial.txt`）。
+- `:app:testDebugUnitTest --tests '*SynologyPhotosSharedSettingsRepositoryTest' --tests '*SynologyPhotosSettingsRepositoryTest' --tests '*SynologyPhotoSettingsModelTest' --tests '*SynologyPhotoSettingsStoreTest' --tests '*SynologyPhotosModelTest'`首轮72项中71通过、1项测试夹具失败（`data-initial.txt`，21秒；`xml-data-initial`）。新测试保存后读取分类，夹具误声明FotoTeam分类能力，而现有生产分类发现用统一Foto；按实际契约补齐夹具，不改变生产路由或原断言。
+- 加入`--tests '*SynologyPhotoSharedSettingsModelTest'`后六组82项全部通过（`model-initial.txt`，12秒；`xml-model-initial`）：共享仓储14、共享模型/存储10、既有设置仓储18、设置模型15、设置存储4、根模型21。该阶段不代表最终原生结果。
+- 独立集成复核将成功后重新读取实际共享设置纳入working保护，再释放互斥并应用来源变化；增加读取未结束时不能再次保存/开启其他写的模型断言。正在运行加入相册偏好/任务中心回归的聚焦集成及两APK，新增8条原生流程待运行。
+- 3311对资源完整性/占位符/引用/硬编码扫描与结构检查已通过。NAS契约仍static，无真实NAS、物理设备、TalkBack或完整JVM/Release/R8/lint/云端结论。
+
+
+A4t当前集成：`integration-build-initial.txt`33秒通过109项聚焦JVM及Debug/仪器APK（`xml-integration-initial`）：共享仓储14、共享模型/存储11、既有设置仓储18、设置模型15、设置存储4、根模型21、相册偏好12、任务中心14。后续仅加强原生冷恢复测试在共享来源执行的场景，`:app:assembleDebugAndroidTest`4秒增量通过（`native-scenario-build.txt`），APK摘要留`apk-manifest-initial.json`。8条`SynologyPhotosSharedSettingsUiTest`与7条`SynologyPhotosSettingsUiTest`正在执行，保留所有原设置回归断言。
+
+
+A4t首轮原生：`apk-manifest-initial.json` App `d0af3ba93d371d2b2dfe2ddfd240ddcc0d591fab0ef75ac1a8629c7aa86986c6`（106265666字节），仪器`af1f13eabc2381e82214852962f2d7ec2a32a975eee63ab8f500bd3e4a2f7461`（10224391字节）。手机中文浅色15/15通过，378.505秒、53张截图；平板英文浅色14/15通过，434.777秒、51张截图，失败发生在既有个人识别限制用例，堆栈为`ValueAnimator.cancel/RippleHostView/FrameDeferringContinuationInterceptor`的`Animators may only be run on Looper threads`。两组初始日志/截图单独保留，不能作为最终包验收。
+
+实际中文截图发现管理员表单复用了“请联系管理员”提示，已新增中英资源指向DSM的Synology Photos全局设置，原生测试明确要求新提示存在、旧提示消失；3312对资源检查通过（`localization-final.txt`），两APK35秒增量构建（`global-hint-build.txt`），当时摘要保留`apk-before-test-dispatcher.json`。平板动画错误后，两组设置测试改用当前同版本Compose已提供的`androidx.compose.ui.test.junit4.v2.createComposeRule`标准调度入口；不改依赖或生产动画、不删断言/跳过失败路径。需重走原失败用例并运行最终同包四配置，不能只凭重跑宣称根因解决。
+
+
+两组测试的v2调度入口增量构建3秒通过（`test-dispatcher-build.txt`）；原平板失败路径独立通过，13.961秒（`ui-tablet-recognition-dispatcher.txt`），仍需最终完整四配置。最终候选App `c2946a82ec90e3308951e3f8c5a75abe3f3fcde81aae100680e870485a174649`（111192186字节），仪器`a043e1d59a0e53ca3aa1522aa3e6188eb94e57eb3392cbd7c2ad2d9f8c7df57a`（10224383字节）；摘要及独立留存路径见`apk-manifest.json`。本阶段没有改变设置仓储/模型，不重复未变的109项JVM；最终手机/平板四配置使用这两份包。
+
+
+A4t最终包手机中文浅色15/15通过（211.687秒）、深色二倍字号15/15通过（218.912秒），各53张新合成截图，配置回读与`ui-phone-{light,dark}-final.txt`/`phone-{light,dark}-final`归档。平板英文浅色238.522秒、深色二倍字号277.278秒均15/15通过，但命令漏传`captureWorkspaceUi=true`，拉取到旧截图；结果日志改存`ui-tablet-{light,dark}-no-new-screenshots.txt`，旧截图副本删除，不算最终截图证据。补传截图参数重走同两份留存APK与15条流程，浅色已15/15通过190.798秒、53张新截图，深色仍在执行。
+
+A4t最终截图补采：平板浅色15/15通过190.798秒、深色二倍字号15/15通过199.194秒，各53张新截图。已实际查看手机深色管理员说明、平板浅色共享表单和深色大字公开后果确认，布局/文字可读。最终四配置共60次测试通过、212张合成截图；原生命令为`adb -s <serial> shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSharedSettingsUiTest,io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSettingsUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。配置回读均符合预设，完成后恢复模拟器标准字号/浅色并关闭，清除本片模拟器临时日志。APK摘要沿最终`apk-manifest.json`，不包含A4u源码。真实NAS/物理设备/TalkBack及完整JVM、Release/R8/lint和云端均未验证。
+
+A4t收口九项检查通过（`quality-final-{diff,generated,write,page,touch,motion,structure,plan,docs}.txt`），57页面/0生产状态缺口/2既有自动化缺口/67处点击目标不变。共享设置结论与A4u新增资源/源码分开记录，主计划、STATUS、矩阵、API说明/兼容清单及生成质量报告同步。
+
+## 2026-10-13 Android A4u Photos 全局设置与转换缓存
+
+基准/范围/恢复及回退影响见主计划A4u账本，源码不属于A4t冻结包。接入六项已知全局选项、保留未知格式/大小写的排除选择、HEVC条件、缓存读取/清理；全局关闭联动当前个人/共享已知识别，JPEG关闭先清缓存后按全局/个人/共享顺序保存，复用加密管理记录并持久保存逐步尝试/回执/拒绝/完成事实。恢复只读，不补发后续；无回执的清理必须结束且为零，有回执仍等结束但允许新缓存，明确拒绝不得认领后续他人结果。表单沿既有Compose风格，缓存错误独立；部分保存也按真实设置更新分类/JPEG，保留个人历史位置。
+
+`build/android-rewrite-a4u/compile-initial.txt`6秒编译失败：Kotlin换行后否定表达式解析与不存在的刷新资源引用。改为显式布尔比较及已有`refresh`资源，`compile-corrected.txt`73秒通过。7组99项聚焦JVM通过，10秒（`data-initial.txt`/`xml-data-initial`）：全局仓储16、共享仓储14、既有设置仓储18、设置模型15、设置存储4、共享模型11、根模型21。3332对双语资源/参数/引用/硬编码扫描通过（`localization-stage.txt`）。
+
+后续独立复核已修正两点：全局回读重新开启已有共享识别时应恢复类别缓存；恢复时前一次已匹配的步骤不能掩盖后一次读到的并发变化，最终状态仍按本次真实值判断，已完成事实保持单向。模型增加后台读取取消与返回重载，以及独立视图代次防止旧读取的finally覆盖新加载状态。新增11项模型/存储/生命周期测试初次因两处测试括号编译失败（`model-initial.txt`8秒），已修正并继续运行，不降低断言。尚未运行本片原生测试或真实NAS验证。
+
+
+A4u模型修正后八组110项全部通过（`model-corrected.txt`25秒、`xml-model-corrected`）：上阶段99项加11项全局模型/存储/生命周期。包括真实值而非草稿应用部分结果、成功/部分完成最后读取期间互斥、取消缓存确认保留草稿、缓存5秒和未决15秒只读刷新、后台/关闭/撤权停止、不可取消迟到读取不能应用与返回重载、个人月份/多选保持及JPEG能力、两来源分类退出和恢复事实的单向/账号隔离。新增8条全局原生测试已写入，正在构建两APK；此时不计为原生通过。
+
+
+A4u两APK增量构建16秒通过（`native-build-initial.txt`），`apk-manifest-initial.json`及`initial-apks/`留存：App `03fafae2ebb3918b2f8fd08ebcdcca04f09d13e47a68dd76298453b927530087`（106265666字节）、仪器`b4f0cf8fc96cebae3d3fd355e0b4081ae3b92cb80c89143fe475e6e23ab2b415`（10268407字节）。手机中文浅色正在执行23条（全局8、共享8、个人7），原生使用`captureWorkspaceUi=true`采集新截图，尚无本片原生通过结论。
+
+
+A4u首轮手机中文浅色23/23通过（240.085秒，`ui-phone-light-initial.txt`），包含全局8项、共享8项和个人设置7项；深色二倍字号继续执行。已实际查看浅色六选项/缓存和展开格式截图，操作区与已选/未知大小写格式可读。180请求fixture/1结果示例、29组fixture/48条私有文档引用与严格文档检查通过（`contracts-stage.txt`、`fixtures-stage.txt`、`quality-stage-docs.txt`）。新增A4v账本仅为下一片只读核对，不含共享成员实现或验证。
+
+
+A4u补充集成回归53项通过（`integration-regression.txt`12秒、`xml-integration-regression`）：全局仓储17（新增实际共享类别从关闭到开启、再关闭的读取回归）、相册偏好模型12、任务中心模型14、导出仓储10。与前批110项去重为147项不同聚焦测试；未修改生产代码或两APK，不重建已冻结原生包。以上均为本地合成结果，不提升NAS证据等级。
+
+
+A4u手机深色二倍字号23/23通过（221.424秒，`ui-phone-dark-initial.txt`）。手机两配置各85张新截图（全局32、共享29、个人设置24），同一冻结包未改生产/仪器代码；已实际复核深色大字缓存确认与部分保存恢复提示。手机恢复字号/浅色后关闭并删除模拟器临时日志。平板英文浅色/深色使用同一留存APK正在执行，仍待本片最终四配置收口。
+
+
+A4u平板英文浅色23/23通过（369.677秒，`ui-tablet-light-initial.txt`），85张新合成截图；实际复核全局表单与多项影响确认。深色二倍字号继续运行。此轮APK与截图将在最终复核后按用户要求清理，仅保留结果/命令/摘要与必要失败记录。
+
+A4u最终收口：平板英文深色二倍字号23/23通过（353.996秒），85张新合成截图。最终同包手机浅色240.085秒/深色221.424秒、平板浅色369.677秒/深色353.996秒，四配置共92次流程通过；对应`ui-<设备>-<主题>-initial.txt`、配置回读和`final-validation-summary.json`保留。未修改两APK，最终摘要沿`apk-manifest-initial.json`，不含随后A4v领域草稿。实际复核平板深色大字格式选项、全局/JPEG清理具体后果确认，文字及按钮可读。340张截图与两份APK在复核/摘要检查后依用户要求删除，路径仅表示当时产物位置。
+
+原生命令为`adb -s <serial> shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosGlobalSettingsUiTest,io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSharedSettingsUiTest,io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSettingsUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。完成恢复标准字号/浅色并关闭设备。独立集成及只读对抗复核包含管理员与身份重读、完整原设置条件、每步发送前落盘、已尝试/拒绝约束、缓存未知与重新生成、部分结果应用、后台迟到值隔离；复核修正及147项测试的批次见上文。未降低断言或跳过失败路径。真实NAS、物理设备、TalkBack及完整JVM/Release/R8/lint/云端仍未验，static证据不变。
+
+## 2026-10-13 Android 测试产物磁盘清理
+
+用户明确要求及时删除不需要的测试文件。已清理A0至A4t波次下的截图/录屏/重复APK等大文件及手机旧启动快照，首批4,654个文件；命令、结果、APK摘要和必要失败日志/XML仍保留。原始截图已在对应波次实际检查并记录，旧路径是当时证据位置，不再代表文件仍可下载。未删除源码、正式测试、既有其他平台产物或用户原有模拟器。
+
+已用avdmanager删除本任务创建、已不在运行的LanStash_Phone_API_35与LanStash_Phone_API_37两台专用设备；后续按需重建并禁用快照保存。删除Android重复APK输出、中间编译/tmp/kotlin/reports与本任务9.6.1/configuration-cache项目缓存，保留当前A4u验收唯一冻结APK。磁盘可用空间由约62GiB增至75GiB；正在运行的平板A4u结束后继续清理其专用设备、APK及大截图，不影响本轮已保存的结果记录。
+
+平板完成后删除LanStash_Tablet_API_37及A4u截图/APK/模拟器日志（343个文件），本任务三台专用设备均已移除。最终磁盘可用约86GiB，相比清理前62GiB增加约24GiB（同时可能受系统其他活动影响）；历轮Android验证记录合计约15MiB，仅保留精简文本/XML/JSON。未来每轮实际复核后及时删除大产物，不再累积模拟器快照；用户原有设备、其他平台产物与源码不变。
+
+A4u收口九项`quality-final-{diff,generated,write,page,touch,motion,structure,plan,docs}.txt`通过；57页面/0生产状态缺口/2既有自动化缺口/67处点击目标不变。主计划、STATUS/矩阵和生成质量报告同步。A4v随后源码单独推进，不属于该次APK或原生结果。
+
+## 2026-10-13 Android A4v Photos 共享成员与目录权限
+
+账本沿主计划A4v。新增成员/权限最小恢复字段、完整两层目录及连续批量草稿；统一Foto成员/候选和FotoTeam目录/批量路由。组合操作复用管理互斥与版本1加密记录，成员→批量→单项，逐步尝试/回执/拒绝/完成单向保存；未知恢复只读，结构化失败也读取真实结果，未尝试后续不能冒充完成。原成员/候选/完整目录保存前重读；真实管理员/账号、未知角色、受保护组和管理备份限制保留。尚未接入原生表单，不能算功能完成。
+
+`build/android-rewrite-a4v/compile-initial.txt`26秒失败：新增操作遗漏相册管理标题的穷举分支，已补充中英标题。首批`data-initial.txt`80秒运行38项，其中21项既有测试通过、17项新测试全部在合成访问夹具缺少`package_version`失败（`xml-data-initial`）；沿真实契约补齐夹具，不放宽生产解码。`data-corrected.txt`6秒、`xml-data-corrected`38/38通过：新共享成员仓储17、全局仓储17、设置存储4。
+
+表单模型实现本地新增/降级目录取消、角色/批量备份、候选独立错误、最终确认、记录重开/只读恢复与可见15秒轮询，关闭/后台停止；目录/候选各有读取代次。设置结果应用移至现有SettingsApplication文件供管理员成员复用，根模型保持798行；个人历史月份/选择保持，共享来源读取实际本人权限后按原查询重读，取消旧分页。已提交但未决结果也读取本人实际权限，避免等待所有目录步骤完成才更新已知权限。还需继续复核后台返回和最后权限读取失败时的旧内容处理，并加入迟到分页专项断言。
+
+`model-integration-compile.txt`2秒增量编译通过。`model-initial.txt`4秒失败因新测试构造共享设置漏传`disabledBySharedFolder`参数，已补齐；`model-corrected.txt`6秒、`xml-model-corrected`70/70通过：新增共享成员模型12、全局模型11、共享设置模型11、既有设置模型15、根图库21。与前批38项不重复，共108项不同聚焦JVM已验证；尚无本片Debug/仪器APK、原生交互或真实NAS结论。全部命令沿`JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home android/gradlew -p android --no-parallel --max-workers=2 --console=plain`及日志任务，测试选择为上述类名。临时模拟器和旧大产物已按前节清理；当前编译产物仅在本片继续验证时使用，结束后清理。
+
+
+A4v继续完成共享权限刷新边界：提交前清除共享照片/目录/预览和在途页，仅保存原查询与加载数量；权限读取失败保留重试，后台不重读图库，返回后恢复原月份，多页范围不丢。SettingsApplication归拢既有设置读取/列表偏好逻辑，根模型仍在800行约束内。`model-boundaries.txt`5秒在新增测试误用`itemId/finished`字段时编译失败，按真实领域类型修正；`model-boundaries-corrected.txt`19秒、`xml-model-boundaries-corrected`75/75通过，含17项共享成员模型、21项根图库、37项三类设置模型。新增五项覆盖后台返回、读取失败重试、未知记录只读恢复、不可取消迟到页及120项多页范围。
+
+成员和两层目录Compose已接入照片菜单，搜索/候选/保护角色/管理备份/取消/最终逐成员确认、记录恢复及公开下限均使用资源；新增38对资源加先前标题共39对。`ui-compile-initial.txt`5秒和`ui-test-compile.txt`10秒通过；本地化与结构门禁通过。仓储测试补真实候选中新增administrators拒绝，并加强批量后单项明确失败的部分/全部实际结果；`members-ui-model-data.txt`5秒、`xml-members-ui-model-data`35/35通过（仓储18、模型17），合计114项不同聚焦JVM已通过。
+
+首次原生构建`assemble-initial.txt`29秒通过。独立集成检查发现成员模型创建早于首次管理员读取，修正为随当前能力显示入口，写前继续重新授权，访问刷新撤回管理员时清理成员表单。`assemble-entry-corrected.txt`11秒完成17项模型回归及Debug/仪器APK；准确摘要分别见`apk-manifest-initial.json`和`apk-manifest-entry-corrected.json`，前包未运行UI。按需重建专用Phone API37，原有Medium Phone保持；首个启动命令漏写Debug包名后缀（`ui-phone-light-initial.txt`）未执行任何测试，按安装清单改为`.debug.test`后运行`ui-phone-light-run1.txt`，不能将命令返回或构建当成UI通过。
+
+
+首轮手机中文浅色`ui-phone-light-run1.txt`189.516秒，9项执行7通过、2失败。部分保存测试误把早前批量当作单独请求：当前草稿组合为最后VIEW批量，再由单项UPLOAD/MANAGE补齐，单项拒绝后实际为VIEW；补充最后批量和三目录差量精确断言，回读按实际VIEW验证。目录读取失败重试成功仍携带旧error是真实缺陷，成功时显式清除旧错误并新增模型回归，完成按钮可恢复。部分结果文案改为“权限未全部保存”，不暗示必须已生效一部分。目录UI按父编号一次分组并记忆搜索/展开结果，避免每次重组重复扫描全部目录。
+
+`folder-retry-corrected.txt`10秒：36项仓储/模型回归及Debug/仪器APK通过（18仓储+18模型，`xml-folder-retry-corrected`），本片累计115项不同聚焦JVM。当前包摘要见`apk-manifest-folder-retry.json`；成员9项及共享设置8项合计17项开始四配置复验。首轮实际查看成员列表、批量/单项、父撤权子限制和部分结果图，随后删除首轮全部PNG及设备截图，精简摘要保留在`ui-phone-light-run1-summary.json`，不保留重复安装包。
+
+
+修正版手机中文浅色`ui-phone-light-final.txt`328.950秒，17/17通过（共享成员9+共享设置8）。`ui-phone-light-final-summary.json`记录57张PNG（成员28、共享设置29）与摘要；实际查看新增成员最终确认、部分后重新打开的真实目录权限，沿既有原生样式且无错位。已立即删除设备与电脑上的本组PNG，仅保留小型元数据；同包深色二倍字号继续执行，平板尚未运行，不能以手机结果代替。
+
+
+同包手机中文深色二倍字号`ui-phone-dark-final.txt`321.962秒、17/17通过，57张PNG摘要在`ui-phone-dark-final-summary.json`。实际查看大字新增成员确认与父权限撤销/子行限制，正文/按钮可读，目录按滚动显示；已删除本组设备/电脑PNG。`jvm-final.txt`3秒、`xml-jvm-final`115/115一次聚焦集成通过（成员仓储18+全局仓储17+设置存储4+成员模型18+全局模型11+共享模型11+设置模型15+根图库21），不是完整JVM。两个APK摘要复核未变化；手机设备恢复标准字号/浅色后关闭，随后移除专用设备，平板两配置接续。
+
+
+A4v平板首轮`ui-tablet-light-interrupted.txt`在第1项已通过业务断言后的`captureToImage`发生PixelCopy等待超时，第2项启动后主动中止，保留失败，不计通过；原2张PNG摘要后删除。未修改APK或断言，同设备同配置重跑`ui-tablet-light-final.txt`325.920秒、17/17通过。已查看英文新增成员确认及部分后重新打开的目录实际权限，57张图经摘要记录后立即删除。深色二倍字号继续使用同包；随后A4w源码不属于本次APK。
+
+A4v平板英文深色二倍字号首轮`ui-tablet-dark-run1.txt`312.733秒，17项中16通过；未知角色长说明位于视口下方，测试未滚动即检查可见性失败。仅为该断言增加滚动后，`ui-tablet-dark-scroll-run1.txt`定点复跑暴露同一流程的受保护群组说明同样需滚动，因此将三个搜索结果说明统一先滚动再断言可见，未删断言或改变业务UI。仪器包分别8秒与2秒重建（`instrumentation-scroll-corrected.txt`/`instrumentation-search-scroll.txt`），应用APK SHA256始终为`e662d9b8797b2e6f0646c185e05a3a80b763aa13bbb7c64c46d263a66773609f`，未重装或替换应用APK。更新后的测试包包含滚动修正，摘要单独记录；A4w编译源码未进入已安装应用。两轮失败的53+2张PNG摘要后删除，已查看深色大字最终确认与父权限撤回/子项限制。最后定点复验继续执行，当前不计通过。
+
+A4v最后定点`ui-tablet-dark-scroll-final.txt`30.560秒、1/1通过，7张PNG全部记录摘要，已查看未知权限说明与保存结果；界面内容可通过滚动完整阅读。应用APK不变，最终测试APK SHA256为`12963680705b1f605b30c952d12e0b17ed90ef5737add86f0645a7fcb465cb80`。最终证据：手机浅色328.950秒17/17、手机深色321.962秒17/17、平板浅色325.920秒17/17、平板深色312.733秒16/17加30.560秒原失败流程1/1；四配置各17项均有通过证据，不能描述为末次四组同一对APK全量通过。聚焦JVM115/115及全部配置/摘要见`final-validation-summary.json`；真实命令使用`.debug.test/androidx.test.runner.AndroidJUnitRunner`、`-e class`成员/共享设置类，末次仅按`#加载搜索保护未知角色备份确认取消与保存保持个人位置`过滤，均带`-e captureWorkspaceUi true`。
+
+独立集成与只读对抗复核已覆盖管理员入口时序、实际本人共享权限重读、完整两层/分页和原快照、成员/批量/单项目录的部分及未知恢复、迟到旧分页和后台边界；本轮失败全部保留，无NAS权限变更、无其他平台修改。主计划、API/私有兼容记录与STATUS/矩阵同步；真实NAS传播/后代批量覆盖、实际备份和物理设备/TalkBack仍按主计划PENDING_USER_VALIDATION。未运行完整JVM/Release/R8/lint或云端，不以本片结果替代。
+
+按用户磁盘要求，所有本片PNG、手机和平板专用AVD及模拟器日志、两APK均已删除，原有Medium_Phone_API_35未动；`cleanup-final.json`保留小型清理摘要，磁盘可用约85Gi。A4w正在使用的增量编译数据保留，不留重复安装包。工作继续在main，未暂存/提交/推送；A4w源码与其测试单独计入下一片。
+
+A4v收口`quality-final-{diff,generated,write,page,touch,motion,structure,plan,docs}.txt`九项通过，57页面/0生产状态缺口/2既有自动化缺口/67处点击目标不变。本片3371对资源检查已通过；A4w新增标题后的当前3372对资源另有通过记录，不混入冻结APK结论。
+
+## 2026-10-13 Android A4w Photos 当前图库维护
+
+本片账本与既有static契约已核对，Android新增当前来源状态/动作、严格计数解码、身份/权限重读仓储与版本1管理恢复字段；统一Foto身份/设置，Index按个人或共享路由。仅对应阶段空闲可启动，预览按NAS的H264能力，不以本机HEVC代替。每次发送前保存尝试、返回后保存回执；明确拒绝含100保留失败。真实传输的网络错误、HTTP失败和非法响应不误判为明确拒绝，无回执即使计数归零也保持未知，不重发。已保存但尚未尝试的中断只读结束，允许用户从新状态开始。
+
+`build/android-rewrite-a4w/compile-initial.txt`18秒增量编译通过；`data-initial.txt`12秒37/37（新增维护仓储15、成员仓储18、设置存储4）、`store-initial.txt`3秒5/5新增维护存储通过，XML各自保留。命令沿Java17、`android/gradlew -p android --no-parallel --max-workers=2 --console=plain`与`:app:compileDebugKotlin`、`:app:testDebugUnitTest --tests '*SynologyPhotosMaintenanceRepositoryTest' --tests '*SynologyPhotosSharedMembersRepositoryTest' --tests '*SynologyPhotoSettingsStoreTest'`及单独`--tests '*SynologyPhotoMaintenanceStoreTest'`。覆盖真实仓储路由、撤权/换身份、非法计数/能力、对应忙碌、明确与丢失回执、冷恢复、持久单向事实、跨账号和全局互斥；维护模型初稿已增量编译通过（`model-compile.txt`2秒），尚未接入根图库/界面或运行模型测试，仍无本片APK/原生或NAS结论。无依赖、权限或工具链变更，其他端只读。
+
+A4w接入维护页、确认/记录、原位置保持与全局写互斥。`compile-ui-initial.txt`4秒通过；首轮`jvm-model-initial.txt`4秒编译失败（新测试误用相册模型方法名），按现有`setName/save`修正后`jvm-model-run1.txt`17秒32/32通过。独立集成/只读对抗复核修正维护记录混入通用相册记录的问题，避免从错误入口恢复并触发图库刷新；明确接收但状态尚未结束的文案仅说明请求收到，读取失败时不假称仍在处理。之后`jvm-integration.txt`7秒123/123通过，XML归档于`xml-integration`，不与首批32重复计数。实际命令增加`--tests '*SynologyPhotoMaintenanceModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoSharedMembersModelTest' --tests '*SynologyPhotoSettingsModelTest' --tests '*SynologyPhotoBackgroundModelTest' --tests '*SynologyPhotoAlbumModelTest'`，仍仅聚焦JVM。
+
+新增SynologyPhotosMaintenanceUiTest七条正式流程，使用生产图库/维护仓储、加密恢复及合成媒体；界面错误说明、取消、对应忙碌/能力、共享管理员、换身份、未知冷恢复、关闭期间提交与原月份/多选都有断言。本片APK构建后开始手机/平板检查，尚无原生通过结论；维护页无独立搜索，筛选空沿既有图库。源码与临时测试数据不含真实NAS资料，专用模拟器复核后删除。
+
+A4w手机首轮同包中文浅色54.681秒7/7、深色二倍字号53.810秒7/7通过，各20张合成截图；已查看两主题确认、处理中/能力限制和丢回执冷恢复。全部截图记录SHA256/尺寸后已从主机与设备删除，恢复标准字号/浅色后关闭并删除本任务手机AVD，用户原Medium_Phone_API_35未改。平板首次启动在安装APK之前以134退出（主机模拟器warning，零项测试）；摘要为`tablet-startup-failure.json`，原启动日志已删除。当前以同一AVD/相同配置重启，应用和测试APK均未更改，不将启动失败计为应用测试通过。A4x仅建立只读基线账本，尚无其实现或验证。
+
+A4w首个APK的平板英文浅色82.319秒7/7、深色二倍字号79.198秒7/7通过，各20张图已查看确认/拒绝及未知恢复并摘要后删除；该轮同包四配置全部7/7，但不代替后续修正包验收。补充对抗复核发现`canMaintainLibrary`只看接口/管理员未检查当前来源是否实际开放，已加`allowedSpaces`条件；新增仓储断言未加载访问、个人关闭及两来源关闭时入口不可用。`jvm-source-access.txt`10秒42/42通过（维护仓储16、维护模型12、共享设置仓储14），此前123项集成与本轮存在重叠，不相加当作一次运行。新增第8条原生流程确认两来源均关闭时仍可浏览相册、维护入口不出现。
+
+`apk-source-access.txt`5秒重建Debug和仪器APK通过，最终包摘要独立于初始包，更新后先跑平板深色；四配置最终结果尚待收口。无真实NAS请求、完整JVM/Release/R8/lint/云端结论。
+
+A4w最终收口：更新后的同一对APK，平板英文深色二倍字号82.511秒8/8、平板浅色82.359秒8/8、手机中文浅色66.521秒8/8、手机深色二倍字号59.994秒8/8全部通过，各21张新合成截图。日志`ui-<设备>-<主题>-final.txt`、配置回读、截图摘要和`final-validation-summary.json`均保留；最终应用SHA256 `98024617df9fd133074541e939855f620c2b9bddd2b227ad2a427820ce1b688a`、测试包`824053c403e86c5688cd1635978811af92c0222950b322db219a00ba6d90317e`，期间未变。原生命令为`adb -s <serial> shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosMaintenanceUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。实际查看中英文确认、未知恢复/明确拒绝与空来源菜单，深色大字可滚动阅读；两库均关闭夹具未提供可选相册排序/显示偏好，背景显示其独立错误，列表正常加载及维护入口隐藏已断言，不将本条算作偏好功能验收。
+
+独立集成/只读对抗复核涵盖真实身份和管理员/来源变化、每次写前再次读取、单向持久事实、明确拒绝与网络/HTTP未知区别、无任务编号不能以计数认领缺失回执、跨功能写互斥、关闭/后台及旧结果隔离。复核修正通用相册记录入口与实际来源访问两处问题，未削弱既有安全门禁或断言。主计划/API/兼容矩阵/进度/README及双语已同步；Wizard等后续仍未实现，另列A4x基线。
+
+全部初始80张与最终84张PNG复核/摘要后从主机和设备删除，两个专用AVD均恢复默认字号/浅色后关闭删除，用户Medium_Phone_API_35未动；两APK和模拟器日志也已删除，`cleanup-final.json`记录。磁盘85Gi可用，当前Android增量编译目录为下一片保留，无安装包副本。无真实NAS/物理设备/TalkBack或全量JVM、Release/R8/lint、云端验证；此片不提升static等级，不执行Git暂存/提交/推送。当前源码工作区main保留累计改动，下一片继续A4x。
+
+A4w收口质量检查：生成报告、写操作/五态/点击/动效/结构和严格文档检查通过；计划检查首轮把A4x源码行号的斜杠组合误识别为完成率，改为“与”分隔，未改检查规则或任何功能。更正后计划检查通过，九项最终日志`quality-final-{diff,generated,write,page,touch,motion,structure,plan,docs}.txt`保留。57页面、0生产状态缺口、2既有自动化缺口、67处自定义点击目标及根图库799/800行约束维持。
+
+
+## 2026-10-13 Android A4x Photos 新格式预览提示
+
+当前Android接入固定身份/管理员/个人功能/提示快照、统一Foto Wizard读取与固定提示保存、管理员reindex_all_user和普通用户reindex(type=thumbnail)。生成先取得接收回执再保存提示，每次发送前保存事实；部分成功保留生成回执，继续入口只保存提示，未知回执只读且不重放。复用版本1加密管理记录的可选字段与动作，无新增存储、依赖、权限或工具链。已接Compose页面与原管理菜单；主图库791/800行，抽出原有五处相同原件编辑/上传未决检查供新操作共用，其他门禁不变。原月份/多选/分页不全量刷新。
+
+构建/聚焦命令统一Java17、`android/gradlew -p android --offline --max-workers=2 --console=plain`。`compile-data-run1.txt`仅调用位置错误（根目录无gradlew，exit127），无编译执行；改为仓库实际android/gradlew后`compile-data-run2.txt`17秒通过，`compile-ui-run1.txt`3秒通过。`jvm-data-run1.txt`10秒44/44通过，新提示仓储18、存储5与原维护仓储16、存储5；XML/摘要保留于同名目录。`jvm-model-run1.txt`10秒120/120通过（新提示仓储18/存储5/模型12、维护模型12、共享成员模型18、设置模型15、全局设置模型11、后台模型14、目录共享模型15），与前批重叠不相加。仅为聚焦JVM，不是完整JVM/Release/R8/lint或云端。
+
+独立集成与只读对抗复核：新提示恢复记录从通用相册记录中排除，避免从错误入口恢复并刷新图库；已接收但未保存提示的PARTIAL保持未决，不可清除或重新生成。继续前重读固定身份/范围，变化抛出可恢复错误；状态读取与稍后不要求Index能力，管理员无个人/共享图库仍可全用户生成，普通账号无home不能生成。生成缺回执时即使提示后来关闭也不能认领成功。120项正式回归覆盖上述分界、持久单向事实、跨身份隔离、关闭/撤权/迟到读取、15秒前台只读恢复、取消/连点与原浏览位置。
+
+`apk-run1.txt`17秒Debug/仪器APK通过，尚未安装测试前发现新增两库关闭夹具的可选相册偏好键不匹配既有解码，修正为已记录album_list_sort_by/sort_direction和album_display_type；`apk-fixture-preferences.txt`1秒仪器包增量通过，无生产变化。`apk-manifest-initial.json`记录实际两APK摘要。新增SynologyPhotosCodecPromptUiTest九项合成流程，准备手机中文与平板英文浅深色二倍字号检查；当前没有原生或NAS通过结论。本地化3408对、结构约束、页面五态和写操作基线已通过，质量报告待最终验证后同步。真实NAS/物理设备/TalkBack和全用户后台最终完成未验。
+
+
+A4x手机中文浅色首轮67.579秒8/9通过；“提交后关闭再打开”流程在业务断言后等待旧activeId超时，因为打开页面会清空该界面编号。修正正式测试为检查重新加载的持久记录COMPLETED、生成回执、提示关闭事实和实际结果文案，未更改生产APK或降低断言。`apk-reopen-test-corrected.txt`3秒仪器包通过，最终应用SHA256 `c17cbbfe07fcd2e625af082a7f7b96bd0d459f0e89bfe8aa2e7dfb59dc11cf34`不变、测试包`6b8177441db7805dbdc68381bbcf8b1c259bc3706de7f0ed21617ea5e659d28e`。`ui-phone-light-final.txt`59.066秒9/9通过，初轮20张与最终21张截图分别摘要后删除；实际查看所有用户确认、部分成功冷恢复、关闭重开结果及两图库关闭仍可处理提示。手机深色二倍字号与平板验证继续。
+
+
+A4x手机中文深色二倍字号同最终包59.148秒9/9通过，21张截图复核全用户确认/部分保存长文后摘要并删除，字号和主题恢复默认后专用手机AVD已关闭并删除。平板首次启动在AVD创建完成前退出（Unknown AVD，零应用测试）；待创建进程成功退出后按同参数启动，不计应用失败或通过，原日志保留到清理摘要。两APK未变化，继续平板英文两配置。
+
+
+A4x最终收口：同一对APK手机中文浅色59.066秒9/9、深色二倍字号59.148秒9/9；平板英文浅色93.492秒9/9、深色二倍字号89.276秒9/9全部通过。原生命令为`adb -s <serial> shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosCodecPromptUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。每配置21张图、语言/字号/夜间模式回读、时间与APK摘要见`build/android-rewrite-a4x/final-validation-summary.json`，失败轮单独留证。已实际查看中英文个人/全用户确认、部分成功保存、未知冷恢复与页面重开结果。最终84张与初始失败轮20张图均保存尺寸/SHA256后删除，两APK、专用手机/平板AVD及模拟器日志删除，用户原AVD未动；小型日志/XML/JSON和下一片需要的增量编译缓存保留。
+
+双语资源3408对、请求180组Fixture及1个写操作结果、私有29组Fixture和48条文档引用通过；计划初轮把下一片“三档短边1280/240/320”误判动态完成率，改用中文分隔，原失败留`quality-plan-dimension-reference-failed.txt`，未改检查规则。完整JVM/Release/R8/lint、云端、真实NAS、物理设备与TalkBack未运行；static证据等级不变。当前main仍保留累计改动，未暂存/提交/推送，Apple/Windows无修改。下一片A4y仅核对手动预览/事件与本机转换基线，尚无实现或验证结论。
+
+
+A4x九项收口检查`quality-final-{diff,generated,write,page,touch,motion,structure,plan,docs}.txt`全部通过：57页面/0生产状态缺口/2既有自动化缺口/67处自定义点击目标不变，主图库791/800行；生成报告来自正式JSON生成器。最终ADB设备列表为空、仅保留用户原Medium_Phone_API_35，可用磁盘约85Gi。
+
+
+### 2026-10-13 Android A4y 手动更新预览：媒体与仓储阶段（功能仍在实施）
+
+- 当前源码接入：`SynologyPhotosPreviewEvents/Socket`官方EIO4握手、心跳、同单元结果与有限重连；`SynologyPhotosPreviewConverter`三档JPEG和视频单帧；`SynologyPhotosMediaTransport.uploadPreview`只在当前会话上传固定三档，未知回执不重放；`SynologyPhotosPreviewAccess/Repository`目标资格、PNG本机优先/NAS通知分支、逐项写前保存和只读恢复。
+- 版本1加密管理记录增量`REGENERATE_PREVIEWS`与可选`previews`，保留原件/基线和单向事实；不增加存储文件、依赖、权限或工具链。原件下载复用既有导出资格与安全传输，仅排除当前操作自己的管理记录，其他未决操作仍阻止导出和新写入。已知生成需回读详情，未知生成需同原件/同缩略图单元非空版本变化和两次队列缺席；还原中断不能认作生成成功。
+- 当前未完成：Compose入口、选择与确认、逐项结果/记录、生命周期与根图库集成，以及最终原生UI/整体验证和文档同步。新增六项真实平台解码仪器测试已编译，尚未执行；无真实NAS或物理设备结论。不得据本节宣布A4或A4y功能完整。
+- 执行环境：仓库现有`main`及累计未提交工作区；没有stage/commit/push/PR、NAS请求或会话浏览器操作。本阶段未创建APK、模拟器或媒体截图；合成测试临时文件由测试清理。
+
+实际命令均使用下列前缀，无完整JVM/Release/R8/lint或云端门禁：
+
+```bash
+JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android <任务和测试过滤器> --offline --max-workers=2 --console=plain
+```
+
+| 记录（`build/android-rewrite-a4y/`） | 实际任务与结果 |
+| --- | --- |
+| `compile-media-run1.txt` | `:app:compileDebugKotlin`通过，3秒 |
+| `jvm-media-run1.txt` | `:app:testDebugUnitTest --tests '*SynologyPhotosPreviewEventsTest' --tests '*SynologyPhotosPreviewUploadTest' --tests '*SynologyPhotosPreviewConverterTest' --tests '*SynologyPhotosMediaTransportTest'`，37项中1项失败：新增测试错误假定multipart标量头之后直接接空行，未考虑实际Content-Length头；修正为解析头/正文分隔后核对原有字段和值，没有改产品或降低断言 |
+| `jvm-media-run2.txt` | 同上37项全部通过（通知13、上传6、尺寸/时间3、既有媒体传输15）；XML及汇总已留`jvm-media-run2/` |
+| `compile-device-tests-run1.txt` | `:app:compileDebugAndroidTestKotlin`通过，2秒；新`SynologyPhotosPreviewConverterDeviceTest`六项未运行，不能视为设备验证 |
+| `compile-data-run1.txt` | `:app:compileDebugKotlin`通过，20秒 |
+| `jvm-data-run1.txt` | `:app:testDebugUnitTest --tests '*SynologyPhotosPreviewRepositoryTest' --tests '*SynologyPhotosExportRepositoryTest' --tests '*SynologyPhotosAlbumRepositoryTest' --tests '*SynologyPhotoAlbumStoreTest'`，67项全部通过，12秒 |
+| `jvm-data-run2.txt` | 上一数据批次增加`--tests '*SynologyPhotoPreviewRegenerationStoreTest' --tests '*SynologyPhotosPreviewIntegrationTest'`；未运行测试，新增存储测试一处括号错误导致测试编译失败，已修正 |
+| `jvm-data-run3.txt` | 上一批次再增加`--tests '*SynologyPhotosPreviewEventsTest'`，90项全部通过，20秒；含正式组合根的原件下载、权限独立、未知写互斥及访问代次撤回，XML和汇总留`jvm-data-run3/` |
+| `jvm-data-edge-run1.txt` | `:app:testDebugUnitTest --tests '*SynologyPhotosPreviewRepositoryTest' --tests '*SynologyPhotoPreviewRegenerationStoreTest' --tests '*SynologyPhotosPreviewIntegrationTest'`，33项全部通过，5秒；最终仓储23、存储6、组合4，补完整队列、空基线与非法提供者；XML和汇总已归档 |
+
+批次存在重叠，不相加为总测试数。当前`git diff --check`通过；本阶段尚未运行最终文档、契约、本地化和结构门禁，留完整界面接入后统一执行。
+
+
+### 2026-10-13 Android A4y 手动更新预览：界面模型阶段（设备验证进行中）
+
+- 接入现有图库多选、大图工具栏、管理菜单、待处理队列及逐项记录；两来源仅在实际可切换时显示，队列显式选择后才执行，最多100项。版本1加密记录冷恢复仅读取；清理仅限当前身份持久操作对应的临时目录，受任务互斥保护。更新后的缩略图、选择元数据和当前大图按命中身份刷新，保留月份和分页。
+- `JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android compileDebugKotlin --offline --max-workers=2 --console=plain`：3秒通过，日志 `build/android-rewrite-a4y/compile-ui-run1.log`。
+- `testDebugUnitTest --tests '*SynologyPhotoPreviewRegenerationModelTest' --tests '*SynologyPhotoRotationModelTest' --tests '*SynologyPhotosPreviewRepositoryTest' --tests '*SynologyPhotoCodecPromptModelTest' --tests '*SynologyPhotoMaintenanceModelTest'`，同一JAVA_HOME、`-p android --offline --max-workers=2 --console=plain`：首轮69项通过；补强跨操作互斥后第二轮68通过、1项断言失败。实际编辑被拦截并保留READY草稿，测试误要求无记录；改为精确断言READY且NAS写数量不变，第三轮69项通过，同时 `compileDebugAndroidTestKotlin` 通过。保留各轮日志/XML，没有删除或跳过失败场景。
+- 追加缓存清理与同身份活跃任务竞争、更新期间切换大图两项回归，以及媒体刷新在缓存失效后的页面代次检查后，同一五类测试第四轮71项全部通过（仓储23、预览模型16、旋转8、新格式12、维护12），6秒；日志 `jvm-ui-run4.log`，脱敏XML/汇总 `build/android-rewrite-a4y/jvm-ui-run4/`。此前媒体/数据阶段测试与该批次重叠，不相加。
+- 独立集成复核检查互斥覆盖、冷记录只读、页面迟到响应、临时文件归属、原件维护资格、凭据事件连接、逐项未知上传不补发及终态证明。新增UI仪器测试7项连接正式根仓储、真实系统图片转换/媒体上传、Compose和加密存储，仅网络与完成通知为合成边界；系统解码仪器6项覆盖照片/视频方向等。目前13项只完成编译，设备执行结果未形成，不把编译记为通过。
+- 本地化扫描通过（Android3429双语资源），结构、写操作与五态门禁通过；最终质量/文档同步和设备四配置将在本片完整验收时补记。实际NAS、代理/证书事件连接、物理设备编解码和断网恢复仍未验证；未提交、推送或发布。
+
+- 设备首轮：最终入口改进前APK在中文手机浅色执行13项，12通过、1失败（58.030秒）；6项系统解码全部通过，7项UI中权限变化场景重新选择遗漏。权限失败会清空旧选择，刷新后需重新勾选，补上精确空选择断言及实际点击，未放宽零写保护。随后页面去掉重复未决说明，顶部刷新改为优先只读查询未决结果；16项预览模型+8项旋转回归共24项通过，Debug/仪器APK重新构建通过（10秒）。第二次设备命令误把第二个类名中的句点写为斜线，7项UI全部通过但解码类初始化失败（总8项、1失败），该轮不作完整通过；修正命令后按同一对APK重新执行。各原始日志保存在 `build/android-rewrite-a4y/`，完整结果待本片收口补记。
+
+
+### 2026-10-13 Android A4y Photos 手动更新预览
+
+已完成现有图库多选、大图入口、按来源队列选择、三档JPEG图片/视频取帧、ConvertedFile上传与NAS完成通知、逐项加密结果和只读冷恢复。固定原件身份、相册提供者与目录资格，写前落盘、转换后重读、未知不补发；明确失败后的还原只记失败，不凭队列消失冒认完成。顶部刷新读取未决结果，完成只更新命中缩略图/选择元数据和仍在显示的原大图，保留月份/分页。
+
+- 媒体阶段37项、数据集成90项、身份边界33项、界面集成71项及末次刷新入口24项聚焦JVM分别通过，批次重叠，不相加。精确筛选命令与各阶段失败/修正见本页前两节；界面集成使用真实仓储/存储，未以模拟成功替代生产路径。完整JVM/Release/R8/lint、云端、物理设备、真实NAS和TalkBack未运行。
+- 安装构建统一使用 `JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android assembleDebug assembleDebugAndroidTest --offline --max-workers=2 --console=plain`。原包13秒，顶部刷新修正包结合24项聚焦测试10秒，最后数量资源包15秒通过；单独重选测试APK构建未作为最终整包验收。
+- 原生完整命令：`/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosPreviewRegenerationUiTest,io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosPreviewConverterDeviceTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。API37合成环境，中文手机1080×2400/英文平板2560×1600，浅色font_scale=1.0、深色font_scale=2.0。7项UI覆盖五态、原件/队列、两来源、未知/失败、权限改变、关页与原位置；6项解码覆盖三档比例/无放大、透明铺黑、八种EXIF、视频四向及3秒帧、损坏类型、取消和原件不变。
+- 查看英文截图发现单项确认/进度使用复数，最后仅改为Android数量资源，增加现有确认文案精确断言；双语/资源类型/参数与硬编码扫描通过（3429对）。不重复无关编解码与恢复测试；最后对四配置的选择/取消/实际更新/结果路径定点复验：将上述 `-e class` 改为 `io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosPreviewRegenerationUiTest#图库多选更新真实三档图片保留月份分页和选择`。下表按构建分开，不能表述为最终数量包整轮13项重跑。
+
+| 配置 | 主流程与解码整轮（数量文案修正前同包） | 最终数量包受影响流程 |
+| --- | --- | --- |
+| 手机中文 浅色标准字号 | 13/13，54.992秒 | 1/1，10.249秒 |
+| 手机中文 深色二倍字号 | 13/13，56.829秒 | 1/1，8.862秒 |
+| 平板英文 浅色标准字号 | 13/13，81.051秒 | 1/1，12.948秒 |
+| 平板英文 深色二倍字号 | 13/13，79.229秒 | 1/1，11.706秒 |
+
+包摘要（安装产物已按清理要求删除）：
+
+- 主流程四配置包应用：99609846字节，SHA-256 `7c3cc7999c4250c4958c73a06aa55b275f2f6f72e1813aa0d675931691c6f3eb`。
+- 主流程四配置包仪器：12467255字节，SHA-256 `1084e11346a5529621aea62a6b4554c4b38030ca7d1e383f9a5a48012bb144dc`。
+- 最终数量资源包应用：99609846字节，SHA-256 `d98f49b9617d6c1948201274ee162383645de67b2b9ddc57c140b9963cfef5af`。
+- 最终数量资源包仪器：12467395字节，SHA-256 `194fafc77323b4b8c0fc37355b8e4d2de85bfeee67ba4f007457c119dd2a1d1e`。
+
+- 初始手机13项有1项重选步骤遗漏；下一轮命令把类名中的句点误写为斜线，导致初始化失败，7项UI通过不冒充8项全过。完整同包四配置与最后定点均已复验，原失败日志保留，未删断言或跳过场景。原始证据 `build/android-rewrite-a4y/ui-*-pre-quantity.txt`、`ui-*-quantity-final.txt`，配置JSON、各轮XML、APK清单、`final-validation-summary.json` 和清理清单保留。
+- 独立集成/对抗复核再次核对写入互斥及持久未决、事件同源/凭据与截止时间、精确原件/提供者、转换后撤权、未知不切换生成路径、只读恢复证明、缓存清理互斥、页面代次和切换大图保护；正式回归覆盖相关情形。使用现有依赖/工具链/权限，其他平台源码不改，内部API静态证据不提升。
+- 已查看中英文、浅深色、大字体的确认、队列、逐项结果和恢复画面。95张合成截图（8,687,579字节）先记录SHA-256及尺寸后删除；两APK校验最终摘要后删除。手机/平板临时模拟器恢复正常字号/浅色、退出并删除，3份一次性模拟器日志删除，只保留原有 `Medium_Phone_API_35`，ADB设备列表为空；磁盘剩余约84GiB。正式测试及必要增量构建缓存保留，没有提交/推送/发布或真实NAS写入。
+- `PENDING_USER_VALIDATION`：专用测试媒体、各角色/提供者、实际直连或代理WSS/证书、厂商HEIF/视频解码、生成/上传期间断网或进程终止；预期原件不改、未知不重复、恢复不按队列消失误报成功。回传脱敏版本、角色、格式和阶段即可，详见Android主计划A4y账本。自动预览调度/完整视频转换与人物/相似管理继续后续切片。
+
+- 收尾门禁：`git diff --check`、质量生成一致性、写操作、五态、点击目标、动效、结构、长期计划、严格文档9项检查全部通过；本地化3429对、180请求Fixture/1结果示例、29组脱敏Fixture/48私有文档引用另通过。原命令见主计划质量基线及契约工具README，输出 `build/android-rewrite-a4y/quality-final-*.txt`。仍为57个页面/0个生产状态缺口/2个既有自动化未闭环页面，点击目标增加为68；未修改或放宽门禁规则。
+
+
+## 2026-10-13 Android A4z 自动预览候选与原件阶段
+
+本阶段为A4z实施中间证据：已接严格开关/候选读取和真实单元下载；未接自动转换上传、失败同步、持久恢复、设置保存或前台队列，不宣称整项功能完成。Android组合根与实际媒体请求编码运行，仅网络返回是合成夹具；没有真实NAS读取或写入。
+
+执行命令：
+
+```sh
+JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android testDebugUnitTest --tests '*SynologyPhotosAutomaticPreviewRepositoryTest' --tests '*SynologyPhotosPreviewRepositoryTest' --tests '*SynologyPhotosPreviewIntegrationTest' --tests '*SynologyPhotoExportTransportTest' --offline --max-workers=2 --console=plain
+```
+
+第二轮52项通过，无跳过（自动组合根20、手动仓储23、手动集成4、导出5），包含增量Debug编译。首轮52项有2项失败：测试误写已有媒体错误分类、错误地在Repository已复制能力映射后修改夹具；修正为精确MEDIA/LENGTH_MISMATCH分类与初始化前缺能力，不改生产拒绝策略。日志与两轮XML留于`build/android-rewrite-a4z/jvm-access-run1.log`、`jvm-access-run2.log`及对应目录。
+
+独立集成与只读对抗复核覆盖实际Unit与Item身份区分、本人/共享owner、可见目录与全库扫描权限、相册权不得扩大、实况子单元、下载前后需求/身份复读、访问代次、错误页/归档/长度/空文件、取消与无覆盖文件提升。只新增默认不支持的服务方法，不改存储、依赖、权限、工具链或其他四端源码。未执行完整JVM、Release/R8/lint、原生视频转换、UI、云端或真实NAS验收；这些后续实现与验证继续按Android A4z账本推进。
+
+## 2026-10-13 Android A4z 本机视频转换与轨道摘要阶段
+
+实现系统MediaExtractor/MediaCodec/Surface/MediaMuxer完整H264视频及AAC声音流程，视频与音轨分别生成私有中间容器后交错封装；保留方向、原尺寸、末帧时长及原始音画起始差。已有AAC保留编码样本，其他可支持音轨经PCM16编码AAC，无法处理不静默静音。所有权仅限本次临时目录与无覆盖提升的结果，取消包括返回调用线程时清理已提升结果。视频轨道摘要记录逐样本内容及时间、编码配置、时长/尺寸/方向/像素比例和音频参数。该阶段没有连接NAS上传、失败回写、持久恢复或UI；新增序列化类型尚未写入存储。
+
+- 最终命令：`JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android assembleDebug assembleDebugAndroidTest testDebugUnitTest --tests '*SynologyPhotoPreviewVideoSignatureTest' --offline --max-workers=2 --console=plain`，9秒通过，5项JVM通过、0失败/跳过（0.027秒）。日志`build/android-rewrite-a4z/build-video-device-run6.log`，XML与摘要`jvm-signature-run2/`。只执行聚焦JVM与设备调试所需的增量Debug/仪器构建，没有完整JVM、Release/R8/lint或云端门禁。
+- 当前同一对APK安装到专用API37手机模拟器，运行`adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosVideoConverterDeviceTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`，10项全部通过、无跳过、6.456秒（`device-video-run4.txt`）。APK SHA-256见`video-apks-run6.sha256`。
+- 10项覆盖完整六秒60帧及首末画面、原尺寸/原件不变、90/180/270度四色角标方向、正弦PCM→AAC后真实解码并验证音量、已有AAC逐样本保持、一秒延迟音轨仍同步、不同容器相同轨道匹配及不同编码/方向拒绝、相同样本数/时长但改变单帧时间拒绝、已有输出保护、损坏输入失败和执行中取消清理。
+- 首次增量编译因VideoCapabilities可空失败，补实际不支持分支后通过。原生首轮8项4失败：默认虚拟硬件解码器`c2.goldfish.h264.decoder`在提交CSD时返回14，以及原始B帧素材重封装改变时间轴。新增一次不同系统软件解码器的本地重试，资源不足/回收/可恢复/暂时错误不重试；显式保留末帧时长。摘要按实际上传用的Baseline输出验证重新封装，原始B帧时间变化不能强称相同。第二轮9项1失败仅为“同封装器产物字节必定不同”的测试假设，加入合法空闲容器box建立明确字节差异，保留摘要相等断言；另外新增单帧时间改变反例。加入四色角标与音轨偏移后第三轮10项通过（6.543秒），末次像素比例和浮点帧率支持后最终同组10项复验通过。各轮失败日志与APK摘要按轮次保留，未跳过测试或降低媒体完整性断言。
+- 测试视频继续使用原纯色资产，新方向素材由`swift tools/codex/generate_android_test_video.swift android/app/src/androidTest/assets/synthetic-video-landmarks.mp4 --landmarks`生成；没有覆盖原资产。音频在测试私有目录生成正弦波，完成后清理，没有真实用户资料、网络请求或外部媒体。
+
+独立集成及只读对抗复核重新核对编解码能力、CSD错误与内容损坏区分、加密/分段旗标不得透传Codec、32MiB单样本上限、编码器先排空防止Surface堵塞、30秒无进展停止、取消与资源关闭、原件/目标文件所有权、音轨偏移及最终编码/轨道结构。非方形像素、多视频/多音轨暂不转换；HDR须系统明确接受SDR请求，不能按系统版本推定可用。MediaMuxer末帧显式EOS与色调转换支持检查依据本机SDK文档及[Android MediaMuxer](https://developer.android.com/reference/android/media/MediaMuxer)、[MediaFormat](https://developer.android.com/reference/android/media/MediaFormat)。物理HEVC/VC1/HDR、其他音频编码及真实NAS Streaming MOV重封装仍未验证；不宣称A4z整体可用，不提升私有API静态证据。
+
+阶段末差异、结构债务、计划一致性、严格文档、本地化资源/硬编码、请求契约及私有fixture检查均通过（`quality-video-*.txt`）；双语资源Apple7079/Android3429/Windows3402对。按用户清理要求已关闭并删除本次专用`LanStash_Phone_API_37`模拟器，保留原`Medium_Phone_API_35`；两APK及本次模拟器日志已清理，保留摘要、正式测试/素材、XML与必要失败证据，清单在`cleanup-video-manifest.json`。
+
+差异/结构/严格文档/180请求Fixture及1结果示例/29组Fixture及48私有文档引用均通过。长期计划检查首轮误将JDK路径中的版本斜线识别为测试比例；把完整命令移至本档案、计划保留JDK17说明，未修改或放宽检查规则。正式测试自动删除本次私有媒体目录，无新增模拟器、APK或截图。
+
+## 2026-10-13 Android A4z 自动上传与只读恢复阶段
+
+正式组合根已连接单元原件下载、本机三档图片/完整视频转换、按需求一次性multipart上传、源内容失败同步和持久只读恢复。版本1加密管理记录新增可选自动任务/能力/图片摘要/视频轨道摘要/写入事实，旧记录无需迁移；回退旧包前须保留并由支持版本处理新动作，不增加文件、权限、依赖或其他端修改。设置保存和前台调度UI仍待继续，不能将本阶段当作A4z整体验收。
+
+- 最终命令：`JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android assembleDebug assembleDebugAndroidTest testDebugUnitTest --tests '*SynologyPhotosAutomaticPreviewMutationTest' --tests '*SynologyPhotoAutomaticPreviewStoreTest' --tests '*SynologyPhotosAutomaticPreviewTransportTest' --tests '*SynologyPhotosAutomaticPreviewRepositoryTest' --tests '*SynologyPhotosPreviewUploadTest' --tests '*SynologyPhotosPreviewIntegrationTest' --tests '*SynologyPhotosPreviewRepositoryTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotoPreviewRegenerationStoreTest' --offline --max-workers=2 --console=plain`，18秒通过，108项JVM、0失败/错误/跳过。新增仓储22、存储7、媒体传输3；既有候选20、手动上传6/组合根4/仓储23、通用管理存储17和手动存储6。输出`build/android-rewrite-a4z/build-mutation-device-run1.log`，XML/摘要`jvm-mutation-run5/`；包含设备调试所需增量Debug/仪器APK，不是Release/R8/lint或完整JVM门禁。
+- 关键断言：两来源真实请求编码及身份/权限复查，后台Unit不猜Item；三档与视频按需组合，8MiB视频有界发送/长度一致/外层不可重放；先持久化再上传或失败同步、存储失败零外发、同时执行同任务仅一次；长转换后候选/开关/权限变化零写；明确拒绝不标损坏，HTTP/网络/畸形回执保留未知；冷热重复执行不重发，候选缺席不能认领；任意JPEG一档不符、相同时长不同轨道内容均不确认；JPEG及Streaming2强制联网、身份在回读期间变化不确认；后台未知失败标记不能按缺席解除；可见xl/sm或video真实broken才收尾为失败；真实协程取消清理私有目录，未决自动任务阻止同源导出及其他管理写入；旧记录兼容、目标/摘要/回执单调和账号隔离。
+- 同一对APK安装到本次专用API37手机模拟器，`adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosAutomaticPreviewConverterDeviceTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`，新增3项系统媒体接线测试全部通过，1.173秒，日志`device-mutation-run1.txt`。真实PNG→三档JPEG且无多余视频、真实完整视频按需求是否生成缩略图并获取实际编码摘要、真实截断JPEG只归类为photo内容失败；原件和既有素材不改，临时输出清理。APK摘要`mutation-apks-run1.sha256`。这是新增接线测试，未把前一阶段10项原生测试表述为当前包整轮重跑。
+- 失败与修复：首次生产增量编译通过（21秒）。聚焦测试编译首轮发现新增缓存参数破坏旧review位置参数调用，以及夹具使用挂起默认值和错误DsmFailure构造；保留原review重载兼容旧调用并修正夹具，第二轮剩余夹具编译问题修正后进入实际测试。第三轮81项中1项失败为测试错误地假设multipart标量头部没有Content-Length；按实际标量解析后84项通过。之后补并发重复执行与既有存储回归，末轮108项全部通过。失败日志`jvm-mutation-run1.log`至`run3.log`、run3 XML，84项结果`jvm-mutation-run4/`，未删测试、跳过或放松防重复/内容摘要断言。
+
+独立集成/只读对抗复核已检查原件与Unit区分、共享可见下载和全库管理资格、恢复不再要求ame_defect、所有写前持久事实/重查、未决保护不自阻断内部单元下载、失败分类和终态互斥、强制联网内容回读、换账号/权限撤回与文件所有权。ImageDecoder仅明确SOURCE_INCOMPLETE/SOURCE_MALFORMED_DATA映射源内容失败，SOURCE_EXCEPTION及普通异常不映射；视频仅原件解码输入在存在轨道时无有效样本分类为确定源失败，普通UNREADABLE、尺寸/能力、编码器资源和输出校验保留本机失败，不能反推原件损坏。请求参数与既有私有记录一致，没有真实NAS读写或兼容证据提升。
+
+差异、结构债务、长期计划、严格文档、本地化（Apple7079/Android3430/Windows3402）、180请求Fixture/1结果示例及29组Fixture/48私有文档引用均通过，输出`quality-mutation-*.txt`。本阶段无UI流程测试、完整JVM、Release/R8/lint、云端门禁、真实NAS或物理编解码器验收；真实Streaming MOV、HEVC/VC1/HDR和厂商音频行为继续待用户环境，设置/前台队列尚未实现不标记为已验。
+
+按用户清理要求已结束本次专用模拟器并删除`LanStash_Phone_API_37`，保留原`Medium_Phone_API_35`；本轮两APK和模拟器创建/运行日志共105498017字节已清理。保留正式源码/合成素材、XML/失败日志、APK摘要和`cleanup-mutation-manifest.json`，没有删除用户原有资料或其他项目产物。工作仍在现有main，未暂存、提交、推送或创建分支。
+
+
+## 2026-10-13 Android A4z 自动预览前台队列阶段
+
+设置保存、前台调度和Compose入口已接，实际界面验证尚待继续。本轮修改仅Android相关领域/设置/管理互斥/自动模型/图库与幻灯片/双语/正式测试及文档；沿用当前main，未暂存、提交、推送或发布。
+
+- 真实设备能力、自动开关每次重新读取、可见80%与2秒去抖、相邻集合/优先级/共享全库限制、只读恢复退避已实现。普通管理操作在同身份互斥前取消自动任务并等待清理；自动任务缓存绑定操作编号。冷未发送记录只清理，上传和失败标记事实不回退。
+- 独立集成与只读对抗复查覆盖：自动/手动互斥中断、取消后的仓储内存与持久记录一致性、未知不能因列表缺席或暂停变为成功、会话撤回后的迟到响应、缓存归属、原件只读、恢复不重新转换/上传，以及后台共享entry排除。复查后为幻灯片更新取消先前媒体加载，保持暂停与分页。
+- `compile-queue-run1.log`首次增量编译失败（2秒）：根访问空间为List而新快照定义Set；改为沿用List。`jvm-queue-run1.log`78项中1项失败（50秒）：既有设置模型夹具遍历新增kind但未提供新类型；补齐夹具并新增直接保存断言。
+- `jvm-queue-run2.log`新25项中2项失败（8秒）：取消时仅更新持久记录，仓储内存仍PENDING，导致继续被拒；改为无写入事实时统一调用只读恢复，保留有写事实的未决。另一项相邻测试未遵循已记录四项集合移除后侧最后一项的规则，核对基准后修正精确预期，未改生产选择算法。
+- `jvm-queue-run3.log`104项通过（6秒）。补图库/幻灯片回归后`jvm-queue-run4.log`139项中1项失败（7秒）：合成details基于不含缩略图的持久快照返回null，测试又错误要求已选项保留旧缩略图；修正夹具实际返回新revision并严格断言仅缩略图变化。`jvm-queue-run5.log`139项通过（4秒）。随后补齐2秒稳定可见时主动唤醒，末轮`jvm-queue-run6.log` **139项通过、0失败、0跳过**（7秒），XML分别保留在同名目录，批次不可累计。
+
+末轮真实命令（使用本机既有JDK17）：
+
+```sh
+JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android testDebugUnitTest --tests '*SynologyPhotoAutomaticPreviewModelTest' --tests '*SynologyPhotoAutomaticPreviewSelectionTest' --tests '*SynologyPhotosSettingsRepositoryTest' --tests '*SynologyPhotoSettingsStoreTest' --tests '*SynologyPhotoSettingsModelTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotosAutomaticPreviewMutationTest' --tests '*SynologyPhotoSlideshowModelTest' --tests '*SynologyPhotoPreviewRegenerationModelTest' --offline --max-workers=2 --console=plain
+```
+
+139项组成：自动模型20、相邻6、自动仓储22、设置仓储20/模型16/存储4、管理存储17、幻灯片18、手动预览模型16。包括增量Debug编译；没有运行本轮仪器APK/界面、完整JVM、Release/R8/lint、云端、真实NAS或物理设备，不能据此宣称完整A4z验收。没有创建模拟器或临时账号；单元测试私有临时媒体由各夹具关闭时清理，保留正式源码及必要失败/通过证据。下一步继续正式手机/平板界面操作、浅深色和大字体检查，再同步整项进度。
+
+本阶段差异空白、结构、本地化、严格文档、计划、请求契约与fixture检查通过，日志`build/android-rewrite-a4z/quality-queue-*.txt`。Android中英资源3438对；结构基线未放宽。计划检查首次因可见比例“80%”触发动态进度检测，改为等值文字“五分之四”后重跑通过，未改变规则或业务阈值。
+
+
+## 2026-10-13 Android A4z 自动预览界面与阶段收口
+
+自动预览设置、严格单元候选与原件、本机图片/完整视频转换、上传/失败同步、内容摘要恢复及前台调度已形成完整主流程。当前阶段新增正式`SynologyPhotosAutomaticPreviewUiTest`，经生产根仓储、Android ImageDecoder、multipart、加密存储和Compose操作；网络与设备能力报告使用明确合成夹具，输入为本机生成160×120 PNG，使用HEIC候选名验证系统实际解码接线，不声称真实HEIC素材已验。真实NAS和物理编解码器仍按Android主计划A4z的PENDING_USER_VALIDATION执行，其他四端和static证据不变。
+
+- 最终设备安装构建命令：`JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android assembleDebug assembleDebugAndroidTest --offline --max-workers=2 --console=plain`。`build-ui-run4.log`3秒通过；前一轮run3为17秒通过，run4仅修正仪器测试等待。run1/run2各因测试误用`state.space`/`state.selectedSpace`编译失败，核对现有模型后改为`state.navigation.space`，不改生产结构，失败日志保留。
+- 原生命令：`/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosAutomaticPreviewUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。全部在专用API37合成环境执行，手机1080×2400/420dpi中文、平板2560×1600/320dpi英文；浅色font_scale=1.0，深色font_scale=2.0，配置回读JSON保留。
+
+| 当前同包日志（`build/android-rewrite-a4z/`） | 配置 | 结果 | 秒 |
+| --- | --- | --- | --- |
+| `ui-phone-light-run2.txt` | 手机中文浅色 | 6/6 | 24.219 |
+| `ui-phone-dark-run1.txt` | 手机中文深色二倍字号 | 6/6 | 24.731 |
+| `ui-tablet-light-run1.txt` | 平板英文浅色 | 6/6 | 44.193 |
+| `ui-tablet-dark-run1.txt` | 平板英文深色二倍字号 | 6/6 | 39.679 |
+
+- 六项覆盖设置加载/失败重试、空闲状态隐藏、单字段直接保存/再次读取且无额外确认；真实三档JPEG/单元151而非Item51上传，暂停清理/继续、月份/选择/分页保持；未知上传冷恢复仅回读，匹配本次内容才结束；明确拒绝只有显式继续才重新生成；共享entry只处理真实可见且可下载照片、不调用全库候选；离开前台取消后重新进入只上传一次。每配置15张合成截图，实际查看中英文设置、工作/暂停、失败/未知，深色二倍字号控件可用。无新增独立筛选，筛选空沿既有图库证据。
+- 初始手机浅色`ui-phone-light-run1.txt`为6项中5通过、1失败，30.978秒：测试点击刷新后以旧空闲状态提前结束等待，改变合成响应导致前一轮已完成而第二次刷新按钮消失。修正为等待此次实际Thumbnail回读次数增加、工作结束且仍未完成，再发布合成内容；随后同包四配置全部通过。没有删除断言或调整生产恢复策略，也没有把首轮表述为全通过。
+- 最终应用SHA256 `3160e80ef694b780f5bb36c1910f0d16aa8798557195c7a368353d3602a05719`，测试包`27b62a8fff81637ce4eee4b004a0ff80b1bec7fca67bf8ff4938ce952aaa3416`。安装前后摘要一致，详情`apk-manifest-ui-final.json`与`final-validation-summary.json`。队列阶段139项JVM、前期108项和52项均有重叠，分阶段记录不相加；前期10+3项系统媒体测试未在最终UI包重复运行，不声称当前包全部系统测试重跑。
+- 独立集成与只读对抗复核覆盖候选归属/权限、Item与Unit差异、写前落盘/上传不可重放、取消清理与手动优先、冷READY不执行、未知摘要/退避、缓存只清理本身份、设置可见阻止领取、现有网格可见比例和局部刷新。该阶段未改生产算法，现有139项JVM已通过且无相关新增改动，不无故重复整批执行。保留共享管理写入与未知自动操作的互斥，不以缺少真机禁用独立安全主流程。
+- 按用户要求完成清理：74张合成截图先记录尺寸/摘要后删除（最终四配置60张、初轮14张），两APK及本次`LanStash_A4z_Phone_API_37`/`LanStash_A4z_Tablet_API_37`均删除；临时模拟器日志删除，原`Medium_Phone_API_35`未动，无运行设备，磁盘可用约89GiB。保留小型日志/JSON/原JVM XML、正式测试及下一片需要的增量缓存。无临时账号、真实媒体、NAS访问或外部写入；仍main累计工作区，未暂存、提交、推送或创建分支。
+
+收尾门禁：差异空白、质量生成一致性、写操作、五态、点击目标、动效、结构、严格文档、请求契约/fixture及双语扫描通过；Android3438对资源，180请求Fixture/1结果示例、29组Fixture/48私有文档引用。命令沿主计划质量基线及契约工具，日志`build/android-rewrite-a4z/quality-final-*.txt`。计划检查首次将斜线分隔的小数耗时误读为动态完成率，改为顿号分隔、保留真实数值后重跑通过，未改变校验器；仍57个页面、0个生产状态缺口、2个既有自动化未闭环页面、68处自定义点击目标。
+
+
+## 2026-10-13 Android A4aa 人物管理源码与聚焦验证
+
+范围为人物改名/清空名称、固定目标合并、搜索含隐藏项的显示管理、封面读取与既有加密记录恢复。Android源码/双语资源已接，完整界面验收尚在实施，不宣布A4aa收口。其他端和真实NAS未修改，未执行Git暂存/提交/推送或发布。
+
+- 真实命令前缀：`JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android`；各轮均带`--offline --max-workers=2 --console=plain`。
+- `compileDebugKotlin`首次因既有相册动作标题when未穷举人物三动作失败；补齐资源映射后聚焦测试自带编译通过。模型接线、UI接线两次`compileDebugKotlin`分别2秒、3秒通过，日志`compile-model-run1.log`、`compile-ui-run1.log`。没有删分支或降低断言。
+- 第一轮`testDebugUnitTest --tests '*SynologyPhotosPeopleRepositoryTest' --tests '*SynologyPhotosRepositoryTest'`：46项，51秒通过；第二轮人物仓储/人物存储/相册存储/媒体传输：58项，3秒通过。模型轮人物/根/相册/缩略图：66项，8秒通过。各轮XML均另存，非累计验收数字。
+- 独立复核固定人物/来源、完整分页及目录管理权、写前保存、只读冷恢复、清空名称精确回执、部分show与封面授权缓存；补上缓存命中时仍检查当前账号，并加跨来源/类型/代次以及缓存撤权回归。
+- 末轮命令：`testDebugUnitTest --tests '*SynologyPhotosPeopleRepositoryTest' --tests '*SynologyPhotoPeopleStoreTest' --tests '*SynologyPhotoPeopleModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotoThumbnailStoreTest' --tests '*SynologyPhotosMediaTransportTest' --tests '*SynologyPhotosRepositoryTest'`。同轮155项，0失败/0错误，7秒通过；日志与九类XML在`build/android-rewrite-a4aa/integration-tests-run1.log`及`integration-xml-run1/`。
+- `python3 tools/localization/check_localization.py`通过，Android3465组，Apple7079/Windows3402未变；`git diff --check`、写操作矩阵、结构ratchet、点击目标69处通过。最初误用了不存在的`tools/codex/check_localization.py`路径，改用项目正式脚本后通过。
+- 这里仅证明源码编译与上述聚焦行为；本片未构建/运行仪器APK、未启模拟器、未访问真实NAS；完整JVM/Release/R8/lint/云端、TalkBack与物理设备也未验证。仍需完成原生四配置检查和具体用户验收步骤，当前没有本片APK/截图/专用模拟器需要保留或清理。
+
+## 2026-10-13 Android A4aa 人物管理界面与阶段收口
+
+人物名称/小分组清空、固定目标合并、搜索含隐藏项的显示管理、person/unit封面读取及加密只读恢复已形成完整主流程。正式`SynologyPhotosPeopleUiTest`使用生产根模型、人物仓储、媒体传输、Android图片解码及加密存储，只有网络、人物和96×96 PNG为合成夹具。覆盖卡片菜单直接保存、具体后果确认/取消、完整合并成员、隐藏列表五态、明确部分结果、模型重建后的只读恢复、共享撤权及详情月份/照片选择保持。没有使用真实人物资料或向NAS写入。
+
+- 收尾独立复核发现刷新列表失败再重试会以旧名称覆盖用户草稿。正式模型测试`刷新失败重试保留已输入名称与合并选择`先稳定失败：`draft-regression-before.log`为20项中1失败，5秒，XML保存原期望/实际名称。修复为每次打开表单只在首次读取成功时初始化名称；读取失败仍禁用保存，重试保留名称与选择。原生改名流程增加相同失败/重试与零写入断言，没有放宽既有测试。
+- 最终命令：`JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android testDebugUnitTest --tests '*SynologyPhotosPeopleRepositoryTest' --tests '*SynologyPhotoPeopleStoreTest' --tests '*SynologyPhotoPeopleModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotoThumbnailStoreTest' --tests '*SynologyPhotosMediaTransportTest' --tests '*SynologyPhotosRepositoryTest' :app:assembleDebug :app:assembleDebugAndroidTest --offline --max-workers=2 --console=plain`。12秒通过，156项/0失败/0错误；人物模型20项，其余八类与前阶段相同。日志`build/android-rewrite-a4aa/integration-build-run2.log`，XML在`integration-xml-run2/`；与前155项有重叠，不相加。
+- 原生命令：`/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e captureWorkspaceUi true -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosPeopleUiTest io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。均为专用API37合成环境，手机1080×2400/420dpi中文，平板2560×1600/320dpi英文；浅色标准字号与深色二倍字号分别回读配置JSON。
+
+| 最终同包日志（`build/android-rewrite-a4aa/`） | 配置 | 结果 | 秒 |
+| --- | --- | --- | --- |
+| `ui-phone-zh-light-run4.log` | 手机中文浅色 | 8/8 | 64.190 |
+| `ui-phone-zh-dark-run4.log` | 手机中文深色二倍字号 | 8/8 | 65.268 |
+| `ui-tablet-en-light-run2.log` | 平板英文浅色 | 8/8 | 97.916 |
+| `ui-tablet-en-dark-run2.log` | 平板英文深色二倍字号 | 8/8 | 98.288 |
+
+- 首次手机浅色7/8：合成接口漏处理`person`筛选数组，返回全库而非当前人物照片，补齐夹具后保留单张断言通过。首次手机深色6/8：测试直接寻找LazyColumn尚未组成的屏外记录节点，改为先通过列表滚动到目标，再操作或断言；未改生产布局。`ui-phone-zh-dark-run2.log`为仪器组件参数误写，未启动测试；纠正后run3通过。草稿修复前四配置也各8项通过，但只作为前版本结果保留；上述表格才是修复后的最终包。
+- 最终应用SHA256 `7259dbb43ca2f3410dbb08e85f9117f5aa750c5499818bbe1efeb7a408a4189e`；仪器APK `e451821d7ed48e24a1fbbb10c11f71c25d216e93f62164e56ee25ce924cb57f8`。手机和平板实际安装摘要均匹配，见`apk-manifest-ui-final.json`、`installed-apk-hashes.json`、`installed-phone-apk-hashes.json`和`final-validation-summary.json`。每配置24张合成截图，实际查看中英文表单、合并/清空确认、错误重试、隐藏搜索和部分/未知结果；大字号长列表支持滚动，系统键盘占用的区域不视为页面截图内容。
+- 独立集成与只读对抗复核覆盖来源/识别/共享management、精确人物快照、完整照片并集/目录权限、写前持久化、明确拒绝与未知分离、少量照片清空名称精确回执、严格Bool显示状态、封面已读身份/授权代次缓存及局部列表/详情更新。缓存命中时的当前账号检查已在前155项阶段补齐；本阶段只追加草稿保留修复与正式UI证据，没有修改其他端、API字段、权限或工具链。
+- 按用户要求清理：96张最终合成截图记录尺寸和摘要后删除，两APK、专用`CodexA4aaPhone`/`CodexA4aaTablet`及三份模拟器启动日志已删除；关闭前恢复标准字号/浅色。原`Medium_Phone_API_35`保留，无运行设备；正式测试、必要日志/JSON/JVM XML和增量缓存保留。没有临时NAS账号、真实照片或外部写入，仍在main累计工作区，未暂存、提交、推送、建分支或发布。
+
+真实NAS、物理设备、TalkBack与实际进程回收仍为`PENDING_USER_VALIDATION`，按A4aa账本仅使用专用测试人物和照片验证版本、角色、合并/隐藏、原件保留及断网恢复。完整JVM、Release/R8/lint和云端门禁未运行；static等级与NAS verifications不提升。后续继续人脸归入/移出与人物封面、图片内手工人脸、主题/相似/标签等管理，不把未实现能力写成仅待真机。
+
+收尾门禁全部通过：差异空白、质量报告生成一致性、写操作、五态、点击目标、动效、结构、长期计划、双语扫描、严格文档、请求契约及Fixture检查。日志`build/android-rewrite-a4aa/quality-final-*.txt`；Android3465对资源、69处自定义点击目标、57个页面、0生产状态缺口和2个既有自动化未闭环页面；180请求Fixture/1结果示例、29组Fixture/48项私有文档引用。根模型仍799行，未放宽上限；磁盘可用约89GiB。
+
+## 2026-10-13 Android A4ab 人物内人脸整理与封面
+
+已从人物详情的照片选择菜单接入逐照片人脸读取、授权缩略图、移出错误归类、归入已有或新人物及单张设封面；已有目标名称保持不变，移出/归入说明分组后果且保留原件。共用加密管理记录固定来源/人物/原件/人脸及实际回执，提交前复读、写前落盘、未知只读恢复。仅从当前人物详情移走已无本人物人脸的照片，保留其他人脸、月份和选择。图片内手工画框、移动缩放与裁剪上传尚未实现，留A4ac；没有操作真实NAS或读取真实人物资料。
+
+- 聚焦命令：`JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android testDebugUnitTest --tests '*SynologyPhotosPeopleRepositoryTest' --tests '*SynologyPhotoPeopleStoreTest' --tests '*SynologyPhotoPeopleModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotoAlbumStoreTest' --tests '*SynologyPhotoThumbnailStoreTest' --tests '*SynologyPhotosMediaTransportTest' --tests '*SynologyPhotosRepositoryTest' --offline --max-workers=2 --console=plain`。`build/android-rewrite-a4ab/integration-tests-run2.log`为10秒通过，九组177项/0失败/0错误/0跳过；人物仓储28、人物存储11、人物模型27、图库仓储29、相册模型23/存储17、根模型21、媒体17、缩略图4。XML与摘要分别在`integration-xml-run2/`和`integration-summary-run2.json`，与旧阶段测试重叠，不累加为新的总覆盖量。
+- 构建命令沿上述Java/Gradle参数执行`:app:assembleDebug :app:assembleDebugAndroidTest`，`native-build-run1.log`为19秒通过；随后两次只重建`:app:assembleDebugAndroidTest`，`native-build-run2.log`/`native-build-run3.log`分别3秒/2秒通过。177项之后生产代码未改变；仅末次共享表单自动化补充收起系统键盘，不改产品字段或断言。
+- 正式`SynologyPhotosPersonFacesUiTest`使用生产根模型/仓储、真实face GET和Android PNG解码、加密相册与编辑存储；网络、96×96图片、人物和照片均为合成夹具。八条主流程覆盖取消零写、同张照片保留其他人脸、已有/新目标、封面不透明回执、五态与刷新输入保留、两种断线模型重建恢复、共享权限与正确FotoTeam路由。
+- 原生命令：`/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosPersonFacesUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。专用API37手机1080×2400/420dpi、中文；平板2560×1600/320dpi、英文。浅色字号1.0，深色字号2.0；实际配置已回读保存JSON。
+
+| 日志（`build/android-rewrite-a4ab/`） | 实际配置 | 结果 | 秒 |
+| --- | --- | --- | --- |
+| `ui-phone-zh-light-run1.log` | 手机中文浅色 | 8/8通过 | 85.525 |
+| `ui-phone-zh-dark-run1.log` | 手机中文深色二倍字号 | 8/8通过 | 86.377 |
+| `ui-tablet-en-light-run1.log` | 平板英文浅色 | 8/8通过 | 129.477 |
+| `ui-tablet-en-dark-run1.log` | 平板英文深色二倍字号 | 7/8通过，共享测试保存节点未找到 | 111.835 |
+| `ui-tablet-en-dark-shared-run2.log` | 同上，定点共享路径 | 0/1，默认IME不支持测试的Done动作 | 9.260 |
+| `ui-tablet-en-dark-shared-run3.log` | 同上，定点共享路径 | 1/1通过 | 14.845 |
+
+定点命令只将`-e class`值换为`io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosPersonFacesUiTest#共享确认前权限撤销零写恢复后路由正确且保留草稿`。首轮输入名称后，测试已调用列表滚动，下一次触摸未找到保存节点，尚未发生写入；尝试`performImeAction`暴露该输入的默认IME并非Done。最终沿既有测试方式调用`Espresso.closeSoftKeyboard()`后再滚动点击，同一条路径确认撤权零写、输入与选择保留、恢复后正确共享路由。其余七条和前三配置的同一应用包结果保留；四配置八条路径均有通过证据，不宣称末次仪器包四配置全量重跑。
+
+应用APK始终为SHA256 `1b16e9e577191577bf70c24c049fa57fb531233a6f7e7c218aa30e9ff665fde4`（98548460字节）。初始仪器APK `2b2ac2de27a75629489cb069843af51ba391722f6cce18b58da677add5b520c1`；IME尝试包 `824f76dc73728284904661250803944efc0bbee2d6016e0c8f3df0a09eaa4d56`；最终定点包 `112fd3e0176fe55ce81f3fdedc63145fe41dc62b80be70f2369a51e1c10bf089`。手机/平板初始及平板末次实际安装摘要已核对。`apk-manifest-ui-*.json`、`installed-*-apk-hashes*.json`与`final-validation-summary.json`保留版本和各次结果。
+
+- 实施期失败未掩盖：初次测试编译使用错误DsmFailure构造，修正为完整参数；HTTP夹具补不自动重试与实际Content-Type；共享管理角色按已有目录权限语义校验；人脸缩略图回调与仓储方法同名造成真实递归，重命名注入回调后通过。整合首轮177项的1个失败为新模型测试期待全部移出后计数1，实际应为0，改为完整导航快照只变count=0，保留月份/照片/其他选择断言。失败日志和XML按原轮次保留，未降低权限、回执或原件验证。
+- 独立集成与只读对抗复核覆盖：来源/识别/management、固定原件身份与目录权限、选择人脸/照片精确归属、已有目标名称、写前持久化及单向事实、目标回执不可变、相同照片/人物跨操作冲突、未知与明确拒绝分离。移出需来源人脸缺席，归入需同一人脸在同一照片的目标归属和名称一致，新人物缺回执不能按同名认领；封面回执为不透明编号，丢回执不能猜照片编号。完成前复读原件，重新读取撤销过期人脸缩略图授权；界面只局部应用已完成结果。
+- 已实际查看中英浅深色、两倍字号下的人脸选择、目标搜索、新人物输入、确认、错误/撤权和未知记录。前三配置每组24张；平板深色首轮22张有效截图及末次共享2张。设备残留的两张上一轮浅色截图按摘要识别并排除，未计作深色证据。96张有效图记录尺寸/摘要后删除，见`screenshot-manifest-ui-final.json`。
+- 两APK、专用`CodexA4abPhone`/`CodexA4abTablet`和启动日志已清理，关闭前恢复标准字号/浅色。原`Medium_Phone_API_35`保留，无运行设备；磁盘可用约89GiB。保留正式测试、必要脱敏日志/XML/JSON与下片增量缓存；没有临时NAS账号或真实照片。仍在main累计工作区，未暂存、提交、推送、建分支或发布。
+
+完整JVM、Release/R8/lint、云端、真实NAS、物理设备TalkBack和系统进程回收未验证；`PENDING_USER_VALIDATION`条件、操作、预期及脱敏回传沿Android A4ab账本。既有static证据等级与verifications不提升，其余四端/API字段/权限/工具链不变。图片内手工人脸、主题/相似/标签管理与A5–A10仍属后续实施。
+
+
+收尾检查通过：差异空白、生成报告一致性、写操作、页面五态、点击区域、动效、结构、长期计划、双语与硬编码、严格文档、请求契约和Fixture。证据`build/android-rewrite-a4ab/quality-final-*.txt`；Android3477对资源，Apple7079/Windows3402未变；72处自定义点击区域、57个页面、0生产状态缺口和2个既有自动化未闭环页面；180请求Fixture/1结果示例、29组Fixture/48项私有文档引用。根模型仍799行，未放宽结构上限。
+
+
+## 2026-10-13 Android A4ac 图片内手工人脸
+
+已从实际照片预览接入当前人脸读取、触控正方形框选、居中新增、可访问的位置/尺寸控件、已有或新人物、移除/撤销及系统方向解码后的JPEG裁剪上传。图像、裁剪与未保存草稿只在内存；版本1加密管理记录固定身份/来源/原框、目标人物、临时编号、裁剪摘要和单向发送事实。修改旧框先完成所有新增和上传，失败时保留尚未移除的旧框；未知只读恢复，不重发、不补发、不按名称/坐标猜新增编号。原件始终保留，成功局部更新预览和人物详情，保持月份/其他来源/选择。全部测试图片和人物为合成夹具，没有访问NAS、读取真实人物资料或执行外部写入。
+
+- 聚焦命令前缀：`JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android`，各轮均带`--offline --max-workers=2 --console=plain`。以下是分批194项不同测试，不把同一测试的多轮通过相加。
+- 后端：`testDebugUnitTest --tests '*SynologyPhotosManualFacesRepositoryTest' --tests '*SynologyPhotoManualFacesStoreTest' --tests '*SynologyPhotosPeopleRepositoryTest' --tests '*SynologyPhotoPeopleStoreTest' --tests '*SynologyPhotosMediaTransportTest'`，`build/android-rewrite-a4ac/backend-tests-run5.log`7秒通过，仓储17、手工记录9、已有28/11/17共82项。共享媒体上传助手回归`--tests '*SynologyPhotosPreviewUploadTest' --tests '*SynologyPhotosAutomaticPreviewTransportTest'`在`upload-regression-run1.log`2秒通过6+3项，XML/摘要在`jvm-run5/`与`upload-regression-run1/`。
+- 模型：`testDebugUnitTest --tests '*SynologyPhotoManualFacesModelTest' --tests '*SynologyPhotoFaceEditingTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoRotationModelTest' --tests '*SynologyPhotoAlbumModelTest' --tests '*SynologyPhotoPeopleModelTest'`，`model-tests-run2.log`25秒通过101项（17+5+21+8+23+27）。随后增加默认新增框按实际图片保持正方形、刷新重新取图及同人物点击保留新名称等回归，`native-build-run4.log`9秒通过18项编辑模型和6项框选计算并构建两APK；当前不同模型/几何测试103项，原79项集成回归沿前一轮有效证据，XML在`model-jvm-run2/`与`model-jvm-run4/`。
+- 增量构建：UI编译5秒通过。两APK构建命令`assembleDebug assembleDebugAndroidTest`；`native-build-run1.log`26秒、run2 15秒、run3 10秒、run4含上述测试9秒、run5 14秒、run6 7秒、run7 13秒均通过，构建与对应界面结果分别记录。没有执行完整JVM、Release/R8/lint或云端门禁。
+- 实施期失败与修复：首次编译误用不存在的isVideo和新增动作标题未穷举，改为既有mediaType及双语动作资源。后端run1为70项13失败，修复归一化坐标浮点加减后的严格相等，按既有1e-6误差判断同框；已有目标名称保持原文，新名称才去首尾空白。run2为79项6失败，定点run3证明是测试multipart解析漏掉每段Content-Length，修正夹具后run4 79项通过，再补3项对抗回归形成最终82项；生产上传仍为单次请求，不加重试或绕过错误。模型run1为测试构造字段误写generation，改用既有sessionGeneration，未改变生产身份机制。失败日志/XML保留。
+- 原生正式测试：`SynologyPhotosManualFacesUiTest`八条流程经生产根模型、仓储、媒体HTTP传输、系统图片解码与加密记录；实际触控新增并检查上传JPEG/摘要、Slider调整并确认新增先于移除、已有/新人物精确参数、移除/撤销保留照片、加载/错误/筛选空/空表、两种中断冷恢复和共享确认前撤权零写。`SynologyPhotoFaceCropDeviceTest`两条覆盖实际系统八种EXIF方向、裁剪颜色/尺寸、最长边256像素、边界向外取整、元数据不复制及原件不变。
+- 原生命令：`/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosManualFacesUiTest,io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotoFaceCropDeviceTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。专用API37手机1080×2400/420dpi中文、平板2560×1600/320dpi英文；浅色字号1.0、深色字号2.0，按实际应用语言/字号/夜间配置回读。
+- 初轮手机浅色10/10、65.807秒；初轮深色八条UI通过，但第二测试类误用斜线导致初始化失败，报告9项1失败、68.521秒，两条裁剪未在该轮运行。按钮统一外观后，深色run2为10项6失败、43.036秒，错误为`ChildSemanticsNode`对已移出列表的节点读取状态；把框选按钮选中语义改为组合时取得的Boolean，避免无障碍读取整份State触发卸载节点重算。原失败八条流程全部保留，修复后手机深色run3为10/10、63.135秒，手机浅色run2为10/10、66.280秒；平板浅色run1为10/10、117.888秒。此三组为run6包，后续画布最小交互尺寸补齐后的run7包结果另列，不能混作同一版本。
+- 点击目标门禁首次要求人工审计新画布。补齐原生`minimumInteractiveComponentSize`与质量基线手势声明，保留真实图像坐标；居中新增、至少48dp选择及四个有本地化描述/数值的Slider提供不用手势的等价操作，没有放宽校验器。重跑点击门禁通过75处交互，双语检查通过Android3502对，Apple7079/Windows3402未变。
+- 独立集成与只读对抗复核：当前账号/授权代次、来源识别与共享management、目录/相册实际管理权、原件身份/原框/已有人物名称、所有写前落盘、回执编号与单向事实、跨操作互斥、裁剪只在内存且使用后清零、后台/撤权取消、结果未知禁止重发。新增回执缺项只上传明确编号，全部新增上传成功前不触碰旧框；丢上传回执必须相同编号的实际缩略图摘要匹配，明确拒绝不升级为成功。读取失败保留输入、框变化显式重读、恢复只读、原件缺失不能冒充移出完成；每项均有对应正式测试。未发现额外生产阻断。
+
+
+画布尺寸补齐后的run7应用包先完成平板浅色run2 10/10（104.037秒）、深色run1 10/10（103.424秒）。英文截图复核发现单个标记仍使用复数、零项动作重复描述，改成两个平台复数资源，只显示实际会发生的移除/归入；照片保留后果单独说明，可滚动大字确认保留。`native-build-run8.log`15秒构建通过，之后生产代码与资源未再修改，最终四配置结果如下。
+
+| 最终run8同包日志（`build/android-rewrite-a4ac/`） | 配置 | 结果 | 秒 |
+| --- | --- | --- | --- |
+| `ui-phone-zh-light-run3.log` | 手机中文浅色标准字号 | 10/10 | 71.288 |
+| `ui-phone-zh-dark-run4.log` | 手机中文深色二倍字号 | 10/10 | 70.496 |
+| `ui-tablet-en-light-run3.log` | 平板英文浅色标准字号 | 10/10 | 99.018 |
+| `ui-tablet-en-dark-run2.log` | 平板英文深色二倍字号 | 10/10 | 101.850 |
+
+最终应用SHA256 `00c7022fbfcfec1b3ee82144afb7436f77e6d41fa0fd288b9b998741bfb1a069`（104611594字节），仪器包`aa8df6af3af1968fb64021c245fe1c4be0840e162d3ce18c6bd5ddd709c5d492`（7757896字节）。手机和平板已安装摘要一致，见`native-apk-manifest-run8.json`、`phone-installed-run8.json`和`tablet-installed-run8.json`；`source-final-manifest.json`记录本片29个核心源码/测试/资源的摘要，`final-validation-summary.json`保存结果映射。名称带final的较早manifest仍保留原值，不能替代本run8证据。
+
+已实际查看最终中英浅深色与二倍字号的画布、数量确认、筛选空、错误/共享撤权及未知恢复；每配置22张合成截图，最终88张，各阶段共249张。按用户要求先记录尺寸/摘要再删除全部PNG，两APK、`CodexA4acPhone`/`CodexA4acTablet`和三份启动日志亦已清理；关闭前恢复标准字号/浅色，原`Medium_Phone_API_35`保留，无运行设备，磁盘可用约88GiB。清理摘要`screenshot-manifest-all.json`/`cleanup-summary.json`保留，正式测试、必要日志/XML/JSON及后续增量缓存保留。仍在main累计工作区，667条未暂存状态；没有暂存、提交、推送、建分支或发布。
+
+完整JVM、Release/R8/lint、云端、真实NAS、物理设备TalkBack与实际系统进程回收未验证。具体版本/角色/测试数据、操作、预期及脱敏回传见A4ac账本的`PENDING_USER_VALIDATION`；没有提升static或追加NAS verifications，不修改其余四端、公开契约、应用身份、依赖或工具链。后续主题/相似/标签管理及A5–A10继续实施；A4ad主题基线账本已建立。
+
+
+收尾门禁通过：`git diff --check`、质量报告生成一致性、写操作、页面五态、点击区域、动效、结构、长期计划、双语/硬编码、严格文档、请求契约和Fixture，日志`build/android-rewrite-a4ac/quality-closed-*.txt`。命令沿Android主计划质量基线及`tools/request-contract/validate_contracts.py`、`tools/contract-validation/validate_fixtures.py`。Android3504对资源、75处点击区域、57个页面、0生产状态缺口、2个既有自动化未闭环页面；180请求Fixture/1结果示例、29组Fixture/48项私有引用。主模型793行，29个本片源码/测试/资源摘要与最终构建时一致。新增A4ad基线的行号引用曾因斜线被计划检查误读为动态完成率，改用顿号后通过，未修改校验器或实际数值。
+
+
+## 2026-10-13 Android A4ad 主题显示与分类整理
+
+范围：主题完整隐藏项读取、搜索/批量显示隐藏、实际封面、单张设封面、多选移出误分类、真实数量后果确认、加密只读恢复与图库原位更新。仅Android源码、双语及受影响文档；没有真实NAS请求、其他端修改、工具链或权限变化，没有暂存/提交/推送。工作区保留前续累计修改，仍使用main。
+
+新增`SynologyPhotoConceptModels/Codec/Model/Application`、`SynologyPhotosConceptRepository`，复用版本1管理记录、仓储互斥与现有媒体缓存。主题结果保存实际回读字段，封面比对选中Item编号；移出完整核对成员数量并确认原件身份，未知不重发，明确拒绝不升级。当前图库只删除已确认移出的展示项，保留月份和未命中预览，并调整已读游标；普通时间线中的原件保留。根模型既有缓存缩略图读取移入`SynologyPhotoMediaUpdates`，沿用代次检查与原缓存；移除两层冗余设置转发后根模型789行，没有放宽结构门禁。
+
+### 聚焦JVM与增量构建
+
+所有Gradle命令以`JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android`开始，附`--offline --max-workers=2 --console=plain`。证据位于`build/android-rewrite-a4ad/`，同名目录保留XML和summary.json。
+
+- `:app:testDebugUnitTest --tests '*SynologyPhotosConceptRepositoryTest' --tests '*SynologyPhotoConceptStoreTest' --tests '*SynologyPhotosPeopleRepositoryTest' --tests '*SynologyPhotoPeopleStoreTest' --tests '*SynologyPhotosAlbumRepositoryTest' --tests '*SynologyPhotoAlbumStoreTest'`：`jvm-run1.txt`共102项，101通过，1失败。旧人物/相册仓储与存储75项通过；新主题授权代次测试误期望普通拒绝，实际正确抛取消且零写入。仅该新断言改为明确验证CancellationException；`jvm-run2.txt`主题19+存储8项全部通过，3秒。
+- 实际回读主题结果字段纳入记录后，同上两组`jvm-run3.txt`27项全部通过，15秒。完整主题分页、三种精确请求、源权限/身份、缺字段/原件丢失、完整和部分结果、断网冷恢复、防重、媒体授权和记录不可变均有正式断言。
+- `:app:testDebugUnitTest --tests '*SynologyPhotoConceptModelTest' --tests '*SynologyPhotoConceptStoreTest' --tests '*SynologyPhotosConceptRepositoryTest' --tests '*SynologyPhotoPeopleModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoRotationModelTest' --tests '*SynologyPhotoAlbumPreferencesModelTest'`：`model-jvm-run1.txt`112项、110通过、2失败。新根模型夹具从时间线直接点主题，跳过相册分类加载导致超时；补齐真实导航顺序后，仅运行`--tests '*SynologyPhotoConceptModelTest'`的`model-jvm-run2.txt`17项全部通过，7秒。模型覆盖普通保存无额外确认、固定移出确认、五态/搜索/上限、晚到读取、关闭期间提交、部分/未知只读恢复、互斥、月份/预览与移出后继续分页；未改生产导航或降低断言。
+- 本片共有187项不同聚焦JVM测试分批通过：新主题仓储19、存储8、模型17；旧人物仓储28/存储11/模型27，相册仓储19/存储17/偏好12，根模型21、旋转8。批次与源码变更分别记录，不宣称一次187项全量运行。
+- `:app:compileDebugKotlin`初轮及界面集成均通过；`:app:assembleDebug :app:assembleDebugAndroidTest`的`native-build-run1.txt`22秒成功。使用同一冻结应用和仪器APK进行下述四配置；`source-manifest-run1.json`记录26个相关源码/测试/资源摘要，原生开始后未改生产代码或测试。
+
+### 原生设备流程
+
+真实命令：`/Users/yuangy/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am instrument -w -r -e class io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosConceptUiTest -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。
+
+八项测试经正式图库、主题仓储、加密存储、真实媒体请求构造/系统解码及Compose交互，仅使用合成主题、照片与响应：卡片隐藏和实际封面、搜索隐藏项/五态、预览设封面、数量阈值取消/确认与原件保留、非阈值确认及多选封面限制、部分结果、断线后模型重建只读恢复、共享正确路由与撤权零新增写入。
+
+| 配置 | 结果 | 时长 | 证据 |
+| --- | --- | --- | --- |
+| API37 手机，中文，浅色，标准字号 | 8/8通过 | 68.947秒 | ui-phone-zh-light-run1.txt |
+| API37 手机，中文，深色，二倍字号 | 8/8通过 | 69.364秒 | ui-phone-zh-dark-run1.txt |
+| API37 平板，英文，浅色，标准字号 | 8/8通过 | 98.372秒 | ui-tablet-en-light-run1.txt |
+| API37 平板，英文，深色，二倍字号 | 8/8通过 | 97.804秒 | ui-tablet-en-dark-run1.txt |
+
+手机1080×2400/420dpi，平板2560×1600/320dpi，Google APIs arm64 API37；设备配置回读存于四个config.json。应用SHA256 `24b042819d1b9c7b88f9b71cb8da522fda7144caf8fc239b5d8e053e211b3caa`（99211060字节），仪器APK `0e4f118f15388849fa5855f2da58236f2e64140314e6ccecd52886dce852b5ac`（7813384字节）；手机与平板已安装摘要一致，见native-apk-manifest-run1.json及两个installed-run1.json。
+
+手机中文和平板英文、浅色及深色二倍字号的表单、实际数量确认、部分/未知结果、权限错误及空状态已实际查看；每配置22张合成截图，共88张。尺寸/摘要存于`screenshot-manifest.json`后全部删除；两类APK及重复输出、CodexA4adPhone/CodexA4adTablet和两份启动日志已清理。原Medium_Phone_API_35保留，清理摘要见`cleanup-summary.json`，最终配置结果见`final-validation-summary.json`，保留正式测试、必要日志/XML/JSON及增量缓存。
+
+`PENDING_USER_VALIDATION`：真实NAS的DSM/套件完整版本，个人与共享管理/entry测试账号，以及可恢复的主题测试照片。分别搜索隐藏项并显示、设普通/连拍封面、移出一张/多张/全部且确认原件保留，核对低于实际显示阈值时卡片及当前月份；在可控网络中断后重开仅刷新，保持同次操作不重复，网页并发修改或撤销权限后拒绝保存。仅回传版本、角色/空间类别、操作阶段与脱敏提示；不回传照片、路径、主机、账号或会话。物理设备TalkBack和系统进程回收另验。没有完整JVM、Release/R8/lint或云端门禁；static与NAS verifications不增加，相似组/标签及A5–A10继续实施。
+
+
+本片收尾质量门禁全部通过：`git diff --check`，`python3 tools/codex/generate_android_quality_baseline.py --check`，`check_android_write_test_matrix.py`、`check_android_page_state_matrix.py`、`check_android_touch_targets.py`、`check_android_motion_audit.py`、`check_android_structure_debt.py`、`check_android_plan_progress.py`（均在tools/codex），`python3 tools/localization/check_localization.py`、`python3 tools/codex/check_documentation.py --strict-release`、`python3 tools/request-contract/validate_contracts.py`、`python3 tools/contract-validation/validate_fixtures.py`。实际结果见`quality-closed-*.txt`：3526个Android双语资源对、76处自定义点击、57个页面/弹窗、零生产状态缺口及2个既有自动化未闭环项、180个请求和1个结果示例、29组fixture及48项私有引用；结构上限未放宽。清理后无运行模拟器，仅保留原Medium_Phone_API_35，可用空间约87.67GiB。main累计677条未暂存状态，无暂存、提交或推送；相似分组下一切片已建立基线账本，尚未实施。
+
+
+## 2026-10-13 Android A4ae 相似分组与标签复核
+
+本片在现有main未暂存工作区接入Similar/SimilarItem/SimilarTimeline已登记契约：个人/共享分类、月份分页、完整组、推荐/移出/拆组、批次顺序恢复与绑定原动作的撤销，整组导出、组内完整成员幻灯片和沿原件删除流程的保留所选清理。沿现有版本1加密管理记录保存可选相似意图、提交边界、批次顺序及撤销依据；先持久再发送，未知只读回查且停止后续，跨重启不重复提交，撤销前完整原件/归组复读。原查询中恢复撤销位置和分页；连续原件删除依序刷新完整组。未新增NAS参数、依赖、包名、权限或持久系统。
+
+A4af重新读取Mac PhotoManagementPanel、SynologyPhotosView与共享领域枚举，确认标签范围为浏览/独立创建/创建应用/添加/移除，A4a/A4c已有等价实现。当前包复验四种操作，不新增无依据的标签改名/删除或平行页面。Apple/Windows本轮只读。
+
+验证证据在`build/android-rewrite-a4ae/`。Gradle实际命令统一使用`JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android`与`--offline --max-workers=2 --console=plain`：
+
+- `:app:testDebugUnitTest --tests '*SynologyPhotosSimilarRepositoryTest' --tests '*SynologyPhotoSimilarStoreTest' --tests '*SynologyPhotosRepositoryTest' --tests '*SynologyPhotosAlbumRepositoryTest' --tests '*SynologyPhotoAlbumStoreTest'`及相似两组聚焦修正，共94项不同仓储/存储测试通过，见`jvm-run3`、`jvm-run5`。
+- `:app:testDebugUnitTest --tests '*SynologyPhotoSimilarModelTest' --tests '*SynologyPhotosModelTest' --tests '*SynologyPhotoBackgroundModelTest'`首轮50项中49项通过。冷启动测试在自动回读前操作发生竞态，改为等待实际恢复回读；根图库21/背景14项已通过。相似模型补充月份/删除应用后16项通过，见`jvm-ui-run5`。
+- `:app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest --tests '*SynologyPhotoSlideshowModelTest' --tests '*SynologyPhotoSimilarModelTest'`通过，18项幻灯片和16项相似模型；新增`--tests '*SynologyPhotoSlideshowModelTest.相似组播放完整成员循环而不调用分类分页'`定点1/1通过。全部不同聚焦JVM共164项，不累加重复运行。
+- 增量`:app:compileDebugKotlin`和最终Debug/仪器APK生成通过。最终应用SHA-256 `52e3377a6674a7906a229ac7edbb9b2c67dacdec00674a4fe8fe25276838cd70`，仪器APK `0feb88240973026b7934a6fa2788926717df173b45a06b38221337eeb6e5df08`。完整JVM、Release/R8、lint及云端未运行。
+
+原生正式测试使用`adb -s emulator-5554 shell am instrument -w -r -e class 'io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosSimilarUiTest,io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotosEditUiTest#已有标签增删与新建应用均回读真实标签' -e captureWorkspaceUi true io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner`。使用同一独立任务API37模拟器的手机/平板窗口，后者通过wm配置2560×1600/320dpi；不是物理平板验收。所有成员、响应、截图和写入均为合成夹具，没有向真实NAS发送本片请求。
+
+| 配置 | 实际结果 |
+| --- | --- |
+| 手机1080×2400/420dpi、中文、浅色、标准字号 | 首轮4/6；测试关闭顶层预览和导出面板的定位修正后定点1/2，补齐合成BackgroundTask.File删除能力后剩余1/1。六条均有通过证据。 |
+| 平板窗口2560×1600/320dpi、英文、深色、二倍字号 | 首轮6/6通过；截图发现组内文字换行过碎，卡片宽度改为随字号扩展。 |
+| 末次字号与待恢复批次继续按钮修改 | 上述两配置各2/2受影响流程通过，见手机run4/平板run2；“继续剩余整理”在前项结果不明时禁用。 |
+| 末次完整组幻灯片集成 | 上述两配置各1/1通过，见手机run5/平板run3；从非代表成员启动、切下一成员、停止返回均正确且不查询分类分页。 |
+
+末次修正没有重跑无变化的全套流程，不能将首轮结果表述为最终包六项全量通过。通过路径覆盖加载/错误恢复/正常/解散/空记录、独立选择/完整预览、推荐精确字段、移出取消/保存/撤销、两组未知停止与模型重建只读恢复/继续/逆序撤销、整组导出完整成员、原件清理补集确认及取消零删除、共享路由和权限撤回。标签测试同时覆盖已有标签增删、创建应用和独立创建。大字号前后截图已检查；TalkBack人工体验未运行。
+
+独立集成及只读对抗复核检查了持久先于写入、成员完整性、来源/账号隔离、分类失效、并发归组拒绝、重启撤销证明及跨操作未决互斥。修正了原查询撤销位置/分页、原件删除刷新排序及组内幻灯片完整集合。仓储早期新增枚举/合成类型/新增分类夹具/未提交撤销复用编号的失败已保存；没有删断言、降低权限或将失败当作空组。
+
+已停止并删除CodexA4aePhone及其数据，未修改原Medium_Phone_API_35与既有系统镜像。最终临时应用APK约100.6MiB、仪器APK约12.6MiB已删除；逐字重复截图删除，保留必要失败/最终合成图像、正式测试和验证结果。`cleanup.json`记录清理后可用约87.14GiB。无暂存、提交、推送或发布。
+
+真实NAS、物理媒体/权限及私有接口兼容仍为PENDING_USER_VALIDATION，条件和步骤见主计划A4ae；兼容记录仅补Android实现说明，不新增NAS verifications或提升static证据。A4源码与当前环境聚焦验证已收口，A5–A10继续推进。
+
+
+本片最终质量检查通过：`git diff --check`；`python3 tools/codex/generate_android_quality_baseline.py --check`；`check_android_write_test_matrix.py`、`check_android_page_state_matrix.py`、`check_android_touch_targets.py`、`check_android_motion_audit.py`、`check_android_structure_debt.py`、`check_android_plan_progress.py`（均在tools/codex）；`python3 tools/localization/check_localization.py`、`python3 tools/codex/check_documentation.py --strict-release`、`python3 tools/request-contract/validate_contracts.py`与`python3 tools/contract-validation/validate_fixtures.py`。Android3555对双语资源、77处自定义点击、57个页面及零生产五态缺口、2项原有自动化未闭环项；180个请求/1个结果示例、29组fixture/48项私有引用。计划检查曾把引用的源代码行号569/602当作完成率，改为中文行号列举后通过；未修改检查器。结构ratchet未放宽。
+
+## 2026-10-13 Android A5 Chat 主流程与恢复
+
+本波次以完整Chat模块接通后集中验收，其他平台只读；没有真实NAS交互、Git暂存/提交/推送或发布。原历史offset改为Post v5消息身份游标，搜索独立分页；新增根/回复详情、本人编辑、完整投票选择、公告、多条转发/删除/关闭。既有群聊/提醒/定时/投票创建转入单一`ChatActionModel`与同一Chat Repository，准确回执、写前保存、群聊创建/加入/邀请和转发目标分别保留，未知不重放。草稿正文/附件元数据加密保存，附件内容在应用私有副本；主动AAC录制最长5分钟、退后台停止，试听/取消/发送明确分开。既有实时订阅保持工作区归属，已读只取实际可见消息，弹层遮挡不推进。
+
+当前主流程相关137项不同聚焦JVM分批通过：动作/存储/批次/内容48项（12/11/9/11/5），请求/身份/群聊/转发53项（25/5/12/8/3），既有读取/生命周期/传输36项（18/12/3/1/2）。另24项旧写门面与原已读辅助测试是历史回归，未拿来证明新执行器；无人调用的旧门面、近似匹配辅助与测试迁移接既定A10。测试使用JDK17运行当前Gradle9.6.1/AGP9.4.1，目标和依赖未在本片再变更。
+
+```bash
+JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home \
+  android/gradlew -p android :app:testDebugUnitTest --tests '<聚焦类>' \
+  --offline --max-workers=2 --console=plain
+JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home \
+  android/gradlew -p android :app:assembleDebug :app:assembleDebugAndroidTest \
+  --offline --max-workers=2 --console=plain
+adb -s emulator-5580 shell am instrument -w -r \
+  -e class io.github.qwertyuiop1995.dsmnativeclient.ChatWorkspaceUiTest \
+  -e captureWorkspaceUi true \
+  io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+精确类名、命令输出与XML在`build/android-rewrite-a5/`。`native-preflight-jvm-results`为动作12、内容10与请求25项通过；发送者复用实际目录后`native-build-run3.txt`再次执行请求25项；话题失败重试修复后`thread-retry-jvm-results`为内容11项通过。早期群聊/转发/多账号/批次/存储/上传结果见该目录各`*-results`。multipart外层未继承不可重放属性的测试失败推动修正外层正文；取消、保存失败与缺回执断言未减弱。冷启动批次测试改为按原消息身份定位，不依赖同毫秒存储返回顺序。
+
+原生验证使用本任务创建的API37 ARM64模拟器`Codex_Android_A5`、同一应用标识的独立Debug包：
+
+| 配置 | 真实执行的合成流程 | 结果 |
+| --- | --- | --- |
+| 手机1080×2400、420dpi，中文浅色标准字号 | 发送及丢回执重建模型恢复；搜索加载/空/错误/正常与话题回复；本人编辑/置顶/删除确认；投票及批量未知停后续；录音/试听/取消清理；批量关闭后记录可达 | `native-phone-run2.txt` 六项通过。首轮三项因弹层和背景同名控件选择歧义失败，修正定位后通过，没有改变业务断言 |
+| 手机同配置，既有表单/输入/无障碍 | `ChatConversationDialogTest`13项、`ChatMessageAccessibilityTest`2项、`ChatComposerTest`1项；追加话题失败重试 | `native-phone-regression.txt`17项中14项通过，三项仍以旧内联控件/旧Workspace状态作为入口；迁移到正式长按菜单及当前详情展示投影，`native-phone-regression-run2.txt`三项及发送恢复一项共四项通过。保留单一无障碍摘要、未知只能刷新、不可重发/移除 |
+| 平板窗口2560×1600、320dpi，英文深色二倍字号 | 六项新流程，包括最新话题重试和恢复面板正文 | `native-tablet-run1.txt` 六项全部通过，45.138秒；截图人工复核确认内容、滚动与操作可达 |
+
+最新`native-review-build-run2.txt` Debug及仪器包增量构建通过；不声称手机所有路径在最后一次小改动后全量重跑。实际模拟器录音、编码和播放通过不代表物理麦克风或硬件中断。手机/平板截图为合成测试资料，复核后按用户要求清理，只保留摘要与结果；安装包、专用模拟器和临时日志同样清理。
+
+独立集成与只读对抗复核重新核对：写前保存/准确回执、返回编号保存失败后内存保留、当前账号与原消息内容、同目标冲突、群聊部分步骤、逐项批次未知停止、私有附件副本与一次提交、取消/切换后的迟到响应，以及无会话时记录仍可达。新生产写入口登记为独立Repository的`executeAction/continueGroupAction`；质量工具同时保留旧Result新增调用检查，并补正式用例证明扩展函数声明不是调用，26项Python测试通过。结构ratchet按生成流程从15759收紧到14653行，不手改生成报告或放宽门槛。
+
+`PENDING_USER_VALIDATION`：使用可丢弃测试会话/群组、测试附件和不同权限账号；验证实际分页/并发编辑、投票选择、丢网/进程结束后恢复、转发/本人删除/会话关闭、群聊分阶段、提醒/定时和物理录音中断。预期未知不重发、原账号恢复、不按同文认领，权限撤销后不再发送；回传版本、连接/权限类别、步骤与脱敏状态，不回传正文、路径、主机、成员或凭据。完整JVM、Release/R8/lint、云端及真实NAS均未运行；系统通知接A9，旧代码/测试迁移和未知DSM/套件版本的内部写启用边界接A10，不提高私有接口环境证据。
+
+A5收尾门禁全部通过：差异空白、质量报告一致性、写入口、五态、80处点击区域、动效、结构、主计划、3608对双语/硬编码、严格文档、180请求Fixture/1结果示例及29组Fixture/48私有引用；输出`quality-final-*.txt`。`a5-source-manifest.json`保存49项相关源码/测试/资源摘要；`reviewed-artifacts.json`保存复核截图和最后两个APK摘要。已停止并删除`Codex_Android_A5`及其数据，删除32张合成截图、两APK和模拟器临时日志；`cleanup.json`记录，原Medium_Phone_API_35与既有系统镜像未动。小型XML/日志与后续增量所需编译缓存保留，A6继续实施。
+
+
+## 2026-10-13 Android A6 下载整模块接入（验收中）
+
+本轮仍在main原工作区，未暂存/提交/推送或创建分支。DownloadStation仓储修正公开版本、分页/严格类型、创建接受回执、force_complete、设置与RSS；新增单一动作恢复/表单模型及加密记录，替换根模型旧写编排并连接当前Compose。详见A6账本和下载API说明，当前不标记模块验收完成。
+
+- `JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home android/gradlew -p android :app:compileDebugKotlin --offline --max-workers=2 --console=plain`：首次仓储26秒通过；模型首次因launch推导返回Boolean失败，明确Unit后，接线UI增量26秒通过。日志`build/android-rewrite-a6/android-a6-{compile,model-compile,ui-compile}.txt`。
+- 同前缀`:app:testDebugUnitTest --tests '*downloads.DownloadContractTest' --tests '*downloads.DownloadActionStoreTest' --tests '*downloads.DownloadActionModelTest'`：首轮29项25通过/4失败，暴露旧strict辅助函数仍接收字符串布尔/整数和数字字符串类型混淆。修正后29项全过（14秒），随后补充编辑v2/目录空格、未知错误保护、HTTP/FTP差量、旧文件选取和RSS原身份测试，第三轮35项全过（27秒；19+8+8）。对应`backend-model-tests*.txt`及保留XML。成功回执和当前配置可能通过之后的只读检查结束动作，未把单纯success当作文件完成。
+- 同前缀增加七组旧仓储测试（DownloadCreationResultTest、DownloadMutationResultTest、DownloadSettingsRepositoryTest、DownloadTaskDetailsRepositoryTest、DownloadDiscoveryRepositoryTest、DownloadAdvancedReadRepositoryTest、DownloadTaskFileTest）：125项61通过/64失败（36秒），旧断言仍使用v1/v2链接、v1编辑、任务与文件两效果、可省略/宽松RSS字段、无manager设置及旧读取顺序。保留`repository-regression-run1.txt`及XML；后续须逐项迁移和复查，不能作为模块验收通过。
+- 后续仍需：旧回归及原生UI迁移/真实交互、双语/字体/浅深色/无障碍门禁、对抗与集成复核、记录及临时材料清理。本轮未运行完整JVM、Release/R8/lint、云端或真实NAS；NAS创建/实际文件移动/普通与管理员设置权限按A6账本保留`PENDING_USER_VALIDATION`。
+
+
+## 2026-10-13 Android A6 下载主流程与恢复
+
+本节接续上面的“验收中”记录，关闭当前环境内A6主流程；完整A0–A10任务继续。原工作区main未暂存、提交或推送，其他平台源码保持只读。本轮将创建、暂停/继续/移除、位置编辑、设置与RSS统一交给`DownloadActionModel`及独立加密记录，保留原批准UI。新增`DownloadCreationModel`在系统选择之后复制私有任务文件，显式提交才创建，密码不保存。
+
+下载相关最终244项JVM全部通过，覆盖七类仓储、三个新模型/存储/契约类及既有状态/表单策略。实际命令：
+
+```bash
+JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home \
+  android/gradlew -p android :app:testDebugUnitTest --tests '*Download*Test' \
+  :app:assembleDebug :app:assembleDebugAndroidTest \
+  --offline --max-workers=2 --console=plain
+```
+
+`native-build-run3.txt`该组合73秒通过，XML在`download-final-results`。早期七类回归迁移后的127项126通过/1失败，BT大小测试仍使用字符串，按已登记“RSS十进制字符串、BT数值”修正。扩展下载测试首轮242项6失败，包含工作区构造参数超过JVM上限、旧目录裁剪/调度关闭和双效果假设；归并新增读取状态到现有下载状态对象并保留合法空格/独立计划后243项通过，追加“继续后快速完成”后244项通过。没有降低未知、权限、完整分页、写前保存或重复提交断言。
+
+实际修复包括：设置第一分区已完成、后续分区漂移/权限撤销时保留部分成功；取消按当前分区是否发送区分未知。完成任务独立显示“已完成”，合法继续回执后快速完成可结束动作。设置开关整行可点击并提供单一标签/角色。删除无人调用的旧下载Repository门面；新请求样本验证常规/计划只发送变化字段，生成参数目录同步。
+
+原生验证仅使用本轮创建的`Codex_Downloads_A6_API37`（API37、ARM64）与合成请求拦截器；没有访问真实NAS。真实命令：
+
+```bash
+adb -s emulator-5582 shell am instrument -w -r -e captureWorkspaceUi true \
+  -e class io.github.qwertyuiop1995.dsmnativeclient.DownloadWorkspaceUiTest \
+  io.github.qwertyuiop1995.dsmnativeclient.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+| 配置与范围 | 当前证据 |
+| --- | --- |
+| 手机1080×2400/420dpi、zh-Hans-CN、浅色fontScale=1 | `native-phone-run4.txt`七项中六项通过；设置保存原生事件等待、禁用字段不具备SetText的定位修正后，`native-phone-regression-run6.txt`包含设置与新增保存位置两项通过，形成八条主流程分组证据。具体覆盖链接接受/未知冷恢复、任务文件复制/当次密码、批量停后续/刷新/明确继续、移除取消/force_complete、设置差量/权限、详情加载/失败/重试/Tracker源站、RSS更新与BT进入创建表单，以及目录选择/Task.edit v2 |
+| 同手机的既有界面 | `native-phone-regression-run6.txt`36项35通过/1失败，其中2项为上述新流程，34项为详情、发现、设置、活动摘要及页面状态。唯一旧活动摘要断言写死英文，改为当前语言资源后先遇中文前缀重复匹配，再改为标签前缀精确起始，`native-phone-activity-run8.txt`两项通过，5.115秒。保留两次定位失败，不将中途失败视为通过 |
+| 平板窗口2560×1600/320dpi、en-US、深色fontScale=2 | 同一应用APK运行`DownloadWorkspaceUiTest,DownloadAdaptiveScreenTest`，`native-tablet-run1.txt`12项全部通过，54.671秒；八条主流程加四项宽屏、窄屏切换及未选择详情。旧静态详情夹具显式提供独立加载完成状态，未改变生产加载逻辑 |
+
+首轮原生七项中六项失败：五项为固定按钮没有滚动父节点的测试操作错误，设置开关文字不可点击为实际交互问题。修正开关后英文复跑三项通过、四项因弹层与背景同名“返回/Files”定位失败，改为弹层/详情作用域；中途一次在构建结束前安装的run2已主动中断，不计为当前包验收。`native-build-run4.txt`应用/仪器包增量12秒通过，后续run5–run9仅修改测试定位和夹具。未重跑无变化的全部JVM/全部Android仪器集；不把旧反馈卡用例当作当前动作模型证据。
+
+人工查看手机任务文件表单和平板恢复面板、详情分栏与只读设置，内容和操作可滚动、无横向裁切，密码隐藏，Tracker不显示用户名/口令/路径。配置实际回读保存；截图只含合成资料，复核后保留SHA-256、尺寸和配置，清理原图及专用模拟器。`a6-final-source-and-apks.json`记录源码与包摘要，后续清理记录说明保留项；不是正式签名、发布或真实硬件结论。
+
+独立集成与只读对抗复核检查原账号/连接代次、同来源内容摘要、写前同步保存、接受回执保存失败、同任务/设置分区互斥、危险操作确认、逐项严格回执、完整查询和目录权限、未知停止后续、冷恢复只读、取消与迟到回调、RSS订阅身份变更、内部API不得降级写入。质量基线登记六个新执行入口，巨型文件行数按实际减少收紧；字段缺失不充当false/0，HTTP/FTP不一致保持不可编辑。
+
+门禁结果：244项下载JVM、Debug与仪器APK、180个请求Fixture/1结果示例、3630对Android语言资源及全平台本地化检查、写入口、57页五态、81处点击区域、动效、结构ratchet、计划、差异空白和严格文档均通过；五态工具仍报告两项既有自动化未闭环页面，不能据此声称全应用UI验收完成。
+
+`PENDING_USER_VALIDATION`：专用可丢弃任务/目录和管理员、普通账号；验证真实任务文件、目的地实际搬迁/残留、RSS时序、其他客户端并发、断网/进程结束后的恢复及物理设备系统选择器/TalkBack。预期未知不重发、不误认同名任务、不越权、不将任务消失当作文件已删除，仅回传脱敏版本、角色、步骤、业务状态与错误类型。完整JVM、Release/R8/lint和云端未运行；系统生命周期接A9，旧未调用反馈投影/资源清理接A10。

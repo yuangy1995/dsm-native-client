@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ContainerSection
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
@@ -48,7 +50,7 @@ class ContainerMutationResultTest {
     }
 
     @Test
-    fun `行为未验证时所有容器写操作稳定拒绝且零请求`() = runBlocking {
+    fun `旧未绑定确认快照的容器写门面稳定拒绝且零请求`() = runBlocking {
         val transport = ContainerMutationInterceptor()
         val repository = repository(
             transport,
@@ -106,7 +108,7 @@ class ContainerMutationResultTest {
     private fun repository(
         interceptor: Interceptor,
         vararg capabilityNames: String = arrayOf("SYNO.Docker.Container"),
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
         DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
@@ -149,8 +151,8 @@ private class ContainerOverviewInterceptor : Interceptor {
                 """{"success":true,"data":{"containers":[{"id":"c1","name":"Container 1","status":"running"}]}}"""
             "SYNO.Docker.Image" -> """{"success":false,"error":{"code":105}}"""
             "SYNO.Docker.Network" ->
-                """{"success":true,"data":{"networks":[{"id":"n1","name":"Network 1","status":"normal"}]}}"""
-            "SYNO.Docker.Project" -> """{"success":true,"data":{"projects":[]}}"""
+                """{"success":true,"data":{"networks":[{"id":"n1","name":"Network 1","driver":"bridge","containers":[],"enable_ipv6":false}]}}"""
+            "SYNO.Docker.Project" -> """{"success":true,"data":{}}"""
             "SYNO.Docker.Log" -> """{"success":true,"data":{"logs":[]}}"""
             else -> error("未处理的合成 Container Manager API")
         }

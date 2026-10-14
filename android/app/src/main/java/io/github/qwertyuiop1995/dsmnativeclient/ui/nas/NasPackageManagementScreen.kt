@@ -2,6 +2,8 @@ package io.github.qwertyuiop1995.dsmnativeclient.ui.nas
 
 import android.graphics.Bitmap
 import androidx.annotation.StringRes
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,40 +60,17 @@ internal fun NasPackageManagementScreen(
     state: WorkspaceState,
     model: AppViewModel,
 ) {
-    val target = state.packageMutationTarget
-    val operation = state.packageMutationOperation
+    val center by model.packageCenter.state.collectAsStateWithLifecycle()
     @Suppress("UNUSED_VARIABLE")
     val packageIconGeneration by model.packageIconGeneration.collectAsStateWithLifecycle()
-    val enabled = !state.isPerformingAction && !state.packageMutationInProgress &&
-        !state.packageMutationRefreshInProgress && state.packageMutationResult == null &&
-        state.packageMutationFailure == null && !state.packageMutationConfirmationRequested
-    PackageManagementContent(
-        packages = snapshot.packages,
-        packagesAvailable = snapshot.packagesAvailable,
-        target = target,
-        operation = operation,
-        mutationInProgress = state.packageMutationInProgress,
-        result = state.packageMutationResult,
-        failure = state.packageMutationFailure,
-        refreshFailure = state.packageMutationRefreshFailure,
-        refreshInProgress = state.packageMutationRefreshInProgress,
-        refreshCompleted = state.packageMutationRefreshCompleted,
-        enabled = enabled,
-        onRequest = model::requestPackageMutation,
-        onRefresh = model::refreshPackageMutation,
-        onContinue = { model.dismissPackageMutationResult() },
-        onCloseResult = { model.dismissPackageMutationResult() },
-        packageIcon = { packageInfo -> model.packageIcon(packageInfo, state.profile.id) },
-        onLoadPackageIcon = { packageInfo -> model.loadPackageIcon(packageInfo, state.profile.id) },
-    )
-    if (state.packageMutationConfirmationRequested && target != null && operation != null) {
-        PackageMutationConfirmationDialog(
-            target = target,
-            operation = operation,
-            onConfirm = model::confirmPackageMutation,
-            onDismiss = model::cancelPackageMutationConfirmation,
-        )
-    }
+    LaunchedEffect(model.packageCenter, state.profile.id) { model.packageCenter.loadInstalled() }
+    androidx.compose.runtime.DisposableEffect(model.packageCenter) { onDispose { model.packageCenter.cancelControl() } }
+    PackageControlContent(center, !state.isPerformingAction && !model.nasPower.state.value.busy,
+        model.packageCenter::loadInstalled, model.packageCenter::requestControl, model.packageCenter::cancelControl,
+        model.packageCenter::confirmControl, model.packageCenter::review, model.packageCenter::discard,
+        packageIcon = { model.packageIcon(it, state.profile.id) },
+        onLoadPackageIcon = { model.loadPackageIcon(it, state.profile.id) },
+        onUpdate = { model.packageCenter.updateInstalled(it.id) })
 }
 
 @Composable
@@ -113,6 +92,7 @@ internal fun PackageManagementContent(
     onCloseResult: () -> Unit,
     packageIcon: (PackageInfo) -> Bitmap? = { null },
     onLoadPackageIcon: ((PackageInfo) -> Unit)? = null,
+    onUpdate: ((PackageInfo) -> Unit)? = null,
 ) {
     val targetState = if (target != null && operation != null) {
         packageTargetState(target, operation, packages, packagesAvailable, refreshCompleted)
@@ -151,6 +131,7 @@ internal fun PackageManagementContent(
                     onRequest = onRequest,
                     icon = packageIcon(packageInfo),
                     onLoadIcon = onLoadPackageIcon,
+                    onUpdate = onUpdate,
                 )
             }
         }
@@ -164,6 +145,8 @@ internal fun PackageManagementRow(
     onRequest: (PackageInfo, PackageMutationOperation) -> Unit,
     icon: Bitmap? = null,
     onLoadIcon: ((PackageInfo) -> Unit)? = null,
+    onUpdate: ((PackageInfo) -> Unit)? = null,
+    allowedActions: Set<PackageMutationOperation> = PackageMutationOperation.entries.toSet(),
 ) {
     val currentLoadIcon by rememberUpdatedState(onLoadIcon)
     LaunchedEffect(packageInfo.id, packageInfo.version) {
@@ -187,17 +170,19 @@ internal fun PackageManagementRow(
         leadingContent = { PackageIconArtwork(icon) },
         trailingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (packageInfo.canStart) PackageActionButton(
+                if (packageInfo.isUpgradeAvailable && onUpdate != null) TextButton(onClick = { onUpdate(packageInfo) }, enabled = enabled,
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.pc_update)) }
+                if (packageInfo.canStart && PackageMutationOperation.START in allowedActions) PackageActionButton(
                     enabled,
                     stringResource(R.string.start_package_description, packageInfo.name),
                     PackageMutationOperation.START,
                 ) { onRequest(packageInfo, PackageMutationOperation.START) }
-                if (packageInfo.canStop) PackageActionButton(
+                if (packageInfo.canStop && PackageMutationOperation.STOP in allowedActions) PackageActionButton(
                     enabled,
                     stringResource(R.string.stop_package_description, packageInfo.name),
                     PackageMutationOperation.STOP,
                 ) { onRequest(packageInfo, PackageMutationOperation.STOP) }
-                if (packageInfo.canUninstall) PackageActionButton(
+                if (packageInfo.canUninstall && PackageMutationOperation.UNINSTALL in allowedActions) PackageActionButton(
                     enabled,
                     stringResource(R.string.uninstall_package_description, packageInfo.name),
                     PackageMutationOperation.UNINSTALL,
@@ -277,7 +262,7 @@ internal fun PackageMutationConfirmationDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(packageConfirmationTitle(operation), target.name)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(packageConfirmationMessage(operation)))
                 Text(stringResource(R.string.package_target_summary, target.name, target.version))
                 Text(
@@ -288,8 +273,8 @@ internal fun PackageMutationConfirmationDialog(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm() }) { Text(stringResource(packageActionLabel(operation))) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { TextButton(onClick = { onConfirm() }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(packageActionLabel(operation))) } },
+        dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

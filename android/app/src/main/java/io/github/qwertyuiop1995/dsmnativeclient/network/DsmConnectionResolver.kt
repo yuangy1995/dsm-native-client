@@ -28,7 +28,7 @@ enum class ConnectionStatus {
  */
 internal class DsmConnectionResolver(
     private val api: DsmApiClient,
-    private val quickConnect: DsmQuickConnectResolver = DsmQuickConnectResolver(),
+    private val quickConnect: DsmQuickConnectResolver = api.quickConnectResolver(),
 ) {
     suspend fun discover(
         profile: NasProfile,
@@ -72,6 +72,7 @@ internal class DsmConnectionResolver(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: DsmFailure) {
+                if (error.stopsConnectionFallback()) throw error
                 lastDirectFailure = error
             }
         }

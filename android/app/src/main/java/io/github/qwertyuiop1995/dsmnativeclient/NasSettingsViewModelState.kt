@@ -3,6 +3,7 @@ package io.github.qwertyuiop1995.dsmnativeclient
 import io.github.qwertyuiop1995.dsmnativeclient.domain.*
 import java.util.Locale
 
+@kotlinx.serialization.Serializable
 enum class DdnsMutationOperation { TEST, SAVE, DELETE, ADDRESS_REFRESH }
 
 enum class PackageMutationOperation { START, STOP, UNINSTALL }

@@ -34,12 +34,14 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.AlarmAdd
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Poll
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.ClientSheet
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
@@ -55,6 +57,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.collectAsState
+import io.github.qwertyuiop1995.dsmnativeclient.chat.presentation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +66,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -102,13 +107,22 @@ import java.util.Date
 import java.util.Calendar
 
 @Composable
-internal fun ChatScreen(state: WorkspaceState, model: AppViewModel) {
+internal fun ChatScreen(rawState: WorkspaceState, model: AppViewModel) {
+    DisposableEffect(model) { onDispose { model.chatVoice.pause() } }
+    val actions by model.chatActions.state.collectAsState()
+    val batches by model.chatBatches.state.collectAsState()
+    val voice by model.chatVoice.state.collectAsState()
+    var listOverlayVisible by remember(rawState.profile.id) { mutableStateOf(false) }
+    val state = rawState.copy(chatMutationState = actions.presentation(rawState.profile.id))
+    val contentVisible = !listOverlayVisible && actions.focusedId == null && batches.focusedId == null && !voice.visible &&
+        !state.chatNewConversationVisible && !state.chatMembersVisible && !state.chatRemindersVisible &&
+        !state.chatScheduleComposerVisible && !state.chatScheduledMessagesVisible && !state.chatPollComposerVisible &&
+        state.chatAttachmentPreviewName == null
     val selected = state.selectedConversation
-    val managementMutation = state.chatMutationState.latestManagementEntry
     BoxWithConstraints(Modifier.fillMaxSize()) {
         if (AdaptiveLayoutPolicy.usesChatListDetail(maxWidth.value)) {
             Row(Modifier.fillMaxSize()) {
-                ConversationList(state, model, Modifier.width(360.dp).fillMaxSize())
+                ConversationList(state, model, Modifier.width(360.dp).fillMaxSize(), onOverlayChanged = { listOverlayVisible = it })
                 VerticalDivider()
                 if (selected == null) {
                     Box(Modifier.weight(1f).fillMaxSize()) {
@@ -123,16 +137,18 @@ internal fun ChatScreen(state: WorkspaceState, model: AppViewModel) {
                         state,
                         model,
                         showBack = false,
+                        contentVisible = contentVisible,
                         modifier = Modifier.weight(1f).fillMaxSize(),
                     )
                 }
             }
         } else if (selected == null) {
-            ConversationList(state, model)
+            ConversationList(state, model, onOverlayChanged = { listOverlayVisible = it })
         } else {
-            ConversationDetail(state, model)
+            ConversationDetail(state, model, contentVisible = contentVisible)
         }
     }
+    ChatContentPanels(state, model, contentVisible)
     if (state.chatNewConversationVisible) NewConversationDialog(state, model)
     if (state.chatMembersVisible) ChatMembersDialog(state, model)
     if (state.chatRemindersVisible) ChatRemindersDialog(state, model)
@@ -143,24 +159,10 @@ internal fun ChatScreen(state: WorkspaceState, model: AppViewModel) {
     }
     if (state.chatPollComposerVisible) ChatPollComposerDialog(state, model)
     if (state.chatAttachmentPreviewName != null) ChatAttachmentPreviewDialog(state, model)
-    managementMutation?.let { entry ->
-        if (entry.confirmationRequested) {
-            ChatMutationConfirmationDialog(
-                target = entry.target,
-                onConfirm = { model.confirmChatMutation(entry.target.requestId) },
-                onDismiss = { model.cancelChatMutation(entry.target.requestId) },
-            )
-        } else {
-            ChatMutationFeedbackDialog(
-                entry = entry,
-                onRefresh = { model.refreshChatMutation(entry.target.requestId) },
-                onContinueEditing = {
-                    model.continueEditingChatMutation(entry.target.requestId)
-                },
-                onDismiss = { model.dismissChatMutation(entry.target.requestId) },
-            )
-        }
-    }
+    if (batches.focusedId == null) ChatActionPanel(actions, model.chatActions)
+    ChatBatchPanel(batches, actions, model.chatBatches, model.chatActions)
+    ChatVoicePanel(model.chatVoice)
+
 }
 
 @Composable
@@ -171,10 +173,9 @@ internal fun NewConversationDialog(state: WorkspaceState, model: AppViewModel) {
         ChatMutationOperation.DIRECT_CONVERSATION_CREATE,
         ChatMutationOperation.PRIVATE_GROUP_CREATE,
     )
-    AlertDialog(
+    ChatFormSheet(
         onDismissRequest = model::closeNewChatConversation,
-        icon = { Icon(Icons.Outlined.PersonAdd, contentDescription = null) },
-        title = { Text(stringResource(R.string.new_conversation)) },
+        title = stringResource(R.string.new_conversation),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.select_people_for_chat))
@@ -276,10 +277,9 @@ internal fun NewConversationDialog(state: WorkspaceState, model: AppViewModel) {
 
 @Composable
 internal fun ChatMembersDialog(state: WorkspaceState, model: AppViewModel) {
-    AlertDialog(
+    ChatFormSheet(
         onDismissRequest = model::closeChatMembers,
-        icon = { Icon(Icons.Outlined.Info, contentDescription = null) },
-        title = { Text(stringResource(R.string.group_members)) },
+        title = stringResource(R.string.group_members),
         text = {
             when (val members = state.chatMembers) {
                 Loadable.Idle, Loadable.Loading -> Box(
@@ -325,10 +325,9 @@ internal fun ChatRemindersDialog(state: WorkspaceState, model: AppViewModel) {
         ChatMutationOperation.REMINDER_SET,
         ChatMutationOperation.REMINDER_DELETE,
     )
-    AlertDialog(
+    ChatFormSheet(
         onDismissRequest = model::closeChatReminders,
-        icon = { Icon(Icons.Outlined.Notifications, contentDescription = null) },
-        title = { Text(stringResource(R.string.chat_reminders)) },
+        title = stringResource(R.string.chat_reminders),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (mutationInProgress) {
@@ -433,10 +432,9 @@ internal fun ChatScheduledMessagesDialog(state: WorkspaceState, model: AppViewMo
         ChatMutationOperation.SCHEDULE_CREATE,
         ChatMutationOperation.SCHEDULE_DELETE,
     )
-    AlertDialog(
+    ChatFormSheet(
         onDismissRequest = model::closeChatScheduledMessages,
-        icon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
-        title = { Text(stringResource(R.string.scheduled_messages)) },
+        title = stringResource(R.string.scheduled_messages),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (mutationInProgress) {
@@ -524,9 +522,9 @@ internal fun ChatScheduleComposerDialog(state: WorkspaceState, model: AppViewMod
     val formatted = sendAt?.let {
         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
     }.orEmpty()
-    AlertDialog(
+    ChatFormSheet(
         onDismissRequest = model::closeChatScheduleComposer,
-        title = { Text(stringResource(R.string.new_scheduled_message)) },
+        title = stringResource(R.string.new_scheduled_message),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -582,10 +580,9 @@ internal fun ChatPollComposerDialog(state: WorkspaceState, model: AppViewModel) 
     val optionsAreValid = normalizedOptions.size >= 2 &&
         normalizedOptions.map { it.lowercase() }.distinct().size == normalizedOptions.size
     val progressDescription = stringResource(R.string.chat_poll_creation_in_progress)
-    AlertDialog(
+    ChatFormSheet(
         onDismissRequest = model::closeChatPollComposer,
-        icon = { Icon(Icons.Outlined.Poll, contentDescription = null) },
-        title = { Text(stringResource(R.string.create_chat_poll)) },
+        title = stringResource(R.string.create_chat_poll),
         text = {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -702,6 +699,9 @@ internal fun ChatAttachment.isPreviewableVideo(): Boolean =
             "mp4", "m4v", "mov", "avi", "mkv", "webm", "mpeg", "mpg", "ts", "m2ts",
         )
 
+internal fun ChatAttachment.isPreviewableAudio(): Boolean =
+    mimeType?.startsWith("audio/", ignoreCase = true) == true || name.substringAfterLast('.', "").lowercase() in setOf("m4a", "mp3", "aac", "wav", "ogg", "flac")
+
 @Composable
 internal fun ChatAttachmentPreviewDialog(state: WorkspaceState, model: AppViewModel) {
     val name = state.chatAttachmentPreviewName ?: return
@@ -709,9 +709,9 @@ internal fun ChatAttachmentPreviewDialog(state: WorkspaceState, model: AppViewMo
     val bitmap = remember(bytes) {
         bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
     }
-    AlertDialog(
+    ChatFormSheet(
         onDismissRequest = model::closeChatAttachmentPreview,
-        title = { Text(name) },
+        title = name,
         text = {
             when {
                 state.chatAttachmentPreviewIsLoading -> Column(
@@ -736,7 +736,9 @@ internal fun ChatAttachmentPreviewDialog(state: WorkspaceState, model: AppViewMo
                 }
                 state.chatAttachmentPreviewError != null -> Text(state.chatAttachmentPreviewError)
                 state.chatAttachmentPreviewIsVideo && state.chatAttachmentPreviewVideoFile != null ->
-                    ChatVideoAttachmentPlayer(state.chatAttachmentPreviewVideoFile, name)
+                    if (state.chatAttachmentPreviewIsAudio) Box(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 280.dp)) {
+                        MediaPreview(state.chatAttachmentPreviewVideoFile, null, name, audio = true)
+                    } else ChatVideoAttachmentPlayer(state.chatAttachmentPreviewVideoFile, name)
                 bitmap != null -> Image(
                     bitmap = bitmap.asImageBitmap(),
                     contentDescription = name,
@@ -797,6 +799,7 @@ internal fun ChatComposer(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     onAttach: (() -> Unit)? = null,
+    onVoice: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().imePadding().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -808,10 +811,13 @@ internal fun ChatComposer(
                 Icon(Icons.Outlined.AttachFile, stringResource(R.string.attach_file))
             }
         }
+        if (onVoice != null) IconButton(onClick = onVoice, enabled = enabled) {
+            Icon(androidx.compose.material.icons.Icons.Outlined.Mic, stringResource(R.string.chat_voice))
+        }
         OutlinedTextField(
             value = text,
             onValueChange = { if (it.length <= 10_000) onTextChange(it) },
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).testTag("chat_composer"),
             enabled = enabled,
             shape = MaterialTheme.shapes.large,
             placeholder = { Text(stringResource(R.string.write_a_message)) },
@@ -848,6 +854,20 @@ internal fun PhotoFailureForChat(
         Text(localized.recovery, modifier = Modifier.padding(top = 8.dp))
         Button(onClick = { model.openConversation(conversation) }, modifier = Modifier.padding(top = 16.dp)) {
             Text(stringResource(R.string.retry))
+        }
+    }
+}
+
+/** 表单复用已确认的底部面板；按钮、加载与错误仍由原有表单状态驱动。 */
+@Composable
+private fun ChatFormSheet(onDismissRequest: () -> Unit, title: String, text: @Composable () -> Unit,
+    confirmButton: @Composable () -> Unit, dismissButton: (@Composable () -> Unit)? = null) {
+    ClientSheet(title, onDismissRequest) {
+        text()
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            confirmButton()
+            dismissButton?.invoke()
         }
     }
 }

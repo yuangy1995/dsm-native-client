@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.canPauseDownload
 import io.github.qwertyuiop1995.dsmnativeclient.canResumeDownload
 import io.github.qwertyuiop1995.dsmnativeclient.downloadFailureKind
@@ -339,6 +341,45 @@ class FileDownloadTest {
         )
     }
 
+    @Test fun archivePreservesContentEmptyDirectoryAndRawPathsWithoutRange() = runBlocking {
+        val archive = ByteArrayOutputStream().also { buffer ->
+            java.util.zip.ZipOutputStream(buffer).use { zip ->
+                zip.putNextEntry(java.util.zip.ZipEntry("a.txt ")); zip.write("fixture-content".encodeToByteArray()); zip.closeEntry()
+                zip.putNextEntry(java.util.zip.ZipEntry("Empty/")); zip.closeEntry()
+            }
+        }.toByteArray()
+        val transport = DownloadInterceptor(archive, unknownContentLength = true)
+        val output = ByteArrayOutputStream()
+        val progress = mutableListOf<Pair<Long, Long?>>()
+        val written = repository(transport).downloadArchive(listOf(
+            FileItem("/synthetic/a.txt ", "a.txt ", false, 100_000),
+            FileItem("/synthetic/Empty", "Empty", true, 999),
+        ), output) { completed, total -> progress += completed to total }
+        assertEquals(archive.size.toLong(), written)
+        assertTrue(archive.contentEquals(output.toByteArray()))
+        assertEquals(archive.size.toLong(), progress.last().first)
+        assertEquals(null, transport.requests.single().header("Range"))
+        assertEquals("""["/synthetic/a.txt ","/synthetic/Empty"]""", transport.requests.single().url.queryParameter("path"))
+        java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { zip ->
+            assertEquals("a.txt ", zip.nextEntry.name)
+            assertEquals("fixture-content", zip.readBytes().decodeToString())
+            assertEquals("Empty/", zip.nextEntry.name)
+            assertEquals(null, zip.nextEntry)
+        }
+    }
+
+    @Test fun invalidOrUnreadableArchiveSelectionSendsNoRequests() = runBlocking {
+        val transport = DownloadInterceptor(byteArrayOf())
+        val repo = repository(transport)
+        val file = FileItem("/synthetic/a", "a", false)
+        val folder = FileItem("/synthetic/empty", "empty", true)
+        listOf(emptyList(), listOf(file), listOf(file, folder.copy(canRead = false)),
+            listOf(file, folder.copy(path = "/synthetic/../other"))).forEach { items ->
+            assertTrue(runCatching { repo.downloadArchive(items, ByteArrayOutputStream()) }.isFailure)
+        }
+        assertTrue(transport.requests.isEmpty())
+    }
+
     private fun persistedDownload(
         state: TransferState,
         isDirectory: Boolean = false,
@@ -355,7 +396,7 @@ class FileDownloadTest {
         workId = workId,
     )
 
-    private fun repository(interceptor: DownloadInterceptor): DsmRepository = DsmRepository(
+    private fun repository(interceptor: DownloadInterceptor): DsmRepository = authorizedRepository(
         profile = NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         session = DsmSession("test", "test-session", "test-token"),
         api = DsmApiClient(

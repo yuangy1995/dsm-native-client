@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -40,6 +41,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import io.github.qwertyuiop1995.dsmnativeclient.AppViewModel
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasSettingsSnapshot
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +77,51 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.NasDdnsRecord
 import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
 
 @Composable
+internal fun NasDdnsManagement(snapshot: NasSettingsSnapshot, isPerformingAction: Boolean, model: AppViewModel) {
+    val ddns = model.nasDdns; val state by ddns.state.collectAsState()
+    var editing by remember { mutableStateOf(false) }
+    LaunchedEffect(ddns) { ddns.refresh() }
+    DisposableEffect(ddns) { onDispose { ddns.leave() } }
+    DdnsManagementContent(state.current, state.current != null,
+        enabled = !state.blocked && !isPerformingAction && !editing && state.confirmation == null,
+        leadingContent = {
+            item { NasRemoteAccessManagement(snapshot.remoteAccessSettings, snapshot.remoteAccessSettingsAvailable, isPerformingAction, model) }
+            item { EthernetManagement(snapshot.networkInterfaces, snapshot.networkInterfacesAvailable, isPerformingAction, model) }
+        },
+        mutationStatusContent = {
+            if (state.saving && state.operation != null) DdnsSavingCard(requireNotNull(state.operation), state.draft, null, emptyList(), state.current)
+            else if (state.result != null && state.operation != null) DdnsMutationFeedbackCard(
+                operation = requireNotNull(state.operation), draft = state.draft, deleteTarget = null, addressTargets = emptyList(),
+                providers = state.current?.providers.orEmpty(), currentRecord = null, result = requireNotNull(state.result),
+                refreshFailure = state.failure, refreshInProgress = state.busy, refreshCompleted = false,
+                onRefresh = ddns::refresh, onContinueEditing = { ddns.dismiss(); editing = true }, onDismiss = { ddns.dismiss(discard = true) },
+                canContinueEditing = !state.blocked && state.draft != null && state.current != null && state.result?.errorCategory != MutationErrorCategory.CONFLICT, canDismiss = !state.blocked)
+            else if (state.failure != null) Column(Modifier.padding(16.dp)) {
+                Text(requireNotNull(state.failure).localize(LocalContext.current).combined, color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = ddns::refresh, enabled = !state.busy) { Text(stringResource(R.string.refresh_and_check_ddns)) }
+            } else if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (state.record?.requiresAcceptance == true && state.record?.blocks == true && state.record?.accepted == false)
+                Text(stringResource(R.string.ddns_credentials_unknown_hint), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        onAdd = { editing = ddns.begin(it) }, onEdit = { editing = ddns.begin(it.toDraft()) },
+        onDelete = { ddns.prepare(DdnsMutationOperation.DELETE, it) }, onRefreshAddress = { ddns.prepare(DdnsMutationOperation.ADDRESS_REFRESH) },
+        onReload = ddns::refresh, reloadEnabled = !state.busy && !editing && state.confirmation == null)
+    val draft = state.draft
+    if (editing && draft != null && state.confirmation == null) DdnsEditorDialog(
+        initial = state.original?.records?.singleOrNull { it.providerId == draft.originalProviderId }?.toDraft() ?: NasDdnsDraft(providerId = draft.providerId, hostname = "", username = ""),
+        draft = draft, providers = state.current?.providers.orEmpty(), enabled = !state.blocked && !isPerformingAction,
+        onDraftChange = ddns::draft,
+        onTest = { ddns.prepare(DdnsMutationOperation.TEST).also { if (it) editing = false } },
+        onSave = { ddns.prepare(DdnsMutationOperation.SAVE).also { if (it) editing = false } },
+        onDismiss = { ddns.leave(); editing = false })
+    state.confirmation?.let { plan -> DdnsConfirmationDialog(plan.operation, plan.draft, plan.target,
+        plan.original.records.takeIf { plan.operation == DdnsMutationOperation.ADDRESS_REFRESH }.orEmpty(), plan.original.providers,
+        onConfirm = { ddns.confirm(plan) }, onDismiss = {
+            ddns.cancelConfirmation(); editing = plan.operation in setOf(DdnsMutationOperation.SAVE, DdnsMutationOperation.TEST)
+        }) }
+}
+
+@Composable
 internal fun DdnsManagementContent(
     directory: NasDdnsDirectory?,
     directoryAvailable: Boolean,
@@ -81,6 +132,8 @@ internal fun DdnsManagementContent(
     onRefreshAddress: () -> Unit,
     onEdit: (NasDdnsRecord) -> Unit,
     onDelete: (NasDdnsRecord) -> Unit,
+    onReload: (() -> Unit)? = null,
+    reloadEnabled: Boolean = enabled,
 ) {
     LazyColumn {
         leadingContent()
@@ -91,6 +144,7 @@ internal fun DdnsManagementContent(
                 enabled = enabled,
                 onAdd = onAdd,
                 onRefresh = onRefreshAddress,
+                onReload = onReload, reloadEnabled = reloadEnabled,
             )
         }
         item { mutationStatusContent() }
@@ -120,17 +174,12 @@ internal fun DdnsToolbar(
     enabled: Boolean,
     onAdd: (NasDdnsDraft) -> Unit,
     onRefresh: () -> Unit,
+    onReload: (() -> Unit)? = null,
+    reloadEnabled: Boolean = enabled,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(stringResource(R.string.dynamic_domain_name), style = MaterialTheme.typography.titleMedium)
-        Text(
-            stringResource(
-                if (!directoryAvailable) R.string.ddns_unavailable_hint else R.string.ddns_description,
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -152,6 +201,9 @@ internal fun DdnsToolbar(
             ) {
                 Icon(Icons.Outlined.Refresh, null)
                 Text(stringResource(R.string.update_address))
+            }
+            if (onReload != null) TextButton(onClick = onReload, enabled = reloadEnabled, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.refresh))
             }
         }
     }
@@ -576,7 +628,7 @@ internal fun ddnsFeedbackPolicy(
         MutationResultStatus.PARTIAL_SUCCESS -> R.string.service_action_partial
         MutationResultStatus.SUBMITTED_BUT_UNVERIFIED,
         MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-        -> R.string.service_action_unverified
+        -> if (operation in setOf(DdnsMutationOperation.TEST, DdnsMutationOperation.ADDRESS_REFRESH)) R.string.ddns_transient_unknown_hint else R.string.service_action_unverified
         MutationResultStatus.PERMISSION_DENIED -> R.string.service_action_permission_denied
         MutationResultStatus.UNSUPPORTED -> R.string.service_action_unsupported
         MutationResultStatus.CANCELLED_BEFORE_SUBMISSION -> R.string.service_action_cancelled
@@ -626,11 +678,13 @@ internal fun DdnsMutationFeedbackCard(
     onRefresh: () -> Unit,
     onContinueEditing: () -> Unit,
     onDismiss: () -> Unit,
+    canContinueEditing: Boolean? = null,
+    canDismiss: Boolean? = null,
 ) {
     val policy = ddnsFeedbackPolicy(operation, result)
-    val canLeave = !policy.mustRefreshBeforeDismiss || refreshCompleted
-    val canContinue = operation == DdnsMutationOperation.TEST ||
-        operation == DdnsMutationOperation.SAVE && (!refreshCompleted || currentRecord != null)
+    val canLeave = canDismiss ?: (!policy.mustRefreshBeforeDismiss || refreshCompleted)
+    val canContinue = canContinueEditing ?: (operation == DdnsMutationOperation.TEST ||
+        operation == DdnsMutationOperation.SAVE && (!refreshCompleted || currentRecord != null))
     DdnsFeedbackCard(
         liveRegionMode = if (policy.isAssertive) LiveRegionMode.Assertive else LiveRegionMode.Polite,
         isError = result.status in setOf(
@@ -665,7 +719,7 @@ internal fun DdnsMutationFeedbackCard(
                 modifier = Modifier.align(Alignment.End),
             ) { Text(stringResource(R.string.continue_editing)) }
         }
-        TextButton(
+        if (canDismiss != false) TextButton(
             onClick = onDismiss,
             enabled = !refreshInProgress && canLeave,
             modifier = Modifier.align(Alignment.End),
@@ -673,7 +727,7 @@ internal fun DdnsMutationFeedbackCard(
             Text(
                 stringResource(
                     if (result.status == MutationResultStatus.CONFIRMED_SUCCESS) R.string.done
-                    else R.string.discard_changes,
+                    else R.string.close,
                 ),
             )
         }

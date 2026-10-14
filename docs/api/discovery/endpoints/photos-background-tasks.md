@@ -37,6 +37,9 @@ completion是已处理数并包含失败；成功数completion-error；done且co
 - Core：apple/Packages/DsmCore/Sources/SynologyPhotosManagement.swift、SynologyPhotos.swift。
 - Adapter/自动化：apple/Packages/DsmNetwork/Sources/SynologyPhotosRepository.swift及Tests/SynologyPhotosRepositoryTests.swift。
 - macOS：SynologyPhotosModel.swift、PhotoManagementPanel.swift、SynologyPhotosView.swift及双语资源。
-- 本轮macOS实现已通过780项相关XCTest、6项本地化及2项原生UI测试（56张合成截图）；独立Release、严格签名、Sparkle实际加载及DMG校验通过。iPhone/iPad/Android/Windows仅登记影响，未实现UI、未运行各端构建。无存储迁移、依赖、权限或工具链变更；回滚删除新增入口/调用，不回滚NAS实际已完成的用户操作。
+- macOS既有实现通过780项相关XCTest、6项本地化及2项原生UI测试（56张合成截图）；独立Release、严格签名、Sparkle实际加载及DMG校验通过。这些历史结果不代表其他端或真实NAS验收。
+- Android A4s接入`SynologyPhotoBackgroundModels`、`SynologyPhotosBackgroundRepository`、现有相册操作存储、`SynologyPhotoBackgroundModel`与`SynologyPhotoBackgroundTasks`。Info v1统一Foto，停止数组、逐项清理标量；创建时间保留小数，确认固定身份但允许进度推进。详情Item v5每批不超过100项，按ID补名称；Folder v2检查实际权限与完整父链。关闭页面/切换记录取消读取，晚到结果不重新显示；已发送控制独立保存，恢复仅检查已尝试且未明确拒绝的项目。
+- Android加密记录沿用版本1并追加可选后台控制字段/动作，旧记录继续读取，无数据迁移；旧包不认识新增动作，回退前须保留记录并只读处理未决操作。控制任务与原复制/移动分别恢复，原搬移终态证据未保存时不得清理。2026-10-13110项聚焦JVM回归及Debug/仪器APK通过，最终同包手机中文/平板英文浅色标准字号与深色二倍字号四配置各16项原生流程通过（任务中心8项、原文件操作回归8项）；详见[验证历史](../../../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)与[Android A4s账本](../../../archive/2026-h2/ANDROID_REWRITE_IMPLEMENTATION_HISTORY_ZH.md#a4s-photos-后台任务中心账本)。证据仍仅static，未新增真实NAS兼容结论。
+- iPhone/iPad/Windows仅登记影响，本片未修改其源码或运行其构建。Android无新增依赖、权限或工具链；回滚不回滚NAS实际已完成的复制/移动。
 
 PENDING_USER_VALIDATION：在有复制/移动任务的专用验收场景查看waiting/processing/aborting/done、部分失败和取消后的已完成部分；取消确认后逐步停止，关闭窗口不停止任务；清理只消除选定记录，照片保留；同时网页完成的新任务不得误清。断网后重新连接仅核对原操作，重复点击不重复提交；同账号个人/共享空间以及个人空间关闭条件分别测试，目标失权不可跳转。错误详情以实际返回为准。只回传脱敏版本、步骤和提示，不回传地址、任务原文、照片名/路径或凭据。

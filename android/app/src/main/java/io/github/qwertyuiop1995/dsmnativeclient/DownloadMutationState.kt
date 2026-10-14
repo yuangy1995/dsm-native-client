@@ -45,7 +45,7 @@ enum class DownloadControlOperation {
     PAUSE,
     RESUME,
     DELETE_TASK,
-    DELETE_TASK_AND_FILES,
+    END_TASK_AND_MOVE_FILES,
     ;
 
     val repositoryAction: DownloadTaskMutationAction
@@ -53,16 +53,16 @@ enum class DownloadControlOperation {
             PAUSE -> DownloadTaskMutationAction.PAUSE
             RESUME -> DownloadTaskMutationAction.RESUME
             DELETE_TASK -> DownloadTaskMutationAction.REMOVE_TASK
-            DELETE_TASK_AND_FILES -> DownloadTaskMutationAction.REMOVE_TASK_AND_FILES
+            END_TASK_AND_MOVE_FILES -> DownloadTaskMutationAction.END_TASK_AND_MOVE_FILES
         }
     val resultOperation: String
         get() = when (this) {
             PAUSE -> "downloadPause"
             RESUME -> "downloadResume"
             DELETE_TASK -> "downloadDelete"
-            DELETE_TASK_AND_FILES -> "downloadDeleteFiles"
+            END_TASK_AND_MOVE_FILES -> "downloadEndAndMove"
         }
-    val isDeletion: Boolean get() = this == DELETE_TASK || this == DELETE_TASK_AND_FILES
+    val isDeletion: Boolean get() = this == DELETE_TASK || this == END_TASK_AND_MOVE_FILES
 }
 
 data class DownloadControlTarget(
@@ -111,6 +111,7 @@ data class DownloadDestinationEditTarget(
 
 data class DownloadDestinationEditWorkspaceState(
     val selectionTaskBaseline: DownloadTask? = null,
+    val selectionTasks: List<DownloadTask> = emptyList(),
     val target: DownloadDestinationEditTarget? = null,
     val confirmationRequested: Boolean = false,
     val mutationInProgress: Boolean = false,
@@ -179,12 +180,9 @@ data class DownloadSettingsDraftState(
     val scheduleEnabled: Boolean,
     val emuleScheduleEnabled: Boolean,
 ) {
-    fun toSettingsOrNull(supportsSchedule: Boolean): DownloadSettings? {
-        val cleanDestination = destination.trim().trim('/')
-        if (cleanDestination.isBlank() || cleanDestination.split('/').any {
-                it.isBlank() || it == "." || it == ".."
-            }
-        ) return null
+    fun toSettingsOrNull(supportsSchedule: Boolean, baseline: DownloadSettings? = null): DownloadSettings? {
+        val cleanDestination = if (baseline != null && "default_destination" !in baseline.availableFields) baseline.defaultDestination
+            else io.github.qwertyuiop1995.dsmnativeclient.data.downloads.downloadDestination(destination) ?: return null
         val limits = listOf(
             btDownload,
             btUpload,
@@ -207,7 +205,11 @@ data class DownloadSettingsDraftState(
             emuleDownloadLimitKb = limits[5],
             emuleUploadLimitKb = limits[6],
             scheduleEnabled = supportsSchedule && scheduleEnabled,
-            emuleScheduleEnabled = supportsSchedule && emuleEnabled && emuleScheduleEnabled,
+            emuleScheduleEnabled = supportsSchedule && emuleScheduleEnabled,
+            availableFields = baseline?.availableFields ?: io.github.qwertyuiop1995.dsmnativeclient.domain.DOWNLOAD_SETTING_FIELDS,
+            canManage = baseline?.canManage ?: false,
+            scheduleFailure = baseline?.scheduleFailure,
+            basicFailure = baseline?.basicFailure,
         )
     }
 
@@ -305,7 +307,7 @@ internal fun downloadControlOperationAllowed(
     DownloadControlOperation.RESUME ->
         status == io.github.qwertyuiop1995.dsmnativeclient.domain.ResourceState.PAUSED
     DownloadControlOperation.DELETE_TASK,
-    DownloadControlOperation.DELETE_TASK_AND_FILES,
+    DownloadControlOperation.END_TASK_AND_MOVE_FILES,
     -> true
 }
 
@@ -342,7 +344,7 @@ internal fun downloadControlRefreshMatches(
             io.github.qwertyuiop1995.dsmnativeclient.domain.ResourceState.WAITING,
         )
         DownloadControlOperation.DELETE_TASK,
-        DownloadControlOperation.DELETE_TASK_AND_FILES,
+        DownloadControlOperation.END_TASK_AND_MOVE_FILES,
         -> matches.isEmpty()
     }
 }
@@ -376,7 +378,7 @@ internal fun cancelledDownloadControlResult(target: DownloadControlTarget): Muta
     counts = MutationResultCounts(
         succeeded = 0,
         failed = 0,
-        unknown = if (target.operation == DownloadControlOperation.DELETE_TASK_AND_FILES) 2 else 1,
+        unknown = 1,
     ),
     errorCategory = MutationErrorCategory.UNKNOWN,
     diagnosticTag = "download-station.${target.operation.name.lowercase().replace('_', '-')}.cancelled-externally",

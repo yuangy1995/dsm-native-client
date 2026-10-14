@@ -130,12 +130,12 @@ internal object RequestFixtureAssertions {
     }
 
     private fun formFields(request: Request): Map<String, String> {
-        val form = request.body as? FormBody ?: error("请求正文不是 form")
+        val form = request.fixtureBody() as? FormBody ?: error("请求正文不是 form")
         return (0 until form.size).associate { form.name(it) to form.value(it) }
     }
 
     private fun multipartFields(request: Request): Map<String, String> {
-        val multipart = request.body as? MultipartBody ?: error("请求正文不是 multipart")
+        val multipart = ((request.body as? io.github.qwertyuiop1995.dsmnativeclient.network.OneShotRequestBody)?.delegate ?: request.body) as? MultipartBody ?: error("请求正文不是 multipart")
         return multipart.parts.associate { part ->
             val disposition = part.headers?.get("Content-Disposition").orEmpty()
             val name = Regex("name=\"([^\"]+)\"").find(disposition)?.groupValues?.get(1)
@@ -163,13 +163,13 @@ internal object RequestFixtureAssertions {
         val token = mutableSetOf<String>()
         if (request.header("Cookie") != null) session += "cookie"
         if (request.url.queryParameter("_sid") != null) session += "query"
-        if (fields["_sid"] != null) session += if (request.body is MultipartBody) "multipart" else "form"
+        if (fields["_sid"] != null) session += if (request.body?.contentType()?.type == "multipart") "multipart" else "form"
         if (request.header("X-SYNO-TOKEN") != null) token += "header"
         if (request.url.queryParameter("SynoToken") != null || request.url.queryParameter("synotoken") != null) {
             token += "query"
         }
         if (fields.keys.any { it in tokenNames }) {
-            token += if (request.body is MultipartBody) "multipart" else "form"
+            token += if (request.body?.contentType()?.type == "multipart") "multipart" else "form"
         }
         return session to token
     }
@@ -193,3 +193,7 @@ internal object RequestFixtureAssertions {
     private fun String.normalizedCgiPath(): String =
         removePrefix("/").removePrefix("webapi/")
 }
+
+/** 断言实际正文，同时保留外层禁止自动重放的生产保护。 */
+internal fun Request.fixtureBody(): okhttp3.RequestBody? =
+    (body as? io.github.qwertyuiop1995.dsmnativeclient.network.OneShotRequestBody)?.delegate ?: body

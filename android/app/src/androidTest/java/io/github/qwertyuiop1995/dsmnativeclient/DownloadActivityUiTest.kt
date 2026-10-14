@@ -6,6 +6,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -50,8 +53,12 @@ class DownloadActivityUiTest {
         rule.runOnIdle {
             activityState = Loadable.Ready(DownloadStationActivity(1024, 512, 256, 128))
         }
-        rule.onNodeWithText("Downloads:", substring = true).assertIsDisplayed()
-        rule.onNodeWithText("eMule downloads:", substring = true).assertIsDisplayed()
+        rule.onNode(activityPrefix(context.getString(R.string.download_activity_standard).substringBefore('%'))).assertIsDisplayed()
+        rule.onNode(activityPrefix(context.getString(R.string.download_activity_emule).substringBefore('%'))).assertIsDisplayed()
+    }
+
+    private fun activityPrefix(prefix: String) = SemanticsMatcher("Localized activity label") {
+        it.config.getOrNull(SemanticsProperties.Text)?.any { value -> value.text.startsWith(prefix) } == true
     }
 
     private fun render(

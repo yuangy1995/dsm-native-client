@@ -35,27 +35,12 @@ class NasStorageScreenTest {
                         DsmFailure(null, "Synthetic analysis failure", "Try again."),
                     ),
                     progress = null,
-                    diskTestStatuses = emptyMap(),
-                    diskTestMutationTarget = null,
-                    diskTestMutationBaseline = null,
-                    diskTestMutationOperation = null,
-                    diskTestMutationConfirmationRequested = false,
-                    diskTestMutationInProgress = false,
-                    diskTestMutationResult = null,
-                    diskTestMutationFailure = null,
-                    diskTestMutationRefreshFailure = null,
-                    diskTestMutationRefreshInProgress = false,
-                    diskTestMutationRefreshCompleted = false,
-                    diskTestActionsEnabled = true,
+                    smartContent = { io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasSmartTestContent(
+                        io.github.qwertyuiop1995.dsmnativeclient.nas.NasSmartState(loaded = true, disks = snapshot().storageDisks),
+                        onRefresh = {}, onLoad = {}, onRequest = { _, _ -> false }, onCancel = {}, onConfirm = { false }, onDismiss = {}) },
                     onBeginAnalysis = { retries += 1 },
                     onCancelAnalysis = {},
-                    onLoadDiskTest = {},
-                    onRequestDiskTest = { _, _, _ -> },
-                    onConfirmDiskTest = { false },
-                    onCancelDiskTestConfirmation = {},
-                    onRefreshDiskTest = {},
-                    onContinueDiskTest = {},
-                    onCloseDiskTestResult = {},
+
                 )
             }
         }
@@ -81,30 +66,15 @@ class NasStorageScreenTest {
                     snapshot = snapshot(),
                     analysis = analysis.value,
                     progress = progress.value,
-                    diskTestStatuses = emptyMap(),
-                    diskTestMutationTarget = null,
-                    diskTestMutationBaseline = null,
-                    diskTestMutationOperation = null,
-                    diskTestMutationConfirmationRequested = false,
-                    diskTestMutationInProgress = false,
-                    diskTestMutationResult = null,
-                    diskTestMutationFailure = null,
-                    diskTestMutationRefreshFailure = null,
-                    diskTestMutationRefreshInProgress = false,
-                    diskTestMutationRefreshCompleted = false,
-                    diskTestActionsEnabled = true,
+                    smartContent = { io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasSmartTestContent(
+                        io.github.qwertyuiop1995.dsmnativeclient.nas.NasSmartState(loaded = true, disks = snapshot().storageDisks),
+                        onRefresh = {}, onLoad = {}, onRequest = { _, _ -> false }, onCancel = {}, onConfirm = { false }, onDismiss = {}) },
                     onBeginAnalysis = {
                         analysis.value = Loadable.Loading
                         progress.value = StorageAnalysisProgress("scanning", 0, 1)
                     },
                     onCancelAnalysis = { analysis.value = Loadable.Idle },
-                    onLoadDiskTest = {},
-                    onRequestDiskTest = { _, _, _ -> },
-                    onConfirmDiskTest = { false },
-                    onCancelDiskTestConfirmation = {},
-                    onRefreshDiskTest = {},
-                    onContinueDiskTest = {},
-                    onCloseDiskTestResult = {},
+
                 )
             }
         }

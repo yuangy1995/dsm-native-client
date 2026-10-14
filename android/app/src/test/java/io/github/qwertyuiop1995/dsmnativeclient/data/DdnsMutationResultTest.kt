@@ -1,5 +1,11 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.DdnsMutationOperation
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasDdnsDirectory
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasDdnsProvider
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
@@ -37,7 +43,7 @@ class DdnsMutationResultTest {
     fun `连接测试只调用 test 且不会保存更新或回读`() = runBlocking {
         val transport = QueueDdnsInterceptor(PROVIDERS, EMPTY_RECORDS, SUCCESS)
 
-        val result = repository(transport).testDdnsResult(newDraft())
+        val result = repository(transport).testDdns(newDraft())
 
         assertConfirmed(result)
         assertEquals(listOf("list", "list", "test"), transport.methods())
@@ -52,7 +58,7 @@ class DdnsMutationResultTest {
     fun `新建只提交一次并严格回读全部可观察字段`() = runBlocking {
         val transport = QueueDdnsInterceptor(PROVIDERS, EMPTY_RECORDS, SUCCESS, PROVIDERS, SAVED_RECORDS)
 
-        val result = repository(transport).saveDdnsResult(null, newDraft())
+        val result = repository(transport).saveDdns(null, newDraft())
 
         assertConfirmed(result)
         assertEquals(listOf("list", "list", "create", "list", "list"), transport.methods())
@@ -72,7 +78,7 @@ class DdnsMutationResultTest {
             hostname = "updated.example.invalid",
         )
 
-        val result = repository(transport).saveDdnsResult(savedRecord(), desired)
+        val result = repository(transport).saveDdns(savedRecord(), desired)
 
         assertConfirmed(result)
         assertEquals("set", transport.methods()[2])
@@ -84,7 +90,7 @@ class DdnsMutationResultTest {
         val transport = QueueDdnsInterceptor(PROVIDERS, UPDATED_RECORDS)
         val desired = newDraft().copy(originalProviderId = "Example", password = "", heartbeat = true)
 
-        val result = repository(transport).saveDdnsResult(savedRecord(), desired)
+        val result = repository(transport).saveDdns(savedRecord(), desired)
 
         assertConflictBeforeSubmission(result)
         assertFalse(transport.methods().any { it in setOf("create", "set") })
@@ -94,7 +100,7 @@ class DdnsMutationResultTest {
     fun `删除基线陈旧时零写入拒绝误删`() = runBlocking {
         val transport = QueueDdnsInterceptor(PROVIDERS, UPDATED_RECORDS)
 
-        val result = repository(transport).deleteDdnsResult(savedRecord())
+        val result = repository(transport).deleteDdns(savedRecord())
 
         assertConflictBeforeSubmission(result)
         assertFalse(transport.methods().contains("delete"))
@@ -104,7 +110,7 @@ class DdnsMutationResultTest {
     fun `删除按服务商数组只提交一次并确认消失`() = runBlocking {
         val transport = QueueDdnsInterceptor(PROVIDERS, SAVED_RECORDS, SUCCESS, PROVIDERS, EMPTY_RECORDS)
 
-        val result = repository(transport).deleteDdnsResult(savedRecord())
+        val result = repository(transport).deleteDdns(savedRecord())
 
         assertConfirmed(result)
         assertEquals("[\"Example\"]", transport.requests[2].fields()["id"])
@@ -115,7 +121,7 @@ class DdnsMutationResultTest {
     fun `立即更新目标集合一致时独立提交并只证明请求接受`() = runBlocking {
         val transport = QueueDdnsInterceptor(PROVIDERS, SAVED_RECORDS, SUCCESS, PROVIDERS, SAVED_RECORDS)
 
-        val result = repository(transport).refreshDdnsResult(setOf("Example"))
+        val result = repository(transport).refreshDdns(setOf("Example"))
 
         assertConfirmed(result)
         assertEquals(listOf("list", "list", "update_ip_address", "list", "list"), transport.methods())
@@ -129,7 +135,7 @@ class DdnsMutationResultTest {
     fun `立即更新目标集合变化时零写入冲突`() = runBlocking {
         val transport = QueueDdnsInterceptor(PROVIDERS, SAVED_RECORDS)
 
-        val result = repository(transport).refreshDdnsResult(setOf("Other"))
+        val result = repository(transport).refreshDdns(setOf("Other"))
 
         assertConflictBeforeSubmission(result)
         assertFalse(transport.methods().contains("update_ip_address"))
@@ -140,18 +146,13 @@ class DdnsMutationResultTest {
         listOf(PROVIDER_API to 2, RECORD_API to 2).forEach { (changedApi, minVersion) ->
             val transport = QueueDdnsInterceptor()
             val repo = repository(transport, versionOverrides = mapOf(changedApi to minVersion))
-            val results = listOf(
-                repo.testDdnsResult(newDraft()),
-                repo.saveDdnsResult(null, newDraft()),
-                repo.deleteDdnsResult(savedRecord()),
-                repo.refreshDdnsResult(setOf("Example")),
+            val failures = listOf(
+                runCatching { repo.testDdns(newDraft()) },
+                runCatching { repo.saveDdns(null, newDraft()) },
+                runCatching { repo.deleteDdns(savedRecord()) },
+                runCatching { repo.refreshDdns(setOf("Example")) },
             )
-            results.forEach { result ->
-                assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
-                assertEquals(MutationErrorCategory.UNSUPPORTED, result.errorCategory)
-                assertFalse(result.submitted)
-                assertEquals(1, result.counts.failed)
-            }
+            failures.forEach { assertEquals(DsmErrorKind.FEATURE_UNSUPPORTED, (it.exceptionOrNull() as DsmFailure).kind) }
             assertTrue(transport.requests.isEmpty())
         }
     }
@@ -206,7 +207,7 @@ class DdnsMutationResultTest {
     fun `最小 Record 仍可确认保存的单次模糊回读`() = runBlocking {
         val transport = AmbiguousMutationInterceptor("create", MINIMAL_RECORDS)
 
-        val result = repository(transport).saveDdnsResult(null, newDraft())
+        val result = repository(transport).saveDdns(null, newDraft())
 
         assertConfirmed(result)
         assertEquals(1, transport.methods().count { it == "create" })
@@ -217,7 +218,7 @@ class DdnsMutationResultTest {
     fun `最小 Record 可作为删除预检基线`() = runBlocking {
         val transport = QueueDdnsInterceptor(PROVIDERS, MINIMAL_RECORDS, SUCCESS, PROVIDERS, EMPTY_RECORDS)
 
-        val result = repository(transport).deleteDdnsResult(savedRecord())
+        val result = repository(transport).deleteDdns(savedRecord().copy(knownNetworkFields = emptySet()))
 
         assertConfirmed(result)
         assertEquals(1, transport.methods().count { it == "delete" })
@@ -234,10 +235,8 @@ class DdnsMutationResultTest {
             newDraft().copy(password = "secret\tvalue"),
         ).forEach { draft ->
             val transport = QueueDdnsInterceptor()
-            val result = repository(transport).saveDdnsResult(null, draft)
-            assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-            assertEquals(MutationErrorCategory.VALIDATION, result.errorCategory)
-            assertFalse(result.submitted)
+            val failure = runCatching { repository(transport).saveDdns(null, draft) }.exceptionOrNull()
+            assertEquals(DsmErrorKind.NAS_DDNS_INVALID, (failure as DsmFailure).kind)
             assertTrue(transport.requests.isEmpty())
         }
     }
@@ -246,7 +245,7 @@ class DdnsMutationResultTest {
     fun `新建响应丢失后只读取一次目录且不重放`() = runBlocking {
         val transport = AmbiguousMutationInterceptor("create", SAVED_RECORDS)
 
-        val result = repository(transport).saveDdnsResult(null, newDraft())
+        val result = repository(transport).saveDdns(null, newDraft())
 
         assertConfirmed(result)
         assertEquals(1, transport.methods().count { it == "create" })
@@ -257,7 +256,7 @@ class DdnsMutationResultTest {
     fun `删除响应丢失后只读取一次目录且不重放`() = runBlocking {
         val transport = AmbiguousMutationInterceptor("delete", EMPTY_RECORDS, initialRecords = SAVED_RECORDS)
 
-        val result = repository(transport).deleteDdnsResult(savedRecord())
+        val result = repository(transport).deleteDdns(savedRecord())
 
         assertConfirmed(result)
         assertEquals(1, transport.methods().count { it == "delete" })
@@ -268,7 +267,7 @@ class DdnsMutationResultTest {
     fun `模糊保存单次回读失败保持未确认且不重放`() = runBlocking {
         val transport = AmbiguousMutationInterceptor("create", EMPTY_RECORDS)
 
-        val result = repository(transport).saveDdnsResult(null, newDraft())
+        val result = repository(transport).saveDdns(null, newDraft())
 
         assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
         assertEquals(MutationErrorCategory.NETWORK, result.errorCategory)
@@ -279,30 +278,30 @@ class DdnsMutationResultTest {
     }
 
     @Test
-    fun `立即更新响应丢失不以可读目录升级成功且不回读`() = runBlocking {
+    fun `立即更新响应丢失不以可读目录升级成功且不重放`() = runBlocking {
         val transport = AmbiguousMutationInterceptor("update_ip_address", SAVED_RECORDS, initialRecords = SAVED_RECORDS)
 
-        val result = repository(transport).refreshDdnsResult(setOf("Example"))
+        val result = repository(transport).refreshDdns(setOf("Example"))
 
         assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
         assertEquals(MutationErrorCategory.NETWORK, result.errorCategory)
         assertTrue(result.requiresRefresh)
         assertEquals(1, result.counts.unknown)
-        assertEquals(2, transport.methods().count { it == "list" })
+        assertEquals(4, transport.methods().count { it == "list" })
         assertEquals(1, transport.methods().count { it == "update_ip_address" })
     }
 
     @Test
-    fun `不同 provider 操作可并行而 global 与 provider 互斥`() = runBlocking {
+    fun `服务商测试与其他服务商和全局操作共享互斥`() = runBlocking {
         val transport = BlockingTestInterceptor()
         val repo = repository(transport)
-        val first = async(Dispatchers.IO) { repo.testDdnsResult(newDraft()) }
+        val first = async(Dispatchers.IO) { repo.testDdns(newDraft()) }
         assertTrue(transport.testEntered.await(2, TimeUnit.SECONDS))
 
-        val other = repo.testDdnsResult(newDraft(provider = "Other"))
-        assertConfirmed(other)
-        val global = repo.refreshDdnsResult(setOf("Example"))
-        assertConflictBeforeSubmission(global)
+        val other = runCatching { repo.testDdns(newDraft(provider = "Other")) }.exceptionOrNull()
+        assertEquals(DsmErrorKind.NAS_SERVICE_CHANGED, (other as DsmFailure).kind)
+        val global = runCatching { repo.refreshDdns(setOf("Example")) }.exceptionOrNull()
+        assertEquals(DsmErrorKind.NAS_SERVICE_CHANGED, (global as DsmFailure).kind)
         assertEquals(0, transport.methods().count { it == "update_ip_address" })
 
         transport.releaseTest.countDown()
@@ -313,12 +312,11 @@ class DdnsMutationResultTest {
     fun `global 操作进行时拒绝任一 provider 操作`() = runBlocking {
         val transport = BlockingRefreshInterceptor()
         val repo = repository(transport)
-        val refresh = async(Dispatchers.IO) { repo.refreshDdnsResult(setOf("Example")) }
+        val refresh = async(Dispatchers.IO) { repo.refreshDdns(setOf("Example")) }
         assertTrue(transport.refreshEntered.await(2, TimeUnit.SECONDS))
 
-        val provider = repo.testDdnsResult(newDraft())
-
-        assertConflictBeforeSubmission(provider)
+        val provider = runCatching { repo.testDdns(newDraft()) }.exceptionOrNull()
+        assertEquals(DsmErrorKind.NAS_SERVICE_CHANGED, (provider as DsmFailure).kind)
         assertEquals(0, transport.methods().count { it == "test" })
         transport.releaseRefresh.countDown()
         assertConfirmed(refresh.await())
@@ -329,12 +327,12 @@ class DdnsMutationResultTest {
         val transport = CancelOnceInterceptor(cancelMethod = "list")
         val repo = repository(transport)
 
-        val cancelled = repo.testDdnsResult(newDraft())
+        val cancelled = repo.testDdns(newDraft())
 
         assertEquals(MutationResultStatus.CANCELLED_BEFORE_SUBMISSION, cancelled.status)
         assertFalse(cancelled.submitted)
         assertEquals(0, cancelled.counts.unknown)
-        assertConfirmed(repo.testDdnsResult(newDraft()))
+        assertConfirmed(repo.testDdns(newDraft()))
     }
 
     @Test
@@ -342,18 +340,18 @@ class DdnsMutationResultTest {
         val transport = CancelOnceInterceptor(cancelMethod = "test")
         val repo = repository(transport)
 
-        val cancelled = repo.testDdnsResult(newDraft())
+        val cancelled = repo.testDdns(newDraft())
 
         assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, cancelled.status)
         assertTrue(cancelled.submitted)
         assertEquals(1, cancelled.counts.unknown)
-        assertConfirmed(repo.testDdnsResult(newDraft()))
+        assertConfirmed(repo.testDdns(newDraft()))
     }
 
     @Test
     fun `DDNS 四个写入口在途取消都不重放写请求`() = runBlocking {
         val testTransport = CancelOnceInterceptor(cancelMethod = "test")
-        val test = repository(testTransport).testDdnsResult(newDraft())
+        val test = repository(testTransport).testDdns(newDraft())
         assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, test.status)
         assertTrue(test.submitted)
         assertEquals(1, testTransport.methods().count { it == "test" })
@@ -362,7 +360,7 @@ class DdnsMutationResultTest {
             cancelMethod = "create",
             recordResponses = listOf(EMPTY_RECORDS, EMPTY_RECORDS),
         )
-        val save = repository(saveTransport).saveDdnsResult(null, newDraft())
+        val save = repository(saveTransport).saveDdns(null, newDraft())
         assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, save.status)
         assertTrue(save.submitted)
         assertEquals(1, saveTransport.methods().count { it == "create" })
@@ -371,7 +369,7 @@ class DdnsMutationResultTest {
             cancelMethod = "delete",
             recordResponses = listOf(SAVED_RECORDS, SAVED_RECORDS),
         )
-        val delete = repository(deleteTransport).deleteDdnsResult(savedRecord())
+        val delete = repository(deleteTransport).deleteDdns(savedRecord())
         assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, delete.status)
         assertTrue(delete.submitted)
         assertEquals(1, deleteTransport.methods().count { it == "delete" })
@@ -380,20 +378,37 @@ class DdnsMutationResultTest {
             cancelMethod = "update_ip_address",
             recordResponses = listOf(SAVED_RECORDS),
         )
-        val refresh = repository(refreshTransport).refreshDdnsResult(setOf("Example"))
+        val refresh = repository(refreshTransport).refreshDdns(setOf("Example"))
         assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, refresh.status)
         assertTrue(refresh.submitted)
         assertEquals(1, refreshTransport.methods().count { it == "update_ip_address" })
     }
 
+    // 基线为用户打开编辑器时已见的合成目录；结果直接取正式执行器，不重建旧结果映射。
+    private fun directory(records: List<NasDdnsRecord>) = NasDdnsDirectory(
+        listOf(NasDdnsProvider("Example", "Synthetic Provider"), NasDdnsProvider("Other", "Other Provider")), records)
+    private suspend fun DsmRepository.testDdns(draft: NasDdnsDraft) =
+        nasDdns.perform(nasDdns.plan(DdnsMutationOperation.TEST, directory(emptyList()), draft)) {}.result
+    private suspend fun DsmRepository.saveDdns(original: NasDdnsRecord?, draft: NasDdnsDraft) =
+        nasDdns.perform(nasDdns.plan(DdnsMutationOperation.SAVE, directory(listOfNotNull(original)), draft)) {}.result
+    private suspend fun DsmRepository.deleteDdns(original: NasDdnsRecord) =
+        nasDdns.perform(nasDdns.plan(DdnsMutationOperation.DELETE, directory(listOf(original)), target = original)) {}.result
+    private suspend fun DsmRepository.refreshDdns(ids: Set<String>) =
+        nasDdns.perform(nasDdns.plan(DdnsMutationOperation.ADDRESS_REFRESH, directory(ids.map(::savedRecord)))) {}.result
+
     private fun repository(
         interceptor: Interceptor,
         versionOverrides: Map<String, Int> = emptyMap(),
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "operator"),
         DsmSession("test", "test-session", "test-token"),
-        DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
+        DsmApiClient(OkHttpClient.Builder().addInterceptor { chain ->
+            if (chain.request().fields()["api"] == "SYNO.Core.System")
+                ddnsResponse(chain.request(), """{"success":true,"data":{"firmware_ver":"DSM 7.2.1-69057 Update 12","buildnumber":69057,"smallfixnumber":12}}""")
+            else chain.proceed(chain.request())
+        }.addInterceptor(interceptor).build()),
         mapOf(
+            "SYNO.Core.System" to ApiCapability("SYNO.Core.System", "entry.cgi", 1, 1),
             PROVIDER_API to ApiCapability(
                 PROVIDER_API,
                 "entry.cgi",
@@ -539,7 +554,7 @@ private class BlockingTestInterceptor(
             fields["method"] == "list" && fields["api"] == DdnsMutationResultTest.PROVIDER_API ->
                 DdnsMutationResultTest.PROVIDERS
             fields["method"] == "list" && fields["api"] == DdnsMutationResultTest.RECORD_API ->
-                DdnsMutationResultTest.SAVED_RECORDS
+                DdnsMutationResultTest.EMPTY_RECORDS
             else -> DdnsMutationResultTest.SUCCESS
         }
         return ddnsResponse(request, body)
@@ -621,6 +636,6 @@ private fun ddnsResponse(request: Request, body: String): Response = Response.Bu
     .build()
 
 private fun Request.fields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return (0 until form.size).associate { form.name(it) to form.value(it) }
 }

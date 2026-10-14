@@ -1,5 +1,5 @@
 <!-- doc-role: documentation-index -->
-<!-- last-reviewed: 2026-10-10 -->
+<!-- last-reviewed: 2026-10-11 -->
 
 # 项目文档
 
@@ -10,6 +10,7 @@
 - [开发进度](progress/STATUS.md)、[平台功能矩阵](progress/PLATFORM_MATRIX.md)、[产品路线图](progress/ROADMAP.md)
 - [macOS 使用与功能说明](../apple/Apps/DsmMac/README.md)、[iPhone/iPad 使用与构建](../apple/Apps/DsmMobile/README.md)
 - [跨端总控](development/MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)、[Windows 计划](development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)、[iPhone/iPad 计划](development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)、[Android 计划](development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)
+- [Android 已确认 UI 与首页自定义](design/ANDROID_UI_SPEC_ZH.md)：重写必须遵循的手机/平板设计与交互原件。
 - [Photos](development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)、[Chat](development/NATIVE_DSM_CHAT_DEVELOPMENT_PLAN_ZH.md)、[下载、容器与虚拟机](development/NATIVE_DSM_SERVICE_MANAGEMENT_PLAN_ZH.md)、[存储管理](development/NATIVE_DSM_STORAGE_MANAGEMENT_PLAN_ZH.md)、[桌面挂载与缓存](development/NATIVE_DSM_DESKTOP_CLOUD_DRIVE_DEVELOPMENT_PLAN_ZH.md)
 
 - 移动系统集成：[普通传输与分享](development/APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md)、[Files 与原位编辑](development/APPLE_MOBILE_FILES_PROVIDER_ZH.md)、[照片/跨 NAS/Office 后台](development/APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md)

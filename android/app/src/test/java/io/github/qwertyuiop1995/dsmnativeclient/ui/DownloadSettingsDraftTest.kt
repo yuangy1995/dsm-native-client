@@ -8,10 +8,10 @@ import org.junit.Test
 
 class DownloadSettingsDraftTest {
     @Test
-    fun `有效草稿规范化目录并生成稳定设置`() {
+    fun `有效草稿保留目录空格且不关闭未编辑的独立计划`() {
         val draft = DownloadSettingsDraft.from(
             DownloadSettings(
-                defaultDestination = "/downloads/current/",
+                defaultDestination = "/downloads/current ",
                 emuleEnabled = false,
                 btDownloadLimitKb = 500,
                 scheduleEnabled = true,
@@ -21,9 +21,9 @@ class DownloadSettingsDraftTest {
 
         val settings = draft.toSettingsOrNull(supportsSchedule = true)!!
 
-        assertEquals("downloads/current", settings.defaultDestination)
+        assertEquals("downloads/current ", settings.defaultDestination)
         assertEquals(500, settings.btDownloadLimitKb)
-        assertFalse(settings.emuleScheduleEnabled)
+        org.junit.Assert.assertTrue(settings.emuleScheduleEnabled)
     }
 
     @Test

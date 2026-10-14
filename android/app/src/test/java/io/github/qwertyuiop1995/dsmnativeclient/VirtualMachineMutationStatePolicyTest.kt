@@ -1,553 +1,249 @@
 package io.github.qwertyuiop1995.dsmnativeclient
 
-import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
-import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
-import io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem
+import io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.*
+import io.github.qwertyuiop1995.dsmnativeclient.domain.*
 import io.github.qwertyuiop1995.dsmnativeclient.domain.Module
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ManagedResource
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultCounts
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ResourceState
-import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineOverview
-import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineImageType
-import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineLocalImageRejection
-import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineLocalImageValidation
-import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineSettings
-import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineTask
-import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineTaskCenterState
+import io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.*
+import io.github.qwertyuiop1995.dsmnativeclient.testing.MemoryPreferences
+import java.io.IOException
 import java.lang.reflect.Modifier
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertTrue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.*
+import kotlinx.serialization.json.*
+import org.junit.Assert.*
+import org.junit.After
 import org.junit.Test
 
+/** 旧状态策略的业务断言迁到现行模型、仓储和持久化阶段；不构造旧的结果投影。 */
 class VirtualMachineMutationStatePolicyTest {
-    @Test
-    fun `Guest 外链在 VMM 编辑确认和在途写流程活跃时拒绝`() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    @After fun cleanup() { scope.cancel() }
+    private suspend fun idle(busy: () -> Boolean) = withTimeout(8_000) { while (busy()) delay(5) }
+
+    @Test fun `Guest 外链在映像编辑期间拒绝`() {
         assertFalse(virtualMachineGuestExternalNavigationBlocked(VirtualMachineMutationWorkspaceState()))
-        listOf(
-            VirtualMachineMutationWorkspaceState(creationEditorVisible = true),
-            VirtualMachineMutationWorkspaceState(imageImportEditorVisible = true),
-            VirtualMachineMutationWorkspaceState(settingsEditorVisible = true),
-            VirtualMachineMutationWorkspaceState(lifecycleConfirmationRequested = true),
-            VirtualMachineMutationWorkspaceState(taskCleanupConfirmationRequested = true),
-            VirtualMachineMutationWorkspaceState(mutationInProgress = true),
-            VirtualMachineMutationWorkspaceState(mutationRefreshInProgress = true),
-        ).forEach { state ->
-            assertTrue(virtualMachineGuestExternalNavigationBlocked(state))
+        assertTrue(virtualMachineGuestExternalNavigationBlocked(VirtualMachineMutationWorkspaceState(imageImportEditorVisible = true)))
+    }
+    @Test fun `当前创建设置和生命周期模型各自保护编辑与确认`() = runBlocking {
+        val scenario = VmmCreationFixture(); val repo = scenario.repository()
+        val creation = VmmCreationModel(scope, { repo }, { VmmCreationStore(MemoryPreferences()) }, { true })
+        assertTrue(creation.open()); idle { creation.state.value.busy }; assertTrue(creation.hasPending())
+        creation.close(); assertFalse(creation.hasPending())
+        val settings = VmmSettingsModel(scope, { repo }, { VmmSettingsStore(MemoryPreferences()) }, { true })
+        assertTrue(settings.open("synthetic-guest")); idle { settings.state.value.busy }; assertTrue(settings.hasPending())
+        settings.close(); assertFalse(settings.hasPending())
+        val controls = VmmControlModel(scope, { repo }, { VmmControlStore(MemoryPreferences()) }, { true })
+        controls.refresh(); idle { controls.state.value.busy }
+        assertTrue(controls.request(controls.state.value.targets, VmmAction.START)); assertTrue(controls.state.value.blocked)
+        controls.cancel(); assertFalse(controls.state.value.blocked); assertTrue(scenario.fixture.writes.isEmpty())
+    }
+    @Test fun `配置摘要和对象身份稳定且不同请求不可混同`() {
+        val config = VmmConfiguration("Synthetic", "Description", 2, 2048, 256, 1)
+        assertEquals(config.digest(VmmSource.PUBLIC), config.copy().digest(VmmSource.PUBLIC))
+        assertNotEquals(config.digest(VmmSource.PUBLIC), config.copy(cpu = 4).digest(VmmSource.PUBLIC))
+        assertNotEquals(config.digest(VmmSource.PUBLIC), config.digest(VmmSource.INTERNAL))
+        val target = VmmControlTarget("one", "Synthetic", "shutdown", setOf(VmmAction.START))
+        assertEquals(vmmIdentity(target), vmmIdentity(target.copy()))
+        assertNotEquals(vmmIdentity(target), vmmIdentity(target.copy(id = "two")))
+        assertNotEquals(vmmIdentity(target), vmmIdentity(target.copy(name = "Renamed")))
+    }
+    @Test fun `同步提交先占用模型并阻止重复创建与外部竞争`() = runBlocking {
+        val scenario = VmmCreationFixture(); val repo = scenario.repository(); val store = VmmCreationStore(MemoryPreferences())
+        var allowed = true
+        val model = VmmCreationModel(scope, { repo }, { store }, { allowed }, pollAttempts = 1)
+        assertTrue(model.open()); idle { model.state.value.busy }; model.change(model.state.value.draft!!.copy(name = "Synthetic created"))
+        allowed = false; assertFalse(model.create()); assertTrue(model.state.value.editor); assertTrue(scenario.fixture.writes.isEmpty())
+        allowed = true; assertTrue(model.create()); assertFalse(model.create()); idle { model.state.value.busy }
+        assertEquals(VmmCreationStage.COMPLETE, model.state.value.records.single().progress.stage)
+        assertEquals(listOf("create", "set"), scenario.fixture.writes.map { it.method })
+    }
+    @Test fun `映像编辑器阻止工作区退出`() {
+        assertFalse(virtualMachineMutationBlocksWorkspaceExit(VirtualMachineMutationWorkspaceState()))
+        assertTrue(virtualMachineMutationBlocksWorkspaceExit(VirtualMachineMutationWorkspaceState(imageImportEditorVisible = true)))
+    }
+    @Test fun `未发送取消与明确拒绝可重新打开设置且不隐式重试`() = runBlocking {
+        for (case in 0..3) {
+            val f = VmmFixture(); val repo = f.repository(); val store = VmmSettingsStore(MemoryPreferences())
+            val model = VmmSettingsModel(scope, { repo }, { store }, { true })
+            assertTrue(model.open("synthetic-guest")); idle { model.state.value.busy }; model.change(model.state.value.draft!!.copy(name = "Updated"))
+            when (case) { 0 -> f.allowed = false; 1 -> f.rejection = 105; 2 -> f.rejection = 102; else -> f.ownerValid = false }
+            if (case == 3) assertFalse(model.save()) else { assertTrue(model.save()); idle { model.state.value.busy } }
+            assertEquals(if (case in 1..2) 1 else 0, f.writes.size)
+            val stage = store.records(repo.owner!!).singleOrNull()?.stage
+            if (case != 3) assertEquals(if (case == 0) VmmStage.CANCELLED else VmmStage.REJECTED, stage)
+            f.allowed = true; f.ownerValid = true; f.rejection = null; model.close()
+            assertTrue(model.open("synthetic-guest")); idle { model.state.value.busy }; assertTrue(model.state.value.editor)
+            assertEquals(if (case in 1..2) 1 else 0, f.writes.size); model.clear()
         }
     }
-
-    private val target = virtualMachineMutationTarget(
-        profileId = "profile-a",
-        kind = VirtualMachineMutationKind.SETTINGS,
-        operation = "virtualMachineSettings",
-        resourceId = "guest-1",
-        requestParts = listOf("Synthetic VM", "2", "2048"),
-    )
-
-    @Test
-    fun `目标指纹稳定且请求或类型变化会改变身份`() {
-        assertEquals(
-            target,
-            virtualMachineMutationTarget(
-                "profile-a",
-                VirtualMachineMutationKind.SETTINGS,
-                "virtualMachineSettings",
-                "guest-1",
-                listOf("Synthetic VM", "2", "2048"),
-            ),
-        )
-        assertNotEquals(
-            target.requestFingerprint,
-            virtualMachineMutationTarget(
-                "profile-a",
-                VirtualMachineMutationKind.SETTINGS,
-                "virtualMachineSettings",
-                "guest-1",
-                listOf("Synthetic VM", "4", "2048"),
-            ).requestFingerprint,
-        )
-        assertNotEquals(
-            target.requestFingerprint,
-            virtualMachineMutationTarget(
-                "profile-a",
-                VirtualMachineMutationKind.LIFECYCLE,
-                "virtualMachineControl",
-                "guest-1",
-                listOf("shutdown"),
-            ).requestFingerprint,
-        )
+    @Test fun `已发送未知结果不能关闭记录或再次编辑原目标`() = runBlocking {
+        val f = VmmFixture(); val repo = f.repository(); val store = VmmSettingsStore(MemoryPreferences())
+        val model = VmmSettingsModel(scope, { repo }, { store }, { true })
+        model.open("synthetic-guest"); idle { model.state.value.busy }; model.change(model.state.value.draft!!.copy(name = "Updated"))
+        f.after = { if (it.method == "set") throw IOException("Synthetic lost receipt") }
+        assertTrue(model.save()); idle { model.state.value.busy }; assertEquals(VmmStage.SUBMITTED, model.state.value.records.single().stage)
+        f.after = {}; model.refresh(); idle { model.state.value.busy }; model.dismiss()
+        assertTrue(model.hasPending()); assertTrue(model.open("synthetic-guest")); idle { model.state.value.busy }
+        assertTrue(model.state.value.failure is VmmFailure); assertNull(model.state.value.draft); assertFalse(model.save()); assertEquals(1, f.writes.size)
     }
-
-    @Test
-    fun `同步claim写入目标后拒绝创建设置与生命周期竞争请求`() {
-        assertTrue(canStartVirtualMachineMutation(false, VirtualMachineMutationWorkspaceState()))
-        val claimed = VirtualMachineMutationWorkspaceState(
-            target = target,
-            mutationInProgress = true,
-            mutationGeneration = 7,
-        )
-        assertFalse(canStartVirtualMachineMutation(false, claimed))
-        assertFalse(canStartVirtualMachineMutation(true, VirtualMachineMutationWorkspaceState()))
-        assertFalse(
-            canStartVirtualMachineMutation(
-                false,
-                VirtualMachineMutationWorkspaceState(
-                    mutationResult = result(MutationResultStatus.CONFIRMED_SUCCESS),
-                ),
-            ),
-        )
+    @Test fun `同账号重新绑定仓库后迟到表单不会覆盖新草稿`() = runBlocking {
+        val f = VmmFixture(); var repo = f.repository(); val store = VmmSettingsStore(MemoryPreferences())
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        f.before = { if (it.method == "get") { entered.countDown(); assertTrue(release.await(5, TimeUnit.SECONDS)) } }
+        val model = VmmSettingsModel(scope, { repo }, { store }, { true })
+        try {
+            assertTrue(model.open("synthetic-guest")); assertTrue(entered.await(5, TimeUnit.SECONDS))
+            model.clear(); repo = f.repository("next"); f.before = {}; release.countDown()
+            assertTrue(model.open("synthetic-guest")); idle { model.state.value.busy }
+            model.change(model.state.value.draft!!.copy(name = "New draft")); delay(50)
+            assertEquals("New draft", model.state.value.draft!!.name); assertTrue(f.writes.isEmpty())
+        } finally { release.countDown() }
     }
-
-    @Test
-    fun `编辑器与生命周期确认均阻止工作区退出`() {
-        assertTrue(
-            virtualMachineMutationBlocksWorkspaceExit(
-                VirtualMachineMutationWorkspaceState(
-                    creationEditorVisible = true,
-                    creationDraft = VirtualMachineCreationDraftState(),
-                ),
-            ),
-        )
-        assertTrue(
-            virtualMachineMutationBlocksWorkspaceExit(
-                VirtualMachineMutationWorkspaceState(
-                    settingsEditorVisible = true,
-                    settingsTargetId = "guest-1",
-                ),
-            ),
-        )
-        assertTrue(
-            virtualMachineMutationBlocksWorkspaceExit(
-                VirtualMachineMutationWorkspaceState(
-                    lifecycleConfirmationTarget = VirtualMachineLifecycleTarget(
-                        "profile-a",
-                        "guest-1",
-                        VirtualMachineLifecycleOperation.CONTROL,
-                        ResourceState.RUNNING,
-                        "shutdown",
-                    ),
-                    lifecycleConfirmationRequested = true,
-                ),
-            ),
-        )
+    @Test fun `跨身份回调和持久记录不能投影到新账号`() = runBlocking {
+        val f = VmmFixture(); var repo = f.repository(); val store = VmmControlStore(MemoryPreferences())
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val model = VmmControlModel(scope, { repo }, { store }, { true })
+        model.refresh(); idle { model.state.value.busy }
+        f.before = { if (it.method == "poweron") { entered.countDown(); assertTrue(release.await(5, TimeUnit.SECONDS)) } }
+        try {
+            model.request(model.state.value.targets, VmmAction.START); assertTrue(model.confirm(model.state.value.confirmation!!)); assertTrue(entered.await(5, TimeUnit.SECONDS))
+            model.clear(); repo = f.repository("next", "other"); f.before = {}; release.countDown()
+            model.refresh(); idle { model.state.value.busy }; delay(50)
+            assertTrue(model.state.value.records.isEmpty()); assertEquals(1, f.writes.size)
+        } finally { release.countDown() }
     }
-
-    @Test
-    fun `四种未提交结果允许创建与设置继续编辑`() {
-        val statuses = listOf(
-            MutationResultStatus.CONFIRMED_FAILURE,
-            MutationResultStatus.PERMISSION_DENIED,
-            MutationResultStatus.UNSUPPORTED,
-            MutationResultStatus.CANCELLED_BEFORE_SUBMISSION,
-        )
-        val creationTarget = virtualMachineMutationTarget(
-            "profile-a",
-            VirtualMachineMutationKind.CREATION,
-            "virtualMachineCreate",
-            null,
-            listOf("Synthetic VM"),
-        )
-        val baseline = VirtualMachineSettings("Synthetic VM", "Before", 2, 2048, false)
-        val settingsDraft = VirtualMachineSettingsDraftState.from(
-            baseline.copy(description = "After"),
-        )
-        statuses.forEach { status ->
-            assertTrue(
-                status.name,
-                canContinueEditingVirtualMachineMutation(
-                    VirtualMachineMutationWorkspaceState(
-                        creationEditorVisible = true,
-                        creationDraft = VirtualMachineCreationDraftState(
-                            step = 2,
-                            name = "Synthetic VM",
-                            storageId = "storage-1",
-                        ),
-                        target = creationTarget,
-                        mutationResult = result(status),
-                        mutationGeneration = 7,
-                    ),
-                ),
-            )
-            assertTrue(
-                status.name,
-                canContinueEditingVirtualMachineMutation(
-                    VirtualMachineMutationWorkspaceState(
-                        settingsEditorVisible = true,
-                        settingsTargetId = "guest-1",
-                        settingsBaseline = baseline,
-                        settingsDraft = settingsDraft,
-                        target = target,
-                        mutationResult = result(status),
-                        mutationGeneration = 7,
-                    ),
-                ),
-            )
+    @Test fun `持久阶段只允许完成或明确拒绝记录被移除`() {
+        val owner = io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceOwner("profile", "identity", "session")
+        for (stage in VmmStage.entries) {
+            val store = VmmSettingsStore(MemoryPreferences())
+            val record = VmmSettingsActivity("record", owner, vmmDigest("id"), vmmDigest("name"), vmmDigest("new"), vmmDigest("desired"), VmmSource.PUBLIC)
+            store.begin(record)
+            if (stage != VmmStage.PREPARED) {
+                if (stage != VmmStage.CANCELLED) store.checkpoint(owner, record.id, VmmStage.SUBMITTED)
+                if (stage in setOf(VmmStage.ACCEPTED, VmmStage.VERIFIED)) store.checkpoint(owner, record.id, VmmStage.ACCEPTED)
+                if (stage in setOf(VmmStage.VERIFIED, VmmStage.REJECTED, VmmStage.CANCELLED)) store.checkpoint(owner, record.id, stage)
+            }
+            val current = store.records(owner).single(); assertEquals(stage, current.stage)
+            val pending = stage in setOf(VmmStage.PREPARED, VmmStage.SUBMITTED, VmmStage.ACCEPTED)
+            assertEquals(pending, runCatching { store.dismiss(owner, record.id) }.isFailure)
+            assertEquals(pending, store.records(owner).isNotEmpty())
         }
     }
-
-    @Test
-    fun `已提交需刷新异常与生命周期结果拒绝继续编辑`() {
-        val editableCreation = VirtualMachineMutationWorkspaceState(
-            creationEditorVisible = true,
-            creationDraft = VirtualMachineCreationDraftState(
-                step = 2,
-                name = "Synthetic VM",
-                storageId = "storage-1",
-            ),
-            target = virtualMachineMutationTarget(
-                "profile-a",
-                VirtualMachineMutationKind.CREATION,
-                "virtualMachineCreate",
-                null,
-                listOf("Synthetic VM"),
-            ),
-        )
-        assertFalse(
-            canContinueEditingVirtualMachineMutation(
-                editableCreation.copy(
-                    mutationResult = result(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED),
-                ),
-            ),
-        )
-        assertFalse(
-            canContinueEditingVirtualMachineMutation(
-                editableCreation.copy(
-                    mutationFailure = DsmFailure(
-                        null,
-                        "Synthetic failure",
-                        "Refresh and review.",
-                        kind = DsmErrorKind.UNKNOWN,
-                    ),
-                ),
-            ),
-        )
-        val lifecycleTarget = virtualMachineMutationTarget(
-            "profile-a",
-            VirtualMachineMutationKind.LIFECYCLE,
-            "virtualMachineControl",
-            "guest-1",
-            listOf("shutdown"),
-        )
-        assertFalse(
-            canContinueEditingVirtualMachineMutation(
-                VirtualMachineMutationWorkspaceState(
-                    lifecycleConfirmationTarget = VirtualMachineLifecycleTarget(
-                        "profile-a",
-                        "guest-1",
-                        VirtualMachineLifecycleOperation.CONTROL,
-                        ResourceState.RUNNING,
-                        "shutdown",
-                    ),
-                    target = lifecycleTarget,
-                    mutationResult = result(MutationResultStatus.CONFIRMED_FAILURE),
-                ),
-            ),
-        )
+    @Test fun `落盘失败持续阻止写入不能借关闭绕过`() = runBlocking {
+        val f = VmmFixture(); val repo = f.repository(); val preferences = MemoryPreferences(); val store = VmmSettingsStore(preferences)
+        val model = VmmSettingsModel(scope, { repo }, { store }, { true })
+        model.open("synthetic-guest"); idle { model.state.value.busy }; model.change(model.state.value.draft!!.copy(name = "Updated"))
+        preferences.commitSucceeds = false; assertTrue(model.save()); idle { model.state.value.busy }
+        assertTrue(model.state.value.failure is VmmFailure); model.dismiss(); assertTrue(model.hasPending()); assertTrue(f.writes.isEmpty())
     }
-
-    @Test
-    fun `继续编辑清除目标并推进代次后旧回调失效`() {
-        assertFalse(
-            virtualMachineMutationCallbackMatches(
-                repositoryMatches = true,
-                profileMatches = true,
-                stateTarget = null,
-                callbackTarget = target,
-                stateGeneration = 8,
-                callbackGeneration = 7,
-                globalGeneration = 8,
-            ),
-        )
+    @Test fun `映像导入任务未完成时保护原任务与原映像`() = runBlocking {
+        val scenario = VmmTaskFixture(); scenario.finished = false
+        val repo = scenario.repository(); val store = VmmTaskStore(MemoryPreferences())
+        val model = VmmTaskModel(scope, { repo }, { store }, { true }, pollAttempts = 1)
+        assertTrue(model.startImport(scenario.target())); idle { model.state.value.busy }
+        val record = model.state.value.imports.single(); model.dismiss(record.id, VmmTaskAction.IMPORT)
+        assertTrue(model.state.value.imports.single().pending); assertTrue(model.protectsImage(scenario.imageId, "Imported image"))
+        assertFalse(model.startImport(scenario.target())); assertEquals(1, scenario.fixture.writes.size)
     }
-
-    @Test
-    fun `回调必须同时匹配仓库NAS目标与双代次`() {
-        assertTrue(callbackMatches())
-        assertFalse(callbackMatches(repositoryMatches = false))
-        assertFalse(callbackMatches(profileMatches = false))
-        assertFalse(callbackMatches(stateTarget = target.copy(resourceId = "guest-2")))
-        assertFalse(callbackMatches(stateGeneration = 8))
-        assertFalse(callbackMatches(callbackGeneration = 8))
-        assertFalse(callbackMatches(globalGeneration = 8))
+    @Test fun `任务清理只使用用户确认的原始基线`() = runBlocking {
+        val scenario = VmmTaskFixture(); scenario.tasks["one"] = VmmTaskFixture.task()
+        val repo = scenario.repository(); val store = VmmTaskStore(MemoryPreferences()); val model = VmmTaskModel(scope, { repo }, { store }, { true })
+        assertTrue(model.requestCleanup()); idle { model.state.value.busy }; assertTrue(model.state.value.active)
+        val original = model.state.value.confirmation!!
+        scenario.tasks["new"] = VmmTaskFixture.task()
+        assertTrue(model.confirmCleanup(original)); idle { model.state.value.busy }
+        assertEquals(setOf("new"), scenario.tasks.keys); assertEquals(VmmStage.VERIFIED, model.state.value.cleanups.single().items.single().stage)
+        assertEquals(1, scenario.fixture.writes.size)
     }
-
-    @Test
-    fun `八种结果保持结构化刷新与关闭策略`() {
-        MutationResultStatus.entries.forEach { status ->
-            val dangerous = status in setOf(
-                MutationResultStatus.PARTIAL_SUCCESS,
-                MutationResultStatus.SUBMITTED_BUT_UNVERIFIED,
-                MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-            )
-            val state = VirtualMachineMutationWorkspaceState(
-                target = target,
-                mutationResult = result(status),
-            )
-            assertEquals(status.name, dangerous, virtualMachineMutationRequiresRefreshBeforeDismiss(state))
-            assertEquals(status.name, dangerous, virtualMachineMutationBlocksWorkspaceExit(state))
-            assertEquals(status.name, !dangerous, canDismissVirtualMachineMutation(state))
-
-            val refreshed = state.copy(
-                mutationRefreshCompleted = true,
-                mutationVerification = VirtualMachineMutationVerification.MATCHES,
-            )
-            assertTrue(status.name, canDismissVirtualMachineMutation(refreshed))
-            assertEquals(
-                "刷新不能隐式清除需要明确关闭的证据：${status.name}",
-                dangerous,
-                virtualMachineMutationBlocksWorkspaceExit(refreshed),
-            )
-            assertEquals(status, refreshed.mutationResult?.status)
+    @Test fun `清理取消保留已提交项并停止后续任务`() = runBlocking {
+        val scenario = VmmTaskFixture(); scenario.tasks["one"] = VmmTaskFixture.task(); scenario.tasks["two"] = VmmTaskFixture.task()
+        val repo = scenario.repository(); val store = VmmTaskStore(MemoryPreferences()); val model = VmmTaskModel(scope, { repo }, { store }, { true })
+        model.requestCleanup(); idle { model.state.value.busy }; model.cancelCleanup(); assertTrue(scenario.fixture.writes.isEmpty())
+        model.requestCleanup(); idle { model.state.value.busy }
+        scenario.fixture.after = { if (it.method == "clear") throw CancellationException("Synthetic cancellation") }
+        model.confirmCleanup(model.state.value.confirmation!!); idle { model.state.value.busy }
+        assertEquals(listOf(VmmStage.SUBMITTED, VmmStage.CANCELLED), store.cleanups(repo.owner!!).single().items.map { it.stage })
+        assertEquals(1, scenario.fixture.writes.size)
+    }
+    @Test fun `设置回读区分匹配差异消失与读取失败`() = runBlocking {
+        val f = VmmFixture(); val repo = f.repository().virtualMachineManagement
+        val baseline = repo.settings("synthetic-guest"); val desired = baseline.configuration.copy(name = "Updated")
+        val id = vmmDigest(baseline.id); val digest = desired.digest(VmmSource.PUBLIC)
+        assertFalse(repo.recoverSettings(id, digest, VmmSource.PUBLIC))
+        f.guests = listOf(VmmFixture.guest(name = "Updated")); assertTrue(repo.recoverSettings(id, digest, VmmSource.PUBLIC))
+        f.guests = emptyList(); assertFalse(repo.recoverSettings(id, digest, VmmSource.PUBLIC))
+        f.errors = mapOf(VmmSource.PUBLIC.guestApi to "list" to 102)
+        assertTrue(runCatching { repo.recoverSettings(id, digest, VmmSource.PUBLIC) }.isFailure); assertTrue(f.writes.isEmpty())
+    }
+    @Test fun `设置缺失字段禁止补值越界被拒绝并保留启动三态`() {
+        val raw = VmmFixture.guest(); val valid = parseVmmSettings(raw, VmmSource.PUBLIC)
+        assertEquals(1, valid.configuration.startup)
+        val missing = parseVmmSettings(JsonObject(raw - "description" - "vcpu_num" - "vram_size" - "autorun"), VmmSource.PUBLIC)
+        assertFalse(missing.validChange(missing.configuration.copy(cpu = 2)))
+        assertFalse(missing.validChange(missing.configuration.copy(startup = 0)))
+        assertTrue(missing.validChange(missing.configuration.copy(name = "Updated")))
+        for ((key, value) in listOf("vcpu_num" to JsonPrimitive(0), "vram_size" to JsonPrimitive("bad"), "autorun" to JsonPrimitive(3)))
+            assertTrue(runCatching { parseVmmSettings(JsonObject(raw + (key to value)), VmmSource.PUBLIC) }.isFailure)
+    }
+    @Test fun `创建丢失回执不能把同名虚拟机归属本次结果`() = runBlocking {
+        val scenario = VmmCreationFixture(); scenario.missingReceipt = true
+        val repo = scenario.repository(); val store = VmmCreationStore(MemoryPreferences()); val model = VmmCreationModel(scope, { repo }, { store }, { true }, pollAttempts = 1)
+        model.open(); idle { model.state.value.busy }; model.change(model.state.value.draft!!.copy(name = "Synthetic created"))
+        model.create(); idle { model.state.value.busy }; assertEquals(VmmCreationStage.CREATE_SENT, model.state.value.records.single().progress.stage)
+        model.clear(); model.refresh(); idle { model.state.value.busy }
+        assertEquals(VmmCreationStage.CREATE_SENT, model.state.value.records.single().progress.stage)
+        assertFalse(model.review(model.state.value.records.single().id)); assertEquals(1, scenario.fixture.writes.size)
+    }
+    @Test fun `创建与设置草稿保留编辑值并严格解析`() {
+        val resources = VmmCreationResources(VmmSource.PUBLIC, listOf(VmmCreationStorage(VmmCreationRef("storage", "Storage"))), emptyList(),
+            listOf(VmmCreationImage(VmmCreationRef("image", "Image"), "disk")), true, true)
+        val draft = VmmCreationDraft(name = "Synthetic", description = " Draft ", storage = "storage")
+        assertEquals(" Draft ", draft.plan(resources)!!.configuration.description)
+        assertNull(draft.copy(name = " Synthetic ").plan(resources)); assertNull(draft.copy(cpu = "0").plan(resources))
+        assertEquals("image", draft.copy(disks = listOf(VmmCreationDiskDraft("not-used", "image"))).plan(resources)!!.disks.single().image!!.id)
+        assertNull(draft.copy(disks = List(9) { VmmCreationDiskDraft() }).plan(resources))
+        val settings = VmmSettings("id", "shutdown", VmmSource.PUBLIC, VmmConfiguration("Synthetic", "", 2, 2048, null, 1))
+        val edit = VmmSettingsDraft.from(settings.configuration).copy(name = "Updated", memory = "bad")
+        assertEquals("bad", edit.memory); assertFalse(settings.validChange(edit.configuration()))
+    }
+    @Test fun `控制外层取消按已保存提交阶段保留未知结果`() = runBlocking {
+        val f = VmmFixture(); val repo = f.repository(); val store = VmmControlStore(MemoryPreferences()); val model = VmmControlModel(scope, { repo }, { store }, { true })
+        model.refresh(); idle { model.state.value.busy }; model.request(model.state.value.targets, VmmAction.START)
+        f.after = { if (it.method == "poweron") throw CancellationException("Synthetic cancelled") }
+        model.confirm(model.state.value.confirmation!!); idle { model.state.value.busy }
+        assertEquals(VmmStage.SUBMITTED, store.records(repo.owner!!).single().items.single().stage)
+        f.after = {}; model.refresh(); idle { model.state.value.busy }; assertTrue(model.hasPending()); assertEquals(1, f.writes.size)
+    }
+    @Test fun `普通概览请求在映像编辑期间被阻止`() {
+        assertFalse(virtualMachineOrdinaryLoadBlocked(VirtualMachineMutationWorkspaceState()))
+        assertTrue(virtualMachineOrdinaryLoadBlocked(VirtualMachineMutationWorkspaceState(imageImportEditorVisible = true)))
+    }
+    @Test fun `生命周期回读仅原身份和目标终态可完成`() = runBlocking {
+        val f = VmmFixture(); val repo = f.repository().virtualMachineManagement; val original = repo.controlTargets().single()
+        suspend fun recovered() = repo.recoverControl(vmmDigest(original.id), vmmIdentity(original), VmmAction.START, VmmSource.PUBLIC)
+        assertFalse(recovered()); f.guests = listOf(VmmFixture.guest(status = "running")); assertTrue(recovered())
+        f.guests = listOf(VmmFixture.guest(name = "Other", status = "running")); assertFalse(recovered())
+        f.guests = listOf(VmmFixture.guest(id = "other", status = "running")); assertFalse(recovered())
+        assertTrue(f.writes.isEmpty())
+    }
+    @Test fun `控制命令严格遵守状态及支持能力矩阵`() {
+        for (status in listOf("shutdown", "running", "suspended", "migrating", "unknown")) for (action in VmmAction.entries) {
+            val target = VmmControlTarget("id", "Synthetic", status, VmmAction.entries.toSet())
+            val expected = status == if (action in setOf(VmmAction.START, VmmAction.DELETE)) "shutdown" else "running"
+            assertEquals("$status/$action", expected, target.supports(action))
+            assertFalse(target.copy(actions = emptySet()).supports(action))
         }
     }
-
-    @Test
-    fun `异常与刷新失败持续阻止退出直到成功刷新后明确关闭`() {
-        val failure = DsmFailure(
-            code = null,
-            message = "Synthetic failure",
-            recovery = "Refresh and review.",
-            kind = DsmErrorKind.UNKNOWN,
-        )
-        val failed = VirtualMachineMutationWorkspaceState(
-            target = target,
-            mutationFailure = failure,
-            mutationRefreshFailure = failure,
-        )
-        assertTrue(virtualMachineMutationRequiresRefreshBeforeDismiss(failed))
-        assertTrue(virtualMachineMutationBlocksWorkspaceExit(failed))
-        assertFalse(canDismissVirtualMachineMutation(failed))
-
-        val refreshed = failed.copy(
-            mutationRefreshFailure = null,
-            mutationRefreshCompleted = true,
-            mutationVerification = VirtualMachineMutationVerification.DIFFERS,
-        )
-        assertTrue(canDismissVirtualMachineMutation(refreshed))
-        assertTrue(virtualMachineMutationBlocksWorkspaceExit(refreshed))
+    @Test fun `生命周期确认保留基线变化后拒绝写入`() = runBlocking {
+        val f = VmmFixture(); val repo = f.repository().virtualMachineManagement; val target = repo.controlTargets().single()
+        val confirmation = VmmControlConfirmation(listOf(target), VmmAction.START)
+        assertEquals(confirmation, confirmation.copy(targets = confirmation.targets.map { it.copy() }))
+        f.guests = listOf(VmmFixture.guest(status = "running"))
+        val stages = mutableListOf<VmmStage>()
+        assertTrue(runCatching { repo.performControl(target, VmmAction.START, VmmSource.PUBLIC, stages::add) }.isFailure)
+        assertEquals(listOf(VmmStage.CANCELLED), stages); assertTrue(f.writes.isEmpty())
     }
-
-    @Test
-    fun `映像任务未清理时即使结果已确认也持续阻止关闭与退出`() {
-        val pendingCleanup = VirtualMachineMutationWorkspaceState(
-            target = target.copy(kind = VirtualMachineMutationKind.IMAGE_IMPORT),
-            imageImportTaskId = "task-1",
-            mutationResult = result(MutationResultStatus.CONFIRMED_SUCCESS),
-            mutationRefreshCompleted = true,
-            mutationVerification = VirtualMachineMutationVerification.MATCHES,
-        )
-
-        assertTrue(virtualMachineMutationRequiresRefreshBeforeDismiss(pendingCleanup))
-        assertTrue(virtualMachineMutationBlocksWorkspaceExit(pendingCleanup))
-        assertFalse(canDismissVirtualMachineMutation(pendingCleanup))
-
-        val cleared = pendingCleanup.copy(imageImportTaskId = null)
-        assertFalse(virtualMachineMutationRequiresRefreshBeforeDismiss(cleared))
-        assertFalse(virtualMachineMutationBlocksWorkspaceExit(cleared))
-        assertTrue(canDismissVirtualMachineMutation(cleared))
-    }
-
-    @Test
-    fun `任务清理确认和回读只按原始任务基线判断`() {
-        val completed = VirtualMachineTask(
-            id = "local-a",
-            isFinished = true,
-            progressPercent = 100,
-            taskToken = "task-a",
-        )
-        val state = VirtualMachineMutationWorkspaceState(
-            taskCleanupConfirmationRequested = true,
-            taskCleanupBaseline = listOf(completed),
-        )
-        assertTrue(virtualMachineMutationBlocksWorkspaceExit(state))
-        assertTrue(virtualMachineOrdinaryLoadBlocked(state))
-
-        val submitted = state.copy(
-            taskCleanupConfirmationRequested = false,
-            target = target.copy(kind = VirtualMachineMutationKind.TASK_CLEANUP),
-        )
-        assertEquals(
-            VirtualMachineMutationVerification.DIFFERS,
-            virtualMachineMutationVerification(
-                submitted,
-                overview().copy(
-                    tasks = listOf(completed),
-                    taskCenterState = VirtualMachineTaskCenterState.AVAILABLE,
-                ),
-            ),
-        )
-        assertEquals(
-            VirtualMachineMutationVerification.MATCHES,
-            virtualMachineMutationVerification(
-                submitted,
-                overview().copy(
-                    tasks = emptyList(),
-                    taskCenterState = VirtualMachineTaskCenterState.AVAILABLE,
-                ),
-            ),
-        )
-        assertEquals(
-            VirtualMachineMutationVerification.UNAVAILABLE,
-            virtualMachineMutationVerification(
-                submitted,
-                overview().copy(taskCenterState = VirtualMachineTaskCenterState.LOAD_FAILED),
-            ),
-        )
-    }
-
-    @Test
-    fun `任务清理外部取消只采用 Repository 已解析证据`() {
-        val cleanupTarget = target.copy(
-            kind = VirtualMachineMutationKind.TASK_CLEANUP,
-            operation = "virtualMachineTaskCleanup",
-        )
-        val withoutEvidence = cancelledVirtualMachineMutationResult(cleanupTarget)
-        assertEquals(MutationResultStatus.CANCELLED_BEFORE_SUBMISSION, withoutEvidence.status)
-        assertFalse(withoutEvidence.submitted)
-        assertEquals(MutationResultCounts(0, 0, 0), withoutEvidence.counts)
-
-        val resolved = MutationResult(
-            schemaVersion = 1,
-            status = MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-            operation = "virtualMachineTaskCleanup",
-            submitted = true,
-            requiresRefresh = true,
-            counts = MutationResultCounts(succeeded = 1, failed = 1, unknown = 2),
-            errorCategory = MutationErrorCategory.UNKNOWN,
-            diagnosticTag = "vmm.task.cleanup.cancelled-after-readback",
-        )
-        assertEquals(resolved, cancelledVirtualMachineMutationResult(cleanupTarget, resolved))
-    }
-
-    @Test
-    fun `刷新核对区分匹配差异消失与不可用`() {
-        val desired = VirtualMachineSettings("Synthetic VM", "Expected", 2, 2048, true)
-        val state = VirtualMachineMutationWorkspaceState(
-            settingsTargetId = "guest-1",
-            settingsBaseline = desired.copy(description = "Before"),
-            settingsDraft = VirtualMachineSettingsDraftState.from(desired),
-            target = target,
-            mutationResult = result(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED),
-        )
-        val matching = machine("guest-1", desired)
-        assertEquals(
-            VirtualMachineMutationVerification.MATCHES,
-            virtualMachineMutationVerification(state, overview(matching)),
-        )
-        assertEquals(
-            VirtualMachineMutationVerification.DIFFERS,
-            virtualMachineMutationVerification(
-                state,
-                overview(machine("guest-1", desired.copy(memoryMiB = 4096))),
-            ),
-        )
-        assertEquals(
-            VirtualMachineMutationVerification.DISAPPEARED,
-            virtualMachineMutationVerification(state, overview()),
-        )
-        assertTrue(
-            canDismissVirtualMachineMutation(
-                state.copy(
-                    mutationRefreshCompleted = true,
-                    mutationVerification = VirtualMachineMutationVerification.UNAVAILABLE,
-                ),
-            ),
-        )
-    }
-
-    @Test
-    fun `设置基线缺字段越界或autorun一律安全关闭`() {
-        val valid = machine(
-            "guest-1",
-            VirtualMachineSettings("Synthetic VM", "Expected", 2, 2048, true),
-        )
-        assertEquals(2, virtualMachineSettingsBaseline(valid)?.cpuCount)
-        assertEquals(null, virtualMachineSettingsBaseline(valid.copy(metadata = valid.metadata - "description")))
-        assertEquals(
-            null,
-            virtualMachineSettingsBaseline(valid.copy(metadata = valid.metadata + ("vcpu_num" to "0"))),
-        )
-        assertEquals(
-            null,
-            virtualMachineSettingsBaseline(valid.copy(metadata = valid.metadata + ("vram_size" to "bad"))),
-        )
-        assertEquals(
-            null,
-            virtualMachineSettingsBaseline(valid.copy(metadata = valid.metadata + ("autorun" to "1"))),
-        )
-    }
-
-    @Test
-    fun `创建刷新不得把其他客户端同名虚拟机归属为本次结果`() {
-        val creationTarget = virtualMachineMutationTarget(
-            "profile-a",
-            VirtualMachineMutationKind.CREATION,
-            "virtualMachineCreate",
-            null,
-            listOf("Synthetic VM"),
-        )
-        val state = VirtualMachineMutationWorkspaceState(
-            creationDraft = VirtualMachineCreationDraftState(
-                step = 2,
-                name = "Synthetic VM",
-                cpu = "2",
-                memory = "2048",
-                disk = "20",
-                storageId = "storage-1",
-            ),
-            target = creationTarget,
-            mutationResult = result(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED),
-        )
-        assertEquals(
-            VirtualMachineMutationVerification.UNAVAILABLE,
-            virtualMachineMutationVerification(
-                state,
-                overview(
-                    machine(
-                        "other-client-guest",
-                        VirtualMachineSettings("Synthetic VM", "", 2, 2048, false),
-                    ),
-                ),
-            ),
-        )
-    }
-
-    @Test
-    fun `创建与设置草稿保留编辑值并严格解析`() {
-        val creation = VirtualMachineCreationDraftState(
-            step = 2,
-            name = " Synthetic VM ",
-            description = " Draft ",
-            cpu = "2",
-            memory = "2048",
-            disk = "20",
-            storageId = "storage-1",
-        )
-        assertEquals("Synthetic VM", creation.toCreationOrNull()?.name)
-        assertEquals("Draft", creation.toCreationOrNull()?.description)
-        assertEquals(null, creation.copy(cpu = "0").toCreationOrNull())
-        assertEquals(
-            0,
-            creation.copy(disk = "not-used", diskImageId = "image-1")
-                .toCreationOrNull()?.diskGiB,
-        )
-        assertEquals(
-            null,
-            creation.copy(
-                additionalDisks = List(8) { VirtualMachineCreationDiskDraftState() },
-            ).toCreationOrNull(),
-        )
-
-        val settings = VirtualMachineSettingsDraftState(" VM ", " Note ", "4", "4096", false)
-        assertEquals("VM", settings.toSettingsOrNull()?.name)
-        assertEquals(null, settings.copy(memory = "bad").toSettingsOrNull())
-    }
-
     @Test
     fun `本地映像草稿不保存URI且严格校验格式大小存储与暂存目录`() {
         val twoTiB = 2_199_023_255_552L
@@ -592,16 +288,6 @@ class VirtualMachineMutationStatePolicyTest {
     }
 
     @Test
-    fun `外层取消按提交后未知结果保留并要求刷新`() {
-        val result = cancelledVirtualMachineMutationResult(target)
-        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, result.status)
-        assertTrue(result.submitted)
-        assertTrue(result.requiresRefresh)
-        assertEquals(MutationResultCounts(0, 0, 1), result.counts)
-        assertEquals(target.operation, result.operation)
-    }
-
-    @Test
     fun `普通概览旧回调按仓库模块NAS和代次隔离`() {
         val token = VirtualMachineOverviewRequestToken("profile-a", 4)
         assertTrue(
@@ -619,241 +305,6 @@ class VirtualMachineMutationStatePolicyTest {
         assertFalse(virtualMachineOverviewCallbackMatches(true, Module.VIRTUAL_MACHINES, "profile-a", token, 5))
     }
 
-    @Test
-    fun `普通概览请求在编辑确认与结构化反馈期间均被阻止`() {
-        assertFalse(virtualMachineOrdinaryLoadBlocked(VirtualMachineMutationWorkspaceState()))
-        assertTrue(
-            virtualMachineOrdinaryLoadBlocked(
-                VirtualMachineMutationWorkspaceState(
-                    creationEditorVisible = true,
-                    creationDraft = VirtualMachineCreationDraftState(),
-                ),
-            ),
-        )
-        assertTrue(
-            virtualMachineOrdinaryLoadBlocked(
-                VirtualMachineMutationWorkspaceState(
-                    settingsEditorVisible = true,
-                    settingsTargetId = "guest-1",
-                ),
-            ),
-        )
-        assertTrue(
-            virtualMachineOrdinaryLoadBlocked(
-                VirtualMachineMutationWorkspaceState(
-                    lifecycleConfirmationRequested = true,
-                    lifecycleConfirmationTarget = VirtualMachineLifecycleTarget(
-                        "profile-a",
-                        "guest-1",
-                        VirtualMachineLifecycleOperation.CONTROL,
-                        ResourceState.RUNNING,
-                        "shutdown",
-                    ),
-                ),
-            ),
-        )
-        assertTrue(
-            virtualMachineOrdinaryLoadBlocked(
-                VirtualMachineMutationWorkspaceState(
-                    target = target,
-                    mutationResult = result(MutationResultStatus.CONFIRMED_SUCCESS),
-                ),
-            ),
-        )
-    }
-
-    @Test
-    fun `生命周期刷新使用用户所见基线核对目标状态`() {
-        val running = machine(
-            "guest-1",
-            VirtualMachineSettings("Synthetic VM", "Expected", 2, 2048, false),
-        ).copy(state = ResourceState.RUNNING)
-        val stopped = running.copy(state = ResourceState.STOPPED)
-        fun state(baselineState: ResourceState, command: String) =
-            VirtualMachineMutationWorkspaceState(
-            lifecycleConfirmationTarget = VirtualMachineLifecycleTarget(
-                "profile-a",
-                "guest-1",
-                VirtualMachineLifecycleOperation.CONTROL,
-                baselineState,
-                command,
-            ),
-            target = virtualMachineMutationTarget(
-                "profile-a",
-                VirtualMachineMutationKind.LIFECYCLE,
-                "virtualMachineControl",
-                "guest-1",
-                listOf(command),
-            ),
-            mutationResult = result(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED),
-        )
-        assertEquals(
-            VirtualMachineMutationVerification.MATCHES,
-            virtualMachineMutationVerification(
-                state(ResourceState.STOPPED, "poweron"),
-                overview(running),
-            ),
-        )
-        assertEquals(
-            VirtualMachineMutationVerification.DIFFERS,
-            virtualMachineMutationVerification(
-                state(ResourceState.STOPPED, "poweron"),
-                overview(stopped),
-            ),
-        )
-        assertEquals(
-            VirtualMachineMutationVerification.MATCHES,
-            virtualMachineMutationVerification(
-                state(ResourceState.RUNNING, "shutdown"),
-                overview(stopped),
-            ),
-        )
-    }
-
-    @Test
-    fun `控制命令仅允许与用户所见状态匹配的安全矩阵`() {
-        assertEquals(
-            ResourceState.RUNNING,
-            virtualMachineControlExpectedState(ResourceState.STOPPED, "poweron"),
-        )
-        listOf("poweroff", "shutdown").forEach { command ->
-            assertEquals(
-                command,
-                ResourceState.STOPPED,
-                virtualMachineControlExpectedState(ResourceState.RUNNING, command),
-            )
-        }
-        ResourceState.entries.forEach { baseline ->
-            listOf("poweron", "poweroff", "shutdown", "pause", "resume", "reboot").forEach { command ->
-                val allowed = baseline == ResourceState.STOPPED && command == "poweron" ||
-                    baseline == ResourceState.RUNNING && command in setOf("poweroff", "shutdown")
-                if (!allowed) {
-                    assertEquals(
-                        "$baseline/$command",
-                        null,
-                        virtualMachineControlExpectedState(baseline, command),
-                    )
-                }
-            }
-        }
-    }
-
-    @Test
-    fun `生命周期目标重建保留基线且基线参与身份比较`() {
-        val lifecycle = VirtualMachineLifecycleTarget(
-            profileId = "profile-a",
-            resourceId = "guest-1",
-            operation = VirtualMachineLifecycleOperation.CONTROL,
-            baselineState = ResourceState.RUNNING,
-            command = "shutdown",
-        )
-        val rebuilt = VirtualMachineMutationWorkspaceState(
-            lifecycleConfirmationTarget = lifecycle.copy(),
-            lifecycleConfirmationRequested = true,
-        )
-        assertEquals(lifecycle, rebuilt.lifecycleConfirmationTarget)
-        assertEquals(ResourceState.RUNNING, rebuilt.lifecycleConfirmationTarget?.baselineState)
-        assertNotEquals(
-            lifecycle,
-            lifecycle.copy(
-                baselineState = ResourceState.STOPPED,
-                command = "poweron",
-            ),
-        )
-        val runningClaim = virtualMachineMutationTarget(
-            "profile-a",
-            VirtualMachineMutationKind.LIFECYCLE,
-            "virtualMachineControl",
-            "guest-1",
-            listOf(ResourceState.RUNNING.name, "shutdown"),
-        )
-        val stoppedClaim = virtualMachineMutationTarget(
-            "profile-a",
-            VirtualMachineMutationKind.LIFECYCLE,
-            "virtualMachineControl",
-            "guest-1",
-            listOf(ResourceState.STOPPED.name, "poweron"),
-        )
-        assertNotEquals(runningClaim, stoppedClaim)
-        assertFalse(
-            virtualMachineMutationCallbackMatches(
-                repositoryMatches = true,
-                profileMatches = true,
-                stateTarget = stoppedClaim,
-                callbackTarget = runningClaim,
-                stateGeneration = 7,
-                callbackGeneration = 7,
-                globalGeneration = 7,
-            ),
-        )
-    }
-
-    private fun callbackMatches(
-        repositoryMatches: Boolean = true,
-        profileMatches: Boolean = true,
-        stateTarget: VirtualMachineMutationTarget? = target,
-        stateGeneration: Long = 7,
-        callbackGeneration: Long = 7,
-        globalGeneration: Long = 7,
-    ) = virtualMachineMutationCallbackMatches(
-        repositoryMatches,
-        profileMatches,
-        stateTarget,
-        target,
-        stateGeneration,
-        callbackGeneration,
-        globalGeneration,
-    )
-
-    private fun result(status: MutationResultStatus): MutationResult {
-        val dangerous = status in setOf(
-            MutationResultStatus.PARTIAL_SUCCESS,
-            MutationResultStatus.SUBMITTED_BUT_UNVERIFIED,
-            MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-        )
-        val counts = when (status) {
-            MutationResultStatus.CONFIRMED_SUCCESS -> MutationResultCounts(1, 0, 0)
-            MutationResultStatus.PARTIAL_SUCCESS -> MutationResultCounts(1, 0, 1)
-            MutationResultStatus.SUBMITTED_BUT_UNVERIFIED,
-            MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-            -> MutationResultCounts(0, 0, 1)
-            MutationResultStatus.CANCELLED_BEFORE_SUBMISSION -> MutationResultCounts(0, 0, 0)
-            else -> MutationResultCounts(0, 1, 0)
-        }
-        return MutationResult(
-            schemaVersion = 1,
-            status = status,
-            operation = "virtualMachineSettings",
-            submitted = status in setOf(
-                MutationResultStatus.CONFIRMED_SUCCESS,
-                MutationResultStatus.PARTIAL_SUCCESS,
-                MutationResultStatus.SUBMITTED_BUT_UNVERIFIED,
-                MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-            ),
-            requiresRefresh = dangerous,
-            counts = counts,
-            errorCategory = if (status == MutationResultStatus.CONFIRMED_SUCCESS) {
-                null
-            } else {
-                MutationErrorCategory.UNKNOWN
-            },
-            diagnosticTag = "synthetic.${status.name.lowercase()}",
-        )
-    }
-
-    private fun machine(id: String, settings: VirtualMachineSettings) = ManagedResource(
-        id = id,
-        name = settings.name,
-        detail = "Synthetic",
-        state = ResourceState.STOPPED,
-        metadata = mapOf(
-            "description" to settings.description,
-            "vcpu_num" to settings.cpuCount.toString(),
-            "vram_size" to settings.memoryMiB.toString(),
-            "autorun" to if (settings.autoStart) "2" else "0",
-        ),
-    )
-
     private fun eligibleStorage() = ManagedResource(
         id = "storage-1",
         name = "Synthetic storage",
@@ -870,15 +321,4 @@ class VirtualMachineMutationStatePolicyTest {
         canWrite = true,
     )
 
-    private fun overview(vararg machines: ManagedResource) = VirtualMachineOverview(
-        machines = machines.toList(),
-        hosts = emptyList(),
-        storages = emptyList(),
-        networks = emptyList(),
-        images = emptyList(),
-        protectionPlans = emptyList(),
-        protectionSchedules = emptyList(),
-        retentionPolicies = emptyList(),
-        logs = emptyList(),
-    )
 }

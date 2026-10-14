@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.foundation.selection.toggleable
+
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -126,6 +128,7 @@ internal fun DownloadSettingsDialog(
     onRefreshMutation: () -> Unit,
     onDismissMutation: () -> Boolean,
     onDismiss: () -> Boolean,
+    onChooseDestination: (() -> Unit)? = null,
 ) {
     val settingsState = state.downloadSettingsState
     Dialog(
@@ -193,6 +196,8 @@ internal fun DownloadSettingsDialog(
                                             settingsState.mutationFailure != null,
                                         onDraftChange = onDraftChange,
                                         onSave = onSave,
+                                        onChooseDestination = onChooseDestination,
+                                        onRetry = onRetry,
                                     )
                                 }
                             }
@@ -206,115 +211,44 @@ internal fun DownloadSettingsDialog(
 
 @Composable
 private fun DownloadSettingsForm(
-    initial: DownloadSettings,
-    draft: DownloadSettingsDraftState,
-    supportsSchedule: Boolean,
-    saving: Boolean,
-    onDraftChange: (DownloadSettingsDraftState) -> Unit,
-    onSave: (DownloadSettings) -> Boolean,
+    initial: DownloadSettings, draft: DownloadSettingsDraftState, supportsSchedule: Boolean, saving: Boolean,
+    onDraftChange: (DownloadSettingsDraftState) -> Unit, onSave: (DownloadSettings) -> Boolean,
+    onChooseDestination: (() -> Unit)?, onRetry: () -> Unit,
 ) {
-    val parsed = draft.toSettingsOrNull(supportsSchedule)
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            stringResource(R.string.download_settings_general),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        OutlinedTextField(
-            value = draft.destination,
-            onValueChange = { onDraftChange(draft.copy(destination = it)) },
-            label = { Text(stringResource(R.string.download_default_folder)) },
-            supportingText = { Text(stringResource(R.string.download_default_folder_hint)) },
-            singleLine = true,
-            enabled = !saving,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        SettingsSwitchRow(
-            stringResource(R.string.download_auto_extract),
-            draft.autoExtract,
-            !saving,
-        ) { onDraftChange(draft.copy(autoExtract = it)) }
-        SettingsSwitchRow(
-            stringResource(R.string.download_enable_emule),
-            draft.emuleEnabled,
-            !saving,
-        ) { onDraftChange(draft.copy(emuleEnabled = it)) }
+    val parsed = draft.toSettingsOrNull(supportsSchedule, initial)
+    val enabled = !saving && initial.canManage
+    fun available(key: String) = key in initial.availableFields
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (!initial.canManage) Text(stringResource(R.string.download_settings_read_only))
+        if (initial.basicFailure != null || initial.scheduleFailure != null) {
+            Text(stringResource(R.string.download_settings_partial))
+            TextButton(onClick = onRetry) { Text(stringResource(R.string.refresh)) }
+        }
+        Text(stringResource(R.string.download_settings_general), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        if (available("default_destination")) {
+            OutlinedTextField(draft.destination, { onDraftChange(draft.copy(destination = it)) }, label = { Text(stringResource(R.string.download_default_folder)) },
+                singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth())
+            if (onChooseDestination != null) TextButton(onClick = onChooseDestination, enabled = enabled) { Text(stringResource(R.string.browse_nas_folders)) }
+        }
+        if (available("unzip_service_enabled")) SettingsSwitchRow(stringResource(R.string.download_auto_extract), draft.autoExtract, enabled) { onDraftChange(draft.copy(autoExtract = it)) }
+        if (available("emule_enabled")) SettingsSwitchRow(stringResource(R.string.download_enable_emule), draft.emuleEnabled, enabled) { onDraftChange(draft.copy(emuleEnabled = it)) }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
-        Text(
-            stringResource(R.string.download_speed_limits),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            stringResource(R.string.download_speed_limits_note),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        LimitField(R.string.download_bt_limit, draft.btDownload, saving) {
-            onDraftChange(draft.copy(btDownload = it))
-        }
-        LimitField(R.string.download_bt_upload_limit, draft.btUpload, saving) {
-            onDraftChange(draft.copy(btUpload = it))
-        }
-        LimitField(
-            R.string.download_http_ftp_limit,
-            draft.httpDownload,
-            saving,
-            supportingText = R.string.download_http_ftp_limit_hint,
-        ) { onDraftChange(draft.copy(httpDownload = it, ftpDownload = it)) }
-        LimitField(R.string.download_nzb_limit, draft.nzbDownload, saving) {
-            onDraftChange(draft.copy(nzbDownload = it))
-        }
-        LimitField(R.string.download_emule_limit, draft.emuleDownload, saving) {
-            onDraftChange(draft.copy(emuleDownload = it))
-        }
-        LimitField(R.string.download_emule_upload_limit, draft.emuleUpload, saving) {
-            onDraftChange(draft.copy(emuleUpload = it))
-        }
+        Text(stringResource(R.string.download_speed_limits), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.download_speed_limits_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (available("bt_max_download")) LimitField(R.string.download_bt_limit, draft.btDownload, !enabled) { onDraftChange(draft.copy(btDownload = it)) }
+        if (available("bt_max_upload")) LimitField(R.string.download_bt_upload_limit, draft.btUpload, !enabled) { onDraftChange(draft.copy(btUpload = it)) }
+        if (available("http_max_download") && available("ftp_max_download")) LimitField(R.string.download_http_ftp_limit, draft.httpDownload, !enabled, R.string.download_http_ftp_limit_hint) { onDraftChange(draft.copy(httpDownload = it, ftpDownload = it)) }
+        if (available("nzb_max_download")) LimitField(R.string.download_nzb_limit, draft.nzbDownload, !enabled) { onDraftChange(draft.copy(nzbDownload = it)) }
+        if (available("emule_max_download")) LimitField(R.string.download_emule_limit, draft.emuleDownload, !enabled) { onDraftChange(draft.copy(emuleDownload = it)) }
+        if (available("emule_max_upload")) LimitField(R.string.download_emule_upload_limit, draft.emuleUpload, !enabled) { onDraftChange(draft.copy(emuleUpload = it)) }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
-        Text(
-            stringResource(R.string.download_schedule_title),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        if (supportsSchedule) {
-            SettingsSwitchRow(
-                stringResource(R.string.download_schedule_enabled),
-                draft.scheduleEnabled,
-                !saving,
-            ) { onDraftChange(draft.copy(scheduleEnabled = it)) }
-            SettingsSwitchRow(
-                stringResource(R.string.download_emule_schedule_enabled),
-                draft.emuleScheduleEnabled,
-                !saving && draft.emuleEnabled,
-            ) { onDraftChange(draft.copy(emuleScheduleEnabled = it)) }
-        } else {
-            Text(
-                stringResource(R.string.download_schedule_unavailable),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (parsed == null) {
-            Text(
-                stringResource(R.string.download_settings_invalid),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            Button(
-                onClick = { parsed?.let(onSave) },
-                enabled = parsed != null && parsed != initial && !saving,
-                modifier = Modifier.heightIn(min = 48.dp).semantics { role = Role.Button },
-            ) { Text(stringResource(R.string.save_changes)) }
-        }
+        Text(stringResource(R.string.download_schedule_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        if (available("enabled")) SettingsSwitchRow(stringResource(R.string.download_schedule_enabled), draft.scheduleEnabled, enabled) { onDraftChange(draft.copy(scheduleEnabled = it)) }
+        if (available("schedule_emule_enabled")) SettingsSwitchRow(stringResource(R.string.download_emule_schedule_enabled), draft.emuleScheduleEnabled, enabled) { onDraftChange(draft.copy(emuleScheduleEnabled = it)) }
+        if (!supportsSchedule) Text(stringResource(R.string.download_schedule_unavailable), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (parsed == null) Text(stringResource(R.string.download_settings_invalid), color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
+        Button(onClick = { parsed?.let(onSave) }, enabled = parsed != null && parsed != initial && enabled,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.save_changes)) }
     }
 }
 
@@ -326,11 +260,11 @@ private fun SettingsSwitchRow(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 

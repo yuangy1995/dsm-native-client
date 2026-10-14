@@ -20,7 +20,13 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.layout.fillMaxSize
+import io.github.qwertyuiop1995.dsmnativeclient.nas.NasConnectionModel
+import io.github.qwertyuiop1995.dsmnativeclient.nas.NasConnectionState
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.NasConnectionStage
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.isWebConnection
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -44,148 +50,79 @@ import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
 import io.github.qwertyuiop1995.dsmnativeclient.ui.ConfirmDialog
 
 @Composable
-internal fun NasConnectionScreen(
-    connections: List<ActiveConnection>,
-    connectionsAvailable: Boolean,
-    target: ActiveConnection?,
-    mutationResult: MutationResult?,
-    mutationFailure: DsmFailure?,
-    refreshFailure: DsmFailure?,
-    mutationInProgress: Boolean,
-    refreshInProgress: Boolean,
-    refreshCompleted: Boolean,
-    isPerformingAction: Boolean,
-    model: AppViewModel,
-) = NasConnectionContent(
-    connections = connections,
-    connectionsAvailable = connectionsAvailable,
-    target = target,
-    mutationResult = mutationResult,
-    mutationFailure = mutationFailure,
-    refreshFailure = refreshFailure,
-    mutationInProgress = mutationInProgress,
-    refreshInProgress = refreshInProgress,
-    refreshCompleted = refreshCompleted,
-    isPerformingAction = isPerformingAction,
-    onRequestDisconnect = model::requestConnectionDisconnect,
-    onCancelRequest = model::cancelConnectionDisconnectRequest,
-    onConfirmRequest = model::confirmConnectionDisconnect,
-    onRefreshMutation = model::refreshConnectionMutation,
-    onDismissResult = model::dismissConnectionMutationResult,
-    onRefreshList = { model.load(Module.NAS_SETTINGS) },
-)
+internal fun NasConnectionScreen(model: NasConnectionModel, isPerformingAction: Boolean) {
+    val state by model.state.collectAsState()
+    LaunchedEffect(model) { model.refresh() }
+    NasConnectionContent(state, isPerformingAction, model::request, model::cancel, model::confirm, model::refresh, model::dismiss)
+}
 
 @Composable
 internal fun NasConnectionContent(
-    connections: List<ActiveConnection>,
-    connectionsAvailable: Boolean,
-    target: ActiveConnection?,
-    mutationResult: MutationResult?,
-    mutationFailure: DsmFailure?,
-    refreshFailure: DsmFailure?,
-    mutationInProgress: Boolean,
-    refreshInProgress: Boolean = false,
-    refreshCompleted: Boolean,
-    isPerformingAction: Boolean,
-    onRequestDisconnect: (ActiveConnection) -> Boolean,
-    onCancelRequest: () -> Unit,
-    onConfirmRequest: () -> Boolean,
-    onRefreshMutation: () -> Unit,
-    onDismissResult: () -> Unit,
-    onRefreshList: () -> Unit,
+    state: NasConnectionState, isPerformingAction: Boolean = false,
+    onRequestDisconnect: (ActiveConnection) -> Boolean, onCancelRequest: () -> Unit,
+    onConfirmRequest: (ActiveConnection) -> Boolean, onRefresh: () -> Unit, onDismissResult: () -> Unit,
 ) {
-    val targetStillPresent = target?.let { selected -> connections.any { it.id == selected.id } }
-    LazyColumn {
-        if (mutationInProgress) {
-            item { ConnectionSavingCard(target) }
-        } else if (mutationResult != null && target != null) {
-            item {
-                ConnectionMutationFeedbackCard(
-                    target = target,
-                    result = mutationResult,
-                    refreshCompleted = refreshCompleted,
-                    targetStillPresent = targetStillPresent == true,
-                    refreshFailure = refreshFailure,
-                    refreshInProgress = refreshInProgress,
-                    onRefresh = onRefreshMutation,
-                    onDismiss = onDismissResult,
-                )
+    var search by remember { mutableStateOf("") }
+    val rows = state.directory?.rows.orEmpty()
+    val matches = rows.filter { row -> search.isBlank() || listOf(row.user, row.client, row.service).any { it.contains(search.trim(), true) } }
+    Column(Modifier.fillMaxSize()) {
+        OutlinedTextField(value = search, onValueChange = { search = it; onCancelRequest() },
+            label = { Text(stringResource(R.string.connection_search)) }, singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+        TextButton(onClick = onRefresh, enabled = !state.busy && !isPerformingAction,
+            modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)) { Text(stringResource(R.string.refresh_connections)) }
+        if (state.busy || !state.loaded && state.failure == null) LinearProgressIndicator(Modifier.fillMaxWidth())
+        LazyColumn(Modifier.weight(1f)) {
+            state.record?.let { record -> item {
+                FeedbackCard(LiveRegionMode.Polite, false) {
+                    Text(stringResource(when (record.stage) {
+                        NasConnectionStage.VERIFIED -> R.string.connection_feedback_disconnected_title
+                        NasConnectionStage.REJECTED -> R.string.connection_feedback_failed_title
+                        NasConnectionStage.CANCELLED -> R.string.connection_feedback_cancelled_title
+                        NasConnectionStage.PREPARED -> R.string.connection_disconnecting_title
+                        else -> R.string.connection_feedback_check_title
+                    }), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(when (record.stage) {
+                        NasConnectionStage.VERIFIED -> R.string.connection_feedback_disconnected_message
+                        NasConnectionStage.REJECTED -> R.string.connection_feedback_failed_message
+                        NasConnectionStage.CANCELLED -> R.string.connection_not_sent
+                        NasConnectionStage.PREPARED -> R.string.connection_disconnecting_message
+                        else -> R.string.connection_feedback_unverified_message
+                    }))
+                    if (!record.pending) TextButton(onClick = onDismissResult, enabled = !state.busy,
+                        modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)) { Text(stringResource(R.string.done)) }
+                }
+            } }
+            state.failure?.let { failure -> item {
+                FeedbackCard(LiveRegionMode.Assertive, true) { Text(failure.localize(LocalContext.current).combined) }
+            } }
+            if (state.directory?.complete == false) item {
+                Text(stringResource(R.string.connection_partial_list), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        } else if (mutationFailure != null && target != null) {
-            item {
-                ConnectionMutationFailureCard(
-                    target = target,
-                    failure = mutationFailure,
-                    onDismiss = onDismissResult,
-                )
-            }
-        }
-
-        if (!connectionsAvailable || connections.isEmpty()) {
-            item {
-                Column(
-                    Modifier.fillMaxWidth().padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        stringResource(
-                            if (connectionsAvailable) R.string.no_active_connections
-                            else R.string.connections_unavailable,
-                        ),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        stringResource(
-                            if (connectionsAvailable) R.string.no_active_connections_hint
-                            else R.string.connections_unavailable_hint,
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    TextButton(
-                        onClick = onRefreshList,
-                        enabled = !isPerformingAction,
-                    ) {
-                        Text(stringResource(R.string.refresh_connections))
-                    }
+            if (matches.isEmpty() && !state.busy && (state.loaded || state.failure != null)) item {
+                Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(when { state.directory == null -> R.string.connections_unavailable
+                        rows.isNotEmpty() -> R.string.connection_no_matches
+                        else -> R.string.no_active_connections }), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(when { state.directory == null -> R.string.connections_unavailable_hint
+                        rows.isNotEmpty() -> R.string.connection_search_hint
+                        else -> R.string.no_active_connections_hint }), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        } else {
-            items(connections, key = { it.id }) { connection ->
-                ConnectionListItem(
-                    connection = connection,
-                    enabled = connection.canDisconnect && !isPerformingAction && target == null &&
-                        mutationResult == null && mutationFailure == null,
-                    onDisconnect = { onRequestDisconnect(connection) },
-                )
+            items(matches, key = { it.id }) { connection ->
+                ConnectionListItem(connection, !state.blocked && !isPerformingAction && state.confirmation == null && connection.canDisconnect,
+                    onDisconnect = { onRequestDisconnect(connection) })
                 HorizontalDivider(Modifier.padding(start = 72.dp))
             }
         }
     }
-
-    if (target != null && !mutationInProgress && mutationResult == null && mutationFailure == null) {
-        val webConnection = target.type.equals("HTTP/HTTPS", ignoreCase = true)
-        val targetSummary = connectionTargetSummary(target)
-        val impact = stringResource(
-            when {
-                target.isCurrent -> R.string.disconnect_current_connection_message
-                webConnection -> R.string.disconnect_web_connection_message
-                else -> R.string.disconnect_service_connection_message
-            },
-        )
-        ConfirmDialog(
-            title = stringResource(
-                if (target.isCurrent) R.string.disconnect_current_connection_title
-                else R.string.disconnect_connection_title,
-            ),
-            message = stringResource(R.string.connection_confirmation_message, targetSummary, impact),
-            confirm = stringResource(
-                if (target.isCurrent) R.string.disconnect_current_connection
-                else R.string.disconnect_connection,
-            ),
-            destructive = true,
-            onConfirm = { onConfirmRequest() },
-            onDismiss = onCancelRequest,
-        )
+    state.confirmation?.let { target ->
+        val mayDisconnectApp = target.isCurrent || !target.isCurrentKnown || target.isWebConnection
+        ConfirmDialog(title = stringResource(if (target.isCurrent) R.string.disconnect_current_connection_title else R.string.disconnect_connection_title),
+            message = stringResource(R.string.connection_confirmation_message, connectionTargetSummary(target),
+                stringResource(if (mayDisconnectApp) R.string.disconnect_connection_app_risk else R.string.disconnect_service_connection_message)),
+            confirm = stringResource(if (mayDisconnectApp) R.string.disconnect_current_connection else R.string.disconnect_connection),
+            destructive = true, onConfirm = { onConfirmRequest(target) }, onDismiss = onCancelRequest)
     }
 }
 
@@ -395,7 +332,7 @@ internal fun ConnectionMutationFeedbackCard(
         TextButton(
             onClick = onDismiss,
             enabled = !refreshInProgress &&
-                (!policy.mustRefreshBeforeDismiss || refreshCompleted),
+                (!policy.mustRefreshBeforeDismiss || refreshCompleted && !targetStillPresent),
             modifier = Modifier.align(Alignment.End),
         ) {
             Text(stringResource(R.string.done))

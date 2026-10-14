@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
@@ -109,7 +111,7 @@ class NasPerformanceRepositoryTest {
     private fun repository(
         interceptor: Interceptor,
         includeCapability: Boolean = true,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "synthetic-session", "synthetic-token"),
         DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),

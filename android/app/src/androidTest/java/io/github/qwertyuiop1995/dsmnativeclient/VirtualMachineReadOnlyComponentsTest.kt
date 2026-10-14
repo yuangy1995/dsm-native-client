@@ -139,7 +139,8 @@ class VirtualMachineReadOnlyComponentsTest {
                 context.getString(R.string.virtual_machine_task_progress, 40),
             ),
         ).assertIsDisplayed()
-        rule.onNodeWithText(context.getString(R.string.virtual_machine_task_finished), substring = true)
+        rule.onNodeWithText(context.getString(R.string.virtual_machine_task_summary_with_progress,
+            context.getString(R.string.virtual_machine_task_finished), context.getString(R.string.virtual_machine_task_progress, 100)))
             .assertIsDisplayed()
         listOf("private-task", "internal_create", "internal_import").forEach { hidden ->
             rule.onNodeWithText(hidden, substring = true).assertDoesNotExist()

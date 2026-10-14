@@ -30,7 +30,9 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasTerminalSettings
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasFileServiceSettings
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasSettingsSnapshot
-import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasServiceSettingsScreen
+import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasServiceSettingsContent
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceValue
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.TerminalMutationFailureCard
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.TerminalMutationFeedbackCard
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.TerminalSavingCard
@@ -208,14 +210,12 @@ class TerminalFeedbackCardTest {
     fun 编辑和确认阶段经过保存状态恢复仍保持原阶段() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val restoration = StateRestorationTester(rule)
-        val model = AppViewModel(ApplicationProvider.getApplicationContext())
         val draft = NasTerminalSettings(true, false, 2_222)
         restoration.setContent {
             LanStashTheme {
                 serviceScreen(
                     snapshot = snapshot(terminal = NasTerminalSettings(false, false, 22)),
                     savedTerminalDraft = draft,
-                    model = model,
                 )
             }
         }
@@ -234,15 +234,13 @@ class TerminalFeedbackCardTest {
     @Test
     fun 终端能力缺失在深色两倍字体下显示原因() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val model = AppViewModel(ApplicationProvider.getApplicationContext())
         rule.setContent {
             LanStashTheme(darkTheme = true) {
                 CompositionLocalProvider(LocalDensity provides Density(1f, 2f)) {
                     serviceScreen(
                         snapshot = snapshot(fileServices = fileSettings(), terminal = null),
                         savedTerminalDraft = null,
-                        model = model,
-                    )
+                        )
                 }
             }
         }
@@ -284,28 +282,12 @@ class TerminalFeedbackCardTest {
     private fun serviceScreen(
         snapshot: NasSettingsSnapshot,
         savedTerminalDraft: NasTerminalSettings?,
-        model: AppViewModel,
     ) {
-        NasServiceSettingsScreen(
-            snapshot = snapshot,
-            savedDraft = null,
-            mutationResult = null,
-            mutationFailure = null,
-            mutationInProgress = false,
-            mutationRefreshCompleted = false,
-            savedTerminalDraft = savedTerminalDraft,
-            terminalMutationResult = null,
-            terminalMutationFailure = null,
-            terminalMutationInProgress = false,
-            terminalMutationRefreshCompleted = false,
-            savedProxyDraft = null,
-            proxyMutationResult = null,
-            proxyMutationFailure = null,
-            proxyMutationInProgress = false,
-            proxyMutationRefreshCompleted = false,
-            isPerformingAction = false,
-            model = model,
-        )
+        val fixture = androidx.compose.runtime.remember(snapshot, savedTerminalDraft) {
+            NasServiceUiFixture(snapshot, listOfNotNull(savedTerminalDraft?.let(NasServiceValue::Terminal)))
+        }
+        val states = fixture.states.value
+        NasServiceSettingsContent(snapshot, false, states, fixture::begin, fixture::draft, { false }, {}, { _, _ -> })
     }
 
     private fun snapshot(

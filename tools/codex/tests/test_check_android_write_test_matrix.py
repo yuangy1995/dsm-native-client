@@ -14,6 +14,57 @@ SPEC.loader.exec_module(MODULE)
 
 
 class AndroidWriteTestMatrixCheckTest(unittest.TestCase):
+    def test_supplemental_recovery_evidence_cannot_reference_a_missing_test(self):
+        row = self.row("example", state="readonly", success="na", readback="na", cancel="na",
+                       recovery="MissingRecoveryTest.kt::must exist")
+        errors = MODULE.validate(calls={"example"}, rows=[row])
+        self.assertTrue(any("MissingRecoveryTest.kt" in error for error in errors))
+
+    def test_result_property_is_not_a_write_but_calls_and_references_remain(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = """
+class Owner {
+    fun render() = state.uploadResult?.status
+    fun send() = repo.uploadResult(source)
+    fun callback() = repo.uploadResult { checkpoint() }
+    fun reference() = submit(repo::uploadResult)
+}
+"""
+            (root / "Upload.kt").write_text(source, encoding="utf-8")
+            sites = MODULE.discover_result_call_sites({"uploadResult"}, root)
+            self.assertEqual([site["owner"] for site in sites], ["send", "callback", "reference"])
+            self.assertEqual(len(list(MODULE.DIRECT_RESULT_CALL_PATTERN.finditer(source))), 3)
+
+    def test_qualified_checkpoint_entry_does_not_capture_unrelated_methods(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "Connections.kt").write_text("""
+class Owner {
+    fun confirm() = repo.nasConnections.disconnect(target) { saveCheckpoint(it) }
+    fun unrelated() = socket.disconnect()
+    fun renamed() = repo.nasConnections.disconnectLater(target)
+}
+""", encoding="utf-8")
+            sites = MODULE.discover_result_call_sites({"nasConnections.disconnect"}, root)
+            self.assertEqual([(site["owner"], site["resultMethod"]) for site in sites],
+                             [("confirm", "nasConnections.disconnect")])
+
+    def test_registered_feature_repository_entry_keeps_exact_call_inventory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "Chat.kt").write_text("""
+class ChatOwner {
+    fun send() = repository.executeAction()
+    fun continueGroup() = repository.continueGroupAction()
+    fun unrelated() = repository.executeActionLater()
+}
+internal suspend fun ChatRepository.executeAction() = Unit
+""", encoding="utf-8")
+            sites = MODULE.discover_result_call_sites({"executeAction", "continueGroupAction"}, root)
+            self.assertEqual([(site["owner"], site["resultMethod"]) for site in sites],
+                             [("send", "executeAction"), ("continueGroup", "continueGroupAction")])
+
     def row(self, methods, state="open", multi=False, **fields):
         values = {
             "methods": methods,

@@ -1,5 +1,8 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.chat.*
+import io.github.qwertyuiop1995.dsmnativeclient.data.chat.*
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ConversationKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
@@ -8,7 +11,6 @@ import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.runBlocking
-import okhttp3.FormBody
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -21,131 +23,71 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatConversationRepositoryTest {
-    @Test
-    fun `首次单聊固定v2且创建前后查重`() = runBlocking {
-        val transport = ChatConversationInterceptor(
-            body(users()), body(emptyChannels()), body("""{"success":true,"data":{"channel_id":"27"}}"""),
-            body(users()), body(directChannels()),
-        )
-        val repo = repository(transport)
-
-        val first = repo.openDirectChatConversation(" 2 ", "request-direct")
-        val second = repo.openDirectChatConversation("2", "request-direct")
-
-        assertEquals(first, second)
-        assertEquals("27", first.id)
-        assertEquals(ConversationKind.DIRECT, first.kind)
-        assertEquals(5, transport.requests.size)
-        val fields = transport.fields()[2]
-        assertEquals("SYNO.Chat.Channel.Anonymous", fields["api"])
-        assertEquals("2", fields["version"])
-        assertEquals("initiate", fields["method"])
-        assertEquals("[\"2\"]", fields["user_ids"])
-        assertEquals("false", fields["encrypted"])
-        assertEquals("[]", fields["channel_key_encs"])
-        assertTrue(fields.keys.none { it.contains("request", ignoreCase = true) })
+    @Test fun `首次单聊固定v2且创建前后查重`() = runBlocking {
+        val f = ChatProtocolFixture(); f.channels = "[]"
+        f.write = { f.channels = f.directChannel(); """{"success":true,"data":{"channel_id":"27"}}""" }
+        val action = f.prepare(ChatActionDraft(ChatActionKind.DIRECT, "new", memberIds = listOf("2")))
+        val first = f.execute(action); val count = f.requests.size
+        assertEquals(ChatActionPhase.COMPLETED, first.checkpoint.phase)
+        assertEquals("27", first.conversation!!.id); assertEquals(ConversationKind.DIRECT, first.conversation.kind)
+        assertEquals(first.checkpoint, f.execute(action).checkpoint); assertEquals(count, f.requests.size)
+        val fields = f.writes.single().chatFields()
+        assertEquals("SYNO.Chat.Channel.Anonymous", fields["api"]); assertEquals("2", fields["version"])
+        assertEquals("initiate", fields["method"]); assertEquals("[\"2\"]", fields["user_ids"])
+        assertEquals("false", fields["encrypted"]); assertEquals("[]", fields["channel_key_encs"])
+        assertTrue(fields.keys.none { it.contains("request", true) })
     }
 
-    @Test
-    fun `已有单聊直接复用且不提交写请求`() = runBlocking {
-        val transport = ChatConversationInterceptor(body(users()), body(directChannels()))
-
-        val conversation = repository(transport)
-            .openDirectChatConversation("2", "request-existing")
-
-        assertEquals("27", conversation.id)
-        assertEquals(listOf("list", "list"), transport.fields().map { it["method"] })
+    @Test fun `已有单聊直接复用且不提交写请求`() = runBlocking {
+        val f = ChatProtocolFixture(); f.channels = f.directChannel()
+        val result = f.execute(f.prepare(ChatActionDraft(ChatActionKind.DIRECT, "new", memberIds = listOf("2"))))
+        assertEquals(ChatActionPhase.COMPLETED, result.checkpoint.phase)
+        assertEquals("27", result.conversation!!.id); assertTrue(f.writes.isEmpty())
     }
 
-    @Test
-    fun `私人群聊按v1创建加入邀请并复查成员`() = runBlocking {
-        val transport = ChatConversationInterceptor(
-            body(users()), body(emptyChannels()),
-            body("""{"success":true,"data":{"channel_id":"42"}}"""),
-            body("""{"success":true,"data":{}}"""),
-            body("""{"success":true,"data":{}}"""),
-            body(users()), body(groupChannels()),
-            body("""{"success":true,"data":{"user_ids":[1,2,3],"broken_user_ids":[]}}"""),
-            body(users()),
-        )
-
-        val group = repository(transport).createPrivateChatGroup(
-            " 项目组 ", listOf("3", "2", "2"), "request-group",
-        )
-
-        assertEquals("42", group.id)
-        assertEquals(ConversationKind.GROUP, group.kind)
-        assertEquals(listOf("1", "2", "3"), group.memberIds)
-        val fields = transport.fields()
-        assertEquals(listOf("create", "join", "invite"), fields.slice(2..4).map { it["method"] })
-        assertTrue(fields.slice(2..4).all { it["version"] == "1" })
-        assertEquals("项目组", fields[2]["name"])
-        assertEquals("private", fields[2]["type"])
-        assertEquals("[\"2\",\"3\"]", fields[4]["user_ids"])
-        assertEquals("[]", fields[4]["channel_key_encs"])
-        assertEquals("get", fields[7]["method"])
-        assertEquals("SYNO.Chat.Channel.Member", fields[7]["api"])
+    @Test fun `私人群聊按v1创建加入邀请并复查成员`() = runBlocking {
+        val f = groupFixture()
+        val action = f.prepare(ChatActionDraft(ChatActionKind.GROUP, "new", text = " 项目组 ", memberIds = listOf("3", "2")))
+        val result = f.execute(action)
+        assertEquals(ChatActionPhase.COMPLETED, result.checkpoint.phase)
+        assertEquals("42", result.conversation!!.id); assertEquals(ConversationKind.GROUP, result.conversation.kind)
+        assertEquals(listOf("1", "2", "3"), result.conversation.memberIds)
+        val fields = f.writes.map { it.chatFields() }
+        assertEquals(listOf("create", "join", "invite"), fields.map { it["method"] })
+        assertTrue(fields.all { it["version"] == "1" })
+        assertEquals("项目组", fields[0]["name"]); assertEquals("private", fields[0]["type"])
+        assertEquals("[\"2\",\"3\"]", fields[2]["user_ids"]); assertEquals("[]", fields[2]["channel_key_encs"])
+        assertTrue(f.requests.any { it.chatFields()["api"] == "SYNO.Chat.Channel.Member" && it.chatFields()["method"] == "get" })
     }
 
-    @Test
-    fun `单聊能力不覆盖v2时零请求拒绝`() = runBlocking {
-        val transport = ChatConversationInterceptor()
-
-        assertThrows {
-            repository(transport, anonymousMaximumVersion = 1)
-                .openDirectChatConversation("2", "request-direct")
-        }
-
-        assertTrue(transport.requests.isEmpty())
+    @Test fun `单聊能力不覆盖v2时零请求拒绝`() = runBlocking {
+        val f = ChatProtocolFixture(anonymousVersion = 1)
+        assertThrows { f.prepare(ChatActionDraft(ChatActionKind.DIRECT, "new", memberIds = listOf("2"))) }
+        assertTrue(f.requests.isEmpty())
     }
 
-    @Test
-    fun `建群邀请断线不会自动重放`() = runBlocking {
-        val transport = ChatConversationInterceptor(
-            body(users()), body(emptyChannels()),
-            body("""{"success":true,"data":{"channel_id":"42"}}"""),
-            body("""{"success":true,"data":{}}"""),
-            failure(IOException("synthetic disconnect")),
-            body(users()), body(partialGroupChannels()),
-            body("""{"success":true,"data":{"user_ids":[1],"broken_user_ids":[]}}"""), body(users()),
-        )
-
-        assertThrows {
-            repository(transport).createPrivateChatGroup(
-                "项目组", listOf("2", "3"), "request-group",
-            )
-        }
-
-        assertEquals(9, transport.requests.size)
-        assertEquals(1, transport.fields().count { it["method"] == "invite" })
+    @Test fun `建群邀请断线不会自动重放`() = runBlocking {
+        val f = groupFixture(inviteFailure = true)
+        val action = f.prepare(ChatActionDraft(ChatActionKind.GROUP, "new", text = "项目组", memberIds = listOf("2", "3")))
+        val result = f.execute(action)
+        assertEquals(ChatActionPhase.SUBMITTED, result.checkpoint.phase)
+        assertEquals(ChatGroupStep.COMPLETED, result.checkpoint.group!!.join)
+        assertEquals(ChatGroupStep.SUBMITTED, result.checkpoint.group.invite)
+        assertEquals(ChatActionPhase.SUBMITTED, f.execute(action).checkpoint.phase)
+        assertEquals(1, f.writes.count { it.chatFields()["method"] == "invite" })
     }
 
-    @Test
-    fun `用户明确重试建群时复用已创建群聊而不重复创建`() = runBlocking {
-        val partialMembers = """{"success":true,"data":{"user_ids":[1],"broken_user_ids":[]}}"""
-        val allMembers = """{"success":true,"data":{"user_ids":[1,2,3],"broken_user_ids":[]}}"""
-        val transport = ChatConversationInterceptor(
-            body(users()), body(emptyChannels()),
-            body("""{"success":true,"data":{"channel_id":"42"}}"""),
-            body("""{"success":true,"data":{}}"""),
-            failure(IOException("synthetic disconnect")),
-            body(users()), body(partialGroupChannels()), body(partialMembers), body(users()),
-            body(users()), body(partialGroupChannels()), body(partialMembers), body(users()),
-            body("""{"success":true,"data":{}}"""),
-            body(users()), body(groupChannels()), body(allMembers), body(users()),
-        )
-        val repo = repository(transport)
-
-        assertThrows {
-            repo.createPrivateChatGroup("项目组", listOf("2", "3"), "request-first")
-        }
-        val group = repo.createPrivateChatGroup("项目组", listOf("2", "3"), "request-retry")
-
-        assertEquals("42", group.id)
-        val fields = transport.fields()
-        assertEquals(1, fields.count { it["method"] == "create" })
-        assertEquals(2, fields.count { it["method"] == "invite" })
-        assertEquals("[\"2\",\"3\"]", fields.last { it["method"] == "invite" }["user_ids"])
+    @Test fun `明确拒绝后的继续沿原群聊邀请且不重复创建`() = runBlocking {
+        val f = groupFixture(inviteRejected = true)
+        val action = f.prepare(ChatActionDraft(ChatActionKind.GROUP, "new", text = "项目组", memberIds = listOf("2", "3")))
+        val result = f.execute(action)
+        assertEquals(ChatGroupStep.REJECTED, result.checkpoint.group!!.invite)
+        f.write = { f.members = listOf("1", "2", "3"); f.channels = f.groupChannel("项目组"); """{"success":true}""" }
+        val next = f.store.execute(action.checkpoint.id) { f.repo.continueGroupAction(result.checkpoint) { f.store.save(f.owner, it) } }
+        assertEquals(ChatActionPhase.COMPLETED, next.checkpoint.phase); assertEquals("42", next.conversation!!.id)
+        assertEquals(1, f.writes.count { it.chatFields()["method"] == "create" })
+        assertEquals(2, f.writes.count { it.chatFields()["method"] == "invite" })
+        assertEquals("[\"2\",\"3\"]", f.writes.last().chatFields()["user_ids"])
     }
 
     @Test
@@ -195,48 +137,23 @@ class ChatConversationRepositoryTest {
         }
     }
 
-    private fun repository(
-        interceptor: ChatConversationInterceptor,
-        anonymousMaximumVersion: Int = 2,
-    ) = DsmRepository(
-        NasProfile("test", "Test", "https://nas.example.invalid", "operator"),
-        DsmSession("test", "test-session", "test-token"),
-        DsmApiClient(
-            OkHttpClient.Builder().retryOnConnectionFailure(false).addInterceptor(interceptor).build(),
-        ),
-        mapOf(
-            "SYNO.Chat.User" to ApiCapability("SYNO.Chat.User", "entry.cgi", 1, 3),
-            "SYNO.Chat.Channel" to ApiCapability("SYNO.Chat.Channel", "entry.cgi", 1, 5),
-            "SYNO.Chat.Channel.Anonymous" to ApiCapability(
-                "SYNO.Chat.Channel.Anonymous", "entry.cgi", 1, anonymousMaximumVersion,
-            ),
-            "SYNO.Chat.Channel.Named" to ApiCapability("SYNO.Chat.Channel.Named", "entry.cgi", 1, 1),
-            "SYNO.Chat.Channel.Member" to ApiCapability("SYNO.Chat.Channel.Member", "entry.cgi", 1, 1),
-        ),
-    )
-
-    private fun users() = """{"success":true,"data":{"current_user_id":"1","users":[
-        {"user_id":"1","username":"operator","nickname":"Current"},
-        {"user_id":"2","username":"member2","nickname":"Member 2"},
-        {"user_id":"3","username":"member3","nickname":"Member 3"}
-    ]}}"""
-
-    private fun emptyChannels() = """{"success":true,"data":{"channels":[]}}"""
-
-    private fun directChannels() = """{"success":true,"data":{"channels":[
-        {"channel_id":"27","type":"anonymous","members":["1","2"],"member_count":2}
-    ]}}"""
-
-    private fun groupChannels() = """{"success":true,"data":{"channels":[
-        {"channel_id":"42","type":"private","name":"项目组","members":["1","2","3"],"member_count":3}
-    ]}}"""
-
-    private fun partialGroupChannels() = """{"success":true,"data":{"channels":[
-        {"channel_id":"42","type":"private","name":"项目组","members":["1"],"member_count":1}
-    ]}}"""
+    private fun groupFixture(inviteFailure: Boolean = false, inviteRejected: Boolean = false) = ChatProtocolFixture().also { f ->
+        f.channels = "[]"; f.members = emptyList()
+        f.write = { request ->
+            when (request.chatFields()["method"]) {
+                "create" -> """{"success":true,"data":{"channel_id":"42"}}"""
+                "join" -> { f.members = listOf("1"); f.channels = f.groupChannel("项目组"); """{"success":true}""" }
+                "invite" -> when {
+                    inviteFailure -> throw IOException("synthetic disconnect")
+                    inviteRejected -> """{"success":false,"error":{"code":105}}"""
+                    else -> { f.members = listOf("1", "2", "3"); f.channels = f.groupChannel("项目组"); """{"success":true}""" }
+                }
+                else -> error("Unexpected synthetic group write")
+            }
+        }
+    }
 
     private fun body(value: String) = ChatConversationStep.Body(value)
-    private fun failure(error: IOException) = ChatConversationStep.Failure(error)
 
     private suspend fun assertThrows(block: suspend () -> Unit) {
         var thrown = false
@@ -251,7 +168,6 @@ class ChatConversationRepositoryTest {
 
 private sealed interface ChatConversationStep {
     data class Body(val value: String) : ChatConversationStep
-    data class Failure(val error: IOException) : ChatConversationStep
 }
 
 private class ChatConversationInterceptor(vararg steps: ChatConversationStep) : Interceptor {
@@ -262,7 +178,6 @@ private class ChatConversationInterceptor(vararg steps: ChatConversationStep) : 
         val request = chain.request()
         requests += request
         return when (val step = queue.removeFirstOrNull() ?: error("Unexpected request")) {
-            is ChatConversationStep.Failure -> throw step.error
             is ChatConversationStep.Body -> Response.Builder()
                 .request(request)
                 .protocol(Protocol.HTTP_1_1)
@@ -273,8 +188,4 @@ private class ChatConversationInterceptor(vararg steps: ChatConversationStep) : 
         }
     }
 
-    fun fields(): List<Map<String, String>> = requests.map { request ->
-        val form = request.body as? FormBody
-        buildMap { if (form != null) repeat(form.size) { put(form.name(it), form.value(it)) } }
-    }
 }

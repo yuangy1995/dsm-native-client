@@ -28,7 +28,8 @@ FUNCTION_PATTERN = re.compile(
     r"(?:<[^>\n]+>\s*)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\("
 )
 DIRECT_RESULT_CALL_PATTERN = re.compile(
-    r"(?:\.\s*|::\s*)(?P<method>[A-Za-z_][A-Za-z0-9_]*Result)\s*(?:\(|\b)"
+    r"(?:\.\s*(?=[A-Za-z_][A-Za-z0-9_]*Result\b\s*[({])|::\s*)"
+    r"(?P<method>[A-Za-z_][A-Za-z0-9_]*Result)\b"
 )
 
 
@@ -77,14 +78,25 @@ def discover_result_call_sites(
     methods: set[str],
     production_root: Path = PRODUCTION_ROOT,
 ) -> list[dict[str, str | int]]:
-    """找出受审 ``*Result`` 调用点，不以文件散列作为审计边界。"""
+    """找出已登记结果入口（含独立功能仓储），不以命名后缀或文件散列代替审计。"""
     sites: list[dict[str, str | int]] = []
+    if not methods:
+        return sites
+    names = "|".join(re.escape(name) for name in sorted(methods, key=len, reverse=True))
+    # 普通点号必须跟调用参数或尾随 lambda；同名结果属性不是写操作。
+    call_pattern = re.compile(
+        rf"(?:\.\s*(?=(?:{names})\b\s*[({{])|::\s*)(?P<method>{names})\b"
+    )
     occurrences: dict[tuple[str, str, str], int] = {}
     for path in sorted(production_root.rglob("*.kt")):
         source = path.read_text(encoding="utf-8")
         relative = path.relative_to(production_root).as_posix()
         ranges = _function_ranges(source)
-        for match in DIRECT_RESULT_CALL_PATTERN.finditer(source):
+        for match in call_pattern.finditer(source):
+            line_start = source.rfind("\n", 0, match.start()) + 1
+            # Kotlin扩展函数声明中的接收者点号不是调用；同一行的表达式函数体仍须登记。
+            if re.search(r"\bfun\s+[A-Za-z_][A-Za-z0-9_<>?]*\s*$", source[line_start:match.start()]):
+                continue
             method = match.group("method")
             if method not in methods:
                 continue
@@ -162,7 +174,7 @@ def generate_report(baseline: dict[str, Any]) -> str:
         "",
         "## 审计边界",
         "",
-        f"- 写操作：{len(writes)} 个生产调用点，{len(unique_methods)} 个 `Result` 方法。",
+        f"- 写操作：{len(writes)} 个生产调用点，{len(unique_methods)} 个写入口方法。",
         f"- 页面状态：{len(pages)} 个生产页面或弹窗文件。",
         f"- 自定义点击目标：至少 {touch['minimumDp']}dp × {touch['minimumDp']}dp，并保留原生按压反馈。",
         f"- 显式时间动效：仅允许 `{motion['allowedPath']}` 中登记的预测返回实现。",
@@ -171,7 +183,7 @@ def generate_report(baseline: dict[str, Any]) -> str:
         "",
         "## 写操作调用点",
         "",
-        _markdown_table_row(["调用文件", "所属函数", "Result 方法", "开放状态", "测试证据"]),
+        _markdown_table_row(["调用文件", "所属函数", "写入口方法", "开放状态", "测试证据"]),
         _markdown_table_row(["---", "---", "---", "---", "---"]),
     ]
     for operation in writes:

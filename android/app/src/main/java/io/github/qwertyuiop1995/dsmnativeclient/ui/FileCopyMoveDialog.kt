@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,9 +63,10 @@ internal fun FileCopyMoveDialog(state: WorkspaceState, model: AppViewModel) {
     val sameFolder = operation.targetProfileId == operation.sourceProfileId && operation.items.any {
         it.path.substringBeforeLast('/', "") == operation.location.path
     }
-    val crossNasDirectoryMoveUnsupported = !isCopy &&
-        operation.targetProfileId != operation.sourceProfileId &&
-        operation.items.any(FileItem::isDirectory)
+    val crossNas = operation.targetProfileId != operation.sourceProfileId
+    val context = LocalContext.current
+    fun label(profile: io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile) =
+        connectionConfirmationName(context, profile, operation.targetProfiles)
 
     Dialog(
         onDismissRequest = {
@@ -136,9 +138,9 @@ internal fun FileCopyMoveDialog(state: WorkspaceState, model: AppViewModel) {
                                         if (profile.id == operation.sourceProfileId) {
                                             stringResource(
                                                 R.string.file_copy_move_current_nas,
-                                                profile.name,
+                                                label(profile),
                                             )
-                                        } else profile.name,
+                                        } else label(profile),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -146,7 +148,7 @@ internal fun FileCopyMoveDialog(state: WorkspaceState, model: AppViewModel) {
                             )
                         }
                     }
-                    if (operation.targetProfileId != operation.sourceProfileId) {
+                    if (crossNas && !isCopy) {
                         Text(
                             stringResource(R.string.file_copy_move_cross_nas_hint),
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -251,14 +253,6 @@ internal fun FileCopyMoveDialog(state: WorkspaceState, model: AppViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                if (crossNasDirectoryMoveUnsupported) {
-                    Text(
-                        stringResource(R.string.file_copy_move_cross_nas_directory_move_unavailable),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
                 if (state.isPerformingAction) LinearProgressIndicator(Modifier.fillMaxWidth())
                 HorizontalDivider()
                 Row(
@@ -276,7 +270,7 @@ internal fun FileCopyMoveDialog(state: WorkspaceState, model: AppViewModel) {
                     Button(
                         onClick = { model.requestFileCopyMoveConfirmation() },
                         enabled = operation.location.path.isNotBlank() && operation.location.canWrite &&
-                            !sameFolder && !crossNasDirectoryMoveUnsupported &&
+                            !sameFolder &&
                             !state.isPerformingAction && !mutation.confirmationRequested,
                         modifier = Modifier.padding(start = 8.dp).heightIn(min = 48.dp),
                     ) {
@@ -294,7 +288,17 @@ internal fun FileCopyMoveDialog(state: WorkspaceState, model: AppViewModel) {
         )
     }
     confirmationTarget?.let { target ->
-        FileStationMutationConfirmationDialog(
+        if (crossNas) AlertDialog(onDismissRequest = { model.cancelPendingFileStationMutation() },
+            title = { Text(stringResource(R.string.cross_nas_start_copy)) },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(R.string.cross_nas_route, label(state.profile),
+                    operation.targetProfiles.firstOrNull { it.id == operation.targetProfileId }?.let(::label).orEmpty()))
+                Text(stringResource(R.string.cross_nas_destination, operation.location.path))
+                if (!isCopy) Text(stringResource(R.string.file_copy_move_cross_nas_hint))
+            } },
+            confirmButton = { TextButton({ model.confirmFileCopyMove() }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.cross_nas_start_copy)) } },
+            dismissButton = { TextButton({ model.cancelPendingFileStationMutation() }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.cancel)) } })
+        else FileStationMutationConfirmationDialog(
             target = target,
             onConfirm = model::confirmFileCopyMove,
             onDismiss = model::cancelPendingFileStationMutation,

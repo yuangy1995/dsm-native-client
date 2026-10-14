@@ -13,6 +13,8 @@ import java.net.URI
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -48,9 +50,22 @@ class DsmApiClient(
         .retryOnConnectionFailure(false)
         .build(),
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val authorizeRequest: (String) -> Unit = {},
+    private val onAccessFailure: () -> Unit = {},
 ) {
-    internal fun openWebSocket(request: Request, listener: WebSocketListener): WebSocket =
-        http.newWebSocket(request, listener)
+    internal fun quickConnectResolver() = DsmQuickConnectResolver(http)
+    internal fun authorized(check: (String) -> Unit, onFailure: () -> Unit = {}): DsmApiClient =
+        DsmApiClient(http, json, { name -> authorizeRequest(name); check(name) },
+            { onAccessFailure(); onFailure() })
+
+    internal fun openWebSocket(request: Request, listener: WebSocketListener): WebSocket {
+        authorizeRequest("SYNO.Chat.Channel")
+        return http.newWebSocket(request, listener)
+    }
+
+    internal fun virtualMachineConsole(policy: io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.VmmConsolePolicy, session: DsmSession): VmmConsoleSession =
+        VmmConsoleSession(policy, DsmVmmConsoleTransport(policy, session.sid, http,
+            authorize = { authorizeRequest("SYNO.Virtualization.Guest") }, onAccessFailure = onAccessFailure))
 
     fun endpoint(profile: NasProfile): String {
         val raw = profile.address.trim()
@@ -96,10 +111,11 @@ class DsmApiClient(
 
     /** 复用当前连接的证书校验与禁止重定向策略，不把凭据交给系统播放器。 */
     fun photosMedia(profile: NasProfile, session: DsmSession): SynologyPhotosMediaTransport =
-        SynologyPhotosMediaTransport(profile, session, endpoint(profile), http)
+        SynologyPhotosMediaTransport(profile, session, endpoint(profile), http,
+            authorizeRequest = { authorizeRequest("SYNO.Foto.UserInfo") }, onAccessFailure = onAccessFailure)
 
     suspend fun discover(profile: NasProfile): Map<String, ApiCapability> {
-        val result = post(
+        val result = request(
             profile = profile,
             path = "/webapi/query.cgi",
             parameters = mapOf(
@@ -140,8 +156,8 @@ class DsmApiClient(
             otp?.takeIf { it.isNotBlank() }?.let { put("otp_code", it) }
             deviceId?.takeIf { it.isNotBlank() }?.let { put("device_id", it) }
         }
-        val result = post(profile, "/webapi/auth.cgi", parameters)
-        val data = requireSuccess(result)
+        val result = request(profile, "/webapi/auth.cgi", parameters)
+        val data = requireSuccess(result, authenticationRequest = true)
         val sid = data.string("sid")
             ?: throw DsmFailure(
                 null,
@@ -160,7 +176,7 @@ class DsmApiClient(
 
     suspend fun logout(profile: NasProfile, session: DsmSession) {
         runCatching {
-            post(
+            request(
                 profile,
                 "/webapi/auth.cgi",
                 mapOf(
@@ -180,7 +196,9 @@ class DsmApiClient(
         capability: ApiCapability,
         method: String,
         parameters: Map<String, String> = emptyMap(),
+        oneShot: Boolean = false,
     ): JsonObject {
+        authorizeRequest(capability.name)
         val requestParameters = buildMap {
             put("api", capability.name)
             put("version", capability.maxVersion.toString())
@@ -188,7 +206,26 @@ class DsmApiClient(
             putAll(parameters)
         }
         val path = if (capability.path.startsWith("/")) capability.path else "/webapi/${capability.path}"
-        return requireSuccess(post(profile, path, requestParameters, session))
+        val reply = request(profile, path, requestParameters, session, oneShot = oneShot)
+        if (oneShot && reply["success"]?.jsonPrimitive?.booleanOrNull == true && reply["error"] != null && reply["error"] != kotlinx.serialization.json.JsonNull) {
+            throw DsmFailure(null, "The NAS returned a conflicting response", "Refresh the operation status.", kind = DsmErrorKind.INVALID_RESPONSE)
+        }
+        return requireSuccess(reply)
+    }
+
+    /** 内部只读摘要使用已记录的 GET；凭据仅放请求头。 */
+    internal suspend fun get(
+        profile: NasProfile,
+        session: DsmSession,
+        capability: ApiCapability,
+        method: String,
+        parameters: Map<String, String>,
+    ): JsonObject {
+        authorizeRequest(capability.name)
+        val path = if (capability.path.startsWith('/')) capability.path else "/webapi/${capability.path}"
+        return requireSuccess(request(profile, path, mapOf(
+            "api" to capability.name, "version" to capability.maxVersion.toString(), "method" to method,
+        ) + parameters, session, get = true))
     }
 
     suspend fun upload(
@@ -202,7 +239,9 @@ class DsmApiClient(
         overwrite: Boolean,
         openInputStream: () -> InputStream,
         onProgress: (Long, Long) -> Unit,
+        onContentRead: (io.github.qwertyuiop1995.dsmnativeclient.data.UploadContentFingerprint) -> Unit = {},
     ): JsonObject = withContext(Dispatchers.IO) {
+        authorizeRequest(capability.name)
         require(contentLength >= 0) { "Upload content length is required" }
         val resolvedVersion = capability.version(2)
         val requestBody = InputStreamRequestBody(
@@ -210,6 +249,7 @@ class DsmApiClient(
             contentLength = contentLength,
             openInputStream = openInputStream,
             onProgress = onProgress,
+            onContentRead = onContentRead,
         )
         val multipart = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -238,13 +278,6 @@ class DsmApiClient(
             .addQueryParameter("api", capability.name)
             .addQueryParameter("version", resolvedVersion.toString())
             .addQueryParameter("method", "upload")
-            .addQueryParameter("_sid", session.sid)
-            .apply {
-                session.synoToken?.takeIf { it.isNotBlank() }?.let {
-                    addQueryParameter("SynoToken", it)
-                    addQueryParameter("synotoken", it)
-                }
-            }
             .build()
         val multipartLength = multipart.contentLength()
         if (multipartLength < 0) {
@@ -271,12 +304,7 @@ class DsmApiClient(
         http.newCall(request).await().use { response ->
             val text = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                throw DsmFailure(
-                    response.code,
-                    "Could not upload the file",
-                    "Check the connection and try again.",
-                    kind = DsmErrorKind.CONNECTION_FAILED,
-                )
+                throw reportAccessFailure(httpFailure(response.code))
             }
             requireSuccess(
                 runCatching { json.parseToJsonElement(text).jsonObject }
@@ -303,8 +331,10 @@ class DsmApiClient(
         unzipPassword: String?,
         openInputStream: () -> InputStream,
     ): JsonObject = withContext(Dispatchers.IO) {
-        require(contentLength in 0..MAX_DOWNLOAD_TASK_FILE_BYTES)
-        val version = if (destination.isNullOrBlank()) 1 else 2
+        authorizeRequest(capability.name)
+        require(contentLength in 1..MAX_DOWNLOAD_TASK_FILE_BYTES)
+        require(unzipPassword.orEmpty().none { it == '\n' || it == '\r' || it == '\u0000' })
+        val version = if (destination.isNullOrEmpty()) 1 else 2
         if (version !in capability.minVersion..capability.maxVersion) throw mapFailure(103)
         val safeFilename = filename.replace(Regex("[\\r\\n\"]"), "_")
         val multipart = MultipartBody.Builder()
@@ -315,10 +345,10 @@ class DsmApiClient(
                     addFormDataPart("SynoToken", it)
                     addFormDataPart("synotoken", it)
                 }
-                destination?.takeIf(String::isNotBlank)?.let {
+                destination?.takeIf(String::isNotEmpty)?.let {
                     addFormDataPart("destination", it)
                 }
-                unzipPassword?.takeIf(String::isNotBlank)?.let {
+                unzipPassword?.takeIf(String::isNotEmpty)?.let {
                     addFormDataPart("unzip_password", it)
                 }
             }
@@ -345,7 +375,7 @@ class DsmApiClient(
             .build()
         val request = Request.Builder()
             .url(url)
-            .post(multipart)
+            .post(OneShotRequestBody(multipart))
             .header("Cookie", "id=${session.sid}")
             .apply {
                 session.synoToken?.takeIf(String::isNotBlank)?.let {
@@ -354,9 +384,38 @@ class DsmApiClient(
             }
             .build()
         http.newCall(request).await().use { response ->
+            if (!response.isSuccessful) throw reportAccessFailure(httpFailure(response.code))
             val text = response.body?.string() ?: throw invalidBinaryResponse()
             val envelope = runCatching { json.parseToJsonElement(text).jsonObject }
                 .getOrElse { throw invalidBinaryResponse() }
+            if (envelope["success"]?.jsonPrimitive?.booleanOrNull == true && envelope["error"] != null && envelope["error"] != kotlinx.serialization.json.JsonNull) throw invalidBinaryResponse()
+            requireSuccess(envelope)
+        }
+    }
+
+    /** 本机私有副本由调用方持有；固定文件名且最外层 multipart 不允许自动重放。 */
+    internal suspend fun uploadPackage(
+        profile: NasProfile, session: DsmSession, capability: ApiCapability,
+        source: io.github.qwertyuiop1995.dsmnativeclient.data.UploadSource,
+    ): JsonObject = withContext(Dispatchers.IO) {
+        authorizeRequest(capability.name)
+        require(source.contentLength > 0 && source.displayName.endsWith(".spk", ignoreCase = true))
+        if (1 !in capability.minVersion..capability.maxVersion) throw mapFailure(103)
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("additional", "[\"description\",\"maintainer\",\"distributor\",\"startable\",\"dsm_apps\",\"status\",\"install_reboot\",\"install_type\",\"install_on_cold_storage\",\"break_pkgs\",\"replace_pkgs\"]")
+            .addFormDataPart("file", "package.spk", InputStreamRequestBody(
+                contentType = "application/octet-stream", contentLength = source.contentLength,
+                openInputStream = source.openInputStream, onProgress = { _, _ -> },
+            )).build()
+        val path = if (capability.path.startsWith('/')) capability.path else "/webapi/${capability.path}"
+        val url = "${endpoint(profile)}$path".toHttpUrl().newBuilder()
+            .addQueryParameter("api", capability.name).addQueryParameter("version", "1").addQueryParameter("method", "upload").build()
+        val request = Request.Builder().url(url).post(OneShotRequestBody(body)).header("Cookie", "id=${session.sid}")
+            .apply { session.synoToken?.takeIf(String::isNotBlank)?.let { header("X-SYNO-TOKEN", it) } }.build()
+        http.newCall(request).await().use { response ->
+            if (!response.isSuccessful) throw reportAccessFailure(httpFailure(response.code))
+            val envelope = response.body?.string()?.let { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() } ?: throw invalidBinaryResponse()
+            if (envelope["success"]?.jsonPrimitive?.booleanOrNull == true && envelope["error"] != null && envelope["error"] != kotlinx.serialization.json.JsonNull) throw invalidBinaryResponse()
             requireSuccess(envelope)
         }
     }
@@ -371,8 +430,10 @@ class DsmApiClient(
         contentType: String?,
         contentLength: Long,
         openInputStream: () -> InputStream,
+        willSubmit: () -> Unit = {},
         onProgress: (Long, Long) -> Unit,
     ): JsonObject = withContext(Dispatchers.IO) {
+        authorizeRequest(capability.name)
         require(contentLength >= 0)
         val version = 5
         if (version !in capability.minVersion..capability.maxVersion) throw DsmFailure(
@@ -382,14 +443,15 @@ class DsmApiClient(
             kind = DsmErrorKind.FEATURE_UNSUPPORTED,
         )
         val safeFilename = filename.replace(Regex("[\\r\\n\"]"), "_")
+        fun value(text: String) = if (capability.requestFormat.equals("JSON", true)) kotlinx.serialization.json.JsonPrimitive(text).toString() else text
         val multipart = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("api", capability.name)
             .addFormDataPart("version", version.toString())
             .addFormDataPart("method", "create")
-            .addFormDataPart("channel_id", conversationId)
-            .addFormDataPart("type", "file")
-            .addFormDataPart("message", message)
+            .addFormDataPart("channel_id", value(conversationId))
+            .addFormDataPart("type", value("file"))
+            .addFormDataPart("message", value(message))
             .addFormDataPart("is_thread", "false")
             .addFormDataPart("_sid", session.sid)
             .apply {
@@ -419,7 +481,7 @@ class DsmApiClient(
         )
         val request = Request.Builder()
             .url(url)
-            .post(multipart)
+            .post(OneShotRequestBody(multipart))
             .header("Content-Length", multipartLength.toString())
             .header("Accept", "application/json")
             .header("User-Agent", "LanStash-Android/0.1")
@@ -428,19 +490,92 @@ class DsmApiClient(
                 session.synoToken?.takeIf(String::isNotBlank)?.let { header("X-SYNO-TOKEN", it) }
             }
             .build()
+        currentCoroutineContext().ensureActive()
+        willSubmit()
+        currentCoroutineContext().ensureActive()
         http.newCall(request).await().use { response ->
             val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw DsmFailure(
-                response.code,
-                "The attachment could not be uploaded",
-                "Check the connection and try again.",
-                kind = DsmErrorKind.CONNECTION_FAILED,
-            )
+            if (!response.isSuccessful) throw reportAccessFailure(httpFailure(response.code))
             requireSuccess(
                 runCatching { json.parseToJsonElement(text).jsonObject }
                     .getOrElse { throw invalidBinaryResponse() },
             )
         }
+    }
+
+    /** 内部分享页图片上传；沿用同一证书/权限/错误处理，凭据不进入 URL，正文不可重放。 */
+    internal suspend fun uploadThemeImage(profile: NasProfile, session: DsmSession, capability: ApiCapability,
+        type: String, filename: String, source: File, expectedDigest: String): JsonObject = withContext(Dispatchers.IO) {
+        authorizeRequest(capability.name)
+        require(capability.name == "SYNO.Core.Theme.Image" && 1 in capability.minVersion..capability.maxVersion)
+        require(type in setOf("fbsharing_login_logo", "fbsharing_login_background"))
+        val body = InputStreamRequestBody("application/octet-stream", source.length(), { source.inputStream() }, { _, _ -> }, {
+            if (it.sha256 != expectedDigest) throw IOException("Upload source changed")
+        })
+        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("api", capability.name).addFormDataPart("version", "1").addFormDataPart("method", "upload")
+            .addFormDataPart("type", type).addFormDataPart("_sid", session.sid)
+            .apply { session.synoToken?.takeIf(String::isNotBlank)?.let { addFormDataPart("SynoToken", it) } }
+            .addFormDataPart("upload_image", filename, body).build()
+        val path = if (capability.path.startsWith('/')) capability.path else "/webapi/${capability.path}"
+        val request = Request.Builder().url("${endpoint(profile)}$path").post(multipart).header("Accept", "application/json")
+            .header("Cookie", "id=${session.sid}").header("User-Agent", "LanStash-Android/0.1")
+            .apply { session.synoToken?.takeIf(String::isNotBlank)?.let { header("X-SYNO-TOKEN", it) } }.build()
+        http.newCall(request).await().use { response ->
+            if (!response.isSuccessful) throw reportAccessFailure(httpFailure(response.code))
+            val value = runCatching { json.parseToJsonElement(response.body?.string().orEmpty()).jsonObject }.getOrElse { throw invalidBinaryResponse() }
+            requireSuccess(value)
+        }
+    }
+
+    /** Photos 原件上传复用当前会话、证书和权限边界；正文不可重放，原名只进入 JSON 字段。 */
+    internal suspend fun uploadPhoto(profile: NasProfile, session: DsmSession, capability: ApiCapability,
+        method: String, parameters: Map<String, String>, source: io.github.qwertyuiop1995.dsmnativeclient.data.UploadSource,
+        progress: (Long, Long) -> Unit): JsonObject = withContext(Dispatchers.IO) {
+        authorizeRequest(capability.name)
+        require(capability.name in setOf("SYNO.Foto.Upload.Item", "SYNO.FotoTeam.Upload.Item") &&
+            1 in capability.minVersion..capability.maxVersion && method in setOf("upload", "upload_to_folder"))
+        require(source.contentLength > 0 && parameters.keys.all {
+            it in setOf("duplicate", "name", "mtime", "folder", "uploadDestination", "target_folder_id", "album_id", "passphrase")
+        })
+        val path = photoApiPath(capability.path)
+        val body = InputStreamRequestBody("application/octet-stream", source.contentLength, source.openInputStream, progress, source.onContentRead)
+        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("api", capability.name).addFormDataPart("version", "1").addFormDataPart("method", method)
+            .apply { parameters.forEach { (key, value) -> addFormDataPart(key, value) } }
+            .addFormDataPart("file", "upload", body).build()
+        val request = Request.Builder().url("${endpoint(profile)}$path").post(OneShotRequestBody(multipart))
+            .header("Accept", "application/json").header("Cookie", "id=${session.sid}")
+            .header("User-Agent", "LanStash-Android/0.1")
+            .apply { session.synoToken?.takeIf(String::isNotBlank)?.let { header("X-SYNO-TOKEN", it) } }.build()
+        http.newCall(request).await().use { response ->
+            if (!response.isSuccessful) throw reportAccessFailure(httpFailure(response.code))
+            val envelope = runCatching { json.parseToJsonElement(response.body?.string().orEmpty()).jsonObject }
+                .getOrElse { throw invalidBinaryResponse() }
+            if (envelope["success"]?.jsonPrimitive?.booleanOrNull == true && envelope["error"] != null) throw invalidBinaryResponse()
+            requireSuccess(envelope)
+        }
+    }
+
+    /** 固定默认背景在当前 NAS 上读取，无 Cookie/令牌；写入私有临时文件，避免整图占用内存。 */
+    internal suspend fun downloadThemeBackground(profile: NasProfile, filename: String, destination: File) = withContext(Dispatchers.IO) {
+        authorizeRequest("SYNO.Core.Theme.Image")
+        require((1..10).any { filename == "dsm7_0$it.jpg" })
+        val request = Request.Builder().url("${endpoint(profile)}/webman/resources/images/1x/default_login_background/$filename").get().build()
+        try {
+            http.newCall(request).await().use { response ->
+                validateBinaryResponse(response, MAX_ERROR_RESPONSE_BYTES, null)
+                val body = response.body ?: throw invalidBinaryResponse()
+                destination.outputStream().buffered().use { output -> body.byteStream().use { input ->
+                    val buffer = ByteArray(STREAM_BUFFER_BYTES)
+                    while (true) {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        val count = input.read(buffer); if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                } }
+            }
+        } catch (error: Throwable) { destination.delete(); throw error }
     }
 
     suspend fun readBinary(
@@ -453,6 +588,7 @@ class DsmApiClient(
         maximumBytes: Long,
         range: LongRange? = null,
     ): ByteArray = withContext(Dispatchers.IO) {
+        authorizeRequest(capability.name)
         require(maximumBytes in 1..MAX_BINARY_RESPONSE_BYTES)
         val request = binaryRequest(
             profile = profile,
@@ -503,6 +639,7 @@ class DsmApiClient(
         maximumBytes: Long,
         onProgress: (Long, Long?) -> Unit = { _, _ -> },
     ): Long {
+        authorizeRequest(capability.name)
         try {
             destination.parentFile?.mkdirs()
             return destination.outputStream().buffered().use { output ->
@@ -539,6 +676,7 @@ class DsmApiClient(
         initialBytes: Long = 0,
         onProgress: (Long, Long?) -> Unit = { _, _ -> },
     ): Long = withContext(Dispatchers.IO) {
+        authorizeRequest(capability.name)
         maximumBytes?.let { require(it in 1..MAX_STREAM_RESPONSE_BYTES) }
         require(initialBytes >= 0)
         expectedBytes?.takeIf { it >= 0 }?.let { expected ->
@@ -648,6 +786,7 @@ class DsmApiClient(
         range: LongRange?,
         expectedBytes: Long? = null,
     ): Long? {
+        if (!response.isSuccessful) throw reportAccessFailure(httpFailure(response.code))
         val contentType = response.header("Content-Type").orEmpty().lowercase()
         if (contentType.contains("application/json") || contentType.contains("text/html")) {
             val text = response.body?.source()?.let { source ->
@@ -685,14 +824,6 @@ class DsmApiClient(
         } else {
             if (response.code == 206 || response.header("Content-Range") != null) {
                 throw invalidBinaryResponse()
-            }
-            if (!response.isSuccessful) {
-                throw DsmFailure(
-                    response.code,
-                    "Could not read this file",
-                    "Check the connection and try again.",
-                    kind = DsmErrorKind.CONNECTION_FAILED,
-                )
             }
         }
         return null
@@ -735,29 +866,36 @@ class DsmApiClient(
         parameters: Map<String, String> = emptyMap(),
         path: String = "/webapi/entry.cgi",
     ): JsonObject {
+        authorizeRequest(api)
         val requestParameters = buildMap {
             put("api", api)
             put("version", version.toString())
             put("method", method)
             putAll(parameters)
         }
-        return requireSuccess(post(profile, path, requestParameters, session))
+        return requireSuccess(request(profile, path, requestParameters, session))
     }
 
-    private suspend fun post(
+    private suspend fun request(
         profile: NasProfile,
         path: String,
         parameters: Map<String, String>,
         session: DsmSession? = null,
+        get: Boolean = false,
+        oneShot: Boolean = false,
     ): JsonObject = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder().apply {
-            parameters.forEach { (key, value) -> add(key, value) }
-            session?.sid?.let { add("_sid", it) }
-            session?.synoToken?.takeIf { it.isNotBlank() }?.let { add("SynoToken", it) }
+        val url = "${endpoint(profile)}$path".toHttpUrl().newBuilder().apply {
+            if (get) parameters.forEach { (key, value) -> addQueryParameter(key, value) }
         }.build()
-        val request = Request.Builder()
-            .url("${endpoint(profile)}$path")
-            .post(body)
+        val request = Request.Builder().url(url).apply {
+            if (get) get() else post(FormBody.Builder().apply {
+                parameters.forEach { (key, value) -> add(key, value) }
+                session?.sid?.let { add("_sid", it) }
+                session?.synoToken?.takeIf { it.isNotBlank() }?.let { add("SynoToken", it) }
+            }.build().let { body ->
+                if (oneShot) OneShotRequestBody(body) else body
+            })
+        }
             .header("Accept", "application/json")
             .header("User-Agent", "LanStash-Android/0.1")
             .apply {
@@ -771,13 +909,7 @@ class DsmApiClient(
         response.use {
             val text = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
-                throw DsmFailure(
-                    it.code,
-                    "Could not connect to the NAS",
-                    "Check the network, address, and certificate.",
-                    it.code == 401 || it.code == 403,
-                    DsmErrorKind.CONNECTION_FAILED,
-                )
+                throw reportAccessFailure(httpFailure(it.code))
             }
             runCatching { json.parseToJsonElement(text).jsonObject }
                 .getOrElse {
@@ -791,7 +923,7 @@ class DsmApiClient(
         }
     }
 
-    private fun requireSuccess(envelope: JsonObject): JsonObject {
+    private fun requireSuccess(envelope: JsonObject, authenticationRequest: Boolean = false): JsonObject {
         if (envelope["success"]?.jsonPrimitive?.booleanOrNull == true) {
             return when (val data = envelope["data"]) {
                 is JsonObject -> data
@@ -800,25 +932,14 @@ class DsmApiClient(
             }
         }
         val code = (envelope["error"] as? JsonObject)?.int("code")
-        throw mapFailure(code)
+        throw mapFailure(code, authenticationRequest)
     }
 
-    private fun mapFailure(code: Int?): DsmFailure = when (code) {
-        101 -> DsmFailure(code, "DSM request failed", "Refresh and try again.", kind = DsmErrorKind.REQUEST_FAILED)
-        102 -> DsmFailure(code, "Feature unsupported", "Update DSM or the related package.", kind = DsmErrorKind.FEATURE_UNSUPPORTED)
-        103 -> DsmFailure(code, "Package version unsupported", "Update the package and try again.", kind = DsmErrorKind.PACKAGE_VERSION_UNSUPPORTED)
-        104 -> DsmFailure(code, "Session expired", "Sign in again.", true, DsmErrorKind.SESSION_EXPIRED)
-        105 -> DsmFailure(code, "Permission denied", "Use an account with the required permission.", kind = DsmErrorKind.PERMISSION_DENIED)
-        106, 107 -> DsmFailure(code, "Too many requests", "Try again later.", kind = DsmErrorKind.RATE_LIMITED)
-        400, 401, 402, 403, 404 -> DsmFailure(code, "Sign-in information is incorrect", "Check the account, password, and verification code.", true, DsmErrorKind.AUTHENTICATION_FAILED)
-        406 -> DsmFailure(code, "Two-factor code required", "Enter the current code from your authenticator.", true, DsmErrorKind.OTP_REQUIRED)
-        407 -> DsmFailure(code, "Two-factor code is incorrect", "Use the latest code and try again.", true, DsmErrorKind.OTP_INVALID)
-        408, 409 -> DsmFailure(code, "Device confirmation required", "Confirm the device in DSM and try again.", true, DsmErrorKind.DEVICE_CONFIRMATION_REQUIRED)
-        108 -> DsmFailure(code, "The upload was not completed", "Choose the file again and retry.", kind = DsmErrorKind.UPLOAD_FAILED)
-        115 -> DsmFailure(code, "The NAS did not allow this upload", "Check folder permissions and available space.", kind = DsmErrorKind.UPLOAD_NOT_ALLOWED)
-        1800 -> DsmFailure(code, "The upload size could not be verified", "Choose the file again and retry.", kind = DsmErrorKind.UPLOAD_LENGTH_MISMATCH)
-        1801, 1802, 1803, 1804, 1805 -> DsmFailure(code, "The NAS could not accept this file", "Check the file name, folder permissions, and available space.", kind = DsmErrorKind.UPLOAD_FAILED)
-        else -> DsmFailure(code, "NAS operation failed", "Refresh and try again.", kind = DsmErrorKind.REQUEST_FAILED)
+    private fun mapFailure(code: Int?, authenticationRequest: Boolean = false): DsmFailure =
+        reportAccessFailure(dsmApiFailure(code, authenticationRequest))
+
+    private fun reportAccessFailure(failure: DsmFailure): DsmFailure = failure.also {
+        if (it.kind == DsmErrorKind.PERMISSION_DENIED || it.kind == DsmErrorKind.SESSION_EXPIRED) onAccessFailure()
     }
 
     private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
@@ -831,7 +952,11 @@ class DsmApiClient(
                         null,
                         "Could not connect to the NAS",
                         "Check the network connection and NAS address.",
-                        kind = DsmErrorKind.CONNECTION_FAILED,
+                        kind = when (e) {
+                            is LocalNetworkPermissionException -> DsmErrorKind.LOCAL_NETWORK_PERMISSION_REQUIRED
+                            is javax.net.ssl.SSLException -> DsmErrorKind.TLS_UNTRUSTED
+                            else -> DsmErrorKind.CONNECTION_FAILED
+                        },
                     )
                 )
             }
@@ -854,39 +979,6 @@ class DsmApiClient(
         const val MAX_DOWNLOAD_TASK_FILE_BYTES = 100L * 1024L * 1024L
         const val STREAM_BUFFER_BYTES = 64 * 1024
         val CONTENT_RANGE_PATTERN = Regex("bytes\\s+(\\d+)-(\\d+)/(\\d+|\\*)", RegexOption.IGNORE_CASE)
-    }
-}
-
-private class InputStreamRequestBody(
-    contentType: String?,
-    private val contentLength: Long,
-    private val openInputStream: () -> InputStream,
-    private val onProgress: (Long, Long) -> Unit,
-) : RequestBody() {
-    private val mediaType = contentType?.toMediaTypeOrNull()
-
-    override fun contentType() = mediaType
-
-    override fun contentLength() = contentLength
-
-    // ContentResolver、跨 NAS 管道等上传源均不可倒带，禁止 OkHttp 自动重放正文。
-    override fun isOneShot() = true
-
-    override fun writeTo(sink: BufferedSink) {
-        var completed = 0L
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-        openInputStream().use { input ->
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                sink.write(buffer, 0, count)
-                completed += count
-                onProgress(completed, contentLength)
-            }
-        }
-        if (completed != contentLength) {
-            throw IOException("Upload source length changed")
-        }
     }
 }
 

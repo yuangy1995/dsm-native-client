@@ -61,8 +61,12 @@ import io.github.qwertyuiop1995.dsmnativeclient.ui.PhotoMoveDialog
 import io.github.qwertyuiop1995.dsmnativeclient.ui.PhotosScreen
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasSettingsScreen
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasStorageScreen
+import io.github.qwertyuiop1995.dsmnativeclient.ui.services.ContainerEventsContent
 import io.github.qwertyuiop1995.dsmnativeclient.ui.services.ContainersScreen
-import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VirtualMachineCreationDialog
+import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VmmCreationSheet
+import io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmCreationDraft
+import io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.VmmCreationStorage
+import io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.VmmCreationRef
 import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VirtualMachinesScreen
 import io.github.qwertyuiop1995.dsmnativeclient.ui.theme.LanStashTheme
 import org.junit.Rule
@@ -337,8 +341,7 @@ class PrimaryPageStateMatrixTest {
                 ),
             )
         }
-        rule.onNodeWithText(text(R.string.containers)).performClick()
-        rule.onNodeWithText(CONTAINER_NAME).assertIsDisplayed()
+        rule.onNodeWithText(containerTotal(1)).assertIsDisplayed()
     }
 
     @Test
@@ -350,13 +353,13 @@ class PrimaryPageStateMatrixTest {
 
     @Test
     fun ContainersScreen事件页签覆盖日志内容和真实筛选空() {
-        val model = model()
-        val state = baseState(
-            containers = Loadable.Ready(containerOverview(events = listOf(logEntry()))),
-        )
-        rule.setContent { LanStashTheme { ContainersScreen(state, model) } }
-
-        rule.onNodeWithText(text(R.string.events)).performClick()
+        var events by mutableStateOf<Loadable<List<LogEntry>>>(Loadable.Loading)
+        rule.setContent { LanStashTheme { ContainerEventsContent(events) {} } }
+        assertLoading()
+        update { events = Loadable.Ready(emptyList()) }
+        rule.onNodeWithText(text(R.string.no_log_entries)).assertIsDisplayed()
+        update { events = failure() }; assertFailure()
+        update { events = Loadable.Ready(listOf(logEntry())) }
         rule.onNodeWithText(LOG_EVENT).performScrollTo().assertIsDisplayed()
         rule.onNode(hasSetTextAction()).performTextInput(ABSENT_QUERY)
         rule.onNodeWithText(text(R.string.no_matching_log_entries))
@@ -440,55 +443,24 @@ class PrimaryPageStateMatrixTest {
     }
 
     @Test
-    fun VirtualMachineCreationDialog覆盖校验错误无存储和正常内容() {
-        var draft by mutableStateOf(VirtualMachineCreationDraftState())
-        var overview by mutableStateOf(virtualMachineOverview())
-        rule.setContent {
-            LanStashTheme {
-                VirtualMachineCreationDialog(
-                    overview = overview,
-                    draft = draft,
-                    submitting = false,
-                    onDraftChange = { draft = it; true },
-                    onConfirm = { true },
-                    onDismiss = { true },
-                )
-            }
-        }
-
-        rule.onNodeWithText(text(R.string.virtual_machine_name_required)).assertIsDisplayed()
-        update {
-            draft = validCreationDraft(storageId = "", step = 2)
-            overview = virtualMachineOverview()
-        }
-        rule.onNodeWithText(text(R.string.virtual_machine_no_storage))
-            .performScrollTo().assertIsDisplayed()
-        update {
-            draft = validCreationDraft(storageId = "storage-1", step = 2)
-            overview = virtualMachineOverview(
-                storages = listOf(resource("storage-1", STORAGE_NAME)),
-            )
-        }
-        rule.onNodeWithText(text(R.string.virtual_machine_review))
-            .performScrollTo().assertIsDisplayed()
+    fun VmmCreationSheet覆盖校验错误无存储和正常内容() {
+        var state by mutableStateOf(creationUiState(name = "x".repeat(65)))
+        rule.setContent { LanStashTheme { VmmCreationSheet(state, { state = state.copy(draft = it) }, {}, {}, {}, {}) } }
+        rule.onNodeWithText(text(R.string.virtual_machine_name_invalid)).assertIsDisplayed()
+        update { state = state.copy(draft = VmmCreationDraft(step = 2, name = VM_NAME), resources = state.resources!!.copy(storages = emptyList())) }
+        rule.onNodeWithText(text(R.string.virtual_machine_no_storage)).performScrollTo().assertIsDisplayed()
+        update { state = state.copy(draft = state.draft!!.copy(storage = "storage-1"),
+            resources = state.resources!!.copy(storages = listOf(VmmCreationStorage(VmmCreationRef("storage-1", STORAGE_NAME))))) }
+        rule.onNodeWithText(VM_NAME).performScrollTo().assertIsDisplayed()
         rule.onNodeWithText(STORAGE_NAME).performScrollTo().assertIsDisplayed()
     }
 
     @Test
-    fun VirtualMachineCreationDialog两倍字体校验错误和下一步可见() {
-        var draft by mutableStateOf(VirtualMachineCreationDraftState())
-        setTwoXContent {
-            VirtualMachineCreationDialog(
-                overview = virtualMachineOverview(),
-                draft = draft,
-                submitting = false,
-                onDraftChange = { draft = it; true },
-                onConfirm = { true },
-                onDismiss = { true },
-            )
-        }
-        rule.onNodeWithText(text(R.string.virtual_machine_name_required)).assertIsDisplayed()
-        rule.onNodeWithText(text(R.string.virtual_machine_next_step)).assertIsDisplayed()
+    fun VmmCreationSheet两倍字体校验错误和下一步可见() {
+        var state by mutableStateOf(creationUiState(name = "x".repeat(65)))
+        setTwoXContent { VmmCreationSheet(state, { state = state.copy(draft = it) }, {}, {}, {}, {}) }
+        rule.onNodeWithText(text(R.string.virtual_machine_name_invalid)).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText(text(R.string.virtual_machine_next_step)).performScrollTo().assertIsDisplayed()
     }
 
     private fun copyMoveState(folders: Loadable<FilePage>) = baseState(
@@ -555,27 +527,12 @@ class PrimaryPageStateMatrixTest {
             snapshot = snapshot,
             analysis = analysis,
             progress = progress,
-            diskTestStatuses = emptyMap(),
-            diskTestMutationTarget = null,
-            diskTestMutationBaseline = null,
-            diskTestMutationOperation = null,
-            diskTestMutationConfirmationRequested = false,
-            diskTestMutationInProgress = false,
-            diskTestMutationResult = null,
-            diskTestMutationFailure = null,
-            diskTestMutationRefreshFailure = null,
-            diskTestMutationRefreshInProgress = false,
-            diskTestMutationRefreshCompleted = false,
-            diskTestActionsEnabled = true,
+            smartContent = { io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasSmartTestContent(
+                io.github.qwertyuiop1995.dsmnativeclient.nas.NasSmartState(loaded = true, disks = snapshot.storageDisks),
+                onRefresh = {}, onLoad = {}, onRequest = { _, _ -> false }, onCancel = {}, onConfirm = { false }, onDismiss = {}) },
             onBeginAnalysis = {},
             onCancelAnalysis = {},
-            onLoadDiskTest = {},
-            onRequestDiskTest = { _, _, _ -> },
-            onConfirmDiskTest = { false },
-            onCancelDiskTestConfirmation = {},
-            onRefreshDiskTest = {},
-            onContinueDiskTest = {},
-            onCloseDiskTestResult = {},
+
         )
     }
 
@@ -673,13 +630,6 @@ class PrimaryPageStateMatrixTest {
         user = "Synthetic operator",
         event = LOG_EVENT,
     )
-
-    private fun validCreationDraft(storageId: String, step: Int) =
-        VirtualMachineCreationDraftState(
-            step = step,
-            name = VM_NAME,
-            storageId = storageId,
-        )
 
     private fun resource(id: String, name: String) = ManagedResource(
         id = id,

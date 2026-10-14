@@ -2,6 +2,7 @@ package io.github.qwertyuiop1995.dsmnativeclient
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
 import io.github.qwertyuiop1995.dsmnativeclient.domain.OpaqueWorkspaceTarget
 import io.github.qwertyuiop1995.dsmnativeclient.storage.SecureProfileStore
@@ -15,7 +16,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SecureProfileStoreTest {
-    private val store = SecureProfileStore(ApplicationProvider.getApplicationContext())
+    private val store = SecureProfileStore(ApplicationProvider.getApplicationContext<android.app.Application>())
 
     @After
     fun cleanup() {
@@ -56,12 +57,12 @@ class SecureProfileStoreTest {
         )
         val target = OpaqueWorkspaceTarget.FilePreview("/share/Projects/readme.md")
 
-        store.saveProfile(profile)
-        val token = requireNotNull(store.issueOpaqueWorkspaceTarget(profile.id, target))
+        store.commitConnection(store.connectionAttempt(profile.id), profile, DsmSession(profile.id, "synthetic"), null, false)
+        val token = requireNotNull(store.issueOpaqueWorkspaceTarget(profile.id, target, owner = requireNotNull(store.currentOwner(profile.id))))
 
         assertEquals(43, token.length)
         assertEquals(target, store.opaqueWorkspaceRoute(token)?.target)
-        assertEquals(token, store.issueOpaqueWorkspaceTarget(profile.id, target))
+        assertEquals(token, store.issueOpaqueWorkspaceTarget(profile.id, target, owner = requireNotNull(store.currentOwner(profile.id))))
 
         store.clearSession(profile.id)
 
@@ -84,18 +85,20 @@ class SecureProfileStoreTest {
             address = "test-nas-second",
             username = "tester",
         )
-        store.saveProfile(first)
-        store.saveProfile(second)
+        store.commitConnection(store.connectionAttempt(first.id), first, DsmSession(first.id, "synthetic-first"), null, false)
+        store.commitConnection(store.connectionAttempt(second.id), second, DsmSession(second.id, "synthetic-second"), null, false)
         val firstToken = requireNotNull(
             store.issueOpaqueWorkspaceTarget(
                 first.id,
                 OpaqueWorkspaceTarget.ChatConversation("conversation-a"),
+                owner = requireNotNull(store.currentOwner(first.id)),
             ),
         )
         val secondToken = requireNotNull(
             store.issueOpaqueWorkspaceTarget(
                 second.id,
                 OpaqueWorkspaceTarget.DownloadTask("task-b"),
+                owner = requireNotNull(store.currentOwner(second.id)),
             ),
         )
 

@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.domain.*
+import kotlinx.coroutines.CancellationException
 import java.io.InputStream
 import java.util.UUID
 
@@ -13,4 +15,31 @@ data class UploadSource(
     val contentLength: Long,
     val openInputStream: () -> InputStream,
     val requestToken: String = UUID.randomUUID().toString(),
+    val onContentRead: (UploadContentFingerprint) -> Unit = {},
 )
+
+internal fun requireConfirmedUploadMutation(result: MutationResult) {
+    if (result.errorCategory == MutationErrorCategory.VALIDATION) {
+        throw IllegalArgumentException("Invalid upload request")
+    }
+    when (result.status) {
+        MutationResultStatus.CONFIRMED_SUCCESS -> return
+        MutationResultStatus.CANCELLED_BEFORE_SUBMISSION,
+        MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
+        -> throw CancellationException("upload cancelled")
+        else -> throw DsmFailure(
+            null,
+            "The NAS did not confirm the uploaded file",
+            "Refresh the folder before uploading again.",
+            kind = when (result.status) {
+                MutationResultStatus.PERMISSION_DENIED -> DsmErrorKind.PERMISSION_DENIED
+                MutationResultStatus.UNSUPPORTED -> DsmErrorKind.FEATURE_UNSUPPORTED
+                else -> if (result.diagnosticTag == "file-station.upload.length-mismatch") {
+                    DsmErrorKind.UPLOAD_LENGTH_MISMATCH
+                } else {
+                    DsmErrorKind.CHANGE_NOT_CONFIRMED
+                }
+            },
+        )
+    }
+}

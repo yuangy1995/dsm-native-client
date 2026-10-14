@@ -28,10 +28,14 @@ class ApprovedWorkspaceUiTest {
         var path: String? = null
         var action: ClientEntryAction? = null
         rule.setContent { LanStashTheme { ClientHomeScreen(state, recent, { path = it }, {}, { action = it }) } }
+        rule.onNodeWithTag("client_home_list").performScrollToNode(hasText(text(R.string.client_recent_empty)))
         rule.onNodeWithText(text(R.string.client_recent_empty)).assertIsDisplayed()
+        rule.onNodeWithTag("client_home_list").performScrollToNode(hasText(text(R.string.client_no_active_tasks)))
         rule.onNodeWithText(text(R.string.client_no_active_tasks)).assertIsDisplayed()
         rule.runOnIdle { recent = listOf("/synthetic/work"); state = ApprovedUiFixture.state() }
-        rule.onNodeWithText("work").performClick()
+        rule.onNodeWithTag("client_home_list").performScrollToNode(hasTestTag("home_section_recentItems"))
+        rule.onNode(hasText("work") and hasAnyAncestor(hasTestTag("home_section_recentItems"))).performClick()
+        rule.onNodeWithTag("client_home_list").performScrollToNode(hasText(text(R.string.upload_file)))
         rule.onNodeWithText(text(R.string.upload_file)).performClick()
         rule.runOnIdle { assertEquals("/synthetic/work", path); assertEquals(ClientEntryAction.UPLOAD, action) }
     }
@@ -68,7 +72,8 @@ class ApprovedWorkspaceUiTest {
         rule.setContent { LanStashTheme { val value by model.workspace.collectAsState(); ClientWorkspace(requireNotNull(value), model) } }
         rule.onNodeWithContentDescription(text(R.string.client_home)).performClick()
         rule.runOnIdle { assertEquals(Module.FILES, model.workspace.value?.selectedModule) }
-        rule.onNode(hasContentDescription(text(R.string.client_files)) and hasAnyAncestor(hasTestTag("client_bottom_navigation")))
+        rule.onNode(hasContentDescription(text(R.string.client_files)) and hasAnyAncestor(
+            hasTestTag("client_bottom_navigation") or hasTestTag("workspace_navigation_rail")))
             .assertIsSelected()
     }
 
@@ -86,6 +91,7 @@ class ApprovedWorkspaceUiTest {
         rule.setContent { LanStashTheme { val state by model.workspace.collectAsState(); ClientWorkspace(requireNotNull(state), model) } }
         rule.onNodeWithContentDescription(text(R.string.client_files)).performClick()
         rule.runOnIdle { assertEquals(Module.FILES, model.workspace.value?.selectedModule) }
+        rule.runOnIdle { ApprovedUiFixture.attachUnavailablePhotosSession(model) }
         rule.onNodeWithContentDescription(text(R.string.client_photos)).performClick()
         rule.runOnIdle { assertEquals(Module.PHOTOS, model.workspace.value?.selectedModule) }
         rule.onNodeWithContentDescription(text(R.string.client_photo_backup)).assertIsDisplayed()

@@ -7,6 +7,7 @@ import androidx.compose.ui.res.stringResource
 import io.github.qwertyuiop1995.dsmnativeclient.R
 import io.github.qwertyuiop1995.dsmnativeclient.domain.*
 import io.github.qwertyuiop1995.dsmnativeclient.photos.SynologyPhotosSection
+import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
 
 @StringRes
 internal fun SynologyPhotosSection.label() = when (this) {
@@ -23,6 +24,7 @@ internal fun SynologyPhotoCategory.label() = when (this) {
     SynologyPhotoCategory.SUBJECTS -> R.string.sp_category_concept
     SynologyPhotoCategory.LOCATIONS -> R.string.sp_category_location
     SynologyPhotoCategory.TAGS -> R.string.sp_category_tags
+    SynologyPhotoCategory.SIMILAR -> R.string.sp_category_similar
     SynologyPhotoCategory.VIDEOS -> R.string.sp_category_videos
 }
 
@@ -34,7 +36,13 @@ internal fun SynologyPhotoShareScope.label() = when (this) {
 }
 
 @Composable
-internal fun photoError(error: Throwable): String = stringResource(when ((error as? SynologyPhotoFailure)?.kind) {
+internal fun photoError(error: Throwable): String {
+    if (error is io.github.qwertyuiop1995.dsmnativeclient.photos.SynologyPhotoDeletionFailure) return photoDeletionError(error)
+    if (error is io.github.qwertyuiop1995.dsmnativeclient.photos.SynologyPhotoEditFailure) return photoEditError(error)
+    if (error is io.github.qwertyuiop1995.dsmnativeclient.photos.SynologyPhotoAlbumFailure) return photoAlbumError(error)
+    val failure = error as? DsmFailure ?: error.cause as? DsmFailure
+    if (failure?.kind in setOf(DsmErrorKind.LOCAL_NETWORK_PERMISSION_REQUIRED, DsmErrorKind.BACKGROUND_EXECUTION_UNAVAILABLE)) return failure!!.localize(LocalContext.current).combined
+    return stringResource(when ((error as? SynologyPhotoFailure)?.kind) {
     SynologyPhotoFailureKind.UNAVAILABLE -> R.string.sp_service_unavailable
     SynologyPhotoFailureKind.PERMISSION -> R.string.sp_service_permission
     SynologyPhotoFailureKind.INVALID_RESPONSE -> R.string.sp_service_invalid_response
@@ -44,3 +52,4 @@ internal fun photoError(error: Throwable): String = stringResource(when ((error 
     SynologyPhotoFailureKind.DELETE_FAILED -> R.string.sp_delete_failed
     else -> R.string.sp_media_failed
 })
+}

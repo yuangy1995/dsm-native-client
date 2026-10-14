@@ -1,5 +1,16 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.downloads
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
+import io.github.qwertyuiop1995.dsmnativeclient.downloads.DownloadActionKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.ResourceState
 import androidx.compose.ui.semantics.contentDescription
 import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
 import io.github.qwertyuiop1995.dsmnativeclient.ui.navigation.*
@@ -99,6 +110,14 @@ import io.github.qwertyuiop1995.dsmnativeclient.ui.formatBytes
 
 @Composable
 internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
+    val creationForm by model.downloadCreation.state.collectAsState()
+    var selecting by remember(state.profile.id) { mutableStateOf(false) }
+    var selection by remember(state.profile.id) { mutableStateOf(emptySet<String>()) }
+    val tasks = (state.downloads as? Loadable.Ready)?.value.orEmpty()
+    LaunchedEffect(state.downloadDetailsTask?.id, state.downloadDetails) {
+        if (state.downloadDetails == Loadable.Idle) state.downloadDetailsTask?.let(model::openDownloadTaskDetails)
+    }
+    fun toggle(task: DownloadTask) { selection = if (task.id in selection) selection - task.id else selection + task.id }
     var query by rememberSaveable(state.profile.id) { mutableStateOf("") }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var status by rememberSaveable { mutableStateOf(ClientTaskStatus.ACTIVE) }
@@ -114,11 +133,13 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
     }
     var selected by remember { mutableStateOf<DownloadTask?>(null) }
     var settingsUnavailable by rememberSaveable { mutableStateOf(false) }
+    var fileSelectionToken by remember { mutableStateOf<Long?>(null) }
     val taskFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
         uri?.let {
-            if (!model.createDownloadFromFile(it)) model.openDownloadCreationEditor()
+            fileSelectionToken?.let { token -> model.createDownloadFromFile(it, token) }
+            fileSelectionToken = null
         }
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -173,7 +194,21 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
             }
             if (searchVisible) ClientSearchField(query, { query = it }, stringResource(R.string.client_search_downloads),
                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            if (selecting) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.download_batch_selected, selection.size))
+                val chosen = tasks.filter { it.id in selection }
+                TextButton(onClick = { model.downloadActions.requestTasks(chosen, DownloadActionKind.PAUSE); selecting = false; selection = emptySet() },
+                    enabled = chosen.isNotEmpty() && chosen.all { it.status in setOf(ResourceState.RUNNING, ResourceState.WAITING) }) { Text(stringResource(R.string.pause)) }
+                TextButton(onClick = { model.downloadActions.requestTasks(chosen, DownloadActionKind.RESUME); selecting = false; selection = emptySet() },
+                    enabled = chosen.isNotEmpty() && chosen.all { it.status == ResourceState.PAUSED }) { Text(stringResource(R.string.resume)) }
+                TextButton(onClick = { model.downloadActions.requestTasks(chosen, DownloadActionKind.REMOVE); selecting = false; selection = emptySet() }, enabled = chosen.isNotEmpty()) { Text(stringResource(R.string.remove_task)) }
+                TextButton(onClick = { model.downloadActions.requestTasks(chosen, DownloadActionKind.END_AND_MOVE); selecting = false; selection = emptySet() }, enabled = chosen.isNotEmpty()) { Text(stringResource(R.string.remove_task_and_files)) }
+                TextButton(onClick = { if (model.beginDownloadTasksDestinationSelection(selection)) { selecting = false; selection = emptySet() } }, enabled = chosen.isNotEmpty() && state.supportsDownloadTaskDestinationEditing) { Text(stringResource(R.string.change_download_destination)) }
+                TextButton(onClick = { selecting = false; selection = emptySet() }) { Text(stringResource(R.string.cancel)) }
+            }
             if (optionsVisible) ClientSheet(stringResource(R.string.client_downloads), { optionsVisible = false }) {
+                ClientRow(stringResource(R.string.download_actions_title), Icons.Outlined.History) { optionsVisible = false; model.downloadActions.show() }
+                ClientRow(stringResource(R.string.download_batch_select), Icons.Outlined.Checklist, enabled = tasks.isNotEmpty()) { optionsVisible = false; selecting = true }
                 if (state.supportsDownloadRss || state.supportsDownloadBtSearch) ClientRow(
                     stringResource(R.string.download_discovery), Icons.Outlined.Search, enabled = creationActionsEnabled) {
                     optionsVisible = false; model.openDownloadDiscovery()
@@ -183,53 +218,17 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
                     if (state.supportsDownloadSettings) model.openDownloadSettings() else settingsUnavailable = true
                 }
             }
-            if (downloadControl.mutationResult != null || downloadControl.mutationFailure != null) {
-                DownloadControlMutationFeedbackCard(
-                    result = downloadControl.mutationResult,
-                    failure = downloadControl.mutationFailure,
-                    refreshFailure = downloadControl.mutationRefreshFailure,
-                    refreshInProgress = downloadControl.mutationRefreshInProgress,
-                    refreshCompleted = downloadControl.mutationRefreshCompleted,
-                    mustRefresh = downloadControlRequiresRefreshBeforeDismiss(downloadControl),
-                    currentMatches = downloadControl.mutationRefreshMatches,
-                    deleteFiles = downloadControl.target?.operation ==
-                        DownloadControlOperation.DELETE_TASK_AND_FILES,
-                    onRefresh = model::refreshDownloadControlMutation,
-                    onDismiss = { model.dismissDownloadControlMutation() },
-                )
-            }
-            if (destinationEdit.mutationResult != null || destinationEdit.mutationFailure != null) {
-                DownloadControlMutationFeedbackCard(
-                    result = destinationEdit.mutationResult,
-                    failure = destinationEdit.mutationFailure,
-                    refreshFailure = destinationEdit.mutationRefreshFailure,
-                    refreshInProgress = destinationEdit.mutationRefreshInProgress,
-                    refreshCompleted = destinationEdit.mutationRefreshCompleted,
-                    mustRefresh = downloadDestinationEditRequiresRefreshBeforeDismiss(destinationEdit),
-                    currentMatches = destinationEdit.mutationRefreshMatches,
-                    deleteFiles = false,
-                    onRefresh = model::refreshDownloadDestinationEditMutation,
-                    onDismiss = { model.dismissDownloadDestinationEditMutation() },
-                )
-            }
-            if (
-                downloadCreation.target != null || downloadCreation.mutationInProgress ||
-                downloadCreation.mutationResult != null || downloadCreation.mutationFailure != null
-            ) {
-                DownloadCreationMutationFeedbackCard(
-                    state = downloadCreation,
-                    mustRefresh = downloadCreationRequiresRefreshBeforeDismiss(downloadCreation),
-                    onRefresh = model::refreshDownloadCreationMutation,
-                    onDismiss = { model.dismissDownloadCreationMutation() },
-                    onEdit = { model.editDownloadCreationAfterResult() },
-                )
-            }
             if (state.downloadAdvancedRead.supportsActivity) {
                 DownloadActivitySummary(
                     activity = state.downloadAdvancedRead.activity,
                     onRetry = model::loadDownloadActivity,
                 )
             }
+            if (state.downloadListRefreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
+            state.downloadListFailure?.let { failure -> Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(failure.localize(LocalContext.current).combined, Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { model.load(Module.DOWNLOADS) }) { Text(stringResource(R.string.retry)) }
+            } }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (expandedLayout) {
                     Row(Modifier.fillMaxSize()) {
@@ -240,6 +239,8 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
                             selectedTaskId = state.downloadDetailsTask?.id,
                             actionsEnabled = downloadActionsEnabled,
                             onTaskActions = { selected = it },
+                            selection = selection, selecting = selecting, onToggle = ::toggle,
+                            onLongPress = { selecting = true; toggle(it) },
                             query = query, status = status,
                             modifier = Modifier.weight(0.42f).fillMaxSize(),
                         )
@@ -254,9 +255,8 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
                                 )
                             }
                         } else {
-                            DownloadTaskDetailsPane(
-                                task = detail,
-                                onDismiss = model::closeDownloadTaskDetails,
+                            DownloadLoadedDetails(
+                                state = state, model = model, phone = false,
                                 modifier = Modifier
                                     .weight(0.58f)
                                     .fillMaxSize()
@@ -272,44 +272,18 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
                         selectedTaskId = null,
                         actionsEnabled = downloadActionsEnabled,
                         onTaskActions = { selected = it },
+                        selection = selection, selecting = selecting, onToggle = ::toggle,
+                        onLongPress = { selecting = true; toggle(it) },
                         query = query, status = status,
                     )
                 }
             }
         }
     }
-    if (state.downloadCreationState.editorVisible) {
-        DownloadDialog(
-            state = state,
-            model = model,
-            onConfirm = { uri, destination ->
-                val sourceKind = if (uri.trim().startsWith("magnet:", ignoreCase = true)) {
-                    DownloadCreationSourceKind.MAGNET
-                } else {
-                    DownloadCreationSourceKind.LINK
-                }
-                if (model.createDownload(uri, destination, sourceKind)) {
-                    model.cancelDownloadDestinationSelection()
-                }
-            },
-            onChooseFile = {
-                model.cancelDownloadDestinationSelection()
-                taskFileLauncher.launch(
-                    arrayOf(
-                        "application/x-bittorrent",
-                        "application/x-nzb",
-                        "text/plain",
-                        "application/octet-stream",
-                    ),
-                )
-            },
-            onDismiss = {
-                if (model.closeDownloadCreationEditor()) {
-                    model.cancelDownloadDestinationSelection()
-                }
-            },
-        )
-    }
+    if (creationForm.visible) DownloadDialog(state, model, onChooseFile = {
+        fileSelectionToken = model.downloadCreation.selectionToken
+        taskFileLauncher.launch(arrayOf("application/x-bittorrent", "application/x-nzb", "text/plain", "application/octet-stream"))
+    }, onDismiss = { model.closeDownloadCreationEditor(); model.cancelDownloadDestinationSelection() })
     if (state.downloadSettingsState.editorVisible) {
         DownloadSettingsDialog(
             state = state,
@@ -319,40 +293,22 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
             onRefreshMutation = model::refreshDownloadSettingsMutation,
             onDismissMutation = model::dismissDownloadSettingsMutation,
             onDismiss = model::closeDownloadSettings,
+            onChooseDestination = model::beginDownloadDestinationSelection,
         )
     }
+    if (state.downloadSettingsState.editorVisible && state.downloadDestinationPicker != null) DownloadDestinationDialog(state, model,
+        onSelected = { path -> state.downloadSettingsState.draft?.let { model.updateDownloadSettingsDraft(it.copy(destination = path.removePrefix("/"))) }; model.cancelDownloadDestinationSelection() },
+        onDismiss = model::cancelDownloadDestinationSelection)
     if (state.downloadAdvancedRead.discoveryVisible) {
         DownloadDiscoveryDialog(
             state = state,
             model = model,
             canCreateTask = creationActionsEnabled,
             onCreateTask = { title, uri, sourceKind ->
-                if (model.beginDiscoveryDownloadCreation(title, uri, sourceKind)) {
-                    model.beginDownloadDestinationSelection()
-                }
+                model.beginDiscoveryDownloadCreation(title, uri, sourceKind)
             },
             onDismiss = { model.closeDownloadDiscovery() },
         )
-    }
-    val pendingDiscoveryUri = state.downloadCreationState.pendingDiscoveryUri
-    val pendingDiscoverySource = state.downloadCreationState.pendingDiscoverySource
-    if (pendingDiscoveryUri != null && pendingDiscoverySource != null) {
-        if (state.downloadDestinationPicker != null) {
-            DownloadDestinationDialog(
-                state = state,
-                model = model,
-                onSelected = { destination ->
-                    if (model.createDownload(pendingDiscoveryUri, destination, pendingDiscoverySource)) {
-                        model.cancelDownloadDestinationSelection()
-                        model.cancelDiscoveryDownloadCreation()
-                    }
-                },
-                onDismiss = {
-                    model.cancelDownloadDestinationSelection()
-                    model.cancelDiscoveryDownloadCreation()
-                },
-            )
-        }
     }
     if (settingsUnavailable) {
         AlertDialog(
@@ -390,20 +346,7 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
     }
     val showDetailsDialog = state.downloadDetailsTask != null && !expandedLayout
     if (showDetailsDialog) state.downloadDetailsTask?.let { task ->
-        DownloadTaskDetailsDialog(task = task, onDismiss = model::closeDownloadTaskDetails)
-    }
-    downloadControl.target
-        ?.takeIf { downloadControl.confirmationRequested }
-        ?.let { target ->
-        DownloadDeletionConfirmationDialog(
-            taskTitle = target.taskBaseline.title.ifBlank {
-                stringResource(R.string.unnamed_download)
-            },
-            deleteFiles = target.operation == DownloadControlOperation.DELETE_TASK_AND_FILES,
-            persistentRejection = downloadControl.mutationFailure != null,
-            onConfirm = model::confirmDownloadDeletion,
-            onDismiss = model::cancelDownloadDeletion,
-        )
+        DownloadLoadedDetails(state, model, phone = true)
     }
     if (destinationEdit.selectionTaskBaseline != null && state.downloadDestinationPicker != null) {
         val sameDestination = state.downloadDestinationPicker.location.path.trim() ==
@@ -420,21 +363,9 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
             } else null,
         )
     }
-    destinationEdit.target
-        ?.takeIf { destinationEdit.confirmationRequested }
-        ?.let { target ->
-            DownloadDestinationEditConfirmationDialog(
-                taskTitle = target.taskBaseline.title.ifBlank {
-                    stringResource(R.string.unnamed_download)
-                },
-                currentDestination = target.taskBaseline.destination,
-                newDestination = target.destinationBaseline.path,
-                persistentRejection = destinationEdit.mutationFailure != null,
-                onConfirm = model::confirmDownloadDestinationEdit,
-                onDismiss = model::cancelDownloadDestinationEdit,
-            )
-        }
     }
+    DownloadActionsPanel(model.downloadActions, tasks)
+
 }
 
 @Composable
@@ -506,6 +437,7 @@ private fun DownloadTaskList(
     onTaskActions: (DownloadTask) -> Unit,
     query: String,
     status: ClientTaskStatus,
+    selection: Set<String>, selecting: Boolean, onToggle: (DownloadTask) -> Unit, onLongPress: (DownloadTask) -> Unit,
     modifier: Modifier = Modifier.fillMaxSize(),
 ) {
     Box(modifier) {
@@ -525,10 +457,10 @@ private fun DownloadTaskList(
                 contentPadding = PaddingValues(bottom = 96.dp),
             ) {
                 items(visible, key = DownloadTask::id) { task ->
-                    val isSelected = expanded && selectedTaskId == task.id
+                    val isSelected = if (selecting) task.id in selection else expanded && selectedTaskId == task.id
                     val rowModifier = Modifier.fillMaxWidth().heightIn(min = 76.dp)
                         .background(if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-                        .clickable { model.openDownloadTaskDetails(task) }
+                        .combinedClickable(onClick = { if (selecting) onToggle(task) else model.openDownloadTaskDetails(task) }, onLongClick = { onLongPress(task) })
                         .semantics { selected = isSelected }
                     ListItem(
                         headlineContent = {
@@ -540,7 +472,7 @@ private fun DownloadTaskList(
                         },
                         supportingContent = {
                             Column {
-                                Text(task.status.displayName())
+                                Text(task.displayStatus())
                                 val total = task.size
                                 val transferred = task.transferred
                                 if (total != null && total > 0 && transferred != null) {
@@ -553,7 +485,7 @@ private fun DownloadTaskList(
                                 }
                             }
                         },
-                        leadingContent = { StatusIcon(task.status) },
+                        leadingContent = { if (selecting) Checkbox(task.id in selection, onCheckedChange = { onToggle(task) }) else StatusIcon(task.status) },
                         trailingContent = {
                             val taskTitle = task.title.ifBlank {
                                 stringResource(R.string.unnamed_download)
@@ -588,13 +520,12 @@ private fun DownloadTaskList(
 private fun DownloadDialog(
     state: WorkspaceState,
     model: AppViewModel,
-    onConfirm: (String, String?) -> Unit,
     onChooseFile: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val creation = state.downloadCreationState
-    val uri = creation.uriDraft
-    val destination = creation.destinationDraft
+    val creation by model.downloadCreation.state.collectAsState()
+    val uri = creation.uri
+    val destination = creation.destination
     ClientPageDialog(stringResource(R.string.add_download_task), onDismiss) {
         Column(Modifier.fillMaxSize()) {
             Column(
@@ -606,7 +537,16 @@ private fun DownloadDialog(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                OutlinedTextField(
+                if (creation.copying) LinearProgressIndicator(Modifier.fillMaxWidth())
+                creation.failure?.let { Text(it.localize(LocalContext.current).combined, color = MaterialTheme.colorScheme.error) }
+                creation.title?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
+                if (creation.filename != null) {
+                    Text(creation.filename.orEmpty(), style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = { model.downloadCreation.useLink() }, enabled = !creation.copying) { Text(stringResource(R.string.download_creation_use_link)) }
+                    OutlinedTextField(creation.password, { model.downloadCreation.update(password = it) }, label = { Text(stringResource(R.string.download_creation_password)) },
+                        visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        enabled = !creation.copying, singleLine = true, modifier = Modifier.fillMaxWidth())
+                } else OutlinedTextField(
                     value = uri,
                     onValueChange = { model.updateDownloadCreationDraft(it, destination) },
                     label = { Text(stringResource(R.string.url_or_magnet)) },
@@ -631,7 +571,8 @@ private fun DownloadDialog(
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.browse_nas_folders))
                 }
-                Button(onClick = onChooseFile, modifier = Modifier.fillMaxWidth()) {
+                if (destination.isNotEmpty()) TextButton(onClick = { model.downloadCreation.update(destination = "") }) { Text(stringResource(R.string.download_creation_default)) }
+                Button(onClick = onChooseFile, enabled = !creation.copying, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Outlined.UploadFile, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.choose_download_task_file))
@@ -642,8 +583,8 @@ private fun DownloadDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Button(onClick = { onConfirm(uri, destination.ifBlank { null }) },
-                enabled = uri.isNotBlank() && !state.isPerformingAction,
+            Button(onClick = { model.downloadCreation.submit() },
+                enabled = (uri.isNotBlank() || creation.filename != null) && !creation.copying,
                 modifier = Modifier.fillMaxWidth().padding(20.dp).heightIn(min = 52.dp)) {
                 Text(stringResource(R.string.create_task))
             }
@@ -659,4 +600,24 @@ private fun DownloadDialog(
             },
         )
     }
+}
+
+@Composable
+private fun DownloadLoadedDetails(state: WorkspaceState, model: AppViewModel, phone: Boolean, modifier: Modifier = Modifier) {
+    val selected = state.downloadDetailsTask ?: return
+    @Composable fun content() {
+        when (val details = state.downloadDetails) {
+            is Loadable.Ready -> if (phone) DownloadTaskDetailsContent(details.value, Modifier.fillMaxSize())
+                else DownloadTaskDetailsPane(details.value, model::closeDownloadTaskDetails, Modifier.fillMaxSize())
+            is Loadable.Failed -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(details.error.localize(LocalContext.current).combined)
+                TextButton(onClick = { model.openDownloadTaskDetails(selected) }) { Text(stringResource(R.string.retry)) }
+            }
+            else -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LinearProgressIndicator(Modifier.fillMaxWidth()); Text(stringResource(R.string.download_details_loading))
+            }
+        }
+    }
+    if (phone) ClientPageDialog(selected.title, model::closeDownloadTaskDetails) { content() }
+    else Box(modifier) { content() }
 }

@@ -9,6 +9,8 @@ import io.github.qwertyuiop1995.dsmnativeclient.data.DsmRepository
 import io.github.qwertyuiop1995.dsmnativeclient.data.PersistedUpload
 import io.github.qwertyuiop1995.dsmnativeclient.data.TransferStore
 import io.github.qwertyuiop1995.dsmnativeclient.data.UploadSource
+import io.github.qwertyuiop1995.dsmnativeclient.data.contentFingerprint
+import io.github.qwertyuiop1995.dsmnativeclient.data.matchesUploadContent
 import io.github.qwertyuiop1995.dsmnativeclient.data.toPersistedMutationResult
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
@@ -18,9 +20,6 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultCounts
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.TransferDirection
 import io.github.qwertyuiop1995.dsmnativeclient.domain.TransferState
-import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
-import io.github.qwertyuiop1995.dsmnativeclient.network.DsmConnectionResolver
-import io.github.qwertyuiop1995.dsmnativeclient.storage.SecureProfileStore
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 
@@ -36,9 +35,13 @@ class PhotoBackupWorker(
         val initial = transfers.upload(taskId) ?: return Result.failure()
         val executionId = id.toString()
         if (!initial.ownsUploadExecution(executionId)) return Result.success()
+        // 目录任务不能被旧的单文件执行器当成树 URI 文件上传。
+        if (runCatching { transfers.folderUploadPlan(taskId) }.fold({ it != null }, { true })) return Result.failure()
         if (initial.state !in setOf(TransferState.WAITING, TransferState.RUNNING)) {
             return Result.success(progressData(initial.completedBytes, initial.expectedBytes))
         }
+        val openTaskIntent = TransferNotifications.openAppIntent(applicationContext, taskId,
+            io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceRecordKind.UPLOAD)
         setForeground(
             TransferNotifications.foreground(
                 applicationContext,
@@ -48,6 +51,7 @@ class PhotoBackupWorker(
                 initial.completedBytes,
                 initial.expectedBytes,
                 TransferDirection.UPLOAD,
+                openTaskIntent = openTaskIntent,
             ),
         )
         if (initial.state == TransferState.RUNNING) {
@@ -114,12 +118,33 @@ class PhotoBackupWorker(
                     return Result.success(progressData(prepared?.completedBytes ?: 0, initial.expectedBytes))
                 }
             }
+            val uri = Uri.parse(initial.sourceUri)
+            val source = UploadSource(
+                displayName = initial.title,
+                contentType = initial.contentType,
+                contentLength = initial.expectedBytes,
+                openInputStream = {
+                    applicationContext.contentResolver.openInputStream(uri)
+                        ?: throw IOException("The selected photo is no longer available")
+                },
+                onContentRead = { fingerprint ->
+                    try { repo.requireCurrentOwner() } catch (failure: DsmFailure) {
+                        throw IOException("Upload connection changed", failure)
+                    }
+                    transfers.saveUploadContent(initial, executionId, fingerprint)
+                },
+            )
             val targetPath = initial.destinationPath.trimEnd('/') + "/" + initial.title
             val existing = if (repo.itemExists(targetPath)) repo.fileInfo(targetPath) else null
-            val decision = if (initial.backupMode) {
+            var decision = if (initial.backupMode) {
                 backupTargetDecision(existing, initial.expectedBytes)
             } else {
                 userUploadTargetDecision(existing, initial.overwrite)
+            }
+            if (decision == BackupTargetDecision.VERIFY_CONTENT) {
+                decision = if (repo.matchesUploadContent(requireNotNull(existing), source.contentFingerprint())) {
+                    BackupTargetDecision.SKIP_MATCHING
+                } else BackupTargetDecision.CONFLICT
             }
             when (decision) {
                 BackupTargetDecision.SKIP_MATCHING -> {
@@ -142,17 +167,8 @@ class PhotoBackupWorker(
                     )
                 }
                 BackupTargetDecision.UPLOAD -> Unit
+                BackupTargetDecision.VERIFY_CONTENT -> error("Content must be checked before deciding")
             }
-            val uri = Uri.parse(initial.sourceUri)
-            val source = UploadSource(
-                displayName = initial.title,
-                contentType = initial.contentType,
-                contentLength = initial.expectedBytes,
-                openInputStream = {
-                    applicationContext.contentResolver.openInputStream(uri)
-                        ?: throw IOException("The selected photo is no longer available")
-                },
-            )
             var lastPublishedAt = 0L
             uploadAttemptStarted = true
             val uploadResult = repo.uploadResult(
@@ -182,6 +198,7 @@ class PhotoBackupWorker(
                             completed,
                             total,
                             TransferDirection.UPLOAD,
+                            openTaskIntent = openTaskIntent,
                         ),
                     )
                 }
@@ -205,7 +222,7 @@ class PhotoBackupWorker(
             }
         } catch (error: CancellationException) {
             transfers.updateUpload(taskId) { current ->
-                current.cancelUploadExecution(executionId)
+                current.cancelUploadExecution(executionId, uploadAttemptStarted)
             }
             throw error
         } catch (error: Throwable) {
@@ -217,10 +234,11 @@ class PhotoBackupWorker(
                     current
                 } else {
                     current.copy(
-                        state = TransferState.FAILED,
+                        state = if (kind == DsmErrorKind.WORKSPACE_CHANGED) TransferState.PAUSED else TransferState.FAILED,
                         errorKind = kind.name,
                         requiresRefresh = current.requiresRefresh || uploadAttemptStarted && (
                             current.completedBytes > 0 || kind in setOf(
+                                DsmErrorKind.WORKSPACE_CHANGED,
                                 DsmErrorKind.CONNECTION_FAILED,
                                 DsmErrorKind.INVALID_RESPONSE,
                                 DsmErrorKind.CHANGE_NOT_CONFIRMED,
@@ -260,16 +278,9 @@ class PhotoBackupWorker(
         )
     }
 
-    private suspend fun repository(upload: PersistedUpload): DsmRepository {
-        val store = SecureProfileStore(applicationContext)
-        val profile = store.profiles().firstOrNull { it.id == upload.profileId }
-            ?: throw IllegalStateException("The saved NAS profile is unavailable")
-        val session = store.session(upload.profileId)
-            ?: throw IllegalStateException("The saved session is unavailable")
-        val api = DsmApiClient()
-        val discovered = DsmConnectionResolver(api).discover(profile)
-        return DsmRepository(discovered.profile, session, api, discovered.capabilities)
-    }
+    private suspend fun repository(upload: PersistedUpload): DsmRepository =
+        restoreTaskRepository(applicationContext,
+            io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceRecordKind.UPLOAD, upload.id, upload.profileId)
 
     companion object {
         const val KEY_TASK_ID = "task_id"
@@ -291,7 +302,7 @@ class PhotoBackupWorker(
     }
 }
 
-internal enum class BackupTargetDecision { UPLOAD, SKIP_MATCHING, CONFLICT }
+internal enum class BackupTargetDecision { VERIFY_CONTENT, UPLOAD, SKIP_MATCHING, CONFLICT }
 
 internal fun interruptedUploadResult(): MutationResult = MutationResult(
     schemaVersion = 1,
@@ -320,7 +331,7 @@ internal fun backupTargetDecision(
     expectedBytes: Long,
 ): BackupTargetDecision = when {
     existing == null -> BackupTargetDecision.UPLOAD
-    !existing.isDirectory && existing.size == expectedBytes -> BackupTargetDecision.SKIP_MATCHING
+    !existing.isDirectory && existing.size == expectedBytes -> BackupTargetDecision.VERIFY_CONTENT
     else -> BackupTargetDecision.CONFLICT
 }
 
@@ -336,7 +347,7 @@ internal fun userUploadTargetDecision(
 internal fun PersistedUpload.ownsUploadExecution(executionId: String): Boolean =
     workId.isCurrentDownloadExecution(executionId)
 
-internal fun PersistedUpload.cancelUploadExecution(executionId: String): PersistedUpload =
+internal fun PersistedUpload.cancelUploadExecution(executionId: String, attemptStarted: Boolean = false): PersistedUpload =
     if (workerCancellationDecision(state, workId, executionId) ==
         WorkerCancellationDecision.USER_CANCELLATION
     ) {
@@ -344,7 +355,7 @@ internal fun PersistedUpload.cancelUploadExecution(executionId: String): Persist
             state = TransferState.CANCELLED,
             errorKind = null,
             requiresRefresh = requiresRefresh || directoryMutationResult?.requiresRefresh == true ||
-                uploadMutationResult?.requiresRefresh == true || !backupMode && completedBytes > 0,
+                uploadMutationResult?.requiresRefresh == true || attemptStarted || completedBytes > 0,
         )
     } else {
         this

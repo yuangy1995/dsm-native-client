@@ -1,5 +1,8 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
+import io.github.qwertyuiop1995.dsmnativeclient.domain.*
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
@@ -27,16 +30,16 @@ import org.junit.Test
 class HardwareSettingsMutationResultTest {
     @Test
     fun `正式保存携带完整硬件基线并整体回读`() = runBlocking {
-        val transport = HardwareQueueInterceptor(POWER_OFF, SUCCESS, POWER_ON)
+        val transport = HardwareQueueInterceptor(POWER_OFF, SUCCESS, POWER_ON, POWER_ON)
         val original = emptyHardware().copy(restartsAfterPowerFailure = false)
 
-        val result = repository(transport, POWER to 1).saveHardwareSettingsResult(
+        val result = repository(transport, POWER to 1).saveHardware(
             original, original.copy(restartsAfterPowerFailure = true),
         )
 
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         assertEquals(1, result.counts.succeeded)
-        assertEquals(listOf("get", "set", "get"), transport.methods())
+        assertEquals(listOf("get", "set", "get", "get"), transport.methods())
         assertTrue(transport.versions().all { it == "1" })
     }
 
@@ -45,7 +48,7 @@ class HardwareSettingsMutationResultTest {
         val transport = HardwareQueueInterceptor(POWER_ON)
         val original = emptyHardware().copy(restartsAfterPowerFailure = false)
 
-        val result = repository(transport, POWER to 1).saveHardwareSettingsResult(
+        val result = repository(transport, POWER to 1).saveHardware(
             original, original.copy(restartsAfterPowerFailure = true),
         )
 
@@ -60,11 +63,10 @@ class HardwareSettingsMutationResultTest {
         val transport = HardwareQueueInterceptor()
         val original = emptyHardware().copy(restartsAfterPowerFailure = false)
 
-        val result = repository(transport).saveHardwareSettingsResult(
+        rejected(DsmErrorKind.FEATURE_UNSUPPORTED) { repository(transport).saveHardware(
             original, original.copy(restartsAfterPowerFailure = true),
         )
-
-        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
+        }
         assertTrue(transport.requests.isEmpty())
     }
 
@@ -82,10 +84,10 @@ class HardwareSettingsMutationResultTest {
 
     @Test
     fun `蜂鸣器部分可信字段只提交该字段且固定 v1`() = runBlocking {
-        val transport = HardwareQueueInterceptor(BEEP_FAN_OFF, SUCCESS, BEEP_FAN_ON)
+        val transport = HardwareQueueInterceptor(BEEP_FAN_OFF, SUCCESS, BEEP_FAN_ON, BEEP_FAN_ON)
         val original = emptyHardware().copy(isFanFailureAlertEnabled = false)
 
-        val result = repository(transport, BEEP to 1).saveHardwareSettingsResult(
+        val result = repository(transport, BEEP to 1).saveHardware(
             original, original.copy(isFanFailureAlertEnabled = true),
         )
 
@@ -130,18 +132,15 @@ class HardwareSettingsMutationResultTest {
             ),
         )
 
-        val result = repository(transport, UPS to 1)
-            .saveHardwareSettingsResult(original, desired)
-
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertEquals(MutationErrorCategory.VALIDATION, result.errorCategory)
-        assertFalse(result.submitted)
+        rejected(DsmErrorKind.NAS_SERVICE_INVALID) { repository(transport, UPS to 1)
+            .saveHardware(original, desired)
+        }
         assertTrue(transport.requests.isEmpty())
     }
 
     @Test
     fun `UPS 地址字段明确为空时可从正式入口配置新地址`() = runBlocking {
-        val transport = HardwareQueueInterceptor(UPS_OFF, SUCCESS, UPS_ON)
+        val transport = HardwareQueueInterceptor(UPS_OFF, SUCCESS, UPS_ON, UPS_ON)
         val original = emptyHardware().copy(
             ups = NasUpsSettings(false, "USB", 60, false, false, "", ""),
         )
@@ -156,11 +155,17 @@ class HardwareSettingsMutationResultTest {
         )
 
         val result = repository(transport, UPS to 1)
-            .saveHardwareSettingsResult(original, desired)
+            .saveHardware(original, desired)
 
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         assertEquals("ups.example.invalid", transport.requests[1].hardwareFields()["net_server_ip"])
-        assertEquals(listOf("get", "set", "get"), transport.methods())
+        assertEquals(listOf("get", "set", "get", "get"), transport.methods())
+    }
+
+    private suspend fun DsmRepository.saveHardware(original: NasHardwareSettings, desired: NasHardwareSettings): MutationResult =
+        nasServices.save(nasServices.plan(NasServiceValue.Hardware(original), NasServiceValue.Hardware(desired))) { }
+    private suspend fun rejected(kind: DsmErrorKind, action: suspend () -> Unit) {
+        val error = try { action(); error("Expected rejection") } catch (failure: DsmFailure) { failure }; assertEquals(kind, error.kind)
     }
 
     private fun emptyHardware() = NasHardwareSettings(
@@ -171,11 +176,16 @@ class HardwareSettingsMutationResultTest {
     private fun repository(
         interceptor: Interceptor,
         vararg versions: Pair<String, Int>,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("synthetic", "Synthetic", "https://nas.example.invalid", "operator"),
         DsmSession("synthetic", "synthetic-session", "synthetic-token"),
-        DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
-        versions.associate { (name, max) -> name to ApiCapability(name, "entry.cgi", 1, max) },
+        DsmApiClient(OkHttpClient.Builder().addInterceptor { chain ->
+            if (chain.request().hardwareFields()["api"] == "SYNO.Core.System") Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("synthetic")
+                .body("""{"success":true,"data":{"firmware_ver":"DSM 7.2.1-69057 Update 12","buildnumber":69057,"smallfixnumber":12}}""".toResponseBody("application/json".toMediaType())).build()
+            else chain.proceed(chain.request())
+        }.addInterceptor(interceptor).build()),
+        versions.associate { (name, max) -> name to ApiCapability(name, "entry.cgi", 1, max) } +
+            ("SYNO.Core.System" to ApiCapability("SYNO.Core.System", "entry.cgi", 1, 1)),
     )
 
     private companion object {
@@ -217,6 +227,6 @@ private class HardwareQueueInterceptor(vararg responses: String) : Interceptor {
 }
 
 private fun Request.hardwareFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return (0 until form.size).associate { form.name(it) to form.value(it) }
 }

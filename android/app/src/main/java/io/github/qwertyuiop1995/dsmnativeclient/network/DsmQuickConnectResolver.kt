@@ -107,6 +107,7 @@ internal class DsmQuickConnectResolver(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: DsmFailure) {
+                if (error.stopsConnectionFallback()) throw error
                 if (error.kind == DsmErrorKind.QUICK_CONNECT_RELAY_DISABLED ||
                     error.kind == DsmErrorKind.QUICK_CONNECT_IDENTITY_MISMATCH
                 ) {
@@ -152,6 +153,7 @@ internal class DsmQuickConnectResolver(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: DsmFailure) {
+                if (error.stopsConnectionFallback()) throw error
                 lastFailure = error
             }
         }
@@ -240,6 +242,7 @@ internal class DsmQuickConnectResolver(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: DsmFailure) {
+                if (error.stopsConnectionFallback()) throw error
                 if (error.kind == DsmErrorKind.QUICK_CONNECT_IDENTITY_MISMATCH) throw error
                 if (attempt < 5) delay(1_000L)
             }
@@ -440,7 +443,11 @@ internal class DsmQuickConnectResolver(
         enqueue(object : Callback {
             override fun onFailure(call: Call, error: IOException) {
                 if (!continuation.isCancelled) {
-                    continuation.resumeWithException(serviceUnavailable())
+                    continuation.resumeWithException(when (error) {
+                        is LocalNetworkPermissionException -> localNetworkPermissionFailure()
+                        is javax.net.ssl.SSLException -> DsmFailure(null, "Secure connection failed", "Check the address and certificate.", kind = DsmErrorKind.TLS_UNTRUSTED)
+                        else -> serviceUnavailable()
+                    })
                 }
             }
 

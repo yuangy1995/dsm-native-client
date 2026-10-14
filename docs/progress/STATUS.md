@@ -1,9 +1,9 @@
 <!-- doc-role: status -->
-<!-- last-reviewed: 2026-10-10 -->
+<!-- last-reviewed: 2026-10-13 -->
 
 # 当前开发进度
 
-更新至 2026-10-10。本页只记录当前结论与下一步；平台范围见[功能矩阵](PLATFORM_MATRIX.md)，精确提交、命令、原失败与产物见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。源码、契约及实际结果优先于历史描述。
+更新至 2026-10-13。本页只记录当前结论与下一步；平台范围见[功能矩阵](PLATFORM_MATRIX.md)，精确提交、命令、原失败与产物见[验证历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。源码、契约及实际结果优先于历史描述。
 
 ## 当前结论
 
@@ -15,7 +15,7 @@
 | macOS Chat 与桌面集成 | 搜索、编辑、线程、投票参与、录音播放、阅读同步及通知已接入；挂载默认只读，编辑和删除分别授权 | 真实 Chat、Finder、通知、辅助功能及升级场景分别验收；[历史反馈](../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md)不替代新包结果 |
 | iPhone / iPad | M0–M7 批准范围及 M8 普通文件/照片/跨 NAS/Office 后台时间、系统分享与 Files 已接入；两端分片 UI、单元和构建已有证据 | 原云端六项失败经 `7f411313` 相关修正后按原机型本机复跑全部通过；用户已要求跳过本次等待，完整云端验收延期。共享/macOS 分组通过；截至本页复核，移动分组仍在运行或排队。保留原失败与系统时序风险，见[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) |
 | Windows | 已完成 2026-09-21 范围的业务对齐、云盘写回/恢复及 x64/ARM64 云端验证；后续 Mac 增量不自动算已移植 | 按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)推进 Photos 管理、File Station 增量与 Office，并独立完成 Windows 设备验收 |
-| Android | Compose 客户端、后台/传输、Photos 和质量门已建立；已记录 Task.edit 版本及 Chat 投票请求差异，既有云端失败仍待独立修正 | 按[Android 计划](../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)修正契约差异、收敛结构并验证目标设备；完整 JVM/Release/R8/lint 交托管 Runner |
+| Android | A0–A9已接通批准范围主流程：首页显隐、多NAS/账号、分层权限；文件/Photos/Chat/下载、NAS/套件、容器/VMM和系统分享/文件/通知/前台服务。各波次源码、聚焦JVM、原生UI及真实环境待办见[当前计划](../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)与[实施验收历史](../archive/2026-h2/ANDROID_REWRITE_IMPLEMENTATION_HISTORY_ZH.md) | A10已清理部分旧入口并完成本批129项聚焦JVM；七处页面缺口通过中文手机及英文平板深色二倍字号补验。继续旧NAS/Chat/VMM仓储测试迁移、完整写入口/版本边界复核与最终测试包；完整云端门禁、真实NAS及物理设备未验，未提交/推送/发布 |
 
 ## 验证与发布边界
 

@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -16,6 +17,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
@@ -149,7 +151,7 @@ class PersistentFeedbackFontScaleMatrixTest {
             .performScrollTo().assertIsDisplayed()
         assertReachable(R.string.refresh_and_check_ddns)
         assertReachable(R.string.continue_editing)
-        assertReachable(R.string.discard_changes)
+        assertReachable(R.string.close)
         assertLiveRegion(LiveRegionMode.Assertive)
 
         rule.runOnIdle { stage.intValue = 1 }
@@ -375,13 +377,14 @@ class PersistentFeedbackFontScaleMatrixTest {
     @Test
     fun 连接持久反馈的标题说明和操作可滚动到达() {
         val context = context()
+        val present = mutableStateOf(true)
         rule.setContent {
             feedbackViewport {
                 ConnectionMutationFeedbackCard(
                     target = connection(),
                     result = partialResult("connectionDisconnect"),
                     refreshCompleted = true,
-                    targetStillPresent = true,
+                    targetStillPresent = present.value,
                     refreshFailure = null,
                     onRefresh = {},
                     onDismiss = {},
@@ -393,8 +396,10 @@ class PersistentFeedbackFontScaleMatrixTest {
         rule.onNodeWithText(context.getString(R.string.connection_feedback_partial_message))
             .performScrollTo().assertIsDisplayed()
         assertReachable(R.string.refresh_and_check_connection)
-        assertReachable(R.string.done)
+        rule.onNodeWithText(context.getString(R.string.done)).performScrollTo().assertIsDisplayed().assertIsNotEnabled()
         assertLiveRegion(LiveRegionMode.Assertive)
+        rule.runOnIdle { present.value = false }
+        assertReachable(R.string.done)
     }
 
     @Test
@@ -448,9 +453,9 @@ class PersistentFeedbackFontScaleMatrixTest {
                         listOf("fileServiceSettingsUpdate", "terminalSettingsUpdate", "proxySettingsUpdate")[stage.intValue],
                     )
                     when (stage.intValue) {
-                        0 -> FileServiceMutationFeedbackCard(result, true, true, {}, {}, {})
-                        1 -> TerminalMutationFeedbackCard(result, true, true, {}, {}, {})
-                        else -> ProxyMutationFeedbackCard(result, true, true, {}, {}, {})
+                        0 -> FileServiceMutationFeedbackCard(result, refreshCompleted = true, canContinueEditing = true, onRefresh = {}, onContinueEditing = {}, onDismiss = {})
+                        1 -> TerminalMutationFeedbackCard(result, refreshCompleted = true, canContinueEditing = true, onRefresh = {}, onContinueEditing = {}, onDismiss = {})
+                        else -> ProxyMutationFeedbackCard(result, refreshCompleted = true, canContinueEditing = true, onRefresh = {}, onContinueEditing = {}, onDismiss = {})
                     }
                 }
             }

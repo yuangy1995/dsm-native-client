@@ -3,86 +3,277 @@ package io.github.qwertyuiop1995.dsmnativeclient.data
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import io.github.qwertyuiop1995.dsmnativeclient.domain.FileBackgroundTaskKind
-import io.github.qwertyuiop1995.dsmnativeclient.domain.FileBackgroundTaskPage
-import io.github.qwertyuiop1995.dsmnativeclient.domain.FileBackgroundTaskState
-import io.github.qwertyuiop1995.dsmnativeclient.domain.FileBackgroundTaskSummary
-import io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FileServerMutationExpectedOutput
-import io.github.qwertyuiop1995.dsmnativeclient.domain.FileServerMutationOperation
-import io.github.qwertyuiop1995.dsmnativeclient.domain.FileServerMutationTarget
-import io.github.qwertyuiop1995.dsmnativeclient.domain.FileServerMutationVerification
-import io.github.qwertyuiop1995.dsmnativeclient.domain.Module
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultCounts
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.TransferState
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+
+private val transferStoreChanges = MutableStateFlow(0L)
+internal val transferChanges = transferStoreChanges.asStateFlow()
+private fun notifyTransferChanged() { transferStoreChanges.update { it + 1L } }
+
+internal data class PersistedTransferSnapshot(
+    val downloads: List<PersistedDownload>, val uploads: List<PersistedUpload>,
+    val servers: List<PersistedServerTransfer>, val imports: List<PersistedVirtualMachineImageImport>,
+)
 
 /**
- * 只保存恢复传输所需的非凭据状态；SID、令牌、账号和 NAS 地址不进入此存储。
+ * 只保存恢复传输所需的非凭据状态；SID、密码和令牌不进入此存储；远程下载仅保留加密的来源身份。
  */
-class TransferStore(
-    context: Context,
+class TransferStore internal constructor(
+    private val preferences: android.content.SharedPreferences,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
-    private val preferences = EncryptedSharedPreferences.create(
-        context,
-        PREFERENCES_NAME,
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
+    constructor(context: Context, json: Json = Json { ignoreUnknownKeys = true }) : this(
+        EncryptedSharedPreferences.create(context, PREFERENCES_NAME,
+            MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM), json)
 
-    @Synchronized
-    fun downloads(profileId: String): List<PersistedDownload> = all().filter { it.profileId == profileId }
+    internal fun snapshot(): PersistedTransferSnapshot = synchronized(TRANSFER_STORE_LOCK) {
+        PersistedTransferSnapshot(all(), allUploads(), allServers(), allVirtualMachineImageImports())
+    }
 
-    @Synchronized
-    fun download(id: String): PersistedDownload? = all().firstOrNull { it.id == id }
+    fun downloads(profileId: String): List<PersistedDownload> = synchronized(TRANSFER_STORE_LOCK) {
+        all().filter { it.profileId == profileId }
+    }
 
-    @Synchronized
-    fun uploads(profileId: String): List<PersistedUpload> = allUploads().filter { it.profileId == profileId }
+    fun download(id: String): PersistedDownload? = synchronized(TRANSFER_STORE_LOCK) {
+        all().firstOrNull { it.id == id }
+    }
 
-    @Synchronized
-    fun upload(id: String): PersistedUpload? = allUploads().firstOrNull { it.id == id }
+    internal fun archiveDownloadPlan(record: PersistedDownload): ArchiveDownloadPlan? = synchronized(TRANSFER_STORE_LOCK) {
+        if (!record.isArchiveDownload) return@synchronized null
+        val raw = preferences.getString(archiveDownloadKey(record.id), null)
+            ?: throw ArchiveDownloadPlanUnavailable()
+        val plan = runCatching { json.decodeFromString<ArchiveDownloadPlan>(raw) }.getOrNull()
+            ?: throw ArchiveDownloadPlanUnavailable()
+        if (!plan.matches(record)) throw ArchiveDownloadPlanUnavailable()
+        plan
+    }
 
-    @Synchronized
-    fun virtualMachineImageImports(profileId: String): List<PersistedVirtualMachineImageImport> =
+    /** 清单与任务一次落盘；失败时不入队，不以普通下载覆盖同一编号。 */
+    internal fun createArchiveDownloadDurably(record: PersistedDownload, plan: ArchiveDownloadPlan): Boolean =
+        synchronized(TRANSFER_STORE_LOCK) {
+            require(plan.matches(record))
+            val existing = all()
+            if (existing.any { it.id == record.id } || preferences.contains(archiveDownloadKey(record.id))) return@synchronized false
+            preferences.edit().putString(KEY_DOWNLOADS,
+                json.encodeToString(ListSerializer(PersistedDownload.serializer()), existing + record))
+                .putString(archiveDownloadKey(record.id), json.encodeToString(plan)).commit()
+                .also { if (it) notifyTransferChanged() }
+        }
+
+    private fun archiveDownloadKey(id: String) = "archive_download_plan_v1_" +
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(id.toByteArray(Charsets.UTF_8))
+
+    internal fun vfsDownloadPlan(record: PersistedDownload): FileVFSDownloadPlan? = synchronized(TRANSFER_STORE_LOCK) {
+        if (!record.isVFSDownload) return@synchronized null
+        val raw = preferences.getString(vfsDownloadKey(record.id), null) ?: throw FileVFSDownloadPlanUnavailable()
+        val plan = runCatching { json.decodeFromString<FileVFSDownloadPlan>(raw) }.getOrNull()
+            ?: throw FileVFSDownloadPlanUnavailable()
+        if (!plan.matches(record)) throw FileVFSDownloadPlanUnavailable()
+        plan
+    }
+
+    internal fun createVFSDownloadDurably(record: PersistedDownload, plan: FileVFSDownloadPlan): Boolean =
+        synchronized(TRANSFER_STORE_LOCK) {
+            require(plan.matches(record))
+            val existing = all()
+            if (existing.any { it.id == record.id } || preferences.contains(vfsDownloadKey(record.id))) return@synchronized false
+            preferences.edit().putString(KEY_DOWNLOADS,
+                json.encodeToString(ListSerializer(PersistedDownload.serializer()), existing + record))
+                .putString(vfsDownloadKey(record.id), json.encodeToString(plan)).commit()
+                .also { if (it) notifyTransferChanged() }
+        }
+
+    private fun vfsDownloadKey(id: String) = "vfs_download_plan_v1_" +
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(id.toByteArray(Charsets.UTF_8))
+
+    fun uploads(profileId: String): List<PersistedUpload> = synchronized(TRANSFER_STORE_LOCK) {
+        allUploads().filter { it.profileId == profileId }
+    }
+
+    fun upload(id: String): PersistedUpload? = synchronized(TRANSFER_STORE_LOCK) {
+        allUploads().firstOrNull { it.id == id }
+    }
+
+    internal fun saveUploadContent(upload: PersistedUpload, executionId: String, fingerprint: UploadContentFingerprint) =
+        synchronized(TRANSFER_STORE_LOCK) {
+            val current = upload(upload.id) ?: throw java.io.IOException("Upload task is unavailable")
+            if (current.profileId != upload.profileId || current.workId != executionId ||
+                current.sourceUri != upload.sourceUri || current.expectedBytes != fingerprint.bytes
+            ) throw java.io.IOException("Upload execution changed")
+            val record = UploadContentRecord(profileId = upload.profileId, executionId = executionId, fingerprint = fingerprint)
+            if (!preferences.edit().putString(uploadContentKey(upload.id), json.encodeToString(record)).commit()) {
+                throw java.io.IOException("Upload content record could not be saved")
+            }
+        }
+
+    internal fun uploadContent(upload: PersistedUpload): UploadContentFingerprint? = synchronized(TRANSFER_STORE_LOCK) {
+        val value = preferences.getString(uploadContentKey(upload.id), null) ?: return@synchronized null
+        val record = runCatching { json.decodeFromString<UploadContentRecord>(value) }.getOrNull()
+            ?: throw java.io.IOException("Upload content record is unavailable")
+        record.takeIf { it.schemaVersion == 1 && it.profileId == upload.profileId && it.executionId == upload.workId }
+            ?.fingerprint?.takeIf { it.bytes == upload.expectedBytes }
+    }
+
+    private fun uploadContentKey(id: String) = "upload_content_v1_" +
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(id.toByteArray(Charsets.UTF_8))
+
+    internal fun hasFolderUploadPlan(id: String): Boolean = synchronized(TRANSFER_STORE_LOCK) { preferences.contains(folderUploadKey(id)) }
+
+    /** 分享草稿的整批接收与任务事实一次落盘；重建不能从同一草稿再次创建上传。 */
+    internal fun createSharedUploadsDurably(batchId: String, uploads: List<PersistedUpload>): Boolean = synchronized(TRANSFER_STORE_LOCK) {
+        require(java.util.UUID.fromString(batchId).toString() == batchId && uploads.isNotEmpty())
+        require(uploads.map { it.id }.distinct().size == uploads.size && uploads.all {
+            it.profileId == uploads.first().profileId && it.destinationPath == uploads.first().destinationPath &&
+                it.state == TransferState.WAITING && it.workId == null && !it.backupMode
+        })
+        if (sharedUploadBatchExists(batchId)) return@synchronized false
+        val current = allUploads()
+        if (current.any { old -> uploads.any { it.id == old.id } }) throw java.io.IOException("Shared task already exists")
+        if (!preferences.edit().putString(KEY_UPLOADS,
+                json.encodeToString(ListSerializer(PersistedUpload.serializer()), current + uploads))
+                .putBoolean("shared_upload_v1_$batchId", true).commit()) throw java.io.IOException("Shared tasks could not be saved")
+        notifyTransferChanged()
+        true
+    }
+
+    internal fun sharedUploadBatchExists(batchId: String): Boolean = synchronized(TRANSFER_STORE_LOCK) {
+        preferences.getBoolean("shared_upload_v1_$batchId", false)
+    }
+
+    internal fun folderUploadPlan(id: String): FolderUploadPlan? = synchronized(TRANSFER_STORE_LOCK) {
+        val raw = preferences.getString(folderUploadKey(id), null) ?: return@synchronized null
+        val plan = runCatching { json.decodeFromString<FolderUploadPlan>(raw) }.getOrNull()
+            ?: throw java.io.IOException("Folder upload plan is unavailable")
+        val upload = upload(id) ?: throw java.io.IOException("Folder upload task is unavailable")
+        if (!plan.matches(upload)) throw java.io.IOException("Folder upload identity changed")
+        plan
+    }
+
+    /** 来源清单与任务同时保存成功后才允许后台入队。 */
+    internal fun createFolderUploadDurably(upload: PersistedUpload, plan: FolderUploadPlan): Boolean = synchronized(TRANSFER_STORE_LOCK) {
+        require(plan.matches(upload) && plan.totalBytes == upload.expectedBytes)
+        val existing = allUploads()
+        if (existing.any { it.id == upload.id || it.profileId == upload.profileId && it.sourceUri == upload.sourceUri &&
+                it.destinationPath == upload.destinationPath && !it.canRemoveFinishedUpload() } ||
+            preferences.contains(folderUploadKey(upload.id))) return@synchronized false
+        val saved = preferences.edit()
+            .putString(KEY_UPLOADS, json.encodeToString(ListSerializer(PersistedUpload.serializer()), existing + upload))
+            .putString(folderUploadKey(upload.id), json.encodeToString(plan)).commit()
+        if (saved) notifyTransferChanged()
+        saved
+    }
+
+    /** 原执行器可保存迟到的确定事实；换执行器后不能覆盖新阶段或来源。 */
+    internal fun updateFolderUploadPlan(
+        id: String, executionId: String, transform: (FolderUploadPlan) -> FolderUploadPlan,
+    ): FolderUploadPlan? = synchronized(TRANSFER_STORE_LOCK) {
+        val upload = upload(id)?.takeIf { it.workId == executionId } ?: return@synchronized null
+        val current = folderUploadPlan(id) ?: throw java.io.IOException("Folder upload plan is unavailable")
+        val next = transform(current)
+        require(next.matches(upload) && next.sameDefinition(current))
+        val updated = upload.copy(completedBytes = next.completedBytes, requiresRefresh = next.requiresRefresh)
+        if (!preferences.edit()
+                .putString(folderUploadKey(id), json.encodeToString(next))
+                .putString(KEY_UPLOADS, json.encodeToString(ListSerializer(PersistedUpload.serializer()),
+                    allUploads().map { if (it.id == id) updated else it })).commit()
+        ) throw java.io.IOException("Folder upload progress could not be saved")
+        notifyTransferChanged()
+        next
+    }
+
+    private fun folderUploadKey(id: String) = "folder_upload_plan_v1_" +
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(id.toByteArray(Charsets.UTF_8))
+
+    /** 入队与手动继续共用一个原子执行权；来源和未知项不因继续而改变。 */
+    internal fun beginFolderUploadExecution(expected: PersistedUpload, executionId: String): PersistedUpload? = synchronized(TRANSFER_STORE_LOCK) {
+        if (upload(expected.id) != expected || expected.state !in setOf(TransferState.WAITING, TransferState.PAUSED, TransferState.FAILED, TransferState.CANCELLED) ||
+            expected.state == TransferState.WAITING && expected.workId != null) return@synchronized null
+        val plan = folderUploadPlan(expected.id) ?: return@synchronized null
+        val nextPlan = plan.recoveringInterruptedEntries().copy(entries = plan.recoveringInterruptedEntries().entries.map {
+            if (it.source.sourceIssue == null && it.state in setOf(FolderUploadEntryState.FAILED, FolderUploadEntryState.PAUSED, FolderUploadEntryState.CANCELLED))
+                it.copy(state = FolderUploadEntryState.PENDING, errorKind = null) else it
+        })
+        val next = expected.copy(workId = executionId, state = TransferState.WAITING, errorKind = null,
+            completedBytes = nextPlan.completedBytes, requiresRefresh = nextPlan.requiresRefresh)
+        if (!preferences.edit().putString(folderUploadKey(expected.id), json.encodeToString(nextPlan))
+                .putString(KEY_UPLOADS, json.encodeToString(ListSerializer(PersistedUpload.serializer()),
+                    allUploads().map { if (it.id == expected.id) next else it })).commit()) return@synchronized null
+        notifyTransferChanged()
+        next
+    }
+
+    fun virtualMachineImageImports(profileId: String): List<PersistedVirtualMachineImageImport> = synchronized(TRANSFER_STORE_LOCK) {
         synchronized(VMM_IMPORT_LOCK) {
             allVirtualMachineImageImports().filter { it.profileId == profileId }
         }
+    }
 
-    @Synchronized
-    fun virtualMachineImageImport(id: String): PersistedVirtualMachineImageImport? =
+    fun virtualMachineImageImport(id: String): PersistedVirtualMachineImageImport? = synchronized(TRANSFER_STORE_LOCK) {
         synchronized(VMM_IMPORT_LOCK) {
             allVirtualMachineImageImports().firstOrNull { it.id == id }
         }
+    }
 
-    @Synchronized
-    fun servers(profileId: String): List<PersistedServerTransfer> =
+    fun servers(profileId: String): List<PersistedServerTransfer> = synchronized(TRANSFER_STORE_LOCK) {
         allServers().filter { it.profileId == profileId }
+    }
 
-    @Synchronized
-    fun server(id: String): PersistedServerTransfer? = allServers().firstOrNull { it.id == id }
+    fun server(id: String): PersistedServerTransfer? = synchronized(TRANSFER_STORE_LOCK) {
+        allServers().firstOrNull { it.id == id }
+    }
 
-    @Synchronized
-    fun fileBackgroundTaskSnapshot(profileId: String): PersistedFileBackgroundTaskSnapshot? =
+    internal fun extractionOutputs(record: PersistedServerTransfer): List<FileServerMutationExpectedOutput> = synchronized(TRANSFER_STORE_LOCK) {
+        if (!record.isPlannedExtraction) return@synchronized record.expectedOutputs.map { it.toFileServerMutationExpectedOutput() }
+        val raw = preferences.getString(fileArchiveVerificationKey(record.id), null) ?: throw FileArchiveVerificationUnavailable()
+        val plan = runCatching { json.decodeFromString<FileArchiveVerificationPlan>(raw) }.getOrNull()
+            ?.takeIf { it.matches(record) } ?: throw FileArchiveVerificationUnavailable()
+        plan.outputs.map { it.toOutput() }
+    }
+
+    /** 清单与原任务同时保存，失败时保持零 start；归属仍由原执行代次限制。 */
+    internal fun updateExtractionOutputs(id: String, generation: Long, outputs: List<FileServerMutationExpectedOutput>): PersistedServerTransfer? = synchronized(TRANSFER_STORE_LOCK) {
+        val record = server(id)?.takeIf { it.isPlannedExtraction && it.executionGeneration == generation && it.submissionPhase == PersistedServerSubmissionPhase.PREPARING }
+            ?: return@synchronized null
+        val next = record.copy(expectedOutputs = outputs.map { it.toPersistedServerExpectedOutput() })
+        val plan = FileArchiveVerificationPlan(taskId = id, profileId = record.profileId,
+            sourcePath = record.sourceBaselines.single().path, destinationPath = record.destinationFolderBaseline!!.path,
+            outputs = outputs.map { FileArchiveVerificationOutput(it.path, it.isDirectory, it.expectedBytes, it.requiresTaskCompletion) })
+        require(plan.matches(next))
+        saveServers(allServers().map { if (it.id == id) next else it }, plan)
+        next
+    }
+
+    fun fileBackgroundTaskSnapshot(profileId: String): PersistedFileBackgroundTaskSnapshot? = synchronized(TRANSFER_STORE_LOCK) {
         allFileBackgroundTaskSnapshots().firstOrNull { it.profileId == profileId }
+    }
 
-    @Synchronized
-    fun photoBackupSource(profileId: String): PersistedPhotoBackupSource? =
+    fun photoBackupSource(profileId: String): PersistedPhotoBackupSource? = synchronized(TRANSFER_STORE_LOCK) {
         allBackupSources().firstOrNull { it.profileId == profileId }
+    }
 
-    @Synchronized
-    fun upsert(download: PersistedDownload) {
+    /** URI 授权属于整个应用；一个账号结束任务不能撤销另一账号仍在使用的授权。 */
+    fun hasReadGrantReference(uri: String, excludingRecordId: String? = null): Boolean = synchronized(TRANSFER_STORE_LOCK) {
+        allUploads().any { it.id != excludingRecordId && (!it.canRemoveFinishedUpload()) &&
+            (it.sourceUri == uri || it.sourceTreeUri == uri) } ||
+            allBackupSources().any { it.treeUri == uri } ||
+            allVirtualMachineImageImports().any { it.id != excludingRecordId && it.ownsPersistedReadGrant && it.sourceUri == uri }
+    }
+
+    fun hasDownloadDestinationReference(uri: String, excludingRecordId: String? = null): Boolean = synchronized(TRANSFER_STORE_LOCK) {
+        all().any { it.id != excludingRecordId && it.destinationUri == uri &&
+            (it.state !in TERMINAL_STATES || (it.isArchiveDownload || it.isVFSDownload) && it.state == TransferState.FAILED) }
+    }
+
+    fun upsert(download: PersistedDownload) = synchronized(TRANSFER_STORE_LOCK) {
         val next = all().filterNot { it.id == download.id } + download
         save(next)
     }
@@ -91,12 +282,11 @@ class TransferStore(
      * WorkManager 入队前保存任务事实；只有确认写入成功后调用方才能提交后台任务。
      * 普通状态和进度更新继续使用 [upsert]/[update] 的异步写入，避免阻塞主线程。
      */
-    @Synchronized
-    fun upsertDownloadDurably(download: PersistedDownload): Boolean =
+    fun upsertDownloadDurably(download: PersistedDownload): Boolean = synchronized(TRANSFER_STORE_LOCK) {
         saveDurably(all().filterNot { it.id == download.id } + download)
+    }
 
-    @Synchronized
-    fun update(id: String, transform: (PersistedDownload) -> PersistedDownload): PersistedDownload? {
+    fun update(id: String, transform: (PersistedDownload) -> PersistedDownload): PersistedDownload? = synchronized(TRANSFER_STORE_LOCK) {
         var updated: PersistedDownload? = null
         val next = all().map { current ->
             if (current.id == id) transform(current).also { updated = it } else current
@@ -109,11 +299,10 @@ class TransferStore(
      * 仅用于入队边界的受保护替换。transform 返回 null 时表示记录已经不属于当前操作，
      * 不写入也不覆盖较新的状态。
      */
-    @Synchronized
     fun updateDownloadDurably(
         id: String,
         transform: (PersistedDownload) -> PersistedDownload?,
-    ): PersistedDownload? {
+    ): PersistedDownload? = synchronized(TRANSFER_STORE_LOCK) {
         var updated: PersistedDownload? = null
         val next = all().map { current ->
             if (current.id != id) {
@@ -125,13 +314,11 @@ class TransferStore(
         return updated?.takeIf { saveDurably(next) }
     }
 
-    @Synchronized
-    fun upsert(upload: PersistedUpload) {
+    fun upsert(upload: PersistedUpload) = synchronized(TRANSFER_STORE_LOCK) {
         saveUploads(allUploads().filterNot { it.id == upload.id } + upload)
     }
 
-    @Synchronized
-    fun updateUpload(id: String, transform: (PersistedUpload) -> PersistedUpload): PersistedUpload? {
+    fun updateUpload(id: String, transform: (PersistedUpload) -> PersistedUpload): PersistedUpload? = synchronized(TRANSFER_STORE_LOCK) {
         var updated: PersistedUpload? = null
         val next = allUploads().map { current ->
             if (current.id == id) transform(current).also { updated = it } else current
@@ -140,18 +327,16 @@ class TransferStore(
         return updated
     }
 
-    @Synchronized
-    fun upsertVirtualMachineImageImport(import: PersistedVirtualMachineImageImport) {
+    fun upsertVirtualMachineImageImport(import: PersistedVirtualMachineImageImport) = synchronized(TRANSFER_STORE_LOCK) {
         synchronized(VMM_IMPORT_LOCK) {
             saveVirtualMachineImageImports(allVirtualMachineImageImports().upsert(import))
         }
     }
 
-    @Synchronized
     fun updateVirtualMachineImageImport(
         id: String,
         transform: (PersistedVirtualMachineImageImport) -> PersistedVirtualMachineImageImport,
-    ): PersistedVirtualMachineImageImport? {
+    ): PersistedVirtualMachineImageImport? = synchronized(TRANSFER_STORE_LOCK) {
         return synchronized(VMM_IMPORT_LOCK) {
             val (imports, updated) = allVirtualMachineImageImports().updateById(id, transform)
             if (updated != null) saveVirtualMachineImageImports(imports)
@@ -160,8 +345,7 @@ class TransferStore(
     }
 
     /** 同一 NAS 资料和映像名称只允许一个非终态后台导入占有执行权。 */
-    @Synchronized
-    fun claimVirtualMachineImageImportWork(id: String, workId: String): Boolean {
+    fun claimVirtualMachineImageImportWork(id: String, workId: String): Boolean = synchronized(TRANSFER_STORE_LOCK) {
         return synchronized(VMM_IMPORT_LOCK) {
             val imports = allVirtualMachineImageImports()
             if (!imports.canClaimWork(id)) return@synchronized false
@@ -173,21 +357,21 @@ class TransferStore(
     }
 
     /** 首次提交在同一临界区完成同名判重、插入和执行权领取。 */
-    @Synchronized
     fun insertAndClaimVirtualMachineImageImport(
         import: PersistedVirtualMachineImageImport,
         workId: String,
-    ): Boolean = synchronized(VMM_IMPORT_LOCK) {
+    ): Boolean = synchronized(TRANSFER_STORE_LOCK) {
+        synchronized(VMM_IMPORT_LOCK) {
         val current = allVirtualMachineImageImports()
         val (imports, inserted) = current.insertAndClaimWork(import, workId)
         if (!inserted) return@synchronized false
         saveVirtualMachineImageImports(imports)
         true
     }
+    }
 
     /** 仅撤销仍由同一 WorkManager 请求占有的领取，避免异常回滚覆盖后来执行者。 */
-    @Synchronized
-    fun releaseVirtualMachineImageImportWork(id: String, workId: String): Boolean =
+    fun releaseVirtualMachineImageImportWork(id: String, workId: String): Boolean = synchronized(TRANSFER_STORE_LOCK) {
         synchronized(VMM_IMPORT_LOCK) {
             val imports = allVirtualMachineImageImports()
             val (releasedImports, released) = imports.releaseWorkClaim(id, workId)
@@ -195,10 +379,10 @@ class TransferStore(
             saveVirtualMachineImageImports(releasedImports)
             released
         }
+    }
 
     /** 首次入队同步失败时，仅移除仍处于准备阶段且由该请求拥有的新记录。 */
-    @Synchronized
-    fun removeOwnedPreparingVirtualMachineImageImport(id: String, workId: String): Boolean =
+    fun removeOwnedPreparingVirtualMachineImageImport(id: String, workId: String): Boolean = synchronized(TRANSFER_STORE_LOCK) {
         synchronized(VMM_IMPORT_LOCK) {
             val current = allVirtualMachineImageImports()
             val (imports, removed) = current.removeOwnedPreparingImport(id, workId)
@@ -206,9 +390,9 @@ class TransferStore(
             saveVirtualMachineImageImports(imports)
             true
         }
+    }
 
-    @Synchronized
-    fun removeVirtualMachineImageImport(id: String): Boolean {
+    fun removeVirtualMachineImageImport(id: String): Boolean = synchronized(TRANSFER_STORE_LOCK) {
         return synchronized(VMM_IMPORT_LOCK) {
             val current = allVirtualMachineImageImports()
             val (imports, removed) = current.removeFinishedById(id)
@@ -218,16 +402,14 @@ class TransferStore(
         }
     }
 
-    @Synchronized
-    fun upsert(server: PersistedServerTransfer) {
+    fun upsert(server: PersistedServerTransfer) = synchronized(TRANSFER_STORE_LOCK) {
         saveServers(allServers().filterNot { it.id == server.id } + server)
     }
 
-    @Synchronized
     fun updateServer(
         id: String,
         transform: (PersistedServerTransfer) -> PersistedServerTransfer,
-    ): PersistedServerTransfer? {
+    ): PersistedServerTransfer? = synchronized(TRANSFER_STORE_LOCK) {
         var updated: PersistedServerTransfer? = null
         val next = allServers().map { current ->
             if (current.id == id) transform(current).also { updated = it } else current
@@ -237,8 +419,7 @@ class TransferStore(
     }
 
     /** 只有已经安全收敛的终态任务可以从普通清理入口移除。 */
-    @Synchronized
-    fun removeServer(id: String): Boolean {
+    fun removeServer(id: String): Boolean = synchronized(TRANSFER_STORE_LOCK) {
         val current = allServers()
         val target = current.firstOrNull { it.id == id } ?: return false
         if (!target.canRemoveFinishedServer()) return false
@@ -247,8 +428,7 @@ class TransferStore(
     }
 
     /** 丢弃无法还原目标的损坏记录；正常任务始终带有完整目标基线。 */
-    @Synchronized
-    fun removeInvalidServer(id: String): Boolean {
+    fun removeInvalidServer(id: String): Boolean = synchronized(TRANSFER_STORE_LOCK) {
         val current = allServers()
         val target = current.firstOrNull { it.id == id } ?: return false
         if (target.toFileServerMutationTarget() != null) return false
@@ -256,35 +436,24 @@ class TransferStore(
         return true
     }
 
-    @Synchronized
-    fun replaceFileBackgroundTaskSnapshot(snapshot: PersistedFileBackgroundTaskSnapshot) {
+    fun replaceFileBackgroundTaskSnapshot(snapshot: PersistedFileBackgroundTaskSnapshot) = synchronized(TRANSFER_STORE_LOCK) {
         saveFileBackgroundTaskSnapshots(
             allFileBackgroundTaskSnapshots().filterNot { it.profileId == snapshot.profileId } + snapshot,
         )
     }
 
-    @Synchronized
-    fun upsertPhotoBackupSource(source: PersistedPhotoBackupSource) {
+    fun upsertPhotoBackupSource(source: PersistedPhotoBackupSource) = synchronized(TRANSFER_STORE_LOCK) {
         saveBackupSources(allBackupSources().filterNot { it.profileId == source.profileId } + source)
     }
 
-    @Synchronized
-    fun removePhotoBackupSource(profileId: String) {
+    fun removePhotoBackupSource(profileId: String) = synchronized(TRANSFER_STORE_LOCK) {
         saveBackupSources(allBackupSources().filterNot { it.profileId == profileId })
     }
 
-    @Synchronized
-    fun removeTerminal(profileId: String) {
-        save(
-            all().filterNot {
-                it.profileId == profileId && it.state in TERMINAL_STATES
-            },
-        )
-        saveUploads(
-            allUploads().filterNot {
-                it.profileId == profileId && it.canRemoveFinishedUpload()
-            },
-        )
+    fun removeTerminal(profileId: String) = synchronized(TRANSFER_STORE_LOCK) {
+        val (removed, retained) = all().partition { it.profileId == profileId && it.state in TERMINAL_STATES }
+        save(retained, removed.map(PersistedDownload::id))
+        removeFinishedUploads(profileId)
         saveServers(
             allServers().filterNot {
                 it.profileId == profileId && it.canRemoveFinishedServer()
@@ -299,19 +468,18 @@ class TransferStore(
         }
     }
 
-    @Synchronized
-    fun remove(id: String) {
-        save(all().filterNot { it.id == id })
+    fun remove(id: String) = synchronized(TRANSFER_STORE_LOCK) {
+        save(all().filterNot { it.id == id }, listOf(id))
     }
 
-    @Synchronized
-    fun removeProfile(profileId: String) {
-        save(all().filterNot { it.profileId == profileId })
-        saveUploads(allUploads().filterNot { it.profileId == profileId })
-        saveServers(allServers().filterNot { it.profileId == profileId })
+    fun removeProfile(profileId: String) = synchronized(TRANSFER_STORE_LOCK) {
+        val (removed, retained) = all().partition { it.profileId == profileId }
+        save(retained, removed.map(PersistedDownload::id))
+        removeFinishedUploads(profileId)
+        saveServers(allServers().filterNot { it.profileId == profileId && it.canRemoveFinishedServer() })
         synchronized(VMM_IMPORT_LOCK) {
             saveVirtualMachineImageImports(
-                allVirtualMachineImageImports().filterNot { it.profileId == profileId },
+                allVirtualMachineImageImports().filterNot { it.profileId == profileId && it.canRemoveFromHistory() },
             )
         }
         saveBackupSources(allBackupSources().filterNot { it.profileId == profileId })
@@ -327,13 +495,15 @@ class TransferStore(
         }.getOrDefault(emptyList())
     }
 
-    private fun save(downloads: List<PersistedDownload>) {
+    private fun save(downloads: List<PersistedDownload>, removedIds: List<String> = emptyList()) {
         preferences.edit()
             .putString(
                 KEY_DOWNLOADS,
                 json.encodeToString(ListSerializer(PersistedDownload.serializer()), downloads),
             )
+            .apply { removedIds.forEach { remove(archiveDownloadKey(it)); remove(vfsDownloadKey(it)) } }
             .apply()
+        notifyTransferChanged()
     }
 
     private fun saveDurably(downloads: List<PersistedDownload>): Boolean =
@@ -343,6 +513,7 @@ class TransferStore(
                 json.encodeToString(ListSerializer(PersistedDownload.serializer()), downloads),
             )
             .commit()
+            .also { if (it) notifyTransferChanged() }
 
     private fun allUploads(): List<PersistedUpload> {
         val value = preferences.getString(KEY_UPLOADS, null) ?: return emptyList()
@@ -351,12 +522,19 @@ class TransferStore(
         }.getOrDefault(emptyList())
     }
 
-    private fun saveUploads(uploads: List<PersistedUpload>) {
+    private fun removeFinishedUploads(profileId: String) {
+        val (removed, retained) = allUploads().partition { it.profileId == profileId && it.canRemoveFinishedUpload() }
+        saveUploads(retained, removed.map(PersistedUpload::id))
+    }
+
+    private fun saveUploads(uploads: List<PersistedUpload>, removedIds: List<String> = emptyList()) {
         check(
             preferences.edit()
             .putString(KEY_UPLOADS, json.encodeToString(ListSerializer(PersistedUpload.serializer()), uploads))
+            .apply { removedIds.forEach { remove(uploadContentKey(it)); remove(folderUploadKey(it)) } }
             .commit(),
         ) { "transfer.upload_state_not_persisted" }
+        notifyTransferChanged()
     }
 
     private fun allVirtualMachineImageImports(): List<PersistedVirtualMachineImageImport> {
@@ -381,6 +559,7 @@ class TransferStore(
                 )
                 .commit(),
         ) { "transfer.vmm_image_import_state_not_persisted" }
+        notifyTransferChanged()
     }
 
     private fun allBackupSources(): List<PersistedPhotoBackupSource> {
@@ -397,15 +576,20 @@ class TransferStore(
         }.getOrDefault(emptyList())
     }
 
-    private fun saveServers(servers: List<PersistedServerTransfer>) {
+    private fun saveServers(servers: List<PersistedServerTransfer>, verificationPlan: FileArchiveVerificationPlan? = null) {
+        val removed = allServers().filter { prior -> servers.none { it.id == prior.id } }
         check(
             preferences.edit()
                 .putString(
                     KEY_SERVERS,
                     json.encodeToString(ListSerializer(PersistedServerTransfer.serializer()), servers),
                 )
-                .commit(),
+                .also { editor ->
+                    removed.forEach { editor.remove(fileArchiveVerificationKey(it.id)) }
+                    verificationPlan?.let { editor.putString(fileArchiveVerificationKey(it.taskId), json.encodeToString(it)) }
+                }.commit(),
         ) { "transfer.server_state_not_persisted" }
+        notifyTransferChanged()
     }
 
     private fun allFileBackgroundTaskSnapshots(): List<PersistedFileBackgroundTaskSnapshot> {
@@ -430,6 +614,7 @@ class TransferStore(
                 )
                 .commit(),
         ) { "transfer.file_background_tasks_not_persisted" }
+        notifyTransferChanged()
     }
 
     private fun saveBackupSources(sources: List<PersistedPhotoBackupSource>) {
@@ -441,9 +626,11 @@ class TransferStore(
                 )
                 .commit(),
         ) { "transfer.photo_backup_source_not_persisted" }
+        notifyTransferChanged()
     }
 
     private companion object {
+        val TRANSFER_STORE_LOCK = Any()
         private val VMM_IMPORT_LOCK = Any()
         const val PREFERENCES_NAME = "lanstash_transfer_tasks"
         const val KEY_DOWNLOADS = "downloads"
@@ -459,359 +646,3 @@ class TransferStore(
         )
     }
 }
-
-@Serializable
-data class PersistedDownload(
-    val id: String,
-    val profileId: String,
-    val sourcePath: String,
-    val title: String,
-    val destinationUri: String,
-    val isDirectory: Boolean,
-    val expectedBytes: Long? = null,
-    val state: TransferState = TransferState.WAITING,
-    val completedBytes: Long = 0,
-    val totalBytes: Long? = expectedBytes,
-    val errorKind: String? = null,
-    val workId: String? = null,
-    val backgroundCapable: Boolean = false,
-    val startedAtEpochMillis: Long? = null,
-)
-
-@Serializable
-data class PersistedUpload(
-    val id: String,
-    val profileId: String,
-    val sourceUri: String,
-    val title: String,
-    val contentType: String? = null,
-    val expectedBytes: Long,
-    val destinationPath: String,
-    val destinationRootPath: String = destinationPath,
-    val state: TransferState = TransferState.WAITING,
-    val completedBytes: Long = 0,
-    val errorKind: String? = null,
-    val workId: String? = null,
-    val skippedExisting: Boolean = false,
-    val ownsPersistedReadGrant: Boolean = true,
-    val sourceTreeUri: String? = null,
-    val backupMode: Boolean = true,
-    val overwrite: Boolean = false,
-    val requiresRefresh: Boolean = false,
-    val mirrorDirectories: Boolean = false,
-    val startedAtEpochMillis: Long? = null,
-    val directoryMutationResult: PersistedMutationResult? = null,
-    val uploadMutationResult: PersistedMutationResult? = null,
-)
-
-/** NAS 写任务的请求边界；恢复后只有 `PREPARING` 能确认尚未提交。 */
-@Serializable
-enum class PersistedServerSubmissionPhase {
-    PREPARING,
-    SUBMITTING,
-    SUBMITTED,
-    TERMINAL,
-}
-
-@Serializable
-enum class PersistedServerOperation {
-    COMPRESS,
-    EXTRACT,
-}
-
-/** 恢复目标核对所需的文件基线；内容只保存在现有加密传输存储中。 */
-@Serializable
-data class PersistedServerFileBaseline(
-    val path: String,
-    val name: String,
-    val isDirectory: Boolean,
-    val size: Long = 0,
-    val modifiedAtEpochSeconds: Long? = null,
-    val owner: String? = null,
-    val canRead: Boolean = true,
-    val canWrite: Boolean = false,
-    val canDelete: Boolean = false,
-    val mountPointType: String? = null,
-)
-
-@Serializable
-data class PersistedServerExpectedOutput(
-    val path: String,
-    val isDirectory: Boolean,
-    val requiresNonEmptyFile: Boolean = false,
-)
-
-/**
- * App 发起、由 NAS 执行的任务状态。opaque task ID 只用于恢复只读轮询，不包含会话或地址。
- */
-@Serializable
-data class PersistedServerTransfer(
-    val id: String,
-    val profileId: String,
-    val title: String,
-    val operation: PersistedServerOperation,
-    val state: TransferState = TransferState.WAITING,
-    val submissionPhase: PersistedServerSubmissionPhase = PersistedServerSubmissionPhase.PREPARING,
-    val executionGeneration: Long = 0,
-    val readOnlyObservation: Boolean = false,
-    val nasTaskId: String? = null,
-    val completedUnits: Long = 0,
-    val totalUnits: Long? = null,
-    val startedAtEpochMillis: Long? = null,
-    val requiresRefresh: Boolean = false,
-    val errorKind: String? = null,
-    val sourceModule: String = Module.FILES.name,
-    val sourceBaselines: List<PersistedServerFileBaseline> = emptyList(),
-    val destinationFolderBaseline: PersistedServerFileBaseline? = null,
-    val expectedOutputs: List<PersistedServerExpectedOutput> = emptyList(),
-    val mutationResult: PersistedMutationResult? = null,
-    val refreshCompleted: Boolean = false,
-    val verification: String? = null,
-    val refreshFailureKind: String? = null,
-)
-
-/** 官方 BackgroundTask 的脱敏快照；不保存路径、参数、消息或响应正文。 */
-@Serializable
-data class PersistedFileBackgroundTaskSnapshot(
-    val profileId: String,
-    val observedAtEpochSeconds: Long,
-    val tasks: List<PersistedFileBackgroundTaskSummary> = emptyList(),
-)
-
-@Serializable
-data class PersistedFileBackgroundTaskSummary(
-    val id: String,
-    val kind: PersistedFileBackgroundTaskKind,
-    val state: PersistedFileBackgroundTaskState,
-    val progress: Double? = null,
-    val createdAtEpochSeconds: Long? = null,
-    val processedItemCount: Int? = null,
-    val totalItemCount: Int? = null,
-    val processedBytes: Long? = null,
-    val totalBytes: Long? = null,
-)
-
-@Serializable
-enum class PersistedFileBackgroundTaskKind {
-    COPY_OR_MOVE,
-    DELETE,
-    COMPRESS,
-    EXTRACT,
-}
-
-@Serializable
-enum class PersistedFileBackgroundTaskState {
-    ACTIVE,
-    FINISHED,
-}
-
-/** 仅保留恢复与结果展示所需的稳定语义，不保存响应、路径、凭据或用户数据。 */
-@Serializable
-data class PersistedMutationResult(
-    val status: MutationResultStatus = MutationResultStatus.CONFIRMED_FAILURE,
-    val submitted: Boolean = false,
-    val requiresRefresh: Boolean = false,
-    val counts: MutationResultCounts = MutationResultCounts(0, 0, 0),
-    val errorCategory: MutationErrorCategory? = null,
-    val diagnosticTag: String? = null,
-    val writeSubmitted: Boolean = false,
-)
-
-internal fun MutationResult.toPersistedMutationResult(
-    writeSubmitted: Boolean = submitted,
-) = PersistedMutationResult(
-    status = status,
-    submitted = submitted,
-    requiresRefresh = requiresRefresh,
-    counts = counts,
-    errorCategory = errorCategory,
-    diagnosticTag = diagnosticTag,
-    writeSubmitted = writeSubmitted,
-)
-
-internal fun PersistedMutationResult.toMutationResult(operation: String) = MutationResult(
-    schemaVersion = 1,
-    status = status,
-    operation = operation,
-    submitted = submitted,
-    requiresRefresh = requiresRefresh,
-    counts = counts,
-    errorCategory = errorCategory,
-    diagnosticTag = diagnosticTag,
-)
-
-internal fun FileItem.toPersistedServerFileBaseline() = PersistedServerFileBaseline(
-    path = path,
-    name = name,
-    isDirectory = isDirectory,
-    size = size,
-    modifiedAtEpochSeconds = modifiedAtEpochSeconds,
-    owner = owner,
-    canRead = canRead,
-    canWrite = canWrite,
-    canDelete = canDelete,
-    mountPointType = mountPointType,
-)
-
-internal fun PersistedServerFileBaseline.toFileItem() = FileItem(
-    path = path,
-    name = name,
-    isDirectory = isDirectory,
-    size = size,
-    modifiedAtEpochSeconds = modifiedAtEpochSeconds,
-    owner = owner,
-    canRead = canRead,
-    canWrite = canWrite,
-    canDelete = canDelete,
-    mountPointType = mountPointType,
-)
-
-internal fun FileServerMutationExpectedOutput.toPersistedServerExpectedOutput() =
-    PersistedServerExpectedOutput(path, isDirectory, requiresNonEmptyFile)
-
-internal fun PersistedServerExpectedOutput.toFileServerMutationExpectedOutput() =
-    FileServerMutationExpectedOutput(path, isDirectory, requiresNonEmptyFile)
-
-internal fun FileServerMutationOperation.toPersistedServerOperation() = when (this) {
-    FileServerMutationOperation.COMPRESS -> PersistedServerOperation.COMPRESS
-    FileServerMutationOperation.EXTRACT -> PersistedServerOperation.EXTRACT
-}
-
-internal fun PersistedServerOperation.toFileServerMutationOperation() = when (this) {
-    PersistedServerOperation.COMPRESS -> FileServerMutationOperation.COMPRESS
-    PersistedServerOperation.EXTRACT -> FileServerMutationOperation.EXTRACT
-}
-
-internal fun FileServerMutationTarget.toPersistedServerTransfer(
-    id: String,
-    title: String,
-    state: TransferState = TransferState.WAITING,
-    submissionPhase: PersistedServerSubmissionPhase = PersistedServerSubmissionPhase.PREPARING,
-    startedAtEpochMillis: Long? = null,
-) = PersistedServerTransfer(
-    id = id,
-    profileId = profileId,
-    title = title,
-    operation = operation.toPersistedServerOperation(),
-    state = state,
-    submissionPhase = submissionPhase,
-    startedAtEpochMillis = startedAtEpochMillis,
-    sourceModule = module.name,
-    sourceBaselines = sourceBaselines.map(FileItem::toPersistedServerFileBaseline),
-    destinationFolderBaseline = destinationFolderBaseline.toPersistedServerFileBaseline(),
-    expectedOutputs = expectedOutputs.map(
-        FileServerMutationExpectedOutput::toPersistedServerExpectedOutput,
-    ),
-)
-
-internal fun PersistedServerTransfer.toFileServerMutationTarget(): FileServerMutationTarget? {
-    val destination = destinationFolderBaseline ?: return null
-    val module = runCatching { Module.valueOf(sourceModule) }.getOrNull() ?: return null
-    return FileServerMutationTarget(
-        profileId = profileId,
-        module = module,
-        operation = operation.toFileServerMutationOperation(),
-        sourceBaselines = sourceBaselines.map(PersistedServerFileBaseline::toFileItem),
-        destinationFolderBaseline = destination.toFileItem(),
-        expectedOutputs = expectedOutputs.map(
-            PersistedServerExpectedOutput::toFileServerMutationExpectedOutput,
-        ),
-    )
-}
-
-internal fun PersistedServerTransfer.toFileServerMutationVerification(): FileServerMutationVerification? =
-    verification?.let { value ->
-        runCatching { FileServerMutationVerification.valueOf(value) }.getOrNull()
-    }
-
-internal fun FileBackgroundTaskPage.toPersistedFileBackgroundTaskSnapshot(
-    profileId: String,
-    observedAtEpochSeconds: Long,
-) = PersistedFileBackgroundTaskSnapshot(
-    profileId = profileId,
-    observedAtEpochSeconds = observedAtEpochSeconds,
-    tasks = tasks.map(FileBackgroundTaskSummary::toPersistedFileBackgroundTaskSummary),
-)
-
-internal fun FileBackgroundTaskSummary.toPersistedFileBackgroundTaskSummary() =
-    PersistedFileBackgroundTaskSummary(
-        id = id,
-        kind = kind.toPersistedFileBackgroundTaskKind(),
-        state = state.toPersistedFileBackgroundTaskState(),
-        progress = progress,
-        createdAtEpochSeconds = createdAtEpochSeconds,
-        processedItemCount = processedItemCount,
-        totalItemCount = totalItemCount,
-        processedBytes = processedBytes,
-        totalBytes = totalBytes,
-    )
-
-internal fun PersistedFileBackgroundTaskSnapshot.toFileBackgroundTaskPage() = FileBackgroundTaskPage(
-    tasks = tasks.map { task ->
-        FileBackgroundTaskSummary(
-            id = task.id,
-            kind = task.kind.toFileBackgroundTaskKind(),
-            state = task.state.toFileBackgroundTaskState(),
-            progress = task.progress,
-            createdAtEpochSeconds = task.createdAtEpochSeconds,
-            processedItemCount = task.processedItemCount,
-            totalItemCount = task.totalItemCount,
-            processedBytes = task.processedBytes,
-            totalBytes = task.totalBytes,
-        )
-    },
-    offset = 0,
-    nextOffset = tasks.size,
-    total = tasks.size,
-    hasMore = false,
-)
-
-internal fun FileBackgroundTaskKind.toPersistedFileBackgroundTaskKind() = when (this) {
-    FileBackgroundTaskKind.COPY_OR_MOVE -> PersistedFileBackgroundTaskKind.COPY_OR_MOVE
-    FileBackgroundTaskKind.DELETE -> PersistedFileBackgroundTaskKind.DELETE
-    FileBackgroundTaskKind.COMPRESS -> PersistedFileBackgroundTaskKind.COMPRESS
-    FileBackgroundTaskKind.EXTRACT -> PersistedFileBackgroundTaskKind.EXTRACT
-}
-
-internal fun PersistedFileBackgroundTaskKind.toFileBackgroundTaskKind() = when (this) {
-    PersistedFileBackgroundTaskKind.COPY_OR_MOVE -> FileBackgroundTaskKind.COPY_OR_MOVE
-    PersistedFileBackgroundTaskKind.DELETE -> FileBackgroundTaskKind.DELETE
-    PersistedFileBackgroundTaskKind.COMPRESS -> FileBackgroundTaskKind.COMPRESS
-    PersistedFileBackgroundTaskKind.EXTRACT -> FileBackgroundTaskKind.EXTRACT
-}
-
-internal fun FileBackgroundTaskState.toPersistedFileBackgroundTaskState() = when (this) {
-    FileBackgroundTaskState.ACTIVE -> PersistedFileBackgroundTaskState.ACTIVE
-    FileBackgroundTaskState.FINISHED -> PersistedFileBackgroundTaskState.FINISHED
-}
-
-internal fun PersistedFileBackgroundTaskState.toFileBackgroundTaskState() = when (this) {
-    PersistedFileBackgroundTaskState.ACTIVE -> FileBackgroundTaskState.ACTIVE
-    PersistedFileBackgroundTaskState.FINISHED -> FileBackgroundTaskState.FINISHED
-}
-
-@Serializable
-data class PersistedPhotoBackupSource(
-    val profileId: String,
-    val treeUri: String,
-    val destinationPath: String,
-    val workId: String? = null,
-    val enabled: Boolean = true,
-    /** 扫描上限触发后暂停来源，要求用户选择更小的目录再继续。 */
-    val needsAttention: Boolean = false,
-)
-
-internal fun TransferState.hasIncompleteDownloadDestination(): Boolean = this !in setOf(
-    TransferState.SUCCEEDED,
-    TransferState.FAILED,
-    TransferState.CANCELLED,
-)
-
-internal fun PersistedUpload.canRemoveFinishedUpload(): Boolean =
-    state in setOf(TransferState.SUCCEEDED, TransferState.FAILED, TransferState.CANCELLED) &&
-        !requiresRefresh
-
-internal fun PersistedServerTransfer.canRemoveFinishedServer(): Boolean =
-    state in setOf(TransferState.SUCCEEDED, TransferState.FAILED, TransferState.CANCELLED) &&
-        submissionPhase == PersistedServerSubmissionPhase.TERMINAL &&
-        !requiresRefresh && (mutationResult?.requiresRefresh != true || refreshCompleted)

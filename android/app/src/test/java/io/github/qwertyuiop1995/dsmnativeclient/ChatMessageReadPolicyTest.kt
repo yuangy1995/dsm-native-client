@@ -45,7 +45,7 @@ class ChatMessageReadPolicyTest {
             ),
         )
         val result = reconcileChatMessagePage(
-            metadataSource = page(existing, nextOffset = 50, hasMore = true),
+            metadataSource = page(existing, previousCursor = "post-50", hasMore = true),
             lowerPriority = listOf(existing),
             higherPriority = listOf(latest),
             outgoing = emptyList(),
@@ -54,7 +54,7 @@ class ChatMessageReadPolicyTest {
         val message = result.messages.single()
         assertTrue(message.isPinned)
         assertEquals(4, message.poll?.options?.single()?.voteCount)
-        assertEquals(50, result.nextOffset)
+        assertEquals("post-50", result.previousCursor)
         assertTrue(result.hasMore)
     }
 
@@ -68,7 +68,7 @@ class ChatMessageReadPolicyTest {
             ),
         )
         val result = reconcileChatMessagePage(
-            metadataSource = page(historical, nextOffset = null, hasMore = false),
+            metadataSource = page(historical, previousCursor = null, hasMore = false),
             lowerPriority = listOf(historical),
             higherPriority = listOf(visible),
             outgoing = emptyList(),
@@ -77,7 +77,7 @@ class ChatMessageReadPolicyTest {
         val message = result.messages.single()
         assertTrue(message.isPinned)
         assertEquals(4, message.poll?.options?.single()?.voteCount)
-        assertNull(result.nextOffset)
+        assertNull(result.previousCursor)
         assertFalse(result.hasMore)
     }
 
@@ -173,8 +173,8 @@ class ChatMessageReadPolicyTest {
 
     @Test
     fun `无重叠的最新 HEAD 使用服务端新分页边界以桥接缺口`() {
-        val existing = page(message("old", 1), nextOffset = null, hasMore = false)
-        val latest = page(message("latest", 100), nextOffset = 50, hasMore = true)
+        val existing = page(message("old", 1), previousCursor = null, hasMore = false)
+        val latest = page(message("latest", 100), previousCursor = "post-50", hasMore = true)
 
         val result = reconcileHeadPage(
             existing = existing,
@@ -183,7 +183,7 @@ class ChatMessageReadPolicyTest {
         )
 
         assertEquals(listOf("old", "latest"), result.messages.map(ChatMessage::id))
-        assertEquals(50, result.nextOffset)
+        assertEquals("post-50", result.previousCursor)
         assertTrue(result.hasMore)
     }
 
@@ -205,8 +205,8 @@ class ChatMessageReadPolicyTest {
         val latest = message("latest-confirmed", 4)
 
         val result = reconcileHeadPage(
-            existing = page(oldConfirmed, nextOffset = 50, hasMore = true),
-            latest = page(latest, nextOffset = null, hasMore = false),
+            existing = page(oldConfirmed, previousCursor = "post-50", hasMore = true),
+            latest = page(latest, previousCursor = null, hasMore = false),
             outgoing = listOf(pending, failed),
         )
 
@@ -214,7 +214,7 @@ class ChatMessageReadPolicyTest {
             listOf("local:pending", "local:failed", "latest-confirmed"),
             result.messages.map(ChatMessage::id),
         )
-        assertNull(result.nextOffset)
+        assertNull(result.previousCursor)
         assertFalse(result.hasMore)
     }
 
@@ -224,8 +224,8 @@ class ChatMessageReadPolicyTest {
         val latest = message("same-id", 1, body = "新正文", isPinned = true)
 
         val result = reconcileHeadPage(
-            existing = page(existing, nextOffset = 50, hasMore = true),
-            latest = page(latest, nextOffset = null, hasMore = false),
+            existing = page(existing, previousCursor = "post-50", hasMore = true),
+            latest = page(latest, previousCursor = null, hasMore = false),
             outgoing = emptyList(),
         ).messages.single()
 
@@ -239,13 +239,13 @@ class ChatMessageReadPolicyTest {
         val existing = page(
             message("old", 1),
             message("overlap", 2, body = "旧正文"),
-            nextOffset = 100,
+            previousCursor = "post-100",
             hasMore = true,
         )
         val latest = page(
             message("overlap", 2, body = "新正文"),
             message("latest", 3),
-            nextOffset = 50,
+            previousCursor = "post-50",
             hasMore = true,
         )
 
@@ -255,7 +255,7 @@ class ChatMessageReadPolicyTest {
             outgoing = emptyList(),
         )
 
-        assertEquals(100, result.nextOffset)
+        assertEquals("post-100", result.previousCursor)
         assertTrue(result.hasMore)
         assertEquals("新正文", result.messages.single { it.id == "overlap" }.body)
     }
@@ -268,8 +268,8 @@ class ChatMessageReadPolicyTest {
             deliveryState = ChatDeliveryState.SENDING,
             clientRequestId = "request-shared",
         )
-        val existing = page(pending, nextOffset = null, hasMore = false)
-        val latest = page(message("local:shared", 2), nextOffset = 50, hasMore = true)
+        val existing = page(pending, previousCursor = null, hasMore = false)
+        val latest = page(message("local:shared", 2), previousCursor = "post-50", hasMore = true)
 
         val result = reconcileHeadPage(
             existing = existing,
@@ -277,7 +277,7 @@ class ChatMessageReadPolicyTest {
             outgoing = listOf(pending),
         )
 
-        assertEquals(50, result.nextOffset)
+        assertEquals("post-50", result.previousCursor)
         assertTrue(result.hasMore)
         assertEquals(ChatDeliveryState.SENT, result.messages.single().deliveryState)
     }
@@ -317,7 +317,7 @@ class ChatMessageReadPolicyTest {
 
     private fun page(
         vararg messages: ChatMessage,
-        nextOffset: Int? = null,
+        previousCursor: String? = null,
         hasMore: Boolean = false,
-    ) = ChatMessagePage(messages.toList(), nextOffset, hasMore)
+    ) = ChatMessagePage(messages.toList(), previousCursor, hasMore)
 }

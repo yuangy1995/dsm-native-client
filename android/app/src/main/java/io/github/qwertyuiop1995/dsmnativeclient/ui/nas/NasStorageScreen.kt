@@ -57,27 +57,10 @@ internal fun NasStorageScreen(
     snapshot: NasSettingsSnapshot,
     analysis: Loadable<StorageAnalysisSnapshot>,
     progress: StorageAnalysisProgress?,
-    diskTestStatuses: Map<String, Loadable<NasDiskTestStatus>>,
-    diskTestMutationTarget: NasStorageDisk?,
-    diskTestMutationBaseline: NasDiskTestStatus?,
-    diskTestMutationOperation: NasDiskTestType?,
-    diskTestMutationConfirmationRequested: Boolean,
-    diskTestMutationInProgress: Boolean,
-    diskTestMutationResult: MutationResult?,
-    diskTestMutationFailure: DsmFailure?,
-    diskTestMutationRefreshFailure: DsmFailure?,
-    diskTestMutationRefreshInProgress: Boolean,
-    diskTestMutationRefreshCompleted: Boolean,
-    diskTestActionsEnabled: Boolean,
+    smartContent: @Composable () -> Unit,
     onBeginAnalysis: () -> Unit,
     onCancelAnalysis: () -> Unit,
-    onLoadDiskTest: (String) -> Unit,
-    onRequestDiskTest: (NasStorageDisk, NasDiskTestStatus, NasDiskTestType?) -> Unit,
-    onConfirmDiskTest: () -> Boolean,
-    onCancelDiskTestConfirmation: () -> Unit,
-    onRefreshDiskTest: () -> Unit,
-    onContinueDiskTest: () -> Unit,
-    onCloseDiskTestResult: () -> Unit,
+    onReload: (() -> Unit)? = null,
 ) {
     var section by remember { mutableIntStateOf(0) }
     LazyColumn(
@@ -86,6 +69,10 @@ internal fun NasStorageScreen(
     ) {
         item {
             Text(stringResource(R.string.storage_overview), style = MaterialTheme.typography.titleLarge)
+        }
+        if (!snapshot.storageAvailable) item {
+            if (onReload != null) NasReadFailureNotice(onReload)
+            else Text(stringResource(R.string.nas_read_failed), color = MaterialTheme.colorScheme.error)
         }
         items(snapshot.volumes, key = { "volume:${it.id}" }) { volume ->
             StorageSummaryCard(
@@ -97,28 +84,7 @@ internal fun NasStorageScreen(
             StorageSummaryCard(resource.name, resource.detail)
         }
         item {
-            SmartTestManagementContent(
-                disks = snapshot.storageDisks,
-                statuses = diskTestStatuses,
-                target = diskTestMutationTarget,
-                baseline = diskTestMutationBaseline,
-                type = diskTestMutationOperation,
-                mutationInProgress = diskTestMutationInProgress,
-                result = diskTestMutationResult,
-                failure = diskTestMutationFailure,
-                refreshFailure = diskTestMutationRefreshFailure,
-                refreshInProgress = diskTestMutationRefreshInProgress,
-                refreshCompleted = diskTestMutationRefreshCompleted,
-                enabled = diskTestActionsEnabled,
-                onLoad = { onLoadDiskTest(it.id) },
-                onRequest = { disk, operation ->
-                    val baseline = (diskTestStatuses[disk.id] as? Loadable.Ready)?.value
-                    if (baseline != null) onRequestDiskTest(disk, baseline, operation)
-                },
-                onRefresh = onRefreshDiskTest,
-                onContinue = onContinueDiskTest,
-                onCloseResult = onCloseDiskTestResult,
-            )
+            smartContent()
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -185,14 +151,7 @@ internal fun NasStorageScreen(
             }
         }
     }
-    if (diskTestMutationConfirmationRequested && diskTestMutationTarget != null) {
-        SmartTestConfirmationDialog(
-            target = diskTestMutationTarget,
-            type = diskTestMutationOperation,
-            onConfirm = onConfirmDiskTest,
-            onDismiss = onCancelDiskTestConfirmation,
-        )
-    }
+
 }
 
 @Composable
@@ -274,6 +233,7 @@ internal fun SmartTestDiskCard(
     disk: NasStorageDisk,
     status: Loadable<NasDiskTestStatus>,
     enabled: Boolean,
+    readEnabled: Boolean = enabled,
     onLoad: () -> Unit,
     onRequest: (NasDiskTestType?) -> Unit,
 ) {
@@ -296,7 +256,7 @@ internal fun SmartTestDiskCard(
                 Loadable.Idle -> SmartTestActionButton(
                     label = R.string.check_test_status,
                     description = stringResource(R.string.check_smart_test_description, disk.name),
-                    enabled = enabled,
+                    enabled = readEnabled,
                     onClick = onLoad,
                 )
                 Loadable.Loading -> SmartTestInlineState(
@@ -315,7 +275,7 @@ internal fun SmartTestDiskCard(
                     SmartTestActionButton(
                         label = R.string.retry,
                         description = stringResource(R.string.retry_smart_test_description, disk.name),
-                        enabled = enabled,
+                        enabled = readEnabled,
                         onClick = onLoad,
                     )
                 }
@@ -330,7 +290,7 @@ internal fun SmartTestDiskCard(
                         SmartTestActionButton(
                             label = R.string.refresh,
                             description = stringResource(R.string.refresh_smart_test_description, disk.name),
-                            enabled = enabled,
+                            enabled = readEnabled,
                             onClick = onLoad,
                         )
                     } else {
@@ -349,6 +309,10 @@ internal fun SmartTestDiskCard(
                                 R.string.last_test_result,
                                 driveStateLabel(lastResult) ?: stringResource(R.string.unknown_status),
                             ))
+                        }
+                        if (value.isHistoryAvailable) {
+                            value.lastQuickTest?.let { Text(stringResource(R.string.smart_last_quick, it)) }
+                            value.lastExtendedTest?.let { Text(stringResource(R.string.smart_last_extended, it)) }
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (value.isRunning) {
@@ -373,7 +337,7 @@ internal fun SmartTestDiskCard(
                             SmartTestActionButton(
                                 label = R.string.refresh,
                                 description = stringResource(R.string.refresh_smart_test_description, disk.name),
-                                enabled = enabled,
+                                enabled = readEnabled,
                                 onClick = onLoad,
                             )
                         }

@@ -63,7 +63,7 @@
 - 默认优先使用公开 `SYNO.DownloadStation.*`。
 - 只有运行时能力发现明确返回目标 `DownloadStation2` API，且公开 API 缺少必要能力时，才启用相应内部降级能力。
 - 内部 API 缺失或不兼容时关闭对应增强能力，不使用猜测路径、版本、参数或公开 API 响应模型替代。
-- 未记录的新 DSM build 或 Download Station 版本默认不开放内部写能力。
+- 内部降级必须有明确的请求契约和实际接口能力，不按DSM或Download Station精确版本禁用。
 - 公开接口可以满足的任务、统计和 RSS 能力继续走公开适配器。
 
 ## 客户端与测试

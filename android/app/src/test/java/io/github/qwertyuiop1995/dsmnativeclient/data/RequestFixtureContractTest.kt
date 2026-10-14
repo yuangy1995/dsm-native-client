@@ -1,5 +1,8 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.*
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
@@ -61,7 +64,12 @@ class RequestFixtureContractTest {
         )
         val harness = RequestHarness(fixture)
 
-        harness.repository.deleteVirtualMachineResult("<synthetic-virtual-machine>")
+        val stages = mutableListOf<VmmStage>()
+        harness.repository.virtualMachineManagement.performControl(
+            VmmControlTarget("<synthetic-virtual-machine>", "Synthetic", "shutdown", setOf(VmmAction.DELETE)),
+            VmmAction.DELETE, VmmSource.PUBLIC, stages::add,
+        )
+        assertEquals(listOf(VmmStage.SUBMITTED, VmmStage.ACCEPTED, VmmStage.VERIFIED), stages)
 
         assertRequestMatchesFixture(harness.mutationRequest(), fixture)
     }
@@ -73,7 +81,7 @@ class RequestFixtureContractTest {
         val api = fixture.getValue("api").jsonObject
         val transport = fixture.getValue("transport").jsonObject
         val authentication = fixture.getValue("authentication").jsonObject
-        val body = request.body as FormBody
+        val body = request.fixtureBody() as FormBody
         val values = (0 until body.size).associate { body.name(it) to body.value(it) }
         val expectedParameters = fixture.getValue("parameters").jsonArray.associate { value ->
             val parameter = value.jsonObject
@@ -140,14 +148,14 @@ private class RequestHarness(fixture: JsonObject) {
         .addInterceptor { chain ->
             val request = chain.request()
             requests += request
-            val body = request.body as? FormBody
+            val body = request.fixtureBody() as? FormBody
             val values = body?.let {
                 (0 until it.size).associate { index -> it.name(index) to it.value(index) }
             }.orEmpty()
             val responseBody = when {
                 values["api"] == "SYNO.Virtualization.API.Guest" &&
                     values["method"] == "list" && !mutationSubmitted ->
-                    """{"success":true,"data":{"guests":[{"id":"<synthetic-virtual-machine>","name":"Synthetic","status":"stopped"}]}}"""
+                    """{"success":true,"data":{"guests":[{"guest_id":"<synthetic-virtual-machine>","guest_name":"Synthetic","status":"shutdown"}]}}"""
                 values["api"] == apiName && values["method"] == method -> {
                     mutationSubmitted = true
                     """{"success":true,"data":{}}"""
@@ -164,7 +172,7 @@ private class RequestHarness(fixture: JsonObject) {
         }
         .build()
 
-    val repository = DsmRepository(
+    val repository = authorizedRepository(
         profile = NasProfile(
             id = "test-profile",
             name = "测试 NAS",
@@ -194,13 +202,13 @@ private class RequestHarness(fixture: JsonObject) {
     )
 
     fun mutationRequest(): Request = requests.first { request ->
-        val body = request.body as? FormBody ?: return@first false
+        val body = request.fixtureBody() as? FormBody ?: return@first false
         val values = (0 until body.size).associate { body.name(it) to body.value(it) }
         values["api"] == apiName && values["method"] == method
     }
 
     fun hasMutationRequest(): Boolean = requests.any { request ->
-        val body = request.body as? FormBody ?: return@any false
+        val body = request.fixtureBody() as? FormBody ?: return@any false
         val values = (0 until body.size).associate { body.name(it) to body.value(it) }
         values["api"] == apiName && values["method"] == method
     }

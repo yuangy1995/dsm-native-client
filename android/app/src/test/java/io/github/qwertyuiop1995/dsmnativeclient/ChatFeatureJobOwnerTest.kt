@@ -544,7 +544,7 @@ class ChatFeatureJobOwnerTest {
             ),
         )
 
-        historicalResponse.complete(page(message("older", 0), nextOffset = null, hasMore = false))
+        historicalResponse.complete(page(message("older", 0), previousCursor = null, hasMore = false))
         val afterHistorical = if (revisions.isCurrentMessageRead(
                 "conversation-a",
                 ChatMessageReadLane.PAGINATION,
@@ -577,7 +577,7 @@ class ChatFeatureJobOwnerTest {
         val outgoing = message("local:request-1", 3, mine = true)
         assertFalse(historicalResponse.isCompleted)
 
-        historicalResponse.complete(page(message("older", 1), nextOffset = null, hasMore = false))
+        historicalResponse.complete(page(message("older", 1), previousCursor = null, hasMore = false))
         val merged = if (revisions.isCurrentMessageRead(
                 "conversation-a",
                 ChatMessageReadLane.PAGINATION,
@@ -597,7 +597,7 @@ class ChatFeatureJobOwnerTest {
 
         assertEquals(listOf("older", "current", "local:request-1"), merged.messages.map(ChatMessage::id))
         assertTrue(merged.messages.any { it.id == outgoing.id })
-        assertNull(merged.nextOffset)
+        assertNull(merged.previousCursor)
         assertFalse(merged.hasMore)
     }
 
@@ -751,7 +751,7 @@ class ChatFeatureJobOwnerTest {
 
     private fun page(
         vararg messages: ChatMessage,
-        nextOffset: Int? = 50,
+        previousCursor: String? = "post-50",
         hasMore: Boolean = true,
-    ) = ChatMessagePage(messages.toList(), nextOffset, hasMore)
+    ) = ChatMessagePage(messages.toList(), previousCursor, hasMore)
 }

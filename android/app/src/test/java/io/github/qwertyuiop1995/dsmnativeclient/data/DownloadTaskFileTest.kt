@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
@@ -24,12 +26,11 @@ class DownloadTaskFileTest {
     fun `任务文件使用官方multipart接口且文件位于正文末尾`() = runBlocking {
         val transport = DownloadTaskFileInterceptor(
             """{"success":true,"data":{"files":[{"path":"/downloads","name":"downloads","isdir":true,"additional":{"perm":{"read":true,"write":true,"delete":false}}}]}}""",
-            """{"success":true,"data":{"tasks":[]}}""",
             """{"success":true,"data":{"taskid":"task-1"}}""",
             """{"success":true,"data":{"tasks":[{"id":"task-1","type":"bt","title":"Synthetic","status":"waiting"}]}}""",
         )
         val bytes = "d4:infod4:name4:testee".encodeToByteArray()
-        val repository = DsmRepository(
+        val repository = authorizedRepository(
             NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
             DsmSession("test", "REDACTED_SESSION", "REDACTED_TOKEN"),
             DsmApiClient(OkHttpClient.Builder().addInterceptor(transport).build()),
@@ -49,7 +50,7 @@ class DownloadTaskFileTest {
             ),
         )
 
-        repository.createDownloadFromFile(
+        val result = repository.createDownloadFromFileResult(
             UploadSource(
                 displayName = "synthetic.torrent",
                 contentType = "application/x-bittorrent",
@@ -60,6 +61,7 @@ class DownloadTaskFileTest {
             unzipPassword = "REDACTED_ARCHIVE_PASSWORD",
         )
 
+        assertEquals(io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         val requestIndex = transport.requests.indexOfFirst { it.url.queryParameter("method") == "create" }
         val request = transport.requests[requestIndex]
         assertEquals("SYNO.DownloadStation.Task", request.url.queryParameter("api"))
@@ -68,7 +70,9 @@ class DownloadTaskFileTest {
         assertFalse(request.url.toString().contains("REDACTED_SESSION"))
         val body = transport.bodies[requestIndex]
         assertTrue(body.contains("name=\"destination\""))
-        assertTrue(body.contains("/downloads"))
+        assertTrue(body.contains("\r\n\r\ndownloads\r\n"))
+        assertFalse(body.contains("\r\n\r\n/downloads\r\n"))
+        assertTrue(request.body!!.isOneShot())
         assertTrue(body.contains("name=\"unzip_password\""))
         assertTrue(body.contains("REDACTED_ARCHIVE_PASSWORD"))
         assertTrue(body.contains("name=\"file\"; filename=\"synthetic.torrent\""))

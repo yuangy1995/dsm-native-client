@@ -15,6 +15,8 @@ import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.ui.graphics.vector.ImageVector
 import io.github.qwertyuiop1995.dsmnativeclient.R
 import io.github.qwertyuiop1995.dsmnativeclient.domain.Module
+import io.github.qwertyuiop1995.dsmnativeclient.domain.ModuleAvailability
+import io.github.qwertyuiop1995.dsmnativeclient.allows
 
 /** 界面目的地与业务模块分离；首页、设备根页也必须通过原模块退出门。 */
 internal enum class ClientDestination(val id: String, @StringRes val title: Int, val module: Module) {
@@ -77,6 +79,8 @@ internal data class PinnedModules(val items: List<ClientDestination> = ClientDes
     }
 
     fun encode(): String = items.joinToString("|") { it.id }
+    fun visibleItems(availability: List<ModuleAvailability>): List<ClientDestination> =
+        items.filter { availability.allows(it.module) }
 
     companion object {
         /** 空串表示用户隐藏了全部固定项；未知的旧/新版本标识不参与导航。 */

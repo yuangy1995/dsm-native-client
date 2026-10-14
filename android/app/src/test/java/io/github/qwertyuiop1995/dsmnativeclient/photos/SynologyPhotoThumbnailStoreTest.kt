@@ -8,6 +8,19 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SynologyPhotoThumbnailStoreTest {
+    @Test fun `同一照片的不同相册授权不可复用请求或缓存`() = runTest {
+        SynologyPhotoThumbnailStore(this).use { cache ->
+            var reads = 0
+            suspend fun load(value: SynologyPhoto) = cache.load(value) { byteArrayOf((++reads).toByte()) }
+            val photo = photo(1)
+            assertArrayEquals(byteArrayOf(1), load(photo))
+            assertArrayEquals(byteArrayOf(2), load(photo.copy(albumContext = SynologyPhotoAlbumContext(7, 41))))
+            assertArrayEquals(byteArrayOf(3), load(photo.copy(albumContext = SynologyPhotoAlbumContext(8, 41))))
+            assertArrayEquals(byteArrayOf(2), load(photo.copy(albumContext = SynologyPhotoAlbumContext(7, 41))))
+            assertEquals(3, reads)
+        }
+    }
+
     @Test fun `同一可见项目合并请求并在最后等待者离开时取消`() = runTest {
         SynologyPhotoThumbnailStore(this).use { cache ->
             var requests = 0

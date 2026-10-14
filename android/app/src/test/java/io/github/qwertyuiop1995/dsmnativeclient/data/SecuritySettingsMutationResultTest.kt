@@ -1,5 +1,8 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
+import io.github.qwertyuiop1995.dsmnativeclient.domain.*
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
@@ -24,30 +27,29 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SecuritySettingsMutationResultTest {
     @Test
     fun `正式保存携带完整基线并在整体回读后确认`() = runBlocking {
-        val transport = SecurityQueueInterceptor(AUTO_OFF, SUCCESS, AUTO_ON)
+        val transport = SecurityQueueInterceptor(AUTO_OFF, SUCCESS, AUTO_ON, AUTO_ON)
         val original = security(false)
         val desired = security(true)
 
         val result = repository(transport, AUTO_BLOCK to 1)
-            .saveSecuritySettingsResult(original, desired)
+            .saveSecurity(original, desired)
 
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         assertEquals(1, result.counts.succeeded)
-        assertEquals(listOf("get", "set", "get"), transport.methods())
+        assertEquals(listOf("get", "set", "get", "get"), transport.methods())
     }
 
     @Test
     fun `完整基线漂移时零写入并报告冲突`() = runBlocking {
         val transport = SecurityQueueInterceptor(AUTO_CHANGED)
 
-        val result = repository(transport, AUTO_BLOCK to 1).saveSecuritySettingsResult(
+        val result = repository(transport, AUTO_BLOCK to 1).saveSecurity(
             security(false), security(true),
         )
 
@@ -67,12 +69,9 @@ class SecuritySettingsMutationResultTest {
             dosProtection = listOf(NasDoSProtectionSetting("eth-synthetic", "LAN", true)),
         )
 
-        val result = repository(
-            transport, AUTO_BLOCK to 1, ETHERNET to 1, DOS to 2,
-        ).saveSecuritySettingsResult(original, desired)
-
-        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
-        assertFalse(result.submitted)
+        rejected(DsmErrorKind.FEATURE_UNSUPPORTED) {
+            repository(transport, AUTO_BLOCK to 1, ETHERNET to 1, DOS to 2).saveSecurity(original, desired)
+        }
         assertTrue(transport.requests.isEmpty())
     }
 
@@ -92,7 +91,7 @@ class SecuritySettingsMutationResultTest {
     fun `DoS 读取和写入固定使用 v2 且不重放`() = runBlocking {
         val transport = SecurityQueueInterceptor(
             AUTO_OFF, ETHERNET_ROW, DOS_OFF, SUCCESS,
-            AUTO_OFF, ETHERNET_ROW, DOS_ON,
+            AUTO_OFF, ETHERNET_ROW, DOS_ON, AUTO_OFF, ETHERNET_ROW, DOS_ON,
         )
         val original = security(false).copy(
             dosProtection = listOf(NasDoSProtectionSetting("eth-synthetic", "LAN", false)),
@@ -103,10 +102,10 @@ class SecuritySettingsMutationResultTest {
 
         val result = repository(
             transport, AUTO_BLOCK to 1, ETHERNET to 2, DOS to 2,
-        ).saveSecuritySettingsResult(original, desired)
+        ).saveSecurity(original, desired)
 
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-        assertEquals(listOf("1", "2", "2", "2", "1", "2", "2"), transport.versions())
+        assertEquals(listOf("1", "2", "2", "2", "1", "2", "2", "1", "2", "2"), transport.versions())
         assertEquals(1, transport.methods().count { it == "set" })
     }
 
@@ -118,7 +117,7 @@ class SecuritySettingsMutationResultTest {
 
         val result = repository(
             transport, AUTO_BLOCK to 1, FIREWALL_CONF to 1,
-        ).saveSecuritySettingsResult(original, desired)
+        ).saveSecurity(original, desired)
 
         assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
         assertEquals(2, result.counts.failed)
@@ -127,7 +126,7 @@ class SecuritySettingsMutationResultTest {
     }
 
     @Test
-    fun `正式入口提交后取消按整体回读返回部分成功且不标冲突`() = runBlocking {
+    fun `正式入口第二组取消保留第一组成功且停止后续读取`() = runBlocking {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val transport = SecurityCancellationInterceptor(entered, release)
@@ -138,19 +137,25 @@ class SecuritySettingsMutationResultTest {
         val job = launch(Dispatchers.Default) {
             result = repository(
                 transport, AUTO_BLOCK to 1, FIREWALL_CONF to 1,
-            ).saveSecuritySettingsResult(original, desired)
+            ).saveSecurity(original, desired)
         }
         assertTrue(entered.await(5, TimeUnit.SECONDS))
         job.cancel()
         release.countDown()
         job.join()
 
-        assertEquals(MutationResultStatus.PARTIAL_SUCCESS, result?.status)
+        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, result?.status)
         assertEquals(1, result?.counts?.succeeded)
         assertEquals(1, result?.counts?.unknown)
-        assertNull(result?.errorCategory)
+        assertTrue(result?.errorCategory != MutationErrorCategory.CONFLICT)
         assertEquals(2, transport.methods().count { it == "set" })
-        assertEquals(listOf("get", "get", "set", "set", "get", "get"), transport.methods())
+        assertEquals(listOf("get", "get", "set", "get", "get", "get", "get", "set"), transport.methods())
+    }
+
+    private suspend fun DsmRepository.saveSecurity(original: NasSecuritySettings, desired: NasSecuritySettings): MutationResult =
+        nasServices.save(nasServices.plan(NasServiceValue.Security(original), NasServiceValue.Security(desired))) { }
+    private suspend fun rejected(kind: DsmErrorKind, action: suspend () -> Unit) {
+        val error = try { action(); error("Expected rejection") } catch (failure: DsmFailure) { failure }; assertEquals(kind, error.kind)
     }
 
     private fun security(enabled: Boolean) = NasSecuritySettings(
@@ -161,11 +166,16 @@ class SecuritySettingsMutationResultTest {
     private fun repository(
         interceptor: Interceptor,
         vararg versions: Pair<String, Int>,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("synthetic", "Synthetic", "https://nas.example.invalid", "operator"),
         DsmSession("synthetic", "synthetic-session", "synthetic-token"),
-        DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
-        versions.associate { (name, max) -> name to ApiCapability(name, "entry.cgi", 1, max) },
+        DsmApiClient(OkHttpClient.Builder().addInterceptor { chain ->
+            if (chain.request().securityFields()["api"] == "SYNO.Core.System") Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("synthetic")
+                .body("""{"success":true,"data":{"firmware_ver":"DSM 7.2.1-69057 Update 12","buildnumber":69057,"smallfixnumber":12}}""".toResponseBody("application/json".toMediaType())).build()
+            else chain.proceed(chain.request())
+        }.addInterceptor(interceptor).build()),
+        versions.associate { (name, max) -> name to ApiCapability(name, "entry.cgi", 1, max) } +
+            ("SYNO.Core.System" to ApiCapability("SYNO.Core.System", "entry.cgi", 1, 1)),
     )
 
     private companion object {
@@ -208,13 +218,13 @@ private class SecurityCancellationInterceptor(
             0 -> """{"success":true,"data":{"enable":false,"attempts":10,"within_mins":5,"expire_day":0}}"""
             1 -> """{"success":true,"data":{"enable_port_check":false}}"""
             2 -> """{"success":true,"data":{}}"""
-            3 -> {
+            7 -> {
                 entered.countDown()
                 check(release.await(5, TimeUnit.SECONDS)) { "合成安全设置请求等待取消超时" }
                 """{"success":true,"data":{}}"""
             }
-            4 -> """{"success":true,"data":{"enable":true,"attempts":5,"within_mins":10,"expire_day":7}}"""
-            5 -> """{"success":true,"data":{"enable_port_check":false}}"""
+            3, 5 -> """{"success":true,"data":{"enable":true,"attempts":5,"within_mins":10,"expire_day":7}}"""
+            4, 6 -> """{"success":true,"data":{"enable_port_check":false}}"""
             else -> error("缺少合成取消响应")
         }
         return Response.Builder()
@@ -251,6 +261,6 @@ private class SecurityQueueInterceptor(vararg responses: String) : Interceptor {
 }
 
 private fun Request.securityFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return (0 until form.size).associate { form.name(it) to form.value(it) }
 }

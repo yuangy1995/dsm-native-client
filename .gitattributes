@@ -1,0 +1,2 @@
+# Gradle 生成的 Windows 启动器使用 CRLF，Git 对文本差异统一规范化。
+android/gradlew.bat text eol=crlf

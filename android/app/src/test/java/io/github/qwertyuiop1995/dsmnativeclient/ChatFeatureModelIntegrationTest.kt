@@ -25,6 +25,22 @@ import org.junit.Test
 
 class ChatFeatureModelIntegrationTest {
     @Test
+    fun `打开会话与加载消息都不会提前清零未读`() = runTest {
+        val fixture = Fixture(testScheduler)
+        try {
+            val unread = fixture.conversationA.copy(unreadCount = 3, latestAtEpochSeconds = 100, latestPreview = "Unread")
+            fixture.workspace.value = fixture.state().copy(conversations = Loadable.Ready(listOf(unread)))
+            fixture.feature.openConversation(unread)
+            runCurrent()
+            assertEquals(3, fixture.state().selectedConversation!!.unreadCount)
+            assertEquals(3, (fixture.state().conversations as Loadable.Ready).value.single().unreadCount)
+            fixture.source.request(unread.id, null).response.complete(page(message("visible-later", 100)))
+            runCurrent()
+            assertEquals(3, fixture.state().selectedConversation!!.unreadCount)
+        } finally { fixture.close() }
+    }
+
+    @Test
     fun `分页与实时 HEAD 并行时保留历史消息并由分页收回 loading`() = runTest {
         val fixture = Fixture(testScheduler)
         try {
@@ -32,27 +48,27 @@ class ChatFeatureModelIntegrationTest {
 
             fixture.feature.loadOlderMessages()
             runCurrent()
-            val pagination = fixture.source.request("conversation-a", 2)
+            val pagination = fixture.source.request("conversation-a", "post-2")
             assertTrue(fixture.state().chatIsLoadingMore)
 
             fixture.source.realtime.fireContentChanged()
             advanceTimeBy(CHAT_REALTIME_COALESCE_MILLIS)
             runCurrent()
-            val realtimeHead = fixture.source.request("conversation-a", 0, occurrence = 1)
+            val realtimeHead = fixture.source.request("conversation-a", null, occurrence = 1)
             realtimeHead.response.complete(page(message("A", 1), message("B", 2), message("C", 3)))
             runCurrent()
 
             assertEquals(listOf("A", "B", "C"), fixture.messageIds())
-            assertEquals(2, fixture.page().nextOffset)
+            assertEquals("post-2", fixture.page().previousCursor)
             assertTrue(fixture.page().hasMore)
             assertTrue(fixture.state().chatIsLoadingMore)
 
-            pagination.response.complete(page(message("older", 0), nextOffset = null, hasMore = false))
+            pagination.response.complete(page(message("older", 0), previousCursor = null, hasMore = false))
             runCurrent()
 
             assertEquals(listOf("older", "A", "B", "C"), fixture.messageIds())
             assertFalse(fixture.state().chatIsLoadingMore)
-            assertEquals(null, fixture.page().nextOffset)
+            assertEquals(null, fixture.page().previousCursor)
             assertFalse(fixture.page().hasMore)
         } finally {
             fixture.close()
@@ -66,19 +82,19 @@ class ChatFeatureModelIntegrationTest {
             openReadyConversation(fixture)
             fixture.feature.loadOlderMessages()
             runCurrent()
-            val pagination = fixture.source.request("conversation-a", 2)
+            val pagination = fixture.source.request("conversation-a", "post-2")
 
             fixture.source.realtime.fireContentChanged()
             advanceTimeBy(CHAT_REALTIME_COALESCE_MILLIS)
             runCurrent()
-            val realtimeHead = fixture.source.request("conversation-a", 0, occurrence = 1)
+            val realtimeHead = fixture.source.request("conversation-a", null, occurrence = 1)
             realtimeHead.response.completeExceptionally(IllegalStateException("head failed"))
             runCurrent()
 
             assertEquals(listOf("A", "B"), fixture.messageIds())
             assertTrue(fixture.state().chatIsLoadingMore)
 
-            pagination.response.complete(page(message("older", 0), nextOffset = null, hasMore = false))
+            pagination.response.complete(page(message("older", 0), previousCursor = null, hasMore = false))
             runCurrent()
 
             assertEquals(listOf("older", "A", "B"), fixture.messageIds())
@@ -95,12 +111,12 @@ class ChatFeatureModelIntegrationTest {
             openReadyConversation(fixture)
             fixture.feature.loadOlderMessages()
             runCurrent()
-            val pagination = fixture.source.request("conversation-a", 2)
+            val pagination = fixture.source.request("conversation-a", "post-2")
             assertTrue(fixture.state().chatIsLoadingMore)
 
             fixture.feature.loadModule()
             runCurrent()
-            val refreshHead = fixture.source.request("conversation-a", 0, occurrence = 1)
+            val refreshHead = fixture.source.request("conversation-a", null, occurrence = 1)
             refreshHead.response.completeExceptionally(IllegalStateException("head failed"))
             runCurrent()
 
@@ -108,7 +124,7 @@ class ChatFeatureModelIntegrationTest {
             assertEquals(listOf("A", "B"), fixture.messageIds())
             assertTrue(fixture.state().chatIsLoadingMore)
 
-            pagination.response.complete(page(message("older", 0), nextOffset = null, hasMore = false))
+            pagination.response.complete(page(message("older", 0), previousCursor = null, hasMore = false))
             runCurrent()
 
             assertEquals(listOf("older", "A", "B"), fixture.messageIds())
@@ -125,7 +141,7 @@ class ChatFeatureModelIntegrationTest {
             openReadyConversation(fixture)
             fixture.feature.loadOlderMessages()
             runCurrent()
-            val pagination = fixture.source.request("conversation-a", 2)
+            val pagination = fixture.source.request("conversation-a", "post-2")
             assertTrue(fixture.state().chatIsLoadingMore)
 
             pagination.response.completeExceptionally(IllegalStateException("pagination failed"))
@@ -165,7 +181,7 @@ class ChatFeatureModelIntegrationTest {
             runCurrent()
             fixture.feature.openConversation(fixture.conversationA)
             runCurrent()
-            fixture.source.request("conversation-a", 0)
+            fixture.source.request("conversation-a", null)
                 .response
                 .completeExceptionally(IllegalStateException("initial head failed"))
             runCurrent()
@@ -185,28 +201,28 @@ class ChatFeatureModelIntegrationTest {
             runCurrent()
             fixture.feature.openConversation(fixture.conversationA)
             runCurrent()
-            fixture.source.request("conversation-a", 0).response.complete(
-                page(message("old", 1), nextOffset = null, hasMore = false),
+            fixture.source.request("conversation-a", null).response.complete(
+                page(message("old", 1), previousCursor = null, hasMore = false),
             )
             runCurrent()
 
             fixture.feature.loadModule()
             runCurrent()
-            fixture.source.request("conversation-a", 0, occurrence = 1).response.complete(
-                page(message("latest", 100), nextOffset = 50, hasMore = true),
+            fixture.source.request("conversation-a", null, occurrence = 1).response.complete(
+                page(message("latest", 100), previousCursor = "post-50", hasMore = true),
             )
             runCurrent()
 
             assertEquals(listOf("old", "latest"), fixture.messageIds())
-            assertEquals(50, fixture.page().nextOffset)
+            assertEquals("post-50", fixture.page().previousCursor)
             assertTrue(fixture.page().hasMore)
 
             fixture.feature.loadOlderMessages()
             runCurrent()
-            val bridgePagination = fixture.source.request("conversation-a", 50)
+            val bridgePagination = fixture.source.request("conversation-a", "post-50")
             assertTrue(fixture.state().chatIsLoadingMore)
             bridgePagination.response.complete(
-                page(message("bridge", 50), nextOffset = null, hasMore = false),
+                page(message("bridge", 50), previousCursor = null, hasMore = false),
             )
             runCurrent()
 
@@ -226,15 +242,15 @@ class ChatFeatureModelIntegrationTest {
             runCurrent()
             fixture.feature.openConversation(fixture.conversationA)
             runCurrent()
-            fixture.source.request("conversation-a", 0).response.complete(
-                page(message("A", 1, body = "旧正文", isPinned = false), nextOffset = 2, hasMore = true),
+            fixture.source.request("conversation-a", null).response.complete(
+                page(message("A", 1, body = "旧正文", isPinned = false), previousCursor = "post-2", hasMore = true),
             )
             runCurrent()
 
             fixture.source.realtime.fireContentChanged()
             advanceTimeBy(CHAT_REALTIME_COALESCE_MILLIS)
             runCurrent()
-            fixture.source.request("conversation-a", 0, occurrence = 1).response.complete(
+            fixture.source.request("conversation-a", null, occurrence = 1).response.complete(
                 page(message("A", 1, body = "服务端新正文", isPinned = true)),
             )
             runCurrent()
@@ -242,7 +258,7 @@ class ChatFeatureModelIntegrationTest {
             val updated = fixture.page().messages.single()
             assertEquals("服务端新正文", updated.body)
             assertTrue(updated.isPinned)
-            assertEquals(2, fixture.page().nextOffset)
+            assertEquals("post-2", fixture.page().previousCursor)
             assertTrue(fixture.page().hasMore)
         } finally {
             fixture.close()
@@ -256,8 +272,8 @@ class ChatFeatureModelIntegrationTest {
             openReadyConversation(fixture)
             fixture.feature.loadOlderMessages()
             runCurrent()
-            assertEquals(1, fixture.source.requestCount("conversation-a", 2))
-            val oldPagination = fixture.source.request("conversation-a", 2)
+            assertEquals(1, fixture.source.requestCount("conversation-a", "post-2"))
+            val oldPagination = fixture.source.request("conversation-a", "post-2")
 
             // 构造同一分页分道已经失去公开投影、但私有 owner 尚未释放的替换窗口。新任务
             // 必须仅在旧 token 已失效后接管 owner，旧 finally 随后不得清掉新任务的投影。
@@ -269,18 +285,18 @@ class ChatFeatureModelIntegrationTest {
             fixture.feature.loadOlderMessages()
             runCurrent()
 
-            assertEquals(2, fixture.source.requestCount("conversation-a", 2))
-            val replacementPagination = fixture.source.request("conversation-a", 2, occurrence = 1)
+            assertEquals(2, fixture.source.requestCount("conversation-a", "post-2"))
+            val replacementPagination = fixture.source.request("conversation-a", "post-2", occurrence = 1)
             assertTrue(fixture.state().chatIsLoadingMore)
 
-            oldPagination.response.complete(page(message("older", 0), nextOffset = null, hasMore = false))
+            oldPagination.response.complete(page(message("older", 0), previousCursor = null, hasMore = false))
             runCurrent()
 
             assertEquals(listOf("A", "B"), fixture.messageIds())
             assertTrue(fixture.state().chatIsLoadingMore)
 
             replacementPagination.response.complete(
-                page(message("older", 0), nextOffset = null, hasMore = false),
+                page(message("older", 0), previousCursor = null, hasMore = false),
             )
             runCurrent()
 
@@ -298,23 +314,23 @@ class ChatFeatureModelIntegrationTest {
             openReadyConversation(fixture)
             fixture.feature.loadOlderMessages()
             runCurrent()
-            val oldPagination = fixture.source.request("conversation-a", 2)
+            val oldPagination = fixture.source.request("conversation-a", "post-2")
 
             fixture.source.realtime.fireContentChanged()
             advanceTimeBy(CHAT_REALTIME_COALESCE_MILLIS)
             runCurrent()
-            val oldHead = fixture.source.request("conversation-a", 0, occurrence = 1)
+            val oldHead = fixture.source.request("conversation-a", null, occurrence = 1)
 
             fixture.feature.openConversation(fixture.conversationB)
             runCurrent()
             assertTrue(fixture.state().chatMessages is Loadable.Loading)
             assertFalse(fixture.state().chatIsLoadingMore)
-            val newHead = fixture.source.request("conversation-b", 0)
+            val newHead = fixture.source.request("conversation-b", null)
             newHead.response.complete(page(message("B-current", 10, conversationId = "conversation-b")))
             runCurrent()
 
             oldHead.response.complete(page(message("A-late", 4)))
-            oldPagination.response.complete(page(message("A-older", 0), nextOffset = null, hasMore = false))
+            oldPagination.response.complete(page(message("A-older", 0), previousCursor = null, hasMore = false))
             runCurrent()
 
             assertEquals("conversation-b", fixture.state().selectedConversation?.id)
@@ -332,12 +348,12 @@ class ChatFeatureModelIntegrationTest {
             openReadyConversation(fixture)
             fixture.feature.loadOlderMessages()
             runCurrent()
-            val oldPagination = fixture.source.request("conversation-a", 2)
+            val oldPagination = fixture.source.request("conversation-a", "post-2")
 
             fixture.source.realtime.fireContentChanged()
             advanceTimeBy(CHAT_REALTIME_COALESCE_MILLIS)
             runCurrent()
-            val oldHead = fixture.source.request("conversation-a", 0, occurrence = 1)
+            val oldHead = fixture.source.request("conversation-a", null, occurrence = 1)
 
             fixture.workspace.value = workspace("profile-b").copy(
                 selectedConversation = fixture.conversationB,
@@ -348,7 +364,7 @@ class ChatFeatureModelIntegrationTest {
             )
             fixture.feature.clearForProfileSwitch()
             oldHead.response.complete(page(message("A-late", 4)))
-            oldPagination.response.complete(page(message("A-older", 0), nextOffset = null, hasMore = false))
+            oldPagination.response.complete(page(message("A-older", 0), previousCursor = null, hasMore = false))
             runCurrent()
 
             assertEquals("profile-b", fixture.state().profile.id)
@@ -360,13 +376,36 @@ class ChatFeatureModelIntegrationTest {
         }
     }
 
+    @Test fun `通知复用单条实时连接离开Chat仍回调停用后旧事件失效`() = runTest {
+        val fixture = Fixture(testScheduler)
+        try {
+            fixture.workspace.value = fixture.state().copy(selectedModule = Module.FILES)
+            var notices = 0
+            fixture.feature.observeNotices { notices++ }
+            val original = fixture.source.realtime
+            fixture.feature.observeNotices { notices++ }
+            assertTrue(original === fixture.source.realtime)
+            original.fireContentChanged(); advanceTimeBy(CHAT_REALTIME_COALESCE_MILLIS); runCurrent()
+            assertEquals(1, notices)
+            fixture.feature.stopForModuleExit()
+            val replacement = fixture.source.realtime
+            original.fireContentChanged(); advanceTimeBy(CHAT_REALTIME_COALESCE_MILLIS); runCurrent()
+            assertEquals(1, notices)
+            replacement.fireContentChanged(); advanceTimeBy(CHAT_REALTIME_COALESCE_MILLIS); runCurrent()
+            assertEquals(2, notices)
+            fixture.feature.observeNotices(null)
+            replacement.fireContentChanged(); advanceTimeBy(CHAT_REALTIME_COALESCE_MILLIS); runCurrent()
+            assertEquals(2, notices)
+        } finally { fixture.close() }
+    }
+
     private fun TestScope.openReadyConversation(fixture: Fixture) {
         fixture.feature.loadModule()
         runCurrent()
         fixture.feature.openConversation(fixture.conversationA)
         runCurrent()
-        fixture.source.request("conversation-a", 0).response.complete(
-            page(message("A", 1), message("B", 2), nextOffset = 2, hasMore = true),
+        fixture.source.request("conversation-a", null).response.complete(
+            page(message("A", 1), message("B", 2), previousCursor = "post-2", hasMore = true),
         )
         runCurrent()
     }
@@ -405,8 +444,8 @@ class ChatFeatureModelIntegrationTest {
 
         override suspend fun conversations(): List<ChatConversation> = availableConversations
 
-        override suspend fun messages(conversationId: String, offset: Int): ChatMessagePage {
-            val request = MessageRequest(conversationId, offset)
+        override suspend fun messages(conversationId: String, before: String?): ChatMessagePage {
+            val request = MessageRequest(conversationId, before)
             requests += request
             return request.response.await()
         }
@@ -419,11 +458,11 @@ class ChatFeatureModelIntegrationTest {
             onContentChanged,
         ).also { realtime = it }
 
-        fun request(conversationId: String, offset: Int, occurrence: Int = 0): MessageRequest =
-            requests.filter { it.conversationId == conversationId && it.offset == offset }[occurrence]
+        fun request(conversationId: String, before: String?, occurrence: Int = 0): MessageRequest =
+            requests.filter { it.conversationId == conversationId && it.before == before }[occurrence]
 
-        fun requestCount(conversationId: String, offset: Int): Int =
-            requests.count { it.conversationId == conversationId && it.offset == offset }
+        fun requestCount(conversationId: String, before: String?): Int =
+            requests.count { it.conversationId == conversationId && it.before == before }
     }
 
     private class FakeRealtimeConnection(
@@ -448,7 +487,7 @@ class ChatFeatureModelIntegrationTest {
 
     private data class MessageRequest(
         val conversationId: String,
-        val offset: Int,
+        val before: String?,
         val response: CompletableDeferred<ChatMessagePage> = CompletableDeferred(),
     )
 
@@ -483,8 +522,8 @@ class ChatFeatureModelIntegrationTest {
 
         fun page(
             vararg messages: ChatMessage,
-            nextOffset: Int? = 2,
+            previousCursor: String? = "post-2",
             hasMore: Boolean = true,
-        ): ChatMessagePage = ChatMessagePage(messages.toList(), nextOffset, hasMore)
+        ): ChatMessagePage = ChatMessagePage(messages.toList(), previousCursor, hasMore)
     }
 }

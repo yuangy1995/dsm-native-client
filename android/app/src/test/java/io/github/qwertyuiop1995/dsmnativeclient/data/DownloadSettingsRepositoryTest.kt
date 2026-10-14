@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
@@ -30,7 +32,6 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
 
 class DownloadSettingsRepositoryTest {
@@ -53,59 +54,50 @@ class DownloadSettingsRepositoryTest {
     @Test
     fun `基础设置缺失字段不能默认为零或关闭`() = runBlocking {
         val malformed = """{"success":true,"data":{"default_destination":"downloads"}}"""
-
-        val failure = captureFailure { repository(DownloadSettingsInterceptor(malformed)).loadDownloadSettings() }
-
-        assertEquals(DsmErrorKind.INVALID_RESPONSE, failure.kind)
+        val transport = DownloadSettingsInterceptor(malformed, scheduleResponse())
+        val settings = repository(transport).loadDownloadSettings()
+        assertEquals(setOf("default_destination", "enabled", "schedule_emule_enabled"), settings.availableFields)
+        val result = repository(DownloadSettingsInterceptor()).saveDownloadSettingsResult(
+            settings, settings.copy(btDownloadLimitKb = 10))
+        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
+        assertFalse(result.submitted)
     }
 
     @Test
-    fun `计划设置畸形不能默认为关闭`() = runBlocking {
-        val malformedSchedule = """{"success":true,"data":{"enabled":false}}"""
-
-        val failure = captureFailure {
-            repository(DownloadSettingsInterceptor(basicResponse(), malformedSchedule))
-                .loadDownloadSettings()
-        }
-
-        assertEquals(DsmErrorKind.INVALID_RESPONSE, failure.kind)
+    fun `计划设置缺失字段不能默认为关闭`() = runBlocking {
+        val missingEmule = """{"success":true,"data":{"enabled":false}}"""
+        val settings = repository(DownloadSettingsInterceptor(basicResponse(), missingEmule)).loadDownloadSettings()
+        assertTrue("enabled" in settings.availableFields)
+        assertFalse("schedule_emule_enabled" in settings.availableFields)
+        val malformed = """{"success":true,"data":{"enabled":"false","emule_enabled":0}}"""
+        val invalid = repository(DownloadSettingsInterceptor(basicResponse(), malformed)).loadDownloadSettings()
+        assertFalse("enabled" in invalid.availableFields)
+        assertFalse("schedule_emule_enabled" in invalid.availableFields)
+        assertTrue("bt_max_download" in invalid.availableFields)
     }
 
     @Test
     fun `HTTP FTP回读不一致不能被折叠成可信共享限速`() = runBlocking {
-        val divergent = basicResponse().replace(
-            "\"ftp_max_download\":0",
-            "\"ftp_max_download\":1",
-        )
-
-        val failure = captureFailure {
-            repository(DownloadSettingsInterceptor(divergent)).loadDownloadSettings()
-        }
-
-        assertEquals(DsmErrorKind.INVALID_RESPONSE, failure.kind)
+        val divergent = basicResponse().replace("\"ftp_max_download\":0", "\"ftp_max_download\":1")
+        val settings = repository(DownloadSettingsInterceptor(divergent, scheduleResponse())).loadDownloadSettings()
+        assertFalse("http_max_download" in settings.availableFields)
+        assertFalse("ftp_max_download" in settings.availableFields)
+        assertTrue("bt_max_download" in settings.availableFields)
     }
 
     @Test
-    fun `保存两组件后严格回读并把HTTP FTP请求规范化为同值`() = runBlocking {
+    fun `两组件分别差量保存与回读且HTTP FTP保持同值`() = runBlocking {
         val original = baseline()
         val desired = desired().copy(
             btUploadLimitKb = 100,
-            ftpDownloadLimitKb = 999,
+            ftpDownloadLimitKb = 200,
             nzbDownloadLimitKb = 300,
         )
         val transport = DownloadSettingsInterceptor(
-            basicResponse(),
-            scheduleResponse(),
-            success(),
-            success(),
-            basicResponse(
-                autoExtract = true,
-                btLimit = 500,
-                btUploadLimit = 100,
-                webFtpLimit = 200,
-                nzbLimit = 300,
-            ),
-            scheduleResponse(enabled = true),
+            basicResponse(), scheduleResponse(), success(),
+            basicResponse(autoExtract = true, btLimit = 500, btUploadLimit = 100, webFtpLimit = 200, nzbLimit = 300), scheduleResponse(),
+            basicResponse(autoExtract = true, btLimit = 500, btUploadLimit = 100, webFtpLimit = 200, nzbLimit = 300), scheduleResponse(), success(),
+            basicResponse(autoExtract = true, btLimit = 500, btUploadLimit = 100, webFtpLimit = 200, nzbLimit = 300), scheduleResponse(enabled = true),
         )
 
         val result = repository(transport).saveDownloadSettingsResult(original, desired)
@@ -113,7 +105,8 @@ class DownloadSettingsRepositoryTest {
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         assertEquals(2, result.counts.succeeded)
         assertEquals(
-            listOf("getconfig", "getconfig", "setserverconfig", "setconfig", "getconfig", "getconfig"),
+            listOf("getinfo", "getconfig", "getconfig", "setserverconfig", "getinfo", "getconfig", "getconfig",
+                "getinfo", "getconfig", "getconfig", "setconfig", "getinfo", "getconfig", "getconfig"),
             transport.requests.map { it.settingsFormFields()["method"] },
         )
         val basicWrite = transport.requests.single {
@@ -123,18 +116,18 @@ class DownloadSettingsRepositoryTest {
         assertEquals("200", basicWrite.settingsFormFields()["ftp_max_download"])
         RequestFixtureAssertions.assertRequest(
             basicWrite,
-            "download-station/save-settings/synthetic-settings/request.json",
+            "download-station/save-settings/synthetic-delta/request.json",
         )
         RequestFixtureAssertions.assertRequest(
             transport.requests.single { it.settingsFormFields()["method"] == "setconfig" },
-            "download-station/save-schedule/synthetic-settings/request.json",
+            "download-station/save-schedule/synthetic-delta/request.json",
         )
     }
 
     @Test
     fun `持锁后二次读取发现baseline漂移时零写入`() = runBlocking {
         val transport = DownloadSettingsInterceptor(
-            basicResponse(destination = "changed"),
+            basicResponse(autoExtract = true),
             scheduleResponse(),
         )
 
@@ -163,10 +156,8 @@ class DownloadSettingsRepositoryTest {
         val original = baseline()
         val desired = original.copy(autoExtractEnabled = true)
         val transport = DownloadSettingsInterceptor(
-            basicResponse(),
-            scheduleResponse(),
-            success(),
-            basicResponse(autoExtract = true),
+            basicResponse(), scheduleResponse(), success(),
+            basicResponse(autoExtract = true), scheduleResponse(),
         )
 
         val result = repository(transport).saveDownloadSettingsResult(original, desired)
@@ -182,10 +173,8 @@ class DownloadSettingsRepositoryTest {
         val original = baseline()
         val desired = original.copy(scheduleEnabled = true)
         val transport = DownloadSettingsInterceptor(
-            basicResponse(),
-            scheduleResponse(),
-            success(),
-            scheduleResponse(enabled = true),
+            basicResponse(), scheduleResponse(), success(),
+            basicResponse(), scheduleResponse(enabled = true),
         )
 
         val result = repository(transport).saveDownloadSettingsResult(original, desired)
@@ -199,12 +188,9 @@ class DownloadSettingsRepositoryTest {
     @Test
     fun `计划提交失败但基础设置已确认时返回部分成功且不重放`() = runBlocking {
         val transport = DownloadSettingsInterceptor(
-            basicResponse(),
-            scheduleResponse(),
-            success(),
-            failure(105),
-            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200),
-            scheduleResponse(),
+            basicResponse(), scheduleResponse(), success(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), scheduleResponse(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), scheduleResponse(), failure(105),
         )
 
         val result = repository(transport).saveDownloadSettingsResult(baseline(), desired())
@@ -219,12 +205,10 @@ class DownloadSettingsRepositoryTest {
     @Test
     fun `计划回读失败保留unknown且不把基础成功压成全部成功`() = runBlocking {
         val transport = DownloadSettingsInterceptor(
-            basicResponse(),
-            scheduleResponse(),
-            success(),
-            success(),
-            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200),
-            IOException("synthetic schedule readback failure"),
+            basicResponse(), scheduleResponse(), success(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), scheduleResponse(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), scheduleResponse(), success(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), IOException("synthetic schedule readback failure"),
         )
 
         val result = repository(transport).saveDownloadSettingsResult(baseline(), desired())
@@ -236,14 +220,12 @@ class DownloadSettingsRepositoryTest {
     }
 
     @Test
-    fun `第二阶段取消只回读并保留计划unknown`() = runBlocking {
+    fun `第二阶段取消保留基础成功与计划unknown`() = runBlocking {
         val transport = DownloadSettingsInterceptor(
-            basicResponse(),
-            scheduleResponse(),
-            success(),
+            basicResponse(), scheduleResponse(), success(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), scheduleResponse(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), scheduleResponse(),
             CancellationException("synthetic cancellation during schedule submission"),
-            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200),
-            scheduleResponse(),
         )
 
         val result = repository(transport).saveDownloadSettingsResult(baseline(), desired())
@@ -321,10 +303,43 @@ class DownloadSettingsRepositoryTest {
         assertEquals(1, transport.requests.count { it.settingsFormFields()["method"] == "setconfig" })
     }
 
+    @Test
+    fun `基础完成后计划预检漂移仍保留部分成功且不发送计划`() = runBlocking {
+        val transport = DownloadSettingsInterceptor(
+            basicResponse(), scheduleResponse(), success(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), scheduleResponse(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), scheduleResponse(enabled = true),
+        )
+        val result = repository(transport).saveDownloadSettingsResult(baseline(), desired())
+        assertEquals(MutationResultStatus.PARTIAL_SUCCESS, result.status)
+        assertTrue(result.submitted)
+        assertEquals(1, result.counts.succeeded)
+        assertEquals(1, result.counts.failed)
+        assertEquals(0, result.counts.unknown)
+        assertEquals(MutationErrorCategory.CONFLICT, result.errorCategory)
+        assertEquals(listOf("setserverconfig"), transport.requests.mapNotNull { it.settingsFormFields()["method"]?.takeIf { it.startsWith("set") } })
+    }
+
+    @Test
+    fun `基础完成后权限撤销保留结果且后续请求为零`() = runBlocking {
+        val transport = DownloadSettingsInterceptor(
+            basicResponse(), scheduleResponse(), success(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), scheduleResponse(),
+            basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200), scheduleResponse(),
+        )
+        transport.managers.addAll(listOf(true, true, false))
+        val result = repository(transport).saveDownloadSettingsResult(baseline(), desired())
+        assertEquals(MutationResultStatus.PARTIAL_SUCCESS, result.status)
+        assertEquals(1, result.counts.succeeded)
+        assertEquals(1, result.counts.failed)
+        assertEquals(MutationErrorCategory.PERMISSION, result.errorCategory)
+        assertEquals(1, transport.writeCount())
+    }
+
     private fun repository(
         interceptor: Interceptor,
         supportsSchedule: Boolean = true,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
         DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
@@ -339,7 +354,7 @@ class DownloadSettingsRepositoryTest {
     private fun baseline() = DownloadSettings(defaultDestination = "downloads")
 
     private fun desired() = DownloadSettings(
-        defaultDestination = "/downloads",
+        defaultDestination = "downloads",
         autoExtractEnabled = true,
         btDownloadLimitKb = 500,
         httpDownloadLimitKb = 200,
@@ -347,24 +362,20 @@ class DownloadSettingsRepositoryTest {
         scheduleEnabled = true,
     )
 
-    private suspend fun captureFailure(block: suspend () -> Unit): DsmFailure {
-        try {
-            block()
-        } catch (failure: DsmFailure) {
-            return failure
-        }
-        fail("预期严格下载设置读取失败")
-        error("unreachable")
-    }
+
 }
 
 private class DownloadSettingsInterceptor(vararg responses: Any) : Interceptor {
     private val pending = ArrayDeque(responses.toList())
+    val managers = ArrayDeque<Boolean>()
     val requests: MutableList<Request> = Collections.synchronizedList(mutableListOf())
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         requests += request
+        if (request.settingsFormFields()["method"] == "getinfo") {
+            return syntheticResponse(request, """{"success":true,"data":{"is_manager":${managers.removeFirstOrNull() ?: true}}}""")
+        }
         val step = pending.removeFirstOrNull() ?: error("缺少合成下载设置响应")
         if (step is Throwable) throw step
         return syntheticResponse(request, step as String)
@@ -395,6 +406,7 @@ private class BlockingDownloadSettingsInterceptor : Interceptor {
             scheduleWritten.set(true)
         }
         val body = when {
+            method == "getinfo" -> """{"success":true,"data":{"is_manager":true}}"""
             method in setOf("setserverconfig", "setconfig") -> success()
             request.url.encodedPath.endsWith("info.cgi") -> if (basicWritten.get()) {
                 basicResponse(autoExtract = true, btLimit = 500, webFtpLimit = 200)
@@ -416,7 +428,7 @@ private fun syntheticResponse(request: Request, body: String) = Response.Builder
     .build()
 
 private fun Request.settingsFormFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return (0 until form.size).associate { form.name(it) to form.value(it) }
 }
 

@@ -197,7 +197,7 @@ internal fun WorkspaceState.pageLinkDestination(): WorkspacePageLinkDestination 
             fileStationMutationState.editorVisible ||
             fileStationMutationState.confirmationRequested ||
             fileStationMutationState.target != null ||
-            fileFavorites !is Loadable.Idle || fileRemoteLocations !is Loadable.Idle ||
+            fileFavorites !is Loadable.Idle ||
             fileRecentLocations !is Loadable.Idle || fileShareLinks !is Loadable.Idle -> {
             WorkspacePageLinkDestination.Unavailable
         }
@@ -303,12 +303,7 @@ internal fun WorkspaceState.pageLinkDestination(): WorkspacePageLinkDestination 
     }
 
     Module.VIRTUAL_MACHINES -> when {
-        virtualMachineMutationState.creationEditorVisible ||
-            virtualMachineMutationState.imageImportEditorVisible ||
-            virtualMachineMutationState.settingsEditorVisible ||
-            virtualMachineMutationState.lifecycleConfirmationRequested ||
-            virtualMachineMutationState.taskCleanupConfirmationRequested ||
-            virtualMachineMutationState.target != null -> WorkspacePageLinkDestination.Unavailable
+        virtualMachineMutationState.imageImportEditorVisible -> WorkspacePageLinkDestination.Unavailable
 
         virtualMachineMutationState.guestDetailsTargetId != null -> {
             val id = virtualMachineMutationState.guestDetailsTargetId
@@ -1034,7 +1029,8 @@ internal fun downloadSettingsMutationMessageResource(result: MutationResult): In
 }
 
 internal fun Throwable.asDsmFailure(): DsmFailure =
-    this as? DsmFailure
+    (if (this is io.github.qwertyuiop1995.dsmnativeclient.data.FileArchiveVerificationUnavailable)
+        DsmFailure(null, "", "", kind = DsmErrorKind.ARCHIVE_RECOVERY_UNAVAILABLE) else this as? DsmFailure)
         ?: DsmFailure(
             null,
             "The operation was not completed",
@@ -1205,11 +1201,6 @@ internal fun photoBackupScanFailureDecision(
     }
 }
 
-internal fun shouldDeleteFailedForegroundDownload(
-    download: PersistedDownload,
-    ownsExecution: Boolean,
-): Boolean = ownsExecution && download.isDirectory && download.state == TransferState.FAILED
-
 /** Container 私有写接口在行为验证和兼容记录同时满足前保持关闭。 */
 internal fun containerWriteActionsEnabled(): Boolean = false
 
@@ -1237,19 +1228,6 @@ internal fun WorkspaceState.workspaceRouteStack(): WorkspaceRouteStack =
         hasNasSettingsPerformance = selectedModule == Module.NAS_SETTINGS &&
             nasPerformance.selectedTab == NasSettingsTab.PERFORMANCE,
     )
-
-internal fun WorkspaceState.withDownloads(
-    value: Loadable<List<DownloadTask>>,
-): WorkspaceState {
-    val reconciledDetails = if (value is Loadable.Ready) {
-        downloadDetailsTask?.let { selected ->
-            value.value.firstOrNull { it.id == selected.id }
-        }
-    } else {
-        downloadDetailsTask
-    }
-    return copy(downloads = value, downloadDetailsTask = reconciledDetails)
-}
 
 internal fun WorkspaceState.hasDirtyTextPreview(): Boolean {
     val savedText = ((preview as? Loadable.Ready)?.value as? FilePreviewContent.Text)?.value
@@ -1462,44 +1440,6 @@ internal fun canSafelySwitchNas(
     return !hasBlockingFileServerTransfer(transfers)
 }
 
-internal fun hasBlockingFileServerTransfer(transfers: List<TransferTask>): Boolean =
-    transfers.any { transfer ->
-        transfer.direction == TransferDirection.SERVER && (
-            transfer.state !in TERMINAL_TRANSFER_STATES ||
-                fileServerMutationBlocksWorkspaceExit(transfer.fileServerMutation)
-            )
-    }
-
-internal fun fileServerMutationBlocksWorkspaceExit(
-    lifecycle: FileServerMutationLifecycle?,
-): Boolean = lifecycle?.let {
-    it.refreshInProgress || it.refreshFailure != null ||
-        (it.failure != null && it.result?.submitted != false && (!it.refreshCompleted ||
-            it.verification == FileServerMutationVerification.UNAVAILABLE)) ||
-        (it.result?.requiresRefresh == true && (!it.refreshCompleted ||
-            it.verification == FileServerMutationVerification.UNAVAILABLE))
-} == true
-
-internal fun fileServerMutationCanBeExplicitlyCleared(
-    lifecycle: FileServerMutationLifecycle?,
-): Boolean = lifecycle?.let {
-    it.refreshCompleted && !it.refreshInProgress && it.refreshFailure == null
-} == true
-
-internal fun cancelledFileServerMutationResult(
-    operation: FileServerMutationOperation,
-): MutationResult = MutationResult(
-    schemaVersion = 1,
-    status = MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-    operation = when (operation) {
-        FileServerMutationOperation.COMPRESS -> "archiveCompress"
-        FileServerMutationOperation.EXTRACT -> "archiveExtract"
-    },
-    submitted = true,
-    requiresRefresh = true,
-    counts = MutationResultCounts(succeeded = 0, failed = 0, unknown = 1),
-)
-
 internal fun sha256Hex(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
     .digest(bytes)
     .joinToString("") { "%02x".format(it) }
@@ -1627,7 +1567,6 @@ internal const val FILE_PAGE_SIZE = 100
 internal const val MAX_FILE_UPLOAD_BATCH = 100
 internal const val MAX_FILE_TREE_DOCUMENTS = 1_000
 internal const val MAX_FILE_FAVORITES = 500
-internal const val MAX_FILE_REMOTE_LOCATIONS = 200
 internal const val MAX_THUMBNAIL_DISK_CACHE_BYTES = 128L * 1024L * 1024L
 internal const val MAX_PACKAGE_ICON_MEMORY_CACHE_BYTES = 4 * 1024 * 1024
 internal const val MIN_PACKAGE_ICON_DECODE_DIMENSION = 256
@@ -1666,29 +1605,6 @@ internal fun appendPerformanceSample(
     history
 } else {
     (history + sample).takeLast(MAX_NAS_PERFORMANCE_SAMPLES)
-}
-
-internal enum class RetryUploadDecision { ALREADY_COMPLETE, CONFLICT, REQUEUE }
-
-internal fun confirmedUploadReadbackResult(): MutationResult = MutationResult(
-    schemaVersion = 1,
-    status = MutationResultStatus.CONFIRMED_SUCCESS,
-    operation = "fileUpload",
-    submitted = true,
-    requiresRefresh = false,
-    counts = MutationResultCounts(1, 0, 0),
-    diagnosticTag = "file-station.upload.confirmed-by-explicit-retry-readback",
-)
-
-internal fun retryUploadDecision(
-    existing: FileItem?,
-    expectedBytes: Long,
-    overwrite: Boolean,
-): RetryUploadDecision = when {
-    existing != null && !existing.isDirectory && existing.size == expectedBytes ->
-        RetryUploadDecision.ALREADY_COMPLETE
-    existing != null && !overwrite -> RetryUploadDecision.CONFLICT
-    else -> RetryUploadDecision.REQUEUE
 }
 
 internal fun photoBackupConstraints(): Constraints = Constraints.Builder()

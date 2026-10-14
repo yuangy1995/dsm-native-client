@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
@@ -24,7 +26,7 @@ class NasSettingsAvailabilityTest {
         val capabilities = listOf(PACKAGE_API, USER_API, GROUP_API).associateWith { api ->
             ApiCapability(api, "entry.cgi", 1, if (api == PACKAGE_API) 2 else 1)
         }
-        val repository = DsmRepository(
+        val repository = authorizedRepository(
             NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
             DsmSession("test", "test-session", "test-token"),
             DsmApiClient(OkHttpClient.Builder().addInterceptor(transport).build()),
@@ -47,7 +49,7 @@ class NasSettingsAvailabilityTest {
         val capabilities = listOf(PACKAGE_API, USER_API, GROUP_API).associateWith { api ->
             ApiCapability(api, "entry.cgi", 1, if (api == PACKAGE_API) 2 else 1)
         }
-        val repository = DsmRepository(
+        val repository = authorizedRepository(
             NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
             DsmSession("test", "test-session", "test-token"),
             DsmApiClient(OkHttpClient.Builder().addInterceptor(transport).build()),
@@ -79,7 +81,7 @@ class NasSettingsAvailabilityTest {
         assertTrue(snapshot.logs.isEmpty())
     }
 
-    private fun logRepository(logRequestSucceeds: Boolean) = DsmRepository(
+    private fun logRepository(logRequestSucceeds: Boolean) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
         DsmApiClient(

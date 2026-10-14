@@ -27,6 +27,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -58,44 +61,37 @@ internal fun NasSecuritySettingsScreen(
     state: WorkspaceState,
     model: AppViewModel,
 ) {
+    val services = model.nasServices
+    val states by services.state.collectAsState()
+    val editor = states.getValue(NasServiceKind.SECURITY)
+    val baseline = (editor.original as? NasServiceValue.Security)?.settings
+    val draft = (editor.draft as? NasServiceValue.Security)?.settings
+    var editing by remember { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf(false) }
+    LaunchedEffect(services) { services.refresh(NasServiceKind.SECURITY, notify = false) }
     SecuritySettingsContent(
-        settings = settings,
-        settingsAvailable = settingsAvailable,
-        fallback = fallback,
-        baseline = state.securitySettingsBaseline,
-        draft = state.securitySettingsDraft,
-        mutationInProgress = state.securitySettingsMutationInProgress,
-        mutationResult = state.securitySettingsMutationResult,
-        mutationFailure = state.securitySettingsMutationFailure,
-        refreshFailure = state.securitySettingsMutationRefreshFailure,
-        refreshInProgress = state.securitySettingsMutationRefreshInProgress,
-        refreshCompleted = state.securitySettingsMutationRefreshCompleted,
-        enabled = !state.isPerformingAction && !state.securitySettingsMutationInProgress &&
-            !state.securitySettingsMutationRefreshInProgress && state.securitySettingsMutationResult == null &&
-            state.securitySettingsMutationFailure == null,
-        onEdit = { settings?.let(model::requestSecuritySettingsEditing) },
-        onRefresh = model::refreshSecuritySettingsMutation,
-        onContinueEditing = { model.dismissSecuritySettingsMutationResult(discardDraft = false) },
-        onDismissResult = { model.dismissSecuritySettingsMutationResult(discardDraft = true) },
+        settings, settingsAvailable, fallback, baseline, draft, editor.saving, editor.result, editor.failure,
+        refreshFailure = editor.failure, refreshInProgress = editor.busy && !editor.saving,
+        refreshCompleted = false,
+        enabled = !state.isPerformingAction && !editor.blocked,
+        onEdit = { if (settings != null && services.begin(NasServiceValue.Security(settings))) editing = true },
+        onRefresh = { services.refresh(NasServiceKind.SECURITY) },
+        onContinueEditing = { services.dismiss(NasServiceKind.SECURITY); editing = true },
+        onDismissResult = { services.dismiss(NasServiceKind.SECURITY, discard = true) },
+        canContinueEditing = !editor.blocked && draft != null && editor.result?.errorCategory != MutationErrorCategory.CONFLICT,
+        canDismiss = !editor.blocked,
     )
-    if (state.securitySettingsEditorVisible && state.securitySettingsBaseline != null && state.securitySettingsDraft != null) {
-        SecuritySettingsDialog(
-            initial = state.securitySettingsBaseline,
-            draft = state.securitySettingsDraft,
-            enabled = !state.isPerformingAction,
-            onDraftChange = model::updateSecuritySettingsDraft,
-            onContinue = model::requestSecuritySettingsConfirmation,
-            onDismiss = model::cancelSecuritySettingsEditing,
-        )
-    }
-    if (state.securitySettingsConfirmationRequested && state.securitySettingsBaseline != null && state.securitySettingsDraft != null) {
-        SecurityConfirmationDialog(
-            baseline = state.securitySettingsBaseline,
-            draft = state.securitySettingsDraft,
-            onConfirm = model::confirmSecuritySettingsMutation,
-            onDismiss = model::cancelSecuritySettingsConfirmation,
-        )
-    }
+    if (editing && baseline != null && draft != null && !editor.blocked) SecuritySettingsDialog(
+        initial = baseline, draft = draft, enabled = !state.isPerformingAction,
+        onDraftChange = { services.draft(NasServiceKind.SECURITY, NasServiceValue.Security(it)) },
+        onContinue = { editing = false; confirming = true; true },
+        onDismiss = { editing = false; services.draft(NasServiceKind.SECURITY, null) },
+    )
+    if (confirming && baseline != null && draft != null && !editor.blocked) SecurityConfirmationDialog(
+        baseline, draft,
+        onConfirm = { services.save(NasServiceKind.SECURITY).also { if (it) confirming = false } },
+        onDismiss = { confirming = false; editing = true },
+    )
 }
 
 @Composable
@@ -116,38 +112,48 @@ internal fun SecuritySettingsContent(
     onRefresh: () -> Unit,
     onContinueEditing: () -> Unit,
     onDismissResult: () -> Unit,
+    canContinueEditing: Boolean? = null,
+    canDismiss: Boolean? = null,
 ) {
     Column(Modifier.verticalScroll(rememberScrollState())) {
+        TextButton(onClick = onRefresh, enabled = !mutationInProgress && !refreshInProgress, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.refresh_and_check_security_settings))
+        }
+        if (refreshInProgress) LinearProgressIndicator(Modifier.fillMaxWidth())
         when {
-            mutationInProgress && draft != null -> StructuredSettingsSavingCard(
+            mutationInProgress -> StructuredSettingsSavingCard(
                 R.string.security_saving_title,
                 R.string.security_saving_message,
             )
-            mutationResult != null && baseline != null && draft != null -> SettingsMutationFeedbackCard(
+            mutationResult != null -> SettingsMutationFeedbackCard(
                 result = mutationResult,
                 failure = null,
                 refreshFailure = refreshFailure,
                 refreshInProgress = refreshInProgress,
                 refreshCompleted = refreshCompleted,
-                currentMatches = settings?.let { securitySettingsMatch(it, draft) },
+                currentMatches = if (draft != null) settings?.let { securitySettingsMatch(it, draft) } else null,
                 countsLabel = R.string.security_feedback_counts,
                 refreshLabel = R.string.refresh_and_check_security_settings,
                 onRefresh = onRefresh,
                 onContinueEditing = onContinueEditing,
                 onDismiss = onDismissResult,
+                canContinueEditing = canContinueEditing,
+                canDismiss = canDismiss,
             )
-            mutationFailure != null && baseline != null && draft != null -> SettingsMutationFeedbackCard(
+            mutationFailure != null -> SettingsMutationFeedbackCard(
                 result = null,
                 failure = mutationFailure,
                 refreshFailure = refreshFailure,
                 refreshInProgress = refreshInProgress,
                 refreshCompleted = refreshCompleted,
-                currentMatches = settings?.let { securitySettingsMatch(it, draft) },
+                currentMatches = if (draft != null) settings?.let { securitySettingsMatch(it, draft) } else null,
                 countsLabel = R.string.security_feedback_counts,
                 refreshLabel = R.string.refresh_and_check_security_settings,
                 onRefresh = onRefresh,
                 onContinueEditing = onContinueEditing,
                 onDismiss = onDismissResult,
+                canContinueEditing = canContinueEditing,
+                canDismiss = canDismiss,
             )
         }
         when {
@@ -408,6 +414,8 @@ internal fun SettingsMutationFeedbackCard(
     onRefresh: () -> Unit,
     onContinueEditing: () -> Unit,
     onDismiss: () -> Unit,
+    canContinueEditing: Boolean? = null,
+    canDismiss: Boolean? = null,
 ) {
     val policy = result?.let(::settingsFeedbackPolicy)
     val mustRefresh = failure != null || refreshFailure != null || policy?.mustRefresh == true
@@ -435,15 +443,15 @@ internal fun SettingsMutationFeedbackCard(
                 modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp).semantics { role = Role.Button },
             ) { Text(stringResource(refreshLabel)) }
         }
-        TextButton(
-            enabled = canLeave && !refreshInProgress,
+        if (canContinueEditing != false) TextButton(
+            enabled = (canContinueEditing ?: canLeave) && !refreshInProgress,
             onClick = onContinueEditing,
             modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp).semantics { role = Role.Button },
         ) {
             Text(stringResource(R.string.continue_editing))
         }
-        TextButton(
-            enabled = canLeave && !refreshInProgress,
+        if (canDismiss != false) TextButton(
+            enabled = (canDismiss ?: canLeave) && !refreshInProgress,
             onClick = onDismiss,
             modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp).semantics { role = Role.Button },
         ) {

@@ -71,3 +71,10 @@ Similar.get_status v1无业务参数，返回waiting_count（非负整数）、s
 similarGroupDetails允许读取已解散组为空，读取失败绝不伪造解散。删除前先核对完整原组和每张身份，再固定保留补集作为删除确认名单；原件删除沿photos-item-deletion既有契约，无新删除端点。已确认删除后只读刷新原组，不将分组消失当作原件删除证据。最多三次自动读取失败后可只读重试，不刷新整个月份。
 
 多组拆分在一次确认后逐组提交既有ungroup(id=[单组])，保留每组operationID；未知暂停后续，确认成功再续作，失败保留继续/取消选择。会话撤销按逆序恢复已确认组，不覆盖其他操作；删原件不进入分组撤销。共享服务仅增量增加similarGroupDetails/similarStatus默认unsupported方法与状态模型，macOS接入；iPhone/iPad无新界面，Android/Windows仅记录未来等价语义。回滚移除新增入口/声明，不逆转已确认NAS写入；没有存储迁移。聚焦回归与PENDING_USER_VALIDATION见开发账本最新波次。
+
+
+### Android A4ae实现记录（2026-10-13，static）
+
+Android已接分类/月份、完整组、独立预览选择、推荐、移出、拆组、批量续作与撤销，整组导出和保留所选原件删除沿已有流程。复用版本1加密管理记录，增加可选similar意图、单向结果、批次顺序及撤销原操作依据；冷启动恢复不重新发送已提交项，未开始项须明确继续并重新预检。原件身份批量读取，不按当前页或代表照片推测组成员。撤销同一原动作不能换编号重复发出；组消失仍需逐原件归组和身份回读。当前查询中恢复卡片位置及分页，离开原查询不插入旧照片。
+
+该条补充此前Android仅同步语义的状态；不改变上文NAS端点、版本或字段，不新增observed/read-verified/behavior-verified环境。真实NAS的多组、跨重启、并发重新归组及删除后索引更新仍为PENDING_USER_VALIDATION，具体前置条件、步骤和脱敏回传要求见Android主计划A4ae账本。Apple/Windows本轮无源码变更。

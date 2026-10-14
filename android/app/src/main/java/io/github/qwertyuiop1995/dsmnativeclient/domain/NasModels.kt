@@ -74,6 +74,9 @@ data class NasAccount(
     val email: String?,
     val disabled: Boolean,
     val canDelete: Boolean = false,
+    val canEdit: Boolean = false,
+    val groups: List<String>? = null,
+    val disabledKnown: Boolean = true,
 )
 
 data class NasGroup(
@@ -81,6 +84,7 @@ data class NasGroup(
     val name: String,
     val description: String?,
     val canDelete: Boolean = false,
+    val canEdit: Boolean = false,
 )
 
 data class PackageInfo(
@@ -93,8 +97,10 @@ data class PackageInfo(
     val canStop: Boolean,
     val canUninstall: Boolean = false,
     val dsmApps: List<String> = emptyList(),
-    /** `available_operation` 明确给出 upgrade 时仅提示，升级提交仍保持关闭。 */
+    /** `available_operation` 明确给出升级候选；更新进入独立安装计划，不调用旧直接升级接口。 */
     val isUpgradeAvailable: Boolean = false,
+    val installType: String? = null,
+    val installedAt: Double? = null,
 )
 
 data class ActiveConnection(
@@ -109,7 +115,12 @@ data class ActiveConnection(
     val type: String? = null,
     val description: String? = null,
     val canDisconnect: Boolean = false,
-)
+    val isCurrentKnown: Boolean = true,
+    val reportedTime: String? = null,
+    val location: String? = null,
+) {
+    override fun toString() = "ActiveConnection(redacted)"
+}
 
 data class NasEthernetInterface(
     val id: String,
@@ -146,6 +157,7 @@ data class NasDdnsRecord(
     val interfaceV4: String,
     val interfaceV6: String,
     val heartbeat: Boolean,
+    val knownNetworkFields: Set<String> = setOf("net", "ip", "ipv6", "interface_v4", "interface_v6"),
 )
 
 data class NasDdnsDirectory(
@@ -182,7 +194,7 @@ data class NasProxySettings(
 
 /**
  * DSM 远程访问设置。null 表示对应内部接口不可用或响应不可信，不得折叠为关闭。
- * 连接类别与环境写门禁均由客户端可信上下文派生，不接受界面输入。
+ * 连接类别与管理权限均由客户端可信上下文派生，不接受界面输入。
  */
 data class NasRemoteAccessSettings(
     val isRelayEnabled: Boolean?,
@@ -264,6 +276,8 @@ data class NasHardwareSettings(
     val ignoresNetworkDiscoveryDuringSleep: Boolean?,
     val isAutomaticPowerOffEnabled: Boolean?,
     val ups: NasUpsSettings?,
+    val supportedFanModes: List<String>? = null,
+    val beepVolumeFieldName: String? = null,
 )
 
 /** DDNS 密码或密钥只用于当前测试或保存请求，不得持久化。 */
@@ -280,7 +294,9 @@ data class NasDdnsDraft(
     val interfaceV4: String = "",
     val interfaceV6: String = "",
     val heartbeat: Boolean = false,
-)
+) { override fun toString() = "NasDdnsDraft" }
+
+enum class NasSettingsArea { OVERVIEW, STORAGE, PACKAGES, DIRECTORY, LOGS, CONNECTIONS, SERVICES, REGION, NETWORK, SECURITY, HARDWARE, INDEPENDENT }
 
 data class NasSettingsSnapshot(
     val system: SystemSummary?,
@@ -321,4 +337,7 @@ data class NasSettingsSnapshot(
     val remoteAccessSettingsAvailable: Boolean = remoteAccessSettings != null,
     /** false 表示日志读取失败，空列表不得展示为可信的“没有日志”。 */
     val logsAvailable: Boolean = true,
+    val systemAvailable: Boolean = system != null,
+    val storageAvailable: Boolean = true,
+    val scheduledTasksAvailable: Boolean = true,
 )

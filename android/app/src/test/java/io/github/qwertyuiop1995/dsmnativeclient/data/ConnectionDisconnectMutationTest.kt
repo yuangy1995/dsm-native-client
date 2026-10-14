@@ -1,13 +1,18 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
+import io.github.qwertyuiop1995.dsmnativeclient.domain.ActiveConnection
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.NasConnectionStage
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.decodeConnections
+import kotlinx.coroutines.CancellationException
 import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
 import java.io.IOException
-import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +23,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.FormBody
+import java.net.URLDecoder
+import okio.Buffer
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -36,9 +42,9 @@ class ConnectionDisconnectMutationTest {
     fun `网页连接使用设备标识且回读消失后确认成功`() = runBlocking {
         val transport = ConnectionInterceptor(httpList(), SUCCESS, EMPTY_LIST)
 
-        val result = repository(transport).disconnectConnectionResult(httpId())
+        val result = repository(transport).probeDisconnect(httpTarget())
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertConfirmed(result)
         assertEquals(listOf("list", "kick_connection", "list"), transport.methods())
         val fields = transport.requests[1].fields()
         assertEquals("[]", fields["service_conn"])
@@ -52,9 +58,9 @@ class ConnectionDisconnectMutationTest {
     fun `服务连接使用进程标识且不提交设备数组`() = runBlocking {
         val transport = ConnectionInterceptor(serviceList(), SUCCESS, EMPTY_LIST)
 
-        val result = repository(transport).disconnectConnectionResult(serviceId())
+        val result = repository(transport).probeDisconnect(serviceTarget())
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertConfirmed(result)
         val fields = transport.requests[1].fields()
         assertEquals("[]", fields["http_conn"])
         val target = Json.parseToJsonElement(fields.getValue("service_conn")).jsonArray.single().jsonObject
@@ -66,11 +72,10 @@ class ConnectionDisconnectMutationTest {
     fun `列表未明确允许断开时不发送写请求`() = runBlocking {
         val transport = ConnectionInterceptor(httpList(canDisconnect = false))
 
-        val result = repository(transport).disconnectConnectionResult(httpId())
+        val result = repository(transport).probeDisconnect(httpTarget())
 
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertEquals(MutationErrorCategory.CONFLICT, result.errorCategory)
-        assertFalse(result.submitted)
+        assertEquals(DsmErrorKind.NAS_CONNECTION_CHANGED, (result.failure as? DsmFailure)?.kind)
+        assertEquals(listOf(NasConnectionStage.CANCELLED), result.stages)
         assertEquals(listOf("list"), transport.methods())
     }
 
@@ -78,10 +83,10 @@ class ConnectionDisconnectMutationTest {
     fun `断开请求明确权限拒绝时不自动重放`() = runBlocking {
         val transport = ConnectionInterceptor(httpList(), PERMISSION_DENIED)
 
-        val result = repository(transport).disconnectConnectionResult(httpId())
+        val result = repository(transport).probeDisconnect(httpTarget())
 
-        assertEquals(MutationResultStatus.PERMISSION_DENIED, result.status)
-        assertTrue(result.submitted)
+        assertEquals(105, (result.failure as? DsmFailure)?.code)
+        assertEquals(listOf(NasConnectionStage.SUBMITTED, NasConnectionStage.REJECTED), result.stages)
         assertEquals(1, transport.methods().count { it == "kick_connection" })
     }
 
@@ -89,9 +94,9 @@ class ConnectionDisconnectMutationTest {
     fun `断开请求响应丢失后只回读且目标消失时确认成功`() = runBlocking {
         val transport = AmbiguousConnectionInterceptor()
 
-        val result = repository(transport).disconnectConnectionResult(httpId())
+        val result = repository(transport).probeDisconnect(httpTarget())
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertConfirmed(result)
         assertEquals(listOf("list", "kick_connection", "list"), transport.methods())
     }
 
@@ -99,16 +104,15 @@ class ConnectionDisconnectMutationTest {
     fun `同一连接已有断开请求时第二次调用不访问网络`() = runBlocking {
         val transport = BlockingConnectionInterceptor()
         val repo = repository(transport)
-        val first = async(Dispatchers.IO) { repo.disconnectConnectionResult(httpId()) }
+        val first = async(Dispatchers.IO) { repo.probeDisconnect(httpTarget()) }
         assertTrue(transport.submissionStarted.await(2, TimeUnit.SECONDS))
 
-        val duplicate = repo.disconnectConnectionResult(httpId())
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, duplicate.status)
-        assertEquals(MutationErrorCategory.CONFLICT, duplicate.errorCategory)
-        assertFalse(duplicate.submitted)
+        val duplicate = repo.probeDisconnect(httpTarget())
+        assertEquals(DsmErrorKind.NAS_CONNECTION_CHANGED, (duplicate.failure as? DsmFailure)?.kind)
+        assertTrue(duplicate.stages.isEmpty())
 
         transport.allowSubmission.countDown()
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, first.await().status)
+        assertConfirmed(first.await())
         assertEquals(listOf("list", "kick_connection", "list"), transport.methods())
     }
 
@@ -116,15 +120,15 @@ class ConnectionDisconnectMutationTest {
     fun `固定使用v1且能力范围不含v1时零请求关闭`() = runBlocking {
         val unsupported = ConnectionInterceptor(httpList())
         val unsupportedResult = repository(unsupported, minVersion = 2, maxVersion = 2)
-            .disconnectConnectionResult(httpId())
-        assertEquals(MutationResultStatus.UNSUPPORTED, unsupportedResult.status)
-        assertFalse(unsupportedResult.submitted)
+            .probeDisconnect(httpTarget())
+        assertEquals(DsmErrorKind.FEATURE_UNSUPPORTED, (unsupportedResult.failure as? DsmFailure)?.kind)
+        assertEquals(listOf(NasConnectionStage.CANCELLED), unsupportedResult.stages)
         assertTrue(unsupported.requests.isEmpty())
 
         val compatible = ConnectionInterceptor(httpList(), SUCCESS, EMPTY_LIST)
         val result = repository(compatible, minVersion = 1, maxVersion = 2)
-            .disconnectConnectionResult(httpId())
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+            .probeDisconnect(httpTarget())
+        assertConfirmed(result)
         assertTrue(compatible.requests.all { it.fields()["version"] == "1" })
     }
 
@@ -137,10 +141,9 @@ class ConnectionDisconnectMutationTest {
             *Array(8) { malformed },
         )
 
-        val result = repository(transport).disconnectConnectionResult(httpId())
+        val result = repository(transport).probeDisconnect(httpTarget())
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.requiresRefresh)
+        assertPending(result)
         assertEquals(1, transport.methods().count { it == "kick_connection" })
     }
 
@@ -154,9 +157,9 @@ class ConnectionDisconnectMutationTest {
             *Array(8) { changedClassification },
         )
 
-        val result = repository(transport).disconnectConnectionResult(httpId())
+        val result = repository(transport).probeDisconnect(httpTarget())
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
+        assertPending(result)
         assertEquals(1, transport.methods().count { it == "kick_connection" })
     }
 
@@ -166,10 +169,9 @@ class ConnectionDisconnectMutationTest {
             """{"success":true,"data":{"items":[{"pid":"88","who":"operator","from":"synthetic-source","descr":"File Station","protocol":"HTTPS","type":"HTTP/HTTPS","can_be_kicked":true}]}}"""
         val transport = ConnectionInterceptor(httpList(), SUCCESS, missingIdentity)
 
-        val result = repository(transport).disconnectConnectionResult(httpId())
+        val result = repository(transport).probeDisconnect(httpTarget())
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.requiresRefresh)
+        assertPending(result)
         assertEquals(1, transport.methods().count { it == "kick_connection" })
     }
 
@@ -179,7 +181,7 @@ class ConnectionDisconnectMutationTest {
             """{"success":true,"data":{"items":[{"pid":"$PROCESS_ID","who":"operator","from":"synthetic-source","protocol":"SMB","type":"SMB","can_be_kicked":true}]}}""",
         )
 
-        val connections = repository(transport).activeConnections()
+        val connections = repository(transport).nasConnections.read().rows
 
         assertEquals(1, connections.size)
         assertFalse(connections.single().isCurrent)
@@ -191,7 +193,7 @@ class ConnectionDisconnectMutationTest {
             """{"success":true,"data":{"items":["invalid"]}}""",
         )
 
-        val result = runCatching { repository(transport).activeConnections() }
+        val result = runCatching { repository(transport).nasConnections.read().rows }
 
         assertTrue(result.isFailure)
     }
@@ -202,9 +204,9 @@ class ConnectionDisconnectMutationTest {
             blockAt = 1,
             bodies = listOf(httpList()),
         )
-        var result: io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult? = null
+        var result: ConnectionProbe? = null
         val job = launch(Dispatchers.Default) {
-            result = repository(transport).disconnectConnectionResult(httpId())
+            result = repository(transport).probeDisconnect(httpTarget())
         }
 
         assertTrue(transport.entered.await(5, TimeUnit.SECONDS))
@@ -212,20 +214,20 @@ class ConnectionDisconnectMutationTest {
         transport.release.countDown()
         job.join()
 
-        assertEquals(MutationResultStatus.CANCELLED_BEFORE_SUBMISSION, result?.status)
-        assertFalse(result?.submitted ?: true)
+        assertTrue(result?.failure is CancellationException)
+        assertEquals(listOf(NasConnectionStage.CANCELLED), result?.stages)
         assertEquals(listOf("list"), transport.methods())
     }
 
     @Test
-    fun `断开请求在途取消只回读不重放并报告需核对`() = runBlocking {
+    fun `断开请求在途取消保留已提交检查点且不重放`() = runBlocking {
         val transport = CancellableConnectionInterceptor(
             blockAt = 2,
             bodies = listOf(httpList(), SUCCESS, httpList()),
         )
-        var result: io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult? = null
+        var result: ConnectionProbe? = null
         val job = launch(Dispatchers.Default) {
-            result = repository(transport).disconnectConnectionResult(httpId())
+            result = repository(transport).probeDisconnect(httpTarget())
         }
 
         assertTrue(transport.entered.await(5, TimeUnit.SECONDS))
@@ -233,21 +235,44 @@ class ConnectionDisconnectMutationTest {
         transport.release.countDown()
         job.join()
 
-        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, result?.status)
-        assertTrue(result?.submitted == true)
-        assertTrue(result?.requiresRefresh == true)
+        assertTrue(result?.failure is CancellationException)
+        assertPending(requireNotNull(result))
         assertEquals(1, transport.methods().count { it == "kick_connection" })
+    }
+
+    /** 直接记录当前执行器的检查点与异常，不重造旧 Result 门面的判断。 */
+    private data class ConnectionProbe(val stages: List<NasConnectionStage>, val failure: Throwable?)
+    private suspend fun DsmRepository.probeDisconnect(target: ActiveConnection): ConnectionProbe {
+        val stages = mutableListOf<NasConnectionStage>()
+        val outcome = runCatching { nasConnections.disconnect(target) { stages += it } }
+        return ConnectionProbe(stages, outcome.exceptionOrNull())
+    }
+    private fun assertConfirmed(result: ConnectionProbe) {
+        assertEquals(null, result.failure)
+        assertEquals(NasConnectionStage.VERIFIED, result.stages.last())
+        assertEquals(1, result.stages.count { it == NasConnectionStage.SUBMITTED })
+    }
+    private fun assertPending(result: ConnectionProbe) {
+        assertTrue(NasConnectionStage.SUBMITTED in result.stages)
+        assertFalse(NasConnectionStage.VERIFIED in result.stages)
+        assertFalse(NasConnectionStage.REJECTED in result.stages)
+        assertFalse(NasConnectionStage.CANCELLED in result.stages)
     }
 
     private fun repository(
         interceptor: Interceptor,
         minVersion: Int = 1,
         maxVersion: Int = 1,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "operator"),
         DsmSession("test", "test-session", "test-token"),
-        DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
-        mapOf(API to ApiCapability(API, "entry.cgi", minVersion, maxVersion)),
+        DsmApiClient(OkHttpClient.Builder().addInterceptor { chain ->
+            if (chain.request().fields()["api"] == "SYNO.Core.System") connectionResponse(chain.request(),
+                """{"success":true,"data":{"firmware_ver":"DSM 7.2.1-69057 Update 12","buildnumber":69057,"smallfixnumber":12}}""")
+            else chain.proceed(chain.request())
+        }.addInterceptor(interceptor).build()),
+        mapOf(API to ApiCapability(API, "entry.cgi", minVersion, maxVersion),
+            "SYNO.Core.System" to ApiCapability("SYNO.Core.System", "entry.cgi", 1, 3)),
     )
 
     companion object {
@@ -258,11 +283,8 @@ class ConnectionDisconnectMutationTest {
         const val EMPTY_LIST = """{"success":true,"data":{"items":[]}}"""
         const val PERMISSION_DENIED = """{"success":false,"error":{"code":105}}"""
 
-        fun httpId() = stableId("http", DEVICE_ID)
-        fun serviceId() = stableId("service", PROCESS_ID)
-        fun stableId(kind: String, identifier: String) = UUID.nameUUIDFromBytes(
-            "$kind:$identifier".toByteArray(),
-        ).toString()
+        fun httpTarget() = decodeConnections(Json.parseToJsonElement(httpList()).jsonObject.getValue("data").jsonObject).rows.single()
+        fun serviceTarget() = decodeConnections(Json.parseToJsonElement(serviceList()).jsonObject.getValue("data").jsonObject).rows.single()
 
         fun httpList(canDisconnect: Boolean = true) =
             """{"success":true,"data":{"items":[{"pid":"88","did":"$DEVICE_ID","who":"operator","from":"synthetic-source","descr":"File Station","protocol":"HTTPS","type":"HTTP/HTTPS","time":"2026-08-02 10:00:00","is_current_connected":true,"can_be_kicked":$canDisconnect}]}}"""
@@ -374,6 +396,10 @@ private fun connectionResponse(request: Request, body: String): Response = Respo
     .build()
 
 private fun Request.fields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
-    return (0 until form.size).associate { form.name(it) to form.value(it) }
+    val buffer = Buffer()
+    body?.writeTo(buffer)
+    return buffer.readUtf8().split('&').filter(String::isNotBlank).associate { field ->
+        val pair = field.split('=', limit = 2)
+        URLDecoder.decode(pair[0], "UTF-8") to URLDecoder.decode(pair.getOrElse(1) { "" }, "UTF-8")
+    }
 }

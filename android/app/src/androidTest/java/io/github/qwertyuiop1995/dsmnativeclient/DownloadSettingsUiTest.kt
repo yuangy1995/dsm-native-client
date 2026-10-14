@@ -108,7 +108,7 @@ class DownloadSettingsUiTest {
     @Test
     fun 深色两倍字体下HTTP与FTP使用同一可滚动字段() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val baseline = DownloadSettings(defaultDestination = "downloads")
+        val baseline = DownloadSettings(defaultDestination = "downloads", canManage = true)
         var updated: DownloadSettingsDraftState? = null
         rule.setContent {
             val density = LocalDensity.current

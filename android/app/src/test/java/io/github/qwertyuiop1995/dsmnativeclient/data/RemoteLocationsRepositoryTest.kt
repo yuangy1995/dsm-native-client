@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
@@ -34,7 +36,7 @@ class RemoteLocationsRepositoryTest {
                 )
                 .build()
         }
-        val repository = DsmRepository(
+        val repository = authorizedRepository(
             NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
             DsmSession("test", "test-session", "test-token"),
             DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
@@ -48,7 +50,7 @@ class RemoteLocationsRepositoryTest {
             ),
         )
 
-        val page = repository.listRemoteLocations()
+        val page = repository.fileMounts.remoteLocations(0, 200)
 
         assertEquals("/home/远程资料", page.items.single().path)
         assertEquals("SYNO.FileStation.VirtualFolder", requests.single()["api"])

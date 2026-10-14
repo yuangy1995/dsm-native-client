@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
@@ -20,6 +22,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackupFolderRepositoryTest {
+    @Test
+    fun `来源目录的末尾空格不会被改成普通同名目录`() = runBlocking {
+        val transport = BackupFolderInterceptor(
+            listResponse("Trips", "/share/Trips"), infoResponse("share", "/share"),
+            listResponse("Trips", "/share/Trips"), successResponse, infoResponse("Trips ", "/share/Trips "),
+        )
+        val result = repository(transport).ensureSubdirectoryResult("/share", "/share/Trips ")
+        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertEquals("Trips ", transport.requests.single { it.backupFields()["method"] == "create" }.backupFields()["name"])
+        assertEquals("[\"/share/Trips \"]", transport.requests.last().backupFields()["path"])
+    }
+
+    @Test
+    fun `目录计划中的点路径和重复分隔符在网络访问前拒绝`() = runBlocking {
+        for (path in listOf("/share/../other", "/share/./child", "/share//child")) {
+            val transport = BackupFolderInterceptor()
+            assertTrue(runCatching { repository(transport).ensureSubdirectoryResult("/share", path) }.exceptionOrNull() is IllegalArgumentException)
+            assertTrue(transport.requests.isEmpty())
+        }
+    }
+
     @Test
     fun `自动备份只在配置根目录下逐层创建子目录`() = runBlocking {
         val transport = BackupFolderInterceptor(
@@ -171,7 +194,7 @@ class BackupFolderRepositoryTest {
         assertEquals(1, afterResult.counts.unknown)
     }
 
-    private fun repository(interceptor: Interceptor) = DsmRepository(
+    private fun repository(interceptor: Interceptor) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
         DsmApiClient(OkHttpClient.Builder().retryOnConnectionFailure(false).addInterceptor(interceptor).build()),

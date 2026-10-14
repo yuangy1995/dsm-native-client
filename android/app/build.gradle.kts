@@ -3,19 +3,18 @@ import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
     namespace = "io.github.qwertyuiop1995.dsmnativeclient"
-    compileSdk = 34
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "io.github.qwertyuiop1995.dsmnativeclient"
         minSdk = 29
-        targetSdk = 34
+        targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
 
@@ -48,6 +47,10 @@ android {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 
+    // JVM 与设备测试复用同一合成协议，避免两套夹具行为漂移。
+    sourceSets.getByName("test").kotlin.srcDir("src/sharedTest/java")
+    sourceSets.getByName("androidTest").kotlin.srcDir("src/sharedTest/java")
+
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
@@ -77,9 +80,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 }
 
 dependencies {
@@ -89,17 +89,21 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
     implementation("androidx.navigation:navigation-compose:2.7.7")
-    implementation("androidx.compose.ui:ui:1.6.8")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.6.8")
-    implementation("androidx.compose.foundation:foundation:1.6.8")
-    implementation("androidx.compose.material3:material3:1.2.1")
-    // 与现有 Compose 版本一致，用于官方下拉刷新组件；该构件此前已由依赖树引入运行时。
-    implementation("androidx.compose.material:material:1.6.8")
-    implementation("androidx.compose.material:material-icons-extended:1.6.8")
+    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
+    implementation(composeBom)
+    androidTestImplementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    // 下拉刷新与图标继续使用既有 Material 构件，版本由同一 BOM 管理。
+    implementation("androidx.compose.material:material")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.zxing:core:3.5.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
 
@@ -108,7 +112,9 @@ dependencies {
 
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.6.8")
-    debugImplementation("androidx.compose.ui:ui-tooling:1.6.8")
-    debugImplementation("androidx.compose.ui:ui-test-manifest:1.6.8")
+    // Compose 的传递版本仍为 3.5.0；3.7.0 已移除 Android 17 不再提供的 InputManager 反射调用。
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

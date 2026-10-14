@@ -1,13 +1,12 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
 import io.github.qwertyuiop1995.dsmnativeclient.domain.PackageInfo
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ResourceState
-import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -15,10 +14,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import okio.BufferedSource
-import okhttp3.FormBody
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.controlInstalled
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasPackageFailure
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasPackageProblem
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasPackageWriteStage
+import kotlinx.coroutines.CancellationException
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
@@ -36,12 +40,12 @@ class PackageControlMutationTest {
             packageList("stopped", startable = true),
             SUCCESS,
             SUCCESS,
-            packageList("running", startable = false),
+            packageList("running", startable = true),
         )
 
-        val result = repository(transport).controlPackageResult(packageInfo("stopped", true), "start")
+        val result = repository(transport).probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertPackageVerified(result)
         assertEquals(listOf("list", "feasibility_check", "start", "list"), transport.methods())
         RequestFixtureAssertions.assertRequest(
             transport.requests[2],
@@ -54,21 +58,21 @@ class PackageControlMutationTest {
             "[\"synthetic-app-one\",\"synthetic-app-two\"]",
             transport.requests[2].formFields()["dsm_apps"],
         )
-        assertEquals(listOf("2", "2", "1", "2"), transport.requests.map { it.formFields()["version"] })
+        assertEquals(listOf("2", "1", "1", "2"), transport.requests.map { it.formFields()["version"] })
     }
 
     @Test
     fun `停止按 Fixture 只提交稳定 ID 并回读停止状态`() = runBlocking {
         val transport = PackageMutationInterceptor(
-            packageList("running", startable = false),
+            packageList("running", startable = true),
             SUCCESS,
             SUCCESS,
             packageList("stopped", startable = true),
         )
 
-        val result = repository(transport).controlPackageResult(packageInfo("running", false), "stop")
+        val result = repository(transport).probePackageControl(packageInfo("running", false), "stop")
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertPackageVerified(result)
         assertEquals(listOf("list", "feasibility_check", "stop", "list"), transport.methods())
         RequestFixtureAssertions.assertRequest(
             transport.requests[2],
@@ -82,14 +86,14 @@ class PackageControlMutationTest {
     @Test
     fun `当前状态不允许操作时不发送可行性检查或写请求`() = runBlocking {
         val transport = PackageMutationInterceptor(
-            packageList("running", startable = false),
+            packageList("running", startable = true),
         )
 
-        val result = repository(transport).controlPackageResult(packageInfo("stopped", true), "start")
+        val result = repository(transport).probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertEquals(MutationErrorCategory.CONFLICT, result.errorCategory)
-        assertFalse(result.submitted)
+        assertPackageNotSubmitted(result)
+        assertEquals(NasPackageProblem.CHANGED, (result.failure as NasPackageFailure).problem)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertEquals(listOf("list"), transport.methods())
     }
 
@@ -100,11 +104,10 @@ class PackageControlMutationTest {
             """{"success":false,"error":{"code":105}}""",
         )
 
-        val result = repository(transport).controlPackageResult(packageInfo("stopped", true), "start")
+        val result = repository(transport).probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationResultStatus.PERMISSION_DENIED, result.status)
-        assertEquals(MutationErrorCategory.PERMISSION, result.errorCategory)
-        assertFalse(result.submitted)
+        assertEquals(DsmErrorKind.PERMISSION_DENIED, (result.failure as DsmFailure).kind)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertEquals(listOf("list", "feasibility_check"), transport.methods())
     }
 
@@ -114,10 +117,10 @@ class PackageControlMutationTest {
             """{"success":true,"data":{"packages":[{"id":"$PACKAGE_ID","name":"Synthetic Package","version":"1.0.0","status":"stopped","startable":true,"dsm_apps":[]}]}}""",
         )
 
-        val result = repository(transport).controlPackageResult(packageInfo("stopped", true), "start")
+        val result = repository(transport).probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertFalse(result.submitted)
+        assertPackageNotSubmitted(result)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertEquals(listOf("list"), transport.methods())
     }
 
@@ -125,10 +128,10 @@ class PackageControlMutationTest {
     fun `套件完整基线变化时冲突且不执行可行性检查`() = runBlocking {
         val transport = PackageMutationInterceptor(packageList("stopped", startable = false))
 
-        val result = repository(transport).controlPackageResult(packageInfo("stopped", true), "start")
+        val result = repository(transport).probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationErrorCategory.CONFLICT, result.errorCategory)
-        assertFalse(result.submitted)
+        assertEquals(NasPackageProblem.CHANGED, (result.failure as NasPackageFailure).problem)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertEquals(listOf("list"), transport.methods())
     }
 
@@ -138,9 +141,9 @@ class PackageControlMutationTest {
             packageList("stopped", true), SUCCESS, SUCCESS, SUCCESS,
         )
 
-        val result = repository(transport).controlPackageResult(packageInfo("stopped", true), "start")
+        val result = repository(transport).probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
+        assertPackagePending(result)
         assertEquals(1, transport.methods().count { it == "start" })
     }
 
@@ -149,10 +152,10 @@ class PackageControlMutationTest {
         val transport = PackageMutationInterceptor()
 
         val result = repository(transport, packageMinVersion = 3)
-            .controlPackageResult(packageInfo("stopped", true), "start")
+            .probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
-        assertFalse(result.submitted)
+        assertEquals(DsmErrorKind.FEATURE_UNSUPPORTED, (result.failure as DsmFailure).kind)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertTrue(transport.requests.isEmpty())
     }
 
@@ -160,7 +163,7 @@ class PackageControlMutationTest {
     fun `启停专项刷新不要求卸载专属权限字段`() = runBlocking {
         val transport = PackageMutationInterceptor(packageList("stopped", true))
 
-        val packages = repository(transport).activePackagesForControl()
+        val packages = repository(transport).packageCenter.controlInstalled()
 
         assertEquals(PACKAGE_ID, packages.single().id)
         assertTrue(packages.single().canStart)
@@ -173,17 +176,17 @@ class PackageControlMutationTest {
         )
         val withoutUpgrade = PackageMutationInterceptor(packageList("stopped", true))
 
-        assertTrue(repository(withUpgrade).activePackagesForControl().single().isUpgradeAvailable)
-        assertFalse(repository(withoutUpgrade).activePackagesForControl().single().isUpgradeAvailable)
+        assertTrue(repository(withUpgrade).packageCenter.controlInstalled().single().isUpgradeAvailable)
+        assertFalse(repository(withoutUpgrade).packageCenter.controlInstalled().single().isUpgradeAvailable)
     }
 
     @Test
     fun `模糊控制写入最多专项回读三次且绝不重放`() = runBlocking {
         val transport = PackageAmbiguousUnconfirmedInterceptor()
 
-        val result = repository(transport).controlPackageResult(packageInfo("stopped", true), "start")
+        val result = repository(transport).probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
+        assertPackagePending(result)
         assertEquals(3, transport.methods().count { it == "list" } - 1)
         assertEquals(1, transport.methods().count { it == "start" })
     }
@@ -194,12 +197,13 @@ class PackageControlMutationTest {
         val repo = repository(transport)
         val original = packageInfo("stopped", true)
 
-        val cancelled = repo.controlPackageResult(original, "start")
+        val cancelled = repo.probePackageControl(original, "start")
 
-        assertEquals(MutationResultStatus.CANCELLED_BEFORE_SUBMISSION, cancelled.status)
-        assertFalse(cancelled.submitted)
+        assertTrue(cancelled.failure is CancellationException)
+        assertPackageNotSubmitted(cancelled)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in cancelled.stages)
         assertEquals(0, transport.methods().count { it == "start" })
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, repo.controlPackageResult(original, "start").status)
+        assertPackageVerified(repo.probePackageControl(original, "start"))
     }
 
     @Test
@@ -207,15 +211,13 @@ class PackageControlMutationTest {
         val transport = CancellingPackageControlInterceptor(cancelMethod = "start")
         val repo = repository(transport)
 
-        val cancelledButConfirmed = repo.controlPackageResult(packageInfo("stopped", true), "start")
+        val cancelledButConfirmed = repo.probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, cancelledButConfirmed.status)
-        assertTrue(cancelledButConfirmed.submitted)
+        assertTrue(cancelledButConfirmed.failure is CancellationException)
+        assertEquals(NasPackageWriteStage.VERIFIED, cancelledButConfirmed.stages.last())
+        assertTrue(NasPackageWriteStage.WILL_SUBMIT in cancelledButConfirmed.stages)
         assertEquals(1, transport.methods().count { it == "start" })
-        assertEquals(
-            MutationResultStatus.CONFIRMED_SUCCESS,
-            repo.controlPackageResult(packageInfo("running", false), "stop").status,
-        )
+        assertPackageVerified(repo.probePackageControl(packageInfo("running", false), "stop"))
         assertEquals(1, transport.methods().count { it == "stop" })
     }
 
@@ -226,9 +228,10 @@ class PackageControlMutationTest {
             applyCancelledStart = false,
         )
 
-        val result = repository(transport).controlPackageResult(packageInfo("stopped", true), "start")
+        val result = repository(transport).probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, result.status)
+        assertTrue(result.failure is CancellationException)
+        assertPackagePending(result)
         assertEquals(2, transport.methods().count { it == "list" })
         assertEquals(1, transport.methods().count { it == "start" })
     }
@@ -237,10 +240,10 @@ class PackageControlMutationTest {
     fun `写请求断线后只回读且状态已变化时确认成功`() = runBlocking {
         val transport = PackageAmbiguousSubmissionInterceptor()
 
-        val result = repository(transport).controlPackageResult(packageInfo("stopped", true), "start")
+        val result = repository(transport).probePackageControl(packageInfo("stopped", true), "start")
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-        assertTrue(result.submitted)
+        assertPackageVerified(result)
+        assertTrue(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertEquals(listOf("list", "feasibility_check", "start", "list"), transport.methods())
     }
 
@@ -249,28 +252,37 @@ class PackageControlMutationTest {
         val transport = BlockingPackageMutationInterceptor()
         val repo = repository(transport)
         val original = packageInfo("stopped", true)
-        val first = async(Dispatchers.IO) { repo.controlPackageResult(original, "start") }
+        val first = async(Dispatchers.IO) { repo.probePackageControl(original, "start") }
         assertTrue(transport.submissionStarted.await(2, TimeUnit.SECONDS))
 
-        val duplicate = repo.controlPackageResult(original, "stop")
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, duplicate.status)
-        assertEquals(MutationErrorCategory.CONFLICT, duplicate.errorCategory)
-        assertFalse(duplicate.submitted)
+        val duplicate = repo.probePackageControl(original, "stop")
+        assertPackageNotSubmitted(duplicate)
+        assertEquals(NasPackageProblem.BUSY, (duplicate.failure as NasPackageFailure).problem)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in duplicate.stages)
 
         transport.allowSubmission.countDown()
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, first.await().status)
+        assertPackageVerified(first.await())
         assertEquals(listOf("list", "feasibility_check", "start", "list"), transport.methods())
     }
 
-    private fun repository(interceptor: Interceptor, packageMinVersion: Int = 1) = DsmRepository(
+    private fun repository(interceptor: Interceptor, packageMinVersion: Int = 1) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
-        DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
+        packageMutationClient(interceptor),
         mapOf(
+            "SYNO.Core.System" to ApiCapability("SYNO.Core.System", "entry.cgi", 1, 3),
             PACKAGE_API to ApiCapability(PACKAGE_API, "entry.cgi", packageMinVersion, 5),
             CONTROL_API to ApiCapability(CONTROL_API, "entry.cgi", 1, 5),
         ),
     )
+
+    @Test fun `对象操作元数据提供升级候选并按状态与startable允许启停`() = runBlocking {
+        val response = """{"success":true,"data":{"packages":[{"id":"$PACKAGE_ID","name":"Synthetic Package","version":"1.0.0","additional":{"status":"running","startable":true,"available_operation":{"upgrade":{"id":"$PACKAGE_ID","version":"2.0"}},"dsm_apps":[]}}]}}"""
+        val value = repository(PackageMutationInterceptor(response)).packageCenter.controlInstalled().single()
+        assertTrue(value.canStop); assertFalse(value.canStart); assertTrue(value.isUpgradeAvailable)
+        val denied = repository(PackageMutationInterceptor(response.replace("\"startable\":true", "\"startable\":false"))).packageCenter.controlInstalled().single()
+        assertFalse(denied.canStart); assertFalse(denied.canStop)
+    }
 
     private fun packageList(status: String, startable: Boolean): String {
         val operation = if (status == "running") "stop" else "start"
@@ -402,7 +414,7 @@ private class CancellingPackageControlInterceptor(
                 .build()
         }
         val body = when (method) {
-            "list" -> if (running) packageControlList("running", false, "stop")
+            "list" -> if (running) packageControlList("running", true, "stop")
                 else packageControlList("stopped", true, "start")
             "start" -> SUCCESS_BODY.also { running = true }
             "stop" -> SUCCESS_BODY.also { running = false }
@@ -437,6 +449,5 @@ private fun packageResponse(request: Request, body: String): Response = Response
     .build()
 
 private fun Request.formFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
-    return (0 until form.size).associate { form.name(it) to form.value(it) }
+    return packageMutationFields()
 }

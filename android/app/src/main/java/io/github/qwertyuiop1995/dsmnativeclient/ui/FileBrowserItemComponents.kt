@@ -119,12 +119,15 @@ internal fun FileItems(
                     )
                 },
                 supportingContent = {
-                    Text(
+                    Column {
+                        Text(
                         if (item.isDirectory) stringResource(R.string.folder) else formatBytes(item.size),
                         maxLines = 1,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                        SearchResultLocation(item, state.fileBrowser.activeSearchQuery != null)
+                    }
                 },
                 leadingContent = {
                     FileItemThumbnail(item, state, model)
@@ -249,8 +252,16 @@ internal fun FileGridItem(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            SearchResultLocation(item, state.fileBrowser.activeSearchQuery != null)
         }
     }
+}
+
+@Composable
+private fun SearchResultLocation(item: FileItem, visible: Boolean) {
+    if (visible) Text(stringResource(R.string.file_search_result_location, item.path.substringBeforeLast('/', "")),
+        maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable

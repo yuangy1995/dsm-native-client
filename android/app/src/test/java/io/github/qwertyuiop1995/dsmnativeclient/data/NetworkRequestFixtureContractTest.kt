@@ -1,9 +1,12 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceValue
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasRemoteAccessSettings
 import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
 import kotlinx.coroutines.runBlocking
@@ -22,7 +25,7 @@ class NetworkRequestFixtureContractTest {
     @Test
     fun `正式仓库入口生成的QuickConnect中继与路由请求符合公共Fixture`() = runBlocking {
         val transport = NetworkFixtureInterceptor()
-        val repository = DsmRepository(
+        val repository = authorizedRepository(
             NasProfile("test", "Test", "https://nas.example.invalid", "operator"),
             DsmSession("test", "test-session", "test-token"),
             DsmApiClient(OkHttpClient.Builder().addInterceptor(transport).build()),
@@ -39,7 +42,7 @@ class NetworkRequestFixtureContractTest {
         val original = NasRemoteAccessSettings(true, false, false, true)
         val desired = NasRemoteAccessSettings(false, true, false, true)
 
-        val result = repository.saveRemoteAccessSettingsResult(original, desired)
+        val result = repository.nasServices.save(repository.nasServices.plan(NasServiceValue.RemoteAccess(original), NasServiceValue.RemoteAccess(desired))) { }
 
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         val relayRequest = transport.requests.single {
@@ -103,6 +106,6 @@ private class NetworkFixtureInterceptor : Interceptor {
 }
 
 private fun Request.fixtureFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return buildMap { repeat(form.size) { put(form.name(it), form.value(it)) } }
 }

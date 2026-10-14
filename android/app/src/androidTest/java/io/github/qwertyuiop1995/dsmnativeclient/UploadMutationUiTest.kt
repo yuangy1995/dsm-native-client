@@ -21,7 +21,7 @@ class UploadMutationUiTest {
     val rule = createComposeRule()
 
     @Test
-    fun 上传未确认结果在重建后的传输任务中保留阶段计数和核对提示() {
+    fun 上传结果不明保留恢复提示且不重复单文件阶段计数() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val result = MutationResult(
             schemaVersion = 1,
@@ -45,13 +45,13 @@ class UploadMutationUiTest {
         rule.setContent { LanStashTheme { TransferTaskDetails(task) } }
 
         rule.onNodeWithText(context.getString(R.string.transfer_mutation_upload_stage))
-            .assertIsDisplayed()
-        rule.onNodeWithText(context.getString(R.string.service_action_unverified))
+            .assertDoesNotExist()
+        rule.onNodeWithText(context.getString(R.string.upload_unverified))
             .assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.transfer_mutation_counts, 0, 0, 1))
-            .assertIsDisplayed()
+            .assertDoesNotExist()
         rule.onNodeWithText(context.getString(R.string.transfer_refresh_before_retry))
-            .assertIsDisplayed()
+            .assertDoesNotExist()
     }
 
     @Test
@@ -80,7 +80,7 @@ class UploadMutationUiTest {
 
         rule.onNodeWithText(context.getString(R.string.transfer_mutation_folder_stage))
             .assertIsDisplayed()
-        rule.onNodeWithText(context.getString(R.string.service_action_partial))
+        rule.onNodeWithText(context.getString(R.string.folder_create_partial))
             .assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.transfer_mutation_counts, 1, 1, 0))
             .assertIsDisplayed()

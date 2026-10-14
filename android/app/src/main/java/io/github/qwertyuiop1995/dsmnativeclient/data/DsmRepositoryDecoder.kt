@@ -19,7 +19,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * 与网络传输和门面状态无关的 DSM 响应解码器。
  *
- * 所有函数保持既有宽容解析规则，以便生产请求与脱敏 fixture 使用相同语义。
+ * 生产请求与脱敏 fixture 使用相同语义；权限缺失不能补成允许。
  */
 internal fun decodeTextPreview(bytes: ByteArray): String {
     val (content, charset) = when {
@@ -54,6 +54,12 @@ internal fun parseFilePageFixture(data: JsonObject, root: String = "files"): Fil
         val additional = item.objectValue("additional")
         val time = additional?.objectValue("time")
         val permission = additional?.objectValue("perm")
+        val hasAcl = permission?.containsKey("acl") == true
+        val acl = permission?.objectValue("acl")
+        val sharedRight = permission?.string("share_right").takeIf { root == "shares" }
+        // ACL 在 POSIX 模式下同样是 NAS 返回的当前用户权限；节点缺项不回退到更宽的权限。
+        fun aclAllows(key: String): Boolean = (acl?.get(key) as? JsonPrimitive)
+            ?.takeUnless { it.isString }?.booleanOrNull == true
         FileItem(
             path = item.string("path") ?: return@mapNotNull null,
             name = item.string("name") ?: item.string("path")?.substringAfterLast('/').orEmpty(),
@@ -62,9 +68,9 @@ internal fun parseFilePageFixture(data: JsonObject, root: String = "files"): Fil
             modifiedAtEpochSeconds = time?.long("mtime") ?: item.long("mtime"),
             accessedAtEpochSeconds = time?.long("atime") ?: item.long("atime"),
             owner = additional?.objectValue("owner")?.string("user") ?: additional?.string("owner"),
-            canRead = permission?.bool("read") ?: true,
-            canWrite = permission?.bool("write") ?: false,
-            canDelete = permission?.bool("delete") ?: false,
+            canRead = if (hasAcl) aclAllows("read") else permission?.bool("read") ?: (sharedRight in setOf("RO", "RW")),
+            canWrite = if (hasAcl) aclAllows("write") else permission?.bool("write") ?: (sharedRight == "RW"),
+            canDelete = if (hasAcl) aclAllows("del") else permission?.bool("delete") ?: false,
             mountPointType = additional?.string("mount_point_type") ?: item.string("mount_point_type"),
         )
     }

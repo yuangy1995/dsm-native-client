@@ -89,6 +89,8 @@ JSON 成功信封为 `success:true` 与 `data`；失败含 `success:false`、`er
 
 ### SEC-002 认证位置例外
 
-Apple 的 File Station GET/上传已把认证移出 URL；现有 `file-station.upload.synthetic-overwrite` 共享样例仍保留 URL 认证位置的历史约束。Android 等目标实现须单独核查，不能把 Apple 安全收敛表述为全端已完成，也不能直接改 fixture 来掩盖差异。迁移须同时更新目标实现/测试、共享 fixture、Apple/Windows 回归和五端矩阵；在此之前保留业务参数一致性与 Apple URL 无凭据断言。
+File Station GET/上传的认证不得进入 URL。2026-10-11 Android A3a 源码已移除 Upload 查询参数中的 `_sid`、`SynoToken` 与 `synotoken`，保留 Cookie、`X-SYNO-TOKEN` 和 multipart 正文认证；业务路由、字段顺序、版本、权限与写后回读不变。`file-station.upload.synthetic-overwrite` 合成样例同步删除两类认证的 `query` 位置，Android 正式测试增加完整 URI 无凭据和可选令牌缺失的断言。
+
+五端影响：macOS/iPhone/iPad 共用的 Apple 上传已无 URL 凭据，原无凭据断言必须保留；Windows 上传源码同样使用请求头/正文且已有 URI 否定断言；两端生产代码不变。当前切片的可运行回归与真实 NAS 缺项见 [Android 主计划](../../archive/2026-h2/ANDROID_REWRITE_IMPLEMENTATION_HISTORY_ZH.md#a3a-上传认证位置对齐账本)和[验证历史](../../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。源码位置对齐不代表五端当前版本或真实 NAS 已全部验收；禁止因兼容失败恢复 URL 认证或自动重发未知上传。
 
 静态资料仅有名称、缺少版本/路径/参数的接口保持零猜测请求。例如 Printer BonjourSharing 和 SecurityScan.Status 不因同名字段或其他组件的响应而建立可调用契约。后续证据仍走私有接口发现流程。

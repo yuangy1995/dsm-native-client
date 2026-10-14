@@ -1,23 +1,27 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
 import io.github.qwertyuiop1995.dsmnativeclient.domain.PackageInfo
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ResourceState
-import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import okhttp3.FormBody
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.controlInstalled
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasPackageFailure
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasPackageProblem
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasPackageWriteStage
+import kotlinx.coroutines.CancellationException
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
@@ -39,9 +43,9 @@ class PackageUninstallMutationTest {
             EMPTY_LIST,
         )
 
-        val result = repository(transport).uninstallPackageResult(packageInfo())
+        val result = repository(transport).probePackageUninstall(packageInfo())
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertPackageVerified(result)
         assertEquals(listOf("list", "feasibility_check", "uninstall", "list"), transport.methods())
         assertEquals("uninstall_check", transport.requests[1].fields()["type"])
         assertEquals("[\"$PACKAGE_ID\"]", transport.requests[1].fields()["packages"])
@@ -56,18 +60,18 @@ class PackageUninstallMutationTest {
             request,
             "packages/uninstall/synthetic-package/request.json",
         )
-        assertEquals(listOf("2", "2", "1", "2"), transport.requests.map { it.fields()["version"] })
+        assertEquals(listOf("2", "1", "1", "2"), transport.requests.map { it.fields()["version"] })
     }
 
     @Test
     fun `系统或未明确允许卸载的套件不会发送检查与写请求`() = runBlocking {
         val transport = UninstallInterceptor(packageList(uninstallable = false))
 
-        val result = repository(transport).uninstallPackageResult(packageInfo())
+        val result = repository(transport).probePackageUninstall(packageInfo())
 
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertEquals(MutationErrorCategory.CONFLICT, result.errorCategory)
-        assertFalse(result.submitted)
+        assertPackageNotSubmitted(result)
+        assertEquals(NasPackageProblem.CHANGED, (result.failure as NasPackageFailure).problem)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertEquals(listOf("list"), transport.methods())
     }
 
@@ -78,10 +82,10 @@ class PackageUninstallMutationTest {
             PERMISSION_DENIED,
         )
 
-        val result = repository(transport).uninstallPackageResult(packageInfo())
+        val result = repository(transport).probePackageUninstall(packageInfo())
 
-        assertEquals(MutationResultStatus.PERMISSION_DENIED, result.status)
-        assertFalse(result.submitted)
+        assertEquals(DsmErrorKind.PERMISSION_DENIED, (result.failure as DsmFailure).kind)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertEquals(listOf("list", "feasibility_check"), transport.methods())
     }
 
@@ -93,10 +97,11 @@ class PackageUninstallMutationTest {
             PERMISSION_DENIED,
         )
 
-        val result = repository(transport).uninstallPackageResult(packageInfo())
+        val result = repository(transport).probePackageUninstall(packageInfo())
 
-        assertEquals(MutationResultStatus.PERMISSION_DENIED, result.status)
-        assertTrue(result.submitted)
+        assertEquals(DsmErrorKind.PERMISSION_DENIED, (result.failure as DsmFailure).kind)
+        assertEquals(NasPackageWriteStage.REJECTED, result.stages.last())
+        assertTrue(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertEquals(1, transport.methods().count { it == "uninstall" })
     }
 
@@ -104,10 +109,10 @@ class PackageUninstallMutationTest {
     fun `卸载写请求断线后只回读且目标消失时确认成功`() = runBlocking {
         val transport = AmbiguousUninstallInterceptor()
 
-        val result = repository(transport).uninstallPackageResult(packageInfo())
+        val result = repository(transport).probePackageUninstall(packageInfo())
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-        assertTrue(result.submitted)
+        assertPackageVerified(result)
+        assertTrue(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertEquals(listOf("list", "feasibility_check", "uninstall", "list"), transport.methods())
     }
 
@@ -115,9 +120,9 @@ class PackageUninstallMutationTest {
     fun `卸载后畸形回读不得把缺失列表根当作已消失`() = runBlocking {
         val transport = UninstallInterceptor(packageList(true), SUCCESS, SUCCESS, SUCCESS)
 
-        val result = repository(transport).uninstallPackageResult(packageInfo())
+        val result = repository(transport).probePackageUninstall(packageInfo())
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
+        assertPackagePending(result)
         assertEquals(1, transport.methods().count { it == "uninstall" })
     }
 
@@ -126,21 +131,24 @@ class PackageUninstallMutationTest {
         val transport = UninstallInterceptor()
 
         val result = repository(transport, uninstallMinVersion = 2)
-            .uninstallPackageResult(packageInfo())
+            .probePackageUninstall(packageInfo())
 
-        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
-        assertFalse(result.submitted)
+        assertEquals(DsmErrorKind.FEATURE_UNSUPPORTED, (result.failure as DsmFailure).kind)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertTrue(transport.requests.isEmpty())
     }
 
     @Test
-    fun `卸载专项刷新缺少卸载许可字段时严格失败`() = runBlocking {
+    fun `列表缺少卸载许可仍可读取但当前执行器禁止卸载`() = runBlocking {
         val body = """{"success":true,"data":{"packages":[{"id":"$PACKAGE_ID","name":"Synthetic Package","version":"1.0.0","status":"stopped","startable":true,"available_operation":["start"],"dsm_apps":[]}]}}"""
-        val transport = UninstallInterceptor(body)
-
-        val failure = runCatching { repository(transport).activePackagesForUninstall() }
-
-        assertTrue(failure.isFailure)
+        val transport = UninstallInterceptor(body, body)
+        val repo = repository(transport)
+        val target = repo.packageCenter.controlInstalled().single()
+        assertFalse(target.canUninstall)
+        val result = repo.probePackageUninstall(target)
+        assertPackageNotSubmitted(result)
+        assertEquals(NasPackageProblem.CHANGED, (result.failure as NasPackageFailure).problem)
+        assertEquals(listOf("list", "list"), transport.methods())
     }
 
     @Test
@@ -148,16 +156,16 @@ class PackageUninstallMutationTest {
         val transport = BlockingUninstallInterceptor()
         val repo = repository(transport)
         val original = packageInfo()
-        val uninstall = async(Dispatchers.IO) { repo.uninstallPackageResult(original) }
+        val uninstall = async(Dispatchers.IO) { repo.probePackageUninstall(original) }
         assertTrue(transport.submissionStarted.await(2, TimeUnit.SECONDS))
 
-        val duplicate = repo.controlPackageResult(original, "start")
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, duplicate.status)
-        assertEquals(MutationErrorCategory.CONFLICT, duplicate.errorCategory)
-        assertFalse(duplicate.submitted)
+        val duplicate = repo.probePackageControl(original, "start")
+        assertPackageNotSubmitted(duplicate)
+        assertEquals(NasPackageProblem.BUSY, (duplicate.failure as NasPackageFailure).problem)
+        assertFalse(NasPackageWriteStage.WILL_SUBMIT in duplicate.stages)
 
         transport.allowSubmission.countDown()
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, uninstall.await().status)
+        assertPackageVerified(uninstall.await())
         assertEquals(listOf("list", "feasibility_check", "uninstall", "list"), transport.methods())
     }
 
@@ -165,20 +173,21 @@ class PackageUninstallMutationTest {
     fun `卸载写请求在途取消只严格回读一次且不重放`() = runBlocking {
         val transport = CancellingUninstallInterceptor()
 
-        val result = repository(transport).uninstallPackageResult(packageInfo())
+        val result = repository(transport).probePackageUninstall(packageInfo())
 
-        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, result.status)
-        assertTrue(result.submitted)
-        assertTrue(result.requiresRefresh)
+        assertTrue(result.failure is CancellationException)
+        assertPackagePending(result)
+        assertTrue(NasPackageWriteStage.WILL_SUBMIT in result.stages)
         assertEquals(listOf("list", "feasibility_check", "uninstall", "list"), transport.methods())
         assertEquals(1, transport.methods().count { it == "uninstall" })
     }
 
-    private fun repository(interceptor: Interceptor, uninstallMinVersion: Int = 1) = DsmRepository(
+    private fun repository(interceptor: Interceptor, uninstallMinVersion: Int = 1) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
-        DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
+        packageMutationClient(interceptor),
         mapOf(
+            "SYNO.Core.System" to ApiCapability("SYNO.Core.System", "entry.cgi", 1, 3),
             PACKAGE_API to ApiCapability(PACKAGE_API, "entry.cgi", 1, 5),
             CONTROL_API to ApiCapability(CONTROL_API, "entry.cgi", 1, 5),
             UNINSTALL_API to ApiCapability(UNINSTALL_API, "entry.cgi", uninstallMinVersion, 5),
@@ -200,6 +209,7 @@ class PackageUninstallMutationTest {
         canStart = false,
         canStop = false,
         canUninstall = true,
+        installType = "user",
         dsmApps = listOf("synthetic-app-one", "synthetic-app-two"),
     )
 
@@ -319,6 +329,5 @@ private fun uninstallResponse(request: Request, body: String): Response = Respon
     .build()
 
 private fun Request.fields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
-    return (0 until form.size).associate { form.name(it) to form.value(it) }
+    return packageMutationFields()
 }
