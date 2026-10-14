@@ -25,7 +25,7 @@ concurrency:
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - name: 检出仓库
         uses: actions/checkout@v7
@@ -47,18 +47,45 @@ jobs:
           "$sdk_manager" --version
           "$sdk_manager" --sdk_root="$ANDROID_HOME" "platforms;android-37.0" "build-tools;36.0.0"
 
-      - name: 运行 Android 构建与静态门禁
+      # 全量编译曾耗尽 Kotlin 默认堆并反复回退；仅在 CI 增大堆，串行处理各构建阶段。
+      - name: 运行全部 Android 单元测试与 Debug 构建
         working-directory: android
         run: >-
           ./gradlew
           :app:testDebugUnitTest
           :app:assembleDebug
-          :app:assembleRelease
-          :app:minifyReleaseWithR8
-          :app:assembleDebugAndroidTest
-          :app:lintDebug
+          -Pkotlin.daemon.jvmargs=-Xmx6g
+          -Pkotlin.daemon.useFallbackStrategy=false
+          --max-workers=1
           --no-parallel
           --stacktrace
+          --console=plain
+
+      - name: 运行 Android Release 与 R8 构建
+        working-directory: android
+        run: >-
+          ./gradlew
+          :app:assembleRelease
+          :app:minifyReleaseWithR8
+          -Pkotlin.daemon.jvmargs=-Xmx6g
+          -Pkotlin.daemon.useFallbackStrategy=false
+          --max-workers=1
+          --no-parallel
+          --stacktrace
+          --console=plain
+
+      - name: 构建 Android 仪器测试包并运行 lint
+        working-directory: android
+        run: >-
+          ./gradlew
+          :app:assembleDebugAndroidTest
+          :app:lintDebug
+          -Pkotlin.daemon.jvmargs=-Xmx6g
+          -Pkotlin.daemon.useFallbackStrategy=false
+          --max-workers=1
+          --no-parallel
+          --stacktrace
+          --console=plain
 
       - name: 上传调试包
         uses: actions/upload-artifact@v7
