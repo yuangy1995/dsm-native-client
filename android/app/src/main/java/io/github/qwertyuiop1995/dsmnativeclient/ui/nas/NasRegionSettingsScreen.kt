@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.nas
 
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -117,7 +118,7 @@ internal fun NasRegionSettingsContent(settings: NasRegionSettings?, isPerforming
                 Text(stringResource(R.string.nas_region_clock_unavailable), modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             displayed.manualDateTime?.let { clock -> item {
-                val locale = LocalContext.current.resources.configuration.locales[0]
+                val locale = LocalConfiguration.current.locales[0]
                 val formatted = java.time.LocalDateTime.of(clock.year, clock.month, clock.day, clock.hour, clock.minute, clock.second)
                     .format(java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM).withLocale(locale))
                 ListItem(headlineContent = { Text(stringResource(R.string.nas_region_current_time)) }, supportingContent = { Text(formatted) })

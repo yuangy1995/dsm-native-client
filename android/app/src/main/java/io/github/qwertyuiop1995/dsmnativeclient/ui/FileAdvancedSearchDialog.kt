@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.ui.platform.LocalConfiguration
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.*
@@ -154,7 +155,7 @@ private fun SearchDateBound(label: Int, seconds: Long?, onChanged: (Long?) -> Un
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val text = seconds?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, context.resources.configuration.locales[0]).format(java.util.Date(it * 1_000)) }
+    val text = seconds?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, LocalConfiguration.current.locales[0]).format(java.util.Date(it * 1_000)) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TextButton({
             focus.clearFocus(); keyboard?.hide()

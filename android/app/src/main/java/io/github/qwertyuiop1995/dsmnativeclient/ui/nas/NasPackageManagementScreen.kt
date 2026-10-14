@@ -65,7 +65,7 @@ internal fun NasPackageManagementScreen(
     val packageIconGeneration by model.packageIconGeneration.collectAsStateWithLifecycle()
     LaunchedEffect(model.packageCenter, state.profile.id) { model.packageCenter.loadInstalled() }
     androidx.compose.runtime.DisposableEffect(model.packageCenter) { onDispose { model.packageCenter.cancelControl() } }
-    PackageControlContent(center, !state.isPerformingAction && !model.nasPower.state.value.busy,
+    PackageControlContent(center, !state.isPerformingAction && !model.nasPower.state.collectAsStateWithLifecycle().value.busy,
         model.packageCenter::loadInstalled, model.packageCenter::requestControl, model.packageCenter::cancelControl,
         model.packageCenter::confirmControl, model.packageCenter::review, model.packageCenter::discard,
         packageIcon = { model.packageIcon(it, state.profile.id) },

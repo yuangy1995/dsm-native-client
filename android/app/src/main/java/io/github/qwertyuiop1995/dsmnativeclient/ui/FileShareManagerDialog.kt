@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.ui.platform.LocalResources
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -126,11 +127,12 @@ internal fun FileShareManagerDialog(workspace: WorkspaceState, model: AppViewMod
 @Composable
 internal fun FileShareLinkActions(links: List<FileShareLink>, model: AppViewModel) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TextButton({
         if (links.size == 1) model.copyFileShareLink(links.single())
         else (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(
-            ClipData.newPlainText(context.getString(R.string.share_link_clip_label), links.joinToString("\n") { it.url }))
+            ClipData.newPlainText(resources.getString(R.string.share_link_clip_label), links.joinToString("\n") { it.url }))
         }, Modifier.heightIn(min = 48.dp)) { Icon(Icons.Outlined.ContentCopy, null); Text(stringResource(R.string.copy_share_link), Modifier.padding(start = 8.dp)) }
         ShareLinkButton(links, showLabel = true)
     }
@@ -139,9 +141,10 @@ internal fun FileShareLinkActions(links: List<FileShareLink>, model: AppViewMode
 @Composable
 private fun ShareLinkButton(links: List<FileShareLink>, showLabel: Boolean = false) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val share = {
         val intent = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, links.joinToString("\n") { it.url })
-        context.startActivity(Intent.createChooser(intent, context.getString(R.string.file_share_system)))
+        context.startActivity(Intent.createChooser(intent, resources.getString(R.string.file_share_system)))
     }
     if (showLabel) TextButton(share, Modifier.heightIn(min = 48.dp)) {
         Icon(Icons.Outlined.Share, null); Text(stringResource(R.string.file_share_system), Modifier.padding(start = 8.dp))

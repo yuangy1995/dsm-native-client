@@ -1,10 +1,12 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.qwertyuiop1995.dsmnativeclient.R
@@ -15,8 +17,9 @@ import java.text.NumberFormat
 @Composable
 internal fun FileSettingsChangesSummary(change: FileSettingsChange) {
     val context = LocalContext.current
-    val numbers = NumberFormat.getIntegerInstance(context.resources.configuration.locales[0])
-    fun text(id: Int) = context.getString(id)
+    val resources = LocalResources.current
+    val numbers = NumberFormat.getIntegerInstance(LocalConfiguration.current.locales[0])
+    fun text(id: Int) = resources.getString(id)
     fun bool(value: Boolean) = text(if (value) R.string.enabled else R.string.disabled)
     val rows = buildList<Pair<Int, String>> {
         when (change) {
@@ -35,7 +38,7 @@ internal fun FileSettingsChangesSummary(change: FileSettingsChange) {
                 if (old.schedule != new.schedule) add(R.string.file_settings_schedule_title to text(R.string.file_settings_schedule_changed))
                 for ((label, before, after) in listOf(Triple(R.string.file_settings_share_accounts, old.sharingAccounts, new.sharingAccounts),
                         Triple(R.string.file_settings_request_accounts, old.requestAccounts, new.requestAccounts)))
-                    if (before != after) add(label to context.getString(R.string.file_settings_members_changed, (after - before).size, (before - after).size))
+                    if (before != after) add(label to resources.getString(R.string.file_settings_members_changed, (after - before).size, (before - after).size))
             }
             is FileSettingsChange.MountScope -> if (change.baseline != change.updated) add(R.string.file_settings_remote_access to text(change.updated.label()))
             is FileSettingsChange.MountAccount -> if (change.baseline.enabled != change.enabled) add(R.string.file_settings_account_allowed to bool(change.enabled))

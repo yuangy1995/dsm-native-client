@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.compose.ui.platform.LocalConfiguration
 import android.app.DatePickerDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
@@ -125,7 +126,7 @@ private fun FileShareDateField(label: Int, value: FileShareDateChange, allowKeep
             DatePickerDialog(context, { _, year, month, day -> onChange(FileShareDateChange.Set(LocalDate.of(year, month + 1, day))) },
                 date.year, date.monthValue - 1, date.dayOfMonth).show()
         }, label = { Text((value as? FileShareDateChange.Set)?.date?.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
-            .withLocale(context.resources.configuration.locales[0])) ?: stringResource(R.string.file_share_custom_date)) })
+            .withLocale(LocalConfiguration.current.locales[0])) ?: stringResource(R.string.file_share_custom_date)) })
     }
 }
 

@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Album
@@ -501,7 +502,7 @@ private fun FileBrowserContent(
     }
     if (state.fileCopyMove != null && mutation.target == null) FileCopyMoveDialog(state, model)
     CrossNasTransferDialog(model.crossNasTransfers)
-    OfficeDocumentDialog(model.officeDocuments, state.profile, model.login.value.profiles)
+    OfficeDocumentDialog(model.officeDocuments, state.profile, model.login.collectAsStateWithLifecycle().value.profiles)
     if (showUploadOptions) FileUploadSourceDialog(
         onClose = { showUploadOptions = false },
         onFiles = { showUploadOptions = false; uploadLauncher.launch(arrayOf("*/*")) },

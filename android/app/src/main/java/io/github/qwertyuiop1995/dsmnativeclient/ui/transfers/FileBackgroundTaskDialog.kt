@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.transfers
 
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -141,7 +142,7 @@ private fun FileBackgroundTaskAction.label() = if (this == FileBackgroundTaskAct
 
 @Composable
 private fun backgroundTaskDate(seconds: Long): String {
-    val locale = LocalContext.current.resources.configuration.locales[0]
+    val locale = LocalConfiguration.current.locales[0]
     val formatter = remember(locale) { DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(locale).withZone(ZoneId.systemDefault()) }
     return formatter.format(Instant.ofEpochSecond(seconds))
 }

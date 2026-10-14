@@ -100,7 +100,7 @@ internal fun GlobalTaskCenterContent(
                 items(visible, key = { it.key }) { item ->
                     val model = host.taskModel(item)
                     val valid = item.profile != null
-                    val canUseFiles = model?.workspace?.value?.availability?.allows(io.github.qwertyuiop1995.dsmnativeclient.domain.Module.FILES) == true
+                    val canUseFiles = model?.workspace?.collectAsStateWithLifecycle()?.value?.availability?.allows(io.github.qwertyuiop1995.dsmnativeclient.domain.Module.FILES) == true
                     val label = item.profile?.let { profile -> val name = connectionConfirmationName(profile, connections); when (item.task.direction) {
                         TransferDirection.DOWNLOAD -> stringResource(R.string.task_nas_to_phone, name)
                         TransferDirection.UPLOAD -> stringResource(R.string.task_phone_to_nas, name)
