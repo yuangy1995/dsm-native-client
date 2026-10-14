@@ -22,7 +22,7 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.*
 import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
 
 @Composable
-internal fun ClientFileSelectionBar(state: WorkspaceState, model: AppViewModel, items: List<FileItem>, blocked: Boolean, onCompress: () -> Unit) {
+internal fun ClientFileSelectionBar(state: WorkspaceState, model: AppViewModel, items: List<FileItem>, blocked: Boolean, onCompress: () -> Unit, onDownload: () -> Unit) {
     val writable = !blocked && !state.isPerformingAction && items.isNotEmpty()
     Surface(color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -31,6 +31,16 @@ internal fun ClientFileSelectionBar(state: WorkspaceState, model: AppViewModel, 
                 Text(stringResource(R.string.items_selected_count, state.fileBrowser.selectedPaths.size), style = MaterialTheme.typography.titleSmall)
             }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onDownload, enabled = !state.isPerformingAction &&
+                    items.isNotEmpty() && items.size == state.fileBrowser.selectedPaths.size && items.all(FileItem::canRead)) {
+                    Icon(Icons.Outlined.Download, null)
+                    Text(stringResource(if (items.size > 1 || items.singleOrNull()?.isDirectory == true)
+                        R.string.download_selected_as_zip else R.string.download_item), Modifier.padding(start = 6.dp))
+                }
+                if (state.supportsSharing) TextButton(onClick = { model.fileSharing.openCreate(items) },
+                    enabled = writable && items.size == state.fileBrowser.selectedPaths.size && items.all(FileItem::canRead)) {
+                    Icon(Icons.Outlined.Link, null); Text(stringResource(R.string.file_share_create), Modifier.padding(start = 6.dp))
+                }
                 TextButton(onClick = { model.beginFileCopyMove(items, FileCopyMoveOperation.COPY) },
                     enabled = writable && state.supportsCopyMove && items.all(FileItem::canRead)) {
                     Icon(Icons.Outlined.FileCopy, null); Text(stringResource(R.string.copy_selected_items), Modifier.padding(start = 6.dp))
@@ -58,6 +68,7 @@ internal fun ClientFileSelectionBar(state: WorkspaceState, model: AppViewModel, 
 @Composable
 internal fun ClientFileOptionsSheet(state: WorkspaceState, model: AppViewModel, onShareLinks: () -> Unit, onDismiss: () -> Unit) {
     ClientSheet(stringResource(R.string.client_file_options), onDismiss) {
+        ClientRow(stringResource(R.string.file_search_advanced), Icons.Outlined.Search) { onDismiss(); model.fileSearch.open() }
         ClientSectionTitle(stringResource(R.string.sort_files))
         ClientGroup {
             FileSortOption.entries.forEach { option ->
@@ -93,8 +104,12 @@ internal fun ClientFileOptionsSheet(state: WorkspaceState, model: AppViewModel, 
             }
             if (state.supportsFavorites) ClientRow(stringResource(R.string.open_favorites), Icons.Outlined.StarOutline) { onDismiss(); model.loadFileFavorites() }
             ClientRow(stringResource(R.string.open_recent_locations), Icons.Outlined.History) { onDismiss(); model.loadFileRecentLocations() }
-            if (state.supportsRemoteLocations) ClientRow(stringResource(R.string.open_remote_locations), Icons.Outlined.FolderOpen) { onDismiss(); model.loadFileRemoteLocations() }
+            if (model.fileVFS.available()) ClientRow(stringResource(R.string.vfs_title), Icons.Outlined.FolderOpen) { onDismiss(); model.fileVFS.openManager() }
+            if (model.fileRemoteMounts.available()) ClientRow(stringResource(R.string.remote_mount_title), Icons.Outlined.FolderOpen) { onDismiss(); model.fileRemoteMounts.openManager() }
+            if (model.fileISOMounts.available()) ClientRow(stringResource(R.string.iso_mounts_title), Icons.Outlined.Album) { onDismiss(); model.fileISOMounts.openManager() }
             if (state.supportsSharing) ClientRow(stringResource(R.string.manage_share_links), Icons.Outlined.Link, onClick = onShareLinks)
         }
+        if (model.fileSettings.available()) ClientRow(stringResource(R.string.file_settings_title), Icons.Outlined.Settings) { onDismiss(); model.fileSettings.open() }
+        ClientRow(stringResource(R.string.office_copies), Icons.Outlined.Description, enabled = !state.isPerformingAction) { onDismiss(); model.officeDocuments.show() }
     }
 }

@@ -5,9 +5,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import io.github.qwertyuiop1995.dsmnativeclient.*
 import io.github.qwertyuiop1995.dsmnativeclient.domain.Module
 import io.github.qwertyuiop1995.dsmnativeclient.storage.ClientNavigationPreferences
+import io.github.qwertyuiop1995.dsmnativeclient.storage.ClientHomePreferences
+import io.github.qwertyuiop1995.dsmnativeclient.ui.home.ClientHomeEditor
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.*
 import io.github.qwertyuiop1995.dsmnativeclient.ui.navigation.*
 import io.github.qwertyuiop1995.dsmnativeclient.ui.transfers.ClientTaskCenterScreen
@@ -22,6 +27,9 @@ internal fun ClientWorkspace(state: WorkspaceState, model: AppViewModel) {
     val preferences = remember(context) { ClientNavigationPreferences(context) }
     var pinned by remember { mutableStateOf(preferences.load()) }
     var editorVisible by remember { mutableStateOf(false) }
+    val homePreferences = remember(context) { ClientHomePreferences(context) }
+    var homeLayout by remember { mutableStateOf(homePreferences.load()) }
+    var homeEditorVisible by remember { mutableStateOf(false) }
     val signal by model.moduleNavigation.collectAsStateWithLifecycle()
     var destination by rememberSaveable(state.profile.id) { mutableStateOf(
         signal?.takeIf { it.profileId == state.profile.id }?.let { ClientDestination.forModule(it.module) }
@@ -34,6 +42,15 @@ internal fun ClientWorkspace(state: WorkspaceState, model: AppViewModel) {
     var deviceCategory by rememberSaveable(state.profile.id) { mutableStateOf<DeviceCategory?>(null) }
     var taskSource by rememberSaveable(state.profile.id) { mutableStateOf(ClientTaskSource.PHONE) }
     var photosEntered by rememberSaveable(state.profile.id) { mutableStateOf(false) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(model, state.profile.id, lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) model.setWorkspaceForeground(true)
+            if (event == Lifecycle.Event.ON_STOP) model.setWorkspaceForeground(false)
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); model.setWorkspaceForeground(false) }
+    }
 
     fun requestEntry(action: ClientEntryAction?) {
         if (action == null) { entry = null; return }
@@ -73,8 +90,11 @@ internal fun ClientWorkspace(state: WorkspaceState, model: AppViewModel) {
     LaunchedEffect(state.previewDiscardConfirmationVisible) {
         if (!state.previewDiscardConfirmationVisible && signal?.revision == handledRevision) deferredDestination = null
     }
+    LaunchedEffect(state.availability) {
+        if (!state.availability.allows(destination.module)) { entry = null; deferredDestination = null }
+    }
     LaunchedEffect(destination, state.profile.id) {
-        if (destination == ClientDestination.DEVICE && state.availability.firstOrNull { it.module == Module.NAS_SETTINGS }?.isAvailable != false) {
+        if (destination == ClientDestination.DEVICE && state.availability.allows(Module.NAS_SETTINGS)) {
             model.load(Module.NAS_SETTINGS)
         }
     }
@@ -91,7 +111,7 @@ internal fun ClientWorkspace(state: WorkspaceState, model: AppViewModel) {
     WorkspaceShell(
         state = state,
         onModuleSelected = { navigate(ClientDestination.forModule(it)) },
-        onRefresh = { model.load(if (destination == ClientDestination.DEVICE) Module.NAS_SETTINGS else null) },
+        onRefresh = { model.refreshWorkspaceAccess(if (destination == ClientDestination.DEVICE) Module.NAS_SETTINGS else null) },
         onNavigateUp = {
             when {
                 destination == ClientDestination.DEVICE && deviceCategory != null -> deviceCategory = null
@@ -105,7 +125,7 @@ internal fun ClientWorkspace(state: WorkspaceState, model: AppViewModel) {
         canCopyPageLink = model.canCopyCurrentPageLink(), onCopyPageLink = { model.copyCurrentPageLink() },
         destination = destination, pinned = pinned,
         onDestinationSelected = { navigate(it) }, onCustomize = { editorVisible = true },
-        onSearch = if (destination in listOf(ClientDestination.FILES, ClientDestination.PHOTOS, ClientDestination.CHAT))
+        onSearch = if (state.availability.allows(destination.module) && destination in listOf(ClientDestination.FILES, ClientDestination.PHOTOS, ClientDestination.CHAT))
             ({ requestEntry(ClientEntryAction.SEARCH) }) else null,
         pageTitle = pageTitle,
         canNavigateUp = nestedBusinessRoute || secondary || deviceCategory != null,
@@ -122,11 +142,12 @@ internal fun ClientWorkspace(state: WorkspaceState, model: AppViewModel) {
                             ClientEntryAction.DOWNLOAD_CREATE -> ClientDestination.DOWNLOADS
                             else -> ClientDestination.FILES
                         }, action)
-                    })
+                    }, layout = homeLayout, onCustomize = { homeEditorVisible = true })
                 ClientDestination.DEVICE -> ClientDeviceScreen(state, deviceCategory,
                     onCategory = { deviceCategory = it },
                     onTab = { if (navigate(ClientDestination.NAS_SETTINGS, keepDeviceCategory = true)) model.selectNasSettingsTab(it) },
-                    onOpen = { navigate(it) }, onRefresh = { model.load(Module.NAS_SETTINGS) })
+                    onOpen = { navigate(it) }, onRefresh = { model.refreshWorkspaceAccess(Module.NAS_SETTINGS) },
+                    onSignIn = { model.requestSignIn() })
                 ClientDestination.TASKS -> ClientTaskCenterScreen(state, model, taskSource) { source ->
                     val target = if (source == ClientTaskSource.DOWNLOADS) Module.DOWNLOADS else Module.TRANSFERS
                     val result = model.requestClientModule(target)
@@ -146,4 +167,9 @@ internal fun ClientWorkspace(state: WorkspaceState, model: AppViewModel) {
         if (saved) pinned = value
         saved
     }, onDismiss = { editorVisible = false })
+    if (homeEditorVisible) ClientHomeEditor(homeLayout, onSave = { value ->
+        val saved = withContext(Dispatchers.IO) { homePreferences.save(value) }
+        if (saved) homeLayout = value
+        saved
+    }, onDismiss = { homeEditorVisible = false })
 }

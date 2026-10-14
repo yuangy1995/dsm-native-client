@@ -41,12 +41,10 @@
     "synoTokenRequired": false,
     "sessionLocations": [
       "cookie",
-      "query",
       "multipart"
     ],
     "synoTokenLocations": [
       "header",
-      "query",
       "multipart"
     ]
   },

@@ -7,6 +7,7 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,7 +21,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -29,6 +33,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.qwertyuiop1995.dsmnativeclient.R
 import io.github.qwertyuiop1995.dsmnativeclient.WorkspaceState
 import io.github.qwertyuiop1995.dsmnativeclient.chatUnreadCount
@@ -88,6 +93,10 @@ internal fun WorkspaceShell(
     canNavigateUp: Boolean = state.workspaceRouteStack().entries.size > 1,
     content: @Composable () -> Unit,
 ) {
+    val host = LocalWorkspaceHost.current
+    val connections = host?.connections?.collectAsStateWithLifecycle()?.value.orEmpty()
+    val showAccount = needsConnectionAccount(state.profile, connections.map { it.profile })
+    val showAddress = needsConnectionAddress(state.profile, connections.map { it.profile })
     var featuresVisible by remember { mutableStateOf(false) }
     var profileVisible by remember { mutableStateOf(false) }
     var logoutConfirmation by remember { mutableStateOf(false) }
@@ -123,39 +132,45 @@ internal fun WorkspaceShell(
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 600.dp
-        val expanded = maxWidth >= 840.dp
         val focusedConversation = compact && destination == ClientDestination.CHAT && state.selectedConversation != null
-        Row(Modifier.fillMaxSize()) {
-            if (!compact) ClientSideNavigation(state, pinned, destination, expanded, onDestinationSelected) {
-                featuresVisible = true
-            }
             Scaffold(
-                modifier = Modifier.weight(1f).fillMaxHeight(),
+                modifier = Modifier.fillMaxSize(),
                 contentWindowInsets = WindowInsets(0),
                 topBar = {
-                    if (!focusedConversation) Surface(color = MaterialTheme.colorScheme.surface) {
+                    Surface(color = MaterialTheme.colorScheme.surface) {
                         Column {
                             Row(Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 56.dp).padding(horizontal = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically) {
-                                if (canNavigateUp) IconButton(onClick = onNavigateUp) {
+                                if (canNavigateUp && !focusedConversation) IconButton(onClick = onNavigateUp) {
                                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.go_up))
                                 }
-                                if (pageTitle != null) {
-                                    Text(pageTitle, style = MaterialTheme.typography.titleMedium,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(8.dp))
-                                } else TextButton(onClick = { profileVisible = true }, modifier = Modifier.weight(1f),
+                                Image(painterResource(R.drawable.brand_logo), null,
+                                    Modifier.padding(horizontal = 6.dp).size(36.dp).clip(MaterialTheme.shapes.small))
+                                TextButton(onClick = { if (host != null) host.showPicker() else profileVisible = true }, modifier = Modifier.weight(1f),
                                     contentPadding = PaddingValues(horizontal = 8.dp)) {
-                                    Text(state.profile.name, color = MaterialTheme.colorScheme.onSurface, maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                    Icon(Icons.Outlined.ExpandMore, null, Modifier.size(18.dp))
+                                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(state.profile.name, color = MaterialTheme.colorScheme.onSurface, maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                            Icon(Icons.Outlined.ExpandMore, null, Modifier.padding(start = 4.dp).size(18.dp))
+                                        }
+                                        val detail = when {
+                                            showAddress -> connectionAddress(state.profile)
+                                            showAccount && pageTitle != null -> stringResource(R.string.workspace_account_page, state.profile.username, pageTitle)
+                                            showAccount -> state.profile.username
+                                            else -> pageTitle
+                                        }
+                                        if (detail != null) Text(detail, style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
                                 }
                                 if (onSearch != null) IconButton(onClick = onSearch) {
                                     Icon(Icons.Outlined.Search, stringResource(R.string.client_search))
                                 }
                                 if (destination != ClientDestination.TASKS) IconButton(onClick = { onDestinationSelected(ClientDestination.TASKS) }) {
-                                    Icon(Icons.Outlined.AssignmentTurnedIn, stringResource(R.string.client_tasks))
+                                    Icon(Icons.Outlined.SwapVert, stringResource(R.string.client_tasks))
                                 }
-                                if (compact) IconButton(onClick = { featuresVisible = true }) {
+                                IconButton(onClick = { featuresVisible = true }) {
                                     Icon(Icons.Outlined.GridView, stringResource(R.string.client_all_features))
                                 }
                             }
@@ -164,22 +179,23 @@ internal fun WorkspaceShell(
                     }
                 },
                 bottomBar = {
-                    if (compact && !focusedConversation) ClientBottomNavigation(pinned,
+                    if (compact) ClientBottomNavigation(pinned,
                         if (destination == ClientDestination.NAS_SETTINGS) ClientDestination.DEVICE else destination,
                         onDestinationSelected, chatUnreadCount(state.conversations), availability = state.availability)
                 },
                 snackbarHost = { SnackbarHost(snackbar, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) },
             ) { padding ->
-                Box(Modifier.fillMaxSize().padding(padding)
-                    .then(if (focusedConversation) Modifier.safeDrawingPadding() else if (!compact || pinned.items.isEmpty())
-                        Modifier.navigationBarsPadding() else Modifier)
-                    .graphicsLayer {
+                Row(Modifier.fillMaxSize().padding(padding)
+                    .then(if (!compact || pinned.visibleItems(state.availability).isEmpty())
+                        Modifier.navigationBarsPadding() else Modifier)) {
+                    if (!compact) ClientSideNavigation(state, pinned, destination, onDestinationSelected)
+                    Box(Modifier.weight(1f).fillMaxHeight().graphicsLayer {
                         val progress = if (backAction == WorkspaceBackAction.NAVIGATE_UP) predictiveBackProgress.value else 0f
                         translationX = progress * predictiveBackDirection(predictiveBackSwipeEdge) * 32.dp.toPx()
                         alpha = 1f - progress * 0.08f
                     }) {
                     content()
-                    if (state.isPerformingAction) {
+                    if (state.isPerformingAction || state.access.refreshing) {
                         val processing = stringResource(R.string.processing_action)
                         LinearProgressIndicator(Modifier.fillMaxWidth().semantics { contentDescription = processing })
                     }
@@ -196,7 +212,8 @@ internal fun WorkspaceShell(
         ClientRow(stringResource(R.string.client_custom_navigation), Icons.Outlined.Edit) {
             featuresVisible = false; onCustomize()
         }
-        ClientRow(stringResource(R.string.refresh), Icons.Outlined.Refresh) { featuresVisible = false; onRefresh() }
+        ClientRow(stringResource(R.string.refresh), Icons.Outlined.Refresh,
+            enabled = !state.access.refreshing) { onRefresh() }
         if (canCopyPageLink && destination !in listOf(ClientDestination.HOME, ClientDestination.DEVICE)) {
             ClientRow(stringResource(R.string.copy_page_link), Icons.Outlined.Link) { featuresVisible = false; onCopyPageLink() }
         }
@@ -220,25 +237,22 @@ internal fun WorkspaceShell(
 }
 
 @Composable
-private fun ClientSideNavigation(state: WorkspaceState, pinned: PinnedModules, selected: ClientDestination, expanded: Boolean,
-    onSelect: (ClientDestination) -> Unit, onShowFeatures: () -> Unit) {
+private fun ClientSideNavigation(state: WorkspaceState, pinned: PinnedModules, selected: ClientDestination,
+    onSelect: (ClientDestination) -> Unit) {
+    val width = (88 + 32 * (LocalDensity.current.fontScale - 1).coerceIn(0f, 1f)).dp
     Surface(color = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.width(if (expanded) 216.dp else 88.dp).fillMaxHeight().safeDrawingPadding()
+        Column(Modifier.width(width).fillMaxHeight()
             .verticalScroll(rememberScrollState()).padding(8.dp).testTag(WORKSPACE_NAVIGATION_RAIL_TEST_TAG)) {
-            IconButton(onClick = onShowFeatures) { Icon(Icons.Outlined.GridView, stringResource(R.string.client_all_features)) }
-            pinned.items.forEach { item ->
+            pinned.visibleItems(state.availability).forEach { item ->
+                val label = stringResource(item.title)
                 val unread = if (item == ClientDestination.CHAT) chatUnreadCount(state.conversations) else 0
                 val reason = state.availability.firstOrNull { it.module == item.module }.navigationStatusResource()?.let { stringResource(it) }
                     ?: if (unread > 0) pluralStringResource(R.plurals.unread_count, unread, unread) else null
-                val status = Modifier.semantics { reason?.let { stateDescription = it } }
-                if (expanded) NavigationDrawerItem(
-                    modifier = status,
-                    label = { Text(stringResource(item.title)) }, icon = { Icon(item.icon, null) },
+                val status = Modifier.semantics { contentDescription = label; reason?.let { stateDescription = it } }
+                NavigationRailItem(
+                    modifier = status.fillMaxWidth(),
                     selected = item == selected, onClick = { onSelect(item) },
-                ) else NavigationRailItem(
-                    modifier = status,
-                    selected = item == selected, onClick = { onSelect(item) },
-                    icon = { Icon(item.icon, null) }, label = { Text(stringResource(item.title)) },
+                    icon = { Icon(item.icon, null) }, label = { Text(label) },
                 )
             }
         }

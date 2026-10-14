@@ -14,6 +14,7 @@ import io.github.qwertyuiop1995.dsmnativeclient.data.parseVirtualizationLogs
 import io.github.qwertyuiop1995.dsmnativeclient.network.int
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -28,91 +29,18 @@ import kotlinx.serialization.json.contentOrNull
 internal class ContainerRepository(
     private val gateway: ContainerRepositoryGateway,
 ) {
-    suspend fun overview(): ContainerOverview {
-        if (!gateway.supportsVersion("SYNO.Docker.Container", 1)) throw DsmFailure(
-            102,
-            "Container Manager is unavailable",
-            "Update Container Manager and try again.",
-            kind = DsmErrorKind.FEATURE_UNSUPPORTED,
-        )
-        val containers = gateway.strictResources(
-            gateway.call(
-                "SYNO.Docker.Container",
-                "list",
-                mapOf("offset" to "0", "limit" to "-1", "type" to "all"),
-                version = 1,
-            ),
-            "containers", "container", "data", "list",
-        ).map { it.toContainerReadOnlyResource() }
-        val unavailable = mutableSetOf<ContainerSection>()
-        suspend fun supplementary(
-            section: ContainerSection,
-            apiName: String,
-            method: String,
-            parameters: Map<String, String> = emptyMap(),
-            vararg roots: String,
-        ): List<ManagedResource> {
-            if (!gateway.supportsVersion(apiName, 1)) {
-                unavailable += section
-                return emptyList()
-            }
-            return runCatching {
-                gateway.strictResources(
-                    gateway.call(apiName, method, parameters, version = 1),
-                    *roots,
-                ).map { it.toContainerReadOnlyResource() }
-            }.getOrElse { error ->
-                error.rethrowIfContainerBoundaryFailure()
-                unavailable += section
-                emptyList()
-            }
-        }
-        val images = supplementary(
-            ContainerSection.IMAGES,
-            "SYNO.Docker.Image",
-            "list",
-            roots = arrayOf("images", "image", "data", "list"),
-        )
-        val networks = supplementary(
-            ContainerSection.NETWORKS,
-            "SYNO.Docker.Network",
-            "list",
-            roots = arrayOf("networks", "network", "data", "list"),
-        )
-        val projects = supplementary(
-            ContainerSection.PROJECTS,
-            "SYNO.Docker.Project",
-            "list",
-            roots = arrayOf("projects", "project", "data", "list"),
-        )
-        val eventData = if (gateway.supportsVersion("SYNO.Docker.Log", 1)) runCatching {
-            gateway.call(
-                "SYNO.Docker.Log",
-                "list",
-                mapOf("offset" to "0", "limit" to "200"),
-                version = 1,
-            )
-        }.getOrElse { error ->
-            error.rethrowIfContainerBoundaryFailure()
-            unavailable += ContainerSection.EVENTS
-            null
-        } else {
-            unavailable += ContainerSection.EVENTS
-            null
-        }
-        return ContainerOverview(
-            containers,
-            images,
-            networks,
-            projects,
-            events = eventData?.let(::parseVirtualizationLogs).orEmpty(),
-            unavailableSections = unavailable,
-        )
+    internal val managementLock = Mutex()
+    internal suspend fun managementCall(api: String, method: String, parameters: Map<String, JsonElement> = emptyMap(), write: Boolean = false): JsonObject {
+        if (!gateway.supportsVersion(api, 1)) containerUnsupported()
+        return gateway.managementCall(api, method, parameters, write)
     }
+    internal suspend fun requireManagementWrite() = gateway.requireManagementWrite()
+    internal fun supportsEvents() = gateway.supportsVersion("SYNO.Docker.Log", 1)
+    suspend fun overview(): ContainerOverview = readOverview()
 
     fun supportsRegistry(): Boolean = gateway.supportsVersion("SYNO.Docker.Registry", 1)
 
-    /** 版本化行为证据完成前，Container 写操作始终关闭。 */
+    /** 旧门面没有原目标快照和持久检查点，保持关闭；正式管理入口使用下方扩展与实际能力/权限检查。 */
     fun supportsVerifiedWrites(): Boolean = false
 
     suspend fun searchRegistry(query: String): List<ContainerRegistryImage> {
@@ -124,67 +52,44 @@ internal class ContainerRepository(
             "Search for the image in Container Manager.",
             kind = DsmErrorKind.FEATURE_UNSUPPORTED,
         )
-        val data = gateway.call(
-            "SYNO.Docker.Registry",
-            "search",
-            mapOf(
-                "offset" to "0",
-                "limit" to "50",
-                "page_size" to "50",
-                "q" to normalizedQuery,
-            ),
-            version = 1,
-        )
-        return sequenceOf("data", "items", "results", "_array")
-            .flatMap { gateway.elements(data, it).asSequence() }
-            .distinctBy(JsonElement::toString)
-            .mapNotNull { element ->
-                val item = element as? JsonObject ?: return@mapNotNull null
-                val name = gateway.firstNonBlank(item, "name", "repository", "repo")
-                    ?: return@mapNotNull null
-                ContainerRegistryImage(
-                    name = name,
-                    registry = gateway.firstNonBlank(item, "registry") ?: "docker.io",
-                    description = gateway.firstNonBlank(item, "description"),
-                    starCount = item.int("star_count") ?: item.int("stars") ?: 0,
-                    isOfficial = gateway.bool(item, "is_official")
-                        ?: gateway.bool(item, "official") ?: false,
-                    isAutomated = gateway.bool(item, "is_automated")
-                        ?: gateway.bool(item, "automated") ?: false,
-                    isTrusted = gateway.bool(item, "is_trusted")
-                        ?: gateway.bool(item, "trusted") ?: false,
-                )
-            }
-            .distinctBy(ContainerRegistryImage::id)
-            .toList()
+        val data = managementCall("SYNO.Docker.Registry", "search", mapOf(
+            "offset" to kotlinx.serialization.json.JsonPrimitive(0), "limit" to kotlinx.serialization.json.JsonPrimitive(50),
+            "page_size" to kotlinx.serialization.json.JsonPrimitive(50), "q" to kotlinx.serialization.json.JsonPrimitive(normalizedQuery)))
+        val rows = data["data"] as? kotlinx.serialization.json.JsonArray ?: containerInvalid()
+        return rows.map { element ->
+            val item = element as? JsonObject ?: containerInvalid()
+            val name = gateway.firstNonBlank(item, "name", "repository", "repo") ?: containerInvalid()
+            if (!validImageTarget(name, "latest")) containerInvalid()
+            ContainerRegistryImage(name, gateway.firstNonBlank(item, "registry") ?: "docker.io",
+                gateway.firstNonBlank(item, "description"), item.int("star_count") ?: item.int("stars") ?: 0,
+                gateway.bool(item, "is_official") ?: gateway.bool(item, "official") ?: false,
+                gateway.bool(item, "is_automated") ?: gateway.bool(item, "automated") ?: false,
+                gateway.bool(item, "is_trusted") ?: gateway.bool(item, "trusted") ?: false)
+        }.distinctBy(ContainerRegistryImage::id)
     }
 
     suspend fun registryTags(repository: String): List<String> {
         val normalizedRepository = repository.trim()
         require(normalizedRepository.isNotEmpty() && normalizedRepository.length <= 500)
-        if (!supportsRegistry()) throw DsmFailure(
-            102,
-            "Container image tags are unavailable",
-            "View the image tags in Container Manager.",
-            kind = DsmErrorKind.FEATURE_UNSUPPORTED,
-        )
-        val data = gateway.call(
-            "SYNO.Docker.Registry",
-            "tags",
-            mapOf("repo" to normalizedRepository),
-            version = 1,
-        )
-        return sequenceOf("data", "tags", "items", "_array")
-            .flatMap { gateway.elements(data, it).asSequence() }
-            .mapNotNull { element ->
-                when (element) {
-                    is JsonObject -> gateway.firstNonBlank(element, "tag", "name")
-                    is JsonPrimitive -> element.contentOrNull?.trim()?.takeIf(String::isNotBlank)
-                    else -> null
-                }
-            }
-            .distinct()
-            .toList()
+        val data = managementCall("SYNO.Docker.Registry", "tags", mapOf("repo" to JsonPrimitive(normalizedRepository)))
+        val sources = listOf("data", "tags", "items", "_array").mapNotNull { data[it] }
+        if (sources.isEmpty()) containerInvalid()
+        val results = sources.map { value ->
+            val rows = value as? kotlinx.serialization.json.JsonArray ?: containerInvalid()
+            rows.map { element ->
+                val tag = if (element is JsonObject) {
+                    val fields = listOf("tag", "name").mapNotNull { element[it] }
+                    if (fields.isEmpty()) containerInvalid()
+                    val names = fields.map { it.containerString() ?: containerInvalid() }.distinct()
+                    if (names.size != 1) containerInvalid()
+                    names.single()
+                } else element.containerString() ?: containerInvalid()
+                if (!validImageTarget(normalizedRepository, tag)) containerInvalid()
+                tag
+            }.distinct()
+        }
+        if (results.distinct().size != 1) containerInvalid()
+        return results.singleOrNull() ?: results.first()
     }
 
     suspend fun controlResult(id: String, action: String): MutationResult {
@@ -316,27 +221,12 @@ internal class ContainerRepository(
     }
 }
 
-private fun ManagedResource.toContainerReadOnlyResource(): ManagedResource = ManagedResource(
-    id = id,
-    name = name,
-    detail = "",
-    state = state,
-)
-
-private fun Throwable.rethrowIfContainerBoundaryFailure() {
-    if (this is CancellationException) {
-        throw this
-    }
-    val failure = this as? DsmFailure ?: return
-    if (
-        failure.kind == DsmErrorKind.SESSION_EXPIRED ||
-        failure.kind == DsmErrorKind.AUTHENTICATION_FAILED
-    ) {
-        throw failure
-    }
-}
-
 internal interface ContainerRepositoryGateway {
+    suspend fun requireManagementWrite(): Unit = containerUnsupported()
+    suspend fun managementCall(api: String, method: String, parameters: Map<String, JsonElement>, write: Boolean): JsonObject {
+        if (write) containerUnsupported()
+        return call(api, method, parameters.mapValues { it.value.toString() }, 1)
+    }
     fun supports(apiName: String): Boolean
 
     fun supportsVersion(apiName: String, version: Int): Boolean

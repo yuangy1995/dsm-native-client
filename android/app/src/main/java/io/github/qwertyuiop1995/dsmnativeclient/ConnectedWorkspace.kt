@@ -27,7 +27,6 @@ internal fun connectedWorkspace(
     supportsSharing = repo.supportsSharing(),
     supportsCompression = repo.supportsCompression(),
     supportsExtraction = repo.supportsExtraction(),
-    supportsRemoteLocations = repo.supportsRemoteLocations(),
     supportsDownloadSettings = repo.supportsDownloadSettings(),
     supportsDownloadSchedule = repo.supportsDownloadSchedule(),
     supportsDownloadTaskDestinationEditing =

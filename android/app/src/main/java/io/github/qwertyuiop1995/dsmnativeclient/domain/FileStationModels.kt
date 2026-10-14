@@ -87,7 +87,8 @@ data class FilePage(
     val offset: Int,
 )
 
-/** File Station 在 NAS 上执行的只读后台任务类别。 */
+/** File Station 在 NAS 上执行的后台任务类别。 */
+@Serializable
 enum class FileBackgroundTaskKind { COPY_OR_MOVE, DELETE, COMPRESS, EXTRACT }
 
 /** `FINISHED` 只表示任务已经结束，不代表任务成功。 */
@@ -109,6 +110,10 @@ data class FileBackgroundTaskSummary(
     val totalItemCount: Int?,
     val processedBytes: Long?,
     val totalBytes: Long?,
+    val apiVersion: Int? = null,
+    val method: String? = null,
+    /** 控制身份保留完整创建时间；旧脱敏快照没有此字段，刷新前只能查看。 */
+    val controlCreatedAtSeconds: Double? = null,
 )
 
 data class FileBackgroundTaskPage(
@@ -124,6 +129,7 @@ data class FavoriteLocation(
     val name: String,
 )
 
+@Serializable
 data class FileShareLink(
     val id: String,
     val name: String,
@@ -131,6 +137,12 @@ data class FileShareLink(
     val url: String,
     val hasPassword: Boolean = false,
     val expiresAt: String? = null,
+    val availableAt: String? = null,
+    val passwordKnown: Boolean = false,
+    val expirationKnown: Boolean = false,
+    val availabilityKnown: Boolean = false,
+    val status: FileShareStatus = FileShareStatus.UNKNOWN,
+    val advanced: FileShareAdvancedDetails? = null,
 )
 
 data class RecycleLocation(
@@ -173,6 +185,8 @@ data class FileServerMutationExpectedOutput(
     val path: String,
     val isDirectory: Boolean,
     val requiresNonEmptyFile: Boolean = false,
+    val expectedBytes: Long? = null,
+    val requiresTaskCompletion: Boolean = false,
 )
 
 data class FileServerMutationTarget(
@@ -258,4 +272,5 @@ data class ArchiveItem(
     val name: String,
     val path: String,
     val isDirectory: Boolean,
+    val size: Long? = null,
 )

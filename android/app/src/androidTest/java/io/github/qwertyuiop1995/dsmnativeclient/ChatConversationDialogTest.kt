@@ -9,6 +9,8 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.requiredWidth
@@ -163,7 +165,7 @@ class ChatConversationDialogTest {
         rule.setContent {
             LanStashTheme {
                 ChatScreen(
-                    state = workspace().copy(
+                    rawState = workspace().copy(
                         conversations = Loadable.Ready(
                             listOf(
                                 ChatConversation(
@@ -181,7 +183,8 @@ class ChatConversationDialogTest {
         }
 
         rule.onNodeWithText("3").assertIsDisplayed()
-        rule.onNodeWithContentDescription(
+        rule.onNodeWithText("Synthetic chat").performTouchInput { longClick() }
+        rule.onNodeWithText(
             context.getString(R.string.pin_conversation, "Synthetic chat"),
         ).assertIsDisplayed()
     }
@@ -194,7 +197,7 @@ class ChatConversationDialogTest {
             LanStashTheme {
                 Box(Modifier.requiredWidth(1000.dp).height(700.dp)) {
                     ChatScreen(
-                        state = workspace().copy(
+                        rawState = workspace().copy(
                             conversations = Loadable.Ready(
                                 listOf(
                                     ChatConversation(

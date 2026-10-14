@@ -56,37 +56,7 @@ internal fun NasDirectoryManagementScreen(
     state: WorkspaceState,
     model: AppViewModel,
 ) {
-    val target = state.directoryMutationTarget
-    val uiEnabled = !state.isPerformingAction && !state.directoryMutationInProgress &&
-        !state.directoryMutationRefreshInProgress && state.directoryMutationResult == null &&
-        state.directoryMutationFailure == null && !state.directoryMutationConfirmationRequested
-    DirectoryManagementContent(
-        accounts = snapshot.accounts,
-        groups = snapshot.groups,
-        accountsAvailable = snapshot.accountsAvailable,
-        groupsAvailable = snapshot.groupsAvailable,
-        currentUsername = state.profile.username,
-        target = target,
-        mutationInProgress = state.directoryMutationInProgress,
-        result = state.directoryMutationResult,
-        failure = state.directoryMutationFailure,
-        refreshFailure = state.directoryMutationRefreshFailure,
-        refreshInProgress = state.directoryMutationRefreshInProgress,
-        refreshCompleted = state.directoryMutationRefreshCompleted,
-        enabled = uiEnabled,
-        onDeleteAccount = { model.requestDirectoryDeletion(it) },
-        onDeleteGroup = { model.requestDirectoryDeletion(it) },
-        onRefresh = model::refreshDirectoryDeletionMutation,
-        onContinue = { model.dismissDirectoryDeletionResult() },
-        onCloseResult = { model.dismissDirectoryDeletionResult() },
-    )
-    if (state.directoryMutationConfirmationRequested && target != null) {
-        DirectoryDeletionConfirmationDialog(
-            target = target,
-            onConfirm = model::confirmDirectoryDeletion,
-            onDismiss = model::cancelDirectoryDeletionConfirmation,
-        )
-    }
+    NasAccountDirectoryScreen(state.profile.username, model.nasDirectory)
 }
 
 @Composable

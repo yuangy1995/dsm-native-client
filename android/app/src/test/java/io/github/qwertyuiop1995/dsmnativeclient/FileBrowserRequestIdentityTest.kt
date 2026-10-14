@@ -47,6 +47,19 @@ class FileBrowserRequestIdentityTest {
     }
 
     @Test
+    fun `每个高级条件变化都会拒绝旧结果且进入目录会清空查询`() {
+        val request = io.github.qwertyuiop1995.dsmnativeclient.domain.FileSearchRequest(listOf("/share"), name = "report")
+        val current = initial.copy(searchRequest = request)
+        val identity = current.fileBrowserRequestIdentity()
+        listOf(request.copy(folders = listOf("/other")), request.copy(searchesContents = true),
+            request.copy(minimumBytes = 10), request.copy(owner = "synthetic"), request.copy(recursive = false))
+            .forEach { assertFalse(current.copy(searchRequest = it).matchesFileBrowserRequest(identity)) }
+        assertTrue(current.editSearchQuery("draft").matchesFileBrowserRequest(identity))
+        assertTrue(current.enterDirectory("/share/sub").searchRequest == null)
+        assertTrue(current.openShortcut("/other").searchRequest == null)
+    }
+
+    @Test
     fun `只有当前代次可以回写同身份文件请求`() {
         val oldRequest = FileBrowserRequestToken(generation = 41, identity = identity)
         val currentRequest = FileBrowserRequestToken(generation = 42, identity = identity)

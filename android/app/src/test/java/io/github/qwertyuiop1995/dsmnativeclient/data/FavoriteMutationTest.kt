@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
@@ -281,7 +283,7 @@ class FavoriteMutationTest {
             minVersion = 1,
             maxVersion = 2,
         )
-        return DsmRepository(
+        return authorizedRepository(
             profile = NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
             session = DsmSession("test", "test-session", "test-token"),
             api = client,

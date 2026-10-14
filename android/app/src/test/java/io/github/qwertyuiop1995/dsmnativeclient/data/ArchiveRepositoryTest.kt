@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ArchiveCompressionLevel
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ArchiveFormat
@@ -121,7 +123,9 @@ class ArchiveRepositoryTest {
     fun `解压先读取内容拒绝覆盖并按顶层类型复查`() = runBlocking {
         val transport = ArchiveInterceptor(
             success("""{"files":[{"name":"target","path":"/home/target","isdir":true,"additional":{"perm":{"write":true}}}]}"""),
-            success("""{"items":[{"itemid":7,"name":"存档","path":"/存档","is_dir":true}]}"""),
+            fileInfoResponse(fileItem("/home/资料.zip", size = 10)),
+            success("""{"items":[{"itemid":7,"name":"存档","path":"存档","is_dir":true}]}"""),
+            success("""{"items":[],"total":0}"""),
             listResponse(),
             success("""{"taskid":"extract-task"}"""),
             success("""{"finished":true,"progress":0.75}"""),
@@ -147,6 +151,16 @@ class ArchiveRepositoryTest {
         )
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         assertEquals(1, transport.methods().count { it == "start" })
+    }
+
+    @Test
+    fun `压缩密码全为空白时原样传递而不是创建无密码压缩包`() = runBlocking {
+        val transport = ArchiveInterceptor(directoryResponse("/home", true), listResponse(),
+            success("""{"taskid":"compress-task"}"""), success("""{"finished":true}"""),
+            fileInfoResponse(fileItem("/home/archive.zip", size = 12)))
+        repository(transport).compress(listOf("/home/source.txt"), "/home/archive.zip", ArchiveFormat.ZIP,
+            ArchiveCompressionLevel.MODERATE, password = "   ")
+        assertEquals("   ", transport.requests.single { it.formFields()["method"] == "start" }.formFields()["password"])
     }
 
     @Test
@@ -201,7 +215,8 @@ class ArchiveRepositoryTest {
     fun `解压提交钩子失败时不发送启动请求`() = runBlocking {
         val transport = ArchiveInterceptor(
             directoryResponse("/home/target", canWrite = true),
-            success("""{"items":[{"itemid":1,"name":"a.txt","path":"/a.txt","is_dir":false}]}"""),
+            fileInfoResponse(fileItem("/home/archive.zip", size = 10)),
+            success("""{"items":[{"itemid":1,"name":"a.txt","path":"a.txt","is_dir":false}]}"""),
             listResponse(),
         )
 
@@ -221,7 +236,8 @@ class ArchiveRepositoryTest {
     fun `解压启动成功后只回调一次任务标识且先于状态轮询`() = runBlocking {
         val transport = ArchiveInterceptor(
             directoryResponse("/home/target", canWrite = true),
-            success("""{"items":[{"itemid":1,"name":"a.txt","path":"/a.txt","is_dir":false}]}"""),
+            fileInfoResponse(fileItem("/home/archive.zip", size = 10)),
+            success("""{"items":[{"itemid":1,"name":"a.txt","path":"a.txt","is_dir":false}]}"""),
             listResponse(),
             success("""{"taskid":"extract-task"}"""),
             success("""{"finished":true}"""),
@@ -324,7 +340,8 @@ class ArchiveRepositoryTest {
     fun `解压只确认部分目标时返回部分成功`() = runBlocking {
         val responses = mutableListOf<Any>(
             directoryResponse("/home/target", canWrite = true),
-            success("""{"items":[{"itemid":1,"name":"a","path":"/a","is_dir":false},{"itemid":2,"name":"b","path":"/b","is_dir":false}]}"""),
+            fileInfoResponse(fileItem("/home/archive.zip", size = 10)),
+            success("""{"items":[{"itemid":1,"name":"a","path":"a","is_dir":false},{"itemid":2,"name":"b","path":"b","is_dir":false}]}"""),
             listResponse(),
             listResponse(),
             success("""{"taskid":"extract-task"}"""),
@@ -364,7 +381,8 @@ class ArchiveRepositoryTest {
     fun `解压启动断线但全部目标回读存在时确认成功且不重放`() = runBlocking {
         val transport = ArchiveInterceptor(
             directoryResponse("/home/target", canWrite = true),
-            success("""{"items":[{"itemid":1,"name":"a","path":"/a","is_dir":false}]}"""),
+            fileInfoResponse(fileItem("/home/archive.zip", size = 10)),
+            success("""{"items":[{"itemid":1,"name":"a","path":"a","is_dir":false}]}"""),
             listResponse(),
             IOException("synthetic disconnect"),
             listResponse("""{"name":"a","path":"/home/target/a","isdir":false}"""),
@@ -659,6 +677,18 @@ class ArchiveRepositoryTest {
     }
 
     @Test
+    fun `压缩源读取权限撤销后不能沿用旧快照提交`() = runBlocking {
+        val source = fileItem("/home/a.txt", size = 10)
+        val destination = directoryItem("/home")
+        val transport = ArchiveInterceptor(fileInfoResponse(destination), fileInfoResponse(source.copy(canRead = false)))
+        val result = repository(transport).compressResult(listOf(source), destination, "/home/archive.zip", ArchiveFormat.ZIP, ArchiveCompressionLevel.MODERATE)
+        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
+        assertEquals(MutationErrorCategory.CONFLICT, result.errorCategory)
+        assertFalse(result.submitted)
+        assertEquals(0, transport.methods().count { it == "start" })
+    }
+
+    @Test
     fun `解压目标目录基线漂移时不会读取归档或启动任务`() = runBlocking {
         val destination = directoryItem("/home/target")
         val source = fileItem("/home/archive.zip", size = 10)
@@ -679,7 +709,7 @@ class ArchiveRepositoryTest {
         val responses = mutableListOf<Any>(
             fileInfoResponse(destination),
             fileInfoResponse(source),
-            success("""{"items":[{"itemid":1,"name":"a.txt","path":"/a.txt","is_dir":false}]}"""),
+            success("""{"items":[{"itemid":1,"name":"a.txt","path":"a.txt","is_dir":false}]}"""),
             listResponse(),
             success("""{"taskid":"extract-task"}"""),
             success("""{"finished":true}"""),
@@ -727,7 +757,7 @@ class ArchiveRepositoryTest {
     private fun repository(
         interceptor: Interceptor,
         supportsArchives: Boolean = true,
-    ): DsmRepository = DsmRepository(
+    ): DsmRepository = authorizedRepository(
         profile = NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         session = DsmSession("test", "test-session", "test-token"),
         api = DsmApiClient(
@@ -881,7 +911,7 @@ private class BlockingExtractListInterceptor : Interceptor {
             "list" -> {
                 listStarted.countDown()
                 check(allowList.await(2, TimeUnit.SECONDS)) { "等待解压列表响应超时" }
-                """{"success":true,"data":{"items":[{"itemid":1,"name":"a.txt","path":"/a.txt","is_dir":false}]}}"""
+                """{"success":true,"data":{"items":[{"itemid":1,"name":"a.txt","path":"a.txt","is_dir":false}]}}"""
             }
             "start" -> {
                 taskStarted = true
@@ -922,10 +952,11 @@ private class BlockingExtractStatusInterceptor : Interceptor {
         val body = when (fields["method"]) {
             "getinfo" -> when (fields["path"]) {
                 "[\"/home/target\"]" -> fileInfo("target", "/home/target", isDirectory = true, canWrite = true)
+                "[\"/home/archive.zip\"]" -> fileInfo("archive.zip", "/home/archive.zip", isDirectory = false, canWrite = false)
                 "[\"/home/target/a.txt\"]" -> """{"success":true,"data":{"files":[]}}"""
                 else -> error("未处理的解压路径：${fields["path"]}")
             }
-            "list" -> """{"success":true,"data":{"items":[{"itemid":1,"name":"a.txt","path":"/a.txt","is_dir":false}]}}"""
+            "list" -> """{"success":true,"data":{"items":[{"itemid":1,"name":"a.txt","path":"a.txt","is_dir":false}]}}"""
             "start" -> """{"success":true,"data":{"taskid":"extract-task"}}"""
             "status" -> {
                 statusStarted.countDown()
@@ -941,7 +972,7 @@ private class BlockingExtractStatusInterceptor : Interceptor {
     fun methods(): List<String?> = requests.map { it.formFields()["method"] }
 
     private fun fileInfo(name: String, path: String, isDirectory: Boolean, canWrite: Boolean) =
-        """{"success":true,"data":{"files":[{"name":"$name","path":"$path","isdir":$isDirectory,"additional":{"perm":{"write":$canWrite}}}]}}"""
+        """{"success":true,"data":{"files":[{"name":"$name","path":"$path","isdir":$isDirectory,"additional":{"perm":{"read":true,"write":$canWrite}}}]}}"""
 }
 
 private class BlockingResumeArchiveStatusInterceptor : Interceptor {

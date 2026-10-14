@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
@@ -42,19 +44,23 @@ class ChatReadRepositoryTest {
             """{"success":true,"data":{"total":3,"posts":[{"post_id":"p-2","channel_id":"c-1","message":"","create_at":1700000002},{"post_id":"p-1","channel_id":"c-1","message":"你好 👋","creator":{"user_id":"u-1","nickname":"合成用户"},"create_at":1700000001,"is_mine":false,"files":[{"file_id":"f-1","file_name":"合成.txt","size":12}]}]}}""",
         )
 
-        val page = repository(transport).chatMessages("c-1", offset = 0, limit = 2)
+        val page = repository(transport).chatMessages("c-1", before = null, limit = 2)
 
         assertEquals(listOf("p-1"), page.messages.map { it.id })
         assertEquals("合成用户", page.messages.single().sender?.displayName)
         assertEquals("f-1", page.messages.single().attachments.single().id)
         assertTrue(page.hasMore)
-        assertEquals(2, page.nextOffset)
+        assertEquals("p-1", page.previousCursor)
         assertFalse(page.messages.single().isMine)
         val fields = transport.requests.single().fields()
         assertEquals("SYNO.Chat.Post", fields["api"])
         assertEquals("list", fields["method"])
         assertEquals("c-1", fields["channel_id"])
-        assertEquals("2", fields["limit"])
+        assertEquals("2", fields["prev_count"])
+        assertEquals("0", fields["thread_id"])
+        assertEquals("5", fields["version"])
+        assertFalse(fields.containsKey("offset"))
+        assertFalse(fields.containsKey("limit"))
     }
 
     @Test
@@ -78,7 +84,7 @@ class ChatReadRepositoryTest {
             ApiCapability("SYNO.Chat.Channel", "entry.cgi", 1, 5),
             ApiCapability("SYNO.Chat.Post", "entry.cgi", 1, 8),
         ).associateBy(ApiCapability::name)
-        return DsmRepository(
+        return authorizedRepository(
             NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
             DsmSession("test", "test-session", "test-token"),
             DsmApiClient(OkHttpClient.Builder().retryOnConnectionFailure(false).addInterceptor(interceptor).build()),

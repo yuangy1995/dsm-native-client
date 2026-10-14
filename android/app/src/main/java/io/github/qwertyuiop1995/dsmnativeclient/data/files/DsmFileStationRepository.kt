@@ -24,6 +24,8 @@ internal interface DsmFileStationRepositoryGateway {
 internal class DsmFileStationRepository(
     private val gateway: DsmFileStationRepositoryGateway,
 ) {
+    internal val crossNasReader = CrossNasFileReader { method, fields -> gateway.call("SYNO.FileStation.List", method, fields) }
+
     suspend fun listShares(
         offset: Int = 0,
         limit: Int = 200,

@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
@@ -148,7 +150,7 @@ class PhotoRepositoryTest {
         assertEquals(listOf("0", "1"), transport.requests.map { it.formFields()["offset"] })
     }
 
-    private fun repository(interceptor: Interceptor): DsmRepository = DsmRepository(
+    private fun repository(interceptor: Interceptor): DsmRepository = authorizedRepository(
         profile = NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         session = DsmSession("test", "test-session", "test-token"),
         api = DsmApiClient(

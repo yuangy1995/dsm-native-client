@@ -37,7 +37,9 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasFileServiceSettings
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProxySettings
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasSettingsSnapshot
-import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasServiceSettingsScreen
+import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasServiceSettingsContent
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceValue
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.ProxyMutationFailureCard
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.ProxyMutationFeedbackCard
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.ProxySavingCard
@@ -345,14 +347,12 @@ class ProxyFeedbackCardTest {
     fun 编辑确认阶段可恢复且保存未接收时确认仍保留() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val restoration = StateRestorationTester(rule)
-        val model = AppViewModel(ApplicationProvider.getApplicationContext())
         val draft = NasProxySettings(true, "proxy.example.invalid", 3_128)
         restoration.setContent {
             LanStashTheme {
                 serviceScreen(
                     snapshot = snapshot(proxy = NasProxySettings(false, "", null)),
                     savedProxyDraft = draft,
-                    model = model,
                 )
             }
         }
@@ -376,7 +376,6 @@ class ProxyFeedbackCardTest {
     @Test
     fun 保存期间代理编辑入口被禁用() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val model = AppViewModel(ApplicationProvider.getApplicationContext())
         rule.setContent {
             LanStashTheme {
                 serviceScreen(
@@ -389,7 +388,6 @@ class ProxyFeedbackCardTest {
                         8_080,
                     ),
                     proxyMutationInProgress = true,
-                    model = model,
                 )
             }
         }
@@ -408,15 +406,13 @@ class ProxyFeedbackCardTest {
     @Test
     fun 代理能力缺失在深色两倍字体下显示原因() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val model = AppViewModel(ApplicationProvider.getApplicationContext())
         rule.setContent {
             LanStashTheme(darkTheme = true) {
                 CompositionLocalProvider(LocalDensity provides Density(1f, 2f)) {
                     serviceScreen(
                         snapshot = snapshot(fileServices = fileSettings(), proxy = null),
                         savedProxyDraft = null,
-                        model = model,
-                    )
+                        )
                 }
             }
         }
@@ -462,28 +458,14 @@ class ProxyFeedbackCardTest {
         snapshot: NasSettingsSnapshot,
         savedProxyDraft: NasProxySettings?,
         proxyMutationInProgress: Boolean = false,
-        model: AppViewModel,
     ) {
-        NasServiceSettingsScreen(
-            snapshot = snapshot,
-            savedDraft = null,
-            mutationResult = null,
-            mutationFailure = null,
-            mutationInProgress = false,
-            mutationRefreshCompleted = false,
-            savedTerminalDraft = null,
-            terminalMutationResult = null,
-            terminalMutationFailure = null,
-            terminalMutationInProgress = false,
-            terminalMutationRefreshCompleted = false,
-            savedProxyDraft = savedProxyDraft,
-            proxyMutationResult = null,
-            proxyMutationFailure = null,
-            proxyMutationInProgress = proxyMutationInProgress,
-            proxyMutationRefreshCompleted = false,
-            isPerformingAction = false,
-            model = model,
-        )
+        val fixture = androidx.compose.runtime.remember(snapshot, savedProxyDraft) {
+            NasServiceUiFixture(snapshot, listOfNotNull(savedProxyDraft?.let(NasServiceValue::Proxy)))
+        }
+        val states = fixture.states.value.mapValues { (key, value) ->
+            if (key == NasServiceKind.PROXY) value.copy(busy = proxyMutationInProgress, saving = proxyMutationInProgress) else value
+        }
+        NasServiceSettingsContent(snapshot, false, states, fixture::begin, fixture::draft, { false }, {}, { _, _ -> })
     }
 
     private fun snapshot(

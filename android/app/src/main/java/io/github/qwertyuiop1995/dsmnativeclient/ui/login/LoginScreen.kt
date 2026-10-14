@@ -44,23 +44,39 @@ import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
 import io.github.qwertyuiop1995.dsmnativeclient.network.ConnectionStatus
 import io.github.qwertyuiop1995.dsmnativeclient.ui.ConfirmDialog
 import io.github.qwertyuiop1995.dsmnativeclient.ui.ErrorBanner
+import io.github.qwertyuiop1995.dsmnativeclient.ui.needsConnectionAccount
+import io.github.qwertyuiop1995.dsmnativeclient.ui.needsConnectionAddress
+import io.github.qwertyuiop1995.dsmnativeclient.ui.connectionAddress
 import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
 import io.github.qwertyuiop1995.dsmnativeclient.ui.settings.LanguageMenu
 
 @Composable
-internal fun LoginScreen(state: LoginState, model: AppViewModel) {
+internal fun LoginScreen(state: LoginState, model: AppViewModel,
+    initiallyShowForm: Boolean = false,
+    onSelectProfile: (NasProfile) -> Unit = model::selectProfile,
+    onConnectProfile: (NasProfile) -> Unit = { model.restore(it) },
+    onAddProfile: () -> Unit = model::newProfile,
+    onRemoveProfile: (NasProfile) -> Unit = model::removeProfile,
+    onReturn: (() -> Unit)? = null,
+    onTaskHistory: (() -> Unit)? = null,
+) {
+    key(model) { LocalNetworkPermissionEffect(model.localNetworkPermission) }
     val profile = state.profiles.firstOrNull { it.id == state.selectedProfileId }
-    var formVisible by rememberSaveable { mutableStateOf(state.profiles.isEmpty()) }
+    var formVisible by rememberSaveable { mutableStateOf(initiallyShowForm || state.profiles.isEmpty()) }
     var removal by remember { mutableStateOf<NasProfile?>(null) }
+    LaunchedEffect(initiallyShowForm) { if (initiallyShowForm) formVisible = true }
     LaunchedEffect(state.error, state.needsOtp) {
         if (state.error != null || state.needsOtp) formVisible = true
     }
-    BackHandler(enabled = formVisible && state.profiles.isNotEmpty() && !state.isConnecting) { formVisible = false }
+    BackHandler(enabled = (onReturn != null || formVisible && state.profiles.isNotEmpty()) && !state.isConnecting) {
+        if (onReturn != null) onReturn() else formVisible = false
+    }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         if (formVisible) {
             ConnectionForm(
                 state = state, profile = profile,
-                onBack = if (state.profiles.isNotEmpty()) ({ formVisible = false }) else null,
+                onIdentityChanged = model::clearLoginAutofill,
+                onBack = onReturn ?: if (state.profiles.isNotEmpty()) ({ formVisible = false }) else null,
                 onConnect = { name, address, port, username, password, otp, remember, automatic ->
                     model.connect(state.selectedProfileId, name, address, port, username, password, otp, remember, automatic)
                 },
@@ -68,10 +84,11 @@ internal fun LoginScreen(state: LoginState, model: AppViewModel) {
         } else {
             SavedDevices(
                 state = state,
-                onSelect = { model.selectProfile(it); formVisible = true },
-                onConnect = { model.restore(it) },
+                onSelect = { onSelectProfile(it); formVisible = true },
+                onConnect = onConnectProfile,
                 onRemove = { removal = it },
-                onAdd = { model.newProfile(); formVisible = true },
+                onAdd = { onAddProfile(); formVisible = true },
+                onTaskHistory = onTaskHistory,
             )
         }
     }
@@ -85,7 +102,7 @@ internal fun LoginScreen(state: LoginState, model: AppViewModel) {
             title = stringResource(R.string.remove_profile_title, target.name),
             message = stringResource(R.string.remove_profile_message),
             confirm = stringResource(R.string.remove), destructive = true,
-            onConfirm = { model.removeProfile(target); removal = null },
+            onConfirm = { onRemoveProfile(target); removal = null },
             onDismiss = { removal = null },
         )
     }
@@ -98,9 +115,13 @@ private fun SavedDevices(
     onConnect: (NasProfile) -> Unit,
     onRemove: (NasProfile) -> Unit,
     onAdd: () -> Unit,
+    onTaskHistory: (() -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-        ClientToolbar(stringResource(R.string.app_name), actions = { LanguageMenu() })
+        ClientToolbar(stringResource(R.string.app_name), actions = {
+            onTaskHistory?.let { TextButton(it) { Text(stringResource(R.string.task_saved_history)) } }
+            LanguageMenu()
+        })
         HorizontalDivider()
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -118,7 +139,12 @@ private fun SavedDevices(
                             Column(Modifier.fillMaxWidth()) {
                                 Text(profile.name, color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = FontWeight.SemiBold)
-                                Text(stringResource(R.string.client_saved_device),
+                                val detail = when {
+                                    needsConnectionAddress(profile, state.profiles) -> connectionAddress(profile)
+                                    needsConnectionAccount(profile, state.profiles) -> profile.username
+                                    else -> null
+                                }
+                                if (detail != null) Text(detail,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -156,6 +182,7 @@ private fun ConnectionForm(
     state: LoginState,
     profile: NasProfile?,
     onBack: (() -> Unit)?,
+    onIdentityChanged: () -> Unit,
     onConnect: (String, String, String, String, String, String, Boolean, Boolean) -> Unit,
 ) {
     val profileId = state.selectedProfileId
@@ -164,7 +191,9 @@ private fun ConnectionForm(
     var port by rememberSaveable(profileId) { mutableStateOf(profile?.port?.toString().orEmpty()) }
     var username by rememberSaveable(profileId) { mutableStateOf(profile?.username.orEmpty()) }
     // 密码与验证码只留在当前组合内，绝不进入 Activity SavedState。
-    var password by remember(profileId) { mutableStateOf(state.savedPassword) }
+    var password by remember(profileId) { mutableStateOf(state.savedPassword.takeIf {
+        savedLoginFieldsMatch(profile, address, port, username)
+    }.orEmpty()) }
     var otp by remember(profileId) { mutableStateOf("") }
     var remembersPassword by rememberSaveable(profileId) { mutableStateOf(state.rememberPassword) }
     var automatic by rememberSaveable(profileId) { mutableStateOf(state.autoLoginEnabled) }
@@ -174,11 +203,12 @@ private fun ConnectionForm(
     val keyboard = LocalSoftwareKeyboardController.current
     val otpFocus = remember { FocusRequester() }
     LaunchedEffect(profileId, state.savedPassword) {
-        password = state.savedPassword
+        password = state.savedPassword.takeIf { savedLoginFieldsMatch(profile, address, port, username) }.orEmpty()
         otp = ""
         remembersPassword = state.rememberPassword
         automatic = state.autoLoginEnabled
     }
+    fun identityChanged() { password = ""; otp = ""; onIdentityChanged() }
     val submit: () -> Unit = {
         if (!state.isConnecting) {
             focus.clearFocus(); keyboard?.hide()
@@ -208,11 +238,11 @@ private fun ConnectionForm(
                     Icon(Icons.Outlined.Edit, stringResource(R.string.display_name))
                 }
             }
-            OutlinedTextField(address, { address = it }, enabled = !state.isConnecting, label = { Text(stringResource(R.string.nas_address_or_quickconnect)) },
+            OutlinedTextField(address, { address = it; identityChanged() }, enabled = !state.isConnecting, label = { Text(stringResource(R.string.nas_address_or_quickconnect)) },
                 singleLine = true, shape = MaterialTheme.shapes.small,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth().testTag("login_address"))
-            OutlinedTextField(username, { username = it }, enabled = !state.isConnecting, label = { Text(stringResource(R.string.account)) },
+            OutlinedTextField(username, { username = it; identityChanged() }, enabled = !state.isConnecting, label = { Text(stringResource(R.string.account)) },
                 singleLine = true, shape = MaterialTheme.shapes.small,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth().testTag("login_username"))
@@ -253,7 +283,7 @@ private fun ConnectionForm(
             if (advanced) {
                 OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.display_name)) },
                     singleLine = true, modifier = Modifier.fillMaxWidth().testTag("login_name"))
-                OutlinedTextField(port, { port = it.filter(Char::isDigit) },
+                OutlinedTextField(port, { port = it.filter(Char::isDigit); identityChanged() },
                     label = { Text(stringResource(R.string.custom_https_port)) }, singleLine = true,
                     supportingText = { Text(stringResource(R.string.custom_https_port_note)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

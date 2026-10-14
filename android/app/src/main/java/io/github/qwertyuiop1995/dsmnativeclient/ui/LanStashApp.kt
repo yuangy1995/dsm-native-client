@@ -129,10 +129,12 @@ import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import io.github.qwertyuiop1995.dsmnativeclient.AppViewModel
+import io.github.qwertyuiop1995.dsmnativeclient.WorkspaceHostModel
 import io.github.qwertyuiop1995.dsmnativeclient.Loadable
 import io.github.qwertyuiop1995.dsmnativeclient.LoginState
 import io.github.qwertyuiop1995.dsmnativeclient.R
 import io.github.qwertyuiop1995.dsmnativeclient.WorkspaceState
+import io.github.qwertyuiop1995.dsmnativeclient.allows
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ContainerOverview
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DownloadTask
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem
@@ -171,6 +173,41 @@ fun LanStashApp(model: AppViewModel) {
         ClientWorkspace(workspace!!, model)
     }
 }
+
+@Composable
+internal fun LanStashApp(host: WorkspaceHostModel) {
+    val selection by host.active.collectAsStateWithLifecycle()
+    val connections by host.connections.collectAsStateWithLifecycle()
+    val picker by host.pickerVisible.collectAsStateWithLifecycle()
+    val taskHistory by host.taskHistoryVisible.collectAsStateWithLifecycle()
+    val canReturn by host.canReturn.collectAsStateWithLifecycle()
+    val model = selection.model
+    val login by model.login.collectAsStateWithLifecycle()
+    val workspace by model.workspace.collectAsStateWithLifecycle()
+    val stateHolder = rememberSaveableStateHolder()
+    val owner = model.workspaceOwner
+    val stateKey = "${selection.key}:${owner?.identityRevision.orEmpty()}:${owner?.sessionGeneration.orEmpty()}"
+    androidx.compose.runtime.DisposableEffect(model, stateKey) {
+        onDispose { if (owner != null && (model.workspace.value == null || model.workspaceOwner != owner)) stateHolder.removeState(stateKey) }
+    }
+    CompositionLocalProvider(LocalWorkspaceHost provides host) {
+        if (taskHistory) io.github.qwertyuiop1995.dsmnativeclient.ui.transfers.GlobalTaskHistoryScreen(host)
+        else stateHolder.SaveableStateProvider(stateKey) {
+            if (workspace == null) LoginScreen(login, model,
+                initiallyShowForm = selection.showConnectionForm,
+                onSelectProfile = { host.select(it.id, edit = true) },
+                onConnectProfile = { host.select(it.id) },
+                onAddProfile = { host.newConnection() },
+                onRemoveProfile = host::removeConnection,
+                onTaskHistory = { host.showTaskHistory(); Unit },
+                onReturn = if (canReturn) ({ host.returnToPreviousWorkspace(); Unit }) else null)
+            else ClientWorkspace(workspace!!, model)
+        }
+        if (picker) WorkspaceConnectionPicker(connections, host)
+        SharedInputSurface(host.sharedInput, connections)
+        SystemFileSettingsDialog(host.systemFiles)
+    }
+}
 @Composable
 internal fun WorkspaceModuleSaveableState(
     profileId: String,
@@ -195,6 +232,11 @@ internal fun isWorkspaceModuleSaveable(module: Module): Boolean = module in setO
 
 @Composable
 internal fun ModuleContent(state: WorkspaceState, model: AppViewModel) {
+    if (!state.availability.allows(state.selectedModule)) {
+        WorkspaceAccessNotice(state, state.selectedModule, { model.refreshWorkspaceAccess() },
+            { model.requestSignIn() }, Modifier.fillMaxSize())
+        return
+    }
     when (state.selectedModule) {
         Module.FILES -> FileBrowserScreen(state, model)
         Module.PHOTOS -> PhotosScreen(state, model)

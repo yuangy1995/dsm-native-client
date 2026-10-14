@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- 仅测试APK：所有文档都在此提供器自己的合成测试目录中。 -->
+        <provider android:name="io.github.qwertyuiop1995.dsmnativeclient.SynologyPhotoExportTestProvider"
+            android:authorities="io.github.qwertyuiop1995.dsmnativeclient.test.photoexports"
+            android:grantUriPermissions="true"
+            android:exported="true" />
+    </application>
+</manifest>

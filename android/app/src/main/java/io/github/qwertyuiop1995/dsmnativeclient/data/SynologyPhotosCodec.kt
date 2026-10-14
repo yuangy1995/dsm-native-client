@@ -30,13 +30,15 @@ internal object SynologyPhotosCodec {
     fun JsonObject.decimal(key: String): Double = (this[key] as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull?.takeIf { it.isFinite() } ?: invalid()
     fun JsonObject.optionalInt(key: String): Int? = when (this[key]) { null, JsonNull -> null; else -> intNumber(key) }
     fun JsonObject.boolean(key: String): Boolean = (this[key] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull ?: invalid()
+    fun JsonObject.optionalBoolean(key: String): Boolean? = when (this[key]) { null, JsonNull -> null; else -> boolean(key) }
+    fun JsonObject.optionalLong(key: String): Long? = when (this[key]) { null, JsonNull -> null; else -> number(key) }
     fun JsonObject.permission(key: String): Boolean = this[key] == JsonPrimitive(true)
 
     fun thumbnail(value: JsonObject?): SynologyPhotoThumbnail? = value?.let {
         SynologyPhotoThumbnail(it.positive("unit_id"), it.text("cache_key"))
     }
 
-    fun photo(value: JsonObject, profileId: String, space: SynologyPhotoSpace): SynologyPhoto {
+    fun photo(value: JsonObject, profileId: String, space: SynologyPhotoSpace, albumContext: SynologyPhotoAlbumContext? = null): SynologyPhoto {
         val size = value.number("filesize").also { if (it < 0) invalid() }
         val additional = value.optionalObject("additional")
         val resolution = additional?.optionalObject("resolution")
@@ -53,7 +55,7 @@ internal object SynologyPhotosCodec {
             folderId = value.positive("folder_id"), mediaType = value.text("type"),
             thumbnail = thumbnail(additional?.optionalObject("thumbnail")),
             width = resolution?.intNumber("width"), height = resolution?.intNumber("height"),
-            orientation = additional?.optionalInt("orientation"),
+            orientation = additional?.optionalInt("orientation"), originalOrientation = additional?.optionalInt("orientation_original"),
             description = additional?.optionalText("description"), camera = exif?.optionalText("camera"),
             lens = exif?.optionalText("lens"), aperture = exif?.optionalText("aperture"),
             exposureTime = exif?.optionalText("exposure_time"), focalLength = exif?.optionalText("focal_length"),
@@ -62,6 +64,10 @@ internal object SynologyPhotosCodec {
             address = listOf("country", "state", "county", "city", "town", "district", "village", "route", "landmark")
                 .mapNotNull { address?.optionalText(it)?.takeIf(String::isNotEmpty) }.distinct(),
             latitude = latitude.takeIf { hasValidGPS }, longitude = longitude.takeIf { hasValidGPS },
+            albumContext = albumContext,
+            tags = additional?.takeIf { it["tag"] != null && it["tag"] != JsonNull }?.list("tag")?.map {
+                SynologyPhotoChoice(it.positive("id"), it.text("name"))
+            }?.also { if (it.map { tag -> tag.id }.distinct().size != it.size) invalid() },
         )
     }
 
@@ -78,6 +84,10 @@ internal object SynologyPhotosCodec {
         name = value.text("name").let { if (folder) it.trimEnd('/').substringAfterLast('/').ifEmpty { "/" } else it },
         parentId = if (folder) value.number("parent") else null,
         count = value.optionalInt("item_count")?.also { if (it < 0) invalid() },
+        isConditional = value.optionalText("type") == "condition", isFrozen = value.optionalBoolean("freeze_album") == true,
+        isTemporary = value.optionalBoolean("temporary_shared") == true,
+        path = value.text("name").takeIf { folder },
+        folderCovers = if (folder) SynologyPhotoFolderCodec.covers(value) else emptyList(),
     )
 
     fun collectionPage(payload: JsonObject, limit: Int, folder: Boolean = false, parentId: Long? = null): List<SynologyPhotoCollection> {

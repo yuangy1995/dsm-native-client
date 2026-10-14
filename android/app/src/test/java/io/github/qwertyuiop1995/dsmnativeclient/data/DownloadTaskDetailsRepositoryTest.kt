@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
@@ -23,10 +25,12 @@ class DownloadTaskDetailsRepositoryTest {
         val transport = DownloadDetailsInterceptor(OFFICIAL_DETAILS)
 
         val task = repository(transport, includeOfficial = true, includeInternal = true)
-            .listDownloads().single()
+            .downloadTaskDetails("task-1")
 
         val fields = transport.requests.single().downloadDetailsFields()
         assertEquals("SYNO.DownloadStation.Task", fields["api"])
+        assertEquals("getinfo", fields["method"])
+        assertEquals("task-1", fields["id"])
         assertEquals("detail,transfer,file,tracker,peer", fields["additional"])
         assertEquals("bt", task.type)
         assertEquals("normal", task.priority)
@@ -74,7 +78,7 @@ class DownloadTaskDetailsRepositoryTest {
         interceptor: Interceptor,
         includeOfficial: Boolean,
         includeInternal: Boolean,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "synthetic-session", "synthetic-token"),
         DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
@@ -113,6 +117,6 @@ private class DownloadDetailsInterceptor(private val bodyValue: String) : Interc
 }
 
 private fun Request.downloadDetailsFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return (0 until form.size).associate { form.name(it) to form.value(it) }
 }

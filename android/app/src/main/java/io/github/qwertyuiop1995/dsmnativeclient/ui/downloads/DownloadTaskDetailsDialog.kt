@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.downloads
 
+import androidx.compose.ui.platform.testTag
+
 import io.github.qwertyuiop1995.dsmnativeclient.ui.components.ClientPageDialog
 
 import androidx.annotation.StringRes
@@ -91,7 +93,7 @@ internal fun DownloadTaskDetailsPane(
 }
 
 @Composable
-private fun DownloadTaskDetailsContent(
+internal fun DownloadTaskDetailsContent(
     task: DownloadTask,
     modifier: Modifier = Modifier,
 ) {
@@ -102,7 +104,7 @@ private fun DownloadTaskDetailsContent(
         stringResource(R.string.download_detail_trackers),
         stringResource(R.string.download_detail_peers),
     )
-    Column(modifier) {
+    Column(modifier.testTag("download_details")) {
         ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
             titles.forEachIndexed { index, title ->
                 Tab(
@@ -126,7 +128,7 @@ private fun DownloadTaskDetailsContent(
 @Composable
 private fun DownloadGeneralDetails(task: DownloadTask, modifier: Modifier = Modifier) {
     LazyColumn(modifier) {
-        item { DetailRow(stringResource(R.string.download_detail_status), task.status.displayName()) }
+        item { DetailRow(stringResource(R.string.download_detail_status), task.displayStatus()) }
         task.type?.takeIf(String::isNotBlank)?.let { value ->
             item { DetailRow(stringResource(R.string.download_detail_type), value.uppercase(Locale.ROOT)) }
         }
@@ -302,3 +304,7 @@ private fun DownloadDetailEmpty(@StringRes message: Int, modifier: Modifier = Mo
 @Composable
 private fun speed(value: Long): String =
     stringResource(R.string.download_detail_speed_value, formatBytes(value))
+
+@Composable
+internal fun DownloadTask.displayStatus(): String =
+    if (isCompleted) stringResource(R.string.download_action_complete) else status.displayName()

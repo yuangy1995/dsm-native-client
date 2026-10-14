@@ -1,6 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient
 
 import io.github.qwertyuiop1995.dsmnativeclient.domain.Module
+import io.github.qwertyuiop1995.dsmnativeclient.domain.WorkspacePage
 import java.net.URI
 import java.util.Base64
 
@@ -92,6 +93,14 @@ internal fun Module.externalWorkspaceSlug(): String = when (this) {
     Module.NAS_SETTINGS -> "nas-settings"
     Module.TRANSFERS -> "transfers"
     Module.SETTINGS -> "settings"
+}
+
+internal fun String.workspacePageOrNull(): WorkspacePage? = when (val route = externalWorkspaceRoute()) {
+    is ExternalWorkspaceRoute.ModuleRoot -> WorkspacePage.entries.first { it.name == route.module.name }
+    ExternalWorkspaceRoute.ContainerRegistry -> WorkspacePage.CONTAINER_REGISTRY
+    ExternalWorkspaceRoute.VirtualMachineTasks -> WorkspacePage.VIRTUAL_MACHINE_TASKS
+    ExternalWorkspaceRoute.NasSettingsPerformance -> WorkspacePage.NAS_PERFORMANCE
+    else -> null
 }
 
 private const val EXTERNAL_ROUTE_SCHEME = "lanstash"

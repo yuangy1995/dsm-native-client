@@ -17,6 +17,44 @@ import org.junit.Test
 import okio.buffer
 
 class SynologyPhotosMediaTransportTest {
+    @Test fun `人物封面按真实类型与来源读取不附加size或相册参数且仅在头部认证`() = runBlocking {
+        val requests = mutableListOf<Request>()
+        val transport = transport { request -> requests += request; response(request, byteArrayOf(1, 2, 3), "image/jpeg") }
+        for (space in SynologyPhotoSpace.entries) for (type in SynologyPhotoPersonCover.Type.entries) {
+            assertArrayEquals(byteArrayOf(1, 2, 3), transport.personThumbnail(SynologyPhotoPersonCover(91, "Synthetic revision", type), space))
+            val request = requests.last()
+            assertEquals("/synofoto/api/v2/${if (space == SynologyPhotoSpace.SHARED) "t" else "p"}/Thumbnail/get", request.url.encodedPath)
+            assertEquals("91", request.url.queryParameter("id")); assertEquals("\"${type.value}\"", request.url.queryParameter("type"))
+            assertEquals(setOf("id", "cache_key", "type"), request.url.queryParameterNames)
+            assertEquals("id=synthetic-session", request.header("Cookie")); assertEquals("synthetic-token", request.header("X-SYNO-TOKEN"))
+        }
+    }
+    @Test fun `人物封面拒绝错误页重定向空内容与超限响应`() = runBlocking {
+        for ((bytes, type, status) in listOf(Triple(byteArrayOf(), "image/png", 200), Triple(byteArrayOf(1), "text/html", 200),
+            Triple(byteArrayOf(1), "image/png", 302), Triple(ByteArray(8 * 1024 * 1024 + 1), "image/png", 200))) {
+            failure { transport { response(it, bytes, type, status) }.personThumbnail(SynologyPhotoPersonCover(1, "r", SynologyPhotoPersonCover.Type.PERSON), SynologyPhotoSpace.PERSONAL) }
+        }
+    }
+    @Test fun `自定义目录封面使用固定目录序号不带size而普通封面使用独立照片单元`() = runBlocking {
+        val requests = mutableListOf<Request>()
+        val transport = transport { request -> requests += request; response(request, byteArrayOf(1, 2, 3), "image/png") }
+        transport.folderThumbnail(9, SynologyPhotoFolderCover("synthetic revision", sequence = 0), SynologyPhotoSpace.SHARED)
+        val folder = requests.last()
+        assertEquals("/synofoto/api/v2/t/Thumbnail/get", folder.url.encodedPath)
+        assertEquals("9", folder.url.queryParameter("id")); assertEquals("0", folder.url.queryParameter("folder_cover_seq"))
+        assertEquals("\"folder\"", folder.url.queryParameter("type")); assertNull(folder.url.queryParameter("size"))
+        assertNull(folder.url.queryParameter("album_id")); assertEquals("id=synthetic-session", folder.header("Cookie"))
+        transport.folderThumbnail(9, SynologyPhotoFolderCover("revision", unitId = 81), SynologyPhotoSpace.PERSONAL)
+        val unit = requests.last(); assertEquals("81", unit.url.queryParameter("id")); assertEquals("\"m\"", unit.url.queryParameter("size"))
+        assertEquals("\"unit\"", unit.url.queryParameter("type")); assertNull(unit.url.queryParameter("folder_cover_seq"))
+    }
+
+    @Test fun `目录封面继续拒绝错误页重定向空响应和过大响应`() = runBlocking {
+        for ((bytes, type, status) in listOf(Triple(byteArrayOf(), "image/png", 200), Triple(byteArrayOf(1), "text/html", 200),
+            Triple(byteArrayOf(1), "image/png", 302), Triple(ByteArray(8 * 1024 * 1024 + 1), "image/png", 200))) {
+            failure { transport { response(it, bytes, type, status) }.folderThumbnail(9, SynologyPhotoFolderCover("r", sequence = 0), SynologyPhotoSpace.PERSONAL) }
+        }
+    }
     @Test fun `缩略图使用观测路径和独立单元并仅在头部认证`() = runBlocking {
         val requests = mutableListOf<Request>()
         val transport = transport { request -> requests += request; response(request, byteArrayOf(1, 2, 3), "image/jpeg") }
@@ -213,6 +251,30 @@ class SynologyPhotosMediaTransportTest {
                 failure { transport.download(download, originalParameters, File(directory, "original.jpg"), bytes.size.toLong()) { _, _ -> } }
                 assertTrue(directory.listFiles()!!.isEmpty())
             }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun `共享缩略图走t而相册统一p并保留相册编号`() = runBlocking {
+        val requests = mutableListOf<Request>()
+        val transport = transport { request -> requests += request; response(request, byteArrayOf(1), "image/jpeg") }
+        transport.thumbnail(SynologyPhotoThumbnail(93, "r"), false, SynologyPhotoSpace.SHARED)
+        transport.thumbnail(SynologyPhotoThumbnail(93, "r"), true, SynologyPhotoSpace.SHARED, 7)
+        assertEquals(listOf("/synofoto/api/v2/t/Thumbnail/get", "/synofoto/api/v2/p/Thumbnail/get"), requests.map { it.url.encodedPath })
+        assertNull(requests.first().url.queryParameter("album_id"))
+        assertEquals("7", requests.last().url.queryParameter("album_id"))
+        assertTrue(requests.all { it.url.queryParameterNames.none { key -> key in setOf("sid", "_sid", "SynoToken", "Cookie") } })
+    }
+
+    @Test fun `共享原件允许明确FotoTeam下载而相册下载保留album`() = runBlocking {
+        val directory = Files.createTempDirectory("photos-source-test-").toFile()
+        try {
+            val requests = mutableListOf<Request>()
+            val transport = transport { request -> requests += request; response(request, byteArrayOf(1, 2, 3, 4), "image/jpeg") }
+            transport.download(download.copy(name = "SYNO.FotoTeam.Download"), originalParameters, File(directory, "shared.jpg"), 4) { _, _ -> }
+            transport.download(download, originalParameters + ("album_id" to "7"), File(directory, "album.jpg"), 4) { _, _ -> }
+            assertEquals(listOf("SYNO.FotoTeam.Download", "SYNO.Foto.Download"), requests.map { it.url.queryParameter("api") })
+            assertEquals("7", requests.last().url.queryParameter("album_id"))
+            assertArrayEquals(File(directory, "shared.jpg").readBytes(), File(directory, "album.jpg").readBytes())
         } finally { directory.deleteRecursively() }
     }
 

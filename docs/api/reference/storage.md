@@ -18,6 +18,8 @@
 
 SMART 详细响应容器、状态别名与占用规则见[硬盘检测记录](../discovery/endpoints/dsm-smart-test.md)，精确写入字段见[参数目录](requests.md#storage)。权限、读取错误、设备换盘和不支持检测均不能解释为“未运行，可启动”。
 
+Android A7 当前入口由 `NasSmartTestRepository/NasSmartTestModel` 执行，独立加密摘要记录保留原账号及动作阶段；接受不冒充运行，恢复先刷新权限，再只读原盘与精确类型。历史读取失败保留可信当前状态，前台只刷新已查看的运行硬盘。38项聚焦JVM通过，真实检测及A7整组原生验收仍待完成。
+
 ## 文件空间分析
 
 客户端的空间分析复用公开 File Station List/Search/MD5，不是一个已固化的 Storage Analyzer API。保持当前账号可见范围，排除明确不在分析范围的回收站、远程挂载及系统数据；先按大小筛选重复候选，再核对内容。取消只停止自己的任务。

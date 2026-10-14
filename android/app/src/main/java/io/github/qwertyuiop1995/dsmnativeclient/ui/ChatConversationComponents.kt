@@ -48,12 +48,22 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Checkbox
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Share
+import kotlinx.coroutines.flow.distinctUntilChanged
+import io.github.qwertyuiop1995.dsmnativeclient.chat.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -71,6 +81,7 @@ import io.github.qwertyuiop1995.dsmnativeclient.Loadable
 import io.github.qwertyuiop1995.dsmnativeclient.R
 import io.github.qwertyuiop1995.dsmnativeclient.WorkspaceState
 import io.github.qwertyuiop1995.dsmnativeclient.chatMutationCanRemoveFailed
+import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatAttachment
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatDeliveryState
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatMessage
@@ -93,6 +104,7 @@ internal fun ConversationDetail(
     state: WorkspaceState,
     model: AppViewModel,
     showBack: Boolean = true,
+    contentVisible: Boolean = true,
     modifier: Modifier = Modifier.fillMaxSize(),
 ) {
     val conversation = state.selectedConversation ?: return
@@ -102,7 +114,17 @@ internal fun ConversationDetail(
         ChatMutationOperation.REMINDER_DELETE,
     )
     var optionsVisible by remember { mutableStateOf(false) }
+    var messageOptions by remember(conversation.id) { mutableStateOf<ChatMessage?>(null) }
+    var selectedIds by remember(conversation.id) { mutableStateOf(emptySet<String>()) }
+    var forwardMessages by remember { mutableStateOf<List<ChatMessage>?>(null) }
+    val listState = rememberLazyListState()
+    var initialScroll by remember(conversation.id) { mutableStateOf(false) }
+    val selectedMessages = (state.chatMessages as? Loadable.Ready)?.value?.messages.orEmpty().filter { it.id in selectedIds }
     var pendingSave by remember { mutableStateOf<Pair<String, ChatAttachment>?>(null) }
+    val voicePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) model.chatVoice.start(conversation.id, conversation.title, context.getString(R.string.chat_voice_filename))
+        else model.chatVoice.permissionDenied()
+    }
     val attachmentPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri -> if (uri != null) model.sendChatAttachment(uri) },
@@ -140,8 +162,23 @@ internal fun ConversationDetail(
                 Icon(Icons.Outlined.MoreVert, stringResource(R.string.client_conversation_options))
             }
         }
+        if (selectedIds.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.chat_selected_count, selectedIds.size), Modifier.weight(1f))
+            IconButton(onClick = { forwardMessages = selectedMessages }, enabled = selectedMessages.size == selectedIds.size && selectedMessages.all { it.poll == null && !it.isEncrypted }) {
+                Icon(Icons.Outlined.Share, stringResource(R.string.chat_forward))
+            }
+            IconButton(onClick = { if (model.chatBatches.request(selectedMessages.map { ChatActionDraft(ChatActionKind.DELETE, it.conversationId, original = it) })) selectedIds = emptySet() },
+                enabled = selectedMessages.size == selectedIds.size && selectedMessages.all { it.isMine && (it.threadId == null || it.threadId == it.id) }) {
+                Icon(Icons.Outlined.Delete, stringResource(R.string.chat_delete_message))
+            }
+            IconButton(onClick = { selectedIds = emptySet() }) { Icon(Icons.Outlined.Close, stringResource(R.string.cancel)) }
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            when (val messages = state.chatMessages) {
+            val content = (state.chatMessages as? Loadable.Ready)?.value?.let { page ->
+                Loadable.Ready(page.copy(messages = (page.messages + state.chatOutgoingMessages[conversation.id].orEmpty()
+                    .filter { it.threadId == null || it.threadId == it.id }).distinctBy { it.id }.sortedBy { it.createdAtEpochMillis }))
+            } ?: state.chatMessages
+            when (val messages = content) {
                 Loadable.Idle, Loadable.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     CircularProgressIndicator()
                 }
@@ -153,7 +190,20 @@ internal fun ConversationDetail(
                         Icons.Outlined.ChatBubbleOutline,
                     )
                 } else {
+                    LaunchedEffect(conversation.id, messages.value.messages.lastOrNull()?.id) {
+                        if (!initialScroll && messages.value.messages.isNotEmpty()) {
+                            listState.scrollToItem(messages.value.messages.lastIndex + if (messages.value.hasMore) 1 else 0)
+                            initialScroll = true
+                        }
+                    }
+                    LaunchedEffect(listState, messages.value.messages, messageOptions, optionsVisible, forwardMessages, contentVisible) {
+                        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.key } }.distinctUntilChanged().collect { keys ->
+                            if (contentVisible && messageOptions == null && !optionsVisible && forwardMessages == null)
+                                messages.value.messages.lastOrNull { it.id in keys }?.let { model.chatContent.markVisible(it) }
+                        }
+                    }
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
@@ -174,8 +224,12 @@ internal fun ConversationDetail(
                         }
                         items(messages.value.messages, key = ChatMessage::id) { message ->
                             val mutation = state.chatMutationState.entry(message.clientRequestId)
-                            MessageBubble(
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            if (selectedIds.isNotEmpty() && message.deliveryState == ChatDeliveryState.SENT && !message.id.startsWith("local:")) Checkbox(
+                                checked = message.id in selectedIds, onCheckedChange = { checked -> selectedIds = if (checked) selectedIds + message.id else selectedIds - message.id })
+                            Column(Modifier.weight(1f)) { MessageBubble(
                                 message = message,
+                                onMore = { messageOptions = message },
                                 mutation = mutation,
                                 onRetry = { model.retryChatMessage(message.id) },
                                 onRemove = { model.removeFailedChatMessage(message.id) },
@@ -209,7 +263,8 @@ internal fun ConversationDetail(
                                 onCancelMutation = {
                                     mutation?.let { model.cancelChatMutation(it.target.requestId) } ?: false
                                 },
-                            )
+                            ) }
+                            }
                         }
                         item { Spacer(Modifier.padding(bottom = 12.dp)) }
                     }
@@ -218,14 +273,25 @@ internal fun ConversationDetail(
         }
         ChatComposer(
             text = state.chatDrafts[conversation.id].orEmpty(),
-            enabled = state.chatMessages is Loadable.Ready,
+            enabled = state.chatMessages is Loadable.Ready && !conversation.isEncrypted,
             onTextChange = model::updateChatDraft,
             onSend = model::sendChatMessage,
             onAttach = { attachmentPicker.launch(arrayOf("image/*", "video/*", "application/*", "text/*", "audio/*")) },
+            onVoice = { voicePermission.launch(android.Manifest.permission.RECORD_AUDIO) },
         )
     }
+    messageOptions?.let { message -> ChatMessageActionsSheet(message, state, model, { messageOptions = null },
+        onForward = { messageOptions = null; forwardMessages = listOf(message) },
+        onSelect = { selectedIds = setOf(message.id) }) }
+    forwardMessages?.let { ChatForwardSheet(it, state, model, { forwardMessages = null; selectedIds = emptySet() }) }
     if (optionsVisible) ClientSheet(stringResource(R.string.client_conversation_options), { optionsVisible = false }) {
         ClientActionGrid(buildList {
+            add(ClientAction(stringResource(R.string.chat_search_messages), Icons.Outlined.Search) {
+                optionsVisible = false; model.chatContent.openSearch(conversation.id)
+            })
+            if (conversation.kind == ConversationKind.GROUP) add(ClientAction(stringResource(R.string.chat_pinned_messages), Icons.Outlined.PushPin) {
+                optionsVisible = false; model.chatContent.openPinned(conversation.id)
+            })
             if (conversation.kind == ConversationKind.GROUP) add(ClientAction(stringResource(R.string.view_group_members), Icons.Outlined.Group) {
                 optionsVisible = false; model.showChatMembers()
             })
@@ -239,6 +305,13 @@ internal fun ConversationDetail(
                 optionsVisible = false; model.openChatPollComposer()
             })
         })
+        ClientRow(stringResource(R.string.chat_close_conversation), Icons.Outlined.Close) {
+            optionsVisible = false; model.chatActions.request(ChatActionDraft(ChatActionKind.CLOSE, conversation.id, conversation = conversation), confirm = true)
+        }
+        ClientRow(stringResource(R.string.chat_batches), Icons.Outlined.Schedule) { optionsVisible = false; model.chatBatches.focus("all") }
+        ClientRow(stringResource(R.string.chat_activity), Icons.Outlined.Schedule) {
+            optionsVisible = false; model.chatActions.focus("all")
+        }
         if (model.canCopyCurrentPageLink()) ClientRow(stringResource(R.string.copy_page_link), Icons.Outlined.Link) {
             optionsVisible = false; model.copyCurrentPageLink()
         }
@@ -265,9 +338,10 @@ internal fun MessageBubble(
     onContinueEditingMutation: () -> Boolean,
     onDismissMutation: () -> Boolean,
     onCancelMutation: () -> Boolean,
+    onMore: (() -> Unit)? = null,
 ) {
     val sender = message.sender?.displayName ?: stringResource(R.string.unknown_sender)
-    val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+    val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, LocalContext.current.resources.configuration.locales[0])
         .format(Date(message.createdAtEpochSeconds * 1_000))
     val mutationDelivery = if (mutation != null) chatMutationFeedbackMessage(mutation) else null
     val delivery = mutationDelivery ?: when (
@@ -338,7 +412,7 @@ internal fun MessageBubble(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (message.deliveryState == ChatDeliveryState.SENT) {
-                        if (attachment.isPreviewableImage() || attachment.isPreviewableVideo()) {
+                        if (attachment.isPreviewableImage() || attachment.isPreviewableVideo() || attachment.isPreviewableAudio()) {
                             TextButton(onClick = { onPreviewAttachment(attachment) }) {
                                 if (thumbnail is Loadable.Loading) {
                                     CircularProgressIndicator(Modifier.size(18.dp))
@@ -422,6 +496,7 @@ internal fun MessageBubble(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp).clearAndSetSemantics {},
             )
+            onMore?.let { more -> IconButton(onClick = more, modifier = Modifier.testTag("chat_message_options_${message.id}")) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.chat_message_options)) } }
             if (canSetReminder && message.deliveryState == ChatDeliveryState.SENT) {
                 TextButton(
                     onClick = onSetReminder,
@@ -441,10 +516,12 @@ internal fun MessageBubble(
                     modifier = Modifier.padding(top = 4.dp).clearAndSetSemantics {},
                 )
                 ChatDeliveryState.FAILED -> {
+                    Text(stringResource(if (mutation?.mutationResult?.requiresRefresh == true) R.string.chat_action_waiting else R.string.message_send_failed),
+                        style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (canRetryChatMutation(mutation)) {
+                        if (mutation?.mutationResult?.requiresRefresh == true) {
                             Button(onClick = onRetry) {
-                                Text(stringResource(R.string.retry_send))
+                                Text(stringResource(R.string.refresh))
                             }
                         }
                         if (chatMutationCanRemoveFailed(mutation)) {
@@ -459,21 +536,9 @@ internal fun MessageBubble(
                 }
                 ChatDeliveryState.SENT -> Unit
             }
-            mutation?.let {
-                val failedMessage = message.deliveryState == ChatDeliveryState.FAILED
-                ChatSendMutationFeedback(
-                    entry = it,
-                    onRefresh = onRefreshMutation,
-                    onContinueEditing = onContinueEditingMutation,
-                    onDismiss = if (failedMessage) onRemove else onDismissMutation,
-                    onCancel = onCancelMutation,
-                    canClose = if (failedMessage) {
-                        chatMutationCanRemoveFailed(it)
-                    } else {
-                        canDismissChatMutationFeedback(it)
-                    },
-                )
-            }
+            mutation?.mutationFailure?.let { Text(it.localize(LocalContext.current).combined,
+                modifier = Modifier.padding(top = 4.dp), color = MaterialTheme.colorScheme.error) }
+
         }
     }
 }

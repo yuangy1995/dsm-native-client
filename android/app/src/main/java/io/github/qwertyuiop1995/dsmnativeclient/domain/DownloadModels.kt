@@ -19,6 +19,7 @@ data class DownloadTask(
     val files: List<DownloadTaskFile> = emptyList(),
     val trackers: List<DownloadTaskTracker> = emptyList(),
     val peers: List<DownloadTaskPeer> = emptyList(),
+    val isCompleted: Boolean = false,
 )
 
 /** Download Station 任务控制使用的稳定操作类型，避免以自由字符串区分危险删除语义。 */
@@ -26,7 +27,7 @@ enum class DownloadTaskMutationAction {
     PAUSE,
     RESUME,
     REMOVE_TASK,
-    REMOVE_TASK_AND_FILES,
+    END_TASK_AND_MOVE_FILES,
 }
 
 /**
@@ -82,6 +83,7 @@ data class DownloadRssSite(
     val title: String,
     val isUpdating: Boolean,
     val lastUpdatedAtEpochSeconds: Long?,
+    val identityDigest: String = "",
 )
 
 data class DownloadRssFeed(
@@ -177,4 +179,25 @@ data class DownloadSettings(
     val emuleUploadLimitKb: Int = 0,
     val scheduleEnabled: Boolean = false,
     val emuleScheduleEnabled: Boolean = false,
+    val availableFields: Set<String> = DOWNLOAD_SETTING_FIELDS,
+    val canManage: Boolean = false,
+    val scheduleFailure: DsmFailure? = null,
+    val basicFailure: DsmFailure? = null,
 )
+
+enum class DownloadSettingsPartition { BASIC, SCHEDULE }
+
+internal val DOWNLOAD_BASIC_SETTING_FIELDS = setOf("default_destination", "emule_enabled", "unzip_service_enabled",
+    "bt_max_download", "bt_max_upload", "http_max_download", "ftp_max_download", "nzb_max_download", "emule_max_download", "emule_max_upload")
+internal val DOWNLOAD_SCHEDULE_SETTING_FIELDS = setOf("enabled", "schedule_emule_enabled")
+internal val DOWNLOAD_SETTING_FIELDS = DOWNLOAD_BASIC_SETTING_FIELDS + DOWNLOAD_SCHEDULE_SETTING_FIELDS
+
+/** 字段存在性与默认显示值分离；缺失字段不得进入请求或被当作 false/0。 */
+internal fun downloadSettingsParameters(value: DownloadSettings, availableOnly: Boolean = true): Map<String, String> = mapOf(
+    "default_destination" to value.defaultDestination, "emule_enabled" to value.emuleEnabled.toString(),
+    "unzip_service_enabled" to value.autoExtractEnabled.toString(), "bt_max_download" to value.btDownloadLimitKb.toString(),
+    "bt_max_upload" to value.btUploadLimitKb.toString(), "http_max_download" to value.httpDownloadLimitKb.toString(),
+    "ftp_max_download" to value.ftpDownloadLimitKb.toString(), "nzb_max_download" to value.nzbDownloadLimitKb.toString(),
+    "emule_max_download" to value.emuleDownloadLimitKb.toString(), "emule_max_upload" to value.emuleUploadLimitKb.toString(),
+    "enabled" to value.scheduleEnabled.toString(), "schedule_emule_enabled" to value.emuleScheduleEnabled.toString(),
+).filterKeys { !availableOnly || it in value.availableFields }

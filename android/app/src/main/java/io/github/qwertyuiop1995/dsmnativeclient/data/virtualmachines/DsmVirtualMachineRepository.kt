@@ -1,6 +1,8 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines
 
 import io.github.qwertyuiop1995.dsmnativeclient.suspendRunCatching
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.LogEntry
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ManagedResource
 import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineHardware
@@ -72,7 +74,8 @@ internal class DsmVirtualMachineRepository(
                 gateway.officialRead()
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
-            } catch (_: Throwable) {
+            } catch (error: Exception) {
+                vmmRethrowCritical(error)
                 unavailable += VirtualMachineSection.HARDWARE
                 null
             }
@@ -96,7 +99,8 @@ internal class DsmVirtualMachineRepository(
             }
             return suspendRunCatching {
                 gateway.resourceList(apiName, listOf("list"), *roots)
-            }.getOrElse {
+            }.getOrElse { error ->
+                vmmRethrowCritical(error)
                 unavailable += section
                 emptyList()
             }
@@ -139,7 +143,7 @@ internal class DsmVirtualMachineRepository(
                     "SYNO.Virtualization.GuestProtect.Plan",
                     listOf("list", "get"),
                 )
-            }.getOrNull()
+            }.getOrElse { error -> vmmRethrowCritical(error); null }
         } else {
             unavailable += VirtualMachineSection.PROTECTION
             null
@@ -165,7 +169,8 @@ internal class DsmVirtualMachineRepository(
             gateway.genericResources(it, "retention_policies", "retentions", "retention_policy")
         }.orEmpty()
         val logs = if (gateway.supports("SYNO.Virtualization.Log")) {
-            suspendRunCatching { gateway.logs() }.getOrElse {
+            suspendRunCatching { gateway.logs() }.getOrElse { error ->
+                vmmRethrowCritical(error)
                 unavailable += VirtualMachineSection.LOGS
                 emptyList()
             }
@@ -193,4 +198,10 @@ internal class DsmVirtualMachineRepository(
             unavailableSections = unavailable,
         )
     }
+}
+
+/** 身份和证书失败不能被可选分区降级吞掉后继续请求。 */
+internal fun vmmRethrowCritical(error: Throwable) {
+    if (error is kotlinx.coroutines.CancellationException || error is DsmFailure && error.kind in setOf(DsmErrorKind.TLS_UNTRUSTED,
+        DsmErrorKind.SESSION_EXPIRED, DsmErrorKind.AUTHENTICATION_FAILED, DsmErrorKind.WORKSPACE_CHANGED)) throw error
 }

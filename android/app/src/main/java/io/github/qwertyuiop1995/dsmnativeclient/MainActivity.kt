@@ -11,14 +11,20 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.Module
 import io.github.qwertyuiop1995.dsmnativeclient.domain.WorkspaceRoute
 import io.github.qwertyuiop1995.dsmnativeclient.ui.LanStashApp
 import io.github.qwertyuiop1995.dsmnativeclient.ui.theme.LanStashTheme
+import io.github.qwertyuiop1995.dsmnativeclient.systemfiles.sharedInput
+import io.github.qwertyuiop1995.dsmnativeclient.systemfiles.clearSharedInput
+import io.github.qwertyuiop1995.dsmnativeclient.systemfiles.sources
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MainActivity : AppCompatActivity() {
-    private val model: AppViewModel by viewModels()
+    private val host: WorkspaceHostModel by viewModels()
+    private val model: AppViewModel get() = host.active.value.model
     private var internalNavigation = InternalNavigationState()
     private var pendingNavigationIntent: Intent? = null
     private var internalNavigationJob: Job? = null
@@ -30,15 +36,24 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         setContent {
             LanStashTheme {
-                LanStashApp(model)
+                LanStashApp(host)
             }
         }
+        if (savedInstanceState?.getBoolean(STATE_TASK_HISTORY) == true && !host.taskHistoryVisible.value) {
+            val token = savedInstanceState.getString(STATE_TASK_HISTORY_TOKEN)
+            if (token == null || host.openLocalTransferTarget(token) != true) host.showTaskHistory()
+        }
+        val initialRequest = internalNavigation.currentRequest ?: intent.pendingNavigationRequest()
         handleIntent(intent)
+        if (initialRequest == null || initialRequest is PendingNavigationRequest.Fixed &&
+            initialRequest.request != InternalRouteRequest.OPEN_TRANSFERS) host.restoreInitialConnection()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(STATE_PENDING_ROUTE, internalNavigation.pendingRequest?.name)
         outState.putString(STATE_PENDING_OPAQUE_TOKEN, internalNavigation.pendingOpaqueToken)
+        outState.putBoolean(STATE_TASK_HISTORY, host.taskHistoryVisible.value)
+        outState.putString(STATE_TASK_HISTORY_TOKEN, host.taskHistoryToken.takeIf { host.taskHistoryVisible.value })
         super.onSaveInstanceState(outState)
     }
 
@@ -49,6 +64,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        if (intent?.action in setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) {
+            try {
+                val input = requireNotNull(intent).sharedInput(packageName)
+                if (input != null) host.sharedInput.receive { input.sources(contentResolver, getString(R.string.shared_text_filename)) }
+            } catch (_: Exception) { host.sharedInput.invalidInput() }
+            intent?.clearSharedInput()
+            return
+        }
         val request = intent.pendingNavigationRequest()
         if (request is PendingNavigationRequest.Fixed) {
             model.cancelOpaqueExternalNavigation()
@@ -65,11 +88,30 @@ class MainActivity : AppCompatActivity() {
         }
         val pending = internalNavigation.currentRequest ?: return
         internalNavigationJob?.cancel()
+        val handledLocalTask = if (pending is PendingNavigationRequest.OpaqueObject) host.openLocalTransferTarget(pending.token)
+            else if (pending is PendingNavigationRequest.Fixed && pending.request == InternalRouteRequest.OPEN_TRANSFERS && model.workspace.value == null) host.showTaskHistory()
+            else null
+        if (handledLocalTask != null) {
+            if (!handledLocalTask) host.closeTaskHistory()
+            model.cancelOpaqueExternalNavigation()
+            internalNavigation = internalNavigation.consume(pending)
+            clearConsumedNavigationIntent(pendingNavigationIntent, pending)
+            clearConsumedNavigationIntent(this.intent, pending)
+            pendingNavigationIntent = null
+            return
+        }
+        if (pending is PendingNavigationRequest.OpaqueObject && !host.selectForOpaqueTarget(pending.token)) {
+            host.closeTaskHistory()
+            internalNavigation = internalNavigation.consume(pending)
+            clearConsumedNavigationIntent(pendingNavigationIntent, pending)
+            pendingNavigationIntent = null
+            return
+        }
+        host.closeTaskHistory()
         val job = lifecycleScope.launch {
-            combine(
-                model.workspace.filterNotNull(),
-                model.opaqueExternalNavigationRevision,
-            ) { _, _ -> Unit }.first {
+            host.active.flatMapLatest { selection -> combine(
+                selection.model.workspace.filterNotNull(), selection.model.opaqueExternalNavigationRevision,
+            ) { _, _ -> Unit } }.first {
                 if (internalNavigation.currentRequest != pending) return@first true
                 navigatePendingRequest(pending) != WorkspaceNavigationResult.DEFERRED
             }
@@ -141,6 +183,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private companion object {
+        const val STATE_TASK_HISTORY = "task_history_visible"
+        const val STATE_TASK_HISTORY_TOKEN = "task_history_token"
         const val STATE_PENDING_ROUTE = "pending_route"
         const val STATE_PENDING_OPAQUE_TOKEN = "pending_opaque_token"
     }

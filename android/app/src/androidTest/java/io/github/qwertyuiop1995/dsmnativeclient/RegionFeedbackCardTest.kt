@@ -41,7 +41,8 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasManualDateTime
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasRegionSettings
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasTimeZoneOption
-import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasRegionSettingsScreen
+import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasRegionSettingsContent
+import io.github.qwertyuiop1995.dsmnativeclient.nas.NasRegionEditorState
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.RegionMutationFailureCard
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.RegionMutationFeedbackCard
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.RegionSavingCard
@@ -328,8 +329,11 @@ class RegionFeedbackCardTest {
             }
         }
 
-        rule.onNode(hasSetTextAction() and hasText("Y/m/d")).performTextReplacement(" d/m/Y ")
-        rule.onNode(hasSetTextAction() and hasText("H:i:s")).performTextReplacement("H:i")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        rule.onNodeWithText(context.getString(R.string.nas_region_date_ymd_slash)).performScrollTo().performClick()
+        rule.onNodeWithText(context.getString(R.string.nas_region_date_dmy_slash)).performClick()
+        rule.onNodeWithText(context.getString(R.string.nas_region_current_format, "H:i:s")).performScrollTo().performClick()
+        rule.onNodeWithText(context.getString(R.string.nas_region_time_24)).performClick()
         rule.onNode(hasSetTextAction() and hasText("time.example.invalid"))
             .performTextReplacement(" time-a.invalid \n time-b.invalid ")
         rule.waitForIdle()
@@ -338,7 +342,8 @@ class RegionFeedbackCardTest {
             check(restored.timeServers == listOf("time-a.invalid", "time-b.invalid"))
         }
         restoration.emulateSavedInstanceStateRestore()
-        rule.onNode(hasSetTextAction() and hasText(" d/m/Y ")).assertExists()
+        rule.onNodeWithText(context.getString(R.string.nas_region_date_dmy_slash)).assertExists()
+        rule.onNodeWithText(context.getString(R.string.nas_region_time_24)).assertExists()
         rule.onNode(hasSetTextAction() and hasText(" time-a.invalid \n time-b.invalid "))
             .assertExists()
     }
@@ -391,8 +396,8 @@ class RegionFeedbackCardTest {
         rule.onNodeWithText("Coordinated Universal Time").performClick()
         rule.onNodeWithText(context.getString(R.string.time_zone_value, "Coordinated Universal Time"))
             .assertIsDisplayed()
-        rule.onNode(hasSetTextAction() and hasText("Y-m-d")).performTextReplacement("")
-        rule.onNodeWithText(context.getString(R.string.region_format_required))
+        rule.onNode(hasSetTextAction() and hasText(context.getString(R.string.time_servers))).performScrollTo().performTextReplacement("https://bad/path")
+        rule.onNodeWithText(context.getString(R.string.invalid_time_servers))
             .performScrollTo().assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.region_time_impact_hint))
             .performScrollTo().assertIsDisplayed()
@@ -402,7 +407,6 @@ class RegionFeedbackCardTest {
     fun 编辑确认阶段可恢复且取消返回草稿保存未接收仍保留确认() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val restoration = StateRestorationTester(rule)
-        val model = AppViewModel(ApplicationProvider.getApplicationContext())
         val draft = region(network = true).copy(
             dateFormat = "Y/m/d",
             timeZone = "UTC",
@@ -410,14 +414,14 @@ class RegionFeedbackCardTest {
         )
         restoration.setContent {
             LanStashTheme {
-                regionScreen(settings = region(), savedDraft = draft, model = model)
+                regionScreen(settings = region(), savedDraft = draft)
             }
         }
 
         rule.onNodeWithText(context.getString(R.string.edit)).performClick()
-        rule.onNode(hasSetTextAction() and hasText("Y/m/d")).assertExists()
+        rule.onNodeWithText(context.getString(R.string.nas_region_date_ymd_slash)).assertExists()
         restoration.emulateSavedInstanceStateRestore()
-        rule.onNode(hasSetTextAction() and hasText("Y/m/d")).assertExists()
+        rule.onNodeWithText(context.getString(R.string.nas_region_date_ymd_slash)).assertExists()
         rule.onNodeWithText(context.getString(R.string.continue_action)).performClick()
         rule.onNodeWithText(context.getString(R.string.save_region_settings_title)).assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.save_region_settings_with_sync_message))
@@ -425,7 +429,7 @@ class RegionFeedbackCardTest {
         restoration.emulateSavedInstanceStateRestore()
         rule.onNodeWithText(context.getString(R.string.save_region_settings_title)).assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.cancel)).performClick()
-        rule.onNode(hasSetTextAction() and hasText("Y/m/d")).assertExists()
+        rule.onNodeWithText(context.getString(R.string.nas_region_date_ymd_slash)).assertExists()
         rule.onNodeWithText(context.getString(R.string.continue_action)).performClick()
         rule.onNodeWithText(context.getString(R.string.save)).performClick()
         rule.onNodeWithText(context.getString(R.string.save_region_settings_title)).assertIsDisplayed()
@@ -434,11 +438,10 @@ class RegionFeedbackCardTest {
     @Test
     fun 区域能力缺失在深色两倍字体下显示原因和恢复动作() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val model = AppViewModel(ApplicationProvider.getApplicationContext())
         rule.setContent {
             LanStashTheme(darkTheme = true) {
                 CompositionLocalProvider(LocalDensity provides Density(1f, 2f)) {
-                    regionScreen(settings = null, savedDraft = null, model = model)
+                    regionScreen(settings = null, savedDraft = null)
                 }
             }
         }
@@ -484,7 +487,7 @@ class RegionFeedbackCardTest {
         rule.setContent {
             LanStashTheme {
                 RegionSettingsDialog(
-                    baseline = region(),
+                    baseline = region(network = true),
                     restoredDraft = null,
                     onDraftChange = {},
                     onSave = {},
@@ -493,20 +496,19 @@ class RegionFeedbackCardTest {
             }
         }
 
-        rule.onNode(hasSetTextAction() and hasText("Y-m-d")).performTextReplacement("")
+        rule.onNode(hasSetTextAction() and hasText(context.getString(R.string.time_servers))).performScrollTo().performTextReplacement("https://bad/path")
         rule.onAllNodes(hasError).assertCountEquals(1)
         check(rule.onNode(hasError).fetchSemanticsNode().config[SemanticsProperties.Error].isNotBlank())
-        val formatLabel = rule.onNodeWithText(
-            context.getString(R.string.date_format),
+        val initialServerLabel = rule.onNodeWithText(
+            context.getString(R.string.time_servers),
             useUnmergedTree = true,
         ).fetchSemanticsNode()
-        check(generateSequence(formatLabel.parent) { it.parent }.any {
+        check(generateSequence(initialServerLabel.parent) { it.parent }.any {
             it.config.contains(SemanticsActions.SetText)
         })
 
-        rule.onNode(hasError and hasSetTextAction()).performTextReplacement("Y-m-d")
-        rule.onNode(hasSetTextAction() and hasText("2026-08-04"))
-            .performTextReplacement("2025-02-29")
+        rule.onNodeWithText(context.getString(R.string.use_network_time)).performClick()
+        rule.onNode(hasSetTextAction() and hasText("2026-08-04")).performTextReplacement("2025-02-29")
         rule.onNode(hasSetTextAction() and hasText("12:34:56"))
             .performTextReplacement("24:00:00")
         rule.onAllNodes(hasError).assertCountEquals(2)
@@ -514,7 +516,7 @@ class RegionFeedbackCardTest {
             .assertCountEquals(2)
 
         rule.onNodeWithText(context.getString(R.string.use_network_time)).performClick()
-        rule.onNode(hasSetTextAction() and hasText("")).performTextReplacement("https://bad/path")
+        rule.onNode(hasSetTextAction() and hasText(context.getString(R.string.time_servers))).performTextReplacement("https://bad/path")
         rule.onAllNodes(hasError).assertCountEquals(1)
         val serverLabel = rule.onNodeWithText(
             context.getString(R.string.time_servers),
@@ -540,13 +542,12 @@ class RegionFeedbackCardTest {
             }
         }
 
-        val dateFormat = rule.onNode(hasSetTextAction() and hasText("Y-m-d"))
-        dateFormat.performTextReplacement("")
+        // 格式采用受支持选项，不能输入空值；未修改任何字段时也不能继续。
+        rule.onAllNodes(hasSetTextAction() and hasText(context.getString(R.string.date_format))).assertCountEquals(0)
         rule.onNodeWithText(context.getString(R.string.continue_action)).assertIsNotEnabled()
-        rule.onNode(hasSetTextAction() and hasText("")).performTextReplacement("Y-m-d")
 
         rule.onNodeWithText(context.getString(R.string.use_network_time)).performClick()
-        val server = rule.onAllNodes(hasSetTextAction())[2]
+        val server = rule.onNode(hasSetTextAction() and hasText(context.getString(R.string.time_servers)))
         server.performTextReplacement("https://time.invalid/path")
         rule.onNodeWithText(context.getString(R.string.continue_action)).assertIsNotEnabled()
         server.performTextReplacement("a.invalid\na.invalid")
@@ -580,19 +581,11 @@ class RegionFeedbackCardTest {
     @Test
     fun 保存期间编辑入口被禁用且显示进度() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val model = AppViewModel(ApplicationProvider.getApplicationContext())
         rule.setContent {
             LanStashTheme {
-                NasRegionSettingsScreen(
-                    settings = region(),
-                    savedDraft = region().copy(dateFormat = "Y/m/d"),
-                    mutationResult = null,
-                    mutationFailure = null,
-                    mutationInProgress = true,
-                    mutationRefreshCompleted = false,
-                    isPerformingAction = true,
-                    model = model,
-                )
+                NasRegionSettingsContent(region(), true, NasRegionEditorState(current = region(), original = region(),
+                    draft = region().copy(dateFormat = "Y/m/d"), busy = true, saving = true),
+                    { false }, {}, { _, _ -> false }, {}, {})
             }
         }
 
@@ -610,18 +603,9 @@ class RegionFeedbackCardTest {
     private fun regionScreen(
         settings: NasRegionSettings?,
         savedDraft: NasRegionSettings?,
-        model: AppViewModel,
     ) {
-        NasRegionSettingsScreen(
-            settings = settings,
-            savedDraft = savedDraft,
-            mutationResult = null,
-            mutationFailure = null,
-            mutationInProgress = false,
-            mutationRefreshCompleted = false,
-            isPerformingAction = false,
-            model = model,
-        )
+        val fixture = androidx.compose.runtime.remember(settings, savedDraft) { NasRegionUiFixture(settings, savedDraft) }
+        NasRegionSettingsContent(settings, false, fixture.state.value, fixture::begin, fixture::draft, { _, _ -> false }, {}, {})
     }
 
     private fun setFeedback(

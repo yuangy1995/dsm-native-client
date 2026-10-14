@@ -72,6 +72,7 @@ class DownloadAdaptiveScreenTest {
                         selectedModule = Module.DOWNLOADS,
                         downloads = Loadable.Ready(listOf(task)),
                         downloadDetailsTask = task,
+                        downloadAdvancedRead = DownloadAdvancedReadWorkspaceState(downloadDetails = Loadable.Ready(task)),
                     ),
                     model = model,
                 )
@@ -101,6 +102,7 @@ class DownloadAdaptiveScreenTest {
                             selectedModule = Module.DOWNLOADS,
                             downloads = Loadable.Ready(listOf(task)),
                             downloadDetailsTask = task,
+                        downloadAdvancedRead = DownloadAdvancedReadWorkspaceState(downloadDetails = Loadable.Ready(task)),
                         ),
                         model = model,
                     )
@@ -139,6 +141,7 @@ class DownloadAdaptiveScreenTest {
                                 selectedModule = Module.DOWNLOADS,
                                 downloads = Loadable.Ready(listOf(task)),
                                 downloadDetailsTask = detail,
+                                downloadAdvancedRead = DownloadAdvancedReadWorkspaceState(downloadDetails = detail?.let { Loadable.Ready(it) } ?: Loadable.Idle),
                             ),
                             model = model,
                         )

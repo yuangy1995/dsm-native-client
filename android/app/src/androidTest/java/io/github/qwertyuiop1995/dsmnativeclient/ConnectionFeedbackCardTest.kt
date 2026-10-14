@@ -24,6 +24,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
+import io.github.qwertyuiop1995.dsmnativeclient.nas.NasConnectionState
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.NasConnectionDirectory
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ActiveConnection
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
@@ -87,7 +89,7 @@ class ConnectionFeedbackCardTest {
     }
 
     @Test
-    fun 刷新后明确目标仍在才允许用户结束反馈再决定() {
+    fun 刷新后目标仍在继续保留重复提交保护() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         setFeedback(
             result(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, MutationResultCounts(0, 0, 1)),
@@ -96,7 +98,7 @@ class ConnectionFeedbackCardTest {
         )
 
         rule.onNodeWithText(context.getString(R.string.connection_refresh_still_present)).assertIsDisplayed()
-        rule.onNodeWithText(context.getString(R.string.done)).assertIsEnabled()
+        rule.onNodeWithText(context.getString(R.string.done)).assertIsNotEnabled()
     }
 
     @Test
@@ -158,21 +160,9 @@ class ConnectionFeedbackCardTest {
         rule.setContent {
             LanStashTheme {
                 NasConnectionContent(
-                    connections = emptyList(),
-                    connectionsAvailable = available,
-                    target = null,
-                    mutationResult = null,
-                    mutationFailure = null,
-                    refreshFailure = null,
-                    mutationInProgress = false,
-                    refreshCompleted = false,
-                    isPerformingAction = false,
-                    onRequestDisconnect = { false },
-                    onCancelRequest = {},
-                    onConfirmRequest = { false },
-                    onRefreshMutation = {},
-                    onDismissResult = {},
-                    onRefreshList = {},
+                    state = NasConnectionState(loaded = true, directory = if (available) NasConnectionDirectory(emptyList(), true) else null),
+                    onRequestDisconnect = { false }, onCancelRequest = {}, onConfirmRequest = { false },
+                    onRefresh = {}, onDismissResult = {},
                 )
             }
         }
@@ -190,28 +180,16 @@ class ConnectionFeedbackCardTest {
         rule.setContent {
             LanStashTheme {
                 NasConnectionContent(
-                    connections = emptyList(),
-                    connectionsAvailable = true,
-                    target = target,
-                    mutationResult = null,
-                    mutationFailure = null,
-                    refreshFailure = null,
-                    mutationInProgress = false,
-                    refreshCompleted = false,
-                    isPerformingAction = false,
-                    onRequestDisconnect = { false },
-                    onCancelRequest = { target = null },
-                    onConfirmRequest = { confirmations += 1; false },
-                    onRefreshMutation = {},
-                    onDismissResult = {},
-                    onRefreshList = {},
+                    state = NasConnectionState(loaded = true, directory = NasConnectionDirectory(emptyList(), true), confirmation = target),
+                    onRequestDisconnect = { false }, onCancelRequest = { target = null },
+                    onConfirmRequest = { confirmations += 1; false }, onRefresh = {}, onDismissResult = {},
                 )
             }
         }
 
-        rule.onNodeWithText(context.getString(R.string.disconnect_web_connection_message), substring = true)
+        rule.onNodeWithText(context.getString(R.string.disconnect_connection_app_risk), substring = true)
             .assertIsDisplayed()
-        rule.onNodeWithText(context.getString(R.string.disconnect_connection)).performClick()
+        rule.onNodeWithText(context.getString(R.string.disconnect_current_connection)).performClick()
         rule.onNodeWithText(context.getString(R.string.disconnect_connection_title)).assertIsDisplayed()
         rule.runOnIdle { check(confirmations == 1); target = service() }
         rule.onNodeWithText(context.getString(R.string.disconnect_service_connection_message), substring = true)

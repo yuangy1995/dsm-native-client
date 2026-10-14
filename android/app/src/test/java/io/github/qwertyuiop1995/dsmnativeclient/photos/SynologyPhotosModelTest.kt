@@ -6,7 +6,8 @@ import java.io.IOException
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneOffset
-import java.util.UUID
+import io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceOwner
+import io.github.qwertyuiop1995.dsmnativeclient.testing.MemoryPreferences
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import org.junit.Assert.*
@@ -21,6 +22,8 @@ class SynologyPhotosModelTest {
         var days = listOf(SynologyPhotoDay(LocalDate.of(2025, 1, 1), 10_000))
         val pageCalls = mutableListOf<Pair<SynologyPhotoQuery, Int>>()
         val timelineCalls = mutableListOf<SynologyPhotoQuery?>()
+        val sourceCalls = mutableListOf<SynologyPhotoSpace>()
+        var filterReply: suspend (SynologyPhotoSpace) -> SynologyPhotoFilterOptions = { throw IOException("synthetic options failure") }
         var page: suspend (SynologyPhotoQuery, Int, Int) -> SynologyPhotoPage = { _, offset, limit ->
             SynologyPhotoPage((offset + 1L..offset + limit.toLong()).map(::photo), offset, offset + limit, true)
         }
@@ -29,27 +32,34 @@ class SynologyPhotosModelTest {
         var original: suspend (SynologyPhoto, File) -> Unit = { _, file -> file.writeBytes(byteArrayOf(1, 2, 3, 4)) }
         var writes = 0
         var reviews = 0
-        var deletion: suspend () -> SynologyPhotoDeletionResult = { SynologyPhotoDeletionResult.PENDING_REVIEW }
-        var review: suspend () -> SynologyPhotoDeletionResult = { SynologyPhotoDeletionResult.CONFIRMED }
+        var deletion: suspend () -> SynologyPhotoDeletionPhase = { SynologyPhotoDeletionPhase.SUBMITTED }
+        var review: suspend () -> SynologyPhotoDeletionPhase = { SynologyPhotoDeletionPhase.CONFIRMED }
         var folderPages: suspend (Long, Int) -> List<SynologyPhotoCollection> = { parent, _ ->
             if (parent == 5L) listOf(SynologyPhotoCollection(6, "Trips", parentId = 5)) else emptyList()
         }
+        val sharingOffsets = mutableListOf<Int>()
+        var sharedPage: suspend (Int, Int) -> List<SynologyPhotoSharedEntry> = { _, _ -> listOf(SynologyPhotoSharedEntry("7", "Shared album", 7)) }
         override suspend fun access() = SynologyPhotoAccess(spaces, "fixture")
         override suspend fun timeline(space: SynologyPhotoSpace, query: SynologyPhotoQuery?): List<SynologyPhotoDay> {
             timelineCalls += query
             return days
         }
         override suspend fun photos(space: SynologyPhotoSpace, query: SynologyPhotoQuery, offset: Int, limit: Int): SynologyPhotoPage {
+            sourceCalls += space
             pageCalls += query to offset
-            return page(query, offset, limit)
+            return page(query, offset, limit).let { result -> result.copy(items = result.items.map { photo ->
+                photo.copy(id = photo.id.copy(space = space), albumContext = if (query is SynologyPhotoQuery.Album) SynologyPhotoAlbumContext(query.id, if (space == SynologyPhotoSpace.PERSONAL) 41 else 0) else null)
+            }) }
         }
         override suspend fun rootFolder(space: SynologyPhotoSpace) = SynologyPhotoCollection(5, "/", parentId = 0)
-        override suspend fun folders(space: SynologyPhotoSpace, parentId: Long, offset: Int, limit: Int) = folderPages(parentId, offset)
-        override suspend fun categories() = SynologyPhotoCategory.entries.toSet()
+        override suspend fun folders(space: SynologyPhotoSpace, parentId: Long, offset: Int, limit: Int) = folderPages(parentId, offset).map { it.copy(space = space) }
+        override suspend fun categories(space: SynologyPhotoSpace) = SynologyPhotoCategory.entries.toSet()
         override suspend fun albums(offset: Int, limit: Int) = if (offset == 0) listOf(SynologyPhotoCollection(7, "Album")) else emptyList()
-        override suspend fun categoryItems(category: SynologyPhotoCategory, offset: Int, limit: Int) = listOf(SynologyPhotoCollection(8, "Category"))
-        override suspend fun sharedEntries(scope: SynologyPhotoShareScope, offset: Int, limit: Int) = listOf(SynologyPhotoSharedEntry("7", "Shared album", 7))
-        override suspend fun filterOptions(): SynologyPhotoFilterOptions = throw IOException("synthetic options failure")
+        override suspend fun categoryItems(category: SynologyPhotoCategory, offset: Int, limit: Int, space: SynologyPhotoSpace) = listOf(SynologyPhotoCollection(8, "Category"))
+        override suspend fun sharedEntries(scope: SynologyPhotoShareScope, offset: Int, limit: Int): List<SynologyPhotoSharedEntry> {
+            sharingOffsets += offset; return sharedPage(offset, limit)
+        }
+        override suspend fun filterOptions(space: SynologyPhotoSpace): SynologyPhotoFilterOptions = filterReply(space)
         override suspend fun details(photo: SynologyPhoto) = details.invoke(photo)
         override suspend fun thumbnail(photo: SynologyPhoto, large: Boolean) = byteArrayOf(1, 2)
         override suspend fun videoSource(photo: SynologyPhoto) = source(photo)
@@ -58,14 +68,145 @@ class SynologyPhotosModelTest {
             progress(4, 4)
         }
         override suspend fun prepareDeletion(photo: SynologyPhoto) = Unit
-        override suspend fun deletePhoto(photo: SynologyPhoto, operationId: UUID): SynologyPhotoDeletionResult { writes++; return deletion() }
-        override suspend fun reviewDeletion(photo: SynologyPhoto): SynologyPhotoDeletionResult { reviews++; return review() }
+        override suspend fun photoEditIdentity() = 41L
+        override suspend fun performPhotoDeletion(photo: SynologyPhoto, checkpoint: SynologyPhotoDeletionCheckpoint,
+            save: (SynologyPhotoDeletionCheckpoint) -> Unit): SynologyPhotoDeletionCheckpoint {
+            val sent = checkpoint.copy(phase = SynologyPhotoDeletionPhase.SUBMITTED); save(sent); writes++
+            val phase = try { deletion() } catch (_: CancellationException) { SynologyPhotoDeletionPhase.SUBMITTED }
+            return sent.copy(phase = phase).also(save)
+        }
+        override suspend fun reviewPhotoDeletion(checkpoint: SynologyPhotoDeletionCheckpoint,
+            save: (SynologyPhotoDeletionCheckpoint) -> Unit): SynologyPhotoDeletionCheckpoint {
+            reviews++; return checkpoint.copy(phase = review()).also(save)
+        }
     }
     private class Source : RandomAccessMediaSource {
         var closed = false
         override val size = 4L
         override fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int) = -1
         override fun close() { closed = true }
+    }
+    @Test fun `收集标题搜索保持请求列表无匹配时继续后续页清除不重读`() = runTest {
+        val fixture = Fixture().apply { sharedPage = { offset, limit ->
+            (offset until minOf(offset + limit, 5)).map { SynologyPhotoSharedEntry("synthetic-$it", if (it == 4) "Target" else "Other $it") }
+        } }
+        SynologyPhotosModel(fixture, this, pageSize = 2).use { model ->
+            model.activate(); advanceUntilIdle(); model.selectSection(SynologyPhotosSection.SHARING); advanceUntilIdle()
+            model.selectShareScope(SynologyPhotoShareScope.REQUESTS); advanceUntilIdle(); fixture.sharingOffsets.clear(); fixture.pageCalls.clear()
+            model.search("target"); advanceUntilIdle()
+            assertTrue(model.state.value.navigation.isRequests); assertEquals(listOf("Target"), model.state.value.visibleSharing.map { it.title })
+            assertEquals(listOf(2, 4), fixture.sharingOffsets); assertTrue(fixture.pageCalls.isEmpty())
+            model.search("missing"); advanceUntilIdle(); assertTrue(model.state.value.empty)
+            model.search(""); advanceUntilIdle(); assertEquals(5, model.state.value.visibleSharing.size); assertEquals(2, fixture.sharingOffsets.size)
+        }
+    }
+    @Test fun `收集搜索后续页错误保留已读结果与重试位置`() = runTest {
+        val fixture = Fixture().apply { sharedPage = { offset, _ ->
+            if (offset > 0) throw IOException("Synthetic page")
+            listOf(SynologyPhotoSharedEntry("one", "Other one"), SynologyPhotoSharedEntry("two", "Other two"))
+        } }
+        SynologyPhotosModel(fixture, this, pageSize = 2).use { model ->
+            model.activate(); advanceUntilIdle(); model.selectSection(SynologyPhotosSection.SHARING); advanceUntilIdle()
+            model.selectShareScope(SynologyPhotoShareScope.REQUESTS); advanceUntilIdle(); model.search("Target"); advanceUntilIdle()
+            assertNotNull(model.state.value.error); assertEquals(2, model.state.value.sharing.size)
+            fixture.sharedPage = { _, _ -> listOf(SynologyPhotoSharedEntry("three", "Target")) }
+            model.loadMore(); advanceUntilIdle(); assertNull(model.state.value.error)
+            assertEquals(2, fixture.sharingOffsets.last()); assertEquals("Target", model.state.value.visibleSharing.single().title)
+        }
+    }
+
+    @Test fun `来源切换后相同目录编号不接受旧来源的点击快照`() = runTest {
+        val fixture = Fixture().apply { spaces = SynologyPhotoSpace.entries }
+        SynologyPhotosModel(fixture, this).use { model ->
+            model.activate(); advanceUntilIdle()
+            model.selectSection(SynologyPhotosSection.FOLDERS); advanceUntilIdle()
+            val old = model.state.value.collections.single()
+            model.selectSpace(SynologyPhotoSpace.SHARED); advanceUntilIdle()
+            assertEquals(old.id, model.state.value.collections.single().id)
+            assertNotEquals(old.space, model.state.value.collections.single().space)
+            val before = fixture.pageCalls.size
+            model.openCollection(old); advanceUntilIdle()
+            assertEquals(before, fixture.pageCalls.size)
+            assertEquals(5L, model.state.value.navigation.folders.single().id)
+            model.openCollection(model.state.value.collections.single()); advanceUntilIdle()
+            assertEquals(SynologyPhotoQuery.Folder(6), fixture.pageCalls.last().first)
+            assertEquals(SynologyPhotoSpace.SHARED, fixture.sourceCalls.last())
+        }
+    }
+
+    @Test fun `共享单来源可直接读取切换双来源后分页搜索均保留来源`() = runTest {
+        val fixture = Fixture().apply { spaces = listOf(SynologyPhotoSpace.SHARED) }
+        SynologyPhotosModel(fixture, this, pageSize = 2).use { model ->
+            model.activate(); advanceUntilIdle()
+            assertEquals(SynologyPhotoSpace.SHARED, model.state.value.navigation.space)
+            assertTrue(model.state.value.items.all { it.id.space == SynologyPhotoSpace.SHARED })
+            model.search("shared"); advanceUntilIdle(); model.loadMore()?.join()
+            assertTrue(fixture.sourceCalls.all { it == SynologyPhotoSpace.SHARED })
+            fixture.spaces = SynologyPhotoSpace.entries
+            model.refresh()?.join()
+            model.selectSpace(SynologyPhotoSpace.PERSONAL); advanceUntilIdle()
+            assertTrue(model.state.value.items.all { it.id.space == SynologyPhotoSpace.PERSONAL })
+            assertEquals("", model.state.value.navigation.keyword)
+            assertEquals(SynologyPhotoSpace.PERSONAL, fixture.sourceCalls.last())
+            fixture.spaces = listOf(SynologyPhotoSpace.SHARED)
+            model.refresh()?.join()
+            assertEquals(SynologyPhotoSpace.SHARED, model.state.value.navigation.space)
+        }
+    }
+
+    @Test fun `切换来源取消筛选候选并拒绝旧来源迟到结果`() = runTest {
+        val fixture = Fixture().apply { spaces = SynologyPhotoSpace.entries }
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        fixture.filterReply = { space ->
+            if (space == SynologyPhotoSpace.PERSONAL) withContext(NonCancellable) {
+                entered.complete(Unit); release.await(); SynologyPhotoFilterOptions(people = listOf(SynologyPhotoChoice(1, "old")))
+            } else SynologyPhotoFilterOptions(people = listOf(SynologyPhotoChoice(2, "shared")))
+        }
+        SynologyPhotosModel(fixture, this).use { model ->
+            model.activate(); advanceUntilIdle()
+            model.loadFilterOptions(); entered.await()
+            model.selectSpace(SynologyPhotoSpace.SHARED); runCurrent()
+            model.loadFilterOptions()?.join()
+            release.complete(Unit); advanceUntilIdle()
+            assertEquals(listOf(2L), model.state.value.options.people.map { it.id })
+            assertFalse(model.state.value.optionsLoading)
+        }
+    }
+
+    @Test fun `仅相册授权仍可打开分享相册而不能进入时间线和搜索`() = runTest {
+        val fixture = Fixture().apply { spaces = emptyList() }
+        SynologyPhotosModel(fixture, this, pageSize = 2).use { model ->
+            model.activate(); advanceUntilIdle()
+            model.selectSection(SynologyPhotosSection.TIMELINE); model.search("unavailable"); advanceUntilIdle()
+            assertTrue(fixture.pageCalls.isEmpty())
+            model.openCollection(model.state.value.collections.single()); advanceUntilIdle()
+            assertNull(model.state.value.error)
+            assertTrue(model.state.value.items.all { it.albumContext?.albumId == 7L })
+            model.selectSection(SynologyPhotosSection.SHARING); advanceUntilIdle()
+            model.openSharedAlbum(model.state.value.sharing.single()); advanceUntilIdle()
+            assertNull(model.state.value.error)
+            assertEquals(SynologyPhotoQuery.Album(7), fixture.pageCalls.last().first)
+        }
+    }
+
+    @Test fun `撤销授权清除图库并保留已提交删除供恢复后回查`() = runTest {
+        val fixture = Fixture().apply { canDeleteOriginals = true }
+        val owner = WorkspaceOwner(fixture.profileId, "identity", "session")
+        val store = SynologyPhotoDeletionStore(MemoryPreferences())
+        SynologyPhotosModel(fixture, this, uploadOwner = owner, deletionStore = store).use { model ->
+            model.activate(); advanceUntilIdle(); deletionReady(model.deletion)
+            val target = model.state.value.items.first()
+            model.deletion.prepare(target)!!.join(); model.deletion.confirm()!!.join()
+            assertTrue(model.deletion.state.value.pending!!.entries.single().target.matches(target))
+            model.revokeAccess(); advanceUntilIdle()
+            assertTrue(model.state.value.items.isEmpty()); assertTrue(model.state.value.groups.isEmpty())
+            assertEquals(SynologyPhotoDeletionPhase.SUBMITTED, store.records(owner, 41).single().entries.single().phase)
+            assertTrue(model.deletion.state.value.records.isEmpty())
+            model.activate(); runCurrent(); deletionReady(model.deletion)
+            model.deletion.review(store.records(owner, 41).single().id)?.join()
+            assertEquals(1, fixture.writes); assertEquals(1, fixture.reviews)
+            assertNull(model.deletion.state.value.pending)
+        }
     }
 
     @Test fun `初始万张聚合只读取一页并按原始偏移加载下一页`() = runTest {
@@ -101,16 +242,19 @@ class SynologyPhotosModelTest {
         }
     }
 
-    @Test fun `缺少权限和空聚合不会触发文件扫描或项目查询`() = runTest {
+    @Test fun `没有原来源时显示相册且空时间线不触发项目查询`() = runTest {
         val fixture = Fixture()
         fixture.spaces = emptyList()
         SynologyPhotosModel(fixture, this).use { model ->
             model.activate(); advanceUntilIdle()
-            assertNotNull(model.state.value.error)
+            assertNull(model.state.value.error)
+            assertEquals(SynologyPhotosSection.ALBUMS, model.state.value.navigation.section)
+            assertEquals(listOf(7L), model.state.value.collections.map { it.id })
             assertTrue(fixture.pageCalls.isEmpty())
             fixture.spaces = listOf(SynologyPhotoSpace.PERSONAL)
             fixture.days = emptyList()
             model.refresh()?.join()
+            model.selectSection(SynologyPhotosSection.TIMELINE); advanceUntilIdle()
             assertTrue(model.state.value.loaded)
             assertTrue(model.state.value.empty)
             assertTrue(fixture.pageCalls.isEmpty())
@@ -247,19 +391,20 @@ class SynologyPhotosModelTest {
     @Test fun `系统保存选择器暂停页面保留已校验原件但退出账号清理`() = runTest {
         val fixture = Fixture()
         val cache = java.nio.file.Files.createTempDirectory("photos-model-test-").toFile()
-        val preview = SynologyPhotoPreviewModel(fixture, this) { listOf(photo(1)) }
+        val export = SynologyPhotoExportModel(fixture, this)
         try {
-            preview.prepareExport(photo(1), cache)?.join()
-            val file = preview.state.value.exportFile!!
+            export.open(SynologyPhotoExportRequest.Items(listOf(photo(1))))
+            export.prepare(SynologyPhotoDownloadFormat.ORIGINAL, cache)?.join()
+            val file = export.state.value.file!!
             assertTrue(file.exists())
-            preview.deactivate(preservePreparedExport = true)
-            assertEquals(file, preview.state.value.exportFile)
-            preview.deactivate()
+            export.deactivate(preservePicker = true)
+            assertEquals(file, export.state.value.file)
+            export.deactivate(false)
             advanceUntilIdle()
-            assertNull(preview.state.value.exportFile)
+            assertNull(export.state.value.file)
             withContext(Dispatchers.IO) { repeat(100) { if (!file.exists()) return@withContext; delay(2) } }
             assertFalse(file.exists())
-        } finally { preview.deactivate(); cache.deleteRecursively() }
+        } finally { export.deactivate(false); cache.deleteRecursively() }
     }
 
     @Test fun `页面离开时删除不确定状态保留且只允许核对`() = runTest {
@@ -267,19 +412,57 @@ class SynologyPhotosModelTest {
         val entered = CompletableDeferred<Unit>()
         fixture.deletion = { entered.complete(Unit); awaitCancellation() }
         var confirmed = 0
-        val deletion = SynologyPhotoDeletionModel(fixture, this) { confirmed++ }
-        deletion.prepare(photo(1))?.join()
-        deletion.confirm()
-        entered.await()
-        assertNull(deletion.confirm())
-        deletion.deactivate(); advanceUntilIdle()
-        assertEquals(photo(1), deletion.state.value.pending)
-        assertNull(deletion.prepare(photo(2)))
-        deletion.review()?.join()
-        assertEquals(1, fixture.writes)
-        assertEquals(1, fixture.reviews)
-        assertEquals(1, confirmed)
-        assertNull(deletion.state.value.pending)
+        val owner = WorkspaceOwner(fixture.profileId, "identity", "session")
+        val store = SynologyPhotoDeletionStore(MemoryPreferences())
+        SynologyPhotoDeletionModel(fixture, this, store, owner, onConfirmed = { confirmed++ }).use { deletion ->
+            deletion.activate(); deletionReady(deletion)
+            deletion.prepare(photo(1))!!.join(); deletion.confirm(); entered.await()
+            assertNull(deletion.confirm())
+            deletion.deactivate(); advanceUntilIdle()
+            val row = store.records(owner, 41).single()
+            assertTrue(row.entries.single().target.matches(photo(1)))
+            assertEquals(SynologyPhotoDeletionPhase.SUBMITTED, row.entries.single().phase)
+            assertNull(deletion.prepare(photo(2))); assertNull(deletion.review(row.id))
+            deletion.activate(); deletionReady(deletion); deletion.review(row.id)!!.join()
+            assertEquals("write count", 1, fixture.writes); assertEquals("review count", 1, fixture.reviews); assertEquals("confirmed callback count", 1, confirmed)
+            assertNull(deletion.state.value.pending)
+        }
+    }
+    @Test fun `原件删除保留历史月份并修正原照片分页偏移`() = runTest {
+        val fixture = Fixture().apply { canDeleteOriginals = true; days = listOf(
+            SynologyPhotoDay(LocalDate.of(2025, 2, 1), 3), SynologyPhotoDay(LocalDate.of(2025, 1, 1), 3)) }
+        val remaining = mutableListOf(1L, 2L, 3L)
+        fixture.page = { _, offset, limit -> SynologyPhotoPage(remaining.drop(offset).take(limit).map(::photo), offset,
+            offset + minOf(limit, remaining.size - offset), offset + limit < remaining.size) }
+        fixture.deletion = { remaining.remove(1L); SynologyPhotoDeletionPhase.CONFIRMED }
+        val owner = WorkspaceOwner(fixture.profileId, "paging", "session")
+        SynologyPhotosModel(fixture, this, pageSize = 2, uploadOwner = owner, deletionStore = SynologyPhotoDeletionStore(MemoryPreferences())).use { model ->
+            model.activate(); advanceUntilIdle(); deletionReady(model.deletion)
+            val month = YearMonth.of(2025, 1); model.jumpToMonth(month)!!.join(); deletionReady(model.deletion)
+            val reads = fixture.timelineCalls.size
+            model.deletion.prepare(model.state.value.items.first())!!.join(); model.deletion.confirm()!!.join()
+            assertEquals(month, model.state.value.selectedMonth); assertEquals(reads, fixture.timelineCalls.size)
+            assertEquals(listOf(2L), model.state.value.items.map { it.id.itemId })
+            model.loadMore()!!.join()
+            assertEquals(1, fixture.pageCalls.last().second); assertEquals(listOf(2L, 3L), model.state.value.items.map { it.id.itemId })
+            assertEquals(month, model.state.value.selectedMonth); assertEquals(reads, fixture.timelineCalls.size)
+        }
+    }
+    @Test fun `个人原件完成不删除共享同编号照片也不切换当前来源`() = runTest {
+        val fixture = Fixture().apply { canDeleteOriginals = true; spaces = SynologyPhotoSpace.entries; deletion = { SynologyPhotoDeletionPhase.CONFIRMED } }
+        val owner = WorkspaceOwner(fixture.profileId, "space", "session")
+        SynologyPhotosModel(fixture, this, pageSize = 2, uploadOwner = owner, deletionStore = SynologyPhotoDeletionStore(MemoryPreferences())).use { model ->
+            model.activate(); advanceUntilIdle(); deletionReady(model.deletion)
+            model.selectSpace(SynologyPhotoSpace.SHARED); advanceUntilIdle(); deletionReady(model.deletion)
+            val shared = model.state.value.items
+            model.deletion.prepare(photo(1))!!.join(); model.deletion.confirm()!!.join()
+            assertEquals(shared, model.state.value.items)
+            assertEquals(SynologyPhotoSpace.SHARED, model.state.value.navigation.space)
+        }
+    }
+
+    private suspend fun deletionReady(model: SynologyPhotoDeletionModel) = withContext(Dispatchers.Default) {
+        withTimeout(5_000) { while (model.state.value.checking || model.state.value.recovering) delay(2) }
     }
 
     private companion object {

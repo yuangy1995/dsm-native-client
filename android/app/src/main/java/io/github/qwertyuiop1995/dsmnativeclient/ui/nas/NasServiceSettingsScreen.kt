@@ -3,21 +3,14 @@ package io.github.qwertyuiop1995.dsmnativeclient.ui.nas
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Terminal
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -25,35 +18,33 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.qwertyuiop1995.dsmnativeclient.AppViewModel
 import io.github.qwertyuiop1995.dsmnativeclient.R
+import io.github.qwertyuiop1995.dsmnativeclient.nas.NasServiceEditorState
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceValue
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasFileServiceSettings
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
-import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProxySettings
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasSettingsSnapshot
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasTerminalSettings
 import io.github.qwertyuiop1995.dsmnativeclient.ui.ConfirmDialog
@@ -62,24 +53,39 @@ import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
 @Composable
 internal fun NasServiceSettingsScreen(
     snapshot: NasSettingsSnapshot,
-    savedDraft: NasFileServiceSettings?,
-    mutationResult: MutationResult?,
-    mutationFailure: DsmFailure?,
-    mutationInProgress: Boolean,
-    mutationRefreshCompleted: Boolean,
-    savedTerminalDraft: NasTerminalSettings?,
-    terminalMutationResult: MutationResult?,
-    terminalMutationFailure: DsmFailure?,
-    terminalMutationInProgress: Boolean,
-    terminalMutationRefreshCompleted: Boolean,
-    savedProxyDraft: NasProxySettings?,
-    proxyMutationResult: MutationResult?,
-    proxyMutationFailure: DsmFailure?,
-    proxyMutationInProgress: Boolean,
-    proxyMutationRefreshCompleted: Boolean,
     isPerformingAction: Boolean,
     model: AppViewModel,
 ) {
+    val services = model.nasServices
+    val serviceStates by services.state.collectAsState()
+    LaunchedEffect(services) { services.load() }
+    NasServiceSettingsContent(snapshot, isPerformingAction, serviceStates, services::begin, services::draft, services::save,
+        { services.refresh(it) }, { kind, discard -> services.dismiss(kind, discard) })
+}
+
+@Composable
+internal fun NasServiceSettingsContent(snapshot: NasSettingsSnapshot, isPerformingAction: Boolean,
+    serviceStates: Map<NasServiceKind, NasServiceEditorState>, onBegin: (NasServiceValue) -> Boolean,
+    onDraft: (NasServiceKind, NasServiceValue?) -> Unit, onSave: (NasServiceKind) -> Boolean,
+    onRefresh: (NasServiceKind) -> Unit, onDismiss: (NasServiceKind, Boolean) -> Unit) {
+    val filesState = serviceStates.getValue(NasServiceKind.FILES)
+    val terminalState = serviceStates.getValue(NasServiceKind.TERMINAL)
+    val proxyState = serviceStates.getValue(NasServiceKind.PROXY)
+    val savedDraft = (filesState.draft as? NasServiceValue.Files)?.settings
+    val savedTerminalDraft = (terminalState.draft as? NasServiceValue.Terminal)?.settings
+    val savedProxyDraft = (proxyState.draft as? NasServiceValue.Proxy)?.settings
+    val mutationResult = filesState.result
+    val mutationFailure = filesState.failure
+    val mutationInProgress = filesState.saving
+    val mutationRefreshCompleted = !filesState.blocked && mutationResult != null
+    val terminalMutationResult = terminalState.result
+    val terminalMutationFailure = terminalState.failure
+    val terminalMutationInProgress = terminalState.saving
+    val terminalMutationRefreshCompleted = !terminalState.blocked && terminalMutationResult != null
+    val proxyMutationResult = proxyState.result
+    val proxyMutationFailure = proxyState.failure
+    val proxyMutationInProgress = proxyState.saving
+    val proxyMutationRefreshCompleted = !proxyState.blocked && proxyMutationResult != null
     var editFiles by rememberSaveable { mutableStateOf(false) }
     var confirmFiles by rememberSaveable { mutableStateOf(false) }
     var fileSaveRequested by rememberSaveable { mutableStateOf(false) }
@@ -139,6 +145,7 @@ internal fun NasServiceSettingsScreen(
         }
     }
     LazyColumn {
+        if (serviceStates.values.any { it.busy && !it.saving }) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
         if (fileSaveRequested || mutationInProgress) {
             item {
                 FileServiceSavingCard()
@@ -149,15 +156,16 @@ internal fun NasServiceSettingsScreen(
                     val policy = fileServiceFeedbackPolicy(result)
                     FileServiceMutationFeedbackCard(
                         result = result,
+                        canDismiss = !filesState.blocked,
                         refreshCompleted = mutationRefreshCompleted,
-                        canContinueEditing = savedDraft != null &&
+                        canContinueEditing = !filesState.blocked && savedDraft != null &&
                             (!policy.mustRefreshBeforeEditing || mutationRefreshCompleted),
-                        onRefresh = { model.load(io.github.qwertyuiop1995.dsmnativeclient.domain.Module.NAS_SETTINGS) },
+                        onRefresh = { onRefresh(NasServiceKind.FILES) },
                         onContinueEditing = {
                             editFiles = savedDraft != null
-                            model.dismissFileServiceMutationResult()
+                            onDismiss(NasServiceKind.FILES, false)
                         },
-                        onDismiss = { model.dismissFileServiceMutationResult(discardDraft = true) },
+                        onDismiss = { onDismiss(NasServiceKind.FILES, true) },
                     )
                 }
             }
@@ -165,12 +173,13 @@ internal fun NasServiceSettingsScreen(
                 item {
                     FileServiceMutationFailureCard(
                         failure = failure,
-                        canContinueEditing = savedDraft != null,
+                        canDismiss = !filesState.blocked,
+                        canContinueEditing = !filesState.blocked && savedDraft != null,
                         onContinueEditing = {
                             editFiles = savedDraft != null
-                            model.dismissFileServiceMutationResult()
+                            onDismiss(NasServiceKind.FILES, false)
                         },
-                        onDismiss = { model.dismissFileServiceMutationResult(discardDraft = true) },
+                        onDismiss = { onDismiss(NasServiceKind.FILES, true) },
                     )
                 }
             }
@@ -185,17 +194,18 @@ internal fun NasServiceSettingsScreen(
                     val policy = terminalFeedbackPolicy(result)
                     TerminalMutationFeedbackCard(
                         result = result,
+                        canDismiss = !terminalState.blocked,
                         refreshCompleted = terminalMutationRefreshCompleted,
-                        canContinueEditing = savedTerminalDraft != null &&
+                        canContinueEditing = !terminalState.blocked && savedTerminalDraft != null &&
                             (!policy.mustRefreshBeforeEditing || terminalMutationRefreshCompleted),
                         onRefresh = {
-                            model.load(io.github.qwertyuiop1995.dsmnativeclient.domain.Module.NAS_SETTINGS)
+                            onRefresh(NasServiceKind.TERMINAL)
                         },
                         onContinueEditing = {
                             editTerminal = savedTerminalDraft != null
-                            model.dismissTerminalMutationResult()
+                            onDismiss(NasServiceKind.TERMINAL, false)
                         },
-                        onDismiss = { model.dismissTerminalMutationResult(discardDraft = true) },
+                        onDismiss = { onDismiss(NasServiceKind.TERMINAL, true) },
                     )
                 }
             }
@@ -203,12 +213,13 @@ internal fun NasServiceSettingsScreen(
                 item {
                     TerminalMutationFailureCard(
                         failure = failure,
-                        canContinueEditing = savedTerminalDraft != null,
+                        canDismiss = !terminalState.blocked,
+                        canContinueEditing = !terminalState.blocked && savedTerminalDraft != null,
                         onContinueEditing = {
                             editTerminal = savedTerminalDraft != null
-                            model.dismissTerminalMutationResult()
+                            onDismiss(NasServiceKind.TERMINAL, false)
                         },
-                        onDismiss = { model.dismissTerminalMutationResult(discardDraft = true) },
+                        onDismiss = { onDismiss(NasServiceKind.TERMINAL, true) },
                     )
                 }
             }
@@ -223,17 +234,18 @@ internal fun NasServiceSettingsScreen(
                     val policy = proxyFeedbackPolicy(result)
                     ProxyMutationFeedbackCard(
                         result = result,
+                        canDismiss = !proxyState.blocked,
                         refreshCompleted = proxyMutationRefreshCompleted,
-                        canContinueEditing = savedProxyDraft != null &&
+                        canContinueEditing = !proxyState.blocked && savedProxyDraft != null &&
                             (!policy.mustRefreshBeforeEditing || proxyMutationRefreshCompleted),
                         onRefresh = {
-                            model.load(io.github.qwertyuiop1995.dsmnativeclient.domain.Module.NAS_SETTINGS)
+                            onRefresh(NasServiceKind.PROXY)
                         },
                         onContinueEditing = {
                             editProxy = savedProxyDraft != null
-                            model.dismissProxyMutationResult()
+                            onDismiss(NasServiceKind.PROXY, false)
                         },
-                        onDismiss = { model.dismissProxyMutationResult(discardDraft = true) },
+                        onDismiss = { onDismiss(NasServiceKind.PROXY, true) },
                     )
                 }
             }
@@ -241,12 +253,13 @@ internal fun NasServiceSettingsScreen(
                 item {
                     ProxyMutationFailureCard(
                         failure = failure,
-                        canContinueEditing = savedProxyDraft != null,
+                        canDismiss = !proxyState.blocked,
+                        canContinueEditing = !proxyState.blocked && savedProxyDraft != null,
                         onContinueEditing = {
                             editProxy = savedProxyDraft != null
-                            model.dismissProxyMutationResult()
+                            onDismiss(NasServiceKind.PROXY, false)
                         },
-                        onDismiss = { model.dismissProxyMutationResult(discardDraft = true) },
+                        onDismiss = { onDismiss(NasServiceKind.PROXY, true) },
                     )
                 }
             }
@@ -258,10 +271,9 @@ internal fun NasServiceSettingsScreen(
                     detail = fileServiceSummary(settings),
                     icon = { Icon(Icons.Outlined.FolderShared, null) },
                     onEdit = {
-                        model.updateFileServiceSettingsDraft(settings)
-                        editFiles = true
+                        editFiles = onBegin(NasServiceValue.Files(settings))
                     },
-                    enabled = !isPerformingAction && mutationResult == null && mutationFailure == null,
+                    enabled = !isPerformingAction && !filesState.blocked && mutationResult == null && mutationFailure == null,
                 )
             }
         }
@@ -272,10 +284,9 @@ internal fun NasServiceSettingsScreen(
                     detail = terminalSummary(settings),
                     icon = { Icon(Icons.Outlined.Terminal, null) },
                     onEdit = {
-                        model.updateTerminalSettingsDraft(settings)
-                        editTerminal = true
+                        editTerminal = onBegin(NasServiceValue.Terminal(settings))
                     },
-                    enabled = !isPerformingAction && terminalMutationResult == null &&
+                    enabled = !isPerformingAction && !terminalState.blocked && terminalMutationResult == null &&
                         terminalMutationFailure == null,
                 )
             }
@@ -297,10 +308,9 @@ internal fun NasServiceSettingsScreen(
                     detail = if (settings.isEnabled) settings.host else stringResource(R.string.service_disabled),
                     icon = { Icon(Icons.Outlined.Public, null) },
                     onEdit = {
-                        model.updateProxySettingsDraft(settings)
-                        editProxy = true
+                        editProxy = onBegin(NasServiceValue.Proxy(settings))
                     },
-                    enabled = !isPerformingAction && !proxyMutationInProgress &&
+                    enabled = !isPerformingAction && !proxyState.blocked && !proxyMutationInProgress &&
                         proxyMutationResult == null && proxyMutationFailure == null,
                 )
             }
@@ -330,50 +340,50 @@ internal fun NasServiceSettingsScreen(
             }
         }
     }
-    if (editFiles) snapshot.fileServiceSettings?.let { baseline ->
+    if (editFiles) (filesState.original as? NasServiceValue.Files)?.settings?.let { baseline ->
         FileServiceDialog(
             baseline = baseline,
             restoredDraft = savedDraft,
-            onDraftChange = model::updateFileServiceSettingsDraft,
+            onDraftChange = { onDraft(NasServiceKind.FILES, NasServiceValue.Files(it)) },
             onSave = {
-                model.updateFileServiceSettingsDraft(it)
+                onDraft(NasServiceKind.FILES, NasServiceValue.Files(it))
                 confirmFiles = true
                 editFiles = false
             },
             onDismiss = {
-                model.updateFileServiceSettingsDraft(null)
+                onDraft(NasServiceKind.FILES, null)
                 editFiles = false
             },
         )
     }
-    if (editTerminal) snapshot.terminalSettings?.let { baseline ->
+    if (editTerminal) (terminalState.original as? NasServiceValue.Terminal)?.settings?.let { baseline ->
         TerminalSettingsDialog(
             baseline = baseline,
             restoredDraft = savedTerminalDraft,
-            onDraftChange = model::updateTerminalSettingsDraft,
+            onDraftChange = { onDraft(NasServiceKind.TERMINAL, NasServiceValue.Terminal(it)) },
             onSave = {
-                model.updateTerminalSettingsDraft(it)
+                onDraft(NasServiceKind.TERMINAL, NasServiceValue.Terminal(it))
                 confirmTerminal = true
                 editTerminal = false
             },
             onDismiss = {
-                model.updateTerminalSettingsDraft(null)
+                onDraft(NasServiceKind.TERMINAL, null)
                 editTerminal = false
             },
         )
     }
-    if (editProxy) snapshot.proxySettings?.let { baseline ->
+    if (editProxy) (proxyState.original as? NasServiceValue.Proxy)?.settings?.let { baseline ->
         ProxySettingsDialog(
             baseline = baseline,
             restoredDraft = savedProxyDraft,
-            onDraftChange = model::updateProxySettingsDraft,
+            onDraftChange = { onDraft(NasServiceKind.PROXY, NasServiceValue.Proxy(it)) },
             onSave = {
-                model.updateProxySettingsDraft(it)
+                onDraft(NasServiceKind.PROXY, NasServiceValue.Proxy(it))
                 confirmProxy = true
                 editProxy = false
             },
             onDismiss = {
-                model.updateProxySettingsDraft(null)
+                onDraft(NasServiceKind.PROXY, null)
                 editProxy = false
             },
         )
@@ -385,7 +395,7 @@ internal fun NasServiceSettingsScreen(
             confirm = stringResource(R.string.save),
             destructive = true,
             onConfirm = {
-                if (model.saveFileServiceSettings(value)) {
+                if (onSave(NasServiceKind.FILES)) {
                     fileSaveRequested = true
                     confirmFiles = false
                 }
@@ -403,7 +413,7 @@ internal fun NasServiceSettingsScreen(
             confirm = stringResource(R.string.save),
             destructive = true,
             onConfirm = {
-                if (model.saveTerminalSettings(value)) {
+                if (onSave(NasServiceKind.TERMINAL)) {
                     terminalSaveRequested = true
                     confirmTerminal = false
                 }
@@ -421,7 +431,7 @@ internal fun NasServiceSettingsScreen(
             confirm = stringResource(R.string.save),
             destructive = true,
             onConfirm = {
-                if (model.saveProxySettings(value)) {
+                if (onSave(NasServiceKind.PROXY)) {
                     proxySaveRequested = true
                     confirmProxy = false
                 }
@@ -430,267 +440,6 @@ internal fun NasServiceSettingsScreen(
                 confirmProxy = false
                 editProxy = true
             },
-        )
-    }
-}
-
-internal fun shouldReopenFileServiceEditor(
-    saveRequested: Boolean,
-    mutationInProgress: Boolean,
-    mutationResult: MutationResult?,
-    mutationFailure: DsmFailure?,
-): Boolean = saveRequested && !mutationInProgress && mutationResult == null && mutationFailure == null
-
-internal fun shouldReopenTerminalEditor(
-    saveRequested: Boolean,
-    mutationInProgress: Boolean,
-    mutationResult: MutationResult?,
-    mutationFailure: DsmFailure?,
-): Boolean = saveRequested && !mutationInProgress && mutationResult == null && mutationFailure == null
-
-internal fun shouldReopenProxyEditor(
-    saveRequested: Boolean,
-    mutationInProgress: Boolean,
-    mutationResult: MutationResult?,
-    mutationFailure: DsmFailure?,
-): Boolean = saveRequested && !mutationInProgress && mutationResult == null && mutationFailure == null
-
-internal data class FileServiceFeedbackPolicy(
-    @StringRes val title: Int,
-    @StringRes val message: Int,
-    val canRefresh: Boolean,
-    val mustRefreshBeforeEditing: Boolean,
-    val isAssertive: Boolean,
-)
-
-internal fun fileServiceFeedbackPolicy(result: MutationResult): FileServiceFeedbackPolicy {
-    require(result.operation == "fileServiceSettingsUpdate") { "file-services.unexpected-operation" }
-    val canRefresh = result.submitted || result.requiresRefresh ||
-        result.errorCategory == MutationErrorCategory.CONFLICT
-    return when (result.status) {
-        MutationResultStatus.CONFIRMED_SUCCESS -> FileServiceFeedbackPolicy(
-            R.string.file_service_feedback_saved_title,
-            R.string.file_service_settings_saved,
-            canRefresh = false,
-            mustRefreshBeforeEditing = false,
-            isAssertive = false,
-        )
-        MutationResultStatus.PARTIAL_SUCCESS -> FileServiceFeedbackPolicy(
-            R.string.file_service_feedback_partial_title,
-            R.string.file_service_feedback_partial_message,
-            canRefresh = true,
-            mustRefreshBeforeEditing = true,
-            isAssertive = true,
-        )
-        MutationResultStatus.SUBMITTED_BUT_UNVERIFIED -> FileServiceFeedbackPolicy(
-            R.string.file_service_feedback_check_title,
-            R.string.file_service_feedback_unverified_message,
-            canRefresh = true,
-            mustRefreshBeforeEditing = true,
-            isAssertive = true,
-        )
-        MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION -> FileServiceFeedbackPolicy(
-            R.string.file_service_feedback_check_title,
-            R.string.file_service_cancel_after_submission,
-            canRefresh = true,
-            mustRefreshBeforeEditing = true,
-            isAssertive = true,
-        )
-        MutationResultStatus.PERMISSION_DENIED -> FileServiceFeedbackPolicy(
-            R.string.file_service_feedback_permission_title,
-            R.string.file_service_feedback_permission_message,
-            canRefresh = canRefresh,
-            mustRefreshBeforeEditing = canRefresh,
-            isAssertive = true,
-        )
-        MutationResultStatus.UNSUPPORTED -> FileServiceFeedbackPolicy(
-            R.string.file_service_feedback_unavailable_title,
-            R.string.file_service_feedback_unsupported_message,
-            canRefresh = canRefresh,
-            mustRefreshBeforeEditing = canRefresh,
-            isAssertive = true,
-        )
-        MutationResultStatus.CANCELLED_BEFORE_SUBMISSION -> FileServiceFeedbackPolicy(
-            R.string.file_service_feedback_cancelled_title,
-            R.string.file_service_feedback_cancelled_message,
-            canRefresh = false,
-            mustRefreshBeforeEditing = false,
-            isAssertive = false,
-        )
-        MutationResultStatus.CONFIRMED_FAILURE -> FileServiceFeedbackPolicy(
-            if (result.errorCategory == MutationErrorCategory.CONFLICT) {
-                R.string.file_service_feedback_conflict_title
-            } else {
-                R.string.file_service_feedback_failed_title
-            },
-            if (result.errorCategory == MutationErrorCategory.CONFLICT) {
-                R.string.file_service_feedback_conflict_message
-            } else {
-                R.string.file_service_feedback_failed_message
-            },
-            canRefresh = canRefresh,
-            mustRefreshBeforeEditing = canRefresh,
-            isAssertive = true,
-        )
-    }
-}
-
-internal data class TerminalFeedbackPolicy(
-    @StringRes val title: Int,
-    @StringRes val message: Int,
-    val canRefresh: Boolean,
-    val mustRefreshBeforeEditing: Boolean,
-    val isAssertive: Boolean,
-)
-
-internal fun terminalFeedbackPolicy(result: MutationResult): TerminalFeedbackPolicy {
-    require(result.operation == "terminalSettingsUpdate") { "terminal.unexpected-operation" }
-    val canRefresh = result.submitted || result.requiresRefresh ||
-        result.errorCategory == MutationErrorCategory.CONFLICT
-    return when (result.status) {
-        MutationResultStatus.CONFIRMED_SUCCESS -> TerminalFeedbackPolicy(
-            R.string.file_service_feedback_saved_title,
-            R.string.terminal_settings_saved,
-            canRefresh = false,
-            mustRefreshBeforeEditing = false,
-            isAssertive = false,
-        )
-        MutationResultStatus.PARTIAL_SUCCESS -> TerminalFeedbackPolicy(
-            R.string.file_service_feedback_partial_title,
-            R.string.terminal_feedback_partial_message,
-            canRefresh = true,
-            mustRefreshBeforeEditing = true,
-            isAssertive = true,
-        )
-        MutationResultStatus.SUBMITTED_BUT_UNVERIFIED -> TerminalFeedbackPolicy(
-            R.string.file_service_feedback_check_title,
-            R.string.terminal_feedback_unverified_message,
-            canRefresh = true,
-            mustRefreshBeforeEditing = true,
-            isAssertive = true,
-        )
-        MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION -> TerminalFeedbackPolicy(
-            R.string.file_service_feedback_check_title,
-            R.string.terminal_cancel_after_submission,
-            canRefresh = true,
-            mustRefreshBeforeEditing = true,
-            isAssertive = true,
-        )
-        MutationResultStatus.PERMISSION_DENIED -> TerminalFeedbackPolicy(
-            R.string.file_service_feedback_permission_title,
-            R.string.terminal_feedback_permission_message,
-            canRefresh = canRefresh,
-            mustRefreshBeforeEditing = canRefresh,
-            isAssertive = true,
-        )
-        MutationResultStatus.UNSUPPORTED -> TerminalFeedbackPolicy(
-            R.string.file_service_feedback_unavailable_title,
-            R.string.terminal_feedback_unsupported_message,
-            canRefresh = canRefresh,
-            mustRefreshBeforeEditing = canRefresh,
-            isAssertive = true,
-        )
-        MutationResultStatus.CANCELLED_BEFORE_SUBMISSION -> TerminalFeedbackPolicy(
-            R.string.file_service_feedback_cancelled_title,
-            R.string.terminal_feedback_cancelled_message,
-            canRefresh = false,
-            mustRefreshBeforeEditing = false,
-            isAssertive = false,
-        )
-        MutationResultStatus.CONFIRMED_FAILURE -> TerminalFeedbackPolicy(
-            if (result.errorCategory == MutationErrorCategory.CONFLICT) {
-                R.string.file_service_feedback_conflict_title
-            } else {
-                R.string.file_service_feedback_failed_title
-            },
-            if (result.errorCategory == MutationErrorCategory.CONFLICT) {
-                R.string.terminal_feedback_conflict_message
-            } else {
-                R.string.terminal_feedback_failed_message
-            },
-            canRefresh = canRefresh,
-            mustRefreshBeforeEditing = canRefresh,
-            isAssertive = true,
-        )
-    }
-}
-
-internal data class ProxyFeedbackPolicy(
-    @StringRes val title: Int,
-    @StringRes val message: Int,
-    val canRefresh: Boolean,
-    val mustRefreshBeforeEditing: Boolean,
-    val isAssertive: Boolean,
-)
-
-internal fun proxyFeedbackPolicy(result: MutationResult): ProxyFeedbackPolicy {
-    require(result.operation == "proxySettingsUpdate") { "proxy.unexpected-operation" }
-    val canRefresh = result.submitted || result.requiresRefresh ||
-        result.errorCategory == MutationErrorCategory.CONFLICT
-    return when (result.status) {
-        MutationResultStatus.CONFIRMED_SUCCESS -> ProxyFeedbackPolicy(
-            R.string.file_service_feedback_saved_title,
-            R.string.proxy_settings_saved,
-            canRefresh = false,
-            mustRefreshBeforeEditing = false,
-            isAssertive = false,
-        )
-        MutationResultStatus.PARTIAL_SUCCESS -> ProxyFeedbackPolicy(
-            R.string.file_service_feedback_partial_title,
-            R.string.proxy_feedback_partial_message,
-            canRefresh = true,
-            mustRefreshBeforeEditing = true,
-            isAssertive = true,
-        )
-        MutationResultStatus.SUBMITTED_BUT_UNVERIFIED -> ProxyFeedbackPolicy(
-            R.string.file_service_feedback_check_title,
-            R.string.proxy_feedback_unverified_message,
-            canRefresh = true,
-            mustRefreshBeforeEditing = true,
-            isAssertive = true,
-        )
-        MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION -> ProxyFeedbackPolicy(
-            R.string.file_service_feedback_check_title,
-            R.string.proxy_cancel_after_submission,
-            canRefresh = true,
-            mustRefreshBeforeEditing = true,
-            isAssertive = true,
-        )
-        MutationResultStatus.PERMISSION_DENIED -> ProxyFeedbackPolicy(
-            R.string.file_service_feedback_permission_title,
-            R.string.proxy_feedback_permission_message,
-            canRefresh = canRefresh,
-            mustRefreshBeforeEditing = canRefresh,
-            isAssertive = true,
-        )
-        MutationResultStatus.UNSUPPORTED -> ProxyFeedbackPolicy(
-            R.string.file_service_feedback_unavailable_title,
-            R.string.proxy_feedback_unsupported_message,
-            canRefresh = canRefresh,
-            mustRefreshBeforeEditing = canRefresh,
-            isAssertive = true,
-        )
-        MutationResultStatus.CANCELLED_BEFORE_SUBMISSION -> ProxyFeedbackPolicy(
-            R.string.file_service_feedback_cancelled_title,
-            R.string.proxy_feedback_cancelled_message,
-            canRefresh = false,
-            mustRefreshBeforeEditing = false,
-            isAssertive = false,
-        )
-        MutationResultStatus.CONFIRMED_FAILURE -> ProxyFeedbackPolicy(
-            if (result.errorCategory == MutationErrorCategory.CONFLICT) {
-                R.string.file_service_feedback_conflict_title
-            } else {
-                R.string.file_service_feedback_failed_title
-            },
-            if (result.errorCategory == MutationErrorCategory.CONFLICT) {
-                R.string.proxy_feedback_conflict_message
-            } else {
-                R.string.proxy_feedback_failed_message
-            },
-            canRefresh = canRefresh,
-            mustRefreshBeforeEditing = canRefresh,
-            isAssertive = true,
         )
     }
 }
@@ -739,6 +488,7 @@ private fun SettingsSavingCard(@StringRes title: Int, @StringRes message: Int) {
 @Composable
 internal fun FileServiceMutationFeedbackCard(
     result: MutationResult,
+    canDismiss: Boolean = true,
     refreshCompleted: Boolean,
     canContinueEditing: Boolean,
     onRefresh: () -> Unit,
@@ -748,6 +498,7 @@ internal fun FileServiceMutationFeedbackCard(
     val policy = fileServiceFeedbackPolicy(result)
     SettingsMutationFeedbackCard(
         result = result,
+        canDismiss = canDismiss,
         title = policy.title,
         message = policy.message,
         canRefresh = policy.canRefresh,
@@ -768,6 +519,7 @@ internal fun FileServiceMutationFeedbackCard(
 @Composable
 internal fun TerminalMutationFeedbackCard(
     result: MutationResult,
+    canDismiss: Boolean = true,
     refreshCompleted: Boolean,
     canContinueEditing: Boolean,
     onRefresh: () -> Unit,
@@ -777,6 +529,7 @@ internal fun TerminalMutationFeedbackCard(
     val policy = terminalFeedbackPolicy(result)
     SettingsMutationFeedbackCard(
         result = result,
+        canDismiss = canDismiss,
         title = policy.title,
         message = policy.message,
         canRefresh = policy.canRefresh,
@@ -797,6 +550,7 @@ internal fun TerminalMutationFeedbackCard(
 @Composable
 internal fun ProxyMutationFeedbackCard(
     result: MutationResult,
+    canDismiss: Boolean = true,
     refreshCompleted: Boolean,
     canContinueEditing: Boolean,
     onRefresh: () -> Unit,
@@ -806,6 +560,7 @@ internal fun ProxyMutationFeedbackCard(
     val policy = proxyFeedbackPolicy(result)
     SettingsMutationFeedbackCard(
         result = result,
+        canDismiss = canDismiss,
         title = policy.title,
         message = policy.message,
         canRefresh = policy.canRefresh,
@@ -826,6 +581,7 @@ internal fun ProxyMutationFeedbackCard(
 @Composable
 private fun SettingsMutationFeedbackCard(
     result: MutationResult,
+    canDismiss: Boolean = true,
     @StringRes title: Int,
     @StringRes message: Int,
     canRefresh: Boolean,
@@ -895,7 +651,7 @@ private fun SettingsMutationFeedbackCard(
                     Text(stringResource(R.string.continue_editing))
                 }
             }
-            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+            if (canDismiss) TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                 Text(
                     stringResource(
                         if (success) R.string.done else discardAction,
@@ -909,12 +665,14 @@ private fun SettingsMutationFeedbackCard(
 @Composable
 internal fun FileServiceMutationFailureCard(
     failure: DsmFailure,
+    canDismiss: Boolean = true,
     canContinueEditing: Boolean,
     onContinueEditing: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     SettingsMutationFailureCard(
         failure = failure,
+        canDismiss = canDismiss,
         title = R.string.file_service_feedback_failed_title,
         discardAction = R.string.discard_file_service_draft,
         canContinueEditing = canContinueEditing,
@@ -926,12 +684,14 @@ internal fun FileServiceMutationFailureCard(
 @Composable
 internal fun TerminalMutationFailureCard(
     failure: DsmFailure,
+    canDismiss: Boolean = true,
     canContinueEditing: Boolean,
     onContinueEditing: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     SettingsMutationFailureCard(
         failure = failure,
+        canDismiss = canDismiss,
         title = R.string.file_service_feedback_failed_title,
         discardAction = R.string.discard_terminal_draft,
         canContinueEditing = canContinueEditing,
@@ -943,12 +703,14 @@ internal fun TerminalMutationFailureCard(
 @Composable
 internal fun ProxyMutationFailureCard(
     failure: DsmFailure,
+    canDismiss: Boolean = true,
     canContinueEditing: Boolean,
     onContinueEditing: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     SettingsMutationFailureCard(
         failure = failure,
+        canDismiss = canDismiss,
         title = R.string.file_service_feedback_failed_title,
         discardAction = R.string.discard_proxy_draft,
         canContinueEditing = canContinueEditing,
@@ -960,6 +722,7 @@ internal fun ProxyMutationFailureCard(
 @Composable
 private fun SettingsMutationFailureCard(
     failure: DsmFailure,
+    canDismiss: Boolean = true,
     @StringRes title: Int,
     @StringRes discardAction: Int,
     canContinueEditing: Boolean,
@@ -988,7 +751,7 @@ private fun SettingsMutationFailureCard(
                     Text(stringResource(R.string.continue_editing))
                 }
             }
-            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+            if (canDismiss) TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                 Text(stringResource(discardAction))
             }
         }
@@ -1008,7 +771,8 @@ private fun SettingsSummaryRow(
         supportingContent = { Text(detail) },
         leadingContent = icon,
         trailingContent = {
-            TextButton(onClick = onEdit, enabled = enabled) {
+            val editDescription = stringResource(R.string.nas_edit_settings_accessibility, title)
+            TextButton(onClick = onEdit, enabled = enabled, modifier = Modifier.semantics { contentDescription = editDescription }) {
                 Icon(Icons.Outlined.Edit, null)
                 Text(stringResource(R.string.edit))
             }
@@ -1048,250 +812,3 @@ private fun terminalSummary(value: NasTerminalSettings): String = listOfNotNull(
     stringResource(R.string.ssh_short_name).takeIf { value.isSshEnabled },
     stringResource(R.string.telnet_short_name).takeIf { value.isTelnetEnabled },
 ).joinToString(" · ").ifBlank { stringResource(R.string.service_disabled) }
-
-@Composable
-private fun FileServiceDialog(
-    baseline: NasFileServiceSettings,
-    restoredDraft: NasFileServiceSettings?,
-    onDraftChange: (NasFileServiceSettings) -> Unit,
-    onSave: (NasFileServiceSettings) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var draft by remember(baseline, restoredDraft) { mutableStateOf(restoredDraft ?: baseline) }
-    LaunchedEffect(draft) { onDraftChange(draft) }
-    val validation = fileServiceValidation(draft)
-    SettingsDialog(
-        title = stringResource(R.string.file_services),
-        valid = validation == null,
-        changed = draft != baseline,
-        onSave = { onSave(draft) },
-        onDismiss = onDismiss,
-    ) {
-        NullableSettingsSwitch(R.string.smb_service, draft.isSmbEnabled) {
-            draft = draft.copy(isSmbEnabled = it)
-        }
-        NullableSettingsSwitch(R.string.nfs_service, draft.isNfsEnabled) {
-            draft = draft.copy(isNfsEnabled = it)
-        }
-        NullableSettingsSwitch(R.string.ftp_service, draft.isFtpEnabled) {
-            draft = draft.copy(isFtpEnabled = it)
-        }
-        NullableSettingsSwitch(R.string.ftps_service, draft.isFtpsEnabled) {
-            draft = draft.copy(isFtpsEnabled = it)
-        }
-        draft.ftpPort?.let { port ->
-            PortField(port, R.string.ftp_port, validation == ServiceValidation.FTP_PORT) {
-                draft = draft.copy(ftpPort = it)
-            }
-        }
-        NullableSettingsSwitch(R.string.sftp_service, draft.isSftpEnabled) {
-            draft = draft.copy(isSftpEnabled = it)
-        }
-        draft.sftpPort?.let { port ->
-            PortField(port, R.string.sftp_port, validation == ServiceValidation.SFTP_PORT) {
-                draft = draft.copy(sftpPort = it)
-            }
-        }
-        NullableSettingsSwitch(R.string.ssdp_discovery, draft.isSsdpEnabled) {
-            draft = draft.copy(isSsdpEnabled = it)
-        }
-        NullableSettingsSwitch(R.string.bonjour_discovery, draft.isBonjourEnabled) {
-            draft = draft.copy(isBonjourEnabled = it)
-        }
-        NullableSettingsSwitch(R.string.smb_time_machine, draft.isSmbTimeMachineEnabled) {
-            draft = draft.copy(isSmbTimeMachineEnabled = it)
-        }
-        validation?.let {
-            Text(
-                stringResource(
-                    if (it == ServiceValidation.PORT_CONFLICT) R.string.file_service_port_conflict
-                    else if (it == ServiceValidation.TIME_MACHINE) R.string.time_machine_requires_smb
-                    else R.string.invalid_port,
-                ),
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        Text(
-            stringResource(R.string.file_services_impact_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-internal fun TerminalSettingsDialog(
-    baseline: NasTerminalSettings,
-    restoredDraft: NasTerminalSettings?,
-    onDraftChange: (NasTerminalSettings) -> Unit,
-    onSave: (NasTerminalSettings) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var draft by remember(baseline, restoredDraft) { mutableStateOf(restoredDraft ?: baseline) }
-    LaunchedEffect(draft) { onDraftChange(draft) }
-    val invalidPort = draft.sshPort?.let { it !in 1..65_535 } == true
-    SettingsDialog(
-        title = stringResource(R.string.remote_terminal),
-        valid = !invalidPort,
-        changed = draft != baseline,
-        onSave = { onSave(draft) },
-        onDismiss = onDismiss,
-    ) {
-        SettingsSwitch(R.string.ssh_service, draft.isSshEnabled) {
-            draft = draft.copy(isSshEnabled = it)
-        }
-        SettingsSwitch(R.string.telnet_service, draft.isTelnetEnabled) {
-            draft = draft.copy(isTelnetEnabled = it)
-        }
-        draft.sshPort?.let { port ->
-            PortField(port, R.string.ssh_port, invalidPort) { draft = draft.copy(sshPort = it) }
-        }
-        Text(
-            stringResource(R.string.terminal_security_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-internal fun ProxySettingsDialog(
-    baseline: NasProxySettings,
-    restoredDraft: NasProxySettings?,
-    onDraftChange: (NasProxySettings) -> Unit,
-    onSave: (NasProxySettings) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val initial = restoredDraft ?: baseline
-    var enabled by rememberSaveable(baseline, restoredDraft) { mutableStateOf(initial.isEnabled) }
-    var host by rememberSaveable(baseline, restoredDraft) { mutableStateOf(initial.host) }
-    var portText by rememberSaveable(baseline, restoredDraft) {
-        mutableStateOf(initial.port?.toString().orEmpty())
-    }
-    val port = portText.toIntOrNull()
-    val hostInvalid = enabled && !isValidProxyHost(host.trim())
-    val portInvalid = enabled && (port == null || port !in 1..65_535)
-    val draft = NasProxySettings(enabled, host.trim(), port)
-    val changed = enabled != baseline.isEnabled || enabled &&
-        (draft.host != baseline.host.trim() || draft.port != baseline.port)
-    LaunchedEffect(draft) { onDraftChange(draft) }
-    SettingsDialog(
-        title = stringResource(R.string.internet_proxy),
-        valid = !hostInvalid && !portInvalid,
-        changed = changed,
-        onSave = { onSave(draft) },
-        onDismiss = onDismiss,
-    ) {
-        SettingsSwitch(R.string.use_internet_proxy, enabled) { enabled = it }
-        if (enabled) {
-            OutlinedTextField(
-                value = host,
-                onValueChange = { host = it },
-                label = { Text(stringResource(R.string.proxy_host)) },
-                isError = hostInvalid,
-                supportingText = if (hostInvalid) {
-                    { Text(stringResource(R.string.invalid_proxy_host)) }
-                } else null,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = portText,
-                onValueChange = { portText = it.filter(Char::isDigit).take(5) },
-                label = { Text(stringResource(R.string.proxy_port)) },
-                isError = portInvalid,
-                supportingText = if (portInvalid) { { Text(stringResource(R.string.invalid_port)) } } else null,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        Text(
-            stringResource(R.string.proxy_impact_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun SettingsDialog(
-    title: String,
-    valid: Boolean,
-    changed: Boolean,
-    onSave: () -> Unit,
-    onDismiss: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(
-                modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) { content() }
-        },
-        confirmButton = {
-            TextButton(enabled = valid && changed, onClick = onSave) { Text(stringResource(R.string.continue_action)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-    )
-}
-
-@Composable
-private fun NullableSettingsSwitch(label: Int, value: Boolean?, onChange: (Boolean) -> Unit) {
-    value?.let { SettingsSwitch(label, it, onChange) }
-}
-
-@Composable
-private fun SettingsSwitch(label: Int, value: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .toggleable(value = value, role = Role.Switch, onValueChange = onChange)
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(stringResource(label), modifier = Modifier.weight(1f))
-        Switch(checked = value, onCheckedChange = null)
-    }
-}
-
-@Composable
-private fun PortField(value: Int, label: Int, isError: Boolean, onChange: (Int) -> Unit) {
-    var text by remember(value) { mutableStateOf(value.toString()) }
-    OutlinedTextField(
-        value = text,
-        onValueChange = {
-            text = it.filter(Char::isDigit).take(5)
-            onChange(text.toIntOrNull() ?: 0)
-        },
-        label = { Text(stringResource(label)) },
-        isError = isError,
-        supportingText = if (isError) { { Text(stringResource(R.string.invalid_port)) } } else null,
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-private enum class ServiceValidation { FTP_PORT, SFTP_PORT, PORT_CONFLICT, TIME_MACHINE }
-
-private fun fileServiceValidation(value: NasFileServiceSettings): ServiceValidation? = when {
-    value.ftpPort?.let { it !in 1..65_535 } == true -> ServiceValidation.FTP_PORT
-    value.sftpPort?.let { it !in 1..65_535 } == true -> ServiceValidation.SFTP_PORT
-    value.isSmbTimeMachineEnabled == true && value.isSmbEnabled == false -> ServiceValidation.TIME_MACHINE
-    (value.isFtpEnabled == true || value.isFtpsEnabled == true) && value.isSftpEnabled == true &&
-        value.ftpPort != null && value.ftpPort == value.sftpPort -> ServiceValidation.PORT_CONFLICT
-    else -> null
-}
-
-private fun isValidProxyHost(value: String): Boolean =
-    value.isNotBlank() && value.length <= 255 && "://" !in value &&
-        value.none { it.isWhitespace() || it in "/?#@" }

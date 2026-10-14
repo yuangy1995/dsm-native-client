@@ -1,9 +1,10 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
+import io.github.qwertyuiop1995.dsmnativeclient.domain.*
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasAccount
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasGroup
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
@@ -13,6 +14,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import okhttp3.FormBody
 import okhttp3.Interceptor
@@ -21,9 +24,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
-import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
-import okio.BufferedSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -34,9 +35,10 @@ class DirectoryDeletionMutationTest {
     fun `账号删除使用名称数组并在目录消失后确认成功`() = runBlocking {
         val transport = DirectoryInterceptor(userList(), SUCCESS, emptyUsers())
 
-        val result = repository(transport).deleteAccountResult(account())
+        val result = repository(transport).deleteAccount(account())
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertTrue(result.complete)
+        assertEquals(NasDirectoryStage.COMPLETED, result.stages.last())
         assertEquals(listOf("list", "delete", "list"), transport.methods())
         RequestFixtureAssertions.assertRequest(
             transport.requests[1],
@@ -51,9 +53,10 @@ class DirectoryDeletionMutationTest {
     fun `群组删除使用专用 API 与名称数组`() = runBlocking {
         val transport = DirectoryInterceptor(groupList(), SUCCESS, emptyGroups())
 
-        val result = repository(transport).deleteGroupResult(group())
+        val result = repository(transport).deleteGroup(group())
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertTrue(result.complete)
+        assertEquals(NasDirectoryStage.COMPLETED, result.stages.last())
         RequestFixtureAssertions.assertRequest(
             transport.requests[1],
             "groups/delete/synthetic-group/request.json",
@@ -63,33 +66,27 @@ class DirectoryDeletionMutationTest {
     }
 
     @Test
-    fun `当前登录账号与系统保留目标在访问网络前被拒绝`() = runBlocking {
-        val accountTransport = DirectoryInterceptor()
-        val groupTransport = DirectoryInterceptor()
-
-        val account = repository(accountTransport).deleteAccountResult(
-            NasAccount(null, "operator", null, null, false),
-        )
-        val group = repository(groupTransport).deleteGroupResult(
-            NasGroup(null, "administrators", null),
-        )
-
-        assertEquals(MutationResultStatus.PERMISSION_DENIED, account.status)
-        assertEquals(MutationResultStatus.PERMISSION_DENIED, group.status)
-        assertFalse(account.submitted)
-        assertFalse(group.submitted)
-        assertTrue(accountTransport.requests.isEmpty())
-        assertTrue(groupTransport.requests.isEmpty())
+    fun `当前登录账号与系统保留目标读取完整目录后仍禁止删除`() = runBlocking {
+        val accountTransport = DirectoryInterceptor(userList().replace(ACCOUNT, "operator"))
+        val groupTransport = DirectoryInterceptor(groupList().replace(GROUP, "administrators"))
+        val account = repository(accountTransport).deleteAccount(account().copy(name = "operator"))
+        val group = repository(groupTransport).deleteGroup(group().copy(name = "administrators"))
+        for (probe in listOf(account, group)) {
+            assertEquals(NasDirectoryProblem.PERMISSION, (probe.failure as NasDirectoryFailure).problem)
+            assertTrue(probe.stages.isEmpty())
+        }
+        assertEquals(listOf("list"), accountTransport.methods())
+        assertEquals(listOf("list"), groupTransport.methods())
     }
 
     @Test
     fun `目录未明确允许删除时不发送写请求`() = runBlocking {
         val transport = DirectoryInterceptor(userList(canDelete = false))
 
-        val result = repository(transport).deleteAccountResult(account(canDelete = false))
+        val result = repository(transport).deleteAccount(account(canDelete = false))
 
-        assertEquals(MutationResultStatus.PERMISSION_DENIED, result.status)
-        assertEquals(MutationErrorCategory.PERMISSION, result.errorCategory)
+        assertEquals(NasDirectoryProblem.PERMISSION, (result.failure as NasDirectoryFailure).problem)
+        assertTrue(result.stages.isEmpty())
         assertEquals(listOf("list"), transport.methods())
     }
 
@@ -97,11 +94,10 @@ class DirectoryDeletionMutationTest {
     fun `账号完整基线变化时严格冲突且零写入`() = runBlocking {
         val transport = DirectoryInterceptor(userList(description = "changed"))
 
-        val result = repository(transport).deleteAccountResult(account())
+        val result = repository(transport).deleteAccount(account())
 
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertEquals(MutationErrorCategory.CONFLICT, result.errorCategory)
-        assertFalse(result.submitted)
+        assertEquals(NasDirectoryProblem.CHANGED, (result.failure as NasDirectoryFailure).problem)
+        assertTrue(result.stages.isEmpty())
         assertEquals(listOf("list"), transport.methods())
     }
 
@@ -109,10 +105,11 @@ class DirectoryDeletionMutationTest {
     fun `账号删除后回读根缺失不得冒充目标消失`() = runBlocking {
         val transport = DirectoryInterceptor(userList(), SUCCESS, SUCCESS)
 
-        val result = repository(transport).deleteAccountResult(account())
+        val result = repository(transport).deleteAccount(account())
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.submitted)
+        assertFalse(result.complete)
+        assertEquals(listOf(NasDirectoryStage.SUBMITTED, NasDirectoryStage.ACCEPTED), result.stages)
+        assertTrue(NasDirectoryStage.SUBMITTED in result.stages)
         assertEquals(1, transport.methods().count { it == "delete" })
     }
 
@@ -120,10 +117,10 @@ class DirectoryDeletionMutationTest {
     fun `账号 API 最低版本高于已验证版本时零请求返回不支持`() = runBlocking {
         val transport = DirectoryInterceptor()
 
-        val result = repository(transport, userMinVersion = 2).deleteAccountResult(account())
+        val result = repository(transport, userMinVersion = 2).deleteAccount(account())
 
-        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
-        assertFalse(result.submitted)
+        assertEquals(DsmErrorKind.FEATURE_UNSUPPORTED, (result.failure as DsmFailure).kind)
+        assertTrue(result.stages.isEmpty())
         assertTrue(transport.requests.isEmpty())
     }
 
@@ -131,10 +128,11 @@ class DirectoryDeletionMutationTest {
     fun `账号删除明确权限拒绝时不自动重放`() = runBlocking {
         val transport = DirectoryInterceptor(userList(), PERMISSION_DENIED)
 
-        val result = repository(transport).deleteAccountResult(account())
+        val result = repository(transport).deleteAccount(account())
 
-        assertEquals(MutationResultStatus.PERMISSION_DENIED, result.status)
-        assertTrue(result.submitted)
+        assertEquals(DsmErrorKind.PERMISSION_DENIED, (result.failure as DsmFailure).kind)
+        assertEquals(listOf(NasDirectoryStage.SUBMITTED, NasDirectoryStage.REJECTED), result.stages)
+        assertTrue(NasDirectoryStage.SUBMITTED in result.stages)
         assertEquals(1, transport.methods().count { it == "delete" })
     }
 
@@ -142,9 +140,10 @@ class DirectoryDeletionMutationTest {
     fun `账号删除响应丢失后只回读且目标消失时确认成功`() = runBlocking {
         val transport = AmbiguousDirectoryInterceptor()
 
-        val result = repository(transport).deleteAccountResult(account())
+        val result = repository(transport).deleteAccount(account())
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertTrue(result.complete)
+        assertEquals(NasDirectoryStage.COMPLETED, result.stages.last())
         assertEquals(listOf("list", "delete", "list"), transport.methods())
     }
 
@@ -152,9 +151,10 @@ class DirectoryDeletionMutationTest {
     fun `群组删除响应丢失后只回读且不重放`() = runBlocking {
         val transport = AmbiguousDirectoryInterceptor(groupList(), emptyGroups())
 
-        val result = repository(transport).deleteGroupResult(group())
+        val result = repository(transport).deleteGroup(group())
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertTrue(result.complete)
+        assertEquals(NasDirectoryStage.COMPLETED, result.stages.last())
         assertEquals(listOf("list", "delete", "list"), transport.methods())
         assertEquals(1, transport.methods().count { it == "delete" })
     }
@@ -163,10 +163,11 @@ class DirectoryDeletionMutationTest {
     fun `群组删除写后畸形回读保持未确认`() = runBlocking {
         val transport = DirectoryInterceptor(groupList(), SUCCESS, SUCCESS)
 
-        val result = repository(transport).deleteGroupResult(group())
+        val result = repository(transport).deleteGroup(group())
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.submitted)
+        assertFalse(result.complete)
+        assertEquals(listOf(NasDirectoryStage.SUBMITTED, NasDirectoryStage.ACCEPTED), result.stages)
+        assertTrue(NasDirectoryStage.SUBMITTED in result.stages)
         assertEquals(1, transport.methods().count { it == "delete" })
     }
 
@@ -174,40 +175,33 @@ class DirectoryDeletionMutationTest {
     fun `同一账号已有删除请求时第二次调用不访问网络`() = runBlocking {
         val transport = BlockingDirectoryInterceptor()
         val repo = repository(transport)
-        val first = async(Dispatchers.IO) { repo.deleteAccountResult(account()) }
+        val first = async(Dispatchers.IO) { repo.deleteAccount(account()) }
         assertTrue(transport.submissionStarted.await(2, TimeUnit.SECONDS))
 
-        val duplicate = repo.deleteAccountResult(account().copy(name = ACCOUNT.uppercase()))
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, duplicate.status)
-        assertEquals(MutationErrorCategory.CONFLICT, duplicate.errorCategory)
-        assertFalse(duplicate.submitted)
+        val duplicate = repo.deleteAccount(account().copy(name = ACCOUNT.uppercase()))
+        assertEquals(NasDirectoryProblem.BUSY, (duplicate.failure as NasDirectoryFailure).problem)
+        assertTrue(duplicate.stages.isEmpty())
 
         transport.allowSubmission.countDown()
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, first.await().status)
+        assertTrue(first.await().complete)
         assertEquals(listOf("list", "delete", "list"), transport.methods())
     }
 
     @Test
-    fun `账号与群组删除在途取消只回读且不重放`() = runBlocking {
-        val accountTransport = CancellingDirectoryInterceptor(userList(), SUCCESS)
-        val accountResult = repository(accountTransport).deleteAccountResult(account())
-        assertEquals(
-            MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-            accountResult.status,
-        )
-        assertTrue(accountResult.submitted)
-        assertEquals(listOf("list", "delete", "list"), accountTransport.methods())
-        assertEquals(1, accountTransport.methods().count { it == "delete" })
-
-        val groupTransport = CancellingDirectoryInterceptor(groupList(), SUCCESS)
-        val groupResult = repository(groupTransport).deleteGroupResult(group())
-        assertEquals(
-            MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION,
-            groupResult.status,
-        )
-        assertTrue(groupResult.submitted)
-        assertEquals(listOf("list", "delete", "list"), groupTransport.methods())
-        assertEquals(1, groupTransport.methods().count { it == "delete" })
+    fun `账号与群组删除在途取消不自动回读或重放`() = runBlocking {
+        for (isGroup in listOf(false, true)) {
+            val transport = BlockingDirectoryInterceptor(if (isGroup) groupList() else userList())
+            val repo = repository(transport)
+            var result: DirectoryProbe? = null
+            val job = launch(Dispatchers.IO) {
+                result = if (isGroup) repo.deleteGroup(group()) else repo.deleteAccount(account())
+            }
+            assertTrue(transport.submissionStarted.await(2, TimeUnit.SECONDS))
+            job.cancel(); transport.allowSubmission.countDown(); job.join()
+            assertTrue(result?.failure is CancellationException)
+            assertEquals(listOf(NasDirectoryStage.SUBMITTED), result?.stages)
+            assertEquals(listOf("list", "delete"), transport.methods())
+        }
     }
 
     @Test
@@ -236,15 +230,31 @@ class DirectoryDeletionMutationTest {
         )
     }
 
-    private fun repository(interceptor: Interceptor, userMinVersion: Int = 1) = DsmRepository(
+    private fun repository(interceptor: Interceptor, userMinVersion: Int = 1) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "operator"),
         DsmSession("test", "test-session", "test-token"),
-        DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
+        DsmApiClient(OkHttpClient.Builder().addInterceptor { chain ->
+            if (chain.request().directoryFields()["api"] == "SYNO.Core.System") directoryResponse(chain.request(),
+                """{"success":true,"data":{"firmware_ver":"DSM 7.2.1-69057 Update 12","buildnumber":69057,"smallfixnumber":12}}""")
+            else chain.proceed(chain.request())
+        }.addInterceptor(interceptor).build()),
         mapOf(
+            "SYNO.Core.System" to ApiCapability("SYNO.Core.System", "entry.cgi", 1, 1),
             USER_API to ApiCapability(USER_API, "entry.cgi", userMinVersion, 5),
             GROUP_API to ApiCapability(GROUP_API, "entry.cgi", 1, 5),
         ),
     )
+
+    private data class DirectoryProbe(val stages: MutableList<NasDirectoryStage> = mutableListOf(), var complete: Boolean = false, var failure: Exception? = null)
+    private suspend fun DsmRepository.deleteAccount(original: NasAccount) = probeDirectory(
+        NasDirectoryChange(NasDirectoryKind.ACCOUNT, NasDirectoryAction.DELETE, original.name, account = original))
+    private suspend fun DsmRepository.deleteGroup(original: NasGroup) = probeDirectory(
+        NasDirectoryChange(NasDirectoryKind.GROUP, NasDirectoryAction.DELETE, original.name, group = original))
+    private suspend fun DsmRepository.probeDirectory(change: NasDirectoryChange): DirectoryProbe {
+        val probe = DirectoryProbe()
+        try { probe.complete = directory.change(change) { probe.stages += it } } catch (error: Exception) { probe.failure = error }
+        return probe
+    }
 
     companion object {
         const val USER_API = "SYNO.Core.User"
@@ -262,7 +272,7 @@ class DirectoryDeletionMutationTest {
         fun emptyUsers() = """{"success":true,"data":{"users":[]}}"""
         fun emptyGroups() = """{"success":true,"data":{"groups":[]}}"""
         fun account(canDelete: Boolean = true) =
-            NasAccount(null, ACCOUNT, null, null, false, canDelete)
+            NasAccount(null, ACCOUNT, null, null, false, canDelete, disabledKnown = false)
         fun group() = NasGroup(null, GROUP, null, true)
     }
 }
@@ -295,7 +305,7 @@ private class AmbiguousDirectoryInterceptor(
     fun methods() = requests.map { it.directoryFields()["method"] }
 }
 
-private class BlockingDirectoryInterceptor : Interceptor {
+private class BlockingDirectoryInterceptor(private val initialList: String = DirectoryDeletionMutationTest.userList()) : Interceptor {
     val submissionStarted = CountDownLatch(1)
     val allowSubmission = CountDownLatch(1)
     private val requests = mutableListOf<Request>()
@@ -303,7 +313,7 @@ private class BlockingDirectoryInterceptor : Interceptor {
         val request = chain.request()
         val index = synchronized(requests) { requests += request; requests.size }
         val body = when (index) {
-            1 -> DirectoryDeletionMutationTest.userList()
+            1 -> initialList
             2 -> {
                 submissionStarted.countDown()
                 check(allowSubmission.await(2, TimeUnit.SECONDS)) { "等待合成账号删除请求放行超时" }
@@ -316,38 +326,6 @@ private class BlockingDirectoryInterceptor : Interceptor {
     fun methods() = synchronized(requests) { requests.map { it.directoryFields()["method"] } }
 }
 
-private class CancellingDirectoryInterceptor(
-    private val initialList: String,
-    private val readbackList: String,
-) : Interceptor {
-    val requests = mutableListOf<Request>()
-
-    override fun intercept(chain: Interceptor.Chain): Response {
-        val request = chain.request()
-        requests += request
-        return when (requests.size) {
-            1 -> directoryResponse(request, initialList)
-            2 -> Response.Builder()
-                .request(request)
-                .protocol(Protocol.HTTP_1_1)
-                .code(200)
-                .message("OK")
-                .body(DirectoryCancellationBody())
-                .build()
-            else -> directoryResponse(request, readbackList)
-        }
-    }
-
-    fun methods() = requests.map { it.directoryFields()["method"] }
-}
-
-private class DirectoryCancellationBody : ResponseBody() {
-    override fun contentType() = "application/json".toMediaType()
-    override fun contentLength() = -1L
-    override fun source(): BufferedSource =
-        throw kotlinx.coroutines.CancellationException("synthetic directory cancellation")
-}
-
 private fun directoryResponse(request: Request, body: String): Response = Response.Builder()
     .request(request)
     .protocol(Protocol.HTTP_1_1)
@@ -357,6 +335,6 @@ private fun directoryResponse(request: Request, body: String): Response = Respon
     .build()
 
 private fun Request.directoryFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return (0 until form.size).associate { form.name(it) to form.value(it) }
 }

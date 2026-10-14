@@ -32,6 +32,8 @@ enum class NasSettingsTab {
     NETWORKS,
     SECURITY,
     HARDWARE_AND_POWER,
+    SCHEDULED_TASKS,
+    PROCESSES,
 }
 
 internal data class FileBackgroundTaskRequestToken(
@@ -92,6 +94,10 @@ internal fun appendFileBackgroundTaskPage(
 }
 
 data class DownloadAdvancedReadWorkspaceState(
+    val downloadDetails: Loadable<DownloadTask> = Loadable.Idle,
+    val downloadListFailure: DsmFailure? = null,
+    val downloadListRefreshing: Boolean = false,
+    val downloadLastTasks: List<DownloadTask>? = null,
     val supportsActivity: Boolean = false,
     val activity: Loadable<DownloadStationActivity> = Loadable.Idle,
     val discoveryVisible: Boolean = false,
@@ -128,7 +134,9 @@ data class WorkspaceState(
     val profile: NasProfile,
     val selectedModule: Module = Module.FILES,
     val availability: List<ModuleAvailability> = emptyList(),
+    val access: WorkspaceAccessUiState = WorkspaceAccessUiState(),
     val files: Loadable<FilePage> = Loadable.Idle,
+    val fileSearchCoverage: io.github.qwertyuiop1995.dsmnativeclient.domain.FileSearchIndexCoverage = io.github.qwertyuiop1995.dsmnativeclient.domain.FileSearchIndexCoverage.NOT_REQUESTED,
     val fileBrowser: FileBrowserState = FileBrowserState(),
     val fileDirectoryBaselines: Map<String, FileItem> = emptyMap(),
     val fileIsLoadingMore: Boolean = false,
@@ -138,7 +146,6 @@ data class WorkspaceState(
         FileStationMutationWorkspaceState(),
     val pendingFileUploads: PendingFileUploads? = null,
     val fileFavorites: Loadable<List<FileItem>> = Loadable.Idle,
-    val fileRemoteLocations: Loadable<List<FileItem>> = Loadable.Idle,
     val fileRecentLocations: Loadable<List<FileItem>> = Loadable.Idle,
     val fileShareLinks: Loadable<List<FileShareLink>> = Loadable.Idle,
     val photos: Loadable<PhotoPage> = Loadable.Idle,
@@ -154,7 +161,6 @@ data class WorkspaceState(
     val supportsSharing: Boolean = false,
     val supportsCompression: Boolean = false,
     val supportsExtraction: Boolean = false,
-    val supportsRemoteLocations: Boolean = false,
     val supportsDownloadSettings: Boolean = false,
     val supportsDownloadSchedule: Boolean = false,
     val supportsDownloadTaskDestinationEditing: Boolean = false,
@@ -227,6 +233,7 @@ data class WorkspaceState(
     val chatAttachmentPreviewBytes: ByteArray? = null,
     val chatAttachmentPreviewVideoFile: File? = null,
     val chatAttachmentPreviewIsVideo: Boolean = false,
+    val chatAttachmentPreviewIsAudio: Boolean = false,
     val chatAttachmentPreviewIsLoading: Boolean = false,
     val chatAttachmentPreviewProgress: Float? = null,
     val chatAttachmentPreviewError: String? = null,
@@ -253,13 +260,6 @@ data class WorkspaceState(
     val regionMutationFailure: DsmFailure? = null,
     val regionMutationRefreshCompleted: Boolean = false,
     val remoteAccessState: RemoteAccessWorkspaceState = RemoteAccessWorkspaceState(),
-    val connectionMutationTarget: io.github.qwertyuiop1995.dsmnativeclient.domain.ActiveConnection? = null,
-    val connectionMutationInProgress: Boolean = false,
-    val connectionMutationResult: MutationResult? = null,
-    val connectionMutationFailure: DsmFailure? = null,
-    val connectionMutationRefreshFailure: DsmFailure? = null,
-    val connectionMutationRefreshInProgress: Boolean = false,
-    val connectionMutationRefreshCompleted: Boolean = false,
     val ethernetBaseline: io.github.qwertyuiop1995.dsmnativeclient.domain.NasEthernetInterface? = null,
     val ethernetSettingsDraft: io.github.qwertyuiop1995.dsmnativeclient.domain.NasEthernetInterface? = null,
     val ethernetEditorVisible: Boolean = false,
@@ -307,11 +307,6 @@ data class WorkspaceState(
     val hardwareSettingsMutationRefreshInProgress: Boolean = false,
     val hardwareSettingsMutationRefreshCompleted: Boolean = false,
     val hardwareSettingsMutationGeneration: Long = 0L,
-    val pendingPowerAction: io.github.qwertyuiop1995.dsmnativeclient.domain.NasPowerAction? = null,
-    val powerMutationInProgress: Boolean = false,
-    val powerMutationResult: MutationResult? = null,
-    val powerMutationFailure: DsmFailure? = null,
-    val powerMutationGeneration: Long = 0L,
     val packageMutationTarget: PackageInfo? = null,
     val packageMutationOperation: PackageMutationOperation? = null,
     val packageMutationConfirmationRequested: Boolean = false,
@@ -365,6 +360,11 @@ data class WorkspaceState(
     val message: String? = null,
     val regenerableCacheBytes: Long = 0,
 ) {
+    val downloadDetails: Loadable<DownloadTask> get() = downloadAdvancedRead.downloadDetails
+    val downloadListFailure: DsmFailure? get() = downloadAdvancedRead.downloadListFailure
+    val downloadListRefreshing: Boolean get() = downloadAdvancedRead.downloadListRefreshing
+    val downloadLastTasks: List<DownloadTask>? get() = downloadAdvancedRead.downloadLastTasks
+
     val remoteAccessSettingsBaseline get() = remoteAccessState.settingsBaseline
     val remoteAccessSettingsDraft get() = remoteAccessState.settingsDraft
     val remoteAccessEditorVisible get() = remoteAccessState.editorVisible
@@ -385,6 +385,7 @@ internal data class FileBrowserRequestIdentity(
     val sortOption: FileSortOption,
     val sortAscending: Boolean,
     val typeFilter: FileTypeFilter,
+    val searchRequest: io.github.qwertyuiop1995.dsmnativeclient.domain.FileSearchRequest? = null,
 )
 
 /** Download 活动读取独立于任务列表，读取失败或重试不得替换任务列表状态。 */
@@ -445,6 +446,7 @@ internal fun FileBrowserState.fileBrowserRequestIdentity() = FileBrowserRequestI
     sortOption = sortOption,
     sortAscending = sortAscending,
     typeFilter = typeFilter,
+    searchRequest = searchRequest,
 )
 
 internal fun FileBrowserState.matchesFileBrowserRequest(
@@ -455,3 +457,20 @@ internal fun FileBrowserState.matchesFileBrowserRequest(
     token: FileBrowserRequestToken,
     currentGeneration: Long,
 ): Boolean = token.generation == currentGeneration && matchesFileBrowserRequest(token.identity)
+
+internal fun WorkspaceState.withDownloads(
+    value: Loadable<List<DownloadTask>>,
+): WorkspaceState {
+    val reconciledDetails = if (value is Loadable.Ready) {
+        downloadDetailsTask?.let { selected ->
+            value.value.firstOrNull { it.id == selected.id }
+        }
+    } else {
+        downloadDetailsTask
+    }
+    val previous = (downloads as? Loadable.Ready)?.value ?: downloadLastTasks
+    return copy(downloads = if (value !is Loadable.Ready && previous != null) Loadable.Ready(previous) else value,
+        downloadDetailsTask = reconciledDetails, downloadAdvancedRead = downloadAdvancedRead.copy(
+            downloadLastTasks = (value as? Loadable.Ready)?.value ?: previous,
+            downloadListRefreshing = value == Loadable.Loading, downloadListFailure = (value as? Loadable.Failed)?.error))
+}

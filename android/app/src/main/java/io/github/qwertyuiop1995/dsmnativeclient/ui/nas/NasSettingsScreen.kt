@@ -79,39 +79,11 @@ internal fun NasSettingsScreen(state: WorkspaceState, model: AppViewModel) {
                     tab = tab,
                     storageAnalysis = state.storageAnalysis,
                     storageAnalysisProgress = state.storageAnalysisProgress,
-                    diskTestStatuses = state.diskTestStatuses,
                     performanceHistory = state.nasPerformance.history,
                     performanceIsLoading = state.nasPerformance.isLoading,
                     performanceError = state.nasPerformance.error,
                     performanceIsPaused = state.nasPerformance.isPaused,
                     systemUpdate = state.nasSystemUpdate,
-                    fileServiceSettingsDraft = state.fileServiceSettingsDraft,
-                    fileServiceMutationResult = state.fileServiceMutationResult,
-                    fileServiceMutationFailure = state.fileServiceMutationFailure,
-                    fileServiceMutationInProgress = state.fileServiceMutationInProgress,
-                    fileServiceMutationRefreshCompleted = state.fileServiceMutationRefreshCompleted,
-                    terminalSettingsDraft = state.terminalSettingsDraft,
-                    terminalMutationResult = state.terminalMutationResult,
-                    terminalMutationFailure = state.terminalMutationFailure,
-                    terminalMutationInProgress = state.terminalMutationInProgress,
-                    terminalMutationRefreshCompleted = state.terminalMutationRefreshCompleted,
-                    proxySettingsDraft = state.proxySettingsDraft,
-                    proxyMutationResult = state.proxyMutationResult,
-                    proxyMutationFailure = state.proxyMutationFailure,
-                    proxyMutationInProgress = state.proxyMutationInProgress,
-                    proxyMutationRefreshCompleted = state.proxyMutationRefreshCompleted,
-                    regionSettingsDraft = state.regionSettingsDraft,
-                    regionMutationResult = state.regionMutationResult,
-                    regionMutationFailure = state.regionMutationFailure,
-                    regionMutationInProgress = state.regionMutationInProgress,
-                    regionMutationRefreshCompleted = state.regionMutationRefreshCompleted,
-                    connectionMutationTarget = state.connectionMutationTarget,
-                    connectionMutationResult = state.connectionMutationResult,
-                    connectionMutationFailure = state.connectionMutationFailure,
-                    connectionMutationRefreshFailure = state.connectionMutationRefreshFailure,
-                    connectionMutationInProgress = state.connectionMutationInProgress,
-                    connectionMutationRefreshInProgress = state.connectionMutationRefreshInProgress,
-                    connectionMutationRefreshCompleted = state.connectionMutationRefreshCompleted,
                     isPerformingAction = state.isPerformingAction,
                     model = model,
                 )
@@ -128,39 +100,11 @@ private fun NasSettingsTab(
     tab: Int,
     storageAnalysis: io.github.qwertyuiop1995.dsmnativeclient.Loadable<io.github.qwertyuiop1995.dsmnativeclient.domain.StorageAnalysisSnapshot>,
     storageAnalysisProgress: io.github.qwertyuiop1995.dsmnativeclient.domain.StorageAnalysisProgress?,
-    diskTestStatuses: Map<String, io.github.qwertyuiop1995.dsmnativeclient.Loadable<io.github.qwertyuiop1995.dsmnativeclient.domain.NasDiskTestStatus>>,
     performanceHistory: List<io.github.qwertyuiop1995.dsmnativeclient.domain.PerformanceSample>,
     performanceIsLoading: Boolean,
     performanceError: io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure?,
     performanceIsPaused: Boolean,
     systemUpdate: io.github.qwertyuiop1995.dsmnativeclient.Loadable<io.github.qwertyuiop1995.dsmnativeclient.domain.NasSystemUpdateInfo>,
-    fileServiceSettingsDraft: io.github.qwertyuiop1995.dsmnativeclient.domain.NasFileServiceSettings?,
-    fileServiceMutationResult: io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult?,
-    fileServiceMutationFailure: io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure?,
-    fileServiceMutationInProgress: Boolean,
-    fileServiceMutationRefreshCompleted: Boolean,
-    terminalSettingsDraft: io.github.qwertyuiop1995.dsmnativeclient.domain.NasTerminalSettings?,
-    terminalMutationResult: io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult?,
-    terminalMutationFailure: io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure?,
-    terminalMutationInProgress: Boolean,
-    terminalMutationRefreshCompleted: Boolean,
-    proxySettingsDraft: io.github.qwertyuiop1995.dsmnativeclient.domain.NasProxySettings?,
-    proxyMutationResult: io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult?,
-    proxyMutationFailure: io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure?,
-    proxyMutationInProgress: Boolean,
-    proxyMutationRefreshCompleted: Boolean,
-    regionSettingsDraft: io.github.qwertyuiop1995.dsmnativeclient.domain.NasRegionSettings?,
-    regionMutationResult: io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult?,
-    regionMutationFailure: io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure?,
-    regionMutationInProgress: Boolean,
-    regionMutationRefreshCompleted: Boolean,
-    connectionMutationTarget: io.github.qwertyuiop1995.dsmnativeclient.domain.ActiveConnection?,
-    connectionMutationResult: io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult?,
-    connectionMutationFailure: io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure?,
-    connectionMutationRefreshFailure: io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure?,
-    connectionMutationInProgress: Boolean,
-    connectionMutationRefreshInProgress: Boolean,
-    connectionMutationRefreshCompleted: Boolean,
     isPerformingAction: Boolean,
     model: AppViewModel,
 ) {
@@ -169,6 +113,10 @@ private fun NasSettingsTab(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (!snapshot.systemAvailable || !snapshot.storageAvailable || !snapshot.packagesAvailable ||
+                !snapshot.accountsAvailable || !snapshot.connectionsAvailable) item {
+                NasReadFailureNotice { model.load(Module.NAS_SETTINGS) }
+            }
             item {
                 snapshot.system?.let { system ->
                     SummaryCard(stringResource(R.string.system)) {
@@ -188,22 +136,22 @@ private fun NasSettingsTab(
                 ) {
                     MetricCard(
                         stringResource(R.string.storage_space),
-                        snapshot.volumes.size.toString(),
+                        if (snapshot.storageAvailable) snapshot.volumes.size.toString() else stringResource(R.string.unknown_status),
                         Icons.Outlined.Storage,
                     )
                     MetricCard(
                         stringResource(R.string.packages),
-                        snapshot.packages.size.toString(),
+                        if (snapshot.packagesAvailable) snapshot.packages.size.toString() else stringResource(R.string.unknown_status),
                         Icons.Outlined.Dns,
                     )
                     MetricCard(
                         stringResource(R.string.active_connections),
-                        snapshot.connections.size.toString(),
+                        if (snapshot.connectionsAvailable) snapshot.connections.size.toString() else stringResource(R.string.unknown_status),
                         Icons.Outlined.NetworkCheck,
                     )
                     MetricCard(
                         stringResource(R.string.account),
-                        snapshot.accounts.size.toString(),
+                        if (snapshot.accountsAvailable) snapshot.accounts.size.toString() else stringResource(R.string.unknown_status),
                         Icons.Outlined.AdminPanelSettings,
                     )
                 }
@@ -229,80 +177,18 @@ private fun NasSettingsTab(
             snapshot = snapshot,
             analysis = storageAnalysis,
             progress = storageAnalysisProgress,
-            diskTestStatuses = diskTestStatuses,
-            diskTestMutationTarget = state.diskTestMutationTarget,
-            diskTestMutationBaseline = state.diskTestMutationBaseline,
-            diskTestMutationOperation = state.diskTestMutationOperation,
-            diskTestMutationConfirmationRequested = state.diskTestMutationConfirmationRequested,
-            diskTestMutationInProgress = state.diskTestMutationInProgress,
-            diskTestMutationResult = state.diskTestMutationResult,
-            diskTestMutationFailure = state.diskTestMutationFailure,
-            diskTestMutationRefreshFailure = state.diskTestMutationRefreshFailure,
-            diskTestMutationRefreshInProgress = state.diskTestMutationRefreshInProgress,
-            diskTestMutationRefreshCompleted = state.diskTestMutationRefreshCompleted,
-            diskTestActionsEnabled = state.diskTestMutationTarget == null && !state.isPerformingAction &&
-                !state.diskTestMutationInProgress &&
-                !state.diskTestMutationRefreshInProgress && state.diskTestMutationResult == null &&
-                state.diskTestMutationFailure == null && !state.diskTestMutationConfirmationRequested,
+            smartContent = { NasSmartTestSection(model.nasSmart, !state.isPerformingAction) },
             onBeginAnalysis = model::beginStorageAnalysis,
             onCancelAnalysis = model::cancelStorageAnalysis,
-            onLoadDiskTest = model::loadDiskTestStatus,
-            onRequestDiskTest = { disk, baseline, operation ->
-                model.requestDiskTestMutation(disk, baseline, operation)
-            },
-            onConfirmDiskTest = model::confirmDiskTestMutation,
-            onCancelDiskTestConfirmation = { model.cancelDiskTestMutationConfirmation() },
-            onRefreshDiskTest = model::refreshDiskTestMutation,
-            onContinueDiskTest = { model.dismissDiskTestMutationResult() },
-            onCloseDiskTestResult = { model.dismissDiskTestMutationResult() },
+            onReload = { model.load(Module.NAS_SETTINGS) },
         )
-        3 -> NasPackageManagementScreen(snapshot, state, model)
+        3 -> NasPackageCenterScreen(snapshot, state, model)
         4 -> NasDirectoryManagementScreen(snapshot, state, model)
-        5 -> LogList(
-            logs = snapshot.logs,
-            isAvailable = snapshot.logsAvailable,
-            onRetry = { model.load(Module.NAS_SETTINGS) },
-        )
-        6 -> NasConnectionScreen(
-            connections = snapshot.connections,
-            connectionsAvailable = snapshot.connectionsAvailable,
-            target = connectionMutationTarget,
-            mutationResult = connectionMutationResult,
-            mutationFailure = connectionMutationFailure,
-            refreshFailure = connectionMutationRefreshFailure,
-            mutationInProgress = connectionMutationInProgress,
-            refreshInProgress = connectionMutationRefreshInProgress,
-            refreshCompleted = connectionMutationRefreshCompleted,
-            isPerformingAction = isPerformingAction,
-            model = model,
-        )
-        7 -> NasServiceSettingsScreen(
-            snapshot = snapshot,
-            savedDraft = fileServiceSettingsDraft,
-            mutationResult = fileServiceMutationResult,
-            mutationFailure = fileServiceMutationFailure,
-            mutationInProgress = fileServiceMutationInProgress,
-            mutationRefreshCompleted = fileServiceMutationRefreshCompleted,
-            savedTerminalDraft = terminalSettingsDraft,
-            terminalMutationResult = terminalMutationResult,
-            terminalMutationFailure = terminalMutationFailure,
-            terminalMutationInProgress = terminalMutationInProgress,
-            terminalMutationRefreshCompleted = terminalMutationRefreshCompleted,
-            savedProxyDraft = proxySettingsDraft,
-            proxyMutationResult = proxyMutationResult,
-            proxyMutationFailure = proxyMutationFailure,
-            proxyMutationInProgress = proxyMutationInProgress,
-            proxyMutationRefreshCompleted = proxyMutationRefreshCompleted,
-            isPerformingAction = isPerformingAction,
-            model = model,
-        )
+        5 -> NasLogsScreen(model.nasObservation)
+        6 -> NasConnectionScreen(model.nasConnections, isPerformingAction)
+        7 -> NasServiceSettingsScreen(snapshot = snapshot, isPerformingAction = isPerformingAction, model = model)
         8 -> NasRegionSettingsScreen(
             settings = snapshot.regionSettings,
-            savedDraft = regionSettingsDraft,
-            mutationResult = regionMutationResult,
-            mutationFailure = regionMutationFailure,
-            mutationInProgress = regionMutationInProgress,
-            mutationRefreshCompleted = regionMutationRefreshCompleted,
             isPerformingAction = isPerformingAction,
             model = model,
         )
@@ -314,12 +200,24 @@ private fun NasSettingsTab(
             state = state,
             model = model,
         )
+        12 -> NasScheduledTaskScreen(model.nasScheduledTasks)
+        13 -> NasProcessesScreen(model.nasObservation)
         else -> NasHardwareSettingsScreen(
             settings = snapshot.hardwareSettings,
             settingsAvailable = snapshot.hardwareSettingsAvailable,
             state = state,
             model = model,
         )
+    }
+}
+
+@Composable
+internal fun NasReadFailureNotice(onReload: () -> Unit) {
+    io.github.qwertyuiop1995.dsmnativeclient.ui.components.ClientGroup {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.nas_read_failed), color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = onReload) { Text(stringResource(R.string.retry)) }
+        }
     }
 }
 

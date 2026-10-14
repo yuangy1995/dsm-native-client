@@ -45,8 +45,10 @@ import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.DdnsManagementContent
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.EthernetSettingsContent
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.HardwareSettingsContent
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasConnectionContent
-import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasRegionSettingsScreen
-import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasServiceSettingsScreen
+import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasRegionSettingsContent
+import io.github.qwertyuiop1995.dsmnativeclient.nas.NasRegionEditorState
+import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasServiceSettingsContent
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceKind
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.PackageManagementContent
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.RemoteAccessSettingsContent
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.SecuritySettingsContent
@@ -152,22 +154,15 @@ class NasServicePageStateMatrixTest {
             largeTextSmallScreen {
                 key(stage.intValue) {
                     NasConnectionContent(
-                        connections = if (stage.intValue >= 2) listOf(connection) else emptyList(),
-                        connectionsAvailable = stage.intValue != 0,
-                        target = connection.takeIf { stage.intValue == 3 },
-                        mutationResult = null,
-                        mutationFailure = null,
-                        refreshFailure = null,
-                        mutationInProgress = stage.intValue == 3,
-                        refreshInProgress = false,
-                        refreshCompleted = false,
-                        isPerformingAction = false,
-                        onRequestDisconnect = { true },
-                        onCancelRequest = {},
-                        onConfirmRequest = { true },
-                        onRefreshMutation = {},
-                        onDismissResult = {},
-                        onRefreshList = {},
+                        state = io.github.qwertyuiop1995.dsmnativeclient.nas.NasConnectionState(
+                            loaded = true, busy = stage.intValue == 3,
+                            directory = if (stage.intValue == 0) null else io.github.qwertyuiop1995.dsmnativeclient.data.nas.NasConnectionDirectory(
+                                if (stage.intValue >= 2) listOf(connection) else emptyList(), true),
+                            record = if (stage.intValue == 3) io.github.qwertyuiop1995.dsmnativeclient.nas.NasConnectionActivity(
+                                "synthetic", io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceOwner("profile", "identity", "session"),
+                                io.github.qwertyuiop1995.dsmnativeclient.data.nas.NasConnectionIdentity(true, "a".repeat(64), setOf("a".repeat(64)), "b".repeat(64))) else null),
+                        onRequestDisconnect = { true }, onCancelRequest = {}, onConfirmRequest = { true },
+                        onRefresh = {}, onDismissResult = {},
                     )
                 }
             }
@@ -284,18 +279,11 @@ class NasServicePageStateMatrixTest {
     fun 区域设置页在两倍字体小屏覆盖不可用正常和进行中状态() {
         val context = context()
         val stage = mutableIntStateOf(0)
-        val model = AppViewModel(ApplicationProvider.getApplicationContext())
         rule.setContent {
             largeTextSmallScreen {
-                NasRegionSettingsScreen(
-                    settings = region().takeIf { stage.intValue > 0 },
-                    savedDraft = region().takeIf { stage.intValue == 2 },
-                    mutationResult = null, mutationFailure = null,
-                    mutationInProgress = stage.intValue == 2,
-                    mutationRefreshCompleted = false,
-                    isPerformingAction = stage.intValue == 2,
-                    model = model,
-                )
+                NasRegionSettingsContent(region().takeIf { stage.intValue > 0 }, stage.intValue == 2,
+                    NasRegionEditorState(current = region().takeIf { stage.intValue > 0 }, busy = stage.intValue == 2, saving = stage.intValue == 2),
+                    { false }, {}, { _, _ -> false }, {}, {})
             }
         }
 
@@ -369,24 +357,13 @@ class NasServicePageStateMatrixTest {
     fun 服务设置页在两倍字体小屏覆盖不可用正常和进行中状态() {
         val context = context()
         val stage = mutableIntStateOf(0)
-        val model = AppViewModel(ApplicationProvider.getApplicationContext())
         rule.setContent {
             largeTextSmallScreen {
-                NasServiceSettingsScreen(
-                    snapshot = serviceSnapshot(stage.intValue > 0),
-                    savedDraft = fileService().takeIf { stage.intValue == 2 },
-                    mutationResult = null, mutationFailure = null,
-                    mutationInProgress = stage.intValue == 2,
-                    mutationRefreshCompleted = false,
-                    savedTerminalDraft = null, terminalMutationResult = null,
-                    terminalMutationFailure = null, terminalMutationInProgress = false,
-                    terminalMutationRefreshCompleted = false,
-                    savedProxyDraft = null, proxyMutationResult = null,
-                    proxyMutationFailure = null, proxyMutationInProgress = false,
-                    proxyMutationRefreshCompleted = false,
-                    isPerformingAction = stage.intValue == 2,
-                    model = model,
-                )
+                val snapshot = serviceSnapshot(stage.intValue > 0)
+                val states = NasServiceUiFixture(snapshot).states.value.mapValues { (kind, value) ->
+                    if (kind == NasServiceKind.FILES) value.copy(busy = stage.intValue == 2, saving = stage.intValue == 2) else value
+                }
+                NasServiceSettingsContent(snapshot, stage.intValue == 2, states, { false }, { _, _ -> }, { false }, {}, { _, _ -> })
             }
         }
 

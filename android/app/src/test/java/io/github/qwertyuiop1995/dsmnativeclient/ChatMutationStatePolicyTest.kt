@@ -4,8 +4,6 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatMessage
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatAttachment
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatPoll
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatPollOption
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatReminder
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatScheduledMessage
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatUser
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatDeliveryState
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatMessagePage
@@ -18,6 +16,10 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.Module
 import io.github.qwertyuiop1995.dsmnativeclient.ui.canRetryChatMutation
 import android.net.Uri
+import io.github.qwertyuiop1995.dsmnativeclient.chat.*
+import io.github.qwertyuiop1995.dsmnativeclient.data.chat.*
+import java.io.IOException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -29,7 +31,7 @@ class ChatMutationStatePolicyTest {
     fun `九类操作使用稳定标识并且目标不保存正文`() {
         val secret = "仅用于内存中的正文"
         ChatMutationOperation.entries.forEachIndexed { index, operation ->
-            val target = chatMutationTarget(
+            val target = presentationTarget(
                 profileId = "profile-a",
                 operation = operation,
                 requestId = "request-$index",
@@ -63,16 +65,12 @@ class ChatMutationStatePolicyTest {
         assertEquals(8, MutationResultStatus.entries.size)
     }
 
-    @Test
-    fun `回调必须同时匹配仓库配置目标和代次`() {
-        val target = target(ChatMutationOperation.ATTACHMENT_SEND)
-        val entry = ChatMutationEntry(target, mutationInProgress = true, generation = 7)
-        assertTrue(chatMutationCallbackMatches(true, true, entry, target, 7, 7))
-        assertFalse(chatMutationCallbackMatches(false, true, entry, target, 7, 7))
-        assertFalse(chatMutationCallbackMatches(true, false, entry, target, 7, 7))
-        assertFalse(chatMutationCallbackMatches(true, true, entry, target.copy(requestId = "other"), 7, 7))
-        assertFalse(chatMutationCallbackMatches(true, true, entry, target, 6, 7))
-        assertFalse(chatMutationCallbackMatches(true, true, entry, target, 7, 8))
+    @Test fun `显示结果保留原账号请求和会话归属`() {
+        val checkpoint = ChatActionCheckpoint("request-a", ChatActionKind.ATTACHMENT, "conversation-a", "user-a", desiredDigest = chatTextDigest("body"))
+        val state = ChatActionsState(listOf(ChatActionItem(checkpoint.id, checkpoint.kind, checkpoint.channelId, checkpoint)))
+        val entry = state.presentation("profile-a").entries.getValue(checkpoint.id)
+        assertEquals("profile-a", entry.target.profileId); assertEquals("request-a", entry.target.requestId)
+        assertEquals("conversation-a", entry.target.conversationId); assertEquals(checkpoint.desiredDigest, entry.target.requestFingerprint)
     }
 
     @Test
@@ -93,88 +91,46 @@ class ChatMutationStatePolicyTest {
         assertFalse(chatMutationBlocksWorkspaceExit(ChatMutationWorkspaceState(mapOf(target.requestId to success))))
     }
 
-    @Test
-    fun `删除回读和发送回读按稳定目标核验`() {
-        val reminder = ChatReminder("reminder-a", "message-a", 1000)
-        val reminderTarget = chatMutationTarget(
-            "profile-a", ChatMutationOperation.REMINDER_DELETE, "request-reminder",
-            "conversation-a", resourceIds = listOf("message-a"), requestParts = listOf("message-a"),
-            reminderBaseline = reminder,
-        )
-        assertEquals(ChatMutationVerification.DISAPPEARED, chatMutationVerification(reminderTarget, reminders = emptyList()))
-
-        val schedule = ChatScheduledMessage("schedule-a", "conversation-a", "later", 2000)
-        val scheduleTarget = chatMutationTarget(
-            "profile-a", ChatMutationOperation.SCHEDULE_DELETE, "request-schedule",
-            "conversation-a", resourceIds = listOf("schedule-a"), requestParts = listOf("schedule-a"),
-            scheduleBaseline = schedule,
-        )
-        assertEquals(ChatMutationVerification.DIFFERS, chatMutationVerification(scheduleTarget, schedules = listOf(schedule)))
-
-        val textTarget = chatMutationTarget(
-            "profile-a", ChatMutationOperation.TEXT_SEND, "request-text", "conversation-a",
-            expectedEpochMillis = 1_000,
-            requestParts = listOf("hello"),
-        )
-        val sent = ChatMessage(
-            "message-b", "conversation-a", ChatUser("me", "Me", "me"), "hello", 1, true,
-        )
-        assertEquals(ChatMutationVerification.MATCHES, chatMutationVerification(textTarget, messages = listOf(sent)))
-        assertEquals(
-            ChatMutationVerification.DIFFERS,
-            chatMutationVerification(
-                textTarget,
-                messages = listOf(sent.copy(createdAtEpochSeconds = 122)),
-            ),
-        )
+    @Test fun `删除回读和发送回读按当前执行器的稳定目标核验`() = runBlocking {
+        val f = ChatProtocolFixture(); f.posts = "[${f.post()}]"
+        val action = f.prepare(ChatActionDraft(ChatActionKind.SEND, f.channelId, text = "hello"))
+        val sent = f.execute(action)
+        assertEquals(ChatActionPhase.COMPLETED, sent.checkpoint.phase)
+        assertEquals("post-1", sent.message!!.id)
+        val reminder = ChatActionCheckpoint("reminder", ChatActionKind.REMINDER_DELETE, f.channelId, "1", messageId = "message-a",
+            phase = ChatActionPhase.SUBMITTED, submittedAtMillis = 1)
+        assertEquals(ChatActionPhase.COMPLETED, f.repo.recoverAction(reminder) {}.checkpoint.phase)
+        val time = System.currentTimeMillis() + 3_600_000
+        f.schedules = "[${f.schedule(time)}]"
+        val scheduled = reminder.copy(id = "schedule", kind = ChatActionKind.SCHEDULE_DELETE, messageId = "schedule-1", baselineAtMillis = time)
+        assertEquals(ChatActionPhase.SUBMITTED, f.repo.recoverAction(scheduled) {}.checkpoint.phase)
     }
 
-    @Test
-    fun `投票和附件的同内容历史消息不能认领当前提交`() {
-        val pollTarget = chatMutationTarget(
-            "profile-a", ChatMutationOperation.POLL_CREATE, "request-poll", "conversation-a",
-            expectedEpochMillis = 1_000,
-            requestParts = listOf("Question", "false", "false", "A", "B"),
-        )
-        val pollMessage = ChatMessage(
-            "poll-message", "conversation-a", ChatUser("me", "Me", "me"), "", 122, true,
-            poll = ChatPoll(
-                "poll-a", "Question", false, false,
-                options = listOf(ChatPollOption("a", "A"), ChatPollOption("b", "B")),
-            ),
-        )
-        assertEquals(
-            ChatMutationVerification.DIFFERS,
-            chatMutationVerification(pollTarget, messages = listOf(pollMessage)),
-        )
-
-        val attachmentTarget = chatMutationTarget(
-            "profile-a", ChatMutationOperation.ATTACHMENT_SEND, "request-file", "conversation-a",
-            expectedEpochMillis = 1_000,
-            requestParts = listOf("body", "photo.jpg", "42"),
-        )
-        val attachmentMessage = ChatMessage(
-            "file-message", "conversation-a", ChatUser("me", "Me", "me"), "body", 122, true,
-            attachments = listOf(ChatAttachment("file-a", "photo.jpg", "image/jpeg", 42)),
-        )
-        assertEquals(
-            ChatMutationVerification.DIFFERS,
-            chatMutationVerification(attachmentTarget, messages = listOf(attachmentMessage)),
-        )
+    @Test fun `投票和附件的同内容历史消息不能认领当前提交`() = runBlocking {
+        for (kind in listOf(ChatActionKind.POLL_CREATE, ChatActionKind.ATTACHMENT)) {
+            val f = ChatProtocolFixture()
+            f.posts = if (kind == ChatActionKind.POLL_CREATE) "[${f.poll()}]" else "[${f.post("Question?", attachment = true)}]"
+            f.write = { """{"success":true,"data":{}}""" }
+            val action = f.prepare(ChatActionDraft(kind, f.channelId, text = "Question?", options = listOf("First", "Second"),
+                multiple = true, attachment = f.source().takeIf { kind == ChatActionKind.ATTACHMENT }))
+            val result = f.execute(action)
+            assertEquals(ChatActionPhase.SUBMITTED, result.checkpoint.phase); assertTrue(result.message == null)
+            assertTrue(f.postReads.isEmpty())
+        }
     }
 
-    @Test
-    fun `提交后取消保留未知计数并要求刷新`() {
-        val result = cancelledChatMutationResult(target(ChatMutationOperation.ATTACHMENT_SEND))
-        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, result.status)
-        assertTrue(result.submitted)
-        assertTrue(result.requiresRefresh)
-        assertEquals(MutationResultCounts(0, 0, 1), result.counts)
+    @Test fun `提交后取消的显示投影保留未知计数并要求刷新`() {
+        val checkpoint = ChatActionCheckpoint("request-a", ChatActionKind.ATTACHMENT, "conversation-a", "user-a",
+            phase = ChatActionPhase.SUBMITTED, submittedAtMillis = 1)
+        val result = ChatActionsState(listOf(ChatActionItem(checkpoint.id, checkpoint.kind, checkpoint.channelId, checkpoint)))
+            .presentation("profile-a").entries.getValue(checkpoint.id).mutationResult!!
+        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
+        assertTrue(result.submitted); assertTrue(result.requiresRefresh); assertEquals(MutationResultCounts(0, 0, 1), result.counts)
     }
 
     @Test
     fun `刷新匹配会原子替换失败消息并收敛投票编辑器`() {
-        val textTarget = chatMutationTarget(
+        val textTarget = presentationTarget(
             "profile-a", ChatMutationOperation.TEXT_SEND, "request-text", "conversation-a",
             expectedEpochMillis = 1_000, requestParts = listOf("hello"),
         )
@@ -191,12 +147,13 @@ class ChatMutationStatePolicyTest {
             chatOutgoingMessages = mapOf("conversation-a" to listOf(local)),
             chatMessages = Loadable.Ready(ChatMessagePage(listOf(local), null, false)),
         )
-        val converged = convergeChatMutationRefreshMatch(state, textTarget, listOf(remote))
+        val converged = applyChatActionOutcome(state, completed(textTarget, remote))
         val visible = (converged.chatMessages as Loadable.Ready).value.messages
         assertFalse(visible.any { it.id == local.id })
-        assertEquals("request-text", visible.single { it.id == remote.id }.clientRequestId)
+        assertEquals(ChatDeliveryState.SENT, visible.single { it.id == remote.id }.deliveryState)
+        assertEquals("request-text", converged.chatOutgoingMessages.getValue("conversation-a").single().clientRequestId)
 
-        val pollTarget = chatMutationTarget(
+        val pollTarget = presentationTarget(
             "profile-a", ChatMutationOperation.POLL_CREATE, "request-poll", "conversation-a",
             expectedEpochMillis = 1_000,
             requestParts = listOf("Question", "false", "false", "A", "B"),
@@ -208,7 +165,7 @@ class ChatMutationStatePolicyTest {
                 options = listOf(ChatPollOption("a", "A"), ChatPollOption("b", "B")),
             ),
         )
-        val pollState = convergeChatMutationRefreshMatch(
+        val pollState = applyChatActionOutcome(
             workspace().copy(
                 selectedConversation = io.github.qwertyuiop1995.dsmnativeclient.domain.ChatConversation(
                     "conversation-a", "A", io.github.qwertyuiop1995.dsmnativeclient.domain.ConversationKind.DIRECT,
@@ -218,8 +175,7 @@ class ChatMutationStatePolicyTest {
                 chatPollOptions = listOf("A", "B"),
                 chatMessages = Loadable.Ready(ChatMessagePage(emptyList(), null, false)),
             ),
-            pollTarget,
-            listOf(poll),
+            completed(pollTarget, poll),
         )
         assertFalse(pollState.chatPollComposerVisible)
         assertTrue((pollState.chatMessages as Loadable.Ready).value.messages.any { it.id == poll.id })
@@ -227,7 +183,7 @@ class ChatMutationStatePolicyTest {
 
     @Test
     fun `附件刷新匹配替换失败气泡`() {
-        val target = chatMutationTarget(
+        val target = presentationTarget(
             "profile-a", ChatMutationOperation.ATTACHMENT_SEND, "request-file", "conversation-a",
             expectedEpochMillis = 1_000, requestParts = listOf("body", "photo.jpg", "42"),
         )
@@ -238,7 +194,7 @@ class ChatMutationStatePolicyTest {
             deliveryState = ChatDeliveryState.FAILED,
         )
         val remote = local.copy(id = "remote-file", clientRequestId = null, deliveryState = ChatDeliveryState.SENT)
-        val converged = convergeChatMutationRefreshMatch(
+        val converged = applyChatActionOutcome(
             workspace().copy(
                 selectedConversation = io.github.qwertyuiop1995.dsmnativeclient.domain.ChatConversation(
                     "conversation-a", "A", io.github.qwertyuiop1995.dsmnativeclient.domain.ConversationKind.DIRECT,
@@ -246,35 +202,23 @@ class ChatMutationStatePolicyTest {
                 chatOutgoingMessages = mapOf("conversation-a" to listOf(local)),
                 chatMessages = Loadable.Ready(ChatMessagePage(listOf(local), null, false)),
             ),
-            target,
-            listOf(remote),
+            completed(target, remote),
         )
         assertFalse(converged.chatOutgoingMessages.values.flatten().any { it.id == local.id })
         assertTrue(converged.chatOutgoingMessages.values.flatten().any { it.id == remote.id })
         assertFalse(converged.chatPendingAttachmentUris.containsKey(local.id))
     }
 
-    @Test
-    fun `未完成回读拒绝处置而明确不匹配后允许原子移除和继续编辑`() {
-        val target = target(ChatMutationOperation.TEXT_SEND)
-        val unknown = ChatMutationEntry(
-            target,
-            mutationResult = result(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED),
-        )
-        assertFalse(chatMutationCanRemoveFailed(unknown))
-        assertFalse(chatMutationCanContinueEditing(unknown))
-        val checkedDifferent = unknown.copy(
-            mutationRefreshCompleted = true,
-            mutationVerification = ChatMutationVerification.DIFFERS,
-        )
-        assertTrue(chatMutationCanRemoveFailed(checkedDifferent))
-        assertTrue(chatMutationCanContinueEditing(checkedDifferent))
-        val settled = ChatMutationEntry(
-            target,
-            mutationResult = result(MutationResultStatus.CONFIRMED_FAILURE),
-        )
-        assertTrue(chatMutationCanRemoveFailed(settled))
-        assertTrue(chatMutationCanContinueEditing(settled))
+    @Test fun `回读仍未完成时保留未知而明确拒绝允许继续编辑`() {
+        val checkpoint = ChatActionCheckpoint("request-a", ChatActionKind.SEND, "conversation-a", "user-a",
+            phase = ChatActionPhase.SUBMITTED, submittedAtMillis = 1)
+        val item = ChatActionItem(checkpoint.id, checkpoint.kind, checkpoint.channelId, checkpoint)
+        val entry = ChatActionsState(listOf(item)).presentation("profile-a").entries.getValue(checkpoint.id)
+        assertFalse(item.canEdit); assertTrue(item.canRefresh)
+        assertFalse(chatMutationCanRemoveFailed(entry)); assertFalse(chatMutationCanContinueEditing(entry))
+        val rejected = item.copy(checkpoint = checkpoint.copy(phase = ChatActionPhase.REJECTED))
+        val settled = ChatActionsState(listOf(rejected)).presentation("profile-a").entries.getValue(checkpoint.id)
+        assertTrue(rejected.canEdit); assertTrue(chatMutationCanRemoveFailed(settled)); assertTrue(chatMutationCanContinueEditing(settled))
     }
 
     @Test
@@ -285,7 +229,7 @@ class ChatMutationStatePolicyTest {
         val conversationB = io.github.qwertyuiop1995.dsmnativeclient.domain.ChatConversation(
             "conversation-b", "B", io.github.qwertyuiop1995.dsmnativeclient.domain.ConversationKind.DIRECT,
         )
-        val target = chatMutationTarget(
+        val target = presentationTarget(
             "profile-a", ChatMutationOperation.TEXT_SEND, "request-a", conversationA.id,
             expectedEpochMillis = 1_000, requestParts = listOf("from A"),
         )
@@ -307,7 +251,7 @@ class ChatMutationStatePolicyTest {
             chatMessages = Loadable.Ready(ChatMessagePage(listOf(visibleB), null, false)),
         )
 
-        val converged = convergeChatMutationRefreshMatch(state, target, listOf(remote))
+        val converged = applyChatActionOutcome(state, completed(target, remote))
 
         assertEquals(listOf(visibleB), (converged.chatMessages as Loadable.Ready).value.messages)
         assertFalse(converged.chatOutgoingMessages.getValue(conversationA.id).any { it.id == local.id })
@@ -355,53 +299,31 @@ class ChatMutationStatePolicyTest {
         assertEquals(listOf(Uri.EMPTY), chatPendingAttachmentUrisForRelease(state))
     }
 
-    @Test
-    fun `重试回读失败保留失败态只有明确不匹配才重发`() {
-        val failure = DsmFailure(null, "read failed", "retry")
-        assertEquals(
-            ChatRetryReadbackDecision.KEEP_FAILED,
-            chatRetryReadbackDecision(true, failure, null),
-        )
-        assertEquals(
-            ChatRetryReadbackDecision.KEEP_FAILED,
-            chatRetryReadbackDecision(false, null, ChatMutationVerification.DIFFERS),
-        )
-        assertEquals(
-            ChatRetryReadbackDecision.RESEND,
-            chatRetryReadbackDecision(true, null, ChatMutationVerification.DIFFERS),
-        )
-        assertEquals(
-            ChatRetryReadbackDecision.CONVERGE,
-            chatRetryReadbackDecision(true, null, ChatMutationVerification.MATCHES),
-        )
+    @Test fun `回读失败或内容不同都不能把未知恢复为可重发`() = runBlocking {
+        val f = ChatProtocolFixture(); val action = f.prepare(ChatActionDraft(ChatActionKind.SEND, f.channelId, text = "hello"))
+        f.readFailure = IOException("synthetic readback failure")
+        assertEquals(ChatActionPhase.SUBMITTED, f.execute(action).checkpoint.phase)
+        f.readFailure = null; f.posts = "[${f.post("different")}]"
+        assertEquals(ChatActionPhase.SUBMITTED, f.execute(action).checkpoint.phase)
+        f.posts = "[${f.post()}]"
+        assertEquals(ChatActionPhase.COMPLETED, f.execute(action).checkpoint.phase)
+        assertEquals(1, f.writes.size)
     }
 
-    @Test
-    fun `附件预检离开再返回的ABA代次失配且claim失败会释放已取得权限`() {
-        assertTrue(chatAttachmentPreflightIsCurrent(true, true, true, true, true))
-        assertFalse(chatAttachmentPreflightIsCurrent(true, true, false, true, true))
-        assertFalse(chatAttachmentPreflightIsCurrent(true, true, true, false, true))
-        // 即使模块和会话已经返回原值，离开时递增的代次仍拒绝旧回调。
-        assertFalse(chatAttachmentPreflightIsCurrent(true, true, true, true, false))
-        assertTrue(releaseChatAttachmentPermissionAfterPreflight(true, false, false))
-        assertTrue(releaseChatAttachmentPermissionAfterPreflight(true, true, false))
-        assertFalse(releaseChatAttachmentPermissionAfterPreflight(true, true, true))
-        assertFalse(releaseChatAttachmentPermissionAfterPreflight(false, false, false))
+    @Test fun `附件动作预检失败时未提交投影允许处置`() {
+        val item = ChatActionItem("request-a", ChatActionKind.ATTACHMENT, "conversation-a", failure = DsmFailure(null, "failed", "retry"))
+        val entry = ChatActionsState(listOf(item)).presentation("profile-a").entries.getValue(item.id)
+        assertFalse(entry.mutationResult!!.submitted)
+        assertTrue(item.canEdit); assertTrue(chatMutationCanRemoveFailed(entry)); assertTrue(chatMutationCanContinueEditing(entry))
     }
 
-    @Test
-    fun `附件预检失败形成提交前结构化结果且无需回读即可处置`() {
-        val target = target(ChatMutationOperation.ATTACHMENT_SEND)
-        val result = chatMutationFailedBeforeSubmissionResult(target)
-        val entry = ChatMutationEntry(target, mutationResult = result, mutationFailure = DsmFailure(null, "failed", "retry"))
-
-        assertEquals(MutationResultStatus.CANCELLED_BEFORE_SUBMISSION, result.status)
-        assertFalse(result.submitted)
-        assertFalse(result.requiresRefresh)
-        assertEquals(MutationResultCounts(0, 0, 0), result.counts)
-        assertFalse(chatMutationRequiresRefresh(entry))
-        assertTrue(chatMutationCanRemoveFailed(entry))
-        assertTrue(chatMutationCanContinueEditing(entry))
+    @Test fun `附件已预检但写前保存失败仍保留未提交阶段`() {
+        val checkpoint = ChatActionCheckpoint("request-a", ChatActionKind.ATTACHMENT, "conversation-a", "user-a")
+        val item = ChatActionItem(checkpoint.id, checkpoint.kind, checkpoint.channelId, checkpoint, failure = DsmFailure(null, "failed", "retry"))
+        val entry = ChatActionsState(listOf(item)).presentation("profile-a").entries.getValue(item.id)
+        assertEquals(MutationResultStatus.CANCELLED_BEFORE_SUBMISSION, entry.mutationResult!!.status)
+        assertFalse(entry.mutationResult.submitted); assertEquals(MutationResultCounts(0, 0, 0), entry.mutationResult.counts)
+        assertFalse(chatMutationRequiresRefresh(entry)); assertTrue(chatMutationCanRemoveFailed(entry))
     }
 
     @Test
@@ -451,7 +373,23 @@ class ChatMutationStatePolicyTest {
         )
     }
 
-    private fun target(operation: ChatMutationOperation) = chatMutationTarget(
+    private fun presentationTarget(profileId: String, operation: ChatMutationOperation, requestId: String,
+        conversationId: String? = null, expectedEpochMillis: Long? = null, requestParts: List<String> = emptyList()) =
+        ChatMutationTarget(profileId, operation, requestId, conversationId, expectedEpochMillis = expectedEpochMillis,
+            requestFingerprint = chatPayloadFingerprint(requestParts))
+
+    private fun completed(target: ChatMutationTarget, message: ChatMessage): ChatActionOutcome {
+        val kind = when (target.operation) {
+            ChatMutationOperation.TEXT_SEND -> ChatActionKind.SEND
+            ChatMutationOperation.ATTACHMENT_SEND -> ChatActionKind.ATTACHMENT
+            ChatMutationOperation.POLL_CREATE -> ChatActionKind.POLL_CREATE
+            else -> error("Unexpected presentation target")
+        }
+        return ChatActionOutcome(ChatActionCheckpoint(target.requestId, kind, requireNotNull(target.conversationId), "me",
+            remoteId = message.id, phase = ChatActionPhase.COMPLETED, acknowledged = true, submittedAtMillis = 1), message = message)
+    }
+
+    private fun target(operation: ChatMutationOperation) = presentationTarget(
         "profile-a", operation, "request-a", "conversation-a", expectedEpochMillis = 1_000,
         requestParts = listOf("payload"),
     )

@@ -9,6 +9,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.net.Uri
+import io.github.qwertyuiop1995.dsmnativeclient.storage.SecureProfileStore
+import io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceRecordKind
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -30,6 +33,8 @@ internal object TransferNotifications {
         completedBytes: Long,
         totalBytes: Long?,
         direction: TransferDirection = TransferDirection.DOWNLOAD,
+        recordKind: WorkspaceRecordKind = direction.recordKind(),
+        openTaskIntent: PendingIntent? = null,
     ): ForegroundInfo {
         ensureChannel(context)
         val isPhotoBackup = isPhotoBackup(context, taskId, direction)
@@ -50,7 +55,7 @@ internal object TransferNotifications {
             )
             .setContentTitle(context.getString(content.title))
             .setContentText(context.getString(content.status))
-            .setContentIntent(openAppIntent(context))
+            .setContentIntent(openTaskIntent ?: openAppIntent(context, taskId, recordKind))
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setProgress(progressMaximum, progress ?: 0, progress == null)
@@ -101,7 +106,7 @@ internal object TransferNotifications {
             )
             .setContentTitle(context.getString(title))
             .setContentText(context.getString(R.string.notification_open_transfers))
-            .setContentIntent(openAppIntent(context))
+            .setContentIntent(openAppIntent(context, taskId, direction.recordKind()))
             .setAutoCancel(true)
             .build()
         runCatching {
@@ -122,10 +127,15 @@ internal object TransferNotifications {
         )
     }
 
-    private fun openAppIntent(context: Context): PendingIntent {
+    internal fun openAppIntent(context: Context, taskId: String, kind: WorkspaceRecordKind): PendingIntent {
+        val token = SecureProfileStore(context).issueLocalTransferTarget(kind, taskId)
+
         val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_OPEN_TRANSFERS, true)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            if (token != null) {
+                action = Intent.ACTION_VIEW
+                data = Uri.parse(opaqueObjectExternalWorkspaceUri(token))
+            } else putExtra(EXTRA_OPEN_TRANSFERS, true)
         }
         return PendingIntent.getActivity(
             context,

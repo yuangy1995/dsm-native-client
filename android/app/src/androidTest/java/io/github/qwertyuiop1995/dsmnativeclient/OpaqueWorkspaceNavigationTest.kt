@@ -1,10 +1,13 @@
 package io.github.qwertyuiop1995.dsmnativeclient
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import android.app.Application
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.rules.ActivityScenarioRule
 import io.github.qwertyuiop1995.dsmnativeclient.data.DsmRepository
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
@@ -13,6 +16,7 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FilePreviewContent
 import io.github.qwertyuiop1995.dsmnativeclient.domain.Module
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
+import io.github.qwertyuiop1995.dsmnativeclient.domain.WorkspacePage
 import io.github.qwertyuiop1995.dsmnativeclient.domain.OpaqueWorkspaceTarget
 import io.github.qwertyuiop1995.dsmnativeclient.domain.PhotoBrowserState
 import io.github.qwertyuiop1995.dsmnativeclient.domain.PhotoBrowseMode
@@ -35,8 +39,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Rule
 
 class OpaqueWorkspaceNavigationTest {
+    @get:Rule val activity = ActivityScenarioRule(MainActivity::class.java)
     @Test
     fun 未知或跨资料令牌会确定拒绝且不切换资料() {
         val currentProfile = syntheticProfile("current")
@@ -50,6 +56,7 @@ class OpaqueWorkspaceNavigationTest {
                 store.issueOpaqueWorkspaceTarget(
                     otherProfile.id,
                     OpaqueWorkspaceTarget.FileDirectory("/synthetic/other"),
+                owner = requireNotNull(store.currentOwner(otherProfile.id)),
                 ),
             )
 
@@ -90,12 +97,14 @@ class OpaqueWorkspaceNavigationTest {
                 store.issueOpaqueWorkspaceTarget(
                     profile.id,
                     OpaqueWorkspaceTarget.FileDirectory("/synthetic/older"),
+                owner = requireNotNull(store.currentOwner(profile.id)),
                 ),
             )
             val latestToken = requireNotNull(
                 store.issueOpaqueWorkspaceTarget(
                     profile.id,
                     OpaqueWorkspaceTarget.FilePreview(currentItem.path),
+                owner = requireNotNull(store.currentOwner(profile.id)),
                 ),
             )
 
@@ -141,6 +150,7 @@ class OpaqueWorkspaceNavigationTest {
                 store.issueOpaqueWorkspaceTarget(
                     profile.id,
                     OpaqueWorkspaceTarget.FileDirectory("/synthetic/other"),
+                owner = requireNotNull(store.currentOwner(profile.id)),
                 ),
             )
 
@@ -170,11 +180,19 @@ class OpaqueWorkspaceNavigationTest {
         val profile = syntheticProfile("page-link")
         withProfiles(profile) { store ->
             val model = model()
+            installRepository(model, repository(profile, RecordingFileRepositoryInterceptor()))
             val workspace = workspace(model)
             workspace.value = syntheticWorkspace(profile)
 
             model.copyCurrentPageLink()
-            assertEquals("lanstash://open/files", clipboardText())
+            val rootLink = clipboardText()
+            val rootToken = (rootLink.externalWorkspaceRoute() as ExternalWorkspaceRoute.OpaqueObject).token
+            val rootRecord = requireNotNull(store.opaqueWorkspaceRoute(rootToken))
+            assertEquals(profile.id, rootRecord.profileId)
+            assertEquals(OpaqueWorkspaceTarget.Page(WorkspacePage.FILES), rootRecord.target)
+            assertFalse(rootLink.contains(profile.id))
+            assertFalse(rootLink.contains(profile.address))
+            assertFalse(rootLink.contains(profile.username))
 
             val directory = "/synthetic/private-folder"
             workspace.value = workspace.value?.copy(fileBrowser = FileBrowserState(path = directory))
@@ -254,7 +272,10 @@ class OpaqueWorkspaceNavigationTest {
                 photoBrowser = PhotoBrowserState(),
             )
             model.copyCurrentPageLink()
-            assertEquals("lanstash://open/photos", clipboardText())
+            val personalToken = (clipboardText().externalWorkspaceRoute() as ExternalWorkspaceRoute.OpaqueObject).token
+            val personalRecord = requireNotNull(store.opaqueWorkspaceRoute(personalToken))
+            assertEquals(profile.id, personalRecord.profileId)
+            assertEquals(OpaqueWorkspaceTarget.Page(WorkspacePage.PHOTOS), personalRecord.target)
         }
     }
 
@@ -280,6 +301,7 @@ class OpaqueWorkspaceNavigationTest {
                         SHARED_PHOTO_SPACE.id,
                         SHARED_PHOTO_SPACE.rootPath,
                     ),
+                owner = requireNotNull(store.currentOwner(profile.id)),
                 ),
             )
 
@@ -317,14 +339,15 @@ class OpaqueWorkspaceNavigationTest {
     }
 
     private fun installRepository(model: AppViewModel, repository: DsmRepository) {
-        AppViewModel::class.java.getDeclaredField("repository").apply {
+        AppViewModel::class.java.getDeclaredMethod("setRepository", DsmRepository::class.java).apply {
             isAccessible = true
-        }.set(model, repository)
+        }.invoke(model, repository)
     }
 
     private fun syntheticWorkspace(profile: NasProfile) = WorkspaceState(
         profile = profile,
         selectedModule = Module.FILES,
+        availability = Module.entries.map { io.github.qwertyuiop1995.dsmnativeclient.domain.ModuleAvailability(it, true) },
     )
 
     private fun syntheticProfile(label: String) = NasProfile(
@@ -346,11 +369,13 @@ class OpaqueWorkspaceNavigationTest {
     private fun repository(
         profile: NasProfile,
         interceptor: RecordingFileRepositoryInterceptor,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         profile = profile,
         session = DsmSession(profile.id, "synthetic-session", "synthetic-token"),
         api = DsmApiClient(
             OkHttpClient.Builder()
+                .followRedirects(false)
+                .followSslRedirects(false)
                 .retryOnConnectionFailure(false)
                 .addInterceptor(interceptor)
                 .build(),
@@ -358,7 +383,11 @@ class OpaqueWorkspaceNavigationTest {
         capabilities = listOf(
             ApiCapability("SYNO.FileStation.List", "entry.cgi", 1, 2),
         ).associateBy(ApiCapability::name),
-    )
+    ).also { repo ->
+        val store = SecureProfileStore(ApplicationProvider.getApplicationContext<Application>())
+        val owner = requireNotNull(store.currentOwner(profile.id))
+        repo.bindOwner(owner) { store.requireCurrentOwner(owner) }
+    }
 
     private fun clipboardText(): String {
         val application = ApplicationProvider.getApplicationContext<Application>()
@@ -371,7 +400,10 @@ class OpaqueWorkspaceNavigationTest {
         block: (SecureProfileStore) -> Unit,
     ) {
         val store = SecureProfileStore(ApplicationProvider.getApplicationContext<Application>())
-        profiles.forEach(store::saveProfile)
+        profiles.forEach { profile ->
+            store.commitConnection(store.connectionAttempt(profile.id), profile,
+                DsmSession(profile.id, "synthetic-session", "synthetic-token"), null, false)
+        }
         try {
             block(store)
         } finally {

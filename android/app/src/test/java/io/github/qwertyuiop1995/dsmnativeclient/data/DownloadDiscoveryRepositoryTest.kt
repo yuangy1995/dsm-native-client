@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
@@ -31,8 +33,8 @@ class DownloadDiscoveryRepositoryTest {
     @Test
     fun `RSS 站点和条目使用公开 v1 固定分页参数`() = runBlocking {
         val transport = DownloadDiscoveryInterceptor(
-            """{"success":true,"data":{"site":[{"id":6,"title":"Synthetic feed","is_updating":false,"last_update":1700000000}]}}""",
-            """{"success":true,"data":{"feeds":[{"title":"Synthetic item","size":"1024","time":1700000001,"download_uri":"https://download.invalid/item.torrent","external_link":"https://page.invalid/item"}]}}""",
+            """{"success":true,"data":{"total":1,"offset":0,"site":[{"id":6,"url":"https://feed.invalid/rss","username":"","title":"Synthetic feed","is_updating":false,"last_update":1700000000}]}}""",
+            """{"success":true,"data":{"total":1,"offset":0,"feeds":[{"title":"Synthetic item","size":"1024","time":1700000001,"download_uri":"https://download.invalid/item.torrent","external_link":"https://page.invalid/item"}]}}""",
         )
         val repository = repository(transport)
 
@@ -43,7 +45,7 @@ class DownloadDiscoveryRepositoryTest {
         assertEquals("Synthetic item", feed.title)
         assertEquals(1024L, feed.size)
         assertEquals("1", transport.requests[0].discoveryFields()["version"])
-        assertEquals("200", transport.requests[0].discoveryFields()["limit"])
+        assertEquals("500", transport.requests[0].discoveryFields()["limit"])
         assertEquals("6", transport.requests[1].discoveryFields()["id"])
     }
 
@@ -51,7 +53,7 @@ class DownloadDiscoveryRepositoryTest {
     fun `BT 搜索只使用已启用模块并在读取完成后清理任务`() = runBlocking {
         val transport = DownloadDiscoveryInterceptor(
             """{"success":true,"data":{"taskid":"synthetic-search"}}""",
-            """{"success":true,"data":{"finished":true,"items":[{"title":"Synthetic result","date":"2026-01-01 00:00:00","download_uri":"https://download.invalid/result.torrent","external_link":"https://page.invalid/result","peers":12,"seeds":9,"leechs":3,"size":"2048","module_title":"Synthetic provider"}]}}""",
+            """{"success":true,"data":{"finished":true,"items":[{"title":"Synthetic result","date":"2026-01-01 00:00:00","download_uri":"https://download.invalid/result.torrent","external_link":"https://page.invalid/result","peers":12,"seeds":9,"leechs":3,"size":2048,"module_title":"Synthetic provider"}]}}""",
             """{"success":true,"data":{}}""",
         )
 
@@ -83,14 +85,14 @@ class DownloadDiscoveryRepositoryTest {
     @Test
     fun `RSS 刷新固定使用公开 v1 且写前写后回读目标`() = runBlocking {
         val siteResponse =
-            """{"success":true,"data":{"site":[{"id":6,"title":"Synthetic feed","is_updating":false,"last_update":1700000000}]}}"""
+            """{"success":true,"data":{"total":1,"offset":0,"site":[{"id":6,"url":"https://feed.invalid/rss","username":"","title":"Synthetic feed","is_updating":false,"last_update":1700000000}]}}"""
         val transport = DownloadDiscoveryInterceptor(
             siteResponse,
             """{"success":true,"data":{}}""",
-            siteResponse,
+            siteResponse.replace("1700000000", "1700000001"),
         )
 
-        val result = repository(transport).refreshDownloadRssSiteResult(" 6 ")
+        val result = repository(transport).refreshDownloadRssSiteResult("6")
 
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         assertTrue(result.submitted)
@@ -112,10 +114,10 @@ class DownloadDiscoveryRepositoryTest {
     @Test
     fun `RSS 目标已变化时不提交刷新`() = runBlocking {
         val transport = DownloadDiscoveryInterceptor(
-            """{"success":true,"data":{"site":[]}}""",
+            """{"success":true,"data":{"total":0,"offset":0,"site":[]}}""",
         )
 
-        val result = repository(transport).refreshDownloadRssSiteResult("missing")
+        val result = repository(transport).refreshDownloadRssSiteResult("7")
 
         assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
         assertEquals(MutationErrorCategory.CONFLICT, result.errorCategory)
@@ -138,7 +140,7 @@ class DownloadDiscoveryRepositoryTest {
     @Test
     fun `RSS 刷新提交成功但回读失败时保持未确认且不重放`() = runBlocking {
         val transport = DownloadDiscoveryInterceptor(
-            """{"success":true,"data":{"site":[{"id":6,"title":"Synthetic feed","is_updating":false}]}}""",
+            """{"success":true,"data":{"total":1,"offset":0,"site":[{"id":6,"url":"https://feed.invalid/rss","username":"","title":"Synthetic feed","is_updating":false,"last_update":1700000000}]}}""",
             """{"success":true,"data":{}}""",
             IOException("synthetic RSS readback failure"),
         )
@@ -189,7 +191,7 @@ class DownloadDiscoveryRepositoryTest {
     private fun repository(
         interceptor: Interceptor,
         includeFeed: Boolean = true,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "synthetic-session", "synthetic-token"),
         DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
@@ -224,7 +226,7 @@ private class BlockingDownloadRssRefreshInterceptor : Interceptor {
                 if (request.discoveryFields()["method"] == "refresh") {
                     """{"success":true,"data":{}}"""
                 } else {
-                    """{"success":true,"data":{"site":[{"id":6,"title":"Synthetic feed","is_updating":false}]}}"""
+                    """{"success":true,"data":{"total":1,"offset":0,"site":[{"id":6,"url":"https://feed.invalid/rss","username":"","title":"Synthetic feed","is_updating":false,"last_update":${1700000000L + refreshCount.get()}}]}}"""
                 }.toResponseBody("application/json".toMediaType()),
             )
             .build()
@@ -245,7 +247,7 @@ private class DownloadRssRefreshDisconnectInterceptor : Interceptor {
             .code(200)
             .message("OK")
             .body(
-                """{"success":true,"data":{"site":[{"id":6,"title":"Synthetic feed","is_updating":false}]}}"""
+                """{"success":true,"data":{"total":1,"offset":0,"site":[{"id":6,"url":"https://feed.invalid/rss","username":"","title":"Synthetic feed","is_updating":false,"last_update":1700000000}]}}"""
                     .toResponseBody("application/json".toMediaType()),
             )
             .build()
@@ -275,6 +277,6 @@ private class DownloadDiscoveryInterceptor(vararg responses: Any) : Interceptor 
 }
 
 private fun Request.discoveryFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return (0 until form.size).associate { form.name(it) to form.value(it) }
 }

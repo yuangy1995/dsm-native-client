@@ -8,11 +8,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.qwertyuiop1995.dsmnativeclient.domain.LogEntry
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ManagedResource
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ResourceState
-import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineOverview
-import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VirtualMachineCreationDialog
+import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VmmCreationSheet
+import io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.VmmCreationDraft
 import io.github.qwertyuiop1995.dsmnativeclient.ui.theme.LanStashTheme
 import org.junit.Rule
 import org.junit.Test
@@ -28,13 +25,11 @@ class VirtualMachineCreationSystemBackTest {
         var dismissCount = 0
         rule.setContent {
             LanStashTheme {
-                VirtualMachineCreationDialog(
-                    overview = overview(),
-                    draft = draft,
-                    submitting = false,
-                    onDraftChange = { draft = it; true },
-                    onConfirm = { true },
-                    onDismiss = { dismissCount++; true },
+                VmmCreationSheet(
+                    state = creationUiState().copy(draft = draft),
+                    onChange = { draft = it },
+                    onCreate = {}, onRetry = {}, onContinue = {},
+                    onClose = { dismissCount++ },
                 )
             }
         }
@@ -55,13 +50,11 @@ class VirtualMachineCreationSystemBackTest {
         var draft by mutableStateOf(creationDraft(step = 1))
         rule.setContent {
             LanStashTheme {
-                VirtualMachineCreationDialog(
-                    overview = overview(),
-                    draft = draft,
-                    submitting = false,
-                    onDraftChange = { draft = it; true },
-                    onConfirm = { true },
-                    onDismiss = { true },
+                VmmCreationSheet(
+                    state = creationUiState().copy(draft = draft),
+                    onChange = { draft = it },
+                    onCreate = {}, onRetry = {}, onContinue = {},
+                    onClose = {},
                 )
             }
         }
@@ -79,16 +72,13 @@ class VirtualMachineCreationSystemBackTest {
         rule.setContent {
             LanStashTheme {
                 if (visible) {
-                    VirtualMachineCreationDialog(
-                        overview = overview(),
-                        draft = creationDraft(step = 0),
-                        submitting = false,
-                        onDraftChange = { true },
-                        onConfirm = { true },
-                        onDismiss = {
+                    VmmCreationSheet(
+                        state = creationUiState(),
+                        onChange = {},
+                        onCreate = {}, onRetry = {}, onContinue = {},
+                        onClose = {
                             dismissCount++
                             visible = false
-                            true
                         },
                     )
                 }
@@ -111,17 +101,14 @@ class VirtualMachineCreationSystemBackTest {
         var dismissCount = 0
         rule.setContent {
             LanStashTheme {
-                VirtualMachineCreationDialog(
-                    overview = overview(),
-                    draft = draft,
-                    submitting = true,
-                    onDraftChange = {
+                VmmCreationSheet(
+                    state = creationUiState().copy(draft = draft, busy = true),
+                    onChange = {
                         draftChangeCount++
                         draft = it
-                        true
                     },
-                    onConfirm = { true },
-                    onDismiss = { dismissCount++; true },
+                    onCreate = {}, onRetry = {}, onContinue = {},
+                    onClose = { dismissCount++ },
                 )
             }
         }
@@ -143,50 +130,24 @@ class VirtualMachineCreationSystemBackTest {
         var draftChangeCount = 0
         rule.setContent {
             LanStashTheme {
-                VirtualMachineCreationDialog(
-                    overview = overview(),
-                    draft = draft,
-                    submitting = false,
-                    onDraftChange = {
+                VmmCreationSheet(
+                    state = creationUiState().copy(draft = draft),
+                    onChange = {
                         draftChangeCount++
-                        false
                     },
-                    onConfirm = { true },
-                    onDismiss = { false },
+                    onCreate = {}, onRetry = {}, onContinue = {},
+                    onClose = {},
                 )
             }
         }
 
         pressSystemBack()
 
-        rule.onNodeWithText(context.getString(R.string.virtual_machine_review)).assertIsDisplayed()
+        rule.onNodeWithText(context.getString(R.string.virtual_machine_storage)).assertIsDisplayed()
         rule.runOnIdle { check(draftChangeCount == 1) }
     }
 
-    private fun creationDraft(step: Int) = VirtualMachineCreationDraftState(
-        step = step,
-        name = "Synthetic VM",
-        storageId = "storage-1",
-    )
-
-    private fun overview() = VirtualMachineOverview(
-        machines = emptyList(),
-        hosts = emptyList(),
-        storages = listOf(resource("storage-1", "Synthetic storage")),
-        networks = emptyList(),
-        images = emptyList(),
-        protectionPlans = emptyList(),
-        protectionSchedules = emptyList(),
-        retentionPolicies = emptyList(),
-        logs = emptyList<LogEntry>(),
-    )
-
-    private fun resource(id: String, name: String) = ManagedResource(
-        id = id,
-        name = name,
-        detail = "",
-        state = ResourceState.HEALTHY,
-    )
+    private fun creationDraft(step: Int) = VmmCreationDraft(step = step, name = "Synthetic VM", storage = "storage-1")
 
     private fun pressSystemBack() {
         rule.waitForIdle()

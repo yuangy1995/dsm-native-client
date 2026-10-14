@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem
@@ -314,8 +316,8 @@ class FileStationBaselineRepositoryTest {
 
         val outcome = repository(transport).createShareLinkResult(baseline)
 
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, outcome.result.status)
-        assertEquals(MutationResultCounts(0, 1, 0), outcome.result.counts)
+        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, outcome.result.status)
+        assertEquals(MutationResultCounts(0, 0, 1), outcome.result.counts)
         assertEquals(listOf("getinfo", "list", "create", "list"), transport.methods())
     }
 
@@ -339,7 +341,7 @@ class FileStationBaselineRepositoryTest {
         assertEquals(listOf("list"), transport.methods())
     }
 
-    private fun repository(transport: Interceptor) = DsmRepository(
+    private fun repository(transport: Interceptor) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "synthetic-session", "synthetic-token"),
         DsmApiClient(OkHttpClient.Builder().addInterceptor(transport).build()),
@@ -351,7 +353,7 @@ class FileStationBaselineRepositoryTest {
             "SYNO.FileStation.Delete",
             "SYNO.FileStation.Favorite",
             "SYNO.FileStation.Sharing",
-        ).associateWith { name -> ApiCapability(name, "entry.cgi", 1, 2) },
+        ).associateWith { name -> ApiCapability(name, "entry.cgi", 1, if (name == "SYNO.FileStation.Sharing") 3 else 2) },
     )
 
     private companion object {

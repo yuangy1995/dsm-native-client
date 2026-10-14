@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
@@ -92,7 +94,7 @@ class StorageAnalysisRepositoryTest {
         assertEquals(10L, page.items.single().accessedAtEpochSeconds)
     }
 
-    private fun repository(interceptor: StorageInterceptor, includeMd5: Boolean) = DsmRepository(
+    private fun repository(interceptor: StorageInterceptor, includeMd5: Boolean) = authorizedRepository(
         profile = NasProfile("profile", "NAS", "https://nas.invalid", "user"),
         session = DsmSession("synthetic", "synthetic", null),
         api = DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),

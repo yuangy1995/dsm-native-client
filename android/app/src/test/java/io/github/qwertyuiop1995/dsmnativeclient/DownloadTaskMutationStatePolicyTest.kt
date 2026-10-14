@@ -27,11 +27,11 @@ class DownloadTaskMutationStatePolicyTest {
             DownloadControlOperation.DELETE_TASK.repositoryAction,
         )
         assertEquals(
-            DownloadTaskMutationAction.REMOVE_TASK_AND_FILES,
-            DownloadControlOperation.DELETE_TASK_AND_FILES.repositoryAction,
+            DownloadTaskMutationAction.END_TASK_AND_MOVE_FILES,
+            DownloadControlOperation.END_TASK_AND_MOVE_FILES.repositoryAction,
         )
         assertFalse(DownloadControlOperation.PAUSE.isDeletion)
-        assertTrue(DownloadControlOperation.DELETE_TASK_AND_FILES.isDeletion)
+        assertTrue(DownloadControlOperation.END_TASK_AND_MOVE_FILES.isDeletion)
     }
 
     @Test
@@ -122,7 +122,7 @@ class DownloadTaskMutationStatePolicyTest {
     fun `两种删除刷新都只确认任务消失`() {
         listOf(
             DownloadControlOperation.DELETE_TASK,
-            DownloadControlOperation.DELETE_TASK_AND_FILES,
+            DownloadControlOperation.END_TASK_AND_MOVE_FILES,
         ).forEach { operation ->
             val target = target(operation, ResourceState.RUNNING)!!
             assertTrue(downloadControlRefreshMatches(target, emptyList()))
@@ -206,7 +206,7 @@ class DownloadTaskMutationStatePolicyTest {
 
     @Test
     fun `刷新成功与目标匹配分离且differs仍允许明确核对后dismiss`() {
-        val target = target(DownloadControlOperation.DELETE_TASK_AND_FILES, ResourceState.RUNNING)!!
+        val target = target(DownloadControlOperation.END_TASK_AND_MOVE_FILES, ResourceState.RUNNING)!!
         val state = DownloadControlWorkspaceState(
             target = target,
             mutationResult = result(MutationResultStatus.PARTIAL_SUCCESS),
@@ -331,10 +331,10 @@ class DownloadTaskMutationStatePolicyTest {
     }
 
     @Test
-    fun `launch外层取消保守保留已提交未知结果并按双效果计数`() {
+    fun `launch外层取消保守保留已提交未知且只计算任务结果`() {
         val ordinary = target(DownloadControlOperation.PAUSE, ResourceState.RUNNING)!!
         val deleteFiles = target(
-            DownloadControlOperation.DELETE_TASK_AND_FILES,
+            DownloadControlOperation.END_TASK_AND_MOVE_FILES,
             ResourceState.RUNNING,
         )!!
 
@@ -345,8 +345,8 @@ class DownloadTaskMutationStatePolicyTest {
         assertEquals(MutationResultCounts(0, 0, 1), ordinaryResult.counts)
 
         val deleteFilesResult = cancelledDownloadControlResult(deleteFiles)
-        assertEquals("downloadDeleteFiles", deleteFilesResult.operation)
-        assertEquals(MutationResultCounts(0, 0, 2), deleteFilesResult.counts)
+        assertEquals("downloadEndAndMove", deleteFilesResult.operation)
+        assertEquals(MutationResultCounts(0, 0, 1), deleteFilesResult.counts)
         val state = DownloadControlWorkspaceState(
             target = deleteFiles,
             mutationResult = deleteFilesResult,

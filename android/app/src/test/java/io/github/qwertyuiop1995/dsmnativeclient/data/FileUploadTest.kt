@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
@@ -35,6 +37,23 @@ import org.junit.Test
 
 class FileUploadTest {
     @Test
+    fun `Office提交前检查在写权限后执行且失败释放同路径写锁`() = runBlocking {
+        val transport = UploadRecordingInterceptor("{\"success\":true}", "{\"success\":true}",
+            "{\"success\":true}", uploadedFileResponse(17))
+        val repo = repository(transport)
+        val rejected = runCatching { repo.uploadOfficeResult(source(SYNTHETIC_BYTES), "/share", {
+            assertEquals(listOf("write"), transport.requests.map(::method))
+            throw io.github.qwertyuiop1995.dsmnativeclient.data.files.officeChanged()
+        }, { _, _ -> }) }.exceptionOrNull() as DsmFailure
+        assertEquals(DsmErrorKind.OFFICE_CHANGED, rejected.kind)
+        assertTrue(transport.multipartBodies.isEmpty())
+        var checked = 0
+        val result = repo.uploadOfficeResult(source(SYNTHETIC_BYTES), "/share", { checked++ }, { _, _ -> })
+        assertEquals(1, checked); assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertEquals(listOf("write", "write", "upload", "getinfo"), transport.requests.map(::method))
+    }
+
+    @Test
     fun `上传请求符合公共Fixture且写后大小回读一致`() = runBlocking {
         val transport = UploadRecordingInterceptor(
             "{\"success\":true}",
@@ -52,7 +71,7 @@ class FileUploadTest {
             onProgress = { completed, total -> progress += completed to total },
         )
 
-        assertEquals(listOf("write", "upload", "list"), transport.requests.map(::method))
+        assertEquals(listOf("write", "upload", "getinfo"), transport.requests.map(::method))
         assertEquals(17L to 17L, progress.last())
         val upload = transport.requests[1]
         val multipart = upload.body as MultipartBody
@@ -62,8 +81,11 @@ class FileUploadTest {
             "file-station/upload/synthetic-overwrite/request.json",
         )
         assertEquals("2", upload.url.queryParameter("version"))
-        assertEquals("test-session", upload.url.queryParameter("_sid"))
-        assertEquals("test-token", upload.url.queryParameter("SynoToken"))
+        assertEquals(setOf("api", "version", "method"), upload.url.queryParameterNames)
+        assertFalse(upload.url.toString().contains("test-session"))
+        assertFalse(upload.url.toString().contains("test-token"))
+        assertEquals("test-session", multipartValue(upload.body as MultipartBody, "_sid"))
+        assertEquals("test-token", multipartValue(upload.body as MultipartBody, "SynoToken"))
         assertEquals("id=test-session", upload.header("Cookie"))
         assertEquals("test-token", upload.header("X-SYNO-TOKEN"))
         assertEquals(multipart.contentLength().toString(), upload.header("Content-Length"))
@@ -73,6 +95,23 @@ class FileUploadTest {
         assertTrue(filePart > body.indexOf("name=\"overwrite\""))
         assertTrue(body.indexOf("synthetic-content", filePart) > filePart)
         assertFalse(body.substring(filePart + 1).contains("name=\"path\""))
+    }
+
+    @Test
+    fun `未返回SynoToken时仍仅在Cookie和正文携带会话`() = runBlocking {
+        val transport = UploadRecordingInterceptor(
+            "{\"success\":true}", "{\"success\":true}", uploadedFileResponse(17),
+        )
+        repository(transport, synoToken = null).upload(source(SYNTHETIC_BYTES), "/share") { _, _ -> }
+        val request = transport.requests.single { method(it) == "upload" }
+        val body = transport.multipartBodies.single().readUtf8()
+        assertEquals(setOf("api", "version", "method"), request.url.queryParameterNames)
+        assertFalse(request.url.toString().contains("test-session"))
+        assertEquals("id=test-session", request.header("Cookie"))
+        assertTrue(request.header("X-SYNO-TOKEN") == null)
+        assertEquals("test-session", multipartValue(request.body as MultipartBody, "_sid"))
+        assertFalse(body.contains("name=\"SynoToken\""))
+        assertFalse(body.contains("name=\"synotoken\""))
     }
 
     @Test
@@ -164,23 +203,89 @@ class FileUploadTest {
         assertEquals("你好", saved.value)
         assertFalse(saved.truncated)
         assertEquals(
-            listOf("getinfo", "write", "upload", "list", "download"),
+            listOf("getinfo", "write", "upload", "getinfo", "download"),
             transport.requests.map(::method),
         )
     }
 
     @Test
-    fun `上传断线但大小回读一致时确认成功且不重放`() = runBlocking {
+    fun `上传断线但完整内容一致时确认成功且不重放`() = runBlocking {
         val transport = UploadRecordingInterceptor(
             """{"success":true}""",
             IOException("synthetic disconnect"),
             uploadedFileResponse(17),
+            SYNTHETIC_BYTES.decodeToString(),
         )
 
         val result = repository(transport).uploadResult(source(SYNTHETIC_BYTES), "/share")
 
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         assertEquals(1, transport.requests.count { it.body is MultipartBody })
+    }
+
+    @Test
+    fun `上传断线后同大小旧内容不能冒充完成`() = runBlocking {
+        val transport = UploadRecordingInterceptor(
+            """{"success":true}""", IOException("synthetic disconnect"),
+            uploadedFileResponse(17), "different-content",
+        )
+        val result = repository(transport).uploadResult(source(SYNTHETIC_BYTES), "/share", overwrite = true)
+        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
+        assertTrue(result.requiresRefresh)
+        assertEquals(listOf("write", "upload", "getinfo", "download"), transport.requests.map(::method))
+    }
+
+    @Test
+    fun `上传后源文件变化不影响原正文摘要且只打开来源一次`() = runBlocking {
+        var opens = 0
+        var fingerprint: UploadContentFingerprint? = null
+        val input = source(SYNTHETIC_BYTES).copy(
+            openInputStream = { opens++; ByteArrayInputStream(if (opens == 1) SYNTHETIC_BYTES else "different-content".encodeToByteArray()) },
+            onContentRead = { fingerprint = it },
+        )
+        val transport = UploadRecordingInterceptor(
+            """{"success":true}""", IOException("synthetic disconnect"), uploadedFileResponse(17), SYNTHETIC_BYTES.decodeToString(),
+        )
+        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, repository(transport).uploadResult(input, "/share").status)
+        assertEquals(1, opens)
+        assertEquals(source(SYNTHETIC_BYTES).contentFingerprint(), fingerprint)
+    }
+
+    @Test
+    fun `上传未读完的源不能留下完整摘要`() = runBlocking {
+        var fingerprint: UploadContentFingerprint? = null
+        val transport = UploadRecordingInterceptor("""{"success":true}""")
+        val input = source(SYNTHETIC_BYTES).copy(contentLength = 18, onContentRead = { fingerprint = it })
+        val result = repository(transport).uploadResult(input, "/share")
+        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
+        assertTrue(result.requiresRefresh)
+        assertEquals(null, fingerprint)
+        assertEquals(listOf("write", "upload"), transport.requests.map(::method))
+    }
+
+    @Test
+    fun `断线后读取权限被拒绝不报告完成也不再次上传`() = runBlocking {
+        val transport = UploadRecordingInterceptor(
+            """{"success":true}""", IOException("synthetic disconnect"),
+            """{"success":false,"error":{"code":105}}""",
+        )
+        val result = repository(transport).uploadResult(source(SYNTHETIC_BYTES), "/share")
+        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
+        assertTrue(result.requiresRefresh)
+        assertEquals(1, transport.requests.count { method(it) == "upload" })
+    }
+
+    @Test
+    fun `零字节完整内容可以恢复且目标空格不被剥除`() = runBlocking {
+        val path = "/share/folder /synthetic.bin"
+        val transport = UploadRecordingInterceptor(
+            """{"success":true}""", IOException("synthetic disconnect"),
+            """{"success":true,"data":{"files":[{"path":"$path","name":"synthetic.bin","isdir":false,"size":0,"additional":{"perm":{"is_acl_mode":false,"acl":{"read":true,"write":false,"del":false}}}}]}}""", "",
+        )
+        val result = repository(transport).uploadResult(source(byteArrayOf()), "/share/folder ")
+        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        val multipart = transport.requests[1].body as MultipartBody
+        assertEquals("/share/folder ", multipartValue(multipart, "path"))
     }
 
     @Test
@@ -333,6 +438,10 @@ class FileUploadTest {
         assertTrue(transport.multipartBodies.isEmpty())
     }
 
+    private fun multipartValue(body: MultipartBody, name: String): String? = body.parts
+        .singleOrNull { it.headers?.get("Content-Disposition") == "form-data; name=\"$name\"" }
+        ?.let { part -> Buffer().also(part.body::writeTo).readUtf8() }
+
     private fun source(bytes: ByteArray) = UploadSource(
         displayName = "synthetic.bin",
         contentType = "application/octet-stream",
@@ -349,7 +458,7 @@ class FileUploadTest {
     )
 
     private fun uploadedFileResponse(size: Long) =
-        """{"success":true,"data":{"files":[{"path":"/share/synthetic.bin","name":"synthetic.bin","isdir":false,"size":$size}]}}"""
+        """{"success":true,"data":{"files":[{"path":"/share/synthetic.bin","name":"synthetic.bin","isdir":false,"size":$size,"additional":{"perm":{"is_acl_mode":false,"acl":{"read":true,"write":false,"del":false}}}}]}}"""
 
     private fun uploadedTextResponse() =
         """{"success":true,"data":{"files":[{"path":"/share/note.txt","name":"note.txt","isdir":false,"size":6}]}}"""
@@ -360,6 +469,7 @@ class FileUploadTest {
     private fun repository(
         interceptor: Interceptor,
         supportsUpload: Boolean = true,
+        synoToken: String? = "test-token",
     ): DsmRepository {
         val client = DsmApiClient(
             OkHttpClient.Builder()
@@ -380,9 +490,9 @@ class FileUploadTest {
             )
             add(ApiCapability("SYNO.FileStation.Delete", "entry.cgi", 1, 2))
         }.associateBy(ApiCapability::name)
-        return DsmRepository(
+        return authorizedRepository(
             profile = NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
-            session = DsmSession("test", "test-session", "test-token"),
+            session = DsmSession("test", "test-session", synoToken),
             api = client,
             capabilities = capabilities,
         )
@@ -428,10 +538,10 @@ private class UploadRecordingInterceptor(vararg responses: Any) : Interceptor {
         return Response.Builder()
             .request(request)
             .protocol(Protocol.HTTP_1_1)
-            .code(if (requestMethod == "download") 206 else 200)
+            .code(if (request.header("Range") != null) 206 else 200)
             .message("OK")
             .apply {
-                if (requestMethod == "download") {
+                if (request.header("Range") != null) {
                     val size = response.encodeToByteArray().size
                     header("Content-Range", "bytes 0-${size - 1}/$size")
                 }
@@ -461,7 +571,7 @@ private class BlockingUploadInterceptor(
                 check(allowUpload.await(2, TimeUnit.SECONDS)) { "等待上传响应超时" }
                 """{"success":true}"""
             }
-            "list" -> if (targetAppears && uploadStarted.count == 0L) {
+            "list", "getinfo" -> if (targetAppears && uploadStarted.count == 0L) {
                 """{"success":true,"data":{"files":[{"path":"/share/synthetic.bin","name":"synthetic.bin","isdir":false,"size":17}]}}"""
             } else {
                 """{"success":true,"data":{"files":[]}}"""

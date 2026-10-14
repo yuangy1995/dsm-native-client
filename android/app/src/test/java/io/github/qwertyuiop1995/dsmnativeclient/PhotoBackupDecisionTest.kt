@@ -18,9 +18,9 @@ class PhotoBackupDecisionTest {
     }
 
     @Test
-    fun `同名同大小文件视为已备份`() {
+    fun `同名同大小文件必须继续比较内容`() {
         val existing = FileItem("/photos/a.jpg", "a.jpg", isDirectory = false, size = 100)
-        assertEquals(BackupTargetDecision.SKIP_MATCHING, backupTargetDecision(existing, 100))
+        assertEquals(BackupTargetDecision.VERIFY_CONTENT, backupTargetDecision(existing, 100))
     }
 
     @Test
@@ -65,10 +65,12 @@ class PhotoBackupDecisionTest {
         val complete = FileItem("/share/a.txt", "a.txt", isDirectory = false, size = 10)
         val conflict = FileItem("/share/a.txt", "a.txt", isDirectory = false, size = 9)
 
-        assertEquals(RetryUploadDecision.ALREADY_COMPLETE, retryUploadDecision(complete, 10, false))
-        assertEquals(RetryUploadDecision.CONFLICT, retryUploadDecision(conflict, 10, false))
-        assertEquals(RetryUploadDecision.REQUEUE, retryUploadDecision(conflict, 10, true))
-        assertEquals(RetryUploadDecision.REQUEUE, retryUploadDecision(null, 10, false))
+        assertEquals(RetryUploadDecision.CONFLICT, retryUploadDecision(complete, false, true))
+        assertEquals(RetryUploadDecision.UNRESOLVED, retryUploadDecision(null, false, true))
+        assertEquals(RetryUploadDecision.ALREADY_COMPLETE, retryUploadDecision(complete, contentMatches = true, unresolved = true))
+        assertEquals(RetryUploadDecision.CONFLICT, retryUploadDecision(conflict, contentMatches = false, unresolved = false))
+        assertEquals(RetryUploadDecision.CONFLICT, retryUploadDecision(conflict, contentMatches = false, unresolved = true))
+        assertEquals(RetryUploadDecision.REQUEUE, retryUploadDecision(null, contentMatches = false, unresolved = false))
     }
 
     @Test

@@ -22,6 +22,7 @@ data class FileBrowserState(
     val pathHistory: List<String> = emptyList(),
     val searchQuery: String = "",
     val activeSearchQuery: String? = null,
+    val searchRequest: FileSearchRequest? = null,
     val sortOption: FileSortOption = FileSortOption.NAME,
     val sortAscending: Boolean = true,
     val typeFilter: FileTypeFilter = FileTypeFilter.ALL,
@@ -33,6 +34,7 @@ data class FileBrowserState(
         pathHistory = pathHistory + path,
         searchQuery = "",
         activeSearchQuery = null,
+        searchRequest = null,
         selectedPaths = emptySet(),
     )
 
@@ -43,6 +45,7 @@ data class FileBrowserState(
             pathHistory = pathHistory.dropLast(1),
             searchQuery = "",
             activeSearchQuery = null,
+        searchRequest = null,
             selectedPaths = emptySet(),
         )
     }
@@ -56,6 +59,7 @@ data class FileBrowserState(
             pathHistory = lineage.take(targetIndex),
             searchQuery = "",
             activeSearchQuery = null,
+        searchRequest = null,
             selectedPaths = emptySet(),
         )
     }
@@ -63,7 +67,8 @@ data class FileBrowserState(
     fun editSearchQuery(query: String): FileBrowserState = copy(searchQuery = query)
 
     fun submitSearch(): FileBrowserState = copy(
-        activeSearchQuery = searchQuery.trim().ifBlank { null },
+        activeSearchQuery = if (searchRequest != null) searchQuery.trim() else searchQuery.trim().ifBlank { null },
+        searchRequest = searchRequest?.copy(name = searchQuery.trim()),
         selectedPaths = emptySet(),
     )
 
@@ -75,6 +80,7 @@ data class FileBrowserState(
 
     fun changeFilter(filter: FileTypeFilter): FileBrowserState = copy(
         typeFilter = filter,
+        searchRequest = searchRequest?.copy(kind = filter.searchKind()),
         selectedPaths = emptySet(),
     )
 
@@ -91,6 +97,7 @@ data class FileBrowserState(
         pathHistory = listOf(""),
         searchQuery = "",
         activeSearchQuery = null,
+        searchRequest = null,
         selectedPaths = emptySet(),
     )
 

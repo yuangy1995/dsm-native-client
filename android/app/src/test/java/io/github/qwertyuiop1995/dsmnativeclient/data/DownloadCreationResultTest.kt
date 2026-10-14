@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
@@ -33,18 +35,22 @@ import org.junit.Test
 
 class DownloadCreationResultTest {
     @Test
-    fun `未指定目录的链接固定使用v1且兼容仅有v1的服务`() = runBlocking {
-        for (maxVersion in listOf(1, 3)) {
-            val transport = ScriptedDownloadCreationInterceptor(
-                emptyTaskList(), success("""{"taskid":"task-1"}"""), taskList("task-1"),
-            )
+    fun `未指定目录的链接固定使用v3且旧版本零请求`() = runBlocking {
+        for (maxVersion in listOf(1, 2, 3)) {
+            val transport = ScriptedDownloadCreationInterceptor(success("{}"))
             val result = repository(transport, taskMaxVersion = maxVersion)
-                .createDownloadResult("https://example.invalid/synthetic.iso", "  ")
-
-            assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-            val form = transport.requests.single { it.downloadMethod() == "create" }.body as FormBody
-            assertEquals("1", (0 until form.size).first { form.name(it) == "version" }.let(form::value))
-            assertFalse((0 until form.size).any { form.name(it) == "destination" })
+                .createDownloadResult("https://example.invalid/synthetic.iso", null)
+            if (maxVersion < 3) {
+                assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
+                assertFalse(result.submitted)
+                assertTrue(transport.requests.isEmpty())
+            } else {
+                assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+                val form = transport.requests.single().fixtureBody() as FormBody
+                assertEquals("3", (0 until form.size).first { form.name(it) == "version" }.let(form::value))
+                assertFalse((0 until form.size).any { form.name(it) == "destination" })
+                assertTrue(transport.requests.single().body!!.isOneShot())
+            }
         }
     }
 
@@ -63,7 +69,7 @@ class DownloadCreationResultTest {
     fun `不包含所需版本的链接能力不回退到其他版本`() = runBlocking {
         for (destination in listOf(null, "/downloads")) {
             val transport = ScriptedDownloadCreationInterceptor()
-            val result = repository(transport, taskMinVersion = 3)
+            val result = repository(transport, taskMinVersion = 4, taskMaxVersion = 4)
                 .createDownloadResult("https://example.invalid/synthetic.iso", destination)
 
             assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
@@ -77,9 +83,7 @@ class DownloadCreationResultTest {
         for (destination in listOf(null, "/downloads")) {
             val steps = buildList {
                 if (destination != null) add(writableDestination(destination))
-                add(emptyTaskList())
                 add(success("""{"taskid":"task-1"}"""))
-                add(taskList("task-1"))
             }
             val transport = ScriptedDownloadCreationInterceptor(*steps.toTypedArray())
             val result = repository(transport).createDownloadFromFileResult(
@@ -87,7 +91,7 @@ class DownloadCreationResultTest {
             )
 
             assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-            val request = transport.requests.single { it.body is MultipartBody }
+            val request = transport.requests.single { it.fixtureBody() is MultipartBody }
             assertEquals(if (destination == null) "1" else "2", request.url.queryParameter("version"))
             assertEquals(1, transport.methods().count { it == "create" })
         }
@@ -113,10 +117,9 @@ class DownloadCreationResultTest {
     }
 
     @Test
-    fun `链接任务只在新任务回读后确认且请求符合公共契约`() = runBlocking {
+    fun `链接创建按接受回执结束且请求符合公共v3契约`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
             writableDestination("/downloads"),
-            emptyTaskList(),
             success("""{"taskid":"task-1"}"""),
             taskList("task-1"),
         )
@@ -129,11 +132,11 @@ class DownloadCreationResultTest {
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         assertEquals(1, result.counts.succeeded)
         assertFalse(result.requiresRefresh)
-        assertEquals(listOf("getinfo", "list", "create", "list"), transport.methods())
+        assertEquals(listOf("getinfo", "create"), transport.methods())
         assertEquals(1, transport.methods().count { it == "create" })
         RequestFixtureAssertions.assertRequest(
-            transport.requests[2],
-            "download-station/create/synthetic-link/request.json",
+            transport.requests[1],
+            "download-station/create/synthetic-link-v3/request.json",
         )
     }
 
@@ -155,9 +158,8 @@ class DownloadCreationResultTest {
     }
 
     @Test
-    fun `链接提交断线后不把其他新任务归属给本请求且不重放`() = runBlocking {
+    fun `链接提交断线不读取其他任务猜测归属且不重放`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
-            emptyTaskList(),
             IOException("synthetic disconnect"),
             taskList("task-1"),
         )
@@ -170,14 +172,13 @@ class DownloadCreationResultTest {
         assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
         assertEquals(1, result.counts.unknown)
         assertTrue(result.requiresRefresh)
-        assertEquals(listOf("list", "create", "list"), transport.methods())
+        assertEquals(listOf("create"), transport.methods())
         assertEquals(1, transport.methods().count { it == "create" })
     }
 
     @Test
-    fun `成功响应缺少稳定任务ID时严格回读也不猜测归属`() = runBlocking {
+    fun `成功响应无需稳定任务ID即表示已接受且不认领列表任务`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
-            emptyTaskList(),
             success("{}"),
             taskList("unrelated-task"),
         )
@@ -187,18 +188,18 @@ class DownloadCreationResultTest {
             null,
         )
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertEquals(1, result.counts.unknown)
-        assertTrue(result.requiresRefresh)
-        assertEquals(listOf("list", "create", "list"), transport.methods())
+        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertEquals(0, result.counts.unknown)
+        assertEquals(1, result.counts.succeeded)
+        assertFalse(result.requiresRefresh)
+        assertEquals(listOf("create"), transport.methods())
         assertEquals(1, transport.methods().count { it == "create" })
     }
 
     @Test
-    fun `服务端返回的任务ID未出现时保持已提交但未确认`() = runBlocking {
+    fun `成功响应的可选任务ID不触发列表轮询`() = runBlocking {
         val readbacks = Array(8) { emptyTaskList() }
         val transport = ScriptedDownloadCreationInterceptor(
-            emptyTaskList(),
             success("""{"taskid":"expected-task"}"""),
             *readbacks,
         )
@@ -208,17 +209,18 @@ class DownloadCreationResultTest {
             null,
         )
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
+        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         assertEquals(0, result.counts.failed)
-        assertEquals(1, result.counts.unknown)
-        assertTrue(result.requiresRefresh)
+        assertEquals(0, result.counts.unknown)
+        assertEquals(1, result.counts.succeeded)
+        assertFalse(result.requiresRefresh)
+        assertEquals(listOf("create"), transport.methods())
         assertEquals(1, transport.methods().count { it == "create" })
     }
 
     @Test
-    fun `稳定任务ID去除首尾空白后严格回读可确认`() = runBlocking {
+    fun `成功响应中的非规范可选任务ID不影响接受事实`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
-            emptyTaskList(),
             success("""{"taskid":"  task-1  "}"""),
             taskList("task-1"),
         )
@@ -233,11 +235,10 @@ class DownloadCreationResultTest {
     }
 
     @Test
-    fun `任务ID匹配但回读目标目录不同时不确认成功`() = runBlocking {
+    fun `创建接受回执不声称目录搬迁或认领同ID任务`() = runBlocking {
         val readbacks = Array(8) { taskListWithDestination("task-1", "/other") }
         val transport = ScriptedDownloadCreationInterceptor(
             writableDestination("/downloads"),
-            emptyTaskList(),
             success("""{"taskid":"task-1"}"""),
             *readbacks,
         )
@@ -247,14 +248,16 @@ class DownloadCreationResultTest {
             "/downloads",
         )
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertEquals(1, result.counts.unknown)
-        assertTrue(result.requiresRefresh)
+        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertEquals(0, result.counts.unknown)
+        assertEquals(1, result.counts.succeeded)
+        assertFalse(result.requiresRefresh)
+        assertEquals(listOf("getinfo", "create"), transport.methods())
         assertEquals(1, transport.methods().count { it == "create" })
     }
 
     @Test
-    fun `创建前严格列表响应缺少tasks时失败关闭且不提交`() = runBlocking {
+    fun `创建接受空data不依赖列表读取权限`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(success("{}"))
 
         val result = repository(transport).createDownloadResult(
@@ -262,18 +265,16 @@ class DownloadCreationResultTest {
             null,
         )
 
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertFalse(result.submitted)
-        assertEquals(listOf("list"), transport.methods())
-        assertEquals(0, transport.methods().count { it == "create" })
+        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertTrue(result.submitted)
+        assertEquals(listOf("create"), transport.methods())
+        assertEquals(1, transport.methods().count { it == "create" })
     }
 
     @Test
-    fun `链接提交断线且回读无新任务时保持未确认`() = runBlocking {
+    fun `链接提交断线保持未知且不额外查询任务列表`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
-            emptyTaskList(),
             IOException("synthetic disconnect"),
-            emptyTaskList(),
         )
 
         val result = repository(transport).createDownloadResult(
@@ -290,7 +291,6 @@ class DownloadCreationResultTest {
     @Test
     fun `链接创建权限拒绝不重放也不冒充成功`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
-            emptyTaskList(),
             """{"success":false,"error":{"code":105}}""",
         )
 
@@ -301,7 +301,7 @@ class DownloadCreationResultTest {
 
         assertEquals(MutationResultStatus.PERMISSION_DENIED, result.status)
         assertEquals(MutationErrorCategory.PERMISSION, result.errorCategory)
-        assertEquals(listOf("list", "create"), transport.methods())
+        assertEquals(listOf("create"), transport.methods())
     }
 
     @Test
@@ -322,9 +322,8 @@ class DownloadCreationResultTest {
     }
 
     @Test
-    fun `链接创建响应成功但回读失败时保持未确认`() = runBlocking {
+    fun `链接已接受后不因无关列表不可用而降为未知`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
-            emptyTaskList(),
             success("""{"taskid":"task-1"}"""),
             IOException("synthetic readback failure"),
         )
@@ -334,8 +333,9 @@ class DownloadCreationResultTest {
             null,
         )
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.requiresRefresh)
+        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertFalse(result.requiresRefresh)
+        assertEquals(listOf("create"), transport.methods())
         assertEquals(1, transport.methods().count { it == "create" })
     }
 
@@ -405,9 +405,8 @@ class DownloadCreationResultTest {
     }
 
     @Test
-    fun `任务文件提交断线只回读不猜测归属且不再次上传`() = runBlocking {
+    fun `任务文件提交断线不猜测归属且不再次上传`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
-            emptyTaskList(),
             IOException("synthetic upload disconnect"),
             taskList("task-file-1"),
         )
@@ -425,14 +424,13 @@ class DownloadCreationResultTest {
         assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
         assertEquals(1, result.counts.unknown)
         assertTrue(result.requiresRefresh)
-        assertEquals(listOf("list", "create", "list"), transport.methods())
-        assertEquals(1, transport.requests.count { it.body is MultipartBody })
+        assertEquals(listOf("create"), transport.methods())
+        assertEquals(1, transport.requests.count { it.fixtureBody() is MultipartBody })
     }
 
     @Test
-    fun `任务文件只在稳定任务回读后确认成功且只上传一次`() = runBlocking {
+    fun `任务文件接受回执后结束且只上传一次`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
-            emptyTaskList(),
             success("""{"taskid":"task-file-1"}"""),
             taskList("task-file-1"),
         )
@@ -445,14 +443,13 @@ class DownloadCreationResultTest {
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
         assertEquals(1, result.counts.succeeded)
         assertFalse(result.requiresRefresh)
-        assertEquals(listOf("list", "create", "list"), transport.methods())
-        assertEquals(1, transport.requests.count { it.body is MultipartBody })
+        assertEquals(listOf("create"), transport.methods())
+        assertEquals(1, transport.requests.count { it.fixtureBody() is MultipartBody })
     }
 
     @Test
-    fun `任务文件上传成功但回读失败时保持未确认且不再次上传`() = runBlocking {
+    fun `任务文件已接受不依赖无关列表且不再次上传`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
-            emptyTaskList(),
             success("""{"taskid":"task-file-1"}"""),
             IOException("synthetic file task readback failure"),
         )
@@ -462,10 +459,12 @@ class DownloadCreationResultTest {
             taskFileSource(bytes),
         )
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertEquals(1, result.counts.unknown)
-        assertTrue(result.requiresRefresh)
-        assertEquals(1, transport.requests.count { it.body is MultipartBody })
+        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertEquals(0, result.counts.unknown)
+        assertEquals(1, result.counts.succeeded)
+        assertFalse(result.requiresRefresh)
+        assertEquals(listOf("create"), transport.methods())
+        assertEquals(1, transport.requests.count { it.fixtureBody() is MultipartBody })
     }
 
     @Test
@@ -484,7 +483,7 @@ class DownloadCreationResultTest {
         worker.join()
 
         assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, status)
-        assertEquals(1, transport.requests.count { it.body is MultipartBody })
+        assertEquals(1, transport.requests.count { it.fixtureBody() is MultipartBody })
     }
 
     @Test
@@ -496,7 +495,7 @@ class DownloadCreationResultTest {
             displayName = "synthetic.torrent",
             contentType = "application/x-bittorrent",
             contentLength = bytes.size.toLong(),
-            openInputStream = { ByteArrayInputStream(bytes) },
+            openInputStream = { ByteArrayInputStream(bytes.copyOf().also { it[it.lastIndex] = token.last().code.toByte() }) },
             requestToken = token,
         )
 
@@ -507,7 +506,7 @@ class DownloadCreationResultTest {
 
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, first.await().status)
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, second.await().status)
-        assertEquals(2, transport.requests.count { it.body is MultipartBody })
+        assertEquals(2, transport.requests.count { it.fixtureBody() is MultipartBody })
     }
 
     @Test
@@ -532,7 +531,7 @@ class DownloadCreationResultTest {
 
         transport.allowSubmission.countDown()
         assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, first.await().status)
-        assertEquals(1, transport.requests.count { it.body is MultipartBody })
+        assertEquals(1, transport.requests.count { it.fixtureBody() is MultipartBody })
     }
 
     @Test
@@ -572,7 +571,7 @@ class DownloadCreationResultTest {
         supportsTask: Boolean = true,
         taskMinVersion: Int = 1,
         taskMaxVersion: Int = 3,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
         DsmApiClient(
@@ -638,9 +637,8 @@ private class BlockingDownloadCreationInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         requests += request
-        val body = when (requestIndex.getAndIncrement()) {
-            0 -> emptyTaskList()
-            1 -> {
+        val body = when (request.downloadMethod()) {
+            "create" -> {
                 submissionStarted.countDown()
                 check(allowSubmission.await(2, TimeUnit.SECONDS)) { "等待创建请求超时" }
                 success("""{"taskid":"task-1"}""")
@@ -679,7 +677,7 @@ private class ConcurrentFileCreationInterceptor : Interceptor {
 }
 
 private fun Request.downloadMethod(): String? {
-    val form = body as? FormBody
+    val form = fixtureBody() as? FormBody
     if (form != null) {
         return (0 until form.size).firstNotNullOfOrNull { index ->
             form.value(index).takeIf { form.name(index) == "method" }

@@ -1,10 +1,12 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.*
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ManagedResource
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ResourceState
 import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineImageImport
@@ -78,14 +80,14 @@ class VirtualMachineImageImportRepositoryTest {
             fileInfo(), storageList(), imageList(),
             taskStarted(), taskFinished(), imageList(image()),
         )
-        var capturedTask: String? = null
-
-        val result = repository(transport).importVirtualMachineImageResult(target()) {
-            capturedTask = it
-        }
-
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-        assertEquals("task-1", capturedTask)
+        val repo = repository(transport)
+        val result = repo.probeImport()
+        assertEquals(null, result.failure)
+        assertEquals(listOf(VmmStage.SUBMITTED, VmmStage.ACCEPTED), result.steps.map { it.stage })
+        assertEquals("task-1", result.steps.last().task)
+        val verified = repo.virtualMachineManagement.recoverImport(requireNotNull(result.snapshot), result.steps.last())
+        assertEquals(VmmStage.VERIFIED, verified.stage)
+        assertEquals(vmmDigest("image-1"), verified.image)
         assertEquals(1, transport.requests.count { it.fields()["method"] == "create" })
         assertEquals(
             listOf("getinfo", "list", "list", "create", "get", "list"),
@@ -111,10 +113,10 @@ class VirtualMachineImageImportRepositoryTest {
             fileInfo(), storageList(), imageList(), IOException("synthetic disconnect"),
         )
 
-        val result = repository(transport).importVirtualMachineImageResult(target())
+        val result = repository(transport).probeImport()
 
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.requiresRefresh)
+        assertEquals(listOf(VmmStage.SUBMITTED), result.steps.map { it.stage })
+        assertTrue(result.failure != null)
         assertEquals(1, transport.requests.count { it.fields()["method"] == "create" })
     }
 
@@ -123,9 +125,9 @@ class VirtualMachineImageImportRepositoryTest {
         val transport = ImageImportInterceptor(
             fileInfo(), storageList(), imageList(), CANCEL_RESPONSE,
         )
-        val captured = CompletableDeferred<io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult>()
+        val captured = CompletableDeferred<ImportProbe>()
         val worker = launch(Dispatchers.IO) {
-            captured.complete(repository(transport).importVirtualMachineImageResult(target()))
+            captured.complete(repository(transport).probeImport())
         }
         assertTrue(transport.cancellationRequestEntered.await(5, TimeUnit.SECONDS))
 
@@ -134,7 +136,8 @@ class VirtualMachineImageImportRepositoryTest {
         worker.join()
         val result = captured.await()
 
-        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, result.status)
+        assertEquals(listOf(VmmStage.SUBMITTED), result.steps.map { it.stage })
+        assertTrue(result.failure is kotlinx.coroutines.CancellationException)
         assertEquals(1, transport.requests.count { it.fields()["method"] == "create" })
     }
 
@@ -144,10 +147,11 @@ class VirtualMachineImageImportRepositoryTest {
             fileInfo(size = 2049), storageList(), imageList(),
         )
 
-        val result = repository(transport).importVirtualMachineImageResult(target())
+        val result = repository(transport).probeImport()
 
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertFalse(result.submitted)
+        assertTrue(result.failure is VmmFailure)
+        assertEquals(null, result.snapshot)
+        assertTrue(result.steps.isEmpty())
         assertFalse(transport.requests.any { it.fields()["method"] == "create" })
     }
 
@@ -158,10 +162,13 @@ class VirtualMachineImageImportRepositoryTest {
             """{"success":true,"data":{"finish":true,"task_info":{}}}""",
         )
 
-        val result = repository(transport).importVirtualMachineImageResult(target())
-
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.requiresRefresh)
+        val repo = repository(transport)
+        val result = repo.probeImport()
+        assertEquals(null, result.failure)
+        val pending = repo.virtualMachineManagement.recoverImport(requireNotNull(result.snapshot), result.steps.last())
+        assertEquals(VmmStage.ACCEPTED, pending.stage)
+        assertEquals(null, pending.image)
+        assertEquals("task-1", pending.task)
         assertEquals(1, transport.requests.count { it.fields()["method"] == "create" })
         assertFalse(transport.requests.any { it.fields()["method"] == "clear" })
     }
@@ -250,7 +257,15 @@ class VirtualMachineImageImportRepositoryTest {
         }
     }
 
-    private fun repository(interceptor: Interceptor) = DsmRepository(
+    private data class ImportProbe(val snapshot: VmmImportSnapshot?, val steps: List<VmmImportProgress>, val failure: Throwable?)
+    private suspend fun DsmRepository.probeImport(): ImportProbe {
+        var snapshot: VmmImportSnapshot? = null
+        val steps = mutableListOf<VmmImportProgress>()
+        val outcome = runCatching { importNasVmmImage(target(), { snapshot = it }, steps::add) }
+        return ImportProbe(snapshot, steps.toList(), outcome.exceptionOrNull())
+    }
+
+    private fun repository(interceptor: Interceptor) = authorizedRepository(
         NasProfile("profile-a", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("profile-a", "synthetic-session", "synthetic-token"),
         DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
@@ -340,6 +355,6 @@ private const val CANCEL_RESPONSE = "__synthetic_image_import_cancellation__"
 private fun taskStarted() = """{"success":true,"data":{"task_id":"task-1"}}"""
 
 private fun Request.fields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return (0 until form.size).associate { form.name(it) to form.value(it) }
 }

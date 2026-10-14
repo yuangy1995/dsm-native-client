@@ -33,7 +33,10 @@ data class ContainerOverview(
     val projects: List<ManagedResource>,
     val events: List<LogEntry> = emptyList(),
     val unavailableSections: Set<ContainerSection> = emptySet(),
+    val projectDetails: List<ContainerProjectInfo> = emptyList(),
 )
+
+data class ContainerProjectInfo(val id: String, val name: String, val state: ResourceState, val containerCount: Int?)
 
 enum class ContainerSection { IMAGES, NETWORKS, PROJECTS, EVENTS }
 
@@ -198,4 +201,6 @@ data class LogEntry(
     val timeEpochSeconds: Long?,
     val user: String,
     val event: String,
+    /** 容器日志未附时区，保留 NAS 本地时间，不假设为手机时区或 UTC。 */
+    val localTime: java.time.LocalDateTime? = null,
 )

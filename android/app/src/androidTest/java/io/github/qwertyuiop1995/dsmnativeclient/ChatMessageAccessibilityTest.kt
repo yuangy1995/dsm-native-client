@@ -23,7 +23,7 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultCounts
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
-import io.github.qwertyuiop1995.dsmnativeclient.ui.ChatScreen
+import io.github.qwertyuiop1995.dsmnativeclient.ui.ConversationDetail
 import io.github.qwertyuiop1995.dsmnativeclient.ui.theme.LanStashTheme
 import java.text.DateFormat
 import java.util.Date
@@ -90,7 +90,7 @@ class ChatMessageAccessibilityTest {
 
         rule.setContent {
             LanStashTheme {
-                ChatScreen(
+                ConversationDetail(
                     state = WorkspaceState(
                         profile = NasProfile(
                             "synthetic",
@@ -154,13 +154,14 @@ class ChatMessageAccessibilityTest {
                 context.getString(R.string.message_received),
             ),
         ).assertIsDisplayed()
-        rule.onNodeWithText(context.getString(R.string.retry_send)).assertIsDisplayed()
+        rule.onAllNodesWithContentDescription(context.getString(R.string.chat_message_options))
+            .assertCountEquals(messages.size)
         rule.onNodeWithContentDescription(context.getString(R.string.remove_failed_message))
             .assertIsDisplayed()
     }
 
     @Test
-    fun 未确认发送必须保留气泡刷新关闭且不能移除() {
+    fun 未确认发送必须保留气泡刷新且不能重发或移除() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val model = AppViewModel(ApplicationProvider.getApplicationContext<Application>())
         val conversation = ChatConversation(
@@ -196,7 +197,7 @@ class ChatMessageAccessibilityTest {
         )
         rule.setContent {
             LanStashTheme {
-                ChatScreen(
+                ConversationDetail(
                     state = WorkspaceState(
                         profile = NasProfile(
                             "synthetic",
@@ -223,10 +224,10 @@ class ChatMessageAccessibilityTest {
             }
         }
 
-        rule.onNodeWithText(context.getString(R.string.chat_text_send_unverified))
+        rule.onNodeWithText(context.getString(R.string.chat_action_waiting))
             .assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.refresh)).assertIsDisplayed()
-        rule.onNodeWithText(context.getString(R.string.close)).assertIsNotEnabled()
+        rule.onAllNodesWithText(context.getString(R.string.retry_send)).assertCountEquals(0)
         rule.onAllNodesWithText(context.getString(R.string.chat_mutation_continue_editing))
             .assertCountEquals(0)
         rule.onAllNodesWithContentDescription(context.getString(R.string.remove_failed_message))

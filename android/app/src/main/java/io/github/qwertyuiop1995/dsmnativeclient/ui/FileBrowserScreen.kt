@@ -2,6 +2,7 @@ package io.github.qwertyuiop1995.dsmnativeclient.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.CreateNewFolder
@@ -12,8 +13,6 @@ import androidx.compose.ui.semantics.semantics
 import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
 import io.github.qwertyuiop1995.dsmnativeclient.ui.navigation.*
 
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -123,12 +122,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
-import androidx.core.content.ContextCompat
 import io.github.qwertyuiop1995.dsmnativeclient.AppViewModel
 import io.github.qwertyuiop1995.dsmnativeclient.FileCopyMoveOperation
 import io.github.qwertyuiop1995.dsmnativeclient.FileStationMutationOperation
 import io.github.qwertyuiop1995.dsmnativeclient.Loadable
-import io.github.qwertyuiop1995.dsmnativeclient.POST_NOTIFICATIONS_PERMISSION
 import io.github.qwertyuiop1995.dsmnativeclient.PreviewOwner
 import io.github.qwertyuiop1995.dsmnativeclient.R
 import io.github.qwertyuiop1995.dsmnativeclient.WorkspaceState
@@ -136,7 +133,7 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FileBrowserState
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FilePage
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FileShareLink
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ArchiveFormat
+import io.github.qwertyuiop1995.dsmnativeclient.domain.isSupportedArchive
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FilePreviewKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FileSortOption
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FileTypeFilter
@@ -155,9 +152,9 @@ internal fun filePageUiState(
     val hasConstraint = browser.activeSearchQuery != null ||
         browser.typeFilter != FileTypeFilter.ALL
     return files.toPageUiState(
-        isEmpty = { page -> browser.visibleItems(page.items).isEmpty() },
+        isEmpty = { page -> page.items.none { browser.typeFilter == FileTypeFilter.ALL || (browser.typeFilter == FileTypeFilter.FOLDERS) == it.isDirectory } },
         isFilteredEmpty = { page ->
-            hasConstraint && browser.visibleItems(page.items).isEmpty()
+            hasConstraint && page.items.none { browser.typeFilter == FileTypeFilter.ALL || (browser.typeFilter == FileTypeFilter.FOLDERS) == it.isDirectory }
         },
     )
 }
@@ -186,11 +183,7 @@ private fun FileBrowserContent(
     val mutation = state.fileStationMutationState
     var selected by remember { mutableStateOf<FileItem?>(null) }
     var details by remember { mutableStateOf<FileItem?>(null) }
-    var pendingDownload by rememberSaveable(
-        state.profile.id,
-        stateSaver = PendingDownloadRequestStateSaver,
-    ) { mutableStateOf(PendingDownloadRequestState()) }
-    var showNotificationPermission by remember { mutableStateOf(false) }
+    val downloadSelection = rememberFileDownloadLauncher(state, model)
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
@@ -214,8 +207,6 @@ private fun FileBrowserContent(
     var showSortMenu by remember { mutableStateOf(false) }
     var showFilterMenu by remember { mutableStateOf(false) }
     var showUploadOptions by remember { mutableStateOf(false) }
-    var compressTargets by remember { mutableStateOf<List<FileItem>>(emptyList()) }
-    var extractTarget by remember { mutableStateOf<FileItem?>(null) }
     val context = LocalContext.current
     val inlinePreview = useInlineFilePreview(
         availableWidthDp,
@@ -225,7 +216,7 @@ private fun FileBrowserContent(
     val pullRefreshState = rememberPullRefreshState(refreshing, model::refreshFiles)
     val loadedItems = (state.files as? Loadable.Ready)?.value?.items.orEmpty()
     val selectedItems = loadedItems.filter { it.path in browser.selectedPaths }
-    val pageUiState = filePageUiState(state.files, browser)
+    val pageUiState = remember(state.files, browser.activeSearchQuery, browser.typeFilter) { filePageUiState(state.files, browser) }
     val mutationBlocksWrites = mutation.editorVisible || mutation.confirmationRequested ||
         mutation.target != null || mutation.mutationInProgress || mutation.mutationRefreshInProgress ||
         mutation.mutationResult != null || mutation.mutationFailure != null ||
@@ -233,52 +224,6 @@ private fun FileBrowserContent(
     val textSaveInProgress = mutation.target?.operation == FileStationMutationOperation.TEXT_SAVE &&
         mutation.mutationInProgress
 
-    fun handleDownloadDestination(uri: android.net.Uri?) {
-        val resolution = resolveDownloadDestination(
-            pending = pendingDownload,
-            activeProfileId = state.profile.id,
-            destinationSelected = uri != null,
-        )
-        pendingDownload = resolution.nextPending
-        when (resolution.decision) {
-            DownloadDestinationDecision.CANCELLED -> Unit
-            DownloadDestinationDecision.DISCARD_ORPHAN -> {
-                if (uri != null) model.discardUnmatchedDownloadDestination(uri)
-            }
-            DownloadDestinationDecision.ENQUEUE -> {
-                if (uri == null) return
-                val item = resolution.request?.toFileItem() ?: run {
-                    model.discardUnmatchedDownloadDestination(uri)
-                    return
-                }
-                val enqueueResult = model.enqueueDownload(item, uri)
-                val permissionGranted = ContextCompat.checkSelfPermission(
-                    context,
-                    POST_NOTIFICATIONS_PERMISSION,
-                ) == PackageManager.PERMISSION_GRANTED
-                if (shouldRequestDownloadNotificationPermission(
-                        enqueueResult = enqueueResult,
-                        sdkInt = Build.VERSION.SDK_INT,
-                        notificationPermissionGranted = permissionGranted,
-                    )
-                ) {
-                    showNotificationPermission = true
-                }
-            }
-        }
-    }
-
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { showNotificationPermission = false }
-    val fileDownloadLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
-        onResult = ::handleDownloadDestination,
-    )
-    val folderDownloadLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/zip"),
-        onResult = ::handleDownloadDestination,
-    )
     val uploadLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
@@ -296,7 +241,8 @@ private fun FileBrowserContent(
             when {
                 browser.selectedPaths.isNotEmpty() -> ClientFileSelectionBar(
                     state, model, selectedItems, mutationBlocksWrites,
-                    onCompress = { compressTargets = selectedItems },
+                    onCompress = { model.fileArchive.openCompression(selectedItems) },
+                    onDownload = { downloadSelection(selectedItems) },
                 )
                 uploadDestinationMode -> androidx.compose.material3.Surface {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -327,15 +273,7 @@ private fun FileBrowserContent(
         Row(Modifier.fillMaxSize().padding(padding)) {
             Column(if (inlinePreview) Modifier.width(420.dp).fillMaxHeight() else Modifier.fillMaxSize()) {
                 if (showSearch || browser.activeSearchQuery != null) {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ClientSearchField(browser.searchQuery, model::updateFileSearchQuery,
-                            stringResource(R.string.client_search_files), Modifier.weight(1f), onSearch = model::searchFiles)
-                        IconButton(onClick = {
-                            showSearch = false
-                            model.updateFileSearchQuery("")
-                            model.searchFiles()
-                        }) { Icon(Icons.Outlined.Close, stringResource(R.string.close)) }
-                    }
+                    FileSearchControls(state, model.fileSearch) { showSearch = false }
                 }
                 if (browser.path.isBlank() && browser.selectedPaths.isEmpty() && state.favoritePaths.isNotEmpty()) {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -362,7 +300,7 @@ private fun FileBrowserContent(
                         filteredEmptyIcon = Icons.Outlined.Search,
                         onRetry = model::refreshFiles,
                     ) { page ->
-                        val visibleItems = browser.visibleItems(page.items)
+                        val visibleItems = remember(page.items, browser.sortOption, browser.sortAscending, browser.typeFilter) { browser.visibleItems(page.items) }
                         FileItems(
                             items = visibleItems, state = state, model = model, viewMode = browser.viewMode,
                             canLoadMore = browser.activeSearchQuery == null && page.offset + page.items.size < page.total,
@@ -413,6 +351,9 @@ private fun FileBrowserContent(
             showAdd = false; model.openCreateFolderEditor()
         }
     }
+    FileAdvancedSearchSheet(model.fileSearch)
+    FileSharingDialogs(model)
+    FolderUploadDialog(model.folderUploads)
     if (showOptions) ClientFileOptionsSheet(state, model, onShareLinks = {
         showOptions = false; showShareLinks = true; model.loadFileShareLinks()
     }, onDismiss = { showOptions = false })
@@ -430,9 +371,8 @@ private fun FileBrowserContent(
                 })
                 if (item.canRead) add(ClientAction(stringResource(if (item.isDirectory) R.string.download_folder_as_zip else R.string.download_item),
                     Icons.Outlined.Download) {
-                    pendingDownload = PendingDownloadRequestState(item.toPendingDownloadRequest(state.profile.id))
                     selected = null
-                    if (item.isDirectory) folderDownloadLauncher.launch("${item.name}.zip") else fileDownloadLauncher.launch(item.name)
+                    downloadSelection(listOf(item))
                 })
                 if (state.supportsSharing && item.canRead) add(ClientAction(stringResource(R.string.create_share_link), Icons.Outlined.Share, writable) {
                     if (model.requestFileShareLinkCreation(item)) selected = null
@@ -459,11 +399,11 @@ private fun FileBrowserContent(
                 }
                 if (state.supportsCompression && item.canRead) ClientRow(stringResource(R.string.create_archive),
                     Icons.AutoMirrored.Outlined.InsertDriveFile, enabled = writable) {
-                    compressTargets = listOf(item); selected = null
+                    if (model.fileArchive.openCompression(listOf(item))) selected = null
                 }
                 if (!item.isDirectory && state.supportsExtraction && item.canRead && item.isSupportedArchive()) {
                     ClientRow(stringResource(R.string.extract_archive), Icons.Outlined.FolderOpen, enabled = writable) {
-                        extractTarget = item; selected = null
+                        if (model.fileArchive.open(item)) selected = null
                     }
                 }
                 if (item.isDirectory && browser.path.isBlank()) ClientRow(stringResource(R.string.open_recycle_bin),
@@ -471,6 +411,15 @@ private fun FileBrowserContent(
                 if (state.supportsCopyMove && item.path.split('/').contains("#recycle")) ClientRow(
                     stringResource(R.string.restore_from_recycle_bin), Icons.Outlined.RestoreFromTrash, enabled = writable) {
                     if (model.requestFileRestore(item)) selected = null
+                }
+                ClientRow(stringResource(R.string.file_permissions_title), Icons.Outlined.Info) {
+                    if (model.filePermissions.open(item)) selected = null
+                }
+                if (!item.isDirectory && item.extension == "iso" && item.canRead && model.fileISOMounts.available() &&
+                    io.github.qwertyuiop1995.dsmnativeclient.data.files.isMountTargetPath(item.path)) {
+                    ClientRow(stringResource(R.string.iso_mount_action), Icons.Outlined.Album, enabled = writable) {
+                        if (model.fileISOMounts.openMount(item)) selected = null
+                    }
                 }
                 ClientRow(stringResource(R.string.file_details), Icons.Outlined.Info) { details = item; selected = null }
             }
@@ -487,160 +436,14 @@ private fun FileBrowserContent(
         mutation.draftTarget?.operation == FileStationMutationOperation.SHARE_DELETE
     val shareDeleteResult = mutation.target?.operation == FileStationMutationOperation.SHARE_DELETE
     if (showShareLinks && !shareDeleteConfirmation && !shareDeleteResult) {
-        AlertDialog(
-            onDismissRequest = { if (!state.isPerformingAction) showShareLinks = false },
-            title = { Text(stringResource(R.string.manage_share_links)) },
-            text = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 260.dp, max = 560.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    when (val links = state.fileShareLinks) {
-                        Loadable.Idle,
-                        Loadable.Loading,
-                        -> CircularProgressIndicator()
-                        is Loadable.Failed -> Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Icon(
-                                Icons.Outlined.Link,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                            Text(
-                                stringResource(R.string.manage_share_links_load_failed),
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            Text(
-                                links.error.localize(context).combined,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            TextButton(onClick = model::loadFileShareLinks) {
-                                Text(stringResource(R.string.retry))
-                            }
-                        }
-                        is Loadable.Ready -> if (links.value.isEmpty()) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Link,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(48.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    stringResource(R.string.manage_share_links_empty),
-                                    style = MaterialTheme.typography.titleMedium,
-                                )
-                                Text(
-                                    stringResource(R.string.manage_share_links_empty_description),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        } else {
-                            LazyColumn(Modifier.fillMaxSize()) {
-                                items(links.value, key = FileShareLink::id) { link ->
-                                    ListItem(
-                                        headlineContent = {
-                                            Text(
-                                                link.name.ifBlank {
-                                                    stringResource(R.string.share_link_unnamed)
-                                                },
-                                            )
-                                        },
-                                        supportingContent = {
-                                            Column {
-                                                if (link.path.isNotBlank()) {
-                                                    Text(link.path, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                                }
-                                                if (link.hasPassword) {
-                                                    Text(stringResource(R.string.share_link_password_protected))
-                                                }
-                                                link.expiresAt?.let {
-                                                    Text(stringResource(R.string.share_link_expires_at, it))
-                                                }
-                                            }
-                                        },
-                                        trailingContent = {
-                                            Row {
-                                                IconButton(
-                                                    onClick = { model.copyFileShareLink(link) },
-                                                    enabled = !state.isPerformingAction,
-                                                ) {
-                                                    Icon(
-                                                        Icons.Outlined.ContentCopy,
-                                                        stringResource(R.string.copy_share_link),
-                                                    )
-                                                }
-                                                IconButton(
-                                                    onClick = {
-                                                        model.requestFileShareLinkDeletion(listOf(link.id))
-                                                    },
-                                                    enabled = !state.isPerformingAction,
-                                                ) {
-                                                    Icon(
-                                                        Icons.Outlined.DeleteOutline,
-                                                        stringResource(R.string.delete_share_link),
-                                                        tint = MaterialTheme.colorScheme.error,
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        colors = ListItemDefaults.colors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        ),
-                                    )
-                                    HorizontalDivider()
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = model::loadFileShareLinks,
-                    enabled = !state.isPerformingAction,
-                ) {
-                    Text(stringResource(R.string.refresh))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showShareLinks = false },
-                    enabled = !state.isPerformingAction,
-                ) {
-                    Text(stringResource(R.string.close))
-                }
-            },
-        )
+        FileShareManagerDialog(state, model) { if (!state.isPerformingAction) showShareLinks = false }
     }
-    if (compressTargets.isNotEmpty()) {
-        ArchiveCreateDialog(
-            suggestedName = compressTargets.singleOrNull()?.name?.substringBeforeLast('.')
-                ?: stringResource(R.string.archive_default_name),
-            onConfirm = { name, format, password ->
-                model.compressFiles(compressTargets, name, format, password)
-                compressTargets = emptyList()
-            },
-            onDismiss = { compressTargets = emptyList() },
-        )
-    }
-    extractTarget?.let { item ->
-        ArchiveExtractDialog(
-            itemName = item.name,
-            onConfirm = { password ->
-                model.extractFile(item, password)
-                extractTarget = null
-            },
-            onDismiss = { extractTarget = null },
-        )
-    }
+    FileArchiveDialog(model.fileArchive)
+    FilePermissionDialog(model.filePermissions)
+    FileISOMountDialog(model.fileISOMounts)
+    FileRemoteMountDialog(model.fileRemoteMounts)
+    FileVFSDialog(model.fileVFS, downloadSelection::remote)
+    FileSettingsDialog(model.fileSettings)
     if (!inlinePreview) filePreviewItem?.let { item ->
         val sequence = state.filePreviewSequence
         FilePreviewDialog(
@@ -660,28 +463,6 @@ private fun FileBrowserContent(
             discardConfirmationVisible = state.previewDiscardConfirmationVisible,
             onConfirmDiscard = model::confirmDiscardTextPreview,
             onDismissDiscard = model::dismissPreviewDiscardConfirmation,
-        )
-    }
-    if (showNotificationPermission) {
-        AlertDialog(
-            onDismissRequest = { showNotificationPermission = false },
-            title = { Text(stringResource(R.string.notification_permission_title)) },
-            text = { Text(stringResource(R.string.notification_permission_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showNotificationPermission = false
-                        notificationPermissionLauncher.launch(POST_NOTIFICATIONS_PERMISSION)
-                    },
-                ) {
-                    Text(stringResource(R.string.allow_notifications))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNotificationPermission = false }) {
-                    Text(stringResource(R.string.not_now))
-                }
-            },
         )
     }
     val nameEditorVisible = mutation.editorVisible &&
@@ -719,35 +500,13 @@ private fun FileBrowserContent(
         )
     }
     if (state.fileCopyMove != null && mutation.target == null) FileCopyMoveDialog(state, model)
-    if (showUploadOptions) {
-        AlertDialog(
-            onDismissRequest = { showUploadOptions = false },
-            title = { Text(stringResource(R.string.choose_upload_source)) },
-            text = {
-                Column {
-                    ActionRow(Icons.Outlined.UploadFile, stringResource(R.string.upload_files)) {
-                        showUploadOptions = false
-                        uploadLauncher.launch(arrayOf("*/*"))
-                    }
-                    ActionRow(Icons.Outlined.FolderOpen, stringResource(R.string.upload_folder)) {
-                        showUploadOptions = false
-                        folderUploadLauncher.launch(null)
-                    }
-                    Text(
-                        stringResource(R.string.upload_folder_description),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showUploadOptions = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-        )
-    }
+    CrossNasTransferDialog(model.crossNasTransfers)
+    OfficeDocumentDialog(model.officeDocuments, state.profile, model.login.value.profiles)
+    if (showUploadOptions) FileUploadSourceDialog(
+        onClose = { showUploadOptions = false },
+        onFiles = { showUploadOptions = false; uploadLauncher.launch(arrayOf("*/*")) },
+        onFolder = { showUploadOptions = false; folderUploadLauncher.launch(null) },
+    )
     state.pendingFileUploads?.let { pending ->
         AlertDialog(
             onDismissRequest = model::cancelPendingFileUploads,
@@ -831,59 +590,6 @@ private fun FileBrowserContent(
             },
         )
     }
-    if (state.fileRemoteLocations !is Loadable.Idle) {
-        AlertDialog(
-            onDismissRequest = model::closeFileRemoteLocations,
-            title = { Text(stringResource(R.string.remote_locations)) },
-            text = {
-                when (val locations = state.fileRemoteLocations) {
-                    Loadable.Idle -> Unit
-                    Loadable.Loading -> Box(
-                        Modifier.fillMaxWidth().heightIn(min = 160.dp),
-                        contentAlignment = Alignment.Center,
-                    ) { CircularProgressIndicator() }
-                    is Loadable.Failed -> {
-                        val localized = locations.error.localize(context)
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(localized.message, color = MaterialTheme.colorScheme.error)
-                            Text(localized.recovery)
-                            TextButton(onClick = model::loadFileRemoteLocations) {
-                                Text(stringResource(R.string.retry))
-                            }
-                        }
-                    }
-                    is Loadable.Ready -> if (locations.value.isEmpty()) {
-                        Text(stringResource(R.string.no_remote_locations))
-                    } else {
-                        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
-                            items(locations.value, key = FileItem::path) { folder ->
-                                ListItem(
-                                    headlineContent = {
-                                        Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    },
-                                    supportingContent = {
-                                        Text(folder.path, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    },
-                                    leadingContent = {
-                                        Icon(Icons.Outlined.FolderOpen, contentDescription = null)
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 48.dp)
-                                        .clickable { model.openFileRemoteLocation(folder) },
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = model::closeFileRemoteLocations) {
-                    Text(stringResource(R.string.close))
-                }
-            },
-        )
-    }
     if (state.fileRecentLocations !is Loadable.Idle) {
         AlertDialog(
             onDismissRequest = model::closeFileRecentLocations,
@@ -928,117 +634,4 @@ private fun FileBrowserContent(
             },
         )
     }
-}
-
-private fun FileItem.isSupportedArchive(): Boolean =
-    name.substringAfterLast('.', "").lowercase() in setOf("zip", "7z")
-
-@Composable
-private fun ArchiveCreateDialog(
-    suggestedName: String,
-    onConfirm: (String, ArchiveFormat, String?) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var name by remember(suggestedName) { mutableStateOf(suggestedName) }
-    var password by remember { mutableStateOf("") }
-    var format by remember { mutableStateOf(ArchiveFormat.ZIP) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.create_archive)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.archive_name)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth().selectableGroup(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ArchiveFormat.entries.forEach { option ->
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 48.dp)
-                                .selectable(
-                                    selected = format == option,
-                                    role = Role.RadioButton,
-                                    onClick = { format = option },
-                                )
-                                .padding(horizontal = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = format == option, onClick = null)
-                            Text(if (option == ArchiveFormat.ZIP) "ZIP" else "7z")
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text(stringResource(R.string.archive_password_optional)) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    stringResource(R.string.archive_no_overwrite_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(name, format, password.ifBlank { null }) },
-                enabled = name.isNotBlank() && '/' !in name,
-            ) { Text(stringResource(R.string.create)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-    )
-}
-
-@Composable
-private fun ArchiveExtractDialog(
-    itemName: String,
-    onConfirm: (String?) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var password by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.extract_archive)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.extract_archive_message, itemName))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text(stringResource(R.string.archive_password_optional)) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    stringResource(R.string.archive_no_overwrite_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(password.ifBlank { null }) }) {
-                Text(stringResource(R.string.extract))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-    )
 }

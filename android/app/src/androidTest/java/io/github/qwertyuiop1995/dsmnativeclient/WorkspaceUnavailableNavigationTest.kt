@@ -24,7 +24,7 @@ class WorkspaceUnavailableNavigationTest {
     val rule = createComposeRule()
 
     @Test
-    fun 不可用模块在导航中保留入口和具体原因() {
+    fun 不可用模块从固定导航隐藏但全部功能保留入口和具体原因() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         rule.setContent {
             LanStashTheme {
@@ -54,8 +54,9 @@ class WorkspaceUnavailableNavigationTest {
             }
         }
 
+        rule.onNodeWithContentDescription(context.getString(R.string.client_chat)).assertDoesNotExist()
         rule.onNodeWithContentDescription(context.getString(R.string.client_all_features)).performClick()
-        rule.onAllNodesWithText(context.getString(R.string.client_chat)).assertCountEquals(2)
+        rule.onAllNodesWithText(context.getString(R.string.client_chat)).assertCountEquals(1)
         rule.onNode(hasText(context.getString(R.string.client_chat)) and
             hasAnyAncestor(hasTestTag("client_all_features")) and
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, context.getString(R.string.module_unavailable_chat))).assertIsDisplayed()

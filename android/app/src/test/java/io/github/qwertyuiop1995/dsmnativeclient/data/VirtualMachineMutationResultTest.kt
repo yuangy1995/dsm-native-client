@@ -1,11 +1,13 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.*
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationErrorCategory
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ResourceState
 import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineSection
 import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
 import java.io.IOException
@@ -46,336 +48,257 @@ class VirtualMachineMutationResultTest {
     }
 
     @Test
-    fun `正常关机必须在列表回读为停止后才确认成功`() = runBlocking {
-        val transport = VmmMutationInterceptor(
-            guestList("running"),
-            SUCCESS,
-            guestList("shutdown"),
-        )
-
-        val result = repository(transport, API_GUEST, API_GUEST_ACTION)
-            .controlVirtualMachineResult("guest-1", ResourceState.RUNNING, "shutdown")
-
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-        assertEquals(listOf("list", "shutdown", "list"), transport.methods())
+    fun `正常关机必须有接受回执和原身份停止终态`() = runBlocking {
+        val transport = VmmMutationInterceptor(guestDetail("running"), SUCCESS, guestList("shutdown"))
+        val result = repository(transport, API_GUEST, API_GUEST_ACTION).control(VmmAction.SHUTDOWN)
+        assertVerified(result)
+        assertEquals(listOf("get", "shutdown", "list"), transport.methods())
         assertEquals("guest-1", transport.requests[1].formFields()["guest_id"])
     }
 
     @Test
     fun `强制关机必须在列表回读为停止后才确认成功`() = runBlocking {
-        val transport = VmmMutationInterceptor(
-            guestList("running"),
-            SUCCESS,
-            guestList("shutdown"),
-        )
-
-        val result = repository(transport, API_GUEST, API_GUEST_ACTION)
-            .controlVirtualMachineResult("guest-1", ResourceState.RUNNING, "poweroff")
-
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-        assertEquals(listOf("list", "poweroff", "list"), transport.methods())
+        val transport = VmmMutationInterceptor(guestDetail("running"), SUCCESS, guestList("shutdown"))
+        val result = repository(transport, API_GUEST, API_GUEST_ACTION).control(VmmAction.POWER_OFF)
+        assertVerified(result)
+        assertEquals(listOf("get", "poweroff", "list"), transport.methods())
         assertEquals("guest-1", transport.requests[1].formFields()["guest_id"])
     }
 
     @Test
     fun `删除虚拟机必须回读消失且发送稳定标识`() = runBlocking {
-        val transport = VmmMutationInterceptor(
-            guestList("stopped"),
-            SUCCESS,
-            """{"success":true,"data":{"guests":[]}}""",
-        )
-
-        val result = repository(transport, API_GUEST).deleteVirtualMachineResult("guest-1")
-
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        val transport = VmmMutationInterceptor(guestList("shutdown"), SUCCESS, EMPTY_GUESTS)
+        assertVerified(repository(transport, API_GUEST).control(VmmAction.DELETE, "shutdown"))
         assertEquals(listOf("list", "delete", "list"), transport.methods())
-        RequestFixtureAssertions.assertRequest(
-            transport.requests[1],
-            "vmm/delete/synthetic-virtual-machine/request.json",
-        )
+        RequestFixtureAssertions.assertRequest(transport.requests[1], "vmm/delete/synthetic-virtual-machine/request.json")
         assertEquals("guest-1", transport.requests[1].formFields()["guest_id"])
     }
 
     @Test
-    fun `内部网络改名契约未行为验证时零请求关闭`() = runBlocking {
-        val transport = VmmMutationInterceptor()
-
-        val result = repository(transport, NETWORK)
-            .renameVirtualMachineNetworkResult("network-1", "Existing")
-
-        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
-        assertEquals(MutationErrorCategory.UNSUPPORTED, result.errorCategory)
-        assertFalse(result.submitted)
-        assertTrue(transport.requests.isEmpty())
+    fun `内部网络改名没有版本信息仍读取实际接口且权限拒绝时零写`() = runBlocking {
+        val transport = VmmMutationInterceptor("""{"success":false,"error":{"code":105}}""", """{"success":false,"error":{"code":105}}""")
+        val result = probe { repository(transport, NETWORK).virtualMachineManagement.mutateNetwork(network, "Existing", it) }
+        assertPermissionBlocked(result)
+        assertTrue(transport.requests.isNotEmpty()); assertTrue(transport.methods().all { it in setOf("get", "list") })
     }
 
     @Test
-    fun `映像删除提交后回读断线标记未确认且不重放`() = runBlocking {
+    fun `映像删除提交后回读断线保留接受阶段且不重放`() = runBlocking {
         val transport = VmmImageReadbackFailureInterceptor()
-
-        val result = repository(transport, API_IMAGE).deleteVirtualMachineImageResult("image-1")
-
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.requiresRefresh)
+        val result = repository(transport, API_IMAGE).image()
+        assertEquals(listOf(VmmStage.SUBMITTED, VmmStage.ACCEPTED), result.stages)
+        assertTrue(result.failure is DsmFailure)
         assertEquals(listOf("list", "delete", "list"), transport.methods())
-        RequestFixtureAssertions.assertRequest(
-            transport.requests[1],
-            "vmm/delete-image/synthetic-image/request.json",
-        )
+        RequestFixtureAssertions.assertRequest(transport.requests[1], "vmm/delete-image/synthetic-image/request.json")
     }
 
     @Test
-    fun `内部网络删除契约未行为验证时零请求关闭`() = runBlocking {
-        val transport = VmmMutationInterceptor()
-
-        val result = repository(transport, NETWORK).deleteVirtualMachineNetworkResult("network-1")
-
-        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
-        assertFalse(result.submitted)
-        assertTrue(transport.requests.isEmpty())
+    fun `内部网络删除没有版本信息仍读取实际接口且权限拒绝时零写`() = runBlocking {
+        val transport = VmmMutationInterceptor("""{"success":false,"error":{"code":105}}""", """{"success":false,"error":{"code":105}}""")
+        val result = probe { repository(transport, NETWORK).virtualMachineManagement.mutateNetwork(network, null, it) }
+        assertPermissionBlocked(result)
+        assertTrue(transport.requests.isNotEmpty()); assertTrue(transport.methods().all { it in setOf("get", "list") })
     }
 
     @Test
-    fun `仅有内部 Guest 时生命周期和删除均零请求关闭`() = runBlocking {
-        val transport = VmmMutationInterceptor()
-        val repository = repository(transport, GUEST, GUEST_ACTION)
-
-        val control = repository.controlVirtualMachineResult(
-            "guest-1",
-            ResourceState.RUNNING,
-            "shutdown",
-        )
-        val delete = repository.deleteVirtualMachineResult("guest-1")
-
-        assertEquals(MutationResultStatus.UNSUPPORTED, control.status)
-        assertEquals(MutationResultStatus.UNSUPPORTED, delete.status)
-        assertTrue(transport.requests.isEmpty())
+    fun `内部生命周期与删除没有版本信息仍读取实际接口且权限拒绝时零写`() = runBlocking {
+        val transport = VmmMutationInterceptor("""{"success":false,"error":{"code":105}}""", """{"success":false,"error":{"code":105}}""")
+        val repo = repository(transport, GUEST, GUEST_ACTION)
+        assertPermissionBlocked(repo.control(VmmAction.SHUTDOWN))
+        assertPermissionBlocked(repo.control(VmmAction.DELETE, "shutdown"))
+        assertTrue(transport.requests.isNotEmpty()); assertTrue(transport.methods().all { it in setOf("get", "list") })
     }
 
     @Test
-    fun `仅有内部映像 API 时删除零请求关闭`() = runBlocking {
-        val transport = VmmMutationInterceptor()
-
-        val result = repository(transport, IMAGE).deleteVirtualMachineImageResult("image-1")
-
-        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
-        assertTrue(transport.requests.isEmpty())
+    fun `内部映像删除没有版本信息仍读取实际接口且权限拒绝时零写`() = runBlocking {
+        val transport = VmmMutationInterceptor("""{"success":false,"error":{"code":105}}""", """{"success":false,"error":{"code":105}}""")
+        val result = probe { repository(transport, IMAGE).virtualMachineManagement.deleteImage(
+            VmmImage("image-1", "Synthetic", "disk", VmmSource.INTERNAL,
+                listOf(VmmImageCopy("storage-1", "host-1", "online", "healthy"))), it) }
+        assertPermissionBlocked(result)
+        assertTrue(transport.requests.isNotEmpty()); assertTrue(transport.methods().all { it in setOf("get", "list") })
     }
 
     @Test
-    fun `非官方生命周期动作即使存在公开能力也零请求拒绝`() = runBlocking {
-        val transport = VmmMutationInterceptor()
-
-        val result = repository(transport, API_GUEST, API_GUEST_ACTION)
-            .controlVirtualMachineResult("guest-1", ResourceState.RUNNING, "pause")
-
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertEquals(MutationErrorCategory.VALIDATION, result.errorCategory)
-        assertTrue(transport.requests.isEmpty())
+    fun `非契约生命周期动作不进入稳定动作集合`() {
+        assertEquals(null, VmmAction.entries.singleOrNull { it.command == "pause" })
+        assertEquals(setOf("poweron", "shutdown", "poweroff", "reboot", "delete"), VmmAction.entries.map { it.command }.toSet())
     }
 
     @Test
-    fun `缺少用户所见状态基线的旧生命周期入口零请求拒绝`() = runBlocking {
-        val transport = VmmMutationInterceptor()
-
-        val result = repository(transport, API_GUEST, API_GUEST_ACTION)
-            .controlVirtualMachineResult("guest-1", "shutdown")
-
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertFalse(result.submitted)
-        assertTrue(transport.requests.isEmpty())
+    fun `缺少用户所见身份基线时零写拒绝`() = runBlocking {
+        val transport = VmmMutationInterceptor(guestDetail("running"))
+        val result = repository(transport, API_GUEST, API_GUEST_ACTION).control(VmmAction.SHUTDOWN, name = "")
+        assertChanged(result)
+        assertEquals(listOf("get"), transport.methods())
     }
 
     @Test
     fun `生命周期锁内状态偏离用户所见基线时零写拒绝`() = runBlocking {
-        val transport = VmmMutationInterceptor(guestList("shutdown"))
-
-        val result = repository(transport, API_GUEST, API_GUEST_ACTION)
-            .controlVirtualMachineResult("guest-1", ResourceState.RUNNING, "shutdown")
-
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertFalse(result.submitted)
-        assertEquals(listOf("list"), transport.methods())
+        val transport = VmmMutationInterceptor(guestDetail("shutdown"))
+        assertChanged(repository(transport, API_GUEST, API_GUEST_ACTION).control(VmmAction.SHUTDOWN))
+        assertEquals(listOf("get"), transport.methods())
     }
 
     @Test
     fun `强制关机状态偏离用户所见基线时零写拒绝`() = runBlocking {
-        val transport = VmmMutationInterceptor(guestList("shutdown"))
-
-        val result = repository(transport, API_GUEST, API_GUEST_ACTION)
-            .controlVirtualMachineResult("guest-1", ResourceState.RUNNING, "poweroff")
-
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertFalse(result.submitted)
-        assertEquals(listOf("list"), transport.methods())
+        val transport = VmmMutationInterceptor(guestDetail("shutdown"))
+        assertChanged(repository(transport, API_GUEST, API_GUEST_ACTION).control(VmmAction.POWER_OFF))
+        assertEquals(listOf("get"), transport.methods())
     }
 
     @Test
-    fun `生命周期动作与用户所见状态组合非法时零请求拒绝`() = runBlocking {
-        val transport = VmmMutationInterceptor()
-
-        val result = repository(transport, API_GUEST, API_GUEST_ACTION)
-            .controlVirtualMachineResult("guest-1", ResourceState.PAUSED, "shutdown")
-
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertEquals(MutationErrorCategory.VALIDATION, result.errorCategory)
-        assertTrue(transport.requests.isEmpty())
+    fun `生命周期动作与用户所见状态组合非法时零写拒绝`() = runBlocking {
+        val transport = VmmMutationInterceptor(guestDetail("paused"))
+        assertChanged(repository(transport, API_GUEST, API_GUEST_ACTION).control(VmmAction.SHUTDOWN, "paused"))
+        assertEquals(listOf("get"), transport.methods())
     }
 
     @Test
     fun `VMM 删除预检遇到缺失标识时不发送写请求`() = runBlocking {
-        val transport = VmmMutationInterceptor(
-            """{"success":true,"data":{"guests":[{"guest_name":"Synthetic","status":"shutdown"}]}}""",
-        )
-
-        val result = repository(transport, API_GUEST).deleteVirtualMachineResult("guest-1")
-
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertFalse(result.submitted)
+        val transport = VmmMutationInterceptor("""{"success":true,"data":{"guests":[{"guest_name":"Synthetic","status":"shutdown"}]}}""")
+        val result = repository(transport, API_GUEST).control(VmmAction.DELETE, "shutdown")
+        assertEquals(listOf(VmmStage.CANCELLED), result.stages)
+        assertEquals(DsmErrorKind.INVALID_RESPONSE, (result.failure as DsmFailure).kind)
         assertEquals(listOf("list"), transport.methods())
     }
 
     @Test
     fun `VMM 删除预检遇到重复标识时不发送写请求`() = runBlocking {
-        val duplicate = """{"success":true,"data":{"guests":[{"guest_id":"guest-1","guest_name":"One"},{"guest_id":"guest-1","guest_name":"Two"}]}}"""
+        val duplicate = """{"success":true,"data":{"guests":[{"guest_id":"guest-1","guest_name":"One","status":"shutdown"},{"guest_id":"guest-1","guest_name":"Two","status":"shutdown"}]}}"""
         val transport = VmmMutationInterceptor(duplicate)
-
-        val result = repository(transport, API_GUEST).deleteVirtualMachineResult("guest-1")
-
-        assertEquals(MutationResultStatus.CONFIRMED_FAILURE, result.status)
-        assertFalse(result.submitted)
+        val result = repository(transport, API_GUEST).control(VmmAction.DELETE, "shutdown")
+        assertEquals(listOf(VmmStage.CANCELLED), result.stages)
+        assertEquals(DsmErrorKind.INVALID_RESPONSE, (result.failure as DsmFailure).kind)
         assertEquals(listOf("list"), transport.methods())
     }
 
     @Test
-    fun `生命周期提交断线后只回读确认最终状态`() = runBlocking {
-        val transport = ScriptedVmmInterceptor(
-            VmmStep.Json(guestList("running")),
-            VmmStep.Failure(IOException("synthetic lifecycle disconnect")),
-            VmmStep.Json(guestList("shutdown")),
-        )
-
-        val result = repository(transport, API_GUEST, API_GUEST_ACTION)
-            .controlVirtualMachineResult("guest-1", ResourceState.RUNNING, "shutdown")
-
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-        assertEquals(listOf("list", "shutdown", "list"), transport.methods())
+    fun `生命周期回执丢失不以随后停止认领本次成功`() = runBlocking {
+        val transport = ScriptedVmmInterceptor(VmmStep.Json(guestDetail("running")),
+            VmmStep.Failure(IOException("synthetic lifecycle disconnect")), VmmStep.Json(guestList("shutdown")))
+        val repo = repository(transport, API_GUEST, API_GUEST_ACTION)
+        val result = repo.control(VmmAction.SHUTDOWN)
+        assertUnknown(result)
+        assertEquals(listOf("get", "shutdown"), transport.methods())
+        // 独立读取只证明当前状态；缺少接受回执时不能更新本次操作为成功。
+        assertEquals("shutdown", repo.virtualMachineManagement.controlTargets().single().status)
+        assertUnknown(result)
         assertEquals(1, transport.methods().count { it == "shutdown" })
     }
 
     @Test
-    fun `生命周期写后回读失败保持未确认`() = runBlocking {
-        val transport = ScriptedVmmInterceptor(
-            VmmStep.Json(guestList("running")),
-            VmmStep.Json(SUCCESS),
-            VmmStep.Json("""{"success":true,"data":{}}"""),
-        )
-
-        val result = repository(transport, API_GUEST, API_GUEST_ACTION)
-            .controlVirtualMachineResult("guest-1", ResourceState.RUNNING, "shutdown")
-
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.submitted)
-        assertTrue(result.requiresRefresh)
+    fun `生命周期写后回读失败保持接受而未完成`() = runBlocking {
+        val transport = ScriptedVmmInterceptor(VmmStep.Json(guestDetail("running")), VmmStep.Json(SUCCESS), VmmStep.Json(SUCCESS))
+        val result = repository(transport, API_GUEST, API_GUEST_ACTION).control(VmmAction.SHUTDOWN)
+        assertEquals(listOf(VmmStage.SUBMITTED, VmmStage.ACCEPTED), result.stages)
+        assertEquals(DsmErrorKind.INVALID_RESPONSE, (result.failure as DsmFailure).kind)
         assertEquals(1, transport.methods().count { it == "shutdown" })
     }
 
     @Test
-    fun `生命周期与删除在途取消只回读且不重放`() = runBlocking {
-        val controlTransport = ScriptedVmmInterceptor(
-            VmmStep.Json(guestList("running")),
-            VmmStep.Cancellation,
-            VmmStep.Json(guestList("running")),
-        )
-        val control = repository(controlTransport, API_GUEST, API_GUEST_ACTION)
-            .controlVirtualMachineResult("guest-1", ResourceState.RUNNING, "shutdown")
-        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, control.status)
-        assertEquals(1, controlTransport.methods().count { it == "shutdown" })
-
-        val deleteTransport = ScriptedVmmInterceptor(
-            VmmStep.Json(guestList("stopped")),
-            VmmStep.Cancellation,
-            VmmStep.Json(guestList("stopped")),
-        )
-        val delete = repository(deleteTransport, API_GUEST).deleteVirtualMachineResult("guest-1")
-        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, delete.status)
-        assertEquals(1, deleteTransport.methods().count { it == "delete" })
+    fun `生命周期与删除在途取消均保留提交且不重放`() = runBlocking {
+        for (action in listOf(VmmAction.SHUTDOWN, VmmAction.DELETE)) {
+            val baseline = if (action == VmmAction.DELETE) guestList("shutdown") else guestDetail("running")
+            val transport = ScriptedVmmInterceptor(VmmStep.Json(baseline), VmmStep.Cancellation)
+            val repo = repository(transport, API_GUEST, API_GUEST_ACTION)
+            val result = repo.control(action, if (action == VmmAction.DELETE) "shutdown" else "running")
+            assertEquals(listOf(VmmStage.SUBMITTED), result.stages)
+            assertTrue(result.failure is kotlinx.coroutines.CancellationException)
+            assertEquals(listOf(if (action == VmmAction.DELETE) "list" else "get", action.command), transport.methods())
+        }
     }
 
     @Test
-    fun `虚拟机删除提交断线后只回读确认目标消失`() = runBlocking {
-        val transport = ScriptedVmmInterceptor(
-            VmmStep.Json(guestList("stopped")),
-            VmmStep.Failure(IOException("synthetic delete disconnect")),
-            VmmStep.Json("""{"success":true,"data":{"guests":[]}}"""),
-        )
-
-        val result = repository(transport, API_GUEST).deleteVirtualMachineResult("guest-1")
-
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
-        assertEquals(listOf("list", "delete", "list"), transport.methods())
+    fun `虚拟机删除回执丢失不以随后消失认领本次成功`() = runBlocking {
+        val transport = ScriptedVmmInterceptor(VmmStep.Json(guestList("shutdown")),
+            VmmStep.Failure(IOException("synthetic delete disconnect")), VmmStep.Json(EMPTY_GUESTS))
+        val repo = repository(transport, API_GUEST)
+        val result = repo.control(VmmAction.DELETE, "shutdown")
+        assertUnknown(result)
+        assertEquals(listOf("list", "delete"), transport.methods())
+        assertTrue(repo.virtualMachineManagement.controlTargets().isEmpty())
+        assertUnknown(result)
         assertEquals(1, transport.methods().count { it == "delete" })
     }
 
     @Test
-    fun `虚拟机删除写后回读失败保持未确认`() = runBlocking {
-        val transport = ScriptedVmmInterceptor(
-            VmmStep.Json(guestList("stopped")),
-            VmmStep.Json(SUCCESS),
-            VmmStep.Json("""{"success":true,"data":{}}"""),
-        )
-
-        val result = repository(transport, API_GUEST).deleteVirtualMachineResult("guest-1")
-
-        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
-        assertTrue(result.requiresRefresh)
+    fun `虚拟机删除写后回读失败保持接受而未完成`() = runBlocking {
+        val transport = ScriptedVmmInterceptor(VmmStep.Json(guestList("shutdown")), VmmStep.Json(SUCCESS), VmmStep.Json(SUCCESS))
+        val result = repository(transport, API_GUEST).control(VmmAction.DELETE, "shutdown")
+        assertEquals(listOf(VmmStage.SUBMITTED, VmmStage.ACCEPTED), result.stages)
+        assertEquals(DsmErrorKind.INVALID_RESPONSE, (result.failure as DsmFailure).kind)
         assertEquals(1, transport.methods().count { it == "delete" })
     }
 
     @Test
     fun `公开映像删除成功断线与取消均不重放`() = runBlocking {
-        val imageList = """{"success":true,"data":{"images":[{"id":"image-1","name":"Synthetic","status":"normal"}]}}"""
-        val emptyImages = """{"success":true,"data":{"images":[]}}"""
-
-        val successTransport = ScriptedVmmInterceptor(
-            VmmStep.Json(imageList), VmmStep.Json(SUCCESS), VmmStep.Json(emptyImages),
-        )
-        val success = repository(successTransport, API_IMAGE)
-            .deleteVirtualMachineImageResult("image-1")
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, success.status)
-
-        val disconnectTransport = ScriptedVmmInterceptor(
-            VmmStep.Json(imageList),
-            VmmStep.Failure(IOException("synthetic image delete disconnect")),
-            VmmStep.Json(emptyImages),
-        )
-        val disconnect = repository(disconnectTransport, API_IMAGE)
-            .deleteVirtualMachineImageResult("image-1")
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, disconnect.status)
-        assertEquals(1, disconnectTransport.methods().count { it == "delete" })
-
-        val cancelTransport = ScriptedVmmInterceptor(
-            VmmStep.Json(imageList), VmmStep.Cancellation, VmmStep.Json(imageList),
-        )
-        val cancel = repository(cancelTransport, API_IMAGE)
-            .deleteVirtualMachineImageResult("image-1")
-        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, cancel.status)
-        assertEquals(1, cancelTransport.methods().count { it == "delete" })
+        val successTransport = ScriptedVmmInterceptor(VmmStep.Json(IMAGE_LIST), VmmStep.Json(SUCCESS), VmmStep.Json(EMPTY_IMAGES))
+        assertVerified(repository(successTransport, API_IMAGE).image())
+        for (failure in listOf(VmmStep.Failure(IOException("synthetic image delete disconnect")), VmmStep.Cancellation)) {
+            val transport = ScriptedVmmInterceptor(VmmStep.Json(IMAGE_LIST), failure, VmmStep.Json(EMPTY_IMAGES))
+            val repo = repository(transport, API_IMAGE)
+            val result = repo.image()
+            assertEquals(listOf(VmmStage.SUBMITTED), result.stages)
+            assertTrue(result.failure != null)
+            assertEquals(listOf("list", "delete"), transport.methods())
+            assertTrue(repo.virtualMachineManagement.imageInventory().images.isEmpty())
+            assertEquals(listOf(VmmStage.SUBMITTED), result.stages)
+            assertEquals(1, transport.methods().count { it == "delete" })
+        }
     }
 
-    private fun repository(interceptor: Interceptor, vararg capabilities: String) = DsmRepository(
+    private data class Probe(val stages: List<VmmStage>, val failure: Throwable?)
+    private suspend fun probe(action: suspend ((VmmStage) -> Unit) -> Unit): Probe {
+        val stages = mutableListOf<VmmStage>()
+        val result = runCatching { action { stages += it } }
+        return Probe(stages.toList(), result.exceptionOrNull())
+    }
+    private suspend fun DsmRepository.control(action: VmmAction, status: String = "running", name: String = "Synthetic") = probe { checkpoint ->
+        val repo = virtualMachineManagement
+        val actions = VmmAction.entries.filter { runCatching { repo.controlSource(it) }.isSuccess }.toSet()
+        repo.performControl(VmmControlTarget("guest-1", name, status, actions), action, repo.controlSource(action), checkpoint)
+    }
+    private suspend fun DsmRepository.image() = probe {
+        virtualMachineManagement.deleteImage(VmmImage("image-1", "Synthetic", null, VmmSource.PUBLIC), it)
+    }
+    private fun assertVerified(result: Probe) {
+        assertEquals(null, result.failure)
+        assertEquals(listOf(VmmStage.SUBMITTED, VmmStage.ACCEPTED, VmmStage.VERIFIED), result.stages)
+    }
+    private fun assertUnknown(result: Probe) {
+        assertEquals(listOf(VmmStage.SUBMITTED), result.stages)
+        assertTrue(result.failure is DsmFailure)
+    }
+    private fun assertChanged(result: Probe) {
+        assertEquals(listOf(VmmStage.CANCELLED), result.stages)
+        assertEquals(VmmProblem.CHANGED, (result.failure as VmmFailure).problem)
+    }
+    private fun assertPermissionBlocked(result: Probe) {
+        assertEquals(listOf(VmmStage.CANCELLED), result.stages)
+        assertEquals(DsmErrorKind.PERMISSION_DENIED, (result.failure as DsmFailure).kind)
+    }
+    private val network = VmmNetwork("network-1", "Synthetic", "private", "host-1", 0, emptyList(), emptyList())
+
+    private fun repository(interceptor: Interceptor, vararg capabilities: String) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
         DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
         capabilities.associateWith { name ->
-            ApiCapability(name, "entry.cgi", 1, 1)
+            ApiCapability(name, "entry.cgi", 1, if (name in setOf(GUEST, IMAGE, NETWORK)) 2 else 1)
         },
     )
 
     private fun guestList(status: String) =
-        """{"success":true,"data":{"guests":[{"id":"guest-1","name":"Synthetic","status":"$status"}]}}"""
+        """{"success":true,"data":{"guests":[{"guest_id":"guest-1","guest_name":"Synthetic","status":"$status"}]}}"""
+
+    private fun guestDetail(status: String) =
+        """{"success":true,"data":{"guest_id":"guest-1","guest_name":"Synthetic","status":"$status"}}"""
 
     private companion object {
+        const val EMPTY_GUESTS = """{"success":true,"data":{"guests":[]}}"""
+        const val EMPTY_IMAGES = """{"success":true,"data":{"images":[]}}"""
+        const val IMAGE_LIST = """{"success":true,"data":{"images":[{"image_id":"image-1","image_name":"Synthetic"}]}}"""
         const val GUEST = "SYNO.Virtualization.Guest"
         const val API_GUEST = "SYNO.Virtualization.API.Guest"
         const val API_GUEST_ACTION = "SYNO.Virtualization.API.Guest.Action"
@@ -433,7 +356,7 @@ private class VmmImageReadbackFailureInterceptor : Interceptor {
         requests += request
         if (requests.size == 3) throw IOException("synthetic disconnect")
         val body = if (requests.size == 1) {
-            """{"success":true,"data":{"images":[{"id":"image-1","name":"Synthetic","status":"normal"}]}}"""
+            """{"success":true,"data":{"images":[{"image_id":"image-1","image_name":"Synthetic"}]}}"""
         } else {
             """{"success":true,"data":{}}"""
         }
@@ -489,6 +412,6 @@ private fun vmmResponse(request: Request, body: String): Response = Response.Bui
     .build()
 
 private fun Request.formFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return (0 until form.size).associate { form.name(it) to form.value(it) }
 }

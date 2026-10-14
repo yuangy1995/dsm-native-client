@@ -2,6 +2,8 @@ package io.github.qwertyuiop1995.dsmnativeclient
 
 import io.github.qwertyuiop1995.dsmnativeclient.data.DsmRepository
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasSettingsSnapshot
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasSettingsArea
+import io.github.qwertyuiop1995.dsmnativeclient.domain.Module
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -16,6 +18,7 @@ internal class NasAdministrationFeatureModel(
     private val repositoryProvider: () -> DsmRepository?,
 ) {
     private val settingsLoadController = NasSettingsLoadController()
+    private var cachedSnapshot: NasSettingsSnapshot? = null
 
     /** NAS 写操作与设置刷新共用的同步边界，避免旧回调跨资料覆盖。 */
     val mutationLock: Any
@@ -27,6 +30,8 @@ internal class NasAdministrationFeatureModel(
 
     fun loadSettings(repository: DsmRepository) {
         val requestedProfileId = workspace.value?.profile?.id ?: return
+        val selectedTab = workspace.value?.nasPerformance?.selectedTab ?: return
+        val area = selectedTab.readArea(workspace.value?.selectedModule ?: return)
         var previousSnapshot: NasSettingsSnapshot? = null
         settingsLoadController.start(
             scope = scope,
@@ -34,22 +39,25 @@ internal class NasAdministrationFeatureModel(
             onStart = { token ->
                 val current = workspace.value ?: return@start false
                 if (current.profile.id != token.profileId || current.isPerformingAction) return@start false
-                previousSnapshot = (current.nasSettings as? Loadable.Ready)?.value
+                previousSnapshot = (current.nasSettings as? Loadable.Ready)?.value ?: cachedSnapshot
                 workspace.value = current.copy(
                     nasSettings = Loadable.Loading,
                     diskTestStatuses = diskTestStatusesWithoutPendingLoads(current.diskTestStatuses),
                 )
                 true
             },
-            load = { repository.nasSettings() },
+            load = { repository.nasSettings(area, previousSnapshot) },
             onResult = { token, value ->
+                if (repositoryProvider() === repository && workspace.value?.profile?.id == token.profileId &&
+                    settingsRequestGeneration.get() == token.generation && value is Loadable.Ready) cachedSnapshot = value.value
                 workspace.update { current ->
                     current?.takeIf {
                         repositoryProvider() === repository && it.profile.id == token.profileId &&
                             settingsRequestGeneration.get() == token.generation
                     }?.copy(
                         nasSettings = value,
-                        diskTestStatuses = if (value is Loadable.Ready) {
+                        diskTestStatuses = if (value is Loadable.Ready && value.value.storageAvailable &&
+                            area in setOf(NasSettingsArea.STORAGE, NasSettingsArea.OVERVIEW)) {
                             reconciledDiskTestStatusesAfterSettingsRefresh(
                                 previousSnapshot,
                                 value.value,
@@ -91,6 +99,23 @@ internal class NasAdministrationFeatureModel(
 
     fun clearForProfileSwitch() {
         settingsLoadController.invalidate()
+        cachedSnapshot = null
+    }
+}
+
+internal fun NasSettingsTab.readArea(module: Module = Module.NAS_SETTINGS): NasSettingsArea {
+    if (module != Module.NAS_SETTINGS) return NasSettingsArea.OVERVIEW
+    return when (this) {
+    NasSettingsTab.OVERVIEW -> NasSettingsArea.OVERVIEW
+    NasSettingsTab.STORAGE -> NasSettingsArea.STORAGE
+    NasSettingsTab.PACKAGES -> NasSettingsArea.PACKAGES
+    NasSettingsTab.CONNECTIONS -> NasSettingsArea.CONNECTIONS
+    NasSettingsTab.SERVICES -> NasSettingsArea.SERVICES
+    NasSettingsTab.REGION_AND_TIME -> NasSettingsArea.REGION
+    NasSettingsTab.NETWORKS -> NasSettingsArea.NETWORK
+    NasSettingsTab.SECURITY -> NasSettingsArea.SECURITY
+    NasSettingsTab.HARDWARE_AND_POWER -> NasSettingsArea.HARDWARE
+    NasSettingsTab.ACCOUNT, NasSettingsTab.SCHEDULED_TASKS, NasSettingsTab.PERFORMANCE, NasSettingsTab.LOGS, NasSettingsTab.PROCESSES -> NasSettingsArea.INDEPENDENT
     }
 }
 

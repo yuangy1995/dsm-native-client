@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
@@ -147,7 +149,7 @@ class FilePreviewRepositoryTest {
             ApiCapability("SYNO.FileStation.Thumb", "entry.cgi", 1, 2),
             ApiCapability("SYNO.FileStation.Download", "entry.cgi", 1, 2),
         ).associateBy(ApiCapability::name)
-        return DsmRepository(
+        return authorizedRepository(
             profile = NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
             session = DsmSession("test", "test-session", "test-token"),
             api = DsmApiClient(

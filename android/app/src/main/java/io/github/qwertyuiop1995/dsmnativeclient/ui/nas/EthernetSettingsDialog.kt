@@ -27,7 +27,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceValue
+import io.github.qwertyuiop1995.dsmnativeclient.nas.NasServiceRecord
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -61,161 +65,62 @@ internal fun EthernetAndDdnsList(
     state: WorkspaceState,
     model: AppViewModel,
 ) {
-    val currentTarget = (state.ethernetSettingsDraft ?: state.ethernetBaseline)?.let { target ->
-        snapshot.networkInterfaces.firstOrNull { it.id == target.id }
-    }
-    val ddnsDirectory = snapshot.ddnsDirectory
-    val ddnsUiEnabled = !state.isPerformingAction && !state.ddnsMutationInProgress &&
-        !state.ddnsMutationRefreshInProgress && state.ddnsMutationResult == null &&
-        state.ddnsMutationFailure == null && state.ddnsConfirmationOperation == null
-    val addressTargets = state.ddnsAddressRefreshTargets
-    val remoteAccessBaseline = state.remoteAccessSettingsBaseline
-    val remoteAccessDraft = state.remoteAccessSettingsDraft
+    NasDdnsManagement(snapshot, state.isPerformingAction, model)
+}
 
-    DdnsManagementContent(
-        directory = ddnsDirectory,
-        directoryAvailable = snapshot.ddnsDirectoryAvailable,
-        enabled = ddnsUiEnabled && !state.ddnsEditorVisible,
-        leadingContent = {
-            item {
-                RemoteAccessSettingsContent(
-                    settings = snapshot.remoteAccessSettings,
-                    settingsAvailable = snapshot.remoteAccessSettingsAvailable,
-                    baseline = state.remoteAccessSettingsBaseline,
-                    draft = state.remoteAccessSettingsDraft,
-                    mutationInProgress = state.remoteAccessMutationInProgress,
-                    mutationResult = state.remoteAccessMutationResult,
-                    mutationFailure = state.remoteAccessMutationFailure,
-                    refreshFailure = state.remoteAccessMutationRefreshFailure,
-                    refreshInProgress = state.remoteAccessMutationRefreshInProgress,
-                    refreshCompleted = state.remoteAccessMutationRefreshCompleted,
-                    isPerformingAction = state.isPerformingAction,
-                    onEdit = { model.requestRemoteAccessEditing(it) },
-                    onRefresh = model::refreshRemoteAccessMutation,
-                    onContinueEditing = { model.dismissRemoteAccessMutationResult(discardDraft = false) },
-                    onDismissResult = { model.dismissRemoteAccessMutationResult(discardDraft = true) },
-                    onRefreshSettings = {
-                        model.load(io.github.qwertyuiop1995.dsmnativeclient.domain.Module.NAS_SETTINGS)
-                    },
-                )
+@Composable
+internal fun EthernetManagement(interfaces: List<NasEthernetInterface>, available: Boolean,
+    isPerformingAction: Boolean, model: AppViewModel) {
+    val services = model.nasServices; val kind = NasServiceKind.ETHERNET
+    val values by services.state.collectAsState(); val state = values.getValue(kind)
+    val original = (state.original as? NasServiceValue.Ethernet)?.settings
+    val draft = (state.draft as? NasServiceValue.Ethernet)?.settings
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var confirming by rememberSaveable { mutableStateOf(false) }
+    var association by remember { mutableStateOf<NasServiceRecord?>(null) }
+    LaunchedEffect(services) { services.refresh(kind, notify = false) }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(stringResource(R.string.physical_network_interfaces), style = MaterialTheme.typography.titleMedium)
+        if (state.saving && draft != null) EthernetSavingCard(draft)
+        else if (state.needsAssociation) {
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.ethernet_reconnect_title), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(if (state.canAssociate) R.string.ethernet_reconnect_same_nas else R.string.ethernet_reconnect_original_account))
+                state.failure?.let { Text(it.localize(LocalContext.current).combined, color = MaterialTheme.colorScheme.error) }
+                if (state.canAssociate) TextButton(onClick = { association = state.record }, enabled = !state.busy) {
+                    Text(stringResource(R.string.ethernet_reconnect_action))
+                }
+            } }
+        } else if (state.result != null || state.failure != null) SettingsMutationFeedbackCard(
+            result = state.result, failure = state.failure, refreshFailure = null,
+            refreshInProgress = state.busy, refreshCompleted = false, currentMatches = null,
+            countsLabel = R.string.ethernet_feedback_counts, refreshLabel = R.string.refresh_network_interfaces,
+            onRefresh = { services.refresh(kind) },
+            onContinueEditing = { services.dismiss(kind); editing = true },
+            onDismiss = { services.dismiss(kind, discard = true) },
+            canContinueEditing = !state.blocked && draft != null, canDismiss = !state.blocked)
+        else if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (state.record?.terminal == false && !state.needsAssociation) Text(
+            stringResource(R.string.ethernet_reconnect_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!available || interfaces.isEmpty()) EthernetEmptyState(available, !state.busy) { services.refresh(kind) }
+        else interfaces.forEach { ethernet ->
+            EthernetListItem(ethernet, !isPerformingAction && !state.blocked && original == null) {
+                editing = services.begin(NasServiceValue.Ethernet(ethernet))
             }
-            item {
-                EthernetSettingsContent(
-                    interfaces = snapshot.networkInterfaces,
-                    interfacesAvailable = snapshot.networkInterfacesAvailable,
-                    baseline = state.ethernetBaseline,
-                    draft = state.ethernetSettingsDraft,
-                    mutationResult = state.ethernetMutationResult,
-                    mutationFailure = state.ethernetMutationFailure,
-                    refreshFailure = state.ethernetMutationRefreshFailure,
-                    mutationInProgress = state.ethernetMutationInProgress,
-                    refreshInProgress = state.ethernetMutationRefreshInProgress,
-                    refreshCompleted = state.ethernetMutationRefreshCompleted,
-                    isPerformingAction = state.isPerformingAction,
-                    currentTarget = currentTarget,
-                    onEdit = { model.requestEthernetEditing(it.id) },
-                    onRefresh = model::refreshEthernetMutation,
-                    onContinueEditing = { model.dismissEthernetMutationResult(discardDraft = false) },
-                    onDismissResult = { model.dismissEthernetMutationResult(discardDraft = true) },
-                    onRefreshList = {
-                        model.load(io.github.qwertyuiop1995.dsmnativeclient.domain.Module.NAS_SETTINGS)
-                    },
-                )
-            }
-        },
-        mutationStatusContent = {
-            DdnsMutationStatusContent(
-                operation = state.ddnsMutationOperation,
-                draft = state.ddnsSettingsDraft,
-                deleteTarget = state.ddnsDeleteTarget,
-                addressTargetIds = state.ddnsAddressRefreshTargetProviderIds,
-                addressTargets = addressTargets,
-                targetProviderId = state.ddnsMutationTargetProviderId,
-                directory = ddnsDirectory,
-                mutationInProgress = state.ddnsMutationInProgress,
-                result = state.ddnsMutationResult,
-                failure = state.ddnsMutationFailure,
-                refreshFailure = state.ddnsMutationRefreshFailure,
-                refreshInProgress = state.ddnsMutationRefreshInProgress,
-                refreshCompleted = state.ddnsMutationRefreshCompleted,
-                onRefresh = model::refreshDdnsMutation,
-                onContinueEditing = { model.dismissDdnsMutationResult(discardDraft = false) },
-                onDismiss = { model.dismissDdnsMutationResult(discardDraft = true) },
-            )
-        },
-        onAdd = model::requestDdnsEditing,
-        onRefreshAddress = { model.requestDdnsAddressRefresh() },
-        onEdit = { model.requestDdnsEditing(it.toDraft()) },
-        onDelete = model::requestDdnsDelete,
-    )
-
-    if (
-        state.remoteAccessEditorVisible && remoteAccessBaseline != null && remoteAccessDraft != null
-    ) {
-        RemoteAccessEditDialog(
-            baseline = remoteAccessBaseline,
-            draft = remoteAccessDraft,
-            enabled = !state.isPerformingAction && !state.remoteAccessMutationInProgress,
-            onDraftChange = model::updateRemoteAccessSettingsDraft,
-            onContinue = { model.requestRemoteAccessConfirmation() },
-            onDismiss = model::cancelRemoteAccessEditing,
-        )
+            HorizontalDivider(Modifier.padding(start = 56.dp))
+        }
     }
-    if (
-        state.remoteAccessConfirmationRequested && remoteAccessBaseline != null && remoteAccessDraft != null
-    ) {
-        RemoteAccessConfirmationDialog(
-            baseline = remoteAccessBaseline,
-            draft = remoteAccessDraft,
-            onConfirm = model::confirmRemoteAccessMutation,
-            onDismiss = model::cancelRemoteAccessConfirmation,
-        )
-    }
-    if (state.ethernetEditorVisible && state.ethernetBaseline != null && state.ethernetSettingsDraft != null) {
-        EthernetEditDialog(
-            initial = state.ethernetBaseline,
-            draft = state.ethernetSettingsDraft,
-            enabled = !state.isPerformingAction,
-            onDraftChange = model::updateEthernetSettingsDraft,
-            onContinue = { model.requestEthernetSaveConfirmation() },
-            onDismiss = model::cancelEthernetEditing,
-        )
-    }
-    if (
-        state.ethernetConfirmationRequested && state.ethernetBaseline != null &&
-        state.ethernetSettingsDraft != null
-    ) {
-        EthernetConfirmationDialog(
-            baseline = state.ethernetBaseline,
-            draft = state.ethernetSettingsDraft,
-            onConfirm = { model.confirmEthernetSettings() },
-            onDismiss = model::cancelEthernetSaveConfirmation,
-        )
-    }
-    if (state.ddnsEditorVisible && state.ddnsSettingsDraft != null) {
-        val draft = state.ddnsSettingsDraft
-        DdnsEditorDialog(
-            initial = state.ddnsBaseline?.toDraft() ?: draft,
-            draft = draft,
-            providers = ddnsDirectory?.providers.orEmpty(),
-            enabled = !state.isPerformingAction && !state.ddnsMutationInProgress,
-            onDraftChange = model::updateDdnsSettingsDraft,
-            onTest = { model.requestDdnsConfirmation(DdnsMutationOperation.TEST) },
-            onSave = { model.requestDdnsConfirmation(DdnsMutationOperation.SAVE) },
-            onDismiss = model::cancelDdnsEditing,
-        )
-    }
-    state.ddnsConfirmationOperation?.let { operation ->
-        DdnsConfirmationDialog(
-            operation = operation,
-            draft = state.ddnsSettingsDraft,
-            deleteTarget = state.ddnsDeleteTarget,
-            addressTargets = addressTargets,
-            providers = ddnsDirectory?.providers.orEmpty(),
-            onConfirm = model::confirmDdnsMutation,
-            onDismiss = model::cancelDdnsConfirmation,
-        )
-    }
+    if (editing && original != null && draft != null) EthernetEditDialog(original, draft, !isPerformingAction && !state.blocked,
+        onDraftChange = { services.draft(kind, NasServiceValue.Ethernet(it)) },
+        onContinue = { editing = false; confirming = true; true },
+        onDismiss = { services.draft(kind, null); editing = false })
+    if (confirming && original != null && draft != null) EthernetConfirmationDialog(original, draft,
+        onConfirm = { services.save(kind).also { if (it) confirming = false } },
+        onDismiss = { confirming = false; editing = true })
+    association?.let { record -> ConfirmDialog(
+        title = stringResource(R.string.ethernet_reconnect_title), message = stringResource(R.string.ethernet_reconnect_confirmation),
+        confirm = stringResource(R.string.ethernet_reconnect_action), destructive = false,
+        onConfirm = { services.associateEthernet(record); association = null }, onDismiss = { association = null }) }
 }
 
 @Composable
@@ -856,7 +761,7 @@ internal fun ethernetHasConnectionRisk(
     baseline.gateway.trim() != draft.gateway.trim() || baseline.isVlanEnabled != draft.isVlanEnabled ||
     baseline.vlanId != draft.vlanId
 
-private fun NasDdnsRecord.toDraft() = NasDdnsDraft(
+internal fun NasDdnsRecord.toDraft() = NasDdnsDraft(
     originalProviderId = providerId,
     providerId = providerId,
     hostname = hostname,

@@ -12,7 +12,7 @@ internal interface ChatFeatureDataSource {
 
     suspend fun conversations(): List<ChatConversation>
 
-    suspend fun messages(conversationId: String, offset: Int): ChatMessagePage
+    suspend fun messages(conversationId: String, before: String?): ChatMessagePage
 
     fun realtimeConnection(
         onConnectionChanged: (Boolean) -> Unit,
@@ -36,8 +36,8 @@ internal class DsmRepositoryChatFeatureDataSource(
 
     override suspend fun conversations(): List<ChatConversation> = repository.chatConversations()
 
-    override suspend fun messages(conversationId: String, offset: Int): ChatMessagePage =
-        repository.chatMessages(conversationId, offset)
+    override suspend fun messages(conversationId: String, before: String?): ChatMessagePage =
+        repository.chatMessages(conversationId, before)
 
     override fun realtimeConnection(
         onConnectionChanged: (Boolean) -> Unit,

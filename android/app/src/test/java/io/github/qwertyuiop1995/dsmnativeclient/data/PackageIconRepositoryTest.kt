@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
@@ -59,7 +61,7 @@ class PackageIconRepositoryTest {
         assertFalse(hasKnownPackageIconSignature("<svg/>".encodeToByteArray()))
     }
 
-    private fun repository(transport: Interceptor, supportsIcon: Boolean) = DsmRepository(
+    private fun repository(transport: Interceptor, supportsIcon: Boolean) = authorizedRepository(
         profile = NasProfile("nas-a", "NAS", "https://nas.example.invalid", "tester"),
         session = DsmSession("nas-a", "test-session", "test-token"),
         api = DsmApiClient(OkHttpClient.Builder().addInterceptor(transport).build()),

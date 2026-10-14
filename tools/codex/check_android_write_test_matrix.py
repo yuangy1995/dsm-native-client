@@ -337,8 +337,10 @@ def validate(
             else:
                 errors.append(f"待补测试：{','.join(row.methods)} -> {','.join(gaps)}")
 
-        for scenario in ("pre", "success", "disconnect", "readback", "cancel", "partial", "zero"):
-            reference = row.fields.get(scenario, "")
+        # 独立执行器可能包含多个设置组和冷恢复，补充证据同样必须存在。
+        for scenario, reference in row.fields.items():
+            if scenario in {"methods", "state", "multi"}:
+                continue
             if reference not in {"", "gap", "na"}:
                 evidence_error = _validate_evidence(reference)
                 if evidence_error and evidence_error not in errors:

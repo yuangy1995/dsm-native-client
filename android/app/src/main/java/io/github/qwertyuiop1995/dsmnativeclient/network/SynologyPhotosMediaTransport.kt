@@ -22,15 +22,23 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.intOrNull
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.MultipartBody
 
 /**
- * 仅承载已记录的 Photos 媒体 GET。复用连接的 OkHttp/TLS 策略；凭据只在 Header，
+ * 仅承载已记录的 Photos 媒体 GET/POST。复用连接的 OkHttp/TLS 策略；凭据只在 Header，
  * 缩略图有界、原件流式、播放器按范围读取。禁止跳转、整段视频预下载和错误页落盘。
  */
 class SynologyPhotosMediaTransport internal constructor(
@@ -38,6 +46,9 @@ class SynologyPhotosMediaTransport internal constructor(
     private val session: DsmSession,
     private val endpoint: String,
     private val http: OkHttpClient,
+    private val authorizeRequest: () -> Unit = {},
+    private val onAccessFailure: () -> Unit = {},
+    private val validateJPEG: (File) -> Unit = SynologyPhotoExportValidation::jpeg,
 ) {
     init {
         if (profile.id != session.profileId || session.sid.isBlank()) fail(SynologyPhotoFailureKind.PERMISSION)
@@ -45,14 +56,125 @@ class SynologyPhotosMediaTransport internal constructor(
         require(!http.followRedirects && !http.followSslRedirects && !http.retryOnConnectionFailure)
     }
 
-    suspend fun thumbnail(thumbnail: SynologyPhotoThumbnail, large: Boolean): ByteArray = withContext(Dispatchers.IO) {
+    internal fun previewEvents(): SynologyPhotoPreviewEvents = SynologyPhotosPreviewEvents(connect = {
+        SynologyPhotosPreviewSocket(http, photoPreviewSocketRequest(endpoint, session), authorizeRequest, onAccessFailure)
+    })
+
+    /** 同步转换上传只返回明确成功/拒绝；网络、HTTP及畸形回执均抛出并保留未知。 */
+    internal suspend fun uploadPreview(capability: ApiCapability, unitId: Long, converted: SynologyPhotoConvertedPreview): Boolean =
+        uploadAutomaticPreview(capability, unitId, converted, null)
+
+    internal suspend fun uploadAutomaticPreview(capability: ApiCapability, unitId: Long,
+        thumbnail: SynologyPhotoConvertedPreview?, video: File?): Boolean = withContext(Dispatchers.IO) {
+        require(capability.name in setOf("SYNO.Foto.Upload.ConvertedFile", "SYNO.FotoTeam.Upload.ConvertedFile") &&
+            3 in capability.minVersion..capability.maxVersion && capability.requestFormat.equals("JSON", true) && unitId > 0)
+        require(thumbnail != null || video != null)
+        require(video == null || video.isFile && video.length() > 0)
+        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("api", capability.name).addFormDataPart("version", "3")
+            .addFormDataPart("method", "upload").addFormDataPart("unit_id", unitId.toString())
+            .apply {
+                for ((name, bytes) in thumbnail?.let { listOf("thumb_xl" to it.large, "thumb_sm" to it.small, "thumb_m" to it.medium) }.orEmpty()) {
+                    require(bytes.isNotEmpty())
+                    addFormDataPart(name, "$name.jpg", bytes.toRequestBody("image/jpeg".toMediaType()))
+                }
+                video?.let { addFormDataPart("film_h264", "preview.mp4", it.asRequestBody("video/mp4".toMediaType())) }
+            }.build()
+        uploadMultipart(capability, multipart)
+    }
+
+    internal suspend fun uploadFace(capability: ApiCapability, faceId: Long, jpeg: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        require(capability.name in setOf("SYNO.Foto.Upload.Face", "SYNO.FotoTeam.Upload.Face") &&
+            1 in capability.minVersion..capability.maxVersion && capability.requestFormat.equals("JSON", true) && faceId > 0)
+        require(jpeg.size >= 3 && jpeg[0] == 0xff.toByte() && jpeg[1] == 0xd8.toByte() && jpeg[2] == 0xff.toByte())
+        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("api", capability.name).addFormDataPart("version", "1")
+            .addFormDataPart("method", "upload").addFormDataPart("face_id", faceId.toString())
+            .addFormDataPart("file", "face.jpg", jpeg.toRequestBody("image/jpeg".toMediaType())).build()
+        uploadMultipart(capability, multipart)
+    }
+
+    private suspend fun uploadMultipart(capability: ApiCapability, multipart: MultipartBody): Boolean {
+        val upload = request(photoApiPath(capability.path), emptyMap(), "application/json")
+            .newBuilder().post(OneShotRequestBody(multipart)).build()
+        return withResponse(upload) { response ->
+            if (response.code in setOf(401, 403)) { onAccessFailure(); fail(SynologyPhotoFailureKind.PERMISSION) }
+            if (!response.isSuccessful || response.body == null) fail(SynologyPhotoFailureKind.INVALID_RESPONSE)
+            val source = response.body!!.source()
+            source.request(65_537)
+            if (source.buffer.size > 65_536) fail(SynologyPhotoFailureKind.INVALID_RESPONSE)
+            val bytes = source.buffer.readByteArray()
+            val envelope = try { Json.parseToJsonElement(bytes.decodeToString()) as? JsonObject } catch (_: Exception) { null }
+                ?: fail(SynologyPhotoFailureKind.INVALID_RESPONSE)
+            val success = (envelope["success"] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull
+                ?: fail(SynologyPhotoFailureKind.INVALID_RESPONSE)
+            if (success) {
+                if (envelope.containsKey("error")) fail(SynologyPhotoFailureKind.INVALID_RESPONSE)
+                true
+            } else {
+                val code = ((envelope["error"] as? JsonObject)?.get("code") as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull
+                    ?: fail(SynologyPhotoFailureKind.INVALID_RESPONSE)
+                val failure = dsmApiFailure(code)
+                if (failure.kind in setOf(DsmErrorKind.PERMISSION_DENIED, DsmErrorKind.SESSION_EXPIRED)) {
+                    onAccessFailure(); throw failure
+                }
+                false
+            }
+        }
+    }
+
+    suspend fun thumbnail(thumbnail: SynologyPhotoThumbnail, large: Boolean,
+        space: SynologyPhotoSpace = SynologyPhotoSpace.PERSONAL, albumId: Long? = null,
+    ): ByteArray = thumbnail(thumbnail, if (large) "xl" else "m", space, albumId)
+
+    internal suspend fun previewThumbnail(unitId: Long, size: String, space: SynologyPhotoSpace): ByteArray =
+        thumbnail(SynologyPhotoThumbnail(unitId, ""), size, space, null)
+
+    private suspend fun thumbnail(thumbnail: SynologyPhotoThumbnail, size: String,
+        space: SynologyPhotoSpace, albumId: Long?): ByteArray = withContext(Dispatchers.IO) {
         require(thumbnail.unitId > 0)
-        val request = request("/synofoto/api/v2/p/Thumbnail/get", mapOf(
+        require(albumId == null || albumId > 0)
+        require(size in setOf("xl", "sm", "m"))
+        val namespace = if (space == SynologyPhotoSpace.SHARED && albumId == null) "t" else "p"
+        val request = request("/synofoto/api/v2/$namespace/Thumbnail/get", mapOf(
             "id" to thumbnail.unitId.toString(),
             "cache_key" to JsonPrimitive(thumbnail.revision).toString(),
             "type" to JsonPrimitive("unit").toString(),
-            "size" to JsonPrimitive(if (large) "xl" else "m").toString(),
-        ), "image/*")
+            "size" to JsonPrimitive(size).toString(),
+        ) + (albumId?.let { mapOf("album_id" to it.toString()) } ?: emptyMap()), "image/*")
+        image(request.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build())
+    }
+
+    suspend fun personThumbnail(cover: SynologyPhotoPersonCover, space: SynologyPhotoSpace): ByteArray = withContext(Dispatchers.IO) {
+        require(cover.id > 0)
+        val namespace = if (space == SynologyPhotoSpace.SHARED) "t" else "p"
+        image(request("/synofoto/api/v2/$namespace/Thumbnail/get", mapOf(
+            "id" to cover.id.toString(), "cache_key" to JsonPrimitive(cover.revision).toString(),
+            "type" to JsonPrimitive(cover.type.value).toString(),
+        ), "image/*"))
+    }
+
+    suspend fun faceThumbnail(face: SynologyPhotoPersonFace): ByteArray = withContext(Dispatchers.IO) {
+        require(face.id > 0 && face.revision != null)
+        val namespace = if (face.photoId.space == SynologyPhotoSpace.SHARED) "t" else "p"
+        image(request("/synofoto/api/v2/$namespace/Thumbnail/get", mapOf(
+            "id" to face.id.toString(), "cache_key" to JsonPrimitive(face.revision).toString(), "type" to JsonPrimitive("face").toString(),
+        ), "image/*"))
+    }
+
+    suspend fun folderThumbnail(id: Long, cover: SynologyPhotoFolderCover, space: SynologyPhotoSpace): ByteArray = withContext(Dispatchers.IO) {
+        require(id > 0)
+        val sequence = cover.sequence
+        if (sequence == null) return@withContext thumbnail(SynologyPhotoThumbnail(cover.unitId?.takeIf { it > 0 } ?: fail(), cover.revision), false, space)
+        require(sequence >= 0)
+        val namespace = if (space == SynologyPhotoSpace.SHARED) "t" else "p"
+        image(request("/synofoto/api/v2/$namespace/Thumbnail/get", mapOf(
+            "id" to id.toString(), "cache_key" to JsonPrimitive(cover.revision).toString(),
+            "type" to JsonPrimitive("folder").toString(), "folder_cover_seq" to sequence.toString(),
+        ), "image/*"))
+    }
+
+    private suspend fun image(request: Request): ByteArray =
         withResponse(request) { response ->
             validate(response, 200, imageOnly = true)
             if ((response.body?.contentLength() ?: -1) > MAX_IMAGE_BYTES) fail()
@@ -70,30 +192,82 @@ class SynologyPhotosMediaTransport internal constructor(
             if (result.size() == 0) fail()
             result.toByteArray()
         }
-    }
 
     suspend fun download(
-        capability: ApiCapability,
-        parameters: Map<String, String>,
-        destination: File,
-        expectedBytes: Long,
-        beforeCommit: suspend () -> Unit = {},
-        progress: (Long, Long) -> Unit,
-    ): Unit = withContext(Dispatchers.IO) {
+        capability: ApiCapability, parameters: Map<String, String>, destination: File, expectedBytes: Long,
+        beforeCommit: suspend () -> Unit = {}, progress: (Long, Long) -> Unit,
+    ) {
         require(expectedBytes >= 0)
+        transfer(apiRequest(capability, "download", parameters), destination, expectedBytes, false, beforeCommit, progress) { _, _ -> Unit }
+    }
+
+    /** 自动预览按真实单元下载；实况子单元大小不能由整个Item大小推算。 */
+    internal suspend fun downloadPreviewUnit(capability: ApiCapability, unitId: Long, destination: File,
+        beforeCommit: suspend () -> Unit,
+    ) {
+        require(capability.name in setOf("SYNO.Foto.Download", "SYNO.FotoTeam.Download") && unitId > 0)
+        transfer(apiRequest(capability, "download", mapOf("unit_id" to "[$unitId]")), destination,
+            null, false, beforeCommit, { _, _ -> }) { file, _ -> if (file.length() <= 0) fail() }
+    }
+
+    internal suspend fun downloadConvertedPreview(capability: ApiCapability, unitId: Long, destination: File,
+        beforeCommit: suspend () -> Unit) {
+        require(capability.name in setOf("SYNO.Foto.Streaming", "SYNO.FotoTeam.Streaming") && unitId > 0)
+        transfer(apiRequest(capability, "streaming", mapOf("id" to unitId.toString(), "type" to JsonPrimitive("unit").toString(),
+            "quality" to JsonPrimitive("orig_h264").toString(), "use_mov" to "true"))
+            .newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build(), destination,
+            null, false, beforeCommit, { _, _ -> }) { file, _ -> if (file.length() <= 0) fail() }
+    }
+
+    suspend fun downloadPhoto(
+        capability: ApiCapability, parameters: Map<String, String>, destination: File, originalBytes: Long,
+        format: SynologyPhotoDownloadFormat, post: Boolean = false,
+        beforeCommit: suspend () -> Unit = {}, progress: (Long, Long) -> Unit,
+    ): SynologyPhotoDownloadFormat {
+        require(originalBytes >= 0)
+        return transfer(apiRequest(capability, "download", parameters, post), destination,
+            originalBytes.takeIf { format == SynologyPhotoDownloadFormat.ORIGINAL }, false, beforeCommit, progress) { file, type ->
+            if (format == SynologyPhotoDownloadFormat.ORIGINAL) format
+            else {
+                if (file.length() <= 0) fail()
+                val header = ByteArray(minOf(file.length(), 3L).toInt())
+                java.io.DataInputStream(file.inputStream()).use { it.readFully(header) }
+                if (header.contentEquals(byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte()))) {
+                    validateJPEG(file)
+                    format
+                } else {
+                    if (format != SynologyPhotoDownloadFormat.OPTIMIZED_JPEG || type.contains("jpeg") || file.length() != originalBytes) fail()
+                    SynologyPhotoDownloadFormat.ORIGINAL
+                }
+            }
+        }
+    }
+
+    suspend fun downloadArchive(
+        capability: ApiCapability, parameters: Map<String, String>, destination: File,
+        beforeCommit: suspend () -> Unit = {}, progress: (Long, Long) -> Unit,
+    ) = transfer(apiRequest(capability, "download", parameters, post = true), destination, null, true, beforeCommit, progress) { file, _ ->
+        SynologyPhotoExportValidation.archive(file)
+    }
+
+    /** 所有导出共享有界流与无覆盖提升；先验证完整文件再交给系统文档提供器。 */
+    private suspend fun <T> transfer(
+        request: Request, destination: File, expectedBytes: Long?, archive: Boolean,
+        beforeCommit: suspend () -> Unit, progress: (Long, Long) -> Unit, validateFile: (File, String) -> T,
+    ): T = withContext(Dispatchers.IO) {
         if (destination.exists()) throw java.nio.file.FileAlreadyExistsException(destination.name)
         val parent = destination.absoluteFile.parentFile ?: fail()
         val staging = File(parent, ".${UUID.randomUUID()}.photos-download")
         check(staging.createNewFile())
         try {
-            withResponse(apiRequest(capability, "download", parameters)) { response ->
-                validate(response, 200)
+            withResponse(request) { response ->
+                validate(response, 200, archive = archive)
                 val declared = response.body!!.contentLength()
-                if (declared >= 0 && declared != expectedBytes) fail(SynologyPhotoFailureKind.LENGTH_MISMATCH)
+                if (expectedBytes != null && declared >= 0 && declared != expectedBytes) fail(SynologyPhotoFailureKind.LENGTH_MISMATCH)
+                val total = expectedBytes ?: declared
                 var done = 0L
                 var lastProgress = 0L
                 response.body!!.byteStream().buffered().use { input ->
-                    // MIME 可能错误，另读有界前缀阻止错误页或实况 ZIP 冒充单个原件。
                     input.mark(512)
                     val prefix = ByteArray(512)
                     var prefixCount = 0
@@ -105,7 +279,9 @@ class SynologyPhotosMediaTransport internal constructor(
                     }
                     val header = prefix.decodeToString(0, prefixCount).trimStart { it.isWhitespace() || it == '\uFEFF' }
                     if (header.startsWith("{") || header.startsWith("[") || header.startsWith("<") ||
-                        (prefixCount >= 4 && prefix[0] == 0x50.toByte() && prefix[1] == 0x4b.toByte() && prefix[2] == 3.toByte() && prefix[3] == 4.toByte())) fail()
+                        (!archive && prefixCount >= 4 && prefix[0] == 0x50.toByte() && prefix[1] == 0x4b.toByte() &&
+                            ((prefix[2] == 3.toByte() && prefix[3] == 4.toByte()) || (prefix[2] == 5.toByte() && prefix[3] == 6.toByte()) ||
+                                (prefix[2] == 6.toByte() && prefix[3] == 6.toByte())))) fail()
                     input.reset()
                     staging.outputStream().buffered().use { output ->
                         val buffer = ByteArray(64 * 1024)
@@ -113,28 +289,27 @@ class SynologyPhotosMediaTransport internal constructor(
                             currentCoroutineContext().ensureActive()
                             val count = input.read(buffer)
                             if (count < 0) break
-                            if (count.toLong() > expectedBytes - done) fail(SynologyPhotoFailureKind.LENGTH_MISMATCH)
+                            if (total >= 0 && count.toLong() > total - done) fail(SynologyPhotoFailureKind.LENGTH_MISMATCH)
                             output.write(buffer, 0, count)
                             done += count
                             val now = System.nanoTime()
-                            if (now - lastProgress >= 100_000_000L || done == expectedBytes) {
-                                progress(done, expectedBytes)
-                                lastProgress = now
+                            if (now - lastProgress >= 100_000_000L || done == total) {
+                                progress(done, total); lastProgress = now
                             }
                         }
                     }
                 }
-                if (done != expectedBytes) fail(SynologyPhotoFailureKind.LENGTH_MISMATCH)
+                if (total >= 0 && done != total) fail(SynologyPhotoFailureKind.LENGTH_MISMATCH)
+                val result = validateFile(staging, response.header("Content-Type").orEmpty().lowercase(java.util.Locale.ROOT))
                 currentCoroutineContext().ensureActive()
-                // 提升前重新检查账号/权限代际；迟到结果不能成为可导出的原件。
                 beforeCommit()
                 currentCoroutineContext().ensureActive()
-                // 不使用 REPLACE_EXISTING，也不清理用户已有目标；仅清理本次随机暂存文件。
+                // 只清理本次随机暂存文件，不删除或覆盖既有目标。
                 Files.move(staging.toPath(), destination.toPath())
+                progress(done, if (total >= 0) total else done)
+                result
             }
-        } finally {
-            staging.delete()
-        }
+        } finally { staging.delete() }
     }
 
     suspend fun video(
@@ -155,24 +330,27 @@ class SynologyPhotosMediaTransport internal constructor(
         PhotosRangeSource(mediaRequest, total)
     }
 
-    private fun apiRequest(capability: ApiCapability, method: String, parameters: Map<String, String>): Request {
-        require(capability.name in setOf("SYNO.Foto.Download", "SYNO.Foto.Streaming"))
+    private fun apiRequest(capability: ApiCapability, method: String, parameters: Map<String, String>, post: Boolean = false): Request {
+        require(capability.name in setOf("SYNO.Foto.Download", "SYNO.Foto.Streaming", "SYNO.FotoTeam.Download", "SYNO.FotoTeam.Streaming", "SYNO.Foto.Browse.Album"))
         require(capability.minVersion <= 2 && capability.maxVersion >= 2 && capability.requestFormat.equals("JSON", true))
-        require((capability.name == "SYNO.Foto.Download" && method == "download") ||
-            (capability.name == "SYNO.Foto.Streaming" && method == "streaming"))
+        require(((capability.name.endsWith(".Download") || capability.name == "SYNO.Foto.Browse.Album" && post) && method == "download") ||
+            (capability.name.endsWith(".Streaming") && method == "streaming"))
         require(parameters.keys.none { it.lowercase() in setOf("api", "version", "method", "_sid", "sid", "synotoken", "cookie", "did") })
         return request(photoApiPath(capability.path), mapOf(
             "api" to capability.name, "version" to "2", "method" to method,
-        ) + parameters)
+        ) + parameters, post = post)
     }
 
-    private fun request(path: String, parameters: Map<String, String>, accept: String = "application/octet-stream, video/*"): Request {
+    private fun request(path: String, parameters: Map<String, String>, accept: String = "application/octet-stream, video/*", post: Boolean = false): Request {
         val base = endpoint.toHttpUrl()
         val url = "$endpoint$path".toHttpUrl().newBuilder().apply {
-            parameters.forEach { (name, value) -> addQueryParameter(name, value) }
+            if (!post) parameters.forEach { (name, value) -> addQueryParameter(name, value) }
         }.build()
         require(url.scheme == base.scheme && url.host == base.host && url.port == base.port)
-        return Request.Builder().url(url).get().header("Accept", accept)
+        require(post || "passphrase" !in parameters)
+        return Request.Builder().url(url).apply {
+            if (post) post(okhttp3.FormBody.Builder().apply { parameters.forEach { (name, value) -> add(name, value) } }.build()) else get()
+        }.header("Accept", accept)
             .header("User-Agent", "LanStash-Android/0.1")
             .header("Cookie", "id=${session.sid}")
             .apply { session.synoToken?.takeIf { it.isNotBlank() }?.let { header("X-SYNO-TOKEN", it) } }
@@ -180,6 +358,7 @@ class SynologyPhotosMediaTransport internal constructor(
     }
 
     private suspend fun <T> withResponse(request: Request, body: suspend (Response) -> T): T = coroutineScope {
+        authorizeRequest()
         val call = http.newCall(request)
         // 收到响应头后仍保持取消关联；阻塞中的响应体读取必须立即随页面/账号取消。
         val cancellation = launch(start = CoroutineStart.UNDISPATCHED) {
@@ -201,7 +380,9 @@ class SynologyPhotosMediaTransport internal constructor(
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, error: IOException) {
-                if (!continuation.isCancelled) continuation.resumeWithException(SynologyPhotoFailure(SynologyPhotoFailureKind.MEDIA, error))
+                if (!continuation.isCancelled) continuation.resumeWithException(
+                    if (error is LocalNetworkPermissionException) localNetworkPermissionFailure()
+                    else SynologyPhotoFailure(SynologyPhotoFailureKind.MEDIA, error))
             }
             override fun onResponse(call: Call, response: Response) {
                 continuation.resume(response) { response.close() }
@@ -209,11 +390,14 @@ class SynologyPhotosMediaTransport internal constructor(
         })
     }
 
-    private fun validate(response: Response, status: Int, imageOnly: Boolean = false) {
-        if (response.code == 401 || response.code == 403) fail(SynologyPhotoFailureKind.PERMISSION)
+    private fun validate(response: Response, status: Int, imageOnly: Boolean = false, archive: Boolean = false) {
+        if (response.code == 401 || response.code == 403) {
+            onAccessFailure()
+            fail(SynologyPhotoFailureKind.PERMISSION)
+        }
         if (response.code != status || response.body == null) fail()
         val type = response.header("Content-Type").orEmpty().lowercase()
-        if (type.contains("json") || type.contains("html") || type.contains("zip") ||
+        if (type.contains("json") || type.contains("html") || !archive && type.contains("zip") ||
             (imageOnly && !type.startsWith("image/"))) fail()
     }
 
@@ -233,6 +417,7 @@ class SynologyPhotosMediaTransport internal constructor(
         private val lock = ReentrantLock()
 
         override fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int): Int {
+            authorizeRequest()
             if (closed.get()) throw IOException("Photos media source closed")
             if (position < 0 || offset < 0 || length < 0 || offset > buffer.size - length) throw IndexOutOfBoundsException()
             if (length == 0) return 0
@@ -254,6 +439,7 @@ class SynologyPhotosMediaTransport internal constructor(
         }
 
         private fun readBlock(start: Long): ByteArray {
+            authorizeRequest()
             val end = minOf(size - 1, start + RANGE_BLOCK_BYTES - 1)
             val call = http.newCall(request.newBuilder().header("Range", "bytes=$start-$end").build())
             active.add(call)

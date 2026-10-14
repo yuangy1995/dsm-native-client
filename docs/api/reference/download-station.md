@@ -2,6 +2,19 @@
 
 主实现：[DsmServiceManagementRepository](../../../apple/Packages/DsmNetwork/Sources/DsmServiceManagementRepository.swift)；领域：[ServiceManagement](../../../apple/Packages/DsmCore/Sources/ServiceManagement.swift)。公开 `SYNO.DownloadStation.*` 优先，只有对应公开能力不可用时才采用已记录的内部 `SYNO.DownloadStation2.*`。
 
+## Android A6 接入状态（2026-10-13，当前环境聚焦验收完成）
+
+当前 Android 已在原 `data/downloads/DownloadStationRepository.kt` 上纠正链接创建 v3、任务位置编辑 v2、公开任务完整分页及 `force_complete` 含义；只保留内部备用摘要读取，不再降级到缺少相同结果契约的内部写入。下文 M5 历史段落中“Android 尚未修改”描述的是当时状态，当前差异以本节与 [A6 账本](../../archive/2026-h2/ANDROID_REWRITE_IMPLEMENTATION_HISTORY_ZH.md#a6-download-station-整模块功能对齐账本) 为准。
+
+- 列表每页500，固定总量/偏移、重复身份和畸形容器会失败；无total满页继续读到短页。界面保留上次成功列表。单项详情单独 `Task.getinfo`，Tracker仅保留源站，文件名不拼为NAS路径。
+- 创建成功按官方接受回执结束，不要求taskid；表单统一链接、RSS/BT来源和任务文件，文件先复制到私有临时目录，明确提交后才创建。内容摘要防止同文件改名/换目录绕过未知保护。目录只去掉第一个`/`，密码原值只在内存及单次multipart中存在。表单和系统选取回调绑定当前连接及表单代次。
+- 暂停/继续/移除、位置编辑均使用原任务身份、单次正文、唯一同编号整数error回执和完整读取。任务移除只计一个任务效果；结束并移出未完成文件不声称文件已移动或已删除。未知项停止后续提交，重启后只读恢复，剩余项目需要明确继续或取消。
+- `DownloadActionModel` 是当前下载写入编排；根模型已移除旧内存执行器并转发到它。`lanstash_download_actions` 独立加密保存原账号、动作、逐项阶段、身份/来源摘要及必要设置/目录；不保存原任务名称、URI、文件正文或密码，不迁移登录数据。持久保存失败不发送，已开始结果不因退出页面变成可重发。
+- 设置读取当前严格布尔`is_manager`，按字段实际存在性展示，常规/计划分别记录差量与进度，HTTP/FTP限速保持同值；提交前重读当前权限及变更字段原值。RSS完整读取严格total/offset，Site只接受单一site/sites容器与整数编号；订阅身份由编号/URL/账号摘要构成，只有同身份更新时间前进且结束更新才完成。Feed大小只接受十进制字符串，相同条目可合并，不访问订阅URL。
+- 已有BT搜索仍保留单次最多200条的既有Mac范围、分类/来源/排序和本次任务清理；未实现RSS订阅创建/删除、规则或额外任务字段。
+
+当前证据：下载相关244项JVM通过；手机八条正式工作区流程及34项既有界面回归分组通过，平板八条流程与四项分栏测试单轮通过。设置每分区保存后保留已完成事实，后续权限撤销或基线漂移不能把先前成功改成未提交；`finished`独立显示已完成，继续后很快结束仍可由合法回执和最终状态确认。新增常规/计划差量请求样本，生成目录已同步。真实NAS、物理系统文件选择器/屏幕阅读器及完整云端门禁未验证，不能由合成证据推定文件移动或真实环境兼容。其他四端源码未改，不提升任何私有API环境等级。
+
 ## 操作标准
 
 | 用户结果 / 入口 | API / 方法 | 输入及版本 | 返回 / 核查 |

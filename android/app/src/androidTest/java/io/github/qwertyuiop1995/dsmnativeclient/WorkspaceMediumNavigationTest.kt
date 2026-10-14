@@ -52,7 +52,7 @@ class WorkspaceMediumNavigationTest {
     val rule = createComposeRule()
 
     @Test
-    fun 中等宽度大字体使用单一Rail并保留五个主入口状态() {
+    fun 中等宽度大字体保留可用Rail入口并将不可用原因放入全部功能() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         var selectedModule: Module? = null
         setMediumContent(
@@ -89,7 +89,6 @@ class WorkspaceMediumNavigationTest {
             Module.FILES,
             Module.PHOTOS,
             Module.CHAT,
-            Module.DOWNLOADS,
             Module.TRANSFERS,
         ).forEach { module ->
             rule.onNode(
@@ -99,7 +98,7 @@ class WorkspaceMediumNavigationTest {
 
         rule.onNode(
             hasText(context.getString(R.string.client_downloads)) and hasClickAction() and isRailItem,
-        ).assertIsSelected()
+        ).assertDoesNotExist()
         rule.onAllNodes(
             hasText(context.getString(R.string.client_chat)) and
                 isRailItem and
@@ -108,14 +107,17 @@ class WorkspaceMediumNavigationTest {
                     context.resources.getQuantityString(R.plurals.unread_count, 7, 7),
                 ),
         ).assertCountEquals(1)
+        rule.onNodeWithContentDescription(context.getString(R.string.client_all_features)).performClick()
         rule.onAllNodes(
             hasText(context.getString(R.string.client_downloads)) and
-                isRailItem and
+                hasAnyAncestor(hasTestTag(WORKSPACE_MODAL_DRAWER_TEST_TAG)) and
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.StateDescription,
                     context.getString(R.string.module_unavailable_downloads),
                 ),
         ).assertCountEquals(1)
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        rule.onNodeWithTag(WORKSPACE_MODAL_DRAWER_TEST_TAG).assertDoesNotExist()
 
         rule.onNode(
             hasText(context.getString(R.string.client_photos)) and hasClickAction() and isRailItem,
@@ -258,7 +260,7 @@ class WorkspaceMediumNavigationTest {
             username = "operator",
         ),
         selectedModule = selectedModule,
-        availability = availability,
+        availability = Module.entries.map { module -> availability.firstOrNull { it.module == module } ?: ModuleAvailability(module, true) },
         conversations = conversations,
     )
 

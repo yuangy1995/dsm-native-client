@@ -286,42 +286,6 @@ internal data class DownloadSettingsMutationClaim(
 
 
 
-internal data class ChatMutationClaim(
-    val repository: DsmRepository,
-    val profileId: String,
-    val target: ChatMutationTarget,
-    val generation: Long,
-)
-
-internal data class ChatMutationCompletion(
-    val result: MutationResult,
-    val verification: ChatMutationVerification? = null,
-    val apply: (WorkspaceState) -> WorkspaceState = { it },
-    val afterApply: (() -> Unit)? = null,
-)
-
-internal data class ChatMutationRefreshSnapshot(
-    val conversations: List<ChatConversation>? = null,
-    val reminders: List<ChatReminder>? = null,
-    val schedules: List<ChatScheduledMessage>? = null,
-    val messages: List<ChatMessage>? = null,
-)
-
-internal data class ChatAttachmentPreflightToken(
-    val repository: DsmRepository,
-    val profileId: String,
-    val conversationId: String,
-    val generation: Long,
-    val createdAtEpochSeconds: Long,
-)
-
-internal data class VirtualMachineMutationClaim(
-    val repository: DsmRepository,
-    val profileId: String,
-    val target: VirtualMachineMutationTarget,
-    val generation: Long,
-)
-
 internal data class VirtualMachineLocalImagePreparation(
     val profileId: String,
     val uri: Uri,

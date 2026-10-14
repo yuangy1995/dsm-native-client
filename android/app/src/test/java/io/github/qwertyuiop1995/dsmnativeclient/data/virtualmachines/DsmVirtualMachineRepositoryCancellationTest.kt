@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines
 
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
+import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.LogEntry
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ManagedResource
 import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineHardware
@@ -48,6 +50,21 @@ class DsmVirtualMachineRepositoryCancellationTest {
         assertSame(expected, actual)
     }
 
+    @Test fun `所有可选分区及公开摘要的会话错误必须停止`() = runBlocking {
+        for (mode in Mode.entries) {
+            val failure = DsmFailure(106, "Synthetic", "", kind = DsmErrorKind.SESSION_EXPIRED)
+            val result = runCatching { DsmVirtualMachineRepository(CancellingVirtualMachineGateway(mode, failure)).overview() }.exceptionOrNull()
+            assertSame(failure, result)
+        }
+    }
+    @Test fun `所有可选分区及公开摘要的证书错误必须停止`() = runBlocking {
+        for (mode in Mode.entries) {
+            val failure = DsmFailure(null, "Synthetic", "", kind = DsmErrorKind.TLS_UNTRUSTED)
+            val result = runCatching { DsmVirtualMachineRepository(CancellingVirtualMachineGateway(mode, failure)).overview() }.exceptionOrNull()
+            assertSame(failure, result)
+        }
+    }
+
     private suspend fun captureCancellation(block: suspend () -> Unit): CancellationException {
         try {
             block()
@@ -59,6 +76,7 @@ class DsmVirtualMachineRepositoryCancellationTest {
 }
 
 private enum class Mode {
+    OFFICIAL,
     OPTIONAL,
     PROTECTION,
     LOGS,
@@ -66,13 +84,14 @@ private enum class Mode {
 
 private class CancellingVirtualMachineGateway(
     private val mode: Mode,
-    private val cancellation: CancellationException,
+    private val cancellation: Exception,
 ) : DsmVirtualMachineRepositoryGateway {
     override fun preferred(vararg names: String): String = "guest"
 
     override fun preferredOrNull(vararg names: String): String? = when (mode) {
         Mode.OPTIONAL -> if (names.any { it.contains("Host") }) "host" else null
         Mode.PROTECTION,
+        Mode.OFFICIAL,
         Mode.LOGS,
         -> null
     }
@@ -80,13 +99,13 @@ private class CancellingVirtualMachineGateway(
     override fun supports(apiName: String): Boolean = when (mode) {
         Mode.PROTECTION -> apiName == "SYNO.Virtualization.GuestProtect.Plan"
         Mode.LOGS -> apiName == "SYNO.Virtualization.Log"
-        Mode.OPTIONAL -> false
+        Mode.OPTIONAL, Mode.OFFICIAL -> false
     }
 
-    override fun supportsVersion(apiName: String, version: Int): Boolean = false
+    override fun supportsVersion(apiName: String, version: Int): Boolean = mode == Mode.OFFICIAL
 
     override suspend fun officialRead(): Pair<List<ManagedResource>, List<VirtualMachineHardware>?> =
-        emptyList<ManagedResource>() to null
+        if (mode == Mode.OFFICIAL) throw cancellation else emptyList<ManagedResource>() to null
 
     override suspend fun resourceList(
         apiName: String,

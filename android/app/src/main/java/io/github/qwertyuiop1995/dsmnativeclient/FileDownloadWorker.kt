@@ -12,11 +12,8 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem
 import io.github.qwertyuiop1995.dsmnativeclient.domain.TransferState
-import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
-import io.github.qwertyuiop1995.dsmnativeclient.network.DsmConnectionResolver
-import io.github.qwertyuiop1995.dsmnativeclient.storage.SecureProfileStore
 import java.io.IOException
-import java.io.FileOutputStream
+import io.github.qwertyuiop1995.dsmnativeclient.data.isArchiveDownload
 import kotlinx.coroutines.CancellationException
 
 class FileDownloadWorker(
@@ -24,6 +21,7 @@ class FileDownloadWorker(
     parameters: WorkerParameters,
 ) : CoroutineWorker(appContext, parameters) {
     private val transfers = TransferStore(appContext)
+    private val transferUris = TransferUriAccess(appContext, transfers)
 
     override suspend fun doWork(): Result {
         val taskId = inputData.getString(KEY_TASK_ID) ?: return Result.failure()
@@ -34,6 +32,8 @@ class FileDownloadWorker(
             return Result.success(progressData(initial.completedBytes, initial.totalBytes))
         }
         val destination = Uri.parse(initial.destinationUri)
+        val openTaskIntent = TransferNotifications.openAppIntent(applicationContext, taskId,
+            io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceRecordKind.DOWNLOAD)
         setForeground(
             TransferNotifications.foreground(
                 applicationContext,
@@ -42,6 +42,7 @@ class FileDownloadWorker(
                 TransferState.WAITING,
                 initial.completedBytes,
                 initial.totalBytes,
+                openTaskIntent = openTaskIntent,
             ),
         )
         val running = transfers.update(taskId) { current ->
@@ -62,65 +63,47 @@ class FileDownloadWorker(
         }
         return try {
             val repo = repository(initial)
-            val resumeFrom = if (!initial.isDirectory) initial.completedBytes else 0L
-            val requireExactResume = inputData.getBoolean(KEY_REQUIRE_EXACT_RESUME, false)
-            val descriptor = applicationContext.contentResolver.openFileDescriptor(destination, "rw")
-                ?: throw IOException("The destination could not be opened")
-            descriptor.use { parcel ->
-                FileOutputStream(parcel.fileDescriptor).use { stream ->
-                    val resolvedResume = runCatching {
-                        if (resumeFrom > 0 && stream.channel.size() == resumeFrom) {
-                            stream.channel.position(resumeFrom)
-                            resumeFrom
-                        } else if (requireExactResume && resumeFrom > 0) {
-                            throw IOException("The saved partial download does not match its resume offset")
+            var lastPublishedAt = 0L
+            val written = executeFileDownload(applicationContext, repo, initial, transfers,
+                requireExactResume = inputData.getBoolean(KEY_REQUIRE_EXACT_RESUME, false),
+                requireActive = {
+                    val current = transfers.download(taskId)
+                    if (current?.ownsDownloadExecution(executionId) != true || current.state != TransferState.RUNNING)
+                        throw CancellationException("Download execution changed")
+                },
+                onReset = { transfers.update(taskId) { current ->
+                    if (current.ownsDownloadExecution(executionId)) current.copy(completedBytes = 0, totalBytes = current.expectedBytes) else current
+                } },
+            ) { completed, total ->
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastPublishedAt >= PROGRESS_INTERVAL_MILLIS || completed == total) {
+                    lastPublishedAt = now
+                    val resolvedTotal = total ?: initial.expectedBytes
+                    transfers.update(taskId) { current ->
+                        if (current.ownsDownloadExecution(executionId)) {
+                            current.copy(completedBytes = completed, totalBytes = resolvedTotal)
                         } else {
-                            stream.channel.truncate(0)
-                            stream.channel.position(0)
-                            0L
-                        }
-                    }.getOrElse {
-                        throw IOException("The destination does not support safe resume", it)
-                    }
-                    if (resolvedResume == 0L) {
-                        transfers.update(taskId) { current ->
-                            if (current.ownsDownloadExecution(executionId)) {
-                                current.copy(completedBytes = 0)
-                            } else {
-                                current
-                            }
+                            current
                         }
                     }
-                var lastPublishedAt = 0L
-                repo.download(initial.toFileItem(), stream, resumeFrom = resolvedResume) { completed, total ->
-                    val now = android.os.SystemClock.elapsedRealtime()
-                    if (now - lastPublishedAt >= PROGRESS_INTERVAL_MILLIS || completed == total) {
-                        lastPublishedAt = now
-                        val resolvedTotal = total ?: initial.expectedBytes
-                        transfers.update(taskId) { current ->
-                            if (current.ownsDownloadExecution(executionId)) {
-                                current.copy(completedBytes = completed, totalBytes = resolvedTotal)
-                            } else {
-                                current
-                            }
-                        }
-                        setProgressAsync(progressData(completed, resolvedTotal))
-                        setForegroundAsync(
-                            TransferNotifications.foreground(
-                                applicationContext,
-                                taskId,
-                                id,
-                                TransferState.RUNNING,
-                                completed,
-                                resolvedTotal,
-                            ),
-                        )
-                    }
-                }
+                    setProgressAsync(progressData(completed, resolvedTotal))
+                    setForegroundAsync(
+                        TransferNotifications.foreground(
+                            applicationContext,
+                            taskId,
+                            id,
+                            TransferState.RUNNING,
+                            completed,
+                            resolvedTotal,
+                            openTaskIntent = openTaskIntent,
+                        ),
+                    )
                 }
             }
             val completed = transfers.update(taskId) { current ->
-                current.completeDownloadExecution(executionId)
+                if (current.ownsDownloadExecution(executionId) && current.state == TransferState.RUNNING) {
+                    current.copy(completedBytes = written, totalBytes = written).completeDownloadExecution(executionId)
+                } else current
             }
             if (completed?.ownsDownloadExecution(executionId) == true &&
                 completed.state == TransferState.SUCCEEDED
@@ -153,7 +136,8 @@ class FileDownloadWorker(
                 ) {
                     current
                 } else {
-                    current.copy(state = TransferState.FAILED, errorKind = kind.name)
+                    current.copy(state = if (kind == DsmErrorKind.WORKSPACE_CHANGED) TransferState.PAUSED else TransferState.FAILED,
+                        errorKind = kind.name)
                 }
             }
             if (failed?.ownsDownloadExecution(executionId) == true &&
@@ -169,30 +153,12 @@ class FileDownloadWorker(
         }
     }
 
-    private suspend fun repository(download: PersistedDownload): DsmRepository {
-        val secureStore = SecureProfileStore(applicationContext)
-        val profile = secureStore.profiles().firstOrNull { it.id == download.profileId }
-            ?: throw IllegalStateException("The saved NAS profile is unavailable")
-        val session = secureStore.session(download.profileId)
-            ?: throw IllegalStateException("The saved session is unavailable")
-        val api = DsmApiClient()
-        val discovered = DsmConnectionResolver(api).discover(profile)
-        return DsmRepository(discovered.profile, session, api, discovered.capabilities)
-    }
+    private suspend fun repository(download: PersistedDownload): DsmRepository =
+        restoreTaskRepository(applicationContext,
+            io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceRecordKind.DOWNLOAD, download.id, download.profileId)
 
-    private fun deleteIncomplete(destination: Uri) {
-        runCatching { applicationContext.contentResolver.delete(destination, null, null) }
-    }
-
-    private fun releaseDestinationPermission(destination: Uri) {
-        runCatching {
-            applicationContext.contentResolver.releasePersistableUriPermission(
-                destination,
-                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                    android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-            )
-        }
-    }
+    private fun deleteIncomplete(destination: Uri) = transferUris.deleteIncomplete(destination, inputData.getString(KEY_TASK_ID))
+    private fun releaseDestinationPermission(destination: Uri) = transferUris.releaseDownload(destination, inputData.getString(KEY_TASK_ID))
 
     companion object {
         const val KEY_TASK_ID = "task_id"
@@ -213,10 +179,14 @@ class FileDownloadWorker(
 }
 
 internal fun PersistedDownload.canPauseDownload(): Boolean =
-    !isDirectory && state in setOf(TransferState.WAITING, TransferState.RUNNING)
+    (!isDirectory || isArchiveDownload) && state in setOf(TransferState.WAITING, TransferState.RUNNING)
 
 internal fun PersistedDownload.canResumeDownload(): Boolean =
-    !isDirectory && state == TransferState.PAUSED
+    (!isDirectory || isArchiveDownload) && state == TransferState.PAUSED
+
+internal fun PersistedDownload.canRetryDownload(): Boolean =
+    state == TransferState.FAILED && (!isDirectory || isArchiveDownload) &&
+        errorKind != DsmErrorKind.DOWNLOAD_SOURCE_UNAVAILABLE.name
 
 internal fun PersistedDownload.ownsDownloadExecution(executionId: String): Boolean =
     workId.isCurrentDownloadExecution(executionId)
@@ -250,10 +220,12 @@ internal fun shouldDeleteCancelledDownload(
     WorkerCancellationDecision.USER_CANCELLATION
 
 internal fun PersistedDownload.shouldDeleteFailedDownload(executionId: String): Boolean =
-    isDirectory && state == TransferState.FAILED && ownsDownloadExecution(executionId)
+    isDirectory && !isArchiveDownload && state == TransferState.FAILED && ownsDownloadExecution(executionId)
 
 internal fun downloadFailureKind(error: Throwable): DsmErrorKind =
-    (error as? DsmFailure)?.kind ?: DsmErrorKind.DOWNLOAD_FAILED
+    if (error is io.github.qwertyuiop1995.dsmnativeclient.data.ArchiveDownloadPlanUnavailable ||
+        error is io.github.qwertyuiop1995.dsmnativeclient.data.FileVFSDownloadPlanUnavailable)
+        DsmErrorKind.DOWNLOAD_SOURCE_UNAVAILABLE else (error as? DsmFailure)?.kind ?: DsmErrorKind.DOWNLOAD_FAILED
 
 internal fun PersistedDownload.cancelDownloadExecution(executionId: String): PersistedDownload =
     if (workerCancellationDecision(state, workId, executionId) ==
@@ -275,10 +247,7 @@ internal fun PersistedDownload.completeDownloadExecution(executionId: String): P
         this
     }
 
-private fun PersistedDownload.toFileItem() = FileItem(
-    path = sourcePath,
-    name = title,
-    isDirectory = isDirectory,
-    size = expectedBytes ?: 0,
-    canRead = true,
-)
+internal fun shouldDeleteFailedForegroundDownload(
+    download: PersistedDownload,
+    ownsExecution: Boolean,
+): Boolean = ownsExecution && download.isDirectory && !download.isArchiveDownload && download.state == TransferState.FAILED

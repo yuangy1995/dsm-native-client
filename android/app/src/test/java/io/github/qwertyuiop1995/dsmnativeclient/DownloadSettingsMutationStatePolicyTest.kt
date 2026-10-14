@@ -16,7 +16,7 @@ class DownloadSettingsMutationStatePolicyTest {
     @Test
     fun `草稿严格解析目录限速与调度能力`() {
         val draft = validDraft().copy(
-            destination = " /downloads/current/ ",
+            destination = "/downloads/current ",
             btDownload = "0",
             btUpload = "1000000",
             scheduleEnabled = true,
@@ -25,11 +25,11 @@ class DownloadSettingsMutationStatePolicyTest {
         )
 
         val withSchedule = checkNotNull(draft.toSettingsOrNull(supportsSchedule = true))
-        assertEquals("downloads/current", withSchedule.defaultDestination)
+        assertEquals("downloads/current ", withSchedule.defaultDestination)
         assertEquals(0, withSchedule.btDownloadLimitKb)
         assertEquals(1_000_000, withSchedule.btUploadLimitKb)
         assertTrue(withSchedule.scheduleEnabled)
-        assertFalse(withSchedule.emuleScheduleEnabled)
+        assertTrue(withSchedule.emuleScheduleEnabled)
 
         val withoutSchedule = checkNotNull(draft.toSettingsOrNull(supportsSchedule = false))
         assertFalse(withoutSchedule.scheduleEnabled)

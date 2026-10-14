@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DownloadTaskMutationAction
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DownloadTaskMutationBaseline
@@ -37,7 +39,7 @@ import org.junit.Test
 
 class DownloadMutationResultTest {
     @Test
-    fun `修改保存位置仅发送一次官方v1写请求并按回读确认`() = runTest {
+    fun `修改保存位置仅发送一次官方v2写请求并按回读确认`() = runTest {
         val destination = directory("/volume1/downloads/new")
         val transport = DownloadMutationInterceptor(
             ok(fileInfo(destination)),
@@ -56,7 +58,7 @@ class DownloadMutationResultTest {
         assertEquals(1, transport.methods().count { it == "edit" })
         RequestFixtureAssertions.assertRequest(
             transport.requests[2],
-            "download-station/edit-destination/synthetic-task/request.json",
+            "download-station/edit-destination/synthetic-task-v2/request.json",
         )
     }
 
@@ -89,7 +91,7 @@ class DownloadMutationResultTest {
     }
 
     @Test
-    fun `写请求连接失败但回读已生效时不重放并确认成功`() = runTest {
+    fun `写请求丢失回执时保留未知且不重放`() = runTest {
         val destination = directory("/volume1/downloads/new")
         val transport = DownloadMutationInterceptor(
             ok(fileInfo(destination)),
@@ -103,7 +105,7 @@ class DownloadMutationResultTest {
             destination,
         )
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
         assertEquals(1, transport.methods().count { it == "edit" })
     }
 
@@ -152,7 +154,7 @@ class DownloadMutationResultTest {
         cancelled.cancel()
         cancelled.join()
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, checkNotNull(captured.get()).status)
+        assertEquals(MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION, checkNotNull(captured.get()).status)
         assertEquals(1, transport.methods().count { it == "edit" })
         assertEquals(listOf("getinfo", "list", "edit", "list"), transport.methods())
     }
@@ -207,42 +209,42 @@ class DownloadMutationResultTest {
 
     @Test
     fun `严格任务列表按稳定total完整分页`() = runTest {
-        val firstPage = (0 until 1_000).map { task("task-$it", "downloading") }
+        val firstPage = (0 until 500).map { task("task-$it", "downloading") }
         val transport = DownloadMutationInterceptor(
-            ok(taskListWithTotal(1_001, *firstPage.toTypedArray())),
-            ok(taskListWithTotal(1_001, task("task-1000", "waiting"))),
+            ok(taskListWithTotal(501, *firstPage.toTypedArray())),
+            ok(taskListWithTotal(501, task("task-500", "waiting"))),
         )
 
         val tasks = repository(transport).activeDownloadTasksForMutation()
 
-        assertEquals(1_001, tasks.size)
-        assertEquals("task-1000", tasks.last().id)
-        assertEquals(listOf("0", "1000"), transport.requests.map { it.formFields()["offset"] })
-        assertTrue(transport.requests.all { it.formFields()["limit"] == "1000" })
+        assertEquals(501, tasks.size)
+        assertEquals("task-500", tasks.last().id)
+        assertEquals(listOf("0", "500"), transport.requests.map { it.formFields()["offset"] })
+        assertTrue(transport.requests.all { it.formFields()["limit"] == "500" })
     }
 
     @Test
     fun `对象外链任务会读取后续分页而不误判为不存在`() = runTest {
-        val firstPage = (0 until 1_000).map { task("task-$it", "downloading") }
+        val firstPage = (0 until 500).map { task("task-$it", "downloading") }
         val transport = DownloadMutationInterceptor(
-            ok(taskListWithTotal(1_001, *firstPage.toTypedArray())),
-            ok(taskListWithTotal(1_001, task("target-task", "waiting"))),
+            ok(taskListWithTotal(501, *firstPage.toTypedArray())),
+            ok(taskListWithTotal(501, task("target-task", "waiting"))),
         )
 
         val target = repository(transport).downloadTask("target-task")
 
         assertEquals("target-task", target?.id)
-        assertEquals(listOf("0", "1000"), transport.requests.map { it.formFields()["offset"] })
+        assertEquals(listOf("0", "500"), transport.requests.map { it.formFields()["offset"] })
     }
 
     @Test
     fun `严格任务列表拒绝分页期间total变化`() = runTest {
-        val firstPage = (0 until 1_000).map { task("task-$it", "downloading") }
+        val firstPage = (0 until 500).map { task("task-$it", "downloading") }
         val failure = runCatching {
             repository(
                 DownloadMutationInterceptor(
-                    ok(taskListWithTotal(1_001, *firstPage.toTypedArray())),
-                    ok(taskListWithTotal(1_002, task("task-1000", "waiting"))),
+                    ok(taskListWithTotal(501, *firstPage.toTypedArray())),
+                    ok(taskListWithTotal(502, task("task-500", "waiting"))),
                 ),
             ).activeDownloadTasksForMutation()
         }.exceptionOrNull()
@@ -252,25 +254,22 @@ class DownloadMutationResultTest {
     }
 
     @Test
-    fun `严格任务列表拒绝无total满页`() = runTest {
-        val fullPage = (0 until 1_000).map { task("task-$it", "downloading") }
-        val failure = runCatching {
-            repository(DownloadMutationInterceptor(ok(taskList(*fullPage.toTypedArray()))))
-                .activeDownloadTasksForMutation()
-        }.exceptionOrNull()
-
-        assertTrue(failure is DsmFailure)
-        assertEquals(DsmErrorKind.INVALID_RESPONSE, (failure as DsmFailure).kind)
+    fun `严格任务列表无total满页继续读取到空页`() = runTest {
+        val fullPage = (0 until 500).map { task("task-$it", "downloading") }
+        val transport = DownloadMutationInterceptor(ok(taskList(*fullPage.toTypedArray())), ok(taskList()))
+        val tasks = repository(transport).activeDownloadTasksForMutation()
+        assertEquals(500, tasks.size)
+        assertEquals(listOf("0", "500"), transport.requests.map { it.formFields()["offset"] })
     }
 
     @Test
     fun `严格任务列表拒绝跨页重复ID`() = runTest {
-        val firstPage = (0 until 1_000).map { task("task-$it", "downloading") }
+        val firstPage = (0 until 500).map { task("task-$it", "downloading") }
         val failure = runCatching {
             repository(
                 DownloadMutationInterceptor(
-                    ok(taskListWithTotal(1_001, *firstPage.toTypedArray())),
-                    ok(taskListWithTotal(1_001, task("task-999", "waiting"))),
+                    ok(taskListWithTotal(501, *firstPage.toTypedArray())),
+                    ok(taskListWithTotal(501, task("task-499", "waiting"))),
                 ),
             ).activeDownloadTasksForMutation()
         }.exceptionOrNull()
@@ -295,7 +294,7 @@ class DownloadMutationResultTest {
     }
 
     @Test
-    fun `删除文件正式入口使用确认基线且不冒充文件已删除`() = runTest {
+    fun `结束并移出未完成文件使用确认基线且不声称删除文件`() = runTest {
         val transport = DownloadMutationInterceptor(
             ok(taskList(task("task-1", "downloading"))),
             ok(),
@@ -304,14 +303,15 @@ class DownloadMutationResultTest {
 
         val result = repository(transport).controlDownloadsResult(
             baseline = listOf(baseline("task-1", ResourceState.RUNNING)),
-            action = DownloadTaskMutationAction.REMOVE_TASK_AND_FILES,
+            action = DownloadTaskMutationAction.END_TASK_AND_MOVE_FILES,
         )
 
-        assertEquals(MutationResultStatus.PARTIAL_SUCCESS, result.status)
-        assertEquals("downloadDeleteFiles", result.operation)
+        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertEquals("downloadEndAndMove", result.operation)
         assertEquals(1, result.counts.succeeded)
-        assertEquals(1, result.counts.unknown)
-        assertTrue(result.requiresRefresh)
+        assertEquals(0, result.counts.unknown)
+        assertEquals(0, result.counts.failed)
+        assertFalse(result.requiresRefresh)
         assertEquals(listOf("list", "delete", "list"), transport.methods())
         RequestFixtureAssertions.assertRequest(
             transport.requests[1],
@@ -371,7 +371,7 @@ class DownloadMutationResultTest {
         val partial = taskList(task("a", "paused"), task("b", "downloading"))
         val transport = DownloadMutationInterceptor(
             ok(taskList(task("b", "downloading"), task("a", "downloading"))),
-            ok(),
+            ok(receipt("a", "b")),
             *Array(8) { ok(partial) },
         )
 
@@ -394,7 +394,7 @@ class DownloadMutationResultTest {
     fun `顺序变化不构成漂移且请求ID固定排序`() = runTest {
         val transport = DownloadMutationInterceptor(
             ok(taskList(task("b", "downloading"), task("a", "downloading"))),
-            ok(),
+            ok(receipt("a", "b")),
             ok(taskList(task("a", "paused"), task("b", "paused"))),
         )
 
@@ -474,7 +474,7 @@ class DownloadMutationResultTest {
     }
 
     @Test
-    fun `提交断线后在不可取消回读确认最终状态且不重放`() = runTest {
+    fun `提交断线回读不替代逐项回执且不重放`() = runTest {
         val transport = DownloadMutationInterceptor(
             ok(taskList(task("task-1", "paused"))),
             fail(IOException("synthetic disconnect")),
@@ -486,7 +486,7 @@ class DownloadMutationResultTest {
             DownloadTaskMutationAction.RESUME,
         )
 
-        assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+        assertEquals(MutationResultStatus.SUBMITTED_BUT_UNVERIFIED, result.status)
         assertEquals(listOf("list", "resume", "list"), transport.methods())
     }
 
@@ -653,7 +653,7 @@ class DownloadMutationResultTest {
                 2,
             ),
         ),
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
         DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),
@@ -690,7 +690,7 @@ private data class DownloadBlock(
 
 private data class DownloadCancelBlock(val entered: CountDownLatch) : DownloadReply
 
-private fun ok(data: String = "{}", success: Boolean = true, errorCode: Int? = null): DownloadReply =
+private fun ok(data: String = receipt("task-1"), success: Boolean = true, errorCode: Int? = null): DownloadReply =
     if (success) {
         DownloadBody("""{"success":true,"data":$data}""")
     } else {
@@ -760,7 +760,7 @@ private class DownloadMutationInterceptor(vararg replies: DownloadReply) : Inter
             }
             is DownloadCancelBlock -> {
                 reply.entered.countDown()
-                repeat(1_000) {
+                repeat(500) {
                     if (chain.call().isCanceled()) throw IOException("synthetic cancelled call")
                     Thread.sleep(5)
                 }
@@ -781,6 +781,9 @@ private class DownloadMutationInterceptor(vararg replies: DownloadReply) : Inter
 }
 
 private fun Request.formFields(): Map<String, String> {
-    val form = body as? FormBody ?: return emptyMap()
+    val form = fixtureBody() as? FormBody ?: return emptyMap()
     return (0 until form.size).associate { form.name(it) to form.value(it) }
 }
+
+private fun receipt(vararg ids: String): String =
+    """{"_array":[${ids.joinToString(",") { """{"id":"$it","error":0}""" }}]}"""

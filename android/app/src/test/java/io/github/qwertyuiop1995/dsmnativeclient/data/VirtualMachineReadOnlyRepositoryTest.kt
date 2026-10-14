@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmErrorKind
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
@@ -326,7 +328,7 @@ class VirtualMachineReadOnlyRepositoryTest {
         assertEquals(null, overview.tasks.single().progressPercent)
     }
 
-    private fun repository(interceptor: Interceptor, vararg capabilities: String) = DsmRepository(
+    private fun repository(interceptor: Interceptor, vararg capabilities: String) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
         DsmApiClient(OkHttpClient.Builder().addInterceptor(interceptor).build()),

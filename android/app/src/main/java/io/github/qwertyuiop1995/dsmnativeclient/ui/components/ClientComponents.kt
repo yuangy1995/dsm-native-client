@@ -16,8 +16,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -29,6 +31,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import io.github.qwertyuiop1995.dsmnativeclient.R
 
 @Composable
@@ -36,6 +40,7 @@ internal fun ClientToolbar(
     title: String,
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    titleContent: (@Composable RowScope.() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Surface(color = MaterialTheme.colorScheme.surface) {
@@ -44,7 +49,7 @@ internal fun ClientToolbar(
             if (onBack != null) IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.go_up))
             }
-            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1,
+            if (titleContent != null) titleContent() else Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
             actions()
         }
@@ -89,16 +94,24 @@ internal fun ClientRow(title: String, icon: ImageVector, detail: String? = null,
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ClientSheet(title: String, onDismiss: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+internal fun ClientSheet(title: String, onDismiss: () -> Unit, modifier: Modifier = Modifier,
+                         dismissEnabled: Boolean = true, canDismiss: () -> Boolean = { true },
+                         content: @Composable ColumnScope.() -> Unit) {
+    val permitsDismissal by rememberUpdatedState(canDismiss)
+    val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
+    // 手势和返回发生时读取当前状态，避免提交后的下一帧前仍按旧状态关闭。
+    ModalBottomSheet(onDismissRequest = { if (currentDismissEnabled && permitsDismissal()) onDismiss() },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true,
+            confirmValueChange = { value -> value != SheetValue.Hidden || currentDismissEnabled && permitsDismissal() }),
         containerColor = MaterialTheme.colorScheme.surface) {
         Column(modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState())
             .padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f).semantics { heading() })
-                IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, stringResource(R.string.close)) }
+                IconButton(onClick = { if (currentDismissEnabled && permitsDismissal()) onDismiss() }, enabled = dismissEnabled) {
+                    Icon(Icons.Outlined.Close, stringResource(R.string.close))
+                }
             }
             content()
         }
@@ -109,6 +122,16 @@ internal fun ClientSheet(title: String, onDismiss: () -> Unit, modifier: Modifie
 internal fun ClientPageDialog(title: String, onDismiss: () -> Unit, content: @Composable () -> Unit) {
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val view = LocalView.current
+        val darkSystemIcons = MaterialTheme.colorScheme.background.luminance() > 0.5f
+        SideEffect {
+            (view.parent as? DialogWindowProvider)?.window?.let { window ->
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = darkSystemIcons
+                    isAppearanceLightNavigationBars = darkSystemIcons
+                }
+            }
+        }
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
                 ClientToolbar(title, onBack = onDismiss)

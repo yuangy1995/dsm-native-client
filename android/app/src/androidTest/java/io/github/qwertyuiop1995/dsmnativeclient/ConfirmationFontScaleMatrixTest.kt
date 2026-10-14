@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -49,7 +51,9 @@ import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.PowerActionConfirmationDi
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.RemoteAccessConfirmationDialog
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.SecurityConfirmationDialog
 import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.SmartTestConfirmationDialog
-import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VirtualMachineLifecycleConfirmationDialog
+import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VmmControlsContent
+import io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.*
+import io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.*
 import io.github.qwertyuiop1995.dsmnativeclient.ui.theme.LanStashTheme
 import org.junit.Rule
 import org.junit.Test
@@ -222,10 +226,11 @@ class ConfirmationFontScaleMatrixTest {
     @Test
     fun 虚拟机关机确认在两倍字体下保留影响和操作() {
         val context = context()
-        setTwoX { VirtualMachineLifecycleConfirmationDialog(vmTarget(), "Synthetic VM", { true }, { true }) }
-        assertVisible(context.getString(R.string.shutdown_virtual_machine_title, "Synthetic VM"))
-        assertVisible(context.getString(R.string.shutdown_virtual_machine_message))
-        assertAction(context.getString(R.string.normal_shutdown))
+        setTwoX { VmmControlsContent(vmConfirmation(VmmAction.SHUTDOWN), {}, { _, _ -> true }, { true }, {}, {}) }
+        assertVisible("Synthetic VM")
+        assertVisible(context.getString(R.string.vm_stop_risk))
+        rule.onNode(hasText(context.getString(R.string.vm_stop)) and hasClickAction())
+            .performScrollTo().assertIsDisplayed().assertIsEnabled()
         assertAction(context.getString(R.string.cancel))
     }
 
@@ -233,16 +238,12 @@ class ConfirmationFontScaleMatrixTest {
     fun 虚拟机强制关机确认在两倍字体下保留风险和操作() {
         val context = context()
         setTwoX {
-            VirtualMachineLifecycleConfirmationDialog(
-                vmTarget(command = "poweroff"),
-                "Synthetic VM",
-                { true },
-                { true },
-            )
+            VmmControlsContent(vmConfirmation(VmmAction.POWER_OFF), {}, { _, _ -> true }, { true }, {}, {})
         }
-        assertVisible(context.getString(R.string.force_shutdown_virtual_machine_title, "Synthetic VM"))
-        assertVisible(context.getString(R.string.force_shutdown_virtual_machine_message), scroll = true)
-        assertAction(context.getString(R.string.force_shutdown))
+        assertVisible("Synthetic VM")
+        assertVisible(context.getString(R.string.vm_poweroff_risk), scroll = true)
+        rule.onNode(hasText(context.getString(R.string.vm_poweroff)) and hasClickAction())
+            .performScrollTo().assertIsDisplayed().assertIsEnabled()
         assertAction(context.getString(R.string.cancel))
     }
 
@@ -427,13 +428,8 @@ class ConfirmationFontScaleMatrixTest {
         supportsSmartTest = true,
     )
 
-    private fun vmTarget(command: String = "shutdown") = VirtualMachineLifecycleTarget(
-        profileId = "synthetic-profile",
-        resourceId = "synthetic-vm",
-        operation = VirtualMachineLifecycleOperation.CONTROL,
-        baselineState = ResourceState.RUNNING,
-        command = command,
-    )
+    private fun vmConfirmation(action: VmmAction) = VmmControlState(loaded = true,
+        confirmation = VmmControlConfirmation(listOf(VmmControlTarget("synthetic-vm", "Synthetic VM", "running", setOf(action))), action))
 
     private fun workspace() = WorkspaceState(
         profile = NasProfile("synthetic-profile", "Synthetic NAS", "https://nas.example.invalid", "tester"),

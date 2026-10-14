@@ -1,7 +1,11 @@
 package io.github.qwertyuiop1995.dsmnativeclient
 
 import java.util.UUID
-import kotlinx.coroutines.Job
+import androidx.work.WorkManager
+import io.github.qwertyuiop1995.dsmnativeclient.data.TransferStore
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
 
 /**
  * 集中管理传输运行时所有权。
@@ -69,6 +73,30 @@ internal class TransferCoordinator {
                 true
             }
         }
+    }
+
+    /** 上传观察统一在 IO 线程保存事实；目录取消先收敛逐项阶段，再套用共用工作状态。 */
+    fun observeUpload(scope: CoroutineScope, workManager: WorkManager, store: TransferStore, taskId: String, workId: UUID,
+        onChanged: (String) -> Unit) {
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            workManager.getWorkInfoByIdFlow(workId).filterNotNull().collectLatest { info ->
+                val completed = info.progress.getLong(PhotoBackupWorker.KEY_COMPLETED_BYTES, 0)
+                withContext(Dispatchers.IO) {
+                    if (info.state.isFinished && store.hasFolderUploadPlan(taskId)) {
+                        finalizeFolderUploadCancellation(store, taskId, workId.toString())
+                    }
+                    store.updateUpload(taskId) { current -> current.applyUploadWorkObservation(
+                        executionId = workId.toString(), workState = info.state, observedCompletedBytes = completed,
+                        observedErrorKind = info.outputData.getString(PhotoBackupWorker.KEY_ERROR_KIND)) }
+                }?.let { onChanged(it.profileId) }
+                if (info.state.isFinished) {
+                    removeWorkObservation(taskId, currentCoroutineContext()[Job])
+                    currentCoroutineContext()[Job]?.cancel()
+                }
+            }
+        }
+        replaceWorkObservation(taskId, job)
+        job.start()
     }
 
     /** 重新恢复持久化任务时仅替换 WorkManager 观察者，不碰前台传输所有权。 */

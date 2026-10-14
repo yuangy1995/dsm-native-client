@@ -18,6 +18,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,9 +36,54 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.qwertyuiop1995.dsmnativeclient.R
+import io.github.qwertyuiop1995.dsmnativeclient.AppViewModel
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceKind
+import io.github.qwertyuiop1995.dsmnativeclient.domain.NasServiceValue
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmFailure
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasRemoteAccessSettings
+
+@Composable
+internal fun NasRemoteAccessManagement(settings: NasRemoteAccessSettings?, available: Boolean,
+    isPerformingAction: Boolean, model: AppViewModel) {
+    val services = model.nasServices
+    val values by services.state.collectAsState()
+    val state = values.getValue(NasServiceKind.REMOTE_ACCESS)
+    val original = (state.original as? NasServiceValue.RemoteAccess)?.settings
+    val draft = (state.draft as? NasServiceValue.RemoteAccess)?.settings
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var confirming by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(services) { services.refresh(NasServiceKind.REMOTE_ACCESS, notify = false) }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(stringResource(R.string.remote_access), style = MaterialTheme.typography.titleMedium)
+        if (state.saving) RemoteAccessStateCard(R.string.remote_access_saving_title, R.string.remote_access_saving_message, LiveRegionMode.Polite, true)
+        else {
+            if (state.result != null || state.failure != null) SettingsMutationFeedbackCard(
+                result = state.result, failure = state.failure, refreshFailure = null,
+                refreshInProgress = state.busy, refreshCompleted = false, currentMatches = null,
+                countsLabel = R.string.remote_access_feedback_counts, refreshLabel = R.string.refresh_and_check_remote_access,
+                onRefresh = { services.refresh(NasServiceKind.REMOTE_ACCESS) },
+                onContinueEditing = { services.dismiss(NasServiceKind.REMOTE_ACCESS); editing = true },
+                onDismiss = { services.dismiss(NasServiceKind.REMOTE_ACCESS, discard = true) },
+                canContinueEditing = !state.blocked && draft != null,
+                canDismiss = !state.blocked)
+            else if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        if (!available || settings == null) RemoteAccessUnavailableCard(R.string.remote_access_read_failed_title,
+            R.string.remote_access_read_failed_message, !state.busy, onRefresh = { services.refresh(NasServiceKind.REMOTE_ACCESS) })
+        else RemoteAccessSettingsCard(settings, !isPerformingAction && !state.blocked && original == null) {
+            editing = services.begin(NasServiceValue.RemoteAccess(settings))
+        }
+    }
+    if (editing && original != null && draft != null) RemoteAccessEditDialog(original, draft,
+        enabled = !isPerformingAction && !state.blocked,
+        onDraftChange = { services.draft(NasServiceKind.REMOTE_ACCESS, NasServiceValue.RemoteAccess(it)) },
+        onContinue = { editing = false; confirming = true },
+        onDismiss = { services.draft(NasServiceKind.REMOTE_ACCESS, null); editing = false })
+    if (confirming && original != null && draft != null) RemoteAccessConfirmationDialog(original, draft,
+        onConfirm = { services.save(NasServiceKind.REMOTE_ACCESS).also { if (it) confirming = false } },
+        onDismiss = { confirming = false; editing = true })
+}
 
 @Composable
 internal fun RemoteAccessSettingsContent(
@@ -214,7 +262,6 @@ internal fun RemoteAccessEditDialog(
                 modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(stringResource(R.string.remote_access_editor_message))
                 RemoteAccessSwitchRow(
                     label = stringResource(R.string.quickconnect_relay),
                     supporting = relaySupporting,
@@ -246,7 +293,7 @@ internal fun RemoteAccessEditDialog(
                 enabled = enabled && draft.canManage && changed,
                 onClick = onContinue,
                 modifier = Modifier.heightIn(min = 48.dp).semantics { role = Role.Button },
-            ) { Text(stringResource(R.string.review_changes)) }
+            ) { Text(stringResource(R.string.continue_action)) }
         },
         dismissButton = {
             OutlinedButton(
@@ -274,7 +321,6 @@ internal fun RemoteAccessConfirmationDialog(
                 modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(stringResource(R.string.remote_access_confirm_summary))
                 if (baseline.isRelayEnabled != draft.isRelayEnabled) Text(stringResource(
                     if (draft.isRelayEnabled == false) R.string.disable_relay_impact else R.string.enable_relay_impact,
                 ))

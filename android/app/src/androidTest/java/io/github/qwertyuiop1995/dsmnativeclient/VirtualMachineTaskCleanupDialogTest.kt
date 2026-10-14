@@ -12,12 +12,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.unit.Density
 import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineTask
 import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineTaskCenterState
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResult
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultCounts
-import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VirtualMachineTaskCenterContent
 import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VirtualMachineTaskCleanupConfirmationDialog
-import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VirtualMachineMutationFeedbackDialog
+import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VmmTaskRecords
+import io.github.qwertyuiop1995.dsmnativeclient.virtualmachines.*
+import io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.*
+import io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceOwner
 import io.github.qwertyuiop1995.dsmnativeclient.ui.theme.LanStashTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -120,35 +120,11 @@ class VirtualMachineTaskCleanupDialogTest {
     @Test
     fun 清理结果使用无问号反馈标题() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val target = virtualMachineMutationTarget(
-            profileId = "profile",
-            kind = VirtualMachineMutationKind.TASK_CLEANUP,
-            operation = "virtualMachineTaskCleanup",
-            resourceId = null,
-            requestParts = listOf("synthetic-task"),
-        )
-        rule.setContent {
-            LanStashTheme {
-                VirtualMachineMutationFeedbackDialog(
-                    state = VirtualMachineMutationWorkspaceState(
-                        target = target,
-                        mutationResult = MutationResult(
-                            schemaVersion = 1,
-                            status = MutationResultStatus.CONFIRMED_SUCCESS,
-                            operation = "virtualMachineTaskCleanup",
-                            submitted = true,
-                            requiresRefresh = false,
-                            counts = MutationResultCounts(1, 0, 0),
-                        ),
-                    ),
-                    onRefresh = { true },
-                    onContinueEditing = { true },
-                    onDismiss = { true },
-                )
-            }
-        }
+        val owner = WorkspaceOwner("profile", "identity", "session")
+        val record = VmmTaskClearActivity("cleanup", owner, listOf(VmmTaskClearItem(vmmDigest("task"), vmmDigest("data"), VmmStage.VERIFIED)))
+        rule.setContent { LanStashTheme { VmmTaskRecords(VmmTaskState(cleanups = listOf(record)), {}, { _, _ -> }, {}) } }
 
-        rule.onNodeWithText(context.getString(R.string.virtual_machine_task_cleanup_feedback_title))
+        rule.onNodeWithText(context.getString(R.string.virtual_machine_task_cleanup_feedback_title), substring = true)
             .assertIsDisplayed()
         rule.onAllNodesWithText(context.getString(R.string.virtual_machine_clear_finished_tasks_title))
             .assertCountEquals(0)

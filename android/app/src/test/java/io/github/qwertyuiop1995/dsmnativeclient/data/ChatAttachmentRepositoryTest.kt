@@ -1,10 +1,13 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+import io.github.qwertyuiop1995.dsmnativeclient.chat.*
+import io.github.qwertyuiop1995.dsmnativeclient.data.chat.ChatProtocolFixture
+
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.DsmSession
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
 import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
@@ -28,27 +31,19 @@ class ChatAttachmentRepositoryTest {
     @Test
     fun `附件上传固定v5且客户端请求ID不出站`() = runBlocking {
         val bytes = "synthetic attachment".toByteArray()
-        val transport = ChatAttachmentInterceptor(
-            body("""{"success":true,"data":{"post_id":"post-1","channel_id":"channel-1","message":"说明","files":[{"file_id":"file-1","file_name":"sample.txt","size":20}]}}"""),
-        )
+        val f = ChatProtocolFixture("synthetic-channel")
+        f.posts = "[${f.post("Synthetic caption", attachment = true, size = bytes.size.toLong())}]"
         var progress = 0L
-
-        val message = repository(transport).sendChatAttachmentMessage(
-            conversationId = "synthetic-channel",
-            text = " Synthetic caption ",
-            source = source(bytes),
-            clientRequestId = "request-1",
-            onProgress = { completed, _ -> progress = completed },
-        )
-
+        val action = f.prepare(ChatActionDraft(ChatActionKind.ATTACHMENT, f.channelId,
+            text = " Synthetic caption ", attachment = f.source(bytes = bytes)))
+        val result = f.execute(action) { completed, _ -> progress = completed }
+        assertEquals(ChatActionPhase.COMPLETED, result.checkpoint.phase)
+        val message = requireNotNull(result.message)
         assertEquals("post-1", message.id)
         assertEquals("sample.txt", message.attachments.single().name)
         assertEquals(bytes.size.toLong(), progress)
-        val request = transport.requests.single()
-        RequestFixtureAssertions.assertRequest(
-            request,
-            "chat/send-attachment/synthetic-file/request.json",
-        )
+        val request = f.writes.single()
+        RequestFixtureAssertions.assertRequest(request, "chat/send-attachment/synthetic-file/request.json")
         assertEquals("5", request.url.queryParameter("version"))
         assertEquals("create", request.url.queryParameter("method"))
         assertTrue(request.url.queryParameter("_sid") == null)
@@ -64,32 +59,18 @@ class ChatAttachmentRepositoryTest {
 
     @Test
     fun `附件能力不覆盖v5时零请求拒绝`() = runBlocking {
-        val transport = ChatAttachmentInterceptor()
-
-        assertThrows {
-            repository(transport, postMaximumVersion = 4).sendChatAttachmentMessage(
-                "channel-1", "", source(byteArrayOf(1)), "request-1", { _, _ -> },
-            )
-        }
-
-        assertTrue(transport.requests.isEmpty())
+        val f = ChatProtocolFixture(maximumVersion = 4)
+        assertThrows { f.prepare(ChatActionDraft(ChatActionKind.ATTACHMENT, f.channelId, attachment = f.source())) }
+        assertTrue(f.requests.isEmpty())
     }
 
     @Test
     fun `附件提交断线不会自动重放`() = runBlocking {
-        val transport = ChatAttachmentInterceptor(
-            failure(IOException("synthetic disconnect")),
-            body("""{"success":true,"data":{"total":0,"posts":[]}}"""),
-        )
-
-        assertThrows {
-            repository(transport).sendChatAttachmentMessage(
-                "channel-1", "", source(byteArrayOf(1)), "request-1", { _, _ -> },
-            )
-        }
-
-        assertEquals(2, transport.requests.size)
-        assertEquals(1, transport.requests.count { it.body is MultipartBody })
+        val f = ChatProtocolFixture(); f.write = { throw IOException("synthetic disconnect") }
+        val action = f.prepare(ChatActionDraft(ChatActionKind.ATTACHMENT, f.channelId, attachment = f.source()))
+        assertEquals(ChatActionPhase.SUBMITTED, f.execute(action).checkpoint.phase)
+        assertEquals(ChatActionPhase.SUBMITTED, f.execute(action).checkpoint.phase)
+        assertEquals(1, f.writes.size); assertTrue(f.postReads.isEmpty())
     }
 
     @Test
@@ -156,7 +137,7 @@ class ChatAttachmentRepositoryTest {
     private fun repository(
         interceptor: ChatAttachmentInterceptor,
         postMaximumVersion: Int = 5,
-    ) = DsmRepository(
+    ) = authorizedRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "operator"),
         DsmSession("test", "synthetic-session", "synthetic-token"),
         DsmApiClient(OkHttpClient.Builder().retryOnConnectionFailure(false).addInterceptor(interceptor).build()),
@@ -166,16 +147,7 @@ class ChatAttachmentRepositoryTest {
         ),
     )
 
-    private fun source(bytes: ByteArray) = UploadSource(
-        displayName = "sample.txt",
-        contentType = "text/plain",
-        contentLength = bytes.size.toLong(),
-        openInputStream = { ByteArrayInputStream(bytes) },
-    )
-
-    private fun body(value: String) = ChatAttachmentStep.Body(value.toByteArray(), "application/json")
     private fun binary(value: ByteArray, type: String) = ChatAttachmentStep.Body(value, type)
-    private fun failure(error: IOException) = ChatAttachmentStep.Failure(error)
 
     private suspend fun assertThrows(block: suspend () -> Unit) {
         var thrown = false
@@ -190,7 +162,6 @@ class ChatAttachmentRepositoryTest {
 
 private sealed interface ChatAttachmentStep {
     data class Body(val value: ByteArray, val contentType: String) : ChatAttachmentStep
-    data class Failure(val error: IOException) : ChatAttachmentStep
 }
 
 private class ChatAttachmentInterceptor(vararg steps: ChatAttachmentStep) : Interceptor {
@@ -200,9 +171,8 @@ private class ChatAttachmentInterceptor(vararg steps: ChatAttachmentStep) : Inte
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         requests += request
-        if (request.body is MultipartBody) request.body?.writeTo(Buffer())
+        if (request.body?.contentType()?.type == "multipart") request.body?.writeTo(Buffer())
         return when (val step = queue.removeFirstOrNull() ?: error("Unexpected request")) {
-            is ChatAttachmentStep.Failure -> throw step.error
             is ChatAttachmentStep.Body -> Response.Builder()
                 .request(request)
                 .protocol(Protocol.HTTP_1_1)
@@ -216,7 +186,7 @@ private class ChatAttachmentInterceptor(vararg steps: ChatAttachmentStep) : Inte
 }
 
 private fun Request.multipartTextFields(): Map<String, String> {
-    val multipart = body as MultipartBody
+    val multipart = ((body as? io.github.qwertyuiop1995.dsmnativeclient.network.OneShotRequestBody)?.delegate ?: body) as MultipartBody
     return buildMap {
         multipart.parts.forEach { part ->
             val disposition = part.headers?.get("Content-Disposition").orEmpty()

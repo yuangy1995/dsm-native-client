@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient
 
+import io.github.qwertyuiop1995.dsmnativeclient.testing.authorizedRepository
+
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -8,10 +10,14 @@ import android.graphics.Paint
 import android.util.LruCache
 import androidx.test.core.app.ApplicationProvider
 import io.github.qwertyuiop1995.dsmnativeclient.domain.*
+import io.github.qwertyuiop1995.dsmnativeclient.data.DsmRepository
+import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
+import okhttp3.OkHttpClient
+import java.io.IOException
 import java.time.Instant
 
-/** 仅用于隔离模拟器的合成数据。没有 Repository、真实账号或可发送的请求。 */
+/** 仅用于隔离模拟器的合成数据；默认不装配 Repository，专用照片会话禁止所有网络请求。 */
 internal object ApprovedUiFixture {
     val profile = NasProfile("approved-ui-fixture", "Demo NAS", "https://nas.example.invalid", "fixture-user")
     val files = listOf(
@@ -55,6 +61,18 @@ internal object ApprovedUiFixture {
 
     fun model(state: WorkspaceState = state()): AppViewModel = AppViewModel(ApplicationProvider.getApplicationContext<Application>()).also {
         setState(it, state)
+    }
+
+    /** 正式 Photos 页面由仓储会话创建，不能用旧 File Station 照片字段冒充已装配。 */
+    fun attachUnavailablePhotosSession(model: AppViewModel) {
+        val client = DsmApiClient(OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
+            .retryOnConnectionFailure(false).addInterceptor {
+            throw IOException("Synthetic UI fixture does not allow network requests")
+        }.build())
+        val repository = authorizedRepository(profile, DsmSession(profile.id, "synthetic-session"), client, emptyMap())
+        AppViewModel::class.java.getDeclaredMethod("setRepository", DsmRepository::class.java).apply {
+            isAccessible = true
+        }.invoke(model, repository)
     }
 
     @Suppress("UNCHECKED_CAST")

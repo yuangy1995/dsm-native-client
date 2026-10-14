@@ -6,16 +6,8 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.media.ExifInterface
-import android.media.MediaDataSource
-import android.media.MediaPlayer
-import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.text.format.Formatter
-import android.view.SurfaceHolder
-import android.view.SurfaceView
-import android.widget.FrameLayout
-import android.widget.MediaController
-import android.widget.VideoView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -42,7 +34,6 @@ import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.ZoomIn
 import androidx.compose.material.icons.outlined.ZoomOut
 import androidx.compose.material3.Button
@@ -80,14 +71,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.github.qwertyuiop1995.dsmnativeclient.Loadable
 import io.github.qwertyuiop1995.dsmnativeclient.R
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem
 import io.github.qwertyuiop1995.dsmnativeclient.domain.FilePreviewContent
-import io.github.qwertyuiop1995.dsmnativeclient.domain.RandomAccessMediaSource
 import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
 import java.io.File
 import java.text.DateFormat
@@ -499,223 +488,6 @@ private fun VideoPreview(content: FilePreviewContent.Video) {
 @Composable
 private fun AudioPreview(content: FilePreviewContent.Audio) {
     MediaPreview(content.localFile, content.mediaSource, content.item.name, audio = true)
-}
-
-@Composable
-internal fun MediaPreview(
-    localFile: File?,
-    mediaSource: RandomAccessMediaSource?,
-    itemName: String,
-    audio: Boolean,
-) {
-    val context = LocalContext.current
-    val sourceKey = localFile?.path ?: mediaSource
-    var videoView: VideoView? by remember(sourceKey) { mutableStateOf(null) }
-    var streamingView: StreamingMediaView? by remember(sourceKey) { mutableStateOf(null) }
-    var playbackFailed by remember(sourceKey) { mutableStateOf(false) }
-    val description = stringResource(
-        if (audio) R.string.preview_audio_description else R.string.preview_video_description,
-        itemName,
-    )
-    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
-        AndroidView(
-            factory = { viewContext ->
-                when {
-                    mediaSource != null -> StreamingMediaView(
-                        context = viewContext,
-                        source = mediaSource,
-                        audio = audio,
-                        onPlaybackFailed = { playbackFailed = true },
-                    ).also { streamingView = it }
-
-                    localFile != null -> VideoView(viewContext).also { view ->
-                        videoView = view
-                        val mediaController = MediaController(viewContext)
-                        view.setMediaController(mediaController)
-                        mediaController.setAnchorView(view)
-                        view.setVideoURI(Uri.fromFile(localFile))
-                        view.setOnPreparedListener { mediaController.show(0) }
-                        view.setOnErrorListener { _, _, _ ->
-                            playbackFailed = true
-                            true
-                        }
-                        view.requestFocus()
-                    }
-
-                    else -> FrameLayout(viewContext).also { playbackFailed = true }
-                }
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .semantics { contentDescription = description },
-        )
-        if (audio && !playbackFailed) {
-            Column(
-                modifier = Modifier.align(Alignment.Center).padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Icon(
-                    Icons.Outlined.Headphones,
-                    contentDescription = null,
-                    tint = androidx.compose.ui.graphics.Color.White,
-                    modifier = Modifier.size(72.dp),
-                )
-                Text(
-                    itemName,
-                    color = androidx.compose.ui.graphics.Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    stringResource(R.string.audio_controls_hint),
-                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.8f),
-                )
-            }
-        }
-        if (playbackFailed) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Icon(
-                    Icons.Outlined.ErrorOutline,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(48.dp),
-                )
-                Text(
-                    stringResource(
-                        if (audio) R.string.audio_playback_failed else R.string.video_playback_failed,
-                    ),
-                    color = androidx.compose.ui.graphics.Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    stringResource(
-                        if (audio) {
-                            R.string.audio_playback_failed_recovery
-                        } else {
-                            R.string.video_playback_failed_recovery
-                        },
-                    ),
-                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.8f),
-                )
-            }
-        }
-    }
-    DisposableEffect(sourceKey) {
-        onDispose {
-            videoView?.stopPlayback()
-            videoView = null
-            streamingView?.release()
-            streamingView = null
-        }
-    }
-}
-
-private class StreamingMediaDataSource(
-    private val source: RandomAccessMediaSource,
-) : MediaDataSource() {
-    override fun getSize(): Long = source.size
-
-    override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int =
-        source.readAt(position, buffer, offset, size)
-
-    override fun close() = source.close()
-}
-
-private class StreamingMediaView(
-    context: android.content.Context,
-    source: RandomAccessMediaSource,
-    audio: Boolean,
-    private val onPlaybackFailed: () -> Unit,
-) : FrameLayout(context), MediaController.MediaPlayerControl, SurfaceHolder.Callback {
-    private val mediaPlayer = MediaPlayer()
-    private val mediaController = MediaController(context)
-    private val dataSource = StreamingMediaDataSource(source)
-    private var prepared = false
-    private var released = false
-
-    init {
-        if (!audio) {
-            val surface = SurfaceView(context)
-            surface.holder.addCallback(this)
-            addView(surface, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        }
-        isFocusable = true
-        isClickable = true
-        mediaController.setMediaPlayer(this)
-        mediaController.setAnchorView(this)
-        setOnClickListener { mediaController.show() }
-        mediaPlayer.setDataSource(dataSource)
-        mediaPlayer.setOnPreparedListener {
-            prepared = true
-            mediaController.isEnabled = true
-            mediaController.show(0)
-        }
-        mediaPlayer.setOnCompletionListener { mediaController.show(0) }
-        mediaPlayer.setOnErrorListener { _, _, _ ->
-            onPlaybackFailed()
-            true
-        }
-        mediaPlayer.prepareAsync()
-        requestFocus()
-    }
-
-    fun release() {
-        if (released) return
-        released = true
-        prepared = false
-        mediaController.hide()
-        runCatching { mediaPlayer.stop() }
-        mediaPlayer.reset()
-        mediaPlayer.release()
-        dataSource.close()
-    }
-
-    override fun surfaceCreated(holder: SurfaceHolder) {
-        if (!released) mediaPlayer.setDisplay(holder)
-    }
-
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
-
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
-        if (!released) mediaPlayer.setDisplay(null)
-    }
-
-    override fun start() {
-        if (prepared && !released) mediaPlayer.start()
-    }
-
-    override fun pause() {
-        if (prepared && !released) mediaPlayer.pause()
-    }
-
-    override fun getDuration(): Int = if (prepared && !released) mediaPlayer.duration else 0
-
-    override fun getCurrentPosition(): Int = if (prepared && !released) mediaPlayer.currentPosition else 0
-
-    override fun seekTo(position: Int) {
-        if (prepared && !released) mediaPlayer.seekTo(position)
-    }
-
-    override fun isPlaying(): Boolean = prepared && !released && mediaPlayer.isPlaying
-
-    override fun getBufferPercentage(): Int = 0
-
-    override fun canPause(): Boolean = true
-
-    override fun canSeekBackward(): Boolean = true
-
-    override fun canSeekForward(): Boolean = true
-
-    override fun getAudioSessionId(): Int = if (released) 0 else mediaPlayer.audioSessionId
 }
 
 @Composable

@@ -1,6 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient
 
 import android.net.Uri
+import io.github.qwertyuiop1995.dsmnativeclient.data.DsmRepository
 import io.github.qwertyuiop1995.dsmnativeclient.domain.*
 
 data class PhotoMoveLocation(
@@ -274,6 +275,16 @@ private fun FileItem.matchesMutationOutcome(baseline: FileItem, expectedPath: St
         (isDirectory || size == baseline.size &&
             modifiedAtEpochSeconds == baseline.modifiedAtEpochSeconds)
 
+/** 当前工作区的文件写后读取沿用同一结果规则，缺少工作区时不认定成功。 */
+internal suspend fun WorkspaceState?.verifyFileStationMutation(
+    target: FileStationMutationTarget,
+    fileInfo: suspend (String) -> FileItem?,
+): FileStationMutationVerification {
+    val current = this ?: return FileStationMutationVerification.UNAVAILABLE
+    return verifyFileStationMutationOutcome(target, fileInfo, current.favoritePaths,
+        (current.fileShareLinks as? Loadable.Ready)?.value, current.fileStationMutationState.createdShareLink)
+}
+
 internal suspend fun verifyFileStationMutationOutcome(
     target: FileStationMutationTarget,
     fileInfo: suspend (String) -> FileItem?,
@@ -474,3 +485,31 @@ internal fun interruptedServerMutationResult(
         "archive.interrupted-before-submission"
     },
 )
+
+internal suspend fun listFilePage(
+    repo: DsmRepository,
+    browser: FileBrowserState,
+    offset: Int,
+): FilePage {
+    val sortBy = when (browser.sortOption) {
+        FileSortOption.NAME -> "name"
+        FileSortOption.MODIFIED_TIME -> "mtime"
+        FileSortOption.SIZE -> "size"
+    }
+    return if (browser.path.isBlank()) {
+        repo.listShares(offset, FILE_PAGE_SIZE, sortBy, browser.sortAscending)
+    } else {
+        repo.listDirectory(
+            browser.path,
+            offset,
+            FILE_PAGE_SIZE,
+            sortBy,
+            browser.sortAscending,
+            when (browser.typeFilter) {
+                FileTypeFilter.ALL -> "all"
+                FileTypeFilter.FOLDERS -> "dir"
+                FileTypeFilter.FILES -> "file"
+            },
+        )
+    }
+}

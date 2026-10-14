@@ -1,126 +1,7 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-08-21",
+  "lastReviewed": "2026-10-14",
   "writeOperations": [
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "submitChatConversation",
-      "resultMethod": "openDirectChatConversationResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "ChatConversationMutationResultTest.kt::单聊写前列表失败时不提交",
-        "success": "ChatConversationMutationResultTest.kt::单聊成功响应仍须列表回读确认",
-        "disconnect": "ChatConversationMutationResultTest.kt::单聊创建断线但列表回读匹配",
-        "readback": "ChatConversationMutationResultTest.kt::单聊权限拒绝且回读不匹配",
-        "cancel": "ChatConversationMutationResultTest.kt::群聊创建提交后取消",
-        "partial": "ChatConversationMutationResultTest.kt::群聊邀请断线且成员不完整时报告部分成功",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "submitChatConversation",
-      "resultMethod": "createPrivateChatGroupResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "ChatConversationMutationResultTest.kt::单聊写前列表失败时不提交",
-        "success": "ChatConversationMutationResultTest.kt::单聊成功响应仍须列表回读确认",
-        "disconnect": "ChatConversationMutationResultTest.kt::单聊创建断线但列表回读匹配",
-        "readback": "ChatConversationMutationResultTest.kt::单聊权限拒绝且回读不匹配",
-        "cancel": "ChatConversationMutationResultTest.kt::群聊创建提交后取消",
-        "partial": "ChatConversationMutationResultTest.kt::群聊邀请断线且成员不完整时报告部分成功",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "setChatReminder",
-      "resultMethod": "setChatReminderResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "ChatReminderMutationResultTest.kt::写前回读失败时不提交提醒变更",
-        "success": "ChatReminderMutationResultTest.kt::设置提交断线但回读匹配",
-        "disconnect": "ChatReminderMutationResultTest.kt::删除提交断线但回读已不存在",
-        "readback": "ChatReminderMutationResultTest.kt::成功响应但回读失败",
-        "cancel": "ChatReminderMutationResultTest.kt::提交后取消只回读",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmChatMutation",
-      "resultMethod": "deleteChatReminderResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "ChatReminderMutationResultTest.kt::写前回读失败时不提交提醒变更",
-        "success": "ChatReminderMutationResultTest.kt::设置提交断线但回读匹配",
-        "disconnect": "ChatReminderMutationResultTest.kt::删除提交断线但回读已不存在",
-        "readback": "ChatReminderMutationResultTest.kt::成功响应但回读失败",
-        "cancel": "ChatReminderMutationResultTest.kt::提交后取消只回读",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmChatMutation",
-      "resultMethod": "deleteChatScheduledMessageResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "ChatScheduleMutationResultTest.kt::写前回读失败时不提交定时消息",
-        "success": "ChatScheduleMutationResultTest.kt::创建成功响应仍须列表回读确认",
-        "disconnect": "ChatScheduleMutationResultTest.kt::取消定时消息断线但回读已不存在",
-        "readback": "ChatScheduleMutationResultTest.kt::创建断线且回读不匹配",
-        "cancel": "ChatScheduleMutationResultTest.kt::提交后取消只回读",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "createChatScheduledMessage",
-      "resultMethod": "createChatScheduledMessageResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "ChatScheduleMutationResultTest.kt::写前回读失败时不提交定时消息",
-        "success": "ChatScheduleMutationResultTest.kt::创建成功响应仍须列表回读确认",
-        "disconnect": "ChatScheduleMutationResultTest.kt::取消定时消息断线但回读已不存在",
-        "readback": "ChatScheduleMutationResultTest.kt::创建断线且回读不匹配",
-        "cancel": "ChatScheduleMutationResultTest.kt::提交后取消只回读",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "createChatPoll",
-      "resultMethod": "createChatPollResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "ChatPollMutationResultTest.kt::写前回读失败时不提交投票",
-        "success": "ChatPollMutationResultTest.kt::创建成功响应仍须近期消息回读确认",
-        "disconnect": "ChatPollMutationResultTest.kt::创建断线但近期消息回读匹配",
-        "readback": "ChatPollMutationResultTest.kt::提交后回读失败",
-        "cancel": "ChatPollMutationResultTest.kt::提交后取消只回读",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
     {
       "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
       "owner": "createFolder",
@@ -352,7 +233,7 @@
       "scenarios": {
         "pre": "FileUploadTest.kt::上传非法输入和能力不足均不访问网络",
         "success": "FileUploadTest.kt::上传请求符合公共Fixture且写后大小回读一致",
-        "disconnect": "FileUploadTest.kt::上传断线但大小回读一致",
+        "disconnect": "FileUploadTest.kt::上传断线但完整内容一致",
         "readback": "FileUploadTest.kt::上传响应成功但回读大小不一致",
         "cancel": "FileUploadTest.kt::上传提交后取消只要求刷新",
         "partial": "na",
@@ -377,8 +258,8 @@
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "refreshSelectedDownloadRssSite",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/downloads/DownloadActionModel.kt",
+      "owner": "submit",
       "resultMethod": "refreshDownloadRssSiteResult",
       "occurrence": 1,
       "state": "open",
@@ -394,59 +275,59 @@
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "saveDownloadSettings",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/downloads/DownloadActionModel.kt",
+      "owner": "submit",
       "resultMethod": "saveDownloadSettingsResult",
       "occurrence": 1,
       "state": "open",
       "multi": true,
       "scenarios": {
         "pre": "DownloadSettingsRepositoryTest.kt::计划预读失败时保持未提交",
-        "success": "DownloadSettingsRepositoryTest.kt::保存两组件后严格回读",
+        "success": "DownloadSettingsRepositoryTest.kt::两组件分别差量保存与回读且HTTP FTP保持同值",
         "disconnect": "DownloadSettingsRepositoryTest.kt::计划提交失败但基础设置已确认",
         "readback": "DownloadSettingsRepositoryTest.kt::计划回读失败保留unknown",
-        "cancel": "DownloadSettingsRepositoryTest.kt::第二阶段取消只回读",
-        "partial": "DownloadSettingsRepositoryTest.kt::计划提交失败但基础设置已确认时返回部分成功",
+        "cancel": "DownloadSettingsRepositoryTest.kt::第二阶段取消保留基础成功与计划unknown",
+        "partial": "DownloadActionModelTest.kt::设置多分区未知停止且刷新不会补发未开始分区",
         "zero": "na"
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "createDownload",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/downloads/DownloadActionModel.kt",
+      "owner": "createLink",
       "resultMethod": "createDownloadResult",
       "occurrence": 1,
       "state": "open",
       "multi": false,
       "scenarios": {
         "pre": "DownloadCreationResultTest.kt::非法链接和不支持能力均在提交前失败",
-        "success": "DownloadCreationResultTest.kt::链接任务只在新任务回读后确认",
-        "disconnect": "DownloadCreationResultTest.kt::链接提交断线后不把其他新任务归属",
-        "readback": "DownloadCreationResultTest.kt::链接创建响应成功但回读失败",
+        "success": "DownloadCreationResultTest.kt::链接创建按接受回执结束且请求符合公共v3契约",
+        "disconnect": "DownloadCreationResultTest.kt::链接提交断线不读取其他任务猜测归属且不重放",
+        "readback": "DownloadActionModelTest.kt::失去创建回执刷新和重登均不能认领同名新任务或重发",
         "cancel": "DownloadCreationResultTest.kt::链接创建提交后的取消",
         "partial": "na",
         "zero": "na"
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "createDownloadFromFile",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/downloads/DownloadActionModel.kt",
+      "owner": "createFile",
       "resultMethod": "createDownloadFromFileResult",
       "occurrence": 1,
       "state": "open",
       "multi": false,
       "scenarios": {
         "pre": "DownloadCreationResultTest.kt::非法任务文件在上传前失败",
-        "success": "DownloadCreationResultTest.kt::任务文件只在稳定任务回读后确认成功且只上传一次",
-        "disconnect": "DownloadCreationResultTest.kt::任务文件提交断线只回读不猜测归属且不再次上传",
-        "readback": "DownloadCreationResultTest.kt::任务文件上传成功但回读失败时保持未确认且不再次上传",
+        "success": "DownloadCreationResultTest.kt::任务文件接受回执后结束且只上传一次",
+        "disconnect": "DownloadCreationResultTest.kt::任务文件提交断线不猜测归属且不再次上传",
+        "readback": "DownloadActionModelTest.kt::失去创建回执刷新和重登均不能认领同名新任务或重发",
         "cancel": "DownloadCreationResultTest.kt::任务文件提交后的取消只要求核对且不再次上传",
         "partial": "na",
         "zero": "na"
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "launchDownloadControlMutation",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/downloads/DownloadActionModel.kt",
+      "owner": "submit",
       "resultMethod": "controlDownloadsResult",
       "occurrence": 1,
       "state": "open",
@@ -454,24 +335,24 @@
       "scenarios": {
         "pre": "DownloadMutationResultTest.kt::稳定基线或适用状态漂移时写请求为零",
         "success": "DownloadMutationResultTest.kt::暂停和继续按最终状态逐项确认",
-        "disconnect": "DownloadMutationResultTest.kt::提交断线后在不可取消回读确认最终状态",
+        "disconnect": "DownloadMutationResultTest.kt::提交断线回读不替代逐项回执且不重放",
         "readback": "DownloadMutationResultTest.kt::提交断线且严格回读失败",
         "cancel": "DownloadMutationResultTest.kt::提交阶段取消仍执行不可取消严格回读",
-        "partial": "DownloadMutationResultTest.kt::批量暂停只把已确认项计成功",
+        "partial": "DownloadActionModelTest.kt::批量未知停止后项冷恢复只读后显式继续",
         "zero": "na"
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmDownloadDestinationEdit",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/downloads/DownloadActionModel.kt",
+      "owner": "submit",
       "resultMethod": "editDownloadDestinationResult",
       "occurrence": 1,
       "state": "open",
       "multi": false,
       "scenarios": {
         "pre": "DownloadMutationResultTest.kt::目标目录或任务基线漂移时保存位置写请求为零",
-        "success": "DownloadMutationResultTest.kt::修改保存位置仅发送一次官方v1写请求并按回读确认",
-        "disconnect": "DownloadMutationResultTest.kt::写请求连接失败但回读已生效时不重放并确认成功",
+        "success": "DownloadMutationResultTest.kt::修改保存位置仅发送一次官方v2写请求并按回读确认",
+        "disconnect": "DownloadMutationResultTest.kt::写请求丢失回执时保留未知且不重放",
         "readback": "DownloadMutationResultTest.kt::修改保存位置写后回读失败保持未确认且不重放",
         "cancel": "DownloadMutationResultTest.kt::修改保存位置提交阶段取消只回读且不重放",
         "partial": "na",
@@ -479,298 +360,9 @@
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "controlContainer",
-      "resultMethod": "controlContainerResult",
-      "occurrence": 1,
-      "state": "closed",
-      "multi": false,
-      "scenarios": {
-        "pre": "na",
-        "success": "na",
-        "disconnect": "na",
-        "readback": "na",
-        "cancel": "na",
-        "partial": "na",
-        "zero": "ContainerMutationResultTest.kt::行为未验证时所有容器写操作稳定拒绝且零请求"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "deleteContainer",
-      "resultMethod": "deleteContainerResult",
-      "occurrence": 1,
-      "state": "closed",
-      "multi": false,
-      "scenarios": {
-        "pre": "na",
-        "success": "na",
-        "disconnect": "na",
-        "readback": "na",
-        "cancel": "na",
-        "partial": "na",
-        "zero": "ContainerMutationResultTest.kt::行为未验证时所有容器写操作稳定拒绝且零请求"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "deleteContainerImage",
-      "resultMethod": "deleteContainerImageResult",
-      "occurrence": 1,
-      "state": "closed",
-      "multi": false,
-      "scenarios": {
-        "pre": "na",
-        "success": "na",
-        "disconnect": "na",
-        "readback": "na",
-        "cancel": "na",
-        "partial": "na",
-        "zero": "ContainerMutationResultTest.kt::行为未验证时所有容器写操作稳定拒绝且零请求"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "createContainerNetwork",
-      "resultMethod": "createContainerNetworkResult",
-      "occurrence": 1,
-      "state": "closed",
-      "multi": false,
-      "scenarios": {
-        "pre": "na",
-        "success": "na",
-        "disconnect": "na",
-        "readback": "na",
-        "cancel": "na",
-        "partial": "na",
-        "zero": "ContainerMutationResultTest.kt::行为未验证时所有容器写操作稳定拒绝且零请求"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "deleteContainerNetwork",
-      "resultMethod": "deleteContainerNetworkResult",
-      "occurrence": 1,
-      "state": "closed",
-      "multi": false,
-      "scenarios": {
-        "pre": "na",
-        "success": "na",
-        "disconnect": "na",
-        "readback": "na",
-        "cancel": "na",
-        "partial": "na",
-        "zero": "ContainerMutationResultTest.kt::行为未验证时所有容器写操作稳定拒绝且零请求"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "controlVirtualMachine",
-      "resultMethod": "controlVirtualMachineResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "VirtualMachineMutationResultTest.kt::生命周期锁内状态偏离用户所见基线",
-        "success": "VirtualMachineMutationResultTest.kt::正常关机必须在列表回读为停止后才确认成功",
-        "disconnect": "VirtualMachineMutationResultTest.kt::生命周期提交断线后只回读确认最终状态",
-        "readback": "VirtualMachineMutationResultTest.kt::生命周期写后回读失败保持未确认",
-        "cancel": "VirtualMachineMutationResultTest.kt::生命周期与删除在途取消只回读且不重放",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "clearFinishedVirtualMachineTasks",
-      "resultMethod": "clearFinishedVirtualMachineTasksResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "VirtualMachineTaskClearRepositoryTest.kt::能力缺失空基线和无已完成任务均零 clear",
-        "success": "VirtualMachineTaskClearRepositoryTest.kt::完整复核后只清除基线中的已完成任务并严格回读",
-        "disconnect": "VirtualMachineTaskClearRepositoryTest.kt::清除提交异常后只回读一次且不重放",
-        "readback": "VirtualMachineTaskClearRepositoryTest.kt::clear 成功响应但任务仍存在时保持待核对",
-        "cancel": "VirtualMachineTaskClearRepositoryTest.kt::提交后取消只回读且不清除后续任务",
-        "partial": "VirtualMachineTaskClearRepositoryTest.kt::未提交任务并发消失不计入本批成功且计数不重叠",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "createVirtualMachine",
-      "resultMethod": "createVirtualMachineResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "VirtualMachineCreationRepositoryTest.kt::名称预检取消按提交前取消",
-        "success": "VirtualMachineCreationRepositoryTest.kt::公开 VMM 创建轮询任务应用配置并完整回读",
-        "disconnect": "VirtualMachineCreationRepositoryTest.kt::创建提交响应模糊时同名回读",
-        "readback": "VirtualMachineCreationRepositoryTest.kt::创建配置回读缺字段时不确认",
-        "cancel": "VirtualMachineCreationRepositoryTest.kt::任务轮询取消只回读",
-        "partial": "VirtualMachineCreationRepositoryTest.kt::创建成功但常规配置未确认时报告部分成功",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "importVirtualMachineImage",
-      "resultMethod": "importVirtualMachineImageResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "VirtualMachineImageImportRepositoryTest.kt::源文件完整基线漂移时零创建",
-        "success": "VirtualMachineImageImportRepositoryTest.kt::官方映像创建只提交一次并以任务映像标识严格回读",
-        "disconnect": "VirtualMachineImageImportRepositoryTest.kt::创建请求断线后保持未确认且不重放",
-        "readback": "VirtualMachineImageImportRepositoryTest.kt::任务终态缺少映像标识时保持未确认且不清理",
-        "cancel": "VirtualMachineImageImportRepositoryTest.kt::创建请求在途取消后保持提交边界且不重放",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "updateVirtualMachineSettings",
-      "resultMethod": "updateVirtualMachineSettingsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "VirtualMachineCreationRepositoryTest.kt::常规设置锁内发现用户所见基线漂移",
-        "success": "VirtualMachineCreationRepositoryTest.kt::公开 VMM 常规设置提交后完整回读",
-        "disconnect": "VirtualMachineCreationRepositoryTest.kt::常规设置提交断线后只回读且不重放",
-        "readback": "VirtualMachineCreationRepositoryTest.kt::常规设置写后回读结构失败保持未确认",
-        "cancel": "VirtualMachineCreationRepositoryTest.kt::常规设置写请求在途取消只回读且不重放",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "deleteVirtualMachine",
-      "resultMethod": "deleteVirtualMachineResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "VirtualMachineMutationResultTest.kt::VMM 删除预检遇到缺失标识时不发送写请求",
-        "success": "VirtualMachineMutationResultTest.kt::删除虚拟机必须回读消失且发送稳定标识",
-        "disconnect": "VirtualMachineMutationResultTest.kt::虚拟机删除提交断线后只回读确认目标消失",
-        "readback": "VirtualMachineMutationResultTest.kt::虚拟机删除写后回读失败保持未确认",
-        "cancel": "VirtualMachineMutationResultTest.kt::生命周期与删除在途取消只回读且不重放",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "deleteVirtualMachineImage",
-      "resultMethod": "deleteVirtualMachineImageResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "VirtualMachineMutationResultTest.kt::仅有内部映像 API 时删除零请求关闭",
-        "success": "VirtualMachineMutationResultTest.kt::公开映像删除成功断线与取消均不重放",
-        "disconnect": "VirtualMachineMutationResultTest.kt::公开映像删除成功断线与取消均不重放",
-        "readback": "VirtualMachineMutationResultTest.kt::映像删除提交后回读断线",
-        "cancel": "VirtualMachineMutationResultTest.kt::公开映像删除成功断线与取消均不重放",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "renameVirtualMachineNetwork",
-      "resultMethod": "renameVirtualMachineNetworkResult",
-      "occurrence": 1,
-      "state": "closed",
-      "multi": false,
-      "scenarios": {
-        "pre": "na",
-        "success": "na",
-        "disconnect": "na",
-        "readback": "na",
-        "cancel": "na",
-        "partial": "na",
-        "zero": "VirtualMachineMutationResultTest.kt::内部网络改名契约未行为验证时零请求关闭"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "deleteVirtualMachineNetwork",
-      "resultMethod": "deleteVirtualMachineNetworkResult",
-      "occurrence": 1,
-      "state": "closed",
-      "multi": false,
-      "scenarios": {
-        "pre": "na",
-        "success": "na",
-        "disconnect": "na",
-        "readback": "na",
-        "cancel": "na",
-        "partial": "na",
-        "zero": "VirtualMachineMutationResultTest.kt::内部网络改名契约未行为验证时零请求关闭"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmPackageMutation",
-      "resultMethod": "controlPackageResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "PackageControlMutationTest.kt::可行性检查权限不足属于提交前权限拒绝",
-        "success": "PackageControlMutationTest.kt::停止按 Fixture 只提交稳定 ID 并回读停止状态",
-        "disconnect": "PackageControlMutationTest.kt::写请求断线后只回读且状态已变化",
-        "readback": "PackageControlMutationTest.kt::控制写入后畸形回读不得确认成功",
-        "cancel": "PackageControlMutationTest.kt::控制写请求在途取消只回读",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmPackageMutation",
-      "resultMethod": "controlPackageResult",
-      "occurrence": 2,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "PackageControlMutationTest.kt::可行性检查权限不足属于提交前权限拒绝",
-        "success": "PackageControlMutationTest.kt::停止按 Fixture 只提交稳定 ID 并回读停止状态",
-        "disconnect": "PackageControlMutationTest.kt::写请求断线后只回读且状态已变化",
-        "readback": "PackageControlMutationTest.kt::控制写入后畸形回读不得确认成功",
-        "cancel": "PackageControlMutationTest.kt::控制写请求在途取消只回读",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmPackageMutation",
-      "resultMethod": "uninstallPackageResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "PackageUninstallMutationTest.kt::系统或未明确允许卸载的套件",
-        "success": "PackageUninstallMutationTest.kt::卸载按共享 Fixture 传递稳定 ID",
-        "disconnect": "PackageUninstallMutationTest.kt::卸载写请求断线后只回读且目标消失时确认成功",
-        "readback": "PackageUninstallMutationTest.kt::卸载后畸形回读",
-        "cancel": "PackageUninstallMutationTest.kt::卸载写请求在途取消只严格回读一次且不重放",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmConnectionDisconnect",
-      "resultMethod": "disconnectConnectionResult",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasConnectionModel.kt",
+      "owner": "confirm",
+      "resultMethod": "nasConnections.disconnect",
       "occurrence": 1,
       "state": "open",
       "multi": false,
@@ -779,236 +371,16 @@
         "success": "ConnectionDisconnectMutationTest.kt::网页连接使用设备标识且回读消失后确认成功",
         "disconnect": "ConnectionDisconnectMutationTest.kt::断开请求响应丢失后只回读",
         "readback": "ConnectionDisconnectMutationTest.kt::写后回读缺少列表根",
-        "cancel": "ConnectionDisconnectMutationTest.kt::断开请求在途取消只回读",
+        "cancel": "ConnectionDisconnectMutationTest.kt::断开请求在途取消保留已提交检查点且不重放",
         "partial": "na",
-        "zero": "na"
+        "zero": "na",
+        "recovery": "NasConnectionModelTest.kt::接受跨重启保留目标仍在不能关闭或重发最后消失只读解锁"
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmDirectoryDeletion",
-      "resultMethod": "deleteAccountResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "DirectoryDeletionMutationTest.kt::目录未明确允许删除时不发送写请求",
-        "success": "DirectoryDeletionMutationTest.kt::账号删除使用名称数组并在目录消失后确认成功",
-        "disconnect": "DirectoryDeletionMutationTest.kt::账号删除响应丢失后只回读",
-        "readback": "DirectoryDeletionMutationTest.kt::账号删除后回读根缺失",
-        "cancel": "DirectoryDeletionMutationTest.kt::账号与群组删除在途取消只回读且不重放",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmDirectoryDeletion",
-      "resultMethod": "deleteGroupResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "DirectoryDeletionMutationTest.kt::目录未明确允许删除时不发送写请求",
-        "success": "DirectoryDeletionMutationTest.kt::群组删除使用专用 API 与名称数组",
-        "disconnect": "DirectoryDeletionMutationTest.kt::群组删除响应丢失后只回读且不重放",
-        "readback": "DirectoryDeletionMutationTest.kt::群组删除写后畸形回读保持未确认",
-        "cancel": "DirectoryDeletionMutationTest.kt::账号与群组删除在途取消只回读且不重放",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmEthernetSettings",
-      "resultMethod": "saveEthernetInterfaceResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "EthernetMutationResultTest.kt::非法标识地址 MTU 与 VLAN",
-        "success": "EthernetMutationResultTest.kt::DHCP 设置与共享 Fixture 一致并使用固定版本回读",
-        "disconnect": "EthernetMutationResultTest.kt::设置响应丢失后只回读",
-        "readback": "EthernetMutationResultTest.kt::设置成功但回读断线",
-        "cancel": "EthernetMutationResultTest.kt::预检取消零写且设置在途取消",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmDdnsMutation",
-      "resultMethod": "testDdnsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "DdnsMutationResultTest.kt::Provider 或 Record 不含 v1 时四入口均零网络",
-        "success": "DdnsMutationResultTest.kt::新建只提交一次并严格回读",
-        "disconnect": "DdnsMutationResultTest.kt::新建响应丢失后只读取一次目录",
-        "readback": "DdnsMutationResultTest.kt::模糊保存单次回读失败",
-        "cancel": "DdnsMutationResultTest.kt::DDNS 四个写入口在途取消都不重放写请求",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmDdnsMutation",
-      "resultMethod": "saveDdnsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "DdnsMutationResultTest.kt::Provider 或 Record 不含 v1 时四入口均零网络",
-        "success": "DdnsMutationResultTest.kt::新建只提交一次并严格回读",
-        "disconnect": "DdnsMutationResultTest.kt::新建响应丢失后只读取一次目录",
-        "readback": "DdnsMutationResultTest.kt::模糊保存单次回读失败",
-        "cancel": "DdnsMutationResultTest.kt::DDNS 四个写入口在途取消都不重放写请求",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmDdnsMutation",
-      "resultMethod": "deleteDdnsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "DdnsMutationResultTest.kt::Provider 或 Record 不含 v1 时四入口均零网络",
-        "success": "DdnsMutationResultTest.kt::新建只提交一次并严格回读",
-        "disconnect": "DdnsMutationResultTest.kt::新建响应丢失后只读取一次目录",
-        "readback": "DdnsMutationResultTest.kt::模糊保存单次回读失败",
-        "cancel": "DdnsMutationResultTest.kt::DDNS 四个写入口在途取消都不重放写请求",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmDdnsMutation",
-      "resultMethod": "refreshDdnsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "DdnsMutationResultTest.kt::Provider 或 Record 不含 v1 时四入口均零网络",
-        "success": "DdnsMutationResultTest.kt::新建只提交一次并严格回读",
-        "disconnect": "DdnsMutationResultTest.kt::新建响应丢失后只读取一次目录",
-        "readback": "DdnsMutationResultTest.kt::模糊保存单次回读失败",
-        "cancel": "DdnsMutationResultTest.kt::DDNS 四个写入口在途取消都不重放写请求",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "saveFileServiceSettings",
-      "resultMethod": "saveFileServiceSettingsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "NasServiceSettingsMutationTest.kt::文件服务后续能力缺失时一次性预检",
-        "success": "NasServiceSettingsMutationTest.kt::文件服务只提交变化 API 组并整体回读",
-        "disconnect": "NasServiceSettingsMutationTest.kt::文件服务提交与回读均断线",
-        "readback": "NasServiceSettingsMutationTest.kt::文件服务写入响应成功但回读全不匹配",
-        "cancel": "NasServiceSettingsMutationTest.kt::文件服务写请求在途取消",
-        "partial": "NasServiceSettingsMutationTest.kt::文件服务前序生效后后续失败返回部分成功",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "saveTerminalSettings",
-      "resultMethod": "saveTerminalSettingsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "NasServiceSettingsMutationTest.kt::终端预检在途取消不会进入写请求",
-        "success": "NasServiceSettingsMutationTest.kt::终端设置提交完整字段并回读确认",
-        "disconnect": "NasServiceSettingsMutationTest.kt::终端提交响应丢失后部分字段匹配",
-        "readback": "NasServiceSettingsMutationTest.kt::终端提交成功但回读失败",
-        "cancel": "NasServiceSettingsMutationTest.kt::终端写请求在途取消",
-        "partial": "NasServiceSettingsMutationTest.kt::终端提交响应丢失后部分字段匹配返回部分成功",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "saveProxySettings",
-      "resultMethod": "saveProxySettingsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "NasServiceSettingsMutationTest.kt::代理非法地址与端口零请求拒绝",
-        "success": "NasServiceSettingsMutationTest.kt::代理启用请求与 Fixture 字段一致并回读确认",
-        "disconnect": "NasServiceSettingsMutationTest.kt::代理提交响应丢失后部分生效",
-        "readback": "NasServiceSettingsMutationTest.kt::代理提交断线且回读失败",
-        "cancel": "NasServiceSettingsMutationTest.kt::代理写请求在途取消回读",
-        "partial": "NasServiceSettingsMutationTest.kt::代理提交响应丢失后部分生效保留未知字段",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "saveRegionSettings",
-      "resultMethod": "saveRegionSettingsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "NasServiceSettingsMutationTest.kt::区域预检拒绝未知自动校时模式",
-        "success": "NasServiceSettingsMutationTest.kt::区域设置按固定版本保存回读",
-        "disconnect": "NasServiceSettingsMutationTest.kt::区域配置提交超时只回读",
-        "readback": "NasServiceSettingsMutationTest.kt::区域配置权限失败与回读失败",
-        "cancel": "NasServiceSettingsMutationTest.kt::区域配置写请求在途取消",
-        "partial": "NasServiceSettingsMutationTest.kt::区域配置确认后校时超时返回部分成功",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmRemoteAccessMutation",
-      "resultMethod": "saveRemoteAccessSettingsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "RemoteAccessSettingsMutationTest.kt::无变化基线漂移和能力缺口均零写入",
-        "success": "RemoteAccessSettingsMutationTest.kt::两项写入按固定顺序执行并完整回读确认",
-        "disconnect": "RemoteAccessSettingsMutationTest.kt::提交断线后只回读确认",
-        "readback": "RemoteAccessSettingsMutationTest.kt::回读单字段失败必须要求刷新",
-        "cancel": "RemoteAccessSettingsMutationTest.kt::提交阶段取消后仍回读",
-        "partial": "RemoteAccessSettingsMutationTest.kt::第二步权限失败报告部分成功",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmSecuritySettingsMutation",
-      "resultMethod": "saveSecuritySettingsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "SecuritySettingsMutationResultTest.kt::完整基线漂移时零写入",
-        "success": "NasServiceSettingsMutationTest.kt::安全设置四个子操作使用固定契约并整体回读",
-        "disconnect": "NasServiceSettingsMutationTest.kt::安全设置中途断线后停止后续提交",
-        "readback": "NasServiceSettingsMutationTest.kt::安全设置提交断网且回读失败",
-        "cancel": "SecuritySettingsMutationResultTest.kt::正式入口提交后取消",
-        "partial": "SecuritySettingsMutationResultTest.kt::正式入口提交后取消按整体回读返回部分成功",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmPowerAction",
-      "resultMethod": "performPowerActionResult",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasPowerActionModel.kt",
+      "owner": "confirm",
+      "resultMethod": "nasPower.perform",
       "occurrence": 1,
       "state": "open",
       "multi": false,
@@ -1023,26 +395,9 @@
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmHardwareSettingsMutation",
-      "resultMethod": "saveHardwareSettingsResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "HardwareSettingsMutationResultTest.kt::完整硬件基线漂移时零写入",
-        "success": "NasServiceSettingsMutationTest.kt::硬件六组设置按契约提交并整体回读",
-        "disconnect": "NasServiceSettingsMutationTest.kt::硬件设置中途断线停止后续写入",
-        "readback": "NasServiceSettingsMutationTest.kt::硬件设置写入成功但回读失败保持未确认且不重放",
-        "cancel": "NasServiceSettingsMutationTest.kt::硬件设置写请求在途取消只回读且不重放",
-        "partial": "NasServiceSettingsMutationTest.kt::硬件设置中途断线停止后续写入并回读部分成功",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "confirmDiskTestMutation",
-      "resultMethod": "changeDiskTestResult",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasSmartTestModel.kt",
+      "owner": "confirm",
+      "resultMethod": "nasSmart.perform",
       "occurrence": 1,
       "state": "open",
       "multi": false,
@@ -1051,43 +406,10 @@
         "success": "SmartTestMutationTest.kt::快速检测使用预检返回的device且回读运行状态",
         "disconnect": "SmartTestMutationTest.kt::提交断线后仅回读确认",
         "readback": "SmartTestMutationTest.kt::写后检测能力漂移不得确认成功",
-        "cancel": "SmartTestMutationTest.kt::写入阶段取消只专项回读一次",
+        "cancel": "SmartTestMutationTest.kt::写入阶段取消保留提交阶段仅主动恢复回读且释放跨动作锁",
         "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "performChatSend",
-      "resultMethod": "sendChatTextMessageResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "ChatTextMutationResultTest.kt::非法输入不支持能力和提交前取消",
-        "success": "ChatTextMutationResultTest.kt::响应缺少消息ID但回读匹配",
-        "disconnect": "ChatTextMutationResultTest.kt::提交断线但近期消息回读匹配",
-        "readback": "ChatTextMutationResultTest.kt::断线后回读也失败",
-        "cancel": "ChatTextMutationResultTest.kt::提交后取消只回读",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "performChatAttachmentSend",
-      "resultMethod": "sendChatAttachmentMessageResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "ChatAttachmentMutationResultTest.kt::附件流未上传完成时失败不回读",
-        "success": "ChatAttachmentMutationResultTest.kt::响应缺少消息ID但回读附件匹配",
-        "disconnect": "ChatAttachmentMutationResultTest.kt::完整上传后断线且近期附件匹配",
-        "readback": "ChatAttachmentMutationResultTest.kt::完整上传后断线且回读无匹配",
-        "cancel": "ChatAttachmentMutationResultTest.kt::完整上传后取消只回读",
-        "partial": "na",
-        "zero": "na"
+        "zero": "na",
+        "recovery": "NasSmartTestModelTest.kt::未知跨重启保留原动作类型错误换盘消失均不能关闭之后精确状态只读恢复"
       }
     },
     {
@@ -1096,15 +418,16 @@
       "resultMethod": "createShareLinkResult",
       "occurrence": 1,
       "state": "open",
-      "multi": false,
+      "multi": true,
       "scenarios": {
-        "pre": "PhotoShareRepositoryTest.kt::共享链接输入或能力无效时零请求拒绝",
-        "success": "PhotoShareRepositoryTest.kt::创建公开共享链接后必须通过列表回读确认",
+        "pre": "FileSharingRepositoryTest.kt::collectionRequiresCurrentDirectoryWritePermission",
+        "success": "FileSharingRepositoryTest.kt::createCollectionUsesExactV3FieldsAndConfirmsReturnedIdentity",
         "disconnect": "PhotoShareRepositoryTest.kt::共享链接提交断线保持未确认",
-        "readback": "PhotoShareRepositoryTest.kt::共享链接回读断线保持未确认",
+        "readback": "FileSharingRepositoryTest.kt::createWithoutReceiptNeverClaimsAnotherClientsMatchingLink",
         "cancel": "PhotoShareRepositoryTest.kt::共享链接提交后的取消",
-        "partial": "na",
-        "zero": "na"
+        "partial": "FileSharingFeatureModelTest.kt::batchPreservesPartialSuccessClearsPasswordAndCannotBeSubmittedTwice",
+        "zero": "na",
+        "environment": "FileSharingRepositoryTest.kt::ordinaryAndCollectionLinksUseActualPermissionsWithoutVersionCallback"
       }
     },
     {
@@ -1120,23 +443,6 @@
         "disconnect": "na",
         "readback": "ArchiveRepositoryTest.kt::恢复任务即使状态完成也必须输出回读成功",
         "cancel": "ArchiveRepositoryTest.kt::恢复已提交压缩任务取消时只停止本地观察且不发送写请求",
-        "partial": "na",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-      "owner": "uploadTransferTask",
-      "resultMethod": "uploadResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": false,
-      "scenarios": {
-        "pre": "FileUploadTest.kt::上传非法输入和能力不足均不访问网络",
-        "success": "FileUploadTest.kt::上传请求符合公共Fixture且写后大小回读一致",
-        "disconnect": "FileUploadTest.kt::上传断线但大小回读一致",
-        "readback": "FileUploadTest.kt::上传响应成功但回读大小不一致",
-        "cancel": "FileUploadTest.kt::上传提交后取消只要求刷新",
         "partial": "na",
         "zero": "na"
       }
@@ -1168,7 +474,7 @@
       "scenarios": {
         "pre": "FileUploadTest.kt::上传非法输入和能力不足均不访问网络",
         "success": "FileUploadTest.kt::上传请求符合公共Fixture且写后大小回读一致",
-        "disconnect": "FileUploadTest.kt::上传断线但大小回读一致",
+        "disconnect": "FileUploadTest.kt::上传断线但完整内容一致",
         "readback": "FileUploadTest.kt::上传响应成功但回读大小不一致",
         "cancel": "FileUploadTest.kt::上传提交后取消只要求刷新",
         "partial": "na",
@@ -1185,7 +491,7 @@
       "scenarios": {
         "pre": "FileUploadTest.kt::上传非法输入和能力不足均不访问网络",
         "success": "FileUploadTest.kt::上传请求符合公共Fixture且写后大小回读一致",
-        "disconnect": "FileUploadTest.kt::上传断线但大小回读一致",
+        "disconnect": "FileUploadTest.kt::上传断线但完整内容一致",
         "readback": "FileUploadTest.kt::上传响应成功但回读大小不一致",
         "cancel": "FileUploadTest.kt::上传提交后取消只要求刷新",
         "partial": "na",
@@ -1210,25 +516,8 @@
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/data/CrossNasTransferCoordinator.kt",
-      "owner": "transferInternal",
-      "resultMethod": "deleteResult",
-      "occurrence": 1,
-      "state": "open",
-      "multi": true,
-      "scenarios": {
-        "pre": "FileDeleteResultTest.kt::非法目标在提交前失败",
-        "success": "FileDeleteResultTest.kt::删除任务完成并逐项回读不存在",
-        "disconnect": "FileDeleteResultTest.kt::提交时断线只报告未确认",
-        "readback": "FileDeleteResultTest.kt::删除完成但回读失败",
-        "cancel": "FileDeleteResultTest.kt::提交后的取消只报告需要核对",
-        "partial": "FileDeleteResultTest.kt::部分目标删除后逐项回读",
-        "zero": "na"
-      }
-    },
-    {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/data/CrossNasTransferCoordinator.kt",
-      "owner": "transferItem",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/data/files/CrossNasTransferQueue.kt",
+      "owner": "copy",
       "resultMethod": "createFolderResult",
       "occurrence": 1,
       "state": "open",
@@ -1245,7 +534,7 @@
     },
     {
       "file": "io/github/qwertyuiop1995/dsmnativeclient/data/CrossNasTransferCoordinator.kt",
-      "owner": "transferFile",
+      "owner": "copyFile",
       "resultMethod": "uploadResult",
       "occurrence": 1,
       "state": "open",
@@ -1253,7 +542,7 @@
       "scenarios": {
         "pre": "FileUploadTest.kt::上传非法输入和能力不足均不访问网络",
         "success": "FileUploadTest.kt::上传请求符合公共Fixture且写后大小回读一致",
-        "disconnect": "FileUploadTest.kt::上传断线但大小回读一致",
+        "disconnect": "FileUploadTest.kt::上传断线但完整内容一致",
         "readback": "FileUploadTest.kt::上传响应成功但回读大小不一致",
         "cancel": "FileUploadTest.kt::上传提交后取消只要求刷新",
         "partial": "na",
@@ -1287,7 +576,7 @@
       "scenarios": {
         "pre": "FileUploadTest.kt::上传非法输入和能力不足均不访问网络",
         "success": "FileUploadTest.kt::上传请求符合公共Fixture且写后大小回读一致",
-        "disconnect": "FileUploadTest.kt::上传断线但大小回读一致",
+        "disconnect": "FileUploadTest.kt::上传断线但完整内容一致",
         "readback": "FileUploadTest.kt::上传响应成功但回读大小不一致",
         "cancel": "FileUploadTest.kt::上传提交后取消只要求刷新",
         "partial": "na",
@@ -1296,7 +585,7 @@
     },
     {
       "file": "io/github/qwertyuiop1995/dsmnativeclient/data/CrossNasTransferCoordinator.kt",
-      "owner": "deleteResult",
+      "owner": "deleteSingleResult",
       "resultMethod": "deleteResult",
       "occurrence": 1,
       "state": "open",
@@ -1329,8 +618,25 @@
       }
     },
     {
-      "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/transfers/TransfersScreen.kt",
-      "owner": "uploadMutationFeedbackPolicy",
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/RepositoryFolderUploadEndpoint.kt",
+      "owner": "createDirectory",
+      "resultMethod": "ensureSubdirectoryResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "BackupFolderRepositoryTest.kt::拒绝在配置根目录之外创建备份目录",
+        "success": "BackupFolderRepositoryTest.kt::自动备份只在配置根目录下逐层创建子目录",
+        "disconnect": "BackupFolderRepositoryTest.kt::目录创建提交断线后只读回读且不重放",
+        "readback": "BackupFolderRepositoryTest.kt::提交后无法读回时保留未知且不重放创建",
+        "cancel": "BackupFolderRepositoryTest.kt::取消发生在提交前后时返回不同状态",
+        "partial": "BackupFolderRepositoryTest.kt::后续层级失败时保留已创建层级和部分成功语义",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/RepositoryFolderUploadEndpoint.kt",
+      "owner": "upload",
       "resultMethod": "uploadResult",
       "occurrence": 1,
       "state": "open",
@@ -1338,9 +644,1443 @@
       "scenarios": {
         "pre": "FileUploadTest.kt::上传非法输入和能力不足均不访问网络",
         "success": "FileUploadTest.kt::上传请求符合公共Fixture且写后大小回读一致",
-        "disconnect": "FileUploadTest.kt::上传断线但大小回读一致",
+        "disconnect": "FileUploadTest.kt::上传断线但完整内容一致",
         "readback": "FileUploadTest.kt::上传响应成功但回读大小不一致",
         "cancel": "FileUploadTest.kt::上传提交后取消只要求刷新",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileSharingFeatureModel.kt",
+      "owner": "submit",
+      "resultMethod": "createShareLinkResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "FileSharingRepositoryTest.kt::collectionRequiresCurrentDirectoryWritePermission",
+        "success": "FileSharingRepositoryTest.kt::createCollectionUsesExactV3FieldsAndConfirmsReturnedIdentity",
+        "disconnect": "PhotoShareRepositoryTest.kt::共享链接提交断线保持未确认",
+        "readback": "FileSharingRepositoryTest.kt::createWithoutReceiptNeverClaimsAnotherClientsMatchingLink",
+        "cancel": "PhotoShareRepositoryTest.kt::共享链接提交后的取消",
+        "partial": "FileSharingFeatureModelTest.kt::batchPreservesPartialSuccessClearsPasswordAndCannotBeSubmittedTwice",
+        "zero": "na",
+        "environment": "FileSharingRepositoryTest.kt::ordinaryAndCollectionLinksUseActualPermissionsWithoutVersionCallback"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileSharingFeatureModel.kt",
+      "owner": "submit",
+      "resultMethod": "editShareLinkResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "FileSharingRepositoryTest.kt::missingAdvancedOrInvalidCountOrPasswordCombinationPreventsWrite",
+        "success": "FileSharingRepositoryTest.kt::editKeepsDatesIncludingTimeAndOmitsPasswordWhenNotChanged",
+        "disconnect": "FileSharingRepositoryTest.kt::passwordSetRequiresAcceptedResponseNotJustExistingPasswordFlag",
+        "readback": "FileSharingRepositoryTest.kt::readbackPermissionFailureAfterWriteRemainsUnknown",
+        "cancel": "FileSharingRepositoryTest.kt::editCancellationAfterSubmissionKeepsUnknownRecordAndBlocksReplay",
+        "partial": "FileSharingFeatureModelTest.kt::batchEditPreservesSuccessfulLinksWhenAnotherLinkRejectsChanges",
+        "zero": "na",
+        "environment": "FileSharingRepositoryTest.kt::ordinaryAndCollectionLinksUseActualPermissionsWithoutVersionCallback"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FilePermissionFeatureModel.kt",
+      "owner": "submit",
+      "resultMethod": "changePermissionsResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "FilePermissionRepositoryTest.kt::bothBaselineChecksRejectChangedTargetOrInheritedRules",
+        "success": "FilePermissionRepositoryTest.kt::explicitChangeChecksSameDraftAndSendsOnlyExplicitRules",
+        "disconnect": "FilePermissionRepositoryTest.kt::connectionLossNeverReplaysAndColdRecoveryUsesHashesWithoutRawPermissionsOrMapping",
+        "readback": "FilePermissionRepositoryTest.kt::knownMemberIdAndInheritedIdentityChangesCannotBecomeSuccess",
+        "cancel": "FilePermissionRepositoryTest.kt::concurrentIdenticalSubmissionsProduceOneSetAndCancellationKeepsRecovery",
+        "partial": "FilePermissionRepositoryTest.kt::recursivePartialFailureRemainsUnknownAfterRestartEvenWhenRootMatches",
+        "zero": "na",
+        "environment": "FilePermissionRepositoryTest.kt::permissionWriteUsesObjectAccessWithoutEnvironmentCallback"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileISOMountFeatureModel.kt",
+      "owner": "submit",
+      "resultMethod": "changeISOMountResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "FileMountRepositoryTest.kt::secondAuthorizationCheckAndRelatedPermissionChangesPreventWrite",
+        "success": "FileMountRepositoryTest.kt::mountUsesRecordedFieldsOriginalWhitespaceAndFullStateReadback",
+        "disconnect": "FileMountRepositoryTest.kt::connectionLossAndColdRecoveryNeverResubmitUnknownMount",
+        "readback": "FileMountRepositoryTest.kt::acknowledgedMountNeedsExactSourceAutomaticAndIsoDirectory",
+        "cancel": "FileMountRepositoryTest.kt::cancellationAndConcurrentDuplicateKeepOneWriteAndRecoverableRecord",
+        "partial": "na",
+        "zero": "na",
+        "environment": "FileMountRepositoryTest.kt::isoMountUsesActualCapabilityAndPermissionsWithoutVersionCallback"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileRemoteMountFeatureModel.kt",
+      "owner": "submit",
+      "resultMethod": "changeRemoteMountResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "RemoteMountRepositoryTest.kt::revokedSecondGrantDisabledSettingAndChangedDestinationNeverWrite",
+        "success": "RemoteMountRepositoryTest.kt::nfsHasProtocolFieldsAndNeverSendsCredentials",
+        "disconnect": "RemoteMountRepositoryTest.kt::networkLossColdRecoveryAndStaleContinueNeverReplay",
+        "readback": "RemoteMountRepositoryTest.kt::unreadableOrWrongMountTypeNeverCountsAsDisconnected",
+        "cancel": "RemoteMountRepositoryTest.kt::cancelledSubmittedStepStaysUnknownAndAccountSwitchCannotReadIt",
+        "partial": "na",
+        "zero": "na",
+        "environment": "RemoteMountRepositoryTest.kt::remoteMountUsesActualPermissionsWithoutVersionCallback"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileRemoteMountFeatureModel.kt",
+      "owner": "continueOperation",
+      "resultMethod": "continueRemoteMountResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "RemoteMountRepositoryTest.kt::changedNewOrOldIdentityPreventsSecondDisconnect",
+        "success": "RemoteMountRepositoryTest.kt::movingConnectsFirstAndNeverAutomaticallyDisconnectsPrevious",
+        "disconnect": "RemoteMountRepositoryTest.kt::unknownUpdateReviewAdvancesButDoesNotExecuteNextStep",
+        "readback": "RemoteMountRepositoryTest.kt::unreadableOrWrongMountTypeNeverCountsAsDisconnected",
+        "cancel": "RemoteMountRepositoryTest.kt::cancelledSecondStepCannotBeEndedOrReplayedAfterReconnection",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileVFSFeatureModel.kt",
+      "owner": "save",
+      "resultMethod": "changeVFSResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "FileVFSRepositoryTest.kt::missingConfirmationPermissionsCleartextNasAndUnacceptedRemoteCleartextNeverWrite",
+        "success": "FileVFSRepositoryTest.kt::createCompletesOnlyAfterNewUniqueIdentityAndFullDetailsMatch",
+        "disconnect": "FileVFSRepositoryTest.kt::firstUnknownNeverSendsProfileAndColdReviewNeverReplaysEitherStep",
+        "readback": "FileVFSRepositoryTest.kt::secondUnknownCannotInferChangedCredentialsFromMatchingPublicFields",
+        "cancel": "FileVFSRepositoryTest.kt::cancellationBetweenStepsAndFailedAcknowledgmentPersistenceStopSecondWrite",
+        "partial": "na",
+        "zero": "na",
+        "environment": "FilePrivateWriteEnvironmentTest.kt::远程连接未知版本仍可操作且不读取系统元数据"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileVFSFeatureModel.kt",
+      "owner": "submitAction",
+      "resultMethod": "changeVFSResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "FileVFSRepositoryTest.kt::missingConfirmationPermissionsCleartextNasAndUnacceptedRemoteCleartextNeverWrite",
+        "success": "FileVFSRepositoryTest.kt::createCompletesOnlyAfterNewUniqueIdentityAndFullDetailsMatch",
+        "disconnect": "FileVFSRepositoryTest.kt::firstUnknownNeverSendsProfileAndColdReviewNeverReplaysEitherStep",
+        "readback": "FileVFSRepositoryTest.kt::secondUnknownCannotInferChangedCredentialsFromMatchingPublicFields",
+        "cancel": "FileVFSRepositoryTest.kt::cancellationBetweenStepsAndFailedAcknowledgmentPersistenceStopSecondWrite",
+        "partial": "na",
+        "zero": "na",
+        "environment": "FilePrivateWriteEnvironmentTest.kt::远程连接未知版本仍可操作且不读取系统元数据"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileVFSFeatureModel.kt",
+      "owner": "saveCloud",
+      "resultMethod": "authorizeVFSResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "FileVFSRepositoryTest.kt::expiredCancelledMismatchedOrOtherOwnerCloudCallbacksCannotWrite",
+        "success": "FileVFSFeatureModelTest.kt::cloudCallbackOnlyEnablesExplicitSaveAndTokensNeverEnterRecovery",
+        "disconnect": "FileVFSRepositoryTest.kt::firstUnknownNeverSendsProfileAndColdReviewNeverReplaysEitherStep",
+        "readback": "FileVFSRepositoryTest.kt::cloudAuthorizationIsBoundSingleUseAndDoesNotPersistTokens",
+        "cancel": "FileVFSRepositoryTest.kt::cancellationBetweenStepsAndFailedAcknowledgmentPersistenceStopSecondWrite",
+        "partial": "na",
+        "zero": "na",
+        "environment": "FilePrivateWriteEnvironmentTest.kt::远程连接未知版本仍可操作且不读取系统元数据"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileSettingsFeatureModel.kt",
+      "owner": "submit",
+      "resultMethod": "changeSettingsResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "FileSettingsRepositoryTest.kt::missingConfirmationRiskAcceptancePermissionsAndOwnerCannotWrite",
+        "success": "FileSettingsRepositoryTest.kt::generalSendsOnlyActualDirtyFieldsAndConfirmsCompleteFreshSnapshot",
+        "disconnect": "FileSettingsRepositoryTest.kt::unknownSavePersistsOnlyDigestsBlocksSameTargetAndSurvivesNewSession",
+        "readback": "FileSettingsRepositoryTest.kt::readbackMustMatchAllSettingsAndNewDraftCannotReplaceStoredExpectation",
+        "cancel": "FileSettingsRepositoryTest.kt::cancellationAfterSubmissionKeepsRecoveryAndOnlyReadsOnResume",
+        "partial": "na",
+        "zero": "na",
+        "environment": "FilePrivateWriteEnvironmentTest.kt::设置不同DSM或缺套件版本仍按实际权限保存且不读取版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileThemePickerFeatureModel.kt",
+      "owner": "upload",
+      "resultMethod": "uploadThemeImageResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "FileSharingThemeRepositoryTest.kt::changedFileOrDeniedUploadNeverSendsAndDefiniteRejectionClearsOnlyItsRecord",
+        "success": "FileSharingThemeRepositoryTest.kt::uploadUsesMultipartAndHistoryIdentityWithoutApplyingTheme",
+        "disconnect": "FileSharingThemeRepositoryTest.kt::unknownUploadBlocksSameContentAcrossReopenButNotOtherKindOrSettings",
+        "readback": "FileSharingThemeRepositoryTest.kt::acknowledgedUploadMissingFromHistoryRemainsUnknown",
+        "cancel": "FileSharingThemeRepositoryTest.kt::cancelledUploadPreservesSubmissionFactAndNeverAutomaticallyReplays",
+        "partial": "na",
+        "zero": "na",
+        "environment": "FilePrivateWriteEnvironmentTest.kt::主题图片上传不读取系统或套件版本且仍有独立结果"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/FileBackgroundTaskFeatureModel.kt",
+      "owner": "confirm",
+      "resultMethod": "controlBackgroundTaskResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "FileBackgroundTaskControlRepositoryTest.kt::missingConfirmationStaleSnapshotWrongStateAndUnsupportedVersionNeverWrite",
+        "success": "FileBackgroundTaskControlRepositoryTest.kt::stopEachKnownKindUsesExactVersionAndConfirmsFinishedIdentity",
+        "disconnect": "FileBackgroundTaskControlRepositoryTest.kt::unknownStopPersistsBlocksReplayAndRestoresAcrossSessionsWithoutClaimingSuccess",
+        "readback": "FileBackgroundTaskControlRepositoryTest.kt::unknownClearRequiresCompleteValidAbsenceAndCannotClearReusedId",
+        "cancel": "FileBackgroundTaskControlRepositoryTest.kt::simultaneousStopIsRejectedAndCancellationKeepsSubmittedFacts",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/data/files/OfficeDocumentTransfer.kt",
+      "owner": "upload",
+      "resultMethod": "uploadOfficeResult",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "OfficeDocumentTransferTest.kt::same size and timestamp with changed original bytes stops overwrite",
+        "success": "OfficeDocumentTransferTest.kt::explicit save persists submission first and verifies full returned content",
+        "disconnect": "OfficeDocumentTransferTest.kt::unknown receipt with matching complete content confirms exactly one upload",
+        "readback": "OfficeDocumentTransferTest.kt::unknown mismatch restores read only and cannot discard import or replay",
+        "cancel": "OfficeDocumentTransferTest.kt::cancellation after submission preserves unknown and local edited copy",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/chat/ChatActionSource.kt",
+      "owner": "execute",
+      "resultMethod": "executeAction",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "ChatActionModelTest.kt::写前保存失败不发送",
+        "success": "ChatInteractionRepositoryTest.kt::发送必须先保存且只按返回身份读取无相似认领",
+        "disconnect": "ChatActionModelTest.kt::不明结果刷新关闭删除均不能变成重发",
+        "readback": "ChatActionModelTest.kt::回执保存失败保留内存编号并先补存再恢复",
+        "cancel": "ChatActionModelTest.kt::取消已开始的写入仍保留待恢复阶段",
+        "partial": "ChatBatchModelTest.kt::第二项结果不明停止后续并禁止再次发送",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/chat/ChatActionSource.kt",
+      "owner": "continueGroup",
+      "resultMethod": "continueGroupAction",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "ChatActionModelTest.kt::写前保存失败不发送",
+        "success": "ChatConversationRecoveryTest.kt::邀请明确拒绝可显式继续但只邀请仍缺少的成员",
+        "disconnect": "ChatActionModelTest.kt::不明结果刷新关闭删除均不能变成重发",
+        "readback": "ChatActionModelTest.kt::回执保存失败保留内存编号并先补存再恢复",
+        "cancel": "ChatActionModelTest.kt::取消已开始的写入仍保留待恢复阶段",
+        "partial": "ChatConversationRecoveryTest.kt::群聊创建加入邀请分别落盘且缺少成员不误报完成",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/containers/ContainerControlModel.kt",
+      "owner": "confirm",
+      "resultMethod": "containerManagement.performControl",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "ContainerControlRepositoryTest.kt::名称身份状态或托管变化拒绝旧确认",
+        "success": "ContainerControlRepositoryTest.kt::四项操作固定v1名称原生参数及单次请求并验证结果",
+        "disconnect": "ContainerControlRepositoryTest.kt::证书错误和断线保留未知而明确拒绝记录终态",
+        "readback": "ContainerControlModelTest.kt::整批接受但未结束停止后项冷恢复只读不继续",
+        "cancel": "ContainerControlModelTest.kt::必须加载固定确认取消双击及外部忙碌零重复请求",
+        "partial": "ContainerControlModelTest.kt::整批第二项失败保留首项终态停止后项且明确拒绝不因外部变化成功",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/containers/ContainerImageModel.kt",
+      "owner": "confirm",
+      "resultMethod": "containerManagement.startImagePull",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "ContainerImageModelTest.kt::记录失败零写不同身份不接管旧任务",
+        "success": "ContainerImageModelTest.kt::固定下载确认取消重复提交与当前任务完成",
+        "disconnect": "ContainerImageModelTest.kt::没有回执重建保留保护不同标签仍可下载",
+        "readback": "ContainerImageRepositoryTest.kt::旧标签不证明下载结束结束必须原生布尔回显与完整映像同时匹配",
+        "cancel": "ContainerImageModelTest.kt::固定下载确认取消重复提交与当前任务完成",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/containers/ContainerImageModel.kt",
+      "owner": "confirm",
+      "resultMethod": "containerManagement.deleteImages",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "ContainerImageRepositoryTest.kt::停止容器也占用映像缺少占用字段不补空",
+        "success": "ContainerImageRepositoryTest.kt::映像完整参数原生布尔和按标签展开删除不扩大目标",
+        "disconnect": "ContainerImageModelTest.kt::删除未知按原标签恢复不自动重发且未结束不能清理",
+        "readback": "ContainerImageRepositoryTest.kt::裸映像不能带走其他标签标签重新指向不认领旧删除",
+        "cancel": "ContainerImageModelTest.kt::删除确认取消零写在途取消保留记录且冷恢复不重发",
+        "partial": "ContainerImageModelTest.kt::批量映像只删除部分时保留逐项结果并仅只读恢复剩余项",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/containers/ContainerNetworkModel.kt",
+      "owner": "checkpoint",
+      "resultMethod": "containerManagement.createNetwork",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "ContainerNetworkRepositoryTest.kt::非法地址族地址池网关名称零请求",
+        "success": "ContainerNetworkRepositoryTest.kt::自动手动IPv4及IPv6创建参数不发送driver且保留原生布尔",
+        "disconnect": "ContainerNetworkModelTest.kt::丢创建回执重启后同名只标记已存在而不认领创建",
+        "readback": "ContainerNetworkModelTest.kt::已接受但配置不匹配持续保护并阻止同名创建",
+        "cancel": "ContainerNetworkModelTest.kt::表单固定确认取消外部忙碌和重复点击不会重复创建",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/containers/ContainerNetworkModel.kt",
+      "owner": "checkpoint",
+      "resultMethod": "containerManagement.deleteNetwork",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "ContainerNetworkRepositoryTest.kt::默认有容器及已变化网络不能删除",
+        "success": "ContainerNetworkRepositoryTest.kt::删除严格按一个网络对象数组空failed再回读原ID",
+        "disconnect": "ContainerNetworkModelTest.kt::未知删除仅按原ID消失恢复不删除同名替代",
+        "readback": "ContainerNetworkRepositoryTest.kt::failed非空明确拒绝畸形failed保留未知",
+        "cancel": "ContainerNetworkModelTest.kt::删除确认取消零写在途取消停止批次冷恢复不重发",
+        "partial": "ContainerNetworkModelTest.kt::删除批次保留已完成项明确拒绝后停止且不会被外部消失覆盖",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasDdnsModel.kt",
+      "owner": "confirm",
+      "resultMethod": "nasDdns.perform",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "NasDdnsRecoveryRepositoryTest.kt::实际接口版本身份存储检查点与输入失败仍受保护",
+        "success": "NasDdnsRecoveryRepositoryTest.kt::FORM与JSON四类动作独立仅一次传输且测试不保存",
+        "disconnect": "NasDdnsRecoveryRepositoryTest.kt::测试及立即更新没有回执时读取不能补造成功",
+        "readback": "NasDdnsRecoveryRepositoryTest.kt::仅改密码无接受回执不能被同值列表认领",
+        "cancel": "NasDdnsRecoveryModelTest.kt::离页及换会话清密码和旧确认且记录按原身份隔离",
+        "partial": "na",
+        "zero": "na",
+        "recovery": "NasDdnsRecoveryModelTest.kt::保存未知跨重启只读恢复且不保存域名账号与密码"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasDirectoryModel.kt",
+      "owner": "submit",
+      "resultMethod": "directory.change",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "NasDirectoryRepositoryTest.kt::无对象许可无原组关系和权限撤销均零写入",
+        "success": "NasDirectoryModelTest.kt::真实传输保存删除共用账本且页面保留实际变化",
+        "disconnect": "NasDirectoryRepositoryTest.kt::回执丢失的改密和创建保持未知且不重放",
+        "readback": "NasDirectoryRepositoryTest.kt::删除回读畸形不能确认消失",
+        "cancel": "NasDirectoryRepositoryTest.kt::未知记录锁住新写入并且提交取消不补发",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasPackageCenterModel.kt",
+      "owner": "confirmControl",
+      "resultMethod": "packageCenter.performControl",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "NasPackageControlRepositoryTest.kt::原安装权限和状态漂移零写而文案变化不影响身份",
+        "success": "NasPackageControlRepositoryTest.kt::表单JSON三动作固定版本原应用数组可行性先于单次写入",
+        "disconnect": "NasPackageControlRepositoryTest.kt::明确拒绝不回读未知只回读原安装且检查点失败不能继续",
+        "readback": "NasPackageControlModelTest.kt::原安装恢复拒绝同版本重装和消失达到原状态才解除共享锁",
+        "cancel": "NasPackageControlRepositoryTest.kt::接受落盘失败立即停止且取消只读一次权限异常不轮询",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasRegionSettingsModel.kt",
+      "owner": "save",
+      "resultMethod": "nasRegion.save",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "NasRegionSettingsRepositoryTest.kt::原配置并发变化或目标时区被移除零写入",
+        "success": "NasRegionSettingsRepositoryTest.kt::设置和校时固定版本有序提交每步重新授权并完整回读",
+        "disconnect": "NasRegionSettingsRepositoryTest.kt::丢失保存回执可确认配置但绝不继续校时或冒认手动改时",
+        "readback": "NasRegionSettingsRepositoryTest.kt::校时前撤权不再提交且先前设置变化撤回成功",
+        "cancel": "NasRegionSettingsRepositoryTest.kt::取消后不校时配置缺字段不被当成保存完成",
+        "partial": "NasRegionSettingsModelTest.kt::保存后断线冷恢复仅配置完成不重发未执行校时",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasScheduledTaskModel.kt",
+      "owner": "confirm",
+      "resultMethod": "scheduledTasks.change",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "NasScheduledTaskRepositoryTest.kt::脚本已变化列表未变时保存启用运行均不提交",
+        "success": "NasScheduledTaskRepositoryTest.kt::创建保存启停运行删除使用固定版本与类型并完整回读",
+        "disconnect": "NasScheduledTaskRepositoryTest.kt::未知创建运行不认领旧记录但状态变更允许严格读取完成",
+        "readback": "NasScheduledTaskModelTest.kt::接受后读取失败只按原id与全部字段恢复不重发",
+        "cancel": "NasScheduledTaskRepositoryTest.kt::待恢复权限撤销取消均不提交系统任务仅明确许可运行",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasServiceSettingsModel.kt",
+      "owner": "save",
+      "resultMethod": "nasServices.save",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "NasServiceSettingsRepositoryTest.kt::原值或缺失字段变化均零提交",
+        "success": "NasServiceSettingsRepositoryTest.kt::六组全部保存固定版本单次写及最终读取",
+        "disconnect": "NasServiceSettingsRepositoryTest.kt::回执丢失后目标相同仍不补交后组",
+        "readback": "NasServiceSettingsRepositoryTest.kt::每组重查权限且最终读取能发现先前组变化",
+        "cancel": "NasServiceSettingsRepositoryTest.kt::提交断线和取消都保留未知而未提交后组不会算成功",
+        "partial": "NasServiceSettingsModelTest.kt::仅部分终端字段生效保持整组保护直到全部匹配",
+        "zero": "na",
+        "ethernet": "NasEthernetRecoveryRepositoryTest.kt::FORM和JSON均仅提交选中网卡完整静态配置",
+        "ethernetRecovery": "NasEthernetRecoveryModelTest.kt::新地址明确关联前零恢复读取关联后只读且保留原身份",
+        "security": "NasSecurityRecoveryRepositoryTest.kt::FORM及JSON四组顺序固定版本原配置档任务完成后单次清理",
+        "securityRecovery": "NasSecurityRecoveryModelTest.kt::没有任务回执不能凭开启状态恢复成功或丢弃保护",
+        "hardware": "NasHardwareRecoveryRepositoryTest.kt::FORM和JSON六组七请求只写变化字段且亮度与应用分别接受",
+        "hardwareContinuation": "NasHardwareRecoveryModelTest.kt::已接受亮度但未发送应用冷恢复后只在主动继续时发送一次应用",
+        "remote": "NasRemoteAccessRecoveryTest.kt::两组固定版本单次写入和完整原值检查",
+        "remoteRecovery": "NasRemoteAccessRecoveryModelTest.kt::断网冷恢复原账号只读不补发路由器开关",
+        "powerSettings": "NasPowerSettingsRepositoryTest.kt::电源计划FORM与JSON一次保存完整双数组清空和周日编码",
+        "compression": "NasPowerSettingsModelTest.kt::首步已接受但未提交标记冷恢复后用户继续只提交标记"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasServiceSettingsModel.kt",
+      "owner": "continuePendingStep",
+      "resultMethod": "nasServices.save",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "NasServiceSettingsRepositoryTest.kt::原值或缺失字段变化均零提交",
+        "success": "NasServiceSettingsRepositoryTest.kt::六组全部保存固定版本单次写及最终读取",
+        "disconnect": "NasServiceSettingsRepositoryTest.kt::回执丢失后目标相同仍不补交后组",
+        "readback": "NasServiceSettingsRepositoryTest.kt::每组重查权限且最终读取能发现先前组变化",
+        "cancel": "NasServiceSettingsRepositoryTest.kt::提交断线和取消都保留未知而未提交后组不会算成功",
+        "partial": "NasServiceSettingsModelTest.kt::仅部分终端字段生效保持整组保护直到全部匹配",
+        "zero": "na",
+        "ethernet": "NasEthernetRecoveryRepositoryTest.kt::FORM和JSON均仅提交选中网卡完整静态配置",
+        "ethernetRecovery": "NasEthernetRecoveryModelTest.kt::新地址明确关联前零恢复读取关联后只读且保留原身份",
+        "security": "NasSecurityRecoveryRepositoryTest.kt::FORM及JSON四组顺序固定版本原配置档任务完成后单次清理",
+        "securityRecovery": "NasSecurityRecoveryModelTest.kt::没有任务回执不能凭开启状态恢复成功或丢弃保护",
+        "hardware": "NasHardwareRecoveryRepositoryTest.kt::FORM和JSON六组七请求只写变化字段且亮度与应用分别接受",
+        "hardwareContinuation": "NasHardwareRecoveryModelTest.kt::已接受亮度但未发送应用冷恢复后只在主动继续时发送一次应用",
+        "remote": "NasRemoteAccessRecoveryTest.kt::两组固定版本单次写入和完整原值检查",
+        "remoteRecovery": "NasRemoteAccessRecoveryModelTest.kt::断网冷恢复原账号只读不补发路由器开关",
+        "powerSettings": "NasPowerSettingsRepositoryTest.kt::电源计划FORM与JSON一次保存完整双数组清空和周日编码",
+        "compression": "NasPowerSettingsModelTest.kt::首步已接受但未提交标记冷恢复后用户继续只提交标记"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/virtualmachines/VmmCreationModel.kt",
+      "owner": "recover",
+      "resultMethod": "virtualMachineManagement.resumeCreation",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "VmmCreationRepositoryTest.kt::原名冲突存储改名冻结残缺清单和撤权都不创建",
+        "success": "VmmCreationRepositoryTest.kt::公开多空白和映像盘多网卡全部保留且设置回执后才完成",
+        "disconnect": "VmmCreationRepositoryTest.kt::缺公开创建回执不按同名机器认领或重试",
+        "readback": "VmmCreationModelTest.kt::设置接受但回读失败冷恢复后不自动开机",
+        "cancel": "VmmCreationModelTest.kt::取消无写创建防双击并清除编辑草稿",
+        "partial": "VmmCreationRepositoryTest.kt::公开创建明确拒绝不转内部设置拒绝保留已创建机器",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/virtualmachines/VmmCreationModel.kt",
+      "owner": "create",
+      "resultMethod": "virtualMachineManagement.createGuest",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "VmmCreationRepositoryTest.kt::原名冲突存储改名冻结残缺清单和撤权都不创建",
+        "success": "VmmCreationRepositoryTest.kt::公开多空白和映像盘多网卡全部保留且设置回执后才完成",
+        "disconnect": "VmmCreationRepositoryTest.kt::缺公开创建回执不按同名机器认领或重试",
+        "readback": "VmmCreationModelTest.kt::设置接受但回读失败冷恢复后不自动开机",
+        "cancel": "VmmCreationModelTest.kt::取消无写创建防双击并清除编辑草稿",
+        "partial": "VmmCreationRepositoryTest.kt::公开创建明确拒绝不转内部设置拒绝保留已创建机器",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/virtualmachines/VmmCreationModel.kt",
+      "owner": "continueCreation",
+      "resultMethod": "virtualMachineManagement.resumeCreation",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "VmmCreationRepositoryTest.kt::原名冲突存储改名冻结残缺清单和撤权都不创建",
+        "success": "VmmCreationRepositoryTest.kt::公开多空白和映像盘多网卡全部保留且设置回执后才完成",
+        "disconnect": "VmmCreationRepositoryTest.kt::缺公开创建回执不按同名机器认领或重试",
+        "readback": "VmmCreationModelTest.kt::设置接受但回读失败冷恢复后不自动开机",
+        "cancel": "VmmCreationModelTest.kt::取消无写创建防双击并清除编辑草稿",
+        "partial": "VmmCreationRepositoryTest.kt::公开创建明确拒绝不转内部设置拒绝保留已创建机器",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/virtualmachines/VmmSettingsModel.kt",
+      "owner": "save",
+      "resultMethod": "virtualMachineManagement.saveSettings",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "VmmSettingsRepositoryTest.kt::写前外部修改同名碰撞局部清单或权限撤销全部零写",
+        "success": "VmmSettingsRepositoryTest.kt::优先级变化时所有字段只发一次内部v1且内存使用MiB",
+        "disconnect": "VmmSettingsRepositoryTest.kt::拒绝不降级重发丢回执不回读或标记接受",
+        "readback": "VmmSettingsModelTest.kt::接受后冷恢复按所有字段匹配不重发其他VM可以编辑",
+        "cancel": "VmmSettingsModelTest.kt::原表单取消零写明确保存一次且完成移除草稿",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/virtualmachines/VmmTaskModel.kt",
+      "owner": "startImport",
+      "resultMethod": "importNasVmmImage",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "VmmTaskRepositoryTest.kt::权限文件存储同名或不完整列表变化都在发送前停止",
+        "success": "VmmTaskRepositoryTest.kt::NAS文件导入使用公开固定版本与一次写任务回读且不自动清理",
+        "disconnect": "VmmTaskRepositoryTest.kt::未知创建回执不允许追认同名映像明确拒绝才记录拒绝",
+        "readback": "VmmTaskRepositoryTest.kt::原任务必须严格布尔结束和新映像身份名称类型",
+        "cancel": "VmmTaskStoreTest.kt::未发送恢复取消并与其他VMM操作共用锁",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/virtualmachines/VmmTaskModel.kt",
+      "owner": "confirmCleanup",
+      "resultMethod": "virtualMachineManagement.clearTask",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "VmmTaskRepositoryTest.kt::清理拒绝漂移且丢失回执即使任务消失仍保留已发送",
+        "success": "VmmTaskRepositoryTest.kt::任务清理仅清除用户看到的结束记录接受后严格读取不存在",
+        "disconnect": "VmmTaskModelTest.kt::清理首项回执丢失不继续批次且冷恢复不追认消失",
+        "readback": "VmmTaskModelTest.kt::有清理回执但回读失败允许冷恢复仅标记已接受项",
+        "cancel": "VmmTaskModelTest.kt::任务清理取消零写确认后双击被挡逐项完成",
+        "partial": "VmmTaskModelTest.kt::清理首项回执丢失不继续批次且冷恢复不追认消失",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasPackageCenterModel.kt",
+      "owner": "savePreferences",
+      "resultMethod": "packageCenter.savePreferences",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "NasPackagePreferencesTest.kt::设置与来源增改删权限或落盘失败均零写且无未决记录",
+        "success": "NasPackageRepositoryTest.kt::设置频道读取布尔写字符串默认卷未改不发送",
+        "disconnect": "NasPackagePreferencesTest.kt::设置与来源回执丢失仅保留提交阶段重复保存被阻止",
+        "readback": "NasPackagePreferencesTest.kt::设置与来源接受后回读失败或内容不符保留未决不允许再次提交",
+        "cancel": "NasPackagePreferencesTest.kt::设置与来源发送前取消零写发送中取消保留未决且读取不重放",
+        "partial": "na",
+        "zero": "na",
+        "recovery": "NasPackageCenterModelTest.kt::设置断线跨实例恢复只读且内容不符继续禁止保存",
+        "rejection": "NasPackagePreferencesTest.kt::设置与来源明确拒绝记录拒绝后允许重新确认而不误报成功"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasPackageCenterModel.kt",
+      "owner": "saveSource",
+      "resultMethod": "packageCenter.saveSource",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "NasPackagePreferencesTest.kt::设置与来源增改删权限或落盘失败均零写且无未决记录",
+        "success": "NasPackageRepositoryTest.kt::来源JSON文本改名改地址删除都检查结果且拒绝凭据URL",
+        "disconnect": "NasPackagePreferencesTest.kt::设置与来源回执丢失仅保留提交阶段重复保存被阻止",
+        "readback": "NasPackagePreferencesTest.kt::设置与来源接受后回读失败或内容不符保留未决不允许再次提交",
+        "cancel": "NasPackagePreferencesTest.kt::设置与来源发送前取消零写发送中取消保留未决且读取不重放",
+        "partial": "na",
+        "zero": "na",
+        "recovery": "NasPackageCenterModelTest.kt::来源改址接受后回读失败冷恢复要求新来源匹配且旧地址消失",
+        "rejection": "NasPackagePreferencesTest.kt::设置与来源明确拒绝记录拒绝后允许重新确认而不误报成功"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasPackageCenterModel.kt",
+      "owner": "start",
+      "resultMethod": "packageCenter.start",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "NasPackageRepositoryTest.kt::准备后候选版本改变拒绝旧确认零提交",
+        "success": "NasPackageRepositoryTest.kt::快速安装单次提交轮询并确认精确版本",
+        "disconnect": "NasPackagePipelineBoundaryTest.kt::安装配置取消与下一依赖丢回执均保留未知且刷新不重放",
+        "readback": "NasPackageRepositoryTest.kt::安装回执丢失刷新不重发且版本不符不报完成",
+        "cancel": "NasPackagePipelineBoundaryTest.kt::安装配置取消与下一依赖发送中取消均保留检查点且刷新不重放",
+        "partial": "NasPackageRepositoryTest.kt::依赖完成后下一目标变化只终止未提交部分",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasPackageCenterModel.kt",
+      "owner": "refreshProgress",
+      "resultMethod": "packageCenter.advance",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "NasPackageRepositoryTest.kt::权限拒绝停止轮询而不回退列表认领",
+        "success": "NasPackageRepositoryTest.kt::依赖逐项完成后才提交下一套件",
+        "disconnect": "NasPackagePipelineBoundaryTest.kt::安装配置取消与下一依赖丢回执均保留未知且刷新不重放",
+        "readback": "NasPackageRepositoryTest.kt::完成记录保存失败不继续后续依赖",
+        "cancel": "NasPackagePipelineBoundaryTest.kt::安装配置取消与下一依赖发送中取消均保留检查点且刷新不重放",
+        "partial": "NasPackageRepositoryTest.kt::依赖完成后下一目标变化只终止未提交部分",
+        "zero": "na",
+        "cleanup": "NasPackageRepositoryTest.kt::签名与脚本表单拒绝只清理本次返回目标"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasPackageCenterModel.kt",
+      "owner": "monitor",
+      "resultMethod": "packageCenter.advance",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "NasPackageRepositoryTest.kt::权限拒绝停止轮询而不回退列表认领",
+        "success": "NasPackageRepositoryTest.kt::依赖逐项完成后才提交下一套件",
+        "disconnect": "NasPackagePipelineBoundaryTest.kt::安装配置取消与下一依赖丢回执均保留未知且刷新不重放",
+        "readback": "NasPackageRepositoryTest.kt::完成记录保存失败不继续后续依赖",
+        "cancel": "NasPackagePipelineBoundaryTest.kt::安装配置取消与下一依赖发送中取消均保留检查点且刷新不重放",
+        "partial": "NasPackageRepositoryTest.kt::依赖完成后下一目标变化只终止未提交部分",
+        "zero": "na",
+        "cleanup": "NasPackageRepositoryTest.kt::签名与脚本表单拒绝只清理本次返回目标"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasPackageCenterModel.kt",
+      "owner": "configure",
+      "resultMethod": "packageCenter.configure",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "NasPackageRepositoryTest.kt::确认选项后安装位置消失零正式安装",
+        "success": "NasPackageRepositoryTest.kt::下载完成进入原生选项最终安装始终检查签名",
+        "disconnect": "NasPackageRepositoryTest.kt::同版本手动重装回执丢失不以旧版本认领",
+        "readback": "NasPackageRepositoryTest.kt::任务明确失败不以旁路版本相同抹成成功",
+        "cancel": "NasPackagePipelineBoundaryTest.kt::安装配置取消与下一依赖发送中取消均保留检查点且刷新不重放",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasPackageCenterModel.kt",
+      "owner": "cancel",
+      "resultMethod": "packageCenter.cancel",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "NasPackageRepositoryTest.kt::慢速最终安装等待中仍显示安装且不开放取消",
+        "success": "NasPackageRepositoryTest.kt::取消下载到达时已完成只清理不安装且不重复取消",
+        "disconnect": "NasPackagePipelineBoundaryTest.kt::安装配置取消与下一依赖丢回执均保留未知且刷新不重放",
+        "readback": "NasPackageRepositoryTest.kt::下载状态读取失败仍可取消已知任务且不重放下载",
+        "cancel": "NasPackagePipelineBoundaryTest.kt::安装配置取消与下一依赖发送中取消均保留检查点且刷新不重放",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/nas/NasPackageCenterModel.kt",
+      "owner": "upload",
+      "resultMethod": "packageCenter.upload",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "NasPackageCenterModelTest.kt::SPK取消选择或写前落盘失败均零上传",
+        "success": "NasPackageCenterModelTest.kt::选择SPK只复制明确上传才发送且清理临时副本",
+        "disconnect": "NasPackageCenterModelTest.kt::SPK回执丢失阻止重复上传冷恢复仅标中断不认领安装或清理",
+        "readback": "NasPackageCenterModelTest.kt::SPK回执丢失阻止重复上传冷恢复仅标中断不认领安装或清理",
+        "cancel": "NasPackageCenterModelTest.kt::SPK取消选择或写前落盘失败均零上传",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/virtualmachines/VmmControlModel.kt",
+      "owner": "confirm",
+      "resultMethod": "virtualMachineManagement.performControl",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "VmmControlRepositoryTest.kt::预检名称状态身份变化均零写",
+        "success": "VmmControlRepositoryTest.kt::公开启停断电删除固定v1单项oneShot且需要原身份终态",
+        "disconnect": "VmmControlModelTest.kt::丢失控制或删除回执后外部变化不能认领或重发",
+        "readback": "VmmControlModelTest.kt::接受但未结束停止后项冷恢复只读不继续",
+        "cancel": "VmmControlModelTest.kt::加载固定确认取消双击及外部忙碌零重复请求",
+        "partial": "VmmControlModelTest.kt::整批第二项拒绝保留首项停止后项且拒绝不变成功",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/virtualmachines/VmmAssetModel.kt",
+      "owner": "confirm",
+      "resultMethod": "virtualMachineManagement.mutateNetwork",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "VmmAssetsRepositoryTest.kt::冻结名称碰撞拓扑或关联变化阻止网络写入",
+        "success": "VmmAssetsRepositoryTest.kt::网络读取详情关联关机虚拟机且重命名保留原拓扑参数",
+        "disconnect": "VmmAssetsRepositoryTest.kt::网络及映像断网与拒绝不转为已接受且不读取后续",
+        "readback": "VmmAssetModelTest.kt::改名接受后重建只按原ID新名称及原拓扑完成",
+        "cancel": "VmmAssetModelTest.kt::网络和映像确认取消零写发送中取消保留原项且冷恢复不续批",
+        "partial": "VmmAssetModelTest.kt::网络和映像未知接受分阶段恢复不续批",
+        "zero": "na",
+        "deletion": "VmmAssetsRepositoryTest.kt::网络删除保留固定单ID和关联信息确认"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/virtualmachines/VmmAssetModel.kt",
+      "owner": "confirm",
+      "resultMethod": "virtualMachineManagement.deleteImage",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "VmmAssetsRepositoryTest.kt::公开无名字只读内部冻结及副本故障不允许删除",
+        "success": "VmmAssetsRepositoryTest.kt::公开映像固定v1image_id内部固定v2id及唯一UUID",
+        "disconnect": "VmmAssetModelTest.kt::缺回执外部删除不能认领重建不能清理保护",
+        "readback": "VmmAssetModelTest.kt::网络和映像未知接受分阶段恢复不续批",
+        "cancel": "VmmAssetModelTest.kt::网络和映像确认取消零写发送中取消保留原项且冷恢复不续批",
+        "partial": "VmmAssetModelTest.kt::第二项拒绝保留首项并终止后项",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/chat/ChatContentModel.kt",
+      "owner": "markRead",
+      "resultMethod": "markRead",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "ChatInteractionRepositoryTest.kt::阅读同步只接受读到的消息时间且回读未推进仍失败",
+        "success": "ChatInteractionRepositoryTest.kt::阅读同步只接受读到的消息时间且回读未推进仍失败",
+        "disconnect": "ChatInteractionRepositoryTest.kt::已读同步断线或取消不自动重放且不报告已推进",
+        "readback": "ChatInteractionRepositoryTest.kt::阅读同步只接受读到的消息时间且回读未推进仍失败",
+        "cancel": "ChatInteractionRepositoryTest.kt::已读同步断线或取消不自动重放且不报告已推进",
+        "partial": "na",
+        "zero": "na",
+        "environment": "PrivateWriteEnvironmentTest.kt::Chat普通账号可以发送及同步已读而不读取系统或套件版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/chat/ChatContentModel.kt",
+      "owner": "markThreadRead",
+      "resultMethod": "markThreadRead",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "ChatInteractionRepositoryTest.kt::线程阅读遇到未显示的新回复不发送view",
+        "success": "ChatInteractionRepositoryTest.kt::线程已读明确回执仅结束同步不推测未读数量",
+        "disconnect": "ChatInteractionRepositoryTest.kt::已读同步断线或取消不自动重放且不报告已推进",
+        "readback": "ChatInteractionRepositoryTest.kt::线程已读明确回执仅结束同步不推测未读数量",
+        "cancel": "ChatInteractionRepositoryTest.kt::已读同步断线或取消不自动重放且不报告已推进",
+        "partial": "na",
+        "zero": "na",
+        "environment": "PrivateWriteEnvironmentTest.kt::Chat普通账号可以发送及同步已读而不读取系统或套件版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/chat/ChatContentModel.kt",
+      "owner": "markVisible",
+      "resultMethod": "markThreadRead",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "ChatInteractionRepositoryTest.kt::线程阅读遇到未显示的新回复不发送view",
+        "success": "ChatInteractionRepositoryTest.kt::线程已读明确回执仅结束同步不推测未读数量",
+        "disconnect": "ChatInteractionRepositoryTest.kt::已读同步断线或取消不自动重放且不报告已推进",
+        "readback": "ChatInteractionRepositoryTest.kt::线程已读明确回执仅结束同步不推测未读数量",
+        "cancel": "ChatInteractionRepositoryTest.kt::已读同步断线或取消不自动重放且不报告已推进",
+        "partial": "na",
+        "zero": "na",
+        "environment": "PrivateWriteEnvironmentTest.kt::Chat普通账号可以发送及同步已读而不读取系统或套件版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/chat/ChatContentModel.kt",
+      "owner": "markVisible",
+      "resultMethod": "markRead",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "ChatInteractionRepositoryTest.kt::阅读同步只接受读到的消息时间且回读未推进仍失败",
+        "success": "ChatInteractionRepositoryTest.kt::阅读同步只接受读到的消息时间且回读未推进仍失败",
+        "disconnect": "ChatInteractionRepositoryTest.kt::已读同步断线或取消不自动重放且不报告已推进",
+        "readback": "ChatInteractionRepositoryTest.kt::阅读同步只接受读到的消息时间且回读未推进仍失败",
+        "cancel": "ChatInteractionRepositoryTest.kt::已读同步断线或取消不自动重放且不报告已推进",
+        "partial": "na",
+        "zero": "na",
+        "environment": "PrivateWriteEnvironmentTest.kt::Chat普通账号可以发送及同步已读而不读取系统或套件版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/data/SynologyPhotosRepository.kt",
+      "owner": "continueCodecPrompt",
+      "resultMethod": "continueCodecPrompt",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosCodecPromptRepositoryTest.kt::继续前范围变化不追加写入提示在其他客户端关闭则读取结束",
+        "success": "SynologyPhotosCodecPromptRepositoryTest.kt::生成接收保存明确失败跨冷启动保留部分成功显式继续只保存提示",
+        "disconnect": "SynologyPhotosCodecPromptRepositoryTest.kt::提示回执未知不重放提示也不生成只读观察关闭后完成",
+        "readback": "SynologyPhotosCodecPromptRepositoryTest.kt::提示保存回执成功但仍显示保持未决不能宣称生成完成",
+        "cancel": "SynologyPhotosCodecPromptRepositoryTest.kt::继续关闭提示在途取消保留尝试事实且恢复不重复生成或保存",
+        "partial": "SynologyPhotosCodecPromptRepositoryTest.kt::继续保存再次拒绝保留单向事实新尝试不重复生成",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoAlbumModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoSharing",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosSharingRepositoryTest.kt::原相册或分享修订变化及来源权限失效零写入",
+        "success": "SynologyPhotosSharingRepositoryTest.kt::成员差量密码有效期依序关闭更新保存再开启",
+        "disconnect": "SynologyPhotosSharingRepositoryTest.kt::未知换密回执不凭已有保护追认新密码或继续开启",
+        "readback": "SynologyPhotosSharingRepositoryTest.kt::更新未生效或保护成员范围不符绝不扩大访问",
+        "cancel": "SynologyPhotosSharingRepositoryTest.kt::读取或关闭后账号代次变化不继续共享写入",
+        "partial": "SynologyPhotosSharingRepositoryTest.kt::阶段保存失败停止后续写入冷恢复只读",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoAlbumModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoAutomaticPreviewModel.kt",
+      "owner": "save",
+      "resultMethod": "performAutomaticPreview",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "SynologyPhotosAutomaticPreviewMutationTest.kt::上传或失败尝试无法保存时不会外发请求",
+        "success": "SynologyPhotosAutomaticPreviewMutationTest.kt::两来源实际下载按Unit上传三档图片并持久保存摘要不再要求缺损状态",
+        "disconnect": "SynologyPhotosAutomaticPreviewMutationTest.kt::网络HTTP和畸形上传回执保持未知不转失败标记",
+        "readback": "SynologyPhotosAutomaticPreviewMutationTest.kt::未知图片任意一档不符都不认领且恢复读取强制绕过缓存",
+        "cancel": "SynologyPhotosAutomaticPreviewMutationTest.kt::真实协程取消清理本次目录并保留未决记录待只读恢复",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoBackgroundModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoCodecPromptModel.kt",
+      "owner": "save",
+      "resultMethod": "continueCodecPrompt",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosCodecPromptRepositoryTest.kt::继续前范围变化不追加写入提示在其他客户端关闭则读取结束",
+        "success": "SynologyPhotosCodecPromptRepositoryTest.kt::生成接收保存明确失败跨冷启动保留部分成功显式继续只保存提示",
+        "disconnect": "SynologyPhotosCodecPromptRepositoryTest.kt::提示回执未知不重放提示也不生成只读观察关闭后完成",
+        "readback": "SynologyPhotosCodecPromptRepositoryTest.kt::提示保存回执成功但仍显示保持未决不能宣称生成完成",
+        "cancel": "SynologyPhotosCodecPromptRepositoryTest.kt::继续关闭提示在途取消保留尝试事实且恢复不重复生成或保存",
+        "partial": "SynologyPhotosCodecPromptRepositoryTest.kt::继续保存再次拒绝保留单向事实新尝试不重复生成",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoCodecPromptModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoConceptModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoDeletionModel.kt",
+      "owner": "confirm",
+      "resultMethod": "performPhotoDeletion",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "SynologyPhotosDeletionRepositoryTest.kt::同步记录失败零危险请求",
+        "success": "SynologyPhotosDeletionRepositoryTest.kt::个人及共享都先保存提交阶段再按原命名空间删除单项",
+        "disconnect": "SynologyPhotosDeletionRepositoryTest.kt::网络取消和未知错误保留已提交记录只允许读取",
+        "readback": "SynologyPhotosDeletionRepositoryTest.kt::已提交冷恢复只有成功空列表确认且不依赖内存或",
+        "cancel": "SynologyPhotosDeletionRepositoryTest.kt::网络取消和未知错误保留已提交记录只允许读取",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoEditModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoEdit",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosEditRepositoryTest.kt::批量全量预检发现第二项变更时第一项也不写",
+        "success": "SynologyPhotosEditRepositoryTest.kt::评分描述与日期只发送本次字段并回读真实值",
+        "disconnect": "SynologyPhotosEditRepositoryTest.kt::相对时间固定原始目标且断网后的执行和恢复都不重放",
+        "readback": "SynologyPhotosEditRepositoryTest.kt::未知写入保持pending并禁止换操作编号覆盖",
+        "cancel": "SynologyPhotosEditRepositoryTest.kt::授权代次改变与其他账号禁止继续写入或恢复",
+        "partial": "SynologyPhotosEditRepositoryTest.kt::error_list不猜单项编号而以全部回读产生部分结果",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoFileModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoFolderModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoFolderSharingModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoFolderSharing",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosFolderSharingRepositoryTest.kt::接口缺失不借用相册权限接口且失去代次停止后续请求",
+        "success": "SynologyPhotosFolderSharingRepositoryTest.kt::普通权限丢回执只读结果确认并且重复调用绝不重放",
+        "disconnect": "SynologyPhotosFolderSharingRepositoryTest.kt::丢失密码或子目录回执不能凭顶层匹配追认完成",
+        "readback": "SynologyPhotosFolderSharingRepositoryTest.kt::明确权限拒绝结束记录读取失败保留未知事实",
+        "cancel": "SynologyPhotosFolderSharingRepositoryTest.kt::接口缺失不借用相册权限接口且失去代次停止后续请求",
+        "partial": "SynologyPhotosFolderSharingRepositoryTest.kt::默认保存失败明确部分完成而不重发权限或默认设置",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoMaintenanceModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoManualFacesModel.kt",
+      "owner": "save",
+      "resultMethod": "performManualFaces",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosManualFacesRepositoryTest.kt::写前人物照片权限身份和识别状态变化均零写入",
+        "success": "SynologyPhotosManualFacesRepositoryTest.kt::两来源新增先上传再移除旧框并保持原件精确路由与逐步事实",
+        "disconnect": "SynologyPhotosManualFacesRepositoryTest.kt::新增丢回执和非法回执均不按同名坐标猜编号且禁止上传和删除",
+        "readback": "SynologyPhotosManualFacesRepositoryTest.kt::上传响应丢失且缩略图摘要不同保持未知直至只读获取相同图片",
+        "cancel": "SynologyPhotosManualFacesRepositoryTest.kt::新增后授权代次变化丢弃旧回执且不上传不删除不重发",
+        "partial": "SynologyPhotosManualFacesRepositoryTest.kt::部分新增回执只上传已知编号并保留全部旧框",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoPeopleModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoPreviewRegenerationModel.kt",
+      "owner": "save",
+      "resultMethod": "performPreviewRegeneration",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosPreviewRepositoryTest.kt::准备后身份或缩略图基线变化不能使用旧确认",
+        "success": "SynologyPhotosPreviewRepositoryTest.kt::NAS先订阅再标记再生成事件后回读且重复操作只读",
+        "disconnect": "SynologyPhotosPreviewRepositoryTest.kt::本机上传未知不切NAS也不还原且保留原始事实",
+        "readback": "SynologyPhotosPreviewRepositoryTest.kt::原件身份变化或读取失败不能认领未知结果",
+        "cancel": "SynologyPhotoPreviewRegenerationModelTest.kt::撤销访问取消在途但发送事实保留冷恢复不重发",
+        "partial": "SynologyPhotosPreviewRepositoryTest.kt::多项未知会停止后续写入并为未发送项保留失败结果",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoRequestModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoRequest",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "SynologyPhotosRequestRepositoryTest.kt::保存阶段失败阻止请求和记录回执后的持久化失败不再写",
+        "success": "SynologyPhotosRequestRepositoryTest.kt::创建使用明确空口令真实回执和目录核对且持久记录不含秘密",
+        "disconnect": "SynologyPhotosRequestRepositoryTest.kt::创建丢失或缺编号回执不按同名认领且冷热恢复均不写",
+        "readback": "SynologyPhotosRequestRepositoryTest.kt::删除完整分页缺失才成功重复页和读取失败都保留未知",
+        "cancel": "SynologyPhotosRequestRepositoryTest.kt::收集创建在途取消保留未知记录且冷恢复不重发",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoRequestModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoSettingsModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoSharedMembersModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoSimilarModel.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoAlbum",
+      "occurrence": 1,
+      "state": "open",
+      "multi": true,
+      "scenarios": {
+        "pre": "SynologyPhotosAlbumRepositoryTest.kt::原件变更身份撤销和写前保存失败都不发送请求",
+        "success": "SynologyPhotosAlbumRepositoryTest.kt::空相册和选择照片创建均固定返回编号并完整核对成员",
+        "disconnect": "SynologyPhotosAlbumRepositoryTest.kt::创建丢失编号不按同名认领也不重新提交",
+        "readback": "SynologyPhotosAlbumRepositoryTest.kt::未知畸形回执和读取失败保留pending且不会误报删除成功",
+        "cancel": "SynologyPhotosConditionRepositoryTest.kt::写提交后取消保留未决而不猜测编号",
+        "partial": "SynologyPhotosAlbumRepositoryTest.kt::部分回执错误不猜编号按实际成员得出完成子集",
+        "zero": "na",
+        "fileTasks": "SynologyPhotosFileRepositoryTest.kt::替换策略固定写参数允许合法覆盖计数部分结果不猜逐项目成功",
+        "folders": "SynologyPhotoFolderModelTest.kt::未知操作冷热刷新只读取且不清理未知记录",
+        "background": "SynologyPhotosBackgroundRepositoryTest.kt::清理丢回执只读取已尝试部分冷恢复不碰剩余任务",
+        "sharedMembers": "SynologyPhotosSharedMembersRepositoryTest.kt::删除携带原角色与备份只发实际差量",
+        "maintenance": "SynologyPhotosMaintenanceRepositoryTest.kt::提交前撤销身份管理员home或共享状态都拒绝旧快照且零写入",
+        "settings": "SynologyPhotosSettingsRepositoryTest.kt::仅部分字段应用或回读缺字段不冒充完成",
+        "codecPrompt": "SynologyPhotosCodecPromptRepositoryTest.kt::丢失生成回执即使提示后来关闭冷恢复也只读且不可继续保存",
+        "people": "SynologyPhotosPeopleRepositoryTest.kt::显示部分匹配仅明确回执可结束未知保持pending且缺项字段不当隐藏成功",
+        "concepts": "SynologyPhotoConceptModelTest.kt::部分结果只移除已完成照片并保留余项可再次明确操作",
+        "similar": "SynologyPhotosSimilarRepositoryTest.kt::写成功断线冷恢复只读确认不会重发",
+        "temporary": "SynologyPhotosTemporaryRepositoryTest.kt::停止回执未知只读观察关闭即部分完成不自动删除",
+        "frozen": "SynologyPhotosFrozenAlbumRepositoryTest.kt::新编号已保存后进程中断的冷恢复只读并保留旧相册",
+        "sharedSettings": "SynologyPhotosSharedSettingsRepositoryTest.kt::丢回执冷恢复只读启停或普通设置均不重发",
+        "environment": "PrivateWriteEnvironmentTest.kt::照片普通账号在未知DSM与套件版本下仍可提交且不读取系统版本"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoUploadExecution.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoUpload",
+      "occurrence": 1,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "SynologyPhotosUploadRepositoryTest.kt::私有副本改动在写前拒绝",
+        "success": "SynologyPhotosUploadRepositoryTest.kt::个人时间线上传使用JSON业务字段并以编号回读完成",
+        "disconnect": "SynologyPhotosUploadRepositoryTest.kt::丢失与损坏回执绝不以同名照片认领或重传",
+        "readback": "SynologyPhotosUploadRepositoryTest.kt::大小目录和相册提供者不匹配保留结果不明",
+        "cancel": "SynologyPhotosUploadRepositoryTest.kt::提交后取消保留回执编号并且恢复不再发送",
+        "partial": "na",
+        "zero": "na"
+      }
+    },
+    {
+      "file": "io/github/qwertyuiop1995/dsmnativeclient/photos/SynologyPhotoUploadExecution.kt",
+      "owner": "save",
+      "resultMethod": "performPhotoUpload",
+      "occurrence": 2,
+      "state": "open",
+      "multi": false,
+      "scenarios": {
+        "pre": "SynologyPhotosUploadRepositoryTest.kt::私有副本改动在写前拒绝",
+        "success": "SynologyPhotosUploadRepositoryTest.kt::个人时间线上传使用JSON业务字段并以编号回读完成",
+        "disconnect": "SynologyPhotosUploadRepositoryTest.kt::丢失与损坏回执绝不以同名照片认领或重传",
+        "readback": "SynologyPhotosUploadRepositoryTest.kt::大小目录和相册提供者不匹配保留结果不明",
+        "cancel": "SynologyPhotosUploadRepositoryTest.kt::提交后取消保留回执编号并且恢复不再发送",
         "partial": "na",
         "zero": "na"
       }
@@ -1348,47 +2088,33 @@
   ],
   "pageStates": [
     {
+      "file": "ChatScreen.kt",
+      "surface": "会话列表、消息详情、搜索/话题/公告及管理面板",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "`ChatWorkspaceUiTest` 驱动正式模型/仓储的发送恢复、本人编辑/置顶/删除、录音与话题；`PrimaryPageStateMatrixTest` 保留主页面五态，`ApprovedWorkspaceUiTest` 保留会话筛选。 `ChatContentPanels.kt` 的搜索加载/无匹配/错误/正常结果由 `ChatWorkspaceUiTest.searchLoadingEmptyErrorAndThreadReplyUseActualRequests` 覆盖，`ChatContentModelTest` 覆盖迟到结果与实际可见已读。"
+    },
+    {
       "file": "ClientHomeScreen.kt",
-      "surface": "首页最近访问、快捷操作与当前任务",
+      "surface": "已确认首页四模块、权限过滤与显示隐藏",
       "states": {
         "loading": "不适用",
         "empty": "覆盖",
-        "filteredEmpty": "不适用",
+        "filteredEmpty": "覆盖",
         "error": "不适用",
         "content": "覆盖"
       },
       "automation": "完整",
-      "evidence": "本机已有记录与工作区任务投影，不新增异步来源；ApprovedWorkspaceUiTest 覆盖空/正常与快捷入口，错误由目标功能页或原全局提示处理；ApprovedDesignScreenshotTest 覆盖布局。"
+      "evidence": "HomeLayoutTest 覆盖稳定显隐偏好；HomeCustomizationUiTest/ApprovedWorkspaceUiTest 覆盖全隐藏、恢复、权限过滤、真实持久化及原操作保护。API 35 手机、API 37 手机/平板已执行，中英文、深色和系统二倍字号分别验证；截图只含合成数据。"
     },
     {
-      "file": "nas/ClientDeviceScreen.kt",
-      "surface": "设备摘要、四个分类与原十二个管理分区入口",
-      "states": {
-        "loading": "覆盖",
-        "empty": "覆盖",
-        "filteredEmpty": "不适用",
-        "error": "覆盖",
-        "content": "覆盖"
-      },
-      "automation": "完整",
-      "evidence": "ApprovedWorkspaceUiTest 覆盖加载、缺少摘要、失败重试、正常信息和全部分区映射；ApprovedDesignScreenshotTest 覆盖浅深色、语言和字号。"
-    },
-    {
-      "file": "navigation/ClientNavigationEditorScreen.kt",
-      "surface": "固定导航编辑、隐藏、替换、排序和本机保存",
-      "states": {
-        "loading": "覆盖",
-        "empty": "覆盖",
-        "filteredEmpty": "不适用",
-        "error": "覆盖",
-        "content": "覆盖"
-      },
-      "automation": "完整",
-      "evidence": "ApprovedNavigationUiTest 覆盖零固定项恢复路径、替换、拖动及可访问排序、保存中、失败重试和取消；PinnedModulesTest 覆盖持久化编码与上限。"
-    },
-    {
-      "file": "transfers/ClientTaskCenterScreen.kt",
-      "surface": "手机传输、NAS 下载、NAS 文件任务的统一入口",
+      "file": "CrossNasTransferDialog.kt",
       "states": {
         "loading": "覆盖",
         "empty": "覆盖",
@@ -1397,20 +2123,8 @@
         "content": "覆盖"
       },
       "automation": "完整",
-      "evidence": "沿用 TransfersScreen 和 DownloadsScreen 的数据/反馈组件及原五态测试；ClientTaskStatusTest 覆盖待核对结果与未知状态分类，ApprovedDesignScreenshotTest 覆盖主界面。"
-    },
-    {
-      "file": "ChatScreen.kt",
-      "surface": "会话列表、消息详情及管理弹窗",
-      "states": {
-        "loading": "覆盖",
-        "empty": "覆盖",
-        "filteredEmpty": "覆盖",
-        "error": "覆盖",
-        "content": "覆盖"
-      },
-      "automation": "完整",
-      "evidence": "`PrimaryPageStateMatrixTest` 直测加载、源空、失败和会话内容；`ApprovedWorkspaceUiTest` 直测会话搜索无匹配与关闭搜索恢复。"
+      "evidence": "62项聚焦JVM通过；当前App手机中文浅色/深色二倍字号各9项、平板英文浅色8+1项/深色二倍字号9项通过，含原生选择器、独立删源/保留结束、未知恢复、活动重建、撤权、身份改变和清理记录。加载/记录读取失败为明确UI状态夹具，其余使用双Repository合成传输；实际NAS及TalkBack另验。",
+      "surface": "跨 NAS 操作与恢复"
     },
     {
       "file": "DownloadDestinationDialog.kt",
@@ -1439,6 +2153,45 @@
       "evidence": "已加载 Workspace 草稿是唯一适用态；`DownloadLoginPageStateMatrixTest` 直测生产表单"
     },
     {
+      "file": "FileAdvancedSearchDialog.kt",
+      "surface": "高级搜索条件与多目录范围选择",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FileAdvancedSearchUiTest 实际宿主覆盖多目录、原生日期、重建、正文结果、取消、真实空/错误与目录选择五态；手机/平板浅深色与系统二倍字号见验证历史。FileSearchRepositoryTest/FileSearchFeatureModelTest 覆盖完整分页、索引状态及请求隔离。 A3f 新增 Android 原生 Unicode 正则、栏内再搜索及纠错；51 项聚焦 JVM、手机全类 8 项和手机/平板深浅色新增 2 项 UI 见验证历史。"
+    },
+    {
+      "file": "FileArchiveBrowserDialog.kt",
+      "surface": "包内目录与目标位置选择",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FileArchiveUiTest 覆盖包内目录/分页、空包/空目录、筛选空、错误重试、只读目录禁用和所选输出；FileArchiveReaderTest/FileExtractionRepositoryTest 核对完整清单、路径/编号及覆盖恢复；设备分组和原时序失败见验证历史。"
+    },
+    {
+      "file": "FileArchiveDialog.kt",
+      "surface": "压缩与解压选项",
+      "states": {
+        "loading": "覆盖",
+        "empty": "不适用",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "固定所选归档或压缩来源，无空列表/筛选；FileArchiveUiTest 覆盖加载、密码纠错、覆盖风险、草稿重建、压缩级别及实际任务，手机/平板浅深色和系统二倍字号已跑对应分组；最终包/原失败及范围见验证历史。"
+    },
+    {
       "file": "FileBrowserScreen.kt",
       "surface": "文件列表与收藏/回收站",
       "states": {
@@ -1449,7 +2202,7 @@
         "content": "覆盖"
       },
       "automation": "完整",
-      "evidence": "`PrimaryPageStateMatrixTest` 直测五态"
+      "evidence": "`PrimaryPageStateMatrixTest` 直测五态；A3g ArchiveDownloadUiTest 通过真实系统保存与任务中心验证多选 ZIP、目录 ZIP、单文件、暂停继续，手机/平板浅深色和系统二倍字号；ArchiveDownloadExecutionTest 验证实际输出、损坏清单和原账号拒绝。精确分组见验证历史。"
     },
     {
       "file": "FileCopyMoveDialog.kt",
@@ -1465,6 +2218,58 @@
       "evidence": "`PrimaryPageStateMatrixTest` 直测四个适用态"
     },
     {
+      "file": "FileISOMountDestinationDialog.kt",
+      "surface": "ISO 与远程连接共用的现有空目录选择",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FileISOMountUiTest 与 FileRemoteMountUiTest 覆盖加载、空目录、筛选空、读取失败重试、真实目录选择及只读禁用；两个仓储均拒绝非空目录写入，逐组结果见验证历史。"
+    },
+    {
+      "file": "FileISOMountDialog.kt",
+      "surface": "ISO 挂载、自动连接、列表、断开和中断恢复",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FileISOMountUiTest 覆盖真实菜单、自动连接确认、挂载/浏览/断开、读写授权撤销、空/筛选/失败以及重建后未知结果只读恢复；手机/平板浅深色及系统二倍字号逐组通过，原浏览入口失败已修复并保留证据。"
+    },
+    {
+      "file": "FilePermissionDialog.kt",
+      "surface": "文件所有者、访问规则与传统权限",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FilePermissionUiTest 覆盖生产入口、读取/空规则/错误重试、真实编辑与保存、继承只读、自锁拒绝、具体风险确认、重建和未知/部分失败恢复；当前执行结果逐组记录于验证历史。"
+    },
+    {
+      "file": "FilePermissionMembersDialog.kt",
+      "surface": "权限账号与群组选择",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FilePermissionUiTest 覆盖搜索空、源空、选择、加载、错误重试和分页；完整结果以本轮验证历史为准。"
+    },
+    {
       "file": "FilePreviewDialog.kt",
       "surface": "文件预览与文本加载",
       "states": {
@@ -1475,7 +2280,137 @@
         "content": "覆盖"
       },
       "automation": "完整",
-      "evidence": "`PrimaryPageStateMatrixTest` 直测加载、失败和文本内容"
+      "evidence": "`PrimaryPageStateMatrixTest` 直测加载、失败和文本内容 MediaPreviewPlaybackTest使用六秒合成视频，覆盖默认不自动播放/系统播放键及受控暂停准备/结束回调；Photos幻灯片复用同一个媒体组件。"
+    },
+    {
+      "file": "FileRemoteMountDialog.kt",
+      "surface": "SMB/NFS 连接、编辑、断开与分步恢复",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FileRemoteMountUiTest 覆盖真实入口、SMB/NFS 选项、密码重建清理、自动连接确认、两种位置修改、断开、未知结果只读恢复及列表五态；当前逐组结果见验证历史。"
+    },
+    {
+      "file": "FileSettingsDialog.kt",
+      "surface": "File Station 常规、访问名单、限速、时间表及共享页面外观",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FileSettingsUiTest 常规/名单/限速与 FileThemeUiTest 分享页外观分别在手机中文、平板英文浅色标准字号及深色系统二倍字号各9项通过；真实设置/账号/周表、布局/换图、未知恢复和撤权均走正式模型/仓储的合成NAS响应，实际NAS效果另验。"
+    },
+    {
+      "file": "FileShareEditorDialog.kt",
+      "surface": "分享创建、日期密码与访问设置",
+      "states": {
+        "loading": "覆盖",
+        "empty": "不适用",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "固定所选目标，无空列表或本地筛选；FileSharingUiTest 验证草稿重建、提交进度、原生返回/关闭保护、输入纠错、风险确认、逐项结果和未知恢复；FileSharingFeatureModelTest 覆盖部分成功及停止剩余。"
+    },
+    {
+      "file": "FileShareManagerDialog.kt",
+      "surface": "分享链接管理与批量操作",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FileSharingUiTest 覆盖读取/空列表/筛选空/错误重试/正常内容；单项删除、二维码和系统分享；ShareLinksDialogTest 验证受保护删除。"
+    },
+    {
+      "file": "FileShareMembersDialog.kt",
+      "surface": "分享用户和群组选择",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FileSharingUiTest 验证成员分页、搜索空结果、失败重试和实际选择；FileSharingRepositoryTest 拒绝缺失成员及二次基线漂移。"
+    },
+    {
+      "file": "FileShareQrDialog.kt",
+      "surface": "分享二维码",
+      "states": {
+        "loading": "覆盖",
+        "empty": "不适用",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "固定已有链接，无空列表或筛选；FileShareQrCodeTest 覆盖准确解码及空/过长失败，FileSharingUiTest 解码实际页面输出并打开系统分享。"
+    },
+    {
+      "file": "FileThemePickerDialog.kt",
+      "surface": "共享页面历史、NAS、本机与默认图片选择",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FileThemeUiTest 在手机中文、平板英文浅色标准字号及深色二倍字号各9项通过；包括历史/NAS/默认/本机PNG、加载/空/筛选空/预览失败、独立上传与页面保存、未知去重及迟到系统选择结果。实际系统选择器与NAS图片格式另验。"
+    },
+    {
+      "file": "FileVFSDialog.kt",
+      "surface": "服务器/云盘连接、授权、保存恢复与原 URI 分页浏览",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FileVFSUiTest 覆盖正式管理/编辑/授权入口、具体确认、密码重建清理、只读恢复、目录五态与分页、系统保存取消和完成下载；FileVFSDownloadExecutionTest 与 PendingDownloadRequestRestorationTest 验证来源/账号/内容及真实文件保护。手机/平板浅深色及系统二倍字号逐组结果、末次云错误修正的针对性复验见验证历史。"
+    },
+    {
+      "file": "FolderUploadDialog.kt",
+      "surface": "文件夹上传来源选择、固定清单预览与逐项详情",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "FolderUploadUiTest/FolderUploadRepositoryIntegrationTest/FolderUploadRecoveryUiTest 共 8 项在手机/平板、浅色常规字号与深色系统二倍字号四组同包配置通过；包含生产预览/风险确认/忙碌/错误/筛选空/千项列表、系统 Cursor 与实际流及真实请求编码、实际任务中心只读恢复；当前 130 项 JVM 与截图/原失败见验证历史。"
+    },
+    {
+      "file": "OfficeDocumentDialog.kt",
+      "surface": "Office 系统副本、主动回传与恢复",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "A3旧主流程及A9七项OfficeDocumentUiTest重新覆盖，含外部编辑中断/重建/主动接收后明确回传；中文手机分组和英文平板深色二倍字号通过。系统PFD四项另由SystemDocumentsProviderTest验证。"
     },
     {
       "file": "PhotoMoveDialog.kt",
@@ -1492,7 +2427,7 @@
     },
     {
       "file": "PhotosScreen.kt",
-      "surface": "文件夹、时间线与相册",
+      "surface": "Photos 时间线、双来源、目录创建/改名/排序/封面、照片/目录移动复制与混合删除、普通/条件/冻结相册、共享权限/密码/期限、临时分享与普通副本、照片收集及目标选择、上传恢复与批量资料编辑、单张/纯照片批量原件删除与持久恢复、共享文件夹权限与持久恢复、个人显示/重复处理/识别设置与持久恢复、相册照片与三类列表排序/显示范围及恢复、独立分页幻灯片与原生播放控制、单张旋转保存与只读恢复、多格式单张/多选保存及完整相册/目录/混选ZIP、NAS照片任务列表/详情/目标目录及停止/固定清理恢复、共享图库管理员识别/顶层公开设置与独立启停恢复、六项全局选项/排除格式/转换缓存与多步骤恢复、共享成员/备份与两层目录逐项/连续批量授权及恢复、当前来源照片索引/预览维护与只读恢复、新格式提示/管理员全用户或个人生成与两阶段只读恢复、手动预览三档转换/上传/事件与队列选择及逐项只读恢复、自动预览设置/实际媒体转换上传/前台暂停继续与内容摘要只读恢复、人物名称/固定目标合并/搜索含隐藏项的显示管理及加密恢复、人物内逐照片人脸移出/归入与单张封面及加密只读恢复、图片内人脸框选/位置尺寸/归属/移除及JPEG裁剪上传与加密只读恢复、主题显示/隐藏搜索/单张封面/误分类移出与实际阈值确认及加密只读恢复、相似完整分组/推荐/移出/拆组与批次恢复/撤销/整组导出和原件清理确认",
       "states": {
         "loading": "覆盖",
         "empty": "覆盖",
@@ -1501,7 +2436,20 @@
         "content": "覆盖"
       },
       "automation": "完整",
-      "evidence": "`PrimaryPageStateMatrixTest` 直测五态"
+      "evidence": "原五态断言保留；SynologyPhotosSourceUiTest 通过实际仓储/图库覆盖五态、来源、相册与媒体，A4a 四组各5项通过。SynologyPhotosUploadUiTest 使用生产模型、加密存储和系统选择器，覆盖选择/目录/贡献/暂停/重建恢复/错误重试/空任务，A4b 最终同包手机中文/平板英文浅深色及二倍字号四组各6项通过；88 项上传、读取与切换 JVM 通过。A4c SynologyPhotosEditUiTest 覆盖选择、评分/描述/日期/标签、记录恢复与权限，115 项聚焦 JVM 通过，手机/平板中英浅深色及二倍字号分组各6项通过，末次日期输入宽度修正四组各1项通过，各构建证据在验证历史分开记录。截图、命令及哈希见验证历史。真实 NAS 与 TalkBack 待验证。 A4d SynologyPhotosAlbumUiTest 通过生产图库、仓储和加密记录覆盖相册创建、加入/移出、封面、改名/删除、原件保留、重建后只读恢复、跨操作防重、加载/空/错误和权限；筛选空沿原图库，新增相册表单没有独立筛选。169 项相关 JVM 及完成处理修复后的12项模型回归通过；最终同包手机中文/平板英文、浅色/深色二倍字号四组各6项通过，命令、失败修复和哈希见验证历史。 A4e SynologyPhotosConditionUiTest 通过生产图库、仓储和加密记录覆盖条件创建/编辑、实际建议/目录/数量、日期输入、原规则保留、权限拒绝及重建后的只读恢复；空建议、读/查找/数量失败均有实际断言。116 项相关 JVM 通过；最终同包手机中文/平板英文浅色与深色二倍字号四组各6项通过，包含数量单复数、短曝光范围显示和保存后再次编辑，数值比较区分数字与字符串并保留未知数组顺序。真实 NAS 和 TalkBack 仍待验证。 A4f SynologyPhotosFrozenAlbumUiTest 通过生产根模型、实际仓储和加密存储覆盖普通恢复、规则重建及分享后果、仅普通恢复、旧册变化保留两者、删除未知冷恢复、读取错误重试与创建回执丢失；加载、空记录和结果态有实际断言，筛选空沿原图库。102 项聚焦 JVM 和最终同包四配置各6项原生流程通过；每组18张合成截图，真实冻结样本与 TalkBack 仍待验证。 A4g SynologyPhotosSharingUiTest 通过生产根模型、仓储和加密存储覆盖只读打开、实际复制与系统分享调用、成员搜索/空/失败/权限、密码/日期/停止分享、改密未知部分完成、开启未知冷恢复和由我共享冻结入口；系统分享通过平台 ActivityMonitor 截获调用，不向外部应用发送。128 项聚焦 JVM 与最终同包四配置各6项原生流程通过，每组19张合成截图；真实 NAS 链接/密码/期限和 TalkBack 仍待验证。 A4h 临时分享创建/取消/停止与保留普通副本已接入，151 项聚焦 JVM 通过；SynologyPhotosTemporaryUiTest 通过生产图库/仓储/加密记录覆盖连续取消、保留副本、未知回执及冷恢复，最终同包手机中文/平板英文浅色与深色二倍字号四配置各6项通过，每组19张合成截图。包含保留副本勾选语义、加载/错误、取消及未知结果恢复；不表示真实 NAS 或 TalkBack 已验收。 A4i 收集创建/编辑/删除、默认/已有目录、可贡献相册与表单新相册、日期/大小、标题搜索及摘要恢复已接入；148 项聚焦 JVM 通过。SynologyPhotosRequestUiTest 经生产图库/仓储/加密存储覆盖读与保存前失败重试、空/筛选空、确认、未知创建冷恢复及相册未知恢复，最终同包手机中文/平板英文浅色与深色二倍字号四配置各7项通过，每组24张合成截图。模拟器系统启动 ANR、测试等待与各阶段包结果分开留证，未降低断言。真实访客上传、限制行为、NAS 版本与 TalkBack 仍待验证。 A4j 目录创建/改名、真实四字段双向排序、固定目录/后代封面与共用加密恢复已接入。160项聚焦JVM通过；SynologyPhotosFolderUiTest通过生产图库/仓储/存储、真实Android图片解码与合成接口覆盖权限差异、排序网格顺序、单选、读取/保存前失败、空目录和丢失回执冷恢复，最终同包手机中文/平板英文浅色及深色二倍字号四组各7项通过，每组23张截图。封面单选语义、字号下目录名称和宽屏网格经实际操作/截图修正；旧版本结果单独留证，未降低断言。真实NAS和TalkBack待用户验证。 A4k接入固定选择、实际目标目录、覆盖确认、混合删除与加密后台任务恢复。11组195项聚焦JVM通过，首次访问时序修正后文件/根模型35项通过；SynologyPhotosFileUiTest使用生产图库/仓储/加密记录和合成接口覆盖八条操作流程，配置结果与一次布局崩溃的未稳定复现记录见验证历史。真实NAS及TalkBack仍待用户验证。 A4k最终同包手机中文/平板英文，浅色标准字号与深色二倍字号四配置各8项通过，每组26张合成截图；取消零写入、原位置保留及只读恢复均有实际断言。首轮深色第8项一次Compose布局崩溃未稳定复现，独立路径与完整复跑通过，保留原始风险，不据复跑声称根因已修复。 最终目录触控尺寸与事件声明合并后7秒重建，同一新包四配置各8项通过，67处自定义点击门禁通过。 A4l SynologyPhotosDeletionUiTest使用生产图库、逐项仓储和独立加密记录覆盖固定确认、取消、共享权限、未知冷恢复、剩余重新确认/取消、明确拒绝、加载/空记录/读取错误与原件改变；142项聚焦测试及Debug/仪器构建通过，最终同包手机中文/平板英文浅色及深色二倍字号四组各8项通过，每组24张合成截图，已实际复核确认、未知恢复和错误页面的显示。新增删除记录不提供筛选，筛选空沿原图库。真实NAS与TalkBack待验证。 A4m共享目录前两层权限、范围/成员/密码/子目录及加密恢复已接入，190项聚焦JVM和Debug/仪器APK通过；SynologyPhotosFolderSharingUiTest八条生产路径最终同包手机中文/平板英文浅色与深色二倍字号四配置全部通过，每组28张合成截图，已复核权限表单、后果确认、父限制与部分/未知结果。成员列表覆盖加载/空/筛选空/错误/正常，权限表单及记录覆盖适用状态，真实NAS与TalkBack未验。 A4n SynologyPhotosSettingsUiTest使用正式图库/设置仓储/加密记录和Android媒体解码覆盖显示六项、预览信息、重复默认覆盖确认、识别限制及个人分类、读取失败/并发修改/明确拒绝、空记录与未知冷恢复。187项集成测试与新增回归后的15项设置模型测试通过；最终同包手机中文/平板英文浅色标准字号及深色二倍字号四配置各7项通过，每组24张合成截图，表单无独立筛选、筛选空沿图库，实际复核大字号/深色表单、确认、预览与限制。真实NAS和TalkBack未验。 A4o相册内排序、全部/我的及相册首页/两类分享独立排序复用设置恢复；178项集成、6项切换与网格修正后35项回归分别通过，最终同包四配置各7项原生流程通过，每组28张合成截图。首轮双文字定位修正；截图复核发现日期分组打乱相册排序后改为平铺并增加跨日期实际网格坐标断言，前阶段结果未冒充最终包。新增表单无独立筛选，空图库/加载/读取失败/冲突/拒绝/未知冷恢复有实际覆盖，真实NAS和TalkBack未验。 A4p幻灯片复用正式图库/仓储/媒体范围读取；94项聚焦JVM及共享播放器修复后38项回归通过，最终同包手机中文/平板英文浅色及深色二倍字号四配置各13项原生流程通过（8项幻灯片、5项共享预览），每组19张合成截图。实际三秒图片、六秒视频/暂停结束、默认系统控制、页失败/解码/播放错误重试、只读相册、空/共享和后台释放均覆盖；播放器准备态pause错误经原生测试修复，未降低断言。真实NAS/物理设备/TalkBack未验。 A4q单张旋转复用资料编辑记录，八方向/权限/尺寸/明确与丢失回执/冷恢复、原位更新与防连点均有正式测试；140项聚焦JVM、45项入口回归及59项收尾回归分别通过。SynologyPhotosRotationUiTest六条与幻灯片八条在最终同包手机中文/平板英文、浅色标准字号与深色二倍字号四组各14项通过，各37张合成截图。包括图片就绪按钮绑定、保存与读取完成期间互斥、拒绝/未知恢复、相册原来源限制、取消/换图和实际图片解码；真实NAS、物理设备及TalkBack待用户验证。 A4r完整导出已接，97项聚焦JVM和最终同包手机中文/平板英文浅色标准字号与深色二倍字号四配置各22项原生流程通过（8导出、6旋转、8幻灯片），各53张合成截图。覆盖实际Android解码/文档描述符写入、同名另存、真实格式计数、部分失败、取消/迟到结果清理与图库位置保留；文档提供器仅测试APK，系统选择器结果合成驱动。前阶段失败/修正与最终摘要分开留证，真实NAS、物理文件提供器及TalkBack未验。 A4s后台任务中心已接，110项聚焦JVM和最终同包手机中文/平板英文浅色标准字号与深色二倍字号四配置各16项原生流程通过（任务中心8项、原文件操作8项），各53张合成截图。五态/筛选空、未知只读、停止保留内容、固定清理范围/新任务保留、明确拒绝/未知冷恢复、原搬移先回读、错误补名及目标权限/路径均覆盖；初始导航失败修正及平板设备中断分别留证。实际复核停止/清理确认、部分结果、目标目录与大字号，真实NAS、物理设备和TalkBack未验。 A4t共享图库管理员设置已接，109项聚焦JVM与最终同包手机中文/平板英文浅色标准字号及深色二倍字号四配置各15项原生流程通过（共享8项、原设置7项），各53张新合成截图。管理员/角色区分、差量保存、启停默认值回读、最后图库、并发/拒绝/未知冷恢复与个人位置保持均覆盖。复核管理员恢复提示与大字号确认；首轮Compose动画调度失败、v2测试调度修正及平板截图参数遗漏分开留证，未删断言。真实NAS、物理设备与TalkBack未验。 A4u全局设置/转换缓存已接，147项不同聚焦JVM分批与Debug/仪器APK通过，最终同包手机中文/平板英文浅色标准字号和深色二倍字号四配置各23项原生流程通过（全局8、共享8、个人7），各85张合成截图。覆盖HEVC条件/未知格式、缓存独立错误/取消/新缓存、关闭联动/部分保存、明确拒绝/未知冷恢复、管理员/身份/并发与个人位置保持；实际查看中英大字格式及确认。按用户要求复核后删除截图/APK/专用模拟器，保留精简命令/结果/摘要。真实NAS/物理设备/TalkBack未验。 A4v共享成员与目录权限已接，115项聚焦JVM最终集成通过。同一应用APK手机中文浅色/深色二倍字号、平板英文浅色各17/17；平板英文深色二倍字号首轮16/17，搜索结果补滚动后的原失败流程1/1通过，四配置各17项均有通过证据，不宣称平板深色最终单轮全量通过。末次仅测试APK变化，权限保护、取消/逐步恢复、未知/拒绝、本人共享权限刷新与个人位置保持均有断言。实际查看中英确认、部分后真实目录、大字父撤权/子限制与未知角色说明；截图/APK/专用模拟器已清理，真实NAS/物理设备/TalkBack未验。 A4w当前来源维护/确认/加密只读恢复已接，123项聚焦JVM集成及实际来源入口修正后42项回归分别通过；最终同包手机中文/平板英文浅色标准字号与深色二倍字号四配置各8/8原生流程通过，各21张合成截图。包括两图库关闭时入口隐藏、对应计数/H264、取消/明确拒绝/丢回执冷恢复、关闭期间提交、原月份/多选保持。维护无独立搜索，筛选空沿原图库；两库关闭夹具未提供可选相册偏好，但列表/菜单断言不受影响。初始包结果与平板启动失败分开留证，所有截图/APK/专用模拟器已删除；真实NAS/物理设备/TalkBack未验。 A4x新格式提示已接，120项聚焦JVM及最终同包手机中文/平板英文浅色标准字号和深色二倍字号四配置各9项原生流程通过，各21张合成截图。读取/空提示/角色与实际范围、稍后只保存、取消零写、生成拒绝与未知、提示部分/未知冷恢复、继续仅保存及原月份/多选保持有断言。无独立筛选，筛选空沿原图库。首轮手机关闭重开测试等待旧界面编号失败，改为直接检查持久事实及文案后同包复验通过；平板AVD未创建就绪启动失败独立留证。截图/APK/专用模拟器已清理，真实NAS/物理设备/TalkBack未验。 A4y手动预览更新已接，71项聚焦JVM与后续24项入口回归通过；同包手机中文/平板英文浅色标准字号与深色二倍字号四配置各13项通过（7项真实根仓储/系统转换/媒体上传/Compose/加密恢复，6项系统解码）。覆盖加载/空队列/搜索空/读取错误、明确选择、取消零写、两来源、未知冷恢复、失败还原、权限变化、关页完成及月份/分页/多选保持。末次确认与进度使用数量资源，四配置各1项受影响路径在新同包复验通过；不同构建分别留证，不宣称最终包全部13项重跑。实际查看中英文确认、逐项失败、未知和更新结果，95张合成截图、安装包及临时模拟器已清理；真实NAS/物理设备/TalkBack未验。 A4z自动预览已接，队列阶段139项聚焦JVM与最终Debug/仪器APK通过；SynologyPhotosAutomaticPreviewUiTest经正式根仓储、系统解码、真实上传和加密记录，最终同包手机中文/平板英文浅色标准字号及深色二倍字号四配置各6项通过，各15张合成截图。设置加载/错误/空闲/保存、暂停继续、未知冷恢复只读、拒绝显式重试、共享entry可见处理不扫描与前台取消均有断言，月份/分页/选择保持。无独立筛选，沿原图库；初轮测试异步等待修正后通过，未改生产恢复策略。已查看中英文大字界面，74张截图、APK和专用模拟器已清理，保留摘要与失败/通过日志。真实NAS/物理编解码器/TalkBack与完整门禁未验。 A4aa SynologyPhotosPeopleUiTest使用正式图库、人物仓储、媒体传输及加密记录覆盖卡片直接改名、小分组清空确认、固定合并/取消、隐藏搜索五态、部分结果、断线模型重建只读恢复、共享权限撤销和详情月份/照片选择保持。刷新失败覆盖未保存名称的回归先失败，修复后156项聚焦JVM及最终同包四配置各8项原生流程通过，每配置24张合成截图；已实际复核中英浅深色和二倍字号表单、确认、恢复与错误。真实NAS、物理设备和TalkBack未验。 A4ab SynologyPhotosPersonFacesUiTest经生产图库、仓储、真实face媒体解码和加密记录覆盖选择菜单、部分人脸保留照片、移出取消/确认、归入已有/新人物、封面不透明回执、加载/空/搜索空/错误恢复、草稿保留、未知冷恢复与共享权限撤销。177项聚焦JVM通过；同一应用APK手机中文浅色/深色二倍字号和平板英文浅色各8项通过，平板英文深色二倍字号首轮7/8，测试收起键盘修正后定点1/1通过，生产代码与应用包未改。96张合成截图已实际查看并清理，APK和专用AVD亦已清理，记录首次失败及测试收起键盘修正；真实NAS、物理设备和TalkBack未验。 A4ac SynologyPhotosManualFacesUiTest经正式预览、根仓储、媒体传输、系统解码/裁剪与加密记录覆盖画框、位置/尺寸、已有或新人物、移除/撤销、确认取消、五态、加载失败保留草稿、共享撤权零写和两种丢回执恢复；SynologyPhotoFaceCropDeviceTest覆盖八方向、边界和256像素RGB JPEG。194项不同聚焦JVM分批通过；最终同包手机中文/平板英文浅色标准字号与深色二倍字号四配置各10项原生流程通过（八条编辑、两条系统裁剪），当前中英界面已实际查看，249张阶段截图、两APK和专用模拟器已清理；精确结果以A4ac验证历史为准。界面收尾发现并修复卸载按钮节点读取整份编辑状态的崩溃和英文数量资源，未降低恢复/权限断言。真实NAS、物理设备、TalkBack与系统进程回收未验。 A4ad SynologyPhotosConceptUiTest经正式图库/主题仓储/媒体传输/系统解码与加密记录覆盖实际封面卡片、隐藏搜索五态、预览封面、实际数量阈值取消/确认、非阈值与多选限制、部分结果、断线模型重建只读恢复和共享撤权。187项不同聚焦JVM分批通过；最终同包手机中文/平板英文浅色标准字号与深色二倍字号四配置各8项原生流程通过，各22张合成截图。已实际查看中英浅深色/大字表单、确认和恢复，88张截图、两类APK及重复输出和专用AVD已清理。初轮授权异常断言与根模型导航夹具失败修正分开留证，未降低生产保护或旧断言；真实NAS、物理设备、TalkBack及进程回收未验。 A4ae相似分组164项不同聚焦JVM分批通过；SynologyPhotosSimilarUiTest五项主流程与A4af既有标签四种操作合并在手机中文浅色/平板英文深色二倍字号验证，失败、修正与末次受影响流程复验分开记录。当前环境不替代真实NAS、物理设备或TalkBack人工验收。"
+    },
+    {
+      "file": "WorkspaceConnectionsDialog.kt",
+      "surface": "NAS/账号选择、重命名、独立退出与连接错误",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "WorkspaceHostUiTest 保留双账号、空列表、连接错误、退出、触控/键盘、独立目录和重复保存证据；A10新增“重命名保存失败保留输入和原身份重试才更新名称”，在当前存储实例注入commit失败，确认草稿与原身份保留且重试成功。中文手机及英文平板深色二倍字号均通过；无列表搜索。"
     },
     {
       "file": "downloads/DownloadDiscoveryDialog.kt",
@@ -1543,6 +2491,19 @@
       "evidence": "`DownloadLoginPageStateMatrixTest` 直测任务列表四态；`DownloadActivityUiTest` 直测活动加载、零活动、局部错误/独立重试与正常速率，统计失败不遮蔽任务列表"
     },
     {
+      "file": "home/ClientHomeEditorDialog.kt",
+      "surface": "首页显隐草稿、手机面板与平板对话框",
+      "states": {
+        "loading": "覆盖",
+        "empty": "不适用",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "HomeCustomizationUiTest 覆盖取消草稿、保存失败重试、保存中禁用、全隐藏/恢复、重建读取及导航偏好隔离；API 37 手机/平板分别验证底部面板/对话框及系统二倍字号。"
+    },
+    {
       "file": "login/LoginScreen.kt",
       "surface": "登录、连接与证书确认",
       "states": {
@@ -1554,6 +2515,19 @@
       },
       "automation": "完整",
       "evidence": "`DownloadLoginPageStateMatrixTest` 直测连接中、错误与正常表单"
+    },
+    {
+      "file": "nas/ClientDeviceScreen.kt",
+      "surface": "设备摘要、四个分类与原十二个管理分区入口",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "ApprovedWorkspaceUiTest 覆盖加载、缺少摘要、失败重试、正常信息和全部分区映射；ApprovedDesignScreenshotTest 覆盖浅深色、语言和字号。"
     },
     {
       "file": "nas/DdnsSettingsDialog.kt",
@@ -1582,17 +2556,30 @@
       "evidence": "`NasServicePageStateMatrixTest` 直测不可用、空、内容和保存中"
     },
     {
-      "file": "nas/NasConnectionScreen.kt",
-      "surface": "活跃连接管理",
+      "file": "nas/NasAccountDirectoryScreen.kt",
+      "surface": "账号、群组、编辑与活动记录",
       "states": {
-        "loading": "不适用",
+        "loading": "覆盖",
         "empty": "覆盖",
-        "filteredEmpty": "不适用",
-        "error": "不适用",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
         "content": "覆盖"
       },
       "automation": "完整",
-      "evidence": "`NasServicePageStateMatrixTest` 直测不可用、空、内容和进行中"
+      "evidence": "NasWorkspaceUiTest.directoryLoadingEmptyReadErrorContentAndSearchEmptyStayDistinct 通过正式模型与合成协议覆盖实际加载、账号和群组空列表、分别读取失败/重试、正常内容和搜索为空；既有accountEditAndGroupCreationRoundTrip保留真实提交证据。A10中文手机与英文平板深色二倍字号均运行通过。"
+    },
+    {
+      "file": "nas/NasConnectionScreen.kt",
+      "surface": "活跃连接管理",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "`NasConnectionUiTest` 覆盖当前持久模型投影的未知/接受禁止清除、只读恢复、部分列表、搜索空与深色大字风险确认；仓储/模型合成验证另计。"
     },
     {
       "file": "nas/NasDirectoryManagementScreen.kt",
@@ -1621,17 +2608,30 @@
       "evidence": "`NasServicePageStateMatrixTest` 直测不可用、内容和保存中"
     },
     {
-      "file": "nas/NasPackageManagementScreen.kt",
-      "surface": "套件管理",
+      "file": "nas/NasPackageCenterScreen.kt",
+      "surface": "已安装、目录、准备与安装进度",
       "states": {
-        "loading": "不适用",
+        "loading": "覆盖",
         "empty": "覆盖",
-        "filteredEmpty": "不适用",
-        "error": "不适用",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
         "content": "覆盖"
       },
       "automation": "完整",
-      "evidence": "`NasServicePageStateMatrixTest` 直测不可用、空、内容和进行中"
+      "evidence": "NasPackageControlUiTest保留已安装页五态，NasWorkspaceUiTest保留实际安装主流程。A10新增packageCatalogLoadingEmptyErrorAndFiltersUseActualReads，覆盖目录实际加载、空内容、读取失败/重试、正常内容、搜索及更新筛选为空；中文手机与英文平板深色二倍字号均运行通过。"
+    },
+    {
+      "file": "nas/NasPackageManagementScreen.kt",
+      "surface": "套件管理",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "产品包装层连接 PackageControlContent 与 NasPackageCenterModel；`NasPackageControlUiTest` 直接五态、未知/接受防重、风险确认；`NasWorkspaceUiTest` 经真实模型和请求完成启停。"
     },
     {
       "file": "nas/NasPerformanceScreen.kt",
@@ -1671,6 +2671,19 @@
       },
       "automation": "完整",
       "evidence": "`NasServicePageStateMatrixTest` 直测不可用、内容和保存中"
+    },
+    {
+      "file": "nas/NasScheduledTaskScreen.kt",
+      "surface": "计划任务、详情、结果与活动记录",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "NasWorkspaceUiTest.scheduledTasksFiveStatesAndDetailHistoryFailuresRecoverWithoutRunning 覆盖实际加载/空任务/正常内容/搜索与启停筛选为空、列表/详情/历史/输出失败及恢复，断言零运行请求；既有scheduledTaskDetailsCancelRunAndOutput保留明确运行证据。A10中文手机与英文平板深色二倍字号均通过。"
     },
     {
       "file": "nas/NasSecuritySettingsScreen.kt",
@@ -1725,8 +2738,34 @@
       "evidence": "`PrimaryPageStateMatrixTest` 与 `NasStorageScreenTest` 覆盖 SMART 空、分析加载/错误/结果及存储内容"
     },
     {
+      "file": "nas/PackagePreferencesScreen.kt",
+      "surface": "套件设置、来源与活动记录",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "NasWorkspaceUiTest.packagePreferencesSourcesErrorsAndEditsShowActualSavedRecords 运行设置/来源加载、读取失败与重试、空来源/空活动、实际保存设置和新增来源后记录完成。无搜索；设置缺失按读取失败处理。A10中文手机与英文平板深色二倍字号均通过；JVM覆盖取消/断线/拒绝/冷恢复。"
+    },
+    {
+      "file": "navigation/ClientNavigationEditorScreen.kt",
+      "surface": "固定导航编辑、隐藏、替换、排序和本机保存",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "ApprovedNavigationUiTest 覆盖零固定项恢复路径、替换、拖动及可访问排序、保存中、失败重试和取消；PinnedModulesTest 覆盖持久化编码与上限。"
+    },
+    {
       "file": "services/ServiceScreens.kt",
-      "surface": "Container、Registry 与 VMM",
+      "surface": "Container、Registry 与共用日志",
       "states": {
         "loading": "覆盖",
         "empty": "覆盖",
@@ -1735,33 +2774,7 @@
         "content": "覆盖"
       },
       "automation": "完整",
-      "evidence": "`PrimaryPageStateMatrixTest` 直测三页主状态，并通过 Container Events/VMM Logs 真实页签覆盖筛选空"
-    },
-    {
-      "file": "services/VirtualMachineCreationDialog.kt",
-      "surface": "虚拟机创建向导",
-      "states": {
-        "loading": "不适用",
-        "empty": "覆盖",
-        "filteredEmpty": "不适用",
-        "error": "覆盖",
-        "content": "覆盖"
-      },
-      "automation": "完整",
-      "evidence": "`PrimaryPageStateMatrixTest` 直测校验错误、无存储与正常复核步骤"
-    },
-    {
-      "file": "services/VirtualMachineImageImportDialog.kt",
-      "surface": "从 NAS 文件创建 VMM 映像",
-      "states": {
-        "loading": "覆盖",
-        "empty": "覆盖",
-        "filteredEmpty": "不适用",
-        "error": "覆盖",
-        "content": "覆盖"
-      },
-      "automation": "完整",
-      "evidence": "`VirtualMachineImageImportDialogTest` 直测加载、失败与重试、源空、目录及文件正常内容，并覆盖系统返回和提交门禁"
+      "evidence": "A8容器/Registry/共用日志五态与正式组合根手机/平板各20项通过。VMM已移至VirtualMachinesScreen，按独立条目继续原生验收。"
     },
     {
       "file": "services/VirtualMachineGuestDetailsScreen.kt",
@@ -1777,17 +2790,69 @@
       "evidence": "`VirtualMachineGuestDetailsUiTest` 直测加载、失败重试、正常只读内容、无写动作和 2× 字体空硬件配置"
     },
     {
+      "file": "services/VirtualMachineImageImportDialog.kt",
+      "surface": "从 NAS 文件创建 VMM 映像",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "`VirtualMachineImageImportDialogTest` 直测加载、失败与重试、源空、目录及文件正常内容，并覆盖系统返回和提交门禁"
+    },
+    {
       "file": "settings/SettingsScreen.kt",
       "surface": "应用设置与语言",
       "states": {
         "loading": "不适用",
         "empty": "不适用",
         "filteredEmpty": "不适用",
-        "error": "不适用",
+        "error": "覆盖",
         "content": "覆盖"
       },
       "automation": "完整",
-      "evidence": "完全本地静态设置；`DownloadLoginPageStateMatrixTest` 直测生产设置页"
+      "evidence": "DownloadLoginPageStateMatrixTest保留既有设置证据。A9系统通知/设置已实际设备运行；A10 ChatNoticeUiTest两项在中文手机与英文平板深色二倍字号通过，覆盖实际开关保存，以及合成通知拒绝/同步失败状态的可见提示和不同恢复按钮；不以合成拒绝代替物理系统授权验收。"
+    },
+    {
+      "file": "transfers/ClientTaskCenterScreen.kt",
+      "surface": "手机传输、NAS 下载、NAS 文件任务的统一入口",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "沿用 TransfersScreen 和 DownloadsScreen 的数据/反馈组件及原五态测试；ClientTaskStatusTest 覆盖待核对结果与未知状态分类，ApprovedDesignScreenshotTest 覆盖主界面。"
+    },
+    {
+      "file": "transfers/FileBackgroundTaskDialog.kt",
+      "surface": "NAS 文件任务详情、指定停止/清理与持久只读恢复",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "仓储/状态策略/模型30项JVM通过；FileBackgroundTaskControlUiTest 手机中文浅深色各6项通过，末次复数文案包手机详情各1项补验、平板英文浅深色各6项通过，含大字号、独立确认、未知恢复、任务消失/编号复用、重建、撤权与快照清理；原列表7项回归通过。无本页筛选，实际NAS与TalkBack另验。"
+    },
+    {
+      "file": "transfers/GlobalTaskCenterScreen.kt",
+      "surface": "跨连接任务记录、所属账号筛选与本机通知定位",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "GlobalTaskCenterUiTest/LocalTaskColdStartTest/WorkspaceHostUiTest保留持久任务、空/筛选、跨账号、暂停、身份隔离、通知与冷启动证据。A10新增“本机记录读取失败不冒充空列表且重试恢复原任务”，只对当前存储实例注入读取失败，实际重试恢复原任务且不连接NAS；中文手机及英文平板深色二倍字号均通过。"
     },
     {
       "file": "transfers/TransfersScreen.kt",
@@ -1801,6 +2866,149 @@
       },
       "automation": "完整",
       "evidence": "`FileBackgroundTaskUiTest` 直接覆盖 NAS 五态，`TransferServerPresentationTest` 覆盖来源筛选空与正常任务"
+    },
+    {
+      "file": "services/ContainerControlsScreen.kt",
+      "surface": "容器单项/批量控制、删除和逐项恢复",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "ContainerPageStateTest/PrimaryPageStateMatrixTest覆盖加载、空内容、筛选空、错误和内容；ContainerWorkspaceUiTest通过正式组合根操作与恢复。2026-10-14同一应用包手机中文浅色1x和平板英文深色2x各20项通过，见Android A8账本；真实NAS与物理TalkBack仍待用户验证。"
+    },
+    {
+      "file": "services/ContainerImagesScreen.kt",
+      "surface": "映像列表/下载/删除、任务及持久恢复",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "ContainerPageStateTest/PrimaryPageStateMatrixTest覆盖加载、空内容、筛选空、错误和内容；ContainerWorkspaceUiTest通过正式组合根操作与恢复。2026-10-14同一应用包手机中文浅色1x和平板英文深色2x各20项通过，见Android A8账本；真实NAS与物理TalkBack仍待用户验证。"
+    },
+    {
+      "file": "services/ContainerNetworksScreen.kt",
+      "surface": "容器网络详情、创建表单/删除与恢复",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "ContainerPageStateTest/PrimaryPageStateMatrixTest覆盖加载、空内容、筛选空、错误和内容；ContainerWorkspaceUiTest通过正式组合根操作与恢复。2026-10-14同一应用包手机中文浅色1x和平板英文深色2x各20项通过，见Android A8账本；真实NAS与物理TalkBack仍待用户验证。"
+    },
+    {
+      "file": "services/ContainerEventsScreen.kt",
+      "surface": "容器活动记录按需读取与筛选",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "ContainerPageStateTest/PrimaryPageStateMatrixTest覆盖加载、空内容、筛选空、错误和内容；ContainerWorkspaceUiTest通过正式组合根操作与恢复。2026-10-14同一应用包手机中文浅色1x和平板英文深色2x各20项通过，见Android A8账本；真实NAS与物理TalkBack仍待用户验证。"
+    },
+    {
+      "file": "services/VirtualMachinesScreen.kt",
+      "surface": "VMM总览、资源分区、受控控制台、导入/任务整合",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "A8正式组合根九条流程与VmmManagementUiTest六项状态矩阵覆盖本页；API35中文手机41项、英文平板深色二倍字号15项分组通过，VMM仓储/模型148项JVM通过。真实NAS和物理TalkBack未验，精确命令及首轮修正在Android完成计划A8账本。 控制台实际WebView六项通过；VmmTaskRecords导入/清理记录覆盖加载/空/错误/未知/完成、48dp和隐藏标识，单对象控制台与活动记录不提供筛选。 A10移除旧表单和不可达统一反馈后，316项VMM聚焦JVM及中文手机/英文平板深色二倍字号各41项原生分组通过；原创建/设置/系统返回/重建/反馈/确认断言已迁到当前组件，补齐错误读屏通知和48dp次要按钮。"
+    },
+    {
+      "file": "services/VmmControlsScreen.kt",
+      "surface": "虚拟机单项/批量控制与持久恢复",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "A8正式组合根九条流程与VmmManagementUiTest六项状态矩阵覆盖本页；API35中文手机41项、英文平板深色二倍字号15项分组通过，VMM仓储/模型148项JVM通过。真实NAS和物理TalkBack未验，精确命令及首轮修正在Android完成计划A8账本。 A10移除旧表单和不可达统一反馈后，316项VMM聚焦JVM及中文手机/英文平板深色二倍字号各41项原生分组通过；原创建/设置/系统返回/重建/反馈/确认断言已迁到当前组件，补齐错误读屏通知和48dp次要按钮。"
+    },
+    {
+      "file": "services/VmmAssetsScreen.kt",
+      "surface": "VMM网络改名/删除与映像删除",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "A8正式组合根九条流程与VmmManagementUiTest六项状态矩阵覆盖本页；API35中文手机41项、英文平板深色二倍字号15项分组通过，VMM仓储/模型148项JVM通过。真实NAS和物理TalkBack未验，精确命令及首轮修正在Android完成计划A8账本。"
+    },
+    {
+      "file": "services/VmmSettingsDialog.kt",
+      "surface": "虚拟机完整设置及保存记录",
+      "states": {
+        "loading": "覆盖",
+        "empty": "不适用",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "A8正式组合根九条流程与VmmManagementUiTest六项状态矩阵覆盖本页；API35中文手机41项、英文平板深色二倍字号15项分组通过，VMM仓储/模型148项JVM通过。真实NAS和物理TalkBack未验，精确命令及首轮修正在Android完成计划A8账本。 固定VM表单不提供筛选；缺字段保持禁用，运行中硬件不可改。 A10移除旧表单和不可达统一反馈后，316项VMM聚焦JVM及中文手机/英文平板深色二倍字号各41项原生分组通过；原创建/设置/系统返回/重建/反馈/确认断言已迁到当前组件，补齐错误读屏通知和48dp次要按钮。"
+    },
+    {
+      "file": "services/VmmCreationDialog.kt",
+      "surface": "虚拟机通用/模板创建、完整原配置继续和创建记录",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "A8正式组合根九条流程与VmmManagementUiTest六项状态矩阵覆盖本页；API35中文手机41项、英文平板深色二倍字号15项分组通过，VMM仓储/模型148项JVM通过。真实NAS和物理TalkBack未验，精确命令及首轮修正在Android完成计划A8账本。 三步表单无筛选，空存储、错误刷新和系统返回保留草稿已运行。 A10移除旧表单和不可达统一反馈后，316项VMM聚焦JVM及中文手机/英文平板深色二倍字号各41项原生分组通过；原创建/设置/系统返回/重建/反馈/确认断言已迁到当前组件，补齐错误读屏通知和48dp次要按钮。"
+    },
+    {
+      "file": "SharedInputDialog.kt",
+      "surface": "系统分享接收、连接及上传目录选择",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "A9 SharedInputUiTest 四项系统SEND/原账号后台任务/权限与重建，SharedInputStateUiTest 两项五态；中文手机分组和英文平板深色二倍字号通过。"
+    },
+    {
+      "file": "SystemFileSettingsDialog.kt",
+      "surface": "系统文件连接启用、单独Office编辑授权与恢复提示",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "A9 SystemFileSettingsUiTest 实际设置/单独编辑授权与DocumentsUI选择，SystemFileSettingsStateUiTest 五态、48dp与深色二倍字号；手机分组和英文平板通过。"
     }
   ],
   "touchTargets": {
@@ -1877,6 +3085,20 @@
           "onClick = { zoom = if (zoom > 1f) 1f else 2f }"
         ],
         "evidence": "照片整屏手势区至少 48dp；双击仅调整本地预览缩放，提供同等作用的原生 IconButton 和本地化无障碍名称。由 SynologyPhotosPresentationTest 验证；真机手势与 TalkBack 为 PENDING_USER_VALIDATION。"
+      },
+      {
+        "file": "photos/SynologyPhotoManualFaces.kt",
+        "source": "Canvas(Modifier.fillMaxSize().minimumInteractiveComponentSize().pointerInput(state.editable, state.drawing, state.drafts) {",
+        "requiredMarkers": [
+          "minimumInteractiveComponentSize()",
+          "detectDragGestures(onDragStart",
+          "SynologyPhotoFaceEditing.square(",
+          "photos_manual_add",
+          "heightIn(min = 48.dp).testTag(\"photos_manual_face_",
+          "Slider(value.toFloat()",
+          "contentDescription = title"
+        ],
+        "evidence": "A4ac图像内画框/点选只改变内存草稿；画布沿原生最小交互尺寸，极端图片比例保留图像坐标。另提供至少48dp的人脸选择、原生居中新增按钮和有本地化名称/数值的四个位置尺寸Slider，键盘与屏幕阅读器无需手势即可完成同等操作。SynologyPhotosManualFacesUiTest验证实际触控画框与Slider，框选归一化和方向裁剪有正式测试；物理TalkBack仍PENDING_USER_VALIDATION。"
       }
     ],
     "rules": {
@@ -1905,50 +3127,26 @@
       {
         "id": "android-app-view-model",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-        "maxLines": 16473,
-        "targetLines": 12000
+        "maxLines": 8850,
+        "targetLines": 8850
       },
       {
         "id": "android-app-view-model-support",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt",
-        "maxLines": 1699,
+        "maxLines": 1615,
         "targetLines": 1200
       },
       {
         "id": "android-dsm-repository",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt",
-        "maxLines": 14934,
-        "targetLines": 11000
+        "maxLines": 7090,
+        "targetLines": 7090
       },
       {
         "id": "android-download-station-repository",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt",
-        "maxLines": 2295,
-        "targetLines": 1800
-      },
-      {
-        "id": "android-file-browser-screen",
-        "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt",
-        "maxLines": 1044,
-        "targetLines": 1000
-      },
-      {
-        "id": "android-file-preview-dialog",
-        "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/FilePreviewDialog.kt",
-        "maxLines": 1060,
-        "targetLines": 1000
-      },
-      {
-        "id": "android-nas-service-settings-screen",
-        "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/nas/NasServiceSettingsScreen.kt",
-        "maxLines": 1297,
-        "targetLines": 1000
-      },
-      {
-        "id": "android-service-screens",
-        "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt",
-        "maxLines": 1126,
-        "targetLines": 1000
+        "maxLines": 1756,
+        "targetLines": 1500
       }
     ],
     "exceptions": [

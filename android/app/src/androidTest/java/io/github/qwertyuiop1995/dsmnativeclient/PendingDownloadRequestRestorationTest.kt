@@ -64,14 +64,29 @@ class PendingDownloadRequestRestorationTest {
         rule.runOnIdle { assertNull(observed.request) }
     }
 
+    @Test fun 远程下载重建保留连接身份和原文件且拒绝过时账号() {
+        val restoration = StateRestorationTester(rule)
+        val owner = io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceOwner("profile-a", "identity", "generation")
+        val profile = io.github.qwertyuiop1995.dsmnativeclient.domain.FileVFSProfile(owner, "opaque", "davs", "WebDAV", "davs://opaque/root",
+            "synthetic.invalid", 443, "Synthetic", "synthetic", "UTF-8", io.github.qwertyuiop1995.dsmnativeclient.domain.FileVFSConnectionState.CONNECTED)
+        val source = io.github.qwertyuiop1995.dsmnativeclient.data.FileVFSDownloadSource(profile, profile.uri, profile.uri + "/file ", "file ", 42, 20)
+        val expected = PendingDownloadRequestState(PendingDownloadRequest(owner, listOf(source.item()), source.name, source))
+        var observed = PendingDownloadRequestState()
+        lateinit var update: (PendingDownloadRequestState) -> Unit
+        restoration.setContent {
+            var pending by rememberSaveable("profile-a", stateSaver = PendingDownloadRequestStateSaver) { mutableStateOf(PendingDownloadRequestState()) }
+            SideEffect { observed = pending; update = { pending = it } }
+        }
+        rule.runOnIdle { update(expected) }; restoration.emulateSavedInstanceStateRestore()
+        rule.runOnIdle {
+            assertEquals(expected, observed)
+            assertEquals(io.github.qwertyuiop1995.dsmnativeclient.ui.DownloadDestinationDecision.DISCARD_ORPHAN,
+                io.github.qwertyuiop1995.dsmnativeclient.ui.resolveDownloadDestination(observed, owner.copy(sessionGeneration = "new"), true).decision)
+        }
+    }
+
     private fun request(profileId: String) = PendingDownloadRequestState(
-        PendingDownloadRequest(
-            profileId = profileId,
-            path = "/synthetic/file.bin",
-            name = "file.bin",
-            isDirectory = false,
-            size = 42,
-            canRead = true,
-        ),
-    )
+        PendingDownloadRequest(io.github.qwertyuiop1995.dsmnativeclient.storage.WorkspaceOwner(profileId, "identity", "generation"),
+            listOf(io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem("/synthetic/file.bin", "file.bin", false, 42),
+                io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem("/synthetic/empty ", "empty ", true)), "Selected.zip"))
 }

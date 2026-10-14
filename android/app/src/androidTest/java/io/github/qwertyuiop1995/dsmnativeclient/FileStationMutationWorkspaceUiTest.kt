@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -177,11 +178,12 @@ class FileStationMutationWorkspaceUiTest {
             .assertIsDisplayed()
         rule.onNodeWithText("Backup NAS").assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.file_copy_move_cross_nas_hint))
-            .assertIsDisplayed()
+            .assertDoesNotExist()
+        rule.onNodeWithText(context.getString(R.string.copy_here)).assertIsEnabled()
     }
 
     @Test
-    fun 跨Nas文件夹移动在提交前禁用并说明安全替代操作() {
+    fun 跨Nas文件夹移动允许先复制且说明删源为后续独立选择() {
         val context = context()
         val model = AppViewModel(ApplicationProvider.getApplicationContext<Application>())
         val source = profile()
@@ -204,9 +206,25 @@ class FileStationMutationWorkspaceUiTest {
         rule.setContent { LanStashTheme { FileCopyMoveDialog(state, model) } }
 
         rule.onNodeWithText(
-            context.getString(R.string.file_copy_move_cross_nas_directory_move_unavailable),
+            context.getString(R.string.file_copy_move_cross_nas_hint),
         ).assertIsDisplayed()
-        rule.onNodeWithText(context.getString(R.string.move_here)).assertIsNotEnabled()
+        rule.onNodeWithText(context.getString(R.string.move_here)).assertIsEnabled()
+    }
+
+    @Test
+    fun 同名Nas选择器使用账号区别源和目标() {
+        val context = context(); val source = profile(name = "NAS").copy(username = "alpha")
+        val target = profile(id = "profile-target", name = "NAS").copy(username = "beta")
+        val model = AppViewModel(ApplicationProvider.getApplicationContext<Application>())
+        val state = WorkspaceState(profile = source, fileCopyMove = FileCopyMoveState(listOf(file()), FileCopyMoveOperation.MOVE,
+            source.id, target.id, listOf(source, target), FileCopyMoveLocation(destination().path, true),
+            destinationBaselines = mapOf(destination().path to destination())),
+            fileCopyMoveFolders = Loadable.Ready(io.github.qwertyuiop1995.dsmnativeclient.domain.FilePage(emptyList(), 0, 0)))
+        rule.setContent { LanStashTheme { FileCopyMoveDialog(state, model) } }
+        rule.onNodeWithText(context.getString(R.string.workspace_account_page, "NAS", "beta")).assertIsDisplayed()
+        rule.onNodeWithText(context.getString(R.string.file_copy_move_current_nas,
+            context.getString(R.string.workspace_account_page, "NAS", "alpha"))).assertIsDisplayed()
+        rule.onNodeWithText(context.getString(R.string.move_here)).assertIsEnabled()
     }
 
     private fun context() = InstrumentationRegistry.getInstrumentation().targetContext
