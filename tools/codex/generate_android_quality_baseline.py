@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成并校验 Android 质量基线报告。"""
+"""校验 Android 质量基线输入，按需导出本机报告。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE_PATH = ROOT / "tools/codex/android_quality_baseline.json"
-REPORT_PATH = ROOT / "docs/quality/ANDROID_QUALITY_BASELINE_ZH.md"
+REPORT_PATH = ROOT / "build/reports/android-quality.md"
 PRODUCTION_ROOT = ROOT / "android/app/src/main/java"
 
 STRUCTURE_DEBT_TARGET_LINES = {
@@ -332,7 +332,7 @@ def write_report(baseline: dict[str, Any], path: Path = REPORT_PATH) -> None:
 def check_report(baseline: dict[str, Any], path: Path = REPORT_PATH) -> list[str]:
     expected = generate_report(baseline)
     if not path.is_file():
-        return [f"生成报告不存在：{path.relative_to(ROOT)}"]
+        return [f"生成报告不存在：{path}"]
     if path.read_text(encoding="utf-8") != expected:
         return [
             "Android 质量报告与 JSON 基线漂移："
@@ -342,12 +342,13 @@ def check_report(baseline: dict[str, Any], path: Path = REPORT_PATH) -> list[str
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="生成或校验 Android 质量基线报告")
-    parser.add_argument("--check", action="store_true", help="仅检查生成报告是否漂移")
+    parser = argparse.ArgumentParser(description="校验机器基线或导出本机 Android 质量报告")
+    parser.add_argument("--check", action="store_true", help="校验输入可渲染；同时指定 --output 时检查该报告是否漂移")
+    parser.add_argument("--output", type=Path, help="报告输出路径，默认 build/reports/android-quality.md")
     parser.add_argument(
         "--update-structure-ratchet",
         action="store_true",
-        help="仅收紧已登记大文件的当前 ratchet，并重新生成报告",
+        help="仅收紧已登记大文件的当前 ratchet；指定 --output 可同时导出报告",
     )
     args = parser.parse_args()
     try:
@@ -355,19 +356,23 @@ def main() -> int:
         if args.update_structure_ratchet:
             baseline = tighten_structure_debt_ratchet(baseline)
             write_baseline(baseline)
-            write_report(baseline)
-            print("已收紧 Android 结构债务 ratchet 并重新生成质量报告。")
+            if args.output is not None:
+                write_report(baseline, args.output)
+            print("已收紧 Android 结构债务 ratchet。")
             return 0
         if args.check:
-            errors = check_report(baseline)
+            # 生成结果不再入库；源码清单、安全场景与结构债务由各专用门禁校验。
+            generate_report(baseline)
+            errors = check_report(baseline, args.output) if args.output is not None else []
             if errors:
                 for error in errors:
                     print(f"错误：{error}")
                 return 1
-            print("Android 质量基线生成报告通过：JSON 与 Markdown 一致。")
+            print("Android 质量基线输入可渲染；指定的报告（若有）与 JSON 一致。")
             return 0
-        write_report(baseline)
-        print("已从 Android 质量基线 JSON 生成报告。")
+        output = args.output if args.output is not None else REPORT_PATH
+        write_report(baseline, output)
+        print(f"已从 Android 质量基线 JSON 生成本机报告：{output}")
         return 0
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"错误：{error}")

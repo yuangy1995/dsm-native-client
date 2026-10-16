@@ -1,22 +1,11 @@
-# 私有 API 机器可读契约
+# 私有 API 索引
 
-本目录保存 DSM 与套件私有 API 的机器可读版本索引。详细发现过程和人工审查记录位于 [`docs/api/discovery`](../../docs/api/discovery/README.md)。
+`compatibility.json` 保存稳定环境/端点、接口元数据、历史 verification 与证据路径；请求及结果语义只维护于 documentRef 指向的[当前接口定义](../../docs/api/discovery/endpoints/INDEX.md)。结构由[Schema](../schemas/private-api-compatibility.schema.json)约束。
 
-## 文件
+- lab-a、lab-b 为匿名稳定设备；同设备升级保留旧 historical 基线，以 supersedes 关联，每设备最多一个 current。归属未知的观察仅进入[证据索引](../../docs/api/discovery/environments/INDEX.md)，不冒用既有 environmentId。
+- 保留原日期、版本、权限、来源和证据等级。历史 verification 的状态描述不是当前运行开关，当前功能状态只维护于[平台矩阵](../../docs/progress/PLATFORM_MATRIX.md)。
+- capability/fallback 只提供定位与必要边界，不复制各端施工日志。apiNames/versionMatrix 的旧候选项不自动成为可调用协议，未知方法以正文证据为准；实际请求必须有明确参数和能力依据。
+- 新观察追加记录；不得以 static、observed 或合成测试升级行为证据。接口开放按实际能力/权限、确认、去重与结果规则；未实测不等于已验证，也不产生精确版本白名单。
+- 不保存秘密、真实用户数据或原始响应。fixture 的来源与证据等级必须如实标记。
 
-- `compatibility.json`：环境、端点及其版本验证结论。
-- `../schemas/private-api-compatibility.schema.json`：索引结构约束。
-- `../fixtures-redacted`：经过彻底脱敏的请求或响应样本。
-
-## 更新规则
-
-- 每个环境和端点使用稳定且不含设备信息的标识。
-- 不同 NAS 使用 `lab-a`、`lab-b` 等匿名稳定别名；同一 NAS 升级后沿用别名并新建环境基线。
-- 每个设备别名最多有一个 `current` 基线；升级后的旧基线保留为 `historical`，新基线通过 `supersedes` 指向旧基线。
-- 紧密关联的 API 可以组成端点组，但 `apiNames` 和 `versionMatrix` 必须逐项列出，不能只写模糊的通配名称。
-- `environmentId` 必须引用 `environments` 中已存在的环境。
-- `evidenceRefs` 只能引用仓库内的脱敏文档、Schema、fixture 或测试。
-- 观察到的新版本必须新增 verification，不覆盖旧版本结论。
-- `static` 和 `observed` 不能作为写能力兼容依据。
-- 内部写能力只有在对应环境达到 `behavior-verified` 后才可标为 `enabled`。
-- 真实地址、账号、路径、文件名、消息、日志、凭据和响应正文不得进入本目录。
+修改索引和文档引用后运行 `tools/contract-validation/validate_fixtures.py`。Schema、API 字段或 fixture 的变更需独立评估，不因文档整理顺手迁移。

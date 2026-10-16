@@ -59,7 +59,7 @@
 
 | 环境标识 | 证据等级 | 接口版本 | 结果 | 日期 | 证据路径 |
 | --- | --- | --- | --- | --- | --- |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | User / Group v1 | 只读结构和网页请求已记录；未执行账号写行为验收 | 2026-07-27 | `docs/api/DSM_WEB_API_REFERENCE_ZH.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | User / Group v1 | 只读结构和网页请求已记录；未执行账号写行为验收 | 2026-07-27 | `docs/api/discovery/environments/INDEX.md` |
 
 共享请求 Fixture 和本地源码测试只证明客户端请求没有漂移，不把本环境提升为
 `behavior-verified`。
@@ -77,75 +77,6 @@
 - 网络失败：写后先重新读取账号与群组目录，不自动重新提交。
 - 替代的官方 API：当前项目未找到满足 DSM 本地账号管理需求的公开 API。
 - 功能开关：运行时能力发现与平台账号管理入口共同控制。
-
-## 客户端与测试
-
-- Apple Adapter：`apple/Packages/DsmNetwork/Sources/DsmNasAdministrationRepository.swift`
-- Android Adapter：`NasDirectoryRepository.change` 与当前目录模型使用用户确认时看到的
-  完整 `NasAccount` / `NasGroup` 作为删除基线；写前以固定 v1 严格重读并比较数字标识、名称、
-  说明、账号邮件、停用状态和删除许可，任何漂移均按冲突零写入。严格列表要求唯一数组根、
-  对象行、非空且唯一的稳定名称以及类型正确的权限字段；普通快照同时保留
-  `additional.uid` / `additional.gid`，避免同一响应在写前产生伪基线漂移。列表只在
-  `can_delete=true` 时开放入口，并额外保护当前账号和系统保留名称。
-- Android 删除结果通过持久状态保存确认目标、确认阶段、提交结果、专项刷新结果与失败；
-  写后只调用严格账号或群组目录回读。畸形、缺根、重复身份或读取失败不能证明目标消失，
-  也不会触发删除重放。
-- Windows Adapter：User/Group v1 独立严格读取、确认基线删除及只读恢复核心已迁移。
-  解析根/行、稳定名称、uid/gid、说明、邮件、停用、组关系和权限；同时支持已记录的
-  根与 additional 字段，但两处冲突时失败，未知停用状态保持可空。目录达到 1000 条
-  源边界时失败，不将未完整读取当成目标消失。旧工作区分别保存账号/群组状态，一方
-  失败不遮蔽另一方成功数据；原生管理调用链已接入读取、新建、编辑、删除和恢复。
-- Windows 删除固定 name 数组，保护当前账号与系统保留名称；写前重读并比较完整
-  确认基线。按账号/NAS/目录类型/名称保存同客户端挂起状态，同请求不重放，未知目标
-  不允许以新请求 ID 绕过。断线后只回读一次，提交后取消保留未知，重建页面可查询
-  挂起目标后只读核对。账号/群组生产删除行为门各自关闭。
-- Windows 新建/编辑核心已迁移：按已记录 Session.is_admin 的明确布尔真值及版本
-  做管理权限检查，编辑重读完整基线且要求 can_edit，组关系变更核查目标组目录。
-  当前账号不能被停用或改变自身组关系。保存与删除共用目标互斥和未知恢复；密码与
-  确认密码仅是调用参数，不进入确认 DTO、共享缓存或指纹，空密码不发送。
-  记录回读比较姓名、说明、邮件、停用、选择的组关系与既有数字 ID；涉及密码还必须
-  收到接受响应。密码响应丢失时即便字段匹配也保持未知，不能据此证明密码登录可用。
-  用户/群组保存行为门独立关闭。原生界面仅在明确选择修改组关系时发送 groups；
-  原组关系未知、组目录不可读或当前账号时禁止修改，其他允许编辑的资料不受影响。
-- Windows 原生目录管理具备账号/用户组切换、本地搜索、只读编号/邮箱/所属组、
-  独立的保存和删除确认以及持续反馈。确认绑定当前字段、目标、组选择及临时密码，
-  控件变化会失效，执行前重新读取控件；关闭/切换清除两个密码框并隔离迟到结果。
-  恢复包含已从目录消失的目标，不重放写请求。当前只有合成界面证据，生产写门未开放。
-- Mac 本波修正：严格根/行/重复身份及字段类型，保留 additional.uid/gid 和可信空文本；
-  缺少许可不默认允许，缺少会被编辑器覆盖的字段时关闭编辑。删除前重新检查当前
-  can_delete，并保护已知当前账号；界面不再凭目录为空覆盖拒绝或未知结果。
-  名称只在保护检查中规范化，不裁剪后去删除另一个目录目标。
-  Mac 保存模型已增加创建重名/编辑基线预检、逐字段核对与真实新回读，回读失败不得
-  使用页面缓存确认；模糊错误改为不可重试的未确认提示。保存/删除共用规范化目标
-  标识及界面忙碌状态，已知当前账号不能被保存动作停用或改组。Mac 名称式删除的
-  完整确认基线仍待后续完善；新增共享 Swift 与 Mac 模型回归未在 Windows 环境运行。
-- Schema：`contracts/schemas/request-fixture.schema.json`
-- 合成 Fixture：
-  - `contracts/request-fixtures/users/create/synthetic-account/request.json`
-  - `contracts/request-fixtures/users/delete/synthetic-account/request.json`
-  - `contracts/request-fixtures/groups/delete/synthetic-group/request.json`
-- 自动化测试：
-  - `apple/Packages/DsmNetwork/Tests/RequestFixtureContractTests.swift`
-  - `apple/Packages/DsmNetwork/Tests/DsmNasAdministrationRepositoryTests.swift`
-  - `android/app/src/test/java/io/github/qwertyuiop1995/dsmnativeclient/data/DirectoryDeletionMutationTest.kt`
-  - `android/app/src/test/java/io/github/qwertyuiop1995/dsmnativeclient/data/NasSettingsAvailabilityTest.kt`
-- Android 自动化覆盖完整基线相等与漂移、权限拒绝、保留账号、固定 v1 和不支持版本零请求、
-  严格列表畸形回读、模糊提交只回读、同目标互斥以及失败列表与真实空列表的可用性区分。
-  第 53 批仓库汇总口径为 JVM 753 项、Android 双语资源完整性 1526 项；API 35 仪器测试
-  最终 XML 为 220 项，其中 214 项通过、6 项跳过、0 项失败。这些自动化结果不替代真实
-  NAS 验收。
-- 产品兼容矩阵条目：`contracts/private-api/compatibility.json` 的
-  `dsm-account-directory`
-
-## 2026-10-05 iPhone/iPad 完整管理调用链
-
-移动 `MobileDirectoryModel` / `MobileDirectoryScreen` 提供账号/群组切换、搜索、名称与数字身份查看、新建、编辑、所属组选择和删除。普通说明/邮件保存由保存按钮确认；密码、停用、所属组等访问风险变更及删除说明具体后果。系统保留项不能删除，当前账号不能停用、改组或删除；不把未知原组关系当作空组回写。群组只使用既有名称/说明请求，不额外猜测群组成员方法。
-
-共享增量 `loadAccountDirectoryForManagement` 固定 User/Group v1，能力不支持时零请求；沿用同一严格解析器，达到 1000 条读取边界即失败，不能以截断目录证明目标消失。`changeDirectoryResult` 确认完整原对象和数字身份，成员变更还比较原群组目录；旧 Mac 方法签名与参数保持兼容，参数构造复用。创建与改密码必须取得接受回执，再比较实际新目录；明确拒绝不能被偶合的字段或目录变化覆盖，模糊结果只读取，不重放。
-
-独立 `NAS/directory-operations-v1.json` 受文件保护并排除备份，只含上下文/目标/字段摘要、数字身份、阶段和回执，不含名称、说明、邮件、成员正文、地址或密码。写前记录失败零提交，接受回执落盘失败保留原保护；重启未提交项取消，提交项只读恢复，同名不同数字身份不能结束原编辑记录。无法辨认改密或创建结果时引导使用 DSM，不提供无条件清除未知记录后重发的入口。切账号与同配置重连隔离旧确认和迟到结果。
-
-入口沿用 2026-10-05 用户授权按已记录请求能力、当前管理员与对象权限、确认及恢复保护开放，不以未完成真机行为验收固定关闭。Mac 旧调用仅做兼容参数共用，Windows/Android 不改代码；五端请求字段与真实环境证据等级均不变。本片共享、移动和设备证据分别登记在[移动主计划 M6b1](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6b1-账号与群组)。
 
 ## 安全与副作用
 
@@ -170,19 +101,14 @@
   与自动化测试验证，尚未在真实 NAS 上执行删除行为验收。
 - DSM 升级后的方法参数、权限和错误码变化尚未验证。
 
-## 2026-09-26 macOS 读取回归修复
+## macOS 读取回归修复
 
 当前待归属浏览器观察确认用户列表的 `expired` 是 `normal/now` 文本枚举，Apple
 兼容这两个状态及原有布尔响应。完整资料缺少 `can_edit` 时允许打开编辑器；显式 false
 继续禁止，缺少可编辑资料继续关闭，服务端权限拒绝不绕过。删除仍要求显式许可，
-当前账号与保留账号保护不变。证据见 [本次观察](../environments/2026-09-26-nas-settings-read-observation.md)。
+当前账号与保留账号保护不变。证据见 [本次观察](../environments/INDEX.md#2026-09-26-nas-settings-read-observation)。
 
-## 2026-10-13 Android A7 完整管理接入
 
-Android产品账号页现使用`NasDirectoryRepository`、`NasDirectoryModel`与`NasDirectoryActivityStore`，支持账号/群组列表、搜索、新建、编辑、账号所属组、删除和原账号只读恢复。固定User/Group v1；列表严格保留缺字段、expired normal/now/布尔值，完整资料缺can_edit可编辑但显式false禁止。达到1000条、重复名称/数字身份、根与additional冲突或畸形字段读取失败，不用空列表证明删除。普通NAS快照与新管理页共用此解析器。
+## 证据与实现范围
 
-保存前重新检查当前管理员、实际接口能力、原对象及可选群组目录；编辑不改名，空密码与未修改组关系均省略。群组仅name/description，当前账号不能停用、改组或删除，保留账号/群组不能删除。写请求固定单次传输；创建或改密必须有接受回执和实际字段回读，明确拒绝不被偶合变化覆盖。证书、连接身份异常停止后续请求，未知只回读，不自动重复写入。
-
-独立加密本机记录仅含原连接身份、目标/字段摘要、数字身份、动作、阶段和回执，不保存名称、邮件、成员正文、密码或请求正文；应用保持禁止备份。写前保存失败零请求，接受记录失败保留保护，重新登录沿原账号恢复，同名不同数字身份不能确认原编辑；连接替换后到达的旧表单回调不能写入新连接。未知记录不可直接清除；产品页面不再使用旧根模型的删除编排。此切换未改变公开网络参数或其他四端源码。
-
-本轮聚焦JVM 32项通过（严格请求/字段17、恢复记录4、真实传输模型7、既有读取可用性4），增量编译和3800项Android双语资源扫描通过。手机/平板并入A7整波次验收，真实NAS创建/改密/成员权限/删除/并发仍为`PENDING_USER_VALIDATION`，测试对象仅限用户授权的可丢弃账号和群组；只回传脱敏版本、角色、步骤和错误类型。源码与合成结果不提升匿名环境的observed等级。
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

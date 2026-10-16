@@ -33,4 +33,4 @@ Chat 基础契约包括能力、用户、会话、消息、附件、投票、提
 - 高风险与破坏性写操作不得配置自动重试，必须具备最终状态复查策略。
 - 不允许保存真实 SID、主机、账号、共享名、路径或文件内容。
 - 私有 API 发现必须同时维护版本化环境记录、端点文档和 `private-api/compatibility.json`，详细规则见 [`docs/api/discovery`](../docs/api/discovery/README.md)。
-- 社区兼容性报告使用独立契约，不得据此提升私有 API 证据等级；详细规则见 [`COMMUNITY_COMPATIBILITY_PROGRAM_ZH.md`](../docs/compatibility/COMMUNITY_COMPATIBILITY_PROGRAM_ZH.md)。
+- 社区兼容性报告使用独立契约，不得据此提升私有 API 证据等级；详细规则见 [社区兼容性指南](../docs/compatibility/COMMUNITY_COMPATIBILITY_GUIDE_ZH.md)。

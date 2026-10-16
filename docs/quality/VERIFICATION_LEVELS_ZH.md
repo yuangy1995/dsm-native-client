@@ -1,64 +1,44 @@
 <!-- doc-role: quality-policy -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-10-16 -->
 
-# 功能实现与验证等级
+# 验证原则与验收方法
 
-本文统一描述“代码存在”“可重跑自动化”“目标平台构建”“真实环境验证”和“发布”的
-区别。低等级证据不能替代高等级证据，也不能从其他平台、DSM build、套件版本或签名方式
-推断通过。
+功能状态只在[矩阵](../progress/PLATFORM_MATRIX.md)维护；当前问题和 `PENDING_USER_VALIDATION` 步骤只在[限制清单](../progress/KNOWN_LIMITATIONS.md)维护。源码、自动化、构建、设备和发布分别说明，不由测试数量或页面存在推定“全部完成”。
 
-## 等级定义
-
-| 标识 | 含义 | 最低证据 |
+| 证据 | 能证明什么 | 不能替代什么 |
 | --- | --- | --- |
-| `IMPLEMENTED` | 目标路径已有源码实现。 | 代码审查确认入口、错误处理和安全边界存在。 |
-| `AUTOMATED` | 不依赖真实环境的逻辑、静态门禁或测试可重跑。 | 真实命令、源码版本和通过/失败结果。 |
-| `BUILD_VERIFIED` | 目标工程在声明工具链成功构建。 | 构建命令、平台、架构与签名类型。 |
-| `SIGNING_REQUIRED` | 下一项验证依赖正式签名、entitlement 或系统注册。 | 明确列出证书、权限、目标系统和运行步骤。 |
-| `DEVICE_VERIFIED` | 在真实目标设备和受控测试数据上完成。 | 脱敏环境类别、步骤、结果、日期与清理结论。 |
-| `COMMUNITY_VERIFIED` | 独立外部环境给出经过审核的一致结果。 | 结构化、脱敏的社区报告；不含秘密或真实用户数据。 |
-| `RELEASE_READY` | 当前候选满足平台发布准入。 | 构建、签名、回滚、已知限制和必要设备验收均完整。 |
+| 源码复核 | 生产入口、请求、结果与安全边界已接通 | 实际运行、接口兼容 |
+| 聚焦/完整自动化 | 指定提交和用例范围内的实际结果 | 未运行场景、真实 NAS 和设备 |
+| 目标构建 | 指定工具链/架构/签名类型能够构建 | 安装、升级、系统注册与使用 |
+| 设备/NAS 验收 | 记录环境下的真实用户结果 | 其他平台、版本、权限或网络 |
+| 发布验收 | 指定候选的签名、公证、包内容、更新和回退证据 | 后续未发布源码及全部业务行为 |
 
-一个功能可以同时拥有多个等级。例如，一个写操作可同时是 `IMPLEMENTED`、`AUTOMATED`
-和 `BUILD_VERIFIED`，但只有在目标设备和专用 NAS 的真实结果形成后才能增加
-`DEVICE_VERIFIED`。社区结论不会提升私有 API 的证据等级，也不会自动解除内部写接口
-的默认关闭策略。
+历史 `IMPLEMENTED/AUTOMATED/BUILD_VERIFIED/DEVICE_VERIFIED/RELEASE_READY` 标签按上表解释；`SIGNING_REQUIRED` 和 `PENDING_USER_VALIDATION` 只是缺少条件，不能当作通过等级。
 
-## 记录规则
+修改后运行相关行为测试、目标构建与必要原生场景。UI 必须实际检查加载、空内容、筛选空、错误和正常状态，以及双语/主题、焦点和可见边界；资源存在、截图文件生成或进程正常退出不证明界面正确。高风险操作另核对提交前拒绝、权限/对象变化、防重、接受与最终结果、取消/断网、部分完成及恢复。
 
-每个需要发布判断的功能记录：
+结果记录只需：**源码/包身份、命令或工作流链接、平台/架构、通过/失败/跳过及范围、未解决问题**。失败修正后的定点结果不改写原失败，也不冒称完整重跑；条件跳过不算通过。CI 只覆盖其来源提交，运行中日志片段不证明任务卡住；取消不是通过。
 
-- 功能、平台与当前源码版本；
-- 已获得的验证等级；
-- 已运行命令或脱敏证据路径；
-- 尚缺的签名、目标设备、DSM build、套件版本或权限；
-- 已知限制、失败后的恢复方式和是否应保持关闭；
-- 对危险写操作，确认、权限、重复提交保护、取消边界和最终状态复查。
+当前 Checks、发布资产及正式测试是证据入口，不在多个 README、计划和矩阵复制逐轮次数、耗时与临时路径。已结束的调试流水不作为永久开发文档；未解决问题及兼容/迁移决策保留在相应唯一说明。
 
-动态测试数量、CI 标识和中间构建记录不进入活动状态页、矩阵或路线图；必要的历史上下文
-只能保留在归档，不能用作当前结论。
+## 可重跑入口
 
-## 工作流命名边界
+平台命令见 [Apple](../../apple/README.md)、[Android](../../android/README.md)、[Windows](../../windows/README.md)。仓库级执行：
 
-`Documentation & Quality Preflight` 只提供严格文档、Android 质量数据、写操作矩阵、结构债务和
-本地化的 `AUTOMATED` 证据。它不是 Release Preflight，不能证明任一平台的完整构建、Artifact、
-SHA-256、签名、安装、升级、回滚、真机或真实 NAS 验收。真正的 Release Preflight 只能在跨平台
-可复用构建、Artifact manifest、校验和、签名状态和人工验证清单具备后作为独立发布基础设施建立。
+```sh
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
+```
 
-## 平台应用
+Android 写入口、页面状态、触控、动效与结构检查继续读取[机器基线](../../tools/codex/android_quality_baseline.json)；可读报告按需生成，不能把人工登记或静态扫描等同业务通过。Documentation & Quality Preflight 不是签名/设备/发布门禁。
 
-| 平台 | 自动化或构建可证明 | 仍需真实环境证明 |
-| --- | --- | --- |
-| macOS | 共享 Package、无签名 macOS 构建和仓库门禁。 | Developer ID、notarization、stapling、Gatekeeper、Finder/File Provider、真实 NAS 与升级。 |
-| iPhone / iPad | 共享 Package 和对应模拟器构建。 | 真机、系统选择器、键盘、VoiceOver、动态文字、网络和真实 NAS。 |
-| Android | 单元、增量编译、质量基线、本地化、fixture 与契约门禁。 | 真机、证书、后台、WorkManager、危险写和真实 DSM/套件行为。 |
-| Windows | xUnit、WinUI XAML、x64/ARM64 构建。 | Windows 设备、Explorer、Cloud Files、通知、安装与真实 NAS。 |
+桌面云盘合成大目录基准按需运行：
 
-## macOS 桌面云盘特别规则
+```sh
+LANSTASH_RUN_DESKTOP_DRIVE_BENCHMARKS=1 swift test --package-path apple --filter DesktopCloudDrivePerformanceTests
+```
 
-桌面云盘在正式签名、App Group/Keychain、Finder/File Provider、升级回退和真实 NAS 验收
-完成前，最多表述为 `IMPLEMENTED`、`AUTOMATED`、`BUILD_VERIFIED` 或
-`SIGNING_REQUIRED`。不得称为 `DEVICE_VERIFIED` 或 `RELEASE_READY`。
-
-完整手工步骤见[macOS 桌面云盘发布与升级验收](../compatibility/DESKTOP_CLOUD_DRIVE_RELEASE_ACCEPTANCE_ZH.md)，
-当前待验收边界见[发布与手工验收历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。
+它验证 200 页、100000 条合成元数据完整进入缓存；耗时只与同机同配置比较，不是 CI 性能硬门槛。真实 Finder/Explorer 首次枚举、连续滚动、取消和内存压力另按[云盘验收](../compatibility/DESKTOP_CLOUD_DRIVE_RELEASE_ACCEPTANCE_ZH.md)执行。

@@ -1,6 +1,6 @@
 # File Station 套件设置与分享页面
 
-端点组 `file-station-package-settings`，组件 file-station，internal / mixed / high。来源：[2026-10-02 官方页面和脚本](../environments/2026-10-02-file-station-live-observation.md)，DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559。Settings.get 达到 read-verified；Bandwidth.list 字段只读核对。所有 set、主题读写和权限差量目前仅 static。
+端点组 `file-station-package-settings`，组件 file-station，internal / mixed / high。来源：[2026-10-02 官方页面和脚本](../environments/INDEX.md#2026-10-02-file-station-live-observation)，DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559。Settings.get 达到 read-verified；Bandwidth.list 字段只读核对。所有 set、主题读写和权限差量目前仅 static。
 
 ## 设置
 
@@ -16,7 +16,7 @@ set 仅提交变化字段，具名授权差量为 enabled_sharing_privilege/disa
 
 ## 限速
 
-`SYNO.Core.BandwidthControl/list,set v1`；list protocol="FileStation"、owner_type、offset/limit，返回 bandwidths/total。条目 name/protocol/owner_type/policy/schedule_plan 为字符串；upload_limit_1/2、download_limit_1/2、upload_result/download_result 为数字。policy=disabled/enabled/scheduled，0 为不限速，File Station 非零下限 10 KB/s，官方输入最多九位。set bandwidths 数组，只提交修改项。本轮通过 Sources 只读核对 DSM 自带 ux-all.js 的 SYNO.ux.ScheduleTable：DAY_STRING_SHORT 按日、一、二、三、四、五、六；createTemplate 每日 0…23 列；getSchedule 为 currentSchedule.join("")。服务级 0=不限速、1=启用账号限速；账号级 0=不限速、1=默认限速、2=自定义限速。不能把 CLASS_LIST 的通用样式名当作限速语义。
+`SYNO.Core.BandwidthControl/list,set v1`；list protocol="FileStation"、owner_type、offset/limit，返回 bandwidths/total。条目 name/protocol/owner_type/policy/schedule_plan 为字符串；upload_limit_1/2、download_limit_1/2、upload_result/download_result 为数字。policy=disabled/enabled/scheduled，0 为不限速，File Station 非零下限 10 KB/s，官方输入最多九位。set bandwidths 数组，只提交修改项。通过 Sources 只读核对 DSM 自带 ux-all.js 的 SYNO.ux.ScheduleTable：DAY_STRING_SHORT 按日、一、二、三、四、五、六；createTemplate 每日 0…23 列；getSchedule 为 currentSchedule.join("")。服务级 0=不限速、1=启用账号限速；账号级 0=不限速、1=默认限速、2=自定义限速。不能把 CLASS_LIST 的通用样式名当作限速语义。
 
 ## 分享页面
 
@@ -33,22 +33,13 @@ background_color、footer_msg（最多 512）、enable_footer_html。
 
 五端：macOS 实施，Apple 共享增量保留旧调用；其他四端只同步影响。未提交任何真实设置，所有实际保存、普通账号拒绝、并发变化和部分保存均需专用环境验证。
 
-
-## 本轮原生实现与边界
-
-通用设置、分享/收集授权（UserGrp.list_user/list_group 返回 uid/gid/name/is_admin 后按 uid/gid 逗号串提交增删差量）、SMB/NFS 与 ISO 挂载权限、远程协议访问范围、六种账号来源的分页限速及每周时间表、现有分享页页脚/颜色/布局已接入。Settings 与 VFS.User、BandwidthControl、Theme 分别保存、分别回读，不能描述为一次原子保存。
-
-VFS 自定义名单已接入本机用户/组分页、可修改标识和单 uid/gid 的 enabled 差量；范围切换与名单分别确认保存。域/LDAP 名单按下方来源契约接入。Settings 的 enable_sharing_custom_setting 已观察字符串 false，客户端仅接受明确 true/false 形态；写 boolean 依官方静态表单，和主题布局保存分开，未知形态不伪造关闭。分享页总开关已接入，新图片选择、上传和预览按下方契约接入。所有真实写入均待专用环境验证。
-
-源码：`DsmFileRepository+Settings.swift`、`FileStationSettingsView.swift`、`FileStationBandwidthView.swift`、`FileStationMountAccountList.swift`；自动化：`FileStationParityTests`。合成请求位于 `contracts/request-fixtures/file-station/{set-package-settings,set-sharing-theme-enabled,list-mount-accounts,set-mount-account,set-bandwidth,set-sharing-theme}`；响应位于 `contracts/fixtures-redacted/file-station/settings`，结构描述为 `contracts/schemas/file-station-settings.schema.json`。统一未知核查与原保存互斥，不重放 set。
-
 ## 第三波次目录来源契约（static）
 
 官方 `ProtocolUserGrid.loadRoles` 使用 `SYNO.Core.Directory.LDAP/get v1` 的 `enable_client`，`SYNO.Core.Directory.Domain/get v1` 的 `enable_domain`，以及 `test_dc v1` 的 `test_join_success`。启用且加入有效的域用 `get_domain_list v2` 读取 `domain_list`：每项是域字符串，或 `[显示名称, 请求值, 说明]` 数组；请求必须使用第二列，不能用显示名称代替。此处只读查询不加入或修改目录服务。
 
 名单 get 为 `type=local/ldap/domain`、`usergroup=user/group`、`content=user_settings/group_settings`、`substr/offset/limit`；域来源另传 `domain`。保存仍为 `settings.user_settings/group_settings` 中单 uid/gid 与 enabled，不提交整个来源名单。客户端把来源绑定在确认快照及待核查身份中，回读同一来源。某目录查询失败明确提示，可用的其他来源继续列出，不将失败伪装成未启用。
 
-本波次按用户要求取消专用验证开关和精确固件白名单；实际管理员、文件服务权限、目标基线、确认、重复保护和回读仍保留。未执行真实目录权限写入，证据保持 static / synthetic automated。
+按实际能力与权限判断；实际管理员、文件服务权限、目标基线、确认、重复保护和回读仍保留。未执行真实目录权限写入，证据保持 static / synthetic automated。
 
 ## 第三波次图片契约（static）
 
@@ -56,39 +47,26 @@ VFS 自定义名单已接入本机用户/组分页、可修改标识和单 uid/g
 
 upload 为 multipart，type 与 upload_image 文件字段，成功 data.path 作为历史身份；上传后回查历史，之后页面应用需要独立确认。上传超时保存当前会话内图片摘要，不重复发送同一图片；用户查看历史后可选取已上传项，其他图片和页面设置不被阻断。摘要不包含文件路径、内容或凭据。图片来源为 fromDS/history/default：NAS 保留完整路径，历史/默认用文件名。Theme.set 保存回执和 logo_seq/background_seq 变化同时成立才确认换图成功；单独序列变化不证明未知写完成。
 
-本轮未执行真实上传或主题写入。合成 fixture 覆盖 list/get/upload、历史清单及目录来源；源码为 `DsmFileRepository+ThemeImages.swift`、`FileStationThemeImagePicker.swift`，自动化在 `FileStationParityTests`。真实图片尺寸限制、所有支持格式和最终页面显示由用户验收，不增加推测的文件大小上限。
+未执行真实上传或主题写入。合成 fixture 覆盖 list/get/upload、历史清单及目录来源；源码为 `DsmFileRepository+ThemeImages.swift`、`FileStationThemeImagePicker.swift`，自动化在 `FileStationParityTests`。真实图片尺寸限制、所有支持格式和最终页面显示由用户验收，不增加推测的文件大小上限。
 
-## 2026-10-02 本机账号名单类型更正
+## 本机账号名单类型更正
 
-[本轮只读核查](../environments/2026-10-02-file-station-settings-read-fix.md)重新确认 DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559。官方名单的 VFS.User.get v1 返回成功，但用户 `uid` 和群组 `gid` 都是十进制数字字符串；`offset/total` 为整数，`enabled/is_modifiable` 为原生布尔。此前仅按整数解码编号的客户端会把成功响应误报为无法读取设置，合成回归已复现同一错误。
+[只读核查](../environments/INDEX.md#2026-10-02-file-station-settings-read-fix)重新确认 DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559。官方名单的 VFS.User.get v1 返回成功，但用户 `uid` 和群组 `gid` 都是十进制数字字符串；`offset/total` 为整数，`enabled/is_modifiable` 为原生布尔。此前仅按整数解码编号的客户端会把成功响应误报为无法读取设置，合成回归已复现同一错误。
 
 读取适配只为该端点的 uid/gid 接受整数或数字字符串，转换后仍需有效的非负编号，不接受空值、非数字、布尔、溢出或重复身份；权限布尔不作宽松转换。确认快照、来源、可修改标识、提交去重及单账号保存/回读规则保持不变。新增合成响应为 `contracts/fixtures-redacted/file-station/settings/synthetic-mount-account-string-ids`，旧整数样本保留；Schema 的更正仅限 `mountAccounts`，不扩大尚未验证的其他设置响应。
 
-五端影响：macOS 修复名单读取及来源/用户组控件；Apple 共享网络层兼容增量可供 iPhone/iPad 复用，没有新增移动入口；Android/Windows 后续接入此端点时应采用相同编号语义，本轮不修改两端代码。读取格式达到本次待归属观察的 `read-verified`，真实保存、其他权限和其他版本仍须用户验收；分享账号等其他端点不借此提升证据等级。
+五端影响：macOS 修复名单读取及来源/用户组控件；Apple 共享网络层兼容增量可供 iPhone/iPad 复用，没有新增移动入口；Android/Windows 后续接入此端点时应采用相同编号语义，不修改两端代码。读取格式达到本次待归属观察的 `read-verified`，真实保存、其他权限和其他版本仍须用户验收；分享账号等其他端点不借此提升证据等级。
 
-## 2026-10-02 未配置限速状态更正
+## 未配置限速状态更正
 
-上述早期枚举记录不完整。[追加只读核查](../environments/2026-10-02-file-station-settings-read-fix.md#传输限速追加核查)在相同 DSM/套件版本观察到本机用户和群组的 `policy=notexist`；官方用户列表显示应用群组设置。该值表示没有独立账号配置，不能归并为 `disabled`。新增读取枚举并保留未知值拒绝，用户显示“应用群组限速”，群组显示“未设置限速”。首次打开编辑器保持原状态，未作修改时不保存；仅可明确选择既有 `disabled/enabled/scheduled` 策略，仓库拒绝把 `notexist` 发往账号或服务级设置。未新增恢复群组配置的写操作。
+上述早期枚举记录不完整。[追加只读核查](../environments/INDEX.md#2026-10-02-file-station-settings-read-fix)在相同 DSM/套件版本观察到本机用户和群组的 `policy=notexist`；官方用户列表显示应用群组设置。该值表示没有独立账号配置，不能归并为 `disabled`。新增读取枚举并保留未知值拒绝，用户显示“应用群组限速”，群组显示“未设置限速”。首次打开编辑器保持原状态，未作修改时不保存；仅可明确选择既有 `disabled/enabled/scheduled` 策略，仓库拒绝把 `notexist` 发往账号或服务级设置。未新增恢复群组配置的写操作。
 
-响应 Schema 及 `synthetic-bandwidth-unconfigured-user/group` 合成样本已同步；`FileStationParityTests` 覆盖两类读取、已配置策略、首次明确设定后回读、未知策略拒绝及禁止回写未配置标记。该标记只补全共享 Apple 内存模型，没有会话/持久化格式、公开 DSM 请求或存储迁移；回滚可撤销本轮解析与界面变更，NAS 原数据不受影响。
+响应 Schema 及 `synthetic-bandwidth-unconfigured-user/group` 合成样本已同步；`FileStationParityTests` 覆盖两类读取、已配置策略、首次明确设定后回读、未知策略拒绝及禁止回写未配置标记。该标记只补全共享 Apple 内存模型，没有会话/持久化格式、公开 DSM 请求或存储迁移；回滚可撤销解析与界面变更，NAS 原数据不受影响。
 
-五端影响：macOS 接入名单与编辑状态；iPhone/iPad 共享模型和网络层兼容读取，不新增设置入口；Windows/Android 后续接入应保留“继承或未配置”和“不限速”的区别，不借本次修复改变两端源码。真实保存、实际速度、群组继承计算及域/LDAP 均为 `PENDING_USER_VALIDATION`，本轮不提升写验证等级。
+五端影响：macOS 接入名单与编辑状态；iPhone/iPad 共享模型和网络层兼容读取，不新增设置入口；Windows/Android 后续接入应保留“继承或未配置”和“不限速”的区别，不借本次修复改变两端源码。真实保存、实际速度、群组继承计算及域/LDAP 均为 `PENDING_USER_VALIDATION`，不提升写验证等级。
 
 
-## 2026-10-04 Apple 移动设置接入
 
-iPhone/iPad 已接入上述现有设置、账号目录、限速时间表和分享主题接口；五端请求、版本、字段及验证等级不变。两端使用触控表单与逐日/逐时编辑，保留 `notexist`、管理员不可修改账号、来源请求值、完整分页及原快照回读规则。独立未结束目标记录与上传摘要不保存设置内容或图片，重启不自动重放；共享接口仍是唯一请求实现。macOS 仅资源/构建回归，Windows/Android 无代码变化。真实写入未验证，准确移动自动化与设备条件见 [M2g2 实施账本](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m2g2-file-station-设置)。
+## 证据与实现范围
 
-## 2026-10-12 Android 设置接入
-
-Android A3n 目前已接通 Settings 常规表单、分享/收集 uid/gid 差量、VFS.User 访问范围与本机/LDAP/域账号、BandwidthControl 六类账号及服务/账号周时间表。共享页面外观、历史/NAS/本机/默认图片选择与独立上传也已接入，手机/平板中英文浅深色与大字号聚焦界面验证已通过。API 版本和字段沿用本记录，不新增固件白名单、不提高真实 NAS 证据等级。
-
-写前检查原工作区、管理员、文件服务授权及完整基线，名单跨页检查身份重复/总数变化，具名管理员不能修改；名单核对后再次读取基线。目录显示名与请求值分开，来源失效或不能重新读取时阻止旧目录名单提交；Core 接口仍经过独立 NAS 管理授权，明确拒绝不绕过。普通保存使用本次修改摘要和一个保存按钮，扩大分享、收集、挂载或账号名称可见范围才说明具体后果并确认。
-
-独立加密记录只保留原账号身份、目标摘要、期望状态摘要与回执，不保存设置正文、名单、域名或图片。共享页面选图额外保存旧图片序列摘要；布局全字段匹配且已取得本次回执、各选图序列均变化才确认完成。上传按图片类型/完整内容摘要独立去重，回查历史稳定路径成功后才允许将上传结果选入页面草稿；未知上传不会重复发送同一内容。已提交但结果不明的目标停止再写，重开/重新登录后仅回读；设置全字段、账号来源/编号/名称/可修改状态以及限速完整字段均需与期望摘要一致。恢复不拿新草稿替换期望值，其他分区可继续使用。取消发送中的操作保留事实；实际写入后失去权限不能被当作未提交清除。用户未配置限速保持继承，`notexist` 禁止写入，周表按星期日至星期六、每天 24 格，服务级 `0/1`、账号级 `0/1/2`。
-
-聚焦自动化与当前设备结果记录于验证历史；真实保存、目录权限、实际速度/继承和服务时间表仍为 `PENDING_USER_VALIDATION`，只使用专用测试账号和可恢复设置。macOS、Apple 移动端和 Windows 源码未修改，现有契约和验证等级不变。
-
-## 2026-10-14 五端写入策略更正
-
-五端均按实际接口能力、当前账号/对象权限、必要确认、防重复提交和结果复查开放操作；不匹配DSM/build/套件或客户端类型版本白名单，也不为版本匹配要求额外系统管理读取权限。未实测版本不标为已验证，但不据此关闭功能。 Android已删除A10误加的限制；实际权限和恢复保护保留，见[功能参考](../../reference/files.md#写入可用性与版本策略五端统一)。真实环境证据等级不变。
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

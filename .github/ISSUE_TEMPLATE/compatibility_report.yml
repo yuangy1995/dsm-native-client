@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        感谢参与岚仓社区兼容性计划。请先阅读[中文测试指南](../blob/main/docs/compatibility/COMMUNITY_TEST_GUIDE_ZH.md)；English contributors: read the [test guide](../blob/main/docs/compatibility/COMMUNITY_TEST_GUIDE_EN.md) first.
+        感谢参与岚仓社区兼容性计划。请先阅读[中文测试指南](../blob/main/docs/compatibility/COMMUNITY_COMPATIBILITY_GUIDE_ZH.md)；English contributors: read the [test guide](../blob/main/docs/compatibility/COMMUNITY_COMPATIBILITY_GUIDE_EN.md) first.
 
         **本表单公开可见。不要提交日志、截图、HAR、原始错误、序列号、设备名、地址、QuickConnect ID、账号、真实文件名或路径。**
 

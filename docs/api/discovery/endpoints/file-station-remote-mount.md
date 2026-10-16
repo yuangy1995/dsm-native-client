@@ -10,7 +10,7 @@
 
 ## 请求契约
 
-来源：[2026-09-20 只读核查](../environments/2026-09-20-remote-mount-read-observation.md)。
+来源：[2026-09-20 只读核查](../environments/INDEX.md#2026-09-20-remote-mount-read-observation)。
 当前环境 DSM 7.2.1-69057 Update 12、File Station 1.4.1-1559，设备待归属。
 Mount 和 Mount.List 都由 API.Info 发现 entry.cgi、JSON、v1；通过 DSM 会话认证，
 不记录凭据值、不将远程凭据放 URL。发送形态为 POST 表单内按声明编码参数。
@@ -48,65 +48,6 @@ mount_point、actor、date、auto_mount。actor/真实路径不进入记录或�
 | 待归属当前环境 | static | 官方请求参数和非空行字段名 | 2026-09-20 |
 | 待归属当前环境 | read-verified | 能力缓存、套件版本及空 Mount.List.get | 2026-09-20 |
 
-## 能力与客户端
-
-Windows 原生挂载管理已按此契约接入目标确认、权限预检、重复保护和最终状态核查，
-按会话/接口开放用户验证。Mac 同类别名与只读保证缺口已在源码修正，仍需源身份
-核查/恢复及目标构建，不能作为已验证基线复制。用户授权可测试入口不代表 Agent
-可执行真实挂载。
-无等价公开写 API；可用公开 List.getinfo 辅助确认，但读取失败和缺字段不是“断开”。
-
-Apple：DsmFileRepository.swift；Windows：DsmRepository.FileRemoteMounts.cs。
-正式测试：DsmFileRepositoryTests.swift、FileRemoteMountContractTests.cs。新增写请求
-fixture 与模型迁移随后续适配切片更新；目前不把旧合成测试当新官方契约证据。
-五端影响：Mac/Windows 需修正，iPhone/iPad 保持既有受限范围，Android 只记录不改代码。
-
-2026-09-20 Windows 协议依赖已实现：RemoteMountProtocol 构建规范 CIFS/NFS 地址及
-固定字段，专用 transport 支持 mount_remote 与 Mount.List.unmount，布尔/数组不
-重复 JSON 编码；拒绝旧 create/update/delete、别名注入和隐含 auto_mount。独立
-Mount.List.get 读取返回绑定 profile 的严格清单，重复路径/缺字段/错误类型不冒充
-空列表。新构造器保留兼容默认 NFS 3/tcp，v4 不允许 UDP；未知只读要求明确不支持，
-不静默忽略。该协议层不等于创建/编辑/断开的确认与结果编排完成，旧 UI 仍关闭。
-
-新增四份合成 fixture：file-station 下 mount-cifs、mount-nfs、unmount-remote、
-list-remote-mounts；账户/密码只标记 redacted，Windows 实际传输测试校验非敏感字段。
-没有执行真实写操作，没有因此提高当前或历史环境验证等级。
-
-2026-09-20 Windows 新增阶段式核心：固定请求编号、目标身份及用户确认快照，创建/
-断开/同位置修改/换位置修改逐阶段执行；未知只回查，修改下一阶段要求重新明确继续。
-完整清单和公开 getinfo 共同核查源/协议/自动挂载标志与目录状态，读取异常不代表
-断开成功。外部身份替换、嵌套挂载和未知路径互斥有正式合成回归，不自动回滚或删目录。
-39 项新案例与全量 3068 项通过均为客户端合成证据，非空清单与真实写行为仍未验证。
-随后 Windows 原生管理窗口已迁移，按绑定会话与三组接口能力开放用户确认测试，
-未知仅核查、修改分步确认和密码重新输入均接正式入口。旧无确认接口只保留不发送
-的兼容返回，错误参数发送路径已移除；这不提升真实环境验证等级。Mac 别名修复仍
-是剩余工作，不能将 Windows 适配或测试结果当作 Mac 通过。
-
-随后 Mac 协议源码已修正：mount_remote 固定 CIFS/NFS、server_ip、mount_point、
-user_set=true、auto_mount=false 与两种协议专用字段；断开 Mount.List.unmount
-仅挂载点数组。兼容构造器新增默认 NFS 3/TCP，v4+UDP 和 readOnly 要求明确拒绝，
-不暗中增加权限保证；域账号合并且不发送别名。三份请求 fixture 绑定实际 Swift
-调用测试，但本机缺 Swift，8 个新测试方法未执行，Mac App 未构建。源身份核查/
-恢复仍需补齐，不改变 verifications 中历史或当前环境的真实证据等级。
-
-Mac 后续已补严格 Mount.List.get 读取及写后来源证明：按原生布尔/字符串/数组解码，
-缺失自动挂载键保留未知，重复路径或畸形来源不冒充空清单；忽略 actor 等非必要字段。
-连接成功需清单精确来源/协议/位置/auto_mount=false 与公开目录类型共同证明；断开
-需清单目标消失与正常目录/明确 408 共同证明。新增 7 个测试方法和既有响应序列已
-更新，但 Swift/Mac 未运行；确认前旧连接绑定和恢复仍待实施，不提高环境验证等级。
-
-Mac 后续确认前绑定已接源码：窗口加载并展示来源后传递固定身份重载，首次提交前
-核查原连接，换位置时断开前再次核查新旧身份，最后确认新连接仍存在。新建/新位置
-必须是未占用的现有目录，禁止隐式覆盖或断开嵌套连接；旧无身份签名只保留不支持。
-这些客户端安全检查和 14 个未运行的新 Swift/Mac 测试不构成 NAS 行为证据；未知
-结果恢复仍是后续代码工作，无实际写请求、无新的环境兼容结论。
-
-Mac 后续恢复源码已接：相同 Repository 内记录操作编号和非密码配置，保留提交/
-待核查/待继续阶段并互斥关联路径。只读核查不补写，用户确认才继续；明确第二步
-失败可重新提供密码，未知不能重放或直接遗忘，仅已知未执行的剩余步骤可明确结束。
-原生窗口接入恢复入口并说明重连/退出不保留记录。没有新增 NAS 请求方法，仍复用
-本端点组及公开 getinfo；15 个新 Swift/Mac 方法未运行，未提升真实环境验证等级。
-
 ## 安全与未验证范围
 
 远程密码仅在当次输入和 HTTPS 正文，不持久化、日志化或在调试字符串中展开。
@@ -114,39 +55,12 @@ Mac 后续恢复源码已接：相同 Repository 内记录操作编号和非密�
 重连、域账号、只读策略、并发占用、真实路径映射、升级与失败恢复尚未验证。
 不新增 NAS 权限或绕过证书。后续用户验收需专用可恢复远程共享和清晰目标。
 
-## 本轮回归与证据边界
+## ISO 静态补充
 
-既有 macOS 源身份核查、阶段式恢复和原生入口的聚焦回归及目标构建记录已纳入 [File Station 账本](../../../../apple/Apps/DsmMac/README.md)。上文各历史波次的“未运行”只描述当时状态，不覆盖本次自动化结果。本次未进行真实连接、断开或持久自动挂载验证，不提升旧环境等级。ISO、FTP/SFTP/WebDAV/云盘和设置无新增契约；[官方包核查](../environments/2026-10-02-file-station-official-package.md)未取得资源，不能据此实现猜测字段。
-
-## 2026-10-02 ISO 静态补充
-
-[本轮官方 FileBrowser.js](../environments/2026-10-02-file-station-live-observation.md)确认 `Mount.mount_iso v1` 参数 source、mount_point、auto_mount、user_set。来源和挂载点均为 NAS 路径；客户端只允许明确选定现有空目录、user_set=true，不照搬隐式创建/卸载后删除目录。列表仍是 Mount.List.get 的 isoList，断开仅指定 mount_point。auto_mount 为持久行为，需单独确认；未挂载或卸载真实 ISO，证据仅 static，不提升历史验证。
+[官方 FileBrowser.js](../environments/INDEX.md#2026-10-02-file-station-live-observation)确认 `Mount.mount_iso v1` 参数 source、mount_point、auto_mount、user_set。来源和挂载点均为 NAS 路径；客户端只允许明确选定现有空目录、user_set=true，不照搬隐式创建/卸载后删除目录。列表仍是 Mount.List.get 的 isoList，断开仅指定 mount_point。auto_mount 为持久行为，需单独确认；未挂载或卸载真实 ISO，证据仅 static，不提升历史验证。
 
 
-## 2026-10-04 移动 M2f 适配
 
-iPhone/iPad 按[移动主计划](../../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)接入现有共享 Repository 的原对象校验、权限、阶段控制和最终回读，替代上文历史移动范围；未新增请求、参数或版本。移动恢复记录独立保存未结束目标身份，凭据仅用于当前请求，未知不重放。macOS 仅共享校验/云回调代码引用调整，Windows/Android 无请求变化。本机模拟器与合成回调证据不提高此端点在真实 DSM/套件上的等级，真实连接/断开及云授权仍未验证。
+## 证据与实现范围
 
-
-## 2026-10-12 Android ISO 适配
-
-Android A3k 沿用已记录的 `Mount.mount_iso` / `Mount.List.get` / `Mount.List.unmount` v1 和公开 `List.getinfo/list` v2，接入文件菜单、现有空目录选择、挂载列表、浏览与断开。普通挂载由操作按钮确认，开机自动连接另行说明持久后果并确认；不自动创建或删除目录。SMB/NFS 编辑与 VFS 本片尚未实施，不把 ISO 入口等同全部远程连接完成。
-
-写前两次核对明确 File Station 授权、管理员身份、功能开关、所选来源/目标与清单，检查空目录并排除相交的既有挂载和未结束权限修改。普通位置的精确空 `mount_point_type` 按已记录的[文件契约](../../reference/files.md)处理，缺字段仍未知；同一修正适用于 Android 权限编辑。断开须原 ISO 身份一致，结果同时依据完整清单及正常目录/明确不存在；不将网络错误视为目标消失。
-
-原账号、来源、位置及自动连接标志在提交前同步保存至独立加密记录，重启或会话更新后只有只读恢复，不重放未知操作。关闭表单不删除记录；权限修改与挂载对相交路径互斥。无旧数据迁移，回退前须完成新操作并保留未解决记录。源码、合成测试和模拟器证据分别记入[Android 主计划](../../../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)，没有真实 ISO/NAS 写入，不提升既有验证等级；其余四端请求及实现不变。
-
-
-## 2026-10-12 Android SMB/NFS 适配
-
-Android A3l 接入既有 `mount_remote` / `Mount.List.get/unmount` v1，不新增请求别名或猜测只读保证。CIFS 使用 `server_ip`、合并后的 `account` 与正文 `passwd`，只允许 HTTPS NAS 连接；NFS 仅发送版本和传输选项，NFS 4 固定 TCP。来源仅规范服务器大小写及 SMB 斜线，保留共享路径大小写/空白；NAS 逻辑目标不裁剪名称。
-
-写前两次刷新明确文件授权、目录/原清单身份和关联操作。新连接使用已有空目录；普通授权账号可管理非自动连接，开启自动连接、原连接已自动连接或其自动设置未知时需要管理员。自动行为明确说明持久后果；共享根、回收站、相交挂载以及未结束 ISO/权限/远程操作不能被隐式覆盖。清单与目录类型共同证明连接或断开，异常读取不能证明不存在。
-
-同位置修改先断开再连接，换位置先连接新位置再断开原位置，每次明确继续只写一步。首次发送及每次阶段推进同步保存独立加密记录，绑定原账号、非密码配置、旧/新身份与阶段；关闭、重建及重新登录只读恢复未知步骤，不自动重发或回滚。只有已知尚未执行的剩余步骤可明确结束，说明会保持断开或保留两个连接；不调用文件删除。密码只在当前表单和受保护请求内存中，页面重建/关闭、协议切换及提交后清空，不进入状态保存、恢复记录或调试描述。
-
-合成仓储/模型和界面证据分别记录于[Android 验证历史](../../../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-12-android-a3l-smbnfs-连接与分步恢复)。真实非空清单、域凭据、NFS、断开与开机自动连接仍为 `PENDING_USER_VALIDATION`，仅用专用可恢复共享和空目录。没有执行真实 NAS 写操作，未提升当前/历史环境等级，其他四端实现和既有请求契约不变；VFS/云授权继续独立切片。
-
-## 2026-10-14 五端写入策略更正
-
-五端均按实际接口能力、当前账号/对象权限、必要确认、防重复提交和结果复查开放操作；不匹配DSM/build/套件或客户端类型版本白名单，也不为版本匹配要求额外系统管理读取权限。未实测版本不标为已验证，但不据此关闭功能。 Android已删除A10误加的限制；实际权限和恢复保护保留，见[功能参考](../../reference/files.md#写入可用性与版本策略五端统一)。真实环境证据等级不变。
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

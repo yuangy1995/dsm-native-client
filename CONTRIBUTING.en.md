@@ -11,7 +11,7 @@ When the user explicitly requests a commit, commit the task-related changes on `
 ## Commit requirements
 
 - Keep each commit focused on one clear objective.
-- Update the relevant documentation, contracts, and progress status when behavior changes.
+- Update the relevant API contracts, single feature table, and current limitations when behavior changes; do not add development or test journals.
 - Before committing, confirm that no secret, real response, network capture, or user file is present.
 - Write code comments in Simplified Chinese. Follow each platform language's conventions for public type and method names.
 
@@ -32,8 +32,7 @@ A Pull Request must describe the change, affected platforms, validation performe
 
 Most users should use the GitHub “社区兼容性报告 / Community compatibility report” form. Read these documents before testing:
 
-- [`Community Compatibility Program`](docs/compatibility/COMMUNITY_COMPATIBILITY_PROGRAM_EN.md)
-- [`Community Compatibility Test Guide`](docs/compatibility/COMMUNITY_TEST_GUIDE_EN.md)
+- [`Community Compatibility Guide`](docs/compatibility/COMMUNITY_COMPATIBILITY_GUIDE_EN.md)
 
 Contributors familiar with GitHub may submit a structured report Pull Request based on [`example-report.json`](contracts/community-compatibility/examples/example-report.json). Every report must complete a manual privacy review and pass:
 

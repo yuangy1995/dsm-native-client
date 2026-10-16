@@ -25,3 +25,5 @@
 `metadata.json` 遵循 `contracts/schemas/fixture-metadata.schema.json`。合成样本使用 `synthetic` 环境别名；真实脱敏样本只能使用 `lab-a`、`lab-b` 等稳定别名，不得使用设备名、型号、地址或序列号。
 
 仓库当前包含用于验证解析容错和工具链的合成样本。它们不是实际 DSM 行为证据。真实响应只有在完成自动脱敏、人工复核和严格校验后才能进入本目录。
+
+当前29组样本均明确标为 `synthetic/static`，目录名称不表示它们来自真实 NAS。真实观察证据单独见[环境索引](../../docs/api/discovery/environments/INDEX.md)；不得将样例校验成功当作目标版本响应或行为验收。

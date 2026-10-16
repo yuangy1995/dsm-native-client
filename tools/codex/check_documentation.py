@@ -7,11 +7,12 @@ import argparse
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 import re
+import subprocess
 from urllib.parse import unquote
 
 
 ROOT = Path(__file__).resolve().parents[2]
-STATUS_PATH = ROOT / "docs/progress/STATUS.md"
+FEATURES_PATH = ROOT / "docs/progress/PLATFORM_MATRIX.md"
 DOCUMENTATION_TIMEZONE = timezone(timedelta(hours=8))
 
 
@@ -27,16 +28,10 @@ ACTIVE_DOCUMENTS = {
     "apple/README.md": "platform-readme",
     "windows/README.md": "platform-readme",
     "docs/README.md": "documentation-index",
-    "docs/progress/STATUS.md": "status",
     "docs/progress/PLATFORM_MATRIX.md": "platform-matrix",
-    "docs/progress/ROADMAP.md": "roadmap",
+    "docs/progress/KNOWN_LIMITATIONS.md": "known-limitations",
+    "docs/development/PLATFORM_INTEGRATION.md": "platform-integration",
     "docs/quality/VERIFICATION_LEVELS_ZH.md": "quality-policy",
-    "docs/quality/ANDROID_QUALITY_BASELINE_ZH.md": "generated-quality-baseline",
-    "docs/quality/MACOS_BETA_READINESS_ZH.md": "release-readiness",
-    "docs/development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md": "development-plan",
-    "docs/development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md": "development-plan",
-    "docs/development/MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md": "development-plan",
-    "docs/development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md": "development-plan",
 }
 
 ROLE_PATTERN = re.compile(r"<!--\s*doc-role:\s*([a-z0-9-]+)\s*-->")
@@ -52,7 +47,7 @@ MANUAL_TEST_COUNT_PATTERN = re.compile(
     r"\b\d+\s*/\s*\d+\b.{0,28}(?:测试|test|通过|passed)",
     re.IGNORECASE,
 )
-STATUS_FULL_COMMIT_SHA_PATTERN = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", re.IGNORECASE)
+FULL_COMMIT_SHA_PATTERN = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", re.IGNORECASE)
 
 
 def _strip_code_fences(text: str) -> str:
@@ -84,8 +79,12 @@ def anchors(text: str) -> set[str]:
 
 
 def _local_document_paths(root: Path) -> list[Path]:
-    paths = [path for path in (root / "docs").rglob("*.md")]
-    paths.extend(root / relative for relative in ACTIVE_DOCUMENTS if not relative.startswith("docs/"))
+    # 包括模块说明、契约 README 和新增文档；排除忽略的本机构建产物。
+    result = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "*.md"],
+        check=True, capture_output=True,
+    )
+    paths = [root / name for name in result.stdout.decode("utf-8").split("\0") if name]
     return sorted({path.resolve() for path in paths if path.is_file()})
 
 
@@ -169,25 +168,23 @@ def validate_active_metadata(
             errors.append(f"活动文档不得记录 CI Run ID：{relative}")
         if MANUAL_TEST_COUNT_PATTERN.search(text):
             errors.append(f"活动文档不得记录人工维护的测试数量：{relative}")
-        if relative == "docs/progress/STATUS.md" and STATUS_FULL_COMMIT_SHA_PATTERN.search(text):
-            errors.append("STATUS.md 不得记录完整提交 SHA；精确执行结论应以 GitHub Checks 为准")
+        if expected_role in {"platform-matrix", "known-limitations"} and FULL_COMMIT_SHA_PATTERN.search(text):
+            errors.append(f"{relative} 不得记录完整提交 SHA；精确执行结论应以对应提交和 Checks 为准")
 
         if strict_release and reviewed is not None:
-            max_age = 30 if relative == "docs/progress/STATUS.md" else 90
-            if relative in {
-                "docs/progress/STATUS.md",
-                "docs/progress/PLATFORM_MATRIX.md",
-                "docs/progress/ROADMAP.md",
-            } and (now - reviewed).days > max_age:
+            max_age = 30
+            if expected_role in {"platform-matrix", "known-limitations"} and (now - reviewed).days > max_age:
                 errors.append(f"发布预检时效超限：{relative} 已超过 {max_age} 天")
     return errors
 
 
-def validate_status_line_count(path: Path = STATUS_PATH) -> list[str]:
+def validate_feature_line_count(path: Path = FEATURES_PATH) -> list[str]:
+    if not path.is_file():
+        return [f"功能表不存在：{path.name}"]
     lines = len(path.read_text(encoding="utf-8").splitlines())
-    # 状态页允许精简，不为满足最低行数重复专项文档；仍禁止空页与过长流水。
+    # 只约束唯一功能表，不为满足最低行数增加重复正文。
     if not path.read_text(encoding="utf-8").strip() or lines > 250:
-        return [f"STATUS.md 不得为空或超过 250 行，当前 {lines} 行"]
+        return [f"功能表不得为空或超过 250 行，当前 {lines} 行"]
     return []
 
 
@@ -195,7 +192,7 @@ def validate(strict_release: bool = False) -> list[str]:
     paths = _local_document_paths(ROOT)
     errors = validate_links(paths)
     errors.extend(validate_active_metadata(strict_release=strict_release))
-    errors.extend(validate_status_line_count())
+    errors.extend(validate_feature_line_count())
     return errors
 
 
@@ -214,7 +211,7 @@ def main() -> int:
             print(f"错误：{error}")
         return 1
     suffix = "（严格发布预检）" if args.strict_release else ""
-    print(f"文档检查通过{suffix}：链接、标题锚点、角色、时效、动态证据和状态页行数均符合要求。")
+    print(f"文档检查通过{suffix}：链接、标题锚点、角色、复核日期、生成结果和功能表长度符合要求；不代表接口或实机验证通过。")
     return 0
 
 

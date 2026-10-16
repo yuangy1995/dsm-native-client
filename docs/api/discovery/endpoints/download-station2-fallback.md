@@ -54,7 +54,7 @@
 
 | 环境标识 | 证据等级 | 接口版本 | 结果 | 日期 | 证据路径 |
 | --- | --- | --- | --- | --- | --- |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | `Task` 客户端范围 v1-v2；`Task.Statistic`、`Settings.Location`、`RSS.Feed` 客户端范围 v1 | `degraded`；Download Station `4.1.2-5012`，文件上传和设置写入尚未在真实目标执行 | 2026-07-27 | `docs/api/DSM_WEB_API_REFERENCE_ZH.md`、`docs/compatibility/DSM_COMPATIBILITY_MATRIX.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | `Task` 客户端范围 v1-v2；`Task.Statistic`、`Settings.Location`、`RSS.Feed` 客户端范围 v1 | `degraded`；Download Station `4.1.2-5012`，文件上传和设置写入尚未在真实目标执行 | 2026-07-27 | `docs/api/discovery/environments/INDEX.md`、`docs/compatibility/DSM_COMPATIBILITY_MATRIX.md` |
 
 `observed` 只表示当前证据中观察到了接口或请求形态，不等同于读取或写入已经通过行为验证。
 
@@ -65,13 +65,6 @@
 - 内部 API 缺失或不兼容时关闭对应增强能力，不使用猜测路径、版本、参数或公开 API 响应模型替代。
 - 内部降级必须有明确的请求契约和实际接口能力，不按DSM或Download Station精确版本禁用。
 - 公开接口可以满足的任务、统计和 RSS 能力继续走公开适配器。
-
-## 客户端与测试
-
-- 本记录不新增或变更客户端实现路径，仅把现有兼容条目从汇总索引迁移为独立稳定记录。
-- 兼容索引：`contracts/private-api/compatibility.json`。
-- 事实来源：`docs/api/DSM_WEB_API_REFERENCE_ZH.md` 与 `docs/compatibility/DSM_COMPATIBILITY_MATRIX.md`。
-- 后续新增脱敏 fixture 时必须独立标注公开接口与 `DownloadStation2` 内部接口，不得混用模型。
 
 ## 安全与副作用
 
@@ -86,3 +79,7 @@
 - `SYNO.DownloadStation2.RSS.Feed` 的方法与参数。
 - 文件上传、设置写入、任务创建和动态动作在真实专用目标上的行为。
 - 不同 DSM build、Download Station 版本、账号权限与连接方式下的兼容性。
+
+## 证据与实现范围
+
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

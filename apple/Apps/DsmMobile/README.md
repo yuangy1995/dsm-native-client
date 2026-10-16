@@ -1,78 +1,32 @@
 <!-- doc-role: platform-readme -->
-<!-- last-reviewed: 2026-10-10 -->
+<!-- last-reviewed: 2026-10-16 -->
 
-# DsmMobile
+# iPhone / iPad 客户端
 
-岚仓（LanStash）的 iPhone/iPad 通用 SwiftUI App，最低支持 iOS/iPadOS 17。两端业务范围一致：iPhone 使用导航栈和动态标签栏，iPad 根据可用宽度使用分栏、并列详情与键盘操作。
+岚仓的通用 SwiftUI App，最低 iOS/iPadOS 17。业务范围相同，iPhone 使用导航栈/标签栏，iPad 按可用宽度和字号采用分栏及键盘入口。[功能矩阵](../../../docs/progress/PLATFORM_MATRIX.md)是唯一功能清单。
 
-## 开始使用
+## 使用
 
-使用 HTTPS 地址或 QuickConnect 登录。自定义 HTTPS 端口收在高级连接设置；登录后保存连接名称、地址和账号。真机只在明确选择后保存密码，并可继续开启自动登录。
+支持 HTTPS 或 QuickConnect、OTP、用户明确选择的记住密码与自动登录。默认导航为文件和 App 设置；在设置中按当前账号授权开启照片、聊天、下载、容器、虚拟机和 NAS 设置。权限刷新只过滤入口，不覆盖用户的显隐偏好。
 
-默认导航为文件和 App 设置。在设置的可开启功能中，按当前账号授权选择照片、聊天、下载、容器、虚拟机和 NAS 设置。启用偏好不改变 NAS 权限：登录、返回前台、打开设置或刷新时重新读取授权，退出或换账号立即清理旧授权。读取失败可重试，文件与本机设置仍可用。iPhone 模块较多时使用系统“更多”，iPad 使用动态侧栏。
+文件活动入口集中显示传输、跨 NAS、Office 与扩展任务。复制/上传、加入相册、删源等阶段分开处理；重新打开应用只查询已提交的未知结果，未开始部分由用户明确继续。Office 使用系统副本后主动保存，Files 原位编辑另有授权及冲突保护。
 
-文件工具栏的活动入口集中查看上传、下载、归档、跨 NAS、Office 和扩展接手的任务。中断后先查看原任务状态；结果未知的写入不会自动重复。
+在设置中为原账号启用 Files 位置后，还需在系统“文件”启用该提供器。默认只读，编辑与删除分别授权；移除前处理未完成操作与未保存副本。系统分享在扩展内选择 NAS/目录并明确上传，主 App 只接手已释放的原任务。
 
-## 功能与使用边界
+普通文件、照片、跨 NAS 与 Office 可使用系统允许的后台时间，到期停止后项并保留恢复事实，不承诺锁屏或进程终止后继续。Chat 新消息更新限前台工作区，本地定时提醒最多安排最近50条；无后台远程推送。录音由用户主动开始，后台/中断不自动恢复。
 
-| 功能 | 当前用户结果 | 主要限制与恢复 |
-| --- | --- | --- |
-| 文件浏览与搜索 | 共享目录、分页、预览、收藏，以及目录/类型/大小/时间/所有者/正文等高级筛选 | 正文检索取决于 NAS 索引；无结果与无权限分别处理 |
-| 上传、下载与批量管理 | Files 多文件/目录上传、保留层次，混合复制/移动/删除、回收站恢复、多项目 ZIP 下载 | 覆盖、删除分别确认；按项显示结果，未完成副本与任务按账号隔离；不因重启重放未知上传 |
-| 分享、收集与归档 | 创建/管理分享、密码和有效期、访问对象、二维码、收集；压缩、包内浏览与选项解压 | 扩大访问或移除保护说明后果；归档任务绑定原 NAS 和目标 |
-| 权限与远程位置 | 所有者/群组与显式/继承权限；SMB/NFS/VFS/ISO 和系统云授权 | 高风险改动保留原快照与确认；真实权限、云回调和远程服务另验 |
-| 跨 NAS 复制与移动 | 明确选择两端账号和目录，复制后比对目标；移动再单独确认删源 | 未核对目标不得删除源，已完成步骤不重复，未知状态只读取恢复 |
-| Office | 六种格式 Quick Look 预览、系统编辑副本后主动回传；Files 提供原位编辑 | 冲突保留本机副本；后台时间由系统决定，不承诺终止进程后继续同步 |
-| Photos 上传与管理 | 系统照片/视频、文件/目录多选；普通/条件/冻结相册、分享/收集、目录、资料/日期/标签和旋转 | 原件权限与相册贡献权限分别检查；上传成功但加入相册失败只继续加入；重复策略读取失败可重试 |
-| Photos 分类与维护 | 人物/主题、手工人脸框、相似分组/撤销，预览重建、图库设置与成员管理 | 合并分组保留原照片；原件删除另行确认；人脸改框先保存新裁剪再移除旧框，失败不继续删除 |
-| Photos 浏览与导出 | 日/月分组、范围选择、缩略图大小、独立分页幻灯片；原件/JPEG/整集合 ZIP 与系统分享 | 整集合导出覆盖完整分页；不能转换时保留实际格式，重名副本不覆盖，部分失败保留已完成项 |
-| Chat | 单聊/私人群聊、搜索、本人编辑、线程、公告、批量转发/删除/关闭、投票、提醒/文字定时、单附件和语音 | 未知发送只查询；建群按创建/加入/邀请分步恢复；删除与关闭说明不同后果，不支持加密会话和实时通话 |
-| Chat 更新与通知 | 工作区前台实时更新、实际阅读位置同步、主动开启的本地到期提醒 | 未读按已确认位置更新；本机只安排最近 50 条未来提醒，不含后台新消息远程推送 |
-| Download Station | 完整目录/详情、筛选、多选暂停/继续、设置、保存位置、链接/文件/搜索创建、RSS 查看/更新/条目创建、移除与停止做种 | 移除任务与实际文件删除分开；结束并移出未完成文件需具体确认，实际文件由文件页独立选择 |
-| NAS 与套件 | 存储/SMART/日志、账号群组、服务/终端/代理、网卡/远程访问/安全、区域/DDNS、硬件/UPS/电源计划、计划任务/连接/电源、套件安装/更新/SPK/来源设置 | 只编辑实际支持字段；外接存储/进程只读，DSM 更新只检查；网络改变需明确恢复，电源接受不等于执行完成 |
-| Container Manager | 单项/多项启停重启/删除、活动详情、映像搜索/tag/下载/删除、网络管理、项目状态 | 按套件权限提供；暂时读失败保留任务，明确下载失败结束；容器创建/编辑及项目写未实现 |
-| VMM | 清单、电源/删除、基础设置、创建、网络/映像与触控控制台 | 固定原目标和接受回执；同名不认领，未知不重放；控制台退出/后台清理并手动重连，真实 noVNC/RFB 另验 |
+平台与存储边界见[集成说明](../../../docs/development/PLATFORM_INTEGRATION.md)。真机密码在 Keychain；仅模拟器用沙盒保护存储验证。移动仍使用当前开发格式，不保证旧开发记录迁移，也不能清空未知记录绕过防重复。
 
-Photos 目录与照片混合操作每批最多 100 项；共享来源只允许按现有方向规则复制回个人来源。目录子页的权限草稿返回后统一保存，扩大访问、覆盖子目录或清理缓存有具体后果确认。关闭个人图库不会自动取消相册贡献权限，最后可用图库不能关闭。
+## 构建与测试
 
-录音支持开始、停止、试听、丢弃和发送。麦克风拒绝、来电/音频中断或转入后台不会自动重启录音；媒体通过安全读取交给本机播放器，不直接暴露会话 URL。幻灯片离开模块、换账号或转入后台即停止。
+使用 [Apple 工作流](../../../.github/workflows/apple-build.yml)锁定的 Xcode/XcodeGen。以下从仓库根目录运行：
 
-## 后台、分享与系统文件
-
-普通文件、照片上传/导出、跨 NAS 和 Office 使用系统允许的后台执行时间；旧系统使用有限时间，到期取消在途请求并保存恢复状态，不保证锁屏、系统回收或强制结束后继续。自动照片备份、常驻进程与 iPad 多窗口不在当前范围。
-
-分享扩展可接收其他 App 的文件，在扩展内选择已登录 NAS 和目录并上传；中断后主 App 活动接手原记录。扩展只共享必要的文件连接能力、短期会话及用户主动选择的副本，不共享密码或 DID。退出、删除连接、账号/地址/信任变化会撤销旧共享会话；主 App 不接管仍由扩展执行的任务。
-
-在设置中启用文件位置后，可从系统“文件”浏览 NAS、下载与使用缓存。默认只读，编辑与删除分别授权；编辑回传遇到冲突保留本机副本。移除位置前处理未完成任务和未保存修改，退出账号不会自动删除系统副本。移动使用非复制式系统适配，macOS 的域移除保留模式不可直接套用。
-
-实现与设备条件见[系统传输与分享](../../../docs/development/APPLE_MOBILE_SYSTEM_TRANSFERS_ZH.md)、[Files 接入](../../../docs/development/APPLE_MOBILE_FILES_PROVIDER_ZH.md)和[照片/跨 NAS/Office 后台](../../../docs/development/APPLE_MOBILE_BACKGROUND_EXECUTORS_ZH.md)。
-
-## 账号与恢复
-
-组合根装配会话和导航，下载由 `MobileDownloadsModel` 持有，Photos 使用共享 `DsmPhotosFeature`，文件计划/归档/Office 使用 `DsmFileFeature`，Files 共用 `DsmFileProviderRuntime`。系统选择器回调绑定原连接；同一配置更换账号、地址或信任边界时旧请求与缓存失效。
-
-操作记录使用当前移动开发格式，按账号隔离并受系统文件保护、排除备份。摘要记录不保存密码、会话、分享链接或无关正文；继续发送所需草稿、附件与编辑副本独立保护，完成后清理。保存失败不提交写入，损坏记录限制相关操作并保留恢复资料，不阻断无关浏览。重启只查询已提交的未知结果，剩余未提交项由用户明确继续或取消。
-
-真机密码使用 Keychain。仅模拟器使用沙盒 AES-GCM 存储验证登录/自动登录，不改变真机策略。正式分享与 Files 需要主 App 和扩展的团队、移动 App Group 与共享会话权限一致，见[签名配置](../../../docs/development/APPLE_GITHUB_ACTIONS_SIGNING_ZH.md)。
-
-## 构建与验证
-
-使用 [Apple 工作流](../../../.github/workflows/apple-build.yml)锁定的 Xcode 26.6（17F113）与 XcodeGen 2.46.0。以下命令从仓库根目录执行，只验证编译：
-
-```bash
-cd apple/Apps/DsmMobile
-xcodegen generate
-xcodebuild \
-  -project DsmMobile.xcodeproj \
-  -scheme DsmMobile \
-  -sdk iphonesimulator \
-  -configuration Debug \
-  CODE_SIGNING_ALLOWED=NO \
-  build
+```sh
+xcodegen generate --spec apple/Apps/DsmMobile/project.yml
+xcodebuild build -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+xcodebuild test -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -destination 'platform=iOS Simulator,id=<测试设备ID>' -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
 ```
 
-`DsmMobileUITests` 分别在 iPhone/iPad 启动 App、操作原生控件并保存截图。仅 Debug 的 `--ui-fixture` 使用隔离偏好和内存网络替身，不读取真实配置或访问 NAS；Release 不编译该入口。共享变化另运行 `swift test --package-path apple` 与 macOS 回归，不能用共享通过替代两端 UI。
+通用无签名构建只证明编译；实际模拟器测试使用正常临时签名，分别选择 iPhone 和 iPad。按改动使用 `-only-testing` 聚焦，失败退出不得吞掉。仅 Debug 的 `--ui-fixture` 使用隔离偏好和合成网络；Release 不包含这些入口。共享修改另运行 `swift test --package-path apple` 和 Mac 回归。
 
-当前批准范围已有源码与分片验证。原云端失败修正后按机型本机复跑通过，完整云端复验按用户要求延期；本机通过不能消除历史系统读访问占用与时序风险。真机、正式权限、真实 NAS、完整辅助功能与后台生命周期仍为 `PENDING_USER_VALIDATION`，尚未移动正式发布。
-
-当前事实与步骤只维护于[移动主计划](../../../docs/development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)，精确命令、原失败和结果包见[验证历史](../../../docs/archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)，逐波设计见[实施历史](../../../docs/archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md)。
+正式 App/Share/Files 的团队与移动 App Group、共享会话权限须一致，见[签名配置](../../../docs/releases/MACOS_GITHUB_RELEASE_ZH.md)。已知源码问题、完整云端复验及真机/真实 NAS 条件见[限制清单](../../../docs/progress/KNOWN_LIMITATIONS.md)；模拟器通过不表示系统文件、后台调度或正式分发完成。

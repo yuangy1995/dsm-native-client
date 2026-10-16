@@ -70,23 +70,11 @@ Fixture 或界面。未来启用前必须取得版本化设备标识、占用检
 部分目录。Windows 对可读取数组中的无效条目单独提示不完整；Apple 无效数组
 结构使该来源独立不可用，保留其他来源，不改变接口证据等级。
 
-## 客户端与界面
-
-- Apple 领域：`NasExternalStorageDirectory`、`NasExternalStorageDevice`、
-  `NasExternalStorageConnection`、`NasExternalStorageStatus`。
-- Apple Adapter：`DsmNasAdministrationRepository.loadExternalStorage()`。
-- macOS：NAS 设置中的“外接存储”页，提供全部/USB/eSATA 筛选、手动刷新、只读说明、
-  截断与局部降级提示，以及加载、空内容、筛选空、错误和正常五种状态。
-- Windows：已接 v1 独立读取、64 项边界、只读原生列表/容量/状态/筛选与失败降级，
-  只有合成证据，没有 eject 入口。
-- iPhone、iPad、Android：本波不迁移页面；Apple 移动需回归共享严格读取修正。
-- 状态同时使用图标和文字，不依赖颜色；页面没有弹出或其他写按钮。
-
 ## 版本验证
 
 | 环境标识 | 证据等级 | 结果 | 日期 | 证据路径 |
 | --- | --- | --- | --- | --- |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `static` | 只确认 API 与方法名；未保存真实设备响应，也未执行弹出 | 2026-08-03 | `docs/api/DSM_WEB_API_REFERENCE_ZH.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `static` | 只确认 API 与方法名；未保存真实设备响应，也未执行弹出 | 2026-08-03 | `docs/api/discovery/environments/INDEX.md` |
 
 合成响应、字段白名单、64 项上限、版本协商、局部降级、能力缺失零请求和零 `eject`
 测试不能把当前环境提升为 `read-verified`。
@@ -98,6 +86,7 @@ Fixture 或界面。未来启用前必须取得版本化设备标识、占用检
 - 容量字段是否始终以字节返回，以及列表排序和刷新一致性；
 - `eject` 的参数、占用语义、任务状态、取消、超时和最终状态复查。
 
-## 2026-10-05 移动 M6a1 接入
 
-iPhone/iPad M6a1 已接既有读取适配器、USB/eSATA 筛选、容量/状态、截断和局部不可用提示，继续没有 eject 入口。未新增请求或放宽字段白名单。当前环境命令与两端页面验证集中在[移动主计划](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a1-五项读取与筛选)及其验证历史；真实 NAS 证据不提升。
+## 证据与实现范围
+
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

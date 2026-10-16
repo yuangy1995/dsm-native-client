@@ -54,7 +54,7 @@
 
 | 环境标识 | 证据等级 | 结果 | 日期 | 证据路径 |
 | --- | --- | --- | --- | --- |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | 读取结构、网页请求和能力范围已有记录；写入只完成合成请求、故障注入与模型测试，未执行真实行为验收 | 2026-07-27 | `docs/api/DSM_WEB_API_REFERENCE_ZH.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | 读取结构、网页请求和能力范围已有记录；写入只完成合成请求、故障注入与模型测试，未执行真实行为验收 | 2026-07-27 | `docs/api/discovery/environments/INDEX.md` |
 
 合成 Fixture 与源码测试只证明当前客户端序列化和恢复语义稳定，不将当前环境提升为
 `behavior-verified`。
@@ -63,33 +63,10 @@
 
 - 未发现任一文件服务 API 时，整个页面按不可用处理。
 - 单个 API 缺失时，其字段保持 `nil`，界面不显示对应控件，也不提交猜测值。
-- macOS 本轮按用户明确授权提供测试入口，以实际接口版本、权限、输入、确认、防重复和结果核查判断可用性，不仅因未实测固定关闭。新 DSM build 的真实行为仍待验证；其他平台以其最新授权和实施状态为准。
+- macOS 按用户明确授权提供测试入口，以实际接口版本、权限、输入、确认、防重复和结果核查判断可用性，不仅因未实测固定关闭。新 DSM build 的真实行为仍待验证；其他平台以其最新授权和实施状态为准。
 - 提交前读取失败不发送写请求；提交后读取失败返回未确认，不自动再次保存。
 - 文件服务设置失败不阻断文件浏览、照片、消息或其他 NAS 设置。
 - 当前项目未找到覆盖这些 DSM 控制面板设置的统一公开写 API。
-
-## 客户端与测试
-
-- Apple Adapter：`DsmNasAdministrationRepository`。
-- Android Adapter：`NasServiceSettingsRepository` 与当前服务模型；六组能力在首个写请求前一次性预检，仅提交变化组，每组重新比较原快照，逐项回读并最终整体复查。A10已删除旧根仓储写门面，原有效回归直接覆盖当前执行器。
-- Windows：六组固定版本 get 已迁移，新增字段可用/失败位图及独立 FTPS 开关；单组
-  失败不伪造关闭，认证失败与取消传播，无任一 API 时不可用。原生只读文件服务表单
-  已接入服务设置菜单及基线绑定的六组保存核心：先完整预检、仅提交变化组，中途异常
-  停止后续组并整体回读，同请求只核对、不重发。已有合成 HTTP 与表单校验/确认回归；
-  生产行为门独立关闭，未执行真实写。FORM/JSON 的布尔/整数业务参数按 fixture 编码，
-  不提交未知字段、代理字段或旧猜测聚合请求。
-- iPhone 与 iPad：M6b2 已接原生编辑/确认、原快照绑定、逐请求记录及只读恢复，两端实际 UI、共享和 Mac 回归通过；真实 NAS 写行为未验证。
-- 脱敏 Fixture：
-  - `contracts/request-fixtures/file-services/set-smb/synthetic-settings/request.json`
-  - `contracts/request-fixtures/file-services/set-nfs/synthetic-settings/request.json`
-  - `contracts/request-fixtures/file-services/set-ftp/synthetic-settings/request.json`
-  - `contracts/request-fixtures/file-services/set-sftp/synthetic-settings/request.json`
-  - `contracts/request-fixtures/file-services/set-web-discovery/synthetic-settings/request.json`
-  - `contracts/request-fixtures/file-services/set-time-machine/synthetic-settings/request.json`
-- 自动化测试覆盖六类请求确认成功、一次性能力预检、冲突端口、部分成功、断网后回读
-  失败、全局重复提交、提交后取消和 macOS 用户反馈；Android
-  `NasServiceSettingsMutationTest` 另覆盖六组固定参数/版本、只提交变化组、后续能力缺失
-  零写请求、前序生效后断线的部分成功以及 Time Machine 依赖。
 
 ## 安全与副作用
 
@@ -101,35 +78,6 @@
 
 ## 未验证事项
 
-- 六类写操作在目标 DSM build、不同权限和活跃客户端连接下的真实副作用尚未验证。
-- SMB 与 Time Machine、FTP/FTPS 与 SFTP 端口约束在不同 DSM build 上的服务端错误
-  细节尚未收集。
-- Android 调用链已迁移但尚未做设备及真实 DSM 写行为验收；Windows 已有读取/原生
-  表单及六组安全写核心的源码与合成回归，生产行为门仍关闭；iPhone 与 iPad 的 M6b2 设置链已接入，真实 NAS 写行为尚未验收。
-- Windows 实机读取为 `PENDING_USER_VALIDATION`：核对可用协议开关、端口、缺失能力
-  与权限失败，不能将静态/合成通过提升为行为验证；不启停真实服务，不回传原始响应。
+## 证据与实现范围
 
-
-## 2026-10-05 Mac 保存反馈修正
-
-用户单独授权修正 Mac 文件服务、终端和代理三个结果判断。页面缓存或回读字段恰好相同，不能覆盖适配器返回的权限拒绝、不支持、部分完成、未知或提交后取消；只有明确成功及提交前取消按对应结果结束。请求、权限检查和服务副作用没有改变，移动本项实现仍按 M6b2 另行推进。三项新增模型回归先复现 18 个错误判断，修复后 Mac 管理模型 101 项、共享完整回归及 Mac 双架构构建通过；真实 NAS 证据等级不提升。具体命令见[移动验证记录](../../../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#2026-10-05-移动-m6b1-账号与群组管理)。
-
-## 2026-10-05 移动 M6b2 管理与恢复
-
-移动管理读取只使用本文已记录版本；同一解析入口提供严格字段检查，未知开关/非整数端口不能变为可写默认值。新管理方法携带原配置和提交检查点，与 Mac 旧方法共用实际请求编码；旧调用仍保持兼容。开始前核对全部变化组的能力、原字段和依赖，每个写请求前重新检查当前权限并保存记录。明确拒绝不被后续相同配置覆盖；回执丢失只读取，不重复提交。
-
-文件服务的六组请求分别保存写前、接受和回读阶段；未提交的后组不能因读取到相同值而被认领成功。顺序保持 SMB/Time Machine 和在用端口的有效中间状态，无法直接安全交换在用端口时要求用户先明确关闭其中一项。最后一次读取覆盖本次所有已写组。终端和代理以单个完整请求作为恢复单位，若仅部分字段生效，记录该事实并保留整组保护；不能把 SSH 或代理开关相同推定为完整保存。停用代理只发送并比较开关，不改保留地址/端口。
-
-移动的 `NAS/service-operations-v1.json` 仅保存账号上下文/配置摘要、服务类别、逐组阶段/回执和日期，使用完整系统文件保护并排除备份，不存主机、端口正文、账号或密码。准备阶段重启取消；已提交部分等待只读恢复；未完成记录不可直接移除重发。保护仅限制相关服务，读取失败不影响其他页面。实际系统锁屏保护尚待真机验证，模拟器不作通过结论。
-
-本片不新增 DSM 参数，不改变证据等级；五端中 Mac 复用请求并执行回归，iPhone/iPad 增加完整管理与恢复，Windows/Android 只登记语义影响。逐轮测试及设备待办见[移动 M6b2 账本](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6b2-文件服务终端与代理)。
-
-## 2026-10-13 Android A7 服务保存与恢复
-
-Android 产品入口已迁移至 `NasServiceSettingsRepository`、`NasServiceSettingsModel` 和 `NasServiceActivityStore`。三个原生表单沿用既有布局和明确风险确认，打开时保留原配置，保存前逐组重读、检查当前权限与实际接口能力；所有写请求只传输一次。SMB/NFS/终端限定共同支持的 v1…v3，其余按本文固定版本；未知开关、非整数或越界端口不能成为可写默认值。
-
-文件服务先检查所有字段与能力，按 SMB/Time Machine 依赖及在用端口安排顺序，不能直接交换冲突端口。逐组记录提交前、接受和回读结果，最后整体复查；中途断线停止后组，未提交组明确结束，不因巧合同值认领成功。终端与代理以完整请求为恢复单位，只有部分字段相同仍保留保护；停用代理只提交开关，编辑预检仍包含原保留地址与端口。明确拒绝不被后续配置相同覆盖。
-
-恢复记录使用现有加密本地存储，按原账号身份隔离，只保存服务类别、组名、目标摘要与阶段，不存地址、端口正文或配置值。重启时取消未提交组，其余只读取配置；未知结果不能通过关闭提示、换会话或再次点击保存绕过。旧表单、账号变化及迟到结果不进入新工作区，原页面的三条旧根模型写入口已移除。
-
-聚焦与兼容 JVM 101 项通过（新服务仓储11、恢复记录4、真实传输模型4、三组既有反馈12、既有设置62、分区/可用性8），零失败、零跳过。本机证据为 `build/android-rewrite-a7/services-jvm-run4.txt`、`services-results/` 与源码摘要；首轮阶段处理失败已修复，旧代理测试的端口0前置样本改为有效端口并保留全部原断言，另测非法代理响应必须整体拒绝。Android 3823 项双语资源及硬编码检查通过。手机/平板归入 A7 整模块验收，真实服务启停、端口、权限与当前连接影响仍为 `PENDING_USER_VALIDATION`，仅限专用测试 NAS；本轮没有真实 NAS 写入，也不提升历史环境证据等级。Mac、Apple 移动端与 Windows 未改。
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

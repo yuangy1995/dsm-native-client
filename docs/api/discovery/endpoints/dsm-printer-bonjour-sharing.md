@@ -61,7 +61,7 @@ Windows 均不注册该能力，不发送猜测请求。
 
 | 环境标识 | 证据等级 | 接口版本 | 结果 | 日期 | 证据路径 |
 | --- | --- | --- | --- | --- | --- |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `static` | 未验证 | 仅登记静态 API 名称与 `get`；没有在该环境观察或调用 | 2026-08-03 | `docs/api/DSM_WEB_API_REFERENCE_ZH.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `static` | 未验证 | 仅登记静态 API 名称与 `get`；没有在该环境观察或调用 | 2026-08-03 | `docs/api/discovery/environments/INDEX.md` |
 
 静态目录不证明该端点在当前 DSM build 可发现或可读取。
 
@@ -73,17 +73,6 @@ Windows 均不注册该能力，不发送猜测请求。
 - 字段缺失或类型变化：不得把未知值转换成 `false`；
 - 替代的官方 API：当前未发现；
 - 功能开关：没有客户端功能开关，能力整体关闭。
-
-## 客户端与测试
-
-- Apple / Android / Windows Adapter：未实现；
-- 领域模型：未建立；取得证据后最多考虑只含可空布尔状态的独立快照；
-- Schema：无真实响应，不建立响应 Schema；
-- 脱敏 fixture：无真实响应，不创建 fixture；
-- 自动化测试：当前无请求实现；未来必须覆盖版本拒绝、严格布尔、隐私字段忽略、
-  能力缺失零请求、空/错误/正常态以及全局零写入；
-- 产品兼容矩阵：`docs/compatibility/DSM_COMPATIBILITY_MATRIX.md`；
-- 机器索引：`contracts/private-api/compatibility.json`。
 
 ## 安全与副作用
 
@@ -102,3 +91,7 @@ Windows 均不注册该能力，不发送猜测请求。
 - 服务不可用、无打印机、共享关闭与无权限的差异；
 - 是否返回任何打印机、队列、网络或设备标识；
 - 普通账号、不同硬件和 DSM 更新下的行为。
+
+## 证据与实现范围
+
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。
