@@ -1,6 +1,7 @@
 import DsmCore
 import DsmNetwork
 import Foundation
+import Network
 import Observation
 import DsmLocalization
 
@@ -117,6 +118,7 @@ final class AppModel {
     private enum SessionRestoreOutcome: Equatable {
         case connected
         case credentialsNeeded
+        case retryableFailure
         case stopped
     }
 
@@ -162,15 +164,20 @@ final class AppModel {
     private let secureStoreRollbackMigrator:
         DesktopSecureStoreRollbackMigrator?
     private let desktopDriveStore: DesktopDriveConfigurationStore
+    private let autoLoginRetryDelays: [Duration]
     private var selectedProfile: NasProfile?
     private var activeConnectionProfile: NasProfile?
     private var capabilities: CapabilitySet?
     private var session: AuthSession?
     private var certificateRetryMode: CertificateRetryMode = .connect
     private var didLoad = false
+    private var needsAutoLoginRetryOnNetworkReady = false
+    private var lastConnectFailedWithRetryableError = false
     private var workspacesByProfileID: [UUID: WorkspaceModel] = [:]
     private var connectionContextsByProfileID: [UUID: ConnectionContext] = [:]
     @ObservationIgnored private var loginTask: Task<Void, Never>?
+    @ObservationIgnored private var autoLoginTask: Task<Void, Never>?
+    @ObservationIgnored private var pathMonitor: NWPathMonitor?
     @ObservationIgnored private var connectionGeneration = 0
 
     var connectedWorkspaces: [WorkspaceModel] {
@@ -190,7 +197,14 @@ final class AppModel {
         desktopDriveSessionStore: (any SessionSecureStoring)? = nil,
         secureStoreRollbackMigrator:
             DesktopSecureStoreRollbackMigrator? = nil,
-        desktopDriveStore: DesktopDriveConfigurationStore = .init()
+        desktopDriveStore: DesktopDriveConfigurationStore = .init(),
+        autoLoginRetryDelays: [Duration] = [
+            .seconds(1),
+            .seconds(2),
+            .seconds(4),
+            .seconds(8),
+            .seconds(15)
+        ]
     ) {
         let usesProductionSecureStore = authRepository == nil && passwordStore == nil
         let localSecureStore = LocalFileSecureStore()
@@ -212,6 +226,7 @@ final class AppModel {
                 )
                 : nil)
         self.desktopDriveStore = desktopDriveStore
+        self.autoLoginRetryDelays = autoLoginRetryDelays
     }
 
     func load() {
@@ -220,12 +235,54 @@ final class AppModel {
         }
         didLoad = true
         profiles = profileStore.load()
-        if let first = profiles.first {
+        let initial = profiles.first(where: { profileStore.isAutoLoginEnabled(for: $0.id) })
+            ?? profiles.first
+        if let initial {
             chooseProfile(
-                first,
-                attemptSessionRestore: profileStore.isAutoLoginEnabled(for: first.id)
+                initial,
+                attemptSessionRestore: profileStore.isAutoLoginEnabled(for: initial.id)
             )
         }
+    }
+
+    func startNetworkMonitoring() {
+        guard pathMonitor == nil,
+              ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
+              NSClassFromString("XCTestCase") == nil else {
+            return
+        }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            Task { @MainActor [weak self] in
+                self?.retryAutoLoginIfNeeded()
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.lanstash.network-monitor"))
+        pathMonitor = monitor
+    }
+
+    func retryAutoLoginIfNeeded() {
+        guard needsAutoLoginRetryOnNetworkReady,
+              !isBusy,
+              workspace == nil,
+              pendingCertificate == nil,
+              !requiresOTP,
+              autoLoginEnabled,
+              let profile = selectedProfile else {
+            return
+        }
+        scheduleAutoLogin(for: profile)
+    }
+
+    func openChatConversationFromNotification(scope: String, conversationID: String) {
+        guard let targetWorkspace = connectedWorkspaces.first(where: { $0.chat.notificationScope == scope }),
+              targetWorkspace.isChatModuleEnabled else {
+            return
+        }
+        selectProfile(id: targetWorkspace.profile.id)
+        targetWorkspace.section = .chat
+        Task { await targetWorkspace.chat.selectConversation(id: conversationID) }
     }
 
     func newProfile() {
@@ -271,6 +328,8 @@ final class AppModel {
         autoLoginEnabled = enabled
         if enabled {
             rememberPassword = true
+        } else {
+            needsAutoLoginRetryOnNetworkReady = false
         }
         if let profileID = selectedProfile?.id {
             profileStore.setAutoLoginEnabled(enabled, for: profileID)
@@ -423,6 +482,10 @@ final class AppModel {
 
     private func invalidateConnectionAttempt() {
         connectionGeneration += 1
+        needsAutoLoginRetryOnNetworkReady = false
+        lastConnectFailedWithRetryableError = false
+        autoLoginTask?.cancel()
+        autoLoginTask = nil
         loginTask?.cancel()
         loginTask = nil
         isBusy = false
@@ -435,6 +498,9 @@ final class AppModel {
 
     func connect() async {
         guard !isBusy else { return }
+        needsAutoLoginRetryOnNetworkReady = false
+        autoLoginTask?.cancel()
+        autoLoginTask = nil
         loginTask?.cancel()
         connectionGeneration += 1
         let generation = connectionGeneration
@@ -448,6 +514,7 @@ final class AppModel {
 
     private func performConnect(generation: Int) async {
         guard !isBusy, generation == connectionGeneration, !Task.isCancelled else { return }
+        lastConnectFailedWithRetryableError = false
         isBusy = true
         statusIsError = false
         statusMessage = L10n.string("ui.a50211f01216a878")
@@ -548,7 +615,11 @@ final class AppModel {
             guard generation == connectionGeneration, !Task.isCancelled else { return }
             statusIsError = true
             statusMessage = error.localizedDescription
-            password = ""
+            if Self.isRetryableStartupError(error) && (rememberPassword || autoLoginEnabled) {
+                lastConnectFailedWithRetryableError = true
+            } else {
+                password = ""
+            }
             otpCode = ""
         } catch {
             guard generation == connectionGeneration, !Task.isCancelled else { return }
@@ -711,6 +782,10 @@ final class AppModel {
     }
 
     private func chooseProfile(_ profile: NasProfile, attemptSessionRestore: Bool) {
+        needsAutoLoginRetryOnNetworkReady = false
+        lastConnectFailedWithRetryableError = false
+        autoLoginTask?.cancel()
+        autoLoginTask = nil
         selectedProfile = profile
         activeConnectionProfile = nil
         selectedProfileID = profile.id
@@ -741,19 +816,72 @@ final class AppModel {
             Task { await loadSavedPassword(for: profile) }
             return
         }
+        scheduleAutoLogin(for: profile)
+    }
+
+    private func scheduleAutoLogin(for profile: NasProfile) {
+        autoLoginTask?.cancel()
+        loginTask?.cancel()
+        loginTask = nil
+        isBusy = false
+        connectionGeneration += 1
         let generation = connectionGeneration
-        Task {
+        autoLoginTask = Task { [weak self] in
+            await self?.performAutoLogin(for: profile, generation: generation)
+        }
+    }
+
+    private func performAutoLogin(for profile: NasProfile, generation: Int) async {
+        if password.isEmpty {
             await loadSavedPassword(for: profile)
-            guard generation == connectionGeneration,
-                  selectedProfile?.id == profile.id, autoLoginEnabled, !password.isEmpty else {
+        }
+        guard !Task.isCancelled,
+              generation == connectionGeneration,
+              selectedProfile?.id == profile.id,
+              autoLoginEnabled,
+              !password.isEmpty else {
+            return
+        }
+        for attempt in 0...autoLoginRetryDelays.count {
+            if attempt > 0 {
+                do {
+                    try await Task.sleep(for: autoLoginRetryDelays[attempt - 1])
+                } catch {
+                    return
+                }
+            }
+            guard !Task.isCancelled,
+                  generation == connectionGeneration,
+                  selectedProfile?.id == profile.id,
+                  workspace == nil,
+                  autoLoginEnabled,
+                  !password.isEmpty,
+                  pendingCertificate == nil,
+                  !requiresOTP else {
                 return
             }
             let outcome = await restoreSession(for: profile)
-            if outcome == .credentialsNeeded, generation == connectionGeneration,
-               selectedProfile?.id == profile.id,
-               autoLoginEnabled,
-               !password.isEmpty {
-                await connect()
+            switch outcome {
+            case .connected, .stopped:
+                needsAutoLoginRetryOnNetworkReady = false
+                return
+            case .retryableFailure:
+                needsAutoLoginRetryOnNetworkReady = true
+                continue
+            case .credentialsNeeded:
+                guard !Task.isCancelled,
+                      generation == connectionGeneration,
+                      selectedProfile?.id == profile.id,
+                      autoLoginEnabled,
+                      !password.isEmpty else {
+                    return
+                }
+                await performConnect(generation: generation)
+                if workspace != nil || !lastConnectFailedWithRetryableError {
+                    needsAutoLoginRetryOnNetworkReady = false
+                    return
+                }
+                needsAutoLoginRetryOnNetworkReady = true
             }
         }
     }
@@ -858,12 +986,12 @@ final class AppModel {
             guard generation == connectionGeneration, !Task.isCancelled else { return .stopped }
             statusIsError = true
             statusMessage = error.localizedDescription
-            return .stopped
+            return Self.isRetryableStartupError(error) ? .retryableFailure : .stopped
         } catch let error as AppError where error.isRetryable || error.category == .tlsUntrusted {
             guard generation == connectionGeneration, !Task.isCancelled else { return .stopped }
             statusIsError = true
             statusMessage = error.safeUserMessage
-            return .stopped
+            return error.isRetryable ? .retryableFailure : .stopped
         } catch {
             guard generation == connectionGeneration, !Task.isCancelled else { return .stopped }
             statusIsError = true
@@ -972,6 +1100,21 @@ final class AppModel {
             }
         )
         activeConnectionProfile = connectionProfile
+        let desktopDriveStore = self.desktopDriveStore
+        let desktopDriveBootstrap: (@MainActor () async -> Void)? = if let bridge = desktopDriveSessionBridge {
+            { @MainActor in
+                let manager = DesktopCloudDriveManager(
+                    profile: profile,
+                    repository: repository,
+                    store: desktopDriveStore,
+                    sessionBridge: bridge
+                )
+                await manager.load()
+                await DesktopDriveMenuBarController.shared.refreshAfterWorkspaceLogin()
+            }
+        } else {
+            nil
+        }
         let openedWorkspace = WorkspaceModel(
             profile: profile,
             repository: repository,
@@ -982,6 +1125,7 @@ final class AppModel {
             nasSettingsRepository: administrationRepository,
             serviceManagementRepository: serviceManagementRepository,
             desktopDriveSessionBridge: desktopDriveSessionBridge,
+            desktopDriveBootstrap: desktopDriveBootstrap,
             moduleAccessLoader: { await accessReader.read() }
         )
         workspacesByProfileID[profile.id] = openedWorkspace
@@ -992,8 +1136,11 @@ final class AppModel {
             route: route
         )
         workspace = openedWorkspace
+        needsAutoLoginRetryOnNetworkReady = false
+        lastConnectFailedWithRetryableError = false
         statusIsError = false
         statusMessage = L10n.string("ui.49263fcae6b8dce3", String(describing: profile.displayName))
+        openedWorkspace.scheduleBackgroundStartup()
     }
 
     private func clearStoredSessions(profileID: UUID) async {
@@ -1163,11 +1310,31 @@ final class AppModel {
         statusIsError = true
         statusMessage = error.safeUserMessage
         if error.category == .otpRequired {
+            lastConnectFailedWithRetryableError = false
             requiresOTP = true
             otpCode = ""
+        } else if error.isRetryable && (rememberPassword || autoLoginEnabled) {
+            lastConnectFailedWithRetryableError = true
+            otpCode = ""
         } else {
+            lastConnectFailedWithRetryableError = false
             password = ""
             otpCode = ""
         }
+    }
+
+    private static func isRetryableStartupError(_ error: any Error) -> Bool {
+        if let appError = error as? AppError {
+            return appError.isRetryable
+        }
+        if let qcError = error as? QuickConnectResolutionError {
+            switch qcError {
+            case .relayUnavailable, .serviceUnavailable, .offline:
+                return true
+            case .notFound, .noDirectRoute, .relayDisabled, .relayIdentityMismatch, .invalidResponse:
+                return false
+            }
+        }
+        return false
     }
 }
