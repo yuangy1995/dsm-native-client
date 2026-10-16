@@ -209,8 +209,21 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
             CountText.Text = _l.Format("PhotosLoadedCount", _model.Items.Count + _model.Collections.Count + _model.VisibleSharedEntries.Count);
             RenderPreviewControls();
             RenderManagementControls();
+            UpdateChangeRefresh();
         }
         finally { _rendering = false; }
+    }
+
+    private void UpdateChangeRefresh()
+    {
+        if (!_model.CanRefreshChanges)
+        {
+            _fileRefreshTimer?.Stop(); _albumRefreshTimer?.Stop();
+            // 图库授权失败只显示主错误，不能伪装成用户执行过文件或相册操作。
+            if (!_model.HasAccess) PhotoFileBar.IsOpen = PhotoAlbumBar.IsOpen = false;
+            return;
+        }
+        StartFileRefresh(); StartAlbumRefresh();
     }
 
     private void RebuildGroups()

@@ -71,7 +71,7 @@ public sealed partial class SynologyPhotosRepository
             ("additional", new[] { "thumbnail", "video_meta", "video_convert" })), token, photo.Id.Space).ConfigureAwait(false));
         if (raw.Length != 1) throw Invalid(); var item = raw[0];
         if (Positive(item, "id") != photo.Id.ItemId || Text(item, "filename") != photo.Filename || Number(item, "filesize") != photo.SizeBytes ||
-            Positive(item, "folder_id") != photo.FolderId || Text(item, "type") != photo.MediaType || Timestamp(item, "indexed_time") != photo.IndexedAt)
+            Positive(item, "folder_id") != photo.FolderId || Text(item, "type") != photo.MediaType || IndexedTimestamp(item) != photo.IndexedAt)
             throw new SynologyPhotoException(SynologyPhotoFailure.TargetChanged);
         var owner = Number(item, "owner_user_id");
         if (photo.Id.Space == SynologyPhotoSpace.Shared ? owner != 0 : owner <= 0 || owner != _currentUserId)

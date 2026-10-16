@@ -14,6 +14,20 @@
 
 ## 请求契约
 
+### 2026-10-16 Windows 空保护清单兼容
+
+待归属环境 DSM 7.2.1-69057 Update 12、VMM 2.6.5-12202 的官方保护页面，
+`SYNO.Virtualization.GuestProtect.Plan.list` v2 通过 `SYNO.Entry.Request` v2
+返回成功 `data={"protect_ids":[]}`，并非旧合成样例的 `plans:[]`。这只验证
+没有计划的读取结构；非空编号数组的详情读取仍未验证，不能据此猜测 `get` 参数。
+Windows 接受空编号数组为正常空状态，非空、畸形、冲突或未知数组继续报告该分区读取失败，
+不影响其他已成功资源。没有改变公开 VMM 契约或开放写操作。
+
+五端影响：Windows 修正解析并新增真实 HTTP 解码到 ViewModel 的合成回归；macOS、
+iPhone/iPad 共用 Apple 读取实现及 Android 需在各自实施线复验此结构，本轮不修改其源码，
+也不将 Windows 测试或本次浏览器结果提升为四端验收。完整条件见
+[本次观察](../environments/2026-10-16-windows-read-regression.md)。
+
 ### 2026-10-14 Android 控制台实现边界
 
 Android A8 仅复用本页已记录的 Guest.list/get、Setting.General.get 与2026-09-21静态资源路径，不构成新增接口发现。原VM身份、运行状态、权限与未完成操作互锁在准备和手动重连时重新读取；内部get v2的Default布局只用General.get v1解析。系统WebView临时HTTPS来源与主框架消息端口隔离网页，原生OkHttp复用原证书/授权访问固定资源和WSS，Cookie仅在原生请求头；拒绝重定向、网页直接联网、外部导航、文件/内容访问、混合内容和网页持久存储。窗口设置只在有限内存中存在，不新增会话/资料存储格式或权限。

@@ -432,12 +432,22 @@ public sealed partial class DsmRepository
             ["retention_policies", "retentions", "retention_policy"],
         ];
         var knownRootNames = knownRoots.SelectMany(roots => roots).ToHashSet(StringComparer.Ordinal);
+        // 官方 Plan.list v2 在没有保护计划时返回 protect_ids 空数组。
+        // 非空编号不是完整计划详情，不能当作空列表或猜测后续请求。
+        var hasEmptyProtectionIds = false;
+        if (data.TryGetPropertyValue("protect_ids", out var protectionIds))
+        {
+            if (protectionIds is not JsonArray { Count: 0 })
+                throw InvalidVirtualMachineManagerResponse();
+            hasEmptyProtectionIds = true;
+            knownRootNames.Add("protect_ids");
+        }
         if (data.Any(pair => pair.Value is JsonArray && !knownRootNames.Contains(pair.Key)))
         {
             throw InvalidVirtualMachineManagerResponse();
         }
 
-        var recognizedRoot = false;
+        var recognizedRoot = hasEmptyProtectionIds;
         AppendProtectionResources(
             result,
             ids,
@@ -459,7 +469,7 @@ public sealed partial class DsmRepository
             knownRoots[2],
             VirtualizationResourceKind.ProtectionRetention,
             ref recognizedRoot);
-        if (!recognizedRoot)
+        if (!recognizedRoot || hasEmptyProtectionIds && result.Count > 0)
         {
             throw InvalidVirtualMachineManagerResponse();
         }

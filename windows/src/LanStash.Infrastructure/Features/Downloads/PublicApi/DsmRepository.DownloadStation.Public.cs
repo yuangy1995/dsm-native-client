@@ -500,9 +500,16 @@ public sealed partial class DsmRepository
 
     private static long? OptionalNonNegativeLong(JsonObject? data, string key)
     {
-        if (data is null || !data.ContainsKey(key))
+        if (data?[key] is null)
         {
             return null;
+        }
+        // 下载大小、速度等可选字段也可能返回十进制数字字符串；未知值不补零。
+        // 分页、RSS 编号和回执仍使用严格的必填数值读取，避免改变结果完整性判断。
+        if (data[key] is JsonValue value && value.TryGetValue<string>(out var text) &&
+            long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+        {
+            return number;
         }
         return RequiredNonNegativeLong(data, key);
     }

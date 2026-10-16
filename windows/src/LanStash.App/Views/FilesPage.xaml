@@ -205,7 +205,6 @@
         </CommandBar>
       </Grid>
       <StackPanel Grid.Row="1">
-        <ToggleSwitch x:Uid="FileBrowserSearchSubfolders" x:Name="SearchSubfoldersToggle" Toggled="SearchSubfolders_Toggled" IsOn="False" Visibility="Collapsed"/>
         <StackPanel x:Name="SearchProgressState" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
           <ProgressRing Width="18" Height="18" IsActive="True"/>
           <TextBlock x:Uid="FileBrowserSearchInProgress" VerticalAlignment="Center" TextWrapping="Wrap"/>

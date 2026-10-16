@@ -161,8 +161,6 @@ public sealed partial class FilesPage : Page, IDisposable
         _searchRepository = (previewRepository as IFileSearchRepository)?.ProfileId == _profileId
             ? (previewRepository as IFileSearchRepository)
             : null;
-        SearchSubfoldersToggle.Visibility = _searchRepository?.IsSearchAvailable == true
-            ? Visibility.Visible : Visibility.Collapsed;
         _transfers = transfers;
         _systemShare = new WindowsSystemShare(
             () => (Application.Current as App)?.MainWindow);
@@ -381,36 +379,10 @@ public sealed partial class FilesPage : Page, IDisposable
         }
         ExitDownloadSelectionMode();
         _activeSearchRequest = null;
-        if (SearchSubfoldersToggle.IsOn && _searchRepository is not null)
-        {
-            _ = PerformAsyncSearchAsync(sender.Text);
-        }
-        else
-        {
-            CancelAsyncSearch();
-            _viewModel.SetFilter(sender.Text);
-            UpdateState();
-        }
+        CancelAsyncSearch();
+        _viewModel.SetFilter(sender.Text);
+        UpdateState();
     }
-
-    private void SearchSubfolders_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (!SearchSubfoldersToggle.IsOn)
-        {
-            _activeSearchRequest = null;
-            CancelAsyncSearch();
-            _viewModel.SetFilter(FilterBox.Text);
-            UpdateState();
-            return;
-        }
-        if (!string.IsNullOrWhiteSpace(FilterBox.Text) && _searchRepository is not null)
-        {
-            _ = PerformAsyncSearchAsync(FilterBox.Text);
-        }
-    }
-
-    private Task PerformAsyncSearchAsync(string query) => PerformAsyncSearchAsync(
-        new FileSearchRequest(_viewModel.CurrentPath, query, Recursive: true) { Kind = _viewModel.TypeFilter });
 
     private async Task PerformAsyncSearchAsync(FileSearchRequest request)
     {

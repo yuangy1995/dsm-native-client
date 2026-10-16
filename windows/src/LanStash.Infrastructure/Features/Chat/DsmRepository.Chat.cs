@@ -542,16 +542,17 @@ public sealed partial class DsmRepository
 
     private static IReadOnlyList<ChatAttachment> ParseAttachments(JsonObject item, string messageId)
     {
-        var values = item["files"] as JsonArray ?? item["attachments"] as JsonArray;
-        if (values is null && item["file_props"] is JsonObject fileProps)
+        var values = (item["files"] as JsonArray ?? item["attachments"] as JsonArray)?.OfType<JsonObject>();
+        if (values is null && item["file_props"] is JsonObject { Count: > 0 } fileProps)
         {
+            // 保持原响应节点的归属，只枚举单附件对象，不能再挂入另一个 JsonArray。
             values = [fileProps];
         }
         if (values is null)
         {
             return [];
         }
-        return values.OfType<JsonObject>().Select((file, index) =>
+        return values.Select((file, index) =>
         {
             var name = FirstNonEmpty(file, "name", "file_name", "filename", "title")
                 ?? $"attachment-{index + 1}";

@@ -3419,8 +3419,8 @@
   <data name="FileBrowserSearchTruncatedMessage" xml:space="preserve">
     <value>Showing the first {0:N0} matches. Narrow the search to find more specific files.</value>
   </data>
-  <data name="Settings.PageTitle.Text" xml:space="preserve">
-    <value>Settings</value>
+  <data name="SettingsPageTitle.Text" xml:space="preserve">
+    <value>App settings</value>
   </data>
   <data name="Settings.PageDescription.Text" xml:space="preserve">
     <value>Choose how this app looks, which optional modules appear, and how local reusable data is managed.</value>
@@ -3428,10 +3428,10 @@
   <data name="Settings.LanguageSectionTitle.Text" xml:space="preserve">
     <value>Language</value>
   </data>
-  <data name="Settings.Language.Header" xml:space="preserve">
+  <data name="SettingsLanguageLabel.Text" xml:space="preserve">
     <value>App language</value>
   </data>
-  <data name="Settings.Language.AutomationProperties.Name" xml:space="preserve">
+  <data name="SettingsLanguage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>App language</value>
   </data>
   <data name="Settings.LanguageDescription.Text" xml:space="preserve">
@@ -3440,77 +3440,77 @@
   <data name="Settings.AppearanceSectionTitle.Text" xml:space="preserve">
     <value>Appearance</value>
   </data>
-  <data name="Settings.Theme.Header" xml:space="preserve">
+  <data name="SettingsThemeLabel.Text" xml:space="preserve">
     <value>Theme</value>
   </data>
-  <data name="Settings.Theme.AutomationProperties.Name" xml:space="preserve">
+  <data name="SettingsTheme.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Theme</value>
   </data>
-  <data name="Settings.ModulesSectionTitle.Text" xml:space="preserve">
-    <value>Optional modules</value>
+  <data name="SettingsModulesSectionTitle.Text" xml:space="preserve">
+    <value>Sidebar</value>
   </data>
   <data name="Settings.ModulesDescription.Text" xml:space="preserve">
     <value>Hidden modules stay available on the NAS and can be shown again at any time.</value>
   </data>
-  <data name="Settings.DownloadsModule.Header" xml:space="preserve">
-    <value>Download Station</value>
+  <data name="SettingsDownloadsModuleLabel.Text" xml:space="preserve">
+    <value>Downloads</value>
   </data>
-  <data name="Settings.DownloadsModule.AutomationProperties.Name" xml:space="preserve">
-    <value>Download Station</value>
+  <data name="SettingsDownloadsModule.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show Downloads</value>
   </data>
-  <data name="Settings.DownloadsModule.OnContent" xml:space="preserve">
+  <data name="SettingsDownloadsModule.OnContent" xml:space="preserve">
     <value>Shown</value>
   </data>
-  <data name="Settings.DownloadsModule.OffContent" xml:space="preserve">
+  <data name="SettingsDownloadsModule.OffContent" xml:space="preserve">
     <value>Hidden</value>
   </data>
-  <data name="Settings.ContainersModule.Header" xml:space="preserve">
+  <data name="SettingsContainersModuleLabel.Text" xml:space="preserve">
     <value>Containers</value>
   </data>
-  <data name="Settings.ContainersModule.AutomationProperties.Name" xml:space="preserve">
+  <data name="SettingsContainersModule.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Containers</value>
   </data>
-  <data name="Settings.ContainersModule.OnContent" xml:space="preserve">
+  <data name="SettingsContainersModule.OnContent" xml:space="preserve">
     <value>Shown</value>
   </data>
-  <data name="Settings.ContainersModule.OffContent" xml:space="preserve">
+  <data name="SettingsContainersModule.OffContent" xml:space="preserve">
     <value>Hidden</value>
   </data>
-  <data name="Settings.VirtualMachinesModule.Header" xml:space="preserve">
+  <data name="SettingsVirtualMachinesModuleLabel.Text" xml:space="preserve">
     <value>Virtual machines</value>
   </data>
-  <data name="Settings.VirtualMachinesModule.AutomationProperties.Name" xml:space="preserve">
+  <data name="SettingsVirtualMachinesModule.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Virtual machines</value>
   </data>
-  <data name="Settings.VirtualMachinesModule.OnContent" xml:space="preserve">
+  <data name="SettingsVirtualMachinesModule.OnContent" xml:space="preserve">
     <value>Shown</value>
   </data>
-  <data name="Settings.VirtualMachinesModule.OffContent" xml:space="preserve">
+  <data name="SettingsVirtualMachinesModule.OffContent" xml:space="preserve">
     <value>Hidden</value>
   </data>
-  <data name="Settings.NasHealthModule.Header" xml:space="preserve">
-    <value>NAS health</value>
+  <data name="SettingsNasHealthModuleLabel.Text" xml:space="preserve">
+    <value>NAS settings</value>
   </data>
-  <data name="Settings.NasHealthModule.AutomationProperties.Name" xml:space="preserve">
-    <value>NAS health</value>
+  <data name="SettingsNasHealthModule.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show NAS settings</value>
   </data>
-  <data name="Settings.NasHealthModule.OnContent" xml:space="preserve">
+  <data name="SettingsNasHealthModule.OnContent" xml:space="preserve">
     <value>Shown</value>
   </data>
-  <data name="Settings.NasHealthModule.OffContent" xml:space="preserve">
+  <data name="SettingsNasHealthModule.OffContent" xml:space="preserve">
     <value>Hidden</value>
   </data>
-  <data name="Settings.CacheSectionTitle.Text" xml:space="preserve">
-    <value>Reusable local data</value>
+  <data name="SettingsCacheSectionTitle.Text" xml:space="preserve">
+    <value>Photo cache</value>
   </data>
-  <data name="Settings.CacheDescription.Text" xml:space="preserve">
-    <value>Clearing removes registered photo thumbnail memory only. It does not remove NAS files, saved copies, profiles, credentials, transfers, previews in use, or Cloud Drive data.</value>
+  <data name="SettingsCacheDescription.Text" xml:space="preserve">
+    <value>Clears thumbnails without deleting original photos or saved files.</value>
   </data>
-  <data name="Settings.ClearCache.Content" xml:space="preserve">
-    <value>Clear reusable data</value>
+  <data name="SettingsClearCache.Content" xml:space="preserve">
+    <value>Clear cache</value>
   </data>
-  <data name="Settings.ClearCache.AutomationProperties.Name" xml:space="preserve">
-    <value>Clear reusable data</value>
+  <data name="SettingsClearCache.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Clear photo cache</value>
   </data>
   <data name="Settings.Privacy.Title" xml:space="preserve">
     <value>Privacy</value>
@@ -3540,13 +3540,13 @@
     <value>{0} MB</value>
   </data>
   <data name="Settings.CacheClearedTitle" xml:space="preserve">
-    <value>Reusable data cleared</value>
+    <value>Cache cleared</value>
   </data>
   <data name="Settings.CacheClearedMessage" xml:space="preserve">
-    <value>The registered photo thumbnail cache is now empty.</value>
+    <value>The photo thumbnail cache has been cleared.</value>
   </data>
   <data name="Settings.CachePartialTitle" xml:space="preserve">
-    <value>Some reusable data couldn’t be cleared</value>
+    <value>Some cache could not be cleared</value>
   </data>
   <data name="Settings.CachePartialMessage" xml:space="preserve">
     <value>Close the Photos page, then try again.</value>
@@ -7518,7 +7518,7 @@ Power on after creation and setup.</value></data>
   <data name="VmConsoleCertificateFailed" xml:space="preserve"><value>The connection could not be verified securely. Close the console and check the NAS connection.</value></data>
   <data name="VmConsoleBrowserUnavailable" xml:space="preserve"><value>The browser component is unavailable. Install or repair Microsoft Edge WebView2 Runtime, then reopen the console.</value></data>
   <data name="VmConsoleNavigationBlocked" xml:space="preserve"><value>The page tried to leave this console. The connection was closed. Close this window and reopen the console.</value></data>
-  <data name="Settings.CloudDrive.Content" xml:space="preserve"><value>Manage cloud drives</value></data>
+  <data name="SettingsCloudDrive.Content" xml:space="preserve"><value>Manage cloud drives</value></data>
   <data name="CloudDriveBackToSettings" xml:space="preserve"><value>Back to settings</value></data>
   <data name="CloudDriveEnableSessionTest" xml:space="preserve"><value>Enable read-only testing</value></data>
   <data name="CloudDriveSessionTestNotice" xml:space="preserve"><value>Cloud drive integration needs testing on this device. Enable it explicitly before adding a drive.</value></data>
@@ -10395,4 +10395,6 @@ Their access to shared photos and permission to back up photos may change. Folde
   <data name="DesktopQuitVoiceDetail" xml:space="preserve"><value>Unsent recordings will be kept on this computer and can be exported from Local recordings.</value></data>
   <data name="CloudDriveUseExistingDirectory" xml:space="preserve"><value>Continue sync into existing folder</value></data>
   <data name="CloudDriveUseExistingDirectoryConfirm" xml:space="preserve"><value>Sync the contents of this local folder into the folder with the same name on the NAS. Existing files remain protected by conflict checks.</value></data>
+  <data name="SettingsGeneralSectionTitle.Text" xml:space="preserve"><value>General</value></data>
+  <data name="SettingsStorageSectionTitle.Text" xml:space="preserve"><value>Local storage</value></data>
 </root>

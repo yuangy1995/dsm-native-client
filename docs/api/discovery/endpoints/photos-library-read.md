@@ -1,5 +1,23 @@
 # Synology Photos 照片库只读接口
 
+## 2026-10-16 入库时间单位纠正
+
+在 DSM 7.2.1-69057 Update 12 / Synology Photos 1.8.2-10090 的待归属环境中，
+官方网页 `Browse.Item.list` v4 返回 `time` 秒、`indexed_time` 整数毫秒，存在非整秒值。
+已加载的官方 `react_bundle.js` 对最近添加使用 `Math.floor(indexed_time / 1e3)`，
+筛选范围则将秒乘以 1000；不能以原文“所有时间均为 Unix 秒”继续解释此字段。
+
+Windows 原有会话与生产 Transport/Repository 的只读复验确认：授权及时间线成功，
+项目列表在错误的索引时间秒转换处越界；修正固定毫秒转换后，列表与缩略图读取成功。
+普通项目、文件操作原件快照和自动预览原件身份统一转换，身份比较保留毫秒精度。
+领域日期类型与持久格式不变；旧错误日期若已形成恢复记录，仍须与正确回读完全一致，
+不自动换算记录、不继续不匹配的写操作。
+
+五端影响：本轮仅修 Windows。Apple 共享实现与 Android 的索引时间单位需分别复核，
+会影响 macOS、iPhone、iPad 的最近添加显示、原件身份与恢复匹配；其他端源码未修改，
+未执行其构建或实机验证。后续修复应沿各自实施线单独进行，不能用本次 Windows 通过替代。
+见[环境与证据](../environments/2026-10-16-windows-read-regression.md)。
+
 ## 2026-09-29 共享空间静态补证与读取适配
 
 来源为已登录官方页面加载的 react_bundle.js，环境见2026-09-28-photos-parity-observation.md；DSM/Photos版本仍未确认，只登记 static，不覆盖下文历史只读验证结论。

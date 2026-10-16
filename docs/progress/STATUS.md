@@ -14,7 +14,7 @@ Windows 结论更新至 2026-10-16，其他端保留各自复核范围。本页�
 | macOS NAS、套件、容器与 VMM | NAS 设置、安装/更新/SPK、服务控制及恢复已有实现；VMM 电源、删除、设置、创建、网络/映像和控制台有共享/Mac 回归与构建证据 | 真实系统写仅在专用可丢弃环境验收；控制台合成握手不能代替真实画面、键鼠和长连接 |
 | macOS Chat 与桌面集成 | 搜索、编辑、线程、投票参与、录音播放、阅读同步及通知已接入；挂载默认只读，编辑和删除分别授权 | 真实 Chat、Finder、通知、辅助功能及升级场景分别验收；[历史反馈](../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md)不替代新包结果 |
 | iPhone / iPad | M0–M7 批准范围及 M8 普通文件/照片/跨 NAS/Office 后台时间、系统分享与 Files 已接入；两端分片 UI、单元和构建已有证据 | 原云端六项失败经 `7f411313` 相关修正后按原机型本机复跑全部通过；用户已要求跳过本次等待，完整云端验收延期。共享/macOS 分组通过；截至本页复核，移动分组仍在运行或排队。保留原失败与系统时序风险，见[移动主计划](../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) |
-| Windows | 固定 `a521ccb5` 的 W0–W9 本机实施与收口已完成；完整 xUnit、双语原生及首轮失败修正补验、x64/ARM64 自包含测试包有当前证据；危险增量保留专项保护 | 按[验收清单](../quality/WINDOWS_TEST_BUILD_ACCEPTANCE_ZH.md)验证真实 NAS、物理 ARM64、Explorer、外部编辑器及辅助功能。临时 UI 产物清理被自动审批拒绝，残留见验证历史；未提交、推送或发布 |
+| Windows | W0–W9 已提交推送 `90abeb17`，云端 Windows/仓库/文档门禁通过；后续 Photos 毫秒、Chat 附件、VMM 空保护读取及设置/文件入口修复已完成并纳入本次增量提交，6626 项全量测试及真实 NAS 只读证据见[本轮账本](../development/WINDOWS_READ_REGRESSION_20261016_ZH.md) | 完成新包界面与持续使用验收；下载截图失败本次未稳定复现。物理 ARM64、Explorer、外部编辑器及辅助功能继续按[验收清单](../quality/WINDOWS_TEST_BUILD_ACCEPTANCE_ZH.md)验证，危险增量原保护保持；未正式发布 |
 | Android | A0–A9已接通批准范围主流程：首页显隐、多NAS/账号、分层权限；文件/Photos/Chat/下载、NAS/套件、容器/VMM和系统分享/文件/通知/前台服务。各波次源码、聚焦JVM、原生UI及真实环境待办见[当前计划](../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)与[实施验收历史](../archive/2026-h2/ANDROID_REWRITE_IMPLEMENTATION_HISTORY_ZH.md) | A10已清理部分旧入口并完成本批129项聚焦JVM；七处页面缺口通过中文手机及英文平板深色二倍字号补验。继续旧NAS/Chat/VMM仓储测试迁移、完整写入口/版本边界复核与最终测试包；完整云端门禁、真实NAS及物理设备未验，未提交/推送/发布 |
 
 ## 验证与发布边界

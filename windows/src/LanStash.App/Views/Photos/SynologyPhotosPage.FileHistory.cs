@@ -12,19 +12,20 @@ public sealed partial class SynologyPhotosPage
     private sealed record PhotoFileChangeChoice(Guid Id, string Title) { public override string ToString() => Title; }
     private void StartFileRefresh()
     {
-        if (_disposed || !_windowVisible || !_model.Repository.SupportsFileManagement) return;
+        if (_disposed || !_windowVisible || !IsLoaded || !_model.CanRefreshChanges || !_model.Repository.SupportsFileManagement) return;
         if (_fileRefreshTimer is null)
         {
             _fileRefreshTimer = new() { Interval = TimeSpan.FromSeconds(15) };
             _fileRefreshTimer.Tick += async (_, _) => await RefreshFilesAsync();
         }
+        if (_fileRefreshTimer.IsEnabled) return;
         _fileRefreshTimer.Start(); _ = RefreshFilesAsync();
     }
     private async Task RefreshFilesAsync()
     {
-        if (_disposed || !_windowVisible || !IsLoaded || _dialog is not null || _fileRefreshing) return;
+        if (_disposed || !_windowVisible || !IsLoaded || !_model.CanRefreshChanges || _dialog is not null || _fileRefreshing) return;
         _fileRefreshing = true; var generation = _viewGeneration;
-        bool Current() => !_disposed && _windowVisible && IsLoaded && generation == _viewGeneration;
+        bool Current() => !_disposed && _windowVisible && IsLoaded && _model.CanRefreshChanges && generation == _viewGeneration;
         try
         {
             var changes = await _model.Repository.FileChangesAsync();

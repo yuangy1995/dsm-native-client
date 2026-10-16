@@ -36,6 +36,13 @@ internal static class SynologyPhotosCodec
         catch (ArgumentOutOfRangeException) { throw Invalid(); }
     }
 
+    internal static DateTimeOffset IndexedTimestamp(JsonObject value)
+    {
+        // Photos 的拍摄时间为秒，索引时间固定为毫秒；不能按数值大小猜测单位。
+        try { return DateTimeOffset.FromUnixTimeMilliseconds(Number(value, "indexed_time")); }
+        catch (ArgumentOutOfRangeException) { throw Invalid(); }
+    }
+
     internal static SynologyPhoto Photo(JsonObject value, Guid profileId, SynologyPhotoSpace space = SynologyPhotoSpace.Personal, long? albumId = null)
     {
         var size = Number(value, "filesize");
@@ -62,7 +69,7 @@ internal static class SynologyPhotosCodec
         string? Exif(string key) => exif is null ? null : OptionalText(exif, key);
         return new SynologyPhoto(
             new SynologyPhotoIdentity(profileId, space, Positive(value, "id")),
-            Text(value, "filename"), size, Timestamp(value, "time"), Timestamp(value, "indexed_time"),
+            Text(value, "filename"), size, Timestamp(value, "time"), IndexedTimestamp(value),
             Positive(value, "folder_id"), Text(value, "type"))
         {
             AlbumContext = album,

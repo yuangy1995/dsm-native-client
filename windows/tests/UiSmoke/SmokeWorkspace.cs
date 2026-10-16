@@ -4691,6 +4691,65 @@ internal static partial class SmokeSnapshot
         await Task.Delay(100);
         var frame = (Frame)shell.FindName("ContentFrame");
         if (frame.Content is not AppSettingsPage settings) throw new InvalidOperationException("设置入口没有显示。");
+        // 必须验证 XAML 实际注入后的控件文字；动态读取成功不能证明 x:Uid 生效。
+        var settingsLocalization = LanStash.App.Localization.LocalizationService.Current;
+        foreach (var key in new[] { "SettingsPageTitle.Text", "SettingsGeneralSectionTitle.Text", "SettingsLanguageLabel.Text",
+                     "SettingsThemeLabel.Text", "SettingsModulesSectionTitle.Text", "SettingsStorageSectionTitle.Text",
+                     "SettingsCacheSectionTitle.Text", "SettingsCacheDescription.Text" })
+        {
+            var expected = settingsLocalization.Get(key);
+            var label = Descendants(settings).OfType<TextBlock>().FirstOrDefault(block => block.Text == expected);
+            if (string.IsNullOrWhiteSpace(expected) || expected == key || label is null)
+                throw new InvalidOperationException("设置静态标题或标签没有按当前语言显示：" + key);
+            VerifySettingsHorizontalBounds(label, key);
+        }
+        foreach (var (name, key) in new[] { ("ClearCacheButton", "SettingsClearCache.Content"), ("CloudDriveButton", "SettingsCloudDrive.Content") })
+        {
+            var expected = settingsLocalization.Get(key);
+            if (string.IsNullOrWhiteSpace(expected) || expected == key ||
+                settings.FindName(name) is not Button button || !Equals(button.Content, expected))
+                throw new InvalidOperationException("设置操作按钮没有按当前语言显示：" + key);
+        }
+        foreach (var (name, uid) in new[] { ("LanguageSelector", "SettingsLanguage"), ("ThemeSelector", "SettingsTheme"),
+                     ("ClearCacheButton", "SettingsClearCache") })
+        {
+            var key = uid + ".[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name";
+            var expected = settingsLocalization.Get(key);
+            if (string.IsNullOrWhiteSpace(expected) || expected == key || settings.FindName(name) is not DependencyObject control ||
+                Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(control) != expected)
+                throw new InvalidOperationException("设置控件缺少当前语言的无障碍名称：" + uid);
+        }
+        VerifySettingsControlBounds();
+        var sidebar = Descendants(settings).OfType<Expander>().Single();
+        var sidebarWasExpanded = sidebar.IsExpanded;
+        try
+        {
+            sidebar.IsExpanded = true;
+            await Task.Delay(150); settings.UpdateLayout();
+            foreach (var (name, uid) in new[] { ("DownloadsToggle", "SettingsDownloadsModule"),
+                         ("ContainersToggle", "SettingsContainersModule"), ("VirtualMachinesToggle", "SettingsVirtualMachinesModule"),
+                         ("NasHealthToggle", "SettingsNasHealthModule") })
+            {
+                var labelKey = uid + "Label.Text"; var expectedLabel = settingsLocalization.Get(labelKey);
+                var label = Descendants(sidebar).OfType<TextBlock>().FirstOrDefault(block => block.Text == expectedLabel);
+                if (string.IsNullOrWhiteSpace(expectedLabel) || expectedLabel == labelKey || label is null)
+                    throw new InvalidOperationException("展开侧边栏后缺少本地化模块名称：" + uid);
+                if (settings.FindName(name) is not ToggleSwitch toggle ||
+                    !Equals(toggle.OnContent, settingsLocalization.Get(uid + ".OnContent")) ||
+                    !Equals(toggle.OffContent, settingsLocalization.Get(uid + ".OffContent")) ||
+                    string.IsNullOrWhiteSpace(toggle.OnContent?.ToString()) || string.IsNullOrWhiteSpace(toggle.OffContent?.ToString()) ||
+                    Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(toggle) !=
+                        settingsLocalization.Get(uid + ".[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"))
+                    throw new InvalidOperationException("展开侧边栏后开关文案或无障碍名称不完整：" + uid);
+                VerifySettingsHorizontalBounds(label, labelKey);
+                VerifySettingsHorizontalBounds(toggle, name);
+            }
+        }
+        finally
+        {
+            sidebar.IsExpanded = sidebarWasExpanded;
+            await Task.Delay(150); settings.UpdateLayout();
+        }
         Invoke((Button)settings.FindName("CloudDriveButton")); await Task.Delay(100);
         if (frame.Content is not CloudDriveSettingsPage page) throw new InvalidOperationException("云盘入口断开。");
         if (((CheckBox)page.FindName("LaunchAtLoginChoice")).IsChecked != false) throw new InvalidOperationException("未选择就开启登录启动。");
@@ -4948,7 +5007,14 @@ internal static partial class SmokeSnapshot
                 ((InfoBar)refreshPage.FindName("CloudDriveMessage")).StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
                 await Task.Delay(100);
             }
-            await WriteSnapshotAsync((FrameworkElement)frame.Content); return;
+            if (state == "cloud-refresh-leave")
+            {
+                await Task.Delay(150); settings.UpdateLayout(); VerifySettingsControlBounds();
+                // 子页面快照可能带上父容器的合成偏移；通过实际边界检查后截取完整 Frame。
+                await WriteSnapshotAsync(root);
+            }
+            else await WriteSnapshotAsync((FrameworkElement)frame.Content);
+            return;
         }
         if (state == "cloud-back")
         {
@@ -4981,6 +5047,42 @@ internal static partial class SmokeSnapshot
         if (app.DesktopDriveMappings.Count != 0) throw new InvalidOperationException("打开管理页或确认测试自动添加了映射。");
         if (state is not ("cloud-confirm" or "cloud-leave-confirm")) await WriteSnapshotAsync((FrameworkElement)frame.Content, markComplete: false);
         MarkSnapshotComplete();
+        void VerifySettingsControlBounds()
+        {
+            foreach (var name in new[] { "LanguageSelector", "ThemeSelector", "ClearCacheButton", "CloudDriveButton", "SavedRecordingsButton" })
+            {
+                if (settings.FindName(name) is not FrameworkElement control) throw new InvalidOperationException("缺少设置控件：" + name);
+                VerifySettingsHorizontalBounds(control, name);
+            }
+        }
+        void VerifySettingsHorizontalBounds(FrameworkElement control, string name)
+        {
+            var bounds = control.TransformToVisual(root).TransformBounds(
+                new Windows.Foundation.Rect(0, 0, control.ActualWidth, control.ActualHeight));
+            var pageBounds = settings.TransformToVisual(root).TransformBounds(
+                new Windows.Foundation.Rect(0, 0, settings.ActualWidth, settings.ActualHeight));
+            if (control.ActualWidth <= 0 || settings.ActualWidth <= 0 || bounds.X < pageBounds.X - 1 || bounds.Right > pageBounds.Right + 1)
+                throw new InvalidOperationException($"设置控件超出页面水平边界：{name} 相对位置 ({bounds.X - pageBounds.X},{bounds.Width}), " +
+                    $"控件根坐标 ({bounds.X},{bounds.Y},{bounds.Width},{bounds.Height}), 页面根坐标 ({pageBounds.X},{pageBounds.Y},{pageBounds.Width},{pageBounds.Height})；" +
+                    SettingsLayoutTrace(control));
+        }
+        string SettingsLayoutTrace(FrameworkElement control)
+        {
+            var ancestors = new List<string>();
+            for (DependencyObject? current = control; current is not null; current = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(current))
+            {
+                if (current is FrameworkElement element)
+                {
+                    var position = element.TransformToVisual(root).TransformPoint(new Windows.Foundation.Point());
+                    var slot = Microsoft.UI.Xaml.Controls.Primitives.LayoutInformation.GetLayoutSlot(element);
+                    ancestors.Add($"{element.GetType().Name}#{element.Name}: Actual=({element.ActualWidth},{element.ActualHeight}), " +
+                        $"Desired=({element.DesiredSize.Width},{element.DesiredSize.Height}), HorizontalAlignment={element.HorizontalAlignment}, " +
+                        $"MaxWidth={element.MaxWidth}, Root=({position.X},{position.Y}), LayoutSlot=({slot.X},{slot.Y},{slot.Width},{slot.Height})");
+                }
+                if (ReferenceEquals(current, settings)) break;
+            }
+            return string.Join(" -> ", ancestors);
+        }
         static void Invoke(Button button) => ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(button).GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
         static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
         {

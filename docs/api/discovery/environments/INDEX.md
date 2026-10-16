@@ -20,6 +20,8 @@
 
 ## 待归属观察
 
+- [2026-10-16 Windows 读取故障核查](2026-10-16-windows-read-regression.md)：重新核实 DSM、Photos、Chat、Download Station 与 VMM 完整版本；官方照片授权/列表、Chat 消息字段和 VMM 空保护编号数组已只读观察。没有 NAS 写入，不提升旧设备基线。
+
 - [2026-10-06 容器与 VMM API 缺口核查](2026-10-06-container-vmm-api-read-observation.md)：重新核实 DSM/两套件完整版本，容器/网络/映像/仓库列表及空项目读取；补容器 profile、项目 CRUD/流式操作与 VMM 精确版本/参数，发现 Apple 内部电源/删除等差距。新增写均为 static，未操作真实资源或连接 VM；临时观察器已清理。
 
 - [2026-10-03 Chat 五组交互补全](2026-10-03-chat-five-features-observation.md)：分页、搜索和编辑设置只读验证；指定合成会话内完成编辑、线程回复、投票与会话已读回读；线程已读仅有接受回执，不能提升其最终状态证据。

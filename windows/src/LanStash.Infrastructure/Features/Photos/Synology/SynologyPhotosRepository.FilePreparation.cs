@@ -45,7 +45,7 @@ public sealed partial class SynologyPhotosRepository
     }
     private static SynologyPhoto OriginalFilePhoto(JsonObject entry, Guid profileId, SynologyPhotoSpace space) =>
         new(new(profileId, space, Positive(entry, "id")), Text(entry, "filename"), Number(entry, "filesize"),
-            Timestamp(entry, "time"), Timestamp(entry, "indexed_time"), Positive(entry, "folder_id"), Text(entry, "type"));
+            Timestamp(entry, "time"), IndexedTimestamp(entry), Positive(entry, "folder_id"), Text(entry, "type"));
     private async Task<SynologyPhoto> ReadOriginalFilePhotoAsync(SynologyPhoto photo, CancellationToken token)
     {
         RequirePhoto(photo); RequireAccess(photo.Id.Space);

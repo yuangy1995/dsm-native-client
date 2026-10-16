@@ -134,6 +134,7 @@ public sealed class SynologyPhotosAutomaticCandidateTests
                 var item = Http.PhotoJson(Media); item["filename"] = Photo.Filename; item["owner_user_id"] = Space == SynologyPhotoSpace.Shared ? 0 : 19; item["additional"] = Extra(8);
                 if (Changed == "unit") item["additional"]!["thumbnail"]!["unit_id"] = 91;
                 else if (Changed is "filename" or "type") item[Changed] = "changed";
+                else if (Changed == "indexed_time") item[Changed] = item[Changed]!.GetValue<long>() + 1;
                 else if (Changed is not null) item[Changed] = item[Changed]!.GetValue<int>() + 1;
                 data = SynologyPhotosHttpFixture.List(item);
             }

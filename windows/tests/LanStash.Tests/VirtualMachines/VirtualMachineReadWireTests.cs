@@ -86,6 +86,36 @@ public sealed class VirtualMachineReadWireTests
         Assert.Equal(VirtualMachineManagerSectionStatus.Available, result.Machines.Status);
     }
     [Theory]
+    [InlineData("FORM")]
+    [InlineData("JSON")]
+    public async Task OfficialEmptyProtectionIdsDoNotReportAnInventoryRefreshFailure(string format)
+    {
+        using var f = new Fixture(format);
+        f.Data[Fixture.Plan] = new() { ["protect_ids"] = new JsonArray() };
+        var result = await f.Repository.LoadSnapshotAsync();
+        Assert.Equal(VirtualMachineManagerSectionStatus.Available, result.Protection.Status);
+        Assert.Empty(result.Protection.Items);
+        using var model = new VirtualMachineManagerViewModel();
+        await model.ActivateAsync(f.Repository);
+        Assert.Equal(VirtualMachineManagerContentState.Empty, model.ProtectionState);
+        Assert.False(model.HasRefreshError);
+    }
+    [Theory]
+    [InlineData("{\"protect_ids\":[\"synthetic-plan\"]}")]
+    [InlineData("{\"protect_ids\":null}")]
+    [InlineData("{\"protect_ids\":{}}")]
+    [InlineData("{\"protect_ids\":[],\"unknown\":[]}")]
+    [InlineData("{\"protect_ids\":[],\"plans\":[{\"id\":\"synthetic-plan\",\"name\":\"Synthetic\"}]}")]
+    public async Task ProtectionIdOnlyOrConflictingResponsesAreNotPresentedAsEmpty(string data)
+    {
+        using var f = new Fixture();
+        f.Data[Fixture.Plan] = JsonNode.Parse(data)!.AsObject();
+        var result = await f.Repository.LoadSnapshotAsync();
+        Assert.Equal(VirtualMachineManagerSectionStatus.Failed, result.Protection.Status);
+        Assert.Equal(VirtualMachineManagerSectionStatus.Available, result.Machines.Status);
+        Assert.All(f.Calls, call => Assert.Equal("list", call["method"]));
+    }
+    [Theory]
     [InlineData(0, 1, "FORM", false)] [InlineData(2, 1, "FORM", false)] [InlineData(1, 2, "UNKNOWN", false)] [InlineData(1, 2, "FORM", true)]
     public async Task InvalidMainCapabilityIsUnavailableWithoutNetworkRequests(int minimum, int maximum, string format, bool wrongName)
     {
