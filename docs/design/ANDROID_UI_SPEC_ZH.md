@@ -1,9 +1,9 @@
 <!-- doc-role: design-spec -->
-<!-- last-reviewed: 2026-10-11 -->
+<!-- last-reviewed: 2026-10-16 -->
 
 # Android 已确认 UI 与交互规范
 
-2026-10-11 用户确认[交互预览原件](android-approved-ui.html)，要求后续开发完全遵守该 UI，功能围绕它实现，继续使用当前 Logo，并增加首页模块显示/隐藏自定义。本规范是 Android 界面验收依据；业务与安全语义见[主计划](../development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)。
+2026-10-11 用户确认[交互预览原件](android-approved-ui.html)，要求后续开发遵守该 UI，保留当前 Logo，并增加首页模块显隐。本规范是界面验收依据；功能范围见[五端矩阵](../progress/PLATFORM_MATRIX.md)，系统行为见[平台集成](../development/PLATFORM_INTEGRATION.md)。
 
 ## 固定视觉与布局
 
@@ -55,4 +55,4 @@
 
 设备、文件、任务、消息、图片和即时结果均为设计示例；正式实现必须连接真实 Repository。完成五态、中英文、浅深色、动态文字、键盘、TalkBack、降低动效及模拟器实际操作后才能标记本片 UI 通过。
 
-首页显隐是确认 UI 后追加需求，按原样式增量实现，不改原件。因平台限制必须调整时，在主计划记录等价结果和原因，不重新设计其他页面。
+首页显隐按原样式增量实现，不改原件。因平台限制必须调整时，记录用户目标、替代交互和不可用能力，不重新设计无关页面。

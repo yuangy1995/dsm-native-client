@@ -18,21 +18,6 @@ PRIVATE_API_COMPATIBILITY_PATH = (
 )
 DISCOVERY_ENDPOINT_INDEX_REF = "docs/api/discovery/endpoints/INDEX.md"
 
-# 这些既有条目在汇总索引中已有独立小节，但尚未迁移为独立稳定记录。
-# 显式列举可防止新条目继续借用汇总索引；迁移完成后应逐项删除豁免。
-LEGACY_SUMMARY_DOCUMENT_REF_EXCEPTIONS = frozenset(
-    {
-        "quickconnect-relay-control",
-        "file-station-remote-mount",
-        "dsm-system-observability",
-        "dsm-storage-hardware",
-        "dsm-administration",
-        "chat-internal",
-        "chat-realtime",
-        "photos-internal-candidate",
-    }
-)
-
 FIXTURE_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:[.-][a-z0-9]+)*$")
 DSM_VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){1,3}$")
 BUILD_PATTERN = re.compile(r"^[0-9]{4,8}$")
@@ -312,18 +297,9 @@ def validate_private_api_document_refs(
         is_summary_index = Path(document_ref).name == "INDEX.md"
 
         if is_summary_index:
-            if (
-                endpoint_id not in LEGACY_SUMMARY_DOCUMENT_REF_EXCEPTIONS
-                or document_ref != DISCOVERY_ENDPOINT_INDEX_REF
-            ):
-                raise ValidationError(
-                    f"{endpoint_id}: 内部端点不能只引用汇总 INDEX，必须建立独立稳定记录"
-                )
-            heading = f"### `{endpoint_id}`"
-            if heading not in document.read_text(encoding="utf-8"):
-                raise ValidationError(
-                    f"{endpoint_id}: 汇总 INDEX 豁免缺少同名事实小节"
-                )
+            raise ValidationError(
+                f"{endpoint_id}: 内部端点不能只引用汇总 INDEX，必须引用声明稳定标识的接口正文"
+            )
         elif f"`{endpoint_id}`" not in document.read_text(encoding="utf-8"):
             raise ValidationError(
                 f"{endpoint_id}: 独立稳定记录未声明对应端点标识"

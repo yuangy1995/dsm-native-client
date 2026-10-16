@@ -267,8 +267,8 @@ def render_document(
         )
         source = (
             "参与计划、隐私限制和审核规则见"
-            " [`COMMUNITY_COMPATIBILITY_PROGRAM_ZH.md`]"
-            "(COMMUNITY_COMPATIBILITY_PROGRAM_ZH.md)。"
+            " [`COMMUNITY_COMPATIBILITY_GUIDE_ZH.md`]"
+            "(COMMUNITY_COMPATIBILITY_GUIDE_ZH.md)。"
         )
         overview = "## 报告概览"
         coverage = "## 能力汇总"
@@ -284,8 +284,8 @@ def render_document(
             "passing result applies only to the exact version combination shown."
         )
         source = (
-            "See [`COMMUNITY_COMPATIBILITY_PROGRAM_EN.md`]"
-            "(COMMUNITY_COMPATIBILITY_PROGRAM_EN.md) for participation, privacy, "
+            "See [`COMMUNITY_COMPATIBILITY_GUIDE_EN.md`]"
+            "(COMMUNITY_COMPATIBILITY_GUIDE_EN.md) for participation, privacy, "
             "and review rules."
         )
         overview = "## Report overview"

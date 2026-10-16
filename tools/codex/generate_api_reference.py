@@ -45,10 +45,11 @@ def render() -> str:
         groups[path.relative_to(ROOT / "contracts/request-fixtures").parts[0]].append((path, item))
     lines = [
         "<!-- generated-by: tools/codex/generate_api_reference.py -->",
-        "# 请求参数目录（由合成快照生成）", "",
+        "# 请求样例目录（自动生成）", "",
         "本页直接读取 `contracts/request-fixtures`，只列请求形态和调用策略，不保存参数值。",
-        "这些快照证明已有客户端请求的约束，**不是全部 macOS 功能清单，也不证明真实 NAS 兼容**。",
-        "功能流程、未被快照覆盖的读取接口和响应结构见[API 入口](../README.md)。", "",
+        "目录包含仍被测试使用的历史形状，不能据此认定当前生产调用或五端均采用该方法/版本。",
+        "现行接口、响应、证据与限制见[API 入口](../README.md)；合成样例不证明真实 NAS 兼容。",
+        "Photos 分组中的 `SYNO.FileStation.Thumb` 是旧文件缩略图样例，不能作为当前 Synology Photos 图库契约。", "",
         "`版本`为样例的 preferred/resolved 版本；`路径`为该样例的发现结果，运行时仍须读取能力。",
         "参数表列本场景实际发送的字段，不把出现过的字段全部认定为必填。",
         "秘密参数只标记类型与“敏感”；可选值、JSON 内部结构及精确编码打开对应快照查看。",

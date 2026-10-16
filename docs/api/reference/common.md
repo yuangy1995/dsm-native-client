@@ -79,7 +79,7 @@ JSON 成功信封为 `success:true` 与 `data`；失败含 `success:false`、`er
 
 功能文档统一给出：用户结果及领域入口、官方/内部分类、API/method/版本规则、请求字段/编码、原始响应到领域结果的映射、权限与副作用、失败及恢复、源码/快照/证据链接、目标平台范围。未知字段或方法明确标未验证；不得用另一个版本的结果填空。
 
-维护私有接口时保留版本化证据；本目录只引用，不复制。跨端新增能力按[平台矩阵](../../progress/PLATFORM_MATRIX.md)和目标平台计划推进，禁止将 macOS 的已实现状态直接填到其他端。
+维护私有接口时保留版本化证据；本目录只引用，不复制。跨端新增能力按[平台矩阵](../../progress/PLATFORM_MATRIX.md)推进，禁止将 macOS 的已实现状态直接填到其他端。
 
 ## 跨端迁移与回归要求
 
@@ -87,10 +87,8 @@ JSON 成功信封为 `success:true` 与 `data`；失败含 `success:false`、`er
 
 每个写操作至少验证提交前失败、提交且回读成功、提交后网络失败、回读失败、部分成功、提交后取消；同一操作身份重复请求不得产生第二次副作用。校验器必须拒绝真实秘密/环境数据、未知字段以及危险写的自动重试配置。
 
-### SEC-002 认证位置例外
+### 认证位置与候选边界
 
-File Station GET/上传的认证不得进入 URL。2026-10-11 Android A3a 源码已移除 Upload 查询参数中的 `_sid`、`SynoToken` 与 `synotoken`，保留 Cookie、`X-SYNO-TOKEN` 和 multipart 正文认证；业务路由、字段顺序、版本、权限与写后回读不变。`file-station.upload.synthetic-overwrite` 合成样例同步删除两类认证的 `query` 位置，Android 正式测试增加完整 URI 无凭据和可选令牌缺失的断言。
+File Station GET/上传的会话秘密不得进入 URL。旧请求样例可能保留历史认证位置；它们用于既有测试快照，不覆盖本页安全规则。兼容失败不能成为恢复 URL 凭据或自动重发未知上传的理由。
 
-五端影响：macOS/iPhone/iPad 共用的 Apple 上传已无 URL 凭据，原无凭据断言必须保留；Windows 上传源码同样使用请求头/正文且已有 URI 否定断言；两端生产代码不变。当前切片的可运行回归与真实 NAS 缺项见 [Android 主计划](../../archive/2026-h2/ANDROID_REWRITE_IMPLEMENTATION_HISTORY_ZH.md#a3a-上传认证位置对齐账本)和[验证历史](../../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。源码位置对齐不代表五端当前版本或真实 NAS 已全部验收；禁止因兼容失败恢复 URL 认证或自动重发未知上传。
-
-静态资料仅有名称、缺少版本/路径/参数的接口保持零猜测请求。例如 Printer BonjourSharing 和 SecurityScan.Status 不因同名字段或其他组件的响应而建立可调用契约。后续证据仍走私有接口发现流程。
+静态资料只有名称而缺版本、路径或参数时保持零猜测请求，例如 Printer BonjourSharing。平台适配缺口见[已知限制](../../progress/KNOWN_LIMITATIONS.md)。

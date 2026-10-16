@@ -9,7 +9,6 @@ on:
       - "contracts/community-compatibility/**"
       - "contracts/schemas/community-compatibility-*.schema.json"
       - "docs/compatibility/COMMUNITY_COMPATIBILITY_*.md"
-      - "docs/compatibility/COMMUNITY_TEST_GUIDE_*.md"
       - "tools/community-compatibility/**"
   pull_request:
     paths:
@@ -18,7 +17,6 @@ on:
       - "contracts/community-compatibility/**"
       - "contracts/schemas/community-compatibility-*.schema.json"
       - "docs/compatibility/COMMUNITY_COMPATIBILITY_*.md"
-      - "docs/compatibility/COMMUNITY_TEST_GUIDE_*.md"
       - "tools/community-compatibility/**"
 
 permissions:

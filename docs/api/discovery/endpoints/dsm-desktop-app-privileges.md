@@ -63,7 +63,7 @@
 
 用户补充 VMM 为手工安装且机型非官方支持。安装来源与应用授权分开处理：既有 VMM 原生模块依据稳定应用授权与已有接口能力决定入口，不新增机型白名单拦截，不依据安装成功自动放行，也不把菜单可见提升为完整兼容验证。任意第三方应用不自动映射成原生模块；没有明确授权规则或专门 Adapter 时不试探其业务接口，更不解锁套件写操作。
 
-2026-09-09 在 DSM 7.2.1-69057 Update 12 的非管理员官方网页中观察到请求并读取成功响应；证据详见 [环境观察](../environments/2026-09-09-nonadmin-permission-observation.md)。设备是否为旧 lab-a 尚未确认，因此不建立已归属的 read-verified verification，也不改变现有产品支持矩阵。
+2026-09-09 在 DSM 7.2.1-69057 Update 12 的非管理员官方网页中观察到请求并读取成功响应；证据详见 [环境观察](../environments/INDEX.md#2026-09-09-nonadmin-permission-observation)。设备是否为旧 lab-a 尚未确认，因此不建立已归属的 read-verified verification，也不改变现有产品支持矩阵。
 
 ## 能力探测与降级
 
@@ -74,16 +74,6 @@
 - AppPrivilege 只决定入口可用性候选，不替代具体操作的权限校验，尤其不能解锁危险写操作。
 - 未确认有公开 API 能等价提供本次摘要；不据此宣称不存在公开替代。
 
-## 客户端、测试与五端影响
-
-- macOS：`WorkspaceModuleAccessReader` 改为一次摘要读取；权限整体替换，隐藏模块停止后台模型并禁止导航，套件模型另阻止旧页面加载/操作回调。2026-10-06 修正正式 Photos 入口的旧文件权限绑定：按已记录 Synology Photos `access()` 独立授权，不猜 Photos 应用键；即使文件权限被拒绝或文件能力缺失，Photos 自身读取成功仍可显示。照片明确拒绝/缺能力不被文件授权覆盖，照片会话失效进入既有重新登录反馈。使用独立权限读取实例，不清空照片工作区对象权限与缓存；安全错误/取消不继续追加读取。目标验证见移动主计划的 Photos 入口专项审计，真实账号组合仍待用户验收。
-- iPhone / iPad：2026-10-04 移动 App 接入既有只读服务，为 App 设置中的可开启功能筛选当前账号授权。默认只显示文件与 App 设置，权限候选还要求实际读取契约可用；照片单独使用已记录 Synology Photos `access()`，不沿用旧 File Station 图库授权，不猜测新的 AppPrivilege 键。登录/返回前台/设置页刷新重新读取，切换账号清空旧结果，迟到响应不可恢复旧授权；摘要失败不阻断文件，Photos 自身访问读取成功时可独立保留照片候选。安全错误及取消不追加照片读取。入口授权不代替各操作权限。2026-10-06 继续检查登录恢复链路：已保存会话的文件列表明确权限/能力受限时，改由既有 Photos access 成功读取确认可恢复，不能直接忽略文件错误；文件认证、证书、取消与网络错误不改用照片，Photos 拒绝/失效仍阻止恢复。请求参数、方法、认证和响应投影未改，真实 App/NAS 行为待用户验证；两端构建及合成测试证据见移动主计划。
-- Android：2026-10-11 A2a 接入同一白名单与 GET v1 请求，登录及已保存会话恢复读取授权，摘要失败只追加最小文件会话读取及独立 Photos access；合法空表不追加文件读取。网络、一般权限或能力错误不清会话、不重发登录；106/107/119 与 HTTP 401 按已记录通用契约识别会话过期，HTTP 403 保持权限拒绝，证书失败停止额外请求。A2b 为业务请求与 Worker 增加门禁；A2c 接入前台/手动/明确拒绝后刷新、读取取消和旧内容清理，保留未知写结果。合成验证见 Android 主计划与验证历史；多账号身份与完整系统入口继续实施，真实 App/NAS 账号组合未验证。
-- Windows：记录相同规则供后续对齐，本次 Android 实施不改 Windows 代码或请求。
-- 新服务：`apple/Packages/DsmNetwork/Sources/DsmDesktopAppPrivileges.swift`；测试：`apple/Packages/DsmNetwork/Tests/DsmDesktopAppPrivilegesTests.swift`、`apple/Apps/DsmMac/Tests/WorkspaceModuleAccessTests.swift`。白名单解码忽略真实会话和用户设置，合成 fixture 内联于测试，不保存原始响应。
-- [产品验证状态](../../../compatibility/DSM_COMPATIBILITY_MATRIX.md) 标记 App 实机待验；没有把代码接入提升为环境验证。
-- 机器索引沿用 private-api-compatibility.schema.json；当前验证限于文档和索引一致性。
-
 ## 安全与副作用
 
 该方法是官方页面已发出的读取，没有手工重放。页面导航自动发出的 UserSettings.apply 等请求另见环境记录，不属于本读取契约，也未由 Agent 修改或重放。未打开受限组件、聊天或用户文件内容；没有新增写操作。
@@ -92,10 +82,14 @@
 
 设备归属；更多管理员及普通账号；明确 false 和缺失键的完整服务端语义（当前按用户确认策略处理）；其他 DSM build；最小必需参数；错误码；与本地 App 登录会话的兼容性；返回授权与菜单最终过滤条件的完整关系；客户端组件请求导致后续文件 119 的具体原因。
 
-## 2026-09-27 未登录空摘要回归
+## 未登录空摘要回归
 
 当前 App 已保存会话用 GET 和 POST 都取得 `success=true`，但 `Session.isLogined=false`、
 `is_admin=false` 和空权限表。Apple 解码器现在拒绝显式未登录摘要，恢复登录及权限刷新
 回到既有文件会话核实；合法的已登录空权限表仍不放行该摘要管理的应用；Photos 另由自身访问设置授权。没有修改请求方法、
 登录会话名或持久化格式。修复包已恢复真实文件与 NAS 设置菜单，五个相关页面读取通过；
-最终包退出后重新连接由用户确认菜单正常。未将原始空摘要单独等同整体会话过期。详见 [实测记录](../environments/2026-09-27-nas-settings-live-validation.md)。
+最终包退出后重新连接由用户确认菜单正常。未将原始空摘要单独等同整体会话过期。详见 [实测记录](../environments/INDEX.md#2026-09-27-nas-settings-live-validation)。
+
+## 证据与实现范围
+
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

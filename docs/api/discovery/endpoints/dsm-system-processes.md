@@ -80,20 +80,11 @@ macOS 当前从 `start=0` 读取单个最多 500 项的快照，不持续轮询�
 - 取消请求会继续向上抛出，不转换为部分成功。
 - 空列表只在请求成功后显示为空，不把错误解释为“没有进程”。
 
-## 客户端与界面
-
-- Apple 领域：`NasProcessDirectory`、`NasSystemProcess`、`NasProcessGroup`。
-- Apple Adapter：`DsmNasAdministrationRepository.loadSystemProcesses(start:limit:)`。
-- macOS：NAS 设置中的“系统活动”页，支持本地搜索、手动刷新、只读/隐私说明、截断
-  提示、服务组降级提示及加载、空内容、筛选空、错误和正常五种状态。
-- iPhone、iPad、Android 与 Windows：尚未迁移该页面。
-- 界面没有写按钮，不依赖颜色表达状态；原生列表和按钮保留键盘焦点与 VoiceOver 语义。
-
 ## 版本验证
 
 | 环境标识 | 证据等级 | 结果 | 日期 | 证据路径 |
 | --- | --- | --- | --- | --- |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `static` | 仅确认 API 与方法名；未保存或提交真实进程响应 | 2026-07-31 | `docs/api/DSM_WEB_API_REFERENCE_ZH.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `static` | 仅确认 API 与方法名；未保存或提交真实进程响应 | 2026-07-31 | `docs/api/discovery/environments/INDEX.md` |
 
 合成响应、能力协商、字段白名单、截断、零猜测请求和服务组降级测试不能把当前环境提升为
 `read-verified`。
@@ -105,28 +96,23 @@ macOS 当前从 `start=0` 读取单个最多 500 项的快照，不持续轮询�
 - `service_info` 的必需参数、返回字段、权限与隐私影响未知，保持关闭。
 - 当前页面是单次快照，不宣称实时监控；也不展示尚无单位证据的 CPU 与内存数值。
 
-## 2026-09-26 macOS 兼容候选修复
+## macOS 兼容候选修复
 
 根据原始开源 Schema 补充 `process[]` 与 `slices[]` 容器；进程的 `command` 仅提取
 首个空白前片段的末级名称，参数和目录不进入模型；服务组使用 `unit_name` 标识，
 数量可从嵌套 `process[]` 计算。既有 `processes/items` 与 `groups/items` 继续兼容。
 读取结果在客户端仍限制最多 500 项，缺失容器报错，服务组异常不阻断进程列表。
-来源及当前环境限制见 [本次观察](../environments/2026-09-26-nas-settings-read-observation.md)；
+来源及当前环境限制见 [本次观察](../environments/INDEX.md#2026-09-26-nas-settings-read-observation)；
 仅有静态结构线索与合成验证，当前 NAS 读取仍为 `PENDING_USER_VALIDATION`。
 
-## 2026-09-27 当前响应核对
+## 当前响应核对
 
 在 DSM 7.2.1-69057 Update 12 官方资源监控中，Process.list v1 成功返回
 `process[]` 与 `command/pid/status`，ProcessGroup.list v1 成功返回
 `slices[]` 与 `unit_name/name/process[]`。上轮兼容候选已得到当前只读响应支持，
-未执行进程控制。见 [实测记录](../environments/2026-09-27-nas-settings-live-validation.md)。
+未执行进程控制。见 [实测记录](../environments/INDEX.md#2026-09-27-nas-settings-live-validation)。
 
-## 2026-10-05 移动 M6a1 接入
 
-iPhone/iPad M6a1 已接既有最多 500 项进程/服务组快照、本地搜索、截断与局部错误展示。无结束进程、发送信号、命令行或环境变量入口。当前环境命令与两端页面验证集中在[移动主计划](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a1-五项读取与筛选)及其验证历史；真实 NAS 证据不提升。
+## 证据与实现范围
 
-## 2026-10-13 Android A7 接入
-
-Android新增系统进程页，沿现有Process/ProcessGroup list v1、start=0/limit=500和容器候选读取；支持手动刷新、本地搜索、进程/服务组切换、截断与服务组局部失败。只保留编号、末级名称、状态和合法组标识，command只取首段末级名称；命令参数、路径、账号、环境变量不进入领域结果或界面。缺能力/版本不匹配零猜测请求；组失败不阻断进程，取消与连接身份错误继续抛出。
-
-本轮与日志/分区一起23项聚焦JVM通过，覆盖实际请求版本/类型、合成隐私字段丢弃、截断/去重/非法身份、可选组失败、取消与原账号。增量编译通过；手机/平板并入A7整模块，真实NAS不同权限/进程变化与物理设备仍待用户验证。没有真实进程读取、控制或新增私有接口发现，其他端未改，历史证据等级不变。
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

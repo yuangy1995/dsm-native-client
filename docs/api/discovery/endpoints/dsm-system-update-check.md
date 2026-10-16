@@ -57,7 +57,7 @@ macOS 检查结果会明确说明安装仍需在 DSM 中安排；按钮和图标
 
 | 环境标识 | 证据等级 | 结果 | 日期 | 证据路径 |
 | --- | --- | --- | --- | --- |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `read-verified` | `System.info` 与 `Upgrade.Server.check` v3 只读结构已核对；未执行下载或安装 | 2026-07-31 | `docs/api/DSM_WEB_API_REFERENCE_ZH.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `read-verified` | `System.info` 与 `Upgrade.Server.check` v3 只读结构已核对；未执行下载或安装 | 2026-07-31 | `docs/api/discovery/environments/INDEX.md` |
 
 合成测试覆盖候选更新、无候选、相同版本、空白规范化和请求参数；这些测试不提升下载或
 安装行为的证据等级。
@@ -70,19 +70,13 @@ macOS 检查结果会明确说明安装仍需在 DSM 中安排；按钮和图标
 - 当前版本缺失时仍可展示服务器明确返回的候选版本，但不自行比较版本号。
 - 新 DSM build 上继续允许只读检查；安装写入仍默认关闭。
 
-## 客户端与测试
-
-- Apple 领域：`NasSystemUpdateInfo`。
-- Apple Adapter：`DsmNasAdministrationRepository.checkSystemUpdate()`。
-- macOS：总览页提供检查按钮、忙碌禁用、可用更新/无更新/失败反馈和可选发布说明。
-- Android：总览页使用相同双请求契约，提供忙碌禁用、可用更新/无更新/失败重试、可选发布说明和 TalkBack 状态通知；能力不足时零请求降级。
-- Windows：NAS 详情页提供独立“系统更新”分区，复用系统概览当前版本并固定执行 v3 `check`；仅展示当前版本、候选版本和普通文字发布说明，失败不阻断其他分区。
-- iPhone、iPad、Android 与 Windows：安装链路均未迁移。
-- 请求不包含账号、地址、Cookie、SID、SynoToken 或真实响应 Fixture。
-
 ## 未验证事项
 
 - 无更新、分阶段更新、重大版本、回退版本、区域限制、代理离线和更新服务维护时的所有
   真实响应形态尚未覆盖。
 - 发布说明可能包含富文本；当前仅按普通文字展示。
 - 下载、安装、取消、任务进度、重启与恢复均未验证且保持关闭。
+
+## 证据与实现范围
+
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

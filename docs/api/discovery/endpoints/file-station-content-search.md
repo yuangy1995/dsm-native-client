@@ -2,7 +2,7 @@
 
 ## 标识、来源与版本
 
-端点组 `file-station-content-search`，组件 file-station，internal / read / low。来源为[2026-10-02 官方网页观察](../environments/2026-10-02-file-station-live-observation.md)：DSM 7.2.1-69057 Update 12，File Station 1.4.1-1559；匿名设备待归属，不挂靠既有 lab-a。
+端点组 `file-station-content-search`，组件 file-station，internal / read / low。来源为[2026-10-02 官方网页观察](../environments/INDEX.md#2026-10-02-file-station-live-observation)：DSM 7.2.1-69057 Update 12，File Station 1.4.1-1559；匿名设备待归属，不挂靠既有 lab-a。
 
 官方前端静态条件 `supportfileindex` 决定内容搜索复选框，当前网页实际显示。官方高级搜索产生的 POST `entry.cgi` 已只读核对，Search/start v2 返回 HTTP 200、业务成功、任务编号与原生布尔 `has_not_index_share=true`。只有请求形态和未索引提示达到 read-verified；合成无命中查询不能证明真实文档正文召回。
 
@@ -21,10 +21,7 @@ Apple 在 FileSearchRequest 中增加默认 false 的 searchesContents；searchW
 
 五端：macOS 实现；iPhone/iPad 只编译共享增量，移动入口另行评估；Android/Windows 只记录契约影响。本次没有改变其他四端功能。
 
-## Android A3c 适配
 
-2026-10-11 Android 已接入 Search v2 的多目录与完整高级字段，正文模式使用同一扩展并要求原生布尔 `has_not_index_share`。不下载文件模拟正文，也不按文件名再次过滤正文命中。返回未覆盖提示时保留真实结果并说明部分位置暂不能搜索内容；字段缺失或类型不符显示不可用。
+## 证据与实现范围
 
-搜索等待 `finished=true` 后读取完整分页，按原始条目数前进并去重路径；缺少总数/分页内容或页状态异常不报告完成。读取最长五分钟，失败/取消/超时只停止和清理本次 taskid，清理最多五秒并继续执行原账号门禁。Android 使用当前批准 UI 的条件面板与多目录选择，浅深色/字号和真实设备结果按 Android 账本分别登记。
-
-本次没有新增接口或 NAS 参数，Apple 三端与 Windows 实现只读；上述 2026-10-02 观察等级保持不变。Android 合成请求与状态测试已经过本机聚焦验证，手机/平板交互使用合成数据完成条件、重建、取消及错误/空结果验证，精确安装包与分组见 Android 账本；真实正文命中、普通账号及多位置覆盖仍为 `PENDING_USER_VALIDATION`。
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

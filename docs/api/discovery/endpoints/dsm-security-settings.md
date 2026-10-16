@@ -57,36 +57,18 @@
 
 | 环境标识 | 证据等级 | 接口版本 | 结果 | 日期 | 证据路径 |
 | --- | --- | --- | --- | --- | --- |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | DoS v2；其余 v1 | 只读结构和网页请求已有记录；本批次只完成合成请求与故障注入测试，未执行写行为验收 | 2026-07-27 | `docs/api/DSM_WEB_API_REFERENCE_ZH.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | DoS v2；其余 v1 | 只读结构和网页请求已有记录；本批次只完成合成请求与故障注入测试，未执行写行为验收 | 2026-07-27 | `docs/api/discovery/environments/INDEX.md` |
 
 ## 能力探测与降级
 
 - 启用条件：预检一次性确认所有实际变化所需的 API 与版本，并成功读取当前设置。
-- macOS 本轮按用户明确授权提供测试入口，以实际接口版本、权限、输入、确认、防重复和结果核查判断可用性，不仅因未实测固定关闭。新 DSM build 的真实行为仍待验证；其他平台以其最新授权和实施状态为准。
+- macOS 按用户明确授权提供测试入口，以实际接口版本、权限、输入、确认、防重复和结果核查判断可用性，不仅因未实测固定关闭。新 DSM build 的真实行为仍待验证；其他平台以其最新授权和实施状态为准。
 - 接口缺失：只关闭依赖该接口的设置，不阻断文件浏览等主流程。
 - 字段缺失或类型变化：不能构造完整当前状态时不提交猜测值。
 - 权限不足：不提升权限、不切换账号、不继续后续子操作。
 - 网络失败：提交前失败可在恢复后重试；提交开始后必须先回读，不自动再次保存。
 - 替代的官方 API：当前项目未找到覆盖这些 DSM 安全设置的公开 API。
 - 功能开关：NAS 设置模块开关、运行时能力发现和当前环境兼容记录共同控制。
-
-## 客户端与测试
-
-- Apple Adapter：`DsmNasAdministrationRepository`。
-- Android Adapter：`NasServiceSettingsRepository`、`NasServiceSettingsModel` 与现有安全页面；四个子操作使用原始/目标双基线、固定版本预检、服务互斥、逐步取消、原配置档任务轮询/清理、整体回读与持久恢复。A10已删除旧根仓储保存门面；部分成功和未知结果不得清除后重放。
-- Windows Adapter：已接四分区固定读取、DoS 按网卡 configs/重复状态覆盖及原生只读
-  入口及四段基线保存/防火墙任务核心，未知值不猜测。所有变化一次预检，中途失败停止
-  后续配置；开启使用预检配置档，完成状态后才 stop 清理，未知任务/清理不重发。
-  旧 fire-and-forget 假成功已移除，生产行为门独立关闭，源码/合成不等于真实验收。
-- Schema：复用 `MutationResult` 与请求 Fixture Schema。
-- 脱敏 Fixture：
-  - `contracts/request-fixtures/security/set-auto-block/synthetic-settings/request.json`
-  - `contracts/request-fixtures/security/set-dos/synthetic-interface/request.json`
-  - `contracts/request-fixtures/security/set-port-scan/synthetic-settings/request.json`
-  - `contracts/request-fixtures/security/disable-firewall/synthetic-settings/request.json`
-  - `contracts/request-fixtures/security/apply-firewall-profile/synthetic-profile/request.json`
-- 自动化测试：Apple 覆盖四段确认成功、中途部分成功、提交断网且回读失败、重复提交和提交后取消；Android 本批 7 项正式 Repository 测试覆盖双基线、多步骤计数、第二步在途取消与不可取消整体回读，8 项状态策略和 6 项界面策略覆盖原子门闩、专项刷新、可写字段规范化及结果关闭门禁；API 35 安全/硬件专项设备测试包含五态、确认拒绝、48dp 整行开关和深色 2× 字体。
-- 产品兼容矩阵条目：`NAS 设置`、`统一写操作结果 MR0/MR1/MR2`。
 
 ## 安全与副作用
 
@@ -99,37 +81,17 @@
 
 ## 未验证事项
 
-- 当前环境未在专用测试目标完成自动封锁、DoS、防火墙通知、防火墙启停、权限不足、
-  中途断网、配置档任务超时和回滚行为验收。
-- 不同 DSM build 的任务状态字段、接口错误码和防火墙生效时序尚未验证。
-- Windows 四段安全写/任务核心与表单有合成回归，真实副作用未验收；iPhone/iPad
-  用户调用链见下方 M6b5 增量。Android 仍待真实设备、真实 DSM 和权限矩阵验收，不以本波 Windows
-  回归提升其或当前 NAS 的证据等级。
-
-## 2026-10-03 字段语义修正
+## 字段语义修正
 
 官方控件 `name=enable_port_check` 绑定 `firewall_enable_port_detect`，当前中文为
 “启用防火墙通知”：服务或应用被防火墙阻挡时通知用户并提供解锁选项。该字段不是
 防端口扫描。macOS 双语文案已修正；共享模型的历史属性名为保持源码兼容暂不重命名，
-不得以属性名推断安全功能。Windows/Android 需在后续 UI 切片同步含义，本轮未修改。
+不得以属性名推断安全功能。Windows/Android 需在后续 UI 切片同步含义，未修改。
 旧 `security/set-port-scan` 样本路径保留作为稳定标识，仅解释更新，不修改传输字段。
-macOS 按本轮用户授权保留现有可用写入口，去除仅实测证据不足的产品禁用含义；实际
+macOS 按用户授权保留现有可用写入口，去除仅实测证据不足的产品禁用含义；实际
 权限、预检、确认、重复提交与回读不变。没有新增真实安全设置写入证据。
 
-## 2026-10-06 Apple 移动 M6b5 增量
 
-- iPhone/iPad 复用现有服务管理流程，固定 AutoBlock/Firewall/Conf/Profile.Apply v1、DoS v2、Ethernet list v2；只保存变化的四组。管理读取不把缺失期限默认成永不过期，不截断小数或越界次数；DoS 要求完整网卡映射，保留同网卡后返回状态覆盖旧值的已记录语义。
-- 用户看到的原配置、网卡 ID 集合和配置档绑定到保存前读取；只读显示名称不参与比较。所有变化所需版本在首次提交前检查，每组再次验证原值、权限和持久记录。配置档不可手填或替换；`enable_port_check` 始终表示防火墙通知。
-- `NAS/service-operations-v1.json` 保存设置/账号摘要、逐组阶段及开启防火墙的原任务回执和终态；不保存配置正文、名称或凭据。没有回执不能仅凭开关已开启宣布完成，未提交后组不能被后来状态认领。
-- 连续执行期间仅在原任务明确结束后、再次通过权限及取消检查、写入清理边界后调用一次 `stop`。该动作没有任务参数；App 重启或旧流程中断后的恢复只调用原 `status(task_id)` 和配置读取，不尝试全局 `stop`、重新 `start` 或重复清理。原任务成功加原配置匹配才解除保护，任务失败保留失败。旧任务上下文可能仍由 DSM 保留，后续应用的兼容性须在专用环境验证，不能自动清理其他任务。
-- Mac 共享任务 helper 同步移除超时盲目清理与清理错误吞掉；权限/证书失败停止请求，未知任务不由配置相同改为成功。Mac 页面模型不再用缓存覆盖明确拒绝、部分或未知结果。旧页面与持久配置保持兼容。
-- Windows/Android 本片无源码变化，仅登记完整字段、固定版本和任务边界的影响。共享合成与两端验证以移动主计划/验证历史为准，不提升 `lab-a` 的 `observed` 等级，不新增真实 NAS 写入证据。
+## 证据与实现范围
 
-## 2026-10-13 Android A7 安全设置与任务恢复
-
-- 产品入口改接 `NasServiceSettingsModel`、`NasServiceSettingsRepository` 和现有加密 `NasServiceActivityStore`；根模型旧保存/确认/反馈调用已移除。自动封锁、DoS、防火墙通知及防火墙按实际变化逐组单次传输，版本保持 AutoBlock/Firewall/Conf/Profile.Apply v1、DoS/Ethernet list v2；每组再次验证权限、原配置、网卡集合和原配置档，未提交后组取消，不自动补发。`enable_port_check` 的 Android 双语文案已改为防火墙通知，历史资源键/属性名保持兼容。
-- 管理读取沿用完整字段校验，不把缺少封锁期限填为零；DoS 按契约保留后返回状态覆盖旧状态，同时要求完整接口集合。配置档只能来自原始读取，不能由编辑或恢复替换。
-- 服务记录新增可选的原任务回执、任务终态和清理尝试/接受事实；旧服务记录继续解码，不保存配置档、地址或配置正文。开启任务没有回执时，即使当前开关相同也保持未知；明确任务失败不能被当前状态覆盖。回执落盘失败立即中止后续请求。
-- 只有连续原执行流程在任务明确结束后、通过新权限和取消检查并先保存清理边界，才发送一次无任务参数的 `stop`。超时、轮询失败和取消不做盲目清理。重启恢复先读原 `status(task_id)`，再读完整配置；不 `start`、不 `stop`，清理回执丢失的事实保留。原任务成功加配置匹配才解除该组保护，不能宣称旧清理请求已成功。
-- 增量 Kotlin 编译及最终119项聚焦/兼容 JVM 通过，零失败、零跳过；新仓储11、模型/记录6覆盖 FORM/JSON、四组顺序、丢回执、超时/取消、清理失败、任务失败、冷恢复、固定版本、原账号、DoS覆盖和存储失败。证据见 `build/android-rewrite-a7/security-jvm-run2.txt`、`security-results/` 与源码摘要。首轮取消夹具被真实网络层归为连接失败，后改为直接验证协程取消，原预期不变。
-- `PENDING_USER_VALIDATION`：已登记 DSM、专用可恢复测试网络与具备管理权限/无权限账号，测试四组保存、连接受阻、任务中断和重启恢复；确认不会重发开启/清理且其他接口配置不变。只回传版本、权限类别、阶段和脱敏失败。未改真实防护/网络配置，手机/平板并入 A7 整模块；其他端未改，历史 `observed` 不提升。
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

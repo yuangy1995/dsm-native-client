@@ -14,17 +14,16 @@
 | 电源计划 | `Core.Hardware.PowerSchedule.load/save` v1 | `savePowerScheduleResult` 使用原快照、计划规则及最终回读；未知时间/启用状态不补值；[记录](../discovery/endpoints/dsm-power-schedule.md) |
 | 内存压缩 | `Core.Hardware.ZRAM.get/set` v1 | `saveZRAMResult` 核对原快照及 `enable_zram`，保存后回读；[记录](../discovery/endpoints/dsm-zram.md) |
 
-写入实现见 [HardwareEditing](../../../apple/Packages/DsmNetwork/Sources/DsmNasAdministrationRepository+HardwareEditing.swift)。macOS 已有管理入口；iPhone/iPad 按 [M6](../../development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md) 实施，不能由共享方法存在推断移动界面或真实行为已经验证。
+写入实现见[HardwareEditing](../../../apple/Packages/DsmNetwork/Sources/DsmNasAdministrationRepository+HardwareEditing.swift)；平台状态见[平台矩阵](../../progress/PLATFORM_MATRIX.md)。
 
 SMART 详细响应容器、状态别名与占用规则见[硬盘检测记录](../discovery/endpoints/dsm-smart-test.md)，精确写入字段见[参数目录](requests.md#storage)。权限、读取错误、设备换盘和不支持检测均不能解释为“未运行，可启动”。
 
-Android A7 当前入口由 `NasSmartTestRepository/NasSmartTestModel` 执行，独立加密摘要记录保留原账号及动作阶段；接受不冒充运行，恢复先刷新权限，再只读原盘与精确类型。历史读取失败保留可信当前状态，前台只刷新已查看的运行硬盘。38项聚焦JVM通过，真实检测及A7整组原生验收仍待完成。
 
 ## 文件空间分析
 
 客户端的空间分析复用公开 File Station List/Search/MD5，不是一个已固化的 Storage Analyzer API。保持当前账号可见范围，排除明确不在分析范围的回收站、远程挂载及系统数据；先按大小筛选重复候选，再核对内容。取消只停止自己的任务。
 
-文件逻辑大小不等于文件系统实际占用，也不等于可释放空间。Storage Analyzer 套件历史报告、报告配置和计划尚无本项目固化的完整契约，不得根据页面名称猜方法；范围见[存储长期计划](../../development/NATIVE_DSM_STORAGE_MANAGEMENT_PLAN_ZH.md)。
+文件逻辑大小不等于文件系统实际占用，也不等于可释放空间。Storage Analyzer 套件历史报告、报告配置和计划尚无本项目固化的完整契约，不得根据页面名称猜方法；范围见[已知限制](../../progress/KNOWN_LIMITATIONS.md)。
 
 ## Finder / Explorer 挂载属于客户端集成
 
@@ -34,7 +33,7 @@ macOS File Provider 与 Windows Cloud Files 复用[文件 API](files.md)，没�
 - 客户端系统挂载：在 Finder/Explorer 中显示当前 NAS 文件，按需下载或保存。
 - 本机预览缓存/Office 编辑副本：独立生命周期，不是上述任何一种远程挂载。
 
-领域参考：[DesktopCloudDrive](../../../apple/Packages/DsmCore/Sources/DesktopCloudDrive.swift)、[写回语义](../../../apple/Packages/DsmCore/Sources/DesktopDriveWriteback.swift)。系统行为和恢复约束只维护于[桌面挂载计划](../../development/NATIVE_DSM_DESKTOP_CLOUD_DRIVE_DEVELOPMENT_PLAN_ZH.md)与[发布验收](../../compatibility/DESKTOP_CLOUD_DRIVE_RELEASE_ACCEPTANCE_ZH.md)，不得把临时签名包当成已验证 File Provider。
+领域参考：[DesktopCloudDrive](../../../apple/Packages/DsmCore/Sources/DesktopCloudDrive.swift)、[写回语义](../../../apple/Packages/DsmCore/Sources/DesktopDriveWriteback.swift)。系统行为和恢复约束只维护于[平台集成](../../development/PLATFORM_INTEGRATION.md)与[发布验收](../../compatibility/DESKTOP_CLOUD_DRIVE_RELEASE_ACCEPTANCE_ZH.md)，不得把临时签名包当成已验证 File Provider。
 
 ## 验收
 

@@ -12,23 +12,9 @@
 | 操作性质 | `mixed` |
 | 风险等级 | `critical` |
 
-## 2026-10-14 Android A8 客户端增量（非现场发现）
+## 缺失请求字段补全（只读与静态）
 
-Android 沿本记录已有字段接入容器启停/重启/删除、映像下载/按标签删除、网络创建/删除与独立加密摘要恢复；完整源码、验证和未完成工作见[Android A8账本](../../../archive/2026-h2/ANDROID_REWRITE_IMPLEMENTATION_HISTORY_ZH.md#a8-容器与虚拟机整模块功能对齐账本实施中)。没有新增 NAS 方法或现场请求，没有重新定级历史环境。
-
-正式入口使用实际v1能力、当前管理员/模块权限及原目标，不按DSM/Container Manager精确版本限制操作；下文早期“Android始终只读/写门关闭”描述旧门面，不代表A8已接的受保护入口，也不能把入口可操作当成行为验证。每次确认保留原目标，写前及回执后保存独立摘要；存储失败停止链路，未知不重放，部分批次不自动继续。
-
-容器按原ID/名称、原生状态、启动时间和项目托管预检；映像占用包含停止容器，摘要源ID关联保护该源所有标签，裸映像不能扩大至有效标签。下载完成需要原任务、原生finished、目标回显及完整清单；1202只有在原pull_status读取失败时表示任务失败，完成后Image.list同码仍为读取失败。下载与删除跨实例、跨重启相互保护，原任务号保留原类型，无回执不查询聚合任务或重发。
-
-网络地址表单不发送driver；单项remove对象沿已观察白名单组装，非空failed表示该项拒绝，不推测失败数组内部字段。无创建回执同名只标为存在，无删除回执原ID消失只标为当前不在列表，均不认领写成功。IPv6地址和IP伪装未形成可靠回读字段，不宣称全部选项结果已验证。
-
-只读总览按原生状态、完整映像/网络及项目ID键值对象解码，缺关联数不补零；日志进入页面才按Log.list/load完整分页，取消、认证和证书失败停止，正文只驻留原工作区内存。无时区日志日期保留NAS当地时间，不假设手机时区。当前82项聚焦JVM、Debug/仪器包和同包手机/平板各20项原生通过，真实NAS仍未完成，不能提升static/observed或宣称五端全部验收。
-
-`PENDING_USER_VALIDATION`：仅可丢弃测试容器/映像/网络，记录当前环境版本用于排障，分别检查启停/重启、删除后其他对象保留、下载完成与失败、网络地址与实际连接效果，断网及进程重启后不重复提交。回传完整版本、权限类别、操作阶段及脱敏失败，不附凭据、名称、地址、环境变量或日志正文。其他平台实现、公开契约和历史verifications保持原样。
-
-## 2026-10-06 缺失请求字段补全（只读与静态）
-
-[本次观察](../environments/2026-10-06-container-vmm-api-read-observation.md) 已从当前官方页面
+[本次观察](../environments/INDEX.md#2026-10-06-container-vmm-api-read-observation) 已从当前官方页面
 重新核实 DSM 7.2.1-69057 Update 12 / Container Manager 24.0.2-1535。设备待归属，账号
 群组角色未单独核实；不修改旧 lab-a verification。Container/Network/Image/Registry 列表
 与空 Project.list 成功结构为 `read-verified`，下列新增写定义均为官方 MainVue.js `static`。
@@ -64,145 +50,7 @@ Android 沿本记录已有字段接入容器启停/重启/删除、映像下载/
 没有真实新增写回执、错误码、流式终态或非空项目响应，以上不等于完整服务端 Schema。
 新 Adapter 接入时按这些来源建立合成请求断言；断线或取消保留未知，只读恢复，明确拒绝
 不能被随后外部变化覆盖。能力/权限不足只限制相关操作，不阻断已有容器清单。
-五端影响：macOS 与 Windows 对照现有实现补对应缺口；iPhone/iPad 同一共享接口及触控
-流程，尚未实施创建/编辑/项目写；Android 仅记录。此次文档不开放新写入口，不变更公开
-Schema、权限、持久化或依赖；旧环境写兼容等级保持。Network.list 的本次字段继续支持
-M7c3，但仍没有可用于验证 IPv6 地址/IP 伪装结果的新字段。
-
-## 2026-10-06 Apple 移动网络管理增量
-
-M7c3 沿既有 Network.list/create/remove v1 实现 iPhone/iPad 创建、详情、单项/多项删除和
-持久恢复；共享旧 Mac 签名进入同一网络流水线，不改变 NAS 字段。实际组合根开放已实现
-创建，继续核对 v1 能力范围和当前 Container Manager 授权，不额外强加 DSM 管理员身份。
-只删除非默认且无关联容器的网络，写前重读比较确认时原 ID、名称与可读配置；每次 remove
-只包含一个已确认网络对象，非空 failed 数组即该项拒绝，不猜测数组内未验证的目标字段。
-批量失败停止后项，明确拒绝和预检失败不能被外部移除覆盖。本轮已用合成测试复现旧误报。
-
-创建继续只发已记录默认/手动字段，不传 driver。接受回执与完整列表中的原名称、bridge、
-IPv6 开关、手动 IPv4 配置共同确认；历史 list 未验证 IPv6 地址和 IP 伪装结果字段，不能
-因此猜测响应或声称每个选项已核对。没有创建回执但出现同名对象时只显示“已找到同名网络”，
-不冒称本次创建成功。无删除回执时，原 ID 消失只显示当前已不在列表中，不认领写入成功。
-未找到目标的未知创建、仍存在的未知删除保持保护，刷新只读取，不自动重新提交。
-
-创建/删除分别保存写前、接受、明确拒绝与完成边界；保存失败停止后续请求。独立受保护的
-Containers/network-operations-v1.json 仅保存账号、目标/配置摘要与阶段，名称/地址仅在
-当前内存；重启后的未发送项停止，已发送项只读恢复。完整列表检查已有可选 total/offset
-类型和数量，缺失/重复身份不作为成功证据。后续对抗复核另补旧批量入口的删除接受标记：
-丢回执后原 ID 消失仍不能认领本次成功；移动恢复同时保护原 ID/名称，外部改名不能绕过。
-共享 ContainerNetwork 增加默认 nil 的 ipRange
-只读字段，延续已记录 list 字段，不增加持久化配置迁移。
-
-五端影响：iPhone/iPad 原生表单、触控多选、详情和活动记录；macOS 保留页面与调用，获得
-同一拒绝/预检修正并运行回归；Windows/Android 仅登记同等安全语义，不改代码。当前移动
-开发格式不提供旧开发记录迁移，登录、权限、App 身份、依赖与最低版本不变。回滚停用
-入口并保留未完成记录，不自动恢复已删除网络。实际验证见移动主计划和验证历史，真实
-创建/副作用及新环境未验证，不提升历史证据等级。
-
-## 2026-10-06 Apple 移动容器删除与恢复增量
-
-iPhone/iPad M7c2 沿用 Container.list/delete v1，发送当前原 ID 对应的 name、force=false、
-preserve_profile=false，不增加卷或目录删除字段。详情和多选确认明确容器及其内部未外存
-文件不可恢复，映像与共享文件夹数据不自动删除；实际数据后果仍需专用可丢弃环境验证。
-
-共享旧批量入口和新增原快照入口进入同一实现。删除前比较原 ID、名称和原生运行/托管
-状态，仅停止且非套件托管的容器可删除；Compose 项目的 is_package 限制同样生效。
-写前、接受、明确拒绝和已完成四个边界沿现容器控制观察者保存。写前保存或权限失败零写，
-回执保存失败停止后续链路；证书错误保留原错误且停止，明确拒绝不能被后来的外部删除覆盖。
-旧批量后项预检单独发生在提交边界之前，已发送前项与未提交/明确拒绝后项分开计数。
-
-Container.list 的可选 total 必须等于实际条目数、offset 必须为零，且均须原生数字。
-本轮合成测试复现部分清单被误判删除完成，修正后启停、删除预检及只读恢复均使用严格
-清单；这不是新增真实响应观察。删除完成只由完整目录中原 ID 消失证明，同名新 ID 不会
-被继续删除；原 ID 改名仍不能认领删除完成。缺少可选分页元数据时沿既有 v1 全量契约。
-
-移动沿用 Containers/container-controls-v1.json，增加本地 delete 类型而不扩展共享
-ContainerAction 的启停三动作。记录仍只有账号/目标摘要、阶段和接受标记，名称只在
-当前账号内存保留；损坏目录或在途文件丢失不能解除保护。批次出错后剩余项停止，不自动
-续跑；未知删除与启停按原 ID/名称双向互斥，重启只读恢复。原账号迟到结果只写原记录。
-
-五端影响：iPhone/iPad 新增删除闭环；macOS App 无新增改动，共享旧签名保留，清单完整性、
-批量计数及证书停止行为同步修正并运行共享与 Mac 回归。Windows/Android 只登记同等恢复
-和完整性要求，不改源码。无新增依赖、应用身份、权限或登录格式；移动采用当前开发格式，
-不提供旧开发记录迁移。回滚停用删除入口并保留未完成记录，不恢复已删容器。实际命令、
-结果和真机条件见移动主计划与验证历史；不提升现有环境的证据等级。
-
-## 2026-10-06 Apple 移动映像删除与恢复增量
-
-M7c1 沿用 Image.list/delete v1 与完整 Container.list 的占用判断，不新增 NAS 方法或
-参数。单项/多项确认绑定原始映像 ID、仓库和标签；提交前重读完整清单与占用，停止容器
-同样计入占用。按原 `images` 数组合并同仓库标签，无标签条目使用 `identity`，不得隐含
-删除同 ID 的其他有效标签。删除后的单项结果按原标签地址或裸映像 ID 判断；标签改指向
-其他 ID 时仍保留未知，不按旧选择 ID 消失推断成功。
-
-共享兼容增加固定选择请求、写前/接受/明确拒绝检查点和只读恢复方法。旧 Mac 入口仍
-进入同一提交/回读实现；未实现新协议的适配器直接不可用，不回退到无记录写入。持久
-恢复摘要包含所选身份、规范化地址与原 ID 的 SHA-256 及是否无标签。移动新增独立受
-完整文件保护、排除备份的 `Containers/image-deletions-v1.json`，仅保存账号摘要、目标
-摘要、阶段/接受标记与逐项结果，不保存仓库名称、路径、地址或凭据。
-
-写前存储失败零提交，回执保存失败停止后续读取；明确拒绝为终态，不能被第三方删除
-覆盖。原未知记录重启后只读清单恢复，准备但未提交的记录停止；部分完成保留未结束
-结果且不自动重发整个批次。恢复不依赖容器占用读取能力，新删除仍必须取得完整占用
-信息。当前账号权限或证书失败停止关联链路，旧账号迟到结果只写原记录。
-
-移动下载和删除共享当前账号的恢复保护；下载提交前再次比较标签及原裸映像摘要，
-删除提交前再次检查相关下载记录。共享内存互斥同时保留；恢复中的同标签/裸映像不能
-被另一操作重写。结果终态才允许移除本机记录，移除不操作 NAS。
-
-没有新增依赖、身份或系统权限，不迁移已发布 Mac 数据或登录结构；回滚停用新入口并
-保留未完成记录。macOS 通用删除反馈缺陷另行请求授权，本片映像路径已禁用该兜底，
-不修改 Mac App。Windows/Android 仅记录影响，不改实现，不提升任何真实环境证据等级。
-
-## 2026-10-06 Apple 移动映像下载与恢复增量
-
-iPhone/iPad M7b 继续使用已记录 Registry.search/tags v1、Image.pull_start/pull_status/list
-v1；搜索沿现有前 50 项结果，不猜分页或取消接口。下载前使用当前套件授权，重新读取标签与
-完整映像清单，用户在固定仓库/标签页面明确点击下载；离开页面不停止 NAS 下载。
-
-共享 `ContainerImagePullRecovery` 保存规范化目标与原映像 ID 的 SHA-256 摘要，以及原类型
-字符串/安全整数任务编号。兼容增加写前、接受、明确拒绝检查点及只读恢复方法，旧 Mac
-签名继续进入同一请求/状态检查路径，默认协议实现不支持新增写入。移动独立
-`Containers/image-pulls-v1.json` 采用完整文件保护并排除备份，只含账号/目标摘要、原任务、
-阶段与稳定结果类别，不含仓库名称、地址或凭据；任务编号不进入用户界面或日志。
-
-写前落盘失败零提交，回执保存失败停止后续读取。有回执时只查原 task_id，并将状态回显
-repository/tag 规范化后与原摘要比较；finished 必须是原生布尔，结束后还须完整 Image.list
-包含目标标签。百分比、旧标签存在或其他任务完成均不能代替此条件。无回执只恢复保护记录，
-不从同名映像或聚合任务猜测、不自动重发。恢复仅依赖 Image 能力，Registry 缺失不阻断已有
-任务读取；当前授权失效或证书错误停止关联链路，跨账号迟到回执只写原记录。
-
-重启后恢复的下载继续参与原标签及原裸映像身份的删除互斥；未提交记录停止、不自动执行。
-明确失败不被之后外部变化改写为成功，原任务读取的 1202 沿既有观察解释为下载失败；完成后
-Image.list 的同码仍只表示无法读取结果。macOS 的跨进程恢复仍未实施，旧内存行为不变。
-Windows/Android 只记录语义影响，不改源码；没有新增依赖、系统权限或真实 NAS 写验证。
-移动恢复格式沿本阶段已批准的独立存储范围；不迁移旧配置，回滚停用新增入口并保留记录。
-源码、合成与目标构建证据见移动主计划和验证历史，不能提升既有环境验证等级。
-
-## 2026-10-06 Apple 移动容器控制与恢复增量
-
-iPhone/iPad M7a 沿用下方已记录的 Container.list/start/stop/restart v1，不新增网络方法或
-猜测参数。兼容增加 `ContainerControlState`、逐项提交观察者及只读管理状态方法；旧
-`controlContainers` 继续进入相同身份/托管/状态校验流程，旧协议适配器默认不支持新增
-管理方法，不回退到不带恢复记录的写调用。移动入口采用 Container Manager 明确应用
-授权，不把 DSM 管理员身份视为套件授权；NAS 仍执行最终权限裁决。
-
-确认固定 ID、名称、原生 Running/Paused/Restarting、StartedAt 与项目托管状态。每项
-提交前重新读取并重新授权，willSubmit/accepted/rejected/verified 分别保存到当前账号
-独立的 `container-controls-v1.json`；记录只保留账号和目标摘要、操作类型、启动时间、
-逐项阶段及稳定错误类别，不含名称、主机、凭据或事件正文。文件使用完整数据保护并排除
-备份；记录损坏或保存失败停止后续写。批次出错后未提交项停止，恢复不会自动继续剩余项。
-
-重新打开后，只有实际相同 ID/名称的完整状态读取可以解除未知保护；重启还要求启动时间
-严格增大，不能凭 running 或同名容器认领。明确拒绝、未提交项不因外部状态变化改判成功。
-同一目标 ID 或名称的未完成记录阻止重复操作；跨账号迟到回执只更新原账号记录。活动日志
-正文和用户来自已有完整 Log.list/load 读取，只在当前页面内存展示，不保存到恢复文件。
-
-五端影响：iPhone/iPad 新增上述流程；macOS App 不改，旧共享调用保持兼容并需完整共享与
-Mac 构建回归。Windows/Android 仅记录恢复/身份语义，无源码变化。无依赖、系统权限、
-Bundle ID 或登录配置变更；移动开发数据不做历史迁移，回滚停用新增控制入口并保留配置。
-当前属于源码与合成验证范围，最新实际命令/结果见移动主计划及验证历史，不提升下方真实
-环境等级。删除、映像、网络和 VMM 另片实施；Container.Log.get/export 等缺证据接口继续
-不实现。
+Network.list尚未取得可验证IPv6地址/IP伪装结果的新字段；不能用其他已读字段证明这些选项保存成功。
 
 ## 请求契约
 
@@ -235,20 +83,20 @@ Bundle ID 或登录配置变更；移动开发数据不做历史迁移，回滚�
 | `Image.pull_start` | `repository`、`tag` | 2026-07-27 请求在发送前终止；没有行为验证，入口关闭 |
 | 容器、映像、网络、项目其他写方法 | 未在本记录固化 | 必须在专用测试目标重新发现并完成写后复查 |
 
-### 2026-09-19 生命周期与镜像删除参数静态确认
+### 生命周期与镜像删除参数静态确认
 
-本节更新上表的“未固化”历史状态，详见[本轮只读观察](../environments/2026-09-19-container-lifecycle-read-observation.md)。
+本节更新上表的“未固化”历史状态，详见[只读观察](../environments/INDEX.md#2026-09-19-container-lifecycle-read-observation)。
 DSM 7.2.1-69057 Update 12 / Container Manager 24.0.2-1535；设备归属未确认，不
 复用旧 lab-a 行为等级。官方 MainVue.js 静态确认 Container.start/stop/restart v1
 均发送 `name`，普通 delete 为 `name,force=false,preserve_profile=false`；重置的
 preserve_profile=true 不得冒充删除。Image.delete v1 发送 `images` 对象数组，元素
 为 `{repository,tags:[...]}` 或裸映像标识的 `{identity}`，不使用单 id。
 
-Container.list v1 本轮自然请求为 POST entry.cgi、offset=0/limit=-1/type JSON
+Container.list v1 自然请求为 POST entry.cgi、offset=0/limit=-1/type JSON
 字符串 all，成功响应含稳定 id/name 及 State 对象。Running/Paused/Restarting 为
 布尔，ExitCode 为数字，Status/StartedAt/FinishedAt 为字符串，时间字段呈 ISO
 日期格式。请求 ID 与实际名称/时间值不进入记录；重启必须绑定同一容器身份并核对
-启动时间变化候选，不能仅以 running 状态回显报成功。尚无本轮真实写行为结论。
+启动时间变化候选，不能仅以 running 状态回显报成功。尚无真实写行为结论。
 macOS 既有单 id 请求需修复；Windows 生命周期和映像管理依本记录继续实施。
 
 2026-09-20 追加静态限制及源码：官方容器写入口排除由容器自身或 Compose 项目标记
@@ -261,48 +109,7 @@ Mac/共享 Swift 构建未运行，不能称目标端已验收。
 Windows 映像删除已按下节接入；Mac 同日完成参数/标签及只读恢复源码修复，目标
 构建未执行。不因源码修正而冒称两端镜像管理与验收全部完成。
 
-### 2026-09-20 Windows 镜像标签删除适配
-
-镜像清单按原生 tags 展开，标签身份绑定原始 ID/仓库/标签；旧无 tags 摘要只读显示，
-不猜 latest。分页 total 与原始镜像记录数核对，不与展开后的标签数比较。内部 v1
-delete 发送 images 对象数组，同仓库合组 tags，裸标签用 identity；不发送单 id 或
-force。裸 identity 不得隐含删除同 ID 的其他有效标签。提交前读取完整镜像及容器
-清单，按官方 image/Image/ImageID 静态归属规则检查包含停止容器在内的占用。
-
-用户确认绑定清单快照和请求标识，名称/ID/标签变化重新选择；同作用域未知请求按
-标签地址或裸身份互斥，回执丢失、取消或部分成功只读核查。标签删除须确认所选地址
-消失（底层 ID 可保留其他标签）；identity 删除须原始 ID 消失。明确拒绝不因第三方
-删除而改判成功。窗口包含多选、确认、反馈与恢复，按会话/接口开放，无未验证恒关门。
-权限仍由 NAS 裁决；运行中的并发外部变化由 NAS 最终保护，Agent 未执行真实删除。
-
-五端影响：Windows 新增兼容可选镜像元数据/默认仓库方法；Mac 同日修复见下一节；
-iPhone/iPad 保持只读，Android 不改代码。无需存储、依赖、权限迁移，
-回滚仅撤销增量与入口；不改变下方历史 verification 或声明真实写行为已经验证。
-
-### 2026-09-20 Mac 镜像标签删除源码修复
-
-Apple 共享 ContainerImage 增加可选 sourceImageID，标签行使用原始 ID/仓库/标签
-组合成会话内选择身份，不改变存储。Image.list/删除固定内部 v1；total 对原始记录
-数核对后再展开 tags，普通旧摘要不猜 latest、无可写身份。根据完整容器清单计算
-占用，保留普通名称/摘要/裸标识的已记录官方静态归属。delete 发送 images 数组，
-同仓库合组 tags、裸标签 identity；仍要求权限、确认、新鲜身份和无占用。
-
-未知批次在仓库会话内保留原始标签范围；独立 reviewContainerImageDeletion 只读
-Image.list，旧适配器默认不支持，绝不回退调用删除。标签换 ID 不按旧选择消失判
-成功，原生窗口固定确认时的选择，增加“核查删除状态”；移除该路径的 UI 列表消失
-兜底成功判定。明确拒绝为终态，不因其他客户端动作改判成功。新增共享合成请求
-fixture `container-manager/delete-image-tags/synthetic-selection/request.json`，
-Apple/Windows 请求断言使用同一结构；Windows 已执行，Apple 测试源码未执行。
-本机无 Swift/macOS，不宣称构建、签名或真实删除验收通过，不提升任何环境等级。
-
-同日对齐 RESTARTING 分组：官方将该状态归入 running，因此停止/重启不应要求
-Restarting=false。两端已修正提交资格；稳定停止才允许启动/普通删除，暂停/托管/
-缺失运行字段继续拒绝。结果核查仍要求不再重启中，restart 还要 StartedAt 变大，
-不能以允许提交或过渡状态回显宣称完成。没有新增方法/参数或真实写行为验证。
-
-`Container.Resource.get`、`Container.Log.get/export`、`Container.stats/get_process` 的完整参数和响应尚未获得脱敏请求证据，不得根据方法名猜测。
-
-### 2026-09-17 映像列表与下载任务分离
+### 映像列表与下载任务分离
 
 2026-09-20 更新：下方“暂不实施/关闭”是当时决策；后续用户已批准兼容接口增量和
 可测试入口。Windows 现接入 pull_start/pull_status v1 及任务身份绑定，见发现记录
@@ -321,49 +128,13 @@ Registry 原生窗口增加确认、下载列表、5 秒可见任务刷新与会
 五端：Windows 实施；Mac 同日新增任务追踪源码，目标构建与测试未执行，见下节；
 Apple 移动端保持只读，Android 不修改。无持久化/依赖/权限迁移，不新增真实写证据。
 
-### 2026-09-20 Mac 拉取任务追踪源码
+### 读取更正（待归属观察）
 
-新增兼容请求/进度结果和默认协议方法，旧适配器未实现时不回退调用启动；实际
-macOS 适配器按当前 Image/Registry v1 能力开放。旧 pullContainerImage 入口委托
-同一受保护流程，不再绕过任务记录；新的 Mac 搜索窗口带固定目标确认与下载任务
-分区，5 秒仅刷新可见且正在下载的任务，手动核查不发送 pull_start，关闭取消本地
-任务等待而非 NAS 下载。确认变化失效，已确认终态不被迟到缓存覆盖。
-
-任务编号字符串原样回传；ServiceJSON 使用 Double，整数编号只接受不超过 2^53−1
-的安全整数，不能把超范围编号四舍五入后查询别的任务。finished 原生布尔、回显
-仓库/标签及完整镜像清单共同验证可用。无回执、查询失败或取消保留未知，不猜取消
-方法；拉取与对应镜像删除交叉保护，保留原请求编号的结果供重复调用只读核查。
-这些是源码/合成契约范围，没有新的真实字段或写行为验证。
-
-恢复仅限同一仓库实例/工作区的内存记录，不跨应用重启或彻底重建登录连接；不会
-以镜像名称重绑全局任务，空记录提示用户先在 DSM 核查。这不改变持久化格式或
-读取其他账号任务，跨进程恢复若需要持久化必须单列审批。Mac Swift/App 构建和
-新增回归当前未运行；iPhone/iPad 新协议只保留默认不可写行为，Android 源码不变。
-
-[本轮只读记录](../environments/2026-09-17-container-image-pull-read-observation.md)已核实
-DSM 7.2.1-69057 Update 12、Container Manager 24.0.2-1535 管理员环境的 Image.list
-请求及成功响应结构。设备归属仍未知，不更新旧 lab-a 等级。列表为 images 数组与
-数值 offset/limit/total；每项 id/repository/digest/remote_digest 为字符串，tags 为
-字符串数组。完整请求仍返回非零 offset、总数不匹配或畸形分页字段时，客户端仅使
-映像分区失败，不把部分页当作完整目录。Windows/macOS 已有列表调用同步修正参数；
-未新增公开模型，tags 多值表达仍需单列兼容扩展。
-
-官方 MainVue.js 静态线索另确认 Image.pull_start 回执的 task_id 被用于
-Image.pull_status v1 的 task_id 参数。状态消费 finished/repository/tag/downloaded，
-另一处消费 current/total；实际类型、单位、失败终态及任务消失语义仍未验证。
-Entry.Request.Polling.list v1 的 task_id_prefix 与 extra_group_tasks 参数仅作为
-聚合任务发现候选（具体固定值见环境记录），不能用聚合列表为空证明某个下载成功。
-Image 与 Polling 能力元数据声明 JSON；没有执行下载或自行轮询真实任务。
-权限/取消/重复提交/回执丢失/最终回读契约未闭合，Windows 下载入口保持关闭，
-不新增猜测的 Domain/Repository 方法。其他三端只记录影响，不增加写能力。
-
-### 2026-09-10 读取更正（待归属观察）
-
-2026-09-16 [Windows 对齐只读核查](../environments/2026-09-16-windows-parity-read-observation.md)
+2026-09-16 [Windows 对齐只读核查](../environments/INDEX.md#2026-09-16-windows-parity-read-observation)
 确认当前 Container Manager 24.0.2-1535 的 Container/Log v1 声明 JSON；仅能力元数据
 read-verified，不增加当前日志响应或写操作证据。Windows 按本节已有契约同步完整读取与分页。
 
-见[日志与网络观察](../environments/2026-09-10-container-read-observation.md)。本次观察未确认设备关系与完整版本，不升级下方历史基线的证据等级。
+见[日志与网络观察](../environments/INDEX.md#2026-09-10-container-read-observation)。本次观察未确认设备关系与完整版本，不升级下方历史基线的证据等级。
 
 - `SYNO.Docker.Log.list` v1：官方日志页面发送 `action=load, offset=0, limit=1000, sort_by=time, sort_dir=DESC, loglevel="", filter_content="", datefrom=0, dateto=0`。客户端此前只有 offset/limit，与官方请求不一致。
 - 成功响应 `logs` 元素为 `event/level/log_type/time/user`，均为字符串；时间为 `yyyy/MM/dd HH:mm:ss`。顶层 `offset/limit/total` 和分级数量为数字。客户端按返回总数读取后页，不能将首批当作全部。
@@ -371,10 +142,10 @@ read-verified，不增加当前日志响应或写操作证据。Windows 按本�
 - 同一网络响应还包含 `enable_ipv6:boolean` 与 `gateway/iprange/subnet:string`；用户已明确批准为共享领域模型增加向后兼容的可选只读字段，macOS 展开显示子网、网关、IPv6 与关联容器名称，不改请求或存储格式。官方 UI 的 IP 伪装显示未在本次响应中找到对应字段，不按界面文案猜契约。
 - 不增加或开放写操作。macOS 修复读取与分区展示；Apple 移动端专用清单、Android、Windows 实现不变，后两端只记录后续适配影响。
 - 后续同日核对 `Project.list` v1 无附加参数：官方无项目返回 `{}`，不是空数组；按 ID 键值解析的非空摘要仅有官方脚本静态证据，字段 `name/status/containerIds`。客户端仅对项目分区兼容这一对象容器。
-- 网络创建表单和静态参数差异见[观察记录](../environments/2026-09-10-container-read-observation.md#项目列表与新建网络后续核对)。实际创建未发送，不能把只读详情授权或表单可见当成写行为验证。
+- 网络创建表单和静态参数差异见[观察记录](../environments/INDEX.md#2026-09-10-container-read-observation)。实际创建未发送，不能把只读详情授权或表单可见当成写行为验证。
 - 用户后续已批准创建契约同步：默认参数为 `name/enable_ipv6/disable_masquerade`，手动 IPv4 加 `subnet/iprange/gateway`，手动 IPv6 加 `ipv6_subnet/ipv6_iprange/ipv6_gateway`，不传 `driver`。客户端增加确认、校验、同名互斥与读前/读后核对；提交能力默认关闭，只有合成测试显式开启，不升级真实写入证据。五端影响与迁移/回滚见观察记录。
 - 用户再次明确要求可点击测试包后，macOS 独立本地测试包允许手动确认并提交创建；正式版默认关闭不变，真实写入仍待用户验收，不将入口开放升级为行为验证。
-- 同日用户授权单个无关联测试网络的真实删除：`Network.remove` v1 发送 `networks:[所选网络对象]`，响应 `failed:[]`，最终列表目标消失。对象键及限定证据见[删除观察](../environments/2026-09-10-container-read-observation.md#用户授权的单个测试网络删除)。已纠正 Apple 的单 id 参数及共享请求 fixture；不外推到其他网络、权限、版本或其他写操作。
+- 同日用户授权单个无关联测试网络的真实删除：`Network.remove` v1 发送 `networks:[所选网络对象]`，响应 `failed:[]`，最终列表目标消失。对象键及限定证据见[删除观察](../environments/INDEX.md#2026-09-10-container-read-observation)。已纠正 Apple 的单 id 参数及共享请求 fixture；不外推到其他网络、权限、版本或其他写操作。
 - 1.0.5 按用户明确要求纠正正式版创建接线：不再要求 localtest 包标识，保留实际接口能力和所有提交保护。此前“正式版关闭”记录为历史状态，不代表当前入口策略；不因该修正宣称其他环境已验证。
 
 ## 响应与错误
@@ -408,7 +179,7 @@ read-verified，不增加当前日志响应或写操作证据。Windows 按本�
 | 环境标识 | 证据等级 | 接口版本 | 结果 | 日期 | 证据路径 |
 | --- | --- | --- | --- | --- | --- |
 | `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | 客户端范围 v1 | Container Manager `24.0.2-1535` 的容器列表、Registry 搜索/标签请求结构已有脱敏记录；`pull_start` 未发送 | 2026-07-27 | `docs/compatibility/DSM_COMPATIBILITY_MATRIX.md` |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | 未捕获详情请求版本 | 官方页面只读显示总览 CPU/RAM/网络，以及容器详情网络、环境变量、进程和日志分区；未读取内容或原始响应 | 2026-08-02 | `docs/api/discovery/environments/2026-07-29-lab-a-dsm-69057-u12.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | 未捕获详情请求版本 | 官方页面只读显示总览 CPU/RAM/网络，以及容器详情网络、环境变量、进程和日志分区；未读取内容或原始响应 | 2026-08-02 | `docs/api/discovery/environments/INDEX.md#2026-07-29-lab-a-dsm-69057-u12` |
 
 第二条只证明当前官方界面存在对应能力入口，不证明详情 API、参数或响应已经验证。
 
@@ -422,54 +193,6 @@ read-verified，不增加当前日志响应或写操作证据。Windows 按本�
 - 网络失败：允许用户刷新；写请求不自动重放。
 - 替代的官方 API：当前 Container Manager 必要能力没有等价公开 API。
 - 功能开关：写能力必须同时满足版本兼容记录和专用目标行为验证。
-
-## 客户端与测试
-
-2026-09-17 Windows 网络只读详情迁移：在原有 Network.list v1 响应中增加兼容可选
-详情映射及原生展开视图，显示驱动、关联数量/名称、子网、网关、IP 范围和 IPv6。
-数组存在时数量来自数组；没有数组时必须有明确一致的非负整数计数，缺失或错误
-只让网络分区失败，不补零。名称未提供与已知无关联分别显示，错误 IPv6 不补 false，
-非 IP/CIDR 地址字段不作为可用地址显示。展开不会追加请求、读取日志正文或环境变量。
-Apple 同类计数修正拒绝 Boolean、小数、溢出和冲突计数，新增回归待 Mac 执行。
-这些源码/合成证据不开放 Windows 网络创建/删除，也不提升真实环境写行为等级。
-
-2026-09-17 Windows 创建核心：完整自动/手动 IPv4、IPv6 与 disable_masquerade
-配置复用既有创建契约，不发送 driver。客户端验证名称、地址族、规范 IPv4、CIDR
-及子网归属，读取完整网络列表后检查名称占用；同一客户端按 NAS/账号/地址作用域
-和名称保存未确认操作，重复请求或重建 Repository 后只回读。基本创建需唯一新
-身份、bridge、IPv6 开关和手动 IPv4 参数吻合才确认，不把旧 ID 改名当作新建；
-明确拒绝不因其他客户端改值而成功。启用 IPv6 或禁用 IP 伪装时，当前没有已验证
-的完整选项回读字段，保留未确认状态。生产行为门关闭，已接原生完整配置与确认/
-核查表单，并以合成仓库验证正常、拒绝、未知、关闭取消和主列表更新；不改变
-Mac 1.0.5 的既有入口策略，也不声称真实套件或路由副作用已验收。
-
-2026-09-17 Windows 删除核心及原生流程：remove v1 使用已记录的 networks 对象数组，
-只复制白名单字段。确认绑定稳定 ID 与读取基线，提交前重新核对系统名称保护、明确
-零关联、驱动及 IPv6 开关；缺失或类型错误不补可删除状态。共享协调器隔离 NAS/账号，
-同一目标及创建/删除交叉互斥，未知结果不重放。严格完整列表按原 ID 确认消失，部分
-消失逐项计数，明确拒绝不被其他客户端操作覆盖为成功。原生多选、风险确认、恢复核查、
-离页取消与父列表刷新已有合成测试；没有新增真实删除记录，批量仅有合成证据。Windows
-生产写门仍关闭；macOS/iPhone/iPad/Android 无代码或入口策略变化，无契约/存储迁移。
-
-2026-09-17 Windows Registry 只读对齐：运行时路径、固定 v1 与 FORM/JSON 声明，
-search 的 offset/limit/page_size 为数字，q/repo 按声明编码。支持 data/items/results
-搜索数组、data/tags/items 标签数组及传输层保留的顶层数组；标签可为原生字符串或
-tag/name 对象，按首次出现顺序去重。缺失/错误列表或必需身份不冒充空结果；可选收藏
-数和徽章缺失/错类型保留未知。仅请求首批 50 项且界面明示，不猜测后页。搜索/标签
-状态绑定请求代次和当前仓库，离页/改词/切换仓库取消旧读取，迟到响应隔离。
-真实权限、数量与弱网仍待验收，不增加 pull_start 或其他写行为证据。
-同波按用户既有授权修正 Apple 共享标签解析：原 objects.compactMap 会丢弃字符串
-标签并把畸形响应当作空/部分列表；现接相同已记录形态并严格区分错误。macOS 调用
-签名和 iPhone/iPad 共享 API 不变，新增 Swift 测试未在此 Windows 主机执行，Android
-代码不变。没有修改 NAS 协议、存储或权限；回滚仅撤销该解析增量与 Windows 新入口。
-
-- Apple Adapter：`apple/Packages/DsmNetwork/Sources/DsmServiceManagementRepository.swift`
-- Android Adapter：`android/app/src/main/java/io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt`
-- Windows Adapter：`windows/src/LanStash.Infrastructure/Features/Containers/PrivateApi/DsmRepository.ContainerManager.Private.cs`
-- Schema：当前使用各平台强类型领域模型和脱敏合成响应；详情 Schema 尚未建立。
-- 脱敏 fixture：`contracts/request-fixtures/container-manager/`
-- Android 自动化测试：`ContainerMutationResultTest.kt`、`ContainerRegistryRepositoryTest.kt`、`ContainerWriteSafetyTest.kt`、`ContainerReadOnlyScreenTest.kt`
-- 产品兼容矩阵条目：`docs/compatibility/DSM_COMPATIBILITY_MATRIX.md` 的 Container Manager 行。
 
 ## 安全与副作用
 
@@ -488,10 +211,10 @@ tag/name 对象，按首次出现顺序去重。缺失/错误列表或必需身�
 - `pull_start`、映像更新/清理、容器创建编辑、Compose 校验/部署和异步任务的真实写行为。
 - 管理员与普通账号、QuickConnect、弱网、套件升级及大量容器/日志下的行为。
 
-## 2026-10-03 搜索版本与下载失败更正
+## 搜索版本与下载失败更正
 
 本次待归属环境 DSM 7.2.1-69057 Update 12 / Container Manager 24.0.2-1535；详见
-[观察记录](../environments/2026-10-03-container-image-pull-observation.md)。不改写旧 lab-a verification。
+[观察记录](../environments/INDEX.md#2026-10-03-container-image-pull-observation)。不改写旧 lab-a verification。
 
 - search 必须固定 Registry v1：本次 v1 返回成功，v2 返回 103；不能跟随 Registry 最高版本。
 - 成功结构 data.data 为数组；空数组是空结果，缺失/畸形容器应报告读取失败。
@@ -501,3 +224,7 @@ tag/name 对象，按首次出现顺序去重。缺失/错误列表或必需身�
 - 未验证成功下载终态；仍要求 task_id/finished/目标匹配/完整清单。搜索 v1 与失败路径证据不外推全部下载场景。
 
 五端影响：共享 Apple 读取适配修正并执行 macOS 回归和 iOS 模拟器构建；macOS 原生恢复/双语 UI 修复；Windows/Android 记录 search 版本及 1202 处理风险，未更改实现。未改变公开模型、存储或权限。
+
+## 证据与实现范围
+
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

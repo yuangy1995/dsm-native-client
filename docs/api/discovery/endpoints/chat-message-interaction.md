@@ -1,7 +1,7 @@
 # Chat 消息搜索、编辑、线程、投票参与与已读
 
 稳定端点组：`chat-message-interaction`；既有 `chat-internal` 的消息交互增量。全部属于内部 API。
-观察来源：[2026-10-03 环境记录](../environments/2026-10-03-chat-five-features-observation.md)。
+观察来源：[2026-10-03 环境记录](../environments/INDEX.md#2026-10-03-chat-five-features-observation)。
 当前实际观察组合：DSM **7.2.1-69057 Update 12**、Chat **2.4.1-22111**，管理员账号、QuickConnect 直连。
 设备匿名归属未重新确认；不把该观察硬关联到 `lab-a`，不覆盖历史环境基线。
 
@@ -17,8 +17,8 @@
 | 同上 | list | 定位单条：`post_id` 为目标，`prev_count=0,next_count=0`；回复携带所属 `thread_id` | read-verified |
 | 同上 | search | `keyword` 字符串、`in` 数字会话数组，空数组搜索当前账号全部可见聊天；`offset`、`limit` | read-verified |
 | `SYNO.Chat.Admin.Setting` v3 | get | 无业务参数；读取 `allow_edit_message`、`allow_edit_message_time_within_min` | read-verified |
-| `SYNO.Chat.Post` v8 | set | `channel_id`、`post_id`、`message` | behavior-verified，仅本轮合成消息 |
-| `SYNO.Chat.Post` v5 | create | `channel_id`、`message`、`type=normal`、`is_thread=false`、`thread_id=根消息 ID` | behavior-verified，仅本轮合成回复 |
+| `SYNO.Chat.Post` v8 | set | `channel_id`、`post_id`、`message` | behavior-verified，仅合成消息 |
+| `SYNO.Chat.Post` v5 | create | `channel_id`、`message`、`type=normal`、`is_thread=false`、`thread_id=根消息 ID` | behavior-verified，仅合成回复 |
 | `SYNO.Chat.Post.Vote` v1 | create | `channel_id`、`message`、`choices=[{text:…}]`、`options` 对象；新选项不发送 id | behavior-verified，纠正旧字符串数组/JSON 文本形态 |
 | 同上 | get_choices | `post_id` | read-verified |
 | 同上 | vote | `post_id`、`choice_ids` **字符串数组**；传完整选择集合 | behavior-verified，非匿名多选投票的一项选择 |
@@ -65,7 +65,7 @@
 4. 已结束/过期投票不可提交；单选最多一项，多选提交全部选择，选项身份/文字或问题已变则要求重新读取。
 5. 本次错误观察：旧 `options` JSON 文本产生 117；仅改 options 对象但仍传 choices 字符串数组产生 101。
    这些是该错误请求的结果，不推广为所有 DSM 版本的全局错误解释。
-6. 主消息与投票创建的旧功能本轮修正请求形态；这不等于为其他平台已经实现相同修复。
+6. 主消息与投票创建的旧功能修正请求形态；这不等于为其他平台已经实现相同修复。
 
 ## 媒体与通知的边界
 
@@ -76,45 +76,15 @@
 - 系统通知基于新一轮会话数据和真实消息回读，首轮旧消息不通知、本人消息不通知、加密消息不展开。
   默认通知不包含正文；应用需运行并连接。Chat 启用时连接绑定 NAS 工作区生命周期，离开页面或切换当前 NAS 不停止订阅；关闭模块、断开该 NAS 或退出时停止。后台收到消息不推进已读。系统通知与麦克风硬件效果属于本地系统授权验证，未由网页测试代替。
 
-## 五端影响
-
-| 平台 | 本轮变化与后续 |
-|---|---|
-| macOS | 原生搜索、编辑、回复、投票、媒体/录音、通知和已读流程；本地测试/打包证据见功能账本 |
-| iOS | 共享 Apple 网络分页、投票映射/编码修正；新协议有拒绝默认实现。未新增移动入口，录音/通知不在本轮移动 DAG |
-| iPadOS | 与 iOS 相同；未增加桌面多窗口、常驻通知或麦克风权限；不把尚未实现的移动功能标为仅待真机验收 |
-| Android | 只记录契约差异，未修改代码；后续需核实原分页与投票创建参数，不得复制错误旧样例 |
-| Windows | 只记录新语义和旧投票样例纠正，未修改代码；既有用户授权的版本能力策略保持原样，不以 macOS 结果代替 Windows 验证 |
-
-本轮未确认匿名投票、关闭投票操作、普通账号、其他 DSM/Chat 版本及 QuickConnect 中继组合。
-来源、源码、正式测试及 `PENDING_USER_VALIDATION` 条件见
-[五组功能账本](../../../archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#macos-chat-五组功能补齐账本)。
-
-## 2026-10-03 置顶搜索修正
+## 置顶搜索修正
 
 - 内部只读接口：`SYNO.Chat.Post` / `search` / v5，POST，路径由 `SYNO.API.Info` 发现；要求当前账号能访问目标未加密会话，不扩大置顶/取消置顶写权限。
 - 参数：`in=[数字会话ID]`、`has=["pin"]`、`offset=0` 起、`limit=100`、`sort_by="last_pin_at"`、`sort_by_array=["is_sticky","last_pin_at"]`。FORM/JSON 声明均保持 `in` 为数字数组，不能传字符串数组或 `channel_id`。
 - 当前响应：`search_results` 消息数组，`total/offset/limit` 数字；置顶时间为 `last_pin_at`，大于零才作为有效置顶。短页或总数边界结束分页，保留既有日期映射和降序呈现。
-- 当前环境只读复验：旧 `channel_id` 请求成功但含其他会话，属于过滤失效；`in` 结果全部属于请求会话。证据为 [2026-10-03 观察](../environments/2026-10-03-chat-pinned-read-observation.md)，不替换历史匿名环境或证明置顶写入。
+- 当前环境只读复验：旧 `channel_id` 请求成功但含其他会话，属于过滤失效；`in` 结果全部属于请求会话。证据为 [2026-10-03 观察](../environments/INDEX.md#2026-10-03-chat-pinned-read-observation)，不替换历史匿名环境或证明置顶写入。
 - 客户端仍拒绝跨会话/重复/坏结构，不通过丢弃越界项掩盖请求错误。读取失败显示可重试的置顶错误，合法空数组显示没有置顶消息，不阻断聊天正文。无响应模型或持久化 Schema 变更。
 - 自动化：`DsmChatFiveFeatureTests` 覆盖 FORM/JSON 数字数组、101 项分页、空列表与跨会话拒绝；`DsmChatRepositoryTests` 保留 pin 后回读；合成请求 fixture 在 `contracts/request-fixtures/chat/list-pinned/synthetic-channel/request.json`。
 
-| 平台 | 本次影响 |
-| --- | --- |
-| macOS | 共享请求修正；消息内语音、通知入口、可见位置已读另见七项反馈账本；已读写契约不变 |
-| iOS / iPadOS | 共享 Apple 请求获得修正；两端均不增加置顶页面、录音或桌面通知功能，保持既有移动范围 |
-| Android | 不改实现；若已有置顶搜索使用 channel_id，后续授权切片改为数字 in 并运行目标平台测试 |
-| Windows | 既有高级动作置顶读取同样需后续修正；本轮只登记影响，不宣称已对齐或仅缺真机 |
+## 证据与实现范围
 
-
-## 2026-10-04 移动投票恢复增量
-
-M4b1 沿用上表 Vote.create/get_choices/vote 与 Post.list，不增加 NAS 请求或提高环境证据等级。共享 Apple `ChatRepository` 增加创建消息身份保存回调，以及只读 `pollMessage`；旧创建入口继续有效，其他提供者的只读新方法默认拒绝。创建回执先保存、后读取原消息；保存失败保持未知。只读详情重读当前账号/会话，再读取当前选择与票数，选项身份缺失或重复不作为有效结果；已确认的原投票请求可以在内存中结束，用户后续主动改选使用新操作。
-
-iOS/iPadOS 的原生创建、结果与投票采用独立受保护 `Chat/polls-v1.json`，保存账号摘要、操作/消息 ID、草稿与完整选择摘要；不保存问题正文、选项文字、凭据或投票者名单。收到创建 ID 才能在重启后认领同一对象，完全丢回执时不以同内容消息推断归属。恢复只读；写前存储失败零提交，未知目标跨重启继续限制，其他账号和无关聊天不受污染。当前开发格式不附加旧版本兼容。
-
-五端影响：iOS/iPadOS 获得原生投票流程及恢复；macOS 继续原 UI/存储，通过兼容的共享调用与回归；Windows/Android 无请求、代码或存储变化，仅登记本协议增量。客户端合成测试、模拟器及真实设备验收分别记入[移动 M4b1 账本](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m4b1-投票创建参与与恢复)；不操作真实 NAS，也不将普通账号、匿名规则或其他版本标为已实测。
-
-## 2026-10-14 五端写入策略更正
-
-五端均按实际接口能力、当前账号/对象权限、必要确认、防重复提交和结果复查开放操作；不匹配DSM/build/套件或客户端类型版本白名单，也不为版本匹配要求额外系统管理读取权限。未实测版本不标为已验证，但不据此关闭功能。 Android已删除A10误加的限制；实际权限和恢复保护保留，见[功能参考](../../reference/chat.md#写入可用性与版本策略五端统一)。真实环境证据等级不变。
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

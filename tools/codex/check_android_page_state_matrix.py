@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-import re
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -17,7 +16,6 @@ from generate_android_quality_baseline import BASELINE_PATH, load_baseline
 
 ROOT = Path(__file__).resolve().parents[2]
 UI_ROOT = ROOT / "android/app/src/main/java/io/github/qwertyuiop1995/dsmnativeclient/ui"
-PLAN_PATH = ROOT / "docs/development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md"
 STATE_VALUES = {"覆盖", "不适用", "缺口"}
 AUTOMATION_VALUES = {"完整", "局部", "缺失"}
 
@@ -33,31 +31,6 @@ def discover_surface_files(ui_root: Path = UI_ROOT) -> set[str]:
     if service_screens.exists():
         discovered.add("services/ServiceScreens.kt")
     return discovered
-
-
-def parse_legacy_matrix(path: Path) -> tuple[dict[str, list[str]], list[str]]:
-    """仅为门禁单测保留的旧格式解析器，不用于仓库生产基线。"""
-    rows: dict[str, list[str]] = {}
-    errors: list[str] = []
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if not line.startswith("| `"):
-            continue
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cells) != 9:
-            errors.append(f"矩阵第 {line_number} 行必须有 9 列，实际为 {len(cells)} 列")
-            continue
-        source = cells[0].strip("`")
-        if source in rows:
-            errors.append(f"矩阵重复记录页面文件：{source}")
-            continue
-        states = cells[2:7]
-        invalid = [value for value in states if value not in STATE_VALUES]
-        if invalid:
-            errors.append(f"{source} 使用了非法状态值：{', '.join(invalid)}")
-        if cells[7] not in AUTOMATION_VALUES:
-            errors.append(f"{source} 使用了非法自动化等级：{cells[7]}")
-        rows[source] = states + [cells[7], cells[8]]
-    return rows, errors
 
 
 def parse_baseline(path: Path = BASELINE_PATH) -> tuple[dict[str, list[str]], list[str]]:
@@ -96,33 +69,14 @@ def parse_baseline(path: Path = BASELINE_PATH) -> tuple[dict[str, list[str]], li
     return rows, errors
 
 
-# 兼容既有单测；其值完全由 JSON 基线派生，不再由 Markdown 审计矩阵维护。
-EXPECTED_FILES = set(parse_baseline()[0])
-
-
-def _plan_marks_five_state_target_complete(plan_path: Path) -> bool | None:
-    if not plan_path.is_file():
-        return None
-    plan = plan_path.read_text(encoding="utf-8")
-    pattern = re.compile(
-        r"- \[(?P<checked>[ x])\] 每页覆盖加载、空内容、筛选后为空、错误和正常内容五种状态；"
-    )
-    match = pattern.search(plan)
-    return None if match is None else match.group("checked") == "x"
-
-
 def validate(
     ui_root: Path = UI_ROOT,
-    baseline_path: Path | None = None,
-    plan_path: Path = PLAN_PATH,
+    baseline_path: Path = BASELINE_PATH,
 ) -> tuple[list[str], int, int]:
-    """验证当前生产清单；传入 Markdown 路径仅支持既有单测夹具。"""
-    if baseline_path is not None and baseline_path.suffix == ".md":
-        rows, errors = parse_legacy_matrix(baseline_path)
-    else:
-        rows, errors = parse_baseline(BASELINE_PATH if baseline_path is None else baseline_path)
+    """直接校验机器基线和已完成的页面覆盖，不依赖人工计划勾选。"""
+    rows, errors = parse_baseline(baseline_path)
     discovered = discover_surface_files(ui_root)
-    expected_files = EXPECTED_FILES if baseline_path is not None and baseline_path.suffix == ".md" else set(rows)
+    expected_files = set(rows)
     missing_inventory = sorted(discovered - expected_files)
     stale_inventory = sorted(expected_files - discovered)
     if missing_inventory:
@@ -137,12 +91,9 @@ def validate(
 
     gap_count = sum(value == "缺口" for row in rows.values() for value in row[:5])
     automation_gap_count = sum(row[5] != "完整" for row in rows.values())
-    completed = _plan_marks_five_state_target_complete(plan_path)
-    if completed is None:
-        errors.append("未找到 Android 计划中的页面五态叶子目标")
-    elif completed and (gap_count or automation_gap_count):
+    if gap_count or automation_gap_count:
         errors.append(
-            "页面五态目标已勾选，但矩阵仍有"
+            "页面五态完整基线出现回退："
             f" {gap_count} 个生产状态缺口、{automation_gap_count} 个自动化未闭环页面"
         )
     return errors, gap_count, automation_gap_count

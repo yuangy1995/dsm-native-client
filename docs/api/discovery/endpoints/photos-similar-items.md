@@ -2,9 +2,8 @@
 
 ## 标识、证据与范围
 
-稳定标识 `photos-similar-items`；组件 `synology-photos`；内部接口，读取涉及私有照片，隐私风险 high。2026-09-30 从已登录官方页面加载的脚本静态核对，环境沿用 [观察记录](../environments/2026-09-28-photos-parity-observation.md)，DSM/套件版本和设备归属未确认。证据仅为 **static**，没有真实 NAS 请求或写入验收，不挂靠旧 lab-a verification。
+稳定标识 `photos-similar-items`；组件 `synology-photos`；内部接口，读取涉及私有照片，隐私风险 high。2026-09-30 从已登录官方页面加载的脚本静态核对，环境沿用 [观察记录](../environments/INDEX.md#2026-09-28-photos-parity-observation)，DSM/套件版本和设备归属未确认。证据仅为 **static**，没有真实 NAS 请求或写入验收，不挂靠旧 lab-a verification。
 
-当前接入 macOS 分组分类、月份分页、组内预览、推荐设置、移出/拆组与会话撤销，以及保留所选删除其他、多组拆分/撤销、识别状态；各增量见下文，真实 NAS 行为仍待用户验证。
 
 ## 请求与响应
 
@@ -17,7 +16,7 @@
 | Browse.Similar | get / 1 | id=[groupID] | list[] 为分组快照，同上四字段 |
 | Browse.Item | get / 5 | id=分组 item_id，additional=[folder,thumbnail,resolution,orientation,video_convert,video_meta] | list[] 完整成员；沿用照片库基础字段 |
 
-分组字段 id/count/top_pick 为整数，item_id 为整数数组；本轮显示至少两项的有效分组。count 与唯一成员数必须一致，top_pick 及入口照片必须属于成员。成员回读集合完全一致后按 item_id 顺序组装，不依赖响应顺序、不按文件名补齐成员。详情接口保留代表照片的分组身份，组内读取另行获取新快照。
+分组字段 id/count/top_pick 为整数，item_id 为整数数组；显示至少两项的有效分组。count 与唯一成员数必须一致，top_pick 及入口照片必须属于成员。成员回读集合完全一致后按 item_id 顺序组装，不依赖响应顺序、不按文件名补齐成员。详情接口保留代表照片的分组身份，组内读取另行获取新快照。
 
 ## 能力、权限与失败处理
 
@@ -27,18 +26,9 @@
 
 副作用：以上均为读取，没有 NAS 修改。本地只有短期预览状态，没有新增持久化结构。
 
-## 契约与五端影响
+## 分组管理
 
-DsmCore 增加 `.similar` 分类/查询、分组快照与详情、两个只读服务方法（旧 Adapter 默认明确 unsupported）。macOS 使用现有预览、捏合与月份位置，不新增播放器。iOS/iPadOS 仅补齐共享枚举的两个穷尽分支，共享 Model 不展示新分类；移动端本轮不交付该功能。Android/Windows 记录等价语义后续迁移，不修改其源码。回滚本轮分类、领域增量和只读适配即可，无数据迁移。
-
-聚焦合成回归位于 SynologyPhotosRepositoryTests、SynologyPhotosModelTests、WorkspacePresentationTests；只使用虚构编号/图片。测试结果及构建交付见 [本轮账本](../../../development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。合成通过不提升 NAS 证据等级。
-
-PENDING_USER_VALIDATION：NAS 已启用相似识别且有至少一组，分别在个人/共享管理来源打开相似分类，跳转旧月份、打开一组、键盘和点击切换成员、关闭再打开；确认推荐项和数量、成员来源及月份保留。断网后恢复并重试，快速关闭窗口不能闪回旧组。回传包版本、空间类别、操作及脱敏提示，不提供真实照片/路径/凭据。
-
-
-## 2026-09-30 分组管理增量
-
-下列官方静态方法已接入，共享/个人分别使用既有 FotoTeam/Foto.Browse.Similar v1；没有真实 NAS 写入，证据仍 static。保留选择、删除其余原件仍是下一切片，不把分组移出当作删除。
+下列官方静态方法，共享/个人分别使用 FotoTeam/Foto.Browse.Similar v1；没有真实 NAS 写入，证据仍 static。分组移出不是原件删除。
 
 | 方法 | 参数 | 用户结果 |
 | --- | --- | --- |
@@ -53,28 +43,17 @@ PENDING_USER_VALIDATION：NAS 已启用相似识别且有至少一组，分别�
 
 核对：推荐项需精确成员集合及top_pick，移出需剩余集合完全匹配且所移出照片不再归属原组，拆组需组不存在或有效count小于2且所有原照片不再归属原组；不能只凭组列表消失推断。有效单成员组也按解散处理，非法字段、失败响应和读取异常绝不当作空组。所有结果都需回读完整原件，不能因分组操作而静默接受原件消失。
 
-撤销仅接受同会话已confirmed的remove/ungroup记录与完全相同原快照；重新核对原操作结果仍成立，原件仍可管理，且成员未加入其他组。成功回读恢复原成员集合和原top_pick；同原操作只能发起一次撤销，未知不换编号重试。此次撤销无跨重启保证，不写本地存储。新月份窗口只更新已有同组，恢复旧组不会把旧月份照片插进新窗口。
-
-五端：macOS接入确认、勾选、操作、自动核对与撤销；共享Apple枚举和结果向后兼容增量，iOS/iPadOS无新界面；Android/Windows仅同步迁移语义。本轮未运行移动端构建。风险回滚移除分组管理入口/枚举分支，不自动逆转已经由用户确认的NAS更改；用户可在本会话用撤销恢复拆组/移出。
-
-PENDING_USER_VALIDATION：使用可测试的相似组，分别在个人和共享管理来源更改推荐、勾选移出、拆组及撤销；确认原件仍在普通时间线、推荐与成员正确，月份原位保留。可测试组中断网后恢复应自动回读，不重复写入；另一网页同时更改分组后撤销应拒绝覆盖。回传包版本、动作、空间及脱敏提示，不上传照片/主机/凭据。
-
-### 相似识别处理状态后续接入依据
-
-2026-09-30 官方静态前端确认：Similar.get_status v1（无业务参数）返回waiting_count、similar_clustering_stage、is_similar_hash_migration_done。当waiting_count=0且迁移完成时无状态提示；count>0且stage="running"显示处理数量；其余待处理情况显示计划处理文案。默认缓存stage="waiting"，非实际NAS返回证据。页面每15秒读取，卸载清理轮询。本轮仅补证未接入UI，下轮应只在相似分类可见期间读取，失败不阻断浏览；不猜测未知stage枚举，不把无响应当作处理完成。环境记录已同步，未升级验证等级。
+撤销仅接受同会话已confirmed的remove/ungroup记录与完全相同原快照；重新核对原操作结果仍成立，原件仍可管理，且成员未加入其他组。成功回读恢复原成员集合和原top_pick；同原操作只能发起一次撤销，未知不换编号重试。跨重启恢复范围按平台矩阵记录。新月份窗口只更新已有同组，恢复旧组不会把旧月份照片插进新窗口。
 
 
-## 2026-09-30 清理、批量与识别状态增量
+## 清理、批量与识别状态
 
 Similar.get_status v1无业务参数，返回waiting_count（非负整数）、similar_clustering_stage（非空字符串）、is_similar_hash_migration_done（布尔）；两空间各用其API前缀。零等待且迁移完成时不提示；数量大于零且stage=running时显示数量，其余显示等待处理。不枚举或猜测其他stage含义；按15秒间隔仅在分类可见期间读取，错误不阻断浏览，授权代次变化丢弃结果。来源仍是官方静态脚本，没有当前NAS返回验证。
 
 similarGroupDetails允许读取已解散组为空，读取失败绝不伪造解散。删除前先核对完整原组和每张身份，再固定保留补集作为删除确认名单；原件删除沿photos-item-deletion既有契约，无新删除端点。已确认删除后只读刷新原组，不将分组消失当作原件删除证据。最多三次自动读取失败后可只读重试，不刷新整个月份。
 
-多组拆分在一次确认后逐组提交既有ungroup(id=[单组])，保留每组operationID；未知暂停后续，确认成功再续作，失败保留继续/取消选择。会话撤销按逆序恢复已确认组，不覆盖其他操作；删原件不进入分组撤销。共享服务仅增量增加similarGroupDetails/similarStatus默认unsupported方法与状态模型，macOS接入；iPhone/iPad无新界面，Android/Windows仅记录未来等价语义。回滚移除新增入口/声明，不逆转已确认NAS写入；没有存储迁移。聚焦回归与PENDING_USER_VALIDATION见开发账本最新波次。
+多组拆分在一次确认后逐组提交既有ungroup(id=[单组])，保留每组operationID；未知暂停后续，确认成功再续作，失败保留继续/取消选择。会话撤销按逆序恢复已确认组，不覆盖其他操作；删原件不进入分组撤销。平台实现范围见平台矩阵，接口证据仍为static。
 
+### 证据与实现范围
 
-### Android A4ae实现记录（2026-10-13，static）
-
-Android已接分类/月份、完整组、独立预览选择、推荐、移出、拆组、批量续作与撤销，整组导出和保留所选原件删除沿已有流程。复用版本1加密管理记录，增加可选similar意图、单向结果、批次顺序及撤销原操作依据；冷启动恢复不重新发送已提交项，未开始项须明确继续并重新预检。原件身份批量读取，不按当前页或代表照片推测组成员。撤销同一原动作不能换编号重复发出；组消失仍需逐原件归组和身份回读。当前查询中恢复卡片位置及分页，离开原查询不插入旧照片。
-
-该条补充此前Android仅同步语义的状态；不改变上文NAS端点、版本或字段，不新增observed/read-verified/behavior-verified环境。真实NAS的多组、跨重启、并发重新归组及删除后索引更新仍为PENDING_USER_VALIDATION，具体前置条件、步骤和脱敏回传要求见Android主计划A4ae账本。Apple/Windows本轮无源码变更。
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

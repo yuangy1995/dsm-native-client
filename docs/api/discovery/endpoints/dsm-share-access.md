@@ -1,5 +1,7 @@
 # DSM 共享文件夹访问权限契约
 
+稳定端点标识：`file-station-share-access`。
+
 ## 标识
 
 | 字段 | 值 |
@@ -59,8 +61,8 @@
 
 | 环境标识 | 证据等级 | 结果 | 日期 | 证据路径 |
 | --- | --- | --- | --- | --- |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | 公开 `list_share` 契约已由既有 File Station 路径和合成响应覆盖；本批未读取或修改真实共享权限 | 2026-07-31 | `docs/api/DSM_WEB_API_REFERENCE_ZH.md` |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `static` | 仅发现内部 `list_by_user` 方法名，管理员矩阵保持关闭 | 2026-07-31 | `docs/api/DSM_WEB_API_REFERENCE_ZH.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `observed` | 公开 `list_share` 契约已由既有 File Station 路径和合成响应覆盖；本批未读取或修改真实共享权限 | 2026-07-31 | `docs/api/discovery/environments/INDEX.md` |
+| `lab-a-dsm-7-2-1-69057-u12-20260729` | `static` | 仅发现内部 `list_by_user` 方法名，管理员矩阵保持关闭 | 2026-07-31 | `docs/api/discovery/environments/INDEX.md` |
 
 合成响应与源码测试只能证明客户端分页、解析、去重、远程挂载过滤和降级行为，不能把
 当前环境的管理员权限读取或写入提升为 `read-verified` / `behavior-verified`。
@@ -74,16 +76,6 @@
 - 内部 `SYNO.Core.Share.Permission` 在取得版本化契约前保持禁用；不得根据方法名猜测
   参数。
 - 新 DSM build 或 File Station 版本必须重新验证分页、附加字段和权限解释。
-
-## 客户端与测试
-
-- 共享领域：`NasShareAccessDirectory`、`NasShareAccessEntry`。
-- 公开适配：`FileStationShareAccessRepository`，复用 `FileRepository.listShares`。
-- macOS：NAS 设置增加“共享访问”只读页面，覆盖加载、空内容、错误、正常和权限未知
-  状态；权限以文字和图标同时表达，并提供 VoiceOver 行描述。
-- iPhone、iPad、Android 与 Windows：尚未接入该页面。
-- 自动化测试覆盖分页、稳定 ID 去重、远程挂载过滤、权限映射、缺少 File Station 时的
-  明确降级，以及 Model 加载。
 
 ## 安全与隐私
 
@@ -100,6 +92,7 @@
 - 内部管理员矩阵的版本、参数、响应、继承、显式拒绝和权限要求均未验证。
 - 五端 UI 与跨平台契约尚未全部迁移。
 
-## 2026-10-05 移动 M6a1 接入
 
-iPhone/iPad M6a1 接入既有 FileStationShareAccessRepository 的分页与权限摘要。实际 UI 暴露 Apple listShares 缺少权限时默认可读、误显示只读的问题，已修正：共享根缺少权限保持未知，普通目录原行为保留；没有新增 NAS 请求、权限或存储字段。该共享修正同时影响 macOS，执行共享与桌面回归；Windows/Android 仅记录语义参考，不改代码。当前环境命令与两端页面验证集中在[移动主计划](../../../archive/2026-h2/APPLE_MOBILE_IMPLEMENTATION_HISTORY.md#m6a1-五项读取与筛选)及其验证历史；真实 NAS 证据不提升。
+## 证据与实现范围
+
+接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

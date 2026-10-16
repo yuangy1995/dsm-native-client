@@ -47,10 +47,10 @@ class DocumentationCheckTests(unittest.TestCase):
     def test_requires_role_and_review_date(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            self.write(root, "docs/progress/STATUS.md", "# 状态\n")
+            self.write(root, "docs/progress/PLATFORM_MATRIX.md", "# 状态\n")
             errors = documentation.validate_active_metadata(
                 root,
-                {"docs/progress/STATUS.md": "status"},
+                {"docs/progress/PLATFORM_MATRIX.md": "platform-matrix"},
                 today=date(2026, 8, 20),
             )
             self.assertTrue(any("doc-role" in error for error in errors))
@@ -66,20 +66,20 @@ class DocumentationCheckTests(unittest.TestCase):
         today = documentation.documentation_date(datetime(2026, 10, 3, 17, 0, tzinfo=timezone.utc))
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            relative = "docs/progress/STATUS.md"
-            self.write(root, relative, self.metadata("status", "2026-10-04") + "# 状态\n")
-            self.assertEqual(documentation.validate_active_metadata(root, {relative: "status"}, today=today), [])
-            self.write(root, relative, self.metadata("status", "2026-10-05") + "# 状态\n")
-            errors = documentation.validate_active_metadata(root, {relative: "status"}, today=today)
+            relative = "docs/progress/PLATFORM_MATRIX.md"
+            self.write(root, relative, self.metadata("platform-matrix", "2026-10-04") + "# 状态\n")
+            self.assertEqual(documentation.validate_active_metadata(root, {relative: "platform-matrix"}, today=today), [])
+            self.write(root, relative, self.metadata("platform-matrix", "2026-10-05") + "# 状态\n")
+            errors = documentation.validate_active_metadata(root, {relative: "platform-matrix"}, today=today)
             self.assertTrue(any("不能晚于当前日期" in error for error in errors))
 
     def test_strict_release_enforces_status_and_matrix_freshness(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            self.write(root, "docs/progress/STATUS.md", self.metadata("status", "2026-06-01") + "# 状态\n")
+            self.write(root, "docs/progress/PLATFORM_MATRIX.md", self.metadata("platform-matrix", "2026-06-01") + "# 状态\n")
             errors = documentation.validate_active_metadata(
                 root,
-                {"docs/progress/STATUS.md": "status"},
+                {"docs/progress/PLATFORM_MATRIX.md": "platform-matrix"},
                 strict_release=True,
                 today=date(2026, 8, 20),
             )
@@ -90,12 +90,12 @@ class DocumentationCheckTests(unittest.TestCase):
             root = Path(temporary_directory)
             self.write(
                 root,
-                "docs/progress/ROADMAP.md",
-                self.metadata("roadmap") + "GitHub Build 123456\n测试 12/12 通过\n",
+                "docs/progress/KNOWN_LIMITATIONS.md",
+                self.metadata("known-limitations") + "GitHub Build 123456\n测试 12/12 通过\n",
             )
             errors = documentation.validate_active_metadata(
                 root,
-                {"docs/progress/ROADMAP.md": "roadmap"},
+                {"docs/progress/KNOWN_LIMITATIONS.md": "known-limitations"},
                 today=date(2026, 8, 20),
             )
             self.assertTrue(any("CI Run ID" in error for error in errors))
@@ -107,39 +107,39 @@ class DocumentationCheckTests(unittest.TestCase):
             sha = "0123456789abcdef0123456789abcdef01234567"
             self.write(
                 root,
-                "docs/progress/STATUS.md",
-                self.metadata("status") + f"当前状态引用 {sha}\n",
+                "docs/progress/PLATFORM_MATRIX.md",
+                self.metadata("platform-matrix") + f"当前状态引用 {sha}\n",
             )
             errors = documentation.validate_active_metadata(
                 root,
-                {"docs/progress/STATUS.md": "status"},
+                {"docs/progress/PLATFORM_MATRIX.md": "platform-matrix"},
                 today=date(2026, 8, 20),
             )
             self.assertTrue(any("完整提交 SHA" in error for error in errors))
 
             self.write(
                 root,
-                "docs/progress/STATUS.md",
-                self.metadata("status") + f"```text\n{sha}\n```\n",
+                "docs/progress/PLATFORM_MATRIX.md",
+                self.metadata("platform-matrix") + f"```text\n{sha}\n```\n",
             )
             code_errors = documentation.validate_active_metadata(
                 root,
-                {"docs/progress/STATUS.md": "status"},
+                {"docs/progress/PLATFORM_MATRIX.md": "platform-matrix"},
                 today=date(2026, 8, 20),
             )
             self.assertFalse(any("完整提交 SHA" in error for error in code_errors))
 
     def test_status_line_count_range(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            path = Path(temporary_directory) / "STATUS.md"
+            path = Path(temporary_directory) / "PLATFORM_MATRIX.md"
             path.write_text("", encoding="utf-8")
-            self.assertTrue(documentation.validate_status_line_count(path))
+            self.assertTrue(documentation.validate_feature_line_count(path))
             path.write_text("# 当前开发进度\n\n简明状态。", encoding="utf-8")
-            self.assertEqual(documentation.validate_status_line_count(path), [])
+            self.assertEqual(documentation.validate_feature_line_count(path), [])
             path.write_text("\n".join("状态" for _ in range(250)), encoding="utf-8")
-            self.assertEqual(documentation.validate_status_line_count(path), [])
+            self.assertEqual(documentation.validate_feature_line_count(path), [])
             path.write_text("\n".join("状态" for _ in range(251)), encoding="utf-8")
-            self.assertTrue(documentation.validate_status_line_count(path))
+            self.assertTrue(documentation.validate_feature_line_count(path))
 
 
 if __name__ == "__main__":

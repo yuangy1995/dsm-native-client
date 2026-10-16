@@ -4,7 +4,7 @@
 
 > This file is generated from structured community reports. Do not edit it directly. Community reports are not maintainer device acceptance; a passing result applies only to the exact version combination shown.
 
-See [`COMMUNITY_COMPATIBILITY_PROGRAM_EN.md`](COMMUNITY_COMPATIBILITY_PROGRAM_EN.md) for participation, privacy, and review rules.
+See [`COMMUNITY_COMPATIBILITY_GUIDE_EN.md`](COMMUNITY_COMPATIBILITY_GUIDE_EN.md) for participation, privacy, and review rules.
 
 The matrix currently contains **0** reviewed structured reports.
 

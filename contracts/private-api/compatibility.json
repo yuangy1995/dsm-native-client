@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/private-api-compatibility.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-10-14",
+  "updatedAt": "2026-10-17",
   "environments": [
     {
       "id": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -54,7 +54,7 @@
         }
       ],
       "evidenceRefs": [
-        "docs/api/discovery/environments/2026-07-29-lab-a-dsm-69057-u12.md",
+        "docs/api/discovery/environments/INDEX.md",
         "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
       ],
       "notes": "通过已登录 DSM 信息中心和套件中心只读核实版本；未执行更新或其他写操作。"
@@ -65,7 +65,7 @@
       "id": "photos-similar-items",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人/共享相似分类、月份分页、分组预览及推荐设置、移出、拆组与本会话撤销；固定原件/成员与操作编号，双重回读，未知不重放，撤销拒绝覆盖其他组；已接入保留所选删除其他（复用原件删除与原位分组回读）、多组拆分/撤销及get_status识别状态。按实际设置/权限/能力开放，static及合成验证不代表NAS兼容。 Android A4ae已接实际分类/完整组、推荐/移出/拆组/撤销、整组导出和既有原件清理确认，沿版本1加密管理记录保存批次顺序及撤销依据；冷启动未知只读、后续显式续作，原查询撤销恢复位置及分页；仅当前源码与合成/模拟器验证，不新增NAS验证环境。",
+      "capability": "个人与共享相似分组读取、整理及撤销；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -83,7 +83,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "分类缺失不阻断其他功能；来源或分组身份不符拒绝显示，读取失败可重试，不扫描替代，不设置待实测禁用门禁。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-similar-items.md",
       "verifications": []
     },
@@ -91,7 +91,7 @@
       "id": "photos-condition-albums",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人/共享来源条件相册创建、规则读取/修改、建议和数量预览；统一Foto接口，个人user_id为当前用户、共享为0，共享来源需management权限。2026-10-01冻结恢复已实现：独立freeze_album，NormalAlbum.set_unfreeze v1标量id；重建读取Album v4 condition_object/cant_migrate_condition，经ConditionAlbum.create v3核对新相册后Album.delete旧id数组，不继承分享。来源仅static，798项相关XCTest、6项本地化及1项UI/28张合成截图通过，独立Release临时签名包及Sparkle实际加载/DMG校验通过，不代表NAS行为兼容。",
+      "capability": "个人与共享来源的条件相册；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -106,7 +106,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "静态证据不代表行为兼容；按真实能力与权限接入，未知写结果不重放，不按名称追认创建结果，不增加验证白名单。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -114,7 +114,7 @@
       "id": "photos-people-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人与共享空间人物命名、合并、批量显示/隐藏及恢复、所选照片人脸列表、移出/归入既有或新人物和人物封面；图片内画框/调整/纠正/移除及JPEG上传已接入两空间。相册内手动人脸按实际个人提供者/共享management资格，保留识别开启、原图身份、人脸归属与回执编号校验。来源固定、混选拒绝、封面缓存隔离，写后核对成员/名称/show/封面；未知不重放，真实NAS写入待用户验证。Android A4aa已接名称/固定目标合并/显示管理、person/unit封面读取与加密只读恢复；156项聚焦JVM和最终同包四配置各8项原生流程通过。Android A4ab已接逐照片人脸移出/归入已有或新人物、单张人物封面及加密恢复；177项聚焦JVM通过；同一应用APK手机中文浅色/深色二倍字号和平板英文浅色各8项通过，平板英文深色二倍字号首轮7/8，测试收起键盘修正后定点1/1通过。Android A4ac已接图片内框选/位置尺寸/归属/移除、系统JPEG裁剪上传及加密只读恢复；194项不同聚焦JVM分批通过，最终同包四配置各10项原生流程通过。其余四端不变；真实NAS未验，不新增verifications",
+      "capability": "个人与共享人物、人脸及封面管理；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -132,7 +132,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "静态证据不代表行为兼容；按真实能力与权限接入，未知写结果不重放，不按名称追认创建结果，不增加验证白名单。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -140,7 +140,7 @@
       "id": "photos-request-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "照片收集请求创建/修改/删除主流程；个人/共享目录、addable自有/共享相册、日期/大小限制、差量更新、清除相册-1和精确标识回读；未知创建不按名称追认；macOS接入文件夹/普通相册快捷创建、默认标题、窗口内新建目标相册与跨页列表搜索；默认目标个人优先、共享management自动目录、entry明确选择目录，编辑保留目标；Android A4i 已接入创建/编辑/删除、目录/相册快捷入口、表单内新相册和跨页标题搜索，沿相册加密记录仅保存请求/设置/原快照摘要，未知冷热恢复只读，不保存口令或链接",
+      "capability": "照片收集请求管理；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -156,7 +156,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "静态证据不代表行为兼容；按真实能力与权限接入，未知写结果不重放，不按名称追认创建结果，不增加验证白名单。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -164,7 +164,7 @@
       "id": "photos-preview-regeneration",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "混合个人/共享预览按来源独立订阅和提交；照片预览重建NAS分支已接入：EIO4同源WSS订阅后按明确unit_id发起并核对完成事件，失败恢复、批量部分结果与局部更新；本机ImageIO图片及AVFoundation视频取帧、三档JPEG和ConvertedFile v3上传已接入，转换后核对身份权限，未知上传不重放；通知短暂断线可限次重连并重订阅原目标，不重放重建写入；已接list_regenerating队列读取/确认继续，初次恢复不重复标记；丢失通知按提交前新鲜版本基准、原件身份、新版本和队列共同核对，无法证明时保留未知，官方队列重排及手动仅缩略图已有静态证据；真实行为待用户验证，无人工白名单 2026-10-01已按官方worker及菜单补齐共享普通目录下载角色、相册本人提供者的预览重建资格；相册读取保留album_id，写入仍按原空间发送item_id/unit_id；普通相册纯下载者和来源关闭不放行，转换后重新核对资格；冻结相册保留多选重建，仅预览窗口不提供。原件编辑门槛不变；803项XCTest、6项本地化、最终8项聚焦及2项UI/12张合成截图通过，NAS角色行为仍待用户验证。 Android A4y已接三档JPEG系统转换、按来源上传/完成通知、逐项加密只读恢复与图库/队列/记录界面，71项聚焦JVM和后续24项入口回归通过；同包手机中文/平板英文浅色标准字号及深色二倍字号四配置各13项原生流程通过，末次数量资源修正后四配置各1项受影响流程复验通过；真实NAS未验，static不变。",
+      "capability": "个人与共享照片预览重建；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -182,7 +182,7 @@
         "POST",
         "GET"
       ],
-      "fallback": "静态证据不代表行为兼容；按真实能力与权限接入，通知未知不重放、不提前恢复标记、不把请求已接受当完成，不增加验证白名单。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -190,7 +190,7 @@
       "id": "photos-sharing-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "相册分享现状、具名成员、有效期与密码管理；新增get_permission v1读取实际下载/贡献角色，权限未知不沿用旧授权。静态与合成验证，真实NAS待验。 新增共享目录前两层权限只读：Folder.get sharing_info、FolderPermission.get_config/get_folder_link、共享成员候选；固定目录/父级身份与共享management，未知字段不当关闭或空名单。update/set_config仅静态候选，尚未接入保存，不声称完整目录权限管理。 共享目录FolderPermission.update/set_config保存已接入，四种访问范围/成员角色/密码/子目录选项，预检快照与身份、统一去重和自动回读；默认配置失败单独报告部分完成，丢失回执不猜子目录或新密码生效。macOS入口开放，static/PENDING_USER_VALIDATION，无新增真实环境结论。 2026-10-04 iPhone/iPad接入原有访问范围、成员、密码和有效期；版本2客户端恢复仅保存非秘密权限意图和步骤回执，重启只读，改密丢回执不能凭已有保护确认。Mac共享纯草稿逻辑并回归，Windows/Android仅记录影响；NAS契约及真实验证等级不变。 M3b3移动临时分享接入已实现创建/复制/关闭/清理，按版本3非秘密操作回执与版本1流程恢复，不以同名推断成功或重复复制，NAS请求及真实证据等级不变。 Android A4m已接入共享目录前两层权限表单、四范围/角色、密码三态、子目录覆盖及既有版本1加密恢复；预检原快照、步骤落盘及冷热只读不重放，190项聚焦JVM和Debug/仪器构建通过，最终同包手机/平板中英浅深色及二倍字号四组各8项原生流程通过，真实NAS仍PENDING_USER_VALIDATION，无环境证据升级。",
+      "capability": "相册分享、密码、有效期和成员权限；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
@@ -207,7 +207,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按用户明确授权取消默认禁用与验证白名单；仍按实际接口版本、空间和权限判定可用性。拒绝跨空间和非所有者操作；未知结果只读核对，不重放、不按名称猜测成功、不回退 File Station。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -215,7 +215,7 @@
       "id": "photos-duplicate-settings",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "当前Photos用户的上传和移动复制重复项默认设置。Setting.User get/set v1，严格读取ignore/rename与skip/overwrite枚举、提交前比较完整原快照、只写差异字段、按操作编号去重并最终回读。macOS可单次覆盖默认规则，队列固定确认值，无本地持久化变化。官方证据static，真实NAS待用户验收。 Android A4n已接独立设置表单，新增默认overwrite需说明原件替换后果并确认；后续任务读取实际默认，已有任务不改。共用现有加密恢复，未知仅回读，真实NAS未验证。",
+      "capability": "照片重复项处理设置；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -228,7 +228,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "仅按真实接口能力开放；读取失败提供重试，不静默选择覆盖；未知写结果只读核对不重放，权限拒绝不换接口。无人工未验证禁用。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -236,7 +236,7 @@
       "id": "photos-display-settings",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "当前Photos用户的显示偏好：日/月分组、九种日期格式、12/24小时、默认照片排序及预览/幻灯片底部信息。Setting.User get/set v1，只写已改变字段，冻结原快照、操作编号去重、回读六项一致后应用。原生分组/日期/预览同步更新，默认排序沿目录已有覆盖规则；排序字段或方向变更需确认，取消保留草稿。static，真实NAS待用户验收。 Android A4n已接显示六项、日/月分组、日期/时钟、默认目录排序与图片预览信息，普通显示保存用明确按钮确认；保持原图库位置/选择，沿现有加密记录恢复，未知不重发。未新增Android幻灯片或真实NAS验证。",
+      "capability": "照片显示偏好；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "low",
@@ -249,7 +249,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "读取缺失或未知枚举不猜值保存，旧服务保留既有浏览方式；保存失败可恢复，未知结果只读核对不重放。不增加人工待实测门禁。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -257,7 +257,7 @@
       "id": "photos-recognition-settings",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人Photos人物、主题与相似照片识别设置。User get/set v1与Admin get v1，保留缺字段、全局开关与个人空间条件；仅改变可编辑字段，写前核对完整快照，未知结果只回读不重放。分类能力和入口局部更新，共享空间不受个人设置影响。static，实际NAS待用户验收。 Android A4n已接个人三项识别设置、已知/全局/个人条件与差量保存，个人分类更新及当前关闭分类回相册首页，共享分类不变；分类读取错误不阻断设置保存。共用现有加密记录，不含相似组管理或新的真实NAS验证。",
+      "capability": "个人识别显示设置；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "medium",
@@ -271,7 +271,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "缺失字段不猜关闭、不写入未知项；管理员关闭或个人空间未开启时按真实条件不可编辑，用户可查看原因；读取失败可重试，不阻断图库。无人工待实测门禁。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -279,7 +279,7 @@
       "id": "photos-upload",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人/共享空间multipart队列、目录导入及相册直接上传；相册使用album_id或passphrase、PhotoLibrary目录，不加timeline目的字段，回读编号/大小/提供者，完成不重复add_item。切页保留队列目标，无空间贡献者可上传；真实NAS待验。 2026-09-30新增duplicate=ignore/rename显式策略；ignore回执按返回编号、名称及目标/相册重新读取已有照片，skippedCount与新上传数量分离，不要求原提供者或大小变为上传者内容。未知结果不重传；static/PENDING_USER_VALIDATION。 macOS新增本机跨重启队列：按连接及当前账号隔离，写前意图与收到的编号回执原子保存，恢复只读核对；已上传但未加入相册只补加入步骤，无回执不按名称猜测。Apple协议默认不支持以保持旧适配器兼容。2026-10-04 iPhone/iPad接入Photos/Files多选与目录、相册贡献及同一版本1恢复队列；本机副本完整保护并排除备份，换会话冻结旧写入者，未知只查询，重试相册加入不重传。Windows/Android仅记录影响；无新增NAS接口或真实行为验证。",
+      "capability": "个人与共享空间及相册上传；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "write",
       "risk": "high",
@@ -293,7 +293,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "固定操作空间，不将共享编号回退至个人接口。上传前核对实际空间和目录权限，未知结果仅在原空间回读，不重复上传，不按名称猜测成功。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -301,7 +301,7 @@
       "id": "photos-file-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人/共享照片移动复制：同空间及个人到共享移动，个人与共享双向复制；源API固定、目标空间/目录与后台任务数量回读。逐级上传目录保留；跨空间移动后当前相册按已加载范围更新身份；网页相册菜单不提供混合来源移动。真实NAS待用户验收，无人工版本白名单。 新增Folder.set_cover v2单选目录封面；固定空间/目标，核对管理权、照片身份及可查看后代，成功回执与序号0封面可读共同确认，不回读或猜测item_id。static/PENDING_USER_VALIDATION。 新增Folder.set_order v1浏览排序偏好：固定目录和view权限，操作编号去重，严格回读两个排序字段；丢失回执只查询不重放。 新增Folder.rename v1(id,name)：固定单目录及原路径/manage，重新读取同一编号及完整新路径/父目录；回执丢失只读核对，局部更新保留浏览位置。static，真实NAS待用户验收。 新增多目录/照片混选move/copy：folder_id与source_folder_ids，固定父级/路径/权限，拒绝自身后代；任务total按目录内容核对，不等同顶层选择数，完成后局部更新。静态证据，真实NAS待用户验收。 macOS文件夹页增加原生拖放到可见目录、上级按钮和路径导航，固定整组照片/目录后预选既有确认表单；不新增API，沿现有skip和自动任务核对。重复项默认设置及overwrite执行仍待后续接入，静态候选不等于已实现。 2026-09-30重复项执行已补齐：action随确认选择skip/overwrite，覆盖有独立用户确认，任务overwrite计数必须在范围内且符合所选策略，身份与任务核对保留。默认设置另见photos-duplicate-settings，真实NAS待验。 Android A4j接入目录create/rename/set_order/set_cover，复用加密管理记录；固定空间/父级/完整路径与逐动作权限，创建只认编号、排序严格回读、封面需明确回执及可解码序号0图片，未知冷热恢复只读。未改变NAS契约或static证据，真实环境PENDING_USER_VALIDATION。 Android A4k接入照片/目录固定混选与目标选择、skip/overwrite和明确覆盖确认；固定源路由，编号先持久保存，目录/跨空间目标id及owner/total回读，冷热恢复只读不重发，真实NAS仍为PENDING_USER_VALIDATION。",
+      "capability": "个人与共享目录、照片移动复制及权限；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "write",
       "risk": "high",
@@ -318,7 +318,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按实际接口、空间和目录权限开放；跨空间任务需核对目标owner/目录/total与完成状态。缺目标回执只按已知任务编号查询list_user_task；未知不重放、不按名称猜测，不回退File Station；共享到个人移动不属于当前网页方向。 封面读失败自动只读重查；写回执丢失保持未知，不重放。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -326,7 +326,7 @@
       "id": "photos-album-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "2026-10-01临时分享生命周期：create(shared=true)、temporary_shared、copy(source_album_id)及已停止临时相册清理已接入Core/Repository，按回执身份、完整成员、所有权与分享快照核对；macOS已接入创建取消清理、停止并保留副本、关闭/Esc及未知结果持续核对；preservedCopyID仅作本地清理前完整成员复查，明确失败可保留现有相册，未知结果不可放弃核对。完整网页对齐仍有其他待办。static，未进行真实NAS行为验证。 普通相册创建/命名/封面/删除与混合来源成员；新增addable目标列表、贡献角色添加及按provider移除成员。所有者用id，贡献者用passphrase，明确部分失败逐项回读，未知不重放；本人提供的相册项目在原空间启用时可转加或新建目标；原空间关闭时不提供转加，与网页一致。 新增相册内照片四字段/双向排序：Album.get v4读取，set_order v1保存；Item.list携带相同排序分页；查看权限独立于上传和原空间开启，过期设置冲突拒绝，回读缺省不能冒充保存证明。 新增相册首页及两类分享列表独立排序：get/set_album_list_order v2；全部/我的相册显示范围get/set_album_list_display v3；固定范围跨页传参和原偏好冲突检查，不改变相册内容或共享权限。 2026-10-04 iPhone/iPad接入多选及普通相册管理；独立版本1客户端意图/回执在写前保存，创建编号先落盘再回读，重启只读恢复。统一相册权限独立于个人图库，原件权限不扩大；共享模型删除当前相册后返回列表。Mac不启用新恢复存储，Windows/Android仅记录影响；不增加NAS请求或真实验证等级。 2026-10-12 Android A4h接入临时分享创建、准备取消、停止与可选普通副本；完整分页成员与原分享修订核对，副本确认后才关闭/清理临时容器，原件保留。版本1加密相册记录仅增量保存必要摘要/编号/阶段，取消意图持久化，未知冷热恢复只读；151项聚焦JVM通过，设备与真实NAS验证以Android主计划和验证历史为准。其他四端本轮不变；现有API参数不变，verifications保持原值，不提升static等级。 2026-10-12 Android A4o接入相册内排序及三个列表独立顺序、全部/我的相册显示范围，沿既有版本/参数；查看权独立于个人来源，首次默认不作为保存证明，固定分页条件与原位置/选择保留。复用设置类型及版本1加密管理恢复，原值冲突拒绝，未知只回读；178项聚焦JVM与Debug构建通过，原生及真实NAS边界见Android主计划。其他端不改，不增加真实兼容验证。",
+      "capability": "普通相册、临时相册及冻结恢复；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "write",
       "risk": "high",
@@ -340,7 +340,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按真实角色开放；原件操作与相册成员权限分离，贡献者仅可移除本人提供的成员。确认、身份快照、重复提交保护及最终回读保留；未知不重放、不按名称猜测、不回退File Station。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -348,7 +348,7 @@
       "id": "photos-item-metadata",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人/共享照片评级、描述、绝对日期与相对日期偏移、标签增删与新建；评级和日期允许两空间混合，预检全部来源能力/身份/共享管理权后按空间分发，部分结果只续作未完成目标；描述和标签仍同空间。真实NAS写入待验，无人工版本白名单 已接入预览逆时针旋转：个人/共享Item.set v2(id数组,rotate_action=counter_clockwise)，支持媒体与EXIF镜像方向按官方static定义；写前管理权限/身份/方向快照，写后get v5核对身份和预期方向；明确成功回执时允许原始分辨率保持或对调，纠正将前端布局尺寸当作NAS必需响应的静态推断。丢回执或恢复历史操作仍按原尺寸条件只读核对，未知结果不重放。2026-10-07静态来源见photos-rotation-observation环境记录，未提升真实写兼容等级。真实NAS待用户验证。相册资料与旋转按实际provider_user_id和来源空间判断：个人空间提供者可编辑，共享相册需全局management；混合共享相册还需全部由本人提供，条件/冻结相册保留本人原件资格。删除和搬移不扩大。 Android A4q已复用资料编辑仓储/版本1加密记录接入单张旋转，保存原方向/尺寸与提交事实；回执仅内存使用，未知/冷恢复只读不重发，明确拒绝不追认。保持原来源启用门禁，完成仅更新当前预览/缩略图/选择及已加载分组，不全量刷新图库；不新增API、权限或真实NAS验证结论。",
+      "capability": "照片评级、说明、日期与标签；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "write",
       "risk": "high",
@@ -365,7 +365,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按用户明确授权取消默认禁用与验证白名单；仍按实际接口版本、空间和权限判定可用性。按功能允许混合来源；相册编辑重新读取提供者，原件删除/移动仍保留原权限检查；未知结果只读核对，不重放、不按名称猜测成功、不回退 File Station。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -373,7 +373,7 @@
       "id": "photos-item-deletion",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人/共享照片原件删除：macOS批量选择、逐项预检提交、自动只读核对并保留月份；共享管理角色或目录manage权限，未知结果不重放。共享实现为static与合成验证，真实NAS待验 新增同父目录多文件夹及照片混合删除：Foto/FotoTeam.BackgroundTask.File v1数组参数，任务done且无错误后完整分页回读父目录及照片空结果，局部更新；未知不重放，部分失败不猜测逐目录结果。静态证据，不扩展历史单照片实机结论。 Android A4k接入同父目录的照片/文件夹混合删除；明确整目录及相册引用后果，固定清单、权限及操作互斥，后台任务完成后完整枚举父目录并读取照片消失，加密记录冷热恢复只读，未知不重复删除。真实NAS目录删除仍为PENDING_USER_VALIDATION。 Android A4l单张/纯照片批量共用逐项删除与独立加密摘要记录，最小原件预检、写前持久边界、明确拒绝与未知区分，已提交跨重启只读；未发送重新确认或取消，保持月份/分页与账号隔离。142项聚焦测试、构建及最终同包四配置各8项原生流程通过，真实NAS为PENDING_USER_VALIDATION，不提升环境等级。",
+      "capability": "个人与共享原件及目录删除；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "write",
       "risk": "critical",
@@ -389,7 +389,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "接口不支持或权限不足时不发送删除；不按 DSM／Photos 版本白名单拦截；未知结果只核对，不重放，不回退 File Station。2026-09-19 Apple 删除身份预检去除无关媒体详情解析依赖；明确 DSM 105/106/107/119 拒绝显示原因并按操作标识缓存、不重发，其他提交异常保留未知。接口与权限检查不变；仅源码修正，Swift/macOS 回归及用户具体失败提示待验证。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-item-deletion.md",
       "verifications": []
     },
@@ -397,7 +397,7 @@
       "id": "photos-library-read",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "2026-10-16 当前官方脚本与真实只读链路纠正 indexed_time 为整数 Unix 毫秒，time 仍为秒。Windows 普通项目、原件快照与自动预览身份统一保留毫秒精度；Apple 三端与 Android 仅登记独立复核影响，不改源码或提升旧环境验证。详见 docs/api/discovery/environments/2026-10-16-windows-read-regression.md。 个人照片库、12类标准筛选、共享列表和媒体读取；Apple Repository接入entry/management权限与FotoTeam读取，macOS支持共享人物/主题/地点/标签分类和空间导航；统一Category发现，集合及缩略图缓存携带空间，同编号隔离，entry转目录浏览。共享人物管理另见photos-people-management，相册来源已接入；静态证据与合成测试不代表NAS兼容验收 相册列表和照片读取使用统一Foto入口，照片owner_user_id=0时保留共享身份；相册封面带album_id授权，不依赖个人空间开启。 相册项目增加可选albumContext，详情/缩略图/视频/实况/原件经统一Foto携带album_id；无原空间权限也按相册授权请求，Photos有效但空间均关闭仍可浏览相册，拒绝不回退原件。原件写权限独立，真实NAS待用户验证，相册协作角色见photos-sharing-management、photos-album-management和photos-upload。 分类首页新增最多四张拼图缩略图读取，固定显式选择空间，不覆盖完整分类封面缓存；人物保留person/unit类型，视频type=video，单张失败不阻断分类。相似项目实现另见photos-similar-items。新增Download v2 optimized_jpeg读取、实际JPEG/原格式校验和相似组全部成员导出；macOS菜单开放，static及合成验证不等于真实NAS兼容。 新增整相册Album.download v2与目录Download.download v2归档，目标固定相册或空间/目录，POST仅请求体传分享口令；实际下载角色和目录权限预检，ZIP有限尾部完整结束记录检查，取消/失败保留本地旧文件。仍static/PENDING_USER_VALIDATION。 macOS幻灯片复用既有媒体和照片查询，只读独立分页；官方三秒/视频结束/暂停循环语义为static，未新增NAS接口或实际兼容环境。 新增原尺寸JPEG：Setting.User.ame_status.has_hevc与Setting.Admin.enable_converted_original_jpeg实际条件，Download.convert v2后original_size_jpeg单项下载；核对身份和下载权、去重、取消、完整JPEG及不覆盖。convert可能生成派生缓存，属于mixed；static/PENDING_USER_VALIDATION。 目录封面解析thumbnail数组；默认unit拼图、自定义type=folder加folder_cover_seq且不传size，固定个人/共享路径，单图失败占位。 目录排序读取Folder.sort_by/sort_direction，逐字段沿用户设置和官方默认值降级；Item.list按四字段/两方向逐页请求，子目录按名称同方向，旧调用默认行为保留。 多目录及照片混选归档已接入：同一空间/父目录的item_id与folder_id合并一次POST，逐项权限/身份预检，固定选择且取消失败保留本地文件；仍static，真实NAS待用户验收。 上传任务导航增量公开folder(id:in:)只读契约，复用已记录Browse.Folder.get v2，读取当前名称/父目录并检查空间、编号及目录查看权；macOS先回读照片所在目录再构建完整路径，直接相册上传不授予原件目录访问。无新NAS写入，仍static/PENDING_USER_VALIDATION。 Android A4p幻灯片复用现有只读查询与媒体，独立分页固定完整查询/排序/相册上下文，照片显示3秒、视频结束推进，保留图库位置与选择，暂停/停止和迟到结果隔离；仅合成与原生模拟器验证，不新增接口或NAS verifications。 Android A4r接入原件/压缩与单张原尺寸JPEG、完整相册/目录及同级混选ZIP，实际身份/下载权预检、POST口令、平台JPEG解码及有限ZIP检查，统一系统文档交付/同名另存/部分完成与取消；真实NAS及物理文件提供器仍待用户验证，不提升static或新增verifications。",
+      "capability": "个人与共享图库、相册及媒体读取；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -447,7 +447,7 @@
         "POST",
         "GET"
       ],
-      "fallback": "照片不可用时提示恢复步骤，不回退 File Station 扫描。共享空间正向权限和全部写操作未验证；浏览器观察环境与 lab-a 关系待确认，verifications 不冒用旧环境。2026-09-19 Apple 原件中间文件移至应用临时区，系统协调导出，网络参数不变；Mac 面板已确认替换后可保存，Repository 无覆盖契约保留，实际沙盒行为待验。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-library-read.md",
       "verifications": []
     },
@@ -455,7 +455,7 @@
       "id": "dsm-desktop-app-privileges",
       "componentId": "dsm-core",
       "scope": "DSM",
-      "capability": "当前账号应用权限摘要（macOS、iPhone、iPad、Android 已接入，逐端 App 实机状态见记录）",
+      "capability": "DSM 当前账号应用权限摘要（候选）；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "read",
       "risk": "medium",
@@ -468,7 +468,7 @@
       "methods": [
         "GET"
       ],
-      "fallback": "摘要失败只保留文件只读会话确认，其他模块保持关闭；有效空表不额外试探。用户确认 NAS 设置与容器要求管理员，独立应用要求明确授权，false 不被管理员覆盖；不加载组件业务数据判断权限。设备匿名归属待确认，verifications 不冒用旧基线。 2026-09-27 当前 App 保存会话的 GET/POST 摘要均明确 isLogined=false；Apple 拒绝未登录空摘要，回到原文件会话核实，不放开权限；修复包已恢复文件和管理菜单，用户确认退出后重新连接正常。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。 2026-10-04 移动端沿用此摘要筛选可开启功能；照片另按既有 Photos access 读取授权，摘要非安全类失败时可独立保留照片候选。请求契约和环境证据等级不变。 2026-10-06 macOS 正式 Photos 入口同步独立 access 授权，移除 File Station 权限绑定；Photos 拒绝/缺能力不得借文件授权开放，权限读取不重置工作区缓存。iPhone/iPad 已采用独立入口读取；保存会话恢复的文件权限/能力受限须改由 Photos 成功读取确认，认证/证书/网络错误不转读照片，并补回归；Windows/Android 不改实现，不提升真实环境验证等级。 2026-10-11 Android A2a 接入既有 GET/Header 白名单与独立 Photos access，网络或一般权限失败不清会话；A2b 为 Repository、Worker 与跨 NAS 增加请求前授权门禁。A2c 已接前台/手动刷新与撤销展示清理，保留未知写结果；多账号身份和完整系统入口继续实施，未增加真实环境 verification。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/dsm-desktop-app-privileges.md",
       "verifications": []
     },
@@ -476,7 +476,7 @@
       "id": "quickconnect-relay-control",
       "componentId": "dsm-core",
       "scope": "QuickConnect",
-      "capability": "直连失败后的中继发现与目标身份核对",
+      "capability": "QuickConnect 控制面与区域转介；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "read",
       "risk": "high",
@@ -490,7 +490,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "全球入口返回 sites 时仅查询合法官方区域主机，去重且最多 8 个控制入口；成功响应没有直连候选时保留在线结果进入既有中继流程。Apple、Android 与 Windows 共用该语义；中继或身份核对失败则停止连接。2026-10-03 客户端区域转介修复不提升既有真实 NAS 验证等级。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/quickconnect-relay-control.md",
       "verifications": [
         {
@@ -502,10 +502,10 @@
           },
           "verifiedAt": "2026-07-23",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
+            "docs/api/discovery/endpoints/quickconnect-relay-control.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "已记录中继建立、身份核对和随后 SYNO.API.Info 探测；不记录控制主机或目标标识。"
+          "notes": "历史观察：已记录中继建立、身份核对和随后 SYNO.API.Info 探测；不记录控制主机或目标标识。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -513,7 +513,7 @@
       "id": "file-station-remote-mount",
       "componentId": "file-station",
       "scope": "File Station",
-      "capability": "SMB/NFS 远程位置创建、重连与断开，以及 ISO 挂载管理",
+      "capability": "File Station 远程挂载内部接口；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -527,7 +527,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "接口缺失或无权限不提交；提交结果不明只核查，不自动重发。2026-09-20 待归属 DSM 7.2.1-69057 U12 / File Station 1.4.1-1559 官方静态字段为 mount_type/server_ip/mount_point/user_set/auto_mount，CIFS account/passwd，NFS nfs_version/protocol；Mount.List.get 空清单与配置布尔已只读核查，Mount.List.unmount/reconnect 用挂载点数组。Windows 阶段式核心与原生管理已接通，按会话/能力/确认开放用户验证。Mac 已在源码纠正别名、断开端点、NFS 选项并移除无证据只读保证，保留输入校验/确认/取消/回查及不盲目回滚；Mac 已补严格清单与写后源身份/目录双重核查，确认前旧连接绑定、目标可用性和结束时新连接核查已接窗口/仓库源码；本次 Repository 内未知结果记录、只读核查、明确继续及结束未执行步骤已接核心/窗口源码，记录不含密码且不跨重连/进程，源码与验收范围见 apple/Apps/DsmMac/README.md，历史自动化/构建证据见 docs/archive/2026-h2/RELEASE_VALIDATION_HISTORY.md，不能宣称真实写兼容。没有执行真实挂载或断开，不升级旧 lab-a 证据。 2026-10-02 未取得当前会话；公开套件包静态核查未得到 ISO/VFS/设置新契约，不扩展内部写范围。 2026-10-12 Android A3k 沿用后续已记录的 ISO v1 参数，接入现有空目录、自动连接确认、原身份断开和加密只读恢复；授权/目录/清单双重预检，精确空挂载类型按普通位置处理，缺字段仍拒绝。与权限修改互斥；SMB/NFS/VFS 继续后续切片，未执行真实 NAS 写入，verifications 不变。 2026-10-12 Android A3l 接入既有 SMB/NFS 参数与独立加密阶段恢复，密码仅当前表单/HTTPS 正文；同位置和换位置修改每次确认只写一步，未知不重放，明确未执行的剩余步骤可结束。两次授权/原身份/目录检查，与 ISO/权限互斥；客户端合成证据见 Android 主计划，VFS 另片推进，真实环境等级不变。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/file-station-remote-mount.md",
       "verifications": [
         {
@@ -539,10 +539,10 @@
           },
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
+            "docs/api/discovery/endpoints/file-station-remote-mount.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "内部实验性契约；尚未在专用目标完成写行为验收。"
+          "notes": "历史观察：内部实验性契约；尚未在专用目标完成写行为验收。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -550,7 +550,7 @@
       "id": "dsm-system-observability",
       "componentId": "dsm-core",
       "scope": "DSM",
-      "capability": "系统、性能、连接、日志和更新状态",
+      "capability": "系统概览、性能、进程、连接和日志；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -568,8 +568,8 @@
       "methods": [
         "POST"
       ],
-      "fallback": "各只读页面独立降级；连接断开不可用时不影响连接列表。 2026-09-26 Apple 连接列表兼容整数 PID，拒绝小数，断开保护不变。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 当前连接单项 PID 的数字类型已由当前浏览器成功响应核对。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。 2026-10-05 Apple 移动 M6a2 接系统日志完整分页/正文，未知总数独立表示，畸形列表不当空；同账号重连清除正文，迟到翻页不回写。细化文档 docs/api/discovery/endpoints/dsm-system-log.md；无新现场观察或等级提升。 2026-10-06 Apple 移动 M6d2 新增固定 v1 连接管理、触控后果确认、原目标完整预检、逐次权限、唯一写入及回执检查点和跨重启只读恢复；新旧 Mac 方法共用请求与目标互斥，未知原始身份或部分目录不报告断开。记录仅存不可逆摘要，Windows/Android 只登记影响，真实写证据不提升。 2026-10-13 Android A7按分区独立加载，日志正式页采用SyslogClient.Log v1及完整分页/本页筛选/正文与会话清理；与进程分区共23项聚焦JVM通过，真实NAS和整模块原生验收未执行，不提升证据等级。 2026-10-13 Android A7连接管理接入严格完整目录、原目标预检、单次断开、写前/回执后加密摘要及跨重启只读恢复；原身份仍在、相似缺身份、权限撤销或部分目录继续保留未知，不可丢弃后重发。33项聚焦/兼容JVM通过，原生整组与真实断开待验；其他端与历史证据不变。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
-      "documentRef": "docs/api/discovery/endpoints/INDEX.md",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
+      "documentRef": "docs/api/discovery/endpoints/dsm-system-read.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -585,13 +585,13 @@
           },
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
+            "docs/api/discovery/endpoints/dsm-system-read.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md",
             "docs/api/discovery/endpoints/dsm-current-connection.md",
             "docs/api/discovery/endpoints/dsm-system-update-check.md",
             "docs/api/discovery/endpoints/dsm-system-log.md"
           ],
-          "notes": "连接断开属于写行为，本环境未执行，不能继承只读证据等级；系统更新只读检查已记录，下载与安装保持关闭。Windows 连接固定 v1 严格读取、完整目标预检、网页 DID/服务 PID 请求、当前或未知会话更强确认及原始标识回读已有合成证据，原生列表/搜索/当前会话额外确认/关闭取消/只读恢复已有合成证据，关联原始身份不能绕过挂起阻止，写门关闭。Mac 同步修正派生 ID、畸形列表、用户名当前状态推断和缓存回读误报；新 Swift 回归未运行，不提升真实断开行为证据。"
+          "notes": "历史观察：连接断开属于写行为，本环境未执行，不能继承只读证据等级；系统更新只读检查已记录，下载与安装保持关闭。Windows 连接固定 v1 严格读取、完整目标预检、网页 DID/服务 PID 请求、当前或未知会话更强确认及原始标识回读已有合成证据，原生列表/搜索/当前会话额外确认/关闭取消/只读恢复已有合成证据，关联原始身份不能绕过挂起阻止，写门关闭。Mac 同步修正派生 ID、畸形列表、用户名当前状态推断和缓存回读误报；新 Swift 回归未运行，不提升真实断开行为证据。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -599,7 +599,7 @@
       "id": "dsm-system-processes",
       "componentId": "dsm-core",
       "scope": "DSM 资源监控",
-      "capability": "系统进程与服务进程组只读摘要",
+      "capability": "DSM 系统进程与服务进程组内部 API；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "read",
       "risk": "medium",
@@ -613,7 +613,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "进程能力缺失时页面独立不可用；服务组缺失或失败时保留进程列表。命令、路径、账号和网络地址不进入模型。 2026-09-26 Apple 新增 process/command 与 slices/unit_name 静态兼容候选，缺失容器报错；当前 NAS 读取待用户验证。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 当前 DSM 7.2.1-69057 Update 12 官方页面成功返回 process/command 与 slices/unit_name，候选结构已得到只读响应支持。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。 2026-10-13 Android A7接Process/ProcessGroup v1最多500项快照、原生搜索/组/截断和独立失败；仅保留白名单，未新增控制。与日志分区共23项聚焦JVM通过，手机/平板与真实NAS待后续，不提升历史证据。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/dsm-system-processes.md",
       "verifications": [
         {
@@ -626,10 +626,9 @@
           },
           "verifiedAt": "2026-07-31",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/api/discovery/endpoints/dsm-system-processes.md"
           ],
-          "notes": "合成响应只验证字段白名单、500 项上限、能力缺失零请求和服务组失败降级，不提升真实环境证据等级。"
+          "notes": "历史观察：合成响应只验证字段白名单、500 项上限、能力缺失零请求和服务组失败降级，不提升真实环境证据等级。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -637,7 +636,7 @@
       "id": "dsm-power-schedule",
       "componentId": "dsm-core",
       "scope": "DSM 控制面板",
-      "capability": "电源计划读取及开机/关机计划完整清单编辑",
+      "capability": "DSM 电源计划内部 API；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -650,7 +649,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "2026-10-03 macOS 按用户授权接入 v1 load/save，两个原生数组完整且不超过 200 条才可编辑；未知动作、时间、星期、状态或缺失条目拒绝覆盖。保存前完整基线比较，明确关机风险、全局去重并回读整表；未知结果仅刷新，不重放。2026-10-06 iPhone/iPad M6c1 已接完整清单草稿、启停、移除、整体保存与摘要恢复；NAS 时区纳入确认和恢复比较，空清单可添加，不完整清单不得覆盖。共享旧 Mac 调用不变。Windows/Android 未迁移写入，历史验证不升级。本轮官方前端 static 及读取证据见 docs/api/discovery/environments/2026-10-02-nas-settings-web-audit.md。 2026-10-13 Android A7 已接完整清单管理、200条上限、NAS时区/原值比较、单次双数组保存与加密摘要恢复；未知或不完整条目不可覆盖。75项相关JVM通过，原生整模块/真实NAS待验；其他端和历史环境证据不变。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/dsm-power-schedule.md",
       "verifications": [
         {
@@ -662,10 +661,9 @@
           },
           "verifiedAt": "2026-07-31",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/api/discovery/endpoints/dsm-power-schedule.md"
           ],
-          "notes": "合成响应只验证字段白名单、128 条上限、歧义星期降级、能力缺失零请求和零 save，不提升真实环境证据等级。Windows 已接固定 v1 读取与原生筛选/五态页面；Apple 缺失/冲突根、时间整数、未知启用状态和不完整提示修正待 Mac 回归，仍为 static 候选，未执行真实读取或保存。"
+          "notes": "历史观察：合成响应只验证字段白名单、128 条上限、歧义星期降级、能力缺失零请求和零 save，不提升真实环境证据等级。Windows 已接固定 v1 读取与原生筛选/五态页面；Apple 缺失/冲突根、时间整数、未知启用状态和不完整提示修正待 Mac 回归，仍为 static 候选，未执行真实读取或保存。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -673,7 +671,7 @@
       "id": "dsm-external-storage",
       "componentId": "dsm-core",
       "scope": "DSM 控制面板",
-      "capability": "USB 与 eSATA 外接存储只读摘要和安全弹出禁用边界",
+      "capability": "DSM USB 与 eSATA 外接存储内部 API；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -687,7 +685,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "两个 list 独立发现和降级；均缺失时零请求，单项失败时保留另一项；USB eject 始终关闭。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/dsm-external-storage.md",
       "verifications": [
         {
@@ -700,10 +698,9 @@
           },
           "verifiedAt": "2026-08-03",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/api/discovery/endpoints/dsm-external-storage.md"
           ],
-          "notes": "合成响应只验证字段白名单、明确字节单位、每类 64 项上限、局部降级、能力缺失零请求和零 eject，不提升真实环境证据等级。Windows 已接独立读取和原生筛选/五态列表；整体失败不当空目录，未知容量不补零。Apple 严格容器/字节字段和整体失败、认证错误修正待 Mac 回归。保持 static 候选，未执行真实列表或弹出。"
+          "notes": "历史观察：合成响应只验证字段白名单、明确字节单位、每类 64 项上限、局部降级、能力缺失零请求和零 eject，不提升真实环境证据等级。Windows 已接独立读取和原生筛选/五态列表；整体失败不当空目录，未知容量不补零。Apple 严格容器/字节字段和整体失败、认证错误修正待 Mac 回归。保持 static 候选，未执行真实列表或弹出。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -711,7 +708,7 @@
       "id": "dsm-zram",
       "componentId": "dsm-core",
       "scope": "DSM 控制面板",
-      "capability": "内存压缩启用状态、开关保存及重启要求",
+      "capability": "DSM 内存压缩（ZRAM）内部 API；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -725,7 +722,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "2026-10-03 macOS 使用 enable_zram 原生布尔，缺失或冲突保持未知。按用户授权提供开关；必须预检 ZRAM/NeedReboot v1、比较编辑基线、分别提交 set 并回读目标值和重启标记，不自动重启。断线或回读失败禁止自动重放；其他页面独立可用。2026-10-06 iPhone/iPad M6c1 已接移动开关及逐步恢复：两步独立保存提交状态，压缩已保存而后步未完成时只允许明确继续，当前压缩配置变化则停止；共享旧 Mac 调用不变。Windows/Android 未迁移写入，不升级历史验证。本轮证据见 docs/api/discovery/environments/2026-10-02-nas-settings-web-audit.md。 2026-10-13 Android A7 已接两步 v1 保存与加密摘要恢复，接受事实和配置结果分别保留；标记明确未完成可主动继续，回执未知只读且不重放，不自动重启。75项相关JVM通过，原生整模块/真实NAS待验；其他端和历史环境证据不变。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/dsm-zram.md",
       "verifications": [
         {
@@ -737,11 +734,10 @@
           },
           "verifiedAt": "2026-08-03",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/api/discovery/endpoints/dsm-zram.md",
-            "docs/api/discovery/environments/2026-07-29-lab-a-dsm-69057-u12.md"
+            "docs/api/discovery/environments/INDEX.md"
           ],
-          "notes": "2026-08-03 只在同一匿名设备观察到官方设置控件，当日未重新核实 DSM 版本；未捕获或保存 API 请求/响应。合成响应只验证字段白名单、明确字节单位、算法归一、能力缺失零请求和零 set，不提升真实环境证据等级。Windows 已接 v1 读取和原生只读摘要；Apple 原生布尔、整数容量、冲突别名与错误根修正待 Mac 回归。没有开关或 set 入口，保持 static 候选。"
+          "notes": "历史观察：2026-08-03 只在同一匿名设备观察到官方设置控件，当日未重新核实 DSM 版本；未捕获或保存 API 请求/响应。合成响应只验证字段白名单、明确字节单位、算法归一、能力缺失零请求和零 set，不提升真实环境证据等级。Windows 已接 v1 读取和原生只读摘要；Apple 原生布尔、整数容量、冲突别名与错误根修正待 Mac 回归。没有开关或 set 入口，保持 static 候选。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -749,7 +745,7 @@
       "id": "dsm-printer-bonjour-sharing",
       "componentId": "dsm-core",
       "scope": "DSM 控制面板 / 外接设备",
-      "capability": "打印机 Bonjour 共享只读状态候选",
+      "capability": "DSM 打印机 Bonjour 共享内部 API；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "read",
       "risk": "medium",
@@ -762,7 +758,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "版本、参数和响应未确认前客户端整体关闭且零猜测请求；接口缺失、无权限或结构未知不解释为共享关闭或没有打印机。",
+      "fallback": "静态名称线索不足以形成可调用契约；未知版本、参数或响应保持零猜测请求。methods等旧候选元数据不代表已观察传输，详见documentRef。",
       "documentRef": "docs/api/discovery/endpoints/dsm-printer-bonjour-sharing.md",
       "verifications": [
         {
@@ -774,10 +770,9 @@
           },
           "verifiedAt": "2026-08-03",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/api/discovery/endpoints/dsm-printer-bonjour-sharing.md"
           ],
-          "notes": "没有注册客户端能力、领域模型、Adapter、响应 Schema 或 fixture；不复用通用 Bonjour/Avahi 字段，不推断打印机清单或共享状态。"
+          "notes": "历史观察：没有注册客户端能力、领域模型、Adapter、响应 Schema 或 fixture；不复用通用 Bonjour/Avahi 字段，不推断打印机清单或共享状态。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -785,7 +780,7 @@
       "id": "dsm-storage-hardware",
       "componentId": "storage-manager",
       "scope": "DSM 与存储管理器",
-      "capability": "存储、硬盘健康、检测和硬件设置",
+      "capability": "存储读取、硬盘检测及硬件设置；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -807,8 +802,8 @@
       "methods": [
         "POST"
       ],
-      "fallback": "以 Storage.load_info 为主；单项接口失败时保留其他有效数据并关闭对应写入口。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-10-03 macOS 以 BeepControl support_* 过滤不可编辑提示音，FanSpeed cool_fan/fan_type 决定支持模式；未知设备组合与扩展网卡限制由 NAS 拒绝，未执行实际硬件写入。 2026-10-05 Apple 移动 M6a2 接硬盘检测确认、写前摘要记录与重启只读恢复；共享统一原硬盘/确认状态和快速/完整类型匹配，旧 Mac 签名保持。未执行真实 NAS 写入，Windows/Android 仅记录影响，真实证据不提升。 2026-10-06 Apple 移动 M6c2 接硬件/UPS 原配置管理、固定 v1、可信字段与七个写边界。LED 两步分别要求回执，丢失时不得凭暂存亮度认领；原亮度明确完成且应用未提交或拒绝时才允许主动继续。共享旧入口及 Mac 修正拒绝、未提交和 LED 缓存误报。共享 2954 XCTest/12 Swift Testing 通过；移动 UI 与目标构建以专项账本为准。真实硬件写未执行，五端请求契约及证据等级保持。 2026-10-13 Android A7硬件按support_*及风扇模式位读取，六组七步单次保存、原元数据/可信字段预检和加密摘要恢复；LED两步接受事实分别保留，暂存值不能补造回执，原亮度已接受且应用未提交或拒绝时才主动继续原update。137项聚焦/兼容JVM通过，原生整模块与物理硬件待验证，其他端未改，证据等级不提升。 2026-10-13 Android A7磁盘检测接入单次启停、原盘/原状态预检、精确类型回读和独立加密摘要恢复；当前状态与历史分开，未知不重发，重新检查当前权限后才认领恢复。38项聚焦/兼容JVM通过，真实磁盘写与整组原生验收待验证，其他端及历史证据不变。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
-      "documentRef": "docs/api/discovery/endpoints/INDEX.md",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
+      "documentRef": "docs/api/discovery/endpoints/dsm-system-read.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -824,12 +819,12 @@
           },
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
+            "docs/api/discovery/endpoints/dsm-system-read.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md",
             "docs/api/discovery/endpoints/dsm-smart-test.md",
             "docs/api/discovery/endpoints/dsm-hardware-settings.md"
           ],
-          "notes": "S.M.A.R.T. 启停、硬件和 UPS 设置没有为发现而执行。Windows 新增固定 v1 目标/状态/最近历史读取及正确启停核心合成证据，旧猜测写入口已移除；确认基线、稳定设备互斥、有限回读及不重放恢复已有故障注入覆盖，原生选择/状态/历史/确认/恢复面板已有合成证据，运行中只读刷新且生产门关闭。Apple 不再伪造设备身份、从健康推断许可或把缺失检测状态当作空闲，固定 v1、严格解码、设备/代次缓存绑定与不以旧状态冒充成功的修正均待 Mac 回归。均不提升真实环境证据等级，Android 本波未修改。"
+          "notes": "历史观察：S.M.A.R.T. 启停、硬件和 UPS 设置没有为发现而执行。Windows 新增固定 v1 目标/状态/最近历史读取及正确启停核心合成证据，旧猜测写入口已移除；确认基线、稳定设备互斥、有限回读及不重放恢复已有故障注入覆盖，原生选择/状态/历史/确认/恢复面板已有合成证据，运行中只读刷新且生产门关闭。Apple 不再伪造设备身份、从健康推断许可或把缺失检测状态当作空闲，固定 v1、严格解码、设备/代次缓存绑定与不以旧状态冒充成功的修正均待 Mac 回归。均不提升真实环境证据等级，Android 本波未修改。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -837,7 +832,7 @@
       "id": "dsm-account-directory",
       "componentId": "dsm-core",
       "scope": "DSM",
-      "capability": "账号与群组目录读取和管理",
+      "capability": "DSM 账号与群组目录内部 API；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
@@ -851,7 +846,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "能力缺失或权限不足时关闭账号管理；写请求结果无法回读时提示核对，不自动重放。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-09-26 Apple 读取兼容 expired normal/now；缺少 can_edit 且资料完整时可打开编辑，显式拒绝和删除许可仍生效。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-10-05 iPhone/iPad 已接 User/Group v1 完整管理与独立摘要恢复；运行时能力、当前管理员和对象权限、原快照/数字身份及写前/接受回执保护决定操作，未实机不固定关闭。创建/改密无回执保持未知，旧 Mac 方法兼容，Windows/Android 不改源码；真实账号写证据未提升。 2026-10-13 Android A7接通User/Group v1创建、编辑、所属组、删除和加密摘要恢复；当前管理员、已记录DSM版本、原对象/数字身份、写前与接受回执保护生效，未知不重放。32项聚焦JVM与增量编译/双语扫描通过；手机/平板待整波次，真实账号写证据不提升。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/dsm-account-directory.md",
       "verifications": [
         {
@@ -865,10 +860,9 @@
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
             "docs/api/discovery/endpoints/dsm-account-directory.md",
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "只读结构与网页请求已有脱敏记录；共享请求 Fixture 和源码测试不提升当前环境的写行为证据等级。Windows User/Group 固定 v1 严格读取、完整确认基线删除、同请求不重放和同客户端未知恢复已有合成证据，旧工作区分别保留读取状态；新建/编辑核心已有明确管理员检查、完整基线和密码/字段结果区分的合成证据，复用删除互斥与恢复；原生管理已接目录切换、明确组关系修改、草稿绑定确认、密码清除与未知恢复并有合成证据，保存和删除生产门独立关闭。Mac 修正缺失许可默认放行、根与额外字段解析及目录为空覆盖删除未知结果，保存模型另加完整基线预检、真实新回读和不可重试的未知结果提示，新回归尚未在 Mac 运行；不提升任何真实账号写行为证据等级。"
+          "notes": "历史观察：只读结构与网页请求已有脱敏记录；共享请求 Fixture 和源码测试不提升当前环境的写行为证据等级。Windows User/Group 固定 v1 严格读取、完整确认基线删除、同请求不重放和同客户端未知恢复已有合成证据，旧工作区分别保留读取状态；新建/编辑核心已有明确管理员检查、完整基线和密码/字段结果区分的合成证据，复用删除互斥与恢复；原生管理已接目录切换、明确组关系修改、草稿绑定确认、密码清除与未知恢复并有合成证据，保存和删除生产门独立关闭。Mac 修正缺失许可默认放行、根与额外字段解析及目录为空覆盖删除未知结果，保存模型另加完整基线预检、真实新回读和不可重试的未知结果提示，新回归尚未在 Mac 运行；不提升任何真实账号写行为证据等级。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -876,7 +870,7 @@
       "id": "file-station-share-access",
       "componentId": "file-station",
       "scope": "File Station",
-      "capability": "当前登录账号可见共享文件夹及有效读写权限",
+      "capability": "DSM 共享文件夹访问权限契约；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "official",
       "operation": "read",
       "risk": "low",
@@ -889,7 +883,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "能力缺失或读取失败时仅关闭共享访问页面；空结果和缺少权限位均不推断为拒绝访问。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/dsm-share-access.md",
       "verifications": [
         {
@@ -901,10 +895,9 @@
           },
           "verifiedAt": "2026-07-31",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/api/discovery/endpoints/dsm-share-access.md"
           ],
-          "notes": "只展示当前账号可见集合；本批没有读取或记录真实共享名、路径或权限响应。"
+          "notes": "历史观察：只展示当前账号可见集合；本批没有读取或记录真实共享名、路径或权限响应。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -912,7 +905,7 @@
       "id": "dsm-share-permission-matrix",
       "componentId": "dsm-core",
       "scope": "DSM",
-      "capability": "按用户读取管理员共享文件夹权限矩阵",
+      "capability": "DSM 共享文件夹访问权限契约；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "read",
       "risk": "medium",
@@ -925,7 +918,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "保持管理员权限矩阵关闭，继续使用公开 File Station 当前账号有效访问视图。",
+      "fallback": "静态名称线索不足以形成可调用契约；未知版本、参数或响应保持零猜测请求。methods等旧候选元数据不代表已观察传输，详见documentRef。",
       "documentRef": "docs/api/discovery/endpoints/dsm-share-access.md",
       "verifications": [
         {
@@ -937,10 +930,9 @@
           },
           "verifiedAt": "2026-07-31",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/api/discovery/endpoints/dsm-share-access.md"
           ],
-          "notes": "客户端不探测、不调用该内部候选，也不根据方法名猜测参数。"
+          "notes": "历史观察：客户端不探测、不调用该内部候选，也不根据方法名猜测参数。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -948,7 +940,7 @@
       "id": "dsm-package-installation",
       "componentId": "dsm-core",
       "scope": "DSM 套件中心",
-      "capability": "套件目录、依赖计划、安装/更新、手动上传、进度、取消下载、自动更新与来源管理",
+      "capability": "DSM 套件中心内部 API；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -968,7 +960,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "2026-10-03 macOS 按用户授权接入官方目录和安装流程。更新由 available_operation.upgrade 对象进入完整计划；运行时能力、权限、签名、许可、风险确认、互斥和精确版本核对必需，未知提交只查询，不重放。第三方目录独立降级；付费/首次测试版协议/浏览器专属安装表单明确交由 DSM。其他平台没有迁移写入。当前目录结构 read-verified、写结构 static/合成测试，真实行为 PENDING_USER_VALIDATION；不改变 lab-a 历史等级。见 docs/api/discovery/environments/2026-10-02-nas-settings-web-audit.md。 2026-10-03 后续修复：feasibility_check 成功允许没有 data；Setting.get.update_channel 为 Boolean、set 仍为 stable/beta，default_vol 可缺省。官方网页单次 MediaServer 2.2.1-3406→2.2.2-3412 更新及最终运行状态已验证；仅此目标为 behavior-verified，客户端真实提交与其他写操作仍待验，匿名设备未归属，历史 verifications 不变。见 docs/api/discovery/environments/2026-10-03-package-center-followup.md。 同日二次反馈：官方系统安装分支允许 system/system_hidden 缺省普通 volume_list，macOS 已按类型修正且保留普通套件位置要求；只读准备支持取消并丢弃迟到结果，已确认提交仅关闭窗口后台继续。本轮没有新增 NAS 写验证，见 docs/api/discovery/environments/2026-10-03-photos-package-followup.md。 2026-10-06 Apple 移动 M6e1 接入设置/自动更新与来源管理；复用 Setting/Feed v1、Package list v2 及既有附加信息组，未知策略不补关闭后覆盖。原快照、当前管理权限、写前/接受回执和受保护摘要恢复联动，明确拒绝不由匹配覆盖，来源改址须旧地址消失，未知跨重启不重放；Mac 原调用保持，Windows/Android 仅记录影响。安装/更新/SPK 与套件控制仍属后续切片，真实环境证据不提升。 2026-10-06 M6e3 已完成移动安装/更新/SPK 源码与当前环境验收：新增兼容写前、接受与逐项完成检查点，原请求复用，当前权限和记录失败停止后续依赖。摘要恢复不保存 taskid、路径、URL 或口令，跨重启只读已提交目标，同版本未知保持保护；下载/上传准备中断不认领安装。双端完整单元、十项实际 UI、共享与 Mac 回归结果见移动主计划，真实环境证据等级不变。 2026-10-13 Android A7已接目录、准备/依赖、安装更新、SPK、许可/选项、设置/来源与加密摘要恢复；新写链路检查已登记DSM版本和当前权限，单次提交，跨进程只读恢复，未发送依赖不续作。72项聚焦JVM通过，原生设备/真实NAS尚未验证；原控制/卸载统一门禁仍在A7实施。其他端未修改，不提升任何历史环境等级。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/dsm-package-installation.md",
       "verifications": [
         {
@@ -981,10 +973,9 @@
           },
           "verifiedAt": "2026-07-31",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/api/discovery/endpoints/dsm-package-installation.md"
           ],
-          "notes": "客户端不探测或调用安装接口；合成 Package.list 响应只验证只读升级提示，不能提升写行为证据。"
+          "notes": "历史观察：客户端不探测或调用安装接口；合成 Package.list 响应只验证只读升级提示，不能提升写行为证据。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -992,7 +983,7 @@
       "id": "dsm-administration",
       "componentId": "dsm-core",
       "scope": "DSM",
-      "capability": "套件、任务、文件服务、网络、DDNS 与安全设置",
+      "capability": "套件、账号、计划与系统设置管理；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
@@ -1029,8 +1020,8 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按能力逐项隐藏或只读降级；不得自动尝试管理员权限或批量回写完整配置。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-09-26 Apple 新建脚本任务使用本地空白草稿，仍检查 v4 能力，已有任务严格读取及保存保护不变。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 官方已有脚本任务 get v4 字段与当前严格解析匹配，未保存或执行。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。 2026-10-03 macOS 将 enable_port_check 更正为防火墙通知（不是防端口扫描）；已安装 available_operation 兼容对象。新增安装流程见 dsm-package-installation；其他平台只记录适配影响，真实写证据不升级。 2026-10-05 Apple 移动 DDNS 管理复用 v1，增加原记录/服务商集合、严格管理读取、写前与接受回执检查点及按账号持久恢复；仅改凭据无回执不能凭旧字段成功，瞬时动作不自动重放。Mac 区域保存不再用配置匹配掩盖校时部分失败或明确拒绝；原请求/存储保持。 移动区域设置新增原配置确认、set/sync 独立检查点与只读持久恢复；单独校时不重写配置，未编辑手动时间使用 NAS 新值，手动改时缺回执不凭近似时钟冒认成功。Windows/Android 仅登记影响，未执行真实 NAS 写入或提升证据等级。 2026-10-05 Apple 移动 M6b2 文件服务/终端/代理新增原配置确认、固定已记录版本、严格管理读取和逐请求持久恢复，与旧 Mac 方法共用实际写参数；每组提交前重新检查权限，明确拒绝不被缓存匹配覆盖，未知不重放，未提交后组不认领成功。Windows/Android 只登记影响，未执行真实 NAS 写入或提升证据等级。 2026-10-06 Apple 移动 M6b3 远程访问接入 v3/v1 原快照、逐步记录、当前中继保护和同一逻辑配置重新连接后的只读恢复；单项读取失败保留另一项，两项失败不作空值，新增管理入口传播结构化证书信任错误。新地址新配置不认领旧记录，不承诺路由器映射结果；旧 Mac 调用保持兼容，Windows/Android 仅记录影响，真实环境证据不提升。 2026-10-06 Apple 移动 M6d1 计划任务复用 list/command v3、detail/save v4、result v1；新建/编辑、启停、运行、删除和输出接逐次权限、原列表/脚本预览、提交回执与受保护摘要恢复。创建不认领既有 ID 或无回执同名任务，删除不凭所有者改变成功，未知运行不因旧历史解除；停用不依赖 v4，未知原星期保持。旧 Mac 实际请求与数据保持，Windows/Android 仅记录影响，未执行真实任务写入或提升历史证据。 2026-10-06 Apple 移动 M6d2 接入固定 v3 info/shutdown/reboot 与独立后果确认；接受仅代表请求已发送，未知不重放，跨重启保留保护。只有新会话、明确设备恢复确认、当前权限和只读 info 后才能恢复操作能力，不据此推断前次执行完成；记录只含不可逆摘要和阶段。旧 Mac 签名与请求保持，Windows/Android 只登记影响，不提升真实电源证据。 2026-10-06 Apple 移动 M6b4 网卡管理复用 list v2/get、set v1，严格完整原配置、单张网卡写和提交/回执摘要恢复；DHCP 租约不算配置变化，未知只读且同一连接配置/账号的新地址需重新登录并明确同 NAS 后恢复。Mac 网卡反馈移除旧缓存覆盖拒绝与未知分支；Windows/Android 仅登记影响，真实网络环境证据不提升。 2026-10-06 Apple 移动 M6b5 安全设置复用 AutoBlock/Firewall/Conf/Profile.Apply v1、DoS/Ethernet list v2；完整原字段与配置档、网卡绑定，逐组权限和摘要恢复。防火墙持久原任务回执，未知不从开关认领；仅持续执行且任务明确结束才清理，重启只读取原任务和配置，不 start/stop。Mac 同步修复缓存覆盖结果、超时清理与权限错误吞掉；Windows/Android 仅登记影响，真实安全环境证据不提升。 2026-10-06 Apple M6e2 三操作固定 list v2、feasibility/control/uninstall v1，共用原安装预检与当前列表应用标识；卸载补齐重读与权限。移动详情、具体风险确认、写前/接受回执摘要与原账号只读恢复已接，安装/设置/控制互斥，未知不重放。Mac 页面不再以同状态覆盖拒绝或未知；证书与权限失败停止进一步处理。Windows/Android 仅记录影响，不改实现；未执行真实套件写入，不提升环境证据等级。 2026-10-13 Android A7计划任务已接固定方法版本、完整脚本预检、单次写入和加密摘要恢复；25项聚焦JVM覆盖FORM/JSON、全部动作和冷恢复，原生整模块与真实任务仍待验证。其他端未改，历史证据等级不提升。 2026-10-13 Android A7文件服务/终端/代理接入原快照、固定版本、逐组权限、单次写入与加密摘要恢复；101项聚焦及兼容JVM通过，未知不重放，未提交组不认领，原生整模块和真实服务行为待验证。其他端未改，证据等级不提升。 2026-10-13 Android A7区域时间接入原配置、分步单次保存/独立校时与加密摘要恢复；99项聚焦及兼容JVM通过，手动改时及瞬时校时接受回执不可由同值配置补造，未知不重放。原生整模块与真实改时待验证，其他端未改，既有证据等级不提升。 2026-10-13 Android A7远程访问复用服务记录新增中继/路由器分步单次保存与原账号只读恢复；64项聚焦及兼容JVM通过，保留可信中继保护、部分读取与认证/证书传播，旧三类记录兼容。真实网络和原生整模块待验证，不提升环境证据等级。 2026-10-13 Android A7物理网卡复用服务流程接入单目标单次保存、原配置与加密摘要恢复；77项聚焦及兼容JVM通过。新地址需原已保存连接/原账号的新会话及明确同NAS后只读恢复，不沿用旧会话或重发。旧服务记录兼容，其他端未改，真实网络和原生整模块待验证，不提升环境证据等级。 2026-10-13 Android A7 DDNS四动作接原快照、v1单次请求与加密摘要恢复；61项聚焦及兼容JVM通过，编辑使用预检新网络值并省略未知字段/空密码，仅改密码需接受回执，瞬时未知不重放且保留历史。原生整模块与真实服务商待验证，其他端未改，证据等级不提升。 2026-10-13 Android A7安全四组接入逐组单次写与加密摘要，防火墙原任务成功加配置匹配才能恢复，重启不start/stop，清理只在未中断且任务结束的原流程；119项聚焦/兼容JVM通过。防火墙通知文案与DoS后值覆盖已对齐，原生整模块和真实防护待验证，其他端未改，历史证据等级不提升。 2026-10-13 Android A7 电源控制固定 v3 预检与空参数单次命令，当前权限/已登记环境、写前及回执后加密阶段；接受/未知跨重启保护，同 SID 换代次不能解除，新登录及明确设备/服务恢复后只读检查连接，不改写原结果或重放。84项聚焦/兼容 JVM通过，原生整组与真实电源待验；不提升历史证据或修改其他端。 2026-10-13 Android A7 套件三动作接统一加密活动与安装/设置/来源互斥；list v2、feasibility/control/uninstall v1，原安装摘要及完整目录预检，明确拒绝不由后续匹配覆盖，跨重启仅只读恢复，未知不可移除或重发。89项聚焦JVM通过，手机/平板与真实NAS仍待验，其他端及历史证据等级不变。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
-      "documentRef": "docs/api/discovery/endpoints/INDEX.md",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
+      "documentRef": "docs/api/discovery/endpoints/dsm-system-read.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -1053,7 +1044,7 @@
           },
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
+            "docs/api/discovery/endpoints/dsm-system-read.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md",
             "docs/api/discovery/endpoints/dsm-ethernet-settings.md",
             "docs/api/discovery/endpoints/dsm-security-settings.md",
@@ -1068,7 +1059,7 @@
             "docs/api/discovery/endpoints/dsm-package-installation.md",
             "docs/api/discovery/endpoints/dsm-task-scheduler.md"
           ],
-          "notes": "只读结构和网页请求已有记录；套件启动/停止及 Android 远程访问设置的合成请求、故障注入、持久反馈和回读测试不提升当前环境的写行为证据等级。Windows 终端/代理已有固定版本读取、原生表单、基线绑定保存、同请求不重放和逐字段回读核心的源码/合成证据；同一客户端重建页面或 Repository 后可只读核对未知保存，生产行为门仍关闭。Windows 文件服务已有字段位图、独立 FTPS、六组整体预检/基线提交/整体回读核心的源码与合成证据；终端、代理、文件服务行为门分别关闭，不因其他功能验收而自动开放。区域时间新增 Windows 固定读取、基线保存/条件校时核心与原生编辑，生产门关闭且不重发未知校时；Apple 解码修复待 Mac 回归，不将 NAS 接受校时请求当作精度验证。Windows 物理网卡 list v2/get v1、明确数组变体和部分读取状态已有合成回归与只读入口，单目标 configs 写入/回读及新地址的新会话+同 NAS 确认恢复已有合成证据，生产网络行为门关闭。Windows 安全四分区基线保存、按网卡 DoS、防火墙任务/完成后清理与原生编辑已有合成证据；旧假成功已移除，生产行为门关闭，未知任务不盲目重发或清理。Windows 硬件/UPS 六组基线保存、LED 两阶段、可信字段规则与原生编辑已有合成证据，生产门关闭，未知 LED 阶段不重发且真实副作用未验收。Windows DDNS 双 v1 读取、服务商身份与只读入口及凭据显示保护已有合成证据，四操作核心已有基线确认、固定请求和故障恢复合成证据，原生四操作确认/反馈/恢复已有合成证据，生产门关闭；Apple 适配器及 Mac 界面层同步修正拒绝/未知被旧配置覆盖和仅换密码超时误报成功，Mac 回归未运行。Windows 套件固定 v2 严格读取、三操作基线预检/不重放回读核心及升级只读提示已有合成证据，原生确认/持续反馈/恢复已有合成证据，启停与卸载能力分离且写门关闭；Mac 列表缺失许可默认放行与畸形列表误作空目录修正待 Swift 回归。Windows 电源固定 v3 预检、单次命令与原生确认已有合成证据，接受/未知都不推断最终设备状态；新登录与用户设备核对后才允许解除本地阻止，生产电源门关闭。Windows 任务计划 list v3/get v4 与 EventScheduler 结果/输出 v1 已有方法级严格读取合成证据，脚本及输出不默认导出，v3 启停/运行/删除核心另有基线与脚本预览核对合成证据，运行接受不等于脚本成功，模糊运行不重放；v4 创建/编辑核心已有服务器模板/双基线和完整配置回读合成证据，脚本不进恢复缓存；原生列表/编辑/命令确认与记录输出已有合成场景证据，生产门关闭。Mac 保存快照/完整新回读修正待回归。Windows 远程访问 v3/v1 独立严格读取、基线保存、可信中继保护及不重放恢复核心已有合成证据，原生表单已有字段失败隔离、确认与部分/未知恢复合成证据且写门关闭；Apple 读取与明确拒绝/未知计数及旧缓存误报修正待 Mac 回归。兼容结论仍为 observed/degraded；未执行真实 NAS 或路由器写操作，既有登录、QuickConnect 隧道和 SYNO.API.Info 证据不得外推。"
+          "notes": "历史观察：只读结构和网页请求已有记录；套件启动/停止及 Android 远程访问设置的合成请求、故障注入、持久反馈和回读测试不提升当前环境的写行为证据等级。Windows 终端/代理已有固定版本读取、原生表单、基线绑定保存、同请求不重放和逐字段回读核心的源码/合成证据；同一客户端重建页面或 Repository 后可只读核对未知保存，生产行为门仍关闭。Windows 文件服务已有字段位图、独立 FTPS、六组整体预检/基线提交/整体回读核心的源码与合成证据；终端、代理、文件服务行为门分别关闭，不因其他功能验收而自动开放。区域时间新增 Windows 固定读取、基线保存/条件校时核心与原生编辑，生产门关闭且不重发未知校时；Apple 解码修复待 Mac 回归，不将 NAS 接受校时请求当作精度验证。Windows 物理网卡 list v2/get v1、明确数组变体和部分读取状态已有合成回归与只读入口，单目标 configs 写入/回读及新地址的新会话+同 NAS 确认恢复已有合成证据，生产网络行为门关闭。Windows 安全四分区基线保存、按网卡 DoS、防火墙任务/完成后清理与原生编辑已有合成证据；旧假成功已移除，生产行为门关闭，未知任务不盲目重发或清理。Windows 硬件/UPS 六组基线保存、LED 两阶段、可信字段规则与原生编辑已有合成证据，生产门关闭，未知 LED 阶段不重发且真实副作用未验收。Windows DDNS 双 v1 读取、服务商身份与只读入口及凭据显示保护已有合成证据，四操作核心已有基线确认、固定请求和故障恢复合成证据，原生四操作确认/反馈/恢复已有合成证据，生产门关闭；Apple 适配器及 Mac 界面层同步修正拒绝/未知被旧配置覆盖和仅换密码超时误报成功，Mac 回归未运行。Windows 套件固定 v2 严格读取、三操作基线预检/不重放回读核心及升级只读提示已有合成证据，原生确认/持续反馈/恢复已有合成证据，启停与卸载能力分离且写门关闭；Mac 列表缺失许可默认放行与畸形列表误作空目录修正待 Swift 回归。Windows 电源固定 v3 预检、单次命令与原生确认已有合成证据，接受/未知都不推断最终设备状态；新登录与用户设备核对后才允许解除本地阻止，生产电源门关闭。Windows 任务计划 list v3/get v4 与 EventScheduler 结果/输出 v1 已有方法级严格读取合成证据，脚本及输出不默认导出，v3 启停/运行/删除核心另有基线与脚本预览核对合成证据，运行接受不等于脚本成功，模糊运行不重放；v4 创建/编辑核心已有服务器模板/双基线和完整配置回读合成证据，脚本不进恢复缓存；原生列表/编辑/命令确认与记录输出已有合成场景证据，生产门关闭。Mac 保存快照/完整新回读修正待回归。Windows 远程访问 v3/v1 独立严格读取、基线保存、可信中继保护及不重放恢复核心已有合成证据，原生表单已有字段失败隔离、确认与部分/未知恢复合成证据且写门关闭；Apple 读取与明确拒绝/未知计数及旧缓存误报修正待 Mac 回归。兼容结论仍为 observed/degraded；未执行真实 NAS 或路由器写操作，既有登录、QuickConnect 隧道和 SYNO.API.Info 证据不得外推。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -1076,7 +1067,7 @@
       "id": "download-station2-fallback",
       "componentId": "download-station",
       "scope": "Download Station",
-      "capability": "官方接口不足时的任务、统计、位置和 RSS 降级",
+      "capability": "Download Station 2 内部降级接口；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -1092,7 +1083,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "优先官方 SYNO.DownloadStation.*；内部家族缺失时关闭对应增强能力。2026-10-13 Android A6仅保留内部任务摘要读取，完整目录、创建、控制、位置编辑及移除统一要求已登记公开接口；不以内部摘要证明任务不存在，不降级发送内部写入。当前仅源码与合成回归进度，不提升环境证据等级。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/download-station2-fallback.md",
       "verifications": [
         {
@@ -1108,10 +1099,9 @@
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
             "docs/api/discovery/endpoints/download-station2-fallback.md",
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "当前组件版本为 4.1.2-5012；文件上传和设置写入尚未在真实目标执行。"
+          "notes": "历史观察：当前组件版本为 4.1.2-5012；文件上传和设置写入尚未在真实目标执行。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -1119,7 +1109,7 @@
       "id": "vmm-internal",
       "componentId": "virtual-machine-manager",
       "scope": "Virtual Machine Manager",
-      "capability": "2026-10-16 待归属环境官方 Plan.list v2 成功空响应为 protect_ids 空数组；Windows 已补空清单解析，非空编号仍不猜详情。macOS、iPhone、iPad 与 Android 记录复验影响，不改源码、不提升历史环境证据，见 docs/api/discovery/environments/2026-10-16-windows-read-regression.md。 VMM 网页端读取、日志与受控高级设置；Windows 已纠正内部日志编码及清单截断，2026-09-20 已接五档 CPU 优先级编辑、一次提交与同源核查。同日待归属观察重新核实 DSM 7.2.1-69057 Update 12 / VMM 2.6.5-12202，Network.list/get v2 与 list_avail_interface v1 只读成功；Network.set/delete v1、增量 interfaces_add/interfaces_remove、Guest.create v1 和 unmounted 空槽为官方静态线索，详见 environments/2026-09-20-vmm-network-read-observation.md。此前未执行相关写操作；同日后续有单台专用创建样本（见高级创建观察），不提升历史 lab-a 或发布兼容等级；用户主动验证入口仍需能力/字段/确认/互锁与回读；Windows 现已接网络单项改名/多选删除、完整 list/get 快照与关联 VM 确认、set/delete v1、模块互锁和未知只读恢复。external 改名仅发空 interfaces_add/remove，private 保持 host_id，不改 VLAN/拓扑。仅有合成回归，未执行真实网络写。 2026-10-06 当前官方 VMM 2.6.5-12202 静态补核：Guest.delete v1 单 guest_id，Guest.Action.pwr_ctl v1 的 poweron/shutdown/poweroff/reboot，Guest.Image.delete v2 的 id/synovmm_ui_id，Network.set v1 的 external 增量接口数组或 private host_id。Apple 内部兼容分支 on/off、逗号 ID/版本、image_id 与 name-only 拓扑参数存在差距，后续须独立修复；创建同名认领/控制台默认布局别名也不能作为契约。此次 Cluster.get v2 成功结构只读，其他新增写仅 static、设备待归属，证据见 docs/api/discovery/environments/2026-10-06-container-vmm-api-read-observation.md。不提升历史基线，无真实操作或其他平台源码改动。 2026-10-07 同版本官方静态补核 pwr_ctl 成功回调仅恢复轮询，不消费任务身份；uptime 只作显示格式化，原生类型/单位与 reboot 是否归零未验证，不能由仍 running 推定重启完成。详见 docs/api/discovery/environments/2026-10-07-vmm-power-read-observation.md，无真实写入、不提升任何 verification。 同日 M7d1 Apple 已纠正内部电源枚举及 Guest.delete v1 逐项 ID，公开/内部共用原身份、停机/运行状态、接受回执、完整清单及最终结果保护；移动新增摘要持久恢复，丢回执不认领外部变化，重启只记录接受且保留互斥，证书异常停止后续请求。只有源码/合成证据，不提升真实版本等级；映像删除、网络拓扑、创建与控制台差距仍未在本片处理。 同日 M7d2 基础编辑使用内部 get/list v2、set v1、精确 KiB/MiB、三态/五档和 shutdown 硬件限制；共享原快照与回执保护，移动摘要持久恢复与电源/删除互斥，未知不重放，接受后逐字段只读恢复。仅源码/合成进度，目标验证见移动主计划，不改变本索引 verification；Mac 未新增持久化，Windows/Android 无源码变化。 同日 M7d3 Apple 创建已替换同名认领：Guest.create v1、内部资源 list v2、Cluster.get_total_progress v1 的原回执/随机 UUID/完整参数摘要绑定，成功任务的新 guest_id 经 get v2/get_setting v1/get v2 核查配置后完成；丢回执只读关联，任务消失不认领或重发。移动分步表单和独立摘要恢复已接，Mac 同实例共用修正；所引用资源及 VM 写入互斥。当前仅源码/合成进度，目标构建与两端实际操作以 M7d3 主计划为准，无真实写入、不提升 verification，Windows/Android 无源码变化。 同日 M7d4a Apple 网络改名/逐项删除共用严格 Network.list/get v2 与 set/delete v1；external 仅改名使用空接口增量数组，private 保留 host_id，不改变 VLAN/拓扑。原网络、关联 VM、冻结/完整列表和接受回执共同决定结果；缺回执不认领外部同名或消失、不重发。移动网络详情/确认及独立摘要持久恢复已接入，同名、关联 VM 写和引用网络的创建互斥，HTTP 登录失效与证书异常停止后续请求。Mac 仍限实例内恢复，Windows/Android 无源码变化。目标构建/界面结果以 M7d4a 主计划为准，不提升本索引 verification 或任何真实网络写兼容等级。 2026-10-07 M7d5 Apple 控制台使用严格原 VM 身份/运行状态、内部 get v2 和 Default 时 General.get v1；iPhone/iPad 全屏触控与 Mac 独立窗口共用无网页凭据的受限 WebKit/原生资源及 WSS 桥，固定 VM/app_id、TLS 策略、拒绝重定向、关闭/退出清理与手动重连。本机真实 WebKit 和临时证书回环 HTTPS/WSS 有自动化证据，真实 NAS noVNC 资源/画面/键鼠仍未验证；Apple 当前只提供主机/端口根路径，非根应用门户不新增入口。Windows/Android 仅登记边界，不改源码与既有环境等级。",
+      "capability": "Virtual Machine Manager 内部接口；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
@@ -1143,7 +1133,7 @@
         "POST",
         "GET"
       ],
-      "fallback": "优先公开 SYNO.Virtualization.API.* v1；内部读取失败不阻断无关主流程。2026-09-20 待归属环境 DSM 7.2.1-69057 Update 12 / VMM 2.6.5-12202 已只读核查 Guest v1-v2 JSON 元数据及 get v2/get_setting v1；前端静态确认 set v1、autorun 0/1/2 与 cpu_weight 五档，未保存。Apple 三态/五档/固定 set v1 及移动只读显示已修源码但未构建；Windows 已接一次内部优先级保存、同源回读及未知恢复，其他基础设置仍公开。Windows 控制台独立窗口已接新鲜身份/运行状态、Default 键盘布局 General.get v1、既有证书 HTML 读取、每窗口 InPrivate 与同源 CSP、关闭清理。系统信任连接按实际能力提供主动验证入口。固定指纹根路径连接已接原生 WSS/受限静态资源和二进制消息桥，不给网页 Cookie，CSP 禁止直接连接，按能力提供用户验证入口；2026-09-21 已从官方 app.js 确认 alias 前缀及 app_id 查询并接入托管 URI；语言 JSON 经受限原生桥读取，connect-src none 保持，补齐已观察铃声/图标资源。域名/单段别名/IPv4/IPv6 的真实 WebView2 合成验证通过，实际别名门户仍待验。真实 WebView2 合成回归通过，但实际 NAS noVNC 资源和键鼠未验证，没有连接真实 VNC，不提升历史 lab-a 或发布兼容等级；其他四端未改。同日高级创建续查已取得 get_setting v1 的固件/ISO/磁盘/网卡字段类型，以及 Repo.list v2 的 allocated_size 数字、size/used 字符串；来源仍是待归属的已登录官方页面，不提升历史设备等级。后续用户已授权所有不涉及真实数据的隔离测试，本次专用 Linux/UEFI VM 按向导最低 10 GiB 创建一次，保持 1 CPU/512 MiB、断网、无 ISO、不开机。实际 create v1 回 task_id，Cluster.get_total_progress v1 的任务 finish/success/data.guest_id 及 info.param.synovmm_ui_id 已精确关联并回读配置；只证明该样本，不提升历史基线。内部 Guest.get/list v2、get_setting v1 读内存 KiB，create/set 写 MiB；Windows 正规化内部读取，Mac 按来源换算并纠正保存核查及 allocated_size 原生整数。Swift/Mac 尚未构建。2026-09-21 Windows 高级空白盘创建已接原窗口，支持系统预设/固件/ISO，按 task_id/UUID/完整参数绑定并核对最终配置后才进入已有开机流程；只读恢复不写，已按能力开放测试入口。全量 3593 及原生中英文各 36 场景通过；真实 App 行为仍待验，不提升历史设备等级。详见 endpoints/vmm-internal.md 与 environments/2026-09-20-vmm-parity-read-observation.md。 2026-10-07 M7d4b Apple 映像公开 list/delete v1 保留 image_id，内部固定 v2 并纠正为 id/synovmm_ui_id。内部严格冻结/副本/健康状态及 Guest.get_setting v1 的 ISO 挂载检查；两种来源均逐项回执加完整清单确认，缺回执不认领外部消失，不重发。移动新增同来源摘要持久恢复及原生确认/结果，与创建引用双向保护；Mac 保留实例内恢复，普通刷新只恢复已接受结果。公开占用字段未知时由 NAS 拒绝，不猜内部属性。共享自动化通过，目标平台进度见 M7d4b 主计划，Windows/Android 无源码变化，不提升本索引 verification。 2026-10-14 Android A8控制、完整设置、网络/映像、通用/模板创建、NAS映像导入、任务清理及独立加密恢复已接。内部写按实际API能力、当前权限及原身份来源开放，不按DSM/套件精确版本限制；创建以原任务/UUID/完整参数及配置绑定，读KiB写MiB。创建/配置/开机分别区分发送与接受，缺回执不重发，冷恢复只读，原配置审阅后才继续未发送步骤。控制台使用WebView精确来源消息端口与受限原生资源/WSS，不向网页安装NAS凭据，禁止直接联网/持久DOM存储，后台/离页/撤权关闭，手动重连不重发。148项聚焦JVM、API35中文手机41项与英文平板深色二倍字号15项分组原生通过，包含实际WebView合成资源/语言/消息/关闭。真实NAS副作用与noVNC/RFB/物理输入未验，不新增环境或提升verification。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/vmm-internal.md",
       "verifications": [
         {
@@ -1158,10 +1148,9 @@
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
             "docs/api/discovery/endpoints/vmm-internal.md",
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "当前组件版本为 2.6.5-12202；创建、修改、网络写和删除未形成行为验证结论。"
+          "notes": "历史观察：当前组件版本为 2.6.5-12202；创建、修改、网络写和删除未形成行为验证结论。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -1169,7 +1158,7 @@
       "id": "container-manager-internal",
       "componentId": "container-manager",
       "scope": "Container Manager",
-      "capability": "容器、映像、仓库、网络与只读详情、项目和日志；2026-09-17 待归属观察只读核实 Image.list 的 offset=0/limit=-1/show_dsm=false 及 tags 数组结构，Windows/macOS 已有请求同步修正。Image.pull_status 与 Entry.Request.Polling.list 仅有官方脚本静态线索；后续兼容模型已获授权，Windows 已接 task_id 绑定进度与恢复，不采用 admin 聚合任务猜测绑定，旧 lab-a 验证与写等级不提升，见端点文档；2026-10-03 待归属同版本 search v1 成功/v2 返回 103，受控下载回执与运行状态可读、随后 1202 失败且无新增目标镜像，详见当日观察；成功下载仍未行为验证 2026-10-06 官方页面补核：DSM 7.2.1-69057 U12 / Container Manager 24.0.2-1535，设备待归属；列表及空 Project 只读字段已核对。Container.create/set profile、内存字节/CPU优先级/端口与挂载变量、Project.create/update/get/delete 与 build_stream/start_stream/stop_stream/restart_stream/clean_stream v1、Network.set 连接关系均仅 static。Project is_run_instantly 是本地后续构建选项，不是 create 参数；流式终态和新增写行为未验证。完整证据见 docs/api/discovery/environments/2026-10-06-container-vmm-api-read-observation.md；五端只登记文档影响，不新增这些写入口或修改历史 verification。 2026-10-14 Android A8新增原生容器控制/删除、映像下载/标签删除、网络创建/删除与独立加密摘要恢复；按实际API能力、当前权限、原目标和最终状态保护，不按DSM/Container Manager精确版本限制。当前81项聚焦JVM通过，原生界面与真实NAS仍待验；不提升历史verifications。",
+      "capability": "Container Manager 内部接口；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
@@ -1188,7 +1177,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "读取按能力逐项降级；日志失败/不可用不得显示为空，网络缺失关联数量不得默认为零，项目空键值对象是正常空列表。1.0.5 按用户要求移除创建的包类型限制，保留接口检查、确认、校验、互斥和回读；网络删除使用 networks 对象数组，默认及有连接的网络禁止删除。限定实机证据见端点文档，不外推其他环境。2026-09-19 Windows 网络创建/删除按用户授权开放，不强加 DSM 管理员身份。2026-09-20 Mac 源码已纠正容器 name 寻址和 delete 的 force=false/preserve_profile=false，增加确认与状态核查；Windows 四操作、筛选多选确认、逐项反馈及会话内恢复原生窗口已接，未知中止批次且核查不重发，已有双语原生合成证据。两端均排除容器或所属项目 is_package 托管实例，未知只核查不重放；只有 Windows 合成证据，Swift/Mac 未构建。Windows Image.delete 已接 images 仓库/标签数组或裸 identity，标签展开、原 ID/标签快照确认、容器占用预检、部分结果与只读恢复；Mac 同日已修 images 参数、多标签身份、占用预检、固定选择确认与独立只读恢复源码，新增 Swift/共享请求测试未在本机执行，无 Mac 修复包。Windows 拉取按标签确认和 task_id 查询，finished/回显匹配/完整列表共同核查；未知不重发，关闭仅停止本地查询，已知任务读取不依赖 Registry 能力，正式验证入口按能力开放。旧镜像删除 fixture 已同步 images/identity，Mac 已补拉取请求/进度/独立只读核查、兼容入口委托、搜索与任务分区、确认及可见轮询源码，恢复限当前仓库实例内存；数字任务编号超过 Double 安全整数范围时不回传。Swift/App 测试未执行，无 Mac 包，不提升行为等级。State 字段只读来源设备待归属，未提升任何写行为验证，详见端点文档。 2026-10-03 更新：macOS 与共享 Apple 搜索 v1、失败恢复和双语 UI 已完成 2415 项 XCTest（169 环境跳过、0 失败）及 12 项 Swift Testing，单独容器 UI 通过，iOS 通用模拟器构建通过；受控下载的 NAS 1202 失败有观察证据，成功结束仍未验证。较早“未构建/无 Mac 包”仅描述当时状态，最新产物与验证见 docs/archive/2026-h2/MACOS_FEEDBACK_HISTORY.md#macos-chat-五组功能补齐账本。 2026-10-06 M7a：iPhone/iPad 新增启停/重启与逐项保护恢复；沿用 Container v1 请求，确认绑定 ID/名称和运行快照，明确套件授权，写前及回执后持久化摘要，未知跨重启只读恢复且未提交项不自动继续；重启须 StartedAt 增大。活动记录正文仅内存展示；旧 macOS 调用仍走同一共享校验，不提升任何真实环境等级。 2026-10-06 M7b：iPhone/iPad 新增 Registry v1 搜索/标签与 Image v1 下载；原任务编号和目标摘要独立保护存储，写前/回执检查点、只读跨重启恢复、finished/回显摘要/完整映像清单共同确认，缺回执不认领或重发。恢复继续保护对应标签与裸映像删除；旧 Mac 内存调用保持兼容，Windows/Android 不改，不提升真实环境等级。 2026-10-06 M7c1：iPhone/iPad 映像单项/多项删除绑定原 ID/仓库/标签，沿用 images 标签数组或裸 identity 与完整占用判断；写前/接受/拒绝检查点和摘要持久恢复共用原实现，部分完成逐项显示，未知跨重启只读不重发，明确拒绝不被外部消失覆盖。下载与删除在当前账号恢复记录间双向保护；Mac 原调用兼容，Windows/Android 无源码变化，不提升真实验证等级。 2026-10-06 M7c2：iPhone/iPad 单项/多项容器删除沿现启停记录保存原 ID/名称摘要及逐项边界，固定停止/非套件托管快照，force=false/preserve_profile=false。完整清单验证可选 total/offset，原 ID 消失才完成，同名新 ID 不续删；未知跨重启只读、与启停互斥、未提交后项不自动续跑。共享旧批量入口保留，修正后项预检/明确拒绝计数与证书错误停止，Mac App 无本轮修改；Windows/Android 仅记录同等语义，真实写证据不提升。 2026-10-06 M7c3：iPhone/iPad 网络创建、地址详情、单项/多项删除与摘要恢复沿 Network v1；明确拒绝和预检失败不被外部状态覆盖。remove 每次发送单项网络对象数组，非空 failed 明确拒绝，批量停止后项；完整列表、原快照、写前与回执保存、套件授权和重复保护保留。创建无回执同名仅显示存在，删除无回执原 ID 消失仅显示不在列表，不冒称本次写成功；未知只读恢复。历史 list 缺少已验证 IPv6 地址和伪装结果字段，不猜测或提升验证。Mac 旧入口共用修正，Windows/Android 无源码变化。 Android A8：固定内部v1，容器按原ID/名称/原生状态，重启须StartedAt增加；映像原任务保留类型且只读恢复，1202任务失败终态，标签删除不扩到其他标签；网络按单项对象数组、failed和原ID回读，无回执同名只标为已存在。日志按需完整分页保留NAS无时区本地时间，附属读取失败独立降级，认证/证书/取消停止。独立记录不含名称/地址/凭据，未知不重发、不自动续批次。其他端源码及环境证据等级不变。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/container-manager-internal.md",
       "verifications": [
         {
@@ -1203,10 +1192,10 @@
           },
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
+            "docs/api/discovery/endpoints/container-manager-internal.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "当前组件版本为 24.0.2-1535；镜像拉取请求在发送前终止。Windows 2026-09-17 已补网络列表的关联数量/名称、驱动、IPv4/CIDR 与 IPv6 可选详情及原生展开合成证据。网络创建核心另有完整配置校验、重名互斥和只核查不重放的合成证据；高级选项回读仍未确认，生产门关闭，原生创建表单/确认/核查已有合成证据。删除核心与原生多选/确认/核查已接对象数组、系统和占用保护、创建删除互斥、原 ID 最终回读与未知不重放，批量仍只有合成证据，生产删除门关闭。Registry.search/tags v1 已接 Windows 只读首批搜索、严格标签解析与原生取消/迟到隔离合成证据，没有增加拉取验证。缺失关联不补零，Apple 同类非整数/冲突计数及字符串标签丢失修正待 Mac 回归；不提升真实环境证据等级。"
+          "notes": "历史观察：当前组件版本为 24.0.2-1535；镜像拉取请求在发送前终止。Windows 2026-09-17 已补网络列表的关联数量/名称、驱动、IPv4/CIDR 与 IPv6 可选详情及原生展开合成证据。网络创建核心另有完整配置校验、重名互斥和只核查不重放的合成证据；高级选项回读仍未确认，生产门关闭，原生创建表单/确认/核查已有合成证据。删除核心与原生多选/确认/核查已接对象数组、系统和占用保护、创建删除互斥、原 ID 最终回读与未知不重放，批量仍只有合成证据，生产删除门关闭。Registry.search/tags v1 已接 Windows 只读首批搜索、严格标签解析与原生取消/迟到隔离合成证据，没有增加拉取验证。缺失关联不补零，Apple 同类非整数/冲突计数及字符串标签丢失修正待 Mac 回归；不提升真实环境证据等级。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -1214,7 +1203,7 @@
       "id": "chat-internal",
       "componentId": "synology-chat-server",
       "scope": "Synology Chat Server",
-      "capability": "普通用户会话、消息、附件、提醒、投票与定时消息；Windows 提醒/定时/投票、批量关闭/转发/本人消息删除、新联系人转发与群公告已接入会话/接口能力门、确认和回读，只有合成证据；2026-09-16 元数据观察不提升写行为等级，见端点文档及高级动作记录 Android A5正式入口已接同一动作执行器、独立加密回执/草稿/批次、群聊分阶段与主动AAC录音；批量未知停止后续，重启只读；仅合成及模拟器证据，真实NAS未验。",
+      "capability": "Chat 会话基础接口；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
@@ -1237,8 +1226,8 @@
       "methods": [
         "POST"
       ],
-      "fallback": "内部普通用户接口缺失或精确版本不支持时关闭对应能力，不用公开 Bot/Webhook API 替代。会话创建按能力声明使用 FORM 或 JSON 参数编码，不因 JSON 声明误禁用；2026-09-09 待归属观察及五端影响见 documentRef 的编码纠正节，未提升创建写入证据等级。2026-09-19 Windows 按用户授权移除单一 DSM/套件 build 白名单及系统套件管理读取依赖，保留绑定会话、接口版本/格式、目标/归属预检、防重复及结果核查；其他四端不变，不提升真实验证。 2026-10-05 iPhone/iPad M4b4c 使用分步持久建群回执，只按创建编号与原账号恢复；缺编号不认领同名群，未知加入/邀请只读，用户继续只补未提交或明确拒绝步骤及缺少成员。旧 Mac 调用保持兼容并共用 Named v1 请求编码；Windows/Android 仅记录语义参考。详见 chat-advanced-actions.md；只有源码/合成证据，不提升真实环境等级。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
-      "documentRef": "docs/api/discovery/endpoints/INDEX.md",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
+      "documentRef": "docs/api/discovery/endpoints/chat-core.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -1257,10 +1246,10 @@
           },
           "verifiedAt": "2026-07-23",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
+            "docs/api/discovery/endpoints/chat-core.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "当前组件版本为 2.4.1-22111；不同能力的读写证据仍按产品兼容矩阵逐项处理。"
+          "notes": "历史观察：当前组件版本为 2.4.1-22111；不同能力的读写证据仍按产品兼容矩阵逐项处理。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -1268,7 +1257,7 @@
       "id": "chat-realtime",
       "componentId": "synology-chat-server",
       "scope": "Synology Chat Server",
-      "capability": "聊天实时事件与轮询降级；Windows 已接入原生 WebSocket、EIO 4/3、同源认证与现有证书策略、事件合并及隐藏取消，仅源码/合成证据",
+      "capability": "Chat 实时事件通道；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "read",
       "risk": "medium",
@@ -1281,7 +1270,7 @@
       "methods": [
         "WebSocket"
       ],
-      "fallback": "连接失败时每 5 秒轮询，连接稳定时每 30 秒 API 校准。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/chat-realtime.md",
       "verifications": [
         {
@@ -1294,10 +1283,10 @@
           },
           "verifiedAt": "2026-07-23",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
+            "docs/api/discovery/endpoints/chat-realtime.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "当前组件版本为 2.4.1-22111；完整跨版本、睡眠唤醒和中继矩阵待验证。"
+          "notes": "历史观察：当前组件版本为 2.4.1-22111；完整跨版本、睡眠唤醒和中继矩阵待验证。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -1305,7 +1294,7 @@
       "id": "photos-internal-candidate",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "相册、文件夹、项目、时间线、标签、地理位置和媒体读取候选",
+      "capability": "早期Photos静态目录的历史标识；apiNames/versionMatrix为当时未确认候选，不代表现行可调用API。",
       "classification": "internal",
       "operation": "read",
       "risk": "high",
@@ -1335,8 +1324,8 @@
       "methods": [
         "POST"
       ],
-      "fallback": "增强接口保持关闭，基础照片库使用官方 File Station 能力。",
-      "documentRef": "docs/api/discovery/endpoints/INDEX.md",
+      "fallback": "现行读取以photos-library-read定义为准；不使用未经确认的FotoTeam.Album候选，不回退File Station图库。历史候选状态不控制当前入口。",
+      "documentRef": "docs/api/discovery/endpoints/photos-library-read.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -1347,10 +1336,10 @@
           },
           "verifiedAt": "2026-07-29",
           "evidenceRefs": [
-            "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
+            "docs/api/discovery/endpoints/photos-library-read.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "当前组件版本为 1.8.2-10090；没有完成内部 Adapter 契约测试，不得提升证据等级。"
+          "notes": "历史观察：当前组件版本为 1.8.2-10090；没有完成内部 Adapter 契约测试，不得提升证据等级。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
       ]
     },
@@ -1358,7 +1347,7 @@
       "id": "photos-concept-visibility",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人/共享主题的隐藏项列表、批量显示隐藏、单张封面、批量移出误分类；固定快照/成员/权限，自动回读封面编号或完整成员并确认原件保留，低于显示阈值局部更新，未知不重放。实际NAS待用户验证。 Android A4ad已接入完整分页、当前权限与快照复读、严格计数阈值、加密只读恢复和实际主题结果更新；原件保留、浏览位置保持，后续分页按实际移出项调整。合成验证不提升版本证据。",
+      "capability": "个人与共享主题显示、封面与分类整理；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "medium",
@@ -1372,7 +1361,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按真实空间权限与Concept v2能力开放；缺visibility不猜状态，未知只读核对且不重放，不阻断图库浏览。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -1380,7 +1369,7 @@
       "id": "photos-automatic-preview",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "自动预览设置、后台候选与可见Item/实况Unit候选、单元原件读取、本机转换、ConvertedFile上传与未知核对。macOS已接80%可见比例、2秒去抖、前2后3及小集合缩减（排除视频）、格式1至3级与后台4级顺序、同级当前/相邻优先及跨来源单元去重；共享entry按目录下载权处理可见项，后台扫描仍限management。真实NAS未验证，证据static及合成测试。2026-10-13 Android A4z先接自动开关只读、严格后台/可见/实况候选和原件Unit下载，52项聚焦JVM通过（新组合根/媒体20项）；本机H264/AAC转换与轨道摘要已实现，新增摘要JVM5项/API37系统媒体10项及Debug/仪器构建通过；后续自动上传/失败同步与版本1可选摘要恢复已接，108项聚焦JVM、Debug/仪器构建及API37系统媒体接线3项通过；冷恢复仅按实际图片/视频内容或可见broken字段检查、不重发，后续设置保存/前台队列/Compose状态已接，139项聚焦JVM及增量Debug编译通过；最终同包手机中文/平板英文浅色标准字号与深色二倍字号四配置各6项原生流程通过，真实NAS/物理编解码器和完整门禁仍待验证。其他四端及接口参数不变，不提升真实环境证据。",
+      "capability": "个人与共享自动预览候选、转换及上传；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "medium",
@@ -1410,7 +1399,7 @@
         "POST",
         "GET"
       ],
-      "fallback": "按后台/可见原来源复查身份和权限，状态/权限变化在提交前结束；共享entry仅限实际有下载权的照片，不扫描全库。提交后回执未知只读核对、不重传、不因候选消失确认。明确媒体转换失败按阶段set_broken，取消/网络/资源/权限及未知上传回执不标记；标记回执丢失只接受可见单元的实际broken字段，后台无直接状态证据则保留待核对。视频档位与缩略图缓存核对仍待真实NAS验证；失去权限或不能证明结果保持待核对。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -1418,7 +1407,7 @@
       "id": "photos-shared-space-settings",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "管理员共享空间启停、共享识别及顶层文件夹公开分享设置；固定身份和原值、差量写入、重复保护与自动回读。static与合成证据，NAS待用户验证。 2026-10-13 Android A4t接入实际管理员/当前用户/完整原设置复查，三识别与顶层公开差量、独立启停和最后图库限制；共用版本1加密设置记录，未知只读，启停按实际回读默认值更新来源/分类且保留个人位置。109项聚焦JVM及Debug/仪器APK、最终同包手机中文/平板英文浅色标准字号与深色二倍字号四配置各15项原生流程通过；未新增真实NAS兼容证据，其他端源码不改。",
+      "capability": "共享空间启用与识别设置；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -1434,7 +1423,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "仅实际DSM管理员和接口可用时提供共享设置；缺字段不猜默认值，旧快照或身份变化拒绝提交，未知仅回读不重放，读取错误可重试。保留最后一个空间，不以管理员身份授予照片访问；无待实测人工禁用。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -1442,7 +1431,7 @@
       "id": "photos-shared-space-members",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "共享成员、自动备份与按成员目录权限；原生草稿、最终确认、分阶段保存、后台自动核对和本人权限更新已接入。官方static证据，NAS待用户验证。 2026-10-13 Android A4v接入完整两层目录、连续批量草稿、受保护/未知角色、逐步加密恢复和本人权限更新；首次访问后动态显示管理员入口，写前清旧共享内容，失败/后台保留原位置。115项聚焦JVM最终集成及Debug/仪器APK通过；同一应用APK前三配置各17/17，平板深色16/17及测试滚动修正后定点1/1，四配置均覆盖17项；NAS实际兼容证据不增加。",
+      "capability": "共享成员及目录权限；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -1459,7 +1448,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "独立核对DSM管理员，权限/会话变化丢弃旧结果，成员不省略当前用户，保留数字/字符串及用户/群组身份；缺字段失败恢复，未知角色保留，系统administrators群组不可修改。目录读取不创建链接；固定完整快照，成员/批量目录/单目录分阶段写入，未知只读核对不重放，明确失败仍核对部分应用；原生入口按真实权限开放，个人月份保持，撤权使在途分页失效；不声明NAS行为兼容。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -1467,7 +1456,7 @@
       "id": "photos-global-settings-cache",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "管理员全局识别、普通用户分享、访客详情、格式排除、原尺寸JPEG与转换缓存；按步骤保存并自动核对，static与合成证据，NAS待用户验证。 2026-10-13 Android A4u接入管理员完整快照、六选项/格式/HEVC、缓存/全局/个人/共享顺序差量与逐步事实恢复；未知只读不补发，部分应用实际设置，当前类别和JPEG局部更新，页面可见时受控刷新。147项不同聚焦JVM分批与Debug/仪器APK通过，最终同包四配置各23项原生流程通过；其他端源码不改，无新增NAS实际兼容证据。",
+      "capability": "全局照片设置与转换缓存；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -1484,7 +1473,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按真实管理员/字段/HEVC与接口能力开放。快照变化拒绝覆盖，缓存读取错误不阻断其他设置；未知仅回读不重放，部分完成报告实际结果，自动继续核对。无待实测人工禁用。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -1492,7 +1481,7 @@
       "id": "photos-library-maintenance",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人/共享空间重新索引和异常预览生成；Wizard新格式提示已读与管理员全用户/普通用户个人补预览已接入。证据static，NAS待用户验证。 Android A4w当前来源维护、加密恢复、根图库和Compose维护页已接，123项聚焦JVM集成及入口修正后42项回归分别通过；最终同包手机中文/平板英文浅色及深色二倍字号四配置各8/8通过。真实NAS未验，不包含Wizard/全用户。 Android A4x已接Wizard固定提示与全用户/个人生成、两阶段加密恢复和Compose页面，120项聚焦JVM及Debug/仪器APK通过，最终同包中英文手机/平板浅深色四配置各9项原生流程通过，真实NAS未验。",
+      "capability": "当前图库维护与新格式提示；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -1510,7 +1499,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "保留真实身份/空间/管理员及适用的H.264条件。当前空间维护以明确回执和对应计数归零结束核对；新格式动作只确认提交与提示已读，不用个人计数冒充全用户完成。未知回执只读等待不重发；生成已接收而提示保存明确失败时仅补保存提示。不设人工未实测禁用。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -1518,7 +1507,7 @@
       "id": "photos-background-tasks",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "当前用户NAS复制/移动后台任务列表、状态、取消、固定快照清理和错误详情。统一Info v1；取消保留已完成部分；未知回执仅回读。2026-10-01 static；macOS与Android已接入，Android A4s聚焦JVM/Debug及仪器APK通过，最终同包四配置各16项原生流程通过（8项任务中心、8项文件操作回归）；真实NAS未验证。",
+      "capability": "照片后台任务查询、取消与清理；参数、权限与结果语义见documentRef。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "medium",
@@ -1531,7 +1520,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "任务读取失败不影响图库；未知操作/状态不猜写入；取消及清理按任务身份快照确认与去重；尚待核对的本机搬移任务禁止先清理。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-background-tasks.md",
       "verifications": []
     },
@@ -1539,7 +1528,7 @@
       "id": "file-station-content-search",
       "componentId": "file-station",
       "scope": "File Station",
-      "capability": "文件内容索引搜索；macOS 与 Android 已接入，2026-10-02 待归属官方页面/静态证据及当前聚焦自动化分别记录，不代表真实正文召回通过。",
+      "capability": "File Station 文件内容搜索；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "read",
       "risk": "low",
@@ -1552,7 +1541,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "正文搜索缺少原生布尔索引覆盖时明确不可用，不退回名称搜索；等待完成并完整分页，取消/失败/超时仅停止和清理本次任务，不影响普通名称搜索或其他模块。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/file-station-content-search.md",
       "verifications": []
     },
@@ -1560,7 +1549,7 @@
       "id": "file-station-sharing-extended",
       "componentId": "file-station",
       "scope": "File Station",
-      "capability": "具名分享、次数限制与文件请求；Android A3h 已按同一版本和字段接入并增加独立加密只读恢复。官方静态证据与真实验证等级见稳定记录。",
+      "capability": "File Station 具名分享与文件请求扩展；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -1574,7 +1563,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按用户要求不以实机证据等级或精确固件白名单禁用功能；能力发现、绑定会话实际权限、目标确认、去重和逐字段回读继续执行。Android 写前持久保存非凭据结果记录，只按原账号和明确编号恢复，缺编号不按路径认领，未知不重放；缺少扩展快照不开放高级修改，读取失败不影响无关文件流程。真实写仍待用户验证。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/file-station-sharing-extended.md",
       "verifications": []
     },
@@ -1582,7 +1571,7 @@
       "id": "file-station-file-permissions",
       "componentId": "file-station",
       "scope": "File Station",
-      "capability": "文件所有者、POSIX 与 ACL；2026-10-02 官方页面静态契约，Android A3j 已接入权限表单、明确角色检查与独立只读恢复；合成测试不等于真实权限写验证，具体等级和实现状态见稳定记录。",
+      "capability": "File Station 所有者、POSIX 与 ACL；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -1597,7 +1586,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按用户要求不以实机证据等级或精确固件白名单禁用功能；能力发现、绑定会话实际权限、目标确认、去重和结果回读继续执行。Android 写前同步保存原账号/逻辑目标、结果摘要与任务回执，不保存完整权限表或内部路径；缺少明确应用授权、必要管理员角色、完整快照或自锁检查时关闭修改。递归部分失败不由根项匹配清除；未知和重启只读恢复，不重放。读取失败不影响无关文件流程，真实写仍待用户验证。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/file-station-file-permissions.md",
       "verifications": []
     },
@@ -1605,7 +1594,7 @@
       "id": "file-station-vfs-connections",
       "componentId": "file-station",
       "scope": "File Station",
-      "capability": "VFS 远程协议及云盘连接、正式网页授权与原账号续授权、原 URI 分页浏览下载；静态契约及合成自动化不等于真实 NAS 或云服务验收。",
+      "capability": "File Station VFS 连接；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -1622,7 +1611,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按用户要求不以实机证据等级或精确固件白名单禁用功能；能力发现、绑定会话实际权限、目标确认、去重和结果回读继续执行。未知不重放，读取失败不影响无关文件流程。真实写仍待用户验证。 2026-10-12 Android A3m 已接动态协议、服务器表单、系统浏览器授权、独立加密分步恢复与原 URI 浏览/单文件下载；原账号/连接/文件在写入和续传前核对，密码及令牌仅内存，未知组合步骤不重放，断开不删除文件。精确参数与客户端证据见稳定记录；合成回调和模拟器不提升真实云授权或写行为等级。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/file-station-vfs-connections.md",
       "verifications": []
     },
@@ -1630,7 +1619,7 @@
       "id": "file-station-package-settings",
       "componentId": "file-station",
       "scope": "File Station",
-      "capability": "套件设置、各目录来源的挂载名单、带宽、分享页面布局及图片选择上传；2026-10-02 待归属只读观察确认本机用户/群组 uid/gid 为数字字符串，客户端兼容整数和数字字符串，并补全 BandwidthControl.list 的 notexist 未配置状态，禁止作为写入策略；具体等级见稳定记录，真实写待用户验证。",
+      "capability": "File Station 套件设置与分享页面；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -1650,7 +1639,7 @@
         "POST",
         "GET"
       ],
-      "fallback": "按用户要求不以实机证据等级或精确固件白名单禁用功能；能力发现、绑定会话实际权限、目标确认、去重和结果回读继续执行。未知不重放，读取失败不影响无关文件流程。Android A3n 已接入常规/访问名单/限速与独立摘要恢复，保留 Core 管理门禁和目录来源复查；共享页布局与图片已接入，上传和应用分别确认，历史按稳定路径重读当前编号，换图需要回执及对应序列变化；图片临时副本按页面清理。真实写仍待用户验证。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/file-station-package-settings.md",
       "verifications": []
     },
@@ -1658,7 +1647,7 @@
       "id": "chat-message-interaction",
       "componentId": "synology-chat-server",
       "scope": "Synology Chat 消息交互",
-      "capability": "历史定位分页、关键词搜索、本人编辑、线程回复、投票参与和跨设备已读。2026-10-03 待归属观察包含受控合成消息的行为证据；因设备别名未确认，不伪造 environmentId 或提升历史基线。 同日置顶只读复验：Post.search 的 channel_id 不限定会话，in 数字数组有效；修复与待归属证据见稳定记录。 Android A5已接固定Post游标、独立搜索、根/回复、本人编辑、完整选择投票、实际可见位置已读与单条/批量消息管理；账号、原内容、准确编号与写前保存保护；不增加NAS环境验证。",
+      "capability": "Chat 消息搜索、编辑、线程、投票参与与已读；具体API、参数、权限和结果语义以 documentRef 为准。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -1675,7 +1664,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "用户明确要求开放后，macOS/共享 Apple 新增交互不再按精确 DSM/Chat 版本白名单拦截，也不要求读取套件版本；按实际 API 能力、会话与本人权限、管理员编辑规则、稳定目标及去重回读开放。缺失接口保留独立读取；未知提交只回读。移动范围包装器与 Windows/Android 实现不变，麦克风/通知与其他版本真实效果另行验收。 2026-10-14统一策略：不按DSM/build/套件或客户端类型版本白名单关闭操作，不为版本匹配附加系统管理读取权限；仍检查真实API能力、权限、确认、防重复与结果，未实测不等于已验证。",
+      "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
       "documentRef": "docs/api/discovery/endpoints/chat-message-interaction.md",
       "verifications": []
     }

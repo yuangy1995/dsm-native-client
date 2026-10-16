@@ -77,20 +77,16 @@ class FixtureValidationTests(unittest.TestCase):
                     }
                 ]
             }
-            with self.assertRaisesRegex(validator.ValidationError, "独立稳定记录"):
+            with self.assertRaisesRegex(validator.ValidationError, "接口正文"):
                 validator.validate_private_api_document_refs(value, root)
 
-    def test_summary_index_exception_requires_matching_fact_section(self) -> None:
+    def test_migrated_endpoint_cannot_revert_to_summary_index(self) -> None:
         endpoint_id = "quickconnect-relay-control"
-        self.assertIn(
-            endpoint_id,
-            validator.LEGACY_SUMMARY_DOCUMENT_REF_EXCEPTIONS,
-        )
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             index = root / validator.DISCOVERY_ENDPOINT_INDEX_REF
             index.parent.mkdir(parents=True)
-            index.write_text("# 内部端点汇总\n", encoding="utf-8")
+            index.write_text(f"### `{endpoint_id}`\n", encoding="utf-8")
             value = {
                 "endpoints": [
                     {
@@ -100,7 +96,7 @@ class FixtureValidationTests(unittest.TestCase):
                     }
                 ]
             }
-            with self.assertRaisesRegex(validator.ValidationError, "同名事实小节"):
+            with self.assertRaisesRegex(validator.ValidationError, "接口正文"):
                 validator.validate_private_api_document_refs(value, root)
 
     def test_rejects_standalone_document_without_matching_endpoint_id(self) -> None:

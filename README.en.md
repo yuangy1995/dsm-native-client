@@ -1,165 +1,31 @@
 <!-- doc-role: entrypoint -->
-<!-- last-reviewed: 2026-10-10 -->
+<!-- last-reviewed: 2026-10-16 -->
 
 # LanStash
 
 [简体中文](README.md) · [English](README.en.md)
 
-LanStash is an open-source native client for Synology DSM across five device targets: macOS, iPhone, iPad, Android, and Windows. It does not use a cross-platform UI runtime. Apple clients use Swift and SwiftUI, Android uses Kotlin and Jetpack Compose, and Windows uses C# and WinUI 3.
+LanStash is an open-source native client for Synology DSM on macOS, iPhone, iPad, Android, and Windows. Apple clients use Swift/SwiftUI, Android uses Kotlin/Jetpack Compose, and Windows uses C#/WinUI 3. They share API contracts and follow each platform's native interaction patterns.
 
-The three technology stacks share DSM API contracts, error semantics, locale rules, redacted fixtures, and acceptance criteria. Each client still follows its platform's conventions for navigation, windows, touch, keyboard access, accessibility, and secure storage.
+Features cover files, Synology Photos, Chat, downloads, NAS settings, packages, containers, and virtual machines. The [platform feature table](docs/progress/PLATFORM_MATRIX.md) is the single source for implemented scope, missing capabilities, and protected entry points. See [limitations and remaining work](docs/progress/KNOWN_LIMITATIONS.md) for known issues and real-environment validation conditions. An implementation does not establish compatibility with every DSM, package, or device combination.
 
-## Project status
+## Getting started
 
-The current milestone is native-client alignment and device validation across all five targets.
+| Topic | Reference |
+| --- | --- |
+| Apple usage, builds, and tests | [Apple](apple/README.md), [macOS](apple/Apps/DsmMac/README.md), [iPhone/iPad](apple/Apps/DsmMobile/README.md) |
+| Android builds and tests | [Android](android/README.md) |
+| Windows builds and tests | [Windows](windows/README.md) |
+| API definitions and evidence | [API index](docs/api/README.md), [shared contracts](contracts/README.md) |
+| Published versions | [GitHub Releases](https://github.com/yuangy1995/dsm-native-client/releases) |
+| Other maintenance documentation | [Documentation index](docs/README.md) |
 
-| Client | Technology | Current status |
-| --- | --- | --- |
-| macOS | Swift 6, SwiftUI, Swift Package Manager | Most mature; primary Files, Photos, Messages, Downloads, Containers, Virtual Machines, and NAS management flows are implemented |
-| iPhone | Swift 6, SwiftUI | Implemented flows cover file/photo management, Chat and voice, downloads, NAS/packages, containers/VMs, system background time, sharing, and Files; see the [development status](docs/progress/STATUS.md) for exact scope and device-validation gaps |
-| iPad | Swift 6, SwiftUI | Shares the universal iPhone project and includes split layouts, keyboard paths, and large-screen adaptation; real iPad and NAS interaction remains tracked in the [development status](docs/progress/STATUS.md) |
-| Android | Kotlin, Jetpack Compose | Major native modules and automated safety flows are established; current completion, remaining scope, and device-validation gaps are tracked in the [development status](docs/progress/STATUS.md) |
-| Windows | C#, WinUI 3 | Native flows now cover authentication, Files, Photos, Chat text, attachments, reminders, schedules and polls, Download Station, local settings, and desktop integration; cloud-build evidence and real-device gaps are tracked in the [development status](docs/progress/STATUS.md) |
+## Languages and privacy
 
-“Implemented” means that the source path and automated tests exist. It does not mean that every DSM model, DSM release, or package version has completed device compatibility testing. High-impact writes still require capability discovery, permission checks, user confirmation, duplicate-submission protection, and result verification.
+English and Simplified Chinese are supported. The first launch follows the system language, falls back to English for unsupported languages, and allows a local language override. See the [locale contract](contracts/localization/README.md).
 
-## Main capabilities
+Official Synology APIs take priority; internal APIs are identified explicitly. High-impact writes require permission checks, appropriate confirmation, duplicate-submission protection, and result verification. Never publicly submit credentials, sessions, real hosts or paths, raw responses, or captures. See the [security policy](SECURITY.md).
 
-- Multiple NAS profiles, HTTPS addresses, and QuickConnect IDs.
-- DSM sign-in, two-factor verification, session restoration, and platform secure storage.
-- File and shared-folder browsing, search, upload, download, copy, move, rename, compression, extraction, and sharing.
-- On macOS, native system previews for Word, Excel, and PowerPoint, plus automatic saving back to the NAS after editing in a local app; unchanged content is not uploaded.
-- Native Synology Photos personal timelines, month navigation, 12 filter categories, album/shared-entry browsing, media previews, and original-file saving; single-item personal deletion retains confirmation, permission checks, and result verification.
-- Synology Chat conversations, attachments, reminders, polls, and scheduled messages.
-- Entry points for Download Station, Container Manager, Virtual Machine Manager, and NAS settings.
-- Native management views for storage, packages, accounts, logs, connections, networks, and security.
-- Light and dark modes, keyboard and touch input, dynamic type, screen readers, and reduced motion.
+Read [AGENTS.md](AGENTS.md) and [Contributing](CONTRIBUTING.en.md) before development. To contribute sanitized results from another NAS environment, follow the [community compatibility guide](docs/compatibility/COMMUNITY_COMPATIBILITY_GUIDE_EN.md).
 
-Some capabilities depend on DSM or package versions. LanStash prefers Synology's public APIs. Internal APIs are explicitly marked in the implementation and compatibility documentation and isolated behind capability discovery.
-
-On macOS, document auto save requires LanStash to keep running. Conflicts or uncertain save results pause further uploads and preserve the local copy. Quitting stops synchronization, and restarting does not restore editing sessions. On iPhone/iPad, users can return an edited system copy or edit through Files. Transfers use system-granted background time and preserve recovery state when it expires; continuation after process termination is not promised. Real editors, signed devices, and NAS validation remain pending. See the [Office preview and editing record](apple/Apps/DsmMac/README.md) for usage, the isolated test package, and validation scope.
-
-All five production Photos routes use Synology Photos directly, without falling back to File Station scanning when the package is unavailable. Sharing an original through the operating system does not create a Photos sharing link. Uploads, album editing, shared spaces, and automatic backup retain their separate scope. See the [Photos plan](docs/development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md) for implementation, performance boundaries, and per-platform validation.
-
-## Languages and localization
-
-The initial release supports:
-
-- English (`en`)
-- Simplified Chinese (`zh-Hans`)
-
-On first launch, the app follows the system's primary preferred language. English variants use English. Simplified Chinese, mainland China Chinese, and Singapore Chinese use Simplified Chinese. Traditional Chinese and all other unsupported languages fall back to English. A user can explicitly select English or Simplified Chinese in the app. This preference is stored locally and is not tied to a NAS, account, password, or session.
-
-The shared locale contract is [`contracts/localization/supported-locales.json`](contracts/localization/supported-locales.json). Adding a language requires matching Apple, Android, and Windows resources, language selectors, tests, README updates, and platform-matrix updates. Run the following command to detect missing resources, parameter mismatches, invalid references, and visible-text hardcoding:
-
-```bash
-python3 tools/localization/check_localization.py
-```
-
-## Repository layout
-
-```text
-apple/
-  Apps/DsmMac/             macOS SwiftUI app
-  Apps/DsmMobile/          universal iPhone/iPad SwiftUI app
-  Packages/                shared Apple domain, networking, and localization packages
-android/                   Android Jetpack Compose app
-windows/                   Windows WinUI 3 app
-contracts/                 cross-client API, error, and locale contracts
-docs/                      architecture, plans, progress, security, and compatibility docs
-tools/                     localization, contract, and repository validation tools
-```
-
-## Build and test
-
-Every GitHub Actions job has a 120-minute timeout, including each matrix job.
-This is not a limit on the total workflow duration. Jobs finish as soon as their work is done,
-and test failures still fail the job. Windows per-test hang diagnostics, release approvals,
-and signing gates remain in place.
-
-### Apple
-
-Use the pinned Xcode 26.6 (17F113) and XcodeGen 2.46.0 from the [Apple build workflow](.github/workflows/apple-build.yml).
-
-```bash
-swift test --package-path apple
-
-cd apple/Apps/DsmMac
-xcodegen generate
-xcodebuild \
-  -project DsmMac.xcodeproj \
-  -scheme DsmMac \
-  -configuration Debug \
-  CODE_SIGNING_ALLOWED=NO \
-  build
-
-cd ../DsmMobile
-xcodegen generate
-xcodebuild \
-  -project DsmMobile.xcodeproj \
-  -scheme DsmMobile \
-  -sdk iphonesimulator \
-  -configuration Debug \
-  CODE_SIGNING_ALLOWED=NO \
-  build
-```
-
-### Android
-
-Use JDK 17 and an Android SDK.
-
-```bash
-cd android
-./gradlew test assembleDebug
-```
-
-### Windows
-
-Use Windows with the .NET 10 SDK and a WinUI 3 build environment.
-
-```powershell
-cd windows
-dotnet restore LanStash.slnx
-dotnet test tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore
-dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore
-```
-
-See [`apple/README.md`](apple/README.md), [`android/README.md`](android/README.md), and [`windows/README.md`](windows/README.md) for platform-specific setup. GitHub Actions validates Apple, Android, Windows, and repository-level contracts independently.
-
-`Documentation & Quality Preflight` checks strict documentation, Android quality data, the write-operation matrix, structure debt, and localization only. It is not a full release preflight and does not prove Apple/Android/Windows builds, signing, installation, upgrade, rollback, device, or real-NAS validation. A real Release Preflight remains future release infrastructure and requires reusable cross-platform builds, an artifact manifest, SHA-256 values, signing status, and a manual-validation checklist.
-
-## Security and privacy
-
-- Never commit passwords, OTPs, SIDs, SynoTokens, cookies, DIDs, private certificate keys, or real user data.
-- Never commit unredacted HAR or PCAP captures, DSM responses, file paths, or host addresses.
-- Release builds require HTTPS and do not provide a global certificate-validation bypass.
-- Passwords and sessions use platform secure storage only when the user explicitly opts in.
-- Destructive operations such as deletion, restoration, and network changes require permission checks, confirmation, duplicate protection, and result verification.
-- Real DSM behavior is tested only on dedicated test systems with the DSM build, package versions, and certificate type recorded.
-
-Follow [`SECURITY.md`](SECURITY.md) when reporting a vulnerability. Do not attach real environment data to a public issue.
-
-## Documentation
-
-- [Documentation index](docs/README.md)
-- [Current progress](docs/progress/STATUS.md)
-- [Product roadmap](docs/progress/ROADMAP.md)
-- [Platform feature matrix](docs/progress/PLATFORM_MATRIX.md)
-- [Android quality baseline](docs/quality/ANDROID_QUALITY_BASELINE_ZH.md)
-- [Release and manual-validation history](docs/archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)
-- [DSM compatibility matrix](docs/compatibility/DSM_COMPATIBILITY_MATRIX.md)
-- [Community Compatibility Program](docs/compatibility/COMMUNITY_COMPATIBILITY_PROGRAM_EN.md)
-- [Community Compatibility Matrix](docs/compatibility/COMMUNITY_COMPATIBILITY_MATRIX_EN.md)
-- [Architecture](docs/architecture/ARCHITECTURE.md)
-- [Security baseline](docs/security/SECURITY_BASELINE.md)
-- [API implementation reference by feature](docs/api/README.md)
-- [DSM and package private API discovery process](docs/api/discovery/README.md)
-- [Locale contract](contracts/localization/README.md)
-
-## Contributing
-
-Read [`AGENTS.md`](AGENTS.md) and [`CONTRIBUTING.en.md`](CONTRIBUTING.en.md) before making changes. Every new or changed user-visible string must have both English and Simplified Chinese resources. Translated strings must never drive business logic, navigation, filtering, persistence, or API parameters.
-
-If you have access to a different Synology NAS model or version, you can also join the [Community Compatibility Program](docs/compatibility/COMMUNITY_COMPATIBILITY_PROGRAM_EN.md). Most users submit redacted results through a bilingual GitHub form; developers may submit validated structured reports. The first phase does not collect logs, screenshots, host information, or real file data.
-
-LanStash is licensed under the [Apache License 2.0](LICENSE).
+This project and its history are licensed under [Apache License 2.0](LICENSE).
