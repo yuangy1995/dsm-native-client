@@ -28,6 +28,14 @@ class DocumentationCheckTests(unittest.TestCase):
     def metadata(self, role: str, reviewed: str = "2026-08-20") -> str:
         return f"<!-- doc-role: {role} -->\n<!-- last-reviewed: {reviewed} -->\n\n"
 
+    def test_resolves_explicit_html_anchor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write(root, "docs/source.md", "[目标](target.md#dsm-zram)\n")
+            self.write(root, "docs/target.md", '## 合并章节\n\n<a id="dsm-zram"></a>\n')
+            errors = documentation.validate_links([root / "docs/source.md", root / "docs/target.md"])
+            self.assertEqual(errors, [])
+
     def test_resolves_relative_link_and_heading_anchor(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

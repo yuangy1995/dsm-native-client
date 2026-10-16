@@ -38,6 +38,7 @@ ROLE_PATTERN = re.compile(r"<!--\s*doc-role:\s*([a-z0-9-]+)\s*-->")
 DATE_PATTERN = re.compile(r"<!--\s*last-reviewed:\s*(\d{4}-\d{2}-\d{2})\s*-->")
 LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]*\]\((?P<target><[^>]+>|[^)\s]+)(?:\s+[^)]*)?\)")
 HEADING_PATTERN = re.compile(r"^(?:#{1,6})\s+(.+?)\s*#*\s*$")
+EXPLICIT_ANCHOR_PATTERN = re.compile(r'<a\s+id="([^"]+)"\s*>\s*</a>')
 CI_RUN_PATTERN = re.compile(
     r"\b(?:CI|GitHub|Apple|Android|Windows|Repository)\s+(?:Run|run|Build|build)\s*`?\d{6,}`?",
     re.IGNORECASE,
@@ -64,7 +65,7 @@ def _heading_slug(title: str) -> str:
 
 def anchors(text: str) -> set[str]:
     counts: dict[str, int] = {}
-    values: set[str] = set()
+    values: set[str] = set(EXPLICIT_ANCHOR_PATTERN.findall(text))
     for line in text.splitlines():
         match = HEADING_PATTERN.match(line)
         if not match:

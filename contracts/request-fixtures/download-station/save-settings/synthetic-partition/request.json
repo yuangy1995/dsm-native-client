@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "download-station.save-settings.synthetic-partition",
+  "module": "download-station",
+  "operation": "saveSettings",
+  "api": {
+    "name": "SYNO.DownloadStation.Info",
+    "method": "setserverconfig",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "DownloadStation/info.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "bt_max_download",
+      "valueType": "integer",
+      "encodedValue": "500"
+    },
+    {
+      "name": "bt_max_upload",
+      "valueType": "integer",
+      "encodedValue": "100"
+    },
+    {
+      "name": "ftp_max_download",
+      "valueType": "integer",
+      "encodedValue": "200"
+    },
+    {
+      "name": "http_max_download",
+      "valueType": "integer",
+      "encodedValue": "200"
+    },
+    {
+      "name": "nzb_max_download",
+      "valueType": "integer",
+      "encodedValue": "300"
+    },
+    {
+      "name": "unzip_service_enabled",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

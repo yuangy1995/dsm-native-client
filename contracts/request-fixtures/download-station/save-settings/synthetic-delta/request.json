@@ -18,32 +18,7 @@
     {
       "name": "bt_max_download",
       "valueType": "integer",
-      "encodedValue": "500"
-    },
-    {
-      "name": "bt_max_upload",
-      "valueType": "integer",
-      "encodedValue": "100"
-    },
-    {
-      "name": "ftp_max_download",
-      "valueType": "integer",
-      "encodedValue": "200"
-    },
-    {
-      "name": "http_max_download",
-      "valueType": "integer",
-      "encodedValue": "200"
-    },
-    {
-      "name": "nzb_max_download",
-      "valueType": "integer",
-      "encodedValue": "300"
-    },
-    {
-      "name": "unzip_service_enabled",
-      "valueType": "boolean",
-      "encodedValue": "true"
+      "encodedValue": "12"
     }
   ],
   "authentication": {

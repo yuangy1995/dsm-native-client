@@ -84,7 +84,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-similar-items.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-library.md",
       "verifications": []
     },
     {
@@ -107,7 +107,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -133,7 +133,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -157,7 +157,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -183,7 +183,7 @@
         "GET"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -390,7 +390,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-item-deletion.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -448,7 +448,7 @@
         "GET"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-library-read.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-library.md",
       "verifications": []
     },
     {
@@ -469,7 +469,7 @@
         "GET"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-desktop-app-privileges.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-account-and-connection.md",
       "verifications": []
     },
     {
@@ -491,7 +491,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/quickconnect-relay-control.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-account-and-connection.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -502,7 +502,7 @@
           },
           "verifiedAt": "2026-07-23",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/quickconnect-relay-control.md",
+            "docs/api/discovery/endpoints/dsm-account-and-connection.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
           "notes": "历史观察：已记录中继建立、身份核对和随后 SYNO.API.Info 探测；不记录控制主机或目标标识。 当前入口策略见稳定端点定义，不由此历史状态决定。"
@@ -528,7 +528,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/file-station-remote-mount.md",
+      "documentRef": "docs/api/discovery/endpoints/file-station.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -539,7 +539,7 @@
           },
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/file-station-remote-mount.md",
+            "docs/api/discovery/endpoints/file-station.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
           "notes": "历史观察：内部实验性契约；尚未在专用目标完成写行为验收。 当前入口策略见稳定端点定义，不由此历史状态决定。"
@@ -569,7 +569,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-system-read.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-system-monitoring.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -585,11 +585,11 @@
           },
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-system-read.md",
+            "docs/api/discovery/endpoints/dsm-system-monitoring.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md",
-            "docs/api/discovery/endpoints/dsm-current-connection.md",
-            "docs/api/discovery/endpoints/dsm-system-update-check.md",
-            "docs/api/discovery/endpoints/dsm-system-log.md"
+            "docs/api/discovery/endpoints/dsm-account-and-connection.md",
+            "docs/api/discovery/endpoints/dsm-system-monitoring.md",
+            "docs/api/discovery/endpoints/dsm-system-monitoring.md"
           ],
           "notes": "历史观察：连接断开属于写行为，本环境未执行，不能继承只读证据等级；系统更新只读检查已记录，下载与安装保持关闭。Windows 连接固定 v1 严格读取、完整目标预检、网页 DID/服务 PID 请求、当前或未知会话更强确认及原始标识回读已有合成证据，原生列表/搜索/当前会话额外确认/关闭取消/只读恢复已有合成证据，关联原始身份不能绕过挂起阻止，写门关闭。Mac 同步修正派生 ID、畸形列表、用户名当前状态推断和缓存回读误报；新 Swift 回归未运行，不提升真实断开行为证据。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
@@ -614,7 +614,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-system-processes.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-system-monitoring.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -626,7 +626,7 @@
           },
           "verifiedAt": "2026-07-31",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-system-processes.md"
+            "docs/api/discovery/endpoints/dsm-system-monitoring.md"
           ],
           "notes": "历史观察：合成响应只验证字段白名单、500 项上限、能力缺失零请求和服务组失败降级，不提升真实环境证据等级。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
@@ -650,7 +650,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-power-schedule.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-hardware-and-power.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -661,7 +661,7 @@
           },
           "verifiedAt": "2026-07-31",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-power-schedule.md"
+            "docs/api/discovery/endpoints/dsm-hardware-and-power.md"
           ],
           "notes": "历史观察：合成响应只验证字段白名单、128 条上限、歧义星期降级、能力缺失零请求和零 save，不提升真实环境证据等级。Windows 已接固定 v1 读取与原生筛选/五态页面；Apple 缺失/冲突根、时间整数、未知启用状态和不完整提示修正待 Mac 回归，仍为 static 候选，未执行真实读取或保存。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
@@ -686,7 +686,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-external-storage.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-hardware-and-power.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -698,7 +698,7 @@
           },
           "verifiedAt": "2026-08-03",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-external-storage.md"
+            "docs/api/discovery/endpoints/dsm-hardware-and-power.md"
           ],
           "notes": "历史观察：合成响应只验证字段白名单、明确字节单位、每类 64 项上限、局部降级、能力缺失零请求和零 eject，不提升真实环境证据等级。Windows 已接独立读取和原生筛选/五态列表；整体失败不当空目录，未知容量不补零。Apple 严格容器/字节字段和整体失败、认证错误修正待 Mac 回归。保持 static 候选，未执行真实列表或弹出。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
@@ -723,7 +723,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-zram.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-hardware-and-power.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -734,7 +734,7 @@
           },
           "verifiedAt": "2026-08-03",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-zram.md",
+            "docs/api/discovery/endpoints/dsm-hardware-and-power.md",
             "docs/api/discovery/environments/INDEX.md"
           ],
           "notes": "历史观察：2026-08-03 只在同一匿名设备观察到官方设置控件，当日未重新核实 DSM 版本；未捕获或保存 API 请求/响应。合成响应只验证字段白名单、明确字节单位、算法归一、能力缺失零请求和零 set，不提升真实环境证据等级。Windows 已接 v1 读取和原生只读摘要；Apple 原生布尔、整数容量、冲突别名与错误根修正待 Mac 回归。没有开关或 set 入口，保持 static 候选。 当前入口策略见稳定端点定义，不由此历史状态决定。"
@@ -759,7 +759,7 @@
         "POST"
       ],
       "fallback": "静态名称线索不足以形成可调用契约；未知版本、参数或响应保持零猜测请求。methods等旧候选元数据不代表已观察传输，详见documentRef。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-printer-bonjour-sharing.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-network-and-security.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -770,7 +770,7 @@
           },
           "verifiedAt": "2026-08-03",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-printer-bonjour-sharing.md"
+            "docs/api/discovery/endpoints/dsm-network-and-security.md"
           ],
           "notes": "历史观察：没有注册客户端能力、领域模型、Adapter、响应 Schema 或 fixture；不复用通用 Bonjour/Avahi 字段，不推断打印机清单或共享状态。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
@@ -803,7 +803,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-system-read.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-system-monitoring.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -819,10 +819,10 @@
           },
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-system-read.md",
+            "docs/api/discovery/endpoints/dsm-system-monitoring.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md",
-            "docs/api/discovery/endpoints/dsm-smart-test.md",
-            "docs/api/discovery/endpoints/dsm-hardware-settings.md"
+            "docs/api/discovery/endpoints/dsm-hardware-and-power.md",
+            "docs/api/discovery/endpoints/dsm-hardware-and-power.md"
           ],
           "notes": "历史观察：S.M.A.R.T. 启停、硬件和 UPS 设置没有为发现而执行。Windows 新增固定 v1 目标/状态/最近历史读取及正确启停核心合成证据，旧猜测写入口已移除；确认基线、稳定设备互斥、有限回读及不重放恢复已有故障注入覆盖，原生选择/状态/历史/确认/恢复面板已有合成证据，运行中只读刷新且生产门关闭。Apple 不再伪造设备身份、从健康推断许可或把缺失检测状态当作空闲，固定 v1、严格解码、设备/代次缓存绑定与不以旧状态冒充成功的修正均待 Mac 回归。均不提升真实环境证据等级，Android 本波未修改。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
@@ -847,7 +847,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-account-directory.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-account-and-connection.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -859,7 +859,7 @@
           },
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-account-directory.md",
+            "docs/api/discovery/endpoints/dsm-account-and-connection.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
           "notes": "历史观察：只读结构与网页请求已有脱敏记录；共享请求 Fixture 和源码测试不提升当前环境的写行为证据等级。Windows User/Group 固定 v1 严格读取、完整确认基线删除、同请求不重放和同客户端未知恢复已有合成证据，旧工作区分别保留读取状态；新建/编辑核心已有明确管理员检查、完整基线和密码/字段结果区分的合成证据，复用删除互斥与恢复；原生管理已接目录切换、明确组关系修改、草稿绑定确认、密码清除与未知恢复并有合成证据，保存和删除生产门独立关闭。Mac 修正缺失许可默认放行、根与额外字段解析及目录为空覆盖删除未知结果，保存模型另加完整基线预检、真实新回读和不可重试的未知结果提示，新回归尚未在 Mac 运行；不提升任何真实账号写行为证据等级。 当前入口策略见稳定端点定义，不由此历史状态决定。"
@@ -884,7 +884,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-share-access.md",
+      "documentRef": "docs/api/discovery/endpoints/file-station.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -895,7 +895,7 @@
           },
           "verifiedAt": "2026-07-31",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-share-access.md"
+            "docs/api/discovery/endpoints/file-station.md"
           ],
           "notes": "历史观察：只展示当前账号可见集合；本批没有读取或记录真实共享名、路径或权限响应。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
@@ -919,7 +919,7 @@
         "POST"
       ],
       "fallback": "静态名称线索不足以形成可调用契约；未知版本、参数或响应保持零猜测请求。methods等旧候选元数据不代表已观察传输，详见documentRef。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-share-access.md",
+      "documentRef": "docs/api/discovery/endpoints/file-station.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -930,7 +930,7 @@
           },
           "verifiedAt": "2026-07-31",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-share-access.md"
+            "docs/api/discovery/endpoints/file-station.md"
           ],
           "notes": "历史观察：客户端不探测、不调用该内部候选，也不根据方法名猜测参数。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
@@ -961,7 +961,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-package-installation.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-packages.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -973,7 +973,7 @@
           },
           "verifiedAt": "2026-07-31",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-package-installation.md"
+            "docs/api/discovery/endpoints/dsm-packages.md"
           ],
           "notes": "历史观察：客户端不探测或调用安装接口；合成 Package.list 响应只验证只读升级提示，不能提升写行为证据。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
@@ -1021,7 +1021,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/dsm-system-read.md",
+      "documentRef": "docs/api/discovery/endpoints/dsm-system-monitoring.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -1044,20 +1044,20 @@
           },
           "verifiedAt": "2026-07-27",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/dsm-system-read.md",
+            "docs/api/discovery/endpoints/dsm-system-monitoring.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md",
-            "docs/api/discovery/endpoints/dsm-ethernet-settings.md",
-            "docs/api/discovery/endpoints/dsm-security-settings.md",
-            "docs/api/discovery/endpoints/dsm-remote-access-settings.md",
-            "docs/api/discovery/endpoints/dsm-file-service-settings.md",
-            "docs/api/discovery/endpoints/dsm-terminal-settings.md",
-            "docs/api/discovery/endpoints/dsm-proxy-settings.md",
-            "docs/api/discovery/endpoints/dsm-region-time-settings.md",
-            "docs/api/discovery/endpoints/dsm-ddns-settings.md",
-            "docs/api/discovery/endpoints/dsm-system-power-actions.md",
-            "docs/api/discovery/endpoints/dsm-package-control.md",
-            "docs/api/discovery/endpoints/dsm-package-installation.md",
-            "docs/api/discovery/endpoints/dsm-task-scheduler.md"
+            "docs/api/discovery/endpoints/dsm-network-and-security.md",
+            "docs/api/discovery/endpoints/dsm-network-and-security.md",
+            "docs/api/discovery/endpoints/dsm-account-and-connection.md",
+            "docs/api/discovery/endpoints/dsm-network-and-security.md",
+            "docs/api/discovery/endpoints/dsm-network-and-security.md",
+            "docs/api/discovery/endpoints/dsm-network-and-security.md",
+            "docs/api/discovery/endpoints/dsm-network-and-security.md",
+            "docs/api/discovery/endpoints/dsm-network-and-security.md",
+            "docs/api/discovery/endpoints/dsm-hardware-and-power.md",
+            "docs/api/discovery/endpoints/dsm-packages.md",
+            "docs/api/discovery/endpoints/dsm-packages.md",
+            "docs/api/discovery/endpoints/dsm-system-monitoring.md"
           ],
           "notes": "历史观察：只读结构和网页请求已有记录；套件启动/停止及 Android 远程访问设置的合成请求、故障注入、持久反馈和回读测试不提升当前环境的写行为证据等级。Windows 终端/代理已有固定版本读取、原生表单、基线绑定保存、同请求不重放和逐字段回读核心的源码/合成证据；同一客户端重建页面或 Repository 后可只读核对未知保存，生产行为门仍关闭。Windows 文件服务已有字段位图、独立 FTPS、六组整体预检/基线提交/整体回读核心的源码与合成证据；终端、代理、文件服务行为门分别关闭，不因其他功能验收而自动开放。区域时间新增 Windows 固定读取、基线保存/条件校时核心与原生编辑，生产门关闭且不重发未知校时；Apple 解码修复待 Mac 回归，不将 NAS 接受校时请求当作精度验证。Windows 物理网卡 list v2/get v1、明确数组变体和部分读取状态已有合成回归与只读入口，单目标 configs 写入/回读及新地址的新会话+同 NAS 确认恢复已有合成证据，生产网络行为门关闭。Windows 安全四分区基线保存、按网卡 DoS、防火墙任务/完成后清理与原生编辑已有合成证据；旧假成功已移除，生产行为门关闭，未知任务不盲目重发或清理。Windows 硬件/UPS 六组基线保存、LED 两阶段、可信字段规则与原生编辑已有合成证据，生产门关闭，未知 LED 阶段不重发且真实副作用未验收。Windows DDNS 双 v1 读取、服务商身份与只读入口及凭据显示保护已有合成证据，四操作核心已有基线确认、固定请求和故障恢复合成证据，原生四操作确认/反馈/恢复已有合成证据，生产门关闭；Apple 适配器及 Mac 界面层同步修正拒绝/未知被旧配置覆盖和仅换密码超时误报成功，Mac 回归未运行。Windows 套件固定 v2 严格读取、三操作基线预检/不重放回读核心及升级只读提示已有合成证据，原生确认/持续反馈/恢复已有合成证据，启停与卸载能力分离且写门关闭；Mac 列表缺失许可默认放行与畸形列表误作空目录修正待 Swift 回归。Windows 电源固定 v3 预检、单次命令与原生确认已有合成证据，接受/未知都不推断最终设备状态；新登录与用户设备核对后才允许解除本地阻止，生产电源门关闭。Windows 任务计划 list v3/get v4 与 EventScheduler 结果/输出 v1 已有方法级严格读取合成证据，脚本及输出不默认导出，v3 启停/运行/删除核心另有基线与脚本预览核对合成证据，运行接受不等于脚本成功，模糊运行不重放；v4 创建/编辑核心已有服务器模板/双基线和完整配置回读合成证据，脚本不进恢复缓存；原生列表/编辑/命令确认与记录输出已有合成场景证据，生产门关闭。Mac 保存快照/完整新回读修正待回归。Windows 远程访问 v3/v1 独立严格读取、基线保存、可信中继保护及不重放恢复核心已有合成证据，原生表单已有字段失败隔离、确认与部分/未知恢复合成证据且写门关闭；Apple 读取与明确拒绝/未知计数及旧缓存误报修正待 Mac 回归。兼容结论仍为 observed/degraded；未执行真实 NAS 或路由器写操作，既有登录、QuickConnect 隧道和 SYNO.API.Info 证据不得外推。 当前入口策略见稳定端点定义，不由此历史状态决定。"
         }
@@ -1227,7 +1227,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/chat-core.md",
+      "documentRef": "docs/api/discovery/endpoints/chat.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -1246,7 +1246,7 @@
           },
           "verifiedAt": "2026-07-23",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/chat-core.md",
+            "docs/api/discovery/endpoints/chat.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
           "notes": "历史观察：当前组件版本为 2.4.1-22111；不同能力的读写证据仍按产品兼容矩阵逐项处理。 当前入口策略见稳定端点定义，不由此历史状态决定。"
@@ -1271,7 +1271,7 @@
         "WebSocket"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/chat-realtime.md",
+      "documentRef": "docs/api/discovery/endpoints/chat.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -1283,7 +1283,7 @@
           },
           "verifiedAt": "2026-07-23",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/chat-realtime.md",
+            "docs/api/discovery/endpoints/chat.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
           "notes": "历史观察：当前组件版本为 2.4.1-22111；完整跨版本、睡眠唤醒和中继矩阵待验证。 当前入口策略见稳定端点定义，不由此历史状态决定。"
@@ -1325,7 +1325,7 @@
         "POST"
       ],
       "fallback": "现行读取以photos-library-read定义为准；不使用未经确认的FotoTeam.Album候选，不回退File Station图库。历史候选状态不控制当前入口。",
-      "documentRef": "docs/api/discovery/endpoints/photos-library-read.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-library.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -1336,7 +1336,7 @@
           },
           "verifiedAt": "2026-07-29",
           "evidenceRefs": [
-            "docs/api/discovery/endpoints/photos-library-read.md",
+            "docs/api/discovery/endpoints/photos-library.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
           "notes": "历史观察：当前组件版本为 1.8.2-10090；没有完成内部 Adapter 契约测试，不得提升证据等级。 当前入口策略见稳定端点定义，不由此历史状态决定。"
@@ -1362,7 +1362,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -1400,7 +1400,7 @@
         "GET"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -1424,7 +1424,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -1449,7 +1449,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -1474,7 +1474,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -1500,7 +1500,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
     {
@@ -1521,7 +1521,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/photos-background-tasks.md",
+      "documentRef": "docs/api/discovery/endpoints/photos-library.md",
       "verifications": []
     },
     {
@@ -1542,7 +1542,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/file-station-content-search.md",
+      "documentRef": "docs/api/discovery/endpoints/file-station.md",
       "verifications": []
     },
     {
@@ -1564,7 +1564,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/file-station-sharing-extended.md",
+      "documentRef": "docs/api/discovery/endpoints/file-station.md",
       "verifications": []
     },
     {
@@ -1587,7 +1587,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/file-station-file-permissions.md",
+      "documentRef": "docs/api/discovery/endpoints/file-station.md",
       "verifications": []
     },
     {
@@ -1612,7 +1612,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/file-station-vfs-connections.md",
+      "documentRef": "docs/api/discovery/endpoints/file-station.md",
       "verifications": []
     },
     {
@@ -1640,7 +1640,7 @@
         "GET"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/file-station-package-settings.md",
+      "documentRef": "docs/api/discovery/endpoints/file-station.md",
       "verifications": []
     },
     {
@@ -1665,7 +1665,7 @@
         "POST"
       ],
       "fallback": "依稳定端点定义与API通用标准处理能力、权限及错误；读取局部降级，结果未知的写操作只查询原结果，不盲目重放。历史verification不作为精确版本白名单。",
-      "documentRef": "docs/api/discovery/endpoints/chat-message-interaction.md",
+      "documentRef": "docs/api/discovery/endpoints/chat.md",
       "verifications": []
     }
   ]

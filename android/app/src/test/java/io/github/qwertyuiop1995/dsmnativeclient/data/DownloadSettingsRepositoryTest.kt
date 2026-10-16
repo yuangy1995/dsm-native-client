@@ -116,7 +116,7 @@ class DownloadSettingsRepositoryTest {
         assertEquals("200", basicWrite.settingsFormFields()["ftp_max_download"])
         RequestFixtureAssertions.assertRequest(
             basicWrite,
-            "download-station/save-settings/synthetic-delta/request.json",
+            "download-station/save-settings/synthetic-partition/request.json",
         )
         RequestFixtureAssertions.assertRequest(
             transport.requests.single { it.settingsFormFields()["method"] == "setconfig" },

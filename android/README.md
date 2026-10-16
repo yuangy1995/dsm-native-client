@@ -9,11 +9,7 @@ Kotlin、Jetpack Compose、Coroutines、OkHttp 与 Android Keystore。包名为 
 
 ## 使用与系统边界
 
-每个 NAS/账号拥有独立会话、授权、页面和任务。切换不是退出；改账号/地址后旧任务不会接管新身份。通知只定位原账号，不显示消息正文。Photos 独立授权，文件权限不代替照片权限。
-
-跨 NAS 移动先复制和校验，再独立确认删源。任务未知时只读取恢复，不通过重登、改名或重新创建请求重发。目录备份使用 File Station；它与 Photos 套件上传是两条不同功能。
-
-系统分享接收用户选择的副本，再明确选择 NAS/目录上传。DocumentsProvider 默认只读，单独允许 Office 编辑后仍需回到原账号主动保存；关闭系统入口不能收回已交付其他 App 的内容。当前不提供离线目录浏览或编辑器关闭后自动回传。后台/前台服务受系统资格、省电与超时限制，进程终止不自动重放照片、Office 覆盖或跨 NAS 删源。完整差异见[平台集成](../docs/development/PLATFORM_INTEGRATION.md)。
+每个 NAS/账号拥有独立会话、授权、页面和任务，切换账号不接管旧任务；Photos 授权独立于文件权限。DocumentsProvider、WorkManager 与系统后台资格等差异，以及未知结果不重放的规则，统一见[平台集成](../docs/development/PLATFORM_INTEGRATION.md)。
 
 ## 开发与验证
 

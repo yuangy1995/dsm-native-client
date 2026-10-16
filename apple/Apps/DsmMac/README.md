@@ -11,9 +11,7 @@
 
 上传暂停后继续可能重新发送未完成文件，公开 Upload 没有字节偏移续传契约；已经提交但结果不明时先只读恢复。下载续传和媒体预览需要可靠的 Range/版本证据。图片、PDF、音视频和 Office 的实际格式支持由系统组件决定。
 
-Office 预览不会自动开始回传。选择本机副本及编辑器后，稳定保存可回传到原路径；未修改不上传、冲突停止覆盖、未知只读核对。关闭视图不结束会话，明确停止/断开/退出后保留副本，重启不自动接管，“另存为”不跟踪新路径。公开接口没有跨客户端原子锁；跨 NAS 移动还有[待处理风险](../../../docs/progress/KNOWN_LIMITATIONS.md)，测试前先保留源文件。
-
-Finder 本地磁盘挂载默认只读，编辑和删除分别授权；缓存不是备份，映射根/共享根受保护。Mac 主 App 的会话及可选密码存于加密文件，主密钥在私有 Keychain；系统挂载只共享必要会话。系统权限、映射移除和回退规则见[平台集成](../../../docs/development/PLATFORM_INTEGRATION.md)。
+Office 编辑的回传条件、会话退出与 Finder 挂载的权限、缓存规则见[平台集成](../../../docs/development/PLATFORM_INTEGRATION.md)。跨 NAS 移动的待处理风险见[限制清单](../../../docs/progress/KNOWN_LIMITATIONS.md)，测试前先保留源文件。
 
 ## 构建与本机测试包
 
@@ -28,7 +26,7 @@ LANSTASH_NON_INTERACTIVE=1 LANSTASH_BUILD_TYPE=Release LANSTASH_TARGET_ARCH=nati
 
 也可在本目录运行 `./package.sh` 交互选择构建、架构、签名和是否启动；脚本不接受命令行参数。测试使用独立输出目录并关闭自动启动，避免覆盖旧包；默认输出目录会在成功验证后清理更早版本 DMG。
 
-本机临时签名沿用脚本既有的 `.macos.localtest` 身份、`LanStash Test.app` 和独立 App Group/Keychain，默认输出到 `dist/local-test`；不访问或迁移正式应用数据，不含 Finder 挂载扩展。只给专用测试权限文件增加库验证例外，正式包不得携带。打包验证实际 Sparkle 加载、签名、架构与 DMG 内容，不能仅凭 codesign 完整性认定可运行。签名证书、主 App/扩展 profile、公证和正式在线更新均按[发布手册](../../../docs/releases/MACOS_GITHUB_RELEASE_ZH.md)办理。
+本机临时签名的身份、隔离范围、库验证例外与打包验证要求见[发布手册 · 本地测试包](../../../docs/releases/MACOS_GITHUB_RELEASE_ZH.md#本地测试包)；正式签名与公证同样以该手册为准。
 
 ## 原生验证与源码入口
 
