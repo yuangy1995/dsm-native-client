@@ -477,6 +477,9 @@ final class WorkspaceModel {
     private(set) var moduleAccess: [WorkspaceModule: WorkspaceModuleAccess] = [:]
     private(set) var isCheckingModuleAccess = false
     @ObservationIgnored private let moduleAccessLoader: (@Sendable () async -> WorkspaceModuleAccessSnapshot)?
+    @ObservationIgnored private let desktopDriveBootstrap: (@MainActor () async -> Void)?
+    @ObservationIgnored private var startupTask: Task<Void, Never>?
+    @ObservationIgnored private var desktopDriveBootstrapTask: Task<Void, Never>?
     private(set) var moduleAccessLookupFailed = false
     @ObservationIgnored private var hasStartedModules = false
     private var hasCheckedModuleAccess = false
@@ -682,12 +685,14 @@ final class WorkspaceModel {
         serviceManagementRepository: any ServiceManagementRepository =
             UnavailableServiceManagementRepository(),
         desktopDriveSessionBridge: DesktopDriveSessionBridge? = nil,
+        desktopDriveBootstrap: (@MainActor () async -> Void)? = nil,
         transferNotifier: any TransferNotifying = TransferNotifierFactory.makeDefault(),
         preparePreviewCache: (() -> Void)? = nil,
         moduleAccessLoader: (@Sendable () async -> WorkspaceModuleAccessSnapshot)? = nil
     ) {
         self.profile = profile
         self.moduleAccessLoader = moduleAccessLoader
+        self.desktopDriveBootstrap = desktopDriveBootstrap
         self.repository = repository
         self.transferNotifier = transferNotifier
         self.desktopDriveSessionBridge = desktopDriveSessionBridge
@@ -882,8 +887,34 @@ final class WorkspaceModel {
         }.count
     }
 
+    /// 登录后立即在后台启动模块权限核验、通知同步与云盘挂载恢复，不依赖主窗口视图是否已打开。
+    func scheduleBackgroundStartup() {
+        if startupTask == nil, !hasStartedModules {
+            startupTask = Task { [weak self] in
+                guard let self else { return }
+                defer { startupTask = nil }
+                await performStartEnabledModules()
+            }
+        }
+        if desktopDriveBootstrapTask == nil, let desktopDriveBootstrap {
+            desktopDriveBootstrapTask = Task { [weak self] in
+                guard self != nil else { return }
+                defer { self?.desktopDriveBootstrapTask = nil }
+                await desktopDriveBootstrap()
+            }
+        }
+    }
+
     /// 只启动已启用的首个模块；所有功能都关闭时停留在设置页。
     func startEnabledModules() async {
+        if let startupTask {
+            await startupTask.value
+            return
+        }
+        await performStartEnabledModules()
+    }
+
+    private func performStartEnabledModules() async {
         if needsModuleAccessCheck { await refreshModuleAccess(startsWorkspace: true) }
         guard !Task.isCancelled, !requiresReauthentication else { return }
         if isFileModuleEnabled { _ = await pendingFileStationChanges() }
@@ -3782,6 +3813,10 @@ final class WorkspaceModel {
     }
 
     func cancelAllWork() {
+        startupTask?.cancel()
+        startupTask = nil
+        desktopDriveBootstrapTask?.cancel()
+        desktopDriveBootstrapTask = nil
         serviceManagement.closeVirtualMachineConsoles()
         suspendFileModule()
         photoLibrary.cancel()

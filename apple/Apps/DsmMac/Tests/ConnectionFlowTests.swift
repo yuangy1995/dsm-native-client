@@ -947,4 +947,119 @@ final class ConnectionFlowTests: XCTestCase {
         let logoutCount = await repository.logoutCallCount
         XCTAssertEqual(logoutCount, 0)
     }
+
+    @MainActor
+    func test开机网络尚未就绪时自动登录保留密码并在网络恢复后自动重连() async throws {
+        let suite = "AutoLoginRetryTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let profileStore = NasProfileStore(defaults: defaults)
+        let profile = try NasProfile(
+            displayName: "家庭 NAS",
+            host: "home-nas.local",
+            port: 5_001,
+            usernameHint: "user"
+        )
+        try profileStore.save([profile])
+        profileStore.setAutoLoginEnabled(true, for: profile.id)
+        let passwordStore = MemoryPasswordStore()
+        try await passwordStore.save("saved-password", for: profile.id)
+        let repository = TransientNetworkAuthRepository(failuresBeforeSuccess: 2)
+        let model = AppModel(
+            profileStore: profileStore,
+            authRepository: repository,
+            passwordStore: passwordStore,
+            desktopDriveSessionStore: MemorySessionStore(),
+            autoLoginRetryDelays: [.milliseconds(15), .milliseconds(15)]
+        )
+
+        model.load()
+        for _ in 0..<100 {
+            if model.workspace != nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        let workspace = try XCTUnwrap(model.workspace)
+        for _ in 0..<100 {
+            if !workspace.needsModuleAccessCheck { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let discoverCount = await repository.discoverCallCount
+        let loginCount = await repository.loginCallCount
+        XCTAssertEqual(discoverCount, 3)
+        XCTAssertEqual(loginCount, 1)
+        XCTAssertEqual(model.password, "saved-password")
+        XCTAssertFalse(workspace.needsModuleAccessCheck, "无需挂载主窗口视图也应在后台完成工作区模块初始化")
+    }
+
+    @MainActor
+    func test多台NAS配置下启动时优先自动登录已开启自动登录的设备() async throws {
+        let suite = "MultiProfileAutoLoginTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let profileStore = NasProfileStore(defaults: defaults)
+        let first = try NasProfile(displayName: "未自动登录 NAS", host: "first.local", port: 5_001, usernameHint: "user1")
+        let second = try NasProfile(displayName: "自动登录 NAS", host: "second.local", port: 5_001, usernameHint: "user2")
+        try profileStore.save([first, second])
+        profileStore.setAutoLoginEnabled(false, for: first.id)
+        profileStore.setAutoLoginEnabled(true, for: second.id)
+        let passwordStore = MemoryPasswordStore()
+        try await passwordStore.save("second-password", for: second.id)
+        let repository = RecordingAuthRepository()
+        let model = AppModel(
+            profileStore: profileStore,
+            authRepository: repository,
+            passwordStore: passwordStore,
+            desktopDriveSessionStore: MemorySessionStore()
+        )
+
+        model.load()
+        for _ in 0..<100 {
+            if model.workspace != nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        XCTAssertEqual(model.selectedProfileID, second.id)
+        XCTAssertEqual(model.workspace?.profile.id, second.id)
+        let loginHost = await repository.loginHost
+        XCTAssertEqual(loginHost, "second.local")
+    }
+}
+
+private actor TransientNetworkAuthRepository: AuthRepository {
+    private var remainingFailures: Int
+    private(set) var discoverCallCount = 0
+    private(set) var loginCallCount = 0
+
+    init(failuresBeforeSuccess: Int) {
+        self.remainingFailures = failuresBeforeSuccess
+    }
+
+    func discover(profile: NasProfile) async throws -> CapabilitySet {
+        discoverCallCount += 1
+        if remainingFailures > 0 {
+            remainingFailures -= 1
+            throw AppError(
+                category: .networkUnavailable,
+                isRetryable: true,
+                safeUserMessage: "网络尚未就绪。"
+            )
+        }
+        return CapabilitySet([:])
+    }
+
+    func login(
+        profile: NasProfile,
+        capabilities: CapabilitySet,
+        account: String,
+        password: String,
+        otpCode: String?
+    ) async throws -> AuthSession {
+        loginCallCount += 1
+        return AuthSession(sid: "recovered-session", synoToken: nil, did: nil, isPortalPort: false)
+    }
+
+    func restoreSession(for profileID: UUID) async throws -> AuthSession? { nil }
+    func clearSession(for profileID: UUID) async throws {}
+    func logout(profile: NasProfile, capabilities: CapabilitySet, session: AuthSession) async throws {}
 }

@@ -208,7 +208,7 @@ final class DesktopDriveMenuBarController: NSObject, NSMenuDelegate {
         statusItem = nil
     }
 
-    @objc private func openApplication() {
+    func openMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         if let window = NSApp.windows.first(where: { !($0 is NSPanel) }) {
             window.makeKeyAndOrderFront(nil)
@@ -216,6 +216,17 @@ final class DesktopDriveMenuBarController: NSObject, NSMenuDelegate {
             // WindowGroup 在窗口被关闭后会响应标准的新建窗口动作。
             NSApp.sendAction(Selector(("newWindow:")), to: nil, from: self)
         }
+    }
+
+    func refreshAfterWorkspaceLogin() async {
+        guard DesktopCloudDriveAvailability.isAvailable else { return }
+        try? await store.setProviderAvailable(true)
+        await reconnectAvailableMappings()
+        await refreshState()
+    }
+
+    @objc private func openApplication() {
+        openMainWindow()
     }
 
     @objc private func toggleAllMappings() {
@@ -318,16 +329,20 @@ final class DesktopDriveMenuBarController: NSObject, NSMenuDelegate {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var isTerminationPending = false
+    weak var appModel: AppModel?
     weak var updateController: AppUpdateController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
         DesktopDriveMenuBarController.shared.start()
+        appModel?.load()
+        appModel?.startNetworkMonitoring()
     }
 
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
@@ -336,13 +351,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return [.sound]
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         guard let scope = response.notification.request.content.userInfo["chatScope"] as? String,
               let conversationID = response.notification.request.content.userInfo["conversationID"] as? String else { return }
         await MainActor.run {
+            appModel?.openChatConversationFromNotification(scope: scope, conversationID: conversationID)
             NotificationCenter.default.post(name: .chatNotificationOpened, object: nil,
                 userInfo: ["scope": scope, "conversationID": conversationID])
-            NSApp.activate(ignoringOtherApps: true)
+            DesktopDriveMenuBarController.shared.openMainWindow()
         }
     }
 
@@ -377,6 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
+        appModel?.retryAutoLoginIfNeeded()
         guard !flag,
               let window = sender.windows.first(where: { !($0 is NSPanel) }) else {
             return false
@@ -397,13 +414,18 @@ struct DsmMacApp: App {
     init() {
         MacAppearanceStore.shared.mode.applyNativeAppearance()
         let model = AppModel()
-        _model = State(initialValue: model)
-        _updates = StateObject(wrappedValue: AppUpdateController(canRestart: {
+        let updates = AppUpdateController(canRestart: {
             !OfficeEditingCoordinator.shared.hasActiveSessions && !model.isPreparingPaste && !model.connectedWorkspaces.contains {
                 AppUpdateController.hasUnfinishedTransfers($0.transfers)
                     || $0.isEditingText || $0.isSavingText || $0.isMovingItemsByDrag
             }
-        }))
+        })
+        _model = State(initialValue: model)
+        _updates = StateObject(wrappedValue: updates)
+        appDelegate.appModel = model
+        appDelegate.updateController = updates
+        model.load()
+        model.startNetworkMonitoring()
     }
 
     var body: some Scene {
@@ -415,6 +437,8 @@ struct DsmMacApp: App {
                 .environment(\.locale, language.locale)
                 .task {
                     model.load()
+                    model.retryAutoLoginIfNeeded()
+                    appDelegate.appModel = model
                     appDelegate.updateController = updates
                 }
         }
