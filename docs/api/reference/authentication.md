@@ -22,7 +22,7 @@
 - 候选主机、端口、HTTPS 和域名按既有适配器规则校验；使用前核对 NAS 身份。
 - 中继必须通过系统证书信任，不以自签名确认绕过。
 - 失败允许输入实际 NAS 地址；解析结果不覆盖用户保存的 QuickConnect ID。
-- 详细命令字段、域名限制和版本证据只维护于[中继控制记录](../discovery/endpoints/quickconnect-relay-control.md)。
+- 详细命令字段、域名限制和版本证据只维护于[中继控制记录](../discovery/endpoints/dsm-account-and-connection.md#quickconnect-relay-control)。
 
 ## 跨端不变量
 
@@ -34,6 +34,6 @@ macOS 主应用使用受保护的本地存储；File Provider 仅在用户启用
 
 - [认证服务](../../../apple/Packages/DsmNetwork/Sources/DsmAuthenticationService.swift)、[认证 Repository](../../../apple/Packages/DsmNetwork/Sources/DsmAuthRepository.swift)、[领域模型](../../../apple/Packages/DsmCore/Sources/Authentication.swift)。
 - [能力发现](../../../apple/Packages/DsmNetwork/Sources/DsmCapabilityDiscovery.swift)、[QuickConnect](../../../apple/Packages/DsmNetwork/Sources/DsmQuickConnectResolver.swift)、[桌面权限解析](../../../apple/Packages/DsmNetwork/Sources/DsmDesktopAppPrivileges.swift)。
-- [权限摘要证据](../discovery/endpoints/dsm-desktop-app-privileges.md)、[网络与认证测试目录](../../../apple/Packages/DsmNetwork/Tests/)、[macOS 测试目录](../../../apple/Apps/DsmMac/Tests/)。
+- [权限摘要证据](../discovery/endpoints/dsm-account-and-connection.md#dsm-desktop-app-privileges)、[网络与认证测试目录](../../../apple/Packages/DsmNetwork/Tests/)、[macOS 测试目录](../../../apple/Apps/DsmMac/Tests/)。
 
 首次移植至少验证：OTP 错误、过期会话、不同 NAS 同名账号、模块无权限、证书变更、中继身份错误、取消后迟到结果和退出清理。源码/合成通过不能替代目标端安全存储与真实 NAS 验收。

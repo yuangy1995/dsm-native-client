@@ -29,11 +29,14 @@
 python3 tools/localization/check_localization.py
 python3 tools/request-contract/validate_contracts.py
 python3 tools/contract-validation/validate_fixtures.py
-python3 tools/codex/check_documentation.py
+python3 tools/codex/check_documentation.py --strict-release
+python3 tools/codex/generate_api_reference.py --check
 git diff --check
 ```
 
-Android 写入口、页面状态、触控、动效与结构检查继续读取[机器基线](../../tools/codex/android_quality_baseline.json)；可读报告按需生成，不能把人工登记或静态扫描等同业务通过。Documentation & Quality Preflight 不是签名/设备/发布门禁。
+生成物只能通过生成器更新，不得手改：请求样例目录用 `python3 tools/codex/generate_api_reference.py`；社区矩阵用 `python3 tools/community-compatibility/generate.py`；Android 质量报告用 `python3 tools/codex/generate_android_quality_baseline.py`（机器基线为 [android_quality_baseline.json](../../tools/codex/android_quality_baseline.json)，不另建人工状态表）。
+
+Android 写入口、页面状态、触控、动效与结构检查以机器基线为准；静态扫描或人工登记不等同业务通过。Documentation & Quality Preflight 不是签名/设备/发布门禁。
 
 桌面云盘合成大目录基准按需运行：
 

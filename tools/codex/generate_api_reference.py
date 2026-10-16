@@ -34,6 +34,9 @@ MODULES = {
 }
 
 
+DEFAULT_SESSION_LOCATIONS = ["cookie", "form"]
+
+
 def code(value: object) -> str:
     return "`" + str(value).replace("|", "&#124;").replace("`", "") + "`"
 
@@ -53,6 +56,7 @@ def render() -> str:
         "`版本`为样例的 preferred/resolved 版本；`路径`为该样例的发现结果，运行时仍须读取能力。",
         "参数表列本场景实际发送的字段，不把出现过的字段全部认定为必填。",
         "秘密参数只标记类型与“敏感”；可选值、JSON 内部结构及精确编码打开对应快照查看。",
+        "会话位置默认为 `cookie` / `form`，表中“会话”仅标注非默认样例。",
         "认证、重试与结果规则见[通用标准](common.md)。", "",
         "重新生成：`python3 tools/codex/generate_api_reference.py`；校验：加 `--check`。", "",
     ]
@@ -69,7 +73,9 @@ def render() -> str:
                 for p in item.get("parameters", [])
             ) or "—"
             constraints = [code(policy["risk"]), code(policy["retryPolicy"]), "回读 " + code(policy["readbackPolicy"])]
-            constraints.append("会话 " + (" / ".join(code(x) for x in auth.get("sessionLocations", [])) or "无"))
+            locations = auth.get("sessionLocations", [])
+            if locations != DEFAULT_SESSION_LOCATIONS:
+                constraints.append("会话 " + (" / ".join(code(x) for x in locations) or "无"))
             if auth.get("synoTokenRequired"):
                 constraints.append("必须提供 SynoToken")
             lines.append(

@@ -24,7 +24,7 @@ List 原始条目通常含 `name/path/isdir/additional`；领域时间、权限�
 ## 搜索与后台任务
 
 - 名称/高级搜索使用 `Search.start → list → stop/clean`；条件以 [FileSearchRequest](../../../apple/Packages/DsmCore/Sources/FileSearchRequest.swift) 为输入，保持原始任务 ID 和完整分页。
-- 正文搜索是内部扩展：v2 `search_content=true`、`search_type="advance"`，读取 `has_not_index_share` 并返回索引覆盖状态；缺少所需字段不能退回名称搜索后假称正文无结果。见[正文搜索记录](../discovery/endpoints/file-station-content-search.md)。
+- 正文搜索是内部扩展：v2 `search_content=true`、`search_type="advance"`，读取 `has_not_index_share` 并返回索引覆盖状态；缺少所需字段不能退回名称搜索后假称正文无结果。见[正文搜索记录](../discovery/endpoints/file-station.md#file-station-content-search)。
 - `BackgroundTask.list` 固定 v3；指定任务停止和清理使用对应任务身份，不能拿文件列表刷新或任务从列表消失推断业务成功。保留不能控制的任务类型及权限限制。
 
 ## 文件变更与传输
@@ -59,21 +59,21 @@ List 原始条目通常含 `name/path/isdir/additional`；领域时间、权限�
 
 `SYNO.FileStation.Sharing` 的公开基础与内部扩展分开对待。创建/编辑结果流程固定 v3；每个目标独立结果，链接 ID 不从文件名推导。密码“保留/替换/清除”是不同意图；公开范围变化、移除密码、允许持链接者上传须展示实际后果。
 
-高级收集、访问次数、具名用户/群组及返回字段见[分享扩展记录](../discovery/endpoints/file-station-sharing-extended.md)、[编辑领域模型](../../../apple/Packages/DsmCore/Sources/FileShareLinkEdit.swift)和请求快照。批量部分失败不覆盖已完成结果，不自动重发已创建链接。
+高级收集、访问次数、具名用户/群组及返回字段见[分享扩展记录](../discovery/endpoints/file-station.md#file-station-sharing-extended)、[编辑领域模型](../../../apple/Packages/DsmCore/Sources/FileShareLinkEdit.swift)和请求快照。批量部分失败不覆盖已完成结果，不自动重发已创建链接。
 
 ## 权限、ISO 与 File Station 设置
 
 | 功能 | 接口组 / 版本 | 原始结构与精确约束 |
 | --- | --- | --- |
-| ACL、POSIX、所有者 | `SYNO.Core.ACL`、`FileStation.Property/ACLOwner` v1，`List.getinfo` v2 | [权限记录](../discovery/endpoints/file-station-file-permissions.md)；真实路径由 NAS 返回，不猜卷路径；保留继承、递归、所有者及移除权限的独立确认 |
-| SMB/NFS 与 ISO 挂载 | `FileStation.Mount`、`Mount.List` v1 | [挂载记录](../discovery/endpoints/file-station-remote-mount.md)；绑定挂载点及来源，未知只读恢复，不自动停止或替换其他连接 |
-| 套件设置、远程账号、限速、分享页面 | `FileStation.Settings/VFS.User`、`Core.BandwidthControl`、`Core.Theme.*` v1 | [设置记录](../discovery/endpoints/file-station-package-settings.md)；管理员与文件服务授权分别检查，多接口保存不是原子事务 |
+| ACL、POSIX、所有者 | `SYNO.Core.ACL`、`FileStation.Property/ACLOwner` v1，`List.getinfo` v2 | [权限记录](../discovery/endpoints/file-station.md#file-station-file-permissions)；真实路径由 NAS 返回，不猜卷路径；保留继承、递归、所有者及移除权限的独立确认 |
+| SMB/NFS 与 ISO 挂载 | `FileStation.Mount`、`Mount.List` v1 | [挂载记录](../discovery/endpoints/file-station.md#file-station-remote-mount)；绑定挂载点及来源，未知只读恢复，不自动停止或替换其他连接 |
+| 套件设置、远程账号、限速、分享页面 | `FileStation.Settings/VFS.User`、`Core.BandwidthControl`、`Core.Theme.*` v1 | [设置记录](../discovery/endpoints/file-station.md#file-station-package-settings)；管理员与文件服务授权分别检查，多接口保存不是原子事务 |
 | 目录账号来源 | `Core.Directory.LDAP` v1、`Core.Directory.Domain` v1/v2 | local/domain/ldap 与 user/group 绑定原快照，域请求值不使用显示名称 |
 | 分享页图片 | `Core.Theme.Image.list/get/upload` v1 | 图片上传仅加入历史；应用主题是独立保存。未知上传禁止重复发送同一图片 |
 
 ## FTP、SFTP、WebDAV 与云盘
 
-这些是 NAS 管理的远程连接，接口均为内部 v1；不是本机直接实现 FTP/WebDAV。详见[稳定端点记录](../discovery/endpoints/file-station-vfs-connections.md)与 [FileVFSConnection](../../../apple/Packages/DsmCore/Sources/FileVFSConnection.swift)。
+这些是 NAS 管理的远程连接，接口均为内部 v1；不是本机直接实现 FTP/WebDAV。详见[稳定端点记录](../discovery/endpoints/file-station.md#file-station-vfs-connections)与 [FileVFSConnection](../../../apple/Packages/DsmCore/Sources/FileVFSConnection.swift)。
 
 | API / 方法 | 业务参数 | 返回与语义 |
 | --- | --- | --- |
@@ -90,8 +90,3 @@ List 原始条目通常含 `name/path/isdir/additional`；领域时间、权限�
 云盘类型取实际 `Protocol.list` 与已支持供应商的交集。macOS 使用系统浏览器及一次性本机回调接收授权，`account/access_token/refresh_token/client_id/expires_in` 仅在当次内存中；不发送 NAS 会话给授权网站，不把令牌写入待查看结果。登录启动、授权回调和 NAS 保存是三段不同证据。
 
 macOS 用户流程标准：普通连接按钮直接执行；保存等待有进度文字；成功关闭表单并刷新；主页展示远程连接，已连接条目有独立“浏览文件”按钮。失败、权限不足、结果未知保持不同状态；未知只查看原操作结果。
-
-
-## 实现与验证范围
-
-五端功能状态见[平台矩阵](../../progress/PLATFORM_MATRIX.md)，当前缺口与用户验证条件见[已知限制](../../progress/KNOWN_LIMITATIONS.md)。本页描述业务与接口语义，不以客户端存在、合成测试通过或同版本观察代替目标端验证。

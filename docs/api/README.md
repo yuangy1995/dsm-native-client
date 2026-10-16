@@ -60,4 +60,4 @@ python3 tools/codex/check_documentation.py
 - [QuickConnect白皮书](https://global.download.synology.com/download/Document/Software/WhitePaper/Os/DSM/All/enu/Synology_QuickConnect_White_Paper_enu.pdf)
 - [NAS外部访问说明](https://kb.synology.com/en-my/DSM/tutorial/Quick_Start_External_Access)
 
-Photos及File Station官方包来源、未成功读取的边界保留在[环境索引](discovery/environments/INDEX.md)；Photos升级帮助的有限摘要证据保留在[高级相册定义](discovery/endpoints/photos-advanced-management.md)。第三方Schema仅是注明来源的静态线索，不能冒充Synology文档或成功响应。
+Photos及File Station官方包来源、未成功读取的边界保留在[环境索引](discovery/environments/INDEX.md)；Photos升级帮助的有限摘要证据保留在[高级相册定义](discovery/endpoints/photos-management.md#photos-advanced-management)。第三方Schema仅是注明来源的静态线索，不能冒充Synology文档或成功响应。

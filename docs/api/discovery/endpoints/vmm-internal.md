@@ -69,6 +69,4 @@ create成功回执的task_id为字符串。查询参数prefix=virtualization_gue
 
 来源和请求绑定固定VM、单窗口app_id及原会话，不接受任意网页、外部导航或通用HTTP代理。HTTP/WSS沿原证书策略，QuickConnect中继强制系统信任，不绕过错误或跟随重定向。Windows系统信任与固定指纹连接的宿主路径不同，详见[平台集成](../../../development/PLATFORM_INTEGRATION.md#虚拟机控制台)；不能宣称浏览器直连继承原生证书指纹检查。
 
-## 证据与实现范围
-
 方法级观察见[环境索引](../environments/INDEX.md)：历史读取、09-20单台创建、10-06静态字段、10-07电源边界、10-16空保护清单分别适用各自版本与权限，不能互相提升。其他高风险写与真实控制台仍需专用目标验证。当前五端状态只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。

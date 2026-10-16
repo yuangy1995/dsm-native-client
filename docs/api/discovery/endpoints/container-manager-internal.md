@@ -224,7 +224,3 @@ read-verified，不增加当前日志响应或写操作证据。Windows 按本�
 - 未验证成功下载终态；仍要求 task_id/finished/目标匹配/完整清单。搜索 v1 与失败路径证据不外推全部下载场景。
 
 五端影响：共享 Apple 读取适配修正并执行 macOS 回归和 iOS 模拟器构建；macOS 原生恢复/双语 UI 修复；Windows/Android 记录 search 版本及 1202 处理风险，未更改实现。未改变公开模型、存储或权限。
-
-## 证据与实现范围
-
-接口证据按[环境记录](../environments/INDEX.md)中的日期、版本、权限和场景读取；静态线索与合成测试不能提升真实行为等级。各端实现及当前缺口只维护于[平台矩阵](../../../progress/PLATFORM_MATRIX.md)和[已知限制](../../../progress/KNOWN_LIMITATIONS.md)。通用认证、危险写与结果规则见[通用标准](../../reference/common.md)。

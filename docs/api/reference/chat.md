@@ -24,9 +24,9 @@
 | 定时消息 | `Post.Schedule.list/create/delete` v1 | 内容与发送时间保持固定；结果未知只查原任务 |
 | 附件与头像 | `Post.File.thumbnail/get`、`User.Avatar` | 二进制按权限读取，认证不进入 URL，不把 JSON 错误当媒体 |
 
-固定请求字段、JSON 参数差异、认证位置和读写策略见[Chat 请求参数目录](requests.md#chat)。其余逐项字段见[高级动作记录](../discovery/endpoints/chat-advanced-actions.md)和对应 Repository 方法。没有固定版本要求的方法仍须在当前客户端支持区间内选择，不自动改成 NAS 的最高版本。
+固定请求字段、JSON 参数差异、认证位置和读写策略见[Chat 请求参数目录](requests.md#chat)。其余逐项字段见[高级动作记录](../discovery/endpoints/chat.md#chat-advanced-actions)和对应 Repository 方法。没有固定版本要求的方法仍须在当前客户端支持区间内选择，不自动改成 NAS 的最高版本。
 
-2026-10-03 的真实请求、响应字段、错误观察和能力要求见[消息交互契约](../discovery/endpoints/chat-message-interaction.md)。
+2026-10-03 的真实请求、响应字段、错误观察和能力要求见[消息交互契约](../discovery/endpoints/chat.md#chat-message-interaction)。
 新增领域能力为 messageSearch/messageEditing/threadedReplies/pollVoting/readSynchronization；ChatMessage 追加可选 kind/threadID/replyCount/editedAt，ChatConversation 追加可选 lastViewedAt，ChatMessageDraft 追加默认 nil 的 threadID。旧提供者的新方法默认明确拒绝，不隐式开放其他端入口。搜索结果使用 ChatSearchPage，编辑策略使用 ChatEditingPolicy，不改变既有持久化格式。
 
 ## 结果与错误
@@ -45,9 +45,4 @@
 
 [DsmChatRealtimeClient](../../../apple/Packages/DsmNetwork/Sources/DsmChatRealtimeClient.swift) 使用同源 `sc/socket.io/` 的 WSS/Engine.IO 通道。该通道只发握手和心跳，内容事件仅触发既有 API 回读，不从事件载荷直接构造可信聊天记录。
 
-EIO 版本、心跳、帧大小、超时、重连及轮询降级的完整约束见[实时记录](../discovery/endpoints/chat-realtime.md)。Chat 模块启用且 NAS 仍连接时，离开页面或切换当前 NAS 保留该工作区的独立订阅；关闭模块、断开该 NAS 或退出时结束订阅，迟到事件不能刷新另一个工作区；实时失败不阻断普通列表读取与手动刷新。
-
-
-## 实现与验证范围
-
-五端功能状态见[平台矩阵](../../progress/PLATFORM_MATRIX.md)，当前缺口与用户验证条件见[已知限制](../../progress/KNOWN_LIMITATIONS.md)。本页描述业务与接口语义，不以客户端存在、合成测试通过或同版本观察代替目标端验证。
+EIO 版本、心跳、帧大小、超时、重连及轮询降级的完整约束见[实时记录](../discovery/endpoints/chat.md#chat-realtime)。Chat 模块启用且 NAS 仍连接时，离开页面或切换当前 NAS 保留该工作区的独立订阅；关闭模块、断开该 NAS 或退出时结束订阅，迟到事件不能刷新另一个工作区；实时失败不阻断普通列表读取与手动刷新。
