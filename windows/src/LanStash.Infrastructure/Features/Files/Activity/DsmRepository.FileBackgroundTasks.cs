@@ -25,12 +25,13 @@ public sealed partial class DsmRepository
         string.Equals(capability.Name, FileBackgroundTaskApi, StringComparison.Ordinal) &&
         capability.MinVersion <= FileBackgroundTaskApiVersion &&
         capability.MaxVersion >= FileBackgroundTaskApiVersion &&
-        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
+        HasFixedCapability(FileBackgroundTaskApi, FileBackgroundTaskApiVersion) &&
+        _profile.Id == _session.ProfileId && !string.IsNullOrWhiteSpace(_session.Sid);
 
     private async Task<FileBackgroundTaskPage> ListFileBackgroundTasksAsync(
         int offset,
         int limit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool strict = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!IsFileBackgroundTaskAvailable ||
@@ -51,13 +52,18 @@ public sealed partial class DsmRepository
             {
                 ["offset"] = requestedOffset.ToString(CultureInfo.InvariantCulture),
                 ["limit"] = requestedLimit.ToString(CultureInfo.InvariantCulture),
-                ["sort_by"] = "crtime",
-                ["sort_direction"] = "desc",
+                ["sort_by"] = ShareParameterString(FileBackgroundTaskApi, "crtime"),
+                ["sort_direction"] = ShareParameterString(FileBackgroundTaskApi, "desc"),
                 ["api_filter"] = FileBackgroundTaskFilter,
             },
             cancellationToken).ConfigureAwait(false);
 
         var taskArray = data["tasks"] as JsonArray;
+        if (strict && (taskArray is null || taskArray.Count > requestedLimit ||
+            FileBackgroundTaskOptionalNonNegativeLong(data, "offset") != requestedOffset ||
+            FileBackgroundTaskOptionalNonNegativeLong(data, "total") is not { } count || count > int.MaxValue ||
+            count < (long)requestedOffset + taskArray.Count || taskArray.Count == 0 && count != requestedOffset))
+            throw new InvalidDataException("file.tasks.pagination");
         var sourceTaskCount = taskArray?.Count ?? 0;
         var rawTasks = taskArray?.Take(requestedLimit).ToArray() ?? [];
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -66,10 +72,12 @@ public sealed partial class DsmRepository
         {
             if (node is JsonObject item &&
                 ParseFileBackgroundTask(item) is { } task &&
+                (!strict || item["taskid"] is JsonValue id && id.TryGetValue<string>(out var rawId) && rawId == task.Id) &&
                 seen.Add(task.Id))
             {
                 tasks.Add(task);
             }
+            else if (strict) throw new InvalidDataException("file.tasks.identity");
         }
 
         var resolvedOffset = BoundedPageValue(data, "offset", requestedOffset);
@@ -109,7 +117,12 @@ public sealed partial class DsmRepository
             ToNonNegativeInt(FileBackgroundTaskOptionalNonNegativeLong(item, "processed_num")),
             totalItemCount,
             FileBackgroundTaskOptionalNonNegativeLong(item, "processed_size"),
-            totalBytes);
+            totalBytes)
+        {
+            CreationTimestamp = FileTaskTimestamp(item),
+            ApiVersion = FileBackgroundTaskOptionalNonNegativeLong(item, "version") is { } version && version is > 0 and <= int.MaxValue ? (int)version : null,
+            Method = item["method"] is JsonValue method && method.TryGetValue<string>(out var name) && name == "start" ? name : null,
+        };
     }
 
     private static string? NormalizeFileBackgroundTaskId(string? value)
@@ -198,20 +211,23 @@ public sealed partial class DsmRepository
 
     private static DateTimeOffset? OptionalCreationTime(JsonObject item, string key)
     {
-        if (item.Long(key) is not { } epoch ||
-            epoch < 946_684_800 || epoch > DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 86_400)
+        if (FileTaskTimestamp(item) is not { } epoch)
         {
             return null;
         }
         try
         {
-            return DateTimeOffset.FromUnixTimeSeconds(epoch);
+            return DateTimeOffset.UnixEpoch.AddTicks((long)(epoch * TimeSpan.TicksPerSecond));
         }
         catch (ArgumentOutOfRangeException)
         {
             return null;
         }
     }
+
+    private static decimal? FileTaskTimestamp(JsonObject item) => item["crtime"] is JsonValue value &&
+        decimal.TryParse(value.TryGetValue<string>(out var text) ? text : value.ToJsonString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var epoch) &&
+        epoch >= 946_684_800 && epoch <= DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 86_400 ? epoch : null;
 
     private static int? ToNonNegativeInt(long? value) =>
         value is >= 0 and <= int.MaxValue ? (int)value.Value : null;

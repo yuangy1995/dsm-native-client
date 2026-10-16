@@ -44,6 +44,14 @@ public interface IFileLocationsRepository
     Task<RemoteMountInventory> LoadRemoteMountInventoryAsync(CancellationToken cancellationToken = default) =>
         Task.FromException<RemoteMountInventory>(new NotSupportedException());
 
+    bool CanManageIsoMounts => false;
+    Task<IsoMountProgress> ChangeIsoMountAsync(IsoMountChange change, CancellationToken cancellationToken = default) =>
+        Task.FromException<IsoMountProgress>(new NotSupportedException());
+    Task<IReadOnlyList<IsoMountProgress>> GetIsoMountOperationsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<IsoMountProgress>>([]);
+    Task<IsoMountProgress?> ReviewIsoMountAsync(Guid requestId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IsoMountProgress?>(null);
+
     Task<MutationResult> CreateRemoteMountAsync(
         RemoteMountDraft draft,
         CancellationToken cancellationToken = default);

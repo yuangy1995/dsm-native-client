@@ -7,6 +7,7 @@ internal interface INasSettingsDialogContent : IDisposable
     bool CanSave { get; }
     bool IsBusy { get; }
     string? PrimaryButtonResourceKey => "ActionSave";
+    string ReloadButtonResourceKey => "NasServiceReload";
     Task ActivateAsync();
     Task ReloadAsync();
     Task SaveAsync();

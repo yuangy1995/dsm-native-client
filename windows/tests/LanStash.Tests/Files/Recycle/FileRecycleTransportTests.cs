@@ -7,6 +7,18 @@ namespace LanStash.Tests.Files.Recycle;
 public sealed class FileRecycleTransportTests
 {
     [Fact]
+    public async Task CrossNasSourceDeletionUsesSameDeleteV2WithRecursionDisabled()
+    {
+        var handler = new CaptureHandler();
+        var client = new DsmApiClient(new HttpClient(handler));
+        var result = await client.StartNonRecursiveFileDeleteAsync(Profile, Session, DeleteCapability, "/share/docs/a.txt");
+        Assert.Equal(FileMutationTransportStatus.ResponseReceived, result.Status);
+        var form = Decode(Assert.Single(handler.Bodies));
+        Assert.Equal("false", form["recursive"]); Assert.Equal("2", form["version"]);
+        Assert.Equal("start", form["method"]); Assert.Equal("[\"/share/docs/a.txt\"]", form["path"]);
+        Assert.Equal("SYNO.FileStation.Delete", form["api"]);
+    }
+    [Fact]
     public async Task MoveToRecycleUsesFixedDeleteV2FormSinglePath()
     {
         var handler = new CaptureHandler();

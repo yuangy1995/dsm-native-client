@@ -28,8 +28,9 @@ public sealed class DownloadSettingsRepositoryTests
         var schedule = Assert.Single(fixture.Calls, call => call["method"] == "setconfig");
         Assert.Equal("2", basic["version"]); Assert.Equal("1", schedule["version"]);
         Assert.Equal(format == "JSON" ? "\"synthetic-folder\"" : "synthetic-folder", basic["default_destination"]);
-        Assert.Equal(basic["http_max_download"], basic["ftp_max_download"]);
-        Assert.Contains(fixture.Calls, call => call["api"] == "SYNO.FileStation.List");
+        Assert.False(basic.ContainsKey("http_max_download")); Assert.False(basic.ContainsKey("ftp_max_download"));
+        Assert.DoesNotContain(fixture.Calls, call => call["api"] == "SYNO.FileStation.List");
+        Assert.Contains(fixture.Calls, call => call["method"] == "getinfo");
     }
 
     [Fact]
@@ -128,15 +129,15 @@ public sealed class DownloadSettingsRepositoryTests
     }
 
     [Fact]
-    public async Task StaleConfirmationAndReadOnlyDestinationProduceNoSettingsWrite()
+    public async Task StaleConfirmationAndRevokedManagerProduceNoSettingsWrite()
     {
         using var stale = new Fixture("FORM");
         var original = await stale.Repository.LoadSettingsAsync(); stale.Config["bt_max_download"] = 900;
         var result = await stale.Repository.SaveSettingsAsync(new(stale.Profile.Id, original, original.Value with { BtDownloadLimitKb = 650 }, Guid.NewGuid()));
         Assert.Equal(MutationErrorCategory.Conflict, result.Result.ErrorCategory);
         Assert.DoesNotContain(stale.Calls, IsWrite);
-        using var readOnly = new Fixture("JSON") { FolderWritable = false };
-        original = await readOnly.Repository.LoadSettingsAsync();
+        using var readOnly = new Fixture("JSON");
+        original = await readOnly.Repository.LoadSettingsAsync(); readOnly.IsManager = false;
         result = await readOnly.Repository.SaveSettingsAsync(new(readOnly.Profile.Id, original, original.Value with { DefaultDestination = "synthetic-folder" }, Guid.NewGuid()));
         Assert.Equal(MutationErrorCategory.Permission, result.Result.ErrorCategory);
         Assert.DoesNotContain(readOnly.Calls, IsWrite);
@@ -158,12 +159,16 @@ public sealed class DownloadSettingsRepositoryTests
     }
 
     [Fact]
-    public async Task MissingAdministratorFieldsAndUnequalWebFtpLimitsCannotCreateEditableSnapshot()
+    public async Task MissingFieldsAndUnequalWebFtpLimitsCannotBeWrittenAsDefaults()
     {
         using var missing = new Fixture("FORM"); missing.Config.Remove("bt_max_download");
-        await Assert.ThrowsAsync<DsmException>(() => missing.Repository.LoadSettingsAsync());
+        var missingSnapshot = await missing.Repository.LoadSettingsAsync(); Assert.Null(missingSnapshot.Value.BtDownloadLimitKb);
+        var missingWrite = await missing.Repository.SaveSettingsAsync(new(missing.Profile.Id, missingSnapshot, missingSnapshot.Value with { BtDownloadLimitKb = 0 }, Guid.NewGuid()));
+        Assert.False(missingWrite.Result.Submitted);
         using var unequal = new Fixture("JSON"); unequal.Config["ftp_max_download"] = 300;
-        await Assert.ThrowsAsync<DsmException>(() => unequal.Repository.LoadSettingsAsync());
+        var unequalSnapshot = await unequal.Repository.LoadSettingsAsync(); Assert.Equal(300, unequalSnapshot.Value.FtpDownloadLimitKb);
+        var unequalWrite = await unequal.Repository.SaveSettingsAsync(new(unequal.Profile.Id, unequalSnapshot, unequalSnapshot.Value with { HttpDownloadLimitKb = 100, FtpDownloadLimitKb = 100 }, Guid.NewGuid()));
+        Assert.False(unequalWrite.Result.Submitted);
         Assert.DoesNotContain(missing.Calls, IsWrite); Assert.DoesNotContain(unequal.Calls, IsWrite);
     }
 
@@ -197,6 +202,7 @@ public sealed class DownloadSettingsRepositoryTests
         public bool BasicResponseLost { get; init; }
         public bool MalformedBasicAfterWrite { get; set; }
         public bool FolderWritable { get; init; } = true;
+        public bool IsManager { get; set; } = true;
         public bool RejectSchedule { get; init; }
         public bool ScheduleUnavailable { get; init; }
         public Action? AfterBasicApply { get; init; }
@@ -224,6 +230,7 @@ public sealed class DownloadSettingsRepositoryTests
         private JsonObject Reply(Dictionary<string, string> call)
         {
             var api = call["api"]; var method = call["method"];
+            if (method == "getinfo") return new() { ["is_manager"] = IsManager };
             if (api == "SYNO.FileStation.List") return new() { ["shares"] = new JsonArray(new JsonObject
             { ["path"] = "/synthetic-folder", ["name"] = "synthetic-folder", ["isdir"] = true,
                 ["additional"] = new JsonObject { ["perm"] = new JsonObject { ["write"] = FolderWritable } } }), ["offset"] = 0, ["total"] = 1 };

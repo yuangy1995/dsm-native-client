@@ -17,6 +17,45 @@ public sealed partial class DsmRepository
     FileArchiveExtractionAvailability IFileArchiveExtractionRepository.Availability =>
         FileArchiveExtractionAvailability;
 
+    public async Task<FileArchiveExtractionPreview> PreviewAsync(
+        FileArchiveExtractionRequest request, CancellationToken cancellationToken = default)
+    {
+        if (!TryNormalizeExtractionRequest(request, out var normalized, out _, out _) ||
+            !ArchiveExtractionCapabilityAvailable) throw new NotSupportedException();
+        var parent = await LoadArchiveFolderAsync(ArchiveMutationParent(normalized.Source.Item.Path), cancellationToken).ConfigureAwait(false);
+        var source = parent.SingleOrDefault(item => item.Item.Path == normalized.Source.Item.Path);
+        if (source is null || !MatchesArchiveExtractionSource(source, normalized.Source))
+            throw new InvalidDataException("file.archive-extraction.source-changed");
+        var preview = await LoadArchiveExtractionPreviewAsync(normalized, cancellationToken).ConfigureAwait(false);
+        if (!TryValidateExtractionInventory(preview.Items, out _))
+            throw new InvalidDataException("file.archive-extraction.invalid-archive-item");
+        return preview;
+    }
+
+    private async Task<FileArchiveExtractionPreview> LoadArchiveExtractionPreviewAsync(
+        FileArchiveExtractionRequest request, CancellationToken cancellationToken)
+    {
+        var options = request.Options with { SelectedItems = null };
+        var items = await _api.ListFileArchiveExtractionItemsAsync(_profile, _session,
+            _capabilities["SYNO.FileStation.Extract"], request.Source.Item.Path, options, cancellationToken).ConfigureAwait(false);
+        var penalty = FileArchiveExtractionOptions.NamePenalty(items.Select(item => item.Name));
+        if (options.Codepage is null && penalty > 0)
+        {
+            try
+            {
+                var chineseOptions = options with { Codepage = "chs" };
+                var chineseItems = await _api.ListFileArchiveExtractionItemsAsync(_profile, _session,
+                    _capabilities["SYNO.FileStation.Extract"], request.Source.Item.Path, chineseOptions, cancellationToken).ConfigureAwait(false);
+                if (chineseItems.Count == items.Count && FileArchiveExtractionOptions.NamePenalty(chineseItems.Select(item => item.Name)) < penalty)
+                    return new(chineseItems, "chs");
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (DsmException error) when (IsArchiveAuthenticationFailure(error)) { throw; }
+            catch (Exception) { /* 编码比较失败时保留已经完整读取的原列表。 */ }
+        }
+        return new(items, options.Codepage);
+    }
+
     public async Task<FileArchiveExtractionOutcome> ExtractAsync(
         FileArchiveExtractionRequest request,
         CancellationToken cancellationToken = default)
@@ -49,31 +88,9 @@ public sealed partial class DsmRepository
             IReadOnlyList<FileArchiveExtractionListedItem> archiveItems;
             try
             {
-                archiveItems = await _api.ListFileArchiveExtractionItemsAsync(
-                    _profile,
-                    _session,
-                    _capabilities["SYNO.FileStation.Extract"],
-                    normalized.Source.Item.Path,
-                    normalized.Options,
-                    cancellationToken).ConfigureAwait(false);
-                var originalPenalty = FileArchiveExtractionOptions.NamePenalty(archiveItems.Select(item => item.Name));
-                if (normalized.Options.Codepage is null && originalPenalty > 0)
-                {
-                    try
-                    {
-                        var chineseOptions = normalized.Options with { Codepage = "chs" };
-                        var chineseItems = await _api.ListFileArchiveExtractionItemsAsync(_profile, _session,
-                            _capabilities["SYNO.FileStation.Extract"], normalized.Source.Item.Path, chineseOptions, cancellationToken).ConfigureAwait(false);
-                        if (chineseItems.Count == archiveItems.Count && FileArchiveExtractionOptions.NamePenalty(chineseItems.Select(item => item.Name)) < originalPenalty)
-                        {
-                            normalized = normalized with { Options = chineseOptions };
-                            archiveItems = chineseItems;
-                        }
-                    }
-                    catch (OperationCanceledException) { throw; }
-                    catch (DsmException error) when (IsArchiveAuthenticationFailure(error)) { throw; }
-                    catch (Exception) { /* 编码比较不可用时使用原始成功列表，不影响原解压流程。 */ }
-                }
+                var preview = await LoadArchiveExtractionPreviewAsync(normalized, cancellationToken).ConfigureAwait(false);
+                archiveItems = preview.Items;
+                normalized = normalized with { Options = normalized.Options with { Codepage = preview.Codepage } };
             }
             catch (DsmException error) when (IsArchiveAuthenticationFailure(error))
             {
@@ -112,11 +129,14 @@ public sealed partial class DsmRepository
                 Request = normalized with { Options = normalized.Options with { Password = null } } };
 
             IReadOnlyList<FileArchiveListedItem> folderItems;
+            IReadOnlyList<FileArchiveListedItem> sourceItems;
             FileArchiveListedItem destination;
             try
             {
                 folderItems = await LoadArchiveFolderAsync(normalized.DestinationFolder,
                     cancellationToken).ConfigureAwait(false);
+                sourceItems = normalized.DestinationFolder == ArchiveMutationParent(normalized.Source.Item.Path)
+                    ? folderItems : await LoadArchiveFolderAsync(ArchiveMutationParent(normalized.Source.Item.Path), cancellationToken).ConfigureAwait(false);
                 destination = await LoadArchiveExtractionDestinationAsync(
                     normalized.DestinationFolder, cancellationToken).ConfigureAwait(false);
             }
@@ -137,7 +157,7 @@ public sealed partial class DsmRepository
                     "file.archive-extraction.preflight-invalid");
             }
 
-            var observedSource = folderItems.SingleOrDefault(item =>
+            var observedSource = sourceItems.SingleOrDefault(item =>
                 item.Item.Path == normalized.Source.Item.Path);
             if (observedSource is null ||
                 !MatchesArchiveExtractionSource(observedSource, normalized.Source))
@@ -484,7 +504,9 @@ public sealed partial class DsmRepository
         out FileArchiveExtractionReview? review,
         out string invalidTag)
     {
-        normalized = request;
+        if (request?.Options?.SelectedItems is { } selection)
+            request = request with { Options = request.Options with { SelectedItems = selection.ToArray() } };
+        normalized = request!;
         review = null;
         invalidTag = "file.archive-extraction.invalid-input";
         if (request is null || request.ProfileId != ProfileId || request.Source is null ||
@@ -500,8 +522,8 @@ public sealed partial class DsmRepository
                 StringComparison.Ordinal) ||
             ArchiveContainsRecycleSegment(request.Source.Item.Path) ||
             !FileArchiveExtractionOptions.IsSupportedArchive(request.Source.Item.Name) ||
-            request.DestinationFolder != ArchiveMutationParent(request.Source.Item.Path) ||
-            string.IsNullOrEmpty(request.DestinationFolder))
+            !ValidArchiveObjectPath(request.DestinationFolder) ||
+            ArchiveContainsRecycleSegment(request.DestinationFolder))
             return false;
 
         normalized = request;
@@ -513,6 +535,23 @@ public sealed partial class DsmRepository
         var signature = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request.Options))));
         review = new FileArchiveExtractionReview(normalized with { Options = normalized.Options with { Password = null } }, [], reservedPaths, signature);
+        return true;
+    }
+
+    private static bool TryValidateExtractionInventory(IReadOnlyList<FileArchiveExtractionListedItem> items,
+        out Dictionary<string, FileArchiveExtractionListedItem> paths)
+    {
+        paths = new Dictionary<string, FileArchiveExtractionListedItem>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in items)
+            if (item is null || !ValidArchiveItemName(item.Name) || item.Size < 0 ||
+                string.IsNullOrEmpty(item.RelativePath) || item.RelativePath.Contains('\\') ||
+                item.RelativePath.Split('/').Any(segment => !ValidArchiveItemName(segment)) ||
+                item.RelativePath.Split('/')[^1] != item.Name || !paths.TryAdd(item.RelativePath, item)) return false;
+        foreach (var item in items)
+        {
+            var separator = item.RelativePath.LastIndexOf('/');
+            if (separator >= 0 && (!paths.TryGetValue(item.RelativePath[..separator], out var parent) || !parent.IsDirectory)) return false;
+        }
         return true;
     }
 
@@ -529,16 +568,20 @@ public sealed partial class DsmRepository
             invalidTag = "file.archive-extraction.empty-archive";
             return false;
         }
-        var paths = new Dictionary<string, FileArchiveExtractionListedItem>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in archiveItems)
-            if (item is null || !ValidArchiveItemName(item.Name) || item.Size < 0 ||
-                string.IsNullOrEmpty(item.RelativePath) || item.RelativePath.Contains('\\') ||
-                item.RelativePath.Split('/').Any(segment => !ValidArchiveItemName(segment)) ||
-                item.RelativePath.Split('/')[^1] != item.Name || !paths.TryAdd(item.RelativePath, item)) return false;
-        foreach (var item in archiveItems)
+        if (!TryValidateExtractionInventory(archiveItems, out var paths)) return false;
+        IReadOnlyList<FileArchiveExtractionListedItem> included = archiveItems;
+        if (request.Options.SelectedItems is { } selected)
         {
-            var separator = item.RelativePath.LastIndexOf('/');
-            if (separator >= 0 && (!paths.TryGetValue(item.RelativePath[..separator], out var parent) || !parent.IsDirectory)) return false;
+            invalidTag = "file.archive-extraction.selection-changed";
+            var ids = new HashSet<int>();
+            foreach (var item in archiveItems)
+                if (item.Id is { } id && !ids.Add(id)) return false;
+            foreach (var item in selected)
+                if (item.Id is null || !paths.TryGetValue(item.RelativePath, out var current) || current != item) return false;
+            included = archiveItems.Where(item => selected.Any(chosen => item == chosen ||
+                chosen.IsDirectory && item.RelativePath.StartsWith(chosen.RelativePath + "/", StringComparison.Ordinal) ||
+                request.Options.KeepDirectoryStructure && item.IsDirectory &&
+                    chosen.RelativePath.StartsWith(item.RelativePath + "/", StringComparison.Ordinal))).ToArray();
         }
         var destinationFolder = request.DestinationFolder;
         var result = new List<FileArchiveExtractionExpectedOutput>(archiveItems.Count);
@@ -550,7 +593,7 @@ public sealed partial class DsmRepository
             result.Add(new(folderName, destinationFolder, true));
         }
         var outputPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in archiveItems)
+        foreach (var item in included)
         {
             if (!request.Options.KeepDirectoryStructure && item.IsDirectory) continue;
             var path = destinationFolder + "/" + (request.Options.KeepDirectoryStructure ? item.RelativePath : item.Name);
@@ -596,6 +639,7 @@ public sealed partial class DsmRepository
         FileArchiveExtractionReview review)
     {
         var state = ArchiveMutationStateForProfile(ProfileId);
+        lock (FileMutationState().Sync)
         lock (state.Sync)
         {
             state.ExtractionReviews.TryGetValue(review.Key, out var pending);
@@ -605,7 +649,7 @@ public sealed partial class DsmRepository
                     .Where(item => item.Key != review.Key)
                     .SelectMany(item => item.Value.ReservedPaths))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (review.Request.ProfileId != ProfileId ||
+            if (review.Request.ProfileId != ProfileId || OfficeEditingConflicts(review.ReservedPaths) ||
                 HasArchivePathConflict(state.ActivePaths, review.ReservedPaths) ||
                 HasArchivePathConflict(unresolvedPaths, review.ReservedPaths))
                 return new(false, null);

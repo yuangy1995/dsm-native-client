@@ -14,7 +14,7 @@ public sealed class VirtualMachineDeletionTests
     [InlineData("JSON")]
     public async Task DeletesOneGuestWithEmptyAcknowledgementAndStrictReadback(string format)
     {
-        using var f = new Fixture(format); var request = f.Request();
+        using var f = new Fixture(format) { IncludePagination = true }; var request = f.Request();
         Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Repository.DeleteMachineAsync(request)).Status);
         var write = Assert.Single(f.Writes);
         Assert.Equal(format == "JSON" ? "\"guest-a\"" : "guest-a", write["guest_id"]);
@@ -47,6 +47,12 @@ public sealed class VirtualMachineDeletionTests
     [InlineData("missing")]
     [InlineData("numeric")]
     [InlineData("duplicate")]
+    [InlineData("total")]
+    [InlineData("total-string")]
+    [InlineData("total-null")]
+    [InlineData("offset")]
+    [InlineData("offset-string")]
+    [InlineData("offset-null")]
     public async Task MalformedListCannotProveDeletion(string kind)
     {
         using var f = new Fixture { BadList = kind }; var request = f.Request();
@@ -61,7 +67,12 @@ public sealed class VirtualMachineDeletionTests
     public async Task LostReplyAndExplicitRejectionHaveDifferentOutcomes()
     {
         using var lost = new Fixture { LoseReply = true };
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await lost.Repository.DeleteMachineAsync(lost.Request())).Status);
+        var request = lost.Request();
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await lost.Repository.DeleteMachineAsync(request)).Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await lost.Recreate().ReviewDeletionAsync("guest-a"))!.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await lost.Recreate().DeleteMachineAsync(request)).Status);
+        Assert.Single(await lost.Repository.GetDeletionRecoveriesAsync());
+        Assert.Single(lost.Writes);
         using var rejected = new Fixture { Reject = 105 };
         Assert.Equal(MutationResultStatus.PermissionDenied, (await rejected.Repository.DeleteMachineAsync(rejected.Request())).Status);
         Assert.Equal(2, rejected.Calls.Count);
@@ -89,7 +100,8 @@ public sealed class VirtualMachineDeletionTests
         cancel.Cancel(); Assert.False((await f.Repository.DeleteMachineAsync(request, cancel.Token)).Submitted); Assert.Empty(f.Calls);
         using var after = new CancellationTokenSource(); f.AfterWrite = after.Cancel;
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, (await f.Repository.DeleteMachineAsync(request, after.Token)).Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Recreate().ReviewDeletionAsync("guest-a"))!.Status); Assert.Single(f.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Recreate().ReviewDeletionAsync("guest-a"))!.Status);
+        Assert.Single(await f.Repository.GetDeletionRecoveriesAsync()); Assert.Single(f.Writes);
     }
     [Fact]
     public async Task DeletionCapabilityDoesNotRequirePowerApiAndBlocksNameReuseWhilePending()
@@ -112,7 +124,7 @@ public sealed class VirtualMachineDeletionTests
         public Dictionary<string, ApiCapability> Capabilities { get; } = [];
         public DsmRepository Repository { get; }
         public string Name = "VM", Status = "shutdown";
-        public bool Exists = true, Apply = true, LoseReply;
+        public bool Exists = true, Apply = true, LoseReply, IncludePagination;
         public int? Reject; public string? BadList; public Action? AfterWrite;
         public List<Dictionary<string, string>> Calls { get; } = [];
         public IEnumerable<Dictionary<string, string>> Writes => Calls.Where(item => item["method"] == "delete");
@@ -138,7 +150,18 @@ public sealed class VirtualMachineDeletionTests
                     if (owner.Exists) rows.Add(new JsonObject { ["guest_id"] = "guest-a" });
                     if (owner.BadList == "numeric") rows.Add(new JsonObject { ["guest_id"] = 7 });
                     if (owner.BadList == "duplicate") { rows.Add(new JsonObject { ["guest_id"] = "other" }); rows.Add(new JsonObject { ["guest_id"] = "other" }); }
-                    return Reply(JsonSerializer.Serialize(new { success = true, data = owner.BadList == "missing" ? new JsonObject() : new JsonObject { ["guests"] = rows } }));
+                    var data = owner.BadList == "missing" ? new JsonObject() : new JsonObject { ["guests"] = rows };
+                    if (owner.IncludePagination) { data["total"] = rows.Count; data["offset"] = 0; }
+                    switch (owner.BadList)
+                    {
+                        case "total": data["total"] = rows.Count + 1; break;
+                        case "total-string": data["total"] = rows.Count.ToString(); break;
+                        case "total-null": data["total"] = null; break;
+                        case "offset": data["offset"] = 1; break;
+                        case "offset-string": data["offset"] = "0"; break;
+                        case "offset-null": data["offset"] = null; break;
+                    }
+                    return Reply(JsonSerializer.Serialize(new { success = true, data }));
                 }
                 Assert.Equal("delete", call["method"]);
                 if (owner.Apply) owner.Exists = false;

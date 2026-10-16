@@ -60,6 +60,7 @@ public sealed partial class DsmRepository
                 var current = await LoadHardwareSettingsAsync(token).ConfigureAwait(false);
                 if (current.FailedSections != NasHardwareSections.None || current.AvailableSections != baseline.AvailableSections ||
                     current.LedMinimum != baseline.LedMinimum || current.LedMaximum != baseline.LedMaximum ||
+                    !NasHardwareSettingsRules.SameFanSupport(current, baseline) ||
                     current.Beep?.VolumeFieldName != baseline.Beep?.VolumeFieldName ||
                     HardwareReadGroups.Any(group => !HardwareFieldsMatch(current, baseline, group.Section)))
                     return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);

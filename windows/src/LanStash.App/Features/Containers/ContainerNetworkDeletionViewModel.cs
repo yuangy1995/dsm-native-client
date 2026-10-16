@@ -5,6 +5,20 @@ using LanStash.Domain;
 
 namespace LanStash.App.Features.Containers;
 
+public sealed record ContainerNetworkDeletionRow(ContainerNetworkDeletionItem Item)
+{
+    public string Name => Item.Name;
+    public string Status => LocalizationService.Current.Get(Item.Stage switch
+    {
+        ContainerNetworkDeletionStage.Deleted => "ContainerNetworkDeleted",
+        ContainerNetworkDeletionStage.Rejected => Item.Error == MutationErrorCategory.Permission ? "ContainerNetworkDeleteDenied" : "ContainerNetworkDeleteFailed",
+        ContainerNetworkDeletionStage.NotSubmitted => "ContainerNetworkDeleteNotStarted",
+        ContainerNetworkDeletionStage.Accepted => "ContainerNetworkDeleteAccepted",
+        _ => "ContainerNetworkDeleteInterrupted"
+    });
+    public override string ToString() => nameof(ContainerNetworkDeletionRow);
+}
+
 public sealed class ContainerNetworkDeletionViewModel : ObservableObject, IDisposable
 {
     private IContainerManagerRepository? _repository;
@@ -13,9 +27,11 @@ public sealed class ContainerNetworkDeletionViewModel : ObservableObject, IDispo
     private bool _disposed, _ready;
     private ContainerNetworkDeleteRequest? _confirmation;
     private ContainerResourceSummary[] _selection = [];
+    private readonly HashSet<Guid> _resultRequests = [];
     private readonly Dictionary<string, ContainerNetworkDeletionRecovery> _untracked = new(StringComparer.Ordinal);
     public ObservableCollection<ContainerResourceSummary> Items { get; } = [];
     public ObservableCollection<ContainerNetworkDeletionRecovery> Pending { get; } = [];
+    public ObservableCollection<ContainerNetworkDeletionRow> Results { get; } = [];
     public bool IsLoading { get; private set; }
     public bool IsSaving { get; private set; }
     public bool IsBusy => IsLoading || IsSaving;
@@ -58,16 +74,18 @@ public sealed class ContainerNetworkDeletionViewModel : ObservableObject, IDispo
         {
             await repository.PrepareNetworkManagementAsync(request.Token); if (!Current(request, repository)) return;
             var pending = await repository.GetNetworkDeletionRecoveriesAsync(request.Token); if (!Current(request, repository)) return;
+            foreach (var item in pending.Where(item => item.RequestId != Guid.Empty)) _resultRequests.Add(item.RequestId);
             foreach (var item in pending.Concat(_untracked.Values).DistinctBy(item => item.Id).ToArray())
             {
                 var result = await repository.ReviewNetworkDeletionAsync(item.Id, request.Token); if (!Current(request, repository)) return;
                 if (result is not null) { LastResult = result; NeedsParentRefresh |= result.Submitted; }
-                if (result is { Counts.Unknown: 0, Status: MutationResultStatus.ConfirmedSuccess or MutationResultStatus.ConfirmedFailure or MutationResultStatus.PermissionDenied })
+                if (result is { Counts.Unknown: 0 })
                     _untracked.Remove(item.Id);
             }
+            await LoadResultsAsync(repository, request); if (!Current(request, repository)) return;
             var remaining = await repository.GetNetworkDeletionRecoveriesAsync(request.Token); if (!Current(request, repository)) return;
             Pending.Clear(); foreach (var item in remaining.Concat(_untracked.Values).DistinctBy(item => item.Id)) Pending.Add(item);
-            var snapshot = await repository.LoadSnapshotAsync(request.Token); if (!Current(request, repository)) return;
+            var snapshot = await repository.LoadInventoryAsync(request.Token); if (!Current(request, repository)) return;
             if (snapshot.ProfileId != repository.ProfileId || snapshot.Networks.Status != ContainerManagerSectionStatus.Available)
                 throw new InvalidOperationException("container.network.snapshot.invalid");
             foreach (var item in snapshot.Networks.Items.Where(ContainerNetworkDeletionRules.CanDelete))
@@ -100,6 +118,8 @@ public sealed class ContainerNetworkDeletionViewModel : ObservableObject, IDispo
         {
             var result = await repository.DeleteNetworksAsync(confirmed, request.Token); if (!Current(request, repository)) return;
             LastResult = result; NeedsParentRefresh |= result.Submitted;
+            _resultRequests.Add(confirmed.RequestId);
+            await LoadResultsAsync(repository, request);
         }
         catch
         {
@@ -119,10 +139,25 @@ public sealed class ContainerNetworkDeletionViewModel : ObservableObject, IDispo
             }
         }
     }
+    private async Task LoadResultsAsync(IContainerManagerRepository repository, Request request)
+    {
+        foreach (var id in _resultRequests.ToArray())
+        {
+            IReadOnlyList<ContainerNetworkDeletionItem> items;
+            try { items = await repository.GetNetworkDeletionItemsAsync(id, request.Token); }
+            catch { if (Current(request, repository)) ErrorMessage = L.Get("ContainerDeleteLoadFailed"); return; }
+            if (!Current(request, repository)) return;
+            foreach (var item in items.Where(item => item.RequestId == id))
+            {
+                var index = Results.ToList().FindIndex(row => row.Item.RequestId == id && row.Item.Id == item.Id);
+                if (index < 0) Results.Add(new(item)); else Results[index] = new(item);
+            }
+        }
+    }
     public void Deactivate()
     {
         Cancel(); _repository = null; _ready = false; IsLoading = IsSaving = false; _confirmation = null; _selection = [];
-        Items.Clear(); Pending.Clear(); _untracked.Clear(); LastResult = null; ErrorMessage = null; NeedsParentRefresh = false; Notify();
+        Items.Clear(); Pending.Clear(); Results.Clear(); _resultRequests.Clear(); _untracked.Clear(); LastResult = null; ErrorMessage = null; NeedsParentRefresh = false; Notify();
     }
     public void Dispose() { if (_disposed) return; _disposed = true; Deactivate(); }
     private Request BeginRequest() { Cancel(); _cancellation = new(); return new(++_generation, _cancellation.Token); }

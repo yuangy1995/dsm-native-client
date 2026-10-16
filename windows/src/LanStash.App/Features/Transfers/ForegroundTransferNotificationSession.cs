@@ -13,9 +13,9 @@ internal interface IForegroundTransferNotificationBackend
 internal sealed class ForegroundTransferNotificationSession(
     IForegroundTransferNotificationBackend backend,
     Func<Action, bool> dispatch,
-    Action showActivity) : IForegroundTransferNotificationService, IDisposable
+    Action<Guid?> showActivity) : IForegroundTransferNotificationService, IDisposable
 {
-    private readonly string _context = Guid.NewGuid().ToString("N");
+    private readonly Dictionary<string, Guid?> _contexts = new(StringComparer.Ordinal);
     private bool _registered;
     private int _disposed;
     public bool IsEnabled => Volatile.Read(ref _disposed) == 0 && backend.IsSupported;
@@ -27,8 +27,11 @@ internal sealed class ForegroundTransferNotificationSession(
         dispatch(() =>
         {
             if (!IsEnabled || !TryRegister()) return;
-            try { backend.Show(notification, _context); }
-            catch { /* 通知显示失败不改变已经成功的系统注册，也不阻断传输。 */ }
+            var context = Guid.NewGuid().ToString("N");
+            if (_contexts.Count >= 512) _contexts.Remove(_contexts.Keys.First());
+            _contexts.Add(context, notification.ActivityId);
+            try { backend.Show(notification, context); }
+            catch { _contexts.Remove(context); /* 显示失败不改变注册，也不阻断传输。 */ }
         });
     }
 
@@ -54,10 +57,10 @@ internal sealed class ForegroundTransferNotificationSession(
     {
         if (Volatile.Read(ref _disposed) != 0 || arguments.Count != 2 ||
             !arguments.TryGetValue("route", out var route) || route != "activity" ||
-            !arguments.TryGetValue("context", out var context) || context != _context) return;
+            !arguments.TryGetValue("context", out var context)) return;
         dispatch(() =>
         {
-            if (Volatile.Read(ref _disposed) == 0) showActivity();
+            if (Volatile.Read(ref _disposed) == 0 && _contexts.Remove(context, out var activityId)) showActivity(activityId);
         });
     }
 
@@ -69,6 +72,7 @@ internal sealed class ForegroundTransferNotificationSession(
 
     private void Cleanup()
     {
+        _contexts.Clear();
         backend.Invoked -= HandleInvoked;
         if (!_registered) return;
         _registered = false;

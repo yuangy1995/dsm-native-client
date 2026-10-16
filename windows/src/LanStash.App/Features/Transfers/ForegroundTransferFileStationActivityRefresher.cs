@@ -69,6 +69,9 @@ internal sealed class FileStationActivityRefresher : IAsyncDisposable
         }
     }
 
+    public FileBackgroundTaskSummary? FindTask(string id)
+    { lock (_sync) return _loadedTasks.SingleOrDefault(t => t.Id == id); }
+
     public Task StartAsync()
     {
         lock (_sync)

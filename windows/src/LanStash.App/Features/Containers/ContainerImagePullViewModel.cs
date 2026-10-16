@@ -46,7 +46,7 @@ public sealed class ContainerImagePullViewModel : ObservableObject, IDisposable
         !Items.Any(item => Pending(item.Result) && item.Result.Repository == _selectedRepository && item.Result.Tag == _selectedTag);
     public bool CanSubmit => CanConfirm && _confirmation is not null;
     public bool CanReview => !_disposed && _repository is not null && !IsBusy && !RequiresReconnect;
-    public bool HasPollableTasks => CanReview && Items.Any(item => item.Result.Stage == ContainerImagePullStage.Downloading);
+    public bool HasPollableTasks => CanReview && Items.Any(item => Pollable(item.Result));
     public bool NeedsParentRefresh { get; private set; }
     public string? ErrorMessage { get; private set; }
 
@@ -95,18 +95,19 @@ public sealed class ContainerImagePullViewModel : ObservableObject, IDisposable
             var pending = await repository.GetImagePullRecoveriesAsync(request.Token); if (!Current(request, repository)) return;
             foreach (var result in pending) Accept(result, isCached: true);
             var targets = Items.Select(item => item.Result).Where(result => Pending(result) &&
-                (!automatic || result.Stage == ContainerImagePullStage.Downloading)).ToArray();
+                (!automatic || Pollable(result))).ToArray();
             foreach (var target in targets)
             {
                 var result = await repository.ReviewImagePullAsync(target.RequestId, request.Token); if (!Current(request, repository)) return;
                 if (result is not null) Accept(result);
+                if (RequiresReconnect) break;
             }
         }
         catch (Exception error)
         {
             if (Current(request, repository))
             {
-                RequiresReconnect |= error is DsmException { AuthenticationFailure: true };
+                RequiresReconnect |= error is DsmException { AuthenticationFailure: true } or CertificateTrustChallengeException;
                 ErrorMessage = L.Get(RequiresReconnect ? "ContainerPullSignIn" : "ContainerPullReadFailed");
             }
         }
@@ -121,6 +122,9 @@ public sealed class ContainerImagePullViewModel : ObservableObject, IDisposable
         if (!isCached) RequiresReconnect |= result.Outcome.ErrorCategory == MutationErrorCategory.Authentication;
     }
     private static bool Pending(ContainerImagePullResult result) => result.Stage is not (ContainerImagePullStage.Ready or ContainerImagePullStage.Rejected);
+    private static bool Pollable(ContainerImagePullResult result) =>
+        result.Stage is ContainerImagePullStage.Downloading or ContainerImagePullStage.NeedsReview &&
+        result.Outcome.ErrorCategory is not (MutationErrorCategory.Authentication or MutationErrorCategory.Permission or MutationErrorCategory.Unsupported);
     public void Dispose()
     {
         if (_disposed) return; _disposed = true; Cancel(); _repository = null; _confirmation = null;

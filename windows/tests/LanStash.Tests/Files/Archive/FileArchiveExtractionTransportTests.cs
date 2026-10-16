@@ -7,6 +7,51 @@ namespace LanStash.Tests.Files.Archive;
 
 public sealed class FileArchiveExtractionTransportTests
 {
+    [Fact]
+    public async Task SelectionUsesActualNumericIdentifiersAndCommaSeparatedFormField()
+    {
+        var handler = new CaptureHandler { Responses = new(new[] {
+            """{"success":true,"data":{"items":[{"itemid":7,"name":"a.txt","is_dir":false},{"item_id":42,"name":"b.txt","is_dir":false}]}}""",
+            """{"success":true,"data":{"taskid":"synthetic-task"}}""" }) };
+        var client = new DsmApiClient(new HttpClient(handler));
+        var items = await client.ListFileArchiveExtractionItemsAsync(Profile, Session, Capability, "/share/archive.zip");
+        Assert.Equal(new int?[] { 7, 42 }, items.Select(item => item.Id));
+        await client.StartFileArchiveExtractionAsync(Profile, Session, Capability, "/share/archive.zip", "/share",
+            new FileArchiveExtractionOptions { SelectedItems = items });
+        Assert.Equal("7,42", Decode(handler.Bodies[1])["item_id"]);
+    }
+
+    [Fact]
+    public async Task EmptySelectionCannotFallBackToExtractAll()
+    {
+        var handler = new CaptureHandler(); var client = new DsmApiClient(new HttpClient(handler));
+        var result = await client.StartFileArchiveExtractionAsync(Profile, Session, Capability, "/share/archive.zip", "/share",
+            new FileArchiveExtractionOptions { SelectedItems = [] });
+        Assert.Equal(FileMutationTransportStatus.Unsupported, result.Status);
+        Assert.Equal(0, handler.Count);
+    }
+
+    [Theory]
+    [InlineData("\"itemid\":1,\"item_id\":2")]
+    [InlineData("\"itemid\":\"1\"")]
+    [InlineData("\"itemid\":-1")]
+    public async Task InvalidFileIdentifiersAreRejected(string identifier)
+    {
+        var handler = new CaptureHandler { Responses = new(new[] { "{\"success\":true,\"data\":{\"items\":[{" + identifier + ",\"name\":\"a.txt\",\"is_dir\":false}]}}" }) };
+        await Assert.ThrowsAsync<DsmException>(() => new DsmApiClient(new HttpClient(handler))
+            .ListFileArchiveExtractionItemsAsync(Profile, Session, Capability, "/share/archive.zip"));
+    }
+
+    [Fact]
+    public async Task DuplicateIdentifiersAcrossDirectoryAndFileAreRejected()
+    {
+        var handler = new CaptureHandler { Responses = new(new[] {
+            """{"success":true,"data":{"items":[{"itemid":7,"name":"dir","is_dir":true},{"itemid":7,"name":"a.txt","is_dir":false}]}}""" }) };
+        await Assert.ThrowsAsync<DsmException>(() => new DsmApiClient(new HttpClient(handler))
+            .ListFileArchiveExtractionItemsAsync(Profile, Session, Capability, "/share/archive.zip"));
+        Assert.Single(handler.Bodies);
+    }
+
     [Theory]
     [InlineData("sample.ZIP", true)]
     [InlineData("sample.7z", true)]

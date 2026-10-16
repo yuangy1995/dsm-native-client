@@ -11,6 +11,7 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
     private readonly StorageStreamTransaction _transaction;
     private readonly bool _allowReplaceExisting;
     private readonly bool _validateZipArchive;
+    private readonly Action? _validateTarget;
     private ulong _position;
     private bool _transactionClosed;
     private bool _committed;
@@ -22,7 +23,8 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
         StorageFile stagingFile,
         StorageStreamTransaction transaction,
         bool allowReplaceExisting,
-        bool validateZipArchive)
+        bool validateZipArchive,
+        Action? validateTarget)
     {
         _targetFolder = targetFolder;
         _targetName = targetName;
@@ -30,15 +32,18 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
         _transaction = transaction;
         _allowReplaceExisting = allowReplaceExisting;
         _validateZipArchive = validateZipArchive;
+        _validateTarget = validateTarget;
         _transaction.Stream.Size = 0;
     }
 
     public static async Task<WindowsTransactionalDownloadDestination> CreateAsync(
         string targetPath,
         bool allowReplaceExisting = true,
-        bool validateZipArchive = false)
+        bool validateZipArchive = false,
+        Action? validateTarget = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        validateTarget?.Invoke();
         var directory = Path.GetDirectoryName(targetPath);
         var targetName = Path.GetFileName(targetPath);
         if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(targetName))
@@ -60,7 +65,8 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
                 staging,
                 transaction,
                 allowReplaceExisting,
-                validateZipArchive);
+                validateZipArchive,
+                validateTarget);
         }
         catch
         {
@@ -76,6 +82,7 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
+        _validateTarget?.Invoke();
 
         using var output = _transaction.Stream.GetOutputStreamAt(_position);
         using var writer = new DataWriter(output);
@@ -90,6 +97,7 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
+        _validateTarget?.Invoke();
         _transaction.Stream.Size = _position;
         await _transaction.CommitAsync();
         CloseTransaction();
@@ -97,6 +105,8 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
         {
             await ValidateZipArchiveAsync(_stagingFile, cancellationToken);
         }
+
+        _validateTarget?.Invoke();
 
         if (!_allowReplaceExisting)
         {

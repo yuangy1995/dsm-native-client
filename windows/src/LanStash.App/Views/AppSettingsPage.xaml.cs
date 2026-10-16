@@ -12,7 +12,11 @@ public sealed partial class AppSettingsPage : Page
     private readonly AppSettingsService _settings = AppSettingsService.Current;
     private bool _isLoading;
     private bool _isClearing;
+    private bool _changingLanguage;
+    internal Func<Task<bool>>? PrepareLanguageChangeAsync { get; set; }
     public event EventHandler? CloudDriveRequested;
+    public event EventHandler? SavedRecordingsRequested;
+    private void SavedRecordingsButton_Click(object sender, RoutedEventArgs e) => SavedRecordingsRequested?.Invoke(this, EventArgs.Empty);
 
     private void CloudDriveButton_Click(object sender, RoutedEventArgs e) =>
         CloudDriveRequested?.Invoke(this, EventArgs.Empty);
@@ -69,17 +73,23 @@ public sealed partial class AppSettingsPage : Page
         UpdateCacheSummary();
     }
 
-    private void LanguageSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void LanguageSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_isLoading || LanguageSelector.SelectedItem is not LanguageChoice choice)
+        if (_isLoading || _changingLanguage || LanguageSelector.SelectedItem is not LanguageChoice choice || choice.Value == LocalizationService.Current.Selection)
         {
             return;
         }
-        if (!LocalizationService.Current.TrySetSelection(choice.Value))
+        _changingLanguage = true;
+        try
         {
-            LoadState();
-            ShowSaveFailure();
+            if (PrepareLanguageChangeAsync is { } prepare && !await prepare()) { LoadState(); return; }
+            if (!LocalizationService.Current.TrySetSelection(choice.Value))
+            {
+                LoadState();
+                ShowSaveFailure();
+            }
         }
+        finally { _changingLanguage = false; }
     }
 
     private void ThemeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)

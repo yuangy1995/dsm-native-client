@@ -42,7 +42,7 @@ public sealed class DownloadTaskActionWireTests
         await fixture.Repository.DeleteTaskAsync(request); Assert.Single(fixture.Writes);
         Assert.Equal("true", fixture.Writes[0]["force_complete"]);
         fixture.Exists = false;
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await fixture.Repository.DeleteTaskAsync(request)).Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Repository.DeleteTaskAsync(request)).Result.Status);
         Assert.Single(fixture.Writes);
     }
 
@@ -71,7 +71,7 @@ public sealed class DownloadTaskActionWireTests
         {
             _http = new(new Handler(this));
             Repository = new DsmRepository(Profile, new(Profile.Id, "synthetic-sid", null, null), new DsmApiClient(_http),
-                new Dictionary<string, ApiCapability> { ["SYNO.DownloadStation.Task"] = new("SYNO.DownloadStation.Task", "entry.cgi", 1, 1, "FORM") });
+                new Dictionary<string, ApiCapability> { ["SYNO.DownloadStation.Task"] = new("SYNO.DownloadStation.Task", "entry.cgi", 1, 1, "FORM") }) { CanFinishIncomplete = true };
         }
         private sealed class Handler(Fixture owner) : HttpMessageHandler
         {

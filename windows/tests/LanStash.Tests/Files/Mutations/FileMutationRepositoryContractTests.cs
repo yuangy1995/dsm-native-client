@@ -57,7 +57,7 @@ public sealed class FileMutationRepositoryContractTests
     }
 
     [Fact]
-    public async Task CancellationAfterCreateSubmissionUsesIndependentReadbackAndNeverReplays()
+    public async Task CancellationWithoutAcceptanceCannotClaimSameNameAndNeverReplays()
     {
         using var cancellation = new CancellationTokenSource();
         var api = new FakeApi(Page(), Page(Folder("/share/parent/new", "new")))
@@ -73,11 +73,14 @@ public sealed class FileMutationRepositoryContractTests
         var outcome = await repository.CreateFolderAsync(
             new CreateFolderRequest(Profile.Id, "/share/parent", "new"), cancellation.Token);
 
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, outcome.Result.Status);
+        Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, outcome.Result.Status);
         Assert.Equal(1, api.CreateCount);
-        Assert.Equal(2, api.ListCount);
+        Assert.Equal(1, api.ListCount);
         Assert.True(api.ListTokens[0].CanBeCanceled);
-        Assert.False(api.ListTokens[1].CanBeCanceled);
+        Assert.Null(outcome.ConfirmedItem);
+        var repeated = await repository.CreateFolderAsync(new(Profile.Id, "/share/parent", "new"));
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, repeated.Result.Status);
+        Assert.Equal(1, api.CreateCount);
     }
 
     [Fact]
@@ -168,7 +171,7 @@ public sealed class FileMutationRepositoryContractTests
     }
 
     [Fact]
-    public async Task CancellationAfterSubmissionWithBadReadbackBlocksReplayUntilReviewConfirms()
+    public async Task CancellationWithoutReceiptKeepsReviewUnknownEvenIfSameNameAppears()
     {
         var invalidReadback = new JsonObject
         {
@@ -188,8 +191,10 @@ public sealed class FileMutationRepositoryContractTests
         var reviewed = await Repository(api).CreateFolderAsync(request);
 
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, first.Result.Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, reviewed.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, reviewed.Result.Status);
         Assert.Equal(1, api.CreateCount);
+        Assert.Equal(1, api.ListCount);
+        Assert.Null(reviewed.ConfirmedItem);
     }
 
     [Fact]
@@ -230,9 +235,10 @@ public sealed class FileMutationRepositoryContractTests
         var reviewed = await Repository(api).CreateFolderAsync(request);
 
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, first.Result.Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, reviewed.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, reviewed.Result.Status);
         Assert.Equal(1, api.CreateCount);
-        Assert.Equal(2, api.ListCount);
+        Assert.Equal(1, api.ListCount);
+        Assert.Null(reviewed.ConfirmedItem);
     }
 
     [Theory]
@@ -254,9 +260,10 @@ public sealed class FileMutationRepositoryContractTests
         var reviewed = await Repository(api).CreateFolderAsync(request);
 
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, reviewed.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, reviewed.Result.Status);
         Assert.Equal(1, api.CreateCount);
-        Assert.Equal(2, api.ListCount);
+        Assert.Equal(1, api.ListCount);
+        Assert.Null(reviewed.ConfirmedItem);
     }
 
     [Fact]
@@ -277,9 +284,10 @@ public sealed class FileMutationRepositoryContractTests
         var reviewed = await Repository(api).RenameAsync(request);
 
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, reviewed.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, reviewed.Result.Status);
         Assert.Equal(1, api.RenameCount);
-        Assert.Equal(2, api.ListCount);
+        Assert.Equal(1, api.ListCount);
+        Assert.Null(reviewed.ConfirmedItem);
     }
 
     [Fact]

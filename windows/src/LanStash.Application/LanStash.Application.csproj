@@ -25,6 +25,8 @@
     <Compile Include="..\LanStash.App\Features\Photos\**\*.cs" Link="Features\Photos\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\LanStash.App\Features\Settings\**\*.cs" Link="Features\Settings\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\LanStash.App\Features\Transfers\ForegroundTransfer*.cs" Link="Features\Transfers\%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Features\Transfers\ForegroundFolderDownloadPlan.cs" Link="Features\Transfers\ForegroundFolderDownloadPlan.cs" />
+    <Compile Include="..\LanStash.App\Features\Transfers\ForegroundDownloadDirectoryLease.cs" Link="Features\Transfers\ForegroundDownloadDirectoryLease.cs" />
     <Compile Include="..\LanStash.App\Features\Transfers\BoundedFileUploadBatch.cs" Link="Features\Transfers\BoundedFileUploadBatch.cs" />
     <Compile Include="..\LanStash.App\Features\Transfers\BoundedFileDownloadBatch.cs" Link="Features\Transfers\BoundedFileDownloadBatch.cs" />
     <Compile Include="..\LanStash.App\Features\Transfers\BoundedFolderUploadPlan.cs" Link="Features\Transfers\BoundedFolderUploadPlan.cs" />

@@ -1,5 +1,15 @@
 <Page xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:photos="using:LanStash.App.Views.Photos" x:Class="LanStash.App.Views.Photos.SynologyPhotosPage">
   <Page.Resources>
+    <DataTemplate x:Key="SimilarPhotoTemplate">
+      <Grid ColumnSpacing="12" Padding="4" AutomationProperties.Name="{Binding Title}">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Grid Width="64" Height="64"><SymbolIcon Symbol="Pictures"/><Image Stretch="UniformToFill"/></Grid>
+        <TextBlock Grid.Column="1" Text="{Binding Title}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+      </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="PhotoUploadItemTemplate">
+      <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,4"/>
+    </DataTemplate>
     <CollectionViewSource x:Name="PhotosSource" IsSourceGrouped="True"/>
     <DataTemplate x:Key="PhotoTemplate">
       <Grid Width="152" Height="152" Padding="4" ToolTipService.ToolTip="{Binding Title}" AutomationProperties.Name="{Binding Title}">
@@ -15,9 +25,12 @@
       </Grid>
     </DataTemplate>
     <DataTemplate x:Key="CollectionTemplate">
-      <Border Width="152" Height="152" Margin="4" Padding="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6" ToolTipService.ToolTip="{Binding Title}">
+      <Border Width="152" Height="152" Margin="4" Padding="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6" ToolTipService.ToolTip="{Binding Title}" AutomationProperties.Name="{Binding Title}">
         <StackPanel Spacing="8" VerticalAlignment="Center">
-          <SymbolIcon Symbol="Folder"/>
+          <Grid Height="72">
+            <SymbolIcon Symbol="{Binding CollectionSymbol}"/>
+            <Image x:Name="FolderCoverImage" Stretch="UniformToFill"/>
+          </Grid>
           <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
           <TextBlock Text="{Binding Subtitle}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Center"/>
         </StackPanel>
@@ -34,7 +47,7 @@
     </DataTemplate>
     <photos:SynologyPhotoTemplateSelector x:Key="PhotoTemplates" PhotoTemplate="{StaticResource PhotoTemplate}" CollectionTemplate="{StaticResource CollectionTemplate}" SharedTemplate="{StaticResource SharedTemplate}"/>
   </Page.Resources>
-  <Grid Background="{ThemeResource WorkspaceSurfaceBrush}">
+  <Grid x:Name="PhotosPageRoot" Background="{ThemeResource WorkspaceSurfaceBrush}">
     <Grid x:Name="LibraryRoot" Padding="0" RowSpacing="0">
       <Grid.RowDefinitions>
         <RowDefinition Height="72"/>
@@ -53,8 +66,9 @@
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-        <Button x:Name="BackButton" Click="Back_Click" MinHeight="40" MinWidth="40">
+        <Button x:Name="BackButton" Click="Back_Click" MinHeight="44" MinWidth="44">
           <SymbolIcon Symbol="Back"/>
         </Button>
         <Pivot x:Name="Sections" Grid.Row="0" SelectionChanged="Sections_SelectionChanged" Height="54" Grid.Column="1" MinWidth="320">
@@ -64,24 +78,100 @@
           <PivotItem x:Name="SharingTab"/>
         </Pivot>
         <AutoSuggestBox x:Name="SearchBox" Grid.Column="2" QueryIcon="Find" QuerySubmitted="Search_QuerySubmitted" MinWidth="100" Width="210" CornerRadius="10" VerticalAlignment="Center"/>
-        <Button x:Name="FiltersButton" Grid.Column="3" Click="Filters_Click" MinWidth="40" MinHeight="40" Margin="8,0">
+        <Button x:Name="FiltersButton" Grid.Column="3" Click="Filters_Click" MinWidth="44" MinHeight="44" Margin="8,0">
           <SymbolIcon Symbol="Filter"/>
         </Button>
         <Button x:Name="RefreshButton" Grid.Column="4" Click="Refresh_Click" MinWidth="44" MinHeight="44">
           <SymbolIcon Symbol="Refresh"/>
         </Button>
+        <Button x:Name="MoreButton" Grid.Column="5" MinWidth="44" MinHeight="44">
+          <SymbolIcon Symbol="More"/>
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuFlyoutItem x:Name="SlideshowMenu" Click="StartSlideshow_Click"/>
+              <MenuFlyoutSubItem x:Name="ExportSelectionMenu">
+                <MenuFlyoutItem x:Name="ExportOriginalMenu" Click="ExportOriginal_Click"/>
+                <MenuFlyoutItem x:Name="ExportJpegMenu" Click="ExportJpeg_Click"/>
+                <MenuFlyoutItem x:Name="ExportFullJpegMenu" Click="ExportFullJpeg_Click"/>
+              </MenuFlyoutSubItem>
+              <MenuFlyoutSubItem x:Name="ExportArchiveMenu">
+                <MenuFlyoutItem x:Name="ExportArchiveOriginalMenu" Click="ExportArchiveOriginal_Click"/>
+                <MenuFlyoutItem x:Name="ExportArchiveJpegMenu" Click="ExportArchiveJpeg_Click"/>
+              </MenuFlyoutSubItem>
+              <MenuFlyoutItem x:Name="UploadFilesMenu" Click="UploadFiles_Click"/>
+              <MenuFlyoutItem x:Name="UploadFolderMenu" Click="UploadFolder_Click"/>
+              <MenuFlyoutItem x:Name="UploadQueueMenu" Click="UploadQueue_Click"/>
+              <MenuFlyoutSeparator x:Name="PhotoManagementSeparator"/>
+              <MenuFlyoutItem x:Name="SelectPhotosMenu" Click="SelectPhotos_Click"/>
+              <MenuFlyoutItem x:Name="EditPhotosMenu" Click="EditPhotos_Click"/>
+              <MenuFlyoutItem x:Name="GeneratePhotoPreviewsMenu" Click="GeneratePhotoPreviews_Click"/>
+              <MenuFlyoutItem x:Name="PendingPhotoPreviewsMenu" Click="PendingPhotoPreviews_Click"/>
+              <MenuFlyoutItem x:Name="AutomaticPhotoPreviewsMenu" Click="AutomaticPhotoPreviews_Click"/>
+              <MenuFlyoutItem x:Name="PhotoDisplaySettingsMenu" Click="PhotoDisplaySettings_Click"/>
+              <MenuFlyoutItem x:Name="PhotoDuplicateSettingsMenu" Click="PhotoDuplicateSettings_Click"/>
+              <MenuFlyoutItem x:Name="PhotoRecognitionSettingsMenu" Click="PhotoRecognitionSettings_Click"/>
+              <MenuFlyoutItem x:Name="PhotoSharedSettingsMenu" Click="PhotoSharedSettings_Click"/>
+              <MenuFlyoutItem x:Name="PhotoSharedMembersMenu" Click="PhotoSharedMembers_Click"/>
+              <MenuFlyoutItem x:Name="PhotoGlobalSettingsMenu" Click="PhotoGlobalSettings_Click"/>
+              <MenuFlyoutItem x:Name="PhotoMaintenanceMenu" Click="PhotoMaintenance_Click"/>
+              <MenuFlyoutItem x:Name="PhotoBackgroundTasksMenu" Click="PhotoBackgroundTasks_Click"/>
+              <MenuFlyoutItem x:Name="PhotoCodecPromptMenu" Click="PhotoCodecPrompt_Click"/>
+              <MenuFlyoutItem x:Name="PhotoPreviewHistoryMenu" Click="PhotoPreviewHistory_Click"/>
+              <MenuFlyoutItem x:Name="CreatePhotoTagMenu" Click="CreatePhotoTag_Click"/>
+              <MenuFlyoutItem x:Name="CreatePhotoFolderMenu" Click="CreatePhotoFolder_Click"/>
+              <MenuFlyoutItem x:Name="RenamePhotoFolderMenu" Click="RenamePhotoFolder_Click"/>
+              <MenuFlyoutItem x:Name="SortPhotoFolderMenu" Click="SortPhotoFolder_Click"/>
+              <MenuFlyoutItem x:Name="CoverPhotoFolderMenu" Click="CoverPhotoFolder_Click"/>
+              <MenuFlyoutItem x:Name="CopyPhotoFilesMenu" Click="CopyPhotoFiles_Click"/>
+              <MenuFlyoutItem x:Name="MovePhotoFilesMenu" Click="MovePhotoFiles_Click"/>
+              <MenuFlyoutItem x:Name="DeletePhotoFilesMenu" Click="DeletePhotoFiles_Click"/>
+              <MenuFlyoutItem x:Name="PhotoFileChangesMenu" Click="PhotoFileChanges_Click"/>
+              <MenuFlyoutItem x:Name="PhotoFolderChangesMenu" Click="PhotoFolderChanges_Click"/>
+              <MenuFlyoutItem x:Name="PhotoChangesMenu" Click="PhotoChanges_Click"/>
+              <MenuFlyoutSeparator x:Name="PhotoAlbumSeparator"/>
+              <MenuFlyoutItem x:Name="CreatePhotoAlbumMenu" Click="CreatePhotoAlbum_Click"/>
+              <MenuFlyoutItem x:Name="RenamePhotoAlbumMenu" Click="RenamePhotoAlbum_Click"/>
+              <MenuFlyoutItem x:Name="DeletePhotoAlbumMenu" Click="DeletePhotoAlbum_Click"/>
+              <MenuFlyoutItem x:Name="AddPhotoAlbumMenu" Click="AddPhotoAlbum_Click"/>
+              <MenuFlyoutItem x:Name="RemovePhotoAlbumMenu" Click="RemovePhotoAlbum_Click"/>
+              <MenuFlyoutItem x:Name="CoverPhotoAlbumMenu" Click="CoverPhotoAlbum_Click"/>
+              <MenuFlyoutItem x:Name="SortPhotoAlbumMenu" Click="SortPhotoAlbum_Click"/>
+              <MenuFlyoutItem x:Name="SortAlbumListMenu" Click="SortAlbumList_Click"/>
+              <MenuFlyoutItem x:Name="AlbumDisplayMenu" Click="AlbumDisplay_Click"/>
+              <MenuFlyoutItem x:Name="PhotoAlbumChangesMenu" Click="PhotoAlbumChanges_Click"/>
+              <MenuFlyoutItem x:Name="CreateConditionAlbumMenu" Click="CreateConditionAlbum_Click"/>
+              <MenuFlyoutItem x:Name="EditConditionAlbumMenu" Click="EditConditionAlbum_Click"/>
+              <MenuFlyoutItem x:Name="UnfreezeAlbumMenu" Click="UnfreezeAlbum_Click"/>
+              <MenuFlyoutItem x:Name="RebuildAlbumMenu" Click="RebuildAlbum_Click"/>
+              <MenuFlyoutItem x:Name="PhotoSharingMenu" Click="PhotoSharing_Click"/>
+              <MenuFlyoutItem x:Name="PhotoSharingChangesMenu" Click="PhotoSharingChanges_Click"/>
+              <MenuFlyoutItem x:Name="CreateTemporarySharingMenu" Click="CreateTemporarySharing_Click"/>
+              <MenuFlyoutItem x:Name="StopTemporarySharingMenu" Click="StopTemporarySharing_Click"/>
+              <MenuFlyoutItem x:Name="TemporarySharingChangesMenu" Click="TemporarySharingChanges_Click"/>
+              <MenuFlyoutItem x:Name="CreatePhotoRequestMenu" Click="CreatePhotoRequest_Click"/>
+              <MenuFlyoutItem x:Name="EditPhotoRequestMenu" Click="EditPhotoRequest_Click"/>
+              <MenuFlyoutItem x:Name="DeletePhotoRequestMenu" Click="DeletePhotoRequest_Click"/>
+              <MenuFlyoutItem x:Name="PhotoRequestChangesMenu" Click="PhotoRequestChanges_Click"/>
+              <MenuFlyoutItem x:Name="PhotoFolderSharingMenu" Click="PhotoFolderSharing_Click"/>
+              <MenuFlyoutItem x:Name="PhotoFolderSharingChangesMenu" Click="PhotoFolderSharingChanges_Click"/>
+              <MenuFlyoutItem x:Name="RenamePhotoPersonMenu" Click="RenamePhotoPerson_Click"/>
+              <MenuFlyoutItem x:Name="MergePhotoPeopleMenu" Click="MergePhotoPeople_Click"/>
+              <MenuFlyoutItem x:Name="ShowPhotoPeopleMenu" Click="ShowPhotoPeople_Click"/>
+              <MenuFlyoutItem x:Name="RemovePhotoFacesMenu" Click="RemovePhotoFaces_Click"/>
+              <MenuFlyoutItem x:Name="ReassignPhotoFacesMenu" Click="ReassignPhotoFaces_Click"/>
+              <MenuFlyoutItem x:Name="SetPhotoPersonCoverMenu" Click="SetPhotoPersonCover_Click"/>
+              <MenuFlyoutItem x:Name="ShowPhotoConceptsMenu" Click="ShowPhotoConcepts_Click"/>
+              <MenuFlyoutItem x:Name="SetPhotoConceptCoverMenu" Click="SetPhotoConceptCover_Click"/>
+              <MenuFlyoutItem x:Name="RemovePhotoConceptItemsMenu" Click="RemovePhotoConceptItems_Click"/>
+              <MenuFlyoutItem x:Name="PhotoRecognitionChangesMenu" Click="PhotoRecognitionChanges_Click"/>
+              <MenuFlyoutItem x:Name="SimilarGroupsMenu" Click="SimilarGroups_Click"/>
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
       </Grid>
-      <Grid ColumnSpacing="12" Grid.Row="1" Padding="20,8" Visibility="Collapsed">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
-        </Grid.ColumnDefinitions>
-        <StackPanel>
-          <TextBlock x:Name="PageTitle" Style="{StaticResource WorkspaceTitleStyle}" AutomationProperties.HeadingLevel="Level1"/>
-          <TextBlock x:Name="SpaceTitle" Style="{StaticResource CaptionTextBlockStyle}"/>
-        </StackPanel>
-      </Grid>
+      <ComboBox x:Name="SourcePicker" Grid.Row="2" SelectionChanged="Source_SelectionChanged" MinWidth="180" MinHeight="40" Margin="14,4" Visibility="Collapsed"/>
       <StackPanel Grid.Row="3" Spacing="4">
+        <InfoBar x:Name="SimilarStatusBar" IsClosable="False" Severity="Informational"/>
         <TextBlock x:Name="LocationTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" AutomationProperties.HeadingLevel="Level2"/>
         <ItemsControl x:Name="CategoryButtons">
           <ItemsControl.ItemsPanel>
@@ -98,9 +188,53 @@
         <ComboBox x:Name="ShareScopePicker" SelectionChanged="ShareScope_SelectionChanged" MinWidth="220"/>
       </StackPanel>
       <StackPanel Grid.Row="4" Spacing="4">
+        <InfoBar x:Name="AutomaticPreviewBar" IsClosable="False" Severity="Informational">
+          <InfoBar.ActionButton><Button x:Name="AutomaticPreviewAction" Click="AutomaticPreviewAction_Click"/></InfoBar.ActionButton>
+        </InfoBar>
+        <InfoBar x:Name="PhotoPreviewGenerationBar" IsClosable="True" Severity="Informational">
+          <InfoBar.ActionButton>
+            <Button x:Name="PhotoPreviewHistoryButton" Click="PhotoPreviewHistory_Click"/>
+          </InfoBar.ActionButton>
+        </InfoBar>
+        <InfoBar x:Name="PhotoRequestBar" IsClosable="True" Severity="Informational">
+          <InfoBar.ActionButton>
+            <Button x:Name="PhotoRequestHistoryButton" Click="PhotoRequestChanges_Click"/>
+          </InfoBar.ActionButton>
+        </InfoBar>
+        <InfoBar x:Name="PhotoRecognitionBar" IsClosable="True" Severity="Informational">
+          <InfoBar.ActionButton>
+            <Button x:Name="PhotoRecognitionHistoryButton" Click="PhotoRecognitionChanges_Click"/>
+          </InfoBar.ActionButton>
+        </InfoBar>
+        <InfoBar x:Name="PhotoFolderSharingBar" IsClosable="True" Severity="Informational">
+          <InfoBar.ActionButton>
+            <Button x:Name="PhotoFolderSharingHistoryButton" Click="PhotoFolderSharingChanges_Click"/>
+          </InfoBar.ActionButton>
+        </InfoBar>
+        <InfoBar x:Name="UploadBar" IsClosable="True" Severity="Informational"/>
+        <InfoBar x:Name="PhotoFileBar" IsClosable="True" Severity="Informational">
+          <InfoBar.ActionButton>
+            <Button x:Name="PhotoFileHistoryButton" Click="PhotoFileChanges_Click"/>
+          </InfoBar.ActionButton>
+        </InfoBar>
+        <InfoBar x:Name="PhotoAlbumBar" IsClosable="True" Severity="Informational">
+          <InfoBar.ActionButton>
+            <Button x:Name="PhotoAlbumHistoryButton" Click="PhotoAlbumChanges_Click"/>
+          </InfoBar.ActionButton>
+        </InfoBar>
+        <InfoBar x:Name="PhotoSharingBar" IsClosable="True" Severity="Informational">
+          <InfoBar.ActionButton>
+            <Button x:Name="PhotoSharingHistoryButton" Click="PhotoSharingChanges_Click"/>
+          </InfoBar.ActionButton>
+        </InfoBar>
         <InfoBar x:Name="ErrorBar" IsClosable="False" Severity="Error">
           <InfoBar.ActionButton>
             <Button x:Name="RetryButton" Click="Retry_Click"/>
+          </InfoBar.ActionButton>
+        </InfoBar>
+        <InfoBar x:Name="TemporarySharingBar" IsClosable="True" Severity="Informational">
+          <InfoBar.ActionButton>
+            <Button x:Name="TemporarySharingHistoryButton" Click="TemporarySharingChanges_Click"/>
           </InfoBar.ActionButton>
         </InfoBar>
         <InfoBar x:Name="DeletionBar" IsClosable="False" Severity="Warning">
@@ -124,7 +258,7 @@
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-        <GridView x:Name="LibraryGrid" IsItemClickEnabled="True" ItemClick="Library_ItemClick" SelectionMode="Single" ItemTemplateSelector="{StaticResource PhotoTemplates}" ContainerContentChanging="Library_ContainerContentChanging" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.VerticalScrollMode="Enabled" Margin="12,0">
+        <GridView x:Name="LibraryGrid" IsItemClickEnabled="True" ItemClick="Library_ItemClick" SelectionMode="Single" SelectionChanged="PhotoSelection_Changed" ItemTemplateSelector="{StaticResource PhotoTemplates}" ContainerContentChanging="Library_ContainerContentChanging" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.VerticalScrollMode="Enabled" Margin="12,0">
           <GridView.ItemsPanel>
             <ItemsPanelTemplate>
               <ItemsWrapGrid Orientation="Horizontal" GroupPadding="0,0,0,12"/>
@@ -146,11 +280,17 @@
           <TextBlock x:Name="EmptyMessage" TextAlignment="Center" TextWrapping="Wrap"/>
         </StackPanel>
         <ListView x:Name="MonthPicker" Grid.Column="1" SelectionChanged="Month_SelectionChanged" Width="92" BorderBrush="{ThemeResource WorkspaceEdgeBrush}" BorderThickness="1,0,0,0" Padding="4,10" ScrollViewer.VerticalScrollBarVisibility="Auto">
+          <ListView.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding}" TextWrapping="Wrap" ToolTipService.ToolTip="{Binding}"/>
+            </DataTemplate>
+          </ListView.ItemTemplate>
           <ListView.ItemContainerStyle>
             <Style TargetType="ListViewItem">
               <Setter Property="Padding" Value="4,2"/>
               <Setter Property="MinHeight" Value="40"/>
               <Setter Property="FontSize" Value="12"/>
+              <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             </Style>
           </ListView.ItemContainerStyle>
         </ListView>
@@ -172,19 +312,37 @@
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
       </Grid.RowDefinitions>
-      <CommandBar DefaultLabelPosition="Collapsed" IsDynamicOverflowEnabled="True">
+      <CommandBar x:Name="PreviewCommandBar" DefaultLabelPosition="Collapsed" IsDynamicOverflowEnabled="True">
         <CommandBar.Content>
           <TextBlock x:Name="PreviewTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="260" VerticalAlignment="Center"/>
         </CommandBar.Content>
         <AppBarButton x:Name="PreviousPhotoButton" Icon="Back" Click="PreviousPhoto_Click"/>
         <AppBarButton x:Name="NextPhotoButton" Icon="Forward" Click="NextPhoto_Click"/>
+        <AppBarButton x:Name="StartSlideshowButton" Icon="Play" Click="StartSlideshow_Click"/>
+        <AppBarButton x:Name="SlideshowPlaybackButton" Icon="Pause" Click="SlideshowPlayback_Click" Visibility="Collapsed"/>
+        <AppBarButton x:Name="SlideshowStopButton" Icon="Stop" Click="SlideshowStop_Click" Visibility="Collapsed"/>
         <AppBarButton x:Name="MotionButton" Icon="Play" Click="Motion_Click"/>
-        <AppBarButton x:Name="SaveButton" Icon="Save" Click="Save_Click"/>
+        <AppBarButton x:Name="SaveButton" Icon="Save">
+          <AppBarButton.Flyout>
+            <MenuFlyout>
+              <MenuFlyoutItem x:Name="PreviewExportOriginalMenu" Click="Save_Click"/>
+              <MenuFlyoutItem x:Name="PreviewExportJpegMenu" Click="PreviewExportJpeg_Click"/>
+              <MenuFlyoutItem x:Name="PreviewExportFullJpegMenu" Click="PreviewExportFullJpeg_Click"/>
+            </MenuFlyout>
+          </AppBarButton.Flyout>
+        </AppBarButton>
         <AppBarButton x:Name="DeleteButton" Icon="Delete" Click="Delete_Click"/>
+        <AppBarButton x:Name="EditPhotoButton" Icon="Edit" Click="EditPreviewPhoto_Click"/>
+        <AppBarButton x:Name="GeneratePhotoPreviewButton" Icon="Refresh" Click="GeneratePhotoPreview_Click"/>
+        <AppBarButton x:Name="EditPhotoFacesButton" Icon="Contact" Click="EditPhotoFaces_Click"/>
+        <AppBarButton x:Name="SimilarPhotoButton" Icon="Pictures" Click="SimilarPhoto_Click"/>
         <AppBarButton x:Name="DetailsButton" Icon="More" Click="Details_Click"/>
         <AppBarButton x:Name="ClosePreviewButton" Icon="Cancel" Click="ClosePreview_Click"/>
       </CommandBar>
       <StackPanel Grid.Row="1" Spacing="4">
+        <InfoBar x:Name="PreviewAutomaticBar" IsClosable="False" Severity="Informational">
+          <InfoBar.ActionButton><Button x:Name="PreviewAutomaticAction" Click="AutomaticPreviewAction_Click"/></InfoBar.ActionButton>
+        </InfoBar>
         <InfoBar x:Name="PreviewErrorBar" Severity="Error" IsClosable="False">
           <InfoBar.ActionButton>
             <Button x:Name="PreviewRetryButton" Click="PreviewRetry_Click"/>
@@ -202,10 +360,15 @@
         </InfoBar>
       </StackPanel>
       <Grid Grid.Row="2">
-        <ScrollViewer x:Name="ImageScroll" ZoomMode="Enabled" MinZoomFactor="0.25" MaxZoomFactor="8" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" SizeChanged="ImageScroll_SizeChanged">
-          <Image x:Name="PreviewImage" Stretch="Uniform"/>
+        <ScrollViewer x:Name="ImageScroll" ZoomMode="Enabled" MinZoomFactor="0.25" MaxZoomFactor="8" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" SizeChanged="ImageScroll_SizeChanged">
+          <Grid x:Name="PreviewImageHost">
+            <Image x:Name="PreviewImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Grid>
         </ScrollViewer>
         <MediaPlayerElement x:Name="PlayerElement" AreTransportControlsEnabled="True" Stretch="Uniform" Visibility="Collapsed"/>
+        <Border x:Name="PreviewPhotoInfo" Visibility="Collapsed" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="16" Padding="12,8" CornerRadius="8" Background="{ThemeResource WorkspaceSurfaceBrush}" MaxWidth="660" IsHitTestVisible="False">
+          <TextBlock x:Name="PreviewPhotoInfoText" TextWrapping="Wrap" TextAlignment="Center" MaxLines="4" TextTrimming="CharacterEllipsis"/>
+        </Border>
         <ProgressRing x:Name="PreviewProgress" Width="40" Height="40" HorizontalAlignment="Center" VerticalAlignment="Center"/>
       </Grid>
     </Grid>

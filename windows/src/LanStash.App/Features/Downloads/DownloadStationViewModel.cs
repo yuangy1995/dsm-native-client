@@ -41,6 +41,13 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         DownloadStationSectionStatus.Unavailable,
         null);
     private bool _disposed;
+    public DownloadTaskSort Sort { get; private set; }
+    public bool SortDescending { get; private set; }
+    public void SetSort(DownloadTaskSort sort, bool descending)
+    {
+        Sort = sort; SortDescending = descending;
+        if (CurrentProfile is { } profile) { profile.Sort = sort; profile.SortDescending = descending; ApplyFilter(profile); }
+    }
 
     internal DownloadStationViewModel(
         int pageSize = DefaultPageSize,
@@ -534,7 +541,8 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         if (page.SourceOffset != requestedOffset || page.SourceRecordCount < 0 ||
             page.SourceTotal < 0 || page.SourceRecordCount != page.Tasks.Count ||
             expectedNextOffset > page.SourceTotal ||
-            page.HasMore != (expectedNextOffset < page.SourceTotal) ||
+            (page.SourceTotal is int total && page.HasMore != (expectedNextOffset < total)) ||
+            (page.HasMore && page.SourceRecordCount == 0) ||
             page.HasMore != (page.NextOffset is not null) ||
             page.NextOffset is int nextOffset && nextOffset != expectedNextOffset)
         {
@@ -560,14 +568,22 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
     private void ApplyFilter(ProfileState profile)
     {
         var search = SearchText.Trim();
-        var filtered = profile.AllTasks.Where(item =>
+        var matching = profile.AllTasks.Where(item =>
             MatchesFilter(item.State, Filter) &&
             (string.IsNullOrEmpty(search) ||
              item.Title.Contains(search, StringComparison.CurrentCultureIgnoreCase) ||
              (item.Task.Destination?.Contains(
                  search,
-                 StringComparison.CurrentCultureIgnoreCase) ?? false)))
-            .ToArray();
+                 StringComparison.CurrentCultureIgnoreCase) ?? false)));
+        Func<DownloadTaskItem, IComparable?> key = Sort switch
+        {
+            DownloadTaskSort.Size => item => item.Task.Size,
+            DownloadTaskSort.Progress => item => item.Task.Progress,
+            DownloadTaskSort.Status => item => item.State,
+            DownloadTaskSort.DownloadSpeed => item => item.Task.DownloadSpeed,
+            _ => item => item.Title,
+        };
+        var filtered = (SortDescending ? matching.OrderByDescending(key) : matching.OrderBy(key)).ThenBy(item => item.Id, StringComparer.Ordinal).ToArray();
         Tasks.Clear();
         foreach (var item in filtered)
         {
@@ -609,6 +625,8 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
 
     private void RestoreFilter(ProfileState profile)
     {
+        Sort = profile.Sort;
+        SortDescending = profile.SortDescending;
         SearchText = profile.SearchText;
         Filter = profile.Filter;
     }
@@ -877,7 +895,9 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         public IReadOnlyList<DownloadTaskItem> AllTasks { get; set; } = [];
         public int? NextOffset { get; set; }
         public bool HasMore { get; set; }
-        public int SourceTotal { get; set; }
+        public int? SourceTotal { get; set; }
+        public DownloadTaskSort Sort { get; set; }
+        public bool SortDescending { get; set; }
         public string SearchText { get; set; } = string.Empty;
         public DownloadTaskFilter Filter { get; set; }
         public string? SelectedTaskId { get; set; }

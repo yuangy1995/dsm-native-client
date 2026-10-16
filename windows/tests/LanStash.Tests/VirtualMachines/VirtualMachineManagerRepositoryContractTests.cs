@@ -10,12 +10,12 @@ public sealed class VirtualMachineManagerRepositoryContractTests
         Guid.Parse("22222222-2222-2222-2222-222222222222");
 
     [Fact]
-    public async Task UnavailableContractMakesNoRequestAndInternalApiIsNotAReadFallback()
+    public async Task UndocumentedInternalReadVersionMakesNoRequest()
     {
         var api = new VirtualMachineRecordingApiClient(_ => throw new InvalidOperationException());
         IVirtualMachineManagerRepository repository = CreateRepository(
             api,
-            Capability("SYNO.Virtualization.Guest", 1, 2));
+            Capability("SYNO.Virtualization.Guest", 1, 1));
 
         Assert.Equal(VirtualMachineManagerAvailabilityStatus.Unavailable, repository.Availability.Status);
         Assert.DoesNotContain(AppModule.VirtualMachines, ((DsmRepository)repository).AvailableModules);

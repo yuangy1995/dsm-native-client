@@ -17,16 +17,18 @@ public sealed class VirtualMachinePowerViewModel : ObservableObject, IDisposable
     public bool IsLoading { get; private set; }
     public bool IsSubmitting { get; private set; }
     public bool IsBusy => IsLoading || IsSubmitting;
-    public bool IsReadOnly => _repository?.CanControlPower != true;
+    public bool IsReadOnly => Target is null || _repository?.CanControlPowerAction(Target, Action) != true;
     public bool CanConfirm => !_disposed && _ready && !IsBusy && !IsReadOnly && !_submitted && !_pending && Target is not null && VirtualMachinePowerRules.CanRequest(Target, Action);
     public bool CanSubmit => CanConfirm && _confirmation is not null;
     public bool NeedsParentRefresh { get; private set; }
     public MutationResult? LastResult { get; private set; }
     public string? ErrorMessage { get; private set; }
     public static string ActionKey(VirtualMachinePowerAction action) => action switch
-    { VirtualMachinePowerAction.PowerOn => "VmPowerOnAction", VirtualMachinePowerAction.Shutdown => "VmShutdownAction", _ => "VmPowerOffAction" };
-    public string Hint => L.Get(Action switch { VirtualMachinePowerAction.PowerOn => "VmPowerOnHint", VirtualMachinePowerAction.Shutdown => "VmShutdownHint", _ => "VmPowerOffHint" });
-    public string? Feedback => LastResult is null ? null : L.Format(LastResult.Status switch
+    { VirtualMachinePowerAction.PowerOn => "VmPowerOnAction", VirtualMachinePowerAction.Shutdown => "VmShutdownAction", VirtualMachinePowerAction.Reboot => "VmRebootAction", _ => "VmPowerOffAction" };
+    public string Hint => L.Get(Action switch { VirtualMachinePowerAction.PowerOn => "VmPowerOnHint", VirtualMachinePowerAction.Shutdown => "VmShutdownHint", VirtualMachinePowerAction.Reboot => "VmRebootHint", _ => "VmPowerOffHint" });
+    public string? Feedback => LastResult is null ? null : LastResult.ErrorCategory == MutationErrorCategory.Authentication
+        ? L.Format("VmPowerSignIn", L.Get(ActionKey(ResultAction))) : LastResult.DiagnosticTag == "virtual-machine.power.reboot-accepted"
+        ? L.Get("VmRebootAccepted") : L.Format(LastResult.Status switch
     {
         MutationResultStatus.ConfirmedSuccess => "VmPowerVerified",
         MutationResultStatus.SubmittedButUnverified or MutationResultStatus.CancellationRequestedAfterSubmission => "VmPowerUnknown",
@@ -57,6 +59,7 @@ public sealed class VirtualMachinePowerViewModel : ObservableObject, IDisposable
                 if (result is not null)
                 {
                     LastResult = result; ResultAction = pending.Action; NeedsParentRefresh |= result.Submitted;
+                    _submitted |= result.Submitted;
                     _pending = result.Counts.Unknown > 0 || result.ErrorCategory == MutationErrorCategory.Conflict || result.Status == MutationResultStatus.CancelledBeforeSubmission;
                 }
             }

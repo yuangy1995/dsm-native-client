@@ -1,6 +1,4 @@
-using System.Buffers;
 using LanStash.Domain;
-using LanStash.Infrastructure.Transport;
 
 namespace LanStash.Infrastructure;
 
@@ -13,961 +11,396 @@ public sealed partial class DsmRepository
     private const int CrossNasFolderDepthLimit = 128;
 
     public CrossNasCopyMoveAvailability CrossNasAvailability => new(
-        CanCrossCopy: CrossNasSourceTransferAvailable(),
-        CanCrossMove: false);
-
+        CanCrossCopy: !CrossNasRecoveryUnavailable && CrossNasSourceTransferAvailable(), CanCrossMove: CrossNasSourceDeletionEnabled &&
+            CrossNasSourceTransferAvailable() && MutationCapability("SYNO.FileStation.Delete", 2));
+    // PENDING_USER_VALIDATION：真实 NAS 的非递归删除、权限和外部并发窗口验收后才开放。
+    internal bool CrossNasSourceDeletionEnabled { get; set; }
     private bool CrossNasSourceTransferAvailable() =>
-        _capabilities.ContainsKey("SYNO.FileStation.Download") &&
-        MutationListAvailable;
+        FileContentCapability("SYNO.FileStation.Download", 2) && FileContentCapability("SYNO.FileStation.List", 2);
+    public bool CanReceiveCrossNasCopy => FileContentUploadAvailable;
+    public string? GetCrossNasTargetIdentity(Guid targetProfileId) => CrossNasRepositoryResolver?.Invoke(targetProfileId)?.ServiceScope();
 
-    private bool CrossNasTargetTransferAvailable() =>
-        _capabilities.TryGetValue("SYNO.FileStation.Upload", out var upload) &&
-        string.Equals(upload.Name, "SYNO.FileStation.Upload", StringComparison.Ordinal) &&
-        upload.MinVersion <= 2 &&
-        upload.MaxVersion >= 2 &&
-        string.Equals(upload.RequestFormat, "MULTIPART", StringComparison.OrdinalIgnoreCase) &&
-        SafeMutationCapabilityPath(upload.Path) &&
-        MutationListAvailable;
+    public async Task<IReadOnlyList<CrossNasTransferSummary>> GetCrossNasTransfersAsync(CancellationToken cancellationToken = default)
+    {
+        await InitializeCrossNasRecoveryAsync().ConfigureAwait(false);
+        if (CrossNasRecoveryUnavailable) throw new IOException("file.cross-nas.recovery-unavailable");
+        cancellationToken.ThrowIfCancellationRequested();
+        var scope = ServiceScope();
+        lock (CrossNasTransfers)
+            return CrossNasTransfers
+                .Where(pair => pair.Key.Scope == scope).Select(pair =>
+                {
+                    var task = pair.Value; var request = task.Request;
+                    return new CrossNasTransferSummary(task.Id, ProfileId, request.TargetProfileId, request.SourcePath,
+                        request.DestinationFolderPath, request.SourceName, request.IsDirectory, request.FileSize, CrossNasSnapshot(task));
+                }).ToArray();
+    }
 
-    public bool CanReceiveCrossNasCopy => CrossNasTargetTransferAvailable();
+    public async Task<CrossNasCopyMoveOutcome> CrossNasCopyMoveAsync(CrossNasCopyMoveRequest request,
+        IProgress<long>? progress = null, CancellationToken cancellationToken = default)
+    {
+        await InitializeCrossNasRecoveryAsync().ConfigureAwait(false);
+        if (CrossNasRecoveryUnavailable) return CrossNasRejected(request, MutationErrorCategory.Unknown, "file.cross-nas.recovery-unavailable");
+        if (request.Operation != CrossNasCopyMoveOperation.Copy &&
+            (request.Operation != CrossNasCopyMoveOperation.Move || !CrossNasAvailability.CanCrossMove))
+            return CrossNasRejected(request, MutationErrorCategory.Unsupported, "file.cross-nas.move-disabled");
+        if (!CrossNasSourceTransferAvailable())
+            return CrossNasRejected(request, MutationErrorCategory.Unsupported, "file.cross-nas.source-no-capability");
+        if (request.SourceProfileId != ProfileId || _session.ProfileId != ProfileId ||
+            request.SourceProfileId == request.TargetProfileId || request.FileSize < 0 || request.Overwrite ||
+            !ValidMutationObjectPath(request.SourcePath) || !ValidMutationDirectory(request.DestinationFolderPath) ||
+            !ValidMutationItemName(request.SourceName) || !request.SourcePath.EndsWith("/" + request.SourceName, StringComparison.Ordinal) ||
+            ArchiveContainsRecycleSegment(request.SourcePath) || ArchiveContainsRecycleSegment(request.DestinationFolderPath))
+            return CrossNasRejected(request, MutationErrorCategory.Validation, "file.cross-nas.invalid-request");
+        var target = CrossNasRepositoryResolver?.Invoke(request.TargetProfileId);
+        if (target is null || target.ProfileId != request.TargetProfileId || target._session.ProfileId != target.ProfileId)
+            return CrossNasRejected(request, MutationErrorCategory.Unsupported, "file.cross-nas.target-not-found");
+        if (!target.CanReceiveCrossNasCopy || request.IsDirectory && !target.FileMutationAvailability.CanCreateFolder)
+            return CrossNasRejected(request, MutationErrorCategory.Unsupported, "file.cross-nas.target-no-capability");
+        if (cancellationToken.IsCancellationRequested)
+            return CrossNasRejected(request, null, "file.cross-nas.cancelled-before-submit", MutationResultStatus.CancelledBeforeSubmission);
 
-    public async Task<CrossNasCopyMoveOutcome> CrossNasCopyMoveAsync(
-        CrossNasCopyMoveRequest request,
-        IProgress<long>? progress = null,
+        var scope = ServiceScope(); var targetScope = target.ServiceScope();
+        if (request.TargetIdentity is not null && request.TargetIdentity != targetScope)
+            return CrossNasRejected(request, MutationErrorCategory.Authentication, "file.cross-nas.target-session-changed");
+        var destination = JoinMutationPath(request.DestinationFolderPath, request.SourceName);
+        CrossNasTransfer transfer;
+        lock (CrossNasTransfers)
+        {
+            if (request.OperationId != Guid.Empty && CrossNasTransfers.TryGetValue((scope, request.OperationId), out var existing))
+                return existing.Request == request && existing.TargetScope == targetScope ? CrossNasSnapshot(existing) :
+                    CrossNasRejected(request, MutationErrorCategory.Conflict, "file.cross-nas.operation-mismatch");
+            if (request.OperationId != Guid.Empty && CrossNasTransfers.Values.Any(item => item.Id == request.OperationId))
+                return CrossNasRejected(request, MutationErrorCategory.Conflict, "file.cross-nas.operation-owner-mismatch");
+            var overlapping = CrossNasTransfers.Values.FirstOrDefault(item => item.SourceScope == scope &&
+                item.TargetScope == targetScope && (item.Running || item.HasSubmitted && !item.Verified) &&
+                CrossNasPathsOverlap(item.DestinationPath, destination));
+            if (overlapping is not null)
+                return overlapping.Request.SourcePath == request.SourcePath && overlapping.DestinationPath == destination
+                    ? CrossNasSnapshot(overlapping) : CrossNasRejected(request, MutationErrorCategory.Conflict, "file.cross-nas.target-busy");
+            transfer = new(request.OperationId == Guid.Empty ? Guid.NewGuid() : request.OperationId, request, scope, targetScope, destination);
+            CrossNasTransfers.Add((scope, transfer.Id), transfer);
+            transfer.Running = true;
+        }
+        CrossNasExecuting.Value = transfer.Id;
+        await transfer.Gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            transfer.Items = await BuildCrossNasPlanAsync(request, destination, cancellationToken).ConfigureAwait(false);
+            var parent = await target.ReadFileMetadataAsync(request.DestinationFolderPath, cancellationToken).ConfigureAwait(false);
+            if (parent is null || !parent.Item.IsDirectory || CrossNasUnsafeMetadata(parent, allowShare: true))
+                throw new CrossNasPreflightException(MutationErrorCategory.Validation, "file.cross-nas.invalid-destination");
+            if (await target.ReadFileMetadataAsync(destination, cancellationToken).ConfigureAwait(false) is not null)
+                throw new CrossNasPreflightException(MutationErrorCategory.Conflict, "file.cross-nas.target-exists");
+            await RunCrossNasPlanAsync(transfer, target, progress, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) { RecordCrossNasError(transfer, error); }
+        finally { transfer.Running = false; await FinishCrossNasCheckpointAsync(transfer).ConfigureAwait(false); transfer.Gate.Release(); CrossNasExecuting.Value = null; }
+        return CrossNasSnapshot(transfer);
+    }
+
+    public async Task<CrossNasCopyMoveOutcome?> ReviewCrossNasTransferAsync(Guid operationId, CancellationToken cancellationToken = default)
+    {
+        var transfer = FindCrossNasTransfer(operationId);
+        if (transfer is null) return null;
+        if (!await transfer.Gate.WaitAsync(0, cancellationToken).ConfigureAwait(false)) return CrossNasSnapshot(transfer);
+        try
+        {
+            if (transfer.DeletionStarted)
+            {
+                await ReviewCrossNasSourceDeletionAsync(transfer, cancellationToken).ConfigureAwait(false);
+                transfer.RestoredNeedsReview = false;
+                return CrossNasSnapshot(transfer);
+            }
+            if (!transfer.HasSubmitted && transfer.Error is not null) return CrossNasSnapshot(transfer);
+            transfer.Verified = false;
+            var target = ResolveCrossNasTarget(transfer);
+            transfer.Error = null;
+            foreach (var item in transfer.Items.Where(item => item.State == CrossNasTransferItemState.ResultUnavailable))
+            {
+                if (item.Upload is { } upload)
+                {
+                    // 复用原回执与摘要；恢复绝不进入上传分支。
+                    var result = await target.ReviewFileUploadCoreAsync((transfer.TargetScope, item.DestinationPath), upload, cancellationToken, validateCompleted: true).ConfigureAwait(false);
+                    SetCrossNasItemResult(item, result);
+                }
+                else if (item.FolderReview is { Accepted: true } review)
+                {
+                    var metadata = await target.ReadFileMetadataAsync(item.DestinationPath, cancellationToken).ConfigureAwait(false);
+                    if (metadata is not null && metadata.Item.IsDirectory && !CrossNasUnsafeMetadata(metadata))
+                    {
+                        item.Result = MutationOutcome("createFolder", MutationResultStatus.ConfirmedSuccess, true, false, null, null, metadata.Item).Result;
+                        item.State = CrossNasTransferItemState.Copied;
+                        if (item.FolderOwner is { } owner) lock (owner.Sync) owner.Reviews.Remove(review.Key);
+                    }
+                }
+            }
+            await VerifyCrossNasPlanAsync(transfer, target, cancellationToken).ConfigureAwait(false);
+            transfer.RestoredNeedsReview = false;
+        }
+        catch (Exception error) { RecordCrossNasError(transfer, error); }
+        finally { await FinishCrossNasCheckpointAsync(transfer).ConfigureAwait(false); transfer.Gate.Release(); }
+        return CrossNasSnapshot(transfer);
+    }
+
+    public async Task<CrossNasCopyMoveOutcome?> ContinueCrossNasTransferAsync(Guid operationId, IProgress<long>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        if (request.Operation != CrossNasCopyMoveOperation.Copy)
+        var transfer = FindCrossNasTransfer(operationId);
+        if (transfer is null) return null;
+        if (!await transfer.Gate.WaitAsync(0, cancellationToken).ConfigureAwait(false)) return CrossNasSnapshot(transfer);
+        try
         {
-            return CrossNasOutcome(
-                MutationResultStatus.Unsupported,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Unsupported,
-                "file.cross-nas.move-disabled");
+            if (!CrossNasCanContinue(transfer)) return CrossNasSnapshot(transfer);
+            transfer.Running = true;
+            CrossNasExecuting.Value = transfer.Id;
+            var target = ResolveCrossNasTarget(transfer);
+            transfer.Error = null;
+            await VerifyCrossNasSourceAsync(transfer, cancellationToken).ConfigureAwait(false);
+            await RunCrossNasPlanAsync(transfer, target, progress, cancellationToken).ConfigureAwait(false);
         }
-        if (!CrossNasAvailability.CanCrossCopy)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.Unsupported,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Unsupported,
-                "file.cross-nas.source-no-capability");
-        }
-        if (request.SourceProfileId == request.TargetProfileId)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.Unsupported,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Validation,
-                "file.cross-nas.same-profile");
-        }
-        if (!CrossNasSourceTransferAvailable())
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.Unsupported,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Unsupported,
-                "file.cross-nas.source-no-capability");
-        }
+        catch (Exception error) { RecordCrossNasError(transfer, error); }
+        finally { transfer.Running = false; await FinishCrossNasCheckpointAsync(transfer).ConfigureAwait(false); transfer.Gate.Release(); CrossNasExecuting.Value = null; }
+        return CrossNasSnapshot(transfer);
+    }
 
-        var resolver = CrossNasRepositoryResolver;
-        if (resolver is null)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.Unsupported,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Unsupported,
-                "file.cross-nas.no-resolver");
-        }
+    private CrossNasTransfer? FindCrossNasTransfer(Guid id)
+    {
+        lock (CrossNasTransfers)
+            return CrossNasTransfers.GetValueOrDefault((ServiceScope(), id));
+    }
+    private DsmRepository ResolveCrossNasTarget(CrossNasTransfer transfer)
+    {
+        var target = CrossNasRepositoryResolver?.Invoke(transfer.Request.TargetProfileId);
+        if (target is null || target.ProfileId != transfer.Request.TargetProfileId || target.ServiceScope() != transfer.TargetScope ||
+            target._session.ProfileId != target.ProfileId)
+            throw new CrossNasPreflightException(MutationErrorCategory.Authentication, "file.cross-nas.target-session-changed");
+        return target;
+    }
 
-        var target = resolver(request.TargetProfileId);
-        if (target is null)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.ConfirmedFailure,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Validation,
-                "file.cross-nas.target-not-found");
-        }
-        if (!target.CrossNasTargetTransferAvailable())
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.Unsupported,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Unsupported,
-                "file.cross-nas.target-no-capability");
-        }
-
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.CancelledBeforeSubmission,
-                request.SourcePath,
-                request.DestinationFolderPath);
-        }
-
-        if (ProfileId != request.SourceProfileId ||
-            target.ProfileId != request.TargetProfileId)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.ConfirmedFailure,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Validation,
-                "file.cross-nas.profile-mismatch");
-        }
-
-        var sourceRepository = this;
-        var targetRepository = target;
-
+    private async Task<CrossNasTransferItem[]> BuildCrossNasPlanAsync(CrossNasCopyMoveRequest request, string destination, CancellationToken token)
+    {
+        var root = await ReadFileMetadataAsync(request.SourcePath, token).ConfigureAwait(false);
+        if (root is null || root.Item.Name != request.SourceName || root.Item.IsDirectory != request.IsDirectory ||
+            !request.IsDirectory && root.Item.Size != request.FileSize || CrossNasUnsafeMetadata(root) ||
+            request.SourceModifiedAt is not null && request.SourceModifiedAt != root.Item.ModifiedAt)
+            throw new CrossNasPreflightException(MutationErrorCategory.Conflict, "file.cross-nas.source-changed");
+        var plan = new List<CrossNasTransferItem> { new(root, destination, string.Empty) };
         if (request.IsDirectory)
         {
-            return await CrossNasCopyFolderAsync(
-                sourceRepository, targetRepository, request, progress, cancellationToken)
-                .ConfigureAwait(false);
+            var tree = await LoadCrossNasTreeAsync(this, request.SourcePath, token).ConfigureAwait(false);
+            foreach (var item in tree.OrderBy(item => item.Item.IsDirectory ? 0 : 1)
+                         .ThenBy(item => item.RelativePath.Count(c => c == '/')).ThenBy(item => item.RelativePath, StringComparer.Ordinal))
+            {
+                var metadata = await ReadFileMetadataAsync(item.Item.Path, token).ConfigureAwait(false);
+                if (metadata is null || CrossNasUnsafeMetadata(metadata) || !CrossNasSameFile(metadata.Item, item.Item))
+                    throw new CrossNasPreflightException(MutationErrorCategory.Conflict, "file.cross-nas.source-changed");
+                plan.Add(new(metadata, destination + "/" + item.RelativePath, item.RelativePath));
+            }
         }
-
-        return await CrossNasCopyFileAsync(
-            sourceRepository, targetRepository, request, progress, cancellationToken)
-            .ConfigureAwait(false);
+        _ = plan.Where(item => !item.Source.Item.IsDirectory).Aggregate(0L, (total, item) => checked(total + checked(item.Source.Item.Size * 2)));
+        return plan.ToArray();
     }
 
-    private static async Task<CrossNasCopyMoveOutcome> CrossNasCopyFileAsync(
-        DsmRepository source,
-        DsmRepository target,
-        CrossNasCopyMoveRequest request,
-        IProgress<long>? progress,
-        CancellationToken cancellationToken)
+    private async Task RunCrossNasPlanAsync(CrossNasTransfer transfer, DsmRepository target, IProgress<long>? progress, CancellationToken token)
     {
-        if (request.FileSize == 0)
+        long completed = transfer.Items.Where(item => item.State == CrossNasTransferItemState.Copied && !item.Source.Item.IsDirectory)
+            .Aggregate(0L, (total, item) => checked(total + checked(item.Source.Item.Size * 2)));
+        foreach (var item in transfer.Items.Where(item => item.State == CrossNasTransferItemState.NotStarted))
         {
-            // 零字节文件仍然必须上传并回读确认。
-            return await CreateEmptyFileOnTargetAsync(
-                target, request, cancellationToken).ConfigureAwait(false);
-        }
-
-        var totalProgress = request.FileSize * 2;
-        progress?.Report(0);
-
-        using var pipe = new BoundedMemoryStream(CrossNasPipeCapacity);
-        long downloadedBytes = 0;
-        long uploadedBytes = 0;
-        Exception? uploadFault = null;
-        FileUploadTransportResult? uploadResult = null;
-        var uploadStarted = 0;
-
-        // 先读取并核对第一段，确认源文件契约后才跨过目标上传的提交边界。
-        FileRangeReadResult firstResult;
-        try
-        {
-            firstResult = await source._api.ReadFileRangeResultAsync(
-                source._profile,
-                source._session,
-                source._capabilities["SYNO.FileStation.Download"],
-                request.SourcePath,
-                0,
-                Math.Min(CrossNasChunkSize, request.FileSize),
-                expectedContentVersion: null,
-                expectedTotalLength: request.FileSize,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            EnsureCrossNasRange(firstResult, 0, request.FileSize);
-        }
-        catch (OperationCanceledException)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.CancelledBeforeSubmission,
-                request.SourcePath,
-                request.DestinationFolderPath);
-        }
-        catch (Exception error)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.ConfirmedFailure,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                error is FileRangeContractException
-                    ? MutationErrorCategory.Unknown
-                    : MutationErrorCategory.Network,
-                "file.cross-nas.source-range-invalid");
-        }
-
-        // 上传任务与源端读取并行，但上传开始标志就是不可逆提交边界。
-        var uploadTask = Task.Run(async () =>
-        {
+            token.ThrowIfCancellationRequested();
+            if (!CrossNasSameMetadata(await ReadFileMetadataAsync(item.Source.Item.Path, token).ConfigureAwait(false), item.Source))
+                throw new CrossNasPreflightException(MutationErrorCategory.Conflict, "file.cross-nas.source-changed");
+            item.State = CrossNasTransferItemState.Copying;
+            try { await SaveCrossNasAsync(transfer).ConfigureAwait(false); }
+            catch { item.State = CrossNasTransferItemState.NotStarted; throw; }
             try
             {
-                using var readStream = new BoundedMemoryReadStream(pipe);
-                var uploadRequest = new FileUploadRequest(
-                    readStream,
-                    request.FileSize,
-                    request.DestinationFolderPath,
-                    request.SourceName,
-                    request.Overwrite);
-                Interlocked.Exchange(ref uploadStarted, 1);
-                uploadResult = await target._api.UploadFileAsync(
-                    target._profile,
-                    target._session,
-                    target._capabilities["SYNO.FileStation.Upload"],
-                    uploadRequest,
-                    // 进度由已下载和已上传字节数相加得到。
-                    new UploadProgressAdapter(reported =>
+                MutationResult result;
+                if (item.Source.Item.IsDirectory)
+                {
+                    var owner = target.FileMutationState();
+                    try
                     {
-                        Interlocked.Exchange(ref uploadedBytes, reported);
-                        var combined = Math.Min(Volatile.Read(ref downloadedBytes) + reported, totalProgress);
-                        progress?.Report(combined);
-                    }),
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                pipe.Cancel();
-            }
-            catch (Exception ex)
-            {
-                uploadFault = ex;
-                pipe.Cancel(ex);
-            }
-        }, cancellationToken);
-
-        // 下载循环只消费已经核对的段；后续段出现未知时立即停止，不重放上传。
-        FileRangeReadResult lastResult = firstResult;
-        try
-        {
-            var offset = 0L;
-            while (offset < request.FileSize)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                EnsureCrossNasRange(lastResult, offset, request.FileSize);
-                await pipe.WriteAsync(lastResult.Bytes, cancellationToken).ConfigureAwait(false);
-                Interlocked.Add(ref downloadedBytes, lastResult.ActualByteCount);
-                var combined = Math.Min(Volatile.Read(ref downloadedBytes) + Volatile.Read(ref uploadedBytes), totalProgress);
-                progress?.Report(combined);
-                offset += lastResult.ActualByteCount;
-                if (offset == request.FileSize)
-                {
-                    break;
+                        var outcome = await target.CreateFolderCoreAsync(new(target.ProfileId, MutationParent(item.DestinationPath), item.Source.Item.Name), token, async review =>
+                        { item.FolderReview = review; item.FolderOwner = owner; transfer.HasSubmitted = true; await SaveCrossNasAsync(transfer).ConfigureAwait(false); }).ConfigureAwait(false);
+                        result = outcome.Result;
+                    }
+                    finally
+                    {
+                        lock (owner.Sync) item.FolderReview ??= owner.Reviews.Values.SingleOrDefault(review => review.Operation == "createFolder" && review.NewPath == item.DestinationPath);
+                        item.FolderOwner = owner;
+                    }
                 }
-
-                var chunkLength = Math.Min(CrossNasChunkSize, request.FileSize - offset);
-                var expectedContentVersion = lastResult.ServerContentVersion;
-                lastResult = await source._api.ReadFileRangeResultAsync(
-                    source._profile,
-                    source._session,
-                    source._capabilities["SYNO.FileStation.Download"],
-                    request.SourcePath,
-                    offset,
-                    chunkLength,
-                    expectedContentVersion: lastResult.ServerContentVersion,
-                    expectedTotalLength: request.FileSize,
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(
-                        lastResult.ServerContentVersion,
-                        expectedContentVersion,
-                        StringComparison.Ordinal))
-                {
-                    throw new FileRangeContractException(
-                        FileRangeContractFailure.ContentVersionMismatch,
-                        "file.cross-nas.content-version-changed",
-                        lastResult.StatusCode);
-                }
+                else result = await CopyCrossNasFileAsync(transfer, target, item, completed, progress, token).ConfigureAwait(false);
+                SetCrossNasItemResult(item, result);
+                transfer.HasSubmitted |= result.Submitted;
+                await SaveCrossNasAsync(transfer).ConfigureAwait(false);
+                if (item.State != CrossNasTransferItemState.Copied) break;
+                if (!item.Source.Item.IsDirectory) completed = checked(completed + checked(item.Source.Item.Size * 2));
             }
-        }
-        catch (Exception ex)
-        {
-            pipe.Cancel(ex);
-            await uploadTask.ConfigureAwait(false);
-            if (ex is OperationCanceledException)
+            catch (Exception)
             {
-                return CrossNasOutcome(
-                    Volatile.Read(ref uploadStarted) == 0
-                        ? MutationResultStatus.CancelledBeforeSubmission
-                        : MutationResultStatus.CancellationRequestedAfterSubmission,
-                    request.SourcePath,
-                    request.DestinationFolderPath,
-                    Volatile.Read(ref uploadStarted) == 0
-                        ? null
-                        : MutationErrorCategory.Network,
-                    Volatile.Read(ref uploadStarted) == 0
-                        ? null
-                        : "file.cross-nas.cancelled-after-upload-submit");
+                item.State = CrossNasTransferItemState.ResultUnavailable;
+                item.Result = UploadUnverified("file.cross-nas.result-unavailable");
+                transfer.HasSubmitted = true;
+                throw;
             }
-            // 上传已明确失败时保留服务端给出的错误类别。
-            if (uploadResult?.Status == FileUploadTransportStatus.ConfirmedFailure)
-            {
-                return CrossNasOutcome(
-                    MutationResultStatus.ConfirmedFailure,
-                    request.SourcePath,
-                    request.DestinationFolderPath,
-                    uploadResult.ErrorCategory ?? MutationErrorCategory.Server,
-                    uploadResult.DiagnosticTag);
-            }
-            return CrossNasOutcome(
-                Volatile.Read(ref uploadStarted) == 0
-                    ? MutationResultStatus.ConfirmedFailure
-                    : MutationResultStatus.SubmittedButUnverified,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Network,
-                "file.cross-nas.download-failed");
         }
-
-        pipe.CompleteWrite();
-
-        try
-        {
-            await uploadTask.ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.CancellationRequestedAfterSubmission,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Network,
-                "file.cross-nas.cancelled-after-upload-submit");
-        }
-
-        if (uploadFault is not null)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.SubmittedButUnverified,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Network,
-                "file.cross-nas.upload-failed");
-        }
-
-        if (uploadResult is null)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.SubmittedButUnverified,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Unknown,
-                "file.cross-nas.upload-no-result");
-        }
-
-        switch (uploadResult.Status)
-        {
-            case FileUploadTransportStatus.Accepted:
-                break;
-            case FileUploadTransportStatus.ConfirmedFailure:
-                return CrossNasOutcome(
-                    MutationResultStatus.ConfirmedFailure,
-                    request.SourcePath,
-                    request.DestinationFolderPath,
-                    uploadResult.ErrorCategory ?? MutationErrorCategory.Server,
-                    uploadResult.DiagnosticTag ?? "file.cross-nas.upload-confirmed-failure");
-            case FileUploadTransportStatus.CancelledBeforeSubmission:
-                return CrossNasOutcome(
-                    MutationResultStatus.CancelledBeforeSubmission,
-                    request.SourcePath,
-                    request.DestinationFolderPath);
-            case FileUploadTransportStatus.CancellationRequestedAfterSubmission:
-                return CrossNasOutcome(
-                    MutationResultStatus.CancellationRequestedAfterSubmission,
-                    request.SourcePath,
-                    request.DestinationFolderPath,
-                    MutationErrorCategory.Network,
-                    "file.cross-nas.cancelled-after-upload-submit");
-            case FileUploadTransportStatus.SubmittedButUnverified:
-                return CrossNasOutcome(
-                    MutationResultStatus.SubmittedButUnverified,
-                    request.SourcePath,
-                    request.DestinationFolderPath,
-                    MutationErrorCategory.Network,
-                    "file.cross-nas.upload-unverified");
-            case FileUploadTransportStatus.Unsupported:
-                return CrossNasOutcome(
-                    MutationResultStatus.Unsupported,
-                    request.SourcePath,
-                    request.DestinationFolderPath,
-                    MutationErrorCategory.Unsupported,
-                    "file.cross-nas.upload-unsupported");
-            default:
-                return CrossNasOutcome(
-                    MutationResultStatus.ConfirmedFailure,
-                    request.SourcePath,
-                    request.DestinationFolderPath,
-                    MutationErrorCategory.Unknown,
-                    "file.cross-nas.upload-unknown-status");
-        }
-
-        // 目标端上传返回成功仍需回读确认，回读失败只能是未知，不能再次上传。
-        FileItem? confirmed = null;
-        try
-        {
-            confirmed = await ReadBackCrossNasFileAsync(
-                target, request.DestinationFolderPath, request.SourceName,
-                request.FileSize, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.CancellationRequestedAfterSubmission,
-                request.SourcePath,
-                $"{request.DestinationFolderPath}/{request.SourceName}",
-                MutationErrorCategory.Network,
-                "file.cross-nas.cancelled-after-upload-submit",
-                unknown: 1);
-        }
-        catch
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.SubmittedButUnverified,
-                request.SourcePath,
-                $"{request.DestinationFolderPath}/{request.SourceName}",
-                MutationErrorCategory.Network,
-                "file.cross-nas.readback-unavailable",
-                unknown: 1);
-        }
-        if (confirmed is null)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.SubmittedButUnverified,
-                request.SourcePath,
-                $"{request.DestinationFolderPath}/{request.SourceName}",
-                MutationErrorCategory.Unknown,
-                "file.cross-nas.readback-mismatch",
-                unknown: 1);
-        }
-
-        progress?.Report(totalProgress);
-        return CrossNasOutcome(
-            MutationResultStatus.ConfirmedSuccess,
-            request.SourcePath,
-            $"{request.DestinationFolderPath}/{request.SourceName}",
-            confirmedItem: confirmed);
+        await VerifyCrossNasPlanAsync(transfer, target, token).ConfigureAwait(false);
     }
 
-    private static async Task<CrossNasCopyMoveOutcome> CreateEmptyFileOnTargetAsync(
-        DsmRepository target,
-        CrossNasCopyMoveRequest request,
-        CancellationToken cancellationToken)
+    private async Task VerifyCrossNasPlanAsync(CrossNasTransfer transfer, DsmRepository target, CancellationToken token)
     {
-        using var emptyStream = new MemoryStream(Array.Empty<byte>());
-        var uploadRequest = new FileUploadRequest(
-            emptyStream, 0, request.DestinationFolderPath, request.SourceName, request.Overwrite);
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.CancelledBeforeSubmission,
-                request.SourcePath,
-                request.DestinationFolderPath);
-        }
-        FileUploadTransportResult result;
-        try
-        {
-            result = await target._api.UploadFileAsync(
-                target._profile,
-                target._session,
-                target._capabilities["SYNO.FileStation.Upload"],
-                uploadRequest,
-                progress: null,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.CancellationRequestedAfterSubmission,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Network,
-                "file.cross-nas.cancelled-after-upload-submit");
-        }
-        catch (Exception)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.SubmittedButUnverified,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                MutationErrorCategory.Unknown,
-                "file.cross-nas.empty-upload-unverified");
-        }
-
-        if (result.Status != FileUploadTransportStatus.Accepted)
-        {
-            var status = result.Status switch
-            {
-                FileUploadTransportStatus.CancelledBeforeSubmission =>
-                    MutationResultStatus.CancelledBeforeSubmission,
-                FileUploadTransportStatus.CancellationRequestedAfterSubmission =>
-                    MutationResultStatus.CancellationRequestedAfterSubmission,
-                FileUploadTransportStatus.SubmittedButUnverified =>
-                    MutationResultStatus.SubmittedButUnverified,
-                FileUploadTransportStatus.Unsupported => MutationResultStatus.Unsupported,
-                _ => MutationResultStatus.ConfirmedFailure,
-            };
-            return CrossNasOutcome(
-                status,
-                request.SourcePath,
-                request.DestinationFolderPath,
-                result.ErrorCategory ?? MutationErrorCategory.Server,
-                result.DiagnosticTag ?? "file.cross-nas.empty-upload-failed");
-        }
-
-        FileItem? confirmed;
-        try
-        {
-            confirmed = await ReadBackCrossNasFileAsync(
-                target, request.DestinationFolderPath, request.SourceName, 0,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.CancellationRequestedAfterSubmission,
-                request.SourcePath,
-                $"{request.DestinationFolderPath}/{request.SourceName}",
-                MutationErrorCategory.Network,
-                "file.cross-nas.cancelled-after-upload-submit",
-                unknown: 1);
-        }
-        catch
-        {
-            confirmed = null;
-        }
-        return confirmed is null
-            ? CrossNasOutcome(
-                MutationResultStatus.SubmittedButUnverified,
-                request.SourcePath,
-                $"{request.DestinationFolderPath}/{request.SourceName}",
-                MutationErrorCategory.Unknown,
-                "file.cross-nas.readback-unverified",
-                unknown: 1)
-            : CrossNasOutcome(
-                MutationResultStatus.ConfirmedSuccess,
-                request.SourcePath,
-                $"{request.DestinationFolderPath}/{request.SourceName}",
-                succeeded: 1,
-                confirmedItem: confirmed);
+        transfer.Verified = false;
+        if (transfer.Items.Length == 0 || transfer.Items.Any(item => item.State != CrossNasTransferItemState.Copied)) return;
+        await VerifyCrossNasSourceAsync(transfer, token).ConfigureAwait(false);
+        await VerifyCrossNasTargetAsync(transfer, target, token).ConfigureAwait(false);
+        if (transfer.Items.All(item => item.State == CrossNasTransferItemState.Copied)) transfer.Verified = true;
     }
 
-    private static async Task<CrossNasCopyMoveOutcome> CrossNasCopyFolderAsync(
-        DsmRepository source,
-        DsmRepository target,
-        CrossNasCopyMoveRequest request,
-        IProgress<long>? progress,
-        CancellationToken cancellationToken)
+    private static async Task VerifyCrossNasTargetAsync(CrossNasTransfer transfer, DsmRepository target, CancellationToken token, bool updateCopyResults = true)
     {
-        var destFolderPath = $"{request.DestinationFolderPath}/{request.SourceName}";
-        IReadOnlyList<CrossNasTreeItem> sourceTree;
-        try
+        foreach (var item in transfer.Items)
         {
-            // 在任何目标写入前固定源树，保证后续不会边遍历边改变提交集合。
-            sourceTree = await LoadCrossNasTreeAsync(
-                source, request.SourcePath, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.CancelledBeforeSubmission,
-                request.SourcePath,
-                destFolderPath);
-        }
-        catch (Exception)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.ConfirmedFailure,
-                request.SourcePath,
-                destFolderPath,
-                MutationErrorCategory.Unknown,
-                "file.cross-nas.source-tree-invalid");
-        }
-
-        var folderOutcome = await CreateTargetFolderAsync(
-            target, request.DestinationFolderPath, request.SourceName,
-            request.Overwrite, request.SourcePath, destFolderPath,
-            cancellationToken).ConfigureAwait(false);
-        if (folderOutcome.Result.Status != MutationResultStatus.ConfirmedSuccess)
-        {
-            return folderOutcome;
-        }
-
-        var succeeded = 1;
-        foreach (var item in sourceTree
-                     .OrderBy(item => item.IsDirectory ? 0 : 1)
-                     .ThenBy(item => item.RelativePath.Count(c => c == '/'))
-                     .ThenBy(item => item.RelativePath, StringComparer.Ordinal))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var destinationParent = DestinationParent(destFolderPath, item.RelativePath);
-            CrossNasCopyMoveOutcome childOutcome;
-            if (item.IsDirectory)
+            if (item.Upload is { } upload)
             {
-                childOutcome = await CreateTargetFolderAsync(
-                    target, destinationParent, item.Name, request.Overwrite,
-                    request.SourcePath, $"{destFolderPath}/{item.RelativePath}",
-                    cancellationToken).ConfigureAwait(false);
+                var result = await target.ReviewFileUploadCoreAsync((transfer.TargetScope, item.DestinationPath), upload, token, validateCompleted: true).ConfigureAwait(false);
+                if (updateCopyResults) SetCrossNasItemResult(item, result);
+                if (result.Status != MutationResultStatus.ConfirmedSuccess)
+                {
+                    if (!updateCopyResults) throw new CrossNasPreflightException(MutationErrorCategory.Conflict, "file.cross-nas.target-content-changed");
+                    return;
+                }
             }
             else
             {
-                var childRequest = new CrossNasCopyMoveRequest(
-                    request.SourceProfileId,
-                    request.TargetProfileId,
-                    item.Path,
-                    item.Name,
-                    false,
-                    item.Size,
-                    destinationParent,
-                    request.Overwrite,
-                    CrossNasCopyMoveOperation.Copy);
-                childOutcome = await CrossNasCopyFileAsync(
-                    source, target, childRequest, progress, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            if (childOutcome.Result.Status != MutationResultStatus.ConfirmedSuccess)
-            {
-                // 未知或取消后的提交状态不能继续追加写操作，也不能重放已经提交的项。
-                if (childOutcome.Result.Status is
-                    MutationResultStatus.SubmittedButUnverified or
-                    MutationResultStatus.CancellationRequestedAfterSubmission)
-                {
-                    return CrossNasOutcome(
-                        MutationResultStatus.SubmittedButUnverified,
-                        request.SourcePath,
-                        destFolderPath,
-                        childOutcome.Result.ErrorCategory,
-                        childOutcome.Result.DiagnosticTag,
-                        succeeded: succeeded,
-                        unknown: 1);
-                }
-                return CrossNasOutcome(
-                    childOutcome.Result.Status,
-                    request.SourcePath,
-                    destFolderPath,
-                    childOutcome.Result.ErrorCategory,
-                    childOutcome.Result.DiagnosticTag,
-                    succeeded: succeeded,
-                    failed: 1);
-            }
-            succeeded++;
-        }
-
-        bool verified;
-        try
-        {
-            verified = await VerifyCrossNasTreeAsync(
-                target, destFolderPath, sourceTree, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.CancellationRequestedAfterSubmission,
-                request.SourcePath,
-                destFolderPath,
-                MutationErrorCategory.Network,
-                "file.cross-nas.tree-readback-cancelled",
-                succeeded: succeeded,
-                unknown: 1);
-        }
-        catch (Exception)
-        {
-            verified = false;
-        }
-        if (!verified)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.SubmittedButUnverified,
-                request.SourcePath,
-                destFolderPath,
-                MutationErrorCategory.Unknown,
-                "file.cross-nas.tree-readback-mismatch",
-                succeeded: succeeded,
-                unknown: 1);
-        }
-        return CrossNasOutcome(
-            MutationResultStatus.ConfirmedSuccess,
-            request.SourcePath,
-            destFolderPath,
-            succeeded: succeeded);
-    }
-
-    private static async Task<CrossNasCopyMoveOutcome> CreateTargetFolderAsync(
-        DsmRepository target,
-        string parentPath,
-        string name,
-        bool overwrite,
-        string sourcePath,
-        string destinationPath,
-        CancellationToken cancellationToken)
-    {
-        if (overwrite)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.Unsupported,
-                sourcePath,
-                destinationPath,
-                MutationErrorCategory.Unsupported,
-                "file.cross-nas.overwrite-disabled");
-        }
-
-        FileMutationOutcome outcome;
-        try
-        {
-            // 目录创建复用 Repository 的权限检查、预约和提交后回读。
-            outcome = await target.CreateFolderAsync(
-                new CreateFolderRequest(target.ProfileId, parentPath, name),
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return CrossNasOutcome(
-                MutationResultStatus.CancelledBeforeSubmission,
-                sourcePath,
-                destinationPath);
-        }
-        return CrossNasOutcome(
-            outcome.Result.Status,
-            sourcePath,
-            destinationPath,
-            outcome.Result.ErrorCategory,
-            outcome.Result.DiagnosticTag,
-            succeeded: outcome.Result.Status == MutationResultStatus.ConfirmedSuccess ? 1 : 0,
-            failed: outcome.Result.Status is MutationResultStatus.ConfirmedFailure or
-                MutationResultStatus.PermissionDenied ? 1 : 0,
-            unknown: outcome.Result.Status is MutationResultStatus.SubmittedButUnverified or
-                MutationResultStatus.CancellationRequestedAfterSubmission ? 1 : 0,
-            confirmedItem: outcome.ConfirmedItem);
-    }
-
-    private static async Task<IReadOnlyList<CrossNasTreeItem>> LoadCrossNasTreeAsync(
-        DsmRepository source,
-        string rootPath,
-        CancellationToken cancellationToken)
-    {
-        var result = new List<CrossNasTreeItem>();
-        var pending = new Queue<(string Path, string RelativePath, int Depth)>();
-        pending.Enqueue((rootPath, string.Empty, 0));
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (pending.Count > 0)
-        {
-            var current = pending.Dequeue();
-            if (current.Depth > CrossNasFolderDepthLimit)
-                throw new InvalidDataException("file.cross-nas.tree-too-deep");
-
-            var children = await LoadCrossNasChildrenAsync(
-                source, current.Path, cancellationToken).ConfigureAwait(false);
-            foreach (var item in children)
-            {
-                var relativePath = string.IsNullOrEmpty(current.RelativePath)
-                    ? item.Name
-                    : $"{current.RelativePath}/{item.Name}";
-                if (!seen.Add(item.Path) || result.Count >= CrossNasFolderItemLimit)
-                    throw new InvalidDataException("file.cross-nas.tree-over-limit");
-                result.Add(new CrossNasTreeItem(
-                    item.Path, item.Name, item.IsDirectory, item.Size, relativePath));
-                if (item.IsDirectory)
-                {
-                    pending.Enqueue((item.Path, relativePath, current.Depth + 1));
-                }
+                var current = await target.ReadFileMetadataAsync(item.DestinationPath, token).ConfigureAwait(false);
+                if (current is null || !current.Item.IsDirectory || CrossNasUnsafeMetadata(current))
+                    throw new CrossNasPreflightException(MutationErrorCategory.Conflict, "file.cross-nas.tree-readback-mismatch");
             }
         }
-        return result;
-    }
-
-    private static async Task<bool> VerifyCrossNasTreeAsync(
-        DsmRepository target,
-        string rootPath,
-        IReadOnlyList<CrossNasTreeItem> expected,
-        CancellationToken cancellationToken)
-    {
-        var actual = await LoadCrossNasTreeAsync(
-            target, rootPath, cancellationToken).ConfigureAwait(false);
-        if (actual.Count != expected.Count)
-            return false;
-        var expectedByPath = expected.ToDictionary(item => item.RelativePath, StringComparer.Ordinal);
-        foreach (var item in actual)
+        if (transfer.Request.IsDirectory)
         {
-            if (!expectedByPath.TryGetValue(item.RelativePath, out var expectedItem) ||
-                expectedItem.IsDirectory != item.IsDirectory ||
-                expectedItem.Size != item.Size)
-                return false;
-        }
-        return true;
-    }
-
-    private static async Task<IReadOnlyList<FileItem>> LoadCrossNasChildrenAsync(
-        DsmRepository repository,
-        string path,
-        CancellationToken cancellationToken)
-    {
-        var result = new List<FileItem>();
-        var offset = 0;
-        int? total = null;
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (true)
-        {
-            var page = await repository.ListFilesAsync(
-                path, offset, CrossNasFolderPageSize, cancellationToken).ConfigureAwait(false);
-            if (page.Offset != offset || page.Total < 0 ||
-                total is not null && total != page.Total ||
-                page.Items.Count > CrossNasFolderPageSize ||
-                page.Items.Count == 0 && offset < page.Total)
-                throw new InvalidDataException("file.cross-nas.invalid-tree-page");
-            total ??= page.Total;
-            foreach (var item in page.Items)
-            {
-                if (!seen.Add(item.Path) || item.Path != $"{path}/{item.Name}")
-                    throw new InvalidDataException("file.cross-nas.invalid-tree-item");
-                result.Add(item);
-            }
-            offset = checked(offset + page.Items.Count);
-            if (offset >= page.Total)
-                break;
-        }
-        if (result.Count != total)
-            throw new InvalidDataException("file.cross-nas.invalid-tree-total");
-        return result;
-    }
-
-    private static string DestinationParent(string rootPath, string relativePath)
-    {
-        var separator = relativePath.LastIndexOf('/');
-        return separator < 0 ? rootPath : $"{rootPath}/{relativePath[..separator]}";
-    }
-
-    private static void EnsureCrossNasRange(
-        FileRangeReadResult result,
-        long expectedStart,
-        long expectedTotalLength)
-    {
-        var expectedLength = Math.Min(CrossNasChunkSize, expectedTotalLength - expectedStart);
-        var segmented = expectedStart > 0 || expectedLength < expectedTotalLength;
-        if (result.StatusCode is not (200 or 206) ||
-            result.RequestedStart != expectedStart ||
-            result.RequestedLength != expectedLength ||
-            result.ResponseStart != expectedStart ||
-            result.ResponseLength != expectedLength ||
-            result.TotalLength != expectedTotalLength ||
-            result.ActualByteCount != expectedLength ||
-            result.Bytes.Length != expectedLength ||
-            segmented && (!result.CanSafelyReadInSegments ||
-                string.IsNullOrWhiteSpace(result.ServerContentVersion)))
-        {
-            throw new FileRangeContractException(
-                FileRangeContractFailure.UnexpectedBodyLength,
-                "file.cross-nas.invalid-range-contract",
-                result.StatusCode);
+            var actual = await LoadCrossNasTreeAsync(target, transfer.DestinationPath, token).ConfigureAwait(false);
+            var expected = transfer.Items.Skip(1).ToDictionary(item => item.RelativePath, StringComparer.Ordinal);
+            if (actual.Count != expected.Count || actual.Any(row => !expected.TryGetValue(row.RelativePath, out var planned) ||
+                row.Item.IsDirectory != planned.Source.Item.IsDirectory || !row.Item.IsDirectory && row.Item.Size != planned.Source.Item.Size))
+                throw new CrossNasPreflightException(MutationErrorCategory.Conflict, "file.cross-nas.tree-readback-mismatch");
         }
     }
 
-    private sealed record CrossNasTreeItem(
-        string Path,
-        string Name,
-        bool IsDirectory,
-        long Size,
-        string RelativePath);
-
-    private static async Task<FileItem?> ReadBackCrossNasFileAsync(
-        DsmRepository target,
-        string folderPath,
-        string fileName,
-        long expectedSize,
-        CancellationToken cancellationToken)
+    private async Task VerifyCrossNasSourceAsync(CrossNasTransfer transfer, CancellationToken token)
     {
-        const int pageSize = 500;
-        var offset = 0;
-        while (true)
+        if (transfer.Request.IsDirectory)
         {
-            var page = await target.ListFilesAsync(
-                folderPath, offset, pageSize, cancellationToken).ConfigureAwait(false);
-            var match = page.Items.FirstOrDefault(item =>
-                !item.IsDirectory &&
-                string.Equals(item.Name, fileName, StringComparison.Ordinal) &&
-                item.Size == expectedSize);
-            if (match is not null) return match;
-            offset += page.Items.Count;
-            if (offset >= page.Total) return null;
+            var tree = await LoadCrossNasTreeAsync(this, transfer.Request.SourcePath, token).ConfigureAwait(false);
+            var expected = transfer.Items.Skip(1).ToDictionary(item => item.Source.Item.Path, StringComparer.Ordinal);
+            if (tree.Count != expected.Count || tree.Any(row => !expected.TryGetValue(row.Item.Path, out var original) || !CrossNasSameFile(row.Item, original.Source.Item)))
+                throw new CrossNasPreflightException(MutationErrorCategory.Conflict, "file.cross-nas.source-tree-changed");
         }
+        foreach (var item in transfer.Items)
+            if (!CrossNasSameMetadata(await ReadFileMetadataAsync(item.Source.Item.Path, token).ConfigureAwait(false), item.Source))
+                throw new CrossNasPreflightException(MutationErrorCategory.Conflict, "file.cross-nas.source-changed");
     }
 
-    private static CrossNasCopyMoveOutcome CrossNasOutcome(
-        MutationResultStatus status,
-        string sourcePath,
-        string destinationPath,
-        MutationErrorCategory? errorCategory = null,
-        string? diagnosticTag = null,
-        int succeeded = 0,
-        int failed = 0,
-        int unknown = 0,
-        FileItem? confirmedItem = null)
+    private static void SetCrossNasItemResult(CrossNasTransferItem item, MutationResult result)
     {
-        var submitted = status != MutationResultStatus.CancelledBeforeSubmission &&
-                        status != MutationResultStatus.Unsupported;
-        var requiresRefresh = status is MutationResultStatus.SubmittedButUnverified or
-            MutationResultStatus.CancellationRequestedAfterSubmission;
-        var operation = "crossNasCopy";
-
-        var result = new MutationResult(
-            1,
-            status,
-            operation,
-            submitted,
-            requiresRefresh,
-            new MutationResultCounts(succeeded, failed, unknown),
-            errorCategory,
-            diagnosticTag: diagnosticTag);
-
-        return new CrossNasCopyMoveOutcome(result, sourcePath, destinationPath, confirmedItem);
+        item.Result = result;
+        item.State = result.Status switch
+        {
+            MutationResultStatus.ConfirmedSuccess => CrossNasTransferItemState.Copied,
+            MutationResultStatus.SubmittedButUnverified or MutationResultStatus.CancellationRequestedAfterSubmission => CrossNasTransferItemState.ResultUnavailable,
+            MutationResultStatus.CancelledBeforeSubmission => CrossNasTransferItemState.NotStarted,
+            _ => CrossNasTransferItemState.Failed,
+        };
     }
+    private bool CrossNasCanContinue(CrossNasTransfer transfer) => !CrossNasRecoveryUnavailable && !transfer.RestoredNeedsReview && !transfer.DeletionStarted && !transfer.Running && transfer.Error is null && transfer.Items.Length > 0 &&
+        transfer.Items.Any(item => item.State == CrossNasTransferItemState.NotStarted) &&
+        transfer.Items.All(item => item.State is CrossNasTransferItemState.NotStarted or CrossNasTransferItemState.Copied);
 
-    /// <summary>
-    /// 将上传字节进度适配为跨 NAS 的累计进度。
-    /// </summary>
-    private sealed class UploadProgressAdapter(Action<long> report) : IProgress<long>
+    private CrossNasCopyMoveOutcome CrossNasSnapshot(CrossNasTransfer transfer)
     {
-        public void Report(long value) => report(value);
+        var rows = transfer.Items.Select(item => new CrossNasTransferItemResult(item.Source.Item.Path, item.DestinationPath,
+            item.Source.Item.IsDirectory, item.State, item.Result)).ToArray();
+        var succeeded = rows.Count(item => item.State == CrossNasTransferItemState.Copied);
+        var failed = rows.Count(item => item.State == CrossNasTransferItemState.Failed);
+        var unknown = rows.Count(item => item.State == CrossNasTransferItemState.ResultUnavailable);
+        var status = transfer.Verified ? MutationResultStatus.ConfirmedSuccess : unknown > 0 || transfer.Running && transfer.HasSubmitted ||
+            transfer.HasSubmitted && transfer.Error is not null ? MutationResultStatus.SubmittedButUnverified :
+            succeeded > 0 && failed > 0 ? MutationResultStatus.PartialSuccess :
+            succeeded > 0 || failed > 0 || transfer.Error is not null || transfer.Running ? MutationResultStatus.ConfirmedFailure :
+            MutationResultStatus.CancelledBeforeSubmission;
+        var issue = transfer.Error ?? rows.FirstOrDefault(item => item.State is CrossNasTransferItemState.Failed or CrossNasTransferItemState.ResultUnavailable)?.Result;
+        return new(new(1, status, "crossNasCopy", transfer.HasSubmitted, status == MutationResultStatus.SubmittedButUnverified,
+            new(succeeded, failed, unknown), issue?.ErrorCategory, diagnosticTag: issue?.DiagnosticTag),
+            transfer.Request.SourcePath, transfer.DestinationPath)
+        { OperationId = transfer.Id, Items = rows, CanContinue = CrossNasCanContinue(transfer), IsRunning = transfer.Running, RequiresReadOnlyRecovery = transfer.RestoredNeedsReview, RecoveryStorageUnavailable = CrossNasRecoveryUnavailable,
+            CanDeleteSources = !CrossNasRecoveryUnavailable && !transfer.RestoredNeedsReview && CrossNasSourceDeletionEnabled && MutationCapability("SYNO.FileStation.Delete", 2) &&
+                transfer.Request.SourcePath.LastIndexOf('/') > 0 &&
+                transfer.Verified && !transfer.Running && transfer.DeletionError is null && transfer.Items.All(item => item.State == CrossNasTransferItemState.Copied) &&
+                transfer.Items.Any(item => item.DeletionState == CrossNasSourceDeletionState.NotStarted) &&
+                transfer.Items.All(item => item.DeletionState is CrossNasSourceDeletionState.NotStarted or CrossNasSourceDeletionState.Deleted),
+            SourceDeletion = transfer.DeletionStarted ? CrossNasDeletionSnapshot(transfer) : null };
     }
-
-    /// <summary>
-    /// 将有界内存管道包装为上传请求可消费的只读流。
-    /// </summary>
-    private sealed class BoundedMemoryReadStream : Stream
+    private static void RecordCrossNasError(CrossNasTransfer transfer, Exception error)
     {
-        private readonly BoundedMemoryStream _pipe;
+        if (error is OperationCanceledException && transfer.Items.All(item => item.State is CrossNasTransferItemState.Copied or CrossNasTransferItemState.NotStarted)) return;
+        var category = error is CrossNasPreflightException rejected ? rejected.Category :
+            error is DsmException { AuthenticationFailure: true } ? MutationErrorCategory.Authentication : MutationErrorCategory.Network;
+        transfer.Error = UploadFailure(category, error is CrossNasPreflightException known ? known.Message : "file.cross-nas.readback-unavailable");
+    }
+    private static CrossNasCopyMoveOutcome CrossNasRejected(CrossNasCopyMoveRequest request, MutationErrorCategory? category, string tag,
+        MutationResultStatus? status = null) => new(new(1, status ?? (category == MutationErrorCategory.Unsupported ? MutationResultStatus.Unsupported : MutationResultStatus.ConfirmedFailure),
+            "crossNasCopy", false, false, new(0, category is null ? 0 : 1, 0), category, diagnosticTag: tag), request.SourcePath,
+            request.DestinationFolderPath + "/" + request.SourceName);
 
-        public BoundedMemoryReadStream(BoundedMemoryStream pipe)
-        {
-            _pipe = pipe;
-        }
+    private static bool CrossNasPathsOverlap(string first, string second) => first == second ||
+        first.StartsWith(second + "/", StringComparison.Ordinal) || second.StartsWith(first + "/", StringComparison.Ordinal);
+    private static bool CrossNasUnsafeMetadata(FileEntryMetadata metadata, bool allowShare = false) => UploadIsLink(metadata) ||
+        metadata.MountPointType is { Length: > 0 } mount && !mount.Equals("normal", StringComparison.OrdinalIgnoreCase) && mount != "none" &&
+            !(allowShare && mount.Equals("shared_folder", StringComparison.OrdinalIgnoreCase));
+    private static bool CrossNasSameMetadata(FileEntryMetadata? current, FileEntryMetadata original) => current is not null &&
+        CrossNasSameFile(current.Item, original.Item) && current.Type == original.Type && current.MountPointType == original.MountPointType;
+    private static bool CrossNasSameFile(FileItem first, FileItem second) => first.Path == second.Path && first.Name == second.Name &&
+        first.IsDirectory == second.IsDirectory && (first.IsDirectory || first.Size == second.Size) && first.ModifiedAt == second.ModifiedAt;
 
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override void Flush() { }
-        public override int Read(byte[] buffer, int offset, int count) =>
-            throw new NotSupportedException("Synchronous reads are not supported.");
-
-        public override Task<int> ReadAsync(
-            byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-
-        public override async ValueTask<int> ReadAsync(
-            Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            return await _pipe.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) =>
-            throw new NotSupportedException();
-        public override void SetLength(long value) =>
-            throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) =>
-            throw new NotSupportedException();
+    private sealed class CrossNasPreflightException(MutationErrorCategory category, string tag) : Exception(tag)
+    { public MutationErrorCategory Category { get; } = category; }
+    private sealed class CrossNasTransfer(Guid id, CrossNasCopyMoveRequest request, string sourceScope, string targetScope, string destination)
+    {
+        public Guid Id { get; } = id;
+        public CrossNasCopyMoveRequest Request { get; } = request;
+        public string SourceScope { get; } = sourceScope;
+        public string TargetScope { get; } = targetScope;
+        public string DestinationPath { get; } = destination;
+        public SemaphoreSlim Gate { get; } = new(1, 1);
+        public CrossNasTransferItem[] Items { get; set; } = [];
+        public volatile bool Running;
+        public bool RestoredNeedsReview { get; set; }
+        public bool HasSubmitted { get; set; }
+        public bool Verified { get; set; }
+        public MutationResult? Error { get; set; }
+        public bool DeletionStarted { get; set; }
+        public MutationResult? DeletionError { get; set; }
+    }
+    private sealed class CrossNasTransferItem(FileEntryMetadata source, string destination, string relative)
+    {
+        public FileEntryMetadata Source { get; } = source;
+        public string DestinationPath { get; } = destination;
+        public string RelativePath { get; } = relative;
+        public Guid UploadId { get; init; } = Guid.NewGuid();
+        public CrossNasTransferItemState State { get; set; }
+        public MutationResult? Result { get; set; }
+        public PendingFileUpload? Upload { get; set; }
+        public FileMutationReview? FolderReview { get; set; }
+        public FileMutationSessionState? FolderOwner { get; set; }
+        public CrossNasSourceDeletionState DeletionState { get; set; }
+        public bool DeleteSubmitted { get; set; }
+        public string? DeleteTaskId { get; set; }
+        public FileMutationReview? DeleteMarker { get; set; }
+        public FileMutationSessionState? DeleteOwner { get; set; }
+        public FileMutationReview? DeleteTargetMarker { get; set; }
+        public FileMutationSessionState? DeleteTargetOwner { get; set; }
     }
 }

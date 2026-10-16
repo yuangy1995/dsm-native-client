@@ -12,11 +12,11 @@ public sealed partial class SynologyPhotosPage
         var dialog = new SynologyPhotoFilterDialog(_model) { XamlRoot = XamlRoot };
         try
         {
-            _dialog = dialog;
-            var result = await dialog.ShowAsync();
+            SetPhotoDialog(dialog); await _model.Automatic.YieldAsync();
+            var result = await ShowPhotoDialogAsync(dialog);
             if (!_disposed && generation == _viewGeneration && result != ContentDialogResult.None && dialog.Result is { } filter)
                 await _model.ApplyFilterAsync(filter);
         }
-        finally { if (ReferenceEquals(_dialog, dialog)) _dialog = null; }
+        finally { if (ReferenceEquals(_dialog, dialog)) SetPhotoDialog(null); }
     }
 }

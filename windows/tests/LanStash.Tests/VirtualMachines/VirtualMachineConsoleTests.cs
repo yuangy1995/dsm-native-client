@@ -198,7 +198,7 @@ public sealed class VirtualMachineConsoleTests
                 var call = Query(await request.Content!.ReadAsStringAsync(token)); owner.ApiCalls.Add(call);
                 if (call["api"].EndsWith(".Action", StringComparison.Ordinal)) throw new HttpRequestException("synthetic lost receipt");
                 JsonObject data = call["api"] == General ? new() { ["kb_layout"] = "de-de" } : call["api"] == InternalGuest
-                    ? new() { ["guest_id"] = Machine.Id, ["name"] = owner.Name, ["is_online"] = owner.Status == "running", ["kb_layout"] = owner.Keyboard }
+                    ? new() { ["guest_id"] = Machine.Id, ["name"] = owner.Name, ["status"] = owner.Status, ["is_online"] = owner.Status == "running", ["kb_layout"] = owner.Keyboard }
                     : new() { ["guest_id"] = Machine.Id, ["guest_name"] = owner.Name, ["status"] = owner.Status };
                 if (call["api"] == InternalGuest && owner.Missing is { } missing) data.Remove(missing);
                 return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { success = true, data }), Encoding.UTF8, "application/json") };

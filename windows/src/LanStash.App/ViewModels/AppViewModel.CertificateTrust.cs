@@ -15,6 +15,8 @@ public sealed partial class AppViewModel
     private CertificateTrustPresentation? _certificateTrust;
     private CertificateTrustRetryContext? _certificateRetry;
     private CancellationTokenSource? _certificateConfirmation;
+    private readonly Func<Guid, CertificateFingerprint?, CertificateConnectionContext> _connectionFactory =
+        static (profileId, pin) => new(profileId, pin);
 
     internal CertificateTrustPresentation? CertificateTrust
     {
@@ -31,7 +33,7 @@ public sealed partial class AppViewModel
         var pin = await _certificatePins.LoadAsync(profileId, cancellationToken)
             .ConfigureAwait(true);
         cancellationToken.ThrowIfCancellationRequested();
-        return new CertificateConnectionContext(profileId, pin);
+        return _connectionFactory(profileId, pin);
     }
 
     internal Task<CertificateConnectionContext> CreateCrossNasConnectionAsync(
@@ -204,13 +206,15 @@ internal sealed class CertificateConnectionContext : IDisposable
     internal CertificateConnectionContext(
         Guid profileId,
         CertificateFingerprint? pinnedFingerprint)
+        : this(new HttpClient(new WindowsCertificateTrustHandler(profileId, pinnedFingerprint))
+            { Timeout = TimeSpan.FromSeconds(45) }, pinnedFingerprint is not null)
     {
-        UsesPinnedCertificate = pinnedFingerprint is not null;
-        _httpClient = new HttpClient(
-            new WindowsCertificateTrustHandler(profileId, pinnedFingerprint))
-        {
-            Timeout = TimeSpan.FromSeconds(45),
-        };
+    }
+
+    internal CertificateConnectionContext(HttpClient httpClient, bool usesPinnedCertificate = false)
+    {
+        UsesPinnedCertificate = usesPinnedCertificate;
+        _httpClient = httpClient;
         Api = new DsmApiClient(_httpClient);
         Resolver = new DsmConnectionResolver(
             Api,

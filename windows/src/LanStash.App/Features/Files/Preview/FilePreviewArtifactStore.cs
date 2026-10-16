@@ -89,7 +89,8 @@ internal sealed class FilePreviewArtifactStore : IFilePreviewArtifactStore
         IProgress<ForegroundTransferProgress>? progress,
         CancellationToken cancellationToken)
     {
-        var temporary = ApplicationData.Current.TemporaryFolder;
+        // 便携版没有 MSIX 包身份，不能使用 Windows.Storage.ApplicationData.Current。
+        var temporary = await StorageFolder.GetFolderFromPathAsync(Path.GetTempPath());
         var root = await temporary.CreateFolderAsync(
             RootName,
             CreationCollisionOption.OpenIfExists);

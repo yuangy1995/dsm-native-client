@@ -1,4 +1,9 @@
 <Page xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:files="using:LanStash.App.Features.Files" xmlns:views="using:LanStash.App.Views" x:Class="LanStash.App.Views.FilesPage" SizeChanged="FilesPage_SizeChanged" Background="{ThemeResource WorkspaceSurfaceBrush}">
+  <Page.Resources>
+    <DataTemplate x:Key="FileGroupHeader">
+      <TextBlock Text="{Binding Title}" Style="{StaticResource SubtitleTextBlockStyle}" Margin="12,16,12,8" AutomationProperties.HeadingLevel="Level2"/>
+    </DataTemplate>
+  </Page.Resources>
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="72"/>
@@ -36,7 +41,7 @@
         </Button>
       </StackPanel>
       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-        <Button x:Uid="WorkspaceUpload" x:Name="UploadButton" Click="Upload_Click" MinHeight="38" Width="90" Height="38" Background="{ThemeResource WorkspaceAccentBrush}" Foreground="{ThemeResource WorkspaceOnAccentBrush}" CornerRadius="10">
+        <Button x:Uid="WorkspaceUpload" x:Name="UploadButton" Click="Upload_Click" MinHeight="38" MinWidth="100" Height="38" Background="{ThemeResource WorkspaceAccentBrush}" Foreground="{ThemeResource WorkspaceOnAccentBrush}" CornerRadius="10">
           <Button.KeyboardAccelerators>
             <KeyboardAccelerator Key="U" Modifiers="Control" Invoked="UploadAccelerator_Invoked"/>
           </Button.KeyboardAccelerators>
@@ -90,16 +95,25 @@
                 <MenuFlyoutSeparator/>
                 <RadioMenuFlyoutItem x:Uid="FileBrowserSortAscending" x:Name="SortAscendingItem" Click="SortAscending_Click" GroupName="FileSortDirection" MinHeight="44"/>
                 <RadioMenuFlyoutItem x:Uid="FileBrowserSortDescending" x:Name="SortDescendingItem" Click="SortDescending_Click" GroupName="FileSortDirection" MinHeight="44"/>
+                <MenuFlyoutSeparator/>
+                <MenuFlyoutSubItem x:Uid="FileBrowserGrouping">
+                  <RadioMenuFlyoutItem x:Uid="FileBrowserGroupNone" x:Name="GroupNoneItem" Click="Group_Click" Tag="None" GroupName="FileGrouping" MinHeight="44"/>
+                  <RadioMenuFlyoutItem x:Uid="FileBrowserGroupType" x:Name="GroupTypeItem" Click="Group_Click" Tag="Type" GroupName="FileGrouping" MinHeight="44"/>
+                  <RadioMenuFlyoutItem x:Uid="FileBrowserGroupDate" x:Name="GroupDateItem" Click="Group_Click" Tag="Date" GroupName="FileGrouping" MinHeight="44"/>
+                  <RadioMenuFlyoutItem x:Uid="FileBrowserGroupSize" x:Name="GroupSizeItem" Click="Group_Click" Tag="Size" GroupName="FileGrouping" MinHeight="44"/>
+                </MenuFlyoutSubItem>
               </MenuFlyout>
             </AppBarButton.Flyout>
           </AppBarButton>
           <CommandBar.SecondaryCommands>
+            <AppBarButton x:Uid="FileSearchAdvanced" x:Name="AdvancedSearchButton" Click="AdvancedSearch_Click" Icon="Find" MinHeight="44"/>
             <AppBarButton x:Uid="FileLocationsOpen" x:Name="LocationsButton" Click="Locations_Click" AccessKey="L" CornerRadius="10" MinHeight="44">
               <AppBarButton.Icon>
                 <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="" FontSize="20"/>
               </AppBarButton.Icon>
             </AppBarButton>
             <AppBarButton x:Uid="FileBrowserCancelDownloadSelection" x:Name="CancelDownloadSelectionButton" Click="CancelDownloadSelection_Click" Icon="Cancel" MinHeight="44" Visibility="Collapsed"/>
+            <AppBarButton x:Uid="FileShareSelectedItems" x:Name="ShareSelectedItemsButton" Click="ShareSelectedItems_Click" Icon="Link" MinHeight="44" Visibility="Collapsed"/>
             <AppBarButton x:Uid="FileArchiveCompressionSelected" x:Name="CreateArchiveSelectedButton" Click="CreateArchiveSelected_Click" Icon="Accept" MinHeight="48" Visibility="Collapsed"/>
             <AppBarButton x:Uid="FileRestoreBatchSelected" x:Name="RestoreSelectedItemsButton" Click="RestoreSelectedItems_Click" Icon="Undo" MinHeight="48" Visibility="Collapsed"/>
             <AppBarButton x:Uid="FileRecycleBatchMoveSelected" x:Name="MoveSelectedToRecycleButton" Click="MoveSelectedToRecycle_Click" Icon="Delete" MinHeight="48" Visibility="Collapsed"/>
@@ -133,6 +147,11 @@
               </AppBarButton.Icon>
             </AppBarButton>
             <AppBarButton x:Uid="FilePreviewOpen" x:Name="PreviewButton" Click="Preview_Click" Icon="View" MinHeight="44"/>
+            <AppBarButton x:Uid="OfficeSessions" x:Name="OfficeSessionsButton" Click="OfficeSessions_Click" Icon="Document" MinHeight="44" Visibility="Collapsed"/>
+            <AppBarButton x:Uid="FilePermissionsAction" x:Name="FilePermissionsButton" Click="FilePermissions_Click" Icon="Permissions" MinHeight="44"/>
+            <AppBarButton x:Uid="IsoAction" x:Name="IsoMountsButton" Click="IsoMounts_Click" Icon="Library" MinHeight="44"/>
+            <AppBarButton x:Uid="VfsAction" x:Name="VfsButton" Click="Vfs_Click" Icon="Globe" MinHeight="44"/>
+            <AppBarButton x:Uid="FsSettingsAction" x:Name="FileStationSettingsButton" Click="FileStationSettings_Click" Icon="Setting" MinHeight="44"/>
             <AppBarButton x:Uid="FileFavoriteAction" x:Name="ToggleFavoriteButton" Click="ToggleFavorite_Click" Icon="Favorite" MinHeight="44"/>
             <AppBarButton x:Uid="FileShareLink" x:Name="ShareLinkButton" Click="ShareLink_Click" Icon="Link" MinHeight="44">
               <AppBarButton.KeyboardAccelerators>
@@ -140,6 +159,7 @@
               </AppBarButton.KeyboardAccelerators>
             </AppBarButton>
             <AppBarButton x:Uid="FileCopyMoveCopyMultiple" x:Name="CopyMultipleButton" Click="CopyMultiple_Click" Icon="Copy" MinHeight="48"/>
+            <AppBarButton x:Uid="FileShareMultiple" x:Name="ShareMultipleButton" Click="ShareMultiple_Click" Icon="Link" MinHeight="44"/>
             <AppBarButton x:Uid="FileCopyMoveMoveMultiple" x:Name="MoveMultipleButton" Click="MoveMultiple_Click" Icon="MoveToFolder" MinHeight="48"/>
             <AppBarButton x:Uid="FileOperationReviewAction" x:Name="CopyMoveRecoveryButton" Click="CopyMoveRecovery_Click" Icon="Refresh" MinHeight="48"/>
             <AppBarButton x:Uid="FileRecycleReviewAction" x:Name="RecycleRecoveryButton" Click="RecycleRecovery_Click" Icon="Refresh" MinHeight="48"/>
@@ -189,7 +209,9 @@
         <StackPanel x:Name="SearchProgressState" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
           <ProgressRing Width="18" Height="18" IsActive="True"/>
           <TextBlock x:Uid="FileBrowserSearchInProgress" VerticalAlignment="Center" TextWrapping="Wrap"/>
+          <Button x:Uid="FileSearchCancel" Click="CancelSearch_Click" MinHeight="44"/>
         </StackPanel>
+        <Button x:Uid="FileSearchClear" x:Name="ClearSearchButton" Click="ClearFilter_Click" HorizontalAlignment="Left" MinHeight="44" Visibility="Collapsed"/>
         <InfoBar x:Name="SearchStatus" AutomationProperties.LiveSetting="Polite" IsClosable="False" IsOpen="False" Visibility="Collapsed">
           <InfoBar.ActionButton>
             <Button x:Uid="FileBrowserSearchRetry" Click="SearchRetry_Click" MinHeight="44"/>
@@ -217,6 +239,9 @@
                   <ListView.KeyboardAccelerators>
                     <KeyboardAccelerator Key="Enter" Invoked="OpenSelectedAccelerator_Invoked"/>
                   </ListView.KeyboardAccelerators>
+                  <ListView.GroupStyle>
+                    <GroupStyle HeaderTemplate="{StaticResource FileGroupHeader}"/>
+                  </ListView.GroupStyle>
                   <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem">
                       <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -257,6 +282,9 @@
                   <GridView.KeyboardAccelerators>
                     <KeyboardAccelerator Key="Enter" Invoked="OpenSelectedAccelerator_Invoked"/>
                   </GridView.KeyboardAccelerators>
+                  <GridView.GroupStyle>
+                    <GroupStyle HeaderTemplate="{StaticResource FileGroupHeader}"/>
+                  </GridView.GroupStyle>
                   <GridView.ItemTemplate>
                     <DataTemplate x:DataType="files:FileBrowserEntry">
                       <StackPanel Width="120" MinHeight="144" Padding="8,22" Spacing="12">

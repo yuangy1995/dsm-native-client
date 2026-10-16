@@ -6,18 +6,20 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    public bool CanDeleteVirtualMachineImages => HasAuthenticatedVirtualMachineSession && HasPublicVirtualMachineVersion(PublicImageApi);
+    public bool CanDeleteVirtualMachineImages => HasAuthenticatedVirtualMachineSession && (HasPublicVirtualMachineVersion(PublicImageApi) ||
+        _virtualMachineInternalWritesEnabled && HasInternalVirtualMachineVersion(InternalCreationImageApi, 2, 2));
     bool IVirtualMachineManagerRepository.CanDeleteImages => CanDeleteVirtualMachineImages;
     private static string ImageDeletionScope(string scope) => ServiceHash(scope + "\nimage-deletion");
     public async Task<IReadOnlyList<VirtualizationResourceSummary>> LoadImageDeletionTargetsAsync(CancellationToken cancellationToken = default)
+        => await LoadImageDeletionTargetsAsync(HasPublicVirtualMachineVersion(PublicImageApi) ? VirtualMachineApiSource.Public : VirtualMachineApiSource.Internal, cancellationToken).ConfigureAwait(false);
+
+    private async Task<IReadOnlyList<VirtualizationResourceSummary>> LoadImageDeletionTargetsAsync(VirtualMachineApiSource source, CancellationToken cancellationToken)
     {
         EnsureVirtualMachineManagerProfile();
+        if (source == VirtualMachineApiSource.Internal) return await LoadInternalImageDeletionTargetsAsync(cancellationToken).ConfigureAwait(false);
         if (!HasPublicVirtualMachineVersion(PublicImageApi)) throw UnavailableVirtualMachineManagerError();
         var data = await CallPublicVirtualMachineAsync(PublicImageApi, "list", null, cancellationToken).ConfigureAwait(false);
-        var ids = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var item in RequiredObjectArray(data, "images"))
-            if (item["image_id"] is not JsonValue value || !value.TryGetValue<string>(out var id) || !VirtualMachinePowerRules.ValidId(id) || !ids.Add(id))
-                throw InvalidVirtualMachineManagerResponse();
+        _ = ReadVirtualMachineDeletionIdentities(data, isImage: true);
         return ParseResources(data, "images", "image_id", "image_name", VirtualizationResourceKind.Image);
     }
     public async Task<MutationResult> DeleteImageAsync(VirtualMachineImageDeleteRequest request, CancellationToken cancellationToken = default)
@@ -27,8 +29,12 @@ public sealed partial class DsmRepository
         if (!CanDeleteVirtualMachineImages) return UnsupportedResult(operation);
         if (request is null || request.ProfileId != _profile.Id || request.RequestId == Guid.Empty || !request.RiskConfirmed || !VirtualMachineImageDeletionRules.CanRequest(request.Baseline))
             return ServicePreflightFailure(operation, MutationErrorCategory.Validation);
+        request = request with { Baseline = request.Baseline with { ImageReplicas = request.Baseline.ImageReplicas?.ToArray() } };
+        var source = request.Baseline.Source;
+        if (source == VirtualMachineApiSource.Internal ? !_virtualMachineInternalWritesEnabled || !HasInternalVirtualMachineVersion(InternalCreationImageApi, 2, 2) : !HasPublicVirtualMachineVersion(PublicImageApi))
+            return UnsupportedResult(operation);
         var scope = ServiceScope(); var imageScope = ImageDeletionScope(scope); var state = VmMutations;
-        var signature = ServiceHash(JsonSerializer.Serialize(request.Baseline));
+        var signature = VirtualMachineImageIdentity(request.Baseline);
         try { if (!await state.Gate.WaitAsync(0, cancellationToken).ConfigureAwait(false)) return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true); }
         catch (OperationCanceledException) { return CancelledBeforeSubmissionResult(operation); }
         try
@@ -42,22 +48,31 @@ public sealed partial class DsmRepository
                 return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
             try
             {
-                var images = await LoadImageDeletionTargetsAsync(cancellationToken).ConfigureAwait(false);
-                if (!images.Any(item => item == request.Baseline)) return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
+                var images = await LoadImageDeletionTargetsAsync(source, cancellationToken).ConfigureAwait(false);
+                if (!images.Any(item => VirtualMachineImageIdentity(item) == signature && VirtualMachineImageDeletionRules.CanRequest(item)))
+                    return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
                 cancellationToken.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException) { return CancelledBeforeSubmissionResult(operation); }
             catch (DsmException error) { return ServicePreflightFailure(operation, VirtualMachinePowerError(error)); }
+            catch (CertificateTrustChallengeException) { return ServicePreflightFailure(operation, MutationErrorCategory.Authentication); }
             catch (Exception) { return ServicePreflightFailure(operation, MutationErrorCategory.Network); }
-            var pending = new VirtualMachineDeleteOperation(imageScope, signature, request.Baseline.Id, request.Baseline.Name) { IsImage = true };
+            var pending = new VirtualMachineDeleteOperation(imageScope, signature, request.Baseline.Id, request.Baseline.Name) { IsImage = true, Source = source };
             state.DeletionOperations.Add(request.RequestId, pending); state.DeletionPending.Add((imageScope, pending.Id), pending);
             try
             {
-                await SecurityCallAsync(_capabilities[PublicImageApi] with { MinVersion = 1, MaxVersion = 1 }, "delete",
-                    new() { ["image_id"] = pending.Id }, cancellationToken).ConfigureAwait(false);
+                var version = source == VirtualMachineApiSource.Internal ? 2 : 1;
+                var parameters = source == VirtualMachineApiSource.Internal
+                    ? new Dictionary<string, object> { ["id"] = pending.Id, ["synovmm_ui_id"] = request.RequestId.ToString("D") }
+                    : new Dictionary<string, object> { ["image_id"] = pending.Id };
+                await SecurityCallAsync(_capabilities[source == VirtualMachineApiSource.Internal ? InternalCreationImageApi : PublicImageApi] with { MinVersion = version, MaxVersion = version },
+                    "delete", parameters, cancellationToken).ConfigureAwait(false);
+                pending.Accepted = true;
             }
             catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error)) { pending.Rejection = VirtualMachinePowerError(error); }
-            catch (Exception) { /* 不重发未知删除，仅调用公共列表核对。 */ }
+            catch (DsmException error) when (IsMutationAuthenticationFailure(error)) { return VirtualMachineDeletionUnverified(operation, cancellationToken, MutationErrorCategory.Authentication); }
+            catch (CertificateTrustChallengeException) { return VirtualMachineDeletionUnverified(operation, cancellationToken, MutationErrorCategory.Authentication); }
+            catch (Exception) { /* 不重发未知删除，仅通过原 API 来源读取列表。 */ }
             return await ReviewVirtualMachineDeletionAsync(pending, cancellationToken).ConfigureAwait(false);
         }
         finally { state.Gate.Release(); }
@@ -78,5 +93,43 @@ public sealed partial class DsmRepository
         catch (OperationCanceledException) { return CancelledBeforeSubmissionResult("virtualMachineImageDelete"); }
         try { return state.DeletionPending.TryGetValue((ImageDeletionScope(ServiceScope()), id), out var pending) ? await ReviewVirtualMachineDeletionAsync(pending, cancellationToken).ConfigureAwait(false) : null; }
         finally { state.Gate.Release(); }
+    }
+
+    private static string VirtualMachineImageIdentity(VirtualizationResourceSummary item) => ServiceHash(JsonSerializer.Serialize(new
+    {
+        item.Id, item.Name, item.Kind, item.Health, item.AllocatedBytes, item.CapacityBytes, item.Type, item.Source,
+        Copies = item.ImageReplicas?.OrderBy(copy => copy.StorageId, StringComparer.Ordinal).ThenBy(copy => copy.HostId, StringComparer.Ordinal).ToArray(),
+    }));
+
+    private static IReadOnlyList<VirtualizationResourceSummary> StrictInternalImageDeletionInventory(JsonObject data)
+    {
+        _ = AdvancedBool(data, "is_freeze");
+        foreach (var row in RequiredObjectArray(data, "images"))
+        {
+            foreach (var key in new[] { "id", "name", "type", "status", "status_type" }) _ = AdvancedText(row, key);
+            if (!VirtualMachinePowerRules.ValidId(AdvancedText(row, "repo_id")) || !VirtualMachinePowerRules.ValidId(AdvancedText(row, "host_id")))
+                throw InvalidVirtualMachineManagerResponse();
+        }
+        return ParseInternalVirtualMachineImages(data);
+    }
+
+    private async Task<IReadOnlyList<VirtualizationResourceSummary>> LoadInternalImageDeletionTargetsAsync(CancellationToken token)
+    {
+        var data = await CallInternalVirtualMachineAsync(InternalCreationImageApi, "list", null, 2, 2, token).ConfigureAwait(false);
+        var images = StrictInternalImageDeletionInventory(data);
+        if (AdvancedBool(data, "is_freeze") || !images.Any(item => item.Type == "iso")) return images;
+        if (!HasInternalSettingsContract) throw UnavailableVirtualMachineManagerError();
+        var guests = await CallInternalVirtualMachineAsync(InternalSettingsGuestApi, "list", null, 2, 2, token).ConfigureAwait(false);
+        var guestIds = ReadVirtualMachineDeletionIdentities(guests, isImage: false);
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in guestIds)
+        {
+            // 已关机的虚拟机仍可挂载 ISO，不能只扫描正在运行的对象。
+            var settings = await SecurityCallAsync(_capabilities[InternalSettingsGuestApi] with { MinVersion = 1, MaxVersion = 1 }, "get_setting",
+                new() { ["guest_id"] = id }, token).ConfigureAwait(false);
+            foreach (var image in AdvancedStringArray(settings, "iso_images")) if (image != "unmounted") used.Add(image);
+        }
+        token.ThrowIfCancellationRequested();
+        return images.Select(item => item.Type == "iso" ? item with { IsInUse = used.Contains(item.Id) } : item).ToArray();
     }
 }

@@ -173,7 +173,8 @@ public sealed class FileShareLinkRepositoryContractTests
         var second = await Repository(api).DeleteFileShareLinkAsync(new(link));
 
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, second.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
+        Assert.True(second.Result.RequiresRefresh);
         Assert.Equal(1, api.DeleteCount);
         Assert.Equal(3, api.Requests.Count(request => request.Method == "list"));
     }
@@ -307,7 +308,7 @@ public sealed class FileShareLinkRepositoryContractTests
     }
 
     [Fact]
-    public async Task MissingResponseIdCanClaimOnlyUniqueNewSamePathLink()
+    public async Task MissingResponseIdNeverClaimsEvenUniqueNewSamePathLink()
     {
         var api = new SharingApiClient(
             [
@@ -321,8 +322,9 @@ public sealed class FileShareLinkRepositoryContractTests
 
         var result = await Repository(api).CreateFileShareLinkAsync(new(Target(false)));
 
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
-        Assert.Equal("new", result.Link?.Id);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, result.Result.Status);
+        Assert.Null(result.Link);
+        Assert.True(result.Result.RequiresRefresh);
         Assert.Equal(1, api.CreateCount);
     }
 
@@ -455,8 +457,10 @@ public sealed class FileShareLinkRepositoryContractTests
 
             var result = await Repository(api).CreateFileShareLinkAsync(new(Target(false)));
 
-            Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
-            Assert.Equal("new", result.Link?.Id);
+            Assert.Equal(status == FileShareLinkTransportStatus.CancellationRequestedAfterSubmission
+                ? MutationResultStatus.CancellationRequestedAfterSubmission : MutationResultStatus.SubmittedButUnverified, result.Result.Status);
+            Assert.Null(result.Link);
+            Assert.True(result.Result.RequiresRefresh);
             Assert.Equal(1, api.CreateCount);
         }
     }
@@ -480,8 +484,10 @@ public sealed class FileShareLinkRepositoryContractTests
         var result = await Repository(api).CreateFileShareLinkAsync(
             new(Target(false)), cancellation.Token);
 
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
-        Assert.Equal("new", result.Link?.Id);
+        Assert.Equal(status == FileShareLinkTransportStatus.CancellationRequestedAfterSubmission
+                ? MutationResultStatus.CancellationRequestedAfterSubmission : MutationResultStatus.SubmittedButUnverified, result.Result.Status);
+        Assert.Null(result.Link);
+            Assert.True(result.Result.RequiresRefresh);
         Assert.Equal(1, api.CreateCount);
         Assert.Equal(4, api.Requests.Count);
     }
@@ -608,7 +614,7 @@ public sealed class FileShareLinkRepositoryContractTests
     [InlineData("empty")]
     [InlineData("numeric-nonzero")]
     [InlineData("bool")]
-    public async Task InvalidExpiryFieldNeverConfirms(string failure)
+    public async Task ObservedEmptyExpiryIsAcceptedAndMalformedFieldsNeverConfirm(string failure)
     {
         var link = Link("new", "/share/a.txt");
         switch (failure)
@@ -637,8 +643,9 @@ public sealed class FileShareLinkRepositoryContractTests
 
         var result = await Repository(api).CreateFileShareLinkAsync(new(Target(false)));
 
-        Assert.Equal(MutationResultStatus.SubmittedButUnverified, result.Result.Status);
-        Assert.Null(result.Link);
+        Assert.Equal(failure == "empty" ? MutationResultStatus.ConfirmedSuccess : MutationResultStatus.SubmittedButUnverified, result.Result.Status);
+        if (failure == "empty") Assert.Equal("new", result.Link?.Id);
+        else Assert.Null(result.Link);
         Assert.Equal(1, api.CreateCount);
     }
 
@@ -807,7 +814,7 @@ public sealed class FileShareLinkRepositoryContractTests
             [TargetResponse(false), LinkPage(0), LinkPage(1, Link("new", "/share/a.txt"))],
             new FileShareLinkTransportResult(
                 FileShareLinkTransportStatus.ResponseReceived,
-                CreateDataWithoutId()),
+                new JsonObject { ["id"] = "new" }),
             async () =>
             {
                 started.SetResult(true);

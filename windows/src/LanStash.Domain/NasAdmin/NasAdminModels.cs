@@ -101,6 +101,8 @@ public enum NasStorageAnalysisCategory
     Documents,
     Archives,
     Other,
+    Audio,
+    NoExtension,
 }
 
 public sealed record NasStorageCategorySummary(
@@ -111,7 +113,12 @@ public sealed record NasStorageCategorySummary(
 public sealed record NasStorageFileCandidate(
     string Name,
     long SizeBytes,
-    DateTimeOffset? ModifiedAt);
+    DateTimeOffset? ModifiedAt)
+{
+    public DateTimeOffset? AccessedAt { get; init; }
+}
+
+public sealed record NasStorageOwnerUsage(string? Name, int FileCount, long SizeBytes);
 
 public sealed record NasStorageDuplicateCandidate(
     string Name,
@@ -147,7 +154,12 @@ public sealed record NasStorageAnalysisSummary(
     int SkippedFolderCount = 0,
     NasStorageOwnerSummary? OwnerSummary = null,
     NasStorageAccessTimeSummary? AccessTimeSummary = null,
-    IReadOnlyList<NasStorageDirectorySummary>? Directories = null);
+    IReadOnlyList<NasStorageDirectorySummary>? Directories = null)
+{
+    public IReadOnlyList<NasStorageDirectorySummary> Shares { get; init; } = [];
+    public IReadOnlyList<NasStorageOwnerUsage> Owners { get; init; } = [];
+    public IReadOnlyList<NasStorageFileCandidate> LeastRecentlyAccessedFiles { get; init; } = [];
+}
 
 public sealed record NasSystemProcessSummary(
     string Id,
@@ -202,13 +214,17 @@ public sealed record NasPackageSummary(
     public bool? UninstallAllowed { get; init; }
     public IReadOnlyList<string>? AvailableOperations { get; init; }
     public IReadOnlyList<string>? DesktopApps { get; init; }
+    public bool HasOperationObject { get; init; }
+    public bool HasUpgradeCandidate { get; init; }
+    public decimal? InstalledAt { get; init; }
+    public string Description { get; init; } = "";
     public bool IsRunning => Status is "running" or "active";
     public bool IsStopped => Status is "stopped" or "inactive";
-    public bool CanStart => Startable == true && IsStopped && DesktopApps is not null && AvailableOperations?.Contains("start") == true;
-    public bool CanStop => Startable == true && IsRunning && AvailableOperations?.Contains("stop") == true;
-    public bool CanUninstall => !string.IsNullOrWhiteSpace(InstallType) && InstallType != "system" && UninstallAllowed != false && DesktopApps is not null &&
+    public bool CanStart => Startable == true && IsStopped && DesktopApps is not null && (HasOperationObject || AvailableOperations?.Contains("start") == true);
+    public bool CanStop => Startable == true && IsRunning && (HasOperationObject || AvailableOperations?.Contains("stop") == true);
+    public bool CanUninstall => !string.IsNullOrWhiteSpace(InstallType) && InstallType is not ("system" or "system_hidden") && UninstallAllowed != false && DesktopApps is not null &&
         (UninstallAllowed == true || AvailableOperations?.Contains("uninstall") == true);
-    public bool IsUpgradeAvailable => AvailableOperations?.Contains("upgrade") == true;
+    public bool IsUpgradeAvailable => HasUpgradeCandidate || AvailableOperations?.Contains("upgrade") == true;
     public bool CanUpgrade => false;
 }
 
@@ -255,6 +271,12 @@ public interface INasDetailsRepository
 {
     Guid ProfileId { get; }
     NasDetailsAvailability Availability { get; }
+    bool CanReadPerformance => false;
+    Task<NasPerformanceSnapshot> LoadPerformanceAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<NasPerformanceSnapshot>(new NotSupportedException());
+    bool CanReadLogs => false;
+    Task<NasLogPage> LoadLogPageAsync(int offset, int limit, CancellationToken cancellationToken = default) =>
+        Task.FromException<NasLogPage>(new NotSupportedException());
 
     Task<NasDetailsSnapshot> LoadDetailsAsync(
         CancellationToken cancellationToken = default);

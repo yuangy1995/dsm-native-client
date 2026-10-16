@@ -30,8 +30,8 @@ public sealed class NasPackageMutationTests
         using var f = new Fixture(format); var request = await Request(f, action);
         var result = await Execute(f, request);
         Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Status); Assert.Single(f.Writes); Assert.Single(f.Checks);
-        Assert.Equal(new[] { "get_user_service", "list", "feasibility_check", action.ToString().ToLowerInvariant(), "list" }, f.Calls.Select(c => c["method"]));
-        var check = f.Checks.Single(); Assert.Equal("2", check["version"]);
+        Assert.Equal(new[] { "get_user_service", "list", "feasibility_check", "get_user_service", action.ToString().ToLowerInvariant(), "get_user_service", "list" }, f.Calls.Select(c => c["method"]));
+        var check = f.Checks.Single(); Assert.Equal("1", check["version"]);
         Assert.Equal(JsonSerializer.Serialize(new[] { Fixture.PackageId }), check["packages"]);
         var checkName = action.ToString().ToLowerInvariant() + "_check";
         Assert.Equal(format == "JSON" ? JsonSerializer.Serialize(checkName) : checkName, check["type"]);
@@ -136,10 +136,11 @@ public sealed class NasPackageMutationTests
 
     [Theory]
     [InlineData(NasPackageAction.Start)] [InlineData(NasPackageAction.Stop)] [InlineData(NasPackageAction.Uninstall)]
-    public async Task LostResponseCanOnlyBeResolvedByStateReadback(NasPackageAction action)
+    public async Task LostResponseCannotClaimAnotherClientsMatchingState(NasPackageAction action)
     {
         using var f = new Fixture { LoseWrite = true }; var request = await Request(f, action);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await Execute(f, request)).Status); Assert.Single(f.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await Execute(f, request)).Status); Assert.Single(f.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Recreate().ReviewPackageAsync(Fixture.PackageId))!.Status);
     }
 
     [Theory]
@@ -151,8 +152,10 @@ public sealed class NasPackageMutationTests
         Assert.Equal(attempts + 1, f.Calls.Count(c => c["method"] == "list")); Assert.Equal(attempts - 1, f.Delays);
         Assert.Equal(MutationErrorCategory.Conflict, (await Execute(f, request with { RequestId = Guid.NewGuid() })).ErrorCategory);
         f.Details["status"] = "running";
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Recreate().ReviewPackageAsync(Fixture.PackageId))!.Status);
-        Assert.Single(f.Writes); Assert.Null(await f.Repository.ReviewPackageAsync(Fixture.PackageId));
+        Assert.Equal(lost ? MutationResultStatus.SubmittedButUnverified : MutationResultStatus.ConfirmedSuccess, (await f.Recreate().ReviewPackageAsync(Fixture.PackageId))!.Status);
+        Assert.Single(f.Writes);
+        if (lost) Assert.NotNull(await f.Repository.ReviewPackageAsync(Fixture.PackageId));
+        else Assert.Null(await f.Repository.ReviewPackageAsync(Fixture.PackageId));
     }
 
     [Fact]
@@ -173,7 +176,7 @@ public sealed class NasPackageMutationTests
         using var f = new Fixture { ApplyWrite = apply }; var request = await Request(f, NasPackageAction.Start);
         using var cancelled = new CancellationTokenSource(); f.AfterWrite = cancelled.Cancel;
         var result = await Execute(f, request, cancelled.Token);
-        Assert.Equal(apply ? MutationResultStatus.ConfirmedSuccess : MutationResultStatus.CancellationRequestedAfterSubmission, result.Status);
+        Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, result.Status);
         Assert.Equal(2, f.Calls.Count(c => c["method"] == "list")); Assert.Equal(0, f.Delays); Assert.Single(f.Writes);
     }
 

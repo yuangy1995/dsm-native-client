@@ -20,16 +20,20 @@
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
       <StackPanel Spacing="4">
-        <TextBlock x:Uid="ChatBrowserTitle" Style="{StaticResource WorkspaceTitleStyle}" AutomationProperties.HeadingLevel="Level1" FontSize="16"/>
-        <TextBlock x:Uid="ChatBrowserDescription" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Visibility="Collapsed"/>
+        <TextBlock x:Uid="ChatBrowserTitle" x:Name="LocalizedChatBrowserTitle" Style="{StaticResource WorkspaceTitleStyle}" AutomationProperties.HeadingLevel="Level1" FontSize="16"/>
+        <TextBlock x:Uid="ChatBrowserDescription" x:Name="LocalizedChatBrowserDescription" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Visibility="Collapsed"/>
       </StackPanel>
       <Button x:Uid="ChatAdvancedTools" x:Name="AdvancedToolsButton" Grid.Column="1" MinHeight="44" Click="AdvancedTools_Click" Visibility="Collapsed"/>
-      <Button x:Uid="ChatBrowserRefresh" x:Name="RefreshButton" Grid.Column="2" MinHeight="44" Click="Refresh_Click" HorizontalAlignment="Right" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="10">
+      <Button x:Uid="ChatSearchMessagesButton" x:Name="MessageSearchButton" Grid.Column="2" MinHeight="44" Click="SearchMessages_Click"/>
+      <ToggleButton x:Uid="ChatNotificationsButton" x:Name="ChatNotificationsButton" Grid.Column="3" MinWidth="44" MinHeight="44" Click="ChatNotifications_Click"><FontIcon Glyph="&#xE7F4;" FontSize="16"/></ToggleButton>
+      <Button x:Uid="ChatBrowserRefresh" x:Name="RefreshButton" Grid.Column="4" MinHeight="44" Click="Refresh_Click" HorizontalAlignment="Right" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="10">
         <StackPanel Orientation="Horizontal" Spacing="8">
           <FontIcon Glyph="" FontSize="16"/>
-          <TextBlock x:Uid="ChatBrowserRefreshLabel"/>
+          <TextBlock x:Uid="ChatBrowserRefreshLabel" x:Name="LocalizedChatBrowserRefreshLabel"/>
         </StackPanel>
       </Button>
     </Grid>
@@ -55,12 +59,9 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
-              <TextBlock x:Uid="WorkspaceConversations" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              <TextBlock x:Uid="WorkspaceConversations" x:Name="LocalizedWorkspaceConversations" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
               <Button x:Name="CreateConversationButton" Grid.Column="1" MinWidth="44" MinHeight="44" Margin="0,0,8,0" Click="CreateConversation_Click">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <FontIcon Glyph="" FontSize="16"/>
-                  <TextBlock x:Name="CreateConversationButtonLabel"/>
-                </StackPanel>
+                <FontIcon Glyph="" FontSize="16"/>
               </Button>
             </Grid>
             <AutoSuggestBox x:Uid="ChatBrowserSearch" x:Name="SearchBox" MinHeight="44" QueryIcon="Find" Text="{Binding SearchQuery, Mode=TwoWay}" TextChanged="SearchBox_TextChanged" Grid.Row="1" Margin="12,8"/>
@@ -128,7 +129,7 @@
               </Button>
               <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                 <TextBlock x:Name="ConversationTitle" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                <TextBlock x:Uid="ChatBrowserConversationReadOnly" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="Collapsed"/>
+                <TextBlock x:Uid="ChatBrowserConversationReadOnly" x:Name="LocalizedChatBrowserConversationReadOnly" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="Collapsed"/>
               </StackPanel>
               <Button x:Uid="ChatBrowserMembersButton" x:Name="MembersButton" Grid.Column="2" MinWidth="44" MinHeight="44" Click="Members_Click" Visibility="Collapsed">
                 <FontIcon Glyph="" FontSize="16"/>
@@ -151,21 +152,21 @@
             <Grid Grid.Row="2">
               <StackPanel x:Name="NoSelectionState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8">
                 <FontIcon Glyph="" FontSize="40"/>
-                <TextBlock x:Uid="ChatBrowserChooseConversationTitle" FontSize="20" TextAlignment="Center"/>
-                <TextBlock x:Uid="ChatBrowserChooseConversationMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+                <TextBlock x:Uid="ChatBrowserChooseConversationTitle" x:Name="LocalizedChatBrowserChooseConversationTitle" FontSize="20" TextAlignment="Center"/>
+                <TextBlock x:Uid="ChatBrowserChooseConversationMessage" x:Name="LocalizedChatBrowserChooseConversationMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
               </StackPanel>
               <StackPanel x:Name="EncryptedState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed">
                 <FontIcon Glyph="" FontSize="40"/>
-                <TextBlock x:Uid="ChatBrowserEncryptedTitle" FontSize="20" TextAlignment="Center"/>
-                <TextBlock x:Uid="ChatBrowserEncryptedMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+                <TextBlock x:Uid="ChatBrowserEncryptedTitle" x:Name="LocalizedChatBrowserEncryptedTitle" FontSize="20" TextAlignment="Center"/>
+                <TextBlock x:Uid="ChatBrowserEncryptedMessage" x:Name="LocalizedChatBrowserEncryptedMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
               </StackPanel>
               <StackPanel x:Name="MessageLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Visibility="Collapsed">
                 <ProgressRing Width="36" Height="36" IsActive="True"/>
-                <TextBlock x:Uid="ChatBrowserMessagesLoading"/>
+                <TextBlock x:Uid="ChatBrowserMessagesLoading" x:Name="LocalizedChatBrowserMessagesLoading"/>
               </StackPanel>
               <StackPanel x:Name="MessageEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed">
-                <TextBlock x:Uid="ChatBrowserMessagesEmptyTitle" FontSize="20" TextAlignment="Center"/>
-                <TextBlock x:Uid="ChatBrowserMessagesEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+                <TextBlock x:Uid="ChatBrowserMessagesEmptyTitle" x:Name="LocalizedChatBrowserMessagesEmptyTitle" FontSize="20" TextAlignment="Center"/>
+                <TextBlock x:Uid="ChatBrowserMessagesEmptyMessage" x:Name="LocalizedChatBrowserMessagesEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
               </StackPanel>
               <Grid x:Name="MessagesState" Visibility="Collapsed">
                 <Grid.RowDefinitions>
@@ -197,6 +198,7 @@
                           <TextBlock FontWeight="SemiBold" Text="{x:Bind Sender}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                           <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind SentAtText}" FontSize="12"/>
                           <StackPanel Grid.Column="2" Orientation="Horizontal">
+                          <Button MinWidth="44" MinHeight="44" Click="MessageDetails_Click" Tag="{x:Bind}" ToolTipService.ToolTip="{x:Bind DetailsText}" AutomationProperties.Name="{x:Bind DetailsText}" Visibility="{x:Bind DetailsVisibility}"><FontIcon Glyph="&#xE8A4;" FontSize="16"/></Button>
                           <Button MinWidth="44" MinHeight="44" Click="Reminder_Click" Tag="{x:Bind}" ToolTipService.ToolTip="{x:Bind ReminderText}" AutomationProperties.Name="{x:Bind ReminderText}" Visibility="{x:Bind ReminderVisibility}"><FontIcon Glyph="&#xE823;" FontSize="16"/></Button>
                           <Button MinWidth="44" MinHeight="44" Click="DeleteMessage_Click" Tag="{x:Bind}" ToolTipService.ToolTip="{x:Bind DeleteActionText}" AutomationProperties.Name="{x:Bind DeleteActionAutomationName}" Visibility="{x:Bind DeleteVisibility}">
                             <FontIcon Glyph="" FontSize="16"/>
@@ -207,6 +209,8 @@
                           <StackPanel Spacing="4">
                             <TextBlock Text="{x:Bind Text}" TextWrapping="WrapWholeWords"/>
                             <TextBlock Text="{x:Bind PollSummary}" TextWrapping="WrapWholeWords" Visibility="{x:Bind PollVisibility}"/>
+                            <TextBlock Text="{x:Bind EditedText}" Visibility="{x:Bind EditedVisibility}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12"/>
+                            <TextBlock Text="{x:Bind ReplyCountText}" Visibility="{x:Bind RepliesVisibility}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12"/>
                             <ItemsControl ItemsSource="{x:Bind Attachments}">
                               <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="chat:ChatMessageAttachmentItem">
@@ -248,14 +252,16 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                   </Grid.ColumnDefinitions>
-                  <TextBlock x:Uid="ChatBrowserComposerLabel" VerticalAlignment="Center" FontWeight="SemiBold" Visibility="Collapsed"/>
+                  <TextBlock x:Uid="ChatBrowserComposerLabel" x:Name="LocalizedChatBrowserComposerLabel" VerticalAlignment="Center" FontWeight="SemiBold" Visibility="Collapsed"/>
                   <Button x:Uid="ChatEmojiAction" x:Name="EmojiButton" Grid.Column="0" MinWidth="48" MinHeight="48" Click="Emoji_Click" Visibility="Collapsed" HorizontalAlignment="Left" Margin="54,0,0,0">
                     <FontIcon Glyph="" FontSize="16"/>
                   </Button>
                   <Button x:Uid="WorkspaceChatAttachment" x:Name="ChooseAttachmentButton" Grid.Column="0" MinWidth="44" MinHeight="44" Click="ChooseAttachment_Click" HorizontalAlignment="Left" Margin="0" Width="44">
                     <FontIcon Glyph="" FontSize="20"/>
                   </Button>
+                  <Button x:Uid="ChatVoiceAction" x:Name="VoiceMessageButton" Grid.Column="0" MinWidth="44" MinHeight="44" Click="VoiceMessage_Click" HorizontalAlignment="Left" Margin="108,0,0,0"><FontIcon Glyph="&#xE720;" FontSize="18"/></Button>
                   <Button x:Uid="ChatBrowserSend" x:Name="SendMessageButton" Grid.Column="0" MinWidth="72" MinHeight="36" Click="SendMessage_Click" HorizontalAlignment="Right" Background="{ThemeResource WorkspaceAccentBrush}" Foreground="{ThemeResource WorkspaceOnAccentBrush}" CornerRadius="10"/>
+                  <Button x:Uid="ChatRefreshSendButton" x:Name="RefreshSendButton" Grid.Column="1" MinHeight="44" Click="RefreshSend_Click" Visibility="Collapsed"/>
                 </Grid>
                 <Border x:Name="AttachmentCard" Grid.Row="1" Padding="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Visibility="Collapsed">
                   <Grid ColumnSpacing="8">
@@ -296,30 +302,30 @@
       </Grid>
       <StackPanel x:Name="LoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
         <ProgressRing Width="40" Height="40" IsActive="True"/>
-        <TextBlock x:Uid="ChatBrowserLoading"/>
+        <TextBlock x:Uid="ChatBrowserLoading" x:Name="LocalizedChatBrowserLoading"/>
       </StackPanel>
       <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8" Visibility="Collapsed">
-        <TextBlock x:Uid="ChatBrowserEmptyTitle" FontSize="20" TextAlignment="Center"/>
-        <TextBlock x:Uid="ChatBrowserEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
-        <Button x:Uid="ChatBrowserEmptyRefresh" MinHeight="44" HorizontalAlignment="Center" Click="Refresh_Click"/>
+        <TextBlock x:Uid="ChatBrowserEmptyTitle" x:Name="LocalizedChatBrowserEmptyTitle" FontSize="20" TextAlignment="Center"/>
+        <TextBlock x:Uid="ChatBrowserEmptyMessage" x:Name="LocalizedChatBrowserEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+        <Button x:Uid="ChatBrowserEmptyRefresh" x:Name="LocalizedChatBrowserEmptyRefresh" MinHeight="44" HorizontalAlignment="Center" Click="Refresh_Click"/>
       </StackPanel>
       <StackPanel x:Name="FilteredEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8" Visibility="Collapsed">
-        <TextBlock x:Uid="ChatBrowserFilteredEmptyTitle" FontSize="20" TextAlignment="Center"/>
-        <TextBlock x:Uid="ChatBrowserFilteredEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
-        <Button x:Uid="ChatBrowserClearSearch" MinHeight="44" HorizontalAlignment="Center" Click="ClearSearch_Click"/>
+        <TextBlock x:Uid="ChatBrowserFilteredEmptyTitle" x:Name="LocalizedChatBrowserFilteredEmptyTitle" FontSize="20" TextAlignment="Center"/>
+        <TextBlock x:Uid="ChatBrowserFilteredEmptyMessage" x:Name="LocalizedChatBrowserFilteredEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+        <Button x:Uid="ChatBrowserClearSearch" x:Name="LocalizedChatBrowserClearSearch" MinHeight="44" HorizontalAlignment="Center" Click="ClearSearch_Click"/>
       </StackPanel>
       <StackPanel x:Name="ErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8" Visibility="Collapsed">
-        <TextBlock x:Uid="ChatBrowserErrorTitle" FontSize="20" TextAlignment="Center"/>
-        <TextBlock x:Uid="ChatBrowserErrorMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
-        <Button x:Uid="ChatBrowserRetry" MinHeight="44" HorizontalAlignment="Center" Click="Refresh_Click"/>
+        <TextBlock x:Uid="ChatBrowserErrorTitle" x:Name="LocalizedChatBrowserErrorTitle" FontSize="20" TextAlignment="Center"/>
+        <TextBlock x:Uid="ChatBrowserErrorMessage" x:Name="LocalizedChatBrowserErrorMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+        <Button x:Uid="ChatBrowserRetry" x:Name="LocalizedChatBrowserRetry" MinHeight="44" HorizontalAlignment="Center" Click="Refresh_Click"/>
       </StackPanel>
       <StackPanel x:Name="UnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8" Visibility="Collapsed">
-        <TextBlock x:Uid="ChatBrowserUnavailableTitle" FontSize="20" TextAlignment="Center"/>
-        <TextBlock x:Uid="ChatBrowserUnavailableMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+        <TextBlock x:Uid="ChatBrowserUnavailableTitle" x:Name="LocalizedChatBrowserUnavailableTitle" FontSize="20" TextAlignment="Center"/>
+        <TextBlock x:Uid="ChatBrowserUnavailableMessage" x:Name="LocalizedChatBrowserUnavailableMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
       </StackPanel>
       <StackPanel x:Name="ValidationState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8" Visibility="Collapsed">
-        <TextBlock x:Uid="ChatBrowserValidationTitle" FontSize="20" TextAlignment="Center"/>
-        <TextBlock x:Uid="ChatBrowserValidationMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
+        <TextBlock x:Uid="ChatBrowserValidationTitle" x:Name="LocalizedChatBrowserValidationTitle" FontSize="20" TextAlignment="Center"/>
+        <TextBlock x:Uid="ChatBrowserValidationMessage" x:Name="LocalizedChatBrowserValidationMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap"/>
       </StackPanel>
     </Grid>
   </Grid>

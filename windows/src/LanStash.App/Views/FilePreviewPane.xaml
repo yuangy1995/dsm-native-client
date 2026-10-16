@@ -79,10 +79,31 @@
 
         <InfoBar
             x:Uid="FilePreviewReadOnly"
+            x:Name="PreviewReadOnlyNotice"
             Grid.Row="1"
             IsClosable="False"
             IsOpen="True"
             Severity="Informational" />
+
+        <StackPanel x:Name="OfficeActions" Grid.Row="1" Spacing="6" Visibility="Collapsed">
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <SplitButton x:Uid="OfficeOpenCopyControl" x:Name="OfficeOpenCopyButton" Click="OfficeOpenCopy_Click" MinHeight="56" HorizontalAlignment="Stretch">
+                    <SplitButton.Content><TextBlock x:Uid="OfficeOpenCopyLabel" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="110"/></SplitButton.Content>
+                    <SplitButton.Flyout><MenuFlyout><MenuFlyoutItem x:Uid="OfficeOpenWithMenu" Click="OfficeOpenWith_Click"/></MenuFlyout></SplitButton.Flyout>
+                </SplitButton>
+                <SplitButton x:Uid="OfficeAutoEditControl" x:Name="OfficeAutoEditButton" Grid.Column="1" Click="OfficeAutoEdit_Click" MinHeight="56" HorizontalAlignment="Stretch">
+                    <SplitButton.Content><TextBlock x:Uid="OfficeAutoEditLabel" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="110"/></SplitButton.Content>
+                    <SplitButton.Flyout><MenuFlyout><MenuFlyoutItem x:Uid="OfficeEditWithMenu" Click="OfficeEditWith_Click"/></MenuFlyout></SplitButton.Flyout>
+                </SplitButton>
+                <Button x:Uid="OfficeSessionsCompact" x:Name="OfficeSessionsPreviewButton" Grid.Column="2" Click="OfficeSessions_Click" MinWidth="44" MinHeight="56"><FontIcon Glyph="&#xE8A5;"/></Button>
+            </Grid>
+            <TextBlock x:Uid="OfficeAutoUnavailableNotice" x:Name="OfficeAutoUnavailableText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            <HyperlinkButton x:Uid="OfficeSessionStatusControl" x:Name="OfficeSessionStatusButton" Click="OfficeSessions_Click"
+                MinHeight="44" HorizontalAlignment="Left" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite">
+                <TextBlock x:Name="OfficeSessionStatusText" TextWrapping="Wrap"/>
+            </HyperlinkButton>
+        </StackPanel>
 
         <Grid Grid.Row="2" Margin="0,12,0,0">
             <StackPanel
@@ -170,85 +191,109 @@
             </StackPanel>
 
             <Grid x:Name="ReadyState" Visibility="Collapsed">
-                <ScrollViewer
-                    x:Name="TextScroller"
-                    HorizontalScrollBarVisibility="Auto"
-                    VerticalScrollBarVisibility="Auto"
-                    Visibility="Collapsed">
-                    <StackPanel Spacing="8">
-                        <InfoBar
-                            x:Uid="FilePreviewTextTruncated"
-                            x:Name="TextTruncatedNotice"
-                            IsClosable="False"
-                            IsOpen="False"
-                            Severity="Informational" />
-                        <!-- Read-only text preview (viewing mode). -->
-                        <StackPanel
-                            x:Name="TextEditButtonBar"
-                            Orientation="Horizontal"
-                            HorizontalAlignment="Right"
-                            Spacing="8"
-                            Visibility="Collapsed">
-                            <Button
-                                x:Uid="FileTextEdit_EditButton"
-                                x:Name="TextEditButton"
-                                Click="TextEdit_Click"
-                                MinHeight="44" />
+                <Grid x:Name="OfficePreviewPanel" Visibility="Collapsed" RowSpacing="8">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <Button x:Uid="OfficeFocusPreviewButton" x:Name="OfficeFocusPreviewButton" Click="OfficeFocusPreview_Click" MinHeight="44" Visibility="Collapsed"/>
+                    <Grid x:Name="OfficePreviewSurface" Grid.Row="1" MinHeight="200">
+                        <StackPanel x:Name="OfficePreviewFallback" Spacing="12" MaxWidth="420" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <FontIcon Glyph="&#xE8A5;" FontSize="40"/>
+                            <TextBlock x:Name="OfficePreviewFallbackTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextWrapping="Wrap" TextAlignment="Center"/>
+                            <TextBlock x:Name="OfficePreviewFallbackMessage" TextWrapping="Wrap" TextAlignment="Center"/>
+                            <Button x:Uid="FilePreviewRetry" Click="Retry_Click" MinHeight="44" HorizontalAlignment="Center"/>
                         </StackPanel>
+                    </Grid>
+                </Grid>
+                <Grid x:Name="TextScroller" Visibility="Collapsed" RowSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <InfoBar
+                        x:Uid="FilePreviewTextTruncated"
+                        x:Name="TextTruncatedNotice"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Informational" />
+                    <!-- 查看模式的文本预览。 -->
+                    <StackPanel
+                        x:Name="TextEditButtonBar"
+                        Grid.Row="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="8"
+                        Visibility="Collapsed">
+                        <Button
+                            x:Uid="FileTextEdit_EditButton"
+                            x:Name="TextEditButton"
+                            Click="TextEdit_Click"
+                            MinHeight="44" />
+                    </StackPanel>
+                    <ScrollViewer x:Name="TextPreviewScroller" Grid.Row="2"
+                        HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                         <TextBlock
                             x:Name="TextPreview"
                             AutomationProperties.Name=""
                             FontFamily="Consolas"
                             IsTextSelectionEnabled="True"
                             TextWrapping="NoWrap" />
-                        <!-- Editable text box (edit mode). -->
-                        <TextBox
-                            x:Name="TextEditBox"
-                            AcceptsReturn="True"
-                            AutomationProperties.Name=""
-                            FontFamily="Consolas"
-                            HorizontalAlignment="Stretch"
-                            MinHeight="200"
-                            ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                            ScrollViewer.VerticalScrollBarVisibility="Auto"
-                            TextWrapping="NoWrap"
-                            Visibility="Collapsed" />
-                        <!-- Edit mode toolbar. -->
-                        <StackPanel
-                            x:Name="TextEditToolbar"
-                            Orientation="Horizontal"
-                            HorizontalAlignment="Right"
-                            Spacing="8"
-                            Visibility="Collapsed">
-                            <Button
-                                x:Uid="FileTextEdit_FormatButton"
-                                x:Name="TextEditFormatButton"
-                                Click="TextEditFormat_Click"
-                                MinHeight="44" />
-                            <Button
-                                x:Uid="FileTextEdit_CancelButton"
-                                x:Name="TextEditCancelButton"
-                                Click="TextEditCancel_Click"
-                                MinHeight="44" />
-                            <Button
-                                x:Uid="FileTextEdit_SaveButton"
-                                x:Name="TextEditSaveButton"
-                                Click="TextEditSave_Click"
-                                MinHeight="44" />
-                        </StackPanel>
-                        <!-- Save status indicator. -->
-                        <InfoBar
-                            x:Name="TextEditSaveStatus"
-                            IsClosable="True"
-                            IsOpen="False"
-                            Severity="Informational"
-                            Visibility="Collapsed">
-                            <InfoBar.ActionButton>
-                                <Button x:Uid="FileTextEdit_DismissStatus" Click="TextEditDismissStatus_Click" />
-                            </InfoBar.ActionButton>
-                        </InfoBar>
+                    </ScrollViewer>
+                    <!-- 编辑模式的文本输入。 -->
+                    <TextBox
+                        x:Name="TextEditBox"
+                        Grid.Row="2"
+                        x:Uid="FileTextEdit_Editor"
+                        TextChanged="TextEditBox_TextChanged"
+                        AcceptsReturn="True"
+                        AutomationProperties.Name=""
+                        FontFamily="Consolas"
+                        HorizontalAlignment="Stretch"
+                        MinHeight="200"
+                        ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                        ScrollViewer.VerticalScrollBarVisibility="Auto"
+                        TextWrapping="NoWrap"
+                        Visibility="Collapsed" />
+                    <!-- 编辑工具栏。 -->
+                    <StackPanel
+                        x:Name="TextEditToolbar"
+                        Grid.Row="3"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="8"
+                        Visibility="Collapsed">
+                        <Button x:Uid="FileTextEdit_Refresh" x:Name="TextEditReviewButton"
+                            Click="TextEditReview_Click" MinHeight="44" Visibility="Collapsed" />
+                        <Button
+                            x:Uid="FileTextEdit_FormatButton"
+                            x:Name="TextEditFormatButton"
+                            Click="TextEditFormat_Click"
+                            MinHeight="44" />
+                        <Button
+                            x:Uid="FileTextEdit_CancelButton"
+                            x:Name="TextEditCancelButton"
+                            Click="TextEditCancel_Click"
+                            MinHeight="44" />
+                        <Button
+                            x:Uid="FileTextEdit_SaveButton"
+                            x:Name="TextEditSaveButton"
+                            Click="TextEditSave_Click"
+                            MinHeight="44" />
                     </StackPanel>
-                </ScrollViewer>
+                    <!-- 保存状态。 -->
+                    <InfoBar
+                        x:Name="TextEditSaveStatus"
+                        Grid.Row="4"
+                        IsClosable="True"
+                        IsOpen="False"
+                        Severity="Informational"
+                        Visibility="Collapsed">
+                        <InfoBar.ActionButton>
+                            <Button x:Uid="FileTextEdit_DismissStatus" Click="TextEditDismissStatus_Click" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+                </Grid>
 
                 <Grid x:Name="ImagePreviewSurface" Visibility="Collapsed">
                     <Grid.RowDefinitions>

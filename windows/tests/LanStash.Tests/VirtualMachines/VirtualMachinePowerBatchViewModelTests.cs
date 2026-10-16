@@ -31,6 +31,30 @@ public sealed class VirtualMachinePowerBatchViewModelTests
         Assert.False(model.CanConfirm); Assert.Equal("VmBatchChanged", model.MessageKey);
     }
 
+    [Fact]
+    public async Task RestartKeepsItsActionThroughSubmissionAndRecoveryWithoutDeleting()
+    {
+        var repository = new Repository(3, VirtualMachinePowerAction.Reboot) { StopAt = 1 };
+        using var model = new VirtualMachineBatchViewModel(repository);
+        await model.RefreshAsync(); model.SetAction(VirtualMachinePowerAction.Reboot); model.SelectAll(); model.Confirm(true);
+        await model.SubmitAsync();
+        Assert.Equal(VirtualMachinePowerAction.Reboot, Assert.Single(repository.Calls).Action);
+        Assert.Empty(repository.Deletes); Assert.Equal(1, model.UnknownCount); Assert.Equal(2, model.NotStartedCount);
+        Assert.Equal(VirtualMachineBatchAction.Reboot, Assert.Single(model.Pending).Action);
+        await model.ReviewAsync(); Assert.Single(repository.Calls); Assert.Empty(repository.Deletes);
+        Assert.Equal(VirtualMachineBatchAction.Reboot, Assert.Single(model.Reviews).Target.Action);
+    }
+
+    [Fact]
+    public async Task SelectAllExcludesTargetsWhoseSourceDoesNotAllowTheAction()
+    {
+        var repository = new Repository(3) { UnsupportedMachine = "vm-1" };
+        using var model = new VirtualMachineBatchViewModel(repository);
+        await model.RefreshAsync(); model.SelectAll(); Assert.Equal(2, model.SelectedCount);
+        model.Confirm(true); await model.SubmitAsync();
+        Assert.Equal(2, repository.Calls.Count); Assert.DoesNotContain(repository.Calls, item => item.Baseline.Id == "vm-1");
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -186,6 +210,24 @@ public sealed class VirtualMachinePowerBatchViewModelTests
         await model.SubmitAsync(); Assert.Empty(repository.ImageDeletes); Assert.Equal("VmBatchChanged", model.MessageKey);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ImageCopiesCompareByValueAndFreezeTheDisplayedSelection(bool changed)
+    {
+        var repository = new Repository(1) { Mode = "images-only" };
+        VirtualMachineImageReplica[] copies = [new("store", "host", "online", "healthy")];
+        repository.Images[0] = repository.Images[0] with
+        { Source = VirtualMachineApiSource.Internal, Health = VirtualizationResourceHealth.Healthy, IsFrozen = false, IsInUse = false, ImageReplicas = copies };
+        using var model = new VirtualMachineBatchViewModel(repository, images: true);
+        await model.RefreshAsync(); model.SelectAll(); model.Confirm(true);
+        if (changed) copies[0] = copies[0] with { HostId = "other-host" };
+        else repository.Images[0] = repository.Images[0] with { ImageReplicas = copies.ToArray() };
+        await model.SubmitAsync();
+        if (changed) { Assert.Empty(repository.ImageDeletes); Assert.Equal("VmBatchChanged", model.MessageKey); }
+        else { Assert.Single(repository.ImageDeletes); Assert.Equal(1, model.ConfirmedCount); }
+    }
+
     private sealed class Repository : IVirtualMachineManagerRepository
     {
         public Repository(int count, VirtualMachinePowerAction action = VirtualMachinePowerAction.PowerOn)
@@ -195,6 +237,8 @@ public sealed class VirtualMachinePowerBatchViewModelTests
         public Guid ProfileId => Guid.Parse("11111111-1111-1111-1111-111111111111");
         public VirtualMachineManagerAvailability Availability => new(VirtualMachineManagerAvailabilityStatus.Available, new HashSet<VirtualMachineManagerReadFeature> { VirtualMachineManagerReadFeature.Machines });
         public bool CanControlPower => Mode != "readonly";
+        public string? UnsupportedMachine;
+        public bool CanControlPowerAction(VirtualMachineSummary target, VirtualMachinePowerAction action) => CanControlPower && target.Id != UnsupportedMachine;
         public bool CanDeleteImages => Mode != "readonly";
         public VirtualizationResourceSummary[] Images;
         public List<VirtualMachineImageDeleteRequest> ImageDeletes { get; } = [];

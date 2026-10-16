@@ -163,7 +163,7 @@ public sealed partial class NasDetailsPage
             Title = LocalizationService.Current.Get(titleKey),
             Content = content,
             PrimaryButtonText = content.PrimaryButtonResourceKey is { } primaryKey ? LocalizationService.Current.Get(primaryKey) : "",
-            SecondaryButtonText = LocalizationService.Current.Get("NasServiceReload"),
+            SecondaryButtonText = LocalizationService.Current.Get(content.ReloadButtonResourceKey),
             CloseButtonText = LocalizationService.Current.Get("ActionClose"),
             DefaultButton = ContentDialogButton.Close,
             IsPrimaryButtonEnabled = false,

@@ -9,7 +9,7 @@ namespace LanStash.Infrastructure;
 public sealed partial class DsmRepository
 {
     private const string InternalCreationTaskApi = "SYNO.Virtualization.Cluster";
-    public bool CanCreateAdvancedMachine => CanCreateMachine && CanReadAdvancedCreation && HasInternalVirtualMachineVersion(InternalCreationTaskApi, 1, 1);
+    public bool CanCreateAdvancedMachine => CanReadAdvancedCreation && (HasCreationContract || _virtualMachineInternalWritesEnabled) && HasInternalVirtualMachineVersion(InternalCreationTaskApi, 1, 1);
 
     private async Task<VirtualMachineCreationStorage?> ValidateAdvancedCreationResourcesAsync(VirtualMachineCreationRequest request, CancellationToken token)
     {
@@ -20,6 +20,9 @@ public sealed partial class DsmRepository
             storage.HostName != options.Storage.HostName || storage.Status != "online" || storage.StatusType != "healthy") return null;
         if (options.BootImage is { } image && (inventory.ImagesFrozen || !inventory.Images.Any(item => item == image && item.Type == "iso" && item.StatusType != "error") ||
             VmMutations.DeletionPending.ContainsKey((ImageDeletionScope(ServiceScope()), image.Id)) || ImageImportPending(ServiceScope(), image.Id, image.Name)))
+            return null;
+        if (request.Networks.Any(nic => nic.Network is not null) && (inventory.Networks.Status != VirtualMachineManagerSectionStatus.Available ||
+            request.Networks.Any(nic => nic.Network is { } network && !inventory.Networks.Items.Any(item => item.Id == network.Id && item.Name == network.Name && item.IsFrozen == false))))
             return null;
         return storage;
     }
@@ -48,7 +51,7 @@ public sealed partial class DsmRepository
         return JsonSerializer.SerializeToNode(new Dictionary<string, object>
         {
             ["guest_privilege"] = Array.Empty<object>(), ["iso_images"] = new[] { advanced.BootImage?.Id ?? "unmounted", "unmounted" },
-            ["autorun"] = (int)request.Settings.AutoStart, ["boot_from"] = "disk", ["bios"] = advanced.Firmware == VirtualMachineFirmware.Uefi ? "uefi" : "legacy",
+            ["autorun"] = (int)request.Settings.AutoStart!.Value, ["boot_from"] = "disk", ["bios"] = advanced.Firmware == VirtualMachineFirmware.Uefi ? "uefi" : "legacy",
             ["kb_layout"] = "Default", ["usb_version"] = 0, ["usbs"] = Enumerable.Repeat("unmounted", 4).ToArray(),
             ["is_windows_vm"] = windows, ["use_ovmf"] = advanced.Firmware == VirtualMachineFirmware.Uefi,
             ["vnics"] = request.Networks.Select(nic => new Dictionary<string, object> { ["prefer_sriov"] = false, ["vnic_type"] = linux ? 1 : 2,
@@ -60,8 +63,8 @@ public sealed partial class DsmRepository
                 ["unmap"] = false, ["iops_enable"] = false, ["dev_limit"] = 0, ["dev_reservation"] = 0, ["dev_weight"] = 3,
                 ["vdisk_size"] = disk.SizeMiB!.Value / 1024, ["idx"] = index
             }).ToArray(), ["auto_switch"] = windows ? 1 : 0, ["vdisk_struct"] = Array.Empty<object>(),
-            ["name"] = request.Settings.Name, ["vcpu_num"] = request.Settings.CpuCount, ["vram_size"] = request.Settings.MemoryMiB,
-            ["video_card"] = linux ? "vmvga" : "vga", ["cpu_weight"] = 256, ["desc"] = request.Settings.Description,
+            ["name"] = request.Settings.Name, ["vcpu_num"] = request.Settings.CpuCount!.Value, ["vram_size"] = request.Settings.MemoryMiB!.Value,
+            ["video_card"] = linux ? "vmvga" : "vga", ["cpu_weight"] = 256, ["desc"] = request.Settings.Description!,
             ["cpu_passthru"] = true, ["hyperv_enlighten"] = advanced.OperatingSystem != VirtualMachineOperatingSystem.Other, ["cpu_pin_num"] = 0,
             ["repo_id"] = storage.Id, ["repo_name"] = storage.Name, ["host_id"] = storage.HostId, ["repo_host_name"] = storage.HostName,
             ["allocated_size"] = storage.AllocatedSize, ["size"] = storage.Size,
@@ -129,6 +132,7 @@ public sealed partial class DsmRepository
             return await FinishVerifiedVirtualMachineCreationAsync(pending, current.Basic, allowPower, token).ConfigureAwait(false);
         }
         catch (DsmException error) { return Unknown(VirtualMachineCreationStage.VerifyConfiguration, VirtualMachinePowerError(error)); }
+        catch (CertificateTrustChallengeException) { return Unknown(VirtualMachineCreationStage.VerifyConfiguration, MutationErrorCategory.Authentication); }
         catch { return Unknown(VirtualMachineCreationStage.VerifyConfiguration, token.IsCancellationRequested ? MutationErrorCategory.Unknown : MutationErrorCategory.Network); }
     }
 

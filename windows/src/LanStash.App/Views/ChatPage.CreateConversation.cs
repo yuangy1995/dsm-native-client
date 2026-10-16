@@ -15,7 +15,6 @@ public sealed partial class ChatPage
     private void ConfigureCreateConversationAction()
     {
         var text = LocalizationService.Current.Get("ChatCreateAction");
-        CreateConversationButtonLabel.Text = text;
         AutomationProperties.SetName(CreateConversationButton, text);
         ToolTipService.SetToolTip(CreateConversationButton, text);
     }

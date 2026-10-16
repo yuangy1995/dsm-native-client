@@ -4,7 +4,7 @@ using LanStash.Domain;
 
 namespace LanStash.App.Features.Containers;
 
-public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
+public sealed partial class ContainerManagerViewModel : ObservableObject, IDisposable
 {
     private const int MaximumCachedProfiles = 4;
     private readonly Dictionary<Guid, ProfileState> _profiles = [];
@@ -19,6 +19,7 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
     private ContainerManagerContentState _projectsState = ContainerManagerContentState.Loading;
     private ContainerManagerContentState _eventsState = ContainerManagerContentState.Loading;
     private ContainerManagerFilter _filter;
+    private string _networkSearch = "";
     private ContainerItem? _selectedContainer;
     private bool _isLoading;
     private bool _hasRefreshError;
@@ -32,6 +33,9 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
     public ObservableCollection<ContainerEventItem> Events { get; } = [];
     public int? TotalContainerCount => CurrentProfile?.ContainersBaseState is ContainerManagerContentState.Content or ContainerManagerContentState.Empty
         ? CurrentProfile.Containers.Count : null;
+    public int? TotalNetworkCount => CurrentProfile?.Resources[ContainerManagerReadFeature.Networks] is
+        { State: ContainerManagerContentState.Content or ContainerManagerContentState.Empty } section ? section.Items.Count : null;
+    public string NetworkSearch { get => _networkSearch; private set => SetProperty(ref _networkSearch, value); }
 
     public Guid? ActiveProfileId
     {
@@ -132,11 +136,11 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
     public bool HasError => ContainersState == ContainerManagerContentState.Error;
     public bool IsUnavailable => ContainersState == ContainerManagerContentState.Unavailable;
     public bool HasSelection => SelectedContainer is not null;
-    public bool CanRefresh => !IsLoading && !RequiresReconnect &&
+    public bool CanRefresh => !IsLoading && !IsActivityLoading && !RequiresReconnect &&
         _repository?.Availability.Status == ContainerManagerAvailabilityStatus.InternalObserved;
 
     private ProfileState? CurrentProfile => ActiveProfileId is Guid id &&
-        _profiles.TryGetValue(id, out var profile) ? profile : null;
+        _profiles.TryGetValue(id, out var profile) && ReferenceEquals(profile.Owner, _repository) ? profile : null;
 
     public async Task ActivateAsync(IContainerManagerRepository repository)
     {
@@ -145,6 +149,7 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
         var keepsReconnectBlock = ReferenceEquals(_repository, repository) &&
             ActiveProfileId == repository.ProfileId && RequiresReconnect;
         SaveCurrentProfileState();
+        ClearActivity();
         CancelRequest();
         _repository = repository;
         ActiveProfileId = repository.ProfileId;
@@ -154,6 +159,7 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
         {
             ClearVisibleContent();
             Filter = ContainerManagerFilter.All;
+            NetworkSearch = "";
             HasRefreshError = false;
             RequiresReconnect = false;
             SetAllStates(ContainerManagerContentState.Unavailable);
@@ -161,7 +167,8 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (_profiles.TryGetValue(repository.ProfileId, out var cached) && cached.Loaded)
+        if (_profiles.TryGetValue(repository.ProfileId, out var cached) && !ReferenceEquals(cached.Owner, repository)) cached = null;
+        if (cached is { Loaded: true })
         {
             TouchProfile(repository.ProfileId);
             RestoreProfile(cached);
@@ -169,16 +176,18 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var profile = cached ?? new ProfileState();
+        var profile = cached ?? new ProfileState(repository);
         CacheProfile(repository.ProfileId, profile);
         Filter = profile.Filter;
         PrepareInitialStates(repository.Availability.Features);
+        NetworkSearch = profile.NetworkSearch;
         await LoadAsync(profile, preserveContentOnFailure: false);
     }
 
     public Task RefreshAsync()
     {
         ThrowIfDisposed();
+        if (_activityVisible) return CanRefresh ? RefreshActivityAsync() : Task.CompletedTask;
         return CanRefresh && CurrentProfile is { } profile
             ? LoadAsync(profile, preserveContentOnFailure: profile.Loaded)
             : Task.CompletedTask;
@@ -207,15 +216,28 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
         }
     }
 
+    public void SetNetworkSearch(string text)
+    {
+        ThrowIfDisposed();
+        NetworkSearch = text;
+        if (CurrentProfile is { } profile)
+        {
+            profile.NetworkSearch = text;
+            RestoreNetworks(profile);
+        }
+    }
+
     public void Deactivate()
     {
         ThrowIfDisposed();
         SaveCurrentProfileState();
+        ClearActivity();
         CancelRequest();
         _repository = null;
         ActiveProfileId = null;
         ClearVisibleContent();
         Filter = ContainerManagerFilter.All;
+        NetworkSearch = "";
         HasRefreshError = false;
         RequiresReconnect = false;
         SetAllStates(ContainerManagerContentState.Loading);
@@ -234,7 +256,7 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
         }
         try
         {
-            var snapshot = await repository.LoadSnapshotAsync(request.Cancellation.Token);
+            var snapshot = await repository.LoadInventoryAsync(request.Cancellation.Token);
             if (!IsCurrent(request.Generation, repository))
             {
                 return;
@@ -383,13 +405,13 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
         Filter = profile.Filter;
         RestoreContainers(profile);
         Replace(Images, profile.Resources[ContainerManagerReadFeature.Images].Items);
-        Replace(Networks, profile.Resources[ContainerManagerReadFeature.Networks].Items);
+        NetworkSearch = profile.NetworkSearch;
+        RestoreNetworks(profile);
         Replace(Projects, profile.Resources[ContainerManagerReadFeature.Projects].Items);
-        Replace(Events, profile.Events);
+        if (!_activityVisible) Replace(Events, profile.Events);
         ImagesState = profile.Resources[ContainerManagerReadFeature.Images].State;
-        NetworksState = profile.Resources[ContainerManagerReadFeature.Networks].State;
         ProjectsState = profile.Resources[ContainerManagerReadFeature.Projects].State;
-        EventsState = profile.EventsState;
+        if (!_activityVisible) EventsState = profile.EventsState;
         HasRefreshError = profile.HasSectionFailure;
     }
 
@@ -409,6 +431,18 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void RestoreNetworks(ProfileState profile)
+    {
+        var section = profile.Resources[ContainerManagerReadFeature.Networks];
+        var search = NetworkSearch.Trim();
+        var visible = section.Items.Where(item => item.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+            item.Resource.Network?.Driver?.Contains(search, StringComparison.OrdinalIgnoreCase) == true).ToArray();
+        Replace(Networks, visible);
+        NetworksState = section.State == ContainerManagerContentState.Content && visible.Length == 0
+            ? ContainerManagerContentState.FilteredEmpty : section.State;
+        RaisePropertyChanged(nameof(TotalNetworkCount));
+    }
+
     private bool MatchesFilter(ContainerItem item) => Filter switch
     {
         ContainerManagerFilter.Running => item.State is ContainerOperationalState.Running or ContainerOperationalState.Restarting,
@@ -424,7 +458,7 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
         ImagesState = InitialState(features, ContainerManagerReadFeature.Images);
         NetworksState = InitialState(features, ContainerManagerReadFeature.Networks);
         ProjectsState = InitialState(features, ContainerManagerReadFeature.Projects);
-        EventsState = InitialState(features, ContainerManagerReadFeature.Events);
+        if (!_activityVisible) EventsState = InitialState(features, ContainerManagerReadFeature.Events);
     }
 
     private void MarkSupportedSectionsFailed(IReadOnlySet<ContainerManagerReadFeature> features)
@@ -433,7 +467,7 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
         ImagesState = FailedState(features, ContainerManagerReadFeature.Images);
         NetworksState = FailedState(features, ContainerManagerReadFeature.Networks);
         ProjectsState = FailedState(features, ContainerManagerReadFeature.Projects);
-        EventsState = FailedState(features, ContainerManagerReadFeature.Events);
+        if (!_activityVisible) EventsState = FailedState(features, ContainerManagerReadFeature.Events);
     }
 
     private static ContainerManagerContentState InitialState(
@@ -506,7 +540,7 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
         Images.Clear();
         Networks.Clear();
         Projects.Clear();
-        Events.Clear();
+        if (!_activityVisible) Events.Clear();
         SelectedContainer = null;
     }
 
@@ -546,16 +580,19 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
             return;
         }
         _disposed = true;
+        ClearActivity();
         _generation++;
         _requestCancellation?.Cancel();
         _requestCancellation?.Dispose();
         _requestCancellation = null;
     }
 
-    private sealed class ProfileState
+    private sealed class ProfileState(IContainerManagerRepository owner)
     {
+        public IContainerManagerRepository Owner { get; } = owner;
         public bool Loaded { get; set; }
         public ContainerManagerFilter Filter { get; set; }
+        public string NetworkSearch { get; set; } = "";
         public IReadOnlyList<ContainerItem> Containers { get; set; } = [];
         public ContainerManagerContentState ContainersBaseState { get; set; } = ContainerManagerContentState.Loading;
         public bool ContainersRefreshFailed { get; set; }

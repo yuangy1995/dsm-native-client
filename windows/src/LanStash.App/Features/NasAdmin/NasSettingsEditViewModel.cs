@@ -342,6 +342,7 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
                 hs.HddSleepMinutes, hs.UpsEnabled, hs.UpsMode, hs.UpsShutdownTime)
             {
                 LedMinimum = hs.LedMinimum, LedMaximum = hs.LedMaximum, Beep = hs.Beep, Hibernation = hs.Hibernation,
+                SupportedFanModes = hs.SupportedFanModes is null ? null : Array.AsReadOnly(hs.SupportedFanModes.ToArray()),
                 Ups = hs.Ups, AvailableSections = hs.AvailableSections, FailedSections = hs.FailedSections,
             };
         }

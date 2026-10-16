@@ -42,7 +42,8 @@ internal sealed class SafeFolderArchiveDownloadService
         DownloadAsync(repository, new[] { remotePath }, destination, cancellationToken);
 
     public async Task DownloadAsync(IFileArchiveReader repository, IReadOnlyList<string> remotePaths,
-        ITransactionalDownloadDestination destination, CancellationToken cancellationToken = default)
+        ITransactionalDownloadDestination destination, CancellationToken cancellationToken = default,
+        IProgress<ForegroundTransferProgress>? progress = null, ForegroundTransferControl? control = null)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(remotePaths);
@@ -54,11 +55,20 @@ internal sealed class SafeFolderArchiveDownloadService
         Exception? primaryFailure = null;
         try
         {
+            long received = 0;
+            if (control is not null) await control.WaitAsync(cancellationToken).ConfigureAwait(false);
             await repository.StreamArchiveAsync(
                 paths,
-                destination.WriteAsync,
+                async (bytes, token) =>
+                {
+                    if (control is not null) await control.WaitAsync(token).ConfigureAwait(false);
+                    await destination.WriteAsync(bytes, token).ConfigureAwait(false);
+                    received = checked(received + bytes.Length);
+                    progress?.Report(new(received, 0));
+                },
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            if (control is not null) await control.WaitAsync(cancellationToken).ConfigureAwait(false);
             await destination.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             committed = true;
         }

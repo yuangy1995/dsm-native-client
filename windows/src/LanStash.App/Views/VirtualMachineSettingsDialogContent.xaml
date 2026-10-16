@@ -16,8 +16,6 @@
    <ComboBox x:Name="PriorityInput" x:Uid="VmPriorityField" DisplayMemberPath="Name" SelectionChanged="Startup_Changed" HorizontalAlignment="Stretch"/>
    <TextBlock x:Name="PriorityUnavailableNotice" x:Uid="VmPriorityUnavailable" TextWrapping="Wrap"/>
    <TextBlock x:Name="ValidationNotice" TextWrapping="Wrap" Visibility="Collapsed"/>
-   <TextBlock x:Uid="VmSettingsRisk" TextWrapping="Wrap"/>
-   <CheckBox x:Name="RiskAcknowledgement" x:Uid="VmSettingsAcknowledgement" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Checked="Confirm_Changed" Unchecked="Confirm_Changed"/>
   </StackPanel>
  </ScrollViewer>
 </UserControl>

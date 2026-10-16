@@ -19,7 +19,7 @@ public sealed partial class DsmRepository
     }
     public bool CanOpenConsole => (ConsoleUsesSystemTrust || CanUseManagedConsole) && _profile.Id != Guid.Empty && HasAuthenticatedVirtualMachineSession && VirtualMachineConsoleSession.ValidCookie(_session.Sid) &&
         (string.IsNullOrWhiteSpace(_session.SynoToken) || VirtualMachineConsoleSession.ValidCookie(_session.SynoToken)) && _api.CanReadConsoleDocument &&
-        HasPublicVirtualMachineVersion(PublicGuestApi) && HasInternalVirtualMachineVersion(InternalSettingsGuestApi, 2, 2);
+        (HasPublicVirtualMachineVersion(PublicGuestApi) || _virtualMachineInternalWritesEnabled) && HasInternalVirtualMachineVersion(InternalSettingsGuestApi, 2, 2);
 
     public async Task<VirtualMachineConsoleSession> OpenConsoleAsync(VirtualMachineSummary baseline, CancellationToken cancellationToken = default)
     {
@@ -34,16 +34,16 @@ public sealed partial class DsmRepository
         {
             var scope = ServiceScope();
             if (state.DeletionPending.ContainsKey((scope, baseline.Id)) || state.PowerPending.ContainsKey((scope, baseline.Id)) ||
-                state.SettingsPending.ContainsKey((scope, baseline.Id)) || HasPendingVirtualMachineCreation(scope, baseline.Id, baseline.Name))
+                state.SettingsPending.ContainsKey((scope, baseline.Id)) || HasPendingVirtualMachineCreation(scope, baseline.Id, baseline.Name) || HasPendingNetworkForMachine(scope, baseline.Id))
                 throw new DsmException(UserText.Key("VmConsoleBusy"), UserText.Key("VmConsoleRefresh"));
-            var current = await ReadVirtualMachinePowerTargetAsync(baseline.Id, cancellationToken).ConfigureAwait(false);
+            var current = await ReadVirtualMachinePowerTargetAsync(baseline.Id, cancellationToken, baseline.Source).ConfigureAwait(false);
             if (current.Status != "running" || current.Name != baseline.Name)
                 throw new DsmException(UserText.Key("VmConsoleTargetChanged"), UserText.Key("VmConsoleRefresh"));
             var detail = await SecurityCallAsync(_capabilities[InternalSettingsGuestApi] with { MinVersion = 2, MaxVersion = 2 }, "get",
                 new() { ["guest_id"] = baseline.Id }, cancellationToken).ConfigureAwait(false);
             static string Text(JsonObject data, string key) => data[key] is JsonValue node && node.TryGetValue<string>(out var value) &&
                 !string.IsNullOrWhiteSpace(value) && !value.Any(char.IsControl) ? value : throw InvalidVirtualMachineManagerResponse();
-            if (Text(detail, "guest_id") != baseline.Id || Text(detail, "name") != baseline.Name ||
+            if (Text(detail, "guest_id") != baseline.Id || Text(detail, "name") != baseline.Name || Text(detail, "status") != "running" ||
                 detail["is_online"] is not JsonValue onlineValue || !onlineValue.TryGetValue<bool>(out var online) || !online)
                 throw InvalidVirtualMachineManagerResponse();
             var keyboard = Text(detail, "kb_layout");

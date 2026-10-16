@@ -8,7 +8,7 @@ internal sealed class WindowsTransferNotificationService : IForegroundTransferNo
 {
     private readonly ForegroundTransferNotificationSession _session;
 
-    internal WindowsTransferNotificationService(Action showActivity, Func<Action, bool> dispatch,
+    internal WindowsTransferNotificationService(Action<Guid?> showActivity, Func<Action, bool> dispatch,
         IForegroundTransferNotificationBackend backend) =>
         _session = new(backend, dispatch, showActivity);
 
@@ -91,6 +91,14 @@ internal sealed class WindowsTransferNotificationService : IForegroundTransferNo
         {
             var toast = BuildNotification(notification, context);
             AppNotificationManager.Default.Show(toast);
+        }
+
+        internal void ShowChat(string title, string message, string token)
+        {
+            if (!IsSupported) return;
+            EnsureRegistered();
+            AppNotificationManager.Default.Show(new AppNotificationBuilder().AddText(title).AddText(message)
+                .AddArgument("route", "chat").AddArgument("context", token).BuildNotification());
         }
 
         private void NotificationInvoked(AppNotificationManager sender, AppNotificationActivatedEventArgs args) =>

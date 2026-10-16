@@ -110,6 +110,7 @@ public sealed class ContainerImageDeletionViewModelTests
                     if (Pending.Count == 0) return Task.FromResult<MutationResult?>(null);
                     if (Resolve) { Images.Clear(); Pending.Clear(); return Task.FromResult<MutationResult?>(Success(2)); }
                     return Task.FromResult<MutationResult?>(new(1, MutationResultStatus.PartialSuccess, "deleteContainerImages", true, true, new(1, 0, 1)));
+                case "LoadInventoryAsync":
                 case "LoadSnapshotAsync": return Task.FromResult(new ContainerManagerSnapshot(SnapshotProfile,
                     ContainerManagerSection<ContainerSummary>.Available([]),
                     Failed ? ContainerManagerSection<ContainerResourceSummary>.Failed : ContainerManagerSection<ContainerResourceSummary>.Available(Images.ToArray()),

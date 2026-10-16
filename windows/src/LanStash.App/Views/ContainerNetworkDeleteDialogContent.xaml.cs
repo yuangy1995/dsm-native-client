@@ -17,7 +17,7 @@ public sealed partial class ContainerNetworkDeleteDialogContent : UserControl, I
     public string? PrimaryButtonResourceKey => "ContainerDeleteAction";
     public bool NeedsParentRefresh => _model.NeedsParentRefresh;
     public ContainerNetworkDeleteDialogContent(IContainerManagerRepository repository)
-    { _repository = repository; InitializeComponent(); TargetsList.ItemsSource = _model.Items; _model.PropertyChanged += (_, _) => Refresh(); _synchronizing = false; }
+    { _repository = repository; InitializeComponent(); TargetsList.ItemsSource = _model.Items; ResultsList.ItemsSource = _model.Results; _model.PropertyChanged += (_, _) => Refresh(); _synchronizing = false; }
     public Task ActivateAsync() => _model.ActivateAsync(_repository);
     public Task ReloadAsync() => _model.ReloadAsync();
     public async Task SaveAsync() { ReadSelection(); if (CanSave) await _model.SubmitAsync(); }
@@ -28,6 +28,7 @@ public sealed partial class ContainerNetworkDeleteDialogContent : UserControl, I
         ErrorNotice.IsOpen = _model.ErrorMessage is not null; ErrorNotice.Message = _model.ErrorMessage ?? "";
         FeedbackNotice.IsOpen = _model.Feedback is not null; FeedbackNotice.Message = _model.Feedback ?? "";
         FeedbackNotice.Severity = _model.LastResult?.Status == MutationResultStatus.ConfirmedSuccess ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
+        ResultsList.Visibility = _model.Results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         ReadOnlyNotice.Visibility = _model.IsReadOnly ? Visibility.Visible : Visibility.Collapsed;
         EmptyNotice.Visibility = _model.CanSelect && _model.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         PendingNotice.Visibility = _model.Pending.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -49,6 +50,6 @@ public sealed partial class ContainerNetworkDeleteDialogContent : UserControl, I
         var confirmed = RiskAcknowledgement.IsChecked == true; ReadSelection(); _model.Confirm(confirmed);
         _synchronizing = true; RiskAcknowledgement.IsChecked = _model.CanSubmit; _synchronizing = false; StateChanged?.Invoke();
     }
-    public void Dispose() { if (_disposed) return; _disposed = true; _synchronizing = true; _model.Dispose(); TargetsList.ItemsSource = null; StateChanged = null; }
+    public void Dispose() { if (_disposed) return; _disposed = true; _synchronizing = true; _model.Dispose(); TargetsList.ItemsSource = ResultsList.ItemsSource = null; StateChanged = null; }
     private static LocalizationService L => LocalizationService.Current;
 }

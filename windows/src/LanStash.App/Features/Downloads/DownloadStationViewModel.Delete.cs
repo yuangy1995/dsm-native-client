@@ -75,13 +75,18 @@ public sealed partial class DownloadStationViewModel
         private set => SetProperty(ref _deleteNoticeMessage, value);
     }
 
-    public async Task DeleteSelectedTaskAsync()
+    public Task DeleteSelectedTaskAsync()
     {
         ThrowIfDisposed();
-        if (IsDeletingTask ||
+        return SelectedTask is { } selected && _repository is { } repository
+            ? DeleteConfirmedTaskAsync(selected.Task, repository) : Task.CompletedTask;
+    }
+
+    internal async Task DeleteConfirmedTaskAsync(DownloadTask confirmedTask, IDownloadStationRepository confirmedRepository)
+    {
+        if (_disposed || IsDeletingTask || !ReferenceEquals(_repository, confirmedRepository) ||
             _repository is not { Availability.Status: DownloadStationAvailabilityStatus.Available } repository ||
-            CurrentProfile is not { } profile ||
-            SelectedTask is not { } selected)
+            CurrentProfile is not { } profile)
         {
             return;
         }
@@ -97,7 +102,7 @@ public sealed partial class DownloadStationViewModel
             var outcome = await repository.DeleteTaskAsync(
                 new DownloadTaskDeleteRequest(
                     repository.ProfileId,
-                    selected.Task),
+                    confirmedTask),
                 request.Cancellation.Token);
             if (!IsCurrentDelete(request.Generation, repository))
             {

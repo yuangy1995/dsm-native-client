@@ -1,0 +1,33 @@
+<UserControl x:Class="LanStash.App.Views.NasPerformanceDialogContent"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer MaxHeight="560">
+    <StackPanel MinWidth="340" MaxWidth="620" Spacing="12">
+      <Grid ColumnSpacing="12">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap"/>
+        <Button x:Name="PauseButton" Grid.Column="1" Click="Pause_Click" MinHeight="44"/>
+      </Grid>
+      <ProgressRing x:Name="LoadingIndicator" IsActive="False" Width="32" Height="32" Visibility="Collapsed"/>
+      <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Warning" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock x:Name="EmptyText" TextWrapping="Wrap"/>
+      <StackPanel x:Name="ContentPanel" Spacing="12" Visibility="Collapsed">
+        <ComboBox x:Name="MetricChoice" x:Uid="NasPerformanceMetricChoice" HorizontalAlignment="Stretch" SelectionChanged="Metric_Changed"/>
+        <TextBlock x:Name="CurrentValue" FontSize="28" FontWeight="SemiBold"/>
+        <TextBlock x:Name="ChartMaximum" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="8">
+          <Canvas x:Name="ChartSurface" Height="140" SizeChanged="Chart_SizeChanged" IsHitTestVisible="False"/>
+        </Border>
+        <TextBlock x:Name="ChartRange" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        <ItemsControl x:Name="Metrics">
+          <ItemsControl.ItemTemplate><DataTemplate>
+            <Grid Padding="0,6" ColumnSpacing="16">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <TextBlock Text="{Binding Title}" TextWrapping="Wrap"/>
+              <TextBlock Grid.Column="1" Text="{Binding Value}"/>
+            </Grid>
+          </DataTemplate></ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

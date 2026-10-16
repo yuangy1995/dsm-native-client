@@ -1,7 +1,7 @@
 namespace LanStash.Domain;
 
 /// <summary>
-/// 文件预览只读能力。ProfileId 是 Repository 与预览状态的隔离边界。
+/// 文件预览与编辑能力。ProfileId 是 Repository 与预览状态的隔离边界。
 /// </summary>
 public interface IFilePreviewRepository : IFileRangeReader
 {
@@ -36,6 +36,10 @@ public interface IFilePreviewRepository : IFileRangeReader
         string text,
         TextFormatKind kind,
         CancellationToken cancellationToken = default);
+
+    // 返回空值表示没有需要继续查询的保存；此方法不得再次上传。
+    Task<MutationResult?> ReviewTextContentSaveAsync(string path,
+        CancellationToken cancellationToken = default) => Task.FromResult<MutationResult?>(null);
 
     /// <summary>
     /// File Station MD5 计算能力（只读）。在文件预览/属性中提供“计算 MD5”入口。

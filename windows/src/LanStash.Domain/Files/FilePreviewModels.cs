@@ -8,6 +8,7 @@ public enum FilePreviewKind
     Pdf,
     Audio,
     Video,
+    Office,
 }
 
 public enum FileTextEditState
@@ -52,7 +53,7 @@ public static class FileTextEditClassification
 
     private static readonly HashSet<string> FormatExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        "json", "xml", "js", "ts", "jsx", "tsx", "css",
+        "json", "geojson", "xml", "js", "ts", "jsx", "tsx", "css", "scss",
     };
 
     public static bool CanEditSelectedText(string extension) =>

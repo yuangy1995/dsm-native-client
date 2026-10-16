@@ -39,6 +39,9 @@ public sealed class VirtualMachinePowerViewModelTests
         fake.Pending = new("guest-a", "Synthetic", VirtualMachinePowerAction.Shutdown);
         using var model = new VirtualMachinePowerViewModel(); await model.ActivateAsync(repository, Target, VirtualMachinePowerAction.PowerOn);
         Assert.Equal(VirtualMachinePowerAction.Shutdown, model.ResultAction); Assert.False(model.CanConfirm); Assert.Equal(0, fake.Writes);
+        fake.Resolve = true; await model.ReloadAsync();
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, model.LastResult!.Status); Assert.False(model.CanConfirm);
+        model.Confirm(true); await model.SubmitAsync(); Assert.Equal(0, fake.Writes);
     }
     [Fact]
     public async Task ProfileSwitchCancelsAndIgnoresLateSubmission()
@@ -56,6 +59,19 @@ public sealed class VirtualMachinePowerViewModelTests
         using var model = new VirtualMachinePowerViewModel(); await model.ActivateAsync(repository, Target, VirtualMachinePowerAction.PowerOn);
         Assert.NotNull(model.ErrorMessage); Assert.False(model.CanConfirm); fake.FailRead = false; await model.ReloadAsync(); Assert.True(model.CanConfirm);
     }
+    [Fact]
+    public async Task AuthenticationAfterRestartAcceptanceShowsReconnectAndNeverEnablesAnotherWrite()
+    {
+        var repository = DispatchProxy.Create<IVirtualMachineManagerRepository, Fake>(); var fake = (Fake)repository;
+        fake.WriteTask = Task.FromResult(new MutationResult(1, MutationResultStatus.SubmittedButUnverified, "virtualMachinePower", true, true,
+            new(0, 0, 1), MutationErrorCategory.Authentication, diagnosticTag: "virtual-machine.power.reboot-accepted"));
+        using var model = new VirtualMachinePowerViewModel();
+        await model.ActivateAsync(repository, Target with { State = VirtualMachineOperationalState.Running }, VirtualMachinePowerAction.Reboot);
+        model.Confirm(true); await model.SubmitAsync(); await model.SubmitAsync();
+        Assert.Equal(LanStash.App.Localization.LocalizationService.Current.Format("VmPowerSignIn",
+            LanStash.App.Localization.LocalizationService.Current.Get("VmRebootAction")), model.Feedback);
+        Assert.Equal(1, fake.Writes); Assert.False(model.CanConfirm); Assert.Equal(1, model.LastResult!.Counts.Unknown);
+    }
     public class Fake : DispatchProxy
     {
         public bool Writable = true, Unknown, Resolve, FailRead;
@@ -67,6 +83,7 @@ public sealed class VirtualMachinePowerViewModelTests
         {
             "get_ProfileId" => Guid.Parse("11111111-1111-1111-1111-111111111111"),
             "get_CanControlPower" => Writable,
+            "CanControlPowerAction" => Writable,
             "GetPowerRecoveriesAsync" => FailRead ? Task.FromException<IReadOnlyList<VirtualMachinePowerRecovery>>(new IOException("synthetic")) :
                 Task.FromResult<IReadOnlyList<VirtualMachinePowerRecovery>>(Pending is null ? [] : [Pending]),
             "ReviewPowerAsync" => Review(),

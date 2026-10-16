@@ -151,7 +151,18 @@ public sealed class VirtualMachineCreationViewModelTests
         fake.AdvancedFail = true; await model.RefreshAsync(); Assert.NotNull(model.Draft!.Advanced); Assert.False(model.CanChooseAdvanced);
         model.Confirm(true); await model.SubmitAsync(); Assert.Equal(0, fake.Creates);
         model.SelectOperatingSystem(null); Assert.Null(model.Draft!.Advanced); model.Confirm(true); await model.SubmitAsync();
-        Assert.Equal(1, fake.Creates); Assert.Null(fake.LastRequest!.Advanced);
+        Assert.Equal(1, fake.Creates); Assert.Null(fake.LastRequest!.Advanced); Assert.Null(model.ErrorMessage);
+    }
+    [Fact]
+    public async Task EmptyPublicStorageCanUseAvailableInternalCreationResources()
+    {
+        var repository = DispatchProxy.Create<IVirtualMachineManagerRepository, Fake>(); var fake = (Fake)repository;
+        fake.NoStorage = true; fake.AdvancedAvailable = true;
+        using var model = new VirtualMachineCreationViewModel(); await model.ActivateAsync(repository);
+        Assert.NotNull(model.Draft?.Advanced); Assert.Null(model.ErrorMessage);
+        Assert.Equal(VirtualMachineApiSource.Internal, model.Draft!.Storage.Source);
+        model.ChangeDraft(model.Draft with { Settings = model.Draft.Settings with { Name = "Synthetic VM" } });
+        Assert.True(model.Confirm(true)); await model.SubmitAsync(); Assert.Equal(1, fake.Creates);
     }
     [Fact]
     public async Task FrozenAdvancedResourcesCannotReusePriorConfirmation()
@@ -179,11 +190,12 @@ public sealed class VirtualMachineCreationViewModelTests
         public Task<VirtualMachineCreationResult>? Delayed;
         protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
         {
-            "get_ProfileId" => Profile, "get_CanCreateMachine" => Writable, "get_CanControlPower" => PowerAvailable, "get_CanCreateAdvancedMachine" => AdvancedAvailable,
+            "get_ProfileId" => Profile, "get_CanCreateMachine" or "get_CanCreateBasicMachine" => Writable, "get_CanControlPower" => PowerAvailable,
+            "get_CanCreateAdvancedMachine" or "get_CanReadAdvancedCreation" => AdvancedAvailable,
             "LoadAdvancedCreationInventoryAsync" => AdvancedFail ? Task.FromException<VirtualMachineAdvancedCreationInventory>(new IOException("synthetic")) :
                 Task.FromResult(new VirtualMachineAdvancedCreationInventory(Profile, AdvancedFrozen, false, [AdvancedStorage], [AdvancedImage])),
             "GetCreationRecoveriesAsync" => Task.FromResult<IReadOnlyList<VirtualMachineCreationRecovery>>(Recovery is null ? [] : [Recovery]),
-            "LoadSnapshotAsync" => Task.FromResult(new VirtualMachineManagerSnapshot(Profile, VirtualMachineManagerSection<VirtualMachineSummary>.Available([]), Resources(),
+            "LoadSnapshotAsync" or "LoadInventoryAsync" => Task.FromResult(new VirtualMachineManagerSnapshot(Profile, VirtualMachineManagerSection<VirtualMachineSummary>.Available([]), Resources(),
                 Resources(NoStorage ? [] : [new("storage", "Pool", VirtualizationResourceKind.Storage, VirtualizationResourceHealth.Healthy)]), Resources(), Resources(), Resources(), VirtualMachineManagerSection<ServiceEventSummary>.Available([]))),
             "CreateMachineAsync" => Create((VirtualMachineCreationRequest)args![0]!, (CancellationToken)args[1]!),
             "ReviewCreationAsync" => Review(), "ContinueCreationAsync" => Continue((bool)args![1]!), _ => throw new NotSupportedException(method.Name)

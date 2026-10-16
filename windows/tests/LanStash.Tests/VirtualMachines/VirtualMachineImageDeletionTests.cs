@@ -14,7 +14,7 @@ public sealed class VirtualMachineImageDeletionTests
     [InlineData("JSON")]
     public async Task SingleIdEmptyReplyAndSameApiReadbackDoNotDependOnGuestApi(string format)
     {
-        using var f = new Fixture(format); var request = await f.Request();
+        using var f = new Fixture(format) { IncludePagination = true }; var request = await f.Request();
         Assert.True(f.Repository.CanDeleteVirtualMachineImages); Assert.True(((IVirtualMachineManagerRepository)f.Repository).CanDeleteImages); Assert.False(f.Repository.CanDeleteMachines);
         var result = await f.Repository.DeleteImageAsync(request);
         Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Status);
@@ -41,6 +41,12 @@ public sealed class VirtualMachineImageDeletionTests
     [InlineData("missing")]
     [InlineData("duplicate")]
     [InlineData("numeric")]
+    [InlineData("total")]
+    [InlineData("total-string")]
+    [InlineData("total-null")]
+    [InlineData("offset")]
+    [InlineData("offset-string")]
+    [InlineData("offset-null")]
     public async Task InvalidReadbackStaysUnknownAndNeverReplays(string kind)
     {
         using var f = new Fixture(); var request = await f.Request(); f.AfterDelete = () => f.BadList = kind;
@@ -52,13 +58,17 @@ public sealed class VirtualMachineImageDeletionTests
         Assert.Single(f.Writes);
     }
     [Fact]
-    public async Task RejectionCannotBeOverwrittenByAbsenceAndLostReplyCanBeVerified()
+    public async Task RejectionCannotBeOverwrittenByAbsenceAndLostReplyStaysUnknown()
     {
         using var f = new Fixture { Reject = 105 }; var request = await f.Request();
         Assert.Equal(MutationResultStatus.PermissionDenied, (await f.Repository.DeleteImageAsync(request)).Status);
         Assert.Equal(3, f.Calls.Count);
         using var lost = new Fixture { LoseReply = true };
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await lost.Repository.DeleteImageAsync(await lost.Request())).Status);
+        var lostRequest = await lost.Request();
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await lost.Repository.DeleteImageAsync(lostRequest)).Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await lost.Recreate().ReviewImageDeletionAsync("image-a"))!.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await lost.Recreate().DeleteImageAsync(lostRequest)).Status);
+        Assert.Single(await lost.Repository.GetVirtualMachineImageDeletionRecoveriesAsync());
         Assert.Single(lost.Writes);
     }
     [Fact]
@@ -78,7 +88,8 @@ public sealed class VirtualMachineImageDeletionTests
     {
         using var f = new Fixture(); var request = await f.Request(); using var cancellation = new CancellationTokenSource(); f.AfterDelete = cancellation.Cancel;
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, (await f.Repository.DeleteImageAsync(request, cancellation.Token)).Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Recreate().ReviewImageDeletionAsync(request.Baseline.Id))!.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Recreate().ReviewImageDeletionAsync(request.Baseline.Id))!.Status);
+        Assert.Single(await f.Repository.GetVirtualMachineImageDeletionRecoveriesAsync());
         Assert.Single(f.Writes);
     }
     private sealed class Fixture : IDisposable
@@ -90,7 +101,7 @@ public sealed class VirtualMachineImageDeletionTests
         public DsmRepository Repository { get; }
         public List<Dictionary<string, string>> Calls { get; } = [];
         public IEnumerable<Dictionary<string, string>> Writes => Calls.Where(item => item["method"] == "delete");
-        public bool Exists = true, Apply = true, LoseReply; public int? Reject; public string? BadList; public string Name = "Image", Type = "disk"; public Action? AfterDelete;
+        public bool Exists = true, Apply = true, LoseReply, IncludePagination; public int? Reject; public string? BadList; public string Name = "Image", Type = "disk"; public Action? AfterDelete;
         public Fixture(string format = "FORM")
         { _http = new(new Handler(this)); _api = new(_http); _session = new(Profile.Id, "synthetic", null, null); Capabilities[Api] = new(Api, "entry.cgi", 1, 2, format); Repository = Recreate(); }
         public DsmRepository Recreate() => new(Profile, _session, _api, Capabilities);
@@ -107,7 +118,18 @@ public sealed class VirtualMachineImageDeletionTests
                     var rows = new JsonArray(); if (owner.Exists) rows.Add(new JsonObject { ["image_id"] = "image-a", ["image_name"] = owner.Name, ["type"] = owner.Type });
                     if (owner.BadList == "numeric") rows.Add(new JsonObject { ["image_id"] = 7 });
                     if (owner.BadList == "duplicate") { rows.Add(new JsonObject { ["image_id"] = "other" }); rows.Add(new JsonObject { ["image_id"] = "other" }); }
-                    return Reply(JsonSerializer.Serialize(new { success = true, data = owner.BadList == "missing" ? new JsonObject() : new JsonObject { ["images"] = rows } }));
+                    var data = owner.BadList == "missing" ? new JsonObject() : new JsonObject { ["images"] = rows };
+                    if (owner.IncludePagination) { data["total"] = rows.Count; data["offset"] = 0; }
+                    switch (owner.BadList)
+                    {
+                        case "total": data["total"] = rows.Count + 1; break;
+                        case "total-string": data["total"] = rows.Count.ToString(); break;
+                        case "total-null": data["total"] = null; break;
+                        case "offset": data["offset"] = 1; break;
+                        case "offset-string": data["offset"] = "0"; break;
+                        case "offset-null": data["offset"] = null; break;
+                    }
+                    return Reply(JsonSerializer.Serialize(new { success = true, data }));
                 }
                 Assert.Equal("delete", call["method"]); if (owner.Apply) owner.Exists = false; owner.AfterDelete?.Invoke(); token.ThrowIfCancellationRequested();
                 if (owner.Reject is { } code) return Reply(JsonSerializer.Serialize(new { success = false, error = new { code } }));

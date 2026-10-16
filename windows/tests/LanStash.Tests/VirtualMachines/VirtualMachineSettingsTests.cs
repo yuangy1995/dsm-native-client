@@ -89,10 +89,12 @@ public sealed class VirtualMachineSettingsTests
         Assert.Empty(await f.Repository.GetSettingsRecoveriesAsync()); Assert.Single(f.Writes);
     }
     [Fact]
-    public async Task LostReplyWithMatchingReadbackIsVerified()
+    public async Task LostReplyWithMatchingReadbackRemainsOwnedAndUnknown()
     {
         using var f = new Fixture { LoseReply = true }; var request = f.Request(f.Current, f.Current.Configuration with { Description = "new" });
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Repository.SaveSettingsAsync(request)).Status); Assert.Single(f.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Repository.SaveSettingsAsync(request)).Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Recreate().ReviewSettingsAsync("guest-a"))!.Status);
+        Assert.Single(await f.Repository.GetSettingsRecoveriesAsync()); Assert.Single(f.Writes);
     }
     [Fact]
     public async Task SettingsAndPowerOperationsLockTheSameGuest()
@@ -117,7 +119,8 @@ public sealed class VirtualMachineSettingsTests
         Assert.Equal(MutationResultStatus.CancelledBeforeSubmission, (await f.Repository.SaveSettingsAsync(request, cancelled.Token)).Status); Assert.Empty(f.Calls);
         using var after = new CancellationTokenSource(); f.AfterSet = after.Cancel;
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, (await f.Repository.SaveSettingsAsync(request, after.Token)).Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Recreate().ReviewSettingsAsync("guest-a"))!.Status); Assert.Single(f.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Recreate().ReviewSettingsAsync("guest-a"))!.Status);
+        Assert.Single(await f.Repository.GetSettingsRecoveriesAsync()); Assert.Single(f.Writes);
     }
     [Fact]
     public async Task RequestIdentityCannotBeReusedForDifferentSettingsOrPower()
@@ -135,7 +138,7 @@ public sealed class VirtualMachineSettingsTests
         Assert.Equal(MutationErrorCategory.Conflict, (await reverse.Repository.SaveSettingsAsync(reversed)).ErrorCategory); Assert.Empty(reverse.Writes);
     }
     [Fact]
-    public async Task ReviewRecountsChangedFieldsAndIgnoresUntouchedForeignEdits()
+    public async Task ReviewRecountsChangedFieldsAndKeepsOriginalTargetIdentity()
     {
         using var f = new Fixture { Apply = false }; var request = f.Request(f.Current, f.Current.Configuration with { Description = "new", AutoStart = VirtualMachineAutoStart.On });
         f.AfterSet = () => f.Current = f.Current with { Configuration = f.Current.Configuration with { Description = "new" } };
@@ -143,6 +146,9 @@ public sealed class VirtualMachineSettingsTests
         f.Current = f.Current with { Configuration = f.Current.Configuration with { Description = "other", AutoStart = VirtualMachineAutoStart.On } };
         var partial = await f.Repository.ReviewSettingsAsync("guest-a"); Assert.Equal(1, partial!.Counts.Succeeded); Assert.Equal(1, partial.Counts.Unknown);
         f.Current = f.Current with { Configuration = request.Desired with { Name = "Concurrent rename" } };
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Repository.ReviewSettingsAsync("guest-a"))!.Status);
+        Assert.Single(await f.Repository.GetSettingsRecoveriesAsync());
+        f.Current = f.Current with { Configuration = request.Desired };
         Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Repository.ReviewSettingsAsync("guest-a"))!.Status); Assert.Single(f.Writes);
     }
     [Theory]
@@ -178,7 +184,7 @@ public sealed class VirtualMachineSettingsTests
         {
             if (fault == "missing") data.Remove("cpu_weight"); if (fault == "boolean") data["cpu_weight"] = true;
             if (fault == "fraction") data["cpu_weight"] = 1.5; if (fault == "identity") data["guest_id"] = "other";
-            if (fault == "name") data["name"] = "different"; if (fault == "state") data["is_online"] = true;
+            if (fault == "name") data["name"] = "different"; if (fault == "state") data["status"] = "running";
         };
         var read = await f.Repository.LoadSettingsAsync("guest-a"); Assert.Null(read.Configuration.CpuWeight); Assert.Equal("Before", read.Configuration.Name);
         Assert.Equal(MutationErrorCategory.Validation, (await f.Repository.SaveSettingsAsync(f.Request(read, read.Configuration with { CpuWeight = 512 }))).ErrorCategory);
@@ -236,7 +242,8 @@ public sealed class VirtualMachineSettingsTests
         var power = new VirtualMachinePowerRequest(f.Profile.Id, new("guest-a", "Before", VirtualMachineOperationalState.Stopped, null, null, null, null, null), VirtualMachinePowerAction.PowerOn, Guid.NewGuid(), true);
         Assert.Equal(MutationErrorCategory.Conflict, (await f.Repository.ControlPowerAsync(power)).ErrorCategory);
         var count = f.Calls.Count; f.Current = f.Current with { Configuration = request.Desired };
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Recreate().ReviewSettingsAsync("guest-a"))!.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Recreate().ReviewSettingsAsync("guest-a"))!.Status);
+        Assert.Single(await f.Repository.GetSettingsRecoveriesAsync());
         Assert.All(f.Calls.Skip(count), call => { Assert.Equal(Fixture.InternalApi, call["api"]); Assert.Equal("get", call["method"]); });
         Assert.Single(f.Writes);
     }
@@ -263,7 +270,8 @@ public sealed class VirtualMachineSettingsTests
         using var cancelled = new Fixture(priority: true); using var token = new CancellationTokenSource();
         var before = await cancelled.Repository.LoadSettingsAsync("guest-a"); cancelled.AfterSet = token.Cancel;
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, (await cancelled.Repository.SaveSettingsAsync(cancelled.Request(before, before.Configuration with { CpuWeight = 8 }), token.Token)).Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await cancelled.Recreate().ReviewSettingsAsync("guest-a"))!.Status); Assert.Single(cancelled.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await cancelled.Recreate().ReviewSettingsAsync("guest-a"))!.Status);
+        Assert.Single(await cancelled.Repository.GetSettingsRecoveriesAsync()); Assert.Single(cancelled.Writes);
     }
 
     [Fact]
@@ -314,7 +322,7 @@ public sealed class VirtualMachineSettingsTests
         private JsonObject Data()
         {
             var value = Current.Configuration;
-            return new() { ["guest_id"] = Current.Id, ["guest_name"] = value.Name, ["description"] = value.Description, ["status"] = Current.State == VirtualMachineOperationalState.Running ? "running" : "shutdown", ["vcpu_num"] = value.CpuCount, ["vram_size"] = value.MemoryMiB, ["autorun"] = (int)value.AutoStart };
+            return new() { ["guest_id"] = Current.Id, ["guest_name"] = value.Name, ["description"] = value.Description, ["status"] = Current.State == VirtualMachineOperationalState.Running ? "running" : "shutdown", ["vcpu_num"] = value.CpuCount, ["vram_size"] = value.MemoryMiB, ["autorun"] = (int)value.AutoStart!.Value };
         }
         private sealed class Handler(Fixture owner) : HttpMessageHandler
         {
@@ -331,8 +339,8 @@ public sealed class VirtualMachineSettingsTests
                         if (owner.InternalReadError is int readCode) return Reply(JsonSerializer.Serialize(new { success = false, error = new { code = readCode } }));
                         Assert.Equal("2", call["version"]);
                         data["name"] = data["guest_name"]!.DeepClone(); data.Remove("guest_name"); data["desc"] = data["description"]!.DeepClone(); data.Remove("description");
-                        data["is_online"] = owner.Current.State == VirtualMachineOperationalState.Running; data.Remove("status"); data["cpu_weight"] = owner.Current.Configuration.CpuWeight;
-                        data["vram_size"] = (long)owner.Current.Configuration.MemoryMiB * 1024;
+                        data["is_online"] = owner.Current.State == VirtualMachineOperationalState.Running; data["cpu_weight"] = owner.Current.Configuration.CpuWeight;
+                        data["vram_size"] = (long)owner.Current.Configuration.MemoryMiB!.Value * 1024;
                         owner.MutateInternalRead?.Invoke(data);
                     }
                     else owner.MutateRead?.Invoke(data);
@@ -341,6 +349,11 @@ public sealed class VirtualMachineSettingsTests
                 if (call["method"] == "list")
                 {
                     var guests = new JsonArray(owner.Data()); if (owner.OtherName is { } other) guests.Add(new JsonObject { ["guest_id"] = "other", ["guest_name"] = other, ["status"] = "shutdown" });
+                    if (internalApi) foreach (var item in guests.OfType<JsonObject>())
+                    {
+                        item["name"] = item["guest_name"]!.DeepClone(); item.Remove("guest_name");
+                        if (item["vram_size"] is { } memory) item["vram_size"] = memory.GetValue<int>() * 1024L;
+                    }
                     return Reply(JsonSerializer.Serialize(new { success = true, data = new JsonObject { ["guests"] = guests } }));
                 }
                 if (call["api"].EndsWith(".Action", StringComparison.Ordinal))
@@ -354,7 +367,7 @@ public sealed class VirtualMachineSettingsTests
                 if (owner.Apply && owner.Reject is null)
                 {
                     var previous = owner.Current.Configuration;
-                    owner.Current = owner.Current with { Configuration = new(Text(internalApi ? "name" : "new_guest_name", previous.Name), Text(internalApi ? "desc" : "description", previous.Description), Number("vcpu_num", previous.CpuCount), Number("vram_size", previous.MemoryMiB), (VirtualMachineAutoStart)Number("autorun", (int)previous.AutoStart))
+                    owner.Current = owner.Current with { Configuration = new(Text(internalApi ? "name" : "new_guest_name", previous.Name), Text(internalApi ? "desc" : "description", previous.Description!), Number("vcpu_num", previous.CpuCount!.Value), Number("vram_size", previous.MemoryMiB!.Value), (VirtualMachineAutoStart)Number("autorun", (int)previous.AutoStart!.Value))
                         { CpuWeight = internalApi ? Number("cpu_weight", previous.CpuWeight ?? 256) : previous.CpuWeight } };
                 }
                 owner.AfterSet?.Invoke(); token.ThrowIfCancellationRequested();

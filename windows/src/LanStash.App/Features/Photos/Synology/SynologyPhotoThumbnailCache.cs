@@ -4,7 +4,7 @@ using LanStash.Domain;
 namespace LanStash.App.Features.Photos.Synology;
 
 public sealed record SynologyPhotoDecodedThumbnail<T>(T Value, long Cost);
-public sealed record SynologyPhotoThumbnailKey(SynologyPhotoIdentity Photo, long UnitId, string Revision);
+public sealed record SynologyPhotoThumbnailKey(SynologyPhotoIdentity Photo, long UnitId, string Revision, SynologyPhotoAlbumContext? AlbumContext = null);
 
 /// <summary>按账号、空间、项目、单元和修订号隔离；仅可见项取图，最后一个订阅者离开即取消。</summary>
 public sealed class SynologyPhotoThumbnailCache<T> : IRegenerableCacheParticipant, IDisposable
@@ -36,9 +36,9 @@ public sealed class SynologyPhotoThumbnailCache<T> : IRegenerableCacheParticipan
     public async Task<T> GetAsync(SynologyPhoto photo, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (photo.Id.ProfileId != _repository.ProfileId || photo.Id.Space != SynologyPhotoSpace.Personal || photo.Thumbnail is not { } thumbnail)
+        if (photo.Id.ProfileId != _repository.ProfileId || !Enum.IsDefined(photo.Id.Space) || photo.Thumbnail is not { } thumbnail)
             throw new SynologyPhotoException(SynologyPhotoFailure.Permission);
-        var key = new SynologyPhotoThumbnailKey(photo.Id, thumbnail.UnitId, thumbnail.Revision);
+        var key = new SynologyPhotoThumbnailKey(photo.Id, thumbnail.UnitId, thumbnail.Revision, photo.AlbumContext);
         Entry entry; var start = false;
         lock (_gate)
         {

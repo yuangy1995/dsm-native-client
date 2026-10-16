@@ -49,14 +49,18 @@ public sealed class VirtualMachineReadWireTests
             for (var i = 0; i < 201; i++) rows.Add(new JsonObject { [entry.Id] = $"synthetic-{i}", [entry.Name] = $"synthetic-{i}", ["status"] = "running" });
             f.Data[entry.Api] = new() { [entry.Root] = rows };
         }
-        f.Data[Fixture.Log] = new() { ["logs"] = new JsonArray(Enumerable.Range(0, 1000).Select(i => (JsonNode)new JsonObject { ["id"] = $"event-{i}", ["level"] = "info", ["time"] = 1700000000 + i }).ToArray()) };
+        f.Data[Fixture.Log] = new() { ["logs"] = new JsonArray(Enumerable.Range(0, 1000).Select(i => (JsonNode)new JsonObject { ["id"] = $"event-{i}", ["level"] = "info", ["time"] = 1700000000 + i, ["message"] = "Synthetic event" }).ToArray()) };
         var result = await f.Repository.LoadSnapshotAsync();
         Assert.Equal(201, result.Machines.Items.Count); Assert.Equal(201, result.Hosts.Items.Count);
         Assert.Equal(201, result.Storages.Items.Count); Assert.Equal(201, result.Networks.Items.Count); Assert.Equal(201, result.Images.Items.Count);
         Assert.Equal(1000, result.Events.Items.Count); Assert.Single(f.Calls, call => call["api"] == Fixture.Log);
         using var model = new VirtualMachineManagerViewModel(); await model.ActivateAsync(f.Repository);
         Assert.Equal(201, model.Machines.Count); Assert.Equal(201, model.Hosts.Count); Assert.Equal(201, model.Storages.Count);
-        Assert.Equal(201, model.Networks.Count); Assert.Equal(201, model.Images.Count); Assert.Equal(1000, model.Events.Count);
+        Assert.Equal(201, model.Networks.Count); Assert.Equal(201, model.Images.Count); Assert.Empty(model.Events);
+        Assert.Single(f.Calls, call => call["api"] == Fixture.Log);
+        await model.SetActivityVisibleAsync(true);
+        Assert.Equal(1000, model.Events.Count); Assert.NotNull(model.Events[0].Event.OccurredAt);
+        Assert.Equal(2, f.Calls.Count(call => call["api"] == Fixture.Log));
     }
     [Theory]
     [InlineData("guests")] [InlineData("hosts")] [InlineData("storages")] [InlineData("networks")] [InlineData("images")]

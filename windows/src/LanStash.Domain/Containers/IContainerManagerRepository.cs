@@ -38,6 +38,8 @@ public interface IContainerManagerRepository
         Task.FromResult<IReadOnlyList<ContainerNetworkDeletionRecovery>>([]);
     Task<MutationResult?> ReviewNetworkDeletionAsync(string id, CancellationToken cancellationToken = default) =>
         Task.FromException<MutationResult?>(new NotSupportedException());
+    Task<IReadOnlyList<ContainerNetworkDeletionItem>> GetNetworkDeletionItemsAsync(Guid requestId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<ContainerNetworkDeletionItem>>([]);
     Task PrepareNetworkManagementAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     Task<MutationResult> CreateNetworkAsync(ContainerNetworkCreateRequest request, CancellationToken cancellationToken = default) =>
         Task.FromException<MutationResult>(new NotSupportedException());
@@ -48,4 +50,10 @@ public interface IContainerManagerRepository
 
     Task<ContainerManagerSnapshot> LoadSnapshotAsync(
         CancellationToken cancellationToken = default);
+    Task<ContainerManagerSnapshot> LoadInventoryAsync(CancellationToken cancellationToken = default) => LoadSnapshotAsync(cancellationToken);
+    async Task<ContainerManagerSection<ServiceActivityEntry>> LoadActivityAsync(CancellationToken cancellationToken = default)
+    {
+        var events = (await LoadSnapshotAsync(cancellationToken).ConfigureAwait(false)).Events;
+        return new(events.Status, events.Items.Select(item => new ServiceActivityEntry(item, "")).ToArray());
+    }
 }

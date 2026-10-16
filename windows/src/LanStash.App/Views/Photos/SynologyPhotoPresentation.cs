@@ -17,12 +17,14 @@ public sealed class SynologyPhotoCell
     public SynologyPhoto? Photo { get; init; }
     public SynologyPhotoCollection? Collection { get; init; }
     public SynologyPhotoSharedEntry? Shared { get; init; }
-    public string Title => Photo?.Filename ?? Collection?.Name ?? Shared?.Title ?? "";
+    public SynologyPhotoCategory? Category { get; init; }
+    public Symbol CollectionSymbol => Category == SynologyPhotoCategory.People ? Symbol.People : Symbol.Folder;
+    public string Title => Photo?.SimilarGroup is { } group ? LocalizationService.Current.Format("PhotosSimilarGroupRow", Photo.Filename, group.Count) : Photo?.Filename ?? (Collection is { Name.Length: 0 } && Category == SynologyPhotoCategory.People ? LocalizationService.Current.Get("PhotosPersonUnnamed") : Collection?.Name) ?? Shared?.Title ?? "";
     public string Subtitle => Collection?.Count is { } count ? LocalizationService.Current.Format("PhotosItemCount", count) : "";
     public string CopyLinkTitle => LocalizationService.Current.Get("PhotosCopyLink");
     public Visibility LinkVisibility => Shared?.Url is not null ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility MediaLabelVisibility => Photo?.MediaType is "video" or "live" ? Visibility.Visible : Visibility.Collapsed;
-    public string MediaLabel => Photo?.MediaType switch
+    public Visibility MediaLabelVisibility => Photo?.SimilarGroup is not null || Photo?.MediaType is "video" or "live" ? Visibility.Visible : Visibility.Collapsed;
+    public string MediaLabel => Photo?.SimilarGroup is { } group ? LocalizationService.Current.Format("PhotosSimilarCount", group.Count) : Photo?.MediaType switch
     {
         "video" => LocalizationService.Current.Get("PhotosMediaVideo"),
         "live" => LocalizationService.Current.Get("PhotosMediaLive"),

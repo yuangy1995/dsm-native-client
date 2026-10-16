@@ -11,7 +11,7 @@ public sealed partial class VirtualMachineImageImportDialogContent : UserControl
     private readonly VirtualMachineImageImportViewModel _model;
     private bool _rendering, _ready, _disposed;
     public event Action? StateChanged;
-    public bool CanSubmit => _model.CanSubmit && FormMatchesDraft();
+    public bool CanSubmit => _model.CanConfirm && FormMatchesDraft();
     public bool CanRefresh => _model.CanRefresh;
     public bool NeedsParentRefresh => _model.NeedsParentRefresh;
     public VirtualMachineImageImportDialogContent(IVirtualMachineManagerRepository repository)
@@ -23,6 +23,7 @@ public sealed partial class VirtualMachineImageImportDialogContent : UserControl
     public Task SubmitAsync()
     {
         if (_model.CanEdit && !FormMatchesDraft()) Edit();
+        _model.Confirm(true);
         return _model.SubmitAsync();
     }
     public Task RefreshAsync() => _model.RefreshAsync();
@@ -50,7 +51,6 @@ public sealed partial class VirtualMachineImageImportDialogContent : UserControl
             else if (_model.Draft is null) { NameInput.Text = ""; PathInput.Text = ""; StorageInput.SelectedItems.Clear(); }
             ConfirmationSummary.Text = _model.Summary;
             ValidationNotice.Text = _model.Validation; ValidationNotice.Visibility = Visible(_model.Validation is not null);
-            RiskAcknowledgement.IsEnabled = _model.CanConfirm; RiskAcknowledgement.IsChecked = _model.IsConfirmed;
             NewButton.Visibility = Visible(_model.CanNew);
         }
         finally { _rendering = false; }
@@ -67,7 +67,6 @@ public sealed partial class VirtualMachineImageImportDialogContent : UserControl
     private bool FormMatchesDraft() => _model.Draft is { } draft && NameInput.Text == draft.Name && PathInput.Text == draft.SourcePath &&
         TypeInput.SelectedIndex == (int)draft.Type && StorageInput.SelectedItems.OfType<VirtualizationResourceSummary>().SequenceEqual(draft.Storages);
     private void Choice_Changed(object sender, SelectionChangedEventArgs e) => Edit();
-    private void Confirm_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) _model.Confirm(RiskAcknowledgement.IsChecked == true); }
     private async void Recovery_Changed(object sender, SelectionChangedEventArgs e)
     { if (_ready && !_rendering && RecoveryInput.SelectedItem is VirtualMachineImageImportRequest request) await _model.SelectRecoveryAsync(request); }
     private async void New_Click(object sender, RoutedEventArgs e) => await _model.NewAsync();

@@ -17,7 +17,7 @@ public sealed partial class VirtualMachineCreationDialogContent : UserControl, I
     private bool _disposed, _synchronizing = true;
     private long _formVersion = -1;
     public event Action? StateChanged;
-    public bool CanSubmit => !_disposed && _model.CanSubmit && RiskAcknowledgement.IsChecked == true;
+    public bool CanSubmit => !_disposed && _model.CanConfirm;
     public bool CanRefresh => _model.CanRefresh;
     public bool NeedsParentRefresh => _model.NeedsParentRefresh;
     public string PrimaryText => _model.PrimaryText;
@@ -26,7 +26,7 @@ public sealed partial class VirtualMachineCreationDialogContent : UserControl, I
     { _repository = repository; InitializeComponent(); _model.PropertyChanged += (_, _) => Refresh(); _synchronizing = false; Refresh(); }
     public Task ActivateAsync() => _model.ActivateAsync(_repository);
     public Task RefreshAsync() { ReadFields(); return _model.RefreshAsync(); }
-    public async Task SubmitAsync() { ReadFields(); if (CanSubmit) await _model.SubmitAsync(); }
+    public async Task SubmitAsync() { ReadFields(); if (CanSubmit && _model.Confirm(true)) await _model.SubmitAsync(); }
     private void Refresh()
     {
         if (_disposed) return; _synchronizing = true;
@@ -38,9 +38,13 @@ public sealed partial class VirtualMachineCreationDialogContent : UserControl, I
         TaskProgress.Visibility = Visible(_model.LastResult?.ProgressPercent is not null); TaskProgress.Value = _model.LastResult?.ProgressPercent ?? 0;
         ReadOnlyNotice.Visibility = Visible(_model.IsReadOnly);
         OperatingSystemInput.IsEnabled = _model.CanEdit && (_model.CanChooseAdvanced || _model.Draft?.Advanced is not null);
+        ((ComboBoxItem)OperatingSystemInput.Items[0]).IsEnabled = _model.CanChooseBasic;
         AdvancedUnavailableNotice.Visibility = Visible(!_model.CanChooseAdvanced && !_model.IsBusy);
         AdvancedFields.Visibility = Visible(_model.Draft?.Advanced is not null);
         CreationModeHint.Visibility = Visible(_model.CanChooseAdvanced && _model.Draft?.Advanced is null);
+        NetworksUnavailableNotice.Visibility = Visible(_model.Draft?.Advanced is not null &&
+            (_model.AdvancedInventory?.Networks is not { Status: VirtualMachineManagerSectionStatus.Available } availableNetworks ||
+             availableNetworks.Items.Any(item => item.IsFrozen != false)));
         FirmwareInput.IsEnabled = BootImageInput.IsEnabled = _model.CanEdit && _model.CanChooseAdvanced;
         PowerOnInput.IsEnabled = _model.CanEdit && _model.CanRequestPowerOn;
         PowerUnavailableNotice.Visibility = Visible(!_model.CanRequestPowerOn);
@@ -55,7 +59,6 @@ public sealed partial class VirtualMachineCreationDialogContent : UserControl, I
         if (_model.Draft?.Advanced is { } advanced) ConfirmationSummary.Text += "\n" + L.Format("VmCreateAdvancedSummary",
             L.Get(advanced.OperatingSystem switch { VirtualMachineOperatingSystem.Windows => "VmCreateWindowsPreset.Content", VirtualMachineOperatingSystem.Linux => "VmCreateLinuxPreset.Content", _ => "VmCreateOtherPreset.Content" }),
             L.Get(advanced.Firmware == VirtualMachineFirmware.Uefi ? "VmCreateUefiFirmware.Content" : "VmCreateLegacyFirmware.Content"), advanced.BootImage?.Name ?? L.Get("VmCreateNoBootImage"));
-        RiskAcknowledgement.IsEnabled = _model.CanConfirm; if (!_model.CanSubmit) RiskAcknowledgement.IsChecked = false;
         _synchronizing = false; StateChanged?.Invoke();
     }
     private void RebuildForm()
@@ -68,9 +71,9 @@ public sealed partial class VirtualMachineCreationDialogContent : UserControl, I
         if (draft?.Advanced?.BootImage is { } selectedBoot && !bootChoices.Any(item => item.Image == selectedBoot)) bootChoices.Add(new(L.Format("VmCreateMissingChoice", selectedBoot.Name), selectedBoot));
         BootImageInput.ItemsSource = bootChoices; BootImageInput.SelectedItem = bootChoices.FirstOrDefault(item => item.Image == draft?.Advanced?.BootImage);
         NameInput.Text = draft?.Settings.Name ?? ""; DescriptionInput.Text = draft?.Settings.Description ?? "";
-        CpuInput.Text = draft?.Settings.CpuCount.ToString(CultureInfo.CurrentCulture) ?? "";
-        MemoryInput.Text = draft?.Settings.MemoryMiB.ToString(CultureInfo.CurrentCulture) ?? "";
-        StartupInput.SelectedIndex = draft is null ? 0 : (int)draft.Settings.AutoStart;
+        CpuInput.Text = draft?.Settings.CpuCount?.ToString(CultureInfo.CurrentCulture) ?? "";
+        MemoryInput.Text = draft?.Settings.MemoryMiB?.ToString(CultureInfo.CurrentCulture) ?? "";
+        StartupInput.SelectedIndex = draft?.Settings.AutoStart is { } startup ? (int)startup : -1;
         PowerOnInput.IsChecked = draft?.PowerOnAfterCreation == true;
         var storageChoices = Choices(_model.FormStorages, draft?.Storage); StorageInput.ItemsSource = storageChoices;
         StorageInput.SelectedItem = storageChoices.FirstOrDefault(choice => SameResource(choice.Resource, draft?.Storage));
@@ -81,7 +84,7 @@ public sealed partial class VirtualMachineCreationDialogContent : UserControl, I
         foreach (var disk in draft.Disks)
         {
             var index = _disks.Count;
-            var source = Picker(Choices(_model.Images, disk.Image, "VmCreateBlankDisk"), disk.Image, L.Format("VmCreateDiskSource", index + 1));
+            var source = Picker(Choices(_model.FormImages, disk.Image, "VmCreateBlankDisk"), disk.Image, L.Format("VmCreateDiskSource", index + 1));
             var size = new TextBox { Header = L.Get("VmCreateDiskSize"), Text = (disk.SizeMiB ?? 20480).ToString(CultureInfo.CurrentCulture) };
             var remove = RemoveButton("VmCreateRemoveDisk", index + 1); var row = new DiskEditor(source, size, remove); _disks.Add(row);
             var panel = new StackPanel { Spacing = 8 }; panel.Children.Add(source); panel.Children.Add(size); panel.Children.Add(remove); DiskRows.Children.Add(panel);
@@ -91,7 +94,7 @@ public sealed partial class VirtualMachineCreationDialogContent : UserControl, I
         foreach (var nic in draft.Networks)
         {
             var index = _networks.Count;
-            var source = Picker(Choices(_model.Networks, nic.Network, "VmCreateDisconnected"), nic.Network, L.Format("VmCreateNetworkChoice", index + 1));
+            var source = Picker(Choices(_model.FormNetworks, nic.Network, "VmCreateDisconnected"), nic.Network, L.Format("VmCreateNetworkChoice", index + 1));
             var mac = new TextBox { Header = L.Get("VmCreateMac"), PlaceholderText = L.Get("VmCreateMacAutomatic"), Text = nic.MacAddress ?? "" };
             var remove = RemoveButton("VmCreateRemoveNetwork", index + 1); _networks.Add(new(source, mac, remove));
             var panel = new StackPanel { Spacing = 8 }; panel.Children.Add(source); panel.Children.Add(mac); panel.Children.Add(remove); NetworkRows.Children.Add(panel);
@@ -112,7 +115,7 @@ public sealed partial class VirtualMachineCreationDialogContent : UserControl, I
         picker.SelectedItem = choices.FirstOrDefault(choice => SameResource(choice.Resource, selected)); AutomationProperties.SetName(picker, label); return picker;
     }
     private static bool SameResource(VirtualizationResourceSummary? left, VirtualizationResourceSummary? right) => left is null || right is null
-        ? left is null && right is null : left.Id == right.Id && left.Name == right.Name && left.Kind == right.Kind && left.Type == right.Type;
+        ? left is null && right is null : left.Id == right.Id && left.Name == right.Name && left.Kind == right.Kind && left.Type == right.Type && left.Source == right.Source;
     private static Button RemoveButton(string label, int number)
     { var button = new Button { Content = L.Get("VmCreateRemove"), MinHeight = 44 }; AutomationProperties.SetName(button, L.Format(label, number)); return button; }
     private void ReadFields()
@@ -142,12 +145,6 @@ public sealed partial class VirtualMachineCreationDialogContent : UserControl, I
     private void Choice_Changed(object sender, SelectionChangedEventArgs e) { ReadFields(); if (!_synchronizing) Refresh(); }
     private async void Recovery_Changed(object sender, SelectionChangedEventArgs e)
     { if (!_synchronizing && RecoveryInput.SelectedItem is RecoveryChoice choice) await _model.SelectRecoveryAsync(choice.Recovery); }
-    private void Confirm_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_disposed || _synchronizing) return;
-        var confirmed = RiskAcknowledgement.IsChecked == true; ReadFields(); _model.Confirm(confirmed);
-        _synchronizing = true; RiskAcknowledgement.IsChecked = _model.CanSubmit; _synchronizing = false; StateChanged?.Invoke();
-    }
     public void Dispose()
     { if (_disposed) return; _disposed = true; _synchronizing = true; _model.Dispose(); DiskRows.Children.Clear(); NetworkRows.Children.Clear(); _disks.Clear(); _networks.Clear(); NameInput.Text = DescriptionInput.Text = ""; StateChanged = null; }
     private static Visibility Visible(bool value) => value ? Visibility.Visible : Visibility.Collapsed;

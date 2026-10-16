@@ -33,6 +33,7 @@
       </ListView>
       <StackPanel Grid.Row="2" Spacing="10" Padding="0,12">
         <Button x:Uid="AddNasButton" x:Name="AddNasButton" HorizontalAlignment="Stretch" Click="NewProfile_Click"/>
+        <Button x:Uid="ChatSavedRecordingsButton" x:Name="SavedRecordingsButton" HorizontalAlignment="Stretch" MinHeight="44" Click="SavedRecordings_Click"/>
         <StackPanel Spacing="6">
           <TextBlock x:Name="LanguageLabel" FontWeight="SemiBold" Visibility="Collapsed"/>
           <ComboBox x:Name="LanguageSelector" HorizontalAlignment="Stretch" DisplayMemberPath="DisplayName" SelectionChanged="LanguageSelector_SelectionChanged"/>

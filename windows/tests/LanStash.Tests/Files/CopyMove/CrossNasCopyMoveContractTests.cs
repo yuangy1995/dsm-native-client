@@ -140,8 +140,9 @@ public sealed class CrossNasCopyMoveContractTests
         var crossNasPage = Read("windows/src/LanStash.App/Views/FilesPage.CrossNasCopyMove.cs");
         var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
 
-        Assert.Contains("CanCrossCopy: CrossNasSourceTransferAvailable()", source);
-        Assert.Contains("CanCrossMove: false", source);
+        Assert.Contains("CanCrossCopy: !CrossNasRecoveryUnavailable && CrossNasSourceTransferAvailable()", source);
+        Assert.Contains("CanCrossMove: CrossNasSourceDeletionEnabled", source);
+        Assert.Contains("internal bool CrossNasSourceDeletionEnabled { get; set; }", source);
         Assert.Contains("file.cross-nas.source-no-capability", source);
         Assert.Contains("CrossNasCopyButton.Visibility", view);
         Assert.Contains("CrossNasMoveButton.Visibility = Visibility.Collapsed", view);
@@ -157,11 +158,15 @@ public sealed class CrossNasCopyMoveContractTests
     {
         var source = Read("windows/src/LanStash.Infrastructure/Features/Files/CopyMove/DsmRepository.FileCrossNasCopyMove.cs");
 
-        Assert.Contains("EnsureCrossNasRange", source);
+        var transfer = Read("windows/src/LanStash.Infrastructure/Features/Files/CopyMove/DsmRepository.FileCrossNasTransfer.cs");
+        Assert.Contains("EnsureCrossNasRange", transfer);
         Assert.Contains("file.cross-nas.tree-readback-mismatch", source);
         Assert.Contains("file.cross-nas.source-no-capability", source);
         Assert.Contains("MutationResultStatus.SubmittedButUnverified", source);
-        Assert.Contains("succeeded: succeeded", source);
+        Assert.Contains("new(succeeded, failed, unknown)", source);
+        Assert.Contains("ReviewFileUploadCoreAsync", source);
+        Assert.Contains("target.UploadFileCoreAsync", transfer);
+        Assert.DoesNotContain("target._api.UploadFileAsync", transfer);
         Assert.DoesNotContain("childRequest with { DestinationFolderPath", source);
     }
 

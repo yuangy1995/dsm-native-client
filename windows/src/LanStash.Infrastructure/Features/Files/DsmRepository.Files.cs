@@ -36,7 +36,14 @@ public sealed partial class DsmRepository
     {
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
-        var method = string.IsNullOrWhiteSpace(path) ? "list_share" : "list";
+        if (path.Length != 0 && !DsmFixtureParser.ValidListPath(path))
+            throw new ArgumentException("file.list.invalid-path", nameof(path));
+        const string api = "SYNO.FileStation.List";
+        var capability = Required(api);
+        if (_profile.Id != _session.ProfileId || string.IsNullOrEmpty(_session.Sid) || capability.Name != api || capability.MinVersion > 2 || capability.MaxVersion < 1)
+            throw new NotSupportedException("file.list.unsupported");
+        var version = Math.Min(2, capability.MaxVersion);
+        var method = path.Length == 0 ? "list_share" : "list";
         var effectiveOptions = method == "list_share"
             ? options.NormalizeForSharedRoot()
             : options;
@@ -45,29 +52,34 @@ public sealed partial class DsmRepository
             ["offset"] = offset.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["limit"] = Math.Min(limit, 500).ToString(
                 System.Globalization.CultureInfo.InvariantCulture),
-            ["sort_by"] = SortFieldValue(effectiveOptions.SortField),
-            ["sort_direction"] = SortDirectionValue(effectiveOptions.SortDirection),
+            ["sort_by"] = ShareParameterString(api, SortFieldValue(effectiveOptions.SortField)),
+            ["sort_direction"] = ShareParameterString(api, SortDirectionValue(effectiveOptions.SortDirection)),
             ["additional"] = "[\"real_path\",\"size\",\"owner\",\"time\",\"perm\",\"volume_status\"]",
         };
         if (method == "list")
         {
-            parameters["folder_path"] = path;
+            parameters["folder_path"] = ShareParameterString(api, path);
             var fileType = TypeFilterValue(effectiveOptions.TypeFilter);
             if (fileType is not null)
             {
-                parameters["filetype"] = fileType;
+                parameters["filetype"] = ShareParameterString(api, fileType);
             }
         }
-        var data = await CallAsync(
-            "SYNO.FileStation.List",
+        var data = await _api.CallAsync(
+            _profile, _session, capability with { MinVersion = version, MaxVersion = version },
             method,
             parameters,
             cancellationToken).ConfigureAwait(false);
-        return ParseFilePage(
+        var page = ParseFilePage(
             data,
             method == "list" ? "files" : "shares",
             offset,
             Math.Min(limit, 500));
+        var prefix = path + "/";
+        if (page.Items.Any(item => !item.Path.StartsWith(prefix, StringComparison.Ordinal) ||
+            item.Path[prefix.Length..].Contains('/')))
+            throw new InvalidDataException("file.list.outside-directory");
+        return page;
     }
 
     private static string SortFieldValue(FileListSortField field) => field switch

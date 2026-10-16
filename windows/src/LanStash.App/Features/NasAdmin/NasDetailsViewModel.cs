@@ -665,6 +665,19 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
                 "\uE8B7"),
         };
         rows.AddRange(analysis.Categories.Select(CategoryRow));
+        rows.Add(Row("storage-analysis-size-scope", L.Get("NasDetailsStorageAnalysisSampleOnly"), "", "", "\uE946"));
+        if (analysis.Shares.Count > 0)
+        {
+            rows.Add(GroupRow("storage-analysis-shares", L.Get("NasDetailsStorageAnalysisShares"), "\uE8B7"));
+            rows.AddRange(analysis.Shares.Select((item, index) => Row($"storage-analysis-share-{index}", item.Name,
+                L.Format("NasDetailsStorageAnalysisFileCount", item.FileCount), FormatBytes(item.SizeBytes), "\uE8B7")));
+        }
+        if (analysis.Owners.Count > 0)
+        {
+            rows.Add(GroupRow("storage-analysis-owners", L.Get("NasDetailsStorageAnalysisOwners"), "\uE77B"));
+            rows.AddRange(analysis.Owners.Select((item, index) => Row($"storage-analysis-owner-{index}", item.Name ?? L.Get("UnknownValue"),
+                L.Format("NasDetailsStorageAnalysisFileCount", item.FileCount), FormatBytes(item.SizeBytes), "\uE77B")));
+        }
         if (analysis.OwnerSummary is { KnownOwnerFileCount: > 0 } owner)
         {
             rows.Add(Row(
@@ -729,6 +742,12 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             rows.AddRange(analysis.OldFiles.Select((item, index) =>
                 FileCandidateRow($"storage-analysis-old-{index + 1}", item, "\uE8FD")));
         }
+        if (analysis.LeastRecentlyAccessedFiles.Count > 0)
+        {
+            rows.Add(GroupRow("storage-analysis-least-access", L.Get("NasDetailsStorageAnalysisLeastAccessed"), "\uE823"));
+            rows.AddRange(analysis.LeastRecentlyAccessedFiles.Select((item, index) => Row($"storage-analysis-access-{index}", item.Name,
+                FormatBytes(item.SizeBytes), item.AccessedAt is { } accessed ? L.Format("NasDetailsStorageAnalysisAccessed", accessed.ToLocalTime().ToString("g")) : "", "\uE823")));
+        }
         if (analysis.DuplicateCandidates.Count > 0)
         {
             rows.Add(GroupRow(
@@ -738,7 +757,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             rows.AddRange(analysis.DuplicateCandidates.Select((item, index) =>
                 DuplicateRow($"storage-analysis-duplicate-{index + 1}", item)));
         }
-        return new(section.Status, rows.Take(MaximumSectionRows).ToArray(), section.IsTruncated);
+        return new(section.Status, rows, section.IsTruncated);
     }
 
     private static NasDetailsRow CategoryRow(NasStorageCategorySummary item)
@@ -747,6 +766,8 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         {
             NasStorageAnalysisCategory.Images => L.Get("NasDetailsStorageAnalysisCategoryImages"),
             NasStorageAnalysisCategory.Videos => L.Get("NasDetailsStorageAnalysisCategoryVideos"),
+            NasStorageAnalysisCategory.Audio => L.Get("NasDetailsStorageAnalysisCategoryAudio"),
+            NasStorageAnalysisCategory.NoExtension => L.Get("NasDetailsStorageAnalysisCategoryNoExtension"),
             NasStorageAnalysisCategory.Documents => L.Get("NasDetailsStorageAnalysisCategoryDocuments"),
             NasStorageAnalysisCategory.Archives => L.Get("NasDetailsStorageAnalysisCategoryArchives"),
             NasStorageAnalysisCategory.Other => L.Get("NasDetailsStorageAnalysisCategoryOther"),
@@ -808,7 +829,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         string title,
         string glyph,
         string? detail = null) =>
-        Row(id, title, detail ?? L.Get("NasDetailsStorageAnalysisSampleOnly"), string.Empty, glyph);
+        Row(id, title, detail ?? string.Empty, string.Empty, glyph);
 
     private static SectionProjection ProjectSystemActivitySection(
         NasDetailsSection<NasSystemActivitySummary> section)

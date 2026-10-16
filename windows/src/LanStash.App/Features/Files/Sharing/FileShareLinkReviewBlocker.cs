@@ -22,4 +22,9 @@ internal sealed class FileShareLinkReviewBlocker
             _blocked.Add((profileId, path));
         }
     }
+
+    public void Clear(Guid profileId, string path)
+    {
+        lock (_sync) _blocked.Remove((profileId, path));
+    }
 }

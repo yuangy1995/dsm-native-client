@@ -11,6 +11,7 @@ public sealed partial class NasDetailsPage : Page, IDisposable
 {
     private readonly NasDetailsViewModel _viewModel = new();
     private INasSettingsRepository? _settingsRepository;
+    private INasDetailsRepository? _detailsRepository;
     private bool _disposed;
 
     public NasDetailsPage(INasDetailsRepository repository)
@@ -42,6 +43,9 @@ public sealed partial class NasDetailsPage : Page, IDisposable
         {
             return;
         }
+        if (!ReferenceEquals(_detailsRepository, repository)) CloseServiceSettings();
+        _detailsRepository = repository;
+        PerformanceButton.Visibility = repository.CanReadPerformance ? Visibility.Visible : Visibility.Collapsed;
         await _viewModel.ActivateAsync(repository);
         RestoreSectionSelection();
         UpdateState();
@@ -59,12 +63,12 @@ public sealed partial class NasDetailsPage : Page, IDisposable
 
         await Task.CompletedTask;
 
-        UpdateWriteAvailability();
     }
 
     public void Deactivate()
     {
         CloseServiceSettings();
+        _detailsRepository = null;
         _viewModel.Deactivate();
     }
 
@@ -84,6 +88,16 @@ public sealed partial class NasDetailsPage : Page, IDisposable
         await _viewModel.RefreshAsync();
         RestoreSectionSelection();
         UpdateState();
+    }
+    private async void Performance_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _serviceSettingsDialog is not null || _detailsRepository is not { CanReadPerformance: true } repository) return;
+        await ShowSettingsContentAsync(new NasPerformanceDialogContent(repository), "NasPerformanceTitle");
+    }
+    private async void Logs_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _serviceSettingsDialog is not null || _detailsRepository is not { CanReadLogs: true } repository) return;
+        await ShowSettingsContentAsync(new NasLogsDialogContent(repository), "NasLogsTitle");
     }
 
     private async void RunStorageAnalysis_Click(object sender, RoutedEventArgs e)
@@ -155,6 +169,8 @@ public sealed partial class NasDetailsPage : Page, IDisposable
         StorageOverviewCards.Visibility = _viewModel.SelectedSection == NasDetailsSectionKind.StorageHealth
             ? Visibility.Visible : Visibility.Collapsed;
         RefreshButton.IsEnabled = _viewModel.CanRefresh;
+        LogsButton.Visibility = _detailsRepository?.CanReadLogs == true && _viewModel.SelectedSection == NasDetailsSectionKind.Logs
+            ? Visibility.Visible : Visibility.Collapsed;
         RunStorageAnalysisButton.IsEnabled = _viewModel.CanRunStorageAnalysis;
         RunDeepStorageAnalysisButton.IsEnabled = _viewModel.CanRunDeepStorageAnalysis;
         CancelStorageAnalysisButton.Visibility = _viewModel.CanCancelStorageAnalysis
@@ -177,32 +193,6 @@ public sealed partial class NasDetailsPage : Page, IDisposable
         UnavailableState.Visibility = !_viewModel.IsLoading && _viewModel.IsUnavailable
             ? Visibility.Visible
             : Visibility.Collapsed;
-    }
-
-    private void UpdateWriteAvailability()
-    {
-        if (_settingsRepository is null)
-        {
-            return;
-        }
-
-        var availability = _settingsRepository.WriteAvailability;
-
-        if (availability.CanPowerAction ||
-            availability.CanSaveDDNS ||
-            availability.CanSaveFileService ||
-            availability.CanSaveTerminal ||
-            availability.CanSaveProxy ||
-            availability.CanSaveNetwork ||
-            availability.CanSaveRegion ||
-            availability.CanSaveSecurity ||
-            availability.CanSaveHardware)
-        {
-            ReadOnlyInfoBar.Visibility = Visibility.Collapsed;
-            ReadOnlyInfoBar.IsOpen = false;
-            ReadWriteInfoBar.Visibility = Visibility.Visible;
-            ReadWriteInfoBar.IsOpen = true;
-        }
     }
 
 }

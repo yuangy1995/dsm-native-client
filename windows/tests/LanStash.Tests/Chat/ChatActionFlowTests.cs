@@ -73,6 +73,29 @@ public sealed class ChatActionFlowTests
         Assert.Single(fixture.Calls, call => call["method"] == "forward");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ForwardReadsBeyondLatestPageAndRejectsAmbiguousCandidates(bool duplicate)
+    {
+        using var fixture = new Fixture("JSON") { DestinationPostsAhead = 105, DuplicateForward = duplicate };
+        var request = new ChatForwardRequest("source", "1", ["2"], Guid.NewGuid());
+        var result = await fixture.Chat.ForwardMessageAsync(request);
+        Assert.Equal(duplicate ? MutationResultStatus.SubmittedButUnverified : MutationResultStatus.ConfirmedSuccess, result.Status);
+        Assert.True(fixture.Calls.Count(call => call["api"] == "SYNO.Chat.Post" && call["method"] == "list" &&
+            call.GetValueOrDefault("channel_id") == "\"2\"") >= 3);
+        await fixture.Chat.ForwardMessageAsync(request);
+        Assert.Single(fixture.Calls, call => call["method"] == "forward");
+    }
+
+    [Fact]
+    public async Task ForwardCannotClaimANewIdentityAtTheBaselineTimestamp()
+    {
+        using var fixture = new Fixture("JSON") { OldMatchingMessages = true, SameBaselineTime = true };
+        var result = await fixture.Chat.ForwardMessageAsync(new("source", "1", ["2"], Guid.NewGuid()));
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, result.Status);
+    }
+
     [Fact]
     public async Task CompatibleChatContractCanDeleteOwnMessageWithoutDsmBuildGate()
     {
@@ -106,7 +129,7 @@ public sealed class ChatActionFlowTests
         using var fixture = new Fixture(format) { OwnSource = true, PostsAhead = 101, KeepAfterDelete = true };
         var request = new ChatDeleteMessageRequest("source", "1", Guid.NewGuid());
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Chat.DeleteOwnMessageAsync(request)).Status);
-        Assert.Contains(fixture.Calls, item => item["method"] == "list" && item.GetValueOrDefault("offset") == "100");
+        Assert.Contains(fixture.Calls, item => item["method"] == "list" && item.ContainsKey("post_id"));
         await fixture.Chat.DeleteOwnMessageAsync(request);
         Assert.Single(fixture.Calls, item => item["method"] == "delete");
         fixture.Deleted = true;
@@ -202,6 +225,9 @@ public sealed class ChatActionFlowTests
         public bool MalformedAfterClose { get; set; }
         public bool SourcePoll { get; init; }
         public bool OldMatchingMessages { get; init; }
+        public bool SameBaselineTime { get; init; }
+        public bool DuplicateForward { get; init; }
+        public int DestinationPostsAhead { get; init; }
         public bool Attachment { get; init; }
         public bool EncryptedSource { get; init; }
         public bool OwnSource { get; init; }
@@ -258,18 +284,27 @@ public sealed class ChatActionFlowTests
                     var channel = Text("channel_id"); var posts = new List<JsonObject>();
                     if (channel == "1")
                     {
-                        posts.AddRange(Enumerable.Range(0, PostsAhead).Select(id => Message("ahead-" + id, "1", false)));
-                        var source = Message("source", "1", OwnSource);
+                        posts.AddRange(Enumerable.Range(0, PostsAhead).Select(id => { var post = Message("ahead-" + id, "1", false); post["create_at"] = _time - id; return post; }));
+                        var source = Message("source", "1", OwnSource); source["create_at"] = _time - PostsAhead;
                         if (SourcePoll) source["vote"] = new JsonObject { ["question"] = "Synthetic text", ["choices"] = new JsonArray("one", "two") };
                         if (!Deleted) posts.Add(source);
                     }
                     else
                     {
-                        if (OldMatchingMessages) posts.Add(Message("old-" + channel, channel, true));
+                        if (OldMatchingMessages) { var old = Message("old-" + channel, channel, true); old["create_at"] = _time - (SameBaselineTime ? 0 : 1); posts.Add(old); }
+                        if (Delivered.Contains(channel))
+                        {
+                            posts.AddRange(Enumerable.Range(0, DestinationPostsAhead).Select(index =>
+                            { var noise = Message("noise-" + index, channel, false); noise["message"] = "Synthetic unrelated"; noise["create_at"] = _time + 200 - index; return noise; }));
+                            if (DuplicateForward) posts.Add(Message("duplicate-" + channel, channel, true));
+                        }
                         if (Delivered.Contains(channel)) posts.Add(Message("new-" + channel, channel, true));
                     }
-                    var offset = int.Parse(call["offset"]);
-                    return new() { ["posts"] = new JsonArray(posts.Skip(offset).Take(int.Parse(call["limit"])).Cast<JsonNode>().ToArray()), ["offset"] = offset, ["total"] = posts.Count };
+                    var cursor = call.ContainsKey("post_id") ? Text("post_id") : null;
+                    var offset = cursor is null ? 0 : posts.FindIndex(post => post["post_id"]!.GetValue<string>() == cursor);
+                    Assert.True(offset >= 0);
+                    var count = int.Parse(call["prev_count"]) + (cursor is null ? 0 : 1);
+                    return new() { ["posts"] = new JsonArray(posts.Skip(offset).Take(count).Cast<JsonNode>().ToArray()), ["total"] = posts.Count };
                 default: throw new InvalidOperationException();
             }
         }

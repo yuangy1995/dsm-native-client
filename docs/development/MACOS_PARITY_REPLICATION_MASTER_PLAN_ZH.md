@@ -1,5 +1,5 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-10 -->
+<!-- last-reviewed: 2026-10-16 -->
 
 # macOS 语义基线下的跨端对齐总控
 
@@ -8,9 +8,9 @@
 ## 当前范围
 
 - macOS 是文件、照片、聊天、下载、NAS 管理、桌面云盘与安全行为的参考，固定对齐基线和后续增量须分别记录。
-- Windows 以完整业务语义对齐为目标；2026-09-21 范围已形成实现与云端证据，后续 Photos 管理、File Station 和 Office 等增量按 [Windows 计划](WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)推进。
+- Windows 已按固定 `a521ccb5` 基线完成 W0–W9 本机实施与测试包收口。文件、Photos、Office、Chat、下载、NAS/套件、容器/VMM、工作区任务、通知、录音副本和 Cloud Files 恢复均有实际调用链；完整单元、双语原生及首轮失败修正补验、x64/ARM64 自包含包和源码摘要已完成，尚未提交或发布。真实 NAS、物理设备、辅助功能与危险入口专项保护见 [Windows 计划](WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)；原始失败、精确结果与临时产物清理限制保留在验证历史。
 - iPhone/iPad 按已确认的 [M0–M8](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)实现相同业务范围与原生布局。目前批准的源码范围已接入，包括 NAS/套件管理、容器/VMM、系统后台时间、分享与 Files；完整云端复验及真机另验，不能沿用旧“精选/只读管理”限制描述。
-- Office 在 macOS 使用本机编辑自动回传；移动支持编辑副本后主动回传与 Files 原位编辑，并使用系统授予的后台时间，不保证进程终止后继续。Windows 同类能力仍按其计划开发。
+- Office 在 macOS 使用本机编辑自动回传；移动支持编辑副本后主动回传与 Files 原位编辑，并使用系统授予的后台时间，不保证进程终止后继续。Windows W3 已接六格式系统预览与本机编辑恢复；真实组件/NAS 并发验收前，自动覆盖保持专项保护。
 - Android 不属于这两条实施线。历史 Photos 波次的单独授权不扩张到其他模块；契约变化须评估五端，未获授权时只记录 Android 影响。
 
 ## 基本规则

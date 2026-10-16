@@ -22,8 +22,10 @@ public sealed partial class DsmRepository
             return ServicePreflightFailure(operation, MutationErrorCategory.Validation);
 
         var steps = new List<FileServiceWriteStep>();
-        foreach (var group in FileServiceReadGroups)
+        var order = NasFileServiceSettingsRules.SaveOrder(request.Baseline, request.Desired)!;
+        foreach (var fields in order)
         {
+            var group = FileServiceReadGroups.Single(group => group.AllFields == fields);
             var known = group.Fields.Where(item => request.Desired.AvailableFields.HasFlag(item.Field)).ToArray();
             if (!known.Any(item => !Equals(NasFileServiceSettingsRules.Value(request.Baseline, item.Field),
                     NasFileServiceSettingsRules.Value(request.Desired, item.Field)))) continue;

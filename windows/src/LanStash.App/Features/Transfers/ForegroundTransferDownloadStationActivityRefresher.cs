@@ -8,7 +8,7 @@ internal sealed record DownloadStationActivityRefreshState(
     bool HasSnapshot,
     bool HasFailed,
     int DisplayedTaskCount,
-    int SourceTotal,
+    int? SourceTotal,
     bool IsTruncated);
 
 internal sealed class DownloadStationActivityRefresher : IAsyncDisposable
@@ -218,7 +218,7 @@ internal sealed class DownloadStationActivityRefresher : IAsyncDisposable
             }
             var positions = tasks.Select((task, index) => (task.Id, index)).ToDictionary(pair => pair.Id, pair => pair.index, StringComparer.Ordinal);
             int end;
-            int total;
+            int? total;
             bool hasMore;
             while (true)
             {

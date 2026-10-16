@@ -167,6 +167,15 @@ public sealed record ChatMessageItem(ChatMessage Message)
         ? LocalizationService.Current.Get("ChatBrowserUnknownSender")
         : Message.SenderDisplayName;
     public string Text => Message.Text ?? Message.Poll?.Question ?? string.Empty;
+    public string SearchSummary => LocalizationService.Current.Format("ChatInteractionResult", Sender, SentAtText, Text);
+    public string DetailsText => LocalizationService.Current.Get("ChatMessageDetails");
+    public bool CanViewDetails { get; init; }
+    public Visibility DetailsVisibility => CanViewDetails && Message.EncryptionState == ChatEncryptionState.NotEncrypted ? Visibility.Visible : Visibility.Collapsed;
+    public string EditedText => Message.EditedAt is null ? string.Empty : LocalizationService.Current.Get("ChatMessageEdited");
+    public Visibility EditedVisibility => Message.EditedAt is null ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility RepliesVisibility => Message.ReplyCount is > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public string ReplyCountText => Message.ReplyCount is > 0 and var count
+        ? LocalizationService.Current.Format("ChatReplyCount", count) : string.Empty;
     public bool CanSetReminder { get; init; }
     public Visibility ReminderVisibility => CanSetReminder ? Visibility.Visible : Visibility.Collapsed;
     public string ReminderText => LocalizationService.Current.Get("ChatAdvancedSetReminder");
@@ -189,17 +198,19 @@ public sealed record ChatMessageItem(ChatMessage Message)
     public bool HasAttachments => Message.Attachments.Count > 0;
     public IReadOnlyList<ChatMessageAttachmentItem> Attachments =>
         Message.Attachments
-            .Select(attachment => new ChatMessageAttachmentItem(Message.ConversationId, Id, attachment))
+            .Select(attachment => new ChatMessageAttachmentItem(Message.ConversationId, Id, attachment, Message.ThreadId))
             .ToArray();
 }
 
 public sealed record ChatMessageAttachmentItem(
     string ConversationId,
     string MessageId,
-    ChatAttachment Attachment)
+    ChatAttachment Attachment,
+    string? ThreadId = null)
 {
     public string FileName => Attachment.FileName;
     public bool IsImage => Attachment.Kind == ChatAttachmentKind.Image;
+    public bool IsPlayable => Attachment.Kind is ChatAttachmentKind.Video or ChatAttachmentKind.Voice;
     public bool CanSave => Attachment.SizeBytes is not null;
-    public Visibility PreviewVisibility => IsImage ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility PreviewVisibility => IsImage || IsPlayable ? Visibility.Visible : Visibility.Collapsed;
 }

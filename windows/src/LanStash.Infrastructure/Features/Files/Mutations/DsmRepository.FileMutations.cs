@@ -23,8 +23,11 @@ public sealed partial class DsmRepository
 
     private bool MutationListAvailable => MutationCapability("SYNO.FileStation.List", 2);
 
-    public async Task<FileMutationOutcome> CreateFolderAsync(
-        CreateFolderRequest request, CancellationToken cancellationToken = default)
+    public Task<FileMutationOutcome> CreateFolderAsync(CreateFolderRequest request, CancellationToken cancellationToken = default) =>
+        CreateFolderCoreAsync(request, cancellationToken);
+
+    private async Task<FileMutationOutcome> CreateFolderCoreAsync(CreateFolderRequest request, CancellationToken cancellationToken,
+        Func<FileMutationReview, Task>? checkpoint = null)
     {
         if (request.ProfileId != ProfileId || !ValidMutationDirectory(request.ParentPath) ||
             !ValidMutationItemName(request.Name) || !FileMutationAvailability.CanCreateFolder)
@@ -57,7 +60,7 @@ public sealed partial class DsmRepository
                     _api.CreateFolderMutationAsync(_profile, _session,
                         _capabilities["SYNO.FileStation.CreateFolder"], request.ParentPath,
                         request.Name, cancellationToken), request.ParentPath, targetPath,
-                    oldPath: null, expectedDirectory: true, review: review)
+                    oldPath: null, expectedDirectory: true, review: review, checkpoint: checkpoint)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -159,14 +162,15 @@ public sealed partial class DsmRepository
         string newPath,
         string? oldPath,
         bool expectedDirectory,
-        FileMutationReview review)
+        FileMutationReview review, Func<FileMutationReview, Task>? checkpoint = null)
     {
+        if (checkpoint is not null) await checkpoint(review).ConfigureAwait(false);
         try
         {
             // 调用真实 mutation transport 是不可逆提交边界；进入后任何异常都不得降级成未提交。
             var transport = await submit().ConfigureAwait(false);
             return await FinishMutationAsync(operation, transport, parent, newPath,
-                oldPath, expectedDirectory, review).ConfigureAwait(false);
+                oldPath, expectedDirectory, review, checkpoint).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -191,7 +195,7 @@ public sealed partial class DsmRepository
 
     private async Task<FileMutationOutcome> FinishMutationAsync(string operation,
         FileMutationTransportResult transport, string parent, string newPath,
-        string? oldPath, bool expectedDirectory, FileMutationReview review)
+        string? oldPath, bool expectedDirectory, FileMutationReview review, Func<FileMutationReview, Task>? checkpoint = null)
     {
         if (transport.Status == FileMutationTransportStatus.CancelledBeforeSubmission)
             return MutationOutcome(operation, MutationResultStatus.CancelledBeforeSubmission,
@@ -210,6 +214,17 @@ public sealed partial class DsmRepository
                 transport.ErrorCategory == MutationErrorCategory.Permission
                     ? MutationResultStatus.PermissionDenied : MutationResultStatus.ConfirmedFailure,
                 true, false, transport.ErrorCategory, transport.DiagnosticTag);
+        }
+        review.Accepted = transport.Status == FileMutationTransportStatus.ResponseReceived;
+        if (checkpoint is not null) await checkpoint(review).ConfigureAwait(false);
+        if (!review.Accepted)
+        {
+            StoreFileMutationReview(review);
+            return MutationOutcome(operation,
+                transport.Status == FileMutationTransportStatus.CancellationRequestedAfterSubmission
+                    ? MutationResultStatus.CancellationRequestedAfterSubmission : MutationResultStatus.SubmittedButUnverified,
+                true, true, transport.ErrorCategory ?? MutationErrorCategory.Unknown,
+                "file.mutation.receipt-unavailable");
         }
         try
         {
@@ -240,6 +255,9 @@ public sealed partial class DsmRepository
 
     private async Task<FileMutationOutcome> ReviewFileMutationAsync(FileMutationReview review)
     {
+        if (!review.Accepted)
+            return MutationOutcome(review.Operation, MutationResultStatus.SubmittedButUnverified,
+                true, true, MutationErrorCategory.Unknown, "file.mutation.receipt-unavailable");
         try
         {
             var after = await LoadMutationFolderAsync(review.Parent, CancellationToken.None)
@@ -267,6 +285,7 @@ public sealed partial class DsmRepository
         var state = FileMutationState();
         lock (state.Sync)
         {
+            if (OfficeEditingConflicts(requested.Targets) || CrossNasRecoveryConflicts(requested.Targets) || CrossNasDeletionConflicts(state, requested.Targets)) return default;
             if (state.Reviews.TryGetValue(requested.Key, out var pending))
             {
                 if (state.ActiveTargets.Overlaps(requested.Targets)) return default;
@@ -471,6 +490,7 @@ public sealed partial class DsmRepository
         HashSet<string> Targets)
     {
         public string Key { get; } = $"{Operation}|{OldPath}|{NewPath}";
+        public bool Accepted { get; set; }
     }
 
     private readonly record struct MutationReservation(
@@ -481,6 +501,7 @@ public sealed partial class DsmRepository
     {
         public object Sync { get; } = new();
         public HashSet<string> ActiveTargets { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> CrossNasDeletionTargets { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, FileMutationReview> Reviews { get; } =
             new(StringComparer.Ordinal);
     }

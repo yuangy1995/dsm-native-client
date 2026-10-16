@@ -1,5 +1,5 @@
 <!-- doc-role: archive -->
-<!-- last-reviewed: 2026-10-05 -->
+<!-- last-reviewed: 2026-10-16 -->
 
 # 发布与手工验收历史（2026-H2）
 
@@ -14,7 +14,1198 @@
 
 ## 已归档的结论口径
 
-本节为 2026-08-20 的历史状态；后续 Photos 等专项证据另行追加，不以旧表覆盖新记录。
+### 2026-10-16 Windows W9 全量收口与独立测试包（本机收口完成，未提交工作区）
+
+固定 `main/a521ccb5ecce8a07220c1aee7a4cd606cd594833` 的 macOS 业务基线；实现范围仅 Windows 及对应文档。当前源码完成 W0–W8 本地主流程和独立集成、只读对抗复核，真实系统及高风险增量继续遵循[测试包验收清单](../../quality/WINDOWS_TEST_BUILD_ACCEPTANCE_ZH.md)。最后文案清除普通操作的重复勾选和内部结果复核术语；目录采用、破坏性操作及未知结果保护不因此降低。
+
+当前完整 xUnit 最终复跑 **6598/6598，0 失败、0 跳过，15 秒**。打包首轮出现 1 项旧英文文案断言失败（6597/6598）；更新为当前“未保存、刷新后重试”的完整资源文案，并新增 `LastResult.Submitted == false`、`WasSuccessful == false` 检查，保留 NeedsReview 和禁止再次保存断言后，全量通过（13 秒）。随后窄窗口截图复核发现 Chat 英文会话标题被文字按钮挤住，改为带完整本地化提示及无障碍名称的加号按钮，并增加标题未截断检查；云盘“准备占位内容”改为“准备文件”。第二次打包包含这四个生产文件的改动，完整 xUnit 再次通过（11 秒）；最后再纳入 Office 内容宽度与上传按钮伸展两项修正，最终打包内完整 xUnit 通过（15 秒）。
+
+本机为 Windows 10 x64、build 19045，使用独立 .NET SDK 10.0.402。中文原生全量首轮 `ui-review-20261016-111056` 为 **1936/1957，21 项失败**。其中 18 项来自旧测试同步或交互假设：上传取消把父批次和当前文件当成唯一活动，异常清理又未等待在途文件释放；8 项 ZIP 下载未响应新增方式选择；8 项资料编辑/历史窗口在原生布局完成前查找控件或截图；人物封面只等待固定短延时。测试改为选择完整批次、等待清理、实际操作原生选择窗口，并等待真实布局/图像就绪；保留数量守恒、取消、防重、独占文件句柄、提交来源和控件边界断言，下载选择前另加零读取、零覆盖检查。
+
+另有共享预览、共享维护入口、取消导出三次无新托管异常日志的 `0xC000027B` 退出，当时底层原因尚未确认。新增正式浅色/深色快速预览回归，各连续执行 12 轮来源切换、关闭重开与侧栏布局变化，检查来源、图像与迟到结果。新测试首次编译有一处变量作用域错误，修正后宿主构建成功；随后同一中文宽窗口条件下照片专项 `135107` **29/29**、文件专项 `135529` **24/24** 通过，覆盖首轮全部失败场景。首轮失败及后续结果分别保留，不能把专项通过写成首轮全量零失败。
+
+英文 900 像素窄窗口、侧栏循环的完整矩阵 `ui-review-20261016-141039` 已结束，**1956/1959 通过，3 项失败**：相册解冻（浅色）、JPEG 导出（深色）、幻灯片下一张（深色），均为同一原生退出码。更早的一次英文启动在 182 项通过后脚本中断，未取得完整诊断，作为不完整记录保留；不计为完整矩阵。后续完整重启覆盖全部场景。旁路诊断会改变执行时序，运行后半段明确记录其启用范围，不将它视为未附加诊断的稳定性证明。
+
+为定位退出，新增仅由 `-CaptureNativeFailures` 加载的正式原生诊断器和独立子进程探针。探针分别验证人工 stowed 记录与真实 `RoOriginateErrorW` / `RoFailFastWithErrorContext`；本机真实 FailFast 只交付最终退出事件，因此诊断还保留先前的原始 HRESULT、错误文本、原生栈及合成编码阶段。探针暴露并修正启动时主映像尚未登记，以及误读调试字符串终止符后内容的问题。只读取本次合成宿主，不写内存转储、不更改系统设置；微软公开符号用于本地解析，不进入生产包。
+
+英文专项 `165115` 为 **7/8**，随后 `170047`、`170815` 各单项幻灯片均复现。原生栈解析为 `CBitmapEncoder::SetPixelData → SetWicBitmap → COM 消息等待 → XAML 重入`，末次阶段记录精确停在 `photo-thumbnail-set-pixels`，不是测试截图编码。根因是 `SmokePhotosRepository.ThumbnailAsync` 在 UI 容器回调中生成合成 PNG。改为后台完成合成编码，仍使用同一色块、生产图片解码、来源检查与所有原有断言；未修改生产 Photos 逻辑，也没有增加固定等待掩盖问题。
+
+修正后英文带诊断专项 `171037` **8/8**，覆盖六个中英文原失败场景及两种主题各 12 轮快速预览；此前连续失败的幻灯片又在相同诊断条件下连续 **3 次通过**（`171433`、`171449`、`171504`）。中文原宽窗口专项 `171519` **8/8** 通过，另覆盖 24 轮快速预览。上述结果是合成测试证据，真实 NAS、系统解码器和交互设备仍按验收清单处理。
+
+最终布局与语言切换补验：英文窄窗口 Office/文件 **45/45**（`171658`）、Chat 工作区及往返切语言 **4/4**（`171935`）；中文原宽窗口对应 **45/45**（`171953`）与 **4/4**（`172231`），共 **98 项零失败**。实际截图复核确认会话标题、上传按钮英文和 Office 冲突说明完整显示；新增原生断言检查内容没有横向超出可视区域、标题未截断，以及入口提示和无障碍名称随语言更新。最终原生源码指纹为 `ce75c6fcb2269f64e7755145c8af94ada5787ac9cd6406537084dc0f6f3bdb46`；完整首轮、修正前诊断和修正后专项分别保存各自结果，未用专项代替首轮完整矩阵的真实计数。
+
+两次中文专项仅修改正式 UI 测试，当时 831 个生产源文件及构建定义与首次冻结清单逐项一致。英文全量宿主继续固定使用该版本；后续 Chat 布局与云盘文案改动另行构建、补验和重新打包，不追溯覆盖原测试的源码摘要。交付目录 `validation/` 保留首轮和专项逐项结果、对应源码摘要及此前 296 次分阶段原生记录；旧阶段源码不同，不作为最终源码全量证据。
+
+通过既有 `windows/package.ps1` 生成两个 Release 自包含 ZIP，打包未安装或启动应用。两包均记录源提交及“包含未提交改动”，不是该提交的纯净构建；最终源码清单在交付目录单独提供。包内具备 EXE、资源 PRI、.NET 运行时及 Windows App Runtime，实际 PE 架构分别为 `0x8664` 和 `0xAA64`。摘要与附带 `.sha256` 一致；生产 App 程序集未包含合成宿主类型，ZIP 未包含测试宿主、合成账号配置、凭据或抓包资料。
+
+| 产物目录与版本 | 文件 | 大小（字节） | SHA-256 |
+| --- | --- | ---: | --- |
+| `windows/dist/20261016-114238/` 首次包 | `LanStash-0.1.0-x64.zip` | 97742605 | `C3CA39422BAB673A512E223E20255A1A8591072CD0D88D2CCA2C78EBFEF51FB1` |
+| 同上 | `LanStash-0.1.0-arm64.zip` | 94885311 | `998217C44631145F5BDD61EA4C3FDCF31FC458353E3E5B1359227F21058C44EE` |
+| `windows/dist/20261016-163128/` 中间包 | `LanStash-0.1.0-x64.zip` | 97742407 | `3062AA94015C9ABD388A0F8B9B43BC934DBE29EF530B7548F95386E77305EFF8` |
+| 同上 | `LanStash-0.1.0-arm64.zip` | 94885065 | `22746B92017157A892698FC90E8A03ECBDD5E32DC53F5279ACE0FD755921E1F5` |
+| `windows/dist/20261016-172411/` **最终包** | `LanStash-0.1.0-x64.zip` | 97742305 | `1CA73C4736D1F01D0F439D2EDF72ED2B3F4B1D802273FABC68137FB3B2258231` |
+| 同上 | `LanStash-0.1.0-arm64.zip` | 94885147 | `CB2F763F3D4C10E0C3D0C5E46FC5C543DBF6A89B0B464C2EFE8F9B2436F5C3AB` |
+
+中间包逐项核验架构、EXE、DLL、`resources.pri`、.NET/WinUI 运行时、构建信息与压缩包摘要，x64/ARM64 分别含 523/519 个条目；程序集元数据中没有合成宿主或原生诊断类型。首次人工核验误用 `LanStash.App.pri` 文件名报缺失，依据既有打包脚本改查真实的 `resources.pri` 后两包通过，未改动产物。该中间版本的生产源码指纹为 `a243e1c859afbeb334b8a7a3da00b78a489654c9986b76cb589e06cb1fabd906`，与首次包的差异仅为 Chat 两文件和双语资源两文件。随后截图复核又修正 Office 弹窗内容最小宽度大于可视区域，以及文件上传按钮固定宽度裁切英文的问题；最终包已包含这两项布局修正。
+
+最终两架构构建、压缩与上述内容核验均通过，压缩包仍为 523/519 个条目，确认没有合成宿主类型、诊断器、抓包、测试配置或临时下载的微软符号。包内 `build-info.json` 核对为 Release、自包含、已运行测试、对应架构及正确的基线提交/未提交状态。831 个生产源文件与打包后的清单逐项一致，最终生产源码指纹为 `bcba3a039852802078076e0fc6065093e6d0cb7b285d14241398f198921430cd`；相对首次包仅新增上述六个文件的布局/文案修正。`validation/` 保存源码清单、包核验、逐项测试、诊断探针和重入定位依据；此前分阶段记录明确标记为历史证据。
+
+```powershell
+$env:LANSTASH_NON_INTERACTIVE = '1'
+$env:LANSTASH_TARGET_PLATFORM = 'both'
+$env:LANSTASH_RUN_TESTS = '1'
+$env:LANSTASH_LAUNCH_AFTER = '0'
+$env:LANSTASH_SELF_CONTAINED = '1'
+./windows/package.ps1
+```
+
+本轮实际执行的原生核心命令如下；每条结果必须连同对应源码指纹读取：
+
+```powershell
+./windows/tests/UiSmoke/run.ps1 -Language zh-CN -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States shared-preview,pref-maint-shared-entry,export-cancel,cond-unfreeze,export-jpeg,slide-next,preview-stress -CaptureNativeFailures -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States slide-next -CaptureNativeFailures -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language zh-CN -Scenarios photos -States shared-preview,pref-maint-shared-entry,export-cancel,cond-unfreeze,export-jpeg,slide-next,preview-stress -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios office,files-grouping -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios chat-interactions -States workspaces,workspaces-language -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language zh-CN -WindowWidth 1280 -PaneState auto -Scenarios office,files-grouping -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language zh-CN -WindowWidth 1280 -PaneState auto -Scenarios chat-interactions -States workspaces,workspaces-language -ContinueOnFailure
+./windows/tests/UiSmoke/verify-native-diagnostics.ps1
+```
+
+末次 `check_localization.py`（5052 对 Windows 资源及硬编码）、`validate_contracts.py`（180 个请求与 1 个结果）、`validate_fixtures.py`（29 组与 48 项引用）、`generate_api_reference.py --check` 均通过。文档门禁曾因两处活动文档写入精确测试比例而失败，改为引用本历史后通过；最终 `check_documentation.py` 与 `git diff --check` 均通过。W9 独立集成复核确认最后生产改动只影响布局/文案，Photos 修正只在正式合成测试中；没有更改危险写保护、API、持久格式或其他平台源码。真实 NAS、物理设备与辅助功能继续按 PENDING_USER_VALIDATION 执行。
+
+清理限制：先前批量及精确单目录的临时 UI 产物清理均被自动审批拒绝，返回原因仅为 `blocked by policy`。没有继续改用其他方式绕过；相关临时截图、诊断与中间产物仍留在被 Git 忽略的目录，不进入最终 ZIP，也未暂存、提交或推送。最终包未自动安装或启动，正式签名、发布和真实设备验收不属于本次已完成结果。
+
+### 2026-10-16 Windows W8 桌面生命周期与云盘恢复（未提交工作区）
+
+沿现有 ConnectedWorkspace、传输协调器、通知会话和 Cloud Files v10 收口。保存会话恢复不再强制读取 File Station；注销冻结原账号并立即隔离工作区，连接/凭据迟到结果不能清空另一账号，退出先取消连接再等待本机清理。传输执行器、Chat 页面/草稿、各 NAS 的 Office 读取和云盘恢复任务归属原工作区，切页面、语言或 NAS 不重建任务；真正断开才取消并等待内容保留，最后释放原 HttpClient。
+
+传输通知使用进程内不透明、单次消费的目标标记，绑定原 Repository 和活动编号；过期、替换、断开、退出或关闭通知后不能跳转。Chat 缓存页面刷新双语资源而保留草稿和录音；文本编辑切换语言前仍经过原离页保护。已有随机 M4A 副本接入登录/设置入口，只允许主动导出和明确删除，活动录音排除；实际 Windows 文件身份、句柄与事务保存防止更换对象或覆盖后误删。退出统一处理未发送消息、录音、Office 与在途传输，忙于无法安全终止的写入时保留窗口。
+
+Cloud Files 的同路径映射按 NAS 隔离。初次激活在连接归属建立后开始，后台恢复绑定原工作区取消令牌；注册/连接/启动与断开互斥，暂停和退出后的迟到读取不能重新接管同步根。既有回调及写回清理仍等待完成。目录未知创建的普通刷新不认领结果，单独的“使用现有目录继续同步”要求原记录、映射授权、最新安全父链及目录写权限，只选择后续同步目标。移动/删除的未知结果不能凭路径变化或用户勾选推进；v10 未保存可恢复接受回执，因此丢回执或回读中断后继续保护记录和本机内容，不重复写、不开放下一步或本机清理。不更改日志格式、系统注册方案、NAS 契约或其他端。
+
+独立集成及只读对抗复核覆盖原账号/Repository/页面代次、注销和关机竞争、工作区任务归属、通知失效、录音对象替换、缓存保护、根目录/共享根、目录采用与未知移动/删除。复核中发现的跨 NAS 同路径选择、迟到注册及未知结果认领均修复并增加正式回归；没有把人工勾选当作接受回执。
+
+分阶段实际证据：生命周期/通知/Office/Chat/缓存联合回归 579/579，录音文件测试包含在内；前半中文原生 31/31 与后续专项 15/15、英文 48/48 通过。云盘增量最后的联合回归 306/306、零跳过；新增用例首轮有两处测试编译错误及三处合成夹具假设错误（权限字段位置、禁止关闭未结束映射），修正夹具后通过，没有降低权限或未知结果断言。云盘第一组中文原生 26/26 通过；随后未知移动/删除修正及普通 Chat/远程连接确认精简后的英文整组 123/123 通过。最后一批仅结果提示的双语文案随后由 W9 全量矩阵覆盖，不能把前述整组称为最后文案版本的全部验收。
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~DesktopCloudDrive|FullyQualifiedName~CloudDriveWrite|FullyQualifiedName~ConnectionRecovery'
+./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios cloud-settings,remote-mounts,chat-tools,nas-power-settings,desktop-lifecycle -ContinueOnFailure
+dotnet run --project windows/tests/CloudFilesNativeChecks/CloudFilesNativeChecks.csproj --configuration Release -- --isolated-refresh
+dotnet run --project windows/tests/CloudFilesNativeChecks/CloudFilesNativeChecks.csproj --configuration Release --no-build -- --isolated-recycle
+```
+
+本次隔离 Cloud Files 刷新与回收站两组均退出 0，验证实际占位身份、编辑/改名、删除通知、固定离线、未保存内容、打开句柄、缓存释放和断开保留。只操作本次随机根及合成内容，退出时已注销并清理；没有读取生产映射或真实 NAS。这两组之后只调整上层未知结果推进及原生恢复交互，没有改变其被测系统互操作实现。
+
+代码收口及第一批文案后的生产构建 x64 42.28 秒、ARM64 40.15 秒，均 0 警告/错误。W9 完整 xUnit 首轮 6593/6598，通过部分未冒充全通过；五个失败均为旧源码结构约束，更新为工作区所有权、原连接注销、通知目标及退出等待断言后，6598/6598、零跳过、16 秒通过。请求 180+1、fixture 29/文档引用 48、生成目录、5052 对双语/参数/硬编码、文档与差异门禁通过。最后结果文案及测试包构建另在 W9 记录。
+
+PENDING_USER_VALIDATION：真实 NAS、Explorer 日常程序组合、通知、休眠/外接卷、麦克风/编辑器、物理 ARM64 和系统辅助功能仍未验证。条件、步骤、预期、默认保护项及脱敏反馈统一见[Windows 测试包验收清单](../../quality/WINDOWS_TEST_BUILD_ACCEPTANCE_ZH.md)。W8 本地实现完成，W9 全量双语与两个自包含测试包尚在执行；不据本节宣布正式发布或设备通过。
+
+### 2026-10-16 Windows W7b/c 虚拟机操作与控制台（未提交工作区）
+
+沿既有 VMM Repository、模块互斥、原生页面及弹窗补齐本地主流程。每个资源分区优先使用可用公开 API，缺少对应能力才使用已有内部 Guest/Host/Repo/Network/Image 读取；权限拒绝和请求失败不触发换接口重试。来源随快照进入电源、设置、删除和恢复，内部原生 status 决定状态，不能仅凭 is_online 开放硬件修改。内部说明、CPU、内存、优先级及自动启动缺失时保持空值并禁用该字段，其他已知字段仍可保存，不补写零或关闭。
+
+补单机与批量重启、仅内部能力可用时的高级创建及后续开机，继续复用原任务和配置核查。重启接受不等于重启完成；没有可靠完成证据时保留原目标保护。公开创建的后续设置也保存本次接受事实，丢保存回执即使字段相同也不认领，外部开机不能冒充本次后续开机。设置、电源、网络和删除要求本次接受事实与原身份/目标状态共同成立；删除还要求完整列表。网络改名保留主机、VLAN 和接口拓扑；映像删除冻结全部存储副本，并检查停止虚拟机仍挂载的 ISO。批量重启使用明确枚举映射，不能落入删除分支；全选只纳入有实际操作能力的目标，副本清单按值比较且不会被后续外部数组改动覆盖。
+
+活动页按需读取正文/账号及已知总数的分页，等级和正文筛选只作用于当前页面；离页、关闭和新连接会清除内容并忽略迟到结果，同配置的新 Repository 也不接管旧正文。共用活动解析修正数字时间戳识别，未附时区的 NAS 时间保留其本地时钟。界面移除普通创建、设置、改名、导入和正常电源操作的重复勾选，主按钮仍冻结当前目标并执行预检；删除、强制关机保留具体后果确认。结果使用已完成、结果暂不可用及刷新状态等文案，认证失效优先提示重新连接。网络弹窗和批量窗口适配窄窗，加入实际边界断言。
+
+控制台手动重连重新建立窗口、浏览器隔离目录和会话，绑定原 Repository 与原虚拟机，不随页面当前选择漂移；认证或证书错误禁用直接重连。既有来源、受限资源、WebSocket、Cookie、键鼠与全屏边界保持。独立集成及只读对抗复核检查了接口来源、权限失败、接受归属、完整清单、重启、设置缺失、并发改名、映像副本/占用、正文生命周期及控制台重连。新增内部写与内部能力单独可用时的控制台保持专项默认关闭保护；不设系统/build/套件版本白名单，不增加管理员摘要读取。没有 NAS 契约、其他端源码、持久数据、依赖、应用身份或权限变化。
+
+验证阶段：首轮测试编译有两处构造函数歧义，修正后 941 项中 9 项失败；包括实际创建表单切换状态问题、旧接受/状态契约期望及旧确认结构断言。修复后 943 项通过，后续批量/认证增量的最终容器与 VMM 联合回归为 949/949、零跳过，批量修正期间另有 29/29 聚焦通过。新增原生场景先通过英文 18/18；英文完整组 `ui-review-20261016-090935` 为 213/215，两个失败分别为测试仍查找已移除的普通勾选框，以及只读连接的旧全选假设。已按当前确认/权限语义修正，并保留零写入、原目标和防重断言。最终中文整组 `092606` 为 215/215；最后英文相关场景 `094238` 为 20/20。原英文网络截图发现右侧裁剪，修正后中文整组与英文补验的几何断言通过，已查看中英实际渲染。控制台 WebView 内容使用其独立合成截图检查，没有用空白 XAML 合成区域冒充页面渲染。
+
+最终生产 x64 41.84 秒、ARM64 37.53 秒，均零警告错误。5030 对本地化资源、参数、引用及硬编码检查通过；请求契约 180+1、fixture 29 组及引用 48 项、生成目录、文档和差异检查通过。以下命令中的 `dotnet` 使用既有本机 .NET 10 SDK，Python 使用现有运行时；所有 NAS 响应均为合成测试，未进行真实 NAS 写入。
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Container|FullyQualifiedName~VirtualMachine' --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~VirtualMachinePowerBatchViewModelTests --verbosity minimal
+./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure -Scenarios @('vms','vm-image-import','vm-networks','vm-console','vm-activity','vm-settings','vm-power','vm-power-batch','vm-create','vm-tasks','vm-task-cleanup','vm-delete','vm-image-delete')
+./windows/tests/UiSmoke/run.ps1 -Language zh-CN -WindowWidth 900 -PaneState cycle -ContinueOnFailure -Scenarios @('vms','vm-image-import','vm-networks','vm-console','vm-activity','vm-settings','vm-power','vm-power-batch','vm-create','vm-tasks','vm-task-cleanup','vm-delete','vm-image-delete')
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios @('vm-networks','vm-power-batch','vm-settings','vm-power') -States @('network-form','network-rename-form','network-rename-invalid','network-rename-duplicate','network-rename-run','vmbatch-form','vmbatch-readonly','vmbatch-off-form','vmbatch-reboot','vmbatch-on','vmsettings-missing','vmsettings-save','vmsettings-partial','vmpower-reboot')
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 -p:Platform=x64 --no-restore --verbosity minimal
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 -p:Platform=ARM64 --no-restore --verbosity minimal
+python tools/request-contract/validate_contracts.py
+python tools/contract-validation/validate_fixtures.py
+python tools/codex/generate_api_reference.py --check
+python tools/localization/check_localization.py
+python tools/codex/check_documentation.py
+git diff --check
+```
+
+`PENDING_USER_VALIDATION`：使用真实 NAS 的专用可丢弃虚拟机、网络、ISO/磁盘映像及有相应套件权限的测试账号；新增保护入口只在专项启用的受控测试包中验证。检查公开/内部能力组合、缺失字段、创建及后续设置/开机、关机/强制关机/重启、网络改名原拓扑、全部映像副本及停止虚拟机 ISO 占用。分别制造提交后断网、拒绝、网页同时改名/删除，预期缺回执不认领、不重放、不继续未执行批次；重启只在现有证据范围内表示接受。控制台检查真实键鼠、全屏、断线手动重连、改变页面选择、认证失效和证书变化，预期始终绑定原目标，安全错误不会放行。活动页检查多页、正文、账号、筛选及离页清理。仅回传 DSM/套件版本、权限类别、操作步骤、阶段、条数和脱敏错误类型，不回传凭据、地址、真实名称/路径、正文或原始响应。物理 ARM64、Narrator、触控、缩放及真实 noVNC/RFB 仍未验证。W7 本地主流程完成；W8 与 W9 继续，不代表发布或完整项目交付完成。
+
+### 2026-10-16 Windows W8 既有云盘与桌面基线（未提交工作区）
+
+W8 开始修改生命周期前，对当前云盘身份、写入/移动/删除协调、固定离线、缓存、通知及连接边界做独立源码复核。430 项现有桌面云盘/前台传输/连接尝试/连接恢复/证书/QuickConnect/可再生缓存回归全部通过、零跳过。测试使用当前 W7 完成实现后编译的 Release 测试程序集；这些结果只覆盖所列既有链路，不代替随后 W8 新增生命周期测试。
+
+本机执行 `CloudFilesNativeChecks` 的隔离刷新和隔离回收站两组，均退出 0。实际检查占位身份、只读与完整内容、全共享内编辑、外部改名、文件/目录回收站回调、固定离线及未保存内容保护、打开中的缓存拒绝释放、同长度编辑、大小写改名、重启读取基线、较新内容不被旧结果认领，以及断开后保留副本。回收站场景的文件与目录请求实际到达提供方并按保护规则拒绝，目录完成标记阻止重复枚举。两个程序仅创建本次随机临时同步根和合成内容，退出时已注销并清理；另复查临时目录没有残留 `lanstash-cf-check-*`。未读取真实 NAS 或生产映射，没有把这两组合成检查称为真实设备完整验收。
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --no-build --filter 'FullyQualifiedName~DesktopCloudDrive|FullyQualifiedName~ForegroundTransfer|FullyQualifiedName~ConnectionAttempt|FullyQualifiedName~ConnectionRecovery|FullyQualifiedName~Certificate|FullyQualifiedName~QuickConnect|FullyQualifiedName~RegenerableCache' --verbosity minimal
+dotnet run --project windows/tests/CloudFilesNativeChecks/CloudFilesNativeChecks.csproj --configuration Release -- --isolated-refresh
+dotnet run --project windows/tests/CloudFilesNativeChecks/CloudFilesNativeChecks.csproj --configuration Release --no-build -- --isolated-recycle
+```
+
+W8 尚须修正已列账本中的会话恢复、退出竞争、传输所有者、语言切换及录音副本入口。真实 NAS、日常 Explorer、系统通知、休眠、外接卷和物理 ARM64 仍未验证；不能依据本节宣布 W8 完成。
+
+### 2026-10-16 Windows W7a 容器读取与操作恢复（未提交工作区）
+
+沿既有 Container Manager Repository、五个资源分区及原生弹窗完成本地闭环。Registry.search 固定 v1；映像拉取遇临时查询失败继续查询原任务，只有原 pull_status 的明确 1202 才形成 Docker 失败终态，后续映像清单同码不冒充任务失败。无任务回执不猜测或重发，认证/证书变化停止自动查询。生命周期、映像删除及网络创建均要求本次接受事实，再按原身份/运行状态/完整清单确认；重启继续比较启动时间。
+
+网络删除按官方单对象 remove 逐项提交，只有原生空 failed 数组表示接受；非空 failed 明确失败，缺失/畸形/丢回执保持未知并停止后项。原生窗口保留每项目标及未提交/已发送/接受/失败/删除状态，刷新不续批。普通套件账号只按网络接口能力和实际读取判断，不再额外要求系统管理员摘要。原拓扑、实时占用、互斥和重复提交保护保持。活动页按需读取完整正文/账号及分页，级别/全文本地筛选，离页和换连接清除，未附时区的 NAS 时间不套用 Windows 时区。映像大小/使用状态与项目容器数补齐，缺失保持未知；网络搜索不改变概览总数，展示元数据不参与删除身份或重试签名，删除仍读取当前完整占用。
+
+独立集成与只读对抗复核覆盖请求版本/编码、接受归属、标签与底层映像 ID、停止容器占用、完整清单、网络单项副作用、原连接所有者、日志正文生命周期及原生确认。最终容器 xUnit 331/331、零跳过；资源增量首次 330/331，发现合成原生 int 未进入 long 解析，补正并通过全部回归。英文基础整组 132/132，资源增量及相关页面 20/20，最终活动/资源专项 19/19；最终中文整组 140/140。早期英文筛选输入被状态刷新覆盖已修正；中文首组在筛选空状态断言失败，日志确认是模型变化后界面刷新排队，改为 UI 线程直接刷新后中文全组和英文专项通过。未把失败进程退出计为通过或系统环境故障。
+
+最终界面修正后的生产 x64 39.57 秒、ARM64 30.14 秒，均零警告错误；已查看中英实际 XAML 渲染的活动、映像、项目、筛选空与逐项删除结果。5023 对双语、参数、引用及硬编码检查，请求契约 180+1、fixture 29 组/文档引用 48 项、生成目录、文档与差异检查通过。这些是 W7a 完成时的本机证据，不代表随后 VMM 增量已经验证，也不代表真实 NAS 行为或正式发布。
+
+实际命令（使用现有本机 .NET 10 SDK 与 Python 运行时）：
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~Container --verbosity minimal
+./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios @('containers','container-activity','container-operations','container-image-pull','container-image-delete','container-network-create','container-network-delete','container-registry','container-networks')
+./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios @('containers','container-resources','container-networks')
+./windows/tests/UiSmoke/run.ps1 -Language zh-CN -WindowWidth 900 -PaneState cycle -Scenarios @('containers','container-activity','container-resources','container-operations','container-image-pull','container-image-delete','container-network-create','container-network-delete','container-registry','container-networks')
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios @('container-activity','container-resources')
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 -p:Platform=x64 --no-restore --verbosity minimal
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 -p:Platform=ARM64 --no-restore --verbosity minimal
+python tools/request-contract/validate_contracts.py
+python tools/contract-validation/validate_fixtures.py
+python tools/codex/generate_api_reference.py --check
+python tools/localization/check_localization.py
+python tools/codex/check_documentation.py
+git diff --check
+```
+
+`PENDING_USER_VALIDATION`：在真实 NAS 的专用容器/网络/映像测试资源与具备对应套件权限的账号中，检查完整读取、正文/搜索、无使用和已使用标签、停止容器占用、拉取临时断网后继续原任务，以及生命周期/单项网络创建删除的实际结果。对删除批次制造中途权限拒绝或断网，预期保留已完成项并停止后项；丢回执即使外部状态变化也不自动认领或重发。断开/换账号后旧活动正文不再显示。只回传 DSM/套件版本、权限类别、动作、预期/实际状态与脱敏步骤，不回传日志正文、名称、路径、主机或凭据。未增加真实版本行为证据；无 NAS 契约、其他端、持久数据、依赖或权限变化。W7a 本地主流程完成，继续 VMM 与 W8–W9。
+
+### 2026-10-16 Windows W6a 系统日志正文与分页（未提交工作区）
+
+沿原 NAS 页面和连接 Repository 增量接入系统日志窗口，使用已记录的 `SYNO.Core.SyslogClient.Log.list` v1、offset/limit；FORM/JSON 业务数字编码均通过真实 HTTP 合成测试，不额外读取管理员身份。系统摘要优先使用同一系统日志解析，仅保留原有时间/来源/级别投影；仅有 LogCenter 能力时保留既有摘要读取。没有第二套会话或日志持久化。
+
+窗口支持每页 50/100/200、本页等级及正文/来源/账号搜索、完整纯文本正文与翻页；缺失总数保持未知，满页继续读取，空页可返回上一页。失败保留原页和页码，重试使用原失败偏移及页大小。畸形根、正文、行数和 total 返回错误；可选计数无效时保持未知。关闭、离页、断开及同配置新 Repository 绑定会清除正文和搜索，迟到成功/失败均不更新窗口。领域及显示行的默认字符串表示不包含正文或账号；没有导出、清空或后台采集入口。
+
+独立集成及只读对抗复核检查了严格根解析、固定版本/同源会话、能力失败独立降级、已读摘要与正文生命周期、换连接和关闭后迟到结果。当前 69/69 日志/NAS 详情/证书上下文联合回归通过；英文原生 ui-review-20261016-065010 与中文 065203 各 14/14，覆盖正常浅深色、加载、空、错误、筛选空、长正文、分页/失败重试、未知总数、页大小、断开和重绑。已查看实际 XAML 渲染，正文中的 HTML 字样按普通文字显示。最终生产 x64 41.36 秒、ARM64 45.05 秒，均零警告错误。4993 对双语资源、参数、引用和硬编码检查通过；请求契约 180+1、fixture 29 组/引用 48 项及生成目录检查通过。
+
+实际命令：
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~NasLogs|FullyQualifiedName~NasDetails|FullyQualifiedName~CertificateConnectionContext' --verbosity minimal
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-logs -Language en-US -WindowWidth 900 -PaneState cycle
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios nas-logs -Language zh-CN -WindowWidth 900 -PaneState cycle
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 -p:Platform=x64 --no-restore --verbosity minimal
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 -p:Platform=ARM64 --no-restore --verbosity minimal
+python tools/localization/check_localization.py
+python tools/request-contract/validate_contracts.py
+python tools/contract-validation/validate_fixtures.py
+python tools/codex/generate_api_reference.py --check
+git diff --check
+```
+
+`PENDING_USER_VALIDATION`：具备日志读取权限的真实 NAS 账号，在系统日志中读取多页、切换大小、检查长正文和本页筛选，断网翻页后恢复连接并重试，再切换账号/断开/关闭窗口；也检查日志轮转后数量减少。预期原页保留、重试原目标、未知总数不误报零、关闭后不保留正文，不产生 NAS 写入。只回传版本、权限类别、条数和脱敏失败步骤；不回传正文、账号、路径、主机或凭据。当前未进行真实日志读取，既有环境证据等级不提升；Windows C# 接口为兼容增量，无 NAS 契约、其他端源码、持久化、权限或依赖变化。W6 本地主流程完成，继续 W7–W9。
+
+### 2026-10-16 Windows W6a/b 性能、空间分析与既有设置复核（未提交工作区）
+
+复核固定 macOS 基线后，在现有 NAS 页面新增实时性能入口：固定 Utilization.get v1、resource=all/type=current，不附加管理员摘要读取；处理器分项、内存/交换、网络收发、硬盘/卷读写、磁盘使用率及 NFS 操作数按原单位解析，缺失保持未知，不以零代替。原生指标选择与趋势图每两秒读取，最多保留当前窗口的 120 次记录，重复时间不追加，设备时钟回退重建当前历史；暂停/手动刷新/错误重试与窗口关闭取消有明确行为，失败保留上一份结果，跨连接迟到采样不进入当前窗口。没有 NAS 历史查询或新持久记录。
+
+硬件读取使用 cool_fan/fan_type 支持集和五项 support_* 蜂鸣标记；明确不支持的字段不出现在表单，缺省仍沿已有契约兼容。支持集被纳入草稿复制和写前原值复查，不能通过请求更改只读元数据。文件服务按每个中间配置的 SMB/Time Machine 和在用端口依赖排序：关闭先停用 Time Machine，启用先开启 SMB；端口移动先释放旧占用，直接交换两个在用端口在表单和网络前均拒绝，要求先停用其中一项。没有新请求、隐式关停或额外写步骤。
+
+沿现有有上限的普通/深入空间分析增量补共享文件夹/所有者占用、音频/无扩展名类别和最近访问列表。未知大小/无效路径/重复行不再静默忽略后声称完整，深入遍历只接受原目录直接子项；所有者只用于当前显示，不写入日志或恢复存储。原有扫描范围、取消保留上一结果、大小/内容摘要重复候选、完整性提示继续保留；超过 50 行的已生成分组不再被最后的页面截断隐藏。界面明确本次范围和逻辑大小不代表可释放空间；没有新增全库清理、自动删除、报告配置或外接存储弹出。修复 NAS 工具栏裁剪，移除已不符合管理入口的常驻只读声明。
+
+已对照系统/存储/SMART、进程、账号群组、计划任务、连接、终端/代理、网卡、安全、区域、DDNS、远程访问和硬件的现有专用读取、权限、确认、防重、未知只读与页面生命周期。现有绝对设置和 DDNS/账号等回读语义按各自既定契约保留，没有把套件/VMM 的接受回执规则未经评估泛化到所有操作。复核另外发现日志摘要缺正文/翻页，已在活动账本明确为下一实现片；本节不声称 W6a 全部完成。
+
+验证阶段：新性能/硬件组首轮编译遗漏本地化访问属性，补齐后 88/88；文件服务排序加入后 NAS/存储/连接/证书联合 1078/1078。中文性能/硬件原生首轮 26/28，两个失败明确定位硬件草稿复制未保留支持集，另补宿主该场景写权限；草稿复制专项 1/1 通过，随后英文性能/硬件/文件服务整组 66/66。空间分析组首轮 42/43，唯一失败为旧文案断言，更新为当前可见文字后 43/43；最终工具栏源码契约 7/7。没有删除测试、放宽实际安全断言或把真实环境缺失转为跳过。
+
+原生阶段：英文整组 ui-review-20261016-062440 为 66/66；中文空间分析/硬件支持/端口交换 ui-review-20261016-063150 为 14/14；英文空间分析 ui-review-20261016-063345 为 10/10；最终工具栏/正文排版与性能英文补验 063624 为 5/5，中文 063754 为 5/5。已查看实际 XAML 渲染。最终生产 x64 41.68 秒、ARM64 34.00 秒，均零警告错误；4971 对双语资源/参数/引用/硬编码和 diff 检查通过。上述分阶段用例有重叠，不相加冒充一次全量运行。
+
+实际命令：
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~NasPerformance|FullyQualifiedName~NasHardware' --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Nas|FullyQualifiedName~WindowsProtectedTaskStore|FullyQualifiedName~CertificateTrustApp|FullyQualifiedName~Connection' --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~EditorCopiesAndPreservesSupportedModes' --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~NasDetails' --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~NasDetailsPageSourceContract' --verbosity minimal
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-performance,nas-hardware-settings -Language zh-CN -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-performance,nas-hardware-settings,nas-service-settings -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-analysis,nas-hardware-settings,nas-service-settings -States content,loading,empty,error,unavailable,partial,bottom,deep,cancel,hardware-supported,file-swap-ports -Language zh-CN -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios nas-analysis -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-analysis,nas-performance -States content,bottom -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios nas-analysis,nas-performance -States content,bottom -Language zh-CN -WindowWidth 900 -PaneState cycle -ContinueOnFailure
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 -p:Platform=x64 --no-restore --verbosity minimal
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 -p:Platform=ARM64 --no-restore --verbosity minimal
+python tools/localization/check_localization.py
+git -c core.safecrlf=false diff --check
+```
+
+PENDING_USER_VALIDATION：管理员和普通账号、支持不同风扇/提示音/UPS 的可维护 NAS；读取性能并暂停/刷新/切换 NAS，验证未知指标不补零；在包含未知大小/所有者/访问时间、子目录与重复内容的可丢弃共享上运行/取消分析，预期统计范围明确、失败保留上一结果、不会把逻辑字节称为可释放空间。专用服务环境验证 SMB/Time Machine 开关与端口移动，预期中间配置仍合法，直接交换被拒绝；核对硬件只列设备支持选项，写前支持变化拒绝。其余既有 NAS 设置和 SMART/账号/任务/连接实际副作用须在可恢复目标与相应权限下按既有验收步骤检查，未执行不得视为通过。只回传版本/权限/支持类别、步骤、阶段、计数与脱敏错误；不回传主机、账号、文件名、路径、响应或日志正文。影响为真实设备兼容、服务中断、Narrator/触控/高 DPI 和实际数据范围。其他平台、NAS 契约、持久格式、权限、最低版本和依赖均未变。
+
+### 2026-10-16 Windows W6c 套件中心（未提交工作区）
+
+在原套件管理入口与 Repository partial 中补齐已安装/更新/全部/测试/社区目录、搜索分类、详情、依赖准备/卷选择、SPK、原生安装选项/许可、进度取消及设置/来源。保留原安装身份与完整目录，支持对象形式 available_operation 和无 data 的预检成功；开始前重读角色、对象与完整计划。每个依赖只发一次，准备取消忽略迟到结果；已提交安装由原连接后台任务跟踪，关闭窗口不终止，断开原连接后不继续后续依赖。新连接及冷恢复只读，未知不能改名或重开窗口绕过。
+
+NasManagement-v1 追加最小套件类型字段，旧硬件记录仍可读；仅存账号/目标/版本摘要、提交与接受事实、分项阶段及稳定编号。任务编号、下载地址、暂存路径、表单/密码和许可仅保留于原连接内存。写前保存失败零请求，回执保存失败保留未知；损坏记录关闭写入。接受回执、原身份、目标版本及完整读回共同支持完成，相同版本的 SPK 无明确完成回执不凭相同版本追认。设置按实际字段和版本读取，单卷缺省不补值；来源替换须新记录存在且原记录消失，HTTP 来源明确风险。安装、卸载、启用自动更新与信任新来源专项开关默认关闭；付费、首次测试协议、脚本/自定义向导和签名失败使用不携带凭据的 DSM 网页入口。没有其他平台、NAS 契约、权限、依赖或应用身份变化。
+
+独立集成与只读对抗复核覆盖权限撤销、完整清单/坏行、依赖循环/版本/卷、能力缺失先拒绝、SPK 固定上传名和证书上下文、七类原生字段、许可与自定义向导拒绝、每步保存失败/断网、取消下载与清理只发一次、冷启动、原连接结束及跨账号迟到结果。联合测试初次 1047/1048，唯一失败为证书源码清单未包含新上传文件；实际路径已设置原连接证书上下文。更新清单并新增真实请求上下文回归后 1049/1049、零跳过；随后原连接后台跟踪专项 1/1 通过。分阶段测试存在重叠，不相加冒充同一完整运行。
+
+中文原生整组 43/43（ui-review-20261016-055447），英文整组 43/43（055917）；中文目录/准备/设置/来源及启用补验 7/7（060347）。后续表单错误提示保持与滚动修正：英文三项 3/3（060452），中文三项 3/3（060637），最终可视区域断言英文 1/1（060806）、中文 1/1（060907）。已查看实际 XAML 渲染，错误提示跨两秒轮询保持且完整可见。最终生产 x64 40.64 秒、ARM64 32.42 秒，均零警告错误。4933 对双语资源/参数/引用/硬编码、180 请求样本/1 写结果、29 fixture 组/48 私有引用、API 生成目录、文档与 diff 检查通过。
+
+实际命令：
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Nas|FullyQualifiedName~WindowsProtectedTaskStore|FullyQualifiedName~CertificateTrustApp|FullyQualifiedName~Connection' --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~OriginalConnectionTracksSubmittedInstallationWithoutPagePolling' --verbosity minimal
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-package-settings -Language zh-CN
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-package-settings -Language en-US -WindowWidth 900 -PaneState cycle
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios nas-package-settings -States pkg-center-content,pkg-center-prepare,pkg-center-options,pkg-center-settings,pkg-center-add-source,pkg-start -Language zh-CN -WindowWidth 900 -PaneState cycle
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-package-settings -States pkg-center-options,pkg-center-configure,pkg-center-source-invalid -Language en-US -WindowWidth 900 -PaneState cycle
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios nas-package-settings -States pkg-center-options,pkg-center-configure,pkg-center-source-invalid -Language zh-CN -WindowWidth 900 -PaneState cycle
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-package-settings -States pkg-center-options -Language en-US -WindowWidth 900 -PaneState cycle
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios nas-package-settings -States pkg-center-options -Language zh-CN -WindowWidth 900 -PaneState cycle
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 -p:Platform=x64 --no-restore --verbosity minimal
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 -p:Platform=ARM64 --no-restore --verbosity minimal
+```
+
+`PENDING_USER_VALIDATION`：专用可恢复 NAS、管理员/普通套件账号、可丢弃官方与社区套件、可信 SPK 和多卷环境。先验证目录/权限/设置读取；专项测试构建开放对应开关后，检查更新/依赖/卷/许可、慢下载取消、SPK 原生向导、窗口关闭继续、断网/重连/重启未知只读、通知/自动更新与来源编辑。预期无权限零写、不重复安装、只完成原目标、签名/复杂向导交由 DSM，未知不自动重发；不要在生产 NAS 测试卸载或不可信来源。仅回传 DSM/套件版本、权限类别、步骤、阶段与脱敏错误，不提供路径、地址、账号、表单、密码、响应或恢复文件。影响为真实安装副作用、设置/来源兼容、系统选择器与 Narrator/触控；本机合成结果不提升设备证据等级。W6a/b 其余能力复核及 W7–W9 继续。
+
+### 2026-10-16 Windows W6 内存压缩与电源计划（未提交工作区）
+
+沿已记录内部契约修复 ZRAM 的 enable_zram 主字段，保留严格布尔别名冲突检查；NeedReboot 独立读取，缺失容量和算法不显示空行。电源计划读取 poweron_tasks/poweroff_tasks 完整双数组、200 条上限、数字星期与 min，NAS 本地时分和时区不按电脑换算。旧摘要仍可读但不可覆盖；缺数组、截断、非法或重叠规则、未知状态均不允许整体保存。WinUI 提供空列表添加、编辑/启停/移除/还原草稿，保存前再次比较语义原值和时区，忽略临时 ID、行序与星期顺序；停用计划也不能重叠。
+
+ZRAM 保存包含独立开关与重启生效标记，不发送重启/关机。每一步复查当前管理权限与配置，已有重启标记不省略本次标记；第一步已确认而第二步未提交/明确拒绝时，可明确选择“设为重启后生效”。未知只读，不用相同当前值补造接受回执，不自动重发。电源计划仅发一次整体 save，两个数组同时传入；精确目标、完整清单、原时区和本次接受事实共同决定成功。默认 AllowsPowerScheduleChanges=false，定时关机的专项入口在受控 NAS 验收前保持关闭，本机草稿可用；无精确 DSM 版本白名单。
+
+新增 NasManagement-v1 最小用户保护记录，生产 DI 复用 WindowsProtectedTaskStore。只保存账号/目标/请求摘要、编号、类型和分步骤提交/接受事实，不保存配置正文、时分星期、地址、账号明文、口令或会话。原 QuickConnect 配置固定归属；改连接路径不解除防重，其他账号不可读旧记录。写前存储失败零请求，接受保存失败保持未知并停止后续步骤；损坏记录关闭写入且保留。首次创建，无登录/云盘 v10 迁移；旧包不接管新流程，回退前结束操作或保留记录，再升级先只读恢复。其他四端、NAS 契约、权限、身份与依赖不变。
+
+独立集成与只读对抗复核覆盖固定版本/参数、空成功信封、双数组清空、200 条、字段类型、禁用重叠、原值/时区漂移、每步权限、同账号并发、账号与路由隔离、写前及回执存储失败、取消时回执归属、冷恢复和页面关闭迟到结果。首轮测试编译被 xUnit2031 规则拒绝，改用带谓词的 Assert.Single；下一轮 66/67，唯一失败为新取消样本错误期待在回执丢失时补做标记。修正为必须未知且 Accepted=false，并另加已接受后取消回读的独立恢复用例，69/69 通过。最终 NAS/受保护存储/连接/证书联合回归 989/989、零跳过。中文原生首轮 37/37；后续文案/换行与英文窄窗口补验和生产构建结果继续记录于本节。
+
+中文原生首轮位于 ui-review-20261016-045924（37/37）；隐藏重复状态、风险说明换行和草稿空状态文案后，英文窄窗口与导航栏切换整组 ui-review-20261016-050248（37/37）通过，中文最终相关补验 ui-review-20261016-050559（5/5）通过，已查看两种语言的实际 XAML 渲染。最终生产 x64 39.99 秒、ARM64 41.66 秒，均零警告错误。4834 对双语资源/参数/硬编码、180 请求样本/1 写结果、29 fixture 组/48 私有引用、API 目录、文档和 diff 检查通过；没有运行真实 NAS、硬件电源操作或发布测试包。
+
+实际命令：
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~NasHardwareEditingFlow|FullyQualifiedName~NasPowerSchedule|FullyQualifiedName~NasZram|FullyQualifiedName~WindowsProtectedTaskStore' --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Nas|FullyQualifiedName~WindowsProtectedTaskStore|FullyQualifiedName~CertificateTrustApp|FullyQualifiedName~Connection' --verbosity minimal
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-zram,nas-power-schedule -Language zh-CN
+./windows/tests/UiSmoke/run.ps1 -Scenarios nas-zram,nas-power-schedule -Language en-US -WindowWidth 900 -PaneState cycle
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios nas-zram,nas-power-schedule -States zram-edit,zram-current,powsched-edit-form,powsched-save,powsched-empty -Language zh-CN
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 -p:Platform=x64 --no-restore --verbosity minimal
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 -p:Platform=ARM64 --no-restore --verbosity minimal
+```
+
+`PENDING_USER_VALIDATION`：在可维护的专用 NAS、管理员及权限受限账号下测试 ZRAM 开关保存、需要重启提示、断线重连和只补标记；预期保存本身不重启，未知不会重发。电源计划需先在专项授权的测试构建开放保存，再创建停用计划并在 DSM 比对时分/星期，编辑、清空及断线恢复；真实自动开关机单独安排无任务的维护时段，预期无重复保存、无被覆盖的新计划。回传仅版本、脱敏步骤/错误与发生阶段，不含地址、账号、路径、会话或原始响应。真实硬件、夏令时、UPS/休眠、无自动开机支持及 Narrator/触控效果均未验证。本片未向真实 NAS 写入，不代表 W6 全部完成；套件中心和已有 NAS/存储管理复核继续。
+
+### 2026-10-16 Windows W5 Download Station（未提交工作区）
+
+W5 沿既有 Domain/Infrastructure/Application/App 四层、公开 Download Station 契约和固定 macOS 基线增量实现。完整任务分页不再硬截断，缺省总量不会补零；详情读取唯一任务、文件、Tracker 源站与 Peer 信息，原名称和合法目录不修剪。列表提供本机筛选/排序与加载更多，筛选和排序针对已加载任务。RSS 按站点读取完整目录与条目，严格区分 site/sites、数字/布尔字段和十进制字节字符串；条目按摘要去重而分页使用原始数量，选择 RSS/BT 来源均进入显式创建表单。
+
+链接固定 Task v3，任务文件按目录使用 v1/v2。实际文件先冻结再取内容摘要；改名、改目录或密码不解除同源未知保护。空成功回执只表示接受请求，无编号时不认领相似任务。公开错误的解释独立于 File Station：402 为目录拒绝、405 为无效操作、407 为设置位置失败，未知错误保持防重。暂停/继续、移除与 Task.edit v2 共用逐项队列；编辑只确认保存位置字段，不推断文件搬迁。移除必须有本次唯一匹配的接受回执及完整列表消失，丢回执后消失仍未知，界面不宣称已删除、移动或保留文件。单项确认固定原任务与连接，断开原页面时关闭。
+
+设置只编辑实际存在字段；is_manager 必须是明确布尔值，每个分区前重读权限和改变字段的原值，其他字段变化不造成整份覆盖。HTTP/FTP 原值须同时存在且一致，修改时成对发送；普通目录浏览不代替设置权限，也不附加 File Station 授权要求。常规和计划分区分别保留成功、拒绝、未知与未执行状态，未知只读，未执行部分明确继续或取消。权限未知只显示暂时只读，不误报为账号被拒绝。
+
+新增独立 DownloadActions-v1 当前 Windows 用户加密记录，复用 WindowsProtectedTaskStore 的原子写、进程独占和损坏保留。仅存账号/来源/对象摘要、稳定编号、阶段/回执以及必要的设置差量与位置目标；不存 URI、任务名称、文件正文、解压密码或会话。原 QuickConnect 配置固定账号归属，连接路径变化不解除保护。写前保存失败零提交，接受回执保存失败保留未知，未知项不能取消以解锁重发；已完成目标不被同批次其他未知项永久冻结。首次创建新目录，不迁移登录或云盘 v10；回退前处理未完成记录，旧包不得接管新流程，升级后先只读恢复。没有 NAS 契约、应用权限、身份、最低系统版本或依赖变化，Apple/Android/契约源码未修改。
+
+实现完成后独立进行集成与只读对抗复核，覆盖跨动作并发、原身份/保存位置、权限撤销、接收/回读阶段断网、缺失/重复/错编号回执、未知错误、存储损坏/写失败、重新连接/跨账号迟到结果、同文件改名换目录、批次取消与明确继续，以及单项确认换连接。复核发现并修正了旧移除凭任务消失判成功、任务文件空格目录被传输层省略、下载错误码沿用其他套件解释、设置缺失值回写、确认框读取当前选中项，以及稀疏设置在窄弹窗中裁剪的问题。结束并移出未完成文件的专项开关默认关闭；合成测试显式开启，生产入口保持关闭。
+
+本轮初次生产 x64 构建成功。首轮测试编译因新用例使用目标类型省略语法，与既有不同模块重载冲突，改为显式请求类型。随后 340 项中 308 通过、32 失败：包含旧全量设置/缺失字段拒绝/无回执移除成功的过期样本和真实的取消状态/操作标识兼容问题；更新有契约依据的样本并修复实现。第二轮 338/340 暴露分页数字接受字符串，修复为严格整数后 340/340。增加恢复模型、并发和传输边界用例后，353、358 项分阶段通过；联合存储/证书/连接回归随后 449、450 项通过。原生宿主首轮遗漏新增正式测试文件的条件编译清单，导致编译失败；补齐后中英文整组分别 68/68，布局/位置编辑中文补验 6/6、英文补验 5/5，权限未知中文补验 1/1。单项移除确认增量的源码检查先出现 451/452，原因是静态清单仍要求旧的当前选择入口；改为检查冻结目标/原仓储及关闭释放后，最终联合 452/452、零跳过。最后单项确认/断开/权限未知中英文各 3/3，最终生产 x64 47.21 秒、ARM64 47.72 秒，均零警告错误。各阶段样本有重叠，不相加冒充同一轮完整运行。
+
+实际命令（SDK 10.0.402，环境变量同 W3）：
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Download' --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Download|FullyQualifiedName~WindowsProtectedTaskStore|FullyQualifiedName~CertificateTrustApp|FullyQualifiedName~Connection' --verbosity minimal
+./windows/tests/UiSmoke/run.ps1 -Scenarios downloads,download-settings,download-batch,download-file-options,download-read-actions -Language zh-CN -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -Scenarios downloads,download-settings,download-batch,download-file-options,download-read-actions -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -Scenarios download-read-actions,download-settings,download-batch -States batch-edit,details-ready,settings-missing -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -Scenarios download-read-actions,download-settings,download-batch -States batch-edit,details-ready,settings-missing,recovery-error -Language zh-CN -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -Scenarios download-settings -States settings-permission-unavailable -Language zh-CN -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -Scenarios downloads,download-settings -States delete-confirm,delete-disconnect,settings-permission-unavailable -Language zh-CN -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios downloads,download-settings -States delete-confirm,delete-disconnect,settings-permission-unavailable -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 -p:Platform=x64 --no-restore --verbosity minimal
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 -p:Platform=ARM64 --no-restore --verbosity minimal
+python tools/request-contract/validate_contracts.py
+python tools/contract-validation/validate_fixtures.py
+python tools/codex/generate_api_reference.py --check
+python tools/localization/check_localization.py
+python tools/codex/check_documentation.py
+git -c core.safecrlf=false diff --check
+```
+
+请求 fixture 180/写结果 1、fixture 29 组/私有引用 48 项、生成目录一致性与文档/diff 检查通过。初次本地化检查发现拼接资源键不能被静态验证，改为显式枚举映射，最终 4798 对双语资源/参数/引用/硬编码检查通过。已检查浅深色详情、稀疏设置、恢复记录及英文 900 宽界面；最后确认框和关闭生命周期均补验。正式测试仅使用合成宿主和注入 HTTP 响应，没有访问 NAS、下载互联网条目、导入真实任务文件或提交真实写操作。当前为 IMPLEMENTED / AUTOMATED / BUILD_VERIFIED，不是设备验证或发布批准。
+
+`PENDING_USER_VALIDATION`：
+
+- 专用 Download Station 测试账号与至少两页任务：读取列表/详情、筛选排序/加载更多、RSS 站点与条目、BT 搜索，拒绝管理信息读取。预期普通任务读取独立可用，缺失值显示不可用，不拼接下载内容为可写路径；回传 DSM/套件完整版本、架构、操作类别和脱敏错误类别，不回传地址、账号、URI、任务名或真实路径。影响为官方读取的真实兼容性。
+- 可丢弃下载来源与任务文件：分别用链接、任务文件、RSS/BT 表单添加，取消表单后零写；确认原目录/密码的空格保留。在提交/回读阶段断网，重启后更改同文件名/目录再尝试。预期接受、任务状态和下载完成分别表达，未知不重发，其他来源不受阻。反馈阶段、计数与状态，不回传来源或密码；影响为创建接受及持久恢复。
+- 可丢弃暂停/继续/移除/位置编辑任务：批量中间断网、由其他客户端改变对象、撤销权限、重启后只刷新，再明确继续或取消剩余项。预期逐项结果保留，同目标跨动作受保护，丢移除回执后任务消失仍未知，位置更新不证明文件搬迁。反馈动作、阶段、计数和错误类别；影响为普通控制/移除/编辑。结束并移出未完成文件仍关闭，只有专用可丢弃环境和专项开关验证后才评估开放，不能以本机合成通过放开。
+- 管理员及普通账号设置：测试缺失字段、HTTP/FTP 不一致、v1 默认目录不可编辑、计划不可读、保存前撤销管理员权限及分区间断网。预期只发用户差量，失权不提交，未知只查询，未执行分区须明确继续。反馈字段类别、步骤和状态，不提供配置正文；影响为设置保存与恢复。
+- x64/ARM64 真机、文件选择器、Narrator、键盘/触控与高 DPI/文字缩放：检查来源表单、详情滚动、批量位置选择、恢复记录和确认框断开。预期无裁剪、原任务身份不改变、读取失败可恢复。反馈控件、缩放比例和脱敏截图；影响为系统交互与辅助功能。W6–W9 及最终独立测试包继续。
+
+### 2026-10-16 Windows W4 Chat 日常流程（未提交工作区）
+
+搜索、独立偏移分页、原会话定位、本人编辑/编辑时限、线程历史与文字回复、完整投票选择已接入 WinUI 消息详情及搜索入口。搜索改词不能沿用旧游标；编辑、投票、删除、置顶和转发共享原消息互斥。普通/线程文字与附件使用同一既有执行器，接受回执与稳定消息编号之后精确定位；没有编号时不扫相似正文认领，未知恢复不重新打开附件或重发。取消发生在提交前时允许用户明确重试。既有提醒、定时、群聊/成员、公告、转发与删除均纳入回归；缺失接受回执即使后来出现目标状态也保留未知。
+
+转发按既有契约核对原账号、接受回执、各目标基线身份及最新时间、前后 180 秒窗口和唯一候选；可遍历后续历史，重复候选、相同基线时间或单目标读取失败不伪报完成，已经确认的其他目标保留。QuickConnect 直连/中继变化仍使用用户保存的连接身份摘要保护未完成操作。Windows C# 接口与可选模型增量不改变 NAS 参数契约；macOS、iPhone、iPad、Android 源码与共享契约不变，无第三方依赖、包身份、权限或工具链变化。
+
+附件下载经原消息/附件和长度复查，完整暂存后使用现有本机事务目标发布。音视频使用原生 MediaPlayerElement；静音 WAV 的实际加载、失败、超限与关闭释放经过本机合成检查，不代表所有系统编解码器已验证。原生采集只由用户按钮启动，使用音频模式 AAC/M4A；录音、停止、试听、丢弃、发送及只读恢复分别提供入口。失焦/隐藏/离页与五分钟上限停止采集；重新激活只恢复按钮，不自动录音。未知发送保留唯一录音副本，另存也使用事务发布。遗留录音导出与统一退出保护由 W8 收口，不能把尚未实现的冷启动恢复界面写成用户验收待办。
+
+已连接工作区拥有原 Repository、HttpClient、Chat 浏览状态与实时订阅，页面切换、新增 NAS 和切换其他连接保留原页面/草稿；断开释放原对象。原生多工作区测试实际执行切换、返回、新增连接页、通知定位和逐连接释放，验证其他连接及 HttpClient 不被误释放。窗口活跃、页面可见且真实消息容器处于视口内才同步阅读；弹窗遮挡、后台、旧历史和未看到的新线程回复不提前标读，NAS 回读确认后才更新未读数。历史原位刷新保留滚动位置。
+
+Chat 通知复用已有 Windows 注册，默认关闭；用户偏好仅在原 settings.json 增加可选布尔值，旧文件缺省关闭，旧包忽略新增字段。操作系统只收到本进程随机令牌和通用双语提示，不包含主机、账号、消息正文或凭据。初始历史、本人/加密消息、已见消息与重复事件不通知；断开、旧会话及重启后的令牌不能重连或跳转其他账号。
+
+独立于实现步骤的集成审查及只读对抗复核覆盖了普通 Chat 账号不依赖管理信息、原连接/账号/线程归属、接受回执丢失、目标变化、重复提交、跨仓储恢复、转发分页歧义、迟到读取、实际可见已读、通知边界和本机媒体/录音清理。早期原生测试复现了取消源被提前释放、媒体流适配器未独立释放和历史初始布局/滚动锚点问题；已修正生命周期并保留正式回归。连接代次与播放窗口释放后等待也已补验。证书连接上下文源码清单同步纳入此前 W1/W2 新传输路径，仍逐路径检查原证书上下文，不降低安全断言。
+
+当前 main/a521ccb5 加未提交工作区，SDK 10.0.402；DOTNET_ROOT、PATH 与 DOTNET_GENERATE_ASPNET_CERTIFICATE 设置同 W3。实际命令与结果：
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Chat|FullyQualifiedName~AppSettings|FullyQualifiedName~CertificateTrustApp|FullyQualifiedName~Connection|FullyQualifiedName~Office' --verbosity minimal
+# 最终 533 通过，0 失败，0 跳过。
+./windows/tests/UiSmoke/run.ps1 -Scenarios chat-interactions,chat,chat-tools -Language zh-CN -ContinueOnFailure
+# 扩展集中轮 67 项有 7 项失败；不能作为最终通过结果。
+./windows/tests/UiSmoke/run.ps1 -Scenarios chat-interactions,chat -States media-ready,media-large,media-error,workspaces,chat-realtime -Language zh-CN -ContinueOnFailure
+# 修复后的定点 8/8；媒体释放等待增量后的最终中文补验仍为 8/8。
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios chat-interactions,chat,chat-tools -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure
+# 英文整组 67/67；后续媒体/工作区六项补验通过。
+./windows/tests/UiSmoke/run.ps1 -Scenarios chat -States chat-realtime -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios chat -States chat-realtime -Language zh-CN -ContinueOnFailure
+# 36 条消息、明确超出视口的历史定位，最终两种语言各 2/2。
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 -p:Platform=x64 --no-restore --verbosity minimal
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 -p:Platform=ARM64 --no-restore --verbosity minimal
+# 最终生产两架构均 0 警告、0 错误；最后的改词游标保护已进入 533 项回归和两架构构建。
+python tools/request-contract/validate_contracts.py
+python tools/contract-validation/validate_fixtures.py
+python tools/codex/generate_api_reference.py --check
+python tools/localization/check_localization.py
+python tools/codex/check_documentation.py
+git -c core.safecrlf=false diff --check
+```
+
+请求 fixture 180、写结果 1、fixture 29 组/私有引用 48 项及生成目录一致性通过；Windows 4732 个双语资源及占位符、硬编码扫描通过。原生截图来自隔离合成宿主自身 XAML，已检查中文浅深色及英文 900 宽的搜索、详情、编辑未知、录音和媒体界面；没有启动真实麦克风、访问 NAS、发出真实消息或发送系统通知。源码、自动化和构建为 IMPLEMENTED / AUTOMATED / BUILD_VERIFIED；不提升真实 API 环境证据，不构成发布批准。
+
+`PENDING_USER_VALIDATION`：
+
+- 真实 Chat 套件及普通用户：在专用测试会话执行历史/改词搜索/定位、本人限时编辑、线程回复和投票，撤回权限后再操作。预期没有管理权限附加要求，目标改变不提交，未知不重发；回传客户端版本、套件完整版本、操作类别与脱敏错误类别，不回传账号、正文、路径、地址或令牌。影响为上述 Chat 读取及写入口的真实兼容性。
+- 专用测试会话中的提醒/定时/转发/置顶/删除：在提交回执与回读阶段分别断网，以其他客户端改变目标并重新打开本页面。预期只查询原提交、逐目标保留结果、没有回执不冒充本次成功；回传阶段与结果状态。删除只在可丢弃测试消息上执行，影响为私有写结果归属。
+- Windows x64/ARM64 设备与桌面麦克风权限：明确点击录音，分别拒绝授权、录制/试听、切窗/隐藏、停止、发送及断网恢复；预期无后台录音，设备中断可恢复，未发或未知副本保留。回传设备架构、权限状态及脱敏故障类别，不上传录音；影响为 MediaCapture、音频编码和设备行为。真实视频/音频编解码另验，失败可保存副本。
+- 两个真实 NAS 与 Windows 通知设置：开启通知后切页面/切 NAS/隐藏窗口，收到消息后点击；断开原连接后再点击旧通知。预期定位原会话，旧令牌无效，重复/本人/初始历史不提示，后台不标已读。回传操作顺序、窗口状态及计数，不含消息正文；影响为系统通知注册、激活和实时通道。
+- Narrator、键盘/触控、高 DPI/文字缩放与 ARM64 实机：检查搜索结果、线程、投票、媒体控件及窄窗焦点；预期读屏名称完整、无隐藏操作和越界。回传布局比例、控件名称与脱敏截图。W8/W9 继续完成全局生命周期、恢复资料和最终测试包。
+
+### 2026-10-16 Windows W3 Office 预览与本机编辑（未提交工作区）
+
+六种 Office 格式已接入原文件预览分类、受限大小下载与本机临时产物。系统预览仅使用注册关联和 CLSCTX_LOCAL_SERVER，优先 Stream，其次组件支持的 File/Item 初始化；保留系统进程外隔离，不改注册表。窗口位置随 WinUI 布局/DPI 更新，弹窗/隐藏时让出，支持焦点、Tab/Esc 返回及关闭释放。缺少组件和加载失败分别提供打开本机副本与重试。机制依据 [Microsoft 预览说明](https://learn.microsoft.com/en-us/windows/win32/shell/preview-handlers)、[关联查询](https://learn.microsoft.com/en-us/windows/win32/api/shlwapi/ne-shlwapi-assocstr)、[COM 激活](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-cocreateinstance)。真实注册组件仍待用户验收；原生测试中的内容呈现是合成分支，不能冒充 Office/WPS 已加载。
+
+本机编辑从系统保存选择器开始，提供默认应用/其他应用打开、文档状态与会话管理、继续、另存和结束。应用持有原 NAS/账号的编辑会话；离页、关闭预览和隐藏主窗口不重建任务。轮询文件身份、长度、修改/变更时间，两秒稳定后制作独立 DeleteOnClose 快照；正文 SHA-256 不变时零网络请求。Windows 文件句柄与原目录身份限制符号链接/目录替换，原子替换保存可被识别。下载摘要及新鲜远端版本在本机事务替换前校验，失败保留已有副本；长期文件锁暂停并允许继续。
+
+新增独立 OfficeEditing-v1，沿现有 Windows 用户保护存储，仅保存原连接/账号摘要、目标与本机副本身份、元数据、摘要、阶段及接受事实；不存凭据或正文。本机路径为继续编辑所必需，只存在本机加密记录。写前仍使用实际目录权限检查，覆盖拒绝以 Upload 为准；原元数据/MD5 变化暂停覆盖。复用既有单次上传和完整 SHA-256 回读，必须有本次接受回执；丢回执即使内容相同也不认领、不重放。冷启动先暂停，未知仅查询；结束未知会话仍保留目标保护。存储失败关闭写入而不丢弃旧记录，旧结束记录不能遮住当前会话。准备阶段已纳入目标互斥，上传、移动、回收、归档和跨 NAS 删源不能绕过；Office 副本不进入云盘同步根，两个写回执行者不能同时接管同一目标。
+
+独立集成审查及只读对抗复核检查了初始化窗口、同目标多执行者、账号/页面迟到结果、权限撤回、原件变化、快照替换、检查点失败、丢回执、冷恢复和退出。公开 Upload 没有原子版本条件覆盖，自动回传保持 `OfficeAutomaticUploadEnabled=false` 的专项保护；默认包可预览和打开副本。没有新增 NAS 契约、第三方依赖、工具链、系统权限或应用身份；其他四端源码只读。新增格式首次使用创建，回退前结束或导出副本，旧包不接管新记录；不迁移登录、Photos 或云盘 v10。
+
+SDK 10.0.402，main/a521ccb5 加本轮未提交工作区；设置 DOTNET_ROOT=LOCALAPPDATA/LanStashBuildTools/dotnet-10、加入 PATH、DOTNET_GENERATE_ASPNET_CERTIFICATE=false。实际最终门禁：
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Office|FullyQualifiedName~FilePreview|FullyQualifiedName~FileUpload|FullyQualifiedName~FileTextEdit|FullyQualifiedName~CrossNas|FullyQualifiedName~FileMutation|FullyQualifiedName~CloudDriveWriteback|FullyQualifiedName~FileCopyMove|FullyQualifiedName~FileRecycle|FullyQualifiedName~FileArchive'
+./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios office -ContinueOnFailure
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios office -ContinueOnFailure
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore -p:Platform=x64
+python tools/localization/check_localization.py
+python tools/codex/check_documentation.py
+git -c core.safecrlf=false diff --check
+```
+
+最终 **752 项通过、0 失败、0 跳过，6 秒**；包括真实 Windows 文件标识/原子替换/文件锁/父目录替换、事务下载、用户加密记录和完整合成 HTTP 上传/回读。中文 **32/32**（ui-review-20261016-015319），英文窄窗口/侧栏循环 **32/32**（015623）；包含真实 COM 回调接口查询、实际退出后副本仍在以及取消/忙碌退出保护。最终生产 ARM64 **38.04 秒**，x64 **35.35 秒**，均 **0 警告/0 错误**。4654 对 Windows 双语资源/参数/引用/硬编码检查通过。已检查中英预览降级、合成内容、确认与恢复截图；不将物理 ARM64、Narrator、触控或真实组件效果计入本机通过结果。
+
+失败与修复保留：初次测试构建发现夹具未赋值字段，补入无效 MD5 拒绝行为用例；原生构建修复 AutomationLiveSetting 命名空间、QueryInterface 的 in 参数及资源名/作用域冲突。首组原生 28/29 时，COM 接口查询因回调类型不公开失败，公开回调类型后通过。截图复核发现预览落入通用错误页，新增真实产物测试复现便携版 ApplicationData.Current 无包身份异常；改用系统临时目录，补强加载/限制/呈现分支断言后通过。扩充退出场景时首次 31/32，退出码为 0 且关闭后副本断言已完成；脚本增加仅该专用场景的“新完成标记＋新截图＋实际退出码 0”检查，其余提前退出仍失败。中间 388、749、750、751 项及早期 29 场景/ARM64 构建属于阶段证据，最终口径以上述 752/32/32 和最后双架构为准。
+
+PENDING_USER_VALIDATION：
+
+- 在 x64/ARM64 Windows 和已安装的 Office/WPS 等应用上分别测试六格式、有/无预览组件、焦点/Tab/Esc、浅深色、缩放、弹窗遮挡和反复关闭。预期失败可打开副本，组件不在主进程加载，无需改注册或降低隔离。仅回传系统/应用/架构类别、步骤、脱敏错误类型，不回传文档或本机路径。
+- 自动覆盖只在获准的可丢弃 NAS 目录与专项测试构建中启用上述保护开关。使用普通文件账号测试不修改打开、连续保存、编辑器原子替换、拒绝权限、其他客户端修改和提交后断网/重启。预期未改零上传、稳定快照内容一致、冲突暂停、未知不重发、恢复仍属于原账号/目标。Upload 缺少原子条件覆盖的真实并发窗口尚未验证，未完成前默认包继续关闭自动覆盖。
+- 测试离开页面、隐藏/关闭窗口、退出保留副本、编辑器崩溃、本机副本暂时被锁、外接卷离线及重新连接。预期继续、另存和结束可用，重启先暂停，任何清理不删除编辑副本或未知恢复资料；编辑到受管理同步根或为相同目标开启另一写回执行者应被拒绝。只回传连接方式/文件系统/权限类别、操作顺序、阶段与脱敏失败类型，不回传账号、地址、内容、真实路径或恢复文件。
+
+无一次性调试源码；合成临时副本在测试内清理，正式报告和构建输出在 W9 收口。W3 本地主流程完成，W4–W9 与最终双架构测试包继续，不代表发布或真实 NAS 验收通过。
+
+### 2026-10-16 Windows W2h Photos 后台任务（未提交工作区）
+
+沿 photos-background-tasks.md 的 static 内部契约实现统一 Foto.BackgroundTask.Info v1：list_user_task 无业务参数，停止为 id 数组，逐项清理和错误详情为 id 标量；传输层拒绝无参数清理、错误形状/重复编号和 FotoTeam 路由。任务身份包括 profile、Photos 用户、编号、带小数创建时间、操作、总数和目标目录/所有者，进度变化不改变身份。列表对计数、必需字段和重复任务严格校验；未知类型/状态仅提供读取，不开放控制。读取不附加管理员条件，个人图库关闭仍可查看。
+
+复用既有 Settings v1 用户保护记录，追加可选后台控制、固定快照与逐项尝试/回执/完成事实；与常规设置分开索引，沿既有账号锁和操作编号执行。只读恢复已尝试且未明确拒绝项，丢回执不重发，未发送记录被外部清理也不算本次完成。清理逐个标量请求，保留确认后新结束任务；部分完成后仅显式重新选择剩余记录。停止与原复制/移动分别保存，清理前先只读保存原文件操作终态，结果仍未知时禁止清理。错误详情按目标实际来源以 Item v5 每批最多 100 项或 Folder v2 补名称/路径，按编号匹配；无权读取、缺失原件或未知来源仍显示本地化原因，不猜其他来源。导航重读完整授权父链、拒绝循环/路径矛盾与迟到结果。
+
+WinUI 更多菜单、任务筛选、详情、停止/清理最终确认、失败项目、原目录和恢复入口已接。关闭弹窗取消读取与后续刷新，已提交控制继续保存；普通任务刷新不改变原图库月份、分页或选择。独立集成与只读对抗复核覆盖原任务证据保护、部分清理、身份复用、账号代次、写前检查点、权限撤回、错误路由及目标父链；静态复核在原生运行前修正了目录导航更新页面代次后仍需关闭原弹窗的生命周期。无依赖、系统权限、NAS 契约或其他四端源码变更。
+
+SDK 10.0.402，main/a521ccb5 上本轮未提交工作区；DOTNET_ROOT=LOCALAPPDATA/LanStashBuildTools/dotnet-10、加入 PATH、DOTNET_GENERATE_ASPNET_CERTIFICATE=false。实际执行：
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SynologyPhoto
+./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States @('pref-tasks','pref-tasks-details','pref-tasks-stop','pref-tasks-stop-confirm','pref-tasks-unknown','pref-tasks-clear','pref-tasks-clear-confirm','pref-tasks-partial','pref-tasks-errors','pref-tasks-errors-failed','pref-tasks-errors-close','pref-tasks-location','pref-tasks-shared','pref-tasks-location-failed','pref-tasks-readonly','pref-tasks-filtered','pref-tasks-empty','pref-tasks-error','pref-tasks-loading','pref-tasks-close','pref-tasks-cold','pref-tasks-nohome')
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States @('pref-tasks','pref-tasks-details','pref-tasks-stop','pref-tasks-stop-confirm','pref-tasks-unknown','pref-tasks-clear','pref-tasks-clear-confirm','pref-tasks-partial','pref-tasks-errors','pref-tasks-errors-failed','pref-tasks-errors-close','pref-tasks-location','pref-tasks-shared','pref-tasks-location-failed','pref-tasks-readonly','pref-tasks-filtered','pref-tasks-empty','pref-tasks-error','pref-tasks-loading','pref-tasks-close','pref-tasks-cold','pref-tasks-nohome')
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore -p:Platform=x64
+python tools/localization/check_localization.py
+python tools/codex/check_documentation.py
+git -c core.safecrlf=false diff --check
+```
+
+首轮 xUnit 构建被新增两处 Assert.Single 前使用 Where 的 xUnit2031 规则阻止；改用带谓词重载，未降低断言。最终 **1578 项通过、0 失败、0 跳过，2 秒**，本组新增 95 项（含原文件操作与工作区回归）。首轮 UI 宿主构建发现局部变量 task 与模式变量同名的 CS0136，随之触发 XAML 次级错误；修正命名后构建通过。中文 **23/23**（ui-review-20261016-001953）、英文窄窗口/侧栏循环 **23/23**（002315），同源最终生产 ARM64 **40.89 秒，0 警告/0 错误**，x64 **38.64 秒，0 警告/0 错误**。中文列表/错误、英文确认/部分完成截图已检查无截断或重叠；4584 对 Windows 双语资源/参数/引用/硬编码检查通过。没有创建一次性调试文件；正式合成报告和构建产物在 W9 收口清理。
+
+PENDING_USER_VALIDATION：准备存在复制/移动任务的专用 Photos 环境，覆盖普通个人账号、个人图库关闭、共享 entry/management 访问、部分失败及超过 100 条错误。查看进度和失败项，停止处理中任务，再清理指定已结束记录；同时由网页新增已结束任务或修改权限，另测提交后断网/重启及关闭弹窗。预期已处理内容保留、原任务终态先保存、清理仅移除所选记录、未知只读不重发、失败原因在无名称时仍可见、原目录权限不足时不跳转；跨来源补名称的实际 NAS 行为仍未验证。仅回传版本与权限类别、动作顺序、脱敏失败类型，不回传任务原参数、路径、照片名、主机、账号或响应。物理 ARM64、触控/Narrator/高 DPI/字号亦未验证。static 不升级为实测；W2 本地主流程完成，W3–W9 及最终测试包继续。
+
+### 2026-10-15 Windows W2h 图库维护与新格式提示（未提交工作区）
+
+沿 photos-library-maintenance 的 static 契约增加当前来源 Index.get/reindex v1 与个人 Wizard.get/set v1；管理员新格式生成调用个人 Index.reindex_all_user，普通用户仅个人 Index.reindex，均 thumbnail。维护快照保留 profile、Photos 用户、来源、两项严格非负计数与 NAS H264 条件；个人 home、共享真实管理员及 entry/management 访问逐次读取。所有生成均最终确认，稍后只保存唯一 new_codec_installed 提示，不写其他提示或设置。界面提供当前来源维护、新格式支持、刷新/失败恢复和 15 秒前台局部更新；关闭弹窗不取消已提交任务，月份、内容窗口与多选保持。
+
+复用现有 Settings v1 保护记录、注册门与账号执行锁，追加可选维护/格式分支和逐步尝试/接受/拒绝事实，不新增存储后端。维护只有本次明确接受且对应计数归零才结束当前索引阶段，丢回执后计数正数到零也不追认或重发。生成明确接受后才保存提示；已接受而提示明确拒绝、发送前取消或进程中断均保留部分完成，重启后只允许显式补存提示。提示保存未知可读回关闭事实，生成未知不能从隐藏提示或个人计数推断成功。旧部分记录在实际观察提示关闭后保留关闭事实，允许将来出现的新提示；读取/本地保存期间访问代次变化也不能回传旧账号结果。独立集成及只读对抗复核覆盖身份、来源、角色撤回、字段缺失、持久化损坏、逐步中断与交叉设置去重；未改 NAS 契约或其他四端源码。
+
+SDK 10.0.402，main/a521ccb5 上本轮未提交工作区；DOTNET_ROOT=LOCALAPPDATA/LanStashBuildTools/dotnet-10、加入 PATH、DOTNET_GENERATE_ASPNET_CERTIFICATE=false。实际执行：
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SynologyPhotosMaintenanceTests --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SynologyPhoto --verbosity minimal
+./windows/tests/UiSmoke/run.ps1 -Language zh-CN -ContinueOnFailure -Scenarios photos -States pref-maint,pref-maint-save,pref-maint-confirm,pref-maint-previews,pref-maint-shared,pref-maint-shared-entry,pref-maint-busy,pref-maint-capability,pref-maint-unknown,pref-maint-cold,pref-maint-error,pref-maint-loading,pref-maint-close,pref-codec,pref-codec-generate,pref-codec-confirm,pref-codec-admin,pref-codec-later,pref-codec-partial,pref-codec-unknown,pref-codec-cold,pref-codec-empty,pref-codec-nohome,pref-codec-error,pref-codec-loading
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure -Scenarios photos -States pref-maint,pref-maint-save,pref-maint-confirm,pref-maint-previews,pref-maint-shared,pref-maint-shared-entry,pref-maint-busy,pref-maint-capability,pref-maint-unknown,pref-maint-cold,pref-maint-error,pref-maint-loading,pref-maint-close,pref-codec,pref-codec-generate,pref-codec-confirm,pref-codec-admin,pref-codec-later,pref-codec-partial,pref-codec-unknown,pref-codec-cold,pref-codec-empty,pref-codec-nohome,pref-codec-error,pref-codec-loading
+./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States pref-codec-partial,pref-codec-nohome,pref-codec-cold
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States pref-codec-partial,pref-codec-nohome,pref-codec-cold
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore -p:Platform=x64
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64
+python tools/localization/check_localization.py
+python tools/codex/check_documentation.py
+git -c core.safecrlf=false diff --check
+```
+
+首轮新增组 1/58 通过，57 项失败均为合成 HTTP 断言漏排既有认证字段 SynoToken，只检查业务参数后修复；未读取真实令牌或改变生产传输。补充中断恢复后 61/61 通过（608 毫秒）。独立复核再补两项身份/代次回归，整组先 1482/1483 通过；唯一失败是新测试误将既有 RequireGeneration 的 OperationCanceledException 期望为领域权限异常，按既有代次契约修正。最终 **1483 项通过、0 失败、0 跳过，2 秒**，本片新增 63 项。
+
+中文完整 25/25（ui-review-20261015-234024）、英文窄窗口/侧栏循环完整 25/25（234407）。随后合并重复的部分完成提示并修正个人图库关闭时的引导，最终同包中文受影响 3/3（234727）、英文受影响 3/3（234848）；截图检查中英文确认、忙碌和无个人图库状态无截断/重叠。原生验证涵盖本地确认前零写、共享普通用户入口隐藏、独立计数/H264、未知只读、关闭期间完成、部分保存后只关闭提示、原月份/多选保留。最终生产 x64 **37.67 秒、0 警告/0 错误**，ARM64 **28.94 秒、0 警告/0 错误**；较早的 37.40/41.44 秒构建不代替最后文案调整后的构建。4538 对 Windows 资源、参数/引用/硬编码、文档与差异检查通过。未创建一次性调试文件，正式合成报告与构建产物在 W9 收口清理。
+
+PENDING_USER_VALIDATION：准备有 Photos 权限的普通个人账号、个人图库关闭账号、具备共享 entry/management 访问的真实管理员、NAS 不支持 H264 的场景及实际存在新格式提示的专用环境。分别读取两项计数、确认重新索引/生成预览、关闭窗口后重开，提交后断网再重启；另用网页启动维护或撤回角色。预期范围固定、权限/忙碌拒绝零写、明确接受加归零仅表示当前索引阶段结束，未知不重发且可能长期无法自动证明结果。新格式管理员覆盖所有用户、普通账号仅个人；稍后零生成，生成接受后提示保存失败只补提示，原件不变。仅回传系统/套件版本与权限类别、动作顺序、计数类别和脱敏失败类型，不回传照片、账号、路径、主机、响应或凭据。真实 NAS、物理 ARM64、触控/Narrator/高 DPI/字号仍未验证；static 未升级。W2h 后台任务与 W3–W9 继续，不把本片当作完整 Photos 或最终测试包交付。
+
+### 2026-10-15 Windows W2h 共享成员与两级目录权限（未提交工作区）
+
+沿 photos-shared-space-members 既有 static 契约新增管理员成员读取和候选、共享根下完整两级目录分页、角色/备份和逐目录/批量草稿，以及主窗口最终确认后的组合保存。名单 data 为直接数组；候选无业务参数且保留本人；成员保留数字与字符串身份，保护 administrators 群组和未知角色。管理角色强制备份，降级保留备份选择并进入目录草稿。公开权限下限、私有父层撤权对子层的影响、连续批量提升/降级与后续单项覆盖沿已记录语义；未加载完整快照不能作为批量范围。
+
+复用 Settings 记录和账号互斥，新增可选成员计划、最小身份/权限摘要、每步尝试/接受/拒绝和实际变化事实。名称、路径及候选名单不持久化；既有记录可读，不新增存储、权限、依赖、NAS 契约或其他端代码。每一步在检查点后重新确认权限和原状态，只允许本操作已接受的前序变化；丢回执只读，不补发后续步骤。结构化失败也读取实际部分修改；批量核对容许本操作已尝试单项覆盖造成的中间或最终状态，未尝试步骤不算完成。当前成员权限只读取本人的真实共享设置，不从编辑的群组推断。共享权限未知期间阻止相交共享管理写；个人操作保持独立。
+
+WinUI 菜单/表单提供搜索、添加/移除、角色、逐成员及批量备份、目录展开/搜索/权限和四级全体授权/撤权；子表单完成只返回内存草稿，取消零写。最终确认列出成员目标角色、备份和目录数量。候选读取失败不阻断既有成员编辑。提交前清除共享旧预览、照片及在途页，实际结果按原查询/月份重读，权限撤回退出共享来源；个人月份和选择保持。默认关闭 SharedMembers 专项写保护，读取/草稿仍可使用。
+
+本阶段真实验证：SDK 10.0.402，仓库 main/a521ccb5 上本轮未提交工作区。先设置 DOTNET_ROOT 为 LOCALAPPDATA/LanStashBuildTools/dotnet-10 并加入 PATH，DOTNET_GENERATE_ASPNET_CERTIFICATE=false。
+
+```powershell
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SynologyPhotosSharedMembersTests --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~SynologyPhotosSharedMembersTests|FullyQualifiedName~SynologyPhotosMemberWorkspaceTests|FullyQualifiedName~SynologyPhotosGlobalSettingsTests|FullyQualifiedName~SynologyPhotosSharedSettingsTests|FullyQualifiedName~SynologyPhotosPreferencesTests' --verbosity minimal
+dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SynologyPhoto --verbosity minimal
+./windows/tests/UiSmoke/run.ps1 -Language zh-CN -ContinueOnFailure -States pref-members,pref-members-save,pref-members-confirm,pref-members-empty,pref-members-filtered,pref-members-loading,pref-members-error,pref-members-disabled,pref-members-locked,pref-members-nonadmin,pref-members-cold,pref-members-unknown,pref-members-partial,pref-members-add,pref-members-new-cancel,pref-members-demote,pref-members-candidates-error,pref-members-folders,pref-members-folders-save,pref-members-folder-error,pref-members-parent-revoke,pref-members-batch,pref-members-close,pref-members-shared-role,pref-members-shared-lost
+```
+
+首轮成员组 21/59 通过，38 项失败均由合成 JSON 直接构造 Int32 而现有 codec 接受 Int64/网络解析数字导致，统一测试构造后 58/59 通过；剩余能力测试错误地在 Repository 已复制能力字典后修改外部字典，改为按能力缺失构造新实例，未降低生产断言。联合设置/工作区 199/200 通过，失败是合成访问结果同时返回“无共享来源”和“仍有共享管理权”的矛盾，修正合成状态。随后 1418 项 SynologyPhoto 通过；独立集成与只读对抗复核发现空照片的共享标签任务也须参与成员互斥，补充双向回归后最终 **1420 项通过、0 失败、0 跳过，2 秒**，本片新增 Repository/领域/传输 69 项和工作区 7 项。
+
+中文原生 26/26 通过（230415）。随后确认摘要增加实际角色、备份和目录数量；最终英文 900 像素窄窗/侧栏循环 26/26 通过（230947），同包中文保存/确认/目录定点 3/3 通过（231330），没有把早期中文整组冒充末次整组。已查看中文/英文浅色两级目录及深色确认的真实 XAML 合成输出，字段、按钮与换行可读；内容超出区域可滚动，触控/Narrator 和系统文字缩放另验。末次生产 x64 35.52 秒、ARM64 37.44 秒均构建通过，均零警告、零错误；4513 对 Windows 双语资源、占位符和硬编码扫描通过。
+
+最终原生命令如下；英文 States 与上述中文完整命令一致，全部列出以便复现：
+
+```powershell
+./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure -States pref-members,pref-members-save,pref-members-confirm,pref-members-empty,pref-members-filtered,pref-members-loading,pref-members-error,pref-members-disabled,pref-members-locked,pref-members-nonadmin,pref-members-cold,pref-members-unknown,pref-members-partial,pref-members-add,pref-members-new-cancel,pref-members-demote,pref-members-candidates-error,pref-members-folders,pref-members-folders-save,pref-members-folder-error,pref-members-parent-revoke,pref-members-batch,pref-members-close,pref-members-shared-role,pref-members-shared-lost
+./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language zh-CN -States pref-members-confirm,pref-members-folders,pref-members-save
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore -p:Platform=x64
+dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64
+python tools/localization/check_localization.py
+python tools/codex/check_documentation.py
+git -c core.safecrlf=false diff --check
+```
+
+PENDING_USER_VALIDATION：在专用可丢弃共享库，以 DSM 管理员和专用用户/群组检查新增、移除、自定义/完整权限、备份，以及第一/二层目录、公开下限、父层撤权、连续批量后单项覆盖。先取消确认无 NAS 写，再保存检查真实权限；分别在成员、批量、单项提交及回读时断网，重启后应只读恢复且保留部分事实，不重复或自动补发。修改本人实际共享权限后旧预览/在途页面不得恢复，个人历史月份与多选不动；共享 entry 不冒充 DSM 管理员。仅专用验证包开启 SharedMembers，日常包保留默认保护。需要回传脱敏系统/套件版本、权限类别、步骤、数量和提示差异，不提供账号、地址、路径、照片、原始响应或恢复文件。真实 NAS 传播、深层批量副作用、物理 ARM64、触控/Narrator、DPI/文字缩放未验证，证据仍 static，源码/合成结果不能代替设备验收。
+
+### 2026-10-15 Windows W2h 全局设置与转换缓存（未提交工作区）
+
+沿 photos-global-settings-cache 静态契约接入管理员六项全局设置、排除格式、真实 HEVC 条件和转换缓存。缺字段保持未知；格式按集合比较，保留已有未知值和大小写，允许移除。关闭全局识别联动个人/共享的已知字段，重新开启全局不自动打开图库识别。关闭原尺寸 JPEG 按缓存→全局→个人→共享顺序保存实际差量；缓存 v2 使用统一 Foto 路由和无业务参数，明确成功回执仍须等待非 processing，丢失回执要求实际大小为零。缓存读取失败不阻断无关设置。
+
+复用 PhotosManagement-v1 的 Settings 记录，增加可选全局/缓存载荷、步骤事实与实际回读结果，没有新存储后端。首次提交及检查点后重读完整原值；后续每步重读管理员和完整状态，只容许本操作已接受变化及已记录识别联动。每步持久化尝试/接受/拒绝；未知不补发，未发送步骤不能算完成，部分结果由用户重新打开当前设置后明确保存。明确拒绝不能被其他客户端后来产生的目标值冒充接受。恢复验证步骤顺序、回执、完成数量和身份；重复点击、换编号、跨设置类别均保留互斥。原生表单确认具体全局/识别/分享/格式/缓存后果；用户分享和访客详情修改受默认关闭的 GlobalSharingChanges 专项保护，普通识别、格式和可再生缓存保持可用。
+
+保存及部分回读按实际结果更新分类与原尺寸 JPEG 能力，个人月份、原生多选保持；当前分类被关闭则返回相册。清缓存后保留尚未保存的全局草稿；提交后关闭设置窗口，同一页面仍应用实际结果，离页不把迟到结果送到新页面。缓存清理与未知结果在窗口存续期间只读刷新，重开继续读取原操作。没有 NAS 写入、其他端修改、依赖/权限/身份变化或发布。
+
+实际验证（SDK 10.0.402，全部合成数据）：
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~SynologyPhotosGlobalSettingsTests|FullyQualifiedName~SynologyPhotosSharedSettingsTests|FullyQualifiedName~SynologyPhotosSettingsTests|FullyQualifiedName~SynologyPhotosPreferencesTests'`：初轮 **138/139**，新分类测试夹具返回了错误字段，补为契约 `id` 后 **139/139，460 毫秒**；期间一轮仍使用字段修正前的已编译夹具，失败不计通过。复核追加步骤间并发、重复点击、检查点冷恢复和损坏记录测试后，同项目 `--filter 'FullyQualifiedName~SynologyPhoto'` 最终 **1344 通过、0 失败、0 跳过，2 秒**，包含本组 **55** 项。
+- 原生宿主首轮构建发现 StackPanel 不提供 IsEnabled 及一处可空性错误，修正后构建通过。`./windows/tests/UiSmoke/run.ps1 -Language zh-CN -ContinueOnFailure -Scenarios photos -States pref-global,pref-global-save,pref-global-confirm,pref-global-formats,pref-global-clear,pref-global-cache-error,pref-global-clearing,pref-global-codec,pref-global-locked,pref-global-unknown,pref-global-partial,pref-global-cold,pref-global-nonadmin,pref-global-empty,pref-global-error,pref-global-loading,pref-global-category-off,pref-global-category-partial`：`ui-review-20261015-221555` **18/18**。此前中文在第 5 项缓存清理失败、英文 `221253` **15/16**，日志为测试按同名文案找到两个按钮；改用实际 ContentDialog PrimaryButton 标识，未改业务语义，也不将该失败与 W2g 尚未定位的原生退出合并归因。
+- 同命令改 `-Language en-US -WindowWidth 900 -PaneState cycle`，追加 `pref-global-close`：最终宿主 `ui-review-20261015-222008` **19/19**。覆盖普通/空/加载/错误、缺编解码器、专项保护、格式保留与移除、保存确认、缓存独立失败/处理中/完成、未知/冷恢复/部分、分类退出、月份与实际多选以及提交中关闭窗口。同一最终宿主 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language zh-CN -Scenarios photos -States pref-global-category-off,pref-global-category-partial,pref-global-close`：`222318` **3/3**，中文为 18 项整组及最后变更的定点补验，不冒称单轮 19 项。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`：最终生产源码 **38.50 秒、0 警告、0 错误**；同命令 `--runtime win-arm64`：最终 **28.98 秒、0 警告、0 错误**。此前关闭窗口补强前的 ARM64 为 38.07 秒，不用它替代最终构建。
+- `tools/localization/check_localization.py`：Windows **4481** 项，中英资源、参数、引用及硬编码扫描通过；`tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 通过。已查看中英确认、英文窄窗口保护状态的实际 XAML 渲染。
+
+独立集成审查及只读对抗复核覆盖统一调用路径、管理员与共享角色分离、完整原值/步骤间并发、允许联动范围、同编号/新编号互斥、检查点后撤权或取消、部分完成与明确拒绝、损坏记录、实际分类更新和关闭窗口迟到结果。实现与合成证据不改变私有 API 的 static 等级。
+
+PENDING_USER_VALIDATION：使用专用测试 NAS 和 Photos 管理员，逐项保存全局识别、已记录格式和原尺寸 JPEG；核对关闭识别联动、重新开启不改个人/共享选择、未知格式保留/移除与缺 HEVC 状态。清理缓存后原件保留，处理结束显示实际大小；断网/重启只读恢复，部分保存重新打开后只提交用户确认的当前差量。改变网页设置或撤销管理员权限后旧表单不得覆盖，历史月份/多选保持，当前分类关闭后退出。生产用户分享/访客详情写入口仍受专项保护，开放前验证具体访问变化。回传脱敏套件版本、角色类别、步骤、提示及预期/实际差异，不提供账号、主机、照片、路径或凭据。真实传播时序、同时生成缓存及跨版本行为未验证；共享成员和维护/任务尚在实施，W2h/W3–W9 未整体完成。
+
+### 2026-10-15 Windows W2h 共享图库设置（未提交工作区）
+
+在同一 Settings 变体中增加共享完整原快照、目标、独立启停种类和实际回读结果。界面入口按 UserInfo.is_admin，不能以共享 management 角色替代；普通账号缺少管理员标记不阻塞原有浏览。保存前及提交记录后重读身份和 User/Admin/Team 原快照，识别和顶层公开开关只提交 TeamSpace.set v1 的变化字段，启停单独使用 set_enable v1。最后图库禁止停用，共享文件夹停用原因只提示恢复、不额外阻止已授权启用。普通设置要求完整目标匹配；启停允许分类默认值变化，但仍须身份、个人图库状态及共享角色保持。未知只读、同编号不重放、未结束设置阻止换编号提交，明确拒绝保持失败。
+
+启停及公开目录权限分别受默认关闭的 SettingsSafety 开关保护；合成宿主开放用于验证真实表单，生产组合根保持默认关闭。开放后原生表单还有具体风险确认，普通共享识别不受这两个开关阻塞。保存只更新相关共享来源与分类；个人月份和原生多选保持。停用当前共享图库关闭预览并切回可用来源，关闭正在浏览的识别分类返回相册首页。恢复记录保持原 PhotosManagement-v1 加密边界，无新后端、NAS 契约、依赖、权限、应用身份或其他端源码变化。
+
+实际验证（SDK 10.0.402，全部合成数据）：
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~SynologyPhotosSharedSettingsTests|FullyQualifiedName~SynologyPhotosPreferencesTests|FullyQualifiedName~SynologyPhotosSettingsTests|FullyQualifiedName~SynologyPhotoAutomaticModelTests'`：首轮 **119 通过、0 失败、0 跳过，418 毫秒**，其中共享设置 35 项。复核随后新增启停回读的角色及个人图库条件 2 项；同项目 `--filter 'FullyQualifiedName~SynologyPhoto'` 最终 **1289 通过、0 失败、0 跳过，2 秒**，包含最终共享设置 37 项。
+- `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States pref-shared,pref-shared-save,pref-shared-public,pref-shared-public-save,pref-shared-enable,pref-shared-disable,pref-shared-last,pref-shared-locked,pref-shared-unknown,pref-shared-cold,pref-shared-nonadmin,pref-shared-error,pref-shared-loading,pref-shared-source-disabled -ContinueOnFailure`：首轮 `ui-review-20261015-213903` **13/14**。失败日志明确为停用当前共享来源后等待窗口关闭超时；来源刷新合法改变页面代次，旧 Current 判断没有关闭已完成窗口。改为仅关闭仍属于本页的同一个窗口，不扩大迟到结果应用范围。
+- 同命令改 `-Language en-US -WindowWidth 900 -PaneState cycle`，并增加 `pref-save,pref-recognition-save`：`214218` **16/16**，包括停用当前来源。最终中文同 14 项再增加 `pref-shared-category-off`：`214521` **15/15**，覆盖关闭当前分类并返回相册。同一最终宿主 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States pref-shared-source-disabled,pref-shared-category-off -ContinueOnFailure` 在 `214815` **2/2**。已查看中英共享设置、专项保护和公开风险确认渲染，没有截断。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`：**38.52 秒、0 警告、0 错误**；同命令 `--runtime win-arm64`：**37.02 秒、0 警告、0 错误**，均为最终生产源码。
+- `tools/localization/check_localization.py`：Windows **4459** 项，中英资源、参数、引用及硬编码扫描通过；`tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 通过。
+
+独立集成及只读对抗复核覆盖管理员与共享角色隔离、原快照/条件变化、跨归属、专项开关与确认、单变体恢复、明确拒绝、不确定回执、权限变化及原生代次收尾。首轮 UI 失败已复现并修复；这份托管异常日志不能用于解释 W2g 早期未取得日志的原生退出，后者的 W9 压力复核仍保留。NAS 不支持条件更新的最后读取至提交间竞态仍存在。
+
+PENDING_USER_VALIDATION：管理员在授权测试图库逐项修改共享识别，与官方页面比较；普通成员及 management 成员不应看到管理员入口。个人历史月份、多选应保持，关闭当前共享分类应回到相册。启停与顶层公开权限须先在专用环境完成专项验收后再开放生产开关；核对最后图库限制、共享文件夹恢复提示、成员访问与分享影响，停用不删除原件。覆盖提交前后断网、撤权、网页并发修改及重启，只读恢复不重发；核对分类默认值变化及原角色/个人状态改变时的结果。仅回传系统/套件版本、权限类别、步骤、界面提示与预期/实际差异，不回传主机、账号、照片、路径、响应或凭据。真实 NAS、物理 ARM64、触控、Narrator 和缩放未验证；共享成员、全局/缓存、维护/任务及 W3–W9 继续。
+
+### 2026-10-15 Windows W2h 个人显示、重复处理与识别偏好（未提交工作区）
+
+沿已有 Settings 恢复变体增加类型化的显示、重复处理及个人识别原值/目标值，仍由同一账号互斥和加密记录处理。完整原快照、当前身份与识别全局条件在落盘前后再次读取；仅提交 User.set v1 的实际差量，缺字段或未知枚举不猜默认值。相同编号只读，未结束设置不能换编号绕过，明确拒绝不会因他端状态相同而被追认为成功。没有新增 NAS 契约、第三方依赖、权限、应用身份或其他端源码。
+
+原生三类表单包括加载、错误、无可编辑项、正常和未结束保存；关闭后重新打开只读恢复。显示偏好作用到日/月分组、九种日期及 12/24 小时、预览底部日期/地点/描述和详情日期；视频与已打开详情不重复叠加。改变分组保留实际月份、照片和原生多选。目录默认排序继续使用既有 User 设置回退，显式目录/相册排序不改写。上传及移动复制表单读取实际重复处理默认值；缺失不能静默转为跳过/覆盖。个人识别只改变已知且全局允许项，更新分类能力，关闭正在浏览的个人分类才退出该分类。
+
+当前可复现证据（SDK 10.0.402；合成数据，不访问 NAS）：
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~SynologyPhotosPreferencesTests|FullyQualifiedName~SynologyPhotosSettingsTests|FullyQualifiedName~SynologyPhotoAutomaticModelTests'`：**84 通过、0 失败、0 跳过，384 毫秒**，其中新增个人偏好 34 项。
+- 同项目 `--filter 'FullyQualifiedName~SynologyPhoto'`：**1252 通过、0 失败、0 跳过，2 秒**。这是本次精确过滤结果，不与前轮 `Photos` 过滤的计数混用。
+- `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States pref-display,pref-save,pref-preview,pref-duplicates,pref-duplicate-save,pref-recognition,pref-recognition-save,pref-recognition-locked,pref-loading,pref-error,pref-unknown,pref-cold -ContinueOnFailure`：`ui-review-20261015-211530` **12/12**。初次宿主构建发现新增测试未链接和 StackPanel 无 IsEnabled，补上既有条件编译链接与 ContentControl 禁用容器后运行；未删除任何业务断言。
+- 英文命令增加 `-WindowWidth 900 -PaneState cycle`，同 12 项再加 `upload-options,upload-submit,file-submit,auto-off,auto-enable`：`211730` **15/17**，个人偏好 **12/12**；上传两项失败分别是未完成加载即截图与尚未出现保存按钮。托管日志明确定位旧测试的固定 300 毫秒等待。改为等待实际窗口尺寸、加载状态和按钮，并增加默认重复策略断言，同参数定点 `upload-options,upload-submit,upload-folder,pref-save`：`212008` **4/4**。
+- 详情打开时隐藏底部信息补验：英文窄窗口 `pref-preview,pref-save,auto-off` 在 `212205` **3/3**；同一宿主 `-SkipBuild -Language zh-CN -Scenarios photos -States pref-save,pref-preview,upload-submit -ContinueOnFailure` 在 `212317` **3/3**。已查看中英显示表单、无权限识别、未知保存及实际预览渲染；原生断言检查多选保留和详情关闭后恢复信息。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`：**37.48 秒、0 警告、0 错误**；同命令 `--runtime win-arm64`：**35.45 秒、0 警告、0 错误**，均为末次生产源码。
+- `tools/localization/check_localization.py`：Windows **4445** 项，中英、参数、引用和硬编码扫描通过；`git -c core.safecrlf=false diff --check` 通过。
+
+独立集成与只读对抗复核检查了四种设置变体排他、冷恢复损坏记录、同编号跨意图、自动设置与个人偏好隔离、只读恢复、原值变化、权限撤回和界面迟到结果。没有增加另一条设置存储或请求路径；未结束设置只保留所需枚举/布尔、归属摘要及阶段。仍存在 NAS 不支持条件更新造成的最后读取至提交间竞态，不能宣称原子更新。
+
+PENDING_USER_VALIDATION：在授权的个人、仅共享/相册账号及不同识别权限账号中切换全部显示字段，重开并与官方页面比较；检查既有目录/相册显式排序、历史月份、多选、图片/视频/实况预览及详情。修改重复处理默认值后分别打开上传、移动和复制表单，确认实际默认值与用户覆盖选择；原件替换仍沿既有专项保护。分别关闭/开启个人人物、主题、相似识别，检查共享分类不变及当前分类退出。测试提交前后断网、网页并发修改、撤销权限和重启，未结束操作只读、不重放。回传仅系统/套件版本、账号权限类别、操作步骤、提示与预期/实际差异，不回传照片、真实名称/路径、主机、响应或凭据。真实 NAS、物理 ARM64、触控、Narrator 和缩放仍未验证；共享/全局/维护等其余 W2h 及 W3–W9 尚未完成。
+
+### 2026-10-15 Windows W2g 自动预览设置与前台调度（未提交工作区）
+
+沿同一 Photos Repository、下载/转换与管理恢复路径接入单字段开关、工作区调度器和原生入口。PhotosManagement-v1 的可选 Settings 变体保存账号归属、原布尔值、目标值和阶段；写前及记录后均重读原值，只写实际差量，未知及重启只读回查，同编号不重放、新编号不能绕过未结束设置。原管理变体同步防编号碰撞。无 NAS 契约、第三方依赖、权限、最低版本、应用身份或其他平台源码变化。
+
+调度按实际编解码器、已授权来源和真实裁剪面积至少 80% 的可见项工作，变化后去抖两秒；普通/HEVC 实况/VC1/后台先分级，再按当前预览、基线相邻范围和可见顺序领取一项。实况视频只随当前预览，完成及失败按单元语义去重；共享后台需要管理权。暂停、打开设置或原开关缺失时，已保存的未知提交仍可只读恢复，复查逐步退避到 60 秒。手动窗口先取消并等待本地转换让出；关闭、隐藏和注销保留已提交事实，迟到结果留在原工作区。只刷新现有对应缩略图，不改月份和选择。原生状态仅显示实际执行、暂停、失败及未结束操作，空队列不显示“全部完成”。两个语言的设置、状态和恢复文案已接入。
+
+当前可复现结果（SDK 10.0.402；仅合成资料/媒体，不访问 NAS）：
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~SynologyPhotoAutomaticModelTests|FullyQualifiedName~SynologyPhotosSettingsTests'`：最终 **50 通过、0 失败、0 跳过，325 毫秒**，含 21 项设置和 29 项调度。初轮 47 项有一处相邻范围的测试预期误将时间线开头算作完整六项，依据固定基线改为先缩减后的两张，未改生产算法或降低其他断言。
+- 自动预览联合过滤 `PhotoPreviewVideoSignatureTests|WindowsPhotoAutomaticConverterTests|SynologyPhotosAutomaticCandidateTests|SynologyPhotoAutomaticTransportTests|SynologyPhotoConvertedUploadTests|SynologyPhotosAutomaticExecutionTests|SynologyPhotosSettingsTests|SynologyPhotoAutomaticModelTests`（每项加 `FullyQualifiedName~`，同项目及 Release/`--no-restore`）：**198 通过、0 失败、0 跳过，4 秒**，含真实 WinRT 合成媒体和传输/恢复测试。
+- 同项目 `--filter 'FullyQualifiedName~Photos'`：**1294 通过、0 失败、0 跳过，5 秒**。此过滤不包含名称为单数 Photo 的调度、签名等类，不能代替上一条联合过滤。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`：**36.95 秒、0 警告、0 错误**；同命令 `--runtime win-arm64`：**37.41 秒、0 警告、0 错误**。均为当前生产源码，之后仅调整正式原生测试的就绪等待。
+- `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States auto-off,auto-enabled,auto-enable,auto-disable,auto-loading,auto-error,auto-unsupported,auto-setting-unknown,auto-current,auto-running,auto-complete,auto-failed,auto-cold,auto-paused,auto-hide,auto-manual,regen-confirm,regen-complete,manage-submit -ContinueOnFailure`：最终 `ui-review-20261015-204652` **19/19 通过**。同一宿主改为 `-Language zh-CN`、默认宽度和侧栏，最终 `ui-review-20261015-204923` **19/19 通过**。已查看英文窄窗口当前预览和未知设置、中文运行/未知设置实际渲染。
+- 早期中文 `202330` **15/16**，完成场景错误地假定初始已选中九月，改为比较操作前后实际月份。英文 `202740` **17/18**、`203714` **16/19**、固定侧栏 `204105` **17/19**；当前预览及一次手动入口发生无新托管日志的原生退出 `0xC000027B`，资料编辑有固定 250 毫秒等待后尚未找到控件的断言失败。测试现等待真实容器/图片及可交互控件，先建立当前预览再恢复领取；资料表单等待字段实际出现，不移除业务断言。生产状态栏只更新当前可见区域的变化，图片加载期间不领取；最终英文三项补验 `204511` **3/3**，再整组 **19/19**。这些证据不能证明早期原生退出的底层原因；W9 仍需保留快速预览/侧栏/状态切换压力复核。临时阶段记录代码和文件已删除。
+- `tools/localization/check_localization.py`：Windows **4427** 项，中英资源、参数、引用及硬编码扫描通过；`tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 通过。尚未提交或推送。
+
+独立集成与只读对抗复核覆盖了开关缺字段/旧快照、同编号改意图、换编号绕过、存储失败、跨账号迟到结果、手动与自动竞争、暂停后的只读收尾、可见/后台同单元去重及错误标记边界。没有新增媒体上传路径、恢复后端或只凭队列消失认领成功的逻辑。
+
+PENDING_USER_VALIDATION：在用户授权的 Photos 测试图库，用个人、共享 entry 与 management 身份分别打开开关、滚动长列表、切换预览/实况/幻灯片并观察优先顺序；只有共享管理身份可领取整库后台项。选用可丢弃的 HEIC/HEVC、普通视频、VC1 和损坏媒体，比较生成前后原件内容是否相同，核对方向、声音和播放质量；本机能力不足、断网、取消及磁盘不足不能把原件标成损坏。上传期间切换账号、隐藏窗口、开启手动操作并重启，未结束任务应只读恢复，不重复上传；设置断网后从官方网页检查实际开关并返回 App 观察收尾。需回传脱敏的 DSM/Photos 版本、权限类别、媒体格式/方向、步骤、界面提示及预期/实际差异，不提供主机、账号、文件名、路径、照片、凭据或原始响应。物理 ARM64、实际硬件编解码、触控/Narrator/缩放及 NAS 副作用仍未验证；本机合成测试不提升 NAS 证据等级。W2h–W9 与最终测试包继续实施。
+
+### 2026-10-15 Windows W2g 自动预览执行与加密恢复（未提交工作区）
+
+在上一阶段候选、转换和同源传输上接入单元任务、PhotosManagement-v1 可选自动记录、一次性上传与只读恢复。保存原账号摘要、最小照片/单元身份、三档 JPEG 摘要、视频轨道摘要及提交阶段；不保存媒体、临时路径、照片描述或凭据。所有原管理变体拒绝操作编号碰撞；同单元未知任务不能通过换编号、改文件名、需求旗标或候选来源绕过。手动预览、资料、目录与相册互斥沿原有检查增量接入；后台单元不能推导照片编号，有冲突管理任务时不领取。
+
+每次下载、转换及提交前后检查原候选、自动开关、访问代次和实际权限。提交前写入恢复记录，记录后再查一次；保存失败关闭后续写入。接受回执沿同步接口语义处理，并刷新原件/权限；未知只读取三档实际 JPEG 和所需 H.264/AAC 轨道，不以候选消失、文件名或大小认领。大视频读取后再刷新账号/共享角色。明确内容转换失败才按 photo/video 阶段调用一次 set_broken；网络、取消、设备/资源问题、摘要校验和上传失败不标记原件。未知失败标记仅由可见原单元真实 broken 状态确认，收尾仍是生成失败；后台批次缺席不提供证据。冷恢复不自动重跑未提交转换，媒体正常/错误/取消均清理。
+
+当前命令与结果（SDK 10.0.402，全部为合成数据）：
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~SynologyPhotosAutomaticExecutionTests'`：末次 **52 通过、0 失败、0 跳过，708 毫秒**。覆盖个人/共享、可见/后台、三种媒体需求组合、各档摘要/视频不匹配、单元防重、同编号并发、冷恢复、权限/设置/原件变化、提交前后取消、存储失败、失败分类及损坏记录。首轮 39 项有 4 项测试将序列化的 `Description:null` 字段名误当用户内容，改为植入合成私人描述并断言该值不落盘后通过，生产最小记录规则没有降低。
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos'`：46 项新增时 **1267 通过、0 失败、0 跳过，4 秒**；补上大视频回读后的权限复查和 6 项回归后，末次 **1273 通过、0 失败、0 跳过，4 秒**。
+- `git -c core.safecrlf=false diff --check` 通过；自动转换临时目录为空；没有实际 NAS 写入、其他平台修改或提交。设置保存、前台可见优先调度和原生自动入口仍在实施，完整自动切片双架构构建/UI 验证尚未执行。
+
+PENDING_USER_VALIDATION：完整入口完成后，用专用合成媒体分别测试缩略图、视频及二者，验证丢回执后三档内容/重封装视频识别；明确转换失败的 photo/video 标记、共享角色撤销和后台队列缺席不得误认完成。只回传脱敏套件版本、角色、格式、步骤与提示，不提供原件、地址、账号或响应正文。当前源码和合成网络证据不能提升为真实 NAS 行为验证；设置、调度及 W2h–W9 继续。
+
+### 2026-10-15 Windows W2g 自动预览基础：候选、转换和媒体传输（未提交工作区）
+
+已实现自动单元/实际系统转换能力类型、严格后台候选与物理可见原件/实况单元读取。后台仍按个人或共享 management，单项共享按 view+download；请求使用既有 list_convert_needed v3、Item.get v5 与 Unit.get v1，保留单元编号、数值类型及官方 preset/type 映射，不把批次当完整图库。转换复用 Windows 图片处理，新增原生 H.264/AAC 视频合成、原比例/方向、元数据清除和原件不变检查；视频内容核查读取 MP4/MOV 编码样本、编解码配置、时长、显示顺序、方向和编辑时间线，容器位置、时间基与元数据可改变，内容改变不得认领。非完整/分片或无法解释的容器保持不可核查，不降为整文件大小或时长比较。
+
+ConvertedFile.upload 继续使用原一次性 multipart，增加可选 film_h264 文件流，保留三档 JPEG、严格接受/拒绝/未知回执和无重放；缩略图读取增加 sm 档供恢复复用。set_broken v3 和 Setting.User.set v1 仅纳入已记录传输入口；本阶段尚未接入自动执行/加密记录/调度/设置界面，不能宣称自动预览已交付。后续仍须完成逐次权限/候选复查、下载前后核查、未知恢复、失败分类、后台暂停与用户入口。
+
+验证（SDK 10.0.402，均为当前合成数据）：
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~PhotoPreviewVideoSignatureTests|FullyQualifiedName~WindowsPhotoAutomaticConverterTests|FullyQualifiedName~SynologyPhotosAutomaticCandidateTests|FullyQualifiedName~SynologyPhotoAutomaticTransportTests|FullyQualifiedName~SynologyPhotoConvertedUploadTests'`：最终 96 通过，0 失败、0 跳过，4 秒。覆盖 MP4/MOV 等价封装、样本/配置/显示顺序/方向/时间线改变、坏表/越界、元数据清除、实际 H.264/AAC、四方向、原件保持、取消/已有输出、格式能力与角色、坏批次、实况归属、字段组合和二次序列化拒绝。
+- 初次原生转换准备失败：静止短视频的平均码率 6300 不适合作为编码预算，改按原画面面积/帧率设置预算。原生合成器将旋转落实到画面，避免输出重复旋转信息。320×192 合成视频四方向及有/无 AAC 音轨均通过；160×96 横向保持原尺寸。当前系统对 96×160 极小竖向返回 `MF_E_TRANSFORM_TYPE_NOT_SET`，正式回归明确验证该拒绝不报告媒体损坏、原件不变且输出清理，其他系统若成功则必须保持原尺寸；未将该系统限制伪装为转换成功。相关阶段失败均保留，不扩大为全部媒体兼容。
+- 新候选测试初次编译触发 xUnit2031，改用带谓词的 Assert.Single；随后五项身份变更测试因合成 JsonValue<int> 被测试代码误读为 long 失败，修正测试数据变更后全部通过，未降低生产断言。
+- 完成传输与候选整合后，`dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos'`：1221 通过，0 失败、0 跳过，4 秒。
+- `git -c core.safecrlf=false diff --check` 通过；临时合成视频/音频在 finally 清理，无实际 NAS 请求、Apple/Android 源码改动或提交。生产双架构构建将在完整自动切片接入后运行，本阶段不能沿用手动预览构建当作自动完成证据。
+
+实现依据：[Windows 原生媒体转换](https://learn.microsoft.com/en-us/windows/uwp/audio-video-camera/transcode-media-files)、[系统编解码器查询](https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/codec-query)、[原生视频合成](https://learn.microsoft.com/en-us/uwp/api/windows.media.editing.mediacomposition.rendertofileasync?view=winrt-26100) 和 [QuickTime 样本到块映射](https://developer.apple.com/documentation/quicktime-file-format/sample-to-chunk_atom)。PENDING_USER_VALIDATION：实际 HEIC/HEVC/VC1/WMV3、极小/特殊媒体、ARM64 原生编解码与 NAS 派生视频重封装，后续完整入口验收清单继续补齐；未知恢复仍不得依据候选消失认领成功。
+
+### 2026-10-15 Windows W2g 手动预览生成与恢复（未提交工作区）
+
+接入多选与单张重新生成、按来源读取未完成队列、确认继续、逐项任务记录、停止剩余项和失败项再次确认。冻结相册多选保留、预览工具栏省略；普通共享 view+download/管理、本人提供者、其他共享提供者全空间管理和个人条件/冻结原件资格分别检查。重建复用原件下载、同源证书握手、三档 JPEG/视频取帧、ConvertedFile v3 与 PhotosManagement-v1 加密外壳；没有另建下载/写队列或改变 NAS 契约。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SynologyPhotosPreviewGenerationTests`：首次新增测试编译发现合成 BinaryResult 参数顺序错误，修正后 **53/53 通过**。增加损坏记录、部分完成、相册互斥和工作区回归；`--filter 'FullyQualifiedName~SynologyPhotosPreviewGenerationTests|FullyQualifiedName~SynologyPhotosPreviewWorkspaceTests'` 阶段 **73/73 通过**。此后新增相册互斥 1 项及原生 HTTP 连接错误分类 4 项。
+- 最终 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~Photos`：**1135 通过、0 失败、0 跳过，3 秒**。包括实际 Windows 图片/视频转换、通知与 multipart、PNG 优先、本机后备、丢回执/断线、冷恢复、取消、部分完成、权限撤销、原件变化、跨账号迟到结果及跨管理操作互斥。先前测试断言未降低。
+- `./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States regen-confirm,regen-complete,regen-multi,regen-partial,regen-confirm-cancel,regen-denied,regen-unknown,regen-running,regen-stop,regen-late,regen-capability,regen-queue-empty,regen-queue-loading,regen-queue-error,regen-queue-continue,regen-queue-switch,regen-history-empty,regen-history-cold,regen-history-resume,regen-history-retry -ContinueOnFailure`：初轮 `ui-review-20261015-185511` **13/20 通过**；7 项单张路径发现图片解码完成后没有刷新新按钮状态。补上既有低优先级解码完成回调中的按钮更新后，同命令 `ui-review-20261015-185919` **20/20 通过**，没有放宽可点击、单次提交或结果断言。
+- 中文 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States regen-confirm,regen-complete,regen-multi,regen-partial,regen-confirm-cancel,regen-denied,regen-unknown,regen-running,regen-stop,regen-late,regen-capability,regen-queue-empty,regen-queue-loading,regen-queue-error,regen-queue-continue,regen-queue-switch,regen-history-empty,regen-history-cold,regen-history-resume,regen-history-retry,regen-frozen-preview,regen-frozen-bulk,regen-decode-error,export-picker-cancel,export-decode-error,slide-view -ContinueOnFailure`：`ui-review-20261015-190358` **26/26 通过**，包含冻结多选/预览差异、解码错误仍可重建、键盘聚焦及既有导出/幻灯片补验。中英文真实 XAML 截图已检查。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`：**42.00 秒，0 警告、0 错误**。同命令改为 `win-arm64`：**43.71 秒，0 警告、0 错误**。构建来自本轮源码，未使用旧云端结果。
+- 最终英文补验 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States regen-frozen-preview,regen-frozen-bulk,regen-decode-error,regen-complete,regen-denied -ContinueOnFailure`：`ui-review-20261015-190802` **5/5 通过**。本地化 **4413 项 Windows 双语资源**与硬编码/参数检查通过；请求契约 **180 个请求 Fixture、1 个写结果示例**，Fixture **29 组、48 项私有引用**、生成 API 目录、文档与 `git -c core.safecrlf=false diff --check` 均通过。
+
+独立集成与只读对抗复核：同操作编号仅查询，未决原件与所属目录/相册不能用新编号或其他管理操作绕过；已提交未知不后备上传或恢复标记。队列继续不重复 set_regenerating，队列变化在转换前拒绝；未知标记只有匹配队列才转为可显式继续，未知转换须两次队列缺席、同原件和稳定新预览版本共同证明。明确失败恢复一次且不计为生成完成。关闭页面不会重建任务，用户停止会中断等待并保留未知事实。通知重连只握手/注册原单元，网络连接失败与证书/认证拒绝区分，底层含令牌 URL 的错误不传播。已完成任务刷新当前真实预览，只更新缩略图，保留月份、排序和其他资料。临时源文件与目录已核查为空；未使用真实媒体、NAS 或凭据。
+
+PENDING_USER_VALIDATION：在专用 NAS 合成图库中，用个人、共享 entry+下载、共享 management、本人/其他提供者、条件/冻结相册分别执行单项/混合重建及队列继续；应保持原件，通知成功后更新预览，取消/断线/切换账号不重复转换。验证反向代理应用目录的同源事件地址、真实队列类型/cache_key 变化、PNG/HEIC/视频的系统编解码和未知结果回读；真实 NAS 未完成的项目不能仅因队列消失宣称完成。仅回传脱敏版本、媒体类别、角色、入口、步骤与提示，不回传主机、路径、媒体、账号或会话。物理 ARM64、触控、Narrator、DPI/文字缩放待设备验收。本片不是自动预览或 W2g/W0–W9 全部完成，不发布、不提交或推送。
+
+### 2026-10-15 Windows W2g 预览生成基础阶段（实施中，未提交工作区）
+
+本阶段新增同源 Photos EIO4 通知、Windows 原生三档 JPEG/视频取帧与 ConvertedFile v3 上传。事件复用既有 HTTP 客户端及证书握手，只注册原单元，最多三次重连、不重发转换、600 秒总期限；含官方查询令牌的 URL 和底层异常不进入日志或界面。转换保持 EXIF 方向、比例及小图尺寸，上传禁止 HTTP 自动重放，矛盾或缺失回执保持未知。已接入的 Repository 预览恢复变体、逐项执行与其他管理任务互斥尚待流程专项和原生入口验证，不能将下列基础测试称为手动/自动预览功能完成。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SynologyPhotoPreviewEventsTests`：**33 通过、0 失败、0 跳过**。
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~WindowsPhotoPreviewConverterTests|FullyQualifiedName~SynologyPhotoConvertedUploadTests'`：首次编译发现测试缺少 Transcoding 命名空间和 ApiCapability 请求格式；补齐后 **22/24 通过**。两项视频样本在合成视频生成处失败，调整为合法的 160×96 纯视频配置、去掉不存在的音轨后，`--filter 'FullyQualifiedName~WindowsPhotoPreviewConverterTests.NativeVideo'` **2/2 通过**。实际取帧断言与生产转换器未放宽。
+- 汇总基础组 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~SynologyPhotoPreviewEventsTests|FullyQualifiedName~WindowsPhotoPreviewConverterTests|FullyQualifiedName~SynologyPhotoConvertedUploadTests'`：**57 通过、0 失败、0 跳过**。覆盖真实 JPEG 解码、八种方向、三档尺寸、原件保持、实际短视频/普通视频取帧、字段与回执、协议重连和取消。此后增加当前重建任务的取消源，待后续流程回归覆盖。
+
+本阶段未运行目标 App 双架构构建或原生 UI，未访问真实 NAS。手动重建界面/恢复与流程回归、自动转换及 W2h–W9 继续实施。真实反向代理 Photos 路径、NAS 队列/事件、编解码扩展与媒体格式支持仍未验证。
+
+### 2026-10-15 Windows W2g 格式与完整集合导出（未提交工作区）
+
+沿固定 `a521ccb5` 与 `photos-library-read.md` 已记录语义，扩展同一 Photos 下载传输与事务保存服务。覆盖单张/所选原件、压缩 JPEG、单张原尺寸 JPEG、完整普通/条件/协作相册与目录、同级照片/目录混选 ZIP；列表中的相似组展开完整成员，预览仅保存当前照片。下载前重新读取原件身份与实际下载权，贡献者例外要求来源开启及最新提供者；整册不借贡献权限。原尺寸转换为派生缓存写，要求实际双标记、同照片在途去重及本次明确转换回执，不自动重放；口令只在请求体。原件长度、压缩后实际格式、Windows 完整 JPEG 解码及 ZIP 有界结束记录检查后才提升文件。批量同名另存、按实际后缀命名，部分失败和取消保留已完成事实及旧本地文件。没有新 NAS 契约、依赖、权限、持久化或其他端源码变化。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~Photos` 初轮 **946/949 通过**，三项旧夹具未提供新增下载预检的相册/目录响应；补齐真实调用链后 **949/949 通过**，保留原二进制错误与访问撤销断言。新增导出专项初轮 **43/47 通过**：四项失败来自测试在 Repository 能力快照创建后才改版本，以及直接把 `JsonValue<int>` 当作 `long` 读取；调整夹具初始化与解析后完整 Photos **996/996 通过**。继续增加 ZIP64 最大注释、有取消/访问刷新时的迟到归档、单文件拒绝 ZIP64，最终同命令 **1000 通过、0 失败、0 跳过**；导出新文件 50 项加既有回归 1 项。
+- `python tools/request-contract/validate_contracts.py` **180 个请求 fixture、1 个写结果通过**；`python tools/contract-validation/validate_fixtures.py` **29 组 fixture、48 项私有引用通过**；`python tools/codex/generate_api_reference.py --check` **通过**。`python tools/localization/check_localization.py` **4398 项 Windows 资源通过**；文档与 `git -c core.safecrlf=false diff --check` 通过。Python 使用本机已配置运行时，.NET 使用本机 10.0.402。
+- 原生宿主首轮构建因测试误用不存在的子菜单 AutomationPeer 类型及可空门控字段失败；改为框架实际创建的 peer 与明确非空字段，未计为运行通过。中文 `ui-review-20261015-171321` **16/19 通过**，三个预览导出场景停止响应；`171745`、`172033` 各 **0/3**，`172334` **0/1**，`172548` 与 `172803` 各 **1/4**。菜单退场等待和视口尺寸调整单独均未解决。专用状态提示诊断 `173041`、`173240` 各 **1/1**，随后已删除一次性诊断源码和输出。
+- 原生问题定位为图片解码/错误呈现尚未完成就允许打开菜单。新增解码期间的按钮禁用、完成本轮 XAML 更新后再开放、错误状态保留；保留原居中布局，不保留无效尺寸尝试。中文定点 `173441` **4/4**，中文整组 `173655` **22/22**（19 项导出及 3 项幻灯片）。英文 900 宽/侧栏切换 `174022` **22/23**，新增“解码失败仍可保存原件”暴露错误呈现的相同竞争；将菜单启用放到低优先级 UI 队列，英文定点 `174526` **4/4**。
+- 英文同包整组 `174709` **22/23**，立即取消保存位置触发原生菜单退场竞争；入口再加入等待菜单 Closed 和开始阶段防重，未把失败标记为通过。该修复后的最终双语与双架构结果在后续补记。此前生产 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore` **44.31 秒、0 警告/错误**，尚不代表该最后修复后的构建。
+- 最终菜单/解码处理版英文 `ui-review-20261015-175028` **23/23 通过**；末次补齐开始阶段与幻灯片互斥后，中文 `ui-review-20261015-175513` **20/20 通过**，同包英文 `175802` 的 `export-duplicate,export-picker-cancel,export-decode-error,slide-view` **4/4 通过**，包含实际菜单退场期间的重复保存与幻灯片阻止断言。最终生产同名 `dotnet build` 命令 x64 **30.35 秒**、`--runtime win-arm64` **43.73 秒**，均 **0 警告、0 错误**。英文窄窗口部分完成和中文预览失败仍可保存截图已实际查看，提示、恢复入口和内容边界完整；未将原生合成通过提升为 NAS 验证。
+
+原生命令使用 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States export-original,export-jpeg,export-full-jpeg,export-batch,export-preserved,export-partial,export-collision,export-similar,export-album,export-folder,export-mixed,export-loading,export-error,export-cancel,export-picker-cancel,export-late,export-duplicate,export-empty,export-filtered -ContinueOnFailure`；同包复跑加 `-SkipBuild`，专项仅列对应状态。英文改 `-Language en-US -WindowWidth 900 -PaneState cycle`，追加 `export-decode-error,slide-view,slide-decode,slide-error`。测试通过真实原生菜单、溢出菜单和事务文件执行，内容仅为合成色块、空 ZIP 与固定字节；不调用真实 NAS。失败进程遗留的合成文件逐项核对后非递归清理，未修改用户目录内容。
+
+PENDING_USER_VALIDATION：在专用 NAS 的个人、共享 entry/management、仅相册账号、相册贡献者与下载受限成员中，验证原件/压缩 JPEG、HEIC/TIFF/RAW 原尺寸 JPEG，以及普通/条件/协作相册、完整多层目录和同级混选 ZIP。预期权限撤销或目标变化拒绝下载；原件保持不变，压缩无法转换时保留实际格式，原尺寸 JPEG 必须可打开；解压后的数量、层级、内容和 ZIP64 大归档另行核对，容器检查不等于逐文件 CRC 验收。覆盖断网、取消、同名文件、相似组全部成员、来源切换及原月份保持。回传仅版本/权限类别、选择数量、格式、步骤和脱敏错误，不提供媒体、真实路径、地址或响应。实际系统编解码、物理 ARM64、触控、Narrator、高 DPI/文字缩放未验证；手动/自动预览生成及 W2h–W9 继续，不将本片等同全部交付。
+
+### 2026-10-15 Windows W2g 幻灯片（未提交工作区）
+
+沿固定 `a521ccb5` 与 `photos-library-read.md` 的已有幻灯片语义，复用 Preview/StrictRangeMediaSource，在独立 WinUI 全屏窗口显示同一控件树。图片解码显示后开始三秒计时、视频按结束事件推进、实况默认静帧；支持暂停/继续、左右/空格/Esc、完整原查询独立分页、相似组固定完整成员、媒体与分页失败重试、窗口关闭/退出全屏/隐藏与迟到结果释放。无新 NAS 请求、写操作、权限或依赖，不改变其他端源码和接口证据等级。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SynologyPhotoSlideshowTests` 首轮 27/28 通过：新测试错误地要求完整时间线为无限范围，而既有完整查询按全部图库日期限定；改为断言与进入月份前的完整原查询一致。第二轮 `--filter FullyQualifiedName~SynologyPhoto` 为 890/891 通过：同一新测试未模拟实际显示回调便断言停止后保留图片，补齐回调。随后完整 `--filter FullyQualifiedName~Photos` **949 通过、0 失败、0 跳过**，含新增 28 项幻灯片正式测试；未改变既有断言。
+- 原生宿主首次构建发现新增 Smoke 文件未列入显式工程清单，补入后发现测试按钮 Invoke 局部方法缺失；两次均未计为运行通过。初轮中文 `ui-review-20261015-162644` 18 项中 7 通过、11 失败：独立窗口后的名称作用域查找错误，以及菜单尚未关闭就迁移页面控件引起的原生窗口失败。修复测试定位后四项补跑 `ui-review-20261015-163000` 1 通过、3 失败；生产入口改为等待菜单 Closed，三个失败场景在 `ui-review-20261015-163139` **3/3 通过**。随后中文 `ui-review-20261015-163252` **18/18 通过**。
+- 上述中文场景实际命令为 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language zh-CN -Scenarios photos -States slide-view,slide-loading,slide-error,slide-decode,slide-retry,slide-next,slide-pages,slide-similar,slide-pause,slide-keyboard,slide-auto,slide-video,slide-video-pause,slide-stop,slide-close,slide-exit,slide-hide,slide-late -ContinueOnFailure`；构建轮省略 `-SkipBuild`。合成视频由系统编码器生成纯色短片，经真实范围流和 MediaPlayer 播放，临时文件随生成完成删除，不读真实媒体。
+- 截图复核发现宽屏照片靠左，新增居中几何断言。仅设置 ScrollViewer 内容对齐不足；英文 900 宽主窗口/侧栏切换整组 `ui-review-20261015-163557` 20 项（含 manual-submit、sim-open）中 10 通过、10 因居中断言失败。生产改为以视口尺寸容器居中承载图片，最终双语与构建结果另补，不能把之前通过冒充此布局的证据。
+- 居中容器调整前生产 x64 构建 **39.62 秒、0 警告/错误**，ARM64 **46.62 秒、0 警告/错误**；使用 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`（ARM64 改 runtime），最终布局仍须重建。当前本地化 4385 项 Windows 资源与文档/差异检查通过。
+- 最终居中容器版：英文 `./windows/tests/UiSmoke/run.ps1 -Language en-US -Scenarios photos -States slide-view,slide-loading,slide-error,slide-decode,slide-retry,slide-next,slide-pages,slide-similar,slide-pause,slide-keyboard,slide-auto,slide-video,slide-video-pause,slide-stop,slide-close,slide-exit,slide-hide,slide-late,slide-empty,slide-filtered,sim-open,manual-submit -WindowWidth 900 -PaneState cycle -ContinueOnFailure` 在 `ui-review-20261015-163908` **22/22 通过**（20 新项与 2 旧项）。完整全屏图片截图已查看，图片居中、保持比例，播放控件及键盘焦点完整。最终生产 x64 **31.46 秒**、ARM64 **31.39 秒**，均 **0 警告、0 错误**；以上同名 `dotnet build` 命令真实重跑，不使用布局修复前结果代替。
+- 同一最终宿主中文 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language zh-CN -Scenarios photos -States slide-view,slide-loading,slide-error,slide-decode,slide-retry,slide-next,slide-pages,slide-similar,slide-pause,slide-keyboard,slide-auto,slide-video,slide-video-pause,slide-stop,slide-close,slide-exit,slide-hide,slide-late,slide-empty,slide-filtered -ContinueOnFailure`：`ui-review-20261015-164257` **20/20 通过**。五态、几何、真实系统编解码合成片、播放暂停、返回原浏览和原生窗口生命周期均有执行证据，仍不代表真实 NAS 或 Narrator/触控验收。最终文档、差异与 4385 项双语检查通过，Apple/Android 源码无改动。
+
+PENDING_USER_VALIDATION：在真实个人/共享及协作相册测试 HEIC、RAW、普通视频和实况媒体，跨月分页、播放失败重试、暂停/继续、组内循环、窗口关闭/隐藏后返回；应保持主窗口呈现状态、图库位置与选择，视频完整结束后推进，无额外下载权限要求或迟到媒体泄漏。回传客户端/系统与套件版本、媒体格式、入口、动作、脱敏提示和是否使用系统可用编解码器；不提供真实照片、主机、账号或会话资料。触控、Narrator、多显示器与高 DPI 仍需 W9 及用户设备验收。
+
+### 2026-10-15 Windows W2f 相似组与撤销（未提交工作区）
+
+沿固定 `main@a521ccb5` 与 `photos-similar-items` 已记录 static 契约，Windows 增量实现双来源分类/月份、完整组与预览、最佳照片、移出/拆组、多组串行恢复/取消、逆序撤销、识别状态及保留所选原件清理。源码仍在当前 main 工作区，没有提交、推送、真实 NAS、发布或其他四端变更。SimilarGroups 专项写保护与既有删除保护保持默认关闭。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~Photos --verbosity minimal`：接入初轮 854 旧项全过；新增 Repository 首轮 53 项通过，加入工作区后 914 项通过，补充单成员解散、状态字段、拒绝续作、互斥与账号回归后 **921 通过、0 失败、0 跳过**。新增 60 项 Repository/传输与 7 项工作区/预览自动化；原有断言保留。
+- 初轮 x64 生产 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`：**42.46 秒、0 警告、0 错误**。ARM64 同命令改为 `win-arm64`：**46.15 秒、0 警告、0 错误**。后续窗口关闭与识别轮询恢复接线变更仍需最终双架构重建，不把这些早期构建冒充最终源码。
+- 第一条 UI 命令请求新状态时，既有 `run.ps1` 案例清单尚未登记它们，`ui-review-20261015-154552` 实际只执行 **2/2** 旧回归（manual-submit、concept-cover-save）；没有计为新状态通过。已补齐正式清单。随后 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language zh-CN -Scenarios photos -States sim-view,sim-loading,sim-error,sim-empty,sim-filtered,sim-keyboard,sim-open,sim-top,sim-remove,sim-ungroup,sim-batch,sim-partial,sim-undo,sim-unknown,sim-safety,sim-capability,sim-shared,sim-status,sim-status-waiting,sim-status-failed,sim-cancel,sim-confirm-cancel,sim-conflict,sim-history-cold,sim-history-resume,sim-cleanup -ContinueOnFailure`：`ui-review-20261015-154755` **26/26 通过**。中文普通表单/缩略图、部分结果与状态截图已查看；状态截图首次抓在行布局前，测试补为等待真实行及缩略图，不降低内容断言。
+- 当前本地化 **4379 项 Windows 双语资源**通过；请求契约 **180 请求 Fixture、1 写结果示例**，Fixture **29 组、48 项私有 API 文档引用**及 API 生成目录检查均通过。文档检查通过。使用 .NET 10.0.402 与 bundled Python，不新增依赖。
+
+独立集成及只读对抗复核：逐组操作在整批最小记录落盘后执行，每次提交前重查账号、设置、组快照、全部原件及目录权限；失回执和异常不能追认，明确拒绝才可显式继续。拆组消失仍必须读取全部原件与归组；有效单成员组按解散，字段异常不当空组。撤销要求旧结果仍成立、原件未被他端重新归组和同一原动作只发起一次；可取消未开始项但不能取消未知解除保护。复核补上离开页面后迟到预检不能重新弹确认、重新显示窗口恢复状态轮询，以及分页前重建真实偏移。清理仍使用原删除执行链与固定补集，不把拆组计为删除。最终英文/补验和双架构结果继续记录于本条；真实 NAS、ARM64 设备、Narrator、触控、DPI/文字缩放未验证。
+
+相似组最终补验：
+
+- 英文窄窗口完整命令沿上述 26 状态并追加 `concept-cover-save,manual-submit`，使用 `-Language en-US -WindowWidth 900 -PaneState cycle` 重建宿主：`ui-review-20261015-155133` **28/28 通过**。查看英文状态页实际缩略图、深色键盘焦点与完整行文本，另修正数量文案为参数化标签并补主列表组数量徽标。
+- 加入清理提交/取消、轮询生命周期和迟到读取四个新场景后，`./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States sim-view,sim-batch,sim-partial,sim-cleanup-submit,sim-cleanup-cancel,sim-status,sim-status-waiting,sim-status-failed,sim-status-lifecycle,sim-late -ContinueOnFailure`：`ui-review-20261015-155628` **9/10 通过**。`sim-late` 暴露生产对话框关闭后仍等待未返回读取、未释放占用；失败表现为测试等待超时，并非 NAS 结果。生产改为独立读取任务、关闭立即取消/释放、迟到结果由窗口代次丢弃，未删除或放宽断言。
+- 使用相同十状态以 `-Language zh-CN` 重建后，`ui-review-20261015-160012` **10/10 通过**。最终英文 `-SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States sim-view,sim-loading,sim-late,sim-cleanup-submit -ContinueOnFailure`：`ui-review-20261015-160212` **4/4 通过**。两语言新增 30 个不同相似组场景均有通过证据，但不能称第一次完整执行全部通过。中文最终组数量/进度和原件补集删除结果、英文最终表单均已视觉复核。
+- 最终生产 x64 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`：**30.91 秒、0 警告、0 错误**；同命令 `--runtime win-arm64`：**30.80 秒、0 警告、0 错误**，均包含关闭占用修复。其间的 **45.42 秒 x64、29.15 秒 ARM64** 是该修复之前的中间结果。
+- 最终 Windows 双语资源 **4380 项**通过；Photos **921 项**覆盖最终领域/Repository/工作区逻辑，之后修改仅原生界面、资源、场景宿主和文档。请求契约/Fixture/API 生成检查结果同上；文档、差异和其他平台范围最终重检。W2f 本地主流程已完成，W2g–W9 继续；无发布、安装或真实 NAS 验证。
+
+### 2026-10-15 Windows W2f 主题显示、封面与误分类（未提交工作区）
+
+沿固定 `main@a521ccb5`、`photos-concept-visibility` 的 static 契约，增量接入主题隐藏项完整读取、批量显示、单图封面、误分类移出和同一 Recognition 记录的加密恢复。没有访问真实 NAS、提交、推送或发布，其他四端源码未改；RemoveConceptPhotos 默认关闭。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SynologyPhotosConcept --verbosity minimal` 首轮编译发现四处可空引用标注，修正后 **62 通过、1 失败**；失败夹具在 Repository 复制能力表后修改原字典，修正为重新构造 Repository，未降低能力断言。
+- 最终 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~Photos --verbosity minimal`：**854 通过、0 失败、0 跳过**。新增 57 项 Repository/传输和 6 项工作区，覆盖双来源、完整分页、严格字段、原件保留、完整成员与计数、部分结果、冷恢复、未知不重发、权限/身份变化、互斥、跨账号迟到结果、坏记录及名称/路径不落盘。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore --verbosity minimal`：首轮 **41.86 秒**，主题专用显示文案修正后的最终构建 **30.06 秒、0 警告、0 错误**。改为 `--runtime win-arm64` 的最终构建 **44.02 秒、0 警告、0 错误**。
+- 原生首轮构建因新 `SmokePhotoConcepts.cs` 未列入既有工程的合成条件文件清单失败，按 `Testing` 链接模式补齐。第一组中文 `ui-review-20261015-145810` 为 **24/26 通过**；搜索/键盘两场景定位到 ComboBox 模板内部 TextBox 而失败，已改为精确资源 Header。截图复核另发现显示选项误用人物资源，新增主题专用中英文文案。第二组中文 `ui-review-20261015-150213` 的搜索/键盘断言又暴露测试未等待 WinUI TextChanged 后列表更新，改为等待列表实际变化，保留选择及键盘断言；最终补验见下。
+- 中文整组命令为 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States concept-display,concept-empty,concept-loading,concept-error,concept-filtered,concept-keyboard,concept-show,concept-hide,concept-cover,concept-cover-save,concept-remove,concept-remove-save,concept-threshold,concept-safety,concept-cancel,concept-confirm-cancel,concept-unknown,concept-partial,concept-history-cold,concept-history-resume,concept-shared,concept-capability,concept-conflict,ppl-rename-submit,face-cover-submit,manual-submit -ContinueOnFailure`，第二组仍 **24/26 通过**；修正测试等待后 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States concept-filtered,concept-keyboard -ContinueOnFailure`：`ui-review-20261015-150649` **2/2 通过**，两项未降低原断言，中文 26 个不同场景均有通过证据。已查看最新中文空搜索/保留选择及深色键盘焦点截图，主题文案正确，布局完整。
+- 英文沿上条同一 26 状态集合，以 `-SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle` 运行：`ui-review-20261015-150817` **25/26 通过**，键盘场景在列表项布局前对 ListView 请求焦点失败。测试改为等待实际行容器加载并对该行要求键盘焦点，保留筛选前后选择数量断言；`./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States concept-filtered,concept-keyboard -ContinueOnFailure` 重新构建宿主后，`ui-review-20261015-151237` **2/2 通过**。英文 26 个不同场景均有通过证据，不能将补验表述为首轮全绿。已查看英文窄窗口阈值确认、部分结果及最终焦点截图。
+- `tools/localization/check_localization.py` 当前 **4352 项 Windows 双语资源通过**；文档与 `git -c core.safecrlf=false diff --check` 已通过，最终记录完成后重检。使用本机 .NET 10.0.402 和既有 WinUI，不新增依赖。
+- `python tools/request-contract/validate_contracts.py`：**180 请求 Fixture、1 写结果示例通过**；`python tools/contract-validation/validate_fixtures.py`：**29 组 Fixture、48 项私有 API 引用通过**；`python tools/codex/generate_api_reference.py --check`：与既有请求快照一致。均由既有 bundled Python 执行，没有改动契约或生成文件。
+
+独立集成及只读对抗复核重点：每次写前重新检查账号/来源/识别设置与目录权限；只有本次接受回执加真实结果可完成。移出以 get 数量、完整成员缺席及原件身份三项共同核查，部分事实保留且未知只读；主题互斥不误用人物编号，照片互斥与既有管理任务一致。当前窗口保持月份，移出的预览关闭但原件不进入全局删除缓存。真实 NAS、触控、Narrator、高 DPI/文字缩放及 ARM64 设备均未验证；具体 PENDING_USER_VALIDATION、保护开关及迁移回滚见 Windows 主计划。
+
+### 2026-10-15 Windows W2f 图片内手工人脸（未提交工作区）
+
+沿固定 `main@a521ccb5` 和既有 Photos 私有契约增量实现手工画框、拖动/缩放、键盘位置/大小、归入已有/新人物、移除/撤销、确认和分阶段恢复。没有访问真实 NAS、提交、推送、分支或发布；其他四端源码未改。恢复只保存编号、坐标、摘要、阶段及明确回执，姓名和图像只驻内存。CorrectFaces 继续默认关闭。
+
+- 第一轮 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~SynologyPhotosManualFaces' --verbosity quiet`：**50/50 通过**。追加实际图片方向和裁剪等用例后，`--filter 'FullyQualifiedName~Photos'` **788/788 通过**。最初图片测试类名使用单数 Photo，未进入 Photos 筛选；已改为复数并实际运行八方向与裁剪用例，不把此前 776 项当作包含图片用例。
+- 最终联合命令 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos|FullyQualifiedName~Upload|FullyQualifiedName~ChatAttachment' --verbosity quiet`：**971 通过、0 失败、0 跳过**，手工子组新增 **65 项**（52 Repository/传输、12 图像/草稿、1 工作区）。覆盖部分/错误/旧脸回执、逐阶段断线和只读恢复、完整新增后再改旧框、重复点击、保存失败、落盘时权限/对象变化、共享/相册原件权限、输入 JPEG 冻结、跨账号迟到回执、新人物刷新、损坏记录与旧上传默认 MIME。扩大筛选首轮为 **970 通过、1 失败**：`WindowsUploadPickerSourceContractTests.FolderUploadCreatesParentsFirstThenUploadsStrictlyWithoutOverwrite` 第 197 行仍匹配 W1 之前的两参数调用；按现有带进度回调的完整调用更新字符串检查，保留目录先于上传、禁止覆盖等全部断言后联合通过。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore --verbosity quiet`：最终 **27.76 秒、0 警告、0 错误**；改为 `--runtime win-arm64` **42.29 秒、0 警告、0 错误**。早期首轮因 `Buffer` 与 WinRT 同名类型歧义编译失败，显式使用 `System.Buffer.BlockCopy` 后早期 x64 **39.86 秒通过**；上述最终构建已包含后续原生文字与触控处理。
+- 中文初步原生 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States manual-editor,manual-empty,manual-add,manual-submit,manual-adjust,manual-history-input -ContinueOnFailure`：`ui-review-20261015-141736` **6/6 通过**，已查看编辑和保存截图；纠正历史界面误用“分享设置已保存”的可见文案。
+- 最终中文命令 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States manual-editor,manual-empty,manual-loading,manual-error,manual-add,manual-add-known,manual-adjust,manual-assign,manual-remove,manual-undo,manual-submit,manual-unknown,manual-safety,manual-cancel,manual-confirm-cancel,manual-conflict,manual-partial,manual-history-input,manual-history-cold,manual-keyboard,manual-shared,manual-album,manual-capability,manual-long-name,ppl-rename-submit,face-history-input -ContinueOnFailure`：`ui-review-20261015-142251` **26/26 通过**。含两个既有人物/人脸历史回归；每个场景等待弹窗 Closed 后释放页面，仅成功场景写完成标记。
+- 英文沿同一状态集合追加 `-SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle`：`ui-review-20261015-142727` **26/26 通过**。已查看英文窄窗新增、长姓名深色及最终中文保存状态截图，布局完整，无水平溢出；指针路由、实体触控和系统辅助功能仍按用户验收范围记录。`python tools/localization/check_localization.py`：Windows **4335** 双语键、参数、引用及硬编码扫描通过。无新增 NAS 字段、依赖、工具链或系统权限；真实 NAS 和设备边界见 Windows 计划的手工人脸 `PENDING_USER_VALIDATION`。
+
+### 2026-10-15 Windows W2f 人物人脸纠正与封面（未提交工作区）
+
+继续固定 `main@a521ccb5`，仅修改 Windows 与既有计划/矩阵/验证历史，无提交、推送、PR、真实 NAS 或发布。人物照片中可查看真实人脸、选择移出、归入已有/新人物、设置封面；识别恢复沿第九变体增量保存人脸与照片编号、摘要及回执。CorrectFaces 默认关闭，封面独立按实际权限开放；手工框、主题和相似组不计入本组。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos' --verbosity quiet`：最终 **726 通过、0 失败、0 跳过**。新增 53 项人脸 Repository/传输、1 项旧记录兼容及 5 项工作区用例。覆盖真实 face 缩略图/授权与来源隔离、多个脸对应同一照片、逐图读取、来源移除/目标同一人脸、精确姓名、封面回执与照片编号不同、原件身份保留、当前权限/人物变化、跨账号迟到结果、并发重复、防重互斥、持久化失败、取消、冷恢复及来源/目标窗口重新分页。初次测试编译误用 MemoryStore.Saving，改用已有 FailSave/AfterSave；随后一次测试把故障存储实例继续用于另一场景，触发正确的 RecoveryUnavailable，拆为独立场景后全过。
+- 中文原生命令为 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -ContinueOnFailure -Scenarios photos -States face-remove,face-remove-confirm,face-remove-submit,face-reassign,face-new-submit,face-known-submit,face-cover,face-cover-submit,face-empty,face-loading,face-error,face-safety,face-none,face-cancel,face-confirm-cancel,face-unknown,face-history-cold,face-history-input,face-history-resume,face-shared,face-one,face-long-name,ppl-rename-submit,ppl-hide-submit,ppl-merge-confirm,ppl-history-input`，`ui-review-20261015-132430` **26/26 通过**。首次 21 项为 19 通过、2 失败（`ui-review-20261015-132026`）：测试将 ComboBox 内部 TextBox 计入姓名输入，改为按 Header 定位，保留全部断言。人脸卡片以固定缩略图列和可换行文本列处理长文件名，中文浅深色截图已查看。
+- 英文使用同一状态集合，追加 `-SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle`。两次整组分别 **25/26**（`ui-review-20261015-132922`）与 **24/26**（`ui-review-20261015-133303`）；封面及一次移除场景进程退出 `-1073741189`，没有新的受控异常文件，不推断为已定位的生产错误。封面单独复跑 `ui-review-20261015-133647` **1/1 通过**。审查发现测试完成截图后立即 Hide 并释放页面，现改为等待 ContentDialog.Closed 后释放页面，最后写完成标记；这是收紧关闭门禁，不删除或放宽断言。修正后英文受影响七项 `face-remove,face-cover,face-cover-submit,face-known-submit,face-new-submit,face-history-input,face-long-name`（`ui-review-20261015-133816`）**7/7 通过**；同一修正宿主最终英文整组 `ui-review-20261015-134026` **26/26 通过**，已查看英文姓名选择与移除确认截图。 同宿主中文 `-SkipBuild -Language zh-CN -Scenarios photos -States face-cover,face-known-submit,face-history-input,face-long-name` 在 `ui-review-20261015-134421` **4/4 通过**。中文 26 项整组早于末次目标人物刷新修正，末次修正由新增工作区回归、最终英文整组、中文四项和双架构构建覆盖。一次性阶段诊断代码与文件已删除。
+- 来源与目标人物窗口刷新修正后的 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore --verbosity quiet` **39.19 秒、0 警告、0 错误**；同命令改为 `--runtime win-arm64` **40.07 秒、0 警告、0 错误**。此前同一人脸主体的双架构构建已通过，但不代替末次两行刷新修改后的最终构建。
+- `python tools/localization/check_localization.py`（Windows **4313** 键）、`python tools/codex/check_documentation.py`、`git diff --check` 通过。独立集成及只读对抗复核覆盖记录最小化/旧记录可读、当前授权缩略图、原件与人脸分离、末次权限重读、明确回执、未知锁定、冷恢复和原生取消/关闭；实际 NAS 契约仍为 static，待验条件见 Windows 计划。后续手工人脸只完成实施清单，尚未实现。
+
+### 2026-10-15 Windows W2f 人物命名、合并与显示首组（未提交工作区）
+
+固定 `main@a521ccb5`，修改仅 Windows 与原计划/矩阵/本记录；没有提交、推送、PR、真实 NAS 操作或发布。新增人物领域、Person 列表/封面、识别写入/恢复、原生姓名/显示/合并与历史、52 项正式测试和人物合成场景。PhotosManagement-v1 第九变体只保存编号、摘要、状态与回执；MergePeople 默认关闭，人物其他可逆管理按当前能力与权限开放。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos' --verbosity quiet`：最终 **667 通过、0 失败、0 跳过**，包括 47 项人物 Repository/传输及 5 项工作区回归。覆盖严格姓名回执、清空后隐去、501 项成员分页/重叠并集、来源残留、错身份、部分显示、无回执、权限/识别撤销、持久化后再次变更、保存失败、并发重复、取消、冷输入、操作编号、跨账号迟到回执、封面类型/授权与分页重建。初次新增测试遇到 JsonObject 目标类型和 xUnit 分析器编译错误，修正测试表达式后运行；随后 36 项中 25 失败，定位为传输记录白名单漏接 Person.get/set/show/merge，以及时间线合成 fixture 未按 section 包装。补齐既有已记录请求与正确 fixture 后 36/36 通过，再追加至当前 52 项，无降低断言。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore --verbosity quiet`：最终 **42.97 秒、0 警告、0 错误**；同命令 `--runtime win-arm64` 最终 **45.65 秒、0 警告、0 错误**。两次最终构建对应相同生产代码与双语资源，其间仅追加两项正式测试和文档。最初 x64 42.64 秒为早期阶段证据，不替代最终构建。
+- `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -ContinueOnFailure -Scenarios photos -States ppl-rename,ppl-clear,ppl-rename-submit,ppl-rename-unknown,ppl-merge,ppl-merge-confirm,ppl-merge-submit,ppl-safety,ppl-show,ppl-hide-submit,ppl-partial,ppl-filter,ppl-empty,ppl-loading,ppl-error,ppl-cancel,ppl-confirm-cancel,ppl-history-empty,ppl-history-cold,ppl-history-resume,ppl-history-input,ppl-shared,ppl-cover,ppl-history-input-error`：**24/24 通过**（`ui-review-20261015-125658`）。首轮宿主漏加显式 Compile Include，编译失败；加入已有测试工程路径后首组 23 项为 22 通过、1 失败（`ui-review-20261015-125254`），搜索测试在 TextChanged 尚未完成列表更新时立即检查选择。正式测试改为等待列表重新出现后保留原选择断言，重跑通过。另补恢复读取失败后按钮重新启用、人物分类标题/图标/空名及显示字段文案，不更改请求语义。
+- 同一包 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure -Scenarios photos -States ppl-rename,ppl-clear,ppl-rename-submit,ppl-rename-unknown,ppl-merge,ppl-merge-confirm,ppl-merge-submit,ppl-safety,ppl-show,ppl-hide-submit,ppl-partial,ppl-filter,ppl-empty,ppl-loading,ppl-error,ppl-cancel,ppl-confirm-cancel,ppl-history-empty,ppl-history-cold,ppl-history-resume,ppl-history-input,ppl-shared,ppl-cover,ppl-history-input-error,fperm-submit,shr-submit,req-submit,folder-submit,manage-submit`：**29/29 通过**（`ui-review-20261015-130033`）。已查看中文显示管理、合并确认与英文窄窗口实际 PNG，按钮/多选/风险说明完整，无水平溢出。最终本地化检查为 Windows 4301 组双语资源、参数、引用与硬编码扫描通过；文档检查及按仓库原行尾配置运行的 `git diff --check` 通过。
+- 独立集成及只读对抗复核覆盖九变体兼容、本人/共享角色、末次权限与完整目标、互斥作用域、意图失败零写、本人回执、冷启动零重放、逐项事实、页面/账号迟到、真实封面类型和图片有界解码。当前结果是本地逻辑、原生合成与构建证据；真实人物数据、NAS、ARM64 设备和系统可访问性按 Windows 计划 PENDING_USER_VALIDATION 后置，W2f 其余组和 W2g–W9 继续。
+
+### 2026-10-15 Windows W2e 共享目录权限与分阶段恢复（未提交工作区）
+
+基线仍为 `main@a521ccb5`；新增修改仅 Windows 与计划/矩阵/本记录，Apple/Android 无源码改动；没有提交、推送、PR、真实 NAS 写入或发布。目录权限领域/Repository、PhotosManagement-v1 第八变体、原生表单/确认/历史、共用成员编辑器及 41 项正式用例已接入。FolderPermissions 专项保护默认关闭。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos' --verbosity quiet`：末次 **615 通过、0 失败、0 跳过**，包含新增 41 项目录权限。首轮新 36 项为 35 通过、1 失败：测试错误地假设共享候选只读一次，实际保存前重复读取权限；明确定位后改为非空且每次请求均断言共享候选参数，未降低生产校验。追加并发、恢复损坏、无变化回读、操作编号与相邻目录回归后通过。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore --verbosity quiet`：39.33 秒，0 警告、0 错误，覆盖完整目录逻辑与表单；后续仅确认文案修订另行补验。`--runtime win-arm64` 在同一命令模式下 44.44 秒通过；确认文案修订后的最终 ARM64 再建为 30.09 秒、0 警告、0 错误。不是 ARM64 实机结果。
+- `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -ContinueOnFailure -Scenarios photos -States fperm-form,fperm-members,fperm-filter,fperm-empty,fperm-unknown-members,fperm-loading,fperm-error,fperm-candidates-error,fperm-parent,fperm-second,fperm-safety,fperm-password,fperm-confirm,fperm-submit,fperm-unknown,fperm-partial,fperm-cancel,fperm-confirm-cancel,fperm-history-empty,fperm-history-cold,fperm-history-resume,fperm-history-input,shr-members,shr-submit,shr-password,shr-member-filter`：**26/26 通过**，记录 `ui-review-20261015-121813`。上一轮首个成员筛选测试将控件模板内部文本框也计入 Single，导致宿主退出；失败文件定位测试行后按公开字段标题精确选择，重新整组通过。没有删除或放宽布局/流程断言。
+- 同一完整选择加 `req-submit,folder-submit,file-mixed,upload-submit,manage-submit`，命令改为 `-Language en-US -WindowWidth 900 -PaneState cycle` 重新构建运行：**31/31 通过**，记录 `ui-review-20261015-122247`。覆盖中英文、浅深色、窄窗口、成员/权限/密码、加载/错误/空/筛选空、父级只读、危险开关、双确认取消、未知/部分/冷恢复，以及既有相册分享、收集、目录、资料、上传和文件集成。
+- 截图复核发现目录确认曾复用相册说明并误提有效期，已改为目录专用中英文风险说明并增加原生断言；不改变 API 或权限行为。最后这项文案改动的定点双语回归见下方补验记录。
+- 独立集成与只读对抗复核覆盖完整原快照（含伪造领域字段）、两阶段本次回执、未知不重发、默认配置并发、扁平成员/本人 uid、权限撤销、账号/操作编号、加密记录内容、冷输入缺失及目标互斥。锁范围修正避免阻断相邻目录收集，正式用例覆盖。结果只证明本地逻辑和合成 UI；真实 NAS 后代覆盖、密码、不同用户访问及系统可访问性见 Windows 计划的 PENDING_USER_VALIDATION。
+
+末次文案补验：`./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States fperm-confirm,fperm-submit,fperm-parent,fperm-history-resume` 重新构建后 **4/4 通过**（`ui-review-20261015-122746`）；同包 `-SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle` 同四项 **4/4 通过**（`ui-review-20261015-122914`）。已查看真实合成 PNG，目录说明不再包含相册/有效期，按钮可见且无水平溢出。最后生产 x64 构建为 **30.35 秒、0 警告、0 错误**，ARM64 最终为上述 30.09 秒；615 项测试之后只改变这组 App 文案/原生断言，没有更改领域或 Repository。`check_localization.py` 当前 Windows 4274 组双语资源、参数、引用和硬编码扫描通过；文档检查与 `git diff --check` 通过。W2e 本地闭环完成，W2f–W9 继续，不代表真实 NAS 或系统设备验收通过。
+
+### 2026-10-15 Windows W2e 照片收集与摘要恢复（未提交工作区）
+
+照片收集创建、编辑、删除确认、链接复制、跨页标题搜索、默认/已有目录与可加入相册选择、内联建册及历史恢复已接入现有 Repository 和 WinUI。PhotosManagement-v1 增加第七种互斥记录；正文、目录路径、口令与链接不落盘。main 仍为 a521ccb5，累计 289 项工作区状态，未暂存、提交、推送或发布，Apple/Android 源码无差异，没有访问真实 NAS。Requests 专项保护默认关闭，合成宿主单独启用；共享目录权限及 W2f–W9 继续。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos' --verbosity quiet`：最终 **574 通过、0 失败、0 跳过**。前组 538 项保持通过，新增收集 34 项与工作区搜索/刷新 2 项；阶段结果为 572、573、574。最初只筛 Request 的 22 项、SynologyPhotos 的 503 项和 SynologyPhoto 的 513 项均通过，但不代替最终 Photos 集合。
+- 回归覆盖个人/共享默认目录不预创建、共享 entry 已有上传目录、addable 自有/其他/零所有者与冻结相册、差量及来源/路径成对发送、清除相册 -1、非整数 MiB 与原日期保留、失效目录下删除链接及 500 项后续页、缺字段/重复清单、缺顶层创建编号、三种写的丢回执与冷恢复、保存后的权限撤销、重复点击/跨账号、未知目标互斥和默认目录祖先摘要保护。只有本次接受与相应完整读回可完成，不通过同标题、目标已改变或链接消失追认未知提交。
+- 首次生产 x64 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`：**40.53 秒、0 警告、0 错误**。最终包含列表完成刷新、目录摘要锁及建册候选失败保留编号的同命令加 `--verbosity quiet`：**41.74 秒、0 警告、0 错误**。
+- ARM64 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64 --verbosity quiet`：阶段构建 **54.57 秒、44.35 秒**；最终完整生产源码 **29.28 秒**，均 **0 警告、0 错误**。没有执行 ARM64 设备运行或正式发布。
+- 正式原生状态为 `req-form,req-edit,req-delete,req-submit,req-unknown,req-loading,req-error,req-empty,req-albums-error,req-folder-pages,req-shared-entry,req-shared-default,req-folder-shortcut,req-album-shortcut,req-new-album,req-album-unknown,req-search,req-no-match,req-cancel,req-safety,req-history-empty,req-history-cold,req-history-resume,req-history-input,req-limits,req-new-album-read-error`。
+- 第一轮 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States <前24项> -ContinueOnFailure`：`ui-review-20261015-114303/results.json` **22/24 通过**，内联建册两项在 TextChanged 调度前调用未启用按钮，COM 0x80040200。正式测试改为等待按钮实际启用，不降低断言。加入限制编辑后的第二轮同命令前25项，`ui-review-20261015-114715/results.json` **24/25 通过**；未知建册的刷新查找误匹配目录刷新按钮，改为限定相册展开区，原写入次数断言保留。
+- `./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States <前25项>,tmp-stop-open,shr-submit,alb-create,cond-create,folder-submit,file-mixed,upload-submit,manage-submit -ContinueOnFailure`：重新发布合成宿主，`ui-review-20261015-115227/results.json` **33/33 通过**，覆盖八条既有管理集成。此包包含后端最终摘要锁，尚不包含随后补充的内联建册成功后候选读取失败保留选择处理。
+- 最终源码重新发布，`./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States req-new-album-read-error,req-new-album,req-album-unknown,req-submit,req-history-input,req-limits -ContinueOnFailure`：`ui-review-20261015-115737/results.json` **6/6 通过**。新增相册依据本次已确认编号先选择，随后候选读取失败仍保留目标并提供重试；不会按名称或未知结果选择相册。实际查看中文编辑/失败恢复和英文限制表单，滚动和底部按钮正常，无横向溢出。
+- 最终同一宿主英文 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States req-new-album-read-error,req-new-album,req-album-unknown,req-submit,req-history-input,req-limits -ContinueOnFailure`：`ui-review-20261015-115920/results.json` **6/6 通过**。
+- 本地化资源目前 **4255 对**，双语、占位符、引用和硬编码扫描通过；`python tools/codex/check_documentation.py`、`git -c core.safecrlf=false diff --check` 通过。所有原生宿主仅使用虚构 Repository，不加载真实账号、凭据或 NAS 数据。
+
+独立集成及只读对抗复核检查七种记录互斥、目标目录/相册与创建来源防重、路径祖先摘要保护、保存后权限再读、原快照变化、回执归属、完整删除分页、跨账号迟到结果、未修改字段保留、冷输入恢复和唯一生产调用链。真实访客上传、分享相册与角色撤销仍为 PENDING_USER_VALIDATION；环境、步骤、预期结果和最小脱敏反馈已写入 Windows 计划，不把静态协议或合成自动化提升为 NAS 行为验证。
+
+### 2026-10-15 Windows W2e 临时分享组合流程（未提交工作区）
+
+临时分享创建、创建中取消、设置关闭/Esc 清理、保留普通副本后停止/清理、保留现有相册与冷恢复已接入生产 Repository 和 WinUI。沿同一 PhotosManagement-v1 增加临时阶段变体及原账号/目标互斥；发布和临时清理默认关闭，仅合成 Repository 开启。main 仍为 a521ccb5，累计 281 项工作区状态；没有暂存、提交、推送、发布或访问 NAS，Apple/Android 源码无差异。此条只完成 W2e 的临时分享组，收集与共享目录权限及 W2f–W9 继续。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~Photos --verbosity quiet`：最终 **538 通过、0 失败、0 跳过**。相册分享阶段的 510 项保持通过，新增临时流程 26 项和工作区导航 2 项。阶段运行 534、535、536 后，在新增恢复/导航边界后得到 538；没有测试失败或跳过。最初只筛 `SynologyPhotos` 的 442 项及 `Temporary` 的 22 项仅是早期范围，不替代最终 Photos 集合。
+- 创建仅接受本次返回的相册编号，完整核对临时标记、本人身份和成员；取消意图在网络进行中可独立落盘并合并迟到回执。冷恢复在取消意图已保存但阶段未推进时允许显式继续；其他客户端改变分享快照时不清理。复制要求另一明确编号、本人普通且未分享相册和全部分页成员，关闭/删除前再读双方。三个阶段丢回执后即使目标状态已出现仍不重放；接受后读取失败可恢复到下一明确阶段，刷新不写入。普通相册、无权限和默认保护状态均不发送危险请求。
+- 首次生产 x64 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore --verbosity quiet`：**38.92 秒、0 警告、0 错误**。最终同命令包含冷取消与工作区导航修正：**39.20 秒、0 警告、0 错误**。
+- ARM64 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64 --verbosity quiet`：初次 **48.04 秒**，最终包含全部生产修正 **50.47 秒**；均 **0 警告、0 错误**。正式包和 ARM64 设备运行未执行。
+- 原生初始 17 状态为 `tmp-form,tmp-create,tmp-configure-cancel,tmp-creating-cancel,tmp-unknown,tmp-stop,tmp-stop-nocopy,tmp-ordinary,tmp-loading,tmp-error,tmp-safety,tmp-cancel,tmp-history-empty,tmp-history-cold,tmp-history-resume,tmp-history-keep,tmp-history-configure`，另含 `shr-form,shr-submit,shr-cancel`。`./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States <上述20项> -ContinueOnFailure` 重新发布 x64 合成宿主，报告 `ui-review-20261015-111236/results.json`：**20/20 通过**。
+- 同 20 项重新发布后运行 `-Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States <上述20项> -ContinueOnFailure`，报告 `ui-review-20261015-111553/results.json`：**20/20 通过**。实际查看中英文创建表单和中文停止记录，文本完整、操作可见、无水平溢出。
+- 随后补齐清理当前相册后的返回导航并新增 `tmp-stop-open`。最终源码重新发布执行 `./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States tmp-stop-open,tmp-history-configure,tmp-creating-cancel,tmp-unknown,shr-submit,alb-create,cond-create,folder-submit,file-mixed,upload-submit,manage-submit -ContinueOnFailure`，报告 `ui-review-20261015-111910/results.json`：**11/11 通过**。包含关闭详情回列表，以及既有上传/目录/混合文件/条件/普通相册/资料主流程。
+- 最终同包中文 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language zh-CN -Scenarios photos -States tmp-stop-open,tmp-history-configure,tmp-creating-cancel,tmp-unknown,shr-submit -ContinueOnFailure`，报告 `ui-review-20261015-112136/results.json`：**5/5 通过**。所有宿主只用虚构 Repository，没有配置、凭据或 NAS 请求。
+- `python tools/localization/check_localization.py`：Windows **4223 对**，双语、占位符、引用及硬编码扫描通过；`python tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 通过。
+
+独立集成与只读对抗复核覆盖唯一生产调用链、六种恢复变体的操作编号互斥、账号与上传锁、未完成照片/相册修改冲突、持久化之后的权限再检查、完整分页与副本变化、取消保存竞态、丢编号/丢回执、重启只读和页面关闭后的原任务。清理只调用相册删除，从不删除 Item 原件。真实 NAS 的默认分享范围、副本继承、访客访问和权限撤销行为仍为 PENDING_USER_VALIDATION；专项步骤、预期及最小脱敏反馈见 Windows 计划，不把 static 协议或合成自动化提升为行为验证。
+
+### 2026-10-15 Windows W2e 相册分享与恢复组（未提交工作区）
+
+相册分享、具名成员/角色、密码及有效期已接入现有 Repository、PhotosManagement-v1 和 WinUI 菜单/表单/记录。按关闭访问、更新配置、重新启用三个阶段保存本次接受回执与只读结果；新分享/扩大权限默认关闭，仅合成 Repository 启用。main 仍为 a521ccb5，工作区累计 274 项状态，未暂存、提交、推送或发布；未访问真实 NAS，Apple/Android 源码无差异。此条只完成 W2e 的相册分享组，临时分享、照片收集和共享目录权限继续。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos' --logger 'console;verbosity=minimal'`：最终 **510 通过、0 失败、0 跳过**。已有 476 项保持通过，新增 34 项覆盖三阶段接受/拒绝/未知、明确继续、重启只读、缺内存资料重新设置、密码原值与不落盘、用户/群组及数字/字符串身份、系统 uid、权限/快照变化、共享目标互斥、账号代次和专项开关。
+- 新分享测试首轮编译的 JsonObject 目标类型错误修正后，Sharing 筛选 **177 通过、4 失败**：原通用只读参数检查拦截了分享密码，配置尚未发出却停在未知状态。仅对 `Sharing.Passphrase.update v1` 的精确 password 字段开放；认证参数和其他接口继续拒绝，后续 Photos **497 通过**。追加安全边界、迟到代次和跨账号后 **508 通过**；独立复核补上初始访问范围/保护配置与实时快照比对后 **510 通过**，未降低断言。
+- 原生正式状态为 `shr-form,shr-members,shr-member-filter,shr-empty,shr-unknown-members,shr-password,shr-expiry,shr-loading,shr-error,shr-recipients-error,shr-submit,shr-unknown,shr-partial,shr-history-empty,shr-history-resume,shr-history-cold,shr-history-reedit,shr-history-cancel,shr-safety,shr-cancel`。
+- `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States <上述集合> -ContinueOnFailure`：首轮 `ui-review-20261015-104408/results.json` **17/20 通过**。成员筛选和密码测试在 TextChanged/PasswordChanged 调度前断言，取消测试在关闭动画前断言；按控件事件/窗口实际关闭等待后保留原断言。补充筛选空态的恢复文案，并让历史继续前显示当前目标和拟保存访问范围。相同中文命令重建后 `ui-review-20261015-104708/results.json` **20/20 通过**。之前合成编译曾使用不存在的 Network 错误枚举，改为实际网络异常后重建，没有宣称该编译通过。
+- `./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States <上述集合>,alb-create,cond-create,cond-history-cold,folder-submit,file-mixed,upload-submit,manage-submit -ContinueOnFailure`：重建 x64 合成宿主，`ui-review-20261015-105027/results.json` **27/27 通过**。实际查看中文表单/筛选空态、英文密码/冷恢复截图，浅深色、窄窗口、滚动与底部动作可见，无横向越界。合成宿主不读取真实登录配置，不操作系统剪贴板或访问 NAS。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64`：最终 **37.42 秒、0 警告、0 错误**，包含最后的原快照字段校验。此前相册分享界面完整阶段 ARM64 **42.81 秒、0 警告/错误**；x64 首轮因 StackPanel 无 IsEnabled 编译失败，改用现有 ContentControl 承载方式后 **28.45 秒、0 警告/错误**，后续两次合成发布构建均通过。
+- `python tools/localization/check_localization.py`：Windows **4203 对**，双语资源/占位符/引用与硬编码扫描通过；`git -c core.safecrlf=false diff --check` 通过。密码、密码摘要、passphrase、链接、成员显示名和新正文均不进入本组恢复记录；返回的公开 http(s) 链接仅供复制，认证与密码请求仍强制 HTTPS，不携带链接中的凭据。
+- 最终 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`：**34.00 秒、0 警告、0 错误**；与最终 ARM64 和 510 项测试均包含原快照字段校验。`python tools/codex/check_documentation.py` 通过，活跃计划不重复记录动态测试计数。
+
+独立只读集成及对抗复核确认：未知不得重发；密码修改必须有本次接受回执和保护状态；关闭后配置失败不自动开放；刷新只推进可继续状态；原成员不完整不当空名单；旧角色未改不重写；新增成员末次重读；当前系统 uid 与 Photos 用户 id 不混用；私有写与已有相册/照片/上传目标锁衔接；同编号恢复记录不能替换其他变体。真实 NAS 的分享默认行为、成员/密码/有效期结果、ARM64 设备、Narrator、触控与 DPI/字号尚未验证，按 Windows 计划的 PENDING_USER_VALIDATION 执行；W2e 其他组及 W2f–W9 未完成。
+
+### 2026-10-15 Windows W2d 条件与冻结相册原生集成（未提交工作区）
+
+条件编辑、数量预览和冻结普通恢复/条件重建已接入生产 WinUI 菜单、表单及原相册操作记录。沿用原操作编号和相册恢复，不新建平行执行者；普通恢复/重建仍默认关闭，合成宿主只对虚构 Repository 启用。main 仍为 a521ccb5，266 项工作区状态为本轮累计修改，未暂存、提交、推送或发布，没有访问 NAS，其他平台源码无差异。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos' --logger 'console;verbosity=minimal'`：**476 通过、0 失败、0 跳过**。前阶段 469 后追加 5 项工作区结果/重建导航回归得到 474；最后 2 项检查共享 management 撤销后条件来源被移除，而共享浏览仍保留。
+- 条件编辑器使用原生字段、日期、评级、目录完整分页、关键词策略和建议，保留缺名引用、未知 JSON 字段及未编辑旧值。未知规则或多个日期段保留时限制来源转换，避免隐式丢失规则。范围参数保持建议原值，不用显示文案生成请求；闪光灯只保留/移除已有值。冷恢复重新输入必须与原摘要一致，已有新册的继续窗口只清理旧册，不重新提交条件。
+- 26 个正式原生状态为 `cond-create,cond-edit,cond-unfreeze,cond-rebuild,cond-preview,cond-keyword,cond-suggest,cond-refs,cond-preserved,cond-source,cond-folder-pages,cond-date,cond-loading,cond-error,cond-empty,cond-submit,cond-unknown,cond-partial,cond-history-name,cond-history-resume,cond-history-cleanup,cond-history-cold,cond-history-stale,cond-history-cancel,cond-safety,cond-cancel`。
+- 首轮 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -ContinueOnFailure -States <上述集合>`，报告 `ui-review-20261015-100849/results.json`：**11 通过、15 失败**。直接构造诊断的下一轮 `-States cond-create` 失败，日志为 COMException 0x80073B17：按钮引用了不存在的 PhotosSearch 资源。补齐 PhotosConditionFind 双语资源，并给全部正常编辑场景增加“编辑器已成功加载”断言；删除直接构造的一次性诊断。未把前轮创建/编辑的空错误窗口通过算作可用表单。
+- 修正后相同中文 26 状态命令在 `ui-review-20261015-101339/results.json` **26/26 通过**。截图发现空提示占位和一次预览滚动截图未完整绘制；生产窗口折叠空提示，正式合成等待滚动布局稳定。另按真实共享管理角色收窄条件来源选择，后端末次权限校验保持独立。
+- 最终源码 `./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -ContinueOnFailure -States <上述集合>` 重新构建 x64 合成宿主，报告 `ui-review-20261015-101700/results.json`：**26/26 通过**。实际检查浅/深色创建、编辑、建议、预览截图，长表单可滚动、底部操作可见；最终预览图完整显示数量与规则，不沿用不完整截图。
+- 最终同包中文补验 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language zh-CN -ContinueOnFailure -States cond-create,cond-source,cond-preview,cond-history-name,cond-partial,alb-create,alb-history-name,alb-partial,folder-submit,file-mixed,upload-submit,manage-submit`：报告 `ui-review-20261015-102052/results.json` **12/12 通过**。包含来源/布局修正与既有普通相册、目录、文件混选、上传和资料提交；实际查看中文预览、双方保留、冷恢复完成截图，内容完整。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64`：**39.96 秒、0 警告、0 错误**，包括最终条件原生表单、来源角色和空提示修正。新增原生表单较早两次编译曾分别发现不存在的 OpenAlbumAsync、StackPanel.IsEnabled；已使用现有工作区刷新路径及 ContentControl 承载编辑器，后续 x64/ARM64 和合成发布均通过。
+- `python tools/localization/check_localization.py`：Windows **4148 对**，双语完整性、占位符、引用与硬编码扫描通过；`git -c core.safecrlf=false diff --check` 通过。原生 runner 现在按场景保留新生成的异常文件，防止后续进程覆盖唯一诊断；这不是自动重试，也不会改变失败结果。
+
+独立集成和私有写只读对抗复核检查原生入口、共享管理来源、原条件摘要/未知字段、缺回执、重建新旧编号、私有属性、完整条件和清理前原快照、冷恢复只读、原阶段显式继续、防重、目标锁和账号代次。冻结恢复仍要求明确 freeze_album=false 及照片数/身份，重建清理仍要求本次接受回执；新旧册变化保留双方，未调用原件删除。真实 NAS、ARM64 设备、Narrator、触控、DPI/字号未验证，步骤与影响见 Windows 主计划的 PENDING_USER_VALIDATION；W2e–W9 继续，不以本阶段结束整个任务。
+
+### 2026-10-15 Windows W2d 条件与冻结相册后端阶段（未提交工作区）
+
+条件读取、建议、计数预览、创建/保存及冻结恢复/重建接入现有相册任务，尚未完成本阶段原生表单。正文和建议名称只驻内存，恢复保存摘要及阶段回执；只读恢复不清理旧册，显式继续前仍重新检查新册与旧快照。main 仍为 a521ccb5，未提交或推送，未访问真实 NAS，其他平台源码无差异。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos' --logger 'console;verbosity=minimal'`：最终 **469 通过、0 失败、0 跳过**；新增 43 项正式回归覆盖已记录路由、参数类型、集合归一化、未知 JSON 值、缺名引用、范围建议、地点层级、共享角色/目录可见权限、冻结专项开关、接受回执/未知、冷恢复重输、防重、取消、账号变化、新旧册变化、逐阶段清理与丢回执后的对象消失。
+- 首轮新增测试暴露传输层未登记条件读写和 set_unfreeze，补齐已有契约路由后 **463 项通过**。追加末次权限测试得到 **468 通过、1 失败**：条件写的来源没有传入 FreshManagementAccessAsync，缓存中的共享管理角色掩盖了实际撤权；修复为按条件来源重新检查后全部 **469 项通过**，没有降低断言。
+- 独立只读复核检查恢复最小字段、临时正文不落盘、原来源/原相册身份、条件未知字段不丢失、闪光灯值只保留或移除、新建私有相册及完整条件回读、旧快照变化保留双方、恢复不自动清理、明确拒绝只重试清理、未知创建/删除均不重放。原相册照片删除从未进入该调用链。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64`：**38.93 秒、0 警告、0 错误**，包含当前全部条件/冻结后端和既有普通相册界面；新增条件界面尚未集成，不能以此代替其原生验证。
+
+真实 NAS 条件建议、媒体/日期边界、共享管理与冻结样本仍为 PENDING_USER_VALIDATION；恢复/重建入口保护不解除。原生五态、双语、窄窗口及目标构建按后续集成结果追加，不能以当前 xUnit 代替。
+
+### 2026-10-15 Windows W2d 普通相册与恢复阶段（未提交工作区）
+
+普通相册九类操作已接入 Windows 原调用链：创建、改名、删除、添加/移除成员、封面、册内排序、列表排序和显示选择。恢复复用 PhotosManagement-v1 的第四种互斥记录，不保存新名称正文、分享口令或原始响应；冷恢复名称需显式重输且与原摘要一致。新增删除相册默认关闭，仅专项受控验收可启用；条件和冻结相册仍在实现，不把本阶段写成整个 W2d 完成。main 仍为 a521ccb5，259 项工作区状态均为本轮累计改动，未暂存、提交、推送或发布；其他平台源码无差异，没有访问真实 NAS。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos' --logger 'console;verbosity=minimal'`：**426 通过、0 失败、0 跳过**。新增 47 项相册 HTTP/回执/恢复和 14 项工作区回归；覆盖九条写路由、明确失败/丢回执、创建新编号及私有属性/精确成员、跨来源同编号、贡献者和原图库关闭、权限/身份变化、任务互斥、持久化失败、重启恢复、每页列表偏好和不误删原件。最初冷恢复比较含列表的照片记录时出现 4 项失败，改为比较完整最小持久结构后通过；新增共享分页测试的重载选择编译错误通过显式排序参数修正。阶段 400、407、410、412 项通过，最终工作区回归使范围增至 426。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release -p:Platform=x64 --runtime win-x64 --no-restore`：**0 警告、0 错误**，40.06 秒；后续合成宿主均沿既有 `dotnet publish` 流程构建通过。`dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64` 的普通相册 UI 阶段分别 **44.56 秒、31.05 秒，均 0 警告/0 错误**；后者包含逐项文案与模板初修，最终布局与冷名称提示的增量构建另记下文。
+- 24 个正式原生状态为 `alb-create,alb-rename,alb-delete,alb-add,alb-remove,alb-cover,alb-sort,alb-list-sort,alb-shared-sort,alb-display,alb-pages,alb-empty,alb-loading,alb-error,alb-cancel,alb-partial,alb-unknown,alb-safety,alb-history-empty,alb-history-resume,alb-history-name,alb-history-cold,alb-history-stale,alb-history-cancel`。使用 `./windows/tests/UiSmoke/run.ps1 -ContinueOnFailure -Language zh-CN -Scenarios photos -States <上述集合>`；最终中文报告 `windows/dist/ui-review-20261015-092819/results.json` 为 **24/24 通过**。同包执行 `-SkipBuild -ContinueOnFailure -Language en-US -WindowWidth 900 -PaneState cycle`，报告 `ui-review-20261015-093114/results.json` 为 **24/24 通过**。
+- 过程命令曾错误地给 States 传通配字符串 `alb-*`，构建成功但没有匹配场景，未计入验证。首轮实际 24 状态报告 `ui-review-20261015-092527/results.json` 为 **22 通过、2 失败**：创建和冷恢复名称在 WinUI 派发 TextChanged 前即检查按钮，托管日志明确为“有效相册操作不能提交”；增加事件派发等待后上述中文/英文整组通过，没有自动重试或降低断言。
+- 截图复核发现英文部分完成的第二行被 ListView 行布局裁切，中文同状态一次截图还仅含局部刷新文字。结果区域改为有界滚动的 ItemsControl 和换行模板，并等待对话框完成布局；同时用“已添加／已移除／未完成”表达成员事实，错误恢复放在总体说明。`./windows/tests/UiSmoke/run.ps1 -ContinueOnFailure -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States alb-create,alb-add,alb-remove,alb-partial,alb-unknown,alb-history-empty,alb-history-resume,alb-history-name,alb-history-cold,alb-history-cancel`，报告 `ui-review-20261015-093405/results.json` 为 **10/10 通过**，实际英文截图确认换行与全部操作可见。
+- 冷恢复输入错误名称现提供明确恢复提示，仍以原操作编号及摘要防重；正式 alb-history-name 先输入不匹配名称、断言零写与明确提示，再输入原名称并确认只继续一次。最终中文命令 `./windows/tests/UiSmoke/run.ps1 -ContinueOnFailure -Language zh-CN -Scenarios photos -States alb-partial,alb-history-name,file-mixed,folder-submit,folder-cover-subfolder,manage-submit,upload-submit,shared-preview`，报告 `ui-review-20261015-093548/results.json` 为 **8/8 通过**，包含六个既有 Photos 主流程回归。
+- 最终同包英文 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States alb-partial,alb-history-name`，报告 `ui-review-20261015-093750/results.json` 为 **2/2 通过**，包括名称不匹配后的原编号恢复。最终 ARM64 使用上述相同 build 命令 **26.71 秒、0 警告/0 错误**，包含全部布局与提示修正。
+- `python tools/localization/check_localization.py`：Windows **4110** 对资源、双语参数/引用/硬编码扫描通过。`python tools/codex/check_documentation.py` 通过；正常仓库行尾配置下 `git diff --check` 通过。一条临时使用 `-c core.autocrlf=false` 的检查把现有 CRLF 全部误识别为空白差异，未修改文件；恢复仓库行尾策略并使用 `git -c core.safecrlf=false diff --check` 复核通过。
+
+独立集成与私有写只读对抗复核覆盖真实 Shell/Repository/管理存储、账号与会话代次、固定表单操作编号、关闭中断、同目标与来源相册/上传/资料/文件互斥、逐项完成不回退、全页成员与列表偏移、结果未知不重放、冷名称不落盘、历史终态不重演、删除专项门禁及无原图库时的相册可用性。普通相册只删除相册本身，不走原件删除。所有原生图片和账号均为合成数据；真实 NAS、ARM64 设备、Narrator、触控、DPI/字号及最终 W9 全量验收仍未验证，按 Windows 主计划的 PENDING_USER_VALIDATION 执行。
+
+### 2026-10-15 Windows W2c 照片与目录文件任务（未提交工作区）
+
+已接入复制、移动、同父目录/照片混选删除、原生目的地与操作记录、活跃页面自动只读恢复。原个人单项删除改用同一加密任务及接受回执链，无平行旧删除后端。新增扩展删除、跨图库移动和覆盖各自默认关闭；只读与普通复制/同来源移动独立可用。main 仍为 a521ccb5，未暂存、提交、推送或发布，其他平台源码无差异；没有访问 NAS，本机未创建真实 PhotosManagement-v1 目录。
+
+- 当前核心命令：`dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos' --logger 'console;verbosity=minimal'`，**365 通过、0 失败、0 跳过**。文件请求/回执/恢复及工作区回归覆盖两来源、目录与照片混选、跨空间同编号、目标权限/身份、117 未知、冲突回执、原接受编号、任务计数、目录完整分页缺失、未知/冷恢复、上传/资料互斥、取消及迟到分页。过程阶段 343、354、362、365 项通过；首轮旧删除夹具缺少恢复存储和 Info 能力导致四项失败，补真实存储/能力并加强丢回执断言；一次前月测试以 UTC 范围误判本地区间，改为明确读取阶段夹具后通过，未降低生产断言。
+- x64 合成宿主通过 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States ...` 的既有发布流程构建。首次新增页面缺少功能命名空间导致 CS0103 及伴随 XAML 失败，补引用后构建通过。
+- 中文文件场景完整参数为 `file-copy,file-move,file-delete,file-mixed,file-cross,file-pages,file-loading,file-error,file-empty,file-submit,file-partial,file-unknown,file-history-empty,file-history-resume,file-history-cold,file-safety,file-cancel,file-history-cancel,file-history-stale,file-disable-all`。`./windows/tests/UiSmoke/run.ps1 -ContinueOnFailure -Language zh-CN -Scenarios photos -States <上述集合>`，报告 `windows/dist/ui-review-20261015-084845/results.json`：**20 项中 18 通过、2 失败**。继续操作的测试过早检查新窗口视觉树，改为等待真实目标文字与已加载窗口后，`./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States file-history-resume,file-disable-all` 在 `ui-review-20261015-085146/results.json` **2/2 通过**。当前 20 场景均取得通过证据，不把中途整组失败改写成整组通过。
+- 英文命令为同一 20 状态集合加 `-SkipBuild -ContinueOnFailure -Language en-US -WindowWidth 900 -PaneState cycle`，报告 `ui-review-20261015-085248/results.json`：**20 项中 19 通过、1 失败**。`./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States file-mixed,folder-submit,folder-cover-subfolder,manage-submit,upload-submit,shared-preview`，报告 `ui-review-20261015-085449/results.json`：**6/6 通过**，包含该混选补验和五个既有主流程。
+- 较早中文阶段报告 `ui-review-20261015-084302` 在删除前退出；`084418` 为 16 项中 14 通过、继续/取消等待失败；`084602` 前 12 项通过、空记录宿主退出。取消测试从固定 100ms 改为等待对话框实际关闭；继续测试等待实际内容。删除、空记录、整体删除关闭及英文混选还出现过间歇性宿主退出（记录退出码为 -1073741189 的场景无新的托管失败日志），对应补跑已通过，根因未定位，保留到 W9 全量原生稳定性复核；未增加自动重试或隐藏原失败。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore -p:Platform=arm64`：**0 警告、0 错误**，42.77 秒。`python tools/localization/check_localization.py`：Windows **4070** 对资源及双语参数、引用、硬编码扫描通过；`git diff --check` 通过。工具均沿既有 .NET 10.0.402 与会话 Python 环境，没有新增依赖或工具链迁移。
+
+独立集成与只读对抗复核修复了历史终态冷启动误改当前列表的风险：只应用本次观察到的在途完成结果，已有完成历史仅展示；正式原生 `file-history-stale` 证明后来恢复的照片不会因旧删除再次消失。同时核查主删除开关与扩展开关组合、跨来源/覆盖选项限制、固定原目标继续确认、页面离开时停止轮询及关闭窗口、原查询偏移与前月补读。中英文实际截图检查确认目标、名称、风险、处理计数、错误恢复与窄窗口控件可见，截图仅含合成项目。
+
+真实 NAS、ARM64 设备、Narrator、触控、DPI/字号及长期后台未验证，按 Windows 主计划的 PENDING_USER_VALIDATION 逐项执行；当前结果不等同正式签名、发布或整个 W0–W9 完成。
+
+### 2026-10-15 Windows W2c 目录基础管理与独立标签切片（未提交工作区）
+
+本次增加个人/共享目录创建、改名、保存排序、封面选择和显示，以及独立空标签及其冷恢复。所有入口连接真实 WinUI 表单；共享 PhotosManagement-v1 外壳承载资料和目录两类最小记录，沿相同账号互斥、落盘门禁及只读恢复。没有访问 NAS；主分支仍为 a521ccb5 的未提交工作区，其他平台源码差异为空。
+
+- 最终 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~Photos --logger 'console;verbosity=minimal'`：**306 通过、0 失败、0 跳过**。较资料切片新增 34 项目录 HTTP/图片实际解码测试、3 项独立标签及 6 项工作区测试。过程阶段为 291、296、304、305 项通过；管理类单独阶段为 75、80 项通过。首次较窄 SynologyPhotos 筛选为 197 项，不将该筛选当作整个 Photos 回归。没有降低断言或隐藏失败。
+- 基础原生菜单与表单：`./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States manage-tag-standalone,folder-create,folder-rename,folder-sort,folder-submit,folder-loading,folder-error,folder-history-empty,folder-history-unknown,folder-history-resume`：**10/10 通过**，报告 `windows/dist/ui-review-20261015-075137/results.json`；同状态 `-SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle`：**10/10 通过**，报告 `windows/dist/ui-review-20261015-075349/results.json`。这是加入封面前的阶段证据。
+- 加入封面选择、空目录、子目录来源、提交、加载与错误六场景后，中文重新发布宿主的 16 场景 **16/16 通过**，报告 `windows/dist/ui-review-20261015-075918/results.json`。后续截图复核增加所选照片预览、收起空列表，并修正根选择器不能返回时的空状态操作提示；不是最终界面截图。
+- 当前整组 `./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos`：**64/64 通过**，报告 `windows/dist/ui-review-20261015-080346/results.json`。涵盖既有读取 19 项、上传 11 项、资料/独立标签 19 项和目录 15 项。实际菜单调用、固定目录、子目录封面、真实预览图片、主题与控件边界均有断言。
+- 另补空标签冷恢复的真实“继续编辑→输入→保存”链路，并断言当前个人页面不能改变原共享来源。`./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States manage-history-tag-cold`：**1/1 通过**，报告 `windows/dist/ui-review-20261015-080942/results.json`。之后工作区补充已保存目录结果的历史刷新：首次列表读取失败后，再次应用相同结果仍重读原窗口；最终 306 项覆盖页面和历史两种恢复入口。
+- 最终当前源码重新发布英文宿主：`./windows/tests/UiSmoke/run.ps1 -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States manage-tag-standalone,manage-history-tag-cold,folder-create,folder-rename,folder-sort,folder-submit,folder-loading,folder-error,folder-history-empty,folder-history-unknown,folder-history-resume,folder-cover,folder-cover-empty,folder-cover-subfolder,folder-cover-submit,folder-cover-loading,folder-cover-error`：**17/17 通过**，报告 `windows/dist/ui-review-20261015-081130/results.json`。本包包含上述最后的原位置刷新修正，已查看最终英文封面预览与空目录截图；普通生产 x64 发布包仍在 W9 生成。
+- 最终 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore`：**0 警告、0 错误，29.78 秒**；之前基本完成阶段同命令 36.31 秒通过。两次均使用本机既有独立 .NET 10 SDK，不改变工程工具链或依赖。
+- `python tools/localization/check_localization.py`：Windows **4037** 资源，双语、占位符、引用及硬编码扫描通过；`python tools/codex/check_documentation.py` 和 `git -c core.safecrlf=false diff --check` 通过。没有创建真实 Photos 管理恢复目录；合成产物均位于忽略的 windows/dist，W9 收口清理。
+
+独立集成及只读对抗复核覆盖统一恢复外壳与原上传格式、当前账号/来源权限、原路径和改名后路径的互斥、成功创建编号归属、排序缺省与明确回读的区别、封面接受回执及 Windows 解码、子目录选择边界、取消与冷恢复、旧删除互斥及异来源迟到结果。真实 NAS 的路径/权限/任务行为、ARM64 设备和物理无障碍/输入仍为 PENDING_USER_VALIDATION，具体步骤在 Windows 主计划。移动、复制、混合删除及旧个人删除路径统一尚待下一切片；完整 W2c–W9 未完成，未提交、推送、签名或发布。
+
+### 2026-10-15 Windows W2c 已选照片资料编辑与恢复第一切片（未提交工作区）
+
+现有 Photos 生产路径增加选中照片的描述、评分、绝对日期、相对偏移、标签加减、创建标签后应用及左旋转；主菜单多选、预览编辑和修改记录均接入真实窗口。独立 PhotosManagement-v1 沿 Windows 用户保护保存最小身份、期望值/文字摘要、阶段及回执；描述和新标签文字不落盘。未知结果只读，失败入标签只补原编号，重启不重复偏移、旋转或创建。完成后保留原查询范围与选择，刷新已加载窗口并重建分页偏移。没有访问真实 NAS，未改变其他平台源码、NAS 请求字段、依赖或应用身份；目录和无选中照片的独立新建标签入口仍待实施，本节不代表完整 W2c 完成。
+
+- 最终 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos'`：**263 通过、0 失败、0 跳过**，1 秒；包括资料管理新增 47 项及工作区新增 7 项。覆盖真实 POST 命名空间/JSON、同数字不同来源、相册所有者/提供者、共享角色实时撤销、目标变化、重复操作与并发点击、无变化零写、提交前落盘、丢回执、冷恢复、标签后页读取、日期不重复累加、镜像旋转、旧删除互斥、分页失效和原月份恢复。
+- 阶段原有 209 项通过；新增专项初次编译因两处 xUnit2031 断言写法失败，改用同等严格的过滤重载后 35 项通过。扩展阶段 244 项全部在模块初始化失败，原因是新增与既有 PhotosRatingValue 资源键重复；删除新增重复项、复用原资源后修复。随后 259 项通过；增加四项编辑后分页回归后为最终 263 项。未降低断言或跳过测试。
+- 阶段普通 x64 构建因 StackPanel 没有 IsEnabled 失败，修正为逐控件启停；一次后续合成构建因事件参数命名遮蔽弃元赋值失败，改为直接调用日期校验。两次 XAML 后续错误属于同次编译失败；后续当前源码宿主均成功发布。
+- 原生报告 `windows/dist/ui-review-20261015-070952/results.json` 的 manage-menu 提前退出，新诊断为 WinUI 单选模式不支持 SelectedItems.Clear；生产代码按选择模式清理后修复。`windows/dist/ui-review-20261015-071335/results.json` 前九项通过，manage-mixed 因测试未先进入相册失败；补实际导航和两来源前置断言后修复。`windows/dist/ui-review-20261015-071519/results.json` 前十项通过，manage-submit 在新窗口完成布局前截图失败；增加布局就绪检查，保留实际提交、主题和控件边界断言。
+- 阶段英文 18 项通过，报告 `windows/dist/ui-review-20261015-071838/results.json`。复核发现画廊卡片仍可能引用旧照片，并补原位置分页恢复后，中文 18 项通过，报告 `windows/dist/ui-review-20261015-072444/results.json`；同包英文 900 宽、PaneState cycle 的 18 项通过，报告 `windows/dist/ui-review-20261015-072812/results.json`。提交场景额外断言实际卡片评分更新且选择保留。
+- 增强仅管理能力的真实菜单调用后，`./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos`：**48/48 通过**，报告 `windows/dist/ui-review-20261015-072942/results.json`；包括既有来源/相册/预览 19 项、上传恢复 11 项和新增管理 18 项。真实菜单通过 MenuFlyoutItem 自动化调用进入多选与编辑；管理入口不再依赖无关的上传能力。
+- 截图复核纠正修改记录误用上传按钮文案。最终重新发布当前 x64 宿主：`./windows/tests/UiSmoke/run.ps1 -Language zh-CN -Scenarios photos -States manage-menu,manage-submit,manage-history-empty,manage-history-normal,manage-history-unknown,manage-history-resume,manage-history-cold`：**7/7 通过**，报告 `windows/dist/ui-review-20261015-073421/results.json`。已查看当前中文修改记录及阶段英文窄窗口、日期表单截图；长名称换行、主题和按钮边界正确。
+- 最终同包 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Language en-US -WindowWidth 900 -PaneState cycle -Scenarios photos -States manage-menu,manage-description,manage-rating,manage-date,manage-shift,manage-tags,manage-tags-empty,manage-tag-create,manage-rotate,manage-mixed,manage-submit,manage-loading,manage-error,manage-history-empty,manage-history-normal,manage-history-unknown,manage-history-resume,manage-history-cold`：**18/18 通过**，报告 `windows/dist/ui-review-20261015-073702/results.json`。包含最终修改记录文案、真实菜单入口、混合来源限制、已保存卡片/选择、未知只读刷新及冷恢复继续编辑。
+- 最终 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore`：**0 警告、0 错误**，26.84 秒；此前资料编辑原位置恢复阶段同命令 35.82 秒通过。最终 x64 证据为当前源码合成宿主发布，普通生产 x64 构建与独立双包在 W9 汇总，不以合成宿主冒充发布包。
+- `python tools/localization/check_localization.py`：Windows **4013** 资源，双语、占位符、引用和硬编码检查通过；`python tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 通过。其他平台源码差异为空。
+
+独立集成与只读对抗复核已检查单一生产入口、DI 与受保护记录、实际来源/角色、提交边界、已确认事实不退化、未知不重发、同目标写/删除互斥、标签创建与应用分离、原窗口分页与跨页面迟到结果。真实 NAS、物理输入、Narrator、触控、高 DPI/字号、退出与休眠仍为 PENDING_USER_VALIDATION，具体环境、步骤、预期和脱敏反馈在 Windows 主计划。完整 W2c–W9 尚未完成；没有提交、推送、正式签名或发布。
+
+### 2026-10-15 Windows W2b Photos 上传、独立入册与加密恢复（未提交工作区）
+
+原有 Photos Repository 增量接入文件/目录上传、跳过/保留两份、普通上传后入册及本人/贡献者相册直传。三个写阶段独立保存回执；丢回执不按名称认领，入册失败和重启后仅补入册，冷恢复未开始项必须重新选择并匹配摘要。复用既有 Windows 用户加密存储，通用接口改名不改变跨 NAS 字节格式；独立 PhotosUpload-v1 不含本机绝对路径、凭据、相册口令或媒体内容。没有修改其他平台源码、NAS 请求契约、依赖或应用身份，没有访问真实 NAS。
+
+- 最终 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Photos|FullyQualifiedName~CrossNasPersistent|FullyQualifiedName~CrossNasTransferFlow|FullyQualifiedName~WindowsProtectedTaskStore'`：**272 通过、0 失败、0 跳过**，2 秒。包括真实 multipart/回读、目录完整分页、共享上传权限与个人管理权限区分、相册提供者、入册失败后无需源文件的冷恢复、同内容改名防重、并发继续、停止/取消、会话代次、HTTP 连接关闭、权限/登录拒绝、落盘失败、损坏恢复及真实 Windows 加密存储回归。阶段新增上传专项 30 项，以及扩大后的 263、269 项均通过；最终新增代码全部包含在 272 项中。
+- 阶段普通 x64 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore`：0 警告、0 错误，36.70 秒。该构建早于后续原生主题/文案与恢复边界补充；最终 x64 证据为下述当前源码合成宿主重新发布，不冒充最终普通生产构建。
+- 首次原生命令未设置本机独立 SDK 环境，报找不到 SDK，未进入项目编译；按既定 DOTNET_ROOT/PATH 设置重跑。报告 `windows/dist/ui-review-20261015-063527/results.json` 中 upload-options 通过，upload-submit 提前退出；新 smoke-failure 明确为“上传窗口主题未对齐”。为两个生产上传窗口设置工作区主题后修复，未删除或放宽主题断言。
+- 阶段英文原生 10/10 通过，报告 `windows/dist/ui-review-20261015-063711/results.json`；截图发现完成项不应显示恢复后的 0 字节以及重复标题/常驻说明，修正文案与进度展示后 10/10 通过，报告 `windows/dist/ui-review-20261015-064011/results.json`。补入真实工具栏窄窗口边界场景后 11/11 通过，报告 `windows/dist/ui-review-20261015-064237/results.json`。
+- 最终 `./windows/tests/UiSmoke/run.ps1 -Scenarios photos -States upload-menu,upload-options,upload-submit,upload-folder,upload-loading,upload-empty,upload-error,upload-normal,upload-resume,upload-running,upload-unknown -Language zh-CN`：重新发布当前 x64 宿主，**11/11 通过**，报告 `windows/dist/ui-review-20261015-064503/results.json`。
+- 最终同包 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios photos -States upload-menu,upload-options,upload-submit,upload-folder,upload-loading,upload-empty,upload-error,upload-normal,upload-resume,upload-running,upload-unknown -Language en-US -WindowWidth 900 -PaneState cycle`：**11/11 通过**，报告 `windows/dist/ui-review-20261015-064711/results.json`。覆盖菜单、重复/相册表单、文件/目录提交、五态、原生继续/暂停和未知仅刷新，长文件名换行和按钮宽度断言保留。已查看中英文浅深色窗口及工具栏截图。
+- 最终 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore`：**0 警告、0 错误**，34.22 秒。
+- `python tools/localization/check_localization.py`：Windows **3964** 资源，双语、占位符、引用和硬编码扫描通过；`python tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 通过。其他平台源码差异为空。
+
+独立集成与只读对抗复核已检查唯一生产入口、认证与固定路由、不会自动重发的 multipart、账号/Photos 用户与代次、持久化先于发送、每阶段回执与回读、目录身份/同名竞争、只重试入册及冷恢复最小数据。真实 NAS、物理文件选择器、Narrator、触控、高 DPI/字号和系统休眠/退出仍是 PENDING_USER_VALIDATION，步骤在 Windows 主计划；W2c–W9 尚未完成，没有提交、推送、正式签名或发布。
+
+### 2026-10-15 Windows W2a Photos 来源、相册身份与完整读取（未提交工作区）
+
+个人/共享来源按实际 Photos 授权区分，原来源读取显式路由，相册读在统一 Foto 路由保留 album_id、原件所有者与贡献者；零原来源账号仍可进入授权相册。原生来源选择器、共享预览/原件保存、目录/搜索/筛选/分类和双向分页沿现有生产路径扩展，缓存加入相册上下文。未修改其他平台源码、NAS 契约或持久格式，未访问真实 NAS。
+
+- 初次 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~SynologyPhotos`：48 通过、1 失败。旧测试替身没有相册读取，仍假设零原来源时立即结束；补齐相册替身并增加进入相册的断言，原无 File Station 回退断言保留。
+- 最终 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~Photos`：**166 通过、0 失败、0 跳过**，1 秒。覆盖来源/角色、完整原始分页、混合相册、所有者变化、贡献者边界、媒体上下文、未知 Team 路由拒绝、撤权/迟到、缓存及共享另存；阶段增补前的 156、161、165 项也分别通过。
+- 初始 `./windows/tests/UiSmoke/run.ps1 -Scenarios photos -Language zh-CN`：报告 `windows/dist/ui-review-20261015-060332/results.json` 中 16 个场景通过，shared-pages 场景宿主提前退出。没有该次新失败诊断；目录中的旧 smoke-failure 记录属于更早的跨 NAS 测试，不能拿来解释此次退出。原因未验证。同包 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios photos -States shared-pages,shared-error -Language zh-CN` 两项通过，报告 `windows/dist/ui-review-20261015-060545/results.json`。
+- 阶段英文 900 宽重建场景 18/18 通过，报告 `windows/dist/ui-review-20261015-060735/results.json`；同包中文 18/18 通过，报告 `windows/dist/ui-review-20261015-061001/results.json`。截图发现月份英文被截断，随后改为换行；同时隐藏混合相册内部的来源选择器，增加真实双来源混合相册场景，不降低业务断言。
+- 最终 `./windows/tests/UiSmoke/run.ps1 -Scenarios photos -Language en-US -WindowWidth 900 -PaneState cycle`：重新发布当前 x64 宿主后 **19/19 通过**，报告 `windows/dist/ui-review-20261015-061218/results.json`。已查看来源与混合相册截图，月份完整显示，来源选择器没有误标整册。
+- 最终同包 `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios photos -Language zh-CN`：**19/19 通过**，报告 `windows/dist/ui-review-20261015-061441/results.json`。含加载、空内容、筛选空、错误、共享切换/目录/分页、无原图库的相册及共享/相册预览。
+- 最终 `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore`：**0 警告、0 错误**，29.02 秒；此前月份布局修正前同命令也通过，33.87 秒。
+- `python tools/localization/check_localization.py`：Windows **3917** 个资源，双语、占位符、引用和硬编码扫描通过。`python tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 通过。
+
+独立集成与只读对抗复核已检查真实 Shell/Repository/传输接线、统一相册上下文、原来源权限与共享角色、能力缺失、拒绝不回退、同编号缓存、所有者变化与旧请求隔离。初次宿主退出保留为未定位记录，不能称为已修复；同场景后续定点及两轮完整双语复验均通过。真实 NAS、Narrator、触控、字号/DPI 和物理编解码器按主计划 PENDING_USER_VALIDATION。Windows W2b–W9 未完成；没有提交、推送或发布。
+
+### 2026-10-15 Windows W1b 跨 NAS 加密重启恢复与全局任务（未提交工作区）
+
+独立版本 1 记录使用 Windows 当前用户保护、进程独占锁、加密原子替换；不迁移登录及云盘 v10，不保存内容或凭据。提交边界和回执分别落盘，未知仅只读恢复，未开始项明确继续。原任务索引跨连接重建共享，账号/端点改变不能绕过未知目标保护；源文件消失后仍能从“复制和移动任务”打开原结果。生产删源开关保持默认关闭。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~CrossNas|FullyQualifiedName~WindowsProtectedTaskStore|FullyQualifiedName~FileOperationRecovery|FullyQualifiedName~DsmRepositoryUpload|FullyQualifiedName~FileUploadIntegrityWire' --verbosity minimal`：阶段 **119 通过、0 失败、0 跳过**，2 秒。包括真实 Windows 加密/独占锁/篡改检查以及内存存储模拟冷启动。
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Files|FullyQualifiedName~FileUpload|FullyQualifiedName~ForegroundTransfer|FullyQualifiedName~DesktopCloudDriveCreation|FullyQualifiedName~DesktopCloudDriveWriteback' --verbosity minimal`：最终 **1817 通过、0 失败、0 跳过**，11 秒。先前 1816 项中新增“提交前取消”测试错误使用默认已提交替身结果，触发领域不变量；改为真实未提交/零计数后 1816 通过，随后补入连接地址/账号变化防绕过回归得到最终 1817。生产不变量未放宽。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：当前源码 **0 警告、0 错误**，34.22 秒。
+- 初始 `./windows/tests/UiSmoke/run.ps1 -Scenarios cross-nas -Language zh-CN`：19/19 通过，报告 `windows/dist/ui-review-20261015-053950/results.json`。后加存储失败提示及最终账号/地址保护后重建双语场景，最终结果续记如下。
+- 英文 900 宽初次报告 `windows/dist/ui-review-20261015-054304/results.json` 在 delete-confirm 场景中断；读取宿主失败记录确认测试脚本在目录列表尚未绑定时执行 `Single()`，不是截图成功。测试改为有界等待实际目录行，保留全部业务断言后复验。此前英文全局列表、源已删除历史和存储错误截图已检查，无明显截断或遮挡。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios cross-nas -Language zh-CN`：最终生产代码（含存储失败及端点保护）**20/20 通过**，报告 `windows/dist/ui-review-20261015-054536/results.json`。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios cross-nas -Language en-US -WindowWidth 900 -PaneState cycle`：等待实际目录绑定后的最终宿主 **20/20 通过**，报告 `windows/dist/ui-review-20261015-054839/results.json`。当前全部生产修改均包含在本次 x64 发布；中文最终 20 项使用相同生产源码，测试等待修正不改变产品行为。
+- `python tools/localization/check_localization.py`：**3914 个 Windows 资源**，双语、占位符、引用和硬编码扫描通过。
+
+源码集成与只读对抗复核已覆盖格式拒绝不覆盖、提交前后保存失败、原回执保留、异账号隔离、新 API 实例相交写保护、任务编号归属、迟到连接和全局入口。未访问真实 NAS、未签名发布或安装；真实 Delete taskid 跨登录、用户资料/系统重装、双实例及真实两端连接组合按主计划 PENDING_USER_VALIDATION。所有改动仍在 main 未提交工作区。
+
+### 2026-10-15 Windows W1b 跨 NAS 独立删源（未提交工作区）
+
+复用现有 Delete v2 传输，新增 `recursive=false` 分支，普通回收请求保持原值。复制和删除事实分离；独立确认后重读两端内容/源权限，逐文件及空目录删除，要求原接受 taskid、成功任务状态及完整父目录缺失证据。失回执只读恢复、不重发，取消后仅明确继续未开始项。原会话的源/目标及祖先后代与改名、复制移动、回收和上传互斥，未知删除继续保护目标副本。生产删源开关默认关闭；没有访问真实 NAS，没有持久格式或五端 NAS 契约变化。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~CrossNas|FullyQualifiedName~FileRecycleTransport|FullyQualifiedName~FileMutation|FullyQualifiedName~DsmRepositoryUpload|FullyQualifiedName~FileUploadIntegrityWire|FullyQualifiedName~FileTextEdit|FullyQualifiedName~DesktopCloudDriveCreation|FullyQualifiedName~DesktopCloudDriveWriteback' --verbosity minimal`：阶段聚焦 **272 通过、0 失败、0 跳过**，3 秒。后续祖先互斥补验包含在完整模块结果中。
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~Files|FullyQualifiedName~FileUpload|FullyQualifiedName~ForegroundTransfer|FullyQualifiedName~DesktopCloudDriveCreation|FullyQualifiedName~DesktopCloudDriveWriteback' --verbosity minimal`：最终 **1798 通过、0 失败、0 跳过**，10 秒。覆盖默认关闭、独立确认、空目录顺序、源/目标同大小内容变化、权限撤销、目标账号改变、新增子项、失回执、查询失败、任务仍运行/失败、源仍存在、坏分页、取消/明确继续、重复点击、完整父目录分页以及本机相交路径竞争。
+- 初始聚焦 55 项中旧源码断言仍要求硬编码 `CanCrossMove: false`，改为检查默认关闭能力开关并增加行为回归；随后 75 项中目标变化使已完成复制的状态与计数矛盾，修正为保留复制事实、在独立删除结果报告冲突。完整模块两次均有 1 项旧 Delete 请求夹具失败：替身返回空对象，补齐普通列表后发现实际调用为共享根列表，再补齐 `list_share` 完整分页；原请求字段和版本断言保留。最终得到上述 1798 项通过。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios cross-nas -Language zh-CN`：当前 x64 合成宿主发布并 **17/17 通过**，报告 `windows/dist/ui-review-20261015-052313/results.json`。新增删除入口、风险确认/默认取消、取消确认、完成、未知与只读刷新六场景；实际原生按钮验证复制后零删除、确认后一次删除、刷新零重发。已查看深色确认、浅色未知结果截图，文案、复制与删除双份概要及按钮无明显遮挡。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：**0 警告、0 错误**，35.13 秒。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios cross-nas -Language en-US -WindowWidth 900 -PaneState cycle -SkipBuild`：同一源码宿主 **17/17 通过**，报告 `windows/dist/ui-review-20261015-052528/results.json`；英文窄窗口未知删除截图已检查，双份结果和恢复操作保持可见。
+- `python tools/localization/check_localization.py`：**3912 个 Windows 资源**，双语、参数、引用和硬编码扫描通过；`python tools/codex/check_documentation.py`、`git -c core.safecrlf=false diff --check` 通过。
+
+源码集成与只读对抗复核补入相交目录互斥；源码未提交，未生成本轮最终测试包。缺少跨重启记录、新会话统一互斥、无需选择源项目的全局恢复入口与真实 NAS 原子性验收，不能据此宣布 W1b 或 W0–W9 完成。后续用户验收及公开 Delete 的外部并发窗口见 Windows 主计划。
+
+### 2026-10-15 Windows W1b 跨 NAS 复制完整性与窗口恢复（未提交工作区）
+
+原跨 NAS Repository 改为复用统一上传，保留有界管道，新增完整源清单、全内容确认、冻结账号/连接、逐项结果、原操作只读恢复与显式继续。共用建目录/改名回读要求本次接受回执。原生窗口新增历史恢复、逐项结果、刷新/继续和正确取消，补齐双语与深色主题。只改 Windows，NAS 协议、依赖、权限与持久格式未变；分步删源和跨进程恢复仍未实现，没有访问真实 NAS。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~CrossNas|FullyQualifiedName~FileMutation|FullyQualifiedName~DsmRepositoryUpload|FullyQualifiedName~FileUploadIntegrityWire|FullyQualifiedName~FileTextEdit|FullyQualifiedName~DesktopCloudDriveCreation|FullyQualifiedName~DesktopCloudDriveWriteback' --verbosity minimal`：最终 **243 通过、0 失败、0 跳过**，3 秒。覆盖零文件/跨段内容、同大小错误字节、权限提前拒绝、失回执、重建目标/账号变化、目录完整分页、链接/挂载类型、取消和只读恢复/显式继续、迟到连接释放及共用流程回归。
+- 首轮 104 项有 14 项失败：新合成 getinfo 的 size 构造为 Int32，严格读取要求 Int64；修正替身后 110 项有 4 项结果状态组合错误。修正中间状态及测试构造，未开始项目不虚报失败，110 项通过；扩大回归 242 项通过，再补仍在运行的原操作显示后得到上述最终 243 项。无修改正式结果模型的校验规则，无删除旧回归。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios cross-nas -Language zh-CN`：首次选择通过，深色空状态因窗口未继承主题失败；修正生产主题后 **11/11 通过**，报告 `windows/dist/ui-review-20261015-050241/results.json`。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios cross-nas -Language en-US -WindowWidth 900 -PaneState cycle -SkipBuild`：**11/11 通过**，报告 `windows/dist/ui-review-20261015-050420/results.json`。检查中文浅色未知/深色完成与英文窄窗未知截图，未见遮挡或结果错位；原生宿主实际验证复制、刷新、继续、取消及历史重开次数。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：阶段构建 **0 警告、0 错误**，33.44 秒；随后增加进行中原操作状态，最终构建仍 **0 警告、0 错误**，32.11 秒。
+- `python tools/localization/check_localization.py`：**3900 个 Windows 资源**，双语、参数与硬编码扫描通过；`python tools/codex/check_documentation.py`、`git -c core.safecrlf=false diff --check` 通过。Python 使用现有 bundled runtime，未更改工具链。
+
+上述原生截图对应已验证的普通/未知/恢复场景；最后增加的“原操作仍在运行”分支有专门模型与并发回归，不以旧截图冒充该分支实机验证。复制仍不具备跨重启恢复，跨 NAS 删源继续关闭；真实 NAS、网络、读写权限、证书变化、Narrator/触控/DPI 等见 Windows 计划的 PENDING_USER_VALIDATION。
+
+### 2026-10-15 Windows W1b 上传内容确认与批次控制（未提交工作区）
+
+沿现有上传、分段读取、传输协调器和批次执行器，新增目录/目标预检、本次接受回执与完整 SHA-256、原操作编号、只读恢复和整批控制。没有改变 NAS API、其他平台源码、系统权限、依赖或持久格式。当前工作区未提交，未访问真实 NAS。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~DsmRepositoryUpload|FullyQualifiedName~FileUploadIntegrityWire|FullyQualifiedName~FileUploadContract|FullyQualifiedName~FileTextEdit|FullyQualifiedName~ForegroundTransfer|FullyQualifiedName~BoundedFileUpload|FullyQualifiedName~BoundedFolderUpload|FullyQualifiedName~DesktopCloudDriveWriteback|FullyQualifiedName~DesktopCloudDriveCreation' --verbosity minimal`：最终 **299 通过、0 失败、0 跳过**，耗时 4 秒。覆盖完整 Range 摘要、同大小错误内容、空文件、失回执、失败回读、同目标重复与不同目标并行、权限/目标变化、旧操作不能认领后来的上传、只读恢复、文本保存及云盘创建/写回回归。
+- 首轮旧测试替身未实现严格元数据读取，新并发用例等不到上传而中止；补齐真实前置并为等待增加边界。随后 236 项中 4 项合成 HTTP 用例失败：测试服务将实际 GET Range 当作 POST 读取正文。修正替身后 237 项通过，加入认证、云盘和原操作隔离后得到上述最终 299 项；没有降低生产校验或删除既有断言。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios upload-flows -Language zh-CN`：初版 **11 通过**，报告 `windows/dist/ui-review-20261015-043524/results.json`。包含多文件/目录/空目录、目录拒绝、部分成功、未知、只读刷新、暂停/继续/取消。后补父批次刷新与逐项视觉断言，最终 **12 通过**，报告 `windows/dist/ui-review-20261015-044049/results.json`，重新构建了全部当前 x64 生产代码。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios upload-flows -Language en-US -WindowWidth 900 -PaneState cycle`：中间版本 **12 通过**，报告 `windows/dist/ui-review-20261015-043708/results.json`。视觉检查发现刷新截图早于列表重新绑定，补充正式场景等待实际已上传行出现的断言；最终中文截图已确认父/子及计数一致，英文当前包补验见下一条。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios upload-flows -Language en-US -WindowWidth 900 -PaneState cycle -SkipBuild`：最终当前包 **12 通过**，报告 `windows/dist/ui-review-20261015-044217/results.json`。
+- `python tools/localization/check_localization.py`：Windows **3886** 键，双语/参数/引用/硬编码扫描通过；`python tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 通过。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：当前生产代码 **0 警告、0 错误，36.79 秒**。x64 原生宿主通过不等于 ARM64 实机验收。
+
+原生合成场景不使用账号/真实路径，独立临时源目录在结束时删除。大文件回读需要实际强版本支持，公开覆盖不具备原内容条件下的原子性；真实 NAS、长暂停超时、跨进程/换 API 实例恢复与多 NAS 生命周期未验证。下一片继续跨 NAS；本记录不宣称 W1 或 W0–W9 全部完成。
+
+### 2026-10-15 Windows W1b 结构下载与前台暂停（未提交工作区）
+
+本片只修改 Windows，沿既有传输协调器接入目录清单、原生保存方式、Range/ZIP/上传读取暂停、速度及逐项结果。公开 Download 使用 v2；[Synology 官方指南](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)第 71 页为请求依据。[Windows 文件身份](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info)和[保留名称](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file)仅用于本机输出保护，不改变 NAS 契约。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~ForegroundTransfer|FullyQualifiedName~SafeFileDownload|FullyQualifiedName~SafeFolderArchive|FullyQualifiedName~FileRangeRead|FullyQualifiedName~BoundedFileDownload|FullyQualifiedName~WindowsTransferPicker' --verbosity minimal`：最终 **155 通过、0 失败、0 跳过**。首次新增文件缺少 Application 链接编译而报 CS0103，补既有链接项后解决。最初 144 项中目录仅属性句柄不能阻止替换的断言失败；GenericRead 句柄能阻止替换，却也使原生事务提交失败。最终使用文件身份复查，并加强为文件可正常发布、目录替换后明确拒绝的行为断言。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios transfer-flows -Language zh-CN`：首次目录下载失败，原生直连事务复现 `0x80070497`；未加目录句柄的相同事务成功，定位为句柄共享限制。修复后 **13 通过**，报告 `windows/dist/ui-review-20261015-041626/results.json`。包含保留结构、空目录、部分失败、同名保护、坏名称、读取错误、暂停继续/取消、两种下载方式及空活动；均为独立合成临时目录，结束后自动清理。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios transfer-flows -Language en-US -WindowWidth 900 -PaneState cycle`：最终 **13 通过**，报告 `windows/dist/ui-review-20261015-041930/results.json`。已查看部分失败深色详情及暂停浅色活动截图，逐项状态换行、按钮及已传字节可见。最终生产代码已包含更具体的名称/同名位置提示、部分成功文案和暂停字节显示。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios transfer-flows -States pause,bad-name,collision,partial -Language zh-CN -SkipBuild`：最终文案与暂停进度补验 **4 通过**，报告 `windows/dist/ui-review-20261015-042104/results.json`。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：**0 警告、0 错误，35.73 秒**。x64 完整 XAML 由最终原生宿主发布验证；本片未生成正式测试发行包。
+- `python tools/localization/check_localization.py`：**3878 个 Windows 双语键**，资源、参数和硬编码检查通过；`git -c core.safecrlf=false diff --check` 通过。全部新增测试均真实执行，没有 NAS、ARM64 真机或辅助功能验收结论。
+
+本片不是 W1b 完成声明。旧通用上传只按名称/大小回读、缺少跨页面未知结果保护的缺口已记录，下一片补完整内容核查与只读恢复；批次控制和跨 NAS 仍继续。真实网络、服务器长暂停超时、外接卷及系统生命周期见 Windows 计划中的 PENDING_USER_VALIDATION。
+
+### 2026-10-15 Windows W1a 文本编辑闭环（未提交工作区）
+
+修复原生 TextBox 未接入草稿、失败隐藏编辑框、取消编辑丢目标、保存后仍显示旧正文、异步结果串入新文件及未知保存重开后可重传的问题。补空文件、严格 BOM 解码、权限探测/完整内容前检、内存快照上传、接受回执加回读确认、原账号目标防重与改名互斥；不改变共享 API、凭据/云盘格式、依赖或其他平台。显式连接操作新增草稿确认；跨进程/退出恢复仍归 W3/W8。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~FileTextEdit' --verbosity minimal`：首次编译因新增替身未实现 Range 接口失败；补齐后 44 通过/16 失败，发现错误复用了仅支持 FORM 的能力检查，修复 multipart/JSON 判定与权限 JSON 参数；随后 52 通过/8 失败，修正合成元数据数字类型及“未修改”结果违反既有 MutationResult 不变量的问题。未降低旧断言。
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files' --verbosity minimal`：初轮 1480 通过/1 失败，修正位置导航应先处理草稿、加载成功后才关闭原预览；扩充后 1487 通过/1 失败，既有禁止引入 TextEditor 组件的字符串检查误中变量名，改用 TextBox 名称，保留原断言。最终 **1488 通过，0 失败/跳过，10 秒**。真实 HTTP 合成覆盖 FORM/JSON、空文件/清空、UTF-8、版本冲突、目录权限拒绝、覆盖拒绝、列表写标记不代替真实权限、并发双 Repository、丢回执、回读失败、重开只读恢复与改名互斥；ViewModel 覆盖草稿/保存冻结/迟到结果/格式失败。
+- 布局修复后 `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-build --no-restore --filter 'FullyQualifiedName~FileTextEdit|FullyQualifiedName~FilePreviewPageSourceContract|FullyQualifiedName~FileLocationsPageSourceContract' --verbosity minimal`：**87 通过，0 失败/跳过，227 毫秒**；没有把补验与完整文件测试重叠相加。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-text-edit -Language zh-CN` 初轮 4 项通过后暴露 WinUI 换行转换；同步填充不再改写草稿、格式断言兼容原生显示后 6 项通过，再修正合成宿主对确认弹窗关闭动画的过短等待。首批最终 12 通过（`windows/dist/ui-review-20261015-033926/results.json`），加入连接草稿保护后中英文均 15 通过；截图复核发现无界横向滚动将按钮和提示推到窗口外，改为独立文本滚动与固定操作/状态行，并增加可见边界、420 像素栏和多行未改断言。
+- 最终 `./windows/tests/UiSmoke/run.ps1 -Scenarios files-text-edit -Language en-US -WindowWidth 900 -PaneState cycle`：**17 通过**，报告 `windows/dist/ui-review-20261015-034907/results.json`。包含实际输入、格式、保存确认、成功/失败/未知刷新、加载、空内容、只读、错误及离开时保留/放弃/保存中保护；x64 完整 XAML 由此次原生宿主 publish 验证。
+- 最终 `./windows/tests/UiSmoke/run.ps1 -Scenarios files-text-edit -Language zh-CN -SkipBuild`：**17 通过**，报告 `windows/dist/ui-review-20261015-035111/results.json`。人工检查修复后的英文未知状态、420 像素窄栏和深色放弃确认，按钮、正文、说明均可见，无右侧裁切。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：布局调整前 0 警告/0 错误，34.57 秒；最终 **0 警告/0 错误，28.84 秒**。这不是 ARM64 设备验收。
+- `python tools/localization/check_localization.py`：**3857 个 Windows 双语键**，参数/引用/硬编码检查通过；`git -c core.safecrlf=false diff --check` 通过。真实 NAS、外部并发覆盖、Narrator/触控/文字缩放仍按计划列为 PENDING_USER_VALIDATION；没有执行 NAS 写操作或声称通过真机验收。
+
+### 2026-10-15 Windows W1a 完整目录与原生分组（未提交工作区）
+
+普通列表与搜索共用严格文件页解析，保留已有数字字符串/Boolean 兼容；坏行、重复、越界路径及分页不一致不再静默跳过。导航保留合法空格，分组按类型/日期/大小并保持组内排序，列表/网格共用原条目，多选在加载后续页和布局切换中保留。无共享 API、依赖、权限或持久化变更。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~FileDirectoryIntegrity|FullyQualifiedName~FileBrowser|FullyQualifiedName~FileListOptions|FullyQualifiedName~FileStationFixture|FullyQualifiedName~LanStash.Tests.Files' --verbosity minimal`：首次编译发现缺少 Domain 命名空间引用；修复后 1514 通过/1 失败，旧容器保留测试使用重复页，已改为合法新页并保留容器/选择/增量通知断言；重复页另有拒绝及恢复断言。最终 1515 通过，0 失败/跳过，11 秒。新传输 HTTP 合成覆盖 FORM/JSON、1001 项完整共享/普通目录、尾空格路径、坏页及原偏移重试。
+- 资源检查发现动态分组资源前缀被视为不存在的键，改为逐项明确映射；`dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~FileBrowserGroupingTests' --verbosity minimal` 最终 9 通过，0 失败/跳过，36 毫秒。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-grouping -Language zh-CN`：初次合成宿主缺少局部可视树辅助方法而编译失败；补齐后 11 通过，报告 `windows/dist/ui-review-20261015-031316/results.json`。`./windows/tests/UiSmoke/run.ps1 -Scenarios files-grouping -Language en-US -WindowWidth 900 -PaneState cycle -SkipBuild`：11 通过，报告 `windows/dist/ui-review-20261015-031439/results.json`。
+- 明确资源映射后 `./windows/tests/UiSmoke/run.ps1 -Scenarios files-grouping -States type-grid,type-list,date,size -Language en-US -WindowWidth 900 -PaneState cycle`：x64 重建，6 通过，报告 `windows/dist/ui-review-20261015-031637/results.json`。
+- 独立集成复核发现分组数据源重绑会清除批量选择，修复并新增真实多选/分页/布局切换断言。上述完整中文命令最终 13 通过，报告 `windows/dist/ui-review-20261015-031752/results.json`；`./windows/tests/UiSmoke/run.ps1 -Scenarios files-grouping -States batch,pagination -Language en-US -WindowWidth 900 -PaneState cycle -SkipBuild` 最终 3 通过，报告 `windows/dist/ui-review-20261015-031923/results.json`。中文深色网格与英文窄窗口列表截图人工检查，标题、数据列和选择可见。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：初次 0 警告/0 错误，34.86 秒；最终资源映射和多选修复后 0 警告/0 错误，26.90 秒。x64 完整 XAML 由最终中文合成宿主 publish 验证，不代替 W9 正常包最终构建。
+- `python tools/localization/check_localization.py`：3849 个 Windows 双语键，参数/引用/硬编码检查通过；`git -c core.safecrlf=false diff --check` 通过。未访问 NAS，不提升真实大目录、ARM64 设备、Narrator/触控/DPI 的验证等级。文本编辑与传输剩余范围继续实施，W1 整体尚未完成。
+
+### 2026-10-15 Windows W1e 后台任务与原位置详情（未提交工作区）
+
+扩展既有 BackgroundTask Repository/传输中心，接入完整任务身份、指定停止/清理、进程内原账号只读恢复、任务详情、应用任务错误说明及原目录导航。不更改共享 NAS 契约、旧缓存格式、依赖或系统权限；后台敏感参数仍在解码边界丢弃。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files.Activity|FullyQualifiedName~ForegroundTransferCoordinatorTests|FullyQualifiedName~FileStationActivityRefresherTests|FullyQualifiedName~TransferActivitySourceContractTests' --verbosity minimal`：首次测试编译发现公共测试方法引用内部枚举，改用数字数据参数；首轮 104 通过/1 失败揭示字符串创建时间未解析，修正后最终 105 通过，0 失败/跳过，169 毫秒。
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --no-build --filter 'FullyQualifiedName~LanStash.Tests.Files|FullyQualifiedName~ForegroundTransfer|FullyQualifiedName~FileStationActivity|FullyQualifiedName~TransferActivity|FullyQualifiedName~FileListOptionsContractTests' --verbosity minimal`：1503 通过，0 失败/跳过，10 秒；使用上述最新领域/Repository/模型程序集，之后仅原生资源与合成场景调整。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-tasks -Language zh-CN`：初次 11 通过，报告 `windows/dist/ui-review-20261015-025344/results.json`。截图发现深色详情未继承工作区主题，补充明确主题及断言；英文 900 宽/侧栏循环重建后 11 通过，报告 `windows/dist/ui-review-20261015-025533/results.json`。
+- 同中文命令加入应用任务场景后，13 通过/1 失败：导航断言早于 ContentDialog 关闭动画完成。改为等待实际导航回调，不改变目标断言；`./windows/tests/UiSmoke/run.ps1 -Scenarios files-tasks -States app-error,app-unknown,app-navigation -Language zh-CN` 最终 x64 重建、3 通过，报告 `windows/dist/ui-review-20261015-025853/results.json`。中文其余 11 项在同一生产逻辑下通过，报告 `windows/dist/ui-review-20261015-025702/results.json`。
+- `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios files-tasks -Language en-US -WindowWidth 900 -PaneState cycle`：最终 14 通过，报告 `windows/dist/ui-review-20261015-025948/results.json`。检查中文确认页、英文窄窗口深色未知状态和错误详情；控件可见、无横向截断。
+- 截图去除应用任务中重复的未知/错误说明后，`./windows/tests/UiSmoke/run.ps1 -Scenarios files-tasks -States app-error,app-unknown,app-navigation -Language en-US -WindowWidth 900 -PaneState cycle` 最终 x64 重建、3 通过，报告 `windows/dist/ui-review-20261015-030204/results.json`；同场景 `-SkipBuild -Language zh-CN` 3 通过，报告 `windows/dist/ui-review-20261015-030309/results.json`。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：初次 0 警告/错误，34.68 秒；去重文案后最终 0 警告/错误，24.32 秒。
+- `python tools/localization/check_localization.py`：Windows 3827 键双语、参数、引用/硬编码检查通过；`git -c core.safecrlf=false diff --check` 通过。
+
+独立集成/对抗复核确认完整列表复查、本次接受回执、四类 API 固定版本、纳秒级身份差异、未知不重发、编号复用不认领、原账号与会话边界、旧缓存只读和关闭后迟到结果。任务结束只表示不再活动；没有错误正文/原路径的后台记录不伪造详情。真实 NAS 停止/清理、权限差异、ARM64 设备和 Narrator 尚未验证，按主计划 PENDING_USER_VALIDATION；没有提交、推送或发布。
+
+### 2026-10-15 Windows W1e 分享页外观与图片（未提交工作区）
+
+接入完整主题布局、历史/NAS/内置背景、本机图片独立上传及预览，延续 Settings 保存/恢复和 multipart 实现。新增 C# 功能接口与正式测试，不改变五端 NAS 契约、依赖、系统权限或持久格式；目录列表同时修正到已支持的 v1–v2 和 JSON 业务字符串编码。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files.Settings' --verbosity minimal`：101 项通过，0 失败/跳过，324 毫秒。
+- 同命令过滤 `'FullyQualifiedName~LanStash.Tests.Files|FullyQualifiedName~FileListOptionsContractTests|FullyQualifiedName~ChatAttachment|FullyQualifiedName~PhotoRepositoryContractTests'`：加入 NAS 选图分页与请求修正后最终 1463 项通过，0 失败/跳过，11 秒；覆盖领域/Repository/模型、目录、共享 multipart 与二进制会话校验。随后只有原生按钮布局和测试等待调整。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-settings -States theme,theme-run,theme-picker,theme-empty,theme-filtered,theme-default,theme-preview,theme-upload,theme-upload-unknown,theme-readonly,theme-loading,theme-error -Language zh-CN`：初次构建与前两个场景通过，页脚测试在 TextChanged 派发前断言失败；补充布局/事件等待，保留实际保存断言。最终 13 项通过，报告 `windows/dist/ui-review-20261015-023530/results.json`。
+- 上一命令加 `-SkipBuild`、改为 `-Language en-US -WindowWidth 900 -PaneState cycle`：13 项通过，报告 `windows/dist/ui-review-20261015-023716/results.json`。
+- 截图复核后把“使用此图片”放到固定底部。`./windows/tests/UiSmoke/run.ps1 -Scenarios files-settings -States theme-run,theme-picker,theme-preview,theme-upload,theme-upload-unknown,run -Language zh-CN`：最终 x64 重建与 6 项通过，报告 `windows/dist/ui-review-20261015-023815/results.json`；相同命令加 `-SkipBuild`、改为 `-Language en-US -WindowWidth 900 -PaneState cycle`：6 项通过，报告 `windows/dist/ui-review-20261015-023918/results.json`。中文深色选图、浅色保存与英文窄窗口已检查。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：初次 0 警告/错误，34.76 秒；固定按钮后最终 0 警告/错误，25.00 秒。
+- `python tools/localization/check_localization.py`：Windows 3800 键双语、参数、资源引用和硬编码检查通过；`git -c core.safecrlf=false diff --check` 通过。
+
+只读集成/对抗复核确认历史按稳定路径重新定位索引、原会话管理员和文件应用权限、完整基线、每张选图序列及本次回执、上传内容摘要跨 Repository 防重、明示拒绝与未知区分，以及迟到预览不更新关闭窗口。没有真实上传或主题保存；真实图片格式/尺寸与页面显示、权限、并发、ARM64 设备和辅助功能按主计划 PENDING_USER_VALIDATION。合成测试不提高内部接口实机证据等级。
+
+### 2026-10-15 Windows W1e 常规设置、访问名单和限速（未提交工作区）
+
+新增 Windows 设置领域/Repository partial/原生表单，FilesPage 接入常规、挂载范围、来源名单及六类账号限速；周表支持逐时、整天和整周修改。各目标独立回执/回读与恢复，扩大具体权限时追加对应确认；没有新增共享 NAS 字段、依赖、权限或持久结构，其他平台源码不变。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~FileStationSettingsTests' --verbosity minimal`：先修正模型局部变量重名与测试 xUnit2031 分析器错误；实际运行 47 通过/1 失败，JSON 合成服务把 SynoToken 当业务设置导致丢回执路径。测试服务排除认证字段，保留参数与结果断言。
+- 同命令过滤 `'FullyQualifiedName~LanStash.Tests.Files'`：最终领域、Repository、模型及风险提示逻辑 1337 项通过，0 失败/跳过，11 秒；含新增设置 48 项，不与此前文件批次累加。之后只有原生布局、时间表填充和原生测试变化。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-settings -Language zh-CN`：首轮修正 StackPanel 无 IsEnabled 和局部变量重名的编译错误，改用 ContentControl 的继承禁用；第二轮具名名单断言早于布局完成，在更新布局后保留控件可编辑与实际草稿断言。最终 16 场景通过，报告 `windows/dist/ui-review-20261015-021215/results.json`。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-settings -Language en-US -WindowWidth 900 -PaneState cycle`：16 场景通过，报告 `windows/dist/ui-review-20261015-021413/results.json`；补充实际整天/整周填充断言、滚动显示时间表。目视发现英文格子标签截短，随后改为两行。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-settings -States schedule -Language zh-CN`：最终 x64 重建及中文时间表 1 场景通过，报告 `windows/dist/ui-review-20261015-021613/results.json`；同命令加 `-SkipBuild` 并改为 `-Language en-US -WindowWidth 900 -PaneState cycle`：英文时间表 1 场景通过，报告 `windows/dist/ui-review-20261015-021743/results.json`。最终英文深色截图已目视确认，全部时段与 Alternate 标签完整显示，填充和保存按钮可见。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：初次 0 警告/错误，34.68 秒；英文格子修正后最终 0 警告/错误，25.22 秒。x64 通过上述原生宿主构建。
+- `python tools/localization/check_localization.py`：最终 3753 个 Windows 键双语、参数、引用和硬编码检查通过；`python tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 通过。
+
+集成和对抗复核检查原会话管理员/文件应用权限、完整列表/基线、未知分区互斥与其他分区可用、同一 API 客户端的账号隔离、拒绝与丢回执区别、关闭后迟到结果。全部 HTTP 和 UI 数据均为合成；真实常规保存、LDAP/域、实际限速和设备行为按主计划 PENDING_USER_VALIDATION，未执行真实写入或提高 API 证据等级。
+
+### 2026-10-15 Windows W1d 原 URI 浏览与下载（未提交工作区）
+
+新增专用只读浏览模型/Repository/WinUI 对话框，连接管理器可打开文件；完整分页、返回上级、筛选排序和单文件下载接入既有前台队列及本机事务目标。零字节与每段下载均重查原连接/父目录/文件，range 使用现有安全地址解析并移除 URL 中的 SID，改用 Cookie。其他平台、共享 API 契约、依赖和持久结构不变。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~FileVfsBrowserTests|FullyQualifiedName~FileRangeReadContractTests|FullyQualifiedName~SafeFileDownload|FullyQualifiedName~SessionRequest' --verbosity minimal`：99 项通过，0 失败/跳过，98 毫秒；之后增加分页结束时连接身份复读。
+- 同命令过滤 `'FullyQualifiedName~LanStash.Tests.Files|FullyQualifiedName~FileRangeReadContractTests|FullyQualifiedName~SafeFileDownload|FullyQualifiedName~SessionRequest'`：最终领域/Repository/传输/模型代码 1354 项通过，0 失败/跳过，10 秒。包括新增浏览 34 项、range 安全 6 项及既有文件、事务下载和会话回归，不与前批相加。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-vfs-browser -Language zh-CN`：首轮 x64 构建通过，6 场景通过后筛选测试定位器因多个 TextBox 发生 Single 异常；改为 AutomationId 定位，保留原断言，同时统一空/加载/正常内容区高度。重建后 10 场景通过，报告 `windows/dist/ui-review-20261015-014957/results.json`，正常深色和空列表浅色已目视检查。
+- `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios files-vfs-browser -Language en-US -WindowWidth 900 -PaneState cycle`：10 场景通过，报告 `windows/dist/ui-review-20261015-015109/results.json`；英文深色下载状态已目视检查，按钮与内容无裁切。
+- `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios files-vfs -States edit,readonly -Language en-US -WindowWidth 900 -PaneState cycle`：增加浏览入口后的管理器 3 场景通过，报告 `windows/dist/ui-review-20261015-015229/results.json`。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：0 警告/错误，31.97 秒；x64 使用上述实际原生宿主构建。
+- `python tools/localization/check_localization.py`：3668 个 Windows 键双语/参数/引用/硬编码通过；`python tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 通过。
+
+独立集成和只读对抗复核确认同一生产 Repository/传输队列、原连接前后复读、陈旧文件拒绝、URI 根约束、零字节前置验证、强 ETag/事务目标，以及会话不进入 URL/外部地址。原生测试使用合成文件和下载委托，未打开真实 NAS 或本机保存选择器；真实 NAS 下载/云服务/ARM64 设备按主计划 PENDING_USER_VALIDATION，不能将点击回归当成真实传输验收。
+
+### 2026-10-15 Windows W1d VFS 云授权（未提交工作区）
+
+新增一次性内存授权请求、秘密不序列化的凭据对象、IPv4 loopback 回调和原生云连接表单；Repository 仍走同一 VFS 两步请求、回执、互斥与恢复。正式浏览器仅由用户动作打开；授权后等待明确保存，续授权固定原连接和原账号。没有系统注册、权限声明、依赖、持久结构或其他平台源码变化。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files.Locations.FileVfs' --verbosity minimal`：测试文件首次有 CS1002/CS1519 属性声明语法错误，修正后 86 项通过；补充大小/冲突封装与刷新失败丢弃授权回归后最终 88 项通过，0 失败/跳过，10 秒。
+- 同命令过滤 `FullyQualifiedName~LanStash.Tests.Files`：1254 项通过，0 失败/跳过，11 秒；此批在最后刷新失败修正前，该修正及新增场景由上述最终 88 项覆盖，不能相加。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-vfs -Language zh-CN`：首次 x64 编译通过，但合成宿主在回调尚未结束时过早断言 cloud-ready。测试改为有界等待授权完成，未降低状态断言；重新构建后 22 场景全部通过，报告 `windows/dist/ui-review-20261015-013457/results.json`。包括云表单/回调后保存/等待/取消/未知恢复及此前服务器场景；中文深色回调账号页已目视检查。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-vfs -Language en-US -WindowWidth 900 -PaneState cycle`：最后刷新失败修正后重建 x64 宿主，22 场景全部通过，报告 `windows/dist/ui-review-20261015-013720/results.json`；英文浅色回调账号页已目视检查，表单和底部按钮无裁切。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：首次 0 警告/错误、36.23 秒；最后刷新失败修正后再次 0 警告/错误、24.81 秒。
+- `python tools/localization/check_localization.py`：Windows 3651 键双语、参数、引用及硬编码扫描通过；`git -c core.safecrlf=false diff --check` 通过。
+
+独立集成审查和只读对抗复核覆盖实际文件授权（无额外管理员要求）、官方页面最小参数、单次请求消费、账号/协议/原对象变化、断网及部分接受、授权凭据清理、重复 JSON/表单、长度/编码/Host/随机路径、分段 TCP 和取消/超时关闭端口。合成测试实际使用本机 HTTP/TCP，不启动外部浏览器、不登录云账号、不访问 NAS。正式回调传输封装、NAS 写入、云服务兼容及 ARM64 设备仍为 PENDING_USER_VALIDATION，步骤和脱敏反馈要求见 Windows 主计划；远程 URI 浏览下载尚未实施。
+
+### 2026-10-15 Windows W1d VFS 服务器连接（未提交工作区）
+
+新增服务器连接领域、Repository、原生管理表单与进程内恢复，接入 FilesPage。支持 NAS 返回的 FTP/SFTP/WebDAV 类型新建、仅变化字段编辑、连接、断开及删除已断开的保存配置。没有新 API 参数、依赖、系统权限或持久格式；云授权与远程浏览下载仍待下一组实现。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files.Locations.FileVfsWorkflowTests' --verbosity minimal`：38 通过，0 失败/跳过，227 毫秒。
+- 同命令过滤 `FullyQualifiedName~LanStash.Tests.Files`：更新返回身份回归后 1205 通过，0 失败/跳过，7 秒。涵盖最终服务器领域/网络/模型代码；随后只有原生布局调整。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-vfs -Language zh-CN`：首次构建遇到 StackPanel 无 IsEnabled 的 CS1061，连带 WMC9999；改为对子控件启用后重建，14 场景通过。报告 `windows/dist/ui-review-20261015-011534/results.json`，中文深色创建及浅色明文表单已目视检查。
+- `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios files-vfs -Language en-US -WindowWidth 900 -PaneState cycle`：14 场景通过，报告 `ui-review-20261015-011719/results.json`。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-vfs -States create,cleartext,edit,run,unknown -Language en-US -WindowWidth 900 -PaneState cycle`：将明文风险前移、更多设置折叠及隐藏重复新建按钮后重建，7 场景通过，报告 `ui-review-20261015-011828/results.json`。英文风险提示和深色编辑已目视检查，表单可滚动，固定操作栏可用。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：最终源码 0 警告/错误，36.48 秒；x64 为上述合成宿主构建。
+- `python tools/localization/check_localization.py`：首次 Windows 3640 键通过；最后新增“更多设置”后 3641 键双语/参数/引用/硬编码扫描通过。`python tools/codex/check_documentation.py` 与 `git -c core.safecrlf=false diff --check` 同步通过。
+
+只读对抗复核覆盖保留密码/明确空密码、FORM/JSON 固定版本、普通文件授权、不使用 has_server 禁用 FTP、HTTP 凭据拒绝、完整清单变化、两步接受分离、身份警示不 force、跨 Repository/账号防重、单步丢回执不认领、取消与迟到界面结果。真实服务器连接、云账户、NAS 写入、ARM64 设备、屏幕阅读器与高 DPI 未运行；结果仅为合成及构建证据。恢复模型不含密码或令牌，当前限进程内，不声称跨重启恢复。
+
+### 2026-10-15 Windows W1d ISO 挂载（未提交工作区）
+
+新增 ISO 领域结果、原生管理/选择目录、Mount v1 工作流及同账号恢复，沿用原挂载清单和注册表。没有改变 NAS 契约、依赖、系统权限、持久格式或其他平台。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files.Locations.IsoMountWorkflowTests' --verbosity minimal`：最初被 xUnit2031 拦截，改用 Assert.Single 谓词后首批 35 通过，0 失败/跳过，170 毫秒。补成功后清单刷新断言后同组 35 通过，194 毫秒；最后补恢复表单保持原动作/自动设置及成功表单不可重复编辑，36 通过、0 失败/跳过，211 毫秒。
+- 同命令过滤 `FullyQualifiedName~LanStash.Tests.Files`：加入与权限、SMB/NFS 互斥断言后 1166 通过，0 失败/跳过，7 秒；早于最后的 ISO ViewModel 清单刷新及恢复表单修正，不等同完整 Windows 回归。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-iso -Language zh-CN`：首次宿主缺少新增测试文件的局部控件辅助方法，出现 CS0103/WMC9999；补齐后 11 场景通过，报告 `windows/dist/ui-review-20261015-005009/results.json`。中文浅色自动挂载确认、深色表单已目视检查。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-iso -Language en-US -WindowWidth 900 -PaneState cycle`：精简已选来源时的重复提示后重建，11 场景通过，报告 `ui-review-20261015-005136/results.json`；英文自动确认无裁切。检查发现卸载成功后旧清单仍显示，随后修复并增加正式断言。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-iso -States mount,automatic,unmount,run,unknown -Language zh-CN`：清单修复后重建并通过 6 场景，报告 `ui-review-20261015-005432/results.json`。
+- `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios files-iso -States unmount -Language en-US -WindowWidth 900 -PaneState cycle`：修正后的英文卸载场景通过，报告 `ui-review-20261015-005554/results.json`。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-iso -States run,unknown,unmount -Language en-US -WindowWidth 900 -PaneState cycle`：最终恢复表单修正后重建，3 场景通过，报告 `ui-review-20261015-005820/results.json`。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：ISO 接线后 0 警告/错误，33.02 秒；清单刷新修正后 0 警告/错误，26.85 秒；最终恢复表单修正后 0 警告/错误，22.41 秒。x64 为上述原生合成宿主。
+- `python tools/localization/check_localization.py`：Windows 3596 键，双语/参数/引用/硬编码检查通过；`python tools/codex/check_documentation.py` 与 `git diff --check` 通过。
+
+独立集成/只读对抗复核见 Windows ISO 账本：提交前两次真实授权和对象/清单/空目录检查，源路径与目标路径共同互斥；普通挂载按文件授权，持久自动行为另需管理员和独立确认。接受回执、完整清单和目录状态共同证明结果；丢回执即使状态匹配仍保留未知，不自动再发请求。成功更新清单与缓存，恢复表单保持原动作/自动设置。以上均为合成证据，没有真实挂载、自动重连、NAS 写入或 ARM64 设备验证；恢复目前限进程内，实际验收按主计划 PENDING_USER_VALIDATION。
+
+### 2026-10-15 Windows W1d 所有者与权限（未提交工作区）
+
+在固定 `a521ccb5` 上增量接入文件权限 Repository、WinUI 详情/编辑、成员、所有者/群组、十三项 ACL 动作与四项继承范围、三组传统权限、独立风险确认、任务恢复及缓存失效。内部接口字段/版本、依赖、系统权限和持久化格式不变；其他四端未修改。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files.Permissions' --verbosity minimal`：首批 26 通过，0 失败/跳过。
+- 同命令过滤 `FullyQualifiedName~LanStash.Tests.Files`：增加任务完成、重复提交和迟到结果覆盖后 1129 通过，0 失败/跳过，7 秒；此结果早于最后缓存失效与授权只读降级，不代表最终全量 Windows xUnit。
+- 最后同命令过滤 `'FullyQualifiedName~LanStash.Tests.Files.Permissions|FullyQualifiedName~FileBrowserViewModelTests'`：63 通过，0 失败/跳过，341 毫秒；前一次缓存修正后为 62 通过。新增权限测试共 31 项，其余为既有浏览模型回归。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-permissions -Language zh-CN`：最初宿主因新增文件 namespace 与原 partial 不一致出现 CS0103/WMC9999，修正后 12 场景通过（`windows/dist/ui-review-20261015-002737/results.json`）。覆盖 ACL/传统权限、只读、空、错误、加载、成员空/正常、保存及未知后只读刷新。中文深色 ACL 与浅色传统权限目视检查通过。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-permissions -Language en-US -WindowWidth 900 -PaneState cycle`：补修改摘要后重新构建 x64 宿主，12 场景通过（`ui-review-20261015-002937/results.json`）；英文深色传统权限、浅色成员表单目视检查，无横向裁切。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-permissions -States acl,posix,run,unknown -Language zh-CN`：缓存失效/关闭处理后重建并通过 6 场景（`ui-review-20261015-003226/results.json`）。最后的授权摘要失败只读降级是 Repository 改动，由最终聚焦测试及 ARM64 构建验证，未重新运行全部原生场景。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：最终 0 警告、0 错误，36.55 秒；x64 为上述合成宿主构建，普通双架构测试包仍在 W9。
+- `python tools/localization/check_localization.py`：Windows 3565 键，双语、参数、引用及硬编码扫描通过；`python tools/codex/check_documentation.py` 和 `git diff --check` 通过，收尾文档另行复查。
+
+独立集成与只读对抗复核：实时文件授权失败保留详情但不授予编辑；普通账号只按实际 ACL 授权写，所有者/传统权限限管理员；原路径映射和完整快照两次一致、成员存在及自锁检查通过才提交。继承规则不写入显式列表，新增成员允许 NAS 分配编号，重复规则逐条消耗匹配。原任务接受与完成证据分离，丢回执不凭根项匹配认领，递归无编号不认定完成，子项错误保留；祖先/子目录及 SMB/NFS 工作流互斥，关闭不自动补写。新恢复标记仅在当前账号/连接的进程内，未引入持久化。实际 NAS 行为、ARM64 设备、辅助功能与高 DPI 依主计划 `PENDING_USER_VALIDATION`，没有真实权限写操作或发布。
+
+### 2026-10-15 Windows W1c 分享编辑、成员与文件收集（未提交工作区）
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files.Sharing' --verbosity minimal`：首次编译被 xUnit2031 分析器拦截，改用带谓词的 Assert.Single 后运行。首轮 146 通过、8 失败，均为旧“无编号按路径认领/丢回执后按消失确认”断言或新接受的日期字段形态；依当前契约加强断言、保留防重和恢复用例后 155 通过。补账号隔离、缺日期拒写、取消和保留到期日的范围验证后，最终 159 通过、0 失败/跳过，125 毫秒。
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files' --verbosity minimal`：1099 通过、0 失败/跳过，6 秒。该次先于最后“仅改开始日期也检查保留到期日”的反馈修正；修正由上述最终分享 159 项覆盖，不重复相加。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-sharing -Language zh-CN`：首次构建发现 StackPanel 没有 IsEnabled，改用外层 ContentControl 承担禁用后，19 场景通过（`windows/dist/ui-review-20261015-000103/results.json`）。截图复核发现旧分享对话框未继承深色主题；新增显式继承和主题断言，并等待布局完成后截图，避免空白捕获。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-sharing -Language en-US -WindowWidth 900 -PaneState cycle`：上述主题修正后，19 场景通过（`ui-review-20261015-000348`），覆盖列表/空/错误/加载、编辑/未知恢复/批量、成员五态、文件收集确认及多项目创建。英文深色编辑和收集、浅色成员已目视检查。
+- `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios files-sharing -States list,edit-form,create-collection -Language zh-CN`：主题修正后 6 场景通过（`ui-review-20261015-000610`）。最后日期反馈与新密码标签修改后，英文使用 `-States edit-form,edit-run,edit-batch,create-collection,create-run` 重建并通过 7 场景（`ui-review-20261015-000813`）；中文 `-SkipBuild -States edit-form,create-collection` 4 场景通过（`ui-review-20261015-001014`）。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：最终 0 警告、0 错误，31.71 秒；此前本组构建也通过。x64 为上述实际重新发布的合成宿主，最终普通双架构测试包仍在 W9。
+- `python tools/localization/check_localization.py`：最终 Windows 3499 键，双语、参数、引用和硬编码通过；`git diff --check` 通过。没有修改 API 生成源或生成物。
+
+只读对抗复核覆盖：成功响应但缺创建编号、密码替换丢回执、他方取消链接、名单读取期间目标变化、完整高级字段缺失、账号切换、跨 Repository 互斥、批次未知停止和独立只读恢复。恢复只保存当前工作区内非秘密预期值；没有跨进程恢复格式变更。文件应用授权使用已记录 GET v1，不额外要求管理员。共享 API 契约及其他四端源码不变；真实 NAS 收集上传、成员保护、密码及日期、取消副作用和 ARM64 设备均按主计划 PENDING_USER_VALIDATION，不以当前合成结果提高环境证据等级。
+
+
+### 2026-10-14 Windows W1c 归档选择与目标目录（未提交工作区）
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files.Archive' --verbosity minimal`：成员选择完成后 140 通过；加入独立目标和空预览后 143 通过；集成复核将预览清单验证与提交输出冲突分开，并冻结所选集合后最终 144 通过、0 失败/跳过。最后修正曾触发 CS8601，修复失败分支的 out 初始化后通过，未删除断言。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-extract -Language zh-CN`：最终 22 场景通过（`windows/dist/ui-review-20261014-233102/results.json`），包括目录选择、空/错误/读取中/迟到、选择后提交、密码变化、覆盖确认和原场景。早期合成点击发生在按钮可视区域之外、密码变化断言发生在事件处理之前，各有一次真实失败；让控件进入可视区域并等待 UI 事件后通过。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-extract -Language en-US -WindowWidth 900 -PaneState cycle`：最终清单验证修正后重新构建 x64 宿主，22 场景通过（`ui-review-20261014-233345/results.json`）；中文深色、英文浅色选择列表已目视检查。英文数量文案随后改为无复数歧义的 `Selected: {0}`，下次资源构建统一带入。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal`：最后一次 0 警告、0 错误，29.72 秒；之前同组构建也通过。x64 宿主发布构建由上述脚本实际运行，无正式签名或设备安装。
+- `python tools/localization/check_localization.py`：3446 Windows 键，双语/参数/引用/硬编码通过；`git diff --check` 通过。
+- W1b 既有传输基线复验命令：`dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-build --no-restore --filter 'FullyQualifiedName~ForegroundTransfer|FullyQualifiedName~BoundedFile|FullyQualifiedName~BoundedFolder|FullyQualifiedName~SafeFileDownload|FullyQualifiedName~SafeFolderArchive|FullyQualifiedName~FileUploadContract|FullyQualifiedName~DsmRepositoryUpload|FullyQualifiedName~TransferActivity' --verbosity minimal`：152 通过、0 失败/跳过；此前误用 `LanStash.Tests.Transfers` 过滤没有匹配测试，不计为通过。这组结果不替代其他传输原生场景。
+
+归档目标权限、未知互斥和任务完成检查均保留；没有修改其他端或共享 NAS 契约。真实归档、副作用、断网、ARM64 设备仍按 Windows 账本 PENDING_USER_VALIDATION 验收。分享增量与 W1 其余模块继续实施。
+
+### 2026-10-14 Windows W1a 搜索增量（未提交工作区）
+
+固定基线 a521ccb5。高级条件、正文索引覆盖、名称正则、虚拟共享根展开、结果排序及取消/迟到处理使用既有搜索路径。
+
+- `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Files' --verbosity minimal`：1048 通过、0 失败、0 跳过。
+- 集成复核补充“清除搜索恢复原目录排序”后，同命令改用 `FullyQualifiedName~LanStash.Tests.Files.FileSearch`：38 通过、0 失败、0 跳过；不与上组重复计数。
+- `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore --verbosity minimal`：修复 WinUI ScrollViewer 不可继承问题后 0 警告、0 错误；ARM64 相同命令改 runtime，同样 0 警告、0 错误。
+- `./windows/tests/UiSmoke/run.ps1 -Scenarios files-search -Language zh-CN`：修复场景宿主构造器及局部控件辅助接线后 11 通过，报告 `windows/dist/ui-review-20261014-231408/results.json`。
+- `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios files-search -Language en-US -WindowWidth 900 -PaneState cycle`：11 通过，报告 `ui-review-20261014-231531/results.json`。
+- 表单加宽与错误滚动后，中文 `-States form` 重新构建 2 通过（`ui-review-20261014-231637`），英文 `-SkipBuild -States form -WindowWidth 900 -PaneState cycle` 2 通过（`ui-review-20261014-231751`）；已目视检查中文深色与英文浅色表单。
+- `python tools/localization/check_localization.py`：3435 Windows 键，双语/参数/引用/硬编码通过；`git diff --check` 通过。
+
+这些均为本机合成数据和当前源码证据。没有连接真实 NAS 测试搜索召回，也没有验证 ARM64 实机。测试宿主只存在于专用编译开关的产物，不加入最终测试包。
+
+
+### 2026-10-14 Windows W0 契约纠偏与本机验证
+
+固定基线 `a521ccb5`，本轮为未提交工作区；macOS/Apple 共享层/Android 源码未修改。
+用户批准完整 W0–W9，随后明确要求按完整功能模块集中实现和测试，避免零散改动反复测试。
+
+本机原来只有 .NET 8 运行时，现从 Microsoft 官方 .NET 10 发布元数据取得 10.0.402 Windows x64
+SDK 压缩包并校验 SHA-512，解压到用户 LocalAppData 下的独立构建工具目录。没有修改仓库
+工具链/依赖/最低系统版本，没有全局更改 PATH，也没有提交、推送或发布。下列命令中的 dotnet
+由该目录执行，DOTNET_ROOT 与 PATH 仅对当前子进程设置；Python 使用 Codex 自带运行时。
+
+| 实际命令（仓库根目录） | 结果与边界 |
+| --- | --- |
+| `dotnet restore windows/LanStash.slnx --disable-parallel --verbosity minimal` | 五个项目还原成功。 |
+| `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~VirtualMachineDeletionTests\|FullyQualifiedName~VirtualMachineImageDeletionTests'` | 旧基线 26 项通过；按当前契约加强回执与分页断言后，旧生产代码复现 16 项失败、22 项通过；未删除场景或放宽断言。 |
+| `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~VirtualMachineDeletionTests\|FullyQualifiedName~VirtualMachineImageDeletionTests\|FullyQualifiedName~VirtualMachinePower\|FullyQualifiedName~VirtualMachineSettings\|FullyQualifiedName~VirtualMachineBatch'` | 删除结果修复后 136 项通过，0 失败/跳过。 |
+| `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Chat'` | 首轮 286 通过、6 失败，均为旧分页版本/能力与失去投票回执仍认领新消息的旧断言；按当前契约迁移并加强后 292 项通过，0 失败/跳过。 |
+| `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --filter 'FullyQualifiedName~LanStash.Tests.Downloads'` | 首轮 157 通过、1 失败：Windows 测试仍断言 Apple 旧版按目录选择链接版本。更新当前 Swift 源码断言并保留密码/目录原值保护后，158 项通过，0 失败/跳过。 |
+| `dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-build --no-restore --filter 'FullyQualifiedName~Authentication\|FullyQualifiedName~SessionRequest\|FullyQualifiedName~QuickConnect\|FullyQualifiedName~Certificate\|FullyQualifiedName~VirtualMachines'` | 当前已构建测试程序集 645 项通过，0 失败/跳过；与前述分组存在重叠，不累加成独立总数。 |
+| `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore --verbosity minimal` | 当前源码 WinUI x64 成功，0 警告/错误，33.26 秒。 |
+| `dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore --verbosity minimal` | 当前源码 WinUI ARM64 交叉构建成功，0 警告/错误，32.61 秒；不等于 ARM64 实机。 |
+| `./windows/tests/UiSmoke/run.ps1 -Scenarios downloads -Language zh-CN` | 4 个真实 WinUI 合成场景通过，覆盖浅深色列表及创建表单；报告 `windows/dist/ui-review-20261014-224950/results.json`。 |
+| `./windows/tests/UiSmoke/run.ps1 -SkipBuild -Scenarios downloads -Language en-US -WindowWidth 900 -PaneState cycle` | 4 个英文窄窗口原生合成场景通过；报告 `windows/dist/ui-review-20261014-225121/results.json`。 |
+| `python tools/localization/check_localization.py` | 双语/参数/引用/硬编码扫描通过，Windows 3404 键。 |
+| `python tools/request-contract/validate_contracts.py`；`python tools/contract-validation/validate_fixtures.py` | 180 请求样例、1 写结果示例、29 组 Fixture、48 项私有 API 引用通过。 |
+| `python tools/codex/generate_api_reference.py --check`；`python tools/codex/check_documentation.py` | 生成目录一致，文档检查通过。 |
+
+W0 行为：删除必须持有本次接受回执，缺页/异常分页不能证明消失；Chat 固定 Post.list v5，
+以原始消息身份定位并排除定位项，辅助记录继续推进，重复身份拒绝，置顶范围使用数字 in 数组；
+投票 choices 为 text 对象数组、options 为对象，读取 props.vote，缺回执不按相似消息认领；
+下载 URI 创建固定 v3，成功空回执只确认接受，不虚构任务，HTTP 失败与明确 API 拒绝分开，
+相同未知链接不能通过更换目录重发。公开 NAS 契约与五端请求样例不变，其他四端无实现变更。
+
+PENDING_USER_VALIDATION：真实 NAS/Chat/Download Station/VMM、副作用与故障时序未验；
+Explorer、Cloud Files、通知、编辑器、辅助功能及 ARM64 设备未验。W0 没有新发布包，
+没有完成全量 xUnit，W1–W9 未由本段结果推定完成。下载及其他新流程的跨重启持久恢复仍按
+各自波次实施；当前内存防重复不表述为跨进程恢复。
+
+以下旧表为 2026-08-20 的历史状态；后续 Photos 等专项证据另行追加，不以旧表覆盖新记录。
 
 截至本次文档收敛，仓库中没有可复核、脱敏且与当前候选包绑定的以下手工验收结果：
 

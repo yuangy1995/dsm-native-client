@@ -5,6 +5,41 @@ namespace LanStash.Tests;
 
 public sealed class SynologyPhotosWorkspaceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConditionSourcesRequireCurrentSharedManagementRole(bool personal)
+    {
+        var repository = new SynologyPhotosTestRepository { Spaces = personal ? [SynologyPhotoSpace.Personal, SynologyPhotoSpace.Shared] : [SynologyPhotoSpace.Shared], CanManageSharedSpace = true };
+        using var model = new SynologyPhotosWorkspace(repository);
+        await model.RefreshAsync(); Assert.Contains(SynologyPhotoSpace.Shared, model.ConditionSpaces);
+        repository.CanManageSharedSpace = false; await model.RefreshAsync();
+        Assert.DoesNotContain(SynologyPhotoSpace.Shared, model.ConditionSpaces);
+        Assert.Equal(personal, model.ConditionSpaces.Contains(SynologyPhotoSpace.Personal));
+        Assert.Contains(SynologyPhotoSpace.Shared, model.Spaces);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConfirmedMetadataOnlyUpdatesMatchingOriginalAlbumContext(bool differentAlbum)
+    {
+        var repository = new SynologyPhotosTestRepository(); using var model = new SynologyPhotosWorkspace(repository);
+        var original = repository.Photo() with { AlbumContext = new(41, 19, 19) };
+        var displayed = differentAlbum ? original with { AlbumContext = new(42, 19, 19) } : original;
+        model.Items.Add(displayed);
+        var changed = original with { Rating = 5, TakenAt = original.TakenAt.AddHours(1) };
+        await model.ApplyConfirmedChangesAsync(Guid.NewGuid(), [new(original, SynologyPhotoChangeState.Completed, changed)]);
+        Assert.Equal(differentAlbum ? displayed : changed, Assert.Single(model.Items));
+    }
+    [Fact]
+    public async Task UnknownMetadataDoesNotReplaceVisiblePhoto()
+    {
+        var repository = new SynologyPhotosTestRepository(); using var model = new SynologyPhotosWorkspace(repository);
+        var original = repository.Photo(); model.Items.Add(original);
+        await model.ApplyConfirmedChangesAsync(Guid.NewGuid(), [new(original, SynologyPhotoChangeState.PendingReview, original with { Rating = 5 })]);
+        Assert.Equal(original, Assert.Single(model.Items));
+    }
     [Fact]
     public async Task AccessWithoutPersonalSpaceDoesNotRequestAFileStationFallback()
     {
@@ -12,6 +47,59 @@ public sealed class SynologyPhotosWorkspaceTests
         using var model = new SynologyPhotosWorkspace(repository);
         await model.RefreshAsync();
         Assert.True(model.HasLoaded); Assert.Empty(model.Items); Assert.Empty(repository.Calls);
+        Assert.Equal(SynologyPhotosSection.Albums, model.Section); Assert.Equal(1, repository.AlbumCalls);
+    }
+
+    [Fact]
+    public async Task MetadataReloadPreservesHistoricalMonthAndRebuildsRawOffset()
+    {
+        var repository = new SynologyPhotosTestRepository(); using var model = new SynologyPhotosWorkspace(repository);
+        await model.RefreshAsync(); await model.JumpToMonthAsync(new(2026, 8));
+        var original = model.Items[0]; var end = Assert.IsType<SynologyPhotoQuery.Timeline>(repository.Calls[^1].Query).End;
+        repository.Read = (_, offset, _) => Task.FromResult(offset == 0
+            ? new SynologyPhotoPage(Enumerable.Range(1, 100).Select(id => repository.Photo(id) with { Rating = 5 }).ToArray(), 0, 100, true)
+            : new SynologyPhotoPage([repository.Photo(101)], 100, 101, false));
+        await model.ApplyConfirmedChangesAsync(Guid.NewGuid(), [new(original, SynologyPhotoChangeState.Completed, original with { Rating = 5 })]);
+        Assert.Equal(new SynologyPhotoMonth(2026, 8), model.SelectedMonth); Assert.Equal(end, Assert.IsType<SynologyPhotoQuery.Timeline>(repository.Calls[^1].Query).End);
+        await model.LoadNextAsync(); Assert.Equal(100, repository.Calls[^1].Offset); Assert.Equal(101, model.Items.Count);
+    }
+    [Fact]
+    public async Task MetadataReloadInvalidatesOldPagingResponseWithoutLosingCurrentSelectionScope()
+    {
+        var repository = new SynologyPhotosTestRepository(); var delayed = new TaskCompletionSource<SynologyPhotoPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hold = true;
+        repository.Read = (_, offset, _) => offset == 100 && hold ? delayed.Task : Task.FromResult(offset == 0
+            ? new SynologyPhotoPage(Enumerable.Range(1, 100).Select(id => repository.Photo(id)).ToArray(), 0, 100, true)
+            : new SynologyPhotoPage([repository.Photo(222)], 100, 101, false));
+        using var model = new SynologyPhotosWorkspace(repository); await model.RefreshAsync(); var original = model.Items[0];
+        var oldPage = model.LoadNextAsync();
+        await model.ApplyConfirmedChangesAsync(Guid.NewGuid(), [new(original, SynologyPhotoChangeState.Completed, original with { Rating = 5 })]);
+        delayed.SetResult(new([repository.Photo(101)], 100, 101, false)); await oldPage;
+        Assert.DoesNotContain(model.Items, photo => photo.Id.ItemId == 101); Assert.Equal(100, model.Items.Count);
+        hold = false; await model.LoadNextAsync(); Assert.Equal(100, repository.Calls[^1].Offset); Assert.Contains(model.Items, photo => photo.Id.ItemId == 222);
+    }
+    [Fact]
+    public async Task SavedChangeSurvivesReloadFailureAndExplicitRetryKeepsMonth()
+    {
+        var repository = new SynologyPhotosTestRepository(); using var model = new SynologyPhotosWorkspace(repository);
+        await model.RefreshAsync(); await model.JumpToMonthAsync(new(2026, 8)); var original = model.Items[0]; var id = Guid.NewGuid();
+        var changes = new[] { new SynologyPhotoChangeItem(original, SynologyPhotoChangeState.Completed, original with { Rating = 5 }) };
+        repository.Read = (_, _, _) => Task.FromException<SynologyPhotoPage>(new IOException());
+        await model.ApplyConfirmedChangesAsync(id, changes); Assert.True(model.NeedsChangesRefresh); Assert.Equal(5, model.Items[0].Rating);
+        var count = repository.Calls.Count; await model.LoadNextAsync(automatic: true); Assert.Equal(count, repository.Calls.Count);
+        repository.Read = (_, offset, _) => Task.FromResult(new SynologyPhotoPage([original with { Rating = 5 }], offset, offset + 1, false));
+        await model.ReloadChangedPhotoWindowAsync(); Assert.False(model.NeedsChangesRefresh); Assert.Null(model.ErrorKey); Assert.Equal(new SynologyPhotoMonth(2026, 8), model.SelectedMonth);
+        count = repository.Calls.Count; await model.ApplyConfirmedChangesAsync(id, changes); Assert.Equal(count, repository.Calls.Count);
+    }
+    [Fact]
+    public async Task NavigatingDuringMetadataReloadDiscardsLateOldResults()
+    {
+        var repository = new SynologyPhotosTestRepository(); using var model = new SynologyPhotosWorkspace(repository);
+        await model.RefreshAsync(); var original = model.Items[0]; var delayed = new TaskCompletionSource<SynologyPhotoPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.Read = (query, offset, _) => query is SynologyPhotoQuery.Search ? Task.FromResult(new SynologyPhotoPage([repository.Photo(9)], offset, offset + 1, false)) : delayed.Task;
+        var applying = model.ApplyConfirmedChangesAsync(Guid.NewGuid(), [new(original, SynologyPhotoChangeState.Completed, original with { Rating = 5 })]);
+        await model.SearchAsync("new"); delayed.SetResult(new([repository.Photo(2)], 0, 1, false)); await applying;
+        Assert.Equal("new", model.SearchText); Assert.Equal(9, Assert.Single(model.Items).Id.ItemId); Assert.False(model.NeedsChangesRefresh);
     }
 
     [Fact]
@@ -141,6 +229,25 @@ public sealed class SynologyPhotosWorkspaceTests
         Assert.True(media.Disposed); Assert.Null(preview.MediaSource); Assert.Null(preview.Photo);
     }
 
+    [Fact]
+    public async Task CompletedTemporaryCleanupLeavesRemovedAlbumAndDoesNotRepeatRefresh()
+    {
+        var repository = new SynologyPhotosTestRepository { Albums = [new(61, "Synthetic temporary"), new(62, "Synthetic copy")] };
+        repository.ReadAlbum = id => Task.FromResult(new SynologyPhotoAlbum(id, 1, 1, "Synthetic temporary", false, false, new('a', 64)) { ProfileId = repository.ProfileId });
+        using var model = new SynologyPhotosWorkspace(repository); await model.SelectSectionAsync(SynologyPhotosSection.Albums); await model.OpenCollectionAsync(model.Collections[0]);
+        var change = new SynologyPhotoTemporaryChange(Guid.NewGuid(), 61, 62, SynologyPhotoTemporaryStage.Finished, SynologyPhotoChangeState.Completed, null, false, true, false, false, false, null);
+        await model.ApplyTemporaryChangeAsync(change); Assert.Null(model.Album); Assert.Null(model.CurrentAlbum); Assert.Equal(SynologyPhotosSection.Albums, model.Section);
+        var calls = repository.AlbumCalls; await model.ApplyTemporaryChangeAsync(change); Assert.Equal(calls, repository.AlbumCalls);
+    }
+    [Fact]
+    public async Task PendingTemporaryCleanupAndKeptCreationDoNotLeaveCurrentAlbum()
+    {
+        var repository = new SynologyPhotosTestRepository { Albums = [new(61, "Synthetic temporary")] };
+        using var model = new SynologyPhotosWorkspace(repository); await model.SelectSectionAsync(SynologyPhotosSection.Albums); await model.OpenCollectionAsync(model.Collections[0]);
+        var change = new SynologyPhotoTemporaryChange(Guid.NewGuid(), 61, null, SynologyPhotoTemporaryStage.Delete, SynologyPhotoChangeState.PendingReview, null, false, false, false, false, false, null);
+        await model.ApplyTemporaryChangeAsync(change); Assert.Equal(61, model.Album?.Id);
+        await model.ApplyTemporaryChangeAsync(change with { State = SynologyPhotoChangeState.Completed, FromCreation = true, Stage = SynologyPhotoTemporaryStage.Finished }); Assert.Equal(61, model.Album?.Id);
+    }
     [Fact]
     public async Task LivePhotoReturnsToItsPosterAfterMotionFinishes()
     {

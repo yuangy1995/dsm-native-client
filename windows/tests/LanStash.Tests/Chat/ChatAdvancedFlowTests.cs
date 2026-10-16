@@ -51,7 +51,7 @@ public sealed class ChatAdvancedFlowTests
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
         Assert.Single(fixture.Calls, call => call["method"] == "set");
         fixture.ReminderTime = at.ToUnixTimeMilliseconds();
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await fixture.Chat.SetReminderAsync("p-1", "c-1", at, id)).Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Chat.SetReminderAsync("p-1", "c-1", at, id)).Result.Status);
         Assert.Single(fixture.Calls, call => call["method"] == "set");
     }
 
@@ -158,8 +158,8 @@ public sealed class ChatAdvancedFlowTests
         Assert.Equal(new[] { "One", "Two" }, result.ConfirmedMessage!.Poll!.Options.Select(item => item.Text));
         await fixture.Chat.CreatePollAsync(draft);
         var call = Assert.Single(fixture.Calls, call => call["api"] == "SYNO.Chat.Post.Vote");
-        Assert.Equal(new[] { "One", "Two" }, JsonSerializer.Deserialize<string[]>(call["choices"]));
-        var options = format == "JSON" ? JsonSerializer.Deserialize<string>(call["options"])! : call["options"];
+        Assert.Equal(new[] { "One", "Two" }, JsonNode.Parse(call["choices"])!.AsArray().Select(item => item!["text"]!.GetValue<string>()));
+        var options = call["options"];
         Assert.True(JsonNode.Parse(options)!["multiple"]!.GetValue<bool>());
     }
 
@@ -184,7 +184,7 @@ public sealed class ChatAdvancedFlowTests
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await reconnected.SetReminderAsync("p-1", "c-1", at, id)).Result.Status);
         Assert.Single(fixture.Calls, call => call["method"] == "set");
         fixture.ReminderTime = at.ToUnixTimeMilliseconds();
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await reconnected.SetReminderAsync("p-1", "c-1", at, id)).Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await reconnected.SetReminderAsync("p-1", "c-1", at, id)).Result.Status);
         Assert.Single(fixture.Calls, call => call["method"] == "set");
     }
 
@@ -267,7 +267,8 @@ public sealed class ChatAdvancedFlowTests
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Chat.CreatePollAsync(draft)).Result.Status);
         Assert.Single(fixture.Calls, call => call["api"] == "SYNO.Chat.Post.Vote");
         fixture.PollId = "new-poll";
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await fixture.Chat.CreatePollAsync(draft)).Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Chat.CreatePollAsync(draft)).Result.Status);
+        Assert.Single(fixture.Calls, call => call["api"] == "SYNO.Chat.Post.Vote");
     }
 
     private sealed class Fixture : IDisposable
@@ -321,7 +322,7 @@ public sealed class ChatAdvancedFlowTests
                 case "SYNO.Chat.Channel": return new() { ["channels"] = new JsonArray(new JsonObject { ["channel_id"] = "c-1", ["type"] = "private", ["name"] = "Synthetic group" }) };
                 case "SYNO.Chat.Post":
                     var post = new JsonObject { ["post_id"] = _poll is null ? "p-1" : PollId, ["channel_id"] = "c-1", ["creator_id"] = WrongPollOwner ? "u-2" : "u-1", ["is_my_post"] = !WrongPollOwner, ["message"] = _poll?["question"]?.GetValue<string>() ?? "Synthetic text", ["create_at"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
-                    if (_poll is not null) post["vote"] = _poll.DeepClone();
+                    if (_poll is not null) post["props"] = new JsonObject { ["vote"] = _poll.DeepClone() };
                     return new() { ["posts"] = new JsonArray(post), ["offset"] = 0, ["total"] = 1 };
                 case "SYNO.Chat.Post.Reminder":
                     if (call["method"] == "set") ReminderTime = long.Parse(Text("remind_at"));
@@ -334,7 +335,7 @@ public sealed class ChatAdvancedFlowTests
                     if (call["method"] == "delete") ScheduleTime = null;
                     return new() { ["cronjob_id"] = "s-1", ["schedules"] = ScheduleTime is { } time ? new JsonArray(new JsonObject { ["cronjob_id"] = "s-1", ["channel_id"] = "c-1", ["message"] = _scheduleText, ["send_at"] = time }) : new JsonArray() };
                 case "SYNO.Chat.Post.Vote":
-                    _poll = new() { ["question"] = Text("message"), ["choices"] = JsonNode.Parse(call["choices"]), ["options"] = Text("options") };
+                    _poll = new() { ["question"] = Text("message"), ["choices"] = JsonNode.Parse(call["choices"]), ["options"] = JsonNode.Parse(call["options"]) };
                     return new() { ["post_id"] = PollId };
                 default: throw new InvalidOperationException("unexpected synthetic request");
             }

@@ -7,7 +7,9 @@ public sealed partial class DsmRepository
 {
     private static readonly string[] PackageAdditionalFields = ["status", "description", "install_type", "startable", "dsm_apps", "available_operation", "ctl_uninstall"];
 
-    public async Task<IReadOnlyList<NasPackageSummary>> LoadPackagesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<NasPackageSummary>> LoadPackagesAsync(CancellationToken cancellationToken = default) =>
+        (await ReadPackageDirectoryAsync(cancellationToken).ConfigureAwait(false)).Packages;
+    private async Task<PackageDirectory> ReadPackageDirectoryAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var capability = SecurityCapability("SYNO.Core.Package", 2) ??
@@ -16,7 +18,8 @@ public sealed partial class DsmRepository
             new Dictionary<string, string> { ["offset"] = "0", ["limit"] = "1000",
                 ["additional"] = System.Text.Json.JsonSerializer.Serialize(PackageAdditionalFields) }, cancellationToken).ConfigureAwait(false);
         // 到达源读取边界不能把未返回的目标当作已卸载；管理操作要求完整目录。
-        if (data["packages"] is not JsonArray rows || rows.Count >= 1000) throw InvalidNasServiceSettings();
+        var rows = CompletePackageRows(data, "packages", 1000);
+        var upgrades = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
         var result = new List<NasPackageSummary>(); var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var node in rows)
         {
@@ -27,15 +30,31 @@ public sealed partial class DsmRepository
             var details = row["additional"] is null ? row : row["additional"] as JsonObject ?? throw InvalidNasServiceSettings();
             var status = (PackageText(details, "status") ?? "unknown").ToLowerInvariant();
             var name = PackageText(row, "name");
+            var operations = details["available_operation"] as JsonObject;
+            if (operations?["upgrade"] is JsonObject upgrade) upgrades.Add(id!, (JsonObject)upgrade.DeepClone());
+            else if (operations?["upgrade"] is not null) throw InvalidNasServiceSettings();
             result.Add(new(id!, string.IsNullOrWhiteSpace(name) ? id! : name, PackageText(row, "version"), status, ParseState(status))
             {
                 Startable = PackageBoolean(details, "startable"), InstallType = PackageText(details, "install_type")?.ToLowerInvariant(),
                 UninstallAllowed = PackageBoolean(details, "ctl_uninstall"), DesktopApps = PackageStrings(details, "dsm_apps", false),
-                AvailableOperations = PackageStrings(details, "available_operation", true),
+                AvailableOperations = operations is null ? PackageStrings(details, "available_operation", true) : null,
+                HasOperationObject = operations is not null, HasUpgradeCandidate = upgrades.ContainsKey(id!),
+                InstalledAt = PackageTimestamp(row), Description = PackageText(details, "description") ?? "",
             });
         }
-        return result.AsReadOnly();
+        return new(result.AsReadOnly(), upgrades);
     }
+    private sealed record PackageDirectory(IReadOnlyList<NasPackageSummary> Packages, IReadOnlyDictionary<string, JsonObject> Upgrades);
+    private static JsonArray CompletePackageRows(JsonObject data, string key, int maximum = int.MaxValue)
+    {
+        if (data[key] is not JsonArray rows || rows.Count >= maximum ||
+            data["total"] is not null && PackageInteger(data, "total") != rows.Count) throw InvalidNasServiceSettings();
+        return rows;
+    }
+    private static long? PackageInteger(JsonObject value, string key) => value[key] is null ? null :
+        value[key] is JsonValue scalar && scalar.TryGetValue<long>(out var number) && number >= 0 ? number : throw InvalidNasServiceSettings();
+    private static decimal? PackageTimestamp(JsonObject value) => value["timestamp"] is null ? null :
+        value["timestamp"] is JsonValue scalar && scalar.TryGetValue<decimal>(out var number) && number >= 0 ? number : throw InvalidNasServiceSettings();
     private static bool StablePackageId(string? value) => !string.IsNullOrWhiteSpace(value) && !value.Any(char.IsControl);
     private static string? PackageText(JsonObject value, string key) => value[key] is null ? null :
         value[key] is JsonValue scalar && scalar.TryGetValue<string>(out var text) ? text : throw InvalidNasServiceSettings();

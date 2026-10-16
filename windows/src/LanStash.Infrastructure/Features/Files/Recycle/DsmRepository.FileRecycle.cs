@@ -604,20 +604,23 @@ public sealed partial class DsmRepository
     private FileRecycleReservation ReserveFileRecycle(FileRecycleReview requested)
     {
         var state = FileRecycleState();
-        lock (state.Sync)
+        var mutations = FileMutationState();
+        lock (mutations.Sync)
         {
-            if (state.Reviews.TryGetValue(requested.Key, out var pending))
+            if (OfficeEditingConflicts(requested.Targets) || CrossNasRecoveryConflicts(requested.Targets) || CrossNasDeletionConflicts(mutations, requested.Targets)) return default;
+            lock (state.Sync)
             {
-                if (FileRecycleTargetsOverlap(state.ActiveTargets, requested.Targets))
-                    return default;
+                if (state.Reviews.TryGetValue(requested.Key, out var pending))
+                {
+                    if (FileRecycleTargetsOverlap(state.ActiveTargets, requested.Targets)) return default;
+                    state.ActiveTargets.UnionWith(requested.Targets);
+                    return new(true, pending);
+                }
+                if (state.Reviews.Values.Any(review => FileRecycleTargetsOverlap(review.Targets, requested.Targets)) ||
+                    FileRecycleTargetsOverlap(state.ActiveTargets, requested.Targets)) return default;
                 state.ActiveTargets.UnionWith(requested.Targets);
-                return new(true, pending);
+                return new(true, null);
             }
-            if (state.Reviews.Values.Any(review =>
-                    FileRecycleTargetsOverlap(review.Targets, requested.Targets)) ||
-                FileRecycleTargetsOverlap(state.ActiveTargets, requested.Targets)) return default;
-            state.ActiveTargets.UnionWith(requested.Targets);
-            return new(true, null);
         }
     }
 

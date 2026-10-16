@@ -19,7 +19,8 @@ public sealed partial class DsmRepository
             return ServicePreflightFailure(operation, MutationErrorCategory.Validation);
         if (!CanDeleteImages) return UnsupportedResult(operation);
         var scope = ServiceScope(); var shared = ServiceMutations;
-        var signature = ServiceHash(JsonSerializer.Serialize(targets.OrderBy(item => item.Id, StringComparer.Ordinal)));
+        var signature = ServiceHash(JsonSerializer.Serialize(targets.OrderBy(item => item.Id, StringComparer.Ordinal)
+            .Select(item => new { item.Id, item.Name, item.Kind, item.Image })));
         try { if (!await shared.Gate.WaitAsync(0, cancellationToken).ConfigureAwait(false)) return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true); }
         catch (OperationCanceledException) { return CancelledBeforeSubmissionResult(operation); }
         try
@@ -34,7 +35,8 @@ public sealed partial class DsmRepository
             try
             {
                 var current = await LoadContainerImagesAsync(cancellationToken).ConfigureAwait(false);
-                if (current.Any(item => item.Image is null) || targets.Any(target => !current.Contains(target)))
+                if (current.Any(item => item.Image is null) || targets.Any(target => !current.Any(item =>
+                    item.Id == target.Id && item.Name == target.Name && item.Kind == target.Kind && item.Image == target.Image)))
                     return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
                 if (shared.ImagePulls.Values.Any(pull => pull.Scope == scope && targets.Any(target =>
                         ImageAddress(target.Image!) == pull.Address || target.Image!.UsesIdentity && pull.BaselineIds.Contains(target.Image.ImageId, StringComparer.Ordinal))))
@@ -60,6 +62,7 @@ public sealed partial class DsmRepository
                     .Select(id => new Dictionary<string, object> { ["identity"] = id }));
                 var capability = _capabilities[InternalObservedImageApi] with { MinVersion = 1, MaxVersion = 1 };
                 await SecurityCallAsync(capability, "delete", new Dictionary<string, object> { ["images"] = objects.ToArray() }, cancellationToken).ConfigureAwait(false);
+                state.Accepted = true;
             }
             catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error)) { state.Rejection = ServiceErrorCategory(error); }
             catch (Exception) { /* 已提交可能成功：保留锁，只回读，不重放。 */ }
@@ -107,7 +110,7 @@ public sealed partial class DsmRepository
                 var reference = target.Image!;
                 var exists = current.Any(item => reference.UsesIdentity ? item.Image!.ImageId == reference.ImageId :
                     ImageAddress(item.Image!) == ImageAddress(reference));
-                if (!exists) state.VerifiedIds.Add(target.Id);
+                if (state.Accepted && !exists) state.VerifiedIds.Add(target.Id);
             }
         }
         catch (DsmException error) { category = ServiceErrorCategory(error); }
@@ -129,5 +132,6 @@ public sealed partial class DsmRepository
         public IReadOnlyList<ContainerResourceSummary> Targets { get; } = targets;
         public HashSet<string> VerifiedIds { get; } = new(StringComparer.Ordinal);
         public MutationErrorCategory? Rejection { get; set; }
+        public bool Accepted { get; set; }
     }
 }

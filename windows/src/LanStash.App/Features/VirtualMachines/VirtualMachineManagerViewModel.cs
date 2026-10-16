@@ -4,7 +4,7 @@ using LanStash.Domain;
 
 namespace LanStash.App.Features.VirtualMachines;
 
-public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposable
+public sealed partial class VirtualMachineManagerViewModel : ObservableObject, IDisposable
 {
     private const int MaximumCachedProfiles = 4;
     private readonly Dictionary<Guid, ProfileState> _profiles = [];
@@ -119,7 +119,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
     }
 
     public bool HasSelection => SelectedMachine is not null;
-    public bool CanRefresh => !IsLoading && !RequiresReconnect &&
+    public bool CanRefresh => !IsLoading && !IsActivityLoading && !RequiresReconnect &&
         _repository?.Availability is
         {
             Status: VirtualMachineManagerAvailabilityStatus.Available,
@@ -133,6 +133,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         var keepsReconnectBlock = ReferenceEquals(_repository, repository) &&
             ActiveProfileId == repository.ProfileId && RequiresReconnect;
         SaveCurrentProfileState();
+        ClearActivity();
         CancelRequest();
         _repository = repository;
         ActiveProfileId = repository.ProfileId;
@@ -149,7 +150,8 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
             return;
         }
 
-        if (_profiles.TryGetValue(repository.ProfileId, out var cached) && cached.Loaded)
+        if (_profiles.TryGetValue(repository.ProfileId, out var cached) && !ReferenceEquals(cached.Owner, repository)) cached = null;
+        if (cached is { Loaded: true })
         {
             TouchProfile(repository.ProfileId);
             RestoreProfile(cached);
@@ -157,7 +159,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
             return;
         }
 
-        var profile = cached ?? new ProfileState();
+        var profile = cached ?? new ProfileState(repository);
         CacheProfile(repository.ProfileId, profile);
         PrepareInitialStates(repository.Availability.Features);
         await LoadAsync(profile, preserveContentOnFailure: false);
@@ -166,6 +168,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
     public Task RefreshAsync()
     {
         ThrowIfDisposed();
+        if (_activityVisible) return CanRefresh ? RefreshActivityAsync() : Task.CompletedTask;
         return CanRefresh &&
             CurrentProfile is { } profile
                 ? LoadAsync(profile, preserveContentOnFailure: profile.Loaded)
@@ -188,6 +191,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
     {
         ThrowIfDisposed();
         SaveCurrentProfileState();
+        ClearActivity();
         CancelRequest();
         _repository = null;
         ActiveProfileId = null;
@@ -199,7 +203,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
     }
 
     private ProfileState? CurrentProfile => ActiveProfileId is Guid id &&
-        _profiles.TryGetValue(id, out var profile) ? profile : null;
+        _profiles.TryGetValue(id, out var profile) && ReferenceEquals(profile.Owner, _repository) ? profile : null;
 
     private async Task LoadAsync(ProfileState profile, bool preserveContentOnFailure)
     {
@@ -214,7 +218,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         }
         try
         {
-            var snapshot = await repository.LoadSnapshotAsync(request.Cancellation.Token);
+            var snapshot = await repository.LoadInventoryAsync(request.Cancellation.Token);
             if (!IsCurrent(request.Generation, repository))
             {
                 return;
@@ -373,14 +377,14 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         Replace(Networks, profile.Resources[VirtualMachineManagerReadFeature.Networks].Items);
         Replace(Images, profile.Resources[VirtualMachineManagerReadFeature.Images].Items);
         Replace(Protection, profile.Resources[VirtualMachineManagerReadFeature.Protection].Items);
-        Replace(Events, profile.Events);
+        if (!_activityVisible) Replace(Events, profile.Events);
         MachinesState = profile.MachinesState;
         HostsState = profile.Resources[VirtualMachineManagerReadFeature.Hosts].State;
         StoragesState = profile.Resources[VirtualMachineManagerReadFeature.Storages].State;
         NetworksState = profile.Resources[VirtualMachineManagerReadFeature.Networks].State;
         ImagesState = profile.Resources[VirtualMachineManagerReadFeature.Images].State;
         ProtectionState = profile.Resources[VirtualMachineManagerReadFeature.Protection].State;
-        EventsState = profile.EventsState;
+        if (!_activityVisible) EventsState = profile.EventsState;
         SelectedMachine = profile.SelectedMachineId is { } id
             ? Machines.FirstOrDefault(item => item.Id == id)
             : null;
@@ -402,7 +406,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         NetworksState = InitialState(features, VirtualMachineManagerReadFeature.Networks);
         ImagesState = InitialState(features, VirtualMachineManagerReadFeature.Images);
         ProtectionState = InitialState(features, VirtualMachineManagerReadFeature.Protection);
-        EventsState = InitialState(features, VirtualMachineManagerReadFeature.Events);
+        if (!_activityVisible) EventsState = InitialState(features, VirtualMachineManagerReadFeature.Events);
     }
 
     private void MarkSupportedSectionsFailed(IReadOnlySet<VirtualMachineManagerReadFeature> features)
@@ -413,7 +417,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         NetworksState = FailedState(features, VirtualMachineManagerReadFeature.Networks);
         ImagesState = FailedState(features, VirtualMachineManagerReadFeature.Images);
         ProtectionState = FailedState(features, VirtualMachineManagerReadFeature.Protection);
-        EventsState = FailedState(features, VirtualMachineManagerReadFeature.Events);
+        if (!_activityVisible) EventsState = FailedState(features, VirtualMachineManagerReadFeature.Events);
     }
 
     private static VirtualMachineManagerContentState InitialState(
@@ -487,7 +491,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         Networks.Clear();
         Images.Clear();
         Protection.Clear();
-        Events.Clear();
+        if (!_activityVisible) Events.Clear();
         SelectedMachine = null;
     }
 
@@ -520,14 +524,16 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
             return;
         }
         _disposed = true;
+        ClearActivity();
         _generation++;
         _requestCancellation?.Cancel();
         _requestCancellation?.Dispose();
         _requestCancellation = null;
     }
 
-    private sealed class ProfileState
+    private sealed class ProfileState(IVirtualMachineManagerRepository owner)
     {
+        public IVirtualMachineManagerRepository Owner { get; } = owner;
         public bool Loaded { get; set; }
         public IReadOnlyList<VirtualMachineItem> Machines { get; set; } = [];
         public VirtualMachineManagerContentState MachinesState { get; set; } =

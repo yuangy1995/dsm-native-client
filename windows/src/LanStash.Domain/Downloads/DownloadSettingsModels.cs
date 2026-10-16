@@ -1,8 +1,11 @@
 namespace LanStash.Domain;
 
-/// <summary>完整管理员设置快照。计划读取独立降级，不把未知开关当成关闭。</summary>
+/// <summary>字段按实际存在性提供。计划读取独立降级，管理权限未知时只读。</summary>
 public sealed record DownloadSettingsSnapshot(Guid ProfileId, DownloadStationSettingsSummary Value,
-    bool CanEditDestination, DownloadStationSectionStatus ScheduleStatus);
+    bool CanEditDestination, DownloadStationSectionStatus ScheduleStatus)
+{
+    public bool? IsManager { get; init; }
+}
 
 public sealed record DownloadSettingsSaveRequest(Guid ProfileId, DownloadSettingsSnapshot Expected,
     DownloadStationSettingsSummary Desired, Guid ClientRequestId)
@@ -17,5 +20,6 @@ public sealed record DownloadSettingsSaveOutcome(MutationResult Result, Download
     DownloadSettingsComponentState Basic, DownloadSettingsComponentState Schedule)
 {
     public bool RequiresReview => Basic == DownloadSettingsComponentState.Unknown || Schedule == DownloadSettingsComponentState.Unknown;
-    public bool CanContinue => !RequiresReview && Basic == DownloadSettingsComponentState.Confirmed && Schedule == DownloadSettingsComponentState.NotStarted;
+    public Guid? ActionId { get; init; }
+    public bool CanContinue => !RequiresReview && (Basic == DownloadSettingsComponentState.NotStarted || Schedule == DownloadSettingsComponentState.NotStarted);
 }

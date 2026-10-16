@@ -124,7 +124,8 @@ public sealed class ContainerMutationTests
         fixture.Name = "renamed-worker";
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Repository.ReviewContainerMutationAsync(request.RequestId))!.Status);
         fixture.Name = "synthetic-worker";
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await fixture.Repository.ReviewContainerMutationAsync(request.RequestId))!.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Repository.ReviewContainerMutationAsync(request.RequestId))!.Status);
+        Assert.Single(await fixture.Repository.GetContainerMutationRecoveriesAsync());
         Assert.Single(fixture.Calls, call => call["method"] != "list");
     }
 
@@ -202,7 +203,7 @@ public sealed class ContainerMutationTests
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, first.Status);
         Assert.Single(await fixture.Repository.GetContainerMutationRecoveriesAsync());
         fixture.Running = true;
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await fixture.Repository.ReviewContainerMutationAsync(request.RequestId))!.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Repository.ReviewContainerMutationAsync(request.RequestId))!.Status);
         Assert.Single(fixture.Calls, call => call["method"] == "start");
     }
 

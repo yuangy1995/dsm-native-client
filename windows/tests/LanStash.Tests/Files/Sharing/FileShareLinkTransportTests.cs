@@ -97,7 +97,8 @@ public sealed class FileShareLinkTransportTests
     }
 
     [Theory]
-    [InlineData("date_available", "2026-01-01")]
+    [InlineData("date_available", "not-a-date")]
+    [InlineData("enable_upload", "true")]
     [InlineData("password", "12345678901234567")]
     [InlineData("path", "[\"https://evil.invalid/a\"]")]
     [InlineData("path", "[\"/share/../a\"]")]

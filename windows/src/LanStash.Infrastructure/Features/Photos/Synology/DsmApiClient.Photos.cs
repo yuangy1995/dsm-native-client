@@ -14,6 +14,18 @@ public sealed partial class DsmApiClient
     public async Task<JsonObject> CallPhotoJsonAsync(NasProfile profile, DsmSession session,
         ApiCapability capability, int requiredVersion, string method,
         IReadOnlyDictionary<string, string>? parameters = null, CancellationToken cancellationToken = default)
+        => SynologyPhotosCodec.Object(await CallPhotoDataAsync(profile, session, capability, requiredVersion, method, parameters, cancellationToken).ConfigureAwait(false));
+
+    public async Task<JsonArray> CallPhotoArrayAsync(NasProfile profile, DsmSession session, ApiCapability capability,
+        int requiredVersion, string method, CancellationToken cancellationToken = default)
+    {
+        if ((capability.Name, requiredVersion, method) != ("SYNO.Foto.Setting.TeamSpace", 1, "list_permission"))
+            throw new SynologyPhotoException(SynologyPhotoFailure.Unavailable);
+        return await CallPhotoDataAsync(profile, session, capability, requiredVersion, method, null, cancellationToken).ConfigureAwait(false) as JsonArray ?? throw SynologyPhotosCodec.Invalid();
+    }
+
+    private async Task<JsonNode> CallPhotoDataAsync(NasProfile profile, DsmSession session,
+        ApiCapability capability, int requiredVersion, string method, IReadOnlyDictionary<string, string>? parameters, CancellationToken cancellationToken)
     {
         ValidatePhotoSession(profile, session);
         ValidatePhotoCapability(capability, requiredVersion);
@@ -45,20 +57,33 @@ public sealed partial class DsmApiClient
                 var error = SynologyPhotosCodec.Object(envelope["error"]);
                 throw MapFailure(SynologyPhotosCodec.Int(error, "code"));
             }
-            return SynologyPhotosCodec.Object(envelope["data"]);
+            return envelope["data"] ?? throw SynologyPhotosCodec.Invalid();
         }
         catch (JsonException) { throw SynologyPhotosCodec.Invalid(); }
     }
 
-    public async Task<byte[]> ReadPhotoThumbnailAsync(NasProfile profile, DsmSession session,
+    public Task<byte[]> ReadPhotoThumbnailAsync(NasProfile profile, DsmSession session,
         SynologyPhotoThumbnail thumbnail, bool large, CancellationToken cancellationToken = default)
+        => ReadPhotoThumbnailSizeAsync(profile, session, thumbnail, large ? SynologyPhotoThumbnailSize.Large : SynologyPhotoThumbnailSize.Medium, cancellationToken);
+
+    public async Task<byte[]> ReadPhotoThumbnailSizeAsync(NasProfile profile, DsmSession session,
+        SynologyPhotoThumbnail thumbnail, SynologyPhotoThumbnailSize size, CancellationToken cancellationToken = default)
     {
         ValidatePhotoSession(profile, session);
-        if (thumbnail.UnitId <= 0) throw SynologyPhotosCodec.Invalid();
+        if (!Enum.IsDefined(size) || thumbnail.UnitId <= 0 || thumbnail.AlbumId <= 0 || !Enum.IsDefined(thumbnail.Space) || thumbnail.FolderCoverSequence < 0 ||
+            thumbnail.FolderCoverSequence is not null && thumbnail.AlbumId is not null || !Enum.IsDefined(thumbnail.Type) ||
+            thumbnail.Type != SynologyPhotoThumbnailType.Unit && (thumbnail.AlbumId is not null || thumbnail.FolderCoverSequence is not null || !thumbnail.NativeSize)) throw SynologyPhotosCodec.Invalid();
         var values = SynologyPhotosCodec.Parameters(("id", thumbnail.UnitId), ("cache_key", thumbnail.Revision),
-            ("type", "unit"), ("size", large ? "xl" : "m"));
+            ("type", "unit"), ("size", size switch { SynologyPhotoThumbnailSize.Small => "sm", SynologyPhotoThumbnailSize.Medium => "m", _ => "xl" }));
+        if (thumbnail.FolderCoverSequence is { } sequence)
+        { values["type"] = JsonSerializer.Serialize("folder"); values.Remove("size"); values["folder_cover_seq"] = JsonSerializer.Serialize(sequence); }
+        if (thumbnail.Type == SynologyPhotoThumbnailType.Person) values["type"] = JsonSerializer.Serialize("person");
+        if (thumbnail.Type == SynologyPhotoThumbnailType.Face) values["type"] = JsonSerializer.Serialize("face");
+        if (thumbnail.NativeSize) values.Remove("size");
+        if (thumbnail.AlbumId is { } albumId) values["album_id"] = JsonSerializer.Serialize(albumId);
+        var source = thumbnail.AlbumId is null && thumbnail.Space == SynologyPhotoSpace.Shared ? "t" : "p";
         using var request = PhotoRequest(profile, session, HttpMethod.Get,
-            PhotoQueryUri(profile, "/synofoto/api/v2/p/Thumbnail/get", values), "image/*");
+            PhotoQueryUri(profile, $"/synofoto/api/v2/{source}/Thumbnail/get", values), "image/*");
         SetNasConnectionContext(request, profile);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         ValidatePhotoResponse(response, HttpStatusCode.OK);
@@ -72,18 +97,37 @@ public sealed partial class DsmApiClient
     public async Task DownloadPhotoOriginalAsync(NasProfile profile, DsmSession session,
         SynologyPhotoMediaRequest media, string destination, long expectedBytes,
         IProgress<long>? progress = null, CancellationToken cancellationToken = default)
+        => _ = await DownloadPhotoAsync(profile, session, media, destination, expectedBytes, false, progress, cancellationToken).ConfigureAwait(false);
+
+    public async Task<SynologyPhotoBinaryResult> DownloadPhotoAsync(NasProfile profile, DsmSession session,
+        SynologyPhotoMediaRequest media, string destination, long? expectedBytes, bool archive,
+        IProgress<long>? progress = null, CancellationToken cancellationToken = default)
     {
         ValidatePhotoSession(profile, session);
+        ValidatePhotoCapability(media.Capability, 2);
         ArgumentException.ThrowIfNullOrWhiteSpace(destination);
-        if (expectedBytes < 0 || media.Capability.Name != "SYNO.Foto.Download" || media.Method != "download")
+        if (expectedBytes < 0 || media.Capability.Name is not ("SYNO.Foto.Download" or "SYNO.FotoTeam.Download" or "SYNO.Foto.Browse.Album") || media.Method != "download" ||
+            !archive && media.Capability.Name == "SYNO.Foto.Browse.Album" || media.Parameters.Keys.Any(IsReservedReadParameter))
             throw SynologyPhotosCodec.Invalid();
-        using var request = PhotoRequest(profile, session, HttpMethod.Get, PhotoMediaUri(profile, media), "image/*, video/*, application/octet-stream");
+        var values = new Dictionary<string, string>(media.Parameters, StringComparer.Ordinal)
+        { ["api"] = media.Capability.Name, ["version"] = "2", ["method"] = media.Method };
+        // 下载统一使用能力路径与表单，协作相册口令不得进入 URL。
+        using var request = PhotoRequest(profile, session, HttpMethod.Post, ResolveSafeApiUri(profile, media.Capability.Path),
+            archive ? "application/zip, application/octet-stream" : "image/*, video/*, application/octet-stream");
+        request.Content = CreateSessionFormContent(values, session);
         SetNasConnectionContext(request, profile);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         ValidatePhotoResponse(response, HttpStatusCode.OK);
-        ValidatePhotoBinaryType(response);
-        if (response.Content.Headers.ContentLength is { } declared && declared != expectedBytes)
+        var contentType = response.Content.Headers.ContentType?.MediaType?.ToLowerInvariant() ?? "";
+        if (archive)
+        {
+            if (contentType is not ("application/zip" or "application/x-zip-compressed")) ValidatePhotoBinaryType(response);
+        }
+        else ValidatePhotoBinaryType(response);
+        var declared = response.Content.Headers.ContentLength;
+        if (declared <= 0 || expectedBytes is { } expected && declared is { } length && length != expected)
             throw new SynologyPhotoException(SynologyPhotoFailure.LengthMismatch);
+        var limit = expectedBytes ?? declared;
         var created = false;
         var complete = false;
         try
@@ -106,8 +150,8 @@ public sealed partial class DsmApiClient
                     if (count == 0) break;
                     prefixLength += count;
                 }
-                if (prefixLength == 0 || IsPhotoErrorBody(prefix.AsSpan(0, prefixLength))) throw PhotoMediaFailure();
-                if (prefixLength > expectedBytes) throw new SynologyPhotoException(SynologyPhotoFailure.LengthMismatch);
+                if (prefixLength == 0 || (archive ? !IsPhotoZipHeader(prefix.AsSpan(0, prefixLength)) : IsPhotoErrorBody(prefix.AsSpan(0, prefixLength)))) throw PhotoMediaFailure();
+                if (prefixLength > limit) throw new SynologyPhotoException(SynologyPhotoFailure.LengthMismatch);
                 await destinationStream.WriteAsync(prefix.AsMemory(0, prefixLength), cancellationToken).ConfigureAwait(false);
                 done = prefixLength;
                 progress?.Report(done);
@@ -115,20 +159,21 @@ public sealed partial class DsmApiClient
                 {
                     var count = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
                     if (count == 0) break;
-                    if (count > expectedBytes - done) throw new SynologyPhotoException(SynologyPhotoFailure.LengthMismatch);
+                    if (count > limit - done) throw new SynologyPhotoException(SynologyPhotoFailure.LengthMismatch);
                     await destinationStream.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
                     done += count;
-                    if (Environment.TickCount64 - lastProgress >= 100 || done == expectedBytes)
+                    if (Environment.TickCount64 - lastProgress >= 100 || done == limit)
                     {
                         progress?.Report(done);
                         lastProgress = Environment.TickCount64;
                     }
                 }
-                if (done != expectedBytes) throw new SynologyPhotoException(SynologyPhotoFailure.LengthMismatch);
+                if (limit is { } total && done != total) throw new SynologyPhotoException(SynologyPhotoFailure.LengthMismatch);
                 cancellationToken.ThrowIfCancellationRequested();
                 await destinationStream.FlushAsync(cancellationToken).ConfigureAwait(false);
                 progress?.Report(done);
                 complete = true;
+                return new(contentType, done);
             }
             finally { ArrayPool<byte>.Shared.Return(buffer, clearArray: true); }
         }
@@ -138,10 +183,13 @@ public sealed partial class DsmApiClient
         }
     }
 
+    internal static bool IsPhotoZipHeader(ReadOnlySpan<byte> value) => value.Length >= 4 && value[0] == 0x50 && value[1] == 0x4b &&
+        (value[2], value[3]) is (3, 4) or (5, 6) or (6, 6);
+
     private Uri PhotoMediaUri(NasProfile profile, SynologyPhotoMediaRequest media)
     {
         ValidatePhotoCapability(media.Capability, 2);
-        if ((media.Capability.Name, media.Method) is not (("SYNO.Foto.Download", "download") or ("SYNO.Foto.Streaming", "streaming")) ||
+        if ((media.Capability.Name, media.Method) is not (("SYNO.Foto.Download" or "SYNO.FotoTeam.Download", "download") or ("SYNO.Foto.Streaming" or "SYNO.FotoTeam.Streaming", "streaming")) ||
             media.Parameters.Keys.Any(IsReservedReadParameter)) throw SynologyPhotosCodec.Invalid();
         var values = new Dictionary<string, string>(media.Parameters, StringComparer.Ordinal)
         {
@@ -181,7 +229,7 @@ public sealed partial class DsmApiClient
 
     private static void ValidatePhotoCapability(ApiCapability capability, int requiredVersion)
     {
-        if (!capability.Name.StartsWith("SYNO.Foto.", StringComparison.Ordinal) || requiredVersion < capability.MinVersion ||
+        if ((!capability.Name.StartsWith("SYNO.Foto.", StringComparison.Ordinal) && !capability.Name.StartsWith("SYNO.FotoTeam.", StringComparison.Ordinal)) || requiredVersion < capability.MinVersion ||
             requiredVersion > capability.MaxVersion || !capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase) ||
             capability.Path is not ("entry.cgi" or "webapi/entry.cgi" or "/webapi/entry.cgi"))
             throw new SynologyPhotoException(SynologyPhotoFailure.Unavailable);
@@ -208,8 +256,8 @@ public sealed partial class DsmApiClient
         if (bytes.Length == 0) return true;
         if (bytes.Length >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf) bytes = bytes[3..];
         while (bytes.Length > 0 && bytes[0] is 9 or 10 or 13 or 32) bytes = bytes[1..];
-        return bytes.Length == 0 || bytes[0] is (byte)'<' or (byte)'{' or (byte)'[' ||
-            (bytes.Length >= 4 && bytes[0] == (byte)'P' && bytes[1] == (byte)'K' && bytes[2] is 3 or 5 or 7 && bytes[3] is 4 or 6 or 8);
+        return bytes.Length == 0 || bytes[0] is (byte)'<' or (byte)'{' or (byte)'[' || IsPhotoZipHeader(bytes) ||
+            (bytes.Length >= 4 && bytes[0] == (byte)'P' && bytes[1] == (byte)'K' && (bytes[2], bytes[3]) is (7, 8) or (1, 2));
     }
 
     private static async Task<byte[]> ReadBoundedPhotoBodyAsync(HttpContent content, int maximumBytes, CancellationToken cancellationToken)
@@ -237,17 +285,32 @@ public sealed partial class DsmApiClient
 
     private static bool IsRecordedPhotoCall(string name, int version, string method) => (name, version, method) switch
     {
+        ("SYNO.Foto.Index" or "SYNO.FotoTeam.Index" or "SYNO.Foto.Setting.Wizard", 1, "get") => true,
+        ("SYNO.Foto.Upload.ConvertedFile" or "SYNO.FotoTeam.Upload.ConvertedFile", 3, "list_convert_needed") => true,
+        ("SYNO.Foto.RegeneratePreview" or "SYNO.FotoTeam.RegeneratePreview", 1, "list_regenerating") => true,
+        ("SYNO.Foto.Browse.Similar" or "SYNO.FotoTeam.Browse.Similar", 1, "get" or "get_status") => true,
+        ("SYNO.Foto.Browse.SimilarItem" or "SYNO.FotoTeam.Browse.SimilarItem", 1, "get" or "list_similar") => true,
+        ("SYNO.Foto.Browse.SimilarTimeline" or "SYNO.FotoTeam.Browse.SimilarTimeline", 1, "get_similar") => true,
+        ("SYNO.Foto.Browse.Item" or "SYNO.FotoTeam.Browse.Item", 6, "list_face") => true,
+        ("SYNO.Foto.Browse.Person" or "SYNO.FotoTeam.Browse.Person", 1, "get" or "list_face") => true,
         ("SYNO.Foto.UserInfo", 1, "me") => true,
+        ("SYNO.Foto.Setting.TeamSpace", 1, "list_permission") => true,
         ("SYNO.Foto.Setting.User" or "SYNO.Foto.Setting.Admin" or "SYNO.Foto.Setting.TeamSpace", 1, "get") => true,
-        ("SYNO.Foto.Browse.Timeline", 5, "get") or ("SYNO.Foto.Browse.Timeline", 3, "get_with_filter") => true,
-        ("SYNO.Foto.Browse.Item", 4, "list") or ("SYNO.Foto.Browse.Item", 2, "list_with_filter") or ("SYNO.Foto.Browse.Item", 5, "get") => true,
-        ("SYNO.Foto.Browse.Folder", 2, "get" or "list") or ("SYNO.Foto.Browse.Album", 4, "list") => true,
-        ("SYNO.Foto.Browse.RecentlyAdded" or "SYNO.Foto.Browse.Person" or "SYNO.Foto.Browse.Geocoding" or "SYNO.Foto.Browse.GeneralTag", 1, "list") => true,
-        ("SYNO.Foto.Browse.Concept", 2, "list") or ("SYNO.Foto.Browse.Category", 3, "get") => true,
-        ("SYNO.Foto.Search.Search", 2, "get_search_timeline") or ("SYNO.Foto.Search.Search", 1, "list_item") => true,
-        ("SYNO.Foto.Search.Filter", 3, "list") or ("SYNO.Foto.Sharing.Misc", 2, "list_shared_with_me_album") => true,
-        ("SYNO.Foto.PhotoRequest", 1, "list") or ("SYNO.Foto.Browse.Unit", 1, "get") => true,
-        ("SYNO.Foto.BackgroundTask.File", 1, "delete") => true,
+        ("SYNO.Foto.Download", 2, "get_cache_status" or "calculate_cache_size") => true,
+        ("SYNO.Foto.Browse.Timeline" or "SYNO.FotoTeam.Browse.Timeline", 5, "get") or ("SYNO.Foto.Browse.Timeline" or "SYNO.FotoTeam.Browse.Timeline", 3, "get_with_filter") => true,
+        ("SYNO.Foto.Browse.Item" or "SYNO.FotoTeam.Browse.Item", 4, "list") or ("SYNO.Foto.Browse.Item" or "SYNO.FotoTeam.Browse.Item", 2, "list_with_filter") or ("SYNO.Foto.Browse.Item" or "SYNO.FotoTeam.Browse.Item", 5, "get") => true,
+        ("SYNO.Foto.Browse.Folder" or "SYNO.FotoTeam.Browse.Folder", 2, "get" or "list") or ("SYNO.Foto.Browse.Album", 4, "list" or "get") => true,
+        ("SYNO.Foto.Browse.NormalAlbum", 1, "list") or ("SYNO.Foto.Sharing.Passphrase", 1, "get_permission") => true,
+        ("SYNO.Foto.Sharing.Misc", 1, "list_user_group") => true,
+        ("SYNO.FotoTeam.Sharing.FolderPermission", 1, "get_folder_link" or "get_config") => true,
+        ("SYNO.Foto.Browse.ConditionAlbum", 3, "get" or "suggest" or "peek_item_count") => true,
+        ("SYNO.Foto.Browse.Album", 2, "get_album_list_order") or ("SYNO.Foto.Browse.Album", 3, "get_album_list_display") => true,
+        ("SYNO.Foto.Browse.RecentlyAdded" or "SYNO.FotoTeam.Browse.RecentlyAdded" or "SYNO.Foto.Browse.Person" or "SYNO.FotoTeam.Browse.Person" or "SYNO.Foto.Browse.Geocoding" or "SYNO.FotoTeam.Browse.Geocoding" or "SYNO.Foto.Browse.GeneralTag" or "SYNO.FotoTeam.Browse.GeneralTag", 1, "list") => true,
+        ("SYNO.Foto.Browse.Concept" or "SYNO.FotoTeam.Browse.Concept", 2, "list" or "get") or ("SYNO.Foto.Browse.Category", 3, "get") => true,
+        ("SYNO.Foto.Search.Search" or "SYNO.FotoTeam.Search.Search", 2, "get_search_timeline") or ("SYNO.Foto.Search.Search" or "SYNO.FotoTeam.Search.Search", 1, "list_item") => true,
+        ("SYNO.Foto.Search.Filter" or "SYNO.FotoTeam.Search.Filter", 3, "list") or ("SYNO.Foto.Sharing.Misc", 2, "list_shared_with_me_album") => true,
+        ("SYNO.Foto.PhotoRequest", 1, "list") or ("SYNO.Foto.Browse.Unit" or "SYNO.FotoTeam.Browse.Unit", 1, "get") => true,
+        ("SYNO.Foto.BackgroundTask.Info", 1, "get_status" or "list_user_task" or "get_error_detail") => true,
         _ => false,
     };
 }

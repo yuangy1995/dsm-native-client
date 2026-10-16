@@ -79,7 +79,52 @@ public readonly record struct FileListOptions(
 public sealed record FileSearchRequest(
     string FolderPath,
     string Query,
-    bool Recursive);
+    bool Recursive)
+{
+    public FileListTypeFilter Kind { get; init; }
+    public string Extension { get; init; } = string.Empty;
+    public long? MinimumBytes { get; init; }
+    public long? MaximumBytes { get; init; }
+    public FileSearchTimeRange Modified { get; init; } = new();
+    public FileSearchTimeRange Created { get; init; } = new();
+    public FileSearchTimeRange Accessed { get; init; } = new();
+    public string Owner { get; init; } = string.Empty;
+    public string Group { get; init; } = string.Empty;
+    public bool SearchesContents { get; init; }
+
+    public bool HasConditions => !string.IsNullOrWhiteSpace(Query) || Kind != FileListTypeFilter.All ||
+        !string.IsNullOrWhiteSpace(Extension) || MinimumBytes.HasValue || MaximumBytes.HasValue ||
+        Modified != new FileSearchTimeRange() || Created != new FileSearchTimeRange() ||
+        Accessed != new FileSearchTimeRange() || !string.IsNullOrWhiteSpace(Owner) || !string.IsNullOrWhiteSpace(Group);
+
+    public void Validate()
+    {
+        if (!Enum.IsDefined(Kind) || MinimumBytes < 0 || MaximumBytes < 0 || MinimumBytes > MaximumBytes ||
+            !Modified.IsValid || !Created.IsValid || !Accessed.IsValid ||
+            SearchesContents && string.IsNullOrWhiteSpace(Query))
+            throw new ArgumentException("file.search.invalid-conditions");
+        _ = CreateNameRegex();
+    }
+
+    /// <summary>仅识别闭合斜线及可选 i 标志；其他输入保持普通名称条件。</summary>
+    public System.Text.RegularExpressions.Regex? CreateNameRegex()
+    {
+        if (!Query.StartsWith('/') || Query.Length < 2) return null;
+        var end = Query.LastIndexOf('/');
+        if (end == 0 || end != Query.Length - 1 && Query[(end + 1)..] != "i") return null;
+        if (SearchesContents) throw new ArgumentException("file.search.content-regex-conflict");
+        var options = System.Text.RegularExpressions.RegexOptions.CultureInvariant;
+        if (end < Query.Length - 1) options |= System.Text.RegularExpressions.RegexOptions.IgnoreCase;
+        return new(Query[1..end], options, TimeSpan.FromMilliseconds(250));
+    }
+}
+
+public sealed record FileSearchTimeRange(DateTimeOffset? From = null, DateTimeOffset? To = null)
+{
+    public bool IsValid => !(From < DateTimeOffset.UnixEpoch || To < DateTimeOffset.UnixEpoch || From > To);
+}
+
+public enum FileSearchIndexCoverage { NotRequested, Complete, Incomplete }
 
 /// <summary>
 /// 包含文件项和分页元数据的异步搜索结果。
@@ -87,4 +132,7 @@ public sealed record FileSearchRequest(
 public sealed record FileSearchResult(
     IReadOnlyList<FileItem> Items,
     int TotalCount,
-    bool IsTruncated);
+    bool IsTruncated)
+{
+    public FileSearchIndexCoverage IndexCoverage { get; init; }
+}

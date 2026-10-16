@@ -67,7 +67,7 @@ public sealed class ContainerImageDeletionViewModel : ObservableObject, IDisposa
             }
             var remaining = await repository.GetImageDeletionRecoveriesAsync(request.Token); if (!Current(request, repository)) return;
             Pending.Clear(); foreach (var item in remaining.Concat(_untracked.Values).DistinctBy(item => item.RequestId)) Pending.Add(item);
-            var snapshot = await repository.LoadSnapshotAsync(request.Token); if (!Current(request, repository)) return;
+            var snapshot = await repository.LoadInventoryAsync(request.Token); if (!Current(request, repository)) return;
             if (snapshot.ProfileId != repository.ProfileId || snapshot.Images.Status != ContainerManagerSectionStatus.Available)
                 throw new InvalidOperationException("container.image.snapshot.invalid");
             foreach (var item in snapshot.Images.Items.Where(ContainerImageDeletionRules.CanDelete))

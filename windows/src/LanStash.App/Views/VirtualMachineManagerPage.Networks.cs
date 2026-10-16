@@ -20,7 +20,7 @@ public sealed partial class VirtualMachineManagerPage
             PrimaryButtonText = l.Get("VmNetworkApply"), SecondaryButtonText = l.Get("VmNetworkReview"),
             CloseButtonText = l.Get("ActionClose"), DefaultButton = ContentDialogButton.Close, IsPrimaryButtonEnabled = false, IsSecondaryButtonEnabled = false };
         _networksDialog = dialog; _networksContent = content;
-        void UpdateButtons() { dialog.IsPrimaryButtonEnabled = content.CanSubmit; dialog.IsSecondaryButtonEnabled = content.CanReview; }
+        void UpdateButtons() { dialog.PrimaryButtonText = content.SubmitText; dialog.IsPrimaryButtonEnabled = content.CanSubmit; dialog.IsSecondaryButtonEnabled = content.CanReview; }
         content.StateChanged += UpdateButtons; dialog.Opened += async (_, _) => await content.ActivateAsync();
         dialog.PrimaryButtonClick += async (_, args) => { args.Cancel = true; var deferral = args.GetDeferral(); try { await content.SubmitAsync(); } finally { deferral.Complete(); } };
         dialog.SecondaryButtonClick += async (_, args) => { args.Cancel = true; var deferral = args.GetDeferral(); try { await content.ReviewAsync(); } finally { deferral.Complete(); } };

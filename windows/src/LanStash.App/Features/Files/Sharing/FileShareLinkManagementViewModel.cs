@@ -31,7 +31,6 @@ public sealed class FileShareLinkManagementScope
     public FileShareLinkManagementScope(string path)
     {
         if (string.IsNullOrWhiteSpace(path) ||
-            !string.Equals(path, path.Trim(), StringComparison.Ordinal) ||
             !path.StartsWith("/", StringComparison.Ordinal) ||
             path == "/" ||
             path.EndsWith("/", StringComparison.Ordinal) ||
@@ -64,6 +63,14 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
     private int _visibleLimit = VisiblePageSize;
     private bool _disposed;
     private long _generation;
+    private FileShareLink[] _deleteBatch = [];
+    private int _deleteIndex;
+    private bool _batchRunning;
+    private readonly List<FileShareEditItemResult> _deleteResults = [];
+    public IReadOnlyList<FileShareEditItemResult> DeleteResults => _deleteResults;
+    public int PendingDeleteCount => _deleteBatch.Length - _deleteIndex;
+    public bool CanContinueDeletion => !_batchRunning && DeletionState != FileShareLinkDeletionState.NeedsReview &&
+        _deleteIndex < _deleteBatch.Length;
 
     public FileShareLinkManagementViewModel(
         IFileShareLinkRepository repository,
@@ -117,11 +124,17 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
         private set => SetProperty(ref _pendingDeletion, value);
     }
 
-    public bool IsDeleting => DeletionState == FileShareLinkDeletionState.Deleting;
+    public bool IsDeleting => _batchRunning || DeletionState == FileShareLinkDeletionState.Deleting;
 
     public async Task LoadAsync()
     {
         ThrowIfDisposed();
+        if (IsDeleting) return;
+        if (DeletionState == FileShareLinkDeletionState.NeedsReview)
+        {
+            await ReviewDeletionAsync();
+            return;
+        }
         if (!_repository.ShareLinkAvailability.IsAvailable)
         {
             State = FileShareLinkManagementState.Unsupported;
@@ -183,6 +196,22 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
             return;
         }
         PendingDeletion = link;
+        _deleteBatch = [link];
+        _deleteIndex = 0;
+        _deleteResults.Clear();
+        DeletionState = FileShareLinkDeletionState.Confirming;
+    }
+
+    public void BeginDeleteMany(IReadOnlyList<FileShareLink> links)
+    {
+        ThrowIfDisposed();
+        if (links.Count == 0 || IsDeleting || DeletionState == FileShareLinkDeletionState.NeedsReview ||
+            links.Select(link => link.Id).Distinct(StringComparer.Ordinal).Count() != links.Count ||
+            links.Any(link => !IsInScope(link) || !Links.Any(item => ExactLink(item, link)))) return;
+        _deleteBatch = links.ToArray();
+        _deleteIndex = 0;
+        _deleteResults.Clear();
+        PendingDeletion = _deleteBatch[0];
         DeletionState = FileShareLinkDeletionState.Confirming;
     }
 
@@ -205,6 +234,7 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
             return;
         }
         PendingDeletion = null;
+        _deleteBatch = [];
         DeletionState = FileShareLinkDeletionState.None;
     }
 
@@ -221,16 +251,22 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
         var generation = ++_generation;
         var cancellation = new CancellationTokenSource();
         _cancellation = cancellation;
+        _batchRunning = true;
         DeletionState = FileShareLinkDeletionState.Deleting;
         RaisePropertyChanged(nameof(IsDeleting));
         try
         {
-            var outcome = await _repository.DeleteFileShareLinkAsync(new(link), cancellation.Token);
-            if (!IsCurrent(generation))
+            for (; _deleteIndex < _deleteBatch.Length && !cancellation.IsCancellationRequested; _deleteIndex++)
             {
-                return;
+                link = _deleteBatch[_deleteIndex];
+                PendingDeletion = link;
+                var outcome = await _repository.DeleteFileShareLinkAsync(new(link), cancellation.Token);
+                if (!IsCurrent(generation)) return;
+                ApplyDeletion(outcome, link);
+                _deleteResults.Add(new(link, outcome.Result));
+                if (DeletionState == FileShareLinkDeletionState.NeedsReview) break;
+                if (_deleteIndex + 1 < _deleteBatch.Length) DeletionState = FileShareLinkDeletionState.Deleting;
             }
-            ApplyDeletion(outcome, link);
         }
         catch
         {
@@ -241,13 +277,47 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
         }
         finally
         {
+            _batchRunning = false;
+            if (DeletionState == FileShareLinkDeletionState.Deleting) DeletionState = FileShareLinkDeletionState.Cancelled;
             RaisePropertyChanged(nameof(IsDeleting));
+            RaisePropertyChanged(nameof(DeleteResults));
             if (ReferenceEquals(_cancellation, cancellation))
             {
                 _cancellation = null;
             }
             cancellation.Dispose();
         }
+    }
+
+    public async Task ReviewDeletionAsync()
+    {
+        ThrowIfDisposed();
+        if (IsDeleting || DeletionState != FileShareLinkDeletionState.NeedsReview || PendingDeletion is not { } link) return;
+        _batchRunning = true;
+        var generation = _generation;
+        RaisePropertyChanged(nameof(IsDeleting));
+        try
+        {
+            var outcome = await _repository.DeleteFileShareLinkAsync(new(link));
+            if (!IsCurrent(generation)) return;
+            ApplyDeletion(outcome, link);
+            if (DeletionState == FileShareLinkDeletionState.Deleted)
+            {
+                _deleteResults.RemoveAll(item => item.Link.Id == link.Id);
+                _deleteResults.Add(new(link, outcome.Result));
+                _deleteIndex++;
+            }
+        }
+        catch { }
+        finally { _batchRunning = false; RaisePropertyChanged(nameof(IsDeleting)); }
+    }
+
+    public void ContinueDeletion()
+    {
+        ThrowIfDisposed();
+        if (!CanContinueDeletion) return;
+        PendingDeletion = _deleteBatch[_deleteIndex];
+        DeletionState = FileShareLinkDeletionState.Confirming;
     }
 
     public void ClearDeletionFeedback()

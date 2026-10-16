@@ -7,7 +7,8 @@ namespace LanStash.Infrastructure;
 public sealed partial class DsmRepository
 {
     private const string CreateVmOperation = "createVirtualMachine";
-    public bool CanCreateMachine => HasAuthenticatedVirtualMachineSession && HasCreationContract;
+    public bool CanCreateBasicMachine => HasAuthenticatedVirtualMachineSession && HasCreationContract;
+    public bool CanCreateMachine => CanCreateBasicMachine || CanCreateAdvancedMachine;
     private bool HasCreationContract => HasPublicVirtualMachineVersion(PublicGuestApi) && HasPublicVirtualMachineVersion(PublicStorageApi) && HasPublicVirtualMachineVersion(PublicVirtualMachineTaskApi);
     public Task<VirtualMachineCreationResult> CreateMachineAsync(VirtualMachineCreationRequest request, CancellationToken cancellationToken = default) =>
         CanCreateMachine ? CreateVirtualMachineCoreAsync(request, cancellationToken) : Task.FromResult(new VirtualMachineCreationResult(request?.RequestId ?? Guid.Empty, VirtualMachineCreationStage.Rejected, UnsupportedResult(CreateVmOperation)));
@@ -39,8 +40,8 @@ public sealed partial class DsmRepository
             request.ProfileId != _profile.Id || request.ProfileId != _session.ProfileId || string.IsNullOrWhiteSpace(_session.Sid)) return Reject(MutationErrorCategory.Validation);
         // 调用者可传入可变列表；任何等待前固定已确认配置。
         request = request with { Disks = request.Disks.ToArray(), Networks = request.Networks.ToArray() };
-        if (!HasCreationContract || request.Advanced is not null && !CanCreateAdvancedMachine || request.PowerOnAfterCreation && !CanControlPower || request.Disks.Any(disk => disk.Image is not null) && !HasPublicVirtualMachineVersion(PublicImageApi) ||
-            request.Networks.Any(nic => nic.Network is not null) && !HasPublicVirtualMachineVersion(PublicNetworkApi))
+        if ((request.Advanced is null ? !CanCreateBasicMachine : !CanCreateAdvancedMachine) || request.PowerOnAfterCreation && !CanControlPower || request.Disks.Any(disk => disk.Image is not null) && !HasPublicVirtualMachineVersion(PublicImageApi) ||
+            request.Networks.Any(nic => nic.Network is not null) && (request.Advanced is null ? !HasPublicVirtualMachineVersion(PublicNetworkApi) : !HasInternalVirtualMachineVersion(ManagedNetworkApi, 2, 2)))
             return new(request.RequestId, VirtualMachineCreationStage.Rejected, UnsupportedResult(CreateVmOperation));
         var state = VmMutations; var scope = ServiceScope(); var signature = ServiceHash(JsonSerializer.Serialize(request));
         try { if (!await state.Gate.WaitAsync(0, token).ConfigureAwait(false)) return Reject(MutationErrorCategory.Conflict, true); }
@@ -61,7 +62,7 @@ public sealed partial class DsmRepository
             VirtualMachineCreationStorage? advancedStorage = null;
             try
             {
-                var guests = ParseMachines(await CallPublicVirtualMachineAsync(PublicGuestApi, "list", null, token).ConfigureAwait(false));
+                var guests = await ReadVirtualMachineInventoryAsync(HasPublicVirtualMachineVersion(PublicGuestApi) ? VirtualMachineApiSource.Public : VirtualMachineApiSource.Internal, token).ConfigureAwait(false);
                 if (guests.Any(guest => string.Equals(guest.Name, request.Settings.Name, StringComparison.OrdinalIgnoreCase))) return Reject(MutationErrorCategory.Conflict, true);
                 existingIds = guests.Select(guest => guest.Id).ToHashSet(StringComparer.Ordinal);
                 if (request.Advanced is not null)
@@ -75,7 +76,7 @@ public sealed partial class DsmRepository
                     var storages = ParseResources(storageData, "storages", "storage_id", "storage_name", VirtualizationResourceKind.Storage);
                     if (!storages.Any(item => item.Id == request.Storage.Id && item.Name == request.Storage.Name && item.Health == VirtualizationResourceHealth.Healthy)) return Reject(MutationErrorCategory.Conflict, true);
                 }
-                if (request.Networks.Any(nic => nic.Network is not null))
+                if (request.Advanced is null && request.Networks.Any(nic => nic.Network is not null))
                 {
                     var networkData = await CallPublicVirtualMachineAsync(PublicNetworkApi, "list", null, token).ConfigureAwait(false);
                     var networks = ParseResources(networkData, "networks", "network_id", "network_name", VirtualizationResourceKind.Network);
@@ -90,6 +91,7 @@ public sealed partial class DsmRepository
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { return new(request.RequestId, VirtualMachineCreationStage.Rejected, CancelledBeforeSubmissionResult(CreateVmOperation)); }
             catch (DsmException error) { return Reject(VirtualMachinePowerError(error)); }
+            catch (CertificateTrustChallengeException) { return Reject(MutationErrorCategory.Authentication); }
             catch (Exception) { return Reject(MutationErrorCategory.Network); }
             var pending = new VirtualMachineCreationOperation(scope, signature, request, existingIds);
             if (advancedStorage is not null) pending.AdvancedParameters = BuildAdvancedCreationParameters(request, advancedStorage);
@@ -115,6 +117,11 @@ public sealed partial class DsmRepository
             }
             catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error))
             { return FinishVirtualMachineCreation(pending, new(request.RequestId, VirtualMachineCreationStage.Rejected, new(1, MutationResultStatus.ConfirmedFailure, CreateVmOperation, true, true, new(0, 1, 0), VirtualMachinePowerError(error)))); }
+            catch (Exception error) when (error is CertificateTrustChallengeException || error is DsmException dsm && IsMutationAuthenticationFailure(dsm))
+            {
+                return new(request.RequestId, VirtualMachineCreationStage.VerifyReceipt,
+                    new(1, MutationResultStatus.SubmittedButUnverified, CreateVmOperation, true, true, new(0, 0, 1), MutationErrorCategory.Authentication));
+            }
             catch (Exception) { /* 回执可能丢失，不能按同名 VM 猜测任务或重建。 */ }
             return await ReviewVirtualMachineCreationCoreAsync(pending, true, token).ConfigureAwait(false);
         }
@@ -171,25 +178,33 @@ public sealed partial class DsmRepository
             if (pending.PublicHardware is null) pending.PublicHardware = hardware;
             else if (!JsonNode.DeepEquals(pending.PublicHardware, hardware)) return Unknown(VirtualMachineCreationStage.VerifyConfiguration, MutationErrorCategory.Conflict);
             var current = ParseVirtualMachineSettings(guest, id!);
-            if (current.Configuration == request.Settings) return await FinishVerifiedVirtualMachineCreationAsync(pending, current, allowConfiguration, token).ConfigureAwait(false);
+            if (current.Configuration == request.Settings && (!pending.SettingsSubmitted || pending.SettingsAccepted))
+                return await FinishVerifiedVirtualMachineCreationAsync(pending, current, allowConfiguration, token).ConfigureAwait(false);
             if (pending.SettingsSubmitted || pending.ConfigurationVerified) return Unknown(VirtualMachineCreationStage.VerifyConfiguration);
             if (VirtualMachineSettingsRules.Validate(current, request.Settings) != VirtualMachineSettingsValidation.None) return Unknown(VirtualMachineCreationStage.Configure, MutationErrorCategory.Conflict);
             if (!allowConfiguration) return Unknown(VirtualMachineCreationStage.Configure, canContinue: true);
             token.ThrowIfCancellationRequested();
             var settings = ChangedVirtualMachineFields(current.Configuration, request.Settings); settings["guest_id"] = id!;
             pending.SettingsSubmitted = true;
-            try { await SecurityCallAsync(_capabilities[PublicGuestApi] with { MinVersion = 1, MaxVersion = 1 }, "set", settings, token).ConfigureAwait(false); }
+            try
+            {
+                await SecurityCallAsync(_capabilities[PublicGuestApi] with { MinVersion = 1, MaxVersion = 1 }, "set", settings, token).ConfigureAwait(false);
+                pending.SettingsAccepted = true;
+            }
             catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error))
             { return FinishVirtualMachineCreation(pending, new(request.RequestId, VirtualMachineCreationStage.Rejected, new(1, MutationResultStatus.PartialSuccess, CreateVmOperation, true, true, new(1, 1, 0), VirtualMachinePowerError(error)), pending.Progress, id)); }
+            catch (Exception error) when (error is CertificateTrustChallengeException || error is DsmException dsm && IsMutationAuthenticationFailure(dsm))
+            { return Unknown(VirtualMachineCreationStage.VerifyConfiguration, MutationErrorCategory.Authentication); }
             catch (Exception) { /* 配置可能已经写入，后续仅核查，不再次 set。 */ }
             token.ThrowIfCancellationRequested();
             var finalGuest = await SecurityCallAsync(_capabilities[PublicGuestApi] with { MinVersion = 1, MaxVersion = 1 }, "get", new() { ["guest_id"] = id! }, token).ConfigureAwait(false);
             if (!CreatedVirtualMachineMatches(finalGuest, id!, request) || !JsonNode.DeepEquals(pending.PublicHardware, CreatedHardwareIdentity(finalGuest)))
                 return Unknown(VirtualMachineCreationStage.VerifyConfiguration, MutationErrorCategory.Conflict);
             var verified = ParseVirtualMachineSettings(finalGuest, id!);
-            return verified.Configuration == request.Settings ? await FinishVerifiedVirtualMachineCreationAsync(pending, verified, allowConfiguration, token).ConfigureAwait(false) : Unknown(VirtualMachineCreationStage.VerifyConfiguration);
+            return pending.SettingsAccepted && verified.Configuration == request.Settings ? await FinishVerifiedVirtualMachineCreationAsync(pending, verified, allowConfiguration, token).ConfigureAwait(false) : Unknown(VirtualMachineCreationStage.VerifyConfiguration);
         }
         catch (DsmException error) { return Unknown(pending.SettingsSubmitted ? VirtualMachineCreationStage.VerifyConfiguration : VirtualMachineCreationStage.Creating, VirtualMachinePowerError(error)); }
+        catch (CertificateTrustChallengeException) { return Unknown(pending.SettingsSubmitted ? VirtualMachineCreationStage.VerifyConfiguration : VirtualMachineCreationStage.Creating, MutationErrorCategory.Authentication); }
         catch (Exception) { return Unknown(pending.SettingsSubmitted ? VirtualMachineCreationStage.VerifyConfiguration : VirtualMachineCreationStage.Creating, token.IsCancellationRequested ? MutationErrorCategory.Unknown : MutationErrorCategory.Network); }
     }
 
@@ -206,12 +221,18 @@ public sealed partial class DsmRepository
             MutationResult? power = null;
             if (operation.Power is { } existing)
                 power = existing.Final ?? await ReviewVirtualMachinePowerAsync(existing, token).ConfigureAwait(false);
-            else if (current.State != VirtualMachineOperationalState.Running)
+            else
             {
                 if (!CanControlPower) return Pending(VirtualMachineCreationStage.PowerOn, MutationErrorCategory.Unsupported);
                 if (current.State != VirtualMachineOperationalState.Stopped) return Pending(VirtualMachineCreationStage.PowerOn, MutationErrorCategory.Conflict);
                 if (!allowWrite || token.IsCancellationRequested) return Pending(VirtualMachineCreationStage.PowerOn, canContinue: !token.IsCancellationRequested);
-                operation.Power = new(operation.Scope, operation.Signature, current.Id, current.Configuration.Name, VirtualMachinePowerAction.PowerOn);
+                var powerBaseline = new VirtualMachineSummary(current.Id, current.Configuration.Name, current.State, null, null, null, null, null)
+                { Source = HasPublicVirtualMachineVersion(PublicGuestApi) && HasPublicVirtualMachineVersion(PublicGuestActionApi) ? VirtualMachineApiSource.Public : current.Source };
+                var source = VirtualMachinePowerSource(powerBaseline, VirtualMachinePowerAction.PowerOn);
+                if (source is null) return Pending(VirtualMachineCreationStage.PowerOn, MutationErrorCategory.Unsupported);
+                var target = await ReadVirtualMachinePowerTargetAsync(current.Id, token, source.Value).ConfigureAwait(false);
+                if (target.Name != current.Configuration.Name || target.Status != "shutdown") return Pending(VirtualMachineCreationStage.PowerOn, MutationErrorCategory.Conflict);
+                operation.Power = new(operation.Scope, operation.Signature, current.Id, current.Configuration.Name, VirtualMachinePowerAction.PowerOn, source.Value);
                 power = await StartVirtualMachinePowerAsync(operation.Power, token).ConfigureAwait(false);
             }
             if (power is { Status: not MutationResultStatus.ConfirmedSuccess })
@@ -269,7 +290,7 @@ public sealed partial class DsmRepository
         public string Scope { get; } = scope; public string Signature { get; } = signature; public VirtualMachineCreationRequest Request { get; } = request;
         public HashSet<string> ExistingIds { get; } = existingIds;
         public string? TaskId { get; set; } public string? GuestId { get; set; } public int? Progress { get; set; }
-        public bool SettingsSubmitted { get; set; } public bool ConfigurationVerified { get; set; } public VirtualMachineCreationResult? Final { get; set; }
+        public bool SettingsSubmitted { get; set; } public bool SettingsAccepted { get; set; } public bool ConfigurationVerified { get; set; } public VirtualMachineCreationResult? Final { get; set; }
         public VirtualMachinePowerOperation? Power { get; set; }
         public JsonObject? AdvancedParameters { get; set; }
         public bool AdvancedTaskSucceeded { get; set; }

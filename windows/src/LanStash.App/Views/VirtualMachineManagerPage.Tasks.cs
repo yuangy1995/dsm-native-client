@@ -13,7 +13,11 @@ public sealed partial class VirtualMachineManagerPage
         if (_disposed || TasksPane is null || _repository is null) return;
         var visible = ReferenceEquals(ResourcePivot.SelectedItem, TasksTab);
         RefreshButton.Visibility = visible ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+        var activityVisible = ReferenceEquals(ResourcePivot.SelectedItem, EventsTab);
+        if (!activityVisible) ResetActivityFilterControls();
+        var activity = _initialized ? _viewModel.SetActivityVisibleAsync(activityVisible) : Task.CompletedTask;
         if (visible && !_tasksActivated) { _tasksActivated = true; await TasksPane.ActivateAsync(_repository); }
         else await TasksPane.SetVisibleAsync(visible);
+        await activity;
     }
 }

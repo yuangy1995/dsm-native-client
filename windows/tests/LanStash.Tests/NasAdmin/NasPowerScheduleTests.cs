@@ -48,7 +48,7 @@ public sealed class NasPowerScheduleTests
         for (var i = 0; i < 130; i++) rows.Add(new JsonObject { ["id"] = $"row-{i}", ["hour"] = 8, ["minute"] = 0 });
         f.Data = new JsonObject { ["schedules"] = rows, ["total"] = 200 };
         var result = await f.Repository.LoadPowerScheduleAsync();
-        Assert.Equal(128, result.Entries.Count); Assert.Equal(200, result.Total); Assert.True(result.IsTruncated); Assert.Single(f.Calls);
+        Assert.Equal(130, result.Entries.Count); Assert.Equal(200, result.Total); Assert.True(result.IsTruncated); Assert.False(result.CanEdit); Assert.Single(f.Calls);
     }
     [Fact]
     public async Task EmptyAndAmbiguousRecurrenceHaveDistinctMeaning()
@@ -105,6 +105,8 @@ public sealed class NasPowerScheduleTests
         public Task<NasPowerScheduleSnapshot>? Response { get; set; }
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
+            if (method!.Name == "LoadHardwareEditRecoveriesAsync") return Task.FromResult<IReadOnlyList<NasHardwareEditRecovery>>([]);
+            if (method.Name == "PrepareServiceSettingsAsync") return Task.FromResult(new NasSettingsWriteAvailability(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false));
             if (method!.Name != "LoadPowerScheduleAsync") throw new NotSupportedException("只允许读取计划");
             Reads++; Token = (CancellationToken)args![0]!;
             return Response ?? Task.FromResult(new NasPowerScheduleSnapshot(

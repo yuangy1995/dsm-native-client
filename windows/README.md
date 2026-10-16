@@ -1,12 +1,11 @@
 <!-- doc-role: platform-readme -->
-<!-- last-reviewed: 2026-10-02 -->
+<!-- last-reviewed: 2026-10-16 -->
 
 # Windows 原生客户端
 
 Windows 客户端使用 C#、WinUI 3、HttpClient、System.Text.Json 和 Windows Credential Locker。
-2026-09-16 按用户提供的 macOS 浅色／深色截图重建原生工作区、文件页、登录、照片、消息与 NAS 设置布局。
-协议、认证、会话存储和危险写门保持既有实现；本次界面交付不等于全部 macOS 功能已完成对齐。
-范围、测试与缺口统一见[Windows 长期计划](../docs/development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)。
+本轮按固定 `a521ccb5` 的 macOS 业务基线完善文件、Photos、Office、Chat、下载、NAS/套件、容器/VMM 与桌面生命周期。
+范围和逐功能证据统一见[Windows 长期计划](../docs/development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)，测试包使用、保护项与真实环境步骤见[验收清单](../docs/quality/WINDOWS_TEST_BUILD_ACCEPTANCE_ZH.md)。
 
 ```text
 LanStash.Domain          领域模型与跨模块契约
@@ -20,10 +19,11 @@ LanStash.Tests           不依赖真实 NAS 的自动化测试
 
 ## 当前范围
 
-- 认证、Files、Photos、受限 Chat、Download Station、本机设置与桌面路径维持既有实现。
+- 认证、Files、Photos 完整管理、Office 本机预览/编辑恢复、Chat 日常流程、Download Station、NAS/套件、Container/VMM 与本机设置均有生产调用链和正式自动化。
 - Cloud Files、通知、安装与平台系统集成不以静态代码替代 Windows 设备验收。
-- Container/VMM、NAS 设置、下载设置和其他高影响写操作只在记录的能力门允许时开放；
-  未验证路径继续关闭或只读。
+- 写操作按实际接口、账号/对象权限、必要确认、防重复和结果回读开放，不使用 DSM/build/套件版本白名单。
+- 尚未完成真实环境验收且可能造成数据丢失、越权或不可逆副作用的新增入口保留专项开关，
+  具体范围见验收清单；相关限制不阻断其他已开放功能。
 - 结构拆分只使用现有 partial 文件方向，不删除 Windows Application 项目，也不重做架构。
 
 ## Windows 环境验证
@@ -45,6 +45,7 @@ dotnet build src\LanStash.App\LanStash.App.csproj --configuration Release --runt
 unpackaged 便携 ZIP，解压后运行 `LanStash.App.exe`，不需要改动系统运行库或覆盖旧包。
 每次输出到独立的 `dist/yyyyMMdd-HHmmss/` 目录，包含 SHA-256 和构建来源记录。
 未签名测试包不等于正式分发；Explorer、Cloud Files 和通知仍需要独立系统验收。
+虚拟机控制台另需本机可用的 Microsoft Edge WebView2 Runtime；ZIP 不包含该浏览器运行时。
 
 ```powershell
 $env:LANSTASH_NON_INTERACTIVE = '1'
@@ -65,13 +66,16 @@ $env:LANSTASH_LAUNCH_AFTER = '0'
 ./tests/UiSmoke/run.ps1 -SkipBuild -Scenarios photos,chat,downloads,containers,vms -WindowWidth 900 -PaneState cycle
 ```
 
-测试宿主在独立输出目录运行，覆盖 24 组浅深色、文件五态、选中详情、列表、登录、NAS 存储、照片、消息及下载／容器／虚拟机内容状态。
+测试宿主在独立输出目录运行，覆盖各模块浅深色、五态、实际操作、迟到响应、取消、恢复和桌面生命周期；每次生成逐项结果，不能把截图存在或提前退出当作通过。
 截图来自程序自己的 WinUI XAML 树，所有文件和容量都是合成数据，不加载本机 NAS 配置或凭据。
 该回归不替代真实 NAS、文件选择器、触控、Narrator、系统注册或 ARM64 实机验证。
+
+遇到没有托管异常日志的原生退出，可使用 `-CaptureNativeFailures` 复跑对应 `-Scenarios` / `-States`，在场景目录保存原始错误码、WinRT 起源文本、原生模块栈和合成编码阶段；有匹配的本机符号时显示函数名。该开关仅附加本次启动的隔离宿主，不生成内存转储、不修改系统错误报告设置，也不吞掉被测异常；调试附加会改变运行时序，应与未附加的结果分别记录。`./tests/UiSmoke/verify-native-diagnostics.ps1` 在独立子进程验证可捕获异常和真实 WinRT FailFast 两条路径，检查错误文本、原生栈及字符串边界，不运行生产 App。
 
 ## 相关文档
 
 - [Windows 长期计划](../docs/development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)
+- [Windows 测试包验收清单](../docs/quality/WINDOWS_TEST_BUILD_ACCEPTANCE_ZH.md)
 - [平台功能矩阵](../docs/progress/PLATFORM_MATRIX.md)
 - [当前开发进度](../docs/progress/STATUS.md)
 - [功能实现与验证等级](../docs/quality/VERIFICATION_LEVELS_ZH.md)

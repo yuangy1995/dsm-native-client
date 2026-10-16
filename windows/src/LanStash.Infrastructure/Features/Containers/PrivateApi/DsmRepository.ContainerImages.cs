@@ -15,13 +15,14 @@ public sealed partial class DsmRepository
         var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in source)
         {
+            var size = OptionalContainerNonnegativeInteger(item, "size", "virtual_size", "Size");
             var id = FirstContainerString(item, "id", "image_id", "Id") ?? throw InvalidContainerManagerResponse();
             var repository = FirstContainerString(item, "repository", "name", "repo") ?? throw InvalidContainerManagerResponse();
             if (!item.ContainsKey("tags"))
             {
                 // 旧只读摘要没有标签时继续展示，但不能猜测 latest 或开放删除。
                 if (!keys.Add(id)) throw InvalidContainerManagerResponse();
-                result.Add(new(id, repository, ContainerResourceKind.Image, ContainerOperationalState.Unknown));
+                result.Add(new(id, repository, ContainerResourceKind.Image, ContainerOperationalState.Unknown) { ImageSizeBytes = size });
                 continue;
             }
             if (item["tags"] is not JsonArray tags) throw InvalidContainerManagerResponse();
@@ -31,7 +32,7 @@ public sealed partial class DsmRepository
             if (tags.Count == 0)
             {
                 if (!keys.Add(id)) throw InvalidContainerManagerResponse();
-                result.Add(new(id, repository, ContainerResourceKind.Image, ContainerOperationalState.Unknown));
+                result.Add(new(id, repository, ContainerResourceKind.Image, ContainerOperationalState.Unknown) { ImageSizeBytes = size });
             }
             foreach (var node in tags)
             {
@@ -40,7 +41,7 @@ public sealed partial class DsmRepository
                 var reference = new ContainerImageReference(id, repository, tag);
                 var key = JsonSerializer.Serialize(new[] { id, repository, tag });
                 if (!keys.Add(key)) throw InvalidContainerManagerResponse();
-                result.Add(new(key, $"{repository}:{tag}", ContainerResourceKind.Image, ContainerOperationalState.Unknown) { Image = reference });
+                result.Add(new(key, $"{repository}:{tag}", ContainerResourceKind.Image, ContainerOperationalState.Unknown) { Image = reference, ImageSizeBytes = size });
             }
         }
         // 相同仓库/标签指向多个 ID 的清单无法绑定删除目标；裸标签以原 ID 区分。
@@ -58,9 +59,16 @@ public sealed partial class DsmRepository
     {
         var data = await CallInternalObservedContainerAsync(InternalObservedContainerApi, "list",
             new Dictionary<string, string> { ["offset"] = "0", ["limit"] = "-1", ["type"] = "all" }, token).ConfigureAwait(false);
+        var used = ContainerImageUsage(images, data);
+        return selected.All(item => !used.Contains(item.Id));
+    }
+
+    private static IReadOnlySet<string> ContainerImageUsage(IReadOnlyList<ContainerResourceSummary> images, JsonObject data)
+    {
         var rows = RequiredContainerObjectArray(data, ["containers"]);
         if (ContainerPageNumber(data, "total") is { } total && total != rows.Count ||
             ContainerPageNumber(data, "offset") is { } offset && offset != 0) throw InvalidContainerManagerResponse();
+        var usedIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var row in rows)
         {
             var image = OptionalImageString(row, "Image") ?? "";
@@ -79,10 +87,26 @@ public sealed partial class DsmRepository
                 var name = OptionalImageString(row, "image") ?? throw InvalidContainerManagerResponse();
                 used = images.FirstOrDefault(item => item.Image is { } reference && ImageAddress(reference) == NormalizeImageName(name));
             }
-            if (used is not null && selected.Any(item => item.Id == used.Id ||
-                item.Image is { UsesIdentity: true } reference && reference.ImageId == used.Image?.ImageId)) return false;
+            if (used is not null)
+            {
+                usedIds.Add(used.Id);
+                foreach (var bare in images.Where(item => item.Image is { UsesIdentity: true } reference && reference.ImageId == used.Image?.ImageId))
+                    usedIds.Add(bare.Id);
+            }
         }
-        return true;
+        return usedIds;
+    }
+
+    private static long? OptionalContainerNonnegativeInteger(JsonObject item, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!item.ContainsKey(key)) continue;
+            if (item[key] is not JsonValue value) return null;
+            if (value.TryGetValue<int>(out var integer)) return integer >= 0 ? integer : null;
+            return value.TryGetValue<long>(out var number) && number >= 0 ? number : null;
+        }
+        return null;
     }
 
     private static string? OptionalImageString(JsonObject row, string key)

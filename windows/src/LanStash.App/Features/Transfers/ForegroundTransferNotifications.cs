@@ -13,7 +13,8 @@ internal sealed record ForegroundTransferNotification(
     ForegroundTransferNotificationKind Kind,
     ForegroundTransferDirection Direction,
     string Title,
-    string Message);
+    string Message,
+    Guid? ActivityId = null);
 
 internal interface IForegroundTransferNotificationService
 {
@@ -53,17 +54,17 @@ internal static class ForegroundTransferNotificationFactory
                 localization.Get("TransferNotificationCompletedTitle"),
                 activity.Direction == ForegroundTransferDirection.Upload
                     ? localization.Get("TransferNotificationUploadCompletedMessage")
-                    : localization.Get("TransferNotificationDownloadCompletedMessage")),
+                    : localization.Get("TransferNotificationDownloadCompletedMessage"), activity.Id),
             ForegroundTransferState.ResultNeedsReview => new(
                 ForegroundTransferNotificationKind.NeedsReview,
                 activity.Direction,
                 localization.Get("TransferNotificationReviewTitle"),
-                localization.Get("TransferNotificationReviewMessage")),
+                localization.Get("TransferNotificationReviewMessage"), activity.Id),
             ForegroundTransferState.Failed => new(
                 ForegroundTransferNotificationKind.Failed,
                 activity.Direction,
                 localization.Get("TransferNotificationFailedTitle"),
-                localization.Get("TransferNotificationFailedMessage")),
+                localization.Get("TransferNotificationFailedMessage"), activity.Id),
             _ => null,
         };
     }

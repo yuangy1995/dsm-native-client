@@ -6,6 +6,57 @@ namespace LanStash.Tests.Containers;
 
 public sealed class ContainerNetworkDeletionTests
 {
+    [Theory]
+    [InlineData("FORM")] [InlineData("JSON")]
+    public async Task SuccessfulBatchSendsOneObjectPerCallAndExposesEachCompletion(string format)
+    {
+        using var f = new Fixture(format); var first = Target(); var second = Target("network-b", "synthetic-b"); Add(f); Add(f, second);
+        var request = Request(f, first, second); var result = await f.Repository.DeleteContainerNetworksCoreAsync(request);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Status); Assert.Equal(2, result.Counts.Succeeded);
+        Assert.Equal(new[] { first.Id, second.Id }, f.Writes.Select(call => Assert.Single(JsonNode.Parse(call["networks"])!.AsArray())!["id"]!.GetValue<string>()));
+        var items = await f.Repository.GetNetworkDeletionItemsAsync(request.RequestId);
+        Assert.Equal(2, items.Count); Assert.All(items, item => { Assert.Equal(ContainerNetworkDeletionStage.Deleted, item.Stage); Assert.Null(item.Error); });
+        Assert.Empty(await f.Repository.GetNetworkDeletionRecoveriesAsync());
+        Assert.All(f.Calls, call => Assert.Equal("SYNO.Docker.Network", call["api"]));
+    }
+    [Theory]
+    [InlineData("rejected")] [InlineData("lost")] [InlineData("missing")] [InlineData("still-present")]
+    public async Task FirstUnfinishedItemStopsBatchAndLaterRefreshNeverSendsRemainingItem(string failure)
+    {
+        using var f = new Fixture { Apply = false, LoseReply = failure == "lost" };
+        if (failure == "rejected") f.RemoveResponse = new() { ["failed"] = new JsonArray(new JsonObject { ["unknown"] = "not-interpreted" }) };
+        if (failure == "missing") f.RemoveResponse = new();
+        var first = Target(); var second = Target("network-b", "synthetic-b"); Add(f); Add(f, second);
+        var request = Request(f, first, second); var result = await f.Repository.DeleteContainerNetworksCoreAsync(request);
+        Assert.Equal(failure == "rejected" ? MutationResultStatus.ConfirmedFailure : MutationResultStatus.SubmittedButUnverified, result.Status);
+        var items = await f.Repository.GetNetworkDeletionItemsAsync(request.RequestId);
+        Assert.Equal(ContainerNetworkDeletionStage.NotSubmitted, items[1].Stage);
+        Assert.DoesNotContain(await f.Repository.GetNetworkDeletionRecoveriesAsync(), item => item.Id == second.Id);
+        f.Networks.Clear(); await f.Repository.DeleteContainerNetworksCoreAsync(request);
+        await f.Repository.ReviewNetworkDeletionAsync(first.Id);
+        Assert.Single(f.Writes);
+        items = await f.Repository.GetNetworkDeletionItemsAsync(request.RequestId);
+        Assert.Equal(ContainerNetworkDeletionStage.NotSubmitted, items[1].Stage);
+        Assert.Equal(failure switch { "rejected" => ContainerNetworkDeletionStage.Rejected, "still-present" => ContainerNetworkDeletionStage.Deleted, _ => ContainerNetworkDeletionStage.Submitted }, items[0].Stage);
+    }
+    [Fact]
+    public async Task LaterTargetGainingContainerStopsBeforeItsWriteAndPreservesEarlierSuccess()
+    {
+        using var f = new Fixture(); Add(f); var second = Target("network-b", "synthetic-b"); Add(f, second);
+        f.AfterRemove = () => f.Networks.Single(row => row!["id"]!.GetValue<string>() == second.Id)!["containers"] = new JsonArray("synthetic-container");
+        var request = Request(f, Target(), second); var result = await f.Repository.DeleteContainerNetworksCoreAsync(request);
+        Assert.Equal(MutationResultStatus.PartialSuccess, result.Status); Assert.Equal(1, result.Counts.Succeeded); Assert.Equal(1, result.Counts.Failed);
+        Assert.Single(f.Writes); Assert.Empty(await f.Repository.GetNetworkDeletionRecoveriesAsync());
+        var items = await f.Repository.GetNetworkDeletionItemsAsync(request.RequestId);
+        Assert.Equal(ContainerNetworkDeletionStage.Deleted, items[0].Stage); Assert.Equal(ContainerNetworkDeletionStage.Rejected, items[1].Stage);
+        Assert.Equal(MutationErrorCategory.Conflict, items[1].Error);
+    }
+    [Fact]
+    public async Task NonzeroListOffsetCannotProveCompleteInventory()
+    {
+        using var f = new Fixture(); Add(f); f.TransformList = data => { data["offset"] = 1; return data; };
+        Assert.False((await f.Repository.DeleteContainerNetworksCoreAsync(Request(f))).Submitted); Assert.Empty(f.Writes);
+    }
     private static ContainerResourceSummary Target(string id = "network-a", string name = "synthetic-a") =>
         new(id, name, ContainerResourceKind.Network, ContainerOperationalState.Unknown)
         { Network = new("bridge", 0, Array.Empty<string>(), null, null, null, false) };
@@ -92,21 +143,22 @@ public sealed class ContainerNetworkDeletionTests
         Assert.Equal(MutationResultStatus.PartialSuccess, result.Status); Assert.Equal(1, result.Counts.Succeeded); Assert.Equal(1, result.Counts.Unknown);
         Assert.Equal("network-b", Assert.Single(await f.Recreate().GetNetworkDeletionRecoveriesAsync()).Id);
         Assert.Equal(MutationErrorCategory.Conflict, (await f.Recreate().DeleteContainerNetworksCoreAsync(Request(f, second))).ErrorCategory);
-        await f.Recreate().DeleteContainerNetworksCoreAsync(request); Assert.Single(f.Writes);
+        await f.Recreate().DeleteContainerNetworksCoreAsync(request); Assert.Equal(2, f.Writes.Count());
         f.Networks.Clear();
         var verified = await f.Recreate().ReviewNetworkDeletionAsync("network-b");
         Assert.Equal(MutationResultStatus.ConfirmedSuccess, verified!.Status); Assert.Equal(2, verified.Counts.Succeeded);
-        Assert.Empty(await f.Repository.GetNetworkDeletionRecoveriesAsync()); Assert.Single(f.Writes);
+        Assert.Empty(await f.Repository.GetNetworkDeletionRecoveriesAsync()); Assert.Equal(2, f.Writes.Count());
+        Assert.All(f.Writes, call => Assert.Single(JsonNode.Parse(call["networks"])!.AsArray()));
     }
 
     [Fact]
-    public async Task LostReplyRequiresIdentityAbsenceNotNameAbsence()
+    public async Task LostReplyCannotClaimExternalIdentityAbsence()
     {
         using var f = new Fixture { Apply = false, LoseReply = true }; Add(f);
         f.AfterRemove = () => f.Networks[0]!["name"] = "renamed";
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Repository.DeleteContainerNetworksCoreAsync(Request(f))).Status);
         f.Networks.Clear(); f.AddNetwork("replacement-id", "synthetic-a");
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Recreate().ReviewNetworkDeletionAsync("network-a"))!.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Recreate().ReviewNetworkDeletionAsync("network-a"))!.Status);
         Assert.Single(f.Writes);
     }
 
@@ -122,13 +174,14 @@ public sealed class ContainerNetworkDeletionTests
 
     [Theory]
     [InlineData(false)] [InlineData(true)]
-    public async Task MissingOrNonemptyFailureListIsNotSuccessWithoutReadback(bool nonempty)
+    public async Task MissingFailureListStaysUnknownAndNonemptyIsTerminalEvenAfterExternalDeletion(bool nonempty)
     {
         using var f = new Fixture { Apply = false, RemoveResponse = nonempty ? new() { ["failed"] = new JsonArray("network-a") } : new() }; Add(f);
-        var result = await f.Repository.DeleteContainerNetworksCoreAsync(Request(f));
-        Assert.Equal(MutationResultStatus.SubmittedButUnverified, result.Status);
-        Assert.Equal("container.network.delete.response-unverified", result.DiagnosticTag);
-        f.Networks.Clear(); Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Repository.ReviewNetworkDeletionAsync("network-a"))!.Status);
+        var request = Request(f); var result = await f.Repository.DeleteContainerNetworksCoreAsync(request);
+        Assert.Equal(nonempty ? MutationResultStatus.ConfirmedFailure : MutationResultStatus.SubmittedButUnverified, result.Status);
+        f.Networks.Clear(); Assert.Equal(result.Status, (await f.Repository.DeleteContainerNetworksCoreAsync(request)).Status);
+        Assert.Equal(nonempty ? ContainerNetworkDeletionStage.Rejected : ContainerNetworkDeletionStage.Submitted,
+            Assert.Single(await f.Repository.GetNetworkDeletionItemsAsync(request.RequestId)).Stage);
         Assert.Single(f.Writes);
     }
 
@@ -165,7 +218,7 @@ public sealed class ContainerNetworkDeletionTests
         release.SetResult(); Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await first).Status);
         using var after = new Fixture(); Add(after); using var cancel = new CancellationTokenSource(); after.AfterRemove = cancel.Cancel;
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, (await after.Repository.DeleteContainerNetworksCoreAsync(Request(after), cancel.Token)).Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await after.Recreate().ReviewNetworkDeletionAsync("network-a"))!.Status); Assert.Single(after.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await after.Recreate().ReviewNetworkDeletionAsync("network-a"))!.Status); Assert.Single(after.Writes);
     }
 
     [Fact]

@@ -18,8 +18,8 @@ public sealed partial class NasPackageSettingsDialogContent : UserControl, INasS
     public bool IsBusy => _model.IsBusy;
     public string? PrimaryButtonResourceKey => null;
     public NasPackageSettingsDialogContent(INasSettingsRepository repository)
-    { _repository = repository; InitializeComponent(); _model.PropertyChanged += (_, _) => Refresh(); _synchronizing = false; }
-    public Task ActivateAsync() => _model.ActivateAsync(_repository);
+    { _repository = repository; InitializeComponent(); InitializeCenter(); _model.PropertyChanged += (_, _) => Refresh(); _synchronizing = false; }
+    public async Task ActivateAsync() { await _model.ActivateAsync(_repository); if (!_disposed) _activityTimer.Start(); }
     public Task ReloadAsync() => _model.ReloadAsync();
     public Task SaveAsync() => Task.CompletedTask;
     private void Refresh()
@@ -31,7 +31,8 @@ public sealed partial class NasPackageSettingsDialogContent : UserControl, INasS
         FeedbackNotice.IsOpen = _model.Feedback is not null; FeedbackNotice.Message = _model.Feedback ?? "";
         FeedbackNotice.Severity = _model.WasSuccessful ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
         PendingNotice.IsOpen = _model.Pending.Count > 0;
-        PendingNotice.Message = L.Format("NasPackagePending", string.Join(Environment.NewLine, _model.Pending.Select(item => item.DisplayName)));
+        PendingNotice.Message = L.Format("NasPackagePending", string.Join(Environment.NewLine, _model.Pending.Select(item => NasPackageManagementViewModel.RecoveryName(item.DisplayName))));
+        ErrorNotice.Visibility = Show(ErrorNotice.IsOpen); FeedbackNotice.Visibility = Show(FeedbackNotice.IsOpen); PendingNotice.Visibility = Show(PendingNotice.IsOpen);
         ReadOnlyNotice.Visibility = _model.IsReadOnly ? Visibility.Visible : Visibility.Collapsed;
         SearchInput.IsEnabled = PackageList.IsEnabled = !IsBusy;
         var visible = _model.VisiblePackages;
@@ -52,18 +53,16 @@ public sealed partial class NasPackageSettingsDialogContent : UserControl, INasS
         PackageList.SelectedItem = PackageList.Items.OfType<NasPackageSettingsRow>().FirstOrDefault(row => row.Package.Id == _model.Selected?.Id);
         EmptyNotice.Visibility = !IsBusy && _model.ErrorMessage is null && visible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyNotice.Text = L.Get(_model.Packages.Count == 0 ? "NasPackageEmpty" : "NasPackageNoMatches");
-        UpgradeNotice.Visibility = _model.Selected?.IsUpgradeAvailable == true ? Visibility.Visible : Visibility.Collapsed;
+        UpgradeNotice.Visibility = _model.Selected?.IsUpgradeAvailable == true && !_model.CenterAvailability.CanBrowse ? Visibility.Visible : Visibility.Collapsed;
         StartButton.IsEnabled = _model.CanChoose(NasPackageAction.Start); StopButton.IsEnabled = _model.CanChoose(NasPackageAction.Stop);
         UninstallButton.IsEnabled = _model.CanChoose(NasPackageAction.Uninstall);
         ConfirmationPanel.Visibility = _model.SelectedAction is not null ? Visibility.Visible : Visibility.Collapsed;
         ConfirmationText.Text = _model.SelectedAction is { } action ? L.Format(action switch
         { NasPackageAction.Start => "NasPackageConfirmStart", NasPackageAction.Stop => "NasPackageConfirmStop", _ => "NasPackageConfirmUninstall" }, _model.Selected?.Name ?? "") : "";
-        RiskAcknowledgement.IsEnabled = _model.SelectedAction is { } selected && _model.CanChoose(selected);
-        if (!_model.CanExecute) RiskAcknowledgement.IsChecked = false;
-        ExecuteButton.IsEnabled = _model.CanExecute;
+        ExecuteButton.IsEnabled = _model.SelectedAction is { } selected && _model.CanChoose(selected);
         ExecuteButton.Content = L.Get(_model.SelectedAction switch
         { NasPackageAction.Start => "NasPackageStart.Content", NasPackageAction.Stop => "NasPackageStop.Content", _ => "NasPackageUninstall.Content" });
-        _synchronizing = false; StateChanged?.Invoke();
+        RefreshCenter(); _synchronizing = false; StateChanged?.Invoke();
     }
     private void SynchronizeSelection()
     {
@@ -76,13 +75,8 @@ public sealed partial class NasPackageSettingsDialogContent : UserControl, INasS
     private void Start_Click(object sender, RoutedEventArgs e) { SynchronizeSelection(); _model.ChooseAction(NasPackageAction.Start); }
     private void Stop_Click(object sender, RoutedEventArgs e) { SynchronizeSelection(); _model.ChooseAction(NasPackageAction.Stop); }
     private void Uninstall_Click(object sender, RoutedEventArgs e) { SynchronizeSelection(); _model.ChooseAction(NasPackageAction.Uninstall); }
-    private void Risk_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_synchronizing) return;
-        var confirmed = RiskAcknowledgement.IsChecked == true; SynchronizeSelection(); _model.ConfirmAction(confirmed);
-        _synchronizing = true; RiskAcknowledgement.IsChecked = _model.CanExecute; _synchronizing = false;
-    }
-    private async void Execute_Click(object sender, RoutedEventArgs e) { SynchronizeSelection(); await _model.ExecuteAsync(); }
-    public void Dispose() { if (_disposed) return; _disposed = true; _synchronizing = true; _model.Dispose(); PackageList.ItemsSource = null; _displayed = []; StateChanged = null; }
+    private async void Execute_Click(object sender, RoutedEventArgs e)
+    { SynchronizeSelection(); if (_model.ConfirmAction(true)) await _model.ExecuteAsync(); }
+    public void Dispose() { if (_disposed) return; _disposed = true; _synchronizing = true; _activityTimer.Stop(); ClearCenterConfirmation(); InstallFields.Children.Clear(); _optionReaders.Clear(); _model.Dispose(); PackageList.ItemsSource = null; _displayed = []; StateChanged = null; }
     private static LocalizationService L => LocalizationService.Current;
 }

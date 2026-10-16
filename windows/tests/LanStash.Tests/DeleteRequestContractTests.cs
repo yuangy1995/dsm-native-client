@@ -67,7 +67,9 @@ internal sealed class RecordingApiClient : IDsmApiClient
             new Dictionary<string, string>(
                 parameters ?? new Dictionary<string, string>(),
                 StringComparer.Ordinal)));
-        return Task.FromResult(new JsonObject());
+        return Task.FromResult(capability.Name == "SYNO.FileStation.List" && method is "list" or "list_share"
+            ? new JsonObject { ["offset"] = 0, ["total"] = 0, [method == "list" ? "files" : "shares"] = new JsonArray() }
+            : new JsonObject());
     }
 
     public Uri GetBaseUri(NasProfile profile) => new("https://nas.invalid");

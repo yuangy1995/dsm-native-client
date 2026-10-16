@@ -22,6 +22,7 @@ public sealed record VirtualMachineCreationImage(string Id, string Name, string 
 public sealed record VirtualMachineAdvancedCreationInventory(Guid ProfileId, bool StoragesFrozen, bool ImagesFrozen,
     IReadOnlyList<VirtualMachineCreationStorage> Storages, IReadOnlyList<VirtualMachineCreationImage> Images)
 {
+    public VirtualMachineManagerSection<VirtualizationResourceSummary> Networks { get; init; } = VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable;
     public override string ToString() => nameof(VirtualMachineAdvancedCreationInventory);
 }
 public sealed record VirtualMachineAdvancedDisk(string Id, string Size, int Controller, bool Unmap)

@@ -1,4 +1,6 @@
 using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.CopyMove;
+using LanStash.Domain;
 using LanStash.App.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -21,9 +23,10 @@ public sealed partial class FilesPage
         if (_disposed || _fileOperationRecoveryDialog is not null || _batchCopyMoveDialog is not null ||
             _batchRecycleDialog is not null || XamlRoot is null) return;
         if (recycle ? _recycleRepository is not { SupportsRecycleReview: true } || _recycleRepository.ProfileId != _profileId
-            : _copyMoveRepository is not { SupportsCopyMoveReview: true } || _copyMoveRepository.ProfileId != _profileId) return;
+            : _copyMoveRepository is null || _copyMoveRepository.ProfileId != _profileId) return;
         var model = recycle ? new FileOperationRecoveryViewModel(_recycleRepository!, _profileId, _recycleReviewBlocker)
             : new FileOperationRecoveryViewModel(_copyMoveRepository!, _profileId, _copyMoveReviewBlocker);
+        CrossNasTransferSummary? openCrossNas = null;
         var localization = LocalizationService.Current;
         var dialog = new ContentDialog
         {
@@ -34,7 +37,7 @@ public sealed partial class FilesPage
         void Render()
         {
             if (_disposed || _fileOperationRecoveryDialog != dialog) return;
-            dialog.PrimaryButtonText = model.Items.Count > 0 ? localization.Get("FileOperationReviewNow") : string.Empty;
+            dialog.PrimaryButtonText = model.Items.Count > 0 ? localization.Get(model.Selected?.CrossNas is not null ? "CrossNasOpenTask" : "FileOperationReviewNow") : string.Empty;
             dialog.IsPrimaryButtonEnabled = model.CanReview;
             var panel = new StackPanel { Width = 480, MaxWidth = 480, Spacing = 12 };
             panel.Children.Add(new TextBlock { Text = localization.Get("FileOperationReviewHint"), TextWrapping = TextWrapping.Wrap });
@@ -70,6 +73,7 @@ public sealed partial class FilesPage
         }
         dialog.PrimaryButtonClick += async (_, args) =>
         {
+            if (model.CanReview && model.Selected?.CrossNas is { } crossNas) { openCrossNas = crossNas; return; }
             args.Cancel = true;
             var deferral = args.GetDeferral();
             try { var review = model.ReviewSelectedAsync(); Render(); await review; Render(); }
@@ -88,6 +92,8 @@ public sealed partial class FilesPage
             model.Dispose();
             if (_fileOperationRecoveryDialog == dialog) { _fileOperationRecoveryDialog = null; _fileOperationRecoveryModel = null; }
         }
+        if (!_disposed && openCrossNas is not null && _copyMoveRepository?.ProfileId == _profileId)
+            await ShowCrossNasCopyMoveAsync(FileCopyMoveOperation.Copy, openCrossNas);
         if (!_disposed && model.ConfirmedCount > 0 && (recycle ? _recycleRepository?.ProfileId : _copyMoveRepository?.ProfileId) == _profileId) await RunAsync(_viewModel.RefreshAsync);
         if (!_disposed) UpdateState();
     }

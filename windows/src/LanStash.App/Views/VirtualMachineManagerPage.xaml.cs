@@ -14,6 +14,7 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
     private bool _initialized;
     private bool _compactShowsDetail;
     private bool _disposed;
+    private bool _updatingActivityFilter;
 
     internal VirtualMachineManagerPage(IVirtualMachineManagerRepository repository)
         : this(repository, new VirtualMachineManagerViewModel())
@@ -32,6 +33,7 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         Loaded += VirtualMachineManagerPage_Loaded;
+        Unloaded += (_, _) => { _ = _viewModel.SetActivityVisibleAsync(false); ResetActivityFilterControls(); };
         UpdateState();
     }
 
@@ -49,8 +51,23 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
 
     private void ViewModel_PropertyChanged(
         object? sender,
-        System.ComponentModel.PropertyChangedEventArgs e) =>
-        DispatcherQueue.TryEnqueue(UpdateState);
+        System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (DispatcherQueue.HasThreadAccess) UpdateState(); else DispatcherQueue.TryEnqueue(UpdateState);
+    }
+
+    private void ActivitySearch_TextChanged(object sender, TextChangedEventArgs e) => ReadActivityFilter();
+    private void ActivityLevel_SelectionChanged(object sender, SelectionChangedEventArgs e) => ReadActivityFilter();
+    private void ReadActivityFilter()
+    {
+        if (!_initialized || _disposed || _updatingActivityFilter) return;
+        var tag = (ActivityLevelPicker.SelectedItem as ComboBoxItem)?.Tag as string;
+        _viewModel.SetActivityFilter(ActivitySearchBox.Text, Enum.TryParse<ServiceEventLevel>(tag, out var level) ? level : null);
+    }
+    private void ActivityClear_Click(object sender, RoutedEventArgs e)
+    { ResetActivityFilterControls(); _viewModel.SetActivityFilter("", null); UpdateState(); }
+    private void ResetActivityFilterControls()
+    { _updatingActivityFilter = true; ActivitySearchBox.Text = ""; ActivityLevelPicker.SelectedIndex = 0; _updatingActivityFilter = false; }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
         await RefreshCurrentSectionAsync();
@@ -90,10 +107,10 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (ReferenceEquals(ResourcePivot.SelectedItem, TasksTab))
+        if (ReferenceEquals(ResourcePivot.SelectedItem, TasksTab) || ReferenceEquals(ResourcePivot.SelectedItem, EventsTab))
         {
             args.Handled = true;
-            await TasksPane.RefreshAsync();
+            await RefreshCurrentSectionAsync();
             return;
         }
         if (!_viewModel.CanRefresh)
@@ -155,6 +172,8 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
         ApplySectionState(_viewModel.ImagesState, ImagesList, ImagesLoadingState, ImagesEmptyState, ImagesErrorState, ImagesUnavailableState);
         ApplySectionState(_viewModel.ProtectionState, ProtectionList, ProtectionLoadingState, ProtectionEmptyState, ProtectionErrorState, ProtectionUnavailableState);
         ApplySectionState(_viewModel.EventsState, EventsList, EventsLoadingState, EventsEmptyState, EventsErrorState, EventsUnavailableState);
+        EventsFilteredEmptyState.Visibility = Visible(_viewModel.EventsState == VirtualMachineManagerContentState.FilteredEmpty);
+        ActivityRefreshNotice.IsOpen = _viewModel.ActivityReadFailed && !_viewModel.RequiresReconnect;
         UpdateAdaptiveLayout();
     }
 
@@ -209,5 +228,6 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
         TasksPane.Dispose();
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.Dispose();
+        EventsList.ItemsSource = null; ResetActivityFilterControls();
     }
 }

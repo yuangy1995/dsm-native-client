@@ -5,6 +5,27 @@ public interface IDownloadStationRepository
     Guid ProfileId { get; }
     DownloadStationAvailability Availability { get; }
 
+    bool CanFinishIncomplete => false;
+    Task<IReadOnlyList<DownloadActionInfo>> LoadDownloadActionsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<DownloadActionInfo>>([]);
+    Task<DownloadActionInfo> StartDownloadActionAsync(DownloadTaskActionRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromException<DownloadActionInfo>(new NotSupportedException("download.actions.unavailable"));
+    Task<DownloadActionInfo> ReviewDownloadActionAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Task.FromException<DownloadActionInfo>(new NotSupportedException("download.actions.unavailable"));
+    Task<DownloadActionInfo> ContinueDownloadActionAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Task.FromException<DownloadActionInfo>(new NotSupportedException("download.actions.unavailable"));
+    Task<DownloadActionInfo> CancelDownloadActionRemainderAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Task.FromException<DownloadActionInfo>(new NotSupportedException("download.actions.unavailable"));
+    Task<DownloadActionInfo> RefreshRssSiteAsync(DownloadRssSite site, CancellationToken cancellationToken = default) =>
+        Task.FromException<DownloadActionInfo>(new NotSupportedException("download.rss.unavailable"));
+
+    Task<DownloadTaskDetails> LoadTaskDetailsAsync(string taskId, CancellationToken cancellationToken = default) =>
+        Task.FromException<DownloadTaskDetails>(new NotSupportedException("download.details.unavailable"));
+    Task<IReadOnlyList<DownloadRssSite>> ListRssSitesAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<IReadOnlyList<DownloadRssSite>>(new NotSupportedException("download.rss.unavailable"));
+    Task<IReadOnlyList<DownloadRssFeed>> ListRssFeedsAsync(int siteId, CancellationToken cancellationToken = default) =>
+        Task.FromException<IReadOnlyList<DownloadRssFeed>>(new NotSupportedException("download.rss.unavailable"));
+
     Task<DownloadSettingsSnapshot> LoadSettingsAsync(CancellationToken cancellationToken = default) =>
         Task.FromException<DownloadSettingsSnapshot>(new NotSupportedException("download.settings.unavailable"));
 

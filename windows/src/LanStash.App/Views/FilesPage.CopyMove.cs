@@ -33,7 +33,7 @@ public sealed partial class FilesPage
         var sourceParent = _viewModel.CurrentPath;
         CloseShareLinkDialog();
         CloseMutationDialog();
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
         if (!CanCopyMove(operation) ||
             !string.Equals(sourceParent, _viewModel.CurrentPath, StringComparison.Ordinal) ||
             !SameCopyMoveItem(source, _viewModel.SelectedItem?.Item)) return;
@@ -50,7 +50,7 @@ public sealed partial class FilesPage
     private void UpdateCopyMoveControls()
     {
         CopyMoveRecoveryButton.IsEnabled = !_disposed && _fileOperationRecoveryDialog is null && _batchCopyMoveDialog is null &&
-            _copyMoveRepository is { SupportsCopyMoveReview: true } repository && repository.ProfileId == _profileId;
+            _copyMoveRepository is { } repository && repository.ProfileId == _profileId;
         CopyFileButton.IsEnabled = CanCopyMove(FileCopyMoveOperation.Copy);
         MoveFileButton.IsEnabled = CanCopyMove(FileCopyMoveOperation.Move);
         var visible = IsReadOnlyLocation() ? Visibility.Collapsed : Visibility.Visible;

@@ -505,6 +505,7 @@ public sealed partial class DsmRepository
         FileArchiveCompressionReview review)
     {
         var state = ArchiveMutationStateForProfile(ProfileId);
+        lock (FileMutationState().Sync)
         lock (state.Sync)
         {
             state.Reviews.TryGetValue(review.Key, out var pending);
@@ -514,7 +515,7 @@ public sealed partial class DsmRepository
                 .Concat(state.ExtractionReviews.Values
                     .SelectMany(item => item.ReservedPaths))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (review.Request.ProfileId != ProfileId ||
+            if (review.Request.ProfileId != ProfileId || OfficeEditingConflicts(review.ReservedPaths) ||
                 HasArchivePathConflict(state.ActivePaths, review.ReservedPaths) ||
                 HasArchivePathConflict(unresolvedPaths, review.ReservedPaths))
                 return new(false, null);

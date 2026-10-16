@@ -57,6 +57,7 @@ public sealed partial class DsmRepository
                 { parameters["force"] = false; parameters["preserve_profile"] = false; }
                 var capability = _capabilities[InternalObservedContainerApi] with { MinVersion = 1, MaxVersion = 1 };
                 await SecurityCallAsync(capability, request.Action.ToString().ToLowerInvariant(), parameters, cancellationToken).ConfigureAwait(false);
+                state.Accepted = true;
             }
             catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error)) { state.Rejection = ServiceErrorCategory(error); }
             catch (Exception) { /* 可能已执行，保留目标锁，只通过后续状态核查，不重放。 */ }
@@ -120,7 +121,7 @@ public sealed partial class DsmRepository
                     ContainerMutationAction.Restart => current.Running == true && current.StartedAt is { } after && state.Target.StartedAt is { } before && after > before,
                     _ => false,
                 });
-            if (verified) return Finish(new(1, MutationResultStatus.ConfirmedSuccess, operation, true, false, new(1, 0, 0)));
+            if (state.Accepted && verified) return Finish(new(1, MutationResultStatus.ConfirmedSuccess, operation, true, false, new(1, 0, 0)));
         }
         catch (DsmException error) { category = ServiceErrorCategory(error); }
         catch (Exception) { category = MutationErrorCategory.Network; }
@@ -198,5 +199,6 @@ public sealed partial class DsmRepository
         public ContainerMutationTarget Target { get; } = target;
         public ContainerMutationAction Action { get; } = action;
         public MutationErrorCategory? Rejection { get; set; }
+        public bool Accepted { get; set; }
     }
 }

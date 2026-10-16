@@ -15,6 +15,18 @@ public sealed partial class DsmRepository
     private readonly ConcurrentDictionary<Guid, AdvancedChatOperation> _chatAdvancedOperations = new();
     // 仅保留未确认目标，不保留 Repository/会话凭据；页面或 Repository 重建后仍不能重复写。
     private static readonly ConcurrentDictionary<(Guid Profile, string Account, string Resource), AdvancedChatOperation> PendingAdvancedChat = new();
+    public NasProfile? ConfiguredChatProfile { private get; init; }
+    private string ChatAccountScope
+    {
+        get
+        {
+            var owner = ConfiguredChatProfile ?? _profile;
+            if (owner.Id != _profile.Id || owner.Username != _profile.Username) throw new InvalidOperationException("chat.owner.mismatch");
+            // QuickConnect 的直连/中继地址可变，防重归属使用用户保存的连接身份。
+            return AdvancedFingerprint(new { owner.Host, owner.Port, owner.Username });
+        }
+    }
+    public string? AccountIdentity => ChatAccountScope;
 
     public Task<ChatAvailability> PrepareAdvancedFeaturesAsync(CancellationToken cancellationToken = default)
     {
@@ -71,7 +83,9 @@ public sealed partial class DsmRepository
         bool allowMissingConversation = false, bool allowEncryptedConversation = false)
     {
         var signature = AdvancedFingerprint(new { operation, draft });
-        var resource = AdvancedFingerprint(new[] { api, conversationId, resourceId });
+        var resourceKind = operation is "editMessage" or "vote" or "deleteOwnMessage" or "setMessagePinned" or "forwardMessage"
+            ? "message" : api;
+        var resource = AdvancedFingerprint(new[] { resourceKind, conversationId, resourceId });
         if (requestId == Guid.Empty || _profile.Id == Guid.Empty || _profile.Id != _session.ProfileId || string.IsNullOrWhiteSpace(_session.Sid) ||
             !ValidAdvancedId(conversationId) || string.IsNullOrWhiteSpace(resourceId) || (messageId is not null && !ValidAdvancedId(messageId)))
             return (ChatFailure(operation, "chat.advanced.invalid", MutationErrorCategory.Validation), null);
@@ -86,7 +100,7 @@ public sealed partial class DsmRepository
                 if (state.Terminal is { } terminal) return (terminal, state.Value);
                 return await ReviewAsync(state).ConfigureAwait(false);
             }
-            var pendingKey = (_profile.Id, AdvancedFingerprint(_profile.Username), resource);
+            var pendingKey = (_profile.Id, ChatAccountScope, resource);
             if (PendingAdvancedChat.TryGetValue(pendingKey, out var shared))
             {
                 if (shared.Signature != signature) return (ChatFailure(operation, "chat.advanced.pending", MutationErrorCategory.Conflict), null);
@@ -124,7 +138,13 @@ public sealed partial class DsmRepository
                 return (ChatFailure(operation, "chat.advanced.pending", MutationErrorCategory.Conflict), null);
             state.Submitted = true;
             _chatAdvancedOperations[requestId] = state;
-            try { await submit(state, token).ConfigureAwait(false); }
+            try { await submit(state, token).ConfigureAwait(false); state.Accepted = true; }
+            catch (AdvancedChatSubmissionStopped stopped)
+            {
+                state.Submitted = stopped.Result.Submitted; state.Terminal = stopped.Result;
+                if (!state.Submitted) _chatAdvancedOperations.TryRemove(requestId, out _);
+                ClearAdvancedPending(state); return (stopped.Result, null);
+            }
             catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error))
             {
                 state.Terminal = AdvancedFailure(operation, error, true);
@@ -145,7 +165,7 @@ public sealed partial class DsmRepository
                 {
                     if (pending.Terminal is { } finished) return (finished, pending.Value);
                     var result = await readback(pending, token).ConfigureAwait(false);
-                    if (!result.Confirmed) return (ChatUnknown(operation), null);
+                    if (!pending.Accepted || !result.Confirmed) return (ChatUnknown(operation), null);
                     pending.Value = result.Value; pending.Terminal = ChatSuccess(operation);
                     ClearAdvancedPending(pending);
                     return (pending.Terminal, result.Value);
@@ -166,7 +186,7 @@ public sealed partial class DsmRepository
 
     private void ClearAdvancedPending(AdvancedChatOperation state) =>
         ((ICollection<KeyValuePair<(Guid, string, string), AdvancedChatOperation>>)PendingAdvancedChat)
-            .Remove(new((_profile.Id, AdvancedFingerprint(_profile.Username), state.Resource), state));
+            .Remove(new((_profile.Id, ChatAccountScope, state.Resource), state));
 
     private static string AdvancedFingerprint(object value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value))));
@@ -175,15 +195,20 @@ public sealed partial class DsmRepository
     private static DateTimeOffset Milliseconds(DateTimeOffset value) => DateTimeOffset.FromUnixTimeMilliseconds(value.ToUnixTimeMilliseconds());
     private sealed class AdvancedChatTargetChangedException : Exception;
     private sealed class AdvancedChatPermissionException : Exception;
+    private sealed class AdvancedChatSubmissionStopped(MutationResult result) : Exception
+    { public MutationResult Result { get; } = result; }
     private sealed class AdvancedChatOperation(string signature, string resource, DateTimeOffset submittedAt)
     {
         public string Signature { get; } = signature;
         public string Resource { get; } = resource;
         public DateTimeOffset SubmittedAt { get; } = submittedAt;
         public bool Submitted { get; set; }
+        public bool Accepted { get; set; }
+        public string? OwnerId { get; set; }
         public volatile bool Submitting;
         public HashSet<string> BaselineMessageIds { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, HashSet<string>> DestinationBaselines { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, DateTimeOffset?> DestinationLatest { get; } = new(StringComparer.Ordinal);
         public HashSet<string> ConfirmedDestinations { get; } = new(StringComparer.Ordinal);
         public string? PayloadFingerprint { get; set; }
         public SemaphoreSlim ReviewGate { get; } = new(1, 1);
@@ -269,9 +294,10 @@ public sealed partial class DsmRepository
             "SYNO.Chat.Post.Vote", draft.ConversationId, null, JsonSerializer.Serialize(new { draft.Question, draft.Options, draft.AllowsMultipleSelection, draft.IsAnonymous }),
             async (state, token) =>
             {
-                var options = JsonSerializer.Serialize(new { add_option = false, anonymous = draft.IsAnonymous, multiple = draft.AllowsMultipleSelection });
+                var options = new { add_option = false, anonymous = draft.IsAnonymous, multiple = draft.AllowsMultipleSelection, expire_at = 0 };
                 var response = await AdvancedChatCallAsync("SYNO.Chat.Post.Vote", 1, "create",
-                    [("channel_id", draft.ConversationId), ("message", draft.Question), ("choices", draft.Options), ("options", options)], token).ConfigureAwait(false);
+                    [("channel_id", draft.ConversationId), ("message", draft.Question),
+                     ("choices", draft.Options.Select(text => new { text }).ToArray()), ("options", options)], token).ConfigureAwait(false);
                 state.CandidateId = response.String("post_id") ?? response.String("id");
             },
             async (state, token) =>
@@ -285,7 +311,7 @@ public sealed partial class DsmRepository
                 var matches = page.Messages.Where(message => message.IsFromCurrentUser == true &&
                     !state.BaselineMessageIds.Contains(message.Id) &&
                     message.EncryptionState == ChatEncryptionState.NotEncrypted &&
-                    (state.CandidateId is null || message.Id == state.CandidateId) &&
+                    state.CandidateId is not null && message.Id == state.CandidateId &&
                     Math.Abs((message.SentAt - state.SubmittedAt).TotalSeconds) <= 180 &&
                     message.Poll is { } poll && poll.Question == draft.Question &&
                     poll.AllowsMultipleSelection == draft.AllowsMultipleSelection && poll.IsAnonymous == draft.IsAnonymous &&

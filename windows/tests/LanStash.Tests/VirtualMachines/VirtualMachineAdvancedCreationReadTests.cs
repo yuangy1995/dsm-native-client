@@ -145,7 +145,8 @@ public sealed class VirtualMachineAdvancedCreationReadTests
                 {
                     Assert.Equal("get", call["method"]); owner._gets++;
                     data = new() { ["guest_id"] = "guest-a", ["name"] = "Synthetic", ["desc"] = "Line one\nLine two", ["vcpu_num"] = 1,
-                        ["vram_size"] = 524288, ["cpu_weight"] = 256, ["autorun"] = 0, ["is_online"] = owner.ChangeAfter && owner._gets > 1 };
+                        ["vram_size"] = 524288, ["cpu_weight"] = 256, ["autorun"] = 0, ["is_online"] = owner.ChangeAfter && owner._gets > 1,
+                        ["status"] = owner.ChangeAfter && owner._gets > 1 ? "running" : "shutdown" };
                 }
                 return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { success = true, data }), Encoding.UTF8, "application/json") };
             }

@@ -50,7 +50,7 @@ internal sealed class CloudDriveDeletionCoordinator(DesktopDriveMapping mapping,
         {
             await repository.DeleteFilesAsync([operation.RemotePath], token).ConfigureAwait(false);
             // 旧适配器的列表轮询不是最终证据；必须精确回读目标和可访问的父目录。
-            return await VerifyAsync(submitted, token).ConfigureAwait(false);
+            return await VerifyAsync(submitted, token, accepted: true).ConfigureAwait(false);
         }
         catch { return submitted; }
     }
@@ -59,7 +59,7 @@ internal sealed class CloudDriveDeletionCoordinator(DesktopDriveMapping mapping,
     {
         using var lease = await store.AcquireWritebackAsync(mapping, token).ConfigureAwait(false);
         var operation = await FindAsync(id, token).ConfigureAwait(false); RequireContext(operation.RemotePath);
-        return operation.Phase == CloudDriveDeletionPhase.Submitted ? await VerifyAsync(operation, token).ConfigureAwait(false) : operation;
+        return operation.Phase == CloudDriveDeletionPhase.Submitted ? await VerifyAsync(operation, token, accepted: false).ConfigureAwait(false) : operation;
     }
 
     internal async Task AbandonAsync(CloudDriveDeletionOperation expected, bool confirmed, CancellationToken token = default)
@@ -70,10 +70,12 @@ internal sealed class CloudDriveDeletionCoordinator(DesktopDriveMapping mapping,
         await store.UpdateDeletionOperationAsync(mapping, expected, expected with { Phase = CloudDriveDeletionPhase.Abandoned }, token).ConfigureAwait(false);
     }
 
-    private async Task<CloudDriveDeletionOperation> VerifyAsync(CloudDriveDeletionOperation operation, CancellationToken token)
+    private async Task<CloudDriveDeletionOperation> VerifyAsync(CloudDriveDeletionOperation operation, CancellationToken token, bool accepted)
     {
         await RequireParentsAsync(operation.RemotePath, false, token).ConfigureAwait(false);
         if (await repository.ReadFileMetadataAsync(operation.RemotePath, token).ConfigureAwait(false) is not null) return operation;
+        // v10 未保存接受回执；冷恢复或丢回执后的路径消失不能授权删除本机副本。
+        if (!accepted) return operation;
         var verified = operation with { Phase = CloudDriveDeletionPhase.ServerVerified };
         await store.UpdateDeletionOperationAsync(mapping, operation, verified, token).ConfigureAwait(false);
         return verified;

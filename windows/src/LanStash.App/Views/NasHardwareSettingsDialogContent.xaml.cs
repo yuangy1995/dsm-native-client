@@ -87,7 +87,7 @@ public sealed partial class NasHardwareSettingsDialogContent : UserControl, INas
             else if (key is "dual_fan_speed" or "mode")
             {
                 var choice = new ComboBox { Header = title, HorizontalAlignment = HorizontalAlignment.Stretch };
-                var choices = key == "mode" ? new[] { "USB", "SNMP", "SLAVE" } : NasHardwareSettingsRules.FanModes;
+                var choices = key == "mode" ? new[] { "USB", "SNMP", "SLAVE" } : NasHardwareSettingsRules.FanChoices(_baseline);
                 foreach (var item in choices.Append((string)value).Distinct())
                     choice.Items.Add(new ComboBoxItem { Tag = item, Content = ModeLabel(item) });
                 choice.SelectedItem = choice.Items.OfType<ComboBoxItem>().First(item => (string)item.Tag == (string)value);

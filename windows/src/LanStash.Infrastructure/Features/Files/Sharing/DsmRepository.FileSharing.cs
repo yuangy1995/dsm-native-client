@@ -14,7 +14,7 @@ public sealed partial class DsmRepository
     private const int FileListVersion = 2;
     private const int FileShareLinkPageSize = 500;
     private const int ShareMaximumItems = 5_000;
-    private static readonly ConditionalWeakTable<IDsmApiClient, FileShareDeleteReviewState>
+    private static readonly ConditionalWeakTable<IDsmApiClient, FileShareReviewRegistry>
         FileShareDeleteReviewStates = new();
     public FileShareLinkAvailability ShareLinkAvailability =>
         HasFileShareContract
@@ -36,7 +36,11 @@ public sealed partial class DsmRepository
         var target = request.Target;
         var password = request.Password is { Length: 0 } ? null : request.Password;
         if (!ValidTarget(target) ||
-            password is not null && new StringInfo(password).LengthInTextElements > 16)
+            password is not null && new StringInfo(password).LengthInTextElements > 16 ||
+            request.AvailableOn > request.ExpiresOn ||
+            request.FileRequest is { } configuration &&
+                (!target.IsDirectory || !target.CanWrite || !configuration.UploadConfirmed ||
+                    string.IsNullOrWhiteSpace(configuration.Name)))
         {
             return Outcome(
                 MutationResultStatus.ConfirmedFailure,
@@ -86,6 +90,13 @@ public sealed partial class DsmRepository
                         category: MutationErrorCategory.Conflict,
                         diagnosticTag: "file.share.create.baseline-changed");
                 }
+                if (request.FileRequest is not null)
+                {
+                    await RequireFileShareAdvancedWriteAsync(cancellationToken).ConfigureAwait(false);
+                    if (!observed.IsDirectory || !observed.CanWrite)
+                        return Outcome(MutationResultStatus.PermissionDenied, false, failed: 1,
+                            category: MutationErrorCategory.Permission);
+                }
                 var existing = await LoadAllShareLinksAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -100,6 +111,15 @@ public sealed partial class DsmRepository
                 if (request.ExpiresOn is { } expiry)
                 {
                     parameters["date_expired"] = expiry.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                }
+
+                if (request.AvailableOn is { } available)
+                    parameters["date_available"] = available.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                if (request.FileRequest is { } collection)
+                {
+                    parameters["file_request"] = "true";
+                    parameters["request_name"] = collection.Name;
+                    parameters["request_info"] = collection.Message;
                 }
 
                 FileShareLinkTransportResult transport;
@@ -150,40 +170,15 @@ public sealed partial class DsmRepository
                         diagnosticTag: transport.DiagnosticTag ?? "file.share.create.unsupported");
                 }
 
-                var submitted = SubmittedShareIdentity(transport);
+                var submittedId = SubmittedShareIdentity(transport);
+                var pending = new PendingShareCreation(target.Path, submittedId,
+                    transport.Status == FileShareLinkTransportStatus.ResponseReceived,
+                    existing.Select(link => link.Id).ToHashSet(StringComparer.Ordinal),
+                    password is not null, request.AvailableOn, request.ExpiresOn, request.FileRequest);
+                StoreShareCreationReview(pending);
                 using var verification = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                try
-                {
-                    var readback = await LoadAllShareLinksAsync(verification.Token).ConfigureAwait(false);
-                    var oldIds = existing.Select(link => link.Id).ToHashSet(StringComparer.Ordinal);
-                    var newLinks = readback.Where(link => !oldIds.Contains(link.Id)).ToArray();
-                    var candidate = submitted.Id is { } id
-                        ? newLinks.SingleOrDefault(link => string.Equals(link.Id, id, StringComparison.Ordinal))
-                        : submitted.AllowsMissingIdFallback
-                            ? newLinks.SingleOrDefault(link =>
-                                string.Equals(link.Path, target.Path, StringComparison.Ordinal))
-                            : null;
-                    if (candidate is not null &&
-                        string.Equals(candidate.Path, target.Path, StringComparison.Ordinal) &&
-                        candidate.HasPassword == (password is not null) &&
-                        candidate.ExpiresOn == request.ExpiresOn)
-                    {
-                        return Outcome(
-                            MutationResultStatus.ConfirmedSuccess,
-                            submitted: true,
-                            succeeded: 1,
-                            diagnosticTag: transport.Status ==
-                                FileShareLinkTransportStatus.CancellationRequestedAfterSubmission
-                                    ? "file.share.create.confirmed-after-cancel"
-                                    : "file.share.create.confirmed",
-                            link: candidate);
-                    }
-                }
-                catch (Exception error) when (
-                    error is DsmException or InvalidDataException or InvalidOperationException or
-                        OperationCanceledException)
-                {
-                }
+                var reviewed = await ReviewFileShareLinkCreationAsync(target.Path, verification.Token).ConfigureAwait(false);
+                if (reviewed.Result.Status == MutationResultStatus.ConfirmedSuccess) return reviewed;
 
                 return Outcome(
                     transport.Status == FileShareLinkTransportStatus.CancellationRequestedAfterSubmission
@@ -216,6 +211,11 @@ public sealed partial class DsmRepository
                         ? MutationErrorCategory.Permission
                         : MutationErrorCategory.Server,
                     diagnosticTag: "file.share.create.preflight-failed");
+            }
+            catch (NotSupportedException)
+            {
+                return Outcome(MutationResultStatus.Unsupported, false, failed: 1,
+                    category: MutationErrorCategory.Unsupported);
             }
             catch (InvalidDataException)
             {
@@ -401,7 +401,8 @@ public sealed partial class DsmRepository
         try
         {
             var current = await LoadAllShareLinksAsync(CancellationToken.None).ConfigureAwait(false);
-            if (!current.Any(item => string.Equals(item.Id, link.Id, StringComparison.Ordinal)))
+            if (transport.Status == FileShareLinkTransportStatus.ResponseReceived &&
+                !current.Any(item => string.Equals(item.Id, link.Id, StringComparison.Ordinal)))
             {
                 RemoveShareDeleteReview(link.Id);
                 return DeleteOutcome(
@@ -435,7 +436,7 @@ public sealed partial class DsmRepository
                 link: link);
         }
 
-        StoreShareDeleteReview(link);
+        StoreShareDeleteReview(link, transport.Status == FileShareLinkTransportStatus.ResponseReceived);
         return DeleteOutcome(
             transport.Status == FileShareLinkTransportStatus.CancellationRequestedAfterSubmission
                 ? MutationResultStatus.CancellationRequestedAfterSubmission
@@ -448,12 +449,13 @@ public sealed partial class DsmRepository
             link: link);
     }
 
-    private async Task<FileShareLinkDeletionOutcome> ReviewShareDeletionAsync(FileShareLink link)
+    private async Task<FileShareLinkDeletionOutcome> ReviewShareDeletionAsync(PendingShareDeletion pending)
     {
+        var link = pending.Link;
         try
         {
             var current = await LoadAllShareLinksAsync(CancellationToken.None).ConfigureAwait(false);
-            if (!current.Any(item => string.Equals(item.Id, link.Id, StringComparison.Ordinal)))
+            if (pending.Accepted && !current.Any(item => string.Equals(item.Id, link.Id, StringComparison.Ordinal)))
             {
                 RemoveShareDeleteReview(link.Id);
                 return DeleteOutcome(
@@ -489,7 +491,8 @@ public sealed partial class DsmRepository
         string.Equals(capability.Name, name, StringComparison.Ordinal) &&
         capability.MinVersion <= version &&
         capability.MaxVersion >= version &&
-        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) &&
+        (string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(capability.RequestFormat, "JSON", StringComparison.OrdinalIgnoreCase)) &&
         SafeCapabilityPath(capability.Path);
 
     private ApiCapability FixedCapability(string name, int version) =>
@@ -650,42 +653,34 @@ public sealed partial class DsmRepository
         }
         var hasPassword = StrictBool(item, "has_password")
             ?? throw new InvalidDataException("file.share.invalid-link-password-state");
-        var expiresOn = StrictExpiry(item);
-        return new FileShareLink(id, path, url, hasPassword, expiresOn);
+        var expiry = ParseShareDate(item, "date_expired", required: true);
+        var available = ParseShareDate(item, "date_available", required: false);
+        return new FileShareLink(id, path, url, hasPassword, expiry.Date)
+        {
+            AvailableOn = available.Date,
+            AvailabilityDateKnown = item.ContainsKey("date_available"),
+            RawAvailableDate = available.Raw,
+            RawExpiryDate = expiry.Raw,
+            Advanced = ParseAdvancedShareDetails(item),
+        };
     }
 
-    private static SubmittedShare SubmittedShareIdentity(FileShareLinkTransportResult transport)
+    private static string? SubmittedShareIdentity(FileShareLinkTransportResult transport)
     {
-        if (transport.Status != FileShareLinkTransportStatus.ResponseReceived)
-        {
-            return new(true, null);
-        }
-        if (transport.Data is not JsonObject data)
-        {
-            return new(false, null);
-        }
-        if (!AllowsSubmittedItem(data))
-        {
-            return new(false, null);
-        }
+        if (transport.Status != FileShareLinkTransportStatus.ResponseReceived ||
+            transport.Data is not JsonObject data || !AllowsSubmittedItem(data)) return null;
         if (data.ContainsKey("links"))
         {
-            if (data.ContainsKey("id") || data["links"] is not JsonArray links)
-            {
-                return new(false, null);
-            }
-            if (links.Count != 1 || links[0] is not JsonObject item || !AllowsSubmittedItem(item))
-            {
-                return new(false, null);
-            }
-            return item.String("id") is { Length: > 0 } nested
-                ? new(false, nested)
-                : new(true, null);
+            if (data.ContainsKey("id") || data["links"] is not JsonArray { Count: 1 } links ||
+                links[0] is not JsonObject item || !AllowsSubmittedItem(item)) return null;
+            return ShareReceiptId(item);
         }
-        return data.String("id") is { Length: > 0 } direct
-            ? new(false, direct)
-            : new(false, null);
+        return ShareReceiptId(data);
     }
+
+    private static string? ShareReceiptId(JsonObject data) =>
+        data["id"] is JsonValue value && value.TryGetValue<string>(out var id) &&
+            !string.IsNullOrWhiteSpace(id) && id == id.Trim() ? id : null;
 
     private static bool AllowsSubmittedItem(JsonObject item) =>
         !item.ContainsKey("error") || StrictInt(item, "error") == 0;
@@ -730,36 +725,6 @@ public sealed partial class DsmRepository
         }
     }
 
-    private static DateOnly? StrictExpiry(JsonObject item)
-    {
-        if (!item.ContainsKey("date_expired") || item["date_expired"] is not JsonValue value)
-        {
-            throw new InvalidDataException("file.share.invalid-link-expiry");
-        }
-        if (StrictLong(value) is { } numeric)
-        {
-            return numeric == 0
-                ? null
-                : throw new InvalidDataException("file.share.invalid-link-expiry");
-        }
-        if (!value.TryGetValue<string>(out var text) || string.IsNullOrEmpty(text))
-        {
-            throw new InvalidDataException("file.share.invalid-link-expiry");
-        }
-        if (text == "0")
-        {
-            return null;
-        }
-        return DateOnly.TryParseExact(
-            text,
-            "yyyy-MM-dd",
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.None,
-            out var parsed)
-                ? parsed
-                : throw new InvalidDataException("file.share.invalid-link-expiry");
-    }
-
     private static bool StrictDsmAbsolutePath(string path) =>
         path.Length > 1 &&
         path.StartsWith('/') &&
@@ -784,7 +749,10 @@ public sealed partial class DsmRepository
         string.Equals(observed.Id, frozen.Id, StringComparison.Ordinal) &&
         string.Equals(observed.Path, frozen.Path, StringComparison.Ordinal) &&
         observed.Url == frozen.Url && observed.HasPassword == frozen.HasPassword &&
-        observed.ExpiresOn == frozen.ExpiresOn;
+        observed.ExpiresOn == frozen.ExpiresOn && observed.AvailableOn == frozen.AvailableOn &&
+        observed.AvailabilityDateKnown == frozen.AvailabilityDateKnown &&
+        observed.RawAvailableDate == frozen.RawAvailableDate && observed.RawExpiryDate == frozen.RawExpiryDate &&
+        ExactAdvancedShareDetails(observed.Advanced, frozen.Advanced);
 
     private static bool ValidShareLink(FileShareLink link) =>
         !string.IsNullOrWhiteSpace(link.Id) && link.Id.Length <= 512 &&
@@ -818,12 +786,14 @@ public sealed partial class DsmRepository
             return !state.ActiveDeletePaths.Contains(key) &&
                 !state.Reviews.Any(item =>
                     item.Key.ProfileId == _profile.Id &&
-                    string.Equals(item.Value.Path, path, StringComparison.Ordinal)) &&
+                    string.Equals(item.Value.Link.Path, path, StringComparison.Ordinal)) &&
+                !state.Creations.ContainsKey(key) &&
+                !state.Edits.Any(item => item.Key.ProfileId == _profile.Id && item.Value.Request.Link.Path == path) &&
                 state.ActiveSharePaths.Add(key);
         }
     }
 
-    private bool TryClaimShareDeletion(FileShareLink link, out FileShareLink? pendingReview)
+    private bool TryClaimShareDeletion(FileShareLink link, out PendingShareDeletion? pendingReview)
     {
         var state = ShareDeleteReviewState();
         lock (state.Sync)
@@ -831,7 +801,9 @@ public sealed partial class DsmRepository
             pendingReview = null;
             var idKey = (_profile.Id, link.Id);
             var pathKey = (_profile.Id, link.Path);
-            if (state.ActiveSharePaths.Contains(pathKey) ||
+            if (state.Creations.ContainsKey(pathKey) ||
+                state.Edits.Any(item => item.Key.ProfileId == _profile.Id && item.Value.Request.Link.Path == link.Path) ||
+                state.ActiveSharePaths.Contains(pathKey) ||
                 state.ActiveDeleteIds.Contains(idKey) ||
                 state.ActiveDeletePaths.Contains(pathKey))
             {
@@ -839,7 +811,7 @@ public sealed partial class DsmRepository
             }
             if (state.Reviews.TryGetValue(idKey, out var pending))
             {
-                if (!ExactShareLink(pending, link))
+                if (!ExactShareLink(pending.Link, link))
                 {
                     return false;
                 }
@@ -847,7 +819,7 @@ public sealed partial class DsmRepository
             }
             else if (state.Reviews.Any(item =>
                 item.Key.ProfileId == _profile.Id &&
-                string.Equals(item.Value.Path, link.Path, StringComparison.Ordinal)))
+                string.Equals(item.Value.Link.Path, link.Path, StringComparison.Ordinal)))
             {
                 return false;
             }
@@ -857,12 +829,12 @@ public sealed partial class DsmRepository
         }
     }
 
-    private void StoreShareDeleteReview(FileShareLink link)
+    private void StoreShareDeleteReview(FileShareLink link, bool accepted)
     {
         var state = ShareDeleteReviewState();
         lock (state.Sync)
         {
-            state.Reviews[(_profile.Id, link.Id)] = link;
+            state.Reviews[(_profile.Id, link.Id)] = new(link, accepted);
         }
     }
 
@@ -875,8 +847,18 @@ public sealed partial class DsmRepository
         }
     }
 
-    private FileShareDeleteReviewState ShareDeleteReviewState() =>
-        FileShareDeleteReviewStates.GetValue(_api, static _ => new());
+    private FileShareDeleteReviewState ShareDeleteReviewState()
+    {
+        var registry = FileShareDeleteReviewStates.GetValue(_api, static _ => new());
+        // 配置编号不单独代表账号或 NAS；改账号/地址后不能读取或推进旧目标的结果。
+        var owner = (_profile.Id, _profile.Username, _profile.Host, _profile.Port);
+        lock (registry.Sync)
+        {
+            if (!registry.Workspaces.TryGetValue(owner, out var state))
+                registry.Workspaces.Add(owner, state = new());
+            return state;
+        }
+    }
 
     private void ReleaseShareDeletion(FileShareLink link)
     {
@@ -910,7 +892,8 @@ public sealed partial class DsmRepository
     private static string ShareLinkRequiredString(JsonObject item, string key)
     {
         var value = item.String(key);
-        if (string.IsNullOrEmpty(value) || !string.Equals(value, value.Trim(), StringComparison.Ordinal))
+        if (string.IsNullOrEmpty(value) || value.Contains('\0') ||
+            key is not ("path" or "name") && !string.Equals(value, value.Trim(), StringComparison.Ordinal))
         {
             throw new InvalidDataException("file.share.invalid-string-field");
         }
@@ -972,12 +955,20 @@ public sealed partial class DsmRepository
         bool CanWrite,
         bool CanDelete);
 
-    private readonly record struct SubmittedShare(bool AllowsMissingIdFallback, string? Id);
+    private sealed record PendingShareDeletion(FileShareLink Link, bool Accepted);
+
+    private sealed class FileShareReviewRegistry
+    {
+        public object Sync { get; } = new();
+        public Dictionary<(Guid ProfileId, string Username, string Host, int? Port), FileShareDeleteReviewState> Workspaces { get; } = [];
+    }
 
     private sealed class FileShareDeleteReviewState
     {
         public object Sync { get; } = new();
-        public Dictionary<(Guid ProfileId, string Id), FileShareLink> Reviews { get; } = [];
+        public Dictionary<(Guid ProfileId, string Id), PendingShareDeletion> Reviews { get; } = [];
+        public Dictionary<(Guid ProfileId, string Path), PendingShareCreation> Creations { get; } = [];
+        public Dictionary<(Guid ProfileId, string Id), PendingShareEdit> Edits { get; } = [];
         public HashSet<(Guid ProfileId, string Path)> ActiveSharePaths { get; } = [];
         public HashSet<(Guid ProfileId, string Id)> ActiveDeleteIds { get; } = [];
         public HashSet<(Guid ProfileId, string Path)> ActiveDeletePaths { get; } = [];

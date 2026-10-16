@@ -137,7 +137,7 @@ public sealed record DownloadTaskPage(
     IReadOnlyList<DownloadTask> Tasks,
     int SourceOffset,
     int SourceRecordCount,
-    int SourceTotal,
+    int? SourceTotal,
     int? NextOffset,
     bool HasMore);
 
@@ -252,9 +252,7 @@ public sealed class DownloadTaskFileCreateRequest
         {
             throw new ArgumentException("download.create.file.invalid_name", nameof(fileName));
         }
-        var normalizedDestination = string.IsNullOrWhiteSpace(destination)
-            ? null
-            : destination.Trim();
+        var normalizedDestination = string.IsNullOrEmpty(destination) ? null : destination;
         if (normalizedDestination is not null &&
             (normalizedDestination.Length == 0 || normalizedDestination.Any(char.IsControl)))
         {
@@ -266,7 +264,7 @@ public sealed class DownloadTaskFileCreateRequest
         Length = length;
         FileName = fileName.Trim();
         Destination = normalizedDestination;
-        if (unzipPassword?.Contains('\0') == true) throw new ArgumentException("download.create.file.invalid_password", nameof(unzipPassword));
+        if (unzipPassword?.IndexOfAny(['\r', '\n', '\0']) >= 0) throw new ArgumentException("download.create.file.invalid_password", nameof(unzipPassword));
         UnzipPassword = string.IsNullOrEmpty(unzipPassword) ? null : unzipPassword;
     }
 

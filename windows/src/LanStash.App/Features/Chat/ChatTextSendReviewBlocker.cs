@@ -5,12 +5,15 @@ namespace LanStash.App.Features.Chat;
 public sealed record ChatTextSendReviewBlock(
     Guid ProfileId,
     string ConversationId,
-    string NormalizedText);
+    string NormalizedText,
+    string? ThreadId = null,
+    Guid? RequestId = null,
+    string? AccountIdentity = null);
 
 public sealed class ChatTextSendReviewBlocker
 {
     private readonly object _sync = new();
-    private readonly Dictionary<(Guid ProfileId, string ConversationId, string NormalizedText),
+    private readonly Dictionary<(Guid ProfileId, string ConversationId, string NormalizedText, string? ThreadId, string? AccountIdentity),
         ChatTextSendReviewBlock> _blocked = [];
 
     public static ChatTextSendReviewBlocker Current { get; } = new();
@@ -18,11 +21,13 @@ public sealed class ChatTextSendReviewBlocker
     public ChatTextSendReviewBlock? Find(
         Guid profileId,
         string conversationId,
-        string normalizedText)
+        string normalizedText,
+        string? threadId = null,
+        string? accountIdentity = null)
     {
         lock (_sync)
         {
-            return _blocked.GetValueOrDefault((profileId, conversationId, normalizedText));
+            return _blocked.GetValueOrDefault((profileId, conversationId, normalizedText, threadId, accountIdentity));
         }
     }
 
@@ -30,7 +35,7 @@ public sealed class ChatTextSendReviewBlocker
     {
         lock (_sync)
         {
-            _blocked[(review.ProfileId, review.ConversationId, review.NormalizedText)] = review;
+            _blocked[(review.ProfileId, review.ConversationId, review.NormalizedText, review.ThreadId, review.AccountIdentity)] = review;
         }
     }
 
@@ -38,7 +43,7 @@ public sealed class ChatTextSendReviewBlocker
     {
         lock (_sync)
         {
-            _blocked.Remove((review.ProfileId, review.ConversationId, review.NormalizedText));
+            _blocked.Remove((review.ProfileId, review.ConversationId, review.NormalizedText, review.ThreadId, review.AccountIdentity));
         }
     }
 

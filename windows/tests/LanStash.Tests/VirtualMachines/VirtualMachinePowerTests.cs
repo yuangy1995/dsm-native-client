@@ -42,13 +42,18 @@ public sealed class VirtualMachinePowerTests
         await recreated.ControlPowerAsync(request); Assert.Single(f.Writes);
         Assert.Equal(MutationErrorCategory.Conflict, (await recreated.ControlPowerAsync(request with { RequestId = Guid.NewGuid() })).ErrorCategory);
         f.Status = "running"; f.Name = "renamed-after-submission";
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await recreated.ReviewPowerAsync("guest-a"))!.Status);
+        Assert.Single(await recreated.GetPowerRecoveriesAsync());
+        f.Name = request.Baseline.Name;
         Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await recreated.ReviewPowerAsync("guest-a"))!.Status); Assert.Single(f.Writes);
     }
     [Fact]
-    public async Task LostReplyCanOnlyBeResolvedByReadback()
+    public async Task LostReplyCannotBeClaimedFromMatchingState()
     {
         using var f = new Fixture { LoseReply = true }; var request = f.Request();
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Repository.ControlPowerAsync(request)).Status); Assert.Single(f.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Repository.ControlPowerAsync(request)).Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Recreate().ReviewPowerAsync("guest-a"))!.Status);
+        Assert.Single(await f.Repository.GetPowerRecoveriesAsync()); Assert.Single(f.Writes);
     }
     [Theory]
     [InlineData(105, MutationResultStatus.PermissionDenied)] [InlineData(1003, MutationResultStatus.ConfirmedFailure)]
@@ -95,7 +100,8 @@ public sealed class VirtualMachinePowerTests
         release.SetResult(); await first; Assert.Single(f.Writes);
         using var cancelled = new Fixture(); var other = cancelled.Request(); using var cts = new CancellationTokenSource(); cancelled.AfterWrite = cts.Cancel;
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, (await cancelled.Repository.ControlPowerAsync(other, cts.Token)).Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await cancelled.Recreate().ReviewPowerAsync("guest-a"))!.Status); Assert.Single(cancelled.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await cancelled.Recreate().ReviewPowerAsync("guest-a"))!.Status);
+        Assert.Single(await cancelled.Repository.GetPowerRecoveriesAsync()); Assert.Single(cancelled.Writes);
     }
     [Fact]
     public async Task PublicEntryRequiresConfirmationCapabilityAndUncancelledPreflight()

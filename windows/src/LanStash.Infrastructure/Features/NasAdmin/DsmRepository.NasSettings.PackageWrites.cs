@@ -5,68 +5,65 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
+    public bool AllowsPackageRemoval { get; init; }
     public NasPackageControlAvailability PackageControlAvailability => new(
-        NasSettingsWriteAvailability.CanPackageControl && SecurityCapability("SYNO.Core.Package.Control", 1) is not null,
-        NasSettingsWriteAvailability.CanPackageControl && SecurityCapability("SYNO.Core.Package.Uninstallation", 1) is not null);
+        NasSettingsWriteAvailability.CanPackageControl && SecurityCapability("SYNO.Core.Package", 1) is not null && SecurityCapability("SYNO.Core.Package.Control", 1) is not null,
+        AllowsPackageRemoval && NasSettingsWriteAvailability.CanPackageControl && SecurityCapability("SYNO.Core.Package", 1) is not null && SecurityCapability("SYNO.Core.Package.Uninstallation", 1) is not null);
 
     public async Task<IReadOnlyList<NasPackageRecoveryInfo>> GetPackageRecoveriesAsync(CancellationToken cancellationToken = default)
     {
-        if (_profile.Id != _session.ProfileId) throw InvalidNasServiceSettings();
-        var shared = ServiceMutations;
-        await shared.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterNasManagementAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var scope = ServiceScope();
-            return Array.AsReadOnly(shared.PackagePending.Where(pair => pair.Key.Scope == scope)
-                .Select(pair => new NasPackageRecoveryInfo(pair.Value.PackageId, pair.Value.DisplayName, pair.Value.Action)).ToArray());
+            return OwnedPackageRecords.Where(entry => entry.Package!.Kind == NasPackageActivityKind.Control && entry.Package.Stage == NasPackageStepStage.Unknown)
+                .Select(entry => new NasPackageRecoveryInfo(
+                    NasManagementRecords.PackageTargets.TryGetValue(entry.Id, out var target) ? target.Id : "operation:" + entry.Id,
+                    NasManagementRecords.PackageTargets.TryGetValue(entry.Id, out target) ? target.Name : "", entry.Package!.Action!.Value)
+                    { RequestId = entry.Id }).ToArray();
         }
-        finally { shared.Gate.Release(); }
+        finally { NasManagementRecords.Gate.Release(); }
     }
     public Task<MutationResult> ControlPackageAsync(NasPackageMutationRequest request, CancellationToken cancellationToken = default) =>
-        NasSettingsWriteAvailability.CanPackageControl ? ExecutePackageMutationAsync(request, cancellationToken) :
-            Task.FromResult(UnsupportedResult("controlPackage"));
+        (request.Action == NasPackageAction.Uninstall ? PackageControlAvailability.CanUninstall : PackageControlAvailability.CanStartStop)
+            ? ExecutePackageMutationAsync(request, cancellationToken) : Task.FromResult(UnsupportedResult("controlPackage"));
 
     internal async Task<MutationResult> ExecutePackageMutationAsync(NasPackageMutationRequest request, CancellationToken token = default,
         Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, _packageTrackingLifetime.Token); token = lifetime.Token;
         var operation = PackageOperationName(request?.Action ?? NasPackageAction.Start);
         if (token.IsCancellationRequested) return CancelledBeforeSubmissionResult(operation);
         if (request is null || request.Baseline is null || !StablePackageId(request.Baseline.Id) || !Enum.IsDefined(request.Action) ||
             !request.RiskConfirmed || request.RequestId == Guid.Empty || request.ProfileId != _profile.Id ||
             _profile.Id != _session.ProfileId || string.IsNullOrWhiteSpace(_session.Sid) || !PackageActionAllowed(request.Baseline, request.Action))
             return ServicePreflightFailure(operation, MutationErrorCategory.Validation);
-        var list = SecurityCapability("SYNO.Core.Package", 2);
-        var control = SecurityCapability(request.Action == NasPackageAction.Uninstall ? "SYNO.Core.Package.Uninstallation" : "SYNO.Core.Package.Control", 1);
-        if (list is null || control is null) return UnsupportedResult(operation);
+        if (SecurityCapability("SYNO.Core.Package", 2) is null || SecurityCapability("SYNO.Core.Package", 1) is null ||
+            SecurityCapability(request.Action == NasPackageAction.Uninstall ? "SYNO.Core.Package.Uninstallation" : "SYNO.Core.Package.Control", 1) is null)
+            return UnsupportedResult(operation);
         request = request with { Baseline = request.Baseline with
         {
-            AvailableOperations = request.Baseline.AvailableOperations is null ? null : Array.AsReadOnly(request.Baseline.AvailableOperations.ToArray()),
-            DesktopApps = request.Baseline.DesktopApps is null ? null : Array.AsReadOnly(request.Baseline.DesktopApps.ToArray()),
+            AvailableOperations = request.Baseline.AvailableOperations?.ToArray(), DesktopApps = request.Baseline.DesktopApps?.ToArray(),
         } };
-        var scope = ServiceScope(); var shared = ServiceMutations;
         var signature = ServiceHash(JsonSerializer.Serialize(new { request.Action, Baseline = PackageSnapshotSignature(request.Baseline) }));
-        try
-        {
-            if (!await shared.Gate.WaitAsync(0, token).ConfigureAwait(false)) return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
-        }
+        try { await EnterNasManagementAsync(token).ConfigureAwait(false); }
         catch (OperationCanceledException) { return CancelledBeforeSubmissionResult(operation); }
+        catch (NasHardwareEditException error) { return ServicePreflightFailure(operation, error.Category, true); }
+        catch { return ServicePreflightFailure(operation, MutationErrorCategory.Unknown); }
         try
         {
-            if (shared.Operations.TryGetValue(request.RequestId, out var previous))
-            {
-                if (previous.Scope != scope || previous.Signature != signature) return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
-                return previous.Final ?? await ReviewNasSettingsOperationAsync(previous, token).ConfigureAwait(false);
-            }
-            if (shared.PackagePending.ContainsKey((scope, request.Baseline.Id))) return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
+            NasManagementRecord? entry;
+            try { entry = ExistingPackageRequest(request.RequestId, signature); }
+            catch (NasPackageCenterException error) { return ServicePreflightFailure(operation, error.Category, true); }
+            if (entry is not null)
+                return entry.Package!.Stage == NasPackageStepStage.Unknown
+                    ? await ReconcilePackageAsync(entry, 1, token, false, delay ?? Task.Delay).ConfigureAwait(false) : PackageControlResult(entry);
             try
             {
-                await PrepareServiceSettingsAsync(token).ConfigureAwait(false);
-                if (!_nasServiceSessionVerified) return UnsupportedResult(operation);
-                if (!_nasServiceAdministrator) return ServicePreflightFailure(operation, MutationErrorCategory.Permission);
+                await RequirePackagePermissionAsync(token).ConfigureAwait(false);
                 var current = (await LoadPackagesAsync(token).ConfigureAwait(false)).FirstOrDefault(item => item.Id == request.Baseline.Id);
                 if (current is null || !PackageActionAllowed(current, request.Action) || PackageSnapshotSignature(current) != PackageSnapshotSignature(request.Baseline))
                     return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
-                await SecurityCallAsync(list, "feasibility_check", new()
+                await PackageCallAsync("SYNO.Core.Package", 1, "feasibility_check", new()
                 {
                     ["type"] = request.Action switch { NasPackageAction.Start => "start_check", NasPackageAction.Stop => "stop_check", _ => "uninstall_check" },
                     ["packages"] = new[] { current.Id },
@@ -74,83 +71,79 @@ public sealed partial class DsmRepository
                 token.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException) { return CancelledBeforeSubmissionResult(operation); }
+            catch (NasPackageCenterException error) { return ServicePreflightFailure(operation, error.Category); }
             catch (DsmException error) { return ServicePreflightFailure(operation, ServiceErrorCategory(error)); }
-            catch (Exception) { return ServicePreflightFailure(operation, MutationErrorCategory.Network); }
+            catch { return ServicePreflightFailure(operation, MutationErrorCategory.Network); }
 
-            var state = new NasPackageOperation(scope, signature, request.Baseline.Id, request.Baseline.Name, request.Action);
-            shared.Operations.Add(request.RequestId, state); shared.PackagePending.Add((scope, state.PackageId), state);
-            var parameters = new Dictionary<string, object> { ["id"] = state.PackageId };
+            entry = NewPackageRecord(request.RequestId, signature, NasPackageActivityKind.Control,
+                ServiceHash(request.Baseline.Id), PackageInstallationIdentity(request.Baseline));
+            entry.Package!.Action = request.Action;
+            NasManagementRecords.PackageTargets[entry.Id] = (request.Baseline.Id, request.Baseline.Name);
+            var parameters = new Dictionary<string, object> { ["id"] = request.Baseline.Id };
             if (request.Action != NasPackageAction.Stop) parameters["dsm_apps"] = request.Baseline.DesktopApps!;
             try
             {
-                await SecurityCallAsync(control, request.Action.ToString().ToLowerInvariant(), parameters, token).ConfigureAwait(false);
-                state.Accepted = true;
+                await SubmitPackageCommandAsync(entry, PackageSubmissionKind.Control,
+                    request.Action == NasPackageAction.Uninstall ? "SYNO.Core.Package.Uninstallation" : "SYNO.Core.Package.Control", 1,
+                    request.Action.ToString().ToLowerInvariant(), parameters, token).ConfigureAwait(false);
             }
-            catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error) && error.Code is (102 or 103 or 104 or 105 or 106 or 107 or 119 or 404 or 408 or 900))
-            {
-                state.Rejection = ServiceErrorCategory(error);
-            }
-            catch (Exception) { /* 可能已提交，只允许回读，禁止再次发起启动/停止/卸载。 */ }
-            return await ReconcilePackageAsync(state, state.Accepted ? 10 : 3, token, true, delay ?? Task.Delay).ConfigureAwait(false);
+            catch (OperationCanceledException) when (!entry.Package.Submitted) { return CancelledBeforeSubmissionResult(operation); }
+            catch (NasPackageCenterException error) when (!entry.Package.Submitted) { return ServicePreflightFailure(operation, error.Category); }
+            catch { return PackageControlResult(entry); }
+            return await ReconcilePackageAsync(entry, request.Action == NasPackageAction.Uninstall ? 1 : entry.Package.Accepted ? 10 : 3,
+                token, true, delay ?? Task.Delay).ConfigureAwait(false);
         }
-        finally { shared.Gate.Release(); }
+        finally { NasManagementRecords.Gate.Release(); }
     }
-
     public async Task<MutationResult?> ReviewPackageAsync(string packageId, CancellationToken cancellationToken = default)
     {
         if (!StablePackageId(packageId) || _profile.Id != _session.ProfileId) return ServicePreflightFailure("controlPackage", MutationErrorCategory.Validation);
-        var shared = ServiceMutations;
-        try
-        {
-            if (!await shared.Gate.WaitAsync(0, cancellationToken).ConfigureAwait(false)) return ServicePreflightFailure("controlPackage", MutationErrorCategory.Conflict, true);
-        }
+        try { await EnterNasManagementAsync(cancellationToken).ConfigureAwait(false); }
         catch (OperationCanceledException) { return CancelledBeforeSubmissionResult("controlPackage"); }
+        catch (NasHardwareEditException error) { return ServicePreflightFailure("controlPackage", error.Category, true); }
         try
         {
-            return shared.PackagePending.TryGetValue((ServiceScope(), packageId), out var state)
-                ? await ReconcilePackageAsync(state, 1, cancellationToken, false, Task.Delay).ConfigureAwait(false) : null;
+            var record = OwnedPackageRecords.FirstOrDefault(entry => entry.Package!.Kind == NasPackageActivityKind.Control &&
+                entry.Package.Stage == NasPackageStepStage.Unknown && (entry.Package.TargetDigest == ServiceHash(packageId) || packageId == "operation:" + entry.Id));
+            return record is null ? null : await ReconcilePackageAsync(record, 1, cancellationToken, false, Task.Delay).ConfigureAwait(false);
         }
-        finally { shared.Gate.Release(); }
+        finally { NasManagementRecords.Gate.Release(); }
     }
-
-    private async Task<MutationResult> ReconcilePackageAsync(NasPackageOperation state, int attempts, CancellationToken token,
+    private async Task<MutationResult> ReconcilePackageAsync(NasManagementRecord entry, int attempts, CancellationToken token,
         bool recoverCancellation, Func<TimeSpan, CancellationToken, Task> delay)
     {
-        var operation = PackageOperationName(state.Action);
-        MutationResult Finish(MutationResult value)
-        { state.Final = value; ServiceMutations.PackagePending.Remove((state.Scope, state.PackageId)); return value; }
-        if (state.Rejection is { } rejection)
-            return Finish(new(1, rejection == MutationErrorCategory.Permission ? MutationResultStatus.PermissionDenied : MutationResultStatus.ConfirmedFailure,
-                operation, true, false, new(0, 1, 0), rejection));
-        async Task<bool> Matches(CancellationToken readToken)
-        {
-            var items = await LoadPackagesAsync(readToken).ConfigureAwait(false);
-            var current = items.FirstOrDefault(item => item.Id == state.PackageId);
-            return state.Action == NasPackageAction.Uninstall ? current is null : current is not null &&
-                (state.Action == NasPackageAction.Start ? current.IsRunning : current.IsStopped);
-        }
-        bool verified = false;
+        if (entry.Package!.Stage != NasPackageStepStage.Unknown) return PackageControlResult(entry);
         for (var index = 0; index < attempts && !token.IsCancellationRequested; index++)
         {
             try
             {
                 if (index > 0) await delay(TimeSpan.FromSeconds(1), token).ConfigureAwait(false);
-                verified = await Matches(token).ConfigureAwait(false);
-                if (verified) break;
+                await ReviewPackageRecordCoreAsync(entry, token).ConfigureAwait(false);
+                if (entry.Package.Stage != NasPackageStepStage.Unknown) break;
             }
-            catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
-            catch (Exception) { /* 有界只读恢复不记录原始响应。 */ }
+            catch (OperationCanceledException) { break; }
+            catch (Exception error) when (PackageTrustOrPermissionFailure(error) || NasManagementRecords.Failed) { break; }
+            catch { /* 无正文或读取失败不解除原操作保护。 */ }
         }
-        if (!verified && token.IsCancellationRequested && recoverCancellation)
+        if (entry.Package.Stage == NasPackageStepStage.Unknown && token.IsCancellationRequested && recoverCancellation)
         {
-            // 已提交取消后按契约只做一次独立、有超时的回读，绝不重放写请求。
             using var recovery = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            try { verified = await Matches(recovery.Token).ConfigureAwait(false); }
-            catch (Exception) { }
+            try { await ReviewPackageRecordCoreAsync(entry, recovery.Token).ConfigureAwait(false); }
+            catch { }
         }
-        if (verified) return Finish(new(1, MutationResultStatus.ConfirmedSuccess, operation, true, false, new(1, 0, 0)));
-        return new(1, token.IsCancellationRequested ? MutationResultStatus.CancellationRequestedAfterSubmission : MutationResultStatus.SubmittedButUnverified,
-            operation, true, true, new(0, 0, 1), MutationErrorCategory.Network, diagnosticTag: "package.result-unverified");
+        return PackageControlResult(entry, token.IsCancellationRequested);
+    }
+    private static MutationResult PackageControlResult(NasManagementRecord entry, bool cancelled = false)
+    {
+        var value = entry.Package!; var operation = PackageOperationName(value.Action!.Value);
+        return value.Stage switch
+        {
+            NasPackageStepStage.Confirmed => new(1, MutationResultStatus.ConfirmedSuccess, operation, true, false, new(1, 0, 0)),
+            NasPackageStepStage.Rejected => new(1, value.Error == MutationErrorCategory.Permission ? MutationResultStatus.PermissionDenied : MutationResultStatus.ConfirmedFailure,
+                operation, value.Submitted, false, new(0, 1, 0), value.Error),
+            _ => new(1, cancelled ? MutationResultStatus.CancellationRequestedAfterSubmission : MutationResultStatus.SubmittedButUnverified,
+                operation, value.Submitted, true, new(0, 0, 1), value.Error ?? MutationErrorCategory.Network, diagnosticTag: "package.result-unverified"),
+        };
     }
     private static bool PackageActionAllowed(NasPackageSummary value, NasPackageAction action) => action switch
     { NasPackageAction.Start => value.CanStart, NasPackageAction.Stop => value.CanStop, NasPackageAction.Uninstall => value.CanUninstall, _ => false };
@@ -158,16 +151,7 @@ public sealed partial class DsmRepository
     { NasPackageAction.Start => "startPackage", NasPackageAction.Stop => "stopPackage", NasPackageAction.Uninstall => "uninstallPackage", _ => "controlPackage" };
     private static string PackageSnapshotSignature(NasPackageSummary value) => JsonSerializer.Serialize(new
     {
-        value.Id, value.Name, value.Version, value.Status, value.State, value.Startable, value.InstallType, value.UninstallAllowed,
-        Operations = value.AvailableOperations?.Order(StringComparer.Ordinal), Apps = value.DesktopApps?.Order(StringComparer.Ordinal),
+        value.Id, value.Version, value.Status, value.State, value.Startable, value.InstallType, value.InstalledAt, value.UninstallAllowed,
+        value.HasOperationObject, Operations = value.AvailableOperations?.Order(StringComparer.Ordinal), Apps = value.DesktopApps?.Order(StringComparer.Ordinal),
     });
-    private sealed class NasPackageOperation(string scope, string signature, string packageId, string displayName, NasPackageAction action)
-        : NasSettingsOperation(scope, signature, NasServiceSettingsKind.Packages)
-    {
-        public string PackageId { get; } = packageId;
-        public string DisplayName { get; } = displayName;
-        public NasPackageAction Action { get; } = action;
-        public bool Accepted { get; set; }
-        public MutationErrorCategory? Rejection { get; set; }
-    }
 }

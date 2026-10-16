@@ -61,6 +61,16 @@ public sealed class VirtualMachineSettingsViewModelTests
         await model.ReloadAsync(); Assert.False(model.CanEdit); Assert.False(model.CanConfirm); Assert.Equal(1, fake.Writes);
     }
     [Fact]
+    public async Task AuthenticationAfterSavingShowsReconnectAndPreservesUnknown()
+    {
+        var (fake, model) = await Ready(); using var owned = model;
+        fake.WriteTask = Task.FromResult(new MutationResult(1, MutationResultStatus.SubmittedButUnverified, "saveVirtualMachineSettings", true, true,
+            new(0, 0, 1), MutationErrorCategory.Authentication));
+        model.ChangeDraft(model.Draft! with { Name = "Changed" }); model.Confirm(true); await model.SubmitAsync(); await model.SubmitAsync();
+        Assert.Equal(LanStash.App.Localization.LocalizationService.Current.Get("VmSettingsSignIn"), model.Feedback);
+        Assert.Equal(1, fake.Writes); Assert.False(model.CanConfirm); Assert.Equal(1, model.LastResult!.Counts.Unknown);
+    }
+    [Fact]
     public async Task ReadFailureAndWrongIdentityDoNotEnableEditing()
     {
         var (fake, model) = await Ready(); using var owned = model; fake.FailRead = true;

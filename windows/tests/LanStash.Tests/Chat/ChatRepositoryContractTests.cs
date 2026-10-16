@@ -27,7 +27,9 @@ public sealed class ChatRepositoryContractTests
             invalidWriteCapabilities);
 
         Assert.Equal(ChatAvailabilityStatus.Available, complete.Availability.Status);
-        Assert.Equal(7, complete.Availability.SupportedFeatures.Count);
+        Assert.Equal(9, complete.Availability.SupportedFeatures.Count);
+        Assert.Contains(ChatReadFeature.MessageSearch, complete.Availability.SupportedFeatures);
+        Assert.Contains(ChatReadFeature.ThreadedReplies, complete.Availability.SupportedFeatures);
         Assert.Contains(ChatReadFeature.PinnedMessages, complete.Availability.SupportedFeatures);
         Assert.Contains(ChatWriteFeature.TextMessage, complete.Availability.SupportedWriteFeatures);
         Assert.Contains(ChatWriteFeature.AttachmentMessage, complete.Availability.SupportedWriteFeatures);
@@ -199,7 +201,7 @@ public sealed class ChatRepositoryContractTests
                 new JsonObject
                 {
                     ["post_id"] = "older",
-                    ["channel_id"] = "channel-1",
+                    ["channel_id"] = "1",
                     ["creator_id"] = "u-2",
                     ["creator_name"] = "Other",
                     ["create_at"] = 10,
@@ -211,7 +213,7 @@ public sealed class ChatRepositoryContractTests
                 new JsonObject
                 {
                     ["post_id"] = "newer",
-                    ["channel_id"] = "channel-1",
+                    ["channel_id"] = "1",
                     ["creator_id"] = "u-1",
                     ["create_at"] = 11,
                     ["last_pin_at"] = 30,
@@ -220,19 +222,20 @@ public sealed class ChatRepositoryContractTests
                 new JsonObject
                 {
                     ["post_id"] = "not-pinned",
-                    ["channel_id"] = "channel-1",
+                    ["channel_id"] = "1",
                     ["message"] = "Not pinned",
                 })
         });
 
-        var values = await CreateRepository(api).ListPinnedMessagesAsync(" channel-1 ");
+        var values = await CreateRepository(api).ListPinnedMessagesAsync(" 1 ");
 
         Assert.Equal(new[] { "newer", "older" }, values.Select(value => value.Id));
         Assert.Equal("Other", values[1].SenderDisplayName);
         Assert.Equal("Older announcement", values[1].Text);
         var request = Assert.Single(api.Requests);
         AssertWire(request, "SYNO.Chat.Post", "search", 5, 6);
-        Assert.Equal("channel-1", request.Parameters["channel_id"]);
+        Assert.Equal("[1]", request.Parameters["in"]);
+        Assert.DoesNotContain("channel_id", request.Parameters.Keys);
         Assert.Equal("0", request.Parameters["offset"]);
         Assert.Equal("100", request.Parameters["limit"]);
         Assert.Equal("[\"pin\"]", request.Parameters["has"]);
@@ -248,12 +251,12 @@ public sealed class ChatRepositoryContractTests
             ["posts"] = new JsonArray(new JsonObject
             {
                 ["post_id"] = "foreign",
-                ["channel_id"] = "channel-2",
+                ["channel_id"] = "2",
                 ["last_pin_at"] = 20,
             })
         });
         await Assert.ThrowsAsync<DsmException>(() =>
-            CreateRepository(foreignApi).ListPinnedMessagesAsync("channel-1"));
+            CreateRepository(foreignApi).ListPinnedMessagesAsync("1"));
 
         var unsupportedCapabilities = Capabilities();
         unsupportedCapabilities["SYNO.Chat.Post"] =
@@ -261,7 +264,7 @@ public sealed class ChatRepositoryContractTests
         var unsupportedApi = new RecordingApiClient(_ => throw new InvalidOperationException());
         await Assert.ThrowsAsync<DsmException>(() =>
             CreateRepository(unsupportedApi, unsupportedCapabilities)
-                .ListPinnedMessagesAsync("channel-1"));
+                .ListPinnedMessagesAsync("1"));
 
         Assert.Single(foreignApi.Requests);
         Assert.Empty(unsupportedApi.Requests);
@@ -281,7 +284,7 @@ public sealed class ChatRepositoryContractTests
         var users = await repository.ListUsersAsync();
         var conversations = await repository.ListConversationsAsync();
 
-        Assert.Equal(ProfileId, repository.ProfileId);
+        Assert.Equal(api.TestProfileId, repository.ProfileId);
         Assert.Equal("Current", users[0].DisplayName);
         Assert.True(users[0].IsCurrentUser);
         var conversation = Assert.Single(conversations);
@@ -297,46 +300,63 @@ public sealed class ChatRepositoryContractTests
     }
 
     [Fact]
-    public async Task PostWireUsesExactChannelLimitAndRawOffsetParameters()
+    public async Task PostWireUsesVersionFiveAndMessageCursor()
     {
-        var api = new RecordingApiClient(request => Posts(
-            7,
-            20,
-            Message("p-1", "visible"),
-            Auxiliary("helper"),
-            Message("p-2", "visible too")));
-
-        var page = await CreateRepository(api).ListMessagesAsync("channel-1", "7", 250);
-
+        var api = new RecordingApiClient(_ => Posts(7, 20,
+            Message("p-1", "visible", 2), Auxiliary("helper"), Message("p-2", "visible too", 4), Message("anchor", "anchor", 5)));
+        var page = await CreateRepository(api).ListMessagesAsync("channel-1", "anchor", 3);
         var request = Assert.Single(api.Requests);
-        AssertWire(request, "SYNO.Chat.Post", "list", 8, 3);
+        AssertWire(request, "SYNO.Chat.Post", "list", 5, 5);
         Assert.Equal("channel-1", request.Parameters["channel_id"]);
-        Assert.Equal("100", request.Parameters["limit"]);
-        Assert.Equal("7", request.Parameters["offset"]);
-        Assert.Equal(7, page.SourceOffset);
-        Assert.Equal(3, page.SourceRecordCount);
+        Assert.Equal("3", request.Parameters["prev_count"]);
+        Assert.Equal("0", request.Parameters["next_count"]);
+        Assert.Equal("0", request.Parameters["thread_id"]);
+        Assert.Equal("anchor", request.Parameters["post_id"]);
+        Assert.DoesNotContain("offset", request.Parameters.Keys);
+        Assert.DoesNotContain("limit", request.Parameters.Keys);
+        Assert.Equal(0, page.SourceOffset);
+        Assert.Equal(4, page.SourceRecordCount);
         Assert.Equal(20, page.SourceTotal);
-        Assert.Equal("10", page.PreviousCursor);
+        Assert.Equal("p-1", page.PreviousCursor);
         Assert.True(page.HasMoreBefore);
         Assert.Equal(new[] { "p-1", "p-2" }, page.Messages.Select(message => message.Id));
     }
 
     [Fact]
-    public async Task DuplicateMessageIdsAreNotCollapsedOrUsedAsCursor()
+    public async Task AuxiliaryOldestRecordAdvancesCursorWithoutInventingVisibleMessages()
     {
-        var api = new RecordingApiClient(_ => Posts(
-            0,
-            4,
-            Message("same", "first", 2),
-            Message("same", "second", 1),
-            Auxiliary("helper")));
+        var auxiliary = Auxiliary("helper"); auxiliary["create_at"] = 0;
+        var api = new RecordingApiClient(_ => Posts(0, 2, Message("visible", "text"), auxiliary));
+        var page = await CreateRepository(api).ListMessagesAsync("channel-1", null, 2);
+        Assert.Equal("helper", page.PreviousCursor);
+        Assert.Equal("visible", Assert.Single(page.Messages).Id);
+        Assert.DoesNotContain("post_id", Assert.Single(api.Requests).Parameters.Keys);
+    }
 
-        var page = await CreateRepository(api).ListMessagesAsync("channel-1", null, 3);
+    [Fact]
+    public async Task JsonMessageCursorAndThreadAreStringsAndCountsAreNumbers()
+    {
+        var capabilities = Capabilities();
+        capabilities["SYNO.Chat.Post"] = capabilities["SYNO.Chat.Post"] with { RequestFormat = "JSON" };
+        var api = new RecordingApiClient(_ => Posts(0, 0));
+        await CreateRepository(api, capabilities).ListMessagesAsync("channel-1", "opaque-anchor", 250);
+        var request = Assert.Single(api.Requests);
+        Assert.Equal(5, request.Version);
+        Assert.Equal("\"opaque-anchor\"", request.Parameters["post_id"]);
+        Assert.Equal("\"0\"", request.Parameters["thread_id"]);
+        Assert.Equal("100", request.Parameters["prev_count"]);
+        Assert.Equal("0", request.Parameters["next_count"]);
+        Assert.DoesNotContain("offset", request.Parameters.Keys);
+        Assert.DoesNotContain("limit", request.Parameters.Keys);
+    }
 
-        Assert.Equal(new[] { "same", "same" }, page.Messages.Select(message => message.Id));
-        Assert.Equal(new[] { "second", "first" }, page.Messages.Select(message => message.Text));
-        Assert.Equal(3, page.SourceRecordCount);
-        Assert.Equal("3", page.PreviousCursor);
+    [Fact]
+    public async Task DuplicateMessageIdsRejectThePageInsteadOfInventingACursor()
+    {
+        var api = new RecordingApiClient(_ => Posts(0, 4,
+            Message("same", "first", 2), Message("same", "second", 1), Auxiliary("helper")));
+        await Assert.ThrowsAsync<DsmException>(() => CreateRepository(api).ListMessagesAsync("channel-1", null, 3));
+        Assert.Single(api.Requests);
     }
 
     [Fact]
@@ -430,12 +450,7 @@ public sealed class ChatRepositoryContractTests
         var post = Message("temporary", "must-not-be-mapped");
         post["post_id"] = 1.5;
         var api = new RecordingApiClient(_ => Posts(0, 2, post));
-
-        var page = await CreateRepository(api).ListMessagesAsync("channel-1", null, 20);
-
-        Assert.Empty(page.Messages);
-        Assert.Equal(1, page.SourceRecordCount);
-        Assert.Equal("1", page.PreviousCursor);
+        await Assert.ThrowsAsync<DsmException>(() => CreateRepository(api).ListMessagesAsync("channel-1", null, 20));
     }
 
     [Fact]
@@ -469,8 +484,8 @@ public sealed class ChatRepositoryContractTests
             repository.ListMessagesAsync("channel-1", "5", 20));
         var retry = await repository.ListMessagesAsync("channel-1", "5", 20);
 
-        Assert.Equal(new[] { "5", "5" }, api.Requests.Select(request => request.Parameters["offset"]));
-        Assert.Equal(5, retry.SourceOffset);
+        Assert.Equal(new[] { "5", "5" }, api.Requests.Select(request => request.Parameters["post_id"]));
+        Assert.Equal(0, retry.SourceOffset);
         Assert.Equal("safe", Assert.Single(retry.Messages).Id);
         Assert.DoesNotContain(retry.Messages, message => message.Text == "must-not-leak");
     }
@@ -496,8 +511,8 @@ public sealed class ChatRepositoryContractTests
             repository.ListMessagesAsync(" channel-1 ", "5", 20));
         var retry = await repository.ListMessagesAsync("channel-1", "5", 20);
 
-        Assert.Equal(new[] { "5", "5" }, api.Requests.Select(request => request.Parameters["offset"]));
-        Assert.Equal(5, retry.SourceOffset);
+        Assert.Equal(new[] { "5", "5" }, api.Requests.Select(request => request.Parameters["post_id"]));
+        Assert.Equal(0, retry.SourceOffset);
         Assert.Equal("safe", Assert.Single(retry.Messages).Id);
         Assert.DoesNotContain(retry.Messages, message => message.Text == "must-not-leak");
     }
@@ -528,8 +543,8 @@ public sealed class ChatRepositoryContractTests
             repository.ListMessagesAsync("channel-1", "5", 20));
         var retry = await repository.ListMessagesAsync("channel-1", "5", 20);
 
-        Assert.Equal(new[] { "5", "5" }, api.Requests.Select(request => request.Parameters["offset"]));
-        Assert.Equal(5, retry.SourceOffset);
+        Assert.Equal(new[] { "5", "5" }, api.Requests.Select(request => request.Parameters["post_id"]));
+        Assert.Equal(0, retry.SourceOffset);
         Assert.Equal("safe", Assert.Single(retry.Messages).Id);
         Assert.DoesNotContain(retry.Messages, message => message.Text == "must-not-leak");
     }
@@ -562,8 +577,8 @@ public sealed class ChatRepositoryContractTests
             repository.ListMessagesAsync("channel-1", "5", 20));
         var retry = await repository.ListMessagesAsync("channel-1", "5", 20);
 
-        Assert.Equal(new[] { "5", "5" }, api.Requests.Select(request => request.Parameters["offset"]));
-        Assert.Equal(5, retry.SourceOffset);
+        Assert.Equal(new[] { "5", "5" }, api.Requests.Select(request => request.Parameters["post_id"]));
+        Assert.Equal(0, retry.SourceOffset);
         Assert.Equal("safe", Assert.Single(retry.Messages).Id);
         Assert.DoesNotContain(retry.Messages, message => message.Text == "must-not-leak");
     }
@@ -572,45 +587,34 @@ public sealed class ChatRepositoryContractTests
     [InlineData(-1)]
     [InlineData(4)]
     [InlineData(6)]
-    public async Task InvalidResponseOffsetRejectsWholePageWithoutAdvancing(int responseOffset)
+    public async Task LegacyOffsetDoesNotReplaceTheMessageCursor(int responseOffset)
     {
-        var call = 0;
-        var api = new RecordingApiClient(_ =>
-        {
-            call++;
-            return call == 1
-                ? Posts(responseOffset, 8, Message("untrusted", "must-not-leak"))
-                : Posts(5, 6, Message("safe", "visible"));
-        });
-        var repository = CreateRepository(api);
-
-        await Assert.ThrowsAsync<DsmException>(() =>
-            repository.ListMessagesAsync("channel-1", "5", 20));
-        var retry = await repository.ListMessagesAsync("channel-1", "5", 20);
-
-        Assert.Equal(new[] { "5", "5" }, api.Requests.Select(request => request.Parameters["offset"]));
-        Assert.Equal(5, retry.SourceOffset);
-        Assert.Equal("safe", Assert.Single(retry.Messages).Id);
-        Assert.DoesNotContain(retry.Messages, message => message.Text == "must-not-leak");
+        // v5 不使用 offset；旧字段不能改变定位消息或制造更多历史页。
+        var api = new RecordingApiClient(_ => Posts(responseOffset, 8, Message("safe", "visible")));
+        var page = await CreateRepository(api).ListMessagesAsync("channel-1", "anchor", 20);
+        Assert.Equal("anchor", Assert.Single(api.Requests).Parameters["post_id"]);
+        Assert.Equal(0, page.SourceOffset);
+        Assert.Null(page.PreviousCursor);
+        Assert.False(page.HasMoreBefore);
+        Assert.Equal("safe", Assert.Single(page.Messages).Id);
     }
 
     [Fact]
-    public async Task MissingResponseOffsetUsesRequestedOffset()
+    public async Task MissingResponseOffsetDoesNotPreventMessageCursorPaging()
     {
-        var response = Posts(5, 8, Message("safe", "visible"));
+        var response = Posts(0, 8, Message("safe", "visible"));
         response.Remove("offset");
         var api = new RecordingApiClient(_ => response);
-
-        var page = await CreateRepository(api).ListMessagesAsync("channel-1", "5", 20);
-
-        Assert.Equal(5, page.SourceOffset);
-        Assert.Equal("6", page.PreviousCursor);
+        var page = await CreateRepository(api).ListMessagesAsync("channel-1", "anchor", 1);
+        Assert.Equal(0, page.SourceOffset);
+        Assert.Equal("safe", page.PreviousCursor);
+        Assert.True(page.HasMoreBefore);
     }
 
     [Theory]
     [InlineData("")]
-    [InlineData("-1")]
-    [InlineData("not-an-offset")]
+    [InlineData(" leading")]
+    [InlineData("invalid\nmessage")]
     public async Task InvalidServerCursorIsRejectedBeforeTransport(string cursor)
     {
         var api = new RecordingApiClient(_ => throw new InvalidOperationException());
@@ -641,7 +645,7 @@ public sealed class ChatRepositoryContractTests
         var capabilities = Capabilities();
         capabilities["SYNO.Chat.User"] = new("SYNO.Chat.User", "entry.cgi", 3, 99, "FORM");
         capabilities["SYNO.Chat.Channel"] = new("SYNO.Chat.Channel", "entry.cgi", 5, 99, "FORM");
-        capabilities["SYNO.Chat.Post"] = new("SYNO.Chat.Post", "entry.cgi", 8, 99, "FORM");
+        capabilities["SYNO.Chat.Post"] = new("SYNO.Chat.Post", "entry.cgi", 5, 99, "FORM");
         var api = new RecordingApiClient(request => request.ApiName switch
         {
             "SYNO.Chat.User" => Users(),
@@ -655,7 +659,7 @@ public sealed class ChatRepositoryContractTests
         _ = await repository.ListConversationsAsync();
         _ = await repository.ListMessagesAsync("channel-1", null, 20);
 
-        Assert.Equal(new[] { 3, 3, 5, 8 }, api.Requests.Select(request => request.Version));
+        Assert.Equal(new[] { 3, 3, 5, 5 }, api.Requests.Select(request => request.Version));
     }
 
     [Theory]
@@ -722,7 +726,7 @@ public sealed class ChatRepositoryContractTests
     }
 
     [Fact]
-    public async Task TextSendRequiresPostV5ButLeavesReadAvailable()
+    public async Task TextSendAndHistoryRequireRecordedPostV5()
     {
         var capabilities = Capabilities();
         capabilities["SYNO.Chat.Post"] =
@@ -733,7 +737,7 @@ public sealed class ChatRepositoryContractTests
         var result = await repository.SendTextAsync(
             new ChatTextSendRequest("channel-1", "hello", Guid.NewGuid()));
 
-        Assert.Equal(ChatAvailabilityStatus.Available, repository.Availability.Status);
+        Assert.Equal(ChatAvailabilityStatus.Unavailable, repository.Availability.Status);
         Assert.DoesNotContain(ChatWriteFeature.TextMessage, repository.Availability.SupportedWriteFeatures);
         Assert.Equal(MutationResultStatus.Unsupported, result.Result.Status);
         Assert.False(result.Result.Submitted);
@@ -774,10 +778,16 @@ public sealed class ChatRepositoryContractTests
                 Assert.Equal("channel-1", request.Parameters["channel_id"]);
                 Assert.Equal("hello", request.Parameters["message"]);
             },
+            request => AssertWire(request, "SYNO.Chat.User", "list", 3, 0),
+            request => AssertWire(request, "SYNO.Chat.Channel", "list", 5, 0),
             request =>
             {
-                AssertWire(request, "SYNO.Chat.Post", "list", 8, 3);
+                AssertWire(request, "SYNO.Chat.Post", "list", 5, 5);
                 Assert.Equal("channel-1", request.Parameters["channel_id"]);
+                Assert.Equal("sent-1", request.Parameters["post_id"]);
+                Assert.Equal("0", request.Parameters["thread_id"]);
+                Assert.Equal("0", request.Parameters["prev_count"]);
+                Assert.Equal("0", request.Parameters["next_count"]);
             });
     }
 
@@ -814,7 +824,7 @@ public sealed class ChatRepositoryContractTests
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
         Assert.True(first.Result.RequiresRefresh);
-        Assert.Equal(2, postListCalls);
+        Assert.Equal(0, postListCalls);
         Assert.Equal(1, api.Requests.Count(value =>
             value.ApiName == "SYNO.Chat.Post" && value.Method == "create"));
     }
@@ -836,7 +846,7 @@ public sealed class ChatRepositoryContractTests
     }
 
     [Fact]
-    public async Task AttachmentSendRequiresPostV5ButLeavesReadAvailable()
+    public async Task AttachmentSendAndHistoryRequireRecordedPostV5()
     {
         var capabilities = Capabilities();
         capabilities["SYNO.Chat.Post"] =
@@ -866,14 +876,14 @@ public sealed class ChatRepositoryContractTests
                     }),
                 Guid.NewGuid()));
 
-        Assert.Equal(ChatAvailabilityStatus.Available, repository.Availability.Status);
+        Assert.Equal(ChatAvailabilityStatus.Unavailable, repository.Availability.Status);
         Assert.DoesNotContain(
             ChatWriteFeature.AttachmentMessage,
             repository.Availability.SupportedWriteFeatures);
-        Assert.Contains(
+        Assert.DoesNotContain(
             ChatReadFeature.AttachmentThumbnail,
             repository.Availability.SupportedFeatures);
-        Assert.Contains(
+        Assert.DoesNotContain(
             ChatReadFeature.AttachmentContent,
             repository.Availability.SupportedFeatures);
         Assert.Equal(MutationResultStatus.Unsupported, result.Result.Status);
@@ -934,7 +944,14 @@ public sealed class ChatRepositoryContractTests
             api.Requests,
             request => AssertWire(request, "SYNO.Chat.User", "list", 3, 0),
             request => AssertWire(request, "SYNO.Chat.Channel", "list", 5, 0),
-            request => AssertWire(request, "SYNO.Chat.Post", "list", 8, 3));
+            request => AssertWire(request, "SYNO.Chat.User", "list", 3, 0),
+            request => AssertWire(request, "SYNO.Chat.Channel", "list", 5, 0),
+            request =>
+            {
+                AssertWire(request, "SYNO.Chat.Post", "list", 5, 5);
+                Assert.Equal("file-post-1", request.Parameters["post_id"]);
+                Assert.Equal("0", request.Parameters["thread_id"]);
+            });
         Assert.DoesNotContain(api.Requests, request => request.Method == "create");
     }
 
@@ -1069,10 +1086,10 @@ public sealed class ChatRepositoryContractTests
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, first.Result.Status);
         Assert.True(first.Result.Submitted);
         Assert.True(first.Result.RequiresRefresh);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, second.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
         Assert.Equal(1, opens);
         Assert.Single(api.AttachmentRequests);
-        Assert.Single(api.Requests, request => request.ApiName == "SYNO.Chat.Post");
+        Assert.DoesNotContain(api.Requests, request => request.ApiName == "SYNO.Chat.Post");
     }
 
     [Fact]
@@ -1335,13 +1352,13 @@ public sealed class ChatRepositoryContractTests
             api.Requests,
             request => AssertWire(request, "SYNO.Chat.User", "list", 3, 0),
             request => AssertWire(request, "SYNO.Chat.Channel", "list", 5, 0),
-            request => AssertWire(request, "SYNO.Chat.Post", "list", 8, 3),
+            request => AssertWire(request, "SYNO.Chat.Post", "list", 5, 4),
             request =>
             {
                 AssertWire(request, "SYNO.Chat.Post", "delete", 5, 1);
                 Assert.Equal("mine-1", request.Parameters["post_id"]);
             },
-            request => AssertWire(request, "SYNO.Chat.Post", "list", 8, 3));
+            request => AssertWire(request, "SYNO.Chat.Post", "list", 5, 4));
         Assert.DoesNotContain(api.Requests, request => request.ApiName.StartsWith("SYNO.Core.", StringComparison.Ordinal));
     }
 
@@ -1388,8 +1405,12 @@ public sealed class ChatRepositoryContractTests
 
     private static DsmRepository CreateRepository(
         RecordingApiClient api,
-        IReadOnlyDictionary<string, ApiCapability>? capabilities = null) =>
-        new(Profile(), Session(), api, capabilities ?? Capabilities());
+        IReadOnlyDictionary<string, ApiCapability>? capabilities = null)
+    {
+        // 每个独立用例使用独立连接身份，跨仓储防重状态不应在无关用例之间共用。
+        var id = api.TestProfileId;
+        return new(Profile() with { Id = id }, Session() with { ProfileId = id }, api, capabilities ?? Capabilities());
+    }
 
     private static NasProfile Profile() =>
         new(ProfileId, "Synthetic NAS", "nas.invalid", 5001, "tester");
@@ -1560,9 +1581,8 @@ public sealed class ChatRepositoryContractTests
     {
         ["offset"] = 5,
         ["total"] = 6,
-        ["post_list"] = new JsonObject
-        {
-            ["message"] = new JsonObject
+        ["posts"] = new JsonArray(
+            new JsonObject
             {
                 ["post_id"] = 100,
                 ["channel_id"] = 10,
@@ -1574,8 +1594,7 @@ public sealed class ChatRepositoryContractTests
                     ["file_id"] = 300,
                     ["name"] = "photo.jpg",
                 }),
-            },
-        },
+            }),
     };
 
     private static void AssertWire(
@@ -1611,6 +1630,7 @@ public sealed class ChatRepositoryContractTests
 
     private sealed class RecordingApiClient(Func<ApiRequest, JsonObject> response) : IDsmApiClient
     {
+        internal Guid TestProfileId { get; } = Guid.NewGuid();
         public List<ApiRequest> Requests { get; } = [];
         public List<AttachmentRequest> AttachmentRequests { get; } = [];
         public Func<AttachmentRequest, ChatAttachmentUploadTransportResult>? AttachmentResponse { get; init; }

@@ -28,6 +28,7 @@ public sealed class DownloadStationFileCreateTransportTests
     [Theory]
     [InlineData(null, 1)]
     [InlineData("/downloads", 2)]
+    [InlineData("  ", 2)]
     public async Task FileCreateChoosesVersionByDestinationAndKeepsPasswordOnlyInMultipart(string? target, int expectedVersion)
     {
         byte[]? body = null;
@@ -105,7 +106,7 @@ public sealed class DownloadStationFileCreateTransportTests
         Assert.Contains("name=\"api\"\r\n\r\nSYNO.DownloadStation.Task\r\n", text);
         Assert.Contains($"name=\"version\"\r\n\r\n{expectedVersion}\r\n", text);
         Assert.Contains("name=\"method\"\r\n\r\ncreate\r\n", text);
-        if (target is not null) Assert.Contains("name=\"destination\"\r\n\r\n/downloads\r\n", text);
+        if (target is not null) Assert.Contains($"name=\"destination\"\r\n\r\n{target}\r\n", text);
         Assert.Contains("filename=\"sample.torrent\"", text);
         Assert.True(body.AsSpan().IndexOf(new byte[] { 0x64, 0x38, 0x3A, 0x61 }) > 0);
         Assert.Equal(nameof(DownloadTaskFileCreateRequest), upload.ToString());
@@ -120,6 +121,18 @@ public sealed class DownloadStationFileCreateTransportTests
         var result = await new DsmApiClient(http).CreateDownloadTaskFromFileAsync(Profile, Session, Capability,
             new(Profile.Id, stream, 1, "synthetic.torrent", "downloads"));
         Assert.Equal(DownloadTaskFileCreateTransportStatus.Unsupported, result.Status); Assert.Equal(0, calls);
+    }
+
+    [Theory]
+    [InlineData(402, DownloadTaskFileCreateTransportStatus.ConfirmedFailure, MutationErrorCategory.Permission)]
+    [InlineData(407, DownloadTaskFileCreateTransportStatus.ConfirmedFailure, MutationErrorCategory.Server)]
+    [InlineData(999, DownloadTaskFileCreateTransportStatus.SubmittedButUnverified, MutationErrorCategory.Unknown)]
+    public async Task FileCreationUsesDownloadSpecificErrorsAndUnknownCodesStayProtected(int code, DownloadTaskFileCreateTransportStatus status, MutationErrorCategory category)
+    {
+        using var handler = new CaptureHandler((_, _) => Task.FromResult(JsonResponse($"{{\"success\":false,\"error\":{{\"code\":{code}}}}}")));
+        using var http = new HttpClient(handler); using var stream = new MemoryStream([1]);
+        var result = await new DsmApiClient(http).CreateDownloadTaskFromFileAsync(Profile, Session, Capability, new(Profile.Id, stream, 1, "synthetic.torrent", null));
+        Assert.Equal(status, result.Status); Assert.Equal(category, result.ErrorCategory);
     }
 
     private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)

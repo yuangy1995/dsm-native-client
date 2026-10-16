@@ -5,7 +5,7 @@ using LanStash.Domain;
 
 namespace LanStash.App.Features.NasAdmin;
 
-public sealed class NasPackageManagementViewModel : ObservableObject, IDisposable
+public sealed partial class NasPackageManagementViewModel : ObservableObject, IDisposable
 {
     private INasSettingsRepository? _repository;
     private CancellationTokenSource? _cancellation;
@@ -68,10 +68,11 @@ public sealed class NasPackageManagementViewModel : ObservableObject, IDisposabl
                 if (!IsCurrent(request, repository)) return;
                 if (result is null || result.Counts.Unknown > 0 || result.ErrorCategory == MutationErrorCategory.Conflict ||
                     result.Status == MutationResultStatus.CancelledBeforeSubmission) pending.Add(item);
-                if (result is not null) { LastResult = result; LastAction = item.Action; LastTarget = item.DisplayName; }
+                if (result is not null) { LastResult = result; LastAction = item.Action; LastTarget = RecoveryName(item.DisplayName); }
             }
             Pending.Clear(); foreach (var item in pending) Pending.Add(item);
             await LoadDirectoryAsync(repository, request, selectedId);
+            if (IsCurrent(request, repository)) await LoadCenterAsync(repository, request);
             if (IsCurrent(request, repository)) _refreshRequired = false;
         }
         catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }
@@ -107,7 +108,7 @@ public sealed class NasPackageManagementViewModel : ObservableObject, IDisposabl
     public bool CanChoose(NasPackageAction action)
     {
         if (_disposed || !_loaded || IsBusy || _refreshRequired || ErrorMessage is not null || _repository is null || Selected is null ||
-            Pending.Any(item => item.PackageId == Selected.Id)) return false;
+            HasPendingActivity) return false;
         var available = _repository.PackageControlAvailability;
         return action switch
         {
@@ -166,6 +167,7 @@ public sealed class NasPackageManagementViewModel : ObservableObject, IDisposabl
     public void Deactivate()
     {
         CancelRequest(); _repository = null; _loaded = false; _refreshRequired = false; IsBusy = false;
+        ResetCenter();
         ClearConfirmation(); Packages.Clear(); Pending.Clear(); Selected = null; SearchText = "";
         ErrorMessage = null; LastResult = null; LastAction = null; LastTarget = ""; Notify();
     }

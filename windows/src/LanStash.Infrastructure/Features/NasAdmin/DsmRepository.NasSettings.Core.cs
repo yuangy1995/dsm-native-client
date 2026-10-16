@@ -41,6 +41,10 @@ public sealed partial class DsmRepository
     {
         CanSaveRemoteAccess = _nasServiceSessionVerified && _nasServiceAdministrator &&
             (RemoteAccessCapability(NasRemoteAccessParts.Relay) is not null || RemoteAccessCapability(NasRemoteAccessParts.Router) is not null),
+        CanSaveZram = _nasServiceSessionVerified && _nasServiceAdministrator && SecurityCapability("SYNO.Core.Hardware.ZRAM", 1) is not null &&
+            SecurityCapability("SYNO.Core.Hardware.NeedReboot", 1) is not null,
+        CanSavePowerSchedule = AllowsPowerScheduleChanges && _nasServiceSessionVerified && _nasServiceAdministrator &&
+            SecurityCapability("SYNO.Core.Hardware.PowerSchedule", 1) is not null,
     };
 
     private async Task<MutationResult> SaveSettingsAsync(

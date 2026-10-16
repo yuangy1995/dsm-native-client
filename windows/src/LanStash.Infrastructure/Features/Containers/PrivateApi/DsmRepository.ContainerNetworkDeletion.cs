@@ -6,8 +6,7 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    public bool CanDeleteNetworks => _nasServiceSessionVerified &&
-        HasInternalObservedContainerVersion(InternalObservedNetworkApi);
+    public bool CanDeleteNetworks => CanCreateNetworks;
     public Task<MutationResult> DeleteNetworksAsync(ContainerNetworkDeleteRequest request, CancellationToken cancellationToken = default) =>
         CanDeleteNetworks ? DeleteContainerNetworksCoreAsync(request, cancellationToken) : Task.FromResult(UnsupportedResult("deleteContainerNetworks"));
 
@@ -27,7 +26,7 @@ public sealed partial class DsmRepository
             targets.Select(target => target!.Id).Distinct(StringComparer.Ordinal).Count() != targets.Length)
             return ServicePreflightFailure(operation, MutationErrorCategory.Validation);
         var validTargets = targets.Select(target => target!).ToArray();
-        if (!HasInternalObservedContainerVersion(InternalObservedNetworkApi)) return UnsupportedResult(operation);
+        if (!CanDeleteNetworks) return UnsupportedResult(operation);
         var scope = ServiceScope(); var shared = ServiceMutations;
         var signature = ServiceHash(JsonSerializer.Serialize(new { Operation = operation, Targets = validTargets.OrderBy(target => target.Id, StringComparer.Ordinal).Select(NetworkDeletionSignature) }));
         try { if (!await shared.Gate.WaitAsync(0, token).ConfigureAwait(false)) return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true); }
@@ -39,38 +38,59 @@ public sealed partial class DsmRepository
                     ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
             if (validTargets.Any(target => shared.NetworkDeletions.ContainsKey((scope, target.Id)) || shared.NetworkCreations.ContainsKey((scope, target.Name))))
                 return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
-            Dictionary<string, object>[] payload;
+            IReadOnlyList<ContainerNetworkDefinition> current;
             try
             {
-                await PrepareNetworkManagementAsync(token).ConfigureAwait(false);
-                if (!_nasServiceSessionVerified) return UnsupportedResult(operation);
-                var current = await LoadContainerNetworkDefinitionsAsync(token).ConfigureAwait(false);
-                var selected = new List<ContainerNetworkDefinition>();
+                current = await LoadContainerNetworkDefinitionsAsync(token).ConfigureAwait(false);
                 foreach (var target in validTargets)
                 {
                     var match = current.SingleOrDefault(item => item.Summary.Id == target.Id);
                     if (match is null || !ContainerNetworkDeletionRules.CanDelete(match.Summary) || NetworkDeletionSignature(match.Summary) != NetworkDeletionSignature(target))
                         return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
-                    selected.Add(match);
                 }
-                payload = selected.Select(NetworkRemovalObject).ToArray();
                 token.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { return CancelledBeforeSubmissionResult(operation); }
             catch (DsmException error) { return ServicePreflightFailure(operation, NetworkCreationError(error)); }
             catch (Exception) { return ServicePreflightFailure(operation, MutationErrorCategory.Network); }
-            var state = new ContainerNetworkDeleteOperation(scope, signature, validTargets);
+            var state = new ContainerNetworkDeleteOperation(scope, signature, request.RequestId, validTargets);
             shared.Operations.Add(request.RequestId, state);
             foreach (var target in validTargets) shared.NetworkDeletions.Add((scope, target.Id), state);
-            try
+            foreach (var target in validTargets)
             {
-                var capability = _capabilities[InternalObservedNetworkApi] with { MinVersion = 1, MaxVersion = 1 };
-                var response = await SecurityCallAsync(capability, "remove", new Dictionary<string, object> { ["networks"] = payload }, token).ConfigureAwait(false);
-                // 非空或畸形 failed 不提供可靠逐项归属，只按完整回读确认消失的原 ID。
-                state.EmptyFailureList = response["failed"] is JsonArray { Count: 0 };
+                if (token.IsCancellationRequested) break;
+                try
+                {
+                    // 后续项重新读取原目标及占用，前一项失败或未知就停止，刷新绝不继续批次。
+                    if (state.AttemptedIds.Count > 0) current = await LoadContainerNetworkDefinitionsAsync(token).ConfigureAwait(false);
+                    var selected = current.SingleOrDefault(item => item.Summary.Id == target.Id);
+                    if (selected is null || !ContainerNetworkDeletionRules.CanDelete(selected.Summary) ||
+                        NetworkDeletionSignature(selected.Summary) != NetworkDeletionSignature(target))
+                    { state.Rejections[target.Id] = MutationErrorCategory.Conflict; break; }
+                    token.ThrowIfCancellationRequested();
+                    var payload = new[] { NetworkRemovalObject(selected) };
+                    var capability = _capabilities[InternalObservedNetworkApi] with { MinVersion = 1, MaxVersion = 1 };
+                    state.AttemptedIds.Add(target.Id);
+                    var response = await SecurityCallAsync(capability, "remove", new Dictionary<string, object> { ["networks"] = payload }, token).ConfigureAwait(false);
+                    if (response["failed"] is JsonArray { Count: 0 }) state.AcceptedIds.Add(target.Id);
+                    else if (response["failed"] is JsonArray { Count: > 0 }) state.Rejections[target.Id] = MutationErrorCategory.Server;
+                    else break;
+                    if (state.Rejections.ContainsKey(target.Id)) break;
+                    await RefreshContainerNetworkDeletionAsync(state, token).ConfigureAwait(false);
+                    if (!state.VerifiedIds.Contains(target.Id)) break;
+                }
+                catch (DsmException error) when (state.AttemptedIds.Contains(target.Id) && DsmApiClient.IsExplicitApiRejection(error))
+                {
+                    // 只有写请求的明确拒绝能判定删除失败；回读错误不能改写已接受事实。
+                    if (!state.AcceptedIds.Contains(target.Id)) state.Rejections[target.Id] = NetworkCreationError(error);
+                    else state.ReadError = NetworkCreationError(error);
+                    break;
+                }
+                catch (DsmException error) { state.ReadError = NetworkCreationError(error); break; }
+                catch (Exception) { state.ReadError = MutationErrorCategory.Network; break; }
             }
-            catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error)) { state.Rejection = NetworkCreationError(error); }
-            catch (Exception) { /* 可能已删除，后续只读核对，不重放。 */ }
+            foreach (var target in validTargets.Where(target => !state.AttemptedIds.Contains(target.Id) || state.Rejections.ContainsKey(target.Id)))
+                shared.NetworkDeletions.Remove((scope, target.Id));
             return await ReviewContainerNetworkDeletionAsync(state, token).ConfigureAwait(false);
         }
         finally { shared.Gate.Release(); }
@@ -79,7 +99,23 @@ public sealed partial class DsmRepository
     {
         EnsureContainerManagerProfile(); var shared = ServiceMutations; await shared.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try { var scope = ServiceScope(); return Array.AsReadOnly(shared.NetworkDeletions.Where(pair => pair.Key.Scope == scope)
-            .Select(pair => pair.Value.Targets.Single(target => target.Id == pair.Key.Id)).Select(target => new ContainerNetworkDeletionRecovery(target.Id, target.Name)).ToArray()); }
+            .Select(pair => new ContainerNetworkDeletionRecovery(pair.Key.Id, pair.Value.Targets.Single(target => target.Id == pair.Key.Id).Name)
+                { RequestId = pair.Value.RequestId }).ToArray()); }
+        finally { shared.Gate.Release(); }
+    }
+    public async Task<IReadOnlyList<ContainerNetworkDeletionItem>> GetNetworkDeletionItemsAsync(Guid requestId, CancellationToken cancellationToken = default)
+    {
+        EnsureContainerManagerProfile(); var shared = ServiceMutations; await shared.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return shared.Operations.TryGetValue(requestId, out var previous) && previous is ContainerNetworkDeleteOperation state && state.Scope == ServiceScope()
+                ? state.Targets.Select(target => new ContainerNetworkDeletionItem(state.RequestId, target.Id, target.Name,
+                    state.VerifiedIds.Contains(target.Id) ? ContainerNetworkDeletionStage.Deleted :
+                    state.Rejections.ContainsKey(target.Id) ? ContainerNetworkDeletionStage.Rejected :
+                    state.AcceptedIds.Contains(target.Id) ? ContainerNetworkDeletionStage.Accepted :
+                    state.AttemptedIds.Contains(target.Id) ? ContainerNetworkDeletionStage.Submitted : ContainerNetworkDeletionStage.NotSubmitted,
+                    state.Rejections.TryGetValue(target.Id, out var error) ? error : null)).ToArray() : [];
+        }
         finally { shared.Gate.Release(); }
     }
     public async Task<MutationResult?> ReviewNetworkDeletionAsync(string id, CancellationToken cancellationToken = default)
@@ -94,35 +130,46 @@ public sealed partial class DsmRepository
     }
     private async Task<MutationResult> ReviewContainerNetworkDeletionAsync(ContainerNetworkDeleteOperation state, CancellationToken token)
     {
+        if (state.Final is not null) return state.Final;
         MutationResult Finish(MutationResult result)
         {
             state.Final = result;
             foreach (var target in state.Targets) ServiceMutations.NetworkDeletions.Remove((state.Scope, target.Id));
             return result;
         }
-        if (state.Rejection is { } rejection)
-            return Finish(new(1, rejection == MutationErrorCategory.Permission ? MutationResultStatus.PermissionDenied : MutationResultStatus.ConfirmedFailure,
-                "deleteContainerNetworks", true, true, new(0, state.Targets.Count, 0), rejection));
-        var category = MutationErrorCategory.Unknown;
+        var category = state.ReadError ?? MutationErrorCategory.Unknown;
         if (!token.IsCancellationRequested)
         try
         {
-            var current = await LoadContainerNetworkDefinitionsAsync(token).ConfigureAwait(false);
-            foreach (var target in state.Targets)
-                if (!current.Any(item => item.Summary.Id == target.Id))
-                {
-                    state.VerifiedIds.Add(target.Id);
-                    ServiceMutations.NetworkDeletions.Remove((state.Scope, target.Id));
-                }
+            await RefreshContainerNetworkDeletionAsync(state, token).ConfigureAwait(false);
         }
         catch (DsmException error) { category = NetworkCreationError(error); }
         catch (Exception) { category = MutationErrorCategory.Network; }
-        var succeeded = state.VerifiedIds.Count; var unknown = state.Targets.Count - succeeded;
-        if (unknown == 0) return Finish(new(1, MutationResultStatus.ConfirmedSuccess, "deleteContainerNetworks", true, false, new(succeeded, 0, 0), diagnosticTag: "container.network.deleted"));
+        var succeeded = state.VerifiedIds.Count;
+        var unknown = state.AttemptedIds.Count(id => !state.VerifiedIds.Contains(id) && !state.Rejections.ContainsKey(id));
+        var failed = state.Rejections.Count;
+        var notSubmitted = state.Targets.Count - succeeded - unknown - failed;
+        if (unknown == 0)
+        {
+            if (state.AttemptedIds.Count == 0 && failed == 0) return Finish(CancelledBeforeSubmissionResult("deleteContainerNetworks"));
+            var status = failed + notSubmitted == 0 ? MutationResultStatus.ConfirmedSuccess : succeeded > 0 ? MutationResultStatus.PartialSuccess :
+                state.Rejections.Values.Any(error => error == MutationErrorCategory.Permission) ? MutationResultStatus.PermissionDenied : MutationResultStatus.ConfirmedFailure;
+            return Finish(new(1, status, "deleteContainerNetworks", state.AttemptedIds.Count > 0, false,
+                new(succeeded, failed + (succeeded > 0 ? notSubmitted : 0), 0), state.Rejections.Values.Cast<MutationErrorCategory?>().FirstOrDefault(),
+                diagnosticTag: status == MutationResultStatus.ConfirmedSuccess ? "container.network.deleted" : "container.network.delete.stopped"));
+        }
         return new(1, token.IsCancellationRequested ? MutationResultStatus.CancellationRequestedAfterSubmission :
             succeeded > 0 ? MutationResultStatus.PartialSuccess : MutationResultStatus.SubmittedButUnverified,
-            "deleteContainerNetworks", true, true, new(succeeded, 0, unknown), category,
-            diagnosticTag: state.EmptyFailureList ? "container.network.delete.unverified" : "container.network.delete.response-unverified");
+            "deleteContainerNetworks", true, true, new(succeeded, failed + (succeeded > 0 ? notSubmitted : 0), unknown), category,
+            diagnosticTag: "container.network.delete.unverified");
+    }
+    private async Task RefreshContainerNetworkDeletionAsync(ContainerNetworkDeleteOperation state, CancellationToken token)
+    {
+        if (!state.AcceptedIds.Except(state.VerifiedIds).Any()) return;
+        var current = await LoadContainerNetworkDefinitionsAsync(token).ConfigureAwait(false);
+        foreach (var id in state.AcceptedIds)
+            if (!current.Any(item => item.Summary.Id == id))
+            { state.VerifiedIds.Add(id); ServiceMutations.NetworkDeletions.Remove((state.Scope, id)); }
     }
     private static string NetworkDeletionSignature(ContainerResourceSummary target) => JsonSerializer.Serialize(new
     {
@@ -142,12 +189,15 @@ public sealed partial class DsmRepository
             result[key] = DirectoryText(raw[key]) ?? "";
         return result;
     }
-    private sealed class ContainerNetworkDeleteOperation(string scope, string signature, IReadOnlyList<ContainerResourceSummary> targets)
+    private sealed class ContainerNetworkDeleteOperation(string scope, string signature, Guid requestId, IReadOnlyList<ContainerResourceSummary> targets)
         : NasSettingsOperation(scope, signature, NasServiceSettingsKind.ContainerNetworks)
     {
+        public Guid RequestId { get; } = requestId;
         public IReadOnlyList<ContainerResourceSummary> Targets { get; } = targets;
         public HashSet<string> VerifiedIds { get; } = new(StringComparer.Ordinal);
-        public bool EmptyFailureList { get; set; }
-        public MutationErrorCategory? Rejection { get; set; }
+        public HashSet<string> AttemptedIds { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> AcceptedIds { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, MutationErrorCategory> Rejections { get; } = new(StringComparer.Ordinal);
+        public MutationErrorCategory? ReadError { get; set; }
     }
 }

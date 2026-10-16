@@ -9,8 +9,10 @@ namespace LanStash.App.Features.Files;
 public sealed record FileOperationReviewEntry(Guid Id, Guid ProfileId, string Operation, string SourcePath,
     string DestinationPath, string Name, bool IsDirectory, long Size, DateTimeOffset? ModifiedAt = null, bool RequiresTimestamp = false)
 {
+    public CrossNasTransferSummary? CrossNas { get; init; }
     public string OperationLabelKey => Operation switch
     {
+        "crossNasCopy" => "CrossNasCopyAction.Label",
         "copyFile" => "FileCopyMove_Copy_Button",
         "moveFile" => "FileCopyMove_Move_Button",
         "moveToRecycle" => "FileRecycleMoveAction",
@@ -39,10 +41,16 @@ public sealed class FileOperationRecoveryViewModel : ObservableObject, IDisposab
     public FileOperationRecoveryViewModel(IFileCopyMoveRepository repository, Guid profileId, FileCopyMoveReviewBlocker blocker)
     {
         if (profileId == Guid.Empty || repository.ProfileId != profileId) throw new ArgumentException("file.review.profile-mismatch");
-        _profileId = profileId; _currentProfile = () => repository.ProfileId; _supports = () => repository.SupportsCopyMoveReview;
-        _load = async token => (await repository.GetCopyMoveReviewsAsync(token)).Select(item => new FileOperationReviewEntry(item.Id,
-            item.ProfileId, item.Operation == FileCopyMoveOperation.Copy ? "copyFile" : item.Operation == FileCopyMoveOperation.Move ? "moveFile" : "",
-            item.SourcePath, item.DestinationPath, item.Name, item.IsDirectory, item.Size)).ToArray();
+        _profileId = profileId; _currentProfile = () => repository.ProfileId; _supports = () => repository.SupportsCopyMoveReview || repository.CrossNasAvailability.CanCrossCopy;
+        _load = async token =>
+        {
+            var local = (await repository.GetCopyMoveReviewsAsync(token)).Select(item => new FileOperationReviewEntry(item.Id,
+                item.ProfileId, item.Operation == FileCopyMoveOperation.Copy ? "copyFile" : item.Operation == FileCopyMoveOperation.Move ? "moveFile" : "",
+                item.SourcePath, item.DestinationPath, item.Name, item.IsDirectory, item.Size));
+            var cross = (await repository.GetCrossNasTransfersAsync(token)).Select(item => new FileOperationReviewEntry(item.Id,
+                item.SourceProfileId, "crossNasCopy", item.SourcePath, item.Outcome.DestinationPath, item.Name, item.IsDirectory, item.Size) { CrossNas = item });
+            return local.Concat(cross).ToArray();
+        };
         _review = async (entry, token) =>
         {
             var result = await repository.ReviewCopyMoveAsync(entry.Id, token);
@@ -111,7 +119,7 @@ public sealed class FileOperationRecoveryViewModel : ObservableObject, IDisposab
     public async Task ReviewSelectedAsync()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!CanReview || Selected is not { } selected) return;
+        if (!CanReview || Selected is not { } selected || selected.CrossNas is not null) return;
         var generation = Begin();
         var token = _request!.Token;
         try
@@ -138,12 +146,15 @@ public sealed class FileOperationRecoveryViewModel : ObservableObject, IDisposab
     }
 
     private bool Valid(FileOperationReviewEntry item) => item.Id != Guid.Empty && item.ProfileId == _profileId && item.Size >= 0 &&
-        item.Operation is "copyFile" or "moveFile" or "moveToRecycle" or "restoreFromRecycle" &&
+        (item.Operation != "crossNasCopy" || item.CrossNas is { } cross && cross.Id == item.Id && cross.SourceProfileId == _profileId &&
+            cross.TargetProfileId != Guid.Empty && cross.TargetProfileId != _profileId && cross.Outcome.OperationId == item.Id &&
+            cross.Outcome.SourcePath == item.SourcePath && cross.Outcome.DestinationPath == item.DestinationPath) &&
+        item.Operation is "copyFile" or "moveFile" or "moveToRecycle" or "restoreFromRecycle" or "crossNasCopy" &&
         FileMutationViewModel.IsCanonicalAbsolutePath(item.SourcePath) && FileMutationViewModel.IsCanonicalAbsolutePath(item.DestinationPath) &&
         !string.IsNullOrWhiteSpace(item.Name) && item.SourcePath.EndsWith("/" + item.Name, StringComparison.Ordinal) &&
         item.DestinationPath.EndsWith("/" + item.Name, StringComparison.Ordinal);
     private static string Parent(string path) => path[..path.LastIndexOf('/')];
-    private static string ErrorKey(Exception error) => error is DsmException dsm &&
+    private static string ErrorKey(Exception error) => error is IOException { Message: "file.cross-nas.recovery-unavailable" } ? "CrossNasRecoveryStorageFailed" : error is DsmException dsm &&
         (dsm.AuthenticationFailure || dsm.Code is 106 or 107 or 119 or 401) ? "FileOperationReviewSignIn" : "FileOperationReviewFailed";
     private long Begin()
     {

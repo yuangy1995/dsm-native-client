@@ -36,11 +36,20 @@ internal static class SynologyPhotosCodec
         catch (ArgumentOutOfRangeException) { throw Invalid(); }
     }
 
-    internal static SynologyPhoto Photo(JsonObject value, Guid profileId)
+    internal static SynologyPhoto Photo(JsonObject value, Guid profileId, SynologyPhotoSpace space = SynologyPhotoSpace.Personal, long? albumId = null)
     {
         var size = Number(value, "filesize");
         if (size < 0) throw Invalid();
         var additional = OptionalObject(value, "additional");
+        SynologyPhotoAlbumContext? album = null;
+        if (albumId is { } id)
+        {
+            var owner = Number(value, "owner_user_id");
+            var provider = additional?["provider_user_id"] is null ? (long?)null : Number(additional, "provider_user_id");
+            if (id <= 0 || owner < 0 || provider < 0) throw Invalid();
+            space = owner == 0 ? SynologyPhotoSpace.Shared : SynologyPhotoSpace.Personal;
+            album = new(id, owner, provider);
+        }
         var resolution = additional is null ? null : OptionalObject(additional, "resolution");
         var exif = additional is null ? null : OptionalObject(additional, "exif");
         var thumbnail = additional is null ? null : OptionalObject(additional, "thumbnail");
@@ -52,11 +61,13 @@ internal static class SynologyPhotosCodec
         var video = additional is null ? null : OptionalObject(additional, "video_meta");
         string? Exif(string key) => exif is null ? null : OptionalText(exif, key);
         return new SynologyPhoto(
-            new SynologyPhotoIdentity(profileId, SynologyPhotoSpace.Personal, Positive(value, "id")),
+            new SynologyPhotoIdentity(profileId, space, Positive(value, "id")),
             Text(value, "filename"), size, Timestamp(value, "time"), Timestamp(value, "indexed_time"),
             Positive(value, "folder_id"), Text(value, "type"))
         {
-            Thumbnail = thumbnail is null ? null : new(Positive(thumbnail, "unit_id"), Text(thumbnail, "cache_key")),
+            AlbumContext = album,
+            SimilarGroup = value["similar"] is null ? null : SimilarGroup(Object(value["similar"]), space, Positive(value, "id")),
+            Thumbnail = thumbnail is null ? null : new(Positive(thumbnail, "unit_id"), Text(thumbnail, "cache_key")) { Space = space, AlbumId = albumId },
             Width = resolution is null ? null : OptionalInt(resolution, "width"),
             Height = resolution is null ? null : OptionalInt(resolution, "height"),
             Orientation = additional is null ? null : OptionalInt(additional, "orientation"),
@@ -65,10 +76,22 @@ internal static class SynologyPhotosCodec
             ExposureTime = Exif("exposure_time"), FocalLength = Exif("focal_length"), Iso = Exif("iso"),
             Duration = video?["duration"] is null ? null : Decimal(video, "duration"),
             Rating = additional is null ? null : OptionalInt(additional, "rating"),
+            Tags = additional?["tag"] is null ? null : List(additional, "tag").Select(tag => new SynologyPhotoChoice(Positive(tag, "id"), Text(tag, "name"))).ToArray(),
             Latitude = validGps ? latitude : null, Longitude = validGps ? longitude : null,
             Address = address is null ? [] : new[] { "country", "state", "county", "city", "town", "district", "village", "route", "landmark" }
                 .Select(key => OptionalText(address, key)).OfType<string>().Where(text => text.Length > 0).Distinct(StringComparer.Ordinal).ToArray(),
         };
+    }
+
+    internal static SynologyPhotoSimilarGroup? SimilarGroup(JsonObject value, SynologyPhotoSpace space, long? entry = null)
+    {
+        var id = Positive(value, "id"); var count = Int(value, "count"); var top = Number(value, "top_pick");
+        if (value["item_id"] is not JsonArray raw) throw Invalid();
+        var ids = raw.Select(node => node is JsonValue item && item.TryGetValue<long>(out var number) && number > 0 ? number : throw Invalid()).ToArray();
+        if (count < 0 || count != ids.Length || ids.Distinct().Count() != count || count >= 2 && !ids.Contains(top)) throw Invalid();
+        if (count < 2) return null;
+        if (entry is { } photo && !ids.Contains(photo)) throw Invalid();
+        return new(id, space, top, ids);
     }
 
     internal static IReadOnlyList<SynologyPhotoDay> Days(JsonObject payload) => List(payload, "section").SelectMany(section =>
@@ -85,7 +108,8 @@ internal static class SynologyPhotosCodec
 
     internal static SynologyPhotoCollection Collection(JsonObject value, bool folder = false) =>
         new(Positive(value, "id"), folder ? Text(value, "name").TrimEnd('/').Split('/').Last() : Text(value, "name"),
-            folder ? Number(value, "parent") : null, OptionalInt(value, "item_count"));
+            folder ? Number(value, "parent") : null, OptionalInt(value, "item_count"))
+        { Path = folder ? Text(value, "name") : null, IsConditional = !folder && OptionalText(value, "type") == "condition", IsFrozen = !folder && Permission(value, "freeze_album") };
 
     internal static IReadOnlyList<SynologyPhotoCollection> Collections(JsonObject payload, int limit, bool folders = false, long? parentId = null)
     {

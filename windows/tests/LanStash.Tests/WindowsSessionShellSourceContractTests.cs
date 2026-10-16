@@ -20,8 +20,13 @@ public sealed class WindowsSessionShellSourceContractTests
         Assert.Contains("catch (OperationCanceledException)", source);
         var switchBody = SliceMethod(source, "public async Task SwitchProfileAsync", "public void BeginAddingProfile");
         Assert.DoesNotContain("LogoutAsync", switchBody);
-        var logoutBody = SliceMethod(source, "public async Task LogoutAsync", "public async Task AddDesktopDriveAsync");
-        Assert.Contains("_api.LogoutAsync", logoutBody);
+        var logoutBody = SliceMethod(source, "public Task LogoutAsync", "public async Task AddDesktopDriveAsync");
+        Assert.Contains("var api = _api;", logoutBody);
+        Assert.Contains("var session = Session;", logoutBody);
+        Assert.Contains("await api.LogoutAsync(connectionProfile, session)", logoutBody);
+        Assert.Contains("await ReleaseWorkspaceAsync(profile.Id", logoutBody);
+        Assert.True(logoutBody.IndexOf("DetachActiveWorkspace();", StringComparison.Ordinal) <
+            logoutBody.IndexOf("await api.LogoutAsync", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -94,6 +99,7 @@ public sealed class WindowsSessionShellSourceContractTests
     private static string SliceMethod(string source, string start, string next)
     {
         var startIndex = source.IndexOf(start, StringComparison.Ordinal);
+        Assert.True(startIndex >= 0, start);
         var endIndex = source.IndexOf(next, startIndex, StringComparison.Ordinal);
         Assert.True(startIndex >= 0 && endIndex > startIndex);
         return source[startIndex..endIndex];

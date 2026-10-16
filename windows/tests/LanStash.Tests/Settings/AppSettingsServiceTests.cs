@@ -6,6 +6,34 @@ namespace LanStash.Tests.Settings;
 public sealed class AppSettingsServiceTests
 {
     [Fact]
+    public void ChatNotificationPreferenceDefaultsOffAndPersistsWithoutChangingExistingFields()
+    {
+        var directory = Directory.CreateTempSubdirectory("lanstash-chat-settings-");
+        try
+        {
+            var path = Path.Combine(directory.FullName, "settings.json");
+            File.WriteAllText(path, "{\"Theme\":\"Dark\",\"HiddenOptionalModules\":[\"Downloads\"]}");
+            var service = new AppSettingsService(new FileAppSettingsStore(path));
+            Assert.False(service.Preferences.ChatNotificationsEnabled);
+            Assert.True(service.SetChatNotificationsEnabled(true));
+            var restored = new FileAppSettingsStore(path).Load();
+            Assert.True(restored.ChatNotificationsEnabled); Assert.Equal(AppThemePreference.Dark, restored.Theme);
+            Assert.Contains(AppModule.Downloads, restored.HiddenOptionalModules);
+            Assert.DoesNotContain("synthetic", File.ReadAllText(path));
+        }
+        finally { directory.Delete(true); }
+    }
+
+    [Fact]
+    public void ChatNotificationSaveFailureKeepsPriorPreferenceAndDoesNotPublishChange()
+    {
+        var service = new AppSettingsService(new ThrowingSaveStore()); var changes = 0;
+        service.Changed += (_, _) => changes++;
+        Assert.False(service.SetChatNotificationsEnabled(true));
+        Assert.False(service.Preferences.ChatNotificationsEnabled); Assert.Equal(0, changes);
+    }
+
+    [Fact]
     public void CorruptLocalValueFallsBackToSafeDefaults()
     {
         var directory = Directory.CreateTempSubdirectory("lanstash-settings-");

@@ -15,6 +15,7 @@
           <ListView.ItemTemplate><DataTemplate x:DataType="downloads:DownloadBatchChoice"><TextBlock Text="{x:Bind Title}" TextWrapping="Wrap" Margin="4,8"/></DataTemplate></ListView.ItemTemplate>
         </ListView>
       </StackPanel>
+      <ContentControl x:Name="LocationOptions" Visibility="Collapsed"/>
       <StackPanel x:Name="ResultsPanel" Spacing="8" Visibility="Collapsed">
         <TextBlock x:Name="SummaryText" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
         <ListView x:Name="ResultList" SelectionMode="None" MaxHeight="220">

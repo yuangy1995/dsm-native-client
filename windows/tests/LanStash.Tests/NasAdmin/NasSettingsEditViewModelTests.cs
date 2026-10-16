@@ -220,8 +220,10 @@ public sealed class NasSettingsEditViewModelTests
                 false, true, new(0, 1, 0), MutationErrorCategory.Conflict)));
         await model.SaveAsync();
         Assert.Equal(NasSettingsEditState.NeedsReview, model.State);
-        Assert.Contains("Nothing was saved by this attempt", model.ErrorMessage!);
+        Assert.Equal("Nothing was saved. Refresh settings and try again.", model.ErrorMessage);
         Assert.DoesNotContain("may have been saved", model.ErrorMessage!);
+        Assert.False(model.LastResult!.Submitted);
+        Assert.False(model.WasSuccessful);
         Assert.False(model.CanSave);
     }
 

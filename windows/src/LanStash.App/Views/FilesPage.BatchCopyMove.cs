@@ -17,13 +17,13 @@ public sealed partial class FilesPage
 
     private async void CopyMultiple_Click(object sender, RoutedEventArgs e)
     {
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
         EnterCopyMoveSelectionMode(FileCopyMoveOperation.Copy);
     }
 
     private async void MoveMultiple_Click(object sender, RoutedEventArgs e)
     {
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
         EnterCopyMoveSelectionMode(FileCopyMoveOperation.Move);
     }
 

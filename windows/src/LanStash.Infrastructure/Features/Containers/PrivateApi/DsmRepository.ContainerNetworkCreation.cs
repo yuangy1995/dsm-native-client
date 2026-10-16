@@ -6,10 +6,10 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    public bool CanCreateNetworks => _nasServiceSessionVerified &&
-        HasInternalObservedContainerVersion(InternalObservedNetworkApi);
+    public bool CanCreateNetworks => _profile.Id != Guid.Empty && _session.ProfileId == _profile.Id && !string.IsNullOrWhiteSpace(_session.Sid) &&
+        HasInternalObservedContainerVersion(InternalObservedNetworkApi) && NasServiceFormatAndPathSupported(_capabilities[InternalObservedNetworkApi]);
     public async Task PrepareNetworkManagementAsync(CancellationToken cancellationToken = default) =>
-        _ = await PrepareServiceSettingsAsync(cancellationToken).ConfigureAwait(false);
+        _ = await LoadContainerNetworkDefinitionsAsync(cancellationToken).ConfigureAwait(false);
     public Task<MutationResult> CreateNetworkAsync(ContainerNetworkCreateRequest request, CancellationToken cancellationToken = default) =>
         CanCreateNetworks ? CreateContainerNetworkCoreAsync(request, cancellationToken) : Task.FromResult(UnsupportedResult("createContainerNetwork"));
 
@@ -20,7 +20,7 @@ public sealed partial class DsmRepository
         if (request is null || request.Configuration is null || request.Configuration.ValidationIssue != ContainerNetworkValidationIssue.None ||
             request.RequestId == Guid.Empty || !request.RiskConfirmed || request.ProfileId != _profile.Id || _session.ProfileId != _profile.Id || string.IsNullOrWhiteSpace(_session.Sid))
             return ServicePreflightFailure(operation, MutationErrorCategory.Validation);
-        if (!HasInternalObservedContainerVersion(InternalObservedNetworkApi)) return UnsupportedResult(operation);
+        if (!CanCreateNetworks) return UnsupportedResult(operation);
         var configuration = request.Configuration;
         var shared = ServiceMutations; var scope = ServiceScope();
         var signature = ServiceHash(JsonSerializer.Serialize(new { Kind = NasServiceSettingsKind.ContainerNetworks, configuration }));
@@ -42,8 +42,6 @@ public sealed partial class DsmRepository
             IReadOnlyList<ContainerNetworkDefinition> before;
             try
             {
-                await PrepareNetworkManagementAsync(token).ConfigureAwait(false);
-                if (!_nasServiceSessionVerified) return UnsupportedResult(operation);
                 // 先核对实际列表读取权限；创建权限由 NAS 裁决，不假定只有管理员可创建。
                 before = await LoadContainerNetworkDefinitionsAsync(token).ConfigureAwait(false);
                 if (before.Any(network => network.Summary.Name == configuration.Name))
@@ -69,6 +67,7 @@ public sealed partial class DsmRepository
             {
                 var capability = _capabilities[InternalObservedNetworkApi] with { MinVersion = 1, MaxVersion = 1 };
                 await SecurityCallAsync(capability, "create", parameters, token).ConfigureAwait(false);
+                state.Accepted = true;
             }
             catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error)) { state.Rejection = NetworkCreationError(error); }
             catch (Exception) { /* 可能已创建，随后只能读取；不得重放。 */ }
@@ -105,7 +104,7 @@ public sealed partial class DsmRepository
         {
             var networks = await LoadContainerNetworkDefinitionsAsync(token).ConfigureAwait(false);
             var matches = networks.Where(item => item.Summary.Name == state.Configuration.Name).ToArray();
-            if (matches.Length == 1 && !state.PreviousIds.Contains(matches[0].Summary.Id) && CreatedNetworkMatches(state.Configuration, matches[0]))
+            if (state.Accepted && matches.Length == 1 && !state.PreviousIds.Contains(matches[0].Summary.Id) && CreatedNetworkMatches(state.Configuration, matches[0]))
             {
                 // 当前记录没有可依赖的 IPv6 地址及 IP 伪装回读字段，不把高级选项假装核对成功。
                 optionsUnknown = state.Configuration.IsIpv6Enabled || state.Configuration.DisableMasquerade;
@@ -126,7 +125,8 @@ public sealed partial class DsmRepository
         if (data["network"] is not null && data["networks"] is not null && !JsonNode.DeepEquals(data["network"], data["networks"])) throw InvalidContainerManagerResponse();
         var rows = RequiredContainerObjectArray(data, ["network", "networks"]);
         var summaries = ParseContainerResources(data, ContainerResourceKind.Network, ["network", "networks"], ["id", "network_id", "Id"], ["name", "Name"]);
-        if (ContainerPageNumber(data, "total") is int total && total != rows.Count) throw InvalidContainerManagerResponse();
+        if (ContainerPageNumber(data, "total") is int total && total != rows.Count ||
+            ContainerPageNumber(data, "offset") is int offset && offset != 0) throw InvalidContainerManagerResponse();
         var result = new List<ContainerNetworkDefinition>();
         for (var index = 0; index < rows.Count; index++)
         {
@@ -167,5 +167,6 @@ public sealed partial class DsmRepository
         public ContainerNetworkCreation Configuration { get; } = configuration;
         public HashSet<string> PreviousIds { get; } = previousIds;
         public MutationErrorCategory? Rejection { get; set; }
+        public bool Accepted { get; set; }
     }
 }

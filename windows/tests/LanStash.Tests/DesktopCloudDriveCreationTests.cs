@@ -46,7 +46,7 @@ public sealed class DesktopCloudDriveCreationTests : IDisposable
     }
 
     [Fact]
-    public async Task UnknownDirectoryNeedsExplicitReadOnlyAcceptanceBeforeChildrenCanUpload()
+    public async Task UnknownDirectoryNeedsExplicitUseOfExistingDirectoryBeforeChildrenCanUpload()
     {
         var repository = await ReadyAsync(); repository.LoseDirectoryResponse = true;
         var local = await WriteAsync(Path.Combine("parent", "new.txt"), "nested");
@@ -63,9 +63,48 @@ public sealed class DesktopCloudDriveCreationTests : IDisposable
         await using (var frozen = await Store.OpenContentAsync(_mapping, child.Id))
         using (var reader = new StreamReader(frozen)) Assert.Equal("nested", await reader.ReadToEndAsync());
         Assert.Equal(CloudDriveChangePhase.Submitted, (await coordinator.ReviewAsync(parent.Id)).Phase);
-        Assert.Equal(CloudDriveChangePhase.Verified, (await coordinator.ReviewAsync(parent.Id, acceptDirectory: true)).Phase);
+        Assert.Equal(CloudDriveChangePhase.Verified, (await coordinator.UseExistingDirectoryAsync(parent, true)).Phase);
         Assert.False(await session.ProcessPathAsync(local));
         Assert.Equal(["mkdir:/share/parent", "upload:/share/parent/new.txt"], repository.Writes);
+    }
+
+    [Theory]
+    [InlineData("confirmation")]
+    [InlineData("stale")]
+    [InlineData("disabled")]
+    [InlineData("missing")]
+    [InlineData("file")]
+    [InlineData("permission")]
+    [InlineData("parent-permission")]
+    [InlineData("link")]
+    [InlineData("mount")]
+    public async Task ExistingDirectoryRecoveryKeepsChildrenBlockedWhenUnsafe(string condition)
+    {
+        var repository = await ReadyAsync(); repository.LoseDirectoryResponse = true;
+        var local = await WriteAsync(Path.Combine("parent", "new.txt"), "protected child");
+        await using var session = Session(repository);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => session.ProcessPathAsync(local));
+        var parent = Assert.Single(await Store.ReadChangesAsync(_mapping), item => item.Kind == CloudDriveChangeKind.CreateDirectory);
+        var coordinator = new CloudDriveWritebackCoordinator(_mapping, repository, Store);
+        if (condition == "disabled")
+        {
+            // 合成冷恢复记录：保留未知操作，但当前映射不再授权写入。
+            var path = Path.Combine(_root, "journal", _mapping.Id.ToString("N"), "state.json");
+            var state = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+            state["WritebackEnabled"] = false; await File.WriteAllTextAsync(path, state.ToJsonString());
+        }
+        if (condition == "missing") repository.Entries.Remove(parent.RemotePath);
+        if (condition == "file") repository.Entries[parent.RemotePath] = [1];
+        if (condition is "permission" or "parent-permission") repository.DeniedPath = condition == "permission" ? parent.RemotePath : "/share";
+        if (condition is "link" or "mount") repository.UnsafeDirectory = condition;
+        if (condition is "confirmation" or "stale" or "disabled")
+            await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.UseExistingDirectoryAsync(
+                condition == "stale" ? parent with { CreatedAt = parent.CreatedAt.AddMinutes(1) } : parent, condition != "confirmation"));
+        else Assert.Equal(CloudDriveChangePhase.Submitted, (await coordinator.UseExistingDirectoryAsync(parent, true)).Phase);
+        Assert.Equal(CloudDriveChangePhase.Submitted, (await coordinator.ReviewAsync(parent.Id)).Phase);
+        Assert.Equal(["mkdir:/share/parent"], repository.Writes);
+        var child = Assert.Single(await Store.ReadChangesAsync(_mapping), item => item.Kind == CloudDriveChangeKind.SaveFile);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.SubmitAsync(child.Id));
     }
 
     [Fact]
@@ -81,7 +120,7 @@ public sealed class DesktopCloudDriveCreationTests : IDisposable
     }
 
     [Fact]
-    public async Task AcceptingParentResultWakesChildrenWithoutAnotherEditOrRestart()
+    public async Task UsingExistingParentWakesChildrenWithoutAnotherEditOrRestart()
     {
         var repository = await ReadyAsync(); repository.LoseDirectoryResponse = true;
         await WriteAsync(Path.Combine("parent", "new.txt"), "nested");
@@ -93,7 +132,7 @@ public sealed class DesktopCloudDriveCreationTests : IDisposable
         session.Start(() => _paths.Keys.ToArray());
         await waiting.Task.WaitAsync(TimeSpan.FromSeconds(10));
         var parent = Assert.Single(await Store.ReadChangesAsync(_mapping), item => item.Kind == CloudDriveChangeKind.CreateDirectory);
-        await new CloudDriveWritebackCoordinator(_mapping, repository, Store).ReviewAsync(parent.Id, acceptDirectory: true);
+        await new CloudDriveWritebackCoordinator(_mapping, repository, Store).UseExistingDirectoryAsync(parent, true);
         session.NotifyChanged(Path.Combine(LocalRoot, "parent"));
         await saved.Task.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(["mkdir:/share/parent", "upload:/share/parent/new.txt"], repository.Writes);
@@ -399,10 +438,11 @@ public sealed class DesktopCloudDriveCreationTests : IDisposable
         internal readonly Dictionary<string, byte[]?> Entries = new(StringComparer.Ordinal) { ["/share"] = null };
         internal readonly List<string> Writes = [];
         internal bool Writable = true, LoseDirectoryResponse, LoseFileResponse, LastOverwrite;
+        internal string? DeniedPath, UnsafeDirectory;
         private FileItem Item(string path) => new(path, path[(path.LastIndexOf('/') + 1)..], Entries[path] is null,
-            Entries[path]?.LongLength ?? 0, DateTimeOffset.UnixEpoch, null, Writable, Writable);
+            Entries[path]?.LongLength ?? 0, DateTimeOffset.UnixEpoch, null, Writable && path != DeniedPath, Writable);
         public Task<FileEntryMetadata?> ReadFileMetadataAsync(string path, CancellationToken token = default) =>
-            Task.FromResult<FileEntryMetadata?>(Entries.ContainsKey(path) ? new(Item(path), Entries[path] is null ? "dir" : "file", path == "/share" ? "shared_folder" : "normal") : null);
+            Task.FromResult<FileEntryMetadata?>(Entries.ContainsKey(path) ? new(Item(path), UnsafeDirectory == "link" && path != "/share" ? "symlink" : Entries[path] is null ? "dir" : "file", path == "/share" ? "shared_folder" : UnsafeDirectory == "mount" ? "remote" : "normal") : null);
         public async Task<MutationResult> UploadFileAsync(FileUploadRequest request, IProgress<long>? progress = null, CancellationToken cancellationToken = default)
         {
             var path = request.FolderPath + "/" + request.FileName;

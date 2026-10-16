@@ -27,23 +27,28 @@
       </Expander>
     </DataTemplate>
     <DataTemplate x:Key="ContainerResourceTemplate" x:DataType="containers:ContainerResourceItem">
-      <Grid Padding="4,10" ColumnSpacing="12" AutomationProperties.Name="{x:Bind AutomationName}">
+      <Grid Padding="4,10" ColumnSpacing="12" RowSpacing="5" AutomationProperties.Name="{x:Bind AutomationName}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" TextWrapping="Wrap"/>
-        <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind StatusText}" TextWrapping="Wrap"/>
+        <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind ResourceStatusText}" TextWrapping="Wrap"/>
+        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind DetailsText}" TextWrapping="Wrap"/>
       </Grid>
     </DataTemplate>
     <DataTemplate x:Key="ContainerEventTemplate" x:DataType="containers:ContainerEventItem">
-      <Grid Padding="4,10" ColumnSpacing="12" AutomationProperties.Name="{x:Bind AutomationName}">
+      <Grid Padding="4,10" ColumnSpacing="12" RowSpacing="5" AutomationProperties.Name="{x:Bind AutomationName}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <TextBlock FontWeight="SemiBold" Text="{x:Bind TimeText}" TextWrapping="Wrap"/>
         <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind LevelText}" TextWrapping="Wrap"/>
+        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{x:Bind Message}" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+        <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{x:Bind Account}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
       </Grid>
     </DataTemplate>
   </Page.Resources>
@@ -76,7 +81,7 @@
     <InfoBar x:Uid="ContainerManagerReadOnly" Grid.Row="1" IsClosable="False" IsOpen="False" Severity="Informational" Margin="12,6"/>
     <InfoBar x:Uid="ContainerManagerRefreshError" x:Name="RefreshErrorNotice" Grid.Row="2" AutomationProperties.LiveSetting="Polite" IsClosable="False" IsOpen="False" Severity="Warning" Margin="12,6"/>
     <InfoBar x:Uid="ContainerManagerSessionExpired" x:Name="SessionExpiredNotice" Grid.Row="2" AutomationProperties.LiveSetting="Assertive" IsClosable="False" IsOpen="False" Severity="Error" Margin="12,6"/>
-    <Pivot x:Name="SectionPivot" Grid.Row="3" Margin="12,0,12,12">
+    <Pivot x:Name="SectionPivot" Grid.Row="3" Margin="12,0,12,12" SelectionChanged="SectionPivot_SelectionChanged">
       <PivotItem x:Uid="WorkspaceContainerOverview">
         <Grid>
           <ItemsControl HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6,20">
@@ -265,7 +270,9 @@
           <Button x:Name="BrowseRegistryButton" x:Uid="ContainerRegistryOpen" Click="BrowseRegistry_Click"/>
         </StackPanel>
         <Grid Grid.Row="1" AutomationProperties.LiveSetting="Polite">
-          <ListView x:Uid="ContainerManagerImagesList" x:Name="ImagesList" ItemsSource="{Binding Images}" ItemTemplate="{StaticResource ContainerResourceTemplate}" SelectionMode="None"/>
+          <ListView x:Uid="ContainerManagerImagesList" x:Name="ImagesList" ItemsSource="{Binding Images}" ItemTemplate="{StaticResource ContainerResourceTemplate}" SelectionMode="None">
+            <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
+          </ListView>
           <StackPanel x:Name="ImagesLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
             <ProgressRing Width="30" Height="30" IsActive="True"/>
             <TextBlock x:Uid="ContainerManagerSectionLoading" TextWrapping="Wrap"/>
@@ -285,10 +292,11 @@
       <PivotItem x:Uid="ContainerManagerNetworksTab">
         <Grid AutomationProperties.LiveSetting="Polite">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,6,0,10">
-            <Button x:Name="CreateNetworkButton" x:Uid="ContainerCreateOpen" Click="CreateNetwork_Click"/>
-            <Button x:Name="DeleteNetworksButton" x:Uid="ContainerDeleteOpen" Click="DeleteNetworks_Click"/>
-          </StackPanel>
+          <Grid ColumnSpacing="8" Margin="0,6,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBox x:Name="NetworkSearchBox" x:Uid="ContainerNetworkSearch" TextChanged="NetworkSearch_TextChanged"/>
+            <Button Grid.Column="1" x:Name="CreateNetworkButton" x:Uid="ContainerCreateOpen" Click="CreateNetwork_Click"/>
+            <Button Grid.Column="2" x:Name="DeleteNetworksButton" x:Uid="ContainerDeleteOpen" Click="DeleteNetworks_Click"/>
+          </Grid>
           <Grid Grid.Row="1">
           <ListView x:Uid="ContainerManagerNetworksList" x:Name="NetworksList" ItemsSource="{Binding Networks}" ItemTemplate="{StaticResource ContainerNetworkTemplate}" SelectionMode="None">
             <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
@@ -299,6 +307,10 @@
           </StackPanel>
           <StackPanel x:Name="NetworksEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed">
             <TextBlock x:Uid="ContainerManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap"/>
+          </StackPanel>
+          <StackPanel x:Name="NetworksFilteredEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed">
+            <TextBlock x:Uid="ContainerNetworkFilteredEmpty" TextAlignment="Center" TextWrapping="Wrap"/>
+            <Button x:Name="NetworkClearButton" x:Uid="ContainerNetworkClear" HorizontalAlignment="Center" Click="NetworkClear_Click"/>
           </StackPanel>
           <StackPanel x:Name="NetworksErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed">
             <TextBlock x:Uid="ContainerManagerSectionError" TextAlignment="Center" TextWrapping="Wrap"/>
@@ -311,7 +323,9 @@
       </PivotItem>
       <PivotItem x:Uid="ContainerManagerProjectsTab">
         <Grid AutomationProperties.LiveSetting="Polite">
-          <ListView x:Uid="ContainerManagerProjectsList" x:Name="ProjectsList" ItemsSource="{Binding Projects}" ItemTemplate="{StaticResource ContainerResourceTemplate}" SelectionMode="None"/>
+          <ListView x:Uid="ContainerManagerProjectsList" x:Name="ProjectsList" ItemsSource="{Binding Projects}" ItemTemplate="{StaticResource ContainerResourceTemplate}" SelectionMode="None">
+            <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
+          </ListView>
           <StackPanel x:Name="ProjectsLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
             <ProgressRing Width="30" Height="30" IsActive="True"/>
             <TextBlock x:Uid="ContainerManagerSectionLoading" TextWrapping="Wrap"/>
@@ -329,13 +343,30 @@
       </PivotItem>
       <PivotItem x:Uid="ContainerManagerEventsTab">
         <Grid AutomationProperties.LiveSetting="Polite">
-          <ListView x:Uid="ContainerManagerEventsList" x:Name="EventsList" ItemsSource="{Binding Events}" ItemTemplate="{StaticResource ContainerEventTemplate}" SelectionMode="None"/>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid ColumnSpacing="8" Margin="0,6,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBox x:Name="ActivitySearchBox" x:Uid="ContainerActivitySearch" TextChanged="ActivitySearch_TextChanged"/>
+            <ComboBox x:Name="ActivityLevelPicker" x:Uid="ContainerActivityLevel" Grid.Column="1" SelectedIndex="0" MinWidth="120" SelectionChanged="ActivityLevel_SelectionChanged">
+              <ComboBoxItem x:Uid="ContainerActivityAll" Tag="All"/><ComboBoxItem x:Uid="ContainerActivityInformation" Tag="Information"/>
+              <ComboBoxItem x:Uid="ContainerActivityWarning" Tag="Warning"/><ComboBoxItem x:Uid="ContainerActivityError" Tag="Error"/>
+              <ComboBoxItem x:Uid="ContainerActivityOther" Tag="Unknown"/>
+            </ComboBox>
+          </Grid>
+          <InfoBar x:Name="ActivityRefreshNotice" x:Uid="ContainerActivityRefreshError" Grid.Row="1" IsOpen="False" IsClosable="False" Severity="Warning"/>
+          <Grid Grid.Row="2">
+          <ListView x:Uid="ContainerManagerEventsList" x:Name="EventsList" ItemsSource="{Binding Events}" ItemTemplate="{StaticResource ContainerEventTemplate}" SelectionMode="None">
+            <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
+          </ListView>
           <StackPanel x:Name="EventsLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
             <ProgressRing Width="30" Height="30" IsActive="True"/>
             <TextBlock x:Uid="ContainerManagerSectionLoading" TextWrapping="Wrap"/>
           </StackPanel>
           <StackPanel x:Name="EventsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed">
-            <TextBlock x:Uid="ContainerManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap"/>
+            <TextBlock x:Uid="ContainerActivityEmpty" TextAlignment="Center" TextWrapping="Wrap"/>
+          </StackPanel>
+          <StackPanel x:Name="EventsFilteredEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed">
+            <TextBlock x:Uid="ContainerActivityFilteredEmpty" TextAlignment="Center" TextWrapping="Wrap"/>
+            <Button x:Uid="ContainerActivityClear" HorizontalAlignment="Center" Click="ActivityClear_Click"/>
           </StackPanel>
           <StackPanel x:Name="EventsErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed">
             <TextBlock x:Uid="ContainerManagerSectionError" TextAlignment="Center" TextWrapping="Wrap"/>
@@ -343,6 +374,7 @@
           <StackPanel x:Name="EventsUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed">
             <TextBlock x:Uid="ContainerManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap"/>
           </StackPanel>
+          </Grid>
         </Grid>
       </PivotItem>
     </Pivot>

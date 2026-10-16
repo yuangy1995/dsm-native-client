@@ -138,16 +138,20 @@ internal sealed class CloudDriveWritebackDialog : ContentDialog
             }), TextWrapping = TextWrapping.Wrap });
             var confirm = new CheckBox { MinHeight = 44, Tag = operation.Id, IsChecked = false, HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Content = new TextBlock { Text = L.Get(operation.IsDirectory ? "CloudDriveDeletionDirectoryConfirm" : "CloudDriveDeletionFileConfirm"), TextWrapping = TextWrapping.Wrap } };
-            row.Children.Add(confirm);
+            if (operation.Phase != CloudDriveDeletionPhase.Submitted) row.Children.Add(confirm);
             void Add(string key, CloudDriveDeletionRecoveryAction action)
             {
-                var button = new Button { Content = L.Get(key), MinHeight = 44, IsEnabled = false, Tag = operation.Id };
-                confirm.Checked += (_, _) => button.IsEnabled = _delete is not null;
-                confirm.Unchecked += (_, _) => button.IsEnabled = false;
+                var readOnly = action == CloudDriveDeletionRecoveryAction.Review;
+                var button = new Button { Content = L.Get(key), MinHeight = 44, IsEnabled = readOnly && _delete is not null, Tag = operation.Id };
+                if (!readOnly)
+                {
+                    confirm.Checked += (_, _) => button.IsEnabled = _delete is not null;
+                    confirm.Unchecked += (_, _) => button.IsEnabled = false;
+                }
                 button.Click += async (_, _) =>
                 {
-                    if (confirm.IsChecked != true || _delete is null) return;
-                    await RunAsync(async token => { await _delete(operation, action, true, token); return L.Get("CloudDriveWritebackUpdated"); });
+                    if (!readOnly && confirm.IsChecked != true || _delete is null) return;
+                    await RunAsync(async token => { await _delete(operation, action, !readOnly, token); return L.Get("CloudDriveWritebackUpdated"); });
                 };
                 row.Children.Add(button);
             }
@@ -172,16 +176,20 @@ internal sealed class CloudDriveWritebackDialog : ContentDialog
             }
             var confirm = new CheckBox { IsChecked = false, MinHeight = 44, Tag = operation.Id, HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Content = new TextBlock { Text = L.Get("CloudDriveRelocationConfirm"), TextWrapping = TextWrapping.Wrap } };
-            row.Children.Add(confirm);
+            if (operation.Phase != CloudDriveRelocationPhase.Submitted) row.Children.Add(confirm);
             void Add(string key, CloudDriveRelocationRecoveryAction action)
             {
-                var button = new Button { Content = L.Get(key), MinHeight = 44, IsEnabled = false, Tag = operation.Id };
-                confirm.Checked += (_, _) => button.IsEnabled = _relocate is not null;
-                confirm.Unchecked += (_, _) => button.IsEnabled = false;
+                var readOnly = action == CloudDriveRelocationRecoveryAction.Review;
+                var button = new Button { Content = L.Get(key), MinHeight = 44, IsEnabled = readOnly && _relocate is not null, Tag = operation.Id };
+                if (!readOnly)
+                {
+                    confirm.Checked += (_, _) => button.IsEnabled = _relocate is not null;
+                    confirm.Unchecked += (_, _) => button.IsEnabled = false;
+                }
                 button.Click += async (_, _) =>
                 {
-                    if (confirm.IsChecked != true || _relocate is null) return;
-                    await RunAsync(async token => { await _relocate(operation, action, true, token); return L.Get("CloudDriveWritebackUpdated"); });
+                    if (!readOnly && confirm.IsChecked != true || _relocate is null) return;
+                    await RunAsync(async token => { await _relocate(operation, action, !readOnly, token); return L.Get("CloudDriveWritebackUpdated"); });
                 };
                 row.Children.Add(button);
             }
@@ -202,7 +210,7 @@ internal sealed class CloudDriveWritebackDialog : ContentDialog
             row.Children.Add(new TextBlock { Text = L.Get(directory ? DirectoryPhaseKey(change.Phase) : PhaseKey(change.Phase)), TextWrapping = TextWrapping.Wrap });
             var confirm = new CheckBox { MinHeight = 44, Tag = change.Id, IsChecked = false,
                 HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Content = new TextBlock
-                { Text = L.Get(directory ? "CloudDriveDirectoryRecoveryConfirm" : "CloudDriveWritebackRecoveryConfirm"), TextWrapping = TextWrapping.Wrap } };
+                { Text = L.Get(directory ? change.Phase == CloudDriveChangePhase.Submitted ? "CloudDriveUseExistingDirectoryConfirm" : "CloudDriveDirectoryRecoveryConfirm" : "CloudDriveWritebackRecoveryConfirm"), TextWrapping = TextWrapping.Wrap } };
             if (change.Phase is CloudDriveChangePhase.Conflict or CloudDriveChangePhase.Rejected or CloudDriveChangePhase.KeptLocally) row.Children.Add(confirm);
             if (directory && change.Phase == CloudDriveChangePhase.Submitted) row.Children.Add(confirm);
             void Add(string key, CloudDriveRecoveryAction action, bool needsConfirmation, bool requiresEnabled)
@@ -221,7 +229,11 @@ internal sealed class CloudDriveWritebackDialog : ContentDialog
                 };
                 row.Children.Add(button);
             }
-            if (change.Phase == CloudDriveChangePhase.Submitted) Add("CloudDriveWritebackReview", CloudDriveRecoveryAction.Review, directory, false);
+            if (change.Phase == CloudDriveChangePhase.Submitted)
+            {
+                Add("CloudDriveWritebackReview", CloudDriveRecoveryAction.Review, false, false);
+                if (directory) Add("CloudDriveUseExistingDirectory", CloudDriveRecoveryAction.UseExistingDirectory, true, true);
+            }
             if (change.Phase == CloudDriveChangePhase.Prepared) Add(directory ? "CloudDriveCreateDirectoryNow" : "CloudDriveWritebackSave", CloudDriveRecoveryAction.Save, false, true);
             if (change.Phase is CloudDriveChangePhase.Conflict or CloudDriveChangePhase.Rejected or CloudDriveChangePhase.KeptLocally)
             {
@@ -281,6 +293,7 @@ internal sealed class CloudDriveWritebackDialog : ContentDialog
 
     private static string ErrorKey(Exception error) => error.Message switch
     {
+        "office.cloud-writeback-conflict" => "OfficeCloudEnableConflict",
         "CloudDriveResumeBeforeWriteback" => "CloudDriveResumeBeforeWriteback",
         "CloudDriveWritebackPending" or "cloud.sync.pending_changes" => "CloudDriveWritebackPending",
         "CloudDriveWritebackChanged" or "cloud.sync.invalid_transition" => "CloudDriveWritebackChanged",

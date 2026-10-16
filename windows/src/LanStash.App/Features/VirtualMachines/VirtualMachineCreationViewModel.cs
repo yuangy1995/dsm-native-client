@@ -17,13 +17,17 @@ public sealed class VirtualMachineCreationViewModel(TimeProvider? timeProvider =
     public IReadOnlyList<VirtualizationResourceSummary> Networks { get; private set; } = [];
     public IReadOnlyList<VirtualizationResourceSummary> Images { get; private set; } = [];
     public VirtualMachineAdvancedCreationInventory? AdvancedInventory { get; private set; }
+    public bool CanChooseBasic => _repository?.CanCreateBasicMachine == true;
     public bool CanChooseAdvanced => _repository?.CanCreateAdvancedMachine == true && AdvancedInventory is { StoragesFrozen: false } inventory &&
         inventory.Storages.Any(item => item.Status == "online" && item.StatusType == "healthy");
     public IReadOnlyList<VirtualMachineCreationImage> BootImages => AdvancedInventory is { ImagesFrozen: false } inventory
         ? inventory.Images.Where(item => item.Type == "iso" && item.StatusType != "error").ToArray() : [];
     public IReadOnlyList<VirtualizationResourceSummary> FormStorages => Draft?.Advanced is null ? Storages : AdvancedInventory?.Storages
         .Where(item => item.Status == "online" && item.StatusType == "healthy")
-        .Select(item => new VirtualizationResourceSummary(item.Id, item.Name, VirtualizationResourceKind.Storage, VirtualizationResourceHealth.Healthy)).ToArray() ?? [];
+        .Select(item => new VirtualizationResourceSummary(item.Id, item.Name, VirtualizationResourceKind.Storage, VirtualizationResourceHealth.Healthy) { Source = VirtualMachineApiSource.Internal }).ToArray() ?? [];
+    public IReadOnlyList<VirtualizationResourceSummary> FormNetworks => Draft?.Advanced is null ? Networks :
+        AdvancedInventory?.Networks is { Status: VirtualMachineManagerSectionStatus.Available } networks ? networks.Items.Where(item => item.IsFrozen == false).ToArray() : [];
+    public IReadOnlyList<VirtualizationResourceSummary> FormImages => Draft?.Advanced is null ? Images : [];
     public IReadOnlyList<VirtualMachineCreationRecovery> Recoveries { get; private set; } = [];
     public VirtualMachineCreationRequest? Draft { get; private set; }
     public VirtualMachineCreationRequest? ActiveRequest { get; private set; }
@@ -76,6 +80,7 @@ public sealed class VirtualMachineCreationViewModel(TimeProvider? timeProvider =
         if (!CanEdit || Draft is not { } draft || operatingSystem is not null && !CanChooseAdvanced) return;
         if (operatingSystem is null)
         {
+            if (!CanChooseBasic) return;
             var storage = Storages.FirstOrDefault(item => item.Id == draft.Storage.Id) ?? Storages.FirstOrDefault();
             if (storage is null) return;
             ChangeDraft(draft with { Advanced = null, Storage = storage });
@@ -84,9 +89,10 @@ public sealed class VirtualMachineCreationViewModel(TimeProvider? timeProvider =
         {
             var choices = AdvancedInventory!.Storages.Where(item => item.Status == "online" && item.StatusType == "healthy").ToArray();
             var storage = choices.FirstOrDefault(item => item.Id == draft.Storage.Id) ?? choices.First();
-            ChangeDraft(draft with { Storage = new(storage.Id, storage.Name, VirtualizationResourceKind.Storage, VirtualizationResourceHealth.Healthy),
+            ChangeDraft(draft with { Storage = new(storage.Id, storage.Name, VirtualizationResourceKind.Storage, VirtualizationResourceHealth.Healthy) { Source = VirtualMachineApiSource.Internal },
                 Advanced = new(operatingSystem.Value, draft.Advanced?.Firmware ?? VirtualMachineFirmware.Legacy, storage, draft.Advanced?.BootImage) });
         }
+        if (_ready && !_needsReload) ErrorMessage = FormStorages.Count == 0 ? L.Get("VmCreateNoStorage") : null;
         FormVersion++; Notify();
     }
     public async Task SelectRecoveryAsync(VirtualMachineCreationRecovery recovery)
@@ -114,13 +120,13 @@ public sealed class VirtualMachineCreationViewModel(TimeProvider? timeProvider =
                 _ready = false;
                 var recoveries = await repository.GetCreationRecoveriesAsync(token); if (!Current(generation, repository)) return;
                 Recoveries = recoveries.Where(item => item.Request.ProfileId == repository.ProfileId).ToArray();
-                var snapshot = await repository.LoadSnapshotAsync(token); if (!Current(generation, repository)) return;
+                var snapshot = await repository.LoadInventoryAsync(token); if (!Current(generation, repository)) return;
                 if (snapshot.ProfileId != repository.ProfileId || snapshot.Storages.Status != VirtualMachineManagerSectionStatus.Available) throw new InvalidOperationException("vm.create.resources");
                 Storages = snapshot.Storages.Items.Where(item => item.Health == VirtualizationResourceHealth.Healthy).ToArray();
                 Networks = snapshot.Networks.Status == VirtualMachineManagerSectionStatus.Available ? snapshot.Networks.Items : [];
                 Images = snapshot.Images.Status == VirtualMachineManagerSectionStatus.Available ? snapshot.Images.Items.Where(item => item.Type == "disk").ToArray() : [];
                 AdvancedInventory = null;
-                if (repository.CanCreateAdvancedMachine)
+                if (repository.CanReadAdvancedCreation)
                 {
                     try
                     {
@@ -133,10 +139,18 @@ public sealed class VirtualMachineCreationViewModel(TimeProvider? timeProvider =
                     catch (DsmException error) when (error.AuthenticationFailure) { throw; }
                     catch { /* 高级选项显示不可用，保留公开基础创建。 */ }
                 }
-                if (Draft is null && Storages.FirstOrDefault() is { } storage)
-                    Draft = new(repository.ProfileId, storage, [new(20480)], [new(null)], new("", "", 2, 2048, VirtualMachineAutoStart.Off), Guid.Empty, false);
+                if (Draft is null)
+                {
+                    if ((!CanChooseBasic || Storages.Count == 0) && AdvancedInventory is { StoragesFrozen: false } inventory &&
+                        inventory.Storages.FirstOrDefault(item => item.Status == "online" && item.StatusType == "healthy") is { } internalStorage)
+                        Draft = new(repository.ProfileId, new(internalStorage.Id, internalStorage.Name, VirtualizationResourceKind.Storage, VirtualizationResourceHealth.Healthy)
+                        { Source = VirtualMachineApiSource.Internal }, [new(20480)], [new(null)], new("", "", 2, 2048, VirtualMachineAutoStart.Off), Guid.Empty, false)
+                        { Advanced = new(VirtualMachineOperatingSystem.Linux, VirtualMachineFirmware.Legacy, internalStorage) };
+                    else if (Storages.FirstOrDefault() is { } storage)
+                        Draft = new(repository.ProfileId, storage, [new(20480)], [new(null)], new("", "", 2, 2048, VirtualMachineAutoStart.Off), Guid.Empty, false);
+                }
                 _ready = true; _needsReload = false; FormVersion++;
-                if (Storages.Count == 0) ErrorMessage = L.Get("VmCreateNoStorage");
+                if (FormStorages.Count == 0) ErrorMessage = L.Get("VmCreateNoStorage");
             }
         }
         catch { if (Current(generation, repository)) { ErrorMessage = L.Get("VmCreateLoadFailed"); _needsReload = true; } }
@@ -174,9 +188,9 @@ public sealed class VirtualMachineCreationViewModel(TimeProvider? timeProvider =
     }
     private bool ResourcesMatch(VirtualMachineCreationRequest request) => (request.Advanced is { } advanced ? CanChooseAdvanced && AdvancedInventory!.Storages.Any(item =>
         item.Id == advanced.Storage.Id && item.Name == advanced.Storage.Name && item.HostId == advanced.Storage.HostId && item.HostName == advanced.Storage.HostName && item.Status == "online" && item.StatusType == "healthy") &&
-        (advanced.BootImage is null || BootImages.Contains(advanced.BootImage)) : Storages.Any(item => item.Id == request.Storage.Id && item.Name == request.Storage.Name)) &&
-        request.Disks.All(disk => disk.Image is null || Images.Any(item => item.Id == disk.Image.Id && item.Name == disk.Image.Name)) &&
-        request.Networks.All(nic => nic.Network is null || Networks.Any(item => item.Id == nic.Network.Id && item.Name == nic.Network.Name));
+        (advanced.BootImage is null || BootImages.Contains(advanced.BootImage)) : CanChooseBasic && Storages.Any(item => item.Id == request.Storage.Id && item.Name == request.Storage.Name)) &&
+        request.Disks.All(disk => disk.Image is null || FormImages.Any(item => item.Id == disk.Image.Id && item.Name == disk.Image.Name && item.Source == disk.Image.Source)) &&
+        request.Networks.All(nic => nic.Network is null || FormNetworks.Any(item => item.Id == nic.Network.Id && item.Name == nic.Network.Name && item.Source == nic.Network.Source));
     private static bool SameDraft(VirtualMachineCreationRequest left, VirtualMachineCreationRequest right) => left.ProfileId == right.ProfileId && left.Settings == right.Settings &&
         left.PowerOnAfterCreation == right.PowerOnAfterCreation && left.Advanced == right.Advanced && left.Storage == right.Storage && left.Disks.SequenceEqual(right.Disks) && left.Networks.SequenceEqual(right.Networks);
     private bool ShouldPoll => ActiveRequest is not null && ErrorMessage is null && LastResult?.Result.ErrorCategory != MutationErrorCategory.Authentication &&

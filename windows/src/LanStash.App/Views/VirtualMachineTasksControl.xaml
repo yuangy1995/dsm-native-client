@@ -3,7 +3,6 @@
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
   <Grid ColumnSpacing="12">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <TextBlock x:Uid="VmTasksHint" TextWrapping="Wrap" VerticalAlignment="Center"/>
    <Button x:Name="RefreshButton" x:Uid="VmTasksRefresh" Grid.Column="1" MinHeight="44" Click="Refresh_Click"/>
    <Button x:Name="ClearButton" x:Uid="VmTasksClearOpen" Grid.Column="2" MinHeight="44" Click="Clear_Click"/>
    <Button x:Name="ReviewClearButton" x:Uid="VmTasksClearReview" Grid.Column="3" MinHeight="44" Click="ReviewClear_Click"/>

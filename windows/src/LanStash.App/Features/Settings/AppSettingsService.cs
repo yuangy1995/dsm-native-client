@@ -50,6 +50,16 @@ public sealed class AppSettingsService
         return true;
     }
 
+    public bool SetChatNotificationsEnabled(bool enabled)
+    {
+        if (_preferences.ChatNotificationsEnabled == enabled) return true;
+        var next = _preferences with { ChatNotificationsEnabled = enabled };
+        if (!TrySave(next)) return false;
+        _preferences = next;
+        Changed?.Invoke(this, new(false));
+        return true;
+    }
+
     public bool SetModuleVisible(AppModule module, bool isVisible)
     {
         if (!AppSettingsModulePolicy.CanHide(module))

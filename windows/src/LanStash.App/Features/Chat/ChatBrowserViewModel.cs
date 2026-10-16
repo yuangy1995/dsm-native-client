@@ -4,7 +4,7 @@ using LanStash.Domain;
 
 namespace LanStash.App.Features.Chat;
 
-public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
+public sealed partial class ChatBrowserViewModel : ObservableObject, IDisposable
 {
     public const int DefaultPageSize = 50;
 
@@ -39,7 +39,6 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     private ChatMembersContentState _membersContentState = ChatMembersContentState.Idle;
     private ChatAnnouncementsContentState _announcementsContentState = ChatAnnouncementsContentState.Idle;
     private bool _disposed;
-    private bool _messagePaneVisible;
 
     public ChatBrowserViewModel(int pageSize = DefaultPageSize)
         : this(pageSize, new FileChatConversationPinStore())
@@ -60,6 +59,8 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     public ObservableCollection<ChatMessageItem> Messages { get; } = [];
     public ObservableCollection<ChatMemberItem> ConversationMembers { get; } = [];
     public ObservableCollection<ChatAnnouncementItem> ConversationAnnouncements { get; } = [];
+    internal event Action? MessagesRefreshing;
+    internal event Action? MessagesRefreshed;
 
     public Guid? ActiveProfileId
     {
@@ -381,7 +382,6 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         if (CurrentConversationCache is { Loaded: true } cached)
         {
             ReplaceMessages(cached.Messages);
-            MarkVisibleConversationRead();
             RaisePropertyChanged(nameof(CanLoadEarlier));
             return;
         }
@@ -419,13 +419,6 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         return !IsLoadingMessages && !IsLoadingEarlier && SelectedConversation is { IsEncrypted: false } selected
             ? LoadFirstMessagePageAsync(selected.Id, preserveContentOnFailure: true)
             : Task.CompletedTask;
-    }
-
-    internal void SetMessagePaneVisible(bool visible)
-    {
-        if (_disposed) return;
-        _messagePaneVisible = visible;
-        if (visible) MarkVisibleConversationRead();
     }
 
     public void CancelForegroundRefreshes()
@@ -619,13 +612,12 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
             }
             profile.AllConversations = SortConversations(
                 conversations.Select(value => new ChatConversationItem(
-                    ApplyLocalReadState(value, profile),
+                    value,
                     profile.PinnedConversationIds.Contains(value.Id, StringComparer.Ordinal))),
                 profile.PinnedConversationIds);
             var readableIds = conversations.Where(value => !value.IsEncrypted).Select(value => value.Id)
                 .ToHashSet(StringComparer.Ordinal);
             foreach (var id in profile.Messages.Keys.Where(id => !readableIds.Contains(id)).ToArray()) profile.Messages.Remove(id);
-            foreach (var id in profile.ReadThrough.Keys.Where(id => !readableIds.Contains(id)).ToArray()) profile.ReadThrough.Remove(id);
             if (SelectedConversation is { } activeSelection &&
                 profile.AllConversations.FirstOrDefault(value => value.Id == activeSelection.Id)
                     is not { IsEncrypted: false })
@@ -691,13 +683,9 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
             MergeMessages(cache, page, CanDeleteOwnMessages,
                 updatePaging: !preserveHistory || cache.PreviousCursor is null,
                 canSetReminders: repository.Availability.SupportedFeatures.Contains(ChatReadFeature.Reminders));
-            var latestRead = page.Messages.Where(message => message.ConversationId == conversationId &&
-                    message.EncryptionState == ChatEncryptionState.NotEncrypted && message.SentAt > DateTimeOffset.UnixEpoch)
-                .Select(message => (DateTimeOffset?)message.SentAt).Max();
-            if (latestRead is not null && (cache.LatestReadAt is null || latestRead > cache.LatestReadAt))
-                cache.LatestReadAt = latestRead;
+            if (preserveContentOnFailure) MessagesRefreshing?.Invoke();
             ReplaceMessages(cache.Messages);
-            MarkVisibleConversationRead();
+            if (preserveContentOnFailure) MessagesRefreshed?.Invoke();
             HasMessageDeleteError = false;
             HasMessageDeleteReview = cache.PendingDeleteReviewMessageIds.Count > 0;
         }
@@ -839,25 +827,19 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         }
     }
 
-    // 只记录真正读取到的消息时间；不写 NAS 已读，不用本机当前时间掩盖更晚活动。
-    private void MarkVisibleConversationRead()
+    internal IReadOnlyList<ChatConversation> AllConversationsSnapshot =>
+        CurrentProfile?.AllConversations.Select(item => item.Conversation).ToArray() ?? [];
+
+    internal void ApplyConfirmedRead(ChatConversation result)
     {
-        if (!_messagePaneVisible || SelectedConversation is not { IsEncrypted: false } selected ||
-            CurrentProfile is not { } profile || CurrentConversationCache?.LatestReadAt is not { } readAt) return;
-        if (!profile.ReadThrough.TryGetValue(selected.Id, out var previous) || readAt > previous)
-            profile.ReadThrough[selected.Id] = readAt;
-        var replacement = ApplyLocalReadState(selected.Conversation, profile);
-        if (replacement.UnreadCount == selected.UnreadCount) return;
-        profile.AllConversations = profile.AllConversations.Select(item => item.Id == selected.Id
-            ? item with { Conversation = replacement } : item).ToArray();
+        if (_disposed || CurrentProfile is not { } profile || result.LastViewedAt is null) return;
+        profile.AllConversations = profile.AllConversations.Select(item => item.Id == result.Id &&
+            (item.Conversation.LastViewedAt is null || item.Conversation.LastViewedAt <= result.LastViewedAt) &&
+            (item.Conversation.LastActivityAt is null || item.Conversation.LastActivityAt <= result.LastActivityAt)
+                ? item with { Conversation = result } : item).ToArray();
         ApplyConversationFilter();
         RestoreSelectedConversationReference(profile);
     }
-
-    private static ChatConversation ApplyLocalReadState(ChatConversation conversation, ProfileCache profile) =>
-        !conversation.IsEncrypted && conversation.LastActivityAt is { } activity &&
-        profile.ReadThrough.TryGetValue(conversation.Id, out var readThrough) && activity <= readThrough
-            ? conversation with { UnreadCount = 0 } : conversation;
 
     private void ApplyConversationFilter()
     {
@@ -988,7 +970,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         else Messages.Clear();
     }
 
-    private static void MergeMessages(
+    private void MergeMessages(
         ConversationCache cache,
         ChatMessagePage page,
         bool canDeleteOwnMessages,
@@ -998,7 +980,11 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         var merged = page.Messages.Select(value => CreateMessageItem(
                 value,
                 canDeleteOwnMessages,
-                cache.PendingDeleteReviewMessageIds) with { CanSetReminder = canSetReminders && value.EncryptionState == ChatEncryptionState.NotEncrypted })
+                cache.PendingDeleteReviewMessageIds) with
+                {
+                    CanSetReminder = canSetReminders && value.EncryptionState == ChatEncryptionState.NotEncrypted,
+                    CanViewDetails = _repository?.Availability.SupportedFeatures.Contains(ChatReadFeature.ThreadedReplies) == true,
+                })
             .Concat(cache.Messages)
             .GroupBy(value => value.Id, StringComparer.Ordinal)
             .Select(group => group.First())
@@ -1063,7 +1049,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         foreach (var id in deletedMessages) RemoveMessageFromCache(profile, conversationId, id);
         if (closedConversations.Count == 0) return;
         profile.AllConversations = profile.AllConversations.Where(item => !closedConversations.Contains(item.Id)).ToArray();
-        foreach (var id in closedConversations) { profile.Messages.Remove(id); profile.ReadThrough.Remove(id); }
+        foreach (var id in closedConversations) profile.Messages.Remove(id);
         var previousPins = profile.PinnedConversationIds;
         profile.PinnedConversationIds = previousPins.Where(id => !closedConversations.Contains(id)).ToArray();
         ApplyConversationFilter(); RestoreSelection(profile);
@@ -1353,7 +1339,6 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         public string SearchQuery { get; set; } = string.Empty;
         public Dictionary<string, ConversationCache> Messages { get; } =
             new(StringComparer.Ordinal);
-        public Dictionary<string, DateTimeOffset> ReadThrough { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<ChatMemberItem>> Members { get; } =
             new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<ChatAnnouncementItem>> Announcements { get; } =
@@ -1363,7 +1348,6 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     private sealed class ConversationCache
     {
         public bool Loaded { get; set; }
-        public DateTimeOffset? LatestReadAt { get; set; }
         public IReadOnlyList<ChatMessageItem> Messages { get; set; } = [];
         public string? PreviousCursor { get; set; }
         public bool HasMoreBefore { get; set; }

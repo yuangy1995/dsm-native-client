@@ -56,6 +56,10 @@ public sealed partial class DsmRepository
             if (token.IsCancellationRequested) return Reject(MutationErrorCategory.Unknown, MutationResultStatus.CancelledBeforeSubmission);
             if (continueConfirmed) return Reject(MutationErrorCategory.Validation);
             var paths = new[] { request.Baseline?.MountPoint, request.Desired?.MountPoint }.OfType<string>().ToArray();
+            if (shared.IsoMounts.Any(active => active.Key.Scope == scope && !active.Value.Complete &&
+                active.Value.Paths.Any(path => paths.Any(target => RemoteMountPathsOverlap(path, target))))) return Reject(MutationErrorCategory.Conflict);
+            if (shared.FilePermissions.Keys.Any(key => key.Scope == scope &&
+                paths.Any(path => RemoteMountPathsOverlap(key.Path, path)))) return Reject(MutationErrorCategory.Conflict);
             if (shared.RemoteMountOperations.Values.Any(state => state.Scope == scope && !state.IsTerminal &&
                 state.Paths.Any(active => paths.Any(path => RemoteMountPathsOverlap(active, path))))) return Reject(MutationErrorCategory.Conflict);
             RemoteMountConnection? desired = null;
@@ -67,6 +71,8 @@ public sealed partial class DsmRepository
             try
             {
                 var inventory = await LoadRemoteMountInventoryAsync(token).ConfigureAwait(false);
+                if (inventory.IsoItems?.Any(item => paths.Any(path => RemoteMountPathsOverlap(item.MountPoint, path))) == true)
+                    return Reject(MutationErrorCategory.Conflict);
                 if (request.Action != RemoteMountAction.Disconnect && !inventory.RemoteMountingEnabled) return Reject(MutationErrorCategory.Permission);
                 if (request.Baseline is { } baseline && !inventory.Items.Contains(baseline)) return Reject(MutationErrorCategory.Conflict);
                 if (request.Baseline is { } nested && HasOtherRemoteMountOverlap(inventory, nested)) return Reject(MutationErrorCategory.Conflict);
@@ -116,6 +122,8 @@ public sealed partial class DsmRepository
         try
         {
             var inventory = await LoadRemoteMountInventoryAsync(token).ConfigureAwait(false);
+            if (inventory.IsoItems?.Any(item => state.Paths.Any(path => RemoteMountPathsOverlap(item.MountPoint, path))) == true)
+                return RemoteMountProgressFor(state, error: MutationErrorCategory.Conflict);
             if (connecting)
             {
                 if (!inventory.RemoteMountingEnabled || inventory.Items.Any(item => RemoteMountPathsOverlap(item.MountPoint, state.Desired!.MountPoint)) ||
@@ -193,6 +201,8 @@ public sealed partial class DsmRepository
         try
         {
             var inventory = await LoadRemoteMountInventoryAsync(token).ConfigureAwait(false);
+            if (inventory.IsoItems?.Any(item => state.Paths.Any(path => RemoteMountPathsOverlap(item.MountPoint, path))) == true)
+                return RemoteMountProgressFor(state, error: MutationErrorCategory.Conflict);
             if (state.Stage == RemoteMountStage.VerifyingConnection)
             {
                 if (!await RemoteConnectionVerifiedAsync(state.Desired!, inventory, token).ConfigureAwait(false)) return RemoteMountProgressFor(state);

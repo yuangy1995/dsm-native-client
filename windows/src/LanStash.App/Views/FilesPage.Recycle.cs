@@ -65,7 +65,7 @@ public sealed partial class FilesPage
         CloseShareLinkDialog();
         CloseMutationDialog();
         CloseCopyMoveDialog();
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
 
         if (_disposed ||
             repository.ProfileId != _profileId ||

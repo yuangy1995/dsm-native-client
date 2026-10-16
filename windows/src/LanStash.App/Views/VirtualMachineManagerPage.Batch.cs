@@ -27,11 +27,12 @@ public sealed partial class VirtualMachineManagerPage
             CloseButtonText = l.Get("ActionClose"), DefaultButton = ContentDialogButton.Close };
         _machineBatchDialog = dialog; _machineBatchModel = model;
         var renderedSubmitted = false;
+        bool NeedsRiskAcknowledgement() => deletion || model.Action == VirtualMachineBatchAction.PowerOff;
         string SummaryText() => l.Format("VmBatchSummary", model.SelectedCount, model.ConfirmedCount, model.FailedCount, model.UnknownCount, model.CancelledCount, model.NotStartedCount);
         void Buttons()
         {
             dialog.PrimaryButtonText = model.HasSubmitted ? string.Empty : l.Get(VirtualMachineBatchViewModel.ActionKey(model.Action));
-            dialog.IsPrimaryButtonEnabled = model.CanSubmit;
+            dialog.IsPrimaryButtonEnabled = NeedsRiskAcknowledgement() ? model.CanSubmit : model.CanConfirm;
             dialog.SecondaryButtonText = model.Pending.Count > 0 ? l.Get("VmPowerReview") : string.Empty;
             dialog.IsSecondaryButtonEnabled = model.CanReview;
         }
@@ -39,7 +40,7 @@ public sealed partial class VirtualMachineManagerPage
         {
             if (_disposed || _machineBatchDialog != dialog) return;
             Buttons();
-            var panel = new StackPanel { Width = 500, MaxWidth = 500, Spacing = 10 };
+            var panel = new StackPanel { MinWidth = 340, MaxWidth = 500, Spacing = 10 };
             var refresh = new Button { Name = "VmBatchRefresh", Content = l.Get("VmBatchRefresh"), IsEnabled = !model.IsBusy, MinHeight = 40 };
             refresh.Click += async (_, _) => { var load = model.RefreshAsync(); Render(); await load; Render(); };
             panel.Children.Add(refresh);
@@ -60,12 +61,12 @@ public sealed partial class VirtualMachineManagerPage
                 action.SelectionChanged += (_, _) => { if (action.SelectedItem is VmBatchActionChoice choice) { model.SetAction(choice.Action); Render(); } };
                 panel.Children.Add(action);
                 }
-                var list = new ListView { Name = "VmBatchSelection", ItemsSource = model.Targets.Where(item => model.IsEligibleState(item) && !model.Pending.Any(pending => pending.Id == item.Id)).ToArray(),
+                var list = new ListView { Name = "VmBatchSelection", ItemsSource = model.Targets.Where(model.Eligible).ToArray(),
                     DisplayMemberPath = "Name", SelectionMode = ListViewSelectionMode.Multiple, IsEnabled = model.CanEdit, MaxHeight = 180 };
                 AutomationProperties.SetName(list, l.Get(images ? "VmImageDeleteChoose" : "VmBatchChooseMachines"));
                 foreach (VirtualMachineBatchTarget item in list.Items) if (model.IsSelected(item.Id)) list.SelectedItems.Add(item);
                 var count = new TextBlock { Text = l.Format(images ? "VmImageDeleteSelected" : "VmBatchSelected", model.SelectedCount), TextWrapping = TextWrapping.Wrap };
-                var confirmationText = l.Get(images ? "VmImageDeleteConfirm" : deletion ? "VmDeleteConfirm" : "VmBatchConfirm");
+                var confirmationText = l.Get(images ? "VmImageDeleteConfirm" : deletion ? "VmDeleteConfirm" : "VmPowerOffAcknowledgement.Content");
                 var confirm = new CheckBox { Name = "VmBatchConfirmation", Content = new TextBlock { Text = confirmationText, TextWrapping = TextWrapping.Wrap }, IsChecked = model.HasConfirmation, IsEnabled = model.CanConfirm };
                 AutomationProperties.SetName(confirm, confirmationText);
                 list.SelectionChanged += (_, args) =>
@@ -80,8 +81,8 @@ public sealed partial class VirtualMachineManagerPage
                 panel.Children.Add(all); panel.Children.Add(list); panel.Children.Add(count);
                 if (list.Items.Count == 0 && !model.IsBusy && model.MessageKey is null)
                     panel.Children.Add(new TextBlock { Text = l.Get(images ? "VmImageDeleteEmpty" : deletion ? "VmDeleteNoEligible" : "VmBatchNoEligible"), TextWrapping = TextWrapping.Wrap });
-                panel.Children.Add(new TextBlock { Text = l.Get(images ? "VmImageDeleteWarning" : deletion ? "VmDeleteWarning" : model.Action switch { VirtualMachineBatchAction.PowerOn => "VmBatchOnHint", VirtualMachineBatchAction.Shutdown => "VmBatchShutdownHint", _ => "VmBatchOffHint" }), TextWrapping = TextWrapping.Wrap });
-                panel.Children.Add(confirm);
+                panel.Children.Add(new TextBlock { Text = l.Get(images ? "VmImageDeleteWarning" : deletion ? "VmDeleteWarning" : model.Action switch { VirtualMachineBatchAction.PowerOn => "VmBatchOnHint", VirtualMachineBatchAction.Shutdown => "VmBatchShutdownHint", VirtualMachineBatchAction.Reboot => "VmRebootHint", _ => "VmBatchOffHint" }), TextWrapping = TextWrapping.Wrap });
+                if (NeedsRiskAcknowledgement()) panel.Children.Add(confirm);
             }
             if (model.HasSubmitted)
             {
@@ -121,7 +122,7 @@ public sealed partial class VirtualMachineManagerPage
         }
         model.PropertyChanged += Changed;
         dialog.Opened += async (_, _) => { var load = model.RefreshAsync(); Render(); await load; Render(); };
-        dialog.PrimaryButtonClick += async (_, args) => { args.Cancel = true; var deferral = args.GetDeferral(); try { var work = model.SubmitAsync(); Render(); await work; Render(); } finally { deferral.Complete(); } };
+        dialog.PrimaryButtonClick += async (_, args) => { args.Cancel = true; var deferral = args.GetDeferral(); try { if (!NeedsRiskAcknowledgement()) model.Confirm(true); var work = model.SubmitAsync(); Render(); await work; Render(); } finally { deferral.Complete(); } };
         dialog.SecondaryButtonClick += async (_, args) => { args.Cancel = true; var deferral = args.GetDeferral(); try { var work = model.ReviewAsync(); Render(); await work; Render(); } finally { deferral.Complete(); } };
         dialog.Closing += (_, _) => model.Dispose();
         Render();

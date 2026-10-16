@@ -12,13 +12,19 @@ public sealed class MacDownloadForceCompleteSourceContractTests
         var start = source.IndexOf("private func callOfficialDownloadTaskFileCreate(", StringComparison.Ordinal);
         var end = source.IndexOf("\n    private func ", start + 10, StringComparison.Ordinal);
         var method = source[start..end];
-        Assert.Contains("Self.nonEmpty(destination) == nil ? 1 : 2", method);
+        Assert.Contains("destination?.isEmpty != false ? 1 : 2", method);
+        Assert.Contains("if let destination, !destination.isEmpty", method);
+        Assert.DoesNotContain("Self.nonEmpty(destination)", method);
         Assert.Contains("capability.maxVersion >= requiredVersion", method);
         Assert.Contains("URLQueryItem(name: \"version\", value: String(requiredVersion))", method);
         Assert.Contains("if let unzipPassword, !unzipPassword.isEmpty", method);
         Assert.DoesNotContain("Self.nonEmpty(unzipPassword)", method);
-        Assert.Contains("version: request.destination == nil ? 1 : 2", source);
-        Assert.Contains("version: parameters[\"destination\"] == nil ? 1 : 2", source);
+        Assert.Contains("case .uri: requiredVersion = 3", source);
+        Assert.Contains("case .file: requiredVersion = request.destination == nil ? 1 : 2", source);
+        var submitStart = source.IndexOf("private func submitDownloadTaskCreate(", StringComparison.Ordinal);
+        Assert.True(submitStart >= 0);
+        var submitEnd = source.IndexOf("\n    private func ", submitStart + 10, StringComparison.Ordinal);
+        Assert.Contains("version: 3", source[submitStart..submitEnd]);
     }
 
     [Fact]

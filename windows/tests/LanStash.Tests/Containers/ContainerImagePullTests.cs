@@ -10,6 +10,36 @@ namespace LanStash.Tests.Containers;
 public sealed class ContainerImagePullTests
 {
     [Theory]
+    [InlineData("FORM")] [InlineData("JSON")]
+    public async Task ExplicitDockerTaskFailureIsTerminalAndNeverReplayed(string format)
+    {
+        using var fixture = new Fixture(format) { Scenario = "docker-failed" };
+        var request = fixture.Request(); var result = await fixture.Repository.PullImageAsync(request);
+        Assert.Equal(ContainerImagePullStage.Rejected, result.Stage);
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, result.Outcome.Status);
+        Assert.Equal(MutationErrorCategory.Server, result.Outcome.ErrorCategory);
+        Assert.Empty(await fixture.Repository.GetImagePullRecoveriesAsync());
+        fixture.Scenario = ""; fixture.Finished = true;
+        Assert.Equal(result, await fixture.Reconnect().ReviewImagePullAsync(request.RequestId));
+        Assert.Equal(result, await fixture.Repository.PullImageAsync(request));
+        Assert.Single(fixture.Calls, call => call["method"] == "pull_status");
+        Assert.Single(fixture.Calls, call => call["method"] == "pull_start");
+    }
+
+    [Theory]
+    [InlineData("list-docker-error")] [InlineData("temporary-read-error")]
+    public async Task ReadFailureContinuesOriginalTaskWithoutRestart(string scenario)
+    {
+        using var fixture = new Fixture("JSON") { Scenario = scenario, Finished = true };
+        var request = fixture.Request();
+        Assert.Equal(ContainerImagePullStage.NeedsReview, (await fixture.Repository.PullImageAsync(request)).Stage);
+        Assert.Single(await fixture.Repository.GetImagePullRecoveriesAsync());
+        fixture.Scenario = "";
+        Assert.Equal(ContainerImagePullStage.Ready, (await fixture.Repository.ReviewImagePullAsync(request.RequestId))!.Stage);
+        Assert.Single(fixture.Calls, call => call["method"] == "pull_start");
+        Assert.All(fixture.Calls.Where(call => call["method"] == "pull_status"), call => Assert.Equal("\"synthetic-task\"", call["task_id"]));
+    }
+    [Theory]
     [InlineData("FORM", false)]
     [InlineData("FORM", true)]
     [InlineData("JSON", false)]
@@ -229,6 +259,8 @@ public sealed class ContainerImagePullTests
                 }
                 else if (form["method"] == "pull_status")
                 {
+                    if (owner.Scenario == "docker-failed") return Reply("{\"success\":false,\"error\":{\"code\":1202}}");
+                    if (owner.Scenario == "temporary-read-error") throw new HttpRequestException("合成临时读取失败");
                     if (owner.Scenario == "status-rejected") return Reply("{\"success\":false,\"error\":{\"code\":400}}");
                     data["repository"] = owner.Scenario == "wrong-repository" ? "synthetic/other" : "docker.io/synthetic/web";
                     data["tag"] = owner.Scenario == "wrong-tag" ? "latest" : "stable";
@@ -238,6 +270,7 @@ public sealed class ContainerImagePullTests
                 else if (form["method"] == "list")
                 {
                     var afterStart = owner.Calls.Any(call => call["method"] == "pull_start");
+                    if (afterStart && owner.Scenario == "list-docker-error") return Reply("{\"success\":false,\"error\":{\"code\":1202}}");
                     var images = new JsonArray(new JsonObject { ["id"] = "synthetic-id", ["repository"] = "synthetic/web", ["tags"] = new JsonArray("stable") });
                     if (afterStart && owner.Scenario == "missing-image") images.Clear();
                     data["images"] = images; data["total"] = images.Count + (afterStart && owner.Scenario == "partial-list" ? 1 : 0); data["offset"] = 0;

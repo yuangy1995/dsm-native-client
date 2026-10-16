@@ -12,10 +12,11 @@ public sealed partial class DsmRepository
         var capability = SecurityCapability("SYNO.Core.Hardware.PowerSchedule", 1) ??
             throw new DsmException(UserText.Key("NasSettingsLoadError"), UserText.Key("NasSettingsUnavailable"), 102);
         var data = await _api.CallReadJsonObjectAsync(_profile, _session, capability, 1, "load", cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (data.ContainsKey("poweron_tasks") || data.ContainsKey("poweroff_tasks")) return ParseEditablePowerSchedule(data);
         var root = PowerScheduleField(data, "schedules", "items");
         if (root is not JsonArray rows) throw InvalidNasServiceSettings();
         var entries = new List<NasPowerScheduleEntry>(); var ids = new HashSet<string>(StringComparer.Ordinal); var ignored = 0;
-        for (var index = 0; index < Math.Min(rows.Count, 128); index++)
+        for (var index = 0; index < Math.Min(rows.Count, NasPowerScheduleRules.MaximumEntries); index++)
         {
             if (rows[index] is not JsonObject item) { ignored++; continue; }
             var hour = PowerScheduleInteger(item["hour"]); var minute = PowerScheduleInteger(item["minute"]);
@@ -38,8 +39,48 @@ public sealed partial class DsmRepository
         if (total is < 0 or > 1_000_000) total = null;
         var zone = PowerScheduleText(PowerScheduleField(data, "timezone", "time_zone"))?.Trim();
         if (zone is not { Length: > 0 and <= 128 } || !zone.All(c => char.IsLetterOrDigit(c) || "_/+-".Contains(c))) zone = null;
-        return new(entries.AsReadOnly(), zone, Math.Max(rows.Count, total ?? rows.Count), rows.Count > 128 || total > rows.Count, ignored);
+        return new(entries.AsReadOnly(), zone, Math.Max(rows.Count, total ?? rows.Count), rows.Count > NasPowerScheduleRules.MaximumEntries || total > rows.Count, ignored);
     }
+    private static NasPowerScheduleSnapshot ParseEditablePowerSchedule(JsonObject data)
+    {
+        if (data["poweron_tasks"] is not JsonArray && data["poweroff_tasks"] is not JsonArray) throw InvalidNasServiceSettings();
+        var complete = data["poweron_tasks"] is JsonArray && data["poweroff_tasks"] is JsonArray;
+        var entries = new List<NasPowerScheduleEntry>(); var ignored = 0; var count = 0;
+        foreach (var (field, action) in new[] { ("poweron_tasks", NasPowerScheduleAction.Startup), ("poweroff_tasks", NasPowerScheduleAction.Shutdown) })
+        {
+            if (data[field] is not JsonArray rows) continue;
+            count += rows.Count;
+            foreach (var raw in rows)
+            {
+                if (entries.Count >= NasPowerScheduleRules.MaximumEntries) break;
+                if (raw is not JsonObject item || StrictPowerInteger(item["hour"]) is not { } hour || hour is < 0 or > 23 ||
+                    StrictPowerInteger(item["min"]) is not { } minute || minute is < 0 or > 59 ||
+                    item["enabled"] is not JsonValue enabledNode || !enabledNode.TryGetValue<bool>(out var enabled) ||
+                    PowerScheduleText(item["weekdays"]) is not { } text)
+                { ignored++; continue; }
+                var values = text.Split(','); var days = new List<DayOfWeek>();
+                foreach (var value in values)
+                {
+                    if (value.Length != 1 || value[0] is < '0' or > '6') { days.Clear(); break; }
+                    days.Add((DayOfWeek)(value[0] - '0'));
+                }
+                if (days.Count == 0 || days.Distinct().Count() != days.Count) { ignored++; continue; }
+                entries.Add(new($"{field}-{entries.Count}", action, enabled, hour, minute,
+                    days.Count == 7 ? NasPowerScheduleRecurrence.Daily : NasPowerScheduleRecurrence.Weekly,
+                    null, days.OrderBy(day => (int)day).ToArray()));
+            }
+        }
+        var zoneNode = PowerScheduleField(data, "timezone", "time_zone");
+        var zone = PowerScheduleText(zoneNode);
+        var validZone = zone is null ? zoneNode is null && !data.ContainsKey("timezone") && !data.ContainsKey("time_zone") :
+            zone.Length is > 0 and <= 128 && zone.All(c => char.IsLetterOrDigit(c) || "_/+-".Contains(c));
+        var total = StrictPowerInteger(PowerScheduleField(data, "total", "total_count"));
+        if ((data.ContainsKey("total") || data.ContainsKey("total_count")) && total != count) complete = false;
+        return new(entries.AsReadOnly(), validZone ? zone : null, Math.Max(count, total ?? count),
+            !complete || count > NasPowerScheduleRules.MaximumEntries || total > count, ignored)
+            { SupportsEditing = complete && validZone };
+    }
+    private static int? StrictPowerInteger(JsonNode? node) => node is JsonValue value && value.TryGetValue<int>(out var number) ? number : null;
     private static (NasPowerScheduleRecurrence, DateOnly?, IReadOnlyList<DayOfWeek>) ParsePowerRecurrence(JsonObject item)
     {
         var dateText = PowerScheduleText(PowerScheduleField(item, "date", "run_date"));

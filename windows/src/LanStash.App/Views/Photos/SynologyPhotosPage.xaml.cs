@@ -21,6 +21,7 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
 {
     private readonly SynologyPhotosWorkspace _model;
     private readonly IWindowsTransferSavePicker _savePicker;
+    private readonly IWindowsTransferOpenPicker? _uploadPicker;
     private readonly SynologyPhotoThumbnailCache<BitmapImage> _thumbnails;
     private readonly IDisposable _cacheRegistration;
     private readonly LocalizationService _l = LocalizationService.Current;
@@ -35,11 +36,18 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
     private long _viewGeneration;
     private CancellationTokenSource _viewCancellation = new();
     private ContentDialog? _dialog;
+    private void SetPhotoDialog(ContentDialog? value)
+    { _dialog = value; _model.Automatic.SetInteractionBusy(value is not null && !_model.Automatic.SettingsVisible); RenderPreviewInformation(); }
+    private async Task<ContentDialogResult> ShowPhotoDialogAsync(ContentDialog dialog)
+    {
+        if (_disposed || !_windowVisible || !ReferenceEquals(_dialog, dialog)) return ContentDialogResult.None;
+        return await dialog.ShowAsync();
+    }
 
-    internal SynologyPhotosPage(ISynologyPhotosRepository repository, IWindowsTransferSavePicker savePicker)
+    internal SynologyPhotosPage(ISynologyPhotosRepository repository, IWindowsTransferSavePicker savePicker, IWindowsTransferOpenPicker? uploadPicker = null)
     {
         InitializeComponent();
-        _model = new(repository); _savePicker = savePicker;
+        _model = new(repository); _savePicker = savePicker; _uploadPicker = uploadPicker;
         _thumbnails = new(repository, (bytes, token) => SynologyPhotoImages.DecodeAsync(bytes, 320, token));
         _cacheRegistration = AppSettingsService.Current.Caches.Register(_thumbnails);
         PhotosSource.Source = _groups; LibraryGrid.ItemsSource = PhotosSource.View;
@@ -47,14 +55,19 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         _model.ContentChanged += RebuildGroups;
         _model.RequestChanged += RequestChanged;
         _model.Preview.PropertyChanged += PreviewChanged;
+        _model.Slideshow.PropertyChanged += SlideshowChanged;
         _model.Deletion.PropertyChanged += ModelChanged;
+        _model.Automatic.PropertyChanged += AutomaticChanged;
+        _model.AutomaticPreviewChanged += AutomaticPreviewChanged;
+        MoreButton.Flyout.Opening += (_, _) => _model.Automatic.SetInteractionBusy(true);
+        MoreButton.Flyout.Closed += (_, _) => _model.Automatic.SetInteractionBusy(_dialog is not null && !_model.Automatic.SettingsVisible);
         _l.LanguageChanged += LanguageChanged;
         Loaded += PageLoaded; Unloaded += PageUnloaded; KeyDown += PageKeyDown;
         LibraryGrid.PointerWheelChanged += LibraryWheelChanged;
         SizeChanged += (_, _) =>
         {
             Sections.MinWidth = ActualWidth >= 760 ? 320 : 160;
-            SearchBox.Width = Math.Clamp(ActualWidth - 540, 100, 280);
+            SearchBox.Width = Math.Clamp(ActualWidth - 584, 100, 280);
         };
         _ready = true; Localize(); Render();
     }
@@ -69,21 +82,27 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
     internal Task ShowSectionAsync(SynologyPhotosSection section) => _model.SelectSectionAsync(section);
 
     private async void PageLoaded(object sender, RoutedEventArgs args)
-    { if (!_disposed && _windowVisible) await _model.LoadIfNeededAsync(); }
+    { if (!_disposed && _windowVisible) { await _model.LoadIfNeededAsync(); StartFileRefresh(); StartAlbumRefresh(); StartAutomaticPreviews(); RenderSimilarControls(); } }
     private void PageUnloaded(object sender, RoutedEventArgs args) => Suspend();
     public void SetWindowVisible(bool visible)
     {
         _windowVisible = visible;
         if (!visible) Suspend();
-        else if (!_disposed && IsLoaded) _ = _model.LoadIfNeededAsync();
+        else if (!_disposed && IsLoaded) { _ = _model.LoadIfNeededAsync(); StartFileRefresh(); StartAlbumRefresh(); StartAutomaticPreviews(); RenderSimilarControls(); }
     }
     private void Suspend()
     {
         if (_disposed) return;
-        _dialog?.Hide(); _model.Suspend(); _saveCancellation?.Cancel();
+        _fileRefreshTimer?.Stop();
+        _albumRefreshTimer?.Stop();
+        _similarTimer?.Stop();
+        _automaticTimer?.Stop(); _model.Automatic.SetActive(false);
+        _similarStatusScope = null;
+        _model.Suspend(); _dialog?.Hide(); _saveCancellation?.Cancel();
     }
     private void RequestChanged()
     {
+        SetPhotoSelection(false);
         _viewGeneration++; _viewCancellation.Cancel(); _viewCancellation.Dispose(); _viewCancellation = new();
         CancelThumbnails(); _thumbnails.Clear(); _groups.Clear(); _groupsByKey.Clear();
     }
@@ -100,8 +119,11 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
     { if (_disposed) return; Localize(); _groups.Clear(); _groupsByKey.Clear(); RebuildGroups(); Render(); }
     private void Localize()
     {
-        PageTitle.Text = _l.Get("ModulePhotos"); SpaceTitle.Text = _l.Get("PhotosPersonalSpace");
-        ToolTipService.SetToolTip(SpaceTitle, _l.Get("PhotosSharedSpaceClosed"));
+        AutomationProperties.SetName(SourcePicker, _l.Get("PhotosChooseSource"));
+        AutomationProperties.SetName(MoreButton, _l.Get("PhotosMoreActions")); ToolTipService.SetToolTip(MoreButton, _l.Get("PhotosMoreActions"));
+        UploadFilesMenu.Text = _l.Get("PhotosUploadFiles"); UploadFolderMenu.Text = _l.Get("PhotosUploadFolder"); UploadQueueMenu.Text = _l.Get("PhotosUploadQueue");
+        RenderAutomaticPreviews();
+        EditPhotosMenu.Text = _l.Get("PhotosEditDetails"); PhotoChangesMenu.Text = _l.Get("PhotosChanges"); RenderManagementControls();
         TimelineTab.Header = _l.Get("PhotosLibraryTimeline"); FoldersTab.Header = _l.Get("PhotosLibraryFolders");
         AlbumsTab.Header = _l.Get("PhotosLibraryAlbums"); SharingTab.Header = _l.Get("PhotosLibrarySharing");
         SearchBox.PlaceholderText = _l.Get("PhotosSearchPlaceholder");
@@ -114,7 +136,7 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         foreach (var (button, key) in new (AppBarButton, string)[]
         {
             (PreviousPhotoButton, "PhotosPreviousPhoto"), (NextPhotoButton, "PhotosNextPhoto"), (MotionButton, "PhotosPlayLive"),
-            (SaveButton, "PhotosSaveOriginal"), (DeleteButton, "PhotosDeleteOriginal"), (DetailsButton, "PhotosDetails"), (ClosePreviewButton, "PhotosClose"),
+            (SaveButton, "PhotosSaveOriginal"), (DeleteButton, "PhotosDeleteOriginal"), (EditPhotoButton, "PhotosEditDetails"), (EditPhotoFacesButton, "PhotosManualFaces"), (DetailsButton, "PhotosDetails"), (ClosePreviewButton, "PhotosClose"),
         }) { button.Label = _l.Get(key); AutomationProperties.SetName(button, _l.Get(key)); }
         PreviewRetryButton.Content = _l.Get("PhotosRetry");
         CancelSaveButton.Content = _l.Get("PhotosCancel");
@@ -130,9 +152,23 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         try
         {
             var busy = _model.Deletion.IsBusy;
+            MoreButton.Visibility = Visibility.Visible;
+            UploadFilesMenu.Visibility = UploadFolderMenu.Visibility = UploadQueueMenu.Visibility = Visible(_model.Repository.SupportsUploads);
+            PhotoManagementSeparator.Visibility = Visible(_model.Repository.SupportsUploads && _model.Repository.SupportsManagement);
+            UploadFilesMenu.IsEnabled = UploadFolderMenu.IsEnabled = _uploadPicker is not null && !_uploadPreparing && !busy &&
+                _model.HasLoaded && (_model.HasOriginalSource || _model.Album is not null);
             Sections.SelectedIndex = (int)_model.Section; Sections.IsEnabled = !busy;
-            SearchBox.Visibility = Visible(_model.Section == SynologyPhotosSection.Timeline);
-            FiltersButton.Visibility = SearchBox.Visibility;
+            TimelineTab.IsEnabled = FoldersTab.IsEnabled = !_model.HasLoaded || _model.HasOriginalSource;
+            var choices = _model.Spaces.Select(space => new SourceChoice(space,
+                _l.Get(space == SynologyPhotoSpace.Personal ? "PhotosSourcePersonal" : "PhotosSourceShared"))).ToArray();
+            if (SourcePicker.ItemsSource is not SourceChoice[] existing || !existing.SequenceEqual(choices)) SourcePicker.ItemsSource = choices;
+            SourcePicker.SelectedIndex = Array.FindIndex(choices, choice => choice.Space == _model.SelectedSpace);
+            SourcePicker.Visibility = Visible(choices.Length > 1 && _model.Album is null && _model.Section != SynologyPhotosSection.Sharing);
+            SourcePicker.IsEnabled = !busy;
+            SearchBox.Visibility = Visible(_model.Section == SynologyPhotosSection.Timeline || _model.IsRequestList);
+            SearchBox.PlaceholderText = _l.Get(_model.IsRequestList ? "PhotosRequestSearch" : "PhotosSearchPlaceholder");
+            AutomationProperties.SetName(SearchBox, SearchBox.PlaceholderText);
+            FiltersButton.Visibility = Visible(_model.Section == SynologyPhotosSection.Timeline);
             FiltersButton.IsEnabled = !busy && !_model.IsLoading;
             SearchBox.IsEnabled = !busy;
             // 分页/进度刷新不能覆盖用户尚未提交的搜索草稿。
@@ -164,14 +200,15 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
             OlderButton.Visibility = Visible(_model.HasMore || _model.HasMoreCollections);
             OlderButton.IsEnabled = !_model.IsLoading && !_model.IsLoadingMore && !busy;
             NextProgress.IsActive = _model.IsLoadingMore; NextProgress.Visibility = Visible(_model.IsLoadingMore);
-            var empty = _model.Items.Count + _model.Collections.Count + _model.SharedEntries.Count == 0;
+            var empty = _model.Items.Count + _model.Collections.Count + _model.VisibleSharedEntries.Count == 0;
             EmptyPanel.Visibility = Visible(empty);
             LoadingProgress.IsActive = _model.IsLoading; LoadingProgress.Visibility = Visible(_model.IsLoading);
             EmptyTitle.Text = _l.Get(_model.IsLoading ? "PhotosLoading" : _model.ErrorKey is not null ? "PhotosLoadFailed" : _model.IsFiltering ? "PhotosFilteredEmpty" : "PhotosEmpty");
             EmptyMessage.Text = _l.Get(_model.IsLoading ? "PhotosLoadingDescription" : _model.ErrorKey ??
                 (_model.IsFiltering ? "PhotosFilteredEmptyDescription" : "PhotosEmptyDescription"));
-            CountText.Text = _l.Format("PhotosLoadedCount", _model.Items.Count + _model.Collections.Count + _model.SharedEntries.Count);
+            CountText.Text = _l.Format("PhotosLoadedCount", _model.Items.Count + _model.Collections.Count + _model.VisibleSharedEntries.Count);
             RenderPreviewControls();
+            RenderManagementControls();
         }
         finally { _rendering = false; }
     }
@@ -179,16 +216,17 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
     private void RebuildGroups()
     {
         if (_disposed) return;
+        var selectedIds = _photoSelectionMode ? LibraryGrid.SelectedItems.OfType<SynologyPhotoCell>().Select(cell => cell.Id).ToHashSet() : [];
         var desired = new List<(string Key, string Title, SynologyPhotoCell[] Cells)>();
         if (_model.Collections.Count > 0)
-            desired.Add(("collections", _l.Get(_model.Section == SynologyPhotosSection.Folders ? "PhotosLibraryFolders" : "PhotosLibraryAlbums"),
-                _model.Collections.Select(item => new SynologyPhotoCell { Id = $"collection:{item.Id}", Collection = item }).ToArray()));
-        if (_model.SharedEntries.Count > 0)
-            desired.Add(("sharing", ShareTitle(_model.ShareScope), _model.SharedEntries.Select(item => new SynologyPhotoCell { Id = $"shared:{item.Id}", Shared = item }).ToArray()));
+            desired.Add(("collections", _model.Category is { } category ? CategoryTitle(category) : _l.Get(_model.Section == SynologyPhotosSection.Folders ? "PhotosLibraryFolders" : "PhotosLibraryAlbums"),
+                _model.Collections.Select(item => new SynologyPhotoCell { Id = $"collection:{item.Id}", Collection = item, Category = _model.Category }).ToArray()));
+        if (_model.VisibleSharedEntries.Count > 0)
+            desired.Add(("sharing", ShareTitle(_model.ShareScope), _model.VisibleSharedEntries.Select(item => new SynologyPhotoCell { Id = $"shared:{item.Id}", Shared = item }).ToArray()));
         if (_model.ShowsTimeline)
         {
-            foreach (var group in _model.Items.GroupBy(photo => DateOnly.FromDateTime((_model.Category == SynologyPhotoCategory.Recent ? photo.IndexedAt : photo.TakenAt).LocalDateTime)).OrderByDescending(group => group.Key))
-                desired.Add(($"day:{group.Key:yyyyMMdd}", group.Key.ToString("D", System.Globalization.CultureInfo.CurrentCulture), group.Select(PhotoCell).ToArray()));
+            foreach (var group in _model.Items.GroupBy(_model.DisplayGroupDate).OrderByDescending(group => group.Key))
+                desired.Add(($"day:{group.Key:yyyyMMdd}:{_model.DisplaySettings?.Grouping}:{_model.DisplaySettings?.DateFormat}", _model.DisplayGroupTitle(group.Key), group.Select(PhotoCell).ToArray()));
         }
         else if (_model.Items.Count > 0) desired.Add(("photos", _l.Get("ModulePhotos"), _model.Items.Select(PhotoCell).ToArray()));
         var keys = desired.Select(group => group.Key).ToHashSet();
@@ -203,16 +241,29 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
             var ids = target.Cells.Select(cell => cell.Id).ToHashSet();
             for (var cellIndex = group.Count - 1; cellIndex >= 0; cellIndex--)
                 if (!ids.Contains(group[cellIndex].Id)) group.RemoveAt(cellIndex);
-            var existing = group.Select(cell => cell.Id).ToHashSet();
-            foreach (var cell in target.Cells) if (existing.Add(cell.Id)) group.Add(cell);
+            for (var cellIndex = 0; cellIndex < target.Cells.Length; cellIndex++)
+            {
+                var cell = target.Cells[cellIndex]; var oldIndex = group.ToList().FindIndex(existing => existing.Id == cell.Id);
+                if (oldIndex < 0) group.Insert(cellIndex, cell);
+                else
+                {
+                    if (oldIndex != cellIndex) group.Move(oldIndex, cellIndex);
+                    var old = group[cellIndex];
+                    if (old.Photo != cell.Photo || old.Collection != cell.Collection || old.Shared != cell.Shared || old.Category != cell.Category) group[cellIndex] = cell;
+                }
+            }
         }
+        if (_photoSelectionMode)
+            foreach (var cell in LibraryGrid.Items.OfType<SynologyPhotoCell>().Where(cell => selectedIds.Contains(cell.Id)))
+                if (!LibraryGrid.SelectedItems.Contains(cell)) LibraryGrid.SelectedItems.Add(cell);
+        RenderManagementControls();
     }
     private static SynologyPhotoCell PhotoCell(SynologyPhoto photo) => new() { Id = $"photo:{photo.Id.ProfileId}:{photo.Id.Space}:{photo.Id.ItemId}", Photo = photo };
     private string CategoryTitle(SynologyPhotoCategory category) => _l.Get(category switch
     {
         SynologyPhotoCategory.Recent => "PhotosCategoryRecent", SynologyPhotoCategory.People => "PhotosCategoryPeople",
         SynologyPhotoCategory.Subjects => "PhotosCategorySubjects", SynologyPhotoCategory.Locations => "PhotosCategoryLocations",
-        SynologyPhotoCategory.Tags => "PhotosCategoryTags", _ => "PhotosCategoryVideos",
+        SynologyPhotoCategory.Tags => "PhotosCategoryTags", SynologyPhotoCategory.Similar => "PhotosCategorySimilar", _ => "PhotosCategoryVideos",
     });
     private string ShareTitle(SynologyPhotoShareScope scope) => _l.Get(scope switch
     { SynologyPhotoShareScope.WithMe => "PhotosSharedWithMe", SynologyPhotoShareScope.WithOthers => "PhotosSharedWithOthers", _ => "PhotosPhotoRequests" });
@@ -230,6 +281,40 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
             return;
         }
         if (_disposed || !_windowVisible) return;
+        if (args.Item is SynologyPhotoCell { Collection: { Thumbnail: not null } collection } categoryCell && _model.Category is { } category &&
+            FindChild<Image>(container) is { } categoryImage)
+        {
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_viewCancellation.Token);
+            _visibleRequests[container] = cancellation;
+            try
+            {
+                await _folderCoverSlots.WaitAsync(cancellation.Token);
+                try
+                {
+                    var bytes = await _model.Repository.CategoryImageAsync(category, collection, cancellation.Token);
+                    var bitmap = (await SynologyPhotoImages.DecodeAsync(bytes, 240, cancellation.Token)).Value;
+                    if (!_disposed && generation == _viewGeneration && !cancellation.IsCancellationRequested && ReferenceEquals(container.Content, categoryCell)) categoryImage.Source = bitmap;
+                }
+                finally { _folderCoverSlots.Release(); }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception) { /* 分类封面不可用时仍保留名称和浏览入口。 */ }
+            finally { if (_visibleRequests.TryGetValue(container, out var current) && ReferenceEquals(current, cancellation)) _visibleRequests.Remove(container); }
+        }
+        if (args.Item is SynologyPhotoCell { Collection: { } folder } folderCell && _model.Section == SynologyPhotosSection.Folders &&
+            _model.Repository.SupportsFolderManagement && FindChild<Image>(container) is { } coverImage)
+        {
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_viewCancellation.Token);
+            _visibleRequests[container] = cancellation;
+            try
+            {
+                var bitmap = await LoadFolderCoverImageAsync(folder, cancellation.Token);
+                if (!_disposed && !cancellation.IsCancellationRequested && ReferenceEquals(container.Content, folderCell)) coverImage.Source = bitmap;
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception) { /* 封面不可用时保留目录图标和正常浏览入口。 */ }
+            finally { if (_visibleRequests.TryGetValue(container, out var current) && ReferenceEquals(current, cancellation)) _visibleRequests.Remove(container); }
+        }
         if (args.Item is SynologyPhotoCell { Photo: { Thumbnail: not null } photo } cell && FindChild<Image>(container) is { } image)
         {
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_viewCancellation.Token);
@@ -263,7 +348,12 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         if (cell.Photo is { } photo) await _model.Preview.OpenAsync(photo);
         else if (cell.Collection is { } collection) await _model.OpenCollectionAsync(collection);
         else if (cell.Shared is { AlbumId: not null } shared) await _model.OpenSharedAsync(shared);
+        else if (_model.IsRequestList && cell.Shared is { } request) await ShowPhotoRequestAsync(SynologyPhotoRequestEditKind.Update, request.Id);
     }
+    private sealed record SourceChoice(SynologyPhotoSpace Space, string Title)
+    { public override string ToString() => Title; }
+    private async void Source_SelectionChanged(object sender, SelectionChangedEventArgs args)
+    { if (_ready && !_rendering && SourcePicker.SelectedItem is SourceChoice choice) await _model.SelectSpaceAsync(choice.Space); }
     private async void Sections_SelectionChanged(object sender, SelectionChangedEventArgs args)
     { if (_ready && !_rendering && Sections.SelectedIndex >= 0) await _model.SelectSectionAsync((SynologyPhotosSection)Sections.SelectedIndex); }
     private async void ShareScope_SelectionChanged(object sender, SelectionChangedEventArgs args)
@@ -278,20 +368,22 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
     }
     private async void Category_Click(object sender, RoutedEventArgs args)
     { if (sender is Button { Tag: SynologyPhotoCategory category }) await _model.OpenCategoryAsync(category); }
-    private async void Refresh_Click(object sender, RoutedEventArgs args) => await _model.RefreshAsync();
+    private async void Refresh_Click(object sender, RoutedEventArgs args)
+    { if (_model.NeedsChangesRefresh) await _model.ReloadChangedPhotoWindowAsync(); else await _model.RefreshAsync(); }
     private async void Back_Click(object sender, RoutedEventArgs args) => await _model.GoBackAsync();
     private async void Older_Click(object sender, RoutedEventArgs args) => await _model.LoadNextAsync();
     private async void Newer_Click(object sender, RoutedEventArgs args) => await _model.LoadPreviousAsync();
     private async void Review_Click(object sender, RoutedEventArgs args) => await _model.Deletion.ReviewAsync();
     private async void Retry_Click(object sender, RoutedEventArgs args)
     {
-        if (_model.SelectedMonth is { } month && _model.Items.Count == 0) await _model.JumpToMonthAsync(month);
+        if (_model.NeedsChangesRefresh) await _model.ReloadChangedPhotoWindowAsync();
+        else if (_model.SelectedMonth is { } month && _model.Items.Count == 0) await _model.JumpToMonthAsync(month);
         else if (_model.HasLoaded && (_model.HasMore || _model.HasMoreCollections)) await _model.LoadNextAsync();
         else await _model.RefreshAsync();
     }
     private void CopyLink_Click(object sender, RoutedEventArgs args)
     {
-        if (sender is not Button { Tag: SynologyPhotoSharedEntry { Url: { } url } } || url.Scheme != Uri.UriSchemeHttps || url.UserInfo.Length != 0) return;
+        if (sender is not Button { Tag: SynologyPhotoSharedEntry { Url: { } url } } || url.Scheme is not ("http" or "https") || url.UserInfo.Length != 0) return;
         try { var data = new DataPackage(); data.SetText(url.AbsoluteUri); Clipboard.SetContent(data); ShowSaveMessage("PhotosLinkCopied", false); }
         catch (Exception) { ShowSaveMessage("PhotosCopyLinkFailed", true); }
     }
@@ -309,7 +401,7 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
             else if (args.Key is VirtualKey.Left or VirtualKey.Right && _model.Preview.MediaSource is null)
             { await AdjacentAsync(args.Key == VirtualKey.Left ? -1 : 1); args.Handled = true; }
         }
-        else if (args.Key == VirtualKey.Enter && LibraryGrid.SelectedItem is SynologyPhotoCell cell && args.OriginalSource is not TextBox)
+        else if (!_photoSelectionMode && args.Key == VirtualKey.Enter && LibraryGrid.SelectedItem is SynologyPhotoCell cell && args.OriginalSource is not TextBox)
         { await OpenCellAsync(cell); args.Handled = true; }
         else if (args.Key == VirtualKey.F5) { await _model.RefreshAsync(); args.Handled = true; }
     }
@@ -319,7 +411,8 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         Suspend(); _disposed = true;
         _l.LanguageChanged -= LanguageChanged; _model.PropertyChanged -= ModelChanged;
         _model.ContentChanged -= RebuildGroups; _model.RequestChanged -= RequestChanged;
-        _model.Preview.PropertyChanged -= PreviewChanged; _model.Deletion.PropertyChanged -= ModelChanged;
+        _model.Preview.PropertyChanged -= PreviewChanged; _model.Slideshow.PropertyChanged -= SlideshowChanged; _model.Deletion.PropertyChanged -= ModelChanged;
+        _model.Automatic.PropertyChanged -= AutomaticChanged; _model.AutomaticPreviewChanged -= AutomaticPreviewChanged;
         ClosePlayer(); _model.Dispose(); _thumbnails.Dispose(); _cacheRegistration.Dispose();
         _viewCancellation.Cancel(); _viewCancellation.Dispose(); _groups.Clear(); _groupsByKey.Clear();
         Loaded -= PageLoaded; Unloaded -= PageUnloaded; KeyDown -= PageKeyDown;

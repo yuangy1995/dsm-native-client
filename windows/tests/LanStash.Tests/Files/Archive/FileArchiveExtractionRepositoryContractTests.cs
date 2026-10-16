@@ -7,6 +7,129 @@ namespace LanStash.Tests.Files.Archive;
 public sealed class FileArchiveExtractionRepositoryContractTests
 {
     [Fact]
+    public async Task PreviewCanShowConflictingContentsSoUserCanChooseAnotherMember()
+    {
+        var profile = NewProfile();
+        var selected = ArchiveItem("a.txt", false) with { Id = 2, Size = 12 };
+        var api = new FakeApi([ArchiveItem("archive.zip", false) with { Id = 1 }, selected],
+            FolderPage(Source()), FolderPage(Source()), Destination(), FolderPage(Source(), File("a.txt", 12)));
+        var repository = Repository(profile, api);
+        Assert.Equal(2, (await repository.PreviewAsync(Request(profile))).Items.Count);
+        var result = await repository.ExtractAsync(Request(profile) with { Options = new() { SelectedItems = [selected] } });
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal("a.txt", Assert.Single(result.ConfirmedItems!).Name);
+    }
+
+    [Theory]
+    [InlineData(true, MutationResultStatus.ConfirmedSuccess)]
+    [InlineData(false, MutationResultStatus.PermissionDenied)]
+    public async Task SeparateDestinationChecksOriginalSourceAndCurrentDestinationPermission(bool writable, MutationResultStatus expected)
+    {
+        var profile = NewProfile(); var destination = "/share/target";
+        var api = new FakeApi([ArchiveItem("a.txt", false) with { Id = 2, Size = 12 }],
+            FolderPage(), FolderPage(Source()),
+            new JsonObject { ["files"] = new JsonArray(Item(destination, "target", true, 0, writable)) },
+            FolderPage(Item(destination + "/a.txt", "a.txt", false, 12, true)));
+        var result = await Repository(profile, api).ExtractAsync(Request(profile) with { DestinationFolder = destination });
+        Assert.Equal(expected, result.Result.Status);
+        Assert.Equal(writable ? 1 : 0, api.StartCount);
+        if (writable) Assert.Equal(destination + "/a.txt", Assert.Single(result.ConfirmedItems!).Path);
+    }
+
+    [Fact]
+    public async Task EmptyPreviewIsReadOnlyAndCannotBecomeAnExtraction()
+    {
+        var profile = NewProfile(); var api = new FakeApi([], FolderPage(Source()));
+        var repo = Repository(profile, api);
+        Assert.Empty((await repo.PreviewAsync(Request(profile))).Items);
+        Assert.False((await repo.ExtractAsync(Request(profile))).Result.Submitted);
+        Assert.Equal(0, api.StartCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SelectedMemberIncludesAncestorsOrFolderContentsButNotSiblings(bool selectFolder)
+    {
+        var profile = NewProfile();
+        var directory = ArchiveItem("dir", true) with { Id = 1 };
+        var file = ArchiveItem("a.txt", false) with { Id = 2, RelativePath = "dir/a.txt", Size = 12 };
+        var api = new FakeApi([directory, file, ArchiveItem("other.txt", false) with { Id = 3 }],
+            FolderPage(Source()), Destination(), FolderPage(Source(), Folder("dir")),
+            FolderPage(Item("/share/docs/dir/a.txt", "a.txt", false, 12, true)));
+        var result = await Repository(profile, api).ExtractAsync(Request(profile) with
+            { Options = new() { SelectedItems = [selectFolder ? directory : file] } });
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal(2, result.ConfirmedItems!.Count);
+        Assert.DoesNotContain(result.ConfirmedItems, item => item.Name == "other.txt");
+        Assert.Equal(selectFolder ? 1 : 2, Assert.Single(api.StartedOptions!.SelectedItems!).Id);
+    }
+
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("duplicate")]
+    [InlineData("changed-id")]
+    [InlineData("changed-path")]
+    [InlineData("changed-size")]
+    [InlineData("missing")]
+    public async Task InvalidOrChangedSelectionNeverSubmits(string kind)
+    {
+        var profile = NewProfile();
+        var item = ArchiveItem("a.txt", false) with { Id = 1, Size = 12 };
+        IReadOnlyList<FileArchiveExtractionListedItem> selection = kind switch
+        {
+            "empty" => [], "duplicate" => [item, item],
+            "changed-id" => [item with { Id = 2 }],
+            "changed-path" => [item with { RelativePath = "different/a.txt" }],
+            "changed-size" => [item with { Size = 13 }],
+            _ => [item with { Id = null }],
+        };
+        var api = new FakeApi([item]);
+        var result = await Repository(profile, api).ExtractAsync(Request(profile) with
+            { Options = new() { SelectedItems = selection } });
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, result.Result.Status);
+        Assert.False(result.Result.Submitted);
+        Assert.Equal(0, api.StartCount);
+        Assert.Equal(0, api.FileListCount);
+    }
+
+    [Fact]
+    public async Task SelectionIgnoresUnselectedFlatteningNameCollision()
+    {
+        var profile = NewProfile();
+        var first = ArchiveItem("a.txt", false) with { Id = 2, RelativePath = "dir/a.txt", Size = 12 };
+        var api = new FakeApi([ArchiveItem("dir", true) with { Id = 1 }, first,
+            ArchiveItem("a.txt", false) with { Id = 3, Size = 14 }],
+            FolderPage(Source()), Destination(), FolderPage(Source(), File("a.txt", 12)));
+        var result = await Repository(profile, api).ExtractAsync(Request(profile) with
+            { Options = new() { SelectedItems = [first], KeepDirectoryStructure = false } });
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal("/share/docs/a.txt", Assert.Single(result.ConfirmedItems!).Path);
+    }
+
+    [Fact]
+    public async Task PreviewChecksSourceAndReturnsEffectiveEncodingWithoutStarting()
+    {
+        var profile = NewProfile();
+        var api = new FakeApi([], FolderPage(Source()))
+        { ListProvider = options => [ArchiveItem(options.Codepage == "chs" ? "中文.txt" : "Ã¤.txt", false) with { Id = 7 }] };
+        var result = await Repository(profile, api).PreviewAsync(Request(profile));
+        Assert.Equal("chs", result.Codepage);
+        Assert.Equal("中文.txt", Assert.Single(result.Items).Name);
+        Assert.Equal(7, result.Items[0].Id);
+        Assert.Equal(0, api.StartCount);
+    }
+
+    [Fact]
+    public async Task ChangedSourceCannotBePreviewed()
+    {
+        var profile = NewProfile(); var api = new FakeApi([], FolderPage());
+        await Assert.ThrowsAsync<InvalidDataException>(() => Repository(profile, api).PreviewAsync(Request(profile)));
+        Assert.Equal(0, api.ArchiveListCount);
+        Assert.Equal(0, api.StartCount);
+    }
+
+    [Fact]
     public async Task FolderWithOverFiveThousandItemsIsCompletelyChecked()
     {
         var profile = NewProfile();

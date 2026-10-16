@@ -10,13 +10,15 @@ public sealed class FileUploadRequest
     public string FolderPath { get; }
     public string FileName { get; }
     public bool Overwrite { get; }
+    public Guid OperationId { get; }
 
     public FileUploadRequest(
         Stream content,
         long length,
         string folderPath,
         string fileName,
-        bool overwrite = false)
+        bool overwrite = false,
+        Guid? operationId = null)
     {
         ArgumentNullException.ThrowIfNull(content);
         if (!content.CanRead)
@@ -24,6 +26,7 @@ public sealed class FileUploadRequest
             throw new ArgumentException("upload.stream_not_readable", nameof(content));
         }
         ArgumentOutOfRangeException.ThrowIfNegative(length);
+        if (operationId == Guid.Empty) throw new ArgumentException("upload.invalid_operation", nameof(operationId));
         if (string.IsNullOrWhiteSpace(folderPath) ||
             !folderPath.StartsWith('/') ||
             folderPath.IndexOfAny(['\r', '\n', '\0']) >= 0)
@@ -42,6 +45,7 @@ public sealed class FileUploadRequest
         FolderPath = folderPath;
         FileName = fileName;
         Overwrite = overwrite;
+        OperationId = operationId ?? Guid.NewGuid();
     }
 
     public override string ToString() => nameof(FileUploadRequest);

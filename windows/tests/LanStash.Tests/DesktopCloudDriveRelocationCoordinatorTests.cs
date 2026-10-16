@@ -57,20 +57,20 @@ public sealed class DesktopCloudDriveRelocationCoordinatorTests : IDisposable
     }
 
     [Fact]
-    public async Task UnknownMoveIsReadOnlyOnReviewAndContinuesOnlyAfterNewConfirmation()
+    public async Task UnknownMoveCannotBeClaimedByMatchingPathsOrUserConfirmation()
     {
         var repository = await ReadyAsync(); repository.UnknownCall = 1;
         var first = await Coordinator(repository).StartAsync("synthetic-id", "/share/a", "/share/dest/b", "b", true);
         Assert.Equal(CloudDriveRelocationPhase.Submitted, first.Phase); Assert.Equal(0, first.Step);
-        var unconfirmed = await Coordinator(repository).ReviewAsync(first.Id, false);
+        var unconfirmed = await Coordinator(repository).ReviewAsync(first.Id);
         Assert.Equal(CloudDriveRelocationPhase.Submitted, unconfirmed.Phase);
-        var reviewed = await Coordinator(repository).ReviewAsync(first.Id, true);
-        Assert.Equal(CloudDriveRelocationPhase.ReadyForNextStep, reviewed.Phase); Assert.Equal(1, reviewed.Step);
+        var reviewed = await Coordinator(repository).ReviewAsync(first.Id);
+        Assert.Equal(CloudDriveRelocationPhase.Submitted, reviewed.Phase); Assert.Equal(0, reviewed.Step);
         Assert.Single(repository.Calls);
         await Assert.ThrowsAsync<InvalidOperationException>(() => Coordinator(repository).ContinueAsync(reviewed, false));
         var completed = await Coordinator(repository).ContinueAsync(reviewed, true);
-        Assert.Equal(CloudDriveRelocationPhase.ServerVerified, completed.Phase);
-        Assert.Equal(["move:/share/a:/share/dest/a", "rename:/share/dest/a:/share/dest/b"], repository.Calls);
+        Assert.Equal(CloudDriveRelocationPhase.Submitted, completed.Phase);
+        Assert.Equal(["move:/share/a:/share/dest/a"], repository.Calls);
     }
 
     [Fact]
@@ -80,8 +80,8 @@ public sealed class DesktopCloudDriveRelocationCoordinatorTests : IDisposable
         var result = await Coordinator(repository).StartAsync("synthetic-id", "/share/a", "/share/dest/b", "b", true);
         Assert.Equal(CloudDriveRelocationPhase.Submitted, result.Phase); Assert.Equal(1, result.Step);
         await Coordinator(repository).ContinueAsync(result, true);
-        var verified = await Coordinator(repository).ReviewAsync(result.Id, true);
-        Assert.Equal(CloudDriveRelocationPhase.ServerVerified, verified.Phase); Assert.Equal(2, repository.Calls.Count);
+        var verified = await Coordinator(repository).ReviewAsync(result.Id);
+        Assert.Equal(CloudDriveRelocationPhase.Submitted, verified.Phase); Assert.Equal(1, verified.Step); Assert.Equal(2, repository.Calls.Count);
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public sealed class DesktopCloudDriveRelocationCoordinatorTests : IDisposable
         var repository = await ReadyAsync(); repository.UnknownCall = 1;
         var result = await Coordinator(repository).StartAsync("synthetic-id", "/share/a", "/share/b", "b", true);
         repository.Items["/share/b"] = (false, 99);
-        Assert.Equal(CloudDriveRelocationPhase.Submitted, (await Coordinator(repository).ReviewAsync(result.Id, true)).Phase);
+        Assert.Equal(CloudDriveRelocationPhase.Submitted, (await Coordinator(repository).ReviewAsync(result.Id)).Phase);
         Assert.Single(repository.Calls);
     }
 

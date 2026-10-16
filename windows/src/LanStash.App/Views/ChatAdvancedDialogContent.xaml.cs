@@ -66,8 +66,8 @@ public sealed partial class ChatAdvancedDialogContent : UserControl, IDisposable
             ChatAdvancedSection.ScheduledMessages => !string.IsNullOrWhiteSpace(MessageText.Text) && SelectedTime is { } sendAt && sendAt > DateTimeOffset.Now,
             ChatAdvancedSection.Polls => new ChatPollDraft(_model.ConversationId ?? "", MessageText.Text.Trim(), Choices, MultipleBox.IsChecked == true, AnonymousBox.IsChecked == true, Guid.NewGuid()).IsValid,
             ChatAdvancedSection.Forward => SourceList.SelectedItems.Count > 0 && SourceList.SelectedItems.OfType<ChatAdvancedMessageChoice>().All(source => _model.CanForwardMessage(source.Id)) &&
-                TargetList.SelectedItems.Count + DirectUserList.SelectedItems.Count > 0 && ActionConfirmation.IsChecked == true,
-            ChatAdvancedSection.Announcements => MessagePicker.SelectedItem is ChatAdvancedMessageChoice && ActionConfirmation.IsChecked == true,
+                TargetList.SelectedItems.Count + DirectUserList.SelectedItems.Count > 0,
+            ChatAdvancedSection.Announcements => MessagePicker.SelectedItem is ChatAdvancedMessageChoice,
             ChatAdvancedSection.DeleteMessages => SourceList.SelectedItems.Count > 0 && ActionConfirmation.IsChecked == true,
             _ => TargetList.SelectedItems.Count > 0 && ActionConfirmation.IsChecked == true,
         }))));
@@ -175,7 +175,9 @@ public sealed partial class ChatAdvancedDialogContent : UserControl, IDisposable
         MessageText.MaxLength = poll ? 256 : 0;
         PollChoices.Visibility = MultipleBox.Visibility = AnonymousBox.Visibility = Show(poll);
         DatePicker.Visibility = TimePicker.Visibility = TimeHint.Visibility = Show(_model.Section is ChatAdvancedSection.Reminders or ChatAdvancedSection.ScheduledMessages);
-        ActionHint.Visibility = ActionConfirmation.Visibility = Show(action || delete || _model.Section == ChatAdvancedSection.Announcements);
+        ActionHint.Visibility = Show(forward || _model.Section == ChatAdvancedSection.Announcements);
+        ActionConfirmation.Visibility = Show(delete || _model.Section == ChatAdvancedSection.CloseConversation);
+        ActionConfirmation.Content = _l.Get(delete ? "ChatBatchDeleteWarning" : "ChatActionConfirm");
         ActionHint.Text = _l.Get(delete ? "ChatBatchDeleteWarning" : forward ? "ChatActionForwardWarning" : _model.Section == ChatAdvancedSection.Announcements ? "ChatActionPinWarning" : "ChatActionCloseWarning");
         RefreshButton.IsEnabled = RetryButton.IsEnabled = !_model.IsBusy;
         _rendering = false; StateChanged?.Invoke();

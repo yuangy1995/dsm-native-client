@@ -12,7 +12,8 @@ public sealed partial class VirtualMachineNetworksDialogContent : UserControl, I
     private IReadOnlyList<VirtualMachineNetwork>? _displayed;
     private bool _updating, _disposed;
     public event Action? StateChanged;
-    public bool CanSubmit => _model.CanSubmit;
+    public bool CanSubmit => _model.Action == VirtualMachineNetworkAction.Rename ? _model.CanConfirm : _model.CanSubmit;
+    public string SubmitText => LocalizationService.Current.Get(_model.Action == VirtualMachineNetworkAction.Delete ? "VmNetworkDelete.Content" : "VmNetworkApply");
     public bool CanReview => _model.CanReview;
     public bool NeedsParentRefresh => _model.NeedsParentRefresh;
     public VirtualMachineNetworksDialogContent(IVirtualMachineManagerRepository repository)
@@ -22,7 +23,11 @@ public sealed partial class VirtualMachineNetworksDialogContent : UserControl, I
         _model.PropertyChanged += ModelChanged; Render();
     }
     public async Task ActivateAsync() { await _model.LoadAsync(); Render(); }
-    public async Task SubmitAsync() { await _model.SubmitAsync(); Render(); }
+    public async Task SubmitAsync()
+    {
+        if (_model.Action == VirtualMachineNetworkAction.Rename) _model.SetConfirmed(true);
+        await _model.SubmitAsync(); Render();
+    }
     public async Task ReviewAsync() { await _model.ReviewAsync(); Render(); }
     private void ModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args) => DispatcherQueue.TryEnqueue(Render);
     private void Render()
@@ -40,6 +45,7 @@ public sealed partial class VirtualMachineNetworksDialogContent : UserControl, I
         NewNameBox.IsEnabled = _model.CanEdit && _model.SelectedCount == 1;
         NewNameBox.Text = _model.NewName;
         ConfirmBox.IsEnabled = _model.CanConfirm; ConfirmBox.IsChecked = _model.HasConfirmation;
+        ConfirmBox.Visibility = _model.Action == VirtualMachineNetworkAction.Delete ? Visibility.Visible : Visibility.Collapsed;
         RiskText.Text = _model.ConfirmationText;
         RiskText.Visibility = _model.SelectedCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         var messageKey = _model.MessageKey ?? _model.ValidationKey;

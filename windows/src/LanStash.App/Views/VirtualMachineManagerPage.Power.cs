@@ -13,6 +13,7 @@ public sealed partial class VirtualMachineManagerPage
     private async void PowerOn_Click(object sender, RoutedEventArgs e) => await ShowPowerAsync(VirtualMachinePowerAction.PowerOn);
     private async void Shutdown_Click(object sender, RoutedEventArgs e) => await ShowPowerAsync(VirtualMachinePowerAction.Shutdown);
     private async void PowerOff_Click(object sender, RoutedEventArgs e) => await ShowPowerAsync(VirtualMachinePowerAction.PowerOff);
+    private async void Reboot_Click(object sender, RoutedEventArgs e) => await ShowPowerAsync(VirtualMachinePowerAction.Reboot);
     private async Task ShowPowerAsync(VirtualMachinePowerAction action)
     {
         if (_disposed || _machineBatchDialog is not null || _creationDialog is not null || _powerDialog is not null || _settingsDialog is not null || XamlRoot is null || _viewModel.IsLoading || _viewModel.RequiresReconnect ||
@@ -37,8 +38,9 @@ public sealed partial class VirtualMachineManagerPage
     private void UpdatePowerControls()
     {
         bool Allows(VirtualMachinePowerAction action) => !_disposed && !_viewModel.IsLoading && !_viewModel.RequiresReconnect &&
-            _repository.ProfileId == _viewModel.ActiveProfileId && _viewModel.SelectedMachine?.Machine is { } target && VirtualMachinePowerRules.CanRequest(target, action);
+            _repository.ProfileId == _viewModel.ActiveProfileId && _viewModel.SelectedMachine?.Machine is { } target && VirtualMachinePowerRules.CanRequest(target, action) && _repository.CanControlPowerAction(target, action);
         PowerOnButton.IsEnabled = Allows(VirtualMachinePowerAction.PowerOn); ShutdownButton.IsEnabled = Allows(VirtualMachinePowerAction.Shutdown); PowerOffButton.IsEnabled = Allows(VirtualMachinePowerAction.PowerOff);
+        RebootButton.IsEnabled = Allows(VirtualMachinePowerAction.Reboot);
     }
     private void ClosePowerDialog() { _powerContent?.Dispose(); _powerDialog?.Hide(); _powerContent = null; _powerDialog = null; }
 }

@@ -292,9 +292,9 @@ public sealed partial class DownloadStationViewModel
                 "DownloadStationCreateSuccessTitle",
                 "DownloadStationCreateSuccessMessage"),
             MutationResultStatus.ConfirmedSuccess => (
-                DownloadTaskCreateNoticeKind.NeedsReview,
-                "DownloadStationCreateReviewTitle",
-                "DownloadStationCreateReviewMessage"),
+                DownloadTaskCreateNoticeKind.Success,
+                "DownloadStationCreateAcceptedTitle",
+                "DownloadStationCreateAcceptedMessage"),
             MutationResultStatus.CancelledBeforeSubmission => (
                 DownloadTaskCreateNoticeKind.Cancelled,
                 "DownloadStationCreateCancelledTitle",

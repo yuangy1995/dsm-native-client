@@ -67,10 +67,16 @@ public sealed class CertificateTrustAppSourceContractTests
         Assert.Contains("public async Task ConnectAsync()", app);
         Assert.Contains("public async Task RestoreAsync(NasProfile profile", app);
         Assert.True(Count(app, "ClearCertificateChallenge();") >= 4);
-        Assert.Contains("public async Task SelectProfileAsync(NasProfile profile)\n    {\n        ClearCertificateChallenge();", app);
+        var selection = app.IndexOf("public async Task SelectProfileAsync(NasProfile profile)", StringComparison.Ordinal);
+        var clear = app.IndexOf("ClearCertificateChallenge();", selection, StringComparison.Ordinal);
+        var password = app.IndexOf("_passwordStore.LoadAsync", selection, StringComparison.Ordinal);
+        Assert.True(selection >= 0 && clear > selection && password > clear);
         Assert.Contains("await _certificatePins.RemoveAsync(profile.Id)", app);
-        Assert.Contains("ActiveConnectionSource = null", app);
-        Assert.Contains("_activeHttpClient?.Dispose()", app);
+        var workspaces = Read("windows/src/LanStash.App/ViewModels/AppViewModel.Chat.cs");
+        Assert.Contains("ActiveConnectionSource = null", workspaces);
+        Assert.Contains("CancelConnection();\n        DetachActiveWorkspace();", app);
+        Assert.Contains("workspace.Http.Dispose()", workspaces);
+        Assert.Contains("ReleaseWorkspace(profile.Id)", app);
     }
 
     private static int Count(string value, string pattern) =>

@@ -84,6 +84,8 @@ public sealed class NasZramTests
         public Task<NasZramSnapshot>? Response { get; set; }
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
+            if (method!.Name == "LoadHardwareEditRecoveriesAsync") return Task.FromResult<IReadOnlyList<NasHardwareEditRecovery>>([]);
+            if (method.Name == "PrepareServiceSettingsAsync") return Task.FromResult(new NasSettingsWriteAvailability(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false));
             if (method!.Name != "LoadZramAsync") throw new NotSupportedException("只允许读取内存压缩");
             Reads++; Token = (CancellationToken)args![0]!;
             return Response ?? Task.FromResult(new NasZramSnapshot(true, 1024, NasZramAlgorithm.Lz4));

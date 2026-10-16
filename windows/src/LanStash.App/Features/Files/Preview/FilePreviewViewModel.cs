@@ -203,7 +203,7 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
                 : Details(profileId, item, kind, FilePreviewUnavailableReason.Empty);
             return;
         }
-        if (kind is FilePreviewKind.Image or FilePreviewKind.Pdf &&
+        if (kind is FilePreviewKind.Image or FilePreviewKind.Pdf or FilePreviewKind.Office &&
             item.Size > FilePreviewClassifier.DocumentPreviewByteLimit)
         {
             Snapshot = Details(profileId, item, kind, FilePreviewUnavailableReason.TooLarge);
@@ -226,6 +226,7 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
                     break;
                 case FilePreviewKind.Image:
                 case FilePreviewKind.Pdf:
+                case FilePreviewKind.Office:
                     await LoadArtifactAsync(repository, item, kind, profileId, request)
                         .ConfigureAwait(true);
                     break;
