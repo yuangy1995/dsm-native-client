@@ -3,6 +3,12 @@
 
 # 平台功能矩阵
 
+2026-10-16 Windows 用户反馈复验：Photos `indexed_time` 应按 Unix 毫秒解码，
+VMM 空保护列表使用 `protect_ids=[]`；Chat 附件对象读取与下载可选数字字符串已修正。
+Windows 的原会话只读链路已通过；原生界面与构建以[本轮账本](../development/WINDOWS_READ_REGRESSION_20261016_ZH.md)的实际记录为准。
+macOS、iPhone、iPad 的共享 Photos 及 Android 需独立复核毫秒解码与原件/恢复身份；
+四端本轮只登记影响，不修改源码，不提升验证等级。VMM 非空保护编号详情仍未获得本次证据。
+
 “核心／受限／后续／非目标”表示产品范围，不是源码、自动化、真机或发布等级。当前交付结论见[开发状态](STATUS.md)，请求和恢复语义见[API 目录](../api/README.md)。
 
 ## 当前移动范围

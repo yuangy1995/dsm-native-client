@@ -438,7 +438,7 @@ public sealed class SynologyPhotosUploadTests
                 var content = body[start..body.IndexOf("\r\n--", start, StringComparison.Ordinal)]; UploadBytes.Add(Encoding.UTF8.GetBytes(content));
                 var id = 6 + Uploads; var folder = fields.TryGetValue("target_folder_id", out var rawFolder) ? long.Parse(rawFolder) : 3;
                 var photo = new JsonObject { ["id"] = id, ["filename"] = JsonSerializer.Deserialize<string>(fields["name"]), ["filesize"] = Encoding.UTF8.GetByteCount(content),
-                    ["time"] = 1788220800, ["indexed_time"] = 1788220900, ["folder_id"] = folder, ["type"] = "photo",
+                    ["time"] = 1788220800, ["indexed_time"] = 1788220900000L, ["folder_id"] = folder, ["type"] = "photo",
                     ["owner_user_id"] = fields["api"].Contains("FotoTeam", StringComparison.Ordinal) ? 0 : User,
                     ["additional"] = new JsonObject { ["provider_user_id"] = User } };
                 _photos[id] = photo;

@@ -52,7 +52,7 @@ public sealed class AppSettingsPageSourceContractTests
         var xaml = Read("windows/src/LanStash.App/Views/AppSettingsPage.xaml");
         var source = Read("windows/src/LanStash.App/Views/AppSettingsPage.xaml.cs");
 
-        Assert.Contains("x:Uid=\"Settings.PageTitle\"", xaml);
+        Assert.Contains("x:Uid=\"SettingsPageTitle\"", xaml);
         Assert.Contains("x:Name=\"LanguageSelector\"", xaml);
         Assert.Contains("x:Name=\"ThemeSelector\"", xaml);
         Assert.Equal(4, Count(xaml, "<ToggleSwitch"));

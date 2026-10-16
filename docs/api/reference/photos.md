@@ -25,7 +25,7 @@
 
 项目页没有通用 `total/has_more` 承诺：当前适配器以原始 `list.count` 推进 offset，满页继续、短页/空页结束。不能用筛选后的显示数量推进分页，也不能默认第一批就是完整集合。
 
-原始项目的 `id/filename/filesize/time/indexed_time/folder_id/type/additional` 映射为领域对象；时间是 Unix 秒。相册、目录、分类可能使用不同返回容器，不以“字段名相似”建立通用解码。
+原始项目的 `id/filename/filesize/time/indexed_time/folder_id/type/additional` 映射为领域对象；`time` 是 Unix 秒，`indexed_time` 是 Unix 毫秒，必须保留非整秒精度，不能按数值大小猜单位。2026-10-16 已通过官方脚本与 Windows 真实只读链路纠正原文将两者均视作秒的错误，详见[观察记录](../discovery/environments/2026-10-16-windows-read-regression.md)。相册、目录、分类可能使用不同返回容器，不以“字段名相似”建立通用解码。
 
 ## 缩略图、原件、预览与下载
 

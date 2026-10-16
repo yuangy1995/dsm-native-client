@@ -89,6 +89,8 @@ public sealed partial class SynologyPhotosWorkspace : ObservableObject, IDisposa
     public bool HasMore { get; private set; }
     public bool HasMoreCollections { get; private set; }
     public bool HasLoaded { get; private set; }
+    public bool HasAccess { get; private set; }
+    public bool CanRefreshChanges => HasAccess && !IsLoading && !_disposed;
     public bool IsActive => !_disposed;
     public bool IsFiltering => SearchText.Length != 0 || Filter.IsActive;
     public bool CanGoBack => _folderHistory.Count > 1 || Album is not null || Category is not null;
@@ -175,7 +177,7 @@ public sealed partial class SynologyPhotosWorkspace : ObservableObject, IDisposa
         if (_disposed || Deletion.IsBusy) return;
         var (generation, token) = StartRequest();
         _needsPeopleRefresh = false; _needsConceptRefresh = false;
-        IsLoading = true; HasLoaded = false; ErrorKey = null; CurrentAlbum = null; CanManageSharedSpace = false; IsAdministrator = false;
+        IsLoading = true; HasLoaded = false; HasAccess = false; ErrorKey = null; CurrentAlbum = null; CanManageSharedSpace = false; IsAdministrator = false;
         Items.Clear(); _itemIds.Clear(); _pagedPhotoIds.Clear(); Collections.Clear(); SharedEntries.Clear();
         Days = []; Months = []; SelectedMonth = null; PreviousMonthId = null;
         _timelineBase = null; _nextOffset = 0; _collectionOffset = 0;
@@ -185,6 +187,7 @@ public sealed partial class SynologyPhotosWorkspace : ObservableObject, IDisposa
         {
             var access = await _repository.AccessAsync(token);
             EnsureCurrent(generation, token);
+            HasAccess = true;
             Spaces = access.Spaces.Where(Enum.IsDefined).Distinct().ToArray();
             CanManageSharedSpace = access.CanManageSharedSpace;
             IsAdministrator = access.IsAdministrator;
@@ -306,7 +309,14 @@ public sealed partial class SynologyPhotosWorkspace : ObservableObject, IDisposa
             Accept(page, 0); HasLoaded = true;
         }
         catch (OperationCanceledException) when (!IsCurrent(generation, token)) { }
-        catch (Exception error) { if (IsCurrent(generation, token)) ErrorKey = FailureKey(error); }
+        catch (Exception error)
+        {
+            if (IsCurrent(generation, token))
+            {
+                if (error is DsmException { AuthenticationFailure: true }) HasAccess = false;
+                ErrorKey = FailureKey(error);
+            }
+        }
         finally { if (IsCurrent(generation, token)) { IsLoading = false; Changed(content: true); } }
     }
 
@@ -428,7 +438,7 @@ public sealed partial class SynologyPhotosWorkspace : ObservableObject, IDisposa
     public void Suspend()
     {
         if (_disposed) return;
-        StartRequest(); HasLoaded = false; IsLoading = false;
+        StartRequest(); HasLoaded = false; HasAccess = false; IsLoading = false;
         Deletion.CancelCandidate(); Changed();
     }
 

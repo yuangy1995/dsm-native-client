@@ -147,7 +147,7 @@ internal sealed class SynologyPhotosHttpFixture : IDisposable
     public JsonObject PhotoJson(string type = "photo") => new()
     {
         ["id"] = 7, ["filename"] = "synthetic.jpg", ["filesize"] = 8,
-        ["time"] = 1788220800, ["indexed_time"] = 1788220900, ["folder_id"] = 3, ["type"] = type,
+        ["time"] = 1788220800, ["indexed_time"] = 1788220900000L, ["folder_id"] = 3, ["type"] = type,
         ["additional"] = new JsonObject { ["thumbnail"] = new JsonObject { ["unit_id"] = 8, ["cache_key"] = "synthetic-revision" } }
     };
     public static HttpResponseMessage Json(JsonObject data) => new(HttpStatusCode.OK)

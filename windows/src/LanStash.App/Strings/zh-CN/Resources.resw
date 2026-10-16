@@ -3419,8 +3419,8 @@
   <data name="FileBrowserSearchTruncatedMessage" xml:space="preserve">
     <value>正在显示前 {0:N0} 个匹配项。请缩小搜索范围以查找更具体的文件。</value>
   </data>
-  <data name="Settings.PageTitle.Text" xml:space="preserve">
-    <value>设置</value>
+  <data name="SettingsPageTitle.Text" xml:space="preserve">
+    <value>应用设置</value>
   </data>
   <data name="Settings.PageDescription.Text" xml:space="preserve">
     <value>选择应用外观、可选模块显示方式，以及本机可再生数据的管理方式。</value>
@@ -3428,10 +3428,10 @@
   <data name="Settings.LanguageSectionTitle.Text" xml:space="preserve">
     <value>语言</value>
   </data>
-  <data name="Settings.Language.Header" xml:space="preserve">
+  <data name="SettingsLanguageLabel.Text" xml:space="preserve">
     <value>应用语言</value>
   </data>
-  <data name="Settings.Language.AutomationProperties.Name" xml:space="preserve">
+  <data name="SettingsLanguage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>应用语言</value>
   </data>
   <data name="Settings.LanguageDescription.Text" xml:space="preserve">
@@ -3440,77 +3440,77 @@
   <data name="Settings.AppearanceSectionTitle.Text" xml:space="preserve">
     <value>外观</value>
   </data>
-  <data name="Settings.Theme.Header" xml:space="preserve">
+  <data name="SettingsThemeLabel.Text" xml:space="preserve">
     <value>主题</value>
   </data>
-  <data name="Settings.Theme.AutomationProperties.Name" xml:space="preserve">
+  <data name="SettingsTheme.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>主题</value>
   </data>
-  <data name="Settings.ModulesSectionTitle.Text" xml:space="preserve">
-    <value>可选模块</value>
+  <data name="SettingsModulesSectionTitle.Text" xml:space="preserve">
+    <value>侧边栏</value>
   </data>
   <data name="Settings.ModulesDescription.Text" xml:space="preserve">
     <value>隐藏模块不会更改 NAS 上的功能，并且可以随时重新显示。</value>
   </data>
-  <data name="Settings.DownloadsModule.Header" xml:space="preserve">
-    <value>Download Station</value>
+  <data name="SettingsDownloadsModuleLabel.Text" xml:space="preserve">
+    <value>下载管理</value>
   </data>
-  <data name="Settings.DownloadsModule.AutomationProperties.Name" xml:space="preserve">
-    <value>Download Station</value>
+  <data name="SettingsDownloadsModule.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>显示下载管理</value>
   </data>
-  <data name="Settings.DownloadsModule.OnContent" xml:space="preserve">
+  <data name="SettingsDownloadsModule.OnContent" xml:space="preserve">
     <value>显示</value>
   </data>
-  <data name="Settings.DownloadsModule.OffContent" xml:space="preserve">
+  <data name="SettingsDownloadsModule.OffContent" xml:space="preserve">
     <value>隐藏</value>
   </data>
-  <data name="Settings.ContainersModule.Header" xml:space="preserve">
+  <data name="SettingsContainersModuleLabel.Text" xml:space="preserve">
     <value>容器</value>
   </data>
-  <data name="Settings.ContainersModule.AutomationProperties.Name" xml:space="preserve">
+  <data name="SettingsContainersModule.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>容器</value>
   </data>
-  <data name="Settings.ContainersModule.OnContent" xml:space="preserve">
+  <data name="SettingsContainersModule.OnContent" xml:space="preserve">
     <value>显示</value>
   </data>
-  <data name="Settings.ContainersModule.OffContent" xml:space="preserve">
+  <data name="SettingsContainersModule.OffContent" xml:space="preserve">
     <value>隐藏</value>
   </data>
-  <data name="Settings.VirtualMachinesModule.Header" xml:space="preserve">
+  <data name="SettingsVirtualMachinesModuleLabel.Text" xml:space="preserve">
     <value>虚拟机</value>
   </data>
-  <data name="Settings.VirtualMachinesModule.AutomationProperties.Name" xml:space="preserve">
+  <data name="SettingsVirtualMachinesModule.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>虚拟机</value>
   </data>
-  <data name="Settings.VirtualMachinesModule.OnContent" xml:space="preserve">
+  <data name="SettingsVirtualMachinesModule.OnContent" xml:space="preserve">
     <value>显示</value>
   </data>
-  <data name="Settings.VirtualMachinesModule.OffContent" xml:space="preserve">
+  <data name="SettingsVirtualMachinesModule.OffContent" xml:space="preserve">
     <value>隐藏</value>
   </data>
-  <data name="Settings.NasHealthModule.Header" xml:space="preserve">
-    <value>NAS 健康</value>
+  <data name="SettingsNasHealthModuleLabel.Text" xml:space="preserve">
+    <value>NAS 设置</value>
   </data>
-  <data name="Settings.NasHealthModule.AutomationProperties.Name" xml:space="preserve">
-    <value>NAS 健康</value>
+  <data name="SettingsNasHealthModule.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>显示 NAS 设置</value>
   </data>
-  <data name="Settings.NasHealthModule.OnContent" xml:space="preserve">
+  <data name="SettingsNasHealthModule.OnContent" xml:space="preserve">
     <value>显示</value>
   </data>
-  <data name="Settings.NasHealthModule.OffContent" xml:space="preserve">
+  <data name="SettingsNasHealthModule.OffContent" xml:space="preserve">
     <value>隐藏</value>
   </data>
-  <data name="Settings.CacheSectionTitle.Text" xml:space="preserve">
-    <value>本机可再生数据</value>
+  <data name="SettingsCacheSectionTitle.Text" xml:space="preserve">
+    <value>照片缓存</value>
   </data>
-  <data name="Settings.CacheDescription.Text" xml:space="preserve">
-    <value>清理只会移除已注册的照片缩略图内存，不会删除 NAS 文件、已保存副本、连接资料、凭据、传输、正在使用的预览或 Cloud Drive 数据。</value>
+  <data name="SettingsCacheDescription.Text" xml:space="preserve">
+    <value>只清理缩略图，不会删除照片原件或已保存的文件。</value>
   </data>
-  <data name="Settings.ClearCache.Content" xml:space="preserve">
-    <value>清理可再生数据</value>
+  <data name="SettingsClearCache.Content" xml:space="preserve">
+    <value>清理缓存</value>
   </data>
-  <data name="Settings.ClearCache.AutomationProperties.Name" xml:space="preserve">
-    <value>清理可再生数据</value>
+  <data name="SettingsClearCache.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>清理照片缓存</value>
   </data>
   <data name="Settings.Privacy.Title" xml:space="preserve">
     <value>隐私</value>
@@ -3540,13 +3540,13 @@
     <value>{0} MB</value>
   </data>
   <data name="Settings.CacheClearedTitle" xml:space="preserve">
-    <value>已清理可再生数据</value>
+    <value>缓存已清理</value>
   </data>
   <data name="Settings.CacheClearedMessage" xml:space="preserve">
-    <value>已清空注册的照片缩略图缓存。</value>
+    <value>照片缩略图缓存已清空。</value>
   </data>
   <data name="Settings.CachePartialTitle" xml:space="preserve">
-    <value>部分可再生数据未能清理</value>
+    <value>部分缓存未能清理</value>
   </data>
   <data name="Settings.CachePartialMessage" xml:space="preserve">
     <value>请关闭照片页面后重试。</value>
@@ -7518,7 +7518,7 @@
   <data name="VmConsoleCertificateFailed" xml:space="preserve"><value>无法安全验证此连接，请关闭控制台并检查 NAS 连接。</value></data>
   <data name="VmConsoleBrowserUnavailable" xml:space="preserve"><value>浏览组件暂不可用，请安装或修复 Microsoft Edge WebView2 Runtime 后重新打开控制台。</value></data>
   <data name="VmConsoleNavigationBlocked" xml:space="preserve"><value>页面尝试离开此控制台，连接已停止。请关闭窗口后重新打开控制台。</value></data>
-  <data name="Settings.CloudDrive.Content" xml:space="preserve"><value>管理云盘</value></data>
+  <data name="SettingsCloudDrive.Content" xml:space="preserve"><value>管理云盘</value></data>
   <data name="CloudDriveBackToSettings" xml:space="preserve"><value>返回设置</value></data>
   <data name="CloudDriveEnableSessionTest" xml:space="preserve"><value>启用只读测试</value></data>
   <data name="CloudDriveSessionTestNotice" xml:space="preserve"><value>云盘集成需要在此设备上验证。添加云盘前，请先明确启用测试。</value></data>
@@ -10395,4 +10395,6 @@
   <data name="DesktopQuitVoiceDetail" xml:space="preserve"><value>尚未发送的录音会保留在本机，可在“本机录音”中导出。</value></data>
   <data name="CloudDriveUseExistingDirectory" xml:space="preserve"><value>使用现有目录继续同步</value></data>
   <data name="CloudDriveUseExistingDirectoryConfirm" xml:space="preserve"><value>将本机目录中的内容继续同步到 NAS 的同名目录。已有文件仍须通过冲突检查。</value></data>
+  <data name="SettingsGeneralSectionTitle.Text" xml:space="preserve"><value>常规</value></data>
+  <data name="SettingsStorageSectionTitle.Text" xml:space="preserve"><value>本机存储</value></data>
 </root>

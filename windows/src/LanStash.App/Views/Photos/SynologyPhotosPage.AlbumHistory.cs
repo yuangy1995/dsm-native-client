@@ -12,16 +12,17 @@ public sealed partial class SynologyPhotosPage
     private sealed record PhotoAlbumChangeChoice(Guid Id, string Title) { public override string ToString() => Title; }
     private void StartAlbumRefresh()
     {
-        if (_disposed || !_windowVisible || !(_model.Repository.SupportsAlbumManagement || _model.Repository.SupportsSharingManagement)) return;
+        if (_disposed || !_windowVisible || !IsLoaded || !_model.CanRefreshChanges || !(_model.Repository.SupportsAlbumManagement || _model.Repository.SupportsSharingManagement)) return;
         if (_albumRefreshTimer is null)
         { _albumRefreshTimer = new() { Interval = TimeSpan.FromSeconds(15) }; _albumRefreshTimer.Tick += async (_, _) => await RefreshAlbumsAsync(); }
+        if (_albumRefreshTimer.IsEnabled) return;
         _albumRefreshTimer.Start(); _ = RefreshAlbumsAsync();
     }
     private async Task RefreshAlbumsAsync()
     {
-        if (_disposed || !_windowVisible || !IsLoaded || _dialog is not null || _albumRefreshing) return;
+        if (_disposed || !_windowVisible || !IsLoaded || !_model.CanRefreshChanges || _dialog is not null || _albumRefreshing) return;
         _albumRefreshing = true; var generation = _viewGeneration;
-        bool Current() => !_disposed && _windowVisible && IsLoaded && generation == _viewGeneration;
+        bool Current() => !_disposed && _windowVisible && IsLoaded && _model.CanRefreshChanges && generation == _viewGeneration;
         try
         {
             if (!_model.Repository.SupportsAlbumManagement) { await RefreshSharingStatusAsync(); return; }

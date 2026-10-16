@@ -444,6 +444,90 @@ public sealed class ChatRepositoryContractTests
         Assert.Equal("10", postRequest.Parameters["channel_id"]);
     }
 
+    [Theory]
+    [InlineData("FORM")]
+    [InlineData("JSON")]
+    public async Task FilePropertiesInDecodedHistoryDoNotFailTheWholeMessagePage(string format)
+    {
+        const string response = """
+            {"success":true,"data":{"posts":[
+              {"post_id":101,"channel_id":10,"creator_id":1,"create_at":1700000000000,
+               "update_at":1700000000000,"thread_id":0,"type":"normal","message":"Synthetic text","props":{}},
+              {"post_id":102,"channel_id":10,"creator_id":1,"create_at":1700000001000,
+               "update_at":1700000001000,"thread_id":102,"comment_count":1,"type":"file","message":"",
+               "file_props":{"file_id":201,"name":"synthetic.png","content_type":"image/png","size":128}}
+            ]}}
+            """;
+        using var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            Assert.Equal("nas.invalid", request.RequestUri!.Host);
+            var parameters = (await request.Content!.ReadAsStringAsync(cancellationToken)).Split('&')
+                .Select(pair => pair.Split('=', 2)).ToDictionary(pair => WebUtility.UrlDecode(pair[0]), pair => WebUtility.UrlDecode(pair[1]));
+            Assert.Equal("SYNO.Chat.Post", parameters["api"]);
+            Assert.Equal("5", parameters["version"]);
+            Assert.Equal("50", parameters["prev_count"]);
+            Assert.Equal("0", parameters["next_count"]);
+            Assert.Equal(format == "JSON" ? "\"0\"" : "0", parameters["thread_id"]);
+            Assert.DoesNotContain("post_id", parameters.Keys);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(response, Encoding.UTF8, "application/json"),
+            };
+        });
+        using var http = new HttpClient(handler);
+        var capabilities = Capabilities();
+        capabilities["SYNO.Chat.Post"] = capabilities["SYNO.Chat.Post"] with { RequestFormat = format };
+        var repository = new DsmRepository(Profile(), Session(), new DsmApiClient(http), capabilities);
+
+        var page = await repository.ListMessagesAsync("10", null, 50);
+
+        Assert.Equal(new[] { "101", "102" }, page.Messages.Select(message => message.Id));
+        Assert.Empty(page.Messages[0].Attachments);
+        var root = page.Messages[1];
+        Assert.Equal(root.Id, root.ThreadId);
+        Assert.False(root.IsThreadReply);
+        Assert.Equal(1, root.ReplyCount);
+        var attachment = Assert.Single(root.Attachments);
+        Assert.Equal("201", attachment.Id);
+        Assert.Equal("synthetic.png", attachment.FileName);
+        Assert.Equal(ChatAttachmentKind.Image, attachment.Kind);
+        Assert.Equal(128L, attachment.SizeBytes);
+        Assert.False(page.HasMoreBefore);
+    }
+
+    [Fact]
+    public async Task FilePropertiesParsingPreservesTheOriginalResponseTree()
+    {
+        var post = Message("post-file", "Synthetic attachment");
+        var file = new JsonObject { ["file_id"] = "file-1", ["name"] = "synthetic.txt", ["size"] = 8 };
+        post["file_props"] = file;
+        var payload = Posts(0, 1, post);
+        var originalJson = payload.ToJsonString();
+        var api = new RecordingApiClient(_ => payload);
+
+        var message = Assert.Single((await CreateRepository(api).ListMessagesAsync("channel-1", null, 50)).Messages);
+
+        Assert.Equal("file-1", Assert.Single(message.Attachments).Id);
+        Assert.Same(post, file.Parent);
+        Assert.Equal(originalJson, payload.ToJsonString());
+    }
+
+    [Fact]
+    public async Task EmptyFilePropertiesDoNotInventAnAttachmentOrAnAuxiliaryMessage()
+    {
+        var visible = Message("visible", "Synthetic text");
+        visible["file_props"] = new JsonObject();
+        var auxiliary = Auxiliary("helper");
+        auxiliary["file_props"] = new JsonObject();
+        var api = new RecordingApiClient(_ => Posts(0, 2, visible, auxiliary));
+
+        var page = await CreateRepository(api).ListMessagesAsync("channel-1", null, 50);
+
+        Assert.Equal("visible", Assert.Single(page.Messages).Id);
+        Assert.Empty(page.Messages[0].Attachments);
+        Assert.Equal(2, page.SourceRecordCount);
+    }
+
     [Fact]
     public async Task NonIntegerNumericIdIsNotInventedAsStableMessageId()
     {
