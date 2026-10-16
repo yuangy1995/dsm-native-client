@@ -15,7 +15,8 @@ public sealed partial class ContainerMutationDialogContent : UserControl, INasSe
     private readonly ActionChoice[] _actions;
     public event Action? StateChanged;
     public bool IsBusy => _model.IsBusy;
-    public bool CanSave => !_disposed && _model.CanSubmit && RiskAcknowledgement.IsChecked == true;
+    public bool CanSave => !_disposed && (_model.Action == ContainerMutationAction.Delete
+        ? _model.CanSubmit && RiskAcknowledgement.IsChecked == true : _model.CanConfirm);
     public string? PrimaryButtonResourceKey => _model.ActionResourceKey;
     public bool NeedsParentRefresh => _model.NeedsParentRefresh;
     public ContainerMutationDialogContent(IContainerManagerRepository repository)
@@ -34,7 +35,13 @@ public sealed partial class ContainerMutationDialogContent : UserControl, INasSe
     }
     public Task ActivateAsync() => _disposed ? Task.CompletedTask : _model.ActivateAsync(_repository);
     public Task ReloadAsync() => _disposed ? Task.CompletedTask : _model.ReloadAsync();
-    public async Task SaveAsync() { ReadSelection(); if (CanSave) await _model.SubmitAsync(); }
+    public async Task SaveAsync()
+    {
+        ReadSelection(); if (!CanSave) return;
+        // 启停与重启由对话框的明确操作按钮确认；不可撤销的删除保留专门确认。
+        if (_model.Action != ContainerMutationAction.Delete) _model.Confirm(true);
+        await _model.SubmitAsync();
+    }
     private void Refresh()
     {
         if (_disposed) return; _synchronizing = true;
@@ -53,6 +60,7 @@ public sealed partial class ContainerMutationDialogContent : UserControl, INasSe
         SelectionNotice.Visibility = _model.HasSelection ? Visibility.Visible : Visibility.Collapsed;
         SelectionNotice.Text = L.Format("ContainerOpsSelection", _model.SelectionNames);
         RiskNotice.Text = _model.RiskMessage;
+        RiskAcknowledgement.Visibility = _model.Action == ContainerMutationAction.Delete ? Visibility.Visible : Visibility.Collapsed;
         RiskAcknowledgement.IsEnabled = _model.CanConfirm;
         if (!_model.CanSubmit) RiskAcknowledgement.IsChecked = false;
         _synchronizing = false; StateChanged?.Invoke();

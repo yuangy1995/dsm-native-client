@@ -95,7 +95,7 @@ public sealed partial class DsmRepository
             await PrepareServiceSettingsAsync(cancellationToken).ConfigureAwait(false);
             if (!_nasServiceAdministrator) return false;
             await _api.CallReadJsonObjectAsync(_profile, _session, capability, 3, "info", cancellationToken: cancellationToken).ConfigureAwait(false);
-            // 这是用户检查设备之后的本地确认，不是从 info 证明最终电源状态。
+            // 用户在新连接中明确允许新的电源操作；这不把 info 或本机确认当作此前操作已完成的证明。
             shared.Pending.Remove(key); return true;
         }
         finally { shared.Gate.Release(); }

@@ -1,12 +1,57 @@
 <UserControl x:Class="LanStash.App.Views.NasPackageSettingsDialogContent"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:LanStash.App.Views">
-  <ScrollViewer MaxHeight="560">
+  <ScrollViewer x:Name="ContentScroll" MaxHeight="560">
     <StackPanel MinWidth="340" MaxWidth="560" Spacing="12">
       <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" Visibility="Collapsed" IsActive="False"/>
       <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
       <InfoBar x:Name="FeedbackNotice" IsOpen="False" IsClosable="False" AutomationProperties.LiveSetting="Polite"/>
       <InfoBar x:Name="PendingNotice" IsOpen="False" IsClosable="False" Severity="Warning" AutomationProperties.LiveSetting="Polite"/>
+      <InfoBar x:Name="CenterErrorNotice" IsOpen="False" IsClosable="False" Severity="Warning" AutomationProperties.LiveSetting="Polite"/>
+      <InfoBar x:Name="CenterFeedbackNotice" IsOpen="False" IsClosable="False" AutomationProperties.LiveSetting="Polite"/>
+      <Grid RowSpacing="8" ColumnSpacing="8">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Button x:Name="PreferencesButton" x:Uid="NasPackageCenterSettings" Click="Preferences_Click" HorizontalAlignment="Stretch"/>
+        <Button x:Name="SourcesButton" Grid.Column="1" x:Uid="NasPackageCenterSources" Click="Sources_Click" HorizontalAlignment="Stretch"/>
+        <Button x:Name="UploadButton" Grid.Row="1" x:Uid="NasPackageCenterUpload" Click="Upload_Click" HorizontalAlignment="Stretch"/>
+        <Button x:Name="OpenDsmButton" Grid.Row="1" Grid.Column="1" x:Uid="NasPackageCenterOpenDsm" Click="OpenDsm_Click" HorizontalAlignment="Stretch"/>
+      </Grid>
+      <StackPanel x:Name="ActivityPanel" Spacing="8" Visibility="Collapsed">
+        <TextBlock x:Name="ActivityText" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+        <ProgressBar x:Name="InstallProgress" Minimum="0" Maximum="100"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="RefreshActivityButton" x:Uid="NasPackageCenterRefreshActivity" Click="RefreshActivity_Click"/>
+          <Button x:Name="CancelInstallButton" x:Uid="NasPackageCenterCancelDownload" Click="CancelInstall_Click"/>
+          <Button x:Name="EndQueueButton" x:Uid="NasPackageCenterEndQueue" Click="EndQueue_Click"/>
+        </StackPanel>
+      </StackPanel>
+      <StackPanel x:Name="InstallOptionsPanel" Spacing="8" Visibility="Collapsed">
+        <TextBlock x:Name="InstallOptionsTitle" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <TextBlock x:Name="RestartNotice" x:Uid="NasPackageCenterRestart" TextWrapping="Wrap"/>
+        <ScrollViewer MaxHeight="150"><TextBlock x:Name="LicenseText" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></ScrollViewer>
+        <CheckBox x:Name="AcceptLicense" x:Uid="NasPackageCenterAcceptLicense"/>
+        <StackPanel x:Name="InstallFields" Spacing="8"/>
+        <ComboBox x:Name="ConfigurationVolume" x:Uid="NasPackageCenterVolume" DisplayMemberPath="Name" SelectedValuePath="Id" HorizontalAlignment="Stretch"/>
+        <CheckBox x:Name="ConfigurationStart" x:Uid="NasPackageCenterStartAfter"/>
+        <TextBlock x:Uid="NasPackageCenterInstallRisk" TextWrapping="Wrap"/>
+        <Button x:Name="ConfigureButton" x:Uid="NasPackageCenterConfirmInstall" Click="Configure_Click"/>
+      </StackPanel>
+      <StackPanel x:Name="PreparationPanel" Spacing="8" Visibility="Collapsed">
+        <TextBlock x:Uid="NasPackageCenterPreparationTitle" FontSize="18" FontWeight="SemiBold"/>
+        <TextBlock x:Name="AffectedText" TextWrapping="Wrap"/>
+        <StackPanel x:Name="PlanItems" Spacing="8"/>
+        <CheckBox x:Name="PlanStart" x:Uid="NasPackageCenterStartAfter" IsChecked="True"/>
+        <TextBlock x:Name="PlanRisk" x:Uid="NasPackageCenterInstallRisk" TextWrapping="Wrap"/>
+        <TextBlock x:Name="InstallProtectedNotice" x:Uid="NasPackageCenterProtectedText" TextWrapping="Wrap"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="InstallButton" x:Uid="NasPackageCenterConfirmInstall" Click="Install_Click"/>
+          <Button x:Name="CancelPreparationButton" x:Uid="NasPackageCenterCancelPreparation" Click="CancelPreparation_Click"/>
+        </StackPanel>
+      </StackPanel>
+      <StackPanel x:Name="BrowsePanel" Spacing="12">
+      <ComboBox x:Name="SectionChoice" x:Uid="NasPackageCenterSection" SelectionChanged="Section_Changed" HorizontalAlignment="Stretch"/>
+      <StackPanel x:Name="InstalledPanel" Spacing="12">
       <TextBlock x:Name="ReadOnlyNotice" x:Uid="NasServiceReadOnly" TextWrapping="Wrap"/>
       <TextBox x:Name="SearchInput" x:Uid="NasPackageSearch" TextChanged="Search_Changed"/>
       <TextBlock x:Name="EmptyNotice" Visibility="Collapsed" TextWrapping="Wrap"/>
@@ -28,8 +73,63 @@
       </StackPanel>
       <StackPanel x:Name="ConfirmationPanel" Visibility="Collapsed" Spacing="8">
         <TextBlock x:Name="ConfirmationText" TextWrapping="Wrap"/>
-        <CheckBox x:Name="RiskAcknowledgement" x:Uid="NasPackageConfirm" Checked="Risk_Changed" Unchecked="Risk_Changed"/>
         <Button x:Name="ExecuteButton" Click="Execute_Click"/>
+      </StackPanel>
+      </StackPanel>
+      <StackPanel x:Name="CatalogPanel" Spacing="8" Visibility="Collapsed">
+        <TextBox x:Name="CatalogSearchInput" x:Uid="NasPackageSearch" TextChanged="CatalogFilter_Changed"/>
+        <ComboBox x:Name="CategoryChoice" x:Uid="NasPackageCenterCategory" SelectionChanged="Category_Changed" DisplayMemberPath="Name" SelectedValuePath="Id" HorizontalAlignment="Stretch"/>
+        <TextBlock x:Name="CatalogEmptyNotice" TextWrapping="Wrap"/>
+        <TextBlock x:Name="CommunityNotice" x:Uid="NasPackageCenterCommunityUnavailable" TextWrapping="Wrap"/>
+        <ListView x:Name="CatalogList" MaxHeight="260" SelectionMode="Single" SelectionChanged="CatalogSelection_Changed">
+          <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
+          <ListView.ItemTemplate><DataTemplate x:DataType="local:NasPackageCatalogRow">
+            <StackPanel Spacing="4" Padding="0,8" AutomationProperties.Name="{x:Bind AutomationName}">
+              <TextBlock Text="{x:Bind Entry.Name}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+              <TextBlock Text="{x:Bind Detail}" TextWrapping="Wrap"/>
+            </StackPanel>
+          </DataTemplate></ListView.ItemTemplate>
+        </ListView>
+        <TextBlock x:Name="CatalogDescription" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+        <TextBlock x:Name="CatalogReleaseNotes" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="PrepareButton" x:Uid="NasPackageCenterPrepare" Click="Prepare_Click"/>
+          <Button x:Name="PrepareUpdatesButton" x:Uid="NasPackageCenterPrepareUpdates" Click="PrepareUpdates_Click"/>
+        </StackPanel>
+      </StackPanel>
+      </StackPanel>
+      <StackPanel x:Name="PreferencesPanel" Spacing="8" Visibility="Collapsed">
+        <Button x:Uid="NasPackageCenterBack" Click="Back_Click"/>
+        <TextBlock x:Uid="NasPackageCenterSettingsTitle" FontSize="18" FontWeight="SemiBold"/>
+        <CheckBox x:Name="BetaEnabled" x:Uid="NasPackageCenterBetaEnabled"/>
+        <CheckBox x:Name="EmailEnabled" x:Uid="NasPackageCenterEmailEnabled"/>
+        <CheckBox x:Name="DesktopEnabled" x:Uid="NasPackageCenterDesktopEnabled"/>
+        <ComboBox x:Name="DefaultVolume" x:Uid="NasPackageCenterVolume" DisplayMemberPath="Name" SelectedValuePath="Id" HorizontalAlignment="Stretch"/>
+        <ComboBox x:Name="UpdatePolicy" x:Uid="NasPackageCenterUpdatePolicy" HorizontalAlignment="Stretch" SelectionChanged="Policy_Changed"/>
+        <StackPanel x:Name="PackageUpdatePolicies" Spacing="8"/>
+        <TextBlock x:Name="AutoUpdateProtected" x:Uid="NasPackageCenterAutoProtected" TextWrapping="Wrap"/>
+        <Button x:Name="SavePreferencesButton" x:Uid="NasPackageCenterSave" Click="SavePreferences_Click"/>
+      </StackPanel>
+      <StackPanel x:Name="SourcesPanel" Spacing="8" Visibility="Collapsed">
+        <Button x:Uid="NasPackageCenterBack" Click="Back_Click"/>
+        <TextBlock x:Uid="NasPackageCenterSourcesTitle" FontSize="18" FontWeight="SemiBold"/>
+        <ListView x:Name="SourceList" MaxHeight="180" DisplayMemberPath="Name" SelectionMode="Single" SelectionChanged="SourceSelection_Changed"/>
+        <TextBlock x:Name="SourcesEmptyNotice" x:Uid="NasPackageCenterSourcesEmpty" TextWrapping="Wrap"/>
+        <TextBox x:Name="SourceName" x:Uid="NasPackageCenterSourceName" TextChanged="SourceDraft_Changed"/>
+        <TextBox x:Name="SourceUrl" x:Uid="NasPackageCenterSourceUrl" TextChanged="SourceDraft_Changed"/>
+        <TextBlock x:Name="SourceProtected" x:Uid="NasPackageCenterSourceProtected" TextWrapping="Wrap"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="NewSourceButton" x:Uid="NasPackageCenterNewSource" Click="NewSource_Click"/>
+          <Button x:Name="SaveSourceButton" x:Uid="NasPackageCenterSave" Click="SaveSource_Click"/>
+          <Button x:Name="RemoveSourceButton" x:Uid="NasPackageCenterRemoveSource" Click="RemoveSource_Click"/>
+        </StackPanel>
+      </StackPanel>
+      <StackPanel x:Name="CenterConfirmationPanel" Spacing="8" Visibility="Collapsed">
+        <TextBlock x:Name="CenterConfirmationText" TextWrapping="Wrap"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="ConfirmCenterButton" x:Uid="NasPackageCenterContinue" Click="ConfirmCenter_Click"/>
+          <Button x:Uid="NasPackageCenterCancel" Click="CancelCenter_Click"/>
+        </StackPanel>
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

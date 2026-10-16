@@ -33,6 +33,7 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         Loaded += ContainerManagerPage_Loaded;
+        Unloaded += (_, _) => { _ = _viewModel.SetActivityVisibleAsync(false); ResetActivityFilterControls(); };
         UpdateState();
     }
 
@@ -40,16 +41,50 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
     {
         if (_initialized)
         {
+            await _viewModel.SetActivityVisibleAsync(SectionPivot.SelectedIndex == 5);
             return;
         }
         _initialized = true;
         await RunAsync(() => _viewModel.ActivateAsync(_repository));
+        _updatingFilter = true; NetworkSearchBox.Text = _viewModel.NetworkSearch; _updatingFilter = false;
+        await _viewModel.SetActivityVisibleAsync(SectionPivot.SelectedIndex == 5);
+    }
+    private async void SectionPivot_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_initialized || _disposed) return;
+        if (SectionPivot.SelectedIndex != 5) ResetActivityFilterControls();
+        await RunAsync(() => _viewModel.SetActivityVisibleAsync(SectionPivot.SelectedIndex == 5));
+    }
+    private void ActivitySearch_TextChanged(object sender, TextChangedEventArgs e) => ReadActivityFilter();
+    private void NetworkSearch_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_initialized && !_disposed && !_updatingFilter) _viewModel.SetNetworkSearch(NetworkSearchBox.Text);
+    }
+    private void NetworkClear_Click(object sender, RoutedEventArgs e)
+    {
+        NetworkSearchBox.Text = ""; _viewModel.SetNetworkSearch(""); UpdateState();
+    }
+    private void ActivityLevel_SelectionChanged(object sender, SelectionChangedEventArgs e) => ReadActivityFilter();
+    private void ReadActivityFilter()
+    {
+        if (!_initialized || _disposed || _updatingFilter) return;
+        var tag = (ActivityLevelPicker.SelectedItem as ComboBoxItem)?.Tag as string;
+        _viewModel.SetActivityFilter(ActivitySearchBox.Text, Enum.TryParse<ServiceEventLevel>(tag, out var level) ? level : null);
+    }
+    private void ActivityClear_Click(object sender, RoutedEventArgs e)
+    { ResetActivityFilterControls(); _viewModel.SetActivityFilter("", null); UpdateState(); }
+    private void ResetActivityFilterControls()
+    {
+        _updatingFilter = true; ActivitySearchBox.Text = ""; ActivityLevelPicker.SelectedIndex = 0; _updatingFilter = false;
     }
 
     private void ViewModel_PropertyChanged(
         object? sender,
-        System.ComponentModel.PropertyChangedEventArgs e) =>
-        DispatcherQueue.TryEnqueue(UpdateState);
+        System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (DispatcherQueue.HasThreadAccess) UpdateState();
+        else DispatcherQueue.TryEnqueue(UpdateState);
+    }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(_viewModel.RefreshAsync);
@@ -150,8 +185,11 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
         UnavailableState.Visibility = Visible(_viewModel.IsUnavailable);
         ApplySectionState(_viewModel.ImagesState, ImagesList, ImagesLoadingState, ImagesEmptyState, ImagesErrorState, ImagesUnavailableState);
         ApplySectionState(_viewModel.NetworksState, NetworksList, NetworksLoadingState, NetworksEmptyState, NetworksErrorState, NetworksUnavailableState);
+        NetworksFilteredEmptyState.Visibility = Visible(_viewModel.NetworksState == ContainerManagerContentState.FilteredEmpty);
         ApplySectionState(_viewModel.ProjectsState, ProjectsList, ProjectsLoadingState, ProjectsEmptyState, ProjectsErrorState, ProjectsUnavailableState);
         ApplySectionState(_viewModel.EventsState, EventsList, EventsLoadingState, EventsEmptyState, EventsErrorState, EventsUnavailableState);
+        EventsFilteredEmptyState.Visibility = Visible(_viewModel.EventsState == ContainerManagerContentState.FilteredEmpty);
+        ActivityRefreshNotice.IsOpen = _viewModel.ActivityReadFailed && !_viewModel.RequiresReconnect;
         RefreshButton.IsEnabled = _viewModel.CanRefresh;
         RefreshErrorNotice.IsOpen = _viewModel.HasRefreshError &&
             !_viewModel.HasError && !_viewModel.RequiresReconnect;
@@ -166,7 +204,7 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
             state is ContainerManagerContentState.Content or ContainerManagerContentState.Empty ? count : null;
         OverviewContainersCount.Text = Count(_viewModel.TotalContainerCount);
         OverviewImagesCount.Text = Count(AvailableCount(_viewModel.ImagesState, _viewModel.Images.Count));
-        OverviewNetworksCount.Text = Count(AvailableCount(_viewModel.NetworksState, _viewModel.Networks.Count));
+        OverviewNetworksCount.Text = Count(_viewModel.TotalNetworkCount);
         OverviewProjectsCount.Text = Count(AvailableCount(_viewModel.ProjectsState, _viewModel.Projects.Count));
         UpdateAdaptiveLayout();
     }
@@ -244,5 +282,6 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
         CloseRegistry();
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.Dispose();
+        ActivitySearchBox.Text = ""; EventsList.ItemsSource = null;
     }
 }

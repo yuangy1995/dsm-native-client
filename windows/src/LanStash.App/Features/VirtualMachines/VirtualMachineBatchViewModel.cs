@@ -3,7 +3,7 @@ using LanStash.Domain;
 
 namespace LanStash.App.Features.VirtualMachines;
 
-public enum VirtualMachineBatchAction { PowerOn, Shutdown, PowerOff, Delete, DeleteImage }
+public enum VirtualMachineBatchAction { PowerOn, Shutdown, PowerOff, Delete, DeleteImage, Reboot }
 public sealed record VirtualMachineBatchRecovery(string Id, string Name, VirtualMachineBatchAction Action);
 public sealed record VirtualMachineBatchTarget(VirtualMachineSummary? Machine, VirtualizationResourceSummary? Image)
 {
@@ -22,16 +22,34 @@ public sealed class VirtualMachineBatchViewModel : ObservableObject, IDisposable
     public bool IsDeletion { get; }
     public bool IsImageDeletion { get; }
     private string Operation => IsImageDeletion ? "virtualMachineImageDelete" : IsDeletion ? "virtualMachineDelete" : "virtualMachinePower";
-    private bool CanWrite => IsImageDeletion ? _repository.CanDeleteImages : IsDeletion ? _repository.CanDeleteMachines : _repository.CanControlPower;
+    private bool CanWrite => IsImageDeletion ? _repository.CanDeleteImages : IsDeletion ? _repository.CanDeleteMachines : _repository.CanControlPower &&
+        (Action != VirtualMachineBatchAction.Reboot || Targets.Any(ActionAvailable));
     public bool IsEligibleState(VirtualMachineBatchTarget item) => IsImageDeletion ? item.Image is { } image && VirtualMachineImageDeletionRules.CanRequest(image)
-        : item.Machine is { } machine && (IsDeletion ? VirtualMachineDeletionRules.CanRequest(machine) : VirtualMachinePowerRules.CanRequest(machine, (VirtualMachinePowerAction)(int)Action));
+        : item.Machine is { } machine && (IsDeletion ? VirtualMachineDeletionRules.CanRequest(machine) : VirtualMachinePowerRules.CanRequest(machine, PowerAction(Action)));
+    private bool ActionAvailable(VirtualMachineBatchTarget target) => IsDeletion || target.Machine is { } machine && _repository.CanControlPowerAction(machine, PowerAction(Action));
     public static string ActionKey(VirtualMachineBatchAction action) => action switch
     {
         VirtualMachineBatchAction.Delete => "VmDeleteAction",
         VirtualMachineBatchAction.DeleteImage => "VmImageDeleteAction",
-        _ => VirtualMachinePowerViewModel.ActionKey((VirtualMachinePowerAction)(int)action)
+        _ => VirtualMachinePowerViewModel.ActionKey(PowerAction(action))
     };
-    public void SetAction(VirtualMachinePowerAction action) => SetAction((VirtualMachineBatchAction)(int)action);
+    private static VirtualMachinePowerAction PowerAction(VirtualMachineBatchAction action) => action switch
+    {
+        VirtualMachineBatchAction.PowerOn => VirtualMachinePowerAction.PowerOn,
+        VirtualMachineBatchAction.Shutdown => VirtualMachinePowerAction.Shutdown,
+        VirtualMachineBatchAction.PowerOff => VirtualMachinePowerAction.PowerOff,
+        VirtualMachineBatchAction.Reboot => VirtualMachinePowerAction.Reboot,
+        _ => throw new ArgumentOutOfRangeException(nameof(action)),
+    };
+    private static VirtualMachineBatchAction BatchAction(VirtualMachinePowerAction action) => action switch
+    {
+        VirtualMachinePowerAction.PowerOn => VirtualMachineBatchAction.PowerOn,
+        VirtualMachinePowerAction.Shutdown => VirtualMachineBatchAction.Shutdown,
+        VirtualMachinePowerAction.PowerOff => VirtualMachineBatchAction.PowerOff,
+        VirtualMachinePowerAction.Reboot => VirtualMachineBatchAction.Reboot,
+        _ => throw new ArgumentOutOfRangeException(nameof(action)),
+    };
+    public void SetAction(VirtualMachinePowerAction action) { if (Enum.IsDefined(action)) SetAction(BatchAction(action)); }
     private CancellationTokenSource? _request;
     private long _generation;
     private bool _disposed, _ready, _submitted;
@@ -44,7 +62,7 @@ public sealed class VirtualMachineBatchViewModel : ObservableObject, IDisposable
     public VirtualMachineBatchAction Action { get; private set; } = VirtualMachineBatchAction.PowerOn;
     public bool IsBusy { get; private set; }
     public bool CanEdit => !_disposed && !IsBusy && !_submitted && _repository.ProfileId == _profileId;
-    public bool CanConfirm => CanEdit && _ready && CanWrite && _selected.Count > 0;
+    public bool CanConfirm => CanEdit && _ready && CanWrite && _selected.Count > 0 && Targets.Where(item => _selected.Contains(item.Id)).All(ActionAvailable);
     public bool HasConfirmation => _confirmation is not null;
     public bool CanSubmit => CanConfirm && HasConfirmation;
     public bool CanReview => !_disposed && !IsBusy && Pending.Count > 0 && _repository.ProfileId == _profileId;
@@ -58,7 +76,7 @@ public sealed class VirtualMachineBatchViewModel : ObservableObject, IDisposable
     public int CancelledCount => Results.Count(item => item.Result?.Status == MutationResultStatus.CancelledBeforeSubmission);
     public int NotStartedCount => Results.Count(item => item.Result is null);
     public bool IsSelected(string id) => _selected.Contains(id);
-    public bool Eligible(VirtualMachineBatchTarget item) => CanEdit && IsEligibleState(item) && !Pending.Any(pending => pending.Id == item.Id);
+    public bool Eligible(VirtualMachineBatchTarget item) => CanEdit && IsEligibleState(item) && ActionAvailable(item) && !Pending.Any(pending => pending.Id == item.Id);
     public void Select(string id, bool selected)
     {
         if (!CanEdit || Targets.FirstOrDefault(item => item.Id == id) is not { } item || selected && !Eligible(item)) return;
@@ -95,7 +113,7 @@ public sealed class VirtualMachineBatchViewModel : ObservableObject, IDisposable
             Validate(targets, pending);
             Targets = Array.AsReadOnly(targets.ToArray()); Pending = Array.AsReadOnly(pending.ToArray());
             _ready = true; _selected.RemoveWhere(id => !Targets.Any(item => item.Id == id && IsEligibleState(item)) || Pending.Any(item => item.Id == id));
-            MessageKey = CanWrite ? Targets.Count == 0 && Pending.Count == 0 ? IsImageDeletion ? "VmImageDeleteEmpty" : IsDeletion ? "VmDeleteNoEligible" : "VmBatchEmpty" : null : IsImageDeletion ? "VmImageDeleteUnavailable" : IsDeletion ? "VmDeleteUnavailable" : "VmPowerUnavailable";
+            MessageKey = CanWrite ? Targets.Count == 0 && Pending.Count == 0 ? IsImageDeletion ? "VmImageDeleteEmpty" : IsDeletion ? "VmDeleteNoEligible" : "VmBatchEmpty" : null : IsImageDeletion ? "VmImageDeleteUnavailable" : IsDeletion ? "VmDeleteUnavailable" : "VmPowerReadOnly.Text";
         }
         catch (Exception error) { if (Current(generation, token)) MessageKey = ErrorKey(error); }
         finally { End(generation); }
@@ -112,7 +130,7 @@ public sealed class VirtualMachineBatchViewModel : ObservableObject, IDisposable
             if (!Current(generation, token)) return;
             Validate(targets, pending);
             var byId = targets.ToDictionary(item => item.Id, StringComparer.Ordinal);
-            if (confirmed.Any(item => !byId.TryGetValue(item.Baseline.Id, out var fresh) || fresh != item.Baseline || pending.Any(value => value.Id == item.Baseline.Id)))
+            if (confirmed.Any(item => !byId.TryGetValue(item.Baseline.Id, out var fresh) || !SameTarget(fresh, item.Baseline) || !IsEligibleState(fresh) || !ActionAvailable(fresh) || pending.Any(value => value.Id == item.Baseline.Id)))
             { _ready = false; NeedsParentRefresh = true; MessageKey = "VmBatchChanged"; return; }
             _submitted = true;
             var results = confirmed.Select(item => new VirtualMachineBatchItem(item.Baseline, item.Action, null)).ToArray();
@@ -130,7 +148,7 @@ public sealed class VirtualMachineBatchViewModel : ObservableObject, IDisposable
                         ? await _repository.DeleteImageAsync(new(request.ProfileId, request.Baseline.Image!, request.RequestId, request.RiskConfirmed), token)
                         : IsDeletion
                         ? await _repository.DeleteMachineAsync(new(request.ProfileId, request.Baseline.Machine!, request.RequestId, request.RiskConfirmed), token)
-                        : await _repository.ControlPowerAsync(new(request.ProfileId, request.Baseline.Machine!, (VirtualMachinePowerAction)(int)request.Action, request.RequestId, request.RiskConfirmed), token);
+                        : await _repository.ControlPowerAsync(new(request.ProfileId, request.Baseline.Machine!, PowerAction(request.Action), request.RequestId, request.RiskConfirmed), token);
                 }
                 catch { result = new(1, MutationResultStatus.SubmittedButUnverified, Operation, true, true, new(0, 0, 1)); }
                 if (_disposed || generation != _generation || _repository.ProfileId != _profileId) return;
@@ -181,12 +199,16 @@ public sealed class VirtualMachineBatchViewModel : ObservableObject, IDisposable
         ? (await _repository.GetImageDeletionRecoveriesAsync(token)).Select(item => new VirtualMachineBatchRecovery(item.Id, item.Name, VirtualMachineBatchAction.DeleteImage)).ToArray()
         : IsDeletion
         ? (await _repository.GetDeletionRecoveriesAsync(token)).Select(item => new VirtualMachineBatchRecovery(item.Id, item.Name, VirtualMachineBatchAction.Delete)).ToArray()
-        : (await _repository.GetPowerRecoveriesAsync(token)).Select(item => new VirtualMachineBatchRecovery(item.Id, item.Name, (VirtualMachineBatchAction)(int)item.Action)).ToArray();
+        : (await _repository.GetPowerRecoveriesAsync(token)).Select(item => new VirtualMachineBatchRecovery(item.Id, item.Name, BatchAction(item.Action))).ToArray();
+
+    private static bool SameTarget(VirtualMachineBatchTarget left, VirtualMachineBatchTarget right) => left.Machine == right.Machine &&
+        (left.Image is null ? right.Image is null : right.Image is not null && VirtualMachineImageDeletionRules.SameSnapshot(left.Image, right.Image));
 
     private async Task<IReadOnlyList<VirtualMachineBatchTarget>> LoadTargetsAsync(CancellationToken token)
     {
-        if (IsImageDeletion) return (await _repository.LoadImageDeletionTargetsAsync(token)).Select(item => new VirtualMachineBatchTarget(null, item)).ToArray();
-        var snapshot = await _repository.LoadSnapshotAsync(token);
+        if (IsImageDeletion) return (await _repository.LoadImageDeletionTargetsAsync(token)).Select(item =>
+            new VirtualMachineBatchTarget(null, item with { ImageReplicas = item.ImageReplicas?.ToArray() })).ToArray();
+        var snapshot = await _repository.LoadInventoryAsync(token);
         if (snapshot.ProfileId != _profileId || snapshot.Machines.Status != VirtualMachineManagerSectionStatus.Available) throw new InvalidDataException("vm.batch.invalid-snapshot");
         return snapshot.Machines.Items.Select(item => new VirtualMachineBatchTarget(item, null)).ToArray();
     }

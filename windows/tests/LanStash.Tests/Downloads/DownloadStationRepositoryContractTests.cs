@@ -257,6 +257,8 @@ public sealed class DownloadStationRepositoryContractTests
     [Fact]
     public async Task SnapshotUsesInfoV2ForDestinationAndV1ForOtherOfficialApis()
     {
+        static JsonObject Site(int id) => new() { ["id"] = id, ["title"] = "Synthetic", ["url"] = "https://source.invalid/rss", ["username"] = "synthetic", ["last_update"] = 0, ["is_updating"] = false };
+        static JsonObject Feed(string title) => new() { ["title"] = title, ["size"] = "100", ["time"] = 0, ["download_uri"] = "https://source.invalid/download", ["external_link"] = "https://source.invalid/item" };
         var api = new DownloadRecordingApiClient(request => request.ApiName switch
         {
             PublicTaskApi => EmptyPage(),
@@ -278,19 +280,9 @@ public sealed class DownloadStationRepositoryContractTests
                 ["enabled"] = true,
                 ["emule_enabled"] = false,
             },
-            PublicRssSiteApi => new JsonObject
-            {
-                ["sites"] = new JsonArray(
-                    new JsonObject { ["id"] = "site-a" },
-                    new JsonObject { ["id"] = "site-b" }),
-            },
-            PublicRssFeedApi => new JsonObject
-            {
-                ["feeds"] = new JsonArray(
-                    new JsonObject { ["id"] = "feed-a" },
-                    new JsonObject { ["id"] = "feed-b" },
-                    new JsonObject { ["id"] = "feed-c" }),
-            },
+            PublicRssSiteApi => new JsonObject { ["offset"] = 0, ["total"] = 2, ["sites"] = new JsonArray(Site(1), Site(2)) },
+            PublicRssFeedApi => new JsonObject { ["offset"] = 0, ["total"] = request.Parameters["id"] == "1" ? 2 : 1,
+                ["feeds"] = request.Parameters["id"] == "1" ? new JsonArray(Feed("a"), Feed("b")) : new JsonArray(Feed("c")) },
             _ => throw new InvalidOperationException(request.ApiName),
         });
         var repository = (IDownloadStationRepository)CreateRepository(
@@ -323,37 +315,12 @@ public sealed class DownloadStationRepositoryContractTests
         Assert.True(settings.IsScheduleEnabled);
         Assert.False(settings.IsEmuleScheduleEnabled);
         Assert.Equal(new DownloadRssSummary(2, 3), snapshot.Rss.Value);
-        Assert.Collection(
-            api.Requests,
-            request => Assert.Equal(PublicTaskApi, request.ApiName),
-            request =>
-            {
-                Assert.Equal(PublicInfoApi, request.ApiName);
-                Assert.Equal("getconfig", request.Method);
-                Assert.Equal(2, request.Version);
-                Assert.Empty(request.Parameters);
-            },
-            request =>
-            {
-                Assert.Equal(PublicScheduleApi, request.ApiName);
-                Assert.Equal("getconfig", request.Method);
-                Assert.Equal(1, request.Version);
-                Assert.Empty(request.Parameters);
-            },
-            request =>
-            {
-                Assert.Equal(PublicRssSiteApi, request.ApiName);
-                Assert.Equal("list", request.Method);
-                Assert.Equal(1, request.Version);
-                Assert.Empty(request.Parameters);
-            },
-            request =>
-            {
-                Assert.Equal(PublicRssFeedApi, request.ApiName);
-                Assert.Equal("list", request.Method);
-                Assert.Equal(1, request.Version);
-                Assert.Empty(request.Parameters);
-            });
+        Assert.Equal(new[] { "list", "getconfig", "getinfo", "getconfig", "list", "list", "list" }, api.Requests.Select(request => request.Method));
+        Assert.All(api.Requests.Where(request => request.ApiName == PublicInfoApi), request => { Assert.Equal(2, request.Version); Assert.Empty(request.Parameters); });
+        Assert.All(api.Requests.Where(request => request.ApiName != PublicInfoApi), request => Assert.Equal(1, request.Version));
+        Assert.All(api.Requests.Where(request => request.ApiName is PublicRssSiteApi or PublicRssFeedApi), request =>
+        { Assert.Equal("0", request.Parameters["offset"]); Assert.Equal("500", request.Parameters["limit"]); });
+        Assert.Equal(new[] { "1", "2" }, api.Requests.Where(request => request.ApiName == PublicRssFeedApi).Select(request => request.Parameters["id"]));
         Assert.DoesNotContain(
             api.Requests,
             request => string.Equals(request.ApiName, "SYNO.DownloadStation2.Task", StringComparison.Ordinal));
@@ -904,19 +871,19 @@ public sealed class DownloadStationRepositoryContractTests
     }
 
     [Fact]
-    public async Task ChosenDestinationRequiresTaskV2BeforeAnyRequest()
+    public async Task LinkCreationRequiresTaskV3BeforeAnyRequest()
     {
         var api = new DownloadRecordingApiClient(_ => throw new InvalidOperationException("No request is expected."));
-        var repository = (IDownloadStationRepository)CreateRepository(api, Capability(PublicTaskApi));
+        var repository = (IDownloadStationRepository)CreateRepository(api, Capability(PublicTaskApi, 1, 2));
         var outcome = await repository.CreateTaskAsync(new(ProfileId, "https://example.invalid/synthetic.iso", "chosen"));
         Assert.Equal(MutationResultStatus.Unsupported, outcome.Result.Status);
         Assert.False(outcome.Result.Submitted); Assert.Empty(api.Requests);
     }
 
     [Theory]
-    [InlineData(null, 1)]
-    [InlineData("/synthetic", 2)]
-    public async Task CreateLinkChoosesVersionByDestinationAndRequiresStableTaskReadback(string? destination, int version)
+    [InlineData(null, 3)]
+    [InlineData("/synthetic", 3)]
+    public async Task CreateLinkUsesV3AndOnlyMapsAnIdentifiedTask(string? destination, int version)
     {
         var listPages = new Queue<JsonObject>(new[]
         {
@@ -977,7 +944,7 @@ public sealed class DownloadStationRepositoryContractTests
         });
         var repository = (IDownloadStationRepository)CreateRepository(
             api,
-            Capability(PublicTaskApi));
+            Capability(PublicTaskApi, 1, 3));
         var request = new DownloadTaskCreateRequest(
             ProfileId,
             "magnet:?xt=urn:btih:synthetic",
@@ -990,11 +957,11 @@ public sealed class DownloadStationRepositoryContractTests
         Assert.True(first.Result.RequiresRefresh);
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
         Assert.Equal(1, api.Requests.Count(item => item.Method == "create"));
-        Assert.Equal(1, api.Requests.Count(item => item.Method == "list"));
+        Assert.Equal(2, api.Requests.Count(item => item.Method == "list"));
     }
 
     [Fact]
-    public async Task CreateLinkWithoutStableTaskIdStoresReviewAndSecondCallDoesNotCreateAgain()
+    public async Task CreateLinkWithEmptySuccessReceiptConfirmsAcceptanceWithoutInventingATask()
     {
         var api = new DownloadRecordingApiClient(request => request.Method switch
         {
@@ -1002,22 +969,47 @@ public sealed class DownloadStationRepositoryContractTests
             "create" => new JsonObject(),
             _ => throw new InvalidOperationException(request.Method),
         });
-        var repository = (IDownloadStationRepository)CreateRepository(
-            api,
-            Capability(PublicTaskApi));
-        var request = new DownloadTaskCreateRequest(
-            ProfileId,
-            "https://example.invalid/synthetic.iso",
-            null);
+        var repository = (IDownloadStationRepository)CreateRepository(api, Capability(PublicTaskApi, 1, 3));
+        var outcome = await repository.CreateTaskAsync(new(ProfileId, "https://example.invalid/synthetic.iso", null));
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, outcome.Result.Status);
+        Assert.True(outcome.Result.Submitted);
+        Assert.True(outcome.Result.RequiresRefresh);
+        Assert.Null(outcome.TaskId);
+        Assert.Null(outcome.Task);
+        Assert.Equal("download-station.create.accepted", outcome.Result.DiagnosticTag);
+        Assert.Single(api.Requests, item => item.Method == "create");
+    }
 
-        var first = await repository.CreateTaskAsync(request);
-        var second = await repository.CreateTaskAsync(request);
-
+    [Fact]
+    public async Task LostLinkReplyCannotBeResubmittedByChangingDestination()
+    {
+        var api = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "list" => EmptyPage(),
+            "create" => throw new IOException("synthetic response lost"),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        var repository = (IDownloadStationRepository)CreateRepository(api, Capability(PublicTaskApi, 1, 3));
+        var first = await repository.CreateTaskAsync(new(ProfileId, "https://example.invalid/synthetic.iso", "one"));
+        var second = await repository.CreateTaskAsync(new(ProfileId, "https://example.invalid/synthetic.iso", "two"));
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
-        Assert.True(first.Result.RequiresRefresh);
-        Assert.Equal(1, api.Requests.Count(item => item.Method == "create"));
-        Assert.Equal(1, api.Requests.Count(item => item.Method == "list"));
+        Assert.Single(api.Requests, item => item.Method == "create");
+        Assert.Null(second.Task);
+    }
+
+    [Fact]
+    public async Task AcceptedFileWithoutTaskIdDoesNotBecomeAnUnknownSubmission()
+    {
+        var api = new DownloadRecordingApiClient(_ => EmptyPage());
+        api.FileCreateResults.Enqueue(new DownloadTaskFileCreateTransportResult(DownloadTaskFileCreateTransportStatus.Accepted));
+        var repository = (IDownloadStationRepository)CreateRepository(api, Capability(PublicTaskApi));
+        await using var content = new MemoryStream([0x64, 0x38, 0x3A, 0x61]);
+        var result = await repository.CreateTaskFromFileAsync(new(ProfileId, content, content.Length, "synthetic.torrent", null));
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Null(result.Task);
+        Assert.Null(result.TaskId);
+        Assert.Single(api.FileCreateRequests);
     }
 
     [Fact]
@@ -1092,13 +1084,14 @@ public sealed class DownloadStationRepositoryContractTests
             null);
 
         var first = await repository.CreateTaskFromFileAsync(request);
+        content.Position = 0; // 新的显式调用重新提供原内容；冻结读取会消耗输入流。
         var second = await repository.CreateTaskFromFileAsync(request);
 
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, first.Result.Status);
         Assert.True(first.Result.RequiresRefresh);
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
         Assert.Single(api.FileCreateRequests);
-        Assert.Equal(1, api.Requests.Count(item => item.Method == "list"));
+        Assert.Equal(2, api.Requests.Count(item => item.Method == "list"));
     }
 
     [Fact]
@@ -1122,13 +1115,14 @@ public sealed class DownloadStationRepositoryContractTests
             null);
 
         var first = await repository.CreateTaskFromFileAsync(request);
+        content.Position = 0; // 新的显式调用重新提供原内容；冻结读取会消耗输入流。
         var second = await repository.CreateTaskFromFileAsync(request);
 
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
         Assert.True(first.Result.RequiresRefresh);
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
         Assert.Single(api.FileCreateRequests);
-        Assert.Equal(1, api.Requests.Count(item => item.Method == "list"));
+        Assert.Equal(2, api.Requests.Count(item => item.Method == "list"));
     }
 
     [Fact]
@@ -1142,7 +1136,7 @@ public sealed class DownloadStationRepositoryContractTests
         var api = new DownloadRecordingApiClient(request => request.Method switch
         {
             "list" => listPages.Dequeue(),
-            "delete" => new JsonObject(),
+            "delete" => new JsonObject { [DsmApiResponseKeys.RootArray] = new JsonArray(new JsonObject { ["id"] = "task-1", ["error"] = 0 }) },
             _ => throw new InvalidOperationException(request.Method),
         });
         var repository = (IDownloadStationRepository)CreateRepository(
@@ -1204,7 +1198,7 @@ public sealed class DownloadStationRepositoryContractTests
 
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, first.Result.Status);
         Assert.True(first.Result.RequiresRefresh);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, second.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
         Assert.Equal(1, api.Requests.Count(item => item.Method == "delete"));
         Assert.Equal(3, api.Requests.Count(item => item.Method == "list"));
     }
@@ -1216,8 +1210,8 @@ public sealed class DownloadStationRepositoryContractTests
         yield return [new JsonObject { ["offset"] = 0, ["total"] = 1, ["tasks"] = new JsonArray() }];
         yield return [new JsonObject { ["offset"] = 0, ["total"] = 1, ["tasks"] = new JsonArray("bad") }];
         yield return [Page(0, 2, TaskItem("same", "waiting"), TaskItem("same", "paused"))];
-        yield return [new JsonObject { ["offset"] = 0, ["tasks"] = new JsonArray() }];
-        yield return [new JsonObject { ["total"] = 0, ["tasks"] = new JsonArray() }];
+        yield return [new JsonObject { ["offset"] = 0, ["total"] = "0", ["tasks"] = new JsonArray() }];
+        yield return [new JsonObject { ["offset"] = "0", ["total"] = 0, ["tasks"] = new JsonArray() }];
     }
 
     private const string PublicTaskApi = "SYNO.DownloadStation.Task";

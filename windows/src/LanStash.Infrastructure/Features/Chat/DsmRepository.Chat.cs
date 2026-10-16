@@ -13,9 +13,9 @@ public sealed partial class DsmRepository
     private const int ChatMemberReadVersion = 1;
     private const int ChatPinnedMessageReadVersion = 5;
     private const int ChatTextSendVersion = 5;
-    private const int ChatTextReadbackLimit = 50;
 
-    private readonly Dictionary<Guid, PendingChatTextSendReview> _pendingChatTextSends = [];
+
+
 
     private static readonly IReadOnlyDictionary<string, (int Minimum, int Maximum)> ChatReadVersions =
         new Dictionary<string, (int Minimum, int Maximum)>(StringComparer.Ordinal)
@@ -23,7 +23,7 @@ public sealed partial class DsmRepository
             ["SYNO.Chat.User"] = (1, 3),
             ["SYNO.Chat.Channel"] = (1, 5),
             ["SYNO.Chat.Channel.Member"] = (1, 1),
-            ["SYNO.Chat.Post"] = (1, 8),
+            ["SYNO.Chat.Post"] = (5, 5),
         };
 
     private static readonly IReadOnlySet<ChatReadFeature> ChatReadFeatures =
@@ -74,7 +74,7 @@ public sealed partial class DsmRepository
             "list",
             parameters: null,
             cancellationToken).ConfigureAwait(false);
-        var currentUserId = FirstStableId(data, "current_user_id", "login_user_id", "my_user_id");
+        var currentUserId = ReadChatCurrentUserId(data);
         return ContainerObjects(data, "users", "user", "user_list", "list", "members", "items", "results")
             .Select(item => ParseUser(item, currentUserId))
             .OfType<ChatUser>()
@@ -173,11 +173,7 @@ public sealed partial class DsmRepository
             "list",
             parameters: null,
             cancellationToken).ConfigureAwait(false);
-        var currentUserId = FirstStableId(
-            usersData,
-            "current_user_id",
-            "login_user_id",
-            "my_user_id");
+        var currentUserId = ReadChatCurrentUserId(usersData);
         var userNames = ContainerObjects(
                 usersData,
                 "users",
@@ -216,31 +212,47 @@ public sealed partial class DsmRepository
         ListMessagesCoreAsync(conversationId, beforeCursor, limit, cancellationToken);
 
     private async Task<ChatMessagePage> ListMessagesCoreAsync(string conversationId, string? beforeCursor,
-        int limit, CancellationToken cancellationToken, ISet<string>? verifiedIds = null, string? verifiedMessageId = null)
+        int limit, CancellationToken cancellationToken, ISet<string>? verifiedIds = null, string? verifiedMessageId = null,
+        string? threadId = null)
     {
         EnsureReadableChatContract();
         ArgumentException.ThrowIfNullOrWhiteSpace(conversationId);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         var normalizedConversationId = conversationId.Trim();
         var safeLimit = Math.Min(limit, 100);
-        var offset = ParseCursor(beforeCursor);
-        var data = await CallChatAsync(
+        if (beforeCursor is not null && !ValidAdvancedId(beforeCursor))
+            throw new ArgumentException("chat.cursor.invalid", nameof(beforeCursor));
+        var parameters = new Dictionary<string, string>
+        {
+            ["channel_id"] = normalizedConversationId,
+            ["thread_id"] = threadId ?? "0",
+            ["prev_count"] = safeLimit.ToString(CultureInfo.InvariantCulture),
+            ["next_count"] = "0",
+        };
+        if (beforeCursor is not null) parameters["post_id"] = beforeCursor;
+        var data = await CallChatExactVersionAsync(
             "SYNO.Chat.Post",
             "list",
-            new Dictionary<string, string>
-            {
-                ["channel_id"] = normalizedConversationId,
-                ["limit"] = safeLimit.ToString(CultureInfo.InvariantCulture),
-                ["offset"] = offset.ToString(CultureInfo.InvariantCulture),
-            },
+            5,
+            parameters,
             cancellationToken).ConfigureAwait(false);
-        var sourceOffset = ValidateResponseOffset(data, offset);
-        if (verifiedIds is not null && !new[] { "posts", "post_list", "items", "results", DsmApiResponseKeys.RootArray }.Any(key => data[key] is JsonArray or JsonObject))
+        if (data["posts"] is not JsonArray posts || posts.Count > safeLimit + (beforeCursor is null ? 0 : 1))
             throw InvalidChatResponse();
-        var sourcePosts = ContainerObjects(data, "posts", "post_list", "items", "results").ToArray();
+        int? total = null;
+        if (data.TryGetPropertyValue("total", out var rawTotal))
+        {
+            if (rawTotal is not JsonValue totalValue || !totalValue.TryGetValue<int>(out var count) || count < 0 ||
+                (beforeCursor is null && posts.Count == 0 && count > 0)) throw InvalidChatResponse();
+            total = count;
+        }
+        var sourcePosts = posts.Select(node => node as JsonObject ?? throw InvalidChatResponse()).ToArray();
+        var pageIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var post in sourcePosts)
         {
-            if (verifiedIds is not null && (FirstStableId(post, "post_id", "id") is not { } id || !verifiedIds.Add(id))) throw InvalidChatResponse();
+            var id = FirstStableId(post, "post_id", "id");
+            if (id is null || !pageIds.Add(id)) throw InvalidChatResponse();
+            // v5 可能包含定位消息，跨页去重不能把这个已知定位项判成重复内容。
+            if (id != beforeCursor && verifiedIds is not null && !verifiedIds.Add(id)) throw InvalidChatResponse();
             foreach (var explicitConversationKey in new[] { "channel_id", "conversation_id" })
             {
                 if (post.ContainsKey(explicitConversationKey) &&
@@ -253,199 +265,29 @@ public sealed partial class DsmRepository
                 }
             }
         }
-        var messages = sourcePosts
+        var olderPosts = sourcePosts.Where(post => FirstStableId(post, "post_id", "id") != beforeCursor).ToArray();
+        if (olderPosts.Length > safeLimit) throw InvalidChatResponse();
+        var messages = olderPosts
             .Select(item => ParseMessage(item, normalizedConversationId))
             .OfType<ChatMessage>()
             .OrderBy(item => item.SentAt)
             .ToArray();
-        var total = data.Int("total");
-        var nextOffset = checked(sourceOffset + sourcePosts.Length);
-        if (verifiedIds is not null && (sourcePosts.Length > safeLimit ||
-            (data.ContainsKey("total") && total is null) || total < 0 ||
-            (total is { } count && (nextOffset > count || (sourcePosts.Length == 0 && offset < count))) ||
-            (sourcePosts.Any(item => FirstStableId(item, "post_id", "id") == verifiedMessageId) && !messages.Any(item => item.Id == verifiedMessageId))))
+        if (verifiedMessageId is not null && olderPosts.Any(item => FirstStableId(item, "post_id", "id") == verifiedMessageId) &&
+            !messages.Any(item => item.Id == verifiedMessageId))
             throw InvalidChatResponse();
-        var hasMore = nextOffset > sourceOffset && (total is not null
-            ? nextOffset < Math.Max(0, total.Value)
-            : sourcePosts.Length == safeLimit);
+        if (messages.Any(message => threadId is null ? message.IsThreadReply :
+            message.Id != threadId && message.ThreadId != threadId)) throw InvalidChatResponse();
+        // 游标来自最早原始记录，辅助记录同样推进分页；不再把偏移量作为消息编号发送。
+        var oldest = olderPosts.OrderBy(post => FirstLong(post, "create_at") ?? 0).FirstOrDefault();
+        var oldestId = oldest is null ? null : FirstStableId(oldest, "post_id", "id");
+        var hasMore = olderPosts.Length == safeLimit && oldestId is not null && oldestId != beforeCursor;
         return new ChatMessagePage(
-            messages,
-            hasMore ? nextOffset.ToString(CultureInfo.InvariantCulture) : null,
+            threadId is null ? messages : messages.Where(message => message.Id != threadId).ToArray(),
+            hasMore ? oldestId : null,
             hasMore,
-            sourceOffset,
+            0,
             sourcePosts.Length,
-            total is null ? null : Math.Max(0, total.Value));
-    }
-
-    public async Task<ChatTextSendOutcome> SendTextAsync(
-        ChatTextSendRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        var conversationId = request.ConversationId.Trim();
-        var text = request.Text.Trim();
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return ChatTextSendOutcome(
-                request,
-                MutationResultStatus.CancelledBeforeSubmission,
-                submitted: false,
-                requiresRefresh: false,
-                confirmedMessage: null,
-                errorCategory: null,
-                diagnosticTag: "chat.text-send.cancelled-before");
-        }
-        if (request.ClientRequestId == Guid.Empty ||
-            string.IsNullOrWhiteSpace(conversationId) ||
-            string.IsNullOrWhiteSpace(text) ||
-            _profile.Id != _session.ProfileId)
-        {
-            return ChatTextSendOutcome(
-                request with { ConversationId = conversationId, Text = text },
-                MutationResultStatus.ConfirmedFailure,
-                submitted: false,
-                requiresRefresh: false,
-                confirmedMessage: null,
-                errorCategory: MutationErrorCategory.Validation,
-                diagnosticTag: "chat.text-send.invalid-input");
-        }
-        if (!HasTextMessageSendContract)
-        {
-            return ChatTextSendOutcome(
-                request with { ConversationId = conversationId, Text = text },
-                MutationResultStatus.Unsupported,
-                submitted: false,
-                requiresRefresh: false,
-                confirmedMessage: null,
-                errorCategory: MutationErrorCategory.Unsupported,
-                diagnosticTag: "chat.text-send.unsupported");
-        }
-
-        if (_pendingChatTextSends.TryGetValue(request.ClientRequestId, out var pendingReview))
-        {
-            return await FinishPendingChatTextSendAsync(
-                pendingReview,
-                MutationResultStatus.SubmittedButUnverified).ConfigureAwait(false);
-        }
-
-        var normalizedRequest = request with { ConversationId = conversationId, Text = text };
-        IReadOnlyList<ChatConversation> conversations;
-        try
-        {
-            conversations = await ListConversationsAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return ChatTextSendOutcome(
-                normalizedRequest,
-                MutationResultStatus.CancelledBeforeSubmission,
-                submitted: false,
-                requiresRefresh: false,
-                confirmedMessage: null,
-                errorCategory: null,
-                diagnosticTag: "chat.text-send.cancelled-before");
-        }
-        catch (DsmException error)
-        {
-            return ChatTextSendOutcome(
-                normalizedRequest,
-                error.Code == 105
-                    ? MutationResultStatus.PermissionDenied
-                    : MutationResultStatus.ConfirmedFailure,
-                submitted: false,
-                requiresRefresh: false,
-                confirmedMessage: null,
-                errorCategory: ChatTextSendErrorCategory(error),
-                diagnosticTag: "chat.text-send.preflight-failed");
-        }
-
-        var conversation = conversations.FirstOrDefault(value =>
-            string.Equals(value.Id, conversationId, StringComparison.Ordinal));
-        if (conversation is null || conversation.IsEncrypted)
-        {
-            return ChatTextSendOutcome(
-                normalizedRequest,
-                MutationResultStatus.ConfirmedFailure,
-                submitted: false,
-                requiresRefresh: false,
-                confirmedMessage: null,
-                errorCategory: MutationErrorCategory.Validation,
-                diagnosticTag: conversation is null
-                    ? "chat.text-send.conversation-missing"
-                    : "chat.text-send.encrypted-conversation");
-        }
-
-        var review = new PendingChatTextSendReview(
-            _profile.Id,
-            conversationId,
-            text,
-            request.ClientRequestId,
-            CandidateMessageId: null);
-        try
-        {
-            var data = await CallChatExactVersionAsync(
-                "SYNO.Chat.Post",
-                "create",
-                ChatTextSendVersion,
-                new Dictionary<string, string>
-                {
-                    ["channel_id"] = conversationId,
-                    ["message"] = text,
-                },
-                cancellationToken).ConfigureAwait(false);
-            review = review with { CandidateMessageId = ChatTextCreateMessageId(data) };
-            _pendingChatTextSends[request.ClientRequestId] = review;
-            return await FinishPendingChatTextSendAsync(
-                review,
-                MutationResultStatus.SubmittedButUnverified).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            _pendingChatTextSends[request.ClientRequestId] = review;
-            return ChatTextSendOutcome(
-                normalizedRequest,
-                MutationResultStatus.CancellationRequestedAfterSubmission,
-                submitted: true,
-                requiresRefresh: true,
-                confirmedMessage: null,
-                errorCategory: MutationErrorCategory.Network,
-                diagnosticTag: "chat.text-send.cancelled-after");
-        }
-        catch (DsmException error)
-        {
-            if (error.Code == 105)
-            {
-                return ChatTextSendOutcome(
-                    normalizedRequest,
-                    MutationResultStatus.PermissionDenied,
-                    submitted: true,
-                    requiresRefresh: false,
-                    confirmedMessage: null,
-                    errorCategory: MutationErrorCategory.Permission,
-                    diagnosticTag: "chat.text-send.permission-denied");
-            }
-            _pendingChatTextSends[request.ClientRequestId] = review;
-            return ChatTextSendOutcome(
-                normalizedRequest,
-                MutationResultStatus.SubmittedButUnverified,
-                submitted: true,
-                requiresRefresh: true,
-                confirmedMessage: null,
-                errorCategory: ChatTextSendErrorCategory(error),
-                diagnosticTag: "chat.text-send.submitted-unverified");
-        }
-        catch
-        {
-            _pendingChatTextSends[request.ClientRequestId] = review;
-            return ChatTextSendOutcome(
-                normalizedRequest,
-                MutationResultStatus.SubmittedButUnverified,
-                submitted: true,
-                requiresRefresh: true,
-                confirmedMessage: null,
-                errorCategory: MutationErrorCategory.Unknown,
-                diagnosticTag: "chat.text-send.submitted-unverified");
-        }
+            total);
     }
 
     private void EnsureReadableChatContract()
@@ -545,36 +387,8 @@ public sealed partial class DsmRepository
     {
         if (parameters is null || !capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)) return parameters;
         // 这些已有读取/创建方法的字符串字段统一编码一次；数组、布尔与分页数字保持原类型。
-        return parameters.ToDictionary(pair => pair.Key, pair => pair.Key is "channel_id" or "message" or "name" or "type" or "sort_by"
+        return parameters.ToDictionary(pair => pair.Key, pair => pair.Key is "channel_id" or "thread_id" or "post_id" or "message" or "name" or "type" or "sort_by" or "keyword"
             ? System.Text.Json.JsonSerializer.Serialize(pair.Value) : pair.Value, StringComparer.Ordinal);
-    }
-
-    private static int ParseCursor(string? cursor)
-    {
-        if (cursor is null)
-        {
-            return 0;
-        }
-        if (!int.TryParse(cursor, NumberStyles.None, CultureInfo.InvariantCulture, out var offset) ||
-            offset < 0)
-        {
-            throw new ArgumentException("The Chat cursor must be a non-negative server offset.", nameof(cursor));
-        }
-        return offset;
-    }
-
-    private static int ValidateResponseOffset(JsonObject data, int requestedOffset)
-    {
-        if (!data.ContainsKey("offset"))
-        {
-            return requestedOffset;
-        }
-        var responseOffset = data.Int("offset");
-        if (responseOffset is null || responseOffset < 0 || responseOffset != requestedOffset)
-        {
-            throw InvalidChatResponse();
-        }
-        return responseOffset.Value;
     }
 
     private static ChatUser? ParseUser(JsonObject item, string? currentUserId)
@@ -640,10 +454,10 @@ public sealed partial class DsmRepository
             FirstDate(lastPost, "create_at", "created_at")
                 ?? FirstDate(item, "update_at", "last_activity_at"),
             Math.Max(0, FirstInt(item, "unread", "unread_count") ?? 0),
-            encrypted);
+            encrypted) { LastViewedAt = FirstDate(item, "last_view_at") };
     }
 
-    private static ChatMessage? ParseMessage(JsonObject item, string fallbackConversationId)
+    private ChatMessage? ParseMessage(JsonObject item, string fallbackConversationId)
     {
         var id = FirstStableId(item, "post_id", "id");
         if (id is null)
@@ -663,18 +477,36 @@ public sealed partial class DsmRepository
             ?? StableId(item["creator"])
             ?? FirstStableId(creator, "user_id", "creator_id", "sender_id", "id")
             ?? "unknown";
-        return new ChatMessage(
+        var sentAt = FirstDate(item, "create_at", "created_at", "timestamp") ?? DateTimeOffset.UnixEpoch;
+        var updatedAt = FirstDate(item, "update_at");
+        var explicitMine = FirstBool(item, "is_my_post", "is_mine", "is_current_user")
+            ?? FirstBool(creator, "is_login", "is_current", "is_current_user");
+        var message = new ChatMessage(
             id,
             FirstStableId(item, "channel_id", "conversation_id") ?? fallbackConversationId,
             senderId,
             FirstNonEmpty(item, "creator_name", "sender_name", "nickname")
                 ?? FirstNonEmpty(creator, "nickname", "display_name", "name", "username"),
-            FirstBool(item, "is_my_post", "is_mine", "is_current_user")
-                ?? FirstBool(creator, "is_login", "is_current", "is_current_user"),
-            FirstDate(item, "create_at", "created_at", "timestamp") ?? DateTimeOffset.UnixEpoch,
+            explicitMine == false ? false : _chatCurrentUserId is { } currentId ? senderId == currentId : explicitMine,
+            sentAt,
             text,
             attachments,
-            encrypted ? ChatEncryptionState.Locked : ChatEncryptionState.NotEncrypted) { Poll = poll };
+            encrypted ? ChatEncryptionState.Locked : ChatEncryptionState.NotEncrypted)
+        {
+            Poll = poll,
+            Kind = FirstNonEmpty(item, "type") switch
+            {
+                null or "normal" => ChatMessageKind.Normal,
+                "sticker" => ChatMessageKind.Sticker,
+                "system" => ChatMessageKind.System,
+                _ => ChatMessageKind.Unknown,
+            },
+            ThreadId = FirstStableId(item, "thread_id") is { } thread && thread != "0" ? thread : null,
+            ReplyCount = FirstInt(item, "comment_count") is >= 0 and var count ? count : null,
+            EditedAt = updatedAt > sentAt ? updatedAt : null,
+        };
+        _knownChatMessages[(message.ConversationId, message.Id)] = message;
+        return message;
     }
 
     private static ChatPinnedMessage? ParsePinnedMessage(
@@ -733,6 +565,7 @@ public sealed partial class DsmRepository
                   new[] { "mov", "mp4", "m4v", "webm" }.Contains(extension)
                     ? ChatAttachmentKind.Video
                     : mediaType?.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) == true ||
+                      new[] { "aac", "m4a", "mp3", "wav", "ogg", "flac" }.Contains(extension) ||
                       FirstBool(file, "is_voice") == true
                         ? ChatAttachmentKind.Voice
                         : ChatAttachmentKind.File;
@@ -767,52 +600,6 @@ public sealed partial class DsmRepository
     private static string? FirstStableId(JsonObject? item, params string[] keys) =>
         item is null ? null : keys.Select(key => StableId(item[key])).FirstOrDefault(value => value is not null);
 
-    private async Task<ChatTextSendOutcome> FinishPendingChatTextSendAsync(
-        PendingChatTextSendReview review,
-        MutationResultStatus submittedStatus)
-    {
-        try
-        {
-            var page = await ListMessagesAsync(
-                review.ConversationId,
-                null,
-                ChatTextReadbackLimit,
-                CancellationToken.None).ConfigureAwait(false);
-            var confirmed = page.Messages.FirstOrDefault(message =>
-                string.Equals(message.Id, review.CandidateMessageId, StringComparison.Ordinal) &&
-                string.Equals(message.ConversationId, review.ConversationId, StringComparison.Ordinal) &&
-                message.IsFromCurrentUser == true &&
-                string.Equals(message.Text, review.Text, StringComparison.Ordinal));
-            if (confirmed is not null)
-            {
-                _pendingChatTextSends.Remove(review.ClientRequestId);
-                return ChatTextSendOutcome(
-                    review.Request,
-                    MutationResultStatus.ConfirmedSuccess,
-                    submitted: true,
-                    requiresRefresh: false,
-                    confirmedMessage: confirmed,
-                    errorCategory: null,
-                    diagnosticTag: "chat.text-send.confirmed");
-            }
-        }
-        catch
-        {
-            // 结果未知时保持同一请求的核对记录，避免自动重发。
-        }
-
-        return ChatTextSendOutcome(
-            review.Request,
-            submittedStatus,
-            submitted: true,
-            requiresRefresh: true,
-            confirmedMessage: null,
-            errorCategory: MutationErrorCategory.Unknown,
-            diagnosticTag: submittedStatus == MutationResultStatus.CancellationRequestedAfterSubmission
-                ? "chat.text-send.cancelled-after"
-                : "chat.text-send.submitted-unverified");
-    }
-
     private static string? ChatTextCreateMessageId(JsonObject data) =>
         FirstStableId(data, "post_id", "id", "message_id") ??
         FirstStableId(data["post"] as JsonObject, "post_id", "id", "message_id") ??
@@ -820,50 +607,6 @@ public sealed partial class DsmRepository
         ContainerObjects(data, "post", "posts", "items", "results")
             .Select(item => FirstStableId(item, "post_id", "id", "message_id"))
             .FirstOrDefault(value => value is not null);
-
-    private static MutationErrorCategory ChatTextSendErrorCategory(DsmException error)
-    {
-        if (error.AuthenticationFailure || error.Code is 106 or 107 or 119 or 401)
-        {
-            return MutationErrorCategory.Authentication;
-        }
-        return error.Code switch
-        {
-            105 => MutationErrorCategory.Permission,
-            102 or 103 => MutationErrorCategory.Unsupported,
-            _ => MutationErrorCategory.Server,
-        };
-    }
-
-    private static ChatTextSendOutcome ChatTextSendOutcome(
-        ChatTextSendRequest request,
-        MutationResultStatus status,
-        bool submitted,
-        bool requiresRefresh,
-        ChatMessage? confirmedMessage,
-        MutationErrorCategory? errorCategory,
-        string diagnosticTag)
-    {
-        var succeeded = status == MutationResultStatus.ConfirmedSuccess ? 1 : 0;
-        var failed = status is MutationResultStatus.ConfirmedFailure or
-            MutationResultStatus.PermissionDenied or MutationResultStatus.Unsupported ? 1 : 0;
-        var unknown = status is MutationResultStatus.SubmittedButUnverified or
-            MutationResultStatus.CancellationRequestedAfterSubmission ? 1 : 0;
-        return new(
-            new MutationResult(
-                1,
-                status,
-                "chatTextSend",
-                submitted,
-                requiresRefresh,
-                new MutationResultCounts(succeeded, failed, unknown),
-                errorCategory,
-                localizationKey: $"chat.text-send.{status.ToString().ToLowerInvariant()}",
-                diagnosticTag),
-            request.ConversationId,
-            request.ClientRequestId,
-            confirmedMessage);
-    }
 
     private static string? StableId(JsonNode? node)
     {
@@ -963,13 +706,4 @@ public sealed partial class DsmRepository
         UserText.Key("WinSharedda35e58bcad31766"),
         UserText.Key("WinSharedefc81ced18eb3bb0"));
 
-    private sealed record PendingChatTextSendReview(
-        Guid ProfileId,
-        string ConversationId,
-        string Text,
-        Guid ClientRequestId,
-        string? CandidateMessageId)
-    {
-        public ChatTextSendRequest Request => new(ConversationId, Text, ClientRequestId);
-    }
 }

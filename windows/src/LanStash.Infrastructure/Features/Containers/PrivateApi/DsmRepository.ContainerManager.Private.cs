@@ -8,7 +8,7 @@ namespace LanStash.Infrastructure;
 
 /// <summary>
 /// Container Manager 内部 v1 隐私白名单只读适配器。
-/// 仅发送已记录的 list 请求，不保留路径、账号、日志正文或原始诊断字段。
+/// 仅发送已记录的 list 请求；常规清单不保留日志正文，正文只由活动页显式读取。
 /// </summary>
 public sealed partial class DsmRepository
 {
@@ -49,8 +49,13 @@ public sealed partial class DsmRepository
         }
     }
 
-    async Task<ContainerManagerSnapshot> IContainerManagerRepository.LoadSnapshotAsync(
-        CancellationToken cancellationToken)
+    Task<ContainerManagerSnapshot> IContainerManagerRepository.LoadSnapshotAsync(CancellationToken cancellationToken) =>
+        LoadContainerSnapshotAsync(includeActivity: true, cancellationToken);
+    Task<ContainerManagerSnapshot> IContainerManagerRepository.LoadInventoryAsync(CancellationToken cancellationToken) =>
+        LoadContainerSnapshotAsync(includeActivity: false, cancellationToken);
+    Task<ContainerManagerSection<ServiceActivityEntry>> IContainerManagerRepository.LoadActivityAsync(CancellationToken cancellationToken) =>
+        LoadContainerActivityAsync(includeBody: true, cancellationToken);
+    private async Task<ContainerManagerSnapshot> LoadContainerSnapshotAsync(bool includeActivity, CancellationToken cancellationToken)
     {
         var availability = InternalObservedContainerAvailability;
         if (availability.Status != ContainerManagerAvailabilityStatus.InternalObserved)
@@ -59,6 +64,7 @@ public sealed partial class DsmRepository
         }
         EnsureContainerManagerProfile();
 
+        JsonObject? containerData = null;
         var containers = await LoadContainerSectionAsync(
             InternalObservedContainerApi,
             new Dictionary<string, string>
@@ -67,7 +73,7 @@ public sealed partial class DsmRepository
                 ["limit"] = "-1",
                 ["type"] = "all",
             },
-            ParseInternalObservedContainers,
+            data => { containerData = data; return ParseInternalObservedContainers(data); },
             cancellationToken).ConfigureAwait(false);
         var images = await LoadContainerResourceSectionAsync(
             InternalObservedImageApi,
@@ -76,6 +82,20 @@ public sealed partial class DsmRepository
             ["id", "image_id", "Id"],
             ["repository", "repo", "name"],
             cancellationToken).ConfigureAwait(false);
+        if (containers.Status == ContainerManagerSectionStatus.Available && containerData is not null &&
+            images.Status == ContainerManagerSectionStatus.Available)
+        {
+            try
+            {
+                var used = ContainerImageUsage(images.Items, containerData);
+                images = ContainerManagerSection<ContainerResourceSummary>.Available(images.Items.Select(item =>
+                    item with { IsImageInUse = item.Image is null ? null : used.Contains(item.Id) }).ToArray());
+            }
+            catch (DsmException)
+            {
+                // 占用字段不能完整解释时仅隐藏使用状态；删除仍执行严格的实时预检。
+            }
+        }
         var networks = await LoadContainerResourceSectionAsync(
             InternalObservedNetworkApi,
             ContainerResourceKind.Network,
@@ -90,7 +110,10 @@ public sealed partial class DsmRepository
             ["id", "project_id", "name", "project_name"],
             ["name", "project_name", "id"],
             cancellationToken).ConfigureAwait(false);
-        var events = await LoadContainerEventsAsync(cancellationToken).ConfigureAwait(false);
+        var activity = includeActivity ? await LoadContainerActivityAsync(includeBody: false, cancellationToken).ConfigureAwait(false) :
+            new ContainerManagerSection<ServiceActivityEntry>(HasInternalObservedContainerVersion(InternalObservedEventApi) ?
+                ContainerManagerSectionStatus.Available : ContainerManagerSectionStatus.Unavailable, []);
+        var events = new ContainerManagerSection<ServiceEventSummary>(activity.Status, activity.Items.Select(item => item.Summary).ToArray());
 
         return new(_profile.Id, containers, images, networks, projects, events);
     }
@@ -103,12 +126,13 @@ public sealed partial class DsmRepository
         ContainerManagerSection<ContainerResourceSummary>.Unavailable,
         ContainerManagerSection<ServiceEventSummary>.Unavailable);
 
-    // 官方日志按 total/offset 续页；仅累积脱敏摘要，不把前一页原始日志保留到下一页。
-    private async Task<ContainerManagerSection<ServiceEventSummary>> LoadContainerEventsAsync(CancellationToken cancellationToken)
+    // 同一分页器用于活动正文和兼容摘要；生产清单读取不请求日志。
+    private async Task<ContainerManagerSection<ServiceActivityEntry>> LoadContainerActivityAsync(bool includeBody, CancellationToken cancellationToken)
     {
+        EnsureContainerManagerProfile();
         if (!HasInternalObservedContainerVersion(InternalObservedEventApi))
-            return ContainerManagerSection<ServiceEventSummary>.Unavailable;
-        var events = new List<ServiceEventSummary>();
+            return ContainerManagerSection<ServiceActivityEntry>.Unavailable;
+        var events = new List<ServiceActivityEntry>();
         var ids = new HashSet<string>(StringComparer.Ordinal);
         try
         {
@@ -128,18 +152,19 @@ public sealed partial class DsmRepository
                 if (ContainerPageNumber(data, "offset") is { } returnedOffset && returnedOffset != offset)
                     throw InvalidContainerManagerResponse();
                 var total = ContainerPageNumber(data, "total");
-                var page = ParseContainerEvents(data, offset);
-                if (page.Count > ContainerLogPageSize || page.Any(item => !ids.Add(item.Id)))
+                var page = ParseServiceActivity(RequiredContainerObjectArray(data, ["logs", "events", "data", "list"]), offset, includeBody);
+                if (page.Count > ContainerLogPageSize || page.Any(item => !ids.Add(item.Summary.Id)))
                     throw InvalidContainerManagerResponse();
                 events.AddRange(page);
-                if (total is null || events.Count == total) return ContainerManagerSection<ServiceEventSummary>.Available(events);
+                if (total is null || events.Count == total) return ContainerManagerSection<ServiceActivityEntry>.Available(events);
                 if (events.Count > total || page.Count == 0) throw InvalidContainerManagerResponse();
             }
         }
         catch (DsmException error) when (!IsMutationAuthenticationFailure(error))
         {
-            return ContainerManagerSection<ServiceEventSummary>.Failed;
+            return ContainerManagerSection<ServiceActivityEntry>.Failed;
         }
+        catch (HttpRequestException) { return ContainerManagerSection<ServiceActivityEntry>.Failed; }
     }
 
     private static int? ContainerPageNumber(JsonObject data, string key)
@@ -290,7 +315,8 @@ public sealed partial class DsmRepository
                 throw InvalidContainerManagerResponse();
             return new ContainerResourceSummary(pair.Key,
                 FirstContainerString(item, nameKeys) ?? throw InvalidContainerManagerResponse(),
-                ContainerResourceKind.Project, ParseContainerState(FirstContainerString(item, "status", "state")));
+                ContainerResourceKind.Project, ParseContainerState(FirstContainerString(item, "status", "state")))
+                { ProjectContainerCount = ContainerProjectCount(item) };
         }).ToArray();
     }
 
@@ -317,9 +343,19 @@ public sealed partial class DsmRepository
                 name,
                 kind,
                 ParseContainerState(FirstContainerString(item, "status", "state")))
-                { Network = kind == ContainerResourceKind.Network ? ParseContainerNetworkDetails(item) : null });
+                {
+                    Network = kind == ContainerResourceKind.Network ? ParseContainerNetworkDetails(item) : null,
+                    ProjectContainerCount = kind == ContainerResourceKind.Project ? ContainerProjectCount(item) : null,
+                });
         }
         return resources;
+    }
+
+    private static int? ContainerProjectCount(JsonObject item)
+    {
+        if (item.ContainsKey("containerIds")) return item["containerIds"] is JsonArray ids ? ids.Count : null;
+        var count = OptionalContainerNonnegativeInteger(item, "container_count", "services");
+        return count is >= 0 and <= int.MaxValue ? (int)count.Value : null;
     }
 
     private static ContainerNetworkDetails ParseContainerNetworkDetails(JsonObject item)
@@ -372,10 +408,9 @@ public sealed partial class DsmRepository
         return text;
     }
 
-    private static IReadOnlyList<ServiceEventSummary> ParseContainerEvents(JsonObject data, int offset)
+    private static IReadOnlyList<ServiceActivityEntry> ParseServiceActivity(IReadOnlyList<JsonObject> source, int offset, bool includeBody)
     {
-        var source = RequiredContainerObjectArray(data, ["logs", "events", "data", "list"]);
-        var events = new List<ServiceEventSummary>(source.Count);
+        var events = new List<ServiceActivityEntry>(source.Count);
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in source.Select((item, index) => (item, index)))
         {
@@ -386,7 +421,18 @@ public sealed partial class DsmRepository
             {
                 throw InvalidContainerManagerResponse();
             }
-            events.Add(new(
+            DateTime? localTime = null;
+            if (includeBody)
+            {
+                var time = FirstContainerString(entry.item, "time", "timestamp", "date", "event_time", "create_time", "created_at");
+                if (time is not null && !long.TryParse(time, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) &&
+                    !time.EndsWith('Z') && !time.EndsWith('z') && time.LastIndexOf('+') <= 9 && time.LastIndexOf('-') <= 9)
+                    occurredAt = null;
+                if (time is not null && DateTime.TryParseExact(time, ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss.FFFFFFF", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF"],
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out var local))
+                { localTime = DateTime.SpecifyKind(local, DateTimeKind.Unspecified); occurredAt = null; }
+            }
+            var summary = new ServiceEventSummary(
                 id,
                 occurredAt,
                 ParseServiceEventLevel(FirstContainerString(
@@ -394,9 +440,22 @@ public sealed partial class DsmRepository
                     "level",
                     "severity",
                     "type",
-                    "priority"))));
+                    "priority")));
+            var message = includeBody ? ActivityText(entry.item, "event", "message", "description", "msg", "content", "detail") ?? throw InvalidContainerManagerResponse() : "";
+            var account = includeBody ? ActivityText(entry.item, "user", "username", "owner", "account", "user_name") : null;
+            events.Add(new(summary, message, account, localTime));
         }
         return events;
+    }
+    private static string? ActivityText(JsonObject row, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (row[key] is null) continue;
+            if (row[key] is JsonValue value && value.TryGetValue<string>(out var text)) return text;
+            throw InvalidContainerManagerResponse();
+        }
+        return null;
     }
 
     private static List<JsonObject> RequiredContainerObjectArray(JsonObject data, string[] roots)

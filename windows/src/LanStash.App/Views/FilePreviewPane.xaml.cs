@@ -19,6 +19,8 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
 {
     private FilePreviewViewModel? _viewModel;
     private FileTextEditViewModel? _textEditViewModel;
+    private bool _saveConfirmationOpen;
+    private bool _syncingTextBox;
     private MediaSource? _mediaSource;
     private MediaPlayer? _mediaPlayer;
     private FilePreviewViewModel? _mediaViewModel;
@@ -32,13 +34,23 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
     private bool _disposed;
     private int _imageRotation;
 
-    public FilePreviewPane() => InitializeComponent();
+    public FilePreviewPane()
+    {
+        InitializeComponent();
+        Loaded += (_, _) =>
+        {
+            if (!_disposed && _viewModel?.Snapshot is { Kind: FilePreviewKind.Office, Phase: FilePreviewPhase.Ready } snapshot)
+                StartPresenter(snapshot);
+        };
+    }
 
     public event EventHandler? CloseRequested;
     public event EventHandler<FilePreviewKeyboardCloseRequestedEventArgs>? KeyboardCloseRequested;
     public event EventHandler? RetryRequested;
     public event EventHandler<FilePreviewSaveCopyRequestedEventArgs>? SaveCopyRequested;
     public event EventHandler? UnsavedDiscardRequested;
+    public event EventHandler<OfficePreviewActionEventArgs>? OfficeActionRequested;
+    public event EventHandler? OfficeSessionsRequested;
 
     public void Attach(FilePreviewViewModel viewModel)
     {
@@ -124,6 +136,8 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         ReadyState.Visibility = snapshot.Phase == FilePreviewPhase.Ready
             ? Visibility.Visible
             : Visibility.Collapsed;
+        OfficeActions.Visibility = snapshot.Kind == FilePreviewKind.Office ? Visibility.Visible : Visibility.Collapsed;
+        if (snapshot.Kind == FilePreviewKind.Office) PreviewReadOnlyNotice.Visibility = Visibility.Collapsed;
 
         var localization = LocalizationService.Current;
         ProgressText.Text = snapshot.TotalBytes is > 0
@@ -193,6 +207,9 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
                     break;
                 case FilePreviewKind.Pdf:
                     await PresentPdfAsync(snapshot, generation, cancellation.Token);
+                    break;
+                case FilePreviewKind.Office:
+                    PresentOffice(snapshot);
                     break;
                 case FilePreviewKind.Audio:
                 case FilePreviewKind.Video:
@@ -392,6 +409,7 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
 
     private void ReleasePresenterCore()
     {
+        ReleaseOfficePreview();
         var mediaPlayer = _mediaPlayer;
         _mediaPlayer = null;
         _mediaViewModel = null;
@@ -520,6 +538,7 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         }
 
         var vm = _textEditViewModel;
+        var wasEditing = TextEditBox.Visibility == Visibility.Visible;
         var isEditing = vm.IsEditing;
         var isViewing = vm.IsViewing;
         var canEdit = vm.CanEdit;
@@ -538,32 +557,57 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
             ? Visibility.Visible
             : Visibility.Collapsed;
         TextEditFormatButton.IsEnabled = canFormat;
+        TextEditButton.IsEnabled = canEdit;
+        TextEditBox.IsReadOnly = !vm.CanChangeText;
+        TextEditCancelButton.IsEnabled = !vm.IsBusy;
+        TextEditReviewButton.Visibility = vm.IsSaveNeedsReview ? Visibility.Visible : Visibility.Collapsed;
+        TextEditReviewButton.IsEnabled = vm.CanReview;
+        TextEditFormatButton.Visibility = vm.IsSaveNeedsReview ? Visibility.Collapsed : Visibility.Visible;
+        TextEditSaveButton.Visibility = vm.IsSaveNeedsReview ? Visibility.Collapsed : Visibility.Visible;
+        PreviewReadOnlyNotice.Visibility = vm.IsViewing && _viewModel?.Snapshot.Kind != FilePreviewKind.Office ? Visibility.Visible : Visibility.Collapsed;
+        TextTruncatedNotice.Visibility = vm.IsViewing && vm.SavedText is null && _viewModel?.Snapshot.IsTextTruncated == true
+            ? Visibility.Visible : Visibility.Collapsed;
 
         // 编辑时隐藏只读预览，否则显示只读预览。
         TextPreview.Visibility = isEditing
             ? Visibility.Collapsed
             : Visibility.Visible;
 
+        TextPreviewScroller.Visibility = TextPreview.Visibility;
+
         // 同步文本内容。
         if (isEditing)
         {
-            TextEditBox.Text = vm.EditableText;
-            TextEditBox.Focus(FocusState.Programmatic);
+            if (!SameEditorText(TextEditBox.Text, vm.EditableText))
+            {
+                _syncingTextBox = true;
+                try { TextEditBox.Text = vm.EditableText; }
+                finally { _syncingTextBox = false; }
+            }
+            if (!wasEditing && vm.CanChangeText) TextEditBox.Focus(FocusState.Programmatic);
         }
         else
         {
-            if (_viewModel?.Snapshot is { Text: { } text })
+            if ((vm.SavedText ?? _viewModel?.Snapshot.Text) is { } text)
             {
                 TextPreview.Text = text;
             }
         }
 
         // 仅在内容实际变化时启用保存按钮。
-        TextEditSaveButton.IsEnabled = vm.CanSubmitSave;
+        TextEditSaveButton.IsEnabled = !_saveConfirmationOpen && vm.CanSubmitSave;
 
         // 更新保存状态。
         var localization = LocalizationService.Current;
-        if (vm.IsSaveCompleted)
+        if (vm.SaveMessage.Length != 0)
+        {
+            TextEditSaveStatus.Severity = InfoBarSeverity.Error;
+            TextEditSaveStatus.Title = localization.Get(vm.SaveMessage);
+            TextEditSaveStatus.Message = string.Empty;
+            TextEditSaveStatus.IsOpen = true;
+            TextEditSaveStatus.Visibility = Visibility.Visible;
+        }
+        else if (vm.IsSaveCompleted)
         {
             TextEditSaveStatus.Severity = Microsoft.UI.Xaml.Controls.InfoBarSeverity.Success;
             TextEditSaveStatus.Title = localization.Get("FileTextEdit_SavedMessage");
@@ -587,6 +631,14 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
             TextEditSaveStatus.IsOpen = true;
             TextEditSaveStatus.Visibility = Visibility.Visible;
         }
+        else if (vm.IsBusy && vm.IsViewing)
+        {
+            TextEditSaveStatus.Severity = InfoBarSeverity.Informational;
+            TextEditSaveStatus.Title = localization.Get("FileTextEdit_Loading");
+            TextEditSaveStatus.Message = string.Empty;
+            TextEditSaveStatus.IsOpen = true;
+            TextEditSaveStatus.Visibility = Visibility.Visible;
+        }
         else if (vm.IsSavingIndicator)
         {
             TextEditSaveStatus.Severity = Microsoft.UI.Xaml.Controls.InfoBarSeverity.Informational;
@@ -595,43 +647,40 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
             TextEditSaveStatus.IsOpen = true;
             TextEditSaveStatus.Visibility = Visibility.Visible;
         }
-        else if (vm.IsViewing)
+        else
         {
             TextEditSaveStatus.IsOpen = false;
             TextEditSaveStatus.Visibility = Visibility.Collapsed;
         }
     }
 
+    // WinUI TextBox 将换行显示为 CR；仅比较显示内容，避免把程序填充当成用户改动。
+    private static bool SameEditorText(string first, string second) =>
+        first.Replace("\r\n", "\n").Replace('\r', '\n') == second.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    private void TextEditBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!_disposed && !_syncingTextBox && _textEditViewModel is { CanChangeText: true } model &&
+            !SameEditorText(TextEditBox.Text, model.EditableText)) model.EditableText = TextEditBox.Text;
+    }
+
     private async void TextEdit_Click(object sender, RoutedEventArgs e)
     {
-        if (_textEditViewModel is null || _disposed)
-        {
-            return;
-        }
+        if (!_disposed && _textEditViewModel is { } model) await model.EnterEditModeAsync();
+    }
 
-        TextEditButton.IsEnabled = false;
-        try
-        {
-            var entered = await _textEditViewModel.EnterEditModeAsync();
-            if (!entered)
-            {
-                TextEditButton.IsEnabled = true;
-            }
-        }
-        catch
-        {
-            TextEditButton.IsEnabled = true;
-        }
+    private async void TextEditReview_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_disposed && _textEditViewModel is { } model) await model.ReviewAsync();
     }
 
     private async void TextEditSave_Click(object sender, RoutedEventArgs e)
     {
-        if (_textEditViewModel is null || _disposed)
-        {
-            return;
-        }
-
-        TextEditSaveButton.IsEnabled = false;
+        if (_disposed || _saveConfirmationOpen || _textEditViewModel is not { CanSubmitSave: true } model) return;
+        var generation = model.Generation;
+        var content = model.EditableText;
+        _saveConfirmationOpen = true;
+        UpdateTextEditState();
         try
         {
             var localization = LocalizationService.Current;
@@ -643,20 +692,14 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
                 CloseButtonText = localization.Get("ActionCancel"),
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = XamlRoot,
+                RequestedTheme = ActualTheme,
             };
-            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
-            {
-                return;
-            }
-            await _textEditViewModel.SaveAsync();
+            if (await confirmation.ShowAsync() != ContentDialogResult.Primary || _disposed ||
+                !ReferenceEquals(model, _textEditViewModel) || generation != model.Generation ||
+                content != model.EditableText) return;
+            await model.SaveAsync();
         }
-        finally
-        {
-            if (_textEditViewModel.IsEditing)
-            {
-                TextEditSaveButton.IsEnabled = _textEditViewModel.CanSubmitSave;
-            }
-        }
+        finally { _saveConfirmationOpen = false; if (!_disposed) UpdateTextEditState(); }
     }
 
     private void TextEditCancel_Click(object sender, RoutedEventArgs e)
@@ -683,21 +726,7 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
 
     private async void TextEditFormat_Click(object sender, RoutedEventArgs e)
     {
-        if (_textEditViewModel is null || _disposed)
-        {
-            return;
-        }
-
-        TextEditFormatButton.IsEnabled = false;
-        try
-        {
-            await _textEditViewModel.FormatAsync();
-        }
-        finally
-        {
-            TextEditFormatButton.IsEnabled = _textEditViewModel.CanFormat &&
-                _textEditViewModel.IsEditing;
-        }
+        if (!_disposed && _textEditViewModel is { } model) await model.FormatAsync();
     }
 
     private void TextEditDismissStatus_Click(object sender, RoutedEventArgs e)

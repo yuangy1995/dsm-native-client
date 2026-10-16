@@ -5,6 +5,11 @@
    <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" Visibility="Collapsed"/>
    <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
    <InfoBar x:Name="FeedbackNotice" IsOpen="False" IsClosable="False" AutomationProperties.LiveSetting="Polite"/>
+   <ListView x:Name="ResultsList" x:Uid="ContainerNetworkDeletionResults" SelectionMode="None" IsItemClickEnabled="False" MaxHeight="180" Visibility="Collapsed">
+    <ListView.ItemTemplate><DataTemplate>
+     <StackPanel Spacing="3" Padding="4"><TextBlock Text="{Binding Name}" TextWrapping="Wrap"/><TextBlock Text="{Binding Status}" TextWrapping="Wrap"/></StackPanel>
+    </DataTemplate></ListView.ItemTemplate>
+   </ListView>
    <TextBlock x:Name="ReadOnlyNotice" x:Uid="ContainerDeleteReadOnly" TextWrapping="Wrap"/>
    <TextBlock x:Uid="ContainerDeleteEligible" TextWrapping="Wrap"/>
    <TextBlock x:Name="PendingNotice" Visibility="Collapsed" TextWrapping="Wrap"/>

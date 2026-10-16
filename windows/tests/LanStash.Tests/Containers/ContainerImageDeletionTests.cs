@@ -130,7 +130,8 @@ public sealed class ContainerImageDeletionTests
         Assert.Single(await fixture.Reconnect().GetImageDeletionRecoveriesAsync());
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Reconnect().ReviewImageDeletionAsync(request.RequestId))!.Status);
         fixture.Images[0]!["tags"] = new JsonArray("latest");
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await fixture.Reconnect().ReviewImageDeletionAsync(request.RequestId))!.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Reconnect().ReviewImageDeletionAsync(request.RequestId))!.Status);
+        Assert.Single(await fixture.Repository.GetImageDeletionRecoveriesAsync());
         Assert.Single(fixture.Calls, call => call["method"] == "delete");
     }
 
@@ -167,7 +168,27 @@ public sealed class ContainerImageDeletionTests
         var request = await fixture.RequestAsync();
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, (await fixture.Repository.DeleteImagesAsync(request, cancellation.Token)).Status);
         fixture.Images.Clear();
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await fixture.Repository.ReviewImageDeletionAsync(request.RequestId))!.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await fixture.Repository.ReviewImageDeletionAsync(request.RequestId))!.Status);
+        Assert.Single(fixture.Calls, call => call["method"] == "delete");
+    }
+
+    [Fact]
+    public async Task DisplayMetadataDoesNotInvalidateIdentityAndFreshUsageStillBlocksDeletion()
+    {
+        using var fixture = new Fixture("FORM");
+        fixture.Images[0]!["size"] = 2097152;
+        var request = await fixture.RequestAsync("stable");
+        Assert.False(Assert.Single(request.Baselines).IsImageInUse);
+        fixture.Images[0]!["size"] = 3145728;
+        fixture.Containers.Add(new JsonObject { ["image"] = "synthetic/web:stable" });
+        var blocked = await fixture.Repository.DeleteImagesAsync(request);
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, blocked.Status);
+        Assert.DoesNotContain(fixture.Calls, call => call["method"] == "delete");
+        fixture.Containers.Clear();
+        var result = await fixture.Repository.DeleteImagesAsync(request);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Status);
+        var refreshedDisplay = request with { Baselines = request.Baselines.Select(item => item with { ImageSizeBytes = null, IsImageInUse = null }).ToArray() };
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await fixture.Repository.DeleteImagesAsync(refreshedDisplay)).Status);
         Assert.Single(fixture.Calls, call => call["method"] == "delete");
     }
 

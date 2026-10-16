@@ -15,7 +15,8 @@ public sealed partial class RemoteMountManagementDialogContent : UserControl, IN
     private bool _disposed, _synchronizing = true;
     public event Action? StateChanged;
     public bool IsBusy => _model.IsBusy;
-    public bool CanSave => !_disposed && _model.CanSubmit && RiskAcknowledgement.IsChecked == true;
+    private bool NeedsRiskConfirmation => _model.Action != RemoteMountAction.Create;
+    public bool CanSave => !_disposed && (NeedsRiskConfirmation ? _model.CanSubmit && RiskAcknowledgement.IsChecked == true : _model.CanConfirm);
     public string? PrimaryButtonResourceKey => _model.ActionKey;
     public bool NeedsParentRefresh => _model.NeedsParentRefresh;
     public RemoteMountManagementDialogContent(IFileLocationsRepository repository, string? preferredPath = null, RemoteMountAction action = RemoteMountAction.Create)
@@ -29,6 +30,7 @@ public sealed partial class RemoteMountManagementDialogContent : UserControl, IN
     {
         ReadFields();
         if (!CanSave) return;
+        if (!NeedsRiskConfirmation) _model.Confirm(true);
         var password = PasswordInput.Password; ClearPassword();
         await _model.SubmitAsync(password);
         if (!_disposed) BodyScroller.ChangeView(null, 0, null, true);
@@ -71,6 +73,7 @@ public sealed partial class RemoteMountManagementDialogContent : UserControl, IN
         if (!_model.NeedsPassword) PasswordInput.Password = "";
         PasswordAgainNotice.Visibility = _model.Progress?.Stage == RemoteMountStage.ReadyToConnect && draft.Protocol == FileRemoteProtocol.Cifs ? Visibility.Visible : Visibility.Collapsed;
         ValidationNotice.Text = _model.ValidationMessage ?? ""; ValidationNotice.Visibility = _model.ValidationMessage is not null ? Visibility.Visible : Visibility.Collapsed;
+        RiskAcknowledgement.Visibility = NeedsRiskConfirmation ? Visibility.Visible : Visibility.Collapsed;
         RiskNotice.Text = _model.ConfirmationText; RiskAcknowledgement.IsEnabled = _model.CanConfirm;
         RiskNotice.Visibility = draft.MountPoint.Length > 0 || _model.SelectedConnection is not null ? Visibility.Visible : Visibility.Collapsed;
         if (!_model.CanSubmit) RiskAcknowledgement.IsChecked = false;

@@ -57,23 +57,24 @@ public sealed partial class FilesPage
         await ShowCrossNasCopyMoveAsync(FileCopyMoveOperation.Move);
     }
 
-    private async Task ShowCrossNasCopyMoveAsync(FileCopyMoveOperation operation)
+    private async Task ShowCrossNasCopyMoveAsync(FileCopyMoveOperation operation, CrossNasTransferSummary? restored = null)
     {
-        if (operation != FileCopyMoveOperation.Copy ||
-            _copyMoveRepository?.CrossNasAvailability.CanCrossCopy != true)
+        if (_copyMoveRepository?.CrossNasAvailability.CanCrossCopy != true ||
+            operation == FileCopyMoveOperation.Move && !_copyMoveRepository.CrossNasAvailability.CanCrossMove)
             return;
-        if (_viewModel.SelectedItem is not { } selected ||
+        var source = restored is null ? _viewModel.SelectedItem?.Item : new FileItem(restored.SourcePath, restored.Name, restored.IsDirectory, restored.Size, null, null, false, false);
+        if (source is null || restored is not null && restored.SourceProfileId != _profileId ||
             _copyMoveRepository is null ||
             CrossNasTargetProfiles is null ||
             CrossNasFolderSourceFactory is null)
             return;
 
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
 
         var model = new CrossNasCopyMoveViewModel(
             _copyMoveRepository,
             _profileId,
-            selected.Item,
+            source,
             operation,
             CrossNasTargetProfiles,
             CrossNasFolderSourceFactory);
@@ -88,6 +89,7 @@ public sealed partial class FilesPage
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
+            RequestedTheme = ((FrameworkElement)XamlRoot.Content).ActualTheme,
             DefaultButton = ContentDialogButton.Primary,
             MinWidth = 480,
             MaxWidth = 480,
@@ -98,6 +100,9 @@ public sealed partial class FilesPage
 
         async Task RenderAsync()
         {
+            dialog.SecondaryButtonText = null;
+            dialog.DefaultButton = ContentDialogButton.Primary;
+            dialog.IsPrimaryButtonEnabled = true;
             var isFolder = model.Source.IsDirectory;
             dialog.Title = operation switch
             {
@@ -122,12 +127,33 @@ public sealed partial class FilesPage
                     dialog.IsPrimaryButtonEnabled = model.CanSubmit;
                     break;
                 case CrossNasCopyMoveState.Transferring:
+                case CrossNasCopyMoveState.Refreshing:
+                case CrossNasCopyMoveState.DeletingSources:
                     dialog.PrimaryButtonText = null;
                     dialog.CloseButtonText = localization.Get("FileCopyMove_Cancel_Button");
+                    break;
+                case CrossNasCopyMoveState.Recoverable:
+                    dialog.PrimaryButtonText = localization.Get("CrossNasRefresh");
+                    dialog.IsPrimaryButtonEnabled = model.CanRefresh;
+                    dialog.SecondaryButtonText = model.CanContinue ? localization.Get("CrossNasContinue") : null;
+                    dialog.IsSecondaryButtonEnabled = model.CanContinue;
+                    dialog.CloseButtonText = localization.Get("FileCopyMove_Close_Button");
                     break;
                 case CrossNasCopyMoveState.Completed:
                     dialog.PrimaryButtonText = localization.Get("FileCopyMove_Close_Button");
                     dialog.CloseButtonText = null;
+                    break;
+                case CrossNasCopyMoveState.SourceDeletionReady:
+                    dialog.PrimaryButtonText = localization.Get("CrossNasDeleteSources");
+                    dialog.IsPrimaryButtonEnabled = model.CanDeleteSources;
+                    dialog.CloseButtonText = localization.Get("FileCopyMove_Close_Button");
+                    break;
+                case CrossNasCopyMoveState.ConfirmingSourceDeletion:
+                    dialog.PrimaryButtonText = localization.Get("CrossNasConfirmDeleteSources");
+                    dialog.SecondaryButtonText = localization.Get("FileCopyMove_Cancel_Button");
+                    dialog.IsSecondaryButtonEnabled = true;
+                    dialog.CloseButtonText = localization.Get("FileCopyMove_Close_Button");
+                    dialog.DefaultButton = ContentDialogButton.Secondary;
                     break;
                 case CrossNasCopyMoveState.TargetUnavailable:
                     dialog.PrimaryButtonText = localization.Get("FileCopyMove_Close_Button");
@@ -147,14 +173,12 @@ public sealed partial class FilesPage
 
         dialog.PrimaryButtonClick += async (_, args) =>
         {
-            if (model.State == CrossNasCopyMoveState.Completed ||
-                model.State == CrossNasCopyMoveState.Failure)
+            if (model.State is CrossNasCopyMoveState.Completed or CrossNasCopyMoveState.Failure or
+                CrossNasCopyMoveState.TargetUnavailable or CrossNasCopyMoveState.Unsupported)
             {
                 return;
             }
             args.Cancel = true;
-            var deferral = args.GetDeferral();
-            try
             {
                 if (model.State == CrossNasCopyMoveState.ChoosingTarget &&
                     model.SelectedTarget is null &&
@@ -162,21 +186,41 @@ public sealed partial class FilesPage
                 {
                     await model.SelectTargetAndLoadAsync(model.TargetProfiles[0]);
                 }
+                else if (model.State == CrossNasCopyMoveState.ConfirmingSourceDeletion)
+                {
+                    await model.ConfirmSourceDeletionAsync();
+                }
+                else if (model.CanDeleteSources)
+                {
+                    model.RequestSourceDeletionConfirmation();
+                }
+                else if (model.CanRefresh)
+                {
+                    await model.RefreshAsync();
+                }
                 else if (model.CanSubmit)
                 {
                     await model.SubmitAsync();
                 }
                 await RenderAsync();
             }
-            finally
-            {
-                deferral.Complete();
-            }
         };
+        dialog.SecondaryButtonClick += async (_, args) =>
+        {
+            args.Cancel = true;
+            if (model.State == CrossNasCopyMoveState.ConfirmingSourceDeletion) model.CancelSourceDeletionConfirmation();
+            else await model.ContinueAsync();
+            await RenderAsync();
+        };
+        System.ComponentModel.PropertyChangedEventHandler changed = (_, _) => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (ReferenceEquals(_crossNasCopyMoveModel, model)) _ = RenderAsync();
+        });
+        model.PropertyChanged += changed;
 
         dialog.Closing += (_, args) =>
         {
-            if (model.State == CrossNasCopyMoveState.Transferring)
+            if (model.IsTransferring)
             {
                 args.Cancel = true;
                 model.Cancel();
@@ -185,12 +229,15 @@ public sealed partial class FilesPage
 
         dialog.CloseButtonClick += (_, _) =>
         {
-            if (model.State == CrossNasCopyMoveState.Transferring)
+            if (model.IsTransferring)
             {
                 model.Cancel();
             }
         };
 
+        await model.LoadHistoryAsync(includeCompleted: restored is not null);
+        if (restored is not null && model.History.FirstOrDefault(item => item.Id == restored.Id) is { } original)
+            await model.RestoreAsync(original);
         await RenderAsync();
         try
         {
@@ -198,6 +245,7 @@ public sealed partial class FilesPage
         }
         finally
         {
+            model.PropertyChanged -= changed;
             model.Dispose();
             _crossNasCopyMoveModel = null;
             _crossNasCopyMoveDialog = null;
@@ -232,6 +280,18 @@ public sealed partial class FilesPage
         // 目标 NAS 选择
         if (model.State == CrossNasCopyMoveState.ChoosingTarget)
         {
+            if (model.History.Count > 0)
+            {
+                panel.Children.Add(new TextBlock { Text = localization.Get("CrossNasHistory"), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+                foreach (var previous in model.History)
+                {
+                    var target = model.TargetProfiles.FirstOrDefault(item => item.Id == previous.TargetProfileId);
+                    var resume = new Button { Content = localization.Format("CrossNasHistoryItem", target?.DisplayName ?? previous.Name,
+                        previous.DestinationFolderPath), MinHeight = 44, HorizontalAlignment = HorizontalAlignment.Stretch };
+                    resume.Click += async (_, _) => { await model.RestoreAsync(previous); await render(); };
+                    panel.Children.Add(resume);
+                }
+            }
             var targetLabel = new TextBlock
             {
                 Text = localization.Get("CrossNasSelectTarget"),
@@ -265,7 +325,7 @@ public sealed partial class FilesPage
         {
             var targetDisplay = new TextBlock
             {
-                Text = $"{localization.Get("CrossNasSelectedTarget")}: {targetProfile.DisplayName}",
+                Text = localization.Format("CrossNasTargetLabel", targetProfile.DisplayName),
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Margin = new Thickness(0, 8, 0, 0),
             };
@@ -324,6 +384,8 @@ public sealed partial class FilesPage
             }
             else
             {
+                if (model.Folders.Count == 0 && model.DestinationPath.Length == 0)
+                    panel.Children.Add(new TextBlock { Text = localization.Get("CrossNasNoFolders"), TextWrapping = TextWrapping.Wrap });
                 var folderList = new ListView
                 {
                     ItemsSource = model.Folders,
@@ -346,12 +408,13 @@ public sealed partial class FilesPage
         }
 
         // 进度
-        if (model.State == CrossNasCopyMoveState.Transferring)
+        if (model.IsTransferring)
         {
             var progressLabel = new TextBlock
             {
-                Text = model.TotalBytes > 0
-                    ? string.Format(localization.Get("CrossNasProgress"),
+                Text = model.State == CrossNasCopyMoveState.DeletingSources ? localization.Get("CrossNasSourceDeleting") :
+                    model.State == CrossNasCopyMoveState.Refreshing ? localization.Get("CrossNasRefreshing") : model.TotalBytes > 0
+                    ? localization.Format("CrossNasProgress",
                         model.TransferredBytes, model.TotalBytes)
                     : localization.Get("CrossNasProgressIndeterminate"),
                 TextWrapping = TextWrapping.Wrap,
@@ -360,12 +423,65 @@ public sealed partial class FilesPage
 
             var progressBar = new ProgressBar
             {
-                IsIndeterminate = model.TotalBytes == 0,
+                IsIndeterminate = model.TotalBytes == 0 || model.State is CrossNasCopyMoveState.DeletingSources or CrossNasCopyMoveState.Refreshing,
                 Maximum = model.TotalBytes > 0 ? model.TotalBytes : 100,
                 Value = model.TotalBytes > 0 ? model.TransferredBytes : 0,
                 MinHeight = 4,
             };
             panel.Children.Add(progressBar);
+        }
+
+        if (model.Outcome is { Items.Count: > 0 } outcome)
+        {
+            panel.Children.Add(new TextBlock { Text = localization.Format("CrossNasSummary", outcome.Result.Counts.Succeeded,
+                outcome.Result.Counts.Failed, outcome.Items.Count(item => item.State == CrossNasTransferItemState.NotStarted),
+                outcome.Items.Count(item => item.State == CrossNasTransferItemState.ResultUnavailable)), TextWrapping = TextWrapping.Wrap });
+            var results = new ListView
+            {
+                MaxHeight = 220, SelectionMode = ListViewSelectionMode.None,
+                ItemsSource = outcome.Items.Select(item => new
+                {
+                    Name = item.SourcePath[(item.SourcePath.LastIndexOf('/') + 1)..],
+                    Status = localization.Get(item.State switch
+                    {
+                        CrossNasTransferItemState.Copied => "CrossNasItemCopied",
+                        CrossNasTransferItemState.Failed => "CrossNasItemFailed",
+                        CrossNasTransferItemState.ResultUnavailable => "CrossNasItemUnavailable",
+                        CrossNasTransferItemState.Copying => "CrossNasProgressIndeterminate",
+                        CrossNasTransferItemState.Cancelled => "FileStructureItemCancelled",
+                        _ => "DownloadBatchNotStarted",
+                    }),
+                }).ToArray(),
+                ItemTemplate = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(
+                    "<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><StackPanel Margin='4,6'><TextBlock Text='{Binding Name}' TextWrapping='Wrap'/><TextBlock Text='{Binding Status}' TextWrapping='Wrap'/></StackPanel></DataTemplate>"),
+            };
+            AutomationProperties.SetName(results, localization.Get("CrossNasResults"));
+            panel.Children.Add(results);
+        }
+
+        if (model.State == CrossNasCopyMoveState.ConfirmingSourceDeletion)
+            panel.Children.Add(new InfoBar { IsOpen = true, Severity = InfoBarSeverity.Warning,
+                Title = localization.Get("CrossNasDeleteSources"),
+                Message = localization.Format("CrossNasDeleteSourcesWarning", model.Source.Name) });
+        else if (model.State == CrossNasCopyMoveState.SourceDeletionReady)
+            panel.Children.Add(new InfoBar { IsOpen = true, Severity = InfoBarSeverity.Success,
+                Title = localization.Get("CrossNasCompleted"), Message = localization.Get("CrossNasOriginalsKept") });
+
+        if (model.Outcome?.SourceDeletion is { } deletion)
+        {
+            panel.Children.Add(new TextBlock { Text = localization.Format("CrossNasDeleteSummary", deletion.Result.Counts.Succeeded,
+                deletion.Result.Counts.Failed, deletion.Items.Count(item => item.State == CrossNasSourceDeletionState.NotStarted),
+                deletion.Result.Counts.Unknown), TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(new ListView { MaxHeight = 150, SelectionMode = ListViewSelectionMode.None,
+                ItemsSource = deletion.Items.Select(item => localization.Format("CrossNasDeleteItem", item.SourcePath[(item.SourcePath.LastIndexOf('/') + 1)..],
+                    localization.Get(item.State switch
+                    {
+                        CrossNasSourceDeletionState.Deleted => "CrossNasSourceDeleted",
+                        CrossNasSourceDeletionState.Deleting => "CrossNasSourceDeleting",
+                        CrossNasSourceDeletionState.Failed => "CrossNasSourceDeleteFailed",
+                        CrossNasSourceDeletionState.ResultUnavailable => "CrossNasItemUnavailable",
+                        _ => "DownloadBatchNotStarted",
+                    }))).ToArray() });
         }
 
         // 结果
@@ -374,7 +490,7 @@ public sealed partial class FilesPage
             var infoBar = new InfoBar
             {
                 Severity = InfoBarSeverity.Success,
-                Title = localization.Get("CrossNasCompleted"),
+                Title = localization.Get(model.Outcome?.SourceDeletion?.Result.Status == MutationResultStatus.ConfirmedSuccess ? "CrossNasSourceDeleteCompleted" : "CrossNasCompleted"),
                 IsOpen = true,
             };
             AutomationProperties.SetLiveSetting(infoBar,
@@ -407,13 +523,15 @@ public sealed partial class FilesPage
                 AutomationLiveSetting.Assertive);
             panel.Children.Add(infoBar);
         }
-        else if (model.State == CrossNasCopyMoveState.Failure)
+        else if (model.State is CrossNasCopyMoveState.Failure or CrossNasCopyMoveState.Recoverable)
         {
             var infoBar = new InfoBar
             {
-                Severity = InfoBarSeverity.Error,
-                Title = localization.Get("CrossNasFailed"),
-                Message = CrossNasFailureMessage(model.ResultMessage, localization),
+                Severity = model.State == CrossNasCopyMoveState.Recoverable ? InfoBarSeverity.Warning : InfoBarSeverity.Error,
+                Title = localization.Get(model.Outcome?.SourceDeletion is not null ? "CrossNasSourceDeleteIncomplete" : model.Outcome?.IsRunning == true ? "CrossNasProgressIndeterminate" : model.State == CrossNasCopyMoveState.Recoverable ? "CrossNasIncomplete" : "CrossNasFailed"),
+                Message = model.Outcome?.RecoveryStorageUnavailable == true ? localization.Get("CrossNasRecoveryStorageFailed") :
+                    model.Outcome?.SourceDeletion is not null ? localization.Get("CrossNasDeleteRecovery") :
+                    model.State == CrossNasCopyMoveState.Recoverable ? localization.Get("CrossNasRecoveryMessage") : CrossNasFailureMessage(model.ResultMessage, localization),
                 IsOpen = true,
             };
             AutomationProperties.SetLiveSetting(infoBar,
@@ -467,6 +585,7 @@ public sealed partial class FilesPage
             "file.cross-nas.no-second-session" or
             "file.cross-nas.no-resolver" =>
                 localization.Get("CrossNasTargetUnavailableMessage"),
+            "file.cross-nas.recovery-unavailable" => localization.Get("CrossNasRecoveryStorageFailed"),
             "file.cross-nas.same-profile" =>
                 localization.Get("CrossNasSameTargetMessage"),
             _ => localization.Get("CrossNasFailedMessage"),

@@ -6,6 +6,27 @@ namespace LanStash.Tests.Containers;
 
 public sealed class ContainerImagePullViewModelTests
 {
+    [Fact]
+    public async Task TemporaryReadFailureRemainsAutomaticallyPollableUntilCompletion()
+    {
+        var (fake, model) = await Ready(); using var owned = model;
+        model.Confirm(true); await model.SubmitAsync();
+        fake.Stage = ContainerImagePullStage.NeedsReview; await model.ReviewAsync(automatic: true);
+        Assert.True(model.HasPollableTasks); var reads = fake.Reviews;
+        fake.Stage = ContainerImagePullStage.Ready; await model.ReviewAsync(automatic: true);
+        Assert.Equal(reads + 1, fake.Reviews); Assert.False(model.HasPollableTasks); Assert.Equal(1, fake.Starts);
+    }
+    [Theory]
+    [InlineData(MutationErrorCategory.Authentication)] [InlineData(MutationErrorCategory.Permission)] [InlineData(MutationErrorCategory.Unsupported)]
+    public async Task AccessFailureStopsAutomaticPollingWithoutResending(MutationErrorCategory error)
+    {
+        var (fake, model) = await Ready(); using var owned = model;
+        fake.Stage = ContainerImagePullStage.NeedsReview; fake.Error = error;
+        model.Confirm(true); await model.SubmitAsync(); var reads = fake.Reviews;
+        Assert.False(model.HasPollableTasks); await model.ReviewAsync(automatic: true);
+        Assert.Equal(reads, fake.Reviews); Assert.Equal(1, fake.Starts);
+        Assert.Equal(error == MutationErrorCategory.Authentication, model.RequiresReconnect);
+    }
     private static async Task<(Fake Fake, ContainerImagePullViewModel Model)> Ready()
     {
         var repository = DispatchProxy.Create<IContainerManagerRepository, Fake>(); var fake = (Fake)repository;
@@ -104,6 +125,7 @@ public sealed class ContainerImagePullViewModelTests
         public int Starts { get; private set; }
         public int Reviews { get; private set; }
         public ContainerImagePullStage Stage { get; set; } = ContainerImagePullStage.Downloading;
+        public MutationErrorCategory? Error { get; set; }
         public ContainerImagePullRequest? LastRequest { get; private set; }
         public CancellationToken LastToken { get; private set; }
         public Task<ContainerImagePullResult>? StartTask { get; set; }
@@ -120,14 +142,16 @@ public sealed class ContainerImagePullViewModelTests
                 case "PullImageAsync":
                     Starts++; LastRequest = (ContainerImagePullRequest)args![0]!; LastToken = (CancellationToken)args[1]!;
                     if (StartTask is not null) return StartTask;
-                    _pending = Result(LastRequest, Stage); return Task.FromResult(_pending);
+                    _pending = WithError(Result(LastRequest, Stage)); return Task.FromResult(_pending);
                 case "ReviewImagePullAsync":
                     Reviews++; if (_pending is null) return Task.FromResult<ContainerImagePullResult?>(null);
-                    var result = Result(LastRequest!, Stage); _pending = Stage == ContainerImagePullStage.Ready ? null : result;
+                    var result = WithError(Result(LastRequest!, Stage)); _pending = Stage is ContainerImagePullStage.Ready or ContainerImagePullStage.Rejected ? null : result;
                     return Task.FromResult<ContainerImagePullResult?>(result);
                 default: throw new NotSupportedException(method.Name);
             }
         }
+        private ContainerImagePullResult WithError(ContainerImagePullResult result) => Error is null ? result : result with
+        { Outcome = new(1, result.Outcome.Status, "pullContainerImage", true, true, result.Outcome.Counts, Error) };
         public static ContainerImagePullResult Result(ContainerImagePullRequest request, ContainerImagePullStage stage) => new(request.RequestId, request.Repository, request.Tag, stage, 25,
             new(1, stage == ContainerImagePullStage.Ready ? MutationResultStatus.ConfirmedSuccess : MutationResultStatus.SubmittedButUnverified,
                 "pullContainerImage", true, true, stage == ContainerImagePullStage.Ready ? new(1, 0, 0) : new(0, 0, 1)));

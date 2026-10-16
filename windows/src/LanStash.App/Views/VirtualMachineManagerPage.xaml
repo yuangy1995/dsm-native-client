@@ -12,6 +12,7 @@
         </Grid.ColumnDefinitions>
         <StackPanel Spacing="3">
           <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap"/>
+          <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind DetailText}" TextWrapping="Wrap"/>
           <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind UsageText}" TextWrapping="Wrap"/>
         </StackPanel>
         <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind HealthText}"/>
@@ -31,13 +32,16 @@
       </Grid>
     </DataTemplate>
     <DataTemplate x:Key="VirtualMachineEventTemplate" x:DataType="vm:VirtualMachineEventItem">
-      <Grid Padding="4,8" ColumnSpacing="12" AutomationProperties.Name="{x:Bind AutomationName}">
+      <Grid Padding="4,8" ColumnSpacing="12" RowSpacing="5" AutomationProperties.Name="{x:Bind AutomationName}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <TextBlock FontWeight="SemiBold" Text="{x:Bind TimeText}" TextWrapping="Wrap"/>
         <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind LevelText}" TextWrapping="Wrap"/>
+        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{x:Bind Message}" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+        <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{x:Bind Account}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
       </Grid>
     </DataTemplate>
   </Page.Resources>
@@ -186,6 +190,7 @@
                 <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
                   <Button x:Name="PowerOnButton" x:Uid="VmPowerOn" MinHeight="44" Click="PowerOn_Click"/>
                   <Button x:Name="ShutdownButton" x:Uid="VmShutdown" MinHeight="44" Click="Shutdown_Click"/>
+                  <Button x:Name="RebootButton" x:Uid="VmReboot" MinHeight="44" Click="Reboot_Click"/>
                   <Button x:Name="PowerOffButton" x:Uid="VmPowerOff" MinHeight="44" Click="PowerOff_Click"/>
                 </StackPanel>
                 <StackPanel Grid.Row="7" Grid.ColumnSpan="2" Spacing="8">
@@ -298,15 +303,32 @@
           </StackPanel>
         </Grid>
       </PivotItem>
-      <PivotItem x:Uid="VirtualMachineManagerEventsTab">
+      <PivotItem x:Name="EventsTab" x:Uid="VirtualMachineManagerEventsTab">
         <Grid AutomationProperties.LiveSetting="Polite">
-          <ListView x:Uid="VirtualMachineManagerEventsList" x:Name="EventsList" ItemsSource="{Binding Events}" ItemTemplate="{StaticResource VirtualMachineEventTemplate}" SelectionMode="None"/>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid ColumnSpacing="8" Margin="0,6,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBox x:Name="ActivitySearchBox" x:Uid="ContainerActivitySearch" TextChanged="ActivitySearch_TextChanged"/>
+            <ComboBox x:Name="ActivityLevelPicker" x:Uid="ContainerActivityLevel" Grid.Column="1" SelectedIndex="0" MinWidth="120" SelectionChanged="ActivityLevel_SelectionChanged">
+              <ComboBoxItem x:Uid="ContainerActivityAll" Tag="All"/><ComboBoxItem x:Uid="ContainerActivityInformation" Tag="Information"/>
+              <ComboBoxItem x:Uid="ContainerActivityWarning" Tag="Warning"/><ComboBoxItem x:Uid="ContainerActivityError" Tag="Error"/>
+              <ComboBoxItem x:Uid="ContainerActivityOther" Tag="Unknown"/>
+            </ComboBox>
+          </Grid>
+          <InfoBar x:Name="ActivityRefreshNotice" x:Uid="ContainerActivityRefreshError" Grid.Row="1" IsOpen="False" IsClosable="False" Severity="Warning"/>
+          <Grid Grid.Row="2">
+          <ListView x:Uid="VirtualMachineManagerEventsList" x:Name="EventsList" ItemsSource="{Binding Events}" ItemTemplate="{StaticResource VirtualMachineEventTemplate}" SelectionMode="None">
+            <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
+          </ListView>
           <StackPanel x:Name="EventsLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
             <ProgressRing Width="30" Height="30" IsActive="True"/>
             <TextBlock x:Uid="VirtualMachineManagerSectionLoading" TextWrapping="Wrap"/>
           </StackPanel>
           <StackPanel x:Name="EventsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" Spacing="8" Visibility="Collapsed">
-            <TextBlock x:Uid="VirtualMachineManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap"/>
+            <TextBlock x:Uid="ContainerActivityEmpty" TextAlignment="Center" TextWrapping="Wrap"/>
+          </StackPanel>
+          <StackPanel x:Name="EventsFilteredEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed">
+            <TextBlock x:Uid="ContainerActivityFilteredEmpty" TextAlignment="Center" TextWrapping="Wrap"/>
+            <Button x:Uid="ContainerActivityClear" HorizontalAlignment="Center" Click="ActivityClear_Click"/>
           </StackPanel>
           <StackPanel x:Name="EventsErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" Spacing="8" Visibility="Collapsed">
             <TextBlock x:Uid="VirtualMachineManagerSectionError" TextAlignment="Center" TextWrapping="Wrap"/>
@@ -314,6 +336,7 @@
           <StackPanel x:Name="EventsUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" Spacing="8" Visibility="Collapsed">
             <TextBlock x:Uid="VirtualMachineManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap"/>
           </StackPanel>
+          </Grid>
         </Grid>
       </PivotItem>
       <PivotItem x:Name="TasksTab" x:Uid="VmTasksTab"><views:VirtualMachineTasksControl x:Name="TasksPane"/></PivotItem>

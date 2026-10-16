@@ -39,6 +39,9 @@ public interface IDsmRepository : IFileRangeReader, IFileArchiveReader
             new MutationResultCounts(0, 1, 0),
             MutationErrorCategory.Unsupported,
             diagnosticTag: "file.upload.unsupported"));
+    // 只查询原上传的结果，不重新发送文件；没有未完成记录时返回 null。
+    Task<MutationResult?> ReviewFileUploadAsync(string folderPath, string fileName,
+        CancellationToken cancellationToken = default, Guid? operationId = null) => Task.FromResult<MutationResult?>(null);
     Task<IReadOnlyList<FileItem>> SearchFilesAsync(
         string path,
         string query,

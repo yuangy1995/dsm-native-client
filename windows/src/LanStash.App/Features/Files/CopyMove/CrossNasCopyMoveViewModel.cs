@@ -10,6 +10,11 @@ public enum CrossNasCopyMoveState
     ChoosingDestination,
     LoadingFolders,
     Transferring,
+    Recoverable,
+    Refreshing,
+    SourceDeletionReady,
+    ConfirmingSourceDeletion,
+    DeletingSources,
     Completed,
     Unsupported,
     TargetUnavailable,
@@ -34,7 +39,11 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
     private long _totalBytes;
     private string? _resultMessage;
     private long _generation;
-    private bool _disposed;
+    private bool _disposed, _restoring;
+    private Guid _operationId = Guid.NewGuid();
+    private string? _targetIdentity;
+    private CrossNasCopyMoveOutcome? _outcome;
+    private IReadOnlyList<CrossNasTransferSummary> _history = [];
 
     public CrossNasCopyMoveViewModel(
         IFileCopyMoveRepository sourceRepository,
@@ -71,6 +80,112 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
 
     public FileItem Source { get; }
     public FileCopyMoveOperation Operation { get; }
+    public CrossNasCopyMoveOutcome? Outcome { get => _outcome; private set => SetProperty(ref _outcome, value); }
+    public IReadOnlyList<CrossNasTransferSummary> History { get => _history; private set => SetProperty(ref _history, value); }
+    public bool CanRefresh => Outcome is { RecoveryStorageUnavailable: false } && State is CrossNasCopyMoveState.Recoverable or CrossNasCopyMoveState.SourceDeletionReady or CrossNasCopyMoveState.Completed;
+    public bool CanContinue => State == CrossNasCopyMoveState.Recoverable && Outcome?.CanContinue == true;
+    public bool CanDeleteSources => State == CrossNasCopyMoveState.SourceDeletionReady && Outcome?.CanDeleteSources == true;
+
+    public void RequestSourceDeletionConfirmation()
+    {
+        ThrowIfDisposed();
+        if (CanDeleteSources) State = CrossNasCopyMoveState.ConfirmingSourceDeletion;
+    }
+    public void CancelSourceDeletionConfirmation()
+    {
+        ThrowIfDisposed();
+        if (State == CrossNasCopyMoveState.ConfirmingSourceDeletion && Outcome is { } outcome) ApplyOutcome(outcome);
+    }
+    public async Task ConfirmSourceDeletionAsync()
+    {
+        ThrowIfDisposed();
+        if (State != CrossNasCopyMoveState.ConfirmingSourceDeletion || Outcome?.CanDeleteSources != true) return;
+        var generation = BeginRequest(out var cancellation);
+        State = CrossNasCopyMoveState.DeletingSources;
+        try
+        {
+            var outcome = await _sourceRepository.DeleteCrossNasSourcesAsync(_operationId, confirmed: true, cancellation.Token).ConfigureAwait(false);
+            if (!IsCurrent(generation)) return;
+            if (outcome is null) { State = CrossNasCopyMoveState.TargetUnavailable; return; }
+            ApplyOutcome(outcome);
+        }
+        catch when (IsCurrent(generation)) { State = CrossNasCopyMoveState.Recoverable; }
+        finally { EndRequest(cancellation); }
+    }
+
+    public async Task LoadHistoryAsync(bool includeCompleted = false)
+    {
+        var generation = BeginRequest(out var cancellation);
+        try
+        {
+            var history = await _sourceRepository.GetCrossNasTransfersAsync(cancellation.Token).ConfigureAwait(false);
+            if (IsCurrent(generation)) History = history.Where(item => item.SourceProfileId == _sourceProfileId && item.SourcePath == Source.Path &&
+                (includeCompleted || item.Outcome.RequiresReadOnlyRecovery || item.Outcome.Result.Status != MutationResultStatus.ConfirmedSuccess || item.Outcome.CanDeleteSources ||
+                    item.Outcome.SourceDeletion is { Result.Status: not MutationResultStatus.ConfirmedSuccess })).ToArray();
+        }
+        catch when (IsCurrent(generation)) { State = CrossNasCopyMoveState.Failure; }
+        finally { EndRequest(cancellation); }
+    }
+
+    public async Task RestoreAsync(CrossNasTransferSummary summary)
+    {
+        ThrowIfDisposed();
+        if (!History.Contains(summary) || State != CrossNasCopyMoveState.ChoosingTarget) return;
+        _restoring = true;
+        var target = TargetProfiles.FirstOrDefault(item => item.Id == summary.TargetProfileId);
+        if (target is null) { State = CrossNasCopyMoveState.TargetUnavailable; return; }
+        await SelectTargetAndLoadAsync(target).ConfigureAwait(false);
+        if (_disposed || State != CrossNasCopyMoveState.ChoosingDestination) return;
+        DestinationPath = summary.DestinationFolderPath;
+        _operationId = summary.Id;
+        ApplyOutcome(summary.Outcome);
+        await RefreshAsync().ConfigureAwait(false);
+    }
+
+    public async Task RefreshAsync() => await RecoverAsync(continueRemaining: false).ConfigureAwait(false);
+    public async Task ContinueAsync() => await RecoverAsync(continueRemaining: true).ConfigureAwait(false);
+    private async Task RecoverAsync(bool continueRemaining)
+    {
+        ThrowIfDisposed();
+        if (continueRemaining ? !CanContinue : !CanRefresh) return;
+        var generation = BeginRequest(out var cancellation);
+        State = continueRemaining ? CrossNasCopyMoveState.Transferring : CrossNasCopyMoveState.Refreshing;
+        try
+        {
+            var progress = new Progress<long>(value => { if (IsCurrent(generation)) TransferredBytes = value; });
+            var outcome = continueRemaining
+                ? await _sourceRepository.ContinueCrossNasTransferAsync(_operationId, progress, cancellation.Token).ConfigureAwait(false)
+                : await _sourceRepository.ReviewCrossNasTransferAsync(_operationId, cancellation.Token).ConfigureAwait(false);
+            if (!IsCurrent(generation)) return;
+            if (outcome is null) { State = CrossNasCopyMoveState.TargetUnavailable; return; }
+            ApplyOutcome(outcome);
+        }
+        catch when (IsCurrent(generation)) { State = CrossNasCopyMoveState.Recoverable; }
+        finally { EndRequest(cancellation); }
+    }
+
+    private void ApplyOutcome(CrossNasCopyMoveOutcome outcome)
+    {
+        Outcome = outcome;
+        if (outcome.OperationId != Guid.Empty) _operationId = outcome.OperationId;
+        ResultMessage = outcome.Result.DiagnosticTag;
+        State = outcome.Result.Status switch
+        {
+            _ when outcome.RecoveryStorageUnavailable || outcome.RequiresReadOnlyRecovery || outcome.CanContinue || outcome.IsRunning => CrossNasCopyMoveState.Recoverable,
+            _ when outcome.SourceDeletion?.Result.Status == MutationResultStatus.ConfirmedSuccess => CrossNasCopyMoveState.Completed,
+            _ when outcome.CanDeleteSources => CrossNasCopyMoveState.SourceDeletionReady,
+            _ when outcome.SourceDeletion is not null => CrossNasCopyMoveState.Recoverable,
+            MutationResultStatus.ConfirmedSuccess => CrossNasCopyMoveState.Completed,
+            MutationResultStatus.SubmittedButUnverified or MutationResultStatus.CancellationRequestedAfterSubmission or
+                MutationResultStatus.PartialSuccess => CrossNasCopyMoveState.Recoverable,
+            MutationResultStatus.CancelledBeforeSubmission when outcome.CanContinue => CrossNasCopyMoveState.Recoverable,
+            MutationResultStatus.CancelledBeforeSubmission => CrossNasCopyMoveState.ChoosingDestination,
+            MutationResultStatus.Unsupported when IsTargetUnavailable(outcome.Result.DiagnosticTag) => CrossNasCopyMoveState.TargetUnavailable,
+            MutationResultStatus.Unsupported => CrossNasCopyMoveState.Unsupported,
+            _ => CrossNasCopyMoveState.Failure,
+        };
+        if (State == CrossNasCopyMoveState.Unsupported) ResultMessage = null;
+    }
 
     public IReadOnlyList<NasProfile> TargetProfiles => _targetProfiles;
 
@@ -126,6 +241,9 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
                 RaisePropertyChanged(nameof(CanBrowseFolders));
                 RaisePropertyChanged(nameof(CanSubmit));
                 RaisePropertyChanged(nameof(IsTransferring));
+                RaisePropertyChanged(nameof(CanRefresh));
+                RaisePropertyChanged(nameof(CanContinue));
+                RaisePropertyChanged(nameof(CanDeleteSources));
             }
         }
     }
@@ -153,13 +271,13 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
         SelectedTarget is not null;
 
     public bool CanSubmit =>
-        State == CrossNasCopyMoveState.ChoosingDestination &&
+        !_restoring && State == CrossNasCopyMoveState.ChoosingDestination &&
         DestinationCanWrite &&
         DestinationPath.Length > 0 &&
         IsDestination(DestinationPath);
 
     public bool IsTransferring =>
-        State == CrossNasCopyMoveState.Transferring;
+        State is CrossNasCopyMoveState.Transferring or CrossNasCopyMoveState.Refreshing or CrossNasCopyMoveState.DeletingSources;
 
     public async Task SelectTargetAndLoadAsync(NasProfile target)
     {
@@ -172,8 +290,15 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
         try
         {
             ReleaseTargetFolderSource();
-            _targetFolderSource = await _targetFolderSourceFactory(
+            var restored = await _targetFolderSourceFactory(
                 target.Id, cancellation.Token).ConfigureAwait(false);
+            if (!IsCurrent(generation) || cancellation.IsCancellationRequested)
+            {
+                (restored as IDisposable)?.Dispose();
+                return;
+            }
+            _targetFolderSource = restored;
+            _targetFolderLease = restored as IDisposable;
             cancellation.Token.ThrowIfCancellationRequested();
             if (!IsCurrent(generation)) return;
             if (_targetFolderSource is null ||
@@ -183,7 +308,7 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
                 State = CrossNasCopyMoveState.TargetUnavailable;
                 return;
             }
-            _targetFolderLease = _targetFolderSource as IDisposable;
+            _targetIdentity = _sourceRepository.GetCrossNasTargetIdentity(target.Id);
             await LoadFoldersCoreAsync(
                 string.Empty,
                 destinationCanWrite: true,
@@ -206,7 +331,7 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
     {
         ThrowIfDisposed();
         if (_targetFolderSource is null ||
-            State is CrossNasCopyMoveState.Transferring or CrossNasCopyMoveState.Completed)
+            State is not (CrossNasCopyMoveState.ChoosingDestination or CrossNasCopyMoveState.LoadingFolders))
             return;
         if (!IsFolderPath(path))
         {
@@ -247,7 +372,7 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
             DestinationPath = path;
             DestinationCanWrite = path.Length > 0 && destinationCanWrite;
             Folders = folders
-                .Where(f => f.CanWrite && IsSafeDestination(f.Path))
+                .Where(f => f.CanWrite)
                 .ToArray();
             State = CrossNasCopyMoveState.ChoosingDestination;
         }
@@ -265,7 +390,7 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
         TransferredBytes = 0;
 
         // 文件按下载和上传两段累计，文件夹由最终树核对完成确认。
-        TotalBytes = Source.IsDirectory ? 0 : Source.Size * 2;
+        TotalBytes = Source.IsDirectory || Source.Size > long.MaxValue / 2 ? 0 : Source.Size * 2;
 
         try
         {
@@ -280,7 +405,8 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
                 Overwrite: false,
                 Operation == FileCopyMoveOperation.Copy
                     ? CrossNasCopyMoveOperation.Copy
-                    : CrossNasCopyMoveOperation.Move);
+                    : CrossNasCopyMoveOperation.Move,
+                _operationId) { TargetIdentity = _targetIdentity, SourceModifiedAt = Source.ModifiedAt };
 
             var progress = new Progress<long>(reported =>
             {
@@ -295,38 +421,12 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
 
             if (!IsCurrent(generation)) return;
 
-            if (outcome.Result.Status == MutationResultStatus.ConfirmedSuccess)
-            {
-                ResultMessage = null;
-                State = CrossNasCopyMoveState.Completed;
-            }
-            else if (outcome.Result.Status == MutationResultStatus.CancelledBeforeSubmission)
-            {
-                ResultMessage = null;
-                State = CrossNasCopyMoveState.ChoosingDestination;
-            }
-            else if (outcome.Result.Status == MutationResultStatus.Unsupported)
-            {
-                if (IsTargetUnavailable(outcome.Result.DiagnosticTag))
-                {
-                    ResultMessage = outcome.Result.DiagnosticTag;
-                    State = CrossNasCopyMoveState.TargetUnavailable;
-                }
-                else
-                {
-                    ResultMessage = null;
-                    State = CrossNasCopyMoveState.Unsupported;
-                }
-            }
-            else
-            {
-                ResultMessage = outcome.Result.DiagnosticTag ?? "file.cross-nas.failed";
-                State = CrossNasCopyMoveState.Failure;
-            }
+            ApplyOutcome(outcome);
         }
         catch (OperationCanceledException) when (IsCurrent(generation))
         {
-            State = CrossNasCopyMoveState.ChoosingDestination;
+            ResultMessage = "file.cross-nas.result-unavailable";
+            State = CrossNasCopyMoveState.Recoverable;
         }
         catch when (IsCurrent(generation))
         {
@@ -338,7 +438,7 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
 
     public void Cancel()
     {
-        Interlocked.Increment(ref _generation);
+        if (!IsTransferring) Interlocked.Increment(ref _generation);
         _request?.Cancel();
     }
 
@@ -346,6 +446,7 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        Interlocked.Increment(ref _generation);
         Cancel();
         _request?.Dispose();
         _request = null;
@@ -386,10 +487,6 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
 
     private static bool IsOrdinaryItem(FileItem item) =>
         FileMutationViewModel.IsMutablePath(item.Path);
-
-    private bool IsSafeDestination(string path) =>
-        !Source.IsDirectory ||
-        (path != Source.Path && !path.StartsWith(Source.Path + "/", StringComparison.Ordinal));
 
     private static bool IsDestination(string path) =>
         FileMutationViewModel.IsMutablePath(path);

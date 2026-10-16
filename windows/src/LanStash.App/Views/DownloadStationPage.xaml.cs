@@ -20,6 +20,7 @@ public sealed partial class DownloadStationPage : Page, IDisposable
     private bool _compactShowsTaskList = true;
     private bool _updatingFilter;
     private bool _disposed;
+    private ContentDialog? _deleteDialog;
 
     internal DownloadStationPage(
         IDownloadStationRepository repository,
@@ -169,7 +170,7 @@ public sealed partial class DownloadStationPage : Page, IDisposable
     }
 
     private ContentDialog? _linkCreateDialog;
-    private async Task ShowCreateTaskDialogAsync()
+    private async Task ShowCreateTaskDialogAsync(string? initialUri = null)
     {
         if (_disposed || !_viewModel.CanCreateTask || _linkCreateDialog is not null || XamlRoot is null) return;
         var uriBox = new TextBox
@@ -208,6 +209,7 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         void Closing(ContentDialog sender, ContentDialogClosingEventArgs args) { if (_viewModel.IsCreatingTask && !_disposed) args.Cancel = true; }
         uriBox.TextChanged += TextChanged; options.StateChanged += Update;
         dialog.PrimaryButtonClick += Submit; dialog.Closing += Closing;
+        uriBox.Text = initialUri ?? string.Empty; Update();
         try { await dialog.ShowAsync(); }
         finally
         {
@@ -219,7 +221,7 @@ public sealed partial class DownloadStationPage : Page, IDisposable
 
     private async Task ShowDeleteTaskDialogAsync()
     {
-        if (!_viewModel.CanDeleteSelectedTask)
+        if (_disposed || _deleteDialog is not null || !_viewModel.CanDeleteSelectedTask || _viewModel.SelectedTask is not { } selected)
         {
             return;
         }
@@ -231,9 +233,10 @@ public sealed partial class DownloadStationPage : Page, IDisposable
             MaxWidth = 520,
         };
 
-        var dialog = new ContentDialog
+        var dialog = _deleteDialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
             Title = LocalizationService.Current.Get("DownloadStationDeleteConfirmTitle"),
             Content = content,
             PrimaryButtonText = LocalizationService.Current.Get("DownloadStationDeleteConfirmSubmit"),
@@ -241,15 +244,14 @@ public sealed partial class DownloadStationPage : Page, IDisposable
             DefaultButton = ContentDialogButton.Close,
         };
 
-        var result = await dialog.ShowAsync();
-        if (result == ContentDialogResult.Primary)
+        try
         {
-            await RunAsync(_viewModel.DeleteSelectedTaskAsync);
+            var result = await dialog.ShowAsync();
+            if (!_disposed && result == ContentDialogResult.Primary)
+                await RunAsync(() => _viewModel.DeleteConfirmedTaskAsync(selected.Task, _repository));
+            else if (!_disposed) UpdateState();
         }
-        else
-        {
-            UpdateState();
-        }
+        finally { _deleteDialog = null; }
     }
 
     private async Task RunAsync(Func<Task> operation)
@@ -319,6 +321,7 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         DeleteButton.IsEnabled = _viewModel.CanDeleteSelectedTask;
         if (_taskBatch?.HasPending == true) { PauseButton.IsEnabled = false; ResumeButton.IsEnabled = false; DeleteButton.IsEnabled = false; }
         BatchPendingNotice.IsOpen = _taskBatch?.HasPending == true;
+        RssButton.Visibility = Visible(_repository.Availability.SupportedFeatures.Contains(DownloadStationReadFeature.RssSummary));
         ControlProgress.IsActive = _viewModel.IsControllingTask || _viewModel.IsDeletingTask;
         ControlProgress.Visibility = Visible(_viewModel.IsControllingTask || _viewModel.IsDeletingTask);
         AutomationProperties.SetName(
@@ -406,6 +409,10 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         }
         CloseBtSearchDialog();
         _disposed = true;
+        _deleteDialog?.Hide(); _deleteDialog = null;
+        _detailsModel?.Dispose(); _recoveryDialog?.Hide(); _recoveryModel?.Dispose(); _recoveryDialog = null; _recoveryModel = null;
+        _detailsDialog?.Hide();
+        _rssModel?.Dispose(); _rssDialog?.Hide();
         DisposeSettingsDialog();
         DisposeTaskBatch();
         _fileCreateDialog?.Hide(); _fileCreateDialog = null;

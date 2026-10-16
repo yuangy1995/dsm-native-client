@@ -72,14 +72,16 @@ public sealed class SynologyPhotosCacheAndSaveTests
         Assert.Equal(2, calls);
     }
 
-    [Fact]
-    public async Task SaveCommitsOnlyAfterExactLengthAndRemovesThePrivateTemporaryFile()
+    [Theory]
+    [InlineData(SynologyPhotoSpace.Personal)]
+    [InlineData(SynologyPhotoSpace.Shared)]
+    public async Task SaveCommitsOnlyAfterExactLengthAndRemovesThePrivateTemporaryFile(SynologyPhotoSpace space)
     {
         var repository = new SynologyPhotosTestRepository(); var directory = NewDirectory();
         var destination = new Destination();
         try
         {
-            await new SynologyPhotoSaveService().SaveAsync(repository, repository.Photo(), directory, () => Task.FromResult<ITransactionalDownloadDestination>(destination));
+            await new SynologyPhotoSaveService().SaveAsync(repository, repository.Photo(space: space), directory, () => Task.FromResult<ITransactionalDownloadDestination>(destination));
             Assert.True(destination.Committed); Assert.Equal(8, destination.Written); Assert.True(destination.Disposed);
             Assert.Empty(Directory.EnumerateFileSystemEntries(directory));
         }

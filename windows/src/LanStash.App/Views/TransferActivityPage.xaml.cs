@@ -17,6 +17,10 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
     private readonly FileStationActivityRefresher _fileRefresher;
     private readonly bool _canRefreshDownloadTasks;
     private readonly bool _canRefreshFileTasks;
+    private readonly IFileBackgroundTaskRepository _fileRepository;
+    private readonly Func<string, Task>? _openOriginalFolder;
+    private IReadOnlyList<FileBackgroundTaskProgress> _pendingFileControls = [];
+    private ContentDialog? _detailsDialog;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly ObservableCollection<ActivityPresentation> _presentations = [];
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -29,13 +33,16 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
         WindowsTransferPickerService transfers,
         string profileId,
         IDownloadStationRepository downloadStationRepository,
-        IFileBackgroundTaskRepository fileBackgroundTaskRepository)
+        IFileBackgroundTaskRepository fileBackgroundTaskRepository,
+        Func<string, Task>? openOriginalFolder = null)
     {
         InitializeComponent();
         ActivityList.ItemsSource = _presentations;
         _coordinator = coordinator;
         _transfers = transfers;
         _profileId = profileId;
+        _fileRepository = fileBackgroundTaskRepository;
+        _openOriginalFolder = openOriginalFolder;
         _canRefreshDownloadTasks = downloadStationRepository.ProfileId.ToString() == profileId &&
             downloadStationRepository.Availability.Status ==
                 DownloadStationAvailabilityStatus.Available &&
@@ -65,6 +72,7 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
         RenderActivities();
         _timer.Start();
         await UpdateNasRefreshLifecycleAsync();
+        await RefreshFileOperationsAsync();
     }
 
     private async void TransferActivityPage_Unloaded(object sender, RoutedEventArgs e)
@@ -78,6 +86,18 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
     {
         _isWindowVisible = isVisible;
         await UpdateNasRefreshLifecycleAsync();
+    }
+
+    internal bool RevealActivity(Guid id)
+    {
+        if (_disposed) return false;
+        RenderActivities();
+        var row = _presentations.FirstOrDefault(item => item.Activity.Id == id);
+        if (row is null) return false;
+        ActivityList.ScrollIntoView(row, ScrollIntoViewAlignment.Leading);
+        ActivityList.UpdateLayout();
+        (ActivityList.ContainerFromItem(row) as Control)?.Focus(FocusState.Programmatic);
+        return true;
     }
 
     private async Task UpdateNasRefreshLifecycleAsync()
@@ -129,9 +149,20 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
         RenderActivities();
     }
 
-    private Task RefreshNasTasksAsync() => _disposed ? Task.CompletedTask : Task.WhenAll(
-        _downloadRefresher.RefreshAsync(),
-        _fileRefresher.RefreshAsync());
+    private async Task RefreshNasTasksAsync()
+    {
+        if (_disposed) return;
+        await Task.WhenAll(_downloadRefresher.RefreshAsync(), _fileRefresher.RefreshAsync());
+        await RefreshFileOperationsAsync();
+    }
+
+    private async Task RefreshFileOperationsAsync()
+    {
+        if (_disposed || _fileRepository.ProfileId.ToString() != _profileId) return;
+        try { var pending = await _fileRepository.GetTaskOperationsAsync(); if (!_disposed) _pendingFileControls = pending; }
+        catch { /* 保留已经显示的原操作；列表读取失败单独呈现。 */ }
+        RenderActivities();
+    }
 
     private async void DownloadLoadMore_Click(object sender, RoutedEventArgs e) => await LoadMoreNasTasksAsync(downloads: true);
     private async void FileLoadMore_Click(object sender, RoutedEventArgs e) => await LoadMoreNasTasksAsync(downloads: false);
@@ -150,11 +181,20 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
             {
                 Tag: ForegroundTransferActivity
                 {
-                    State: ForegroundTransferState.Running,
+                    State: ForegroundTransferState.Running or ForegroundTransferState.Paused,
                 } activity,
             })
         {
             _transfers.Cancel(_profileId, activity.Id);
+        }
+    }
+
+    private void Pause_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: ForegroundTransferActivity activity })
+        {
+            _coordinator.SetPaused(_profileId, activity.Id, activity.State != ForegroundTransferState.Paused);
+            RenderActivities();
         }
     }
 
@@ -165,12 +205,16 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
             return;
         }
 
-        var items = _coordinator.GetActivities(_profileId)
-            .ToArray();
+        var items = _coordinator.GetActivities(_profileId).ToList();
+        foreach (var pending in _pendingFileControls)
+            if (!items.Any(a => a.SourceIdentifier == "file:" + pending.Change.Task.Id))
+                items.Add(new(pending.Change.RequestId, _profileId, ForegroundTransferSource.NasFileStation, "file:" + pending.Change.Task.Id,
+                    "", pending.Change.Task.Kind.ToString(), ForegroundTransferDirection.NasOperation, 0, 0,
+                    ForegroundTransferState.ResultNeedsReview, null, pending.Change.Task.Kind));
         var ids = items.Select(item => item.Id).ToHashSet();
         for (var index = _presentations.Count - 1; index >= 0; index--)
             if (!ids.Contains(_presentations[index].Activity.Id)) _presentations.RemoveAt(index);
-        for (var index = 0; index < items.Length; index++)
+        for (var index = 0; index < items.Count; index++)
         {
             var item = items[index];
             if (index >= _presentations.Count || _presentations[index].Activity.Id != item.Id)
@@ -181,8 +225,8 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
             }
             if (_presentations[index].Activity != item) _presentations[index] = ActivityPresentation.Create(item);
         }
-        ActivityList.Visibility = items.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        EmptyState.Visibility = items.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ActivityList.Visibility = items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        EmptyState.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         var downloadState = _downloadRefresher.State;
         var fileState = _fileRefresher.State;
         var isRefreshing = downloadState.IsRefreshing || fileState.IsRefreshing;
@@ -204,7 +248,8 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
                 : "TransferActivityFileRefreshErrorInitial");
         DownloadTruncatedNotice.IsOpen = downloadState.IsTruncated;
         FileTruncatedNotice.IsOpen = fileState.IsTruncated;
-        DownloadTruncatedNotice.Message = LocalizationService.Current.Format("TransferActivityDownloadPageSummary", downloadState.DisplayedTaskCount, downloadState.SourceTotal);
+        DownloadTruncatedNotice.Message = LocalizationService.Current.Format("TransferActivityDownloadPageSummary", downloadState.DisplayedTaskCount,
+            downloadState.SourceTotal?.ToString("N0", System.Globalization.CultureInfo.CurrentCulture) ?? LocalizationService.Current.Get("DownloadStationValueUnavailable"));
         FileTruncatedNotice.Message = LocalizationService.Current.Format("TransferActivityFilePageSummary", fileState.DisplayedTaskCount, fileState.SourceTotal);
         DownloadLoadMoreButton.IsEnabled = _downloadRefresher.CanLoadMore;
         FileLoadMoreButton.IsEnabled = _fileRefresher.CanLoadMore;
@@ -224,6 +269,7 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
             }
 
             _disposed = true;
+            _detailsDialog?.Hide();
             _timer.Stop();
             _timer.Tick -= Timer_Tick;
             Loaded -= TransferActivityPage_Loaded;
@@ -247,6 +293,11 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
         public required double Value { get; init; }
         public required bool IsIndeterminate { get; init; }
         public required string StatusText { get; init; }
+        public required string SpeedText { get; init; }
+        public required Visibility SpeedVisibility { get; init; }
+        public required string PauseText { get; init; }
+        public required string PauseAutomationName { get; init; }
+        public required Visibility PauseVisibility { get; init; }
         public required string CancelAutomationName { get; init; }
         public required Visibility CancelVisibility { get; init; }
         public required Visibility ProgressVisibility { get; init; }
@@ -261,12 +312,16 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
                     activity.ProgressFraction is { } progress
                         ? localization.Format("TransferActivityFileProgress", progress)
                         : localization.Get("TransferActivityFileRunning"),
+                ForegroundTransferState.Running when activity.TotalBytes == 0 =>
+                    localization.Format("TransferActivityUnknownProgress", activity.BytesTransferred),
                 ForegroundTransferState.Running => localization.Format(
                     activity.Direction == ForegroundTransferDirection.Upload
                         ? "TransferActivityUploadProgress"
                         : "TransferActivityProgress",
                     activity.BytesTransferred,
                     activity.TotalBytes),
+                ForegroundTransferState.Paused when activity.Source == ForegroundTransferSource.App =>
+                    localization.Format("TransferActivityPausedProgress", activity.BytesTransferred),
                 ForegroundTransferState.Paused => localization.Get("TransferActivityPaused"),
                 ForegroundTransferState.Completed => localization.Get(
                     activity.Direction == ForegroundTransferDirection.Upload
@@ -275,10 +330,13 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
                 ForegroundTransferState.Cancelled => localization.Get("TransferActivityCancelled"),
                 ForegroundTransferState.CancelledBeforeSubmission =>
                     localization.Get("TransferActivityCancelledBeforeSubmission"),
+                ForegroundTransferState.ResultNeedsReview when isFileTask => localization.Get("FileTaskPending"),
                 ForegroundTransferState.ResultNeedsReview =>
                     localization.Get("TransferActivityUploadNeedsReview"),
                 ForegroundTransferState.EndedNeedsReview =>
                     localization.Get("TransferActivityFileEndedNeedsReview"),
+                ForegroundTransferState.Failed when activity.ItemResults.Any(item => item.State == ForegroundTransferItemState.Completed) =>
+                    localization.Get(activity.Direction == ForegroundTransferDirection.Upload ? "TransferUploadPartial" : "FileStructureDownloadPartial"),
                 ForegroundTransferState.Failed => localization.Get(
                     activity.Direction == ForegroundTransferDirection.Upload
                         ? "TransferActivityUploadFailed"
@@ -309,11 +367,18 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
                         ? activity.ProgressFraction is null
                         : activity.TotalBytes == 0),
                 StatusText = status,
+                SpeedText = localization.Format("TransferActivitySpeed", activity.BytesPerSecond / 1024),
+                SpeedVisibility = activity.Source == ForegroundTransferSource.App && activity.State == ForegroundTransferState.Running
+                    ? Visibility.Visible : Visibility.Collapsed,
+                PauseText = localization.Get(activity.State == ForegroundTransferState.Paused ? "TransferActivityResume" : "TransferActivityPause"),
+                PauseAutomationName = localization.Format(activity.State == ForegroundTransferState.Paused
+                    ? "TransferActivityResumeName" : "TransferActivityPauseName", activity.DisplayName),
+                PauseVisibility = activity.CanPause ? Visibility.Visible : Visibility.Collapsed,
                 CancelAutomationName = localization.Format(
                     "TransferActivityCancelAutomationName",
                     activity.DisplayName),
                 CancelVisibility = activity.Source == ForegroundTransferSource.App &&
-                    activity.State == ForegroundTransferState.Running
+                    activity.State is ForegroundTransferState.Running or ForegroundTransferState.Paused
                     ? Visibility.Visible
                     : Visibility.Collapsed,
                 ProgressVisibility = isFileTask &&
@@ -323,7 +388,7 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
             };
         }
 
-        private static string FileTaskNameKey(FileBackgroundTaskKind? kind) => kind switch
+        public static string FileTaskNameKey(FileBackgroundTaskKind? kind) => kind switch
         {
             FileBackgroundTaskKind.CopyOrMove => "TransferActivityFileCopyMove",
             FileBackgroundTaskKind.Delete => "TransferActivityFileDelete",

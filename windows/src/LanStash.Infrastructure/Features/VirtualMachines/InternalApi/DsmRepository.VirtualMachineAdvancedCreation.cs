@@ -17,19 +17,25 @@ public sealed partial class DsmRepository
         if (!CanReadAdvancedCreation) throw UnavailableVirtualMachineManagerError();
         var repos = await SecurityCallAsync(_capabilities[InternalCreationRepoApi] with { MinVersion = 2, MaxVersion = 2 }, "list", new(), cancellationToken).ConfigureAwait(false);
         var repoFrozen = AdvancedBool(repos, "is_freeze");
-        var storages = RequiredObjectArray(repos, "repos").Select(item => new VirtualMachineCreationStorage(
+        var repoRows = RequiredObjectArray(repos, "repos"); RequireCompleteVirtualMachineList(repos, repoRows.Count);
+        var storages = repoRows.Select(item => new VirtualMachineCreationStorage(
             AdvancedText(item, "repo_id"), AdvancedText(item, "name"), AdvancedText(item, "host_id"), AdvancedText(item, "host_name"),
             AdvancedNumber(item, "allocated_size"), AdvancedText(item, "size"), AdvancedText(item, "used"), AdvancedText(item, "status"), AdvancedText(item, "status_type"))).ToArray();
         if (storages.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != storages.Length) throw InvalidVirtualMachineManagerResponse();
         var imagesData = await SecurityCallAsync(_capabilities[InternalCreationImageApi] with { MinVersion = 2, MaxVersion = 2 }, "list", new(), cancellationToken).ConfigureAwait(false);
         var imagesFrozen = AdvancedBool(imagesData, "is_freeze");
-        var images = RequiredObjectArray(imagesData, "images").Select(item => new VirtualMachineCreationImage(
+        var imageRows = RequiredObjectArray(imagesData, "images"); RequireCompleteVirtualMachineList(imagesData, imageRows.Count);
+        var images = imageRows.Select(item => new VirtualMachineCreationImage(
             AdvancedText(item, "id"), AdvancedText(item, "name"), AdvancedText(item, "repo_id"), AdvancedText(item, "host_id"),
             AdvancedText(item, "type"), AdvancedText(item, "status"), AdvancedText(item, "status_type"))).ToArray();
         // 同一映像可分布于多个存储，仅相同实例重复才是冲突。
         if (images.Select(item => (item.Id, item.StorageId, item.HostId)).Distinct().Count() != images.Length) throw InvalidVirtualMachineManagerResponse();
         cancellationToken.ThrowIfCancellationRequested();
-        return new(_profile.Id, repoFrozen, imagesFrozen, storages, images);
+        var networks = HasInternalVirtualMachineVersion(ManagedNetworkApi, 2, 2)
+            ? await LoadInternalVirtualMachineSectionAsync(ManagedNetworkApi, ["list"], null,
+                data => { _ = AdvancedBool(data, "is_freeze"); return ParseInternalVirtualMachineResources(data, VirtualizationResourceKind.Network); }, 2, 2, cancellationToken).ConfigureAwait(false)
+            : VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable;
+        return new(_profile.Id, repoFrozen, imagesFrozen, storages, images) { Networks = networks };
     }
     public async Task<VirtualMachineAdvancedSettings> LoadAdvancedSettingsAsync(string id, CancellationToken cancellationToken = default)
     {
@@ -42,7 +48,7 @@ public sealed partial class DsmRepository
         var basic = baseline.Configuration;
         if (AdvancedText(data, "name") != basic.Name || AdvancedText(data, "desc", allowEmpty: true, allowMultiline: true) != basic.Description ||
             AdvancedNumber(data, "vcpu_num") != basic.CpuCount || InternalVirtualMachineMemoryMiB(data) != basic.MemoryMiB ||
-            AdvancedNumber(data, "cpu_weight") != basic.CpuWeight || AdvancedNumber(data, "autorun") != (int)basic.AutoStart)
+            AdvancedNumber(data, "cpu_weight") != basic.CpuWeight || AdvancedNumber(data, "autorun") != (int?)basic.AutoStart)
             throw InvalidVirtualMachineManagerResponse();
         var boot = AdvancedText(data, "boot_from") switch { "disk" => VirtualMachineBootDevice.Disk, "iso" => VirtualMachineBootDevice.Iso, _ => throw InvalidVirtualMachineManagerResponse() };
         var iso = AdvancedStringArray(data, "iso_images");

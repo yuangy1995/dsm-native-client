@@ -6,7 +6,8 @@
    <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" Visibility="Collapsed"/>
    <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
    <TextBlock x:Name="UnsupportedNotice" x:Uid="NasPowerScheduleUnavailable" Visibility="Collapsed" TextWrapping="Wrap"/>
-   <TextBlock x:Uid="NasPowerScheduleReadOnly" TextWrapping="Wrap"/>
+   <InfoBar x:Name="ResultNotice" IsOpen="False" IsClosable="False" Severity="Informational" AutomationProperties.LiveSetting="Polite"/>
+   <TextBlock x:Name="WriteUnavailable" x:Uid="NasPowerScheduleWriteUnavailable" TextWrapping="Wrap" Visibility="Collapsed"/>
    <TextBlock x:Name="TimeZoneText" TextWrapping="Wrap"/>
    <TextBlock x:Name="CountText" TextWrapping="Wrap"/>
    <TextBlock x:Name="IncompleteNotice" x:Uid="NasPowerScheduleIncomplete" Visibility="Collapsed" TextWrapping="Wrap"/>
@@ -16,7 +17,14 @@
     <ComboBoxItem x:Uid="NasPowerScheduleDisabled"/>
    </ComboBox>
    <TextBlock x:Name="EmptyNotice" TextWrapping="Wrap" Visibility="Collapsed"/>
-   <ListView x:Name="ScheduleList" x:Uid="NasPowerScheduleList" SelectionMode="None" IsItemClickEnabled="False" MaxHeight="340">
+   <StackPanel Orientation="Horizontal" Spacing="8">
+    <Button x:Name="AddEntryButton" x:Uid="NasPowerScheduleAdd" Click="AddEntry_Click"/>
+    <Button x:Name="EditEntryButton" x:Uid="NasPowerScheduleEdit" Click="EditEntry_Click"/>
+    <Button x:Name="RemoveEntryButton" x:Uid="NasPowerScheduleRemove" Click="RemoveEntry_Click"/>
+    <Button x:Name="ResetButton" x:Uid="NasPowerScheduleReset" Click="Reset_Click"/>
+   </StackPanel>
+   <ToggleSwitch x:Name="SelectedEnabled" x:Uid="NasPowerScheduleEntryEnabled" Toggled="SelectedEnabled_Changed" Visibility="Collapsed"/>
+   <ListView x:Name="ScheduleList" x:Uid="NasPowerScheduleList" SelectionMode="Single" SelectionChanged="Schedule_Changed" MaxHeight="260">
     <ListView.ItemTemplate><DataTemplate x:DataType="local:NasPowerScheduleRow">
      <StackPanel Padding="0,8" Spacing="4">
       <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
@@ -25,6 +33,24 @@
      </StackPanel>
     </DataTemplate></ListView.ItemTemplate>
    </ListView>
+   <StackPanel x:Name="EntryEditor" Spacing="10" Visibility="Collapsed">
+    <ComboBox x:Name="ActionChoice" x:Uid="NasPowerScheduleEditAction" SelectedIndex="0" HorizontalAlignment="Stretch">
+     <ComboBoxItem x:Uid="NasPowerScheduleEditStartup"/>
+     <ComboBoxItem x:Uid="NasPowerScheduleEditShutdown"/>
+    </ComboBox>
+    <TimePicker x:Name="EntryTime" x:Uid="NasPowerScheduleEditTime" ClockIdentifier="24HourClock"/>
+    <TextBlock x:Uid="NasPowerScheduleEditDays"/>
+    <StackPanel x:Name="DaysPanel" Orientation="Horizontal" Spacing="6"/>
+    <CheckBox x:Name="EntryEnabled" x:Uid="NasPowerScheduleEditEnabled" IsChecked="True"/>
+    <InfoBar x:Name="EntryError" IsOpen="False" IsClosable="False" Severity="Error"/>
+    <StackPanel Orientation="Horizontal" Spacing="8">
+     <Button x:Uid="NasPowerScheduleApplyEntry" Click="ApplyEntry_Click"/>
+     <Button x:Uid="NasPowerScheduleCancelEntry" Click="CancelEntry_Click"/>
+    </StackPanel>
+   </StackPanel>
+   <CheckBox x:Name="RiskChoice" x:Uid="NasPowerScheduleRisk" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Checked="Risk_Changed" Unchecked="Risk_Changed" Visibility="Collapsed">
+    <CheckBox.ContentTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></CheckBox.ContentTemplate>
+   </CheckBox>
   </StackPanel>
  </ScrollViewer>
 </UserControl>

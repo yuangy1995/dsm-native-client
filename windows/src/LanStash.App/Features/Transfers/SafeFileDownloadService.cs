@@ -43,7 +43,8 @@ internal sealed class SafeFileDownloadService
         long totalLength,
         ITransactionalDownloadDestination destination,
         IProgress<ForegroundTransferProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ForegroundTransferControl? control = null)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentException.ThrowIfNullOrWhiteSpace(remotePath);
@@ -67,10 +68,12 @@ internal sealed class SafeFileDownloadService
                     totalLength,
                     destination,
                     progress,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    control).ConfigureAwait(false);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            if (control is not null) await control.WaitAsync(cancellationToken).ConfigureAwait(false);
             await destination.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             committed = true;
         }
@@ -118,7 +121,8 @@ internal sealed class SafeFileDownloadService
         long totalLength,
         ITransactionalDownloadDestination destination,
         IProgress<ForegroundTransferProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ForegroundTransferControl? control)
     {
         var isSegmented = totalLength > ChunkSize;
         var offset = 0L;
@@ -127,6 +131,7 @@ internal sealed class SafeFileDownloadService
         while (offset < totalLength)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (control is not null) await control.WaitAsync(cancellationToken).ConfigureAwait(false);
             var length = Math.Min((long)ChunkSize, totalLength - offset);
             var result = await repository.ReadFileRangeResultAsync(
                 remotePath,

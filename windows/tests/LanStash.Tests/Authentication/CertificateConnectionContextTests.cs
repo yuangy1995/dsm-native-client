@@ -29,6 +29,17 @@ public sealed class CertificateConnectionContextTests
     }
 
     [Fact]
+    public async Task PackageUploadKeepsOriginalProfileCertificateContext()
+    {
+        var handler = new ContextCapturingHandler(); using var http = new HttpClient(handler); var client = new DsmApiClient(http);
+        var profile = new NasProfile(Guid.NewGuid(), "Synthetic", "nas.example.invalid", 5001, "synthetic-user");
+        using var source = new MemoryStream([1]);
+        await client.UploadPackageAsync(profile, new(profile.Id, "synthetic-session", null, null),
+            new("SYNO.Core.Package.Installation", "entry.cgi", 1, 2, "FORM"), source, 1);
+        Assert.Equal(profile.Id, handler.ProfileId); Assert.Equal(DsmConnectionSource.DirectAddress, handler.Source);
+    }
+
+    [Fact]
     public async Task FixedReadPublishesProfileAndDirectSourceToTrustHandler()
     {
         var handler = new ContextCapturingHandler();
@@ -61,7 +72,10 @@ public sealed class CertificateConnectionContextTests
             "windows/src/LanStash.Infrastructure/Features/Chat/DsmApiClient.ChatAttachmentUpload.cs",
             "windows/src/LanStash.Infrastructure/Features/Files/DsmApiClient.FileArchive.cs",
             "windows/src/LanStash.Infrastructure/Features/Files/Locations/DsmApiClient.FileLocationMutations.cs",
+            "windows/src/LanStash.Infrastructure/Features/Files/Settings/DsmApiClient.FileStationTheme.cs",
+            "windows/src/LanStash.Infrastructure/Features/NasAdmin/DsmApiClient.PackageUpload.cs",
             "windows/src/LanStash.Infrastructure/Features/Photos/Synology/DsmApiClient.PhotoMedia.cs",
+            "windows/src/LanStash.Infrastructure/Features/Photos/Synology/DsmApiClient.PhotoWrites.cs",
             "windows/src/LanStash.Infrastructure/Features/Photos/Synology/DsmApiClient.Photos.cs",
             "windows/src/LanStash.Infrastructure/Transport/DsmApiClient.ConsoleAssets.cs",
             "windows/src/LanStash.Infrastructure/Transport/DsmApiClient.ConsoleDocument.cs",
@@ -74,8 +88,8 @@ public sealed class CertificateConnectionContextTests
         var apiSources = actualApiSourcePaths.Select(Read).ToArray();
         var quickConnect = Read("windows/src/LanStash.Infrastructure/DsmQuickConnectResolver.cs");
 
-        Assert.Equal(31, apiSources.Sum(source => Count(source, "_http.SendAsync(")));
-        Assert.Equal(19, apiSources.Sum(source =>
+        Assert.Equal(35, apiSources.Sum(source => Count(source, "_http.SendAsync(")));
+        Assert.Equal(24, apiSources.Sum(source =>
             Count(source, "SetNasConnectionContext(request, profile);")));
         Assert.Equal(2, apiSources.Sum(source =>
             Count(source, "WindowsCertificateTrustHandler.SetConnectionContext(")));
@@ -86,7 +100,10 @@ public sealed class CertificateConnectionContextTests
                 source.Contains("WindowsCertificateTrustHandler.SetConnectionContext", StringComparison.Ordinal) ||
                 source == Read("windows/src/LanStash.Infrastructure/Features/Files/Locations/DsmApiClient.FileLocationMutations.cs") &&
                 source.Contains("AddMutationRequestHeaders(message, profile, session);", StringComparison.Ordinal) &&
-                source.IndexOf("AddMutationRequestHeaders(message, profile, session);", StringComparison.Ordinal) < source.IndexOf("_http.SendAsync(", StringComparison.Ordinal),
+                source.IndexOf("AddMutationRequestHeaders(message, profile, session);", StringComparison.Ordinal) < source.IndexOf("_http.SendAsync(", StringComparison.Ordinal) ||
+                source == Read("windows/src/LanStash.Infrastructure/Features/NasAdmin/DsmApiClient.PackageUpload.cs") &&
+                source.Contains("AddMutationRequestHeaders(request, profile, session);", StringComparison.Ordinal) &&
+                source.IndexOf("AddMutationRequestHeaders(request, profile, session);", StringComparison.Ordinal) < source.IndexOf("_http.SendAsync(", StringComparison.Ordinal),
                 "每个包含裸 NAS SendAsync 的 partial 源文件都必须显式设置证书连接上下文。"));
         Assert.DoesNotContain("SetConnectionContext", quickConnect, StringComparison.Ordinal);
         foreach (var credential in new[] { "_sid", "SynoToken", "Cookie", "passwd" })

@@ -28,7 +28,7 @@ public sealed class DownloadTaskBatchTests
     {
         var repo = new Repo(); repo.Outcomes.Enqueue(Result(MutationResultStatus.SubmittedButUnverified));
         using var model = new DownloadTaskBatchViewModel(repo); await model.LoadAsync(); await model.StartAsync(["1", "2"]);
-        model.StopRemaining(); Assert.True(model.RequiresReview); Assert.False(model.CanContinue);
+        await model.StopRemainingAsync(); Assert.True(model.RequiresReview); Assert.False(model.CanContinue);
         await model.ReviewAsync(); Assert.False(model.HasPending);
         Assert.Equal(new[] { DownloadBatchState.Confirmed, DownloadBatchState.Stopped }, model.Results.Select(row => row.State));
         Assert.All(repo.Calls, call => Assert.Equal("1", call.Id));
@@ -97,6 +97,40 @@ public sealed class DownloadTaskBatchTests
         }
         public Task<DownloadTaskDeleteOutcome> DeleteTaskAsync(DownloadTaskDeleteRequest request, CancellationToken cancellationToken = default)
         { Calls.Add((request.Task.Id, request.ForceComplete)); return System.Threading.Tasks.Task.FromResult(new DownloadTaskDeleteOutcome(Outcomes.TryDequeue(out var value) ? value : Result(MutationResultStatus.ConfirmedSuccess), request.Task.Id)); }
+        public bool CanFinishIncomplete => true;
+        private DownloadActionInfo? _action;
+        public async Task<DownloadActionInfo> StartDownloadActionAsync(DownloadTaskActionRequest request, CancellationToken cancellationToken = default)
+        {
+            _action = new(request.Id, ProfileId, request.Kind, DateTimeOffset.UtcNow,
+                request.Tasks.Select(task => new DownloadActionItem(task.Id, DownloadActionStage.NotStarted, null, task)).ToArray());
+            return await Run(false, cancellationToken);
+        }
+        public Task<DownloadActionInfo> ReviewDownloadActionAsync(Guid id, CancellationToken cancellationToken = default) => Run(true, cancellationToken);
+        public Task<DownloadActionInfo> ContinueDownloadActionAsync(Guid id, CancellationToken cancellationToken = default) => Run(false, cancellationToken);
+        public Task<DownloadActionInfo> CancelDownloadActionRemainderAsync(Guid id, CancellationToken cancellationToken = default)
+        {
+            _action = _action! with { Items = _action!.Items.Select(item => item.Stage == DownloadActionStage.NotStarted ? item with { Stage = DownloadActionStage.Cancelled } : item).ToArray() };
+            return System.Threading.Tasks.Task.FromResult(_action);
+        }
+        private async Task<DownloadActionInfo> Run(bool review, CancellationToken token)
+        {
+            var rows = _action!.Items.ToArray();
+            for (var index = 0; index < rows.Length; index++)
+            {
+                if (token.IsCancellationRequested) break;
+                var row = rows[index];
+                if (row.Stage != DownloadActionStage.Unknown && (review || row.Stage != DownloadActionStage.NotStarted)) continue;
+                MutationResult result;
+                if (_action.Kind is DownloadActionKind.Remove or DownloadActionKind.FinishIncomplete)
+                    result = (await DeleteTaskAsync(new(ProfileId, row.Task!) { ForceComplete = _action.Kind == DownloadActionKind.FinishIncomplete }, token)).Result;
+                else result = (await ControlTaskAsync(new(ProfileId, row.Task!, _action.Kind == DownloadActionKind.Pause ? DownloadTaskControlAction.Pause : DownloadTaskControlAction.Resume), token)).Result;
+                rows[index] = row with { TargetId = ForeignResult ? "foreign" : row.TargetId, Stage = result.Status switch
+                    { MutationResultStatus.ConfirmedSuccess => DownloadActionStage.Confirmed, MutationResultStatus.SubmittedButUnverified => DownloadActionStage.Unknown, _ => DownloadActionStage.Rejected },
+                    Task = Task(row.TargetId, _action.Kind == DownloadActionKind.Pause ? "paused" : "downloading") };
+                if (rows[index].Stage == DownloadActionStage.Unknown) break;
+            }
+            return _action = _action with { Items = rows };
+        }
         public Task<DownloadStationSnapshot> LoadSnapshotAsync(int offset, int limit, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

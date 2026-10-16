@@ -7,6 +7,23 @@ namespace LanStash.App.Views;
 public sealed partial class ChatPage
 {
     private ScrollViewer? _messageScroller;
+    private string? _scrollConversationId;
+    private double? _refreshScrollOffset;
+
+    private void CaptureMessageScroll()
+    {
+        _refreshScrollOffset = _messageScroller is { ScrollableHeight: > 4 } scroll &&
+            scroll.ScrollableHeight - scroll.VerticalOffset > 4 ? scroll.VerticalOffset : null;
+    }
+
+    private void RestoreMessageScroll()
+    {
+        if (_refreshScrollOffset is not { } offset || _messageScroller is not { } scroll) return;
+        _refreshScrollOffset = null;
+        // 同一会话的原位内容替换不改变用户正在阅读的位置。
+        if (MessageList.ItemsPanelRoot is ItemsStackPanel panel) panel.ItemsUpdatingScrollMode = ItemsUpdatingScrollMode.KeepItemsInView;
+        MessageList.UpdateLayout(); scroll.ChangeView(null, offset, null, disableAnimation: true);
+    }
 
     private void MessageList_Loaded(object sender, RoutedEventArgs e)
     {
@@ -28,6 +45,9 @@ public sealed partial class ChatPage
 
     private void FollowLatestMessages()
     {
+        var conversationId = _viewModel.SelectedConversation?.Id;
+        if (conversationId == _scrollConversationId) return;
+        _scrollConversationId = conversationId;
         if (MessageList.ItemsPanelRoot is ItemsStackPanel panel) panel.ItemsUpdatingScrollMode = ItemsUpdatingScrollMode.KeepLastItemInView;
     }
 

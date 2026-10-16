@@ -21,6 +21,7 @@ public sealed partial class FilesPage
         Recycle,
         Restore,
         Compress,
+        Share,
     }
 
     private readonly HashSet<string> _batchSelection = new(StringComparer.Ordinal);
@@ -45,7 +46,7 @@ public sealed partial class FilesPage
 
     private async void DownloadMultiple_Click(object sender, RoutedEventArgs e)
     {
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
         EnterDownloadSelectionMode();
     }
 
@@ -120,6 +121,8 @@ public sealed partial class FilesPage
         {
             var rejectsItem = _isSelectingDownloads
                 ? !FileDownloadSelection.IsValidItem(added.Item)
+                : _batchSelectionOperation == FileBatchSelectionOperation.Share
+                    ? !CanSelectForSharing(added.Item)
                 : _isSelectingArchiveCompression
                     ? !CanSelectForArchiveCompression(added.Item)
                 : _isSelectingRecycle
@@ -144,6 +147,8 @@ public sealed partial class FilesPage
             ShowBatchSelectionMessage(
                 _isSelectingDownloads
                     ? "FileSelectionDownloadInvalid"
+                    : _batchSelectionOperation == FileBatchSelectionOperation.Share
+                        ? "FileShareSelectionInvalid"
                     : _isSelectingArchiveCompression
                         ? "FileArchiveCompressionSelectionInvalid"
                     : _isSelectingRecycle
@@ -182,7 +187,9 @@ public sealed partial class FilesPage
         UpdateState();
         try
         {
-            var activityId = await _transfers.PickAndStartSelectedDownloadAsync(_profileId.ToString(), items, SourceIsCurrent);
+            var preserve = FileDownloadSelection.UsesArchive(items) ? await ChooseFolderDownloadModeAsync() : false;
+            if (preserve is null || !SourceIsCurrent()) return;
+            var activityId = await _transfers.PickAndStartSelectedDownloadAsync(_profileId.ToString(), items, SourceIsCurrent, preserve.Value);
             if (_disposed) return;
             if (activityId is null)
             {
@@ -204,6 +211,19 @@ public sealed partial class FilesPage
             _isChoosingDownloadTarget = false;
             if (!_disposed) UpdateState();
         }
+    }
+
+    private async Task<bool?> ChooseFolderDownloadModeAsync()
+    {
+        var text = LocalizationService.Current;
+        var choice = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, SelectedIndex = 0 };
+        choice.Items.Add(text.Get("FileStructureDownloadKeep"));
+        choice.Items.Add(text.Get("FileStructureDownloadZip"));
+        AutomationProperties.SetName(choice, text.Get("FileStructureDownloadTitle"));
+        var dialog = new ContentDialog { XamlRoot = XamlRoot, RequestedTheme = ActualTheme,
+            Title = text.Get("FileStructureDownloadTitle"), Content = choice,
+            PrimaryButtonText = text.Get("FileStructureDownloadSelectLocation"), CloseButtonText = text.Get("ActionCancel"), DefaultButton = ContentDialogButton.Primary };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary ? choice.SelectedIndex == 0 : null;
     }
 
     private void ShowDownloadBatchStarted(int count)
@@ -281,6 +301,9 @@ public sealed partial class FilesPage
             ? Visibility.Visible
             : Visibility.Collapsed;
         CreateArchiveSelectedButton.IsEnabled = _batchSelection.Count > 0;
+        ShareSelectedItemsButton.Visibility = _batchSelectionOperation == FileBatchSelectionOperation.Share
+            ? Visibility.Visible : Visibility.Collapsed;
+        ShareSelectedItemsButton.IsEnabled = _batchSelection.Count > 0 && _shareLinkDialog is null;
         CancelDownloadSelectionButton.Visibility = _isSelectingItems
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -332,6 +355,8 @@ public sealed partial class FilesPage
         ShowBatchSelectionMessage(
             _isSelectingDownloads
                 ? "FileSelectionDownloadCount"
+                : _batchSelectionOperation == FileBatchSelectionOperation.Share
+                    ? "FileShareBatchCount"
                 : _isSelectingArchiveCompression
                     ? "FileArchiveCompressionSelectionCount"
                 : _isSelectingRecycle

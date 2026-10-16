@@ -87,7 +87,7 @@ public sealed class AppSettingsPageSourceContractTests
         Assert.Contains("Navigation.SelectedItem = SettingsItem", method);
         Assert.Contains("ContentFrame.Content = CreateSettingsPage()", method);
         Assert.DoesNotContain("_workspace", method);
-        Assert.Contains("var settings = new AppSettingsPage();", shell);
+        Assert.Contains("var settings = new AppSettingsPage { PrepareLanguageChangeAsync = PrepareExitAsync };", shell);
         Assert.Contains("new CloudDriveSettingsPage(_app)", shell);
         Assert.Contains("ReferenceEquals(ContentFrame.Content, settings)", shell);
         Assert.Contains("cloud.BackRequested", shell);

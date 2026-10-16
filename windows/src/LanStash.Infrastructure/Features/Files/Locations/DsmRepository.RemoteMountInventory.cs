@@ -27,6 +27,24 @@ public sealed partial class DsmRepository
             bool? automatic = row.ContainsKey("auto_mount") ? RequiredNativeBool(row, "auto_mount") : null;
             items.Add(new(_profile.Id, path, source, protocol, automatic));
         }
-        return new(_profile.Id, enabled, items.AsReadOnly());
+        List<IsoMountConnection>? iso = null;
+        if (data.ContainsKey("isoList"))
+        {
+            if (data["isoList"] is not JsonArray isoRows) throw new InvalidDataException("iso.inventory.invalid");
+            iso = [];
+            foreach (var node in isoRows)
+            {
+                var row = RequiredObject(node, "iso.item");
+                var path = CanonicalDirectoryPath(LocationRequiredString(row, "mount_point"));
+                var source = CanonicalDirectoryPath(LocationRequiredString(row, "source"));
+                if (!seen.Add(path)) throw new InvalidDataException("iso.identity.invalid");
+                iso.Add(new(_profile.Id, source, path, RequiredNativeBool(row, "auto_mount")));
+            }
+        }
+        return new(_profile.Id, enabled, items.AsReadOnly())
+        {
+            IsoMountingEnabled = config.ContainsKey("enable_iso_mount") ? RequiredNativeBool(config, "enable_iso_mount") : null,
+            IsoItems = iso?.AsReadOnly(),
+        };
     }
 }

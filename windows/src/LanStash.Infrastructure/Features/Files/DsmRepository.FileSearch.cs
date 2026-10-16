@@ -27,16 +27,35 @@ public sealed partial class DsmRepository
         cancellationToken.ThrowIfCancellationRequested();
         if (_profile.Id != _session.ProfileId) throw new InvalidOperationException("file.search.profile-mismatch");
         if (!HasFileSearchContract) throw new NotSupportedException("file.search.unsupported");
-        if (string.IsNullOrWhiteSpace(request.Query)) return new([], 0, false);
+        request.Validate();
+        if (!request.HasConditions) return new([], 0, false);
+        var matcher = request.CreateNameRegex();
+        var folders = await ResolveSearchFoldersAsync(request.FolderPath, cancellationToken).ConfigureAwait(false);
+        if (folders.Count == 0) return new([], 0, false);
 
-        var folderPath = string.IsNullOrWhiteSpace(request.FolderPath) ? "/" : request.FolderPath;
         // 公开 v2 要求路径数组；只提交一次 start，不因网络错误自动重建搜索任务。
-        var start = await CallFileSearchAsync("start", new Dictionary<string, string>
+        var parameters = new Dictionary<string, string>
         {
-            ["folder_path"] = JsonSerializer.Serialize(new[] { folderPath }),
-            ["pattern"] = SearchString(request.Query),
+            ["folder_path"] = JsonSerializer.Serialize(folders),
+            ["pattern"] = SearchString(matcher is not null || string.IsNullOrWhiteSpace(request.Query) ? "*" : request.Query),
             ["recursive"] = request.Recursive ? "true" : "false",
-        }, cancellationToken).ConfigureAwait(false);
+            ["filetype"] = SearchString(request.Kind switch { FileListTypeFilter.Files => "file", FileListTypeFilter.Folders => "dir", _ => "all" }),
+        };
+        AddText("extension", request.Extension);
+        AddText("owner", request.Owner);
+        AddText("group", request.Group);
+        AddNumber("size_from", request.MinimumBytes);
+        AddNumber("size_to", request.MaximumBytes);
+        AddRange("mtime", request.Modified);
+        AddRange("crtime", request.Created);
+        AddRange("atime", request.Accessed);
+        if (request.SearchesContents)
+        {
+            // 内部只读扩展；不能将正文搜索失败降级为名称搜索后返回空结果。
+            parameters["search_content"] = "true";
+            parameters["search_type"] = SearchString("advance");
+        }
+        var start = await CallFileSearchAsync("start", parameters, cancellationToken).ConfigureAwait(false);
         var taskId = start.String("taskid");
         if (string.IsNullOrWhiteSpace(taskId))
             throw new DsmException(UserText.Key("WinShared17bab1054ab28010"), UserText.Key("WinSharedefc81ced18eb3bb0"));
@@ -44,6 +63,13 @@ public sealed partial class DsmRepository
         var completed = false;
         try
         {
+            var coverage = FileSearchIndexCoverage.NotRequested;
+            if (request.SearchesContents)
+            {
+                if (start["has_not_index_share"] is not JsonValue index || !index.TryGetValue<bool>(out var incomplete))
+                    throw new NotSupportedException("file.search.content-unavailable");
+                coverage = incomplete ? FileSearchIndexCoverage.Incomplete : FileSearchIndexCoverage.Complete;
+            }
             await PollSearchTaskAsync(taskId, cancellationToken).ConfigureAwait(false);
             var items = new List<FileItem>();
             var paths = new HashSet<string>(StringComparer.Ordinal);
@@ -75,22 +101,67 @@ public sealed partial class DsmRepository
                 if (offset == total) break;
                 if (files.Count == 0) throw new InvalidDataException("file.search.non-progress");
             }
+            // 正则仅在完整名称结果上执行，正文结果不能再按名称剔除。
+            var matches = matcher is null ? items : items.Where(item => matcher.IsMatch(item.Name)).ToList();
+            cancellationToken.ThrowIfCancellationRequested();
             completed = true;
-            return new(items, items.Count, false);
+            return new(matches, matches.Count, false) { IndexCoverage = coverage };
         }
         finally
         {
             try
             {
                 // 成功释放结果；失败/取消停止本次任务。独立清理不继承已取消的 UI 令牌。
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 await CallFileSearchAsync(completed ? "clean" : "stop",
                     new Dictionary<string, string> { ["taskid"] = SearchString(taskId) },
-                    CancellationToken.None).ConfigureAwait(false);
+                    cleanup.Token).ConfigureAwait(false);
             }
             catch (Exception)
             {
                 // 清理失败不覆盖用户已获得的结果、取消或原始错误，也不声称 NAS 已清理。
             }
+        }
+
+        void AddText(string key, string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value)) parameters[key] = SearchString(value);
+        }
+        void AddNumber(string key, long? value)
+        {
+            if (value.HasValue) parameters[key] = value.Value.ToString(CultureInfo.InvariantCulture);
+        }
+        void AddRange(string prefix, FileSearchTimeRange range)
+        {
+            AddNumber(prefix + "_from", range.From?.ToUnixTimeSeconds());
+            AddNumber(prefix + "_to", range.To?.ToUnixTimeSeconds());
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> ResolveSearchFoldersAsync(string folder, CancellationToken token)
+    {
+        if (!string.IsNullOrWhiteSpace(folder) && folder != "/")
+        {
+            if (!folder.StartsWith('/') || folder.Split('/').Any(part => part is "." or ".."))
+                throw new ArgumentException("file.search.invalid-folder");
+            return [folder];
+        }
+        // DSM 搜索不接受虚拟共享根，先完整读取当前账号实际可见的共享。
+        var folders = new List<string>();
+        var paths = new HashSet<string>(StringComparer.Ordinal);
+        int? total = null;
+        var offset = 0;
+        while (true)
+        {
+            var page = await ListFilesAsync(string.Empty, offset, FileSearchPageSize, token).ConfigureAwait(false);
+            if (page.Offset != offset || page.Total < offset + page.Items.Count ||
+                total is not null && total != page.Total || page.Items.Count == 0 && page.Total > offset ||
+                page.Items.Any(item => !item.IsDirectory || !paths.Add(item.Path)))
+                throw new InvalidDataException("file.search.invalid-shares");
+            total ??= page.Total;
+            folders.AddRange(page.Items.Select(item => item.Path));
+            offset = checked(offset + page.Items.Count);
+            if (offset == total) return folders;
         }
     }
 

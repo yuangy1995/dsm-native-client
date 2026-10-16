@@ -13,6 +13,8 @@ public sealed record RemoteMountConnection(Guid ProfileId, string MountPoint, st
 
 public sealed record RemoteMountInventory(Guid ProfileId, bool RemoteMountingEnabled, IReadOnlyList<RemoteMountConnection> Items)
 {
+    public bool? IsoMountingEnabled { get; init; }
+    public IReadOnlyList<IsoMountConnection>? IsoItems { get; init; }
     public override string ToString() => nameof(RemoteMountInventory);
 }
 

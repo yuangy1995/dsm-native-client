@@ -99,11 +99,13 @@ public sealed partial class DsmRepository
             state.TaskId is null ? ContainerImagePullStage.AwaitingReceipt : ContainerImagePullStage.NeedsReview,
             outcome: new(1, MutationResultStatus.CancellationRequestedAfterSubmission, ImagePullOperation, true, true, new(0, 0, 1)));
         if (state.TaskId is null) return SetImagePullResult(state, ContainerImagePullStage.AwaitingReceipt);
+        var hasReadTaskStatus = false;
         try
         {
             if (!CanReadImagePullStatus) return SetImagePullResult(state, ContainerImagePullStage.NeedsReview, error: MutationErrorCategory.Unsupported);
             var capability = _capabilities[InternalObservedImageApi] with { MinVersion = 1, MaxVersion = 1 };
             var data = await SecurityCallAsync(capability, "pull_status", new Dictionary<string, object> { ["task_id"] = state.TaskId }, token).ConfigureAwait(false);
+            hasReadTaskStatus = true;
             var repository = OptionalImageString(data, "repository"); var tag = OptionalImageString(data, "tag");
             if (repository is null || tag is null || NormalizeImageName($"{repository}:{tag}") != state.Address ||
                 data["finished"] is not JsonValue finishedValue || !finishedValue.TryGetValue<bool>(out var finished))
@@ -119,6 +121,14 @@ public sealed partial class DsmRepository
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         { return SetImagePullResult(state, ContainerImagePullStage.NeedsReview, outcome: new(1, MutationResultStatus.CancellationRequestedAfterSubmission, ImagePullOperation, true, true, new(0, 0, 1))); }
+        catch (DsmException error) when (!hasReadTaskStatus && error.Code == 1202 && DsmApiClient.IsExplicitApiRejection(error))
+        {
+            // 仅原任务查询的 Docker 失败是终态；后续映像清单同码仍只是读取失败。
+            return SetImagePullResult(state, ContainerImagePullStage.Rejected, outcome: new(1,
+                MutationResultStatus.ConfirmedFailure, ImagePullOperation, true, false, new(0, 1, 0), MutationErrorCategory.Server));
+        }
+        catch (CertificateTrustChallengeException)
+        { return SetImagePullResult(state, ContainerImagePullStage.NeedsReview, error: MutationErrorCategory.Authentication); }
         catch (DsmException error) { return SetImagePullResult(state, ContainerImagePullStage.NeedsReview, error: ServiceErrorCategory(error)); }
         catch (Exception) { return SetImagePullResult(state, ContainerImagePullStage.NeedsReview, error: MutationErrorCategory.Network); }
     }

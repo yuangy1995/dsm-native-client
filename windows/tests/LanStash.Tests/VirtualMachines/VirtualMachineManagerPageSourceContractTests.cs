@@ -33,7 +33,8 @@ public sealed class VirtualMachineManagerPageSourceContractTests
         var model = Read("windows/src/LanStash.App/Features/VirtualMachines/VirtualMachineCreationViewModel.cs");
         Assert.Contains("DefaultButton = ContentDialogButton.Close", page);
         Assert.Contains("content.CanSubmit", page); Assert.Contains("content.NeedsParentRefresh", page);
-        Assert.Contains("RiskAcknowledgement.IsChecked == true", content);
+        Assert.Contains("_model.Confirm(true)", content);
+        Assert.Contains("public async Task SubmitAsync()", content);
         Assert.Contains("CreateMachineAsync", model); Assert.Contains("ReviewCreationAsync", model); Assert.Contains("ContinueCreationAsync", model);
         Assert.Contains("CloseCreationDialog()", Read("windows/src/LanStash.App/Views/VirtualMachineManagerPage.xaml.cs"));
         Assert.DoesNotContain("CreateVirtualMachineCoreAsync", page + content + model);
@@ -211,7 +212,8 @@ public sealed class VirtualMachineManagerPageSourceContractTests
         Assert.Contains("VmBatchOffHint", page);
         Assert.Contains("dialog.Closing += (_, _) => model.Dispose()", page);
         Assert.Contains("model.Confirm(confirm.IsChecked == true)", page);
-        Assert.Contains("fresh != item.Baseline", model);
+        Assert.Contains("!SameTarget(fresh, item.Baseline)", model);
+        Assert.Contains("VirtualMachineImageDeletionRules.SameSnapshot", model);
         Assert.Contains("await _repository.ControlPowerAsync(new(request.ProfileId", model);
         Assert.DoesNotContain("Task.WhenAll", model);
         var review = model[model.IndexOf("public async Task ReviewAsync()", StringComparison.Ordinal)..model.IndexOf("public void Cancel()", StringComparison.Ordinal)];

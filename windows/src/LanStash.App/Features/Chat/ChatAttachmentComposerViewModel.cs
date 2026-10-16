@@ -26,6 +26,8 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
     private ChatConversationItem? _conversation;
     private CancellationTokenSource? _request;
     private ChatAttachmentDraft? _draft;
+    private ChatAttachmentSendRequest? _pendingRequest;
+    private readonly Dictionary<(Guid Profile, string? Account, string Conversation), SavedDraft> _drafts = [];
     private ChatAttachmentComposerState _state = ChatAttachmentComposerState.Unavailable;
     private long? _completedBytes;
     private long _generation;
@@ -69,12 +71,14 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
 
     public bool IsAvailable => CanUseCurrentConversation;
     public bool IsSending => State == ChatAttachmentComposerState.Sending;
+    internal bool HasDrafts => Draft is not null || _drafts.Values.Any(item => item.Draft is not null);
     public bool CanSelect => IsAvailable && !IsSending && !HasReview;
     public bool CanRemove => Draft is not null && !IsSending;
     public bool CanSend => Draft is not null &&
         CanSelect &&
         (CurrentReview is not { } review || !_blocker.Contains(review));
     public bool HasReview => State == ChatAttachmentComposerState.NeedsReview;
+    public bool CanRefreshSend => IsAvailable && !IsSending && HasReview && _pendingRequest is not null && Draft is not null;
     public bool HasStatus => State is ChatAttachmentComposerState.Sending or
         ChatAttachmentComposerState.Sent or
         ChatAttachmentComposerState.NeedsReview or
@@ -91,12 +95,15 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
         if (changed)
         {
             CancelRequest(markReview: IsSending);
+            SaveDraft();
             _repository = repository;
             _conversation = conversation;
-            Draft = null;
+            var saved = conversation is null ? null : _drafts.GetValueOrDefault((repository.ProfileId, repository.AccountIdentity, conversation.Id));
+            Draft = saved?.Draft;
+            _pendingRequest = saved?.Request;
             CompletedBytes = null;
             State = CanUseCurrentConversation
-                ? ChatAttachmentComposerState.Ready
+                ? saved?.State ?? ChatAttachmentComposerState.Ready
                 : ChatAttachmentComposerState.Unavailable;
         }
         else if (!CanUseCurrentConversation)
@@ -122,6 +129,7 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
         }
 
         Draft = draft;
+        _pendingRequest = null;
         CompletedBytes = null;
         var target = CurrentReview;
         State = target is not null && _blocker.Contains(target)
@@ -137,6 +145,7 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
             return;
         }
         Draft = null;
+        _pendingRequest = null;
         CompletedBytes = null;
         State = CanUseCurrentConversation
             ? ChatAttachmentComposerState.Ready
@@ -154,7 +163,7 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
         var review = new ChatAttachmentSendReviewTarget(
             _repository.ProfileId,
             _conversation.Id,
-            draft.Fingerprint);
+            draft.Fingerprint, _repository.AccountIdentity);
         if (_blocker.Contains(review))
         {
             State = ChatAttachmentComposerState.NeedsReview;
@@ -165,6 +174,7 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
         State = ChatAttachmentComposerState.Sending;
         CompletedBytes = 0;
         var normalizedCaption = string.IsNullOrWhiteSpace(caption) ? null : caption.Trim();
+        _pendingRequest = new(_conversation.Id, normalizedCaption, draft.ToSource(), Guid.NewGuid());
         var progress = new Progress<long>(value =>
         {
             if (IsCurrent(generation))
@@ -175,11 +185,7 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
         try
         {
             var outcome = await _repository.SendAttachmentAsync(
-                new ChatAttachmentSendRequest(
-                    _conversation.Id,
-                    normalizedCaption,
-                    draft.ToSource(),
-                    Guid.NewGuid()),
+                _pendingRequest,
                 progress,
                 cancellation.Token);
             if (!IsCurrent(generation))
@@ -204,6 +210,21 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
         }
     }
 
+    public async Task<bool> RefreshSendAsync()
+    {
+        ThrowIfDisposed();
+        if (!CanRefreshSend || _repository is null || Draft is not { } draft || _pendingRequest is not { } request || CurrentReview is not { } review) return false;
+        var generation = BeginRequest(out var cancellation);
+        State = ChatAttachmentComposerState.Sending;
+        try
+        {
+            var outcome = await _repository.SendAttachmentAsync(request, cancellationToken: cancellation.Token);
+            return IsCurrent(generation) && Apply(outcome, review, draft, request.Text);
+        }
+        catch when (IsCurrent(generation)) { MarkReview(review); return false; }
+        finally { EndRequest(cancellation); }
+    }
+
     public void Cancel()
     {
         if (IsSending)
@@ -219,8 +240,10 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
             return;
         }
         CancelRequest(markReview: IsSending);
+        SaveDraft();
         _repository = null;
         _conversation = null;
+        _pendingRequest = null;
         Draft = null;
         CompletedBytes = null;
         State = ChatAttachmentComposerState.Unavailable;
@@ -243,6 +266,7 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
             message.Attachments[0].SizeBytes == draft.Length)
         {
             _blocker.Clear(review);
+            _pendingRequest = null;
             Draft = null;
             CompletedBytes = null;
             State = ChatAttachmentComposerState.Sent;
@@ -274,6 +298,7 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
                 State = ChatAttachmentComposerState.Failure;
                 break;
         }
+        if (!HasReview) _pendingRequest = null;
         return false;
     }
 
@@ -288,7 +313,16 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
             : new ChatAttachmentSendReviewTarget(
                 _repository.ProfileId,
                 _conversation.Id,
-                Draft.Fingerprint);
+                Draft.Fingerprint, _repository.AccountIdentity);
+
+    private void SaveDraft()
+    {
+        if (_repository is null || _conversation is null) return;
+        var key = (_repository.ProfileId, _repository.AccountIdentity, _conversation.Id);
+        if (Draft is null) _drafts.Remove(key);
+        else _drafts[key] = new(Draft, _pendingRequest, State);
+    }
+    private sealed record SavedDraft(ChatAttachmentDraft Draft, ChatAttachmentSendRequest? Request, ChatAttachmentComposerState State);
 
     private void MarkReview(ChatAttachmentSendReviewTarget target)
     {
@@ -342,6 +376,7 @@ public sealed class ChatAttachmentComposerViewModel : ObservableObject, IDisposa
         RaisePropertyChanged(nameof(CanSend));
         RaisePropertyChanged(nameof(HasReview));
         RaisePropertyChanged(nameof(HasStatus));
+        RaisePropertyChanged(nameof(CanRefreshSend));
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);

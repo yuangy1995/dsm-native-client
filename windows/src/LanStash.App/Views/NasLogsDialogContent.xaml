@@ -1,0 +1,35 @@
+<UserControl x:Class="LanStash.App.Views.NasLogsDialogContent"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer MaxHeight="560">
+    <StackPanel MinWidth="340" MaxWidth="620" Spacing="12">
+      <Grid ColumnSpacing="12">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <ComboBox x:Name="FilterChoice" x:Uid="NasLogsFilter" HorizontalAlignment="Stretch" SelectionChanged="Filter_Changed"/>
+        <ComboBox x:Name="PageSizeChoice" Grid.Column="1" x:Uid="NasLogsPageSize" SelectionChanged="PageSize_Changed"/>
+      </Grid>
+      <TextBox x:Name="SearchBox" x:Uid="NasLogsSearch" TextChanged="Search_Changed"/>
+      <ProgressRing x:Name="LoadingIndicator" IsActive="False" Width="32" Height="32" Visibility="Collapsed"/>
+      <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Warning" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock x:Name="EmptyText" TextWrapping="Wrap"/>
+      <ListView x:Name="EntriesList" x:Uid="NasLogsEntries" MaxHeight="320" SelectionMode="None" HorizontalContentAlignment="Stretch">
+        <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
+        <ListView.ItemTemplate><DataTemplate>
+          <StackPanel Spacing="5" Padding="4,10">
+            <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <TextBlock Text="{Binding Level}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+              <TextBlock Grid.Column="1" Text="{Binding Time}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+            </Grid>
+            <TextBlock Text="{Binding Source}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding Account}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+          </StackPanel>
+        </DataTemplate></ListView.ItemTemplate>
+      </ListView>
+      <TextBlock x:Name="PageText" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+      <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Button x:Name="PreviousButton" x:Uid="NasLogsPrevious" Click="Previous_Click" MinHeight="44" HorizontalAlignment="Stretch"/>
+        <Button x:Name="NextButton" Grid.Column="1" x:Uid="NasLogsNext" Click="Next_Click" MinHeight="44" HorizontalAlignment="Stretch"/>
+      </Grid>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

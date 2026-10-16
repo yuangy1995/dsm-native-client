@@ -1,3 +1,4 @@
+using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Files.Locations;
 using LanStash.App.Localization;
 using LanStash.Domain;
@@ -40,15 +41,16 @@ public sealed partial class FilesPage
             return;
         }
 
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
         var destinationFolder = _viewModel.CurrentPath;
+        var extractionDestination = destinationFolder;
         if (!ArchiveExtractionSourceIsCurrent(repository, destinationFolder, source))
         {
             return;
         }
 
         var localization = LocalizationService.Current;
-        var panel = new StackPanel { Spacing = 12, MaxWidth = 460 };
+        var panel = new StackPanel { Spacing = 12, MinWidth = 400, MaxWidth = 480 };
         var notice = new InfoBar { IsOpen = false, IsClosable = false, Severity = InfoBarSeverity.Error };
         var passwordBox = new PasswordBox { Header = localization.Get("ArchivePasswordLabel") };
         var encodingBox = new ComboBox { Header = localization.Get("ArchiveEncodingLabel"), HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -70,6 +72,13 @@ public sealed partial class FilesPage
             TextWrapping = TextWrapping.WrapWholeWords,
             Opacity = 0.8,
         });
+        var destinationLabel = new TextBlock { Text = extractionDestination, TextWrapping = TextWrapping.WrapWholeWords };
+        AutomationProperties.SetName(destinationLabel, localization.Get("ArchiveDestinationLabel"));
+        var chooseDestination = new Button { Name = "ChooseArchiveDestination", Content = localization.Get("ArchiveChooseDestination"),
+            IsEnabled = _copyMoveFolderSource?.ProfileId == _profileId };
+        var destinationBrowser = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed };
+        panel.Children.Add(new TextBlock { Text = localization.Get("ArchiveDestinationLabel") });
+        panel.Children.Add(destinationLabel); panel.Children.Add(chooseDestination); panel.Children.Add(destinationBrowser);
         panel.Children.Add(passwordBox);
         panel.Children.Add(encodingBox);
         var keepFolders = new CheckBox { Name = "KeepArchiveFolders", Content = localization.Get("ArchiveKeepFolders"), IsChecked = true };
@@ -79,6 +88,21 @@ public sealed partial class FilesPage
             Content = new TextBlock { Text = localization.Get("ArchiveOverwriteConfirm"), TextWrapping = TextWrapping.WrapWholeWords },
             Visibility = Visibility.Collapsed };
         panel.Children.Add(keepFolders); panel.Children.Add(createFolder); panel.Children.Add(overwrite); panel.Children.Add(overwriteConfirmation);
+
+        var chooseItems = new CheckBox { Name = "ChooseArchiveItems", Content = localization.Get("ArchiveChooseItems") };
+        var loadItems = new Button { Name = "LoadArchiveItems", Content = localization.Get("ArchiveLoadItems"), Visibility = Visibility.Collapsed };
+        var itemsProgress = new ProgressRing { Width = 24, Height = 24, IsActive = false, Visibility = Visibility.Collapsed };
+        var itemsList = new ListView { Name = "ArchiveItemsList", SelectionMode = ListViewSelectionMode.Multiple,
+            Height = 200, Visibility = Visibility.Collapsed };
+        AutomationProperties.SetName(itemsList, localization.Get("ArchiveItemsLabel"));
+        var selectionStatus = new TextBlock { TextWrapping = TextWrapping.WrapWholeWords, Visibility = Visibility.Collapsed };
+        panel.Children.Add(chooseItems); panel.Children.Add(loadItems); panel.Children.Add(itemsProgress);
+        panel.Children.Add(itemsList); panel.Children.Add(selectionStatus);
+        var isLoadingItems = false;
+        string? previewCodepage = null;
+        CancellationTokenSource? previewCancellation = null;
+        CancellationTokenSource? destinationCancellation = null;
+        var isChoosingDestination = false;
 
         var form = new ScrollViewer { Content = panel, MaxHeight = 480 };
         var dialog = new ContentDialog
@@ -98,7 +122,9 @@ public sealed partial class FilesPage
             overwriteConfirmation.Visibility = overwrite.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
             dialog.DefaultButton = overwrite.IsChecked == true ? ContentDialogButton.Close : ContentDialogButton.Primary;
             if (!_isArchiveExtractionSubmitting && ReferenceEquals(dialog.Content, form))
-                dialog.IsPrimaryButtonEnabled = overwrite.IsChecked != true || overwriteConfirmation.IsChecked == true;
+                dialog.IsPrimaryButtonEnabled = !isLoadingItems && !isChoosingDestination &&
+                    (overwrite.IsChecked != true || overwriteConfirmation.IsChecked == true) &&
+                    (chooseItems.IsChecked != true || itemsList.SelectedItems.Count > 0);
         }
         void ResetConfirmation() { overwriteConfirmation.IsChecked = false; UpdateConfirmation(); }
         keepFolders.Checked += (_, _) => ResetConfirmation(); keepFolders.Unchecked += (_, _) => ResetConfirmation();
@@ -106,16 +132,138 @@ public sealed partial class FilesPage
         overwrite.Checked += (_, _) => ResetConfirmation(); overwrite.Unchecked += (_, _) => ResetConfirmation();
         overwriteConfirmation.Checked += (_, _) => UpdateConfirmation(); overwriteConfirmation.Unchecked += (_, _) => UpdateConfirmation();
         passwordBox.PasswordChanged += (_, _) => ResetConfirmation(); encodingBox.SelectionChanged += (_, _) => ResetConfirmation();
+        async Task BrowseDestinationAsync(string path, bool canWrite)
+        {
+            if (_copyMoveFolderSource is not { } folders || folders.ProfileId != _profileId) return;
+            destinationCancellation?.Cancel();
+            var cancellation = new CancellationTokenSource(); destinationCancellation = cancellation;
+            isChoosingDestination = true; UpdateConfirmation();
+            destinationBrowser.Visibility = Visibility.Visible; destinationBrowser.Children.Clear();
+            destinationBrowser.Children.Add(new ProgressRing { IsActive = true, Width = 24, Height = 24 });
+            try
+            {
+                var children = await folders.LoadFoldersAsync(path, cancellation.Token);
+                if (cancellation.IsCancellationRequested || !CanPresentArchiveExtraction(dialog, generation)) return;
+                destinationBrowser.Children.Clear();
+                destinationBrowser.Children.Add(new TextBlock { Text = path.Length == 0 ? localization.Get("FileLocationsSharesLabel.Text") : path,
+                    TextWrapping = TextWrapping.WrapWholeWords });
+                var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                var up = new Button { Content = new SymbolIcon(Symbol.Up), IsEnabled = path.Length > 0 };
+                AutomationProperties.SetName(up, localization.Get("FileBrowserUp.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"));
+                up.Click += async (_, _) => await BrowseDestinationAsync(path.LastIndexOf('/') > 0 ? path[..path.LastIndexOf('/')] : string.Empty, false);
+                var use = new Button { Name = "UseArchiveDestination", Content = localization.Get("ArchiveUseDestination"),
+                    IsEnabled = canWrite && path.Length > 0 && !folders.IsReadOnlyPath(path) };
+                use.Click += (_, _) =>
+                {
+                    extractionDestination = path; destinationLabel.Text = path;
+                    isChoosingDestination = false; destinationBrowser.Visibility = Visibility.Collapsed; ResetConfirmation();
+                };
+                var cancel = new Button { Content = localization.Get("ActionCancel") };
+                cancel.Click += (_, _) => { isChoosingDestination = false; destinationBrowser.Visibility = Visibility.Collapsed; UpdateConfirmation(); };
+                actions.Children.Add(up); actions.Children.Add(use); actions.Children.Add(cancel); destinationBrowser.Children.Add(actions);
+                var list = new ListView { Name = "ArchiveDestinationFolders", Height = 160, SelectionMode = ListViewSelectionMode.Single };
+                AutomationProperties.SetName(list, localization.Get("ArchiveDestinationLabel"));
+                foreach (var folder in children) list.Items.Add(new ListViewItem { Content = folder.Name, Tag = folder });
+                list.SelectionChanged += async (_, _) =>
+                {
+                    if (list.SelectedItem is ListViewItem { Tag: FileCopyMoveFolder folder })
+                        await BrowseDestinationAsync(folder.Path, folder.CanWrite);
+                };
+                destinationBrowser.Children.Add(list);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception)
+            {
+                if (CanPresentArchiveExtraction(dialog, generation))
+                { destinationBrowser.Children.Clear(); destinationBrowser.Visibility = Visibility.Collapsed; notice.Message = localization.Get("ArchiveDestinationFailed"); notice.IsOpen = true; isChoosingDestination = false; UpdateConfirmation(); }
+            }
+            finally
+            {
+                if (ReferenceEquals(destinationCancellation, cancellation)) destinationCancellation = null;
+                cancellation.Dispose();
+            }
+        }
+        chooseDestination.Click += async (_, _) => await BrowseDestinationAsync(string.Empty, false);
+        void InvalidatePreview()
+        {
+            previewCodepage = null;
+            previewCancellation?.Cancel();
+            itemsList.Items.Clear();
+            itemsList.Visibility = Visibility.Collapsed;
+            selectionStatus.Visibility = Visibility.Collapsed;
+            ResetConfirmation();
+        }
+        passwordBox.PasswordChanged += (_, _) => InvalidatePreview();
+        encodingBox.SelectionChanged += (_, _) => InvalidatePreview();
+        chooseItems.Checked += (_, _) => { loadItems.Visibility = Visibility.Visible; ResetConfirmation(); };
+        chooseItems.Unchecked += (_, _) =>
+        {
+            InvalidatePreview(); loadItems.Visibility = Visibility.Collapsed;
+        };
+        itemsList.SelectionChanged += (_, _) =>
+        {
+            selectionStatus.Text = localization.Format("ArchiveSelectedCount", itemsList.SelectedItems.Count);
+            ResetConfirmation();
+        };
+        loadItems.Click += async (_, _) =>
+        {
+            if (isLoadingItems || _isArchiveExtractionSubmitting ||
+                !ArchiveExtractionSourceIsCurrent(repository, destinationFolder, source)) return;
+            var cancellation = new CancellationTokenSource();
+            previewCancellation = cancellation;
+            _archiveExtractionCancellation = cancellation;
+            isLoadingItems = true; loadItems.IsEnabled = false;
+            itemsProgress.IsActive = true; itemsProgress.Visibility = Visibility.Visible;
+            itemsList.Items.Clear(); notice.IsOpen = false;
+            UpdateConfirmation();
+            try
+            {
+                var encoding = (string)((ComboBoxItem)encodingBox.SelectedItem).Tag;
+                var preview = await repository.PreviewAsync(new FileArchiveExtractionRequest(_profileId,
+                    new FileArchiveExtractionSource(source), destinationFolder)
+                    { Options = new(string.IsNullOrEmpty(passwordBox.Password) ? null : passwordBox.Password,
+                        encoding.Length == 0 ? null : encoding) }, cancellation.Token);
+                if (!CanPresentArchiveExtraction(dialog, generation) || cancellation.IsCancellationRequested ||
+                    !ArchiveExtractionSourceIsCurrent(repository, destinationFolder, source)) return;
+                if (preview.Items.Any(item => item.Id is null)) throw new NotSupportedException();
+                previewCodepage = preview.Codepage;
+                foreach (var item in preview.Items)
+                    itemsList.Items.Add(new ListViewItem { Content = item.RelativePath, Tag = item });
+                itemsList.Visibility = Visibility.Visible;
+                selectionStatus.Text = localization.Get(preview.Items.Count == 0 ? "ArchiveContentsEmpty" : "ArchiveSelectItemsHint");
+                selectionStatus.Visibility = Visibility.Visible;
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception error)
+            {
+                if (CanPresentArchiveExtraction(dialog, generation))
+                {
+                    notice.Message = localization.Get(error is DsmException { Code: 1403 }
+                        ? "ArchivePasswordIncorrect" : "ArchivePreviewFailed");
+                    notice.IsOpen = true;
+                }
+            }
+            finally
+            {
+                if (ReferenceEquals(_archiveExtractionCancellation, cancellation)) _archiveExtractionCancellation = null;
+                if (ReferenceEquals(previewCancellation, cancellation)) previewCancellation = null;
+                cancellation.Dispose(); isLoadingItems = false; loadItems.IsEnabled = true;
+                itemsProgress.IsActive = false; itemsProgress.Visibility = Visibility.Collapsed;
+                UpdateConfirmation();
+            }
+        };
         FileArchiveExtractionOutcome? outcome = null;
         CancellationTokenSource? operationCancellation = null;
 
         dialog.PrimaryButtonClick += async (_, args) =>
         {
             args.Cancel = true;
-            if (_isArchiveExtractionSubmitting)
+            if (_isArchiveExtractionSubmitting || isLoadingItems || isChoosingDestination)
             {
                 return;
             }
+            if (chooseItems.IsChecked == true && itemsList.SelectedItems.Count == 0)
+            { notice.Message = localization.Get("ArchiveSelectItemsHint"); notice.IsOpen = true; return; }
             if (overwrite.IsChecked == true && overwriteConfirmation.IsChecked != true)
             { notice.Message = localization.Get("ArchiveOverwriteConfirm"); notice.IsOpen = true; return; }
             if (!ArchiveExtractionSourceIsCurrent(repository, destinationFolder, source))
@@ -132,11 +280,13 @@ public sealed partial class FilesPage
             notice.IsOpen = false;
             var codepage = (string)((ComboBoxItem)encodingBox.SelectedItem).Tag;
             var options = new FileArchiveExtractionOptions(string.IsNullOrEmpty(passwordBox.Password) ? null : passwordBox.Password,
-                codepage.Length == 0 ? null : codepage)
-            { KeepDirectoryStructure = keepFolders.IsChecked == true, CreateSubfolder = createFolder.IsChecked == true, Overwrite = overwrite.IsChecked == true };
+                chooseItems.IsChecked == true ? previewCodepage : codepage.Length == 0 ? null : codepage)
+            { KeepDirectoryStructure = keepFolders.IsChecked == true, CreateSubfolder = createFolder.IsChecked == true, Overwrite = overwrite.IsChecked == true,
+                SelectedItems = chooseItems.IsChecked == true
+                    ? itemsList.SelectedItems.Cast<ListViewItem>().Select(item => (FileArchiveExtractionListedItem)item.Tag).ToArray() : null };
             var confirmedOverwrite = overwriteConfirmation.IsChecked == true;
-            passwordBox.Password = string.Empty;
             _isArchiveExtractionSubmitting = true;
+            passwordBox.Password = string.Empty;
             operationCancellation = new CancellationTokenSource();
             _archiveExtractionCancellation = operationCancellation;
             dialog.PrimaryButtonText = string.Empty;
@@ -163,7 +313,7 @@ public sealed partial class FilesPage
                     new FileArchiveExtractionRequest(
                         _profileId,
                         new FileArchiveExtractionSource(source),
-                        destinationFolder) { Options = options, OverwriteConfirmed = confirmedOverwrite },
+                        extractionDestination) { Options = options, OverwriteConfirmed = confirmedOverwrite },
                     operationCancellation.Token);
                 if (CanPresentArchiveExtraction(dialog, generation))
                 {
@@ -234,6 +384,8 @@ public sealed partial class FilesPage
         {
             passwordBox.Password = string.Empty;
             operationCancellation?.Cancel();
+            previewCancellation?.Cancel();
+            destinationCancellation?.Cancel();
             if (_archiveExtractionGeneration == generation &&
                 ReferenceEquals(_archiveExtractionDialog, dialog))
             {

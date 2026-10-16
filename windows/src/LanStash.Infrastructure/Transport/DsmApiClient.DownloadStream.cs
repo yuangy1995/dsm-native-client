@@ -20,6 +20,7 @@ public sealed partial class DsmApiClient
         ArgumentException.ThrowIfNullOrWhiteSpace(method);
         ArgumentException.ThrowIfNullOrWhiteSpace(acceptedMediaTypePrefix);
         ArgumentOutOfRangeException.ThrowIfLessThan(maximumBytes, 1);
+        if (profile.Id != session.ProfileId || string.IsNullOrEmpty(session.Sid)) throw new ArgumentException("binary.session_mismatch");
         if (parameters?.Keys.Any(IsAuthenticationParameter) == true)
         {
             throw new ArgumentException(

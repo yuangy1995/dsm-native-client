@@ -1,7 +1,7 @@
-<UserControl x:Class="LanStash.App.Views.DownloadSettingsDialogContent" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:files="using:LanStash.App.Features.Files.CopyMove">
+<UserControl x:Class="LanStash.App.Views.DownloadSettingsDialogContent" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:files="using:LanStash.App.Features.Files.CopyMove" MinWidth="340">
   <UserControl.Resources><Style x:Key="DownloadSettingsActionButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="MinHeight" Value="44"/></Style></UserControl.Resources>
   <ScrollViewer MaxHeight="620" VerticalScrollBarVisibility="Auto">
-    <StackPanel Spacing="12" MinWidth="280" MaxWidth="560">
+    <StackPanel Spacing="12" MaxWidth="560">
       <ProgressRing x:Name="LoadingRing" Width="32" Height="32"/>
       <InfoBar x:Name="Feedback" IsClosable="False"/>
       <TextBlock x:Name="BasicResult" TextWrapping="Wrap" Visibility="Collapsed"/>
@@ -9,6 +9,7 @@
       <StackPanel x:Name="ErrorPanel" Spacing="8" Visibility="Collapsed"><TextBlock x:Name="ErrorText" TextWrapping="Wrap"/></StackPanel>
       <Button x:Name="RefreshButton" Click="Refresh_Click" MinHeight="44"/>
       <StackPanel x:Name="Editor" Spacing="10">
+        <TextBlock x:Name="PermissionHint" TextWrapping="Wrap" Visibility="Collapsed"/>
         <TextBox x:Name="DestinationBox" MinHeight="44" TextChanged="Text_Changed"/>
         <Button x:Name="BrowseButton" Click="Browse_Click" MinHeight="44"/>
         <StackPanel x:Name="FolderBrowser" Spacing="8" Visibility="Collapsed">

@@ -8,15 +8,21 @@ public sealed partial class DsmRepository(
     NasProfile profile,
     DsmSession session,
     IDsmApiClient api,
-    IReadOnlyDictionary<string, ApiCapability> capabilities) : IDsmRepository, ISynologyPhotosProvider, IFileMutationRepository, IFileCopyMoveRepository, IFileRecycleRepository, IFileArchiveCompressionRepository, IFileArchiveExtractionRepository, IFilePreviewRepository, IFileShareLinkRepository, IFileLocationsRepository, IFileBackgroundTaskRepository, IDirectorySizeRepository, IPhotoRepository, IChatRepository, IDownloadStationRepository, IVirtualMachineManagerRepository, IContainerManagerRepository, INasDetailsRepository, INasSettingsRepository, IFileSearchRepository
+    IReadOnlyDictionary<string, ApiCapability> capabilities,
+    IProtectedTaskStore? crossNasStore = null, IProtectedTaskStore? photoUploadStore = null,
+    IProtectedTaskStore? photoManagementStore = null, IProtectedTaskStore? officeEditingStore = null,
+    IProtectedTaskStore? downloadActionsStore = null, IProtectedTaskStore? nasManagementStore = null,
+    bool virtualMachineInternalWritesEnabled = false) : IDsmRepository, ISynologyPhotosProvider, IFileMutationRepository, IFileCopyMoveRepository, IFileRecycleRepository, IFileArchiveCompressionRepository, IFileArchiveExtractionRepository, IFilePreviewRepository, IFileShareLinkRepository, IFileLocationsRepository, IFileBackgroundTaskRepository, IDirectorySizeRepository, IPhotoRepository, IChatRepository, IDownloadStationRepository, IVirtualMachineManagerRepository, IContainerManagerRepository, INasDetailsRepository, INasSettingsRepository, IFileSearchRepository, IFilePermissionRepository, IFileVfsCloudRepository, IFileVfsBrowserRepository, IFileStationThemeRepository, IOfficeEditingRepository
 {
     private readonly NasProfile _profile = profile;
     private readonly DsmSession _session = session;
     private readonly IDsmApiClient _api = api;
     private readonly IReadOnlyDictionary<string, ApiCapability> _capabilities = capabilities;
+    // 仅保护本轮新增的内部写入口，真实 NAS 验收后由组合根明确开放。
+    private readonly bool _virtualMachineInternalWritesEnabled = virtualMachineInternalWritesEnabled;
 
     private readonly Lazy<ISynologyPhotosRepository> _synologyPhotos = new(() =>
-        new SynologyPhotosRepository(profile, session, api, capabilities, deletionEnabled: true));
+        new SynologyPhotosRepository(profile, session, api, capabilities, deletionEnabled: true, uploadStore: photoUploadStore, managementStore: photoManagementStore));
 
     public ISynologyPhotosRepository SynologyPhotos => _synologyPhotos.Value;
 
@@ -35,7 +41,7 @@ public sealed partial class DsmRepository(
         .. (HasInternalObservedContainerContract
             ? new[] { AppModule.Containers }
             : Array.Empty<AppModule>()),
-        .. (HasReadablePublicVirtualMachineManagerContract
+        .. (HasReadableVirtualMachineManagerContract
             ? new[] { AppModule.VirtualMachines }
             : Array.Empty<AppModule>()),
         .. (Supports("SYNO.Core.System")

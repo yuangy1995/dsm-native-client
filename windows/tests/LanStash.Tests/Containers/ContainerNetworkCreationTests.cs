@@ -72,13 +72,14 @@ public sealed class ContainerNetworkCreationTests
         var changed = request with { RequestId = Guid.NewGuid(), Configuration = request.Configuration with { DisableMasquerade = true } };
         Assert.Equal(MutationErrorCategory.Conflict, (await recreated.CreateContainerNetworkCoreAsync(changed)).ErrorCategory);
         f.AddNetwork("created-late", "synthetic");
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await recreated.ReviewNetworkCreationAsync("synthetic"))!.Status); Assert.Single(f.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await recreated.ReviewNetworkCreationAsync("synthetic"))!.Status); Assert.Single(f.Writes);
+        Assert.Single(await recreated.GetNetworkCreationRecoveriesAsync());
     }
     [Fact]
-    public async Task LostReplyWithCorrectReadbackIsConfirmedWithoutASecondWrite()
+    public async Task LostReplyWithMatchingNetworkRemainsUnknownWithoutASecondWrite()
     {
         using var f = new Fixture { LoseReply = true };
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Repository.CreateContainerNetworkCoreAsync(f.Request())).Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Repository.CreateContainerNetworkCoreAsync(f.Request())).Status);
         Assert.Single(f.Writes);
     }
     [Fact]
@@ -135,7 +136,7 @@ public sealed class ContainerNetworkCreationTests
         release.SetResult(); Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await first).Status); Assert.Single(f.Writes);
         using var cancelled = new Fixture(); using var cts = new CancellationTokenSource(); cancelled.AfterCreate = cts.Cancel;
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, (await cancelled.Repository.CreateContainerNetworkCoreAsync(cancelled.Request(), cts.Token)).Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await cancelled.Recreate().ReviewNetworkCreationAsync("synthetic"))!.Status); Assert.Single(cancelled.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await cancelled.Recreate().ReviewNetworkCreationAsync("synthetic"))!.Status); Assert.Single(cancelled.Writes);
     }
     [Fact]
     public async Task PublicNetworkCreationStillRequiresConfirmation()
@@ -145,6 +146,7 @@ public sealed class ContainerNetworkCreationTests
         Assert.False((await f.Repository.CreateContainerNetworkCoreAsync(f.Request() with { RiskConfirmed = false })).Submitted);
         Assert.False((await f.Repository.CreateContainerNetworkCoreAsync(f.Request() with { ProfileId = Guid.NewGuid() })).Submitted); Assert.Empty(f.Writes);
         Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Repository.CreateNetworkAsync(f.Request())).Status); Assert.Single(f.Writes);
+        Assert.All(f.Calls, call => Assert.Equal("SYNO.Docker.Network", call["api"]));
     }
     internal sealed class Fixture : IDisposable
     {
@@ -166,7 +168,7 @@ public sealed class ContainerNetworkCreationTests
         public Fixture(string format = "FORM")
         {
             _http = new(new Handler(this)); _api = new(_http); _session = new(Profile.Id, "synthetic-sid", "synthetic-token", null);
-            _capabilities = new[] { "SYNO.Docker.Network", "SYNO.Core.Desktop.Initdata" }.ToDictionary(name => name, name => new ApiCapability(name, "entry.cgi", 1, 9, format));
+            _capabilities = new[] { "SYNO.Docker.Network" }.ToDictionary(name => name, name => new ApiCapability(name, "entry.cgi", 1, 9, format));
             Repository = new(Profile, _session, _api, _capabilities);
         }
         public DsmRepository Recreate() => new(Profile, _session, _api, _capabilities);

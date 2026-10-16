@@ -1,4 +1,12 @@
 <Page xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="LanStash.App.Views.TransferActivityPage" Background="{ThemeResource WorkspaceSurfaceBrush}">
+  <Page.Resources>
+    <DataTemplate x:Key="TransferItemResultTemplate">
+      <StackPanel Spacing="4" Padding="4,6">
+        <TextBlock Text="{Binding Name}" TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+      </StackPanel>
+    </DataTemplate>
+  </Page.Resources>
   <Page.KeyboardAccelerators>
     <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked"/>
   </Page.KeyboardAccelerators>
@@ -55,8 +63,13 @@
               <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding DirectionText}" TextWrapping="Wrap"/>
               <ProgressBar x:Uid="TransferActivityProgressBar" Height="4" IsIndeterminate="{Binding IsIndeterminate}" Maximum="{Binding Maximum}" Value="{Binding Value}" Visibility="{Binding ProgressVisibility}"/>
               <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding StatusText}" TextWrapping="Wrap"/>
+              <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding SpeedText}" Visibility="{Binding SpeedVisibility}" TextWrapping="Wrap"/>
             </StackPanel>
-            <Button x:Uid="TransferActivityCancel" Grid.Column="1" MinHeight="44" AutomationProperties.Name="{Binding CancelAutomationName}" Click="Cancel_Click" Tag="{Binding Activity}" Visibility="{Binding CancelVisibility}"/>
+            <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
+              <Button x:Uid="FileTaskDetails" MinHeight="44" Click="Details_Click" Tag="{Binding Activity}"/>
+              <Button Content="{Binding PauseText}" MinHeight="44" AutomationProperties.Name="{Binding PauseAutomationName}" Click="Pause_Click" Tag="{Binding Activity}" Visibility="{Binding PauseVisibility}"/>
+              <Button x:Uid="TransferActivityCancel" MinHeight="44" AutomationProperties.Name="{Binding CancelAutomationName}" Click="Cancel_Click" Tag="{Binding Activity}" Visibility="{Binding CancelVisibility}"/>
+            </StackPanel>
           </Grid>
         </DataTemplate>
       </ListView.ItemTemplate>

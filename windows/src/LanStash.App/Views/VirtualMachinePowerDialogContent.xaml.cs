@@ -13,14 +13,20 @@ public sealed partial class VirtualMachinePowerDialogContent : UserControl, IDis
     private readonly VirtualMachinePowerAction _action;
     private bool _disposed, _synchronizing;
     public event Action? StateChanged;
-    public bool CanSubmit => !_disposed && _model.CanSubmit && RiskAcknowledgement.IsChecked == true;
+    public bool CanSubmit => !_disposed && (_action == VirtualMachinePowerAction.PowerOff
+        ? _model.CanSubmit && RiskAcknowledgement.IsChecked == true : _model.CanConfirm);
     public bool IsBusy => _model.IsBusy;
     public bool NeedsParentRefresh => _model.NeedsParentRefresh;
     public VirtualMachinePowerDialogContent(IVirtualMachineManagerRepository repository, VirtualMachineSummary target, VirtualMachinePowerAction action)
     { _repository = repository; _target = target; _action = action; InitializeComponent(); _model.PropertyChanged += (_, _) => Refresh(); }
     public Task ActivateAsync() => _model.ActivateAsync(_repository, _target, _action);
     public Task ReloadAsync() => _model.ReloadAsync();
-    public Task SubmitAsync() => CanSubmit ? _model.SubmitAsync() : Task.CompletedTask;
+    public Task SubmitAsync()
+    {
+        if (!CanSubmit) return Task.CompletedTask;
+        if (_action != VirtualMachinePowerAction.PowerOff) _model.Confirm(true);
+        return _model.SubmitAsync();
+    }
     private void Refresh()
     {
         if (_disposed) return; _synchronizing = true;
@@ -31,6 +37,7 @@ public sealed partial class VirtualMachinePowerDialogContent : UserControl, IDis
         FeedbackNotice.IsOpen = _model.Feedback is not null; FeedbackNotice.Message = _model.Feedback ?? "";
         FeedbackNotice.Severity = _model.LastResult?.Status == MutationResultStatus.ConfirmedSuccess ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
         RiskAcknowledgement.IsEnabled = _model.CanConfirm;
+        RiskAcknowledgement.Visibility = _action == VirtualMachinePowerAction.PowerOff ? Visibility.Visible : Visibility.Collapsed;
         if (!_model.CanSubmit) RiskAcknowledgement.IsChecked = false;
         _synchronizing = false; StateChanged?.Invoke();
     }

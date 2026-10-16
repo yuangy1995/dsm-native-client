@@ -6,7 +6,14 @@ public sealed record ContainerNetworkDeleteRequest(Guid ProfileId, IReadOnlyList
 }
 public sealed record ContainerNetworkDeletionRecovery(string Id, string Name)
 {
+    public Guid RequestId { get; init; }
     public override string ToString() => nameof(ContainerNetworkDeletionRecovery);
+}
+public enum ContainerNetworkDeletionStage { NotSubmitted, Submitted, Accepted, Rejected, Deleted }
+public sealed record ContainerNetworkDeletionItem(Guid RequestId, string Id, string Name, ContainerNetworkDeletionStage Stage,
+    MutationErrorCategory? Error = null)
+{
+    public override string ToString() => nameof(ContainerNetworkDeletionItem);
 }
 public static class ContainerNetworkDeletionRules
 {

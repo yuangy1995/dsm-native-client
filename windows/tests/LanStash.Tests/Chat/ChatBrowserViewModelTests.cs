@@ -688,26 +688,30 @@ public sealed class ChatBrowserViewModelTests
     }
 
     [Fact]
-    public async Task SuccessfulVisibleReadClearsUnreadButLaterActivityWaitsForTheNextMessageRead()
+    public async Task OnlyConfirmedServerReadClearsUnreadAndLaterActivityRemainsUnread()
     {
         var repository = Available(Guid.NewGuid());
         var conversation = Conversation("a", "Alpha") with { LastActivityAt = DateTimeOffset.UnixEpoch.AddMinutes(2), UnreadCount = 4 };
         repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation]);
-        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation]);
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation with { UnreadCount = 0, LastViewedAt = conversation.LastActivityAt }]);
         repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation with { LastActivityAt = DateTimeOffset.UnixEpoch.AddMinutes(3), UnreadCount = 5 }]);
         repository.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2)], "50", true));
         repository.MessageResults.Enqueue(Page("a", [Message("m3", "a", 3)], "50", true));
         using var model = new ChatBrowserViewModel();
-        model.SetMessagePaneVisible(true);
         await model.ActivateAsync(repository);
         Assert.Equal(4, model.Conversations.Single().UnreadCount);
         await model.SelectConversationAsync(model.Conversations.Single());
+        Assert.Equal(4, model.Conversations.Single().UnreadCount);
+        model.ApplyConfirmedRead(conversation with { UnreadCount = 0, LastViewedAt = conversation.LastActivityAt });
         Assert.Equal(0, model.Conversations.Single().UnreadCount);
         await model.RefreshConversationsAsync();
         Assert.Equal(0, model.Conversations.Single().UnreadCount);
         await model.RefreshConversationsAsync();
         Assert.Equal(5, model.Conversations.Single().UnreadCount);
         await model.RefreshMessagesAsync();
+        Assert.Equal(5, model.Conversations.Single().UnreadCount);
+        var latest = model.Conversations.Single().Conversation;
+        model.ApplyConfirmedRead(latest with { UnreadCount = 0, LastViewedAt = latest.LastActivityAt });
         Assert.Equal(0, model.Conversations.Single().UnreadCount);
     }
 
@@ -721,14 +725,12 @@ public sealed class ChatBrowserViewModelTests
             { LastActivityAt = DateTimeOffset.UnixEpoch.AddMinutes(2), UnreadCount = 4 }]);
         repository.MessageResults.Enqueue(failure ? new IOException("synthetic") : Page("a", [Message("m2", "a", 2)], null, false));
         using var model = new ChatBrowserViewModel();
-        model.SetMessagePaneVisible(failure);
         await model.ActivateAsync(repository);
         await model.SelectConversationAsync(model.Conversations.Single());
         Assert.Equal(4, model.Conversations.Single().UnreadCount);
         if (!failure)
         {
-            model.SetMessagePaneVisible(true);
-            Assert.Equal(0, model.Conversations.Single().UnreadCount);
+            Assert.Equal(4, model.Conversations.Single().UnreadCount);
         }
     }
 
@@ -741,7 +743,6 @@ public sealed class ChatBrowserViewModelTests
         var delayed = new TaskCompletionSource<ChatMessagePage>(TaskCreationOptions.RunContinuationsAsynchronously);
         repository.MessageTasks.Enqueue(delayed.Task);
         using var model = new ChatBrowserViewModel();
-        model.SetMessagePaneVisible(true);
         await model.ActivateAsync(repository);
         var loading = model.SelectConversationAsync(model.Conversations.Single());
         model.CancelForegroundRefreshes();
@@ -761,12 +762,10 @@ public sealed class ChatBrowserViewModelTests
         repository.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2)], "50", true));
         repository.MessageResults.Enqueue(Page("a", [Message("m1", "a", 1)], null, false, 50));
         using var model = new ChatBrowserViewModel();
-        model.SetMessagePaneVisible(true);
         await model.ActivateAsync(repository);
         await model.SelectConversationAsync(model.Conversations.Single());
         await model.RefreshConversationsAsync();
         await model.LoadEarlierAsync();
-        model.SetMessagePaneVisible(true);
         Assert.Equal(5, model.Conversations.Single().UnreadCount);
     }
 
@@ -782,7 +781,6 @@ public sealed class ChatBrowserViewModelTests
         second.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation]);
         first.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2)], null, false));
         using var model = new ChatBrowserViewModel();
-        model.SetMessagePaneVisible(true);
         await model.ActivateAsync(first);
         await model.SelectConversationAsync(model.Conversations.Single());
         await model.ActivateAsync(second);
@@ -803,7 +801,6 @@ public sealed class ChatBrowserViewModelTests
             { LastActivityAt = null, UnreadCount = 4 }]);
         repository.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2)], null, false));
         using var model = new ChatBrowserViewModel();
-        model.SetMessagePaneVisible(true);
         await model.ActivateAsync(repository);
         await model.SelectConversationAsync(model.Conversations.Single());
         Assert.Equal(4, model.Conversations.Single().UnreadCount);

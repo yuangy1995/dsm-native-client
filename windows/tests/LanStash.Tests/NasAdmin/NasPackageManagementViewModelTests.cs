@@ -76,12 +76,12 @@ public sealed class NasPackageManagementViewModelTests
     }
 
     [Fact]
-    public async Task UnknownActionBlocksOnlyItsTargetAndReloadOnlyReviews()
+    public async Task UnknownActionBlocksPackageCenterAndReloadOnlyReviews()
     {
         var (fake, model) = await Ready(); using var owned = model; fake.Items.Add(Package("other")); await model.ReloadAsync();
         fake.Result = Unknown(); model.ChooseAction(NasPackageAction.Start); Assert.True(model.ConfirmAction(true)); await model.ExecuteAsync();
         Assert.Single(model.Pending); Assert.False(model.CanChoose(NasPackageAction.Start)); Assert.False(model.WasSuccessful);
-        model.SelectPackage("other"); Assert.True(model.CanChoose(NasPackageAction.Start));
+        model.SelectPackage("other"); Assert.False(model.CanChoose(NasPackageAction.Start));
         await model.ReloadAsync(); Assert.Equal(1, fake.Writes); Assert.Single(model.Pending); Assert.Single(fake.Reviews);
         fake.ReviewResult = Success(); await model.ReloadAsync(); Assert.Empty(model.Pending); Assert.True(model.WasSuccessful); Assert.Equal(1, fake.Writes);
     }
@@ -166,6 +166,9 @@ public sealed class NasPackageManagementViewModelTests
                 case "get_ProfileId": return ProfileId;
                 case "get_WriteAvailability": return Flags;
                 case "get_PackageControlAvailability": return Availability;
+                case "get_PackageCenterAvailability": return new NasPackageCenterAvailability(false, false, false, false, false);
+                case "LoadPackageActivitiesAsync": return Task.FromResult<IReadOnlyList<NasPackageActivity>>([]);
+                case "GetPackageInstallationAsync": return Task.FromResult<NasPackageInstallProgress?>(null);
                 case "PrepareServiceSettingsAsync": return Task.FromResult(Flags);
                 case "GetPackageRecoveriesAsync": return Task.FromResult<IReadOnlyList<NasPackageRecoveryInfo>>(Recoveries.ToArray());
                 case "LoadPackagesAsync": Reads++; return ReadTask ?? Task.FromResult<IReadOnlyList<NasPackageSummary>>(Items.ToArray());

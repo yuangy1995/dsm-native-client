@@ -45,14 +45,14 @@ internal sealed class CloudDriveRelocationCoordinator(DesktopDriveMapping mappin
         return await ExecuteAsync(operation, token).ConfigureAwait(false);
     }
 
-    internal async Task<CloudDriveRelocationOperation> ReviewAsync(Guid id, bool confirmedIdentity, CancellationToken token = default)
+    internal async Task<CloudDriveRelocationOperation> ReviewAsync(Guid id, CancellationToken token = default)
     {
         using var lease = await store.AcquireWritebackAsync(mapping, token).ConfigureAwait(false);
         var operation = await FindAsync(id, token).ConfigureAwait(false);
         RequireContext(operation.Source, operation.Destination);
-        if (operation.Phase != CloudDriveRelocationPhase.Submitted || !confirmedIdentity) return operation;
-        // 路径消失/出现本身不能证明归属；用户核对后也只完成读取，不自动发出下一步写入。
-        return await VerifyStepAsync(operation, token).ConfigureAwait(false);
+        if (operation.Phase != CloudDriveRelocationPhase.Submitted) return operation;
+        // v10 未保存接受回执；刷新只读取现状，不凭路径变化认领旧操作或开放下一步。
+        return await VerifyStepAsync(operation, token, accepted: false).ConfigureAwait(false);
     }
 
     internal async Task AbandonAsync(CloudDriveRelocationOperation expected, bool confirmed, CancellationToken token = default)
@@ -103,20 +103,21 @@ internal sealed class CloudDriveRelocationCoordinator(DesktopDriveMapping mappin
                 return rejected;
             }
             if (result.Status != MutationResultStatus.ConfirmedSuccess) return operation;
-            try { operation = await VerifyStepAsync(operation, token).ConfigureAwait(false); }
+            try { operation = await VerifyStepAsync(operation, token, accepted: true).ConfigureAwait(false); }
             catch { return operation; }
             if (operation.Phase != CloudDriveRelocationPhase.ReadyForNextStep) return operation;
         }
         return operation;
     }
 
-    private async Task<CloudDriveRelocationOperation> VerifyStepAsync(CloudDriveRelocationOperation operation, CancellationToken token)
+    private async Task<CloudDriveRelocationOperation> VerifyStepAsync(CloudDriveRelocationOperation operation, CancellationToken token, bool accepted)
     {
         var step = operation.Steps[operation.Step];
         await RequireSafeAncestorsAsync(Parent(step.Destination), token).ConfigureAwait(false);
         if (await repository.ReadFileMetadataAsync(step.Source, token).ConfigureAwait(false) is not null) return operation;
         var target = await repository.ReadFileMetadataAsync(step.Destination, token).ConfigureAwait(false);
         if (target is null || !Safe(target) || target.Item.Path != step.Destination || !Matches(target.Item, operation)) return operation;
+        if (!accepted) return operation;
         var next = operation with { Step = operation.Step + 1,
             Phase = operation.Step + 1 == operation.Steps.Count ? CloudDriveRelocationPhase.ServerVerified : CloudDriveRelocationPhase.ReadyForNextStep };
         await store.UpdateRelocationOperationAsync(mapping, operation, next, token).ConfigureAwait(false);

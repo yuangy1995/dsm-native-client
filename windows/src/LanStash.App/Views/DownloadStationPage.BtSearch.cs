@@ -55,24 +55,15 @@ public sealed partial class DownloadStationPage
             }
             ObserveBtSearchTask(_viewModel.SearchBtAsync());
         };
-        dialog.SecondaryButtonClick += async (_, args) =>
+        string? selectedUri = null;
+        dialog.SecondaryButtonClick += (_, args) =>
         {
             if (!_viewModel.CanCreateSelectedBtSearchResult)
             {
                 args.Cancel = true;
                 return;
             }
-            var deferral = args.GetDeferral();
-            try
-            {
-                dialog.IsPrimaryButtonEnabled = false;
-                dialog.IsSecondaryButtonEnabled = false;
-                await _viewModel.CreateSelectedBtSearchResultAsync();
-            }
-            finally
-            {
-                deferral.Complete();
-            }
+            selectedUri = _viewModel.TakeSelectedBtSearchUri();
         };
         dialog.Opened += (_, _) => content.FocusKeyword();
 
@@ -88,6 +79,7 @@ public sealed partial class DownloadStationPage
             dialog.Content = null;
             UpdateState();
         }
+        if (!_disposed && selectedUri is not null) await ShowCreateTaskDialogAsync(selectedUri);
     }
 
     private void UpdateBtSearchUi()

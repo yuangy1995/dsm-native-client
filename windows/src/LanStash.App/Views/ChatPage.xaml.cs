@@ -8,8 +8,11 @@ using Microsoft.UI.Xaml.Input;
 
 namespace LanStash.App.Views;
 
-public sealed partial class ChatPage : Page, IDisposable
+public sealed partial class ChatPage : Page, IDisposable, IAsyncDisposable
 {
+    internal bool HasUnsentDrafts => _composer.HasDrafts || _attachmentComposer.HasDrafts || _interactions?.ReplyComposer.HasDrafts == true;
+    internal bool HasSendingMessages => _composer.IsSending || _attachmentComposer.IsSending || _interactions?.IsSubmitting == true ||
+        _voiceModels.Values.Any(item => item.Composer.IsSending);
     private const double CompactWidth = 720;
 
     private readonly IChatRepository _repository;
@@ -18,8 +21,8 @@ public sealed partial class ChatPage : Page, IDisposable
     private readonly ChatAttachmentComposerViewModel _attachmentComposer;
     private readonly ChatConversationCreatorViewModel _conversationCreator;
     private readonly ChatForegroundRefresher _foregroundRefresher;
-    private readonly SemaphoreSlim _foregroundLifecycleGate = new(1, 1);
-    private bool _initialized;
+    private readonly ChatWorkspaceSession _workspaceSession;
+    private readonly bool _ownsWorkspaceSession;
     private bool _isLoaded;
     private bool _isWindowVisible = true;
     private bool _compactShowsConversationList;
@@ -33,10 +36,14 @@ public sealed partial class ChatPage : Page, IDisposable
     }
 
     internal ChatPage(IChatRepository repository, ChatBrowserViewModel viewModel)
+        : this(repository, new ChatWorkspaceSession(repository, viewModel), true) { }
+
+    internal ChatPage(IChatRepository repository, ChatWorkspaceSession session, bool ownsSession = false)
     {
         ArgumentNullException.ThrowIfNull(repository);
-        ArgumentNullException.ThrowIfNull(viewModel);
+        var viewModel = session.Browser;
         InitializeComponent();
+        _workspaceSession = session; _ownsWorkspaceSession = ownsSession;
         _repository = repository;
         _viewModel = viewModel;
         _composer = new(ChatTextSendReviewBlocker.Current);
@@ -44,42 +51,34 @@ public sealed partial class ChatPage : Page, IDisposable
         _conversationCreator = new(repository);
         ConfigureCreateConversationAction();
         ConfigureEmojiAction();
-        _foregroundRefresher = new(
-            viewModel.RefreshConversationsAsync,
-            () => _isLoaded && _isWindowVisible && MessagePane.Visibility == Visibility.Visible &&
-                viewModel.SelectedConversation is { IsEncrypted: false },
-            viewModel.RefreshMessagesAsync,
-            viewModel.CancelForegroundRefreshes,
-            observeRealtime: repository.ObserveRealtimeAsync);
+        _foregroundRefresher = session.Refresher;
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
+        viewModel.MessagesRefreshing += CaptureMessageScroll;
+        viewModel.MessagesRefreshed += RestoreMessageScroll;
         _composer.PropertyChanged += ViewModel_PropertyChanged;
         _attachmentComposer.PropertyChanged += ViewModel_PropertyChanged;
         Loaded += ChatPage_Loaded;
         Unloaded += ChatPage_Unloaded;
+        InitializeReadVisibility();
+        UpdateNotificationPreference();
         UpdateState();
     }
 
     private async void ChatPage_Loaded(object sender, RoutedEventArgs e)
     {
+        RefreshLocalization();
         _isLoaded = true;
         UpdateMessageReadVisibility();
-        if (!_initialized)
-        {
-            _initialized = true;
-            await RunAsync(() => _viewModel.ActivateAsync(_repository));
-            await UpdateForegroundRefreshLifecycleAsync(refreshImmediately: false);
-        }
-        else
-        {
-            await UpdateForegroundRefreshLifecycleAsync();
-        }
+        await RunAsync(_workspaceSession.StartAsync);
+        await UpdateForegroundRefreshLifecycleAsync();
     }
 
     private async void ChatPage_Unloaded(object sender, RoutedEventArgs e)
     {
         _isLoaded = false;
         UpdateMessageReadVisibility();
+        StopChatMedia(); await StopVoiceCaptureAsync();
         await UpdateForegroundRefreshLifecycleAsync();
     }
 
@@ -87,28 +86,15 @@ public sealed partial class ChatPage : Page, IDisposable
     {
         _isWindowVisible = isVisible;
         UpdateMessageReadVisibility();
+        if (!isVisible) StopChatMedia();
+        await UpdateVoiceActivityAsync();
         await UpdateForegroundRefreshLifecycleAsync();
     }
 
     private async Task UpdateForegroundRefreshLifecycleAsync(bool refreshImmediately = true)
     {
-        Task transition;
-        await _foregroundLifecycleGate.WaitAsync();
-        try
-        {
-            if (_disposed)
-            {
-                return;
-            }
-            transition = _isLoaded && _isWindowVisible
-                ? _foregroundRefresher.StartAsync(refreshImmediately)
-                : _foregroundRefresher.StopAsync();
-        }
-        finally
-        {
-            _foregroundLifecycleGate.Release();
-        }
-        await transition;
+        if (_disposed) return;
+        if (_isLoaded && _isWindowVisible && refreshImmediately) await _foregroundRefresher.RefreshAsync();
         UpdateState();
     }
 
@@ -133,7 +119,7 @@ public sealed partial class ChatPage : Page, IDisposable
         {
             _compactShowsConversationList = false;
             // 先切换选中项，再由实际布局确认可见性，不能把旧会话误标为已读。
-            _viewModel.SetMessagePaneVisible(false);
+            _workspaceSession.SetView(false, null, []);
             await RunAsync(() => _viewModel.SelectConversationAsync(conversation));
         }
     }
@@ -307,6 +293,7 @@ public sealed partial class ChatPage : Page, IDisposable
         RefreshButton.IsEnabled = !_viewModel.IsLoadingConversations &&
             !_viewModel.IsUnavailable && !_viewModel.RequiresValidation;
         AdvancedToolsButton.Visibility = Visible(HasAdvancedTools && _viewModel.SelectedConversation is not null);
+        MessageSearchButton.Visibility = Visible(_repository.Availability.SupportedFeatures.Contains(ChatReadFeature.MessageSearch));
         var canCreateConversation =
             _conversationCreator.CanCreateDirect || _conversationCreator.CanCreatePrivateGroup;
         CreateConversationButton.Visibility = Visible(canCreateConversation);
@@ -371,8 +358,7 @@ public sealed partial class ChatPage : Page, IDisposable
         UpdateMessageReadVisibility();
     }
 
-    private void UpdateMessageReadVisibility() => _viewModel.SetMessagePaneVisible(
-        _isLoaded && _isWindowVisible && MessagePane.Visibility == Visibility.Visible);
+    private void UpdateMessageReadVisibility() => UpdateVisibleMessages();
 
     private void ShowConversationList()
     {
@@ -417,8 +403,12 @@ public sealed partial class ChatPage : Page, IDisposable
         DetachMessageScrolling();
         Loaded -= ChatPage_Loaded;
         Unloaded -= ChatPage_Unloaded;
-        _foregroundRefresher.Dispose();
+        _readTimer?.Stop();
+        _workspaceSession.SetView(false, null, []);
+        if (_ownsWorkspaceSession) _workspaceSession.Dispose();
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        _viewModel.MessagesRefreshing -= CaptureMessageScroll;
+        _viewModel.MessagesRefreshed -= RestoreMessageScroll;
         _composer.PropertyChanged -= ViewModel_PropertyChanged;
         _attachmentComposer.PropertyChanged -= ViewModel_PropertyChanged;
         DisposeMembersDialog();
@@ -427,9 +417,13 @@ public sealed partial class ChatPage : Page, IDisposable
         DisposeAdvancedTools();
         DisposeEmojiFlyout();
         CancelAttachmentRead();
+        StopChatMedia(); _voiceDisposal = DisposeVoiceAsync();
         _attachmentComposer.Dispose();
         _conversationCreator.Dispose();
+        DisposeMessageInteractions();
         _composer.Dispose();
-        _viewModel.Dispose();
     }
+
+    private Task _voiceDisposal = Task.CompletedTask;
+    public async ValueTask DisposeAsync() { Dispose(); await _voiceDisposal; await _chatMediaTask; }
 }

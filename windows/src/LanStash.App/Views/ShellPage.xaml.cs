@@ -1,5 +1,6 @@
 using LanStash.App.Views.Photos;
 using LanStash.App.Localization;
+using LanStash.App.Features.Chat;
 using LanStash.App.Features.Settings;
 using LanStash.App.Features.Files.Sharing;
 using LanStash.App.Features.Files;
@@ -26,6 +27,7 @@ public sealed partial class ShellPage : Page
     private readonly WorkspacePage _workspace;
     private readonly ForegroundTransferCoordinator _transfers;
     private readonly WindowsTransferPickerService? _transferPicker;
+    private readonly bool _transfersOwnedByWorkspace;
     private FilesPage? _files;
     private Guid? _filesProfileId;
     private SynologyPhotosPage? _photos;
@@ -45,6 +47,8 @@ public sealed partial class ShellPage : Page
     private INasDetailsRepository? _nasDetailsRepository;
     private TransferActivityPage? _activity;
     private bool _isWindowVisible = true;
+    private bool _isWindowActive;
+    private long _navigationGeneration;
     private readonly Dictionary<Guid, CrossNasTargetRepositoryLease> _crossNasTargetLeases = [];
 
     public ShellPage(AppViewModel app)
@@ -61,19 +65,7 @@ public sealed partial class ShellPage : Page
             (_, _) => UpdateNavigationLayout());
         _app = app;
         _workspace = new WorkspacePage(app);
-        _transfers = new ForegroundTransferCoordinator(transferNotifications);
-        if (app.ActiveProfile is { } activeProfile && app.Repository is { } repository)
-        {
-            var profileId = activeProfile.Id.ToString();
-            _transfers.ActivateProfile(profileId);
-            _transferPicker = new WindowsTransferPickerService(
-                repository,
-                _transfers,
-                new WindowsTransferSavePicker(
-                    () => (Application.Current as App)?.MainWindow),
-                new WindowsTransferOpenPicker(
-                    () => (Application.Current as App)?.MainWindow));
-        }
+        (_transfers, _transferPicker, _transfersOwnedByWorkspace) = app.GetWorkspaceTransfers(transferNotifications);
         Loaded += ShellPage_Loaded;
         Unloaded += ShellPage_Unloaded;
         var localization = LocalizationService.Current;
@@ -99,7 +91,7 @@ public sealed partial class ShellPage : Page
     private async void ShellPage_Loaded(object sender, RoutedEventArgs e)
     {
         UpdateNavigationLayout();
-        if (ContentFrame.Content is not null) return;
+        if (ContentFrame.Content is not null || _navigationGeneration != 0) return;
         var first = Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
         if (first?.Tag is AppModule module)
         {
@@ -111,6 +103,8 @@ public sealed partial class ShellPage : Page
 
     private async void ShellPage_Unloaded(object sender, RoutedEventArgs e)
     {
+        ++_navigationGeneration;
+        DetachChatPage();
         try
         {
             try
@@ -130,7 +124,6 @@ public sealed partial class ShellPage : Page
             _photos = null;
             _photosProfileId = null;
             _photosRepository = null;
-            _chat?.Dispose();
             _chat = null;
             _chatProfileId = null;
             _downloads?.Dispose();
@@ -153,8 +146,11 @@ public sealed partial class ShellPage : Page
             }
             _activity = null;
             ReleaseCrossNasTargetLeases();
-            _transferPicker?.Dispose();
-            _transfers.Dispose();
+            if (!_transfersOwnedByWorkspace)
+            {
+                if (_transferPicker is { } picker) await picker.DisposeAsync();
+                _transfers.Dispose();
+            }
             _settings.Changed -= Settings_Changed;
         }
     }
@@ -176,6 +172,7 @@ public sealed partial class ShellPage : Page
                 DefaultButton = ContentDialogButton.Close,
             };
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            if (_files is not null && !await _files.PrepareToLeaveAsync(XamlRoot)) return;
             await CloseFilesPageAsync();
             CloseNasDetailsPage();
             await _app.LogoutAsync();
@@ -187,6 +184,7 @@ public sealed partial class ShellPage : Page
     }
 
     internal void ToggleNavigationPane() => Navigation.IsPaneOpen = !Navigation.IsPaneOpen;
+    internal Task<bool> PrepareExitAsync() => _files?.PrepareToLeaveAsync(XamlRoot) ?? Task.FromResult(true);
 
     private void UpdateNavigationLayout()
     {
@@ -263,6 +261,7 @@ public sealed partial class ShellPage : Page
         {
             try
             {
+                if (_files is not null && !await _files.PrepareToLeaveAsync(XamlRoot)) return;
                 await CloseFilesPageAsync();
                 CloseNasDetailsPage();
                 await _app.SwitchProfileAsync(profile);
@@ -274,8 +273,11 @@ public sealed partial class ShellPage : Page
         }
     }
 
-    private void AddProfile_Click(object sender, RoutedEventArgs e) =>
+    private async void AddProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (_files is not null && !await _files.PrepareToLeaveAsync(XamlRoot)) return;
         _app.BeginAddingProfile();
+    }
 
     private async void DeleteProfile_Click(object sender, RoutedEventArgs e)
     {
@@ -299,6 +301,7 @@ public sealed partial class ShellPage : Page
         {
             try
             {
+                if (_files is not null && !await _files.PrepareToLeaveAsync(XamlRoot)) return;
                 await CloseFilesPageAsync();
                 CloseNasDetailsPage();
                 await _app.RemoveProfileAsync(profile);
@@ -337,6 +340,7 @@ public sealed partial class ShellPage : Page
         }
         if (args.IsSettingsSelected || ReferenceEquals(args.SelectedItem, SettingsItem))
         {
+            ++_navigationGeneration;
             ContentFrame.Content = CreateSettingsPage();
             await UpdateActivePageVisibilityAsync();
             return;
@@ -360,6 +364,7 @@ public sealed partial class ShellPage : Page
 
     private async Task OpenModuleAsync(AppModule module)
     {
+        var generation = ++_navigationGeneration;
         if (module == AppModule.Files &&
             _app.Repository is { } repository &&
             _app.ActiveProfile is { } profile &&
@@ -390,6 +395,7 @@ public sealed partial class ShellPage : Page
             if (_files is not null && _filesProfileId != profile.Id)
             {
                 await CloseFilesPageAsync();
+                if (generation != _navigationGeneration) return;
             }
             _files ??= new FilesPage(
                 repository,
@@ -402,7 +408,8 @@ public sealed partial class ShellPage : Page
                 mutationRepository,
                 FileMutationReviewBlocker.Current,
                 recycleRepository: recycleRepository,
-                recycleReviewBlocker: FileRecycleReviewBlocker.Current);
+                recycleReviewBlocker: FileRecycleReviewBlocker.Current,
+                officeCoordinator: _app.OfficeEdits);
             _files.BrowserModel.PropertyChanged -= FileStorage_Changed;
             _files.BrowserModel.PropertyChanged += FileStorage_Changed;
             _files.BrowserModel.SetRootDisplayName(profile.DisplayName);
@@ -433,8 +440,18 @@ public sealed partial class ShellPage : Page
                 activityPicker,
                 activityProfile.Id.ToString(),
                 activityRepository,
-                fileActivityRepository);
+                fileActivityRepository,
+                async folder =>
+                {
+                    if (_app.ActiveProfile?.Id != activityProfile.Id || !ReferenceEquals(_app.Repository, fileActivityRepository)) return;
+                    await OpenModuleAsync(AppModule.Files);
+                    if (_app.ActiveProfile?.Id != activityProfile.Id || !ReferenceEquals(_app.Repository, fileActivityRepository) || _files is null) return;
+                    Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(item => item.Tag is AppModule.Files);
+                    await _files.OpenActivityFolderAsync(folder);
+                    await UpdateActivePageVisibilityAsync();
+                });
             await _activity.SetWindowVisibleAsync(_isWindowVisible);
+            if (generation != _navigationGeneration) return;
             ContentFrame.Content = _activity;
             return;
         }
@@ -453,7 +470,8 @@ public sealed partial class ShellPage : Page
             {
                 _photos?.Dispose();
                 _photos = new SynologyPhotosPage(photoRepository,
-                    new WindowsTransferSavePicker(() => (Application.Current as App)?.MainWindow));
+                    new WindowsTransferSavePicker(() => (Application.Current as App)?.MainWindow),
+                    new WindowsTransferOpenPicker(() => (Application.Current as App)?.MainWindow));
                 _photosProfileId = photoProfile.Id; _photosRepository = photoRepository;
             }
             ContentFrame.Content = _photos;
@@ -465,7 +483,7 @@ public sealed partial class ShellPage : Page
                 _app.ActiveProfile is not { } chatProfile ||
                 chatRepository.ProfileId != chatProfile.Id)
             {
-                _chat?.Dispose();
+                DetachChatPage();
                 _chat = null;
                 _chatProfileId = null;
                 ContentFrame.Content = new ChatPage(
@@ -474,11 +492,14 @@ public sealed partial class ShellPage : Page
             }
             if (_chat is null || _chatProfileId != chatProfile.Id)
             {
-                _chat?.Dispose();
-                _chat = new ChatPage(chatRepository);
+                DetachChatPage();
+                _chat = _app.GetChatPage(chatRepository);
                 _chatProfileId = chatProfile.Id;
             }
             await _chat.SetWindowVisibleAsync(_isWindowVisible);
+            if (generation != _navigationGeneration) return;
+            await _chat.SetWindowActiveAsync(_isWindowActive);
+            if (generation != _navigationGeneration) return;
             ContentFrame.Content = _chat;
             return;
         }
@@ -618,6 +639,30 @@ public sealed partial class ShellPage : Page
         await UpdateActivePageVisibilityAsync();
     }
 
+    internal async Task SetWindowActiveAsync(bool active)
+    {
+        _isWindowActive = active;
+        if (_chat is not null) await _chat.SetWindowActiveAsync(active);
+    }
+
+    internal void DetachChatPage()
+    {
+        if (_chat is null) return;
+        // 先解除视觉父节点，再允许新 Shell 复用同一工作区页面。
+        if (ReferenceEquals(ContentFrame.Content, _chat)) ContentFrame.Content = null;
+        _ = _chat.SetWindowVisibleAsync(false);
+    }
+
+    internal async Task ShowChatNotificationAsync(ChatNotificationTarget target)
+    {
+        var navigation = Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(item => item.Tag is AppModule.Chat);
+        if (navigation is null) return;
+        Navigation.SelectedItem = navigation;
+        await OpenModuleAsync(AppModule.Chat);
+        if (_chat is not null) await _chat.RevealNotificationAsync(target);
+        await UpdateActivePageVisibilityAsync();
+    }
+
     private async Task UpdateActivePageVisibilityAsync()
     {
         var isVisible = _isWindowVisible && ReferenceEquals(ContentFrame.Content, _photos);
@@ -741,7 +786,11 @@ public sealed partial class ShellPage : Page
 
     private AppSettingsPage CreateSettingsPage()
     {
-        var settings = new AppSettingsPage();
+        var settings = new AppSettingsPage { PrepareLanguageChangeAsync = PrepareExitAsync };
+        settings.SavedRecordingsRequested += async (_, _) =>
+        {
+            if (ReferenceEquals(ContentFrame.Content, settings)) await ChatSavedRecordingsDialog.ShowForAsync(_app, settings);
+        };
         settings.CloudDriveRequested += (_, _) =>
         {
             if (!ReferenceEquals(ContentFrame.Content, settings)) return;
@@ -781,17 +830,12 @@ public sealed partial class ShellPage : Page
         }
     }
 
-    internal async Task ShowTransfersAsync()
+    internal async Task ShowTransfersAsync(Guid? activityId = null)
     {
-        if (ReferenceEquals(Navigation.SelectedItem, ActivityItem))
-        {
-            await OpenModuleAsync(AppModule.Transfers);
-            await UpdateActivePageVisibilityAsync();
-        }
-        else
-        {
-            Navigation.SelectedItem = ActivityItem;
-        }
+        Navigation.SelectedItem = ActivityItem;
+        await OpenModuleAsync(AppModule.Transfers);
+        await UpdateActivePageVisibilityAsync();
+        if (activityId is { } id) _activity?.RevealActivity(id);
     }
 
     private void WireCrossNasDependencies(FilesPage page, Guid currentProfileId)
@@ -848,7 +892,9 @@ public sealed partial class ShellPage : Page
                 connection.Profile,
                 session,
                 context.Api,
-                connection.Capabilities);
+                connection.Capabilities, WindowsProtectedTaskStore.CrossNas);
+            await repository.InitializeCrossNasRecoveryAsync().ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
             if (repository.ProfileId != targetProfileId ||
                 !repository.CanReceiveCrossNasCopy ||
                 !repository.FileMutationAvailability.CanCreateFolder ||

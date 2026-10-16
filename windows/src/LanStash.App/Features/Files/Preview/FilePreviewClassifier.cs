@@ -38,6 +38,7 @@ public static class FilePreviewClassifier
         }
 
         var extension = Path.GetExtension(item.Name).TrimStart('.');
+        if (OfficeDocumentFormat.Supports(item)) return FilePreviewKind.Office;
         if (string.IsNullOrWhiteSpace(extension) ||
             string.Equals(extension, "ts", StringComparison.OrdinalIgnoreCase))
         {

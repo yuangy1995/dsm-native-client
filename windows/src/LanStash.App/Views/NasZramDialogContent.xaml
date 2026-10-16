@@ -5,16 +5,23 @@
    <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" Visibility="Collapsed"/>
    <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
    <TextBlock x:Name="UnsupportedNotice" x:Uid="NasZramUnavailable" Visibility="Collapsed" TextWrapping="Wrap"/>
-   <TextBlock x:Uid="NasZramReadOnly" TextWrapping="Wrap"/>
+   <TextBlock x:Name="WriteUnavailable" TextWrapping="Wrap" Visibility="Collapsed"/>
+   <InfoBar x:Name="ResultNotice" IsOpen="False" IsClosable="False" Severity="Informational" AutomationProperties.LiveSetting="Polite"/>
    <TextBlock x:Name="EmptyNotice" x:Uid="NasZramEmpty" Visibility="Collapsed" TextWrapping="Wrap"/>
    <StackPanel x:Name="ContentPanel" Spacing="14" Visibility="Collapsed">
-    <TextBlock x:Uid="NasZramStatusTitle" FontWeight="SemiBold"/>
+    <TextBlock x:Name="StatusTitle" x:Uid="NasZramStatusTitle" FontWeight="SemiBold"/>
     <TextBlock x:Name="StatusText" TextWrapping="Wrap"/>
-    <TextBlock x:Uid="NasZramCapacityTitle" FontWeight="SemiBold"/>
+    <ToggleSwitch x:Name="EnabledToggle" x:Uid="NasZramEditToggle" Toggled="Enabled_Changed"/>
+    <TextBlock x:Name="RebootText" TextWrapping="Wrap"/>
+    <TextBlock x:Name="CapacityTitle" x:Uid="NasZramCapacityTitle" FontWeight="SemiBold"/>
     <TextBlock x:Name="CapacityText" TextWrapping="Wrap"/>
-    <TextBlock x:Uid="NasZramAlgorithmTitle" FontWeight="SemiBold"/>
+    <TextBlock x:Name="AlgorithmTitle" x:Uid="NasZramAlgorithmTitle" FontWeight="SemiBold"/>
     <TextBlock x:Name="AlgorithmText" TextWrapping="Wrap"/>
    </StackPanel>
+   <CheckBox x:Name="RiskChoice" x:Uid="NasZramRisk" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Checked="Risk_Changed" Unchecked="Risk_Changed">
+    <CheckBox.ContentTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></CheckBox.ContentTemplate>
+   </CheckBox>
+   <Button x:Name="MarkRebootButton" x:Uid="NasZramMarkReboot" Click="MarkReboot_Click" Visibility="Collapsed"/>
   </StackPanel>
  </ScrollViewer>
 </UserControl>

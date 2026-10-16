@@ -76,6 +76,12 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(method);
         ArgumentException.ThrowIfNullOrWhiteSpace(capability.Name);
+        // 内部权限摘要只使用已记录的 GET 契约；凭据仍只在 Cookie/Header 中。
+        var desktopPrivileges = capability.Name == "SYNO.Core.Desktop.Initdata" && requiredVersion == 1 &&
+            method == "get_user_service" && parameters is { Count: 1 } &&
+            parameters.TryGetValue("launch_app", out var launchApp) && launchApp == "null";
+        if (capability.Name == "SYNO.Core.Desktop.Initdata" && !desktopPrivileges)
+            throw new ArgumentException("file.access.invalid-contract", nameof(parameters));
         var regionZones = capability.Name == "SYNO.Core.Region.NTP" && requiredVersion == 1 &&
             method == "listzone" && (parameters is null || parameters.Count == 0);
         var ledStatic = capability.Name == "SYNO.Core.Hardware.Led.Brightness" && requiredVersion == 1 &&
@@ -91,6 +97,9 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         var externalStorageApi = capability.Name is "SYNO.Core.ExternalDevice.Storage.USB" or "SYNO.Core.ExternalDevice.Storage.eSATA";
         var externalStorageRead = externalStorageApi && requiredVersion == 1 && method == "list" && (parameters is null || parameters.Count == 0);
         var zramRead = capability.Name == "SYNO.Core.Hardware.ZRAM" && requiredVersion == 1 && method == "get" && (parameters is null || parameters.Count == 0);
+        var rebootRequiredRead = capability.Name == "SYNO.Core.Hardware.NeedReboot" && requiredVersion == 1 && method == "get" && (parameters is null || parameters.Count == 0);
+        if (capability.Name == "SYNO.Core.Hardware.NeedReboot" && !rebootRequiredRead)
+            throw new ArgumentException("nas.reboot-marker.invalid-read", nameof(parameters));
         if (capability.Name == "SYNO.Core.Hardware.ZRAM" && !zramRead)
             throw new ArgumentException("The memory compression read does not match its fixed method contract.", nameof(parameters));
         if (externalStorageApi && !externalStorageRead)
@@ -103,7 +112,7 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             throw new ArgumentException("The disk read does not match its fixed method contract.", nameof(parameters));
         if (capability.Name is "SYNO.Core.TaskScheduler" or "SYNO.Core.EventScheduler" && !taskRead)
             throw new ArgumentException("The task read does not match its fixed method contract.", nameof(parameters));
-        if (method is not ("get" or "list" or "list_share" or "info" or "load_info" or "check") && !fileInfoRead && !regionZones && !ledStatic && !taskRead && !diskRead && !remoteAccessRead && !powerScheduleRead)
+        if (method is not ("get" or "list" or "list_share" or "info" or "load_info" or "check") && !desktopPrivileges && !fileInfoRead && !regionZones && !ledStatic && !taskRead && !diskRead && !remoteAccessRead && !powerScheduleRead)
         {
             throw new ArgumentException("The fixed-version read method is not allowed.", nameof(method));
         }
@@ -140,8 +149,16 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase) && parameters is { Count: 2 } &&
             parameters.TryGetValue("offset", out var favoriteOffset) && int.TryParse(favoriteOffset, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedFavoriteOffset) && parsedFavoriteOffset >= 0 &&
             parameters.TryGetValue("limit", out var favoriteLimit) && int.TryParse(favoriteLimit, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedFavoriteLimit) && parsedFavoriteLimit > 0;
+        var jsonSystemLogs = capability.Name == "SYNO.Core.SyslogClient.Log" && requiredVersion == 1 && method == "list" &&
+            capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase) && parameters is { Count: 2 } &&
+            parameters.TryGetValue("offset", out var logOffset) && int.TryParse(logOffset, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedLogOffset) && parsedLogOffset >= 0 &&
+            parameters.TryGetValue("limit", out var logLimit) && int.TryParse(logLimit, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedLogLimit) && parsedLogLimit is >= 1 and <= 500;
         var jsonRemoteMountInventory = capability.Name == "SYNO.FileStation.Mount.List" && requiredVersion == 1 && method == "get" &&
             capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase) && (parameters is null || parameters.Count == 0);
+        var jsonFileBackground = capability.Name == "SYNO.FileStation.BackgroundTask" && requiredVersion == 3 && method == "list" &&
+            capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase) && parameters is { Count: 5 } &&
+            parameters.ContainsKey("offset") && parameters.ContainsKey("limit") && parameters.ContainsKey("sort_by") &&
+            parameters.ContainsKey("sort_direction") && parameters.ContainsKey("api_filter");
         var ethernetList = capability.Name == "SYNO.Core.Network.Ethernet" && requiredVersion == 2 &&
             method == "list" && (parameters is null || parameters.Count == 0);
         var ethernetDetail = capability.Name == "SYNO.Core.Network.Ethernet" && requiredVersion == 1 &&
@@ -173,10 +190,11 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
                 _ => false,
             });
         if (!string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) &&
+            !(desktopPrivileges && capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)) &&
             !(fileInfoRead && capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)) &&
-            !jsonRemoteMountInventory && !jsonFavoriteList && !jsonChatMembers && !jsonNasServiceRead && !(taskRead && capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)) &&
+            !jsonSystemLogs && !jsonRemoteMountInventory && !jsonFavoriteList && !jsonFileBackground && !jsonChatMembers && !jsonNasServiceRead && !(taskRead && capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)) &&
             !((ethernetList || ethernetDetail || dosRead || ddnsList || packageList || directoryList || powerInfo || connectionList) && capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)) &&
-            !((regionZones || ledStatic || diskRead || diskOverview || remoteAccessRead || powerScheduleRead || externalStorageRead || zramRead) && capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)))
+            !((regionZones || ledStatic || diskRead || diskOverview || remoteAccessRead || powerScheduleRead || externalStorageRead || zramRead || rebootRequiredRead) && capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)))
         {
             throw new NotSupportedException("The fixed-version read contract requires FORM requests.");
         }
@@ -199,12 +217,17 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
                 values[key] = value;
             }
         }
-        values["_sid"] = session.Sid;
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
-        {
-            Content = CreateSessionFormContent(values, session),
-        };
+        if (!desktopPrivileges) values["_sid"] = session.Sid;
+        using var request = desktopPrivileges
+            ? new HttpRequestMessage(HttpMethod.Get, new UriBuilder(requestUri)
+            {
+                Query = string.Join("&", values.Select(value =>
+                    Uri.EscapeDataString(value.Key) + "=" + Uri.EscapeDataString(value.Value))),
+            }.Uri)
+            : new HttpRequestMessage(HttpMethod.Post, requestUri)
+            {
+                Content = CreateSessionFormContent(values, session),
+            };
         request.Headers.Accept.ParseAdd("application/json");
         request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
         request.Headers.TryAddWithoutValidation("Cookie", $"id={session.Sid}");
@@ -333,7 +356,7 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         CancellationToken cancellationToken = default)
     {
         if (!ValidMutationCapability(profile, session, capability,
-                "SYNO.FileStation.CheckPermission", 3) ||
+                "SYNO.FileStation.CheckPermission", 3, allowJson: true) ||
             !ValidMutationPath(folderPath, allowSharedRoot: false) ||
             !ValidMutationName(name))
         {
@@ -343,7 +366,9 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         var result = await SendFileMutationFormAsync(profile, session, capability, 3, "write",
             new Dictionary<string, string>
             {
-                ["path"] = folderPath, ["filename"] = name, ["create_only"] = "true",
+                ["path"] = capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase) ? JsonSerializer.Serialize(folderPath) : folderPath,
+                ["filename"] = capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase) ? JsonSerializer.Serialize(name) : name,
+                ["create_only"] = "true",
             }, cancellationToken, permissionProbe: true).ConfigureAwait(false);
         return result.Status switch
         {
@@ -560,12 +585,22 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             FileCopyMoveTaskTransportStatus.Running);
     }
 
-    public async Task<FileRecycleStartTransportResult> StartMoveToRecycleAsync(
+    public Task<FileRecycleStartTransportResult> StartMoveToRecycleAsync(
         NasProfile profile,
         DsmSession session,
         ApiCapability capability,
         string sourcePath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        StartFileDeleteCoreAsync(profile, session, capability, sourcePath, recursive: true, cancellationToken);
+
+    public Task<FileRecycleStartTransportResult> StartNonRecursiveFileDeleteAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability, string sourcePath,
+        CancellationToken cancellationToken = default) =>
+        StartFileDeleteCoreAsync(profile, session, capability, sourcePath, recursive: false, cancellationToken);
+
+    private async Task<FileRecycleStartTransportResult> StartFileDeleteCoreAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability, string sourcePath, bool recursive,
+        CancellationToken cancellationToken)
     {
         if (!ValidMutationCapability(profile, session, capability,
                 "SYNO.FileStation.Delete", 2) ||
@@ -586,7 +621,7 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             ["version"] = "2",
             ["method"] = "start",
             ["path"] = JsonSerializer.Serialize(new[] { sourcePath }),
-            ["recursive"] = "true",
+            ["recursive"] = recursive ? "true" : "false",
             ["accurate_progress"] = "true",
             ["_sid"] = session.Sid,
         };
@@ -953,7 +988,7 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         var result = new List<FileArchiveExtractionListedItem>();
         var folders = new Queue<(int Id, string Path)>();
         folders.Enqueue((-1, string.Empty));
-        var folderIds = new HashSet<int> { -1 };
+        var entryIds = new HashSet<int>();
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         while (folders.TryDequeue(out var folder))
         {
@@ -1007,17 +1042,20 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
                         if (item["size"] is not JsonValue sizeNode || !sizeNode.TryGetValue<long>(out var bytes) || bytes < 0) throw InvalidReadEnvelope();
                         size = bytes;
                     }
+                    var hasId = TryGetNativeInt32(item, "itemid", out var id);
+                    var hasAlias = TryGetNativeInt32(item, "item_id", out var alias);
+                    if (hasId && hasAlias && id != alias ||
+                        item.ContainsKey("itemid") && !hasId || item.ContainsKey("item_id") && !hasAlias)
+                        throw InvalidReadEnvelope();
+                    int? entryId = hasId ? id : hasAlias ? alias : null;
+                    if (entryId is { } presentId && (presentId < 0 || !entryIds.Add(presentId))) throw InvalidReadEnvelope();
                     if (isDirectory)
                     {
-                        var hasId = TryGetNativeInt32(item, "itemid", out var id);
-                        var hasAlias = TryGetNativeInt32(item, "item_id", out var alias);
-                        if (!hasId && !hasAlias || hasId && hasAlias && id != alias ||
-                            item.ContainsKey("itemid") && !hasId || item.ContainsKey("item_id") && !hasAlias) throw InvalidReadEnvelope();
-                        var folderId = hasId ? id : alias;
-                        if (folderId < 0 || !folderIds.Add(folderId)) throw InvalidReadEnvelope();
+                        if (entryId is not { } folderId) throw InvalidReadEnvelope();
                         folders.Enqueue((folderId, relativePath));
                     }
-                    result.Add(new FileArchiveExtractionListedItem(name, isDirectory) { RelativePath = relativePath, Size = size });
+                    result.Add(new FileArchiveExtractionListedItem(name, isDirectory)
+                        { Id = entryId, RelativePath = relativePath, Size = size });
                 }
                 offset = checked(offset + items.Count);
                 if (total is { } expected)
@@ -1075,6 +1113,8 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         };
         if (!string.IsNullOrEmpty(options.Password)) values["password"] = options.Password;
         if (options.Codepage is not null) values["codepage"] = options.Codepage;
+        if (options.SelectedItems is { } selected)
+            values["item_id"] = string.Join(",", selected.Select(item => item.Id!.Value.ToString(CultureInfo.InvariantCulture)));
         using var request = new HttpRequestMessage(HttpMethod.Post,
             ResolveSafeApiUri(profile, capability.Path))
         { Content = CreateSessionFormContent(values, session) };
@@ -1405,11 +1445,12 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
     }
 
     private bool ValidMutationCapability(NasProfile profile, DsmSession session,
-        ApiCapability capability, string name, int version) =>
+        ApiCapability capability, string name, int version, bool allowJson = false) =>
         profile.Id == session.ProfileId && !string.IsNullOrWhiteSpace(session.Sid) &&
         string.Equals(capability.Name, name, StringComparison.Ordinal) &&
         version >= capability.MinVersion && version <= capability.MaxVersion &&
-        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) &&
+        (string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) ||
+            allowJson && string.Equals(capability.RequestFormat, "JSON", StringComparison.OrdinalIgnoreCase)) &&
         IsSafeWebApiPath(capability.Path);
 
     private static bool ValidMutationName(string value) =>
@@ -1559,17 +1600,20 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
                 nameof(expectedContentVersion));
         }
 
-        var path = capability.Path.StartsWith('/')
-            ? capability.Path
-            : $"/webapi/{capability.Path}";
+        if (profile.Id != session.ProfileId || string.IsNullOrWhiteSpace(session.Sid) ||
+            session.Sid.Any(c => char.IsWhiteSpace(c) || char.IsControl(c) || c is ';' or ',') ||
+            session.SynoToken?.Any(char.IsControl) == true)
+            throw new ArgumentException("file.range.invalid-session");
+        if (capability.Name != "SYNO.FileStation.Download" || capability.MinVersion > 2 || capability.MaxVersion < 2)
+            throw new NotSupportedException("file.range.unsupported-version");
+        var endpoint = ResolveSafeApiUri(profile, capability.Path);
         var parameters = new Dictionary<string, string>
         {
             ["api"] = capability.Name,
-            ["version"] = capability.MaxVersion.ToString(),
+            ["version"] = "2",
             ["method"] = "download",
             ["path"] = JsonSerializer.Serialize(new[] { remotePath }),
             ["mode"] = "download",
-            ["_sid"] = session.Sid,
         };
         var query = string.Join(
             "&",
@@ -1577,7 +1621,8 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
                 $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            new Uri(GetBaseUri(profile), $"{path}?{query}"));
+            new UriBuilder(endpoint) { Query = query }.Uri);
+        request.Headers.Add("Cookie", $"id={session.Sid}");
         request.Headers.Range = new RangeHeaderValue(offset, requestedEnd);
         request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
         if (expectedEntityTag is not null)
@@ -1923,7 +1968,7 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         IProgress<long>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        var requiredVersion = string.IsNullOrWhiteSpace(upload.Destination) ? 1 : 2;
+        var requiredVersion = upload.Destination is null ? 1 : 2;
         if (!string.Equals(
                 capability.Name,
                 "SYNO.DownloadStation.Task",
@@ -1949,7 +1994,7 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             new("_sid", session.Sid),
         };
         if (!string.IsNullOrWhiteSpace(session.SynoToken)) fields.Add(new("SynoToken", session.SynoToken));
-        if (!string.IsNullOrWhiteSpace(upload.Destination))
+        if (upload.Destination is not null)
         {
             fields.Add(new("destination", upload.Destination));
         }
@@ -2090,7 +2135,8 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         if (!string.Equals(capability.Name, "SYNO.FileStation.Sharing", StringComparison.Ordinal) ||
             capability.MinVersion != 3 ||
             capability.MaxVersion != 3 ||
-            !string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) ||
+            !(string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(capability.RequestFormat, "JSON", StringComparison.OrdinalIgnoreCase)) ||
             !IsSafeWebApiPath(capability.Path) ||
             profile.Id != session.ProfileId ||
             !ValidFileShareParameters(parameters))
@@ -2127,6 +2173,9 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             ["method"] = "create",
             ["_sid"] = session.Sid,
         };
+        if (capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase))
+            foreach (var key in new[] { "password", "date_available", "date_expired", "request_name", "request_info" })
+                if (values.TryGetValue(key, out var value)) values[key] = JsonSerializer.Serialize(value);
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             new Uri(
@@ -2252,7 +2301,8 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
     {
         if (!string.Equals(capability.Name, "SYNO.FileStation.Sharing", StringComparison.Ordinal) ||
             capability.MinVersion != 3 || capability.MaxVersion != 3 ||
-            !string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) ||
+            !(string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(capability.RequestFormat, "JSON", StringComparison.OrdinalIgnoreCase)) ||
             !IsSafeWebApiPath(capability.Path) || profile.Id != session.ProfileId ||
             string.IsNullOrWhiteSpace(id) || id.Length > 512 ||
             !string.Equals(id, id.Trim(), StringComparison.Ordinal))
@@ -2447,7 +2497,8 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
 
     private static bool ValidFileShareParameters(IReadOnlyDictionary<string, string> parameters)
     {
-        if (parameters.Keys.Any(key => key is not ("path" or "password" or "date_expired")) ||
+        if (parameters.Keys.Any(key => key is not ("path" or "password" or "date_expired" or
+                "date_available" or "file_request" or "request_name" or "request_info")) ||
             !parameters.TryGetValue("path", out var encodedPath))
         {
             return false;
@@ -2477,13 +2528,14 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         {
             return false;
         }
-        return !parameters.TryGetValue("date_expired", out var expiry) ||
-            DateOnly.TryParseExact(
-                expiry,
-                "yyyy-MM-dd",
-                System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.None,
-                out _);
+        foreach (var key in new[] { "date_available", "date_expired" })
+            if (parameters.TryGetValue(key, out var date) &&
+                !DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out _)) return false;
+        if (parameters.TryGetValue("file_request", out var collection))
+            return collection == "true" && parameters.TryGetValue("request_name", out var name) &&
+                !string.IsNullOrWhiteSpace(name) && parameters.ContainsKey("request_info");
+        return !parameters.ContainsKey("request_name") && !parameters.ContainsKey("request_info");
     }
 
     private static FileUploadTransportResult ConfirmedUploadFailure(int? code)
@@ -2506,13 +2558,10 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
 
     private static DownloadTaskFileCreateTransportResult ConfirmedDownloadTaskFileCreateFailure(int? code)
     {
-        var category = code switch
-        {
-            105 or 115 => MutationErrorCategory.Permission,
-            106 or 107 or 119 => MutationErrorCategory.Authentication,
-            1805 => MutationErrorCategory.Conflict,
-            _ => MutationErrorCategory.Server,
-        };
+        if (!DownloadStationErrors.IsKnownRejection(code))
+            return new(DownloadTaskFileCreateTransportStatus.SubmittedButUnverified, ErrorCategory: MutationErrorCategory.Unknown,
+                DiagnosticTag: "download-station.create.file.unknown-error");
+        var category = DownloadStationErrors.Category(code);
         var diagnostic = code is >= 100 and <= 9999
             ? $"download-station.create.file.dsm-{code}"
             : "download-station.create.file.dsm-failure";

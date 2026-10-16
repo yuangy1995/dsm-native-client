@@ -184,7 +184,7 @@ public sealed class VirtualMachineManagerViewModelTests
     }
 
     [Fact]
-    public async Task ProfileCacheRestoresSelectionAndRefreshUsesNewRepositoryBinding()
+    public async Task ProfileCacheRestoresOnlyForOriginalOwnerAndReplacementReadsFresh()
     {
         var profileA = Guid.NewGuid();
         var firstA = Available(profileA);
@@ -199,13 +199,17 @@ public sealed class VirtualMachineManagerViewModelTests
         await model.ActivateAsync(firstA);
         model.SelectMachine(model.Machines.Single());
         await model.ActivateAsync(repositoryB);
+        await model.ActivateAsync(firstA);
+        Assert.Equal("a", model.SelectedMachine?.Name); Assert.Single(firstA.Requests);
         await model.ActivateAsync(reboundA);
 
-        Assert.Equal("a", model.SelectedMachine?.Name);
-        Assert.Empty(reboundA.Requests);
-        await model.RefreshAsync();
-        Assert.Single(reboundA.Requests);
+        Assert.Null(model.SelectedMachine);
         Assert.Equal("a-refreshed", Assert.Single(model.Machines).Name);
+        Assert.Single(reboundA.Requests);
+        reboundA.Results.Enqueue(Snapshot(profileA, machines: [Machine("a-next")]));
+        await model.RefreshAsync();
+        Assert.Equal(2, reboundA.Requests.Count); Assert.Single(firstA.Requests);
+        Assert.Equal("a-next", Assert.Single(model.Machines).Name);
     }
 
     [Fact]

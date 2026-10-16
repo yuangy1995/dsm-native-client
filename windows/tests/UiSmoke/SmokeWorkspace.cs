@@ -7,6 +7,7 @@ using Windows.Graphics.Imaging;
 using Windows.Storage;
 using LanStash.App.Views;
 using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.Preview;
 using LanStash.App.Features.NasAdmin;
 using LanStash.App.Features.Chat;
 using LanStash.App.Features.Containers;
@@ -136,6 +137,7 @@ internal sealed class SmokeVmPowerBatchRepository(string state, bool deletion = 
     public Guid ProfileId => SmokeActivityProbe.Profile;
     public VirtualMachineManagerAvailability Availability => new(VirtualMachineManagerAvailabilityStatus.Available, new HashSet<VirtualMachineManagerReadFeature> { VirtualMachineManagerReadFeature.Machines });
     public bool CanControlPower => !deletion && state != "vmbatch-readonly";
+    public bool CanControlPowerAction(VirtualMachineSummary target, VirtualMachinePowerAction action) => CanControlPower;
     public bool CanDeleteMachines => deletion && !images && state != "vmbatch-readonly";
     public bool CanDeleteImages => images && state != "vmbatch-readonly";
     public VirtualizationResourceSummary[] Images { get; } = Enumerable.Range(0, state == "vmbatch-empty" ? 0 : 205).Select(index =>
@@ -164,7 +166,7 @@ internal sealed class SmokeVmPowerBatchRepository(string state, bool deletion = 
         return ImageResult(true);
     }
     public VirtualMachineSummary[] Machines { get; } = Enumerable.Range(0, state == "vmbatch-empty" ? 0 : 205).Select(index =>
-        new VirtualMachineSummary($"vm-{index:D4}", $"VM {index:D4}", state == "vmbatch-running" || state.Contains("off", StringComparison.Ordinal) || state.Contains("shutdown", StringComparison.Ordinal)
+        new VirtualMachineSummary($"vm-{index:D4}", $"VM {index:D4}", state == "vmbatch-running" || state.Contains("off", StringComparison.Ordinal) || state.Contains("shutdown", StringComparison.Ordinal) || state.Contains("reboot", StringComparison.Ordinal)
             ? VirtualMachineOperationalState.Running : VirtualMachineOperationalState.Stopped, 2, 1073741824, null, null, null)).ToArray();
     public List<VirtualMachinePowerRequest> Calls { get; } = [];
     public List<VirtualMachineDeleteRequest> Deletes { get; } = [];
@@ -204,6 +206,8 @@ internal sealed class SmokeVmPowerBatchRepository(string state, bool deletion = 
     public async Task<MutationResult> ControlPowerAsync(VirtualMachinePowerRequest request, CancellationToken token = default)
     {
         Calls.Add(request); Token = token; await Task.Delay(2, token);
+        if (request.Action == VirtualMachinePowerAction.Reboot)
+        { Pending.Add(new(request.Baseline.Id, request.Baseline.Name, request.Action)); return Unknown(); }
         if (state == "vmbatch-close-busy") return await Release.Task;
         if (Calls.Count == 23 && state is "vmbatch-unknown" or "vmbatch-auth" or "vmbatch-cancel" or "vmbatch-review-after")
         {
@@ -447,6 +451,7 @@ internal sealed class SmokeSelectionSavePicker(string path) : IWindowsTransferSa
 public class SmokeRemoteMountRepository : System.Reflection.DispatchProxy
 {
     public string State = "mount-create";
+    public string? LastTarget;
     public int Writes, Reviews;
     public bool Resolve;
     public CancellationToken LastToken;
@@ -482,7 +487,7 @@ public class SmokeRemoteMountRepository : System.Reflection.DispatchProxy
     }
     private async Task<RemoteMountProgress> SubmitAsync(RemoteMountMutationRequest request, bool continuing, CancellationToken token)
     {
-        Writes++; LastToken = token;
+        Writes++; LastToken = token; LastTarget = request.Desired?.MountPoint ?? request.Baseline?.MountPoint;
         if (State is "mount-close-busy" or "mount-profile-change") await Task.Delay(Timeout.Infinite, token);
         var stage = continuing ? RemoteMountStage.Complete : State is "mount-unknown" or "mount-review" ? RemoteMountStage.VerifyingConnection :
             request.Action == RemoteMountAction.Update ? request.Baseline!.MountPoint == request.Desired!.MountPoint ? RemoteMountStage.ReadyToConnect : RemoteMountStage.ReadyToDisconnectPrevious : RemoteMountStage.Complete;
@@ -493,6 +498,34 @@ public class SmokeRemoteMountRepository : System.Reflection.DispatchProxy
     private static MutationResult Outcome(RemoteMountStage stage) => new(1, stage == RemoteMountStage.Complete ? MutationResultStatus.ConfirmedSuccess :
         stage is RemoteMountStage.ReadyToConnect or RemoteMountStage.ReadyToDisconnectPrevious ? MutationResultStatus.PartialSuccess : MutationResultStatus.SubmittedButUnverified,
         "remoteMount", true, true, new(stage == RemoteMountStage.VerifyingConnection ? 0 : 1, 0, stage == RemoteMountStage.Complete ? 0 : 1));
+}
+
+public interface ISmokeSearchPreview : IFilePreviewRepository, IFileSearchRepository { }
+
+public class SmokeSearchPreview : System.Reflection.DispatchProxy
+{
+    public string State = "content";
+    public FileSearchRequest? Last;
+    public CancellationToken Token;
+    public TaskCompletionSource<FileSearchResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    protected override object? Invoke(System.Reflection.MethodInfo? method, object?[]? args) => method!.Name switch
+    {
+        "get_ProfileId" => SmokeActivityProbe.Profile,
+        "get_IsSearchAvailable" => true,
+        "get_MD5Availability" => new FileMD5Availability(false),
+        "GetTextEditAvailability" => new FileTextEditAvailability(false, false, []),
+        "SearchAsync" => SearchAsync((FileSearchRequest)args![0]!, (CancellationToken)args[1]!),
+        _ => throw new NotSupportedException(method.Name),
+    };
+    private async Task<FileSearchResult> SearchAsync(FileSearchRequest request, CancellationToken token)
+    {
+        Last = request; Token = token;
+        if (State == "error") throw new NotSupportedException("synthetic");
+        if (State == "cancel") await Task.Delay(Timeout.Infinite, token);
+        if (State is "loading" or "stale") return await Completion.Task;
+        return new(State == "empty" ? [] : [new("/share/docs/report.pdf", "report.pdf", false, 100, null, null, false, false)], State == "empty" ? 0 : 1, false)
+        { IndexCoverage = State == "partial" ? FileSearchIndexCoverage.Incomplete : FileSearchIndexCoverage.Complete };
+    }
 }
 
 public class SmokeDragPreview : System.Reflection.DispatchProxy
@@ -570,10 +603,30 @@ internal sealed class SmokeExtractionRepository(string state) : IFileArchiveExtr
     public Guid ProfileId => SmokeActivityProbe.Profile;
     public FileArchiveExtractionAvailability Availability => new(true, 2, 2);
     public int Calls { get; private set; }
+    public int PreviewCalls { get; private set; }
+    public bool PreviewCancelled { get; private set; }
+    public async Task<FileArchiveExtractionPreview> PreviewAsync(FileArchiveExtractionRequest request, CancellationToken token = default)
+    {
+        PreviewCalls++;
+        if (state == "extract-preview-error") throw new IOException("synthetic");
+        if (state is "extract-preview-loading" or "extract-preview-late")
+        {
+            try { await Task.Delay(Timeout.Infinite, token); }
+            catch (OperationCanceledException) { PreviewCancelled = true; throw; }
+        }
+        return new(state == "extract-preview-empty" ? [] :
+            [new("Documents", true) { Id = 1 },
+             new("Report.txt", false) { Id = 2, RelativePath = "Documents/Report.txt", Size = 12 },
+             new("Image.png", false) { Id = 3, Size = 24 }], "chs");
+    }
     public async Task<FileArchiveExtractionOutcome> ExtractAsync(FileArchiveExtractionRequest request, CancellationToken token = default)
     {
         Calls++;
         if (request.Options.Password != " synthetic " || request.Options.Codepage != "chs") throw new InvalidOperationException("解压密码或编码未传递。");
+        if (state == "extract-destination" && request.DestinationFolder != "/share/target")
+            throw new InvalidOperationException("目标文件夹未传递。");
+        if (state == "extract-selected-run" && request.Options.SelectedItems is not [{ Id: 2 }])
+            throw new InvalidOperationException("未按所选编号提交解压。");
         if (state is "extract-overwrite" or "extract-flatten")
         {
             if (!request.Options.Overwrite || !request.OverwriteConfirmed) throw new InvalidOperationException("覆盖缺少确认。");
@@ -769,8 +822,8 @@ internal sealed class SmokeImagePullRepository : IContainerManagerRepository
         if (!request.RiskConfirmed) throw new InvalidOperationException("合成下载缺少确认"); Starts++;
         if (State == "pull-close-busy")
         { try { await Task.Delay(Timeout.Infinite, cancellationToken); } catch (OperationCanceledException) { Cancelled = true; throw; } }
-        var stage = State switch { "pull-no-receipt" => ContainerImagePullStage.AwaitingReceipt, "pull-review" => ContainerImagePullStage.NeedsReview,
-            "pull-rejected" => ContainerImagePullStage.Rejected, _ => ContainerImagePullStage.Downloading };
+        var stage = State switch { "pull-no-receipt" => ContainerImagePullStage.AwaitingReceipt, "pull-review" or "pull-auto-recover" => ContainerImagePullStage.NeedsReview,
+            "pull-rejected" or "pull-docker-failed" => ContainerImagePullStage.Rejected, _ => ContainerImagePullStage.Downloading };
         var result = Result(request.RequestId, request.Repository, request.Tag, stage);
         if (stage != ContainerImagePullStage.Rejected) _pending.Add(request.RequestId, result);
         return result;
@@ -779,15 +832,17 @@ internal sealed class SmokeImagePullRepository : IContainerManagerRepository
     {
         Reviews++;
         if (!_pending.TryGetValue(requestId, out var previous)) return Task.FromResult<ContainerImagePullResult?>(null);
+        if (State == "pull-auto-recover") FinishReview = true;
         var result = Result(requestId, previous.Repository, previous.Tag, FinishReview ? ContainerImagePullStage.Ready : previous.Stage);
         if (FinishReview) _pending.Remove(requestId); else _pending[requestId] = result;
         return Task.FromResult<ContainerImagePullResult?>(result);
     }
     private static ContainerImagePullResult Result(Guid id, string repository, string tag, ContainerImagePullStage stage) =>
         new(id, repository, tag, stage, stage == ContainerImagePullStage.Ready ? 100 : stage == ContainerImagePullStage.Downloading ? 25 : null,
-            new(1, stage == ContainerImagePullStage.Ready ? MutationResultStatus.ConfirmedSuccess : stage == ContainerImagePullStage.Rejected ? MutationResultStatus.PermissionDenied : MutationResultStatus.SubmittedButUnverified,
+            new(1, stage == ContainerImagePullStage.Ready ? MutationResultStatus.ConfirmedSuccess : stage == ContainerImagePullStage.Rejected ?
+                State == "pull-docker-failed" ? MutationResultStatus.ConfirmedFailure : MutationResultStatus.PermissionDenied : MutationResultStatus.SubmittedButUnverified,
                 "pullContainerImage", true, true, stage == ContainerImagePullStage.Ready ? new(1, 0, 0) : stage == ContainerImagePullStage.Rejected ? new(0, 1, 0) : new(0, 0, 1),
-                stage == ContainerImagePullStage.Rejected ? MutationErrorCategory.Permission : MutationErrorCategory.Unknown));
+                stage == ContainerImagePullStage.Rejected ? State == "pull-docker-failed" ? MutationErrorCategory.Server : MutationErrorCategory.Permission : MutationErrorCategory.Unknown));
 }
 
 internal sealed class SmokeImageDeletionRepository : IContainerManagerRepository
@@ -846,7 +901,7 @@ internal sealed class SmokeImageDeletionRepository : IContainerManagerRepository
 internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, ISynologyPhotosProvider, IChatRepository,
     IContainerManagerRepository, IVirtualMachineManagerRepository, IDownloadStationRepository
 {
-    private int _liveMessageCount = 5;
+    private int _liveMessageCount = Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") == "chat-realtime" ? 35 : 5;
     private static readonly VirtualizationResourceSummary CreationStorage = new("store-a", "Demo storage", VirtualizationResourceKind.Storage, VirtualizationResourceHealth.Healthy);
     private VirtualMachineCreationRequest? _creation;
     private bool _creationFinished;
@@ -886,6 +941,7 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
     public int VmCreationReviews { get; private set; }
     public bool VmCreationCancelled { get; private set; }
     public int VmConsoleOpens { get; private set; }
+    public string? VmLastConsoleMachineId { get; private set; }
     public int VmConsoleDocumentReads { get; private set; }
     public bool VmConsoleCancelled { get; private set; }
     public VirtualMachineConsoleSession? VmConsoleSession { get; private set; }
@@ -896,10 +952,11 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
     public bool CanOpenConsole => VmPowerState.StartsWith("vmconsole-", StringComparison.Ordinal) && VmPowerState != "vmconsole-unavailable";
     public async Task<VirtualMachineConsoleSession> OpenConsoleAsync(VirtualMachineSummary baseline, CancellationToken token = default)
     {
-        VmConsoleOpens++;
+        VmConsoleOpens++; VmLastConsoleMachineId = baseline.Id;
         if (VmPowerState == "vmconsole-loading")
         { try { await Task.Delay(Timeout.Infinite, token); } catch (OperationCanceledException) { VmConsoleCancelled = true; throw; } }
         if (VmPowerState == "vmconsole-error") throw new DsmException(UserText.Key("VmConsoleLoadFailed"), UserText.Key("VmConsoleReconnect"));
+        if (VmPowerState == "vmconsole-manual-reconnect" && VmConsoleOpens == 1) throw new IOException("合成连接中断。");
         var origin = VmPowerState == "vmconsole-managed-alias" ? "https://console.invalid:5001/vmm-alias" :
             VmPowerState == "vmconsole-managed-ip" ? "https://127.0.0.1:5001" : VmPowerState == "vmconsole-managed-ipv6" ? "https://[::1]:5001" : "https://console.invalid:5001";
         var policy = VirtualMachineConsolePolicy.Create(new(origin), baseline.Id, baseline.Name, "en-us", Guid.NewGuid());
@@ -964,6 +1021,8 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
     public bool VmCreationPowerRequested => _creation?.PowerOnAfterCreation == true;
     public VirtualMachineCreationRequest? VmCreationRequest => _creation;
     public bool CanCreateAdvancedMachine => VmPowerState.StartsWith("vmcreate-advanced", StringComparison.Ordinal);
+    public bool CanReadAdvancedCreation => CanCreateAdvancedMachine;
+    public bool CanCreateBasicMachine => CanCreateMachine && VmPowerState != "vmcreate-advanced-internal-only";
     public bool VmAdvancedReadFailure { get; set; }
     public Task<VirtualMachineAdvancedCreationInventory> LoadAdvancedCreationInventoryAsync(CancellationToken token = default)
     {
@@ -1027,6 +1086,7 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
     {
         if (VmPowerState == "vmsettings-loading") await Task.Delay(Timeout.Infinite, token);
         if (VmPowerState == "vmsettings-error") throw new IOException("合成设置读取失败");
+        if (VmPowerState == "vmsettings-missing") return _settings ??= new(id, VirtualMachineOperationalState.Stopped, new("Demo VM", null, null, null, null)) { Source = VirtualMachineApiSource.Internal };
         return _settings ??= new(id, VmPowerState is "vmsettings-running" or "vmsettings-priority-running" ? VirtualMachineOperationalState.Running : VirtualMachineOperationalState.Stopped,
             new("Demo VM", "Synthetic description", 2, 2048, VirtualMachineAutoStart.PreviousState)
             { CpuWeight = VmPowerState.StartsWith("vmsettings-priority-", StringComparison.Ordinal) ? VmPowerState == "vmsettings-priority-custom" ? 128 : 256 : null });
@@ -1041,7 +1101,10 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
         if (VmPowerState is "vmsettings-partial" or "vmsettings-priority-unknown")
         { _settingsPending = request; return Task.FromResult(new MutationResult(1, MutationResultStatus.PartialSuccess, "saveVirtualMachineSettings", true, true, new(1, 0, 1))); }
         _settings = request.Baseline with { Configuration = request.Desired };
-        return Task.FromResult(new MutationResult(1, MutationResultStatus.ConfirmedSuccess, "saveVirtualMachineSettings", true, false, new(2, 0, 0)));
+        var before = request.Baseline.Configuration; var after = request.Desired;
+        var changed = new[] { before.Name != after.Name, before.Description != after.Description, before.CpuCount != after.CpuCount,
+            before.MemoryMiB != after.MemoryMiB, before.AutoStart != after.AutoStart, before.CpuWeight != after.CpuWeight }.Count(value => value);
+        return Task.FromResult(new MutationResult(1, MutationResultStatus.ConfirmedSuccess, "saveVirtualMachineSettings", true, false, new(changed, 0, 0)));
     }
     internal static int ActiveRealtimeSubscriptions;
     private static string VmPowerState => Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") ?? "";
@@ -1052,6 +1115,7 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
     public bool VmPowerCancelled { get; private set; }
     public bool CanControlPower => VmPowerState.StartsWith("vmpower-", StringComparison.Ordinal) && VmPowerState != "vmpower-readonly" ||
         VmPowerState.StartsWith("vmcreate-", StringComparison.Ordinal) && VmPowerState is not ("vmcreate-readonly" or "vmcreate-power-readonly");
+    public bool CanControlPowerAction(VirtualMachineSummary target, VirtualMachinePowerAction action) => CanControlPower;
     public async Task<IReadOnlyList<VirtualMachinePowerRecovery>> GetPowerRecoveriesAsync(CancellationToken token = default)
     {
         if (VmPowerState == "vmpower-loading") await Task.Delay(Timeout.Infinite, token);
@@ -1064,7 +1128,8 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
     {
         if (VmPowerState == "vmpower-recovered")
         { _vmPending = null; _vmState = VirtualMachineOperationalState.Running; return Task.FromResult<MutationResult?>(new(1, MutationResultStatus.ConfirmedSuccess, "virtualMachinePower", true, false, new(1, 0, 0))); }
-        return Task.FromResult<MutationResult?>(new(1, MutationResultStatus.SubmittedButUnverified, "virtualMachinePower", true, true, new(0, 0, 1)));
+        return Task.FromResult<MutationResult?>(new(1, MutationResultStatus.SubmittedButUnverified, "virtualMachinePower", true, true, new(0, 0, 1),
+            diagnosticTag: _vmPending?.Action == VirtualMachinePowerAction.Reboot ? "virtual-machine.power.reboot-accepted" : null));
     }
     public async Task<MutationResult> ControlPowerAsync(VirtualMachinePowerRequest request, CancellationToken token = default)
     {
@@ -1072,8 +1137,9 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
         if (VmPowerState == "vmpower-close-busy")
         { try { await Task.Delay(Timeout.Infinite, token); } catch (OperationCanceledException) { VmPowerCancelled = true; throw; } }
         if (VmPowerState == "vmpower-rejected") return new(1, MutationResultStatus.PermissionDenied, "virtualMachinePower", true, true, new(0, 1, 0), MutationErrorCategory.Permission);
-        if (VmPowerState == "vmpower-unknown")
-        { _vmPending = new(request.Baseline.Id, request.Baseline.Name, request.Action); return new(1, MutationResultStatus.SubmittedButUnverified, "virtualMachinePower", true, true, new(0, 0, 1)); }
+        if (VmPowerState is "vmpower-unknown" or "vmpower-reboot")
+        { _vmPending = new(request.Baseline.Id, request.Baseline.Name, request.Action); return new(1, MutationResultStatus.SubmittedButUnverified, "virtualMachinePower", true, true, new(0, 0, 1),
+            diagnosticTag: request.Action == VirtualMachinePowerAction.Reboot ? "virtual-machine.power.reboot-accepted" : null); }
         _vmState = request.Action == VirtualMachinePowerAction.PowerOn ? VirtualMachineOperationalState.Running : VirtualMachineOperationalState.Stopped;
         return new(1, MutationResultStatus.ConfirmedSuccess, "virtualMachinePower", true, false, new(1, 0, 0));
     }
@@ -1112,6 +1178,7 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
     private readonly List<ContainerResourceSummary> _createdNetworks = [];
     private readonly List<ContainerNetworkDeletionRecovery> _networkDeletePending = [];
     private readonly HashSet<string> _deletedNetworkIds = [];
+    private ContainerNetworkDeleteRequest? _networkDeleteRequest;
     public int NetworkDeleteCalls { get; private set; }
     public bool NetworkDeleteCancelled { get; private set; }
     public bool CanDeleteNetworks => NetworkCreateState.StartsWith("netdelete-", StringComparison.Ordinal) && NetworkCreateState != "netdelete-readonly";
@@ -1127,15 +1194,27 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
         { _deletedNetworkIds.Add(id); _networkDeletePending.RemoveAll(item => item.Id == id); return Task.FromResult<MutationResult?>(new(1, MutationResultStatus.ConfirmedSuccess, "deleteContainerNetworks", true, false, new(1, 0, 0))); }
         return Task.FromResult<MutationResult?>(new(1, MutationResultStatus.SubmittedButUnverified, "deleteContainerNetworks", true, true, new(0, 0, 1)));
     }
+    public Task<IReadOnlyList<ContainerNetworkDeletionItem>> GetNetworkDeletionItemsAsync(Guid requestId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<ContainerNetworkDeletionItem>>(_networkDeleteRequest?.RequestId != requestId ? [] :
+            _networkDeleteRequest.Baselines.Select((target, index) => new ContainerNetworkDeletionItem(requestId, target.Id, target.Name,
+                NetworkCreateState == "netdelete-stopped" ? index == 0 ? ContainerNetworkDeletionStage.Submitted : ContainerNetworkDeletionStage.NotSubmitted :
+                NetworkCreateState == "netdelete-rejected" ? ContainerNetworkDeletionStage.Rejected :
+                _deletedNetworkIds.Contains(target.Id) ? ContainerNetworkDeletionStage.Deleted : ContainerNetworkDeletionStage.Accepted,
+                NetworkCreateState == "netdelete-rejected" ? MutationErrorCategory.Permission : null)).ToArray());
     public async Task<MutationResult> DeleteNetworksAsync(ContainerNetworkDeleteRequest request, CancellationToken cancellationToken = default)
     {
-        NetworkDeleteCalls++;
+        NetworkDeleteCalls++; _networkDeleteRequest = request;
         if (NetworkCreateState == "netdelete-close-busy")
         {
             try { await Task.Delay(Timeout.Infinite, cancellationToken); }
             catch (OperationCanceledException) { NetworkDeleteCancelled = true; throw; }
         }
         if (NetworkCreateState == "netdelete-rejected") return new(1, MutationResultStatus.PermissionDenied, "deleteContainerNetworks", true, true, new(0, request.Baselines.Count, 0), MutationErrorCategory.Permission);
+        if (NetworkCreateState == "netdelete-stopped")
+        {
+            var target = request.Baselines[0]; _networkDeletePending.Add(new(target.Id, target.Name) { RequestId = request.RequestId });
+            return new(1, MutationResultStatus.SubmittedButUnverified, "deleteContainerNetworks", true, true, new(0, 0, 1));
+        }
         var count = NetworkCreateState switch { "netdelete-unknown" => 0, "netdelete-partial" => 1, _ => request.Baselines.Count };
         foreach (var target in request.Baselines.Take(count)) _deletedNetworkIds.Add(target.Id);
         foreach (var target in request.Baselines.Skip(count)) _networkDeletePending.Add(new(target.Id, target.Name));
@@ -1224,7 +1303,7 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
         Enum.GetValues<VirtualMachineManagerReadFeature>().ToHashSet());
     Task<VirtualMachineManagerSnapshot> IVirtualMachineManagerRepository.LoadSnapshotAsync(CancellationToken cancellationToken) =>
         Task.FromResult(new VirtualMachineManagerSnapshot(ProfileId,
-            VirtualMachineManagerSection<VirtualMachineSummary>.Available([new("sample-vm", "Demo VM", _vmState ?? (VmPowerState is "vmpower-shutdown" or "vmpower-off" || VmPowerState.StartsWith("vmconsole-", StringComparison.Ordinal) && VmPowerState != "vmconsole-stopped" ? VirtualMachineOperationalState.Running : VirtualMachineOperationalState.Stopped), 2, 2147483648, 34359738368, null, null)]),
+            VirtualMachineManagerSection<VirtualMachineSummary>.Available([new("sample-vm", "Demo VM", _vmState ?? (VmPowerState is "vmpower-shutdown" or "vmpower-off" or "vmpower-reboot" || VmPowerState.StartsWith("vmconsole-", StringComparison.Ordinal) && VmPowerState != "vmconsole-stopped" ? VirtualMachineOperationalState.Running : VirtualMachineOperationalState.Stopped), 2, 2147483648, 34359738368, null, null)]),
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]), VirtualMachineManagerSection<VirtualizationResourceSummary>.Available(VmPowerState.StartsWith("vmcreate-", StringComparison.Ordinal) && VmPowerState != "vmcreate-empty" ? [CreationStorage] : []),
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]), VirtualMachineManagerSection<VirtualizationResourceSummary>.Available(VmPowerState.StartsWith("vmcreate-", StringComparison.Ordinal) ? [new("image-a", "Demo disk image", VirtualizationResourceKind.Image, VirtualizationResourceHealth.Unknown, Type: "disk")] : []),
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]), VirtualMachineManagerSection<ServiceEventSummary>.Available([])));
@@ -1310,30 +1389,6 @@ internal sealed class SmokeRepository : IDsmRepository, INasDetailsRepository, I
         Task.FromException(new NotSupportedException());
     public Task<NasSettingsSnapshot> LoadNasSettingsAsync(CancellationToken cancellationToken = default) =>
         Task.FromException<NasSettingsSnapshot>(new NotSupportedException());
-}
-
-internal sealed class SmokePhotosRepository : ISynologyPhotosRepository
-{
-    public Guid ProfileId { get; } = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    public Task<SynologyPhotoAccess> AccessAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(new SynologyPhotoAccess([SynologyPhotoSpace.Personal], "synthetic"));
-    public Task<IReadOnlyList<SynologyPhotoDay>> TimelineAsync(SynologyPhotoQuery? query = null,
-        CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<SynologyPhotoDay>>(
-            Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") == "photo-empty"
-                ? [] : [new(new DateOnly(2026, 9, 16), 8)]);
-    public async Task<SynologyPhotoPage> PhotosAsync(SynologyPhotoQuery query, int offset, int limit,
-        CancellationToken cancellationToken = default)
-    {
-        var state = Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE");
-        if (state == "photo-loading") await Task.Delay(Timeout.Infinite, cancellationToken);
-        if (state == "photo-error") throw new SynologyPhotoException(SynologyPhotoFailure.InvalidResponse);
-        var date = new DateTimeOffset(2026, 9, 16, 0, 0, 0, TimeSpan.Zero);
-        var items = Enumerable.Range(1, 8).Select(index => new SynologyPhoto(
-            new(ProfileId, SynologyPhotoSpace.Personal, index), $"Sample-{index:00}.jpg",
-            2048, date, date, 1, "photo")).Skip(offset).Take(limit).ToArray();
-        return new SynologyPhotoPage(items, offset, offset + items.Length, false);
-    }
 }
 
 internal sealed class SmokeAdvancedChatRepository(string state) : IChatRepository
@@ -1432,6 +1487,49 @@ internal sealed class SmokeDownloadBatchRepository(string state) : IDownloadStat
         if (request.ForceComplete != (state == "batch-finish")) throw new InvalidOperationException("结束与移除任务语义混淆。");
         return Task.FromResult(new DownloadTaskDeleteOutcome(Result(request.Task.Id), request.Task.Id));
     }
+    public bool CanFinishIncomplete => state == "batch-finish";
+    private DownloadActionInfo? _action;
+    public string? EditedDestination { get; private set; }
+    public async Task<DownloadActionInfo> StartDownloadActionAsync(DownloadTaskActionRequest request, CancellationToken token = default)
+    {
+        if (request.Kind == DownloadActionKind.EditDestination)
+        { if (request.Destination != "writable") throw new InvalidOperationException("批量保存位置来源错误。"); EditedDestination = request.Destination; }
+        _action = new(request.Id, ProfileId, request.Kind, DateTimeOffset.UtcNow,
+            request.Tasks.Select(task => new DownloadActionItem(task.Id, DownloadActionStage.NotStarted, null, task)).ToArray());
+        return await RunAsync(false, token);
+    }
+    public Task<DownloadActionInfo> ReviewDownloadActionAsync(Guid id, CancellationToken token = default) => RunAsync(true, token);
+    public Task<DownloadActionInfo> ContinueDownloadActionAsync(Guid id, CancellationToken token = default) => RunAsync(false, token);
+    public Task<DownloadActionInfo> CancelDownloadActionRemainderAsync(Guid id, CancellationToken token = default)
+    {
+        _action = _action! with { Items = _action!.Items.Select(item => item.Stage == DownloadActionStage.NotStarted ? item with { Stage = DownloadActionStage.Cancelled } : item).ToArray() };
+        return Task.FromResult(_action);
+    }
+    private async Task<DownloadActionInfo> RunAsync(bool review, CancellationToken token)
+    {
+        var rows = _action!.Items.ToArray();
+        for (var index = 0; index < rows.Length; index++)
+        {
+            if (token.IsCancellationRequested) break;
+            var row = rows[index];
+            if (row.Stage != DownloadActionStage.Unknown && (review || row.Stage != DownloadActionStage.NotStarted)) continue;
+            MutationResult result;
+            DownloadTask? confirmed = null;
+            if (_action.Kind is DownloadActionKind.Remove or DownloadActionKind.FinishIncomplete)
+                result = (await DeleteTaskAsync(new(ProfileId, row.Task!) { ForceComplete = _action.Kind == DownloadActionKind.FinishIncomplete }, token)).Result;
+            else if (_action.Kind == DownloadActionKind.EditDestination)
+            { result = Result(row.TargetId); confirmed = row.Task! with { Destination = EditedDestination }; }
+            else
+            {
+                var outcome = await ControlTaskAsync(new(ProfileId, row.Task!, _action.Kind == DownloadActionKind.Pause ? DownloadTaskControlAction.Pause : DownloadTaskControlAction.Resume), token);
+                result = outcome.Result; confirmed = outcome.Task;
+            }
+            rows[index] = row with { Stage = result.Status switch { MutationResultStatus.ConfirmedSuccess => DownloadActionStage.Confirmed,
+                MutationResultStatus.SubmittedButUnverified => DownloadActionStage.Unknown, _ => DownloadActionStage.Rejected }, Task = confirmed };
+            if (rows[index].Stage == DownloadActionStage.Unknown) break;
+        }
+        return _action = _action with { Items = rows };
+    }
     public Task<DownloadStationSnapshot> LoadSnapshotAsync(int offset, int limit, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
@@ -1449,7 +1547,8 @@ internal sealed class SmokeDownloadSettingsRepository(string state) : IDownloadS
     {
         if (state == "settings-loading") await Task.Delay(Timeout.Infinite, cancellationToken);
         if (state == "settings-error") throw new IOException("synthetic");
-        return new(ProfileId, _value, state != "settings-v1", state == "settings-no-schedule" ? DownloadStationSectionStatus.Unavailable : DownloadStationSectionStatus.Available);
+        if (state == "settings-missing") _value = _value with { BtUploadLimitKb = null, HttpDownloadLimitKb = null, FtpDownloadLimitKb = null, IsEmuleEnabled = null };
+        return new(ProfileId, _value, state != "settings-v1", state == "settings-no-schedule" ? DownloadStationSectionStatus.Unavailable : DownloadStationSectionStatus.Available) { IsManager = state == "settings-permission-unavailable" ? null : state != "settings-readonly" };
     }
     public Task<DownloadSettingsSaveOutcome> SaveSettingsAsync(DownloadSettingsSaveRequest request, CancellationToken cancellationToken = default)
     {
@@ -1477,10 +1576,43 @@ internal sealed class SmokeDownloadSettingsRepository(string state) : IDownloadS
 }
 
 // 仅在合成宿主中提供设置能力，不改变生产 Repository 的危险写门。
-public class SmokeNasServiceSettingsRepository : System.Reflection.DispatchProxy
+public partial class SmokeNasServiceSettingsRepository : System.Reflection.DispatchProxy
 {
     public string State { get; set; } = "terminal";
     public int Writes { get; private set; }
+    private NasHardwareEditRecovery? _hardwareEdit;
+    private NasZramSnapshot? _zramSaved;
+    private NasPowerScheduleSnapshot? _powerScheduleSaved;
+    private bool ZramEditable => State is "zram-edit" or "zram-save" or "zram-save-unknown" or "zram-marker" or "zram-disconnect";
+    private bool PowerScheduleEditable => State.StartsWith("powsched-edit", StringComparison.Ordinal) || State is "powsched-save" or "powsched-save-unknown" or "powsched-disconnect";
+    private Task<IReadOnlyList<NasHardwareEditRecovery>> LoadHardwareEditsAsync()
+    {
+        if (State == "zram-marker") _hardwareEdit ??= new(Guid.NewGuid(), NasHardwareEditKind.Zram, DateTimeOffset.UtcNow,
+            [new(NasHardwareEditStage.Confirmed, true, true, null), new(NasHardwareEditStage.NotStarted, false, false, null)]);
+        return Task.FromResult<IReadOnlyList<NasHardwareEditRecovery>>(_hardwareEdit is null ? [] : [_hardwareEdit]);
+    }
+    private async Task<NasHardwareEditRecovery> SaveHardwareEditAsync(object request, CancellationToken token)
+    {
+        Writes++;
+        var unknown = State.EndsWith("unknown", StringComparison.Ordinal);
+        if (request is NasZramSaveRequest zram)
+        {
+            if (!zram.RiskConfirmed || zram.Baseline.IsEnabled == zram.Enabled) throw new InvalidOperationException("合成压缩确认丢失。");
+            _zramSaved = new(zram.Enabled, null, NasZramAlgorithm.Unknown) { NeedsReboot = true };
+            _hardwareEdit = new(zram.RequestId, NasHardwareEditKind.Zram, DateTimeOffset.UtcNow,
+                [new(unknown ? NasHardwareEditStage.Unknown : NasHardwareEditStage.Confirmed, true, !unknown, null),
+                 new(unknown ? NasHardwareEditStage.NotStarted : NasHardwareEditStage.Confirmed, !unknown, !unknown, null)]);
+        }
+        else if (request is NasPowerScheduleSaveRequest schedule)
+        {
+            if (!schedule.RiskConfirmed || !NasPowerScheduleRules.IsValid(schedule.Entries)) throw new InvalidOperationException("合成电源草稿无效。");
+            _powerScheduleSaved = new(schedule.Entries, schedule.Baseline.TimeZoneIdentifier, schedule.Entries.Count, false, 0) { SupportsEditing = true };
+            _hardwareEdit = new(schedule.RequestId, NasHardwareEditKind.PowerSchedule, DateTimeOffset.UtcNow,
+                [new(unknown ? NasHardwareEditStage.Unknown : NasHardwareEditStage.Confirmed, true, !unknown, null)]);
+        }
+        if (State.EndsWith("disconnect", StringComparison.Ordinal)) await Task.Delay(250);
+        return _hardwareEdit!;
+    }
     public int ZramReads { get; private set; }
     private async Task<NasZramSnapshot> LoadZramAsync(CancellationToken token)
     {
@@ -1488,6 +1620,8 @@ public class SmokeNasServiceSettingsRepository : System.Reflection.DispatchProxy
         if (State == "zram-loading") await Task.Delay(Timeout.Infinite, token);
         if (State == "zram-error") throw new IOException("合成内存压缩读取失败");
         if (State == "zram-unavailable") throw new DsmException("synthetic", "synthetic", 102);
+        if (_zramSaved is not null) return _zramSaved;
+        if (ZramEditable || State == "zram-current") return new(State == "zram-marker", null, NasZramAlgorithm.Unknown) { NeedsReboot = false };
         return State switch
         {
             "zram-empty" => new(null, null, NasZramAlgorithm.Unknown),
@@ -1521,6 +1655,8 @@ public class SmokeNasServiceSettingsRepository : System.Reflection.DispatchProxy
         if (State == "powsched-loading") await Task.Delay(Timeout.Infinite, token);
         if (State == "powsched-error") throw new IOException("合成电源计划读取失败");
         if (State == "powsched-unavailable") throw new DsmException("synthetic", "synthetic", 102);
+        if (_powerScheduleSaved is not null) return _powerScheduleSaved;
+        if (PowerScheduleEditable) return new([], "Asia/Shanghai", 0, false, 0) { SupportsEditing = true };
         NasPowerScheduleEntry[] entries = State == "powsched-empty" ? [] : State is "powsched-filtered" or "powsched-unknown" ?
             [new("synthetic", NasPowerScheduleAction.Unknown, null, 8, 30, NasPowerScheduleRecurrence.Unknown, null, [])] :
             [new("one", NasPowerScheduleAction.Startup, true, 8, 30, NasPowerScheduleRecurrence.Weekly, null, [DayOfWeek.Monday, DayOfWeek.Friday]),
@@ -1666,14 +1802,15 @@ public class SmokeNasServiceSettingsRepository : System.Reflection.DispatchProxy
     private NasProxySettings _proxy = new(true, "proxy.example.invalid", 3128);
     protected override object? Invoke(System.Reflection.MethodInfo? method, object?[]? args)
     {
+        if (State.StartsWith("pkg-center-", StringComparison.Ordinal) && TryPackageCenter(method!.Name, args, out var packageCenterResult)) return packageCenterResult;
         var writable = !State.EndsWith("readonly", StringComparison.Ordinal);
-        var fileWritable = State.StartsWith("file-save", StringComparison.Ordinal) || State is "file-invalid" or "file-pending";
+        var fileWritable = State.StartsWith("file-save", StringComparison.Ordinal) || State is "file-invalid" or "file-pending" or "file-swap-ports";
         var regionWritable = State.StartsWith("region-save", StringComparison.Ordinal) || State is "region-invalid" or "region-manual-edit";
         var networkWritable = State.StartsWith("network-save", StringComparison.Ordinal) ||
             State is "network-invalid" or "network-edit-unknown" or "network-reconnect" or "network-fresh-login";
         var securityWritable = State.StartsWith("security-save", StringComparison.Ordinal) ||
             State is "security-invalid" or "security-pending" or "security-missing-profile";
-        var hardwareWritable = State.StartsWith("hardware-save", StringComparison.Ordinal) || State is "hardware-invalid" or "hardware-pending" or "hardware-ups-edit";
+        var hardwareWritable = State.StartsWith("hardware-save", StringComparison.Ordinal) || State is "hardware-invalid" or "hardware-pending" or "hardware-ups-edit" or "hardware-supported";
         var ddnsWritable = State is "ddns-create" or "ddns-save" or "ddns-test" or "ddns-delete" or "ddns-update" or
             "ddns-unknown" or "ddns-rejected" or "ddns-invalid" or "ddns-late-change" or "ddns-pending";
         var packageWritable = State is "pkg-start" or "pkg-stop" or "pkg-uninstall" or "pkg-unknown" or "pkg-rejected" or
@@ -1688,6 +1825,13 @@ public class SmokeNasServiceSettingsRepository : System.Reflection.DispatchProxy
             case "get_ProfileId": return Guid.Parse("11111111-1111-1111-1111-111111111111");
             case "LoadZramAsync": return LoadZramAsync((CancellationToken)args![0]!);
             case "LoadExternalStorageAsync": return LoadExternalStorageAsync((CancellationToken)args![0]!);
+            case "LoadHardwareEditRecoveriesAsync": return LoadHardwareEditsAsync();
+            case "ReviewHardwareEditAsync": return Task.FromResult(_hardwareEdit!);
+            case "SaveZramAsync": case "SavePowerScheduleAsync": return SaveHardwareEditAsync(args![0]!, (CancellationToken)args[1]!);
+            case "MarkZramRebootAsync":
+                if (!(bool)args![1]!) throw new InvalidOperationException("合成重启标记缺少确认。");
+                Writes++; _hardwareEdit = _hardwareEdit! with { Steps = [new(NasHardwareEditStage.Confirmed, true, true, null), new(NasHardwareEditStage.Confirmed, true, true, null)] };
+                _zramSaved = new(true, null, NasZramAlgorithm.Unknown) { NeedsReboot = true }; return Task.FromResult(_hardwareEdit);
             case "LoadPowerScheduleAsync": return LoadPowerScheduleAsync((CancellationToken)args![0]!);
             case "LoadRemoteAccessSettingsAsync": return LoadRemoteAccessAsync((CancellationToken)args![0]!);
             case "SaveRemoteAccessSettingsAsync": return SaveRemoteAccessAsync((NasServiceSettingsSaveRequest<NasRemoteAccessSettings>)args![0]!, (CancellationToken)args[1]!);
@@ -1750,6 +1894,10 @@ public class SmokeNasServiceSettingsRepository : System.Reflection.DispatchProxy
                 DirectoryDelete = (NasDirectoryDeleteRequest)args![0]!;
                 return MutateDirectoryAsync(DirectoryDelete.Baseline.Kind, DirectoryDelete.Baseline.Name, true, (CancellationToken)args[1]!);
             case "get_PackageControlAvailability": return new NasPackageControlAvailability(packageWritable, packageWritable && State != "pkg-control-only");
+            case "get_PackageCenterAvailability": return new NasPackageCenterAvailability(false, false, false, false, false);
+            case "get_PackageCenterWebUri": return null;
+            case "LoadPackageActivitiesAsync": return Task.FromResult<IReadOnlyList<NasPackageActivity>>([]);
+            case "GetPackageInstallationAsync": return Task.FromResult<NasPackageInstallProgress?>(null);
             case "GetPackageRecoveriesAsync": return Task.FromResult<IReadOnlyList<NasPackageRecoveryInfo>>(
                 State == "pkg-pending" || State == "pkg-unknown" && Writes > 0 || State == "pkg-recovered" && _packageReviewCalls == 0
                     ? [new("synthetic-package", "Synthetic Package", State == "pkg-recovered" ? NasPackageAction.Uninstall : NasPackageAction.Start)] : []);
@@ -1766,7 +1914,7 @@ public class SmokeNasServiceSettingsRepository : System.Reflection.DispatchProxy
                 false, false, false, false, powerWritable, packageWritable, directoryWritable, directoryWritable, connectionWritable, diskWritable) { CanSaveRemoteAccess = remoteWritable };
             case "PrepareServiceSettingsAsync": return Task.FromResult(new NasSettingsWriteAvailability(
                 ddnsWritable, fileWritable, writable, writable, networkWritable, regionWritable, securityWritable, hardwareWritable, false, false,
-                false, false, false, false, powerWritable, packageWritable, directoryWritable, directoryWritable, connectionWritable, diskWritable) { CanSaveRemoteAccess = remoteWritable });
+                false, false, false, false, powerWritable, packageWritable, directoryWritable, directoryWritable, connectionWritable, diskWritable) { CanSaveRemoteAccess = remoteWritable, CanSaveZram = ZramEditable, CanSavePowerSchedule = PowerScheduleEditable });
             case "ReviewServiceSettingsAsync":
                 if (args![0] is NasServiceSettingsKind.RemoteAccess) return ReviewRemoteAccessAsync();
                 _serviceReviewCalls++;
@@ -2046,9 +2194,10 @@ public class SmokeNasServiceSettingsRepository : System.Reflection.DispatchProxy
         return _hardwareLastRead = new(true, 5, partial ? null : "coolfan", null, null, true, "SLAVE", "120")
         {
             LedMinimum = 0, LedMaximum = 10,
+            SupportedFanModes = State == "hardware-supported" ? ["fullfan", "quietfan"] : null,
             AvailableSections = partial ? (NasHardwareSections)59 : (NasHardwareSections)63,
             FailedSections = partial ? NasHardwareSections.Fan : NasHardwareSections.None,
-            Beep = new(true, true, false, false, true, "volume_crash"),
+            Beep = State == "hardware-supported" ? new(null, true, null, false, null, "volume_crash") : new(true, true, false, false, true, "volume_crash"),
             Hibernation = new(true, false, true, true, false),
             Ups = new(State != "hardware-ups-edit", "SLAVE", 120, false, true, State is "hardware-ups-empty" or "hardware-ups-edit" ? "" : "192.0.2.50", null),
         };
@@ -2129,10 +2278,18 @@ public class SmokeNasServiceSettingsRepository : System.Reflection.DispatchProxy
     }
 }
 
-internal static class SmokeSnapshot
+internal static partial class SmokeSnapshot
 {
     internal static void RecordFailure(Exception error) => System.IO.File.WriteAllText(
         System.IO.Path.Combine(AppContext.BaseDirectory, "smoke-failure.txt"), error.ToString());
+
+    private static readonly object NativePhaseLock = new();
+    internal static void RecordNativePhase(string phase)
+    {
+        if (Environment.GetEnvironmentVariable("LANSTASH_SMOKE_NATIVE_DIAGNOSTICS") == "1")
+            lock (NativePhaseLock)
+                System.IO.File.WriteAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "smoke-native-phase.txt"), phase);
+    }
 
     internal static async Task SaveAsync(FrameworkElement root)
     {
@@ -2147,8 +2304,13 @@ internal static class SmokeSnapshot
         if (scenario == "notification-lifecycle") { await SaveNotificationLifecycleAsync(root); return; }
         if (scenario == "vm-networks") { await SaveVirtualMachineNetworksAsync(root); return; }
         if (scenario == "chat-tools") { await SaveChatToolsAsync(root); return; }
+        if (scenario == "chat-interactions") { await SaveChatInteractionsAsync(root); return; }
+        if (scenario == "desktop-lifecycle") { await SaveDesktopLifecycleAsync(root); return; }
+        if (scenario == "saved-recordings") { await SaveSavedRecordingsAsync(root); return; }
         if (scenario == "remote-mounts") { await SaveRemoteMountsAsync(root); return; }
         if (scenario == "container-networks") { await SaveContainerNetworksAsync(root); return; }
+        if (scenario == "container-activity") { await SaveContainerActivityAsync(root); return; }
+        if (scenario == "container-resources") { await SaveContainerResourcesAsync(root); return; }
         if (scenario == "container-network-create") { await SaveContainerNetworkCreationAsync(root); return; }
         if (scenario == "container-network-delete") { await SaveContainerNetworkDeletionAsync(root); return; }
         if (scenario == "container-image-delete") { await SaveContainerImageDeletionAsync(root); return; }
@@ -2156,12 +2318,26 @@ internal static class SmokeSnapshot
         if (scenario == "container-operations") { await SaveContainerMutationsAsync(root); return; }
         if (scenario == "container-registry") { await SaveContainerRegistryAsync(root); return; }
         if (scenario == "transfer-lifecycle") { await SaveTransferLifecycleAsync(root); return; }
+        if (scenario == "transfer-flows") { await SaveTransferFlowsAsync(root); return; }
+        if (scenario == "upload-flows") { await SaveUploadFlowsAsync(root); return; }
+        if (scenario == "cross-nas") { await SaveCrossNasAsync(root); return; }
         if (scenario == "transfer-pagination") { await SaveTransferPaginationAsync(root); return; }
         if (scenario == "files-drag-move") { await SaveFileDragMoveAsync(root); return; }
         if (scenario == "files-archive") { await SaveFileArchiveAsync(root); return; }
         if (scenario == "files-favorites") { await SaveFileFavoritesAsync(root); return; }
         if (scenario == "files-selection-download") { await SaveSelectionDownloadAsync(root); return; }
         if (scenario == "files-folder-upload") { await SaveFolderUploadAsync(root); return; }
+        if (scenario == "files-search") { await SaveFileSearchAsync(root); return; }
+        if (scenario == "files-text-edit") { await SaveFileTextEditAsync(root); return; }
+        if (scenario == "office") { await SaveOfficeAsync(root); return; }
+        if (scenario == "files-grouping") { await SaveFileGroupingAsync(root); return; }
+        if (scenario == "files-sharing") { await SaveFileSharingAsync(root); return; }
+        if (scenario == "files-permissions") { await SaveFilePermissionsAsync(root); return; }
+        if (scenario == "files-iso") { await SaveIsoMountsAsync(root); return; }
+        if (scenario == "files-vfs") { await SaveVfsAsync(root); return; }
+        if (scenario == "files-vfs-browser") { await SaveVfsBrowserAsync(root); return; }
+        if (scenario == "files-settings") { await SaveFileStationSettingsAsync(root); return; }
+        if (scenario == "files-tasks") { await SaveFileTasksAsync(root); return; }
         if (scenario == "files-upload-batch") { await SaveFileUploadBatchAsync(root); return; }
         if (scenario == "files-recycle-recovery") { await SaveCopyRecoveryAsync(root, recycle: true); return; }
         if (scenario == "files-copy-recovery") { await SaveCopyRecoveryAsync(root); return; }
@@ -2172,6 +2348,7 @@ internal static class SmokeSnapshot
         if (scenario == "vm-create") { await SaveVirtualMachineCreationAsync(root); return; }
         if (scenario == "vm-tasks") { await SaveVirtualMachineTasksAsync(root); return; }
         if (scenario == "vm-settings") { await SaveVirtualMachineSettingsAsync(root); return; }
+        if (scenario == "vm-activity") { await SaveVirtualMachineActivityAsync(root); return; }
         if (scenario == "vm-console") { await SaveVirtualMachineConsoleAsync(root); return; }
         if (scenario == "vm-image-import") { await SaveVirtualMachineImageImportAsync(root); return; }
         if (scenario == "vm-image-delete") { await SaveVirtualMachinePowerBatchAsync(root, deletion: true, images: true); return; }
@@ -2180,6 +2357,7 @@ internal static class SmokeSnapshot
         if (scenario == "vm-power-batch") { await SaveVirtualMachinePowerBatchAsync(root); return; }
         if (scenario == "vm-power") { await SaveVirtualMachinePowerAsync(root); return; }
         if (scenario == "download-settings") { await SaveDownloadSettingsAsync(root); return; }
+        if (scenario == "download-read-actions") { await SaveDownloadReadActionsAsync(root); return; }
         if (scenario == "download-batch") { await SaveDownloadBatchAsync(root); return; }
         if (scenario == "download-file-options") { await SaveDownloadFileOptionsAsync(root); return; }
         if (scenario == "nas-service-settings") { await SaveNasServiceSettingsAsync(root); return; }
@@ -2187,6 +2365,9 @@ internal static class SmokeSnapshot
         if (scenario == "nas-network-settings") { await SaveNasServiceSettingsAsync(root); return; }
         if (scenario == "nas-security-settings") { await SaveNasServiceSettingsAsync(root); return; }
         if (scenario == "nas-hardware-settings") { await SaveNasServiceSettingsAsync(root); return; }
+        if (scenario == "nas-performance") { await SaveNasPerformanceAsync(root); return; }
+        if (scenario == "nas-logs") { await SaveNasLogsAsync(root); return; }
+        if (scenario == "nas-analysis") { await SaveNasAnalysisAsync(root); return; }
         if (scenario == "nas-ddns-settings") { await SaveNasServiceSettingsAsync(root); return; }
         if (scenario == "nas-package-settings") { await SaveNasServiceSettingsAsync(root); return; }
         if (scenario == "nas-directory-settings") { await SaveNasServiceSettingsAsync(root); return; }
@@ -2229,11 +2410,27 @@ internal static class SmokeSnapshot
                 navigation.SelectedItem = navigation.MenuItems.OfType<NavigationViewItem>()
                     .Single(item => item.Tag is AppModule candidate && candidate == selectedModule);
                 await Task.Delay(500);
+                if (scenario == "downloads" && (Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") is "delete-confirm" or "delete-disconnect") && content.Content is DownloadStationPage deletePage)
+                {
+                    var model = (DownloadStationViewModel)deletePage.DataContext; model.SelectTask(model.Tasks.First());
+                    var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                    var opened = (Task)typeof(DownloadStationPage).GetMethod("ShowDeleteTaskDialogAsync", flags)!.Invoke(deletePage, null)!;
+                    await Task.Delay(250);
+                    var field = typeof(DownloadStationPage).GetField("_deleteDialog", flags)!;
+                    var dialog = (ContentDialog)field.GetValue(deletePage)!;
+                    if (dialog.DefaultButton != ContentDialogButton.Close || dialog.ActualTheme != deletePage.ActualTheme ||
+                        ((TextBlock)dialog.Content).Text != Localization.LocalizationService.Current.Get("DownloadStationDeleteConfirmMessage")) throw new InvalidOperationException("移除确认风险文案或默认取消错误。");
+                    await WriteSnapshotAsync(dialog, markComplete: false);
+                    if (Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") == "delete-disconnect") deletePage.Dispose(); else dialog.Hide();
+                    await opened.WaitAsync(TimeSpan.FromSeconds(2));
+                    if (field.GetValue(deletePage) is not null) throw new InvalidOperationException("移除确认未随原页面结束。");
+                    MarkSnapshotComplete(); return;
+                }
                 if (scenario == "downloads" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") == "link-create" && content.Content is DownloadStationPage downloadsPage)
                 {
                     // 调用实际页面入口，检查 URI 与复用的目录选项一起控制确认按钮；不发送任务。
                     var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-                    var opened = (Task)typeof(DownloadStationPage).GetMethod("ShowCreateTaskDialogAsync", flags)!.Invoke(downloadsPage, null)!;
+                    var opened = (Task)typeof(DownloadStationPage).GetMethod("ShowCreateTaskDialogAsync", flags)!.Invoke(downloadsPage, [null])!;
                     await Task.Delay(350);
                     var dialog = (ContentDialog)typeof(DownloadStationPage).GetField("_linkCreateDialog", flags)!.GetValue(downloadsPage)!;
                     var children = ((StackPanel)dialog.Content).Children;
@@ -2248,12 +2445,13 @@ internal static class SmokeSnapshot
                 if (scenario == "chat" && content.Content is ChatPage { DataContext: LanStash.App.Features.Chat.ChatBrowserViewModel chat } chatPage)
                 {
                     await chat.SelectConversationAsync(chat.Conversations[0]);
+                    await chatPage.SetWindowActiveAsync(true);
                     if (Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") == "chat-realtime")
                     {
                         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                        while (chat.Messages.Count != 6) await Task.Delay(20, timeout.Token);
+                        while (chat.Messages.Count != 36) await Task.Delay(20, timeout.Token);
                         await chatPage.SetWindowVisibleAsync(false);
-                        while (SmokeRepository.ActiveRealtimeSubscriptions != 0) await Task.Delay(20, timeout.Token);
+                        if (SmokeRepository.ActiveRealtimeSubscriptions != 1) throw new InvalidOperationException("隐藏页面停止了工作区订阅。");
                         static ScrollViewer? Scroll(DependencyObject element)
                         {
                             if (element is ScrollViewer found) return found;
@@ -2263,10 +2461,14 @@ internal static class SmokeSnapshot
                         }
                         var messageList = (ListView)chatPage.FindName("MessageList");
                         var scroll = Scroll(messageList) ?? throw new InvalidOperationException("消息滚动容器缺失。");
-                        scroll.ChangeView(null, 0, null, disableAnimation: true); await Task.Delay(100);
+                        await Task.Delay(200); messageList.UpdateLayout();
+                        if (scroll.ScrollableHeight <= 4) throw new InvalidOperationException("合成历史不足以覆盖滚动位置回归。");
+                        messageList.ScrollIntoView(chat.Messages[0], ScrollIntoViewAlignment.Leading);
+                        for (var index = 0; index < 40 && scroll.VerticalOffset > 4; index++) await Task.Delay(25, timeout.Token);
+                        if (scroll.VerticalOffset > 4) throw new InvalidOperationException("合成历史定位尚未完成。");
                         await chatPage.SetWindowVisibleAsync(true);
                         while (SmokeRepository.ActiveRealtimeSubscriptions != 1) await Task.Delay(20, timeout.Token);
-                        while (chat.Messages.Count != 7) await Task.Delay(20, timeout.Token);
+                        if (chat.Messages.Count != 36) throw new InvalidOperationException("恢复可见性重新订阅或重复了消息。");
                         await Task.Delay(150);
                         if (scroll.VerticalOffset > 4) throw new InvalidOperationException("阅读历史时新事件抢走了滚动位置。");
                         scroll.ChangeView(null, scroll.ScrollableHeight, null, disableAnimation: true); await Task.Delay(100);
@@ -2318,8 +2520,49 @@ internal static class SmokeSnapshot
             };
             if (page.FindName(expected) is not FrameworkElement { Visibility: Visibility.Visible })
                 throw new InvalidOperationException($"合成页面没有显示预期状态：{expected}");
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("upload-", StringComparison.Ordinal) == true)
+            { await SavePhotoUploadsAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("manage-", StringComparison.Ordinal) == true)
+            { await SavePhotoManagementAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("folder-", StringComparison.Ordinal) == true)
+            { await SavePhotoFolderManagementAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("file-", StringComparison.Ordinal) == true)
+            { await SavePhotoFilesAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("alb-", StringComparison.Ordinal) == true)
+            { await SavePhotoAlbumsAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("cond-", StringComparison.Ordinal) == true)
+            { await SavePhotoConditionsAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("shr-", StringComparison.Ordinal) == true)
+            { await SavePhotoSharingAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("tmp-", StringComparison.Ordinal) == true)
+            { await SavePhotoTemporaryAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("req-", StringComparison.Ordinal) == true)
+            { await SavePhotoRequestsAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("fperm-", StringComparison.Ordinal) == true)
+            { await SavePhotoFolderSharingAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("ppl-", StringComparison.Ordinal) == true)
+            { await SavePhotoPeopleAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("face-", StringComparison.Ordinal) == true)
+            { await SavePhotoFacesAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("manual-", StringComparison.Ordinal) == true)
+            { await SavePhotoManualFacesAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("concept-", StringComparison.Ordinal) == true)
+            { await SavePhotoConceptsAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("sim-", StringComparison.Ordinal) == true)
+            { await SavePhotoSimilarAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("export-", StringComparison.Ordinal) == true)
+            { await SavePhotoExportAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("regen-", StringComparison.Ordinal) == true)
+            { await SavePhotoPreviewGenerationAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("auto-", StringComparison.Ordinal) == true)
+            { await SavePhotoAutomaticAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("pref-", StringComparison.Ordinal) == true)
+            { await SavePhotoPreferencesAsync(root); return; }
+            if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE")?.StartsWith("slide-", StringComparison.Ordinal) == true)
+            { await SavePhotoSlideshowAsync(root); return; }
+            if (scenario == "photos") await VerifyPhotosAsync(page, (NavigationView)currentShell.FindName("Navigation"));
             if (scenario == "photos" && Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") is { } photoState &&
-                photoState.StartsWith("photo-", StringComparison.Ordinal))
+                photoState is "photo-error" or "photo-loading" or "photo-empty")
             {
                 var localization = Localization.LocalizationService.Current;
                 var messageKey = photoState switch
@@ -2381,7 +2624,7 @@ internal static class SmokeSnapshot
         if (root is Frame { Content: ShellPage layoutShell } &&
             ((Frame)layoutShell.FindName("ContentFrame")).Content is FrameworkElement layoutPage)
         {
-            var bounds = new[] { "RefreshButton", "SettingsButton", "SearchBox", "CreateTaskButton", "SectionPivot", "ResourcePivot", "Sections" }
+            var bounds = new[] { "RefreshButton", "SettingsButton", "SearchBox", "SourcePicker", "CreateTaskButton", "SectionPivot", "ResourcePivot", "Sections" }
                 .Select(name => (name, element: layoutPage.FindName(name) as FrameworkElement))
                 .Where(pair => pair.element is not null)
                 .Select(pair => new { pair.name, pair.element!.ActualWidth, pair.element.ActualHeight,
@@ -2448,10 +2691,10 @@ internal static class SmokeSnapshot
     {
         var state = Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") ?? "batch-pause";
         var repository = new SmokeDownloadBatchRepository(state);
-        using var model = new DownloadTaskBatchViewModel(repository);
+        using var model = new DownloadTaskBatchViewModel(repository, state == "batch-edit" ? new SmokeDownloadSettingsRepository("settings-basic") : null);
         var load = model.LoadAsync(); if (state != "batch-loading") await load;
         model.SetAction(state switch { "batch-resume" => DownloadBatchAction.Resume, "batch-remove" => DownloadBatchAction.RemoveTask,
-            "batch-finish" => DownloadBatchAction.FinishIncomplete, _ => DownloadBatchAction.Pause });
+            "batch-finish" => DownloadBatchAction.FinishIncomplete, "batch-edit" => DownloadBatchAction.EditDestination, _ => DownloadBatchAction.Pause });
         using var content = new DownloadTaskBatchDialogContent(model);
         var dialog = new ContentDialog { XamlRoot = root.XamlRoot, RequestedTheme = root.ActualTheme, Content = content,
             Title = Localization.LocalizationService.Current.Get("DownloadBatchTitle"), CloseButtonText = Localization.LocalizationService.Current.Get("DownloadSettingsClose"),
@@ -2460,21 +2703,29 @@ internal static class SmokeSnapshot
         void Update() { dialog.PrimaryButtonText = content.PrimaryText; dialog.IsPrimaryButtonEnabled = content.CanSubmit; }
         content.StateChanged += Update; Update(); var showing = dialog.ShowAsync(); await Task.Delay(350);
         if (state == "batch-filtered") { ((TextBox)content.FindName("FilterBox")).Text = "no match"; await Task.Delay(150); }
-        if (state is "batch-pause" or "batch-resume" or "batch-remove" or "batch-finish" or "batch-review" or "batch-partial")
+        if (state == "batch-edit")
         {
             ((ListView)content.FindName("TaskChoices")).SelectAll();
-            if (content.CanSubmit) throw new InvalidOperationException("批量下载任务未确认即开放操作。");
+            if (content.CanSubmit) throw new InvalidOperationException("未选择保存位置就开放编辑。");
+            await model.Options.BrowseAsync(""); model.Options.Choose(model.Options.Folders.Single(folder => folder.CanWrite));
+            if (!content.CanSubmit) throw new InvalidOperationException("完整保存位置表单无法提交。");
+        }
+        if (state is "batch-edit" or "batch-pause" or "batch-resume" or "batch-remove" or "batch-finish" or "batch-review" or "batch-partial")
+        {
+            ((ListView)content.FindName("TaskChoices")).SelectAll();
+            if (state is "batch-remove" or "batch-finish" && content.CanSubmit) throw new InvalidOperationException("危险移除未确认即开放操作。");
             ((CheckBox)content.FindName("Confirmation")).IsChecked = true; await content.SubmitAsync();
             if (state == "batch-review")
             {
                 if (!model.RequiresReview || repository.Writes != 1) throw new InvalidOperationException("未知结果未暂停。");
-                await content.SubmitAsync(); await content.SubmitAsync();
-                if (repository.Writes != 1 || !model.CanContinue || content.CanSubmit) throw new InvalidOperationException("核对触发了新写操作。");
+                await content.SubmitAsync();
+                if (repository.Writes != 1 || !model.CanContinue || !content.CanSubmit) throw new InvalidOperationException("核对触发了新写操作。");
                 ((CheckBox)content.FindName("Confirmation")).IsChecked = true; await content.SubmitAsync();
             }
             await content.SubmitAsync();
             if (repository.Writes != 3 || model.HasPending || content.CanSubmit) throw new InvalidOperationException("批量结果或连点防护不正确。");
         }
+        if (state == "batch-edit" && (repository.EditedDestination != "writable" || model.ConfirmedTasks.Any(task => task.Destination != "writable"))) throw new InvalidOperationException("批量位置结果丢失。");
         if (state is "batch-empty" or "batch-filtered" && ((TextBlock)content.FindName("EmptyText")).Visibility != Visibility.Visible) throw new InvalidOperationException("批量空状态缺失。");
         if (state == "batch-loading" && !((ProgressRing)content.FindName("LoadingRing")).IsActive) throw new InvalidOperationException("加载状态缺失。");
         if (state == "batch-error" && ((TextBlock)content.FindName("ErrorText")).Visibility != Visibility.Visible) throw new InvalidOperationException("错误状态缺失。");
@@ -2529,19 +2780,26 @@ internal static class SmokeSnapshot
             }
             else if (state != "mount-disconnect") Control<PasswordBox>("PasswordInput").Password = "synthetic-secret";
             await Task.Delay(100);
-            await content.SaveAsync(); if (fake.Writes != 0) throw new InvalidOperationException("未确认也发送了挂载。");
-            Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+            if (edit)
+            {
+                await content.SaveAsync(); if (fake.Writes != 0) throw new InvalidOperationException("未确认也更改了已有连接。");
+                Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+            }
+            else if (fake.Writes != 0 || Control<CheckBox>("RiskAcknowledgement").Visibility != Visibility.Collapsed)
+                throw new InvalidOperationException("新连接自动提交或要求重复勾选。");
             if (!content.CanSave || !dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("有效挂载未开放。");
             if (state == "mount-change")
             {
-                Control<TextBox>("TargetInput").Text = "/share/changed"; await content.SaveAsync();
-                await Task.Delay(100);
-                if (fake.Writes != 0 || content.CanSave || Control<CheckBox>("RiskAcknowledgement").IsChecked == true) throw new InvalidOperationException("修改目标复用了旧确认。");
+                Control<TextBox>("TargetInput").Text = "/share/changed"; await Task.Delay(100);
+                if (fake.Writes != 0 || !content.CanSave) throw new InvalidOperationException("编辑连接目标自动提交或未更新主按钮。");
+                await content.SaveAsync(); await content.SaveAsync();
+                if (fake.Writes != 1 || fake.LastTarget != "/share/changed" || content.CanSave)
+                    throw new InvalidOperationException("连接未绑定点击时的目标，或重复提交。");
             }
             else if (state == "mount-confirm")
             {
-                var risk = Control<CheckBox>("RiskAcknowledgement"); if (!risk.Focus(FocusState.Keyboard)) throw new InvalidOperationException("确认无法键盘聚焦。");
-                risk.StartBringIntoView();
+                var target = Control<TextBox>("TargetInput"); if (!target.Focus(FocusState.Keyboard)) throw new InvalidOperationException("连接位置无法键盘聚焦。");
+                target.StartBringIntoView();
             }
             else
             {
@@ -2703,8 +2961,13 @@ internal static class SmokeSnapshot
             var action = state switch { "ops-stop" or "ops-transition-stop" => ContainerMutationAction.Stop, "ops-restart" or "ops-transition-restart" => ContainerMutationAction.Restart, "ops-delete" => ContainerMutationAction.Delete, _ => ContainerMutationAction.Start };
             Control<ComboBox>("ActionPicker").SelectedIndex = (int)action;
             var targets = Control<ListView>("TargetsList"); foreach (var item in targets.Items.ToArray()) targets.SelectedItems.Add(item);
-            if (dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("选择即提交，缺少确认。");
-            Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+            if (repository.Writes != 0) throw new InvalidOperationException("尚未点击操作按钮即提交。");
+            if (action == ContainerMutationAction.Delete)
+            {
+                if (dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("永久删除缺少专门确认。");
+                Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+            }
+            else if (Control<CheckBox>("RiskAcknowledgement").Visibility != Visibility.Collapsed) throw new InvalidOperationException("普通启停仍要求重复勾选。");
             if (!dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("确认后仍不能操作。");
             if (state == "ops-change")
             { Control<TextBox>("SearchBox").Text = "1"; await Task.Delay(100); if (dialog.IsPrimaryButtonEnabled || Control<CheckBox>("RiskAcknowledgement").IsChecked == true) throw new InvalidOperationException("筛选改变未清除确认。"); }
@@ -2791,6 +3054,15 @@ internal static class SmokeSnapshot
                 }
                 await saving; await content.SaveAsync(); if (repository.NetworkDeleteCalls != 1 || content.CanSave) throw new InvalidOperationException("重复删除。");
                 if (!Control<InfoBar>("FeedbackNotice").IsOpen) throw new InvalidOperationException("删除结果缺失。");
+                if (Control<ListView>("ResultsList").Items.Count != 2) throw new InvalidOperationException("网络逐项结果缺失。");
+                if (state == "netdelete-stopped")
+                {
+                    var rows = Control<ListView>("ResultsList").Items.Cast<ContainerNetworkDeletionRow>().ToArray();
+                    if (rows[0].Item.Stage != ContainerNetworkDeletionStage.Submitted || rows[1].Item.Stage != ContainerNetworkDeletionStage.NotSubmitted)
+                        throw new InvalidOperationException("未开始网络被误认已提交。");
+                    await content.ReloadAsync(); await content.SaveAsync();
+                    if (repository.NetworkDeleteCalls != 1 || list.Items.Count != 1) throw new InvalidOperationException("刷新错误继续了未开始批次。");
+                }
                 if (state != "netdelete-success" && Control<InfoBar>("FeedbackNotice").Severity == InfoBarSeverity.Success) throw new InvalidOperationException("未确认删除误报成功。");
                 if (state == "netdelete-unknown")
                 {
@@ -2918,6 +3190,11 @@ internal static class SmokeSnapshot
                 if (repository.Starts != 1 || Control<Button>("PullButton").IsEnabled) throw new InvalidOperationException("重复启动下载或确认未失效。");
                 if (state == "pull-ready") { repository.FinishReview = true; await content.ReviewPullsAsync(); }
                 if (state == "pull-auto") { await Task.Delay(5400); if (repository.Reviews == 0) throw new InvalidOperationException("可见下载任务没有自动刷新。"); }
+                if (state == "pull-auto-recover")
+                {
+                    await Task.Delay(5400);
+                    if (repository.Reviews == 0 || repository.Starts != 1) throw new InvalidOperationException("临时失败后没有继续原任务查询。");
+                }
                 if (state == "pull-reopen")
                 {
                     var closedContent = content; var stoppedAtClose = false;
@@ -2928,8 +3205,8 @@ internal static class SmokeSnapshot
                     opened = Show(); await Task.Delay(350); dialog = Dialog(); content = (ContainerRegistryDialogContent)dialog.Content;
                 }
                 var result = ((ContainerImagePullItem)Control<ListView>("PullTasksList").Items.Single()).Result;
-                var expected = state switch { "pull-ready" => ContainerImagePullStage.Ready, "pull-no-receipt" => ContainerImagePullStage.AwaitingReceipt,
-                    "pull-review" => ContainerImagePullStage.NeedsReview, "pull-rejected" => ContainerImagePullStage.Rejected, _ => ContainerImagePullStage.Downloading };
+                var expected = state switch { "pull-ready" or "pull-auto-recover" => ContainerImagePullStage.Ready, "pull-no-receipt" => ContainerImagePullStage.AwaitingReceipt,
+                    "pull-review" => ContainerImagePullStage.NeedsReview, "pull-rejected" or "pull-docker-failed" => ContainerImagePullStage.Rejected, _ => ContainerImagePullStage.Downloading };
                 if (result.Stage != expected || repository.Starts != 1) throw new InvalidOperationException("下载进度、结果或只读恢复错误。");
             }
         }
@@ -3031,7 +3308,7 @@ internal static class SmokeSnapshot
             if (state == "vmcreate-recovery")
             {
                 Control<ComboBox>("RecoveryInput").SelectedIndex = 0; await Task.Delay(80);
-                if (Control<TextBox>("NameInput").Text != "Pending VM" || Control<TextBox>("NameInput").IsEnabled || content.CanSubmit) throw new InvalidOperationException("恢复没有绑定原配置或复用了旧确认。");
+                if (Control<TextBox>("NameInput").Text != "Pending VM" || Control<TextBox>("NameInput").IsEnabled || !content.CanSubmit || repository.VmContinues != 0) throw new InvalidOperationException("恢复没有绑定原配置或复用了旧确认。");
             }
             else
             {
@@ -3056,23 +3333,23 @@ internal static class SmokeSnapshot
                 { ((ComboBox)((StackPanel)Control<StackPanel>("DiskRows").Children[0]).Children[0]).SelectedIndex = 1; await Task.Delay(50); }
                 if (state == "vmcreate-invalid") Control<TextBox>("CpuInput").Text = "2.5";
             }
-            await Task.Delay(50); Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+            await Task.Delay(50); if (content.FindName("RiskAcknowledgement") is not null || repository.VmCreates != 0) throw new InvalidOperationException("创建表单出现重复确认或编辑时提交。");
             if (state == "vmcreate-advanced-fallback")
             {
                 repository.VmAdvancedReadFailure = true; await content.RefreshAsync();
                 var system = Control<ComboBox>("OperatingSystemInput");
                 if (content.CanSubmit || !system.IsEnabled || system.SelectedIndex != 2) throw new InvalidOperationException("高级读取失败后错误提交或锁死模式选择。");
-                system.SelectedIndex = 0; await Task.Delay(40); Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+                system.SelectedIndex = 0; await Task.Delay(40);
             }
             if (state == "vmcreate-advanced-edit")
             {
                 if (!content.CanSubmit) throw new InvalidOperationException("高级配置无法确认。");
                 Control<ComboBox>("FirmwareInput").SelectedIndex = 0; await Task.Delay(40);
-                if (content.CanSubmit || Control<CheckBox>("RiskAcknowledgement").IsChecked == true) throw new InvalidOperationException("固件变化保留旧确认。");
-                Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+                if (!content.CanSubmit || repository.VmCreates != 0) throw new InvalidOperationException("固件变化导致自动提交或有效草稿不可用。");
+
                 Control<ComboBox>("BootImageInput").SelectedIndex = 0; await Task.Delay(40);
-                if (content.CanSubmit) throw new InvalidOperationException("安装介质变化保留旧确认。");
-                Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+                if (!content.CanSubmit || repository.VmCreates != 0) throw new InvalidOperationException("安装介质变化导致自动提交或有效草稿不可用。");
+
             }
             if (state?.StartsWith("vmcreate-power-", StringComparison.Ordinal) == true || state is "vmcreate-image-power" or "vmcreate-image-wait" or "vmcreate-image-hardware")
             {
@@ -3083,8 +3360,8 @@ internal static class SmokeSnapshot
                 {
                     if (!power.IsEnabled) throw new InvalidOperationException("有能力时开机选项不可用。");
                     power.IsChecked = true;
-                    if (content.CanSubmit || Control<CheckBox>("RiskAcknowledgement").IsChecked == true) throw new InvalidOperationException("修改开机选项未撤销确认。");
-                    Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+                    if (!content.CanSubmit || repository.VmCreates != 0) throw new InvalidOperationException("修改开机选项时自动提交或有效草稿不可用。");
+
                 }
             }
             if (state is "vmcreate-invalid" or "vmcreate-readonly" or "vmcreate-advanced-invalid")
@@ -3122,7 +3399,7 @@ internal static class SmokeSnapshot
                 }
                 if (state?.StartsWith("vmcreate-power-", StringComparison.Ordinal) == true && repository.VmCreationPowerRequested != (state != "vmcreate-power-readonly")) throw new InvalidOperationException("开机选项未绑定创建请求。");
                 if (state is "vmcreate-wait" or "vmcreate-power-wait" or "vmcreate-image-wait")
-                { await Task.Delay(2200); if (repository.VmCreationReviews < 1 || repository.VmContinues != 0 || content.CanSubmit) throw new InvalidOperationException("自动核查发生写入或沿用确认。"); Control<CheckBox>("RiskAcknowledgement").IsChecked = true; await content.SubmitAsync(); if (repository.VmContinues != 1) throw new InvalidOperationException("确认后不能继续配置。"); }
+                { await Task.Delay(2200); if (repository.VmCreationReviews < 1 || repository.VmContinues != 0 || !content.CanSubmit) throw new InvalidOperationException("自动刷新发生写入或没有提供明确继续按钮。");  await content.SubmitAsync(); if (repository.VmContinues != 1) throw new InvalidOperationException("确认后不能继续配置。"); }
                 if (state is "vmcreate-unknown" or "vmcreate-advanced-unknown" or "vmcreate-image-unknown" or "vmcreate-image-hardware") { await content.RefreshAsync(); if (repository.VmCreates != 1 || content.CanSubmit || repository.VmContinues != 0) throw new InvalidOperationException("未知创建被重放。"); }
                 if (state == "vmcreate-power-unknown") { await content.RefreshAsync(); if (repository.VmCreates != 1 || repository.VmContinues != 0 || content.CanSubmit) throw new InvalidOperationException("未知开机被继续或重放。"); }
                 if (!Control<InfoBar>("FeedbackNotice").IsOpen) throw new InvalidOperationException("缺少创建结果反馈。");
@@ -3131,10 +3408,10 @@ internal static class SmokeSnapshot
         if (state is "vmcreate-confirm" or "vmcreate-power-confirm" or "vmcreate-advanced-confirm")
         {
             var scroll = Control<ScrollViewer>("FormScroll"); scroll.UpdateLayout(); scroll.ChangeView(null, scroll.ScrollableHeight, null, true); await Task.Delay(80);
-            var confirmation = Control<CheckBox>("RiskAcknowledgement");
+            var confirmation = Control<TextBlock>("ConfirmationSummary");
             confirmation.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 1 }); await Task.Delay(80);
             if (confirmation.TransformToVisual(scroll).TransformPoint(new(0, 0)).Y + confirmation.ActualHeight > scroll.ActualHeight + 1)
-                throw new InvalidOperationException("确认框未完整进入可滚动视口。");
+                throw new InvalidOperationException("创建摘要未完整进入可滚动视口。");
             if (!content.CanSubmit || !Control<TextBlock>("ConfirmationSummary").Text.Contains("New synthetic VM", StringComparison.Ordinal)) throw new InvalidOperationException("确认摘要没有绑定当前配置。");
             if (!dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("确认通过但原生创建按钮仍禁用。");
             if (state == "vmcreate-advanced-confirm" && (!Control<TextBlock>("ConfirmationSummary").Text.Contains("UEFI", StringComparison.Ordinal) ||
@@ -3254,13 +3531,13 @@ internal static class SmokeSnapshot
             Control<TextBox>("NameInput").Text = "Synthetic image"; Control<TextBox>("PathInput").Text = "/share/example.iso";
             Control<ComboBox>("TypeInput").SelectedIndex = 1; var storage = Control<ListView>("StorageInput");
             foreach (var item in storage.Items) storage.SelectedItems.Add(item); await Task.Delay(50);
-            var confirm = Control<CheckBox>("RiskAcknowledgement"); confirm.IsChecked = true;
-            if (state == "vmimport-readonly") { if (confirm.IsEnabled || content.CanSubmit) throw new InvalidOperationException("只读连接可导入。"); }
+            if (content.FindName("RiskAcknowledgement") is not null || repository.VmImageImports != 0) throw new InvalidOperationException("导入表单出现重复确认或编辑时提交。");
+            if (state == "vmimport-readonly") { if (content.CanSubmit) throw new InvalidOperationException("只读连接可导入。"); }
             else
             {
                 if (!content.CanSubmit) throw new InvalidOperationException("完整确认后未开放导入。");
                 if (state == "vmimport-edit")
-                { Control<TextBox>("PathInput").Text = "/share/changed.iso"; if (content.CanSubmit || confirm.IsChecked == true) throw new InvalidOperationException("来源变化保留了旧确认。"); }
+                { Control<TextBox>("PathInput").Text = "/share/changed.iso"; await Task.Delay(50); if (!content.CanSubmit || repository.VmImageImports != 0 || !Control<TextBlock>("ConfirmationSummary").Text.Contains("/share/changed.iso", StringComparison.Ordinal)) throw new InvalidOperationException("来源变化未更新当前导入摘要或编辑时提交。"); }
                 else if (state != "vmimport-form")
                 {
                     var submitting = content.SubmitAsync();
@@ -3297,6 +3574,25 @@ internal static class SmokeSnapshot
         if (state == "vmconsole-loading")
         { await Task.Delay(150); if (!window.SmokeLoading) throw new InvalidOperationException("缺少会话加载反馈。"); await WriteSnapshotAsync(window.SmokeRoot, false); page.Dispose(); await opening; if (!repository.VmConsoleCancelled) throw new InvalidOperationException("关闭未取消会话准备。"); MarkSnapshotComplete(); return; }
         await opening;
+        if (state == "vmconsole-manual-reconnect")
+        {
+            if (!window.SmokeHasError || window.SmokeCore is not null) throw new InvalidOperationException("合成断线没有释放会话。");
+            var original = window; var originalId = window.MachineId;
+            model.Machines.Add(new(new("another-vm", "Another synthetic VM", VirtualMachineOperationalState.Running, null, null, null, null, null)));
+            model.SelectMachine(model.Machines.Last());
+            static IEnumerable<DependencyObject> Children(DependencyObject parent)
+            {
+                for (var i = 0; i < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+                { var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, i); yield return child; foreach (var nested in Children(child)) yield return nested; }
+            }
+            var reconnect = Children(window.SmokeRoot).OfType<Button>().Single(item => item.Name == "ConsoleReconnectButton");
+            if (reconnect.Visibility != Visibility.Visible) throw new InvalidOperationException("断线后没有手动重连入口。");
+            ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(reconnect)
+                .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+            await Until(() => Window() is { } current && !ReferenceEquals(current, original) && repository.VmConsoleOpens == 2);
+            window = Window();
+            if (window.MachineId != originalId || repository.VmLastConsoleMachineId != originalId) throw new InvalidOperationException("重连跟随了页面的新选择。");
+        }
         if (state == "vmconsole-error")
         { if (!window.SmokeHasError || window.SmokeCore is not null) throw new InvalidOperationException("失败后仍创建浏览会话。"); await WriteSnapshotAsync(window.SmokeRoot, false); window.Close(); MarkSnapshotComplete(); return; }
         if (state == "vmconsole-managed-locale-error")
@@ -3402,12 +3698,15 @@ internal static class SmokeSnapshot
         if (state == "vmsettings-error" && !Control<InfoBar>("ErrorNotice").IsOpen) throw new InvalidOperationException("未显示错误状态。");
         if (state is not ("vmsettings-loading" or "vmsettings-error"))
         {
-            if (Control<ComboBox>("StartupInput").SelectedIndex != 1) throw new InvalidOperationException("三态启动原值错误。");
+            if (Control<ComboBox>("StartupInput").SelectedIndex != (state == "vmsettings-missing" ? -1 : 1)) throw new InvalidOperationException("三态启动原值错误。");
+            if (state == "vmsettings-missing" && (Control<TextBox>("CpuInput").Text.Length != 0 || Control<TextBox>("MemoryInput").Text.Length != 0 ||
+                Control<TextBox>("CpuInput").IsEnabled || Control<TextBox>("MemoryInput").IsEnabled || Control<TextBox>("DescriptionInput").IsEnabled || Control<ComboBox>("StartupInput").IsEnabled))
+                throw new InvalidOperationException("缺失字段被补成默认值或允许写入。");
             if (state == "vmsettings-running" && Control<TextBox>("CpuInput").IsEnabled) throw new InvalidOperationException("运行中允许硬件修改。");
             Control<TextBox>("NameInput").Text = "Renamed VM";
             Control<TextBox>("DescriptionInput").Text = "Updated description"; await Task.Delay(50);
             if (state == "vmsettings-invalid") Control<TextBox>("MemoryInput").Text = "2.5";
-            await Task.Delay(50); Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+            await Task.Delay(50); if (content.FindName("RiskAcknowledgement") is not null || repository.VmSettingsCalls != 0) throw new InvalidOperationException("设置表单出现重复确认或编辑时提交。");
             if (state.StartsWith("vmsettings-priority-", StringComparison.Ordinal))
             {
                 var priority = Control<ComboBox>("PriorityInput");
@@ -3417,8 +3716,8 @@ internal static class SmokeSnapshot
                 {
                     if (!priority.IsEnabled || priority.Items.Count != (state == "vmsettings-priority-custom" ? 6 : 5)) throw new InvalidOperationException("优先级档位或能力不正确。");
                     priority.SelectedIndex = priority.Items.Count - 1;
-                    if (content.CanSave || Control<CheckBox>("RiskAcknowledgement").IsChecked == true) throw new InvalidOperationException("修改优先级没有撤销旧确认。");
-                    Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+                    if (!content.CanSave || repository.VmSettingsCalls != 0) throw new InvalidOperationException("优先级编辑触发提交或有效草稿不可用。");
+
                     if (state == "vmsettings-priority-running" && Control<TextBox>("CpuInput").IsEnabled) throw new InvalidOperationException("优先级编辑不应解锁运行中硬件。");
                 }
             }
@@ -3431,6 +3730,8 @@ internal static class SmokeSnapshot
                 if (!content.CanSave || !dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("有效修改无法保存。");
                 await content.SaveAsync(); await content.SaveAsync();
                 if (repository.VmSettingsCalls != 1 || !Control<InfoBar>("FeedbackNotice").IsOpen) throw new InvalidOperationException("重复保存或缺少反馈。");
+                if (state == "vmsettings-missing" && repository.VmLastSettingsRequest?.Desired is not { Name: "Renamed VM", Description: null, CpuCount: null, MemoryMiB: null, AutoStart: null })
+                    throw new InvalidOperationException("缺失设置进入了保存请求。");
                 if (state.StartsWith("vmsettings-priority-", StringComparison.Ordinal) && repository.VmLastSettingsRequest?.Desired.CpuWeight != (state == "vmsettings-priority-readonly" ? 256 : 1024)) throw new InvalidOperationException("优先级未绑定已确认请求。");
                 if (state is "vmsettings-partial" or "vmsettings-priority-unknown")
                 { await content.ReloadAsync(); if (Control<TextBox>("NameInput").IsEnabled || Control<InfoBar>("FeedbackNotice").Severity == InfoBarSeverity.Success || repository.VmSettingsCalls != 1) throw new InvalidOperationException("部分保存被重放或误报成功。"); }
@@ -3438,7 +3739,7 @@ internal static class SmokeSnapshot
             }
         }
         if (state.StartsWith("vmsettings-priority-", StringComparison.Ordinal))
-        { Control<CheckBox>("RiskAcknowledgement").StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 1 }); await Task.Delay(100); }
+        { Control<ComboBox>("PriorityInput").StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 1 }); await Task.Delay(100); }
         await WriteSnapshotAsync(dialog); dialog.Hide(); await showing;
         static string VmSettingsScenario() => Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") ?? "vmsettings-save";
     }
@@ -3475,7 +3776,7 @@ internal static class SmokeSnapshot
         var model = (VirtualMachineBatchViewModel)typeof(VirtualMachineManagerPage).GetField("_machineBatchModel", flags)!.GetValue(page)!;
         T Control<T>(string name) where T : FrameworkElement => Descendants(dialog).OfType<T>().Single(item => item.Name == name);
         if (dialog.ActualTheme != root.ActualTheme || dialog.DefaultButton != ContentDialogButton.Close) throw new InvalidOperationException("批次窗口主题/默认按钮错误。");
-        var action = state.Contains("shutdown", StringComparison.Ordinal) ? VirtualMachinePowerAction.Shutdown : state.Contains("off", StringComparison.Ordinal) ? VirtualMachinePowerAction.PowerOff : VirtualMachinePowerAction.PowerOn;
+        var action = state.Contains("reboot", StringComparison.Ordinal) ? VirtualMachinePowerAction.Reboot : state.Contains("shutdown", StringComparison.Ordinal) ? VirtualMachinePowerAction.Shutdown : state.Contains("off", StringComparison.Ordinal) ? VirtualMachinePowerAction.PowerOff : VirtualMachinePowerAction.PowerOn;
         if (!deletion) Control<ComboBox>("VmBatchAction").SelectedIndex = (int)action; await Task.Delay(60);
         if (state == "vmbatch-review")
         {
@@ -3492,18 +3793,25 @@ internal static class SmokeSnapshot
         else
         {
             var list = Control<ListView>("VmBatchSelection"); list.SelectAll(); await Task.Delay(60);
-            if (model.SelectedCount != 205) throw new InvalidOperationException("批次选择被截断。");
+            if (model.SelectedCount != (state == "vmbatch-readonly" && !deletion ? 0 : 205)) throw new InvalidOperationException("批次选择被截断或包含不可操作目标。");
             await model.SubmitAsync(); if (Count() != 0) throw new InvalidOperationException("没有确认就执行了电源操作。");
             if (state == "vmbatch-readonly")
             { model.Confirm(true); await model.SubmitAsync(); if (model.CanSubmit || Count() != 0) throw new InvalidOperationException("只读条件仍发送写入。"); }
             else
             {
-                var confirm = Control<CheckBox>("VmBatchConfirmation");
-                ((Microsoft.UI.Xaml.Automation.Provider.IToggleProvider)new Microsoft.UI.Xaml.Automation.Peers.CheckBoxAutomationPeer(confirm)
-                    .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Toggle)).Toggle();
-                if (!model.CanSubmit || !dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("确认后无法提交。");
+                if (deletion || action == VirtualMachinePowerAction.PowerOff)
+                {
+                    var confirm = Control<CheckBox>("VmBatchConfirmation");
+                    ((Microsoft.UI.Xaml.Automation.Provider.IToggleProvider)new Microsoft.UI.Xaml.Automation.Peers.CheckBoxAutomationPeer(confirm)
+                        .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Toggle)).Toggle();
+                    if (!model.CanSubmit) throw new InvalidOperationException("风险确认后无法提交。");
+                }
+                else if (Descendants(dialog).OfType<CheckBox>().Any(item => item.Name == "VmBatchConfirmation") || !model.CanConfirm)
+                    throw new InvalidOperationException("普通批次出现重复确认或有效选择不可提交。");
+                if (!dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("有效批次的原生按钮未启用。");
                 if (state == "vmbatch-selection-change")
                 {
+                    model.Confirm(true);
                     list.SelectedItems.RemoveAt(list.SelectedItems.Count - 1); await model.SubmitAsync();
                     if (model.CanSubmit || Count() != 0) throw new InvalidOperationException("选择变化未撤销确认。");
                 }
@@ -3529,13 +3837,14 @@ internal static class SmokeSnapshot
                     else
                     {
                         var stopped = state is "vmbatch-unknown" or "vmbatch-auth" or "vmbatch-cancel" or "vmbatch-review-after" or "vmbatch-rejected";
-                        if (Count() != (stopped ? 23 : 205) || model.NotStartedCount != (stopped ? 182 : 0) || model.ConfirmedCount != (stopped ? 22 : 205))
+                        var expectedWrites = state == "vmbatch-reboot" ? 1 : stopped ? 23 : 205;
+                        if (Count() != expectedWrites || model.NotStartedCount != 205 - expectedWrites || model.ConfirmedCount != (state == "vmbatch-reboot" ? 0 : stopped ? 22 : 205))
                             throw new InvalidOperationException("批次执行或结果数量错误。");
                         if (images ? repository.ImageDeletes.Any(item => !item.RiskConfirmed || !VirtualMachineImageDeletionRules.CanRequest(item.Baseline)) || repository.ImageDeletes.Select(item => item.RequestId).Distinct().Count() != Count()
                             : deletion ? repository.Deletes.Any(item => !item.RiskConfirmed || item.Baseline.State != VirtualMachineOperationalState.Stopped) || repository.Deletes.Select(item => item.RequestId).Distinct().Count() != Count()
                             : repository.Calls.Any(item => item.Action != action || !item.RiskConfirmed) || repository.Calls.Select(item => item.RequestId).Distinct().Count() != Count())
                             throw new InvalidOperationException("已确认动作漂移或重复提交。");
-                        await model.SubmitAsync(); if (Count() != (stopped ? 23 : 205)) throw new InvalidOperationException("完成批次被重发。");
+                        await model.SubmitAsync(); if (Count() != expectedWrites) throw new InvalidOperationException("完成批次被重发。");
                         if (state == "vmbatch-review-after")
                         {
                             repository.Resolve = true; Invoke(Control<Button>("SecondaryButton")); await Task.Delay(140);
@@ -3549,9 +3858,12 @@ internal static class SmokeSnapshot
         if (deletion && repository.Calls.Count != 0) throw new InvalidOperationException("删除流程调用了电源接口。");
         // 等待原生勾选/按钮视觉状态过渡结束，并确认勾选没有被异步重置。
         await Task.Delay(160);
-        if (state is "vmbatch-form" or "vmbatch-off-form" &&
-            (Control<CheckBox>("VmBatchConfirmation").IsChecked != true || !dialog.IsPrimaryButtonEnabled || !model.CanSubmit))
-            throw new InvalidOperationException("稳定后的确认状态不可提交。");
+        if (state is "vmbatch-form" or "vmbatch-off-form")
+        {
+            var needsRisk = deletion || action == VirtualMachinePowerAction.PowerOff;
+            if (!dialog.IsPrimaryButtonEnabled || (needsRisk ? Control<CheckBox>("VmBatchConfirmation").IsChecked != true || !model.CanSubmit : !model.CanConfirm || model.HasConfirmation))
+                throw new InvalidOperationException("稳定后的确认状态不可提交或提前确认了普通操作。");
+        }
         dialog.UpdateLayout(); await WriteSnapshotAsync(dialog, markComplete: false);
         dialog.Hide(); await showing.WaitAsync(TimeSpan.FromSeconds(3)); MarkSnapshotComplete();
     }
@@ -3563,7 +3875,7 @@ internal static class SmokeSnapshot
         var repository = new SmokeRepository(); var model = new LanStash.App.Features.VirtualMachines.VirtualMachineManagerViewModel();
         using var page = new VirtualMachineManagerPage(repository, model);
         ((Frame)shell.FindName("ContentFrame")).Content = page; await Task.Delay(300); model.SelectMachine(model.Machines[0]);
-        var action = state switch { "vmpower-shutdown" => VirtualMachinePowerAction.Shutdown, "vmpower-off" => VirtualMachinePowerAction.PowerOff, _ => VirtualMachinePowerAction.PowerOn };
+        var action = state switch { "vmpower-shutdown" => VirtualMachinePowerAction.Shutdown, "vmpower-off" => VirtualMachinePowerAction.PowerOff, "vmpower-reboot" => VirtualMachinePowerAction.Reboot, _ => VirtualMachinePowerAction.PowerOn };
         var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
         var showing = (Task)typeof(VirtualMachineManagerPage).GetMethod("ShowPowerAsync", flags)!.Invoke(page, [action])!; await Task.Delay(300);
         if (showing.IsCompleted) await showing;
@@ -3571,12 +3883,14 @@ internal static class SmokeSnapshot
         var content = (VirtualMachinePowerDialogContent)dialog.Content;
         T Control<T>(string name) where T : FrameworkElement => (T)content.FindName(name);
         if (dialog.DefaultButton != ContentDialogButton.Close || dialog.ActualTheme != root.ActualTheme) throw new InvalidOperationException("电源确认主题或默认按钮不正确。");
-        await content.SubmitAsync(); if (repository.VmPowerCalls != 0) throw new InvalidOperationException("未经确认发送了电源命令。");
+        if (action == VirtualMachinePowerAction.PowerOff) await content.SubmitAsync();
+        if (repository.VmPowerCalls != 0) throw new InvalidOperationException("打开窗口即发送了电源命令。");
+        if (action != VirtualMachinePowerAction.PowerOff && Control<CheckBox>("RiskAcknowledgement").Visibility != Visibility.Collapsed) throw new InvalidOperationException("普通电源操作出现重复确认。");
         if (state == "vmpower-loading" && !Control<ProgressRing>("BusyIndicator").IsActive) throw new InvalidOperationException("电源核查加载状态缺失。");
         if (state == "vmpower-error" && !Control<InfoBar>("ErrorNotice").IsOpen) throw new InvalidOperationException("电源核查错误状态缺失。");
         if (state is not ("vmpower-loading" or "vmpower-error"))
         {
-            Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
+            if (action == VirtualMachinePowerAction.PowerOff) Control<CheckBox>("RiskAcknowledgement").IsChecked = true;
             if (state is "vmpower-readonly" or "vmpower-pending")
             { if (content.CanSubmit || dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("不允许的电源操作已启用。"); }
             else if (state != "vmpower-recovered")
@@ -3591,7 +3905,7 @@ internal static class SmokeSnapshot
                 }
                 await sending; await content.SubmitAsync(); if (repository.VmPowerCalls != 1) throw new InvalidOperationException("电源命令可重复提交。");
                 if (!Control<InfoBar>("FeedbackNotice").IsOpen) throw new InvalidOperationException("缺少电源结果反馈。");
-                if (state == "vmpower-unknown")
+                if (state is "vmpower-unknown" or "vmpower-reboot")
                 { await content.ReloadAsync(); if (repository.VmPowerCalls != 1 || content.CanSubmit || Control<InfoBar>("FeedbackNotice").Severity == InfoBarSeverity.Success) throw new InvalidOperationException("未知结果重放或被误报成功。"); }
             }
         }
@@ -3609,7 +3923,7 @@ internal static class SmokeSnapshot
         var preview = System.Reflection.DispatchProxy.Create<IFilePreviewRepository, SmokeDragPreview>();
         using var coordinator = new ForegroundTransferCoordinator(); var profile = repository.ProfileId.ToString(); coordinator.ActivateProfile(profile);
         var picker = new WindowsTransferPickerService(new SmokeRepository(), coordinator, new WindowsTransferSavePicker(() => null), new WindowsTransferOpenPicker(() => null));
-        using var page = new FilesPage(model, preview, profile, picker, archiveExtractionRepository: repository);
+        using var page = new FilesPage(model, preview, profile, picker, archiveExtractionRepository: repository, copyMoveFolderSource: files);
         ((Frame)shell.FindName("ContentFrame")).Content = page; await Task.Delay(200); await model.OpenLocationAsync("/share"); await Task.Delay(100);
         model.SelectedItem = model.Items.First(item => !item.Item.IsDirectory);
         var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
@@ -3649,6 +3963,61 @@ internal static class SmokeSnapshot
             var peer = new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(button);
             ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)peer.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
         }
+        if (state == "extract-destination")
+        {
+            void Click(Button button)
+            {
+                var peer = new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(button);
+                ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)peer.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+            }
+            Click(panel.Children.OfType<Button>().Single(item => item.Name == "ChooseArchiveDestination")); await Task.Delay(100);
+            ListView Folders() => Descendants(dialog).OfType<ListView>().Single(item => item.Name == "ArchiveDestinationFolders");
+            Folders().SelectedIndex = 0; await Task.Delay(100);
+            Folders().SelectedIndex = 0; await Task.Delay(100);
+            var use = Descendants(dialog).OfType<Button>().Single(item => item.Name == "UseArchiveDestination");
+            use.StartBringIntoView(); await Task.Delay(100); Click(use); await Task.Delay(100);
+            if (!dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("选择可写目标后仍不能解压。");
+        }
+        var selectsContents = state.StartsWith("extract-selected", StringComparison.Ordinal) ||
+            state.StartsWith("extract-preview", StringComparison.Ordinal) || state == "extract-selection-reset";
+        if (selectsContents)
+        {
+            Check("ChooseArchiveItems").IsChecked = true;
+            if (dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("尚未选择内容就可解压。");
+            var browse = panel.Children.OfType<Button>().Single(item => item.Name == "LoadArchiveItems");
+            browse.StartBringIntoView(); await Task.Delay(100);
+            var peer = new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(browse);
+            ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)peer.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+            await Task.Delay(150);
+            var list = panel.Children.OfType<ListView>().Single();
+            if (state is "extract-selected-form" or "extract-selected-run" or "extract-selection-reset")
+            {
+                if (list.Items.Count != 3 || repository.PreviewCalls != 1) throw new InvalidOperationException($"包内内容未完整显示：显示 {list.Items.Count} 项、预览 {repository.PreviewCalls} 次、提示 {panel.Children.OfType<InfoBar>().Single().Message}。");
+                list.SelectedItems.Add(list.Items[1]);
+                if (!dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("选择内容后仍不能解压。");
+                if (state == "extract-selection-reset")
+                {
+                    password.Password = "changed"; await Task.Delay(100);
+                    if (list.Items.Count != 0 || dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("密码变化后保留了旧选择。");
+                }
+            }
+            else if (dialog.IsPrimaryButtonEnabled || repository.Calls != 0)
+                throw new InvalidOperationException("读取未成功或无选择时允许了写入。");
+            if (state == "extract-preview-error" && !panel.Children.OfType<InfoBar>().Single().IsOpen)
+                throw new InvalidOperationException("读取失败缺少恢复提示。");
+            dialog.UpdateLayout(); ((ScrollViewer)dialog.Content).ChangeView(null, ((ScrollViewer)dialog.Content).ScrollableHeight, null, true);
+            await Task.Delay(100);
+            if (state != "extract-selected-run")
+            {
+                await WriteSnapshotAsync(dialog, markComplete: false);
+                if (state == "extract-preview-late") page.Dispose(); else dialog.Hide();
+                await showing; await Task.Delay(50);
+                if (repository.Calls != 0 || password.Password.Length != 0 ||
+                    state is "extract-preview-late" or "extract-preview-loading" && !repository.PreviewCancelled)
+                    throw new InvalidOperationException("预览关闭后继续提交或未取消读取。");
+                MarkSnapshotComplete(); return;
+            }
+        }
         if (state is not ("extract-form" or "extract-confirm" or "extract-confirm-reset"))
         {
             Confirm(); await Task.Delay(200);
@@ -3664,7 +4033,7 @@ internal static class SmokeSnapshot
                         throw new InvalidOperationException("密码纠正后解压流程未完成。");
                 }
             }
-            else if (state != "extract-working" && ((Descendants(dialog).OfType<InfoBar>().Single().Severity == InfoBarSeverity.Success) != (state is "extract-success" or "extract-overwrite" or "extract-flatten")))
+            else if (state != "extract-working" && ((Descendants(dialog).OfType<InfoBar>().Single().Severity == InfoBarSeverity.Success) != (state is "extract-success" or "extract-overwrite" or "extract-flatten" or "extract-selected-run" or "extract-destination")))
                 throw new InvalidOperationException("解压结果反馈错误。");
         }
         if (state is "extract-confirm" or "extract-confirm-reset")
@@ -4162,13 +4531,20 @@ internal static class SmokeSnapshot
                 await Task.Delay(80);
                 if (rename) ((TextBox)content.FindName("NewNameBox")).Text = state == "network-rename-invalid" ? " " : state == "network-rename-duplicate" ? "Network 001" : "Renamed network";
                 await Task.Delay(80);
-                ((CheckBox)content.FindName("ConfirmBox")).IsChecked = true; await Task.Delay(80);
+                if (rename)
+                { if (((CheckBox)content.FindName("ConfirmBox")).Visibility != Visibility.Collapsed || repository.Writes.Count != 0) throw new InvalidOperationException("改名出现重复勾选或编辑时写入。"); }
+                else ((CheckBox)content.FindName("ConfirmBox")).IsChecked = true;
+                await Task.Delay(80);
                 var invalid = state is "network-rename-invalid" or "network-rename-duplicate";
                 if (invalid) { if (content.CanSubmit || model.ValidationKey is null) throw new InvalidOperationException("无效名称仍可保存或没有修正提示。"); }
                 else if (!content.CanSubmit || !dialog.IsPrimaryButtonEnabled) throw new InvalidOperationException("明确确认后网络操作未开启。");
                 if (state is "network-form" or "network-rename-form" || invalid)
                 {
                     await Task.Delay(150);
+                    dialog.UpdateLayout();
+                    var body = (FrameworkElement)content.Content;
+                    var bounds = body.TransformToVisual(dialog).TransformBounds(new Windows.Foundation.Rect(0, 0, body.ActualWidth, body.ActualHeight));
+                    if (bounds.Right > dialog.ActualWidth - 12) throw new InvalidOperationException("网络表单超出弹窗右侧可见范围。");
                     await WriteSnapshotAsync(dialog, markComplete: false);
                 }
                 else if (state == "network-selection-change")
@@ -4228,56 +4604,73 @@ internal static class SmokeSnapshot
 
     private static async Task SaveNotificationLifecycleAsync(FrameworkElement root)
     {
-        if (root is not Frame { Content: ShellPage shell }) throw new InvalidOperationException("缺少通知测试 Shell。");
+        if (root is not Frame rootFrame) throw new InvalidOperationException("缺少通知测试窗口。");
         var main = (Application.Current as App)?.MainWindow ?? throw new InvalidOperationException("缺少测试窗口。");
         var state = Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") ?? "notification-open";
         var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-        var serviceField = typeof(MainWindow).GetField("_transferNotifications", flags)!;
-        var generationField = typeof(MainWindow).GetField("_notificationGeneration", flags)!;
-        var generation = (int)generationField.GetValue(main)!;
+        var app = (AppViewModel)typeof(MainWindow).GetField("_viewModel", flags)!.GetValue(main)!;
+        var services = (Dictionary<IDsmRepository, Platform.Notifications.WindowsTransferNotificationService>)typeof(MainWindow).GetField("_transferNotifications", flags)!.GetValue(main)!;
+        var first = await app.AddSmokeConnectedChatAsync("Synthetic notification source");
+        var second = await app.AddSmokeConnectedChatAsync("Synthetic other workspace");
+        app.ActivateChatNotificationWorkspace(new(first.Session.Id, first.Profile.Id, "10", "101")); await Task.Delay(180);
+        var transfers = app.GetWorkspaceTransfers(null);
+        var id = Guid.NewGuid();
+        await transfers.Coordinator.RunAsync(new(first.Profile.Id.ToString(), "/sample/synthetic.txt", "Synthetic saved file", 3, id),
+            (progress, token) => { progress.Report(new(3, 3)); return Task.CompletedTask; });
+        var activity = transfers.Coordinator.GetActivities(first.Profile.Id.ToString()).Single();
+        var notice = ForegroundTransferNotificationFactory.Create(activity)!;
         var route = typeof(MainWindow).GetMethod("ShowTransfersFromNotification", flags)!;
         var backend = new SmokeNotificationBackend();
-        var notice = new ForegroundTransferNotification(ForegroundTransferNotificationKind.Completed,
-            ForegroundTransferDirection.Download, "Synthetic completed", "Synthetic summary");
         Platform.Notifications.WindowsTransferNotificationService? service = null;
-        service = new(() => route.Invoke(main, [service!, generation]), Dispatch, backend);
-        serviceField.SetValue(main, service);
+        service = new(activityId => route.Invoke(main, [first.Repository, service!, activityId]), Dispatch, backend);
+        services.Add(first.Repository, service);
         Platform.Notifications.WindowsTransferNotificationService? replacement = null;
-        var frame = (Frame)shell.FindName("ContentFrame"); var initial = frame.Content;
         try
         {
             service.Show(notice);
             if (backend.Registers != 1 || backend.Shows != 1) throw new InvalidOperationException("通知没有使用串行注册路径。");
             var xml = System.Xml.Linq.XDocument.Parse(Platform.Notifications.WindowsTransferNotificationService.BuildNotification(notice, backend.Context).Payload);
             var launch = (string?)xml.Root?.Attribute("launch") ?? "";
-            if (!launch.Contains("route=activity", StringComparison.Ordinal) || !launch.Contains(backend.Context, StringComparison.Ordinal)) throw new InvalidOperationException("SDK 未生成完整的通知路由参数。");
+            if (!launch.Contains("route=activity", StringComparison.Ordinal) || !launch.Contains(backend.Context, StringComparison.Ordinal) ||
+                launch.Contains(id.ToString(), StringComparison.Ordinal)) throw new InvalidOperationException("通知未使用不透明定位标记。");
+            // 当前页面代次变化不废弃另一个仍连接工作区的任务通知。
+            if (state == "notification-generation") { await app.SwitchProfileAsync(second.Profile); await Task.Delay(160); }
+            if (state == "notification-disconnected") { await app.SwitchProfileAsync(second.Profile); await app.ReleaseSmokeChatAsync(first.Profile.Id); await Task.Delay(160); }
+            var initial = rootFrame.Content;
             var arguments = backend.Arguments;
             if (state == "notification-invalid") arguments["route"] = "activity-extra";
             if (state == "notification-old-context") arguments["context"] = "old";
             backend.Emit(arguments);
             if (state == "notification-dispose") service.Dispose();
-            if (state == "notification-generation") generationField.SetValue(main, generation + 1);
             if (state == "notification-replaced")
             {
-                replacement = new(() => { }, Dispatch, new SmokeNotificationBackend()); serviceField.SetValue(main, replacement);
+                replacement = new(_ => { }, Dispatch, new SmokeNotificationBackend()); services[first.Repository] = replacement;
             }
             if (state == "notification-exit") typeof(MainWindow).GetField("_isExplicitExit", flags)!.SetValue(main, true);
-            var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            main.DispatcherQueue.TryEnqueue(() => drained.TrySetResult()); await drained.Task;
-            if (state == "notification-open")
+            var expectedOpen = state is "notification-open" or "notification-generation";
+            TransferActivityPage? page = null;
+            for (var index = 0; index < (expectedOpen ? 150 : 10); index++)
             {
-                for (var index = 0; index < 250 && frame.Content is not TransferActivityPage; index++) await Task.Delay(20);
-                if (frame.Content is not TransferActivityPage) throw new InvalidOperationException("点击通知没有进入传输中心。");
+                await Task.Delay(20);
+                page = rootFrame.Content is ShellPage current ? ((Frame)current.FindName("ContentFrame")).Content as TransferActivityPage : null;
+                if (page is not null) break;
             }
-            else if (!ReferenceEquals(initial, frame.Content)) throw new InvalidOperationException("旧连接、失效通知或退出后仍发生导航。");
-            await Task.Delay(100); await WriteSnapshotAsync((FrameworkElement)frame.Content, markComplete: false);
+            if (expectedOpen)
+            {
+                if (page is null) throw new InvalidOperationException("通知没有进入传输页面。");
+                if (!ReferenceEquals(app.Repository, first.Repository)) throw new InvalidOperationException("通知选择了错误的工作区。");
+                if (!page.RevealActivity(id)) throw new InvalidOperationException("传输页面丢失原通知任务。");
+                if (page.RevealActivity(Guid.NewGuid())) throw new InvalidOperationException("未知任务被错误定位。");
+            }
+            else if (!ReferenceEquals(initial, rootFrame.Content)) throw new InvalidOperationException("失效会话、旧通知或退出后仍发生导航。");
+            await WriteSnapshotAsync(rootFrame, markComplete: false);
         }
         finally
         {
-            service.Dispose(); replacement?.Dispose();
+            service.Dispose(); replacement?.Dispose(); services.Remove(first.Repository);
             if (backend.Unregisters != 1) throw new InvalidOperationException("通知注册未被完整清理。");
-            serviceField.SetValue(main, null); generationField.SetValue(main, generation);
             typeof(MainWindow).GetField("_isExplicitExit", flags)!.SetValue(main, false);
+            await app.ReleaseSmokeChatAsync(first.Profile.Id); await app.ReleaseSmokeChatAsync(second.Profile.Id);
         }
         MarkSnapshotComplete();
         bool Dispatch(Action action)
@@ -4366,16 +4759,16 @@ internal static class SmokeSnapshot
                 {
                     if (!records.Contains(change) || !current || action == CloudDrive.CloudDriveRecoveryAction.Retry && !confirmed)
                         throw new InvalidOperationException("恢复目标或确认漂移。");
-                    if (change.Id == unknown.Id && action != CloudDrive.CloudDriveRecoveryAction.Review)
+                    if (change.Id == unknown.Id && action is not (CloudDrive.CloudDriveRecoveryAction.Review or CloudDrive.CloudDriveRecoveryAction.UseExistingDirectory))
                         throw new InvalidOperationException("未知结果不能重发。");
-                    if (change.Kind == CloudDrive.CloudDriveChangeKind.CreateDirectory && !confirmed)
-                        throw new InvalidOperationException("目录结果缺少归属确认。");
+                    if (action == CloudDrive.CloudDriveRecoveryAction.UseExistingDirectory && !confirmed)
+                        throw new InvalidOperationException("使用现有目录缺少用户确认。");
                     recovered++; return Task.CompletedTask;
                 },
                 (change, token) => { exported++; return Task.FromResult(true); }, () => current, state != "cloud-writeback-invalid-scope",
                 (operation, action, confirmed, token) =>
                 {
-                    if (!confirmed || !current || !relocationRows.Contains(operation)) throw new InvalidOperationException("迁移恢复缺少绑定确认。");
+                    if (confirmed != (action != CloudDrive.CloudDriveRelocationRecoveryAction.Review) || !current || !relocationRows.Contains(operation)) throw new InvalidOperationException("迁移恢复缺少绑定确认。");
                     if (operation.Phase == CloudDrive.CloudDriveRelocationPhase.Submitted && action != CloudDrive.CloudDriveRelocationRecoveryAction.Review)
                         throw new InvalidOperationException("未知迁移不允许写入。");
                     relocationCalls++; return Task.CompletedTask;
@@ -4385,7 +4778,7 @@ internal static class SmokeSnapshot
                     deletionConfigured++; deletionEnabled = value; return Task.CompletedTask;
                 }, (operation, action, confirmed, token) =>
                 {
-                    if (!confirmed || !current || !deletionRows.Contains(operation)) throw new InvalidOperationException("删除恢复缺少对象确认。");
+                    if (confirmed != (action != CloudDrive.CloudDriveDeletionRecoveryAction.Review) || !current || !deletionRows.Contains(operation)) throw new InvalidOperationException("删除恢复缺少对象确认。");
                     if (operation.Phase == CloudDrive.CloudDriveDeletionPhase.Submitted && action != CloudDrive.CloudDriveDeletionRecoveryAction.Review)
                         throw new InvalidOperationException("未知删除不能重发。");
                     deletionCalls++; return Task.CompletedTask;
@@ -4412,12 +4805,16 @@ internal static class SmokeSnapshot
                 {
                     var operation = deletionRows[0];
                     var buttons = Descendants(dialog).OfType<Button>().Where(button => Equals(button.Tag, operation.Id)).ToArray();
-                    if (buttons.Any(button => button.IsEnabled)) throw new InvalidOperationException("未确认即允许删除。");
+                    var readOnly = operation.Phase == CloudDrive.CloudDriveDeletionPhase.Submitted;
+                    if (buttons.Any(button => button.IsEnabled) != readOnly || (readOnly && buttons.Length != 1))
+                        throw new InvalidOperationException("只读刷新被确认阻断，或未确认的修改已开放。");
                     var key = operation.Phase == CloudDrive.CloudDriveDeletionPhase.Submitted ? "CloudDriveWritebackReview" :
                         operation.Phase == CloudDrive.CloudDriveDeletionPhase.ServerVerified ? "CloudDriveDeletionCompleteLocal" : "CloudDriveDeletionConfirm";
                     if (operation.Phase != CloudDrive.CloudDriveDeletionPhase.Prepared && buttons.Any(button => Equals(button.Content, localization.Get("CloudDriveDeletionConfirm"))))
                         throw new InvalidOperationException("已提交的删除再次提供删除按钮。");
-                    Descendants(dialog).OfType<CheckBox>().Single(box => Equals(box.Tag, operation.Id)).IsChecked = true;
+                    if (!readOnly) Descendants(dialog).OfType<CheckBox>().Single(box => Equals(box.Tag, operation.Id)).IsChecked = true;
+                    else if (Descendants(dialog).OfType<CheckBox>().Any(box => Equals(box.Tag, operation.Id)))
+                        throw new InvalidOperationException("只读刷新要求用户认领结果。");
                     Invoke(buttons.Single(button => Equals(button.Content, localization.Get(key)))); await Task.Delay(100);
                     if (deletionCalls != 1) throw new InvalidOperationException("删除动作未接入或重复执行。");
                 }
@@ -4437,15 +4834,19 @@ internal static class SmokeSnapshot
                     if (state == "cloud-writeback-directory")
                     {
                         var review = Descendants(dialog).OfType<Button>().Single(button => Equals(button.Tag, unknown.Id) && Equals(button.Content, localization.Get("CloudDriveWritebackReview")));
-                        if (review.IsEnabled || Descendants(dialog).OfType<Button>().Any(button => Equals(button.Tag, unknown.Id) && Equals(button.Content, localization.Get("CloudDriveWritebackExport"))))
-                            throw new InvalidOperationException("目录未确认即可接纳，或伪装成单文件导出。");
+                        if (!review.IsEnabled || Descendants(dialog).OfType<Button>().Any(button => Equals(button.Tag, unknown.Id) && Equals(button.Content, localization.Get("CloudDriveWritebackExport"))))
+                            throw new InvalidOperationException("只读刷新被确认阻断，或目录伪装成单文件导出。");
+                        var useExisting = Descendants(dialog).OfType<Button>().Single(button => Equals(button.Tag, unknown.Id) && Equals(button.Content, localization.Get("CloudDriveUseExistingDirectory")));
+                        if (useExisting.IsEnabled) throw new InvalidOperationException("未确认即可使用现有目录。");
+                        Invoke(review); await Task.Delay(100);
+                        if (recovered != 1) throw new InvalidOperationException("只读刷新未执行。");
                         Descendants(dialog).OfType<CheckBox>().Single(box => Equals(box.Tag, unknown.Id)).IsChecked = true;
                     }
-                    var key = state is "cloud-writeback-review" or "cloud-writeback-directory" ? "CloudDriveWritebackReview" : state == "cloud-writeback-retry" ? "CloudDriveWritebackRetry" : "CloudDriveWritebackExport";
+                    var key = state == "cloud-writeback-directory" ? "CloudDriveUseExistingDirectory" : state == "cloud-writeback-review" ? "CloudDriveWritebackReview" : state == "cloud-writeback-retry" ? "CloudDriveWritebackRetry" : "CloudDriveWritebackExport";
                     var target = state == "cloud-writeback-retry" ? conflict.Id : unknown.Id;
                     Invoke(Descendants(dialog).OfType<Button>().Single(button => Equals(button.Tag, target) && Equals(button.Content, localization.Get(key))));
                     await Task.Delay(100);
-                    if (state == "cloud-writeback-export" ? exported != 1 : recovered != 1) throw new InvalidOperationException("恢复按钮没有使用目标操作。");
+                    if (state == "cloud-writeback-export" ? exported != 1 : recovered != (state == "cloud-writeback-directory" ? 2 : 1)) throw new InvalidOperationException("恢复按钮没有使用目标操作。");
                 }
                 if (state == "cloud-writeback-error" && !Descendants(dialog).OfType<TextBlock>().Any(text => text.Text == localization.Get("CloudDriveWritebackError")))
                     throw new InvalidOperationException("读取失败没有恢复提示。");
@@ -4453,12 +4854,16 @@ internal static class SmokeSnapshot
                 {
                     var operation = relocationRows[0];
                     var buttons = Descendants(dialog).OfType<Button>().Where(button => Equals(button.Tag, operation.Id)).ToArray();
-                    if (buttons.Any(button => button.IsEnabled) || relocationCalls != 0) throw new InvalidOperationException("未确认就能恢复迁移。");
+                    var readOnly = operation.Phase == CloudDrive.CloudDriveRelocationPhase.Submitted;
+                    if (buttons.Any(button => button.IsEnabled) != readOnly || (readOnly && buttons.Length != 1))
+                        throw new InvalidOperationException("只读刷新被确认阻断，或未确认的修改已开放。");
                     if (operation.Step > 0 && buttons.Any(button => Equals(button.Content, localization.Get("CloudDriveRelocationAbandon"))))
                         throw new InvalidOperationException("已部分完成仍可直接放弃。");
                     var key = operation.Phase == CloudDrive.CloudDriveRelocationPhase.Submitted ? "CloudDriveWritebackReview" :
                         operation.Phase == CloudDrive.CloudDriveRelocationPhase.ServerVerified ? "CloudDriveRelocationCompleteLocal" : "CloudDriveRelocationContinue";
-                    Descendants(dialog).OfType<CheckBox>().Single(box => Equals(box.Tag, operation.Id)).IsChecked = true;
+                    if (!readOnly) Descendants(dialog).OfType<CheckBox>().Single(box => Equals(box.Tag, operation.Id)).IsChecked = true;
+                    else if (Descendants(dialog).OfType<CheckBox>().Any(box => Equals(box.Tag, operation.Id)))
+                        throw new InvalidOperationException("只读刷新要求用户认领结果。");
                     Invoke(buttons.Single(button => Equals(button.Content, localization.Get(key))));
                     await Task.Delay(100);
                     if (relocationCalls != 1) throw new InvalidOperationException("迁移恢复重复或未执行。");
@@ -4678,6 +5083,392 @@ internal static class SmokeSnapshot
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
     private static extern nint SendTrayMessage(nint window, uint message, nint wordParameter, nint longParameter);
 
+    private static async Task SaveFileTextEditAsync(FrameworkElement root)
+    {
+        if (root is not Frame { Content: ShellPage shell }) throw new InvalidOperationException("缺少原生 Shell。");
+        var requestedState = Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") ?? "edit";
+        var state = requestedState == "narrow" ? "unknown" : requestedState;
+        if (state.StartsWith("leave-", StringComparison.Ordinal)) { await SaveTextLeaveAsync(root, shell, state); return; }
+        var repo = new SmokeTextEditor(state);
+        using var preview = new FilePreviewViewModel();
+        using var editor = new FileTextEditViewModel();
+        using var pane = new FilePreviewPane();
+        if (requestedState == "narrow") { pane.Width = 420; pane.HorizontalAlignment = HorizontalAlignment.Left; }
+        var item = new FileItem("/sample/notes.json", "notes.json", false, System.Text.Encoding.UTF8.GetByteCount(repo.Body),
+            null, null, state != "readonly", false);
+        ((Frame)shell.FindName("ContentFrame")).Content = pane;
+        pane.Attach(preview); pane.AttachTextEdit(editor);
+        await preview.OpenAsync(repo, repo.ProfileId, item); editor.Attach(repo, item);
+        await Task.Delay(150);
+        if (state == "readonly")
+        {
+            if (editor.CanEdit || ((FrameworkElement)pane.FindName("TextEditButtonBar")).Visibility == Visibility.Visible)
+                throw new InvalidOperationException("只读文件不应显示编辑入口。");
+            await WriteSnapshotAsync(root); return;
+        }
+        Invoke((Button)pane.FindName("TextEditButton")); await Task.Delay(100);
+        if (state == "loading")
+        {
+            if (!editor.IsBusy || ((Button)pane.FindName("TextEditButton")).IsEnabled) throw new InvalidOperationException("重复加载未拦截。");
+            await WriteSnapshotAsync(root, markComplete: false); repo.OpenCompletion.SetResult(new("{}", 2, "v1", "synthetic"));
+            await Task.Delay(80); MarkSnapshotComplete(); return;
+        }
+        if (state == "open-error")
+        {
+            if (editor.SaveMessage.Length == 0 || !((InfoBar)pane.FindName("TextEditSaveStatus")).IsOpen) throw new InvalidOperationException("编辑失败缺少恢复提示。");
+            await WriteSnapshotAsync(root); return;
+        }
+        var box = (TextBox)pane.FindName("TextEditBox");
+        if (editor.HasUnsavedChanges) throw new InvalidOperationException("打开编辑器不应修改原内容。");
+        if (state == "multiline" && !editor.EditableText.Contains('\n')) throw new InvalidOperationException("打开多行内容改变了换行。");
+        box.Text = state == "format-error" ? "invalid" : "{\"a\":2}";
+        await Task.Delay(80);
+        if (!editor.HasUnsavedChanges || !((Button)pane.FindName("TextEditSaveButton")).IsEnabled || editor.EditableText != box.Text)
+            throw new InvalidOperationException("文本输入未同步草稿与保存按钮。");
+        box.SelectionStart = 3;
+        if (state is "format" or "format-error")
+        {
+            Invoke((Button)pane.FindName("TextEditFormatButton")); await Task.Delay(80);
+            if (state == "format" && (!box.Text.Contains('\r') && !box.Text.Contains('\n') || !editor.EditableText.Contains('\n')) || state == "format-error" && (box.Text != "invalid" || editor.SaveMessage.Length == 0))
+                throw new InvalidOperationException("格式整理结果错误。");
+        }
+        if (state is "save" or "failure" or "unknown" or "saving")
+        {
+            Invoke((Button)pane.FindName("TextEditSaveButton")); await Task.Delay(140);
+            var dialog = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(pane.XamlRoot)
+                .SelectMany(popup => Descendants(popup.Child)).OfType<ContentDialog>().Distinct().Single();
+            if (dialog.ActualTheme != pane.ActualTheme) throw new InvalidOperationException("保存确认主题错误。");
+            Invoke(Descendants(dialog).OfType<Button>().Single(button => button.Name == "PrimaryButton"));
+            for (var attempt = 0; attempt < 40 && repo.Saves == 0; attempt++) await Task.Delay(50);
+            await Task.Delay(80);
+            if (repo.Saves != 1) throw new InvalidOperationException("保存入口未调用原仓库。");
+            if (state == "save" && (!editor.IsSaveCompleted || ((TextBlock)pane.FindName("TextPreview")).Text != "{\"a\":2}"))
+                throw new InvalidOperationException("保存后预览未更新。");
+            if (state == "failure" && (!editor.HasUnsavedChanges || box.Visibility != Visibility.Visible || !editor.CanSubmitSave))
+                throw new InvalidOperationException("失败后草稿丢失。");
+            if (state == "unknown")
+            {
+                if (!editor.CanReview || !box.IsReadOnly || editor.CanSubmitSave) throw new InvalidOperationException("未知结果不能重复保存。");
+                CheckBounds();
+                await WriteSnapshotAsync(root, markComplete: false);
+                repo.ReviewConfirmed = true; Invoke((Button)pane.FindName("TextEditReviewButton")); await Task.Delay(100);
+                if (!editor.IsSaveCompleted || repo.Saves != 1) throw new InvalidOperationException("只读恢复重复上传。");
+                MarkSnapshotComplete(); return;
+            }
+            if (state == "saving")
+            {
+                if (!box.IsReadOnly || editor.RequestClose()) throw new InvalidOperationException("保存中草稿没有保护。");
+                await WriteSnapshotAsync(root, markComplete: false); repo.SaveCompletion.SetResult(SmokeTextEditor.Success());
+                await Task.Delay(100); MarkSnapshotComplete(); return;
+            }
+        }
+        if (state == "edit" && box.SelectionStart != 3) throw new InvalidOperationException("输入通知改变了光标。");
+        CheckBounds();
+        await WriteSnapshotAsync(root);
+        void CheckBounds()
+        {
+            pane.UpdateLayout();
+            foreach (var name in new[] { "TextEditSaveButton", "TextEditFormatButton", "TextEditReviewButton", "TextEditCancelButton", "TextEditSaveStatus" })
+            {
+                var control = (FrameworkElement)pane.FindName(name);
+                if (control.Visibility != Visibility.Visible || !editor.IsEditing && name != "TextEditSaveStatus") continue;
+                var bounds = control.TransformToVisual(pane).TransformBounds(new Windows.Foundation.Rect(0, 0, control.ActualWidth, control.ActualHeight));
+                if (bounds.Right > pane.ActualWidth + 1 || bounds.Left < 0 || bounds.Bottom > pane.ActualHeight + 1)
+                    throw new InvalidOperationException("文本操作或状态超出可见区域。");
+            }
+        }
+        static void Invoke(Button button) => ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(button)
+            .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+        static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+        {
+            if (parent is ContentDialog) yield return parent;
+            for (var i = 0; i < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, i); yield return child;
+                foreach (var descendant in Descendants(child)) yield return descendant;
+            }
+        }
+    }
+
+    private static async Task SaveTextLeaveAsync(FrameworkElement root, ShellPage shell, string state)
+    {
+        var repo = new SmokeTextEditor(state == "leave-busy" ? "saving" : "edit");
+        using var browser = new FileBrowserViewModel(new SmokeTextSource());
+        using var transfers = new ForegroundTransferCoordinator(); var profile = repo.ProfileId.ToString(); transfers.ActivateProfile(profile);
+        using var picker = new WindowsTransferPickerService(new SmokeRepository(), transfers, new WindowsTransferSavePicker(() => null), new SmokeFileUploadPicker([]));
+        using var page = new FilesPage(browser, repo, profile, picker);
+        ((Frame)shell.FindName("ContentFrame")).Content = page; await Task.Delay(120);
+        var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        await ((Task)typeof(FilesPage).GetMethod("OpenPreviewAsync", flags)!.Invoke(page, [browser.Items[0]])!);
+        var editor = (FileTextEditViewModel)typeof(FilesPage).GetField("_textEditViewModel", flags)!.GetValue(page)!;
+        var pane = (FilePreviewPane)page.FindName("PreviewPane");
+        await editor.EnterEditModeAsync(); await Task.Delay(70);
+        ((TextBox)pane.FindName("TextEditBox")).Text = "changed"; await Task.Delay(50);
+        if (state == "leave-busy")
+        {
+            var saving = editor.SaveAsync();
+            if (await page.PrepareToLeaveAsync(page.XamlRoot)) throw new InvalidOperationException("保存中允许销毁草稿。");
+            await WriteSnapshotAsync(root, markComplete: false); repo.SaveCompletion.SetResult(SmokeTextEditor.Success()); await saving;
+            MarkSnapshotComplete(); return;
+        }
+        var initialLanguage = Localization.LocalizationService.Current.Selection;
+        var languageChange = state.StartsWith("leave-language-", StringComparison.Ordinal);
+        Task<bool>? leaving = null;
+        AppSettingsPage? languageSettings = null;
+        if (languageChange)
+        {
+            await (Task)typeof(ShellPage).GetMethod("CloseFilesPageAsync", flags)!.Invoke(shell, null)!;
+            typeof(ShellPage).GetField("_files", flags)!.SetValue(shell, page);
+            var settings = languageSettings = (AppSettingsPage)typeof(ShellPage).GetMethod("CreateSettingsPage", flags)!.Invoke(shell, null)!;
+            ((Frame)shell.FindName("ContentFrame")).Content = settings; await Task.Delay(100);
+            var choice = (ComboBox)settings.FindName("LanguageSelector");
+            choice.SelectedItem = ((IEnumerable<Localization.LanguageChoice>)choice.ItemsSource).Single(item => item.Value ==
+                (Localization.LocalizationService.Current.ResolvedLanguage == "zh-CN" ? AppLanguageSelection.English : AppLanguageSelection.SimplifiedChinese));
+        }
+        else leaving = page.PrepareToLeaveAsync(page.XamlRoot);
+        await Task.Delay(250);
+        var dialog = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
+            .SelectMany(popup => Descendants(popup.Child)).OfType<ContentDialog>().Distinct().Single();
+        await WriteSnapshotAsync(dialog, markComplete: false);
+        var shouldDiscard = state is "leave-discard" or "leave-language-discard";
+        var button = Descendants(dialog).OfType<Button>().Single(item => item.Name == (shouldDiscard ? "PrimaryButton" : "CloseButton"));
+        ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(button)
+            .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+        var allowed = leaving is not null ? await leaving.WaitAsync(TimeSpan.FromSeconds(4)) : shouldDiscard;
+        if (languageChange)
+        {
+            for (var index = 0; index < 100 && (bool)typeof(AppSettingsPage).GetField("_changingLanguage", flags)!.GetValue(languageSettings)!; index++) await Task.Delay(30);
+            if ((Localization.LocalizationService.Current.Selection != initialLanguage) != shouldDiscard)
+                throw new InvalidOperationException("切换语言绕过文本草稿保护，或取消后仍改变语言。");
+            Localization.LocalizationService.Current.SetSelection(initialLanguage);
+        }
+        if (allowed != shouldDiscard || editor.HasUnsavedChanges == allowed || repo.Saves != 0)
+            throw new InvalidOperationException("离开页面的草稿保护失败。");
+        MarkSnapshotComplete();
+        static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+        {
+            yield return parent;
+            for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); index++)
+                foreach (var child in Descendants(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, index))) yield return child;
+        }
+    }
+
+    private sealed class SmokeTextSource : IFileBrowserDataSource
+    {
+        public Task<FilePage> LoadPageAsync(string path, int offset, int limit, FileListOptions options, CancellationToken token) =>
+            Task.FromResult(new FilePage([new("/sample/notes.json", "notes.json", false, 7, null, null, true, false)], 1, 0));
+    }
+
+    private sealed class SmokeTextEditor(string state) : IFilePreviewRepository
+    {
+        public Guid ProfileId => SmokeActivityProbe.Profile;
+        public string Body => state == "empty" ? "" : state == "multiline" ? "{\n  \"a\": 1\n}" : "{\"a\":1}";
+        public FileMD5Availability MD5Availability => new(false);
+        public int Saves { get; private set; }
+        public bool ReviewConfirmed { get; set; }
+        public TaskCompletionSource<FileTextContentSnapshot> OpenCompletion { get; } = new();
+        public TaskCompletionSource<MutationResult> SaveCompletion { get; } = new();
+        public FileTextEditAvailability GetTextEditAvailability() => new(state != "readonly", true, ["json"]);
+        public Task<FileTextContentSnapshot> DownloadTextContentSnapshotAsync(string path, long size, long max, CancellationToken token = default)
+        {
+            if (state == "loading") return OpenCompletion.Task;
+            if (state == "open-error") throw new IOException("synthetic open failure");
+            return Task.FromResult(new FileTextContentSnapshot(Body, size, "v1", "synthetic"));
+        }
+        public Task<MutationResult> SaveTextContentAsync(string path, string text, FileTextContentSnapshot original, CancellationToken token = default)
+        {
+            Saves++;
+            return state switch
+            {
+                "saving" => SaveCompletion.Task,
+                "unknown" => Task.FromResult(new MutationResult(1, MutationResultStatus.SubmittedButUnverified, "saveTextContent", true, true, new(0, 0, 1))),
+                "failure" => Task.FromResult(new MutationResult(1, MutationResultStatus.ConfirmedFailure, "saveTextContent", false, false, new(0, 1, 0), MutationErrorCategory.Network)),
+                _ => Task.FromResult(Success()),
+            };
+        }
+        public Task<MutationResult?> ReviewTextContentSaveAsync(string path, CancellationToken token = default) =>
+            Task.FromResult<MutationResult?>(ReviewConfirmed ? Success() : null);
+        public static MutationResult Success() => new(1, MutationResultStatus.ConfirmedSuccess, "saveTextContent", true, false, new(1, 0, 0));
+        public Task<string> FormatTextContentAsync(string text, TextFormatKind kind, CancellationToken token = default)
+        {
+            if (state == "format-error") throw new InvalidDataException("synthetic format failure");
+            return Task.FromResult("{\n  \"a\": 2\n}");
+        }
+        public Task<string> CalculateMD5Async(string path, CancellationToken token = default) => throw new NotSupportedException();
+        public Task<FileRangeReadResult> ReadFileRangeResultAsync(string path, long offset, long length,
+            string? version = null, long? total = null, CancellationToken token = default)
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(Body);
+            return Task.FromResult(new FileRangeReadResult(206, offset, length, offset, length, bytes.Length, bytes.Length, bytes, "v1", false));
+        }
+    }
+
+    private static async Task SaveFileGroupingAsync(FrameworkElement root)
+    {
+        if (root is not Frame { Content: ShellPage shell }) throw new InvalidOperationException("缺少原生 Shell。");
+        var state = Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") ?? "type-grid";
+        var source = new SmokeGroupingSource(state);
+        using var model = new FileBrowserViewModel(source, pageSize: 3);
+        var preview = System.Reflection.DispatchProxy.Create<IFilePreviewRepository, SmokeDragPreview>();
+        using var coordinator = new ForegroundTransferCoordinator();
+        var profile = SmokeActivityProbe.Profile.ToString(); coordinator.ActivateProfile(profile);
+        using var picker = new WindowsTransferPickerService(new SmokeRepository(), coordinator, new WindowsTransferSavePicker(() => null), new SmokeFileUploadPicker([]));
+        using var page = new FilesPage(model, preview, profile, picker);
+        ((Frame)shell.FindName("ContentFrame")).Content = page; await Task.Delay(200);
+        var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var grouping = state == "date" ? "Date" : state == "size" ? "Size" : "Type";
+        var menu = (RadioMenuFlyoutItem)page.FindName("Group" + grouping + "Item");
+        typeof(FilesPage).GetMethod("Group_Click", flags)!.Invoke(page, [menu, new RoutedEventArgs()]);
+        if (model.Grouping == FileBrowserGrouping.None) throw new InvalidOperationException("分组菜单未连接。");
+        if (state == "loading")
+        {
+            if (!model.IsLoading) throw new InvalidOperationException("加载状态缺失。");
+            await WriteSnapshotAsync(root, markComplete: false); source.Completion.SetResult(new([], 0, 0));
+            await Task.Delay(100); MarkSnapshotComplete(); return;
+        }
+        if (state == "error" && !model.HasError || state == "empty" && !model.IsEmpty)
+            throw new InvalidOperationException("浏览五态错误。");
+        if (state == "pagination")
+        {
+            var original = model.Items[0]; await model.LoadMoreAsync(); await Task.Delay(100);
+            if (!model.HasLoadMoreError || model.Items.Count != 3 || !ReferenceEquals(original, model.Items[0]))
+                throw new InvalidOperationException("坏页未保留原列表。");
+            await WriteSnapshotAsync(root, markComplete: false); source.Repaired = true;
+            await model.LoadMoreAsync(); await model.LoadMoreAsync();
+            if (model.HasLoadMoreError || model.Items.Count != 7 || model.CanLoadMore) throw new InvalidOperationException("分页恢复未加载完整目录。");
+            MarkSnapshotComplete(); return;
+        }
+        if (state == "batch")
+        {
+            await Task.Delay(100);
+            typeof(FilesPage).GetMethod("EnterDownloadSelectionMode", flags)!.Invoke(page, null);
+            var grid = (GridView)page.FindName("FileGrid");
+            grid.SelectedItems.Add(model.Items[0]); grid.SelectedItems.Add(model.Items[1]);
+            while (model.CanLoadMore) { await model.LoadMoreAsync(); await Task.Delay(100); }
+            if (grid.SelectedItems.Count != 2) throw new InvalidOperationException("分组分页丢失多选。");
+            typeof(FilesPage).GetMethod("ListLayout_Click", flags)!.Invoke(page, [page, new RoutedEventArgs()]);
+            await Task.Delay(100);
+            var list = (ListView)page.FindName("FileList");
+            if (list.SelectedItems.Count != 2) throw new InvalidOperationException("分组布局切换丢失多选。");
+            await WriteSnapshotAsync(root); return;
+        }
+        while (model.CanLoadMore) { await model.LoadMoreAsync(); if (model.HasLoadMoreError) throw new InvalidOperationException("合成目录未能完整加载。"); }
+        if (state == "filtered") model.SetFilter("missing synthetic item");
+        if (state == "type-list") model.Layout = FileBrowserLayout.List;
+        await Task.Delay(200); page.UpdateLayout();
+        if (model.HasContent)
+        {
+            var list = state == "type-list" ? (ListViewBase)page.FindName("FileList") : (GridView)page.FindName("FileGrid");
+            if (list.Items.Count != 7 || model.Groups.Sum(group => group.Count) != 7) throw new InvalidOperationException("原生分组丢失条目。");
+            var selected = model.Items[0]; list.SelectedItem = selected; await Task.Delay(80);
+            if (!ReferenceEquals(model.SelectedItem, selected)) throw new InvalidOperationException("分组选择未保留原条目。");
+            var firstTitle = model.Groups[0].Title;
+            if (!Descendants(page).OfType<TextBlock>().Any(text => text.Text == firstTitle && text.ActualHeight > 0))
+                throw new InvalidOperationException("分组标题未渲染。");
+        }
+        await WriteSnapshotAsync(root);
+
+        static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+        {
+            for (var i = 0; i < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, i); yield return child;
+                foreach (var descendant in Descendants(child)) yield return descendant;
+            }
+        }
+    }
+
+    private sealed class SmokeGroupingSource(string state) : IFileBrowserDataSource
+    {
+        public bool Repaired { get; set; }
+        public TaskCompletionSource<FilePage> Completion { get; } = new();
+        public Task<FilePage> LoadPageAsync(string path, int offset, int limit, FileListOptions options, CancellationToken token)
+        {
+            if (state == "loading") return Completion.Task;
+            if (state == "error") throw new IOException("synthetic list failure");
+            if (state == "empty") return Task.FromResult(new FilePage([], 0, 0));
+            var names = new[] { "Documents", "Photo.png", "Video.mp4", "Audio.mp3", "Report.docx", "Notes.txt", "Archive.bin" };
+            var rows = Enumerable.Range(offset, Math.Min(limit, names.Length - offset)).Select(i => new FileItem("/sample/" + names[i], names[i], i == 0,
+                i == 6 ? -1 : 10485760L * i, i == 6 ? null : DateTimeOffset.Now.AddDays(-i), null, false, false)).ToArray();
+            if (state == "pagination" && !Repaired && offset > 0) rows[0] = rows[0] with { Path = "/sample/Documents" };
+            return Task.FromResult(new FilePage(rows, names.Length, offset));
+        }
+    }
+
+    private static async Task SaveFileSearchAsync(FrameworkElement root)
+    {
+        if (root is not Frame { Content: ShellPage shell }) throw new InvalidOperationException("缺少原生 Shell。");
+        var state = Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") ?? "content";
+        var preview = System.Reflection.DispatchProxy.Create<ISmokeSearchPreview, SmokeSearchPreview>();
+        var fake = (SmokeSearchPreview)preview; fake.State = state;
+        using var model = new FileBrowserViewModel(new SmokeDragMoveRepository());
+        using var coordinator = new ForegroundTransferCoordinator();
+        var profile = SmokeActivityProbe.Profile.ToString(); coordinator.ActivateProfile(profile);
+        using var picker = new WindowsTransferPickerService(new SmokeRepository(), coordinator, new WindowsTransferSavePicker(() => null), new SmokeFileUploadPicker([]));
+        using var page = new FilesPage(model, preview, profile, picker);
+        ((Frame)shell.FindName("ContentFrame")).Content = page;
+        await Task.Delay(150); await model.OpenLocationAsync("/share"); await Task.Delay(80);
+        var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        if (state == "form")
+        {
+            var showing = page.ShowAdvancedSearchAsync(); await Task.Delay(180);
+            var dialog = (ContentDialog)typeof(FilesPage).GetField("_advancedSearchDialog", flags)!.GetValue(page)!;
+            if (dialog is null || dialog.ActualTheme != page.ActualTheme) throw new InvalidOperationException("高级搜索表单未显示或主题错误。");
+            var content = (FileSearchDialogContent)dialog.Content;
+            if (content.TryBuildRequest(out _)) throw new InvalidOperationException("空条件不应通过。");
+            var query = Descendants(dialog).OfType<TextBox>().First(); query.Text = "invoice";
+            var contents = Descendants(dialog).OfType<CheckBox>().First(); contents.IsChecked = true;
+            if (!content.TryBuildRequest(out var request) || request?.Query != "invoice" || request.SearchesContents != true)
+                throw new InvalidOperationException("高级搜索条件未保留。");
+            await WriteSnapshotAsync(dialog, markComplete: false);
+            Invoke(Descendants(dialog).OfType<Button>().Single(button => button.Name == "PrimaryButton"));
+            await showing.WaitAsync(TimeSpan.FromSeconds(5));
+            if (fake.Last?.SearchesContents != true || model.Items.Count != 1) throw new InvalidOperationException("搜索表单没有接入生产入口。");
+            MarkSnapshotComplete();
+            return;
+        }
+        var method = typeof(FilesPage).GetMethod("PerformAsyncSearchAsync", flags, [typeof(FileSearchRequest)])!;
+        var searching = (Task)method.Invoke(page, [new FileSearchRequest("/share", "invoice", true) { SearchesContents = true }])!;
+        await Task.Delay(120);
+        if (state is "loading" or "cancel")
+        {
+            if (!model.IsSearching || model.CanLoadMore) throw new InvalidOperationException("搜索中状态错误。");
+            await WriteSnapshotAsync(root, markComplete: false);
+            typeof(FilesPage).GetMethod("CancelSearch_Click", flags)!.Invoke(page, [page, new RoutedEventArgs()]);
+            if (state == "loading") fake.Completion.SetResult(new([], 0, false));
+            await searching.WaitAsync(TimeSpan.FromSeconds(5));
+            if (!fake.Token.IsCancellationRequested || model.IsSearching) throw new InvalidOperationException("取消搜索未释放状态。");
+        }
+        else if (state == "stale")
+        {
+            await model.OpenLocationAsync("/share/next");
+            fake.Completion.SetResult(new([new("/stale/old.txt", "old.txt", false, 1, null, null, false, false)], 1, false));
+            await searching.WaitAsync(TimeSpan.FromSeconds(5));
+            if (model.Items.Any(item => item.Path == "/stale/old.txt")) throw new InvalidOperationException("迟到搜索污染新目录。");
+        }
+        else
+        {
+            await searching.WaitAsync(TimeSpan.FromSeconds(5));
+            if (state == "empty" && !model.IsFilteredEmpty || state == "error" && !model.HasSearchError ||
+                state == "partial" && !model.HasIncompleteSearchIndex || state == "content" && model.Items.Count != 1)
+                throw new InvalidOperationException("搜索结果状态错误。");
+        }
+        await WriteSnapshotAsync(root);
+
+        static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+        {
+            for (var i = 0; i < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, i);
+                yield return child;
+                foreach (var descendant in Descendants(child)) yield return descendant;
+            }
+        }
+        static void Invoke(Button button) =>
+            ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(button)
+                .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+    }
+
     private static async Task SaveFolderUploadAsync(FrameworkElement root)
     {
         if (root is not Frame { Content: ShellPage shell }) throw new InvalidOperationException("缺少原生 Shell。");
@@ -4785,7 +5576,7 @@ internal static class SmokeSnapshot
             var repository = System.Reflection.DispatchProxy.Create<IDsmRepository, SmokeFileUploadRepository>(); var fake = (SmokeFileUploadRepository)repository; fake.State = state;
             var open = new SmokeFileUploadPicker(state == "upload-duplicate" ? [paths[0], paths[0]] : paths) { Cancelled = state == "upload-picker-cancel" };
             using var coordinator = new ForegroundTransferCoordinator(); var profile = SmokeActivityProbe.Profile.ToString(); coordinator.ActivateProfile(profile);
-            using var picker = new WindowsTransferPickerService(repository, coordinator, new WindowsTransferSavePicker(() => null), open);
+            await using var picker = new WindowsTransferPickerService(repository, coordinator, new WindowsTransferSavePicker(() => null), open);
             var finished = new TaskCompletionSource<ForegroundUploadBatchFinished>(TaskCreationOptions.RunContinuationsAsynchronously);
             picker.UploadBatchFinished += value => finished.TrySetResult(value);
             using var model = new FileBrowserViewModel(new SmokeDragMoveRepository());
@@ -4822,11 +5613,14 @@ internal static class SmokeSnapshot
             if (state == "upload-cancel")
             {
                 for (var index = 0; index < 300 && fake.Names.Count < 23; index++) await Task.Delay(10);
-                var running = coordinator.GetActivities(profile).Single(item => item.State == ForegroundTransferState.Running);
+                // 批次及当前文件各有活动，取消入口必须选择完整批次。
+                var running = coordinator.GetActivities(profile).Single(item =>
+                    item.State == ForegroundTransferState.Running && item.ItemResults.Count == paths.Length);
                 picker.Cancel(profile, running.Id);
             }
             var result = await finished.Task.WaitAsync(TimeSpan.FromSeconds(10)); await Task.Delay(100);
             var summary = result.Summary;
+            if (fake.Active != 0) throw new InvalidOperationException("批次完成通知早于在途上传结束。");
             if (summary.SelectedCount != 205 || summary.SelectedCount != summary.ConfirmedCount + summary.NeedsReviewCount + summary.FailedCount + summary.CancelledCount + summary.NotStartedCount || fake.MaximumActive != 1)
                 throw new InvalidOperationException("批次数量守恒或串行约束错误。");
             if (fake.Names.Count != (state == "upload-cancel" ? 23 : 205) || fake.Names.Distinct(StringComparer.Ordinal).Count() != fake.Names.Count)
@@ -4853,6 +5647,7 @@ internal static class SmokeSnapshot
         var state = Environment.GetEnvironmentVariable("LANSTASH_SMOKE_STATE") ?? "selection-download";
         var directory = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "lanstash-selection-download-tests", Guid.NewGuid().ToString("N"))).FullName;
         var complete = false;
+        ContentDialog? choiceDialog = null;
         try
         {
             var target = Path.Combine(directory, state == "selection-single-file" ? "result.txt" : "result.zip");
@@ -4864,7 +5659,7 @@ internal static class SmokeSnapshot
             var fake = (SmokeSelectionDownloadRepository)repository; fake.State = state;
             var save = new SmokeSelectionSavePicker(target) { Cancelled = state == "selection-picker-cancel" };
             using var coordinator = new ForegroundTransferCoordinator(); var profile = SmokeActivityProbe.Profile.ToString(); coordinator.ActivateProfile(profile);
-            using var picker = new WindowsTransferPickerService(repository, coordinator, save, new WindowsTransferOpenPicker(() => null));
+            await using var picker = new WindowsTransferPickerService(repository, coordinator, save, new WindowsTransferOpenPicker(() => null));
             var preview = System.Reflection.DispatchProxy.Create<IFilePreviewRepository, SmokeDragPreview>();
             using var page = new FilesPage(model, preview, profile, picker);
             ((Frame)shell.FindName("ContentFrame")).Content = page; await Task.Delay(150); await model.OpenLocationAsync("/share");
@@ -4890,7 +5685,22 @@ internal static class SmokeSnapshot
             {
                 page.UpdateLayout(); await WriteSnapshotAsync(page, markComplete: false); save.OnPick = page.Dispose;
             }
-            await (Task)typeof(FilesPage).GetMethod("StartSelectedDownloadsAsync", flags)!.Invoke(page, null)!;
+            var start = (Task)typeof(FilesPage).GetMethod("StartSelectedDownloadsAsync", flags)!.Invoke(page, null)!;
+            if (state != "selection-single-file")
+            {
+                await Task.Delay(200);
+                choiceDialog = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(page.XamlRoot)
+                    .SelectMany(popup => Nodes(popup.Child)).OfType<ContentDialog>().Distinct().Single();
+                if (fake.ArchiveCalls != 0 || fake.FileCalls != 0 || File.ReadAllText(target) != "original")
+                    throw new InvalidOperationException("下载方式尚未选择就开始读取或覆盖目标。");
+                // 这些场景验证 ZIP 下载；保留目录结构由 transfer-flows 独立覆盖。
+                Nodes(choiceDialog).OfType<ComboBox>().Single().SelectedIndex = 1;
+                var primary = Nodes(choiceDialog).OfType<Button>().Single(button => button.Name == "PrimaryButton");
+                ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(primary)
+                    .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+            }
+            await start.WaitAsync(TimeSpan.FromSeconds(5));
+            choiceDialog = null;
             if (state is "selection-changed" or "selection-close-picker" or "selection-picker-cancel")
             {
                 await Task.Delay(100);
@@ -4937,10 +5747,18 @@ internal static class SmokeSnapshot
         }
         finally
         {
+            choiceDialog?.Hide();
             var basePath = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "lanstash-selection-download-tests")) + Path.DirectorySeparatorChar;
             if (!Path.GetFullPath(directory).StartsWith(basePath, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("合成临时目录超出范围。");
             Directory.Delete(directory, recursive: true);
             if (complete) MarkSnapshotComplete();
+        }
+
+        static IEnumerable<DependencyObject> Nodes(DependencyObject node)
+        {
+            yield return node;
+            for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(node); index++)
+                foreach (var child in Nodes(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(node, index))) yield return child;
         }
     }
 
@@ -5296,7 +6114,39 @@ internal static class SmokeSnapshot
         {
             var zramContent = (NasZramDialogContent)dialog.Content;
             T Control<T>(string name) where T : FrameworkElement => (T)zramContent.FindName(name);
-            if (!string.IsNullOrEmpty(dialog.PrimaryButtonText) || zramContent.CanSave || dialog.DefaultButton != ContentDialogButton.Close) throw new InvalidOperationException("内存压缩存在写入口。");
+            if (string.IsNullOrEmpty(dialog.PrimaryButtonText) || zramContent.CanSave || dialog.DefaultButton != ContentDialogButton.Close) throw new InvalidOperationException("内存压缩未经修改/确认便可保存。");
+            if (state is "zram-edit" or "zram-save" or "zram-save-unknown" or "zram-marker" or "zram-current" or "zram-disconnect")
+            {
+                if (Control<TextBlock>("CapacityText").Visibility != Visibility.Collapsed || Control<TextBlock>("AlgorithmText").Visibility != Visibility.Collapsed)
+                    throw new InvalidOperationException("缺少容量/算法时仍显示空信息行。");
+                if (state != "zram-current")
+                {
+                    if (state != "zram-marker") Control<ToggleSwitch>("EnabledToggle").IsOn = true;
+                    if (zramContent.CanSave) throw new InvalidOperationException("压缩修改缺少生效风险确认。");
+                    Control<CheckBox>("RiskChoice").IsChecked = true;
+                    if (state == "zram-marker")
+                    {
+                        if (!Control<Button>("MarkRebootButton").IsEnabled) throw new InvalidOperationException("独立标记不可继续。");
+                        typeof(NasZramDialogContent).GetMethod("MarkReboot_Click", flags)!.Invoke(zramContent, [null!, new RoutedEventArgs()]); await Task.Delay(60);
+                    }
+                    else if (state != "zram-edit")
+                    {
+                        if (!zramContent.CanSave) throw new InvalidOperationException("完整压缩草稿无法保存。");
+                        var saving = zramContent.SaveAsync();
+                        if (state == "zram-disconnect")
+                        { page.Deactivate(); await saving; await opened; if (fake.Writes != 1) throw new InvalidOperationException("关闭压缩页面改变提交次数。"); await WriteSnapshotAsync(root); return; }
+                        await saving;
+                    }
+                    if (state is "zram-save" or "zram-save-unknown" or "zram-marker")
+                    {
+                        if (fake.Writes != 1 || !Control<InfoBar>("ResultNotice").IsOpen) throw new InvalidOperationException("压缩保存结果丢失。");
+                        await zramContent.SaveAsync(); await zramContent.ReloadAsync(); if (fake.Writes != 1) throw new InvalidOperationException("刷新重复提交压缩保存。");
+                        if (state == "zram-save-unknown" && (Control<InfoBar>("ResultNotice").Severity == InfoBarSeverity.Success || zramContent.CanSave))
+                            throw new InvalidOperationException("未知压缩结果被认领成功。");
+                    }
+                }
+                await Task.Delay(120); dialog.UpdateLayout(); await WriteSnapshotAsync(dialog); page.Deactivate(); await opened; return;
+            }
             if (state == "zram-loading" && !Control<ProgressRing>("LoadingIndicator").IsActive) throw new InvalidOperationException("内存压缩加载状态缺失。");
             if (state == "zram-error" && !Control<InfoBar>("ErrorNotice").IsOpen) throw new InvalidOperationException("内存压缩错误状态缺失。");
             if (state == "zram-unavailable" && Control<TextBlock>("UnsupportedNotice").Visibility != Visibility.Visible) throw new InvalidOperationException("内存压缩不支持状态缺失。");
@@ -5332,8 +6182,39 @@ internal static class SmokeSnapshot
         {
             var scheduleContent = (NasPowerScheduleDialogContent)dialog.Content;
             T Control<T>(string name) where T : FrameworkElement => (T)scheduleContent.FindName(name);
-            if (!string.IsNullOrEmpty(dialog.PrimaryButtonText) || scheduleContent.CanSave || dialog.DefaultButton != ContentDialogButton.Close) throw new InvalidOperationException("电源计划存在写入口。");
+            if (string.IsNullOrEmpty(dialog.PrimaryButtonText) || scheduleContent.CanSave || dialog.DefaultButton != ContentDialogButton.Close) throw new InvalidOperationException("电源计划未经修改/确认便可保存。");
             var filter = Control<ComboBox>("FilterChoice"); var list = Control<ListView>("ScheduleList");
+            if (state.StartsWith("powsched-edit", StringComparison.Ordinal) || state is "powsched-save" or "powsched-save-unknown" or "powsched-disconnect")
+            {
+                void Click(string method) => typeof(NasPowerScheduleDialogContent).GetMethod(method, flags)!.Invoke(scheduleContent, [null!, new RoutedEventArgs()]);
+                if (!Control<Button>("AddEntryButton").IsEnabled) throw new InvalidOperationException("空计划没有添加入口。");
+                Click("AddEntry_Click"); if (Control<StackPanel>("EntryEditor").Visibility != Visibility.Visible) throw new InvalidOperationException("计划编辑器没有显示。");
+                Control<ComboBox>("ActionChoice").SelectedIndex = 1; Control<TimePicker>("EntryTime").Time = new TimeSpan(23, 30, 0);
+                Control<CheckBox>("EntryEnabled").IsChecked = false;
+                var days = Control<StackPanel>("DaysPanel").Children.Cast<CheckBox>().ToArray();
+                foreach (var day in days) day.IsChecked = (DayOfWeek)day.Tag == DayOfWeek.Sunday;
+                if (state == "powsched-edit-form") { await Task.Delay(120); dialog.UpdateLayout(); await WriteSnapshotAsync(dialog); page.Deactivate(); await opened; return; }
+                Click("ApplyEntry_Click"); if (list.Items.Count != 1 || fake.Writes != 0) throw new InvalidOperationException("本地草稿提前写入或丢失。");
+                if (state == "powsched-edit-conflict")
+                { Click("AddEntry_Click"); Control<TimePicker>("EntryTime").Time = new TimeSpan(23, 30, 0); Click("ApplyEntry_Click"); if (!Control<InfoBar>("EntryError").IsOpen) throw new InvalidOperationException("停用计划重叠未被拒绝。"); }
+                else if (state == "powsched-edit-remove")
+                { list.SelectedIndex = 0; Click("RemoveEntry_Click"); if (list.Items.Count != 0 || fake.Writes != 0) throw new InvalidOperationException("草稿移除提前写入。"); }
+                else if (state == "powsched-edit-reset")
+                { Click("Reset_Click"); if (list.Items.Count != 0 || fake.Writes != 0) throw new InvalidOperationException("草稿还原错误。"); }
+                else if (state is "powsched-save" or "powsched-save-unknown" or "powsched-disconnect")
+                {
+                    if (scheduleContent.CanSave) throw new InvalidOperationException("电源保存缺少风险确认。");
+                    Control<CheckBox>("RiskChoice").IsChecked = true; if (!scheduleContent.CanSave) throw new InvalidOperationException("完整电源草稿无法保存。");
+                    var saving = scheduleContent.SaveAsync();
+                    if (state == "powsched-disconnect")
+                    { page.Deactivate(); await saving; await opened; if (fake.Writes != 1) throw new InvalidOperationException("关闭电源页面改变提交次数。"); await WriteSnapshotAsync(root); return; }
+                    await saving; if (fake.Writes != 1 || !Control<InfoBar>("ResultNotice").IsOpen) throw new InvalidOperationException("电源保存结果丢失。");
+                    await scheduleContent.SaveAsync(); await scheduleContent.ReloadAsync(); if (fake.Writes != 1) throw new InvalidOperationException("刷新重复保存电源计划。");
+                    if (state == "powsched-save-unknown" && (Control<InfoBar>("ResultNotice").Severity == InfoBarSeverity.Success || scheduleContent.CanSave))
+                        throw new InvalidOperationException("未知计划保存被当成完成。");
+                }
+                await Task.Delay(120); dialog.UpdateLayout(); await WriteSnapshotAsync(dialog); page.Deactivate(); await opened; return;
+            }
             if (state == "powsched-enabled") filter.SelectedIndex = 1;
             if (state == "powsched-disabled") filter.SelectedIndex = 2;
             if (state == "powsched-filtered") filter.SelectedIndex = 1;
@@ -5758,6 +6639,8 @@ internal static class SmokeSnapshot
         }
         if (packages)
         {
+            if (state.StartsWith("pkg-center-", StringComparison.Ordinal))
+            { await ExercisePackageCenterAsync(dialog, fake, state); page.Deactivate(); await opened; return; }
             var packageContent = (NasPackageSettingsDialogContent)dialog.Content;
             if (!string.IsNullOrEmpty(dialog.PrimaryButtonText) || dialog.ActualTheme != root.ActualTheme)
                 throw new InvalidOperationException("套件管理出现无意义保存按钮或错误主题。");
@@ -5784,8 +6667,7 @@ internal static class SmokeSnapshot
             {
                 var action = state == "pkg-stop" ? NasPackageAction.Stop : state == "pkg-uninstall" ? NasPackageAction.Uninstall : NasPackageAction.Start;
                 Click(action == NasPackageAction.Stop ? "Stop_Click" : action == NasPackageAction.Uninstall ? "Uninstall_Click" : "Start_Click");
-                Click("Execute_Click"); if (fake.Writes != 0) throw new InvalidOperationException("套件无确认即发送。");
-                var risk = (CheckBox)packageContent.FindName("RiskAcknowledgement"); risk.IsChecked = true;
+                if (fake.Writes != 0) throw new InvalidOperationException("显示套件风险摘要即发送。");
                 if (!((Button)packageContent.FindName("ExecuteButton")).IsEnabled) throw new InvalidOperationException("套件确认后不可执行。");
                 if (state == "pkg-search-change")
                 {
@@ -5796,7 +6678,7 @@ internal static class SmokeSnapshot
                 if (state == "pkg-changed-target")
                 {
                     list.SelectedIndex = 1; Click("Execute_Click"); if (fake.Writes != 0) throw new InvalidOperationException("切换目标沿用旧确认。");
-                    Click("Start_Click"); risk.IsChecked = true;
+                    Click("Start_Click");
                 }
                 Click("Execute_Click"); await Task.Delay(100); Click("Execute_Click");
                 if (fake.Writes != 1 || fake.PackageRequest?.Action != action) throw new InvalidOperationException("套件重复提交或动作混淆。");
@@ -5921,6 +6803,14 @@ internal static class SmokeSnapshot
                 }
             }
             if (state == "hardware-content" && list.Items.Count < 15) throw new InvalidOperationException("硬件字段丢失。");
+            if (state == "hardware-supported")
+            {
+                var editors = ((StackPanel)hardwareContent.FindName("EditorFields")).Children.OfType<Control>().ToArray();
+                var fan = (ComboBox)editors.Single(item => (string)item.Tag == "dual_fan_speed");
+                var modes = fan.Items.OfType<ComboBoxItem>().Select(item => (string)item.Tag).ToArray();
+                if (!modes.SequenceEqual(new[] { "fullfan", "quietfan", "coolfan" }) || editors.Any(item => (string)item.Tag is "fan_fail" or "poweron_beep" or "reset_beep"))
+                    throw new InvalidOperationException("硬件支持集未应用到原生编辑控件：" + string.Join(',', modes) + ";" + string.Join(',', editors.Select(item => item.Tag)));
+            }
             if (state == "hardware-ups-empty" && !list.Items.OfType<NasHardwareSettingsRow>().Any(item =>
                 item.Title == Localization.LocalizationService.Current.Get("NasHardwareUpsServer") &&
                 item.Value == Localization.LocalizationService.Current.Get("NasHardwareNotConfigured")))
@@ -6231,15 +7121,17 @@ internal static class SmokeSnapshot
                 throw new InvalidOperationException("FTP 端口输入框被同排内容拉伸。");
             if (state == "file-pending" && (((ToggleSwitch)fileContent.FindName("Nfs")).IsEnabled ||
                 !((InfoBar)fileContent.FindName("StatusNotice")).IsOpen)) throw new InvalidOperationException("文件服务待核对状态未保护。");
-            if (state.StartsWith("file-save", StringComparison.Ordinal) || state == "file-invalid")
+            if (state.StartsWith("file-save", StringComparison.Ordinal) || state is "file-invalid" or "file-swap-ports")
             {
                 ((ToggleSwitch)fileContent.FindName("Nfs")).IsOn = true;
                 if (state == "file-save-partial") ((TextBox)fileContent.FindName("SftpPort")).Text = "2223";
                 if (state == "file-invalid") ((TextBox)fileContent.FindName("SftpPort")).Text = "21";
+                if (state == "file-swap-ports")
+                { ((TextBox)fileContent.FindName("FtpPort")).Text = "2222"; ((TextBox)fileContent.FindName("SftpPort")).Text = "21"; }
                 await Task.Delay(100);
                 if (fileContent.CanSave) throw new InvalidOperationException("文件服务未经风险确认就可保存。");
                 ((CheckBox)fileContent.FindName("RiskAcknowledgement")).IsChecked = true;
-                if (state == "file-invalid")
+                if (state is "file-invalid" or "file-swap-ports")
                 {
                     if (fileContent.CanSave || ((TextBlock)fileContent.FindName("ValidationNotice")).Visibility != Visibility.Visible)
                         throw new InvalidOperationException("冲突端口可提交。");
@@ -6358,15 +7250,14 @@ internal static class SmokeSnapshot
         {
             ((NumberBox)content.FindName("BtDownload")).Value = 650;
             if (state is "settings-review" or "settings-partial") ((ToggleSwitch)content.FindName("ScheduleToggle")).IsOn = true;
-            if (content.CanSubmit) throw new InvalidOperationException("设置未确认就允许保存。");
-            ((CheckBox)content.FindName("Confirmation")).IsChecked = true;
+            if (((CheckBox)content.FindName("Confirmation")).Visibility != Visibility.Collapsed) throw new InvalidOperationException("普通设置保留了重复确认。");
             if (!content.CanSubmit) throw new InvalidOperationException("有效设置更改不能保存。");
             await content.SubmitAsync();
             if (state == "settings-review")
             {
                 if (!model.RequiresReview || repository.ScheduleWrites != 0) throw new InvalidOperationException("未知基础设置结果没有暂停计划写入。");
-                await content.SubmitAsync(); await content.SubmitAsync();
-                if (!model.CanContinue || content.CanSubmit || repository.ScheduleWrites != 0) throw new InvalidOperationException("核对结果触发了未确认的计划写入。");
+                await content.SubmitAsync();
+                if (!model.CanContinue || !content.CanSubmit || repository.ScheduleWrites != 0) throw new InvalidOperationException("核对结果触发了未确认的计划写入。");
                 ((CheckBox)content.FindName("Confirmation")).IsChecked = true; await content.SubmitAsync();
             }
             await content.SubmitAsync();
@@ -6378,6 +7269,18 @@ internal static class SmokeSnapshot
             if (((Button)content.FindName("ChooseFolderButton")).IsEnabled) throw new InvalidOperationException("只读目录可被选为默认位置。");
             list.SelectedItem = model.Folders[1];
             if (!((Button)content.FindName("ChooseFolderButton")).IsEnabled) throw new InvalidOperationException("可写目录无法选择。");
+        }
+        if (state is "settings-readonly" or "settings-permission-unavailable")
+        {
+            ((NumberBox)content.FindName("BtDownload")).Value = 650;
+            if (content.CanSubmit || ((NumberBox)content.FindName("BtDownload")).IsEnabled) throw new InvalidOperationException("只读账号开放保存。");
+            if (((TextBlock)content.FindName("PermissionHint")).Text != Localization.LocalizationService.Current.Get(state == "settings-readonly" ? "DownloadSettingsReadOnly" : "DownloadSettingsPermissionUnavailable")) throw new InvalidOperationException("权限未知被误报为账号拒绝。");
+        }
+        if (state == "settings-missing")
+        {
+            if (((NumberBox)content.FindName("BtUpload")).Visibility != Visibility.Collapsed || ((ToggleSwitch)content.FindName("EmuleToggle")).Visibility != Visibility.Collapsed) throw new InvalidOperationException("缺失字段显示成零或关闭。");
+            ((NumberBox)content.FindName("BtDownload")).Value = 650;
+            if (!content.CanSubmit || model.Draft!.HttpDownloadLimitKb is not null || model.Draft.IsEmuleEnabled is not null) throw new InvalidOperationException("缺失字段被补默认值。");
         }
         if (state == "settings-v1" && ((TextBox)content.FindName("DestinationBox")).IsEnabled) throw new InvalidOperationException("Info v1 开放了默认位置写入。");
         if (state == "settings-no-schedule" && ((ToggleSwitch)content.FindName("ScheduleToggle")).IsEnabled) throw new InvalidOperationException("不可用计划被当作可编辑。");
@@ -6429,13 +7332,19 @@ internal static class SmokeSnapshot
         if (dialog.ActualTheme != root.ActualTheme) throw new InvalidOperationException("高级聊天弹窗没有跟随主题。");
         if (state.StartsWith("actions-", StringComparison.Ordinal))
         {
-            if (content.CanSubmit) throw new InvalidOperationException("消息操作在确认前可提交。");
+            if (content.CanSubmit != (section == ChatAdvancedSection.Announcements)) throw new InvalidOperationException("消息操作未按选择和风险开放主按钮。");
             if (section == ChatAdvancedSection.Forward)
             {
                 var targetList = (ListView)content.FindName("TargetList");
                 targetList.SelectedItems.Add(model.Targets[0]);
             }
-            ((CheckBox)content.FindName("ActionConfirmation")).IsChecked = true;
+            var confirmation = (CheckBox)content.FindName("ActionConfirmation");
+            if (section is ChatAdvancedSection.Forward or ChatAdvancedSection.Announcements)
+            {
+                if (confirmation.Visibility != Visibility.Collapsed || !content.CanSubmit)
+                    throw new InvalidOperationException("普通转发或公告仍要求重复勾选。");
+            }
+            else confirmation.IsChecked = true;
             if (!content.CanSubmit) throw new InvalidOperationException("有效消息操作无法确认。");
             await content.SubmitAsync(); await content.SubmitAsync();
             if (repository.MutationCalls != 1) throw new InvalidOperationException("消息操作发生重复提交。");
@@ -6495,8 +7404,10 @@ internal static class SmokeSnapshot
         var snapshot = await folder.CreateFileAsync("workspace-smoke.png", CreationCollisionOption.ReplaceExisting);
         using var stream = await snapshot.OpenAsync(FileAccessMode.ReadWrite);
         var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
+        RecordNativePhase("snapshot-set-pixels");
         encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
             (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, pixels);
+        RecordNativePhase("snapshot-pixels-set");
         await encoder.FlushAsync();
         await stream.FlushAsync();
         // 只有编码写入全部完成后才发出完成标记，避免复制尚为空的图片。

@@ -23,6 +23,8 @@ public sealed record NasSettingsWriteAvailability(
     bool CanDiskTest)
 {
     public bool CanSaveRemoteAccess { get; init; }
+    public bool CanSaveZram { get; init; }
+    public bool CanSavePowerSchedule { get; init; }
 }
 
 public enum NasPowerAction
@@ -195,6 +197,7 @@ public sealed record NasHardwareSettings(
 {
     public int? LedMinimum { get; init; }
     public int? LedMaximum { get; init; }
+    public IReadOnlyList<string>? SupportedFanModes { get; init; }
     public NasBeepSettings? Beep { get; init; }
     public NasHibernationSettings? Hibernation { get; init; }
     public NasUpsSettings? Ups { get; init; }
@@ -237,7 +240,7 @@ public sealed record NasRegionSettings(
 public enum NasRegionTimeMode { Unknown, Network, Manual }
 public sealed record NasTimeZoneOption(string Id, string DisplayName);
 
-public interface INasSettingsRepository
+public partial interface INasSettingsRepository
 {
     Guid ProfileId { get; }
 
@@ -458,6 +461,16 @@ public interface INasSettingsRepository
         Task.FromException<NasExternalStorageDirectory>(new NotSupportedException());
     Task<NasZramSnapshot> LoadZramAsync(CancellationToken cancellationToken = default) =>
         Task.FromException<NasZramSnapshot>(new NotSupportedException());
+    Task<NasHardwareEditRecovery> SaveZramAsync(NasZramSaveRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromException<NasHardwareEditRecovery>(new NotSupportedException());
+    Task<NasHardwareEditRecovery> SavePowerScheduleAsync(NasPowerScheduleSaveRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromException<NasHardwareEditRecovery>(new NotSupportedException());
+    Task<IReadOnlyList<NasHardwareEditRecovery>> LoadHardwareEditRecoveriesAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<NasHardwareEditRecovery>>([]);
+    Task<NasHardwareEditRecovery> ReviewHardwareEditAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Task.FromException<NasHardwareEditRecovery>(new NotSupportedException());
+    Task<NasHardwareEditRecovery> MarkZramRebootAsync(Guid id, bool riskConfirmed, CancellationToken cancellationToken = default) =>
+        Task.FromException<NasHardwareEditRecovery>(new NotSupportedException());
     Task<NasRemoteAccessSettings> LoadRemoteAccessSettingsAsync(CancellationToken cancellationToken = default) =>
         Task.FromException<NasRemoteAccessSettings>(new NotSupportedException());
     Task<MutationResult> SaveRemoteAccessSettingsAsync(NasServiceSettingsSaveRequest<NasRemoteAccessSettings> request, CancellationToken cancellationToken = default) =>

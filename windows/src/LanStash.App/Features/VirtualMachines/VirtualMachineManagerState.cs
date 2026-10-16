@@ -11,6 +11,7 @@ public enum VirtualMachineManagerContentState
     Error,
     Content,
     Unavailable,
+    FilteredEmpty,
 }
 
 public sealed record VirtualMachineItem(VirtualMachineSummary Machine)
@@ -77,6 +78,7 @@ public sealed record VirtualMachineItem(VirtualMachineSummary Machine)
 public sealed record VirtualizationResourceItem(VirtualizationResourceSummary Resource)
 {
     public string Id => Resource.Id;
+    public string DetailText => Resource.Detail ?? "";
     public string Name => string.IsNullOrWhiteSpace(Resource.Name)
         ? LocalizationService.Current.Get("VirtualMachineManagerUnnamedResource")
         : Resource.Name.Trim();
@@ -110,8 +112,11 @@ public sealed record VirtualizationResourceItem(VirtualizationResourceSummary Re
 
 public sealed record VirtualMachineEventItem(ServiceEventSummary Event)
 {
+    public ServiceActivityEntry? Activity { get; init; }
+    public string Message => Activity?.Message ?? "";
+    public string Account => Activity?.Account ?? "";
     public string Id => Event.Id;
-    public string TimeText => Event.OccurredAt?.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)
+    public string TimeText => Activity?.LocalTime?.ToString("G", CultureInfo.CurrentCulture) ?? Event.OccurredAt?.ToLocalTime().ToString("G", CultureInfo.CurrentCulture)
         ?? LocalizationService.Current.Get("VirtualMachineManagerValueUnavailable");
     public string LevelText => LocalizationService.Current.Get(Event.Level switch
     {
@@ -124,4 +129,5 @@ public sealed record VirtualMachineEventItem(ServiceEventSummary Event)
         "VirtualMachineManagerEventAutomationName",
         TimeText,
         LevelText);
+    public override string ToString() => nameof(VirtualMachineEventItem);
 }

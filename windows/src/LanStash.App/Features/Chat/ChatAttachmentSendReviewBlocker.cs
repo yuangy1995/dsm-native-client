@@ -40,4 +40,5 @@ public sealed class ChatAttachmentSendReviewBlocker
 public sealed record ChatAttachmentSendReviewTarget(
     Guid ProfileId,
     string ConversationId,
-    string AttachmentFingerprint);
+    string AttachmentFingerprint,
+    string? AccountIdentity = null);

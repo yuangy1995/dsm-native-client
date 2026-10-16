@@ -52,6 +52,8 @@ public enum VirtualMachineOperationalState
     Unknown,
 }
 
+public enum VirtualMachineApiSource { Public, Internal }
+
 public sealed record VirtualMachineSummary(
     string Id,
     string Name,
@@ -60,7 +62,10 @@ public sealed record VirtualMachineSummary(
     long? MemoryBytes,
     long? StorageBytes,
     string? HostId,
-    string? HostName);
+    string? HostName)
+{
+    public VirtualMachineApiSource Source { get; init; } = VirtualMachineApiSource.Public;
+}
 
 public enum VirtualizationResourceKind
 {
@@ -89,7 +94,19 @@ public sealed record VirtualizationResourceSummary(
     VirtualizationResourceHealth Health,
     long? AllocatedBytes = null,
     long? CapacityBytes = null,
-    string? Type = null);
+    string? Type = null)
+{
+    public VirtualMachineApiSource Source { get; init; } = VirtualMachineApiSource.Public;
+    public string? Detail { get; init; }
+    public bool? IsFrozen { get; init; }
+    public bool? IsInUse { get; init; }
+    public IReadOnlyList<VirtualMachineImageReplica>? ImageReplicas { get; init; }
+}
+
+public sealed record VirtualMachineImageReplica(string StorageId, string HostId, string Status, string StatusType)
+{
+    public override string ToString() => nameof(VirtualMachineImageReplica);
+}
 
 public sealed record VirtualMachineManagerSnapshot(
     Guid ProfileId,

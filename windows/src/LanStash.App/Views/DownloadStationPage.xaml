@@ -115,6 +115,8 @@
                     <TextBlock x:Uid="DownloadStationBtSearchButtonLabel"/>
                   </StackPanel>
                 </Button>
+                <Button x:Uid="DownloadActionHistoryEntry" MinHeight="44" Click="Recovery_Click"/>
+                <Button x:Uid="DownloadRssEntry" x:Name="RssButton" MinHeight="44" Click="Rss_Click"/>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="420">
                   <Border x:Name="AdvancedSummary" Padding="16,12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" MaxWidth="560" MaxHeight="420">
                     <StackPanel Spacing="10">
@@ -203,6 +205,13 @@
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
             </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <ComboBox x:Uid="DownloadTaskSort" x:Name="SortPicker" SelectedIndex="0" SelectionChanged="Sort_Changed" MinHeight="44">
+                <ComboBoxItem x:Uid="DownloadSortName"/><ComboBoxItem x:Uid="DownloadSortSize"/><ComboBoxItem x:Uid="DownloadSortProgress"/>
+                <ComboBoxItem x:Uid="DownloadSortStatus"/><ComboBoxItem x:Uid="DownloadSortSpeed"/>
+              </ComboBox>
+              <ToggleButton x:Uid="DownloadSortDescending" x:Name="DescendingToggle" MinHeight="44" Click="SortDirection_Click"/>
+            </StackPanel>
             <ListView x:Uid="DownloadStationTaskList" x:Name="TaskList" Grid.Row="1" IsItemClickEnabled="True" ItemClick="TaskList_ItemClick" ItemsSource="{Binding Tasks}" SelectionMode="Single">
               <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
@@ -286,6 +295,7 @@
                     <ProgressRing x:Uid="DownloadStationControlProgress" x:Name="ControlProgress" Grid.Column="3" Width="28" Height="28" IsActive="False" Visibility="Collapsed"/>
                   </Grid>
                   <ProgressBar IsIndeterminate="{Binding SelectedTask.IsProgressUnknown}" MinHeight="4" Maximum="100" Value="{Binding SelectedTask.ProgressPercent}"/>
+                  <Button x:Uid="DownloadDetailsEntry" MinHeight="44" Click="Details_Click"/>
                   <Grid ColumnSpacing="24" RowSpacing="14">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="Auto"/>

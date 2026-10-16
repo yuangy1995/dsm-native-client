@@ -1,6 +1,6 @@
 namespace LanStash.Domain;
 
-public enum VirtualMachinePowerAction { PowerOn, Shutdown, PowerOff }
+public enum VirtualMachinePowerAction { PowerOn, Shutdown, PowerOff, Reboot }
 
 public sealed record VirtualMachinePowerRequest(Guid ProfileId, VirtualMachineSummary Baseline,
     VirtualMachinePowerAction Action, Guid RequestId, bool RiskConfirmed)
@@ -14,10 +14,10 @@ public sealed record VirtualMachinePowerRecovery(string Id, string Name, Virtual
 public static class VirtualMachinePowerRules
 {
     public static bool CanRequest(VirtualMachineSummary target, VirtualMachinePowerAction action) => target is not null &&
-        ValidId(target.Id) && !string.IsNullOrWhiteSpace(target.Name) && !target.Name.Any(char.IsControl) && action switch
+        ValidId(target.Id) && Enum.IsDefined(target.Source) && !string.IsNullOrWhiteSpace(target.Name) && !target.Name.Any(char.IsControl) && action switch
         {
             VirtualMachinePowerAction.PowerOn => target.State == VirtualMachineOperationalState.Stopped,
-            VirtualMachinePowerAction.Shutdown or VirtualMachinePowerAction.PowerOff => target.State == VirtualMachineOperationalState.Running,
+            VirtualMachinePowerAction.Shutdown or VirtualMachinePowerAction.PowerOff or VirtualMachinePowerAction.Reboot => target.State == VirtualMachineOperationalState.Running,
             _ => false
         };
     public static bool ValidId(string? id) => !string.IsNullOrWhiteSpace(id) && id == id.Trim() &&

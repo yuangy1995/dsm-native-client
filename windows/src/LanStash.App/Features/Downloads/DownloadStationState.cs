@@ -22,6 +22,8 @@ public enum DownloadTaskFilter
     Paused,
 }
 
+public enum DownloadTaskSort { Name, Size, Progress, Status, DownloadSpeed }
+
 public enum DownloadTaskControlNoticeKind
 {
     None,
@@ -66,6 +68,13 @@ public sealed record DownloadTaskItem(DownloadTask Task)
     public string UploadedText => FormatBytes(Task.Uploaded);
     public string DownloadSpeedText => FormatSpeed(Task.DownloadSpeed);
     public string UploadSpeedText => FormatSpeed(Task.UploadSpeed);
+    public string RemainingText => Task.State == DownloadTaskState.Downloading && Task.Size is > 0 &&
+        Task.Downloaded is >= 0 && Task.DownloadSpeed is > 0 && Task.Downloaded <= Task.Size
+        ? LocalizationService.Current.Format("DownloadDetailsRemainingValue", Math.Ceiling((double)(Task.Size.Value - Task.Downloaded.Value) / Task.DownloadSpeed.Value / 60).ToString("N0", CultureInfo.CurrentCulture))
+        : LocalizationService.Current.Get("DownloadStationValueUnavailable");
+    public string RatioText => Task.Downloaded is > 0 && Task.Uploaded is >= 0
+        ? ((double)Task.Uploaded.Value / Task.Downloaded.Value).ToString("N2", CultureInfo.CurrentCulture)
+        : LocalizationService.Current.Get("DownloadStationValueUnavailable");
     public string PriorityText => Task.AdvancedDetails.Priority switch
     {
         DownloadTaskPriority.Low => LocalizationService.Current.Get("DownloadStationPriorityLow"),

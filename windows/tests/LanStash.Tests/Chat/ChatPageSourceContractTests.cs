@@ -28,19 +28,25 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
-    public void LocalReadStateRequiresVisibleMessagePaneAndNeverWritesServerReadStatus()
+    public void ServerReadSynchronizationRequiresActiveWindowAndActualVisibleRows()
     {
         var page = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
         var model = Read("windows/src/LanStash.App/Features/Chat/ChatBrowserViewModel.cs");
-        Assert.Contains("_isLoaded && _isWindowVisible && MessagePane.Visibility == Visibility.Visible", page);
+        var visibility = Read("windows/src/LanStash.App/Views/ChatPage.Visibility.cs");
+        var session = Read("windows/src/LanStash.App/Features/Chat/ChatWorkspaceSession.cs");
+        Assert.Contains("_isLoaded && _isWindowVisible && _isWindowActive", visibility);
+        Assert.Contains("ReadVisibleRows(MessageList, _messageScroller)", visibility);
+        Assert.Contains("TransformToVisual(scroller)", visibility);
         Assert.Contains("UpdateMessageReadVisibility();", Slice(page, "private async void ChatPage_Unloaded", "private void ViewModel_PropertyChanged"));
         Assert.Contains("UpdateMessageReadVisibility();", Slice(page, "private void ShowConversationList()", "private void UpdateSelectedPinAction()"));
-        Assert.Contains("SetMessagePaneVisible", page);
+        Assert.Contains("_workspaceSession.SetView(false, null, [])", page);
         var selection = Slice(page, "private async void ConversationList_ItemClick", "private async void Refresh_Click");
-        Assert.True(selection.IndexOf("SetMessagePaneVisible(false)", StringComparison.Ordinal) <
+        Assert.True(selection.IndexOf("_workspaceSession.SetView(false, null, [])", StringComparison.Ordinal) <
             selection.IndexOf("SelectConversationAsync", StringComparison.Ordinal));
-        Assert.Contains("private static ChatConversation ApplyLocalReadState", model);
-        Assert.Contains("activity <= readThrough", model);
+        Assert.Contains("ApplyConfirmedRead(ChatConversation result)", model);
+        Assert.Contains("result.LastViewedAt", model);
+        Assert.DoesNotContain("ApplyLocalReadState", model);
+        Assert.Contains("_repository.MarkReadAsync(message.ConversationId, message.Id, message.SentAt", session);
         Assert.DoesNotContain("DateTimeOffset.Now", model);
         Assert.DoesNotContain("DateTimeOffset.UtcNow", model);
         Assert.DoesNotContain("mark_read", page + model);
@@ -167,13 +173,14 @@ public sealed class ChatPageSourceContractTests
         Assert.Contains("TimeSpan.FromSeconds(5)", foreground);
         Assert.Contains("await _refreshConversations()", foreground);
         Assert.Contains("await _refreshMessages()", foreground);
-        Assert.Contains("viewModel.CancelForegroundRefreshes", source);
+        var session = Read("windows/src/LanStash.App/Features/Chat/ChatWorkspaceSession.cs");
+        Assert.Contains("Browser.CancelForegroundRefreshes", session);
         Assert.Contains("CreateConversationButton", xaml);
         Assert.Contains("ChatConversationCreatorViewModel", source);
         Assert.Contains("CreatePrivateGroupAsync", create);
         Assert.Contains("CreateDirectAsync", create);
         Assert.DoesNotContain("Socket", combined, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("observeRealtime: repository.ObserveRealtimeAsync", source);
+        Assert.Contains("observeRealtime: repository.ObserveRealtimeAsync", session);
         Assert.Contains("TimeSpan.FromSeconds(30)", foreground);
         Assert.Contains("ChatRealtimeEvent.ContentChanged", foreground);
     }
@@ -246,7 +253,7 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
-    public void ForegroundRefreshFollowsPageAndWindowVisibility()
+    public void WorkspaceOwnsSubscriptionWhilePageSuppliesVisibility()
     {
         var page = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
         var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
@@ -254,8 +261,10 @@ public sealed class ChatPageSourceContractTests
         Assert.Contains("Loaded += ChatPage_Loaded", page);
         Assert.Contains("Unloaded += ChatPage_Unloaded", page);
         Assert.Contains("_isLoaded && _isWindowVisible", page);
-        Assert.Contains("_foregroundRefresher.StartAsync(refreshImmediately)", page);
-        Assert.Contains("_foregroundRefresher.StopAsync()", page);
+        var session = Read("windows/src/LanStash.App/Features/Chat/ChatWorkspaceSession.cs");
+        Assert.Contains("Refresher.StartAsync(false)", session);
+        Assert.DoesNotContain("_foregroundRefresher.StopAsync()", page);
+        Assert.DoesNotContain("_foregroundRefresher.Dispose()", page);
         Assert.Contains("internal async Task SetWindowVisibleAsync(bool isVisible)", page);
         Assert.Contains("await _chat.SetWindowVisibleAsync(_isWindowVisible)", shell);
         Assert.Contains("await _chat.SetWindowVisibleAsync(isVisible)", shell);
@@ -502,18 +511,22 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
-    public void ShellRoutesChatWithoutWorkspaceFallbackAndDisposesPage()
+    public void ShellRoutesChatAndDetachesPageWhileConnectionOwnsItsLifetime()
     {
         var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
         var branch = Slice(shell, "if (module == AppModule.Chat)", "ContentFrame.Content = _workspace;");
         var workspace = Read("windows/src/LanStash.App/ViewModels/WorkspaceViewModel.cs");
 
         Assert.Contains("_app.Repository is not IChatRepository chatRepository", branch);
-        Assert.Contains("_chat = new ChatPage(chatRepository)", branch);
+        Assert.Contains("_chat = _app.GetChatPage(chatRepository)", branch);
         Assert.Contains("ContentFrame.Content = _chat;", branch);
         Assert.True(Count(branch, "return;") >= 2);
         Assert.DoesNotContain("ShowModuleAsync", branch);
-        Assert.Contains("_chat?.Dispose();", shell);
+        Assert.Contains("DetachChatPage();", shell);
+        Assert.DoesNotContain("_chat?.Dispose();", shell);
+        var app = Read("windows/src/LanStash.App/ViewModels/AppViewModel.Chat.cs");
+        Assert.Contains("workspace.Chat?.Dispose()", app);
+        Assert.Contains("await page.DisposeAsync()", app);
         Assert.DoesNotContain("AppModule.Chat =>", workspace);
         Assert.DoesNotContain("LoadConversationsAsync", workspace);
     }

@@ -16,7 +16,7 @@ public sealed partial class FilesPage
 
     private async void CreateArchive_Click(object sender, RoutedEventArgs e)
     {
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
         EnterArchiveCompressionSelectionMode();
     }
 

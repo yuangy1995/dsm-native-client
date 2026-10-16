@@ -31,8 +31,13 @@ public sealed record FileArchiveExtractionOptions(string? Password = null, strin
     public bool KeepDirectoryStructure { get; init; } = true;
     public bool CreateSubfolder { get; init; }
     public bool Overwrite { get; init; }
-    public bool IsValid => Codepage is null or "enu" or "cht" or "chs" or "krn" or "ger" or "fre" or "ita" or
-        "spn" or "jpn" or "dan" or "nor" or "sve" or "nld" or "rus" or "plk" or "ptb" or "ptg" or "hun" or "trk" or "csy";
+    // null 表示全部；空集合表示尚未选择，绝不能退回全部解压。
+    public IReadOnlyList<FileArchiveExtractionListedItem>? SelectedItems { get; init; }
+    public bool IsValid => (Codepage is null or "enu" or "cht" or "chs" or "krn" or "ger" or "fre" or "ita" or
+        "spn" or "jpn" or "dan" or "nor" or "sve" or "nld" or "rus" or "plk" or "ptb" or "ptg" or "hun" or "trk" or "csy") &&
+        (SelectedItems is null || SelectedItems.Count > 0 &&
+            SelectedItems.All(item => item is { Id: >= 0 }) &&
+            SelectedItems.Select(item => item.Id).Distinct().Count() == SelectedItems.Count);
     public override string ToString() => nameof(FileArchiveExtractionOptions);
 
     // 与 macOS 基线一致，只在出现乱码线索时比较中文旧编码，不按界面语言强制改写。

@@ -22,6 +22,52 @@
   </PropertyGroup>
   <ItemGroup Condition="'$(LanStashUiSmoke)' == 'true'">
     <Compile Include="..\..\tests\UiSmoke\SmokeWorkspace.cs" Link="Testing\SmokeWorkspace.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeDownloadReadActions.cs" Link="Testing\SmokeDownloadReadActions.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeSharing.cs" Link="Testing\SmokeSharing.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePermissions.cs" Link="Testing\SmokePermissions.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeIsoMounts.cs" Link="Testing\SmokeIsoMounts.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeVfs.cs" Link="Testing\SmokeVfs.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeFileStationSettings.cs" Link="Testing\SmokeFileStationSettings.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeFileTasks.cs" Link="Testing\SmokeFileTasks.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeTransferFlows.cs" Link="Testing\SmokeTransferFlows.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeUploadFlows.cs" Link="Testing\SmokeUploadFlows.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeCrossNas.cs" Link="Testing\SmokeCrossNas.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotos.cs" Link="Testing\SmokePhotos.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoUploads.cs" Link="Testing\SmokePhotoUploads.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoManagement.cs" Link="Testing\SmokePhotoManagement.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoFolders.cs" Link="Testing\SmokePhotoFolders.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoFiles.cs" Link="Testing\SmokePhotoFiles.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoAlbums.cs" Link="Testing\SmokePhotoAlbums.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoConditions.cs" Link="Testing\SmokePhotoConditions.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoSharing.cs" Link="Testing\SmokePhotoSharing.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoTemporary.cs" Link="Testing\SmokePhotoTemporary.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoRequests.cs" Link="Testing\SmokePhotoRequests.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoFolderSharing.cs" Link="Testing\SmokePhotoFolderSharing.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoPeople.cs" Link="Testing\SmokePhotoPeople.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoFaces.cs" Link="Testing\SmokePhotoFaces.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoManualFaces.cs" Link="Testing\SmokePhotoManualFaces.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoConcepts.cs" Link="Testing\SmokePhotoConcepts.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoSimilar.cs" Link="Testing\SmokePhotoSimilar.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoSlideshow.cs" Link="Testing\SmokePhotoSlideshow.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoExports.cs" Link="Testing\SmokePhotoExports.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoPreviewGeneration.cs" Link="Testing\SmokePhotoPreviewGeneration.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoAutomatic.cs" Link="Testing\SmokePhotoAutomatic.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoPreferences.cs" Link="Testing\SmokePhotoPreferences.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoSharedSettings.cs" Link="Testing\SmokePhotoSharedSettings.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoGlobalSettings.cs" Link="Testing\SmokePhotoGlobalSettings.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoSharedMembers.cs" Link="Testing\SmokePhotoSharedMembers.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoMaintenance.cs" Link="Testing\SmokePhotoMaintenance.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePhotoBackgroundTasks.cs" Link="Testing\SmokePhotoBackgroundTasks.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeOffice.cs" Link="Testing\SmokeOffice.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeChatInteractions.cs" Link="Testing\SmokeChatInteractions.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeDesktopLifecycle.cs" Link="Testing\SmokeDesktopLifecycle.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokePackageCenter.cs" Link="Testing\SmokePackageCenter.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeNasPerformance.cs" Link="Testing\SmokeNasPerformance.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeNasLogs.cs" Link="Testing\SmokeNasLogs.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeContainerActivity.cs" Link="Testing\SmokeContainerActivity.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeContainerResources.cs" Link="Testing\SmokeContainerResources.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeVirtualMachineActivity.cs" Link="Testing\SmokeVirtualMachineActivity.cs" />
+    <Compile Include="..\..\tests\UiSmoke\SmokeNasAnalysis.cs" Link="Testing\SmokeNasAnalysis.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\LanStash.Application\LanStash.Application.csproj" />
@@ -40,6 +86,8 @@
     <Compile Remove="Features\Photos\**\*.cs" />
     <Compile Remove="Features\Settings\**\*.cs" />
     <Compile Remove="Features\Transfers\ForegroundTransfer*.cs" />
+    <Compile Remove="Features\Transfers\ForegroundFolderDownloadPlan.cs" />
+    <Compile Remove="Features\Transfers\ForegroundDownloadDirectoryLease.cs" />
     <Compile Remove="Features\Transfers\BoundedFileUploadBatch.cs" />
     <Compile Remove="Features\Transfers\BoundedFileDownloadBatch.cs" />
     <Compile Remove="Features\Transfers\BoundedFolderUploadPlan.cs" />

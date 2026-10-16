@@ -37,6 +37,8 @@ public sealed partial class LoginPage : Page
         DispatcherQueue.TryEnqueue(ShowCertificateTrustIfNeeded);
     }
 
+    private async void SavedRecordings_Click(object sender, RoutedEventArgs e) => await ChatSavedRecordingsDialog.ShowForAsync(_viewModel, this);
+
     private void LoginPage_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         DeviceColumn.Width = new GridLength(e.NewSize.Width < 900 ? 180 : 241);

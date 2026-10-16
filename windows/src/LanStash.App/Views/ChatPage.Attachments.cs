@@ -96,12 +96,13 @@ public sealed partial class ChatPage
 
     private async void AttachmentPreview_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: ChatMessageAttachmentItem item } || !item.IsImage)
+        if (sender is not Button { Tag: ChatMessageAttachmentItem item } || (!item.IsImage && !item.IsPlayable))
         {
             return;
         }
 
-        await ShowAttachmentPreviewAsync(item);
+        if (item.IsPlayable) await ShowChatMediaAsync(item);
+        else await ShowAttachmentPreviewAsync(item);
     }
 
     private async void AttachmentSave_Click(object sender, RoutedEventArgs e)
@@ -202,13 +203,16 @@ public sealed partial class ChatPage
         using var cancellation = BeginAttachmentRead(item);
         try
         {
+            var current = await _repository.LocateMessageAsync(item.ConversationId, item.MessageId, item.ThreadId, cancellation.Token);
+            if (current is null || current.EncryptionState != ChatEncryptionState.NotEncrypted ||
+                !current.Attachments.Contains(item.Attachment)) throw new IOException("chat.attachment.changed");
             await using var stream = new FileStream(
-                destination.Path,
+                Path.Combine(Path.GetTempPath(), "LanStashChatDownload-" + Guid.NewGuid().ToString("N")),
                 FileMode.CreateNew,
                 FileAccess.ReadWrite,
                 FileShare.None,
                 bufferSize: 64 * 1024,
-                useAsync: true);
+                options: FileOptions.Asynchronous | FileOptions.DeleteOnClose);
             var result = await _repository.SaveAttachmentAsync(
                 item.MessageId,
                 item.Attachment,
@@ -219,6 +223,20 @@ public sealed partial class ChatPage
             {
                 return;
             }
+
+            if (result.Status == ChatAttachmentContentReadStatus.Completed && result.BytesWritten == stream.Length &&
+                (item.Attachment.SizeBytes is null || item.Attachment.SizeBytes == stream.Length))
+            {
+                await using var output = await Features.Transfers.WindowsTransactionalDownloadDestination.CreateAsync(destination.Path);
+                stream.Position = 0;
+                var buffer = new byte[64 * 1024];
+                int count;
+                while ((count = await stream.ReadAsync(buffer, cancellation.Token)) > 0)
+                    await output.WriteAsync(buffer.AsMemory(0, count), cancellation.Token);
+                cancellation.Token.ThrowIfCancellationRequested();
+                await output.CommitAsync(cancellation.Token);
+            }
+            else throw new IOException("chat.attachment.incomplete");
 
             ShowAttachmentStatus(
                 result.Status == ChatAttachmentContentReadStatus.Completed
@@ -255,6 +273,7 @@ public sealed partial class ChatPage
     private CancellationTokenSource BeginAttachmentRead(ChatMessageAttachmentItem item)
     {
         CancelAttachmentRead();
+        _attachmentConversationId = item.ConversationId;
         _attachmentReadCancellation = new CancellationTokenSource();
         return _attachmentReadCancellation;
     }
@@ -277,7 +296,7 @@ public sealed partial class ChatPage
     private void CancelAttachmentRead()
     {
         _attachmentReadCancellation?.Cancel();
-        _attachmentReadCancellation?.Dispose();
+        // 内容读取方法拥有 using 生命周期；取消不能提前销毁其仍在使用的源。
         _attachmentReadCancellation = null;
     }
 
@@ -333,6 +352,10 @@ public sealed partial class ChatPage
             ".heic" => "image/heic",
             ".mp4" => "video/mp4",
             ".mov" => "video/quicktime",
+            ".aac" => "audio/aac",
+            ".m4a" => "audio/mp4",
+            ".mp3" => "audio/mpeg",
+            ".wav" => "audio/wav",
             _ => null,
         };
 

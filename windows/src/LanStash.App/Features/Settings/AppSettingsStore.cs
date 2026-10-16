@@ -40,7 +40,7 @@ internal sealed class FileAppSettingsStore : IAppSettingsStore
                 .OfType<AppModule>()
                 .Where(AppSettingsModulePolicy.CanHide)
                 .ToHashSet();
-            return new AppSettingsPreferences(theme, hidden);
+            return new AppSettingsPreferences(theme, hidden, stored?.ChatNotificationsEnabled == true);
         }
         catch (JsonException)
         {
@@ -71,7 +71,7 @@ internal sealed class FileAppSettingsStore : IAppSettingsStore
                     .Where(AppSettingsModulePolicy.CanHide)
                     .OrderBy(module => module)
                     .Select(module => module.ToString())
-                    .ToArray());
+                    .ToArray(), preferences.ChatNotificationsEnabled);
             File.WriteAllText(_path, JsonSerializer.Serialize(stored));
             return true;
         }
@@ -89,5 +89,5 @@ internal sealed class FileAppSettingsStore : IAppSettingsStore
         }
     }
 
-    private sealed record StoredSettings(string? Theme, string[]? HiddenOptionalModules);
+    private sealed record StoredSettings(string? Theme, string[]? HiddenOptionalModules, bool ChatNotificationsEnabled = false);
 }

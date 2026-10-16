@@ -25,6 +25,7 @@ internal sealed class VirtualMachineConsoleWindow : Window
     private readonly ProgressRing _loading = new() { Width = 28, Height = 28, IsActive = true };
     private readonly InfoBar _error = new() { IsClosable = false, Severity = InfoBarSeverity.Error };
     private readonly Button _fullscreen = new() { MinHeight = 44 };
+    private readonly Button _reconnect = new() { Name = "ConsoleReconnectButton", MinHeight = 44, Visibility = Visibility.Collapsed };
     private readonly List<(VirtualMachineConsoleDocument Document, MemoryStream Stream, Windows.Storage.Streams.IRandomAccessStream Native)> _documents = [];
     private readonly AppWindow _appWindow;
     private WebView2? _browser;
@@ -37,6 +38,7 @@ internal sealed class VirtualMachineConsoleWindow : Window
     private long _retainedBytes;
     private bool _initialized, _closed, _failed, _isolated, _navigating, _fullScreen, _restoreMaximized, _environmentCreating;
     internal string MachineId => _baseline.Id;
+    internal event Action? ReconnectRequested;
     private static LocalizationService L => LocalizationService.Current;
 
     internal VirtualMachineConsoleWindow(IVirtualMachineManagerRepository repository, VirtualMachineSummary baseline, ElementTheme theme)
@@ -52,11 +54,15 @@ internal sealed class VirtualMachineConsoleWindow : Window
         var titleBar = new Grid { Height = 36 }; titleBar.Children.Add(_heading); _root.Children.Add(titleBar);
         ExtendsContentIntoTitleBar = true; SetTitleBar(titleBar);
         var tools = new Grid { Margin = new(12, 8, 12, 8), ColumnSpacing = 12 };
-        tools.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        tools.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var hint = new TextBlock { Text = L.Get("VmConsoleInputHint"), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         _fullscreen.Content = L.Get("VmConsoleEnterFullscreen"); _fullscreen.Click += (_, _) => ToggleFullScreen();
+        _reconnect.Content = L.Get("VmConsoleReconnectAction");
+        _reconnect.Click += (_, _) => { if (_failed && !_closed) ReconnectRequested?.Invoke(); };
         var close = new Button { Content = L.Get("ActionClose"), MinHeight = 44 }; close.Click += (_, _) => Close();
-        tools.Children.Add(hint); Grid.SetColumn(_fullscreen, 1); tools.Children.Add(_fullscreen); Grid.SetColumn(close, 2); tools.Children.Add(close);
+        tools.Children.Add(hint); Grid.SetColumn(_reconnect, 1); tools.Children.Add(_reconnect);
+        Grid.SetColumn(_fullscreen, 2); tools.Children.Add(_fullscreen); Grid.SetColumn(close, 3); tools.Children.Add(close);
         Grid.SetRow(tools, 1); _root.Children.Add(tools);
         var status = new StackPanel { Margin = new(12, 0, 12, 8), Spacing = 8 }; status.Children.Add(_loading); status.Children.Add(_error);
         Grid.SetRow(status, 2); _root.Children.Add(status); Grid.SetRow(_browserHost, 3); _root.Children.Add(_browserHost);
@@ -116,7 +122,7 @@ internal sealed class VirtualMachineConsoleWindow : Window
             _core.BasicAuthenticationRequested += (_, e) => e.Cancel = true;
             _core.ClientCertificateRequested += (_, e) => { e.Cancel = true; e.Handled = true; };
             _core.LaunchingExternalUriScheme += (_, e) => e.Cancel = true;
-            _core.ServerCertificateErrorDetected += (_, e) => { e.Action = CoreWebView2ServerCertificateErrorAction.Cancel; DispatcherQueue.TryEnqueue(() => Fail(L.Get("VmConsoleCertificateFailed"))); };
+            _core.ServerCertificateErrorDetected += (_, e) => { e.Action = CoreWebView2ServerCertificateErrorAction.Cancel; DispatcherQueue.TryEnqueue(() => Fail(L.Get("VmConsoleCertificateFailed"), canReconnect: false)); };
             _core.ProcessFailed += (_, _) => Fail(L.Get("VmConsoleLoadFailed"));
             _core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
             _core.WebResourceRequested += ResourceRequested;
@@ -124,7 +130,8 @@ internal sealed class VirtualMachineConsoleWindow : Window
             {
                 var core = _core;
                 var bridge = new VirtualMachineConsoleBridge(session, message => PostBridgeMessageAsync(core, message),
-                    error => DispatcherQueue.TryEnqueue(() => Fail(L.Get(error is CertificateTrustChallengeException ? "VmConsoleCertificateFailed" : "VmConsoleLoadFailed"))));
+                    error => DispatcherQueue.TryEnqueue(() => Fail(L.Get(error is CertificateTrustChallengeException ? "VmConsoleCertificateFailed" : "VmConsoleLoadFailed"),
+                        canReconnect: error is not CertificateTrustChallengeException && !(error is DsmException dsm && dsm.AuthenticationFailure))));
                 _bridge = bridge; core.Settings.IsWebMessageEnabled = true;
                 // 用订阅时的控件绑定回调，不以 WinRT 事件重新投影的包装对象判断身份。
                 core.WebMessageReceived += (_, e) => BridgeMessageReceived(core, e);
@@ -140,8 +147,8 @@ internal sealed class VirtualMachineConsoleWindow : Window
             _navigating = true; _core.Navigate(session.Policy.NavigationUri.AbsoluteUri);
         }
         catch (OperationCanceledException) when (!IsActive || _lifetime.IsCancellationRequested) { }
-        catch (DsmException error) { Fail(L.Format("VmConsoleFailureMessage", L.ResolveUserText(error.Message), L.ResolveUserText(error.Recovery))); }
-        catch (CertificateTrustChallengeException) { Fail(L.Get("VmConsoleCertificateFailed")); }
+        catch (DsmException error) { Fail(L.Format("VmConsoleFailureMessage", L.ResolveUserText(error.Message), L.ResolveUserText(error.Recovery)), canReconnect: !error.AuthenticationFailure); }
+        catch (CertificateTrustChallengeException) { Fail(L.Get("VmConsoleCertificateFailed"), canReconnect: false); }
         catch { Fail(L.Get("VmConsoleLoadFailed")); }
     }
 
@@ -214,10 +221,11 @@ internal sealed class VirtualMachineConsoleWindow : Window
         finally { try { deferral.Complete(); } catch (Exception) when (!IsActive) { } }
         if (failure is not null) Fail(failure);
     }
-    private void Fail(string message)
+    private void Fail(string message, bool canReconnect = true)
     {
         if (!IsActive) return; _failed = true; ReleaseBrowser();
         _loading.IsActive = false; _loading.Visibility = Visibility.Collapsed; _error.Message = message; _error.IsOpen = true;
+        _reconnect.Visibility = canReconnect ? Visibility.Visible : Visibility.Collapsed;
     }
     private void ReleaseBrowser()
     {

@@ -85,7 +85,9 @@ public sealed class DownloadStationBtSearchSourceContractTests
         Assert.Contains("value.Any(char.IsControl)", model);
         Assert.Equal(8, Count(model, "InvalidateBtSearchResultsForCriteriaChange"));
         Assert.Contains("_btSearchCreationHandled = true", model);
-        Assert.Contains("await CreateTaskAsync(selected.DownloadUri)", model);
+        Assert.Contains("return selected.Result.DownloadUri", model);
+        Assert.DoesNotContain("CreateTaskAsync(", model);
+        Assert.Contains("await ShowCreateTaskDialogAsync(selectedUri)", Read("windows/src/LanStash.App/Views/DownloadStationPage.BtSearch.cs"));
         Assert.DoesNotContain("CleanBtSearch", model + state, StringComparison.Ordinal);
         Assert.DoesNotContain("SYNO.DownloadStation", model + state, StringComparison.Ordinal);
     }

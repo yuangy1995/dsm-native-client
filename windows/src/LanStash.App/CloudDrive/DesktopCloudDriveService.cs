@@ -7,30 +7,31 @@ using Microsoft.Win32;
 
 namespace LanStash.App.CloudDrive;
 
-internal sealed class DesktopCloudDriveService : IDisposable
+internal sealed class DesktopCloudDriveService(DesktopCloudDriveStore? store = null) : IDisposable
 {
     private static readonly Guid ProviderId = new("50131da3-3e75-4a6f-8c97-8c283d2b6c4c");
     private const long DownloadChunkBytes = 4L * 1024 * 1024;
-    private readonly DesktopCloudDriveStore _store = new();
+    private readonly DesktopCloudDriveStore _store = store ?? new();
     private readonly Dictionary<Guid, MappingRuntime> _runtimes = [];
     private readonly Dictionary<Guid, DesktopDriveMappingRuntime> _states = [];
     private readonly string _rootDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         "LanStash");
     private List<DesktopDriveMapping> _mappings = [];
+    private volatile bool _disposed;
 
     internal IReadOnlyList<DesktopDriveMapping> Mappings => _mappings;
 
-    internal DesktopDriveMapping? MappingContaining(IEnumerable<string> paths)
+    internal DesktopDriveMapping? MappingContaining(Guid profileId, IEnumerable<string> paths)
     {
         var normalized = paths
             .Select(DesktopDrivePath.Normalize)
             .ToArray();
-        if (normalized.Any(path => path is null))
+        if (normalized.Length == 0 || normalized.Any(path => path is null))
         {
             return null;
         }
-        return _mappings.FirstOrDefault(mapping =>
+        return _mappings.FirstOrDefault(mapping => mapping.ProfileId == profileId &&
             normalized.All(path =>
             {
                 if (mapping.Scope.Kind == DesktopDriveScopeKind.AllShares)
@@ -54,9 +55,11 @@ internal sealed class DesktopCloudDriveService : IDisposable
         UpdateLaunchAtLogin();
     }
 
-    internal async Task ActivateAsync(Guid profileId, IDsmRepository repository)
+    internal async Task ActivateAsync(Guid profileId, IDsmRepository repository, CancellationToken token = default)
     {
-        foreach (var mapping in _mappings.Where(item => item.ProfileId == profileId))
+        token.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        foreach (var mapping in _mappings.Where(item => item.ProfileId == profileId).ToArray())
         {
             if (Runtime(mapping).IsManuallyPaused)
             {
@@ -69,16 +72,12 @@ internal sealed class DesktopCloudDriveService : IDisposable
                         ? string.Empty
                         : mapping.Scope.FolderPath ?? string.Empty,
                     0,
-                    1).ConfigureAwait(false);
-                await RegisterAndConnectAsync(mapping, repository).ConfigureAwait(false);
-                await SetRuntimeAsync(
-                    mapping.Id,
-                    Runtime(mapping) with
-                    {
-                        State = DesktopDriveMappingState.Available,
-                        LastSuccessfulCheckAt = DateTimeOffset.UtcNow,
-                    }).ConfigureAwait(false);
+                    1, token).ConfigureAwait(false);
+                await RegisterAndConnectAsync(mapping, repository, token).ConfigureAwait(false);
+                await MarkAvailableAsync(mapping, token).ConfigureAwait(false);
             }
+            catch (OperationCanceledException) { throw; }
+            catch (ObjectDisposedException) { throw; }
             catch
             {
                 await SetRuntimeAsync(
@@ -97,8 +96,10 @@ internal sealed class DesktopCloudDriveService : IDisposable
         DesktopDriveScope scope,
         IDsmRepository repository,
         DesktopDriveCachePolicy? cachePolicy = null,
-        bool launchAtLogin = true)
+        bool launchAtLogin = true, CancellationToken token = default)
     {
+        token.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (scope.Kind == DesktopDriveScopeKind.Folder)
         {
             var normalized = DesktopDrivePath.Normalize(scope.FolderPath)
@@ -118,7 +119,9 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 ? string.Empty
                 : scope.FolderPath ?? string.Empty,
             0,
-            1).ConfigureAwait(false);
+            1, token).ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         var mapping = new DesktopDriveMapping(
             Guid.NewGuid(),
@@ -138,14 +141,8 @@ internal sealed class DesktopCloudDriveService : IDisposable
         await _store.SaveAsync(_mappings).ConfigureAwait(false);
         try
         {
-            await RegisterAndConnectAsync(mapping, repository).ConfigureAwait(false);
-            await SetRuntimeAsync(
-                mapping.Id,
-                DesktopDriveMappingRuntime.Default with
-                {
-                    State = DesktopDriveMappingState.Available,
-                    LastSuccessfulCheckAt = DateTimeOffset.UtcNow,
-                }).ConfigureAwait(false);
+            await RegisterAndConnectAsync(mapping, repository, token).ConfigureAwait(false);
+            await MarkAvailableAsync(mapping, token).ConfigureAwait(false);
             UpdateLaunchAtLogin();
             return mapping;
         }
@@ -168,7 +165,6 @@ internal sealed class DesktopCloudDriveService : IDisposable
         if ((await sync.ReadChangesAsync(mapping).ConfigureAwait(false)).Any(change => change.IsPending) ||
             await sync.IsWritebackEnabledAsync(mapping).ConfigureAwait(false))
             throw new InvalidOperationException("CloudDriveWritebackRemoveBlocked");
-        Disconnect(mappingId);
         if (_states.TryGetValue(mappingId, out var state))
         {
             await SetRuntimeAsync(
@@ -176,16 +172,20 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 state with { State = DesktopDriveMappingState.Removing })
                 .ConfigureAwait(false);
         }
-        var path = MappingPath(mapping);
-        var result = CloudFilesInterop.CfUnregisterSyncRoot(path);
-        if (result < 0 && Directory.Exists(path))
+        lock (_runtimes)
         {
-            CloudFilesInterop.ThrowIfFailed(result, "CfUnregisterSyncRoot");
-        }
-        _mappings.Remove(mapping);
-        lock (_states)
-        {
-            _states.Remove(mappingId);
+            Disconnect(mappingId);
+            var path = MappingPath(mapping);
+            var result = CloudFilesInterop.CfUnregisterSyncRoot(path);
+            if (result < 0 && Directory.Exists(path))
+            {
+                CloudFilesInterop.ThrowIfFailed(result, "CfUnregisterSyncRoot");
+            }
+            _mappings.Remove(mapping);
+            lock (_states)
+            {
+                _states.Remove(mappingId);
+            }
         }
         await _store.SaveAsync(_mappings).ConfigureAwait(false);
         UpdateLaunchAtLogin();
@@ -536,7 +536,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 drive.Name);
         }
 
-        await RegisterAndConnectAsync(mapping, repository).ConfigureAwait(false);
+        await RegisterAndConnectAsync(mapping, repository, cancellationToken).ConfigureAwait(false);
         MappingRuntime runtime;
         lock (_runtimes)
         {
@@ -735,20 +735,23 @@ internal sealed class DesktopCloudDriveService : IDisposable
 
     internal async Task PauseAsync(DesktopDriveMapping mapping)
     {
-        Disconnect(mapping.Id);
-        await SetRuntimeAsync(
+        var saving = SetRuntimeAsync(
             mapping.Id,
             Runtime(mapping) with
             {
                 State = DesktopDriveMappingState.Paused,
                 IsManuallyPaused = true,
-            }).ConfigureAwait(false);
+            });
+        Disconnect(mapping.Id);
+        await saving.ConfigureAwait(false);
     }
 
     internal async Task ResumeAsync(
         DesktopDriveMapping mapping,
-        IDsmRepository repository)
+        IDsmRepository repository, CancellationToken token = default)
     {
+        token.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         await SetRuntimeAsync(
             mapping.Id,
             Runtime(mapping) with
@@ -758,15 +761,11 @@ internal sealed class DesktopCloudDriveService : IDisposable
             }).ConfigureAwait(false);
         try
         {
-            await RegisterAndConnectAsync(mapping, repository).ConfigureAwait(false);
-            await SetRuntimeAsync(
-                mapping.Id,
-                Runtime(mapping) with
-                {
-                    State = DesktopDriveMappingState.Available,
-                    LastSuccessfulCheckAt = DateTimeOffset.UtcNow,
-                }).ConfigureAwait(false);
+            await RegisterAndConnectAsync(mapping, repository, token).ConfigureAwait(false);
+            await MarkAvailableAsync(mapping, token).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) { throw; }
+        catch (ObjectDisposedException) { throw; }
         catch
         {
             await SetRuntimeAsync(
@@ -808,7 +807,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
     internal async Task RecoverDeletionAsync(DesktopDriveMapping mapping, IDsmRepository repository, CloudDriveDeletionOperation expected,
         CloudDriveDeletionRecoveryAction action, bool confirmed, CancellationToken token)
     {
-        if (!_mappings.Contains(mapping) || !confirmed) throw new InvalidOperationException("cloud.sync.confirmation_required");
+        if (!_mappings.Contains(mapping) || action != CloudDriveDeletionRecoveryAction.Review && !confirmed) throw new InvalidOperationException("cloud.sync.confirmation_required");
         var sync = new DesktopCloudDriveSyncStore();
         var current = (await sync.ReadDeletionOperationsAsync(mapping, token).ConfigureAwait(false)).SingleOrDefault(item => item.Id == expected.Id);
         if (current != expected) throw new InvalidOperationException("CloudDriveWritebackChanged");
@@ -828,12 +827,12 @@ internal sealed class DesktopCloudDriveService : IDisposable
     internal async Task RecoverRelocationAsync(DesktopDriveMapping mapping, IDsmRepository repository,
         CloudDriveRelocationOperation expected, CloudDriveRelocationRecoveryAction action, bool confirmed, CancellationToken token)
     {
-        if (!_mappings.Contains(mapping) || !confirmed) throw new InvalidOperationException("cloud.sync.confirmation_required");
+        if (!_mappings.Contains(mapping) || action != CloudDriveRelocationRecoveryAction.Review && !confirmed) throw new InvalidOperationException("cloud.sync.confirmation_required");
         var sync = new DesktopCloudDriveSyncStore();
         var current = (await sync.ReadRelocationOperationsAsync(mapping, token).ConfigureAwait(false)).SingleOrDefault(item => item.Id == expected.Id);
         if (current is null || !DesktopCloudDriveSyncStore.SameOperation(current, expected)) throw new InvalidOperationException("CloudDriveWritebackChanged");
         var coordinator = new CloudDriveRelocationCoordinator(mapping, repository, sync);
-        if (action == CloudDriveRelocationRecoveryAction.Review) await coordinator.ReviewAsync(expected.Id, true, token).ConfigureAwait(false);
+        if (action == CloudDriveRelocationRecoveryAction.Review) await coordinator.ReviewAsync(expected.Id, token).ConfigureAwait(false);
         else if (action == CloudDriveRelocationRecoveryAction.Continue) await coordinator.ContinueAsync(expected, true, token).ConfigureAwait(false);
         else if (action == CloudDriveRelocationRecoveryAction.Abandon)
         {
@@ -872,7 +871,8 @@ internal sealed class DesktopCloudDriveService : IDisposable
         var coordinator = new CloudDriveWritebackCoordinator(mapping, repository, sync);
         switch (action)
         {
-            case CloudDriveRecoveryAction.Review: await coordinator.ReviewAsync(expected.Id, token, acceptDirectory: confirmed).ConfigureAwait(false); break;
+            case CloudDriveRecoveryAction.Review: await coordinator.ReviewAsync(expected.Id, token).ConfigureAwait(false); break;
+            case CloudDriveRecoveryAction.UseExistingDirectory: await coordinator.UseExistingDirectoryAsync(expected, confirmed, token).ConfigureAwait(false); break;
             case CloudDriveRecoveryAction.Save: await coordinator.SubmitAsync(expected.Id, token).ConfigureAwait(false); break;
             case CloudDriveRecoveryAction.Retry: await coordinator.RetryAsync(expected, confirmed, token).ConfigureAwait(false); break;
             case CloudDriveRecoveryAction.KeepLocal: await sync.KeepLocallyAsync(mapping, expected.Id, confirmed, token).ConfigureAwait(false); break;
@@ -892,149 +892,181 @@ internal sealed class DesktopCloudDriveService : IDisposable
 
     public void Dispose()
     {
-        foreach (var mappingId in _runtimes.Keys.ToArray())
+        lock (_runtimes)
         {
-            Disconnect(mappingId);
+            _disposed = true;
+            foreach (var mappingId in _runtimes.Keys.ToArray()) Disconnect(mappingId);
         }
     }
 
     private async Task RegisterAndConnectAsync(
         DesktopDriveMapping mapping,
-        IDsmRepository repository)
+        IDsmRepository repository, CancellationToken token = default)
     {
-        DesktopCloudDriveCapabilityGate.EnsureRegistrationEnabled();
-        if (_runtimes.ContainsKey(mapping.Id))
+        token.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        lock (_runtimes)
         {
-            return;
+            if (!_mappings.Contains(mapping) || Runtime(mapping) is { IsManuallyPaused: true } or { State: DesktopDriveMappingState.Removing })
+                throw new OperationCanceledException();
+            if (_runtimes.ContainsKey(mapping.Id)) return;
         }
+        DesktopCloudDriveCapabilityGate.EnsureRegistrationEnabled();
         var itemPaths = await _store.LoadItemPathsAsync(mapping.Id)
             .ConfigureAwait(false);
         var localNames = await new DesktopCloudDriveSyncStore().RegisterLocalNamesAsync(mapping,
-            DesktopDriveWindowsNameCodec.BuildSafeSegments(itemPaths.Values), []).ConfigureAwait(false);
-        await Task.Run(async () =>
+            DesktopDriveWindowsNameCodec.BuildSafeSegments(itemPaths.Values), [], token).ConfigureAwait(false);
+        await Task.Run(() =>
         {
-            var path = MappingPath(mapping);
-            Directory.CreateDirectory(path);
-            var identity = Encoding.UTF8.GetBytes(mapping.Id.ToString("D"));
-            var identityHandle = GCHandle.Alloc(identity, GCHandleType.Pinned);
-            try
-            {
-                var registration = new CloudFilesInterop.SyncRegistration
-                {
-                    StructSize = (uint)Marshal.SizeOf<CloudFilesInterop.SyncRegistration>(),
-                    ProviderName = "LanStash",
-                    ProviderVersion = "1.0",
-                    SyncRootIdentity = identityHandle.AddrOfPinnedObject(),
-                    SyncRootIdentityLength = (uint)identity.Length,
-                    FileIdentity = IntPtr.Zero,
-                    FileIdentityLength = 0,
-                    ProviderId = ProviderId,
-                };
-                var policies = new CloudFilesInterop.SyncPolicies
-                {
-                    StructSize = (uint)Marshal.SizeOf<CloudFilesInterop.SyncPolicies>(),
-                    Hydration = new() { Primary = 1, Modifier = 0 },
-                    Population = new() { Primary = CloudFilesInterop.PopulationPolicyFull, Modifier = 0 },
-                    // 数据修改仍由系统清除已同步；名称走独立日志，不把未回传的 Windows 属性当作内容编辑。
-                    InSync = CloudFilesInterop.InSyncPolicyDefault,
-                    HardLink = 0,
-                    PlaceholderManagement = 0,
-                };
-                CloudFilesInterop.ThrowIfFailed(
-                    CloudFilesInterop.CfRegisterSyncRoot(
-                        path,
-                        registration,
-                        policies,
-                        CloudFilesInterop.RegisterUpdate |
-                        CloudFilesInterop.RegisterMarkRootInSync),
-                    "CfRegisterSyncRoot");
-            }
-            finally
-            {
-                identityHandle.Free();
-            }
-
-            var runtime = new MappingRuntime(
-                mapping,
-                path,
-                repository,
-                _store,
-                itemPaths,
-                localNames,
-                state => UpdateRuntimeCache(mapping.Id, state));
-            runtime.ContextHandle = GCHandle.Alloc(runtime);
-            var callbacks = new[]
-            {
-                new CloudFilesInterop.CallbackRegistration
-                {
-                    Type = CloudFilesInterop.CallbackFetchData,
-                    Callback = runtime.FetchDataCallback,
-                },
-                new CloudFilesInterop.CallbackRegistration
-                {
-                    Type = CloudFilesInterop.CallbackCancelFetchData,
-                    Callback = runtime.CancelCallback,
-                },
-                new CloudFilesInterop.CallbackRegistration
-                {
-                    Type = CloudFilesInterop.CallbackFetchPlaceholders,
-                    Callback = runtime.FetchPlaceholdersCallback,
-                },
-                new CloudFilesInterop.CallbackRegistration
-                {
-                    Type = CloudFilesInterop.CallbackCancelFetchPlaceholders,
-                    Callback = runtime.CancelCallback,
-                },
-                new CloudFilesInterop.CallbackRegistration
-                {
-                    Type = CloudFilesInterop.CallbackNotifyFileOpenCompletion,
-                    Callback = runtime.FileOpenedCallback,
-                },
-                new CloudFilesInterop.CallbackRegistration
-                {
-                    Type = CloudFilesInterop.CallbackNotifyFileCloseCompletion,
-                    Callback = runtime.FileClosedCallback,
-                },
-                new CloudFilesInterop.CallbackRegistration
-                {
-                    Type = CloudFilesInterop.CallbackNotifyDelete,
-                    Callback = runtime.RejectDeleteCallback,
-                },
-                new CloudFilesInterop.CallbackRegistration
-                {
-                    Type = CloudFilesInterop.CallbackNotifyRename,
-                    Callback = runtime.RejectRenameCallback,
-                },
-                new CloudFilesInterop.CallbackRegistration
-                {
-                    Type = CloudFilesInterop.CallbackNotifyRenameCompletion,
-                    Callback = runtime.RenameCompletedCallback,
-                },
-                new CloudFilesInterop.CallbackRegistration
-                {
-                    Type = CloudFilesInterop.CallbackNone,
-                },
-            };
-            var result = CloudFilesInterop.CfConnectSyncRoot(
-                path,
-                callbacks,
-                GCHandle.ToIntPtr(runtime.ContextHandle),
-                    CloudFilesInterop.ConnectRequireFullPath | CloudFilesInterop.ConnectRequireProcessInfo,
-                out var connectionKey);
-            if (result < 0)
-            {
-                runtime.ContextHandle.Free();
-                CloudFilesInterop.ThrowIfFailed(result, "CfConnectSyncRoot");
-            }
-            runtime.ConnectionKey = connectionKey;
-            runtime.Callbacks = callbacks;
+            // 注册、连接和启动与断开互斥；取消后的迟到读取不能重新接管同步根。
             lock (_runtimes)
             {
+                token.ThrowIfCancellationRequested();
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (!_mappings.Contains(mapping) || Runtime(mapping) is { IsManuallyPaused: true } or { State: DesktopDriveMappingState.Removing })
+                    throw new OperationCanceledException();
+                if (_runtimes.ContainsKey(mapping.Id)) return;
+                var path = MappingPath(mapping);
+                Directory.CreateDirectory(path);
+                var identity = Encoding.UTF8.GetBytes(mapping.Id.ToString("D"));
+                var identityHandle = GCHandle.Alloc(identity, GCHandleType.Pinned);
+                try
+                {
+                    var registration = new CloudFilesInterop.SyncRegistration
+                    {
+                        StructSize = (uint)Marshal.SizeOf<CloudFilesInterop.SyncRegistration>(),
+                        ProviderName = "LanStash",
+                        ProviderVersion = "1.0",
+                        SyncRootIdentity = identityHandle.AddrOfPinnedObject(),
+                        SyncRootIdentityLength = (uint)identity.Length,
+                        FileIdentity = IntPtr.Zero,
+                        FileIdentityLength = 0,
+                        ProviderId = ProviderId,
+                    };
+                    var policies = new CloudFilesInterop.SyncPolicies
+                    {
+                        StructSize = (uint)Marshal.SizeOf<CloudFilesInterop.SyncPolicies>(),
+                        Hydration = new() { Primary = 1, Modifier = 0 },
+                        Population = new() { Primary = CloudFilesInterop.PopulationPolicyFull, Modifier = 0 },
+                        // 数据修改仍由系统清除已同步；名称走独立日志，不把未回传的 Windows 属性当作内容编辑。
+                        InSync = CloudFilesInterop.InSyncPolicyDefault,
+                        HardLink = 0,
+                        PlaceholderManagement = 0,
+                    };
+                    CloudFilesInterop.ThrowIfFailed(
+                        CloudFilesInterop.CfRegisterSyncRoot(
+                            path,
+                            registration,
+                            policies,
+                            CloudFilesInterop.RegisterUpdate |
+                            CloudFilesInterop.RegisterMarkRootInSync),
+                        "CfRegisterSyncRoot");
+                }
+                finally
+                {
+                    identityHandle.Free();
+                }
+
+                token.ThrowIfCancellationRequested();
+                var runtime = new MappingRuntime(
+                    mapping,
+                    path,
+                    repository,
+                    _store,
+                    itemPaths,
+                    localNames,
+                    state => UpdateRuntimeCache(mapping.Id, state));
+                runtime.ContextHandle = GCHandle.Alloc(runtime);
+                var callbacks = new[]
+                {
+                    new CloudFilesInterop.CallbackRegistration
+                    {
+                        Type = CloudFilesInterop.CallbackFetchData,
+                        Callback = runtime.FetchDataCallback,
+                    },
+                    new CloudFilesInterop.CallbackRegistration
+                    {
+                        Type = CloudFilesInterop.CallbackCancelFetchData,
+                        Callback = runtime.CancelCallback,
+                    },
+                    new CloudFilesInterop.CallbackRegistration
+                    {
+                        Type = CloudFilesInterop.CallbackFetchPlaceholders,
+                        Callback = runtime.FetchPlaceholdersCallback,
+                    },
+                    new CloudFilesInterop.CallbackRegistration
+                    {
+                        Type = CloudFilesInterop.CallbackCancelFetchPlaceholders,
+                        Callback = runtime.CancelCallback,
+                    },
+                    new CloudFilesInterop.CallbackRegistration
+                    {
+                        Type = CloudFilesInterop.CallbackNotifyFileOpenCompletion,
+                        Callback = runtime.FileOpenedCallback,
+                    },
+                    new CloudFilesInterop.CallbackRegistration
+                    {
+                        Type = CloudFilesInterop.CallbackNotifyFileCloseCompletion,
+                        Callback = runtime.FileClosedCallback,
+                    },
+                    new CloudFilesInterop.CallbackRegistration
+                    {
+                        Type = CloudFilesInterop.CallbackNotifyDelete,
+                        Callback = runtime.RejectDeleteCallback,
+                    },
+                    new CloudFilesInterop.CallbackRegistration
+                    {
+                        Type = CloudFilesInterop.CallbackNotifyRename,
+                        Callback = runtime.RejectRenameCallback,
+                    },
+                    new CloudFilesInterop.CallbackRegistration
+                    {
+                        Type = CloudFilesInterop.CallbackNotifyRenameCompletion,
+                        Callback = runtime.RenameCompletedCallback,
+                    },
+                    new CloudFilesInterop.CallbackRegistration
+                    {
+                        Type = CloudFilesInterop.CallbackNone,
+                    },
+                };
+                var result = CloudFilesInterop.CfConnectSyncRoot(
+                    path,
+                    callbacks,
+                    GCHandle.ToIntPtr(runtime.ContextHandle),
+                        CloudFilesInterop.ConnectRequireFullPath | CloudFilesInterop.ConnectRequireProcessInfo,
+                    out var connectionKey);
+                if (result < 0)
+                {
+                    runtime.ContextHandle.Free();
+                    CloudFilesInterop.ThrowIfFailed(result, "CfConnectSyncRoot");
+                }
+                runtime.ConnectionKey = connectionKey;
+                runtime.Callbacks = callbacks;
                 _runtimes[mapping.Id] = runtime;
+                try
+                {
+                    token.ThrowIfCancellationRequested();
+                    runtime.StartWritebackAsync().GetAwaiter().GetResult();
+                    token.ThrowIfCancellationRequested();
+                }
+                catch { Disconnect(mapping.Id); throw; }
             }
-            try { await runtime.StartWritebackAsync().ConfigureAwait(false); }
-            catch { Disconnect(mapping.Id); throw; }
-        }).ConfigureAwait(false);
+        }, token).ConfigureAwait(false);
+    }
+
+    private Task MarkAvailableAsync(DesktopDriveMapping mapping, CancellationToken token)
+    {
+        lock (_runtimes)
+        {
+            token.ThrowIfCancellationRequested();
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_runtimes.ContainsKey(mapping.Id) || Runtime(mapping).IsManuallyPaused) return Task.CompletedTask;
+            return SetRuntimeAsync(mapping.Id, Runtime(mapping) with
+            {
+                State = DesktopDriveMappingState.Available,
+                LastSuccessfulCheckAt = DateTimeOffset.UtcNow,
+            });
+        }
     }
 
     private async Task SetRuntimeAsync(
@@ -1060,20 +1092,16 @@ internal sealed class DesktopCloudDriveService : IDisposable
 
     private void Disconnect(Guid mappingId)
     {
-        MappingRuntime? runtime;
         lock (_runtimes)
         {
-            if (!_runtimes.Remove(mappingId, out runtime))
+            if (!_runtimes.Remove(mappingId, out var runtime))
             {
                 return;
             }
-        }
-        var callbacksDrained = runtime.StopAcceptingCallbacksAsync();
-        _ = CloudFilesInterop.CfDisconnectSyncRoot(runtime.ConnectionKey);
-        callbacksDrained.GetAwaiter().GetResult();
-        if (runtime.ContextHandle.IsAllocated)
-        {
-            runtime.ContextHandle.Free();
+            var callbacksDrained = runtime.StopAcceptingCallbacksAsync();
+            _ = CloudFilesInterop.CfDisconnectSyncRoot(runtime.ConnectionKey);
+            callbacksDrained.GetAwaiter().GetResult();
+            if (runtime.ContextHandle.IsAllocated) runtime.ContextHandle.Free();
         }
     }
 

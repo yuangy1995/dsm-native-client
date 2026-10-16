@@ -42,7 +42,7 @@ public sealed partial class DownloadSettingsDialogContent : UserControl, IDispos
     }
     internal string PrimaryText => _l.Get(_model.RequiresReview ? "DownloadSettingsReview" : _model.CanContinue ? "DownloadSettingsContinue" : "DownloadSettingsSave");
     internal bool CanSubmit => !_completed && !_model.IsLoading && !_model.IsBusy && (_model.RequiresReview ||
-        ((_model.CanContinue || _model.CanSave) && Confirmation.IsChecked == true));
+        (_model.CanContinue || _model.CanSave));
     internal async Task SubmitAsync()
     {
         if (!CanSubmit) return;
@@ -64,8 +64,12 @@ public sealed partial class DownloadSettingsDialogContent : UserControl, IDispos
         Feedback.Severity = _model.HasPending ? InfoBarSeverity.Warning : InfoBarSeverity.Informational;
         Editor.Visibility = Show(_model.Snapshot is not null && !_model.IsLoading && _model.ErrorKey is null);
         Editor.IsHitTestVisible = !_model.IsBusy && !_model.HasPending;
+        Confirmation.Visibility = ImpactText.Visibility = Visibility.Collapsed;
+        PermissionHint.Text = _l.Get(_model.Snapshot?.IsManager == false ? "DownloadSettingsReadOnly" : "DownloadSettingsPermissionUnavailable");
+        PermissionHint.Visibility = Show(_model.Snapshot?.IsManager != true);
+        SpeedHint.Visibility = Show(_model.Snapshot?.IsManager == true && _model.CanEditWebFtp);
         foreach (var control in new Control[] { DestinationBox, EmuleToggle, ExtractToggle, BtDownload, BtUpload, WebFtpDownload, NzbDownload, EmuleDownload, EmuleUpload, ScheduleToggle, EmuleScheduleToggle })
-            control.IsEnabled = !_model.IsBusy && !_model.HasPending;
+            control.IsEnabled = !_model.IsBusy && !_model.HasPending && _model.Snapshot?.IsManager == true;
         DestinationBox.IsEnabled &= _model.Snapshot?.CanEditDestination == true;
         DestinationBox.Visibility = Show(_model.Snapshot?.CanEditDestination == true);
         BrowseButton.Visibility = Show(_model.CanBrowseFolders); BrowseButton.IsEnabled = !_model.HasPending && !_model.IsBusy;
@@ -82,7 +86,18 @@ public sealed partial class DownloadSettingsDialogContent : UserControl, IDispos
         DestinationUnavailable.Visibility = Show(_model.Snapshot?.CanEditDestination == false);
         var scheduleAvailable = _model.Snapshot?.ScheduleStatus == DownloadStationSectionStatus.Available;
         ScheduleToggle.IsEnabled &= scheduleAvailable; EmuleScheduleToggle.IsEnabled &= scheduleAvailable;
-        ScheduleToggle.Visibility = EmuleScheduleToggle.Visibility = Show(scheduleAvailable);
+        ScheduleToggle.Visibility = Show(scheduleAvailable && _model.Snapshot?.Value.IsScheduleEnabled is not null);
+        EmuleScheduleToggle.Visibility = Show(scheduleAvailable && _model.Snapshot?.Value.IsEmuleScheduleEnabled is not null);
+        if (_model.Snapshot?.Value is { } fields)
+        {
+            EmuleToggle.Visibility = Show(fields.IsEmuleEnabled is not null); ExtractToggle.Visibility = Show(fields.IsAutoExtractEnabled is not null);
+            BtDownload.Visibility = Show(fields.BtDownloadLimitKb is not null); BtUpload.Visibility = Show(fields.BtUploadLimitKb is not null);
+            WebFtpDownload.Visibility = Show(_model.CanEditWebFtp); NzbDownload.Visibility = Show(fields.NzbDownloadLimitKb is not null);
+            EmuleDownload.Visibility = Show(fields.EmuleDownloadLimitKb is not null); EmuleUpload.Visibility = Show(fields.EmuleUploadLimitKb is not null);
+            var index = 0;
+            foreach (var box in new[] { BtDownload, BtUpload, WebFtpDownload, NzbDownload, EmuleDownload, EmuleUpload }.Where(box => box.Visibility == Visibility.Visible))
+            { Grid.SetRow(box, index / 2); Grid.SetColumn(box, index % 2); index++; }
+        }
         ScheduleHint.Text = _l.Get(_model.Snapshot?.ScheduleStatus == DownloadStationSectionStatus.Failed ? "DownloadSettingsScheduleFailed" : "DownloadSettingsScheduleUnavailable");
         ScheduleHint.Visibility = Show(!scheduleAvailable);
         if (_model.Draft is { } value && !ReferenceEquals(_rendered, value))

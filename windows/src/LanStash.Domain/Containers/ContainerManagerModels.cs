@@ -70,6 +70,9 @@ public sealed record ContainerResourceSummary(
 {
     public ContainerNetworkDetails? Network { get; init; }
     public ContainerImageReference? Image { get; init; }
+    public long? ImageSizeBytes { get; init; }
+    public bool? IsImageInUse { get; init; }
+    public int? ProjectContainerCount { get; init; }
 }
 
 public sealed record ContainerNetworkDetails(string? Driver, int ConnectedContainerCount, IReadOnlyList<string>? ConnectedContainerNames,
@@ -90,6 +93,12 @@ public sealed record ServiceEventSummary(
     string Id,
     DateTimeOffset? OccurredAt,
     ServiceEventLevel Level);
+
+// 活动正文只在用户打开的页面内保留，不进入工作区缓存或诊断输出。
+public sealed record ServiceActivityEntry(ServiceEventSummary Summary, string Message, string? Account = null, DateTime? LocalTime = null)
+{
+    public override string ToString() => nameof(ServiceActivityEntry);
+}
 
 public sealed record ContainerManagerSnapshot(
     Guid ProfileId,

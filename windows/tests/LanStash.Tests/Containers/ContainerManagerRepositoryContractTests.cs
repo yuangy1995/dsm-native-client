@@ -434,6 +434,64 @@ public sealed class ContainerManagerRepositoryContractTests
         Assert.DoesNotContain("\"stop\"", combined, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ImageReadAddsSizeAndTagUsageWithoutAnotherContainerRequest()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Docker.Container" => Containers(Container("c", "Web", "stopped", "synthetic/web:latest")),
+            "SYNO.Docker.Image" => Resources("images", new JsonObject
+            { ["id"] = "image", ["repository"] = "synthetic/web", ["tags"] = new JsonArray("latest", "stable"), ["size"] = 2097152 }),
+            _ => throw new InvalidOperationException(),
+        });
+        var repository = CreateRepository(api, Capability(1, 1), Capability("SYNO.Docker.Image"));
+        var snapshot = await repository.LoadInventoryAsync();
+        Assert.Equal(2, snapshot.Images.Items.Count);
+        Assert.All(snapshot.Images.Items, item => Assert.Equal(2097152, item.ImageSizeBytes));
+        Assert.True(snapshot.Images.Items.Single(item => item.Image!.Tag == "latest").IsImageInUse);
+        Assert.False(snapshot.Images.Items.Single(item => item.Image!.Tag == "stable").IsImageInUse);
+        Assert.Single(api.Requests, request => request.ApiName == "SYNO.Docker.Container");
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"size\":-1}")]
+    [InlineData("{\"size\":true}")]
+    [InlineData("{\"size\":\"1048576\"}")]
+    public async Task MissingOrMalformedImageMetadataDoesNotBecomeZeroOrUnused(string metadata)
+    {
+        var image = JsonNode.Parse(metadata)!.AsObject();
+        image["id"] = "image"; image["repository"] = "synthetic/web"; image["tags"] = new JsonArray("latest");
+        var api = new RecordingApiClient(request => request.ApiName == "SYNO.Docker.Image" ? Resources("images", image.DeepClone().AsObject()) :
+            Containers(new JsonObject { ["id"] = "c", ["name"] = "Synthetic", ["status"] = "stopped" }));
+        var snapshot = await CreateRepository(api, Capability(1, 1), Capability("SYNO.Docker.Image")).LoadInventoryAsync();
+        Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Images.Status);
+        var summary = Assert.Single(snapshot.Images.Items);
+        Assert.Null(summary.ImageSizeBytes); Assert.Null(summary.IsImageInUse);
+    }
+
+    [Theory]
+    [InlineData("{\"containerIds\":[\"a\",\"b\"]}", 2)]
+    [InlineData("{\"containerIds\":[]}", 0)]
+    [InlineData("{\"container_count\":3}", 3)]
+    [InlineData("{\"services\":4}", 4)]
+    [InlineData("{}", null)]
+    [InlineData("{\"containerIds\":true}", null)]
+    [InlineData("{\"container_count\":-1}", null)]
+    [InlineData("{\"services\":1.5}", null)]
+    public async Task ProjectCountSupportsObjectAndArrayListsWithoutInventingMissingCounts(string fields, int? expected)
+    {
+        foreach (var dictionary in new[] { true, false })
+        {
+            var project = JsonNode.Parse(fields)!.AsObject(); project["id"] = "p"; project["name"] = "Synthetic project";
+            var api = new RecordingApiClient(request => request.ApiName == "SYNO.Docker.Project"
+                ? dictionary ? new JsonObject { ["p"] = project.DeepClone() } : Resources("projects", project.DeepClone().AsObject()) : Containers());
+            var snapshot = await CreateRepository(api, Capability(1, 1), Capability("SYNO.Docker.Project")).LoadInventoryAsync();
+            Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Projects.Status);
+            Assert.Equal(expected, Assert.Single(snapshot.Projects.Items).ProjectContainerCount);
+        }
+    }
+
     private static IContainerManagerRepository CreateRepository(
         RecordingApiClient api,
         params ApiCapability[] capabilities) => new DsmRepository(

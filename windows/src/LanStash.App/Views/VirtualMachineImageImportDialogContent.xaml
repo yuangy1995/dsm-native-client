@@ -19,9 +19,6 @@
    </ListView>
    <TextBlock x:Name="ConfirmationSummary" TextWrapping="Wrap"/>
    <TextBlock x:Name="ValidationNotice" TextWrapping="Wrap" Visibility="Collapsed"/>
-   <CheckBox x:Name="RiskAcknowledgement" HorizontalContentAlignment="Stretch" Checked="Confirm_Changed" Unchecked="Confirm_Changed">
-    <TextBlock x:Uid="VmImageImportAcknowledgement" TextWrapping="Wrap"/>
-   </CheckBox>
    <TextBlock x:Uid="VmImageImportCloseHint" TextWrapping="Wrap"/>
    <Button x:Name="NewButton" x:Uid="VmImageImportNew" MinHeight="44" Click="New_Click" Visibility="Collapsed"/>
   </StackPanel>

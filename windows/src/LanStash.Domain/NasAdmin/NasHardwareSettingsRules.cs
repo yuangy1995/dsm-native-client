@@ -3,6 +3,10 @@ namespace LanStash.Domain;
 public static class NasHardwareSettingsRules
 {
     public static readonly IReadOnlyList<string> FanModes = Array.AsReadOnly(new[] { "highfan", "lowfan", "fullfan", "coolfan", "quietfan", "quietstopfan" });
+    public static IReadOnlyList<string> FanChoices(NasHardwareSettings value) => value.SupportedFanModes ?? FanModes;
+    public static bool SameFanSupport(NasHardwareSettings left, NasHardwareSettings right) =>
+        (left.SupportedFanModes is null) == (right.SupportedFanModes is null) &&
+        FanChoices(left).ToHashSet(StringComparer.Ordinal).SetEquals(FanChoices(right));
     public static Dictionary<string, object> Fields(NasHardwareSettings value, NasHardwareSections section)
     {
         var result = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -44,7 +48,7 @@ public static class NasHardwareSettingsRules
         if (baseline.AvailableSections == NasHardwareSections.None || ((int)baseline.AvailableSections & ~63) != 0 ||
             baseline.AvailableSections != desired.AvailableSections || baseline.FailedSections != NasHardwareSections.None ||
             desired.FailedSections != NasHardwareSections.None || baseline.LedMinimum != desired.LedMinimum ||
-            baseline.LedMaximum != desired.LedMaximum || baseline.Beep?.VolumeFieldName != desired.Beep?.VolumeFieldName ||
+            baseline.LedMaximum != desired.LedMaximum || !SameFanSupport(baseline, desired) || baseline.Beep?.VolumeFieldName != desired.Beep?.VolumeFieldName ||
             baseline.BeepControl != desired.BeepControl || baseline.HddSleepMinutes != desired.HddSleepMinutes) return false;
         if ((baseline.Beep is null) != (desired.Beep is null) || (baseline.Hibernation is null) != (desired.Hibernation is null) ||
             (baseline.Ups is null) != (desired.Ups is null)) return false;
@@ -61,7 +65,7 @@ public static class NasHardwareSettingsRules
         if (baseline.LedBrightness != desired.LedBrightness &&
             (desired.LedBrightness is not int brightness || baseline.LedMinimum is not int minimum ||
              baseline.LedMaximum is not int maximum || brightness < minimum || brightness > maximum)) return false;
-        if (baseline.FanMode != desired.FanMode && !FanModes.Contains(desired.FanMode)) return false;
+        if (baseline.FanMode != desired.FanMode && !FanChoices(baseline).Contains(desired.FanMode)) return false;
         if (desired.Ups is { } ups && baseline.Ups != desired.Ups)
         {
             if (ups.Mode is not ("USB" or "SNMP" or "SLAVE") || ups.DelaySeconds is < 0 or > 604800) return false;

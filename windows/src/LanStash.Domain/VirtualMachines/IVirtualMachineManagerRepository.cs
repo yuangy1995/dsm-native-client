@@ -15,6 +15,8 @@ public interface IVirtualMachineManagerRepository
     Task<MutationResult?> ReviewNetworkAsync(string id, CancellationToken cancellationToken = default) =>
         Task.FromResult<MutationResult?>(null);
     bool CanControlPower => false;
+    bool CanControlPowerAction(VirtualMachineSummary target, VirtualMachinePowerAction action) =>
+        CanControlPower && action != VirtualMachinePowerAction.Reboot;
     bool CanOpenConsole => false;
     Task<VirtualMachineConsoleSession> OpenConsoleAsync(VirtualMachineSummary baseline, CancellationToken cancellationToken = default) =>
         Task.FromException<VirtualMachineConsoleSession>(new NotSupportedException());
@@ -44,6 +46,7 @@ public interface IVirtualMachineManagerRepository
     Task<MutationResult?> ReviewDeletionAsync(string id, CancellationToken cancellationToken = default) =>
         Task.FromResult<MutationResult?>(null);
     bool CanCreateMachine => false;
+    bool CanCreateBasicMachine => CanCreateMachine;
     bool CanCreateAdvancedMachine => false;
     bool CanReadAdvancedCreation => false;
     Task<VirtualMachineAdvancedCreationInventory> LoadAdvancedCreationInventoryAsync(CancellationToken cancellationToken = default) =>
@@ -87,4 +90,10 @@ public interface IVirtualMachineManagerRepository
 
     Task<VirtualMachineManagerSnapshot> LoadSnapshotAsync(
         CancellationToken cancellationToken = default);
+    Task<VirtualMachineManagerSnapshot> LoadInventoryAsync(CancellationToken cancellationToken = default) => LoadSnapshotAsync(cancellationToken);
+    async Task<VirtualMachineManagerSection<ServiceActivityEntry>> LoadActivityAsync(CancellationToken cancellationToken = default)
+    {
+        var snapshot = await LoadSnapshotAsync(cancellationToken);
+        return new(snapshot.Events.Status, snapshot.Events.Items.Select(item => new ServiceActivityEntry(item, "")).ToArray());
+    }
 }

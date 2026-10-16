@@ -88,7 +88,7 @@ public sealed partial class FilesPage
         }
 
         CloseShareLinkDialog();
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
         if (_disposed || repository.ProfileId != _profileId || IsReadOnlyLocation() ||
             !string.Equals(_viewModel.CurrentPath, frozenParent, StringComparison.Ordinal) ||
             (operation == FileMutationOperation.Rename &&

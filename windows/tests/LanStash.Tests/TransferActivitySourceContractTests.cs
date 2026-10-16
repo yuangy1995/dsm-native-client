@@ -89,7 +89,7 @@ public sealed class TransferActivitySourceContractTests
     }
 
     [Fact]
-    public void ShellOwnsOneCoordinatorAndCachesBothPages()
+    public void ShellReusesWorkspaceCoordinatorAndCachesBothPages()
     {
         var shell = ReadRepositoryFile(
             "windows/src/LanStash.App/Views/ShellPage.xaml.cs");
@@ -97,7 +97,11 @@ public sealed class TransferActivitySourceContractTests
         Assert.Contains(
             "private readonly ForegroundTransferCoordinator _transfers;",
             shell);
-        Assert.Contains("_transfers = new ForegroundTransferCoordinator(transferNotifications);", shell);
+        Assert.Contains("(_transfers, _transferPicker, _transfersOwnedByWorkspace) = app.GetWorkspaceTransfers(transferNotifications);", shell);
+        var ownership = ReadRepositoryFile("windows/src/LanStash.App/ViewModels/AppViewModel.DesktopLifecycle.cs");
+        Assert.Contains("workspace!.Transfers is { } existing) return (existing, workspace.TransferPicker, true);", ownership);
+        Assert.Contains("ReferenceEquals(workspace.Repository, repository)", ownership);
+        Assert.Contains("workspace!.Transfers = coordinator; workspace.TransferPicker = picker;", ownership);
         Assert.Contains("_files ??= new FilesPage(", shell);
         Assert.Contains("_activity ??= new TransferActivityPage(", shell);
         Assert.Contains("private async Task OpenModuleAsync(AppModule module)", shell);
@@ -107,7 +111,11 @@ public sealed class TransferActivitySourceContractTests
         Assert.Contains("_app.Repository as IFileBackgroundTaskRepository", shell);
         Assert.Contains("await _activity.DisposeAsync();", shell);
         Assert.Contains("new DownloadStationPage(downloadRepository, _transfers)", shell);
-        Assert.Contains("_transferPicker?.Dispose();", shell);
+        Assert.Contains("if (!_transfersOwnedByWorkspace)", shell);
+        Assert.Contains("if (_transferPicker is { } picker) await picker.DisposeAsync();", shell);
+        var workspace = ReadRepositoryFile("windows/src/LanStash.App/ViewModels/AppViewModel.Chat.cs");
+        Assert.Contains("workspace.TransferPicker?.DisposeAsync()", workspace);
+        Assert.Contains("await transfers; workspace.Transfers?.Dispose();", workspace);
         Assert.Contains("_transfers.Dispose();", shell);
     }
 
@@ -135,10 +143,13 @@ public sealed class TransferActivitySourceContractTests
         Assert.Contains("_notificationBackend.Dispose()", window);
         Assert.Contains(".AddArgument(\"route\", \"activity\")", service);
         Assert.Contains(".AddArgument(\"context\", context)", service);
-        Assert.Contains("ReferenceEquals(source, _transferNotifications)", window);
+        Assert.Contains("!_viewModel.IsConnectedWorkspace(repository)", window);
+        Assert.Contains("!ReferenceEquals(service, source) || !source.IsEnabled", window);
+        Assert.Contains("_viewModel.ActivateTransferWorkspace(repository)", window);
         Assert.Contains("generation != Volatile.Read(ref _notificationGeneration)", window);
         Assert.Contains("ShowTransfersFromNotification", window);
-        Assert.Contains("await shell.ShowTransfersAsync();", window);
+        Assert.Contains("ReferenceEquals(transferRepository, _viewModel.Repository)", window);
+        Assert.Contains("await current.ShowTransfersAsync(transferActivityId);", window);
         Assert.Contains("ForegroundTransferSource.App", factory);
         Assert.Contains("TransferNotificationCompletedTitle", factory);
         Assert.Contains("TransferNotificationReviewMessage", factory);

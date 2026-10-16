@@ -4,5 +4,8 @@ namespace LanStash.Domain;
 public sealed record NasPackageMutationRequest(Guid ProfileId, NasPackageSummary Baseline,
     NasPackageAction Action, Guid RequestId, bool RiskConfirmed);
 
-public sealed record NasPackageRecoveryInfo(string PackageId, string DisplayName, NasPackageAction Action);
+public sealed record NasPackageRecoveryInfo(string PackageId, string DisplayName, NasPackageAction Action)
+{
+    public Guid RequestId { get; init; }
+}
 public sealed record NasPackageControlAvailability(bool CanStartStop, bool CanUninstall);

@@ -150,6 +150,8 @@
 
             <Button x:Name="CloudDriveButton" x:Uid="Settings.CloudDrive" MinHeight="44"
                     Click="CloudDriveButton_Click" />
+            <Button x:Name="SavedRecordingsButton" x:Uid="ChatSavedRecordingsButton" MinHeight="44"
+                    Click="SavedRecordingsButton_Click" />
 
             <InfoBar
                 x:Uid="Settings.Privacy"

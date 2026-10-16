@@ -19,8 +19,8 @@ public sealed partial class DsmRepository
     private const string InternalProtectionApi = "SYNO.Virtualization.GuestProtect.Plan";
     private const string InternalEventApi = "SYNO.Virtualization.Log";
 
-    private bool HasReadablePublicVirtualMachineManagerContract =>
-        HasPublicVirtualMachineVersion(PublicGuestApi);
+    private bool HasReadableVirtualMachineManagerContract =>
+        HasPublicVirtualMachineVersion(PublicGuestApi) || HasInternalVirtualMachineVersion(InternalSettingsGuestApi, 2, 2);
 
     VirtualMachineManagerAvailability IVirtualMachineManagerRepository.Availability =>
         PublicVirtualMachineManagerAvailability;
@@ -29,7 +29,7 @@ public sealed partial class DsmRepository
     {
         get
         {
-            if (!HasReadablePublicVirtualMachineManagerContract)
+            if (!HasReadableVirtualMachineManagerContract)
             {
                 return new(
                     VirtualMachineManagerAvailabilityStatus.Unavailable,
@@ -44,14 +44,24 @@ public sealed partial class DsmRepository
             AddAvailableFeature(features, PublicStorageApi, VirtualMachineManagerReadFeature.Storages);
             AddAvailableFeature(features, PublicNetworkApi, VirtualMachineManagerReadFeature.Networks);
             AddAvailableFeature(features, PublicImageApi, VirtualMachineManagerReadFeature.Images);
+            AddAvailableInternalFeature(features, InternalHostApi, VirtualMachineManagerReadFeature.Hosts, 2, 2);
+            AddAvailableInternalFeature(features, InternalCreationRepoApi, VirtualMachineManagerReadFeature.Storages, 2, 2);
+            AddAvailableInternalFeature(features, ManagedNetworkApi, VirtualMachineManagerReadFeature.Networks, 2, 2);
+            AddAvailableInternalFeature(features, InternalCreationImageApi, VirtualMachineManagerReadFeature.Images, 2, 2);
             AddAvailableInternalFeature(features, InternalProtectionApi, VirtualMachineManagerReadFeature.Protection, 1, 2);
             AddAvailableInternalFeature(features, InternalEventApi, VirtualMachineManagerReadFeature.Events, 1, 1);
             return new(VirtualMachineManagerAvailabilityStatus.Available, features);
         }
     }
 
-    public async Task<VirtualMachineManagerSnapshot> LoadSnapshotAsync(
-        CancellationToken cancellationToken = default)
+    public Task<VirtualMachineManagerSnapshot> LoadSnapshotAsync(CancellationToken cancellationToken = default) =>
+        LoadVirtualMachineSnapshotAsync(includeActivity: true, cancellationToken);
+    Task<VirtualMachineManagerSnapshot> IVirtualMachineManagerRepository.LoadInventoryAsync(CancellationToken cancellationToken) =>
+        LoadVirtualMachineSnapshotAsync(includeActivity: false, cancellationToken);
+    Task<VirtualMachineManagerSection<ServiceActivityEntry>> IVirtualMachineManagerRepository.LoadActivityAsync(CancellationToken cancellationToken) =>
+        LoadVirtualMachineActivityAsync(includeBody: true, cancellationToken);
+
+    private async Task<VirtualMachineManagerSnapshot> LoadVirtualMachineSnapshotAsync(bool includeActivity, CancellationToken cancellationToken)
     {
         EnsureVirtualMachineManagerProfile();
         var availability = PublicVirtualMachineManagerAvailability;
@@ -60,32 +70,31 @@ public sealed partial class DsmRepository
             return UnavailableVirtualMachineManagerSnapshot();
         }
 
-        var machines = await LoadPublicSectionAsync(
-            PublicGuestApi,
-            ParseMachines,
-            cancellationToken).ConfigureAwait(false);
-        var hosts = await LoadPublicResourceSectionAsync(
+        var machines = HasPublicVirtualMachineVersion(PublicGuestApi)
+            ? await LoadPublicSectionAsync(PublicGuestApi, ParseMachines, cancellationToken).ConfigureAwait(false)
+            : await LoadInternalVirtualMachineSectionAsync(InternalSettingsGuestApi, ["list"], null, ParseInternalMachines, 2, 2, cancellationToken).ConfigureAwait(false);
+        var hosts = await LoadVirtualMachineResourceSectionAsync(
             PublicHostApi,
             "hosts",
             "host_id",
             "host_name",
             VirtualizationResourceKind.Host,
             cancellationToken).ConfigureAwait(false);
-        var storages = await LoadPublicResourceSectionAsync(
+        var storages = await LoadVirtualMachineResourceSectionAsync(
             PublicStorageApi,
             "storages",
             "storage_id",
             "storage_name",
             VirtualizationResourceKind.Storage,
             cancellationToken).ConfigureAwait(false);
-        var networks = await LoadPublicResourceSectionAsync(
+        var networks = await LoadVirtualMachineResourceSectionAsync(
             PublicNetworkApi,
             "networks",
             "network_id",
             "network_name",
             VirtualizationResourceKind.Network,
             cancellationToken).ConfigureAwait(false);
-        var images = await LoadPublicResourceSectionAsync(
+        var images = await LoadVirtualMachineResourceSectionAsync(
             PublicImageApi,
             "images",
             "image_id",
@@ -93,7 +102,10 @@ public sealed partial class DsmRepository
             VirtualizationResourceKind.Image,
             cancellationToken).ConfigureAwait(false);
         var protection = await LoadProtectionSectionAsync(cancellationToken).ConfigureAwait(false);
-        var events = await LoadVirtualMachineEventSectionAsync(cancellationToken).ConfigureAwait(false);
+        var activity = includeActivity ? await LoadVirtualMachineActivityAsync(includeBody: false, cancellationToken).ConfigureAwait(false) :
+            new VirtualMachineManagerSection<ServiceActivityEntry>(HasInternalVirtualMachineVersion(InternalEventApi, 1, 1) ?
+                VirtualMachineManagerSectionStatus.Available : VirtualMachineManagerSectionStatus.Unavailable, []);
+        var events = new VirtualMachineManagerSection<ServiceEventSummary>(activity.Status, activity.Items.Select(item => item.Summary).ToArray());
 
         return new(_profile.Id, machines, hosts, storages, networks, images, protection, events);
     }
@@ -127,32 +139,34 @@ public sealed partial class DsmRepository
             cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<VirtualMachineManagerSection<ServiceEventSummary>>
-        LoadVirtualMachineEventSectionAsync(CancellationToken cancellationToken)
+    private async Task<VirtualMachineManagerSection<ServiceActivityEntry>> LoadVirtualMachineActivityAsync(bool includeBody, CancellationToken cancellationToken)
     {
+        EnsureVirtualMachineManagerProfile();
         if (!HasInternalVirtualMachineVersion(InternalEventApi, 1, 1))
+            return VirtualMachineManagerSection<ServiceActivityEntry>.Unavailable;
+        const int pageSize = 1000;
+        var events = new List<ServiceActivityEntry>(); var ids = new HashSet<string>(StringComparer.Ordinal);
+        try
         {
-            return VirtualMachineManagerSection<ServiceEventSummary>.Unavailable;
-        }
-
-        return await LoadInternalVirtualMachineSectionAsync(
-            InternalEventApi,
-            ["list"],
-            new Dictionary<string, string>
+            while (true)
             {
-                ["offset"] = "0",
-                ["limit"] = "1000",
-                ["loglevel"] = string.Empty,
-                ["filter_content"] = string.Empty,
-                ["datefrom"] = "0",
-                ["dateto"] = "0",
-                ["sort_by"] = "time",
-                ["sort_dir"] = "DESC",
-            },
-            ParseVirtualMachineEvents,
-            minimumVersion: 1,
-            maximumVersion: 1,
-            cancellationToken).ConfigureAwait(false);
+                var offset = events.Count;
+                var data = await CallInternalVirtualMachineAsync(InternalEventApi, "list", new Dictionary<string, string>
+                {
+                    ["offset"] = offset.ToString(System.Globalization.CultureInfo.InvariantCulture), ["limit"] = pageSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["loglevel"] = "", ["filter_content"] = "", ["datefrom"] = "0", ["dateto"] = "0", ["sort_by"] = "time", ["sort_dir"] = "DESC",
+                }, 1, 1, cancellationToken).ConfigureAwait(false);
+                if (OptionalVirtualMachineInteger(data, "offset", 0, int.MaxValue) is { } returnedOffset && returnedOffset != offset) throw InvalidVirtualMachineManagerResponse();
+                var total = OptionalVirtualMachineInteger(data, "total", 0, int.MaxValue);
+                var page = ParseServiceActivity(RequiredObjectArray(data, "logs", "log", "events", "records", "entries", "items", "data", "list"), offset, includeBody);
+                if (page.Count > pageSize || page.Any(item => !ids.Add(item.Summary.Id))) throw InvalidVirtualMachineManagerResponse();
+                events.AddRange(page);
+                if (total is null || total == events.Count) return VirtualMachineManagerSection<ServiceActivityEntry>.Available(events);
+                if (events.Count > total || page.Count == 0) throw InvalidVirtualMachineManagerResponse();
+            }
+        }
+        catch (DsmException error) when (!IsMutationAuthenticationFailure(error)) { return VirtualMachineManagerSection<ServiceActivityEntry>.Failed; }
+        catch (HttpRequestException) { return VirtualMachineManagerSection<ServiceActivityEntry>.Failed; }
     }
 
     private async Task<VirtualMachineManagerSection<T>> LoadInternalVirtualMachineSectionAsync<T>(
@@ -184,12 +198,13 @@ public sealed partial class DsmRepository
                     return VirtualMachineManagerSection<T>.Failed;
                 }
             }
+            catch (HttpRequestException) { return VirtualMachineManagerSection<T>.Failed; }
         }
         return VirtualMachineManagerSection<T>.Failed;
     }
 
     private async Task<VirtualMachineManagerSection<VirtualizationResourceSummary>>
-        LoadPublicResourceSectionAsync(
+        LoadVirtualMachineResourceSectionAsync(
             string apiName,
             string root,
             string idKey,
@@ -199,7 +214,10 @@ public sealed partial class DsmRepository
     {
         if (!HasPublicVirtualMachineVersion(apiName))
         {
-            return VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable;
+            var internalApi = InternalVirtualMachineResourceApi(kind);
+            if (!HasInternalVirtualMachineVersion(internalApi, 2, 2)) return VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable;
+            return await LoadInternalVirtualMachineSectionAsync(internalApi, ["list"], null,
+                data => ParseInternalVirtualMachineResources(data, kind), 2, 2, cancellationToken).ConfigureAwait(false);
         }
 
         return await LoadPublicSectionAsync(
@@ -226,6 +244,7 @@ public sealed partial class DsmRepository
         {
             return VirtualMachineManagerSection<T>.Failed;
         }
+        catch (HttpRequestException) { return VirtualMachineManagerSection<T>.Failed; }
     }
 
     private Task<JsonObject> CallPublicVirtualMachineAsync(
@@ -341,6 +360,7 @@ public sealed partial class DsmRepository
     private static IReadOnlyList<VirtualMachineSummary> ParseMachines(JsonObject data)
     {
         var objects = RequiredObjectArray(data, "guests");
+        RequireCompleteVirtualMachineList(data, objects.Count);
         var result = new List<VirtualMachineSummary>(objects.Count);
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in objects)
@@ -374,6 +394,7 @@ public sealed partial class DsmRepository
         VirtualizationResourceKind kind)
     {
         var objects = RequiredObjectArray(data, root);
+        RequireCompleteVirtualMachineList(data, objects.Count);
         var result = new List<VirtualizationResourceSummary>(objects.Count);
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in objects)
@@ -394,7 +415,7 @@ public sealed partial class DsmRepository
                 kind == VirtualizationResourceKind.Storage ? MiBToBytes(item.Long("size")) : item.Long("size"),
                 kind == VirtualizationResourceKind.Image
                     ? VirtualMachineOptionalString(item, "type")
-                    : null));
+                    : null) { Detail = VirtualMachineResourceDetail(item) });
         }
         return result;
     }
@@ -486,44 +507,6 @@ public sealed partial class DsmRepository
                 ParseResourceHealth(VirtualMachineOptionalString(item, "status") ??
                     VirtualMachineOptionalString(item, "state"))));
         }
-    }
-
-    private static IReadOnlyList<ServiceEventSummary> ParseVirtualMachineEvents(JsonObject data)
-    {
-        var objects = RequiredObjectArray(
-            data,
-            "logs",
-            "log",
-            "events",
-            "records",
-            "entries",
-            "items",
-            "data",
-            "list");
-        var result = new List<ServiceEventSummary>(objects.Count);
-        var ids = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var entry in objects.Select((item, index) => (item, index)))
-        {
-            var occurredAt = entry.item.Date("time") ?? entry.item.Date("timestamp") ??
-                entry.item.Date("date") ?? entry.item.Date("event_time") ??
-                entry.item.Date("create_time") ?? entry.item.Date("created_at");
-            var id = OptionalStableId(entry.item, "id") ??
-                OptionalStableId(entry.item, "log_id") ??
-                $"event-{occurredAt?.ToUnixTimeSeconds() ?? 0}-{entry.index}";
-            if (!ids.Add(id))
-            {
-                throw InvalidVirtualMachineManagerResponse();
-            }
-            result.Add(new(
-                id,
-                occurredAt,
-                ParseVirtualMachineEventLevel(
-                    VirtualMachineOptionalString(entry.item, "level") ??
-                    VirtualMachineOptionalString(entry.item, "severity") ??
-                    VirtualMachineOptionalString(entry.item, "type") ??
-                    VirtualMachineOptionalString(entry.item, "priority"))));
-        }
-        return result;
     }
 
     private static List<JsonObject> RequiredObjectArray(JsonObject data, params string[] roots)
@@ -668,15 +651,6 @@ public sealed partial class DsmRepository
             "error" or "failed" or "critical" => VirtualizationResourceHealth.Error,
             "offline" or "stopped" => VirtualizationResourceHealth.Offline,
             _ => VirtualizationResourceHealth.Unknown,
-        };
-
-    private static ServiceEventLevel ParseVirtualMachineEventLevel(string? value) =>
-        value?.ToLowerInvariant() switch
-        {
-            "info" or "information" or "0" => ServiceEventLevel.Information,
-            "warning" or "warn" or "1" => ServiceEventLevel.Warning,
-            "error" or "err" or "2" => ServiceEventLevel.Error,
-            _ => ServiceEventLevel.Unknown,
         };
 
     private static DsmException InvalidVirtualMachineManagerResponse() =>

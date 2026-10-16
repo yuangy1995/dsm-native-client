@@ -24,7 +24,19 @@ public sealed record FileBackgroundTaskSummary(
     int? ProcessedItemCount,
     int? TotalItemCount,
     long? ProcessedBytes,
-    long? TotalBytes);
+    long? TotalBytes)
+{
+    // 仅来自当前读取的控制身份；旧缓存不据此获得写权限。
+    [System.Text.Json.Serialization.JsonIgnore] public decimal? CreationTimestamp { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public int? ApiVersion { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public string? Method { get; init; }
+    public bool SameIdentity(FileBackgroundTaskSummary other) => Id == other.Id && Kind == other.Kind &&
+        CreationTimestamp is not null && CreationTimestamp == other.CreationTimestamp && ApiVersion == other.ApiVersion && Method == other.Method;
+}
+
+public enum FileBackgroundTaskAction { Stop, Clear }
+public sealed record FileBackgroundTaskChange(Guid RequestId, Guid ProfileId, FileBackgroundTaskSummary Task, FileBackgroundTaskAction Action, bool Confirmed);
+public sealed record FileBackgroundTaskProgress(FileBackgroundTaskChange Change, MutationResult Outcome);
 
 public sealed record FileBackgroundTaskPage(
     IReadOnlyList<FileBackgroundTaskSummary> Tasks,

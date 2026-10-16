@@ -16,7 +16,21 @@ internal static class DsmFixtureParser
         int expectedOffset = 0,
         int requestedLimit = SharedRootPageLimit)
     {
-        var sourceItems = data.Array(root).OfType<JsonObject>().ToArray();
+        if (data[root] is not JsonArray rows || data.Int("offset") is not { } offset ||
+            data.Int("total") is not { } total || offset != expectedOffset || offset < 0 ||
+            total < offset || rows.Count > requestedLimit || rows.Count > total - offset ||
+            rows.Count == 0 && offset < total)
+            throw new InvalidDataException("file.list.invalid-pagination");
+        var paths = new HashSet<string>(StringComparer.Ordinal);
+        var sourceItems = new List<JsonObject>(rows.Count);
+        foreach (var row in rows)
+        {
+            if (row is not JsonObject item || item.String("path") is not { } path ||
+                !ValidListPath(path) || item.String("name") is not { Length: > 0 } ||
+                item.Bool("isdir") is null || root == "shares" && item.Bool("isdir") != true || !paths.Add(path))
+                throw new InvalidDataException("file.list.invalid-item");
+            sourceItems.Add(item);
+        }
         var items = sourceItems.Select(item =>
         {
             var additional = item.Object("additional");
@@ -33,15 +47,19 @@ internal static class DsmFixtureParser
                 additional?.Object("owner")?.String("user") ?? additional?.String("owner"),
                 permission.Write ?? false,
                 permission.Delete ?? false);
-        }).Where(item => !string.IsNullOrWhiteSpace(item.Path)).ToArray();
+        }).ToArray();
         return new FilePage(
             items,
-            data.Int("total") ?? items.Length,
-            data.Int("offset") ?? 0,
+            total,
+            offset,
             root == "shares"
                 ? ParseStorageSpace(data, sourceItems, expectedOffset, requestedLimit)
                 : null);
     }
+
+    internal static bool ValidListPath(string path) => path.Length > 1 && path.StartsWith('/') &&
+        !path.EndsWith('/') && !path.Contains('\\') && !path.Any(char.IsControl) &&
+        !path[1..].Split('/').Any(segment => segment is "" or "." or "..");
 
     private static StorageSpaceSummary? ParseStorageSpace(
         JsonObject data,

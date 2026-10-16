@@ -30,7 +30,7 @@ internal sealed record FileShareLinkManagementDialogOptions(
             "PhotoShareLinkManageUnsupportedMessage");
 }
 
-internal sealed class FileShareLinkManagementDialog : IDisposable
+internal sealed partial class FileShareLinkManagementDialog : IDisposable
 {
     private readonly IFileShareLinkRepository? _repository;
     private readonly Guid _profileId;
@@ -71,6 +71,7 @@ internal sealed class FileShareLinkManagementDialog : IDisposable
         var dialog = new ContentDialog
         {
             XamlRoot = xamlRoot,
+            RequestedTheme = (xamlRoot.Content as FrameworkElement)?.ActualTheme ?? ElementTheme.Default,
             Title = localization.Get(_options.TitleKey),
             CloseButtonText = localization.Get("ActionClose"),
             DefaultButton = ContentDialogButton.None,
@@ -116,6 +117,7 @@ internal sealed class FileShareLinkManagementDialog : IDisposable
         }
 
         var model = _model;
+        CloseEditor();
         _dialog.Closed -= ShareManagementDialog_Closed;
         _dialog = null;
         _model = null;
@@ -133,6 +135,11 @@ internal sealed class FileShareLinkManagementDialog : IDisposable
         if (_dialog is not { } dialog ||
             _model is not { } model)
         {
+            return;
+        }
+        if (_editorContent is not null)
+        {
+            dialog.Content = _editorContent;
             return;
         }
         dialog.Content = BuildContent(model, LocalizationService.Current);
@@ -159,6 +166,23 @@ internal sealed class FileShareLinkManagementDialog : IDisposable
             AutomationProperties.SetLiveSetting(feedback, AutomationLiveSetting.Polite);
             panel.Children.Add(feedback);
         }
+        if (model.DeleteResults.Count > 1)
+            foreach (var result in model.DeleteResults)
+                panel.Children.Add(Message(localization.Format("FileShareItemOutcome", ShareLinkDisplayName(result.Link.Path),
+                    localization.Get(result.Result?.Status == MutationResultStatus.ConfirmedSuccess
+                        ? "FileShareLinkManageDeletedMessage" : ShareResultKey(result.Result!)))));
+        if (model.DeletionState == FileShareLinkDeletionState.NeedsReview)
+        {
+            var review = new Button { Content = localization.Get("FileShareRefreshAction"), MinHeight = 44, IsEnabled = !model.IsDeleting };
+            review.Click += async (_, _) => await model.ReviewDeletionAsync();
+            panel.Children.Add(review);
+        }
+        if (model.CanContinueDeletion)
+        {
+            var more = new Button { Content = localization.Get("FileShareContinueAction"), MinHeight = 44 };
+            more.Click += (_, _) => model.ContinueDeletion();
+            panel.Children.Add(more);
+        }
 
         switch (model.State)
         {
@@ -182,6 +206,7 @@ internal sealed class FileShareLinkManagementDialog : IDisposable
                 break;
             case FileShareLinkManagementState.Content:
                 panel.Children.Add(BuildHeader(model, localization));
+                panel.Children.Add(BuildSelectionActions(model, localization));
                 foreach (var link in model.VisibleLinks)
                 {
                     panel.Children.Add(BuildLinkRow(model, link, localization));
@@ -239,14 +264,13 @@ internal sealed class FileShareLinkManagementDialog : IDisposable
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var details = new StackPanel { Spacing = 3 };
-        details.Children.Add(new TextBlock
-        {
-            Text = ShareLinkDisplayName(link.Path),
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-        });
+        var select = new CheckBox { Content = ShareLinkDisplayName(link.Path), IsChecked = _selectedShareIds.Contains(link.Id) };
+        select.Checked += (_, _) => { _selectedShareIds.Add(link.Id); UpdateSelectionActions(); };
+        select.Unchecked += (_, _) => { _selectedShareIds.Remove(link.Id); UpdateSelectionActions(); };
+        details.Children.Add(select);
         details.Children.Add(new TextBlock
         {
             Text = link.Path,
@@ -280,6 +304,11 @@ internal sealed class FileShareLinkManagementDialog : IDisposable
         Grid.SetColumn(copy, 1);
         grid.Children.Add(copy);
 
+        var edit = IconButton(Symbol.Edit, localization.Get("FileShareEditAction"), localization.Get("FileShareEditAction"));
+        edit.Click += (_, _) => OpenEditor([link]);
+        Grid.SetColumn(edit, 2);
+        grid.Children.Add(edit);
+
         var delete = IconButton(
             Symbol.Delete,
             localization.Get("FileShareLinkManageDeleteAutomationName"),
@@ -287,7 +316,7 @@ internal sealed class FileShareLinkManagementDialog : IDisposable
         delete.IsEnabled = model.DeletionState != FileShareLinkDeletionState.NeedsReview ||
             !string.Equals(model.PendingDeletion?.Id, link.Id, StringComparison.Ordinal);
         delete.Click += (_, _) => model.BeginDelete(link);
-        Grid.SetColumn(delete, 2);
+        Grid.SetColumn(delete, 3);
         grid.Children.Add(delete);
         return grid;
     }
@@ -299,6 +328,8 @@ internal sealed class FileShareLinkManagementDialog : IDisposable
         var link = model.PendingDeletion;
         var panel = new StackPanel { Spacing = 12, MinWidth = 320, MaxWidth = 680 };
         panel.Children.Add(Heading(localization.Get("FileShareLinkManageDeleteTitle")));
+        if (model.PendingDeleteCount > 1)
+            panel.Children.Add(Message(localization.Format("FileShareBatchDeleteMessage", model.PendingDeleteCount)));
         panel.Children.Add(Message(localization.Format(
             "FileShareLinkManageDeleteMessage",
             link is null ? string.Empty : ShareLinkDisplayName(link.Path))));

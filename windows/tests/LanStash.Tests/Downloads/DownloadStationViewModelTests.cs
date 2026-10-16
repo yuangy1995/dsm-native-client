@@ -6,6 +6,28 @@ namespace LanStash.Tests;
 public sealed class DownloadStationViewModelTests
 {
     [Fact]
+    public async Task ConfirmedRemovalUsesOriginalTaskEvenIfSelectionChanges()
+    {
+        var repository = Available(Guid.NewGuid()); var first = Task("first", DownloadTaskState.Paused); var second = Task("second", DownloadTaskState.Paused);
+        repository.SnapshotResults.Enqueue(Snapshot(repository.ProfileId, Page(0, 2, 2, null, first, second)));
+        repository.DeleteResults.Enqueue(DeleteOutcome(MutationResultStatus.SubmittedButUnverified, true, true, first.Id));
+        using var model = new DownloadStationViewModel(); await model.ActivateAsync(repository);
+        model.SelectTask(model.Tasks.Single(item => item.Id == first.Id)); var original = model.SelectedTask!.Task;
+        model.SelectTask(model.Tasks.Single(item => item.Id == second.Id));
+        await model.DeleteConfirmedTaskAsync(original, repository);
+        Assert.Equal(first, Assert.Single(repository.DeleteRequests).Task);
+    }
+    [Fact]
+    public async Task RemovalConfirmationCannotCrossConnectionReplacementOrDisposal()
+    {
+        var profile = Guid.NewGuid(); var first = Available(profile); var second = Available(profile); var task = Task("one", DownloadTaskState.Paused);
+        first.SnapshotResults.Enqueue(Snapshot(profile, Page(0, 1, 1, null, task)));
+        second.SnapshotResults.Enqueue(Snapshot(profile, Page(0, 1, 1, null, task)));
+        using var model = new DownloadStationViewModel(); await model.ActivateAsync(first); await model.ActivateAsync(second);
+        await model.DeleteConfirmedTaskAsync(task, first); Assert.Empty(first.DeleteRequests); Assert.Empty(second.DeleteRequests);
+        model.Dispose(); await model.DeleteConfirmedTaskAsync(task, second); Assert.Empty(second.DeleteRequests);
+    }
+    [Fact]
     public async Task UnavailableStateIssuesNoRequestsAndRefreshIsSafe()
     {
         var repository = new FakeDownloadStationRepository(
@@ -477,6 +499,25 @@ public sealed class DownloadStationViewModelTests
         Assert.Equal(DownloadTaskCreateNoticeKind.Success, model.CreateNoticeKind);
         Assert.Equal("created-1", Assert.Single(model.Tasks).Id);
         Assert.Equal(2, repository.SnapshotRequests.Count);
+    }
+
+    [Fact]
+    public async Task AcceptedCreationWithoutTaskIdShowsSuccessAndRefreshesWithoutInventingRows()
+    {
+        var profile = Guid.NewGuid();
+        var repository = Available(profile);
+        repository.SnapshotResults.Enqueue(Snapshot(profile, Page(0, 0, 0, null)));
+        repository.CreateResults.Enqueue(CreateOutcome(MutationResultStatus.ConfirmedSuccess,
+            submitted: true, requiresRefresh: true, task: null));
+        repository.SnapshotResults.Enqueue(Snapshot(profile, Page(0, 0, 0, null)));
+        using var model = new DownloadStationViewModel();
+        await model.ActivateAsync(repository);
+        await model.CreateTaskAsync("https://example.invalid/synthetic.iso");
+        Assert.Equal(DownloadTaskCreateNoticeKind.Success, model.CreateNoticeKind);
+        Assert.False(model.IsCreateNoticeWarning);
+        Assert.Empty(model.Tasks);
+        Assert.Equal(2, repository.SnapshotRequests.Count);
+        Assert.Single(repository.CreateRequests);
     }
 
     [Theory]

@@ -147,6 +147,39 @@ public sealed class VirtualMachineAdvancedCreationTests
         Assert.Equal(VirtualMachineCreationStage.Complete, (await f.Repository.ReviewCreationAsync(request.RequestId))!.Stage);
         Assert.Single(f.Creates);
     }
+    [Theory]
+    [InlineData("FORM")]
+    [InlineData("JSON")]
+    public async Task InternalOnlyCreationUsesRecordedResourcesAndInternalFollowUpPower(string format)
+    {
+        using var f = new Fixture(format, internalOnly: true, internalWritesEnabled: true);
+        Assert.False(f.Repository.CanCreateBasicMachine); Assert.True(f.Repository.CanCreateAdvancedMachine);
+        var resources = await f.Repository.LoadAdvancedCreationInventoryAsync();
+        var network = Assert.Single(resources.Networks.Items); Assert.Equal(VirtualMachineApiSource.Internal, network.Source);
+        var request = f.Request() with { Networks = [new(network, "02:00:00:00:00:01")], PowerOnAfterCreation = true };
+        var result = await f.Repository.CreateMachineAsync(request);
+        Assert.Equal(VirtualMachineCreationStage.Complete, result.Stage);
+        Assert.DoesNotContain(f.Calls, call => call["api"].Contains(".API.", StringComparison.Ordinal));
+        var power = Assert.Single(f.Calls, call => call["method"] == "pwr_ctl");
+        Assert.Equal("1", power["version"]);
+        Assert.Equal(format == "JSON" ? "\"poweron\"" : "poweron", power["action"]);
+        Assert.Single(f.Creates);
+    }
+
+    [Fact]
+    public async Task InternalOnlyCreationIsGuardedAndFrozenNetworkCannotBeUsed()
+    {
+        using var guarded = new Fixture(internalOnly: true);
+        Assert.True(guarded.Repository.CanReadAdvancedCreation); Assert.False(guarded.Repository.CanCreateMachine);
+        Assert.Equal(MutationResultStatus.Unsupported, (await guarded.Repository.CreateMachineAsync(guarded.Request())).Result.Status);
+        Assert.Empty(guarded.Creates);
+        using var f = new Fixture(internalOnly: true, internalWritesEnabled: true);
+        var network = Assert.Single((await f.Repository.LoadAdvancedCreationInventoryAsync()).Networks.Items);
+        f.Fault = "network-frozen";
+        var result = await f.Repository.CreateMachineAsync(f.Request() with { Networks = [new(network)] });
+        Assert.False(result.Result.Submitted); Assert.Empty(f.Creates);
+    }
+
     private sealed class Fixture : IDisposable
     {
         public const string InternalGuest = "SYNO.Virtualization.Guest", Cluster = "SYNO.Virtualization.Cluster";
@@ -156,20 +189,26 @@ public sealed class VirtualMachineAdvancedCreationTests
         public DsmRepository Repository { get; }
         private readonly HttpClient _http; private readonly DsmApiClient _api; private readonly DsmSession _session; private readonly string _format;
         private readonly Dictionary<string, ApiCapability> _capabilities = [];
+        private readonly bool _internalWritesEnabled;
         public List<Dictionary<string, string>> Calls { get; } = [];
         public IEnumerable<Dictionary<string, string>> Creates => Calls.Where(call => call["method"] == "create");
         public JsonObject? Payload;
         public bool LoseReceipt, OmitTask, Powered, Finished = true;
         public string? Fault;
         public Action? AfterCreate;
-        public Fixture(string format = "FORM")
+        public Fixture(string format = "FORM", bool internalOnly = false, bool internalWritesEnabled = false)
         {
-            _format = format; _http = new(new Handler(this)); _api = new(_http); _session = new(Profile.Id, "synthetic-session", null, null);
+            _format = format; _internalWritesEnabled = internalWritesEnabled; _http = new(new Handler(this)); _api = new(_http); _session = new(Profile.Id, "synthetic-session", null, null);
             foreach (var name in new[] { InternalGuest, Cluster, "SYNO.Virtualization.Repo", "SYNO.Virtualization.Guest.Image", "SYNO.Virtualization.API.Guest", "SYNO.Virtualization.API.Storage", "SYNO.Virtualization.API.Task.Info", "SYNO.Virtualization.API.Guest.Action", "SYNO.Virtualization.API.Guest.Image" })
                 _capabilities[name] = new(name, "advanced-create-synthetic.cgi", 1, 3, format);
+            if (internalOnly)
+            {
+                foreach (var name in _capabilities.Keys.Where(name => name.Contains(".API.", StringComparison.Ordinal)).ToArray()) _capabilities.Remove(name);
+                foreach (var name in new[] { "SYNO.Virtualization.Guest.Action", "SYNO.Virtualization.Network" }) _capabilities[name] = new(name, "advanced-create-synthetic.cgi", 1, 2, format);
+            }
             Repository = Recreate();
         }
-        public DsmRepository Recreate() => new(Profile, _session, _api, _capabilities);
+        public DsmRepository Recreate() => new(Profile, _session, _api, _capabilities, virtualMachineInternalWritesEnabled: _internalWritesEnabled);
         public VirtualMachineCreationRequest Request() => new(Profile.Id, new(Storage.Id, Storage.Name, VirtualizationResourceKind.Storage, VirtualizationResourceHealth.Healthy),
             [new(10240)], [new(null, "02:00:00:00:00:01")], new("Synthetic VM", "", 1, 512, VirtualMachineAutoStart.Off), Guid.NewGuid(), true)
             { Advanced = new(VirtualMachineOperatingSystem.Linux, VirtualMachineFirmware.Uefi, Storage) };
@@ -223,12 +262,16 @@ public sealed class VirtualMachineAdvancedCreationTests
                     host_id = owner.Fault == "storage-host" ? "other-host" : Storage.HostId, host_name = Storage.HostName, allocated_size = Storage.AllocatedSize, size = Storage.Size, used = Storage.Used, status = "online", status_type = "healthy" } } });
                 if (api == "SYNO.Virtualization.Guest.Image") return Reply(new { is_freeze = owner.Fault == "image-frozen", images = owner.Fault == "image-missing" ? Array.Empty<object>() : new object[] { new { id = Image.Id, name = Image.Name, repo_id = Image.StorageId, host_id = Image.HostId, type = "iso", status = "online", status_type = "healthy" } } });
                 if (api == "SYNO.Virtualization.API.Guest.Action") { Assert.Equal("poweron", method); owner.Powered = true; return Reply(new { }); }
+                if (api == "SYNO.Virtualization.Guest.Action") { Assert.Equal("pwr_ctl", method); owner.Powered = true; return Reply(new { }); }
+                if (api == "SYNO.Virtualization.Network") return Reply(new { is_freeze = owner.Fault == "network-frozen",
+                    networks = new[] { new { network_id = "network-a", name = "Synthetic network", type = "external" } }, total = 1, offset = 0 });
                 if (api == "SYNO.Virtualization.API.Guest") return method == "list"
                     ? Reply(new { guests = new[] { new { guest_id = "old-vm", guest_name = "Existing", status = "shutdown" } } })
                     : Reply(new { guest_id = "new-vm", guest_name = owner.Payload!["name"]!.GetValue<string>(), status = owner.Powered ? "running" : "shutdown" });
                 Assert.Equal(InternalGuest, api);
+                if (method == "list") return Reply(new { guests = new[] { new { guest_id = "old-vm", name = "Existing", status = "shutdown" } }, total = 1, offset = 0 });
                 var settings = owner.Settings();
-                if (method == "get") { settings["guest_id"] = "new-vm"; settings["is_online"] = owner.Powered; }
+                if (method == "get") { settings["guest_id"] = "new-vm"; settings["is_online"] = owner.Powered; settings["status"] = owner.Powered ? "running" : "shutdown"; }
                 else Assert.Equal("get_setting", method);
                 return Reply(settings);
             }

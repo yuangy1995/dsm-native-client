@@ -1,4 +1,5 @@
 using LanStash.Domain;
+using System.Diagnostics;
 
 namespace LanStash.App.Features.Transfers;
 
@@ -8,6 +9,8 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
     private readonly Dictionary<string, List<ForegroundTransferActivity>> _activities =
         new(StringComparer.Ordinal);
     private readonly IForegroundTransferNotificationService _notifications;
+    private readonly Dictionary<Guid, ForegroundTransferControl> _controls = [];
+    private readonly Dictionary<Guid, (long Timestamp, long Bytes)> _speedSamples = [];
     private CancellationTokenSource _profileCancellation = new();
     private string? _activeProfileId;
     private long _profileGeneration;
@@ -53,7 +56,9 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
         lock (_sync)
         {
             return _activities.TryGetValue(profileId, out var activities)
-                ? activities.ToArray()
+                ? activities.Select(activity => activity.BytesPerSecond > 0 &&
+                    _speedSamples.TryGetValue(activity.Id, out var sample) && Stopwatch.GetElapsedTime(sample.Timestamp).TotalSeconds > 2
+                    ? activity with { BytesPerSecond = 0 } : activity).ToArray()
                 : [];
         }
     }
@@ -61,7 +66,8 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
     public async Task RunAsync(
         ForegroundDownloadRequest request,
         ForegroundDownloadOperation operation,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ForegroundTransferControl? control = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(operation);
@@ -95,6 +101,9 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
                 request.TotalBytes,
                 ForegroundTransferState.Running,
                 null);
+            activity = activity with { CanPause = control is not null, State = control?.IsPaused == true ? ForegroundTransferState.Paused : activity.State };
+            if (control is not null) _controls.Add(activity.Id, control);
+            _speedSamples[activity.Id] = (Stopwatch.GetTimestamp(), 0);
             GetOrCreateActivities(request.ProfileId).Insert(0, activity);
             linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
@@ -133,16 +142,20 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
                     activityId,
                     generation,
                     ForegroundTransferState.Failed,
-                    exception.Message);
+                    exception.GetType().Name,
+                    exception is ForegroundDownloadException download ? download.Category :
+                        exception is DsmException { Code: 105 } ? MutationErrorCategory.Permission : null);
                 throw;
             }
+            finally { ReleaseControl(activityId); }
         }
     }
 
     public async Task<MutationResult> RunUploadAsync(
         ForegroundUploadRequest request,
         ForegroundUploadOperation operation,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ForegroundTransferControl? control = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(operation);
@@ -174,6 +187,9 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
                 request.TotalBytes,
                 ForegroundTransferState.Running,
                 null);
+            activity = activity with { CanPause = control is not null, State = control?.IsPaused == true ? ForegroundTransferState.Paused : activity.State };
+            if (control is not null) _controls.Add(activity.Id, control);
+            _speedSamples[activity.Id] = (Stopwatch.GetTimestamp(), 0);
             GetOrCreateActivities(request.ProfileId).Insert(0, activity);
             linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
@@ -197,6 +213,7 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
                     MutationResultStatus.ConfirmedSuccess => ForegroundTransferState.Completed,
                     MutationResultStatus.CancelledBeforeSubmission =>
                         ForegroundTransferState.CancelledBeforeSubmission,
+                    MutationResultStatus.PartialSuccess when result.Counts.Unknown == 0 => ForegroundTransferState.Failed,
                     MutationResultStatus.SubmittedButUnverified or
                         MutationResultStatus.CancellationRequestedAfterSubmission or
                         MutationResultStatus.PartialSuccess =>
@@ -208,7 +225,8 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
                     request.OperationId,
                     generation,
                     state,
-                    result.DiagnosticTag);
+                    result.DiagnosticTag,
+                    result.ErrorCategory);
                 return result;
             }
             catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
@@ -231,6 +249,77 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
                     exception.GetType().Name);
                 throw;
             }
+            finally { ReleaseControl(request.OperationId); }
+        }
+    }
+
+    public bool SetPaused(string profileId, Guid activityId, bool paused)
+    {
+        lock (_sync)
+        {
+            if (_disposed || !_controls.TryGetValue(activityId, out var control) ||
+                !_activities.TryGetValue(profileId, out var activities)) return false;
+            var index = activities.FindIndex(a => a.Id == activityId && a.CanPause &&
+                a.State is ForegroundTransferState.Running or ForegroundTransferState.Paused);
+            if (index < 0) return false;
+            var activity = activities[index];
+            if (paused) control.Pause(); else control.Resume();
+            for (var i = 0; i < activities.Count; i++)
+            {
+                var member = activities[i];
+                if (!_controls.TryGetValue(member.Id, out var memberControl) || !ReferenceEquals(memberControl, control) ||
+                    member.State is not (ForegroundTransferState.Running or ForegroundTransferState.Paused)) continue;
+                activities[i] = member with { State = paused ? ForegroundTransferState.Paused : ForegroundTransferState.Running, BytesPerSecond = 0 };
+                _speedSamples[member.Id] = (Stopwatch.GetTimestamp(), member.BytesTransferred);
+            }
+            return true;
+        }
+    }
+
+    public void ApplyUploadReview(string profileId, Guid activityId, MutationResult result)
+    {
+        ForegroundTransferActivity? completed = null;
+        lock (_sync)
+        {
+            if (_disposed) return;
+            UpdateActivity(profileId, activityId, activity =>
+            {
+                if (activity.Source != ForegroundTransferSource.App || activity.Direction != ForegroundTransferDirection.Upload ||
+                    activity.State != ForegroundTransferState.ResultNeedsReview) return activity;
+                if (result.Status != MutationResultStatus.ConfirmedSuccess) return activity with
+                { FailureCategory = result.ErrorCategory, FailureMessage = result.DiagnosticTag };
+                completed = activity with { State = ForegroundTransferState.Completed, BytesTransferred = activity.TotalBytes,
+                    FailureMessage = null, FailureCategory = null };
+                return completed;
+            });
+            if (completed is not null && _activities.TryGetValue(profileId, out var activities))
+                for (var i = 0; i < activities.Count; i++)
+                {
+                    var parent = activities[i];
+                    if (!parent.ItemResults.Any(item => item.ActivityId == activityId)) continue;
+                    var items = parent.ItemResults.Select(item => item.ActivityId == activityId
+                        ? item with { State = ForegroundTransferItemState.Completed } : item).ToArray();
+                    var allDone = items.All(item => item.State == ForegroundTransferItemState.Completed);
+                    activities[i] = parent with { ItemResults = items, State = allDone ? ForegroundTransferState.Completed : parent.State,
+                        BytesTransferred = allDone ? parent.TotalBytes : parent.BytesTransferred };
+                }
+        }
+        NotifyIfNeeded(completed);
+    }
+
+    private void ReleaseControl(Guid activityId)
+    {
+        lock (_sync) { _controls.Remove(activityId); _speedSamples.Remove(activityId); }
+    }
+
+    public void UpdateDownloadPlan(string profileId, Guid activityId, long totalBytes, IReadOnlyList<ForegroundTransferItemResult> results)
+    {
+        lock (_sync)
+        {
+            if (_disposed || totalBytes < 0 || !_controls.ContainsKey(activityId)) return;
+            UpdateActivity(profileId, activityId, activity => activity.Source == ForegroundTransferSource.App &&
+                activity.State is ForegroundTransferState.Running or ForegroundTransferState.Paused
+                ? activity with { TotalBytes = totalBytes, ItemResults = results.ToArray() } : activity);
         }
     }
 
@@ -386,17 +475,27 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
         {
             if (!IsCurrent(profileId, generation) ||
                 progress.BytesTransferred < 0 ||
-                progress.BytesTransferred > progress.TotalBytes)
+                progress.TotalBytes < 0 ||
+                (progress.TotalBytes > 0 && progress.BytesTransferred > progress.TotalBytes))
             {
                 return;
             }
 
             UpdateActivity(profileId, activityId, activity =>
-                activity.State == ForegroundTransferState.Running &&
-                progress.TotalBytes == activity.TotalBytes &&
-                progress.BytesTransferred >= activity.BytesTransferred
-                    ? activity with { BytesTransferred = progress.BytesTransferred }
-                    : activity);
+            {
+                if (activity.State is not (ForegroundTransferState.Running or ForegroundTransferState.Paused) ||
+                    progress.TotalBytes != activity.TotalBytes || progress.BytesTransferred < activity.BytesTransferred) return activity;
+                var now = Stopwatch.GetTimestamp();
+                var speed = activity.BytesPerSecond;
+                if (_speedSamples.TryGetValue(activityId, out var sample) &&
+                    Stopwatch.GetElapsedTime(sample.Timestamp, now).TotalSeconds is var seconds && seconds >= 0.25)
+                {
+                    speed = (progress.BytesTransferred - sample.Bytes) / seconds;
+                    _speedSamples[activityId] = (now, progress.BytesTransferred);
+                }
+                return activity with { BytesTransferred = progress.BytesTransferred,
+                    BytesPerSecond = activity.State == ForegroundTransferState.Paused ? 0 : speed };
+            });
         }
     }
 
@@ -405,7 +504,8 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
         Guid activityId,
         long generation,
         ForegroundTransferState state,
-        string? failureMessage)
+        string? failureMessage,
+        MutationErrorCategory? failureCategory = null)
     {
         ForegroundTransferActivity? updatedActivity = null;
         lock (_sync)
@@ -417,7 +517,7 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
 
             UpdateActivity(profileId, activityId, activity =>
             {
-                if (activity.State != ForegroundTransferState.Running)
+                if (activity.State is not (ForegroundTransferState.Running or ForegroundTransferState.Paused))
                 {
                     return activity;
                 }
@@ -425,8 +525,11 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
                 updatedActivity = activity with
                 {
                     State = state,
+                    CanPause = false,
+                    BytesPerSecond = 0,
                     FailureMessage = failureMessage,
-                    BytesTransferred = state == ForegroundTransferState.Completed
+                    FailureCategory = failureCategory,
+                    BytesTransferred = state == ForegroundTransferState.Completed && activity.TotalBytes > 0
                         ? activity.TotalBytes
                         : activity.BytesTransferred,
                 };
@@ -476,10 +579,12 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
         for (var index = 0; index < activities.Count; index++)
         {
             if (activities[index].Source == ForegroundTransferSource.App &&
-                activities[index].State == ForegroundTransferState.Running)
+                activities[index].State is ForegroundTransferState.Running or ForegroundTransferState.Paused)
             {
                 activities[index] = activities[index] with
                 {
+                    CanPause = false,
+                    BytesPerSecond = 0,
                     State = activities[index].Direction == ForegroundTransferDirection.Upload
                         ? ForegroundTransferState.ResultNeedsReview
                         : ForegroundTransferState.Cancelled,

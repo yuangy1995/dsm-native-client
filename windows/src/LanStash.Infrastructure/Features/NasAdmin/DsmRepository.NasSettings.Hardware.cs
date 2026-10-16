@@ -34,16 +34,18 @@ public sealed partial class DsmRepository
                         result = result with { LedMinimum = min, LedMaximum = max };
                         break;
                     case NasHardwareSections.Fan:
-                        result = result with { FanMode = data.String("dual_fan_speed") };
+                        result = result with { FanMode = data.String("dual_fan_speed"), SupportedFanModes = ReadSupportedFanModes(data) };
                         if (string.IsNullOrWhiteSpace(result.FanMode)) throw InvalidNasServiceSettings();
                         break;
                     case NasHardwareSections.Beep:
                         var volume = data.ContainsKey("volume_or_cache_crash") ? "volume_or_cache_crash" :
                             data.ContainsKey("volume_crash") ? "volume_crash" : null;
-                        var beep = new NasBeepSettings(data.Bool("fan_fail"), volume is null ? null : data.Bool(volume),
-                            data.Bool("poweron_beep"), data.Bool("poweroff_beep"), data.Bool("reset_beep"), volume);
+                        bool? Sound(string field, string support) => data.Bool(support) == false ? null : data.Bool(field);
+                        var beep = new NasBeepSettings(Sound("fan_fail", "support_fan_fail"), volume is null ? null : Sound(volume, "support_volume_crash"),
+                            Sound("poweron_beep", "support_poweron_beep"), Sound("poweroff_beep", "support_poweroff_beep"), Sound("reset_beep", "support_reset_beep"), volume);
                         result = result with { Beep = beep };
-                        if (new[] { beep.FanFailure, beep.VolumeFailure, beep.PowerOn, beep.PowerOff, beep.Reset }.All(value => value is null))
+                        if (new[] { beep.FanFailure, beep.VolumeFailure, beep.PowerOn, beep.PowerOff, beep.Reset }.All(value => value is null) &&
+                            !new[] { "support_fan_fail", "support_volume_crash", "support_poweron_beep", "support_poweroff_beep", "support_reset_beep" }.Any(key => data.Bool(key) == false))
                             throw InvalidNasServiceSettings();
                         break;
                     case NasHardwareSections.Hibernation:
@@ -78,6 +80,17 @@ public sealed partial class DsmRepository
     {
         ArgumentNullException.ThrowIfNull(settings);
         return Task.FromResult(UnsupportedResult("saveHardware")); // 旧签名不能完成六组可信字段/LED update 的保存闭环。
+    }
+    private static IReadOnlyList<string>? ReadSupportedFanModes(JsonObject data)
+    {
+        var kind = data.String("cool_fan");
+        if (kind == "no") return Array.AsReadOnly(new[] { "highfan", "lowfan" });
+        if (kind is not ("yes" or "single") || data.Int("fan_type") is not (>= 0 and var mask)) return null;
+        // 官方硬件页位值：高 1、低 2、低速停转 4、全速 8。
+        (int Bit, string Mode)[] modes = kind == "single"
+            ? [(8, "fullfan"), (2, "quietfan")]
+            : [(8, "fullfan"), (1, "coolfan"), (2, "quietfan"), (4, "quietstopfan")];
+        return Array.AsReadOnly(modes.Where(item => (mask & item.Bit) != 0).Select(item => item.Mode).ToArray());
     }
     private static readonly (string Api, NasHardwareSections Section)[] HardwareReadGroups =
     [

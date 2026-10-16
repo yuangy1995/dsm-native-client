@@ -6,7 +6,7 @@ using LanStash.Domain;
 
 namespace LanStash.App.Features.Files;
 
-public sealed class FileBrowserViewModel : ObservableObject, IDisposable
+public sealed partial class FileBrowserViewModel : ObservableObject, IDisposable
 {
     public const int DefaultPageSize = 100;
     internal const int MaximumCachedLocations = 12;
@@ -191,9 +191,9 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
 
     public bool CanGoBack => _backHistory.Count > 0;
     public bool CanGoUp => !string.IsNullOrWhiteSpace(CurrentPath);
-    public bool CanLoadMore => !IsLoading && !IsLoadingMore && _nextOffset < _total;
-    public bool CanChooseNonNameSort => !IsSharedRoot;
-    public bool CanChooseTypeFilter => !IsSharedRoot;
+    public bool CanLoadMore => !_isSearchActive && !IsLoading && !IsLoadingMore && _nextOffset < _total;
+    public bool CanChooseNonNameSort => _isSearchActive || !IsSharedRoot;
+    public bool CanChooseTypeFilter => _isSearchActive || !IsSharedRoot;
     public bool HasContent => ContentState == FileBrowserContentState.Content;
     public bool IsEmpty => ContentState == FileBrowserContentState.Empty;
     public bool IsFilteredEmpty => ContentState == FileBrowserContentState.FilteredEmpty;
@@ -238,6 +238,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
             if (_disposed || generation != Volatile.Read(ref _generation)) return false;
 
             _backHistory.Push(CaptureLocation());
+            ResetSearchState();
             _preferredOptionsByPath[CurrentPath] = _preferredOptions;
             CurrentPath = normalized;
             _preferredOptions = destinationOptions;
@@ -297,6 +298,20 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         ThrowIfDisposed();
         _pageCache.Remove(CurrentRequestKey);
         _pageCacheOrder.Remove(CurrentRequestKey);
+        await LoadFirstPageAsync();
+    }
+
+    public async Task RefreshAfterPermissionChangeAsync()
+    {
+        ThrowIfDisposed();
+        _pageCache.Clear();
+        _pageCacheOrder.Clear();
+        // 权限可能对子目录生效，历史目录与搜索结果不能继续使用旧授权。
+        _loadedItems.Clear();
+        Items.Clear();
+        SelectedItem = null;
+        FilterText = string.Empty;
+        ResetSearchState();
         await LoadFirstPageAsync();
     }
 
@@ -401,85 +416,121 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
     private bool _searchTruncated;
     private bool _hasSearchError;
     private int _searchResultCount;
+    private bool _isSearchActive;
+    private IReadOnlyList<FileBrowserEntry>? _searchItems;
+    private FileListOptions? _browseOptionsBeforeSearch;
+    private FileSearchIndexCoverage _searchCoverage;
+    private string _searchErrorMessageKey = "FileBrowserSearchErrorMessage";
 
     public bool IsSearching => _isSearching;
     public bool HasSearchTruncationNotice => _searchTruncated;
     public bool HasSearchError => _hasSearchError;
     public int SearchResultCount => _searchResultCount;
+    public bool HasIncompleteSearchIndex => _searchCoverage == FileSearchIndexCoverage.Incomplete;
+    public string SearchErrorMessageKey => _searchErrorMessageKey;
 
     public void SetFilter(string? value)
     {
         ThrowIfDisposed();
         FilterText = value?.Trim() ?? string.Empty;
+        ResetSearchState();
+        ApplyQuickFilter();
+    }
+
+    private void ResetSearchState()
+    {
+        if (_browseOptionsBeforeSearch is { } browseOptions)
+        {
+            _preferredOptions = browseOptions;
+            CurrentOptions = EffectiveOptions(CurrentPath, browseOptions);
+            _browseOptionsBeforeSearch = null;
+        }
         _isSearching = false;
+        _isSearchActive = false;
+        _searchItems = null;
+        _searchCoverage = FileSearchIndexCoverage.NotRequested;
         _searchTruncated = false;
         _hasSearchError = false;
         _searchResultCount = 0;
+        RaiseSearchProperties();
+    }
+
+    private void RaiseSearchProperties()
+    {
         RaisePropertyChanged(nameof(IsSearching));
         RaisePropertyChanged(nameof(HasSearchTruncationNotice));
         RaisePropertyChanged(nameof(HasSearchError));
         RaisePropertyChanged(nameof(SearchResultCount));
-        ApplyQuickFilter();
+        RaisePropertyChanged(nameof(HasIncompleteSearchIndex));
+        RaisePropertyChanged(nameof(SearchErrorMessageKey));
+        RaisePropertyChanged(nameof(CanLoadMore));
+        RaisePropertyChanged(nameof(CanChooseNonNameSort));
+        RaisePropertyChanged(nameof(CanChooseTypeFilter));
     }
 
-    public void BeginAsyncSearch()
+    public void BeginAsyncSearch(FileListTypeFilter? kind = null)
     {
         ThrowIfDisposed();
+        CancelCurrentRequest();
+        _browseOptionsBeforeSearch ??= _preferredOptions;
+        if (kind.HasValue)
+        {
+            _preferredOptions = _preferredOptions with { TypeFilter = kind.Value };
+            CurrentOptions = _preferredOptions;
+        }
+        _isSearchActive = true;
+        _searchItems = null;
+        _searchCoverage = FileSearchIndexCoverage.NotRequested;
         _isSearching = true;
         _searchTruncated = false;
         _hasSearchError = false;
         _searchResultCount = 0;
-        RaisePropertyChanged(nameof(IsSearching));
-        RaisePropertyChanged(nameof(HasSearchTruncationNotice));
-        RaisePropertyChanged(nameof(HasSearchError));
-        RaisePropertyChanged(nameof(SearchResultCount));
+        SelectedItem = null;
+        Items.Clear();
+        ContentState = FileBrowserContentState.Loading;
+        RaiseSearchProperties();
     }
 
     public void SetAsyncSearchResults(
         IReadOnlyList<FileItem> items,
         int totalCount,
-        bool isTruncated)
+        bool isTruncated,
+        FileSearchIndexCoverage indexCoverage = FileSearchIndexCoverage.NotRequested)
     {
         ThrowIfDisposed();
+        _browseOptionsBeforeSearch ??= _preferredOptions;
         _searchTruncated = isTruncated;
         _searchResultCount = totalCount;
         _isSearching = false;
         _hasSearchError = false;
-        RaisePropertyChanged(nameof(IsSearching));
-        RaisePropertyChanged(nameof(HasSearchTruncationNotice));
-        RaisePropertyChanged(nameof(HasSearchError));
-        RaisePropertyChanged(nameof(SearchResultCount));
-
-        Items.Clear();
-        if (items.Count == 0)
-        {
-            ContentState = FileBrowserContentState.FilteredEmpty;
-            return;
-        }
-        foreach (var item in items)
-        {
-            Items.Add(new FileBrowserEntry(item));
-        }
-        ContentState = FileBrowserContentState.Content;
+        _isSearchActive = true;
+        _searchCoverage = indexCoverage;
+        _searchItems = items.Select(item => new FileBrowserEntry(item) { IsSearchResult = true }).ToArray();
+        RaiseSearchProperties();
+        ApplySearchOptions();
     }
 
-    public void SetAsyncSearchError()
+    public void SetAsyncSearchError(string messageKey = "FileBrowserSearchErrorMessage")
     {
         ThrowIfDisposed();
         _isSearching = false;
         _searchTruncated = false;
         _hasSearchError = true;
+        _isSearchActive = true;
+        _searchItems = null;
+        _searchCoverage = FileSearchIndexCoverage.NotRequested;
+        _searchErrorMessageKey = messageKey;
         _searchResultCount = 0;
-        RaisePropertyChanged(nameof(IsSearching));
-        RaisePropertyChanged(nameof(HasSearchTruncationNotice));
-        RaisePropertyChanged(nameof(HasSearchError));
-        RaisePropertyChanged(nameof(SearchResultCount));
+        Items.Clear();
+        SelectedItem = null;
+        ContentState = FileBrowserContentState.Error;
+        RaiseSearchProperties();
     }
 
     public Task SetSortFieldAsync(FileListSortField value)
     {
         ThrowIfDisposed();
-        return IsSharedRoot
+        return !CanChooseNonNameSort
             ? Task.CompletedTask
             : ChangeOptionsAsync(_preferredOptions with { SortField = value });
     }
@@ -493,7 +544,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
     public Task SetTypeFilterAsync(FileListTypeFilter value)
     {
         ThrowIfDisposed();
-        return IsSharedRoot
+        return !CanChooseTypeFilter
             ? Task.CompletedTask
             : ChangeOptionsAsync(_preferredOptions with { TypeFilter = value });
     }
@@ -501,6 +552,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
     public async Task ClearFiltersAsync()
     {
         ThrowIfDisposed();
+        ResetSearchState();
         FilterText = string.Empty;
         if (!IsSharedRoot && _preferredOptions.TypeFilter != FileListTypeFilter.All)
         {
@@ -512,7 +564,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
 
     private async Task ChangeOptionsAsync(FileListOptions preferredOptions)
     {
-        var effectiveOptions = EffectiveOptions(CurrentPath, preferredOptions);
+        var effectiveOptions = _isSearchActive ? preferredOptions : EffectiveOptions(CurrentPath, preferredOptions);
         if (_preferredOptions == preferredOptions && CurrentOptions == effectiveOptions)
         {
             return;
@@ -520,8 +572,13 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
 
         var selectedPath = SelectedItem?.Path;
         _preferredOptions = preferredOptions;
-        _preferredOptionsByPath[CurrentPath] = preferredOptions;
+        if (!_isSearchActive) _preferredOptionsByPath[CurrentPath] = preferredOptions;
         CurrentOptions = effectiveOptions;
+        if (_searchItems is not null)
+        {
+            ApplySearchOptions();
+            return;
+        }
         CancelCurrentRequest();
         if (TryRestorePage(CurrentRequestKey, selectedPath))
         {
@@ -553,6 +610,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
                 ? savedOptions
                 : _preferredOptions);
         CancelCurrentRequest();
+        ResetSearchState();
         CurrentPath = normalized;
         _preferredOptions = destinationOptions;
         _preferredOptionsByPath[CurrentPath] = _preferredOptions;
@@ -579,6 +637,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
 
     private async Task LoadFirstPageAsync(string? selectedPath = null)
     {
+        ResetSearchState();
         var key = CurrentRequestKey;
         var request = BeginRequest();
         var loadsStorageSpace = string.IsNullOrWhiteSpace(key.Path);
@@ -652,31 +711,19 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
 
     private void AppendPage(FilePage page, int requestedOffset)
     {
-        if (page.Offset != requestedOffset)
-        {
-            throw new InvalidDataException(
-                $"File page offset {page.Offset} does not match requested offset {requestedOffset}.");
-        }
-        if (page.Items.Count == 0 && page.Total > requestedOffset)
-        {
-            throw new InvalidDataException(
-                "File page did not advance while more items were reported.");
-        }
+        if (page.Offset != requestedOffset || page.Total < requestedOffset ||
+            page.Items.Count > page.Total - requestedOffset ||
+            page.Items.Count == 0 && page.Total > requestedOffset ||
+            requestedOffset != 0 && page.Total != _total)
+            throw new InvalidDataException("file.list.invalid-pagination");
 
-        // 每页只构建一次索引，避免目录越大逐项查重越慢。
+        // 整页验证后再追加；坏页不能留下半页内容，也不能推进下一次偏移。
         var paths = _loadedItems.Select(item => item.Path).ToHashSet(StringComparer.Ordinal);
-        foreach (var item in page.Items)
-        {
-            if (!paths.Add(item.Path))
-            {
-                continue;
-            }
-
-            _loadedItems.Add(new FileBrowserEntry(item));
-        }
-
+        if (page.Items.Any(item => !paths.Add(item.Path)))
+            throw new InvalidDataException("file.list.duplicate-path");
+        _loadedItems.AddRange(page.Items.Select(item => new FileBrowserEntry(item)));
         _nextOffset = checked(requestedOffset + page.Items.Count);
-        _total = Math.Max(page.Total, _nextOffset);
+        _total = page.Total;
         RaisePropertyChanged(nameof(CanLoadMore));
     }
 
@@ -687,11 +734,10 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         {
             throw new InvalidDataException("The first file page violates the navigation contract.");
         }
-        var items = page.Items
-            .GroupBy(item => item.Path, StringComparer.Ordinal)
-            .Select(group => new FileBrowserEntry(group.First()))
-            .ToArray();
-        return new PageSnapshot(items, page.Items.Count, Math.Max(page.Total, page.Items.Count));
+        if (page.Items.Select(item => item.Path).Distinct(StringComparer.Ordinal).Count() != page.Items.Count)
+            throw new InvalidDataException("file.list.duplicate-path");
+        var items = page.Items.Select(item => new FileBrowserEntry(item)).ToArray();
+        return new PageSnapshot(items, page.Items.Count, page.Total);
     }
 
     private void ApplyQuickFilter(string? selectedPath = null)
@@ -734,6 +780,31 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
             : !string.IsNullOrWhiteSpace(FilterText) || CurrentOptions.TypeFilter != FileListTypeFilter.All
                 ? FileBrowserContentState.FilteredEmpty
                 : FileBrowserContentState.Empty;
+        RebuildGroups();
+    }
+
+    private void ApplySearchOptions()
+    {
+        if (_searchItems is null) return;
+        IEnumerable<FileBrowserEntry> filtered = _searchItems.Where(item => TypeFilter switch
+        {
+            FileListTypeFilter.Files => !item.IsDirectory,
+            FileListTypeFilter.Folders => item.IsDirectory,
+            _ => true,
+        });
+        var descending = SortDirection == FileListSortDirection.Descending;
+        filtered = SortField switch
+        {
+            FileListSortField.Size => descending ? filtered.OrderByDescending(item => item.Item.Size) : filtered.OrderBy(item => item.Item.Size),
+            FileListSortField.ModifiedTime => descending ? filtered.OrderByDescending(item => item.Item.ModifiedAt) : filtered.OrderBy(item => item.Item.ModifiedAt),
+            _ => descending ? filtered.OrderByDescending(item => item.Name, StringComparer.CurrentCultureIgnoreCase) : filtered.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
+        };
+        var selectedPath = SelectedItem?.Path;
+        Items.Clear();
+        foreach (var item in filtered) Items.Add(item);
+        SelectedItem = Items.FirstOrDefault(item => item.Path == selectedPath);
+        ContentState = Items.Count == 0 ? FileBrowserContentState.FilteredEmpty : FileBrowserContentState.Content;
+        RebuildGroups();
     }
 
     private FileBrowserLocation CaptureLocation() => new(
@@ -844,16 +915,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         return separator > 0 ? normalized[..separator] : string.Empty;
     }
 
-    private static string NormalizePath(string path)
-    {
-        var trimmed = path.Trim();
-        if (string.IsNullOrEmpty(trimmed) || trimmed == "/")
-        {
-            return string.Empty;
-        }
-
-        return "/" + trimmed.Trim('/');
-    }
+    private static string NormalizePath(string path) => path == "/" ? string.Empty : CanonicalLocationPath(path);
 
     internal static string CanonicalLocationPath(string path)
     {

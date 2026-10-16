@@ -26,6 +26,8 @@ public sealed partial class ChatPage
             _isConfiguringComposer = false;
         }
         UpdateAttachmentState();
+        VoiceMessageButton.Visibility = Visible(_attachmentComposer.IsAvailable);
+        VoiceMessageButton.IsEnabled = _attachmentComposer.CanSelect && !_composer.IsSending;
         ComposerPanel.Visibility = Visible(_composer.IsAvailable || _attachmentComposer.IsAvailable);
         if (!string.Equals(ComposerInput.Text, _composer.DraftText, StringComparison.Ordinal))
         {
@@ -36,6 +38,8 @@ public sealed partial class ChatPage
             ? _attachmentComposer.CanSend
             : _composer.CanSend;
         SendMessageProgress.IsActive = _composer.IsSending;
+        RefreshSendButton.Visibility = Visible(_composer.CanRefreshSend || _attachmentComposer.CanRefreshSend);
+        RefreshSendButton.IsEnabled = _composer.CanRefreshSend || _attachmentComposer.CanRefreshSend;
         SendMessageProgress.Visibility = Visible(_composer.IsSending);
         AttachmentProgress.IsActive = _attachmentComposer.IsSending;
         AttachmentProgress.Visibility = Visible(_attachmentComposer.IsSending);
@@ -75,6 +79,12 @@ public sealed partial class ChatPage
             ComposerInput.Focus(FocusState.Keyboard);
         }
     }
+
+    private async void RefreshSend_Click(object sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        var sent = _attachmentComposer.CanRefreshSend ? await _attachmentComposer.RefreshSendAsync() : await _composer.RefreshSendAsync();
+        if (sent) await _viewModel.RefreshMessagesAsync();
+    });
 
     private string ComposerStatusText()
     {

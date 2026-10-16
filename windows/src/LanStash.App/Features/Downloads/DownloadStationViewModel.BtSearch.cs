@@ -339,19 +339,13 @@ public sealed partial class DownloadStationViewModel
             : DownloadBtSearchContentState.Error);
     }
 
-    public async Task CreateSelectedBtSearchResultAsync()
+    public string? TakeSelectedBtSearchUri()
     {
         ThrowIfDisposed();
-        if (!CanCreateSelectedBtSearchResult || SelectedBtSearchResult is not { } selected)
-        {
-            return;
-        }
-
-        // 同一弹窗会话只提交一次；结果未知时必须先回到任务列表核对，不能自动重放。
+        if (!CanCreateSelectedBtSearchResult || SelectedBtSearchResult is not { } selected) return null;
         _btSearchCreationHandled = true;
         RaiseBtSearchProperties();
-        await CreateTaskAsync(selected.DownloadUri);
-        RaiseBtSearchProperties();
+        return selected.Result.DownloadUri;
     }
 
     private async Task LoadBtSearchCatalogAsync()

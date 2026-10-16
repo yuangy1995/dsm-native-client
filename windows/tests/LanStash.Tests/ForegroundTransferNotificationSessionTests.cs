@@ -11,7 +11,7 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void RegistersOnceWithHandlerBeforeShowingAndUnregistersOnce()
     {
         var backend = new Backend(); var queue = new DispatchQueue();
-        var session = new ForegroundTransferNotificationSession(backend, queue.Post, () => { });
+        var session = new ForegroundTransferNotificationSession(backend, queue.Post, _ => { });
         session.Show(Notice); session.Show(Notice);
         Assert.Equal(0, backend.RegisterCount);
         queue.Drain();
@@ -30,7 +30,7 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void ShowFailureDoesNotReregisterTheAlreadyRegisteredManager()
     {
         var backend = new Backend { FailShow = true }; var queue = new DispatchQueue();
-        using var session = new ForegroundTransferNotificationSession(backend, queue.Post, () => { });
+        using var session = new ForegroundTransferNotificationSession(backend, queue.Post, _ => { });
         session.Show(Notice); queue.Drain(); backend.FailShow = false;
         session.Show(Notice); queue.Drain();
         Assert.Equal(1, backend.RegisterCount); Assert.Single(backend.Shown);
@@ -41,7 +41,7 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void RegistrationFailureDetachesAndCanRetryOnTheNextNotice()
     {
         var backend = new Backend { FailRegister = true }; var queue = new DispatchQueue();
-        using var session = new ForegroundTransferNotificationSession(backend, queue.Post, () => { });
+        using var session = new ForegroundTransferNotificationSession(backend, queue.Post, _ => { });
         session.Show(Notice); queue.Drain();
         Assert.Equal(0, backend.Subscribers); Assert.Empty(backend.Shown);
         backend.FailRegister = false; session.Show(Notice); queue.Drain();
@@ -52,7 +52,7 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void UnsupportedNotificationsNeverRegister()
     {
         var backend = new Backend { IsSupported = false }; var queue = new DispatchQueue();
-        var session = new ForegroundTransferNotificationSession(backend, queue.Post, () => { });
+        var session = new ForegroundTransferNotificationSession(backend, queue.Post, _ => { });
         Assert.False(session.IsEnabled); session.Show(Notice); session.Dispose(); queue.Drain();
         Assert.Equal(0, backend.RegisterCount); Assert.Equal(0, backend.UnregisterCount); Assert.Empty(backend.Shown);
     }
@@ -61,7 +61,7 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void DisposalBeforeQueuedShowPreventsRegistration()
     {
         var backend = new Backend(); var queue = new DispatchQueue();
-        var session = new ForegroundTransferNotificationSession(backend, queue.Post, () => { });
+        var session = new ForegroundTransferNotificationSession(backend, queue.Post, _ => { });
         session.Show(Notice); session.Dispose(); queue.Drain();
         Assert.Equal(0, backend.RegisterCount); Assert.Empty(backend.Shown); Assert.Equal(0, backend.Subscribers);
     }
@@ -70,7 +70,7 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void DisposalDropsAQueuedClickAndCapturedLateCallback()
     {
         var backend = new Backend(); var queue = new DispatchQueue(); var opened = 0;
-        var session = new ForegroundTransferNotificationSession(backend, queue.Post, () => opened++);
+        var session = new ForegroundTransferNotificationSession(backend, queue.Post, _ => opened++);
         session.Show(Notice); queue.Drain();
         var late = backend.Capture(); var arguments = backend.Arguments;
         backend.Emit(arguments); session.Dispose(); queue.Drain(); late?.Invoke(arguments); queue.Drain();
@@ -86,7 +86,7 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void ClickRequiresExactRouteAndCurrentContext(string route, bool current, int expected)
     {
         var backend = new Backend(); var queue = new DispatchQueue(); var opened = 0;
-        using var session = new ForegroundTransferNotificationSession(backend, queue.Post, () => opened++);
+        using var session = new ForegroundTransferNotificationSession(backend, queue.Post, _ => opened++);
         session.Show(Notice); queue.Drain();
         backend.Emit(new Dictionary<string, string> { ["route"] = route, ["context"] = current ? backend.Shown.Single().Context : "stale" });
         queue.Drain(); Assert.Equal(expected, opened);
@@ -96,7 +96,7 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void MissingOrExtraArgumentsNeverOpenTheActivity()
     {
         var backend = new Backend(); var queue = new DispatchQueue(); var opened = 0;
-        using var session = new ForegroundTransferNotificationSession(backend, queue.Post, () => opened++);
+        using var session = new ForegroundTransferNotificationSession(backend, queue.Post, _ => opened++);
         session.Show(Notice); queue.Drain();
         backend.Emit(new Dictionary<string, string> { ["route"] = "activity" });
         var extra = new Dictionary<string, string>(backend.Arguments) { ["target"] = "untrusted" };
@@ -107,10 +107,10 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void NewConnectionRejectsOldSystemNotifications()
     {
         var backend = new Backend(); var queue = new DispatchQueue(); var opened = 0;
-        var previous = new ForegroundTransferNotificationSession(backend, queue.Post, () => throw new InvalidOperationException());
+        var previous = new ForegroundTransferNotificationSession(backend, queue.Post, _ => throw new InvalidOperationException());
         previous.Show(Notice); queue.Drain(); var oldArguments = backend.Arguments;
         previous.Dispose(); queue.Drain();
-        using var current = new ForegroundTransferNotificationSession(backend, queue.Post, () => opened++);
+        using var current = new ForegroundTransferNotificationSession(backend, queue.Post, _ => opened++);
         current.Show(Notice); queue.Drain();
         Assert.NotEqual(oldArguments["context"], backend.Arguments["context"]);
         backend.Emit(oldArguments); queue.Drain(); Assert.Equal(0, opened);
@@ -121,7 +121,7 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void DisposalDuringRegisterCleansUpWithoutShowing()
     {
         var backend = new Backend(); var queue = new DispatchQueue();
-        var session = new ForegroundTransferNotificationSession(backend, queue.Post, () => { });
+        var session = new ForegroundTransferNotificationSession(backend, queue.Post, _ => { });
         backend.OnRegister = session.Dispose;
         session.Show(Notice); queue.Drain();
         Assert.Equal(1, backend.UnregisterCount); Assert.Empty(backend.Shown); Assert.Equal(0, backend.Subscribers);
@@ -131,7 +131,7 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void RejectedDispatchDoesNotRunNativeCallsOnTheCallerThread()
     {
         var backend = new Backend();
-        var session = new ForegroundTransferNotificationSession(backend, _ => false, () => { });
+        var session = new ForegroundTransferNotificationSession(backend, _ => false, _ => { });
         session.Show(Notice); session.Dispose();
         Assert.Equal(0, backend.RegisterCount); Assert.Equal(0, backend.UnregisterCount); Assert.False(session.IsEnabled);
     }
@@ -140,10 +140,36 @@ public sealed class ForegroundTransferNotificationSessionTests
     public void UnregisterFailureStillLeavesTheSessionDisposed()
     {
         var backend = new Backend { FailUnregister = true }; var queue = new DispatchQueue();
-        var session = new ForegroundTransferNotificationSession(backend, queue.Post, () => { });
+        var session = new ForegroundTransferNotificationSession(backend, queue.Post, _ => { });
         session.Show(Notice); queue.Drain(); session.Dispose(); queue.Drain();
         session.Show(Notice); queue.Drain();
         Assert.False(session.IsEnabled); Assert.Equal(0, backend.Subscribers); Assert.Equal(1, backend.RegisterCount);
+    }
+
+    [Fact]
+    public void EachOpaqueNoticeTargetsItsOriginalActivityAndIsConsumedOnce()
+    {
+        var backend = new Backend(); var queue = new DispatchQueue(); var opened = new List<Guid?>();
+        using var session = new ForegroundTransferNotificationSession(backend, queue.Post, opened.Add);
+        var first = Guid.NewGuid(); var second = Guid.NewGuid();
+        session.Show(Notice with { ActivityId = first }); session.Show(Notice with { ActivityId = second }); queue.Drain();
+        var firstArguments = new Dictionary<string, string> { ["route"] = "activity", ["context"] = backend.Shown[0].Context };
+        Assert.NotEqual(backend.Shown[0].Context, backend.Shown[1].Context);
+        Assert.DoesNotContain(first.ToString(), firstArguments["context"], StringComparison.Ordinal);
+        backend.Emit(backend.Arguments); backend.Emit(firstArguments); backend.Emit(firstArguments); queue.Drain();
+        Assert.Equal(new Guid?[] { second, first }, opened);
+    }
+
+    [Fact]
+    public void ExpiredNoticeCannotOpenANewerActivity()
+    {
+        var backend = new Backend(); var queue = new DispatchQueue(); var opened = new List<Guid?>();
+        using var session = new ForegroundTransferNotificationSession(backend, queue.Post, opened.Add);
+        for (var index = 0; index < 513; index++) session.Show(Notice with { ActivityId = Guid.NewGuid() });
+        queue.Drain();
+        backend.Emit(new Dictionary<string, string> { ["route"] = "activity", ["context"] = backend.Shown[0].Context }); queue.Drain();
+        Assert.Empty(opened);
+        backend.Emit(backend.Arguments); queue.Drain(); Assert.Equal(backend.Shown[^1].Notice.ActivityId, Assert.Single(opened));
     }
 
     private sealed class DispatchQueue

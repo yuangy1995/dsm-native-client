@@ -10,6 +10,7 @@ public enum FileShareLinkExpiration
     SevenDays,
     ThirtyDays,
     NinetyDays,
+    Custom,
 }
 
 public enum FileShareLinkPresentationState
@@ -96,6 +97,14 @@ public sealed class FileShareLinkViewModel : ObservableObject, IDisposable
     public string TargetName => _target.Name;
     public string TargetPath => _target.Path;
     public bool IsDirectory => _target.IsDirectory;
+    public bool CanCollectFiles => _target.IsDirectory && _target.CanWrite &&
+        _target.Baseline == FileShareLinkTargetBaseline.FileBrowser;
+    public DateOnly? AvailableOn { get; set; }
+    public DateOnly? CustomExpiresOn { get; set; }
+    public bool CollectFiles { get; set; }
+    public string CollectionName { get; set; } = "";
+    public string CollectionMessage { get; set; } = "";
+    public bool CollectionUploadConfirmed { get; set; }
 
     public FileShareLinkPresentationState State
     {
@@ -157,7 +166,14 @@ public sealed class FileShareLinkViewModel : ObservableObject, IDisposable
         new StringInfo(Password).LengthInTextElements > 16;
 
     public bool CanCreate =>
-        State == FileShareLinkPresentationState.Form && !HasPasswordError;
+        State == FileShareLinkPresentationState.Form && !HasPasswordError &&
+        (Expiration != FileShareLinkExpiration.Custom || CustomExpiresOn is not null) &&
+        !HasDateError &&
+        (!CollectFiles || CanCollectFiles && CollectionUploadConfirmed && !string.IsNullOrWhiteSpace(CollectionName));
+
+    private DateOnly? SelectedExpirationDate => Expiration == FileShareLinkExpiration.Custom
+        ? CustomExpiresOn : ExpirationDate(Expiration);
+    public bool HasDateError => AvailableOn > SelectedExpirationDate;
 
     public bool CanCopy =>
         State == FileShareLinkPresentationState.Success && ConfirmedUrl is not null;
@@ -187,7 +203,11 @@ public sealed class FileShareLinkViewModel : ObservableObject, IDisposable
             var request = new CreateFileShareLinkRequest(
                 _target,
                 password,
-                ExpirationDate(Expiration));
+                SelectedExpirationDate)
+            {
+                AvailableOn = AvailableOn,
+                FileRequest = CollectFiles ? new(CollectionName, CollectionMessage, CollectionUploadConfirmed) : null,
+            };
             var outcome = await _repository.CreateFileShareLinkAsync(request, cancellation.Token);
             if (IsCurrent(generation))
             {
@@ -226,6 +246,31 @@ public sealed class FileShareLinkViewModel : ObservableObject, IDisposable
         }
         IsCancellationRequested = true;
         _cancellation.Cancel();
+    }
+
+    public async Task ReviewAsync()
+    {
+        ThrowIfDisposed();
+        if (State != FileShareLinkPresentationState.NeedsReview) return;
+        var generation = ++_generation;
+        using var cancellation = new CancellationTokenSource();
+        _cancellation = cancellation;
+        State = FileShareLinkPresentationState.Creating;
+        try
+        {
+            var outcome = await _repository.ReviewFileShareLinkCreationAsync(_target.Path, cancellation.Token);
+            if (!IsCurrent(generation)) return;
+            if (outcome.Result.Status == MutationResultStatus.ConfirmedSuccess && outcome.Link is { } link &&
+                link.Path == _target.Path && !string.IsNullOrWhiteSpace(link.Id) && link.Url.IsAbsoluteUri &&
+                link.Url.Scheme is "http" or "https" && string.IsNullOrEmpty(link.Url.UserInfo))
+            {
+                ConfirmedLink = link; ConfirmedUrl = link.Url;
+                State = FileShareLinkPresentationState.Success;
+            }
+            else State = FileShareLinkPresentationState.NeedsReview;
+        }
+        catch { if (IsCurrent(generation)) State = FileShareLinkPresentationState.NeedsReview; }
+        finally { if (ReferenceEquals(_cancellation, cancellation)) _cancellation = null; }
     }
 
     public void Retry()
@@ -303,6 +348,10 @@ public sealed class FileShareLinkViewModel : ObservableObject, IDisposable
         string.Equals(link.Path, request.Target.Path, StringComparison.Ordinal) &&
         link.HasPassword == !string.IsNullOrEmpty(request.Password) &&
         link.ExpiresOn == request.ExpiresOn &&
+        link.AvailableOn == request.AvailableOn &&
+        (request.FileRequest is not { } collection ? link.Advanced?.IsFileRequest != true :
+            link.Advanced is { IsFileRequest: true, AllowsUpload: true } advanced &&
+            advanced.RequestName == collection.Name && advanced.RequestMessage == collection.Message) &&
         link.Url.IsAbsoluteUri &&
         (string.Equals(link.Url.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(link.Url.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&

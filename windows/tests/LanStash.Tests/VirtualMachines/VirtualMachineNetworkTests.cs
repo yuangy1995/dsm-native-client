@@ -96,17 +96,18 @@ public sealed class VirtualMachineNetworkTests
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await recreated.MutateNetworkAsync(request)).Status);
         Assert.Equal(MutationErrorCategory.Conflict, (await recreated.MutateNetworkAsync(request with { RequestId = Guid.NewGuid() })).ErrorCategory);
         f.Name = request.NewName!;
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await recreated.ReviewNetworkAsync("net-a"))!.Status);
-        Assert.Empty(await recreated.GetNetworkRecoveriesAsync()); Assert.Single(f.Writes);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await recreated.ReviewNetworkAsync("net-a"))!.Status);
+        Assert.Single(await recreated.GetNetworkRecoveriesAsync()); Assert.Single(f.Writes);
     }
 
     [Theory]
     [InlineData(VirtualMachineNetworkAction.Rename)]
     [InlineData(VirtualMachineNetworkAction.Delete)]
-    public async Task AppliedWriteWithLostReplyIsConfirmedByReadback(VirtualMachineNetworkAction action)
+    public async Task AppliedWriteWithLostReplyCannotBeClaimedByReadback(VirtualMachineNetworkAction action)
     {
         using var f = new Fixture { LoseReply = true }; var request = await f.Request(action);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Repository.MutateNetworkAsync(request)).Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Repository.MutateNetworkAsync(request)).Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Recreate().ReviewNetworkAsync("net-a"))!.Status);
         Assert.Single(f.Writes);
     }
 
@@ -116,7 +117,8 @@ public sealed class VirtualMachineNetworkTests
         using var f = new Fixture(); var request = await f.Request(VirtualMachineNetworkAction.Delete);
         using var cancellation = new CancellationTokenSource(); f.AfterWrite = cancellation.Cancel;
         Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, (await f.Repository.MutateNetworkAsync(request, cancellation.Token)).Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await f.Recreate().ReviewNetworkAsync("net-a"))!.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await f.Recreate().ReviewNetworkAsync("net-a"))!.Status);
+        Assert.Single(await f.Repository.GetNetworkRecoveriesAsync());
         Assert.Single(f.Writes);
     }
 
@@ -172,6 +174,24 @@ public sealed class VirtualMachineNetworkTests
         Assert.Single(f.Writes);
     }
 
+    [Theory]
+    [InlineData("total")]
+    [InlineData("offset")]
+    [InlineData("total-string")]
+    [InlineData("offset-string")]
+    public async Task PartialOrMalformedInventoryBlocksWriteAndAcceptedDeletionNeedsCompleteReadback(string fault)
+    {
+        using var before = new Fixture(); var request = await before.Request(VirtualMachineNetworkAction.Delete);
+        before.Bad = fault;
+        Assert.False((await before.Repository.MutateNetworkAsync(request)).Submitted); Assert.Empty(before.Writes);
+        using var after = new Fixture(); var accepted = await after.Request(VirtualMachineNetworkAction.Delete);
+        after.AfterWrite = () => after.Bad = fault;
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await after.Repository.MutateNetworkAsync(accepted)).Status);
+        after.Bad = null;
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await after.Repository.ReviewNetworkAsync("net-a"))!.Status);
+        Assert.Single(after.Writes);
+    }
+
     private sealed class Fixture : IDisposable
     {
         public const string Api = "SYNO.Virtualization.Network";
@@ -214,7 +234,12 @@ public sealed class VirtualMachineNetworkTests
                         ["interfaces"] = owner.Bad == "interfaces" ? null : new JsonArray(new JsonObject { ["host_id"] = "host-a", ["interface_id"] = owner.Interface }),
                     });
                     if (owner.Bad == "duplicate") rows.Add(rows[0]!.DeepClone());
-                    return Reply(new { success = true, data = new JsonObject { ["is_freeze"] = owner.Bad == "freeze" ? JsonValue.Create("false") : JsonValue.Create(owner.Frozen), ["networks"] = rows } });
+                    var data = new JsonObject { ["is_freeze"] = owner.Bad == "freeze" ? JsonValue.Create("false") : JsonValue.Create(owner.Frozen), ["networks"] = rows };
+                    if (owner.Bad == "total") data["total"] = rows.Count + 1;
+                    if (owner.Bad == "offset") data["offset"] = 1;
+                    if (owner.Bad == "total-string") data["total"] = rows.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    if (owner.Bad == "offset-string") data["offset"] = "0";
+                    return Reply(new { success = true, data });
                 }
                 if (call["method"] == "get")
                 {

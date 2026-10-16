@@ -330,7 +330,7 @@ public sealed class DownloadStationBtSearchViewModelTests
     }
 
     [Fact]
-    public async Task SelectedResultCreatesExactlyOnceThroughExistingSafeChain()
+    public async Task SelectedResultOnlyPreparesOneExplicitCreateForm()
     {
         var repository = Searchable(Guid.NewGuid());
         repository.SearchResults.Enqueue(new[] { Result("Safe", "magnet:?xt=urn:btih:safe") });
@@ -345,8 +345,10 @@ public sealed class DownloadStationBtSearchViewModelTests
         await model.SearchBtAsync();
         model.SelectBtSearchResult(model.BtSearchResults.Single());
 
-        await model.CreateSelectedBtSearchResultAsync();
-        await model.CreateSelectedBtSearchResultAsync();
+        var uri = model.TakeSelectedBtSearchUri();
+        Assert.Null(model.TakeSelectedBtSearchUri());
+        Assert.Empty(repository.CreateRequests);
+        await model.CreateTaskAsync(uri);
 
         var request = Assert.Single(repository.CreateRequests);
         Assert.Equal("magnet:?xt=urn:btih:safe", request.Uri);
@@ -355,7 +357,7 @@ public sealed class DownloadStationBtSearchViewModelTests
     }
 
     [Fact]
-    public async Task SubmittedButUnknownCreationIsNeverReplayedInSameSession()
+    public async Task UnknownCreateStillRequiresExplicitFormAndCannotReuseSelection()
     {
         var repository = Searchable(Guid.NewGuid());
         repository.SearchResults.Enqueue(new[] { Result("Review", "magnet:?xt=urn:btih:review") });
@@ -369,8 +371,10 @@ public sealed class DownloadStationBtSearchViewModelTests
         await model.SearchBtAsync();
         model.SelectBtSearchResult(model.BtSearchResults.Single());
 
-        await model.CreateSelectedBtSearchResultAsync();
-        await model.CreateSelectedBtSearchResultAsync();
+        var uri = model.TakeSelectedBtSearchUri();
+        Assert.Null(model.TakeSelectedBtSearchUri());
+        Assert.Empty(repository.CreateRequests);
+        await model.CreateTaskAsync(uri);
 
         Assert.Single(repository.CreateRequests);
         Assert.Equal(DownloadTaskCreateNoticeKind.NeedsReview, model.CreateNoticeKind);

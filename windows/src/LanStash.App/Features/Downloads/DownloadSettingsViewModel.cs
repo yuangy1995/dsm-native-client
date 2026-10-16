@@ -29,11 +29,18 @@ internal sealed class DownloadSettingsViewModel(IDownloadStationRepository repos
     public IReadOnlyList<FileCopyMoveFolder> Folders { get; private set; } = [];
     private CancellationTokenSource? _folderCancellation;
     private long _folderGeneration;
-    public bool CanSave => !_disposed && ErrorKey is null && !IsLoading && !IsBusy && !HasPending && !IsBrowsingFolders && Snapshot is { } original && Draft is { } draft &&
-        draft != original.Value && new[] { draft.BtDownloadLimitKb, draft.BtUploadLimitKb, draft.HttpDownloadLimitKb,
-            draft.NzbDownloadLimitKb, draft.EmuleDownloadLimitKb, draft.EmuleUploadLimitKb }.All(value => value is >= 0 and <= 1_000_000) &&
+    public bool CanEditWebFtp => Snapshot?.Value is { HttpDownloadLimitKb: not null, FtpDownloadLimitKb: not null } value && value.HttpDownloadLimitKb == value.FtpDownloadLimitKb;
+    public bool CanSave => !_disposed && ErrorKey is null && !IsLoading && !IsBusy && !HasPending && !IsBrowsingFolders && Snapshot is { IsManager: true } original && Draft is { } draft &&
+        draft != original.Value && ValidLimits(original.Value, draft) &&
         (!original.CanEditDestination || (!string.IsNullOrWhiteSpace(draft.DefaultDestination) && !draft.DefaultDestination.Any(char.IsControl) &&
             !draft.DefaultDestination.Contains('\\') && draft.DefaultDestination.Split('/').All(part => part.Length > 0 && part is not "." and not "..")));
+
+    private static bool ValidLimits(DownloadStationSettingsSummary before, DownloadStationSettingsSummary after)
+    {
+        int?[] previous = [before.BtDownloadLimitKb, before.BtUploadLimitKb, before.HttpDownloadLimitKb, before.FtpDownloadLimitKb, before.NzbDownloadLimitKb, before.EmuleDownloadLimitKb, before.EmuleUploadLimitKb];
+        int?[] desired = [after.BtDownloadLimitKb, after.BtUploadLimitKb, after.HttpDownloadLimitKb, after.FtpDownloadLimitKb, after.NzbDownloadLimitKb, after.EmuleDownloadLimitKb, after.EmuleUploadLimitKb];
+        return previous.Zip(desired).All(pair => pair.First is null ? pair.Second is null : pair.Second is >= 0 and <= 1_000_000);
+    }
 
     public async Task LoadAsync()
     {
@@ -58,10 +65,18 @@ internal sealed class DownloadSettingsViewModel(IDownloadStationRepository repos
         if (_disposed || IsLoading || IsBusy || HasPending || Snapshot is not { } original) return;
         Draft = value with
         {
-            DefaultDestination = original.CanEditDestination ? value.DefaultDestination?.Trim().Trim('/') : original.Value.DefaultDestination,
-            FtpDownloadLimitKb = value.HttpDownloadLimitKb,
-            IsScheduleEnabled = original.ScheduleStatus == DownloadStationSectionStatus.Available ? value.IsScheduleEnabled : original.Value.IsScheduleEnabled,
-            IsEmuleScheduleEnabled = original.ScheduleStatus == DownloadStationSectionStatus.Available ? value.IsEmuleScheduleEnabled : original.Value.IsEmuleScheduleEnabled,
+            DefaultDestination = original.CanEditDestination ? value.DefaultDestination : original.Value.DefaultDestination,
+            IsEmuleEnabled = original.Value.IsEmuleEnabled is null ? null : value.IsEmuleEnabled,
+            IsAutoExtractEnabled = original.Value.IsAutoExtractEnabled is null ? null : value.IsAutoExtractEnabled,
+            BtDownloadLimitKb = original.Value.BtDownloadLimitKb is null ? null : value.BtDownloadLimitKb,
+            BtUploadLimitKb = original.Value.BtUploadLimitKb is null ? null : value.BtUploadLimitKb,
+            HttpDownloadLimitKb = CanEditWebFtp ? value.HttpDownloadLimitKb : original.Value.HttpDownloadLimitKb,
+            FtpDownloadLimitKb = CanEditWebFtp ? value.HttpDownloadLimitKb : original.Value.FtpDownloadLimitKb,
+            NzbDownloadLimitKb = original.Value.NzbDownloadLimitKb is null ? null : value.NzbDownloadLimitKb,
+            EmuleDownloadLimitKb = original.Value.EmuleDownloadLimitKb is null ? null : value.EmuleDownloadLimitKb,
+            EmuleUploadLimitKb = original.Value.EmuleUploadLimitKb is null ? null : value.EmuleUploadLimitKb,
+            IsScheduleEnabled = original.ScheduleStatus == DownloadStationSectionStatus.Available && original.Value.IsScheduleEnabled is not null ? value.IsScheduleEnabled : original.Value.IsScheduleEnabled,
+            IsEmuleScheduleEnabled = original.ScheduleStatus == DownloadStationSectionStatus.Available && original.Value.IsEmuleScheduleEnabled is not null ? value.IsEmuleScheduleEnabled : original.Value.IsEmuleScheduleEnabled,
         };
         FeedbackKey = null; Changed();
     }
@@ -91,7 +106,7 @@ internal sealed class DownloadSettingsViewModel(IDownloadStationRepository repos
     public void ChooseFolder(FileCopyMoveFolder folder)
     {
         if (IsLoadingFolders || HasPending || IsBusy || !Folders.Contains(folder) || !folder.CanWrite || Draft is null || folders?.IsReadOnlyPath(folder.Path) != false) return;
-        SetDraft(Draft with { DefaultDestination = folder.Path.Trim('/') }); CloseFolderBrowser();
+        SetDraft(Draft with { DefaultDestination = folder.Path.StartsWith('/') ? folder.Path[1..] : folder.Path }); CloseFolderBrowser();
     }
     public void CloseFolderBrowser()
     { _folderGeneration++; _folderCancellation?.Cancel(); IsBrowsingFolders = false; IsLoadingFolders = false; Folders = []; Changed(); }

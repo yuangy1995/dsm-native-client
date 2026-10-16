@@ -79,8 +79,9 @@ public sealed class FileLocationsPageSourceContractTests
         var successGate = transaction.IndexOf("if (!opened || _disposed || !_locationsViewModel.IsActive)", StringComparison.Ordinal);
 
         Assert.True(successGate >= 0);
+        Assert.True(transaction.IndexOf("if (!await ShowUnsavedDiscardDialogAsync()) return false;", StringComparison.Ordinal) < successGate);
         Assert.True(transaction.IndexOf("CloseShareLinkDialog();", StringComparison.Ordinal) > successGate);
-        Assert.True(transaction.IndexOf("await ClosePreviewAsync();", StringComparison.Ordinal) > successGate);
+        Assert.True(transaction.IndexOf("if (!await ClosePreviewAsync()) return false;", StringComparison.Ordinal) > successGate);
         Assert.True(transaction.IndexOf("FilterBox.Text = string.Empty;", StringComparison.Ordinal) > successGate);
         Assert.Contains("catch (ObjectDisposedException) when (_disposed || !_locationsViewModel.IsActive)", transaction);
         Assert.Contains("catch (InvalidOperationException) when (_disposed || !_locationsViewModel.IsActive)", transaction);
@@ -152,7 +153,7 @@ public sealed class FileLocationsPageSourceContractTests
     }
 
     [Fact]
-    public void ShellUnloadAlwaysReleasesEveryModuleAfterExpectedFilesLifecycleRaces()
+    public void ShellUnloadReleasesPagesAndRetainsWorkspaceTasksAfterExpectedLifecycleRaces()
     {
         var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
         var unload = Slice(shell, "private async void ShellPage_Unloaded", "private void ProfileMenu_Opening");
@@ -162,12 +163,19 @@ public sealed class FileLocationsPageSourceContractTests
         Assert.Contains("catch (OperationCanceledException)", unload);
         Assert.Contains("catch (ObjectDisposedException)", unload);
         Assert.DoesNotContain("catch (Exception", unload);
+        Assert.Contains("DetachChatPage();", unload);
+        Assert.DoesNotContain("_chat?.Dispose()", unload);
+        Assert.Contains("if (!_transfersOwnedByWorkspace)", unload);
+        var ownership = Read("windows/src/LanStash.App/ViewModels/AppViewModel.Chat.cs");
+        Assert.Contains("if (workspace.ChatPage is { } page) await page.DisposeAsync();", ownership);
+        Assert.Contains("await transfers; workspace.Transfers?.Dispose();", ownership);
+        Assert.Contains("await workspace.CloudRecovery;", ownership);
         foreach (var cleanup in new[]
         {
-            "_photos?.Dispose();", "_chat?.Dispose();", "_downloads?.Dispose();",
+            "_photos?.Dispose();", "_chat = null;", "_downloads?.Dispose();",
             "_containers?.Dispose();", "_virtualMachines?.Dispose();",
             "await _activity.DisposeAsync();",
-            "_transferPicker?.Dispose();", "_transfers.Dispose();",
+            "await picker.DisposeAsync();", "_transfers.Dispose();",
             "_settings.Changed -= Settings_Changed;"
         })
         {

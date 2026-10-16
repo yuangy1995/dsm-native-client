@@ -1,5 +1,8 @@
 using LanStash.App.Features.Downloads;
 using LanStash.App.Localization;
+using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.CopyMove;
+using LanStash.Domain;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -12,7 +15,8 @@ public sealed partial class DownloadStationPage
     private async void Batch_Click(object sender, RoutedEventArgs e)
     {
         if (_disposed || _batchDialog is not null || XamlRoot is null) return;
-        _taskBatch ??= new(_repository);
+        _taskBatch ??= new(_repository, _repository is IDsmRepository files && _repository is IFileLocationsRepository locations
+            ? new RepositoryFileCopyMoveFolderSource(_repository.ProfileId, new RepositoryFileBrowserDataSource(files), locations) : null);
         var model = _taskBatch; var load = model.LoadAsync();
         using var content = new DownloadTaskBatchDialogContent(model);
         var dialog = _batchDialog = new ContentDialog { XamlRoot = XamlRoot, RequestedTheme = ActualTheme, Content = content,

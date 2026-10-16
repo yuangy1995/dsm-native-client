@@ -4,6 +4,13 @@ namespace LanStash.App.Features.Transfers;
 
 internal sealed record ForegroundSelectionDownloadFinished(string ProfileId, Guid ActivityId, int SelectedCount, FileDownloadBatchAttemptStatus Status);
 
+internal enum ForegroundTransferItemState { Waiting, Running, Completed, Failed, Cancelled, ResultNeedsReview }
+internal sealed record ForegroundTransferItemResult(string RelativePath, bool IsDirectory, ForegroundTransferItemState State, Guid? ActivityId = null);
+internal sealed class ForegroundDownloadException(MutationErrorCategory category) : IOException("download.preflight-failed")
+{
+    public MutationErrorCategory Category { get; } = category;
+}
+
 internal enum ForegroundTransferDirection
 {
     Download,
@@ -47,7 +54,17 @@ internal sealed record ForegroundTransferActivity(
     ForegroundTransferState State,
     string? FailureMessage,
     FileBackgroundTaskKind? FileTaskKind = null,
-    double? ProgressFraction = null);
+    double? ProgressFraction = null)
+{
+    public bool CanPause { get; init; }
+    public double BytesPerSecond { get; init; }
+    public IReadOnlyList<ForegroundTransferItemResult> ItemResults { get; init; } = [];
+    public MutationErrorCategory? FailureCategory { get; init; }
+    public string? OriginalFolder => Source == ForegroundTransferSource.App && RemotePath.StartsWith('/') &&
+        !RemotePath.StartsWith("//", StringComparison.Ordinal) && !RemotePath.Contains('\\') &&
+        !RemotePath.Any(char.IsControl) && !RemotePath.Split('/').Any(p => p is "." or "..")
+        ? Direction == ForegroundTransferDirection.Upload ? RemotePath : RemotePath[..Math.Max(0, RemotePath.LastIndexOf('/'))] : null;
+}
 
 internal sealed record ForegroundDownloadRequest(
     string ProfileId,

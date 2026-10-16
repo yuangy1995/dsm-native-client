@@ -108,7 +108,7 @@ public sealed class DownloadSettingsViewModelTests
         public Queue<DownloadSettingsSaveOutcome> Results { get; } = [];
         public List<DownloadSettingsSaveRequest> Requests { get; } = [];
         public Task<DownloadSettingsSnapshot> LoadSettingsAsync(CancellationToken cancellationToken = default) => LoadOverride?.Invoke() ??
-            Task.FromResult(new DownloadSettingsSnapshot(ForeignLoad ? Guid.NewGuid() : ProfileId, ScheduleStatus == DownloadStationSectionStatus.Available ? Value() : Value() with { IsScheduleEnabled = null, IsEmuleScheduleEnabled = null }, true, ScheduleStatus));
+            Task.FromResult(new DownloadSettingsSnapshot(ForeignLoad ? Guid.NewGuid() : ProfileId, ScheduleStatus == DownloadStationSectionStatus.Available ? Value() : Value() with { IsScheduleEnabled = null, IsEmuleScheduleEnabled = null }, true, ScheduleStatus) { IsManager = true });
         public Task<DownloadSettingsSaveOutcome> SaveSettingsAsync(DownloadSettingsSaveRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request); return Task.FromResult(Results.TryDequeue(out var result) ? result :

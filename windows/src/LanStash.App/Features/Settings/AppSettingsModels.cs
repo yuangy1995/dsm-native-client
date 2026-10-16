@@ -11,7 +11,8 @@ public enum AppThemePreference
 
 public sealed record AppSettingsPreferences(
     AppThemePreference Theme,
-    IReadOnlySet<AppModule> HiddenOptionalModules)
+    IReadOnlySet<AppModule> HiddenOptionalModules,
+    bool ChatNotificationsEnabled = false)
 {
     public static AppSettingsPreferences Default { get; } = new(
         AppThemePreference.System,

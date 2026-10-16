@@ -259,6 +259,11 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.False(analysis.IsPartial);
         Assert.Equal(4, analysis.OwnerSummary?.KnownOwnerFileCount);
         Assert.Equal(2, analysis.OwnerSummary?.DistinctOwnerCount);
+        Assert.Equal(new[] { "owner-a", "owner-b" }, analysis.Owners.Select(item => item.Name));
+        Assert.Equal(new long[] { 8192, 3072 }, analysis.Owners.Select(item => item.SizeBytes));
+        Assert.Equal("Projects", Assert.Single(analysis.Shares).Name);
+        Assert.Equal(11264, analysis.Shares[0].SizeBytes);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(700), analysis.LeastRecentlyAccessedFiles[0].AccessedAt);
         Assert.Equal(3, analysis.AccessTimeSummary?.KnownAccessTimeFileCount);
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(700), analysis.AccessTimeSummary?.OldestAccessedAt);
         Assert.Contains(analysis.Directories ?? [], item =>
@@ -555,6 +560,36 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.Equal(50, snapshot.StorageHealth.Items.Count);
         Assert.Equal("drive-50", snapshot.StorageHealth.Items[^1].Id);
         Assert.DoesNotContain("private-", snapshot.StorageHealth.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnmeasuredFilesMakeAnalysisIncomplete(bool deep)
+    {
+        var api = new FakeApiClient();
+        api.ResponseSequences["SYNO.FileStation.List"] = new Queue<JsonObject>([
+            Json("""{"offset":0,"total":1,"shares":[{"name":"Projects","path":"/projects","isdir":true}]}"""),
+            Json("""{"offset":0,"total":3,"files":[{"name":"song.flac","path":"/projects/song.flac","isdir":false,"size":1024},{"name":"README","path":"/projects/README","isdir":false,"size":50},{"name":"unknown.txt","path":"/projects/unknown.txt","isdir":false}]}""")]);
+        var repo = Repository(api); var result = deep ? await repo.LoadDeepStorageAnalysisAsync() : await repo.LoadStorageAnalysisAsync();
+        var analysis = Assert.Single(result.Items); Assert.True(result.IsTruncated); Assert.True(analysis.IsPartial);
+        Assert.Equal(2, analysis.ScannedFileCount); Assert.Equal(1074, analysis.SampledBytes);
+        Assert.Contains(analysis.Categories, item => item.Category == NasStorageAnalysisCategory.Audio && item.FileCount == 1);
+        Assert.Contains(analysis.Categories, item => item.Category == NasStorageAnalysisCategory.NoExtension && item.FileCount == 1);
+        Assert.Equal(1074, Assert.Single(analysis.Shares).SizeBytes);
+        if (deep) { Assert.Null(Assert.Single(analysis.Owners).Name); Assert.Equal(2, analysis.Owners[0].FileCount); }
+    }
+
+    [Fact]
+    public async Task DeepAnalysisRejectsOutsideChildrenAndDuplicateRowsWithoutFollowingThem()
+    {
+        var api = new FakeApiClient();
+        api.ResponseSequences["SYNO.FileStation.List"] = new Queue<JsonObject>([
+            Json("""{"offset":0,"total":1,"shares":[{"name":"Projects","path":"/projects","isdir":true}]}"""),
+            Json("""{"offset":0,"total":4,"files":[{"name":"other","path":"/outside","isdir":true},{"name":"escape","path":"/projects/../other","isdir":true},{"name":"file.txt","path":"/projects/file.txt","isdir":false,"size":1024},{"name":"file.txt","path":"/projects/file.txt","isdir":false,"size":1024}]}""")]);
+        var result = await Repository(api).LoadDeepStorageAnalysisAsync();
+        var analysis = Assert.Single(result.Items); Assert.True(analysis.IsPartial); Assert.Equal(1, analysis.ScannedFileCount);
+        Assert.Equal(2, api.Calls.Count); Assert.DoesNotContain(api.Calls, call => call.Parameters.GetValueOrDefault("folder_path") == "/outside");
     }
 
     private static DsmRepository Repository(

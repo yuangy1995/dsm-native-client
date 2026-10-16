@@ -215,7 +215,7 @@ public sealed class ForegroundTransferCoordinatorTests
         Assert.Equal("download failed", error.Message);
         var activity = Assert.Single(coordinator.GetActivities("profile-a"));
         Assert.Equal(ForegroundTransferState.Failed, activity.State);
-        Assert.Equal("download failed", activity.FailureMessage);
+        Assert.Equal(nameof(InvalidOperationException), activity.FailureMessage);
     }
 
     [Fact]

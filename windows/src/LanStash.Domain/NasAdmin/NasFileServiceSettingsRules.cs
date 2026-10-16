@@ -43,6 +43,40 @@ public static class NasFileServiceSettingsRules
             SftpEnabled = desired.SftpEnabled, SftpPort = desired.SftpPort,
             SsdpEnabled = desired.SsdpEnabled, BonjourEnabled = desired.BonjourEnabled,
             TimeMachineEnabled = desired.TimeMachineEnabled,
-        } == desired;
+        } == desired && SaveOrder(baseline, desired) is not null;
     }
+
+    // 逐组写入不是事务：每个中间配置也须满足 SMB/备份和在用端口依赖。
+    public static IReadOnlyList<NasFileServiceFields>? SaveOrder(NasFileServiceSettings baseline, NasFileServiceSettings desired)
+    {
+        NasFileServiceFields[] groups = [NasFileServiceFields.Smb, NasFileServiceFields.Nfs,
+            NasFileServiceFields.Ftp | NasFileServiceFields.Ftps | NasFileServiceFields.FtpPort,
+            NasFileServiceFields.Sftp | NasFileServiceFields.SftpPort,
+            NasFileServiceFields.Ssdp | NasFileServiceFields.Bonjour, NasFileServiceFields.TimeMachine];
+        var remaining = groups.Where(group => ApplyGroup(baseline, desired, group) != baseline).ToList();
+        var order = new List<NasFileServiceFields>(); var current = baseline;
+        while (remaining.Count > 0)
+        {
+            var index = remaining.FindIndex(group => SafeDependencies(ApplyGroup(current, desired, group)));
+            if (index < 0) return null;
+            var next = remaining[index]; remaining.RemoveAt(index); order.Add(next); current = ApplyGroup(current, desired, next);
+        }
+        return order;
+    }
+    private static bool SafeDependencies(NasFileServiceSettings value)
+    {
+        var known = value.AvailableFields;
+        if (known.HasFlag(NasFileServiceFields.Smb | NasFileServiceFields.TimeMachine) && !value.SmbEnabled && value.TimeMachineEnabled) return false;
+        var ftp = known.HasFlag(NasFileServiceFields.Ftp) && value.FtpEnabled || known.HasFlag(NasFileServiceFields.Ftps) && value.FtpsEnabled;
+        return !(ftp && value.SftpEnabled && known.HasFlag(NasFileServiceFields.Sftp | NasFileServiceFields.FtpPort | NasFileServiceFields.SftpPort) && value.FtpPort == value.SftpPort);
+    }
+    private static NasFileServiceSettings ApplyGroup(NasFileServiceSettings current, NasFileServiceSettings desired, NasFileServiceFields group) => group switch
+    {
+        NasFileServiceFields.Smb => current with { SmbEnabled = desired.SmbEnabled },
+        NasFileServiceFields.Nfs => current with { NfsEnabled = desired.NfsEnabled },
+        NasFileServiceFields.Ftp | NasFileServiceFields.Ftps | NasFileServiceFields.FtpPort => current with { FtpEnabled = desired.FtpEnabled, FtpsEnabled = desired.FtpsEnabled, FtpPort = desired.FtpPort },
+        NasFileServiceFields.Sftp | NasFileServiceFields.SftpPort => current with { SftpEnabled = desired.SftpEnabled, SftpPort = desired.SftpPort },
+        NasFileServiceFields.Ssdp | NasFileServiceFields.Bonjour => current with { SsdpEnabled = desired.SsdpEnabled, BonjourEnabled = desired.BonjourEnabled },
+        _ => current with { TimeMachineEnabled = desired.TimeMachineEnabled },
+    };
 }

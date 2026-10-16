@@ -6,16 +6,24 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    public bool CanEditSettings => HasAuthenticatedVirtualMachineSession && HasPublicVirtualMachineVersion(PublicGuestApi);
+    private bool HasInternalSettingsContract => HasInternalVirtualMachineVersion(InternalSettingsGuestApi, 1, 1) && HasInternalVirtualMachineVersion(InternalSettingsGuestApi, 2, 2);
+    public bool CanEditSettings => HasAuthenticatedVirtualMachineSession &&
+        (HasPublicVirtualMachineVersion(PublicGuestApi) || _virtualMachineInternalWritesEnabled && HasInternalSettingsContract);
     public async Task<VirtualMachineSettings> LoadSettingsAsync(string id, CancellationToken cancellationToken = default)
     {
         EnsureVirtualMachineManagerProfile();
         if (!VirtualMachinePowerRules.ValidId(id)) throw new ArgumentException("vm.settings.id.invalid", nameof(id));
+        if (!HasPublicVirtualMachineVersion(PublicGuestApi)) return await ReadInternalVirtualMachineSettingsAsync(id, cancellationToken).ConfigureAwait(false);
+        return await AddVirtualMachinePriorityAsync(await ReadPublicVirtualMachineSettingsAsync(id, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+    }
+    private async Task<VirtualMachineSettings> ReadPublicVirtualMachineSettingsAsync(string id, CancellationToken cancellationToken)
+    {
+        EnsureVirtualMachineManagerProfile();
         if (!HasPublicVirtualMachineVersion(PublicGuestApi)) throw UnavailableVirtualMachineManagerError();
         var data = await SecurityCallAsync(_capabilities[PublicGuestApi] with { MinVersion = 1, MaxVersion = 1 }, "get",
             new Dictionary<string, object> { ["guest_id"] = id }, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        return await AddVirtualMachinePriorityAsync(ParseVirtualMachineSettings(data, id), cancellationToken).ConfigureAwait(false);
+        return ParseVirtualMachineSettings(data, id);
     }
     private static VirtualMachineSettings ParseVirtualMachineSettings(JsonObject data, string id)
     {
@@ -37,8 +45,9 @@ public sealed partial class DsmRepository
         if (request is null || request.ProfileId != _profile.Id || request.ProfileId != _session.ProfileId || string.IsNullOrWhiteSpace(_session.Sid) ||
             !request.RiskConfirmed || request.RequestId == Guid.Empty || VirtualMachineSettingsRules.Validate(request.Baseline, request.Desired) != VirtualMachineSettingsValidation.None ||
             request.Baseline.Configuration == request.Desired) return ServicePreflightFailure(operation, MutationErrorCategory.Validation);
-        if (!HasPublicVirtualMachineVersion(PublicGuestApi)) return UnsupportedResult(operation);
-        var useInternal = request.Desired.CpuWeight != request.Baseline.Configuration.CpuWeight;
+        var useInternal = request.Baseline.Source == VirtualMachineApiSource.Internal || request.Desired.CpuWeight != request.Baseline.Configuration.CpuWeight;
+        if (request.Baseline.Source == VirtualMachineApiSource.Internal && !_virtualMachineInternalWritesEnabled ||
+            !useInternal && !HasPublicVirtualMachineVersion(PublicGuestApi)) return UnsupportedResult(operation);
         if (useInternal && !CanEditPriority) return UnsupportedResult(operation);
         var state = VmMutations; var scope = ServiceScope(); var signature = ServiceHash(JsonSerializer.Serialize(new { request.Baseline, request.Desired }));
         try { if (!await state.Gate.WaitAsync(0, token).ConfigureAwait(false)) return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true); }
@@ -56,13 +65,16 @@ public sealed partial class DsmRepository
                 return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
             try
             {
-                var current = await LoadSettingsAsync(request.Baseline.Id, token).ConfigureAwait(false);
+                var current = useInternal ? await ReadInternalVirtualMachineSettingsAsync(request.Baseline.Id, token).ConfigureAwait(false) :
+                    await ReadPublicVirtualMachineSettingsAsync(request.Baseline.Id, token).ConfigureAwait(false);
+                current = current with { Source = request.Baseline.Source };
                 if (!useInternal) current = current with { Configuration = current.Configuration with { CpuWeight = request.Baseline.Configuration.CpuWeight } };
                 if (current != request.Baseline) return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
-                if (current.Configuration.Name != request.Desired.Name)
+                if (useInternal || current.Configuration.Name != request.Desired.Name)
                 {
-                    var data = await CallPublicVirtualMachineAsync(PublicGuestApi, "list", null, token).ConfigureAwait(false);
-                    var machines = ParseMachines(data);
+                    var machines = await ReadVirtualMachineInventoryAsync(useInternal ? VirtualMachineApiSource.Internal : VirtualMachineApiSource.Public, token).ConfigureAwait(false);
+                    if (useInternal && !machines.Any(machine => machine.Id == current.Id && machine.Name == current.Configuration.Name && machine.State == current.State))
+                        return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
                     if (machines.Any(machine => machine.Id != current.Id && string.Equals(machine.Name, request.Desired.Name, StringComparison.OrdinalIgnoreCase)))
                         return ServicePreflightFailure(operation, MutationErrorCategory.Conflict, true);
                 }
@@ -70,17 +82,21 @@ public sealed partial class DsmRepository
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { return CancelledBeforeSubmissionResult(operation); }
             catch (DsmException error) { return ServicePreflightFailure(operation, VirtualMachinePowerError(error)); }
+            catch (CertificateTrustChallengeException) { return ServicePreflightFailure(operation, MutationErrorCategory.Authentication); }
             catch (Exception) { return ServicePreflightFailure(operation, MutationErrorCategory.Network); }
             var changes = ChangedVirtualMachineFields(request.Baseline.Configuration, request.Desired);
-            var pending = new VirtualMachineSettingsOperation(scope, signature, request.Baseline.Id, request.Desired.Name, changes, useInternal);
+            var pending = new VirtualMachineSettingsOperation(scope, signature, request.Baseline.Id, request.Desired.Name, request.Baseline.Configuration.Name, changes, useInternal);
             state.SettingsOperations.Add(request.RequestId, pending); state.SettingsPending.Add((scope, pending.Id), pending);
             var parameters = useInternal ? InternalVirtualMachineChanges(changes, request.RequestId) : new Dictionary<string, object>(changes);
             parameters["guest_id"] = pending.Id;
             try
             {
                 await SecurityCallAsync(_capabilities[useInternal ? InternalSettingsGuestApi : PublicGuestApi] with { MinVersion = 1, MaxVersion = 1 }, "set", parameters, token).ConfigureAwait(false);
+                pending.Accepted = true;
             }
             catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error)) { pending.Rejection = VirtualMachinePowerError(error); }
+            catch (DsmException error) when (IsMutationAuthenticationFailure(error)) { return VirtualMachineSettingsUnverified(pending, token, MutationErrorCategory.Authentication); }
+            catch (CertificateTrustChallengeException) { return VirtualMachineSettingsUnverified(pending, token, MutationErrorCategory.Authentication); }
             catch (Exception) { /* 请求可能已保存，随后只读核查。 */ }
             return await ReviewVirtualMachineSettingsAsync(pending, token).ConfigureAwait(false);
         }
@@ -111,11 +127,13 @@ public sealed partial class DsmRepository
         if (!token.IsCancellationRequested)
         try
         {
-            var readback = pending.UseInternal ? await ReadInternalVirtualMachineSettingsAsync(pending.Id, token).ConfigureAwait(false) : await LoadSettingsAsync(pending.Id, token).ConfigureAwait(false);
+            var readback = pending.UseInternal ? await ReadInternalVirtualMachineSettingsAsync(pending.Id, token).ConfigureAwait(false) : await ReadPublicVirtualMachineSettingsAsync(pending.Id, token).ConfigureAwait(false);
             var actual = VirtualMachineFields(readback.Configuration);
-            succeeded = pending.Changes.Count(pair => actual.TryGetValue(pair.Key, out var value) && Equals(value, pair.Value));
+            if (readback.Configuration.Name != pending.OriginalName && readback.Configuration.Name != pending.Name) category = MutationErrorCategory.Conflict;
+            else if (pending.Accepted) succeeded = pending.Changes.Count(pair => actual.TryGetValue(pair.Key, out var value) && Equals(value, pair.Value));
         }
         catch (DsmException error) { category = VirtualMachinePowerError(error); }
+        catch (CertificateTrustChallengeException) { category = MutationErrorCategory.Authentication; }
         catch (Exception) { category = MutationErrorCategory.Network; }
         var unknown = pending.Changes.Count - succeeded;
         if (unknown == 0) return Finish(new(1, MutationResultStatus.ConfirmedSuccess, "saveVirtualMachineSettings", true, false, new(succeeded, 0, 0)));
@@ -124,7 +142,11 @@ public sealed partial class DsmRepository
     }
     private static Dictionary<string, object> VirtualMachineFields(VirtualMachineConfiguration value)
     {
-        var fields = new Dictionary<string, object> { ["new_guest_name"] = value.Name, ["description"] = value.Description, ["vcpu_num"] = value.CpuCount, ["vram_size"] = value.MemoryMiB, ["autorun"] = (int)value.AutoStart };
+        var fields = new Dictionary<string, object> { ["new_guest_name"] = value.Name };
+        if (value.Description is { } description) fields["description"] = description;
+        if (value.CpuCount is { } cpu) fields["vcpu_num"] = cpu;
+        if (value.MemoryMiB is { } memory) fields["vram_size"] = memory;
+        if (value.AutoStart is { } startup) fields["autorun"] = (int)startup;
         if (value.CpuWeight is { } weight) fields["cpu_weight"] = weight;
         return fields;
     }
@@ -133,12 +155,18 @@ public sealed partial class DsmRepository
         var previous = VirtualMachineFields(baseline);
         return VirtualMachineFields(desired).Where(pair => !previous.TryGetValue(pair.Key, out var value) || !Equals(value, pair.Value)).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
     }
-    private sealed class VirtualMachineSettingsOperation(string scope, string signature, string id, string name, Dictionary<string, object> changes, bool useInternal)
+    private static MutationResult VirtualMachineSettingsUnverified(VirtualMachineSettingsOperation pending, CancellationToken token, MutationErrorCategory category) =>
+        new(1, token.IsCancellationRequested ? MutationResultStatus.CancellationRequestedAfterSubmission : MutationResultStatus.SubmittedButUnverified,
+            "saveVirtualMachineSettings", true, true, new(0, 0, pending.Changes.Count), category, diagnosticTag: "virtual-machine.settings.unverified");
+
+    private sealed class VirtualMachineSettingsOperation(string scope, string signature, string id, string name, string originalName, Dictionary<string, object> changes, bool useInternal)
     {
         public string Scope { get; } = scope; public string Signature { get; } = signature;
         public string Id { get; } = id; public string Name { get; } = name;
+        public string OriginalName { get; } = originalName;
         public Dictionary<string, object> Changes { get; } = changes;
         public bool UseInternal { get; } = useInternal;
+        public bool Accepted { get; set; }
         public MutationErrorCategory? Rejection { get; set; }
         public MutationResult? Final { get; set; }
     }

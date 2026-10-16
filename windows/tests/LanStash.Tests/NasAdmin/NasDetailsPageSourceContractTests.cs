@@ -5,7 +5,7 @@ namespace LanStash.Tests.NasAdmin;
 public sealed class NasDetailsPageSourceContractTests
 {
     [Fact]
-    public void PageHasDedicatedFiveStateReadOnlyWinUiSurface()
+    public void PageHasDedicatedFiveStateWinUiSurfaceAndExplicitManagementEntries()
     {
         var xaml = Read("windows/src/LanStash.App/Views/NasDetailsPage.xaml");
         var source = Read("windows/src/LanStash.App/Views/NasDetailsPage.xaml.cs");
@@ -15,13 +15,15 @@ public sealed class NasDetailsPageSourceContractTests
         Assert.Contains("x:Name=\"ErrorState\"", xaml);
         Assert.Contains("x:Name=\"UnavailableState\"", xaml);
         Assert.Contains("x:Name=\"ContentState\"", xaml);
-        Assert.Contains("NasDetailsReadOnly", xaml);
+        Assert.Contains("x:Name=\"PerformanceButton\"", xaml);
+        Assert.Contains("x:Name=\"ServiceSettingsButton\"", xaml);
+        Assert.DoesNotContain("x:Uid=\"NasDetailsReadOnly\"", xaml);
         Assert.Contains("Key=\"F5\"", xaml);
         Assert.Contains("x:Name=\"RunStorageAnalysisButton\"", xaml);
         Assert.Contains("x:Name=\"RunDeepStorageAnalysisButton\"", xaml);
         Assert.Contains("x:Name=\"CancelStorageAnalysisButton\"", xaml);
         Assert.Contains("x:Name=\"HeaderActions\"", xaml);
-        Assert.Contains("ItemsWrapGrid Orientation=\"Horizontal\"", xaml);
+        Assert.Contains("<Grid x:Name=\"HeaderActions\"", xaml);
         Assert.Contains("AdaptiveTrigger MinWindowWidth=\"1060\"", xaml);
         Assert.Contains("RunStorageAnalysis_Click", source);
         Assert.Contains("RunDeepStorageAnalysis_Click", source);
@@ -140,7 +142,7 @@ public sealed class NasDetailsPageSourceContractTests
             "NasDetailsTitle",
             "NasDetailsDescription",
             "NasDetailsRefresh",
-            "NasDetailsReadOnly",
+            "NasPerformanceOpen",
             "NasDetailsRefreshError",
             "NasDetailsSectionList",
             "NasDetailsItemList",

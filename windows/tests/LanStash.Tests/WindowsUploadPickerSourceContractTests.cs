@@ -193,7 +193,7 @@ public sealed class WindowsUploadPickerSourceContractTests
             "private static FileUploadBatchAttempt ToFolderUploadAttempt");
 
         var create = execute.IndexOf("mutationRepository.CreateFolderAsync(", StringComparison.Ordinal);
-        var upload = execute.IndexOf("await RunUploadAsync(prepared.Running, prepared.Request)", StringComparison.Ordinal);
+        var upload = execute.IndexOf("await RunUploadAsync(prepared.Running, prepared.Request, value => report(index, value))", StringComparison.Ordinal);
         Assert.True(create >= 0 && upload > create);
         Assert.Contains("BoundedFolderUploadBatch.RunAsync(", execute);
         Assert.Contains("BoundedFolderUploadPlan.IsCurrent(file, plan.RootPath)", execute);

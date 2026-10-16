@@ -16,8 +16,8 @@ public sealed partial class DsmRepository
         try
         {
             var detail = await ReadInternalVirtualMachineSettingsAsync(baseline.Id, token).ConfigureAwait(false);
-            if (detail with { Configuration = detail.Configuration with { CpuWeight = null } } != baseline) return baseline;
-            return detail;
+            if (detail with { Source = baseline.Source, Configuration = detail.Configuration with { CpuWeight = null } } != baseline) return baseline;
+            return detail with { Source = baseline.Source };
         }
         catch (OperationCanceledException) { throw; }
         catch (CertificateTrustChallengeException) { throw; }
@@ -32,19 +32,16 @@ public sealed partial class DsmRepository
         var data = await SecurityCallAsync(_capabilities[InternalSettingsGuestApi] with { MinVersion = 2, MaxVersion = 2 }, "get",
             new Dictionary<string, object> { ["guest_id"] = id }, token).ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
-        if (data["is_online"] is not JsonValue onlineValue || !onlineValue.TryGetValue<bool>(out var online) ||
-            data["cpu_weight"] is not JsonValue weightValue || !weightValue.TryGetValue<int>(out var weight) || weight <= 0)
-            throw InvalidVirtualMachineManagerResponse();
-        // 只转换已记录的内部字段名，不用默认值或其他命名空间的值填补缺失。
-        var normalized = new JsonObject
-        {
-            ["guest_id"] = data["guest_id"]?.DeepClone(), ["guest_name"] = data["name"]?.DeepClone(),
-            ["description"] = data["desc"]?.DeepClone(), ["vcpu_num"] = data["vcpu_num"]?.DeepClone(),
-            ["vram_size"] = InternalVirtualMachineMemoryMiB(data), ["autorun"] = data["autorun"]?.DeepClone(),
-            ["status"] = online ? "running" : "shutdown"
-        };
-        var settings = ParseVirtualMachineSettings(normalized, id);
-        return settings with { Configuration = settings.Configuration with { CpuWeight = weight } };
+        if (AdvancedText(data, "guest_id") != id) throw InvalidVirtualMachineManagerResponse();
+        // 原生 status 决定是否允许硬件编辑；is_online 不能区分关机与过渡状态。
+        var status = ParseMachineState(AdvancedText(data, "status"));
+        int? Integer(string key, int minimum, int maximum) => OptionalVirtualMachineInteger(data, key, minimum, maximum) is { } number ? (int)number : null;
+        var startup = Integer("autorun", 0, 2);
+        return new(id, status, new(AdvancedText(data, "name"),
+            data.ContainsKey("desc") ? AdvancedText(data, "desc", allowEmpty: true, allowMultiline: true) : null,
+            Integer("vcpu_num", 1, 64), data.ContainsKey("vram_size") ? InternalVirtualMachineMemoryMiB(data) : null,
+            startup is null ? null : (VirtualMachineAutoStart)startup.Value) { CpuWeight = Integer("cpu_weight", 1, int.MaxValue) })
+            { Source = VirtualMachineApiSource.Internal };
     }
 
     // 官方实测：内部 get/list/get_setting 读 KiB，内部 create/set 与公开 API 用 MiB。

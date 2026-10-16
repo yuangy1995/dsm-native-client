@@ -47,7 +47,7 @@ public sealed class FileBackgroundTaskRepositoryTests
     [InlineData(null, 0, 0, "FORM")]
     [InlineData("SYNO.FileStation.BackgroundTask", 1, 2, "FORM")]
     [InlineData("SYNO.FileStation.BackgroundTask", 4, 5, "FORM")]
-    [InlineData("SYNO.FileStation.BackgroundTask", 3, 3, "JSON")]
+    [InlineData("SYNO.FileStation.BackgroundTask", 3, 3, "UNKNOWN")]
     [InlineData("SYNO.FileStation.Other", 3, 3, "FORM")]
     public async Task UnavailableCapabilityMakesNoRequest(
         string? capabilityName,
@@ -114,7 +114,7 @@ public sealed class FileBackgroundTaskRepositoryTests
     public void DomainSummaryExposesOnlyTheApprovedWhitelist()
     {
         Assert.Equal(
-            ["CreatedAt", "Id", "Kind", "ProcessedBytes", "ProcessedItemCount", "Progress", "State", "TotalBytes", "TotalItemCount"],
+            ["ApiVersion", "CreatedAt", "CreationTimestamp", "Id", "Kind", "Method", "ProcessedBytes", "ProcessedItemCount", "Progress", "State", "TotalBytes", "TotalItemCount"],
             typeof(FileBackgroundTaskSummary).GetProperties().Select(property => property.Name).Order().ToArray());
     }
 

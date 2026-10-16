@@ -381,6 +381,8 @@ public sealed class FileTextEditContractTests
 
     [Theory]
     [InlineData("json", true, true, TextFormatKind.Json)]
+    [InlineData("geojson", true, true, TextFormatKind.Json)]
+    [InlineData("scss", true, true, TextFormatKind.Css)]
     [InlineData("xml", true, true, TextFormatKind.Xml)]
     [InlineData("js", true, true, TextFormatKind.JavaScript)]
     [InlineData("ts", true, true, TextFormatKind.TypeScript)]
@@ -494,7 +496,7 @@ public sealed class FileTextEditContractTests
             "windows/src/LanStash.Infrastructure/Features/Files/DsmRepository.FileTextEdit.cs");
 
         Assert.Contains("0xEF, 0xBB, 0xBF", source);
-        Assert.Contains("Encoding.UTF8.GetString(bytes[3..])", source);
+        Assert.Contains("new UTF8Encoding(false, true).GetString(bytes[3..])", source);
     }
 
     [Fact]
@@ -504,7 +506,7 @@ public sealed class FileTextEditContractTests
             "windows/src/LanStash.Infrastructure/Features/Files/DsmRepository.FileTextEdit.cs");
 
         Assert.Contains("0xFF, 0xFE", source);
-        Assert.Contains("Encoding.Unicode.GetString(bytes[2..])", source);
+        Assert.Contains("new UnicodeEncoding(false, false, true).GetString(bytes[2..])", source);
     }
 
     [Fact]
@@ -514,7 +516,7 @@ public sealed class FileTextEditContractTests
             "windows/src/LanStash.Infrastructure/Features/Files/DsmRepository.FileTextEdit.cs");
 
         Assert.Contains("0xFE, 0xFF", source);
-        Assert.Contains("Encoding.BigEndianUnicode.GetString(bytes[2..])", source);
+        Assert.Contains("new UnicodeEncoding(true, false, true).GetString(bytes[2..])", source);
     }
 
     // XAML 契约检查
@@ -583,6 +585,7 @@ public sealed class FileTextEditContractTests
             new ApiCapability("SYNO.FileStation.Download", "entry.cgi", 1, 2, "FORM"),
             new ApiCapability("SYNO.FileStation.Upload", "entry.cgi", 1, 2, "MULTIPART"),
             new ApiCapability("SYNO.FileStation.List", "entry.cgi", 1, 2, "FORM"),
+            new ApiCapability("SYNO.FileStation.CheckPermission", "entry.cgi", 1, 3, "FORM"),
         }.ToDictionary(item => item.Name, StringComparer.Ordinal);
 
         return new DsmRepository(Profile, Session, api, capabilities);
@@ -726,6 +729,25 @@ public sealed class FileTextEditContractTests
             }
             return Task.FromResult(_uploadResult
                 ?? new FileUploadTransportResult(FileUploadTransportStatus.Accepted));
+        }
+
+        public Task<FilePermissionTransportResult> CheckFileMutationPermissionAsync(NasProfile profile,
+            DsmSession session, ApiCapability capability, string folderPath, string name,
+            CancellationToken cancellationToken = default) => Task.FromResult(new FilePermissionTransportResult(FilePermissionTransportStatus.Allowed));
+
+        public Task<JsonObject> CallReadJsonObjectAsync(NasProfile profile, DsmSession session,
+            ApiCapability capability, int requiredVersion, string method, IReadOnlyDictionary<string, string>? parameters = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (UploadCount > 0 && _readbackError is not null) return Task.FromException<JsonObject>(_readbackError);
+            var path = System.Text.Json.JsonSerializer.Deserialize<string[]>(parameters!["path"])![0];
+            var bytes = _rangeResponses is { Count: > 0 } ? _rangeResponses.Peek() : _rangeResponse ?? [];
+            return Task.FromResult(new JsonObject { ["files"] = new JsonArray(new JsonObject
+            {
+                ["path"] = path, ["name"] = path[(path.LastIndexOf('/') + 1)..], ["isdir"] = false,
+                ["additional"] = new JsonObject { ["size"] = (long)bytes.Length, ["perm"] = new JsonObject { ["write"] = true },
+                    ["time"] = new JsonObject { ["mtime"] = 1700000000L } },
+            }) });
         }
 
         public Task<JsonObject> CallAsync(

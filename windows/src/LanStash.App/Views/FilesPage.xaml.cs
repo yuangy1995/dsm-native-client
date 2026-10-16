@@ -20,9 +20,16 @@ namespace LanStash.App.Views;
 
 public sealed partial class FilesPage : Page, IDisposable
 {
+    internal async Task OpenActivityFolderAsync(string path)
+    {
+        CancelAsyncSearch();
+        await RunAsync(() => _viewModel.NavigateToBreadcrumbAsync(new FileBrowserBreadcrumb(string.Empty, path)));
+    }
     private readonly FileBrowserViewModel _viewModel;
     private readonly FilePreviewViewModel _previewViewModel;
     private readonly FileTextEditViewModel _textEditViewModel;
+    private int _previewOpenGeneration;
+    private bool _textDiscardDialogOpen;
     private readonly IFilePreviewRepository _previewRepository;
     private readonly IFileShareLinkRepository? _shareRepository;
     private readonly IFileArchiveCompressionRepository? _archiveCompressionRepository;
@@ -65,7 +72,9 @@ public sealed partial class FilesPage : Page, IDisposable
         FileRecycleReviewBlocker? recycleReviewBlocker = null,
         IDirectorySizeRepository? directorySizeRepository = null,
         IFileArchiveCompressionRepository? archiveCompressionRepository = null,
-        IFileArchiveExtractionRepository? archiveExtractionRepository = null)
+        IFileArchiveExtractionRepository? archiveExtractionRepository = null,
+        IFilePermissionRepository? permissionRepository = null,
+        LanStash.App.Features.Files.Office.OfficeEditingCoordinator? officeCoordinator = null)
         : this(
             new FileBrowserViewModel(new RepositoryFileBrowserDataSource(repository)),
             previewRepository,
@@ -84,7 +93,9 @@ public sealed partial class FilesPage : Page, IDisposable
             recycleReviewBlocker,
             directorySizeRepository ?? repository as IDirectorySizeRepository,
             archiveCompressionRepository ?? repository as IFileArchiveCompressionRepository,
-            archiveExtractionRepository ?? repository as IFileArchiveExtractionRepository)
+            archiveExtractionRepository ?? repository as IFileArchiveExtractionRepository,
+            permissionRepository ?? repository as IFilePermissionRepository,
+            officeCoordinator)
     {
     }
 
@@ -105,7 +116,9 @@ public sealed partial class FilesPage : Page, IDisposable
         FileRecycleReviewBlocker? recycleReviewBlocker = null,
         IDirectorySizeRepository? directorySizeRepository = null,
         IFileArchiveCompressionRepository? archiveCompressionRepository = null,
-        IFileArchiveExtractionRepository? archiveExtractionRepository = null)
+        IFileArchiveExtractionRepository? archiveExtractionRepository = null,
+        IFilePermissionRepository? permissionRepository = null,
+        LanStash.App.Features.Files.Office.OfficeEditingCoordinator? officeCoordinator = null)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -113,6 +126,10 @@ public sealed partial class FilesPage : Page, IDisposable
         _textEditViewModel = new FileTextEditViewModel();
         _previewRepository = previewRepository;
         _profileId = Guid.Parse(profileId);
+        _isoRepository = locationsRepository?.ProfileId == _profileId ? locationsRepository : null;
+        _vfsRepository = locationsRepository is IFileVfsRepository vfs && vfs.ProfileId == _profileId ? vfs : null;
+        _fileStationSettingsRepository = locationsRepository is IFileStationSettingsRepository settings && settings.ProfileId == _profileId ? settings : null;
+        _permissionRepository = permissionRepository?.ProfileId == _profileId ? permissionRepository : null;
         _shareRepository = shareRepository?.ProfileId == _profileId
             ? shareRepository
             : null;
@@ -167,6 +184,7 @@ public sealed partial class FilesPage : Page, IDisposable
         PreviewPane.RetryRequested += PreviewPane_RetryRequested;
         PreviewPane.SaveCopyRequested += PreviewPane_SaveCopyRequested;
         PreviewPane.UnsavedDiscardRequested += PreviewPane_UnsavedDiscardRequested;
+        InitializeOffice(officeCoordinator);
         LocationsPane.Attach(_locationsViewModel, OpenLocationAsync, RefreshLocationsAsync);
         LocationsPane.LocationOpened += LocationsPane_LocationOpened;
         Loaded += FilesPage_Loaded;
@@ -191,7 +209,7 @@ public sealed partial class FilesPage : Page, IDisposable
         await LocationsPane.LoadAsync();
     }
 
-    private void FilesPage_Unloaded(object sender, RoutedEventArgs e) { CancelFolderUploadPreparation(); CancelAsyncSearch(); ClearRemoteDragState(); CancelFavoriteOperation(); }
+    private void FilesPage_Unloaded(object sender, RoutedEventArgs e) { CancelOfficePageReads(); CancelFolderUploadPreparation(); CancelAsyncSearch(); _advancedSearchDialog?.Hide(); ClearRemoteDragState(); CancelFavoriteOperation(); }
 
     private bool _stateUpdateQueued;
 
@@ -208,6 +226,12 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(FileBrowserViewModel.CurrentPath))
+        {
+            CancelAsyncSearch();
+            _activeSearchRequest = null;
+            _advancedSearchDialog?.Hide();
+        }
         if (_viewModel.IsLoading || e.PropertyName == nameof(FileBrowserViewModel.CurrentPath))
         {
             _dragMoveSession?.Invalidate(); _dragMoveSession = null;
@@ -281,6 +305,12 @@ public sealed partial class FilesPage : Page, IDisposable
         ExitDownloadSelectionMode();
         try
         {
+            if (_textEditViewModel.IsBusy || _textDiscardDialogOpen) return false;
+            if (PreviewPane.HasUnsavedTextEdits)
+            {
+                if (!await ShowUnsavedDiscardDialogAsync()) return false;
+                PreviewPane.ConfirmDiscardTextEdits();
+            }
             var opened = await _locationsViewModel.OpenLocationAsync(path, source, cancellationToken);
             if (!opened || _disposed || !_locationsViewModel.IsActive)
             {
@@ -292,12 +322,13 @@ public sealed partial class FilesPage : Page, IDisposable
             CloseCopyMoveDialog();
             CloseRecycleDialog();
             CloseArchiveExtractionDialog();
-            await ClosePreviewAsync();
+            if (!await ClosePreviewAsync()) return false;
             if (_disposed || !_locationsViewModel.IsActive)
             {
                 return false;
             }
             FilterBox.Text = string.Empty;
+            _activeSearchRequest = null;
             UploadNeedsReview.IsOpen = false;
             UpdateState();
             return true;
@@ -349,6 +380,7 @@ public sealed partial class FilesPage : Page, IDisposable
             return;
         }
         ExitDownloadSelectionMode();
+        _activeSearchRequest = null;
         if (SearchSubfoldersToggle.IsOn && _searchRepository is not null)
         {
             _ = PerformAsyncSearchAsync(sender.Text);
@@ -365,6 +397,7 @@ public sealed partial class FilesPage : Page, IDisposable
     {
         if (!SearchSubfoldersToggle.IsOn)
         {
+            _activeSearchRequest = null;
             CancelAsyncSearch();
             _viewModel.SetFilter(FilterBox.Text);
             UpdateState();
@@ -376,7 +409,10 @@ public sealed partial class FilesPage : Page, IDisposable
         }
     }
 
-    private async Task PerformAsyncSearchAsync(string query)
+    private Task PerformAsyncSearchAsync(string query) => PerformAsyncSearchAsync(
+        new FileSearchRequest(_viewModel.CurrentPath, query, Recursive: true) { Kind = _viewModel.TypeFilter });
+
+    private async Task PerformAsyncSearchAsync(FileSearchRequest request)
     {
         if (_disposed) return;
         CancelAsyncSearch();
@@ -386,9 +422,10 @@ public sealed partial class FilesPage : Page, IDisposable
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(query))
+        if (!request.HasConditions && !request.SearchesContents)
         {
-            _viewModel.SetFilter(query);
+            _activeSearchRequest = null;
+            _viewModel.SetFilter(request.Query);
             UpdateState();
             return;
         }
@@ -397,12 +434,12 @@ public sealed partial class FilesPage : Page, IDisposable
         _searchCancellation = cancellation;
         var token = cancellation.Token;
         var currentPath = _viewModel.CurrentPath;
-        _viewModel.BeginAsyncSearch();
+        _activeSearchRequest = request;
+        _viewModel.BeginAsyncSearch(request.Kind);
         UpdateState();
 
         try
         {
-            var request = new FileSearchRequest(currentPath ?? string.Empty, query, Recursive: true);
             var result = await _searchRepository.SearchAsync(request, token);
 
             if (_disposed || token.IsCancellationRequested || _viewModel.CurrentPath != currentPath)
@@ -410,16 +447,22 @@ public sealed partial class FilesPage : Page, IDisposable
                 return;
             }
 
-            _viewModel.SetAsyncSearchResults(result.Items, result.TotalCount, result.IsTruncated);
+            _viewModel.SetAsyncSearchResults(result.Items, result.TotalCount, result.IsTruncated, result.IndexCoverage);
         }
         catch (OperationCanceledException)
         {
         }
-        catch (Exception)
+        catch (Exception error)
         {
             if (!_disposed && !token.IsCancellationRequested && _viewModel.CurrentPath == currentPath)
             {
-                _viewModel.SetAsyncSearchError();
+                _viewModel.SetAsyncSearchError(error switch
+                {
+                    ArgumentException => "FileSearchInvalidConditions",
+                    System.Text.RegularExpressions.RegexMatchTimeoutException => "FileSearchRegexTooComplex",
+                    NotSupportedException when request.SearchesContents => "FileSearchContentsUnavailable",
+                    _ => "FileBrowserSearchErrorMessage",
+                });
             }
         }
         finally
@@ -444,9 +487,9 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async void SearchRetry_Click(object sender, RoutedEventArgs e)
     {
-        if (!string.IsNullOrWhiteSpace(FilterBox.Text))
+        if (_activeSearchRequest is { } request)
         {
-            await PerformAsyncSearchAsync(FilterBox.Text);
+            await PerformAsyncSearchAsync(request);
         }
     }
 
@@ -478,7 +521,7 @@ public sealed partial class FilesPage : Page, IDisposable
         if (entry.IsDirectory)
         {
             FilterBox.Text = string.Empty;
-            await ClosePreviewAsync();
+            if (!await ClosePreviewAsync()) return;
             await RunAsync(() => _viewModel.OpenAsync(entry));
             return;
         }
@@ -505,7 +548,7 @@ public sealed partial class FilesPage : Page, IDisposable
         ExitDownloadSelectionMode();
         if (_previewViewModel.IsOpen)
         {
-            await ClosePreviewAsync();
+            if (!await ClosePreviewAsync()) return;
             return;
         }
         FilterBox.Text = string.Empty;
@@ -520,7 +563,7 @@ public sealed partial class FilesPage : Page, IDisposable
         ExitDownloadSelectionMode();
         if (_previewViewModel.IsOpen)
         {
-            await ClosePreviewAsync();
+            if (!await ClosePreviewAsync()) return;
             return;
         }
         FilterBox.Text = string.Empty;
@@ -547,14 +590,14 @@ public sealed partial class FilesPage : Page, IDisposable
             return;
         }
         FilterBox.Text = string.Empty;
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
         await RunAsync(() => _viewModel.OpenAsync(selected));
     }
 
     private async void Up_Click(object sender, RoutedEventArgs e)
     {
         ExitDownloadSelectionMode();
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
         FilterBox.Text = string.Empty;
         await RunAsync(_viewModel.GoUpAsync);
     }
@@ -562,8 +605,9 @@ public sealed partial class FilesPage : Page, IDisposable
     private async void Refresh_Click(object sender, RoutedEventArgs e)
     {
         ExitDownloadSelectionMode();
-        await ClosePreviewAsync();
-        await RunAsync(_viewModel.RefreshAsync);
+        if (!await ClosePreviewAsync()) return;
+        if (_activeSearchRequest is { } request) await PerformAsyncSearchAsync(request);
+        else await RunAsync(_viewModel.RefreshAsync);
         UploadNeedsReview.IsOpen = false;
     }
 
@@ -584,7 +628,7 @@ public sealed partial class FilesPage : Page, IDisposable
                 _viewModel.SelectedItem?.Path,
                 StringComparison.Ordinal))
         {
-            await ClosePreviewAsync();
+            if (!await ClosePreviewAsync()) return;
         }
         UpdateState();
     }
@@ -666,12 +710,15 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async Task DownloadItemAsync(Guid profileId, FileItem item)
     {
+        if (_isChoosingDownloadTarget) return;
+        _isChoosingDownloadTarget = true;
         DownloadButton.IsEnabled = false;
         try
         {
-            await _transfers.PickAndStartDownloadAsync(
-                profileId.ToString(),
-                new FileBrowserEntry(item));
+            var preserve = item.IsDirectory ? await ChooseFolderDownloadModeAsync() : false;
+            if (preserve is null || _disposed || profileId != _profileId) return;
+            await _transfers.PickAndStartSelectedDownloadAsync(profileId.ToString(), [item],
+                () => !_disposed && profileId == _profileId, preserve.Value);
         }
         catch (ObjectDisposedException)
         {
@@ -691,6 +738,7 @@ public sealed partial class FilesPage : Page, IDisposable
         }
         finally
         {
+            _isChoosingDownloadTarget = false;
             UpdateState();
         }
     }
@@ -811,6 +859,7 @@ public sealed partial class FilesPage : Page, IDisposable
     private async void ClearFilter_Click(object sender, RoutedEventArgs e)
     {
         ExitDownloadSelectionMode();
+        _activeSearchRequest = null;
         FilterBox.Text = string.Empty;
         await RunAsync(_viewModel.ClearFiltersAsync);
         UpdateState();
@@ -849,19 +898,19 @@ public sealed partial class FilesPage : Page, IDisposable
     private async void TypeAll_Click(object sender, RoutedEventArgs e)
     {
         ExitDownloadSelectionMode();
-        await RunAsync(() => _viewModel.SetTypeFilterAsync(FileListTypeFilter.All));
+        await ChangeSearchTypeAsync(FileListTypeFilter.All);
     }
 
     private async void TypeFiles_Click(object sender, RoutedEventArgs e)
     {
         ExitDownloadSelectionMode();
-        await RunAsync(() => _viewModel.SetTypeFilterAsync(FileListTypeFilter.Files));
+        await ChangeSearchTypeAsync(FileListTypeFilter.Files);
     }
 
     private async void TypeFolders_Click(object sender, RoutedEventArgs e)
     {
         ExitDownloadSelectionMode();
-        await RunAsync(() => _viewModel.SetTypeFilterAsync(FileListTypeFilter.Folders));
+        await ChangeSearchTypeAsync(FileListTypeFilter.Folders);
     }
 
     private void ListLayout_Click(object sender, RoutedEventArgs e)
@@ -920,6 +969,7 @@ public sealed partial class FilesPage : Page, IDisposable
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
             CloseButtonText = localization.Get("ActionClose"),
             DefaultButton = ContentDialogButton.None,
         };
@@ -1011,6 +1061,13 @@ public sealed partial class FilesPage : Page, IDisposable
                 HorizontalAlignment = HorizontalAlignment.Right,
                 AccessKey = "C",
             };
+            var dateError = new InfoBar { IsClosable = false, Severity = InfoBarSeverity.Error,
+                Message = localization.Get("FileShareDateRangeError"), IsOpen = model.HasDateError };
+            void UpdateCreateAvailability()
+            {
+                create.IsEnabled = model.CanCreate;
+                dateError.IsOpen = model.HasDateError;
+            }
             var passwordError = new InfoBar
             {
                 IsOpen = true,
@@ -1045,7 +1102,7 @@ public sealed partial class FilesPage : Page, IDisposable
                 passwordError.Visibility = model.HasPasswordError
                     ? Visibility.Visible
                     : Visibility.Collapsed;
-                create.IsEnabled = model.CanCreate;
+                UpdateCreateAvailability();
             };
             panel.Children.Add(password);
             panel.Children.Add(new TextBlock
@@ -1066,16 +1123,68 @@ public sealed partial class FilesPage : Page, IDisposable
             AddExpirationItem(expiration, localization.Get("FileShareLinkExpiration7Days"), FileShareLinkExpiration.SevenDays);
             AddExpirationItem(expiration, localization.Get("FileShareLinkExpiration30Days"), FileShareLinkExpiration.ThirtyDays);
             AddExpirationItem(expiration, localization.Get("FileShareLinkExpiration90Days"), FileShareLinkExpiration.NinetyDays);
+            AddExpirationItem(expiration, localization.Get("FileShareSetDate"), FileShareLinkExpiration.Custom);
+            var expiryDate = new CalendarDatePicker
+            {
+                Header = localization.Get("FileShareLinkExpirationLabel"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Visibility = model.Expiration == FileShareLinkExpiration.Custom ? Visibility.Visible : Visibility.Collapsed,
+                Date = model.CustomExpiresOn is { } end ? new DateTimeOffset(end.ToDateTime(TimeOnly.MinValue)) : null,
+            };
             expiration.SelectedIndex = (int)model.Expiration;
             expiration.SelectionChanged += (_, _) =>
             {
                 if (expiration.SelectedItem is ComboBoxItem { Tag: FileShareLinkExpiration value })
                 {
                     model.Expiration = value;
+                    expiryDate.Visibility = value == FileShareLinkExpiration.Custom ? Visibility.Visible : Visibility.Collapsed;
+                    UpdateCreateAvailability();
                 }
             };
             panel.Children.Add(expiration);
+            expiryDate.DateChanged += (_, _) =>
+            {
+                model.CustomExpiresOn = expiryDate.Date is { } value ? DateOnly.FromDateTime(value.DateTime) : null;
+                UpdateCreateAvailability();
+            };
+            panel.Children.Add(expiryDate);
+            var available = new CalendarDatePicker
+            {
+                Header = localization.Get("FileShareAvailableDate"),
+                PlaceholderText = localization.Get("FileShareAvailableNow"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Date = model.AvailableOn is { } from ? new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue)) : null,
+            };
+            available.DateChanged += (_, _) =>
+            {
+                model.AvailableOn = available.Date is { } value ? DateOnly.FromDateTime(value.DateTime) : null;
+                UpdateCreateAvailability();
+            };
+            panel.Children.Add(available);
+            if (model.CanCollectFiles)
+            {
+                var collection = new CheckBox { Content = localization.Get("FileShareCollectFiles"), IsChecked = model.CollectFiles };
+                var collectionFields = new StackPanel { Spacing = 8, Visibility = model.CollectFiles ? Visibility.Visible : Visibility.Collapsed };
+                var name = new TextBox { Header = localization.Get("FileShareCollectionName"), Text = model.CollectionName };
+                var message = new TextBox { Header = localization.Get("FileShareCollectionMessage"), Text = model.CollectionMessage,
+                    AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };
+                var risk = new CheckBox { Content = localization.Get("FileShareCollectionRisk"), IsChecked = model.CollectionUploadConfirmed };
+                void UpdateCollection()
+                {
+                    model.CollectFiles = collection.IsChecked == true;
+                    model.CollectionName = name.Text; model.CollectionMessage = message.Text;
+                    model.CollectionUploadConfirmed = risk.IsChecked == true;
+                    collectionFields.Visibility = model.CollectFiles ? Visibility.Visible : Visibility.Collapsed;
+                    UpdateCreateAvailability();
+                }
+                collection.Checked += (_, _) => UpdateCollection(); collection.Unchecked += (_, _) => UpdateCollection();
+                name.TextChanged += (_, _) => UpdateCollection(); message.TextChanged += (_, _) => UpdateCollection();
+                risk.Checked += (_, _) => UpdateCollection(); risk.Unchecked += (_, _) => UpdateCollection();
+                collectionFields.Children.Add(name); collectionFields.Children.Add(message); collectionFields.Children.Add(risk);
+                panel.Children.Add(collection); panel.Children.Add(collectionFields);
+            }
 
+            panel.Children.Add(dateError);
             create.Click += async (_, _) =>
             {
                 var creation = model.CreateAsync();
@@ -1088,7 +1197,7 @@ public sealed partial class FilesPage : Page, IDisposable
                 render();
             };
             panel.Children.Add(create);
-            return panel;
+            return new ScrollViewer { Content = panel, MaxHeight = 540, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         }
 
         if (model.State == FileShareLinkPresentationState.Creating)
@@ -1236,6 +1345,17 @@ public sealed partial class FilesPage : Page, IDisposable
                 });
             }
         }
+        else if (model.State == FileShareLinkPresentationState.NeedsReview)
+        {
+            var refresh = new Button { Content = localization.Get("FileShareRefreshAction"), MinHeight = 44 };
+            refresh.Click += async (_, _) =>
+            {
+                var reading = model.ReviewAsync(); render(); await reading;
+                if (model.State == FileShareLinkPresentationState.Success) _shareReviewBlocker.Clear(_profileId, model.TargetPath);
+                render();
+            };
+            panel.Children.Add(refresh);
+        }
         else if (model.CanRetry || model.State == FileShareLinkPresentationState.Cancelled)
         {
             var retry = new Button
@@ -1294,9 +1414,12 @@ public sealed partial class FilesPage : Page, IDisposable
     private async Task RunAsync(Func<Task> action)
     {
         CancelAsyncSearch();
+        var oldPath = _viewModel.CurrentPath;
         try
         {
             await action();
+            if (_viewModel.CurrentPath != oldPath) _activeSearchRequest = null;
+            UpdateState();
         }
         catch (ObjectDisposedException)
         {
@@ -1339,6 +1462,8 @@ public sealed partial class FilesPage : Page, IDisposable
             return;
         }
         UpdateFavoriteAction();
+        UpdateOfficeActions();
+        UpdateGroupingSource();
 
         LoadingState.Visibility = _viewModel.ContentState == FileBrowserContentState.Loading
             ? Visibility.Visible
@@ -1370,9 +1495,9 @@ public sealed partial class FilesPage : Page, IDisposable
 
         SortModifiedItem.IsEnabled = _viewModel.CanChooseNonNameSort;
         SortSizeItem.IsEnabled = _viewModel.CanChooseNonNameSort;
-        SortButton.IsEnabled = !_viewModel.IsLoading;
+        SortButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.IsSearching;
         TypeFilterButton.IsEnabled =
-            _viewModel.CanChooseTypeFilter && !_viewModel.IsLoading;
+            _viewModel.CanChooseTypeFilter && !_viewModel.IsLoading && !_viewModel.IsSearching;
 
         BackButton.IsEnabled = _viewModel.CanGoBack && !_viewModel.IsLoading;
         UpButton.IsEnabled = _viewModel.CanGoUp && !_viewModel.IsLoading;
@@ -1382,6 +1507,11 @@ public sealed partial class FilesPage : Page, IDisposable
         PreviewButton.IsEnabled =
             !_viewModel.IsLoading && _viewModel.SelectedItem?.IsDirectory == false;
         UpdateMutationControls();
+        FilePermissionsButton.IsEnabled = !_viewModel.IsLoading && _viewModel.SelectedItem is not null &&
+            _permissionRepository is not null && _permissionDialog is null;
+        IsoMountsButton.IsEnabled = !_viewModel.IsLoading && _isoRepository is not null && _isoDialog is null;
+        VfsButton.IsEnabled = !_viewModel.IsLoading && _vfsRepository is not null && !_vfsFlowActive;
+        FileStationSettingsButton.IsEnabled = !_viewModel.IsLoading && _fileStationSettingsRepository is not null && _fileStationSettingsDialog is null;
         UpdateCopyMoveControls();
         UpdateRecycleControls();
         ShareLinkButton.IsEnabled =
@@ -1413,6 +1543,8 @@ public sealed partial class FilesPage : Page, IDisposable
                 ? Visibility.Collapsed
                 : Visibility.Visible;
         UpdateBatchDownloadControls();
+        ShareMultipleButton.IsEnabled = CanEnterShareSelection();
+        ShareMultipleButton.Visibility = IsReadOnlyLocation() ? Visibility.Collapsed : Visibility.Visible;
         UpdateBatchCopyMoveControls();
         UpdateBatchRecycleControls();
         UpdateArchiveCompressionControls();
@@ -1426,11 +1558,13 @@ public sealed partial class FilesPage : Page, IDisposable
         CrossNasMoveButton.Visibility = Visibility.Collapsed;
         LocationsButton.IsEnabled = _locationsViewModel.IsActive;
         FilterBox.IsEnabled = !_viewModel.IsLoading;
+        AdvancedSearchButton.IsEnabled = _searchRepository?.IsSearchAvailable == true && !_viewModel.IsLoading;
+        ClearSearchButton.Visibility = _activeSearchRequest is not null ? Visibility.Visible : Visibility.Collapsed;
         SearchProgressState.Visibility = _viewModel.IsSearching
             ? Visibility.Visible
             : Visibility.Collapsed;
         SearchStatus.IsOpen = _viewModel.HasSearchError ||
-            _viewModel.HasSearchTruncationNotice;
+            _viewModel.HasSearchTruncationNotice || _viewModel.HasIncompleteSearchIndex;
         SearchStatus.Visibility = SearchStatus.IsOpen
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -1439,10 +1573,10 @@ public sealed partial class FilesPage : Page, IDisposable
             : InfoBarSeverity.Warning;
         SearchStatus.Title = _viewModel.HasSearchError
             ? LocalizationService.Current.Get("FileBrowserSearchErrorTitle")
-            : LocalizationService.Current.Get("FileBrowserSearchTruncatedTitle");
+            : LocalizationService.Current.Get(_viewModel.HasIncompleteSearchIndex ? "FileSearchIndexIncompleteTitle" : "FileBrowserSearchTruncatedTitle");
         SearchStatus.Message = _viewModel.HasSearchError
-            ? LocalizationService.Current.Get("FileBrowserSearchErrorMessage")
-            : LocalizationService.Current.Format(
+            ? LocalizationService.Current.Get(_viewModel.SearchErrorMessageKey)
+            : _viewModel.HasIncompleteSearchIndex ? LocalizationService.Current.Get("FileSearchIndexIncompleteMessage") : LocalizationService.Current.Format(
                 "FileBrowserSearchTruncatedMessage",
                 _viewModel.SearchResultCount);
         if (SearchStatus.ActionButton is Button searchRetry)
@@ -1482,39 +1616,42 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async Task OpenPreviewAsync(FileBrowserEntry entry)
     {
+        if (_textEditViewModel.IsBusy || _textDiscardDialogOpen) return;
+        var generation = ++_previewOpenGeneration;
         if (PreviewPane.HasUnsavedTextEdits)
         {
             var discard = await ShowUnsavedDiscardDialogAsync();
-            if (!discard)
-            {
-                return;
-            }
+            if (!discard || _disposed || generation != _previewOpenGeneration) return;
             PreviewPane.ConfirmDiscardTextEdits();
         }
         await PreviewPane.CloseAsync();
+        if (_disposed || generation != _previewOpenGeneration) return;
         await _previewViewModel.OpenAsync(_previewRepository, _profileId, entry.Item);
-        _textEditViewModel.Attach(_previewRepository, entry.Item);
+        if (_disposed || generation != _previewOpenGeneration || _previewViewModel.Snapshot.Item?.Path != entry.Path) return;
+        _textEditViewModel.Attach(_previewRepository, entry.Item, editableLocation: !IsReadOnlyLocation());
+        UpdateOfficeActions();
         PreviewPane.SetSaveCopyEnabled(
             _previewViewModel.TryGetSaveCopyTarget(entry.Item, out _));
         UpdatePreviewLayout();
         PreviewPane.FocusHeading();
     }
 
-    private async Task ClosePreviewAsync()
+    private async Task<bool> ClosePreviewAsync()
     {
-        if (!_previewViewModel.IsOpen)
-        {
-            return;
-        }
+        if (_textEditViewModel.IsBusy || _textDiscardDialogOpen) return false;
+        ++_previewOpenGeneration;
+        if (!_previewViewModel.IsOpen) return true;
         if (PreviewPane.HasUnsavedTextEdits)
         {
             var discard = await ShowUnsavedDiscardDialogAsync();
             if (!discard)
             {
-                return;
+                return false;
             }
             PreviewPane.ConfirmDiscardTextEdits();
         }
+        if (_disposed) return false;
+        _textEditViewModel.CancelEdit();
         await PreviewPane.CloseAsync();
         await _previewViewModel.CloseAsync();
         UpdatePreviewLayout();
@@ -1531,26 +1668,47 @@ public sealed partial class FilesPage : Page, IDisposable
                 FileGrid.Focus(FocusState.Programmatic);
             }
         }
+        return true;
     }
 
-    private async Task<bool> ShowUnsavedDiscardDialogAsync()
+    internal async Task<bool> PrepareToLeaveAsync(XamlRoot hostRoot)
     {
-        var localization = LocalizationService.Current;
-        var dialog = new ContentDialog
-        {
-            Title = localization.Get("FileTextEdit_UnsavedTitle"),
-            Content = localization.Get("FileTextEdit_UnsavedMessage"),
-            PrimaryButtonText = localization.Get("FileTextEdit_Discard"),
-            CloseButtonText = localization.Get("FileTextEdit_KeepEditing"),
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = XamlRoot,
-        };
-        var result = await dialog.ShowAsync();
-        return result == ContentDialogResult.Primary;
+        if (_disposed) return true;
+        if (_textEditViewModel.IsBusy || _textDiscardDialogOpen) return false;
+        if (!PreviewPane.HasUnsavedTextEdits) return true;
+        if (!await ShowUnsavedDiscardDialogAsync(hostRoot)) return false;
+        PreviewPane.ConfirmDiscardTextEdits();
+        return true;
     }
 
-    private async void PreviewPane_CloseRequested(object? sender, EventArgs e) =>
-        await ClosePreviewAsync();
+    private async Task<bool> ShowUnsavedDiscardDialogAsync(XamlRoot? hostRoot = null)
+    {
+        if (_textDiscardDialogOpen || _textEditViewModel.IsBusy) return false;
+        _textDiscardDialogOpen = true;
+        var generation = _textEditViewModel.Generation;
+        try
+        {
+            var localization = LocalizationService.Current;
+            var dialog = new ContentDialog
+            {
+                Title = localization.Get("FileTextEdit_UnsavedTitle"),
+                Content = localization.Get("FileTextEdit_UnsavedMessage"),
+                PrimaryButtonText = localization.Get("FileTextEdit_Discard"),
+                CloseButtonText = localization.Get("FileTextEdit_KeepEditing"),
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = hostRoot ?? XamlRoot,
+                RequestedTheme = ActualTheme,
+            };
+            return await dialog.ShowAsync() == ContentDialogResult.Primary && !_disposed &&
+                generation == _textEditViewModel.Generation;
+        }
+        finally { _textDiscardDialogOpen = false; }
+    }
+
+    private async void PreviewPane_CloseRequested(object? sender, EventArgs e)
+    {
+        if (!await ClosePreviewAsync()) return;
+    }
 
     private void PreviewPane_UnsavedDiscardRequested(object? sender, EventArgs e)
     {
@@ -1661,6 +1819,10 @@ public sealed partial class FilesPage : Page, IDisposable
         _locationsViewModel.Deactivate();
         CloseShareManagementDialog();
         CloseShareLinkDialog();
+        ClosePermissionDialog();
+        CloseIsoDialog();
+        CloseVfsDialog();
+        CloseFileStationSettingsDialog();
         CloseMutationDialog();
         CloseCopyMoveDialog();
         CloseBatchCopyMoveDialog();
@@ -1684,6 +1846,7 @@ public sealed partial class FilesPage : Page, IDisposable
         }
 
         _disposed = true;
+        DisposeOfficePage();
         CancelFolderUploadPreparation();
         CancelFavoriteOperation();
         ClearRemoteDragState();
@@ -1692,6 +1855,10 @@ public sealed partial class FilesPage : Page, IDisposable
         DeactivateFileUploadDrop();
         CloseShareManagementDialog();
         CloseShareLinkDialog();
+        ClosePermissionDialog();
+        CloseIsoDialog();
+        CloseVfsDialog();
+        CloseFileStationSettingsDialog();
         CloseMutationDialog();
         CloseCopyMoveDialog();
         CloseBatchCopyMoveDialog();
@@ -1709,6 +1876,7 @@ public sealed partial class FilesPage : Page, IDisposable
         _locationsViewModel.PropertyChanged -= LocationsViewModel_PropertyChanged;
         _previewViewModel.PropertyChanged -= PreviewViewModel_PropertyChanged;
         PreviewPane.CloseRequested -= PreviewPane_CloseRequested;
+        PreviewPane.UnsavedDiscardRequested -= PreviewPane_UnsavedDiscardRequested;
         PreviewPane.RetryRequested -= PreviewPane_RetryRequested;
         PreviewPane.SaveCopyRequested -= PreviewPane_SaveCopyRequested;
         LocationsPane.LocationOpened -= LocationsPane_LocationOpened;
@@ -1716,6 +1884,7 @@ public sealed partial class FilesPage : Page, IDisposable
         _locationsViewModel.Dispose();
         PreviewPane.Dispose();
         _previewViewModel.Dispose();
+        _textEditViewModel.Dispose();
         _viewModel.Dispose();
     }
 
@@ -1816,7 +1985,7 @@ public sealed partial class FilesPage : Page, IDisposable
     internal async Task ConfirmRemoteDropAsync(IReadOnlyList<FileItem> sources, FileItem target)
     {
         if (!CanResolveRemoteDrag() || !_viewModel.Items.Any(item => item.Item == target) || !target.CanWrite) return;
-        await ClosePreviewAsync();
+        if (!await ClosePreviewAsync()) return;
         if (!CanResolveRemoteDrag() || !_viewModel.Items.Any(item => item.Item == target) ||
             sources.Any(source => !_viewModel.Items.Any(item => item.Item == source))) return;
         await ShowBatchCopyMoveDialogAsync(FileCopyMoveOperation.Move, sources, target.Path, offerUndo: true);

@@ -82,10 +82,13 @@ public sealed class VirtualMachineCreationTests
         Assert.Same(result, await f.Repository.ReviewCreationAsync(request.RequestId)); Assert.DoesNotContain(f.Calls, call => call["method"] == "delete");
     }
     [Fact]
-    public async Task LostSetResponseCanBeConfirmedByExactFinalReadback()
+    public async Task LostSetResponseCannotBeClaimedByExactFinalReadback()
     {
         using var f = new Fixture { LoseSetReply = true };
-        Assert.Equal(VirtualMachineCreationStage.Complete, (await f.Repository.CreateMachineAsync(f.Request())).Stage); Assert.Single(f.Writes("set"));
+        var request = f.Request();
+        Assert.Equal(VirtualMachineCreationStage.VerifyConfiguration, (await f.Repository.CreateMachineAsync(request)).Stage);
+        Assert.Equal(VirtualMachineCreationStage.VerifyConfiguration, (await f.Recreate().ReviewCreationAsync(request.RequestId))!.Stage);
+        Assert.Single(await f.Repository.GetCreationRecoveriesAsync()); Assert.Single(f.Writes("set"));
     }
     [Fact]
     public async Task FinalResourceChangesCannotBeHiddenByMatchingCpuAndMemory()
@@ -148,7 +151,8 @@ public sealed class VirtualMachineCreationTests
         await create.Repository.CreateMachineAsync(request); Assert.Single(create.Writes("create"));
         using var set = new Fixture(); using var afterSet = new CancellationTokenSource(); set.AfterSet = afterSet.Cancel;
         var next = set.Request(); await set.Repository.CreateMachineAsync(next, afterSet.Token);
-        Assert.Equal(VirtualMachineCreationStage.Complete, (await set.Recreate().ReviewCreationAsync(next.RequestId))!.Stage); Assert.Single(set.Writes("set"));
+        Assert.Equal(VirtualMachineCreationStage.VerifyConfiguration, (await set.Recreate().ReviewCreationAsync(next.RequestId))!.Stage);
+        Assert.Single(await set.Repository.GetCreationRecoveriesAsync()); Assert.Single(set.Writes("set"));
     }
     [Fact]
     public async Task PendingCreationProtectsItsNameAndNewGuestFromPowerAndSettings()
@@ -294,8 +298,8 @@ public sealed class VirtualMachineCreationTests
         var deletion = await f.Repository.DeleteMachineAsync(new(f.Profile.Id, new("created-vm", "New VM", VirtualMachineOperationalState.Stopped, null, null, null, null, null), Guid.NewGuid(), true));
         Assert.Equal(MutationErrorCategory.Conflict, deletion.ErrorCategory); Assert.Empty(f.Writes("delete"));
         f.Guest["status"] = "running";
-        Assert.Equal(VirtualMachineCreationStage.Complete, (await f.Recreate().ReviewCreationAsync(request.RequestId))!.Stage);
-        Assert.Empty(await f.Repository.GetCreationRecoveriesAsync()); Assert.Single(f.Writes("poweron"));
+        Assert.Equal(VirtualMachineCreationStage.VerifyPower, (await f.Recreate().ReviewCreationAsync(request.RequestId))!.Stage);
+        Assert.Single(await f.Repository.GetCreationRecoveriesAsync()); Assert.Single(f.Writes("poweron"));
     }
     [Fact]
     public async Task ExplicitPowerRejectionLeavesCreatedGuestAndDoesNotBecomeSuccessFromLaterRunningState()
@@ -312,8 +316,8 @@ public sealed class VirtualMachineCreationTests
         using var f = new Fixture(); using var cancellation = new CancellationTokenSource(); f.AfterPower = cancellation.Cancel;
         var request = f.Request() with { PowerOnAfterCreation = true };
         Assert.Equal(VirtualMachineCreationStage.VerifyPower, (await f.Repository.CreateMachineAsync(request, cancellation.Token)).Stage);
-        Assert.Equal(VirtualMachineCreationStage.Complete, (await f.Recreate().ReviewCreationAsync(request.RequestId))!.Stage);
-        Assert.Single(f.Writes("poweron"));
+        Assert.Equal(VirtualMachineCreationStage.VerifyPower, (await f.Recreate().ReviewCreationAsync(request.RequestId))!.Stage);
+        Assert.Single(await f.Repository.GetCreationRecoveriesAsync()); Assert.Single(f.Writes("poweron"));
     }
     [Fact]
     public async Task MissingPowerCapabilityDoesNotPreventOrdinaryCreationButRejectsRequestedPowerBeforeWriting()
@@ -436,7 +440,7 @@ public sealed class VirtualMachineCreationTests
         public VirtualMachineCreationRequest Request() => new(Profile.Id, Storage, [new(8192)], [new(null)], new("New VM", "Configured", 4, 4096, VirtualMachineAutoStart.Off), Guid.NewGuid(), true);
         public IEnumerable<Dictionary<string, string>> Writes(string method) => Calls.Where(call => call["method"] == method);
         public void Apply(VirtualMachineConfiguration settings)
-        { Guest["guest_name"] = settings.Name; Guest["description"] = settings.Description; Guest["vcpu_num"] = settings.CpuCount; Guest["vram_size"] = settings.MemoryMiB; Guest["autorun"] = (int)settings.AutoStart; }
+        { Guest["guest_name"] = settings.Name; Guest["description"] = settings.Description; Guest["vcpu_num"] = settings.CpuCount; Guest["vram_size"] = settings.MemoryMiB; Guest["autorun"] = (int)settings.AutoStart!.Value; }
         private sealed class Handler(Fixture owner) : HttpMessageHandler
         {
             protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)

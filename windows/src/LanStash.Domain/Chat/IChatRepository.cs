@@ -3,13 +3,15 @@ namespace LanStash.Domain;
 public interface IChatRepository
 {
     Guid ProfileId { get; }
+    /// <summary>不含凭据的连接/账号摘要，用于隔离本机草稿及未知发送；旧合成提供者可省略。</summary>
+    string? AccountIdentity => null;
     ChatAvailability Availability { get; }
 
     /// <summary>旧提供者默认不提供实时流，调用方继续轮询；取消枚举须释放连接。</summary>
     IAsyncEnumerable<ChatRealtimeEvent> ObserveRealtimeAsync(CancellationToken cancellationToken = default) =>
         ChatRealtimeStreams.Empty(cancellationToken);
 
-    /// <summary>只读核对高级功能所需环境；不修改服务器配置，不开启未验证的版本。</summary>
+    /// <summary>只读准备高级功能；按实际 API 能力与账号权限开放，不按系统版本白名单判断。</summary>
     Task<ChatAvailability> PrepareAdvancedFeaturesAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(Availability);
 
@@ -38,6 +40,44 @@ public interface IChatRepository
     /// <summary>按现有历史分页读取指定消息，供确认前刷新；不代表新增 NAS get 接口。</summary>
     Task<ChatMessage> GetMessageAsync(string conversationId, string messageId, CancellationToken cancellationToken = default) =>
         Task.FromException<ChatMessage>(new NotSupportedException("Chat message lookup is not implemented."));
+
+    Task<ChatSearchPage> SearchMessagesAsync(string query, string? conversationId, string? cursor, int limit,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<ChatSearchPage>(new NotSupportedException("chat.search.unsupported"));
+
+    /// <summary>按已记录的 Post.list 定位原消息；线程编号与历史游标分开传递。</summary>
+    Task<ChatMessage?> LocateMessageAsync(string conversationId, string messageId, string? threadId = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<ChatMessage?>(new NotSupportedException("chat.locate.unsupported"));
+
+    Task<ChatMessagePage> ListRepliesAsync(string conversationId, string threadId, string? beforeCursor, int limit,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<ChatMessagePage>(new NotSupportedException("chat.thread.unsupported"));
+
+    Task<ChatEditingPolicy> GetEditingPolicyAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<ChatEditingPolicy>(new NotSupportedException("chat.edit.unsupported"));
+
+    Task<ChatMessageUpdateOutcome> EditMessageAsync(ChatEditMessageRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromResult(UnsupportedMessageUpdate("editMessage"));
+
+    Task<ChatMessage> GetPollMessageAsync(ChatMessage original, CancellationToken cancellationToken = default) =>
+        Task.FromException<ChatMessage>(new NotSupportedException("chat.vote.unsupported"));
+
+    Task<ChatMessageUpdateOutcome> VoteAsync(ChatVoteRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromResult(UnsupportedMessageUpdate("vote"));
+
+    Task<ChatConversation> MarkReadAsync(string conversationId, string messageId, DateTimeOffset through,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<ChatConversation>(new NotSupportedException("chat.read.unsupported"));
+
+    Task MarkThreadReadAsync(string conversationId, string threadId, string lastMessageId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("chat.thread-read.unsupported"));
+
+    private static ChatMessageUpdateOutcome UnsupportedMessageUpdate(string operation) => new(
+        new MutationResult(1, MutationResultStatus.Unsupported, operation, false, false,
+            new MutationResultCounts(0, 1, 0), MutationErrorCategory.Unsupported,
+            diagnosticTag: "chat.interaction.unsupported"), null);
 
     Task<ChatTextSendOutcome> SendTextAsync(
         ChatTextSendRequest request,

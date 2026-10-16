@@ -35,6 +35,7 @@ public sealed record FileBrowserBreadcrumb(string Name, string Path)
 
 public sealed record FileBrowserEntry(FileItem Item)
 {
+    public bool IsSearchResult { get; init; }
     public string Path => Item.Path;
     public string Name => Item.Name;
     public bool IsDirectory => Item.IsDirectory;
@@ -45,7 +46,7 @@ public sealed record FileBrowserEntry(FileItem Item)
     public string KindText => LocalizationService.Current.Get(Item.IsDirectory
         ? "WorkspaceFileFolder" : "WorkspaceFileDocument");
 
-    public string Detail => Item.IsDirectory
+    public string Detail => IsSearchResult ? Item.Path : Item.IsDirectory
         ? Item.Path
         : LocalizationService.Current.Format(
             "FileBrowserFileDetail",

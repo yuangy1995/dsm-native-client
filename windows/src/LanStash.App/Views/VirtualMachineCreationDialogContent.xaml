@@ -30,6 +30,7 @@
    <StackPanel x:Name="DiskRows" Spacing="12"/>
    <Button x:Name="AddDiskButton" x:Uid="VmCreateAddDisk" MinHeight="44" Click="AddDisk_Click"/>
    <TextBlock x:Uid="VmCreateNetworks" FontWeight="SemiBold" AutomationProperties.HeadingLevel="Level2"/>
+   <TextBlock x:Name="NetworksUnavailableNotice" x:Uid="VmCreateNetworksUnavailable" TextWrapping="Wrap" Visibility="Collapsed"/>
    <StackPanel x:Name="NetworkRows" Spacing="12"/>
    <Button x:Name="AddNetworkButton" x:Uid="VmCreateAddNetwork" MinHeight="44" Click="AddNetwork_Click"/>
    <TextBlock x:Name="CreationModeHint" x:Uid="VmCreateLimitations" TextWrapping="Wrap"/>
@@ -39,9 +40,6 @@
    <TextBlock x:Name="PowerUnavailableNotice" x:Uid="VmCreatePowerUnavailable" TextWrapping="Wrap"/>
    <TextBlock x:Name="ValidationNotice" TextWrapping="Wrap" Visibility="Collapsed"/>
    <TextBlock x:Name="ConfirmationSummary" TextWrapping="Wrap" FontWeight="SemiBold"/>
-   <CheckBox x:Name="RiskAcknowledgement" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Checked="Confirm_Changed" Unchecked="Confirm_Changed">
-    <TextBlock x:Uid="VmCreateAcknowledgement" TextWrapping="Wrap"/>
-   </CheckBox>
   </StackPanel>
  </ScrollViewer>
 </UserControl>

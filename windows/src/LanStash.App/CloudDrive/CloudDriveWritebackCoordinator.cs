@@ -119,13 +119,30 @@ internal sealed class CloudDriveWritebackCoordinator(DesktopDriveMapping mapping
         catch { return change; }
     }
 
-    internal async Task<CloudDrivePendingChange> ReviewAsync(Guid operationId, CancellationToken token = default, bool acceptDirectory = false)
+    internal async Task<CloudDrivePendingChange> ReviewAsync(Guid operationId, CancellationToken token = default)
     {
         RequireContext();
         using var lease = await store.AcquireWritebackAsync(mapping, token).ConfigureAwait(false);
         var change = await FindAsync(operationId, token).ConfigureAwait(false);
         await store.RequireNoRelocationAsync(mapping, change.RemotePath, token).ConfigureAwait(false);
-        return await ReviewCoreAsync(change, token, acceptDirectory).ConfigureAwait(false);
+        return await ReviewCoreAsync(change, token).ConfigureAwait(false);
+    }
+
+    internal async Task<CloudDrivePendingChange> UseExistingDirectoryAsync(CloudDrivePendingChange expected,
+        bool confirmed, CancellationToken token = default)
+    {
+        RequireContext();
+        if (!confirmed) throw new InvalidOperationException("cloud.sync.confirmation_required");
+        using var lease = await store.AcquireWritebackAsync(mapping, token).ConfigureAwait(false);
+        var change = await FindAsync(expected.Id, token).ConfigureAwait(false);
+        if (change != expected || change.Kind != CloudDriveChangeKind.CreateDirectory || change.Phase != CloudDriveChangePhase.Submitted)
+            throw new InvalidOperationException("cloud.sync.invalid_transition");
+        CloudDriveWriteScope.RequireWritable(mapping, change.RemotePath);
+        await store.RequireNoRelocationAsync(mapping, change.RemotePath, token).ConfigureAwait(false);
+        if (!await store.IsWritebackEnabledAsync(mapping, token).ConfigureAwait(false))
+            throw new InvalidOperationException("cloud.sync.read_only");
+        // 用户选择现有目录作为后续同步目标；不补写创建回执，也不重复创建目录。
+        return await ReviewCoreAsync(change, token, acceptDirectory: true).ConfigureAwait(false);
     }
 
     private async Task<CloudDrivePendingChange> ReviewCoreAsync(CloudDrivePendingChange change, CancellationToken token, bool acceptDirectory = false)
@@ -136,7 +153,7 @@ internal sealed class CloudDriveWritebackCoordinator(DesktopDriveMapping mapping
         var metadata = await repository.ReadFileMetadataAsync(change.RemotePath, token).ConfigureAwait(false);
         if (change.Kind == CloudDriveChangeKind.CreateDirectory)
         {
-            if (!acceptDirectory || metadata is null || metadata.Item.Path != change.RemotePath || !metadata.Item.IsDirectory ||
+            if (!acceptDirectory || metadata is null || metadata.Item.Path != change.RemotePath || !metadata.Item.IsDirectory || !metadata.Item.CanWrite ||
                 !SafeMetadata(metadata) || metadata.MountPointType is null) return change;
             await store.ConfirmSavedAsync(mapping, change.Id, null, change.ContentHash, token).ConfigureAwait(false);
             return await FindAsync(change.Id, token).ConfigureAwait(false);

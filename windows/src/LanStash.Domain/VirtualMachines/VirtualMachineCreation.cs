@@ -30,7 +30,7 @@ public static class VirtualMachineCreationRules
             request.Disks is null || request.Disks.Count is < 1 or > 8 || request.Networks is null || request.Networks.Count is < 1 or > 8 ||
             string.IsNullOrWhiteSpace(settings.Name) || settings.Name != settings.Name.Trim() || settings.Name.Length > 255 || settings.Name.Any(char.IsControl) ||
             settings.Description is null || settings.Description.Length > 1024 || settings.Description.Contains('\0') ||
-            settings.CpuCount is < 1 or > 64 || settings.MemoryMiB is < 128 or > 1048576 || settings.CpuWeight is not null || !Enum.IsDefined(settings.AutoStart)) return false;
+            settings.CpuCount is null or < 1 or > 64 || settings.MemoryMiB is null or < 128 or > 1048576 || settings.CpuWeight is not null || settings.AutoStart is not { } startup || !Enum.IsDefined(startup)) return false;
         if (request.Disks.Any(disk => disk is null || (disk.Image is null ? disk.SizeMiB is null or < 1 or > 1073741824 :
             disk.SizeMiB is not null || disk.Image.Kind != VirtualizationResourceKind.Image || disk.Image.Type != "disk" || !VirtualMachinePowerRules.ValidId(disk.Image.Id)))) return false;
         if (request.Advanced is { } advanced && (!Enum.IsDefined(advanced.OperatingSystem) || !Enum.IsDefined(advanced.Firmware) ||

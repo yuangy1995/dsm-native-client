@@ -25,12 +25,16 @@ public sealed partial class DsmApiClient
             string fileName,
             Stream source,
             long sourceLength,
-            IProgress<long>? progress)
+            IProgress<long>? progress,
+            string fileFieldName = "file",
+            string contentType = "application/octet-stream")
         {
             _source = source;
             _sourceLength = sourceLength;
             _progress = progress;
-            _prefix = BuildPrefix(boundary, fields, fileName);
+            if (fileFieldName is not ("file" or "upload_image")) throw new ArgumentException("upload.invalid_field");
+            if (contentType is not ("application/octet-stream" or "image/jpeg")) throw new ArgumentException("upload.invalid_content_type");
+            _prefix = BuildPrefix(boundary, fields, fileName, fileFieldName, contentType);
             _suffix = Encoding.UTF8.GetBytes($"\r\n--{boundary}--\r\n");
             _contentLength = checked((long)_prefix.Length + sourceLength + _suffix.Length);
             Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
@@ -96,7 +100,9 @@ public sealed partial class DsmApiClient
         private static byte[] BuildPrefix(
             string boundary,
             IReadOnlyList<KeyValuePair<string, string>> fields,
-            string fileName)
+            string fileName,
+            string fileFieldName,
+            string contentType)
         {
             var builder = new StringBuilder();
             foreach (var (name, value) in fields)
@@ -108,9 +114,9 @@ public sealed partial class DsmApiClient
             }
             var safeFileName = fileName.Replace('"', '\'');
             builder.Append("--").Append(boundary).Append("\r\n")
-                .Append("Content-Disposition: form-data; name=\"file\"; filename=\"")
+                .Append("Content-Disposition: form-data; name=\"").Append(fileFieldName).Append("\"; filename=\"")
                 .Append(safeFileName).Append("\"\r\n")
-                .Append("Content-Type: application/octet-stream\r\n\r\n");
+                .Append("Content-Type: ").Append(contentType).Append("\r\n\r\n");
             return Encoding.UTF8.GetBytes(builder.ToString());
         }
     }

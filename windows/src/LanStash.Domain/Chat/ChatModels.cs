@@ -21,6 +21,8 @@ public enum ChatReadFeature
     Reminders,
     ScheduledMessages,
     Polls,
+    MessageSearch,
+    ThreadedReplies,
 }
 
 public enum ChatWriteFeature
@@ -36,6 +38,10 @@ public enum ChatWriteFeature
     CloseConversation,
     ForwardMessage,
     PinnedMessages,
+    MessageEditing,
+    ThreadedReplies,
+    PollVoting,
+    ReadSynchronization,
 }
 
 public sealed record ChatAvailability(
@@ -75,6 +81,7 @@ public sealed record ChatConversation(
     int UnreadCount,
     bool IsEncrypted)
 {
+    public DateTimeOffset? LastViewedAt { get; init; }
     // 旧 Workspace 仍读取这两个名称；新 Chat 功能只使用强类型字段。
     public string? LatestMessage => LastMessageSummary;
     public DateTimeOffset? LatestAt => LastActivityAt;
@@ -103,6 +110,8 @@ public enum ChatEncryptionState
     Locked,
 }
 
+public enum ChatMessageKind { Normal, Sticker, System, Unknown }
+
 public sealed record ChatMessage(
     string Id,
     string ConversationId,
@@ -115,6 +124,11 @@ public sealed record ChatMessage(
     ChatEncryptionState EncryptionState)
 {
     public ChatPoll? Poll { get; init; }
+    public ChatMessageKind Kind { get; init; } = ChatMessageKind.Normal;
+    public string? ThreadId { get; init; }
+    public int? ReplyCount { get; init; }
+    public DateTimeOffset? EditedAt { get; init; }
+    public bool IsThreadReply => ThreadId is not null && ThreadId != Id;
 }
 
 public sealed record ChatPinnedMessage(
@@ -137,7 +151,10 @@ public sealed record ChatMessagePage(
 public sealed record ChatTextSendRequest(
     string ConversationId,
     string Text,
-    Guid ClientRequestId);
+    Guid ClientRequestId)
+{
+    public string? ThreadId { get; init; }
+}
 
 public sealed record ChatTextSendOutcome(
     MutationResult Result,
@@ -263,7 +280,11 @@ public sealed record ChatPoll(
     bool IsAnonymous,
     DateTimeOffset? ClosesAt,
     bool IsClosed,
-    IReadOnlyList<ChatPollOption> Options);
+    IReadOnlyList<ChatPollOption> Options)
+{
+    // 兼容显示缺少真实选项编号的旧响应，不能用合成编号参与投票。
+    public bool HasStableOptionIds { get; init; } = true;
+}
 
 public sealed record ChatPollDraft(
     string ConversationId,

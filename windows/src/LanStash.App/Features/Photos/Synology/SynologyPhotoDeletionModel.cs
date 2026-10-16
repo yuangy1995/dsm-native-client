@@ -76,6 +76,7 @@ public sealed class SynologyPhotoDeletionModel(ISynologyPhotosRepository reposit
         SynologyPhotoException { Failure: SynologyPhotoFailure.TargetChanged } => "PhotosDeleteChanged",
         SynologyPhotoException { Failure: SynologyPhotoFailure.DeleteDenied or SynologyPhotoFailure.Permission } => "PhotosDeleteDenied",
         SynologyPhotoException { Failure: SynologyPhotoFailure.DeletionUnverified } => "PhotosDeleteUnverified",
+        SynologyPhotoException { Failure: SynologyPhotoFailure.UploadBusy } => "PhotosEditBusy",
         _ => "PhotosDeleteFailed",
     };
     private void Changed() => RaisePropertyChanged(string.Empty);

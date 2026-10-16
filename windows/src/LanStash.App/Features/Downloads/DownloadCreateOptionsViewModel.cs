@@ -34,7 +34,7 @@ internal sealed class DownloadCreateOptionsViewModel(IFileCopyMoveFolderSource? 
     public void Choose(FileCopyMoveFolder value)
     {
         if (_disposed || IsLoading || !Folders.Contains(value) || !value.CanWrite || folders?.IsReadOnlyPath(value.Path) != false) return;
-        Destination = value.Path.Trim('/'); CloseBrowser();
+        Destination = value.Path.StartsWith('/') ? value.Path[1..] : value.Path; CloseBrowser();
     }
     public void UseDefault() { Destination = null; CloseBrowser(); }
     public void CloseBrowser() { _generation++; _load?.Cancel(); IsBrowsing = false; IsLoading = false; Folders = []; Changed(); }

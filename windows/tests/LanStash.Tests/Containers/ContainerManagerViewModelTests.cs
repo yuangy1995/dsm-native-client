@@ -193,13 +193,14 @@ public sealed class ContainerManagerViewModelTests
     }
 
     [Fact]
-    public async Task RepositoryReplacementRestoresCacheAndRefreshUsesNewBinding()
+    public async Task RepositoryReplacementDiscardsOldSessionDataAndRefreshUsesNewBinding()
     {
         var profile = Guid.NewGuid();
         var first = Available(profile);
         first.Results.Enqueue(Snapshot(profile, Container("cached", ContainerOperationalState.Running)));
         var replacement = Available(profile);
         replacement.Results.Enqueue(Snapshot(profile, Container("fresh", ContainerOperationalState.Stopped)));
+        replacement.Results.Enqueue(Snapshot(profile, Container("fresh-next", ContainerOperationalState.Running)));
         using var model = new ContainerManagerViewModel();
 
         await model.ActivateAsync(first);
@@ -207,12 +208,15 @@ public sealed class ContainerManagerViewModelTests
         model.SelectContainer(model.Containers.Single());
         await model.ActivateAsync(replacement);
 
-        Assert.Empty(replacement.Requests);
-        Assert.Equal(ContainerManagerFilter.Running, model.Filter);
-        Assert.Equal("cached", model.SelectedContainer?.Id);
-        await model.RefreshAsync();
         Assert.Single(replacement.Requests);
-        Assert.Equal(ContainerManagerContentState.FilteredEmpty, model.ContentState);
+        Assert.Equal(ContainerManagerFilter.All, model.Filter);
+        Assert.Null(model.SelectedContainer);
+        Assert.Equal("fresh", Assert.Single(model.Containers).Id);
+        await model.RefreshAsync();
+        Assert.Equal(2, replacement.Requests.Count);
+        Assert.Single(first.Requests);
+        Assert.Equal("fresh-next", Assert.Single(model.Containers).Id);
+        Assert.Equal(ContainerManagerContentState.Content, model.ContentState);
     }
 
     [Fact]
@@ -276,6 +280,34 @@ public sealed class ContainerManagerViewModelTests
         Assert.False(string.IsNullOrWhiteSpace(item.ImageText));
         Assert.DoesNotContain("internal-id", item.ImageText, StringComparison.Ordinal);
         Assert.DoesNotContain("internal-id", item.AutomationName, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NetworkSearchUsesNameAndDriverKeepsTotalAndRestoresOnlyForOriginalOwner()
+    {
+        using var model = new ContainerManagerViewModel();
+        var first = Available(Guid.NewGuid()); var second = Available(Guid.NewGuid());
+        var networks = new[]
+        {
+            Resource("Application", ContainerResourceKind.Network) with { Network = new("bridge", 0, [], null, null, null, false) },
+            Resource("External", ContainerResourceKind.Network) with { Network = new("macvlan", 0, [], null, null, null, false) },
+        };
+        first.Results.Enqueue(SectionSnapshot(first.ProfileId, networks: networks));
+        second.Results.Enqueue(SectionSnapshot(second.ProfileId, networks: networks));
+        await model.ActivateAsync(first);
+        model.SetNetworkSearch(" BRIDGE ");
+        Assert.Equal("Application", Assert.Single(model.Networks).Name); Assert.Equal(2, model.TotalNetworkCount);
+        model.SetNetworkSearch("missing");
+        Assert.Empty(model.Networks); Assert.Equal(ContainerManagerContentState.FilteredEmpty, model.NetworksState);
+        Assert.Equal(2, model.TotalNetworkCount); Assert.Single(first.Requests);
+        await model.ActivateAsync(second); Assert.Equal("", model.NetworkSearch); Assert.Equal(2, model.Networks.Count);
+        await model.ActivateAsync(first); Assert.Equal("missing", model.NetworkSearch); Assert.Empty(model.Networks);
+        model.SetNetworkSearch("external"); Assert.Equal("External", Assert.Single(model.Networks).Name);
+        var replacement = Available(first.ProfileId); replacement.Results.Enqueue(SectionSnapshot(first.ProfileId, networks: networks));
+        await model.ActivateAsync(replacement); Assert.Equal("", model.NetworkSearch); Assert.Equal(2, model.Networks.Count);
+        await model.ActivateAsync(new FakeRepository(first.ProfileId, available: false));
+        Assert.Null(model.TotalNetworkCount); Assert.Empty(model.Networks); Assert.Null(model.TotalContainerCount);
+        model.Deactivate(); Assert.Equal("", model.NetworkSearch); Assert.Null(model.TotalNetworkCount);
     }
 
     private static FakeRepository Available(Guid profileId) => new(profileId, available: true);

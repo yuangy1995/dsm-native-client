@@ -71,6 +71,10 @@ public sealed class DsmReadContractUnsupportedException() :
 
 public interface IDsmApiClient
 {
+    bool CanUploadPackage => false;
+    Task<System.Text.Json.Nodes.JsonObject> UploadPackageAsync(NasProfile profile, DsmSession session,
+        ApiCapability capability, Stream source, long length, CancellationToken cancellationToken = default) =>
+        Task.FromException<System.Text.Json.Nodes.JsonObject>(new NotSupportedException());
     bool CanConnectConsoleSocket => false;
     bool CanReadConsoleAssets => false;
     Task<VirtualMachineConsoleDocument> ReadConsoleAssetAsync(NasProfile profile, DsmSession session,
@@ -120,17 +124,45 @@ public interface IDsmApiClient
         CancellationToken cancellationToken = default);
 
     // Photos 使用 JSON 业务参数、固定版本和独立媒体路径，不能复用文件扫描契约。
+    Task<ISynologyPhotoPreviewCompletion> SubscribePhotoPreviewAsync(NasProfile profile, DsmSession session,
+        long unitId, CancellationToken cancellationToken = default) =>
+        Task.FromException<ISynologyPhotoPreviewCompletion>(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
+    Task<SynologyPhotoWriteReceipt> UploadPhotoPreviewAsync(NasProfile profile, DsmSession session, ApiCapability capability,
+        long unitId, SynologyPhotoConvertedPreview preview, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new SynologyPhotoWriteReceipt(SynologyPhotoWriteStatus.Rejected, Failure: SynologyPhotoFailure.Unavailable));
+    Task<SynologyPhotoWriteReceipt> UploadPhotoConvertedMediaAsync(NasProfile profile, DsmSession session, ApiCapability capability,
+        long unitId, SynologyPhotoConvertedPreview? preview, string? video, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new SynologyPhotoWriteReceipt(SynologyPhotoWriteStatus.Rejected, Failure: SynologyPhotoFailure.Unavailable));
+    Task<SynologyPhotoWriteReceipt> UploadPhotoFaceAsync(NasProfile profile, DsmSession session, ApiCapability capability,
+        long faceId, byte[] jpeg, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new SynologyPhotoWriteReceipt(SynologyPhotoWriteStatus.Rejected, Failure: SynologyPhotoFailure.Unavailable));
+    Task<SynologyPhotoWriteReceipt> WritePhotoAsync(NasProfile profile, DsmSession session,
+        ApiCapability capability, int requiredVersion, string method, IReadOnlyDictionary<string, string> parameters,
+        CancellationToken cancellationToken = default) => Task.FromResult(new SynologyPhotoWriteReceipt(SynologyPhotoWriteStatus.Rejected, Failure: SynologyPhotoFailure.Unavailable));
+    Task<SynologyPhotoWriteReceipt> UploadPhotoAsync(NasProfile profile, DsmSession session,
+        ApiCapability capability, SynologyPhotoUploadTransport upload, Stream source, IProgress<long>? progress = null,
+        CancellationToken cancellationToken = default) => Task.FromResult(new SynologyPhotoWriteReceipt(SynologyPhotoWriteStatus.Rejected, Failure: SynologyPhotoFailure.Unavailable));
     Task<System.Text.Json.Nodes.JsonObject> CallPhotoJsonAsync(
         NasProfile profile, DsmSession session, ApiCapability capability, int requiredVersion,
         string method, IReadOnlyDictionary<string, string>? parameters = null,
         CancellationToken cancellationToken = default) =>
         Task.FromException<System.Text.Json.Nodes.JsonObject>(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
+    Task<System.Text.Json.Nodes.JsonArray> CallPhotoArrayAsync(NasProfile profile, DsmSession session, ApiCapability capability,
+        int requiredVersion, string method, CancellationToken cancellationToken = default) =>
+        Task.FromException<System.Text.Json.Nodes.JsonArray>(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
     Task<byte[]> ReadPhotoThumbnailAsync(NasProfile profile, DsmSession session,
         SynologyPhotoThumbnail thumbnail, bool large, CancellationToken cancellationToken = default) =>
+        Task.FromException<byte[]>(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
+    Task<byte[]> ReadPhotoThumbnailSizeAsync(NasProfile profile, DsmSession session,
+        SynologyPhotoThumbnail thumbnail, SynologyPhotoThumbnailSize size, CancellationToken cancellationToken = default) =>
         Task.FromException<byte[]>(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
     Task<IReadOnlyMediaSource> OpenPhotoMediaAsync(NasProfile profile, DsmSession session,
         SynologyPhotoMediaRequest request, CancellationToken cancellationToken = default) =>
         Task.FromException<IReadOnlyMediaSource>(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
+    Task<SynologyPhotoBinaryResult> DownloadPhotoAsync(NasProfile profile, DsmSession session,
+        SynologyPhotoMediaRequest request, string destination, long? expectedBytes, bool archive,
+        IProgress<long>? progress = null, CancellationToken cancellationToken = default) =>
+        Task.FromException<SynologyPhotoBinaryResult>(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
     Task DownloadPhotoOriginalAsync(NasProfile profile, DsmSession session,
         SynologyPhotoMediaRequest request, string destination, long expectedBytes,
         IProgress<long>? progress = null, CancellationToken cancellationToken = default) =>
@@ -287,6 +319,12 @@ public interface IDsmApiClient
             MutationErrorCategory.Unsupported,
             "file.recycle.status-unsupported"));
 
+    Task<FileRecycleStartTransportResult> StartNonRecursiveFileDeleteAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability, string sourcePath,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileRecycleStartTransportResult(FileMutationTransportStatus.Unsupported,
+            ErrorCategory: MutationErrorCategory.Unsupported, DiagnosticTag: "file.delete.unsupported"));
+
     Task<FileArchiveCompressionStartTransportResult> StartFileArchiveCompressionAsync(
         NasProfile profile,
         DsmSession session,
@@ -401,6 +439,11 @@ public interface IDsmApiClient
         CancellationToken cancellationToken = default) =>
         Task.FromException<DsmBinaryResponse>(
             new NotSupportedException("The API client does not implement bounded binary responses."));
+    Task<DsmBinaryResponse> ReadFileStationDefaultBackgroundAsync(NasProfile profile, DsmSession session, string filename, int maximumBytes, CancellationToken token = default) =>
+        Task.FromException<DsmBinaryResponse>(new NotSupportedException("file.theme.default.unsupported"));
+    Task<FileStationThemeUploadTransportResult> UploadFileStationThemeImageAsync(NasProfile profile, DsmSession session, ApiCapability capability,
+        FileStationThemeImageKind kind, string filename, ReadOnlyMemory<byte> content, CancellationToken token = default) =>
+        Task.FromResult(new FileStationThemeUploadTransportResult(false, false, Error: MutationErrorCategory.Unsupported));
     Task<byte[]> ReadFileRangeAsync(
         NasProfile profile,
         DsmSession session,

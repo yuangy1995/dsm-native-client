@@ -19,7 +19,7 @@ public sealed class FileListOptionsContractTests
         string expectedSortDirection,
         string? expectedFileType)
     {
-        var api = new FileListApiClient(EmptyPage("files"));
+        var api = new FileListApiClient(EmptyPage("files", 7));
         var repository = CreateRepository(api);
 
         await repository.ListFilesAsync(
@@ -199,9 +199,7 @@ public sealed class FileListOptionsContractTests
         response[key] = value;
         var repository = CreateRepository(new FileListApiClient(response));
 
-        var page = await repository.ListFilesAsync(string.Empty, 0, 500);
-
-        Assert.Null(page.StorageSpace);
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.ListFilesAsync(string.Empty, 0, 500));
     }
 
     [Fact]
@@ -232,7 +230,7 @@ public sealed class FileListOptionsContractTests
         };
         var repository = CreateRepository(new FileListApiClient(fullPage, overflow));
 
-        Assert.Null((await repository.ListFilesAsync(string.Empty, 0, 500)).StorageSpace);
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.ListFilesAsync(string.Empty, 0, 500));
         Assert.Null((await repository.ListFilesAsync(string.Empty, 0, 500)).StorageSpace);
     }
 
@@ -261,14 +259,14 @@ public sealed class FileListOptionsContractTests
         };
         var repository = CreateRepository(new FileListApiClient(smallFullPage, nonzeroPage));
 
-        Assert.Null((await repository.ListFilesAsync(string.Empty, 0, 100)).StorageSpace);
-        Assert.Null((await repository.ListFilesAsync(string.Empty, 100, 100)).StorageSpace);
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.ListFilesAsync(string.Empty, 0, 100));
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.ListFilesAsync(string.Empty, 100, 100));
     }
 
     [Fact]
     public async Task LegacyOverloadsDelegateToDefaultOptions()
     {
-        var api = new FileListApiClient(EmptyPage("files"), EmptyPage("shares"));
+        var api = new FileListApiClient(EmptyPage("files", 3), EmptyPage("shares"));
         var repository = CreateRepository(api);
 
         await repository.ListFilesAsync("/fixture", 3, 25);
@@ -362,10 +360,10 @@ public sealed class FileListOptionsContractTests
             });
     }
 
-    private static JsonObject EmptyPage(string root) => new()
+    private static JsonObject EmptyPage(string root, int offset = 0) => new()
     {
-        ["offset"] = 0,
-        ["total"] = 0,
+        ["offset"] = offset,
+        ["total"] = offset,
         [root] = new JsonArray(),
     };
 

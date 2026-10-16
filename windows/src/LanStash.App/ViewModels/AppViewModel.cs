@@ -13,8 +13,13 @@ public sealed partial class AppViewModel : ObservableObject
     private readonly ISecureSessionStore _sessionStore = new CredentialSessionStore();
     private readonly ISecurePasswordStore _passwordStore = new CredentialPasswordStore();
     private readonly IChatConversationPinStore _chatConversationPins = new FileChatConversationPinStore();
+    private readonly IProtectedTaskStore _crossNasStore = WindowsProtectedTaskStore.CrossNas;
+    private readonly IProtectedTaskStore _photosUploadsStore = WindowsProtectedTaskStore.PhotosUploads;
+    private readonly IProtectedTaskStore _photosManagementStore = WindowsProtectedTaskStore.PhotosManagement;
+    private readonly IProtectedTaskStore _officeEditingStore = WindowsProtectedTaskStore.OfficeEditing;
+    private readonly IProtectedTaskStore _downloadActionsStore = WindowsProtectedTaskStore.DownloadActions;
+    private readonly IProtectedTaskStore _nasManagementStore = WindowsProtectedTaskStore.NasManagement;
     private IDsmApiClient? _api;
-    private HttpClient? _activeHttpClient;
     private readonly DesktopCloudDriveService _cloudDrives = new();
     private readonly string _profilesPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -32,15 +37,21 @@ public sealed partial class AppViewModel : ObservableObject
     private bool _rememberPassword;
     private bool _autoLogin;
     private bool _isInitialized;
+    private bool _shuttingDown;
+    private Task? _shutdownTask;
+    private readonly HashSet<Guid> _signingOutProfiles = [];
+    private readonly List<Task> _logoutTasks = [];
+    private long _profileSelectionGeneration;
     private readonly ConnectionAttemptGate _connectionAttempts = new();
     private readonly Dictionary<Guid, CancellationTokenSource> _desktopDriveTasks = [];
     private readonly Dictionary<Guid, DesktopDriveOfflineProgress> _desktopDriveProgress = [];
     private readonly Dictionary<Guid, DesktopDrivePlanningProgress> _desktopDrivePlanning = [];
-    private CancellationTokenSource? _desktopDriveRecoveryCancellation;
-    private Task? _desktopDriveRecoveryTask;
 
     public AppViewModel()
     {
+        OfficeEdits = new(ValidateOfficeLocationAsync);
+        OfficeEdits.StartMonitoring();
+        Features.Settings.AppSettingsService.Current.Changed += ChatSettingsChanged;
     }
 
     public event EventHandler<bool>? ConnectionChanged;
@@ -165,14 +176,19 @@ public sealed partial class AppViewModel : ObservableObject
 
     public async Task SelectProfileAsync(NasProfile profile)
     {
+        if (_shuttingDown) return;
+        var generation = ++_profileSelectionGeneration;
         ClearCertificateChallenge();
         var storedPassword = await _passwordStore.LoadAsync(profile.Id).ConfigureAwait(true)
             ?? string.Empty;
+        if (_shuttingDown || generation != _profileSelectionGeneration) return;
         ApplySelectedProfile(profile, storedPassword);
     }
 
     public void NewProfile()
     {
+        if (_shuttingDown) return;
+        ++_profileSelectionGeneration;
         ClearCertificateChallenge();
         DisplayName = LocalizationService.Current.Get("DefaultNasName");
         Host = string.Empty;
@@ -189,7 +205,7 @@ public sealed partial class AppViewModel : ObservableObject
 
     public async Task ConnectAsync()
     {
-        if (IsBusy)
+        if (IsBusy || _shuttingDown || _signingOutProfiles.Count != 0)
         {
             return;
         }
@@ -217,6 +233,7 @@ public sealed partial class AppViewModel : ObservableObject
         ConnectAttempt input,
         bool certificateRetry)
     {
+        if (_shuttingDown || _signingOutProfiles.Contains(input.Profile.Id)) return;
         IsBusy = true;
         ErrorMessage = null;
         var localization = LocalizationService.Current;
@@ -271,10 +288,11 @@ public sealed partial class AppViewModel : ObservableObject
                 connection.Profile,
                 session,
                 connectionContext.Api,
-                connection.Capabilities) { ConsoleUsesSystemTrust = !connectionContext.UsesPinnedCertificate || connection.Source == DsmConnectionSource.QuickConnectRelay };
-            await TryActivateDesktopDrivesAsync(
-                input.Profile.Id,
-                repository).ConfigureAwait(true);
+                connection.Capabilities, _crossNasStore, _photosUploadsStore, _photosManagementStore,
+                _officeEditingStore, _downloadActionsStore, _nasManagementStore) { ConfiguredChatProfile = input.Profile, ConfiguredDownloadProfile = input.Profile, ConfiguredNasManagementProfile = input.Profile,
+                    ConsoleUsesSystemTrust = !connectionContext.UsesPinnedCertificate || connection.Source == DsmConnectionSource.QuickConnectRelay };
+            await repository.InitializeCrossNasRecoveryAsync().ConfigureAwait(true);
+            await repository.InitializeOfficeRecoveryAsync().ConfigureAwait(true);
             _connectionAttempts.ThrowIfNotCurrent(attempt);
             await SaveProfileForAttemptAsync(input.Profile, attempt).ConfigureAwait(true);
             _connectionAttempts.ThrowIfNotCurrent(attempt);
@@ -335,7 +353,7 @@ public sealed partial class AppViewModel : ObservableObject
 
     public async Task RestoreAsync(NasProfile profile, bool fallbackToPassword = false)
     {
-        if (IsBusy)
+        if (IsBusy || _shuttingDown || _signingOutProfiles.Contains(profile.Id))
         {
             return;
         }
@@ -351,6 +369,7 @@ public sealed partial class AppViewModel : ObservableObject
         bool fallbackToPassword,
         bool certificateRetry)
     {
+        if (_shuttingDown || _signingOutProfiles.Contains(profile.Id)) return;
         IsBusy = true;
         ErrorMessage = null;
         var localization = LocalizationService.Current;
@@ -389,13 +408,13 @@ public sealed partial class AppViewModel : ObservableObject
                 connection.Profile,
                 session,
                 connectionContext.Api,
-                connection.Capabilities) { ConsoleUsesSystemTrust = !connectionContext.UsesPinnedCertificate || connection.Source == DsmConnectionSource.QuickConnectRelay };
-            _ = await repository.ListFilesAsync(
-                string.Empty,
-                cancellation.Token).ConfigureAwait(true);
+                connection.Capabilities, _crossNasStore, _photosUploadsStore, _photosManagementStore,
+                _officeEditingStore, _downloadActionsStore, _nasManagementStore) { ConfiguredChatProfile = profile, ConfiguredDownloadProfile = profile, ConfiguredNasManagementProfile = profile,
+                    ConsoleUsesSystemTrust = !connectionContext.UsesPinnedCertificate || connection.Source == DsmConnectionSource.QuickConnectRelay };
+            await repository.InitializeCrossNasRecoveryAsync().ConfigureAwait(true);
+            await repository.InitializeOfficeRecoveryAsync().ConfigureAwait(true);
             _connectionAttempts.ThrowIfNotCurrent(attempt);
-            await TryActivateDesktopDrivesAsync(profile.Id, repository).ConfigureAwait(true);
-            _connectionAttempts.ThrowIfNotCurrent(attempt);
+            // 恢复只加载本机会话；实际模块自行处理过期与权限，不能要求套件账号拥有文件权限。
             DsmRepository.RegisterRepository(connection.Profile.Id, repository);
             CompleteConnection(
                 profile,
@@ -489,12 +508,21 @@ public sealed partial class AppViewModel : ObservableObject
 
     public async Task SwitchProfileAsync(NasProfile profile)
     {
-        if (IsBusy || ActiveProfile?.Id == profile.Id)
+        if (_shuttingDown || _signingOutProfiles.Contains(profile.Id) || ActiveProfile?.Id == profile.Id)
         {
             return;
         }
-        DisconnectCurrentProfileLocally();
-        await SelectProfileAsync(profile).ConfigureAwait(true);
+        if (_connectedWorkspaces.TryGetValue(profile.Id, out var connected) && MatchesConnectedProfile(connected.Profile, profile))
+        {
+            ActivateConnectedWorkspace(connected);
+            return;
+        }
+        if (IsBusy) return;
+        DetachActiveWorkspace();
+        var selection = SelectProfileAsync(profile);
+        var generation = _profileSelectionGeneration;
+        await selection.ConfigureAwait(true);
+        if (_shuttingDown || generation != _profileSelectionGeneration) return;
         await RestoreAsync(profile).ConfigureAwait(true);
     }
 
@@ -505,13 +533,15 @@ public sealed partial class AppViewModel : ObservableObject
 
     public void BeginAddingProfile()
     {
+        if (_shuttingDown) return;
         CancelConnection();
-        DisconnectCurrentProfileLocally();
+        DetachActiveWorkspace();
         NewProfile();
     }
 
     public async Task RemoveProfileAsync(NasProfile profile)
     {
+        DisconnectOffice(profile.Id);
         var mappings = _cloudDrives.Mappings
                      .Where(item => item.ProfileId == profile.Id)
                      .ToArray();
@@ -538,53 +568,58 @@ public sealed partial class AppViewModel : ObservableObject
         {
             DisconnectCurrentProfileLocally();
         }
+        else ReleaseWorkspace(profile.Id);
     }
 
-    public async Task LogoutAsync()
+    public Task LogoutAsync()
     {
         var profile = ActiveProfile;
-        if (profile is not null)
+        if (profile is null || _shuttingDown || !_signingOutProfiles.Add(profile.Id)) return Task.CompletedTask;
+        _logoutTasks.RemoveAll(task => task.IsCompletedSuccessfully);
+        var logout = LogoutCoreAsync(profile);
+        _logoutTasks.Add(logout);
+        return logout;
+    }
+
+    private async Task LogoutCoreAsync(NasProfile profile)
+    {
+        var api = _api;
+        var session = Session;
+        var connectionProfile = ActiveConnectionProfile ?? profile;
+        CancelConnection();
+        DetachActiveWorkspace();
+        try
         {
-            StopDesktopDriveRecovery();
-            DsmRepository.UnregisterRepository(
-                profile.Id, Repository as DsmRepository);
-            _cloudDrives.DisconnectProfile(profile.Id);
-            if (Session is not null)
+            try
             {
-                try
+                await ReleaseWorkspaceAsync(profile.Id, async () =>
                 {
-                    if (_api is not null)
+                    try
                     {
-                        await _api.LogoutAsync(
-                            ActiveConnectionProfile ?? profile,
-                            Session).ConfigureAwait(true);
+                        if (api is not null && session is not null)
+                            await api.LogoutAsync(connectionProfile, session).ConfigureAwait(true);
                     }
-                }
-                catch
-                {
-                    // NAS 暂时不可达时也必须完成本机退出。
-                }
+                    catch
+                    {
+                        // NAS 暂时不可达时也必须完成本机退出。
+                    }
+                }).ConfigureAwait(true);
             }
-            await _sessionStore.RemoveAsync(profile.Id).ConfigureAwait(true);
-            var signedOutProfile = profile with { AutoLogin = false };
-            var index = Profiles.IndexOf(profile);
-            if (index >= 0)
+            finally
             {
-                Profiles[index] = signedOutProfile;
-                await PersistProfilesAsync().ConfigureAwait(true);
+                // 原工作区停止失败也不能留下可被自动恢复的本机会话。
+                await _sessionStore.RemoveAsync(profile.Id).ConfigureAwait(true);
+                var signedOutProfile = profile with { AutoLogin = false };
+                var index = Profiles.ToList().FindIndex(item => item.Id == profile.Id);
+                if (index >= 0)
+                {
+                    Profiles[index] = signedOutProfile;
+                    await PersistProfilesAsync().ConfigureAwait(true);
+                }
+                if (ActiveProfile is null && Host == profile.Host && Username == profile.Username) AutoLogin = false;
             }
-            AutoLogin = false;
         }
-        ActiveProfile = null;
-        ActiveConnectionProfile = null;
-        Session = null;
-        Repository = null;
-        ActiveConnectionSource = null;
-        _api = null;
-        _activeHttpClient?.Dispose();
-        _activeHttpClient = null;
-        AvailableModules.Clear();
-        ConnectionChanged?.Invoke(this, false);
+        finally { _signingOutProfiles.Remove(profile.Id); }
     }
 
     public async Task AddDesktopDriveAsync(string? folderPath)
@@ -617,7 +652,7 @@ public sealed partial class AppViewModel : ObservableObject
             scope,
             Repository,
             cachePolicy,
-            launchAtLogin).ConfigureAwait(true);
+            launchAtLogin, ConnectedCloudToken(ActiveProfile.Id, Repository)).ConfigureAwait(true);
         RefreshDesktopDriveMappings();
     }
 
@@ -683,7 +718,7 @@ public sealed partial class AppViewModel : ObservableObject
     public Task KeepDesktopDriveItemsOfflineAsync(
         IReadOnlyList<FileItem> items)
     {
-        var mapping = _cloudDrives.MappingContaining(items.Select(item => item.Path))
+        var mapping = _cloudDrives.MappingContaining(ActiveProfile?.Id ?? Guid.Empty, items.Select(item => item.Path))
             ?? throw new InvalidOperationException("CloudDriveNotMapped");
         return KeepDesktopDriveOfflineCoreAsync(mapping, items);
     }
@@ -696,7 +731,8 @@ public sealed partial class AppViewModel : ObservableObject
         {
             return;
         }
-        var cancellation = new CancellationTokenSource();
+        var repository = Repository;
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ConnectedCloudToken(mapping.ProfileId, repository));
         _desktopDriveTasks[mapping.Id] = cancellation;
         var progress = new Progress<DesktopDriveOfflineProgress>(value =>
         {
@@ -714,7 +750,7 @@ public sealed partial class AppViewModel : ObservableObject
             {
                 await _cloudDrives.KeepOfflineAsync(
                     mapping,
-                    Repository,
+                    repository,
                     progress,
                     planning,
                     cancellation.Token).ConfigureAwait(true);
@@ -723,7 +759,7 @@ public sealed partial class AppViewModel : ObservableObject
             {
                 await _cloudDrives.KeepOfflineAsync(
                     mapping,
-                    Repository,
+                    repository,
                     items,
                     progress,
                     planning,
@@ -740,12 +776,12 @@ public sealed partial class AppViewModel : ObservableObject
 
     public bool CanManageDesktopDriveItems(IReadOnlyList<FileItem> items) =>
         items.Count > 0 &&
-        _cloudDrives.MappingContaining(items.Select(item => item.Path)) is not null;
+        _cloudDrives.MappingContaining(ActiveProfile?.Id ?? Guid.Empty, items.Select(item => item.Path)) is not null;
 
     public bool DesktopDriveItemsAreKeptOffline(
         IReadOnlyList<FileItem> items)
     {
-        var mapping = _cloudDrives.MappingContaining(items.Select(item => item.Path));
+        var mapping = _cloudDrives.MappingContaining(ActiveProfile?.Id ?? Guid.Empty, items.Select(item => item.Path));
         return mapping is not null &&
             items.Count > 0 &&
             items.All(item => _cloudDrives.Runtime(mapping).KeepsOffline(item.Path));
@@ -754,7 +790,7 @@ public sealed partial class AppViewModel : ObservableObject
     public async Task ReleaseDesktopDriveItemsOfflineAsync(
         IReadOnlyList<FileItem> items)
     {
-        var mapping = _cloudDrives.MappingContaining(items.Select(item => item.Path))
+        var mapping = _cloudDrives.MappingContaining(ActiveProfile?.Id ?? Guid.Empty, items.Select(item => item.Path))
             ?? throw new InvalidOperationException("CloudDriveNotMapped");
         CancelDesktopDriveTask(mapping);
         await _cloudDrives.ReleaseOfflineAsync(mapping, items).ConfigureAwait(true);
@@ -792,7 +828,7 @@ public sealed partial class AppViewModel : ObservableObject
         {
             throw new InvalidOperationException("CloudDriveSignInRequired");
         }
-        await _cloudDrives.ResumeAsync(mapping, Repository).ConfigureAwait(true);
+        await _cloudDrives.ResumeAsync(mapping, Repository, ConnectedCloudToken(mapping.ProfileId, Repository)).ConfigureAwait(true);
         DesktopDriveProgressChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -818,6 +854,9 @@ public sealed partial class AppViewModel : ObservableObject
         bool enabled, bool confirmed, CancellationToken token)
     {
         RequireWritebackProfile(mapping);
+        if (enabled && Repository is IOfficeEditingRepository office && office.HasOfficeSessionWithin(
+            mapping.Scope.Kind == DesktopDriveScopeKind.AllShares ? "/" : mapping.Scope.FolderPath!))
+            throw new InvalidOperationException("office.cloud-writeback-conflict");
         var result = await _cloudDrives.ConfigureWritebackAsync(mapping, enabled, confirmed, token).ConfigureAwait(true);
         DesktopDriveProgressChanged?.Invoke(this, EventArgs.Empty);
         return result;
@@ -925,14 +964,19 @@ public sealed partial class AppViewModel : ObservableObject
         DesktopDriveProgressChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public void Shutdown()
+    public Task ShutdownAsync() => _shutdownTask ??= ShutdownCoreAsync();
+
+    private async Task ShutdownCoreAsync()
     {
+        _shuttingDown = true;
         CancelConnection();
-        StopDesktopDriveRecovery();
-        if (ActiveProfile is { } profile && Repository is DsmRepository repository)
-        {
-            DsmRepository.UnregisterRepository(profile.Id, repository);
-        }
+        ++_profileSelectionGeneration;
+        Features.Settings.AppSettingsService.Current.Changed -= ChatSettingsChanged;
+        DetachActiveWorkspace();
+        foreach (var id in _connectedWorkspaces.Keys.ToArray()) ReleaseWorkspace(id);
+        foreach (var cancellation in _officeConnectionReads.Values.ToArray()) cancellation.Cancel();
+        await Task.WhenAll(_workspaceDisposals.Concat(_logoutTasks));
+        OfficeEdits.Dispose();
         foreach (var cancellation in _desktopDriveTasks.Values)
         {
             cancellation.Cancel();
@@ -951,19 +995,23 @@ public sealed partial class AppViewModel : ObservableObject
         CertificateConnectionContext connectionContext,
         bool startDesktopDriveRecovery)
     {
-        if (ActiveProfile is { } previousProfile &&
-            Repository is DsmRepository previousRepository &&
-            previousProfile.Id != profile.Id)
+        if (_shuttingDown) throw new OperationCanceledException();
+        ReleaseWorkspace(profile.Id);
+        var chat = repository is IChatRepository { Availability.Status: ChatAvailabilityStatus.Available } chatRepository ? new ChatWorkspaceSession(chatRepository) : null;
+        if (chat is not null)
         {
-            DsmRepository.UnregisterRepository(previousProfile.Id, previousRepository);
+            chat.NotificationsEnabled = Features.Settings.AppSettingsService.Current.Preferences.ChatNotificationsEnabled;
+            chat.NotificationRequested += target => ChatNotificationRequested?.Invoke(target);
         }
-        _activeHttpClient?.Dispose();
-        _activeHttpClient = connectionContext.TakeOwnership();
+        _connectedWorkspaces[profile.Id] = new(profile, connectionProfile, session, repository,
+            connectionContext.Api, connectionContext.TakeOwnership(), connectionSource, chat);
+        if (chat is not null) _ = chat.StartAsync();
         _api = connectionContext.Api;
         ActiveProfile = profile;
         ActiveConnectionProfile = connectionProfile;
         Session = session;
         Repository = repository;
+        if (repository is IOfficeEditingRepository office) _ = AttachOfficeRepositoryAsync(office);
         ActiveConnectionSource = connectionSource;
         ClearCertificateChallenge();
         AvailableModules.Clear();
@@ -973,35 +1021,17 @@ public sealed partial class AppViewModel : ObservableObject
         }
         if (startDesktopDriveRecovery)
         {
-            StartDesktopDriveRecovery(profile.Id);
+            StartDesktopDriveRecovery(_connectedWorkspaces[profile.Id]);
         }
         ConnectionChanged?.Invoke(this, true);
     }
 
     private void DisconnectCurrentProfileLocally()
     {
-        StopDesktopDriveRecovery();
-        if (ActiveProfile is { } profile)
-        {
-            DsmRepository.UnregisterRepository(
-                profile.Id, Repository as DsmRepository);
-            foreach (var mapping in _cloudDrives.Mappings
-                         .Where(item => item.ProfileId == profile.Id))
-            {
-                CancelDesktopDriveTask(mapping);
-            }
-            _cloudDrives.DisconnectProfile(profile.Id);
-        }
-        ActiveProfile = null;
-        ActiveConnectionProfile = null;
-        Session = null;
-        Repository = null;
-        ActiveConnectionSource = null;
-        _api = null;
-        _activeHttpClient?.Dispose();
-        _activeHttpClient = null;
-        AvailableModules.Clear();
-        ConnectionChanged?.Invoke(this, false);
+        var profileIdToRelease = ActiveProfile?.Id;
+        CancelConnection();
+        DetachActiveWorkspace();
+        if (profileIdToRelease is { } releaseId) ReleaseWorkspace(releaseId);
     }
 
     private void ApplySelectedProfile(NasProfile profile, string storedPassword)
@@ -1098,73 +1128,4 @@ public sealed partial class AppViewModel : ObservableObject
         }
     }
 
-    private async Task TryActivateDesktopDrivesAsync(
-        Guid profileId,
-        IDsmRepository repository)
-    {
-        try
-        {
-            await _cloudDrives.ActivateAsync(profileId, repository).ConfigureAwait(true);
-        }
-        catch
-        {
-            // 云盘位置稍后可重试，不能把已经成功的 NAS 登录判定为失败。
-        }
-    }
-
-    private void StartDesktopDriveRecovery(Guid profileId)
-    {
-        StopDesktopDriveRecovery();
-        var cancellation = new CancellationTokenSource();
-        _desktopDriveRecoveryCancellation = cancellation;
-        _desktopDriveRecoveryTask = Task.Run(async () =>
-        {
-            var delaySeconds = 15;
-            while (!cancellation.IsCancellationRequested)
-            {
-                try
-                {
-                    await Task.Delay(
-                        TimeSpan.FromSeconds(
-                            delaySeconds + Random.Shared.Next(0, 6)),
-                        cancellation.Token).ConfigureAwait(false);
-                    if (ActiveProfile?.Id != profileId ||
-                        Repository is not { } repository)
-                    {
-                        continue;
-                    }
-                    await _cloudDrives.ActivateAsync(profileId, repository)
-                        .ConfigureAwait(false);
-                    var mappings = _cloudDrives.Mappings
-                        .Where(item => item.ProfileId == profileId)
-                        .ToArray();
-                    var hasIssue = mappings.Any(mapping =>
-                        _cloudDrives.Runtime(mapping).State is not
-                            (DesktopDriveMappingState.Available or
-                             DesktopDriveMappingState.Paused));
-                    delaySeconds = hasIssue
-                        ? Math.Min(delaySeconds * 2, 300)
-                        : 300;
-                    DesktopDriveProgressChanged?.Invoke(this, EventArgs.Empty);
-                }
-                catch (OperationCanceledException)
-                    when (cancellation.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch
-                {
-                    delaySeconds = Math.Min(delaySeconds * 2, 300);
-                }
-            }
-        }, cancellation.Token);
-    }
-
-    private void StopDesktopDriveRecovery()
-    {
-        _desktopDriveRecoveryCancellation?.Cancel();
-        _desktopDriveRecoveryCancellation?.Dispose();
-        _desktopDriveRecoveryCancellation = null;
-        _desktopDriveRecoveryTask = null;
-    }
 }

@@ -497,14 +497,59 @@ public sealed class FileRangeReadContractTests
         return response;
     }
 
+    private static readonly Guid ProfileId = Guid.NewGuid();
     private static NasProfile Profile() =>
-        new(Guid.NewGuid(), "Test NAS", "nas.example.com", null, "tester");
+        new(ProfileId, "Test NAS", "nas.example.com", null, "tester");
 
     private static DsmSession Session() =>
-        new(Guid.NewGuid(), "synthetic-session", "synthetic-token", null);
+        new(ProfileId, "synthetic-session", "synthetic-token", null);
+
+    [Theory]
+    [InlineData("//external.invalid/entry.cgi")][InlineData("https://external.invalid/entry.cgi")]
+    [InlineData("\\external.invalid\\entry.cgi")][InlineData("entry.cgi?unsafe=1")][InlineData("../entry.cgi")]
+    public async Task UnsafeRangeEndpointSendsNoCredentials(string path)
+    {
+        using var handler = new StubHttpMessageHandler(_ => RangeResponse(0, 3, 4, [1, 2, 3, 4]));
+        using var http = new HttpClient(handler); var client = new DsmApiClient(http);
+        await Assert.ThrowsAsync<ArgumentException>(() => client.ReadFileRangeResultAsync(Profile(), Session(), Capability() with { Path = path }, "/share/file", 0, 4));
+        Assert.Equal(0, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task RangeRejectsAnotherNasSessionBeforeSending()
+    {
+        using var handler = new StubHttpMessageHandler(_ => RangeResponse(0, 3, 4, [1, 2, 3, 4]));
+        using var http = new HttpClient(handler); var client = new DsmApiClient(http);
+        await Assert.ThrowsAsync<ArgumentException>(() => client.ReadFileRangeResultAsync(Profile(), Session() with { ProfileId = Guid.NewGuid() }, Capability(), "/share/file", 0, 4));
+        Assert.Equal(0, handler.RequestCount);
+    }
 
     private static ApiCapability Capability() =>
         new("SYNO.FileStation.Download", "entry.cgi", 1, 2, "FORM");
+
+    [Fact]
+    public async Task AdvertisedNewDownloadVersionKeepsTheSupportedWireContract()
+    {
+        using var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.Contains("version=2&", request.RequestUri!.Query, StringComparison.Ordinal);
+            return RangeResponse(0, 3, 4, [1, 2, 3, 4]);
+        });
+        using var http = new HttpClient(handler); var client = new DsmApiClient(http);
+        await client.ReadFileRangeResultAsync(Profile(), Session(), Capability() with { MaxVersion = 20 }, "/share/file", 0, 4);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Theory]
+    [InlineData(3, 20)][InlineData(1, 1)]
+    public async Task CapabilityWithoutDownloadVersionTwoSendsNothing(int minimum, int maximum)
+    {
+        using var handler = new StubHttpMessageHandler(_ => RangeResponse(0, 3, 4, [1, 2, 3, 4]));
+        using var http = new HttpClient(handler); var client = new DsmApiClient(http);
+        await Assert.ThrowsAsync<NotSupportedException>(() => client.ReadFileRangeResultAsync(Profile(), Session(),
+            Capability() with { MinVersion = minimum, MaxVersion = maximum }, "/share/file", 0, 4));
+        Assert.Equal(0, handler.RequestCount);
+    }
 
     private sealed class StubHttpMessageHandler(
         Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler

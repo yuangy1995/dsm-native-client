@@ -98,7 +98,8 @@ public sealed class SynologyPhotosRepositoryTests
     {
         using var fixture = new SynologyPhotosHttpFixture(); var repository = fixture.Repository(); await repository.AccessAsync();
         var delayed = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
-        fixture.Respond = (_, _) => delayed.Task;
+        fixture.Respond = (call, _) => call.Api.EndsWith(".Download", StringComparison.Ordinal) ? delayed.Task :
+            Task.FromResult(call.Api.EndsWith(".Browse.Item", StringComparison.Ordinal) ? Json(List(fixture.PhotoJson())) : Json(ExportFolder()));
         var directory = Path.Combine(Path.GetTempPath(), $"photos-{Guid.NewGuid():N}"); Directory.CreateDirectory(directory);
         var destination = Path.Combine(directory, "original.jpg");
         try
@@ -116,10 +117,16 @@ public sealed class SynologyPhotosRepositoryTests
     [InlineData("{\"success\":false}")]
     [InlineData("<!DOCTYPE html><html>login</html>")]
     [InlineData("PK\u0003\u0004archive")]
+    [InlineData("PK\u0006\u0006archive")]
     public async Task OriginalDownloadRejectsErrorOrZipPayloadEvenWithImageMime(string content)
     {
         using var fixture = new SynologyPhotosHttpFixture(); var bytes = Encoding.UTF8.GetBytes(content);
-        fixture.Respond = (_, _) => Task.FromResult(Binary(bytes, "image/jpeg"));
+        fixture.Respond = (call, _) =>
+        {
+            var photo = fixture.PhotoJson(); photo["filesize"] = bytes.Length;
+            return Task.FromResult(call.Api.EndsWith(".Download", StringComparison.Ordinal) ? Binary(bytes, "image/jpeg") :
+                call.Api.EndsWith(".Browse.Item", StringComparison.Ordinal) ? Json(List(photo)) : Json(ExportFolder()));
+        };
         var repository = fixture.Repository(); await repository.AccessAsync(); var path = Path.Combine(Path.GetTempPath(), $"photos-{Guid.NewGuid():N}.jpg");
         try
         {
@@ -128,6 +135,9 @@ public sealed class SynologyPhotosRepositoryTests
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
+
+    private static JsonObject ExportFolder() => new() { ["folder"] = new JsonObject
+    { ["id"] = 3, ["parent"] = 1, ["name"] = "/synthetic", ["additional"] = new JsonObject { ["access_permission"] = new JsonObject { ["view"] = true, ["download"] = true } } } };
 
     [Fact]
     public async Task ChangedDeletionTargetIsRejectedBeforeTheWrite()
@@ -139,16 +149,21 @@ public sealed class SynologyPhotosRepositoryTests
         Assert.Equal(SynologyPhotoFailure.TargetChanged, error.Failure); Assert.DoesNotContain(fixture.Requests, call => call.Method == "delete");
     }
 
-    [Fact]
-    public async Task UnknownDeleteIsNeverResentAndOnlyEmptyIdReadbackConfirmsSuccess()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DeleteNeverResendsAndAbsenceRequiresThisTaskReceiptAndCompletion(bool lostReceipt)
     {
         using var fixture = new SynologyPhotosHttpFixture(); var deleted = false;
         fixture.Respond = (call, _) =>
         {
-            if (call.Method == "delete") return Task.FromException<HttpResponseMessage>(new IOException());
+            if (call.Method == "delete") return lostReceipt ? Task.FromException<HttpResponseMessage>(new IOException()) :
+                Task.FromResult(Json(new() { ["task_info"] = new JsonObject { ["id"] = 91, ["total"] = 1 } }));
+            if (call.Method == "get_status") return Task.FromResult(Json(List(new JsonObject { ["id"] = 91, ["status"] = deleted ? "done" : "waiting",
+                ["total"] = 1, ["completion"] = deleted ? 1 : 0, ["error"] = 0, ["skip"] = 0 })));
             if (call.Api == "SYNO.Foto.Browse.Folder") return Task.FromResult(Json(new JsonObject { ["folder"] = new JsonObject
             {
-                ["id"] = 3, ["additional"] = new JsonObject { ["access_permission"] = new JsonObject { ["view"] = true, ["manage"] = true } }
+                ["id"] = 3, ["name"] = "/synthetic", ["parent"] = 1, ["additional"] = new JsonObject { ["access_permission"] = new JsonObject { ["view"] = true, ["manage"] = true } }
             }}));
             return Task.FromResult(Json(deleted ? List() : List(fixture.PhotoJson())));
         };
@@ -158,7 +173,8 @@ public sealed class SynologyPhotosRepositoryTests
         var write = Assert.Single(fixture.Requests, call => call.Method == "delete");
         Assert.Equal("[7]", write.Values["item_id"]); Assert.Equal("[]", write.Values["folder_id"]);
         deleted = true;
-        Assert.Equal(SynologyPhotoDeletionResult.Confirmed, await repository.ReviewDeletionAsync(fixture.Photo));
+        Assert.Equal(lostReceipt ? SynologyPhotoDeletionResult.PendingReview : SynologyPhotoDeletionResult.Confirmed, await repository.ReviewDeletionAsync(fixture.Photo));
+        if (lostReceipt) Assert.DoesNotContain(fixture.Requests, call => call.Method == "get_status");
         Assert.Single(fixture.Requests, call => call.Method == "delete");
     }
 

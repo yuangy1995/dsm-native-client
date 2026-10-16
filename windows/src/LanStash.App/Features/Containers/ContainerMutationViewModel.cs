@@ -86,7 +86,7 @@ public sealed class ContainerMutationViewModel : ObservableObject, IDisposable
                 }
             }
             await LoadPendingAsync(repository, request); if (!Current(request, repository)) return;
-            var snapshot = await repository.LoadSnapshotAsync(request.Token); if (!Current(request, repository)) return;
+            var snapshot = await repository.LoadInventoryAsync(request.Token); if (!Current(request, repository)) return;
             if (snapshot.ProfileId != repository.ProfileId || snapshot.Containers.Status != ContainerManagerSectionStatus.Available)
                 throw new InvalidOperationException("container.operations.snapshot.invalid");
             _all = snapshot.Containers.Items.ToArray(); _ready = true; UpdateItems();

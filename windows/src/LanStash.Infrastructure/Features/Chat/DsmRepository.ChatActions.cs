@@ -72,27 +72,59 @@ public sealed partial class DsmRepository
                     var source = await FindActionMessageAsync(request.SourceConversationId, request.MessageId, ct).ConfigureAwait(false);
                     if (source.Poll is not null || (string.IsNullOrWhiteSpace(source.Text) && source.Attachments.Count == 0)) throw new AdvancedChatPermissionException();
                     if (expected is not null && expected != ActionMessageFingerprint(source)) throw new AdvancedChatTargetChangedException();
+                    state.OwnerId = _chatCurrentUserId ?? throw InvalidChatResponse();
                     state.PayloadFingerprint = ForwardPayloadFingerprint(source);
                     foreach (var target in targets)
                     {
                         var page = await ListMessagesAsync(target, null, 100, ct).ConfigureAwait(false);
                         state.DestinationBaselines[target] = page.Messages.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+                        state.DestinationLatest[target] = page.Messages.Select(item => (DateTimeOffset?)item.SentAt).Max();
                     }
                     return (false, null);
                 }
+                if (!state.Accepted) return (false, null);
+                var currentConversations = await ListConversationsAsync(ct).ConfigureAwait(false);
+                if (state.OwnerId is null || state.OwnerId != _chatCurrentUserId) return (false, null);
                 foreach (var target in targets)
                 {
                     if (state.ConfirmedDestinations.Contains(target)) continue;
-                    var page = await ListMessagesAsync(target, null, 100, ct).ConfigureAwait(false);
-                    var matches = page.Messages.Where(item => item.ConversationId == target && item.IsFromCurrentUser == true &&
-                        item.EncryptionState == ChatEncryptionState.NotEncrypted && item.Poll is null &&
-                        !state.DestinationBaselines[target].Contains(item.Id) &&
-                        Math.Abs((item.SentAt - state.SubmittedAt).TotalSeconds) <= 180 &&
-                        ForwardPayloadFingerprint(item) == state.PayloadFingerprint).ToArray();
-                    if (matches.Length == 1) state.ConfirmedDestinations.Add(target);
+                    if (!currentConversations.Any(item => item.Id == target && !item.IsEncrypted)) continue;
+                    try
+                    {
+                        if (await ConfirmForwardDestinationAsync(state, target, ct).ConfigureAwait(false)) state.ConfirmedDestinations.Add(target);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch { /* 单个目标失败保留其他目标的独立确认，下次只读继续。 */ }
                 }
                 return (targets.All(state.ConfirmedDestinations.Contains), null);
             }, token, requiredVersion: ChatActionVersion).ConfigureAwait(false)).Result;
+    }
+
+    private async Task<bool> ConfirmForwardDestinationAsync(AdvancedChatOperation state, string target, CancellationToken token)
+    {
+        string? cursor = null;
+        var cursors = new HashSet<string>(StringComparer.Ordinal); var ids = new HashSet<string>(StringComparer.Ordinal);
+        var matches = new HashSet<string>(StringComparer.Ordinal);
+        var latest = state.DestinationLatest[target];
+        var earliest = state.SubmittedAt.AddSeconds(-180);
+        if (latest > earliest) earliest = latest.Value;
+        while (true)
+        {
+            var page = await ListMessagesAsync(target, cursor, 100, token).ConfigureAwait(false);
+            foreach (var item in page.Messages)
+            {
+                if (!ids.Add(item.Id)) throw InvalidChatResponse();
+                if (item.ConversationId == target && item.SenderId == state.OwnerId && item.IsFromCurrentUser == true &&
+                    item.EncryptionState == ChatEncryptionState.NotEncrypted && item.Poll is null && !item.IsThreadReply &&
+                    item.Kind == ChatMessageKind.Normal && !state.DestinationBaselines[target].Contains(item.Id) &&
+                    Math.Abs((item.SentAt - state.SubmittedAt).TotalSeconds) <= 180 && (latest is null || item.SentAt > latest) &&
+                    ForwardPayloadFingerprint(item) == state.PayloadFingerprint) matches.Add(item.Id);
+            }
+            if (matches.Count > 1) return false;
+            if (!page.HasMoreBefore || page.Messages.Any(item => item.SentAt < earliest)) return matches.Count == 1;
+            if (page.PreviousCursor is null || !cursors.Add(page.PreviousCursor)) throw InvalidChatResponse();
+            cursor = page.PreviousCursor;
+        }
     }
 
     private async Task<ChatMessage> FindActionMessageAsync(string conversationId, string messageId, CancellationToken token) =>
@@ -125,6 +157,7 @@ public sealed partial class DsmRepository
     private static string ActionMessageFingerprint(ChatMessage message) => AdvancedFingerprint(new
     {
         message.Id, message.ConversationId, message.SenderId, message.SentAt, message.EncryptionState,
+        message.Kind, message.ThreadId, message.EditedAt,
         payload = ForwardPayloadFingerprint(message), poll = message.Poll is { } poll
             ? new { poll.Question, Options = poll.Options.Select(option => option.Text).ToArray() } : null,
     });
@@ -132,12 +165,14 @@ public sealed partial class DsmRepository
     private async Task<IReadOnlyList<JsonObject>> ReadAllPinnedPayloadAsync(string conversationId, CancellationToken token)
     {
         EnsureReadableChatContract();
+        if (!long.TryParse(conversationId, NumberStyles.None, CultureInfo.InvariantCulture, out var channelId) || channelId <= 0)
+            throw InvalidChatResponse();
         var rows = new List<JsonObject>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         while (true)
         {
             var data = await AdvancedChatCallAsync("SYNO.Chat.Post", ChatActionVersion, "search",
-                [("channel_id", conversationId), ("offset", rows.Count), ("limit", 100), ("has", new[] { "pin" }),
+                [("in", new[] { channelId }), ("offset", rows.Count), ("limit", 100), ("has", new[] { "pin" }),
                  ("sort_by", "last_pin_at"), ("sort_by_array", new[] { "is_sticky", "last_pin_at" })], token).ConfigureAwait(false);
             var raw = data["search_results"] as JsonArray ?? data["posts"] as JsonArray ?? throw InvalidChatResponse();
             if (raw.Count > 100) throw InvalidChatResponse();

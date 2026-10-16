@@ -23,6 +23,7 @@ public sealed class ContainerNetworkDeletionViewModelTests
         Assert.True(model.Confirm(true)); model.SelectTargets([model.Items[1]]); Assert.False(model.CanSubmit);
         model.Confirm(true); await model.SubmitAsync(); await model.SubmitAsync(); Assert.Equal(1, fake.Writes);
         Assert.Equal("b", Assert.Single(fake.LastRequest!.Baselines).Id); Assert.True(model.NeedsParentRefresh); Assert.False(model.CanSelect);
+        Assert.Equal(ContainerNetworkDeletionStage.Deleted, Assert.Single(model.Results).Item.Stage);
         await model.ReloadAsync(); Assert.Equal("a", Assert.Single(model.Items).Id); Assert.False(model.CanSubmit);
     }
     [Fact]
@@ -97,10 +98,14 @@ public sealed class ContainerNetworkDeletionViewModelTests
                 case "get_CanDeleteNetworks": return Writable;
                 case "PrepareNetworkManagementAsync": return Task.CompletedTask;
                 case "GetNetworkDeletionRecoveriesAsync": return Task.FromResult<IReadOnlyList<ContainerNetworkDeletionRecovery>>(Pending.ToArray());
+                case "GetNetworkDeletionItemsAsync": return Task.FromResult<IReadOnlyList<ContainerNetworkDeletionItem>>(LastRequest is null ? [] :
+                    LastRequest.Baselines.Select(target => new ContainerNetworkDeletionItem(LastRequest.RequestId, target.Id, target.Name,
+                        Networks.Any(item => item.Id == target.Id) ? ContainerNetworkDeletionStage.Accepted : ContainerNetworkDeletionStage.Deleted)).ToArray());
                 case "ReviewNetworkDeletionAsync":
                     if (Pending.Count == 0) return Task.FromResult<MutationResult?>(null);
                     if (Resolve) { Networks.Clear(); Pending.Clear(); return Task.FromResult<MutationResult?>(Success(2)); }
                     return Task.FromResult<MutationResult?>(new(1, MutationResultStatus.PartialSuccess, "deleteContainerNetworks", true, true, new(1, 0, 1)));
+                case "LoadInventoryAsync":
                 case "LoadSnapshotAsync": return Task.FromResult(new ContainerManagerSnapshot(SnapshotProfile,
                     ContainerManagerSection<ContainerSummary>.Available([]), ContainerManagerSection<ContainerResourceSummary>.Available([]),
                     Failed ? ContainerManagerSection<ContainerResourceSummary>.Failed : ContainerManagerSection<ContainerResourceSummary>.Available(Networks.ToArray()),

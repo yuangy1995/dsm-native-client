@@ -49,7 +49,7 @@ public sealed class FileBrowserViewModelTests
     {
         var source = new FakeFileBrowserDataSource();
         source.Enqueue(Page(0, 4, File("/share/a.txt", "a.txt"), File("/share/b.txt", "b.txt")));
-        source.Enqueue(Page(2, 4, File("/share/b.txt", "b.txt"), File("/share/c.txt", "c.txt")));
+        source.Enqueue(Page(2, 4, File("/share/c.txt", "c.txt"), File("/share/d.txt", "d.txt")));
         using var model = new FileBrowserViewModel(source, pageSize: 2);
         await model.InitializeAsync();
         var first = model.Items[0];
@@ -61,8 +61,8 @@ public sealed class FileBrowserViewModelTests
 
         Assert.Same(first, model.Items[0]);
         Assert.Same(first, model.SelectedItem);
-        Assert.Equal([System.Collections.Specialized.NotifyCollectionChangedAction.Add], changes);
-        Assert.Equal(["a.txt", "b.txt", "c.txt"], model.Items.Select(item => item.Name));
+        Assert.Equal([System.Collections.Specialized.NotifyCollectionChangedAction.Add, System.Collections.Specialized.NotifyCollectionChangedAction.Add], changes);
+        Assert.Equal(["a.txt", "b.txt", "c.txt", "d.txt"], model.Items.Select(item => item.Name));
     }
 
     [Fact]
@@ -339,8 +339,10 @@ public sealed class FileBrowserViewModelTests
         await model.InitializeAsync();
         await model.LoadMoreAsync();
 
-        Assert.Equal(3, model.Items.Count);
-        Assert.Equal(3, model.Items.Select(item => item.Path).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(2, model.Items.Count);
+        Assert.Equal(2, model.Items.Select(item => item.Path).Distinct(StringComparer.Ordinal).Count());
+        Assert.True(model.HasLoadMoreError);
+        Assert.True(model.CanLoadMore);
         Assert.Equal([0, 2], source.Requests.Select(request => request.Offset));
     }
 

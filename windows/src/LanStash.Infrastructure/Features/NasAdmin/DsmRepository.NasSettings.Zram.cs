@@ -11,7 +11,7 @@ public sealed partial class DsmRepository
         var capability = SecurityCapability("SYNO.Core.Hardware.ZRAM", 1) ??
             throw new DsmException(UserText.Key("NasSettingsLoadError"), UserText.Key("NasSettingsUnavailable"), 102);
         var data = await _api.CallReadJsonObjectAsync(_profile, _session, capability, 1, "get", cancellationToken: cancellationToken).ConfigureAwait(false);
-        bool? enabled = ExternalStorageField(data, "enable", "enabled", "zram_enable") is JsonValue scalar && scalar.TryGetValue<bool>(out var flag) ? flag : null;
+        bool? enabled = ExternalStorageField(data, "enable_zram", "enable", "enabled", "zram_enable") is JsonValue scalar && scalar.TryGetValue<bool>(out var flag) ? flag : null;
         // 复用明确字节数和一致别名校验，不推断 size/capacity 的单位。
         var bytes = ExternalStorageBytes(ExternalStorageField(data, "configured_bytes", "capacity_bytes", "size_bytes"));
         var algorithm = ExternalStorageText(ExternalStorageField(data, "algorithm", "compression_algorithm", "compressor"))?.Trim().ToLowerInvariant() switch
@@ -21,6 +21,12 @@ public sealed partial class DsmRepository
             "zstd" => NasZramAlgorithm.Zstd,
             _ => NasZramAlgorithm.Unknown
         };
-        return new(enabled, bytes, algorithm);
+        return new(enabled, bytes, algorithm) { NeedsReboot = await ReadZramRebootAsync(cancellationToken).ConfigureAwait(false) };
+    }
+    private async Task<bool?> ReadZramRebootAsync(CancellationToken token)
+    {
+        if (SecurityCapability("SYNO.Core.Hardware.NeedReboot", 1) is not { } capability) return null;
+        var data = await _api.CallReadJsonObjectAsync(_profile, _session, capability, 1, "get", cancellationToken: token).ConfigureAwait(false);
+        return data["need_reboot"] is JsonValue value && value.TryGetValue<bool>(out var flag) ? flag : null;
     }
 }

@@ -67,7 +67,8 @@ public sealed class DesktopCloudDriveDeletionTests : IDisposable
         if (recreate) repository.Items["/share/file"] = new(false, "new content");
         Assert.Equal(operation, await Coordinator(repository).ConfirmAsync(operation, true));
         var result = await Coordinator(repository).ReviewAsync(operation.Id);
-        Assert.Equal(recreate ? CloudDriveDeletionPhase.Submitted : CloudDriveDeletionPhase.ServerVerified, result.Phase);
+        Assert.Equal(CloudDriveDeletionPhase.Submitted, result.Phase);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Store.UpdateDeletionOperationAsync(_mapping, result, result with { Phase = CloudDriveDeletionPhase.Completed }));
         Assert.Equal(1, repository.Deletes);
     }
 

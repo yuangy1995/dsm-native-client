@@ -18,9 +18,11 @@ public enum ChatTextComposerState
 public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
 {
     private readonly ChatTextSendReviewBlocker _blocker;
-    private readonly Dictionary<(Guid ProfileId, string ConversationId), string> _drafts = [];
+    private readonly Dictionary<(Guid ProfileId, string ConversationId, string? ThreadId, string? AccountIdentity), string> _drafts = [];
     private IChatRepository? _repository;
     private ChatConversationItem? _conversation;
+    private string? _threadId;
+    private Guid? _submittedRequestId;
     private CancellationTokenSource? _request;
     private ChatTextComposerState _state = ChatTextComposerState.Unavailable;
     private string _draftText = string.Empty;
@@ -71,6 +73,7 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
 
     public bool IsAvailable => CanUseCurrentConversation;
     public bool IsSending => State == ChatTextComposerState.Sending;
+    internal bool HasDrafts => !string.IsNullOrWhiteSpace(DraftText) || _drafts.Values.Any(text => !string.IsNullOrWhiteSpace(text));
     public bool CanEdit => IsAvailable && !IsSending;
     public bool HasReview => State == ChatTextComposerState.NeedsReview;
     public bool HasStatus => State is ChatTextComposerState.Sending or
@@ -82,19 +85,22 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
     public bool CanSend => CanEdit &&
         !string.IsNullOrWhiteSpace(NormalizedDraft) &&
         CurrentReviewBlock is null;
+    public bool CanRefreshSend => CanEdit && CurrentReviewBlock?.RequestId is not null;
 
-    public void Configure(IChatRepository repository, ChatConversationItem? conversation)
+    public void Configure(IChatRepository repository, ChatConversationItem? conversation, string? threadId = null)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(repository);
         var changed = !ReferenceEquals(repository, _repository) ||
-            _conversation?.Id != conversation?.Id;
+            _conversation?.Id != conversation?.Id || _threadId != threadId;
         if (changed)
         {
             SaveDraft();
             CancelRequest();
             _repository = repository;
             _conversation = conversation;
+            _threadId = threadId;
+            _submittedRequestId = null;
             _draftText = LoadDraft();
             State = CanUseCurrentConversation
                 ? ChatTextComposerState.Ready
@@ -122,6 +128,7 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
         CancelRequest();
         _repository = null;
         _conversation = null;
+        _threadId = null;
         _draftText = string.Empty;
         State = ChatTextComposerState.Unavailable;
         RaisePropertyChanged(nameof(DraftText));
@@ -143,6 +150,7 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
         }
 
         var generation = BeginRequest(out var cancellation);
+        _submittedRequestId = Guid.NewGuid();
         State = ChatTextComposerState.Sending;
         try
         {
@@ -150,7 +158,7 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
                 new ChatTextSendRequest(
                     _conversation.Id,
                     normalizedText,
-                    Guid.NewGuid()),
+                    _submittedRequestId.Value) { ThreadId = _threadId },
                 cancellation.Token);
             if (!IsCurrent(generation))
             {
@@ -172,6 +180,23 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
         {
             EndRequest(cancellation);
         }
+    }
+
+    public async Task<bool> RefreshSendAsync()
+    {
+        ThrowIfDisposed();
+        if (!CanRefreshSend || _repository is null || _conversation is null || CurrentReviewBlock?.RequestId is not { } id) return false;
+        var text = NormalizedDraft;
+        var generation = BeginRequest(out var cancellation);
+        _submittedRequestId = id;
+        State = ChatTextComposerState.Sending;
+        try
+        {
+            var outcome = await _repository.SendTextAsync(new(_conversation.Id, text, id) { ThreadId = _threadId }, cancellation.Token);
+            return IsCurrent(generation) && Apply(outcome, text);
+        }
+        catch when (IsCurrent(generation)) { MarkReview(text); return false; }
+        finally { EndRequest(cancellation); }
     }
 
     private bool Apply(ChatTextSendOutcome outcome, string normalizedText)
@@ -211,6 +236,7 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
     private bool CanUseCurrentConversation =>
         _repository is { Availability.Status: ChatAvailabilityStatus.Available } repository &&
         repository.Availability.SupportedWriteFeatures.Contains(ChatWriteFeature.TextMessage) &&
+        (_threadId is null || repository.Availability.SupportedWriteFeatures.Contains(ChatWriteFeature.ThreadedReplies)) &&
         _conversation is { IsEncrypted: false };
 
     private string NormalizedDraft => DraftText.Trim();
@@ -218,7 +244,7 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
     private ChatTextSendReviewBlock? CurrentReviewBlock =>
         _repository is null || _conversation is null || string.IsNullOrWhiteSpace(NormalizedDraft)
             ? null
-            : _blocker.Find(_repository.ProfileId, _conversation.Id, NormalizedDraft);
+            : _blocker.Find(_repository.ProfileId, _conversation.Id, NormalizedDraft, _threadId, _repository.AccountIdentity);
 
     private void MarkReview(string normalizedText)
     {
@@ -227,7 +253,7 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
             State = ChatTextComposerState.Failure;
             return;
         }
-        _blocker.Block(new(_repository.ProfileId, _conversation.Id, normalizedText));
+        _blocker.Block(new(_repository.ProfileId, _conversation.Id, normalizedText, _threadId, _submittedRequestId, _repository.AccountIdentity));
         State = ChatTextComposerState.NeedsReview;
     }
 
@@ -237,7 +263,7 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
         {
             return;
         }
-        if (_blocker.Find(_repository.ProfileId, _conversation.Id, normalizedText) is { } review)
+        if (_blocker.Find(_repository.ProfileId, _conversation.Id, normalizedText, _threadId, _repository.AccountIdentity) is { } review)
         {
             _blocker.Clear(review);
         }
@@ -249,13 +275,13 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
         {
             return;
         }
-        _drafts[(_repository.ProfileId, _conversation.Id)] = DraftText;
+        _drafts[(_repository.ProfileId, _conversation.Id, _threadId, _repository.AccountIdentity)] = DraftText;
     }
 
     private string LoadDraft() =>
         _repository is not null &&
         _conversation is not null &&
-        _drafts.TryGetValue((_repository.ProfileId, _conversation.Id), out var draft)
+        _drafts.TryGetValue((_repository.ProfileId, _conversation.Id, _threadId, _repository.AccountIdentity), out var draft)
             ? draft
             : string.Empty;
 
@@ -299,6 +325,7 @@ public sealed class ChatTextComposerViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(HasReview));
         RaisePropertyChanged(nameof(HasStatus));
         RaisePropertyChanged(nameof(CanSend));
+        RaisePropertyChanged(nameof(CanRefreshSend));
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);

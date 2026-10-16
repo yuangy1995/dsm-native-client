@@ -71,7 +71,8 @@ public sealed class DownloadStationPageSourceContractTests
         Assert.Contains("x:Name=\"DownloadDeleteNotice\"", xaml);
         Assert.Contains("_viewModel.ControlSelectedTaskAsync(DownloadTaskControlAction.Pause)", source);
         Assert.Contains("_viewModel.ControlSelectedTaskAsync(DownloadTaskControlAction.Resume)", source);
-        Assert.Contains("_viewModel.DeleteSelectedTaskAsync", source);
+        Assert.Contains("_viewModel.DeleteConfirmedTaskAsync(selected.Task, _repository)", source);
+        Assert.Contains("_deleteDialog?.Hide()", source);
         Assert.Contains("DownloadTaskControlNoticeKind.NeedsReview", source);
         Assert.Contains("DownloadTaskDeleteNoticeKind.NeedsReview", source);
         Assert.DoesNotContain("RawStatus", xaml + source);
@@ -123,7 +124,9 @@ public sealed class DownloadStationPageSourceContractTests
         var settings = Read("windows/src/LanStash.App/Views/DownloadStationPage.Settings.cs");
         var editor = Read("windows/src/LanStash.App/Views/DownloadSettingsDialogContent.xaml.cs");
         Assert.Contains("DefaultButton = ContentDialogButton.Close", settings);
-        Assert.Contains("Confirmation.IsChecked == true", editor);
+        Assert.DoesNotContain("Confirmation.IsChecked == true", editor);
+        Assert.Contains("Snapshot?.IsManager == true", editor);
+        Assert.Contains("Confirmation.IsChecked == true", Read("windows/src/LanStash.App/Views/DownloadTaskBatchDialogContent.xaml.cs"));
         Assert.Contains("_model.ReviewAsync()", editor);
         Assert.Contains("_model.ContinueAsync()", editor);
         Assert.DoesNotContain("setserverconfig", settings + editor);

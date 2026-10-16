@@ -176,7 +176,6 @@ public sealed partial class DsmRepository
         state is NasPowerOperation power ? Task.FromResult(power.Final!) :
         state is NasDirectorySaveOperation savedDirectory ? ReviewDirectorySaveAsync(savedDirectory, token) :
         state is NasDirectoryDeletionOperation directory ? ReviewDirectoryDeletionAsync(directory, token) :
-        state is NasPackageOperation package ? ReconcilePackageAsync(package, 1, token, false, Task.Delay) :
         state is NasDdnsOperation ddns ? ReviewDdnsOperationAsync(ddns, token) :
         state is NasHardwareOperation hardware ? ReviewHardwareOperationAsync(hardware, token) :
         state is NasSecurityOperation security ? ReviewSecurityOperationAsync(security, token) :
@@ -315,7 +314,6 @@ public sealed partial class DsmRepository
         public SemaphoreSlim Gate { get; } = new(1, 1);
         public Dictionary<Guid, NasSettingsOperation> Operations { get; } = [];
         public Dictionary<(string Scope, NasServiceSettingsKind Kind), NasSettingsOperation> Pending { get; } = [];
-        public Dictionary<(string Scope, string PackageId), NasPackageOperation> PackagePending { get; } = [];
         public Dictionary<(string Scope, NasDirectoryKind Kind, string Name), NasDirectoryOperation> DirectoryPending { get; } = [];
         public Dictionary<(string Scope, string TargetKey), NasConnectionOperation> ConnectionPending { get; } = [];
         public Dictionary<(string Scope, int Id), NasTaskCommandOperation> TaskPending { get; } = [];
@@ -328,6 +326,15 @@ public sealed partial class DsmRepository
         public Dictionary<Guid, ContainerImagePullOperation> ImagePulls { get; } = [];
         public Dictionary<(string Scope, string Path), FavoriteMutationOperation> FavoritePending { get; } = [];
         public Dictionary<Guid, RemoteMountOperation> RemoteMountOperations { get; } = [];
+        public Dictionary<(string Scope, Guid Id), PendingIsoMount> IsoMounts { get; } = [];
+        public Dictionary<(string Scope, Guid Id), PendingVfs> Vfs { get; } = [];
+        public Dictionary<(string Scope, Guid Id), PendingFileStationSetting> FileStationSettings { get; } = [];
+        public HashSet<(string Scope, FileStationThemeImageKind Kind, string Digest)> FileThemeUploads { get; } = [];
+        public Dictionary<(string Scope, Guid Id), PendingFileBackgroundControl> FileBackgroundControls { get; } = [];
+        public Dictionary<(string Scope, string Path), PendingFilePermissionChange> FilePermissions { get; } = [];
+        public Dictionary<(string Scope, string Path), PendingTextSave> TextSaves { get; } = [];
+        public Dictionary<(string Scope, string Path), PendingFileUpload> FileUploads { get; } = [];
+        public Dictionary<(string Scope, Guid Id), CrossNasTransfer> CrossNasTransfers { get; } = [];
     }
     private abstract class NasSettingsOperation(string scope, string signature, NasServiceSettingsKind kind)
     {

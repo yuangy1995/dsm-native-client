@@ -622,11 +622,8 @@ public sealed partial class DsmRepository
                         share.Path,
                         Math.Min(StorageAnalysisFilesPerShare, remaining),
                         cancellationToken).ConfigureAwait(false);
-                    candidates.AddRange(files);
-                    if (files.Count >= StorageAnalysisFilesPerShare)
-                    {
-                        partial = true;
-                    }
+                    candidates.AddRange(files.Items.Select(file => file with { ShareName = share.Name }));
+                    partial |= files.IsTruncated;
                 }
                 catch (OperationCanceledException)
                 {
@@ -671,14 +668,14 @@ public sealed partial class DsmRepository
             var files = new List<StorageAnalysisFileCandidate>();
             var directories = new Dictionary<string, StorageAnalysisDirectoryAccumulator>(
                 StringComparer.Ordinal);
-            var folderQueue = new Queue<string>();
+            var folderQueue = new Queue<(string Path, string ShareName)>();
             var scannedFolders = 0;
             var skippedFolders = 0;
             var partial = shares.IsTruncated || shares.Items.Count > DeepStorageAnalysisShareLimit;
 
             foreach (var share in shares.Items.Take(DeepStorageAnalysisShareLimit))
             {
-                folderQueue.Enqueue(share.Path);
+                folderQueue.Enqueue((share.Path, share.Name));
             }
 
             while (folderQueue.Count > 0)
@@ -692,7 +689,7 @@ public sealed partial class DsmRepository
                     break;
                 }
 
-                var folderPath = folderQueue.Dequeue();
+                var (folderPath, shareName) = folderQueue.Dequeue();
                 scannedFolders++;
                 try
                 {
@@ -703,7 +700,7 @@ public sealed partial class DsmRepository
                     skippedFolders += entries.SkippedFolderCount;
                     foreach (var child in entries.Folders.Take(DeepStorageAnalysisFoldersPerParent))
                     {
-                        folderQueue.Enqueue(child);
+                        folderQueue.Enqueue((child, shareName));
                     }
                     foreach (var file in entries.Files)
                     {
@@ -712,7 +709,7 @@ public sealed partial class DsmRepository
                             partial = true;
                             break;
                         }
-                        files.Add(file);
+                        files.Add(file with { ShareName = shareName });
                         AddStorageAnalysisDirectory(directories, folderPath, file);
                     }
                 }
@@ -808,14 +805,14 @@ public sealed partial class DsmRepository
         return new StorageAnalysisSharePage(shares, total > page.Count);
     }
 
-    private async Task<IReadOnlyList<StorageAnalysisFileCandidate>> LoadStorageAnalysisFilesAsync(
+    private async Task<StorageAnalysisFilePage> LoadStorageAnalysisFilesAsync(
         string sharePath,
         int limit,
         CancellationToken cancellationToken)
     {
         if (limit <= 0)
         {
-            return [];
+            return new([], false);
         }
         var data = await _api.CallReadJsonObjectAsync(
             _profile,
@@ -835,17 +832,21 @@ public sealed partial class DsmRepository
             },
             cancellationToken).ConfigureAwait(false);
         var files = ShareAccessRequiredArray(data, "files");
-        if (files.Count > limit)
+        var offset = data.Int("offset") ?? 0;
+        var total = data.Int("total");
+        if (files.Count > limit || offset != 0 || total < files.Count)
         {
             throw new InvalidDataException("Storage-analysis file page exceeded its bound.");
         }
         var result = new List<StorageAnalysisFileCandidate>();
+        var partial = total > files.Count || total is null && files.Count == limit;
         foreach (var node in files)
         {
             var item = node as JsonObject
                 ?? throw new InvalidDataException("Invalid storage-analysis file.");
             if (item.Bool("isdir") == true)
             {
+                partial = true;
                 continue;
             }
             var name = RequiredDisplayString(item, "name")
@@ -855,6 +856,7 @@ public sealed partial class DsmRepository
                 name.Any(char.IsControl) || name.Contains('/') || name.Contains('\\') ||
                 size is null)
             {
+                partial = true;
                 continue;
             }
             var modified = item.Object("additional")?.Object("time")?.Date("mtime")
@@ -867,7 +869,7 @@ public sealed partial class DsmRepository
                 Owner: null,
                 AccessedAt: null));
         }
-        return result;
+        return new(result, partial);
     }
 
     private async Task<DeepStorageAnalysisEntryPage> LoadDeepStorageAnalysisEntriesAsync(
@@ -904,12 +906,14 @@ public sealed partial class DsmRepository
         var folders = new List<string>();
         var files = new List<StorageAnalysisFileCandidate>();
         var skippedFolders = 0;
+        var incomplete = total > items.Count;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var node in items)
         {
             var item = node as JsonObject
                 ?? throw new InvalidDataException("Invalid deep storage-analysis item.");
-            var path = RequiredDisplayString(item, "path");
-            var name = RequiredDisplayString(item, "name")
+            var path = item.String("path");
+            var name = item.String("name")
                 ?? path?.Split('/').LastOrDefault();
             if (string.IsNullOrWhiteSpace(path) ||
                 !path.StartsWith("/", StringComparison.Ordinal) ||
@@ -921,10 +925,12 @@ public sealed partial class DsmRepository
                 name.Any(char.IsControl) ||
                 name.Contains('/') ||
                 name.Contains('\\') ||
-                IsRecycleShare(path, name))
+                path.Split('/').Skip(1).Any(part => part is "" or "." or "..") || ParentPath(path) != folderPath || !seen.Add(path))
             {
+                incomplete = true;
                 continue;
             }
+            if (IsRecycleShare(path, name)) continue;
 
             if (item.Bool("isdir") == true)
             {
@@ -943,6 +949,7 @@ public sealed partial class DsmRepository
             var size = Nonnegative(item.Long("size") ?? additional?.Long("size"));
             if (size is null)
             {
+                incomplete = true;
                 continue;
             }
             var time = additional?.Object("time");
@@ -962,7 +969,7 @@ public sealed partial class DsmRepository
             files.Take(DeepStorageAnalysisFilesPerFolder).ToArray(),
             folders,
             skippedFolders,
-            total > items.Count ||
+            incomplete ||
                 files.Count > DeepStorageAnalysisFilesPerFolder ||
                 folders.Count > DeepStorageAnalysisFoldersPerParent ||
                 skippedFolders > 0);
@@ -1034,7 +1041,18 @@ public sealed partial class DsmRepository
             skippedFolderCount,
             isDeepAnalysis ? BuildOwnerSummary(safeFiles) : null,
             isDeepAnalysis ? BuildAccessTimeSummary(safeFiles) : null,
-            directorySummaries);
+            directorySummaries)
+        {
+            Shares = safeFiles.Where(file => file.ShareName is not null).GroupBy(file => file.ShareName!, StringComparer.Ordinal)
+                .Select(group => new NasStorageDirectorySummary(group.Key, group.Count(), SumStorageAnalysisBytes(group.Select(file => file.SizeBytes))))
+                .OrderByDescending(group => group.SizeBytes).ThenBy(group => group.Name, StringComparer.CurrentCultureIgnoreCase).ToArray(),
+            Owners = isDeepAnalysis ? safeFiles.GroupBy(file => file.Owner, StringComparer.Ordinal)
+                .Select(group => new NasStorageOwnerUsage(group.Key, group.Count(), SumStorageAnalysisBytes(group.Select(file => file.SizeBytes))))
+                .OrderByDescending(group => group.SizeBytes).ThenBy(group => group.Name, StringComparer.CurrentCultureIgnoreCase).Take(10).ToArray() : [],
+            LeastRecentlyAccessedFiles = isDeepAnalysis ? safeFiles.Where(file => file.AccessedAt is not null).OrderBy(file => file.AccessedAt)
+                .ThenBy(file => file.Name, StringComparer.CurrentCultureIgnoreCase).Take(5)
+                .Select(file => new NasStorageFileCandidate(file.Name, file.SizeBytes, file.ModifiedAt) { AccessedAt = file.AccessedAt }).ToArray() : [],
+        };
     }
 
     private async Task<IReadOnlyList<NasStorageDuplicateCandidate>> BuildDeepDuplicateCandidatesAsync(
@@ -1249,6 +1267,8 @@ public sealed partial class DsmRepository
                 NasStorageAnalysisCategory.Images,
             ".mov" or ".mp4" or ".m4v" or ".mkv" or ".webm" or ".avi" =>
                 NasStorageAnalysisCategory.Videos,
+            ".mp3" or ".m4a" or ".aac" or ".flac" or ".wav" or ".ogg" or ".aiff" => NasStorageAnalysisCategory.Audio,
+            "" => NasStorageAnalysisCategory.NoExtension,
             ".pdf" or ".doc" or ".docx" or ".xls" or ".xlsx" or ".ppt" or ".pptx" or ".txt" or ".md" =>
                 NasStorageAnalysisCategory.Documents,
             ".zip" or ".7z" or ".rar" or ".tar" or ".gz" or ".tgz" =>
@@ -1288,7 +1308,12 @@ public sealed partial class DsmRepository
         DateTimeOffset? ModifiedAt,
         string? Path = null,
         string? Owner = null,
-        DateTimeOffset? AccessedAt = null);
+        DateTimeOffset? AccessedAt = null)
+    {
+        public string? ShareName { get; init; }
+    }
+
+    private sealed record StorageAnalysisFilePage(IReadOnlyList<StorageAnalysisFileCandidate> Items, bool IsTruncated);
 
     private sealed record DeepStorageAnalysisEntryPage(
         IReadOnlyList<StorageAnalysisFileCandidate> Files,
@@ -1525,7 +1550,18 @@ public sealed partial class DsmRepository
     private async Task<NasDetailsSection<NasLogSummary>> LoadLogsSectionAsync(
         CancellationToken cancellationToken)
     {
-        var apiName = PreferredOptional("SYNO.LogCenter.History", "SYNO.Core.SyslogClient.Log");
+        if (CanReadLogs)
+        {
+            try
+            {
+                var page = await LoadLogPageAsync(0, NasDetailsPageLimit, cancellationToken).ConfigureAwait(false);
+                return new(NasDetailsSectionStatus.Available, page.Entries.Select((entry, index) =>
+                    new NasLogSummary($"log-{index}", entry.Time, entry.Source ?? "", entry.Level ?? "")).ToArray(), page.HasNext);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error) when (IsNasDetailsReadFailure(error)) { return Failed<NasLogSummary>("nas-details.logs.failed"); }
+        }
+        var apiName = PreferredOptional("SYNO.LogCenter.History");
         if (apiName is null)
         {
             return Unavailable<NasLogSummary>("nas-details.logs.unavailable");

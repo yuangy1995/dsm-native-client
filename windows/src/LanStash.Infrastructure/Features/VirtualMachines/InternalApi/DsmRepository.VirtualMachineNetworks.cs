@@ -32,7 +32,9 @@ public sealed partial class DsmRepository
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var networks = new List<(VirtualMachineNetwork, int)>();
-        foreach (var item in RequiredObjectArray(data, "networks"))
+        var rows = RequiredObjectArray(data, "networks");
+        RequireCompleteVirtualMachineList(data, rows.Count);
+        foreach (var item in rows)
         {
             var interfaces = RequiredObjectArray(item, "interfaces").Select(value =>
                 new VirtualMachineNetworkInterface(NetworkText(value, "host_id"), NetworkText(value, "interface_id"))).ToArray();
@@ -112,8 +114,16 @@ public sealed partial class DsmRepository
                 }
                 else parameters["host_id"] = request.Baseline.HostId;
             }
-            try { await CallManagedNetworkAsync(request.Action == VirtualMachineNetworkAction.Delete ? "delete" : "set", 1, parameters, cancellationToken).ConfigureAwait(false); }
+            try
+            {
+                await CallManagedNetworkAsync(request.Action == VirtualMachineNetworkAction.Delete ? "delete" : "set", 1, parameters, cancellationToken).ConfigureAwait(false);
+                operation.Accepted = true;
+            }
             catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error)) { operation.Rejection = VirtualMachinePowerError(error); }
+            catch (CertificateTrustChallengeException)
+            {
+                return new(1, MutationResultStatus.SubmittedButUnverified, NetworkOperation, true, true, new(0, 0, 1), MutationErrorCategory.Authentication);
+            }
             catch { /* 写后不明只核查，不重放；取消也不回滚已提交的网络操作。 */ }
             return await ReviewNetworkCoreAsync(operation, cancellationToken).ConfigureAwait(false);
         }
@@ -152,9 +162,10 @@ public sealed partial class DsmRepository
             var confirmed = pending.Request.Action == VirtualMachineNetworkAction.Delete ? actual.Network is null :
                 actual.Network is not null && actual.Network.Name == pending.Request.NewName &&
                 actual.Network.Type == baseline.Type && actual.Network.HostId == baseline.HostId && actual.Network.VlanId == baseline.VlanId && actual.Network.Interfaces.SequenceEqual(baseline.Interfaces);
-            if (!inventory.Frozen && confirmed) return Finish(new(1, MutationResultStatus.ConfirmedSuccess, NetworkOperation, true, false, new(1, 0, 0)));
+            if (pending.Accepted && !inventory.Frozen && confirmed) return Finish(new(1, MutationResultStatus.ConfirmedSuccess, NetworkOperation, true, false, new(1, 0, 0)));
         }
         catch (DsmException error) { category = VirtualMachinePowerError(error); }
+        catch (CertificateTrustChallengeException) { category = MutationErrorCategory.Authentication; }
         catch { category = MutationErrorCategory.Network; }
         return new(1, token.IsCancellationRequested ? MutationResultStatus.CancellationRequestedAfterSubmission : MutationResultStatus.SubmittedButUnverified,
             NetworkOperation, true, true, new(0, 0, 1), category, diagnosticTag: "virtual-machine.network.unverified");
@@ -169,5 +180,6 @@ public sealed partial class DsmRepository
     {
         public string Scope { get; } = scope; public string Signature { get; } = signature; public VirtualMachineNetworkRequest Request { get; } = request;
         public MutationResult? Final { get; set; } public MutationErrorCategory? Rejection { get; set; }
+        public bool Accepted { get; set; }
     }
 }

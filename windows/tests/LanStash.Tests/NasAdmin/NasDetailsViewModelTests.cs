@@ -293,7 +293,7 @@ public sealed class NasDetailsViewModelTests
         Assert.False(model.IsStorageAnalysisRunning);
         Assert.False(model.StorageAnalysisWasCancelled);
         Assert.Contains(model.Rows, row => row.Id == "storage-analysis-scope" &&
-            row.Detail.Contains("2 file candidates", StringComparison.OrdinalIgnoreCase));
+            row.Detail.Contains("2 files", StringComparison.OrdinalIgnoreCase));
         model.SelectSection(NasDetailsSectionKind.Packages);
         Assert.Equal("Package", Assert.Single(model.Rows).Title);
     }
@@ -351,7 +351,7 @@ public sealed class NasDetailsViewModelTests
         Assert.Empty(repository.StorageAnalysisRequests);
         Assert.Single(repository.DeepStorageAnalysisRequests);
         Assert.Contains(model.Rows, row => row.Id == "storage-analysis-scope" &&
-            row.Title == "Deep storage snapshot" &&
+            row.Title == "Detailed storage analysis" &&
             row.Detail.Contains("2 folders", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(model.Rows, row => row.Id == "storage-analysis-owner" &&
             row.Detail.Contains("3 files", StringComparison.OrdinalIgnoreCase));

@@ -19,7 +19,7 @@ public sealed class VirtualMachineSettingsViewModel : ObservableObject, IDisposa
     public bool IsBusy => IsLoading || IsSaving;
     public bool IsReadOnly => _repository?.CanEditSettings != true;
     public bool HasChanges => Baseline is not null && Draft != Baseline.Configuration;
-    public bool CanEdit => !_disposed && _ready && !IsBusy && !_pending && Baseline is not null;
+    public bool CanEdit => !_disposed && _ready && !IsBusy && !_pending && !IsReadOnly && Baseline?.State is VirtualMachineOperationalState.Stopped or VirtualMachineOperationalState.Running;
     public bool CanEditHardware => CanEdit && Baseline?.State == VirtualMachineOperationalState.Stopped;
     public bool PriorityAvailable => Baseline?.Configuration.CpuWeight is not null && _repository?.CanEditPriority == true;
     public bool CanEditPriority => CanEdit && PriorityAvailable;
@@ -37,7 +37,8 @@ public sealed class VirtualMachineSettingsViewModel : ObservableObject, IDisposa
         VirtualMachineSettingsValidation.RequiresShutdown => L.Get("VmSettingsNeedsShutdown"), VirtualMachineSettingsValidation.State => L.Get("VmSettingsStateUnavailable"),
         VirtualMachineSettingsValidation.AutoStart => L.Get("VmSettingsInvalidStartup"), VirtualMachineSettingsValidation.Priority => L.Get("VmPriorityInvalid"), _ => null
     };
-    public string? Feedback => LastResult is null ? null : L.Format(LastResult.Status switch
+    public string? Feedback => LastResult is null ? null : LastResult.ErrorCategory == MutationErrorCategory.Authentication
+        ? L.Get("VmSettingsSignIn") : L.Format(LastResult.Status switch
     {
         MutationResultStatus.ConfirmedSuccess => "VmSettingsSaved",
         MutationResultStatus.PartialSuccess => "VmSettingsPartial",

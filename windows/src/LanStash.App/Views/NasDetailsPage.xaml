@@ -44,13 +44,10 @@
         <TextBlock x:Uid="NasDetailsTitle" Style="{StaticResource WorkspaceTitleStyle}" AutomationProperties.HeadingLevel="Level1"/>
         <TextBlock x:Uid="NasDetailsDescription" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
       </StackPanel>
-      <ItemsControl x:Name="HeaderActions" Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <ItemsWrapGrid Orientation="Horizontal"/>
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <Button x:Name="ServiceSettingsButton" x:Uid="NasServiceSettingsMenu" Margin="0,0,8,8" MinHeight="44">
+      <Grid x:Name="HeaderActions" Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Button x:Name="ServiceSettingsButton" Grid.Row="0" Grid.Column="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" x:Uid="NasServiceSettingsMenu" Margin="0,0,8,8" MinHeight="44">
           <Button.Flyout>
             <MenuFlyout>
               <MenuFlyoutItem x:Uid="NasServiceTerminalMenu" Click="TerminalSettings_Click"/>
@@ -74,34 +71,24 @@
             </MenuFlyout>
           </Button.Flyout>
         </Button>
-        <Button x:Uid="NasDetailsRefresh" x:Name="RefreshButton" Margin="0,0,8,8" MinHeight="44" Click="Refresh_Click">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <FontIcon Glyph="" FontSize="16"/>
-            <TextBlock x:Uid="NasDetailsRefreshLabel"/>
-          </StackPanel>
+        <Button x:Name="PerformanceButton" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" x:Uid="NasPerformanceOpen" Margin="0,0,8,8" MinHeight="44" Click="Performance_Click" Visibility="Collapsed"/>
+        <Button x:Uid="NasDetailsRefresh" x:Name="RefreshButton" Grid.Row="0" Grid.Column="2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,8,8" MinHeight="44" Click="Refresh_Click">
+          <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="" FontSize="16"/><TextBlock Grid.Column="1" x:Uid="NasDetailsRefreshLabel" TextWrapping="Wrap"/></Grid>
         </Button>
-        <Button x:Uid="NasDetailsRunStorageAnalysis" x:Name="RunStorageAnalysisButton" Margin="0,0,8,8" MinHeight="44" Click="RunStorageAnalysis_Click">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <FontIcon Glyph="" FontSize="16"/>
-            <TextBlock x:Uid="NasDetailsRunStorageAnalysisLabel"/>
-          </StackPanel>
+        <Button x:Uid="NasDetailsRunStorageAnalysis" x:Name="RunStorageAnalysisButton" Grid.Row="1" Grid.Column="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,8,8" MinHeight="44" Click="RunStorageAnalysis_Click">
+          <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="" FontSize="16"/><TextBlock Grid.Column="1" x:Uid="NasDetailsRunStorageAnalysisLabel" TextWrapping="Wrap"/></Grid>
         </Button>
-        <Button x:Uid="NasDetailsRunDeepStorageAnalysis" x:Name="RunDeepStorageAnalysisButton" Margin="0,0,8,8" MinHeight="44" Click="RunDeepStorageAnalysis_Click">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <FontIcon Glyph="" FontSize="16"/>
-            <TextBlock x:Uid="NasDetailsRunDeepStorageAnalysisLabel"/>
-          </StackPanel>
+        <Button x:Uid="NasDetailsRunDeepStorageAnalysis" x:Name="RunDeepStorageAnalysisButton" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,8,8" MinHeight="44" Click="RunDeepStorageAnalysis_Click">
+          <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="" FontSize="16"/><TextBlock Grid.Column="1" x:Uid="NasDetailsRunDeepStorageAnalysisLabel" TextWrapping="Wrap"/></Grid>
         </Button>
-        <Button x:Uid="NasDetailsCancelStorageAnalysis" x:Name="CancelStorageAnalysisButton" Margin="0,0,0,8" MinHeight="44" Click="CancelStorageAnalysis_Click" Visibility="Collapsed">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <FontIcon Glyph="" FontSize="16"/>
-            <TextBlock x:Uid="NasDetailsCancelStorageAnalysisLabel"/>
-          </StackPanel>
+        <StackPanel Grid.Row="1" Grid.Column="2">
+        <Button x:Uid="NasLogsOpen" x:Name="LogsButton" HorizontalAlignment="Stretch" Margin="0,0,0,8" MinHeight="44" Click="Logs_Click" Visibility="Collapsed"/>
+        <Button x:Uid="NasDetailsCancelStorageAnalysis" x:Name="CancelStorageAnalysisButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,8" MinHeight="44" Click="CancelStorageAnalysis_Click" Visibility="Collapsed">
+          <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><FontIcon Glyph="" FontSize="16"/><TextBlock Grid.Column="1" x:Uid="NasDetailsCancelStorageAnalysisLabel" TextWrapping="Wrap"/></Grid>
         </Button>
-      </ItemsControl>
+        </StackPanel>
+      </Grid>
     </Grid>
-    <InfoBar x:Uid="NasDetailsReadOnly" x:Name="ReadOnlyInfoBar" Grid.Row="1" IsClosable="False" IsOpen="True" Severity="Informational"/>
-    <InfoBar x:Uid="NasDetailsReadWrite" x:Name="ReadWriteInfoBar" Grid.Row="1" IsClosable="False" IsOpen="False" Severity="Informational" Visibility="Collapsed"/>
     <InfoBar x:Uid="NasDetailsRefreshError" x:Name="RefreshErrorNotice" Grid.Row="2" AutomationProperties.LiveSetting="Polite" IsClosable="False" IsOpen="False" Severity="Warning"/>
     <InfoBar x:Name="SectionNotice" Grid.Row="3" AutomationProperties.LiveSetting="Polite" IsClosable="False" IsOpen="{Binding SectionNoticeIsOpen}" Message="{Binding SectionNoticeMessage}" Severity="Informational" Title="{Binding SectionNoticeTitle}"/>
     <Grid Grid.Row="4">
@@ -129,7 +116,7 @@
                     <ColumnDefinition Width="36"/>
                     <ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
-                  <FontIcon VerticalAlignment="Center" FontSize="20" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind Glyph}"/>
+                  <FontIcon VerticalAlignment="Center" FontFamily="Segoe MDL2 Assets" FontSize="20" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind Glyph}"/>
                   <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
                     <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap"/>
                     <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Detail}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap"/>
