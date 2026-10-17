@@ -53,16 +53,10 @@ public sealed class WindowsPhotoAutomaticConverterTests
             await CreateVideo(source); await converter.ConvertVideoAsync(source, output);
             Assert.Equal((160u, 96u), await Dimensions((await converter.ConvertAsync(output, "video")).Large)); File.Delete(output);
             Rotate(source, 90, 160, 96); var before = await File.ReadAllBytesAsync(source);
-            var sourceFile = await StorageFile.GetFileFromPathAsync(source);
-            var sourceProperties = await sourceFile.Properties.GetVideoPropertiesAsync();
-            var sourceProfile = await MediaEncodingProfile.CreateFromFileAsync(sourceFile);
-            var sourceSignature = await converter.VideoSignatureAsync(source);
-            var diagnostic = $"DIAG orientation={(int)sourceProperties.Orientation} size={sourceProperties.Width}x{sourceProperties.Height} profile={sourceProfile.Video.Width}x{sourceProfile.Video.Height} tracks={string.Join(";", sourceSignature.Tracks.Select(t => t.Type + ":" + string.Join(",", t.Formats)))}";
             try
             {
                 await converter.ConvertVideoAsync(source, output);
-                var outputDimensions = await Dimensions((await converter.ConvertAsync(output, "video")).Large);
-                Assert.True(outputDimensions == (96u, 160u), $"{diagnostic} output={outputDimensions.Item1}x{outputDimensions.Item2}");
+                Assert.Equal((96u, 160u), await Dimensions((await converter.ConvertAsync(output, "video")).Large));
             }
             catch (System.Runtime.InteropServices.COMException error) when (unchecked((uint)error.HResult) == 0xC00D6D60)
             {
