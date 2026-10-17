@@ -209,7 +209,8 @@ final class MobileFilesProviderUITests: XCTestCase {
                 let hierarchy = XCTAttachment(string: app.debugDescription)
                 hierarchy.name = "Files enabled location first navigation"; hierarchy.lifetime = .keepAlways; add(hierarchy)
                 screenshot(app, "files-enabled-location-first-navigation")
-                if location.exists && location.isEnabled && location.isHittable && !location.isSelected {
+                // 紧凑选择器中首次点击会把位置标为选中但未进入内容，“已选中”不代表已进入，因此仍补一次只读导航。
+                if location.exists && location.isHittable {
                     location.press(forDuration: 0.15)
                 }
             }
