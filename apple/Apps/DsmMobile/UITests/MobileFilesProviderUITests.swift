@@ -194,7 +194,8 @@ final class MobileFilesProviderUITests: XCTestCase {
         location.tap()
         // 系统选择器可能再次要求启用本测试提供器；只处理已观察到的专属确认。
         let activation = app.alerts["Turn On “LanStash”?"]
-        if activation.waitForExistence(timeout: 3) {
+        // 系统启用提示在点击位置后可能晚于 3 秒出现；未及时处理会遮挡后续共享目录查找。
+        if activation.waitForExistence(timeout: 15) {
             let turnOn = activation.buttons["Turn On"]
             XCTAssertTrue(turnOn.isEnabled); XCTAssertTrue(turnOn.isHittable)
             screenshot(app, "files-system-picker-enable-confirmation")

@@ -162,7 +162,13 @@ import XCTest
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
         // 键盘事件返回后文本仍可能在变化，等到实际清空后再继续输入，保留完整值断言。
         let empty = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@ OR value == %@", "", field.placeholderValue ?? ""), object: field)
-        let cleared = XCTWaiter.wait(for: [empty], timeout: 6)
+        var cleared = XCTWaiter.wait(for: [empty], timeout: 6)
+        if cleared != .completed {
+            // 云端键盘删除事件偶发丢失；仅对仍残留的文本补发删除，再等待实际清空。
+            let remaining = field.value as? String ?? ""
+            if !remaining.isEmpty { field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: remaining.count)) }
+            cleared = XCTWaiter.wait(for: [empty], timeout: 10)
+        }
         if cleared != .completed { screenshot("Virtual machine setting did not finish clearing") }
         XCTAssertEqual(cleared, .completed, "输入框未清空：\(field.value as? String ?? "")")
         field.typeText(text)
