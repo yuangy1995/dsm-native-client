@@ -52,17 +52,26 @@ public sealed partial class WindowsPhotoPreviewConverter
                 profile.Audio = AudioEncodingProperties.CreateAac(original.Audio.SampleRate, original.Audio.ChannelCount, 192_000);
             }
             // 输出只允许本次新建；取消或系统失败时不留下不完整派生文件。
-            using (new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { created = true; }
-            var output = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(destination)).AsTask(cancellationToken).ConfigureAwait(false);
-            var composition = new MediaComposition();
-            composition.Clips.Add(await MediaClip.CreateFromFileAsync(input).AsTask(cancellationToken).ConfigureAwait(false));
-            var result = await composition.RenderToFileAsync(output, MediaTrimmingPreference.Precise, profile).AsTask(cancellationToken).ConfigureAwait(false);
-            if (result != TranscodeFailureReason.None)
+            for (var attempt = 1; ; attempt++)
             {
-                var failure = new SynologyPhotoConversionException(false); failure.Data["TranscodeFailureReason"] = result;
-                throw failure;
+                using (new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { created = true; }
+                var output = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(destination)).AsTask(cancellationToken).ConfigureAwait(false);
+                var composition = new MediaComposition();
+                composition.Clips.Add(await MediaClip.CreateFromFileAsync(input).AsTask(cancellationToken).ConfigureAwait(false));
+                var result = await composition.RenderToFileAsync(output, MediaTrimmingPreference.Precise, profile).AsTask(cancellationToken).ConfigureAwait(false);
+                if (result != TranscodeFailureReason.None)
+                {
+                    var failure = new SynologyPhotoConversionException(false); failure.Data["TranscodeFailureReason"] = result;
+                    throw failure;
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                // 原生合成偶发忽略已交换的方向而输出横向画面；横竖不符时删除并重试一次，仍不符则不记为损坏媒体。
+                var rendered = await MediaEncodingProfile.CreateFromFileAsync(output).AsTask(cancellationToken).ConfigureAwait(false);
+                var renderedPortrait = rendered.Video?.Height > rendered.Video?.Width;
+                if (renderedPortrait == (profile.Video.Height > profile.Video.Width)) break;
+                if (attempt == 2) throw new SynologyPhotoConversionException(false);
+                File.Delete(destination);
             }
-            cancellationToken.ThrowIfCancellationRequested();
             PhotoPreviewVideoSignature.RemoveMetadata(destination, cancellationToken);
             var signature = await VideoSignatureAsync(destination, cancellationToken).ConfigureAwait(false);
             if (signature.Tracks.Any(track => track.Formats.Any(format => track.Type == "vide" ? format is not ("avc1" or "avc3") : format != "mp4a")))
