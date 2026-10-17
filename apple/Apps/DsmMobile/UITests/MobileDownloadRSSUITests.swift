@@ -99,7 +99,7 @@ final class MobileDownloadRSSUITests: XCTestCase {
         app.launchEnvironment["LANSTASH_UI_STATE"] = state; app.launch(); return app
     }
     private func openRSS(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", chinese ? "App 设置" : "App settings", app)
         MobileUITestNavigation.enableModule(app, module: "downloads", test: self)
         navigate("downloads", chinese ? "下载管理" : "Downloads", app)

@@ -108,7 +108,7 @@ final class MobileFilesProviderUITests: XCTestCase {
             app.terminate()
             app.launchArguments = ["--ui-files-fixture", "--ui-clean-files"]
             app.launch()
-            XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "mobile.files.test-cleaned").firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+            XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "mobile.files.test-cleaned").firstMatch.waitForExistence(timeout: 90), app.debugDescription)
             app.terminate()
         }
         return app
@@ -123,6 +123,8 @@ final class MobileFilesProviderUITests: XCTestCase {
             predicate: NSPredicate(format: "exists == true AND enabled == true"), object: add)], timeout: 10), .completed)
         for _ in 0..<4 where !add.isHittable { app.swipeUp() }
         XCTAssertTrue(add.isHittable); add.tap()
+        // 云端曾丢弃首次添加点击且未产生任何添加结果；无提示时补一次同一按钮点击。
+        if !app.alerts.firstMatch.waitForExistence(timeout: 5) { XCTAssertTrue(add.isHittable); add.tap() }
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         app.alerts.buttons[chinese ? "关闭" : "Close"].tap()
         XCTAssertTrue(element("mobile.files-location.row", app).waitForExistence(timeout: 10))

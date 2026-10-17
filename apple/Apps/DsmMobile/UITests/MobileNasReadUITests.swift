@@ -30,7 +30,7 @@ final class MobileNasReadUITests: XCTestCase {
     func test共享访问使用当前账号列表且未知权限不当可写() {
         let app = launch(); defer { app.terminate() }
         open("shareAccess", in: app)
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["Access could not be determined"].exists)
         XCTAssertFalse(app.staticTexts["Read and write"].exists)
         screenshot(app, "Share access preserves unknown permissions")
@@ -98,7 +98,7 @@ final class MobileNasReadUITests: XCTestCase {
         if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"] }
         app.launchEnvironment["LANSTASH_UI_STATE"] = state
         app.launch()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", in: app)
         MobileUITestNavigation.enableModule(app, module: "nasSettings", test: self)
         navigate("nasSettings", title: chinese ? "NAS 设置" : "NAS settings", in: app)

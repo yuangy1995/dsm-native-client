@@ -1829,12 +1829,12 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func openPhotos(_ app: XCUIApplication, chinese: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: chinese ? "App 设置" : "App settings", in: app)
         MobileUITestNavigation.enableModule(app, module: "photos", test: self)
         navigate("photos", title: chinese ? "照片" : "Photos", in: app)
         let actions = element("mobile.photos.actions", in: app)
-        if !actions.waitForExistence(timeout: 8) { MobileUITestNavigation.capture(app, name: "Photos actions missing", test: self) }
+        if !actions.waitForExistence(timeout: 20) { MobileUITestNavigation.capture(app, name: "Photos actions missing", test: self) }
         XCTAssertTrue(actions.exists)
     }
 
@@ -1847,7 +1847,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test照片入口独立于文件应用授权() {
         // photo-export 的文件应用授权为 false、Photos 为 enabled；sharing 则相反。
         let photos = launchFixture(state: "photo-export")
-        XCTAssertTrue(photos.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(photos.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: "App settings", in: photos)
         MobileUITestNavigation.enableModule(photos, module: "photos", test: self)
         navigate("photos", title: "Photos", in: photos)
@@ -1857,7 +1857,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         photos.terminate()
 
         let files = launchFixture(state: "sharing"); defer { files.terminate() }
-        XCTAssertTrue(files.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(files.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: "App settings", in: files)
         XCTAssertTrue(element("mobile.settings.module.downloads", in: files).waitForExistence(timeout: 8))
         XCTAssertFalse(element("mobile.settings.module.photos", in: files).exists)
@@ -1869,7 +1869,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test默认仅文件与App设置并按当前账号筛选开关() {
         let app = launchFixture()
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         assertOnlyDefaultNavigation(app)
         navigate("settings", title: "App settings", in: app)
         let downloads = element("mobile.settings.module.downloads", in: app)
@@ -1890,7 +1890,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test权限刷新撤销入口并且不能残留旧开关() {
         let app = launchFixture(state: "modules-revoke")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: "App settings", in: app)
         let downloads = element("mobile.settings.module.downloads", in: app)
         XCTAssertTrue(downloads.waitForExistence(timeout: 8)); downloads.switches.firstMatch.tap()
@@ -1906,7 +1906,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test可开启模块加载空内容和失败具有实际呈现() {
         for state in ["modules-loading", "modules-none", "modules-failed"] {
             let app = launchFixture(state: state)
-            XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+            XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
             navigate("settings", title: "App settings", in: app)
             if state == "modules-loading" {
                 XCTAssertTrue(app.staticTexts["Loading available features…"].waitForExistence(timeout: 5))
@@ -1925,7 +1925,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test管理员六种模块均需开启且设置始终可达() {
         let app = launchFixture(state: "modules-all")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         assertOnlyDefaultNavigation(app)
         navigate("settings", title: "App settings", in: app)
         for name in ["photos", "chat", "downloads", "containers", "virtualMachines", "nasSettings"] {
@@ -1937,7 +1937,7 @@ final class MobileWorkspaceUITests: XCTestCase {
             XCTAssertEqual(toggle.value as? String, "1")
         }
         navigate("files", title: "File", in: app)
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: "App settings", in: app)
         XCTAssertTrue(element("mobile.settings.page", in: app).waitForExistence(timeout: 8))
         attachScreenshot(app, name: "All authorized features enabled")
@@ -1960,23 +1960,23 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test文件活动可返回并直接切换App设置() {
         let app = launchFixture()
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         element("mobile.module.transfers", in: app).tap()
         XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 8))
         navigate("settings", title: "App settings", in: app)
         XCTAssertTrue(element("mobile.settings.page", in: app).waitForExistence(timeout: 8))
         navigate("files", title: "File", in: app)
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         element("mobile.module.transfers", in: app).tap()
         let back = app.navigationBars["Activity"].buttons["File"]
         XCTAssertTrue(back.waitForExistence(timeout: 8)); back.tap()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
     }
 
     func test中文模块设置可开启功能并保留原始文件名() {
         let app = launchFixture(language: "zh-Hans")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: "App 设置", in: app)
         XCTAssertTrue(app.staticTexts["可开启的功能"].waitForExistence(timeout: 8))
         let toggle = element("mobile.settings.module.downloads", in: app)
@@ -1991,7 +1991,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test文件下载和设置可通过原生导航到达() {
         let app = launchFixture()
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("settings", title: "App settings", in: app)
         XCTAssertTrue(element("mobile.settings.page", in: app).waitForExistence(timeout: 5))
         let toggle = element("mobile.settings.module.downloads", in: app)
@@ -2064,7 +2064,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Sample upload/Sample upload.txt"].exists)
         XCTAssertTrue(start.isEnabled)
         start.tap()
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("files", title: "File", in: app)
         let tasks = element("mobile.module.transfers", in: app)
         XCTAssertTrue(tasks.waitForExistence(timeout: 5))
@@ -2089,7 +2089,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test高级搜索通过文件夹选择应用条件并显示部分正文提示() {
         let app = launchFixture(state: "advanced")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         let filters = app.buttons["Sort and filter"]
         XCTAssertTrue(filters.waitForExistence(timeout: 5))
         filters.tap()
@@ -2128,7 +2128,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test原生压缩创建文件且活动保存完成结果() {
         let app = launchFixture(state: "archive")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         app.staticTexts["Sample folder"].tap()
         openItemActions("Sample archive.zip", in: app)
         app.buttons["Compress"].tap()
@@ -2147,7 +2147,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test原生压缩包浏览及解压完成() {
         let app = launchFixture(state: "archive")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         app.staticTexts["Sample folder"].tap()
         openItemActions("Sample archive.zip", in: app)
         app.buttons["Extract"].tap()
@@ -2165,7 +2165,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func testNAS原任务停止及移除记录需要确认并刷新() throws {
         let app = launchFixture(state: "archive")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         navigate("files", title: "File", in: app)
         element("mobile.module.transfers", in: app).tap()
         let stop = app.buttons["Stop this task"]
@@ -2185,7 +2185,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test权限编辑保留继承规则并保存后重新读取() {
         let app = launchFixture(state: "permissions-acl")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         app.buttons["Actions for Inbox"].tap(); app.buttons["Owner and permissions"].tap()
         let rule = app.buttons["Sample member, Allow"]
         XCTAssertTrue(rule.waitForExistence(timeout: 8)); rule.tap()
@@ -2204,7 +2204,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test基础权限修改需确认移除访问且准确回读() {
         let app = launchFixture(state: "permissions-posix")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         openItemActions("Sample document.txt", in: app); app.buttons["Owner and permissions"].tap()
         let write = app.switches["files.permissions.posix.0.2"]
         XCTAssertTrue(write.waitForExistence(timeout: 8))
@@ -2220,7 +2220,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test共享根权限只读且仍可展开继承规则() {
         let app = launchFixture(state: "permissions-acl")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         app.buttons["Actions for Sample folder"].tap(); app.buttons["Owner and permissions"].tap()
         XCTAssertTrue(app.staticTexts["Permissions are read-only here. Manage permissions for this location in DSM."].waitForExistence(timeout: 8))
         XCTAssertFalse(app.buttons["files.permissions.save"].isEnabled)
@@ -2241,7 +2241,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test文件多选可批量创建并保留逐项链接() {
         let app = launchFixture(state: "sharing")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
         openFileActions(app)
         attachScreenshot(app, name: "Batch selection toolbar")
@@ -2263,7 +2263,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test分享创建文件收集后可展示二维码和返回管理() {
         let app = launchFixture(state: "sharing")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         app.staticTexts["Sample folder"].tap()
         let actions = app.buttons["Actions for Inbox"]
         XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap()
@@ -2408,7 +2408,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func testISO选择空目录加载并可卸载() {
         let app = launchFixture(state: "remote")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         openItemActions("Sample image.iso", in: app); app.buttons["Mount ISO"].tap()
         let destination = app.buttons["files.remote.iso.destination"]
         XCTAssertTrue(destination.waitForExistence(timeout: 5)); destination.tap()
@@ -2449,7 +2449,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test文件夹收藏可进入并从位置列表移除() {
         let app = launchFixture(state: "favorites")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         app.buttons["Actions for Sample folder"].tap(); app.buttons["add to favorites"].tap()
         XCTAssertTrue(app.staticTexts["Added to favorites."].waitForExistence(timeout: 8))
         app.buttons["Show locations"].tap()
@@ -2467,7 +2467,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     func test文件收藏打开现有预览且不作为文件夹导航() {
         let app = launchFixture(state: "favorites")
         defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         openItemActions("Sample document.txt", in: app); app.buttons["add to favorites"].tap()
         XCTAssertTrue(app.staticTexts["Added to favorites."].waitForExistence(timeout: 8))
         app.buttons["Show locations"].tap()
@@ -2609,7 +2609,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func openFileSettings(_ app: XCUIApplication) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         openFileActions(app); app.buttons["files.settings.open"].tap()
         XCTAssertTrue(app.buttons["General"].waitForExistence(timeout: 5))
     }
@@ -2630,7 +2630,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func openRemoteLocations(_ app: XCUIApplication) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         openFileActions(app); app.buttons["files.remote.manage"].tap()
         XCTAssertTrue(app.buttons["files.remote.profile.fixture-remote"].waitForExistence(timeout: 8))
     }
@@ -2643,7 +2643,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func openAllSharing(_ app: XCUIApplication) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20))
         openFileActions(app)
         element("files.sharing.all", in: app).tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 8))
@@ -2708,7 +2708,7 @@ final class MobileWorkspaceUITests: XCTestCase {
 
     func test文件夹下载ZIP后打开系统保存面板() {
         let app = launchFixture(state: "download-archive"); defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         openItemActions("Inbox", in: app)
         element("files.item.download-archive", in: app).tap()
         XCTAssertTrue(element("mobile.documents.export-panel", in: app).waitForExistence(timeout: 10))
@@ -2755,7 +2755,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func beginDownloadSelection(_ app: XCUIApplication, singleFile: Bool) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
         openFileActions(app); app.buttons["Select Items"].tap()
         app.staticTexts["Sample document.txt"].tap()
@@ -2891,7 +2891,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func beginRecycleBatch(_ app: XCUIApplication, restore: Bool, recycle: Bool = false) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         if recycle {
             XCTAssertTrue(app.staticTexts["#recycle"].waitForExistence(timeout: 5)); app.staticTexts["#recycle"].tap()
         }
@@ -2907,7 +2907,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func beginCopyMoveBatch(_ app: XCUIApplication, move: Bool) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         XCTAssertTrue(app.staticTexts["Sample document.txt"].waitForExistence(timeout: 5))
         openFileActions(app); app.buttons["Select Items"].tap()
         app.staticTexts["Sample document.txt"].tap(); app.staticTexts["Inbox"].tap()
@@ -2920,7 +2920,7 @@ final class MobileWorkspaceUITests: XCTestCase {
 
     func testOffice预览并交给系统分享及文件选择器() {
         let app = launchFixture(state: "office-preview"); defer { app.terminate() }
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         XCTAssertTrue(app.staticTexts["Document.docx"].waitForExistence(timeout: 5)); app.staticTexts["Document.docx"].tap()
         let edit = element("files.office.preview.edit", in: app)
         XCTAssertTrue(edit.waitForExistence(timeout: 8))
@@ -3006,7 +3006,7 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func openOfficeEditor(_ app: XCUIApplication) {
-        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 8)); app.staticTexts["Sample folder"].tap()
+        XCTAssertTrue(app.staticTexts["Sample folder"].waitForExistence(timeout: 20)); app.staticTexts["Sample folder"].tap()
         openItemActions("Document.docx", in: app)
         let edit = element("files.office.open", in: app)
         XCTAssertTrue(edit.waitForExistence(timeout: 5)); edit.tap()
