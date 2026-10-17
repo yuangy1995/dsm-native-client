@@ -79,7 +79,7 @@ enum MobileUITestNavigation {
         }
     }
 
-    private static func capture(_ app: XCUIApplication, name: String, test: XCTestCase) {
+    static func capture(_ app: XCUIApplication, name: String, test: XCTestCase) {
         let hierarchy = XCTAttachment(string: app.debugDescription)
         hierarchy.name = "\(name) hierarchy"; hierarchy.lifetime = .keepAlways; test.add(hierarchy)
         let screenshot = XCTAttachment(screenshot: app.screenshot())

@@ -1833,7 +1833,9 @@ final class MobileWorkspaceUITests: XCTestCase {
         navigate("settings", title: chinese ? "App 设置" : "App settings", in: app)
         MobileUITestNavigation.enableModule(app, module: "photos", test: self)
         navigate("photos", title: chinese ? "照片" : "Photos", in: app)
-        XCTAssertTrue(element("mobile.photos.actions", in: app).waitForExistence(timeout: 8))
+        let actions = element("mobile.photos.actions", in: app)
+        if !actions.waitForExistence(timeout: 8) { MobileUITestNavigation.capture(app, name: "Photos actions missing", test: self) }
+        XCTAssertTrue(actions.exists)
     }
 
     private func beginPhotoUpload(_ app: XCUIApplication) {

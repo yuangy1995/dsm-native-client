@@ -14,7 +14,8 @@ final class MobileFilesProviderUITests: XCTestCase {
         XCTAssertTrue(browse.waitForExistence(timeout: 8), app.debugDescription); browse.tap()
         openLocation(app)
         let shared = sharedFolder(in: app)
-        XCTAssertTrue(shared.waitForExistence(timeout: 15), app.debugDescription); shared.tap()
+        if !shared.waitForExistence(timeout: 15) { MobileUITestNavigation.capture(app, name: "Read-only shared folder missing", test: self) }
+        XCTAssertTrue(shared.exists, app.debugDescription); shared.tap()
         let file = app.cells["Sample, txt"].firstMatch
         XCTAssertTrue(file.waitForExistence(timeout: 15), app.debugDescription); file.tap()
         let contents = element("mobile.files.test-contents", app)
