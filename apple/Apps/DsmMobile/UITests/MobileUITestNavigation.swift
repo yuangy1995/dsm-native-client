@@ -93,6 +93,29 @@ enum MobileUITestNavigation {
         }
     }
 
+    /// 菜单展开是独立的只读导航步骤；等实际菜单项出现后才允许调用方继续操作。
+    @discardableResult
+    static func openMenu(_ menu: XCUIElement, showing item: XCUIElement, in app: XCUIApplication,
+                         test: XCTestCase, file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let ready = menu.wait(for: \.isHittable, toEqual: true, timeout: 10)
+        if !ready { capture(app, name: "Menu readiness", test: test) }
+        XCTAssertTrue(ready, "菜单入口尚未可操作", file: file, line: line)
+        guard ready else { return false }
+        menu.tap()
+        // 系统菜单已暴露标识时仍可能返回无限坐标或零尺寸；此时不能提交点击。
+        let itemReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard item.exists else { return false }
+            let frame = item.frame
+            return frame.origin.x.isFinite && frame.origin.y.isFinite
+                && frame.width.isFinite && frame.height.isFinite && frame.width > 0 && frame.height > 0
+                && item.isHittable
+        }, object: item)
+        let result = XCTWaiter.wait(for: [itemReady], timeout: 10)
+        if result != .completed { capture(app, name: "Menu presentation", test: test) }
+        XCTAssertEqual(result, .completed, "菜单项尚未完成布局或不可操作", file: file, line: line)
+        return result == .completed
+    }
+
     static func capture(_ app: XCUIApplication, name: String, test: XCTestCase) {
         let hierarchy = XCTAttachment(string: app.debugDescription)
         hierarchy.name = "\(name) hierarchy"; hierarchy.lifetime = .keepAlways; test.add(hierarchy)

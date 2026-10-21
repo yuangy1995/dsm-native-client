@@ -141,6 +141,11 @@ final class MobileRegionUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", text), object: value)], timeout: 10), .completed)
     }
     private func reveal(_ id: String, in app: XCUIApplication) -> XCUIElement {
+        if id.hasPrefix("mobile.nas.region.activity.") {
+            let closed = app.buttons["mobile.nas.region.done"].waitForNonExistence(timeout: 10)
+            if !closed { MobileUITestNavigation.capture(app, name: "Region editor did not close", test: self) }
+            XCTAssertTrue(closed, "保存结果出现后，编辑表单应关闭，才能查看活动记录")
+        }
         let value = element(id, app)
         for attempt in 0..<14 {
             let list = app.collectionViews.containing(.any, identifier: id).firstMatch
@@ -155,6 +160,7 @@ final class MobileRegionUITests: XCTestCase {
             }
             scroll(scroller, upward: attempt < 7, in: app)
         }
+        MobileUITestNavigation.capture(app, name: "Region control unavailable: \(id)", test: self)
         XCTAssertTrue(value.exists); XCTAssertTrue(value.isHittable); return value
     }
     private func scroll(_ element: XCUIElement, upward: Bool, in app: XCUIApplication) {

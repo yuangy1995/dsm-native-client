@@ -65,7 +65,9 @@ struct MobileRegionScreen: View {
         .refreshable { await model.refresh() }
         .onDisappear { model.cancelRead() }
         .onChange(of: model.activation) { _, _ in editor = nil; synchronization = nil }
-        .sheet(item: $editor) { source in NavigationStack { MobileRegionEditor(model: model, source: source) } }
+        .sheet(item: $editor) { source in
+            NavigationStack { MobileRegionEditor(model: model, source: source, close: { editor = nil }) }
+        }
         .alert(L10n.string("mobile.nas.region.synchronize"), isPresented: Binding(
             get: { synchronization != nil }, set: { if !$0 { synchronization = nil } }
         )) {
@@ -90,7 +92,7 @@ private struct MobileRegionEditorSource: Identifiable {
 private struct MobileRegionEditor: View {
     @Bindable var model: MobileRegionModel
     let source: MobileRegionEditorSource
-    @Environment(\.dismiss) private var dismiss
+    let close: () -> Void
     @State private var draft: NasRegionSettings
     @State private var servers: String
     @State private var editedManualTime = false
@@ -98,8 +100,8 @@ private struct MobileRegionEditor: View {
     @State private var operationID: UUID?
     @FocusState private var editingServers: Bool
 
-    init(model: MobileRegionModel, source: MobileRegionEditorSource) {
-        self.model = model; self.source = source
+    init(model: MobileRegionModel, source: MobileRegionEditorSource, close: @escaping () -> Void) {
+        self.model = model; self.source = source; self.close = close
         _draft = State(initialValue: source.original)
         _servers = State(initialValue: source.original.timeServers.joined(separator: ", "))
     }
@@ -163,7 +165,7 @@ private struct MobileRegionEditor: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button(L10n.string("mobile.nas.region.done")) { dismiss() }.accessibilityIdentifier("mobile.nas.region.done")
+                Button(L10n.string("mobile.nas.region.done"), action: close).accessibilityIdentifier("mobile.nas.region.done")
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button(L10n.string("mobile.nas.region.save")) { editingServers = false; confirmation = change }
@@ -171,9 +173,10 @@ private struct MobileRegionEditor: View {
             }
         }
         .onSubmit { editingServers = false }
-        .onChange(of: model.activation) { _, _ in confirmation = nil; dismiss() }
-        .onChange(of: model.recovery.entries) { _, _ in
-            if let id = operationID, let entry = model.recovery.entry(id), [.succeeded, .partial].contains(entry.phase) { dismiss() }
+        .onChange(of: model.activation) { _, _ in confirmation = nil; close() }
+        // 观察当前操作的结果，并由持有 sheet 的状态关闭表单，避免确认框退出时丢失关闭动作。
+        .onChange(of: operationID.flatMap { model.recovery.entry($0)?.phase }, initial: true) { _, phase in
+            if phase == .succeeded || phase == .partial { close() }
         }
         .alert(L10n.string("mobile.nas.region.save"), isPresented: Binding(
             get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }

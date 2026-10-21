@@ -8,11 +8,13 @@ on:
       - "**"
     paths:
       - "apple/**"
+      - "contracts/**"
       - "tools/release/**"
       - ".github/workflows/apple-build.yml"
   pull_request:
     paths:
       - "apple/**"
+      - "contracts/**"
       - "tools/release/**"
       - ".github/workflows/apple-build.yml"
 
@@ -312,14 +314,20 @@ jobs:
           if [[ "$system_result" -ne 0 ]]; then exit "$system_result"; fi
           exit "$suite_result"
 
+      - name: 上传移动端卡顿诊断
+        if: always() && matrix.target != 'shared-macos'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: LanStash-Apple-mobile-diagnostics-${{ matrix.target }}
+          path: ${{ runner.temp }}/DsmMobile-*-diagnostics
+          if-no-files-found: ignore
+
       - name: 上传移动端测试结果
         if: always() && matrix.target != 'shared-macos'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: LanStash-Apple-mobile-tests-${{ matrix.target }}
-          path: |
-            ${{ runner.temp }}/DsmMobile-*.xcresult
-            ${{ runner.temp }}/DsmMobile-*-diagnostics
+          path: ${{ runner.temp }}/DsmMobile-*.xcresult
           if-no-files-found: warn
 
       - name: 打包 macOS 应用

@@ -8,7 +8,7 @@ final class MobileChatPollUITests: XCTestCase {
         enterPoll(app)
         app.buttons["chat-poll-submit"].tap()
         XCTAssertTrue(app.staticTexts["Lunch?"].firstMatch.waitForExistence(timeout: 8))
-        element("chat-poll-open-9400", app).tap()
+        openPoll("9400", app)
         let choice = app.buttons["chat-poll-choice-choice-0"]
         XCTAssertTrue(choice.waitForExistence(timeout: 8)); choice.tap()
         app.buttons["chat-poll-vote"].tap()
@@ -38,7 +38,7 @@ final class MobileChatPollUITests: XCTestCase {
     func test中文深色大字多选投票与已结束投票() {
         for state in ["chat-poll-multiple", "chat-poll-closed"] {
             let app = launch(state: state, chinese: true, dark: true)
-            openChat(app, chinese: true); element("chat-poll-open-9300", app).tap()
+            openChat(app, chinese: true); openPoll("9300", app)
             let first = app.buttons["chat-poll-choice-choice-0"]
             XCTAssertTrue(first.waitForExistence(timeout: 8))
             if state == "chat-poll-multiple" {
@@ -60,8 +60,7 @@ final class MobileChatPollUITests: XCTestCase {
     func test投票载入失败和已删除状态各有正确内容() {
         for state in ["chat-poll-load-error", "chat-poll-missing", "chat-poll-loading"] {
             let app = launch(state: state); openChat(app)
-            // 云端触摸日志记录短点击被丢弃；保持一次打开操作和各状态的实际内容断言。
-            element("chat-poll-open-9300", app).press(forDuration: 0.15)
+            openPoll("9300", app)
             let text = state == "chat-poll-load-error" ? "Could not load poll"
                 : (state == "chat-poll-missing" ? "Message unavailable" : "Loading poll…")
             XCTAssertTrue(app.staticTexts[text].waitForExistence(timeout: 8))
@@ -71,6 +70,19 @@ final class MobileChatPollUITests: XCTestCase {
         }
     }
 
+    private func openPoll(_ messageID: String, _ app: XCUIApplication) {
+        let button = app.buttons["chat-poll-open-\(messageID)"]
+        let ready = button.wait(for: \.isHittable, toEqual: true, timeout: 8)
+        if !ready { MobileUITestNavigation.capture(app, name: "Poll entry readiness", test: self) }
+        XCTAssertTrue(ready, "投票入口尚未可操作")
+        guard ready else { return }
+        // 只打开一次，先确认真实投票面板已呈现，再由调用方验证对应的加载、错误或业务结果。
+        button.press(forDuration: 0.15)
+        let page = app.navigationBars.matching(NSPredicate(format: "identifier IN %@", ["Vote", "参与投票"])).firstMatch
+        let appeared = page.waitForExistence(timeout: 8)
+        if !appeared { MobileUITestNavigation.capture(app, name: "Poll presentation", test: self) }
+        XCTAssertTrue(appeared, "投票页面尚未呈现")
+    }
     private func enterPoll(_ app: XCUIApplication) {
         let question = element("chat-poll-question", app)
         XCTAssertTrue(question.waitForExistence(timeout: 5)); question.tap(); question.typeText("Lunch?")

@@ -32,9 +32,7 @@ final class MobileFilesProviderUITests: XCTestCase {
         element("mobile.files-location.row", app).tap()
         let editing = app.switches["mobile.files-location.editing"]
         XCTAssertTrue(editing.waitForExistence(timeout: 8)); tapSwitch(editing)
-        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
-        app.alerts.buttons["Allow editing"].tap()
-        waitValue(editing, "1")
+        confirmEditing(editing, in: app, title: "Allow editing")
         screenshot(app, "files-location-editing-enabled")
         activateSystemLocation()
         app.activate()
@@ -71,11 +69,12 @@ final class MobileFilesProviderUITests: XCTestCase {
         element("mobile.files-location.row", app).tap()
         let deleting = app.switches["mobile.files-location.deleting"]
         XCTAssertTrue(deleting.waitForExistence(timeout: 8)); XCTAssertFalse(deleting.isEnabled)
-        tapSwitch(app.switches["mobile.files-location.editing"])
+        let editing = app.switches["mobile.files-location.editing"]
+        tapSwitch(editing)
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
         screenshot(app, "files-chinese-edit-confirmation")
         scrollConfirmation(app, name: "files-chinese-edit-consequence")
-        app.alerts.buttons["允许编辑"].tap()
+        confirmEditing(editing, in: app, title: "允许编辑")
         tapSwitch(deleting)
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
         screenshot(app, "files-chinese-delete-confirmation")
@@ -84,10 +83,10 @@ final class MobileFilesProviderUITests: XCTestCase {
         XCTAssertEqual(deleting.value as? String, "0")
         let pause = app.switches["mobile.files-location.pause"]
         tapSwitch(pause)
-        waitValue(pause, "1")
+        waitValue(pause, "1", in: app)
         screenshot(app, "files-chinese-paused-large")
         tapSwitch(pause)
-        waitValue(pause, "0")
+        waitValue(pause, "0", in: app)
         let remove = app.buttons["mobile.files-location.remove"]
         for _ in 0..<4 where !remove.isHittable { app.swipeUp() }
         remove.tap()
@@ -189,8 +188,8 @@ final class MobileFilesProviderUITests: XCTestCase {
                 XCTAssertNotNil(locationSwitch, app.debugDescription)
                 if let locationSwitch {
                     // 同时验证用户可以从系统关闭再开启本测试位置，不触碰其他提供器。
-                    if locationSwitch.value as? String == "1" { locationSwitch.tap(); waitValue(locationSwitch, "0") }
-                    locationSwitch.tap(); waitValue(locationSwitch, "1")
+                    if locationSwitch.value as? String == "1" { locationSwitch.tap(); waitValue(locationSwitch, "0", in: app) }
+                    locationSwitch.tap(); waitValue(locationSwitch, "1", in: app)
                 }
                 app.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "完成"])).firstMatch.tap()
             }
@@ -234,6 +233,21 @@ final class MobileFilesProviderUITests: XCTestCase {
         control.tap()
     }
 
+    private func confirmEditing(_ row: XCUIElement, in app: XCUIApplication, title: String,
+                                file: StaticString = #filePath, line: UInt = #line) {
+        let confirmation = app.alerts.firstMatch
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5), app.debugDescription, file: file, line: line)
+        let button = confirmation.buttons[title]
+        XCTAssertTrue(button.wait(for: \.isHittable, toEqual: true, timeout: 5), app.debugDescription, file: file, line: line)
+        XCTAssertTrue(button.isEnabled, file: file, line: line)
+        // 确认只提交一次；先核对提示确已关闭，再等待系统授权完成后的开关状态。
+        button.press(forDuration: 0.15)
+        let dismissed = confirmation.waitForNonExistence(timeout: 5)
+        if !dismissed { MobileUITestNavigation.capture(app, name: "Files editing confirmation retained", test: self) }
+        XCTAssertTrue(dismissed, "编辑授权确认尚未关闭", file: file, line: line)
+        waitValue(row, "1", in: app, file: file, line: line)
+    }
+
     private func scrollConfirmation(_ app: XCUIApplication, name: String) {
         // 最大字号下系统确认正文可滚动；实际滚动查看末尾风险及保留范围。
         let message = app.alerts.firstMatch.scrollViews.firstMatch
@@ -243,9 +257,17 @@ final class MobileFilesProviderUITests: XCTestCase {
         XCTAssertTrue(app.alerts.buttons["取消"].isHittable)
     }
 
-    private func waitValue(_ element: XCUIElement, _ value: String) {
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", value), object: element)], timeout: 10), .completed)
+    private func waitValue(_ element: XCUIElement, _ value: String, in app: XCUIApplication,
+                           file: StaticString = #filePath, line: UInt = #line) {
+        // SwiftUI 外层是开关行；与点击使用同一实际控件，并等待授权回读结束后恢复可用。
+        // 系统 Files 的原生开关没有嵌套控件，直接读取其自身。
+        let nested = element.switches.firstMatch
+        let control = nested.exists ? nested : element
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND enabled == true AND value == %@", value), object: control)], timeout: 10)
+        if result != .completed { MobileUITestNavigation.capture(app, name: "Files switch state \(value)", test: self) }
+        XCTAssertEqual(result, .completed, "文件位置开关尚未完成状态更新", file: file, line: line)
+        XCTAssertEqual(element.value as? String, value, "文件位置开关行与实际控件的状态不一致", file: file, line: line)
     }
 
     private func element(_ id: String, _ app: XCUIApplication) -> XCUIElement {

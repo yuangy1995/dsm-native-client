@@ -1049,7 +1049,12 @@ final class MobileWorkspaceUITests: XCTestCase {
         let app = launchFixture(state: "photo-folders", language: "zh-Hans"); defer { app.terminate() }
         openPhotos(app, chinese: true); openPhotoSection("文件夹", app: app)
         XCTAssertTrue(app.buttons["mobile.photos.collection.2"].waitForExistence(timeout: 5)); app.buttons["mobile.photos.collection.2"].tap()
-        element("mobile.photos.actions", in: app).tap(); element("mobile.photos.folder.cover", in: app).tap()
+        // 进入目录会异步更新工具栏；先确认子目录已载入，再展开当前目录的操作菜单。
+        XCTAssertTrue(app.buttons["mobile.photos.collection.200"].waitForExistence(timeout: 5))
+        let cover = app.buttons["mobile.photos.folder.cover"]
+        guard MobileUITestNavigation.openMenu(app.buttons["mobile.photos.actions"], showing: cover, in: app, test: self) else { return }
+        XCTAssertTrue(cover.isEnabled)
+        XCTAssertTrue(cover.wait(for: \.isHittable, toEqual: true, timeout: 5)); cover.tap()
         XCTAssertTrue(app.buttons["mobile.photos.folder.child.200"].waitForExistence(timeout: 5)); app.buttons["mobile.photos.folder.child.200"].tap()
         let photo = app.buttons["mobile.photos.folder.cover.3"]
         XCTAssertTrue(photo.waitForExistence(timeout: 5)); photo.tap(); attachScreenshot(app, name: "照片目录子目录封面选择")
@@ -1833,7 +1838,7 @@ final class MobileWorkspaceUITests: XCTestCase {
         navigate("settings", title: chinese ? "App 设置" : "App settings", in: app)
         MobileUITestNavigation.enableModule(app, module: "photos", test: self)
         navigate("photos", title: chinese ? "照片" : "Photos", in: app)
-        let actions = element("mobile.photos.actions", in: app)
+        let actions = app.buttons["mobile.photos.actions"]
         if !actions.waitForExistence(timeout: 20) { MobileUITestNavigation.capture(app, name: "Photos actions missing", test: self) }
         XCTAssertTrue(actions.exists)
     }
@@ -2599,13 +2604,18 @@ final class MobileWorkspaceUITests: XCTestCase {
     }
 
     private func openFileActions(_ app: XCUIApplication) {
-        let direct = element("files.toolbar.more", in: app)
-        if direct.exists && direct.isHittable { direct.tap(); return }
-        let overflow = app.buttons["OverflowBarButtonItem"].firstMatch
-        XCTAssertTrue(overflow.waitForExistence(timeout: 5)); overflow.tap()
+        // 小屏幕会把按钮移入原生溢出菜单；只查询导航栏按钮，避免为不存在的直接入口遍历整棵辅助功能树。
+        let direct = app.navigationBars.buttons["files.toolbar.more"].firstMatch
+        let contents = app.buttons["files.settings.open"]
+        if direct.exists && direct.isHittable {
+            MobileUITestNavigation.openMenu(direct, showing: contents, in: app, test: self)
+            return
+        }
+        let overflow = app.navigationBars.buttons["OverflowBarButtonItem"].firstMatch
         // 原生溢出菜单保留动作标题，不保留原 ToolbarItem 的标识。
         let more = app.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多"])).firstMatch
-        XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
+        guard MobileUITestNavigation.openMenu(overflow, showing: more, in: app, test: self) else { return }
+        MobileUITestNavigation.openMenu(more, showing: contents, in: app, test: self)
     }
 
     private func openFileSettings(_ app: XCUIApplication) {
